@@ -26,44 +26,70 @@ describe('PianoHomeDesk progress strip', () => {
     h.recent = { players: [{ userId: 'kid', name: 'Kid', courses: [course] }, { userId: 'sib', name: 'Sib', courses: [course] }] };
   });
 
-  it('gives a child with both a piece card and a course card, the course drawn as a ring', async () => {
+  it('gives a child with both a piece card and a course card', async () => {
     mount();
     expect(await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Kid: Lesson 12: Swing' })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Sib: Lesson 12: Swing' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Idle/ })).toBeNull();
-    expect(await screen.findByText('Jesu Joy')).toBeInTheDocument();
-    // A course is drawn as a ring with its percent, never a bar or a sentence.
-    const sib = screen.getByRole('button', { name: 'Sib: Lesson 12: Swing' });
-    const ring = sib.querySelector('.psc-ring');
-    expect(ring.style.getPropertyValue('--p')).toBe('6');
-    expect(ring.textContent).toBe('6%');
-    expect(sib.querySelector('.piano-desk__bar')).toBeNull();
-    expect(sib.textContent).not.toMatch(/lessons/);
+    // The printed title, once on the card's title line (the poster stand-in repeats it).
+    await screen.findAllByText('Jesu Joy');
+    expect(screen.getByRole('button', { name: 'Kid: 1 of 3 Silver' }).querySelector('.piano-desk__title').textContent).toBe('Jesu Joy');
   });
 
-  it('puts the child avatar and name on every card, never a time', async () => {
+  it('draws a course as its title without the lesson number, the number below, and a bar', async () => {
+    mount();
+    const sib = await screen.findByRole('button', { name: 'Sib: Lesson 12: Swing' });
+    expect(sib.querySelector('.piano-desk__title').textContent).toBe('Swing');
+    expect(sib.querySelector('.piano-desk__step').textContent).toBe('Lesson 12');
+    expect(sib.querySelector('.piano-desk__badge').textContent).toBe('Next lesson');
+    expect(sib.querySelector('.piano-desk__bar i').style.width).toBe('6%');
+    expect(sib.querySelector('.piano-desk__pct').textContent).toBe('6%');
+    expect(sib.querySelector('.psc-ring')).toBeNull();
+  });
+
+  it('heads each child once, above their cards, never a time', async () => {
     mount();
     await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
-    const cards = [...document.querySelectorAll('.piano-desk__card')];
-    expect(cards).toHaveLength(3);
-    expect(cards.map((card) => card.querySelector('.piano-desk__name').textContent)).toEqual(['Kid', 'Kid', 'Sib']);
-    expect(cards.every((card) => card.querySelector('.piano-avatar'))).toBe(true);
+    const panels = [...document.querySelectorAll('.piano-desk__child')];
+    expect(panels.map((panel) => panel.querySelector('.piano-desk__name').textContent)).toEqual(['Kid', 'Sib']);
+    expect(panels.map((panel) => panel.querySelectorAll('.piano-desk__card').length)).toEqual([2, 1]);
+    expect(document.querySelectorAll('.piano-desk__card .piano-avatar')).toHaveLength(0);
     expect(document.querySelector('.piano-desk').textContent).not.toMatch(/ago|just now/);
   });
 
-  it('leads a course card with the next lesson: its still and its title', async () => {
+  it('puts the course art on the poster, and a stand-in when there is none', async () => {
+    h.recent.players[0].courses = [{ ...course, thumbnail: '/api/course.jpg' }];
     mount();
-    const sib = await screen.findByRole('button', { name: 'Sib: Lesson 12: Swing' });
-    expect(sib.querySelector('.piano-desk__media img').getAttribute('src')).toMatch(/^\/api\/still\.jpg/);
-    expect(sib.querySelector('.piano-desk__title').textContent).toBe('Lesson 12: Swing');
+    const kid = await screen.findByRole('button', { name: 'Kid: Lesson 12: Swing' });
+    expect(kid.querySelector('.piano-desk__poster img').getAttribute('src')).toBe('/api/course.jpg?w=120&h=180');
+    const sib = screen.getByRole('button', { name: 'Sib: Lesson 12: Swing' });
+    expect(sib.querySelector('.piano-desk__poster img')).toBeNull();
+    expect(sib.querySelector('.piano-desk__poster[data-stand-in]').textContent).toMatch(/Piano University/);
   });
 
   it('shows the score poster on a piece card', async () => {
     h.desk.players[0].piece = { ...piece, cover: '/api/cover.jpg' };
     mount();
     const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
-    expect(card.querySelector('.piano-desk__media img')).toHaveAttribute('src', '/api/cover.jpg');
+    expect(card.querySelector('.piano-desk__poster img')).toHaveAttribute('src', '/api/cover.jpg?w=120&h=180');
+  });
+
+  it('stands in for a piece with no cover with its title', async () => {
+    mount();
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+    expect(card.querySelector('.piano-desk__poster img')).toBeNull();
+    await screen.findAllByText('Jesu Joy');
+    expect(card.querySelector('.piano-desk__poster[data-stand-in]').textContent).toMatch(/Jesu Joy/);
+  });
+
+  it('swaps a cover that fails to load for the stand-in', async () => {
+    h.desk.players[0].piece = { ...piece, cover: '/api/cover.jpg' };
+    mount();
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+    fireEvent.error(card.querySelector('.piano-desk__poster img'));
+    expect(card.querySelector('.piano-desk__poster img')).toBeNull();
+    expect(card.querySelector('.piano-desk__poster[data-stand-in]')).not.toBeNull();
   });
 
   it('fades the tomatoes nobody has started, and keeps the one up next bright', async () => {
@@ -85,22 +111,29 @@ describe('PianoHomeDesk progress strip', () => {
     expect(marks.map((mark) => mark.hasAttribute('data-current'))).toEqual([false, true, false]);
   });
 
-  it('counts the piece with coins, as the passage board does, and says no sentence', async () => {
+  it('badges a piece Silver next and leaves the counting to the coins', async () => {
     mount();
     const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
-    const count = card.querySelector('.piano-desk__count');
-    expect(count.textContent).toBe('1/3');
-    expect(count.querySelectorAll('.coin-icon[data-metal="silver"]')).toHaveLength(1);
-    // Gold is counted only once there is some.
-    expect(count.querySelector('[data-level="gold"]')).toBeNull();
+    expect(card.querySelector('.piano-desk__badge').textContent).toBe('Silver next');
+    expect(card.querySelector('.piano-desk__step').textContent).toBe('Bars 6–9');
+    expect(card.querySelector('.piano-desk__count')).toBeNull();
     expect(card.textContent).not.toMatch(/ of 3 Silver/);
   });
 
-  it('keeps a twelve-passage piece to two rows of six small icons, so a card fits with or without a poster', async () => {
+  it('keeps up to fourteen passages on one row of coins', async () => {
     h.desk.players[0].piece = { ...piece, total: 12, passages: Array.from({ length: 12 }, (_, index) => ({ id: `p${index}`, start: index * 4, end: index * 4 + 3, state: 'todo' })) };
     mount();
     const card = await screen.findByRole('button', { name: 'Kid: 1 of 12 Silver' });
-    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(6, 26px)');
+    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(12, 12px)');
+    expect(card.hasAttribute('data-rows')).toBe(false);
+  });
+
+  it('wraps a longer piece onto two rows and makes its card taller', async () => {
+    h.desk.players[0].piece = { ...piece, total: 20, passages: Array.from({ length: 20 }, (_, index) => ({ id: `p${index}`, start: index * 4, end: index * 4 + 3, state: 'todo' })) };
+    mount();
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 20 Silver' });
+    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(10, 15px)');
+    expect(card.getAttribute('data-rows')).toBe('2');
   });
 
   it('shows only the children, never the parents', async () => {

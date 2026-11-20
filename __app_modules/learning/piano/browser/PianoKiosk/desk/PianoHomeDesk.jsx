@@ -6,8 +6,7 @@ import usePianoList from '../usePianoList.js';
 import { usePianoUser } from '../PianoUserContext.jsx';
 import { titleFromScoreId } from '../modes/SheetMusic/scoreTitle.js';
 import PassageCoin from '../modes/SheetMusic/PassageCoin.jsx';
-import ProgressRing from '../modes/Videos/ProgressRing.jsx';
-import { coinSize, mapColumns, passageBars, passageFaded, pieceCount, scoreHeading, stripGroups } from './deskModel.js';
+import { cardBadge, coinSize, lessonTitle, mapColumns, mapRows, nextStep, passageFaded, pieceCount, scoreHeading, stripGroups } from './deskModel.js';
 import './PianoHomeDesk.scss';
 
 const players = (response) => (Array.isArray(response?.players) ? response.players : []);
@@ -58,71 +57,70 @@ export const PieceCount = ({ piece }) => (
 
 export { usePrintedTitle };
 
-/** Whose card it is: the child's avatar and name, on every card. */
-const Who = ({ card }) => (
-  <span className="piano-desk__who">
-    <ProfileAvatar id={card.userId} name={card.name} />
-    <span className="piano-desk__name">{card.name}</span>
-  </span>
-);
+const PLAY = <span className="piano-desk__play" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor" /></svg></span>;
 
-/** The picture of the next thing, cropped to fill, with a play badge: tap to resume. */
-const Media = ({ src }) => (
-  <span className="piano-desk__media">
-    {src && <img src={src} alt="" decoding="async" />}
-    <span className="piano-desk__play" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor" /></svg></span>
-  </span>
-);
+/** A card's tall poster: the picture, or a tinted stand-in with a title when there is none or it fails. */
+function PosterArt({ src, title }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [src]);
+  if (!src || failed) {
+    return (
+      <span className="piano-desk__poster" data-stand-in="">
+        <span className="piano-desk__note" aria-hidden="true">♪</span>
+        <span className="piano-desk__stand-in">{title}</span>
+        {PLAY}
+      </span>
+    );
+  }
+  return <span className="piano-desk__poster"><img src={sized(src, 120, 180)} alt="" decoding="async" onError={() => setFailed(true)} />{PLAY}</span>;
+}
 
-/**
- * One layout for both kinds, so the strip reads as one row of cards: whose it
- * is, the picture of the next thing, what it is, and how far along.
- */
-function PieceCard({ card }) {
-  const title = usePrintedTitle(card.piece.scoreId);
+/** One layout for both kinds: poster left; badge, title and next step beside it; progress under. */
+function Card({ card, poster, title, standIn = title, progress }) {
+  const badge = cardBadge(card);
   return (
     <>
-      <Who card={card} />
-      <Media src={card.piece.cover} />
-      <span className="piano-desk__text">
-        <strong className="piano-desk__title piano-desk__title--one">{title}</strong>
-        <span className="piano-desk__sub">
-          {card.focus && <span className="piano-desk__next">{passageBars(card.focus)}</span>}
-          <PieceCount piece={card.piece} />
+      <span className="piano-desk__top">
+        <PosterArt src={poster} title={standIn} />
+        <span className="piano-desk__text">
+          <span className="piano-desk__badge" data-level={badge.level}>{badge.label}</span>
+          <strong className="piano-desk__title">{title}</strong>
+          <span className="piano-desk__step">{nextStep(card)}</span>
         </span>
       </span>
-      <span className="piano-desk__progress"><PassageMap piece={card.piece} focusId={card.focus?.id} /></span>
+      <span className="piano-desk__progress">{progress}</span>
     </>
   );
+}
+
+function PieceCard({ card }) {
+  const title = usePrintedTitle(card.piece.scoreId);
+  return <Card card={card} poster={card.piece.cover} title={title} progress={<PassageMap piece={card.piece} focusId={card.focus?.id} />} />;
 }
 
 function CourseCard({ card }) {
   const { course } = card;
   const percent = course.total > 0 ? Math.min(100, Math.round((course.completed / course.total) * 100)) : 0;
-  const lesson = course.next;
-  const picture = lesson?.thumbnail ? sized(lesson.thumbnail, 360, 202) : course.thumbnail ? sized(course.thumbnail, 360, 202) : null;
+  const title = course.next?.title ? lessonTitle(course.next.title) : course.courseTitle;
   return (
-    <>
-      <Who card={card} />
-      <Media src={picture} />
-      <span className="piano-desk__text">
-        <strong className="piano-desk__title">{lesson?.title ?? course.courseTitle}</strong>
-      </span>
-      <span className="piano-desk__progress">
-        <ProgressRing percent={percent} label={`${percent}%`} size="44px" />
-        {/* The course's name, unless the title above already is it; then the lessons done. */}
-        <span className="piano-desk__course">{lesson?.title ? course.courseTitle : `${course.completed}/${course.total}`}</span>
-      </span>
-    </>
+    <Card card={card} poster={course.thumbnail} title={title} standIn={course.courseTitle} progress={(
+      <>
+        <span className="piano-desk__bar" aria-hidden="true"><i style={{ width: `${percent}%` }} /></span>
+        <span className="piano-desk__pct">{percent}%</span>
+      </>
+    )} />
   );
 }
 
 /**
- * The progress strip above the home menu: for each child (school learners, not
- * parents), a card for the piece they are learning and one for their video course. Every
- * card carries the child's avatar and name, and leads with the very next thing to do. The strip keeps one
- * height whether or not it has cards, so the menu below never moves. The cards share its width:
- * it never scrolls, and a card is never cut off at its edge.
+ * The progress strip above the home menu: one panel per child (school learners,
+ * not parents), headed once by their avatar and name, holding a card for the
+ * piece they are learning and one for their video course. Both cards share one
+ * layout: a tall poster on the left, the badge, title and very next step beside
+ * it, and the progress (passage coins, or a course bar and percent) underneath.
+ * The strip keeps one height whether or not it has cards, so the menu below
+ * never moves. The cards share its width: it never scrolls, and a card is never
+ * cut off at its edge.
  */
 export default function PianoHomeDesk({ disabled, onOpenPassage, onOpenCourse }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-desk' }), []);
@@ -150,15 +148,22 @@ export default function PianoHomeDesk({ disabled, onOpenPassage, onOpenCourse })
   return (
     <section className={`piano-desk${disabled ? ' is-disabled' : ''}`} aria-label="Recent progress">
       {groups.map((group) => (
-        <span key={group.userId} className="piano-desk__child">
-          {group.cards.map((card) => (
-            <button type="button" key={card.key} className="piano-desk__card" data-kind={card.kind} disabled={disabled}
-              aria-label={card.kind === 'piece' ? `${card.name}: ${pieceCount(card.piece)}` : `${card.name}: ${card.course.next?.title ?? card.course.courseTitle}`}
-              onClick={() => open(card)}>
-              {card.kind === 'piece' ? <PieceCard card={card} /> : <CourseCard card={card} />}
-            </button>
-          ))}
-        </span>
+        <div key={group.userId} className="piano-desk__child">
+          <span className="piano-desk__who">
+            <ProfileAvatar id={group.userId} name={group.name} />
+            <span className="piano-desk__name">{group.name}</span>
+          </span>
+          <span className="piano-desk__cards">
+            {group.cards.map((card) => (
+              <button type="button" key={card.key} className="piano-desk__card" data-kind={card.kind} disabled={disabled}
+                data-rows={card.kind === 'piece' && mapRows(card.piece.passages.length) > 1 ? 2 : undefined}
+                aria-label={card.kind === 'piece' ? `${card.name}: ${pieceCount(card.piece)}` : `${card.name}: ${card.course.next?.title ?? card.course.courseTitle}`}
+                onClick={() => open(card)}>
+                {card.kind === 'piece' ? <PieceCard card={card} /> : <CourseCard card={card} />}
+              </button>
+            ))}
+          </span>
+        </div>
       ))}
     </section>
   );
