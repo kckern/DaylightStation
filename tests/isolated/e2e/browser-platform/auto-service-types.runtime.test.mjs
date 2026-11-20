@@ -125,6 +125,8 @@ test('Auto keeps keyboard traversal in the service sheet while Retry waits', asy
     await expect(retry).toBeFocused();
     await page.keyboard.press('Enter');
     await expect.poll(() => reads).toEqual(['GET', 'GET']);
+    await expect(dialog.getByLabel('Loading service types')).toBeVisible();
+    await expect(retry).toHaveCount(0);
     await expect(region).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(close).toBeFocused();

@@ -260,9 +260,13 @@ before opening. Media's Start fresh dialog returns to the Settings button.
 In `Sheet`, mark the initial input with `data-autofocus`. Once the sheet
 records the opener, it moves focus to that input or Close if focus is still
 outside the panel. Tab and Shift+Tab stay in the sheet, including when an
-action has moved focus to a loading region.
+action has moved focus to a loading region. Custom dialogs can use
+`useDialogFocus(active, panelRef, fallbackRef)` on their own panel and
+compose its returned `onKeyDown` with feature-specific keys.
 [Auto place naming](../../../__app_modules/household/auto/browser/DrivesPanel.jsx) ·
-[Auto service types](../../../__app_modules/household/auto/browser/ServicePanel.jsx)
+[Auto service types](../../../__app_modules/household/auto/browser/ServicePanel.jsx) ·
+[Feed player sheet](../../../__app_modules/media/feed/browser/players/FeedPlayerSheet.jsx) ·
+[Feed article detail](../../../__app_modules/media/feed/browser/Scroll/detail/DetailModal.jsx)
 
 The seven browser app routes opt into the edge-to-edge viewport. Mantine
 dialog sizing follows the same safe rectangle, including body portals.

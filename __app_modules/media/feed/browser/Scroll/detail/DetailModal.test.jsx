@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createPortal } from 'react-dom';
 import { describe, expect, test, vi } from 'vitest';
 import { DismissStackProvider } from '@/lib/ui/dismiss/DismissStackProvider.jsx';
@@ -6,7 +6,7 @@ import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import DetailModal from "./DetailModal.jsx";
 
 vi.mock("./DetailView.jsx", () => ({
-  default: ({ renderDialog }) => renderDialog(<><button>First action</button><button>Last action</button></>),
+  default: ({ renderDialog }) => renderDialog(<><button data-autofocus>First action</button><button>Last action</button></>),
 }));
 
 describe('DetailModal', () => {
@@ -19,6 +19,8 @@ describe('DetailModal', () => {
 
     const first = screen.getByRole('button', { name: 'First action' });
     const last = screen.getByRole('button', { name: 'Last action' });
+    // Supply geometry for the focusable controls in the DOM test environment.
+    for (const action of [first, last]) vi.spyOn(action, 'getClientRects').mockReturnValue([{}]);
     await waitFor(() => expect(first).toHaveFocus());
     fireEvent.keyDown(first, { key: 'Tab', shiftKey: true });
     expect(last).toHaveFocus();
@@ -27,6 +29,20 @@ describe('DetailModal', () => {
 
     fireEvent.keyDown(first, { key: 'Escape' });
     expect(onBack).toHaveBeenCalledOnce();
+  });
+
+  test('keeps the detail action focused when its opening timer runs', () => {
+    vi.useFakeTimers();
+    try {
+      render(<DetailModal item={{ title: 'Story detail' }} sections={[]} onBack={vi.fn()} />);
+      const last = screen.getByRole('button', { name: 'Last action' });
+      last.focus();
+      expect(document.activeElement).toBe(last);
+      act(() => { vi.runOnlyPendingTimers(); });
+      expect(document.activeElement).toBe(last);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('gives Escape to a newer portal and uses the current Back action without refocusing', async () => {

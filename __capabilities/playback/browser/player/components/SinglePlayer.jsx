@@ -6,6 +6,7 @@ import { getRenderer, isMediaFormat } from '../lib/registry.js';
 import { fetchMediaInfo } from '../lib/api.js';
 import { playbackLog } from '../lib/playbackLogger.js';
 import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
+import { browserPreference } from '../../../../../frontend/src/lib/browserPreference.js';
 import { useRefreshableRead } from '../../../../../frontend/src/lib/hooks/useRefreshableRead.js';
 import { AudioPlayer } from '../renderers/AudioPlayer.jsx';
 import { VideoPlayer } from '../renderers/VideoPlayer.jsx';
@@ -169,24 +170,23 @@ export function SinglePlayer(props = {}) {
     return firstDefined != null ? String(firstDefined) : null;
   }, [mediaInfo?.contentId, mediaInfo?.assetId, mediaInfo?.key, mediaInfo?.plex, mediaInfo?.id, mediaInfo?.mediaUrl, effectiveContentId, plex, mediaKeyProp, media]);
 
+  const watchedDurationPreference = useMemo(() => {
+    if (!playbackSessionKey || typeof window === 'undefined') return null;
+    return browserPreference(`watchedDuration:${playbackSessionKey}`, 0, raw => {
+      const parsed = JSON.parse(raw);
+      const value = typeof parsed === 'number' ? parsed : parsed?.value;
+      return Number.isFinite(value) && value >= 0 ? value : 0;
+    });
+  }, [playbackSessionKey]);
+
   const handleProgress = useCallback((payload = {}) => {
     const watchedDuration = accumulateWatchedDuration(payload);
-    if (typeof window !== 'undefined') {
+    if (watchedDurationPreference) {
       const percentValue = Number(payload?.percent);
-      const storageKey = playbackSessionKey ? `watchedDuration:${playbackSessionKey}` : null;
-      if (storageKey) {
-        try {
-          if (Number.isFinite(percentValue) && percentValue >= 99) {
-            window.localStorage.removeItem(storageKey);
-          } else {
-            window.localStorage.setItem(storageKey, JSON.stringify({
-              value: watchedDuration,
-              updatedAt: Date.now()
-            }));
-          }
-        } catch (_) {
-          // Ignore storage errors; timer state remains in memory
-        }
+      if (Number.isFinite(percentValue) && percentValue >= 99) {
+        watchedDurationPreference.clear();
+      } else {
+        watchedDurationPreference.write(JSON.stringify({ value: watchedDuration, updatedAt: Date.now() }));
       }
     }
     // Forward playback metrics to Player.jsx for resilience tracking
@@ -206,7 +206,7 @@ export function SinglePlayer(props = {}) {
         watchedDuration
       });
     }
-  }, [accumulateWatchedDuration, onPlaybackMetrics, onProgress, playbackSessionKey]);
+  }, [accumulateWatchedDuration, onPlaybackMetrics, onProgress, watchedDurationPreference]);
 
   const contentScrollerBridge = {
     onResolvedMeta,
@@ -223,32 +223,8 @@ export function SinglePlayer(props = {}) {
   };
 
   useEffect(() => {
-    if (!playbackSessionKey || typeof window === 'undefined') {
-      setWatchedDurationValue(0);
-      return;
-    }
-    const storageKey = `watchedDuration:${playbackSessionKey}`;
-    try {
-      const raw = window.localStorage.getItem(storageKey);
-      if (!raw) {
-        setWatchedDurationValue(0);
-        return;
-      }
-      const parsed = JSON.parse(raw);
-      const storedValue = typeof parsed === 'number'
-        ? parsed
-        : Number.isFinite(parsed?.value)
-          ? parsed.value
-          : null;
-      if (Number.isFinite(storedValue) && storedValue >= 0) {
-        setWatchedDurationValue(storedValue);
-      } else {
-        setWatchedDurationValue(0);
-      }
-    } catch (_) {
-      setWatchedDurationValue(0);
-    }
-  }, [playbackSessionKey, setWatchedDurationValue]);
+    setWatchedDurationValue(watchedDurationPreference?.read() ?? 0);
+  }, [watchedDurationPreference, setWatchedDurationValue]);
 
   const readVideoInfo = useCallback(async (isCurrent, signal) => {
     setIsReady(false);

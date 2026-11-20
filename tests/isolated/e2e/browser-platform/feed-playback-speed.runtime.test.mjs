@@ -86,6 +86,67 @@ test('Feed uses playable defaults for malformed speed and out-of-range volume', 
   await expect.poll(() => playingSettings(page, '41')).toEqual({ speed: 1, volume: 1 });
 });
 
+const readWatched = (page, id) => page.evaluate(id => {
+  const raw = localStorage.getItem(`watchedDuration:plex:${id}`);
+  return raw === null ? null : JSON.parse(raw);
+}, id);
+
+test('Feed applies each legacy or current watched-duration record on its own track', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('watchedDuration:plex:41', '17');
+    localStorage.setItem('watchedDuration:plex:42', JSON.stringify({ value: 8, updatedAt: 1 }));
+  });
+  await page.goto('/feed/scroll');
+  await playTrack(page, '41');
+  await expect.poll(() => playingSettings(page, '41')).not.toBeNull();
+  await expect.poll(async () => (await readWatched(page, '41'))?.value, { timeout: 10000 }).toBeGreaterThanOrEqual(17);
+  expect((await readWatched(page, '42')).updatedAt).toBe(1);
+  await playTrack(page, '42');
+  await expect.poll(() => playingSettings(page, '42')).not.toBeNull();
+  await expect.poll(async () => (await readWatched(page, '42'))?.updatedAt, { timeout: 10000 }).toBeGreaterThan(1);
+  expect((await readWatched(page, '42')).value).toBeGreaterThanOrEqual(8);
+  expect((await readWatched(page, '42')).value).toBeLessThan(17);
+
+  const track = page.locator('audio[src$="feed-speed-42.wav"]');
+  await track.evaluate(audio => { audio.currentTime = audio.duration - 0.05; });
+  await expect.poll(() => readWatched(page, '42'), { timeout: 10000 }).toBeNull();
+  expect((await readWatched(page, '41')).value).toBeGreaterThanOrEqual(17);
+});
+
+test('Feed plays with watched-duration storage denied', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.deniedWatchStorageCalls = [];
+    for (const method of ['getItem', 'setItem', 'removeItem']) {
+      const real = Storage.prototype[method];
+      Storage.prototype[method] = function(key, ...args) {
+        if (this === localStorage && String(key).startsWith('watchedDuration:')) {
+          window.deniedWatchStorageCalls.push([method, key]);
+          throw new DOMException('fixture unavailable', 'SecurityError');
+        }
+        return real.call(this, key, ...args);
+      };
+    }
+  });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/feed/scroll');
+  await playTrack(page, '41');
+  await expect.poll(() => playingSettings(page, '41')).not.toBeNull();
+  await playTrack(page, '42');
+  await expect.poll(() => playingSettings(page, '42')).not.toBeNull();
+  await expect.poll(() => page.evaluate(() => window.deniedWatchStorageCalls)).toEqual(expect.arrayContaining([
+    ['getItem', 'watchedDuration:plex:41'],
+    ['setItem', 'watchedDuration:plex:41'],
+    ['getItem', 'watchedDuration:plex:42'],
+    ['setItem', 'watchedDuration:plex:42'],
+  ]));
+  const track = page.locator('audio[src$="feed-speed-42.wav"]');
+  await track.evaluate(audio => { audio.currentTime = audio.duration - 0.05; });
+  await expect.poll(() => page.evaluate(() => window.deniedWatchStorageCalls))
+    .toContainEqual(['removeItem', 'watchedDuration:plex:42']);
+  expect(errors).toEqual([]);
+});
+
 test('Feed resumes both interrupted tracks at their captured positions', async ({ page }) => {
   await page.goto('/feed/scroll');
   const audio = id => page.locator('audio[src$="feed-speed-' + id + '.wav"]');

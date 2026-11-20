@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
-import { useFocusTrap, useMediaQuery, useMergedRef } from '@mantine/hooks';
+import { useMediaQuery } from '@mantine/hooks';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
+import { useDialogFocus } from '@/lib/ui/dismiss/useDialogFocus.js';
 import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import { useOverlayFocusReturn } from '@/lib/ui/dismiss/useOverlayFocusReturn.js';
 import { proxyImage } from "../Scroll/cards/utils.js";
@@ -34,8 +35,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
   const active = open && Boolean(item);
   const usesDismissStack = useDismissLayer(active, onClose);
   useOverlayFocusReturn(active, openerRef);
-  const trapRef = useFocusTrap(active);
-  const panelRef = useMergedRef(sheetRef, trapRef);
+  const handleKeys = useDialogFocus(active, sheetRef, closeRef);
   const showVolume = useMediaQuery('(min-width: 900px)');
   const bindVolume = useCallback(node => {
     const previous = volumeRef.current;
@@ -159,7 +159,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
         aria-hidden="true"
       />
       <div
-        ref={panelRef}
+        ref={sheetRef}
         className={`feed-player-sheet${open ? ' open' : ''}${dragging ? ' dragging' : ''}`}
         role="dialog"
         aria-modal="true"
@@ -167,6 +167,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
         inert={open ? undefined : ''}
         aria-labelledby="feed-player-sheet-title"
         tabIndex={-1}
+        onKeyDown={handleKeys}
       >
         <div className="sheet-drag-handle" aria-hidden="true"
           onTouchStart={handleTouchStart} onTouchMove={handleTouchMove}
