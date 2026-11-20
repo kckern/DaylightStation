@@ -62,8 +62,6 @@ final class AndroidSurfaces implements SurfaceSink {
     static final String EXTRA_TOKEN = "token";
 
     @Override public void pin(Action action, String uri, String confirmToken) {
-        ShortcutManager m = manager();
-        if (m == null || !m.isRequestPinShortcutSupported()) throw new UnsupportedException("this launcher does not pin shortcuts");
         IntentSender confirm = null;
         if (confirmToken != null) {
             // Sent by the system once the owner has pinned the shortcut. Immutable: nothing
@@ -71,6 +69,24 @@ final class AndroidSurfaces implements SurfaceSink {
             Intent result = new Intent().setClassName(context, PIN_RESULT_RECEIVER).putExtra(EXTRA_TOKEN, confirmToken);
             confirm = PendingIntent.getBroadcast(context, confirmToken.hashCode(), result,
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_ONE_SHOT).getIntentSender();
+        }
+        pinWithCallback(action, uri, confirm);
+    }
+
+    @Override public void pinFromSetup(Action action, String uri, String requestId) {
+        // The phone setup's private receiver lives in the widgets shell.
+        Intent result = new Intent("net.kckern.daylight.SETUP_SHORTCUT_PIN_CONFIRMED")
+                .setClassName(context, "net.kckern.daylight.cap.widgets.shell.ButtonWidgetProvider")
+                .setData(Uri.parse("daylight-widget://shortcut/" + requestId));
+        IntentSender confirm = PendingIntent.getBroadcast(context, 0, result,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_ONE_SHOT).getIntentSender();
+        pinWithCallback(action, uri, confirm);
+    }
+
+    private void pinWithCallback(Action action, String uri, IntentSender confirm) {
+        ShortcutManager m = manager();
+        if (m == null || !m.isRequestPinShortcutSupported()) {
+            throw new UnsupportedException("this launcher does not pin shortcuts");
         }
         if (!m.requestPinShortcut(info(action, uri, SurfacePlan.pinId(action)), confirm)) {
             throw new UnsupportedException("the launcher refused the pin request");

@@ -7,6 +7,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
+import android.util.Log;
 import android.widget.RemoteViews;
 
 import net.kckern.daylight.api.DirectPlay;
@@ -28,44 +29,46 @@ import net.kckern.daylight.shellkit.SurfaceCache;
  */
 public class ButtonWidgetProvider extends AppWidgetProvider {
     static final String PIN_ACTION = "net.kckern.daylight.WIDGET_PIN_CONFIRMED";
-    static final String EXTRA_ACTION_ID = "net.kckern.daylight.EXTRA_WIDGET_ACTION";
-
-    static final String EXTRA_PLAYLIST_LABEL = "net.kckern.daylight.EXTRA_PLAYLIST_LABEL";
+    static final String SHORTCUT_PIN_ACTION = "net.kckern.daylight.SETUP_SHORTCUT_PIN_CONFIRMED";
 
     @Override public void onReceive(Context context, Intent intent) {
-        if (!PIN_ACTION.equals(intent.getAction())) { super.onReceive(context, intent); return; }
+        boolean shortcut = SHORTCUT_PIN_ACTION.equals(intent.getAction());
+        if (!shortcut && !PIN_ACTION.equals(intent.getAction())) {
+            super.onReceive(context, intent);
+            return;
+        }
         android.net.Uri data = intent.getData();
-        if (data == null || data.getPathSegments().size() != 1) return;
-        String action = intent.getStringExtra(EXTRA_ACTION_ID);
+        if (data == null || !"daylight-widget".equals(data.getScheme())
+                || !(shortcut ? "shortcut" : "pin").equals(data.getHost())
+                || data.getPathSegments().size() != 1) return;
+        PlacementStore store = new PlacementStore(context);
+        LauncherPlacement request = store.get(data.getLastPathSegment());
+        if (request == null) return;
+        if (shortcut) {
+            store.write(request.confirmShortcut(), 0);
+            return;
+        }
+
         int id = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID);
         AppWidgetManager manager = AppWidgetManager.getInstance(context);
-        android.appwidget.AppWidgetProviderInfo info = manager.getAppWidgetInfo(id);
-        if (info == null || !new android.content.ComponentName(context, ButtonWidgetProvider.class).equals(info.provider)
-                || action == null || !action.startsWith("c:")) return;
-        choosePlaylist(context, id, action, intent.getStringExtra(EXTRA_PLAYLIST_LABEL));
-        manager.updateAppWidget(id, render(context, id));
+        boolean ours = owns(context, manager, id);
+        LauncherPlacement bound = request.bindCallback(id, ours, ours && !chosen(context, id).isEmpty());
+        if (bound == null) return;
+        boolean newAssignment = bound.manualWidget != id;
+        if (store.write(bound, newAssignment ? id : 0) && newAssignment) {
+            try {
+                manager.updateAppWidget(id, render(context, id));
+            } catch (RuntimeException unavailable) {
+                Log.w("Daylight-Widget", "could not draw the confirmed playlist widget: "
+                        + unavailable.getClass().getSimpleName());
+            }
+        }
     }
 
-    /** This module's own file: the payload writes the surface cache and never this. */
-    private static final String PREFS = "daylight_buttons";
-
-    static void rememberPlaylist(Context context, String id, String title) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .putString("selected_playlist", id).putString("selected_playlist_title", title).apply();
-    }
-
-    static String selectedPlaylist(Context context) {
-        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("selected_playlist", "");
-    }
-
-    static String selectedPlaylistTitle(Context context) {
-        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("selected_playlist_title", "Playlist");
-    }
-
-    static void choosePlaylist(Context context, int widgetId, String playlist, String label) {
-        String key = ButtonFace.storeKey(widgetId);
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .putString(key, playlist).putString(key + ".label", label).commit();
+    static boolean owns(Context context, AppWidgetManager manager, int widgetId) {
+        android.appwidget.AppWidgetProviderInfo info = manager == null ? null : manager.getAppWidgetInfo(widgetId);
+        return info != null && info.provider != null && ButtonFace.ours(widgetId, info.provider.getPackageName(),
+                info.provider.getClassName(), context.getPackageName(), ButtonWidgetProvider.class.getName());
     }
 
     @Override
@@ -75,7 +78,7 @@ public class ButtonWidgetProvider extends AppWidgetProvider {
 
     @Override
     public void onDeleted(Context context, int[] widgetIds) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        SharedPreferences prefs = context.getSharedPreferences(PlacementStore.PREFS, Context.MODE_PRIVATE);
         if (prefs == null) return;
         SharedPreferences.Editor edit = prefs.edit();
         for (int id : widgetIds) edit.remove(ButtonFace.storeKey(id)).remove(ButtonFace.storeKey(id) + ".label");
@@ -83,20 +86,15 @@ public class ButtonWidgetProvider extends AppWidgetProvider {
     }
 
     static String chosen(Context context, int widgetId) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        SharedPreferences prefs = context.getSharedPreferences(PlacementStore.PREFS, Context.MODE_PRIVATE);
         String id = prefs == null ? null : prefs.getString(ButtonFace.storeKey(widgetId), "");
         return id == null ? "" : id;
-    }
-
-    static void choose(Context context, int widgetId, String actionId) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        if (prefs != null) prefs.edit().putString(ButtonFace.storeKey(widgetId), actionId).commit();
     }
 
     static RemoteViews render(Context context, int widgetId) {
         String actionId = chosen(context, widgetId);
         if (actionId.startsWith("c:")) {
-            String label = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            String label = context.getSharedPreferences(PlacementStore.PREFS, Context.MODE_PRIVATE)
                     .getString(ButtonFace.storeKey(widgetId) + ".label", "Playlist");
             RemoteViews playlist = new RemoteViews(context.getPackageName(), R.layout.widget_button);
             playlist.setTextViewText(R.id.button_label, label);

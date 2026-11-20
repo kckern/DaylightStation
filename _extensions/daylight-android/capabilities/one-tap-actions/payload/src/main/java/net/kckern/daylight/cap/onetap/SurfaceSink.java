@@ -30,4 +30,7 @@ interface SurfaceSink {
      *                     this token to the app's non-exported PinResultReceiver
      */
     void pin(Action action, String uri, String confirmToken);
+
+    /** Correlates a phone setup handoff separately from the media library's recording token. */
+    void pinFromSetup(Action action, String uri, String requestId);
 }

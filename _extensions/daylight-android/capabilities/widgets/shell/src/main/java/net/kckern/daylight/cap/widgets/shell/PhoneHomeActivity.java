@@ -6,6 +6,7 @@ import android.app.PendingIntent;
 import android.appwidget.AppWidgetManager;
 import android.content.ComponentName;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.ShortcutInfo;
 import android.content.pm.ShortcutManager;
 import android.graphics.Color;
@@ -15,6 +16,7 @@ import android.graphics.drawable.Icon;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.*;
@@ -27,7 +29,8 @@ import net.kckern.daylight.shellkit.LauncherCaptureShortcut;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.util.Collections;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -38,6 +41,16 @@ public class PhoneHomeActivity extends Activity {
     private JSONArray pages = new JSONArray();
     private JSONArray configuredActions = new JSONArray();
     private LinearLayout column;
+    private LinearLayout placementPanel;
+    private PlacementStore placements;
+    private final List<Button> setupButtons = new ArrayList<>();
+    private final List<Button> retryButtons = new ArrayList<>();
+    private final Handler timer = new Handler(android.os.Looper.getMainLooper());
+    private final Runnable placementTimeout = this::drawPlacement;
+    private final SharedPreferences.OnSharedPreferenceChangeListener placementChanged =
+            (prefs, key) -> drawPlacement();
+    private boolean openingPlaylist;
+    private boolean observingPlacement;
     private boolean loading = true;
     private boolean launcherPicker;
     private String loadError;
@@ -46,6 +59,7 @@ public class PhoneHomeActivity extends Activity {
         super.onCreate(state);
         launcherPicker = Intent.ACTION_CREATE_SHORTCUT.equals(getIntent().getAction());
         if (launcherPicker) setResult(RESULT_CANCELED);
+        placements = new PlacementStore(this);
         getWindow().setStatusBarColor(PAPER);
         getWindow().setNavigationBarColor(PAPER);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
@@ -53,6 +67,22 @@ public class PhoneHomeActivity extends Activity {
         ShellStart.ensure(this);
         draw();
         refresh();
+    }
+
+    @Override protected void onStart() {
+        super.onStart();
+        if (!launcherPicker) {
+            observingPlacement = true;
+            placements.prefs.registerOnSharedPreferenceChangeListener(placementChanged);
+            drawPlacement();
+        }
+    }
+
+    @Override protected void onStop() {
+        observingPlacement = false;
+        placements.prefs.unregisterOnSharedPreferenceChangeListener(placementChanged);
+        timer.removeCallbacks(placementTimeout);
+        super.onStop();
     }
 
     @Override protected void onDestroy() {
@@ -63,6 +93,13 @@ public class PhoneHomeActivity extends Activity {
     private interface Reply { void accept(JSONObject reply); }
 
     private void call(String port, String body, Reply success) {
+        call(port, body, success, message -> {
+            if (loading) { loading = false; loadError = message; draw(); }
+            else toast(message);
+        });
+    }
+
+    private void call(String port, String body, Reply success, java.util.function.Consumer<String> failure) {
         worker.execute(() -> {
             try {
                 JSONObject result = new JSONObject(PayloadPort.named(port).call(body, 12000));
@@ -71,8 +108,7 @@ public class PhoneHomeActivity extends Activity {
                 runOnUiThread(() -> {
                     if (isDestroyed() || isFinishing()) return;
                     String message = e instanceof PayloadPort.NotReadyException ? "Daylight is still starting." : e.getMessage();
-                    if (loading) { loading = false; loadError = message; draw(); }
-                    else toast(message == null ? "Could not complete the action." : message);
+                    failure.accept(message == null ? "Could not complete the action." : message);
                 });
             }
         });
@@ -103,6 +139,8 @@ public class PhoneHomeActivity extends Activity {
     }
 
     private void draw() {
+        setupButtons.clear();
+        placementPanel = null;
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(PAPER);
@@ -117,6 +155,12 @@ public class PhoneHomeActivity extends Activity {
         column.addView(label(launcherPicker ? "Choose a shortcut" : "Add to your Android home screen", 16, INK));
         if (loading) { column.addView(label("Loading services…", 16, INK)); return; }
         if (loadError != null) { row("Try again", loadError, "open", this::refresh); return; }
+        if (!launcherPicker) {
+            placementPanel = new LinearLayout(this);
+            placementPanel.setOrientation(LinearLayout.VERTICAL);
+            placementPanel.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+            column.addView(placementPanel);
+        }
         column.addView(label("Services", 20, INK));
         for (int i = 0; i < pages.length(); i++) {
             JSONObject page = pages.optJSONObject(i);
@@ -148,8 +192,8 @@ public class PhoneHomeActivity extends Activity {
         }
         if (launcherPicker) return;
         column.addView(label("Play on demand", 20, INK));
-        row("Play a playlist", "Choose a playlist for a one-tap widget", "play",
-                () -> showMediaChoices(0));
+        row("Play a playlist", "Choose playlist", "play", () -> showMediaChoices(0));
+        drawPlacement();
     }
 
     private void returnCaptureShortcut(JSONObject action) {
@@ -177,38 +221,53 @@ public class PhoneHomeActivity extends Activity {
 
     private void pinPage(JSONObject page) {
         String id = page.optString("id");
-        ShortcutManager sm = getSystemService(ShortcutManager.class);
-        if (sm == null || !sm.isRequestPinShortcutSupported()) { toast("This launcher cannot pin bookmarks."); return; }
+        String title = page.optString("label");
         if (!id.startsWith("saved-")) {
-            confirmShortcut(id, page.optString("label"));
+            confirmShortcut(id, title);
             return;
         }
-        ShortcutInfo shortcut = new ShortcutInfo.Builder(this, "bookmark-" + id)
-                .setShortLabel(page.optString("label")).setIcon(Icon.createWithResource(this, drawable("star")))
-                .setIntent(SurfaceCache.viewIntent(this, "daylight://bookmark/" + id)).build();
-        if (!sm.requestPinShortcut(shortcut, null)) toast("The launcher could not add this bookmark.");
+        confirmShortcut(title, () -> {
+            LauncherPlacement placement = beginPlacement(id, title, false);
+            if (placement == null) return;
+            ShortcutManager manager = getSystemService(ShortcutManager.class);
+            try {
+                ShortcutInfo shortcut = new ShortcutInfo.Builder(this, "bookmark-" + id)
+                        .setShortLabel(title).setIcon(Icon.createWithResource(this, drawable("star")))
+                        .setIntent(SurfaceCache.viewIntent(this, "daylight://bookmark/" + id)).build();
+                if (manager != null && manager.isRequestPinShortcutSupported()
+                        && manager.requestPinShortcut(shortcut, callback(placement).getIntentSender())) return;
+            } catch (RuntimeException unavailable) {
+                // Report a refused handoff below.
+            }
+            refused(placement);
+        });
     }
 
-    private void confirmShortcut(String id, String label) {
-        ShortcutManager shortcuts = getSystemService(ShortcutManager.class);
-        if (shortcuts == null || !shortcuts.isRequestPinShortcutSupported()) {
-            toast("Your Android launcher does not support adding shortcuts from Daylight.");
-            return;
-        }
-        if (shortcuts.getPinnedShortcuts().stream().anyMatch(shortcut -> shortcut.getId().equals("pin-" + id))) {
-            new AlertDialog.Builder(this).setTitle(label + " is already on your home screen")
-                    .setPositiveButton("OK", null).show();
-            return;
-        }
-        new AlertDialog.Builder(this).setTitle("Add " + label + " to home screen?")
+    private void confirmShortcut(String id, String title) {
+        confirmShortcut(title, () -> {
+            LauncherPlacement placement = beginPlacement(id, title, false);
+            if (placement == null) return;
+            String request = request("pin", "id", id, "requestId", placement.requestId).toString();
+            call("phone-pin-action", request, result -> {}, message -> refused(placement));
+        });
+    }
+
+    private void confirmShortcut(String title, Runnable pin) {
+        if (placementActive()) return;
+        new AlertDialog.Builder(this).setTitle("Add " + title + " to home screen?")
+                .setMessage("Android will ask you to confirm placement.")
                 .setNegativeButton("Cancel", null)
-                .setPositiveButton("Continue", (dialog, which) -> call("phone-pin-action", id, result ->
-                        toast("Confirm placement in Android. If no prompt appears, check your Home screen layout settings.")))
+                .setPositiveButton("Continue", (dialog, which) -> pin.run())
                 .show();
     }
 
     private void showMediaChoices(int cursor) {
+        if (openingPlaylist || placementActive()) return;
+        openingPlaylist = true;
+        updateSetupButtons(true);
         call("media", request("playlists", "cursor", String.valueOf(cursor)).toString(), result -> {
+            openingPlaylist = false;
+            drawPlacement();
             JSONArray items = result.optJSONArray("items");
             if (!result.optBoolean("ok") || items == null) {
                 toast("Could not load playlists. Tap Play a playlist to retry.");
@@ -227,40 +286,120 @@ public class PhoneHomeActivity extends Activity {
                         if (index == items.length()) { showMediaChoices(next); return; }
                         JSONObject item = items.optJSONObject(index);
                         String title = item.optString("title");
+                        String contentId = item.optString("contentId");
                         new AlertDialog.Builder(this).setTitle(title).setNegativeButton("Cancel", null)
-                                .setPositiveButton("Add widget", (d, w) ->
-                                        pinWidget("c:" + item.optString("contentId"), title)).show();
+                                .setMessage("Add a one-tap playlist widget to Android Home.")
+                                .setPositiveButton("Add widget", (d, w) -> pinWidget(contentId, title)).show();
                     }).setNegativeButton("Cancel", null).show();
+        }, message -> {
+            openingPlaylist = false;
+            drawPlacement();
+            toast("Could not load playlists. Tap Choose playlist to retry.");
         });
     }
 
-    private void pinWidget(String action, String label) {
+    private void pinWidget(String contentId, String title) {
+        LauncherPlacement placement = beginPlacement(contentId, title, true);
+        if (placement == null) return;
         AppWidgetManager manager = AppWidgetManager.getInstance(this);
-        if (manager == null) { toast("Android widgets are unavailable on this launcher."); return; }
-        if (!manager.isRequestPinAppWidgetSupported()) {
-            toast("This launcher cannot add playlist widgets from Daylight."); return;
+        try {
+            if (manager != null && manager.isRequestPinAppWidgetSupported()
+                    && manager.requestPinAppWidget(new ComponentName(this, ButtonWidgetProvider.class), null,
+                        callback(placement))) return;
+        } catch (RuntimeException unavailable) {
+            // Report a refused handoff below.
         }
-        ComponentName provider = new ComponentName(this, ButtonWidgetProvider.class);
-        Intent callback = new Intent(this, ButtonWidgetProvider.class).setAction(ButtonWidgetProvider.PIN_ACTION)
-                .setData(Uri.parse("daylight-widget://pin/" + java.util.UUID.randomUUID()))
-                .putExtra(ButtonWidgetProvider.EXTRA_ACTION_ID, action)
-                .putExtra(ButtonWidgetProvider.EXTRA_PLAYLIST_LABEL, label);
-        int flags = PendingIntent.FLAG_ONE_SHOT | (Build.VERSION.SDK_INT >= 31 ? PendingIntent.FLAG_MUTABLE : 0);
-        PendingIntent confirmed = PendingIntent.getBroadcast(this, 0, callback, flags);
-        boolean requested;
-        try { requested = manager.requestPinAppWidget(provider, null, confirmed); }
-        catch (RuntimeException unavailable) { requested = false; }
-        if (!requested) {
-            showManualPlacement(label);
-        } else {
-            toast("Confirm in Android. If the button does not appear, add Daylight playlist from Android Widgets.");
+        refused(placement);
+    }
+
+    private PendingIntent callback(LauncherPlacement placement) {
+        Intent callback = new Intent(this, ButtonWidgetProvider.class)
+                .setAction(placement.playlist ? ButtonWidgetProvider.PIN_ACTION : ButtonWidgetProvider.SHORTCUT_PIN_ACTION)
+                .setData(Uri.parse("daylight-widget://" + (placement.playlist ? "pin/" : "shortcut/") + placement.requestId));
+        int flags = PendingIntent.FLAG_ONE_SHOT;
+        if (!placement.playlist) flags |= PendingIntent.FLAG_IMMUTABLE;
+        else if (Build.VERSION.SDK_INT >= 31) flags |= PendingIntent.FLAG_MUTABLE;
+        return PendingIntent.getBroadcast(this, 0, callback, flags);
+    }
+
+    private LauncherPlacement beginPlacement(String contentId, String title, boolean playlist) {
+        if (placementActive()) return null;
+        if (contentId.isEmpty() || title.isEmpty()) {
+            toast("This item could not be prepared for placement.");
+            return null;
+        }
+        LauncherPlacement placement = placements.begin(contentId, title, playlist);
+        if (placement == null) toast("Could not prepare placement. Try again.");
+        return placement;
+    }
+
+    private void refused(LauncherPlacement placement) {
+        LauncherPlacement current = placements.get(placement.requestId);
+        if (current != null && current.status(System.currentTimeMillis()) != LauncherPlacement.Status.ADDED) {
+            placements.write(current.refuse(), 0);
         }
     }
 
-    private void showManualPlacement(String title) {
-        new AlertDialog.Builder(this).setTitle("Place the playlist widget")
-                .setMessage("On Android Home, open Widgets, add Daylight playlist, then choose Play " + title + ".")
+    private boolean placementActive() {
+        long now = System.currentTimeMillis();
+        return placements.recent().stream().anyMatch(request -> request.status(now) == LauncherPlacement.Status.CONFIRM);
+    }
+
+    private void showManualPlacement(LauncherPlacement placement) {
+        placements.prepareManual(placement);
+        new AlertDialog.Builder(this).setTitle("Place " + placement.title + " on Android Home")
+                .setMessage("Open Widgets on Android Home, add Daylight playlist, then choose Play " + placement.title + ".")
                 .setPositiveButton("OK", null).show();
+    }
+
+    private void drawPlacement() {
+        if (!observingPlacement || placementPanel == null) return;
+        timer.removeCallbacks(placementTimeout);
+        placementPanel.removeAllViews();
+        retryButtons.clear();
+        long now = System.currentTimeMillis();
+        boolean active = false;
+        int displayed = 0;
+        for (LauncherPlacement request : placements.recent()) {
+            LauncherPlacement.Status status = request.status(now);
+            if (status == LauncherPlacement.Status.CONFIRM) {
+                active = true;
+                timer.postDelayed(placementTimeout, Math.max(1, request.startedAt + LauncherPlacement.TIMEOUT_MS - now));
+            }
+            if (displayed++ >= 5 && status != LauncherPlacement.Status.CONFIRM) continue;
+            addPlacementStatus(request, status);
+        }
+        updateSetupButtons(active || openingPlaylist);
+    }
+
+    private void addPlacementStatus(LauncherPlacement request, LauncherPlacement.Status status) {
+        String message;
+        switch (status) {
+            case CONFIRM: message = "Confirm in Android"; break;
+            case UNCONFIRMED: message = "Placement unconfirmed. Check Android Home before trying again."; break;
+            case REFUSED: message = "Android placement is unavailable."; break;
+            case EXTRA_WIDGET:
+                message = "Added manually and through Android. If you see two widgets, touch and hold the extra one, then choose Remove.";
+                break;
+            default: message = "Added";
+        }
+        placementPanel.addView(label(request.title + " — " + message, 16, INK));
+        if (status != LauncherPlacement.Status.UNCONFIRMED && status != LauncherPlacement.Status.REFUSED) return;
+        if (request.playlist && request.manualWidget == 0) {
+            placementPanel.addView(actionButton("Place manually", request.title, () -> showManualPlacement(request)));
+            Button retry = actionButton("Retry widget placement", request.title,
+                    () -> pinWidget(request.contentId, request.title));
+            retryButtons.add(retry);
+            placementPanel.addView(retry);
+        }
+        if (!request.playlist) {
+            placementPanel.addView(label("You can retry with Add to home screen or check your launcher's shortcuts.", 14, INK));
+        }
+    }
+
+    private void updateSetupButtons(boolean busy) {
+        for (Button button : setupButtons) button.setEnabled(!busy);
+        for (Button button : retryButtons) button.setEnabled(!busy);
     }
 
     private int drawable(String name) {
@@ -282,15 +421,25 @@ public class PhoneHomeActivity extends Activity {
         words.setPadding(dp(14), 0, 0, 0);
         TextView heading = label(name, 18, INK);
         heading.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        words.addView(heading); words.addView(label(detail, 14, 0xff486258));
-        line.addView(words);
+        words.addView(heading);
+        Button action = actionButton(detail, name, click);
+        words.addView(action);
+        if (!launcherPicker && placementPanel != null) setupButtons.add(action);
+        line.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.topMargin = dp(8);
         column.addView(line, lp);
-        line.setContentDescription(name + ", " + detail);
-        line.setFocusable(true);
-        line.setOnClickListener(v -> click.run());
+        icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         return line;
+    }
+
+    private Button actionButton(String text, String item, Runnable click) {
+        Button button = new Button(this);
+        button.setText(text);
+        button.setAllCaps(false);
+        button.setContentDescription(text + ", " + item);
+        button.setOnClickListener(v -> click.run());
+        return button;
     }
 
     private TextView label(String text, int size, int color) {

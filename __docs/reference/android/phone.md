@@ -36,11 +36,21 @@ Call to add its own shortcut to Android Home. Journal and Meal capture shortcuts
 open the recorder, text form or camera directly from Android Home. Full Journal
 needs a supported mobile destination before it can be offered.
 
+Choose **Add to home screen** beside a service or capture action. **Confirm in
+Android** means Daylight is waiting for the launcher. **Added** means the launcher
+reported success. Check Android Home for the icon. After 10 seconds without a
+callback, **Placement unconfirmed** lets you check your home screen and retry.
+Launchers such as Apex can also offer Daylight in their shortcut chooser. Choose
+a supported service or capture action there when assigning a gesture.
+
 Choose **Play a playlist** to pick a Plex playlist and add its named 1×1 widget.
-Tap it from Android Home to start playback. If One UI does not place it from
-Daylight, add **Daylight playlist** in Android Widgets and tap the selected
-playlist. The phone widget picker offers a 1×1 playlist button. Android media controls pause or stop
-playback. Existing 1×1 Call widgets keep their assignments.
+If placement is unconfirmed or unavailable, choose **Place manually** beside that
+playlist in Daylight. Open Widgets on Android Home, add **Daylight playlist** and
+choose the playlist shown there. Each widget keeps its own assignment. If a late
+Android confirmation creates a second widget after manual placement, touch and hold
+the extra widget and choose **Remove**. Tap the widget to start playback and use
+Android media controls to pause or stop. Existing 1×1 Call widgets keep their
+assignments.
 
 ## What makes it a phone and not a kiosk
 
@@ -407,46 +417,21 @@ calls the payload.
 `one-tap-actions`, or before the payload has ever run, the widget has one button,
 "Daylight", that opens the app.
 
-**"Daylight button"**: one cell, one action. Placing it opens a chooser
-(`ButtonWidgetConfigActivity`) that lists every action by its label; a tap on one
-binds the button to that action. The button shows the action's label and icon,
-and a tap launches the action's keyed link, the same link every other surface
-launches. A `media:` action is the exception on both widgets: its button starts the
-play service with the action's id and plays with no window (see "Playing with no
-window").
+**"Daylight playlist"** is a one-cell button for the playlist selected in
+Daylight. A tap starts the play service with that widget's playlist ID and plays
+without opening an app window. Existing buttons assigned to an older action
+continue to draw and launch from the surface cache.
 
-- The widget remembers an action id and nothing else, in a private preferences
-  file of the installed app (`daylight_buttons`, key `button.<widget id>.action`).
-  The label, the icon and the link are read from the surface cache each time the
-  button is drawn. Removing the widget removes its entry.
-- The payload writes every action under its own id (`action.ids`, and
-  `action.<id>.label`, `.icon`, `.uri`) at start and whenever the actions are
-  published, and asks the buttons to redraw. A button's link is therefore under
-  the key in force; a tap on a cold start carries the key of the run before,
-  which is honoured for a minute.
-- A button whose action no longer exists (the settings line was removed, or the
-  widget was never given one) shows "Not set", and a tap opens the chooser again.
-  The payload empties the cache fields of an action that is gone, so the button
-  cannot launch a stale link.
-- From Android 9 the widget's own menu offers the chooser again
-  (`widgetFeatures="reconfigurable"`).
-- Before the payload has ever run the chooser has nothing to list. It says
-  "Daylight has no actions to show yet. Open the app once, then add the button
-  again." and starts the shell service, so the list is there the next time.
-
-The chooser is exported, because the launcher starts it and no permission exists
-that only a launcher holds. What it does with an intent from anybody:
-
-1. It reads the widget id and nothing else.
-2. It asks Android which provider that widget belongs to, and goes on only when
-   the answer is this app's button provider. An id of another app's widget, of
-   the four-button widget, or of no widget ends there.
-3. It lists the action labels and stores the id the owner taps, for that widget.
-
-It runs no action, starts no capture and no playback, opens no page and returns
-nothing but the widget id. Another app that starts it can put the list of action
-labels in front of the owner, and a tap by the owner then rebinds that one
-button. It is not shown over the lock screen.
+- The widget stores its own content ID and label in the app's private
+  `daylight_buttons` preferences. Removing a widget clears its assignment.
+- Each pin request stores the content ID and title before asking Android to
+  place it. A callback can bind only a widget Android identifies as a Daylight
+  playlist widget. An existing assignment stays intact.
+- The manual chooser receives a widget ID from Android and verifies its provider.
+  The chooser opens with the selection prepared in Daylight and keeps that
+  selection if the activity is recreated. Choosing the playlist binds it to that
+  widget ID. Closing the chooser cancels placement. The chooser opens no service
+  or capture UI and starts no playback.
 
 | Method | Route | Answer |
 |---|---|---|

@@ -256,9 +256,21 @@ public final class OneTapActionsCapability implements Capability, ActionList {
             }
             return new JSONObject().put("items", items).toString();
         }
-        Action action = catalog(null).find(id);
+        String actionId = id;
+        String requestId = null;
+        if (id.startsWith("{")) {
+            JSONObject request = new JSONObject(id);
+            actionId = request.getString("id");
+            requestId = request.getString("requestId");
+            if (!"pin".equals(request.getString("op"))
+                    || !java.util.UUID.fromString(requestId).toString().equals(requestId)) {
+                throw new IllegalArgumentException("Invalid pin request");
+            }
+        }
+        Action action = catalog(null).find(actionId);
         if (action == null) throw new IllegalArgumentException("Unknown action");
-        requireSink().pin(action, uri(action), null);
+        if (requestId == null) requireSink().pin(action, uri(action), null);
+        else requireSink().pinFromSetup(action, uri(action), requestId);
         return "{}";
     };
     private final net.kckern.daylight.api.PayloadPort pinPort = net.kckern.daylight.api.PayloadPort.named(PIN_PORT);

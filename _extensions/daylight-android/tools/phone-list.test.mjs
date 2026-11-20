@@ -195,3 +195,20 @@ test('the setup screen has direct destinations for Home and Lifelog', () => {
     'capture-status': 'input:status',
   })) assert.equal(actions[id], target);
 });
+
+test('launcher setup reports callback confirmation and keeps installed shortcut IDs', () => {
+  const read = (...path) => readFileSync(join(root, 'capabilities', ...path), 'utf8');
+  const home = read('widgets/shell/src/main/java/net/kckern/daylight/cap/widgets/shell/PhoneHomeActivity.java');
+  const provider = read('widgets/shell/src/main/java/net/kckern/daylight/cap/widgets/shell/ButtonWidgetProvider.java');
+  const actions = read('one-tap-actions/payload/src/main/java/net/kckern/daylight/cap/onetap/AndroidSurfaces.java');
+  const plan = read('one-tap-actions/payload/src/main/java/net/kckern/daylight/cap/onetap/SurfacePlan.java');
+  assert.match(home, /"bookmark-" \+ id/);
+  assert.match(plan, /PIN_PREFIX = "pin-"/);
+  assert.match(actions, /info\(action, uri, SurfacePlan\.pinId\(action\)\), confirm/);
+  assert.match(home, /requestPinShortcut\(shortcut,.*getIntentSender\(\)/s);
+  assert.match(provider, /SHORTCUT_PIN_ACTION\.equals\(intent\.getAction\(\)\)/);
+  assert.match(home, /LauncherCaptureShortcut\.issue\(this, action\.optString\("id"\)\)/);
+  assert.match(home, /daylight:\/\/bookmark\//);
+  assert.match(home, /Confirm in Android/);
+  assert.match(home, /Placement unconfirmed/);
+});
