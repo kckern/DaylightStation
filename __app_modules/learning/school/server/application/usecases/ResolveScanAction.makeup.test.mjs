@@ -52,3 +52,50 @@ describe('ResolveScanAction makeup_print', () => {
     expect((await useCase.execute({ code: record.token })).status).toBe('unsupported');
   });
 });
+
+describe('ResolveScanAction subject_next from a makeup sheet', () => {
+  const ticket = (subject) => mintToken({
+    tokenClass: 'subject_next', subject: { learnerId: 'kid', subject: 'math', continueToday: true, ...subject },
+    at: '2026-09-10T15:00:00.000Z', rng: () => 0.5, expiresAt: '2026-09-13T11:00:00.000Z',
+  });
+
+  function buildScan(rec, move) {
+    const claimMakeupLesson = { execute: vi.fn(async () => ({ claimed: '2026-09-07', reason: null })) };
+    const issueDocument = { execute: vi.fn(async () => ({ status: 'issued', artifactId: 'art_1', pageCount: 1 })) };
+    const openRemediation = { execute: vi.fn(async () => ({ status: 'opened', newSessionId: 'ses_retry', variant: 1 })) };
+    const useCase = new ResolveScanAction({
+      tokens: { get: vi.fn(async (t) => (t === rec.token ? rec : null)) },
+      sessions: { readEvents: vi.fn(async () => []) },
+      curriculum: { getUnit: vi.fn(async () => null) },
+      resolvePersonalCard: { execute: vi.fn() }, issueDocument, dispatchMedia: { execute: vi.fn() }, openRemediation,
+      receipts: { print: vi.fn(async () => ({ printed: true })) },
+      resolveSubjectNext: { execute: vi.fn(async () => ({ kind: 'move', move: { kind: move }, sessionId: 'ses_a', state: null })) },
+      claimMakeupLesson, clock: () => NOW, logger: { info() {}, warn() {} },
+    });
+    return { useCase, claimMakeupLesson, issueDocument };
+  }
+
+  it('a makeup ticket claims the session it prints', async () => {
+    const rec = ticket({ makeupFor: ['2026-09-07', '2026-09-09'] });
+    const { useCase, claimMakeupLesson, issueDocument } = buildScan(rec, 'print');
+    await useCase.execute({ code: rec.token });
+    expect(claimMakeupLesson.execute).toHaveBeenCalledWith({
+      sessionId: 'ses_a', learnerId: 'kid', subject: 'math', forDays: ['2026-09-07', '2026-09-09'],
+    });
+    expect(issueDocument.execute).toHaveBeenCalledWith({ sessionId: 'ses_a' });
+  });
+
+  it('an ordinary ticket claims nothing', async () => {
+    const rec = ticket({});
+    const { useCase, claimMakeupLesson } = buildScan(rec, 'print');
+    await useCase.execute({ code: rec.token });
+    expect(claimMakeupLesson.execute).not.toHaveBeenCalled();
+  });
+
+  it('a retry move never claims', async () => {
+    const rec = ticket({ makeupFor: ['2026-09-07'] });
+    const { useCase, claimMakeupLesson } = buildScan(rec, 'retry');
+    await useCase.execute({ code: rec.token });
+    expect(claimMakeupLesson.execute).not.toHaveBeenCalled();
+  });
+});

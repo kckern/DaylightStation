@@ -12,10 +12,13 @@
  *     deadline: saturday      # last study day of the week makeup counts on
  *     subjects: [math, english]   # optional; omitted = every subject
  *
- * Absent or `enabled: false` is the old behaviour exactly: a past day is
- * settled when its window closes.
+ * Absent or `enabled: false` is the old behaviour: a past day is settled when
+ * its window closes. The one exception is restitution (below): a lesson a
+ * makeup sheet claimed still counts for the day it was done.
  *
- * DERIVED, NEVER STORED. Nothing here writes. Each day's row already carries
+ * DERIVED FROM THE LOG. Nothing here writes. The one stored fact is a
+ * session's makeup_claimed annotation (which day a makeup-sheet lesson is
+ * for); every credit is still worked out on read. Each day's row already carries
  * a per-section `ledger` (what the day's work amounted to, by track); this
  * fold reads a week of rows and moves SPARE work from a later day onto an
  * earlier missed one. Cached rows stay the raw replay; the credit is laid
@@ -30,6 +33,12 @@
  *   - programs: a required program done on a day that did not ask for it.
  *     A program reports done at most once a day, so on a day it is owed it
  *     never has a spare; a Saturday flashcard sitting does.
+ *   - claimed lessons (`ledger.makeupClaims`, from a makeup-sheet code):
+ *     spent on the day they name first (phase A, before any ordinary spare
+ *     moves). One still unspent is paid back to the day it was done on when
+ *     that day lacks it (restitution, even with makeup off or for a subject
+ *     the policy leaves out); otherwise it joins the ordinary spare
+ *     (phase B).
  * Electives never count: an elective pass must never make up required work.
  *
  * A missed section is credited only when EVERY track it lacked is covered by
@@ -93,6 +102,43 @@ export function makeupOpen({ day, today, policy = DEFAULT_MAKEUP_POLICY }) {
   return day < deadline && today <= deadline;
 }
 
+/**
+ * The earlier day a passed session counts for, or null when it counts for
+ * the day it was done. A session carries a claim only when a makeup-sheet
+ * code opened or reprinted it (`makeup_claimed`). The claim holds while the
+ * pass falls after the claimed day, no later than the claim's deadline, and
+ * in the same week; outside that the lesson is ordinary work again.
+ * @param {{makeupFor?: string|null, makeupDeadline?: string|null}|null} session
+ * @param {string} today the study day the pass is judged on
+ * @returns {string|null}
+ */
+export function honouredMakeupClaim(session, today) {
+  const forDay = session?.makeupFor;
+  const deadline = session?.makeupDeadline;
+  if (typeof forDay !== 'string' || typeof deadline !== 'string' || typeof today !== 'string') return null;
+  if (!(forDay < today) || today > deadline) return null;
+  if (weekIdFor(forDay) !== weekIdFor(today)) return null;
+  return forDay;
+}
+
+/**
+ * The `makeup_claimed` event a session opened FROM a claimed one carries
+ * over (a retry of a makeup-sheet lesson is still that missed day's lesson),
+ * or null: the source holds no claim, or `today` is past the claim's
+ * deadline, when the work would count for the day it is done anyway.
+ * @param {{makeupFor?: string|null, makeupSubject?: string|null, makeupDeadline?: string|null}|null} source
+ * @param {{sessionId: string, at: string, today: string}} next
+ * @returns {object|null} input for `createEvent`
+ */
+export function carriedMakeupClaim(source, { sessionId, at, today } = {}) {
+  const forDay = source?.makeupFor;
+  const deadline = source?.makeupDeadline;
+  const subject = source?.makeupSubject;
+  if (typeof forDay !== 'string' || typeof deadline !== 'string' || typeof subject !== 'string') return null;
+  if (typeof today !== 'string' || today > deadline) return null;
+  return { type: 'makeup_claimed', at, sessionId, forDay, subject, deadline };
+}
+
 const subjectAllowed = (policy, subject) => !policy.subjects || policy.subjects.includes(subject);
 const asked = (section) => section?.state === 'served' || section?.state === 'obligated';
 
@@ -110,14 +156,20 @@ function lacking(section) {
 /** The spare work a section's day leaves over for an earlier one. */
 function spareOf(section) {
   const ledger = section?.ledger;
-  if (!isObject(ledger)) return { lessons: 0, programs: new Set() };
+  if (!isObject(ledger)) return { lessons: 0, programs: new Set(), claims: new Map() };
   // `ledger.asked`: whether the calendar asked for the section at all that
   // day. A served Saturday section reads `served` like any other, so its
   // state cannot say whether the work was owed.
   const owed = typeof ledger.asked === 'boolean' ? ledger.asked : asked(section);
   const lessons = Math.max(0, (ledger.lessons ?? 0) - (owed && ledger.needsLesson === true ? 1 : 0));
   const needs = new Set(owed ? (ledger.needsPrograms ?? []) : []);
-  return { lessons, programs: new Set((ledger.programsDone ?? []).filter((key) => !needs.has(key))) };
+  // Claimed lessons (`makeupClaims`) are not the day's own and never paid
+  // for it, so every one is spare, earmarked for the day it names.
+  const claims = new Map();
+  (Array.isArray(ledger.makeupClaims) ? ledger.makeupClaims : [])
+    .filter((day) => typeof day === 'string')
+    .forEach((day) => claims.set(day, (claims.get(day) ?? 0) + 1));
+  return { lessons, programs: new Set((ledger.programsDone ?? []).filter((key) => !needs.has(key))), claims };
 }
 
 function rejudge(row, sections) {
@@ -136,12 +188,15 @@ function rejudge(row, sections) {
  * @returns {{rows: Record<string, object>, credits: Array<{day: string, subject: string, servedOn: string}>}}
  *   rows: a new map; a credited row carries `makeup: [{subject, servedOn}]` and
  *   `timeliness: 'makeup'`, and each credited section `makeup: {servedOn}`.
+ *   A restituted section carries `makeup: {servedOn: <its own day>, restituted: true}`;
+ *   its row is rejudged but gains no `makeup` entry, no `timeliness`, and no credit.
  */
 export function foldMakeup(rows, { policy = DEFAULT_MAKEUP_POLICY, today } = {}) {
   const out = { ...(rows ?? {}) };
   const credits = [];
-  if (!policy?.enabled || typeof today !== 'string') return { rows: out, credits };
-  const days = Object.keys(out).filter((day) => day < today || day === today).sort();
+  const crediting = Boolean(policy?.enabled) && typeof today === 'string';
+  const days = Object.keys(out)
+    .filter((day) => typeof today !== 'string' || day < today || day === today).sort();
   // Spare work, per day and subject, spent as it is used.
   const spare = new Map();
   const spareFor = (day, subject) => {
@@ -152,14 +207,17 @@ export function foldMakeup(rows, { policy = DEFAULT_MAKEUP_POLICY, today } = {})
     }
     return spare.get(key);
   };
-  for (const day of days) {
+  // Credit one missed day from work later in its window. `claimsOnly`
+  // (phase A): a lesson may come only from a claim naming this day; a
+  // section that lacks no lesson waits for phase B.
+  const creditDay = (day, { claimsOnly = false } = {}) => {
     // The deadline day (and a Sunday after it) has no later day to borrow from.
-    if (day >= makeupDeadline(day, policy)) continue;
+    if (day >= makeupDeadline(day, policy)) return;
     const row = out[day];
-    if (!row || !['partial', 'none'].includes(row.state)) continue;
+    if (!row || !['partial', 'none'].includes(row.state)) return;
     const deadline = makeupDeadline(day, policy);
     const later = days.filter((d) => d > day && d <= deadline && d <= today);
-    if (!later.length) continue;
+    if (!later.length) return;
     let sections = row.sections ?? [];
     const credited = [];
     sections = sections.map((section) => {
@@ -167,10 +225,15 @@ export function foldMakeup(rows, { policy = DEFAULT_MAKEUP_POLICY, today } = {})
       const need = lacking(section);
       if (!need || (!need.lesson && !need.programs.length)) return section;
       // Find every lacking track in later days before spending any of it.
+      // A lesson claimed for THIS day is spent before ordinary spare.
       const plan = [];
       let lessonFrom = null;
+      let lessonClaimed = false;
+      if (claimsOnly && !need.lesson) return section;
       if (need.lesson) {
-        lessonFrom = later.find((d) => spareFor(d, section.subject).lessons > 0) ?? null;
+        lessonFrom = later.find((d) => (spareFor(d, section.subject).claims.get(day) ?? 0) > 0) ?? null;
+        lessonClaimed = Boolean(lessonFrom);
+        if (!lessonFrom && !claimsOnly) lessonFrom = later.find((d) => spareFor(d, section.subject).lessons > 0) ?? null;
         if (!lessonFrom) return section;
       }
       for (const key of need.programs) {
@@ -178,17 +241,82 @@ export function foldMakeup(rows, { policy = DEFAULT_MAKEUP_POLICY, today } = {})
         if (!from) return section;
         plan.push({ key, from });
       }
-      if (lessonFrom) spareFor(lessonFrom, section.subject).lessons -= 1;
+      if (lessonFrom) {
+        const pool = spareFor(lessonFrom, section.subject);
+        if (lessonClaimed) pool.claims.set(day, pool.claims.get(day) - 1);
+        else pool.lessons -= 1;
+      }
       plan.forEach(({ key, from }) => spareFor(from, section.subject).programs.delete(key));
       const servedOn = [lessonFrom, ...plan.map((p) => p.from)].filter(Boolean).sort().at(-1);
       credited.push({ subject: section.subject, servedOn });
       credits.push({ day, subject: section.subject, servedOn });
       return { ...section, state: 'served', reason: null, makeup: { servedOn } };
     });
-    if (!credited.length) continue;
-    out[day] = { ...rejudge(row, sections), makeup: credited, timeliness: MAKEUP_TIMELINESS };
-  }
+    if (!credited.length) return;
+    out[day] = {
+      ...rejudge(row, sections),
+      makeup: [...(Array.isArray(row.makeup) ? row.makeup : []), ...credited],
+      timeliness: MAKEUP_TIMELINESS,
+    };
+  };
+  // PHASE A: claims are spent on the days they name, and nothing else is.
+  // Ordinary spare waits until every day has taken back its own unspent
+  // claim, or a day could borrow a later lesson while its own claimed lesson
+  // counted nowhere (and on-time work read, and was charged, as makeup).
+  if (crediting) days.forEach((day) => creditDay(day, { claimsOnly: true }));
+  // Every (day, subject) holding a claim gets its pool now, so what follows
+  // never depends on which pools pass 1 happened to open.
+  days.forEach((day) => (out[day]?.sections ?? []).forEach((section) => {
+    if (section?.subject && Array.isArray(section.ledger?.makeupClaims) && section.ledger.makeupClaims.length) {
+      spareFor(day, section.subject);
+    }
+  }));
+  // A claim its day did not need (served some other way, or still lacking a
+  // program) is still a lesson done: it becomes ordinary spare for any other
+  // missed day, rather than counting for nothing.
+  spare.forEach((pool) => {
+    pool.unspentClaims = 0;
+    pool.claims.forEach((count) => {
+      if (count > 0) { pool.lessons += count; pool.unspentClaims += count; }
+    });
+    pool.claims.clear();
+  });
+  // RESTITUTION: a day whose own claim is still unspent takes it back.
+  days.forEach((day) => restituteDay(out, day, spare));
+  // PHASE B: ordinary spare, with leftover claims among it.
+  if (crediting) days.forEach((day) => creditDay(day));
   return { rows: out, credits };
+}
+
+/**
+ * RESTITUTION (review, 2026-11-19). The agenda always takes a claimed pass
+ * away from the day it was done on; the fold above pays it to the missed day
+ * only when it can (makeup on, the subject allowed, the missed day inside the
+ * policy's window, every other track covered). A claim still unspent after
+ * phase A is paid back to its own day's section before any ordinary spare
+ * moves, so a real lesson never counts for no day and a day never borrows a
+ * later lesson while its own sits unused. A leftover its own day does not
+ * need joins the ordinary spare for phase B. It runs with makeup off and for excluded subjects too.
+ * The section must lack only the lesson; the row is rejudged but not stamped
+ * `timeliness: 'makeup'` (the work was done that day), and no credit is
+ * reported.
+ */
+function restituteDay(out, day, spare) {
+  const row = out[day];
+  if (!row || !Array.isArray(row.sections)) return;
+  let changed = false;
+  const sections = row.sections.map((section) => {
+    if (section?.state !== 'obligated' || !section.subject) return section;
+    const pool = spare.get(`${day}|${section.subject}`);
+    if (!pool || !(pool.unspentClaims > 0) || !(pool.lessons > 0)) return section;
+    const need = lacking(section);
+    if (!need?.lesson || need.programs.length) return section;
+    pool.unspentClaims -= 1;
+    pool.lessons -= 1;
+    changed = true;
+    return { ...section, state: 'served', reason: null, makeup: { servedOn: day, restituted: true } };
+  });
+  if (changed) out[day] = rejudge(row, sections);
 }
 
 /**

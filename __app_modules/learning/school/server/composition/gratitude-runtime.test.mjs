@@ -70,3 +70,18 @@ it('persists a take before transcription and retries its existing audio without 
     expect(readdirSync(path.join(root,'media/school/gratitude/child'))).toHaveLength(1);
   }finally{rmSync(root,{recursive:true,force:true});}
 });
+
+it('marks a silent take unheard but keeps a transcriber failure retryable',async()=>{
+  const root=mkdtempSync(path.join(tmpdir(),'gratitude-unheard-'));let reply='';
+  const configService={getHouseholdAppConfig:()=>({}),getMediaDir:()=>path.join(root,'media'),getHouseholdPath:p=>path.join(root,p)};
+  const store=new YamlGratitudeStore({configService});
+  const runtime=createGratitudeRuntime({configService,store,assignments:{get:async()=>({programs:[{programId:'gratitude'}]})},scheduler:new NodeAsyncScheduler(),clock:()=>new Date('2026-11-16T18:00:00Z'),logger:{},
+    aiGateway:{transcribe:async(buffer,{prompt})=>reply===null?prompt:reply},
+  });
+  try{
+    expect(await runtime.service.take('child','2026-11-16',{takeId:'quiet',buffer:Buffer.alloc(1001),mimeType:'audio/webm'})).toMatchObject({text:null,unheard:true});
+    reply=null;
+    expect(await runtime.service.take('child','2026-11-16',{takeId:'leak',buffer:Buffer.alloc(1001),mimeType:'audio/webm'})).toMatchObject({text:null,unheard:true});
+    expect((await store.read('child','2026-11-16')).events.filter(e=>e.type==='take-unheard')).toHaveLength(2);
+  }finally{rmSync(root,{recursive:true,force:true});}
+});

@@ -6,6 +6,10 @@
 > (gitignored). `iconRegistry.test.js` fails if generation did not run. The rest stay tracked in `svg/` (no exact Solar equivalent);
 > the per-file rows below that name one of the 13 are historical.
 
+> **Gratitude preschool screens (2026-11-19).** 10 more generated Solar icons for the full-screen preschool states:
+> `check` (check-circle), `idea` (lightbulb), `warning` (danger-triangle), `hourglass`, `microphone` (microphone-large),
+> `heart`, and the four picture hints `family` (users-group-rounded), `food` (donut-bitten), `toys` (balloon), `outside` (sun).
+
 Source: user-curated icons from [SVG Repo](https://www.svgrepo.com/) (ingested
 2026-07-22 from `media/tmp/`), normalized to the shared inline-icon contract:
 `width="1em" height="1em"`, all fills/strokes `currentColor` — set color via

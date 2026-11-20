@@ -46,15 +46,43 @@ describe('gratitude follow-up evidence',()=>{
   });
   it('a retry after an unclear combined answer starts fresh without followUpOf',()=>{
     const unclear={type:'assessed',at:t(5),attemptId:'a2',verdict:'uncertain',confidence:null,model:'jev',rubricVersion:5,matchedId:null};
-    // The retry box holds both answers, so the child edits the whole thing.
-    expect(deriveGratitudeState([...base,second,unclear])).toMatchObject({phase:'retry',draft:{text:"I'm grateful for my mom\nShe made me pancakes"}});
-    // A spoken follow-up's recording holds only the second line, so the joined text is marked edited.
+    // The retry box starts empty (2026-11-19 design: a refused or unclear answer never stays in the box).
+    expect(deriveGratitudeState([...base,second,unclear])).toMatchObject({phase:'retry',draft:null});
     const spoken={...second,via:'voice',audioRef:'child/k1.webm',edited:false};
     const take={type:'take-saved',at:t(3),takeId:'k1',audioRef:'child/k1.webm',text:'She made me pancakes'};
-    expect(deriveGratitudeState([...base,take,spoken,unclear]).draft).toMatchObject({text:"I'm grateful for my mom\nShe made me pancakes",via:'voice',audioRef:'child/k1.webm',edited:true,takeId:null});
+    expect(deriveGratitudeState([...base,take,spoken,unclear]).draft).toBeNull();
     const again={type:'submitted',at:t(6),attemptId:'a3',text:"I'm grateful for my mom\nShe read to me",via:'typed',audioRef:null,edited:true};
     const events=[...base,second,unclear,again];
     expect(validGratitudeEvidence(events)).toBe(true);
     expect(deriveGratitudeState(events)).toMatchObject({assessText:"I'm grateful for my mom\nShe read to me",followUpAsked:true});
+  });
+});
+describe('unheard takes in evidence',()=>{
+  it('accepts take-unheard only for a saved take of this answer',()=>{
+    const take={type:'take-saved',at:t(1),takeId:'k1',audioRef:'child/k1.webm',text:null};
+    expect(validGratitudeEvidence([{type:'opened',at:t(0)},take,{type:'take-unheard',at:t(2),takeId:'k1',audioRef:'child/k1.webm'}])).toBe(true);
+    expect(validGratitudeEvidence([{type:'opened',at:t(0)},take,{type:'take-unheard',at:t(2),takeId:'k2',audioRef:'child/k1.webm'}])).toBe(false);
+    expect(validGratitudeEvidence([{type:'opened',at:t(0)},take,{type:'take-unheard',at:t(2),takeId:'k1',audioRef:'child/other.webm'}])).toBe(false);
+  });
+});
+describe('preschool ladder evidence',()=>{
+  const sub=(n,id)=>({type:'submitted',at:t(n),attemptId:id,text:'x',via:'typed',audioRef:null,edited:false});
+  const judged=(n,id,verdict,extra={})=>({type:'assessed',at:t(n),attemptId:id,verdict,...extra});
+  it('accepts steered, warned and a five-minute break, and derives the runs',()=>{
+    const events=[{type:'opened',at:t(0)},sub(1,'a'),judged(1,'a','repetition',{matchedId:'r'}),{type:'steered',at:t(1),attemptId:'a',reason:'repetition',matchedId:'r'},
+      sub(2,'b'),judged(2,'b','nonsense'),{type:'warned',at:t(2),attemptId:'b'},
+      sub(3,'c'),judged(3,'c','rude'),{type:'refused',at:t(3),attemptId:'c',reason:'rude',retryAt:'2026-11-16T18:08:00.000Z',cooldownMs:300000}];
+    expect(validGratitudeEvidence(events)).toBe(true);
+    expect(deriveGratitudeState(events.slice(0,4))).toMatchObject({phase:'steered',blueRun:1,steer:{reason:'repetition',matchedId:'r'}});
+    expect(deriveGratitudeState(events.slice(0,7))).toMatchObject({phase:'warned',blueRun:0,sillyRun:1});
+    expect(deriveGratitudeState(events,{now:t(4)})).toMatchObject({phase:'cooldown',cooldownMs:300000,sillyRun:0});
+  });
+  it('refuses a break that does not match its recorded length, a steer for nonsense, or a warning for a repeat',()=>{
+    const head=[{type:'opened',at:t(0)},sub(1,'a')];
+    expect(validGratitudeEvidence([...head,judged(1,'a','nonsense'),{type:'refused',at:t(1),attemptId:'a',reason:'nonsense',retryAt:'2026-11-16T18:06:00.000Z',cooldownMs:300000}])).toBe(true);
+    expect(validGratitudeEvidence([...head,judged(1,'a','nonsense'),{type:'refused',at:t(1),attemptId:'a',reason:'nonsense',retryAt:'2026-11-16T18:06:00.000Z'}])).toBe(false);
+    expect(validGratitudeEvidence([...head,judged(1,'a','nonsense'),{type:'refused',at:t(1),attemptId:'a',reason:'nonsense',retryAt:'2026-11-17T18:01:00.000Z',cooldownMs:86400000}])).toBe(false);
+    expect(validGratitudeEvidence([...head,judged(1,'a','nonsense'),{type:'steered',at:t(1),attemptId:'a',reason:'nonsense'}])).toBe(false);
+    expect(validGratitudeEvidence([...head,judged(1,'a','repetition',{matchedId:'r'}),{type:'warned',at:t(1),attemptId:'a'}])).toBe(false);
   });
 });

@@ -37,6 +37,17 @@ function possibleToday(section, todayRow) {
   return lackingPrograms.every((key) => !owedToday.has(key));
 }
 
+/**
+ * Whether the missed section still lacks its lesson. A makeup claim moves a
+ * lesson, so only such a day can be claimed (`ClaimMakeupLesson`). Without a
+ * ledger to read, it is assumed to (the old, permissive answer).
+ */
+function lacksLesson(section) {
+  const ledger = section?.ledger;
+  if (!ledger || typeof ledger !== 'object') return true;
+  return ledger.needsLesson === true && (ledger.lessons ?? 0) < 1;
+}
+
 export class GetMakeupWork {
   #termVerdicts; #policy; #logger;
 
@@ -55,8 +66,9 @@ export class GetMakeupWork {
 
   /**
    * @param {{learnerId: string}} args
-   * @returns {Promise<{deadline: string|null, items: Array<{day: string, subject: string}>}>}
-   *   oldest day first; `deadline` is the last study day the work counts on
+   * @returns {Promise<{deadline: string|null, items: Array<{day: string, subject: string, lacksLesson: boolean}>}>}
+   *   oldest day first; `deadline` is the last study day the work counts on;
+   *   `lacksLesson`: the section still lacks its lesson (not only a program)
    */
   async execute({ learnerId } = {}) {
     const policy = this.#policy() ?? DEFAULT_MAKEUP_POLICY;
@@ -79,7 +91,7 @@ export class GetMakeupWork {
       .filter((section) => section?.state === 'obligated'
         && typeof section.subject === 'string' && section.subject && allowed(section.subject)
         && possibleToday(section, todayRow))
-      .map((section) => ({ day: row.studyDay, subject: section.subject })));
+      .map((section) => ({ day: row.studyDay, subject: section.subject, lacksLesson: lacksLesson(section) })));
     if (!items.length) return EMPTY;
     // Every open day shares its week's deadline; the earliest is the honest one
     // should a policy ever let two weeks overlap.

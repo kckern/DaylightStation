@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  agendaDocument, makeupDocument, makeupBySubject, makeupDueLine, makeupSummary,
+  agendaDocument, makeupDocument, makeupBySubject, makeupDueLine, makeupSummary, resultDocument,
 } from "./receipts.mjs";
 import { validateDocument } from "./documentValidation.mjs";
 
@@ -91,5 +91,19 @@ describe('agendaDocument makeup card', () => {
       type: 'scan_action', action: 'sch:MAKEMAKEMAKE4444', label: 'Scan to print your makeup sheet', panelCode: '777777',
     });
     expect(qrs(doc)).toHaveLength(2);
+  });
+});
+
+const resultBase = { sessionId: 'ses_a', unitTitle: 'Check Subtraction with Addition', result: 'passed', percent: 100 };
+
+describe('resultDocument makeup line', () => {
+  it('names the day and subject a makeup pass counted for', () => {
+    const doc = resultDocument({ ...resultBase, makeup: { forDay: '2026-11-18', subject: 'math' } });
+    expect(doc.blocks[1]).toMatchObject({ type: 'rich_text', md: 'Makeup: this counts for Wednesday\'s math.' });
+  });
+  it('prints nothing extra for ordinary work or a fail', () => {
+    expect(resultDocument(resultBase).blocks.some((b) => /Makeup/.test(b.md ?? ''))).toBe(false);
+    expect(resultDocument({ ...resultBase, result: 'needs_remediation', makeup: { forDay: '2026-11-18', subject: 'math' } })
+      .blocks.some((b) => /Makeup/.test(b.md ?? ''))).toBe(false);
   });
 });

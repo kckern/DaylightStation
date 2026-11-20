@@ -34,10 +34,12 @@ import { shortId } from '#system/utils/id.mjs';
 import { pausedExceptionFor } from "../curriculumExceptionProjection.mjs";
 import { REMEDIATION_COUNT_HEADROOM, remediationMaxRounds, retriesPhrase } from "../../domain/sessions/remediationLineage.mjs";
 import { remediationDepthOf } from "../remediationDepth.mjs";
+import { carriedMakeupClaim } from "../../domain/makeup.mjs";
+import { studyDayForInstant } from "../../domain/studyDay.mjs";
 
 export class OpenRemediation {
   #practiceAssessments; #curriculum; #sessions; #clock; #newSessionId; #logger; #curriculumExceptions;
-  #maxRounds;
+  #maxRounds; #timezone;
 
   /**
    * @param {object} deps
@@ -46,9 +48,11 @@ export class OpenRemediation {
    * @param {() => Date} [deps.clock]
    * @param {() => string} [deps.newSessionId]
    * @param {number|null} [deps.remediationMaxRounds] - retries a child may open
+   * @param {string|null} [deps.timezone] - for the study day a carried makeup
+   *   claim's deadline is checked against
    * @param {object} [deps.logger]
    */
-  constructor({ curriculum, sessions, practiceAssessments = null, curriculumExceptions = null, clock = () => new Date(), newSessionId = () => `ses_${shortId(8)}`, remediationMaxRounds: maxRounds = null, logger = console } = {}) {
+  constructor({ curriculum, sessions, practiceAssessments = null, curriculumExceptions = null, clock = () => new Date(), newSessionId = () => `ses_${shortId(8)}`, remediationMaxRounds: maxRounds = null, timezone = null, logger = console } = {}) {
     if (!curriculum || !sessions) throw new Error('OpenRemediation requires curriculum and sessions');
     this.#practiceAssessments = practiceAssessments;
     this.#curriculum = curriculum;
@@ -58,6 +62,7 @@ export class OpenRemediation {
     this.#logger = logger;
     this.#curriculumExceptions = curriculumExceptions;
     this.#maxRounds = remediationMaxRounds(maxRounds);
+    this.#timezone = timezone;
   }
 
   /**
@@ -138,6 +143,7 @@ export class OpenRemediation {
     });
     if (opened.errors.length) throw new Error(`OpenRemediation: could not open the retry: ${opened.errors.join('; ')}`);
     await this.#sessions.appendEvent(newSessionId, opened.event);
+    await this.#carryMakeupClaim({ state, sessionId, newSessionId, nowIso });
 
     // The original closes only AFTER the replacement exists, so a crash between
     // the two leaves a session that can still be retried rather than one that
@@ -159,6 +165,31 @@ export class OpenRemediation {
       message: 'Printing a fresh sheet to try again.',
       document: null,
     };
+  }
+
+  /**
+   * MAKEUP CLAIM (2026-11-19). A retry of a makeup-sheet lesson is still the
+   * missed day's lesson: the claim moves to the new session while its
+   * deadline holds. Without it the retry's pass served today and the missed
+   * day stayed open. A claim that cannot be written costs the attribution,
+   * never the retry.
+   */
+  async #carryMakeupClaim({ state, sessionId, newSessionId, nowIso }) {
+    const today = studyDayForInstant(Date.parse(nowIso), { timezone: this.#timezone });
+    const input = carriedMakeupClaim(state, { sessionId: newSessionId, at: nowIso, today });
+    if (!input) return;
+    try {
+      const { errors, event } = createEvent(input);
+      if (errors.length) throw new Error(errors.join('; '));
+      await this.#sessions.appendEvent(newSessionId, event);
+      this.#logger.info?.('school.makeup.claim-carried', {
+        learnerId: state.learnerId, sessionId, newSessionId, subject: input.subject, forDay: input.forDay, deadline: input.deadline,
+      });
+    } catch (error) {
+      this.#logger.warn?.('school.makeup.claim-failed', {
+        sessionId: newSessionId, learnerId: state.learnerId, subject: input.subject, error: error?.message ?? String(error),
+      });
+    }
   }
 
   #unavailable(sessionId, line, { headline = 'Nothing to try again', reason = null } = {}) {

@@ -90,6 +90,7 @@ const build = ({
   },
   donow = { decision: 'dispatched', message: 'Starting the garage bike now.' },
   program = null,
+  tokenSubject = {},
   wire = {},
 } = {}) => {
   clock = fakeClock();
@@ -114,7 +115,7 @@ const build = ({
   return (async () => {
     const record = mintToken({
       tokenClass: 'subject_next',
-      subject: { learnerId: 'kid1', subject },
+      subject: { learnerId: 'kid1', subject, ...tokenSubject },
       at: clock.iso(),
       rng: seededRng(),
       expiresAt: new Date(clock.epoch() + 168 * 3_600_000).toISOString(),
@@ -922,4 +923,22 @@ it('resolve subtracts live reservations without persisting expiry cleanup', asyn
   clock.advanceMs(120000);
   expect((await card.execute({ code: CODE })).ok).toBe(true);
   expect(await tokens.get(record.token)).toEqual(before);
+});
+
+describe('makeup-sheet codes claim the session', () => {
+  it('a makeup ticket claims the session it prints', async () => {
+    const claim = { execute: spy({ claimed: '2026-07-24', reason: null }) };
+    await build({ units: bankOnly(), canIssueBank: () => true, tokenSubject: { continueToday: true, makeupFor: ['2026-07-24'] }, wire: { claimMakeupLesson: claim } });
+    await useCase.execute({ code: CODE, action: 'print' });
+    expect(claim.execute.calls).toHaveLength(1);
+    expect(claim.execute.calls[0]).toMatchObject({ learnerId: 'kid1', subject: 'math', forDays: ['2026-07-24'] });
+    expect(claim.execute.calls[0].sessionId).toBe(spies.issueDocument.execute.calls[0].sessionId);
+  });
+
+  it('an ordinary ticket claims nothing', async () => {
+    const claim = { execute: spy({ claimed: null, reason: 'not_makeup' }) };
+    await build({ units: bankOnly(), canIssueBank: () => true, wire: { claimMakeupLesson: claim } });
+    await useCase.execute({ code: CODE, action: 'print' });
+    expect(claim.execute.calls).toHaveLength(0);
+  });
 });

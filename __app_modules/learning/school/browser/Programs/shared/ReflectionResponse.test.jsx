@@ -180,3 +180,26 @@ it('adds aria-describedby only when a description id is given',()=>{
   render(<ReflectionResponse prompt={{id:'p',text:'Q?'}} describedBy="said" onSubmit={()=>{}} onTake={async()=>({})}/>);
   expect(screen.getByRole('textbox')).toHaveAttribute('aria-describedby','said');
 });
+describe('take replacement (Gratitude)',()=>{
+  it('with replaceOnTake a new take replaces the words in the box',async()=>{
+    const takes=[{audioRef:'kid/a.webm',text:'Blah blah'},{audioRef:'kid/b.webm',text:'Making cookies'}];
+    render(<ReflectionResponse prompt={prompt} replaceOnTake onTake={async()=>takes.shift()} onSubmit={vi.fn()}/>);
+    await act(async()=>{await receive({blob:new Blob(['a'])});});
+    await act(async()=>{await receive({blob:new Blob(['b'])});});
+    expect(screen.getByRole('textbox')).toHaveValue('Making cookies');
+  });
+  it('without it a take still appends (Debrief)',async()=>{
+    render(<ReflectionResponse prompt={prompt} initial="My dog" onTake={async()=>({audioRef:'kid/a.webm',text:'and cat'})} onSubmit={vi.fn()}/>);
+    await act(async()=>{await receive({blob:new Blob(['a'])});});
+    expect(screen.getByRole('textbox')).toHaveValue('My dog and cat');
+  });
+  it('an unheard take says so and leaves the box alone',async()=>{
+    const submit=vi.fn();
+    render(<ReflectionResponse prompt={prompt} replaceOnTake initial="My dog" onTake={async()=>({audioRef:'kid/a.webm',text:null,unheard:true})} onSubmit={submit}/>);
+    await act(async()=>{await receive({blob:new Blob(['a'])});});
+    expect(screen.getByRole('textbox')).toHaveValue('My dog');
+    expect(screen.getByText("I didn't hear you. Try again.")).toBeVisible();
+    fireEvent.keyDown(screen.getByRole('textbox'),{key:'Enter'});
+    expect(submit).toHaveBeenCalledWith({text:'My dog',via:'typed',audioRef:null,edited:false});
+  });
+});

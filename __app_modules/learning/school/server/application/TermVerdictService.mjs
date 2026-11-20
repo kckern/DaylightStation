@@ -122,7 +122,11 @@ export class TermVerdictService {
     const computedMs = row.computedAt ? Date.parse(row.computedAt) : NaN;
     if (!Number.isFinite(computedMs)) return true;
     if (studyDayForInstant(computedMs, { timezone: this.#timezone }) <= day) return true;
-    return (row.sections ?? []).some((s) => (s?.state === 'served' || s?.state === 'obligated') && !s.ledger);
+    // A ledger without `makeupClaims` predates makeup claims (or a repair
+    // that claimed a session after the row was cached): the fold would read
+    // its claimed lessons as nothing.
+    return (row.sections ?? []).some((s) => (s?.state === 'served' || s?.state === 'obligated')
+      && (!s.ledger || !Object.hasOwn(s.ledger, 'makeupClaims')));
   }
 
   today() {
@@ -202,7 +206,10 @@ export class TermVerdictService {
    */
   async dayRow(learnerId, studyDay, today = this.today()) {
     const row = await this.#rawDayRow(learnerId, studyDay, today);
-    if (!this.#makeupPolicy().enabled || !row) return row;
+    if (!row) return row;
+    // Makeup off still pays a claimed lesson back to its own day
+    // (restitution), which needs only the row itself.
+    if (!this.#makeupPolicy().enabled) return this.#withMakeup({ [studyDay]: row }, today)[studyDay];
     // The day's makeup credit comes from LATER days of its week: read them
     // from the cache (today's cached row may trail by `freshMs`; the board's
     // own `read` is the exact answer).

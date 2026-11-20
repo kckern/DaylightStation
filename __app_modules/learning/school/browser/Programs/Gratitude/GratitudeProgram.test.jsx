@@ -96,12 +96,15 @@ it('starts a new attempt after a saved answer is retried into an unclear verdict
   const pendingView={...initial,phase:'pending',attemptId:'a1',draft:{text:'my toys',via:'typed',audioRef:null,edited:false}};
   api.open.mockResolvedValue({ok:true,data:initial});
   api.submit.mockReset().mockResolvedValueOnce({ok:true,data:pendingView}).mockResolvedValueOnce({ok:true,data:{...initial,phase:'completed',subject:'Toys'}});
-  api.retry.mockReset().mockResolvedValue({ok:true,data:{...pendingView,phase:'retry',reason:'unclear'}});
+  // The server opens the retry box empty (2026-11-19), so the child says it again.
+  api.retry.mockReset().mockResolvedValue({ok:true,data:{...pendingView,phase:'retry',reason:'unclear',draft:null}});
   render(<GratitudeProgram learnerId="child" gratitudeGrant="grant" today="2026-11-16" onExit={()=>{}}/>);
   fireEvent.change(await screen.findByRole('textbox'),{target:{value:'my toys'}});
   fireEvent.click(screen.getByRole('button',{name:/Submit/}));
   fireEvent.click(await screen.findByRole('button',{name:'Try saved answer again'}));
   await screen.findByText(/a little clearer/);
+  expect(screen.getByRole('textbox')).toHaveValue('');
+  fireEvent.change(screen.getByRole('textbox'),{target:{value:'my toys'}});
   fireEvent.click(screen.getByRole('button',{name:/Submit/}));
   await screen.findByText('Toys',{exact:true});
   expect(api.submit.mock.calls[1][1].text).toBe('my toys');
@@ -114,4 +117,12 @@ it('ties the follow-up box to the "You said" line for screen readers',async()=>{
   const said=screen.getByText(/You said/);
   expect(said.id).toBeTruthy();expect(box).toHaveAttribute('aria-describedby',said.id);
   expect(box).toHaveAccessibleDescription(/I'm grateful for my mom/);
+});
+it('shows whose Gratitude this is in the header',async()=>{
+  api.open.mockResolvedValue({ok:true,data:initial});
+  render(<GratitudeProgram learnerId="kid" learnerName="Kid" gratitudeGrant="grant" today="2026-11-16" onExit={()=>{}}/>);
+  await screen.findByRole('textbox');
+  const header=screen.getByRole('banner');
+  expect(header).toHaveTextContent('Kid');
+  expect(header.querySelector('img[src*="/img/users/kid"]')).toBeTruthy();
 });

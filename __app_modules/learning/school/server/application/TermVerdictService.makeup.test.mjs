@@ -18,7 +18,7 @@ const ledger = (lessons) => ({ asked: true, lessons, programsDone: [], needsLess
 const served = (subject, lessons = 1) => ({ subject, state: 'served', reason: null, ledger: ledger(lessons) });
 const missed = (subject) => ({ subject, state: 'obligated', reason: null, ledger: ledger(0) });
 
-function build({ table, makeupPolicy }) {
+function build({ table, makeupPolicy, cache = new MemoryCache() }) {
   const asked = [];
   const completion = {
     async execute({ studyDay = null }) {
@@ -30,11 +30,11 @@ function build({ table, makeupPolicy }) {
     },
   };
   const service = new TermVerdictService({
-    getLearnerDayCompletion: completion, cache: new MemoryCache(), academicPeriods: periods,
+    getLearnerDayCompletion: completion, cache, academicPeriods: periods,
     window: { from: '2026-09-07' }, timezone: 'America/Los_Angeles', clock: () => new Date(NOW),
     logger: silent, makeupPolicy,
   });
-  return { service, asked };
+  return { service, asked, cache };
 }
 
 const ON = { enabled: true, deadlineWeekday: 6, subjects: null };
@@ -71,5 +71,48 @@ describe('TermVerdictService makeup', () => {
     await service.read('kid');
     await new Promise((r) => setTimeout(r, 20));
     expect((await service.dayRow('kid', WED)).state).toBe('met');
+  });
+});
+
+// Review, 2026-11-19 (makeup claims).
+describe('TermVerdictService makeup claims', () => {
+  const TUE = '2026-09-08';
+  const claimed = (forDay) => ({
+    subject: 'math', state: 'obligated', reason: null, ledger: { ...ledger(0), makeupClaims: [forDay] },
+  });
+
+  it('a claim nothing can spend still counts for its own day, makeup off, in read and dayRow', async () => {
+    const table = { [WED]: [served('math')], [THU]: [claimed(WED)] };
+    const { service } = build({ table, makeupPolicy: undefined });
+    const thu = (await service.read('kid', { detail: true })).days.find((d) => d.studyDay === THU);
+    expect(thu).toMatchObject({ state: 'met', timeliness: 'on-time' });
+    expect(thu.sections[0].makeup).toEqual({ servedOn: THU, restituted: true });
+    expect((await service.dayRow('kid', THU)).state).toBe('met');
+  });
+
+  // A row older than yesterday is read from the cache. One cached before the
+  // agenda reported claims has no `makeupClaims` key and must be recomputed
+  // while its week can still be made up.
+  const cachedRow = (sectionLedger) => ({
+    state: 'met', reason: null, served: 1, asked: 1, computedAt: `${WED}T18:00:00.000Z`,
+    sections: [{ subject: 'math', state: 'served', reason: null, ledger: sectionLedger }],
+  });
+  const seeded = async (sectionLedger) => {
+    const cache = new MemoryCache();
+    const { VERDICT_VERSION } = await import('../domain/termVerdict.mjs');
+    await cache.write('kid', '2026-fall', { version: VERDICT_VERSION, computedAt: NOW, days: { [TUE]: cachedRow(sectionLedger) } });
+    return cache;
+  };
+
+  it('a cached row without makeupClaims in an open makeup week is recomputed', async () => {
+    const { service, asked } = build({ table: {}, makeupPolicy: ON, cache: await seeded(ledger(1)) });
+    await service.dayRow('kid', TUE);
+    expect(asked).toContain(TUE);
+  });
+
+  it('a cached row that carries makeupClaims is read from the cache', async () => {
+    const { service, asked } = build({ table: {}, makeupPolicy: ON, cache: await seeded({ ...ledger(1), makeupClaims: [] }) });
+    await service.dayRow('kid', TUE);
+    expect(asked).not.toContain(TUE);
   });
 });

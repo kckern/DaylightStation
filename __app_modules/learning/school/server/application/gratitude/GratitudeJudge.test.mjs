@@ -62,3 +62,17 @@ describe('gratitude Jev policy',()=>{
     expect(warn).toHaveBeenCalledWith('school.gratitude.judge-unavailable',{error:'Error',code:null});
   });
 });
+describe('rude question (preschool)',()=>{
+  it('asks whether the answer is rude only when asked to',async()=>{
+    const seen=[];const gateway={evaluate:async(state,questions)=>{seen.push(Object.keys(questions));return {answers:{effort:effort(.98)}};}};
+    await new GratitudeJudge({decisionGateway:gateway}).assess({text:'Mom',history:[]});
+    await new GratitudeJudge({decisionGateway:gateway}).assess({text:'Mom',history:[],askRude:true});
+    expect(seen).toEqual([['effort'],['effort','rude']]);
+  });
+  it('a confidently rude answer is rude, whatever else it says',async()=>{
+    expect((await judge({effort:effort(.02),rude:effort(.97)}).assess({text:'You are stupid',history:[],askRude:true})).verdict).toBe('rude');
+    expect((await judge({effort:effort(.9),rude:effort(.97)}).assess({text:'thanks for nothing, stupid',history:[],askRude:true})).verdict).toBe('rude');
+    expect((await judge({effort:effort(.02),rude:effort(.5)}).assess({text:'blah blah',history:[],askRude:true})).verdict).toBe('nonsense');
+    expect((await judge({effort:effort(.98),rude:effort(.03)}).assess({text:'cookies',history:[],askRude:true})).verdict).toBe('eligible');
+  });
+});

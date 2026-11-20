@@ -59,6 +59,8 @@ class MemorySessions {
       const state = reduceSession(events);
       return { sessionId, learnerId: state.learnerId, unitId: state.unitId, state: state.state,
         terminal: state.terminal, outcome: state.outcome, remediationOf: state.remediationOf ?? null,
+        makeupFor: state.makeupFor ?? null, makeupSubject: state.makeupSubject ?? null,
+        makeupDeadline: state.makeupDeadline ?? null,
         updatedAt: events.at(-1)?.at ?? null };
     }).filter((row) => row.learnerId === learnerId);
   }

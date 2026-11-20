@@ -1559,6 +1559,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
           <LocalMountCommit requestId={gratitudeLaunch?.mountRequestId} confirm={confirmLocalMount}>
             <SchoolActivityHost activityId="gratitude" renderProps={{
   learnerId: gratitudeLaunch?.learnerId ?? null,
+  learnerName: currentUser?.name ?? null,
   gratitudeGrant: gratitudeLaunch?.gratitudeGrant ?? null,
   today: gratitudeLaunch?.today ?? null,
   onExit: () => {
@@ -1572,6 +1573,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
           <LocalMountCommit requestId={debriefLaunch?.mountRequestId} confirm={confirmLocalMount}>
             <SchoolActivityHost activityId="school-debrief" renderProps={{
   learnerId: debriefLaunch?.learnerId ?? null,
+  learnerName: currentUser?.name ?? null,
   debriefGrant: debriefLaunch?.debriefGrant ?? null,
   lateDay: debriefLaunch?.lateDay ?? null,
   today: debriefLaunch?.today ?? null,

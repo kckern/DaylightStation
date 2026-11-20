@@ -220,10 +220,33 @@ describe('a card with nothing to decide', () => {
     expect(card.presentation.openImmediately).toBe(true);
   });
 
-  it('never skips a card that is still asking whose paper this is', () => {
-    // `confirmIdentity` exists to ask before anything records against a child.
-    // Skipping the card would skip the question, so the two are exclusive.
-    const card = programCard({ confirmIdentity: true });
+  it('asks no identity question for Gratitude, Debrief or the reading shelf, and so opens them directly', () => {
+    // 2026-11-19 (gratitude preschool design): a re-entered program code asked
+    // "Is this you?" and then showed a Start/Exit card. These three programs
+    // name the child (avatar and name) in their own header instead.
+    for (const programId of ['gratitude', 'school-debrief', 'book-log']) {
+      const card = programCard({ confirmIdentity: true, resolution: { kind: 'program', programId, unit: { title: programId } } });
+      expect(card.presentation.confirmIdentity).toBeUndefined();
+      expect(card.presentation.openImmediately).toBe(true);
+    }
+  });
+
+  it('still asks on a re-entered code for any other program', () => {
+    for (const programId of ['flashcards', 'card-ladder', 'sentence-ladder', 'language-reels', 'rubiks-cube']) {
+      const card = programCard({ confirmIdentity: true, resolution: { kind: 'program', programId, unit: { title: programId } } });
+      expect(card.presentation.confirmIdentity).toBe(true);
+      expect(card.presentation.openImmediately).toBeUndefined();
+    }
+  });
+
+  it('still asks on a re-entered code whose card has something to choose', () => {
+    const card = buildContextualLaunchCard({
+      resolution: { kind: 'move', state: { state: 'created' }, unit: { unitId: 'u1', subject: 'math', bank: 'b1' } },
+      learner: { id: 'learner_a', displayName: 'Alpha' },
+      subjectId: 'math',
+      options: { bankPrintable: true },
+      confirmIdentity: true,
+    });
     expect(card.presentation.confirmIdentity).toBe(true);
     expect(card.presentation.openImmediately).toBeUndefined();
   });

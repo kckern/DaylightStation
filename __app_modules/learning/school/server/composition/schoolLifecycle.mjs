@@ -141,6 +141,7 @@ import { ResolvePersonalCard } from "../application/usecases/ResolvePersonalCard
 import { ResolveScanAction } from "../application/usecases/ResolveScanAction.mjs";
 import { ResolveSubjectNext } from "../application/usecases/ResolveSubjectNext.mjs";
 import { GetMakeupWork } from "../application/usecases/GetMakeupWork.mjs";
+import { ClaimMakeupLesson } from "../application/usecases/ClaimMakeupLesson.mjs";
 import { PrintMakeupAgenda } from "../application/usecases/PrintMakeupAgenda.mjs";
 import { ResolveAccessCode } from "../application/usecases/ResolveAccessCode.mjs";
 import { createTokenBucket } from '#system/utils/tokenBucket.mjs';
@@ -997,6 +998,11 @@ export async function createSchoolLifecycle({
   const getMakeupWork = new GetMakeupWork({
     termVerdicts: () => termVerdicts, makeupPolicy, logger,
   });
+  // Pins work opened from a makeup-sheet ticket to the missed day it was
+  // printed for, so it is not counted as today's (2026-11-19).
+  const claimMakeupLesson = new ClaimMakeupLesson({
+    sessions: stores.sessions, getMakeupWork, clock, logger,
+  });
   const buildAgenda = new BuildAgenda({
     planProjection,
     attestations, teacherNotes,
@@ -1318,10 +1324,10 @@ export async function createSchoolLifecycle({
     })
     : null;
   const openRemediation = new OpenRemediation({ curriculum, sessions: stores.sessions, practiceAssessments,
-    curriculumExceptions: curriculumExceptionStore, remediationMaxRounds: remediationRounds, clock, logger });
+    curriculumExceptions: curriculumExceptionStore, remediationMaxRounds: remediationRounds, timezone, clock, logger });
   practiceAssessments?.configurePrinting({ issueDocument, openRemediation, printDocuments });
   const replaceRemediation = new ReplaceRemediation({
-    curriculum, sessions: stores.sessions, teacherGate, clock, newSessionId, logger,
+    curriculum, sessions: stores.sessions, teacherGate, clock, newSessionId, timezone, logger,
   });
   // One name lookup for everything that prints a learner's name — the card
   // scan AND the agenda routes, so tape and preview show the same header.
@@ -1379,6 +1385,7 @@ export async function createSchoolLifecycle({
     resolveLearningAction: schoolCalcActionResolver,
     replaceLostAnswerSheet,
     printMakeupAgenda,
+    claimMakeupLesson,
   });
 
   // The pending->approved half of the launch-unit loop (spec §6 "the approval
@@ -1613,6 +1620,7 @@ export async function createSchoolLifecycle({
     launchers,
     companions, companionHandlers,
     printMakeupAgenda,
+    claimMakeupLesson,
     newSessionId,
     clock,
     logger,

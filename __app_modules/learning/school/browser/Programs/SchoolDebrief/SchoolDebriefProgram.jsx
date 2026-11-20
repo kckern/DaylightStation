@@ -23,7 +23,7 @@ const firstMissing = (prompts, entries, from = 0) => prompts.findIndex((p, i) =>
 const QUOTE_LIMIT_MS = 2000;
 const withLimit = (p) => Promise.race([p, new Promise((r) => setTimeout(() => r(null), QUOTE_LIMIT_MS))]);
 
-export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay = null, today: todayProp = null, onExit }) {
+export default function SchoolDebriefProgram({ learnerId, learnerName = null, debriefGrant, lateDay = null, today: todayProp = null, onExit }) {
   const api = useScopedSchoolClient(createSchoolDebriefApi, null, { learnerId, grant: debriefGrant });
   const schoolApi = useSchoolApi();
   const [todayView, setTodayView] = useState(null);
@@ -220,7 +220,7 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
 
   return (
     <div className="sd-program">
-      <SchoolDebriefHeader view={view} late={view?.late ?? (day && day === lateDay)} promptIdx={promptIdx} promptCount={prompts?.length ?? 0} />
+      <SchoolDebriefHeader learnerId={learnerId} learnerName={learnerName} view={view} late={view?.late ?? (day && day === lateDay)} promptIdx={promptIdx} promptCount={prompts?.length ?? 0} />
       {nudge && <p className="sd-nudge" role="status">Still there? Press any key to keep going.</p>}
       {error && view && <p className="sd-notice" role="alert">{error}</p>}
       {body}

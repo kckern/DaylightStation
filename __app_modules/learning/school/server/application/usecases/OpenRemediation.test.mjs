@@ -140,3 +140,42 @@ describe('OpenRemediation — a corrected sheet past the cap', () => {
       .toMatchObject({ status: 'unavailable', reason: 'remediation_capped' });
   });
 });
+
+// Makeup claims (pre-merge review, 2026-11-19): a retry of a makeup-sheet
+// lesson is still that missed day's lesson. Without the claim, the retry's
+// pass served today and the missed day stayed open (the original incident).
+describe('OpenRemediation — a makeup claim follows the retry', () => {
+  const claim = (sessions, deadline) => sessions.appendEvent('ses_0', {
+    type: 'makeup_claimed', at: '2026-09-29T15:00:00.000Z', sessionId: 'ses_0',
+    forDay: '2026-09-28', subject: 'math', deadline,
+  });
+
+  it('the retry carries the same claim', async () => {
+    const { sessions, useCase, logger } = build();
+    await fail(sessions, 'ses_0');
+    await claim(sessions, '2026-10-03');
+    const { newSessionId } = await useCase.execute({ sessionId: 'ses_0' });
+    const events = await sessions.readEvents(newSessionId);
+    expect(events.at(-1)).toMatchObject({
+      type: 'makeup_claimed', sessionId: newSessionId, forDay: '2026-09-28', subject: 'math', deadline: '2026-10-03',
+    });
+    expect(logger.info).toHaveBeenCalledWith('school.makeup.claim-carried', expect.objectContaining({
+      sessionId: 'ses_0', newSessionId, forDay: '2026-09-28',
+    }));
+  });
+
+  it('a claim past its deadline is not carried', async () => {
+    const { sessions, useCase } = build();
+    await fail(sessions, 'ses_0');
+    await claim(sessions, '2026-09-28');
+    const { newSessionId } = await useCase.execute({ sessionId: 'ses_0' });
+    expect((await sessions.readEvents(newSessionId)).map((e) => e.type)).not.toContain('makeup_claimed');
+  });
+
+  it('an unclaimed failure opens an unclaimed retry', async () => {
+    const { sessions, useCase } = build();
+    await fail(sessions, 'ses_0');
+    const { newSessionId } = await useCase.execute({ sessionId: 'ses_0' });
+    expect((await sessions.readEvents(newSessionId)).map((e) => e.type)).toEqual(['created']);
+  });
+});

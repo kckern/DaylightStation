@@ -1,4 +1,5 @@
-import { GRATITUDE_PROMPT, deriveGratitudeState, recentGratitudeFacts, gratitudeConfigOf, gratitudePublicationId } from '../../domain/gratitude.mjs';
+import { GRATITUDE_PROMPT, isUnheardTranscript, deriveGratitudeState, recentGratitudeFacts, gratitudeConfigOf, gratitudePublicationId } from '../../domain/gratitude.mjs';
+import { validGratitudeEvidence } from '../../domain/gratitudeEvidence.mjs';
 import { studyDayForInstant, studyDayWindowForDate } from '../../domain/studyDay.mjs';
 import { scheduleVerdict } from '../../domain/schoolCalendar.mjs';
 import { followUpFallbackFor, normalizeFollowUpQuestion } from './GratitudeFollowUpWriter.mjs';
@@ -11,7 +12,7 @@ const sameAnswer = (a,b) => ['text','via','audioRef','edited','followUpOf'].ever
 
 /** Gratitude policy and durable recovery. All mutations for a learner share one queue. */
 export class GratitudeService {
-  #store; #assignments; #capture; #judge; #extractor; #followUpWriter; #publish; #clock; #timezone; #config; #logger; #queues = new Map(); #householdSchedule;
+  #store; #assignments; #capture; #judge; #extractor; #followUpWriter; #publish; #clock; #timezone; #config; #logger; #queues = new Map(); #submitting = new Map(); #householdSchedule;
   constructor({ store, assignments, captureTake = null, judge, extractor, followUpWriter = null, publish, clock = () => new Date(), timezone = null, config = gratitudeConfigOf(), logger = {}, householdSchedule = null }) {
     this.#store=store; this.#assignments=assignments; this.#capture=captureTake; this.#judge=judge; this.#extractor=extractor; this.#followUpWriter=followUpWriter; this.#publish=publish;
     this.#clock=clock; this.#timezone=timezone; this.#config=config; this.#logger=logger; this.#householdSchedule=householdSchedule;
@@ -32,9 +33,13 @@ export class GratitudeService {
     }));
   }
   #state(record) { return deriveGratitudeState(record?.events ?? [],{now:this.#now()}); }
-  #view(id,day,state) {
+  #preschool(id) { return Boolean(this.#config.preschool?.learners?.includes(id)); }
+  #view(id,day,state,facts=[]) {
     const phase=pending(state) ? 'pending' : state.phase;
-    return {learnerId:id,studyDay:day,today:this.today(),serverNow:this.#now(),phase,prompt:GRATITUDE_PROMPT,
+    // Blue screen: the subject already used (and when), plus recent subjects so the hints skip them.
+    const steer=phase==='steered' && state.steer ? {reason:state.steer.reason,used:(f=>f?{subject:f.subject,studyDay:f.studyDay}:null)(facts.find(f=>f.id===state.steer.matchedId)),recent:facts.map(f=>f.subject)} : null;
+    return {learnerId:id,studyDay:day,today:this.today(),serverNow:this.#now(),mode:this.#preschool(id)?'preschool':'standard',phase,prompt:GRATITUDE_PROMPT,
+      steer,flagged:phase==='completed'?Boolean(state.assessment?.flagged):false,cooldownMs:phase==='cooldown'?state.cooldownMs:null,
       attemptId:state.attemptId,draft:state.draft,retryAt:state.retryAt,reason:state.reason ?? (phase==='pending'?'service':null),
       followUp:phase==='follow-up'?{question:state.followUp.question,firstText:state.followUp.firstText}:null,
       subject:state.subject,selectionId:state.selectionId,next:{kind:phase==='completed'?'exit':phase==='cooldown'?'wait':phase==='pending'?'retry':'respond'}};
@@ -65,9 +70,10 @@ export class GratitudeService {
     const state=this.#state(records.find(r=>r.studyDay===day));
     if(state.phase!=='completed') {
       const active=records.map(r=>({day:r.studyDay,state:this.#state(r)})).find(r=>r.state.phase==='cooldown');
-      if(active)return this.#view(id,day,{...state,phase:'cooldown',retryAt:active.state.retryAt,reason:active.state.reason});
+      if(active)return this.#view(id,day,{...state,phase:'cooldown',retryAt:active.state.retryAt,reason:active.state.reason,cooldownMs:active.state.cooldownMs});
     }
-    return this.#view(id,day,state);
+    const facts=state.phase==='steered'?recentGratitudeFacts(records,{learnerId:id,studyDay:day,spacingDays:this.#config.spacingDays}):[];
+    return this.#view(id,day,state,facts);
   }
   async pendingDays(id) { return (await this.#records(id)).filter(r=>pending(this.#state(r))).map(r=>r.studyDay); }
   async history(id) { return this.#records(id); }
@@ -110,25 +116,40 @@ export class GratitudeService {
       const result=await this.#capture({learnerId:id,studyDay:day,buffer,mimeType,savedAudioRef:prior?.audioRef??null,
         onSaved:async({audioRef})=>{if(!prior)await this.#append(id,day,{type:'take-saved',takeId,audioRef,text:null});},
       });
-      await this.#append(id,day,{type:'take-saved',takeId,...result});
-      return {takeId,...result};
+      const {transcribed,...saved}=result;
+      if(transcribed!==false && isUnheardTranscript(saved.text)){
+        // Nothing of the child's was heard: no words, or the transcription hint echoed back. Not judged.
+        await this.#append(id,day,{type:'take-unheard',takeId,audioRef:saved.audioRef});
+        this.#logger.info?.('school.gratitude.take-unheard',{learnerId:id,day,takeId,empty:!String(saved.text??'').trim()});
+        return {takeId,audioRef:saved.audioRef,text:null,unheard:true};
+      }
+      await this.#append(id,day,{type:'take-saved',takeId,...saved});
+      return {takeId,...saved};
     });
   }
   async submit(id,day,body) {
+    // A submit that arrives while another is still being judged (repeated taps, a second tab) is a duplicate.
+    const duplicate=this.#submitting.has(id);
+    this.#submitting.set(id,(this.#submitting.get(id)??0)+1);
+    const done=()=>{const left=this.#submitting.get(id)-1;if(left>0)this.#submitting.set(id,left);else this.#submitting.delete(id);};
     return this.#serial(id,async()=>{
       const answer=this.#body(body);await this.#enrolled(id);
       const records=await this.#records(id);const record=records.find(r=>r.studyDay===day);
       const prior=record?.events.find(e=>e.type==='submitted' && e.attemptId===answer.attemptId);
       if(prior){if(!sameAnswer(prior,answer))throw new GratitudeError('Please start a new attempt for a changed answer.',409);if(pending(this.#state(record)))await this.#resume(id,day,records);return this.day(id,day);}
+      const current=this.#state(record);
+      // Submit is locked while an attempt is out: a second one gets the current state and starts nothing.
+      if(duplicate)return this.day(id,day);
+      // An attempt left assessing (a crash, an outage) is retried first, so a child is never turned away for good.
+      if(pending(current)){await this.#resume(id,day,records);return this.day(id,day);}
       await this.#fresh(id,day,records);await this.#audio(id,day,answer.audioRef,records);
       // While a follow-up is open the answer must name it; otherwise none may.
-      const current=this.#state(record);
       if(current.phase==='follow-up' ? answer.followUpOf!==current.followUp.attemptId : answer.followUpOf!==undefined)
         throw new GratitudeError(current.phase==='follow-up'?'Please answer the follow-up question.':'There is no follow-up question to answer.',409);
       await this.#append(id,day,{type:'submitted',...answer});
       this.#logger.info?.('school.gratitude.submitted',{learnerId:id,day,attemptId:answer.attemptId,via:answer.via});
       await this.#resume(id,day,await this.#records(id));return this.day(id,day);
-    });
+    }).finally(done);
   }
   async retry(id,day,{attemptId}) {
     return this.#serial(id,async()=>{
@@ -139,22 +160,66 @@ export class GratitudeService {
       return this.day(id,day);
     });
   }
+  async #refuse(id,day,attempt,decision,cooldownMs) {
+    const retryAt=new Date(Date.parse(decision.at)+cooldownMs).toISOString();
+    // The standard 30 minutes is implied when the event carries no length (records written before 2026-11-19).
+    await this.#append(id,day,{type:'refused',attemptId:attempt.attemptId,reason:decision.verdict,retryAt,...(cooldownMs!==this.#config.cooldownMs?{cooldownMs}:{})});
+    this.#logger.info?.('school.gratitude.refused',{learnerId:id,day,reason:decision.verdict,retryAt});
+  }
+  /** Preschool verdict ladder: blue steer, yellow warning, red break. True when the attempt is settled here. */
+  async #ladderStep(id,day,state,attempt,decision) {
+    const ladder=this.#config.preschool;
+    if(['general','repetition'].includes(decision.verdict)){
+      await this.#append(id,day,{type:'steered',attemptId:attempt.attemptId,reason:decision.verdict,...(decision.verdict==='repetition'?{matchedId:decision.matchedId}:{})});
+      this.#logger.info?.('school.gratitude.steered',{learnerId:id,day,attemptId:attempt.attemptId,reason:decision.verdict});return true;
+    }
+    if(decision.verdict==='nonsense' && state.sillyRun<1){
+      await this.#append(id,day,{type:'warned',attemptId:attempt.attemptId});
+      this.#logger.info?.('school.gratitude.warned',{learnerId:id,day,attemptId:attempt.attemptId});return true;
+    }
+    if(['nonsense','rude'].includes(decision.verdict)){await this.#refuse(id,day,attempt,decision,ladder.cooldownMs);return true;}
+    return false;
+  }
+  /**
+   * A verdict the evidence chain would refuse must never be appended: the append would throw and leave the
+   * attempt assessing for good. Fall back to doubt, which is always valid (green+flag for preschool).
+   */
+  #appendable(record,attempt,decision,preschool) {
+    const at=this.#now();
+    if(validGratitudeEvidence([...(record?.events??[]),{type:'assessed',at,attemptId:attempt.attemptId,...decision}]))return decision;
+    this.#logger.warn?.('school.gratitude.verdict-invalid',{attemptId:attempt.attemptId,verdict:decision.verdict});
+    return preschool?{...decision,verdict:'eligible',matchedId:null,judged:decision.judged??decision.verdict,flagged:'uncertain'}:{...decision,verdict:'uncertain',matchedId:null,judged:decision.verdict};
+  }
   async #resume(id,day,records) {
-    let state=this.#state(records.find(r=>r.studyDay===day));
+    const record=records.find(r=>r.studyDay===day);
+    let state=this.#state(record);
     if(!pending(state))return;
     const attempt=state.submitted;
     try {
       let decision=state.assessment;
+      const preschool=this.#preschool(id);
+      const ladder=this.#config.preschool;
       if(!decision){
         const history=recentGratitudeFacts(records,{learnerId:id,studyDay:day,spacingDays:this.#config.spacingDays});
         // One follow-up a day: after it, any good-faith answer is accepted as is.
-        const allowFollowUp=this.#config.followUp?.enabled!==false && !state.followUpAsked;
-        decision=await this.#judge.assess({text:state.assessText,history,allowFollowUp});
+        // Preschool has no follow-up; the same question decides a blue steer, until the blue limit.
+        const allowFollowUp=preschool ? !state.followUpAsked && state.blueRun<ladder.blueLimit : this.#config.followUp?.enabled!==false && !state.followUpAsked;
+        decision=await this.#judge.assess({text:state.assessText,history,allowFollowUp,askRude:preschool});
         if(decision.verdict==='unavailable')return;
-        if(decision.verdict==='general' && !allowFollowUp)decision={...decision,verdict:'eligible'};
+        if(decision.verdict==='general' && !allowFollowUp)decision={...decision,verdict:'eligible',...(preschool?{judged:'general',flagged:state.blueRun>=ladder.blueLimit?'blue-limit':'general'}:{})};
         if(decision.verdict==='repetition' && !history.some(h=>h.id===decision.matchedId))decision={...decision,verdict:'uncertain'};
-        decision=await this.#append(id,day,{type:'assessed',attemptId:attempt.attemptId,...decision});
+        if(preschool){
+          // Only green earns credit, and doubt is green: an undecided answer, or one more good-faith answer
+          // after the blue limit, is accepted and flagged for the teacher.
+          if(['general','repetition'].includes(decision.verdict) && state.blueRun>=ladder.blueLimit)decision={...decision,verdict:'eligible',judged:decision.verdict,flagged:'blue-limit'};
+          else if(decision.verdict==='uncertain')decision={...decision,verdict:'eligible',judged:'uncertain',flagged:'uncertain'};
+          // Any answer accepted after the blue limit is flagged, whatever the judge said.
+          else if(decision.verdict==='eligible' && !decision.flagged && state.blueRun>=ladder.blueLimit)decision={...decision,flagged:'blue-limit'};
+        }
+        decision=await this.#append(id,day,{type:'assessed',attemptId:attempt.attemptId,...this.#appendable(record,attempt,decision,preschool)});
+        if(decision.flagged)this.#logger.info?.('school.gratitude.flagged',{learnerId:id,day,attemptId:attempt.attemptId,reason:decision.flagged});
       }
+      if(preschool && await this.#ladderStep(id,day,state,attempt,decision))return;
       if(decision.verdict==='general'){
         let written=null;
         try{written=await this.#followUpWriter?.write({text:state.assessText});}catch{written=null;}
@@ -164,10 +229,8 @@ export class GratitudeService {
         await this.#append(id,day,{type:'follow-up-asked',attemptId:attempt.attemptId,question:written.question,writer:written.writer});
         this.#logger.info?.('school.gratitude.follow-up',{learnerId:id,day,attemptId:attempt.attemptId,writer:written.writer});return;
       }
-      if(['nonsense','repetition'].includes(decision.verdict)){
-        const retryAt=new Date(Date.parse(decision.at)+this.#config.cooldownMs).toISOString();
-        await this.#append(id,day,{type:'refused',attemptId:attempt.attemptId,reason:decision.verdict,retryAt});
-        this.#logger.info?.('school.gratitude.refused',{learnerId:id,day,reason:decision.verdict,retryAt});return;
+      if(['nonsense','repetition','rude'].includes(decision.verdict)){
+        await this.#refuse(id,day,attempt,decision,this.#config.cooldownMs);return;
       }
       if(decision.verdict!=='eligible')return;
       let publication=state.publication;

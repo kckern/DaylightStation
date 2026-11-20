@@ -5,7 +5,7 @@ import { GratitudeJudge } from '../application/gratitude/GratitudeJudge.mjs';
 import { GratitudeTopicExtractor } from '../application/gratitude/GratitudeTopicExtractor.mjs';
 import { GratitudeFollowUpWriter } from '../application/gratitude/GratitudeFollowUpWriter.mjs';
 import { captureProgramTake } from '../application/shared/captureProgramTake.mjs';
-import { gratitudeConfigOf } from '../domain/gratitude.mjs';
+import { gratitudeConfigOf, GRATITUDE_TRANSCRIPTION_HINT } from '../domain/gratitude.mjs';
 import { createSchoolGratitudeRouter } from '../api/schoolGratitude.mjs';
 
 export function createGratitudeRuntime({configService,store,assignments,grants,teacherGate,aiGateway,decisionGateway,publish,notify=null,scheduler,timezone,householdSchedule,clock=()=>new Date(),logger={}}){
@@ -21,7 +21,10 @@ export function createGratitudeRuntime({configService,store,assignments,grants,t
         if(!saved)throw new Error('The saved recording could not be read');
         args={...args,buffer:saved.buffer,mimeType:saved.mimeType};
       }
-      return captureProgramTake({...args,saveAudio:body=>audio.save(body),transcribe:aiGateway?.transcribe?((buffer,opts)=>bounded(aiGateway.transcribe(buffer,opts),'Transcription timed out')):null,prompt:'A child saying what they are grateful for, in English or Korean.',logger});
+      // `transcribed` tells an empty transcript (nothing heard) from a transcriber failure (retry the saved audio).
+      let transcribed=false;
+      const transcribe=aiGateway?.transcribe?((buffer,opts)=>bounded(aiGateway.transcribe(buffer,opts),'Transcription timed out').then(text=>{transcribed=true;return text;})):null;
+      return captureProgramTake({...args,saveAudio:body=>audio.save(body),transcribe,prompt:GRATITUDE_TRANSCRIPTION_HINT,logger}).then(result=>({...result,transcribed}));
     },
     publish:async body=>{const result=await bounded(Promise.resolve().then(()=>publish(body)),'Saving gratitude timed out');try{await notify?.({...body,...result});}catch(error){logger.warn?.('school.gratitude.notify-failed',{error:error.message});}return result;},
   });

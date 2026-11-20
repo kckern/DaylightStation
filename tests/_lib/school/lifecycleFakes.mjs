@@ -142,6 +142,9 @@ export class FakeSessionRepository extends IWorkSessionRepository {
       // consumers bucket by `studyDay ?? day` and a fake that omitted it would
       // hide exactly the UTC-slice bug that rule exists to prevent.
       studyDay: state.studyDay ?? null,
+      makeupFor: state.makeupFor ?? null,
+      makeupSubject: state.makeupSubject ?? null,
+      makeupDeadline: state.makeupDeadline ?? null,
       updatedAt: events[events.length - 1]?.at ?? null,
     }));
   }

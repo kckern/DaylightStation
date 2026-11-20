@@ -92,7 +92,13 @@ export class PrintMakeupAgenda {
       if (accessCode) minted.add(accessCode);
       const record = mintToken({
         tokenClass: 'subject_next',
-        subject: { learnerId, subject, continueToday: true, ...(program ? { program } : {}) },
+        // `makeupFor`: the days this ticket makes up. Acting on it claims the
+        // session for the oldest of them still owed (`ClaimMakeupLesson`), so
+        // the lesson counts for that day rather than today.
+        subject: {
+          learnerId, subject, continueToday: true, makeupFor: [...days].sort(),
+          ...(program ? { program } : {}),
+        },
         at: nowIso,
         rng: this.#rng,
         expiresAt,

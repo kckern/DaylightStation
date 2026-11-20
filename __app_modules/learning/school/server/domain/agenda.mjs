@@ -21,6 +21,7 @@ import { isSameStudyDay, studyDayForInstant } from "./studyDay.mjs";
 import { dayOffTier, isoWeekday, scheduleVerdict } from "./schoolCalendar.mjs";
 import { DEFAULT_DAY_OFF_POLICY, keepsEntry } from "./dayOffPolicy.mjs";
 import { missedWeekdays } from "./saturdayCatchUp.mjs";
+import { honouredMakeupClaim } from "./makeup.mjs";
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 
@@ -306,10 +307,21 @@ export function planDailyAgenda({
   // so this cannot dedupe across builds — it only stops one unit reported by
   // two entries from being reported twice in the same answer.
   const latestBySessionUnit = latestGradedPerUnit(sessions);
-  const passedToday = sessions
+  const passedTodayAll = sessions
     .filter((s) => s?.outcome?.result === 'passed'
       && isSameStudyDay(Date.parse(s.outcome?.at ?? s.updatedAt ?? ''), nowMs, { timezone, boundaryHour }));
+  // MAKEUP CLAIMS (2026-11-19). A pass opened from a makeup-sheet code is
+  // the missed day's lesson, not today's: it neither serves today's section
+  // nor suppresses today's next lesson. It stays in the ledger as a claim
+  // for `foldMakeup` to credit to the day it names. A Wednesday worksheet,
+  // finished Thursday, used to serve Thursday and leave Wednesday open.
+  const passedToday = passedTodayAll.filter((s) => !honouredMakeupClaim(s, today));
+  const claimedToday = passedTodayAll.filter((s) => honouredMakeupClaim(s, today));
   const passedTodayIds = new Set(passedToday.map((s) => s.unitId));
+  // A claimed pass is still work finished today: the day-off filters below
+  // must keep its entry, or its claim vanishes from the ledger while the day
+  // it was done on has already given the lesson up.
+  const claimedTodayIds = new Set(claimedToday.map((s) => s.unitId));
   const isWeekend = typeof today === 'string' && isoWeekday(today) >= 6;
   const latestPassAt = new Map();
   sessions.forEach((s) => {
@@ -350,7 +362,7 @@ export function planDailyAgenda({
     const scheduled = live.length ? live : all;
     // Work already done today survives every filter below: a filter decides
     // what is still ASKED, and must never erase what a child finished.
-    const doneToday = (e) => passedTodayIds.has(e.unitId)
+    const doneToday = (e) => passedTodayIds.has(e.unitId) || claimedTodayIds.has(e.unitId)
       || (e.program && programStatusFor(programStatuses, e)?.doneToday === true);
     // THE SWAP. A date-bound entry is in the plan only on its own day, and on
     // that day it takes its subject's slot: the holiday lesson replaces the
@@ -805,6 +817,14 @@ export function planDailyAgenda({
         }).map(programStatusKey),
         needsLesson: hasRequiredCurriculum,
         needsPrograms: requiredPrograms.map(programStatusKey),
+        // Required lessons passed today that a makeup sheet claimed for an
+        // earlier day, one entry per pass, naming that day. Read against the
+        // subject's whole curriculum (`all`), not the filtered list: a swap
+        // or keep-list deciding what today asks must not erase a claim.
+        makeupClaims: claimedToday
+          .filter((s) => all.some((e) => !e.program && !e.elective && e.unitId === s.unitId))
+          .map((s) => honouredMakeupClaim(s, today))
+          .sort(),
       },
       _subjectPosition: subjectPosition,
       // Internal, like _subjectPosition: the focus pass below needs to know
