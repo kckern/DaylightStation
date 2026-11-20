@@ -21,7 +21,7 @@ import { PairedList } from './PairedList.jsx';
 import { NearbyList } from './NearbyList.jsx';
 import { KeyTest } from './KeyTest.jsx';
 import {
-  forgetText, hiddenNearbyCount, nearbyRows, pairHints, pairView, pairedRows, scanView,
+  displayName, forgetText, hiddenNearbyCount, matchController, nearbyRows, pairHints, pairView, pairedRows, scanView,
 } from './bluetoothScreenModel.js';
 import './BluetoothScreen.scss';
 
@@ -31,6 +31,10 @@ const logger = () => (_logger ||= getLogger().child({ component: 'bluetooth-scre
 const TITLE = { list: 'Bluetooth', guide: 'How to pair', search: 'Search for devices', pairing: 'Pairing', test: 'Test' };
 const EMPTY = [];
 const FORGET_MSG_MS = 6000;
+// A device being paired: its input.yml label when it matches a controller.
+const pairingName = (device, controllers) => (device?.address
+  ? matchController(device, controllers)?.label || displayName(device)
+  : 'a device');
 
 export function BluetoothScreen({
   controllers = EMPTY, keyboardMap = null, bluetooth = null, getGamepads, onClose, titleId, host = 'unknown', notice = null,
@@ -206,7 +210,7 @@ export function BluetoothScreen({
             {/* A pairing started elsewhere (another screen, the backend route)
                 disables Forget and Pair again: say why. */}
             {pairBusy ? (
-              <p className="bts-status-line bts-tone-info">{pairView(bt.pairing, bt.pairing.device?.name || 'a device').text}</p>
+              <p className="bts-status-line bts-tone-info">{pairView(bt.pairing, pairingName(bt.pairing.device, controllers)).text}</p>
             ) : null}
           </section>
           {hints.length > 0 && (

@@ -248,6 +248,11 @@ describe('BluetoothScreen', () => {
   it('the list says a pairing is running when one started elsewhere', () => {
     render(ui(makeBt({ pairing: { requestId: 'other', phase: 'pairing', device: { address: 'AA:BB:CC:11:22:99', name: 'Pad' } } })));
     expect(screen.getByText('Pairing Pad…')).toBeTruthy();
+  });
+
+  it('a pairing started elsewhere is named from input.yml when the device matches', () => {
+    render(ui(makeBt({ pairing: { requestId: 'other', phase: 'pairing', device: { address: 'E4:17:D8:00:00:09', name: 'TestPad GamePad' } } })));
+    expect(screen.getByText('Pairing Garage Pad…')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Forget R1' }).disabled).toBe(true);
   });
 
