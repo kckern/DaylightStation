@@ -2536,6 +2536,41 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     expect(h.recordTierBest.mock.calls[0][0]).toMatchObject({ bucket: 'both', tier: 'medium' });
   });
 
+  const pauseAndResumeRun = async ({ beforePlay = () => {}, whilePaused = () => {} } = {}) => {
+    h.layoutExtras = tierFixture(4, 1);
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    beforePlay();
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000));
+    act(() => { screen.getByRole('button', { name: 'Pause' }).click(); });
+    await act(async () => {});
+    whilePaused();
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(61);
+    act(() => vi.advanceTimersByTime(1000));
+    play(62);
+    play(63);
+    await act(async () => { vi.advanceTimersByTime(1000); }); // → onDone
+    expect(h.recordPolishRun).toHaveBeenCalledTimes(1);
+    return h.recordPolishRun.mock.calls[0][0];
+  };
+  const toggleClick = () => act(() => { fireEvent.click(screen.getByRole('button', { name: /metronome/i })); });
+
+  it('a run started with the metronome off and turned on while paused is reported as metronome off', async () => {
+    const run = await pauseAndResumeRun({ beforePlay: toggleClick, whilePaused: toggleClick });
+    expect(run.metronome).toBe(false);
+  });
+
+  it('a run with the metronome on throughout, paused and resumed, is reported as metronome on', async () => {
+    const run = await pauseAndResumeRun();
+    expect(run.metronome).toBe(true);
+  });
+
   it('a tempo change made between runs does not disqualify the NEXT full run', async () => {
     // The clears must cost only the run they belong to: after a completed run the
     // grades are still on the board, and bumping the tempo for another go from the

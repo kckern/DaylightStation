@@ -351,9 +351,15 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const runMixedRef = useRef(false);
   // The tempo the run STARTED at, and whether the metronome sounded for all of
   // it: the Polish reward facts the server judges (gem at 50%, diamond at 90%,
-  // metronome on). Armed with the tier; a click toggle mid-run clears the latter.
+  // metronome on). A start from step 0 arms the metronome fact from the click; a
+  // resume can only keep it or clear it (see clickForStart), and a click toggle
+  // while a run is in flight or suspended clears it.
   const runTempoRef = useRef(1);
   const runClickRef = useRef(false);
+  // A fresh start from the top takes the click as it is; a resume mid-piece keeps
+  // the run's fact only if the click is on now too, so turning it on during a pause
+  // cannot make a run that began without it count as metronome-on.
+  const clickForStart = (startStep) => (startStep === 0 ? clickOnRef.current : runClickRef.current && clickOnRef.current);
   // Is the run in flight still a COMPLETED WHOLE-PIECE run in the making (design
   // §H)? `mixed` only catches a tempo move while the transport is actually running;
   // it does not catch a run that never started at the top, or one whose tempo/hands
@@ -718,7 +724,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       runTierRef.current = tierOf(tempoMult);
       runMixedRef.current = false;
       runTempoRef.current = tempoMult;
-      runClickRef.current = clickOnRef.current;
+      runClickRef.current = clickForStart(startStep);
       // One-way arm (see runEligibleRef): a start from the top makes this a
       // whole-piece run; a start from anywhere else leaves an earlier arm — or an
       // earlier clear — standing, which is what keeps a mid-piece RESUME of the
@@ -1972,7 +1978,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         runTierRef.current = tierOf(tempoMult); // the no-count-in start path (wave-3 H)
         runMixedRef.current = false;
         runTempoRef.current = tempoMult;
-        runClickRef.current = clickOnRef.current;
+        runClickRef.current = clickForStart(startStep);
         if (startStep === 0) runEligibleRef.current = true; // one-way arm — see runEligibleRef
         transport.seek((stepTimeline[startStep]?.t ?? 0) / tempoMult);
         setRunActive(true);
