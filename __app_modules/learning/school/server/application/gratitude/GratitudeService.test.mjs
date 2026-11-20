@@ -10,7 +10,7 @@ function harness({ verdict='eligible', publishFailure=false, verdicts=null, writ
   const deps={store,assignments:{get:async()=>({programs:[{programId:'gratitude',schedule:{daysOfWeek:[1,2,3,4,5]}}]})},clock:()=>now,timezone:'America/Los_Angeles',
     config:config??gratitudeConfigOf({gratitude:{follow_up:{enabled:followUpEnabled}}}),
     captureTake:async({onSaved})=>{const audioRef=`child/take-${days.size}-${Math.random().toString(36).slice(2,8)}.webm`;await onSaved({audioRef});return {audioRef,text:typeof transcript==='function'?transcript():transcript};},
-    judge:{assess:async args=>{calls++;if(judgeDelay)await judgeDelay();judgeCalls.push(args);const v=queue.length?queue.shift():assessment;return {verdict:v,confidence:.99,model:'test',rubricVersion:1,matchedId:v==='repetition'?'school-gratitude:child:2026-11-16':null};}},
+    judge:{assess:async args=>{calls++;if(judgeDelay)await judgeDelay();judgeCalls.push(args);const v=queue.length?queue.shift():assessment;return {verdict:v,confidence:.99,model:'test',rubricVersion:1,matchedId:v==='repetition'?(args.history?.[0]?.id??'school-gratitude:child:2026-11-16'):null};}},
     followUpWriter:followUpWriter??{write:async()=>writerFails?{question:GRATITUDE_FOLLOW_UP_FALLBACK,writer:'fallback'}:{question:'What about your mom are you grateful for today?',writer:'model'}},
     extractor:{extract:async({text})=>{extracted.push(text);return {subject:'Toys',model:'cheap'};}},publish:async body=>{selections.set(body.selectionId,body);if(fail)throw new Error('lost response');return {selectionId:body.selectionId,subject:body.subject};},logger};
   return {service:new GratitudeService(deps),restart:()=>new GratitudeService(deps),days,selections,setNow:value=>{now=new Date(value);},setVerdict:value=>{assessment=value;},restore:()=>{fail=false;},calls:()=>calls,judgeCalls:()=>judgeCalls,extracted:()=>extracted};
@@ -186,5 +186,75 @@ describe('School gratitude workflow',()=>{
     expect(h.calls()).toBe(1);
     expect(h.days.get('2026-11-16').filter(e=>e.type==='submitted')).toHaveLength(1);
     for(const r of results)expect(r).toMatchObject({phase:'retry',attemptId:'attempt-1'});
+  });
+});
+describe('preschool verdict ladder',()=>{
+  const pre=(opts={})=>harness({...opts,config:gratitudeConfigOf({gratitude:{preschool:['kid']}})});
+  const seed=h=>h.days.set('2026-11-14',[{type:'opened',at:'2026-11-14T18:00:00Z'},{type:'submitted',at:'2026-11-14T18:00:01Z',attemptId:'old',text:'eating cookies',via:'typed',audioRef:null,edited:false},
+    {type:'assessed',at:'2026-11-14T18:00:02Z',attemptId:'old',verdict:'eligible'},{type:'publication-pending',at:'2026-11-14T18:00:03Z',attemptId:'old',text:'eating cookies',subject:'Eating cookies',selectionId:'school-gratitude:kid:2026-11-14',timestamp:'2026-11-14T18:00:03Z'},
+    {type:'completed',at:'2026-11-14T18:00:04Z',attemptId:'old',selectionId:'school-gratitude:kid:2026-11-14'}]);
+  const say=(h,n,text='cookies')=>h.service.submit('kid','2026-11-16',{...body,attemptId:`a${n}`,text});
+  it('reports the mode in the view',async()=>{
+    expect((await pre().service.open('kid','2026-11-16')).mode).toBe('preschool');
+    expect((await pre().service.open('child','2026-11-16')).mode).toBe('standard');
+  });
+  it('accepts an answer the judge cannot decide on, flagged for the teacher',async()=>{
+    const info=vi.fn();const h=pre({verdict:'uncertain',logger:{info}});
+    expect(await say(h,1)).toMatchObject({phase:'completed',flagged:true,subject:'Toys'});
+    expect(h.days.get('2026-11-16').find(e=>e.type==='assessed')).toMatchObject({verdict:'eligible',flagged:'uncertain',judged:'uncertain'});
+    expect(info).toHaveBeenCalledWith('school.gratitude.flagged',expect.objectContaining({learnerId:'kid',reason:'uncertain'}));
+  });
+  it('steers a repeat or a bare category without a break, then accepts the third good-faith answer flagged',async()=>{
+    const info=vi.fn();const h=pre({verdicts:['repetition','general','repetition'],logger:{info}});
+    seed(h);
+    h.judgeCalls().length=0;
+    const first=await say(h,1);
+    expect(first).toMatchObject({phase:'steered',reason:'repetition',retryAt:null,draft:null,steer:{reason:'repetition',used:{subject:'Eating cookies',studyDay:'2026-11-14'}}});
+    expect(first.steer.recent).toEqual(['Eating cookies']);
+    expect(info).toHaveBeenCalledWith('school.gratitude.steered',expect.objectContaining({reason:'repetition'}));
+    expect(await say(h,2,'mom')).toMatchObject({phase:'steered',reason:'general',steer:{reason:'general',used:null}});
+    expect(h.days.get('2026-11-16').some(e=>e.type==='follow-up-asked')).toBe(false);
+    expect(await say(h,3,'cookies again')).toMatchObject({phase:'completed',flagged:true});
+    expect(h.days.get('2026-11-16').filter(e=>e.type==='assessed').at(-1)).toMatchObject({verdict:'eligible',flagged:'blue-limit',judged:'repetition'});
+    expect(h.judgeCalls().map(c=>[c.allowFollowUp,c.askRude])).toEqual([[true,true],[true,true],[false,true]]);
+  });
+  it('warns on the first silly answer, breaks for five minutes on the second',async()=>{
+    const info=vi.fn();const h=pre({verdict:'nonsense',logger:{info}});
+    expect(await say(h,1,'blah blah')).toMatchObject({phase:'warned',retryAt:null,draft:null});
+    expect(info).toHaveBeenCalledWith('school.gratitude.warned',expect.objectContaining({learnerId:'kid'}));
+    expect(await say(h,2,'pff')).toMatchObject({phase:'cooldown',reason:'nonsense',retryAt:'2026-11-16T18:05:00.000Z',cooldownMs:300000});
+    expect(info).toHaveBeenCalledWith('school.gratitude.refused',expect.objectContaining({reason:'nonsense'}));
+  });
+  it('a steer between two silly answers does not reset the silly count',async()=>{
+    const h=pre({verdicts:['nonsense','repetition','nonsense']});
+    seed(h);
+    await say(h,1,'blah');await say(h,2,'cookies');
+    expect((await say(h,3,'pff')).phase).toBe('cooldown');
+  });
+  it('rude goes straight to the break',async()=>{
+    const info=vi.fn();const h=pre({verdict:'rude',logger:{info}});
+    expect(await say(h,1,'You are stupid')).toMatchObject({phase:'cooldown',reason:'rude',retryAt:'2026-11-16T18:05:00.000Z'});
+    expect(info).toHaveBeenCalledWith('school.gratitude.refused',expect.objectContaining({reason:'rude'}));
+  });
+  it('a finished break resets the silly count',async()=>{
+    const h=pre({verdict:'nonsense'});
+    await say(h,1,'blah');await say(h,2,'blah blah');
+    h.setNow('2026-11-16T18:05:00Z');
+    expect((await h.restart().open('kid','2026-11-16')).phase).toBe('retry');
+    expect((await say(h,3,'pff')).phase).toBe('warned');
+  });
+  it('shows the break with its length on re-entry, and green after a completed day',async()=>{
+    const h=pre({verdict:'rude'});await say(h,1,'stupid');
+    h.setNow('2026-11-16T18:02:00Z');
+    expect(await h.restart().open('kid','2026-11-16')).toMatchObject({phase:'cooldown',retryAt:'2026-11-16T18:05:00.000Z',cooldownMs:300000});
+    const g=pre();await say(g,1);
+    expect(await g.restart().open('kid','2026-11-16')).toMatchObject({phase:'completed',subject:'Toys',flagged:false});
+  });
+  it('leaves standard learners on the old ladder',async()=>{
+    const h=pre({verdicts:['nonsense']});
+    expect(await h.service.submit('child','2026-11-16',{...body,text:'blah'})).toMatchObject({phase:'cooldown',retryAt:'2026-11-16T18:30:00.000Z'});
+    const u=pre({verdicts:['uncertain']});
+    expect((await u.service.submit('child','2026-11-16',body)).phase).toBe('retry');
+    expect(u.judgeCalls()[0].askRude).toBe(false);
   });
 });

@@ -23,19 +23,25 @@ export function validateGratitudeEnrollment(raw = {}) {
 export function gratitudeConfigOf(config = {}) {
   const value = config.gratitude ?? {};
   const positive = (v, fallback) => Number.isFinite(v) && v > 0 ? v : fallback;
-  return { spacingDays: 7, cooldownMs: 30 * 60_000,
+  return { spacingDays: 7, cooldownMs: STANDARD_COOLDOWN_MS,
     judge: { model: value.judge?.model, minConfidence: Math.min(1, positive(value.judge?.min_confidence, 0.8)), timeoutMs: positive(value.judge?.timeout_ms, 8000) },
     extractor: { model: value.extractor?.model ?? config.debrief?.judge?.model ?? 'gpt-5-nano', timeoutMs: positive(value.extractor?.timeout_ms, 8000) },
+    // Learners on the preschool screen and verdict ladder (spec 2026-11-19); everyone else keeps the text box.
+    preschool: { learners: Array.isArray(value.preschool) ? value.preschool.filter(id => typeof id === 'string' && id) : [], cooldownMs: PRESCHOOL_COOLDOWN_MS, blueLimit: PRESCHOOL_BLUE_LIMIT },
     followUp: { enabled: value.follow_up?.enabled !== false, model: value.follow_up?.model ?? value.extractor?.model ?? config.debrief?.judge?.model ?? 'gpt-5-nano', timeoutMs: positive(value.follow_up?.timeout_ms, 8000) },
   };
 }
+export const STANDARD_COOLDOWN_MS = 30 * 60_000;
+export const PRESCHOOL_COOLDOWN_MS = 5 * 60_000;
+// Steers in a row; the next good-faith answer is accepted and flagged.
+export const PRESCHOOL_BLUE_LIMIT = 2;
 export const gratitudePublicationId = (learnerId, day) => `school-gratitude:${learnerId}:${day}`;
 
 const answerPhase = phase => phase === 'follow-up' ? 'follow-up' : 'draft';
 /** Event-derived evidence, separate from the browser view and all wall-clock policy. */
 export function deriveGratitudeState(events = [], { now = null } = {}) {
   if(!validGratitudeEvidence(events))throw new Error('Invalid Gratitude evidence');
-  const state = { phase: 'not-started', attemptId: null, draft: null, submitted: null, assessment: null, publication: null, subject: null, selectionId: null, retryAt: null, reason: null, followUp: null, followUpAsked: false, assessText: null };
+  const state = { phase: 'not-started', attemptId: null, draft: null, submitted: null, assessment: null, publication: null, subject: null, selectionId: null, retryAt: null, reason: null, followUp: null, followUpAsked: false, assessText: null, steer: null, cooldownMs: null, blueRun: 0, sillyRun: 0 };
   const takeBases=new Map();
   for (const event of events) {
     switch (event.type) {
@@ -51,7 +57,7 @@ export function deriveGratitudeState(events = [], { now = null } = {}) {
       case 'draft-saved': state.draft = {...event.draft,takeId:event.draft.audioRef===state.draft?.audioRef?state.draft?.takeId:null}; state.phase = answerPhase(state.phase); break;
       case 'submitted':
         state.assessText = event.followUpOf && state.followUp?.attemptId === event.followUpOf ? combineGratitudeAnswers(state.followUp.firstText, event.text) : event.text;
-        state.followUp = null;
+        state.followUp = null; state.steer = null;
         state.attemptId = event.attemptId; state.submitted = event; state.draft = event; state.assessment = null; state.publication = null; state.reason = null; state.retryAt=null; state.phase = 'assessing'; break;
       case 'follow-up-asked': state.followUp = { attemptId: event.attemptId, question: event.question, firstText: state.submitted?.text ?? '' }; state.followUpAsked = true; state.draft = null; state.phase = 'follow-up'; break;
       case 'assessed':
@@ -59,9 +65,14 @@ export function deriveGratitudeState(events = [], { now = null } = {}) {
         // A retried answer starts from an empty box.
         if (event.verdict === 'uncertain') { state.phase = 'retry'; state.reason = 'unclear'; state.draft = null; }
         break;
-      case 'refused': state.phase = 'cooldown'; state.retryAt = event.retryAt; state.reason = event.reason; state.draft = null; break;
+      case 'refused': state.phase = 'cooldown'; state.retryAt = event.retryAt; state.reason = event.reason; state.draft = null; state.cooldownMs = event.cooldownMs ?? STANDARD_COOLDOWN_MS;
+        // The run starts over once the break is done; no answer can arrive during it.
+        state.blueRun = 0; state.sillyRun = 0; break;
+      // Preschool ladder: blue (try something new) and yellow (that was silly). Neither is a break.
+      case 'steered': state.phase = 'steered'; state.reason = event.reason; state.steer = { reason: event.reason, matchedId: event.matchedId ?? null }; state.draft = null; state.blueRun += 1; break;
+      case 'warned': state.phase = 'warned'; state.reason = 'nonsense'; state.draft = null; state.sillyRun += 1; state.blueRun = 0; break;
       case 'publication-pending': state.publication = event; state.subject = event.subject; state.selectionId = event.selectionId; state.phase = 'pending'; state.reason = 'publication'; break;
-      case 'completed': state.phase = 'completed'; state.selectionId = event.selectionId ?? state.selectionId; state.reason = null; state.retryAt = null; break;
+      case 'completed': state.blueRun = 0; state.sillyRun = 0; state.phase = 'completed'; state.selectionId = event.selectionId ?? state.selectionId; state.reason = null; state.retryAt = null; break;
       default: break;
     }
   }

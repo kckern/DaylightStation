@@ -65,3 +65,24 @@ describe('unheard takes in evidence',()=>{
     expect(validGratitudeEvidence([{type:'opened',at:t(0)},take,{type:'take-unheard',at:t(2),takeId:'k1',audioRef:'child/other.webm'}])).toBe(false);
   });
 });
+describe('preschool ladder evidence',()=>{
+  const sub=(n,id)=>({type:'submitted',at:t(n),attemptId:id,text:'x',via:'typed',audioRef:null,edited:false});
+  const judged=(n,id,verdict,extra={})=>({type:'assessed',at:t(n),attemptId:id,verdict,...extra});
+  it('accepts steered, warned and a five-minute break, and derives the runs',()=>{
+    const events=[{type:'opened',at:t(0)},sub(1,'a'),judged(1,'a','repetition',{matchedId:'r'}),{type:'steered',at:t(1),attemptId:'a',reason:'repetition',matchedId:'r'},
+      sub(2,'b'),judged(2,'b','nonsense'),{type:'warned',at:t(2),attemptId:'b'},
+      sub(3,'c'),judged(3,'c','rude'),{type:'refused',at:t(3),attemptId:'c',reason:'rude',retryAt:'2026-11-16T18:08:00.000Z',cooldownMs:300000}];
+    expect(validGratitudeEvidence(events)).toBe(true);
+    expect(deriveGratitudeState(events.slice(0,4))).toMatchObject({phase:'steered',blueRun:1,steer:{reason:'repetition',matchedId:'r'}});
+    expect(deriveGratitudeState(events.slice(0,7))).toMatchObject({phase:'warned',blueRun:0,sillyRun:1});
+    expect(deriveGratitudeState(events,{now:t(4)})).toMatchObject({phase:'cooldown',cooldownMs:300000,sillyRun:0});
+  });
+  it('refuses a break that does not match its recorded length, a steer for nonsense, or a warning for a repeat',()=>{
+    const head=[{type:'opened',at:t(0)},sub(1,'a')];
+    expect(validGratitudeEvidence([...head,judged(1,'a','nonsense'),{type:'refused',at:t(1),attemptId:'a',reason:'nonsense',retryAt:'2026-11-16T18:06:00.000Z',cooldownMs:300000}])).toBe(true);
+    expect(validGratitudeEvidence([...head,judged(1,'a','nonsense'),{type:'refused',at:t(1),attemptId:'a',reason:'nonsense',retryAt:'2026-11-16T18:06:00.000Z'}])).toBe(false);
+    expect(validGratitudeEvidence([...head,judged(1,'a','nonsense'),{type:'refused',at:t(1),attemptId:'a',reason:'nonsense',retryAt:'2026-11-17T18:01:00.000Z',cooldownMs:86400000}])).toBe(false);
+    expect(validGratitudeEvidence([...head,judged(1,'a','nonsense'),{type:'steered',at:t(1),attemptId:'a',reason:'nonsense'}])).toBe(false);
+    expect(validGratitudeEvidence([...head,judged(1,'a','repetition',{matchedId:'r'}),{type:'warned',at:t(1),attemptId:'a'}])).toBe(false);
+  });
+});
