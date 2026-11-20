@@ -44,17 +44,65 @@ describe('useFitnessBluetooth', () => {
     act(() => result.current.bluetooth.stopScan('user'));
     expect(sent[1]).toEqual({ topic: 'bt.scan.request', requestId: id, action: 'stop' });
     expect(result.current.bluetooth.scan.phase).toBe('stopping');
-    // An answered search is not flagged later by the no-answer timer.
-    act(() => { vi.advanceTimersByTime(5000); });
-    expect(result.current.bluetooth.scan.phase).toBe('stopping');
+    // The satellite's done ends it.
+    act(() => { result.current.handleMessage({ topic: 'bt.scan.progress', requestId: id, phase: 'done', reason: 'stopped' }); });
+    expect(result.current.bluetooth.scan).toMatchObject({ phase: 'done', reason: 'stopped' });
+    act(() => { vi.advanceTimersByTime(8000); });
+    expect(result.current.bluetooth.scan.reason).toBe('stopped');
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('a Stop before any answer ends as stopped, never as an outdated satellite', () => {
+    const { result } = setup();
+    act(() => result.current.noteHealth());
+    act(() => { result.current.bluetooth.startScan(); });
+    act(() => { vi.advanceTimersByTime(1000); });
+    act(() => result.current.bluetooth.stopScan('back'));
+    expect(result.current.bluetooth.scan.optimistic).toBe(false);
+    act(() => { vi.advanceTimersByTime(8000); });
+    expect(result.current.bluetooth.scan).toMatchObject({ phase: 'done', reason: 'stopped' });
+    expect(warn).not.toHaveBeenCalledWith('fitness.bt.scan-no-response', expect.anything());
+  });
+
+  it('a slow first answer (up to 8 s: the satellite stops a stuck search first) is not "outdated"', () => {
+    const { result } = setup();
+    act(() => result.current.noteHealth());
+    let id;
+    act(() => { id = result.current.bluetooth.startScan(); });
+    act(() => { vi.advanceTimersByTime(6000); });
+    expect(result.current.bluetooth.scan.phase).toBe('starting');
+    act(() => { result.current.handleMessage({ topic: 'bt.scan.progress', requestId: id, phase: 'scanning', durationMs: 60000 }); });
+    act(() => { vi.advanceTimersByTime(3000); });
+    expect(result.current.bluetooth.scan.phase).toBe('scanning');
+  });
+
+  it('a search whose done never arrives ends 5 s after its end time', () => {
+    const { result } = setup();
+    let id;
+    act(() => { id = result.current.bluetooth.startScan(); });
+    act(() => { result.current.handleMessage({ topic: 'bt.scan.progress', requestId: id, phase: 'scanning', durationMs: 10000 }); });
+    act(() => { vi.advanceTimersByTime(14000); });
+    expect(result.current.bluetooth.scan.phase).toBe('scanning');
+    act(() => { vi.advanceTimersByTime(1500); });
+    expect(result.current.bluetooth.scan).toMatchObject({ phase: 'done', reason: 'no-response', devices: [] });
+  });
+
+  it('a bus reconnect ends an unfinished search (its done may have been lost)', () => {
+    const { result } = setup();
+    let id;
+    act(() => { id = result.current.bluetooth.startScan(); });
+    act(() => { result.current.handleMessage({ topic: 'bt.scan.progress', requestId: id, phase: 'scanning', durationMs: 60000 }); });
+    act(() => result.current.resetScan());
+    expect(result.current.bluetooth.scan).toMatchObject({ phase: 'done', reason: 'interrupted' });
+    act(() => result.current.resetScan());
+    expect(result.current.bluetooth.scan.reason).toBe('interrupted');
   });
 
   it('no answer from a live satellite means it needs an update (warn)', () => {
     const { result } = setup();
     act(() => result.current.noteHealth());
     act(() => { result.current.bluetooth.startScan(); });
-    act(() => { vi.advanceTimersByTime(5000); });
+    act(() => { vi.advanceTimersByTime(8000); });
     expect(result.current.bluetooth.scan).toMatchObject({ phase: 'done', reason: 'satellite-outdated' });
     expect(warn).toHaveBeenCalledWith('fitness.bt.scan-no-response', expect.objectContaining({ reason: 'satellite-outdated' }));
   });
@@ -62,14 +110,14 @@ describe('useFitnessBluetooth', () => {
   it('no answer and no health means the box is not answering', () => {
     const { result } = setup();
     act(() => { result.current.bluetooth.startScan(); });
-    act(() => { vi.advanceTimersByTime(5000); });
+    act(() => { vi.advanceTimersByTime(8000); });
     expect(result.current.bluetooth.scan.reason).toBe('no-response');
   });
 
   it('an old search timer never touches a newer search', () => {
     const { result } = setup();
     act(() => { result.current.bluetooth.startScan(); });
-    act(() => { vi.advanceTimersByTime(3000); });
+    act(() => { vi.advanceTimersByTime(6000); });
     let id2;
     act(() => { id2 = result.current.bluetooth.startScan(); });
     act(() => { vi.advanceTimersByTime(2500); });

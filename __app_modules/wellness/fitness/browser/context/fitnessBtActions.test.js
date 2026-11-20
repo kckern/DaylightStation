@@ -32,8 +32,29 @@ describe('fitnessBtActions', () => {
     const done = mergePairingProgress(err, { phase: 'done', requestId: 'p1', paired: [], reason: 'pair-failed' });
     expect(done.code).toBe('auth-failed');
     expect(done.device.name).toBe('R1');
-    expect(mergePairingProgress(cur, { phase: 'found', requestId: 'p2' }).mode).toBeUndefined();
-    expect(mergePairingProgress(cur, { phase: 'found', requestId: 'p2' }).device).toBeUndefined();
+  });
+  it('mergePairingProgress ignores another request, except a new window once this one is done', () => {
+    const p1 = { phase: 'scanning', requestId: 'p1', mode: 'address', optimistic: true };
+    // A late line from an older window (p0) never overwrites the one the screen waits on.
+    expect(mergePairingProgress(p1, { phase: 'error', requestId: 'p0', code: 'auth-failed' })).toBe(p1);
+    expect(mergePairingProgress(p1, { phase: 'done', requestId: 'p0', paired: [], reason: 'pair-failed' })).toBe(p1);
+    expect(mergePairingProgress(p1, { phase: 'scanning', requestId: 'p0' })).toBe(p1);
+    // Once p1 is done, another window's start is adopted (the backend route's repair).
+    const done = { phase: 'done', requestId: 'p1', paired: [], reason: 'busy' };
+    expect(mergePairingProgress(done, { phase: 'scanning', requestId: 'r9', mode: 'repair' })).toMatchObject({ phase: 'scanning', requestId: 'r9', mode: 'repair' });
+    expect(mergePairingProgress(done, { phase: 'found', requestId: 'r9' })).toBe(done);
+    expect(mergePairingProgress(null, { phase: 'scanning', requestId: 'r9' }).requestId).toBe('r9');
+  });
+  it('mergePairingProgress carries an error code into done only, not into later live phases', () => {
+    let s = { phase: 'scanning', requestId: 'p1', mode: 'address' };
+    s = mergePairingProgress(s, { phase: 'retry', requestId: 'p1', code: 'auth-failed', message: 'x' });
+    expect(s.code).toBe('auth-failed');
+    s = mergePairingProgress(s, { phase: 'pairing', requestId: 'p1' });
+    expect(s.code).toBeUndefined();
+    s = mergePairingProgress(s, { phase: 'passkey', requestId: 'p1', passkey: '123456' });
+    expect(s.code).toBeUndefined();
+    expect(mergePairingProgress(s, { phase: 'done', requestId: 'p1', paired: [], reason: 'pair-failed' }).code).toBe('auth-failed');
+    expect(mergePairingProgress(s, { phase: 'paired', requestId: 'p1' }).code).toBeUndefined();
   });
   it('mergePairingProgress flags an old satellite: an address request answered by a scanning in another mode', () => {
     const cur = { phase: 'scanning', requestId: 'p1', mode: 'address', optimistic: true };

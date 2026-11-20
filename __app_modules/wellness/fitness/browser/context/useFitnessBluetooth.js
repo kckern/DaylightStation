@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
 import {
-  ADDRESS_PAIR_MS, PAIR_WINDOW_MS, SCAN_ANSWER_MS, SCAN_WINDOW_MS,
+  ADDRESS_PAIR_MS, PAIR_WINDOW_MS, SCAN_ANSWER_MS, SCAN_END_GRACE_MS, SCAN_WINDOW_MS,
   buildInventoryRequest, buildPairRequest, buildRemoveRequest, buildScanRequest,
   mergePairingProgress, mergeScanProgress, scanSilenceReason,
 } from './fitnessBtActions.js';
@@ -80,11 +80,41 @@ export function useFitnessBluetooth({ send }) {
         } else {
           logger().info('fitness.bt.scan-progress', { requestId: data.requestId, phase: data.phase, reason: data.reason, message: data.message });
         }
-        setScan((cur) => mergeScanProgress(cur, data, Date.now()));
+        setScan((cur) => {
+          const next = mergeScanProgress(cur, data, Date.now());
+          if (data.phase === 'scanning' && next !== cur && next?.phase === 'scanning') watchScanEnd(next.requestId, next.endsAt);
+          return next;
+        });
         return true;
       default:
         return false;
     }
+  }, []);
+
+  // A search whose `done` never arrives (lost on the bus, satellite gone) ends
+  // SCAN_END_GRACE_MS after its end time, so the screen never counts forever.
+  function watchScanEnd(requestId, endsAt) {
+    const check = () => {
+      setScan((cur) => {
+        if (!cur || cur.requestId !== requestId || cur.phase === 'done') return cur;
+        if (cur.endsAt && Date.now() < cur.endsAt + SCAN_END_GRACE_MS) {
+          later(check, cur.endsAt + SCAN_END_GRACE_MS - Date.now());
+          return cur;
+        }
+        logger().warn('fitness.bt.scan-no-done', { requestId });
+        return { ...cur, phase: 'done', optimistic: false, reason: 'no-response', devices: [] };
+      });
+    };
+    later(check, Math.max(0, (Number(endsAt) || Date.now()) + SCAN_END_GRACE_MS - Date.now()));
+  }
+
+  /** The bus reconnected: a search still running here may have lost its `done`. */
+  const resetScan = useCallback(() => {
+    setScan((cur) => {
+      if (!cur || cur.phase === 'done') return cur;
+      logger().info('fitness.bt.scan-reset', { requestId: cur.requestId, phase: cur.phase });
+      return { ...cur, phase: 'done', optimistic: false, reason: 'interrupted', devices: [] };
+    });
   }, []);
 
   const noteHealth = useCallback(() => { lastHealthAt.current = Date.now(); }, []);
@@ -106,7 +136,10 @@ export function useFitnessBluetooth({ send }) {
     // from a live satellite means it predates searches.
     later(() => {
       setScan((cur) => {
-        if (!cur || cur.requestId !== requestId || !cur.optimistic) return cur;
+        if (!cur || cur.requestId !== requestId) return cur;
+        // Stopped before any answer: it is over, whatever the satellite's age.
+        if (cur.phase === 'stopping') return { ...cur, phase: 'done', optimistic: false, reason: 'stopped', devices: [] };
+        if (!cur.optimistic) return cur;
         const reason = scanSilenceReason({ lastHealthAt: lastHealthAt.current, now: Date.now() });
         logger().warn('fitness.bt.scan-no-response', { requestId, reason });
         return { ...cur, phase: 'done', optimistic: false, reason, devices: [] };
@@ -120,7 +153,7 @@ export function useFitnessBluetooth({ send }) {
     if (!cur || cur.phase === 'done' || cur.phase === 'stopping') return;
     post(buildScanRequest({ requestId: cur.requestId, action: 'stop' }));
     logger().info('fitness.bt.scan-stop', { requestId: cur.requestId, reason });
-    const next = { ...cur, phase: 'stopping' };
+    const next = { ...cur, phase: 'stopping', optimistic: false };
     scanRef.current = next;
     setScan(next);
   }, []);
@@ -159,5 +192,5 @@ export function useFitnessBluetooth({ send }) {
     inventory, scan, pairing, forgetResult, requestInventory, startScan, stopScan, pairAddress, forget,
   }), [inventory, scan, pairing, forgetResult, requestInventory, startScan, stopScan, pairAddress, forget]);
 
-  return { bluetooth, handleMessage, noteHealth, pairController };
+  return { bluetooth, handleMessage, noteHealth, pairController, resetScan };
 }

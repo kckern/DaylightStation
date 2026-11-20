@@ -5,7 +5,8 @@
 export const PAIR_WINDOW_MS = 60000;   // a configured pad's repair window
 export const ADDRESS_PAIR_MS = 30000;  // waiting for one picked device to show up again
 export const SCAN_WINDOW_MS = 60000;   // one nearby search
-export const SCAN_ANSWER_MS = 5000;    // a current satellite answers a search within this
+export const SCAN_ANSWER_MS = 8000;    // a current satellite answers a search within this (> its 5 s kill grace)
+export const SCAN_END_GRACE_MS = 5000; // a search with no `done` this long after its end time is over
 const HEALTH_FRESH_MS = 15000;         // fitness.transport.health arrives every 5 s
 const MODES = new Set(['repair', 'address']);
 
@@ -40,20 +41,30 @@ export function buildRemoveRequest({ requestId, address }) {
 }
 
 /**
- * Next pairing state for a `bt.pair.progress` message. Within one request the
- * window's mode, the device and the last error code carry forward, so `done`
- * still knows who failed and why (a `paired` result drops the code). A current
+ * Next pairing state for a `bt.pair.progress` message. Progress for another
+ * request is ignored (a late line from an older window must not overwrite the
+ * one the screen is waiting on), except that a new window's `scanning` is
+ * adopted once the current one is done (the backend route's repair has no
+ * browser request). Within one request the window's mode and the device carry
+ * forward, and the last error code carries into `done` only, so `done` still
+ * knows who failed and why (a `paired` result drops the code). A current
  * satellite's `scanning` echoes the requested mode; an address request
  * answered by a `scanning` in another mode (or none) met an older satellite,
  * which sets `satelliteOutdated` for the rest of that request.
  */
 export function mergePairingProgress(cur, data) {
+  const otherRequest = cur?.requestId != null && data?.requestId != null && data.requestId !== cur.requestId;
+  if (otherRequest && !(cur.phase === 'done' && data.phase === 'scanning')) return cur;
   const sameRequest = data?.requestId != null && cur?.requestId === data.requestId;
   const next = { ...data, mode: data?.mode ?? (sameRequest ? cur?.mode : undefined) };
+  if (data?.code != null) next.lastCode = data.code;
   if (sameRequest) {
     if (next.device == null && cur?.device) next.device = cur.device;
     const succeeded = data?.phase === 'paired' || (Array.isArray(data?.paired) && data.paired.length > 0);
-    if (next.code == null && cur?.code && !succeeded) next.code = cur.code;
+    // The last error code rides along as `lastCode` and surfaces as `code`
+    // on `done` only: a live phase after a retry (pairing, passkey) is not an error.
+    if (next.code == null && cur?.lastCode) next.lastCode = cur.lastCode;
+    if (data?.phase === 'done' && next.code == null && next.lastCode && !succeeded) next.code = next.lastCode;
   }
   const outdated = sameRequest && (
     cur?.satelliteOutdated === true
