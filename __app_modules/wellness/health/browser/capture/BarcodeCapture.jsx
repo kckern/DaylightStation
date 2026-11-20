@@ -10,7 +10,7 @@ export function BarcodeCapture({ open, ...props }) {
   return open ? <BarcodeSession {...props} /> : null;
 }
 
-function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknown, onUndo, undoBusy, undoError, bucket, meals }) {
+function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknown, onUndo, undoBusy, bucket, meals }) {
   const videoRef = useRef(null);
   const audio = useRef(null);
   const live = useRef(false);
@@ -24,7 +24,9 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
   const [error, setError] = useState(null);
   const [read, setRead] = useState(null);
   const [result, setResult] = useState(null);
-  const [undone, setUndone] = useState(false);
+  const [undoFeedback, setUndoFeedback] = useState(null);
+  const currentUndo = undoFeedback?.token === result?.undoToken ? undoFeedback : null;
+  const undone = currentUndo?.undone;
   const [target, setTarget] = useState(bucket);
   const [generation, setGeneration] = useState(0);
 
@@ -123,7 +125,7 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
     setError(null);
     setRead(null);
     setResult(null);
-    setUndone(false);
+    setUndoFeedback(null);
     setPhase('scanning');
   };
 
@@ -147,6 +149,15 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
     } finally {
       saving.current = false;
     }
+  };
+
+  const undoLogged = async () => {
+    const token = result.undoToken;
+    setUndoFeedback(null);
+    const success = await onUndo(token, error => {
+      if (live.current) setUndoFeedback({ token, error });
+    });
+    if (success && live.current) setUndoFeedback({ token, undone: true });
   };
 
   return (
@@ -187,7 +198,7 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
         <NativeSelect label="Meal" data={meals} value={target} onChange={event => setTarget(event.target.value)} />
       </>}
       {phase === 'unknown' && <Text>No food with a usable portion was found for this barcode.</Text>}
-      {phase === 'logged' && undoError && <Text role="alert" c="red" size="sm">{undoError}</Text>}
+      {phase === 'logged' && currentUndo?.error && <Text role="alert" c="red" size="sm">{currentUndo.error}</Text>}
       <Group mt="md">
         {(['scanning', 'review', 'unknown', 'lookup-error', 'paused'].includes(phase)) && <Button variant="subtle" onClick={close}>Cancel</Button>}
         {(['looking-up', 'committing', 'uncertain'].includes(phase)) && <Button variant="subtle" onClick={close}>Back</Button>}
@@ -198,7 +209,7 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
         {phase === 'logged' && <>
           {!undone && <Button variant="subtle" onClick={() => onView(result)}>View in Health</Button>}
           {!undone && result.undoToken && <Button variant="subtle" aria-label="Undo logged item" loading={undoBusy}
-            onClick={async () => { if (await onUndo(result.undoToken) && live.current) setUndone(true); }}>Undo</Button>}
+            onClick={undoLogged}>Undo</Button>}
           <Button onClick={onDone}>Done</Button>
         </>}
       </Group>

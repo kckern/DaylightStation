@@ -9,7 +9,9 @@ export function createHealthOperations({ userId, durableStorage }) {
     for (let index = 0; index < (durableStorage?.length || 0); index++) {
       const key = durableStorage.key(index);
       if (!key?.startsWith(storagePrefix)) continue;
-      const operation = JSON.parse(durableStorage.getItem(key));
+      let operation;
+      try { operation = JSON.parse(durableStorage.getItem(key)); }
+      catch { continue; }
       if (operation?.userId !== userId || operation.kind !== 'barcode-commit' || key !== storagePrefix + operation.id ||
         operation.request?.path !== 'api/v1/health/nutrition/barcode-commit' ||
         operation.request?.method !== 'POST' || operation.request.body?.operationId !== operation.id) continue;

@@ -321,6 +321,33 @@ describe('TodayView barcode review', () => {
     await waitFor(() => expect(calls('api/v1/health/nutrition/meal-undo')[0][1]).toMatchObject({ undoToken: 'meal-scan' }));
     expect(screen.getByRole('button', { name: 'Scan another' })).toBeTruthy();
   });
+  it('keeps the open barcode Undo when an earlier commit finishes last', async () => {
+    const complete = [];
+    commitBarcode = () => new Promise(resolve => complete.push(resolve));
+    const result = (name, undoToken) => ({ committed: true, undoToken, entryIds: [name], items: [food(name)] });
+    mealUndo = vi.fn().mockRejectedValueOnce(new Error('Lost Undo reply'))
+      .mockResolvedValue({ committed: true, affectedIds: [], affectedDates: [] });
+    await open({ session: true });
+    await detect();
+    fireEvent.click(await screen.findByRole('button', { name: 'Log item' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await detect();
+    fireEvent.click(await screen.findByRole('button', { name: 'Log item' }));
+    await act(async () => complete[1](result('Granola', 'meal-second')));
+    const sheet = within(screen.getByRole('dialog', { name: 'Scan barcode' }));
+    fireEvent.click(sheet.getByRole('button', { name: 'Undo logged item' }));
+    await sheet.findByRole('alert');
+    await act(async () => complete[0](result('Oats', 'meal-first')));
+    fireEvent.click(sheet.getByRole('button', { name: 'Undo logged item' }));
+    expect(await sheet.findByText('Log undone')).toBeTruthy();
+    const undoRequests = calls('api/v1/health/nutrition/meal-undo').map(([, body]) => body);
+    expect(undoRequests).toEqual([
+      { undoToken: 'meal-second', operationId: expect.any(String) },
+      { undoToken: 'meal-second', operationId: undoRequests[0].operationId },
+    ]);
+    fireEvent.click(sheet.getByRole('button', { name: 'Done' }));
+    expect(await toasts().findByText(/^Added Oats/)).toBeTruthy();
+  });
   it('retries an uncertain reply with the same payload and uses a new ID for another scan', async () => {
     const success = commitBarcode;
     commitBarcode = vi.fn().mockRejectedValueOnce(new Error('Lost response')).mockImplementation(success);

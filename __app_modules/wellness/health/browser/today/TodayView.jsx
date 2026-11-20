@@ -154,7 +154,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     try { await orphanRetry.run(); setOrphanRetry(null); logger.info('voice.retry_handoff.sent'); }
     catch (err) { setOrphanRetry(previous => previous && ({ ...previous, busy: false, error: err?.message || 'Still could not send it.' })); }
   };
-  const mealUndoOperation = useRef(null);   // bucketId | null — F5 renders the combobox here
+  const mealUndoOperations = useRef(new Map());
   const [editingRow, setEditingRow] = useState(null); // row | null — F6 renders the edit sheet
   const [captureMode, setCaptureMode] = useState(() => searchParams.get('capture') === 'barcode' ? 'barcode' : null);
   const barcodeShortcut = useRef(searchParams.get('capture') === 'barcode');
@@ -383,7 +383,6 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     return { ...undo, label: capturePlace(what, landed, mealId), offer: { logId: result.logId, ids, what, date: landed } };
   };
   const showAdded = undo => {
-    if (undo.token) mealUndoOperation.current = null;
     if (undo.offer) logger.info('capture.offer', { logId: undo.offer.logId ?? null, count: undo.offer.ids.length, date: undo.offer.date, undo: Boolean(undo.token) });
     setCaptureToasts(state => announceCapture(state, undo));
   };
@@ -452,7 +451,6 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     // A replayed reply can come without the flag the capture toast reads.
     if (result.kind === 'added' && offerAddedFood({ ...result, committed: true }, asked, { added: true })) return;
     if (!result.undoToken) { setDayNotice(result.message || null); return; }
-    mealUndoOperation.current = null;
     const rows = result.items || [];
     const moved = { ids: [...new Set([...(result.entryIds || []), ...(result.affectedIds || []), ...rows.map(entryId)].map(String))],
       logIds: [...new Set(rows.map(row => row.logId).filter(Boolean))], toDate: result.toDate ?? null };
@@ -615,21 +613,35 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   // `day.loading` false the whole time, so it never re-triggers this.
   const coldLoading = day.loading && !day.items.length;
 
-  const undoMealChange = async (tokenToUndo) => {
-    if (undoPending.current || !mealUndo || (typeof tokenToUndo === 'string' && mealUndo.token !== tokenToUndo)) return false;
+  const undoMealChange = async (tokenToUndo, reportFailure) => {
+    const token = typeof tokenToUndo === 'string' ? tokenToUndo : mealUndo?.token;
+    if (undoPending.current || !token) return false;
     undoPending.current = true; setUndoBusy(true);
-    mealUndoOperation.current ??= crypto.randomUUID();
-    const { token } = mealUndo, operationId = mealUndoOperation.current;
+    const operationId = mealUndoOperations.current.get(token) || crypto.randomUUID();
+    mealUndoOperations.current.set(token, operationId);
     const onThisUndo = change => setCaptureToasts(state => (state.undo?.token === token ? { ...state, undo: change(state.undo) } : state));
     onThisUndo(undo => ({ ...undo, failure: null }));
     try {
-      // In the continuation, so a retry from the page's toast finishes it the same way.
-      await foodAPI.withContinuation('api/v1/health/nutrition/meal-undo', { undoToken: token, operationId }, 'POST', () => { setCaptureToasts(state => afterMealUndo(state, token)); day.reload(); });
+      // The sheet can outlive the page's latest Undo toast. Each token owns its retry.
+      await foodAPI.withContinuation('api/v1/health/nutrition/meal-undo', { undoToken: token, operationId }, 'POST', () => {
+        mealUndoOperations.current.delete(token);
+        setCaptureToasts(state => afterMealUndo(state, token));
+        day.reload();
+      });
       return true;
     } catch (err) {
       logger.warn('meal-undo.failed', { status: err?.status, error: err?.message });
-      if (isDefiniteRefusal(err)) { foodAPI.release(operationId); mealUndoOperation.current = null; setCaptureNotice(refusalReason(err) || "Couldn't undo that."); }
-      else onThisUndo(undo => ({ ...undo, failure: "Couldn't confirm that undo. Try again when connected." }));
+      if (isDefiniteRefusal(err)) {
+        foodAPI.release(operationId);
+        mealUndoOperations.current.delete(token);
+        const failure = refusalReason(err) || "Couldn't undo that.";
+        if (reportFailure) reportFailure(failure);
+        else setCaptureNotice(failure);
+      } else {
+        const failure = "Couldn't confirm that undo. Try again when connected.";
+        reportFailure?.(failure);
+        onThisUndo(undo => ({ ...undo, failure }));
+      }
       return false;
     } finally { undoPending.current = false; setUndoBusy(false); }
   };
@@ -646,7 +658,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   };
   // A move with no known outcome is reported by whatever is showing it. Anything
   // no longer showing one falls to the page's toast, which can retry or release it.
-  const shownMoves = new Set([sheetMove, moves.undo?.operationId, mealUndo ? mealUndoOperation.current : null,
+  const shownMoves = new Set([sheetMove, moves.undo?.operationId, mealUndo ? mealUndoOperations.current.get(mealUndo.token) : null,
     ...[mealUndo, ...captureToasts.offers].map(shown => shown?.retryMove?.operationId)].filter(Boolean));
   const unresolvedMoves = moves.unresolved.filter(move => !shownMoves.has(move.id));
   // A portion edit's error is shown on its own row (EntryRow). The one case
@@ -725,7 +737,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
       {coachLine ? <Button variant="subtle" onClick={() => onCoachTap()}>{coachLine}</Button> : null}
       <BarcodeCapture open={active && captureMode === 'barcode'} bucket={barcodeTargetBucket || currentMealBucketId()}
         meals={BUCKETS.map(meal => ({ value: meal.id, label: meal.label }))}
-        undoBusy={undoBusy} undoError={mealUndo?.failure} onUndo={undoMealChange}
+        undoBusy={undoBusy} onUndo={undoMealChange}
         onClose={closeBarcode}
         onDecode={(upc, _bucket, signal) => nutrition.lookupBarcode(upc, signal)}
         onConfirm={prepared => nutrition.commitBarcode({ ...prepared, date: barcodeDate }, result => {

@@ -60,3 +60,20 @@ it('restores unresolved barcode commands per user without overwriting a concurre
     localStorage.removeItem('daylight.health.barcode-operations:barcode-test:second');
   }
 });
+
+it('restores valid barcode commands on both sides of malformed storage', () => {
+  const userId = 'barcode-corrupt';
+  const prefix = `daylight.health.barcode-operations:${userId}:`;
+  const options = { userId, durableStorage: localStorage };
+  const store = createHealthOperations(options);
+  const prepare = id => ({ ...intent(id, []), kind: 'barcode-commit',
+    request: { path: 'api/v1/health/nutrition/barcode-commit', method: 'POST', body: { operationId: id } } });
+  try {
+    store.begin(prepare('first'));
+    localStorage.setItem(prefix + 'broken', '{');
+    store.begin(prepare('last'));
+    expect([...createHealthOperations(options).getSnapshot().operations.keys()]).toEqual(['first', 'last']);
+  } finally {
+    for (const id of ['first', 'broken', 'last']) localStorage.removeItem(prefix + id);
+  }
+});
