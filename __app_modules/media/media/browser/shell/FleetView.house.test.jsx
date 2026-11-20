@@ -99,6 +99,33 @@ describe('FleetView house rows', () => {
     await waitFor(() => expect(controllers['speaker-white'].sessionControls.putBack).toHaveBeenCalledWith('n1'));
   });
 
+  it('admits one pending Put it back per note, then allows retry after refusal', async () => {
+    const held = Promise.withResolvers();
+    controllers['speaker-white'] = { sessionControls: { putBack: vi.fn()
+      .mockImplementationOnce(() => held.promise)
+      .mockResolvedValueOnce({ ok: false, error: 'refused' })
+      .mockResolvedValueOnce({ ok: true }) }, transport: {} };
+    renderFleet();
+    const putBack = screen.getByTestId('house-put-back-speaker-white-n1');
+    fireEvent.click(putBack);
+    fireEvent.click(putBack);
+    expect(controllers['speaker-white'].sessionControls.putBack).toHaveBeenCalledTimes(1);
+    expect(putBack).toBeDisabled();
+
+    held.resolve({ ok: true });
+    await waitFor(() => expect(recordLocal).toHaveBeenCalledTimes(1));
+    expect(recordLocal).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'putBack', phase: 'confirmed' }));
+    await waitFor(() => expect(putBack).toBeEnabled());
+
+    fireEvent.click(putBack);
+    await waitFor(() => expect(recordLocal).toHaveBeenCalledTimes(2));
+    expect(recordLocal).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'putBack', phase: 'failed' }));
+    fireEvent.click(putBack);
+    await waitFor(() => expect(recordLocal).toHaveBeenCalledTimes(3));
+    expect(controllers['speaker-white'].sessionControls.putBack).toHaveBeenCalledTimes(3);
+    expect(recordLocal).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'putBack', phase: 'confirmed' }));
+  });
+
   it('offers "and turn the screen off" on a screen with device control, never on a speaker', async () => {
     controllers['livingroom-tv'] = { transport: { stop: vi.fn(async () => ({ ok: true })) } };
     renderFleet();

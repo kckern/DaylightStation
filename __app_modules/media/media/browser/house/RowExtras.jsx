@@ -11,6 +11,7 @@
 import React, { useEffect, useReducer, useState } from 'react';
 import { Button, Group, Menu, Text } from '@mantine/core';
 import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
+import { useKeyedSubmission } from '@/lib/ui/useKeyedSubmission.js';
 import { IconChevronDown, IconPlayerStopFilled, IconPower, IconArrowBackUp } from '@tabler/icons-react';
 import { startStatusLine, startedByText, rowNotes } from "./houseCopy.js";
 import { useStartedBy } from "./useHouseSignals.js";
@@ -84,6 +85,7 @@ export function AddOnlyNotice({ deviceId, name, controls }) {
 
 export function RowNotes({ deviceId, name, controls }) {
   const { putBack } = useScreenActions();
+  const { pending, run } = useKeyedSubmission();
   const notes = rowNotes(controls);
   const nextExpiry = Math.min(...(controls?.notes ?? [])
     .map((n) => Date.parse(n.putBack?.availableUntil ?? ''))
@@ -92,23 +94,27 @@ export function RowNotes({ deviceId, name, controls }) {
   if (!notes.length) return null;
   return (
     <ul className="house-notes" data-testid={`house-notes-${deviceId}`} aria-label={`Changes to ${name}`}>
-      {notes.map((note) => (
-        <li key={note.id} className="house-note" data-testid={`house-note-${deviceId}-${note.id}`}>
-          <Text size="xs" className="house-note-text">{note.text}</Text>
-          {note.putBack && (
-            <Button
-              size="xs"
-              variant="light"
-              className="house-action"
-              leftSection={<IconArrowBackUp size={14} aria-hidden />}
-              data-testid={`house-put-back-${deviceId}-${note.id}`}
-              onClick={() => putBack({ deviceId, name, noteId: note.id })}
-            >
-              Put it back
-            </Button>
-          )}
-        </li>
-      ))}
+      {notes.map((note) => {
+        const submissionKey = JSON.stringify([deviceId, note.id]);
+        return (
+          <li key={note.id} className="house-note" data-testid={`house-note-${deviceId}-${note.id}`}>
+            <Text size="xs" className="house-note-text">{note.text}</Text>
+            {note.putBack && (
+              <Button
+                size="xs"
+                variant="light"
+                className="house-action"
+                leftSection={<IconArrowBackUp size={14} aria-hidden />}
+                data-testid={`house-put-back-${deviceId}-${note.id}`}
+                loading={pending.has(submissionKey)}
+                onClick={() => { void run(submissionKey, () => putBack({ deviceId, name, noteId: note.id })); }}
+              >
+                Put it back
+              </Button>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }

@@ -94,6 +94,74 @@ test('Media can dismiss the slideshow stop guard before keeping the music on Fle
   await expect(stopAll).toHaveCount(0);
 });
 
+test('Media Fleet admits one Put it back command at a time and lets the user retry a refusal', async ({ page }) => {
+  const pendingCommands = [];
+  const item = { contentId: 'plex:42', title: 'Bedroom mix', format: 'audio', duration: 180 };
+  let socket;
+  let subscribed = false;
+  const publish = () => {
+    if (!socket) return;
+    socket.send(JSON.stringify({
+      topic: 'device-state:speaker-white', deviceId: 'speaker-white', ts: new Date().toISOString(),
+      snapshot: {
+        sessionId: 'bedroom', state: 'playing', position: 12, duration: item.duration, currentItem: item,
+        queue: { items: [item], currentIndex: 0 },
+        meta: { playbackOwner: { ownerInstanceId: 'speaker-white', playbackRevision: 1 } },
+        controls: { notes: [{ id: 'note-1', kind: 'paused', label: 'Paused by TV', at: new Date().toISOString(),
+          putBack: { availableUntil: new Date(Date.now() + 60_000).toISOString() } }] },
+      },
+    }));
+  };
+
+  await page.addInitScript(() => localStorage.setItem('media-app.first-use-done', 'done'));
+  await page.routeWebSocket('**/ws', connection => {
+    socket = connection;
+    connection.onMessage(raw => {
+      if (JSON.parse(raw).action === 'subscribe') subscribed = true;
+    });
+  });
+  await page.route('**/api/**', async route => {
+    const request = route.request();
+    const { pathname } = new URL(request.url());
+    if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    if (pathname.endsWith('/device/config')) return route.fulfill({ json: { devices: {
+      'speaker-white': { name: 'Bedroom speaker', type: 'speaker', fleet: true },
+    } } });
+    if (pathname === '/api/v1/media/screens') return route.fulfill({ json: { screens: [] } });
+    if (request.method() === 'POST' && pathname === '/api/v1/device/speaker-white/session/put-back') {
+      pendingCommands.push({ route, commandId: request.postDataJSON().commandId });
+      return;
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto('/media?view=fleet');
+  await expect.poll(() => Boolean(socket && subscribed)).toBe(true);
+  publish();
+  const button = page.getByTestId('house-put-back-speaker-white-note-1');
+  await expect(button).toBeVisible();
+  await button.click();
+  await expect.poll(() => pendingCommands.length).toBe(1);
+  await expect(button).toBeDisabled();
+  expect(pendingCommands).toHaveLength(1);
+
+  const [refused] = pendingCommands;
+  await refused.route.fulfill({ json: { ok: true } });
+  socket.send(JSON.stringify({ topic: 'device-ack:speaker-white', deviceId: 'speaker-white',
+    commandId: refused.commandId, ok: false, error: 'PUT_BACK_UNAVAILABLE' }));
+  await expect(button).toBeEnabled();
+
+  await button.click();
+  await expect.poll(() => pendingCommands.length).toBe(2);
+  const accepted = pendingCommands[1];
+  await accepted.route.fulfill({ json: { ok: true } });
+  socket.send(JSON.stringify({ topic: 'device-ack:speaker-white', deviceId: 'speaker-white',
+    commandId: accepted.commandId, ok: true }));
+  await expect(button).toBeEnabled();
+  expect(pendingCommands.map(({ commandId }) => commandId)).toHaveLength(2);
+  expect(new Set(pendingCommands.map(({ commandId }) => commandId)).size).toBe(2);
+});
+
 test('Media Home and the open cast picker share screen names and rooms', async ({ page }) => {
   const item = {
     contentId: 'plex:123', title: 'Fixture Film', type: 'movie',
