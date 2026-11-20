@@ -108,6 +108,21 @@ describe('RssHeadlineHarvester', () => {
     expect(result.items.map((item) => [item.title, item.link])).toEqual([['Fine', 'https://example.com/fine']]);
   });
 
+  test('drops a headline image that is relative or points into /api or /admin', async () => {
+    mockRssParser.parseURL.mockResolvedValue({
+      title: 'Hostile images',
+      items: [
+        { title: 'Relative', link: 'https://example.com/1', 'media:content': [{ '$': { url: '/api/v1/home/script/run', type: 'image/jpeg' } }] },
+        { title: 'Absolute', link: 'https://example.com/2', 'media:content': [{ '$': { url: 'https://app.example.test/api/v1/admin/x', type: 'image/jpeg' } }] },
+        { title: 'Fine', link: 'https://example.com/3', 'media:content': [{ '$': { url: 'https://cdn.example/pic.jpg', type: 'image/jpeg' } }] },
+      ],
+    });
+    const result = await harvester.harvest({ id: 'test', label: 'Test', url: 'http://example.com/rss' });
+    expect(result.items.map((item) => [item.title, item.image ?? null])).toEqual([
+      ['Relative', null], ['Absolute', null], ['Fine', 'https://cdn.example/pic.jpg'],
+    ]);
+  });
+
   test('includes imageWidth and imageHeight from media:content attributes', async () => {
     mockRssParser.parseURL.mockResolvedValue({
       title: 'Feed with image dims',

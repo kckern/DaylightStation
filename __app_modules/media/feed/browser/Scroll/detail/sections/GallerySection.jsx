@@ -1,3 +1,4 @@
+import { safeImage } from '../../cards/utils.js';
 export default function GallerySection({ data, onNavigateToItem }) {
   if (!data?.items?.length) return null;
 
@@ -24,8 +25,8 @@ export default function GallerySection({ data, onNavigateToItem }) {
             background: 'transparent',
           }}
         >
-          <img
-            src={item.image}
+          {safeImage(item.image) && <img
+            src={safeImage(item.image)}
             alt=""
             loading="lazy"
             decoding="async"
@@ -35,7 +36,7 @@ export default function GallerySection({ data, onNavigateToItem }) {
               objectFit: 'cover',
               display: 'block',
             }}
-          />
+          />}
         </button>
       ))}
     </div>

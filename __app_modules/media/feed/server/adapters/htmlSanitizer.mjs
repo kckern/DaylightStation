@@ -14,6 +14,7 @@
  */
 
 import sanitizeHtml from 'sanitize-html';
+import { webLink, externalImageLink } from '../../shared/webLink.mjs';
 
 // Tags we allow through. Deliberately narrow: text formatting, lists,
 // links, images, tables, and code blocks — nothing that can execute or
@@ -47,16 +48,31 @@ const SANITIZE_CONFIG = {
   nonTextTags: ['script', 'style', 'textarea', 'noscript', 'iframe', 'object', 'embed', 'form', 'svg', 'math'],
   // Force safe target/rel on external links so they can't hijack the opener
   // or leak referrer.
+  // Links and images must be absolute http(s): a relative URL resolves against
+  // the app's own origin, where an <img> or a click would carry the household
+  // member's trust to an action GET. Images under /api or /admin on any host
+  // are dropped too (the app is reached by several names).
   transformTags: {
-    a: (tagName, attribs) => ({
-      tagName: 'a',
-      attribs: {
-        ...attribs,
-        target: '_blank',
-        rel: 'noopener noreferrer nofollow',
-      },
-    }),
+    a: (tagName, attribs) => {
+      const { href, ...rest } = attribs;
+      const link = webLink(href);
+      return {
+        tagName: 'a',
+        attribs: {
+          ...rest,
+          ...(link ? { href: link } : {}),
+          target: '_blank',
+          rel: 'noopener noreferrer nofollow',
+        },
+      };
+    },
+    img: (tagName, attribs) => {
+      const { src, ...rest } = attribs;
+      const image = externalImageLink(src);
+      return { tagName: 'img', attribs: image ? { ...rest, src: image } : rest };
+    },
   },
+  exclusiveFilter: (frame) => frame.tag === 'img' && !frame.attribs.src,
   // Disallow inline styles outright.
   allowedStyles: {},
 };

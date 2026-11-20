@@ -7,6 +7,8 @@
  * origin. __docs/reference/core/network-exposure.md (Cross-site requests).
  */
 
+import { routePathWithin } from '../../../../shared/contracts/http/routePath.mjs';
+
 /**
  * The link, trimmed, when it is an absolute http(s) URL; else null. Returned
  * as given rather than re-serialized: harvested headline ids hash the link.
@@ -39,4 +41,73 @@ export function frameableLink(value, appOrigin) {
   let own = null;
   try { own = new URL(appOrigin).origin; } catch { own = null; }
   return own && new URL(link).origin === own ? null : link;
+}
+
+// Paths an <img> may load from this app's own origin: the read-only image
+// endpoints the app's own feed sources (Immich, Plex, Komga, Reddit, ABS,
+// Libby, icons) point at. Anything else there, `/api/...` above all, could be
+// an action GET, and a same-origin <img> carries the household member's trust.
+const APP_IMAGE_PREFIXES = [
+  '/api/v1/proxy/plex/library/metadata',
+  '/api/v1/proxy/plex/photo',
+  '/api/v1/proxy/immich/assets',
+  '/api/v1/proxy/komga',
+  '/api/v1/proxy/reddit',
+  '/api/v1/proxy/abs/items',
+  '/api/v1/proxy/libby/cover',
+  '/api/v1/proxy/media',
+  '/api/v1/static',
+  '/api/v1/feed/icon',
+  '/api/v1/feed/image',
+];
+const APP_PATH_PREFIXES = ['/api', '/admin'];
+const IMAGE_PROXY = '/api/v1/feed/image?url=';
+
+/** The path a browser would request: dot segments resolved, as given otherwise. */
+function browserPath(path) {
+  try { return new URL(path, 'http://placeholder.invalid').pathname; } catch { return null; }
+}
+
+function within(path, prefixes) {
+  const resolved = browserPath(path);
+  return resolved !== null && prefixes.some((prefix) => routePathWithin(resolved, prefix));
+}
+
+/**
+ * An image URL from someone else's feed, at ingest: an absolute http(s) URL
+ * whose path is not under `/api` or `/admin` on any host (the app is reached
+ * by several names, and the server cannot tell which a feed meant). Else null.
+ */
+export function externalImageLink(value) {
+  const link = webLink(value);
+  if (!link) return null;
+  return within(new URL(link).pathname, APP_PATH_PREFIXES) ? null : link;
+}
+
+/**
+ * What an <img> in the feed may load, or null to show none.
+ * - A path on this app's origin (relative, or absolute on `appOrigin`): only
+ *   the read-only image endpoints above.
+ * - An http(s) URL on another host: as given, unless its path is under `/api`
+ *   or `/admin` (it may be this app under another name); that one goes through
+ *   the server's image proxy, whose SSRF guard refuses private targets.
+ * - `data:image/...`: as given (no request).
+ * @param {string} value
+ * @param {string} appOrigin - the page's origin (`window.location.origin`)
+ */
+export function feedImageSrc(value, appOrigin) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^data:image\//i.test(trimmed)) return trimmed;
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//')) {
+    return within(trimmed.split(/[?#]/)[0], APP_IMAGE_PREFIXES) ? trimmed : null;
+  }
+  const link = webLink(trimmed);
+  if (!link) return null;
+  const url = new URL(link);
+  let own = null;
+  try { own = new URL(appOrigin).origin; } catch { own = null; }
+  if (own && url.origin === own) return within(url.pathname, APP_IMAGE_PREFIXES) ? link : null;
+  return within(url.pathname, APP_PATH_PREFIXES) ? `${IMAGE_PROXY}${encodeURIComponent(link)}` : link;
 }

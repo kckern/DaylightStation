@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { formatAge, proxyIcon, proxyImage, colorFromLabel } from "../cards/utils.js";
+import { formatAge, proxyIcon, proxyImage, colorFromLabel, safeImage } from "../cards/utils.js";
 import { renderSection } from "./sections/index.jsx";
 import { feedLog } from "../feedLog.js";
 import FeedPlayer from "../../players/FeedPlayer.jsx";
@@ -13,7 +13,7 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
   const iconUrl = proxyIcon(item.meta?.sourceIcon);
   const borderColor = colorFromLabel(sourceName);
   const age = formatAge(item.timestamp);
-  const heroImage = item.image || ogImage;
+  const heroImage = safeImage(item.image) || safeImage(ogImage);
   const isYouTube = item.contentType === 'youtube' && item.meta?.videoId;
   const subtitle = isYouTube ? null : (item.body || ogDescription);
   const hasArticle = sections.length > 0 && !loading;

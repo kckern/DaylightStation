@@ -3,6 +3,7 @@ import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import "./Headlines.scss";
 import { webLink } from "../../shared/webLink.mjs";
+import { safeImage } from "../Scroll/cards/utils.js";
 
 // Default neutral color palette (used if no col_colors in config)
 const DEFAULT_COL_COLORS = [
@@ -117,7 +118,7 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, o
                     )}
                     <span className="headline-tooltip-source">{source.label}</span>
                   </div>
-                  {item.image && <img className="headline-tooltip-image" src={item.image} alt="" loading="lazy" decoding="async" />}
+                  {safeImage(item.image) && <img className="headline-tooltip-image" src={safeImage(item.image)} alt="" loading="lazy" decoding="async" />}
                   <div className="headline-tooltip-title">{smartQuotes(item.title)}</div>
                   {desc && <div className="headline-tooltip-desc">{smartQuotes(desc)}</div>}
                 </div>}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { formatAge, proxyIcon, proxyImage, isImageUrl } from "./utils.js";
+import { formatAge, proxyIcon, proxyImage, isImageUrl, safeImage } from "./utils.js";
 import { getBodyModule } from "./bodies/index.js";
 import { getContentPlugin } from "../../contentPlugins/index.js";
 import { feedLog } from "../feedLog.js";
@@ -42,7 +42,9 @@ const PLACEHOLDER_SVG = `data:image/svg+xml,${encodeURIComponent(
   </svg>`
 )}`;
 
-function HeroImage({ src, thumbnail, feedItemId, title }) {
+function HeroImage({ src: rawSrc, thumbnail: rawThumbnail, feedItemId, title }) {
+  const src = safeImage(rawSrc);
+  const thumbnail = safeImage(rawThumbnail);
   const proxied = proxyImage(src);
   const [imgSrc, setImgSrc] = useState(thumbnail || src);
   const [phase, setPhase] = useState(thumbnail ? 'thumbnail' : 'original');

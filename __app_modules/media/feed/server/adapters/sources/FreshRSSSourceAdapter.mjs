@@ -18,6 +18,7 @@
  */
 
 import { IFeedSourceAdapter, CONTENT_TYPES } from "../../application/ports/IFeedSourceAdapter.mjs";
+import { externalImageLink } from '../../../shared/webLink.mjs';
 
 export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
   #freshRSSAdapter;
@@ -176,6 +177,7 @@ export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
   #extractImage(html) {
     if (!html) return null;
     const match = html.match(/<img[^>]+src=["']([^"']+)["']/i);
-    return match ? match[1] : null;
+    // Someone else's HTML: only an http(s) image outside /api and /admin.
+    return match ? externalImageLink(match[1]) : null;
   }
 }

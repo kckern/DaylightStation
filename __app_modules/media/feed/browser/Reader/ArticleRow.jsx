@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import DOMPurify from 'dompurify';
-import { colorFromLabel } from "../Scroll/cards/utils.js";
+import { colorFromLabel, safeImage } from "../Scroll/cards/utils.js";
 import FeedPlayer from "../players/FeedPlayer.jsx";
 import { useFeedPlayer } from "../players/FeedPlayerContext.jsx";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
@@ -62,7 +62,7 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
   // Strip emojis from preview text
   const cleanPreview = (article.preview || '').replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '').replace(/\s+/g, ' ').trim();
 
-  const faviconUrl = article.iconUrl || null;
+  const faviconUrl = safeImage(article.iconUrl);
 
   return (
     <div className={`article-row ${expanded ? 'expanded' : ''} ${(article.state?.isRead ?? article.isRead) ? 'read' : 'unread'}`}>

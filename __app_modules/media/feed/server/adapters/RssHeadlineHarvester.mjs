@@ -7,7 +7,7 @@
  */
 
 import { Headline } from "../domain/entities/Headline.mjs";
-import { webLink } from '../../shared/webLink.mjs';
+import { webLink, externalImageLink } from '../../shared/webLink.mjs';
 
 /**
  * Known generic default/placeholder image URLs used by specific news sources.
@@ -54,8 +54,9 @@ export class RssHeadlineHarvester {
             });
             const entry = this.#dehydrate(headline);
             const imageData = this.#extractImageWithDims(item);
-            if (imageData) {
-              entry.image = imageData.url;
+            // Someone else's feed: only an http(s) image outside /api and /admin.
+            if (imageData && externalImageLink(imageData.url)) {
+              entry.image = externalImageLink(imageData.url);
               if (imageData.width) entry.imageWidth = imageData.width;
               if (imageData.height) entry.imageHeight = imageData.height;
             }
