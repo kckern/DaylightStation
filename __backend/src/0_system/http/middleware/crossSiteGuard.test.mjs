@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import express from 'express';
 import cors from 'cors';
 import request from 'supertest';
-import { crossSiteGuard, crossSiteRefusal, corsOptionsFor, originAllowList, normalizeOrigin } from './crossSiteGuard.mjs';
+import { crossSiteGuard, crossSiteRefusal, corsOptionsFor, originAllowList, normalizeOrigin, webSocketOriginRefusal } from './crossSiteGuard.mjs';
 
 function build({ allowedOrigins = [], trustProxy = null, logger = null } = {}) {
   const app = express();
@@ -156,5 +156,50 @@ describe('crossSiteGuard', () => {
     expect(crossSiteRefusal(req({ host: HOST }))).toBeNull();
     expect(normalizeOrigin('https://A.example:443/x')).toBe('https://a.example');
     expect(normalizeOrigin('null')).toBeNull();
+  });
+});
+
+describe('webSocketOriginRefusal', () => {
+  // A bare IncomingMessage, as `ws` hands it to verifyClient: headers only.
+  const upgrade = (headers) => ({ method: 'GET', headers });
+  const allowed = originAllowList(['https://partner.example']);
+
+  it('accepts a client that sends no Origin (Node ws, Python websockets, native apps)', () => {
+    expect(webSocketOriginRefusal(upgrade({ host: HOST }))).toBeNull();
+    expect(webSocketOriginRefusal(upgrade({ host: HOST, origin: '' }))).toBeNull();
+  });
+
+  it('accepts a non-web Origin: arduinoWebSockets firmware sends file://', () => {
+    expect(webSocketOriginRefusal(upgrade({ host: '10.0.0.10:3111', origin: 'file://' }))).toBeNull();
+  });
+
+  it('refuses the opaque origin "null" (sandboxed frame, data: page)', () => {
+    expect(webSocketOriginRefusal(upgrade({ host: HOST, origin: 'null' }))).toBe('origin-null');
+  });
+
+  it('accepts the app\'s own page: Origin host equals Host', () => {
+    expect(webSocketOriginRefusal(upgrade({ host: HOST, origin: `https://${HOST}` }))).toBeNull();
+    expect(webSocketOriginRefusal(upgrade({ host: `${HOST}:443`, origin: `https://${HOST}` }))).toBeNull();
+    // Vite dev server: the /ws proxy keeps the browser's Host.
+    expect(webSocketOriginRefusal(upgrade({ host: 'localhost:3111', origin: 'http://localhost:3111' }))).toBeNull();
+  });
+
+  it('accepts a proxied page whose host arrives as X-Forwarded-Host (no page can set that header on a WebSocket)', () => {
+    expect(webSocketOriginRefusal(upgrade({ host: 'daylight-station:3111', 'x-forwarded-host': HOST, origin: `https://${HOST}` }))).toBeNull();
+  });
+
+  it('accepts Sec-Fetch-Site: same-origin and refuses any other Sec-Fetch-Site', () => {
+    expect(webSocketOriginRefusal(upgrade({ host: 'daylight-station:3111', origin: `https://${HOST}`, 'sec-fetch-site': 'same-origin' }))).toBeNull();
+    expect(webSocketOriginRefusal(upgrade({ host: HOST, origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' }))).toBe('sec-fetch-site');
+    expect(webSocketOriginRefusal(upgrade({ host: HOST, origin: 'https://other.example.test', 'sec-fetch-site': 'same-site' }))).toBe('sec-fetch-site');
+  });
+
+  it('refuses another site, or another port on the same host', () => {
+    expect(webSocketOriginRefusal(upgrade({ host: HOST, origin: 'https://evil.example' }))).toBe('origin-mismatch');
+    expect(webSocketOriginRefusal(upgrade({ host: 'localhost:3111', origin: 'http://localhost:3112' }))).toBe('origin-mismatch');
+  });
+
+  it('accepts an origin on http.allowed_origins', () => {
+    expect(webSocketOriginRefusal(upgrade({ host: HOST, origin: 'https://partner.example', 'sec-fetch-site': 'cross-site' }), allowed)).toBeNull();
   });
 });

@@ -814,7 +814,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const eventBus = await createEventBus({
     httpServer: server,
     path: '/ws',
-    logger: rootLogger
+    logger: rootLogger,
+    // Same allow-list as the HTTP cross-site guard: pages from other sites
+    // may not open the bus. __docs/reference/core/network-exposure.md.
+    allowedOrigins,
   });
 
   // DoNow's household-level composition module isn't constructed until well

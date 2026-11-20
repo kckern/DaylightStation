@@ -89,6 +89,47 @@ export function crossSiteRefusal(req, allowed = new Set()) {
 }
 
 /**
+ * Why a WebSocket upgrade is refused, or null when it may connect.
+ *
+ * A browser lets any page open a WebSocket to any host, with cookies and no
+ * CORS check, and always names the page in `Origin`. So without this, a page
+ * on any site opened in a household browser could read every broadcast
+ * (heart-rate telemetry, presence) and send client messages. The rule:
+ *   1. No `Origin`: allowed. Node `ws`, Python `websockets`, native apps.
+ *   2. `Origin: null` (sandboxed frame, data: page): refused.
+ *   3. Any other non-http(s) Origin: allowed. arduinoWebSockets, the relay
+ *      firmware's library, sends `Origin: file://` on every handshake. A
+ *      browser never sends one for a web page.
+ *   4. `Origin` on the allow-list: allowed.
+ *   5. `Sec-Fetch-Site` present: allowed only as `same-origin`.
+ *   6. Otherwise allowed only when the Origin's host is the Host the upgrade
+ *      was sent to, or the first `X-Forwarded-Host`. The WebSocket API lets a
+ *      page set no request headers, so a page cannot forge either.
+ * Works on a bare IncomingMessage (what `ws` passes to verifyClient).
+ *
+ * @returns {null | 'origin-null' | 'sec-fetch-site' | 'origin-mismatch'}
+ */
+export function webSocketOriginRefusal(req, allowed = new Set()) {
+  const headers = req?.headers || {};
+  const origin = typeof headers.origin === 'string' ? headers.origin.trim() : '';
+  if (!origin) return null;
+  if (origin.toLowerCase() === 'null') return 'origin-null';
+
+  const normalized = normalizeOrigin(origin);
+  if (!normalized) return null;
+  if (allowed.has(normalized)) return null;
+
+  const site = String(headers['sec-fetch-site'] ?? '').trim().toLowerCase();
+  if (site) return site === 'same-origin' ? null : 'sec-fetch-site';
+
+  const url = new URL(normalized);
+  const hosts = requestHosts(req, url.protocol);
+  const forwarded = hostKey(String(headers['x-forwarded-host'] ?? '').split(',')[0], url.protocol);
+  if (forwarded) hosts.add(forwarded);
+  return hosts.has(hostKey(url.host, url.protocol)) ? null : 'origin-mismatch';
+}
+
+/**
  * @param {object} [options]
  * @param {Iterable<string>|string[]} [options.allowedOrigins] - Extra origins allowed to write.
  * @param {object} [options.logger] - Structured logger (`sampled`, `warn`).

@@ -9,4 +9,4 @@ export { requestLoggerMiddleware } from './requestLogger.mjs';
 export { aiOriginMiddleware, normalizeOriginPath, httpOrigin } from './aiOrigin.mjs';
 export { withRequestContext } from './requestContext.mjs';
 export { exceptPaths } from './exceptPaths.mjs';
-export { crossSiteGuard, crossSiteRefusal, corsOptionsFor, originAllowList, normalizeOrigin } from './crossSiteGuard.mjs';
+export { crossSiteGuard, crossSiteRefusal, corsOptionsFor, originAllowList, normalizeOrigin, webSocketOriginRefusal } from './crossSiteGuard.mjs';
