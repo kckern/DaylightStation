@@ -1,0 +1,72 @@
+// Preschool Gratitude: one full-screen colour state per step, one big action each.
+// Colours are the design-system status roles: success (green), info (blue),
+// warning (yellow), danger (red).
+.preschool-gratitude {
+  --preschool-tint: var(--ds-surface);
+  --preschool-ink: var(--ds-text-high);
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: 1.5rem 2rem;
+  background: var(--preschool-tint);
+  color: var(--preschool-ink);
+  transition: background-color var(--ds-motion-base) var(--ds-motion-easing);
+
+  &--green { --preschool-tint: var(--ds-success); --preschool-ink: var(--ds-background); }
+  &--blue { --preschool-tint: var(--ds-info); --preschool-ink: var(--ds-background); }
+  &--yellow { --preschool-tint: var(--ds-warning); --preschool-ink: var(--ds-background); }
+  &--red { --preschool-tint: var(--ds-danger); --preschool-ink: var(--ds-background); }
+
+  h2 { margin: 0; font-size: 3rem; line-height: 1.15; text-align: center; }
+  p { margin: 0; font-size: 2rem; text-align: center; }
+}
+
+.preschool-gratitude__header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.preschool-gratitude__learner { display: inline-flex; align-items: center; gap: 1rem; font-size: 2.5rem; font-weight: 700; }
+.preschool-gratitude__learner .piano-avatar { inline-size: 5.5rem; block-size: 5.5rem; }
+.preschool-gratitude .preschool-gratitude__header .preschool-gratitude__close {
+  display: inline-grid; place-items: center; inline-size: 4rem; block-size: 4rem; min-height: 0; padding: 0;
+  border-radius: 999px; font-size: 2rem; color: var(--preschool-ink);
+}
+
+.preschool-gratitude__body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2rem; }
+.preschool-gratitude__picture { font-size: 7rem; }
+.preschool-gratitude__notice { font-weight: 700; }
+
+.preschool-gratitude .preschool-gratitude__mic {
+  display: inline-grid; place-items: center; inline-size: 11rem; block-size: 11rem; min-height: 0; padding: 0;
+  border-radius: 999px; font-size: 6rem; background: var(--ds-accent); color: var(--ds-background);
+  box-shadow: 0 0 0 calc(var(--preschool-level, 0) * 3rem) var(--ds-accent);
+  transition: box-shadow var(--ds-motion-fast) var(--ds-motion-easing);
+}
+.preschool-gratitude .preschool-gratitude__mic--live { background: var(--ds-danger); box-shadow: 0 0 0 calc(var(--preschool-level, 0) * 3rem) var(--ds-danger); }
+
+.preschool-gratitude__hints { display: flex; flex-wrap: wrap; justify-content: center; gap: 1.25rem; }
+.preschool-gratitude .preschool-gratitude__hint {
+  display: inline-flex; flex-direction: column; align-items: center; gap: 0.5rem; min-inline-size: 8rem; padding: 1rem 1.25rem;
+  border-radius: 1.5rem; background: var(--ds-surface-alt); color: var(--ds-text-high); font-size: 1.4rem;
+  .school-icon { font-size: 3.5rem; }
+}
+
+.preschool-gratitude__said { font-size: 3rem; font-weight: 700; max-inline-size: 48rem; }
+.preschool-gratitude__choices { display: flex; flex-wrap: wrap; justify-content: center; gap: 2rem; }
+.preschool-gratitude .preschool-gratitude__choice {
+  display: inline-flex; align-items: center; gap: 1rem; min-block-size: 7rem; padding: 1rem 2.5rem;
+  border-radius: 2rem; font-size: 2.5rem; font-weight: 700; background: var(--ds-surface-alt); color: var(--ds-text-high);
+  .school-icon { font-size: 3.5rem; }
+}
+.preschool-gratitude .preschool-gratitude__choice--yes { background: var(--ds-success); color: var(--ds-background); }
+.preschool-gratitude .preschool-gratitude__choice--again { background: var(--ds-warning); color: var(--ds-background); }
+
+.preschool-gratitude__subject { display: inline-flex; align-items: center; gap: 1rem; font-size: 3.5rem; font-weight: 700; }
+.preschool-gratitude__used { display: inline-flex; flex-direction: column; align-items: center; opacity: 0.55; text-decoration: line-through; font-size: 2.25rem; }
+.preschool-gratitude__used small { text-decoration: none; font-size: 1.25rem; }
+
+.preschool-gratitude__spinner { inline-size: 9rem; block-size: 9rem; fill: none; stroke: var(--ds-accent); stroke-width: 8; stroke-linecap: round; }
+.preschool-gratitude__ring { inline-size: 14rem; block-size: 14rem; fill: none; stroke-width: 8; transform: rotate(-90deg); }
+.preschool-gratitude__ring-track { stroke: var(--ds-border); }
+.preschool-gratitude__ring-left { stroke: var(--preschool-ink); stroke-linecap: round; transition: stroke-dashoffset var(--ds-motion-base) linear; }
+
+@media (prefers-reduced-motion: reduce) {
+  .preschool-gratitude, .preschool-gratitude__mic, .preschool-gratitude__ring-left { transition: none; }
+}

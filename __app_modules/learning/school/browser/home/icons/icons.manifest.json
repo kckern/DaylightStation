@@ -4,14 +4,38 @@
     "back": {
       "solar": "alt-arrow-left-bold"
     },
+    "check": {
+      "solar": "check-circle-bold"
+    },
+    "family": {
+      "solar": "users-group-rounded-bold"
+    },
+    "food": {
+      "solar": "donut-bitten-bold"
+    },
     "forward": {
       "solar": "rewind-forward-bold"
+    },
+    "heart": {
+      "solar": "heart-bold"
+    },
+    "hourglass": {
+      "solar": "hourglass-bold"
+    },
+    "idea": {
+      "solar": "lightbulb-bold"
     },
     "keyboard": {
       "solar": "keyboard-bold"
     },
+    "microphone": {
+      "solar": "microphone-large-bold"
+    },
     "next": {
       "solar": "skip-next-bold"
+    },
+    "outside": {
+      "solar": "sun-bold"
     },
     "pause": {
       "solar": "pause-bold"
@@ -34,11 +58,17 @@
     "stop": {
       "solar": "stop-bold"
     },
+    "toys": {
+      "solar": "balloon-bold"
+    },
     "volume": {
       "solar": "volume-loud-bold"
     },
     "volume-mute": {
       "solar": "muted-bold"
+    },
+    "warning": {
+      "solar": "danger-triangle-bold"
     }
   }
 }

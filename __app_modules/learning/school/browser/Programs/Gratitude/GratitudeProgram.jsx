@@ -4,6 +4,7 @@ import { SchoolButton } from '../../portal/SchoolButton.jsx';
 import Icon from '../../home/icons/Icon.jsx';
 import ProfileAvatar from '../../../../../../frontend/src/lib/identity/ProfileAvatar.jsx';
 import ReflectionResponse from '../shared/ReflectionResponse.jsx';
+import PreschoolGratitude from './PreschoolGratitude.jsx';
 import ProgramRetryButton from '../shared/ProgramRetryButton.jsx';
 import { useProgramKeys } from '../shared/useProgramKeys.js';
 import { useInputStall } from '../shared/useInputStall.js';
@@ -29,7 +30,9 @@ export default function GratitudeProgram({learnerId,learnerName=null,gratitudeGr
   },[]);
   const open=useCallback(async()=>{setBusy(true);try{apply(await api.open(today));}finally{if(live.current)setBusy(false);}},[api,today,apply]);
   useEffect(()=>{live.current=true;gratitudeLog.mounted({learnerId});if(gratitudeGrant&&today)open();return()=>{live.current=false;gratitudeLog.unmounted({learnerId});};},[open,gratitudeGrant,today,learnerId]);
-  useInputStall(view?.phase??'start',ms=>{gratitudeLog.stall({ms});if(ms>=5*60_000)onExit?.();},{enabled:Boolean(gratitudeGrant),thresholds:IDLE_THRESHOLDS});
+  // A preschool break ends in a fresh Ask on this screen, so being idle through it never closes the program.
+  const waitingOutBreak=view?.mode==='preschool'&&view?.phase==='cooldown';
+  useInputStall(view?.phase??'start',ms=>{gratitudeLog.stall({ms});if(ms>=5*60_000)onExit?.();},{enabled:Boolean(gratitudeGrant)&&!waitingOutBreak,thresholds:IDLE_THRESHOLDS});
   // Once per follow-up attempt; the question and the child's words stay out of the log.
   useEffect(()=>{if(view?.phase==='follow-up')gratitudeLog.followUpShown({promptId:'gratitude-follow-up'});},[view?.phase,view?.attemptId]);
   const remaining=view?.retryAt?Math.max(0,Date.parse(view.retryAt)-(now-clockOffset.current)):0;
@@ -60,6 +63,8 @@ export default function GratitudeProgram({learnerId,learnerName=null,gratitudeGr
   const close=()=>{gratitudeLog.closed({phase:view?.phase??null});onExit?.();};
   useProgramKeys({arrowleft:close,...(view?.phase==='completed'?{enter:onExit}:{})});
   if(!gratitudeGrant||!learnerId)return <section className="gratitude-program"><p>Open Gratitude from your School agenda.</p><TouchButton onClick={onExit}>Back to School</TouchButton></section>;
+  // A preschooler gets the picture-and-voice screens; the server decides the mode.
+  if(view?.mode==='preschool')return <PreschoolGratitude view={view} learnerId={learnerId} learnerName={learnerName} busy={busy} remaining={remaining} onTake={take} onSubmit={submit} onRetry={retry} onClose={close}/>;
   return <section className="gratitude-program">
     <header className="gratitude-program__header"><h1>Gratitude</h1><span className="gratitude-program__learner"><ProfileAvatar id={learnerId} name={learnerName??learnerId} size={160}/><span>{learnerName??learnerId}</span></span><SchoolButton variant="plain" type="button" className="gratitude-program__close" aria-label="Close" onClick={close}><Icon name="close"/></SchoolButton></header>
     {error&&<p role="alert">{error}</p>}
