@@ -22,11 +22,27 @@
  * `no-draft`, `draft-changed`, and the score reader's codes (NOT_LIBRARY_SCORE,
  * SCORE_NOT_FOUND, SCORE_UNREADABLE, SCORE_TOO_LARGE).
  *
+ * `upload` adds a MusicXML/MXL file to a configured library folder. Its refusals
+ * are coded too: `invalid-request`, `bad-extension`, `SCORE_TOO_LARGE`,
+ * `bad-mxl`, `not-xml`, `timewise`, `not-partwise`, `no-notes`, `bad-folder`,
+ * `bad-filename`, `basename-exists`, `slug-collides`, `slug-too-long`. The bytes
+ * are stored as uploaded (an .mxl stays an archive) and never overwrite a file.
+ *
  * Layer: APPLICATION. Everything external is injected.
  */
 import { approvalImpact, normalizeLearnFile, validateSegments } from '../../portable/music/sheetMusicLearnFile.mjs';
 import { libraryScoreLocalPath, practiceKeyOfScore } from '../../portable/music/practiceKey.mjs';
 import { contentHash } from '../../portable/practice/lessonExpectation.mjs';
+import {
+  MAX_UPLOAD_MUSICXML_BYTES,
+  MAX_UPLOAD_MXL_BYTES,
+  checkCollision,
+  checkFilename,
+  checkUploadXml,
+  isAllowedFolder,
+  scoreHeader,
+  suggestFilename,
+} from '../../portable/music/musicXmlUpload.mjs';
 
 const READ_CONCURRENCY = 4;
 const LEARN_SAVED = 'piano.sheetmusic.learn-saved';
@@ -37,38 +53,7 @@ function codedError(code, message, extra = {}) {
   return Object.assign(new Error(message), { code, ...extra });
 }
 
-const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
-
-function decodeXml(text) {
-  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, body) => {
-    if (body[0] === '#') {
-      const code = body[1] === 'x' || body[1] === 'X' ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10);
-      try { return String.fromCodePoint(code); } catch { return whole; }
-    }
-    return ENTITIES[body.toLowerCase()] ?? whole;
-  });
-}
-
-function tagText(xml, re) {
-  const match = re.exec(xml);
-  if (!match) return null;
-  // CDATA content is literal: pull it out before tags are stripped and entities decoded.
-  const parts = match[1].split(/(<!\[CDATA\[[\s\S]*?\]\]>)/);
-  const text = parts.map((part) => (part.startsWith('<![CDATA[')
-    ? part.slice(9, -3)
-    : decodeXml(part.replace(/<[^>]*>/g, '')))).join('').replace(/\s+/g, ' ').trim();
-  return text || null;
-}
-
-/** Title and composer from the MusicXML header; null where absent. */
-export function scoreHeader(xml) {
-  const text = String(xml || '');
-  return {
-    title: tagText(text, /<work-title\b[^>]*>([\s\S]*?)<\/work-title>/i)
-      ?? tagText(text, /<movement-title\b[^>]*>([\s\S]*?)<\/movement-title>/i),
-    composer: tagText(text, /<creator\b[^>]*\btype\s*=\s*["']composer["'][^>]*>([\s\S]*?)<\/creator>/i),
-  };
-}
+export { scoreHeader };
 
 /** "the_old-mill.musicxml" → "The Old Mill". */
 export function titleFromFile(file) {
@@ -126,10 +111,16 @@ export class SheetMusicAdminService {
   #fileSignature;
   #clock;
   #logger;
+  #extractMxl;
+  #writeScoreExclusive;
+  #collectionRefs;
   /** id → { signature, title, composer, contentSha256 } */
   #headerCache = new Map();
 
-  constructor({ datastore, scoreReader, listScores, listLearners, fileSignature, clock = () => new Date(), logger } = {}) {
+  constructor({
+    datastore, scoreReader, listScores, listLearners, fileSignature, clock = () => new Date(), logger,
+    extractMxl, writeScoreExclusive, collectionRefs,
+  } = {}) {
     if (!datastore) throw new Error('SheetMusicAdminService requires datastore');
     if (!scoreReader) throw new Error('SheetMusicAdminService requires scoreReader');
     if (typeof listScores !== 'function') throw new Error('SheetMusicAdminService requires listScores');
@@ -141,6 +132,73 @@ export class SheetMusicAdminService {
     this.#fileSignature = typeof fileSignature === 'function' ? fileSignature : () => null;
     this.#clock = clock;
     this.#logger = logger;
+    this.#extractMxl = extractMxl;
+    this.#writeScoreExclusive = writeScoreExclusive;
+    this.#collectionRefs = collectionRefs;
+  }
+
+  /**
+   * Validate an uploaded score and write it to `<folder>/<filename>` without
+   * overwriting. `filename` is optional: absent, one is suggested from the header.
+   * @returns {Promise<{ id: string, title: string|null, composer: string|null, filename: string }>}
+   */
+  async upload({ buffer, originalName, folder, filename } = {}) {
+    const reject = (code, message = `Upload refused: ${code}`) => {
+      this.#logger?.warn?.('piano.sheetmusic.upload-rejected', { code, folder: folder ?? null, originalName: originalName ?? null });
+      return codedError(code, message);
+    };
+    if (typeof this.#extractMxl !== 'function' || typeof this.#writeScoreExclusive !== 'function'
+      || typeof this.#collectionRefs !== 'function') {
+      throw new Error('SheetMusicAdminService.upload requires extractMxl, writeScoreExclusive and collectionRefs');
+    }
+    if (!(buffer instanceof Uint8Array)) throw reject('invalid-request', 'upload requires the file bytes');
+
+    const extMatch = /\.(musicxml|mxl)$/i.exec(String(originalName ?? ''));
+    if (!extMatch) throw reject('bad-extension');
+    const ext = extMatch[1].toLowerCase();
+    const isMxl = ext === 'mxl';
+
+    const maxBytes = isMxl ? MAX_UPLOAD_MXL_BYTES : MAX_UPLOAD_MUSICXML_BYTES;
+    if (buffer.byteLength > maxBytes) throw reject('SCORE_TOO_LARGE', `Upload is over ${maxBytes} bytes`);
+
+    let xml;
+    if (isMxl) {
+      try {
+        xml = await this.#extractMxl(buffer);
+      } catch (error) {
+        throw reject(error?.code === 'MXL_TOO_LARGE' ? 'SCORE_TOO_LARGE' : 'bad-mxl');
+      }
+    } else {
+      xml = new TextDecoder('utf-8').decode(buffer);
+    }
+
+    const checked = checkUploadXml(xml);
+    if (!checked.ok) throw reject(checked.code);
+
+    if (!isAllowedFolder(folder, await this.#collectionRefs())) throw reject('bad-folder');
+
+    let name = filename;
+    if (name != null && name !== '') {
+      if (checkFilename(name) || !name.endsWith(`.${ext}`)) throw reject('bad-filename');
+    } else {
+      const stem = String(originalName).replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '');
+      name = suggestFilename({ title: checked.title ?? stem, composer: checked.composer, ext });
+    }
+
+    const existingIds = (await this.#listScores()).map((row) => row.id);
+    const collision = checkCollision({ folder, filename: name, existingIds });
+    if (collision) throw reject(collision.code);
+
+    const id = `files:docs/sheet-music/${folder}/${name}`;
+    try {
+      await this.#writeScoreExclusive(id, buffer);
+    } catch (error) {
+      if (error?.code === 'EEXIST') throw reject('basename-exists');
+      this.#logger?.error?.('piano.sheetmusic.upload-failed', { id, code: error?.code ?? null, error: error?.message });
+      throw error;
+    }
+    this.#logger?.info?.('piano.sheetmusic.upload', { id, bytes: buffer.byteLength, folder });
+    return { id, title: checked.title ?? titleFromFile(name), composer: checked.composer, filename: name };
   }
 
   async library() {

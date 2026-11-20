@@ -158,3 +158,44 @@ describe('SheetMusicScoreReader', () => {
     }
   });
 });
+
+describe('SheetMusicScoreReader.writeScoreExclusive', () => {
+  let tmp;
+  beforeAll(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'score-writer-')); });
+  afterAll(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
+
+  it('writes the bytes to the library path, creating the folder', async () => {
+    const reader = new SheetMusicScoreReader({ mediaDir: tmp });
+    const bytes = Buffer.from([0x50, 0x4b, 0x03, 0x04, 9, 8, 7]);
+    await reader.writeScoreExclusive('files:docs/sheet-music/fresh/new-tune.mxl', bytes);
+    expect(fs.readFileSync(path.join(tmp, 'docs/sheet-music/fresh/new-tune.mxl'))).toEqual(bytes);
+  });
+
+  it('refuses to overwrite with code EEXIST and leaves the file alone', async () => {
+    const reader = new SheetMusicScoreReader({ mediaDir: tmp });
+    const id = 'files:docs/sheet-music/fresh/kept.musicxml';
+    await reader.writeScoreExclusive(id, Buffer.from('first'));
+    const error = await reader.writeScoreExclusive(id, Buffer.from('second')).then(() => null, (e) => e);
+    expect(error?.code).toBe('EEXIST');
+    expect(error.scoreId).toBe(id);
+    expect(error.message).not.toContain(tmp);
+    expect(fs.readFileSync(path.join(tmp, 'docs/sheet-music/fresh/kept.musicxml'), 'utf8')).toBe('first');
+  });
+
+  it('refuses ids outside the library', async () => {
+    const reader = new SheetMusicScoreReader({ mediaDir: tmp });
+    for (const id of ['files:docs/other/x.mxl', 'files:docs/sheet-music/../x.mxl']) {
+      const error = await reader.writeScoreExclusive(id, Buffer.from('x')).then(() => null, (e) => e);
+      expect(error?.code, id).toBe('NOT_LIBRARY_SCORE');
+    }
+  });
+
+  it('reports other failures as SCORE_UNWRITABLE', async () => {
+    const reader = new SheetMusicScoreReader({ mediaDir: tmp });
+    fs.mkdirSync(path.join(tmp, 'docs/sheet-music/blocked'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, 'docs/sheet-music/blocked/file'), 'x');
+    // A path under a regular file cannot be created.
+    const error = await reader.writeScoreExclusive('files:docs/sheet-music/blocked/file/x.mxl', Buffer.from('x')).then(() => null, (e) => e);
+    expect(error?.code).toBe('SCORE_UNWRITABLE');
+  });
+});

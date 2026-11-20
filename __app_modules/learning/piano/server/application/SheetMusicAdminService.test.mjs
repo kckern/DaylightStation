@@ -426,3 +426,179 @@ describe('review fixes: draft pinning, empty drafts, non-library ids, robust row
     expect(byId[idC]).toMatchObject({ error: 'PRACTICE_UNREADABLE', title: 'C', learners: [] });
   });
 });
+
+describe('SheetMusicAdminService.upload', () => {
+  const NOTE = '<note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration></note>';
+  const scoreXml = ({ title = 'Für Élise', composer = 'Ludwig van Beethoven', body = NOTE, root = 'score-partwise' } = {}) => [
+    `<?xml version="1.0" encoding="UTF-8"?><${root} version="4.0">`,
+    title ? `<work><work-title>${title}</work-title></work>` : '',
+    composer ? `<identification><creator type="composer">${composer}</creator></identification>` : '',
+    `<part-list/><part id="P1"><measure number="1">${body}</measure></part></${root}>`,
+  ].join('');
+  const bytes = (text) => Buffer.from(text, 'utf8');
+  const MXL_BYTES = Buffer.from([0x50, 0x4b, 0x03, 0x04, 1, 2, 3]);
+
+  function uploadFixture({ existing = [], refs = ['files:docs/sheet-music/classical', 'files:docs/sheet-music/folk'],
+    extractMxl = async () => scoreXml({ title: 'Old Tune', composer: null }), writeError = null } = {}) {
+    const writes = [];
+    const logs = [];
+    const logger = {
+      info: (event, data) => logs.push({ level: 'info', event, data }),
+      warn: (event, data) => logs.push({ level: 'warn', event, data }),
+      error: (event, data) => logs.push({ level: 'error', event, data }),
+    };
+    const extractCalls = [];
+    const service = new SheetMusicAdminService({
+      datastore: {},
+      scoreReader: {},
+      listScores: async () => existing.map((id) => ({ id, folder: id.split('/').at(-2), file: id.split('/').at(-1) })),
+      listLearners: () => [],
+      logger,
+      extractMxl: async (buffer) => { extractCalls.push(buffer); return extractMxl(buffer); },
+      writeScoreExclusive: async (id, buffer) => {
+        if (writeError) throw writeError;
+        writes.push({ id, buffer });
+      },
+      collectionRefs: () => refs,
+    });
+    return { service, writes, logs, extractCalls };
+  }
+
+  async function expectRejected(promise, code, logs) {
+    const error = await promise.then(() => null, (e) => e);
+    expect(error, `should reject with ${code}`).toBeInstanceOf(Error);
+    expect(error.code).toBe(code);
+    const rejected = logs.filter((l) => l.event === 'piano.sheetmusic.upload-rejected');
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]).toMatchObject({ level: 'warn', data: { code } });
+    return error;
+  }
+
+  it('writes the original bytes under a suggested name and logs the upload', async () => {
+    const { service, writes, logs } = uploadFixture();
+    const buffer = bytes(scoreXml());
+    const result = await service.upload({ buffer, originalName: 'Score.MusicXML', folder: 'classical' });
+    const id = 'files:docs/sheet-music/classical/fur-elise-ludwig-van-beethoven.musicxml';
+    expect(result).toEqual({ id, title: 'Für Élise', composer: 'Ludwig van Beethoven', filename: 'fur-elise-ludwig-van-beethoven.musicxml' });
+    expect(writes).toHaveLength(1);
+    expect(writes[0].id).toBe(id);
+    expect(writes[0].buffer).toBe(buffer);
+    expect(logs).toEqual([{ level: 'info', event: 'piano.sheetmusic.upload', data: { id, bytes: buffer.byteLength, folder: 'classical' } }]);
+  });
+
+  it('uses a given filename', async () => {
+    const { service, writes } = uploadFixture();
+    const result = await service.upload({ buffer: bytes(scoreXml()), originalName: 'x.musicxml', folder: 'folk', filename: 'elise.musicxml' });
+    expect(result.id).toBe('files:docs/sheet-music/folk/elise.musicxml');
+    expect(writes[0].id).toBe(result.id);
+  });
+
+  it('suggests from the original name when the header has no title', async () => {
+    const { service } = uploadFixture();
+    const result = await service.upload({ buffer: bytes(scoreXml({ title: null, composer: null })), originalName: 'My Song.musicxml', folder: 'folk' });
+    expect(result).toMatchObject({ filename: 'my-song.musicxml', title: 'My Song', composer: null });
+  });
+
+  it('reads an .mxl through extractMxl but stores the archive bytes', async () => {
+    const { service, writes, extractCalls } = uploadFixture();
+    const result = await service.upload({ buffer: MXL_BYTES, originalName: 'tune.mxl', folder: 'folk' });
+    expect(extractCalls).toEqual([MXL_BYTES]);
+    expect(result).toMatchObject({ id: 'files:docs/sheet-music/folk/old-tune.mxl', title: 'Old Tune', composer: null });
+    expect(writes[0].buffer).toBe(MXL_BYTES);
+  });
+
+  it('refuses a request without bytes: invalid-request', async () => {
+    const { service, logs } = uploadFixture();
+    await expectRejected(service.upload({ buffer: 'text', originalName: 'a.musicxml', folder: 'folk' }), 'invalid-request', logs);
+  });
+
+  it('refuses other extensions: bad-extension', async () => {
+    const { service, logs, writes } = uploadFixture();
+    await expectRejected(service.upload({ buffer: bytes(scoreXml()), originalName: 'a.xml', folder: 'folk' }), 'bad-extension', logs);
+    expect(writes).toEqual([]);
+  });
+
+  it('refuses oversize files: SCORE_TOO_LARGE', async () => {
+    const big = new Uint8Array(16 * 1024 * 1024 + 1);
+    const a = uploadFixture();
+    await expectRejected(a.service.upload({ buffer: big, originalName: 'a.mxl', folder: 'folk' }), 'SCORE_TOO_LARGE', a.logs);
+    expect(a.extractCalls).toEqual([]);
+    const b = uploadFixture();
+    await expectRejected(b.service.upload({ buffer: new Uint8Array(32 * 1024 * 1024 + 1), originalName: 'a.musicxml', folder: 'folk' }),
+      'SCORE_TOO_LARGE', b.logs);
+  });
+
+  it('maps an archive that decompresses too large to SCORE_TOO_LARGE', async () => {
+    const { service, logs } = uploadFixture({ extractMxl: async () => { throw Object.assign(new Error('big'), { code: 'MXL_TOO_LARGE' }); } });
+    await expectRejected(service.upload({ buffer: MXL_BYTES, originalName: 'a.mxl', folder: 'folk' }), 'SCORE_TOO_LARGE', logs);
+  });
+
+  it('refuses an unreadable archive: bad-mxl', async () => {
+    const { service, logs } = uploadFixture({ extractMxl: async () => { throw new Error('bad zip'); } });
+    await expectRejected(service.upload({ buffer: MXL_BYTES, originalName: 'a.mxl', folder: 'folk' }), 'bad-mxl', logs);
+  });
+
+  it.each([
+    ['not-xml', 'just text'],
+    ['timewise', scoreXml({ root: 'score-timewise' })],
+    ['not-partwise', '<?xml version="1.0"?><opus><title>x</title></opus>'],
+    ['no-notes', scoreXml({ body: '<note><rest/><duration>4</duration></note>' })],
+  ])('refuses content: %s', async (code, xml) => {
+    const { service, logs, writes } = uploadFixture();
+    await expectRejected(service.upload({ buffer: bytes(xml), originalName: 'a.musicxml', folder: 'folk' }), code, logs);
+    expect(writes).toEqual([]);
+  });
+
+  it.each(['studies', '../classical', 'classical/nested', '', undefined])('refuses folder %j: bad-folder', async (folder) => {
+    const { service, logs } = uploadFixture();
+    await expectRejected(service.upload({ buffer: bytes(scoreXml()), originalName: 'a.musicxml', folder }), 'bad-folder', logs);
+  });
+
+  it('accepts a folder named by the legacy single collection ref', async () => {
+    const { service } = uploadFixture({ refs: ['files:docs/sheet-music/beginner'] });
+    const result = await service.upload({ buffer: bytes(scoreXml()), originalName: 'a.musicxml', folder: 'beginner' });
+    expect(result.id).toMatch(/^files:docs\/sheet-music\/beginner\//);
+  });
+
+  it.each(['Bad Name.musicxml', 'a.xml', 'elise.mxl'])('refuses filename %j: bad-filename', async (filename) => {
+    const { service, logs } = uploadFixture();
+    await expectRejected(service.upload({ buffer: bytes(scoreXml()), originalName: 'a.musicxml', folder: 'folk', filename }), 'bad-filename', logs);
+  });
+
+  it('refuses the same stem in the folder in the other format: basename-exists', async () => {
+    const { service, logs, writes } = uploadFixture({ existing: ['files:docs/sheet-music/classical/fur-elise-ludwig-van-beethoven.mxl'] });
+    await expectRejected(service.upload({ buffer: bytes(scoreXml()), originalName: 'a.musicxml', folder: 'classical' }), 'basename-exists', logs);
+    expect(writes).toEqual([]);
+  });
+
+  it('refuses a practice-key collision across folders: slug-collides', async () => {
+    const { service, logs } = uploadFixture({ existing: ['files:docs/sheet-music/folk-old/tune.mxl'] });
+    await expectRejected(service.upload({ buffer: bytes(scoreXml()), originalName: 'a.mxl', folder: 'folk', filename: 'old-tune.mxl' }),
+      'slug-collides', logs);
+  });
+
+  it('refuses a name whose practice key reaches 120 characters: slug-too-long', async () => {
+    const { service, logs } = uploadFixture();
+    const filename = `${'a'.repeat(100)}.musicxml`;
+    expect(practiceKeyOfScore(`files:docs/sheet-music/folk/${filename}`).length).toBe(120);
+    await expectRejected(service.upload({ buffer: bytes(scoreXml()), originalName: 'a.musicxml', folder: 'folk', filename }), 'slug-too-long', logs);
+  });
+
+  it('maps a lost race on the write (EEXIST) to basename-exists', async () => {
+    const { service, logs } = uploadFixture({ writeError: Object.assign(new Error('exists'), { code: 'EEXIST' }) });
+    await expectRejected(service.upload({ buffer: bytes(scoreXml()), originalName: 'a.musicxml', folder: 'folk' }), 'basename-exists', logs);
+  });
+
+  it('rethrows other write failures after logging them', async () => {
+    const failure = Object.assign(new Error('disk'), { code: 'EACCES' });
+    const { service, logs } = uploadFixture({ writeError: failure });
+    const error = await service.upload({ buffer: bytes(scoreXml()), originalName: 'a.musicxml', folder: 'folk' }).then(() => null, (e) => e);
+    expect(error).toBe(failure);
+    expect(logs.map((l) => l.event)).toEqual(['piano.sheetmusic.upload-failed']);
+  });
+
+  it('requires its upload dependencies', async () => {
+    const service = new SheetMusicAdminService({ datastore: {}, scoreReader: {}, listScores: () => [], listLearners: () => [] });
+    await expect(service.upload({ buffer: bytes(scoreXml()), originalName: 'a.musicxml', folder: 'folk' })).rejects.toThrow(/requires extractMxl/);
+  });
+});

@@ -16,11 +16,15 @@
  * SCORE_UNREADABLE, SCORE_TOO_LARGE), the `scoreId`, and the original error as
  * `cause`. Messages name the score id, never the absolute media path.
  *
+ * `writeScoreExclusive` stores a new score's bytes and never overwrites: an
+ * existing file fails with `code: 'EEXIST'`, any other failure with
+ * SCORE_UNWRITABLE.
+ *
  * Layer: ADAPTER. All filesystem access through FileIO.
  */
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { getFileStatsAsync, readBinaryFromPathAsync } from '#system/utils/FileIO.mjs';
+import { getFileStatsAsync, readBinaryFromPathAsync, writeBinaryExclusive } from '#system/utils/FileIO.mjs';
 import { extractMusicXmlFromMxl, MAX_MXL_XML_BYTES } from '../../../../../__capabilities/music-notation/server/mxlArchive.mjs';
 import { libraryScoreLocalPath } from '../../portable/music/practiceKey.mjs';
 
@@ -98,6 +102,19 @@ export class SheetMusicScoreReader {
       throw new ScoreReadError('SCORE_UNREADABLE', scoreId, `Sheet music score could not be read: ${scoreId}`, error);
     }
     return { xml, contentSha256: SheetMusicScoreReader.hash(xml) };
+  }
+
+  /** Write a new library score; refuses to replace an existing file (code EEXIST). */
+  async writeScoreExclusive(scoreId, buffer) {
+    const file = this.localPath(scoreId);
+    try {
+      writeBinaryExclusive(file, buffer);
+    } catch (error) {
+      if (error?.code === 'EEXIST') {
+        throw new ScoreReadError('EEXIST', scoreId, `Sheet music score already exists: ${scoreId}`, error);
+      }
+      throw new ScoreReadError('SCORE_UNWRITABLE', scoreId, `Sheet music score could not be written: ${scoreId}`, error);
+    }
   }
 
   #local(scoreId) {
