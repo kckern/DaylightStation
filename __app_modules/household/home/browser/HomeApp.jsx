@@ -19,10 +19,10 @@ import './HomeApp.scss';
 const logger = homeLogger;
 
 const TABS = [
-  { id: 'today', label: 'Today', icon: <UiIcon name="timeline" size={20} stroke={1.75} /> },
-  { id: 'mosaic', label: 'Mosaic', icon: <UiIcon name="mosaic" size={20} stroke={1.75} /> },
-  { id: 'rooms', label: 'Rooms', icon: <UiIcon name="home" size={20} stroke={1.75} /> },
-  { id: 'cameras', label: 'Cameras', icon: <UiIcon name="video" size={20} stroke={1.75} /> },
+  { id: 'today', label: 'Today', icon: <UiIcon name="timeline" size={20} /> },
+  { id: 'mosaic', label: 'Mosaic', icon: <UiIcon name="mosaic" size={20} /> },
+  { id: 'rooms', label: 'Rooms', icon: <UiIcon name="home" size={20} /> },
+  { id: 'cameras', label: 'Cameras', icon: <UiIcon name="video" size={20} /> },
 ];
 const VIEW_KEY = 'home.view';
 // Views that lived under the old tab ids open where their content went.

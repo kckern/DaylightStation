@@ -54,12 +54,12 @@ function ImageIcon({ src, size, className, fallback: FallbackIcon, ...props }) {
 }
 
 /** Decorative symbol. Give its surrounding control the accessible action name. */
-export function UiIcon({ name, size = 16, assetName, ...props }) {
+export function UiIcon({ name, size = 16, stroke = 1.75, assetName, ...props }) {
   const Icon = icons[name];
   if (assetName) {
     const filename = /\.svg$/i.test(assetName) ? assetName : `${assetName}.svg`;
     const imageSrc = DaylightImagePath(`icons/${filename}`);
-    return <ImageIcon key={imageSrc} src={imageSrc} size={size} fallback={Icon} {...props} />;
+    return <ImageIcon key={imageSrc} src={imageSrc} size={size} stroke={stroke} fallback={Icon} {...props} />;
   }
-  return <Icon {...props} size={size} aria-hidden="true" focusable="false" />;
+  return <Icon {...props} size={size} stroke={stroke} aria-hidden="true" focusable="false" />;
 }

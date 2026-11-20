@@ -15,6 +15,7 @@ it('provides the shared navigation and action icon names as decorative SVGs', ()
     expect(icon).toHaveAttribute('aria-hidden', 'true');
     expect(icon).toHaveAttribute('focusable', 'false');
     expect(icon).toHaveAttribute('width', '16');
+    expect(icon).toHaveAttribute('stroke-width', '1.75');
   }
 });
 

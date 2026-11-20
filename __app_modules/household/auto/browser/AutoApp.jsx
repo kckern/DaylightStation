@@ -34,11 +34,11 @@ import { describeVehicle } from "./autoAppVehicleLabel.js";
 import "./AutoApp.scss";
 
 const TABS = [
-  { id: 'overview', label: 'Car', icon: <UiIcon name="car" size={20} stroke={1.5} /> },
-  { id: 'drives', label: 'Drives', icon: <UiIcon name="pin" size={20} stroke={1.5} /> },
-  { id: 'fuel', label: 'Fuel', icon: <UiIcon name="fuel" size={20} stroke={1.5} /> },
-  { id: 'service', label: 'Service', icon: <UiIcon name="service" size={20} stroke={1.5} /> },
-  { id: 'glove', label: 'Docs', icon: <UiIcon name="folder" size={20} stroke={1.5} /> },
+  { id: 'overview', label: 'Car', icon: <UiIcon name="car" size={20} /> },
+  { id: 'drives', label: 'Drives', icon: <UiIcon name="pin" size={20} /> },
+  { id: 'fuel', label: 'Fuel', icon: <UiIcon name="fuel" size={20} /> },
+  { id: 'service', label: 'Service', icon: <UiIcon name="service" size={20} /> },
+  { id: 'glove', label: 'Docs', icon: <UiIcon name="folder" size={20} /> },
 ];
 
 function AutoAppShell() {
