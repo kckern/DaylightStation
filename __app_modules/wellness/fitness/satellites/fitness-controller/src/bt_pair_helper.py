@@ -39,7 +39,7 @@ from gi.repository import GLib
 
 from bt_pair_match import (candidate_action, compile_targets, discovery_transport,
                            input_device_present, is_retryable, match as match_rule,
-                           may_remove_bond)
+                           may_remove_bond, paired_after_read_error)
 
 BUS_NAME = "org.bluez"
 ADAPTER = "/org/bluez/hci0"
@@ -162,19 +162,26 @@ def main():
             d["kind"] = target["kind"]
         return d
 
-    def fail_device(path, device, cid, message):
-        """Remove the half-made bond and retry once; second failure is final."""
+    def fail_device(path, device, cid, message, made_here=False):
+        """Remove the half-made bond and retry once; second failure is final.
+
+        made_here: this window's own Pair() succeeded, so any bond is ours and
+        half-made. Otherwise (a Pair error), add mode re-reads Paired: it may
+        have flipped since consider(), and a bond from before the window is
+        never deleted.
+        """
         n = state["attempts"].get(path, 0)
-        if mode == "add":
-            # Paired may have flipped since consider(): add mode never deletes a bond.
+        if mode == "add" and not made_here:
             try:
                 _, now = dev_props(path)
                 paired_now = bool(now.get("Paired", False))
-            except dbus.DBusException:
-                paired_now = False  # no device object left, so no bond to protect
-            if not may_remove_bond(mode, paired_now):
+            except dbus.DBusException as e:
+                paired_now = paired_after_read_error(
+                    e.get_dbus_name() if hasattr(e, "get_dbus_name") else None)
+            if not may_remove_bond(mode, paired_now, made_here):
                 state["busy"] = None
-                emit("error", device=device, controllerId=cid, message="already paired — left untouched")
+                emit("error", device=device, controllerId=cid,
+                     message="was already paired before this search — left untouched")
                 finish("failed", paired=[], reason="pair-failed")
                 return
         try:
@@ -252,19 +259,23 @@ def main():
                 dprops.Set("org.bluez.Device1", "Trusted", dbus.Boolean(True))
                 allp = dprops.GetAll("org.bluez.Device1")
             except dbus.DBusException as e:
-                fail_device(path, device, cid, f"trust failed: {e}")
+                fail_device(path, device, cid, f"trust failed: {e}", made_here=True)
                 return
             paired = bool(allp.get("Paired", False))
             bonded = bool(allp.get("Bonded", paired))
             if not (paired and bonded):
-                fail_device(path, device, cid, "paired but not bonded - the controller refused the PIN")
+                fail_device(path, device, cid, "paired but not bonded - the controller refused the PIN",
+                            made_here=True)
                 return
             emit("bonded", device=device, controllerId=cid, trusted=True)
+            # An LE device matched by Appearance/UUID may have had no Name yet
+            # in consider(); prefer the fresh one.
+            name_now = str(allp.get("Name", "") or "") or bt_name
             try:
                 adapter.StopDiscovery()
             except dbus.DBusException:
                 pass
-            GLib.timeout_add(1000, lambda: (connect(path, device, cid, dev_iface, False, bt_name), False)[1])
+            GLib.timeout_add(1000, lambda: (connect(path, device, cid, dev_iface, False, name_now), False)[1])
 
         def err(e):
             name = e.get_dbus_name() if hasattr(e, "get_dbus_name") else str(e)

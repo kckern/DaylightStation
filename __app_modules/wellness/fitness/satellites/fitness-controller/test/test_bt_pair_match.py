@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from bt_pair_match import (  # noqa: E402
     classify_hid, compile_targets, match, candidate_action,
     discovery_transport, input_device_present, may_remove_bond, is_retryable,
+    paired_after_read_error,
 )
 
 SFC30 = {"Address": "E4:17:D8:C6:54:F0", "Name": "8Bitdo SFC30 GamePad", "Icon": "input-gaming"}
@@ -87,10 +88,23 @@ class CandidateAction(unittest.TestCase):
 
 class BondSafety(unittest.TestCase):
     def test_may_remove_bond(self):
-        self.assertTrue(may_remove_bond("repair", True))
-        self.assertTrue(may_remove_bond("repair", False))
-        self.assertTrue(may_remove_bond("add", False))
-        self.assertFalse(may_remove_bond("add", True))
+        self.assertTrue(may_remove_bond("repair", True, False))
+        self.assertTrue(may_remove_bond("repair", False, False))
+        self.assertTrue(may_remove_bond("add", False, False))
+        # A bond that was there before this window is never removed in add mode.
+        self.assertFalse(may_remove_bond("add", True, False))
+
+    def test_half_made_bond_from_this_window_is_removed(self):
+        self.assertTrue(may_remove_bond("add", True, True))
+        self.assertTrue(may_remove_bond("repair", True, True))
+
+    def test_read_error_fails_closed(self):
+        # Only "the object is gone" means no bond; anything else counts as paired.
+        self.assertFalse(paired_after_read_error("org.freedesktop.DBus.Error.UnknownObject"))
+        self.assertFalse(paired_after_read_error("org.freedesktop.DBus.Error.UnknownMethod"))
+        self.assertTrue(paired_after_read_error("org.freedesktop.DBus.Error.NoReply"))
+        self.assertTrue(paired_after_read_error("org.freedesktop.DBus.Error.Timeout"))
+        self.assertTrue(paired_after_read_error(None))
 
     def test_is_retryable(self):
         self.assertTrue(is_retryable("org.bluez.Error.AlreadyExists", "repair"))

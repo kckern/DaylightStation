@@ -107,9 +107,22 @@ def candidate_action(props, mode):
     return "pair"
 
 
-def may_remove_bond(mode, paired_now):
-    """Whether a failed attempt may RemoveDevice: add mode never deletes a live bond."""
-    return mode == "repair" or not paired_now
+def may_remove_bond(mode, paired_now, made_here):
+    """Whether a failed attempt may RemoveDevice.
+
+    Add mode never deletes a bond that existed before this window. A bond the
+    window's own Pair() just made (made_here) is half-made and is removed, or
+    it would show as paired and every later add window would skip it.
+    """
+    return mode == "repair" or made_here or not paired_now
+
+
+def paired_after_read_error(dbus_error_name):
+    """Fail closed when re-reading Paired raises: only a vanished device object
+    (UnknownObject/UnknownMethod) means no bond. NoReply or a timeout from a
+    busy bluetoothd counts as paired, so the device is left alone."""
+    name = str(dbus_error_name or "")
+    return not name.endswith((".UnknownObject", ".UnknownMethod"))
 
 
 def is_retryable(error_name, mode):
