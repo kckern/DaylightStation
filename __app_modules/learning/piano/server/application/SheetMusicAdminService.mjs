@@ -31,8 +31,9 @@
  * `savePoster` stores an SVG poster the admin browser cut from the engraving, as
  * `<basename>.svg` beside the score (the score grid and home desk show it when
  * there is no raster scan). Refusals: `invalid-request`, the svgSafety codes
- * (`not-svg`, `too-large`, `doctype`, `processing-instruction`, `script`,
- * `foreign-object`, `style`, `event-handler`, `external-href`), `has-scan` (a
+ * (`not-svg`, `too-large`, `bad-char`, `doctype`, `processing-instruction`,
+ * `namespace`, `script`, `foreign-object`, `element`, `event-handler`,
+ * `attribute`, `external-href`, `entity`), `has-scan` (a
  * raster scan wins, so the poster would never show), `poster-exists` (a svg that
  * was not generated sits at that path), plus the score reader's codes.
  *
@@ -264,10 +265,18 @@ export class SheetMusicAdminService {
     };
     if (typeof this.#writePoster !== 'function') throw new Error('SheetMusicAdminService.savePoster requires writePoster');
     requireLibrary(id);
+    // Posters belong to scores; a library id naming a picture or a PDF is refused.
+    if (!/\.(musicxml|mxl)$/i.test(id)) throw reject('invalid-request', 'savePoster takes a .musicxml or .mxl score id');
     if (typeof svgText !== 'string') throw reject('invalid-request', 'savePoster requires the svg text');
     const checked = checkSvg(svgText);
     if (!checked.ok) throw reject(checked.code);
-    const before = posterKind(await this.#datastore.sheetMusicCover(id));
+    let before = 'none';
+    try {
+      before = posterKind(await this.#datastore.sheetMusicCover(id));
+    } catch (error) {
+      // As getLearn: an unreadable cover counts as none. writePoster still never replaces a scan.
+      this.#logger?.warn?.('piano.sheetmusic.cover-unreadable', { id, error: error?.message });
+    }
     if (before === 'scan') throw reject('has-scan', `${id} has a scanned poster, which wins over a generated one`);
     // The score must exist, or the poster would be an orphan beside nothing.
     await this.#scoreInfo(id);

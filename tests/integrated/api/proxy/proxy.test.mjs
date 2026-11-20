@@ -215,7 +215,7 @@ describe('Proxy Router — SVG posters are sandboxed', () => {
 
   test('an svg streams with the sandbox CSP and nosniff', async () => {
     const res = await request(app).get('/proxy/media/stream/docs/sheet-music/piece.svg').expect(200);
-    expect(res.headers['content-type']).toMatch(/^image\/svg\+xml/);
+    expect(res.headers['content-type']).toBe('image/svg+xml; charset=utf-8');
     expect(res.headers['content-security-policy']).toBe(CSP);
     expect(res.headers['x-content-type-options']).toBe('nosniff');
   });

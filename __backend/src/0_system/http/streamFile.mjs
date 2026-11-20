@@ -70,8 +70,11 @@ export function streamMediaResourceWithRanges(req, res, resource, extraHeaders =
 
   // An SVG opened directly (not through <img>) is a document that would run its
   // scripts same-origin. Sandbox it: no scripts, nothing loaded from elsewhere.
+  // And name its charset, so no byte-order mark or XML declaration can pick another.
+  let contentType = resource.mimeType;
   if (isSvgMimeType(resource.mimeType)) {
     extraHeaders = { ...extraHeaders, 'Content-Security-Policy': SVG_CSP };
+    contentType = 'image/svg+xml; charset=utf-8';
   }
 
   // A resource that knows its mtime gets validators, and a matching conditional
@@ -101,7 +104,7 @@ export function streamMediaResourceWithRanges(req, res, resource, extraHeaders =
       'Content-Range': `bytes ${start}-${end}/${resource.size}`,
       'Accept-Ranges': 'bytes',
       'Content-Length': chunkSize,
-      'Content-Type': resource.mimeType,
+      'Content-Type': contentType,
     });
 
     resource.open({ start, end }).pipe(res);
@@ -110,7 +113,7 @@ export function streamMediaResourceWithRanges(req, res, resource, extraHeaders =
       ...extraHeaders,
       'Accept-Ranges': 'bytes',
       'Content-Length': resource.size,
-      'Content-Type': resource.mimeType,
+      'Content-Type': contentType,
     });
 
     resource.open().pipe(res);

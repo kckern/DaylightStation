@@ -349,7 +349,14 @@ describe('createAdminSheetMusicRouter: logs', () => {
 describe('createAdminSheetMusicRouter: POST /poster', () => {
   const SVG = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>';
 
-  it.each(['image/svg+xml', 'text/plain'])('forwards a %s body as text and answers 201', async (type) => {
+  it('a text/plain body is 400 and never reaches the service', async () => {
+    const { app, calls } = harness();
+    const res = await request(app).post(`/sheet-music/poster?${q}`).set('Content-Type', 'text/plain').send(SVG);
+    expect(res.status).toBe(400);
+    expect(calls.some((c) => c.name === 'savePoster')).toBe(false);
+  });
+
+  it.each(['image/svg+xml', 'image/svg+xml; charset=utf-8'])('forwards a %s body as text and answers 201', async (type) => {
     const { app, calls } = harness();
     const res = await request(app).post(`/sheet-music/poster?${q}`).set('Content-Type', type).send(SVG);
     expect(res.status).toBe(201);
@@ -381,8 +388,9 @@ describe('createAdminSheetMusicRouter: POST /poster', () => {
 
   it.each([
     ['too-large', 413], ['has-scan', 409], ['poster-exists', 409], ['not-svg', 422], ['script', 422],
-    ['foreign-object', 422], ['style', 422], ['event-handler', 422], ['external-href', 422], ['doctype', 422],
-    ['processing-instruction', 422], ['invalid-request', 400], ['NOT_LIBRARY_SCORE', 400], ['SCORE_NOT_FOUND', 404],
+    ['foreign-object', 422], ['event-handler', 422], ['external-href', 422], ['doctype', 422],
+    ['processing-instruction', 422], ['element', 422], ['attribute', 422], ['namespace', 422], ['bad-char', 422],
+    ['entity', 422], ['invalid-request', 400], ['NOT_LIBRARY_SCORE', 400], ['SCORE_NOT_FOUND', 404],
   ])('%s → %i', async (codeName, status) => {
     const { app } = harness({ savePoster: async () => { throw coded(codeName); } });
     const res = await request(app).post(`/sheet-music/poster?${q}`).set('Content-Type', 'image/svg+xml').send(SVG);

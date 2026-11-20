@@ -295,6 +295,23 @@ describe('SheetMusicScoreReader.writePoster', () => {
     expect(await codeOf(reader.writePoster('files:docs/sheet-music/p/dir.musicxml', generated()))).toBe('POSTER_EXISTS');
   });
 
+  it('counts as generated only a marker on the root element, read from the first 4 KB', async () => {
+    const plain = '<svg xmlns="http://www.w3.org/2000/svg">';
+    // The marker on a child element, not the root.
+    fs.writeFileSync(path.join(dir, 'child.svg'), `${plain}<g ${POSTER_MARKER}/></svg>`);
+    expect(await codeOf(reader.writePoster('files:docs/sheet-music/p/child.musicxml', generated()))).toBe('POSTER_EXISTS');
+    // The marker only in text.
+    fs.writeFileSync(path.join(dir, 'text.svg'), `${plain}<text>${POSTER_MARKER}</text></svg>`);
+    expect(await codeOf(reader.writePoster('files:docs/sheet-music/p/text.musicxml', generated()))).toBe('POSTER_EXISTS');
+    // A root tag that does not close inside the first 4 KB.
+    fs.writeFileSync(path.join(dir, 'late.svg'), `<svg xmlns="http://www.w3.org/2000/svg" a="${'x'.repeat(5000)}" ${POSTER_MARKER}/>`);
+    expect(await codeOf(reader.writePoster('files:docs/sheet-music/p/late.musicxml', generated()))).toBe('POSTER_EXISTS');
+    // A big generated poster is recognised without reading it all.
+    fs.writeFileSync(path.join(dir, 'big.svg'), generated(`<path d="${'M0 0'.repeat(200000)}"/>`));
+    await reader.writePoster('files:docs/sheet-music/p/big.musicxml', generated('<g/>'));
+    expect(fs.readFileSync(path.join(dir, 'big.svg'), 'utf8')).toBe(generated('<g/>'));
+  });
+
   it('refuses ids outside the library', async () => {
     expect(await codeOf(reader.writePoster('files:docs/other/x.musicxml', generated()))).toBe('NOT_LIBRARY_SCORE');
     expect(await codeOf(reader.writePoster('files:docs/sheet-music/../x.musicxml', generated()))).toBe('NOT_LIBRARY_SCORE');

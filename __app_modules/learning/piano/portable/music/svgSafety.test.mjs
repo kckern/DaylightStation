@@ -1,116 +1,208 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { checkSvg, MAX_POSTER_BYTES } from './svgSafety.mjs';
+import { attributeAllowed, checkSvg, elementAllowed, MAX_POSTER_BYTES } from './svgSafety.mjs';
 
-const wrap = (body, attrs = '') => `<svg xmlns="http://www.w3.org/2000/svg"${attrs} width="800" height="240" viewBox="0 0 1000 300">${body}</svg>`;
+const NS = 'xmlns="http://www.w3.org/2000/svg"';
+const XL = 'xmlns:xlink="http://www.w3.org/1999/xlink"';
+const w = (inner, attrs = '') => `<svg ${NS} ${XL}${attrs}>${inner}</svg>`;
+const ESC = '\x1b';
 
-/** The shape OSMD/VexFlow emits: nested groups, glyph paths, rects, a little text. */
-const OSMD_LIKE = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="800" height="240" viewBox="0 0 1000 300" data-daylight-poster="generated">
-  <rect x="0" y="0" width="1000" height="300" fill="#fff"/>
-  <!-- staff -->
-  <g class="staffline">
-    <g class="vf-measure">
-      <path stroke-width="1" fill="none" stroke="#000000" d="M10 40L990 40"/>
-      <g class="vf-stavenote"><path d="M 30 50 C 31 49 33 48 35 49 Z" fill="black"/></g>
-      <text font-family="Times New Roman" font-size="12px" x="12" y="30">1</text>
-      <use href="#glyph1" x="4"/>
-      <rect x="1" y="1" width="2" height="2" fill="url(#grad)" style="fill: url( '#grad' )"/>
-      <image href="data:image/png;base64,AAAA" width="1" height="1"/>
+/** What the poster serializer emits from an OSMD engraving (VexFlow SVGContext output). */
+const OSMD_LIKE = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="240" viewBox="0 0 1000 300" data-daylight-poster="generated">
+  <rect x="0" y="0" width="1000" height="300" fill="#ffffff"/>
+  <g>
+    <g>
+      <path stroke-width="1" fill="none" stroke="#000000" stroke-dasharray="none" d="M10 40L990 40"/>
+      <g><path d="M 30 50 C 31 49 33 48 35 49 Z" fill="black" stroke="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/></g>
+      <rect x="1" y="1" width="2" height="2" fill="black" fill-opacity="1" stroke-width="0.3" stroke="black"/>
+      <text stroke-width="0.3" fill="black" stroke="none" stroke-dasharray="none" font-family="'Times New Roman', serif"
+        font-size="12px" font-weight="normal" font-style="normal" x="12" y="30">1 &amp; 2 &#9837;</text>
+      <g visibility="hidden" pointer-events="none"><use href="#a"/><use xlink:href="#a" ${XL}/></g>
+      <g clip-path="url(#clip1)"><path d="M0 0"/></g>
     </g>
   </g>
-</svg>
-`;
+</svg>`;
 
 const code = (text) => checkSvg(text).code ?? 'ok';
 
-describe('checkSvg', () => {
-  it('accepts an OSMD-like engraving', () => {
+/** Every case from the security review's bypass harness: all must be refused. */
+const BYPASSES = [
+  ['<SCRIPT>', w('<SCRIPT>alert(1)</SCRIPT>')],
+  ['<svg:script>', '<svg:svg xmlns:svg="http://www.w3.org/2000/svg"><svg:script>alert(1)</svg:script></svg:svg>'],
+  ['<html:script> (xhtml ns prefix)', w('<h:script xmlns:h="http://www.w3.org/1999/xhtml">alert(1)</h:script>')],
+  ['XLINK:HREF javascript', w('<a XLINK:HREF="javascript:alert(1)"><text>x</text></a>')],
+  ['odd prefix q:href javascript', w('<a xmlns:q="http://www.w3.org/1999/xlink" q:href="javascript:alert(1)"><text>x</text></a>')],
+  ['&#106;avascript: href', w('<a href="&#106;avascript:alert(1)"><text>x</text></a>')],
+  ['newline inside attr name', w('<g on\nload="alert(1)"/>')],
+  ['unquoted attr', w('<g onload=alert(1) />')],
+  ['CDATA with <script', w('<g><![CDATA[<script>alert(1)</script>]]></g>')],
+  ['comment then script', w('<!-- --><script>alert(1)</script>')],
+  ['animate to=javascript:', w('<a href="#x"><animate attributeName="href" to="javascript:alert(1)"/><text>x</text></a>')],
+  ['set to=javascript:', w('<a xlink:href="#x"><set attributeName="xlink:href" to="javascript:alert(1)"/><text>x</text></a>')],
+  ['animate values=javascript:', w('<a href="#x"><animate attributeName="href" values="javascript:alert(1)"/><text>x</text></a>')],
+  ['<a href=http>', w('<a href="https://evil.example/"><text>x</text></a>')],
+  ['<use href=external.svg#x>', w('<use href="external.svg#x"/>')],
+  ['<use href=data:image/svg+xml>', w('<use href="data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=#x"/>')],
+  ['<image href=http>', w('<image href="http://evil.example/p.png"/>')],
+  ['<image href=data:image/png>', w('<image href="data:image/png;base64,AAAA"/>')],
+  ['<feImage href=http>', w('<filter id="f"><feImage href="http://evil.example/x"/></filter>')],
+  ['style url(http)', w('<g style="background:url(http://evil.example/x)"/>')],
+  ['style url( entity-encoded u', w('<g style="background:&#117;rl(http://evil.example/x)"/>')],
+  ['fill url( entity-encoded (', w('<g fill="url&#40;http://evil.example/x#a)"/>')],
+  ['style CSS-escaped u\\72l(', w('<g style="background:u\\72l(http://evil.example/x)"/>')],
+  ['style image-set()', w('<g style="background-image:image-set(\'http://evil.example/x\' 1x)"/>')],
+  ['style expression(', w('<g style="width:expression(alert(1))"/>')],
+  ['xml:base', w('<g xml:base="http://evil.example/"><use href="#x"/></g>')],
+  ['<iframe>', w('<iframe src="https://evil.example/"/>')],
+  ['<embed>', w('<embed src="https://evil.example/x.swf"/>')],
+  ['<object data>', w('<object data="https://evil.example/x"/>')],
+  ['xhtml-ns root + iframe srcdoc', '<svg xmlns="http://www.w3.org/1999/xhtml"><iframe srcdoc="&lt;script&gt;alert(document.domain)&lt;/script&gt;"></iframe></svg>'],
+  ['xhtml prefixed iframe srcdoc inside svg', w('<h:iframe xmlns:h="http://www.w3.org/1999/xhtml" srcdoc="&lt;script&gt;alert(1)&lt;/script&gt;"/>')],
+  ['xhtml-ns root + img src http', '<svg xmlns="http://www.w3.org/1999/xhtml"><img src="https://evil.example/t.png"/></svg>'],
+  ['xhtml-ns root + form action javascript', '<svg xmlns="http://www.w3.org/1999/xhtml"><form action="javascript:alert(1)"><button>go</button></form></svg>'],
+  ['xhtml-ns root + meta refresh', '<svg xmlns="http://www.w3.org/1999/xhtml"><meta http-equiv="refresh" content="0;url=https://evil.example/"/></svg>'],
+  ['<foreignObject>', w('<foreignObject><div/></foreignObject>')],
+  ['<FOREIGNOBJECT>', w('<FOREIGNOBJECT/>')],
+  ['<style>', w('<style>@import url(http://x)</style>')],
+  ['DOCTYPE entity', `<!DOCTYPE svg [<!ENTITY x "y">]>${w('')}`],
+  ['null byte in text', w('<text>a\u0000b</text>')],
+  ['null byte inside tag name', w('<scr\u0000ipt>alert(1)</scr\u0000ipt>')],
+  ['BOM prefix', `﻿${w('<g/>')}`],
+  ['xml decl ISO-2022-JP + ESC trick', `<?xml version="1.0" encoding="ISO-2022-JP"?>${w(`<g>${ESC}$B<!--${ESC}(B<script>alert(1)</script>--></g>`)}`],
+  ['xml decl UTF-16', `<?xml version="1.0" encoding="UTF-16"?>${w('<g/>')}`],
+  ['ESC in text', w(`<text>a${ESC}b</text>`)],
+  ['fullwidth onload', w('<g ｏnload="x"/>')],
+  ['href leading space javascript', w('<a href=" javascript:alert(1)"><text>x</text></a>')],
+  ['<a href="&#x23;x">', w('<a href="&#x23;x"><text>x</text></a>')],
+  ['root <h:svg> in xhtml ns', '<h:svg xmlns:h="http://www.w3.org/1999/xhtml"><h:iframe srcdoc="&lt;script&gt;alert(1)&lt;/script&gt;"/></h:svg>'],
+  ['<handler> (SVG Tiny ev)', w('<handler xmlns:ev="http://www.w3.org/2001/xml-events" ev:event="load">alert(1)</handler>')],
+  ['animate onbegin', w('<animate onbegin="alert(1)"/>')],
+  ['set attributeName=onmouseover', w('<rect><set attributeName="onmouseover" to="alert(1)"/></rect>')],
+  ['animate to=data:text/html', w('<a href="#x"><animate attributeName="href" to="data:text/html,%3Cscript%3Ealert(1)%3C/script%3E"/><text>x</text></a>')],
+  ['too large', w('<g/>'.padEnd(310000, ' '))],
+];
+
+describe('checkSvg: what passes', () => {
+  it('accepts the shape the poster serializer emits', () => {
     assert.deepEqual(checkSvg(OSMD_LIKE), { ok: true });
   });
 
-  it('accepts a minimal svg with a leading BOM', () => {
-    assert.equal(code(`﻿${wrap('<g/>')}`), 'ok');
+  it('accepts the review harness baseline', () => {
+    assert.equal(code(w('<g><path d="M0 0L1 1"/><text font-family="Times New Roman">1</text></g>')), 'ok');
   });
+});
 
-  it('rejects text that is not an svg document', () => {
+describe('checkSvg: every bypass from the security review is refused', () => {
+  for (const [name, text] of BYPASSES) {
+    it(name, () => {
+      const result = checkSvg(text);
+      assert.equal(result.ok, false, `${name} was accepted`);
+    });
+  }
+});
+
+describe('checkSvg: specific codes', () => {
+  it('requires an <svg> root in the SVG namespace', () => {
+    assert.equal(code('<svg><g/></svg>'), 'namespace');
+    assert.equal(code('<svg xmlns="http://www.w3.org/1999/xhtml"/>'), 'namespace');
+    assert.equal(code('<html xmlns="http://www.w3.org/2000/svg"/>'), 'not-svg');
     assert.equal(code(''), 'not-svg');
     assert.equal(code(null), 'not-svg');
-    assert.equal(code('<html><body/></html>'), 'not-svg');
-    assert.equal(code('hello'), 'not-svg');
-    assert.equal(code(wrap('<g>')), 'not-svg'); // unclosed
-    assert.equal(code(wrap('<g></h>')), 'not-svg'); // mismatched
-    assert.equal(code(`${wrap('')}<svg/>`), 'not-svg'); // two roots
-    assert.equal(code(`${wrap('')}trailing`), 'not-svg');
-    assert.equal(code(wrap('<path d=unquoted/>')), 'not-svg');
-    assert.equal(code(wrap('<path d="a"fill="b"/>')), 'not-svg');
-    assert.equal(code(wrap('<path d="a<b"/>')), 'not-svg');
-    assert.equal(code(wrap('<!-- open')), 'not-svg');
+    assert.equal(code(w('<g>')), 'not-svg');
+    assert.equal(code(w('<g></h>')), 'not-svg');
+    assert.equal(code(`${w('')}<svg ${NS}/>`), 'not-svg');
   });
 
-  it('rejects script elements, any case or prefix', () => {
-    assert.equal(code(wrap('<script>alert(1)</script>')), 'script');
-    assert.equal(code(wrap('<SCRIPT/>')), 'script');
-    assert.equal(code(wrap('<svg:script/>')), 'script');
+  it('refuses namespace declarations other than SVG and XLink, anywhere', () => {
+    assert.equal(code(w('<g xmlns="http://www.w3.org/1999/xhtml"/>')), 'namespace');
+    assert.equal(code(w('<g xmlns:xlink="http://evil.example/"/>')), 'namespace');
+    assert.equal(code(w('<g xmlns:foo="http://www.w3.org/2000/svg"/>')), 'namespace');
   });
 
-  it('rejects foreignObject', () => {
-    assert.equal(code(wrap('<foreignObject><div/></foreignObject>')), 'foreign-object');
+  it('refuses elements and attributes off the allow-list', () => {
+    assert.equal(code(w('<script/>')), 'script');
+    assert.equal(code(w('<foreignObject/>')), 'foreign-object');
+    assert.equal(code(w('<image/>')), 'element');
+    assert.equal(code(w('<a/>')), 'element');
+    assert.equal(code(w('<animateTransform/>')), 'element');
+    assert.equal(code(w('<svg:g/>')), 'element');
+    assert.equal(code(w('<g onclick="x()"/>')), 'event-handler');
+    assert.equal(code(w('<g style="fill:red"/>')), 'attribute');
+    assert.equal(code(w('<g class="x"/>')), 'attribute');
+    assert.equal(code(w('<g xml:space="preserve"/>')), 'attribute');
   });
 
-  it('rejects style elements', () => {
-    assert.equal(code(wrap('<style>@import url(http://x/a.css);</style>')), 'style');
+  it('allows local references only', () => {
+    assert.equal(code(w('<use href="#ok"/>')), 'ok');
+    assert.equal(code(w('<use href="#"/>')), 'external-href');
+    assert.equal(code(w('<use href="x#ok"/>')), 'external-href');
+    assert.equal(code(w('<g clip-path="url(#c)"/>')), 'ok');
+    assert.equal(code(w('<g clip-path="url(http://x/#c)"/>')), 'external-href');
+    assert.equal(code(w('<g fill="url(#grad)"/>')), 'external-href');
+    assert.equal(code(w('<g fill="URL(#grad)"/>')), 'external-href');
   });
 
-  it('rejects on* attributes on any element, the root included', () => {
-    assert.equal(code(wrap('<g onclick="x()"/>')), 'event-handler');
-    assert.equal(code(wrap('<g ONLOAD=\'x()\'/>')), 'event-handler');
-    assert.equal(code(wrap('', ' onload="x()"')), 'event-handler');
+  it('refuses character references in attribute values and unknown entities in text', () => {
+    assert.equal(code(w('<g fill="&#98;lack"/>')), 'entity');
+    assert.equal(code(w('<text>&nbsp;</text>')), 'entity');
+    assert.equal(code(w('<text>&amp;&lt;&gt;&quot;&apos;&#9837;&#x266D;</text>')), 'ok');
+    assert.equal(code(w('<text>a & b</text>')), 'entity');
   });
 
-  it('rejects hrefs that leave the document', () => {
-    assert.equal(code(wrap('<use href="http://evil/x.svg#a"/>')), 'external-href');
-    assert.equal(code(wrap('<use xlink:href="javascript:alert(1)"/>')), 'external-href');
-    assert.equal(code(wrap('<a href=" //evil"/>')), 'external-href');
-    assert.equal(code(wrap('<image href="data:text/html,<b>"/>')), 'not-svg'); // < in value
-    assert.equal(code(wrap('<image href="data:text/html,x"/>')), 'external-href');
-    assert.equal(code(wrap('<rect fill="url(http://evil/p.svg#a)"/>')), 'external-href');
-    assert.equal(code(wrap('<rect style="fill:url(#ok);stroke:url(evil.svg)"/>')), 'external-href');
+  it('is UTF-8 text only: no declaration, BOM or control characters', () => {
+    assert.equal(code(`<?xml version="1.0" encoding="UTF-8"?>${w('')}`), 'processing-instruction');
+    assert.equal(code(`﻿${w('')}`), 'bad-char');
+    assert.equal(code(w('<text>a\u0001b</text>')), 'bad-char');
+    assert.equal(code(w('<text>a￾b</text>')), 'bad-char');
+    assert.equal(code(w('<text>a\uD800b</text>')), 'bad-char');
+    assert.equal(code(w('<text>tab\tnl\ncr\r 𝄞</text>')), 'ok');
   });
 
-  it('rejects DOCTYPE, ENTITY and processing instructions', () => {
-    assert.equal(code(`<!DOCTYPE svg [<!ENTITY a "b">]>${wrap('')}`), 'doctype');
-    assert.equal(code(wrap('<!ENTITY a "b">')), 'doctype');
-    assert.equal(code(`<?xml-stylesheet href="http://x/a.css"?>${wrap('')}`), 'processing-instruction');
-    assert.equal(code(wrap('<?php echo 1 ?>')), 'processing-instruction');
+  it('refuses DOCTYPE, CDATA and comments', () => {
+    assert.equal(code(`<!DOCTYPE svg>${w('')}`), 'doctype');
+    assert.equal(code(w('<![CDATA[x]]>')), 'doctype');
+    assert.equal(code(w('<!-- note -->')), 'doctype');
   });
 
-  it('rejects anything over the size cap', () => {
-    const pad = 'M0 0'.repeat(Math.ceil(MAX_POSTER_BYTES / 4));
-    assert.equal(code(wrap(`<path d="${pad}"/>`)), 'too-large');
-    // Multi-byte text counts in UTF-8 bytes, not characters.
-    const wide = 'é'.repeat(Math.ceil(MAX_POSTER_BYTES / 2) - 50);
-    assert.equal(code(wrap(`<text>${wide}</text>`)), 'too-large');
+  it('refuses anything over the size cap, in UTF-8 bytes', () => {
+    assert.equal(code(w(`<path d="${'M0 0'.repeat(Math.ceil(MAX_POSTER_BYTES / 4))}"/>`)), 'too-large');
+    assert.equal(code(w(`<text>${'é'.repeat(Math.ceil(MAX_POSTER_BYTES / 2) - 50)}</text>`)), 'too-large');
   });
 
-  it('stays linear on hostile inputs at the size cap', () => {
-    const fill = (unit, budget = MAX_POSTER_BYTES - 200) => unit.repeat(Math.floor(budget / unit.length));
-    const hostile = [
-      `<svg>${fill('<g a="')}`,
-      `<svg>${fill('<!-')}`,
-      `<svg>${fill('<g ')}`,
-      `<svg>${fill('<g>')}`,
-      `<svg><rect fill="${fill('url(#')}"/></svg>`,
-      `<svg>${fill('<g x="url(#a)url(#a)" y=\'1\'>')}`,
-      `<svg>${fill('<![CDATA[')}`,
-      `<svg>${fill('</')}`,
-      fill(' '),
-    ];
-    for (const text of hostile) {
+  it('exposes the allow-lists the serializer strips to', () => {
+    assert.equal(elementAllowed('path'), true);
+    assert.equal(elementAllowed('image'), false);
+    assert.equal(attributeAllowed('path', 'd', 'M0 0'), true);
+    assert.equal(attributeAllowed('g', 'class', 'x'), false);
+    assert.equal(attributeAllowed('use', 'href', 'http://x'), false);
+  });
+});
+
+describe('checkSvg: stays linear on hostile inputs at the size cap', () => {
+  const fill = (unit, budget = MAX_POSTER_BYTES - 200) => unit.repeat(Math.floor(budget / unit.length));
+  const hostile = {
+    'open attribute quotes': `<svg ${NS}>${fill('<g a="')}`,
+    'open comments': `<svg ${NS}>${fill('<!-')}`,
+    'open tags': `<svg ${NS}>${fill('<g ')}`,
+    'deep nesting': `<svg ${NS}>${fill('<g>')}`,
+    'url( in one attribute': `<svg ${NS}><rect fill="${fill('url(#')}"/></svg>`,
+    'url(#a) repeated': `<svg ${NS}><g clip-path="${fill('url(#a)')}"/></svg>`,
+    'open CDATA': `<svg ${NS}>${fill('<![CDATA[')}`,
+    'stray close tags': `<svg ${NS}>${fill('</')}`,
+    'whitespace': fill(' '),
+    'many attributes': `<svg ${NS}><g ${Array.from({ length: 20000 }, (_, i) => `a${i}="1"`).join(' ')}/></svg>`,
+    'unterminated comment': `<svg ${NS}><!--${'-'.repeat(290000)}`,
+    'attributes without end': `<svg${' a="1"'.repeat(48000)}`,
+    'long name': `<svg${'x'.repeat(299000)}>`,
+    'balanced nesting 40k': `<svg ${NS}>${'<g>'.repeat(30000)}${'</g>'.repeat(30000)}</svg>`,
+    'entities in text': `<svg ${NS}><text>${fill('&amp;')}</text></svg>`,
+  };
+  for (const [name, text] of Object.entries(hostile)) {
+    it(name, () => {
       const t0 = performance.now();
       checkSvg(text);
       const ms = performance.now() - t0;
-      assert.ok(ms < 100, `${text.slice(0, 20)}… took ${ms.toFixed(1)} ms`);
-    }
-  });
+      assert.ok(ms < 100, `${name} took ${ms.toFixed(1)} ms`);
+    });
+  }
 });

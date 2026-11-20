@@ -9,18 +9,22 @@
  * staffline groups lower down.
  *
  * Music glyphs are paths in the VexFlow output; measure numbers and other text
- * stay `<text>` in a generic font family, which `<img>` renders with local fonts.
- * Nothing is loaded from elsewhere: anything svgSafety would refuse is stripped,
- * and the result is checked with svgSafety before it is returned.
+ * stay `<text>` with a font-family, which `<img>` renders with the device's own
+ * fonts (fonts are not inlined). The clone is cut down to svgSafety's
+ * allow-lists (elements, attributes, local references only; comments and
+ * control characters dropped), and the result is checked with svgSafety before
+ * it is returned.
  */
-import { checkSvg, MAX_POSTER_BYTES } from '../../portable/music/svgSafety.mjs';
+import { attributeAllowed, checkSvg, elementAllowed, MAX_POSTER_BYTES } from '../../portable/music/svgSafety.mjs';
 
 export const POSTER_SYSTEMS = 2;
 /** Stamped on the root: the server replaces only a poster carrying it. */
 export const POSTER_MARKER_ATTR = 'data-daylight-poster';
 const POSTER_MARKER_VALUE = 'generated';
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const DROP_ELEMENTS = new Set(['script', 'foreignobject', 'style']);
+// C0 controls other than tab/LF/CR, and the noncharacters svgSafety refuses.
+// eslint-disable-next-line no-control-regex
+const BAD_TEXT_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFEFF\uFFFE\uFFFF]/g;
 
 const round = (n) => Math.round(n * 100) / 100;
 
@@ -48,40 +52,42 @@ export function posterCrop(staffBoxes, { systems = POSTER_SYSTEMS } = {}) {
   };
 }
 
-const isLocalRef = (value) => {
-  const v = String(value).trim().toLowerCase();
-  return v.startsWith('#') || v.startsWith('data:image/');
-};
-
-/** Ids that something inside the svg points at (href="#x", url(#x)); those keep their id. */
+/** Ids something inside the svg points at (href="#x", clip-path="url(#x)"); those keep their id. */
 function referencedIds(root) {
   const ids = new Set();
   for (const el of [root, ...root.querySelectorAll('*')]) {
     for (const attr of [...el.attributes]) {
-      const href = /^\s*#(.+)$/.exec(attr.value);
-      if (/(^|:)href$/i.test(attr.name) && href) ids.add(href[1].trim());
-      for (const m of attr.value.matchAll(/url\(\s*['"]?#([^'")\s]+)/g)) ids.add(m[1]);
+      const href = /^#(.+)$/.exec(attr.value);
+      if ((attr.name === 'href' || attr.name === 'xlink:href') && href) ids.add(href[1]);
+      const clip = /^url\(#(.+)\)$/.exec(attr.value);
+      if (attr.name === 'clip-path' && clip) ids.add(clip[1]);
     }
   }
   return ids;
 }
 
+const isPlainSvgElement = (el) => el.namespaceURI === SVG_NS && !el.prefix && elementAllowed(el.localName);
+
+/** Cut the clone down to what svgSafety accepts. */
 function sanitize(root) {
+  // Comments, processing instructions and CDATA go; text loses control characters.
+  const walker = root.ownerDocument.createTreeWalker(root, 0x80 /* comments */ | 0x40 /* PIs */ | 0x08 /* CDATA */ | 0x04 /* text */);
+  const drop = [];
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node.nodeType === 3) node.data = node.data.replace(BAD_TEXT_RE, '');
+    else drop.push(node);
+  }
+  drop.forEach((node) => node.remove());
   for (const el of [...root.querySelectorAll('*')]) {
-    if (DROP_ELEMENTS.has(el.localName.toLowerCase())) el.remove();
+    if (root.contains(el) && !isPlainSvgElement(el)) el.remove();
   }
   const keepIds = referencedIds(root);
   for (const el of [root, ...root.querySelectorAll('*')]) {
     for (const attr of [...el.attributes]) {
-      const name = attr.name.toLowerCase();
-      const local = name.includes(':') ? name.slice(name.lastIndexOf(':') + 1) : name;
-      const drop = local.startsWith('on')
-        || name === 'class'
-        || name.startsWith('data-')
-        || (name === 'id' && !keepIds.has(attr.value))
-        || (local === 'href' && !isLocalRef(attr.value))
-        || (/url\(\s*['"]?(?!#)/i.test(attr.value));
-      if (drop) el.removeAttributeNode(attr);
+      const name = attr.name;
+      const keep = (name === 'id' ? keepIds.has(attr.value) : true)
+        && attributeAllowed(el.localName, name, attr.value);
+      if (!keep) el.removeAttributeNode(attr);
     }
   }
 }

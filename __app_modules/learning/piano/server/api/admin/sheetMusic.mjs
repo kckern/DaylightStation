@@ -10,7 +10,7 @@
  *   PUT  /learn               → body { action: 'draft'|'approve'|'revert', ... }
  *   GET  /learn/draft-impact  → { draftRevision, impact }
  *   POST /impact              → { impact }  body { segments } (revert impact against the generated plan)
- *   POST /poster              → 201 { id, poster, url, bytes }  body: the SVG text (image/svg+xml or text/plain)
+ *   POST /poster              → 201 { id, poster, url, bytes }  body: the SVG text (image/svg+xml only)
  *
  * Coded refusals from the injected SheetMusicAdminService become
  * `{ error: code }` (plus `errors` for invalid-segments, `draftRevision` for
@@ -20,7 +20,7 @@
  * string-shape error handler, which answers 500 without the message.
  *
  * Malformed requests are refused before the service: an unparseable or
- * truncated multipart body, a poster body that is not SVG/plain text (400) or is
+ * truncated multipart body, a poster body that is not image/svg+xml (400) or is
  * over MAX_POSTER_BODY_BYTES (413 too-large), `/impact` without a `segments` array, and more than
  * MAX_SEGMENTS segments in a draft or impact request.
  */
@@ -65,13 +65,17 @@ const STATUS_BY_CODE = {
   SCORE_UNREADABLE: 422,
   // svgSafety refusals
   'not-svg': 422,
+  'bad-char': 422,
   doctype: 422,
   'processing-instruction': 422,
+  namespace: 422,
   script: 422,
   'foreign-object': 422,
-  style: 422,
+  element: 422,
   'event-handler': 422,
+  attribute: 422,
   'external-href': 422,
+  entity: 422,
 };
 
 const ACTIONS = new Set(['draft', 'approve', 'revert']);
@@ -87,7 +91,7 @@ export function createAdminSheetMusicRouter({ service, logger = console } = {}) 
     throw new Error('createAdminSheetMusicRouter requires service');
   }
   const router = express.Router();
-  const posterText = express.text({ type: ['image/svg+xml', 'text/plain'], limit: MAX_POSTER_BODY_BYTES });
+  const posterText = express.text({ type: 'image/svg+xml', limit: MAX_POSTER_BODY_BYTES });
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } });
 
   /** Answers a coded refusal; false when the error is not one (the caller rethrows). */

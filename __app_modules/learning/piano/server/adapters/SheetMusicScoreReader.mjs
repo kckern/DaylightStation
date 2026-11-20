@@ -21,8 +21,8 @@
  * SCORE_UNWRITABLE.
  *
  * `writePoster` writes a generated SVG poster as `<basename>.svg` beside the
- * score, atomically. It replaces only an earlier generated poster (one carrying
- * POSTER_MARKER); a hand-made svg, a symlink or a folder at that path fails with
+ * score, atomically. It replaces only an earlier generated poster: one whose ROOT
+ * start tag carries POSTER_MARKER within the file's first 4 KB; a hand-made svg, a symlink or a folder at that path fails with
  * POSTER_EXISTS, any other failure with POSTER_UNWRITABLE.
  *
  * Layer: ADAPTER. All filesystem access through FileIO.
@@ -30,7 +30,7 @@
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import {
-  ensureDirAsync, getFileStatsAsync, getLinkStatsAsync, readBinaryFromPathAsync, readTextFromPathAsync,
+  ensureDirAsync, getFileStatsAsync, getLinkStatsAsync, readBinaryFromPathAsync, readTextPrefixAsync,
   writeBinaryExclusiveAsync, writeFileAtomic,
 } from '#system/utils/FileIO.mjs';
 import { extractMusicXmlFromMxl, MAX_MXL_XML_BYTES } from '../../../../../__capabilities/music-notation/server/mxlArchive.mjs';
@@ -44,7 +44,16 @@ const BOM = '\uFEFF';
 /** The root attribute the admin's poster serializer stamps on every generated poster. */
 export const POSTER_MARKER = 'data-daylight-poster="generated"';
 /** How much of an existing svg is read to look for the marker on its root element. */
-const MARKER_SCAN_CHARS = 4096;
+const MARKER_SCAN_BYTES = 4096;
+const MARKER_ATTR_RE = /\sdata-daylight-poster\s*=\s*"generated"/;
+
+/** True when the text starts with an <svg> root whose start tag carries the marker. */
+export function rootHasPosterMarker(prefix) {
+  const text = String(prefix).replace(/^\s+/, '');
+  if (!/^<svg[\s>/]/.test(text)) return false;
+  const close = text.indexOf('>');
+  return close > 0 && MARKER_ATTR_RE.test(text.slice(0, close));
+}
 const MXL_RE = /\.mxl$/i;
 
 export class ScoreReadError extends Error {
@@ -179,7 +188,7 @@ export class SheetMusicScoreReader {
       let generated = false;
       if (existing.isFile()) {
         try {
-          generated = (await readTextFromPathAsync(file)).slice(0, MARKER_SCAN_CHARS).includes(POSTER_MARKER);
+          generated = rootHasPosterMarker(await readTextPrefixAsync(file, MARKER_SCAN_BYTES));
         } catch {
           generated = false;
         }

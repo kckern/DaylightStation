@@ -81,15 +81,23 @@ systems from the engraving on screen, and **Generate missing posters** on the
 library page walks the visible scores that have none, one engraving at a time in
 an off-screen host, with a progress line, Stop, and a list of failures. Both
 upload to `POST /api/v1/admin/sheet-music/poster?id=<score id>` (body: the SVG
-text, `image/svg+xml`, at most 300 KB), which writes `<basename>.svg` beside the
-score. The server reads the upload as XML and refuses scripts,
-`<foreignObject>`, `<style>`, `on*` attributes, DOCTYPE/ENTITY declarations and
-any `href` or `url()` that leaves the document; it refuses a score that has a
-scan (`has-scan`, it would never show) and never replaces an SVG it did not
-generate (`poster-exists`; generated posters carry
-`data-daylight-poster="generated"` on the root). The stream route sends
-`Content-Security-Policy: sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:`
-with every SVG, so opening one directly runs nothing. Logs:
+text as `image/svg+xml`, at most 300 KB), which writes `<basename>.svg` beside
+the score. Only `.musicxml`/`.mxl` scores take a poster. The server accepts plain
+static SVG by allow-list (`portable/music/svgSafety.mjs`): UTF-8 text with no XML
+declaration, byte-order mark or control characters; an `<svg>` root in the SVG
+namespace, and no namespace but SVG and XLink; only the shape, text and grouping
+elements VexFlow draws with; only presentation and geometry attributes (no
+`style`, no `on*`), with no character references in their values; references
+only to a local `#id` (`href`, `clip-path="url(#id)"`). It refuses a score that
+has a scan (`has-scan`, it would never show) and never replaces an SVG it did not
+generate (`poster-exists`; a generated poster carries
+`data-daylight-poster="generated"` on its root element). The browser serializer
+strips the engraving to the same allow-lists before uploading. Fonts are not
+inlined: the music glyphs are paths, but measure numbers and other text stay
+`<text>` and render in the viewing device's own fonts. The stream route serves
+every SVG as `image/svg+xml; charset=utf-8` with
+`Content-Security-Policy: sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:`,
+so opening one directly runs nothing. Logs:
 `piano.sheetmusic.poster-saved`, `.poster-rejected`; admin
 `admin.sheetmusic.poster-generated`, `.poster-failed`, `.posters-start|done|cancelled`.
 

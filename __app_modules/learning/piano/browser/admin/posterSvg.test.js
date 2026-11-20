@@ -11,14 +11,21 @@ function engraving() {
   const staff = (system, staffNo) => `
     <g class="staffline" id="Piano1-${staffNo}">
       <g class="vf-measure" id="${system + 1}">
-        <path stroke="#000" d="M20 ${system * 300 + staffNo * 100}L1580 ${system * 300 + staffNo * 100}"/>
-        <path fill="url(#ink)" d="M30 ${system * 300 + 40} C 31 39 33 38 35 39 Z" onclick="steal()"/>
+        <path stroke-width="1" fill="none" stroke="#000000" stroke-dasharray="none" d="M20 ${system * 300 + staffNo * 100}L1580 ${system * 300 + staffNo * 100}"/>
+        <g class="vf-stavenote" id="vf-auto${system}${staffNo}" pointer-events="bounding-box">
+          <path stroke-width="0.3" fill="black" stroke="none" font="10pt Arial" d="M30 ${system * 300 + 40} C 31 39 33 38 35 39 Z" onclick="steal()"/>
+        </g>
       </g>
     </g>`;
   host.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 1600 900"
       id="osmdSvgPage1" style="width: 800px; height: 450px">
-    <defs><linearGradient id="ink"><stop offset="0"/></linearGradient></defs>
-    <text font-family="Times New Roman" x="10" y="20" class="vf-measure-number">1</text>
+    <defs><clipPath id="page"><rect x="0" y="0" width="1600" height="900"/></clipPath><linearGradient id="ink"><stop offset="0"/></linearGradient></defs>
+    <!-- engraved by OSMD -->
+    <text stroke-width="0.3" fill="black" stroke="none" stroke-dasharray="none" font-family="Times New Roman" font-size="10pt"
+      font-weight="normal" font-style="normal" x="10" y="20" class="vf-measure-number">1 &amp; 2</text>
+    <g clip-path="url(#page)" style="fill: red"><rect fill="url(#ink)" fill-opacity="0.5" x="0" y="0" width="1" height="1"/></g>
+    <a href="https://evil.example/"><text>link</text></a>
+    <animate attributeName="href" to="javascript:alert(1)"/>
     ${[0, 1, 2].flatMap((s) => [staff(s, 0), staff(s, 1)]).join('')}
     <script>alert(1)</script>
     <foreignObject><div xmlns="http://www.w3.org/1999/xhtml">x</div></foreignObject>
@@ -58,6 +65,11 @@ describe('posterSvg', () => {
     expect(root.getAttribute('style')).toBeNull();
     expect(root.querySelectorAll('g.staffline, g[id^="Piano"]')).toHaveLength(0); // classes and ids stripped
     expect(root.querySelectorAll('path')).toHaveLength(8); // 4 staves × 2 paths
+    // VexFlow presentation attributes survive; class, unreferenced ids, font, onclick do not.
+    const glyph = root.querySelectorAll('path')[1];
+    expect(glyph.getAttribute('stroke-width')).toBe('0.3');
+    expect(glyph.getAttribute('font')).toBeNull();
+    expect(glyph.getAttribute('onclick')).toBeNull();
     expect(root.firstElementChild.localName).toBe('rect');
     expect(root.firstElementChild.getAttribute('fill')).toBe('#ffffff');
     expect({ width, height }).toEqual({ width: 800, height: 260 });
@@ -67,11 +79,15 @@ describe('posterSvg', () => {
     expect(svg.getAttribute('viewBox')).toBe('0 0 1600 900');
   });
 
-  it('strips everything active or external, keeping referenced ids', () => {
+  it('strips everything off the allow-list, keeping referenced ids, and passes checkSvg', () => {
     const { text } = posterSvg(engraving(), posterCrop(boxes));
-    expect(text).not.toMatch(/<script|foreignObject|onclick|evil\.example|osmdSvgPage1/i);
-    expect(text).toContain('id="ink"');
-    expect(text).toContain('url(#ink)');
+    for (const banned of ['<script', 'foreignObject', 'onclick', 'evil.example', 'osmdSvgPage1', '<image', '<a ', '<a>', '<animate',
+      'linearGradient', 'url(#ink)', ' style=', '<!--', ' class=', ' font=']) {
+      expect(text, banned).not.toContain(banned);
+    }
+    expect(text).toContain('id="page"');
+    expect(text).toContain('clip-path="url(#page)"');
+    expect(text).toContain('1 &amp; 2'); // the BEL is gone, the entity kept
     expect(checkSvg(text)).toEqual({ ok: true });
   });
 

@@ -57,7 +57,9 @@ const DOC_EXTS = ['.pdf'];
 // Image extensions honored as a same-basename sidecar poster for a notation/document
 // file (e.g. fur-elise.jpg next to fur-elise.musicxml). Order = preference: a
 // curated raster scan wins over a generated `.svg` poster (the sheet music admin
-// writes those), and either one is hidden from listings as a sidecar.
+// writes those), and either one is hidden from listings as a sidecar. Sidecars
+// apply to documents too: a `.svg` beside a `.pdf` is now that PDF's thumbnail
+// rather than a tile of its own.
 const SIDECAR_IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.svg'];
 
 const VALID_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];

@@ -752,11 +752,12 @@ describe('SheetMusicAdminService.savePoster', () => {
     const { service, posters, logs } = fixture({ scores });
     expect(await codeOf(service.savePoster(ID_A, SVG.replace('<path', '<script/><path')))).toBe('script');
     expect(await codeOf(service.savePoster(ID_A, SVG.replace('<path', '<g onclick="x()"/><path')))).toBe('event-handler');
+    expect(await codeOf(service.savePoster(ID_A, SVG.replace('<path', '<image href="#a"/><path')))).toBe('element');
     expect(await codeOf(service.savePoster(ID_A, `<svg xmlns="http://www.w3.org/2000/svg"><path d="${'M0 0'.repeat(80000)}"/></svg>`))).toBe('too-large');
     expect(await codeOf(service.savePoster(ID_A, 'not xml'))).toBe('not-svg');
     expect(posters).toEqual([]);
     const rejected = logs.filter((l) => l.event === 'piano.sheetmusic.poster-rejected').map((l) => l.data.code);
-    expect(rejected).toEqual(['script', 'event-handler', 'too-large', 'not-svg']);
+    expect(rejected).toEqual(['script', 'event-handler', 'element', 'too-large', 'not-svg']);
   });
 
   it('refuses when a raster scan exists', async () => {
@@ -771,6 +772,22 @@ describe('SheetMusicAdminService.savePoster', () => {
     expect(await codeOf(service.savePoster('files:docs/other/x.musicxml', SVG))).toBe('NOT_LIBRARY_SCORE');
     expect(await codeOf(service.savePoster(ID_A, undefined))).toBe('invalid-request');
     expect(posters).toEqual([]);
+  });
+
+  it('only takes scores: a library id that is not .musicxml/.mxl is invalid-request', async () => {
+    const { service, posters } = fixture({ scores });
+    expect(await codeOf(service.savePoster('files:docs/sheet-music/classical/notes.pdf', SVG))).toBe('invalid-request');
+    expect(await codeOf(service.savePoster('files:docs/sheet-music/classical/fur-elise.svg', SVG))).toBe('invalid-request');
+    expect(posters).toEqual([]);
+  });
+
+  it('a cover lookup that throws is logged and treated as no poster', async () => {
+    const { service, posters, logs } = fixture({
+      scores, datastoreOverrides: { sheetMusicCover: () => { throw new Error('EIO'); } },
+    });
+    await service.savePoster(ID_A, SVG);
+    expect(posters).toHaveLength(1);
+    expect(logs.some((l) => l.event === 'piano.sheetmusic.cover-unreadable')).toBe(true);
   });
 
   it('maps a hand-made poster at the path to poster-exists', async () => {
