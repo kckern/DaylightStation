@@ -344,12 +344,36 @@ would make older WebViews' writes fail this check.
 
 Non-browser callers (CLIs, Home Assistant `rest_command`s, the playback hub,
 relay firmware, the Android app's native code, Telegram/Strava webhooks) send
-neither header and are not affected. `GET`, `HEAD` and `OPTIONS` are not checked,
-so read routes must keep having no side effects.
+neither header and are not affected.
+
+**Reads are isolated too** for paths under `/api` and `/admin`, by any method
+(`GET`, `HEAD`, `OPTIONS` included). Many routes still act on a `GET` (Home
+Assistant scripts, device power and volume, prints, TTS), so another site must
+not be able to load them:
+
+| Request to `/api/...` or `/admin...` | Result |
+|---------|--------|
+| `Origin` is on `http.allowed_origins` | allowed |
+| `Sec-Fetch-Site: same-site` or `cross-site`, `Sec-Fetch-Mode` not `navigate` (an `<img>`, `<video>`, `<script>`, `fetch`) | `403`, reason `cross-site-read` |
+| `Sec-Fetch-Site: same-site` or `cross-site`, a navigation into a frame (`Sec-Fetch-Dest` `iframe`, `frame`, `embed`, `object`) | `403`, reason `cross-site-frame` |
+| `Sec-Fetch-Site: same-site` or `cross-site`, a top-level navigation (a link, a Telegram button, an OAuth callback) | allowed |
+| `Sec-Fetch-Site: same-origin` or `none`, or no `Sec-Fetch-Site` | allowed |
+
+No path is exempt. Nothing on another origin embeds the API: checked
+2026-11-20 across the data tree (the only absolute app URLs are in feedback
+error traces), Home Assistant's configuration and dashboards (its calls are
+`rest_command`s and an integration, all server-side), the extensions (native
+or server-side callers) and the frontend (relative URLs only). A future embed
+on another origin (a dashboard `<img>` of a proxied photo, say) needs either
+its origin on `http.allowed_origins` (for `fetch`/CORS) or a named exemption
+in `crossSiteGuard.mjs`; a plain `<img>` sends no `Origin`, so only an
+exemption works for it. Plain-http LAN pages (`http://<lan-ip>:<port>`) are
+not affected, since browsers send `Sec-Fetch-*` only to secure origins.
 
 Each refusal logs `security.cross-site-refused` (warn, sampled at 20 a minute)
-with `method`, `path`, `origin`, `secFetchSite` and `reason`
-(`sec-fetch-site`, `origin-null`, `origin-mismatch`).
+with `method`, `path`, `origin`, `secFetchSite`, `secFetchMode`,
+`secFetchDest` and `reason` (`sec-fetch-site`, `origin-null`,
+`origin-mismatch`, `cross-site-read`, `cross-site-frame`).
 
 **CORS** answers only the origins on `http.allowed_origins` (default: none).
 Same-origin pages need no CORS headers. Before 2026-11-20 the handler was
@@ -369,9 +393,50 @@ http:
     - https://other-app.example.com
 ```
 
-Not covered: the event-bus WebSocket (`/ws`) does not check the handshake's
-origin. It is a separate surface with its own callers (relay firmware sends
-`Origin: file://`), and is out of this middleware's reach.
+**The event-bus WebSocket (`/ws`)** checks the handshake in `verifyClient`
+(`WebSocketEventBus`, using `webSocketOriginRefusal` from the same file).
+Browsers let any page open a WebSocket to any host, so without it a page on
+another site could read every broadcast (heart-rate telemetry, presence) and
+send client messages.
+
+| Handshake `Origin` | Result |
+|---------|--------|
+| none | allowed: Node `ws` (fitness controller, simulators), Python `websockets` (piano recorder), native apps |
+| `null` (sandboxed frame, `data:` page) | `403` |
+| any other non-http(s) value | allowed: arduinoWebSockets, the library in every relay firmware (barcode, kitchen, OMR, pressure mat, OBD, TI calculator), sends `Origin: file://` |
+| on `http.allowed_origins` | allowed |
+| http(s), with `Sec-Fetch-Site` | allowed only when `same-origin` |
+| http(s), no `Sec-Fetch-Site` | allowed when its host is the handshake's `Host` or first `X-Forwarded-Host` (the WebSocket API lets a page set neither) |
+
+The frontend connects to `/ws` on its own origin; in dev Vite's `/ws` proxy
+keeps the browser's `Host`. Refusals log `security.ws-origin-refused` (warn,
+sampled) with `origin`, `secFetchSite`, `host`, `ip`, `reason`;
+`eventbus.client_connected` now records each client's `origin`.
+
+**State changes are `POST` only** on the admin routes that used to answer a
+`GET`: `/api/v1/admin/ws/restart`, `/api/v1/admin/ws/broadcast` (and `POST` to
+`/api/v1/admin/ws` as its alias; a `GET` query string no longer broadcasts),
+and `/api/v1/dev/proxy_toggle`. The unauthenticated second mount of the event
+bus admin router at `/admin/ws` (outside `/api/v1`, so outside the auth
+pipeline) is gone.
+
+**Feed links** (FreshRSS, RSS headlines) are other people's data and are
+rendered as anchors and as an iframe sandboxed with `allow-scripts
+allow-same-origin`. `__app_modules/media/feed/shared/webLink.mjs` admits only
+absolute http(s) URLs, at ingest and again at render, and the iframe also
+refuses any URL on the app's own origin, where that sandbox pair would let the
+framed page drive the app. A refused link shows as plain text.
+
+**Not covered yet:**
+
+- Action `GET`s (HA script runner, device on/off/volume, prints, TTS) are
+  still `GET`s. Resource isolation stops other sites from firing them, but a
+  plain-http LAN page, an older WebView without `Sec-Fetch-*`, or a top-level
+  navigation (a link someone clicks) can still trigger one. Converting them
+  to `POST` is the full fix.
+- DNS rebinding: the app accepts any `Host`. A rebinding attacker's page is
+  same-origin with itself, so these checks pass it. Closing that needs a
+  `Host` allow-list.
 
 ---
 
