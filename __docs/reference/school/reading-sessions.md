@@ -27,6 +27,11 @@
 > is now ~60 s (§9), a book tapped while the first card is in flight is HELD and
 > applied on the ACK (§9), and a card scanned while the reader's last unclaimed
 > book is playing ADOPTS that story in place (D12).
+> On 2026-11-20 a card opened sessions three times and the TV showed only the menu:
+> the School Portal surface wrapper (2026-11-17) sized the panel to its layout slot,
+> which sits beside the `grow: 1` menu, so the launch card drew 77 px wide behind
+> it. The widget now renders inside a whole-screen layer (`.reading-session-layer`,
+> and `.media-lesson-layer` for the lesson widget), as it did before the wrapper.
 > Implementation plans: `ops:docs/_wip/plans/2026-08-26-preschool-reading-03-livingroom-session-screen.md`,
 > `ops:docs/_archive/2026-09-11-reading-launch-card-and-timeout-race.md`.
 > This document is the authority on *behaviour*; the plan is the authority on *how*.

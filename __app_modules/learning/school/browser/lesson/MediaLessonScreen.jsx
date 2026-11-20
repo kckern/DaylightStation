@@ -274,7 +274,7 @@ export function LessonStage({ store, api, play, getMediaEl, onMediaRef, onPlayba
     || (state.view === 'celebrating' && state.celebration === 'checkpoint');
 
   return (
-    <SchoolSurfaceProvider surfaceId="lesson" density="touch"><div className="media-lesson-stage" data-testid="media-lesson-stage">
+    <div className="media-lesson-layer"><SchoolSurfaceProvider surfaceId="lesson" density="touch"><div className="media-lesson-stage" data-testid="media-lesson-stage">
       <SurroundFrame
         active={framed}
         data={surround}
@@ -303,7 +303,7 @@ export function LessonStage({ store, api, play, getMediaEl, onMediaRef, onPlayba
           learnerName={state.learner?.name ?? state.learner?.displayName ?? null}
         />
       ) : null}
-    </div></SchoolSurfaceProvider>
+    </div></SchoolSurfaceProvider></div>
   );
 }
 
@@ -520,16 +520,16 @@ export function MediaLessonScreen({ location = 'livingroom', checkpointCelebrate
   if (view === 'idle') {
     if (!notice) return null;
     return (
-      <SchoolSurfaceProvider surfaceId="lesson" density="touch"><div className="media-lesson media-lesson--idle" data-testid="media-lesson" data-view="idle">
+      <div className="media-lesson-layer"><SchoolSurfaceProvider surfaceId="lesson" density="touch"><div className="media-lesson media-lesson--idle" data-testid="media-lesson" data-view="idle">
         <Notice notice={notice} />
-      </div></SchoolSurfaceProvider>
+      </div></SchoolSurfaceProvider></div>
     );
   }
   if (view === 'playing' || view === 'checkpoint') return null;
   if (view === 'celebrating' && celebration === 'checkpoint') return null;
 
   return (
-    <SchoolSurfaceProvider surfaceId="lesson" density="touch"><div className={`media-lesson media-lesson--${view}`} data-testid="media-lesson" data-view={view}>
+    <div className="media-lesson-layer"><SchoolSurfaceProvider surfaceId="lesson" density="touch"><div className={`media-lesson media-lesson--${view}`} data-testid="media-lesson" data-view={view}>
       <Notice notice={notice} />
 
       {view === 'open' ? (
@@ -552,7 +552,7 @@ export function MediaLessonScreen({ location = 'livingroom', checkpointCelebrate
           {lesson?.title ? <p className="media-lesson__hint">{lesson.title}</p> : null}
         </div>
       ) : null}
-    </div></SchoolSurfaceProvider>
+    </div></SchoolSurfaceProvider></div>
   );
 }
 
