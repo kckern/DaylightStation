@@ -7,12 +7,19 @@ const item = { id: 'plex:42', contentId: 'plex:42', title: 'Remote track',
   format: 'audio', mediaType: 'audio', mediaUrl: '/fixture-move.wav', duration: 60 };
 const audio = silentWave(60);
 
-for (const { entry, accepted } of [
+for (const { entry, accepted, leaveRemote } of [
   { entry: 'Fleet', accepted: true },
   { entry: 'Fleet', accepted: false },
   { entry: 'Remote', accepted: true },
+  { entry: 'Remote', accepted: true, leaveRemote: 'browse' },
+  { entry: 'Remote', accepted: true, leaveRemote: 'switch-back' },
 ]) {
-  test(`${entry} moves to this device after native playback and resolves a ${accepted ? 'confirmed' : 'refused'} source stop`, async ({ page, baseURL }) => {
+  const title = {
+    browse: 'Media keeps Browse and local audio playing when a departed Remote move is confirmed',
+    'switch-back': 'Media keeps a replacement Remote visit when a move from the same screen is confirmed',
+  }[leaveRemote] ?? `${entry} moves to this device after native playback and resolves a ${accepted ? 'confirmed' : 'refused'} source stop`;
+  test(title, async ({ page, baseURL }) => {
+    if (leaveRemote === 'switch-back') await page.clock.install();
     let socket;
     let audioRequested = false;
     const releaseAudio = Promise.withResolvers();
@@ -37,7 +44,9 @@ for (const { entry, accepted } of [
       const request = route.request();
       const path = decodeURIComponent(new URL(request.url()).pathname);
       if (path.endsWith('/device/config')) {
-        return route.fulfill({ json: { devices: { fixture: { name: 'Fixture screen', fleet: true } } } });
+        const devices = { fixture: { name: 'Fixture screen', fleet: true } };
+        if (leaveRemote === 'switch-back') devices.spare = { name: 'Spare screen', fleet: true };
+        return route.fulfill({ json: { devices } });
       }
       if (path.endsWith('/play/plex:42')) return route.fulfill({ json: item });
       if (path.endsWith('/device/fixture/session/transport') || path.endsWith('/device/fixture/session/claim')) {
@@ -90,10 +99,50 @@ for (const { entry, accepted } of [
       })]);
       const announced = page.getByTestId('media-outcome-announcer');
       await expect(announced).toContainText('Moving Remote track');
+      let localAudio;
+      let replacementUrl;
+      if (leaveRemote) {
+        localAudio = await page.waitForFunction(() => [...document.querySelectorAll('audio')]
+          .find(node => node.currentSrc.includes('fixture-move.wav') && !node.paused));
+        if (leaveRemote === 'browse') {
+          const primary = page.getByRole('navigation', { name: 'Primary' });
+          await primary.getByRole('button', { name: 'Browse', exact: true }).click();
+          replacementUrl = /\/media\?view=browse$/;
+        } else {
+          const switchScreen = async id => {
+            await page.getByTestId('peek-switch').click();
+            await page.getByTestId(`peek-switch-${id}`).click();
+          };
+          await switchScreen('spare');
+          await expect(page.getByRole('heading', { name: 'Spare screen', exact: true })).toBeVisible();
+          await switchScreen('fixture');
+          replacementUrl = /\/media\?view=peek&deviceId=fixture$/;
+        }
+        await expect(page).toHaveURL(replacementUrl);
+        if (leaveRemote === 'switch-back') {
+          await page.clock.fastForward(3_000);
+          await expect(announced).toContainText('Moving Remote track');
+        }
+      } else if (entry === 'Remote') {
+        // A device status update can remove the button before HTTP confirms the stop.
+        const stoppedAt = new Date().toISOString();
+        socket.send(JSON.stringify({ topic: 'device-state:fixture', deviceId: 'fixture', ts: stoppedAt,
+          snapshot: { state: 'idle', sessionId: null, currentItem: null, meta: { updatedAt: stoppedAt } },
+        }));
+        await expect(page.getByTestId('peek-move-to')).toHaveCount(0);
+      }
       releaseStop.resolve();
       if (accepted) {
         await expect(announced).toHaveText('Moved Remote track here from Fixture screen');
-        if (entry === 'Remote') await expect(page.getByTestId('now-playing-view')).toBeVisible();
+        if (leaveRemote) {
+          const position = await localAudio.evaluate(node => node.currentTime);
+          await expect.poll(() => localAudio.evaluate(node => node.isConnected && !node.paused ? node.currentTime : -1))
+            .toBeGreaterThan(position);
+          expect(stops).toHaveLength(1);
+          await expect(page).toHaveURL(replacementUrl);
+        } else if (entry === 'Remote') {
+          await expect(page.getByTestId('now-playing-view')).toBeVisible();
+        }
       } else {
         await expect(announced).toContainText('Could not confirm the other screen stopped.');
         await expect(announced).toContainText('Remote track');

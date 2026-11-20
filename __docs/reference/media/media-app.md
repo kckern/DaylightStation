@@ -210,7 +210,10 @@ wraps at phone width, so nothing is lost to a narrow screen.
   device**. The destination picks up at the same moment; only once it has
   started is the original stopped (it shows "Moved by …"). If the
   destination can't confirm, the original keeps playing and the outcome says
-  so. Moving to this device opens Now Playing.
+  so. Moving to this device opens Now Playing when the original Remote visit
+  is still active. After navigation or a screen change, the move completes
+  in the playing session and the selected view stays in place. The outcome
+  tray keeps the move pending until the source stop resolves.
 - **Play on a screen** (fling). While something plays (or is paused) on this
   device, the handle and Now Playing's transport carry one cast icon: **Play
   on a screen**. It opens a short list of screens (the Move to… list: content

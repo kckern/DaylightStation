@@ -349,7 +349,8 @@ function TrayRow({ d, retry, removeDispatch, sendElsewhere, recordLocal, stopAtt
     // A local queue action resolves at once; a household write or Move here
     // waits on the server or two screens, so its running row stays until it
     // resolves (a failure must never be dropped unseen).
-    if (isLocal && (phase === 'confirmed' || (phase === 'running' && !HOUSEHOLD_KINDS.has(d.kind)))) {
+    const awaitingConfirmation = HOUSEHOLD_KINDS.has(d.kind) || d.kind === 'move';
+    if (isLocal && (phase === 'confirmed' || (phase === 'running' && !awaitingConfirmation))) {
       ms = Math.max(LOCAL_LINGER_MS, d.undo ? d.undo.expiresAt - Date.now() : 0);
     } else if (!isLocal && phase === 'confirmed') ms = Math.max(CONFIRMED_LINGER_MS, d.undo ? d.undo.expiresAt - Date.now() : 0);
     else if (!isLocal && phase === 'sent') ms = SENT_RESOLUTION_TIMEOUT_MS;

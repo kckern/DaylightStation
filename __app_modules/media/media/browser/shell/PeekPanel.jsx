@@ -3,7 +3,7 @@ import { ActiveQualityButton } from "../quality/PlaybackQualityButtons.jsx";
 // Remote control for one device. The shared TransportBar remains target-bound;
 // this panel supplies only the remote overlay policy (predicted state and
 // pending fields) rather than a second set of transport controls.
-import React, { useCallback, useContext, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Button, Title, Text, Group, Stack, Badge, Menu } from '@mantine/core';
 import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import { IconPlaylistAdd, IconSwitchHorizontal } from '@tabler/icons-react';
@@ -41,6 +41,19 @@ export function PeekPanel({ deviceId }) {
   const realSnap = ctl.snapshot;
   const { device, entry } = useDevice(deviceId);
   const { push, pop, backDestination } = useNav();
+  const visit = useRef(null);
+  useLayoutEffect(() => {
+    visit.current = {};
+    return () => { visit.current = null; };
+  }, [deviceId]);
+  const captureLocalMoveNavigation = () => {
+    // A stopped screen can remove MoveToMenu before its claim settles. The
+    // selected Peek visit still owns navigation until the user leaves it.
+    const startedIn = visit.current;
+    return () => {
+      if (startedIn && visit.current === startedIn) push('nowPlaying', {});
+    };
+  };
   const devices = useContext(FleetContext)?.devices ?? [];
   // Steer another screen in one step (STEER.1b/AC3): the controls move to it; my aim is untouched.
   const otherScreens = devices.filter((d) => typeof d?.id === 'string' && d.id !== deviceId);
@@ -190,7 +203,8 @@ export function PeekPanel({ deviceId }) {
 
       <Group gap="xs">
         {snap?.currentItem && (
-          <MoveToMenu sourceId={deviceId} available={availability.available !== false} title={itemTitle} />
+          <MoveToMenu key={deviceId} sourceId={deviceId} available={availability.available !== false} title={itemTitle}
+            captureLocalMoveNavigation={captureLocalMoveNavigation} />
         )}
         {searchLauncher && (
           <Button

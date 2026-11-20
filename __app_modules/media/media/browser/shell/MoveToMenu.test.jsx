@@ -16,8 +16,6 @@ vi.mock("../logging/mediaLog.js", () => {
   const stub = new Proxy({}, { get: (t, k) => (t[k] ??= vi.fn()) });
   return { default: stub, mediaLog: stub };
 });
-const push = vi.fn();
-vi.mock("./NavProvider.jsx", () => ({ useNav: () => ({ push }) }));
 
 import { MoveToMenu, moveDestinations } from "./MoveToMenu.jsx";
 
@@ -33,7 +31,7 @@ describe('MoveToMenu', () => {
     expect(moveDestinations(devices, 'kitchen').map((d) => d.id)).toEqual(['den']);
   });
 
-  it('moves the screen\'s playback here and opens Now Playing', async () => {
+  it('moves the screen\'s playback here and hands navigation back to Remote', async () => {
     const store = createFleetStore();
     store.receive({ deviceId: 'kitchen', ts: new Date().toISOString(), snapshot: {
       sessionId: 's', state: 'paused', position: 61,
@@ -45,12 +43,13 @@ describe('MoveToMenu', () => {
     const local = createLocalSessionController({ clientId: 'me', sessionControls: { storage: null } });
     const recordLocal = vi.fn(() => 'a1');
     const resolveLocal = vi.fn();
+    const navigateAfterMove = vi.fn();
     render(
       <MantineProvider>
         <FleetContext.Provider value={{ devices, store, identity: { deviceId: 'browser:me' } }}>
           <LocalSessionContext.Provider value={{ controller: local }}>
             <DispatchContext.Provider value={{ recordLocal, resolveLocal }}>
-              <MoveToMenu sourceId="kitchen" title="Hospital" />
+              <MoveToMenu sourceId="kitchen" title="Hospital" captureLocalMoveNavigation={() => navigateAfterMove} />
             </DispatchContext.Provider>
           </LocalSessionContext.Provider>
         </FleetContext.Provider>
@@ -70,6 +69,6 @@ describe('MoveToMenu', () => {
     expect(recordLocal).toHaveBeenCalledWith(expect.objectContaining({ kind: 'move', phase: 'running', targetId: 'local', item: { title: 'Hospital' }, command: expect.objectContaining({ sourceId: 'kitchen' }) }));
     expect(local.getSnapshot().currentItem.contentId).toBe('plex:1');
     expect(api).toHaveBeenCalledWith('api/v1/device/kitchen/session/claim', expect.objectContaining({ origin: { kind: 'device', id: 'browser:me' } }), 'POST');
-    expect(push).toHaveBeenCalledWith('nowPlaying', {});
+    expect(navigateAfterMove).toHaveBeenCalledOnce();
   });
 });

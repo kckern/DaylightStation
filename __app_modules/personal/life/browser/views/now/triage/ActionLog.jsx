@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Badge, Button, Loader, Text } from '@mantine/core';
+import { useRetryRegion } from '@/lib/ui';
 import getLogger from "../../../../../../../frontend/src/lib/logging/Logger.js";
 import { useRefreshableRead } from "../../../../../../../frontend/src/lib/hooks/useRefreshableRead.js";
 
@@ -23,6 +24,7 @@ export function ActionLog({ loadLog, onUndo }) {
   const logger = useMemo(() => getLogger().child({ component: 'triage-action-log' }), []);
   const [entries, setEntries] = useState(null);
   const [loadError, setLoadError] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [state, setState] = useState({}); // id -> { busy, result }
   // Load once per open: the caller's loadLog may be a fresh function each render.
   const loadRef = useRef(loadLog);
@@ -30,6 +32,7 @@ export function ActionLog({ loadLog, onUndo }) {
 
   const read = useCallback(async (isCurrent, signal) => {
     setLoadError(null);
+    setLoading(true);
     try {
       const out = await loadRef.current({ signal });
       if (!isCurrent()) return;
@@ -41,13 +44,17 @@ export function ActionLog({ loadLog, onUndo }) {
       setLoadError(err?.code === 'pass_running' || err?.code === 'busy'
         ? 'Triage is updating — try again in a moment.'
         : "Couldn't load what was done.");
+    } finally {
+      if (isCurrent()) setLoading(false);
     }
   }, [logger]);
   const onTimeout = useCallback(() => {
     setLoadError("Couldn't load what was done.");
+    setLoading(false);
     logger.warn('triage.log.read_timeout');
   }, [logger]);
   const { reload: load } = useRefreshableRead(read, { timeoutMs: 10000, onTimeout });
+  const { regionProps, retry } = useRetryRegion(load, loading);
 
   useEffect(() => { load(); }, [load]);
 
@@ -66,16 +73,21 @@ export function ActionLog({ loadLog, onUndo }) {
     setState((s) => ({ ...s, [id]: { busy: false, result } }));
   };
 
-  if (loadError) {
-    return (
-      <div className="life-triage__log-state" role="status">
-        <Text size="sm" c="dimmed">{loadError}</Text>
-        <Button size="compact-sm" variant="light" onClick={load}>Try again</Button>
-      </div>
-    );
-  }
-  if (!entries) return <Loader size="sm" aria-label="Loading what was done" />;
-  if (entries.length === 0) return <Text size="sm" c="dimmed">Nothing in the last week.</Text>;
+  let content;
+  if (loadError) content = (
+    <div className="life-triage__log-state" role="status">
+      <Text size="sm" c="dimmed">{loadError}</Text>
+      <Button size="compact-sm" variant="light" onClick={retry}>Try again</Button>
+    </div>
+  );
+  else if (!entries) content = <Loader size="sm" aria-label="Loading what was done" />;
+  else if (entries.length === 0) content = <Text size="sm" c="dimmed">Nothing in the last week.</Text>;
+  else content = <ActionRows entries={entries} state={state} undo={undo} />;
+
+  return <section aria-label="Triage action log" {...regionProps}>{content}</section>;
+}
+
+function ActionRows({ entries, state, undo }) {
   return (
     <ul className="life-triage__log" aria-label="What was done">
       {entries.map((e) => {

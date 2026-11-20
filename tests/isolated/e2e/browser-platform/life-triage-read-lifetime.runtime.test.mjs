@@ -11,7 +11,7 @@ const card = {
 const recap = { cardId: 'fixture-recap', kind: 'recap', step: 'recap', status: 'open' };
 const loginRequired = { status: 401, json: { error: 'login_required' } };
 
-async function installTriage(page, { hold, heldResult, chosenCard = card, signIn = false }) {
+async function installTriage(page, { hold, holdAttempt = 1, refuseFirst, heldResult, chosenCard = card, signIn = false }) {
   const held = Promise.withResolvers();
   const release = Promise.withResolvers();
   const reads = [];
@@ -39,13 +39,16 @@ async function installTriage(page, { hold, heldResult, chosenCard = card, signIn
       commands.push(request.method());
       return route.fulfill({ json: { outcome: 'applied' } });
     }
-    const first = !reads.some(([, previouslyRead]) => previouslyRead === operation);
+    const attempt = reads.filter(([, previouslyRead]) => previouslyRead === operation).length + 1;
     reads.push(read);
-    if (first && operation === hold) {
+    if (attempt === 1 && operation === refuseFirst) {
+      return route.fulfill({ status: 422, json: { error: 'fixture_read_failure' } });
+    }
+    if (attempt === holdAttempt && operation === hold) {
       held.resolve();
       await release.promise;
       if (canceled.includes(hold)) return;
-      return route.fulfill(heldResult);
+      if (heldResult) return route.fulfill(heldResult);
     }
     if (operation === 'summary') return route.fulfill({ json: { enrolled: true, mode: 'live' } });
     if (operation === 'session') {
@@ -149,3 +152,41 @@ test('Life Triage retries only the stalled Review read and keeps the recap loade
     release.resolve();
   }
 });
+
+for (const width of [390, 1440]) {
+  for (const operation of ['session', 'log']) {
+    test(`Life Triage keeps keyboard focus through a held ${operation} retry at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 850 });
+      const readingLog = operation === 'log';
+      const { held, release, reads, commands } = await installTriage(page, {
+        hold: operation, holdAttempt: 2, refuseFirst: operation, chosenCard: readingLog ? recap : card,
+      });
+      const main = page.getByRole('main');
+      const region = main.getByRole('region', { name: readingLog ? 'Triage action log' : 'Triage session', exact: true });
+      const back = main.getByRole('link', { name: 'Stop for now' });
+      try {
+        await page.goto('/life/now/triage');
+        if (readingLog) await main.getByRole('button', { name: 'Review', exact: true }).press('Enter');
+        await main.getByRole('button', { name: readingLog ? 'Try again' : 'retry', exact: true }).press('Enter');
+        await held.promise;
+        await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).not.toBe('BODY');
+        await expect(region).toBeFocused();
+        await expect(region).toHaveAttribute('aria-busy', 'true');
+        await expect(back).toBeVisible();
+
+        await page.keyboard.press('Tab');
+        const next = readingLog ? main.getByRole('button', { name: 'Hide', exact: true }) : back;
+        await expect(next).toBeFocused();
+        release.resolve();
+        await expect(main.getByText(readingLog ? 'Current fixture action' : 'Current fixture card')).toBeVisible();
+        await expect(next).toBeFocused();
+        await expect(region).not.toHaveAttribute('aria-busy', 'true');
+        expect(reads.map(([, path]) => path)).toEqual(readingLog
+          ? ['summary', 'session', 'log', 'log'] : ['summary', 'session', 'summary', 'session']);
+        expect(commands).toEqual([]);
+      } finally {
+        release.resolve();
+      }
+    });
+  }
+}

@@ -2,6 +2,7 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'r
 import { Button, Group, Text, Title } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import { IconAlertCircle, IconCircleCheck } from '@tabler/icons-react';
+import { useRetryRegion } from '@/lib/ui';
 import { useTriage } from "../../../hooks/useTriage.js";
 import { LifeUserContext } from "../../../hooks/useLifeUser.js";
 import { LoadingState } from "../../../components/index.js";
@@ -27,6 +28,7 @@ export function TriageSessionView() {
   const t = useTriage({ withSession: true });
   const { session, summary, needsLogin, signInReason } = t;
   const selectedMember = useContext(LifeUserContext);
+  const { regionProps, retry } = useRetryRegion(t.refetch, t.loading);
 
   const [cards, setCards] = useState([]);
   const [idx, setIdx] = useState(0);
@@ -137,32 +139,30 @@ export function TriageSessionView() {
   if (needsLogin) {
     const ownerName = selectedMember?.displayName || selectedMember?.username;
     return (
-      <div className="life-triage">
-        <SessionHeader />
+      <SessionLayout regionProps={regionProps}>
         <Text size="sm" c="dimmed" ta="center" role="status">
           {signInReason === 'session_user_mismatch' && ownerName
             ? `Sign in as ${ownerName} to answer their triage cards.`
             : 'Sign in to answer triage cards.'}
         </Text>
         <div className="life-triage__login"><LoginScreen onLogin={() => t.refetch()} /></div>
-      </div>
+      </SessionLayout>
     );
   }
-  if (t.loading && !session) return <LoadingState />;
+  if (t.loading && !session) return <SessionLayout regionProps={regionProps}><LoadingState /></SessionLayout>;
   if (!session) {
     return (
-      <div className="life-triage">
-        <SessionHeader />
+      <SessionLayout regionProps={regionProps}>
         {summary && summary.enrolled !== true ? (
           <Text c="dimmed">Triage isn&apos;t set up for this person.</Text>
         ) : (
           <Group gap="xs" role="status">
             <IconAlertCircle size={16} color="var(--ds-text-mid)" />
             <Text size="sm" c="dimmed">Triage unavailable</Text>
-            <Button variant="subtle" size="compact-sm" onClick={() => t.refetch()}>retry</Button>
+            <Button variant="subtle" size="compact-sm" onClick={retry}>retry</Button>
           </Group>
         )}
-      </div>
+      </SessionLayout>
     );
   }
 
@@ -189,8 +189,7 @@ export function TriageSessionView() {
   const onResolve = (happened) => perform(card, happened ? 'resolve_yes' : 'resolve_no', () => t.resolve(card.cardId, happened));
 
   return (
-    <div className="life-triage">
-      <SessionHeader />
+    <SessionLayout regionProps={regionProps}>
       {summary?.mode === 'dryRun' && !hasRecap && <Text size="xs" c="dimmed">{DRY_RUN_NOTE}</Text>}
       <StepStrip steps={steps} currentStep={card ? stepId : null} stepPos={stepPos} position={card ? position : total} total={total} />
       {notice && (
@@ -229,7 +228,16 @@ export function TriageSessionView() {
             className="life-triage__end-action ds-touch-target">Back to Now</Button>
         </article>
       )}
-    </div>
+    </SessionLayout>
+  );
+}
+
+function SessionLayout({ regionProps, children }) {
+  return (
+    <section className="life-triage" aria-label="Triage session" {...regionProps}>
+      <SessionHeader />
+      {children}
+    </section>
   );
 }
 
