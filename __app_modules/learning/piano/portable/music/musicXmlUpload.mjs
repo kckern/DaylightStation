@@ -9,7 +9,9 @@
  * ids with the same slug would share a child's progress.
  *
  * Every check returns a code rather than throwing; the service turns codes into
- * coded errors. Regex-level parsing: this screens uploads, it does not render them.
+ * coded errors. This screens uploads, it does not render them. Every scan is
+ * linear in the text (indexOf passes, regexes only on bounded prefixes): the
+ * input is an untrusted upload and the backend's event loop runs it.
  *
  * Layer: PORTABLE (no I/O).
  */
@@ -36,34 +38,117 @@ function decodeXml(text) {
   });
 }
 
-function tagText(xml, re) {
-  const match = re.exec(xml);
-  if (!match) return null;
+/** Header reads look only at the text before the first part, at most this much. */
+const HEADER_MAX = 256 * 1024;
+/** The root element sits at the top: root checks read at most this much. */
+const ROOT_PREFIX_MAX = 64 * 1024;
+const TAG_ATTRS_MAX = 512;
+const TAG_TEXT_MAX = 4096;
+
+const isTagEnd = (ch) => ch === '>' || ch === '/' || ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r';
+
+/** ASCII-lowercased copy, same length, so indexes carry over to the original. */
+const asciiLower = (text) => text.replace(/[A-Z]+/g, (run) => run.toLowerCase());
+
+/** Readable text of an element's content: CDATA literal, tags stripped, entities decoded. */
+function contentText(raw) {
   // CDATA content is literal: pull it out before tags are stripped and entities decoded.
-  const parts = match[1].split(/(<!\[CDATA\[[\s\S]*?\]\]>)/);
+  const parts = raw.split(/(<!\[CDATA\[[\s\S]*?\]\]>)/);
   const text = parts.map((part) => (part.startsWith('<![CDATA[')
     ? part.slice(9, -3)
     : decodeXml(part.replace(/<[^>]*>/g, '')))).join('').replace(/\s+/g, ' ').trim();
   return text || null;
 }
 
-/** Title and composer from the MusicXML header; null where absent. */
+/**
+ * Text of the first `<name …>…</name>` whose attributes pass `attrsOk`.
+ * Linear: each indexOf result is kept while later opens lie before it, so no
+ * stretch of text is scanned twice. Attributes over 512 characters or content
+ * over 4096 characters skip that element.
+ */
+function tagText(text, lower, name, attrsOk = () => true) {
+  const open = `<${name}`;
+  const close = `</${name}`;
+  let gt = -1;
+  let closeAt = -1;
+  for (let at = lower.indexOf(open); at !== -1; at = lower.indexOf(open, at + open.length)) {
+    const after = at + open.length;
+    if (!isTagEnd(lower[after])) continue;
+    if (gt < after) gt = lower.indexOf('>', after);
+    if (gt === -1) return null;
+    if (gt - after > TAG_ATTRS_MAX || lower[gt - 1] === '/') continue;
+    if (!attrsOk(lower.slice(after, gt))) continue;
+    const contentStart = gt + 1;
+    if (closeAt < contentStart) closeAt = lower.indexOf(close, contentStart);
+    if (closeAt === -1) return null;
+    if (closeAt - contentStart > TAG_TEXT_MAX) continue;
+    const value = contentText(text.slice(contentStart, closeAt));
+    if (value) return value;
+  }
+  return null;
+}
+
+/** The text before the first part (where the header lives), capped. */
+function headerOf(text) {
+  const capped = text.length > HEADER_MAX ? text.slice(0, HEADER_MAX) : text;
+  const lower = asciiLower(capped);
+  let end = lower.indexOf('<part-list');
+  if (end === -1) {
+    for (let at = lower.indexOf('<part'); at !== -1; at = lower.indexOf('<part', at + 5)) {
+      if (isTagEnd(lower[at + 5])) { end = at; break; }
+    }
+  }
+  return end === -1 ? { text: capped, lower } : { text: capped.slice(0, end), lower: lower.slice(0, end) };
+}
+
+const COMPOSER_ATTR = /\btype\s*=\s*["']composer["']/;
+
+/** Title and composer from the MusicXML header; null where absent. Linear in the text. */
 export function scoreHeader(xml) {
-  const text = String(xml || '');
+  const { text, lower } = headerOf(String(xml || ''));
   return {
-    title: tagText(text, /<work-title\b[^>]*>([\s\S]*?)<\/work-title>/i)
-      ?? tagText(text, /<movement-title\b[^>]*>([\s\S]*?)<\/movement-title>/i),
-    composer: tagText(text, /<creator\b[^>]*\btype\s*=\s*["']composer["'][^>]*>([\s\S]*?)<\/creator>/i),
+    title: tagText(text, lower, 'work-title') ?? tagText(text, lower, 'movement-title'),
+    composer: tagText(text, lower, 'creator', (attrs) => COMPOSER_ATTR.test(attrs)),
   };
 }
 
-/** True when some `<note>…</note>` has no `<rest`: the score sounds at least once. */
+/**
+ * True when some `<note>…</note>` has no `<rest`: the score sounds at least
+ * once. One forward pass with indexOf; each search result is reused until the
+ * scan passes it, so the cost is linear in the text.
+ */
 function hasSoundingNote(xml) {
-  const re = /<note(?=[\s>])[^>]*>([\s\S]*?)<\/note\s*>/g;
-  for (let match = re.exec(xml); match; match = re.exec(xml)) {
-    if (!/<rest(?=[\s>/])/.test(match[1])) return true;
+  let gt = -1;
+  let closeAt = -1;
+  let restAt = -2;
+  for (let at = xml.indexOf('<note'); at !== -1; at = xml.indexOf('<note', at + 5)) {
+    const after = at + 5;
+    if (!isTagEnd(xml[after])) continue;
+    if (gt < after) gt = xml.indexOf('>', after);
+    if (gt === -1) return false;
+    if (xml[gt - 1] === '/') continue; // <note/> is empty
+    const contentStart = gt + 1;
+    if (closeAt < contentStart) closeAt = xml.indexOf('</note', contentStart);
+    if (closeAt === -1) return false;
+    if (restAt !== -1 && restAt < contentStart) restAt = nextRest(xml, contentStart);
+    if (restAt === -1 || restAt > closeAt) return true;
+    at = closeAt; // continue after this note
   }
   return false;
+}
+
+function nextRest(xml, from) {
+  for (let at = xml.indexOf('<rest', from); at !== -1; at = xml.indexOf('<rest', at + 5)) {
+    if (isTagEnd(xml[at + 5])) return at;
+  }
+  return -1;
+}
+
+/** The text from the first non-space character (after a BOM), at most `max` long. */
+function trimmedPrefix(text, max) {
+  let start = text.charCodeAt(0) === 0xFEFF ? 1 : 0;
+  while (start < text.length && /\s/.test(text[start])) start += 1;
+  return text.slice(start, start + max);
 }
 
 /**
@@ -71,10 +156,11 @@ function hasSoundingNote(xml) {
  * @returns {{ ok: true, title: string|null, composer: string|null } | { ok: false, code: string }}
  */
 export function checkUploadXml(xml) {
-  const text = String(xml ?? '').replace(/^﻿/, '').trim();
-  if (!text.startsWith('<') || !/<[A-Za-z_][\w.:-]*[\s/>]/.test(text)) return { ok: false, code: 'not-xml' };
-  if (/<score-timewise(?=[\s>])/.test(text)) return { ok: false, code: 'timewise' };
-  if (!/<score-partwise(?=[\s>])/.test(text)) return { ok: false, code: 'not-partwise' };
+  const text = typeof xml === 'string' ? xml : String(xml ?? '');
+  const head = trimmedPrefix(text, ROOT_PREFIX_MAX);
+  if (!head.startsWith('<') || !/<[A-Za-z_][\w.:-]*[\s/>]/.test(head)) return { ok: false, code: 'not-xml' };
+  if (/<score-timewise(?=[\s>])/.test(head)) return { ok: false, code: 'timewise' };
+  if (!/<score-partwise(?=[\s>])/.test(head)) return { ok: false, code: 'not-partwise' };
   if (!hasSoundingNote(text)) return { ok: false, code: 'no-notes' };
   return { ok: true, ...scoreHeader(text) };
 }

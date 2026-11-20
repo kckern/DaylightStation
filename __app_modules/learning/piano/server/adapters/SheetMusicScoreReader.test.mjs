@@ -199,3 +199,26 @@ describe('SheetMusicScoreReader.writeScoreExclusive', () => {
     expect(error?.code).toBe('SCORE_UNWRITABLE');
   });
 });
+
+describe('SheetMusicScoreReader.writeScoreExclusive and symlinks', () => {
+  let tmp;
+  beforeAll(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'score-writer-link-')); });
+  afterAll(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
+
+  it('fails with EEXIST when a symlink already holds the name, and writes nothing through it', async () => {
+    const reader = new SheetMusicScoreReader({ mediaDir: tmp });
+    const folder = path.join(tmp, 'docs/sheet-music/linked');
+    fs.mkdirSync(folder, { recursive: true });
+    const outside = path.join(tmp, 'outside.txt');
+    fs.writeFileSync(outside, 'original');
+    fs.symlinkSync(outside, path.join(folder, 'live.musicxml'));
+    fs.symlinkSync(path.join(tmp, 'missing-target'), path.join(folder, 'dangling.musicxml'));
+
+    for (const name of ['live.musicxml', 'dangling.musicxml']) {
+      const error = await reader.writeScoreExclusive(`files:docs/sheet-music/linked/${name}`, Buffer.from('payload')).then(() => null, (e) => e);
+      expect(error?.code, name).toBe('EEXIST');
+    }
+    expect(fs.readFileSync(outside, 'utf8')).toBe('original');
+    expect(fs.existsSync(path.join(tmp, 'missing-target'))).toBe(false);
+  });
+});

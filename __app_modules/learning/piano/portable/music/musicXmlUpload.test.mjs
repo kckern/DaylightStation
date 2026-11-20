@@ -198,3 +198,56 @@ describe('sheetMusicCollectionRefs', () => {
     assert.deepEqual(sheetMusicCollectionRefs({}), []);
   });
 });
+
+describe('linear-time screening of hostile input', () => {
+  const BOUND_MS = 300;
+  const timed = (fn) => { const t = performance.now(); const result = fn(); return { result, ms: performance.now() - t }; };
+  const NOTE_LINE = '<note><pitch><step>C</step></pitch></note>';
+  const cases = [
+    ['unterminated <note ', '<score-partwise>' + '<note '.repeat(200_000), 'no-notes'],
+    ['unclosed <note>', '<score-partwise>' + '<note>'.repeat(200_000), 'no-notes'],
+    ['repeated unclosed <work-title>', '<score-partwise><work><work-title>'.repeat(100_000), 'no-notes'],
+    ['unterminated <creator ', '<score-partwise><identification>' + '<creator '.repeat(200_000), 'no-notes'],
+    ['header traps before a real note', `<score-partwise>${'<work-title>'.repeat(100_000)}${'<creator '.repeat(100_000)}<part-list/>${NOTE_LINE}`, null],
+    ['many rest notes', '<score-partwise>' + '<note><rest/></note>'.repeat(100_000), 'no-notes'],
+    ['notes with a rest only at the end', '<score-partwise>' + '<note>'.repeat(100_000) + '</note><rest/>', null],
+  ];
+  for (const [name, xml, code] of cases) {
+    it(`${name} finishes in under ${BOUND_MS} ms`, (t) => {
+      const { result, ms } = timed(() => checkUploadXml(xml));
+      t.diagnostic(`${name}: ${ms.toFixed(1)} ms over ${(xml.length / 1e6).toFixed(2)} MB`);
+      assert.ok(ms < BOUND_MS, `${name} took ${ms.toFixed(0)} ms`);
+      assert.equal(result.ok ? null : result.code, code);
+    });
+  }
+
+  it('scoreHeader stays fast on a large hostile header', (t) => {
+    const xml = '<work-title>'.repeat(300_000) + '<creator type="composer" '.repeat(50_000) + '<movement-title>'.repeat(300_000);
+    const { result, ms } = timed(() => scoreHeader(xml));
+    t.diagnostic(`scoreHeader: ${ms.toFixed(1)} ms`);
+    assert.ok(ms < BOUND_MS, `${ms.toFixed(0)} ms`);
+    assert.deepEqual(result, { title: null, composer: null });
+  });
+});
+
+describe('scoreHeader bounds', () => {
+  it('reads only the header before the first part', () => {
+    assert.deepEqual(scoreHeader('<score-partwise><part-list/><part id="P1"><work-title>Inside</work-title></part>'),
+      { title: null, composer: null });
+    assert.deepEqual(scoreHeader('<score-partwise><work-title>Top</work-title><part id="P1"/>'), { title: 'Top', composer: null });
+  });
+
+  it('skips a self-closing or overlong element and keeps looking', () => {
+    const long = 'x'.repeat(5000);
+    assert.equal(scoreHeader(`<work-title/><work-title>${long}</work-title><movement-title>Fallback</movement-title>`).title, 'Fallback');
+  });
+
+  it('picks the composer among several creators and ignores tag case', () => {
+    const xml = '<IDENTIFICATION><Creator type="lyricist">Words</Creator><CREATOR TYPE="composer">Tune Maker</CREATOR></IDENTIFICATION>';
+    assert.equal(scoreHeader(xml.replace('TYPE', 'type')).composer, 'Tune Maker');
+  });
+
+  it('does not take <work-titles> or <creatorx> for the tags', () => {
+    assert.deepEqual(scoreHeader('<work-titles>No</work-titles><creatorx type="composer">No</creatorx>'), { title: null, composer: null });
+  });
+});

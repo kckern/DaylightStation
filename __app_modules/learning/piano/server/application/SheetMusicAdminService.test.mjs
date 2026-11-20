@@ -602,3 +602,80 @@ describe('SheetMusicAdminService.upload', () => {
     await expect(service.upload({ buffer: bytes(scoreXml()), originalName: 'a.musicxml', folder: 'folk' })).rejects.toThrow(/requires extractMxl/);
   });
 });
+
+describe('SheetMusicAdminService.upload ordering and logs', () => {
+  const NOTE = '<note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration></note>';
+  const plainXml = `<?xml version="1.0"?><score-partwise><part-list/><part id="P1"><measure>${NOTE}</measure></part></score-partwise>`;
+
+  function make({ refs = ['files:docs/sheet-music/folk'], writeError = null } = {}) {
+    const logs = [];
+    const extractCalls = [];
+    const writes = [];
+    const logger = {
+      info: (event, data) => logs.push({ level: 'info', event, data }),
+      warn: (event, data) => logs.push({ level: 'warn', event, data }),
+      error: (event, data) => logs.push({ level: 'error', event, data }),
+    };
+    const service = new SheetMusicAdminService({
+      datastore: {},
+      scoreReader: {},
+      listScores: async () => [],
+      listLearners: () => [],
+      logger,
+      extractMxl: async (buffer) => { extractCalls.push(buffer); return plainXml; },
+      writeScoreExclusive: async (id, buffer) => { if (writeError) throw writeError; writes.push({ id, buffer }); },
+      collectionRefs: () => refs,
+    });
+    return { service, logs, extractCalls, writes };
+  }
+  const reject = (promise) => promise.then(() => null, (e) => e);
+
+  it('refuses a bad folder before extracting the archive', async () => {
+    const { service, extractCalls } = make();
+    const error = await reject(service.upload({ buffer: Buffer.from('PK'), originalName: 'a.mxl', folder: 'nope' }));
+    expect(error.code).toBe('bad-folder');
+    expect(extractCalls).toEqual([]);
+  });
+
+  it('refuses a bad filename before extracting the archive', async () => {
+    const { service, extractCalls } = make();
+    const error = await reject(service.upload({ buffer: Buffer.from('PK'), originalName: 'a.mxl', folder: 'folk', filename: 'a.musicxml' }));
+    expect(error.code).toBe('bad-filename');
+    expect(extractCalls).toEqual([]);
+  });
+
+  it('refuses a bad folder before reading bad XML', async () => {
+    const { service } = make();
+    const error = await reject(service.upload({ buffer: Buffer.from('not xml'), originalName: 'a.musicxml', folder: '../x' }));
+    expect(error.code).toBe('bad-folder');
+  });
+
+  it('turns an original name with path separators into a safe suggested name', async () => {
+    const { service, writes } = make();
+    const result = await service.upload({ buffer: Buffer.from(plainXml), originalName: '../../evil/Für.musicxml', folder: 'folk' });
+    expect(result.filename).toBe('fur.musicxml');
+    expect(result.id).toBe('files:docs/sheet-music/folk/fur.musicxml');
+    expect(writes[0].id).toBe(result.id);
+    const windows = await service.upload({ buffer: Buffer.from(plainXml), originalName: '..\\..\\evil\\Old Song.musicxml', folder: 'folk' });
+    expect(windows.filename).toBe('old-song.musicxml');
+  });
+
+  it('truncates request values in the rejection log', async () => {
+    const { service, logs } = make();
+    await reject(service.upload({ buffer: Buffer.from('x'), originalName: `${'n'.repeat(500)}.xml`, folder: 'f'.repeat(500) }));
+    await reject(service.upload({ buffer: Buffer.from('x'), originalName: 'a.musicxml', folder: { nested: true } }));
+    const rejected = logs.filter((l) => l.event === 'piano.sheetmusic.upload-rejected').map((l) => l.data);
+    expect(rejected[0].originalName).toHaveLength(120);
+    expect(rejected[0].folder).toHaveLength(120);
+    expect(rejected[1]).toMatchObject({ code: 'bad-folder', folder: 'object', originalName: 'a.musicxml' });
+  });
+
+  it('logs codes, not messages, when the write fails', async () => {
+    const failure = Object.assign(new Error('/secret/abs/path failed'), { code: 'SCORE_UNWRITABLE', cause: { code: 'EACCES' } });
+    const { service, logs } = make({ writeError: failure });
+    expect(await reject(service.upload({ buffer: Buffer.from(plainXml), originalName: 'a.musicxml', folder: 'folk' }))).toBe(failure);
+    const failed = logs.find((l) => l.event === 'piano.sheetmusic.upload-failed');
+    expect(failed.data).toEqual({ id: 'files:docs/sheet-music/folk/a.musicxml', code: 'SCORE_UNWRITABLE', causeCode: 'EACCES' });
+    expect(JSON.stringify(failed.data)).not.toContain('/secret');
+  });
+});

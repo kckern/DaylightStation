@@ -24,7 +24,7 @@
  */
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { getFileStatsAsync, readBinaryFromPathAsync, writeBinaryExclusive } from '#system/utils/FileIO.mjs';
+import { ensureDirAsync, getFileStatsAsync, readBinaryFromPathAsync, writeBinaryExclusiveAsync } from '#system/utils/FileIO.mjs';
 import { extractMusicXmlFromMxl, MAX_MXL_XML_BYTES } from '../../../../../__capabilities/music-notation/server/mxlArchive.mjs';
 import { libraryScoreLocalPath } from '../../portable/music/practiceKey.mjs';
 
@@ -104,16 +104,29 @@ export class SheetMusicScoreReader {
     return { xml, contentSha256: SheetMusicScoreReader.hash(xml) };
   }
 
-  /** Write a new library score; refuses to replace an existing file (code EEXIST). */
+  /**
+   * Write a new library score. The folder is created when missing, so a folder
+   * configured in `sheetmusic.collections` but absent on disk comes into being on
+   * its first upload. Never replaces anything at the path, a symlink included
+   * (O_EXCL): that fails with code EEXIST.
+   */
   async writeScoreExclusive(scoreId, buffer) {
     const file = this.localPath(scoreId);
+    const unwritable = (error) => new ScoreReadError('SCORE_UNWRITABLE', scoreId,
+      `Sheet music score could not be written: ${scoreId}`, error);
     try {
-      writeBinaryExclusive(file, buffer);
+      await ensureDirAsync(path.dirname(file));
+    } catch (error) {
+      // mkdir's EEXIST means a FILE sits where the folder should be: not a duplicate score.
+      throw unwritable(error);
+    }
+    try {
+      await writeBinaryExclusiveAsync(file, buffer);
     } catch (error) {
       if (error?.code === 'EEXIST') {
         throw new ScoreReadError('EEXIST', scoreId, `Sheet music score already exists: ${scoreId}`, error);
       }
-      throw new ScoreReadError('SCORE_UNWRITABLE', scoreId, `Sheet music score could not be written: ${scoreId}`, error);
+      throw unwritable(error);
     }
   }
 

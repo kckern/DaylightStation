@@ -99,6 +99,12 @@ function requireLibrary(id) {
   if (!libraryScoreLocalPath(id)) throw codedError('NOT_LIBRARY_SCORE', `Not a sheet music library score: ${id}`);
 }
 
+/** A request value fit for a log line: strings cut to 120 characters, anything else its type. */
+function logValue(value) {
+  if (value == null) return null;
+  return typeof value === 'string' ? value.slice(0, 120) : typeof value;
+}
+
 const isThenable = (v) => v != null && typeof v.then === 'function';
 
 const hasProgress = (passage) => Boolean(passage?.silver || passage?.gold);
@@ -144,7 +150,7 @@ export class SheetMusicAdminService {
    */
   async upload({ buffer, originalName, folder, filename } = {}) {
     const reject = (code, message = `Upload refused: ${code}`) => {
-      this.#logger?.warn?.('piano.sheetmusic.upload-rejected', { code, folder: folder ?? null, originalName: originalName ?? null });
+      this.#logger?.warn?.('piano.sheetmusic.upload-rejected', { code, folder: logValue(folder), originalName: logValue(originalName) });
       return codedError(code, message);
     };
     if (typeof this.#extractMxl !== 'function' || typeof this.#writeScoreExclusive !== 'function'
@@ -161,6 +167,11 @@ export class SheetMusicAdminService {
     const maxBytes = isMxl ? MAX_UPLOAD_MXL_BYTES : MAX_UPLOAD_MUSICXML_BYTES;
     if (buffer.byteLength > maxBytes) throw reject('SCORE_TOO_LARGE', `Upload is over ${maxBytes} bytes`);
 
+    // Cheap checks before any decoding or decompression.
+    if (!isAllowedFolder(folder, await this.#collectionRefs())) throw reject('bad-folder');
+    const given = filename != null && filename !== '';
+    if (given && (checkFilename(filename) || !filename.endsWith(`.${ext}`))) throw reject('bad-filename');
+
     let xml;
     if (isMxl) {
       try {
@@ -175,12 +186,8 @@ export class SheetMusicAdminService {
     const checked = checkUploadXml(xml);
     if (!checked.ok) throw reject(checked.code);
 
-    if (!isAllowedFolder(folder, await this.#collectionRefs())) throw reject('bad-folder');
-
     let name = filename;
-    if (name != null && name !== '') {
-      if (checkFilename(name) || !name.endsWith(`.${ext}`)) throw reject('bad-filename');
-    } else {
+    if (!given) {
       const stem = String(originalName).replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '');
       name = suggestFilename({ title: checked.title ?? stem, composer: checked.composer, ext });
     }
@@ -194,7 +201,7 @@ export class SheetMusicAdminService {
       await this.#writeScoreExclusive(id, buffer);
     } catch (error) {
       if (error?.code === 'EEXIST') throw reject('basename-exists');
-      this.#logger?.error?.('piano.sheetmusic.upload-failed', { id, code: error?.code ?? null, error: error?.message });
+      this.#logger?.error?.('piano.sheetmusic.upload-failed', { id, code: error?.code ?? null, causeCode: error?.cause?.code ?? null });
       throw error;
     }
     this.#logger?.info?.('piano.sheetmusic.upload', { id, bytes: buffer.byteLength, folder });
