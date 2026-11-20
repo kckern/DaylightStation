@@ -14,9 +14,9 @@ the most recent such piece; pieces only opened or tried do not count), and a cou
 when they have a course.
 
 Both kinds share one layout (193x150): a 60x90 poster on the left with a small play
-disc in its corner; beside it a badge, the title (up to three lines) and the next step;
-the progress in a row along the bottom. The poster is the picture in its own shape,
-never cropped into a band. With no picture, or one that fails to load, a tinted
+disc in its corner; beside it a badge (one line), the title (up to three lines) and the next step;
+the progress in a row along the bottom. The poster is the picture in a 2:3 frame
+(cropped to fit only when its own shape differs), never squeezed into a wide band. With no picture, or one that fails to load, a tinted
 stand-in shows a ♪ and the title.
 
 - **Piece:** the score's `cover` (the same-name picture beside the score), the printed

@@ -94,7 +94,9 @@ export function nextStep(card) {
   if (card.kind === 'piece') return passageBars(card.focus);
   const { course } = card;
   if (!course.next) return '';
-  const printed = LESSON_PREFIX.exec(String(course.next.title ?? '').trim())?.[1];
+  const title = String(course.next.title ?? '').trim();
+  // The number the title prints, with a separator ("Lesson 51 | …") or alone ("Lesson 3").
+  const printed = (LESSON_PREFIX.exec(title) ?? /^lesson\s+(\d+)$/i.exec(title))?.[1];
   const position = printed ?? course.next.position ?? (Number.isFinite(course.completed) ? course.completed + 1 : null);
   return position ? `Lesson ${position}` : '';
 }

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import PianoHomeDesk from './PianoHomeDesk.jsx';
+import PianoHomeDesk, { PosterArt } from './PianoHomeDesk.jsx';
 import { __clearPianoListCache } from '../usePianoList.js';
 
 const h = vi.hoisted(() => ({ desk: null, recent: null }));
@@ -92,6 +92,15 @@ describe('PianoHomeDesk progress strip', () => {
     expect(card.querySelector('.piano-desk__poster[data-stand-in]')).not.toBeNull();
   });
 
+  it('tries a new picture after an old one failed', () => {
+    // The strip keys each poster by its picture, as here.
+    const { container, rerender } = render(<PosterArt key="/api/old.jpg" src="/api/old.jpg" title="Old" />);
+    fireEvent.error(container.querySelector('img'));
+    expect(container.querySelector('[data-stand-in]')).not.toBeNull();
+    rerender(<PosterArt key="/api/new.jpg" src="/api/new.jpg" title="New" />);
+    expect(container.querySelector('img').getAttribute('src')).toBe('/api/new.jpg?w=120&h=180');
+  });
+
   it('fades the tomatoes nobody has started, and keeps the one up next bright', async () => {
     h.desk.players[0].piece = { ...piece, next: { passageId: 'c' }, passages: [
       { id: 'a', start: 0, end: 4, state: 'todo', steps: { done: 1, total: 4 } },
@@ -124,7 +133,7 @@ describe('PianoHomeDesk progress strip', () => {
     h.desk.players[0].piece = { ...piece, total: 12, passages: Array.from({ length: 12 }, (_, index) => ({ id: `p${index}`, start: index * 4, end: index * 4 + 3, state: 'todo' })) };
     mount();
     const card = await screen.findByRole('button', { name: 'Kid: 1 of 12 Silver' });
-    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(12, 12px)');
+    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(12, minmax(0, 12px))');
     expect(card.hasAttribute('data-rows')).toBe(false);
     expect(document.querySelector('.piano-desk').hasAttribute('data-tall')).toBe(false);
   });
@@ -133,7 +142,7 @@ describe('PianoHomeDesk progress strip', () => {
     h.desk.players[0].piece = { ...piece, total: 20, passages: Array.from({ length: 20 }, (_, index) => ({ id: `p${index}`, start: index * 4, end: index * 4 + 3, state: 'todo' })) };
     mount();
     const card = await screen.findByRole('button', { name: 'Kid: 1 of 20 Silver' });
-    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(10, 15px)');
+    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(10, minmax(0, 15px))');
     expect(card.getAttribute('data-rows')).toBe('2');
     expect(document.querySelector('.piano-desk').hasAttribute('data-tall')).toBe(true);
   });

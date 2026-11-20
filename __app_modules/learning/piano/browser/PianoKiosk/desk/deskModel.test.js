@@ -65,6 +65,8 @@ describe('deskModel', () => {
     expect(nextStep({ kind: 'course', course: { completed: 98, next: { title: 'Au Clair de la Lune', position: 99 } } })).toBe('Lesson 99');
     expect(nextStep({ kind: 'course', course: { completed: 98, next: { title: 'x' } } })).toBe('Lesson 99');
     expect(nextStep({ kind: 'course', course: { completed: 5, next: null } })).toBe('');
+  // A bare "Lesson 3" title keeps its own number, whatever the position says.
+  expect(nextStep({ kind: 'course', course: { completed: 4, next: { title: 'Lesson 3', position: 5 } } })).toBe('Lesson 3');
   });
   it('lays coins in one row up to fourteen, else two equal rows', () => {
     expect(mapColumns(12)).toBe(12);

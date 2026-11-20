@@ -49,7 +49,7 @@
     overflow: hidden;
     &:active { background: var(--piano-surface-2); }
     &:disabled { cursor: default; color: var(--piano-muted); }
-    &:disabled .piano-avatar, &:disabled img { filter: grayscale(1); }
+    &:disabled img { filter: grayscale(1); }
   }
 
   &__top { flex: 0 0 90px; display: flex; gap: 8px; min-width: 0; }
@@ -80,9 +80,10 @@
     svg { width: 13px; height: 13px; margin-left: 1px; }
   }
 
-  &__text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  &__text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
   &__badge {
     font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; line-height: 13px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     &[data-level='silver'] { color: var(--piano-silver); }
     &[data-level='gold'] { color: var(--piano-gold); }
     &[data-level='lesson'] { color: var(--piano-accent-text); }
@@ -104,7 +105,10 @@
   &__map {
     // One coin per passage: a tomato, a flower, a silver coin or a gold coin.
     // The gap matches GAP in deskModel.js, which sizes the coins to fill the row.
+    // Coins shrink with a crowded card rather than spill past its edge.
     display: grid;
+    width: 100%;
+    min-width: 0;
     gap: 2px;
     align-content: center;
     justify-content: start;
@@ -114,4 +118,7 @@
     // A tomato nobody has started sits back; started ones and the one up next stay bright.
     i[data-faded] { opacity: 0.3; }
   }
+
+  // Closed (curfew, a pending lesson): the child headers go grey with their cards.
+  &.is-disabled .piano-avatar { filter: grayscale(1); }
 }

@@ -34,7 +34,7 @@ export function PassageMap({ piece, focusId }) {
   const columns = mapColumns(piece.passages.length);
   const size = coinSize(piece.passages.length);
   return (
-    <span className="piano-desk__map" style={{ gridTemplateColumns: `repeat(${columns}, ${size}px)` }} aria-hidden="true">
+    <span className="piano-desk__map" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, ${size}px))` }} aria-hidden="true">
       {piece.passages.map((passage) => {
         const current = passage.id === focusId;
         return (
@@ -60,9 +60,8 @@ export { usePrintedTitle };
 const PLAY = <span className="piano-desk__play" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor" /></svg></span>;
 
 /** A card's tall poster: the picture, or a tinted stand-in with a title when there is none or it fails. */
-function PosterArt({ src, title }) {
+export function PosterArt({ src, title }) {
   const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [src]);
   if (!src || failed) {
     return (
       <span className="piano-desk__poster" data-stand-in="">
@@ -81,7 +80,8 @@ function Card({ card, poster, title, standIn = title, progress }) {
   return (
     <>
       <span className="piano-desk__top">
-        <PosterArt src={poster} title={standIn} />
+        {/* Keyed by its picture, so a new picture starts fresh after an old one failed. */}
+        <PosterArt key={poster ?? ''} src={poster} title={standIn} />
         <span className="piano-desk__text">
           <span className="piano-desk__badge" data-level={badge.level}>{badge.label}</span>
           <strong className="piano-desk__title">{title}</strong>
