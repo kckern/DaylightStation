@@ -13,6 +13,7 @@ import static org.junit.Assert.*;
 
 public class CaptureDraftStoreTest {
     @Rule public TemporaryFolder files = new TemporaryFolder();
+    private static final String OWNER = CaptureScope.key("https://home.example", "alice");
     private static final String FIRST = "1795110000000-12345678";
     private static final String SECOND = "1795110010000-abcdef12";
 
@@ -47,7 +48,7 @@ public class CaptureDraftStoreTest {
     @Test public void interruptionAfterPublishNeverRecreatesConsumedFile() throws Exception {
         CaptureDraftStore store = interrupted(true);
         assertInbox(FIRST + ".journal.txt");
-        assertTrue(new File(files.getRoot(), "inputs/inbox/" + FIRST + ".journal.txt").delete());
+        assertTrue(new File(inbox(), FIRST + ".journal.txt").delete());
         assertNull(store.get(FIRST));
         assertFalse(store.send(FIRST));
         assertInbox();
@@ -94,19 +95,71 @@ public class CaptureDraftStoreTest {
         File legacy = files.newFolder("phone-memo-drafts");
         String name = FIRST + "-00.meal@1795110002000.m4a";
         Files.write(new File(legacy, name).toPath(), new byte[] { 1 });
-        CaptureDraftStore store = store();
+        CaptureDraftStore store = new CaptureDraftStore(files.getRoot());
         store.recoverAudio(null, file -> true);
         CaptureDraftStore.Draft draft = store.latest("meal", CaptureDraftStore.Kind.OPUS);
         assertNotNull(draft);
         assertEquals(FIRST + "-00", draft.id);
         assertEquals(1795110002000L, draft.timestamp);
         assertNull(new File(files.getRoot(), "memos/inbox").list());
-        assertTrue(store.send(draft.id));
-        assertTrue(new File(files.getRoot(), "memos/inbox/" + name).isFile());
+        assertFalse(store.send(draft.id));
+        assertEquals(name, draft.file.getName());
+        assertTrue(draft.file.isFile());
+        assertNull(store().latest("meal", CaptureDraftStore.Kind.OPUS));
+    }
+
+    @Test public void anotherHouseholdOrUserCannotOpenDiscardOrPublishPrivateDraft() throws Exception {
+        String alice = CaptureScope.key("https://home.example", "alice");
+        String bob = CaptureScope.key("https://home.example", "bob");
+        String otherHousehold = CaptureScope.key("https://other.example", "alice");
+        CaptureDraftStore owner = new CaptureDraftStore(files.getRoot(), alice);
+        text(owner, FIRST, "journal", "Alice's note");
+        for (String scope : new String[] { bob, otherHousehold }) {
+            CaptureDraftStore other = new CaptureDraftStore(files.getRoot(), scope);
+            assertNull(other.get(FIRST));
+            assertNull(other.latest("journal", CaptureDraftStore.Kind.TEXT));
+            assertFalse(other.discard(FIRST, true));
+            assertFalse(other.send(FIRST));
+        }
+        assertEquals("Alice's note", read(owner.get(FIRST).file));
+        assertTrue(owner.send(FIRST));
+        assertEquals("Alice's note", read(new File(CaptureScope.inbox(new File(files.getRoot(), "inputs/inbox"), alice),
+                FIRST + ".journal.txt")));
+        assertArrayEquals(new String[] { "owner-" + alice }, new File(files.getRoot(), "inputs/inbox").list());
+    }
+
+    @Test public void unownedLegacyDraftStaysIntactWhenAccountIsKnown() throws Exception {
+        CaptureDraftStore old = new CaptureDraftStore(files.getRoot());
+        text(old, FIRST, "journal", "Unattributed");
+        CaptureDraftStore current = new CaptureDraftStore(files.getRoot(), CaptureScope.key("https://home.example", "alice"));
+        assertNull(current.get(FIRST));
+        assertFalse(current.send(FIRST));
+        assertFalse(old.send(FIRST));
+        assertEquals("Unattributed", read(old.get(FIRST).file));
+        assertInbox();
+    }
+
+    @Test public void aDraftOpenedBeforeRePairingCannotBeSentByItsStaleSession() throws Exception {
+        CaptureDraftStore store = store();
+        text(store, FIRST, "journal", "Private draft");
+        java.util.concurrent.atomic.AtomicReference<String> current = new java.util.concurrent.atomic.AtomicReference<>(OWNER);
+        java.util.function.Supplier<String> session = current::get;
+        CaptureScope.attach(session);
+        try {
+            current.set(CaptureScope.key("https://home.example", "bob"));
+            assertFalse(store.sendForCurrentOwner(FIRST));
+            assertEquals("Private draft", read(store.get(FIRST).file));
+            assertInbox();
+            current.set(OWNER);
+            assertTrue(store.sendForCurrentOwner(FIRST));
+            assertInbox(FIRST + ".journal.txt");
+        } finally {
+            CaptureScope.detach(session);
+        }
     }
 
     private CaptureDraftStore interrupted(boolean afterMove) throws Exception {
-        CaptureDraftStore store = new CaptureDraftStore(files.getRoot(), moved -> {
+        CaptureDraftStore store = new CaptureDraftStore(files.getRoot(), OWNER, moved -> {
             if (moved == afterMove) throw new IOException("simulated process interruption");
         });
         text(store, FIRST, "journal", "A note");
@@ -115,7 +168,9 @@ public class CaptureDraftStoreTest {
         return store();
     }
 
-    private CaptureDraftStore store() { return new CaptureDraftStore(files.getRoot()); }
+    private CaptureDraftStore store() { return new CaptureDraftStore(files.getRoot(), OWNER); }
+
+    private File inbox() { return CaptureScope.inbox(new File(files.getRoot(), "inputs/inbox"), OWNER); }
 
     private static void text(CaptureDraftStore store, String id, String dest, String body) throws Exception {
         store.create(id, dest, "Journal", CaptureDraftStore.Kind.TEXT);
@@ -123,7 +178,7 @@ public class CaptureDraftStoreTest {
     }
 
     private void assertInbox(String... expected) {
-        String[] entries = new File(files.getRoot(), "inputs/inbox").list();
+        String[] entries = inbox().list();
         assertArrayEquals(expected, entries == null ? new String[0] : entries);
     }
 

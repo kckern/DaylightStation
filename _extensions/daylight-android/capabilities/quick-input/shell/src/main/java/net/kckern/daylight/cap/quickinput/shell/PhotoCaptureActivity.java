@@ -34,6 +34,10 @@ public class PhotoCaptureActivity extends Activity {
     private static final Map<String, PhotoCaptureActivity> OPEN = new HashMap<>();
 
     private CaptureDraftStore store;
+    private String owner;
+    private String sessionKey;
+    private final DraftDiscard confirmation = new DraftDiscard();
+    private AlertDialog discardDialog;
     private CaptureDraftStore.Draft draft;
     private String dest;
     private String label;
@@ -47,15 +51,17 @@ public class PhotoCaptureActivity extends Activity {
         super.onCreate(state);
         dest = MemoFiles.dest(getIntent().getStringExtra(MemoFiles.EXTRA_DEST));
         label = MemoFiles.label(getIntent().getStringExtra(MemoFiles.EXTRA_LABEL));
-        if (dest == null) { finish(); return; }
-        PhotoCaptureActivity previous = OPEN.get(dest);
+        owner = getIntent().getStringExtra(CaptureScope.EXTRA);
+        if (dest == null || !CaptureScope.currentIs(owner)) { finish(); return; }
+        sessionKey = owner + ":" + dest;
+        PhotoCaptureActivity previous = OPEN.get(sessionKey);
         if (previous != null && !previous.isFinishing() && !previous.isDestroyed()) {
             finish();
             return;
         }
-        OPEN.put(dest, this);
+        OPEN.put(sessionKey, this);
         if (label == null) label = "Photo";
-        store = new CaptureDraftStore(getFilesDir());
+        store = new CaptureDraftStore(getFilesDir(), owner);
         setFinishOnTouchOutside(false);
         if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false);
         try {
@@ -78,6 +84,11 @@ public class PhotoCaptureActivity extends Activity {
         else if (state == null && draft == null) requestCamera();
     }
 
+    @Override protected void onResume() {
+        super.onResume();
+        if (!isFinishing() && !CaptureScope.currentIs(owner)) finish();
+    }
+
     @Override protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state);
         if (draft != null) state.putString("draft", draft.id);
@@ -87,7 +98,7 @@ public class PhotoCaptureActivity extends Activity {
     }
 
     private void requestCamera() {
-        if (completed || preparing || asking || rawName != null) return;
+        if (completed || preparing || asking || rawName != null || !CaptureScope.currentIs(owner)) return;
         if (CameraAsk.mustAsk(declaredPermissions(), checkSelfPermission(CameraAsk.CAMERA) == PackageManager.PERMISSION_GRANTED)) {
             asking = true;
             render();
@@ -99,7 +110,8 @@ public class PhotoCaptureActivity extends Activity {
 
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode != REQUEST_CAMERA || !asking || completed || isFinishing() || isDestroyed()) return;
+        if (requestCode != REQUEST_CAMERA || !asking || completed || isFinishing() || isDestroyed()
+                || !CaptureScope.currentIs(owner)) return;
         asking = false;
         if (CameraAsk.granted(permissions, grantResults)) openCamera();
         else {
@@ -259,9 +271,10 @@ public class PhotoCaptureActivity extends Activity {
     }
 
     private void send() {
-        if (!used || draft == null || completed || preparing || draft.confirmedPhoto().isFile()) return;
+        if (!used || draft == null || completed || preparing || draft.confirmedPhoto().isFile()
+                || !CaptureScope.currentIs(owner)) return;
         try {
-            if (!store.send(draft.id)) return;
+            if (!store.sendForCurrentOwner(draft.id)) return;
             completed = true;
             CaptureFiles.tellPayload();
             say("Queued for " + label);
@@ -272,21 +285,26 @@ public class PhotoCaptureActivity extends Activity {
     }
 
     private void confirmDiscard() {
-        if (completed) return;
+        if (completed || !CaptureScope.currentIs(owner)) return;
         if (draft == null || !(preparing || draft.requiresDiscardConfirmation())) {
-            discard(false);
+            discard(draft == null ? null : draft.id, false);
             return;
         }
-        new AlertDialog.Builder(this)
+        invalidateDiscard();
+        DraftDiscard.Request selected = confirmation.ask(draft.id);
+        discardDialog = new AlertDialog.Builder(this)
                 .setTitle("Discard this photo draft?")
                 .setNegativeButton("Keep draft", null)
-                .setPositiveButton("Discard draft", (dialog, which) -> discard(true))
-                .show();
+                .setPositiveButton("Discard draft", (dialog, which) -> {
+                    if (CaptureScope.currentIs(owner) && confirmation.confirm(selected, draft == null ? null : draft.id)) {
+                        discard(selected.id, true);
+                    }
+                }).show();
     }
 
-    private void discard(boolean confirmed) {
+    private void discard(String id, boolean confirmed) {
         try {
-            if (draft != null && !store.discard(draft.id, confirmed)) return;
+            if (id != null && !store.discard(id, confirmed)) return;
             completed = true;
             asking = false;
             clearCamera();
@@ -298,8 +316,17 @@ public class PhotoCaptureActivity extends Activity {
 
     @Override public void onBackPressed() { confirmDiscard(); }
 
+    private void invalidateDiscard() {
+        confirmation.invalidate();
+        if (discardDialog != null) {
+            discardDialog.dismiss();
+            discardDialog = null;
+        }
+    }
+
     @Override protected void onDestroy() {
-        if (dest != null && OPEN.get(dest) == this) OPEN.remove(dest);
+        invalidateDiscard();
+        if (sessionKey != null && OPEN.get(sessionKey) == this) OPEN.remove(sessionKey);
         super.onDestroy();
     }
 

@@ -8,6 +8,7 @@ import android.net.NetworkCapabilities;
 
 import net.kckern.daylight.api.PayloadPort;
 import net.kckern.daylight.api.PayloadState;
+import net.kckern.daylight.cap.quickinput.shell.CaptureScope;
 import net.kckern.daylight.core.Capability;
 import net.kckern.daylight.core.CoreContext;
 import net.kckern.daylight.core.LinkEffect;
@@ -28,6 +29,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.LongSupplier;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 /**
  * Quick inputs: a recording, typed text or a photo, captured on the phone and sent to
@@ -90,6 +93,7 @@ public final class QuickInputCapability implements Capability {
 
     private CoreContext core;
     private Backend backend;
+    private final Supplier<String> captureOwner = () -> InputUploader.currentScope(backend);
     private Http http;
     private File stateDir;
     private File inbox;
@@ -112,6 +116,7 @@ public final class QuickInputCapability implements Capability {
     private File cutOffDir;
     Recovery recovery;
     private long discardArmedAtMs;
+    private String discardArmedOwner;
     private Object networkCallback;
 
     private final PayloadPort port = PayloadPort.named(PORT);
@@ -207,6 +212,7 @@ public final class QuickInputCapability implements Capability {
         t.start();
         watchNetwork();
         port.attach(onCall);
+        try { CaptureScope.attach(captureOwner); } catch (LinkageError olderShell) { }
     }
 
     /**
@@ -214,6 +220,7 @@ public final class QuickInputCapability implements Capability {
      * minutes. It finishes by itself and then touches nothing (UploadPump.stop).
      */
     @Override public void stop() {
+        try { CaptureScope.detach(captureOwner); } catch (LinkageError olderShell) { }
         port.detach(onCall);
         UploadPump p = pump;
         if (p != null) p.stop();
@@ -271,6 +278,11 @@ public final class QuickInputCapability implements Capability {
     private void scan(InputQueue q) {
         InputInbox.scan(inbox, q);
         InputInbox.scan(inputsInbox, q);
+        String owner = captureOwner.get();
+        if (owner != null) {
+            InputInbox.scan(CaptureScope.inbox(inbox, owner), q);
+            InputInbox.scan(CaptureScope.inbox(inputsInbox, owner), q);
+        }
     }
 
     /** A capture finished a file: queue it and send it now. */
@@ -440,6 +452,7 @@ public final class QuickInputCapability implements Capability {
         // An input that could never be sent is not captured in the first place.
         String why = InputUploader.blocked(backend);
         if (why != null) return LinkEffect.toast(NOT_SET_UP + why);
+        if (!backend.configured()) return LinkEffect.toast(NOT_SET_UP + InputUploader.SITE_NOT_SET);
         Screens s = screens();
         if (s == null) return LinkEffect.toast("Not available on this device");
         try {
@@ -487,18 +500,22 @@ public final class QuickInputCapability implements Capability {
     private synchronized JSONObject discard() throws Exception {
         InputQueue q = queueOrNull();
         if (q == null) return LinkEffect.toast("Not available on this device");
-        int parked = q.parked();
+        String owner = captureOwner.get();
+        Predicate<InputQueue.Entry> allowed = entry -> InputUploader.allowsFile(new File(entry.file), owner);
+        int parked = q.parked(allowed);
         if (parked == 0) {
             discardArmedAtMs = 0;
             return LinkEffect.toast("No inputs to discard");
         }
         long now = clock.getAsLong();
-        if (discardArmedAtMs == 0 || now - discardArmedAtMs > DISCARD_CONFIRM_MS || now < discardArmedAtMs) {
+        if (!java.util.Objects.equals(discardArmedOwner, owner) || discardArmedAtMs == 0
+                || now - discardArmedAtMs > DISCARD_CONFIRM_MS || now < discardArmedAtMs) {
             discardArmedAtMs = now;
+            discardArmedOwner = owner;
             return LinkEffect.toast("Tap Discard again to delete " + QueueNotice.inputs(parked) + " that could not be sent. This cannot be undone.");
         }
         discardArmedAtMs = 0;
-        List<String> files = q.discardParked();
+        List<String> files = q.discardParked(allowed);
         for (String path : files) new File(path).delete();
         core.shell().note("INPUT", "discarded " + files.size() + " parked input(s) at the owner's request");
         announce(q);
@@ -521,8 +538,11 @@ public final class QuickInputCapability implements Capability {
                  * activity is on screen, which is what lets a service context start one.
                  */
                 private void open(String activity, String dest, String label) {
-                    c.startActivity(new Intent().setClassName(c, activity).putExtra(EXTRA_DEST, dest).putExtra(EXTRA_LABEL, label)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                    Intent request = new Intent().setClassName(c, activity).putExtra(EXTRA_DEST, dest)
+                            .putExtra(EXTRA_LABEL, label).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    String owner = captureOwner.get();
+                    if (owner != null) request.putExtra(CaptureScope.EXTRA, owner);
+                    c.startActivity(request);
                 }
             };
         }

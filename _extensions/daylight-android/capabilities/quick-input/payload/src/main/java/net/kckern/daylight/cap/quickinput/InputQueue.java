@@ -18,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /**
  * Quick inputs (recordings, typed text, photos) waiting to be uploaded. One queue for
@@ -232,12 +233,12 @@ final class InputQueue {
      *
      * @return the audio files of the memos removed
      */
-    synchronized List<String> discardParked() {
+    synchronized List<String> discardParked(Predicate<Entry> allowed) {
         List<String> files = new ArrayList<>();
         if (closed) return files;
         for (java.util.Iterator<Entry> it = memos.iterator(); it.hasNext(); ) {
             Entry m = it.next();
-            if (m.state != State.PARKED) continue;
+            if (m.state != State.PARKED || !allowed.test(m)) continue;
             files.add(m.file);
             it.remove();
             discarded++;
@@ -302,9 +303,11 @@ final class InputQueue {
         return n;
     }
 
-    synchronized int parked() {
+    synchronized int parked() { return parked(entry -> true); }
+
+    synchronized int parked(Predicate<Entry> allowed) {
         int n = 0;
-        for (Entry m : memos) if (m.state == State.PARKED) n++;
+        for (Entry m : memos) if (m.state == State.PARKED && allowed.test(m)) n++;
         return n;
     }
 

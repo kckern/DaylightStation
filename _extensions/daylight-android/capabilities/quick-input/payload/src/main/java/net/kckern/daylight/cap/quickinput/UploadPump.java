@@ -115,6 +115,10 @@ final class UploadPump {
                     queue.holdUntil(memo.id, result.detail, until);
                     break;
                 }
+                case OTHER_OWNER:
+                    // Re-pairing must neither send the capture nor stall unrelated work.
+                    queue.retryLater(memo.id, result.detail, false, nowMs);
+                    break;
                 case NOT_ALLOWED:
                     // This phone is not bound to the user for this destination's bot yet. It
                     // waits, uncounted; another destination may well be allowed.

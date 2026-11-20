@@ -1,5 +1,6 @@
 package net.kckern.daylight.cap.quickinput;
 
+import net.kckern.daylight.cap.quickinput.shell.CaptureScope;
 import net.kckern.daylight.core.backend.Backend;
 import net.kckern.daylight.core.backend.Http;
 
@@ -68,6 +69,7 @@ final class InputUploader implements UploadPump.Sender {
     static final long DEFAULT_WAIT_MS = 15 * 60_000L;
 
     enum Outcome {
+        OTHER_OWNER,
         UPLOADED,
         /** Try again later; the attempt counts. */
         RETRY,
@@ -132,21 +134,50 @@ final class InputUploader implements UploadPump.Sender {
     /** The intake takes audio/ogg and audio/mp4; a recording says which it is by its name. */
     static String contentType(String fileName) { return Destinations.Kind.VOICE.contentType(fileName); }
 
+    static String currentScope(Backend backend) {
+        try {
+            Backend.SiteUser pair = backend.siteUser();
+            return CaptureScope.key(pair.origin, pair.user);
+        } catch (IllegalStateException | LinkageError unavailable) {
+            // A payload can also run on an installed shell from before scoped capture.
+            return null;
+        }
+    }
+
+    static boolean allowsFile(File file, String owner) {
+        try {
+            return CaptureScope.allowsFile(file, owner);
+        } catch (LinkageError olderShell) {
+            File directory = file.getParentFile();
+            return directory == null || !directory.getName().startsWith("owner-");
+        }
+    }
+
     @Override public Result upload(InputQueue.Entry memo) {
         String why = blocked(backend);
         if (why != null) return new Result(Outcome.BLOCKED, why);
-        // Where it goes is looked up now, by the id the entry remembers: no address is ever
-        // kept in the queue, and a destination that is gone receives nothing.
+        Backend.SiteUser pair;
+        try {
+            pair = backend.siteUser();
+        } catch (IllegalStateException notConfigured) {
+            return new Result(Outcome.BLOCKED, SITE_NOT_SET);
+        }
+        File file = new File(memo.file);
+        String owner = null;
+        try { owner = CaptureScope.key(pair.origin, pair.user); } catch (LinkageError olderShell) { }
+        if (!allowsFile(file, owner)) {
+            return new Result(Outcome.OTHER_OWNER, "waiting for the capture's household and user");
+        }
+        // Destination and URL are resolved only for the binding that passed the check.
         Destinations.Destination dest = routes.now().find(memo.dest);
         if (dest == null) return new Result(Outcome.REJECTED, "unknown destination");
         if (dest.kind != memo.kind) return new Result(Outcome.REJECTED, "destination does not take " + memo.kind.word);
         String url;
         try {
-            url = backend.url(dest.route + "?user=" + URLEncoder.encode(backend.user(), "UTF-8").replace("+", "%20"));
-        } catch (IllegalStateException | IllegalArgumentException | java.io.UnsupportedEncodingException notConfigured) {
+            url = pair.origin + Backend.checkedPath(dest.route + "?user=" + URLEncoder.encode(pair.user, "UTF-8").replace("+", "%20"));
+        } catch (IllegalArgumentException | java.io.UnsupportedEncodingException notConfigured) {
             return new Result(Outcome.BLOCKED, SITE_NOT_SET);
         }
-        File file = new File(memo.file);
         if (!file.isFile()) return new Result(Outcome.LOST, "the recording is gone");
         if (file.length() > memo.kind.maxBytes) return new Result(Outcome.REJECTED, "too large to send");
         Map<String, String> headers = new HashMap<>();

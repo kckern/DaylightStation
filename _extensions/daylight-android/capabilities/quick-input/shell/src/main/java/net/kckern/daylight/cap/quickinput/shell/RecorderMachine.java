@@ -100,6 +100,10 @@ public final class RecorderMachine {
         return was == State.STARTING ? Action.DISCARD_AND_STOP : Action.STOP_SERVICE;
     }
 
+    static boolean shouldPauseForWindowFocus(boolean hasFocus, boolean captureRequested) {
+        return !hasFocus && captureRequested;
+    }
+
     static boolean canBeginAfterPermission(boolean waiting, boolean granted) {
         return waiting && granted;
     }

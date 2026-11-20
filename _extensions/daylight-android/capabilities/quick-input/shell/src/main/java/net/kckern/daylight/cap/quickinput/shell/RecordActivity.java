@@ -48,6 +48,10 @@ public class RecordActivity extends Activity {
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private CaptureDraftStore store;
+    private String owner;
+    private boolean receiverRegistered;
+    private final DraftDiscard confirmation = new DraftDiscard();
+    private AlertDialog discardDialog;
     private CaptureDraftStore.Draft draft;
     private TextView status;
     private TextView hint;
@@ -79,8 +83,14 @@ public class RecordActivity extends Activity {
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         setFinishOnTouchOutside(false);
         if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false);
-        store = new CaptureDraftStore(getFilesDir());
+        owner = getIntent().getStringExtra(CaptureScope.EXTRA);
+        if (!CaptureScope.currentIs(owner)) {
+            finish();
+            return;
+        }
+        store = new CaptureDraftStore(getFilesDir(), owner);
         registerReceiver(screenOff, new IntentFilter(Intent.ACTION_SCREEN_OFF));
+        receiverRegistered = true;
         if (savedInstanceState != null) {
             asking = savedInstanceState.getBoolean("asking");
             waitingForMic = savedInstanceState.getBoolean("mic");
@@ -101,16 +111,21 @@ public class RecordActivity extends Activity {
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         if (completed || isFinishing()) return;
+        String nextOwner = intent.getStringExtra(CaptureScope.EXTRA);
+        if (!CaptureScope.currentIs(nextOwner)) return;
         boolean notification = intent.getBooleanExtra(EXTRA_SHOW, false);
         String target = MemoFiles.dest(intent.getStringExtra(MemoFiles.EXTRA_DEST));
         if (notification) {
             String shown = intent.getStringExtra(MemoRecorderService.EXTRA_DRAFT);
             if (shown == null || draft != null && draft.id.equals(shown)) return;
-        } else if (CaptureDraftStore.sameDestination(target, destination, true)) {
+        } else if (nextOwner.equals(owner) && CaptureDraftStore.sameDestination(target, destination, true)) {
             return;
         }
+        invalidateDiscard();
         pauseCapture();
         stopPlayback();
+        owner = nextOwner;
+        store = new CaptureDraftStore(getFilesDir(), owner);
         waitingForMic = beginOnResume = requested = seenRecording = sending = false;
         main.removeCallbacks(watch);
         setIntent(intent);
@@ -151,6 +166,7 @@ public class RecordActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        if (isFinishing() || closeIfOwnerChanged()) return;
         resumed = true;
         if (beginOnResume) {
             beginOnResume = false;
@@ -179,6 +195,7 @@ public class RecordActivity extends Activity {
 
     private void pauseCapture() {
         if (completed || draft == null || sending || (!requested && !active())) return;
+        MemoRecorderService.withdrawStart(draft.id);
         try { service(MemoRecorderService.ACTION_PAUSE, false); }
         catch (RuntimeException unavailable) {
             if (active()) stopService(new Intent(this, MemoRecorderService.class));
@@ -190,15 +207,18 @@ public class RecordActivity extends Activity {
                 && MemoRecorderService.startedAtMs() > 0;
     }
 
-    private void service(String action, boolean foreground) {
+    private void service(String action, boolean foreground) { service(action, foreground, draft.id); }
+
+    private void service(String action, boolean foreground, String id) {
         Intent intent = new Intent(this, MemoRecorderService.class).setAction(action)
-                .putExtra(MemoRecorderService.EXTRA_DRAFT, draft.id);
+                .putExtra(MemoRecorderService.EXTRA_DRAFT, id)
+                .putExtra(CaptureScope.EXTRA, owner);
         if (foreground) startForegroundService(intent);
         else startService(intent);
     }
 
     private void start() {
-        if (completed || asking || active() || requested || isFinishing()) return;
+        if (completed || asking || active() || requested || isFinishing() || closeIfOwnerChanged()) return;
         if (getSystemService(KeyguardManager.class).isKeyguardLocked()) return;
         if (MemoRecorderService.activeId() != null) {
             say("Another memo is being finalized. Try again in a moment.");
@@ -259,6 +279,7 @@ public class RecordActivity extends Activity {
                 draft = store.create(destination, destinationLabel, kind);
             }
             requested = true;
+            MemoRecorderService.allowStart(draft.id);
             service(MemoRecorderService.ACTION_START, true);
             refresh();
             String requestedId = draft.id;
@@ -269,6 +290,7 @@ public class RecordActivity extends Activity {
                 }
             }, 3500);
         } catch (IOException | RuntimeException refused) {
+            if (draft != null) MemoRecorderService.withdrawStart(draft.id);
             requested = false;
             refresh();
             say("Could not start recording");
@@ -277,6 +299,9 @@ public class RecordActivity extends Activity {
 
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        if (RecorderMachine.shouldPauseForWindowFocus(hasFocus, requested || active())) {
+            pauseCapture();
+        }
         if (!hasFocus || !resumed || !beginOnResume || asking) return;
         beginOnResume = false;
         start();
@@ -284,7 +309,7 @@ public class RecordActivity extends Activity {
 
     private void refresh() {
         main.removeCallbacks(watch);
-        if (completed || isFinishing()) return;
+        if (completed || isFinishing() || closeIfOwnerChanged()) return;
         if (active()) {
             if (!seenRecording) {
                 long elapsed = System.currentTimeMillis() - MemoRecorderService.startedAtMs();
@@ -326,6 +351,7 @@ public class RecordActivity extends Activity {
     }
 
     private void review() {
+        if (closeIfOwnerChanged()) return;
         if (draft == null || !draft.hasContent()) {
             start();
             return;
@@ -356,7 +382,7 @@ public class RecordActivity extends Activity {
     }
 
     private void send() {
-        if (draft == null || sending || completed) return;
+        if (draft == null || sending || completed || closeIfOwnerChanged()) return;
         sending = true;
         stopPlayback();
         try {
@@ -365,7 +391,7 @@ public class RecordActivity extends Activity {
                 refresh();
                 return;
             }
-            if (store.send(draft.id)) {
+            if (store.sendForCurrentOwner(draft.id)) {
                 CaptureFiles.tellPayload();
                 say("Memo queued for sending");
                 completed = true;
@@ -378,11 +404,11 @@ public class RecordActivity extends Activity {
         refresh();
     }
 
-    private void discardDraft(boolean confirmed) {
+    private void discardDraft(String id, boolean confirmed) {
         try {
-            if (draft != null && confirmed && (active() || requested)) {
-                service(MemoRecorderService.ACTION_DISCARD, false);
-            } else if (draft != null && !store.discard(draft.id, confirmed)) {
+            if (id != null && confirmed && (active() || requested)) {
+                service(MemoRecorderService.ACTION_DISCARD, false, id);
+            } else if (id != null && !store.discard(id, confirmed)) {
                 refresh();
                 return;
             }
@@ -395,17 +421,40 @@ public class RecordActivity extends Activity {
     }
 
     void confirmDiscard() {
-        if (completed || sending) return;
+        if (completed || sending || closeIfOwnerChanged()) return;
         if (draft == null || !(requested || active() || draft.requiresDiscardConfirmation())) {
-            discardDraft(false);
+            discardDraft(draft == null ? null : draft.id, false);
             return;
         }
-        new AlertDialog.Builder(this)
+        invalidateDiscard();
+        DraftDiscard.Request selected = confirmation.ask(draft.id);
+        pauseCapture();
+        discardDialog = new AlertDialog.Builder(this)
                 .setTitle("Discard this recording?")
                 .setMessage("The audio will be lost.")
                 .setNegativeButton("Keep draft", null)
-                .setPositiveButton("Discard draft", (dialog, which) -> discardDraft(true))
-                .show();
+                .setPositiveButton("Discard draft", (dialog, which) -> {
+                    if (!closeIfOwnerChanged() && confirmation.confirm(selected, draft == null ? null : draft.id)) {
+                        discardDraft(selected.id, true);
+                    }
+                }).show();
+    }
+
+    private void invalidateDiscard() {
+        confirmation.invalidate();
+        if (discardDialog != null) {
+            discardDialog.dismiss();
+            discardDialog = null;
+        }
+    }
+
+    private boolean closeIfOwnerChanged() {
+        if (CaptureScope.currentIs(owner)) return false;
+        invalidateDiscard();
+        pauseCapture();
+        stopPlayback();
+        finish();
+        return true;
     }
 
     @Override public void onBackPressed() { confirmDiscard(); }
@@ -520,7 +569,8 @@ public class RecordActivity extends Activity {
 
     @Override
     protected void onDestroy() {
-        unregisterReceiver(screenOff);
+        invalidateDiscard();
+        if (receiverRegistered) unregisterReceiver(screenOff);
         main.removeCallbacksAndMessages(null);
         stopPlayback();
         super.onDestroy();

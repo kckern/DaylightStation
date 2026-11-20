@@ -271,11 +271,11 @@ public class InputQueueTest {
         q.add("200-b", "/x/200-b.ogg", 200);
         q.claim(1000);
         q.park("100-a", "HTTP 422 empty_transcription");
-        assertEquals(java.util.Collections.singletonList("/x/100-a.ogg"), q.discardParked());
+        assertEquals(java.util.Collections.singletonList("/x/100-a.ogg"), q.discardParked(entry -> true));
         assertEquals(0, q.parked());
         assertEquals("a memo that is only waiting is never discarded", 1, q.waiting());
         assertEquals(1, q.describe().getInt("discarded"));
-        assertTrue(q.discardParked().isEmpty());
+        assertTrue(q.discardParked(entry -> true).isEmpty());
         assertEquals(1, new InputQueue(state).describe().getInt("discarded"));
     }
     // ── kind and destination ─────────────────────────────────────────────────

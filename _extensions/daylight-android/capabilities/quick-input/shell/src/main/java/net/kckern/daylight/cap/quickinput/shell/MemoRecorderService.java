@@ -63,6 +63,8 @@ public class MemoRecorderService extends Service {
     private MediaRecorder recorder;
     private int latestStart;
     private static String activeId;
+    private static String activeOwner;
+    private static String pendingStart;
     private CaptureDraftStore store;
     private AudioFocusRequest focus;
 
@@ -71,36 +73,49 @@ public class MemoRecorderService extends Service {
 
     static String activeId() { return activeId; }
 
+    static void allowStart(String id) { pendingStart = id; }
+
+    static void withdrawStart(String id) {
+        if (id.equals(pendingStart)) pendingStart = null;
+    }
+
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         latestStart = startId;
         String action = intent == null ? null : intent.getAction();
         String id = intent == null ? null : intent.getStringExtra(EXTRA_DRAFT);
+        String owner = intent == null ? null : intent.getStringExtra(CaptureScope.EXTRA);
         if (ACTION_START.equals(action)) {
+            boolean allowed = id != null && id.equals(pendingStart);
+            if (allowed) pendingStart = null;
             if (MACHINE.recording()) return START_NOT_STICKY;
             activeId = id;
-            if (!goForeground()) { end(); return START_NOT_STICKY; }
-            store = new CaptureDraftStore(getFilesDir());
+            activeOwner = owner;
+            if (!goForeground() || !allowed || !CaptureScope.currentIs(owner)) { end(); return START_NOT_STICKY; }
+            store = new CaptureDraftStore(getFilesDir(), owner);
             handle(Event.START);
-        } else if (activeId != null && activeId.equals(id)) {
-            Event event = ACTION_SEND.equals(action) ? Event.STOP
-                    : ACTION_DISCARD.equals(action) ? Event.CANCEL : Event.SERVICE_DESTROYED;
+        } else if (activeId != null && activeId.equals(id) && java.util.Objects.equals(activeOwner, owner)) {
+            Event event = Event.SERVICE_DESTROYED;
+            if (CaptureScope.currentIs(owner)) {
+                if (ACTION_SEND.equals(action)) event = Event.STOP;
+                if (ACTION_DISCARD.equals(action)) event = Event.CANCEL;
+            }
             handle(event);
         } else {
             // A focus or screen-off event may have finalized this draft just before
             // its user's Send or confirmed Discard reached the service.
-            if (id != null) completeInactiveDraft(id, action);
+            if (id != null && CaptureScope.currentIs(owner)) completeInactiveDraft(id, action, owner);
             if (!MACHINE.recording()) end();
         }
         return START_NOT_STICKY;
     }
 
-    private void completeInactiveDraft(String id, String action) {
-        CaptureDraftStore drafts = new CaptureDraftStore(getFilesDir());
+    private void completeInactiveDraft(String id, String action, String owner) {
+        CaptureDraftStore drafts = new CaptureDraftStore(getFilesDir(), owner);
         try {
             CaptureDraftStore.Draft draft = drafts.get(id);
             if (draft == null || !draft.kind.voice()) return;
-            if (ACTION_SEND.equals(action) && drafts.send(id)) {
+            if (ACTION_SEND.equals(action) && drafts.sendForCurrentOwner(id)) {
                 CaptureFiles.tellPayload();
                 say("Memo queued for sending");
             } else if (ACTION_DISCARD.equals(action)) {
@@ -159,10 +174,12 @@ public class MemoRecorderService extends Service {
             NotificationManager manager = getSystemService(NotificationManager.class);
             manager.createNotificationChannel(new NotificationChannel(CHANNEL_ID, "Voice memo recording", NotificationManager.IMPORTANCE_LOW));
             PendingIntent stop = PendingIntent.getService(this, 0,
-                    new Intent(this, MemoRecorderService.class).setAction(ACTION_PAUSE).putExtra(EXTRA_DRAFT, activeId),
+                    new Intent(this, MemoRecorderService.class).setAction(ACTION_PAUSE).putExtra(EXTRA_DRAFT, activeId)
+                            .putExtra(CaptureScope.EXTRA, activeOwner),
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
             PendingIntent show = PendingIntent.getActivity(this, 1,
-                    new Intent(this, RecordActivity.class).putExtra(RecordActivity.EXTRA_SHOW, true).putExtra(EXTRA_DRAFT, activeId).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    new Intent(this, RecordActivity.class).putExtra(RecordActivity.EXTRA_SHOW, true).putExtra(EXTRA_DRAFT, activeId)
+                            .putExtra(CaptureScope.EXTRA, activeOwner).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
             Notification notification = new Notification.Builder(this, CHANNEL_ID)
                     .setContentTitle("Recording a voice memo")
@@ -265,7 +282,7 @@ public class MemoRecorderService extends Service {
         }
         try {
             boolean playable = store.finishAudio(activeId, MemoRecorderService::playable);
-            if (send && playable && store.send(activeId)) {
+            if (send && playable && store.sendForCurrentOwner(activeId)) {
                 CaptureFiles.tellPayload();
                 say("Memo queued for sending");
             } else if (!playable) {
@@ -310,6 +327,7 @@ public class MemoRecorderService extends Service {
 
     private void end() {
         activeId = null;
+        activeOwner = null;
         try { stopForeground(true); } catch (RuntimeException ignored) { }
         stopSelfResult(latestStart);
     }

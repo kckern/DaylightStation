@@ -87,6 +87,12 @@ public class RecorderMachineTest {
         }
     }
 
+    @Test public void aForegroundInterstitialPausesCaptureWhenTheWindowLosesFocus() {
+        assertTrue(RecorderMachine.shouldPauseForWindowFocus(false, true));
+        assertFalse(RecorderMachine.shouldPauseForWindowFocus(true, true));
+        assertFalse(RecorderMachine.shouldPauseForWindowFocus(false, false));
+    }
+
     @Test public void aLateMicrophonePermissionCannotRestartCancelledCapture() {
         assertFalse(RecorderMachine.canBeginAfterPermission(false, true));
         assertFalse(RecorderMachine.canBeginAfterPermission(true, false));

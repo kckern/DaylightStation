@@ -75,17 +75,24 @@ final class CaptureDraftStore {
     private final File filesDir;
     private final File root;
     private final SendCheckpoint checkpoint;
+    private final String owner;
 
-    CaptureDraftStore(File filesDir) { this(filesDir, moved -> { }); }
+    CaptureDraftStore(File filesDir) { this(filesDir, null, moved -> { }); }
 
-    CaptureDraftStore(File filesDir, SendCheckpoint checkpoint) {
+    CaptureDraftStore(File filesDir, String owner) { this(filesDir, owner, moved -> { }); }
+
+    CaptureDraftStore(File filesDir, String owner, SendCheckpoint checkpoint) {
+        if (owner != null && !CaptureScope.valid(owner)) throw new IllegalArgumentException("Invalid capture owner");
+        this.owner = owner;
         this.filesDir = filesDir;
         this.root = new File(filesDir, DIRECTORY);
         this.checkpoint = checkpoint;
     }
 
+    static String nextId() { return MemoFiles.newId(System.currentTimeMillis(), new SecureRandom().nextLong()); }
+
     Draft create(String dest, String label, Kind kind) throws IOException {
-        return create(MemoFiles.newId(System.currentTimeMillis(), new SecureRandom().nextLong()), dest, label, kind);
+        return create(nextId(), dest, label, kind);
     }
 
     Draft create(String id, String dest, String label, Kind kind) throws IOException {
@@ -106,6 +113,7 @@ final class CaptureDraftStore {
                 Properties meta = new Properties();
                 meta.setProperty("kind", kind.name());
                 meta.setProperty("label", label);
+                if (owner != null) meta.setProperty("owner", owner);
                 if (dest != null) meta.setProperty("dest", dest);
                 if (timestampOverride != null) meta.setProperty("time", timestampOverride);
                 try (FileOutputStream output = new FileOutputStream(metadata)) {
@@ -132,6 +140,7 @@ final class CaptureDraftStore {
             if (!metadata.isFile()) return null;
             Properties meta = new Properties();
             try (FileInputStream input = new FileInputStream(metadata)) { meta.load(input); }
+            if (!Objects.equals(owner, meta.getProperty("owner"))) return null;
             Kind kind = Kind.valueOf(meta.getProperty("kind"));
             Draft draft = new Draft(directory, MemoFiles.dest(meta.getProperty("dest")), meta.getProperty("label"), kind, meta.getProperty("time"));
             File intent = new File(directory, "send");
@@ -223,7 +232,7 @@ final class CaptureDraftStore {
 
     void recoverAudio(String activeId, AudioCheck check) throws IOException {
         synchronized (LOCK) {
-            importLegacyAudio();
+            if (owner == null) importLegacyAudio();
             File[] entries = root.listFiles();
             if (entries == null) return;
             for (File entry : entries) {
@@ -270,11 +279,16 @@ final class CaptureDraftStore {
         }
     }
 
+    boolean sendForCurrentOwner(String id) throws IOException {
+        return CaptureScope.currentIs(owner) && send(id);
+    }
+
     boolean send(String id) throws IOException {
+        if (owner == null) return false;
         synchronized (LOCK) {
             Draft draft = get(id);
             if (draft == null || !draft.hasContent() || draft.confirmedPhoto().isFile()) return false;
-            File inbox = new File(filesDir, draft.kind.inbox);
+            File inbox = CaptureScope.inbox(new File(filesDir, draft.kind.inbox), owner);
             ensureDirectory(inbox);
             File target = new File(inbox, draft.file.getName());
             if (target.exists()) throw new IOException("A queued input already uses this identity");

@@ -21,66 +21,139 @@ import android.widget.Toast;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /** Edits a destination's private text draft until Send or confirmed Discard. */
 public class TextInputActivity extends Activity {
+    private static final ExecutorService DISK = Executors.newSingleThreadExecutor(task -> {
+        Thread thread = new Thread(task, "Daylight-text-drafts");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    private final DraftDiscard confirmation = new DraftDiscard();
+    private AlertDialog discardDialog;
     private CaptureDraftStore store;
-    private CaptureDraftStore.Draft draft;
+    private TextDraftWriter writer;
     private boolean completed;
     private boolean loading;
+    private boolean busy;
+    private boolean finishingDraft;
+    private String owner;
     private String dest;
     private String label;
     private EditText field;
     private TextView counter;
+    private Button cancel;
+    private Button send;
 
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        store = new CaptureDraftStore(getFilesDir());
         setFinishOnTouchOutside(false);
         if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
                 | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        open(getIntent(), savedInstanceState == null ? null : savedInstanceState.getString("draft"));
+        open(getIntent(), savedInstanceState);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (!isFinishing() && !CaptureScope.currentIs(owner)) finish();
     }
 
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        if (completed || isFinishing() || dest.equals(MemoFiles.dest(intent.getStringExtra(MemoFiles.EXTRA_DEST)))) return;
-        if (!save(field.getText().toString())) return;
-        setIntent(intent);
-        open(intent, null);
+        if (completed || isFinishing() || finishingDraft) return;
+        String nextOwner = intent.getStringExtra(CaptureScope.EXTRA);
+        if (!CaptureScope.currentIs(nextOwner)) return;
+        String nextDest = MemoFiles.dest(intent.getStringExtra(MemoFiles.EXTRA_DEST));
+        if (nextDest == null || nextOwner.equals(owner) && nextDest.equals(dest)) return;
+        invalidateDiscard();
+        if (writer == null || !nextOwner.equals(owner)) {
+            if (writer != null && !busy) writer.complete(() -> { }, error -> {
+                if (error != null) reportWriteFailure(error);
+            });
+            setIntent(intent);
+            open(intent, null);
+            return;
+        }
+        if (busy) return;
+        TextDraftWriter selected = writer;
+        setBusy(true);
+        selected.complete(() -> { }, error -> runOnUiThread(() -> {
+            if (isDestroyed() || isFinishing() || writer != selected) return;
+            if (error != null) {
+                setBusy(false);
+                say("Could not save the draft");
+                return;
+            }
+            setIntent(intent);
+            open(intent, null);
+        }));
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state);
-        if (draft != null) state.putString("draft", draft.id);
+        if (writer == null) return;
+        state.putString("draft", writer.id);
+        state.putBoolean("finishing-draft", finishingDraft);
+        if (!finishingDraft && CaptureScope.currentIs(owner)) state.putString("text", field.getText().toString());
     }
 
-    private void open(Intent intent, String restoredId) {
-        dest = MemoFiles.dest(intent.getStringExtra(MemoFiles.EXTRA_DEST));
-        label = MemoFiles.label(intent.getStringExtra(MemoFiles.EXTRA_LABEL));
-        if (dest == null) {
+    private void open(Intent intent, Bundle state) {
+        String selectedOwner = intent.getStringExtra(CaptureScope.EXTRA);
+        String selectedDest = MemoFiles.dest(intent.getStringExtra(MemoFiles.EXTRA_DEST));
+        if (selectedDest == null || !CaptureScope.currentIs(selectedOwner)) {
             finish();
             return;
         }
-        if (label == null) label = "Quick input";
-        try {
-            draft = restoredId == null ? store.latest(dest, CaptureDraftStore.Kind.TEXT) : store.get(restoredId);
-            String text = draft != null && draft.hasContent()
-                    ? new String(Files.readAllBytes(draft.file.toPath()), StandardCharsets.UTF_8) : "";
-            if (draft != null) label = draft.label;
-            setTitle(label);
-            build();
-            loading = true;
-            field.setText(text);
-            field.setSelection(field.length());
-            loading = false;
-            getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        } catch (IOException e) {
-            say("Could not open the draft");
-            finish();
-        }
+        owner = selectedOwner;
+        dest = selectedDest;
+        String selectedLabel = MemoFiles.label(intent.getStringExtra(MemoFiles.EXTRA_LABEL));
+        label = selectedLabel == null ? "Quick input" : selectedLabel;
+        CaptureDraftStore selectedStore = new CaptureDraftStore(getFilesDir(), owner);
+        store = selectedStore;
+        writer = null;
+        setTitle(label);
+        build();
+        setBusy(true);
+        getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        String restoredId = state == null ? null : state.getString("draft");
+        String restoredBody = state == null ? null : state.getString("text");
+        boolean restoringHandoff = state != null && state.getBoolean("finishing-draft");
+        DISK.execute(() -> {
+            try {
+                CaptureDraftStore.Draft draft = restoredId == null
+                        ? selectedStore.latest(selectedDest, CaptureDraftStore.Kind.TEXT) : selectedStore.get(restoredId);
+                String id = draft != null ? draft.id : restoredId != null ? restoredId : CaptureDraftStore.nextId();
+                String text = draft != null && draft.file.isFile()
+                        ? new String(Files.readAllBytes(draft.file.toPath()), StandardCharsets.UTF_8)
+                        : restoredBody == null ? "" : restoredBody;
+                runOnUiThread(() -> {
+                    if (isDestroyed() || isFinishing() || store != selectedStore) return;
+                    if (!CaptureScope.currentIs(selectedOwner) || restoringHandoff && draft == null) {
+                        finish();
+                        return;
+                    }
+                    if (draft != null) label = draft.label;
+                    setTitle(label);
+                    writer = new TextDraftWriter(selectedStore, DISK, id, selectedDest, label, this::reportWriteFailure);
+                    loading = true;
+                    field.setText(text);
+                    field.setSelection(field.length());
+                    loading = false;
+                    setBusy(false);
+                    if (draft == null && !text.isEmpty()) writer.edit(text);
+                });
+            } catch (IOException error) {
+                runOnUiThread(() -> {
+                    if (store != selectedStore || isDestroyed() || isFinishing()) return;
+                    say("Could not open the draft");
+                    finish();
+                });
+            }
+        });
     }
 
     private void build() {
@@ -108,7 +181,7 @@ public class TextInputActivity extends Activity {
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) { }
             @Override public void afterTextChanged(Editable s) {
                 counter.setText(TextDraft.counter(TextDraft.utf8Length(s, 0, s.length())));
-                if (!loading && !completed) save(s.toString());
+                if (!loading && !busy && writer != null && CaptureScope.currentIs(owner)) writer.edit(s.toString());
             }
         });
         layout.addView(field, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -120,11 +193,11 @@ public class TextInputActivity extends Activity {
         LinearLayout buttons = new LinearLayout(this);
         buttons.setOrientation(LinearLayout.HORIZONTAL);
         buttons.setGravity(Gravity.END);
-        Button cancel = new Button(this);
+        cancel = new Button(this);
         cancel.setText("Cancel");
         cancel.setOnClickListener(v -> confirmDiscard());
         buttons.addView(cancel);
-        Button send = new Button(this);
+        send = new Button(this);
         send.setText("Send");
         send.setOnClickListener(v -> send());
         buttons.addView(send);
@@ -133,61 +206,100 @@ public class TextInputActivity extends Activity {
         field.requestFocus();
     }
 
-    private boolean save(String value) {
-        if (draft == null && value.isEmpty()) return true;
-        try {
-            if (draft == null) draft = store.create(dest, label, CaptureDraftStore.Kind.TEXT);
-            store.writeText(draft.id, value);
-            return true;
-        } catch (IOException e) {
-            say("Could not save the draft");
-            return false;
-        }
+    private void reportWriteFailure(IOException error) {
+        runOnUiThread(() -> {
+            if (!isDestroyed() && !isFinishing()) counter.setText("Could not save the draft. Try again.");
+        });
+    }
+
+    private void setBusy(boolean value) {
+        busy = value;
+        field.setEnabled(!value);
+        cancel.setEnabled(!value);
+        send.setEnabled(!value);
     }
 
     private void send() {
-        if (completed) return;
+        if (completed || busy || writer == null || !CaptureScope.currentIs(owner)) return;
         byte[] body = TextDraft.body(field.getText().toString());
         if (body == null) {
             say("Nothing to send");
             return;
         }
-        if (!save(new String(body, StandardCharsets.UTF_8))) return;
-        try {
-            if (!store.send(draft.id)) return;
-            completed = true;
+        TextDraftWriter selected = writer;
+        CaptureDraftStore selectedStore = store;
+        String destinationLabel = label;
+        String selectedOwner = owner;
+        finishDraft(selected, () -> {
+            if (!CaptureScope.currentIs(selectedOwner)) throw new IOException("The draft belongs to another account");
+            selectedStore.writeText(selected.id, new String(body, StandardCharsets.UTF_8));
+            if (!selectedStore.sendForCurrentOwner(selected.id)) throw new IOException("Draft cannot be sent");
             CaptureFiles.tellPayload();
-            say("Queued for " + label);
-            finish();
-        } catch (IOException e) {
-            say("Could not queue the draft. Check it and try again.");
-        }
+        }, "Queued for " + destinationLabel, "Could not queue the draft. Check it and try again.");
     }
 
     private void confirmDiscard() {
-        if (completed) return;
-        if (field.length() == 0 && (draft == null || !draft.requiresDiscardConfirmation())) {
-            discard(false);
+        if (completed || busy || writer == null || !CaptureScope.currentIs(owner)) return;
+        if (field.length() == 0) {
+            discard(writer, false);
             return;
         }
-        new AlertDialog.Builder(this)
+        invalidateDiscard();
+        TextDraftWriter selected = writer;
+        DraftDiscard.Request requested = confirmation.ask(selected.id);
+        discardDialog = new AlertDialog.Builder(this)
                 .setTitle("Discard this text draft?")
                 .setNegativeButton("Keep draft", null)
-                .setPositiveButton("Discard draft", (dialog, which) -> discard(true))
-                .show();
+                .setPositiveButton("Discard draft", (dialog, which) -> {
+                    if (writer == selected && CaptureScope.currentIs(owner) && confirmation.confirm(requested, writer.id)) {
+                        discard(selected, true);
+                    }
+                }).show();
     }
 
-    private void discard(boolean confirmed) {
-        try {
-            if (draft != null && !store.discard(draft.id, confirmed)) return;
-            completed = true;
-            finish();
-        } catch (IOException e) {
-            say("Could not discard the draft");
+    private void invalidateDiscard() {
+        confirmation.invalidate();
+        if (discardDialog != null) {
+            discardDialog.dismiss();
+            discardDialog = null;
         }
+    }
+
+    private void discard(TextDraftWriter selected, boolean confirmed) {
+        CaptureDraftStore selectedStore = store;
+        String selectedOwner = owner;
+        finishDraft(selected, () -> {
+            if (!CaptureScope.currentIs(selectedOwner)) throw new IOException("The draft belongs to another account");
+            if (selectedStore.get(selected.id) != null && !selectedStore.discard(selected.id, confirmed)) {
+                throw new IOException("Discard needs confirmation");
+            }
+        }, null, "Could not discard the draft");
+    }
+
+    private void finishDraft(TextDraftWriter selected, TextDraftWriter.Action action, String message, String errorMessage) {
+        invalidateDiscard();
+        finishingDraft = true;
+        setBusy(true);
+        selected.complete(action, error -> runOnUiThread(() -> {
+            if (isDestroyed() || isFinishing() || writer != selected) return;
+            if (error != null) {
+                finishingDraft = false;
+                setBusy(false);
+                say(errorMessage);
+                return;
+            }
+            completed = true;
+            if (message != null) say(message);
+            finish();
+        }));
     }
 
     @Override public void onBackPressed() { confirmDiscard(); }
+
+    @Override protected void onDestroy() {
+        invalidateDiscard();
+        super.onDestroy();
+    }
 
     private void say(String message) {
         Toast.makeText(getApplicationContext(), message, Toast.LENGTH_SHORT).show();
