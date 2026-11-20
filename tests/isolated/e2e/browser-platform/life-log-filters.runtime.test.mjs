@@ -2,6 +2,70 @@ import { expect, test } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block', timezoneId: 'UTC', viewport: { width: 390, height: 850 } });
 
+const logDate = '2026-11-22';
+const logRetryCases = [
+  ...['Week', 'Month', 'Season', 'Year', 'Decade'].map(scope => ({
+    label: scope, scope, title: scope === 'Decade' ? scope : `This ${scope}`, route: '/life/log',
+    request: `scope/${scope.toLowerCase()}`,
+  })),
+  { label: 'direct day', title: 'Nov 22, 2026', route: `/life/log/${logDate}`, request: logDate },
+  { label: 'direct category', title: 'Health', route: '/life/log/category/health', request: 'category/health?scope=month' },
+];
+
+for (const { label, scope, title, route: url, request } of logRetryCases) {
+  test(`Life Log ${label} keeps focus in its read region during Retry`, async ({ page }) => {
+    if (!scope) await page.setViewportSize({ width: 1440, height: 850 });
+    const member = { username: 'amy', displayName: 'Amy' };
+    const path = `/api/v1/life/log/amy/${request}`;
+    const pending = Promise.withResolvers();
+    const reads = [];
+    await page.clock.setFixedTime(new Date(`${logDate}T16:00:00Z`));
+    await page.routeWebSocket('**/*', () => {});
+    await page.route('**/api/**', async route => {
+      const actual = route.request();
+      const { pathname, search } = new URL(actual.url());
+      if (pathname + search === path) {
+        if (reads.push(actual.method()) === 1) {
+          return route.fulfill({ status: 409, json: { error: 'Fixture refused this log read' } });
+        }
+        await pending.promise;
+        return route.fulfill({ json: { days: {}, summaries: [] } });
+      }
+      const json = pathname.endsWith('/life/users') ? { users: [member] }
+        : pathname.endsWith('/life/user') ? member
+        : pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {};
+      return route.fulfill({ json });
+    });
+
+    const main = page.getByRole('main');
+    const results = main.getByRole('region', { name: 'Log results', exact: true });
+    const retry = main.getByRole('button', { name: 'Retry', exact: true });
+    const stayFocused = scope === 'Season' ? main.getByRole('checkbox', { name: 'Health', exact: true })
+      : label === 'direct category' ? page.getByRole('link', { name: 'Log', exact: true }) : results;
+
+    try {
+      await page.goto(url);
+      if (scope && scope !== 'Week') await main.locator('label').filter({ hasText: new RegExp(`^${scope}$`) }).click();
+      await retry.press('Enter');
+      await expect.poll(() => reads).toEqual(['GET', 'GET']);
+      await expect(retry).toHaveCount(0);
+      expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
+      await expect(results).toBeFocused();
+      await expect(results).toHaveAttribute('aria-busy', 'true');
+      await expect(results.getByRole('heading', { name: title, exact: true })).toHaveCount(0);
+      if (scope) await expect(main.getByRole('radio', { name: scope, exact: true })).toBeEnabled();
+      if (stayFocused !== results) await stayFocused.focus();
+    } finally {
+      pending.resolve();
+    }
+
+    await expect(results.getByRole('heading', { name: title, exact: true })).toBeVisible();
+    await expect(results).not.toHaveAttribute('aria-busy', 'true');
+    await expect(stayFocused).toBeFocused();
+    expect(reads).toEqual(['GET', 'GET']);
+  });
+}
+
 test('Life Log applies selected categories across day and period views without refetching the same scope', async ({ page }) => {
   const date = '2026-11-19';
   const earlier = '2026-11-18';

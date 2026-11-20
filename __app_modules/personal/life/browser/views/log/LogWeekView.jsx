@@ -2,21 +2,21 @@ import { Stack, Text, Paper, Group, Badge } from '@mantine/core';
 import { useLogActivity } from './shared/useLogActivity.js';
 import { ActivityHeatmap } from "./shared/ActivityHeatmap.jsx";
 import { SourceIcon } from "./shared/SourceIcon.jsx";
-import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
+import { LifePage } from "../../components/index.js";
+import { LogReadRegion } from './shared/LogReadRegion.jsx';
 import { formatDate } from "../../lib/format.js";
 
 /**
  * Week view showing a heatmap and per-day summary cards.
  */
 export function LogWeekView({ username, at, categories }) {
-  const { days, loading, error, refetch } = useLogActivity({ scope: 'week', username, at, categories });
-
-  if (loading) return <LoadingState />;
-  if (error) return <ErrorState error={error} onRetry={refetch} />;
+  const read = useLogActivity({ scope: 'week', username, at, categories });
+  if (read.loading || read.error) return <LogReadRegion read={read} />;
+  const { days } = read;
 
   const sortedDates = Object.keys(days).sort().reverse();
 
-  return (
+  const content = (
     <LifePage title="This Week">
       <ActivityHeatmap days={days} />
 
@@ -43,4 +43,5 @@ export function LogWeekView({ username, at, categories }) {
       </Stack>
     </LifePage>
   );
+  return <LogReadRegion read={read}>{content}</LogReadRegion>;
 }

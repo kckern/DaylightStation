@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { Button, Group, NumberInput, Stack, Text, TextInput, UnstyledButton } from '@mantine/core';
-import { Sheet, ErrorState, LoadingState } from '@/lib/ui';
+import { Sheet, ErrorState, LoadingState, useRetryRegion } from '@/lib/ui';
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { unavailableError } from "../healthResources.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
@@ -28,6 +28,7 @@ function Manager({ active = true, onClose, onChanged }) {
     primaryInput.current?.focus();
   }, [editing]);
   const foods = useApiResource(`api/v1/health/nutrition/catalog/suggest?q=${encodeURIComponent(query)}&limit=40`, { enabled: active, logger, swr: true });
+  const { regionProps: resultsRegion, retry: retryFoods } = useRetryRegion(foods.reload, foods.loading || foods.revalidating);
   const run = async action => {
     if (pending.current) return;
     pending.current = true; setBusy(true); setError(null);
@@ -54,11 +55,13 @@ function Manager({ active = true, onClose, onChanged }) {
         </Group>
       </> : <>
         <TextInput ref={primaryInput} label="Find a saved food" value={query} onChange={event => setQuery(event.target.value)} data-autofocus />
-        {foods.loading ? <LoadingState label="Saved foods" /> : null}
-        {unavailableError(foods) ? <ErrorState error={foods.error} onRetry={foods.reload} label="Saved foods" /> : null}
-        {(foods.data?.items || []).filter(food => food.type !== 'template').map(food => <UnstyledButton key={food.id} onClick={() => setDraft(structuredClone(food))}>
-          <Group wrap="nowrap" gap="xs"><FoodIcon icon={food.icon} /><Text size="sm">{food.name}</Text><Text size="xs" c="dimmed">{food.grams > 0 ? `${Math.round(food.grams)} g` : 'Weight unknown'}</Text></Group>
-        </UnstyledButton>)}
+        <Stack component="section" {...resultsRegion} gap="xs" aria-label="Saved food results">
+          {foods.loading ? <LoadingState label="Saved foods" /> : null}
+          {unavailableError(foods) ? <ErrorState error={foods.error} onRetry={retryFoods} label="Saved foods" /> : null}
+          {(foods.data?.items || []).filter(food => food.type !== 'template').map(food => <UnstyledButton key={food.id} onClick={() => setDraft(structuredClone(food))}>
+            <Group wrap="nowrap" gap="xs"><FoodIcon icon={food.icon} /><Text size="sm">{food.name}</Text><Text size="xs" c="dimmed">{food.grams > 0 ? `${Math.round(food.grams)} g` : 'Weight unknown'}</Text></Group>
+          </UnstyledButton>)}
+        </Stack>
       </>}
     </Stack>
   </Sheet>;

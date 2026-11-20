@@ -3,6 +3,76 @@ import { installHealthFixtures } from '../../../live/flow/health/healthFixtures.
 
 test.use({ serviceWorkers: 'block', viewport: { width: 390, height: 850 } });
 
+for (const replaceQuery of [false, true]) {
+  test(`Health Saved foods keeps Retry focus while the request ${replaceQuery ? 'is replaced by a search' : 'settles'}`, async ({ page }) => {
+    if (replaceQuery) await page.setViewportSize({ width: 1440, height: 850 });
+    const pending = Promise.withResolvers();
+    const reads = [];
+    let heldRequest;
+    const date = '2026-11-22';
+    await page.clock.setFixedTime(new Date(`${date}T16:00:00Z`));
+    await page.routeWebSocket('**/*', () => {});
+    const fixture = await installHealthFixtures(page);
+    await page.route('**/supervision/bootstrap', route => route.fulfill({ json: { enabled: false } }));
+    await page.route('**/api/v1/health/nutrition/catalog/suggest?*', async route => {
+      const request = route.request();
+      const params = new URL(request.url()).searchParams;
+      if (params.get('limit') !== '40') return route.fallback();
+      const query = params.get('q');
+      if (reads.push([request.method(), query]) === 1) {
+        return route.fulfill({ status: 409, json: { error: 'Fixture refused saved foods' } });
+      }
+      if (query === 'walnuts') {
+        return route.fulfill({ json: { items: [{ id: 'walnuts', name: 'Fixture walnuts', grams: 10 }] } });
+      }
+      heldRequest = request;
+      await pending.promise;
+      await route.fulfill({ json: { items: [{ id: 'oats', name: 'Fixture oats', grams: 80 }] } }).catch(error => {
+        if (!request.failure()) throw error;
+      });
+    });
+
+    const sheet = page.getByRole('dialog', { name: 'Saved foods', exact: true });
+    const search = sheet.getByRole('textbox', { name: 'Find a saved food', exact: true });
+    const results = sheet.getByRole('region', { name: 'Saved food results', exact: true });
+    const retry = sheet.getByRole('button', { name: 'Retry', exact: true });
+    const walnuts = sheet.getByRole('button', { name: /Fixture walnuts/ });
+    const oats = sheet.getByRole('button', { name: /Fixture oats/ });
+
+    try {
+      await page.goto(`/health?date=${date}`);
+      await page.getByRole('combobox', { name: 'Add to Lunch', exact: true }).click();
+      await page.getByRole('button', { name: /Manage saved foods/ }).press('Enter');
+      await retry.press('Enter');
+      await expect.poll(() => reads).toEqual([['GET', ''], ['GET', '']]);
+      await expect(retry).toHaveCount(0);
+      expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
+      await expect(results).toBeFocused();
+      await expect(results).toHaveAttribute('aria-busy', 'true');
+      await expect(search).toBeEditable();
+      await page.keyboard.press('Shift+Tab');
+      await expect(search).toBeFocused();
+      if (replaceQuery) {
+        await search.fill('walnuts');
+        await expect.poll(() => heldRequest?.failure()).not.toBeNull();
+        await expect(walnuts).toBeVisible();
+      }
+    } finally {
+      pending.resolve();
+    }
+
+    await expect(replaceQuery ? walnuts : oats).toBeVisible();
+    await expect(results).not.toHaveAttribute('aria-busy', 'true');
+    await expect(search).toBeFocused();
+    if (replaceQuery) {
+      await expect(oats).toHaveCount(0);
+      await expect(search).toHaveValue('walnuts');
+    }
+    expect(reads).toEqual(replaceQuery ? [['GET', ''], ['GET', ''], ['GET', 'walnuts']] : [['GET', ''], ['GET', '']]);
+    expect(fixture.requests.filter(({ method }) => method !== 'GET')).toEqual([]);
+  });
+}
+
 test('Health keeps keyboard focus in saved foods while editing, going back, and saving', async ({ page }) => {
   await page.routeWebSocket('**/*', () => {});
   const fixture = await installHealthFixtures(page, {

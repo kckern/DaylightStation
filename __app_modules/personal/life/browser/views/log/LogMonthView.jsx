@@ -1,17 +1,17 @@
 import { Stack, Text, Paper, Group, Badge } from '@mantine/core';
 import { useLogActivity } from './shared/useLogActivity.js';
 import { ActivityHeatmap } from "./shared/ActivityHeatmap.jsx";
-import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
+import { LifePage } from "../../components/index.js";
+import { LogReadRegion } from './shared/LogReadRegion.jsx';
 import { formatDate } from "../../lib/format.js";
 
 /**
  * Month view with heatmap and weekly summary rows.
  */
 export function LogMonthView({ username, at, categories }) {
-  const { days, loading, error, refetch } = useLogActivity({ scope: 'month', username, at, categories });
-
-  if (loading) return <LoadingState />;
-  if (error) return <ErrorState error={error} onRetry={refetch} />;
+  const read = useLogActivity({ scope: 'month', username, at, categories });
+  if (read.loading || read.error) return <LogReadRegion read={read} />;
+  const { days } = read;
 
   const dates = Object.keys(days).sort();
 
@@ -28,7 +28,7 @@ export function LogMonthView({ username, at, categories }) {
 
   const weekKeys = Object.keys(weeks).sort().reverse();
 
-  return (
+  const content = (
     <LifePage title="This Month">
       <ActivityHeatmap days={days} />
 
@@ -52,4 +52,5 @@ export function LogMonthView({ username, at, categories }) {
       </Stack>
     </LifePage>
   );
+  return <LogReadRegion read={read}>{content}</LogReadRegion>;
 }

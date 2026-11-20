@@ -1,6 +1,7 @@
 import { useLogActivity } from './shared/useLogActivity.js';
+import { LogReadRegion } from './shared/LogReadRegion.jsx';
 import { LogTimeline } from "./LogTimeline.jsx";
-import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
+import { LifePage } from "../../components/index.js";
 import { formatDate } from "../../lib/format.js";
 
 /**
@@ -12,14 +13,13 @@ import { formatDate } from "../../lib/format.js";
  * @param {string[]} [props.categories]
  */
 export function LogDayDetail({ date, username, categories }) {
-  const { summaries, loading, error, refetch } = useLogActivity({ date, username, categories });
-
-  if (loading) return <LoadingState />;
-  if (error) return <ErrorState error={error} onRetry={refetch} />;
+  const read = useLogActivity({ date, username, categories });
 
   return (
-    <LifePage title={formatDate(date)}>
-      <LogTimeline summaries={summaries} />
-    </LifePage>
+    <LogReadRegion read={read}>
+      <LifePage title={formatDate(date)}>
+        <LogTimeline summaries={read.summaries} />
+      </LifePage>
+    </LogReadRegion>
   );
 }

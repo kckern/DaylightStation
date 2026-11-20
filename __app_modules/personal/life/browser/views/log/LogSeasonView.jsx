@@ -1,17 +1,17 @@
 import { Title, Paper, Group, Badge, SimpleGrid } from '@mantine/core';
 import { useLogActivity } from './shared/useLogActivity.js';
 import { ActivityHeatmap } from "./shared/ActivityHeatmap.jsx";
-import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
+import { LifePage } from "../../components/index.js";
+import { LogReadRegion } from './shared/LogReadRegion.jsx';
 import { formatDate } from "../../lib/format.js";
 
 /**
  * Season (90-day) view with heatmap and monthly summary cards.
  */
 export function LogSeasonView({ username, at, categories }) {
-  const { days, loading, error, refetch } = useLogActivity({ scope: 'season', username, at, categories });
-
-  if (loading) return <LoadingState />;
-  if (error) return <ErrorState error={error} onRetry={refetch} />;
+  const read = useLogActivity({ scope: 'season', username, at, categories });
+  if (read.loading || read.error) return <LogReadRegion read={read} />;
+  const { days } = read;
 
   const dates = Object.keys(days).sort();
 
@@ -28,7 +28,7 @@ export function LogSeasonView({ username, at, categories }) {
 
   const monthKeys = Object.keys(months).sort().reverse();
 
-  return (
+  const content = (
     <LifePage title="This Season">
       <ActivityHeatmap days={days} />
 
@@ -49,4 +49,5 @@ export function LogSeasonView({ username, at, categories }) {
       </SimpleGrid>
     </LifePage>
   );
+  return <LogReadRegion read={read}>{content}</LogReadRegion>;
 }
