@@ -101,7 +101,7 @@ export function EpisodeStill({ src }) {
 /**
  * Sheet music: the score poster the card's full height on the left; beside it
  * the badge, the title (two lines), the bars up next and what to do in them,
- * with the Silver/Gold count and the passage coins pinned at the bottom.
+ * with the passage coins and their Silver/Gold count pinned at the bottom.
  */
 function PieceCard({ card }) {
   const title = usePrintedTitle(card.piece.scoreId);
@@ -116,9 +116,10 @@ function PieceCard({ card }) {
         <strong className="piano-desk__title">{title}</strong>
         <span className="piano-desk__step">{nextStep(card)}</span>
         {skill && <span className="piano-desk__skill">{skill}</span>}
-        <span className="piano-desk__progress" data-kind="piece">
-          <PieceCount piece={card.piece} />
+        {/* One row of coins has the count beside it, at its right; two rows sit under the count. */}
+        <span className="piano-desk__progress" data-kind="piece" data-rows={mapRows(card.piece.passages.length)}>
           <PassageMap piece={card.piece} focusId={card.focus?.id} />
+          <PieceCount piece={card.piece} />
         </span>
       </span>
     </>

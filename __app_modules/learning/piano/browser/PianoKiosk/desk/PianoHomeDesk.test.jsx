@@ -185,7 +185,9 @@ describe('PianoHomeDesk progress strip', () => {
     const progress = card.querySelector('.piano-desk__progress');
     expect(progress.querySelector('.piano-desk__count [data-level="silver"]').textContent).toBe('1/3');
     expect(progress.querySelector('.piano-desk__count [data-level="gold"]')).toBeNull();
-    expect(progress.lastElementChild.classList.contains('piano-desk__map')).toBe(true);
+    // One row: the coins, then the count beside them.
+    expect([...progress.children].map((el) => el.className)).toEqual(['piano-desk__map', 'piano-desk__count']);
+    expect(progress.getAttribute('data-rows')).toBe('1');
   });
 
   it('adds the coach\'s next skill as what to do in the bars, and leaves it out when there is none', async () => {
@@ -208,7 +210,7 @@ describe('PianoHomeDesk progress strip', () => {
     h.desk.players[0].piece = { ...piece, total: 10, passages: Array.from({ length: 10 }, (_, index) => ({ id: `p${index}`, start: index * 4, end: index * 4 + 3, state: 'todo' })) };
     mount();
     const card = await screen.findByRole('button', { name: 'Kid: 1 of 10 Silver' });
-    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(10, minmax(0, 15px))');
+    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(10, minmax(0, 11px))');
     expect(card.hasAttribute('data-rows')).toBe(false);
     expect(document.querySelector('.piano-desk').hasAttribute('data-tall')).toBe(false);
   });
@@ -228,7 +230,7 @@ describe('PianoHomeDesk progress strip', () => {
     mount();
     const card = await screen.findByRole('button', { name: 'Kid: 3 of 3 Silver, Polish gem' });
     const map = card.querySelector('.piano-desk__map');
-    expect(map.style.gridTemplateColumns).toBe('repeat(3, minmax(0, 24px)) minmax(0, 24px)');
+    expect(map.style.gridTemplateColumns).toBe('repeat(3, minmax(0, 30px)) minmax(0, 30px)');
     const stone = map.lastElementChild;
     expect(stone.getAttribute('data-stone')).toBe('gem');
     expect(stone.querySelector('svg.gem-icon')).not.toBeNull();
@@ -252,7 +254,7 @@ describe('PianoHomeDesk progress strip', () => {
     mount();
     const card = await screen.findByRole('button', { name: 'Kid: 3 of 3 Silver' });
     expect(card.querySelector('[data-stone]')).toBeNull();
-    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(3, minmax(0, 24px))');
+    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(3, minmax(0, 36px))');
     expect(card.querySelector('.piano-desk__badge').textContent).toBe('Polish next');
   });
 

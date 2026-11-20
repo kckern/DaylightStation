@@ -54,12 +54,16 @@ the title. Titles wrap to two lines, then end in an ellipsis.
   any passage lacks Silver, **Gold next** once every passage has it, then the Polish
   goal once the piece is all Gold: **Polish next** (gold) until the piece's Polish gem,
   **Diamond next** (pale diamond colour) after the gem, and **Diamond** once the diamond
-  is earned (`cardBadge`). Pinned at the bottom of the column: the Silver count (and the
-  Gold count once there is one, `PieceCount`), over the passage map in score order (a
-  tomato, a flower, a silver coin or a gold coin; the next passage ringed). Up to ten
-  passages make one row of coins up to 24px, sized to fill the 176px column
-  (`coinSize`; a narrower card shrinks them further); a piece with more than ten
-  passages takes two equal rows of coins up to 22px (`mapColumns`, `mapRows`, `coinSize`). A tomato nobody has started sits back at
+  is earned (`cardBadge`). Pinned at the bottom of the column: the passage map in score
+  order (a tomato, a flower, a silver coin or a gold coin; the next passage ringed) with
+  the Silver count (and the Gold count once there is one, `PieceCount`). Up to ten
+  passages make one row of coins with the count stacked at its right (40px); the coins
+  fill the 128px left beside it and grow up to 36px, the height left under a two-line
+  title, the bars and the skill line, so a short piece gets big coins (2–3 passages 36px,
+  4 passages 30px, 10 passages 11px; `coinSize`; a narrower card shrinks them further). A
+  piece with more than ten passages takes two equal rows of coins up to 22px across the
+  whole 176px column, under the count (`mapColumns`, `mapRows`, `coinSize`).
+  A tomato nobody has started sits back at
   30% opacity; a started tomato and the one up next are full colour (`passageFaded`).
   A piece holding its Polish gem ends the coin row with
   a coin-sized gem (`#f2c94c`); once the diamond is earned, the diamond (`#cfe8f7`)
@@ -109,11 +113,11 @@ the owed lesson) is centred in the rest; the pending and curfew captions float; 
 connection banner floats at the foot of the screen, over the on-screen keyboard.
 It is 208px tall: the 32px header, a 6px gap and a card. A card is 150px: 2px of
 border, 16px of padding and 132px of content (the poster, and the right column: badge,
-two title lines, bars, skill, and the count over one row of coins). When any piece shown
+two title lines, bars, skill, and one row of coins with the count beside it). When any piece shown
 on the strip needs two coin rows, every card grows to 170px together (`data-tall`; the
 posters grow with it at 2:3) so the row stays even; a long piece behind a child's other
 tab does not count. `PianoHomeDesk.layout.test.jsx` renders the strip in Chromium at
-1280x800 (two and four children, short and long titles, 2, 7 and 20 passages, a missing
+1280x800 (two and four children, short and long titles (two-line piece titles with a skill line at 150px), 2, 3, 4, 7 and 20 passages, a missing
 episode still, closed), checks that nothing spills out of a card, swipes a card with a
 real pointer, and saves screenshots (to `DESK_SHOTS`, else the OS temp folder). The children's
 panels share the row (`flex: 1 1 0`, at most 300px each, 16px apart): four children in

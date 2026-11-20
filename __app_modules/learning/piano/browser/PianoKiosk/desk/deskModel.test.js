@@ -91,17 +91,19 @@ describe('deskModel', () => {
     expect(mapRows(10)).toBe(1);
     expect(mapRows(11)).toBe(2);
   });
-  it('sizes coins to fill the right column: up to 24px on one row, 22px on two', () => {
-    expect(coinSize(2)).toBe(24);
-    expect(coinSize(3)).toBe(24);
-    expect(coinSize(10)).toBe(15);
+  it('grows a short piece\'s coins up to 36px beside the count, and keeps two rows at 22px', () => {
+    expect(coinSize(2)).toBe(36);
+    expect(coinSize(3)).toBe(36);
+    expect(coinSize(4)).toBe(30);
+    expect(coinSize(7)).toBe(16);
+    expect(coinSize(10)).toBe(11);
     expect(coinSize(12)).toBe(22);
     expect(coinSize(20)).toBe(15);
     expect(coinSize(28)).toBe(10);
   });
   it('makes room for one more coin-sized slot when the row ends in a Polish stone', () => {
-    expect(coinSize(3, 1)).toBe(24);
-    expect(coinSize(10, 1)).toBe(14);
+    expect(coinSize(3, 1)).toBe(30);
+    expect(coinSize(10, 1)).toBe(9);
     expect(coinSize(28, 1)).toBe(9);
   });
   it('reads the coach\'s next skill as the piece card\'s what-to-do line, never while polishing', () => {

@@ -159,14 +159,18 @@
 
   // Pinned to the bottom of the right column: a piece's count over its coins, or a course's bar and percent.
   &__progress { flex: none; margin-top: auto; padding-top: 2px; display: flex; min-width: 0; }
-  &__progress[data-kind='piece'] { flex-direction: column; gap: 2px; }
+  // A piece's progress: one row of coins with the count stacked at its right
+  // (Silver over Gold, 40px wide), or the count over two rows of coins.
+  &__progress[data-kind='piece'] { flex-direction: row; align-items: center; gap: 8px; }
+  &__progress[data-kind='piece'][data-rows='2'] { flex-direction: column-reverse; align-items: stretch; gap: 2px; }
   &__progress[data-kind='course'] { align-items: center; gap: 8px; height: 18px; }
   &__count {
-    display: flex; gap: 10px; font-size: 12px; font-weight: 800; line-height: 14px; font-variant-numeric: tabular-nums;
+    flex: none; display: flex; gap: 10px; font-size: 12px; font-weight: 800; line-height: 14px; font-variant-numeric: tabular-nums;
     span { display: flex; align-items: center; gap: 3px; color: var(--piano-silver); }
     span[data-level='gold'] { color: var(--piano-gold); }
     svg { width: 12px; height: 12px; }
   }
+  &__progress[data-rows='1'] &__count { flex-direction: column; align-items: flex-end; gap: 2px; width: 40px; margin-left: auto; }
   &__bar {
     flex: 1; height: 6px; border-radius: 3px; background: var(--piano-surface-2); overflow: hidden;
     i { display: block; height: 100%; background: var(--piano-accent); border-radius: 3px; }
@@ -178,7 +182,7 @@
     // The gap matches GAP in deskModel.js, which sizes the coins to fill the column.
     // Coins shrink with a crowded card rather than spill past its edge.
     display: grid;
-    width: 100%;
+    flex: 1 1 auto;
     min-width: 0;
     gap: 2px;
     align-content: center;

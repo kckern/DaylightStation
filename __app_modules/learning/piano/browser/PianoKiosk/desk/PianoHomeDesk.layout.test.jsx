@@ -27,6 +27,7 @@ const PIECE_TITLES = {
   jingle: 'Jingle Bells',
   prelude: 'Prelude in C Major from the Well-Tempered Clavier, Book One',
   minuet: 'Minuet in G',
+  nocturne: 'Nocturne in E-flat Major, Opus 9 Number 2 (Simplified)',
 };
 const passages = (count, states) => Array.from({ length: count }, (_, index) => ({
   id: `p${index}`, start: index * 4, end: index * 4 + 3, state: states(index), steps: { done: index < 3 ? 1 : 0, total: 4 },
@@ -51,6 +52,8 @@ const KIDS = {
   ben: { name: 'Benjamin', piece: pieceOf('prelude', 20, (i) => (i < 4 ? 'gold' : i < 9 ? 'silver' : i === 9 ? 'learning' : 'todo'), { next: { passageId: 'p9', skill: 'notes', label: 'Find the right-hand notes', start: 36, end: 39 } }) },
   cleo: { name: 'Cleo', course: courseOf('Lesson 101 | Counting Rhythms with Our Rhythm Challenge - Eighth Rests', '/img/still-c.svg') },
   dot: { name: 'Dot', course: courseOf('Lesson 3 | Hot Cross Buns', null, { completed: 2, total: 40 }) },
+  fay: { name: 'Fay', piece: pieceOf('nocturne', 3, () => 'gold', { cover: '/img/minuet.svg', polish: { gem: true, diamond: false }, next: { passageId: 'p1', skill: 'pulse', label: 'Settle into a beat with both hands', start: 4, end: 7 } }) },
+  gus: { name: 'Gus', piece: pieceOf('nocturne', 4, (i) => (i < 2 ? 'gold' : 'silver'), { cover: '/img/jingle.svg' }) },
   eve: { name: 'Eve', piece: pieceOf('minuet', 7, (i) => (i < 5 ? 'silver' : i === 5 ? 'learning' : 'todo'), { cover: '/img/minuet.svg' }) },
 };
 
@@ -179,6 +182,18 @@ describe('the progress strip at 1280x800', () => {
     expect(await page.evaluate(() => [...document.querySelectorAll('.piano-desk__card')].map((c) => Math.round(c.getBoundingClientRect().height)))).toEqual([150, 150, 150, 150]);
     expect(await spills(page)).toEqual([]);
     await shot(page, 'four-children');
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
+  it('fits long two-line piece titles with a skill line and big coins at 150px', async () => {
+    const { page, errors } = await open(['gus', 'fay', 'ada', 'cleo']);
+    expect(await page.evaluate(() => [...document.querySelectorAll('.piano-desk__card')].map((c) => Math.round(c.getBoundingClientRect().height)))).toEqual([150, 150, 150, 150]);
+    // The long title really takes two lines here, and the coins stay big.
+    expect(await page.evaluate(() => Math.round(document.querySelector('.piano-desk__title').getBoundingClientRect().height))).toBe(36);
+    expect(await page.evaluate(() => Math.round(document.querySelector('.piano-desk__map i').getBoundingClientRect().width))).toBeGreaterThanOrEqual(28);
+    expect(await spills(page)).toEqual([]);
+    await shot(page, 'four-children-long-piece-titles');
     expect(errors).toEqual([]);
     await page.close();
   });

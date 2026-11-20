@@ -147,11 +147,13 @@ export function swipeTarget(cards, kind, direction) {
 }
 
 /**
- * The right column's width in px at a 292px panel (four children), which the
- * coin rows fill: 292 - 2 border - 16 padding - 88 poster - 10 gap. And the gap
- * between coins (the map's CSS gap).
+ * The right column is 176px wide at a 292px panel (four children): 292 - 2 border
+ * - 16 padding - 88 poster - 10 gap. One row of coins shares it with the count
+ * (stacked at its right, 40px with an 8px gap), leaving 128px; two rows sit under
+ * the count and take the whole column. GAP is the map's CSS gap.
  */
-const ROW = 176;
+const ROW_BESIDE_COUNT = 128;
+const ROW_FULL = 176;
 const GAP = 2;
 /** One row up to ten coins, else two equal rows. */
 const ONE_ROW = 10;
@@ -161,14 +163,15 @@ export const mapColumns = (count) => (count > ONE_ROW ? Math.ceil(count / 2) : M
 export const mapRows = (count) => (count > ONE_ROW ? 2 : 1);
 
 /**
- * Coin size in px: the row fills the column, never above 24px on one row (a few
- * passages get big coins) or 22px on two (the tall card's height). `extra` slots
+ * Coin size in px: the row fills its width. One row grows up to 36px, the height
+ * left under a two-line title, the bars and the skill line, so a short piece gets
+ * big coins; two rows stay at most 22px (the tall card's height). `extra` slots
  * (a Polish stone) share the row.
  */
 export const coinSize = (count, extra = 0) => {
   const columns = mapColumns(count) + extra;
-  const most = mapRows(count) > 1 ? 22 : 24;
-  return Math.min(most, Math.floor((ROW - (columns - 1) * GAP) / columns));
+  const [row, most] = mapRows(count) > 1 ? [ROW_FULL, 22] : [ROW_BESIDE_COUNT, 36];
+  return Math.min(most, Math.floor((row - (columns - 1) * GAP) / columns));
 };
 
 export const pieceCount = (piece) => `${piece.silver} of ${piece.total} Silver`;
