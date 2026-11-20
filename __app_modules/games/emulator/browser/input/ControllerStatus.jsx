@@ -5,16 +5,22 @@
  * Keyboard always works regardless of controllers, so the empty state reminds
  * the user of the fallback mapping rather than reading as an error.
  *
- * Pairing is GUIDED: the per-controller steps (which buttons, what the LED
- * does) come from each controller's `pairing:` block in input.yml, shown before
- * and during the pairing window, with the window's live lifecycle progress.
+ * Pairing has two paths:
+ *   - a configured controller's guided re-pair: the per-controller steps (which
+ *     buttons, what the LED does) come from its `pairing:` block in input.yml,
+ *     shown before and during the pairing window with live lifecycle progress;
+ *   - "Add a new device": any Bluetooth input device (gamepad, keyboard, mouse,
+ *     remote), generic steps, no config entry needed. Such devices are listed
+ *     under "Other Bluetooth devices" with a Forget button.
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
 import { useGamepadStatus } from "./useGamepadStatus.js";
 import { pairButtonState } from "./pairButtonState.js";
-import { pairingGuides, buildPairTargets, pairingStatus, controllerOsState } from "./pairingGuide.js";
+import {
+  pairingGuides, buildPairTargets, pairingStatus, controllerOsState, ADD_DEVICE_STEPS, otherBtDevices,
+} from "./pairingGuide.js";
 import "./ControllerStatus.scss";
 
 let _logger;
@@ -31,19 +37,22 @@ const OS_LABEL = {
   'not-paired': 'Not paired',
 };
 
+const KIND_LABEL = { gamepad: 'Controller', keyboard: 'Keyboard mode', mouse: 'Mouse mode', tablet: 'Tablet' };
+const OTHER_LABEL = { ready: 'Ready', connecting: 'Connecting…', asleep: 'Not connected', unpaired: 'Not paired — trying to connect' };
+
 /**
  * @param {object} props
  * @param {Array<object>} props.controllers   [{ id, label, match, count?, address?, pairing? }].
  * @param {Function} [props.getGamepads]       injectable for tests.
  * @param {Array<object>} [props.btInventory]  OS-level BlueZ inventory
- *   ([{ address, name, connected, battery, paired?, input? }]) passed in by the
+ *   ([{ address, name, connected, battery, paired?, input?, kind? }]) passed in by the
  *   host. Optional — when absent the panel renders browser-only (no OS column).
  *   This component is host-agnostic: it never imports FitnessContext.
- * @param {Function} [props.onPair]            ({ targets, controllerId }) => void | Promise<void>.
- *   When provided, render the pairing affordance.
- * @param {object} [props.pairing]             latest `bt.pair.progress` message.
+ * @param {Function} [props.onPair]            ({ targets, controllerId, mode: 'repair'|'add' }) => void | Promise<void>.
+ *   When provided, render the pairing affordance (re-pair and "Add a new device").
+ * @param {object} [props.pairing]             latest `bt.pair.progress` message (may carry `mode`).
  * @param {Function} [props.onForget]          (address: string) => void | Promise<void>.
- *   When provided, render a per-controller "Forget" button on rows that have a bond.
+ *   When provided, render a "Forget" button on bonded rows (configured and other devices).
  * @param {object} [props.forgetResult]        latest `bt.remove.result` ({ address, success, error }).
  */
 export function ControllerStatus({ controllers = [], getGamepads, btInventory, onPair, pairing, onForget, forgetResult }) {
@@ -73,7 +82,14 @@ export function ControllerStatus({ controllers = [], getGamepads, btInventory, o
   const canPair = typeof onPair === 'function';
   const btn = pairButtonState(pairing);
   const status = pairingStatus(pairing);
-  const showGuide = canPair && guides.length > 0 && (guideOpen || status.busy);
+  const [addOpen, setAddOpen] = useState(false);
+  const [activeMode, setActiveMode] = useState('repair');
+  // The context echoes `mode` on its optimistic state; later progress messages
+  // don't carry it, so fall back to the last button pressed.
+  const mode = pairing?.mode || activeMode;
+  const showAdd = canPair && (addOpen || (status.busy && mode === 'add'));
+  const showGuide = canPair && !showAdd && guides.length > 0 && (guideOpen || status.busy);
+  const others = useMemo(() => otherBtDevices(controllers, btInventory), [controllers, btInventory]);
 
   useEffect(() => {
     logger().debug('controller-status.connected-change', {
@@ -97,15 +113,36 @@ export function ControllerStatus({ controllers = [], getGamepads, btInventory, o
 
   const startPairing = (controllerId) => {
     const targets = buildPairTargets(controllers, controllerId || null);
+    setActiveMode('repair');
     logger().info('controller-status.pair-start', { controllerId: controllerId || null, targets: targets.length });
     try {
-      const r = onPair({ targets, controllerId: controllerId || null });
+      const r = onPair({ targets, controllerId: controllerId || null, mode: 'repair' });
       if (r && typeof r.catch === 'function') {
         r.catch((err) => logger().warn('controller-status.pair-error', { error: err && err.message }));
       }
     } catch (err) {
       logger().warn('controller-status.pair-error', { error: err && err.message });
     }
+  };
+
+  const startAdd = () => {
+    const targets = buildPairTargets(controllers, null); // known models' PINs still apply
+    setActiveMode('add');
+    logger().info('controller-status.add-start', { targets: targets.length });
+    try {
+      const r = onPair({ targets, controllerId: null, mode: 'add' });
+      if (r && typeof r.catch === 'function') {
+        r.catch((err) => logger().warn('controller-status.pair-error', { error: err && err.message }));
+      }
+    } catch (err) {
+      logger().warn('controller-status.pair-error', { error: err && err.message });
+    }
+  };
+
+  const openAdd = () => {
+    setGuideOpen(false);
+    setAddOpen(true);
+    logger().info('controller-status.add-open', {});
   };
 
   const openGuide = (controllerId) => {
@@ -185,6 +222,39 @@ export function ControllerStatus({ controllers = [], getGamepads, btInventory, o
         {forgetMessage ? <p className="ccs-forget-result" role="status">{forgetMessage}</p> : null}
       </section>
 
+      {hasBtFeed && others.length > 0 && (
+        <section className="ccs-other">
+          <h4 className="ccs-heading">Other Bluetooth devices</h4>
+          <ul className="ccs-other-list">
+            {others.map((d) => {
+              const label = d.name || d.address;
+              return (
+                <li key={d.address} className="ccs-other-row" data-address={d.address} data-os-status={d.status}>
+                  <span className="ccs-label">{label}</span>
+                  {d.kind && KIND_LABEL[d.kind] ? <span className="ccs-kind">{KIND_LABEL[d.kind]}</span> : null}
+                  <span className={`ccs-os-badge ccs-os-${d.status}${d.status === 'ready' ? ' ccs-os-on' : ' ccs-os-off'}`}>
+                    {OTHER_LABEL[d.status]}{d.status === 'ready' && d.battery != null ? ` · ${d.battery}%` : ''}
+                  </span>
+                  {typeof onForget === 'function' && d.paired !== false ? (
+                    <button
+                      type="button"
+                      className="ccs-forget-button"
+                      aria-label={`Forget ${label}`}
+                      onClick={() => {
+                        logger().info('controller-status.forget-other-click', { address: d.address, kind: d.kind || null });
+                        onForget(d.address);
+                      }}
+                    >
+                      Forget
+                    </button>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
       <section className="ccs-connected">
         <h4 className="ccs-heading">Connected now</h4>
         {hasConnected ? (
@@ -210,7 +280,7 @@ export function ControllerStatus({ controllers = [], getGamepads, btInventory, o
         )}
       </section>
 
-      {canPair && !showGuide && (
+      {canPair && !showGuide && !showAdd && (
         <section className="ccs-pair">
           <button
             type="button"
@@ -221,10 +291,44 @@ export function ControllerStatus({ controllers = [], getGamepads, btInventory, o
           >
             {guides.length > 0 && !btn.scanning ? '🎮 Pair controller' : btn.label}
           </button>
+          <button type="button" className="ccs-pair-button ccs-add-button" disabled={btn.disabled} onClick={openAdd}>
+            ➕ Add a new device
+          </button>
           {btn.scanning && <span className="ccs-pair-progress" aria-hidden="true" />}
           {guides.length > 0 && status.text && !status.busy ? (
             <span className={`ccs-pair-status ccs-tone-${status.tone}`} role="status">{status.text}</span>
           ) : null}
+        </section>
+      )}
+
+      {showAdd && (
+        <section className="ccs-pair-guide ccs-add-guide" aria-label="Add a new device">
+          <h4 className="ccs-heading">Add a new Bluetooth device</h4>
+          <ol className="ccs-guide-steps">
+            {ADD_DEVICE_STEPS.map((s, i) => <li key={i}>{s}</li>)}
+          </ol>
+          {status.text ? (
+            <p className={`ccs-pair-status ccs-tone-${status.tone}`} role="status" data-phase={pairing?.phase}>
+              {status.busy && status.tone === 'info' && <span className="ccs-pair-progress" aria-hidden="true" />}
+              {status.text}
+            </p>
+          ) : null}
+          <div className="ccs-guide-actions">
+            <button type="button" className="ccs-pair-button ccs-guide-start" disabled={status.busy} onClick={startAdd}>
+              {status.retry ? 'Try again' : 'Start search'}
+            </button>
+            <button
+              type="button"
+              className="ccs-guide-close"
+              disabled={status.busy}
+              onClick={() => {
+                setAddOpen(false);
+                logger().info('controller-status.add-close', {});
+              }}
+            >
+              {status.tone === 'ok' ? 'Done' : 'Close'}
+            </button>
+          </div>
         </section>
       )}
 
