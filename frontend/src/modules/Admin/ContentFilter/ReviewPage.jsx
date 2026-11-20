@@ -15,6 +15,7 @@ import { ReviewPlayer } from './ReviewPlayer.jsx';
 import { RowEditor } from './RowEditor.jsx';
 import { SignOffPanel } from './SignOffPanel.jsx';
 import { FilmStatusCard } from './FilmStatusCard.jsx';
+import { useFilmApproval, useFilmReviewOwner } from './useFilmApproval.js';
 import { runText } from './FilterLibrary.jsx';
 import './ContentFilterAdmin.scss';
 
@@ -37,18 +38,23 @@ const EMPTY = {
 
 export function ReviewPage() {
   const { ratingKey, rowId } = useParams();
-  return <FilmReview key={ratingKey} ratingKey={ratingKey} rowId={rowId} />;
+  const owner = useFilmReviewOwner();
+  const [session, setSession] = useState({ owner, visit: 0 });
+  if (owner !== session.owner) setSession({ owner, visit: session.visit + 1 });
+  return <FilmReview key={`${ratingKey}:${session.visit}`} ratingKey={ratingKey} rowId={rowId} owner={owner} />;
 }
 
-function FilmReview({ ratingKey, rowId }) {
+function FilmReview({ ratingKey, rowId, owner }) {
   const navigate = useNavigate();
   const url = `${API}/${encodeURIComponent(ratingKey)}/review`;
-  const { data, loading, error, reload, refresh, poll } = useApiResource(url, { label: 'review', logger });
+  // A new signed-in visit needs its own HTTP read even at the same film URL.
+  const { data, loading, error, reload, refresh, poll } = useApiResource(url, { label: 'review', logger, dedupe: false });
   const [selected, setSelected] = useState(null);
   const [picked, setPicked] = useState(() => new Set());
   const [notice, setNotice] = useState(null);
   const [sending, setSending] = useState(false);
   const activeView = useRef(true);
+  const approval = useFilmApproval({ ratingKey, owner, data, error, reload, activeView });
   const running = data?.job && (data.job.status === 'queued' || data.job.status === 'running');
   const waiting = !!data && (running || (data.audit && !data.audit.fresh) || data.status?.next === 'checking');
 
@@ -116,7 +122,7 @@ function FilmReview({ ratingKey, rowId }) {
   };
 
   if (loading && !data) return <LoadingState label="review" rows={6} />;
-  if (error) return <ErrorState error={error} onRetry={reload} label="Review" />;
+  if (error && (!data || !approval.blocked)) return <ErrorState error={error} onRetry={reload} label="Review" />;
   if (notMatched && !Array.isArray(data.rows)) return <UnmatchedFilm ratingKey={ratingKey} data={data} />;
   const row =data.rows.find((r) => r.id === selected?.id) || null;
   const busyText = running ? `Running: ${data.job.step || 'starting'}` : null;
@@ -129,7 +135,7 @@ function FilmReview({ ratingKey, rowId }) {
           <Badge variant="light" color={data.certification.level === 'none' ? 'gray' : 'green'}>{LEVEL[data.certification.level] || data.certification.level}</Badge>
           {data.job && data.status?.next !== 'running' ? <Text size="sm" c={data.job.status === 'failed' ? 'red' : 'dimmed'}>{runText(data.job)}</Text> : null}
         </Group>
-        <FilmStatusCard ratingKey={ratingKey} status={data.status} job={data.job} approvedBy={data.signOff?.parent?.by || null} auditError={data.auditError || null} worker={data.worker || null}
+        <FilmStatusCard ratingKey={ratingKey} status={data.status} job={data.job} approvedBy={data.signOff?.parent?.by || null} auditError={data.auditError || null} worker={data.worker || null} approval={approval}
           onChanged={reload} onReview={() => { const first = station.scoped.find((r) => !r.verdict) || data.rows[0]; if (first) station.pick(first); }} />
         {notMatched ? (
           <Text size="sm" c="orange">{`Not matched to Plex: ${data.unmatched?.text || 'no Plex film'}. The review and override here are kept; runs are blocked.`}</Text>
@@ -150,7 +156,7 @@ function FilmReview({ ratingKey, rowId }) {
                 Rework {station.flagged} flagged
               </Button>
             ) : null}
-            <SignOffPanel ratingKey={ratingKey} signOff={data.signOff} onChanged={reload} busyText={busyText} />
+            <SignOffPanel signOff={data.signOff} approval={approval} busyText={busyText} />
           </Stack>
           <Stack gap="xs">
             {picked.size ? (

@@ -6,7 +6,7 @@ const api = vi.fn(async () => ({}));
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => api(...a) }));
 const { FilmStatusCard } = await import('./FilmStatusCard.jsx');
 
-const show = (props) => render(<MantineProvider><FilmStatusCard ratingKey="699056" onChanged={() => {}} onReview={() => {}} {...props} /></MantineProvider>);
+const show = (props) => render(<MantineProvider><FilmStatusCard ratingKey="699056" approval={{}} onChanged={() => {}} onReview={() => {}} {...props} /></MantineProvider>);
 const t2 = { filters: { present: true, parts: 243 }, refined: { present: true, measured: 95, of: 243 }, certified: 'machine', next: 'checking' };
 
 beforeEach(() => api.mockClear());
@@ -37,9 +37,10 @@ describe('FilmStatusCard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Review' }));
     expect(onReview).toHaveBeenCalled();
     unmount();
-    show({ status: { ...t2, next: 'approve' } });
+    const submit = vi.fn();
+    show({ status: { ...t2, next: 'approve' }, approval: { submit } });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Approve for family' })); });
-    expect(api).toHaveBeenCalledWith('api/v1/content-filter/699056/signoff', {}, 'POST');
+    expect(submit).toHaveBeenCalledWith('approve');
   });
   it('parent-certified shows who approved', () => {
     show({ status: { ...t2, certified: 'parent', next: 'done' }, approvedBy: 'Dad' });
