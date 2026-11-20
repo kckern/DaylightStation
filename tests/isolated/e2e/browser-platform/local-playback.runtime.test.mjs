@@ -176,12 +176,15 @@ test('Feed keeps its original audio through a prolonged socket outage and releas
   await page.route('**/home', route => route.request().isNavigationRequest()
     ? route.fulfill({ contentType: 'text/html', body: '<p>Reload after Feed exit</p>' })
     : route.fallback());
+  const reloadScheduled = page.waitForEvent('console', message =>
+    message.type() === 'warning' && message.text().includes('websocket.auto-reload-scheduled'));
   await page.evaluate(() => {
     const state = { idx: (history.state?.idx ?? 0) + 1, key: 'feed-outage-home', usr: null };
     history.pushState(state, '', '/home');
     dispatchEvent(new PopStateEvent('popstate', { state }));
   });
   await expect(page.getByRole('button', { name: 'Rooms', exact: true })).toBeVisible();
+  await reloadScheduled;
   await page.clock.fastForward(181_000);
   await expect(page.getByText('Reload after Feed exit', { exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\/home$/);

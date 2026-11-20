@@ -108,3 +108,19 @@ test('Admin Item Details revalidates a warm descriptor on open', async ({ page }
   await expect(row.getByRole('alert').filter({ hasText: /Play needs a playable source/ })).toHaveCount(0);
   expect(requests.filter(([, path]) => path === descriptorPath)).toEqual([['GET', descriptorPath], ['GET', descriptorPath]]);
 });
+
+test('Admin content drag preview gives the descriptor title room to render', async ({ page }) => {
+  await openFolder(page, route => route.fulfill({ json: descriptor }));
+  const row = page.getByTestId('item-row-0-0');
+  await expect(row.getByText(descriptor.title, { exact: true })).toBeVisible();
+  const handle = row.locator('.col-content-drag');
+  await handle.hover();
+  const box = await handle.boundingBox();
+  await page.mouse.down();
+  try {
+    await page.mouse.move(box.x + box.width / 2 + 12, box.y + box.height / 2 + 8);
+    await expect(page.locator('.content-drag-overlay').getByText(descriptor.title, { exact: true })).toBeVisible();
+  } finally {
+    await page.mouse.up();
+  }
+});
