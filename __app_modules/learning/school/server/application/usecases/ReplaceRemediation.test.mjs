@@ -95,4 +95,22 @@ describe('ReplaceRemediation', () => {
     expect(h.sessions.ids()).toEqual([PARENT, RETRY]);
     expect(h.sessions.derive(RETRY).state).toBe('submitted');
   });
+
+  // Makeup claims (pre-merge review, 2026-11-19): the replacement is still
+  // the missed day's lesson.
+  it('carries the replaced retry\'s makeup claim to the replacement', async () => {
+    const h = harness();
+    await failedWithRetry(h.sessions, h.clock);
+    await h.sessions.appendEvent(RETRY, {
+      type: 'makeup_claimed', at: h.clock.iso(), sessionId: RETRY,
+      forDay: '2026-08-31', subject: 'math', deadline: '2026-09-05',
+    });
+    const { newSessionId } = await h.useCase.execute({
+      sessionId: PARENT, currentSessionId: RETRY, reason: 'corrected wording',
+      replacedBy: 'parent', idempotencyKey: 'claim-carry',
+    });
+    expect(h.sessions.derive(newSessionId)).toMatchObject({
+      makeupFor: '2026-08-31', makeupSubject: 'math', makeupDeadline: '2026-09-05',
+    });
+  });
 });

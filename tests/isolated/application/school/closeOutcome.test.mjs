@@ -408,6 +408,22 @@ describe('the result receipt', () => {
     expect(makeupLines(document)).toEqual([]);
   });
 
+  it('a claimed sheet that fails, then passes on its retry, still counts for the missed day', async () => {
+    await graded({ percent: 20 });
+    await sessions.appendEvent(SID, {
+      type: 'makeup_claimed', at: clock.iso(), sessionId: SID, forDay: '2026-07-27', subject: 'math', deadline: '2026-08-01',
+    });
+    clock.advanceDays(1);
+    expect(await close.execute({ sessionId: SID })).toMatchObject({ result: 'needs_remediation' });
+    const { newSessionId } = await remediate.execute({ sessionId: SID });
+    expect(sessions.derive(newSessionId)).toMatchObject({ makeupFor: '2026-07-27', makeupSubject: 'math' });
+    await sessions.appendEvent(newSessionId, { type: 'issued', at: clock.iso(), sessionId: newSessionId, artifactId: 'art_2' });
+    await sessions.appendEvent(newSessionId, { type: 'submitted', at: clock.iso(), sessionId: newSessionId, transport: 'paper' });
+    await sessions.appendEvent(newSessionId, { type: 'graded', at: clock.iso(), sessionId: newSessionId, attemptIds: ['att_2'], percent: 90 });
+    const { document } = await close.execute({ sessionId: newSessionId });
+    expect(makeupLines(document)).toEqual(["Makeup: this counts for Monday's math."]);
+  });
+
   it('carries an OPAQUE retry ticket on a fail, and objectives to revisit', async () => {
     await graded({ percent: 20 });
     const result = await close.execute({ sessionId: SID });

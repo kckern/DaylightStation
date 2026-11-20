@@ -9,15 +9,17 @@
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { createEvent, reduceSession, statesAccepting } from "../../domain/sessions/sessionEvents.mjs";
 import { shortId } from '#system/utils/id.mjs';
+import { carriedMakeupClaim } from "../../domain/makeup.mjs";
+import { studyDayForInstant } from "../../domain/studyDay.mjs";
 
 const REPLACEABLE_STATES = new Set(['created', 'issued', 'reprinted']);
 
 export class ReplaceRemediation {
-  #curriculum; #sessions; #teacherGate; #clock; #newSessionId; #logger;
+  #curriculum; #sessions; #teacherGate; #clock; #newSessionId; #logger; #timezone;
 
   constructor({
     curriculum, sessions, teacherGate,
-    clock = () => new Date(), newSessionId = () => `ses_${shortId(8)}`, logger = console,
+    clock = () => new Date(), newSessionId = () => `ses_${shortId(8)}`, timezone = null, logger = console,
   } = {}) {
     if (!curriculum || !sessions || !teacherGate) {
       throw new Error('ReplaceRemediation requires curriculum, sessions and teacherGate');
@@ -28,6 +30,7 @@ export class ReplaceRemediation {
     this.#clock = clock;
     this.#newSessionId = newSessionId;
     this.#logger = logger;
+    this.#timezone = timezone;
   }
 
   async execute({
@@ -112,6 +115,7 @@ export class ReplaceRemediation {
       }
       await this.#sessions.appendEvent(newSessionId, created.event);
     }
+    await this.#carryMakeupClaim({ from: current.makeupFor ? current : parent, newSessionId, nowIso });
 
     const linked = createEvent({
       type: 'remediation_replaced', at: nowIso, sessionId,
@@ -156,6 +160,32 @@ export class ReplaceRemediation {
       }
     }
     return null;
+  }
+
+  /**
+   * MAKEUP CLAIM (2026-11-19). The replacement is still the missed day's
+   * lesson, so the replaced retry's claim (or the failed attempt's) moves to
+   * it while its deadline holds. A recovered replacement that already holds
+   * one is left alone. Never throws: the attribution is lost, not the sheet.
+   */
+  async #carryMakeupClaim({ from, newSessionId, nowIso }) {
+    const today = studyDayForInstant(Date.parse(nowIso), { timezone: this.#timezone });
+    const input = carriedMakeupClaim(from, { sessionId: newSessionId, at: nowIso, today });
+    if (!input) return;
+    try {
+      if ((await this.#state(newSessionId)).makeupFor) return;
+      const { errors, event } = createEvent(input);
+      if (errors.length) throw new Error(errors.join('; '));
+      await this.#sessions.appendEvent(newSessionId, event);
+      this.#logger.info?.('school.makeup.claim-carried', {
+        learnerId: from.learnerId, sessionId: from.sessionId, newSessionId,
+        subject: input.subject, forDay: input.forDay, deadline: input.deadline,
+      });
+    } catch (error) {
+      this.#logger.warn?.('school.makeup.claim-failed', {
+        sessionId: newSessionId, learnerId: from.learnerId, subject: input.subject, error: error?.message ?? String(error),
+      });
+    }
   }
 
   async #abandonIfNeeded({ sessionId, reason, replacedBy }) {

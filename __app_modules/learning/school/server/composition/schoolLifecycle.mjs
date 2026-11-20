@@ -1324,10 +1324,10 @@ export async function createSchoolLifecycle({
     })
     : null;
   const openRemediation = new OpenRemediation({ curriculum, sessions: stores.sessions, practiceAssessments,
-    curriculumExceptions: curriculumExceptionStore, remediationMaxRounds: remediationRounds, clock, logger });
+    curriculumExceptions: curriculumExceptionStore, remediationMaxRounds: remediationRounds, timezone, clock, logger });
   practiceAssessments?.configurePrinting({ issueDocument, openRemediation, printDocuments });
   const replaceRemediation = new ReplaceRemediation({
-    curriculum, sessions: stores.sessions, teacherGate, clock, newSessionId, logger,
+    curriculum, sessions: stores.sessions, teacherGate, clock, newSessionId, timezone, logger,
   });
   // One name lookup for everything that prints a learner's name — the card
   // scan AND the agenda routes, so tape and preview show the same header.

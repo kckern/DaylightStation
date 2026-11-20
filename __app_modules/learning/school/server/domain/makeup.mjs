@@ -121,6 +121,24 @@ export function honouredMakeupClaim(session, today) {
   return forDay;
 }
 
+/**
+ * The `makeup_claimed` event a session opened FROM a claimed one carries
+ * over (a retry of a makeup-sheet lesson is still that missed day's lesson),
+ * or null: the source holds no claim, or `today` is past the claim's
+ * deadline, when the work would count for the day it is done anyway.
+ * @param {{makeupFor?: string|null, makeupSubject?: string|null, makeupDeadline?: string|null}|null} source
+ * @param {{sessionId: string, at: string, today: string}} next
+ * @returns {object|null} input for `createEvent`
+ */
+export function carriedMakeupClaim(source, { sessionId, at, today } = {}) {
+  const forDay = source?.makeupFor;
+  const deadline = source?.makeupDeadline;
+  const subject = source?.makeupSubject;
+  if (typeof forDay !== 'string' || typeof deadline !== 'string' || typeof subject !== 'string') return null;
+  if (typeof today !== 'string' || today > deadline) return null;
+  return { type: 'makeup_claimed', at, sessionId, forDay, subject, deadline };
+}
+
 const subjectAllowed = (policy, subject) => !policy.subjects || policy.subjects.includes(subject);
 const asked = (section) => section?.state === 'served' || section?.state === 'obligated';
 
