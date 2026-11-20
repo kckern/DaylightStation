@@ -25,13 +25,32 @@ async function blobToBase64(blob) {
   return btoa(binary);
 }
 
+async function retryChunkStorage(work, { sessionId, seq }, operation) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await work();
+      return attempt;
+    } catch (error) {
+      const message = error?.message ?? String(error);
+      if (attempt === 2) {
+        logger().error(`chunk.${operation}-failed-final`, { sessionId, seq, error: message });
+      } else {
+        logger().warn(`chunk.${operation}-retry`, { sessionId, seq, attempt, error: message });
+        await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
+      }
+    }
+  }
+  return null;
+}
+
 export function useChunkUploader({ sessionId, week }) {
   const [status, setStatus] = useState('idle'); // idle|syncing|offline|saved
   const [pendingCount, setPendingCount] = useState(0);
   const [lastAckedAt, setLastAckedAt] = useState(null);
   const [ackedSeq, setAckedSeq] = useState(-1);
 
-  const queueRef = useRef([]);     // in-memory { seq, blob } queue
+  const queueRef = useRef([]);
+  const acknowledgedRef = useRef(new Set());
   const pendingCountRef = useRef(0); // C1: ref-backed count for finalize drain loop (avoids stale closure)
   const busyRef = useRef(false);
   const backoffRef = useRef(1000);
@@ -80,24 +99,11 @@ export function useChunkUploader({ sessionId, week }) {
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       await resp.json();
-
-      // Success — mark IndexedDB row uploaded and pop queue
-      await markChunkUploaded({ sessionId, seq: next.seq });
-      queueRef.current.shift();
-      // I3: Evict from base64 cache after successful upload
-      base64CacheRef.current.delete(next.seq);
-      backoffRef.current = 1000;
-      setAckedSeq(next.seq);
-      setLastAckedAt(Date.now());
-      setPendingCount(queueRef.current.length);
-      pendingCountRef.current = queueRef.current.length; // C1: keep ref in sync
-      logger().info('chunk.uploaded', { sessionId, seq: next.seq, pending: queueRef.current.length });
-      busyRef.current = false;
-      if (aliveRef.current) drain();
     } catch (err) {
       logger().warn('chunk.upload-failed', { sessionId, seq: next.seq, error: err.message, backoffMs: backoffRef.current });
-      setStatus('offline');
       busyRef.current = false;
+      if (!aliveRef.current) return;
+      setStatus('offline');
       const delay = backoffRef.current;
       backoffRef.current = Math.min(backoffRef.current * 2, MAX_BACKOFF_MS);
       // C1: Ensure only one pending retry timer exists at a time
@@ -106,17 +112,38 @@ export function useChunkUploader({ sessionId, week }) {
         retryTimerRef.current = null;
         if (aliveRef.current) drain();
       }, delay);
+      return;
     }
+
+    // The server already owns this chunk. Let local bookkeeping finish in
+    // order without putting the acknowledged chunk back on the network queue.
+    acknowledgedRef.current.add(next.seq);
+    const identity = { sessionId, seq: next.seq };
+    void Promise.resolve(next.savedLocally).then(() =>
+      retryChunkStorage(() => markChunkUploaded(identity), identity, 'acknowledge-local'));
+    queueRef.current = queueRef.current.filter(item => item.seq !== next.seq);
+    base64CacheRef.current.delete(next.seq);
+    backoffRef.current = 1000;
+    busyRef.current = false;
+    pendingCountRef.current = queueRef.current.length;
+    logger().info('chunk.uploaded', { sessionId, seq: next.seq, pending: pendingCountRef.current });
+    if (!aliveRef.current) return;
+    setAckedSeq(next.seq);
+    setLastAckedAt(Date.now());
+    setPendingCount(pendingCountRef.current);
+    drain();
   }, [sessionId, week]);
 
   const enqueue = useCallback(async ({ seq, blob }) => {
     // M7: Synchronously push to in-memory queue FIRST — queue is authoritative for pending state.
     // This prevents tail chunks from being missed if stop/finalize drains immediately.
-    queueRef.current.push({ seq, blob });
+    const next = { seq, blob };
+    queueRef.current.push(next);
     setPendingCount(queueRef.current.length);
     pendingCountRef.current = queueRef.current.length; // C1: keep ref in sync
     // I3: Start base64 encoding in background so beaconFlush has it synchronously ready
     blobToBase64(blob).then(b64 => {
+      if (acknowledgedRef.current.has(seq)) return;
       base64CacheRef.current.set(seq, b64);
       // Evict old entries to keep cache bounded (keep last 10 seqs)
       if (base64CacheRef.current.size > 10) {
@@ -125,22 +152,13 @@ export function useChunkUploader({ sessionId, week }) {
       }
     }).catch(err => logger().warn('chunk.b64-precompute-failed', { seq, error: err.message }));
     // Layer 2 durability: write to IndexedDB with retry (parallel to queue work)
-    (async () => {
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          await putChunk({ sessionId, seq, week, blob, uploaded: false });
-          logger().info('chunk.saved-local', { sessionId, seq, bytes: blob.size, attempt });
-          return;
-        } catch (err) {
-          if (attempt === 2) {
-            logger().error('chunk.save-local-failed-final', { sessionId, seq, error: err.message });
-          } else {
-            logger().warn('chunk.save-local-retry', { sessionId, seq, attempt, error: err.message });
-            await new Promise(r => setTimeout(r, 100 * (attempt + 1)));
-          }
-        }
-      }
-    })();
+    next.savedLocally = retryChunkStorage(
+      () => putChunk({ sessionId, seq, week, blob, uploaded: acknowledgedRef.current.has(seq) }),
+      { sessionId, seq },
+      'save-local',
+    ).then(attempt => {
+      if (attempt !== null) logger().info('chunk.saved-local', { sessionId, seq, bytes: blob.size, attempt });
+    });
     drain();
   }, [sessionId, week, drain]);
 
@@ -175,24 +193,13 @@ export function useChunkUploader({ sessionId, week }) {
   const recoverLocal = useCallback(async () => {
     try {
       const rows = await getChunksForSession(sessionId);
-      const unuploaded = rows.filter(r => !r.uploaded);
+      const unuploaded = rows.filter(row => !row.uploaded && !acknowledgedRef.current.has(row.seq));
       if (unuploaded.length === 0) return { recovered: 0 };
       logger().info('chunks.recover-local', { sessionId, count: unuploaded.length });
       // Merge recovered chunks with any already-queued chunks, then sort by seq
-      const merged = [
-        ...unuploaded.map(r => ({ seq: r.seq, blob: r.blob })),
-        ...queueRef.current,
-      ];
-      merged.sort((a, b) => a.seq - b.seq);
-      // Dedupe by seq (in case the same seq is both queued in memory and in IndexedDB)
-      const deduped = [];
-      const seenSeqs = new Set();
-      for (const item of merged) {
-        if (seenSeqs.has(item.seq)) continue;
-        seenSeqs.add(item.seq);
-        deduped.push(item);
-      }
-      queueRef.current = deduped;
+      const merged = new Map(unuploaded.map(row => [row.seq, { seq: row.seq, blob: row.blob }]));
+      for (const item of queueRef.current) merged.set(item.seq, item);
+      queueRef.current = [...merged.values()].sort((a, b) => a.seq - b.seq);
       setPendingCount(queueRef.current.length);
       pendingCountRef.current = queueRef.current.length; // C1: keep ref in sync
       drain();

@@ -1,9 +1,16 @@
 import { getToken } from '../../../../../frontend/src/lib/auth.js';
+import { createIndexedDbOpener, requestResult, transactionDone } from '../../../../../frontend/src/lib/indexedDb.js';
 
 const DB_NAME = 'daylight-feed-offline-v1';
 const STORE = 'editions';
 const MAX_EDITIONS = 100;
-let dbPromise = null;
+const openDb = createIndexedDbOpener(DB_NAME, 1, db => {
+  if (!db.objectStoreNames.contains(STORE)) {
+    const store = db.createObjectStore(STORE, { keyPath: 'key' });
+    store.createIndex('user', 'user', { unique: false });
+    store.createIndex('savedAt', 'savedAt', { unique: false });
+  }
+}, { waitWhileBlocked: true });
 
 function userScope() {
   const token = getToken();
@@ -17,35 +24,9 @@ function userScope() {
   }
 }
 
-function openDb() {
-  if (dbPromise) return dbPromise;
-  if (!globalThis.indexedDB) return Promise.reject(new Error('Offline storage unavailable'));
-  dbPromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        const store = db.createObjectStore(STORE, { keyPath: 'key' });
-        store.createIndex('user', 'user', { unique: false });
-        store.createIndex('savedAt', 'savedAt', { unique: false });
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => { dbPromise = null; reject(request.error); };
-  });
-  return dbPromise;
-}
-
 async function objectStore(mode) {
   const db = await openDb();
   return db.transaction(STORE, mode).objectStore(STORE);
-}
-
-function requestResult(request) {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
 }
 
 function editionKey(user, id) {
@@ -72,29 +53,25 @@ export async function saveOfflineEdition(item, detail = null) {
   if (!item?.id) throw new Error('Feed item id required');
   const user = userScope();
   const row = { key: editionKey(user, item.id), user, item, detail, savedAt: Date.now() };
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE, 'readwrite');
-    transaction.oncomplete = () => resolve(row);
-    transaction.onabort = () => reject(transaction.error ?? new Error('Offline edition save aborted'));
-
-    const store = transaction.objectStore(STORE);
-    const editions = store.index('user');
-    store.put(row);
-    const request = editions.getAll(user);
-    request.onsuccess = () => {
-      // Queue deletes while the native transaction is active.
-      for (const edition of newestFirst(request.result).slice(MAX_EDITIONS)) {
-        store.delete(edition.key);
-      }
-    };
-  });
+  const transaction = (await openDb()).transaction(STORE, 'readwrite');
+  const store = transaction.objectStore(STORE);
+  store.put(row);
+  const request = store.index('user').getAll(user);
+  request.onsuccess = () => {
+    // Queue deletes while the native transaction is active.
+    for (const edition of newestFirst(request.result).slice(MAX_EDITIONS)) {
+      store.delete(edition.key);
+    }
+  };
+  await transactionDone(transaction);
+  return row;
 }
 
 export async function removeOfflineEdition(id) {
   const user = userScope();
-  const store = await objectStore('readwrite');
-  await requestResult(store.delete(editionKey(user, id)));
+  const transaction = (await openDb()).transaction(STORE, 'readwrite');
+  transaction.objectStore(STORE).delete(editionKey(user, id));
+  await transactionDone(transaction);
 }
 
 export function offlineStorageUser() {

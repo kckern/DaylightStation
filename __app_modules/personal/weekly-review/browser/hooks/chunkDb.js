@@ -1,71 +1,51 @@
 // Thin IndexedDB wrapper for Weekly Review chunks.
 // One row per chunk, keyed by [sessionId, seq]. 7-day retention.
-// No external dependency — raw IndexedDB API.
+import { createIndexedDbOpener, requestResult, transactionDone } from '../../../../../frontend/src/lib/indexedDb.js';
 
 const DB_NAME = 'weekly-review-chunks-v1';
 const STORE = 'chunks';
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
-let _dbPromise = null;
-
-function openDb() {
-  if (_dbPromise) return _dbPromise;
-  _dbPromise = new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        const store = db.createObjectStore(STORE, { keyPath: ['sessionId', 'seq'] });
-        store.createIndex('sessionId', 'sessionId', { unique: false });
-        store.createIndex('savedAt', 'savedAt', { unique: false });
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-  return _dbPromise;
-}
+const openDb = createIndexedDbOpener(DB_NAME, 1, db => {
+  if (!db.objectStoreNames.contains(STORE)) {
+    const store = db.createObjectStore(STORE, { keyPath: ['sessionId', 'seq'] });
+    store.createIndex('sessionId', 'sessionId', { unique: false });
+    store.createIndex('savedAt', 'savedAt', { unique: false });
+  }
+});
 
 function tx(mode) {
-  return openDb().then(db => db.transaction(STORE, mode).objectStore(STORE));
+  return openDb().then(db => db.transaction(STORE, mode));
 }
 
 export async function putChunk({ sessionId, seq, week, blob, uploaded = false }) {
-  const store = await tx('readwrite');
-  return new Promise((resolve, reject) => {
-    const req = store.put({ sessionId, seq, week, blob, uploaded, savedAt: Date.now() });
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
+  const transaction = await tx('readwrite');
+  transaction.objectStore(STORE).put({ sessionId, seq, week, blob, uploaded, savedAt: Date.now() });
+  await transactionDone(transaction);
 }
 
 export async function markChunkUploaded({ sessionId, seq }) {
-  const store = await tx('readwrite');
-  return new Promise((resolve, reject) => {
-    const getReq = store.get([sessionId, seq]);
-    getReq.onsuccess = () => {
-      const row = getReq.result;
-      if (!row) return resolve(false);
-      row.uploaded = true;
-      const putReq = store.put(row);
-      putReq.onsuccess = () => resolve(true);
-      putReq.onerror = () => reject(putReq.error);
-    };
-    getReq.onerror = () => reject(getReq.error);
-  });
+  const transaction = await tx('readwrite');
+  const store = transaction.objectStore(STORE);
+  const request = store.get([sessionId, seq]);
+  let found = false;
+  request.onsuccess = () => {
+    if (!request.result) return;
+    found = true;
+    store.put({ ...request.result, uploaded: true });
+  };
+  await transactionDone(transaction);
+  return found;
 }
 
 export async function getChunksForSession(sessionId) {
-  const store = await tx('readonly');
-  return new Promise((resolve, reject) => {
-    const req = store.index('sessionId').getAll(sessionId);
-    req.onsuccess = () => resolve((req.result || []).sort((a, b) => a.seq - b.seq));
-    req.onerror = () => reject(req.error);
-  });
+  const store = (await tx('readonly')).objectStore(STORE);
+  const rows = await requestResult(store.index('sessionId').getAll(sessionId));
+  return (rows ?? []).sort((a, b) => a.seq - b.seq);
 }
 
 export async function listSessions() {
-  const store = await tx('readonly');
+  const store = (await tx('readonly')).objectStore(STORE);
   return new Promise((resolve, reject) => {
     const seen = new Map();
     const req = store.openCursor();
@@ -99,30 +79,28 @@ export async function listSessions() {
 }
 
 export async function deleteSession(sessionId) {
-  const chunks = await getChunksForSession(sessionId);
-  const store = await tx('readwrite');
-  return Promise.all(chunks.map(c => new Promise((resolve, reject) => {
-    const req = store.delete([sessionId, c.seq]);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  })));
+  const transaction = await tx('readwrite');
+  const store = transaction.objectStore(STORE);
+  const request = store.index('sessionId').getAllKeys(sessionId);
+  request.onsuccess = () => {
+    for (const key of request.result) store.delete(key);
+  };
+  await transactionDone(transaction);
 }
 
 export async function purgeExpired(now = Date.now()) {
   const cutoff = now - RETENTION_MS;
-  const store = await tx('readwrite');
-  return new Promise((resolve, reject) => {
-    const index = store.index('savedAt');
-    const range = IDBKeyRange.upperBound(cutoff);
-    const req = index.openCursor(range);
-    let deleted = 0;
-    req.onsuccess = (e) => {
-      const cursor = e.target.result;
-      if (!cursor) return resolve(deleted);
-      cursor.delete();
-      deleted += 1;
-      cursor.continue();
-    };
-    req.onerror = () => reject(req.error);
-  });
+  const transaction = await tx('readwrite');
+  const index = transaction.objectStore(STORE).index('savedAt');
+  const request = index.openCursor(IDBKeyRange.upperBound(cutoff));
+  let deleted = 0;
+  request.onsuccess = () => {
+    const cursor = request.result;
+    if (!cursor) return;
+    cursor.delete();
+    deleted += 1;
+    cursor.continue();
+  };
+  await transactionDone(transaction);
+  return deleted;
 }

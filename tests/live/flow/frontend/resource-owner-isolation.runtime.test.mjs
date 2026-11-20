@@ -2,16 +2,18 @@ import { readFile } from 'node:fs/promises';
 import { test, expect } from '@playwright/test';
 
 test('two tabs claiming an initially unowned store cannot relabel another user’s data', async ({ context }) => {
-  const source = await readFile(new URL('../../../../frontend/src/lib/hooks/persistentResourceStore.js', import.meta.url), 'utf8');
+  const lib = new URL('../../../../frontend/src/lib/', import.meta.url);
+  const modules = new Map(await Promise.all(['hooks/persistentResourceStore.js', 'indexedDb.js'].map(async file =>
+    [`/${file}`, await readFile(new URL(file, lib), 'utf8')])));
   await context.route('http://localhost:43891/**', route => {
-    const module = route.request().url().endsWith('/store.js');
-    return route.fulfill({ contentType: module ? 'text/javascript' : 'text/html', body: module ? source : '<title>Resource store test</title>' });
+    const source = modules.get(new URL(route.request().url()).pathname);
+    return route.fulfill({ contentType: source ? 'text/javascript' : 'text/html', body: source ?? '<title>Resource store test</title>' });
   });
   const tabs = await Promise.all([context.newPage(), context.newPage()]);
   await Promise.all(tabs.map(async page => {
     await page.goto('http://localhost:43891/');
     const owner = await page.evaluate(async () => {
-      const { createIdbResourceStore } = await import('/store.js');
+      const { createIdbResourceStore } = await import('/hooks/persistentResourceStore.js');
       window.store = createIdbResourceStore('resource-owner-test');
       return (await window.store.load()).owner;
     });
