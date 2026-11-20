@@ -110,7 +110,10 @@ a piece nor a course has no card.
 (`polish-gem` / `polish-diamond` entries; an unreadable log answers both false and
 logs `piano.desk.polish_unreadable`). Each piece is
 projected through `shared/music/learnCoach.mjs`, so the strip and Learn agree. Its
-passages are the score's admin-approved Learn segments when it has them (the
+passages are the segments the kiosk teaches: a household
+`sheetmusic.learn.pieces[scoreId].segments` override first (as in the kiosk, no sha
+check; one that does not validate logs `piano.sheetmusic.override-invalid` and falls
+through to the saved passages), then the score's admin-approved Learn segments (the
 per-score Learn file, matched on the content sha the child practised, so a file cut
 against different XML is ignored); otherwise the passages saved in the record's
 `learnCoach.summary`. Progress is keyed by bar range, so after an admin re-cuts a
