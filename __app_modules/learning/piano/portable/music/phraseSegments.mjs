@@ -250,11 +250,14 @@ function tolerantMatches(got, want, tolerance) {
  * @param {Array<{start,end}>} proposed
  * @param {Array<{start,end}>} reference
  * @param {number} measureCount
+ * @param {{ within?: (k:number) => boolean }} [opts] - only score these barlines
  */
-export function boundaryAgreement(proposed, reference, measureCount) {
+export function boundaryAgreement(proposed, reference, measureCount, { within = null } = {}) {
   const n = Number.isInteger(measureCount) ? measureCount : Infinity;
-  const got = boundariesOf(proposed, n);
-  const want = boundariesOf(reference, n);
+  const keep = typeof within === 'function' ? within : () => true;
+  const filter = (set) => new Set([...set].filter(keep));
+  const got = filter(boundariesOf(proposed, n));
+  const want = filter(boundariesOf(reference, n));
   let tp = 0;
   for (const k of got) if (want.has(k)) tp += 1;
   const near = tolerantMatches(got, want, 1);
@@ -263,6 +266,20 @@ export function boundaryAgreement(proposed, reference, measureCount) {
     precision: got.size ? tp / got.size : null,
     recall: want.size ? tp / want.size : null,
     tolerant: { tp: near, precision: got.size ? near / got.size : null, recall: want.size ? near / want.size : null },
+  };
+}
+
+/**
+ * boundaryAgreement over all barlines, and split into `seams` (barlines whose Jev
+ * crop was two strips joined, at a system break or jump) and `interior` (the rest),
+ * so a scorer that reads pictures can be judged where the picture is plainest.
+ */
+export function splitAgreement(proposed, reference, measureCount, seams = []) {
+  const seamSet = new Set(seams || []);
+  return {
+    all: boundaryAgreement(proposed, reference, measureCount),
+    seams: boundaryAgreement(proposed, reference, measureCount, { within: (k) => seamSet.has(k) }),
+    interior: boundaryAgreement(proposed, reference, measureCount, { within: (k) => !seamSet.has(k) }),
   };
 }
 

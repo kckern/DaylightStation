@@ -12,7 +12,7 @@
  *   POST /impact              → { impact }  body { segments } (revert impact against the generated plan)
  *   POST /poster              → 201 { id, poster, url, bytes }  body: the SVG text (image/svg+xml only)
  *   POST /propose             → { segments, proposal, comparison? }  Jev's Learn segment proposal; multipart:
- *                               `features` (JSON { features, measureCount, targetLen }) and one PNG per
+ *                               `features` (JSON { features, measureCount, targetLen, seams }) and one PNG per
  *                               barline Jev judges as `crop_<k>` (≤ 1 MB each, body ≤ 64 MB with a
  *                               Content-Length, else 413 too-large). 409 jev-disabled while
  *                               `sheetmusic.admin.boundaryScorer` is heuristic (checked before the body is
@@ -282,6 +282,7 @@ export function createAdminSheetMusicRouter({ service, logger = console } = {}) 
     try {
       const result = await service.propose(id, {
         features: parsed.features, crops, measureCount: parsed.measureCount, targetLen: parsed.targetLen,
+        seams: Array.isArray(parsed.seams) ? parsed.seams : [],
         signal: controller.signal,
       });
       if (!controller.signal.aborted) res.json(result);

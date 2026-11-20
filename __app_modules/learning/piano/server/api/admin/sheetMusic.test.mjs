@@ -406,7 +406,7 @@ describe('createAdminSheetMusicRouter: POST /poster', () => {
 
 describe('createAdminSheetMusicRouter: POST /propose', () => {
   const features = [{ after: 0, sectionStart: false }, { after: 1, sectionStart: true }, { after: 2, sectionStart: false }];
-  const body = JSON.stringify({ features, measureCount: 4, targetLen: 4 });
+  const body = JSON.stringify({ features, measureCount: 4, targetLen: 4, seams: [2] });
   const proposeResult = { segments: [{ start: 0, end: 3 }], proposal: { scorer: 'jev' } };
 
   const jevOn = { boundaryScorer: () => 'jev' };
@@ -421,7 +421,7 @@ describe('createAdminSheetMusicRouter: POST /propose', () => {
     expect(res.body).toEqual(proposeResult);
     const [id, input] = calls.find((c) => c.name === 'propose').args;
     expect(id).toBe(ID);
-    expect(input).toMatchObject({ features, measureCount: 4, targetLen: 4 });
+    expect(input).toMatchObject({ features, measureCount: 4, targetLen: 4, seams: [2] });
     expect([...input.crops.keys()]).toEqual([0, 2]);
     expect(input.crops.get(2).toString()).toBe('png-2');
     expect(input.signal).toBeInstanceOf(AbortSignal);

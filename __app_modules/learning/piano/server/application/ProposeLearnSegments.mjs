@@ -20,7 +20,8 @@
  *   gets p 0.5. More than MAX_FAILED_SHARE of the barlines failing throws
  *   `{ code: 'proposal-failed' }`: cuts that only look model-made are worse than none.
  * - With `reference` segments (a grown-up's hand-cut approved segments), the result
- *   carries a `comparison` of Jev's and the heuristic's boundaries against them —
+ *   carries a `comparison` of Jev's and the heuristic's boundaries against them, overall
+ *   and split into seam and interior barlines —
  *   the calibration gate's evidence (spec §5), logged as `piano.sheetmusic.propose.compared`.
  *
  * Logs `piano.sheetmusic.propose.start|done|failed|aborted` with calls, failures, ms, model.
@@ -28,7 +29,7 @@
  */
 import { image, yesNo } from '#apps/common/ports/IDecisionGateway.mjs';
 import {
-  boundaryAgreement, boundaryProbabilities, compactFeatures, FEATURE_KEYS, partitionSegments,
+  boundaryProbabilities, compactFeatures, FEATURE_KEYS, partitionSegments, splitAgreement,
 } from '../../portable/music/phraseSegments.mjs';
 
 export const JEV_BATCH_SIZE = 10;
@@ -36,7 +37,8 @@ export const CONCURRENCY = 2;
 export const MAX_FAILED_SHARE = 0.2;
 export const CALL_TIMEOUT_MS = 30_000;
 export const MAX_RETRY_WAIT_MS = 15_000;
-export const DEADLINE_MS = 75_000;
+/** Inside a reverse proxy's usual 60-100 s read timeout, with room for the reply. */
+export const DEADLINE_MS = 60_000;
 const LIMITS = Object.freeze({ minLen: 2, maxLen: 8, targetLen: 4 });
 
 /** Width and height from a PNG's IHDR chunk, or null when the bytes are not a PNG. */
@@ -59,8 +61,15 @@ export function measurementsOf(record) {
   return out;
 }
 
-const question = (key) => yesNo(
-  `Does a musical phrase end at the barline marked with a red triangle in \`${key}\`? `
+/**
+ * The yes/no for one barline. A seam crop is two strips side by side (the barline
+ * ends a system, or the next bar is not the next one engraved): the barline is the
+ * end of the left piece, not the gap between the pieces.
+ */
+const question = (key, seam = false) => yesNo(
+  (seam
+    ? `\`${key}\` shows two pieces of the score side by side. Does a musical phrase end at the barline at the end of the left piece, marked with the red triangle? `
+    : `Does a musical phrase end at the barline marked with a red triangle in \`${key}\`? `)
     + `\`${key}_features\` has measurements at that barline (tailGapRatio: how much of the bar the last note `
     + 'or rest takes; bassMotion: semitones the bass moves across it).',
   {
@@ -100,12 +109,14 @@ export class ProposeLearnSegments {
   /**
    * @param {{ id: string, features: Array<object>, crops: Map<number, Buffer>, measureCount: number,
    *   limits?: { minLen?: number, maxLen?: number, targetLen?: number }, reference?: Array<{start,end}>,
-   *   signal?: AbortSignal }} input
+   *   signal?: AbortSignal, seams?: number[] }} input
+   *   `seams`: barlines whose crop is two strips (see question()).
    *   `features` are barlineFeatures records, one per barline (after = 0..measureCount-2).
    * @returns {Promise<{ segments: Array<{start,end}>, proposal: object, comparison?: object }>}
    */
-  async execute({ id, features, crops, measureCount, limits = {}, reference = null, signal = null }) {
+  async execute({ id, features, crops, measureCount, limits = {}, reference = null, signal = null, seams = [] }) {
     const started = this.#nowMs();
+    const seamSet = new Set((Array.isArray(seams) ? seams : []).filter((k) => Number.isInteger(k)));
     const records = [...features].sort((a, b) => a.after - b.after);
     const asked = records.filter((f) => !f.sectionStart).map((f) => f.after);
     const batches = [];
@@ -129,7 +140,7 @@ export class ProposeLearnSegments {
         const size = pngDimensions(data);
         state[`bar_${k}`] = image(data, { mediaType: 'image/png', ...(size || {}) });
         state[`bar_${k}_features`] = measurementsOf(byAfter.get(k));
-        questions[`bar_${k}`] = question(`bar_${k}`);
+        questions[`bar_${k}`] = question(`bar_${k}`, seamSet.has(k));
       }
       for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
@@ -191,15 +202,20 @@ export class ProposeLearnSegments {
       failedBarlines: failures,
       featureKeys: [...FEATURE_KEYS],
       features: compactFeatures(records),
+      seams: [...seamSet].sort((a, b) => a - b),
     };
     this.#logger?.info?.('piano.sheetmusic.propose.done', { id, calls, failures, skippedCalls, ms, model, segments: segments.length });
 
     let comparison;
     if (Array.isArray(reference) && reference.length) {
       const heuristic = partitionSegments(measureCount, boundaryProbabilities(records), opts);
+      const jev = splitAgreement(segments, reference, measureCount, proposal.seams);
+      const heur = splitAgreement(heuristic, reference, measureCount, proposal.seams);
       comparison = {
-        jev: boundaryAgreement(segments, reference, measureCount),
-        heuristic: boundaryAgreement(heuristic, reference, measureCount),
+        jev: jev.all,
+        heuristic: heur.all,
+        seams: { jev: jev.seams, heuristic: heur.seams },
+        interior: { jev: jev.interior, heuristic: heur.interior },
         heuristicSegments: heuristic,
       };
       this.#logger?.info?.('piano.sheetmusic.propose.compared', {
@@ -207,6 +223,10 @@ export class ProposeLearnSegments {
         jevPrecision: comparison.jev.precision, jevRecall: comparison.jev.recall,
         heuristicPrecision: comparison.heuristic.precision, heuristicRecall: comparison.heuristic.recall,
         jevRecallNear: comparison.jev.tolerant.recall, heuristicRecallNear: comparison.heuristic.tolerant.recall,
+        seamBarlines: proposal.seams.length,
+        jevSeamRecall: jev.seams.recall, jevInteriorRecall: jev.interior.recall,
+        jevSeamPrecision: jev.seams.precision, jevInteriorPrecision: jev.interior.precision,
+        heuristicSeamRecall: heur.seams.recall, heuristicInteriorRecall: heur.interior.recall,
       });
     }
     return { segments, proposal, ...(comparison ? { comparison } : {}) };

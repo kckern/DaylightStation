@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   barlineFeatures, heuristicBoundaryP, partitionSegments, compactFeatures, FEATURE_KEYS,
-  pieceContext, boundaryProbabilities, LENGTH_WEIGHT, recordsFromRows, boundaryAgreement,
+  pieceContext, boundaryProbabilities, LENGTH_WEIGHT, recordsFromRows, boundaryAgreement, splitAgreement,
 } from './phraseSegments.mjs';
 
 /** The kiosk's buildMeasures, inlined so this test stays portable. */
@@ -403,5 +403,21 @@ describe('boundaryAgreement', () => {
     const got = boundaryAgreement([seg(0, 2), seg(3, 3), seg(4, 7)], [seg(0, 3), seg(4, 7)], 8);
     assert.equal(got.tolerant.tp, 1);
     assert.equal(got.tolerant.precision, 0.5);
+  });
+});
+
+describe('splitAgreement', () => {
+  const seg = (start, end) => ({ start, end });
+  it('scores seam barlines and the rest separately', () => {
+    // Proposed cuts after 3 and 7; reference after 3 and 5. Barline 7 is a seam.
+    const got = splitAgreement([seg(0, 3), seg(4, 7), seg(8, 11)], [seg(0, 3), seg(4, 5), seg(6, 11)], 12, [7]);
+    assert.deepEqual([got.seams.tp, got.seams.fp, got.seams.fn], [0, 1, 0]);
+    assert.deepEqual([got.interior.tp, got.interior.fp, got.interior.fn], [1, 0, 1]);
+    assert.equal(got.all.tp, 1);
+  });
+  it('with no seams, the seam side is empty', () => {
+    const got = splitAgreement([seg(0, 3), seg(4, 7)], [seg(0, 3), seg(4, 7)], 8, []);
+    assert.deepEqual([got.seams.tp, got.seams.fp, got.seams.fn, got.seams.precision], [0, 0, 0, null]);
+    assert.equal(got.interior.precision, 1);
   });
 });

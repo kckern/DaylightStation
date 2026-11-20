@@ -51,8 +51,23 @@ export function comparisonText(comparison) {
   if (!comparison?.jev || !comparison?.heuristic) return null;
   const { jev, heuristic } = comparison;
   const near = (a) => (a.tolerant ? ` (within a bar: ${pct(a.tolerant.precision)} / ${pct(a.tolerant.recall)})` : '');
-  return `Against the approved cuts: Jev precision ${pct(jev.precision)}, recall ${pct(jev.recall)}${near(jev)}; `
+  const overall = `Against the approved cuts: Jev precision ${pct(jev.precision)}, recall ${pct(jev.recall)}${near(jev)}; `
     + `heuristic precision ${pct(heuristic.precision)}, recall ${pct(heuristic.recall)}${near(heuristic)}.`;
+  // Seam barlines (system breaks, jumps) are pictured as two pieces; Jev is judged there apart.
+  const { seams, interior } = comparison;
+  if (!seams?.jev || !interior?.jev) return overall;
+  const part = (a) => `precision ${pct(a.precision)}, recall ${pct(a.recall)}`;
+  return `${overall} At system breaks: Jev ${part(seams.jev)}, heuristic ${part(seams.heuristic)}. `
+    + `Elsewhere: Jev ${part(interior.jev)}, heuristic ${part(interior.heuristic)}.`;
+}
+
+/** Barlines whose Jev crop is two strips joined (a system break or a jump). */
+export function seamBarlines(measures, bounds) {
+  const out = [];
+  for (let k = 0; k < (measures?.length || 0) - 1; k += 1) {
+    if (cropPlan(measures, bounds, k)?.strips.length === 2) out.push(k);
+  }
+  return out;
 }
 
 export const FORM_ERROR_MESSAGES = {
@@ -397,8 +412,9 @@ export default function SheetMusicScore() {
       setNotice({ color: 'red', text: PROPOSE_ERROR_MESSAGES['crop-failed'] });
       return null;
     }
+    const seams = [...plans].filter(([, plan]) => plan.strips.length === 2).map(([k]) => k);
     const outcome = await requestJevProposal({
-      id, features, crops, measureCount, targetLen: proposalTargetLen(pianoConfig),
+      id, features, crops, measureCount, targetLen: proposalTargetLen(pianoConfig), seams,
     });
     if (!alive.current) return null;
     if (!outcome.ok) {
@@ -492,7 +508,12 @@ export default function SheetMusicScore() {
     if (!canWrite) return null;
     const proposal = draftProposal({
       pending, stored: learn?.draft?.proposal, storedSegments: learn?.draft?.segments, segments: editor.segments, dirty,
-      snapshot: score ? { ...featureSnapshot(scoreFeatures(score), engraved?.beatsPerMeasure), ...(learn?.currentSha256 ? { contentSha256: learn.currentSha256 } : {}) } : null,
+      snapshot: score ? {
+        ...featureSnapshot(scoreFeatures(score), engraved?.beatsPerMeasure),
+        // Where this engraving breaks systems, so calibration can split Jev's results the same way.
+        seams: seamBarlines(measures, engraved?.bounds),
+        ...(learn?.currentSha256 ? { contentSha256: learn.currentSha256 } : {}),
+      } : null,
     });
     setBusy('save');
     setServerErrors(null);

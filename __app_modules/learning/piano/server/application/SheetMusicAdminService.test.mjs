@@ -905,6 +905,21 @@ describe('SheetMusicAdminService: proposals and calibration provenance', () => {
     expect(call.reference).toEqual([{ start: 0, end: 1 }, { start: 2, end: 3 }]);
     // A section start needs no crop.
     expect([...call.crops.keys()]).toEqual([0, 2]);
+    expect(call.seams).toEqual([]);
+  });
+
+  it('propose passes seams through, and refuses seams without crops', async () => {
+    const proposer = fakeProposer();
+    const { service } = fixture({ scores: { [ID_A]: { xml: xmlOf(), sha: '1' } }, boundaryScorer: () => 'jev', proposer });
+    await service.propose(ID_A, { ...proposeInput(4), seams: [2] });
+    expect(proposer.calls[0].seams).toEqual([2]);
+    await expect(service.propose(ID_A, { ...proposeInput(4, { sections: [1] }), seams: [1] })).rejects.toMatchObject({ code: 'invalid-request' });
+    await expect(service.propose(ID_A, { ...proposeInput(4), seams: 'x' })).rejects.toMatchObject({ code: 'invalid-request' });
+  });
+
+  it('keeps seams on a stored proposal when they name barlines', () => {
+    expect(cleanProposal({ scorer: 'jev', seams: [2, 0, 2] }, 4)).toEqual({ scorer: 'jev', seams: [0, 2] });
+    expect(cleanProposal({ scorer: 'jev', seams: [3] }, 4)).toEqual({ scorer: 'jev' });
   });
 
   it('propose gives no reference when the approved cuts were a scorer\'s own or are stale', async () => {

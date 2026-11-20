@@ -43,6 +43,16 @@ describe('piano-segment-calibrate', () => {
     expect(result.pieces[0]).toMatchObject({ tp: 1, fp: 0, fn: 1 });
   });
 
+  it('splits seam and interior barlines when the drafts recorded seams', () => {
+    // Heuristic cuts after bar 3; the hand cut after 1 (interior) and 3 (a seam).
+    const files = [{ name: 's.yml', file: learnFile(manual({ seams: [3] }), [{ id: 'a', start: 0, end: 1 }, { id: 'b', start: 2, end: 3 }, { id: 'c', start: 4, end: 7 }]) }];
+    const result = calibrate(files);
+    expect(result.bySeam.seams).toMatchObject({ tp: 1, fp: 0, fn: 0 });
+    expect(result.bySeam.interior).toMatchObject({ tp: 0, fp: 0, fn: 1 });
+    expect(result.pieces[0].seamCounts).toBeUndefined();
+    expect(calibrate([{ name: 'n.yml', file: learnFile(manual()) }]).bySeam).toBeNull();
+  });
+
   it('exits 3 with a clear message when fewer than 4 pieces qualify', async () => {
     const out = []; const err = [];
     const code = await main(['--dir', '/x'], {

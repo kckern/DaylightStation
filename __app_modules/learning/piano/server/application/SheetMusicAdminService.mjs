@@ -149,7 +149,7 @@ const MAX_FEATURE_ROW = FEATURE_KEYS.length;
 /**
  * A draft's `proposal` as stored: only the keys the admin and calibration read
  * (`scorer, model, at, boundaries, featureKeys, features, edited, failedCalls,
- * failedBarlines, beatsPerMeasure, contentSha256`), with boundaries and feature rows limited to the
+ * failedBarlines, beatsPerMeasure, contentSha256, seams`), with boundaries and feature rows limited to the
  * score's barlines (one per barline, measureCount − 1). Each feature row is exactly
  * featureKeys long when keys are given, else no longer than FEATURE_KEYS; one bad
  * row drops them all. `contentSha256` is the score version the proposal was
@@ -165,6 +165,9 @@ export function cleanProposal(raw, measureCount) {
   if (typeof raw.edited === 'boolean') out.edited = raw.edited;
   if (Number.isInteger(raw.failedCalls) && raw.failedCalls >= 0) out.failedCalls = raw.failedCalls;
   if (Number.isInteger(raw.failedBarlines) && raw.failedBarlines >= 0) out.failedBarlines = raw.failedBarlines;
+  if (Array.isArray(raw.seams) && raw.seams.every((k) => Number.isInteger(k) && k >= 0 && k < n - 1)) {
+    out.seams = [...new Set(raw.seams)].sort((a, b) => a - b);
+  }
   if (Number.isFinite(raw.beatsPerMeasure) && raw.beatsPerMeasure > 0) out.beatsPerMeasure = raw.beatsPerMeasure;
   if (typeof raw.contentSha256 === 'string' && /^[0-9a-zA-Z-]{1,128}$/.test(raw.contentSha256)) out.contentSha256 = raw.contentSha256;
   if (isObject(raw.boundaries)) {
@@ -245,9 +248,10 @@ export class SheetMusicAdminService {
    * the reference for the Jev-vs-heuristic comparison.
    * @param {string} id
    * @param {{ features: Array<object>, crops: Map<number, Buffer>, measureCount: number, targetLen?: number,
-   *   signal?: AbortSignal }} input
+   *   signal?: AbortSignal, seams?: number[] }} input
+   *   `seams`: barlines whose crop is two strips joined (a system break or jump).
    */
-  async propose(id, { features, crops, measureCount, targetLen, signal = null } = {}) {
+  async propose(id, { features, crops, measureCount, targetLen, signal = null, seams = [] } = {}) {
     requireLibrary(id);
     const mode = this.boundaryScorer();
     if (mode === 'heuristic') throw codedError('jev-disabled', 'The Jev boundary scorer is not enabled');
@@ -266,12 +270,15 @@ export class SheetMusicAdminService {
       }
       needed.set(f.after, cropMap.get(f.after));
     }
+    if (!Array.isArray(seams) || seams.some((k) => !needed.has(k))) {
+      throw codedError('invalid-request', 'seams must name barlines that have crops');
+    }
     const reference = await this.#calibrationReference(id);
     if (mode === 'calibrate' && !reference) {
       throw codedError('no-reference', `${id} has no current hand-cut approved segments to compare Jev with`);
     }
     const target = Number.isInteger(targetLen) && targetLen >= 1 && targetLen <= 8 ? targetLen : 4;
-    const result = await this.#proposer.execute({ id, features, crops: needed, measureCount, limits: { targetLen: target }, reference, signal });
+    const result = await this.#proposer.execute({ id, features, crops: needed, measureCount, limits: { targetLen: target }, reference, signal, seams });
     return { ...result, mode };
   }
 

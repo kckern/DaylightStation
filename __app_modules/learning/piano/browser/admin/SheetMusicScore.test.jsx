@@ -53,6 +53,7 @@ vi.mock("../../../../../__capabilities/music-notation/browser/parseMusicXml.js",
 }));
 
 import { SheetMusicScore } from "./index.js";
+import { seamBarlines } from "./SheetMusicScore.jsx";
 import { scoreViewPath } from "../PianoKiosk/modes/SheetMusic/sheetMusicModel.js";
 
 const DEFAULT_ID = 'files:docs/sheet-music/classical/fur-elise.musicxml';
@@ -382,7 +383,7 @@ describe('SheetMusicScore', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
     await waitFor(() => expect(putCalls().length).toBe(1));
     const { proposal } = putCalls()[0][1];
-    expect(proposal).toMatchObject({ scorer: 'manual', beatsPerMeasure: 4, contentSha256: 'sha-now' });
+    expect(proposal).toMatchObject({ scorer: 'manual', beatsPerMeasure: 4, contentSha256: 'sha-now', seams: [] });
     expect(proposal.features).toHaveLength(7);
     expect(proposal.featureKeys.length).toBe(proposal.features[0].length);
   });
@@ -411,7 +412,7 @@ describe('SheetMusicScore', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Propose segments' }));
       await waitFor(() => expect(jevRequest).toHaveBeenCalledTimes(1));
       const [req] = jevRequest.mock.calls[0];
-      expect(req).toMatchObject({ id: DEFAULT_ID, measureCount: 8, targetLen: 4 });
+      expect(req).toMatchObject({ id: DEFAULT_ID, measureCount: 8, targetLen: 4, seams: [] });
       expect(req.features).toHaveLength(7);
       expect([...req.crops.keys()]).toEqual([0, 1, 2, 3, 4, 5, 6]);
       expect([...renderCrops.mock.calls[0][1].values()][0]).toMatchObject({ marker: { x: 50 } });
@@ -434,6 +435,8 @@ describe('SheetMusicScore', () => {
           comparison: {
             jev: { precision: 1, recall: 1, tolerant: { precision: 1, recall: 1 } },
             heuristic: { precision: 0, recall: 0, tolerant: { precision: 0.5, recall: 0.5 } },
+            seams: { jev: { precision: 1, recall: 1 }, heuristic: { precision: 0, recall: 0 } },
+            interior: { jev: { precision: 1, recall: 1 }, heuristic: { precision: null, recall: 0 } },
           },
         },
       });
@@ -441,7 +444,7 @@ describe('SheetMusicScore', () => {
       await engravedReady();
       expect(screen.queryByRole('radio', { name: 'Jev' })).toBeNull();
       fireEvent.click(await screen.findByRole('button', { name: 'Compare with Jev' }));
-      expect(await screen.findByText(/Jev precision 100%, recall 100% \(within a bar: 100% \/ 100%\); heuristic precision 0%/)).toBeTruthy();
+      expect(await screen.findByText(/Jev precision 100%, recall 100% \(within a bar: 100% \/ 100%\); heuristic precision 0%.*At system breaks: Jev precision 100%.*Elsewhere: Jev precision 100%, recall 100%, heuristic precision n\/a/)).toBeTruthy();
       expect(within(screen.getByTestId('measure-strip-draft')).getByRole('button', { name: 'Segment 1, Bars 1-8' })).toBeTruthy();
       expect(screen.queryByText('unsaved changes')).toBeNull();
       expect(logged.find((l) => l.event === 'admin.sheetmusic.propose-compared')?.data).toMatchObject({ jevRecall: 1, heuristicRecall: 0 });
@@ -591,5 +594,16 @@ describe('SheetMusicScore', () => {
       expect(await screen.findByText(/hand-made SVG poster/)).toBeTruthy();
       expect(logged.find((l) => l.event === 'admin.sheetmusic.poster-failed')?.data).toMatchObject({ code: 'poster-exists' });
     });
+  });
+});
+
+describe('seamBarlines', () => {
+  it('names the barlines whose Jev crop is two strips', () => {
+    // Bars 0-2 on one system, 3-4 on the next.
+    const bounds = [0, 1, 2, 3, 4].map((i) => (i < 3
+      ? { left: i * 100, right: i * 100 + 100, top: 0, bottom: 60 }
+      : { left: (i - 3) * 100, right: (i - 3) * 100 + 100, top: 200, bottom: 260 }));
+    expect(seamBarlines([0, 1, 2, 3, 4].map((index) => ({ index })), bounds)).toEqual([2]);
+    expect(seamBarlines([0, 1, 3, 4].map((index) => ({ index })), bounds)).toEqual([1]);
   });
 });

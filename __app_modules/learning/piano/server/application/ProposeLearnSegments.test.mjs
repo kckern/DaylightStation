@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ProposeLearnSegments, pngDimensions, measurementsOf, JEV_BATCH_SIZE, CALL_TIMEOUT_MS } from './ProposeLearnSegments.mjs';
+import { ProposeLearnSegments, pngDimensions, measurementsOf, JEV_BATCH_SIZE, CALL_TIMEOUT_MS, DEADLINE_MS } from './ProposeLearnSegments.mjs';
 
 /** A PNG header with the given size (enough for pngDimensions and the adapter's check). */
 function png(width = 400, height = 300) {
@@ -188,7 +188,7 @@ describe('ProposeLearnSegments', () => {
     const original = gateway.evaluate.bind(gateway);
     gateway.evaluate = async (...args) => { t += 50_000; return original(...args); };
     const log = logger();
-    // 31 barlines → 4 batches; each call "takes" 50 s, deadline 75 s.
+    // 31 barlines → 4 batches; each call "takes" 50 s, deadline 60 s.
     await expect(new ProposeLearnSegments({ gateway, logger: log, nowMs: () => t }).execute(input(32)))
       .rejects.toMatchObject({ code: 'proposal-failed' });
     expect(gateway.calls.length).toBeLessThan(4);
@@ -208,6 +208,24 @@ describe('ProposeLearnSegments', () => {
   it('measurements keep only known finite fields', () => {
     expect(measurementsOf({ after: 3, tailGapRatio: 0.5, bassMotion: null, densityChange: NaN, restBar: true, extra: 9 }))
       .toEqual({ tailGapRatio: 0.5, restBar: true });
+  });
+
+  it('asks about the end of the left piece on a seam crop, and records seams', async () => {
+    const gateway = fakeGateway({ pOf: (k) => (k === 3 ? 0.95 : 0.05) });
+    const log = logger();
+    const result = await new ProposeLearnSegments({ gateway, logger: log })
+      .execute({ ...input(8), seams: [3, 9, 'x'], reference: [{ start: 0, end: 3 }, { start: 4, end: 5 }, { start: 6, end: 7 }] });
+    const questions = Object.assign({}, ...gateway.calls.map((c) => c.questions));
+    expect(questions.bar_3.instructions).toContain('end of the left piece');
+    expect(questions.bar_2.instructions).not.toContain('left piece');
+    expect(result.proposal.seams).toEqual([3, 9]);
+    expect(result.comparison.seams.jev).toMatchObject({ tp: 1, fp: 0, fn: 0 });
+    expect(result.comparison.interior.jev).toMatchObject({ tp: 0, fn: 1 });
+    expect(log.logs.find((l) => l.event === 'piano.sheetmusic.propose.compared').data).toMatchObject({ seamBarlines: 2, jevSeamRecall: 1, jevInteriorRecall: 0 });
+  });
+
+  it('stops issuing batches at 60 s, inside a proxy timeout', () => {
+    expect(DEADLINE_MS).toBe(60_000);
   });
 
   it('reads PNG dimensions', () => {

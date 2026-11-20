@@ -47,6 +47,7 @@ function union(list, bounds, measures) {
  * position is not the next engraved bar (an all-rest bar skipped, a jump), the
  * two sides are separate strips drawn side by side with the marker at the seam.
  * Coordinates are the engraving's px; `dx` places each strip in the composite.
+ * A two-strip plan is a "seam": the server asks Jev about the end of the left piece.
  * @param {Array<{index:number}>} measures - layout.measures
  * @param {Array<{left,right,top,bottom}|null>} bounds - per engraved bar (extractMeasureBounds)
  * @returns {{ strips: Array<{x,y,width,height,dx}>, width: number, height: number,
@@ -198,9 +199,9 @@ export async function renderCrops(svg, plans) {
  * POSTs features and crops. Resolves `{ ok: true, result }` or
  * `{ ok: false, code, status }` (`code` null when the body had none).
  */
-export async function requestJevProposal({ id, features, crops, measureCount, targetLen }) {
+export async function requestJevProposal({ id, features, crops, measureCount, targetLen, seams = [] }) {
   const body = new FormData();
-  body.append('features', JSON.stringify({ features, measureCount, targetLen }));
+  body.append('features', JSON.stringify({ features, measureCount, targetLen, seams }));
   for (const [k, blob] of crops) body.append(`crop_${k}`, blob, `crop_${k}.png`);
   let response;
   try {

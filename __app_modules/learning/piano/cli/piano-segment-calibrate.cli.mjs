@@ -11,7 +11,9 @@
  * out of the overall figures. The
  * heuristic is re-run offline from those features, through the same
  * partitionSegments, and its cuts are compared with the approved ones: boundary
- * precision and recall per piece and overall. No network, no AI spend.
+ * precision and recall per piece and overall, and (for drafts that recorded where
+ * the engraving broke systems) split into seam and interior barlines. No network,
+ * no AI spend.
  *
  * Jev needs score pictures, which are not stored, so it is not re-run here. Its
  * side of the comparison comes from the admin score page: on a piece with
@@ -31,7 +33,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import yaml from 'js-yaml';
 import {
-  boundaryAgreement, boundaryProbabilities, partitionSegments, recordsFromRows,
+  boundaryProbabilities, partitionSegments, recordsFromRows, splitAgreement,
 } from '../portable/music/phraseSegments.mjs';
 import { EXIT_OK, EXIT_FAIL, EXIT_USAGE, EXIT_CONFIG } from '../../../../cli/_output.mjs';
 
@@ -70,12 +72,25 @@ function scorePiece(name, file, targetLen) {
   const measureCount = records.length + 1;
   const reference = file.segments.map(({ start, end }) => ({ start, end }));
   const heuristic = partitionSegments(measureCount, boundaryProbabilities(records), { ...LIMITS, targetLen });
-  const agreement = boundaryAgreement(heuristic, reference, measureCount);
+  const seams = Array.isArray(file.approved.proposal.seams) ? file.approved.proposal.seams : null;
+  const split = splitAgreement(heuristic, reference, measureCount, seams || []);
+  const agreement = split.all;
+  const counts = (a) => ({ tp: a.tp, fp: a.fp, fn: a.fn, nearTp: a.tolerant.tp });
   return {
     name, scoreId: file.scoreId ?? null, measureCount, tp: agreement.tp, fp: agreement.fp, fn: agreement.fn,
     precision: agreement.precision, recall: agreement.recall,
     nearPrecision: agreement.tolerant.precision, nearRecall: agreement.tolerant.recall, nearTp: agreement.tolerant.tp,
+    // Only when the draft recorded where its engraving broke systems.
+    ...(seams ? { seamCounts: counts(split.seams), interiorCounts: counts(split.interior) } : {}),
   };
+}
+
+/** Totals over the pieces that recorded seams, for seam and interior barlines apart. */
+function splitTotals(pieces) {
+  const known = pieces.filter((p) => p.seamCounts);
+  if (!known.length) return null;
+  const of = (key) => totals(known.map((p) => p[key]));
+  return { pieces: known.length, seams: of('seamCounts'), interior: of('interiorCounts') };
 }
 
 function totals(pieces) {
@@ -90,7 +105,7 @@ function totals(pieces) {
   };
 }
 
-const rounded = (p) => ({
+const rounded = ({ seamCounts, interiorCounts, ...p }) => ({
   ...p, precision: round(p.precision), recall: round(p.recall), nearPrecision: round(p.nearPrecision), nearRecall: round(p.nearRecall),
 });
 
@@ -117,6 +132,7 @@ export function calibrate(files, { targetLen = 4 } = {}) {
   return {
     pieces: pieces.map(rounded),
     overall: totals(pieces),
+    bySeam: splitTotals(pieces),
     edited: edited.map(rounded),
     skipped,
   };
@@ -166,6 +182,10 @@ function table(result) {
   const lines = [HEADER];
   for (const p of result.pieces) lines.push(row(p.name, p));
   lines.push(row('overall', result.overall));
+  if (result.bySeam) {
+    lines.push(row(`  at system breaks (${result.bySeam.pieces} pieces)`, result.bySeam.seams));
+    lines.push(row('  elsewhere', result.bySeam.interior));
+  }
   if (result.edited.length) {
     lines.push('', 'edited scorer proposals (not counted above):', HEADER);
     for (const p of result.edited) lines.push(row(p.name, p));
