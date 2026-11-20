@@ -54,6 +54,7 @@ const KIDS = {
   dot: { name: 'Dot', course: courseOf('Lesson 3 | Hot Cross Buns', null, { completed: 2, total: 40 }) },
   fay: { name: 'Fay', piece: pieceOf('nocturne', 3, () => 'gold', { cover: '/img/minuet.svg', polish: { gem: true, diamond: false }, next: { passageId: 'p1', skill: 'pulse', label: 'Settle into a beat with both hands', start: 4, end: 7 } }) },
   gus: { name: 'Gus', piece: pieceOf('nocturne', 4, (i) => (i < 2 ? 'gold' : 'silver'), { cover: '/img/jingle.svg' }) },
+  hal: { name: 'Hal', piece: pieceOf('minuet', 10, () => 'silver', { cover: '/img/minuet.svg' }) },
   eve: { name: 'Eve', piece: pieceOf('minuet', 7, (i) => (i < 5 ? 'silver' : i === 5 ? 'learning' : 'todo'), { cover: '/img/minuet.svg' }) },
 };
 
@@ -103,8 +104,8 @@ beforeAll(async () => {
 afterAll(async () => { await browser?.close(); });
 
 /** The strip for these children, as the kiosk draws it: under a 70px header, over the menu. */
-async function open(ids, { disabled = false } = {}) {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+async function open(ids, { disabled = false, touch = false } = {}) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, hasTouch: touch });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   const desk = { players: ids.map((id) => ({ userId: id, name: KIDS[id].name, piece: KIDS[id].piece ?? null })) };
@@ -198,6 +199,17 @@ describe('the progress strip at 1280x800', () => {
     await page.close();
   });
 
+  it('fits long two-line titles, skill lines and a 10/10 count on tall cards', async () => {
+    const { page, errors } = await open(['hal', 'ben', 'fay', 'gus']);
+    // Hal's ten passages take two rows, so every card is tall.
+    expect(await page.evaluate(() => [...document.querySelectorAll('.piano-desk__card')].map((c) => Math.round(c.getBoundingClientRect().height)))).toEqual([170, 170, 170, 170]);
+    expect(await page.locator('.piano-desk__child').first().locator('.piano-desk__count').textContent()).toContain('10/10');
+    expect(await spills(page)).toEqual([]);
+    await shot(page, 'four-children-tall-long-titles');
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
   it('fits two children', async () => {
     const { page, errors } = await open(['ada', 'cleo']);
     expect(await spills(page)).toEqual([]);
@@ -232,6 +244,38 @@ describe('the progress strip at 1280x800', () => {
     await page.waitForTimeout(700);
     await page.locator('.piano-desk__child').first().locator('.piano-desk__card').click();
     expect(await page.evaluate(() => window.__opened)).toEqual([['ada', 'plex:9', 'plex:91']]);
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
+  it('switches on a real touch swipe, then opens on a tap straight after it, and ignores a vertical pan', async () => {
+    const { page, errors } = await open(['ada', 'eve', 'cleo', 'dot'], { touch: true });
+    const cdp = await page.context().newCDPSession(page);
+    const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y]) => ({ x, y })) });
+    const deckCard = () => page.locator('.piano-desk__child').first().locator('.piano-desk__card');
+    const box = await deckCard().boundingBox();
+    const y = box.y + box.height / 2;
+    // Swipe left with a finger: the card switches, nothing opens.
+    await touch('touchStart', [[box.x + box.width - 30, y]]);
+    for (let step = 1; step <= 8; step += 1) await touch('touchMove', [[box.x + box.width - 30 - step * 15, y]]);
+    await touch('touchEnd', []);
+    await page.waitForTimeout(50);
+    expect(await deckCard().getAttribute('data-kind')).toBe('course');
+    expect(await page.evaluate(() => window.__opened ?? [])).toEqual([]);
+    // A tap at once (no click came after the drag): it opens.
+    const tapAt = [box.x + 60, box.y + 40];
+    await touch('touchStart', [tapAt]);
+    await touch('touchEnd', []);
+    await page.waitForFunction(() => (window.__opened ?? []).length > 0, null, { timeout: 3000 });
+    expect(await page.evaluate(() => window.__opened)).toEqual([['ada', 'plex:9', 'plex:91']]);
+    // A vertical pan on the card: no switch, nothing opens.
+    await page.evaluate(() => { window.__opened = []; });
+    await touch('touchStart', [[box.x + 60, box.y + 20]]);
+    for (let step = 1; step <= 8; step += 1) await touch('touchMove', [[box.x + 62, box.y + 20 + step * 15]]);
+    await touch('touchEnd', []);
+    await page.waitForTimeout(400);
+    expect(await deckCard().getAttribute('data-kind')).toBe('course');
+    expect(await page.evaluate(() => window.__opened)).toEqual([]);
     expect(errors).toEqual([]);
     await page.close();
   });

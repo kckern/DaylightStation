@@ -26,14 +26,15 @@ browser may send after it, so a swipe never also opens the card; the next pointe
 disarms that (the Android WebView sends no click after a drag), so a tap straight after
 a swipe opens. Vertical gestures and wobbles under 12px are ignored, so a jittery tap
 still opens. Only the first finger counts: a second pointer, or a new one during a
-gesture, is ignored, and a lost pointer capture ends the drag like a cancel. The follow
+gesture, is ignored, and the deck losing its pointer capture ends the drag like a cancel
+(the card losing touch's implicit capture to the deck does not). The follow
 offset is written straight to the CSS variable, so a drag does not re-render the card. A swipe logs `piano.desk.swipe` (debug,
 `{ userId, from, to }`). With `prefers-reduced-motion` the card neither follows nor
 slides; it swaps in place. Closed (curfew, a pending lesson) there is no swiping.
 
 The header keeps two tabs at its right as indicators: ♪ **Sheet music** (the piece) and
 ▶ **Video lesson** (the course), 32px round buttons with an 18px icon (their hit area
-reaches a few px past the circle) with that `aria-label` and `aria-pressed`. They are
+reaches a few px past the circle), labelled with the child's name (`Ada: Video lesson`), with `aria-pressed`. They are
 light: no ring, the shown one a soft accent tint. Tapping one still swaps the card and
 never opens anything (logs `piano.desk.tab`, debug, `{ userId, kind }`). The card shown
 is the most recent of the two (piece `practicedAt`, course `lastPlayedAt`; a tie keeps
@@ -129,8 +130,9 @@ on the strip needs two coin rows, every card grows to 170px together (`data-tall
 posters grow with it at 2:3) so the row stays even; a long piece behind a child's other
 tab does not count. `PianoHomeDesk.layout.test.jsx` renders the strip in Chromium at
 1280x800 (two and four children, short and long titles (two-line piece titles with a skill line at 150px), 2, 3, 4, 7 and 20 passages, a missing
-episode still, closed), checks that nothing spills out of a card, swipes a card with a
-real pointer, and saves screenshots (to `DESK_SHOTS`, else the OS temp folder). The children's
+episode still, a 10/10 count, closed), checks that nothing spills out of a card, swipes a
+card with a real mouse and with real touch (CDP touch events: a tap straight after a
+swipe opens, a vertical pan is ignored), and saves screenshots (to `DESK_SHOTS`, else the OS temp folder). The children's
 panels share the row (`flex: 1 1 0`, at most 300px each, 16px apart): four children in
 the 1216px row get about 292px each. A crowded row shrinks its cards rather than
 scrolling or cutting one off.

@@ -82,7 +82,10 @@ export default function useCardSwipe({ enabled, onSwipe }) {
     if (swiped) onSwipe(dx < 0 ? 'left' : 'right');
   };
 
-  const onLost = () => { if (start.current) reset(); };
+  const onCancel = (event) => { if (start.current && start.current.id === event.pointerId) reset(); };
+  // Only the deck's own capture ending counts: taking the capture to the deck makes
+  // the card (touch captures implicitly to it) lose one, which must not end the drag.
+  const onLost = (event) => { if (event.target === event.currentTarget) onCancel(event); };
 
   const onPointerLeave = () => {
     // Without a capture (no sideways drag yet), a finger leaving the card ends the gesture.
@@ -99,7 +102,7 @@ export default function useCardSwipe({ enabled, onSwipe }) {
 
   return {
     ref,
-    handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onLost, onLostPointerCapture: onLost, onPointerLeave, onClickCapture },
+    handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onCancel, onLostPointerCapture: onLost, onPointerLeave, onClickCapture },
     dragging,
   };
 }

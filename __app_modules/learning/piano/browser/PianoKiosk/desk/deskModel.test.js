@@ -56,7 +56,6 @@ describe('deskModel', () => {
     expect(cardBadge({ kind: 'piece', piece: { silver: 1, gold: 0, total: 3 } })).toEqual({ level: 'silver', label: 'Silver next' });
     expect(cardBadge({ kind: 'piece', piece: { silver: 3, gold: 1, total: 3 } })).toEqual({ level: 'gold', label: 'Gold next' });
     expect(cardBadge({ kind: 'piece', piece: { silver: 3, gold: 3, total: 3 } })).toEqual({ level: 'gold', label: 'Polish next' });
-    expect(cardBadge({ kind: 'course', course: {} })).toEqual({ level: 'lesson', label: 'Next lesson' });
   });
   it('once a piece is all Gold, badges the Polish goal: Polish next, Diamond next, then Diamond', () => {
     const allGold = { silver: 3, gold: 3, total: 3 };

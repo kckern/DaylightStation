@@ -193,7 +193,7 @@ function ChildPanel({ group, card, disabled, onChoose, onSwipe, onOpen }) {
           <span className="piano-desk__tabs">
             {TABS.filter((tab) => group.cards.some((c) => c.kind === tab.kind)).map((tab) => (
               <button type="button" key={tab.kind} className="piano-desk__tab" data-kind={tab.kind} disabled={disabled}
-                aria-label={tab.label} aria-pressed={card.kind === tab.kind}
+                aria-label={`${group.name}: ${tab.label}`} aria-pressed={card.kind === tab.kind}
                 onClick={() => { setEnter(null); onChoose(group.userId, tab.kind); }}>
                 <Icon name={tab.icon} />
               </button>

@@ -92,12 +92,12 @@ export const lessonTitle = (title) => {
 };
 
 /**
- * Why a card is on the strip, as its badge: Silver next, Gold next, then the
- * Polish goal once the piece is all Gold (Polish next, Diamond next after the
- * gem, Diamond after the diamond), or Next lesson.
+ * Why a piece card is on the strip, as its badge: Silver next, Gold next, then
+ * the Polish goal once the piece is all Gold (Polish next, Diamond next after
+ * the gem, Diamond after the diamond). Course cards have no badge: the next
+ * episode's still says which lesson is next.
  */
 export function cardBadge(card) {
-  if (card.kind === 'course') return { level: 'lesson', label: 'Next lesson' };
   const { silver, gold, total, polish } = card.piece;
   if (total > 0 && gold >= total) {
     if (polish?.diamond === true) return { level: 'diamond', label: 'Diamond' };
