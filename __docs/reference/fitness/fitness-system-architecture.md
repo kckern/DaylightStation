@@ -252,9 +252,11 @@ episode with no duration, is credited — the session is the only evidence.
   episode in 8,267 at the time of writing. Logs: `fitness.show.stills_loaded`
   / `stills_failed` (hook), `fitness.show.stills_grid_live`, and sampled
   `fitness.show.still_failed` / `still_flat` (rail).
-- **Gamepad / arrow keys.** The D-pad walks the grid (columns read from the
-  grid), focus selects and puts a solid ring on the card; A / Enter plays the
-  focused episode (Resume when it resumes). Focus never launches, and a locked
+- **Gamepad / arrow keys.** The D-pad or left stick walks the grid (columns
+  read from the grid; `useGamepadKeys`), focus selects and puts a solid ring on
+  the card; A / Enter plays the focused episode (Resume when it resumes). A
+  button already held when the grid takes the keys needs a release and a new
+  press. Focus never launches, and a locked
   episode is left to its tap-to-unlock path. Keys belong to the sidebar menu
   while it is open and to the player while something plays. Episodes are
   compared by `episodeKey` (`plex`, else `id`) — playable items may carry only
@@ -1105,8 +1107,8 @@ chip that opens it with no focus (shown whenever the economy is not `off`). The
 chip is the area legend: a blue gem "Move", a yellow gem "School", a green
 gem "Games" (`AREA_COLORS` / `AREA_WORDS` in `GemBoard/AreaIcon.jsx`, mirroring
 the server's `GEM_AREAS`).
-While it is open the garage gamepads drive it (`useGamepadKeys`: D-pad ←/→
-moves the column and ↑/↓ a row cursor, A opens the cell under the cursor or,
+While it is open the garage gamepads drive it (`useGamepadKeys`: D-pad or
+left stick ←/→ moves the column and ↑/↓ a row cursor, A opens the cell under the cursor or,
 with no row picked, toggles the week, B closes the detail box, then the board). See the economy reference, "Gem Board".
 
 The widget computes from the home screen's `sessions` source, which FitnessApp
