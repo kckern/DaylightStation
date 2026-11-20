@@ -28,6 +28,7 @@ import { IconAlertTriangle } from '@tabler/icons-react';
 import { Button } from '@mantine/core';
 import { useFocusTrap } from '@mantine/hooks';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
+import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import { useContentCombobox } from "../../../../../__capabilities/content-catalog/browser/picker-controller.mjs";
 import { StreamStatusLine } from "../../../../../__capabilities/content-catalog/browser/search-status.mjs";
 import { ResultRow } from "../../../../../__capabilities/content-catalog/browser/result-row.mjs";
@@ -48,12 +49,6 @@ import { ItemDestinationPicker } from "../actions/ItemDestinationPicker.jsx";
 import { useHouseholdResultActions } from "../household/useHouseholdResultActions.js";
 import "./Search.scss";
 import "../shell/SessionControls.scss";
-
-function SearchResultRow(props) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  useDismissLayer(menuOpen, undefined, { managed: true });
-  return <ResultRow {...props} onMenuOpenChange={setMenuOpen} />;
-}
 
 // `addTo` ({ deviceId, name }) opens this search for ONE addition to that
 // screen's queue (STEER.1b/AC7, RQ-STEER-22): every pick is added there, the
@@ -341,7 +336,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
         )}
         {results.map((item) => (
           <li key={item.id} className="result-row">
-            <SearchResultRow
+            <ResultRow
               item={item}
               title={displayTitle(item)}
               subtitle={rowLabelsFor(item)?.subtitle ?? resultSubtitle(item)}
@@ -353,6 +348,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
               onTap={() => handleChange(item.id, item)}
               onPlayAll={() => handlePlayAll(item)}
               rowLabels={rowLabelsFor(item)}
+              MoreMenu={ActionMenu}
               onMore={(action) => handleMore(action, item)}
               onAction={({ kind }) => handleMore(kind, item)}
               extraActions={extraActions}

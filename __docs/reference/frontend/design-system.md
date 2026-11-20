@@ -211,7 +211,7 @@ it.
 
 ## Primitives
 
-For a content picker or search combo, use `ContentCombobox` from the catalog capability. Its `value` and `onChange` bind the selected content ID to the editor. The controller and result rows are also available for Media’s full-screen search. [Public picker export](../../../__capabilities/content-catalog/browser/picker.mjs) · [Admin form example](../../../__capabilities/content-catalog/browser/admin/ListsItemEditor.jsx)
+For a content picker or search combo, use `ContentCombobox` from the catalog capability. Its `value` and `onChange` bind the selected content ID to the editor. Media’s full-screen search uses the catalog controller and result rows with `ActionMenu` for the standalone More menu. [Public picker export](../../../__capabilities/content-catalog/browser/picker.mjs) · [Admin form example](../../../__capabilities/content-catalog/browser/admin/ListsItemEditor.jsx) · [Media full-screen search](../../../__app_modules/media/media/browser/search/SearchMode.jsx)
 
 The primitives in the table are exported from `frontend/src/lib/ui/index.js`. Use them for shared layout, cards and feedback. Use the app’s themed Mantine controls for labelled fields, radio groups, chips and menus.
 

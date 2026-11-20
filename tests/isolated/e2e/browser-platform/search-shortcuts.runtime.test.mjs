@@ -191,7 +191,7 @@ test('desktop Media closes slideshow music search and dialog before leaving Now 
   await expect(page).toHaveURL(/view=fleet/);
 });
 
-test('phone Media dismisses the item destination picker before Search and preserves Browse history', async ({ page }) => {
+test('phone Media gives More native Tab order and lets the destination picker dismiss before Search', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 850 });
   const item = await installMediaSearchResult(page);
   await page.goto('/media');
@@ -213,23 +213,39 @@ test('phone Media dismisses the item destination picker before Search and preser
   await page.keyboard.press('Tab');
   await expect(close).toBeFocused();
 
+  await more.press('Shift+Tab');
+  const previous = await page.evaluateHandle(() => document.activeElement);
   const playOn = page.getByRole('menuitem', { name: 'Play on…', exact: true });
   await more.press('Enter');
   await expect(playOn).toBeVisible();
   const menu = page.getByRole('menu');
   await playOn.focus();
   await page.keyboard.press('Tab');
-  await expect(menu.locator(':focus')).toHaveCount(1);
+  await expect(menu).toBeHidden();
+  await expect(close).toBeFocused();
+
+  await more.press('Enter');
+  await page.keyboard.press('ArrowDown');
+  await expect(menu.getByRole('menuitem', { name: 'Play Next', exact: true })).toBeFocused();
   await page.keyboard.press('Shift+Tab');
-  await expect(menu.locator(':focus')).toHaveCount(1);
+  await expect(menu).toBeHidden();
+  await expect.poll(() => previous.evaluate(element => document.activeElement === element)).toBe(true);
+  await previous.dispose();
+  await expect(search).toHaveValue(item.title);
+  expect(await page.evaluate(() => history.state.mediaSearchMode)).toBe(true);
+
+  await more.press('Enter');
+  await expect(menu.getByRole('menuitem', { name: 'Play Now', exact: true })).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(playOn).toBeHidden();
+  await expect(more).toBeFocused();
   await expect(search).toHaveValue(item.title);
 
   await more.click();
   await playOn.click();
   const picker = page.getByRole('dialog', { name: 'Play on…', exact: true });
   await expect(picker).toBeVisible();
+  await expect(menu).toBeHidden();
   await expect(picker.locator(':focus')).toHaveCount(1);
   await page.keyboard.press('Shift+Tab');
   await expect(picker.locator(':focus')).toHaveCount(1);
