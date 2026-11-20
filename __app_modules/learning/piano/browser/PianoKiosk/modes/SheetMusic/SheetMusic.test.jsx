@@ -256,6 +256,36 @@ describe('SheetMusic mode', () => {
       expect(await screen.findByTestId('score-player')).toBeTruthy();
     });
 
+    it('a score closed while its Learn fetch is pending stays quiet: no retry, no failure log', async () => {
+      const id = 'files:docs/sheet-music/closed-early.musicxml';
+      const path = `api/v1/piano/sheet-music/learn?id=${encodeURIComponent(id)}`;
+      let rejectLearn;
+      api.mockImplementation((p) => (p === path ? new Promise((_, rej) => { rejectLearn = rej; }) : Promise.resolve({})));
+      apiText.mockResolvedValue('<score-partwise/>');
+      const { unmount } = renderSheet({ collection: 'files:docs/sheet-music' }, `/sheetmusic/view/${id}`);
+      await waitFor(() => expect(rejectLearn).toBeTypeOf('function'));
+      unmount();
+      rejectLearn(new Error('late'));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(api.mock.calls.filter(([p]) => p === path).length).toBe(1);
+      expect(recent('piano.score-learn-failed')
+        .filter((e) => e.data?.id === 'docs/sheet-music/closed-early.musicxml')).toHaveLength(0);
+    });
+
+    it('a score closed while its XML fetch is pending logs no open failure', async () => {
+      let rejectXml;
+      api.mockResolvedValue({});
+      apiText.mockImplementation(() => new Promise((_, rej) => { rejectXml = rej; }));
+      const { unmount } = renderSheet({ collection: 'files:docs/sheet-music' },
+        '/sheetmusic/view/files:docs/sheet-music/closed-xml.musicxml');
+      await waitFor(() => expect(rejectXml).toBeTypeOf('function'));
+      unmount();
+      rejectXml(new Error('late'));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(recent('piano.score-open-failed')
+        .filter((e) => e.data?.id === 'docs/sheet-music/closed-xml.musicxml')).toHaveLength(0);
+    });
+
     it('"Try again" after a Learn failure refetches both and opens the player', async () => {
       let fail = true;
       routeApi(() => (fail ? Promise.reject(new Error('down')) : Promise.resolve({ segments: [], contentSha256: 'x' })));

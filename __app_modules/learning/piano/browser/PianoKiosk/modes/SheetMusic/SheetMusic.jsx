@@ -95,11 +95,12 @@ function ScoreViewerRoute() {
  * immediate retry and then shows the same "Try again" screen as an XML failure.
  * `{}` (no approved segments) is a success.
  */
-async function fetchLearnFile(contentId) {
+async function fetchLearnFile(contentId, isCancelled) {
   const path = `api/v1/piano/sheet-music/learn?id=${encodeURIComponent(contentId)}`;
   try {
     return await DaylightAPI(path);
-  } catch {
+  } catch (err) {
+    if (isCancelled()) throw err; // a closed score makes no second request
     return DaylightAPI(path); // one automatic retry; a second failure propagates
   }
 }
@@ -126,6 +127,9 @@ function NotationScore({ contentId }) {
         fetchMsRef.current = performance.now() - t0;
         if (!cancelled) setXml(text);
       } catch (err) {
+        // A cancelled open (navigated away, or Try again restarted it) is not a
+        // failure of this run: stay quiet.
+        if (cancelled) return;
         // Audit L2: this failure used to go only to the plain kiosk logger, so the
         // per-run session file showed the open and then nothing — no recorded
         // reason. Route it into the same file as the rest of the run by tagging
@@ -136,19 +140,20 @@ function NotationScore({ contentId }) {
         // is enough for it to land in the active run log.
         logger.warn('piano.score-open-failed', { id: localId, error: err.message },
           { context: { app: 'piano-sheetmusic', sessionLog: true } });
-        if (!cancelled) setXml('');
+        setXml('');
       }
     })();
     (async () => {
       try {
-        const file = await fetchLearnFile(contentId);
+        const file = await fetchLearnFile(contentId, () => cancelled);
         if (!cancelled) setLearnFile(file && typeof file === 'object' ? file : {});
       } catch (err) {
+        if (cancelled) return; // same as above: a cancelled open logs nothing
         // Same session-log routing as piano.score-open-failed above (and for the
         // same reason: tag the event's context, never make a sessionLog child).
         logger.warn('piano.score-learn-failed', { id: localId, error: err?.message },
           { context: { app: 'piano-sheetmusic', sessionLog: true } });
-        if (!cancelled) setLearnFile(null);
+        setLearnFile(null);
       }
     })();
     return () => { cancelled = true; };
