@@ -38,13 +38,6 @@ const BATCH_TAKE = 20;
 const SEARCH_DEBOUNCE_MS = 300;
 const PAGE_SIZE = 21;
 
-// Identity of a search run: the query text AND the scope params it ran under.
-// Every once-per-search guard in this hook keys on this pair rather than on
-// the text alone, so re-running the same words under a different scope chip
-// counts as a new search (see the settle/recovery effects below). The unit
-// separator can't occur in either half, so the pair can never collide.
-const searchKey = (text, params) => `${text}\u001f${params ?? ''}`;
-
 /** Check if the browser supports Server-Sent Events. */
 function supportsSSE() {
   return typeof EventSource !== 'undefined';
@@ -237,24 +230,12 @@ export function useContentCombobox({
   // — the SSE stream is uncapped and can blow past the cap, unlike the batch
   // fallback which the server already limits to BATCH_TAKE.
   const [rawResultCount, setRawResultCount] = useState(0);
-  const queryRef = useRef(''); // last dispatched search text (for app-result merge)
-  // The `searchParams` value the last USER-initiated dispatch ran under (a
-  // keystroke or a scope change — NOT the D5 widening, which deliberately
-  // overrides the params for one request without changing the active scope).
-  // Two things need it: (a) the settle/recovery effects must ignore a settle
-  // that belongs to the PREVIOUS scope, which is otherwise indistinguishable
-  // from a real one because the transports are idle and the box text is
-  // unchanged the instant a chip is tapped; (b) the one-shot guards below key
-  // on it, so a scope change re-arms them.
-  const dispatchedParamsRef = useRef(searchParams);
-  // D5: true once the current query text has widened from `searchParams` to
-  // `fallbackSearchParams` after a clean empty settle. Reset on every new
-  // INPUT (handleInput) and on every scope change so a stale flag never
-  // survives onto a different query or a different scope.
+  // Each user dispatch owns its settle log and recovery. Source retries and
+  // catalog-wide fallback keep that owner even when their request params differ.
+  const searchAttemptRef = useRef(null);
   const [fellBackToAll, setFellBackToAll] = useState(false);
   const clearBatchSearch = useCallback(() => {
     cancelBatch();
-    queryRef.current = '';
     setBatchLoading(false);
     setBatchResults([]);
   }, [cancelBatch]);
@@ -283,29 +264,30 @@ export function useContentCombobox({
     const q = isBareSourcePrefix(text) ? '' : text;
     setDebouncePending(false);
     log.info('search.dispatch', { text: q, mode, scopeKey: scopeKey ?? null });
-    queryRef.current = q;
-    // Stamp the scope this dispatch runs under. `searchParams` is read fresh
-    // here (Mantine's useDebouncedCallback holds the callback in a ref, so
-    // this closure is never stale) — the whole point is that a scope change
-    // followed by a re-dispatch must be observable to the settle/recovery
-    // effects below.
-    dispatchedParamsRef.current = searchParams;
+    searchAttemptRef.current = q.length >= 2
+      ? { text: q, params: searchParams, logged: false, retried: false, widened: false }
+      : null;
     if (supportsSSE()) streamSearch(q);
     else doBatchSearch(q);
   }, SEARCH_DEBOUNCE_MS);
+
+  const retireSearch = useCallback(() => {
+    searchAttemptRef.current = null;
+    setFellBackToAll(false);
+    if (supportsSSE()) cancelStream();
+    else clearBatchSearch();
+  }, [cancelStream, clearBatchSearch]);
 
   const handleInput = useCallback((text) => {
     // The debounced transport cannot be the boundary of intent ownership: a
     // previous stream must be retired before its late callback can land under
     // the newly visible text.
-    cancelStream();
-    if (!supportsSSE()) clearBatchSearch();
+    retireSearch();
     invalidateBrowseLoads();
-    setFellBackToAll(false); // new text invalidates any prior D5 fallback flag
     setDebouncePending(!isBareSourcePrefix(text) && text.trim().length >= 2);
     dispatch({ type: 'INPUT', text });
     debouncedSearch(text);
-  }, [cancelStream, clearBatchSearch, debouncedSearch, invalidateBrowseLoads]);
+  }, [retireSearch, debouncedSearch, invalidateBrowseLoads]);
 
   // Scope chips change `searchParams`, and nothing re-ran the search: the chip
   // lit up (aria-pressed) directly above a result list that was still whatever
@@ -313,17 +295,8 @@ export function useContentCombobox({
   // that never did. Re-dispatch the CURRENT box text whenever the active scope
   // changes.
   //
-  // It goes through the SAME debounced dispatch the keystroke path uses rather
-  // than calling streamSearch directly, which buys two things: one dispatch
-  // site (so `search.dispatch`, queryRef and dispatchedParamsRef can never
-  // diverge between the two entry points), and free coalescing — a chip tapped
-  // on top of a still-pending keystroke just restarts the shared timer instead
-  // of racing a second request against it.
-  //
-  // Guarded on a ref rather than "did this effect run": the initial mount must
-  // not dispatch (nothing has been typed yet, and handleInput owns the first
-  // search), and a re-render that merely re-creates the callback must not
-  // re-fire.
+  // A scope change uses the same debounced dispatch as typing, so it can
+  // replace a pending keystroke without starting a competing request.
   const prevSearchParamsRef = useRef(searchParams);
   useEffect(() => {
     if (prevSearchParamsRef.current === searchParams) return;
@@ -335,13 +308,11 @@ export function useContentCombobox({
     if (mode !== Modes.SEARCH || isBareSourcePrefix(text) || text.trim().length < 2) return;
     // Scope changed now; the scoped replacement still debounces, but the old
     // scope must stop owning callbacks immediately.
-    cancelStream();
-    if (!supportsSSE()) clearBatchSearch();
-    setFellBackToAll(false); // a different scope invalidates the previous widening
+    retireSearch();
     setDebouncePending(true);
     log.info('search.rerun_for_scope', { textLength: text.length, scopeKey: scopeKey ?? null });
     debouncedSearch(text);
-  }, [searchParams, scopeKey, cancelStream, clearBatchSearch, debouncedSearch, log]);
+  }, [searchParams, scopeKey, retireSearch, debouncedSearch, log]);
 
   // F14: while searching, a `source:term` query scopes the backend search to
   // that one source. Surface the scope so the UI can show a removable chip.
@@ -362,13 +333,14 @@ export function useContentCombobox({
   // app-registry matches ahead of content results when enabled.
   const rawResults = supportsSSE() ? streamResults : batchResults;
   useEffect(() => {
+    const attempt = searchAttemptRef.current;
     let cancelled = false;
     const finish = (items) => {
-      if (cancelled) return;
+      if (cancelled || searchAttemptRef.current !== attempt) return;
       setRawResultCount(items.length); // pre-cap length (machine slices to RENDER_CAP)
       dispatch({ type: 'RESULTS', items });
     };
-    const query = queryRef.current;
+    const query = attempt?.text;
     if (!appResults || !query || query.length < 2) {
       finish(rawResults);
       return undefined;
@@ -399,12 +371,10 @@ export function useContentCombobox({
   // Cancel any pending debounced dispatch and clear transport results — a
   // timer surviving close would repopulate results while closed.
   const cancelPendingSearch = useCallback(() => {
-    queryRef.current = '';
+    retireSearch();
     setDebouncePending(false);
     debouncedSearch('');
-    if (supportsSSE()) streamSearch(''); // hook clears results/pending for short queries
-    else clearBatchSearch();
-  }, [clearBatchSearch, debouncedSearch, streamSearch]);
+  }, [debouncedSearch, retireSearch]);
 
   // ── 3. Siblings browse (cache-aware) ──
   const applyBrowseData = useCallback((contentId, data) => {
@@ -587,36 +557,13 @@ export function useContentCombobox({
   }, [handleClose, log, retainPlayableSelection]);
 
   // ── Commit executor: run the pure decision and perform its side effect ──
-  // `searchSettled` distinguishes "still loading/debouncing" from "settled, no
-  // match" for the Enter path. True only once the transport has finished for
-  // the CURRENT editing text: queryRef.current is set inside debouncedSearch,
-  // so right after handleInput it is stale → searchSettled stays false until the
-  // debounce fires AND the transport returns (streamSearching/batchLoading clear).
-  const searchSettled = !streamSearching && !batchLoading && !streamError
-    && queryRef.current === (state.search ?? '')
-    && (state.search ?? '').trim().length >= 2;
-  // Mirror into a ref so `commit` reads the latest value without re-creating on
-  // every settle transition (avoids a stale-closure read in event handlers).
+  // An idle transport can still belong to the previous text or scope while
+  // a replacement debounces. Only a dispatched attempt can settle.
+  const attempt = searchAttemptRef.current;
+  const searchSettled = !!attempt && attempt.text === state.search && attempt.params === searchParams
+    && attempt.text.trim().length >= 2 && !streamSearching && !batchLoading && !streamError;
   const searchSettledRef = useRef(searchSettled);
   searchSettledRef.current = searchSettled;
-
-  // Every once-per-search guard below keys on the PAIR (query text, active
-  // scope params), never on the text alone. Keying on text alone made a scope
-  // change invisible to them: re-running "bluey" under a different chip is a
-  // genuinely new search that must be able to log its own settle, spend its
-  // own source-error retry, and widen on its own — but each of those was
-  // already "used up" by the first scope's run of the same text.
-  // (`searchKey` lives at module scope, near the top of this file.)
-
-  // A settle only belongs to the CURRENT scope once a dispatch has actually
-  // run under it. Between a chip tap and the re-dispatch firing, the
-  // transports are idle and the box text is unchanged, so `searchSettled` is
-  // still true while the visible results belong to the OLD scope — acting on
-  // that settle would log a bogus settle and could widen a scope that never
-  // ran. (The D5 widening deliberately does not update dispatchedParamsRef:
-  // its request overrides the params for one call without changing the active
-  // scope, so its own settle stays on the same key and the guards stay armed.)
-  const settleBelongsToScope = dispatchedParamsRef.current === searchParams;
 
   // Observability: the 2026-08-21 incident (phone search settled empty for a
   // title that existed) was undiagnosable because nothing recorded what a
@@ -626,16 +573,12 @@ export function useContentCombobox({
   // sourceErrors arrives from useStreamingSearch as an array of
   // {source, error} objects (not an object keyed by source name) — adapted
   // from the brief's object-shaped assumption accordingly.
-  const settleLoggedForRef = useRef(null);
   useEffect(() => {
-    if (!searchSettled || !settleBelongsToScope) return;
-    const text = queryRef.current;
-    const key = searchKey(text, searchParams);
-    if (settleLoggedForRef.current === key) return;
-    settleLoggedForRef.current = key;
+    if (!searchSettled || searchAttemptRef.current !== attempt || attempt.logged) return;
+    attempt.logged = true;
     const erroredSources = (sourceErrors || []).map((e) => e.source);
     log.info('search.settled', {
-      textLength: text.length,
+      textLength: attempt.text.length,
       resultCount: stateRef.current.results.length,
       rawResultCount,
       sourceErrors: erroredSources,
@@ -644,7 +587,7 @@ export function useContentCombobox({
     for (const { source, error } of sourceErrors || []) {
       log.warn('search.source_error', { source, error: String(error?.message ?? error) });
     }
-  }, [searchSettled, settleBelongsToScope, sourceErrors, rawResultCount, searchParams, scopeKey, log]);
+  }, [attempt, searchSettled, sourceErrors, rawResultCount, scopeKey, log]);
 
   // ── Empty-settle recovery ladder (Task 5 retry + Task 11 / D5 widening) ──
   //
@@ -666,27 +609,17 @@ export function useContentCombobox({
   //            widen to `fallbackSearchParams` and set `fellBackToAll` so the
   //            surface can say so.
   //
-  // Each rung fires at most once per (query text + scope), so a source that is
-  // genuinely down cannot retry-loop and the widened search cannot re-widen.
-  // The rungs are re-armed by a new query text OR a scope change — both are
-  // new searches and both deserve the full ladder. Ordering is guaranteed by
-  // the single early `return` after rung 1: the retry's own settle is a later
-  // render, so rung 2 can never fire in the same pass that started the retry.
-  const recoveryRef = useRef({ key: null, retried: false, widened: false });
+  // Each rung fires at most once per attempt. A fresh user dispatch can
+  // retry and widen even if its words and scope match an earlier attempt.
   useEffect(() => {
-    if (!searchSettled || !settleBelongsToScope) return;
-    const text = queryRef.current;
-    const key = searchKey(text, searchParams);
-    if (recoveryRef.current.key !== key) {
-      recoveryRef.current = { key, retried: false, widened: false };
-    }
-    const recovery = recoveryRef.current;
+    if (!searchSettled || searchAttemptRef.current !== attempt) return;
+    const { text } = attempt;
     if (rawResults.length > 0 || rawResultCount > 0 || stateRef.current.results.length > 0) return; // not empty — nothing to recover from
 
     // Rung 1: same text, same scope, one more time.
     const erroredSources = (sourceErrors || []).map((e) => e.source);
-    if (erroredSources.length > 0 && !recovery.retried) {
-      recovery.retried = true;
+    if (erroredSources.length > 0 && !attempt.retried) {
+      attempt.retried = true;
       log.info('search.retry_after_source_error', { textLength: text.length, sourceErrors: erroredSources });
       if (supportsSSE()) erroredSources.forEach((source) => retryStream(source));
       else doBatchSearch(text);
@@ -699,8 +632,8 @@ export function useContentCombobox({
     // would otherwise loop the identical search forever.
     if (fallbackSearchParams == null) return;
     if (searchParams === fallbackSearchParams) return;
-    if (recovery.widened) return;
-    recovery.widened = true;
+    if (attempt.widened) return;
+    attempt.widened = true;
     setFellBackToAll(true);
     log.info('search.fallback_to_all', {
       textLength: text.length,
@@ -712,7 +645,7 @@ export function useContentCombobox({
     if (supportsSSE()) streamSearch(text, fallbackSearchParams, { preserveFailures: true });
     else doBatchSearch(text, fallbackSearchParams);
   }, [
-    searchSettled, settleBelongsToScope, sourceErrors, rawResults, rawResultCount, searchParams, fallbackSearchParams,
+    attempt, searchSettled, sourceErrors, rawResults, rawResultCount, searchParams, fallbackSearchParams,
     scopeKey, scopeLabel, streamSearch, retryStream, doBatchSearch, log,
   ]);
 
@@ -770,7 +703,7 @@ export function useContentCombobox({
   const resolvedTitle = useContentTitle(isContentIdLike(value) ? value : null);
 
   const normalizedStreamState = streamState ?? {
-    query: queryRef.current,
+    query: attempt?.text ?? '',
     scope: searchParams,
     sources: Object.fromEntries([
       ...pendingSources.map((source) => [source, 'pending']),

@@ -91,6 +91,49 @@ async function installMediaSearchResult(page, extraItems = []) {
   return item;
 }
 
+test('desktop Media retries and widens when the same scoped query is entered again', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 850 });
+  await page.route('**/api/v1/media/config', route => route.fulfill({ json: { searchScopes: [
+    { key: 'all', label: 'All', params: '' },
+    { key: 'video', label: 'Video', params: 'mediaType=video' },
+  ] } }));
+  const title = 'Recorded story';
+  const requests = [];
+  await page.route('**/api/v1/content/query/search/stream**', route => {
+    const params = new URL(route.request().url()).searchParams;
+    const mediaType = params.get('mediaType');
+    const source = params.get('source');
+    requests.push([params.get('text'), mediaType, source]);
+    const items = mediaType ? [] : [streamItem({ id: 'plex:43', title, type: 'movie' })];
+    const frame = mediaType && !source
+      ? { event: 'source_error', source: 'plex', error: 'Fixture source unavailable', pending: [] }
+      : { event: 'results', source: 'plex', items, pending: [] };
+    return route.fulfill({
+      contentType: 'text/event-stream',
+      body: [frame, { event: 'complete' }].map(event => 'data: ' + JSON.stringify(event) + '\n\n').join(''),
+    });
+  });
+
+  await page.goto('/media');
+  await page.getByTestId('app-nav-browse').click();
+  const scope = page.getByRole('button', { name: 'Video', exact: true });
+  await scope.click();
+  const search = page.getByRole('textbox', { name: 'Search media…', exact: true });
+  const result = page.getByTestId('combobox-option-plex:43');
+  const oneSearch = [[title, 'video', null], [title, 'video', 'plex'], [title, null, null]];
+
+  await search.fill(title);
+  await expect(result).toBeVisible();
+  expect(requests).toEqual(oneSearch);
+
+  await search.clear();
+  await expect(result).toBeHidden();
+  await search.fill(title);
+  await expect.poll(() => requests).toEqual([...oneSearch, ...oneSearch]);
+  await expect(result).toBeVisible();
+  await expect(scope).toHaveAttribute('aria-pressed', 'true');
+});
+
 test('desktop Media closes results before Back when Escape restores input focus', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 850 });
   const item = await installMediaSearchResult(page);
