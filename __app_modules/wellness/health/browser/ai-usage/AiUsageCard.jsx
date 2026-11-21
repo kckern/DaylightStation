@@ -46,7 +46,7 @@ function FeatureTable({ rows, linkable, compact }) {
         <Table.Td>
           <FeatureName feature={row.feature} linkable={linkable} />
           <div className="health-ai-usage__track" aria-hidden="true">
-            <div className="health-ai-usage__fill" style={{ width: `${peak > 0 ? Math.max(2, (row.costUsd / peak) * 100) : 0}%` }} />
+            <div className="health-ai-usage__fill" style={{ width: `${row.costUsd > 0 && peak > 0 ? Math.max(2, (row.costUsd / peak) * 100) : 0}%` }} />
           </div>
         </Table.Td>
         <Table.Td>{row.calls}</Table.Td>
