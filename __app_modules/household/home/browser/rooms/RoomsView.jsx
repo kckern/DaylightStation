@@ -109,7 +109,7 @@ export function RoomsView({ entities, rooms, types, summary, haUrl, toggle, turn
                 ) : null}
                 {room.more.length ? (
                   <Disclosure
-                    label={`Show all ${room.more.length} readings and switches`}
+                    label={`Readings and switches (${room.more.length})`}
                     onToggle={(isOpen) => logger.debug('home.room.more', { roomId: room.id, open: isOpen, count: room.more.length })}
                   >
                     <div className="home-rows--ruled">
