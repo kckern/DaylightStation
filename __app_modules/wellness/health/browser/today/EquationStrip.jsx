@@ -37,6 +37,7 @@ function BudgetBar({ budget, baseline = null, date = null, today = null, dayClos
   // big workout can take below zero.
   const net = Math.max(0, food - exercise);
   const realNet = food - exercise;
+  const netLabel = realNet < 0 ? `−${n(-realNet)}` : n(realNet);
   const over = budget.status === 'over';
   const story = budget.range && budget.zone ? budgetStory(budget, { date, today, baseline }) : null;
   const presentation = story ? budgetPresentation(budget, { finished: story.finished }) : null;
@@ -72,7 +73,7 @@ function BudgetBar({ budget, baseline = null, date = null, today = null, dayClos
             <span className="health-budget__exercise-term">{n(exercise)} burned</span></> : null}
           {/* The ranged card states energy balance separately above the ruler. */}
           {!story && exercise > 0 ? <><span className="health-budget__sep" aria-hidden="true">·</span>
-            <span>{realNet < 0 ? `−${n(-realNet)}` : n(realNet)} net</span></> : null}
+            <span>{netLabel} net</span></> : null}
           {!story && balance != null ? <><span className="health-budget__sep" aria-hidden="true">·</span>
             <span className={balance >= 0 ? 'health-budget__deficit' : 'health-budget__surplus'}>{balance >= 0 ? `${n(balance)} deficit` : `${n(-balance)} surplus`}</span></> : null}
           {budget.stale ? <span className="health-equation__stale" title="Latest weigh-in is over a week old">stale wt</span> : null}
@@ -82,7 +83,7 @@ function BudgetBar({ budget, baseline = null, date = null, today = null, dayClos
       {story ? <RulerScale budget={budget} baseline={baseline} spoken={`${spoken}; ${presentation.balance}`} tone={presentation.tone} finished={story.finished} tentative={story.tentative} /> : (
       <div className="health-budget__scale">
         <div className="health-budget__track" role="img"
-          aria-label={`${n(net)} net kcal of ${n(goal)} goal${breakEven ? `, break even ${n(breakEven)}` : ''}, ${spoken}`}>
+          aria-label={`${netLabel} net kcal of ${n(goal)} goal${breakEven ? `, break even ${n(breakEven)}` : ''}, ${spoken}`}>
           {exercise > 0 ? <span className="health-budget__burned" style={band(net, food)} /> : null}
           <span className="health-budget__net" style={band(0, Math.min(net, goal))} />
           {net > goal ? <span className="health-budget__over-goal" style={band(goal, breakEven > goal ? Math.min(net, breakEven) : net)} /> : null}

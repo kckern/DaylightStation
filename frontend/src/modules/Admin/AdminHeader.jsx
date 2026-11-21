@@ -17,6 +17,7 @@ function AdminHeader({ opened, toggle, opener }) {
         {idx > 0 && (
           <Text
             component="span"
+            aria-hidden="true"
             size="12px"
             c="var(--ds-text-muted)"
             ff="var(--ds-font-mono)"
@@ -28,6 +29,7 @@ function AdminHeader({ opened, toggle, opener }) {
         {isLast ? (
           <Text
             component="span"
+            aria-current="page"
             size="12px"
             fw={500}
             ff="var(--ds-font-mono)"
@@ -54,7 +56,7 @@ function AdminHeader({ opened, toggle, opener }) {
   return (
     <Group h="100%" px="md" gap="sm" wrap="nowrap">
       <Burger ref={opener} aria-label="Toggle admin navigation" aria-expanded={opened} opened={opened} onClick={toggle} className="admin-navigation-toggle" size="sm" />
-      <Box className="admin-breadcrumbs">
+      <Box component="nav" aria-label="Breadcrumb" className="admin-breadcrumbs">
         {breadcrumbs}
       </Box>
     </Group>
