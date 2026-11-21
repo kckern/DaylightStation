@@ -72,7 +72,9 @@ filters them out. For Plex scopes, omit `capability=playable` and rely on
   (`ScopeChips.jsx`): top-level scopes render as a chip row, and tapping a
   parent with children expands a second row of its children inline. A parent
   chip is itself selectable (in addition to expanding) only when it carries
-  its own `params`; a grouping-only parent just reveals its children.
+  its own `params`; a grouping-only parent just reveals its children. Grouping
+  parents announce their expanded state, while selectable scopes announce
+  their selected state.
 - Selecting any scope (parent-with-params or leaf) applies its `params` to
   every subsequent search request.
 - Scope is **session-only**: every provider mount starts catalog-wide, at the

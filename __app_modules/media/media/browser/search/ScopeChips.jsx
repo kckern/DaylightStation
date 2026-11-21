@@ -75,7 +75,10 @@ export function ScopeChips() {
             className="media-scope-chip"
             data-testid={`scope-chip-${scope.key}`}
             data-ignore-outside-clicks
-            aria-pressed={scope.key === currentScopeKey}
+            aria-pressed={scope.children?.length > 0 && scope.params == null
+              ? undefined
+              : scope.key === currentScopeKey}
+            aria-expanded={scope.children?.length > 0 ? scope.key === expandedKey : undefined}
             // Desktop scope chips live beside the active Combobox input. Keep
             // its focus through a pointer click so Mantine does not interpret
             // this in-surface narrowing action as an outside dismissal.
