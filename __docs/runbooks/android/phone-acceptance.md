@@ -351,6 +351,37 @@ view. Until it exists, the calls can be made from Chrome's remote inspector
 12. A search with no result answers an empty list, and nothing crashes. With the
     VPN off, the search fails and the car says so.
 
+### Playlist picker and Driving Radio
+
+Run this section on build 77 or later. Use disposable fixtures and restore the phone's preferences after the sitting.
+The [phone experience guide](../../../_extensions/daylight-android/PHONE-EXPERIENCE.md)
+describes the current setup and playback surfaces.
+
+- Stage a mix of audio playlists, system lists, and a mixed video list. Confirm
+  the configured categories appear and that a list which resolves only to
+  images or interactive items stays out of the audio catalog.
+- In Apex's 1×1 picker, verify Recently placed after both a manual placement
+  and an Android-confirmed pin. Confirm canceling creates no assignment and
+  leaves previous widgets intact. With about 100 disposable staged entries,
+  search for a known name, try an empty result, clear the query, and scroll
+  to the end of All staged playlists.
+- On the desktop head unit, confirm Drive, Recent, and Library. Enable
+  **Show on Drive** for one staged playlist and confirm it appears directly
+  under Drive. Turn it off and verify the same playlist remains in the
+  widget picker. Confirm Library still reaches provider catalogs through
+  **All playlists**.
+- Configure two short disposable audio queues as the radio default and today's
+  override. Confirm the row names today's choice, then start it from Drive.
+  Try an unavailable override to check fallback. Let a short selected queue
+  finish and verify handoff. Repeat with Pause, Stop, and a disconnected
+  head unit during a slow lookup. Observe that playback stays stopped.
+- Play a station with a pinned ident and shuffle enabled. Verify the opening
+  ident, subsequent song order, and recurring IDs. For converted audio, verify
+  duration and elapsed progress while recording whether the host offers seeking.
+- Try **Play FM100 on Daylight** by voice and record the assistant's response
+  and whether Daylight logged a search or play-from-search callback. Try
+  **FM 100** in the on-screen search as a separate check.
+
 ## E2. The car list (car-actions), on the Desktop Head Unit
 
 Unproven until this runs: whether Android Auto lists a sideloaded app of the IOT

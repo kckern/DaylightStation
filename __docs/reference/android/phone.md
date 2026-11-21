@@ -29,6 +29,10 @@ Journalist and Nutribot (`quick-input`: a recording, typed text or a photo) and
 the app's own local notifications. What it does not have is
 under "What the phone does not have".
 
+The [build 77 phone experience guide](../../../_extensions/daylight-android/PHONE-EXPERIENCE.md)
+describes the newer candidate's launcher setup, media widgets, and Android Auto
+experience. Check the installed build number before using the guide.
+
 ## What makes it a phone and not a kiosk
 
 | | Kiosk (`piano`, `portal`, `shield`) | `phone` |
