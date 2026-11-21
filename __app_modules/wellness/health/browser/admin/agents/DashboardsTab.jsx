@@ -11,6 +11,7 @@ import {
 } from '@tabler/icons-react';
 import { useAgentDashboard } from "./useAgentDashboard.js";
 import { ConfirmModal } from "../../../../../../frontend/src/lib/ui/ConfirmModal.jsx";
+import { Button as DsButton } from '../../../../../../frontend/src/lib/ui/Button.jsx';
 import { useSheetSubmission } from '../../../../../../frontend/src/lib/ui/useSheetSubmission.js';
 import { utcDateISO } from '../../../portable/contracts/health/isoDate.mjs';
 
@@ -219,14 +220,16 @@ function DashboardsTab({ agentId, userId }) {
 
           {/* Raw JSON */}
           <Paper p="md">
-            <Group
-              gap="xs"
-              style={{ cursor: 'pointer' }}
-              onClick={() => setRawOpen(v => !v)}
+            <DsButton
+              density="compact"
+              variant="plain"
+              wrapLabel={false}
+              aria-expanded={rawOpen}
+              onClick={() => setRawOpen(open => !open)}
             >
               {rawOpen ? <IconChevronDown size={16} /> : <IconChevronRight size={16} />}
-              <Text size="sm" fw={500}>Raw JSON</Text>
-            </Group>
+              <Text component="span" size="sm" fw={500}>Raw JSON</Text>
+            </DsButton>
             <Collapse in={rawOpen}>
               <Code block mt="sm" style={{ maxHeight: 400, overflow: 'auto' }}>
                 {JSON.stringify(dashboard, null, 2)}
