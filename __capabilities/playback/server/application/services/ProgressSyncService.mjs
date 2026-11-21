@@ -131,6 +131,39 @@ export class ProgressSyncService {
   }
 
   /**
+   * The watch state reconcileOnPlay would return, without any of its writes:
+   * no session bookmark, no skeptical tracking, no local update, no remote
+   * write-back. For callers that need to know before play starts whether a
+   * title will resume (the Media app's provenance intro).
+   *
+   * @param {string} contentId
+   * @param {string} namespaceId
+   * @param {string} localId
+   * @returns {Promise<MediaProgress|null>}
+   */
+  async peekOnPlay(contentId, namespaceId, localId) {
+    const [local, remote] = await Promise.all([
+      this.#mediaProgressMemory.findProgress(contentId, namespaceId),
+      this.#fetchRemoteProgress(localId),
+    ]);
+    const resolution = resolveProgressConflict(
+      local ? { playhead: local.playhead, duration: local.duration, isWatched: local.isWatched(), lastPlayed: local.lastPlayed, watchTime: local.watchTime } : null,
+      remote,
+    );
+    if (resolution?.source === 'remote') {
+      return new MediaProgress({
+        contentId,
+        playhead: resolution.playhead,
+        duration: resolution.duration,
+        lastPlayed: this.#clock.now().toISOString(),
+        watchTime: local?.watchTime ?? 0,
+        now: this.#clock.epoch(),
+      });
+    }
+    return local || null;
+  }
+
+  /**
    * Called on each progress update for remote-synced items. Write path.
    *
    * 1. Get or create skepticalMap tracking entry

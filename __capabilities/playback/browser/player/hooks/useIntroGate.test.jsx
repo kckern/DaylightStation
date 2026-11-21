@@ -53,6 +53,18 @@ describe('useIntroGate', () => {
     expect(isIntroCovering()).toBe(false);
   });
 
+  it('counts the hold from an early cover (SinglePlayer showed the scene first)', () => {
+    vi.setSystemTime(new Date('2026-11-21T12:00:10Z'));
+    const coverStartedAt = Date.parse('2026-11-21T12:00:08Z'); // 2 s of early cover
+    const { el, result } = setup({ intro: READY, coverStartedAt });
+    act(() => { el.start(); });
+    expect(result.current).toBe('holding');
+    act(() => { vi.advanceTimersByTime(HOLD - 2000 - 1); });
+    expect(el.play).not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(el.play).toHaveBeenCalled();
+  });
+
   it('covers immediately when the intro is ready', () => {
     const { result } = setup({ intro: READY });
     expect(result.current).toBe('covering');

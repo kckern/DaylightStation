@@ -32,7 +32,7 @@ export function provenancePolicy(raw) {
   };
 }
 
-export function createProvenanceRuntime({ configService, rootLogger, contentRegistry = null }) {
+export function createProvenanceRuntime({ configService, rootLogger, contentRegistry = null, peekPlaybackStart = null }) {
   const logger = rootLogger.child({ module: 'provenance' });
   const policy = () => provenancePolicy(configService.getHouseholdAppConfig(null, 'provenance'));
   const apiKey = configService.getSystemAuth?.('watchmode', 'api_key') || null;
@@ -52,5 +52,6 @@ export function createProvenanceRuntime({ configService, rootLogger, contentRegi
     policy,
     logger,
   });
-  return createProvenanceRouter({ getTitleProvenance, logos, logger });
+  // peekPlaybackStart: the playback capability's read-only start position.
+  return createProvenanceRouter({ getTitleProvenance, logos, peekPlaybackStart, logger });
 }

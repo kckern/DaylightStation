@@ -53,6 +53,9 @@ export class GetTitleProvenance {
     if (policy.enabled === false) return null;
     const now = this.#clock();
 
+    // Movies by default: other players (fitness, school, piano) also play Plex shows.
+    const kinds = Array.isArray(policy.kinds) && policy.kinds.length ? policy.kinds : ['movie'];
+
     let record = await this.#store.get(rk);
     if (!record || !isFresh(record, now, policy.refreshDays)) {
       // An episode or season is recorded under its show.
@@ -60,12 +63,10 @@ export class GetTitleProvenance {
       const key = record?.key || identity?.key || rk;
       if (key !== rk) record = await this.#store.get(key);
       if (!record || !isFresh(record, now, policy.refreshDays)) {
-        record = await this.#refresh(key, record, identity, policy, now);
+        record = await this.#refresh(key, record, identity, { ...policy, kinds }, now);
       }
     }
     if (!record) return null;
-    // Movies by default: other players (fitness, school, piano) also play Plex shows.
-    const kinds = Array.isArray(policy.kinds) && policy.kinds.length ? policy.kinds : ['movie'];
     if (!kinds.includes(record.kind)) return null;
 
     const choice = chooseProvider(record.offers, policy.tiers, (p) => this.#logos.has(p));
@@ -94,6 +95,9 @@ export class GetTitleProvenance {
     if (!this.#availability) return stale;
     const id = identity && identity.key === key ? identity : await this.#identify(key);
     if (!id) return stale;
+    // A kind the household does not show (a music track, an episode when only
+    // movies are on) never spends a lookup; nothing is recorded for it either.
+    if (!policy.kinds.includes(id.kind)) return stale;
     const lookupId = lookupIdFor(id);
     const base = { key, kind: id.kind, title: id.title ?? null, year: id.year ?? null, lookupId };
     if (!lookupId) {

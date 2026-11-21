@@ -71,6 +71,22 @@ export class PlaybackReadService {
     return { kind: 'found', body: this.playResponseService.toPlayResponse(item, watchState, { descriptor, resume, session, quality }) };
   }
 
+  /**
+   * Where a direct play of `compoundId` would start, read-only (nothing is
+   * bookmarked or synced). `startSec` is null when it cannot be known ahead:
+   * an unknown id, a missing item, or a container (its pick happens at play).
+   * @returns {Promise<{ startSec: number|null }>}
+   */
+  async peekStartPosition({ compoundId }) {
+    const resolved = this.contentIdResolver.resolve(compoundId);
+    if (!resolved) return { startSec: null };
+    const item = await this.contentCatalog.getItem(resolved);
+    if (!item || item.isContainer?.() || item.itemType === 'container') return { startSec: null };
+    const progressNamespace = await this.contentCatalog.progressNamespace(resolved, item.id);
+    const watchState = await this.playResponseService.peekWatchState(item, progressNamespace, resolved.source);
+    return { startSec: this.playResponseService.startPositionFor(item, watchState) };
+  }
+
   async #response(item, resolution, options) {
     const progressNamespace = await this.contentCatalog.progressNamespace(resolution, item.id);
     const watchState = await this.playResponseService.getWatchState(item, progressNamespace, resolution.source);

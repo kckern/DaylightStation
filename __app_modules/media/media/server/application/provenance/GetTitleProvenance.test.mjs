@@ -113,6 +113,18 @@ describe('GetTitleProvenance', () => {
     expect((await b.uc.execute({ ratingKey: '100' })).provider).toBe('peacock');
   });
 
+  it('never spends a lookup on a kind it does not show (a music track, a show when only movies are on)', async () => {
+    const track = { key: '300', kind: 'track', title: 'Song' };
+    const a = build({ identity: track, policy: { kinds: undefined } });
+    expect(await a.uc.execute({ ratingKey: '300' })).toBeNull();
+    expect(a.availability.sources).not.toHaveBeenCalled();
+    expect(a.store.put).not.toHaveBeenCalled();
+    const show = { key: '200', kind: 'show', title: 'Show', tmdb: '1396' };
+    const b = build({ identity: show, sources: [{ name: 'Peacock', type: 'sub' }], policy: { kinds: undefined } });
+    expect(await b.uc.execute({ ratingKey: '201' })).toBeNull();
+    expect(b.availability.sources).not.toHaveBeenCalled();
+  });
+
   it('does nothing when disabled or given a bad key', async () => {
     const { uc, identityReader } = build({ identity: MOVIE, policy: { enabled: false } });
     expect(await uc.execute({ ratingKey: '100' })).toBeNull();

@@ -40,6 +40,9 @@ let _mountSeq = 0;
  */
 const buildDashElementKey = ({ mediaUrl, bitrate, elementKey }) => `${mediaUrl}:${bitrate}:${elementKey}`;
 
+/** useVideoIntro arguments that ask for no intro (SinglePlayer's host supplies it). */
+const NO_INTRO_ARGS = Object.freeze({ media: null, isPlex: false });
+
 /**
  * Video player component for playing video content (including DASH video)
  */
@@ -64,7 +67,8 @@ export function VideoPlayer({
   keyboardOverrides,
   onController,
   upscaleEffects = 'auto',
-  resilienceBridge
+  resilienceBridge,
+  introHost = null
 }) {
   // console.log('[VideoPlayer] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
   const isPlex = media.mediaType === 'dash_video' || media.plex != null
@@ -223,7 +227,11 @@ export function VideoPlayer({
   // The gate's start is where this mount will actually start: a remount carries
   // its resume target as seekToIntentSeconds. A recovery remount (any remount
   // that is not an owner operation) never shows the intro, wherever it resumes.
-  const intro = useVideoIntro({ media, isPlex });
+  // Under SinglePlayer the intro comes from its host (useIntroHost), which
+  // started the scene from the play request and draws the scene layer; this
+  // gate reports its stage back. Rendered on its own, VideoPlayer owns both.
+  const ownIntro = useVideoIntro(introHost ? NO_INTRO_ARGS : { media, isPlex });
+  const intro = introHost ? introHost.intro : ownIntro;
   const isRecoveryRemount = resilienceBridge?.remountDiagnostics != null && !isOwnerOperationMount;
   const introStartSec = isRecoveryRemount
     ? Infinity
@@ -232,7 +240,10 @@ export function VideoPlayer({
     intro, getMediaEl,
     startSec: introStartSec,
     resetKey: media?.assetId || media?.key || media?.mediaUrl || null,
+    coverStartedAt: introHost?.coverStartedAt ?? null,
   });
+  const reportIntroStage = introHost?.onStage;
+  useEffect(() => { reportIntroStage?.(introStage); }, [introStage, reportIntroStage]);
   const { overlay: filterOverlay } = useVideoPresentation({ media, isPlex, getMediaEl, introStage });
 
   // Render FPS monitoring for blur overlay performance diagnosis
@@ -1063,7 +1074,7 @@ export function VideoPlayer({
         <div className={overlayProps.className} />
       )}
       {filterOverlay}
-      {intro && (introStage === 'covering' || introStage === 'holding' || introStage === 'playing') ? (
+      {intro && !introHost && (introStage === 'covering' || introStage === 'holding' || introStage === 'playing') ? (
         // Its own layer, below the loading/recovery layer (Player.scss): recovery UI paints over the scene.
         <div className="player-intro-layer">{intro.render(introStage)}</div>
       ) : null}
@@ -1091,6 +1102,8 @@ VideoPlayer.propTypes = {
   onMediaRef: PropTypes.func,
   onController: PropTypes.func,
   upscaleEffects: PropTypes.oneOf(['auto', 'blur-only', 'crt-only', 'aggressive', 'none']),
+  // SinglePlayer's intro host: { intro, coverStartedAt, onStage } (hooks/useIntroHost.js).
+  introHost: PropTypes.shape({ intro: PropTypes.object, coverStartedAt: PropTypes.number, onStage: PropTypes.func }),
   resilienceBridge: PropTypes.shape({
     onPlaybackMetrics: PropTypes.func,
     onRegisterMediaAccess: PropTypes.func,

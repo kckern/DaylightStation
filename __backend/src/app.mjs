@@ -1911,7 +1911,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Provenance bumper: which streaming service a title is "from" (Watchmode,
   // looked up when a title plays). Policy in household/media/provenance.yml.
-  v1Routers.provenance = createProvenanceRuntime({ configService, rootLogger, contentRegistry });
+  v1Routers.provenance = createProvenanceRuntime({
+    configService, rootLogger, contentRegistry,
+    peekPlaybackStart: contentServices?.peekPlaybackStart ?? null,
+  });
 
   v1Routers.emulator = createEmulatorRuntime({
     configService, rootLogger, eventBus,

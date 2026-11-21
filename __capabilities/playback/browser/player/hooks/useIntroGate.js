@@ -22,6 +22,10 @@
  *
  * Covering never outlasts `minHoldMs + INTRO_COVER_CEILING_MS`: a stream that
  * never produces a frame must not sit behind the scene.
+ *
+ * `coverStartedAt`: when SinglePlayer's intro host (useIntroHost) already put
+ * the scene up during the play-info fetch, the hold counts from that moment,
+ * so the early cover does not lengthen it.
  */
 import { useEffect, useRef, useState } from 'react';
 import { getLogger } from '../../../../../frontend/src/lib/logging/Logger.js';
@@ -51,7 +55,7 @@ const HOLD_SOURCE = 'intro-hold';
 const FINAL = new Set(['off', 'playing']);
 const COVERING = new Set(['covering', 'holding']);
 
-export function useIntroGate({ intro, getMediaEl, startSec = 0, resetKey, playTimeoutMs = 2500 }) {
+export function useIntroGate({ intro, getMediaEl, startSec = 0, resetKey, playTimeoutMs = 2500, coverStartedAt = null }) {
   const [stage, setStage] = useState('waiting');
   const stageRef = useRef('waiting');
   const runRef = useRef(null);
@@ -61,6 +65,10 @@ export function useIntroGate({ intro, getMediaEl, startSec = 0, resetKey, playTi
   getMediaElRef.current = getMediaEl;
   const playTimeoutRef = useRef(playTimeoutMs);
   playTimeoutRef.current = playTimeoutMs;
+  // When the scene went up before this gate mounted (SinglePlayer's intro host
+  // covered the play-info fetch), the hold counts from then.
+  const coverStartedAtRef = useRef(coverStartedAt);
+  coverStartedAtRef.current = coverStartedAt;
 
   const go = (next) => { stageRef.current = next; setStage(next); };
   const clearTimers = () => { timersRef.current.forEach(clearTimeout); timersRef.current = []; };
@@ -159,8 +167,10 @@ export function useIntroGate({ intro, getMediaEl, startSec = 0, resetKey, playTi
       el: null, startedAt: Date.now(), holdDone: false, pausedByUs: false, resuming: false, done: false,
     };
     go('covering');
-    logger().info('intro.covering', { minHoldMs, startSec });
-    const holdMs = Math.max(0, Number(minHoldMs) || 0);
+    const since = Number(coverStartedAtRef.current);
+    const earlyMs = Number.isFinite(since) && since > 0 ? Math.max(0, Date.now() - since) : 0;
+    logger().info('intro.covering', { minHoldMs, startSec, earlyMs });
+    const holdMs = Math.max(0, (Number(minHoldMs) || 0) - earlyMs);
     after(holdMs, onHoldDone);
     after(holdMs + INTRO_COVER_CEILING_MS, () => {
       if (stageRef.current !== 'covering') return;

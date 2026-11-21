@@ -96,9 +96,9 @@ export class PlayResponseService {
 
     // Add resume position if in progress (use domain entity)
     // Skip if resume explicitly disabled (e.g., list items with resume: false)
-    if (resume !== false && response.resumable && watchState?.playhead > 0 && watchState?.duration > 0) {
-      const progress = new MediaProgress({ ...watchState, now: this.#now() });
-      if (progress.isInProgress()) {
+    {
+      const progress = this.#resumeProgress(response.resumable, watchState, resume);
+      if (progress) {
         response.resume_position = progress.playhead;
         response.resume_percent = progress.percent;
 
@@ -209,6 +209,37 @@ export class PlayResponseService {
    * @param {string} [source] - Content source used for sync eligibility
    * @returns {Promise<Object|null>} Watch state or null
    */
+  /** The progress a play resumes from, or null when it starts from the top. */
+  #resumeProgress(resumable, watchState, resume) {
+    if (resume === false || !resumable || !(watchState?.playhead > 0) || !(watchState?.duration > 0)) return null;
+    const progress = new MediaProgress({ ...watchState, now: this.#now() });
+    return progress.isInProgress() ? progress : null;
+  }
+
+  /**
+   * The second a direct play of this item starts at (0 when it starts from the
+   * top), by the same rule toPlayResponse applies. Pair with peekWatchState.
+   * @returns {number}
+   */
+  startPositionFor(item, watchState) {
+    return this.#resumeProgress(item?.resumable ?? false, watchState, undefined)?.playhead ?? 0;
+  }
+
+  /**
+   * getWatchState without side effects: for a synced source, where
+   * reconcileOnPlay would land, with none of its writes.
+   */
+  async peekWatchState(item, progressNamespace, source) {
+    if (this.#progressSyncService && this.#progressSyncSources?.has(source)) {
+      const colonIdx = item.id.indexOf(':');
+      const localId = colonIdx > 0 ? item.id.slice(colonIdx + 1) : item.id;
+      return this.#progressSyncService.peekOnPlay(item.id, progressNamespace, localId);
+    }
+    return this.#mediaProgressMemory
+      ? this.#mediaProgressMemory.findProgress(item.id, progressNamespace)
+      : null;
+  }
+
   async getWatchState(item, progressNamespace, source) {
     if (this.#progressSyncService && this.#progressSyncSources?.has(source)) {
       const colonIdx = item.id.indexOf(':');
