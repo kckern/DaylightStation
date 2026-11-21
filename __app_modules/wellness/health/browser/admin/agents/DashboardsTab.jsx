@@ -89,6 +89,12 @@ function DashboardsTab({ agentId, userId }) {
 
       {loading && <Center py="xl"><Loader /></Center>}
 
+      {!loading && !date && (
+        <Paper p="xl" ta="center">
+          <Text c="dimmed">Choose a date to view its dashboard.</Text>
+        </Paper>
+      )}
+
       {!loading && dashboardReadError && !dashboard && (
         <Paper p="xl" ta="center">
           <Text c="dimmed" mb="md">
