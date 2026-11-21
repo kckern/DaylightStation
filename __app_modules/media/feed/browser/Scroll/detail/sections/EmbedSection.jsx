@@ -1,6 +1,6 @@
 import { frameableLink } from '../../../../shared/webLink.mjs';
 
-export default function EmbedSection({ data }) {
+export default function EmbedSection({ data, item }) {
   // The iframe allows scripts and same-origin, so only an http(s) URL on
   // another origin may fill it.
   const src = frameableLink(data?.url, typeof window !== 'undefined' ? window.location.origin : '');
@@ -11,7 +11,7 @@ export default function EmbedSection({ data }) {
     <div style={{ position: 'relative', width: '100%', paddingTop, background: '#000', borderRadius: '8px', overflow: 'hidden' }}>
       <iframe
         src={src}
-        title="Embedded content"
+        title={item?.title || 'Embedded content'}
         style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
         allow="autoplay; encrypted-media"
         allowFullScreen

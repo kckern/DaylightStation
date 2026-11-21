@@ -82,12 +82,13 @@ export function AnswerInput({ value, onChange, onSubmit, placeholder = 'Or say w
   const inlineError = voiceError ?? (micError ? `${micError} Type it instead.` : null);
   return (
     <form className="life-triage__answer" onSubmit={submit}>
-      {prompt && <Text size="sm" fw={600} className="life-triage__prompt">{prompt}</Text>}
+      {prompt && <Text id="triage-answer-prompt" size="sm" fw={600} className="life-triage__prompt">{prompt}</Text>}
       <div className="life-triage__answer-row">
         <TextInput
           ref={inputRef}
           className="life-triage__answer-input"
           aria-label={label}
+          aria-describedby={prompt ? 'triage-answer-prompt' : undefined}
           placeholder={placeholder}
           value={value}
           onChange={(e) => onChange(e.currentTarget.value)}
