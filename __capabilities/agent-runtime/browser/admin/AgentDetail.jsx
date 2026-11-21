@@ -10,8 +10,9 @@ import OverviewTab from "./OverviewTab.jsx";
 import ConfigTab from "./ConfigTab.jsx";
 import "./AgentDetail.scss";
 
-function AgentDetail({ DashboardView }) {
-  const { agentId } = useParams();
+function AgentDetail({ agentId: explicitAgentId, DashboardView }) {
+  const { agentId: routeAgentId } = useParams();
+  const agentId = explicitAgentId ?? routeAgentId;
   const location = useLocation();
   const navigate = useNavigate();
 

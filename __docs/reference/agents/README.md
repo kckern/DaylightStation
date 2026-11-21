@@ -16,9 +16,10 @@ The framework supports any number of agents in a single deployment. Agents range
 ## Admin agent detail
 
 Agent details share Overview and Config. Domain-specific panels are composed only
-on the route that owns their resource: the Health Coach route includes the Health
-dashboard panel, while agents without that view omit its tab and resolve legacy
-`#dashboards` links to Overview.
+on the route that owns their resource: the literal Health Coach route supplies its
+agent ID and includes the Health dashboard panel, while dynamic agent routes use
+their route ID and omit that tab. Unsupported `#dashboards` links resolve to
+Overview.
 
 ## Where to read next
 
