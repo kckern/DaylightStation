@@ -395,6 +395,9 @@ Search accepts `q`, `state`, `mode`, `source`, `from`, `to`, `limit`, and opaque
 ### Portable data and device-local editions
 
 `daylight.feed-export/v1` contains normalized preferences, source preferences, checkpoints, canonical state, annotations, and bounded normalized history records. Import is a merge: valid fields are normalized, invalid entries are ignored, imported synchronization state is reset to `synced`, and current unrelated account data is retained. It is not OPML and intentionally does not export a complete copy of publisher article bodies.
+Imports accept at most 20,000 states, 20,000 annotations, and 50,000 history
+items. An oversized collection rejects the entire import before any account data
+is written, and the UI reports the collection, supplied count, and limit.
 After a successful import, a failed workspace readback keeps the confirmed import
 counts visible and offers **Refresh view**; retrying that action does not submit
 the import again.

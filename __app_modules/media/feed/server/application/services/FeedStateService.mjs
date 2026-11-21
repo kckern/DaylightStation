@@ -6,6 +6,17 @@ const THEMES = new Set(['dark', 'sepia', 'light']);
 const ANNOTATION_COLORS = new Set(['yellow', 'blue', 'green', 'pink', 'none']);
 const SOURCE_PREFERENCE_LEVELS = new Set(['more', 'less', 'mute']);
 const DEFAULT_PREFERENCES = Object.freeze({ theme: 'dark', density: 'comfortable', fontScale: 1, lineHeight: 1.65, measure: 72, sessionBudget: 0 });
+const IMPORT_LIMITS = Object.freeze({ states: 20_000, annotations: 20_000, items: 50_000 });
+
+function validateImportLimits(payload) {
+  for (const [collection, limit] of Object.entries(IMPORT_LIMITS)) {
+    const count = Array.isArray(payload?.[collection]) ? payload[collection].length : 0;
+    if (count <= limit) continue;
+    const error = new Error(`Feed export contains ${count} ${collection}; maximum supported is ${limit}.`);
+    error.code = 'FEED_IMPORT_LIMIT';
+    throw error;
+  }
+}
 
 function finiteIn(value, min, max, fallback) {
   const number = Number(value);
@@ -446,9 +457,10 @@ export class FeedStateService {
 
   async importData(username, payload) {
     if (payload?.format !== 'daylight.feed-export/v1') throw new Error('Unsupported feed export format');
-    const states = Array.isArray(payload.states) ? payload.states.slice(0, 20_000) : [];
-    const annotations = Array.isArray(payload.annotations) ? payload.annotations.slice(0, 20_000) : [];
-    const items = Array.isArray(payload.items) ? payload.items.slice(0, 50_000) : [];
+    validateImportLimits(payload);
+    const states = Array.isArray(payload.states) ? payload.states : [];
+    const annotations = Array.isArray(payload.annotations) ? payload.annotations : [];
+    const items = Array.isArray(payload.items) ? payload.items : [];
     let importedStates = 0;
     let importedAnnotations = 0;
     await this.#store.update(username, data => {

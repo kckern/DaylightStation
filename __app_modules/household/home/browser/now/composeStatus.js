@@ -44,11 +44,14 @@ export function groupByRoom(entities, rooms) {
  *
  * @returns {string[]} sentences, each ending in a full stop
  */
-export function composeSentence({ watts, lightsOn, open, motionRooms, lastSeen = null }) {
+export function composeSentence({ watts, lightsOn, othersOn = 0, othersWord = 'devices', open, motionRooms, lastSeen = null }) {
   const sentences = [];
   const parts = [];
-  if (lightsOn > 0 || open.length > 0 || watts != null) {
+  if (lightsOn > 0 || open.length > 0 || (watts != null && othersOn === 0)) {
     parts.push(lightsOn > 0 ? `${plural(lightsOn, 'light')} on` : 'no lights on');
+  }
+  if (othersOn > 0) {
+    parts.push(`${plural(othersOn, othersWord === 'plugs' ? 'plug' : 'device')} on`);
   }
   if (open.length === 1) {
     const [o] = open;
@@ -59,7 +62,7 @@ export function composeSentence({ watts, lightsOn, open, motionRooms, lastSeen =
   }
 
   if (watts != null) {
-    const quiet = lightsOn === 0 && open.length === 0;
+    const quiet = lightsOn === 0 && othersOn === 0 && open.length === 0;
     sentences.push(quiet
       ? `The house is quiet, drawing ${formatWatts(watts).replace(' ', NBSP)} with nothing on.`
       : `The house is drawing ${formatWatts(watts).replace(' ', NBSP)}, with ${listWords(parts)}.`);
@@ -91,7 +94,8 @@ const isDeviceInternal = (e) => /device_temperature|internal|_outdoor_/.test(e.i
 
 /** The one temperature a room is said to have: a thermostat's, else its first room sensor's. */
 export function roomTemperature(roomEntities) {
-  const thermostat = roomEntities.find((e) => e.domain === 'climate' && Number.isFinite(e.detail?.currentTemperature));
+  const thermostat = roomEntities.find((e) => e.domain === 'climate' && e.stateClass !== 'unavailable'
+    && Number.isFinite(e.detail?.currentTemperature));
   if (thermostat) return { value: thermostat.detail.currentTemperature, entityId: thermostat.id, thermostat };
   const sensor = roomEntities.filter(isTempSensor).sort((a, b) => Number(isDeviceInternal(a)) - Number(isDeviceInternal(b)))[0];
   if (!sensor || isDeviceInternal(sensor)) return null;
@@ -173,7 +177,15 @@ export function composeNow({ entities, rooms, summary }, { now = Date.now() } = 
   const outdoor = entities.find((e) => isTempSensor(e) && /_outdoor_/.test(e.id)) || null;
 
   return {
-    sentences: composeSentence({ watts: s.power.wholeHouse?.watts ?? null, lightsOn: lights.length, open, motionRooms, lastSeen }),
+    sentences: composeSentence({
+      watts: s.power.wholeHouse?.watts ?? null,
+      lightsOn: lights.length,
+      othersOn: others.length,
+      othersWord: othersWord(others),
+      open,
+      motionRooms,
+      lastSeen,
+    }),
     on: { lights: groupByRoom(lights, rooms), others },
     open: open.map((e) => ({ ...e, label: displayName(e) })),
     motion: motionByRoom,
