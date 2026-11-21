@@ -86,6 +86,7 @@ export function ProgressView() {
     deltaLbs: weightTrend.deltaLbs,
     trendDays: weightTrend.trendDays,
   }), [latest, targetBodyFatPct, weightTrend.deltaLbs, weightTrend.trendDays]);
+  const usingFixedBreakEven = form?.maintenanceKcal !== '' && form?.maintenanceKcal != null;
 
   const saveGoals = async () => {
     setSaving(true);
@@ -188,7 +189,8 @@ export function ProgressView() {
               placeholder={String(DEFAULT_TARGET_BODY_FAT_PCT)} value={form.targetBodyFatPct}
               onChange={(v) => setForm({ ...form, targetBodyFatPct: v })} />
             <NumberInput label="Activity baseline" step={0.05} decimalScale={2} value={form.activityBaseline}
-              disabled={form.maintenanceKcal !== '' && form.maintenanceKcal != null}
+              disabled={usingFixedBreakEven}
+              description={usingFixedBreakEven ? 'Clear Break even to use Activity baseline.' : undefined}
               onChange={(v) => setForm({ ...form, activityBaseline: v })} />
             {/* A fixed break-even replaces BMR x activity baseline; blank uses the formula. */}
             <NumberInput label="Break even" suffix=" kcal" placeholder="From formula" value={form.maintenanceKcal ?? ''}

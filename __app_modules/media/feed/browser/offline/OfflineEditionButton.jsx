@@ -29,7 +29,11 @@ export default function OfflineEditionButton({ item, detail = null }) {
       }
     } catch (error) {
       log.warn('feed.offline_edition.failed', { itemId: item.id, error: error.message });
-      notifications.show({ color: 'red', title: 'Offline download failed', message: 'This browser could not store the article.' });
+      notifications.show({
+        color: 'red',
+        title: downloaded ? 'Offline removal failed' : 'Offline download failed',
+        message: downloaded ? "Couldn't remove the offline copy." : 'This browser could not store the article.',
+      });
     } finally {
       setBusy(false);
     }

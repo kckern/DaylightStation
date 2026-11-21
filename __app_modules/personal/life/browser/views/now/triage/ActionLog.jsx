@@ -114,11 +114,11 @@ function ActionRows({ entries, state, undo }) {
             <div className="life-triage__log-text">
               <div className="life-triage__log-meta">
                 <Badge size="xs" variant={owner ? 'light' : 'outline'} color={owner ? undefined : 'gray'}>{owner ? 'you' : 'auto'}</Badge>
-                <Text size="xs" c="dimmed">
+                <Text size="xs" c="dimmed" id={`triage-action-${e.id}`}>
                   {actionWord(e.action)}{e.dryRun ? ' (dry run — not done)' : ''}{e.uncertain ? ' (unconfirmed)' : ''}
                 </Text>
               </div>
-              <Text size="sm" className="life-triage__log-title" td={undone ? 'line-through' : undefined}>{e.title || 'Untitled'}</Text>
+              <Text size="sm" className="life-triage__log-title" id={`triage-title-${e.id}`} td={undone ? 'line-through' : undefined}>{e.title || 'Untitled'}</Text>
             </div>
             {undone ? (
               <Text size="xs" c="dimmed">Undone</Text>
@@ -134,6 +134,7 @@ function ActionRows({ entries, state, undo }) {
                     size="compact-sm"
                     variant="default"
                     loading={st.busy}
+                    aria-describedby={`triage-action-${e.id} triage-title-${e.id}`}
                     onClick={(event) => undo(e.id, event.currentTarget === document.activeElement)}
                   >
                     {st.retryable ? 'Retry undo' : 'Undo'}
