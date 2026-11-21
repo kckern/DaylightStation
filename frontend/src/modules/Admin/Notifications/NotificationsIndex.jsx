@@ -97,7 +97,7 @@ function NotificationSettings({ initial }) {
   return (
     <>
       <SaveBar title="Notification settings" dirty={dirty} saving={saving} onSave={save} onRevert={revert} />
-      {error && <Text c="red">{error}</Text>}
+      {error && <Text c="red" role="alert">{error}</Text>}
 
       <Paper p="md" withBorder>
         <Group justify="space-between" mb="sm"><Title order={5}>Quiet hours</Title>

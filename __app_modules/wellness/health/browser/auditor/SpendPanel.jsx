@@ -66,7 +66,9 @@ export function DailyChart({ days, capUsd = null, describe = dayText,
     <svg className="health-auditor-spend__chart" viewBox={`0 0 ${W} ${H}`} role="img" tabIndex={0}
       aria-label={label}
       onKeyDown={onKeyDown} onFocus={() => setActive(current => current ?? last)} onBlur={() => setActive(null)}
-      onMouseLeave={() => setActive(null)}>
+      onMouseLeave={event => {
+        if (event.currentTarget.ownerDocument.activeElement !== event.currentTarget) setActive(null);
+      }}>
       <line className="health-auditor-spend__axis" x1={LEFT} x2={W - RIGHT} y1={baseline} y2={baseline} />
       <text className="health-auditor-spend__tick" x={LEFT - 4} y={baseline} textAnchor="end" dominantBaseline="middle">$0</text>
       {peakTick ? <text className="health-auditor-spend__tick" x={LEFT - 4} y={y(peak)} textAnchor="end" dominantBaseline="middle">{formatUsd(peak, 2)}</text> : null}
