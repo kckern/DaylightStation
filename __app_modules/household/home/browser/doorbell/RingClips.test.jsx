@@ -39,8 +39,9 @@ describe('RingClips', () => {
   it('when no day of clips loads, every ring still shows its time, with a retry', async () => {
     apiMock.mockRejectedValue(new Error('camera down'));
     wrap(<RingClips camera="porch-cam" marks={rings.slice(0, 2)} timeZone="UTC" />);
-    await waitFor(() => expect(screen.getAllByText('No recording near this ring')).toHaveLength(2));
+    await waitFor(() => expect(screen.getByText('Clips could not be loaded.')).toBeTruthy());
     expect(document.querySelectorAll('.home-rings__time')).toHaveLength(2);
+    expect(screen.queryByText('No recording near this ring')).toBeNull();
     apiMock.mockResolvedValue({ clips: rings.map(clipAt) });
     fireEvent.click(screen.getByRole('button', { name: /retry/i }));
     await waitFor(() => expect(document.querySelectorAll('video')).toHaveLength(2));

@@ -155,7 +155,7 @@ export function RingClips({ camera, marks, timeZone = Intl.DateTimeFormat().reso
                         Retry unavailable day lookups
                       </Button>
                     </p>
-                  ) : <p className="home-rings__none">No recording near this ring</p>}
+                  ) : !error ? <p className="home-rings__none">No recording near this ring</p> : null}
               </li>
             );
           })}
