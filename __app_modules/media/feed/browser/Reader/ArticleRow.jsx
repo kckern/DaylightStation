@@ -144,7 +144,7 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
                   ref={contentRef}
                   className={contentClassName}
                   dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(article.content) }}
-                /> : <p ref={contentRef} className={contentClassName}>{article.preview || 'This saved item has no cached article body. Open the original to continue reading.'}</p>}
+                /> : <p ref={contentRef} className={contentClassName}>{article.preview || 'No article text is available.'}</p>}
               {overflows && !fullHeight && (
                 <button className="article-readmore" onClick={(e) => { e.stopPropagation(); setFullHeight(true); }}>
                   Read more
