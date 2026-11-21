@@ -1,6 +1,6 @@
 // frontend/src/modules/Admin/Agents/AgentDetail.jsx
 
-import React, { useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { Tabs, Group, Select, Text, Stack, Loader, Button } from '@mantine/core';
 import { IconSettings, IconLayoutDashboard, IconAdjustments } from '@tabler/icons-react';
@@ -15,7 +15,17 @@ function AgentDetail({ DashboardView }) {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const activeTab = location.hash.slice(1) || 'overview';
+  const requestedTab = location.hash.slice(1);
+  const hasDashboardView = Boolean(DashboardView);
+  const activeTab = requestedTab === 'dashboards' && !hasDashboardView
+    ? 'overview'
+    : requestedTab || 'overview';
+
+  useEffect(() => {
+    if (requestedTab === 'dashboards' && !hasDashboardView) {
+      navigate('#overview', { replace: true });
+    }
+  }, [requestedTab, hasDashboardView, navigate]);
   const {
     data,
     loading: usersLoading,
@@ -82,9 +92,11 @@ function AgentDetail({ DashboardView }) {
           <Tabs.Tab value="config" leftSection={<IconAdjustments size={16} />}>
             Config
           </Tabs.Tab>
-          <Tabs.Tab value="dashboards" leftSection={<IconLayoutDashboard size={16} />}>
-            Dashboards
-          </Tabs.Tab>
+          {hasDashboardView && (
+            <Tabs.Tab value="dashboards" leftSection={<IconLayoutDashboard size={16} />}>
+              Dashboards
+            </Tabs.Tab>
+          )}
         </Tabs.List>
 
         <Tabs.Panel value="overview" pt="md">
@@ -95,9 +107,11 @@ function AgentDetail({ DashboardView }) {
           <ConfigTab agentId={agentId} userId={userId} />
         </Tabs.Panel>
 
-        <Tabs.Panel value="dashboards" pt="md">
-          <DashboardView agentId={agentId} userId={userId} />
-        </Tabs.Panel>
+        {hasDashboardView && (
+          <Tabs.Panel value="dashboards" pt="md">
+            <DashboardView agentId={agentId} userId={userId} />
+          </Tabs.Panel>
+        )}
       </Tabs>
     </Stack>
   );

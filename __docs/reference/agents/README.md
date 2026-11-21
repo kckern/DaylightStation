@@ -13,6 +13,13 @@ The framework supports any number of agents in a single deployment. Agents range
 - **HTTP.** Each agent exposes its capability through one or more wire formats. The native wire delivers JSON and Server-Sent Events for in-app callers. The OpenAI-compatible wire serves voice satellites and any other consumer that speaks the OpenAI Chat Completions protocol.
 - **Frontend.** A single chat component renders any agent. Per-agent customization (mention adapters, message decorations) is configured by the consumer; the rendering, streaming, markdown, and tool-call attribution are shared.
 
+## Admin agent detail
+
+Agent details share Overview and Config. Domain-specific panels are composed only
+on the route that owns their resource: the Health Coach route includes the Health
+dashboard panel, while agents without that view omit its tab and resolve legacy
+`#dashboards` links to Overview.
+
 ## Where to read next
 
 - **[Architecture](architecture.md)** — turn lifecycle, prompt composition, tool decorator chain, memory model, transcript format, HTTP wire formats, frontend chat surface.

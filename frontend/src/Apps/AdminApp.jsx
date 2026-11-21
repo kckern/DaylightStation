@@ -92,7 +92,8 @@ function AdminApp() {
 
               {/* Agents */}
               <Route path="agents" element={<AgentsIndex />} />
-              <Route path="agents/:agentId" element={<AgentDetail DashboardView={AgentDashboard} />} />
+              <Route path="agents/health-coach" element={<AgentDetail DashboardView={AgentDashboard} />} />
+              <Route path="agents/:agentId" element={<AgentDetail />} />
 
               {/* Playback Hub */}
               <Route path="playback-hub" element={<PlaybackHubPage />} />
