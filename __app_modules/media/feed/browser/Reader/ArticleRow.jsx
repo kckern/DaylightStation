@@ -23,10 +23,22 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
   const [overflows, setOverflows] = useState(false);
 
   useEffect(() => {
-    if (expanded && contentRef.current) {
-      setOverflows(contentRef.current.scrollHeight > 400);
+    const content = contentRef.current;
+    if (!expanded || !content) {
+      setOverflows(false);
+      return;
     }
-  }, [expanded]);
+
+    const measureOverflow = () => {
+      setOverflows(content.scrollHeight > content.clientHeight);
+    };
+    measureOverflow();
+
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measureOverflow);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [article.content, article.preview, expanded]);
 
   const handleExpand = () => {
     if (!expanded) {

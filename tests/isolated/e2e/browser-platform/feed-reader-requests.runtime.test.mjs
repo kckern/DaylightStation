@@ -16,6 +16,30 @@ function article(id, title) {
   return { id, stateKey: id, title, published: '2026-07-01T12:00:00Z', state: { isSaved: true } };
 }
 
+test('Reader recalculates article overflow when a landscape viewport narrows to portrait', async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  const body = 'The detailed report follows with context and findings. '.repeat(19);
+  await page.route('**/api/v1/feed/reader/stream?**', route => route.fulfill({ json: {
+    items: [{ ...article('rotating', 'Rotating article'), content: `<p>${body}</p>` }],
+    continuation: null,
+  } }));
+
+  await page.goto('/feed/reader');
+  const disclosure = page.getByRole('button', { name: /Rotating article/ });
+  await disclosure.click();
+  const content = page.locator('.article-content');
+  await expect(content).toBeVisible();
+  await expect.poll(() => content.evaluate(node => node.scrollHeight <= node.clientHeight)).toBe(true);
+  await expect(page.getByRole('button', { name: 'Read more' })).toHaveCount(0);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => content.evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true);
+  await expect(page.getByRole('button', { name: 'Read more' })).toBeVisible();
+  await page.getByRole('button', { name: 'Read more' }).click();
+  await expect(content).toHaveClass(/full/);
+  await expect(page.getByRole('button', { name: 'Read more' })).toHaveCount(0);
+});
+
 test('Reader aborts a previous filter page and paginates the current stream', async ({ page }) => {
   let oldPage;
   const streamReads = [];

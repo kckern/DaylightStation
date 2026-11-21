@@ -254,7 +254,11 @@ Each article renders as a single-line row that expands into an accordion on clic
 
 ### Expanded State
 
-Shows article metadata (feed title, author, date), full HTML content (capped at 400px with fade gradient, "Read more" to uncap), and "Open original" link.
+Shows article metadata (feed title, author, date), full HTML or plain-text
+content (capped at 400px with fade gradient, "Read more" to uncap), and "Open
+original" link. While the row is open, a resize observer recalculates whether
+the visible content exceeds its cap; it disconnects when the row closes so a
+phone rotation can reveal or remove "Read more" without reopening the article.
 
 ### Read/Unread Styling
 
