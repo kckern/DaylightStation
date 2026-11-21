@@ -9,6 +9,7 @@ import { ActiveQualityButton } from "../quality/PlaybackQualityButtons.jsx";
 import React, { useEffect, useRef, useState } from 'react';
 import { IconArrowsMinimize, IconMaximize } from '@tabler/icons-react';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
+import { useCompactViewport } from '@/lib/ui/useCompactViewport.js';
 import { useSessionController } from "../controller/useSessionController.js";
 import { usePlayerHost } from "../session/usePlayerHost.js";
 import { useNav } from "./NavProvider.jsx";
@@ -24,20 +25,6 @@ import { LineUpOffer } from "./LineUpOffer.jsx";
 import { AddToHomeScreenButton } from "./AddToHomeScreenButton.jsx";
 import { pinTarget } from "./homeScreenPin.js";
 import "./NowPlaying.scss";
-
-function useIsPhone() {
-  const query = '(max-width: 767px)';
-  const [phone, setPhone] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.(query).matches);
-  useEffect(() => {
-    const mq = window.matchMedia?.(query);
-    if (!mq) return undefined;
-    const on = () => setPhone(mq.matches);
-    on();
-    mq.addEventListener?.('change', on);
-    return () => mq.removeEventListener?.('change', on);
-  }, []);
-  return phone;
-}
 
 // Format enrichment may not arrive before a paused/autoplay-blocked video
 // renders. The native node is read only: it restores the visual affordance but
@@ -62,7 +49,7 @@ function useActualVideoNode(controller, hostRef, itemKey) {
   return isVideo;
 }
 
-export function NowPlayingView() {
+export function NowPlayingView({ destinationControlRef }) {
   const { controller, snapshot, portability } = useSessionController('local');
   const item = snapshot?.currentItem;
   const hostRef = useRef(null);
@@ -70,7 +57,7 @@ export function NowPlayingView() {
   usePlayerHost(hostRef, 2, true, { forceShader: expanded ? 'focused' : null });
   const hasActualVideoNode = useActualVideoNode(controller, hostRef, item?.contentId ?? null);
   const { pop, backDestination } = useNav();
-  const isPhone = useIsPhone();
+  const isPhone = useCompactViewport();
 
   useEffect(() => setExpanded(false), [item?.contentId]);
 
@@ -167,7 +154,7 @@ export function NowPlayingView() {
 
       {/* The header's destination control carries the aim on every view; on a phone it
           is out of thumb reach, so Now Playing repeats it there (RELY.12a). */}
-      {isPhone && <DestinationLine surface="now-playing" />}
+      {isPhone && <DestinationLine surface="now-playing" focusReturnRef={destinationControlRef} />}
       <SessionControlFrame targetKind="local">
         {item && (
         <>

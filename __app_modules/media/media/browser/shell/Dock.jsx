@@ -21,7 +21,7 @@ import { CastTargetChip } from "../cast/CastTargetChip.jsx";
 import { FirstUseCard } from "../identity/FirstUseCard.jsx";
 import { DestinationInteractionContext } from "../cast/destinationInteraction.js";
 
-export function Dock({ onOpenSearch, searchInputRef, launcherRef }) {
+export function Dock({ onOpenSearch, searchInputRef, launcherRef, destinationControlRef }) {
   const [startFreshOpen, setStartFreshOpen] = useState(false);
   const openStartFresh = useCallback(() => setStartFreshOpen(true), []);
   // Set while the destination control is being used, so an open search stays open.
@@ -34,7 +34,7 @@ export function Dock({ onOpenSearch, searchInputRef, launcherRef }) {
       {/* The destination control: where the next Play goes. On every width. The
           first-use naming popover anchors to it. */}
       <div className="media-dock-destination">
-        <FirstUseCard><CastTargetChip /></FirstUseCard>
+        <FirstUseCard><CastTargetChip controlRef={destinationControlRef} /></FirstUseCard>
       </div>
       <button
         type="button"

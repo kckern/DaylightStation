@@ -12,7 +12,7 @@
 // ScopeChips. `surface` is optional and used only to tag the
 // dispatch.destination_changed log line; mounted unchanged by SearchMode's
 // full-screen surface (Task 13) and the container browse header (Task 15).
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Modal } from '@mantine/core';
 import { IconChevronDown } from '@tabler/icons-react';
 import { useCastTarget } from "./useCastTarget.js";
@@ -38,14 +38,23 @@ function DestinationInteractionSurface({ onUnmount, children }) {
   return <div data-testid="destination-sheet">{children}</div>;
 }
 
-export function DestinationLine({ surface, onInteractionStart, onInteractionEnd } = {}) {
+export function DestinationLine({ surface, onInteractionStart, onInteractionEnd, focusReturnRef } = {}) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef(null);
+  const dialogRef = useRef(null);
   const interactionStartedRef = useRef(false);
   const provisionalCleanupRef = useRef(null);
   const wasOpenRef = useRef(false);
   const interactionEndRef = useRef(onInteractionEnd);
   interactionEndRef.current = onInteractionEnd;
   const { targetIds, mode, clearTargets, toggleTarget, setMode } = useCastTarget();
+
+  useLayoutEffect(() => () => {
+    const active = document.activeElement;
+    const ownedFocus = triggerRef.current?.contains(active) || dialogRef.current?.contains(active);
+    const focusReturn = focusReturnRef?.current;
+    if (ownedFocus && focusReturn?.getClientRects().length) focusReturn.focus({ preventScroll: true });
+  }, [focusReturnRef]);
 
   const close = useCallback(() => setOpen(false), []);
   // Mantine's own window-capture Escape can close and unregister the Modal
@@ -144,6 +153,7 @@ export function DestinationLine({ surface, onInteractionStart, onInteractionEnd 
     <>
       <button
         type="button"
+        ref={triggerRef}
         data-testid="destination-line"
         data-ignore-outside-clicks
         className="cast-destination-line"
@@ -157,9 +167,11 @@ export function DestinationLine({ surface, onInteractionStart, onInteractionEnd 
         <IconChevronDown size={16} aria-hidden="true" />
       </button>
       <Modal
+        ref={dialogRef}
         opened={open}
         onClose={close}
         title="Destination"
+        closeButtonProps={{ 'aria-label': 'Close destination picker' }}
         centered
         size="sm"
         zIndex={DESTINATION_MODAL_Z_INDEX}

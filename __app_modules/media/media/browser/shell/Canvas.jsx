@@ -10,14 +10,14 @@ import { PeekPanel } from "./PeekPanel.jsx";
 import { ScreenAdminView } from "../house/ScreenAdminView.jsx";
 import { RoutineHistoryView } from "../house/RoutineHistoryView.jsx";
 
-function renderView(view, params) {
+function renderView(view, params, destinationControlRef) {
   switch (view) {
     case 'home': return <HomeView />;
     case 'browse': return <BrowseView path={params.path ?? ''} label={params.label} containerItem={params.containerItem ?? null}
       breadcrumbs={params.breadcrumbs ?? []} scrollTop={params.scrollTop ?? 0} focusedId={params.focusedId ?? null}
       loadedCount={params.loadedCount ?? 0} />;
     case 'detail': return <DetailView key={params.contentId} contentId={params.contentId} />;
-    case 'nowPlaying': return <NowPlayingView />;
+    case 'nowPlaying': return <NowPlayingView destinationControlRef={destinationControlRef} />;
     case 'fleet': return <FleetView />;
     case 'peek': return <PeekPanel deviceId={params.deviceId} />;
     case 'screens': return <ScreenAdminView />;
@@ -26,11 +26,11 @@ function renderView(view, params) {
   }
 }
 
-export function Canvas() {
+export function Canvas({ destinationControlRef }) {
   const { view, params } = useNav();
   return (
     <main data-testid="media-canvas" className="media-canvas">
-      {renderView(view, params)}
+      {renderView(view, params, destinationControlRef)}
     </main>
   );
 }

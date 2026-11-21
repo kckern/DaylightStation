@@ -4,7 +4,7 @@
 // player, dispatch tray) docks between canvas and tab bar on mobile.
 import { PlaybackFrame } from '@/lib/ui/AppFrame.jsx';
 import { useHotkey } from '@/lib/hooks/useHotkey.js';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { NavProvider, useNav } from "./NavProvider.jsx";
 import { DismissStackProvider } from "@/lib/ui/dismiss/DismissStackProvider.jsx";
 import { Dock } from "./Dock.jsx";
@@ -26,6 +26,7 @@ import "./MediaShell.scss";
 function ShellInner() {
   const searchInputRef = React.useRef(null);
   const launcherRef = React.useRef(null);
+  const destinationControlRef = useRef(null);
   const restoreSearchFocus = useCallback(() => {
     const target = searchInputRef.current?.getClientRects().length ? searchInputRef.current : launcherRef.current;
     target?.focus({ preventScroll: true });
@@ -62,7 +63,7 @@ function ShellInner() {
     <SearchLauncherContext.Provider value={searchLauncher}>
     <DismissStackProvider onBaseDismiss={baseDismiss}>
       <PlaybackFrame className="media-shell" data-testid="media-shell"
-        header={<Dock searchInputRef={searchInputRef} launcherRef={launcherRef} onOpenSearch={() => setSearchOpen(true)} />}
+        header={<Dock searchInputRef={searchInputRef} launcherRef={launcherRef} destinationControlRef={destinationControlRef} onOpenSearch={() => setSearchOpen(true)} />}
         controls={<>
           <ReconnectingNote />
           <LocalPlaybackOutcomes />
@@ -90,7 +91,7 @@ function ShellInner() {
       >
         <div className="media-shell-body">
           <NavRail />
-          <Canvas />
+          <Canvas destinationControlRef={destinationControlRef} />
         </div>
       </PlaybackFrame>
     </DismissStackProvider>

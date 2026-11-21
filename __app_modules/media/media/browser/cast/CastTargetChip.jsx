@@ -8,6 +8,7 @@
 // first-use naming popover anchors to it (identity/FirstUseCard.jsx).
 import React, { useState, useCallback, useContext, useEffect, useRef } from 'react';
 import { Popover, Text, UnstyledButton } from '@mantine/core';
+import { useMergedRef } from '@mantine/hooks';
 import { IconChevronDown } from '@tabler/icons-react';
 import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 import { useCastTarget } from "./useCastTarget.js";
@@ -18,9 +19,10 @@ import { destinationName } from "./AimLabel.jsx";
 import { useDestinationInteraction } from "./destinationInteraction.js";
 import "./Cast.scss";
 
-export function CastTargetChip() {
+export function CastTargetChip({ controlRef }) {
   const [open, setOpen] = useState(false);
   const trigger = useRef(null);
+  const setTriggerRef = useMergedRef(trigger, controlRef);
   const dismissFromKeyboard = useCallback(() => {
     setOpen(false);
     trigger.current?.focus({ preventScroll: true });
@@ -38,7 +40,7 @@ export function CastTargetChip() {
 
   const control = (
     <UnstyledButton
-      ref={trigger}
+      ref={setTriggerRef}
       data-testid="cast-target-chip"
       className="media-destination"
       aria-label={`Playing on ${name}. Change where things play`}

@@ -1,7 +1,6 @@
 import { useFeedListShortcuts } from '../useFeedListShortcuts.js';
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
-import { useMediaQuery } from '@mantine/hooks';
-import { DS_TOKENS } from '@/lib/theme/tokens.mjs';
+import { COMPACT_VIEWPORT_QUERY, useCompactViewport } from '@/lib/ui/useCompactViewport.js';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { useRetryRegion } from '@/lib/ui/useRetryRegion.js';
 import { keepTabInPanel } from '@/lib/ui/dismiss/useDialogFocus.js';
@@ -20,7 +19,6 @@ import "./Reader.scss";
 
 const log = getLogger().child({ app: 'feed', module: 'reader' });
 const HISTORY_VIEWS = new Set(['unread', 'saved', 'archived']);
-const COMPACT_QUERY = `(max-width: ${DS_TOKENS.breakpoints.md - 1}px)`;
 const streamTimeoutMs = 10_000;
 
 function historyItemToArticle(item) {
@@ -198,7 +196,7 @@ export default function Reader() {
   const [offlineLoading, setOfflineLoading] = useState(false);
   const [offlineAttempt, setOfflineAttempt] = useState(0);
   const [collapsedGroups, setCollapsedGroups] = useState(new Set());
-  const compact = useMediaQuery(COMPACT_QUERY);
+  const compact = useCompactViewport();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerActive = compact && drawerOpen;
   const wasDrawerActive = useRef(false);
@@ -238,7 +236,7 @@ export default function Reader() {
   }, [compact, drawerActive]);
 
   const openDrawer = () => {
-    if (window.matchMedia(COMPACT_QUERY).matches) setDrawerOpen(true);
+    if (window.matchMedia(COMPACT_VIEWPORT_QUERY).matches) setDrawerOpen(true);
   };
   const closeDrawer = () => setDrawerOpen(false);
   const usesDismissStack = useDismissLayer(drawerActive, closeDrawer);

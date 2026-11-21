@@ -558,6 +558,80 @@ test('Media holds Now Playing progress while the original audio keeps playing in
   await expect.poll(clock).toBeGreaterThan(resumed);
 });
 
+test('Media hands a disappearing Now Playing destination control to the header on desktop resize', async ({ page }) => {
+  await page.setViewportSize({ width: 767, height: 850 });
+  await page.routeWebSocket('**/ws', () => {});
+  await page.goto('/media?play=plex%3A42');
+  const clock = await originalClock(page);
+  await page.getByTestId('mini-player-open-nowplaying').click();
+
+  const phoneDestination = page.getByTestId('destination-line');
+  await expect(phoneDestination).toBeVisible();
+  await phoneDestination.focus();
+  await expect(phoneDestination).toBeFocused();
+
+  await page.setViewportSize({ width: 768, height: 850 });
+  const headerDestination = page.getByTestId('cast-target-chip');
+  await expect(headerDestination).toBeFocused();
+  const before = await clock();
+  await expect.poll(clock).toBeGreaterThan(before);
+});
+
+test('Media hands an open Now Playing destination picker to the header on desktop resize', async ({ page }) => {
+  await page.setViewportSize({ width: 767, height: 850 });
+  await page.routeWebSocket('**/ws', () => {});
+  await page.goto('/media?play=plex%3A42');
+  const clock = await originalClock(page);
+  await page.getByTestId('mini-player-open-nowplaying').click();
+
+  await page.getByTestId('destination-line').click();
+  const picker = page.getByRole('dialog', { name: 'Destination' });
+  await expect(picker).toBeVisible();
+  const localOption = picker.getByTestId('picker-this-device');
+  await localOption.focus();
+
+  await page.setViewportSize({ width: 768, height: 850 });
+  await expect(page.getByTestId('cast-target-chip')).toBeFocused();
+  const before = await clock();
+  await expect.poll(clock).toBeGreaterThan(before);
+});
+
+test('Media hands picker Close focus to the header when the Now Playing modal disappears', async ({ page }) => {
+  await page.setViewportSize({ width: 767, height: 850 });
+  await page.routeWebSocket('**/ws', () => {});
+  await page.goto('/media?play=plex%3A42');
+  const clock = await originalClock(page);
+  await page.getByTestId('mini-player-open-nowplaying').click();
+
+  await page.getByTestId('destination-line').click();
+  const picker = page.getByRole('dialog', { name: 'Destination' });
+  await expect(picker).toBeVisible();
+  const close = picker.getByRole('button', { name: 'Close destination picker' });
+  await close.focus();
+  await expect(close).toBeFocused();
+
+  await page.setViewportSize({ width: 768, height: 850 });
+  await expect(page.getByTestId('cast-target-chip')).toBeFocused();
+  const before = await clock();
+  await expect.poll(clock).toBeGreaterThan(before);
+});
+
+test('Media keeps unrelated Now Playing focus when the phone destination control disappears', async ({ page }) => {
+  await page.setViewportSize({ width: 767, height: 850 });
+  await page.routeWebSocket('**/ws', () => {});
+  await page.goto('/media?play=plex%3A42');
+  await originalClock(page);
+  await page.getByTestId('mini-player-open-nowplaying').click();
+
+  const back = page.getByTestId('now-playing-back');
+  await back.focus();
+  await expect(back).toBeFocused();
+  await page.setViewportSize({ width: 768, height: 850 });
+
+  await expect(page.getByTestId('destination-line')).toHaveCount(0);
+  await expect(back).toBeFocused();
+});
+
 test('Media keeps the last paused seek when leaving its app and restores silently on return', async ({ page }) => {
   const track = { contentId: item.contentId, title: item.title, format: 'audio', duration: 30 };
   await page.addInitScript(track => {

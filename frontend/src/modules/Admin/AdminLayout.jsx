@@ -1,8 +1,7 @@
 import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
-import { DS_TOKENS } from '../../lib/theme/tokens.mjs';
 import { AppFrame } from '../../lib/ui/AppFrame.jsx';
-import { useMediaQuery } from '@mantine/hooks';
+import { useCompactViewport } from '../../lib/ui/useCompactViewport.js';
 import { DismissStackProvider } from '../../lib/ui/dismiss/DismissStackProvider.jsx';
 import { keepTabInPanel } from '../../lib/ui/dismiss/useDialogFocus.js';
 import AdminNav from './AdminNav.jsx';
@@ -12,7 +11,7 @@ import './Admin.scss';
 
 function AdminLayout() {
   const { key } = useLocation();
-  const compact = useMediaQuery(`(max-width: ${DS_TOKENS.breakpoints.md - 1}px)`);
+  const compact = useCompactViewport();
   const [openAt, setOpenAt] = useState(null);
   const opened = compact && openAt === key;
   const opener = useRef(null);
