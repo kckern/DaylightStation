@@ -2,17 +2,11 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { whileDocumentVisible } from '@/lib/hooks/useVisibleRefresh.js';
 import { RemuxPlayer } from "../../../../../__capabilities/playback/browser/remux.mjs";
 import { useFeedPlayer } from "./FeedPlayerContext.jsx";
+import { formatFeedPlaybackTime } from './formatTime.js';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 
 // Recreate child each call to pick up sessionLog context set by FeedApp
 function log() { return getLogger().child({ module: 'feed-player' }); }
-
-function formatTime(s) {
-  if (!s || !Number.isFinite(s)) return '0:00';
-  const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return `${m}:${sec.toString().padStart(2, '0')}`;
-}
 
 /**
  * Speaker icon SVG for volume control.
@@ -299,7 +293,7 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
 
         {/* Time */}
         <span style={{ color: '#fff', fontSize: '12px', fontVariantNumeric: 'tabular-nums' }}>
-          {formatTime(currentTime)} / {formatTime(duration)}
+          {formatFeedPlaybackTime(currentTime)} / {formatFeedPlaybackTime(duration)}
         </span>
 
         <span style={{ flex: 1 }} />

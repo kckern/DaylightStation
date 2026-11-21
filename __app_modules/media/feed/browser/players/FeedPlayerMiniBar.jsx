@@ -2,14 +2,8 @@ import { useRef } from 'react';
 import { proxyImage, safeImage } from "../Scroll/cards/utils.js";
 import { feedLog } from "../Scroll/feedLog.js";
 import { useFeedPlayer } from "./FeedPlayerContext.jsx";
+import { formatFeedPlaybackTime } from './formatTime.js';
 import "./FeedPlayerMiniBar.scss";
-
-function formatTime(s) {
-  if (!s || !Number.isFinite(s)) return '0:00';
-  const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return `${m}:${sec.toString().padStart(2, '0')}`;
-}
 
 export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose, openerRef }) {
   // All hooks must run before any early return (rules-of-hooks).
@@ -65,7 +59,7 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose, ope
       </button>
       {duration > 0 && (
         <span className="feed-mini-bar-time">
-          {formatTime(currentTime)} / {formatTime(duration)}
+          {formatFeedPlaybackTime(currentTime)} / {formatFeedPlaybackTime(duration)}
         </span>
       )}
       <button

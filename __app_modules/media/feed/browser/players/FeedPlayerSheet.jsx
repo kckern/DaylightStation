@@ -7,14 +7,8 @@ import { useOverlayFocusReturn } from '@/lib/ui/dismiss/useOverlayFocusReturn.js
 import { proxyImage, safeImage } from "../Scroll/cards/utils.js";
 import { feedLog } from "../Scroll/feedLog.js";
 import { useFeedPlayer, SPEED_STEPS } from "./FeedPlayerContext.jsx";
+import { formatFeedPlaybackTime } from './formatTime.js';
 import "./FeedPlayerSheet.scss";
-
-function formatTime(s) {
-  if (!s || !Number.isFinite(s)) return '0:00';
-  const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return `${m}:${sec.toString().padStart(2, '0')}`;
-}
 
 export default function FeedPlayerSheet({ open, onClose, item, playback, openerRef }) {
   const {
@@ -227,8 +221,8 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
             </div>
           </div>
           <div className="sheet-scrubber-times">
-            <span>{formatTime(displayTime)}</span>
-            <span>-{formatTime(remaining)}</span>
+            <span>{formatFeedPlaybackTime(displayTime)}</span>
+            <span>-{formatFeedPlaybackTime(remaining)}</span>
           </div>
         </div>
 
