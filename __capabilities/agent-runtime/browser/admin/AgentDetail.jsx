@@ -28,6 +28,7 @@ function AgentDetail({ agentId: explicitAgentId, ConfigView, DashboardView }) {
   }, [requestedTabUnsupported, navigate]);
   const {
     data,
+    hasResult: hasUsersResult,
     loading: usersLoading,
     error: usersError,
     reload: reloadUsers,
@@ -69,9 +70,9 @@ function AgentDetail({ agentId: explicitAgentId, ConfigView, DashboardView }) {
               />
             ) : usersLoading ? (
               <Loader size="xs" />
-            ) : (
+            ) : hasUsersResult && !usersError ? (
               <Text size="xs" c="dimmed">No household members available</Text>
-            )}
+            ) : null}
             {usersError && (
               <Group gap="xs" role="alert">
                 <Text size="xs" c="red">Couldn’t load household members</Text>
