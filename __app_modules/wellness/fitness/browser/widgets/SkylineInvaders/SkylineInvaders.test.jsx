@@ -84,7 +84,7 @@ async function mount(options = {}) {
   return view;
 }
 // Start from the wave list and sit through the 3-2-1. Without a camera there is
-// no Ready screen: straight to the countdown with gamepad aim.
+// no Ready screen: straight to the countdown on auto aim.
 async function startRound() {
   await status('camera-denied');
   await pad(4);
@@ -290,9 +290,9 @@ describe('SkylineInvaders — lobby, controls, Ready, pose and lifecycle', () =>
     await pad(4);
     expect(menuScreen()).toBe('method');
     expect(logged('skyline_invaders.setup.opened')[0]).toMatchObject({ shooterId: 'kid', from: 'start', current: null });
-    // Every way to aim is a tile, the gamepad last; the keys keep only Back.
+    // Every way to aim is a tile, and there is no gamepad tile; the keys keep only Back.
     expect([...document.querySelectorAll('.skyline-invaders__method strong')].map((n) => n.textContent))
-      .toEqual(['Wipers', 'Twist', 'Wings', 'Steering wheel', 'Sprinkler', 'Slide', 'Push', 'Hop', 'Gamepad']);
+      .toEqual(['Wipers', 'Twist', 'Wings', 'Steering wheel', 'Sprinkler', 'Slide', 'Push', 'Hop']);
     expect(padLabels()).toEqual(['Back']);
     // The mat never chooses here: the defender is standing on it.
     await step('mat-a1', 'pressure-mat:stomp');
@@ -332,7 +332,7 @@ describe('SkylineInvaders — lobby, controls, Ready, pose and lifecycle', () =>
     expect(menuScreen()).toBe('method');
   });
 
-  it('Ready offers Skip only with a gamepad connected', async () => {
+  it('Ready has no Skip, even with a gamepad connected: the defender has to be seen', async () => {
     gamepads([{ axes: [0, 0], buttons: Array.from({ length: 16 }, () => ({ pressed: false })) }]);
     await mount({ controls: { gesture: 'wiper' } });
     await status('detecting');
@@ -340,31 +340,25 @@ describe('SkylineInvaders — lobby, controls, Ready, pose and lifecycle', () =>
     await tapMethod('wiper');
     await passSweep();
     await pad(4);
-    expect(padLabels()).toEqual(['Back', 'Skip']);
-    await pad(4);
-    expect(screen.getByTestId('skyline-invaders-play').getAttribute('data-phase')).toBe('countdown');
+    expect(padLabels()).toEqual(['Back']);
+    expect(screen.getByTestId('skyline-invaders-ready')).toBeTruthy();
     gamepads([]);
   });
 
-  it('a camera that never starts: the setup says so, and the Gamepad is a choice of its own that needs no test', async () => {
+  it('a camera that never starts: the setup says so, and there is no gamepad tile to play around it', async () => {
     await mount();
     await pad(4);
     expect(menuScreen()).toBe('method');
     expect(screen.getByTestId('invaders-setup-note').textContent).toBe('The camera is starting…');
-    await tapMethod('gamepad');
-    expect(screen.getByTestId('skyline-invaders-play').getAttribute('data-phase')).toBe('countdown');
-    await f.seconds(3.1);
-    expect(logged('skyline_invaders.level.start')[0]).toMatchObject({ aimMode: 'manual' });
-    expect(screen.getByTestId('skyline-invaders-hud').textContent).toContain('Gamepad aim');
-    // The gamepad is for this visit: nothing is saved as the defender's controls.
-    expect(routes.controls).not.toHaveBeenCalled();
-    expect(logged('skyline_invaders.setup.method_changed')[0]).toMatchObject({ method: 'gamepad', saved: false });
+    expect(screen.queryByTestId('invaders-method-gamepad')).toBeNull();
+    expect(screen.getByTestId('skyline-invaders').getAttribute('data-phase')).toBe('lobby');
   });
 
-  it('plays with gamepad aim when the camera is denied, and the HUD wears a Gamepad aim badge', async () => {
+  it('plays on auto aim when the camera is denied, and the HUD wears an Auto aim badge', async () => {
     await mount();
     await startRound();
-    expect(screen.getByTestId('skyline-invaders-hud').textContent).toContain('Gamepad aim');
+    expect(logged('skyline_invaders.level.start')[0]).toMatchObject({ aimMode: 'manual' });
+    expect(screen.getByTestId('skyline-invaders-hud').textContent).toContain('Auto aim');
   });
 
   it('pauses on the module lifecycle and resumes with it', async () => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  MANUAL_METHOD, SETUP_METHODS, advanceSetupTest, createSetupTest, fireSetupTest, retrySetupTest, setupSecondsLeft, setupStepId,
+  SETUP_METHODS, advanceSetupTest, createSetupTest, fireSetupTest, retrySetupTest, setupSecondsLeft, setupStepId,
 } from '../../lib/skylineInvaders/setupTest.js';
 import { INVADERS_TUNABLES } from '../../lib/skylineInvaders/tunables.js';
 
@@ -21,7 +21,7 @@ const POLL_MS = 50;
 /**
  * @param {object} options
  * @param {object} options.tracker          the game's aim tracker
- * @param {function} [options.onPassed]     (method) the method passed its test (or the gamepad was chosen)
+ * @param {function} [options.onPassed]     (method) the method passed its test
  * @param {function} [options.onEvent]      (name, data) a step passed or timed out, a retry, a fire: for the log
  * @param {function} [options.onTick]       ({ at, sample, test }) every poll of a running sweep, for the trace recorder
  */
@@ -48,10 +48,9 @@ export default function useInvadersSetup({ tracker, onPassed, onEvent, onTick, t
   }, []);
   const move = useCallback((delta) => setState((prior) => ({ ...prior, cursor: (prior.cursor + delta + SETUP_METHODS.length) % SETUP_METHODS.length })), []);
 
-  /** Choose a method (or the one under the cursor). A gesture goes to its test; the gamepad needs none. */
+  /** Choose a method (or the one under the cursor): it goes to its test. */
   const choose = useCallback((method = SETUP_METHODS[live.current.state.cursor]) => {
     if (!SETUP_METHODS.includes(method)) return;
-    if (method === MANUAL_METHOD) { live.current.onPassed?.(method); return; }
     tracker.setManual?.(false);
     tracker.setGesture(method);
     // Every test starts with the cannon in the middle: going left and going right are both a move.

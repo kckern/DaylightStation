@@ -230,9 +230,10 @@ describe('Skyline Invaders controls', () => {
     await pad(4);
     expect(menuScreen()).toBe('method');
     await keyDown('ArrowLeft');
-    expect(screen.getByTestId('invaders-method-gamepad')).toHaveAttribute('aria-pressed','true');
+    expect(screen.getByTestId('invaders-method-hop')).toHaveAttribute('aria-pressed','true');
+    expect(screen.queryByTestId('invaders-method-gamepad')).toBeNull();
     await keyDown('ArrowDown');await keyDown('ArrowUp');
-    expect(screen.getByTestId('invaders-method-gamepad')).toHaveAttribute('aria-pressed','true');
+    expect(screen.getByTestId('invaders-method-hop')).toHaveAttribute('aria-pressed','true');
     await keyDown('ArrowRight');
     expect(screen.getByTestId('invaders-method-wiper')).toHaveAttribute('aria-pressed','true');
     expect(routes.controls).not.toHaveBeenCalled();
@@ -484,7 +485,50 @@ describe('Skyline Invaders controls', () => {
     expect(screen.queryByTestId('invaders-aim-help')).toBeNull();
   });
 
-  it('keyboard round: no camera and no mat, Space fuels the stream, the arrows move the cannon lane by lane, and the round is saved with its stars', async () => {
+  it('kiosk build: a gamepad and the game keys play nothing (no fuel, bomb or aim), each attempt is logged, and the mat still fires', async () => {
+    vi.stubEnv('DEV', false);
+    const buttons = Array.from({ length: 16 }, () => ({ pressed: false, value: 0 }));
+    const axes = [0, 0];
+    Object.defineProperty(navigator, 'getGamepads', { value: () => [{ index: 0, id: 'kid-pad', axes, buttons }], configurable: true, writable: true });
+    try {
+      await mount();
+      await status('camera-denied');
+      await start();
+      expect(phase()).toBe('playing');
+      expect(hud()).toContain('Auto aim');
+      await f.frames(2);
+      const startX = cannonX();
+      // Every button that used to play (A and RT fuel, X and Y bomb), the D-pad and the stick (aim), one after another.
+      for (const index of [0, 7, 2, 3, 14, 15]) {
+        buttons[index] = { pressed: true, value: 1 }; await f.frames(2);
+        buttons[index] = { pressed: false, value: 0 }; await f.frames(2);
+      }
+      axes[0] = 1; await f.frames(20);
+      axes[0] = 0;
+      // The keyboard (a Bluetooth remote or keyboard in the garage) likewise.
+      for (const k of [' ', 'f', 'b']) { await keyDown(k); await keyUp(k); }
+      await keyDown('ArrowRight'); await f.frames(20); await keyUp('ArrowRight');
+      await f.frames(2);
+      expect(phase()).toBe('playing');
+      expect(shots()).toHaveLength(0);
+      expect(logged('skyline_invaders.fuel')).toEqual([]);
+      // No camera: the cannon drifts on its own, never pushed by the stick or the arrows.
+      expect(cannonX()).not.toBeGreaterThan(Math.max(startX, firstMeteor().x));
+      const ignored = logged('skyline_invaders.input.ignored');
+      expect(ignored.filter((entry) => entry.source === 'gamepad' && entry.input === 'button').map((entry) => entry.button)).toEqual([0, 7, 2, 3, 14, 15]);
+      expect(ignored.some((entry) => entry.source === 'gamepad' && entry.input === 'stick')).toBe(true);
+      expect(ignored.filter((entry) => entry.source === 'keyboard').map((entry) => entry.key)).toEqual([' ', 'f', 'b', 'ArrowRight']);
+      // The mat is what fires.
+      await step();
+      await f.frames(3);
+      expect(logged('skyline_invaders.fuel')[0]).toMatchObject({ source: 'mat' });
+    } finally {
+      vi.unstubAllEnvs();
+      Object.defineProperty(navigator, 'getGamepads', { value: () => [], configurable: true, writable: true });
+    }
+  });
+
+  it('dev build only: keyboard round: no camera and no mat, Space fuels the stream, the arrows move the cannon lane by lane, and the round is saved with its stars', async () => {
     h.ctx = makeCtx({ matRider: null });
     h.ctx.equipment = h.ctx.equipment.filter((item) => item.id !== 'step-mat');
     await mount({ controls: null });

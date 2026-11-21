@@ -72,7 +72,7 @@ describe('InvadersReady', () => {
     first.unmount();
     mount({ gesture: null, mat: false });
     expect(screen.queryByTestId('invaders-ready-how')).toBeNull();
-    expect(screen.getByText('A or Space to fire · B or X for the bomb')).toBeTruthy();
+    expect(screen.getByText('Fire comes from the mat: pick a defender on one')).toBeTruthy();
   });
 
   it('does not poll a camera that is not there', () => {

@@ -524,8 +524,6 @@
   grid-column: 1; grid-row: 1 / span 2; display: grid; place-items: center; width: 56px; height: 64px;
   .skyline-invaders__demo { height: 64px; min-height: 0; padding: 2px; }
 }
-.skyline-invaders__method-pad { width: 56px; height: auto; fill: var(--sg-paper); }
-.skyline-invaders__method-pad-key { fill: var(--sg-ink); }
 .skyline-invaders__setup-note { margin: sgvw(.6) 0 0; color: var(--sg-gold); font-size: var(--sg-text-s); font-weight: 900; }
 
 @container skyline-menu (max-width: 1100px) {

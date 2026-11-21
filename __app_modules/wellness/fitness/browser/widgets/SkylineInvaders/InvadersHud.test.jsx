@@ -112,7 +112,7 @@ describe('InvadersHud', () => {
     expect(notes()).toEqual(['Step into view']);
     view.unmount();
     renderHud({ aimStatus: { lost: true, mode: 'manual' }, poseStatus: { state: 'camera-denied' } });
-    expect(notes()).toEqual(['Gamepad aim']);
+    expect(notes()).toEqual(['Auto aim']);
   });
 
   it('says the camera is still starting, rather than asking the defender to step into view', () => {

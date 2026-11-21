@@ -20,9 +20,9 @@ describe('invadersControls: one decision per screen, as four touch keys', () => 
     expect(invadersControls({ ...view, count: 1 })[0].disabled).toBe(true);
   });
 
-  it('ready: Skip only with a gamepad connected', () => {
+  it('ready: no Skip, a gamepad connected or not (the game does not read one)', () => {
     expect(invadersAction({ screen: 'ready', gamepad: false }, 4)).toBeNull();
-    expect(invadersAction({ screen: 'ready', gamepad: true }, 4)).toBe('skip-ready');
+    expect(invadersAction({ screen: 'ready', gamepad: true }, 4)).toBeNull();
     expect(invadersAction({ screen: 'ready' }, 3)).toBe('back-to-waves');
   });
 

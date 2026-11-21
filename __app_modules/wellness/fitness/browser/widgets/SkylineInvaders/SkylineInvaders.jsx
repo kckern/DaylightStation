@@ -21,7 +21,7 @@ import { listInvadersMats, selectInvadersMat } from '../../lib/skylineInvaders/m
 import { gateLearnerIds, listInvadersPeople, listSessionRiderIds } from '../../lib/skylineInvaders/people.js';
 import { buildSkylineInvadersRun } from '../../lib/skylineInvaders/runResult.js';
 import { aimToX } from '../../lib/skylineInvaders/threats.js';
-import { MANUAL_METHOD, setupStepId, setupTargets } from '../../lib/skylineInvaders/setupTest.js';
+import { SETUP_METHODS, setupStepId, setupTargets } from '../../lib/skylineInvaders/setupTest.js';
 import { TRYOUT_TARGET_CODES, createTraceRecorder } from '../../lib/skylineInvaders/traceRecorder.js';
 import { INVADERS_TUNABLES } from '../../lib/skylineInvaders/tunables.js';
 import { invadersAction, invadersControls, pressForMenuKey, stompAction } from '../../lib/skylineInvaders/invadersPanel.js';
@@ -39,7 +39,7 @@ import InvadersScene from './InvadersScene.jsx';
 import useInvadersAim from './useInvadersAim.js';
 import useInvadersBoost from './useInvadersBoost.js';
 import useInvadersFire from './useInvadersFire.js';
-import useInvadersSetup, { SETUP_METHODS } from './useInvadersSetup.js';
+import useInvadersSetup from './useInvadersSetup.js';
 import useMenuInput from './useMenuInput.js';
 import './SkylineInvaders.scss';
 
@@ -71,11 +71,10 @@ const ROUND_PHASES = Object.freeze(['countdown', 'playing', 'paused']);
 // mid-countdown (three seconds) and not over Ready or the setup, which read the pose.
 const SOUND_PHASES = Object.freeze(['lobby', 'paused', 'result']);
 const SOUND_SCREENS = Object.freeze(['who', 'roster', 'waves', 'locked', 'paused', 'result']);
-// Ready waits this long for a camera that is still starting, then plays with gamepad aim.
+// Ready waits this long for a camera that is still starting, then plays on auto aim.
 const READY_CAMERA_WAIT_MS = 20_000;
 const COUNTDOWN_FROM = 3;
 const HEALTH_EVERY_MS = 20_000;   // the log ingest allows three of one event a minute
-const STICK_DEAD_ZONE = 0.2;
 // A touch Exit that appeared under the finger this recently is not pressed: the
 // tap (or second tap) that changed the screen must not leave the game from the next one.
 const FRESH_EXIT_MS = 450;
@@ -86,8 +85,8 @@ const POSE_CONFIG = Object.freeze({
 });
 
 const mediaUrl = (path) => DaylightMediaPath(`/media/${path}`);
-/** A method by name: an aim gesture's label, or Gamepad. */
-const methodLabel = (method) => (method === MANUAL_METHOD ? 'Gamepad' : GESTURE_INFO[method]?.label || '');
+/** A method by name: its aim gesture's label. */
+const methodLabel = (method) => GESTURE_INFO[method]?.label || '';
 // The shell may use real randomness; the engine may not. The seed is saved
 // with the round's logs so a round can be replayed.
 const newSeed = () => {
@@ -98,35 +97,20 @@ const newRunId = () => globalThis.crypto?.randomUUID?.() || `invaders-${Date.now
 const postJson = (url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: true });
 const EMPTY_PRESSES = Object.freeze({ steps: Object.freeze([]), stomps: Object.freeze([]) });
 
-// Stick first, then the D-pad, then held arrow keys: -1 (left) .. 1 (right).
+// The gamepad does not play Skyline Invaders: children played rounds on one
+// instead of exercising (2026-11-20). Only Start (button 9, pause) and Select
+// (button 8, leave the game) are read in a round, and they only stop it; any
+// other press is logged and ignored (useInvadersFire). The keyboard plays only
+// in a dev build: the garage's Bluetooth remotes and keyboards send keys too.
 const readPads = () => { try { return Array.from(navigator.getGamepads?.() || []).filter(Boolean); } catch { return []; } };
-// Gamepad Start (standard button 9) pauses a round; Select (button 8) leaves the game.
 const startPressed = () => readPads().some((pad) => !!pad.buttons?.[9]?.pressed);
 const selectPressed = () => readPads().some((pad) => !!pad.buttons?.[8]?.pressed);
+/** Whether game keys (Space/F/B fire, the arrows aim) play: a dev build only, never the kiosk. Read per call so a test can stub it. */
+export const gameKeysAllowed = () => import.meta.env?.DEV === true;
 
-/** Whether a gamepad is plugged in: the Ready screen offers Skip only then. */
-function useGamepadConnected() {
-  const [connected, setConnected] = useState(() => readPads().length > 0);
-  useEffect(() => {
-    const update = () => setConnected(readPads().length > 0);
-    window.addEventListener('gamepadconnected', update);
-    window.addEventListener('gamepaddisconnected', update);
-    return () => { window.removeEventListener('gamepadconnected', update); window.removeEventListener('gamepaddisconnected', update); };
-  }, []);
-  return connected;
-}
-
+/** Held arrow keys as aim, -1 (left) .. 1 (right); 0 in the kiosk. */
 function readAimAxis(held) {
-  let pads = [];
-  try { pads = Array.from(navigator.getGamepads?.() || []); } catch { pads = []; }
-  for (const pad of pads) {
-    if (!pad) continue;
-    const stick = pad.axes?.[0] ?? 0;
-    if (Math.abs(stick) > STICK_DEAD_ZONE) return Math.max(-1, Math.min(1, stick));
-    const left = !!pad.buttons?.[14]?.pressed;
-    const right = !!pad.buttons?.[15]?.pressed;
-    if (left !== right) return right ? 1 : -1;
-  }
+  if (!gameKeysAllowed()) return 0;
   return (held.right ? 1 : 0) - (held.left ? 1 : 0);
 }
 
@@ -166,16 +150,14 @@ function SkylineInvadersGame({ onClose }) {
   // The roster's cursor shows only once a key or gamepad moves it: under touch a gold tile reads as already chosen.
   const [rosterCursor, setRosterCursor] = useState(false);
   const [rosterIndex, setRosterIndex] = useState(0);
-  // Likewise the method cursor: shown once a key or the gamepad is driving the setup.
+  // Likewise the method cursor: shown once a key or the gamepad is driving the setup (menus only).
   const [methodCursor, setMethodCursor] = useState(false);
   const methodCursorRef = useRef(methodCursor);
   methodCursorRef.current = methodCursor;
-  const gamepadConnected = useGamepadConnected();
   const [game, setGame] = useState(null);
   const [effects, setEffects] = useState(EMPTY_EFFECTS);
   const [poseStatus, setPoseStatus] = useState({ state: 'loading' });
   // Methods picked this visit, by defender: shown at once, and kept if the save fails.
-  // 'gamepad' (aim on the stick or the arrows) is a choice for this visit only.
   const [pickedControls, setPickedControls] = useState({});
   // The method each defender has passed the test sweep with in this visit. Start
   // goes through the setup until it matches their method.
@@ -247,15 +229,15 @@ function SkylineInvadersGame({ onClose }) {
   const level = round?.level || levels.find((item) => item.id === resolveLevelId(levels, riderWorld, chosenLevelId)) || null;
 
   // How the defender aims is their own: an aim gesture chosen and tested in the
-  // setup and saved with their progress, or the gamepad for this visit.
+  // setup and saved with their progress.
   const stored = shooterId ? pickedControls[shooterId] || riderWorld?.controls?.gesture : null;
-  const method = isGesture(stored) || stored === MANUAL_METHOD ? stored : null;
+  const method = isGesture(stored) ? stored : null;
   const gesture = isGesture(method) ? method : null;
   const cameraOff = poseStatus.state === 'camera-denied' || poseStatus.state === 'error';
 
   const drainFire = useInvadersFire({
     enabled: phase === 'playing', matId: mat?.matId || null,
-    subscribeToAppEvent: ctx?.subscribeToAppEvent, tracker,
+    subscribeToAppEvent: ctx?.subscribeToAppEvent, tracker, allowKeys: gameKeysAllowed(),
   });
 
   // Callbacks read the current render through this, so none of them goes stale
@@ -338,10 +320,10 @@ function SkylineInvadersGame({ onClose }) {
   useEffect(() => { void refreshWorld(shooterId); }, [refreshWorld, shooterId]);
 
   // The tracker plays the defender's method: their gesture (the default when
-  // they have none yet), or the gamepad. The setup switches it while it is open.
+  // they have none yet). The setup switches it while it is open.
   useEffect(() => {
     if (setup.open) return;
-    tracker.setManual(method === MANUAL_METHOD);
+    tracker.setManual(false);
     tracker.setGesture(gesture || INVADERS_TUNABLES.defaultGesture);
   }, [tracker, gesture, method, setup.open]);
 
@@ -537,8 +519,8 @@ function SkylineInvadersGame({ onClose }) {
         });
         health = { startedAt: nowMs, frames: 0, longFrames: 0 };
       }
-      // No live pose: the stick or the arrow keys steer; left alone, a lost
-      // pose drifts toward the threat nearest the ground.
+      // No live pose (lost, or no camera): the aim drifts toward the threat
+      // nearest the ground. The arrow keys steer only in a dev build.
       const start = startPressed();
       if (start && !held.start) { held.start = true; pause('player'); return; }
       held.start = start;
@@ -548,13 +530,13 @@ function SkylineInvadersGame({ onClose }) {
       // Either way the cannon stands on a lane: `x` is its centre.
       const sample = tracker.sample();
       const axis = readAimAxis(held);
-      if (sample.mode === 'manual' || (sample.lost && axis !== 0)) tracker.setAim(manualAim(sample.raw, axis, elapsedS));
-      else if (sample.lost) tracker.setAim(driftAim(sample.raw, previous.threats, elapsedS));
+      if (axis !== 0 && (sample.mode === 'manual' || sample.lost)) tracker.setAim(manualAim(sample.raw, axis, elapsedS));
+      else if (sample.mode === 'manual' || sample.lost) tracker.setAim(driftAim(sample.raw, previous.threats, elapsedS));
       const aimNow = tracker.sample();
       // The cannon not following: out of view for a while, or in view with the
       // cannon stuck in one lane. Said on screen, with the way back to the setup.
       {
-        const watching = now.method !== MANUAL_METHOD && poseStatusRef.current.state === 'detecting';
+        const watching = poseStatusRef.current.state === 'detecting';
         const t = previous.time;
         if (aimNow.lost) { help.lostAt ??= t; help.lane = null; } else help.lostAt = null;
         if (aimNow.lane !== help.lane) { help.lane = aimNow.lane; help.laneAt = t; }
@@ -598,8 +580,9 @@ function SkylineInvadersGame({ onClose }) {
 
     const onKey = (down) => (event) => {
       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-        held[event.key === 'ArrowLeft' ? 'left' : 'right'] = down;
         event.preventDefault();
+        if (gameKeysAllowed()) held[event.key === 'ArrowLeft' ? 'left' : 'right'] = down;
+        else if (down && !event.repeat) log.sampled('skyline_invaders.input.ignored', { ...correlation, source: 'keyboard', key: event.key, kind: 'aim' }, { maxPerMinute: 6, aggregate: true });
       } else if (down && !event.repeat && event.key === 'Escape') {
         event.preventDefault();
         pause('player');
@@ -807,10 +790,10 @@ function SkylineInvadersGame({ onClose }) {
     if (!SETUP_METHODS.includes(picked)) return;
     log.info('skyline_invaders.setup.method_chosen', { setupId: setupIdRef.current, shooterId: live.current.shooterId, method: picked, how, previous: live.current.method });
     // Over a paused round the recorder keeps the round's own trace: a sweep there is not recorded.
-    if (picked !== MANUAL_METHOD && now.from !== 'paused') recorder.begin({ kind: 'tryout', runId: setupIdRef.current, levelId: null, shooterId: live.current.shooterId, gesture: picked, card: GESTURES.indexOf(picked) });
+    if (now.from !== 'paused') recorder.begin({ kind: 'tryout', runId: setupIdRef.current, levelId: null, shooterId: live.current.shooterId, gesture: picked, card: GESTURES.indexOf(picked) });
     now.actions.choose(picked);
   }, [log, recorder]);
-  // The method passed its test (or the gamepad was chosen): it is theirs, and verified for this visit.
+  // The method passed its test: it is theirs, and verified for this visit.
   setupHandlers.current.passed = (passed) => {
     const now = live.current;
     const { from } = setupRef.current;
@@ -821,7 +804,7 @@ function SkylineInvadersGame({ onClose }) {
     if (!riderId) return;
     setPickedControls((current) => ({ ...current, [riderId]: passed }));
     setVerified((current) => ({ ...current, [riderId]: passed }));
-    tracker.setManual(passed === MANUAL_METHOD);
+    tracker.setManual(false);
     if (isGesture(passed)) tracker.setGesture(passed);
     log.info('skyline_invaders.setup.passed', { setupId: setupIdRef.current, shooterId: riderId, method: passed, from, runId: roundRef.current?.runId || null });
     if (roundRef.current && from === 'paused') roundRef.current.gesture = isGesture(passed) ? passed : roundRef.current.gesture;
@@ -840,7 +823,6 @@ function SkylineInvadersGame({ onClose }) {
   const saveMethod = async (riderId, picked, previous) => {
     let saved = false;
     let error = null;
-    // The gamepad is a choice for this visit: the saved method stays a gesture.
     if (isGesture(picked)) {
       try {
         const response = await postJson(`${API}/progress/${encodeURIComponent(riderId)}/controls`, { gesture: picked });
@@ -850,21 +832,20 @@ function SkylineInvadersGame({ onClose }) {
         error = saveError.message;
       }
     }
-    log[error ? 'warn' : 'info']('skyline_invaders.setup.method_changed', { setupId: setupIdRef.current, shooterId: riderId, method: picked, label: GESTURE_INFO[picked]?.label || 'Gamepad', previous, saved, error });
+    log[error ? 'warn' : 'info']('skyline_invaders.setup.method_changed', { setupId: setupIdRef.current, shooterId: riderId, method: picked, label: GESTURE_INFO[picked]?.label || null, previous, saved, error });
     if (saved) await refreshWorld(riderId);
   };
 
   // Start: through the setup until the defender's method has passed its test
   // in this visit; then the Ready screen (stand on the mat where the camera can
-  // see you). With no camera to aim with, straight to the countdown with
-  // gamepad aim, and the same for a defender who chose the gamepad.
+  // see you). With no camera to aim with, straight to the countdown on auto
+  // aim (the cannon drifts; the mat still fires).
   const startRound = useCallback((target, source) => {
     const pose = poseStatusRef.current.state;
     if (pose === 'camera-denied' || pose === 'error') { begin(target); return; }
     if (target) setChosenLevelId(target.id);
     const now = live.current;
     if (!now.method || now.verified[now.shooterId] !== now.method) { openSetup('start', source); return; }
-    if (now.method === MANUAL_METHOD) { begin(target); return; }
     log.info('skyline_invaders.lobby.ready_opened', { shooterId: now.shooterId, pose, gesture: tracker.gesture() });
     goPhase('ready');
   }, [begin, goPhase, log, tracker, openSetup]);
@@ -897,7 +878,6 @@ function SkylineInvadersGame({ onClose }) {
     wave: screen === 'result' ? roundRef.current?.level || level : cursorRow,
     shooterName: shooterId ? nameOf(shooterId) : '',
     mat: !!mat,
-    gamepad: gamepadConnected,
     saveStatus: saveState.status,
     next: nextLevel,
     sound: { level: gameVolume.level, muted: gameVolume.muted },
@@ -936,7 +916,6 @@ function SkylineInvadersGame({ onClose }) {
       case 'unlock-wave': { const target = now.levels.find((item) => item.id === viewRef.current.wave?.id); if (target) void requestLevelUnlock(target); break; }
       case 'admin-unlock': void requestAdminOverride(); break;
       case 'back-to-waves': goPhase('lobby'); break;
-      case 'skip-ready': begin(); break;
       case 'open-controls':
         // From a round: pause it first; the setup covers the pause screen.
         if (phaseRef.current === 'playing') pause('player');
@@ -1007,7 +986,8 @@ function SkylineInvadersGame({ onClose }) {
   useMenuInput(menuActive || !!prompt, (action, source) => {
     if (live.current.prompt) { if (action === 'back') cancelPrompt(); return; }
     // The sweep's fire step without a mat: accept (Space, Enter, gamepad A, the foot pad).
-    if (viewRef.current.screen === 'sweep' && action === 'accept' && setupRef.current.actions.fire(source)) return;
+    // With a mat only the mat passes it: that is what fires in the round.
+    if (viewRef.current.screen === 'sweep' && action === 'accept' && !viewRef.current.mat && setupRef.current.actions.fire(source)) return;
     const hit = pressForMenuKey(viewRef.current.screen, action);
     if (hit) press(hit[0], hit[1], source);
   });
@@ -1041,7 +1021,7 @@ function SkylineInvadersGame({ onClose }) {
     return () => { offStep?.(); offStomp?.(); };
   }, [sweepArmed, subscribeToAppEvent]);
 
-  // Ready: the camera went away, or never came up: play with gamepad aim.
+  // Ready: the camera went away, or never came up: play on auto aim.
   useEffect(() => {
     if (phase !== 'ready') return undefined;
     if (['camera-denied', 'error'].includes(poseStatus.state)) { begin(); return undefined; }
@@ -1105,7 +1085,7 @@ function SkylineInvadersGame({ onClose }) {
       )}
       {inRound && game && (
         <InvadersHud
-          state={game} level={level} gesture={round?.gesture || null} aimStatus={{ lost: sample.lost, mode: sample.mode, manual: method === MANUAL_METHOD, help: phase === 'playing' ? aimHelp : null }}
+          state={game} level={level} gesture={round?.gesture || null} aimStatus={{ lost: sample.lost, mode: sample.mode, help: phase === 'playing' ? aimHelp : null }}
           poseStatus={poseStatus} partner={partner}
         />
       )}
