@@ -4,6 +4,7 @@ import spinner from '../../../../../frontend/src/assets/icons/spinner.svg';
 import pause from '../../../../../frontend/src/assets/icons/pause.svg';
 import { playbackLog } from '../lib/playbackLogger.js';
 import { getLoadingPresentation } from '../../presentation.mjs';
+import { subscribeIntroCover, isIntroCovering } from '../../player-support/introCover.js';
 
 /**
  * Loading / resilience overlay shown while media is buffering, stalling, or waiting to start.
@@ -63,6 +64,8 @@ export function PlayerOverlayLoading({
   // FIRST so this hook is always called regardless of the early returns below.
   const { subscribeLoadingSuppression: subscribeSkipCard, getLoadingSuppression: isSkipCardPaused } = getLoadingPresentation();
   const skipCardPaused = useSyncExternalStore(subscribeSkipCard, isSkipCardPaused, isSkipCardPaused);
+  // An installed intro scene covering the load (see player-support/introCover.js).
+  const introCovering = useSyncExternalStore(subscribeIntroCover, isIntroCovering, isIntroCovering);
 
   // Render whenever the user needs recovery feedback. During a true stall, show
   // the spinner even with the pause overlay active — the pause overlay sits ON TOP
@@ -410,6 +413,12 @@ export function PlayerOverlayLoading({
 
   // Deliberate skip-card pause — hide the spinner so the card reads as intentional.
   if (skipCardPaused) {
+    return null;
+  }
+
+  // An installed intro scene is the loading screen: hide the plain spinner,
+  // never the recovery UI (exhausted/held keep their Retry/Skip actions on top).
+  if (introCovering && !isExhausted && !held) {
     return null;
   }
 
