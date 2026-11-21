@@ -180,6 +180,31 @@ describe('TriageSessionView', () => {
     await waitFor(() => expect(screen.getByText('Undone')).toBeInTheDocument());
   });
 
+  it('keeps a focused retry for an undo that failed before execution', async () => {
+    triage = makeTriage({ session: { steps: [{ id: 'recap', count: 1 }], cards: [recap], total: 1, done: 0 } });
+    triage.log.mockResolvedValue(logBody);
+    triage.undo
+      .mockResolvedValueOnce({ outcome: 'failed', reason: 'propose_failed' })
+      .mockResolvedValueOnce({ outcome: 'undone' });
+    wrap();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }));
+    await waitFor(() => expect(screen.getByText('Receipt #42')).toBeInTheDocument());
+    const undoButton = screen.getByRole('button', { name: 'Undo' });
+    undoButton.focus();
+    await act(async () => { fireEvent.click(undoButton); });
+
+    const retryButton = await screen.findByRole('button', { name: 'Retry undo' });
+    expect(screen.getByText(/undo could not be started/i)).toBeInTheDocument();
+    expect(retryButton).toHaveFocus();
+    await act(async () => { fireEvent.click(retryButton); });
+
+    await waitFor(() => expect(screen.getByText('Undone')).toBeInTheDocument());
+    expect(triage.undo).toHaveBeenCalledTimes(2);
+    expect(triage.undo).toHaveBeenNthCalledWith(1, 'log.1');
+    expect(triage.undo).toHaveBeenNthCalledWith(2, 'log.1');
+  });
+
   it('in a dry run the recap reads what would have been done, from wouldHave', () => {
     triage = makeTriage({
       summary: { enrolled: true, mode: 'dryRun', wouldHave: { archived: 7, closed: 2 } },

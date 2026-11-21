@@ -58,19 +58,23 @@ export function ActionLog({ loadLog, onUndo }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const undo = async (id) => {
-    setState((s) => ({ ...s, [id]: { busy: true } }));
+  const undo = async (id, restoreFocus) => {
+    setState((s) => ({ ...s, [id]: { ...s[id], busy: true } }));
     let result;
+    let retryable = false;
     try {
       const out = await onUndo(id);
-      result = UNDO_RESULT[out?.outcome] ?? "Couldn't undo — try again later";
+      retryable = out?.outcome === 'failed' && out.reason === 'propose_failed';
+      result = retryable
+        ? 'Undo could not be started. Retry when ready.'
+        : UNDO_RESULT[out?.outcome] ?? 'Could not confirm the undo. Check the item before trying again.';
     } catch (err) {
       result = err?.code === 'pass_running' || err?.code === 'busy'
         ? 'Triage is updating — try again in a moment.'
-        : "Couldn't undo — try again later";
+        : 'Could not confirm the undo. Check the item before trying again.';
     }
     logger.info('triage.log.undo', { entryId: id, result });
-    setState((s) => ({ ...s, [id]: { busy: false, result } }));
+    setState((s) => ({ ...s, [id]: { busy: false, result, retryable, restoreFocus } }));
   };
 
   let content;
@@ -88,6 +92,17 @@ export function ActionLog({ loadLog, onUndo }) {
 }
 
 function ActionRows({ entries, state, undo }) {
+  const retryButtons = useRef(new Map());
+
+  useEffect(() => {
+    for (const entry of entries) {
+      const entryState = state[entry.id];
+      if (entryState?.retryable && entryState.restoreFocus) {
+        retryButtons.current.get(entry.id)?.focus();
+      }
+    }
+  }, [entries, state]);
+
   return (
     <ul className="life-triage__log" aria-label="What was done">
       {entries.map((e) => {
@@ -107,10 +122,25 @@ function ActionRows({ entries, state, undo }) {
             </div>
             {undone ? (
               <Text size="xs" c="dimmed">Undone</Text>
-            ) : st.result ? (
-              <Text size="xs" c="dimmed" className="life-triage__log-result">{st.result}</Text>
-            ) : e.undoable ? (
-              <Button size="compact-sm" variant="default" loading={st.busy} onClick={() => undo(e.id)}>Undo</Button>
+            ) : e.undoable || st.result ? (
+              <div className="life-triage__log-actions">
+                {e.undoable && (!st.result || st.retryable) && (
+                  <Button
+                    key="undo"
+                    ref={(node) => {
+                      if (node) retryButtons.current.set(e.id, node);
+                      else retryButtons.current.delete(e.id);
+                    }}
+                    size="compact-sm"
+                    variant="default"
+                    loading={st.busy}
+                    onClick={(event) => undo(e.id, event.currentTarget === document.activeElement)}
+                  >
+                    {st.retryable ? 'Retry undo' : 'Undo'}
+                  </Button>
+                )}
+                {st.result && <Text key="result" size="xs" c="dimmed" role="status" className="life-triage__log-result">{st.result}</Text>}
+              </div>
             ) : null}
           </li>
         );

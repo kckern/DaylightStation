@@ -242,7 +242,8 @@
   }
   &__log-text { min-width: 0; flex: 1; }
   &__log-title { overflow-wrap: anywhere; }
-  &__log-result { text-align: right; max-width: 45%; }
+  &__log-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 0.5rem; min-width: 0; }
+  &__log-result { text-align: right; max-width: 12rem; }
 
   &__login {
     .auth-container { min-height: 0; padding: 0; background: none; }

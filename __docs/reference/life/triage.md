@@ -153,6 +153,12 @@ selected member and offers the same sign-in form. Choosing a household member
 leaves the signed-in account in place. Signing in reloads the selected member's
 guided session. Triage commands keep their own outcome and retry controls.
 
+In the action log, Undo can be retried when the server reports
+`failed/propose_failed`, which means the undo command did not start. Other
+unconfirmed failures do not offer resubmission because the original action's
+state may be unknown. When keyboard focus was on Undo, it moves to Retry undo
+after this safe-to-retry response.
+
 ## Logs
 
 `context.app:triage` in the log store. Events: `triage.pass.started|completed|skipped|failed`,

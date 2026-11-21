@@ -15,11 +15,20 @@ const benCard = {
   ...card, cardId: 'ben-fixture',
   display: { ...card.display, title: "Ben’s fixture inbox subject" },
 };
+const recapCard = {
+  cardId: 'recap-fixture', kind: 'recap', step: 'recap', status: 'open',
+  choices: [{ key: 'ok', label: 'Got it' }], counts: { archived: 1, closed: 0 },
+};
+const logEntry = {
+  id: 'log.fixture', actor: 'system', action: 'archive', title: 'Fixture archived item',
+  dryRun: false, uncertain: false, undoneAt: null, undoable: true,
+};
 const sessionToken = username => username + '-fixture-session';
 
-async function installTriage(page, { holdBen, requireOwner = false } = {}) {
+async function installTriage(page, { holdBen, requireOwner = false, recap = false, undoResponses = [] } = {}) {
   const reads = [];
   const commands = [];
+  const pendingUndoResponses = [...undoResponses];
   const signIns = [];
   const authReads = [];
   const benSummary = Promise.withResolvers();
@@ -54,12 +63,19 @@ async function installTriage(page, { holdBen, requireOwner = false } = {}) {
     }
     if (request.method() !== 'GET') {
       commands.push({ username, operation, body: request.postDataJSON() });
-      return route.fulfill({ json: { outcome: 'applied' } });
+      const response = operation.endsWith('/undo')
+        ? pendingUndoResponses.shift() ?? { outcome: 'undone' }
+        : { outcome: 'applied' };
+      return route.fulfill({ json: response });
     }
     reads.push([username, operation]);
     if (operation === 'summary' && username === 'ben' && holdBen) await benSummary.promise;
     if (operation === 'summary') return route.fulfill({ json: username === 'ben' && !requireOwner ? { enrolled: false } : summary });
-    if (operation === 'session') return route.fulfill({ json: { steps: [{ id: 'unsure', count: 1 }], cards: [username === 'ben' ? benCard : card], total: 1, done: 0 } });
+    if (operation === 'session') return route.fulfill({ json: {
+      steps: [{ id: recap ? 'recap' : 'unsure', count: 1 }],
+      cards: [recap ? recapCard : username === 'ben' ? benCard : card], total: 1, done: 0,
+    } });
+    if (operation === 'log') return route.fulfill({ json: { entries: [logEntry] } });
     return route.fulfill({ json: { entries: [] } });
   });
   return { reads, commands, signIns, authReads, benSummary };
@@ -141,4 +157,30 @@ test('Life triage asks for the selected owner sign-in when another member is sig
   await expect.poll(() => commands).toEqual([
     { username: ben.username, operation: 'cards/ben-fixture/answer', body: { choice: 'keep' } },
   ]);
+});
+
+test('Life triage keeps a keyboard retry after the undo could not start', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 850 });
+  const { commands } = await installTriage(page, {
+    recap: true,
+    undoResponses: [
+      { outcome: 'failed', reason: 'propose_failed' },
+      { outcome: 'undone' },
+    ],
+  });
+  await page.goto('/life/now/triage');
+
+  const main = page.getByRole('main');
+  await expect(main.getByText('Done for you')).toBeVisible();
+  await main.getByRole('button', { name: 'Review' }).press('Enter');
+  await expect(main.getByText(logEntry.title)).toBeVisible();
+  const undo = main.getByRole('button', { name: 'Undo' });
+  await undo.press('Enter');
+
+  const retry = main.getByRole('button', { name: 'Retry undo' });
+  await expect(main.getByText(/undo could not be started/i)).toBeVisible();
+  await expect(retry).toBeFocused();
+  await retry.press('Enter');
+  await expect(main.getByText('Undone')).toBeVisible();
+  expect(commands.filter(({ operation }) => operation === 'log/log.fixture/undo')).toHaveLength(2);
 });
