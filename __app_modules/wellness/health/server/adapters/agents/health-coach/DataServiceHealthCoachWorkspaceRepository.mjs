@@ -26,7 +26,8 @@ export class DataServiceHealthCoachWorkspaceRepository extends IHealthCoachWorks
   getBaselines(userId) { return this.#dataService.user.read('profile/baselines', userId); }
   saveBaselines(userId, payload) { return this.#dataService.user.write('profile/baselines', payload, userId); }
   async saveDashboard(userId, date, dashboard) {
-    await this.#dataService.user.write(`health-dashboard/${date}`, dashboard, userId);
+    const saved = await this.#dataService.user.writeAtomic(`health-dashboard/${date}`, dashboard, userId);
+    if (saved !== true) throw new Error('Failed to save Health Coach dashboard');
     return `health-dashboard/${date}`;
   }
   getGoals(userId) {
