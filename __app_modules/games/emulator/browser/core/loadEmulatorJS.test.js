@@ -227,6 +227,13 @@ describe('memory-core boot globals (anonymous play with a state map)', () => {
     expect(g.EJS_gameUrl).toBe('/r.bin');
   });
 
+  it('uses the v2 bundle (memory-map exports) for gambatte and mgba', () => {
+    const gb = buildEjsGlobals({ player: '#p', core: 'gb', romUrl: '/r.gb', pathtodata: '/engine', memoryCore: { name: 'gambatte', variant: 'wasm' } });
+    expect(gb.EJS_paths['gambatte-wasm.data']).toBe('/engine/cores/gambatte-wasm.protected-v2.data');
+    const gba = buildEjsGlobals({ player: '#p', core: 'gba', romUrl: '/r.gba', pathtodata: '/engine', memoryCore: { name: 'mgba', variant: 'legacy-wasm' } });
+    expect(gba.EJS_paths['mgba-wasm.data']).toBe('/engine/cores/mgba-legacy-wasm.protected-v2.data');
+  });
+
   it('forces legacy cores for the legacy variant', () => {
     const g = buildEjsGlobals({ player: '#p', romUrl: '/r.gb', pathtodata: '/e/', memoryCore: { name: 'gambatte', variant: 'legacy-wasm' } });
     expect(g.EJS_forceLegacyCores).toBe(true);

@@ -181,3 +181,18 @@ describe('createStateMap', () => {
     expect(onState).toHaveBeenCalledWith('underground', { type: 'flag', active: false, value: 0 });
   });
 });
+
+describe('unreadable regions', () => {
+  it('warns once per state and keeps sampling the readable ones', () => {
+    const warn = vi.fn();
+    const heap = new Uint8Array(0x2000); heap[0x57] = 7;
+    const map = createStateMap({
+      getHeap: () => heap, wramBase: 0, system: 'gb', logger: { warn, debug() {} },
+      states: { hram_flag: { addr: 0xFFF9, type: 'number' }, ok: { addr: 0xC057, type: 'number' } },
+      onState() {},
+    });
+    map.sample(); map.sample(); map.sample();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(map.getState().ok).toBe(7);
+  });
+});

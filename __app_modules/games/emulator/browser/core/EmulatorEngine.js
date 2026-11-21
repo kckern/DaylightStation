@@ -278,6 +278,26 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
       && pointer + size <= m.HEAPU8.length ? pointer : null;
   }
 
+  /**
+   * Heap locations of the non-WRAM regions the patched core can export: cartridge
+   * save RAM (memory type 0) and, on a core that publishes its memory map, a
+   * per-guest-address lookup (Game Boy HRAM, GBA IWRAM). Read-only; empty when
+   * the core lacks the exports.
+   */
+  function getMemoryRegions() {
+    if (!ready || !(checkpointBridge || memoryExport)) return {};
+    const m = instance.gameManager.Module, heapLen = m.HEAPU8.length, out = {};
+    const sram = m._daylight_memory_data_v1?.(0), sramSize = m._daylight_memory_size_v1?.(0);
+    if (Number.isInteger(sram) && sram > 0 && Number.isInteger(sramSize) && sramSize > 0 && sram + sramSize <= heapLen) out.sram = sram;
+    if (m._daylight_memory_map_version_v1?.() === 1) {
+      out.map = (addr) => {
+        const ptr = m._daylight_memory_region_ptr_v1(addr), len = m._daylight_memory_region_len_v1(addr);
+        return Number.isInteger(ptr) && ptr > 0 && len > 0 && ptr + len <= m.HEAPU8.length ? ptr : null;
+      };
+    }
+    return out;
+  }
+
   function setCheat(i, enabled, code) {
     if (!ready) return;
     instance.gameManager.functions.setCheat(i, enabled, code);
@@ -643,6 +663,7 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
     getAudioContextState,
     getHeap,
     getWramBase,
+    getMemoryRegions,
     setCheat,
     resetCheat,
     getFrameNum,

@@ -36,6 +36,11 @@ const LOADER_SCRIPT_ID = 'ejs-loader';
  *   `resources` reach EmulatorJS — see below.
  * @returns {object} key/value map of EJS_* globals.
  */
+// v2 bundles add the memory-map exports (Game Boy HRAM, GBA IWRAM). They ship under
+// their own filename because saved games pin the v1 bundle hash; anonymous play never
+// checks it. Cores with no v2 build (Genesis) keep v1.
+const memoryBundleGeneration = (name) => (['gambatte', 'mgba'].includes(name) ? 'v2' : 'v1');
+
 export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onReady, onGameStart, controls, volume, shaders, protectedAssets, memoryCore } = {}) {
   if (!player) throw new Error('buildEjsGlobals: player (mount selector/element) is required');
   if (!romUrl) throw new Error('buildEjsGlobals: romUrl is required');
@@ -85,7 +90,7 @@ export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onRea
   // calibration write. Asset databases are off so EJS's cached stock core of the
   // same name can't stand in for it.
   if (memoryCore && !protectedAssets) {
-    const file = `${normalizedPath}cores/${memoryCore.name}-${memoryCore.variant}.protected-v1.data`;
+    const file = `${normalizedPath}cores/${memoryCore.name}-${memoryCore.variant}.protected-${memoryBundleGeneration(memoryCore.name)}.data`;
     Object.assign(globals, {
       EJS_paths: Object.fromEntries(['wasm', 'legacy-wasm', 'thread-wasm', 'thread-legacy-wasm'].map(v => [`${memoryCore.name}-${v}.data`, file])),
       EJS_disableDatabases: true,

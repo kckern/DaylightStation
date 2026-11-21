@@ -1,5 +1,5 @@
 diff --git a/retroarch.c b/retroarch.c
-index 505f4ec..9936ce4 100644
+index 505f4ec744..9936ce49c0 100644
 --- a/retroarch.c
 +++ b/retroarch.c
 @@ -53,6 +53,9 @@
@@ -32,7 +32,7 @@ index 505f4ec..9936ce4 100644
  void set_rewind_granularity(uint granularity)
  {
 diff --git a/tasks/task_save.c b/tasks/task_save.c
-index 5498e51..72d83ad 100644
+index 5498e51497..42539a6455 100644
 --- a/tasks/task_save.c
 +++ b/tasks/task_save.c
 @@ -50,6 +50,11 @@
@@ -67,7 +67,7 @@ index 5498e51..72d83ad 100644
     retro_task_t       *task        = NULL;
     save_task_state_t *state        = NULL;
     video_driver_state_t *video_st  = video_state_get_ptr();
-@@ -1877,7 +1888,96 @@ bool supports_states(void)
+@@ -1877,7 +1888,149 @@ bool supports_states(void)
  }
  void refresh_save_files(void)
  {
@@ -143,6 +143,59 @@ index 5498e51..72d83ad 100644
 +   retro_ctx_memory_info_t info;
 +   memset(&info, 0, sizeof(info)); info.id = type; core_get_memory(&info);
 +   return info.size;
++}
++/* Read-only view of the core's published memory map (SET_MEMORY_MAPS).
++ * Same descriptor semantics as the RetroArch memory command, resolved
++ * against the already preprocessed descriptors. Writes nothing. */
++static const rarch_memory_descriptor_t *daylight_map_lookup(
++      unsigned address, size_t *offset)
++{
++   const rarch_memory_map_t *map = &runloop_state_get_ptr()->system.mmaps;
++   const rarch_memory_descriptor_t *desc = map->descriptors;
++   const rarch_memory_descriptor_t *end  = desc ? desc + map->num_descriptors : NULL;
++   for (; desc && desc < end; desc++)
++   {
++      if (!desc->core.ptr || !desc->core.len) continue;
++      if (desc->core.select == 0)
++      {
++         if (address >= desc->core.start
++               && address < desc->core.start + desc->core.len)
++         {
++            *offset = address - desc->core.start;
++            return desc;
++         }
++      }
++      else if (((desc->core.start ^ address) & desc->core.select) == 0)
++      {
++         unsigned reduced = address - (unsigned)desc->core.start;
++         unsigned mask    = (unsigned)desc->core.disconnect;
++         while (mask)
++         {
++            const unsigned tmp = (mask - 1) & ~mask;
++            reduced = (reduced & tmp) | ((reduced >> 1) & ~tmp);
++            mask    = (mask & (mask - 1)) >> 1;
++         }
++         if (reduced < desc->core.len)
++         {
++            *offset = reduced;
++            return desc;
++         }
++      }
++   }
++   return NULL;
++}
++EMSCRIPTEN_KEEPALIVE unsigned daylight_memory_map_version_v1(void) { return 1; }
++EMSCRIPTEN_KEEPALIVE uintptr_t daylight_memory_region_ptr_v1(unsigned address)
++{
++   size_t offset = 0;
++   const rarch_memory_descriptor_t *desc = daylight_map_lookup(address, &offset);
++   return desc ? (uintptr_t)((uint8_t*)desc->core.ptr + desc->core.offset + offset) : 0;
++}
++EMSCRIPTEN_KEEPALIVE size_t daylight_memory_region_len_v1(unsigned address)
++{
++   size_t offset = 0;
++   const rarch_memory_descriptor_t *desc = daylight_map_lookup(address, &offset);
++   return desc ? desc->core.len - offset : 0;
 +}
 +EMSCRIPTEN_KEEPALIVE int daylight_restore_battery_v1(const char *path, unsigned request)
 +{

@@ -6,7 +6,9 @@
  * resolved via addressMap.toRamOffset.
  */
 
-import { toRamOffset } from "./addressMap.js";
+import { resolveAddress } from "./addressMap.js";
+
+const unavailable = (name) => Object.assign(new Error(`region unavailable: ${name}`), { code: "EUNAVAILABLE" });
 
 /**
  * Systems whose RAM the core stores as host-order 16-bit words. Genesis Plus GX
@@ -22,6 +24,8 @@ const DEFAULT_ENDIAN = { genesis: 'big' };
  * Read and interpret a value from the heap.
  * @param {Uint8Array} heap raw memory view
  * @param {number} wramBase heap index where the system RAM buffer starts
+ * @param {{sram?:number, map?:(addr:number)=>number|null}} [regions] heap index of the
+ *   cartridge save RAM buffer, and a per-address lookup for memory-map regions
  * @param {string} system system key (e.g. 'gb')
  * @param {object} spec
  * @param {number} spec.addr CPU address
@@ -30,15 +34,25 @@ const DEFAULT_ENDIAN = { genesis: 'big' };
  * @param {('bcd')} [spec.decode] optional decode mode
  * @returns {number}
  */
-export function readValue(heap, wramBase, system, { addr, size = 1, endian, decode } = {}) {
+export function readValue(heap, wramBase, system, { addr, size = 1, endian, decode } = {}, regions = {}) {
   const order = endian ?? DEFAULT_ENDIAN[system] ?? 'little';
   const swap = WORD_SWAPPED[system] === true;
 
   // Collect bytes in CPU address order.
   const bytes = [];
   for (let i = 0; i < size; i++) {
-    const offset = toRamOffset(system, addr + i);
-    bytes.push(heap[wramBase + (swap ? offset ^ 1 : offset)]);
+    const at = addr + i;
+    const r = resolveAddress(system, at);
+    let index;
+    if (r.name === 'ram') index = wramBase + (swap ? r.offset ^ 1 : r.offset);
+    else if (r.mapped) {
+      index = regions.map?.(at);
+      if (index == null) throw unavailable(r.name);
+    } else {
+      if (regions[r.name] == null) throw unavailable(r.name);
+      index = regions[r.name] + r.offset;
+    }
+    bytes.push(heap[index]);
   }
   const endianOrder = order;
 

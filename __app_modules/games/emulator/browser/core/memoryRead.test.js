@@ -71,3 +71,22 @@ describe('readValue', () => {
     });
   });
 });
+
+describe('readValue regions', () => {
+  it('reads cartridge save RAM from its own buffer', () => {
+    const big = new Uint8Array(0x1000); big[0x400 + 0x216] = 3;
+    expect(readValue(big, 0, 'gb', { addr: 0xA216 }, { sram: 0x400 })).toBe(3);
+  });
+  it('reads memory-mapped regions per byte through the lookup', () => {
+    const heap = new Uint8Array(0x100); heap[0x20] = 0x0A;
+    expect(readValue(heap, 0, 'gb', { addr: 0xFFF9 }, { map: (a) => (a === 0xFFF9 ? 0x20 : null) })).toBe(0x0A);
+  });
+  it('throws a coded error when the region is not exported', () => {
+    expect(() => readValue(new Uint8Array(8), 0, 'gb', { addr: 0xFFF9 }, {})).toThrow(/region unavailable/);
+    expect(() => readValue(new Uint8Array(8), 0, 'gb', { addr: 0xA216 })).toThrow(/region unavailable/);
+  });
+  it('reads GBA IWRAM little-endian across bytes', () => {
+    const heap = new Uint8Array(0x100); heap[0x10] = 0x34; heap[0x11] = 0x12;
+    expect(readValue(heap, 0, 'gba', { addr: 0x03000000, size: 2 }, { map: (a) => 0x10 + (a - 0x03000000) })).toBe(0x1234);
+  });
+});

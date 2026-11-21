@@ -280,6 +280,7 @@ export function createEmulatorSession({
     stateMap = createStateMap({
       getHeap: engine.getHeap,
       wramBase,
+      regions: engine.getMemoryRegions?.() ?? {},
       system,
       states: game.states,
       onState: (name, detail) => {

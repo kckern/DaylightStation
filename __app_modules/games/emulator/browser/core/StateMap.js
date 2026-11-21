@@ -44,9 +44,9 @@ function rawOf(detail) {
  * Read one state's raw value and interpret it per its type.
  * @returns {{ detail: object, value: any }} detail for onState, value for snapshot
  */
-function interpret(name, def, heap, wramBase, system) {
+function interpret(name, def, heap, wramBase, system, regions) {
   const { type } = def;
-  const raw = readValue(heap, wramBase, system, def);
+  const raw = readValue(heap, wramBase, system, def, regions);
 
   switch (type) {
     case 'flag': {
@@ -73,6 +73,7 @@ function interpret(name, def, heap, wramBase, system) {
  * @param {object} opts
  * @param {() => Uint8Array} opts.getHeap re-fetched each sample
  * @param {number} opts.wramBase heap index where system RAM begins
+ * @param {object} [opts.regions] save-RAM base and memory-map lookup (see memoryRead)
  * @param {string} [opts.system='gb']
  * @param {object} opts.states name → state def
  * @param {(name: string, detail: object) => void} opts.onState change callback
@@ -83,6 +84,7 @@ function interpret(name, def, heap, wramBase, system) {
 export function createStateMap({
   getHeap,
   wramBase,
+  regions = {},
   system = 'gb',
   states,
   onState,
@@ -93,15 +95,18 @@ export function createStateMap({
   const prev = new Map(); // name → last interpreted value
   const current = {}; // name → current interpreted value (for getState)
   let timer = null;
+  const warned = new Set();
 
   function sample() {
     const heap = getHeap();
     for (const [name, def] of Object.entries(states)) {
       let result;
       try {
-        result = interpret(name, def, heap, wramBase, system);
+        result = interpret(name, def, heap, wramBase, system, regions);
       } catch (err) {
-        logger.warn('state-read-failed', { name, error: err.message });
+        // A region this core cannot export (HRAM on an old core) fails every
+        // sample; say so once per state, not at the sampling rate.
+        if (!warned.has(name)) { warned.add(name); logger.warn('state-read-failed', { name, error: err.message }); }
         continue;
       }
       const { detail, value } = result;

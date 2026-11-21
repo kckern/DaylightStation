@@ -27,7 +27,7 @@ and it cannot leave it).
 states:
   underground:
     addr: 0xDFE9            # CPU address
-    type: flag              # flag | enum | count | number
+    type: flag              # flag | enum | count (= set bits, for badge/dex bitfields) | number (the value; use with decode: bcd for lives/coins)
     when: { equals: 0x04 }  # flag: active while this holds (equals/gt/lt/mask/changed)
     hold: [0x0C, 0x02, 0x00]  # raw values that mean "no change"
   music:
@@ -57,6 +57,16 @@ Starman theme over the underground theme without Mario leaving the pipe room, so
 
 Write the evidence into the sidecar's header: the ROM's hash, the sources, and
 how the addresses were verified. The Super Mario Land sidecar is the example.
+
+## Memory regions
+
+Addresses are the game's own. The reader (`addressMap.js`) routes each to a region
+of the patched core: `ram` (SYSTEM_RAM: Game Boy `$C000-$DFFF`, Genesis `$FF0000+`,
+GBA EWRAM), `sram` (cartridge save RAM `$A000-$BFFF`, libretro memory type 0), and
+`mapped` regions (Game Boy HRAM `$FF80-$FFFE`, GBA IWRAM) found through the core's
+published memory map. A state in a region the running core does not export is
+warned once (`state-read-failed`, code `EUNAVAILABLE`) and skipped; the rest keep
+sampling. Super Mario Land 2 and Wario Land keep nearly all state in `sram`.
 
 ## Effects
 
@@ -164,7 +174,17 @@ libretro's memory map (gambatte publishes HRAM there) — a core rebuild.
 
 ## Games mapped
 
-| Game | Sidecar | Verified |
+Per-game research (sources, every address including unreadable ones, trigger ideas, gaps) is in `game-memory-notes/<Game>.notes.md`. Drafts were gathered 2026-11-21 from disassemblies and wikis; only Super Mario Land (and parts of Crystal, Sonic, Red) have been watched live.
+
+| Game | Sidecar | Readable today |
 |---|---|---|
-| Super Mario Land | `gb/roms/SuperMarioLand.yml` — `underground`, `music` → `underground_lights` | 2026-11-20: pipe round trip in PyBoy; browser read → effect path in EmulatorJS |
-| Pokémon Red | `gb/roms/PokemonRed.yml` — `battle`, `badges`, `money`, … (no bindings) | not yet against a live session |
+| Super Mario Land | `gb/roms/SuperMarioLand.yml`: 24 states; `underground` → `underground_lights` | yes (WRAM); world/level/coins/pause are HRAM-only |
+| Pokémon Red | `gb/roms/PokemonRed.yml`: 36 states (HP now big-endian) | yes; not yet against a live session |
+| Pokémon Yellow | `gbc/roms/PokemonYellow.yml`: 38 states, addresses from pokeyellow.sym | yes; not live-checked |
+| Pokémon Crystal | `gbc/roms/PokemonCrystal.yml`: 43 states | WRAM banks 0-1 only; bank 2-7 offsets in notes |
+| Sonic the Hedgehog (REV00) | `genesis/roms/SonicTheHedgehog.yml`: 40 states | yes; `music` fingerprint needs a live check |
+| Super Mario Land 2 (V1.2) | `gb/roms/SuperMarioLand2.yml`: no states, map commented | no: state is in cartridge SRAM; game mode in HRAM |
+| Wario Land | `gb/roms/WarioLand.yml`: `sram_states:` inactive | no: state is in cartridge SRAM |
+| Mario Kart Super Circuit | `gba/roms/MarioKartSuperCircuit.yml`: `pending_states:` inactive | no: reader has no GBA support (IWRAM/EWRAM) |
+
+Two reader changes would unlock the rest: export libretro `RETRO_MEMORY_SAVE_RAM` from the patched core (SML2, Wario Land) and a GBA address map (Mario Kart). HRAM needs the memory-map export noted above.
