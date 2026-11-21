@@ -357,6 +357,42 @@ twin within 400 ms (either order) and dropped; a browser key with no twin
 counts, so a device the garage box does not read still tests
 (`createKeyAttributor` in `keyTestModel.js`).
 
+### Remote directions (`positions:` and `toward:`)
+
+A `kind: remote` entry may say where each button sits for the rider:
+`buttons:` (physical button → key), `positions:` (rider's `up` / `down` /
+`left` / `right` / `center` → physical button) and `toward:` (`front` / `rear`
+→ the ring position toward the equipment's front or rear). Two remotes of one
+model mounted mirror-image differ only in these maps, so both resolve a press
+the same way. `lib/remoteInput/remoteDirection.js` in the fitness app is the
+shared resolver (key → button → position → front/rear); a remote with no
+`toward` reports its positions, one with no `positions` reports nothing.
+
+Games read remotes through the port `IRemoteDirectionSource`
+(`lib/remoteInput/`): `subscribe(listener)` delivers `{type:'ready', sources}`
+and `{type:'press', sourceId, direction, position, state}`. The fitness host's
+adapter is `BluetoothRemoteDirectionSource` (this feed + the inventory); while
+subscribed it stops its remotes' untagged browser copies at the window.
+
+### Who owns a remote's presses
+
+More than one layer may want a remote's presses (a game in flight, a
+per-remote button mapping, the Bluetooth screen trying a remote). They agree
+through `lib/remoteButtons/remoteButtonHolds.js` in the fitness app:
+
+| Call | Meaning |
+|---|---|
+| `holdRemoteButtons(reason)` → `release()` | every remote belongs to the caller (Skyline Glider while mounted with a remote mapping, `reason: 'skyline-glider'`) |
+| `claimRemote(address)` → `release()` | one remote belongs to the caller (the Bluetooth screen while that remote's page is open) |
+| `isRemoteHeld(address)` | a hold, or that address's claim, is on |
+| `remoteButtonHolds()` / `isRemoteClaimed(address)` | the reasons on hold / the claim alone |
+
+**Any layer that turns `bt.remote.key` presses into actions must check
+`isRemoteHeld(address)` before acting, and perform nothing when it is true.**
+Holds and claims are counted, so each holder releases only its own. Skyline
+Invaders ignores remotes in a round (it reads no remote at all; a mapping
+layer that acts on remotes should take a hold for its rounds).
+
 The desktop must not grab media keys: on garage the XFCE PulseAudio panel
 plugin had `enable-keyboard-shortcuts` and `enable-multimedia-keys` on, which
 took volume and play/next/previous before Firefox saw them. Both are off

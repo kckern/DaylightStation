@@ -91,7 +91,7 @@ export function reduceSkylineControl(current,event) {
     }else if(state.phase==='countdown'){if(i===2){if(['live','checkpoint'].includes(state.resumeIntent))finish('flights');else state.phase='flights'}}
     else if(state.phase==='flight'){
       if(gesture==='long'&&i===3&&!state.flight?.stalled){state.phase='menu';effect('pause')}
-      else if(gesture==='single'&&state.weaponsEnabled&&!state.flight?.pausedForSensor)effect('combat',{action:combat[i]});
+      else if(gesture==='single'&&state.weaponsEnabled&&!state.flight?.pausedForSensor)effect('combat',{action:combat[i],...(event.source==='remote'?{source:'remote',input:event.input||null}:{})});
     }else if(state.phase==='menu'){
       if(i===0)ready('live');else if(i===1)openSettings();else finish(i===3?'identity':null);
     }else if(state.phase==='settings'){
@@ -150,4 +150,25 @@ export function describeSkylineControls(s){
  return choices.map(([label,hint,icon,avatarSrc],i)=>({position:i+1,action:combat[i],label,hint:hint||'',icon,avatarSrc,
   disabled:['stall','saving','loading'].includes(s.phase)||(s.phase==='settings'&&((i===0&&(s.sound?.muted||s.sound?.level===0))||(i===1&&s.sound?.level>=100&&!s.sound?.muted)))||(s.phase==='result'&&s.saveStatus==='error'&&[1,3].includes(i))||(s.phase==='result'&&['saved','unsaved'].includes(s.saveStatus)&&i===1&&!openNextAct(s)),
   reason:s.phase==='stall'?'This attempt will crash':null}));
+}
+
+// A Bluetooth remote's action as the bike-button press it stands for. In flight
+// the weapons are buttons 1-4 and `pause` is the hold on 4 (the flight menu).
+// In a menu each weapon is its button number and `pause` is that screen's way
+// back, where it has one: the flight menu's Resume, or a Back / Cancel on 3.
+// Screens whose 3 ends a flight or changes the rider have no way back here.
+const REMOTE_BUTTON={laser:1,bomb:2,missile:3,boost:4};
+export function remoteBackPosition(s){
+ const resuming=['live','checkpoint'].includes(s.resumeIntent);
+ switch(s.phase){
+ case 'menu':return 1;
+ case 'roster':case 'settings':case 'save-details':case 'denied':return 3;
+ case 'ready':case 'countdown':return resuming?null:3;
+ default:return null;
+ }
+}
+export function remotePanelPress(s,action){
+ if(s.phase==='flight'||s.phase==='stall')return action==='pause'?{position:4,gesture:'long'}:REMOTE_BUTTON[action]?{position:REMOTE_BUTTON[action],gesture:'single'}:null;
+ if(action==='pause'){const position=remoteBackPosition(s);return position?{position,gesture:'single'}:null}
+ return REMOTE_BUTTON[action]?{position:REMOTE_BUTTON[action],gesture:'single'}:null;
 }
