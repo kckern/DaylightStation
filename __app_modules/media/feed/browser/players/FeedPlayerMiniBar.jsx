@@ -13,6 +13,7 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose, ope
   if (!item) return null;
 
   const { playing, currentTime, duration, toggle, seek, progressElRef } = playback || {};
+  const resumeLabel = pausedMedia?.item?.title ? `Resume: ${pausedMedia.item.title}` : 'Resume previous';
 
   // Use image directly if already an API path; otherwise proxy external URLs
   // The app's own image endpoints load directly; external images go through the proxy.
@@ -92,8 +93,8 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose, ope
         <button
           className="feed-mini-bar-resume-paused ds-touch-target"
           onClick={(e) => { e.stopPropagation(); resumePaused(); }}
-          aria-label="Resume previous"
-          title={`Resume: ${pausedMedia.item?.title || 'previous'}`}
+          aria-label={resumeLabel}
+          title={resumeLabel}
         >
           ↩ Prev
         </button>
