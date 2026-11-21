@@ -21,15 +21,19 @@ export function ValueAllocationChart({ allocation }) {
   return (
     <Stack gap="xs">
       <Text size="sm" fw={500}>Time Allocation</Text>
-      {sorted.map(([valueId, proportion]) => (
-        <Stack key={valueId} gap={2}>
-          <Group justify="space-between">
-            <Text size="xs">{humanize(valueId)}</Text>
-            <Text size="xs" c="dimmed">{Math.round(proportion * 100)}%</Text>
-          </Group>
-          <Progress value={proportion * 100} color={COLORS[hashStr(valueId) % COLORS.length]} size="xs" />
-        </Stack>
-      ))}
+      {sorted.map(([valueId, proportion]) => {
+        const name = humanize(valueId);
+        const percentage = Math.round(proportion * 100);
+        return (
+          <Stack key={valueId} gap={2}>
+            <Group justify="space-between">
+              <Text size="xs">{name}</Text>
+              <Text size="xs" c="dimmed">{percentage}%</Text>
+            </Group>
+            <Progress aria-label={`Time allocation for ${name}`} value={percentage} color={COLORS[hashStr(valueId) % COLORS.length]} size="xs" />
+          </Stack>
+        );
+      })}
     </Stack>
   );
 }
