@@ -3,6 +3,14 @@ import { expect, test } from '@playwright/test';
 test.use({ serviceWorkers: 'block' });
 
 function editionResponse(edition, title) {
+  const story = {
+    id: `${edition}-briefing`, title, leadSource: edition === 'local' ? 'Local source' : 'World source',
+    sourceCount: 1,
+    coverage: [{
+      id: edition, sourceId: 'daily', sourceLabel: edition === 'local' ? 'Local source' : 'World source',
+      title, url: `https://example.test/${edition}`, state: { isArchived: false, isSaved: false, isRead: false },
+    }],
+  };
   return {
     grid: { rows: ['main'], cols: ['main'] },
     sources: { daily: {
@@ -12,6 +20,7 @@ function editionResponse(edition, title) {
       url: 'https://example.test/feed',
       items: [{ id: edition, title, link: `https://example.test/${edition}` }],
     } },
+    briefing: [story],
   };
 }
 
@@ -32,8 +41,9 @@ test('Feed keeps focus in Headlines while retrying an unavailable edition', asyn
     return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
   });
 
-  await page.goto('/feed/headlines/local');
+  await page.goto('/feed/headlines/local?view=briefing');
   await expect(page.getByRole('alert')).toContainText('This edition could not be refreshed.');
+  await expect(page.getByText('No headlines are available for this edition.')).toHaveCount(0);
   await page.getByRole('button', { name: 'Retry', exact: true }).press('Enter');
   await expect.poll(() => reads).toEqual([['GET', 'local'], ['GET', 'local']]);
   const section = page.getByRole('region', { name: 'Headlines', exact: true });
@@ -44,6 +54,45 @@ test('Feed keeps focus in Headlines while retrying an unavailable edition', asyn
   await expect(section.getByRole('link', { name: 'Recovered local headline' })).toBeVisible();
   await expect(section).toBeFocused();
   await expect(section).not.toHaveAttribute('aria-busy', 'true');
+});
+
+test('Feed Briefing shows its empty state after archiving the last visible story and Undo restores it', async ({ page }) => {
+  const actions = [];
+  const item = {
+    id: 'briefing-item', title: 'Last briefing story', link: 'https://example.test/story',
+    sourceId: 'daily', sourceLabel: 'Daily', state: { isArchived: false, isSaved: false, isRead: false },
+  };
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const request = route.request();
+    const { pathname } = new URL(request.url());
+    if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    if (pathname.endsWith('/workspace')) return route.fulfill({ json: { preferencesStored: true } });
+    if (pathname.endsWith('/items/state/summary')) return route.fulfill({ json: { readerUnread: 1, pendingSync: 0 } });
+    if (pathname.endsWith('/items/state')) {
+      const action = request.postDataJSON().action;
+      actions.push(action);
+      return route.fulfill({ json: { items: [{ id: item.id, state: { ...item.state, isArchived: action === 'archive' } }] } });
+    }
+    if (pathname.endsWith('/headlines/pages')) return route.fulfill({ json: [{ id: 'local', label: 'Local' }] });
+    if (pathname.endsWith('/headlines')) return route.fulfill({ json: {
+      grid: { rows: ['main'], cols: ['main'] }, sources: {},
+      briefing: [{
+        id: 'briefing-story', title: item.title, leadSource: 'Daily', sourceCount: 1,
+        coverage: [item],
+      }],
+    } });
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto('/feed/headlines/local?view=briefing');
+  await expect(page.getByRole('heading', { name: item.title })).toBeVisible();
+  await page.getByRole('button', { name: 'Archive', exact: true }).click();
+  await expect(page.getByText('No headlines are available for this edition.')).toBeVisible();
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.getByRole('heading', { name: item.title })).toBeVisible();
+  await expect(page.getByText('No headlines are available for this edition.')).toHaveCount(0);
+  expect(actions).toEqual(['archive', 'unarchive']);
 });
 
 test('Feed keeps an acknowledged headline read when an earlier save fails', async ({ page }) => {

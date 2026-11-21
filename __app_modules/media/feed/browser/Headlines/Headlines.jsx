@@ -91,6 +91,7 @@ export default function Headlines({ pageId }) {
   const initialLoading = loading && !data;
 
   const sources = data?.sources || {};
+  const briefingStories = (data?.briefing || []).filter(story => !story.state?.isArchived);
   const grid = data?.grid;
   const rows = grid?.rows || [];
   const cols = grid?.cols || [];
@@ -146,7 +147,7 @@ export default function Headlines({ pageId }) {
 
       {view === 'briefing' ? (
         <section className="headline-briefing" aria-label="Top stories">
-          {(data?.briefing || []).filter(story => !story.state?.isArchived).map((story, index) => (
+          {briefingStories.map((story, index) => (
             <article className={`briefing-story ${index === 0 ? 'briefing-story--lead' : ''}`} key={story.id}>
               <div className="briefing-story__eyebrow">{!!previousVisit.current && new Date(story.publishedAt || 0).getTime() > new Date(previousVisit.current).getTime() && <span className="briefing-story__new">New · </span>}{story.sourceCount > 1 ? `${story.sourceCount} outlets` : story.leadSource}{story.publishedAt ? ` · ${formatTime(story.publishedAt)}` : ''}</div>
               <h2><a href={webLink(story.coverage?.[0]?.url) ?? undefined} target="_blank" rel="noreferrer">{story.title}</a></h2>
@@ -162,7 +163,7 @@ export default function Headlines({ pageId }) {
               </details>}
             </article>
           ))}
-          {!data?.briefing?.length && <p className="feed-empty">No headlines are available for this edition.</p>}
+          {data && briefingStories.length === 0 && <p className="feed-empty">No headlines are available for this edition.</p>}
         </section>
       ) : (
         <section className="headlines-matrix" aria-label="Outlet matrix">
