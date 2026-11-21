@@ -70,15 +70,6 @@ export function normalizeListItem(item) {
     const contentId = `${item.src}:${String(item.media_key)}`;
     result.play = { contentId };
 
-    // Watchlist-specific fields
-    if (item.program != null) result.program = item.program;
-    if (item.priority != null) result.priority = item.priority;
-    if (item.watched != null) result.watched = item.watched;
-    if (item.progress != null) result.progress = item.progress;
-    if (item.summary != null) result.summary = item.summary;
-    if (item.hold != null) result.hold = item.hold;
-    if (item.assetId != null) result.assetId = item.assetId;
-    if (item.playable != null) result.playable = item.playable;
   }
 
   // ── Menu/program format: input + action ─────────────────
@@ -127,6 +118,14 @@ export function normalizeListItem(item) {
   if (item.image != null) result.image = item.image;
   if (item.fixed_order != null) result.fixed_order = item.fixed_order;
   if (item.active != null) result.active = item.active;
+  if (item.program != null) result.program = item.program;
+  if (item.priority != null) result.priority = item.priority;
+  if (item.watched != null) result.watched = item.watched;
+  if (item.progress != null) result.progress = item.progress;
+  if (item.summary != null) result.summary = item.summary;
+  if (item.hold != null) result.hold = item.hold;
+  if (item.assetId != null) result.assetId = item.assetId;
+  if (item.playable != null) result.playable = item.playable;
   if (item.continuous != null) result.continuous = item.continuous;
   if (item.shuffle != null) result.shuffle = item.shuffle;
   if (item.menuStyle != null) result.menuStyle = item.menuStyle;

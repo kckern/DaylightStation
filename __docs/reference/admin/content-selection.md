@@ -14,6 +14,8 @@ Clearing an existing item image sends an explicit null to remove its override; a
 
 The list service maps Admin playback aliases to the codec's canonical `fixed_order` and `playbackrate` fields; shader remains a canonical field. Adds, edits, and fresh reads use that same mapping.
 
+Watchlist item metadata such as `hold`, `priority`, `progress`, and `watched` survives Admin saves even when a legacy watchlist row is normalized to the current input/action form.
+
 Per-item playback controls are limited to settings consumed by list playback; the unsupported per-item Loop option is not exposed.
 
 Duplicating a list item gives the copy a distinct “(copy)” label while preserving its content and settings.
