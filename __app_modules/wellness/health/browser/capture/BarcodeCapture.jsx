@@ -194,12 +194,22 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
         right: '8%', height: 2, background: '#6deab0', pointerEvents: 'none' }} />
     </div>
   );
-  const manual = (
-    <Group gap="xs" wrap="nowrap">
+  const submitManual = event => {
+    event.preventDefault();
+    const upc = manualUpc.trim();
+    if (upc) void decode(upc);
+  };
+  const manualControls = (
+    <>
       <TextInput size="md" className="health-barcode__manual-input" inputMode="numeric" placeholder="UPC number"
         value={manualUpc} onChange={event => setManualUpc(event.target.value)} aria-label="Manual UPC entry" />
-      <Button size="md" className="ds-touch-target" disabled={!manualUpc.trim()} onClick={() => decode(manualUpc.trim())}>Look up</Button>
-    </Group>
+      <Button type="submit" size="md" className="ds-touch-target" disabled={!manualUpc.trim()}>Look up</Button>
+    </>
+  );
+  const manual = quickScan ? (
+    <Group component="form" gap="xs" wrap="nowrap" onSubmit={submitManual}>{manualControls}</Group>
+  ) : (
+    <form className="health-barcode__manual" onSubmit={submitManual}>{manualControls}</form>
   );
 
   if (quickScan) {
@@ -252,11 +262,7 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
         {phase === 'paused' && 'Camera paused.'}
       </Text>
       {['scanning', 'paused', 'lookup-error'].includes(phase) && (
-        <div className="health-barcode__manual">
-          <TextInput size="md" className="health-barcode__manual-input" inputMode="numeric" placeholder="UPC number"
-            value={manualUpc} onChange={event => setManualUpc(event.target.value)} aria-label="Manual UPC entry" />
-          <Button size="md" className="ds-touch-target" disabled={!manualUpc.trim()} onClick={() => decode(manualUpc.trim())}>Look up</Button>
-        </div>
+        manual
       )}
       {phase === 'review' && <>
         <Text fw={600}>{read.product.name}</Text>
