@@ -222,7 +222,6 @@ function ListsItemEditor({ hideSection = false, preserveImageClear = false, open
           // Playback
           shuffle: item.shuffle ?? ITEM_DEFAULTS.shuffle,
           continuous: item.continuous ?? ITEM_DEFAULTS.continuous,
-          loop: item.loop ?? ITEM_DEFAULTS.loop,
           fixedOrder: item.fixedOrder ?? ITEM_DEFAULTS.fixedOrder,
           volume: item.volume ?? ITEM_DEFAULTS.volume,
           playbackRate: item.playbackRate ?? ITEM_DEFAULTS.playbackRate,
@@ -249,7 +248,6 @@ function ListsItemEditor({ hideSection = false, preserveImageClear = false, open
           image: null,
           shuffle: ITEM_DEFAULTS.shuffle,
           continuous: ITEM_DEFAULTS.continuous,
-          loop: ITEM_DEFAULTS.loop,
           fixedOrder: ITEM_DEFAULTS.fixedOrder,
           volume: ITEM_DEFAULTS.volume,
           playbackRate: ITEM_DEFAULTS.playbackRate,

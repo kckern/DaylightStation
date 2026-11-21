@@ -32,7 +32,7 @@ export const DAYS_PRESETS = [
   { value: 'TTh', label: 'Tue • Thu' }
 ];
 
-// Known item fields that the editor manages
+// Known list-item fields; unrecognized values are shown as custom fields.
 export const KNOWN_ITEM_FIELDS = [
   // Identity
   'label', 'input', 'action', 'active', 'image', 'uid',
@@ -52,7 +52,7 @@ export const KNOWN_ITEM_FIELDS = [
 // Everything except identity fields (label, image, uid, active)
 export const CONTENT_PAYLOAD_FIELDS = [
   'input', 'action',
-  'shuffle', 'continuous', 'loop', 'fixedOrder', 'volume', 'playbackRate',
+  'shuffle', 'continuous', 'fixedOrder', 'volume', 'playbackRate',
   'days', 'snooze', 'waitUntil',
   'shader', 'composite', 'playable',
   'progress', 'watched',
@@ -82,7 +82,6 @@ export const ITEM_DEFAULTS = {
   active: true,
   shuffle: false,
   continuous: false,
-  loop: false,
   fixedOrder: false,
   volume: 100,
   playbackRate: 1.0,
@@ -101,7 +100,6 @@ export const ITEM_DEFAULTS = {
 export const CONFIG_INDICATORS = [
   { field: 'shuffle', icon: 'IconArrowsShuffle', label: 'Shuffle' },
   { field: 'continuous', icon: 'IconRepeat', label: 'Continuous' },
-  { field: 'loop', icon: 'IconRepeatOnce', label: 'Loop' },
   { field: 'fixedOrder', icon: 'IconSortAscending', label: 'Fixed Order' },
   { field: 'volume', icon: 'IconVolume', label: 'Custom Volume', condition: (v) => v !== 100 && v != null },
   { field: 'playbackRate', icon: 'IconPlayerPlay', label: 'Custom Speed', condition: (v) => v !== 1.0 && v != null },

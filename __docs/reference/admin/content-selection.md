@@ -10,6 +10,8 @@ Deleting and undoing a list item restores its scheduling dates and original posi
 
 Editing a list item sends changed fields, including values reset to their defaults. New items continue to omit default values.
 
+Per-item playback controls are limited to settings consumed by list playback; the unsupported per-item Loop option is not exposed.
+
 Duplicating a list item gives the copy a distinct “(copy)” label while preserving its content and settings.
 
 The item editor's **Section** choice saves the selected destination. When a move succeeds but its field update fails, retrying resolves the item by its stable UID in the refreshed list. Cross-section edits without a stable UID are blocked to prevent writes to the wrong positional row.
