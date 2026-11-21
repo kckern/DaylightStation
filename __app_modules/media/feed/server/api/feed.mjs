@@ -283,7 +283,9 @@ export function createFeedRouter(config) {
       const imported = await feedStateService.importData(getUsername(req), req.body);
       res.json({ imported });
     } catch (error) {
-      if (error.message === 'Unsupported feed export format') return res.status(400).json({ error: error.message });
+      if (error.message === 'Unsupported feed export format' || error.code === 'FEED_IMPORT_LIMIT') {
+        return res.status(400).json({ error: error.message });
+      }
       throw error;
     }
   }));

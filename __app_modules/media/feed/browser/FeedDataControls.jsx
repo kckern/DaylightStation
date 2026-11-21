@@ -92,7 +92,12 @@ export default function FeedDataControls({ onImported }) {
     } catch (error) {
       if (!isCurrent(scope)) return;
       log.warn('feed.import.failed', { error: error.message });
-      setStatus(error instanceof SyntaxError ? 'That file is not valid JSON.' : 'Import failed. Check that this is a Daylight Feed export.');
+      const validationMessage = error.status === 400 && typeof error.body?.error === 'string'
+        ? error.body.error
+        : null;
+      setStatus(error instanceof SyntaxError
+        ? 'That file is not valid JSON.'
+        : validationMessage || 'Import failed. Check that this is a Daylight Feed export.');
     } finally {
       if (isCurrent(scope)) setBusy(false);
     }
