@@ -240,7 +240,10 @@ function MembersIndex() {
         }}
         title="Add Household Member"
       >
-        <Stack gap="md">
+        <Stack component="form" gap="md" onSubmit={event => {
+          event.preventDefault();
+          handleCreateSubmit();
+        }}>
           <TextInput
             label="Username"
             placeholder="johndoe"
@@ -276,10 +279,10 @@ function MembersIndex() {
             max={new Date().getFullYear()}
           />
           <Group justify="flex-end">
-            <Button variant="default" onClick={() => setCreateModalOpen(false)}>
+            <Button type="button" variant="default" onClick={() => setCreateModalOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreateSubmit} loading={creating}>
+            <Button type="submit" loading={creating}>
               Add Member
             </Button>
           </Group>
