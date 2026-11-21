@@ -180,7 +180,7 @@ export default function Reader() {
   const previousVisit = useRef(getLastVisit('reader'));
   const visitStarted = useRef(new Date().toISOString());
   const {
-    data: feedsData, error: feedsReadError, loading: feedsLoading, revalidating: feedsRevalidating, reload: reloadFeeds,
+    data: feedsData, hasResult: feedsLoaded, error: feedsReadError, loading: feedsLoading, revalidating: feedsRevalidating, reload: reloadFeeds,
   } = useApiResource('/api/v1/feed/reader/feeds', { label: 'Feed subscriptions', dedupe: false });
   const { regionProps: feedsRegion, retry: retryFeeds } = useRetryRegion(reloadFeeds, feedsLoading || feedsRevalidating);
   const feeds = feedsData || [];
@@ -569,6 +569,7 @@ export default function Reader() {
           {feedsError && <div className="reader-inline-error" role="status">{feedsError}<button onClick={retryFeeds}>Retry</button></div>}
           <ReaderSidebar
             feeds={feeds}
+            loaded={feedsLoaded}
             activeFeeds={activeFeeds}
             onToggleFeed={handleMobileToggleFeed}
             onToggleCategory={handleMobileToggleCategory}

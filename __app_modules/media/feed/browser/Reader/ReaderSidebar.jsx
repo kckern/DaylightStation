@@ -4,12 +4,13 @@ import { useState, useMemo, useEffect } from 'react';
  * Sidebar with collapsible categories and feed filter toggles.
  * @param {Object} props
  * @param {Array} props.feeds - [{id, title, categories: [{id, label}]}]
+ * @param {boolean} props.loaded - whether the subscription read succeeded
  * @param {Set} props.activeFeeds - set of selected feed IDs (empty = show all)
  * @param {Function} props.onToggleFeed - (feedId, multiSelect) => void
  * @param {Function} props.onToggleCategory - (feedIds, multiSelect) => void
  * @param {Function} props.onClearFilters - () => void
  */
-export default function ReaderSidebar({ feeds, activeFeeds, onToggleFeed, onToggleCategory, onClearFilters }) {
+export default function ReaderSidebar({ feeds, loaded, activeFeeds, onToggleFeed, onToggleCategory, onClearFilters }) {
   const [collapsed, setCollapsed] = useState({});
   const [initialized, setInitialized] = useState(false);
 
@@ -95,7 +96,7 @@ export default function ReaderSidebar({ feeds, activeFeeds, onToggleFeed, onTogg
           ))}
         </div>
       ))}
-      {feeds.length === 0 && (
+      {loaded && feeds.length === 0 && (
         <div className="reader-empty">No feeds found</div>
       )}
     </div>

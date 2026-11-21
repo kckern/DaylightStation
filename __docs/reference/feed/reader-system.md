@@ -142,7 +142,7 @@ This means the initial load shows a manageable window (e.g., 3 days) while progr
 - **Pagination**: passes `?continuation=...` when appending
 - **Unread, Saved, Archived**: query canonical 12-month Reader history with `GET /feed/search?mode=reader&state=...`; Saved snapshots remain addressable beyond normal history retention
 
-Changing `activeFeeds` aborts the obsolete request and starts a fresh fetch. Reader keeps independent subscription-list and inbox errors so partial failures do not blank useful content.
+Changing `activeFeeds` aborts the obsolete request and starts a fresh fetch. Reader keeps independent subscription-list and inbox errors so partial failures do not blank useful content. The sidebar says “No feeds found” only after a successful empty subscription read; a loading or failed read does not imply an empty account.
 
 ### Infinite Scroll
 
