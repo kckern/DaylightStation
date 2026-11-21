@@ -87,7 +87,7 @@ function AgentDetail({ agentId: explicitAgentId, ConfigView, DashboardView }) {
 
       {/* Tabs */}
       <Tabs value={activeTab} onChange={handleTabChange}>
-        <Tabs.List>
+        <Tabs.List aria-label={`${agentId} sections`}>
           <Tabs.Tab value="overview" leftSection={<IconSettings size={16} />}>
             Overview
           </Tabs.Tab>

@@ -214,7 +214,7 @@ function HeadlineStateActions({ item, onAction }) {
     <div className="headline-state-actions" aria-label={`Actions for ${item.title}`}>
       <button type="button" aria-pressed={!!item.state?.isSaved} onClick={() => onAction(item, item.state?.isSaved ? 'unsave' : 'save')}>{item.state?.isSaved ? 'Saved' : 'Save'}</button>
       <button type="button" onClick={() => onAction(item, item.state?.isArchived ? 'unarchive' : 'archive')}>{item.state?.isArchived ? 'Restore' : 'Archive'}</button>
-      <button type="button" onClick={() => onAction(item, item.state?.isRead ? 'unread' : 'read')}>{item.state?.isRead ? 'Unread' : 'Read'}</button>
+      <button type="button" onClick={() => onAction(item, item.state?.isRead ? 'unread' : 'read')}>{item.state?.isRead ? 'Mark unread' : 'Mark read'}</button>
     </div>
   );
 }
