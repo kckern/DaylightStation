@@ -30,15 +30,10 @@ export function useAgentDashboard(userId, date) {
   }, [reload]);
 
   const deleteDashboard = useCallback(async (userId, date) => {
-    try {
-      const result = await DaylightAPI(`/api/v1/health-dashboard/${userId}/${date}`, {}, 'DELETE');
-      logger.info('admin.dashboard.deleted', { userId, date });
-      reload();
-      return result;
-    } catch (err) {
-      setError(err);
-      throw err;
-    }
+    const result = await DaylightAPI(`/api/v1/health-dashboard/${userId}/${date}`, {}, 'DELETE');
+    logger.info('admin.dashboard.deleted', { userId, date });
+    reload();
+    return result;
   }, [logger, userId, date, reload]);
 
   const regenerate = useCallback(async (agentId, userId) => {

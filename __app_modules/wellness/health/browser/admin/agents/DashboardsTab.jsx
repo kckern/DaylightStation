@@ -20,7 +20,9 @@ function DashboardsTab({ agentId, userId }) {
   const canGenerateForDate = date === today;
   const [rawOpen, setRawOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const { run: submitDelete, saving: deleting } = useSheetSubmission(() => setDeleteOpen(false));
+  const {
+    run: submitDelete, saving: deleting, failure: deleteFailure, clearFailure: clearDeleteFailure,
+  } = useSheetSubmission(() => setDeleteOpen(false));
 
   const {
     dashboard, dashboardMissing, dashboardReadError, loading, regenerating, error,
@@ -35,6 +37,10 @@ function DashboardsTab({ agentId, userId }) {
   }, [agentId, userId, date, regenerate, fetchDashboard]);
 
   const handleDelete = () => submitDelete(() => deleteDashboard(userId, date));
+  const openDelete = () => {
+    clearDeleteFailure();
+    setDeleteOpen(true);
+  };
 
   if (!userId) {
     return <Text c="dimmed" p="md">Select a user to view dashboards</Text>;
@@ -234,7 +240,7 @@ function DashboardsTab({ agentId, userId }) {
               variant="light"
               color="red"
               leftSection={<IconTrash size={16} />}
-              onClick={() => setDeleteOpen(true)}
+              onClick={openDelete}
             >
               Delete
             </Button>
@@ -259,7 +265,13 @@ function DashboardsTab({ agentId, userId }) {
         message={`Delete the dashboard for ${userId} on ${date}? This removes the saved dashboard for this date.`}
         confirmLabel="Delete"
         loading={deleting}
-      />
+      >
+        {deleteFailure && (
+          <Alert color="red" icon={<IconAlertCircle size={16} />}>
+            {deleteFailure.message || 'Dashboard deletion failed'}
+          </Alert>
+        )}
+      </ConfirmModal>
     </Stack>
   );
 }
