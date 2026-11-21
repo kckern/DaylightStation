@@ -17,8 +17,12 @@ describe('providerIdFor', () => {
   it('does not treat Apple\'s store as the Apple TV service', () => {
     expect(providerIdFor('AppleTV')).toBeNull();
   });
-  it('returns null for unknown services', () => {
-    expect(providerIdFor('Fawesome')).toBeNull();
+  it('falls back to the name slug for services without an alias', () => {
+    expect(providerIdFor('Fawesome')).toBe('fawesome');
+    expect(providerIdFor('AMC+')).toBe('amc-plus');
+    expect(providerIdFor('AMC+ Amazon Channel')).toBe('amc-plus-amazon-channel');
+    expect(providerIdFor('DirecTV On Demand')).toBe('directv');
+    expect(providerIdFor('Philo')).toBe('philo');
     expect(providerIdFor('')).toBeNull();
   });
 });
@@ -36,7 +40,7 @@ describe('streamingOffers', () => {
   it('keeps streaming offers only, one per provider, free over sub', () => {
     const offers = streamingOffers(sources);
     expect(offers.map((o) => [o.provider, o.type])).toEqual([
-      [null, 'free'], ['hoopla', 'free'], ['peacock', 'free'],
+      ['fawesome', 'free'], ['hoopla', 'free'], ['peacock', 'free'],
     ]);
     expect(offers[1].url).toBe('https://hoopla/x');
   });
@@ -59,9 +63,13 @@ describe('chooseProvider', () => {
     expect(chooseProvider([offer('hoopla', 'free'), offer('tubi', 'free')], tiers).provider).toBe('tubi');
     expect(chooseProvider([offer('peacock'), offer('prime-video')], tiers).provider).toBe('prime-video');
   });
-  it('skips unknown services and ones that cannot be shown', () => {
+  it('skips offers with no provider and ones that cannot be shown', () => {
     expect(chooseProvider([{ provider: null, type: 'free' }], tiers)).toBeNull();
     expect(chooseProvider([offer('netflix'), offer('hulu')], tiers, (p) => p !== 'netflix').provider).toBe('hulu');
+  });
+  it('derives the provider from the name for records stored without one', () => {
+    const stored = [{ provider: null, name: 'Philo', type: 'sub' }, { provider: null, name: 'AMC+', type: 'sub' }];
+    expect(chooseProvider(stored, tiers, (p) => p === 'amc-plus')).toMatchObject({ provider: 'amc-plus', name: 'AMC+', tier: 'other' });
   });
   it('returns null when nothing qualifies', () => {
     expect(chooseProvider([], tiers)).toBeNull();
