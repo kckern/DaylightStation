@@ -1216,7 +1216,7 @@ describe('the four partitions', () => {
     expect(done.closest('.school-status-board__row')).toHaveAttribute('data-complete', 'true');
   });
 
-  it('a rest day keeps its copy, with no count and no check mark', async () => {
+  it('a rest day shows no copy, no count and no check mark', async () => {
     const off = (subject) => ({
       subject, next: { unitId: `${subject}.next` }, obligation: { state: 'excused', reason: 'not_a_school_day' },
     });
@@ -1224,10 +1224,13 @@ describe('the four partitions', () => {
     schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
     schoolApi.teacherDay.mockResolvedValue({ ok: true, data: { studyDay: '2026-09-26', learners: [{ learnerId: 'learner1', sessions: [] }] } });
     render(<AgendaStatusBoard kids={kids} />);
-    expect(await screen.findByText('No school today')).toBeInTheDocument();
+    await waitFor(() => expect(schoolApi.agendaPreview).toHaveBeenCalled());
+    await screen.findByTestId('board-day');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByText(/No school/)).toBeNull();
     expect(screen.queryByTestId('board-day-count')).toBeNull();
     expect(screen.queryByTestId('board-day-done')).toBeNull();
-    // No count and no pins: no empty row standing above the copy.
+    // No count and no pins: no empty row.
     expect(screen.getByTestId('board-day').querySelector('.school-status-board__today')).toBeNull();
   });
 
@@ -1523,28 +1526,24 @@ describe('rest day on the board', () => {
     schoolApi.teacherDay.mockResolvedValue(digest());
   });
 
-  it('says No school today and how to get extra work, never No plan to show', async () => {
+  // Owner 2026-11-21: a rest day carries no copy at all, and no extra-work hint.
+  it('says nothing on a rest day: no No school today, no hint, never No plan to show', async () => {
     schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: { sections: [off('math'), off('language')], entries: [] } });
     render(<AgendaStatusBoard kids={kids} />);
-    expect(await screen.findByText('No school today')).toBeInTheDocument();
-    expect(screen.getByText('Scan your card for extra work')).toBeInTheDocument();
+    await screen.findByTestId('board-day');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByText(/No school/)).toBeNull();
+    expect(screen.queryByText(/extra work/)).toBeNull();
     expect(screen.queryByText('No plan to show')).toBeNull();
     expect(document.querySelector('.school-status-board__pill')).toBeNull();
   });
 
-  it('drops the hint on a holiday with nothing offered', async () => {
-    schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: { sections: [off('math', null)], entries: [] } });
-    render(<AgendaStatusBoard kids={kids} />);
-    expect(await screen.findByText('No school today')).toBeInTheDocument();
-    expect(screen.queryByText('Scan your card for extra work')).toBeNull();
-  });
-
-  it('on a pinned past day says No school, with no scan hint', async () => {
+  it('on a pinned past rest day says nothing either', async () => {
     schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: { sections: [off('math')], entries: [] } });
     render(<AgendaStatusBoard kids={kids} day="2026-09-19" />);
-    expect(await screen.findByText('No school')).toBeInTheDocument();
-    expect(screen.queryByText('No school today')).toBeNull();
-    expect(screen.queryByText('Scan your card for extra work')).toBeNull();
+    await screen.findByTestId('board-day');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByText(/No school/)).toBeNull();
   });
 
   it('never claims a day off when the plan read fails', async () => {
@@ -1559,14 +1558,14 @@ describe('rest day on the board', () => {
     expect(screen.queryByText('No school today')).toBeNull();
   });
 
-  it('shows the rest-day copy under supplemental pins (reading done on a Saturday)', async () => {
+  it('shows supplemental pins and no rest-day copy (reading done on a Saturday)', async () => {
     schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: { sections: [off('math')], entries: [] } });
     schoolApi.teacherDay.mockResolvedValue(digest({
       readingActivity: { status: 'ok', studyDay: '2026-09-26', hasActivity: true, bookCount: 1, finishedCount: 0, progressCount: 1 },
     }));
     render(<AgendaStatusBoard kids={kids} />);
     expect(await screen.findByRole('img', { name: /Reading: done/ })).toBeInTheDocument();
-    expect(screen.getByText('No school today')).toBeInTheDocument();
+    expect(screen.queryByText(/No school/)).toBeNull();
     expect(screen.queryByText('No plan to show')).toBeNull();
   });
 

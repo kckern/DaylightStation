@@ -166,7 +166,14 @@ panel code when self-service is on.
 - **Preview and dry runs.** Preview uses an inert token. A dry run for any day
   other than today shows no makeup. The agenda preview JSON carries `makeup:
   {deadline, items}`, or `null` when nothing is owed.
-- **Status board.** It shows `Makeup work: print your makeup sheet (due Sat)`.
+- **Status board.** The card carries no makeup line (2026-11-20). A tap on a
+  learner's two weeks opens the term popup, and when the live agenda preview
+  carries `makeup`, the popup opens with **Still to do this week**: each open
+  day by weekday with its subjects (`makeupLines`), then `Scan your card to
+  make it up by <weekday>` (or `today` on the deadline day). A card scan prints
+  the agenda with the makeup-sheet card on it. The list comes only from a live
+  (unpinned) read, so it names only work that would still count. Logged as
+  `status-board.term-makeup-shown` (learner, days, due).
 - **Logs.** `school.agenda.makeup.minted` and `school.makeup.printed` record
   the learner, the subjects and the days. `school.makeup.claimed` records a
   claim (learner, session, subject, `forDay`, deadline, unit).

@@ -244,7 +244,7 @@ Each learner's card is four cells, left to right: who, today, rewards, days.
 **Today.** A big number of how many assignments are left, set before the
 subject pins. A finished day shows one green check mark in its place. There is
 no segmented bar; the number is the progressbar for screen readers ("N of M
-done"). A rest day keeps "No school today".
+done"). A rest day shows no count and no copy.
 
 **Whether the day is done is the server's call, not the board's.** The teacher
 day digest (`GET /api/v1/school/teacher/day`, v2) carries each learner's
@@ -479,34 +479,35 @@ and that learner's card on that gate's events.
 
 When every planned section is excused and at least one because the day is off
 (`not_a_school_day`, `household_calendar` or `day_off`), `summarize` returns
-`restDay: {optionalCount}` and the card says **No school today** instead of
-"No plan to show".
+`restDay: {optionalCount}`. An unnamed rest day (a weekend) shows **nothing**
+in the day cell: never "No plan to show", and since 2026-11-21 no "No school
+today" and no extra-work hint either. Optional work needs no signal on the
+board; a child who wants it scans their card, and the agenda that prints
+carries every optional lesson with its code.
 
 A household day off **names itself**. `summarize` also carries the preview's
 `dayOff: {tier, label}`, and `dayOffTitle` turns it into the card's line:
 `<label> — stay-home day` (stay-home, enrichment), `<label> — holiday`
-(major-holiday), `<label> — no school` (away); a `normal`-tier day adds nothing.
-On a day with nothing owed that line replaces "No school today"; on a stay-home
-day with kept work the discs show as usual and the name line sits under them,
-solid, so a child sees why the day is short. See [Day-off tiers](./day-off-tiers.md). When `optionalCount > 0` it adds **Scan your card for
-extra work**: a card scan prints the agenda, and a rest-day agenda still
-carries every optional lesson with its code (the obligation is excused, not
-forbidden).
+(major-holiday), `<label> — no school` (away); a `normal`-tier day and an
+unnamed away day add nothing. On a day with nothing owed that line is the only
+copy; on a stay-home day with kept work the discs show as usual and the name
+line sits under them, solid, so a child sees why the day is short. See
+[Day-off tiers](./day-off-tiers.md).
 
 - Excused work is still never a disc and never counts toward the number left.
   Work a child actually does on a day off appears as usual (sessions,
-  served work, reading, fitness), and the rest-day copy sits under any
-  supplemental pins while `total` is 0.
-- One obligated section makes it a school day: no rest-day copy.
+  served work, reading, fitness), as supplemental pins while `total` is 0.
+- One obligated section makes it a school day: the count and discs show. A
+  program scheduled on weekend days (`daysOfWeek` including 6 and 7, e.g.
+  daily gratitude) is owed on Saturday and Sunday like any weekday.
   `optional_backlog` / `elective_only` sections beside a `not_a_school_day`
   one don't spoil it.
-- A pinned past day (`day` prop) says **No school** with no hint, since a scan
-  prints today's agenda.
 - A failed plan read keeps "No plan to show": the board can't tell a day
   off from missing data.
 
 Added 2026-09-26, after a child at the Portal on a Saturday read "No plan to
-show" as "nothing to do" while flashcards were waiting.
+show" as "nothing to do" while flashcards were waiting. The "No school today" /
+"Scan your card for extra work" copy that replaced it was removed 2026-11-21.
 
 ## How the status board loads and refreshes
 

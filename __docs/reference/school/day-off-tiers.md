@@ -215,9 +215,10 @@ section carries `backfill: {missedDays}` and `catchUp: true`.
   the household calendar, or an enrollment that began mid-week without an
   `except` span, can still read as missed against today's plan.
 - **Where the child sees it.** The printed card's rail names the days
-  (`Catch-up · Mon, Wed`). The status board draws each offer as an outlined
-  optional disc outside the day's count, so the check mark and "done" stay as
-  they are, and adds "Catch-up: scan your card" under a finished day.
+  (`Catch-up · Mon, Wed`). The status board draws nothing for it (no outlined
+  discs, no "Catch-up" line, removed 2026-11-21): optional work needs no
+  signal; a child who wants it scans their card. Missed days this week are
+  listed in the term popup instead (see [Makeup work](./makeup-work.md)).
 
 **Settled is not performed.** A program can report a day done with nobody
 having played — a piano co-progress lock, a grown-up's day bypass, a teacher
@@ -262,8 +263,8 @@ status board names the day:
 | `normal` | nothing extra |
 
 A day with kept work shows its discs and the name line under them; a day with
-nothing owed shows only the name line, plus "Scan your card for extra work" when
-optional work is on the agenda. See
+nothing owed shows only the name line, and an unnamed day off shows nothing.
+See
 [A day off on the status board](./agenda-and-completion.md#a-day-off-on-the-status-board).
 
 ## Adding a holiday
