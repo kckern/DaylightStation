@@ -70,6 +70,7 @@ export function TransportBar({ target, snapshot: snapshotOverride = null, onComm
   const isPlaying = PLAYING_STATES.has(snapshot?.state);
   const repeat = snapshot?.config?.repeat ?? 'off';
   const volume = snapshot?.config?.volume ?? 100;
+  const volumeLabel = `${volume}%`;
   const rate = snapshot?.config?.playbackRate ?? 1;
   const speedCapability = capabilities?.speed;
   const canSetRate = typeof config.setPlaybackRate === 'function'
@@ -218,10 +219,11 @@ export function TransportBar({ target, snapshot: snapshotOverride = null, onComm
             step={1}
             value={volume}
             aria-label="Volume"
+            aria-valuetext={volumeLabel}
             disabled={!controlsAvailable || typeof config.setVolume !== 'function'}
             onChange={(e) => setVolume(Number(e.target.value))}
           />
-          <span className="np-volume-level" data-testid="np-volume-level">{volume}%</span>
+          <span className="np-volume-level" data-testid="np-volume-level">{volumeLabel}</span>
           <button
             type="button"
             className="np-volume-step"
