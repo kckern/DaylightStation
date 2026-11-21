@@ -266,7 +266,7 @@ A small shared design system underpins every view, added alongside the "beautifu
 
 | Directory | Components |
 |-----------|------------|
-| `views/plan/` | PurposeView, QualitiesView, ValuesView, BeliefsView, GoalsView, GoalDetail, CeremonyConfig. GoalDetail renders only the transitions returned by the presenter; terminal goals have no transition control, invalidated goals remain in the Completed group, and Goal cards receive progress derived by `Goal.getProgress()`. |
+| `views/plan/` | PurposeView, QualitiesView, ValuesView, BeliefsView, GoalsView, GoalDetail, CeremonyConfig. BeliefsView renders the presenter's canonical `if` / `then` fields. GoalDetail renders only the transitions returned by the presenter; terminal goals have no transition control, invalidated goals remain in the Completed group, and Goal cards receive progress derived by `Goal.getProgress()`. |
 | `views/now/` | **Dashboard** (not "Briefing" — see below), PriorityList |
 | `views/coach/` | CoachChat — chat UI for the lifeplan-guide agent, gated on a resolved `lifeUser` so agent memory keys to the right person |
 | `views/log/` | LogBrowser, LogTimeline, LogDayDetail, LogWeekView, LogMonthView, LogSeasonView, LogYearView, LogDecadeView, LogCategoryView, and `views/log/shared/` (ActivityHeatmap, CategoryFilter, ScopeSelector, SourceIcon) |
