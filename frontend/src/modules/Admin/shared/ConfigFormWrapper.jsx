@@ -2,6 +2,7 @@ import React from 'react';
 import { Stack, Alert, Center, Loader, Button, Group } from '@mantine/core';
 import { IconAlertCircle } from '@tabler/icons-react';
 import { useAdminConfig } from '../../../hooks/admin/useAdminConfig.js';
+import { useRetryRegion } from '../../../lib/ui/useRetryRegion.js';
 import { useUnsavedGuard } from './useUnsavedGuard.js';
 import SaveBar from './SaveBar.jsx';
 
@@ -25,6 +26,7 @@ function ConfigFormWrapper({ filePath, title, children, validate, rawMode = fals
     save, revert, setData, setRaw, clearError, retryRead
   } = useAdminConfig(filePath);
   const hasEditor = rawMode ? draftReady : data !== null;
+  const { regionProps, retry } = useRetryRegion(retryRead, loading);
 
   // Unsaved-changes guard: beforeunload + guarded Admin navigation (audit C1)
   useUnsavedGuard(dirty, { label: filePath });
@@ -42,43 +44,43 @@ function ConfigFormWrapper({ filePath, title, children, validate, rawMode = fals
     }
   };
 
-  if (loading && !hasEditor) {
-    return (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
-  }
-
   return (
-    <Stack gap="md">
-      <SaveBar
-        title={title}
-        dirty={dirty}
-        saving={saving}
-        disabled={loading}
-        onSave={handleSave}
-        onRevert={revert}
-        headerExtra={headerExtra}
-      />
+    <Stack component="section" gap="md" aria-label={`${title} editor`} {...regionProps}>
+      {loading && !hasEditor ? (
+        <Center h="60vh">
+          <Loader size="lg" />
+        </Center>
+      ) : (
+        <>
+          <SaveBar
+            title={title}
+            dirty={dirty}
+            saving={saving}
+            disabled={loading}
+            onSave={handleSave}
+            onRevert={revert}
+            headerExtra={headerExtra}
+          />
 
-      {error && (
-        <Alert
-          icon={<IconAlertCircle size={16} />}
-          color="red"
-          withCloseButton={error !== readError || hasEditor}
-          onClose={clearError}
-        >
-          <Group justify="space-between" align="center" wrap="nowrap">
-            <span>{error.message || 'An error occurred'}</span>
-            {error === readError && <Button size="xs" variant="light" onClick={retryRead} disabled={saving}>Retry</Button>}
-          </Group>
-        </Alert>
+          {error && (
+            <Alert
+              icon={<IconAlertCircle size={16} />}
+              color="red"
+              withCloseButton={error !== readError || hasEditor}
+              onClose={clearError}
+            >
+              <Group justify="space-between" align="center" wrap="nowrap">
+                <span>{error.message || 'An error occurred'}</span>
+                {error === readError && <Button size="xs" variant="light" onClick={retry} disabled={saving}>Retry</Button>}
+              </Group>
+            </Alert>
+          )}
+
+          <div className="ds-config-body">
+            {hasEditor && children({ data, setData, raw, setRaw, error })}
+          </div>
+        </>
       )}
-
-      <div className="ds-config-body">
-        {hasEditor && children({ data, setData, raw, setRaw, error })}
-      </div>
     </Stack>
   );
 }

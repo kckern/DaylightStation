@@ -104,6 +104,37 @@ test('the config directory retries a failed read and keeps focus through recover
   await expect(region).not.toHaveAttribute('aria-busy', 'true');
 });
 
+test('the config editor retains focus in its region while Retry replaces the failed-read alert', async ({ page }) => {
+  const reads = [];
+  let retryRead;
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path === '/api/v1/admin/config/files/household/sample.yml' && request.method() === 'GET') {
+      reads.push(request.method());
+      if (reads.length === 1) return route.fulfill({ status: 500, json: { message: 'File unavailable' } });
+      retryRead = route;
+      return;
+    }
+    return route.fulfill({ json: path.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+
+  await page.goto('/admin/system/config/household/sample.yml');
+  await expect(page.getByRole('alert')).toBeVisible();
+  const retry = page.getByRole('button', { name: 'Retry', exact: true });
+  await retry.press('Enter');
+
+  const region = page.getByRole('region', { name: 'sample.yml editor', exact: true });
+  await expect.poll(() => reads).toEqual(['GET', 'GET']);
+  await expect(region).toBeFocused();
+  await expect(region).toHaveAttribute('aria-busy', 'true');
+  await retryRead.fulfill({ json: { parsed: { enabled: true }, raw: 'enabled: true\n' } });
+  await expect(page.locator('.cm-content')).toContainText('enabled: true');
+  await expect(region).toBeFocused();
+  await expect(region).not.toHaveAttribute('aria-busy', 'true');
+});
+
 test('config Back preserves a dirty YAML draft until discard is confirmed', async ({ page }) => {
   const writes = [];
   await page.routeWebSocket('**/*', () => {});
