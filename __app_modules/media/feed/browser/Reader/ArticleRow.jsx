@@ -58,6 +58,7 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
     const now = new Date();
     const diffMs = now - d;
     const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return 'now';
     if (diffMins < 60) return `${diffMins}m ago`;
     const diffHrs = Math.floor(diffMins / 60);
     if (diffHrs < 24) return `${diffHrs}h ago`;
