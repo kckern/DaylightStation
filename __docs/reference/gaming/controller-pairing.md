@@ -35,15 +35,24 @@ controllers:
       wake: "Press START to wake it. It reconnects by itself."
       steps: [ "...", "...", "..." ]   # shown in order under How to pair
       troubleshoot: "..."              # shown when a window fails
-  - id: niceday_remote_right            # a media / keyboard remote, not a pad
+  - id: bike_remote_right               # a media / keyboard remote, not a pad
     kind: remote
-    label: NiceDay right remote
-    model: QXS-001                       # what it calls itself over Bluetooth
-    address: "9D:28:06:79:F3:A5"
-    placement: "NiceDay bike, right side"
+    label: Bike right remote
+    model: Example Remote                # what it calls itself over Bluetooth
+    address: "AA:BB:CC:00:00:01"
+    placement: "Exercise bike, right side"
     buttons:                             # physical button -> browser KeyboardEvent.key
       plus: AudioVolumeUp
       ...
+  - id: stick_remote                     # a remote whose input the kernel drops
+    kind: remote
+    label: Stick remote
+    address: "AA:BB:CC:00:00:03"
+    report_decoder:                      # see "Report decoders" below
+      att_handle: 0x001f
+      buttons: { ButtonA: { byte: 0, mask: 0x10 } }
+      axes:
+        - { byte: 1, shift: 6, bits: 2, values: { 0: StickUp, 2: StickDown } }
 keyboard:                              # key names the games use
   up: ArrowUp
   ...
@@ -240,8 +249,8 @@ device is a gamepad.
 A browser `KeyboardEvent` carries no device identity: Firefox merges every
 keyboard into one stream, so two remotes of the same model are
 indistinguishable on the page. The garage box reads each Bluetooth remote
-straight from the kernel instead (`remote_keys_helper.py`, run by
-`remoteKeys.mjs` in the fitness controller): every Bluetooth input device that
+straight from the kernel instead (the fitness controller's remote input,
+below): every Bluetooth input device that
 is not a game pad, its `/dev/input/event*` nodes and its `/dev/hidraw*` node,
 tagged with the device's Bluetooth address. Nodes are rediscovered every 2 s,
 so a remote that sleeps and reconnects is picked up again. Nothing is grabbed:
@@ -257,35 +266,92 @@ name, HID usage, `down`/`up`/`repeat`; relayed to screens by
 | `bt.remote.key` | info (press), debug (release, repeat) | a key, with the remote's address |
 | `bt.remote.unmapped` | warn | a raw HID report with data that became no key: a button Linux drops |
 | `bt.remote.open` / `bt.remote.gone` | info | a remote's device node appeared / went away (sleep, reconnect) |
-| `bt.remote.helper-exit` | warn | the reader exited; it restarts (1 s doubling to 60 s) |
+| `bt.remote.gatt` | debug | a raw report read off the radio (`att`, `value`), decoded or not |
+| `bt.remote.monitor-unavailable` | warn | the report source cannot open the HCI monitor socket |
+| `bt.remote.helper-exit` | warn | a reader exited (`source`); it restarts (1 s doubling to 60 s) |
+| `bt.remote.decoders` | info | report decoders loaded from the app (`count`, `ids`): on change, first load, each reconnect |
+| `bt.remote.decoders-unavailable` | warn | the decoder fetch failed; the last table stays in use |
 
 Query: `context.module:fitness-controller AND _msg:~"bt.remote"`.
 
 **Input the kernel drops.** Some remotes send input on a HID report that their
 own report map does not declare: BlueZ receives it over the air and the kernel
-discards it, so neither evdev nor hidraw ever shows it. The helper also reads
+discards it, so neither evdev nor hidraw ever shows it. A second source reads
 the HCI monitor channel (read-only, what `btmon` uses; `hcitool con` maps
-connection handles to addresses) and emits each ATT notification from a remote
-it reads as a `gatt` line. `remoteKeys.mjs` decodes known ones
-(`GATT_DECODERS`, keyed by Bluetooth name) into ordinary `bt.remote.key`
-presses (`key` like `ButtonA`, `usage: gatt:0x001f`, `raw` bytes);
-undecoded ones are logged at debug as `bt.remote.gatt`. If the monitor socket
-cannot open, `bt.remote.monitor-unavailable` is logged.
+connection handles to addresses) and takes each ATT notification from a remote
+the kernel lists. A remote whose `input.yml` entry has a `report_decoder`
+(matched by `address`, never by name) has its reports decoded into ordinary
+`bt.remote.key` presses (`key` from the spec, `code: null`,
+`usage: gatt:0x001f`, `raw` bytes); every report is also logged at debug as
+`bt.remote.gatt`, which is how a new remote's bytes are captured.
 
-The Magicsee R1 is the case that needed it. Its modes (hold M, press a
-letter): A music (default), **B gamepad**, C shutter, D mouse. Over Bluetooth
-it always presents the same media layout (Consumer + Keyboard), whatever the
-mode or when it was paired. In A, C and D most controls send duplicate media
-keys or nothing. In B every control is distinct, as 2-byte reports on ATT
-handle `0x001f`: byte 0 one bit per button (A `0x10`, B `0x01`, C `0x08`,
-D `0x02`, circle trigger `0x40`, back trigger `0x80`), byte 1 the stick (bits
-7-6 Y: 0 up, 1 centre, 2 down; bits 5-4 X: 0 left, 1 centre, 2 right).
-Captured on garage 2026-11-20; it matches UbiquityRobotics/bt_joystick and the
-libretro `Magicsee_R1.cfg` mode note. Keep it in B.
+### Report decoders
+
+A `report_decoder` says what the bytes of one report channel mean. Code knows
+no device: the spec is the whole description.
+
+```yaml
+    report_decoder:
+      att_handle: 0x001f               # the ATT handle the reports arrive on
+      buttons:                         # control -> one bit (mask) of one byte
+        ButtonA: { byte: 0, mask: 0x10 }
+        ButtonB: { byte: 0, mask: 0x01 }
+      axes:                            # an n-bit field -> controls by value
+        - { byte: 1, shift: 6, bits: 2, values: { 0: StickUp, 2: StickDown } }
+        - { byte: 1, shift: 4, bits: 2, values: { 0: StickLeft, 2: StickRight } }
+```
+
+- A button is down while its bit is set. An axis control is down while the
+  field `(byte >> shift) & (2^bits - 1)` holds its value; any other value
+  (centre) releases it. Presses and releases come from diffing each report
+  against the remote's previous one.
+- Numbers may be YAML integers (`0x1f`, `31`) or strings (`"0x1f"`). Invalid
+  rows are skipped; an entry with no usable control is ignored.
+- The control names are what `bt.remote.key` carries as `key`; name them for
+  the physical control, then record them under `buttons:` like any remote.
+- The app serves the specs at `GET /api/v1/emulator/input/report-decoders`
+  (`{ decoders: [{ id, address, report_decoder }] }`, read from `input.yml` per
+  request). The garage box fetches them at start, on every socket reconnect
+  and every 10 minutes, so an edit applies without a rebuild.
+- To describe a new remote: watch `bt.remote.gatt` (debug) for its address
+  while pressing each control one at a time, note which byte and bit changes,
+  then write the spec.
+
+Worked example, a stick-and-buttons remote in its gamepad mode (the Magicsee
+R1 is one: hold M, press B; in its other modes most controls send duplicate
+media keys). It presents a media report map over Bluetooth whatever the mode,
+so the kernel drops its gamepad reports. Reports are 2 bytes on handle
+`0x001f`: byte 0 one bit per button (A `0x10`, B `0x01`, C `0x08`, D `0x02`,
+circle trigger `0x40`, back trigger `0x80`), byte 1 the stick (bits 7-6 Y:
+0 up, 1 centre, 2 down; bits 5-4 X: 0 left, 1 centre, 2 right). So `0050` is
+idle, `1052` A down, `0010` stick up. It matches UbiquityRobotics/bt_joystick
+and the libretro `Magicsee_R1.cfg` mode note.
+
+### Structure (fitness controller)
+
+Remote input follows ports and adapters
+([DDD reference](../core/layers-of-abstraction/ddd-reference.md)), under
+`satellites/fitness-controller/src/remote-input/`:
+
+| Path | Role |
+|------|------|
+| `ports/IRemoteInputSource.mjs` | the port: `start({ onEvent })`, `stop()`, an `id`; emits normalized events (`control` with `address, control, state, source, raw`; `device-open`, `device-gone`, `unrecognized`, `report`, `unavailable`, `source-exit`); `isRemoteInputSource()` guard |
+| `adapters/LinuxEvdevRemoteSource.mjs` | kernel evdev keys + hidraw reports; the kernel `KEY_*` → browser key table |
+| `adapters/BluezGattReportSource.mjs` | ATT reports off the HCI monitor, decoded per address by `setDecoders()` |
+| `adapters/remote_keys_helper.py` | the one Python reader both adapters run, in `kernel` or `gatt` mode |
+| `adapters/helperProcess.mjs` | spawns the helper, splits lines, restarts it |
+| `reportDecoder.mjs` | the generic spec decoder (no device, no OS) |
+| `decoderConfig.mjs` | keeps the decoder table current from the app |
+| `RemoteInputService.mjs` | the application service: composes the sources it is given, logs `bt.remote.*`, sends `bt.remote.key`; knows no vendor, OS tool or device |
+
+`server.mjs` builds the two adapters, hands them to `startRemoteInput`, and
+wires `decoderConfig` to the report adapter. Tests: `test/remoteInput.test.mjs`
+(port contract per adapter with fake helper lines, the decoder on captured
+bytes, the service with a fake source).
 
 The key test uses this feed when the host provides it
 (`bluetooth.subscribeRemoteKeys`): a key counts only when the tested remote's
-address sent it; a press from another remote shows as "(another remote …F1:98)"
+address sent it; a press from another remote shows as "(another remote …00:02)"
 and does not count. The browser's own copy of a press is matched to its tagged
 twin within 400 ms (either order) and dropped; a browser key with no twin
 counts, so a device the garage box does not read still tests

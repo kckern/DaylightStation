@@ -126,6 +126,28 @@ function makeApp(overrides = {}) {
 }
 
 describe('createEmulatorRouter', () => {
+  describe('GET /input/report-decoders', () => {
+    it('serves only controllers with an address and a report_decoder, address upper-cased', async () => {
+      const decoder = { att_handle: 31, buttons: { ButtonA: { byte: 0, mask: 16 } } };
+      const cfg = makeCfg();
+      cfg.input.controllers.push(
+        { id: 'stick_pad', kind: 'remote', address: 'aa:bb:cc:00:00:03', report_decoder: decoder },
+        { id: 'no_address', kind: 'remote', report_decoder: decoder },
+        { id: 'plain_remote', kind: 'remote', address: 'AA:BB:CC:00:00:01' },
+      );
+      const { app } = makeApp({ loadConfig: () => cfg });
+      const res = await request(app).get('/api/v1/emulator/input/report-decoders');
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ decoders: [{ id: 'stick_pad', address: 'AA:BB:CC:00:00:03', report_decoder: decoder }] });
+    });
+
+    it('is empty when input.yml has no controllers', async () => {
+      const { app } = makeApp({ loadConfig: () => ({ ...makeCfg(), input: null }) });
+      const res = await request(app).get('/api/v1/emulator/input/report-decoders');
+      expect(res.body).toEqual({ decoders: [] });
+    });
+  });
+
   describe('GET /library', () => {
     it('returns systems and games with URLs', async () => {
       const { app } = makeApp();

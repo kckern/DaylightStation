@@ -1,7 +1,7 @@
 import { it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { runControllerFlow, FlowError } from './controllerFlows.js';
 
-const PAD = 'E4:17:D8:1C:7C:7A';
+const PAD = 'E4:17:D8:00:00:0A';
 
 /**
  * A fake audio bridge with Android's timing quirks: createBond and discovery

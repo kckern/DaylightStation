@@ -165,6 +165,20 @@ export function createEmulatorRouter({
     }
   });
 
+  // ---- GET /input/report-decoders -----------------------------------------
+  // The report decoders the garage box needs (input.yml controllers with a
+  // `report_decoder`), so it never pulls the whole library. Read per request:
+  // an edited input.yml applies on the box's next refresh.
+  router.get('/input/report-decoders', (req, res) => {
+    if (typeof emulatorLibrary.getRemoteReportDecoders !== 'function') return res.json({ decoders: [] });
+    try {
+      res.json({ decoders: emulatorLibrary.getRemoteReportDecoders() });
+    } catch (err) {
+      logger.error('emulator.report_decoders.error', { error: err.message });
+      sendInternalError(res, { error: 'internal error' });
+    }
+  });
+
   // ---- GET /rom/:system/:gameId -------------------------------------------
   router.get('/rom/:system/:gameId', (req, res) => {
     let system, gameId;

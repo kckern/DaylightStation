@@ -60,7 +60,7 @@ function fakeHelper(lines, { code = 0, error = null } = {}) {
   return { spawnHelper, args };
 }
 
-const SFC30 = { address: 'E4:17:D8:C6:54:F0', name: '8Bitdo SFC30 GamePad' };
+const SFC30 = { address: 'E4:17:D8:00:00:10', name: '8Bitdo SFC30 GamePad' };
 const TARGETS = [{ id: '8bitdo_sfc30', label: '8BitDo SF30', name: '8bitdo|sfc30', macPrefix: 'E4:17:D8', pin: '0000' }];
 
 test('runPairingWindow: the full lifecycle is relayed in order with the requestId, ending in one done', async () => {

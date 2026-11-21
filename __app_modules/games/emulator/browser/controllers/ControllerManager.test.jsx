@@ -4,7 +4,7 @@ import { render, screen, fireEvent, cleanup, act } from '@testing-library/react'
 import ControllerManager from './ControllerManager.jsx';
 import { getActionBus } from '../../../../../frontend/src/lib/input/ActionBus.js';
 
-const pad = (over) => ({ address: 'E4:17:D8:1C:7C:7A', name: '8Bitdo SN30 Pro', type: 'classic', bond: 'bonded', connected: false, profiles: [], manageable: true, ...over });
+const pad = (over) => ({ address: 'E4:17:D8:00:00:0A', name: '8Bitdo SN30 Pro', type: 'classic', bond: 'bonded', connected: false, profiles: [], manageable: true, ...over });
 const snapshot = (devices, extra = {}) => ({ ok: true, adapter: { supported: true, enabled: true, discovering: false }, devices, pairing: null, lastError: null,
   capabilities: { scan: true, pair: true, unpair: true, input: true, pin: true, confirm: false }, ...extra });
 const clientFor = (getState) => ({ state: vi.fn(async () => structuredClone(getState())), command: vi.fn(async () => ({ ok: true, accepted: true })) });

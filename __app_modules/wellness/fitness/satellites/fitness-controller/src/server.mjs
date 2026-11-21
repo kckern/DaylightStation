@@ -11,7 +11,10 @@ import { selectSimCandidate } from "./unlockSim.mjs";
 import { createReaderArbiter } from "./readerArbiter.mjs";
 import { createContinuousScanLoop, IDENTIFY_WINDOW_S } from "./continuousScanLoop.mjs";
 import { startBtInventoryBroadcast } from "./btInventory.mjs";
-import { startRemoteKeys } from "./remoteKeys.mjs";
+import { startRemoteInput } from "./remote-input/RemoteInputService.mjs";
+import { LinuxEvdevRemoteSource } from "./remote-input/adapters/LinuxEvdevRemoteSource.mjs";
+import { BluezGattReportSource } from "./remote-input/adapters/BluezGattReportSource.mjs";
+import { startDecoderRefresh } from "./remote-input/decoderConfig.mjs";
 import { handleBtPairRequest, handleBtRemoveRequest, isPairingWindowOpen } from "./btPairing.mjs";
 import { handleBtScanRequest, stopScanWindow } from "./btScan.mjs";
 import { createDataPathHealth, createFitnessDataBroadcaster } from "./dataPathHealth.mjs";
@@ -159,8 +162,10 @@ const serviceIdentity = Object.freeze({
 const dataPathHealth = createDataPathHealth({ bootId: randomUUID() });
 // Handle for the BlueZ bt_inventory broadcast loop (identity/inventory only).
 let btInventoryBroadcast = null;
-// Handle for the per-device Bluetooth remote key reader (remoteKeys.mjs).
+// Handle for the per-device Bluetooth remote input (src/remote-input/), and
+// the refresher that keeps its report decoders current from the app.
 let remoteKeys = null;
+let remoteDecoders = null;
 
 // Pending interactive unlock requests, keyed by requestId. Only populated when
 // FINGERPRINT_SIM === 'interactive': the request is held until a CLI resolves it
@@ -443,6 +448,9 @@ const websocketSupervisor = createWebSocketSupervisor({
     }
     console.log('🔐 Subscribed to unlock / enroll / delete / bt.pair / bt.remove / bt.scan / bt.inventory request topics');
     btInventoryBroadcast?.resend();
+    // Re-read the report decoders (input.yml may have changed while we were
+    // away) and log the count now that the store can hear it.
+    remoteDecoders?.refresh({ announce: true });
   },
   logger: {
     info: (message) => console.log(`✅ ${message}`),
@@ -609,6 +617,7 @@ process.on('SIGINT', async () => {
     btInventoryBroadcast.stop();
   }
   remoteKeys?.stop();
+  remoteDecoders?.stop();
 
   // Close WebSocket
   if (dataPathTimer != null) clearInterval(dataPathTimer);
@@ -635,6 +644,7 @@ process.on('SIGTERM', async () => {
     btInventoryBroadcast.stop();
   }
   remoteKeys?.stop();
+  remoteDecoders?.stop();
 
   // Close WebSocket
   if (dataPathTimer != null) clearInterval(dataPathTimer);
@@ -717,11 +727,24 @@ async function startServer() {
   });
   console.log('🎮 BlueZ bt_inventory broadcast started');
 
-  // Per-device Bluetooth remote keys, read from the kernel and tagged with the
-  // remote's address: logged to the store (bt.remote.*) and sent as
-  // `bt.remote.key`. Read-only — keys still reach the browser. A press while
-  // the socket is down is dropped silently (it is still in this container log).
-  remoteKeys = startRemoteKeys({
+  // Per-device Bluetooth remote input, tagged with the remote's address:
+  // logged to the store (bt.remote.*) and sent as `bt.remote.key`. Read-only —
+  // keys still reach the browser. A press while the socket is down is dropped
+  // silently (it is still in this container log). Two adapters: kernel keys,
+  // and input reports the kernel drops, decoded by input.yml `report_decoder`
+  // specs fetched from the app.
+  const gattReports = new BluezGattReportSource();
+  remoteDecoders = startDecoderRefresh({
+    url: `${DAYLIGHT_PORT == 443 ? 'https' : 'http'}://${DAYLIGHT_HOST}:${DAYLIGHT_PORT}/api/v1/emulator/input/report-decoders`,
+    apply: (entries) => {
+      const n = gattReports.setDecoders(entries);
+      console.log(`🎛️ remote report decoders loaded: ${n}`);
+      return n;
+    },
+    logEvent: logToStore,
+  });
+  remoteKeys = startRemoteInput({
+    sources: [new LinuxEvdevRemoteSource(), gattReports],
     logEvent: logToStore,
     send: (topic, payload) => {
       if (websocketClient?.readyState === WebSocket.OPEN) websocketClient.send(JSON.stringify({ topic, ...payload }));
