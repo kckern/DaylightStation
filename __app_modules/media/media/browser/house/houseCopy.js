@@ -25,13 +25,18 @@ export function clockTime(iso, now = Date.now()) {
   return `${date.toLocaleDateString([], { weekday: 'short' })} ${time}`;
 }
 
+function timeSuffix(iso, now) {
+  const time = clockTime(iso, now);
+  return time ? ` at ${time}` : '';
+}
+
 function failureText({ step, error, at }, kind, now) {
   // A sentence from the backend ("The screen did not confirm playback") says
   // it best; a bare code ("timeout") needs the step it happened in.
-  if (typeof error === 'string' && /\s/.test(error.trim())) return `Couldn't start at ${clockTime(at, now)}: ${error.trim()}`;
+  if (typeof error === 'string' && /\s/.test(error.trim())) return `Couldn't start${timeSuffix(at, now)}: ${error.trim()}`;
   const phrase = friendlyStepPhrase(step, kind);
   const what = phrase ? `${phrase} failed` : 'it failed';
-  return `Couldn't start at ${clockTime(at, now)}: ${what}${error ? ` (${error})` : ''}`;
+  return `Couldn't start${timeSuffix(at, now)}: ${what}${error ? ` (${error})` : ''}`;
 }
 
 /**
@@ -44,7 +49,7 @@ export function startStatusLine(status, { kind = 'screen', now = Date.now() } = 
   const { phase, step, error, updatedAt, lastFailure, stale } = status;
   if (phase === 'failed') return { tone: 'failed', text: failureText({ step, error, at: updatedAt }, kind, now) };
   if ((phase === 'starting' || phase === 'delivered') && stale) {
-    return { tone: 'failed', text: `A start stopped reporting at ${clockTime(updatedAt, now)}` };
+    return { tone: 'failed', text: `A start stopped reporting${timeSuffix(updatedAt, now)}` };
   }
   if (phase === 'starting' || phase === 'delivered') {
     return { tone: 'progress', text: `Starting: ${friendlyStepLabel(step ?? 'load', kind)}` };

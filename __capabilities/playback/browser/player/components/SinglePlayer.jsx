@@ -297,10 +297,11 @@ export function SinglePlayer(props = {}) {
         transcode: play?.transcode,
         adaptive: play?.adaptive,
         session: plexClientSession,
-        // An explicit start overrides the server's resume (withCap.seconds
-        // below), so the server must not apply it either: a Plex stream minted
-        // at the saved offset would be sought away from at once (a rebuffer).
-        resume: play?.resume ?? (play?.seconds != null ? false : undefined),
+        // An explicit start (`seconds` on the request, or ?goto / ?start)
+        // overrides the server's resume, so the server must not apply it
+        // either: a Plex stream minted at the saved offset would be sought
+        // away from at once (a rebuffer).
+        resume: play?.resume ?? ((play?.seconds != null || REVIEW_GOTO != null) ? false : undefined),
         signal,
       });
     } catch (error) {

@@ -34,7 +34,7 @@ function GoalCard({ goal }) {
         <Text size="xs" c="dimmed" mb={4}>{goal.quality}</Text>
       )}
       {goal.progress !== undefined && goal.progress > 0 && (
-        <GoalProgressBar name="" state={goal.state} progress={goal.progress} />
+        <GoalProgressBar name={goal.name} state={goal.state} progress={goal.progress} showName={false} />
       )}
       {goal.deadline && (
         <Text size="xs" c="dimmed" mt={4}>Due: {formatDate(goal.deadline)}</Text>
