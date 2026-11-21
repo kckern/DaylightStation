@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { PlayerOverlayLoading } from './PlayerOverlayLoading.jsx';
 import { setIntroCovering } from '../../player-support/introCover.js';
@@ -31,6 +31,22 @@ describe('PlayerOverlayLoading — covering intro', () => {
     setIntroCovering(true);
     const { container } = render(<PlayerOverlayLoading {...baseProps} held />);
     expect(container.querySelector('.loading-overlay')).not.toBeNull();
+  });
+
+  it('keeps the source-healing wait (notice and Skip) over a covering intro', () => {
+    setIntroCovering(true);
+    const { container, getByTestId } = render(
+      <PlayerOverlayLoading {...baseProps} sourceNotice="Fixing this video… · 0:05" onSkipSource={vi.fn()} />,
+    );
+    expect(container.querySelector('.loading-overlay')).not.toBeNull();
+    expect(getByTestId('player-source-notice')).toBeInTheDocument();
+    expect(getByTestId('player-source-skip')).toBeInTheDocument();
+  });
+
+  it('keeps the link notice over a covering intro', () => {
+    setIntroCovering(true);
+    const { getByTestId } = render(<PlayerOverlayLoading {...baseProps} linkNotice="Slow connection" />);
+    expect(getByTestId('player-link-notice')).toBeInTheDocument();
   });
 
   it('shows the spinner when no intro is covering', () => {

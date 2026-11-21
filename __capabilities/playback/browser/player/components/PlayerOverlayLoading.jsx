@@ -416,9 +416,12 @@ export function PlayerOverlayLoading({
     return null;
   }
 
-  // An installed intro scene is the loading screen: hide the plain spinner,
-  // never the recovery UI (exhausted/held keep their Retry/Skip actions on top).
-  if (introCovering && !isExhausted && !held) {
+  // An installed intro scene is the loading screen: hide only the PLAIN spinner.
+  // Anything with something to say stays up, on top of the scene (the intro
+  // layer sits below the loading layer): exhausted/held recovery, the
+  // source-healing wait and its Skip, and the link notice.
+  const hasSomethingToSay = isExhausted || held || !!sourceNotice || !!linkNotice;
+  if (introCovering && !hasSomethingToSay) {
     return null;
   }
 
