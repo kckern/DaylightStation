@@ -11,7 +11,8 @@ export const stepLabel = (id) => STEP_LABELS[id] ?? id;
 export function StepStrip({ steps = [], currentStep = null, stepPos = 0, position = 0, total = 0 }) {
   const currentIdx = steps.findIndex((s) => s.id === currentStep);
   const finished = currentStep === null;
-  const pct = total > 0 ? Math.min(100, Math.round(((position - (finished ? 0 : 1)) / total) * 100)) : 0;
+  const completed = total > 0 ? Math.max(0, Math.min(total, position - (finished ? 0 : 1))) : 0;
+  const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
   return (
     <div className="life-triage__progress">
       {steps.length > 1 && (
@@ -34,7 +35,7 @@ export function StepStrip({ steps = [], currentStep = null, stepPos = 0, positio
         </ol>
       )}
       <div className="life-triage__bar-row">
-        <div className="life-triage__bar" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={Math.max(0, position - 1)}>
+        <div className="life-triage__bar" role="progressbar" aria-label="Triage progress" aria-valuemin={0} aria-valuemax={total} aria-valuenow={completed}>
           <i style={{ width: `${pct}%` }} />
         </div>
         {/* Remaining, not "n / N": beside the step's own "1/45" a second fraction read as a

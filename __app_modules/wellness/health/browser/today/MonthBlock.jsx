@@ -29,6 +29,7 @@ export function MonthBlock({ days = [], loading = false, title }) {
   const tally = zoned
     ? [`${count('over')} over plan`, `${count('past-even')} past break even`, `${count('incomplete')} under-logged`].join(' · ')
     : `${over} over current budget`;
+  const waitingForFirstRead = loading && days.length === 0;
 
   return (
     <section className="health-monthblock" aria-busy={loading}>
@@ -37,7 +38,8 @@ export function MonthBlock({ days = [], loading = false, title }) {
       {title === null ? null : (
         <h3 className="health-monthblock__title">{title || `Last ${days.length || 30} days`}</h3>
       )}
-      <div className="health-monthblock__bars" role="img"
+      {waitingForFirstRead && <p className="health-monthblock__caption" role="status">Loading budget history…</p>}
+      {!waitingForFirstRead && <div className="health-monthblock__bars" role="img"
         aria-label={known
           ? `${known} days with data, ${tally}, ${gaps} without data`
           : 'No budget data for the last 30 days'}>
@@ -60,13 +62,15 @@ export function MonthBlock({ days = [], loading = false, title }) {
             )}
           </span>
         ))}
-      </div>
+      </div>}
       {/* The gap count is stated, never implied. A month with nine holes and a
           month with none must not look like the same month. */}
-      <p className="health-monthblock__caption">
-        {known ? `${known}/${days.length} days logged · ${tally}` : 'No logged days yet'}
-        {gaps ? ` · ${gaps} without data` : ''}
-      </p>
+      {!waitingForFirstRead && (
+        <p className="health-monthblock__caption">
+          {known ? `${known}/${days.length} days logged · ${tally}` : 'No logged days yet'}
+          {gaps ? ` · ${gaps} without data` : ''}
+        </p>
+      )}
     </section>
   );
 }

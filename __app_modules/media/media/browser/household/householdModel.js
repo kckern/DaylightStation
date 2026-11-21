@@ -174,7 +174,9 @@ export function playedAtLabel(value, now = new Date()) {
   if (days <= 0) return `Today ${clock(date)}`;
   if (days === 1) return `Yesterday ${clock(date)}`;
   if (days < 7) return `${date.toLocaleDateString([], { weekday: 'short' })} ${clock(date)}`;
-  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  const dateOptions = { month: 'short', day: 'numeric' };
+  if (date.getFullYear() !== now.getFullYear()) dateOptions.year = 'numeric';
+  return date.toLocaleDateString([], dateOptions);
 }
 
 /** contentId → screen ids it is playing on right now (carry-on `nowOn`). */
