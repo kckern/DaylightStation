@@ -170,16 +170,25 @@ export class DataService {
       },
 
       /**
+       * Read a user data file without hiding failures. The envelope distinguishes
+       * a missing file from a present YAML document whose value is null.
+       */
+      readStrictEntry(relativePath, username = null) {
+        try {
+          return { found: true, value: readYamlFromPath(this.resolvePath(relativePath, username)) };
+        } catch (err) {
+          if (err?.code === 'ENOENT') return { found: false, value: null };
+          throw err;
+        }
+      },
+
+      /**
        * Read user data file without hiding failures: absent -> null; an
        * unreadable or unparseable file throws (unreadable is not absent).
        */
       readStrict(relativePath, username = null) {
-        try {
-          return readYamlFromPath(this.resolvePath(relativePath, username)) ?? null;
-        } catch (err) {
-          if (err?.code === 'ENOENT') return null;
-          throw err;
-        }
+        const entry = this.readStrictEntry(relativePath, username);
+        return entry.found ? entry.value ?? null : null;
       },
 
       /** Confirmed atomic replacement; the old document survives a failed write. */

@@ -7,26 +7,24 @@ import { IconSettings, IconLayoutDashboard, IconAdjustments } from '@tabler/icon
 import { useApiResource } from "../../../../frontend/src/lib/hooks/useApiResource.js";
 import { useRetryRegion } from "../../../../frontend/src/lib/ui/useRetryRegion.js";
 import OverviewTab from "./OverviewTab.jsx";
-import ConfigTab from "./ConfigTab.jsx";
 import "./AgentDetail.scss";
 
-function AgentDetail({ agentId: explicitAgentId, DashboardView }) {
+function AgentDetail({ agentId: explicitAgentId, ConfigView, DashboardView }) {
   const { agentId: routeAgentId } = useParams();
   const agentId = explicitAgentId ?? routeAgentId;
   const location = useLocation();
   const navigate = useNavigate();
 
   const requestedTab = location.hash.slice(1);
+  const hasConfigView = Boolean(ConfigView);
   const hasDashboardView = Boolean(DashboardView);
-  const activeTab = requestedTab === 'dashboards' && !hasDashboardView
-    ? 'overview'
-    : requestedTab || 'overview';
+  const requestedTabUnsupported = (requestedTab === 'config' && !hasConfigView)
+    || (requestedTab === 'dashboards' && !hasDashboardView);
+  const activeTab = requestedTabUnsupported ? 'overview' : requestedTab || 'overview';
 
   useEffect(() => {
-    if (requestedTab === 'dashboards' && !hasDashboardView) {
-      navigate('#overview', { replace: true });
-    }
-  }, [requestedTab, hasDashboardView, navigate]);
+    if (requestedTabUnsupported) navigate('#overview', { replace: true });
+  }, [requestedTabUnsupported, navigate]);
   const {
     data,
     loading: usersLoading,
@@ -90,9 +88,11 @@ function AgentDetail({ agentId: explicitAgentId, DashboardView }) {
           <Tabs.Tab value="overview" leftSection={<IconSettings size={16} />}>
             Overview
           </Tabs.Tab>
-          <Tabs.Tab value="config" leftSection={<IconAdjustments size={16} />}>
-            Config
-          </Tabs.Tab>
+          {hasConfigView && (
+            <Tabs.Tab value="config" leftSection={<IconAdjustments size={16} />}>
+              Config
+            </Tabs.Tab>
+          )}
           {hasDashboardView && (
             <Tabs.Tab value="dashboards" leftSection={<IconLayoutDashboard size={16} />}>
               Dashboards
@@ -104,9 +104,11 @@ function AgentDetail({ agentId: explicitAgentId, DashboardView }) {
           <OverviewTab agentId={agentId} userId={userId} />
         </Tabs.Panel>
 
-        <Tabs.Panel value="config" pt="md">
-          <ConfigTab agentId={agentId} userId={userId} />
-        </Tabs.Panel>
+        {hasConfigView && (
+          <Tabs.Panel value="config" pt="md">
+            <ConfigView agentId={agentId} userId={userId} />
+          </Tabs.Panel>
+        )}
 
         {hasDashboardView && (
           <Tabs.Panel value="dashboards" pt="md">

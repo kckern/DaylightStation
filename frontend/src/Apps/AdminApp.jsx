@@ -25,7 +25,7 @@ import IntegrationsIndex from '../modules/Admin/System/IntegrationsIndex.jsx';
 import IntegrationDetail from '../modules/Admin/System/IntegrationDetail.jsx';
 import NotificationsIndex from '../modules/Admin/Notifications/NotificationsIndex.jsx';
 import { AgentsIndex, AgentDetail } from "../../../__capabilities/agent-runtime/browser/admin.mjs";
-import AgentDashboard from "../../../__app_modules/wellness/health/browser/agent-dashboard.mjs";
+import { AgentDashboard, HealthCoachConfigTab } from "../../../__app_modules/wellness/health/browser/admin.mjs";
 import { AgendasIndex, AgendaSeriesPage, AgendaPlanEditor, AgendaWeekRedirect } from "../../../__app_modules/household/agenda/browser/admin.mjs";
 import { CharadesParticipantSettings, defaultParticipantSettings, remapParticipantKeys } from "../../../__app_modules/games/party-games/browser/participant-settings.mjs";
 import GamesIndex from "../../../__app_modules/games/party-games/browser/admin-games.mjs";
@@ -94,7 +94,13 @@ function AdminApp() {
               <Route path="agents" element={<AgentsIndex />} />
               <Route
                 path="agents/health-coach"
-                element={<AgentDetail agentId="health-coach" DashboardView={AgentDashboard} />}
+                element={(
+                  <AgentDetail
+                    agentId="health-coach"
+                    ConfigView={HealthCoachConfigTab}
+                    DashboardView={AgentDashboard}
+                  />
+                )}
               />
               <Route path="agents/:agentId" element={<AgentDetail />} />
 

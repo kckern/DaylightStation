@@ -53,6 +53,7 @@ export function createAdminRouter(config) {
   const {
     householdContext,
     agendaRouter,
+    healthCoachAdminRouter,
     peopleRouter,
     resourceAliases,
     adminMediaService,
@@ -77,6 +78,7 @@ export function createAdminRouter(config) {
   const router = express.Router();
 
   if (agendaRouter) router.use('/content/agendas', agendaRouter);
+  if (healthCoachAdminRouter) router.use('/health-coach', healthCoachAdminRouter);
   if (peopleRouter) router.use('/people', peopleRouter);
 
   // Mount content router

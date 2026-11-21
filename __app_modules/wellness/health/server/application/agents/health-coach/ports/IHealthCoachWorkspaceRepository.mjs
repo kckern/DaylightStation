@@ -6,6 +6,8 @@ export class IHealthCoachWorkspaceRepository {
   getGoals() { throw new Error('getGoals must be implemented'); }
   getProgramState() { throw new Error('getProgramState must be implemented'); }
   saveProgramState() { throw new Error('saveProgramState must be implemented'); }
+  readAdminConfigDocument() { throw new Error('readAdminConfigDocument must be implemented'); }
+  saveAdminConfigDocument() { throw new Error('saveAdminConfigDocument must be implemented'); }
   listRecentFitnessProgress() { throw new Error('listRecentFitnessProgress must be implemented'); }
 }
 
@@ -18,5 +20,7 @@ export function isHealthCoachWorkspaceRepository(value) {
     && typeof value.getGoals === 'function'
     && typeof value.getProgramState === 'function'
     && typeof value.saveProgramState === 'function'
+    && typeof value.readAdminConfigDocument === 'function'
+    && typeof value.saveAdminConfigDocument === 'function'
     && typeof value.listRecentFitnessProgress === 'function';
 }

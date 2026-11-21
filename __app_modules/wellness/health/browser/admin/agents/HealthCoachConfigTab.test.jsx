@@ -1,16 +1,16 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { DaylightAPI } from '../../../../frontend/src/lib/api.mjs';
-import ConfigTab from './ConfigTab.jsx';
+import { DaylightAPI } from '../../../../../../frontend/src/lib/api.mjs';
+import HealthCoachConfigTab from './HealthCoachConfigTab.jsx';
 
-vi.mock('../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: vi.fn() }));
+vi.mock('../../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: vi.fn() }));
 const goals = { weight: { target_lbs: 180 }, other: 'preserve' };
 const program = { program: { id: 'original' }, other: 'preserve' };
 const missing = Object.assign(new Error('File not found'), { status: 404, body: { code: 'NOT_FOUND' } });
-const base = '/api/v1/admin/config/files/users/alex/agents/coach';
+const base = '/api/v1/admin/health-coach/members/alex/config';
 function mount() {
-  render(<MantineProvider><ConfigTab userId="alex" agentId="coach" /></MantineProvider>);
+  render(<MantineProvider><HealthCoachConfigTab userId="alex" /></MantineProvider>);
 }
 beforeEach(() => { DaylightAPI.mockReset(); });
 afterEach(cleanup);

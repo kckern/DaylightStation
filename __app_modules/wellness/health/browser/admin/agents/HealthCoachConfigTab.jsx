@@ -1,4 +1,4 @@
-// frontend/src/modules/Admin/Agents/ConfigTab.jsx
+// Health Coach Admin goals and program configuration.
 
 import React, { useRef, useState } from 'react';
 import {
@@ -6,16 +6,16 @@ import {
   Center, Loader, TagsInput,
 } from '@mantine/core';
 import { IconDeviceFloppy, IconAlertCircle } from '@tabler/icons-react';
-import { useApiResource } from "../../../../frontend/src/lib/hooks/useApiResource.js";
-import { ErrorState } from '../../../../frontend/src/lib/ui/states.jsx';
-import { DaylightAPI } from "../../../../frontend/src/lib/api.mjs";
+import { useApiResource } from "../../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { ErrorState } from '../../../../../../frontend/src/lib/ui/states.jsx';
+import { DaylightAPI } from "../../../../../../frontend/src/lib/api.mjs";
 
 const DEFAULT_GOALS = { weight: {}, nutrition: {} };
 const DEFAULT_PROGRAM = { program: null };
 
-function ConfigTab({ agentId, userId }) {
+function HealthCoachConfigTab({ userId }) {
   if (!userId) return <Text c="dimmed" p="md">Select a user to configure</Text>;
-  const base = `/api/v1/admin/config/files/users/${userId}/agents/${agentId}`;
+  const base = `/api/v1/admin/health-coach/members/${encodeURIComponent(userId)}/config`;
   return (
     <Stack key={base} gap="md">
       <ConfigDocument path={`${base}/goals`} label="User goals" fallback={DEFAULT_GOALS} Form={GoalsForm} />
@@ -219,4 +219,4 @@ function ProgramForm({ draft: programState, setDraft, dirty, saving, save }) {
   );
 }
 
-export default ConfigTab;
+export default HealthCoachConfigTab;

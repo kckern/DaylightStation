@@ -1,11 +1,22 @@
 import { IHealthCoachWorkspaceRepository } from "../../../application/agents/health-coach/ports/IHealthCoachWorkspaceRepository.mjs";
 
+const GOALS_PATH = 'agents/health-coach/goals';
+const PROGRAM_STATE_PATH = 'agents/health-coach/program-state';
+const ADMIN_CONFIG_PATHS = Object.freeze({ goals: GOALS_PATH, 'program-state': PROGRAM_STATE_PATH });
+
+function configPathFor(document) {
+  const path = ADMIN_CONFIG_PATHS[document];
+  if (!path) throw new Error(`Unsupported Health Coach config document: ${document}`);
+  return path;
+}
+
 export class DataServiceHealthCoachWorkspaceRepository extends IHealthCoachWorkspaceRepository {
   #dataService; #profileService; #mediaProgressMemory;
   constructor({ dataService, profileService = null, mediaProgressMemory = null }) {
     super();
-    if (!dataService?.user?.read || !dataService?.user?.write) {
-      throw new Error('DataServiceHealthCoachWorkspaceRepository requires dataService user read/write');
+    if (!dataService?.user?.read || !dataService?.user?.write
+      || !dataService?.user?.readStrictEntry || !dataService?.user?.writeAtomic) {
+      throw new Error('DataServiceHealthCoachWorkspaceRepository requires user read/write and strict atomic access');
     }
     this.#dataService = dataService;
     this.#profileService = profileService;
@@ -19,7 +30,7 @@ export class DataServiceHealthCoachWorkspaceRepository extends IHealthCoachWorks
     return `health-dashboard/${date}`;
   }
   getGoals(userId) {
-    const goals = this.#dataService.user.read('agents/health-coach/goals', userId) || {};
+    const goals = this.#dataService.user.read(GOALS_PATH, userId) || {};
     if (goals.nutrition?.calories_min || !this.#profileService?.isReady?.()) return goals;
     const profileGoals = this.#profileService.getUserProfile(userId)?.apps?.nutribot?.goals;
     if (!profileGoals) return goals;
@@ -37,8 +48,14 @@ export class DataServiceHealthCoachWorkspaceRepository extends IHealthCoachWorks
       },
     };
   }
-  getProgramState(userId) { return this.#dataService.user.read('agents/health-coach/program-state', userId); }
-  saveProgramState(userId, state) { return this.#dataService.user.write('agents/health-coach/program-state', state, userId); }
+  getProgramState(userId) { return this.#dataService.user.read(PROGRAM_STATE_PATH, userId); }
+  saveProgramState(userId, state) { return this.#dataService.user.write(PROGRAM_STATE_PATH, state, userId); }
+  readAdminConfigDocument(userId, document) {
+    return this.#dataService.user.readStrictEntry(configPathFor(document), userId);
+  }
+  saveAdminConfigDocument(userId, document, value) {
+    return this.#dataService.user.writeAtomic(configPathFor(document), value, userId);
+  }
   async listRecentFitnessProgress(days = 7, nowMs = Date.now()) {
     if (!this.#mediaProgressMemory) return null;
     const all = await this.#mediaProgressMemory.listProgress('plex/14_fitness');

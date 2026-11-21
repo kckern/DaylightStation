@@ -36,6 +36,8 @@ import { createHealthServices } from "./runtime.mjs";
 import { createHealthDashboardRouter } from "../api/routers/health-dashboard.mjs";
 import { AgentHealthDashboardService } from "../application/health/AgentHealthDashboardService.mjs";
 import { DataServiceHealthDashboardRepository } from "../adapters/persistence/files/DataServiceHealthDashboardRepository.mjs";
+import { DataServiceHealthCoachWorkspaceRepository } from "../adapters/agents/health-coach/DataServiceHealthCoachWorkspaceRepository.mjs";
+import { createHealthCoachAdminRouter } from "../api/routers/health-coach-admin.mjs";
 
 /**
  * Create health API router
@@ -362,4 +364,14 @@ export function createHealthDashboardApiRouter(config) {
     logger,
   });
   return createHealthDashboardRouter({ dashboardService });
+}
+
+
+/**
+ * Create the Admin-only Health Coach configuration router. Its repository uses
+ * the same user-scoped storage contract as the coach runtime.
+ */
+export function createHealthCoachAdminApiRouter({ isKnownUser, logger = console } = {}) {
+  const workspaceRepository = new DataServiceHealthCoachWorkspaceRepository({ dataService });
+  return createHealthCoachAdminRouter({ workspaceRepository, isKnownUser, logger });
 }

@@ -365,6 +365,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__capabilities/agent-runtime/browser/admin.mjs': null,
   '__capabilities/agent-runtime/browser/chat.mjs': null,
   '__app_modules/wellness/health/browser/agent-dashboard.mjs': null,
+  '__app_modules/wellness/health/browser/admin.mjs': null,
   '__app_modules/personal/life/browser/kiosk.mjs': null,
   '__capabilities/agent-runtime/server/composition.mjs': 'composition',
   '__app_modules/personal/life/server/composition.mjs': 'composition',

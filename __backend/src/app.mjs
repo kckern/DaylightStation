@@ -140,7 +140,7 @@ import { createEconomyApi } from "../../__app_modules/money/economy/server/compo
 import { createJournalistApiRouter } from "../../__app_modules/personal/journalist/server/api-runtime.mjs";
 import { createHomebotApiRouter } from "../../__app_modules/household/homebot/server/api-runtime.mjs";
 import { createNutribotApiRouter } from "../../__app_modules/wellness/nutribot/server/composition/nutribotApi.mjs";
-import { createHealthApiRouter, createHealthDashboardApiRouter } from "../../__app_modules/wellness/health/server/composition/healthApi.mjs";
+import { createHealthApiRouter, createHealthDashboardApiRouter, createHealthCoachAdminApiRouter } from "../../__app_modules/wellness/health/server/composition/healthApi.mjs";
 import { createEntropyApiRouter } from '#composition/modules/entropyApi.mjs';
 import { createLifelogApiRouter } from "../../__capabilities/lifelog/server/composition/lifelogApi.mjs";
 import { createStaticApiRouter } from '#composition/modules/staticApi.mjs';
@@ -4402,6 +4402,15 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     ledger: notificationStack.ledgerStore,
   });
 
+  // Reuse the household roster policy for all Admin routes that target a member.
+  const isKnownHouseholdUser = (username) => (configService.getHouseholdUsers(configService.getDefaultHouseholdId()) || [])
+    .map((user) => (typeof user === 'string' ? user : (user?.username || user?.userId || user?.name)))
+    .includes(username);
+  const healthCoachAdminRouter = createHealthCoachAdminApiRouter({
+    isKnownUser: isKnownHouseholdUser,
+    logger: adminApiLogger.child?.({ submodule: 'health-coach' }) || adminApiLogger,
+  });
+
   // Withings reconnect: admin-only, server-side code exchange (Withings codes
   // expire in ~30s, so the exchange has to happen in the callback itself).
   // The redirect URI must match one registered with the Withings app; set
@@ -4413,10 +4422,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
       authStore: harvesterServices.authStore,
       harvesterService: harvesterServices.harvesterService,
       resolveUsername: () => configService.getHeadOfHousehold(),
-      // Only household members (same roster normalization as the /life switcher).
-      isKnownUser: (username) => (configService.getHouseholdUsers(configService.getDefaultHouseholdId()) || [])
-        .map((u) => (typeof u === 'string' ? u : (u?.username || u?.userId || u?.name)))
-        .includes(username),
+      isKnownUser: isKnownHouseholdUser,
       redirectUri: (req) => configService.getSystemAuth?.('withings', 'connect_redirect_uri')
         || `${(req.get('x-forwarded-proto') || req.protocol).split(',')[0].trim()}://${req.get('host')}${req.baseUrl}/withings/callback`,
       newState: () => crypto.randomUUID(),
@@ -4431,6 +4437,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     shutdownDiagnostics:{householdId,read:()=>shutdownService.diagnostics()},
     resourceAliases:agendaResourceAliases,
     agendaRouter:participantRuntime.agenda.adminRouter,
+    healthCoachAdminRouter,
     peopleRouter:participantRuntime.peopleRouter,
     householdContext,
     listManagementService,
