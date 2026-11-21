@@ -464,8 +464,11 @@ their own resume slot. When every passage has Silver, the score offers Gold.
 **Play it on your own** is the Silver check: all playable parts, the learner's own
 pace, no metronome, no lit keys and no stuck-ladder note names. It can be attempted
 at any time. Two straight misses on a Silver step or drill offer **Come back to this
-later**, which skips that passage until the next household day. If every remaining
-passage is set aside, the earliest returns. The check ends as a miss after
+later**, which skips that passage until the next household day, or until the
+learner starts a take on it again: choosing a set-aside passage from the rail brings
+it back, smaller steps and all (until 2026-11-20 a passage reopened that way got no
+smaller steps for the rest of the day, only **Try again** on the whole check). If
+every remaining passage is set aside, the earliest returns. The check ends as a miss after
 `stallSeconds` with no newly matched note, including when the first note is never found.
 
 Policy comes from `sheetmusic.learn.certification` and resolves through the same
@@ -810,11 +813,23 @@ graded timing.
 
 After two equivalent valid failures, offer a smaller task deliberately. Prioritize
 missing/extra notes in the measure with the greatest normalized burden, breaking
-ties by earlier score order; without spans use the first half. Continued
-coordination difficulty can narrow to a hand. Timing-only difficulty steps down a
+ties by earlier score order; a take that stopped early (the stall timer, or the
+learner) targets the first bar it did not finish. The drill is that bar **with the
+bar before it**, so it practises the way into the hard spot; when that pair is
+already the task, the bar alone. Without spans use the first half. Continued
+coordination difficulty on one bar narrows to its harder hand. Timing-only difficulty steps down a
 named tempo stage (100, 75, 60, 50, 40), with an automatic floor of 40%, then shortens the range. There
-are at most two recovery levels. Two successful recovery takes recommend the
-parent again without completing its quota. Manual tempo choices under Change
+are at most three recovery levels (`MAX_DRILL_DEPTH`): for a stall in a passage's
+last bar, bars 3–4 of 4, then bar 4, then bar 4 with one hand.
+
+Two successful takes out of the last three on a drill move it on without completing
+the parent's quota. A drill that is its parent's closing bars, at the parent's hands
+and pace, **back-chains** (`reason: 'back-chain'`): it grows one bar toward the
+parent's start (bars 3–4, then 2–4) and returns to the parent only when the next bar
+back would be the parent itself. Every take of the chain ends on the bars already
+learned, so the hard spot is never met tired. Any other drill (a middle bar, one
+hand, a slower tempo) returns to its parent directly. The pass card names a drill
+that follows by its bars ("Next: Bars 2–4"). Manual tempo choices under Change
 practice remain available at 15, 25, 40, 60, 80 and 100 percent. Preparation shows
 the starting effective BPM as well as its percentage of score tempo.
 

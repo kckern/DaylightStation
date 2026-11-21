@@ -103,12 +103,12 @@ describe('Silver and Gold tasks', () => {
     expect(plan.tasks.some((t) => t.skill === 'silver')).toBe(false);
     expect(view(plan, play(undefined, plan, task(plan, 'phrase'))).certifications.one.silver).not.toBeNull();
   });
-  it('a stalled take drills the first bar with missed notes', () => {
+  it('a stalled take drills the first bar with missed notes, from the bar before it', () => {
     const plan = planOf(); const check = task(plan, 'silver');
     const stalled = { ...good, criteria: { completeness: 0.4, cleanliness: 1 }, diagnostics: { expected_notes: 8, matched_notes: 3, wrong_notes: 0, missed_notes: 5 },
       spans: { 'measure:0': { diagnostics: { expected_notes: 2, missed_notes: 0, wrong_notes: 0 } }, 'measure:1': { diagnostics: { expected_notes: 2, missed_notes: 1, wrong_notes: 0 } }, 'measure:2': { diagnostics: { expected_notes: 2, missed_notes: 2, wrong_notes: 0 } } } };
     const drill = view(plan, play(play(undefined, plan, check, stalled), plan, check, stalled)).recommended;
-    expect(drill).toMatchObject({ depth: 1, range: { start: 1, end: 1 } });
+    expect(drill).toMatchObject({ depth: 1, range: { start: 0, end: 1 } });
     expect(drill.assist).toBeUndefined();
   });
 });
