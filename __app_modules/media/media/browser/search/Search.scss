@@ -68,6 +68,23 @@
   }
 }
 
+.media-scope-retry {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: var(--media-muted);
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible { color: var(--media-text); }
+}
+
 // Subtle straggler indicator at the bottom of the result list while slower
 // sources are still streaming in.
 .search-still-searching {

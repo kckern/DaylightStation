@@ -12,7 +12,7 @@ const EMPTY_SCOPES = [];
 export const SearchContext = createContext(null);
 
 export function SearchProvider({ children }) {
-  const { data, error: scopeError } = useApiResource('api/v1/media/config', { label: 'Media search scopes' });
+  const { data, error: scopeError, reload: retryScopes } = useApiResource('api/v1/media/config', { label: 'Media search scopes' });
   const scopes = Array.isArray(data?.searchScopes) ? data.searchScopes : EMPTY_SCOPES;
   const [selected, setScopeKey] = useState();
   const currentScopeKey = selected === undefined ? scopes[0]?.key ?? null : selected;
@@ -31,8 +31,8 @@ export function SearchProvider({ children }) {
   );
 
   const value = useMemo(
-    () => ({ scopes, currentScopeKey, currentScope, scopeError, setScopeKey, resetScope }),
-    [scopes, currentScopeKey, currentScope, scopeError, setScopeKey, resetScope]
+    () => ({ scopes, currentScopeKey, currentScope, scopeError, retryScopes, setScopeKey, resetScope }),
+    [scopes, currentScopeKey, currentScope, scopeError, retryScopes, setScopeKey, resetScope]
   );
 
   return <SearchContext.Provider value={value}>{children}</SearchContext.Provider>;

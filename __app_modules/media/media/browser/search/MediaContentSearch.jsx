@@ -24,7 +24,6 @@
 // leaf ⋯ respectively, wired to the exact same playContainerAsQueue /
 // applyResultRowVerb plumbing SearchMode uses.
 import React, { useCallback, useMemo, useState } from 'react';
-import { IconAlertTriangle } from '@tabler/icons-react';
 import { ContentCombobox } from "../../../../../__capabilities/content-catalog/browser/picker.mjs";
 import { useSearchContext } from "./useSearchContext.js";
 import { ScopeChips } from "./ScopeChips.jsx";
@@ -43,7 +42,7 @@ import "./Search.scss";
 
 export function MediaContentSearch({ inputRef }) {
   const [oneShotAction, setOneShotAction] = useState(null);
-  const { scopes, currentScopeKey, currentScope, scopeError, resetScope } = useSearchContext();
+  const { scopes, currentScopeKey, currentScope, resetScope } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue } = useContentDispatch();
   const { rowLabelsFor, continueFor } = useRowLabels();
   const { extraActions, runHousehold } = useHouseholdResultActions();
@@ -107,11 +106,6 @@ export function MediaContentSearch({ inputRef }) {
       <ItemDestinationPicker action={oneShotAction} onClose={() => setOneShotAction(null)} />
       <div className="media-search-controls">
         <ScopeChips />
-        {scopeError && (
-          <span data-testid="scope-error" className="scope-error" title={scopeError.message}>
-            <IconAlertTriangle size={16} aria-label="Scope config failed to load" />
-          </span>
-        )}
         <div className="media-search-input-wrap">
           <ContentCombobox
             inputRef={inputRef}

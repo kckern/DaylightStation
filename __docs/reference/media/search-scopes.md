@@ -81,7 +81,8 @@ filters them out. For Plex scopes, omit `capability=playable` and rely on
   narrows a later search. `resetScope()` returns to that same catalog-wide
   default on demand (e.g. every time the mobile search surface opens).
 - If the scope config fails to load, search still works catalog-wide; the
-  search bar shows a small error indicator next to the selector.
+  shared scope selector shows an inline retry action on both desktop and mobile.
+  Retrying reloads only the scope config, leaving the current search query intact.
 
 ### Persistence (localStorage)
 

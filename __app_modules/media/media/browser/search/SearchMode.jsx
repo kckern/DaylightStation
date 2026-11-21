@@ -24,7 +24,6 @@
 // same useContentDispatch path MediaContentSearch already uses.
 import { LoadErrorLine } from "../shared/LoadErrorLine.jsx";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { IconAlertTriangle } from '@tabler/icons-react';
 import { Button } from '@mantine/core';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
@@ -67,7 +66,7 @@ function SearchResultRow({ onAction, ...props }) {
 // aim is untouched, and the surface closes once the addition is sent.
 export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   const [oneShotAction, setOneShotAction] = useState(null);
-  const { scopes, currentScopeKey, currentScope, scopeError, resetScope } = useSearchContext();
+  const { scopes, currentScopeKey, currentScope, resetScope } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue, addToScreen } = useContentDispatch();
   const { rowLabelsFor, continueFor } = useRowLabels();
   const { extraActions, runHousehold } = useHouseholdResultActions();
@@ -317,11 +316,6 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
 
       <div className="search-mode-scope">
         <ScopeChips />
-        {scopeError && (
-          <span data-testid="scope-error" className="scope-error" title={scopeError.message}>
-            <IconAlertTriangle size={16} aria-label="Scope config failed to load" />
-          </span>
-        )}
       </div>
 
       <StreamStatusLine
