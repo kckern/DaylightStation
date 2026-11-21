@@ -218,3 +218,47 @@ test('config Back preserves a dirty YAML draft until discard is confirmed', asyn
   await expect(page).toHaveURL('/admin/system/config');
   expect(writes).toEqual([]);
 });
+
+test('Finance ClickUp IDs reject lossy input and preserve existing IDs on save', async ({ page }) => {
+  const writes = [];
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path === '/api/v1/admin/config/files/household/finance/config.yml' && request.method() === 'GET') {
+      return route.fulfill({ json: { parsed: { clickup: {
+        assignees: [7, '9007199254740993'],
+        todo_lists: [13, '9007199254740995'],
+      } }, raw: 'clickup: {}\n' } });
+    }
+    if (request.method() === 'PUT') writes.push(request.postDataJSON());
+    return route.fulfill({ json: path.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+
+  await page.goto('/admin/apps/finance');
+  const save = page.getByTestId('config-save-button');
+  let hasAcceptedEdit = false;
+  for (const [placeholder, rejectedId, acceptedId] of [
+    ['Add assignee ID...', 'abc', '42'],
+    ['Add list ID...', '9007199254740997', '84'],
+  ]) {
+    const input = page.getByPlaceholder(placeholder);
+    await input.fill(rejectedId);
+    await input.press('Enter');
+    await expect(page.getByText('Enter a whole-number ID within the safe integer range.')).toBeVisible();
+    if (!hasAcceptedEdit) await expect(save).toBeDisabled();
+    await input.fill(acceptedId);
+    await input.press('Enter');
+    await expect(page.getByText('Enter a whole-number ID within the safe integer range.')).toHaveCount(0);
+    hasAcceptedEdit = true;
+  }
+
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect.poll(() => writes).toEqual([{
+    parsed: { clickup: {
+      assignees: [7, '9007199254740993', 42],
+      todo_lists: [13, '9007199254740995', 84],
+    } },
+  }]);
+});
