@@ -11,9 +11,14 @@
  * no input. Gamepad input carries no Bluetooth address, so pad presses count
  * toward the verdict only when the tested device is a gamepad (or of unknown
  * kind); each event shows the pad's own id.
+ *
+ * With `address` and `subscribeRemoteKeys` (the garage's per-remote feed), a
+ * key counts only when the remote under test sent it: two remotes of the same
+ * model send identical browser keys, and only the feed knows which is which
+ * (createKeyAttributor). A press from another remote is shown, not counted.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { gameKeySet, keyLabel, normalizeKey, padChanges, testVerdict } from './keyTestModel.js';
+import { createKeyAttributor, gameKeySet, keyLabel, keyName, normalizeKey, padChanges, testVerdict } from './keyTestModel.js';
 import { BACK_BUTTONS, SELECT_BUTTONS } from '../ui/useArcadeInput.js';
 
 const HOLD_TO_FINISH_KEYS = new Set(['Enter', ' ', 'MediaPlayPause']);
@@ -24,7 +29,7 @@ const IDLE_MS = 20000;
 const HOLD_BACK_MS = 1500;
 let eventSeq = 0;
 
-export function KeyTest({ name, kind, keyboardMap, getGamepads, onDone, note = null, idleMs = IDLE_MS, holdBackMs = HOLD_BACK_MS }) {
+export function KeyTest({ name, kind, keyboardMap, getGamepads, onDone, note = null, idleMs = IDLE_MS, holdBackMs = HOLD_BACK_MS, address = null, subscribeRemoteKeys = null }) {
   const gameKeys = useMemo(() => gameKeySet(keyboardMap), [keyboardMap]);
   const [events, setEvents] = useState([]);
   const [keys, setKeys] = useState([]);
@@ -56,9 +61,34 @@ export function KeyTest({ name, kind, keyboardMap, getGamepads, onDone, note = n
     setEvents((list) => [{ id, text }, ...list].slice(0, MAX_EVENTS));
   };
 
+  const countKey = (k, label) => {
+    tally.current = { ...tally.current, keys: [...tally.current.keys, k] };
+    setKeys(tally.current.keys);
+    addEvent(label);
+  };
+  const countKeyRef = useRef(countKey);
+  countKeyRef.current = countKey;
+  const addEventRef = useRef(addEvent);
+  addEventRef.current = addEvent;
+
+  // The garage's per-remote feed: which remote sent each key.
+  const attributorRef = useRef(null);
+  useEffect(() => {
+    if (!address || typeof subscribeRemoteKeys !== 'function') return undefined;
+    const attributor = createKeyAttributor({
+      address,
+      onCount: (k) => countKeyRef.current(k, keyName(k)),
+      onOther: (k, from) => addEventRef.current(`${keyName(k)} (another remote …${from.slice(-5)})`),
+    });
+    attributorRef.current = attributor;
+    const unsubscribe = subscribeRemoteKeys((msg) => attributor.tagged(msg));
+    return () => { unsubscribe?.(); attributor.stop(); attributorRef.current = null; };
+  }, [address, subscribeRemoteKeys]);
+
   useEffect(() => {
     let holdKey = null;
     const handler = (e) => {
+      const attributor = attributorRef.current;
       e.preventDefault();
       e.stopImmediatePropagation();
       if (e.repeat) {
@@ -68,9 +98,12 @@ export function KeyTest({ name, kind, keyboardMap, getGamepads, onDone, note = n
       }
       if (e.key === 'Escape') { finishRef.current(); return; }
       holdKey = HOLD_TO_FINISH_KEYS.has(e.key) ? { key: e.key, since: Date.now() } : null;
-      tally.current = { ...tally.current, keys: [...tally.current.keys, normalizeKey(e.key)] };
-      setKeys(tally.current.keys);
-      addEvent(keyLabel(e));
+      lastAt.current = Date.now();
+      if (attributor) {
+        // Unidentified keys have no tagged twin to wait for: count them now.
+        if (normalizeKey(e.key) !== 'Unidentified') { attributor.browser(e.key); return; }
+      }
+      countKey(normalizeKey(e.key), keyLabel(e));
     };
     const up = (e) => { if (holdKey?.key === e.key) holdKey = null; };
     window.addEventListener('keydown', handler, true);

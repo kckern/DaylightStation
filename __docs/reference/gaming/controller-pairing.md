@@ -57,7 +57,7 @@ Bluetooth screen takes its label from it, but gamepad status and the arcade's
 "controller connected" toasts skip it (`gamepadControllers` in
 `controllerStatus.js`). `buttons:` records what each physical button sends, as
 the browser's `KeyboardEvent.key`; it is a record for mapping keys to actions
-and is not read by code yet.
+and is not read by code yet. For which remote sent a key, see Per-remote keys.
 
 - `steps` lead into the search: the last step points at **Search for it**.
 - `wake` shows under a paired row of that controller while it is asleep.
@@ -234,6 +234,45 @@ real idle time. **Done** shows no focus ring: keys are captured there, so A or
 Enter would not press it. A browser
 gamepad has no Bluetooth address, so pad presses count only when the tested
 device is a gamepad.
+
+## Per-remote keys (`bt.remote.key`)
+
+A browser `KeyboardEvent` carries no device identity: Firefox merges every
+keyboard into one stream, so two remotes of the same model are
+indistinguishable on the page. The garage box reads each Bluetooth remote
+straight from the kernel instead (`remote_keys_helper.py`, run by
+`remoteKeys.mjs` in the fitness controller): every Bluetooth input device that
+is not a game pad, its `/dev/input/event*` nodes and its `/dev/hidraw*` node,
+tagged with the device's Bluetooth address. Nodes are rediscovered every 2 s,
+so a remote that sleeps and reconnects is picked up again. Nothing is grabbed:
+keys still reach the browser as before.
+
+Each press is sent on the bus as `bt.remote.key`
+(`{ address, name, code, key, usage, state }`: kernel `KEY_*` code, browser key
+name, HID usage, `down`/`up`/`repeat`; relayed to screens by
+`ClientRelayPolicy`) and logged to the store:
+
+| Event | Level | Meaning |
+|-------|-------|---------|
+| `bt.remote.key` | info (press), debug (release, repeat) | a key, with the remote's address |
+| `bt.remote.unmapped` | warn | a raw HID report with data that became no key: a button Linux drops |
+| `bt.remote.open` / `bt.remote.gone` | info | a remote's device node appeared / went away (sleep, reconnect) |
+| `bt.remote.helper-exit` | warn | the reader exited; it restarts (1 s doubling to 60 s) |
+
+Query: `context.module:fitness-controller AND _msg:~"bt.remote"`.
+
+The key test uses this feed when the host provides it
+(`bluetooth.subscribeRemoteKeys`): a key counts only when the tested remote's
+address sent it; a press from another remote shows as "(another remote …F1:98)"
+and does not count. The browser's own copy of a press is matched to its tagged
+twin within 400 ms (either order) and dropped; a browser key with no twin
+counts, so a device the garage box does not read still tests
+(`createKeyAttributor` in `keyTestModel.js`).
+
+The desktop must not grab media keys: on garage the XFCE PulseAudio panel
+plugin had `enable-keyboard-shortcuts` and `enable-multimedia-keys` on, which
+took volume and play/next/previous before Firefox saw them. Both are off
+(`xfconf-query -c xfce4-panel -p /plugins/plugin-12/...`).
 
 ## Navigation
 

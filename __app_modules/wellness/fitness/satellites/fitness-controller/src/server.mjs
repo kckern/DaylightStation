@@ -11,6 +11,7 @@ import { selectSimCandidate } from "./unlockSim.mjs";
 import { createReaderArbiter } from "./readerArbiter.mjs";
 import { createContinuousScanLoop, IDENTIFY_WINDOW_S } from "./continuousScanLoop.mjs";
 import { startBtInventoryBroadcast } from "./btInventory.mjs";
+import { startRemoteKeys } from "./remoteKeys.mjs";
 import { handleBtPairRequest, handleBtRemoveRequest, isPairingWindowOpen } from "./btPairing.mjs";
 import { handleBtScanRequest, stopScanWindow } from "./btScan.mjs";
 import { createDataPathHealth, createFitnessDataBroadcaster } from "./dataPathHealth.mjs";
@@ -158,6 +159,8 @@ const serviceIdentity = Object.freeze({
 const dataPathHealth = createDataPathHealth({ bootId: randomUUID() });
 // Handle for the BlueZ bt_inventory broadcast loop (identity/inventory only).
 let btInventoryBroadcast = null;
+// Handle for the per-device Bluetooth remote key reader (remoteKeys.mjs).
+let remoteKeys = null;
 
 // Pending interactive unlock requests, keyed by requestId. Only populated when
 // FINGERPRINT_SIM === 'interactive': the request is held until a CLI resolves it
@@ -605,6 +608,7 @@ process.on('SIGINT', async () => {
   if (btInventoryBroadcast) {
     btInventoryBroadcast.stop();
   }
+  remoteKeys?.stop();
 
   // Close WebSocket
   if (dataPathTimer != null) clearInterval(dataPathTimer);
@@ -630,6 +634,7 @@ process.on('SIGTERM', async () => {
   if (btInventoryBroadcast) {
     btInventoryBroadcast.stop();
   }
+  remoteKeys?.stop();
 
   // Close WebSocket
   if (dataPathTimer != null) clearInterval(dataPathTimer);
@@ -711,6 +716,17 @@ async function startServer() {
     send: (topic, payload) => sendBus(topic, payload),
   });
   console.log('🎮 BlueZ bt_inventory broadcast started');
+
+  // Per-device Bluetooth remote keys, read from the kernel and tagged with the
+  // remote's address: logged to the store (bt.remote.*) and sent as
+  // `bt.remote.key`. Read-only — keys still reach the browser. A press while
+  // the socket is down is dropped silently (it is still in this container log).
+  remoteKeys = startRemoteKeys({
+    logEvent: logToStore,
+    send: (topic, payload) => {
+      if (websocketClient?.readyState === WebSocket.OPEN) websocketClient.send(JSON.stringify({ topic, ...payload }));
+    },
+  });
 
   // Start the continuous biometric scan loop (skipped in sim mode — no reader).
   if (process.env.FINGERPRINT_SIM) {

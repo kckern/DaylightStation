@@ -19,7 +19,7 @@ describe('useFitnessBluetooth', () => {
   afterEach(() => vi.useRealTimers());
 
   it('lists the topics it handles', () => {
-    expect(BT_TOPICS).toEqual(['bt_inventory', 'bt.pair.progress', 'bt.remove.result', 'bt.scan.progress']);
+    expect(BT_TOPICS).toEqual(['bt_inventory', 'bt.pair.progress', 'bt.remove.result', 'bt.scan.progress', 'bt.remote.key']);
   });
 
   it('stores the inventory and asks for it on request', () => {

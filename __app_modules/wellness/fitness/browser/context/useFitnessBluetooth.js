@@ -12,7 +12,7 @@ import {
   mergePairingProgress, mergeScanProgress, scanSilenceReason,
 } from './fitnessBtActions.js';
 
-export const BT_TOPICS = ['bt_inventory', 'bt.pair.progress', 'bt.remove.result', 'bt.scan.progress'];
+export const BT_TOPICS = ['bt_inventory', 'bt.pair.progress', 'bt.remove.result', 'bt.scan.progress', 'bt.remote.key'];
 const PAIR_ANSWER_MS = 15000;
 // The pairing helper ends every window by its own cap (window + 120 s); a
 // pairing still open 10 s after that lost its `done` on the way.
@@ -36,6 +36,9 @@ export function useFitnessBluetooth({ send }) {
   const [scan, setScan] = useState(null);
   const scanRef = useRef(null);
   scanRef.current = scan;
+  // Listeners for `bt.remote.key` (a press tagged with the remote's Bluetooth
+  // address, from the garage box). Not state: presses must not re-render the host.
+  const remoteKeyListeners = useRef(new Set());
 
   useEffect(() => () => {
     timers.current.forEach(clearTimeout);
@@ -74,6 +77,11 @@ export function useFitnessBluetooth({ send }) {
       case 'bt.remove.result':
         logger().info('fitness.bt.remove-result', { address: data.address, success: data.success, error: data.error });
         setForgetResult({ address: data.address, success: !!data.success, error: data.error || null });
+        return true;
+      case 'bt.remote.key':
+        remoteKeyListeners.current.forEach((fn) => {
+          try { fn(data); } catch (err) { logger().warn('fitness.bt.remote-key-listener-failed', { error: err?.message }); }
+        });
         return true;
       case 'bt.scan.progress':
         if (data.phase === 'nearby') {
@@ -205,9 +213,14 @@ export function useFitnessBluetooth({ send }) {
     return requestId;
   }, []);
 
+  const subscribeRemoteKeys = useCallback((fn) => {
+    remoteKeyListeners.current.add(fn);
+    return () => remoteKeyListeners.current.delete(fn);
+  }, []);
+
   const bluetooth = useMemo(() => ({
-    inventory, scan, pairing, forgetResult, requestInventory, startScan, stopScan, pairAddress, forget,
-  }), [inventory, scan, pairing, forgetResult, requestInventory, startScan, stopScan, pairAddress, forget]);
+    inventory, scan, pairing, forgetResult, requestInventory, startScan, stopScan, pairAddress, forget, subscribeRemoteKeys,
+  }), [inventory, scan, pairing, forgetResult, requestInventory, startScan, stopScan, pairAddress, forget, subscribeRemoteKeys]);
 
   return { bluetooth, handleMessage, noteHealth, pairController, resetAfterReconnect };
 }

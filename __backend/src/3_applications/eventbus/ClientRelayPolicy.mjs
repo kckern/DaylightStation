@@ -7,6 +7,7 @@ export const BT_RELAY_TOPICS = new Set([
   'bt.scan.request',
   'bt.scan.progress',
   'bt.inventory.request',
+  'bt.remote.key',
 ]);
 
 export const KIOSK_LAUNCH_RELAY_TOPICS = new Set([

@@ -84,3 +84,47 @@ export function testVerdict({ keys = [], padInputs = 0, gameKeys = new Set() }) 
   if (keys.length) return { id: 'other-keys', tone: 'warn', text: "Games can't use these keys yet." };
   return { id: 'nothing', tone: 'idle', text: null };
 }
+
+/**
+ * Which remote a key came from. The browser's KeyboardEvent has no device
+ * identity, so two remotes of the same model look the same; the garage box
+ * reads each remote from the kernel and sends `bt.remote.key` tagged with its
+ * Bluetooth address. Both copies of one press arrive (nothing is grabbed), in
+ * either order. This pairs them up:
+ *  - a tagged press from `address` counts (onCount(key));
+ *  - a tagged press from another remote is shown, not counted (onOther);
+ *  - a browser key with no tagged twin within `windowMs` counts — a device the
+ *    garage box does not read (USB keypad, an old satellite) still tests.
+ * `browser()` returns true while that key's fate is pending.
+ */
+export function createKeyAttributor({ address, windowMs = 400, onCount, onOther, now = () => Date.now(), setTimer = setTimeout, clearTimer = clearTimeout }) {
+  const want = String(address || '').toUpperCase();
+  const pendingBrowser = []; // { key, at, timer }
+  const recentTagged = [];   // { key, at }
+  const prune = (list) => { const t = now(); while (list.length && t - list[0].at > windowMs) list.shift(); };
+  return {
+    browser(rawKey) {
+      const key = normalizeKey(rawKey);
+      prune(recentTagged);
+      const twin = recentTagged.findIndex((r) => r.key === key);
+      if (twin >= 0) { recentTagged.splice(twin, 1); return false; }
+      const entry = { key, at: now(), timer: null };
+      entry.timer = setTimer(() => {
+        const i = pendingBrowser.indexOf(entry);
+        if (i >= 0) { pendingBrowser.splice(i, 1); onCount?.(key, 'browser'); }
+      }, windowMs);
+      pendingBrowser.push(entry);
+      return true;
+    },
+    tagged({ address: from, key: rawKey, state } = {}) {
+      if (state && state !== 'down') return;
+      const key = normalizeKey(rawKey);
+      const i = pendingBrowser.findIndex((p) => p.key === key);
+      if (i >= 0) { clearTimer(pendingBrowser[i].timer); pendingBrowser.splice(i, 1); }
+      else recentTagged.push({ key, at: now() });
+      if (String(from || '').toUpperCase() === want) onCount?.(key, 'remote');
+      else onOther?.(key, String(from || '').toUpperCase());
+    },
+    stop() { pendingBrowser.forEach((p) => clearTimer(p.timer)); pendingBrowser.length = 0; },
+  };
+}

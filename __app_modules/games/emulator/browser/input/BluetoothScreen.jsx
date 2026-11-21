@@ -276,6 +276,8 @@ export function BluetoothScreen({
           kind={view.kind}
           keyboardMap={keyboardMap}
           getGamepads={getGamepads}
+          address={view.address || null}
+          subscribeRemoteKeys={bt.subscribeRemoteKeys || null}
           note={view.from === 'pair' ? 'Connected.' : null}
           onDone={finishTest}
         />
