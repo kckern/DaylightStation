@@ -77,7 +77,7 @@ import { useSchoolRingGates } from './useSchoolRingGates.js';
 import { schoolLog } from "../schoolLog.js";
 import DayGrid from "../shared/dayGrid/DayGrid.jsx";
 import { weekStart, addDays } from "../shared/dayGrid/dayGridModel.js";
-import { dayOffTitle, dayStatus, summarize, ringProgressByLearner, triangleRows, earningsByLearner, figureInWeek } from "./agendaStatusModel.js";
+import { dayOffTitle, dayStatus, makeupLines, summarize, ringProgressByLearner, triangleRows, earningsByLearner, figureInWeek } from "./agendaStatusModel.js";
 import CoinIcon from "../../../../../frontend/src/lib/icons/CoinIcon.jsx";
 import { coinFigure } from "../../../../../frontend/src/lib/coins/coinFigure.js";
 import RewardsChest from '../rewards/RewardsChest.jsx';
@@ -123,19 +123,7 @@ function iconFor(subject, assignmentIcon = null) {
   return FALLBACK_ICON;
 }
 
-const SHORT_WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-/** `Mon, Wed` from ISO study days, read from the date alone (UTC noon, no drift). */
-function weekdayNames(days) {
-  return (days ?? []).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d ?? ''))
-    .map((d) => SHORT_WEEKDAY[new Date(`${d}T12:00:00Z`).getUTCDay()]).join(', ');
-}
-
 function labelForSegment(segment) {
-  // A Saturday catch-up offer: optional, never "not done".
-  if (segment.state === 'optional') {
-    const days = weekdayNames(segment.catchUp?.missedDays);
-    return `${segment.label}: optional catch-up${days ? ` for ${days}` : ''}`;
-  }
   const state = segment.state === 'passed' ? 'done'
     : segment.state === 'needs-retry' ? 'try again'
       : segment.state === 'in-progress' ? 'in progress'
@@ -325,17 +313,14 @@ function DayCount({ summary }) {
 }
 
 /**
- * "No school today" (+ how to get optional work). See `restDayOf` in the
- * model. A household day off names itself instead ("Christmas break — no
- * school"), so a child is told why rather than shown a blank.
+ * A NAMED household day off ("Christmas break — no school"). An unnamed rest
+ * day (a weekend) shows nothing (2026-11-21): the owner dropped "No school
+ * today" and its "Scan your card for extra work" hint. Optional work needs no
+ * signal; a child who wants it scans their card.
  */
-function RestDayStatus({ restDay, pinned, title = null }) {
-  const hint = !pinned && restDay.optionalCount > 0;
+function RestDayStatus({ title }) {
   return (
-    <span className="school-status-board__status school-status-board__status--rest">
-      {title ?? (pinned ? 'No school' : 'No school today')}
-      {hint && <span className="school-status-board__status-hint">Scan your card for extra work</span>}
-    </span>
+    <span className="school-status-board__status school-status-board__status--rest">{title}</span>
   );
 }
 
@@ -461,6 +446,11 @@ export default function AgendaStatusBoard({ kids = NO_KIDS, day, onOpenSegment =
   }, [onOpenBank]);
   // Whose term popup is open (a learner id), or null.
   const [termFor, setTermFor] = useState(null);
+  // Earlier days this week still owed, per learner, from the LIVE day's
+  // agenda preview (`makeup`, GetMakeupWork). Shown only in the term popup: a
+  // tap on the week is the child asking what is missing (2026-11-21); the card
+  // itself carries no makeup line (2026-11-20).
+  const [makeup, setMakeup] = useState({});
   const openTerm = useCallback((kidId) => {
     schoolLog.selfService('status-board.term-open', { learnerId: kidId });
     setTermFor(kidId);
@@ -706,6 +696,8 @@ export default function AgendaStatusBoard({ kids = NO_KIDS, day, onOpenSegment =
             ? await planRead
             : await schoolApi.agendaPreview(kid.id, effectiveDay);
           if (!plan?.ok) return settleWithoutPlan();
+          // Only a live read carries makeup; a pinned day's preview never does.
+          if (!day) setMakeup((current) => ({ ...current, [kid.id]: plan.data?.makeup ?? null }));
           settle(kid.id, generation, {
             summary: {
               ...withServerVerdict(
@@ -970,24 +962,12 @@ export default function AgendaStatusBoard({ kids = NO_KIDS, day, onOpenSegment =
                   <span className="school-status-board__status school-status-board__status--dayoff">
                     {dayOffTitle(summary.dayOff)}
                   </span>
-                ) : summary.catchUpCount > 0 && !day ? (
-                  // A SATURDAY CATCH-UP beside a finished day: the dashed
-                  // disc is optional, and this says how to get it. The check
-                  // mark stays; nothing here is owed. A pinned past day gets
-                  // no hint, since a scan prints TODAY's agenda.
-                  <span className="school-status-board__status school-status-board__status--catchup">
-                    Catch-up: scan your card
-                  </span>
                 ) : null
               ) : summary?.restDay ? (
-                // A DAY OFF IS NOT AN EMPTY PLAN (2026-09-26). Every section
-                // is excused as not a school day, and the optional work is
-                // still on the agenda a card scan prints. "No plan to show"
-                // told a child with flashcards waiting that there was
-                // nothing to do. A pinned past day gets no hint: a scan
-                // prints TODAY's agenda, not that day's.
-                <RestDayStatus restDay={summary.restDay} pinned={Boolean(day)}
-                  title={summary.dayOff?.label ? dayOffTitle(summary.dayOff) : null} />
+                // A DAY OFF IS NOT AN EMPTY PLAN (2026-09-26): never "No plan
+                // to show". Named, it says its name; a plain weekend says
+                // nothing at all (2026-11-21).
+                dayOffTitle(summary.dayOff) ? <RestDayStatus title={dayOffTitle(summary.dayOff)} /> : null
               ) : summary?.segments.length > 0 ? (
                 // Only optional work on the board (an elective sheet on a day
                 // nothing is owed): the discs are real, the plan is not empty.
@@ -1061,6 +1041,7 @@ export default function AgendaStatusBoard({ kids = NO_KIDS, day, onOpenSegment =
         <TermModal
           kid={visible.find((row) => row.kid.id === termFor)?.kid ?? { id: termFor, name: termFor }}
           term={terms[termFor]}
+          makeup={makeupLines(makeup[termFor], terms[termFor]?.today ?? studyDay)}
           onClose={closeTerm}
         />
       )}

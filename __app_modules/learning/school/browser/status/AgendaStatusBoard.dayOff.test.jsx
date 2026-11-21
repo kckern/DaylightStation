@@ -30,7 +30,7 @@ describe('naming the day off', () => {
     expect(dayOffTitle({ tier: 'enrichment', label: 'Veterans Day' })).toBe('Veterans Day — stay-home day');
     expect(dayOffTitle({ tier: 'major-holiday', label: 'Thanksgiving' })).toBe('Thanksgiving — holiday');
     expect(dayOffTitle({ tier: 'away', label: 'Christmas break' })).toBe('Christmas break — no school');
-    expect(dayOffTitle({ tier: 'away', label: null })).toBe('No school today');
+    expect(dayOffTitle({ tier: 'away', label: null })).toBeNull();
     expect(dayOffTitle({ tier: 'normal', label: 'Thanksgiving Eve' })).toBeNull();
     expect(dayOffTitle(null)).toBeNull();
   });
@@ -66,79 +66,55 @@ describe('naming the day off', () => {
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-label', '0 of 1 done');
   });
 
-  it('a pinned past unlabelled away day says No school, not No school today', async () => {
+  // Owner 2026-11-21: no "No school today" copy on a rest day.
+  it('an unnamed rest day (weekend or away day) says nothing, pinned or live', async () => {
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: {
+      sections: [excused('math', 'not_a_school_day')], entries: [], dayOff: null,
+    } });
+    const { unmount } = render(<AgendaStatusBoard kids={kids} />);
+    await screen.findByTestId('board-day');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByText(/No school/)).toBeNull();
+    expect(screen.queryByText(/extra work/)).toBeNull();
+    expect(screen.queryByText('No plan to show')).toBeNull();
+    unmount();
     schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: {
       sections: [excused('math', 'household_calendar')], entries: [], dayOff: { tier: 'away', label: null },
     } });
     render(<AgendaStatusBoard kids={kids} day="2026-11-04" />);
-    expect(await screen.findByText('No school')).toBeInTheDocument();
-  });
-
-  it('a plain weekend still says No school today', async () => {
-    schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: {
-      sections: [excused('math', 'not_a_school_day')], entries: [], dayOff: null,
-    } });
-    render(<AgendaStatusBoard kids={kids} />);
-    expect(await screen.findByText('No school today')).toBeInTheDocument();
+    await screen.findByTestId('board-day');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByText(/No school/)).toBeNull();
   });
 });
 
+// Owner 2026-11-21: optional weekend catch-up gets no discs and no line on
+// the board; a child who wants it scans their card.
 describe('Saturday catch-up on the board', () => {
   const scriptureServed = {
     subject: 'scripture', next: null, obligation: { state: 'served', reason: null },
     servedWork: [{ unitId: 'cfm.4', assignmentUnitId: 'cfm.4' }],
   };
-  const catchUp = (over = {}) => ({
+  const catchUp = {
     subject: 'language', catchUp: true, backfill: { missedDays: ['2026-11-09'] },
     next: { unitId: 'flashcards:x', program: 'flashcards' },
-    obligation: { state: 'excused', reason: 'not_a_school_day' }, pendingPrograms: [], ...over,
-  });
+    obligation: { state: 'excused', reason: 'not_a_school_day' }, pendingPrograms: [],
+  };
 
-  it('draws the offer as an optional disc that is never counted', () => {
-    const summary = summarize([scriptureServed, catchUp()], []);
+  it('draws no disc for the offer and never counts it', () => {
+    const summary = summarize([scriptureServed, catchUp], []);
     expect(summary.total).toBe(1);
     expect(summary.done).toBe(1);
-    const optional = summary.segments.find((s) => s.unitId === 'flashcards:x');
-    expect(optional).toMatchObject({ state: 'optional', supplemental: true, catchUp: { missedDays: ['2026-11-09'] }, subject: 'language' });
-    expect(summary.catchUpCount).toBe(1);
+    expect(summary.segments.map((s) => s.unitId)).toEqual(['cfm.4']);
   });
 
-  it('a second missed program on the shelf gets its own optional disc', () => {
-    const summary = summarize([scriptureServed, catchUp({
-      pendingPrograms: [{ unitId: 'story-time:daily', program: 'story-time', subject: 'language' }],
-    })], []);
-    expect(summary.segments.filter((s) => s.state === 'optional').map((s) => s.unitId))
-      .toEqual(['flashcards:x', 'story-time:daily']);
-    expect(summary.total).toBe(1);
-  });
-
-  it('an ordinary excused offer (backlog, no backfill) still draws nothing', () => {
-    const summary = summarize([scriptureServed, catchUp({ backfill: null })], []);
-    expect(summary.segments.some((s) => s.state === 'optional')).toBe(false);
-    expect(summary.catchUpCount ?? 0).toBe(0);
-  });
-
-  it('done work for the offer is not drawn twice', () => {
-    const summary = summarize([scriptureServed, catchUp({
-      servedWork: [{ unitId: 'flashcards:x', assignmentUnitId: 'flashcards:x' }],
-    })], []);
-    expect(summary.segments.filter((s) => s.unitId === 'flashcards:x')).toHaveLength(1);
-    expect(summary.segments.find((s) => s.unitId === 'flashcards:x').state).toBe('passed');
-  });
-
-  it('the board keeps the done check and shows the optional disc with a hint', async () => {
+  it('the board keeps the done check with no catch-up hint', async () => {
     schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: {
-      sections: [scriptureServed, catchUp()], entries: [], dayOff: null,
+      sections: [scriptureServed, catchUp], entries: [], dayOff: null,
     } });
     const { container } = render(<AgendaStatusBoard kids={kids} />);
     expect(await screen.findByTestId('board-day-done')).toBeInTheDocument();
-    expect(container.querySelector('.school-status-board__pill[data-state="optional"]')).not.toBeNull();
-    expect(screen.getByText('Catch-up: scan your card')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: /optional catch-up for Mon/ })).toBeInTheDocument();
+    expect(container.querySelector('.school-status-board__pill[data-state="optional"]')).toBeNull();
+    expect(screen.queryByText(/Catch-up/)).toBeNull();
   });
-});
-
-vi.mock('../../../../../frontend/src/services/WebSocketService.js', async () => {
-  const { createSchoolRealtimeSource } = await import('#testlib/school/realtimeSource.mjs');
-  return { wsService: createSchoolRealtimeSource() };
 });

@@ -3153,14 +3153,6 @@
       background: var(--school-board-retry, #e2a33c);
       color: var(--school-board-retry-ink, #2a1a05);
     }
-    // A Saturday catch-up offer: optional, outside the day's count. An
-    // outline rather than a fill, so it never reads as owed (grey) work.
-    &[data-state='optional'] {
-      background: transparent;
-      box-shadow: inset 0 0 0 0.18rem var(--school-board-pending);
-      border: 0.12rem dashed var(--school-board-ink);
-      opacity: 0.8;
-    }
     // ELECTIVE work is optional and outside the day's count (2026-11-17), so
     // an unfinished one is never a filled disc: a dashed ring with the icon
     // in full ink, amber once started so a child can still see it is begun.
@@ -3825,5 +3817,23 @@
     li { overflow: visible; white-space: nowrap; }
   }
   &__grid { --grid-cell: inherit; --grid-gap: inherit; --grid-radius: 4px; }
+  // STILL TO DO this week (makeup), above the grid: the answer to a tap on an
+  // amber day, so it reads first and large.
+  &__todo {
+    align-self: stretch; text-align: center;
+    padding: clamp(0.6rem, 1.8vh, 1rem) clamp(0.8rem, 2vw, 1.4rem);
+    border-radius: 14px; border: 1px solid var(--school-border);
+    color: var(--school-board-ink);
+  }
+  &__todo-title { margin: 0 0 0.4rem; font-size: clamp(1.1rem, 3vh, 1.6rem); font-weight: 800; }
+  &__todo-days {
+    list-style: none; margin: 0; padding: 0;
+    font-size: clamp(1rem, 2.6vh, 1.4rem); line-height: 1.4;
+  }
+  &__todo-day { font-weight: 800; }
+  &__todo-hint {
+    margin: 0.5rem 0 0; font-size: clamp(0.95rem, 2.4vh, 1.25rem); font-weight: 600;
+    color: color-mix(in srgb, var(--school-board-ink) 72%, var(--school-black));
+  }
 }
 

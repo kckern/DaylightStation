@@ -63,6 +63,8 @@ Add one entry to a learner's `programs` list through the normal assignment servi
     daysOfWeek: [1, 2, 3, 4, 5]
 ```
 
+`daysOfWeek` is ISO (1 = Monday … 7 = Sunday). For a daily habit that runs on weekends too, list all seven: `[1, 2, 3, 4, 5, 6, 7]`.
+
 The shelf is Scripture & Gospel; the unit is `gratitude:daily`. One accepted submission completes each scheduled study day. Household calendar exceptions apply. The program never becomes terminal and adds no separate coin payout rule. The study day uses the household timezone and 4am boundary. New backdated submissions are refused; already submitted pending work recovers into its original day.
 
 ## Assessment and spacing
