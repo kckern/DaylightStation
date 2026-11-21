@@ -36,10 +36,20 @@ function stateWords(entity) {
   return entity.stateClass === 'unavailable' ? 'not answering' : formatEntityState(entity);
 }
 
+function attentionWords(tone) {
+  if (tone.attention === 'stuck') return 'Sensor stuck';
+  if (tone.attention === 'battery') return 'Low battery';
+  return null;
+}
+
+function squareDescription(entity, tone) {
+  return `${displayName(entity)}: ${[stateWords(entity), attentionWords(tone)].filter(Boolean).join(' · ')}`;
+}
+
 /** "Kitchen light · On · changed 8:29 pm" — what a square is, in words. */
-function tipText(entity) {
+function tipText(entity, tone) {
   const since = formatSince(entity.lastChanged);
-  return [displayName(entity), stateWords(entity), since ? `changed ${since}` : null].filter(Boolean).join(' · ');
+  return [squareDescription(entity, tone), since ? `changed ${since}` : null].filter(Boolean).join(' · ');
 }
 
 function squareClass(tone) {
@@ -55,7 +65,7 @@ const Square = memo(function Square({ entity, tone }) {
     <UnstyledButton
       className={squareClass(tone)}
       data-entity-id={entity.id}
-      aria-label={`${displayName(entity)}: ${stateWords(entity)}`}
+      aria-label={squareDescription(entity, tone)}
       style={tone.tempPct != null ? { '--tone-pct': tone.tempPct } : undefined}
     >
       <Icon className="home-square__icon" stroke={1.75} aria-hidden="true" focusable="false" />
@@ -139,6 +149,9 @@ export function MosaicView({ entities, mosaic, summary, haUrl, toggle, getFallba
     () => (mosaic ? buildGroups(mode === 'type' ? mosaic.byType : mosaic.byRoom, byId, flags) : []),
     [mosaic, mode, byId, flags],
   );
+  const toneById = useMemo(() => new Map(
+    groups.flatMap(group => group.items.map(({ entity, tone }) => [entity.id, tone])),
+  ), [groups]);
 
   useEffect(() => {
     logger.info('home.mosaic.mount', { mode, grouped: Boolean(mosaic) });
@@ -239,6 +252,8 @@ export function MosaicView({ entities, mosaic, summary, haUrl, toggle, getFallba
   }
 
   const selected = detail.selected;
+  const tooltipEntity = tip ? byId.get(tip.id) : null;
+  const tooltipTone = tip ? toneById.get(tip.id) : null;
   return (
     <div className="home-mosaic">
       <div className="home-mosaic__bar">
@@ -268,7 +283,7 @@ export function MosaicView({ entities, mosaic, summary, haUrl, toggle, getFallba
         >
           <MosaicGroups groups={groups} />
           {/* The words come from the live reading, so a poll updates an open tooltip. */}
-          <MosaicTooltip id={tipDomId} tip={tip} text={tip && byId.has(tip.id) ? tipText(byId.get(tip.id)) : null} boxRef={boxRef} />
+          <MosaicTooltip id={tipDomId} tip={tip} text={tooltipEntity && tooltipTone ? tipText(tooltipEntity, tooltipTone) : null} boxRef={boxRef} />
         </div>
       ) : (
         <EmptyState title="No devices to show" hint="Home Assistant reported no devices in these groups." />
