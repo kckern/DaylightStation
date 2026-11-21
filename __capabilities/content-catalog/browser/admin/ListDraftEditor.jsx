@@ -74,6 +74,6 @@ export default function ListDraftEditor({list, onEdit, renderItemSettings, readO
       {renderItemSettings?.({item,readOnly})}</div>; })}</div></SortableContext>
     {!readOnly && <Button size="xs" onClick={()=>setEditing({item:null,sectionUid:section.uid})}>Add item</Button>}</section>)}</Stack></DndContext>
     {!readOnly && <Button onClick={()=>emit({type:'add-section',section:{title:'New section',items:[]}})}>Add section</Button>}
-    <ListsItemEditor hideSection preserveImageClear opened={!!editing && !readOnly} item={editingView} sections={sections} onClose={()=>setEditing(null)} onSave={payload=>{if(editing.item) { emit({type:'update-item',itemUid:editing.item.uid,changes:changesFor(editing.item,payload)}); } else emit({type:'add-item',sectionUid:editing.sectionUid,item:changesFor({},payload)}); setEditing(null);}}/>
+    <ListsItemEditor hideSection opened={!!editing && !readOnly} item={editingView} sections={sections} onClose={()=>setEditing(null)} onSave={payload=>{if(editing.item) { emit({type:'update-item',itemUid:editing.item.uid,changes:changesFor(editing.item,payload)}); } else emit({type:'add-item',sectionUid:editing.sectionUid,item:changesFor({},payload)}); setEditing(null);}}/>
   </Stack></ListsContext.Provider>;
 }

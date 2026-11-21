@@ -10,6 +10,8 @@ Deleting and undoing a list item restores its scheduling dates and original posi
 
 Editing a list item sends changed fields, including values reset to their defaults. New items continue to omit default values.
 
+Clearing an existing item image sends an explicit null to remove its override; an untouched missing image remains omitted.
+
 The list service maps Admin playback aliases to the codec's canonical `fixed_order` and `playbackrate` fields; shader remains a canonical field. Adds, edits, and fresh reads use that same mapping.
 
 Per-item playback controls are limited to settings consumed by list playback; the unsupported per-item Loop option is not exposed.

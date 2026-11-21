@@ -38,7 +38,7 @@ function extractCustomFields(item) {
  * Build a sparse save payload, preserving explicit resets for edits.
  * Always includes label and input as they are required.
  */
-function buildSavePayload(formData, customFields, preserveImageClear, originalItem) {
+function buildSavePayload(formData, customFields, originalItem) {
   const payload = {
     label: formData.label?.trim() || '',
     input: formData.input?.trim() || ''
@@ -81,9 +81,10 @@ function buildSavePayload(formData, customFields, preserveImageClear, originalIt
     }
   }
 
-  // Controlled hosts can request an explicit null when an override is removed.
-  if (formData.image || preserveImageClear) {
-    payload.image = formData.image || null;
+  const originalImage = originalItem?.image ?? null;
+  const currentImage = formData.image ?? null;
+  if (currentImage !== originalImage) {
+    payload.image = currentImage;
   }
 
   // Merge custom fields
@@ -201,7 +202,7 @@ function SimpleMode({ formData, onChange, errors, sections, hideSection }) {
 /**
  * ListsItemEditor - Modal for editing list items with Simple/Full mode toggle
  */
-function ListsItemEditor({ hideSection = false, preserveImageClear = false, opened, onClose, onSave, item, loading, sections = [], isWatchlist = false }) {
+function ListsItemEditor({ hideSection = false, opened, onClose, onSave, item, loading, sections = [], isWatchlist = false }) {
   const [mode, setMode] = useState('simple');
   const [formData, setFormData] = useState({});
   const [customFields, setCustomFields] = useState({});
@@ -299,7 +300,7 @@ function ListsItemEditor({ hideSection = false, preserveImageClear = false, open
     e.preventDefault();
     if (!validate()) return;
 
-    const payload = buildSavePayload(formData, customFields, preserveImageClear, item);
+    const payload = buildSavePayload(formData, customFields, item);
     if (!hideSection) payload.sectionIndex = formData.sectionIndex;
     await onSave(payload);
   };
