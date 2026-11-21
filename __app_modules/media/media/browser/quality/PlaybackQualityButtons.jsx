@@ -11,9 +11,11 @@ export function ItemQualityButton({ item }) {
   const quality = usePlaybackQuality();
   if (!quality || !supportsQualityOverrides(item)) return null;
   const overrides = quality.getOverrides(item.contentId ?? item.id);
+  const summary = overrides.maxResolution ? ` · ${overrides.maxResolution}p`
+    : Object.keys(overrides).length ? ' · Custom' : '…';
   return <Button variant="default" leftSection={<IconAdjustments size={16} />}
     onClick={() => quality.openForItem(item)}>
-    Quality{overrides.maxResolution ? ` · ${overrides.maxResolution}p` : '…'}
+    Quality{summary}
   </Button>;
 }
 

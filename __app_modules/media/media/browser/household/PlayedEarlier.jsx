@@ -83,6 +83,7 @@ export function PlayedEarlier({ screenId, currentContentId = null }) {
           {items.map((row, index) => {
             const item = toItem({ ...row, kind: 'item' });
             if (!item) return null;
+            const title = typeof row.title === 'string' && row.title.trim() ? row.title.trim() : 'Untitled';
             const testId = `played-earlier-${index}`;
             const context = [row.grandparentTitle, playedAtLabel(row.startedAt ?? row.localTime)].filter(Boolean).join(' · ');
             return (
@@ -90,7 +91,7 @@ export function PlayedEarlier({ screenId, currentContentId = null }) {
                 <UnstyledButton
                   className="played-earlier-main"
                   data-testid={`${testId}-play`}
-                  aria-label={`Play ${row.title ?? 'this'}`}
+                  aria-label={`Play ${title}`}
                   aria-description={context || undefined}
                   onClick={() => run('tap', item)}
                 >
@@ -98,7 +99,7 @@ export function PlayedEarlier({ screenId, currentContentId = null }) {
                     ? <img className="played-earlier-thumb" src={row.thumbnail} alt="" loading="lazy" />
                     : <span className="played-earlier-thumb" aria-hidden />}
                   <span className="played-earlier-text">
-                    <span className="played-earlier-name">{row.title ?? 'Untitled'}</span>
+                    <span className="played-earlier-name">{title}</span>
                     <span className="played-earlier-meta" data-testid={`${testId}-when`}>{context}</span>
                   </span>
                 </UnstyledButton>
