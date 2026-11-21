@@ -1,3 +1,5 @@
+import { formatGoodreadsReadAt } from '../../../../shared/goodreadsDate.mjs';
+
 export default function GoodreadsBody({ item }) {
   const author = item.meta?.author || item.body || '';
   const rating = item.meta?.rating;
@@ -7,9 +9,7 @@ export default function GoodreadsBody({ item }) {
     ? Array.from({ length: 5 }, (_, i) => i < rating ? '\u2605' : '\u2606').join('')
     : null;
 
-  const readDate = readAt
-    ? new Date(readAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-    : null;
+  const readDate = formatGoodreadsReadAt(readAt) || null;
 
   return (
     <>

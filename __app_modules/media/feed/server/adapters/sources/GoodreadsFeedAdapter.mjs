@@ -10,6 +10,7 @@
 import imageSize from 'image-size';
 import { IFeedSourceAdapter, CONTENT_TYPES } from "../../application/ports/IFeedSourceAdapter.mjs";
 import { HttpClient } from '#system/services/HttpClient.mjs';
+import { formatGoodreadsReadAt } from '../../../shared/goodreadsDate.mjs';
 
 /**
  * Deterministic FNV-1a 32-bit hash of a string, base36-encoded.
@@ -115,8 +116,8 @@ export class GoodreadsFeedAdapter extends IFeedSourceAdapter {
       parts.push(stars);
     }
     if (meta?.readAt) {
-      const d = new Date(meta.readAt);
-      parts.push(`Read ${d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`);
+      const readDate = formatGoodreadsReadAt(meta.readAt);
+      if (readDate) parts.push(`Read ${readDate}`);
     }
     if (parts.length > 0) {
       sections.push({ type: 'body', data: { text: parts.join('  \u00b7  ') } });
