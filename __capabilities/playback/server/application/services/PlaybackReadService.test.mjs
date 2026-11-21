@@ -71,3 +71,26 @@ describe('PlaybackReadService — playing a container', () => {
     expect(result.kind).toBe('found');
   });
 });
+
+describe('PlaybackReadService.peekStartPosition', () => {
+  const svc = ({ item, startSec = 0 }) => {
+    const playResponseService = {
+      peekWatchState: async () => ({ playhead: startSec, duration: 6000 }),
+      startPositionFor: (_item, ws) => ws.playhead,
+      getWatchState: () => { throw new Error('the peek must not use the writing read'); },
+    };
+    return new PlaybackReadService({
+      contentIdResolver: { resolve: (id) => (id === 'nope:1' ? null : { source: 'plex', localId: '1' }) },
+      contentCatalog: { getItem: async () => item, progressNamespace: async () => 'plex' },
+      playResponseService,
+    });
+  };
+  it('answers the start second of a direct play', async () => {
+    expect(await svc({ item: { id: 'plex:1' }, startSec: 1234 }).peekStartPosition({ compoundId: 'plex:1' })).toEqual({ startSec: 1234 });
+  });
+  it('cannot know ahead for a container, a missing item or an unknown id', async () => {
+    expect(await svc({ item: { id: 'plex:1', itemType: 'container' } }).peekStartPosition({ compoundId: 'plex:1' })).toEqual({ startSec: null });
+    expect(await svc({ item: null }).peekStartPosition({ compoundId: 'plex:1' })).toEqual({ startSec: null });
+    expect(await svc({ item: {} }).peekStartPosition({ compoundId: 'nope:1' })).toEqual({ startSec: null });
+  });
+});

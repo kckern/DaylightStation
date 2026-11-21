@@ -2,7 +2,8 @@
  * useProvenanceIntro — the Media app's intro for the shared Player: the
  * streaming-service scene in front of a Plex title. The Player owns the gate
  * (cover, hold the first frame, step aside); this supplies the status, the
- * hold length and the scene drawn for each stage.
+ * hold length, where a play would start (`startSec`, for the early cover) and
+ * the scene drawn for each stage.
  *
  * `?provenance=0` on the page URL turns it off for one page load.
  *
@@ -41,8 +42,11 @@ export function useProvenanceIntro({ media, isPlex }) {
   );
   const introStatus = status === 'ready' && !data ? 'none' : (INTRO_STATUS[status] || 'none');
 
+  // startSec lets the Player start the scene before play info arrives
+  // (useIntroHost), only when the title is known to start from the top.
+  const startSec = data?.startSec ?? null;
   return useMemo(
-    () => (eligible ? { status: introStatus, minHoldMs, render } : null),
-    [eligible, introStatus, minHoldMs, render],
+    () => (eligible ? { status: introStatus, minHoldMs, render, startSec } : null),
+    [eligible, introStatus, minHoldMs, render, startSec],
   );
 }

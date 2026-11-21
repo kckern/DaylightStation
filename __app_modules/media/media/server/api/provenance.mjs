@@ -6,18 +6,36 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
  * Provenance API (mounted at /api/v1/provenance): which streaming service a
  * title is shown as coming from, for the Player's provenance bumper.
  *
- *   GET /:ratingKey      -> { provenance: { provider, name, tier, offerType, checkedAt, logo } | null }
+ *   GET /:ratingKey      -> { provenance: { provider, name, tier, offerType, checkedAt, logo } | null,
+ *                             startSec: number | null }
+ *                           startSec: where a direct play of the title would
+ *                           start (0 = from the top), read without side
+ *                           effects; null when it cannot be known ahead. The
+ *                           Player uses it to start the scene before play info
+ *                           arrives, without flashing a logo over a resume.
  *   GET /logo/:provider  -> the provider's logo; `?variant=white` prefers the
  *                           white logo for dark screens (falls back to the base logo)
  *
  * Reference: __docs/reference/media/provenance.md
  */
-export function createProvenanceRouter({ getTitleProvenance, logos, logger = console } = {}) {
+export function createProvenanceRouter({ getTitleProvenance, logos, peekPlaybackStart = null, logger = console } = {}) {
   if (!getTitleProvenance || typeof getTitleProvenance.execute !== 'function') {
     throw new Error('createProvenanceRouter requires getTitleProvenance');
   }
   if (!logos || typeof logos.open !== 'function') throw new Error('createProvenanceRouter requires logos');
   const router = express.Router();
+
+  /** Where a direct play would start; null when unknown or the read fails. */
+  const readStartSec = async (ratingKey) => {
+    if (typeof peekPlaybackStart !== 'function') return null;
+    try {
+      const { startSec } = (await peekPlaybackStart(`plex:${ratingKey}`)) || {};
+      return Number.isFinite(startSec) ? startSec : null;
+    } catch (error) {
+      logger.warn?.('provenance.start.read-failed', { ratingKey, error: error?.message });
+      return null;
+    }
+  };
 
   router.get('/logo/:provider', (req, res) => {
     const provider = String(req.params.provider);
@@ -37,9 +55,12 @@ export function createProvenanceRouter({ getTitleProvenance, logos, logger = con
     const ratingKey = String(req.params.ratingKey).replace(/^plex:/, '');
     if (!/^\d+$/.test(ratingKey)) return res.status(400).json({ error: 'bad ratingKey' });
     const found = await getTitleProvenance.execute({ ratingKey });
+    // Only a title with a scene needs its start (the read asks Plex for progress).
+    const startSec = found ? await readStartSec(ratingKey) : null;
     res.set('Cache-Control', 'no-store');
     res.json({
       provenance: found ? { ...found, logo: `/api/v1/provenance/logo/${found.provider}` } : null,
+      startSec,
     });
   }));
 

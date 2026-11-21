@@ -6,8 +6,9 @@
  * status: idle | loading | ready | none | failed
  *   idle  -> disabled, or not a numeric Plex rating key (never fetched)
  *   failed -> the request failed or did not answer in PROVENANCE_FETCH_TIMEOUT_MS
- *   ready -> { provider, name, tier, logo, logoUrl, plate } with the logo loaded;
- *            plate = the logo is too dark for the field and gets a light plate
+ *   ready -> { provider, name, tier, logo, logoUrl, plate, startSec } with the logo loaded;
+ *            plate = the logo is too dark for the field and gets a light plate;
+ *            startSec = where a play would start (0 = the top), null if unknown
  *   none  -> nothing confirmed (or the logo would not load): no handoff
  *
  * Reference: __docs/reference/media/provenance.md
@@ -85,8 +86,10 @@ export function useProvenance(contentId, { enabled = true } = {}) {
         }
         // A logo too dark for the field (Disney+ navy) is drawn on a light plate.
         const plate = img ? imageNeedsPlate(img) : false;
-        if (settle({ data: { ...p, logoUrl, plate }, status: 'ready' })) {
-          logger().info('provenance.ready', { ratingKey: rk, provider: p.provider, tier: p.tier, plate, elapsedMs: Date.now() - startedAt });
+        // Where a play of the title would start (0 = the top), or null when unknown.
+        const startSec = Number.isFinite(body?.startSec) ? body.startSec : null;
+        if (settle({ data: { ...p, logoUrl, plate, startSec }, status: 'ready' })) {
+          logger().info('provenance.ready', { ratingKey: rk, provider: p.provider, tier: p.tier, plate, startSec, elapsedMs: Date.now() - startedAt });
         }
       })
       .catch((error) => {

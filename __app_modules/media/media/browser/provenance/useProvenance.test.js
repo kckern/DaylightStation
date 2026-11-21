@@ -9,7 +9,7 @@ vi.mock('./logoContrast.js', () => ({ imageNeedsPlate: () => false }));
 
 const { useProvenance, PROVENANCE_FETCH_TIMEOUT_MS } = await import('./useProvenance.js');
 
-const BODY = { provenance: { provider: 'hoopla', tier: 'free', logo: '/logo/hoopla' } };
+const BODY = { provenance: { provider: 'hoopla', tier: 'free', logo: '/logo/hoopla' }, startSec: 0 };
 
 /** A fetch that answers per rating key; `hang` keys never answer (until aborted). */
 function stubFetch({ hang = [] } = {}) {
@@ -49,6 +49,13 @@ describe('useProvenance', () => {
     rerender({ id: 'plex:2' });
     expect(seen[0]).toEqual(['plex:2', 'loading', null]);
     expect(seen.some(([id, , provider]) => id === 'plex:2' && provider)).toBe(false);
+  });
+
+  it('carries where a play would start, for the early cover', async () => {
+    vi.stubGlobal('fetch', stubFetch());
+    const { result } = renderHook(() => useProvenance('plex:3'));
+    await vi.waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.data.startSec).toBe(0);
   });
 
   it('gives up a lookup that does not answer in time', async () => {

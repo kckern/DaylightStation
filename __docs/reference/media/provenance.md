@@ -48,6 +48,13 @@ title whose id is not a numeric Plex rating key gets no intro at all (the lookup
 could never ask). The Player's `useIntroGate` owns all timing (see "Presentation
 contract and the intro slot" in `__docs/reference/content/content-playback.md`):
 
+- The scene starts from the play request, before the Player has fetched the
+  title's play info. The provenance answer carries `startSec`: where a play of the
+  title would start, read by the playback capability's read-only
+  `peekStartPosition` (same resume rule as `/play`, no bookmark or sync write). When
+  it is inside 5 s the scene covers the play-info fetch too; when it is a resume or
+  unknown, the scene waits for the play info as before. The hold counts from when
+  the scene first appeared.
 - While `pending`, the Player holds its spinner back for up to 1.5 s
   (`INTRO_WAIT_COVER_MS`) so the scene is not preceded by a spinner flash; past that
   the spinner shows normally. If the answer arrives before the film has rolled 1 s,
@@ -124,6 +131,9 @@ mount), and the answer is cached:
 
 - A movie or show is recorded under its own rating key; an episode or season under
   its show.
+- A kind outside `kinds` (a music track; a show when only movies are on) spends no
+  lookup and records nothing. The Player asks for every Plex title it starts,
+  music included, so this is what keeps the allowance for films.
 - Plex `Guid` entries give the id: IMDb when present, else a typed TMDB id
   (`movie-603`, `tv-1396`). No external id: recorded with `note: no external id`,
   no lookup spent.
@@ -142,7 +152,9 @@ to 1.5 s and the scene still appears if the answer is in before the film has rol
 
 `/api/v1/provenance`:
 
-- `GET /:ratingKey` (bare or `plex:`-prefixed) → `{ provenance: { ratingKey, provider, name, tier, offerType, checkedAt, logo } | null }`
+- `GET /:ratingKey` (bare or `plex:`-prefixed) → `{ provenance: { ratingKey, provider, name, tier, offerType, checkedAt, logo } | null, startSec: number | null }`.
+  `startSec` is read only when a provider was found; `null` when unknown or the read
+  failed (warn `provenance.start.read-failed`).
 - `GET /logo/:provider[?variant=white]` → the logo (white variant preferred when
   asked, else the base logo); cached for a day
 

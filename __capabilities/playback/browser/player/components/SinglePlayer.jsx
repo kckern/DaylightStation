@@ -15,6 +15,13 @@ import { TitleCardRenderer } from '../renderers/TitleCardRenderer.jsx';
 import { PlayerOverlayLoading } from './PlayerOverlayLoading.jsx';
 import { SlideshowMetadataOverlay } from './SlideshowMetadataOverlay.jsx';
 import { useShaderDiagnostics } from '../hooks/useShaderDiagnostics.js';
+import { useIntroHost } from '../hooks/useIntroHost.js';
+import { useVideoIntro } from '../../presentation.mjs';
+import { REVIEW_GOTO } from '../../player-support/reviewParams.js';
+
+/** useVideoIntro arguments that ask for no intro. */
+const NO_INTRO_ARGS = Object.freeze({ media: null, isPlex: false });
+const PLEX_ID = /^plex:\d+$/;
 
 /**
  * Single player component that handles different media types
@@ -409,6 +416,35 @@ export function SinglePlayer(props = {}) {
     };
   }, [showVideoMeta, mediaInfo?.id, mediaInfo?.mediaUrl]);
 
+  // The installed intro (e.g. Media's provenance scene) is owned here from the
+  // play request, so the scene, not a spinner, covers the play-info fetch.
+  // VideoPlayer's gate times it once it mounts (hooks/useIntroHost.js).
+  const readyFormat = isReady ? mediaInfo?.format : null;
+  const introForVideo = !isReady
+    || (isMediaFormat(readyFormat) && readyFormat !== 'audio' && readyFormat !== 'image');
+  const introContentId = isReady
+    ? (mediaInfo?.assetId || mediaInfo?.key || mediaInfo?.plex || null)
+    : effectiveContentId;
+  const introEligible = introForVideo && PLEX_ID.test(String(introContentId || ''));
+  const intro = useVideoIntro(introEligible ? { media: { assetId: introContentId }, isPlex: true } : NO_INTRO_ARGS);
+  // A start the request already fixes; otherwise the intro's own read of where
+  // a play of the title would start (null: unknown, so no early cover).
+  const explicitStartSec = REVIEW_GOTO != null ? REVIEW_GOTO
+    : play?.segment ? play.segment.start
+    : play?.seconds != null ? play.seconds
+    : play?.resume === false ? 0
+    : null;
+  const { stage: introStage, introHost } = useIntroHost({
+    intro,
+    knownStartSec: explicitStartSec != null ? Number(explicitStartSec) : (intro?.startSec ?? null),
+    recovery: remountDiagnostics != null,
+    resetKey: introContentId,
+  });
+  const introLayer = intro && (introStage === 'covering' || introStage === 'holding' || introStage === 'playing')
+    // Its own layer, below the loading/recovery layer (Player.scss): recovery UI paints over the scene.
+    ? <div className="player-intro-layer">{intro.render(introStage)}</div>
+    : null;
+
   // Calculate plexId from available sources - plex prop is passed directly from Player
   const initialPlexId = plex || media || mediaInfo?.assetId || mediaInfo?.key || mediaInfo?.plex || null;
 
@@ -512,6 +548,7 @@ export function SinglePlayer(props = {}) {
           maxResolution={mediaInfo?.maxResolution ?? play?.maxResolution ?? null}
           watchedDurationProvider={getWatchedDuration}
           upscaleEffects={upscaleEffects}
+          {...(PlayerComponent === VideoPlayer ? { introHost } : {})}
         />
       );
       if (!showVideoMeta) return videoEl;
@@ -575,6 +612,7 @@ export function SinglePlayer(props = {}) {
         </div>
       )}
       {renderByFormat()}
+      {introLayer}
     </>
   );
 

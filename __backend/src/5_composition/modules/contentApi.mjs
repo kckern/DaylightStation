@@ -148,6 +148,9 @@ export function createApiRouters(config) {
       lessonSittingLog,
       legitJudgements,
       markContentWatched,
+      // Read-only: where a direct play would start (the provenance intro asks
+      // before play whether a title starts from the top).
+      peekPlaybackStart: (compoundId) => playbackReadService.peekStartPosition({ compoundId }),
     }
   };
 }
