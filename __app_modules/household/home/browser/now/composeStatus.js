@@ -94,7 +94,8 @@ const isDeviceInternal = (e) => /device_temperature|internal|_outdoor_/.test(e.i
 
 /** The one temperature a room is said to have: a thermostat's, else its first room sensor's. */
 export function roomTemperature(roomEntities) {
-  const thermostat = roomEntities.find((e) => e.domain === 'climate' && Number.isFinite(e.detail?.currentTemperature));
+  const thermostat = roomEntities.find((e) => e.domain === 'climate' && e.stateClass !== 'unavailable'
+    && Number.isFinite(e.detail?.currentTemperature));
   if (thermostat) return { value: thermostat.detail.currentTemperature, entityId: thermostat.id, thermostat };
   const sensor = roomEntities.filter(isTempSensor).sort((a, b) => Number(isDeviceInternal(a)) - Number(isDeviceInternal(b)))[0];
   if (!sensor || isDeviceInternal(sensor)) return null;
