@@ -122,3 +122,19 @@ describe('fitness browser transport recovery', () => {
   });
 
 });
+
+describe('no session: samples do not flip the state', () => {
+  it('stays quiet/inactive while sensors stream with no active session', () => {
+    let time = 0;
+    const states = [];
+    const recovery = createTransportRecovery({ now: () => time, refreshSubscription: vi.fn(), reconnect: vi.fn(), onState: (s) => states.push(`${s.state}/${s.reason}`) });
+    for (let i = 0; i < 10; i += 1) {
+      time += 500; recovery.observeSample({});
+      time += 500; recovery.tick({ active: false });
+    }
+    expect(states).toEqual([]); // starts quiet/inactive and never changes
+    recovery.tick({ active: true });
+    time += 100; recovery.observeSample({});
+    expect(states.at(-1)).toBe('healthy/sample-delivered');
+  });
+});
