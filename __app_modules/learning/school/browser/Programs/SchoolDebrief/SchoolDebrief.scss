@@ -1,28 +1,202 @@
-// Colours only via --ds-* (school pack). Buttons are TouchButton; no button CSS here.
-// Sized for the 1280x800 Portal; rem-based so the stage scales.
-.sd-program { display: grid; grid-template-rows: auto 1fr; min-height: 100%; padding: 1.5rem 2.5rem; background: var(--ds-background); color: var(--ds-text-high); }
-.sd-header { display: flex; gap: 1rem; align-items: baseline; font-size: 1.1rem; color: var(--ds-text-mid);
-  &__title { font-weight: 700; color: var(--ds-text-high); }
-  &__late { padding: 0.1rem 0.6rem; border-radius: 999px; background: var(--ds-warning); color: var(--ds-background); font-weight: 700; }
-  &__step { margin-left: auto; } }
-.sd-header__learner { display: inline-flex; align-items: center; gap: 0.75rem; align-self: center; font-size: 1.5rem; font-weight: 600; color: var(--ds-text-high); }
-.sd-header__learner .piano-avatar { inline-size: 3.5rem; block-size: 3.5rem; }
-.sd-item { display: flex; flex-direction: column; gap: 1.25rem; max-width: 60rem; margin: 1.5rem auto 0; width: 100%; }
-.sd-prompt__text { font-size: 2.2rem; line-height: 1.25; margin: 0; }
-.sd-prompt__field { font-size: 1.6rem; line-height: 1.4; padding: 0.9rem 1rem; border-radius: 12px; border: 2px solid var(--ds-border); background: var(--ds-surface); color: var(--ds-text-high); resize: none; }
-.sd-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-.sd-choice__letter { font-weight: 800; margin-right: 0.5rem; }
-.sd-choices button.is-answer:disabled { opacity: 1; border-color: var(--ds-success); color: var(--ds-text-high); }
-.sd-result { font-size: 1.6rem; &.is-right { color: var(--ds-success); } &.is-wrong { color: var(--ds-text-high); } }
-.sd-controls { display: flex; gap: 1rem; justify-content: flex-end; &--stack { flex-direction: column; align-items: stretch; } }
-.sd-prompt__hearing { font-size: 1.3rem; margin: 0; color: var(--ds-text-mid, var(--ds-text-high)); }
-.sd-notice, .sd-nudge { font-size: 1.3rem; color: var(--ds-warning); }
-.sd-thinking { font-size: 1.8rem; text-align: center; margin-top: 6rem; color: var(--ds-text-mid); }
-.sd-summary__quote { font-size: 1.6rem; border-left: 4px solid var(--ds-accent); padding-left: 1rem; margin: 0; }
-.sd-summary__earned { list-style: none; padding: 0; font-size: 1.4rem; }
-.sd-summary__week { font-weight: 700; margin-top: 0.5rem; }
-.sd-summary__soon { font-size: 1.3rem; color: var(--ds-text-mid); }
+// After-school debrief, on the 1280x800 Portal (and any School surface).
+// Colours only via --ds-* (school pack); translucent tints are color-mix() of
+// those, never a fresh rgba literal (School.scss). Buttons are TouchButton;
+// no button CSS here beyond placement.
+//
+// Layout (owner, 2026-11-20): a left rail that is always on screen (who, where
+// in the debrief, the way out) and one panel on the right holding the step.
+// The panel's controls sit at its foot, so Next is in the same place on every
+// step. The SchoolActivityFrame "focus" layout centres text; this program sets
+// its own alignment and fills the frame.
 
-.sd-chips__grid { display: flex; flex-wrap: wrap; gap: 0.8rem; }
+.sd-program {
+  box-sizing: border-box;
+  flex: 1 1 auto; align-self: stretch;
+  width: 100%; height: 100%; min-height: 0;
+  display: grid; grid-template-columns: 17rem minmax(0, 1fr); gap: 1.25rem;
+  padding: 1.25rem;
+  background: var(--ds-background); color: var(--ds-text-high);
+  text-align: left;
+}
+
+// ── Rail ────────────────────────────────────────────────────────────────────
+.sd-rail {
+  display: flex; flex-direction: column; gap: 1.25rem; min-height: 0;
+  padding: 1.5rem 1.25rem;
+  border-radius: 20px; background: var(--ds-surface-alt); border: 1px solid var(--ds-border);
+
+  &__learner { display: flex; align-items: center; gap: 0.9rem; min-width: 0;
+    .piano-avatar { inline-size: 4rem; block-size: 4rem; flex: 0 0 auto; } }
+  &__name { font-size: 1.6rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__title { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+    font-size: 0.95rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ds-text-mid); }
+  &__late { padding: 0.15rem 0.6rem; border-radius: 999px; letter-spacing: 0.02em;
+    background: color-mix(in srgb, var(--ds-warning) 18%, transparent); color: var(--ds-warning); }
+  &__foot { margin-top: auto; display: flex; flex-direction: column; gap: 0.5rem;
+    .ds-touch { width: 100%; min-width: 0; font-size: 1.25rem; } }
+  &__saved { margin: 0; font-size: 0.95rem; color: var(--ds-text-low); text-align: center; }
+}
+
+.sd-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.sd-step {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.6rem 0.75rem; border-radius: 12px;
+  font-size: 1.2rem; color: var(--ds-text-low);
+
+  &__mark {
+    flex: 0 0 auto; display: grid; place-items: center;
+    inline-size: 1.6rem; block-size: 1.6rem; border-radius: 50%;
+    border: 2px solid var(--ds-border); box-sizing: border-box;
+    .school-icon { display: flex; inline-size: 100%; block-size: 100%; svg { inline-size: 100%; block-size: 100%; } }
+  }
+  &__label { flex: 1 1 auto; min-width: 0; }
+  &__detail { font-variant-numeric: tabular-nums; font-size: 1rem; color: var(--ds-text-mid); }
+
+  &.is-done { color: var(--ds-text-mid);
+    .sd-step__mark { border-color: transparent; color: var(--ds-success); } }
+  &.is-current {
+    color: var(--ds-text-high); font-weight: 700;
+    background: color-mix(in srgb, var(--ds-accent) 14%, transparent);
+    .sd-step__mark { border-color: var(--ds-accent); background: radial-gradient(circle, var(--ds-accent) 0 34%, transparent 38%); }
+  }
+}
+
+// ── Main column ─────────────────────────────────────────────────────────────
+.sd-main { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; min-height: 0; }
+
+.sd-nudge, .sd-alert {
+  margin: 0; padding: 0.65rem 1rem; border-radius: 12px; font-size: 1.15rem;
+}
+.sd-nudge { color: var(--ds-warning); background: color-mix(in srgb, var(--ds-warning) 12%, transparent); }
+.sd-alert { color: var(--ds-danger); background: color-mix(in srgb, var(--ds-danger) 12%, transparent); }
+
+.sd-panel {
+  flex: 1 1 auto; min-height: 0; overflow: auto;
+  display: flex; flex-direction: column;
+  padding: 2rem 2.5rem 1.75rem;
+  border-radius: 20px; background: var(--ds-surface); border: 1px solid var(--ds-border);
+
+  &__step { margin: 0 0 0.75rem; font-size: 0.95rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ds-accent); }
+}
+
+// Every step (and the shared ReflectionResponse) fills the panel; its controls
+// drop to the panel's foot.
+.sd-panel .sd-item,
+.sd-panel .reflection-response {
+  flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column; gap: 1.25rem;
+  width: 100%; max-width: none; margin: 0;
+}
+.sd-panel .sd-controls,
+.sd-panel .reflection-controls {
+  margin-top: auto; padding-top: 0.5rem;
+  display: flex; flex-wrap: wrap; gap: 1rem; justify-content: flex-end;
+}
+
+.sd-prompt__text,
+.sd-panel .reflection-response__prompt {
+  margin: 0; font-size: 2rem; line-height: 1.25; font-weight: 700; color: var(--ds-text-high);
+}
+.sd-prompt__field,
+.sd-panel .reflection-response__field {
+  box-sizing: border-box; width: 100%;
+  font: inherit; font-size: 1.5rem; line-height: 1.4;
+  padding: 1rem 1.15rem; border-radius: 14px;
+  border: 2px solid var(--ds-border); background: var(--ds-background); color: var(--ds-text-high);
+  resize: none;
+  &:focus { outline: none; border-color: var(--ds-accent); }
+  &::placeholder { color: var(--ds-text-low); }
+}
+.sd-panel .reflection-response__field { flex: 1 1 auto; min-height: 7rem; }
+.sd-prompt__hearing,
+.sd-panel .reflection-response__status,
+.sd-panel .reflection-response__hint { margin: 0; font-size: 1.2rem; color: var(--ds-text-mid); }
+.sd-panel .reflection-response__notice { margin: 0; font-size: 1.2rem; color: var(--ds-warning); }
+
+// Chips: the classes they had today.
+.sd-chips__grid { display: flex; flex-wrap: wrap; gap: 0.75rem; }
 .sd-chips__other { max-width: 28rem; }
-.sd-summary__reason { margin: 0.3rem 0; font-size: 1.4rem; }
+
+// Multiple choice.
+.sd-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.sd-choices .ds-touch { justify-content: flex-start; text-align: left; }
+.sd-choice__letter {
+  display: inline-grid; place-items: center; flex: 0 0 auto;
+  inline-size: 2.2rem; block-size: 2.2rem; border-radius: 10px;
+  font-weight: 800; background: var(--ds-surface-alt); color: var(--ds-accent);
+}
+.sd-choices button.is-answer:disabled { opacity: 1; border-color: var(--ds-success); color: var(--ds-text-high); }
+.sd-result {
+  margin: 0; padding: 0.75rem 1rem; border-radius: 12px; font-size: 1.5rem;
+  background: var(--ds-surface-alt);
+  &.is-right { color: var(--ds-success); background: color-mix(in srgb, var(--ds-success) 14%, transparent); }
+  &.is-wrong { color: var(--ds-text-high); }
+}
+
+// Waiting, loading and notices: centred in the panel.
+.sd-panel .sd-waiting { justify-content: center; align-items: center; text-align: center; }
+.sd-thinking { margin: 0; display: inline-flex; align-items: center; gap: 0.75rem; font-size: 1.6rem; color: var(--ds-text-mid);
+  .school-icon { display: flex; inline-size: 1.6rem; block-size: 1.6rem; svg { inline-size: 100%; block-size: 100%; } } }
+.sd-notice { margin: 0; font-size: 1.4rem; color: var(--ds-text-high); }
+.sd-panel .sd-waiting .sd-controls { margin-top: 1rem; justify-content: center; }
+
+// Start card.
+.sd-panel .sd-start { justify-content: center; gap: 1rem; }
+.sd-start__title { margin: 0; display: flex; align-items: center; gap: 0.75rem; font-size: 2.6rem; line-height: 1.15;
+  .school-icon { display: flex; inline-size: 2.4rem; block-size: 2.4rem; color: var(--ds-accent); svg { inline-size: 100%; block-size: 100%; } } }
+.sd-start__lede { margin: 0; font-size: 1.4rem; color: var(--ds-text-mid); }
+.sd-panel .sd-start .sd-controls { margin-top: 1.5rem; }
+.sd-controls--stack { flex-direction: column; align-items: flex-start; .ds-touch { min-width: 22rem; justify-content: space-between; } }
+
+// ── Summary ─────────────────────────────────────────────────────────────────
+.sd-summary__head { display: flex; align-items: center; gap: 1rem; }
+.sd-summary__mark {
+  flex: 0 0 auto; display: grid; place-items: center;
+  inline-size: 3rem; block-size: 3rem; border-radius: 50%;
+  color: var(--ds-success); background: color-mix(in srgb, var(--ds-success) 16%, transparent);
+  .school-icon { display: flex; inline-size: 1.9rem; block-size: 1.9rem; svg { inline-size: 100%; block-size: 100%; } }
+}
+.sd-summary__title { margin: 0; flex: 1 1 auto; font-size: 2rem; line-height: 1.2; }
+.sd-pill {
+  flex: 0 0 auto; padding: 0.35rem 0.9rem; border-radius: 999px; font-size: 1.05rem; font-weight: 700;
+  color: var(--ds-success); background: color-mix(in srgb, var(--ds-success) 14%, transparent);
+  &.is-late { color: var(--ds-warning); background: color-mix(in srgb, var(--ds-warning) 14%, transparent); }
+}
+
+.sd-summary__stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 1rem; }
+.sd-summary__stats:empty { display: none; }
+// StatCard is a dashboard tile; at a child's desk it reads at kiosk scale.
+.sd-stat .ds-stat {
+  height: 100%; box-sizing: border-box; gap: 0.35rem;
+  padding: 1.1rem 1.35rem; border-radius: 16px; background: var(--ds-surface-alt);
+  &--emphasis { border-left-width: 5px; }
+  .ds-stat__label { font-size: 1rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ds-text-mid); }
+  .ds-stat__value { gap: 0.5rem; }
+  .ds-stat__number { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 3rem; line-height: 1; }
+  .ds-stat__unit { font-size: 1.25rem; color: var(--ds-text-mid); }
+  .ds-stat__trend { font-size: 1.2rem; color: var(--ds-text-mid); }
+}
+.sd-stat__coin { flex: 0 0 auto; }
+
+.sd-summary__words.ds-card {
+  padding: 1.1rem 1.35rem; border-radius: 16px; background: var(--ds-surface-alt);
+  .ds-card__title { font-size: 1rem; }
+}
+.sd-summary__quote {
+  margin: 0; font-size: 1.45rem; line-height: 1.45; color: var(--ds-text-high);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden;
+  &::before { content: '\201C'; } &::after { content: '\201D'; }
+}
+
+.sd-badges { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.75rem; }
+.sd-badge {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  padding: 0.5rem 1rem; border-radius: 999px; font-size: 1.15rem; font-weight: 600;
+  color: var(--ds-success); background: color-mix(in srgb, var(--ds-success) 14%, transparent);
+  .school-icon { display: flex; inline-size: 1.2rem; block-size: 1.2rem; svg { inline-size: 100%; block-size: 100%; } }
+}
+
+// The voice band only while a take is running: idle, it is a stray hairline
+// under the box. The box grows into the space when the band is gone.
+.sd-panel .reflection-response .lang-voice { width: 100%; height: 3.5rem; }
+.sd-panel .reflection-response:not([data-recording]) .lang-voice { display: none; }

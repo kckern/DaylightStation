@@ -1,0 +1,22 @@
+// TypedText: a line typed out behind a blinking block cursor. The cursor is
+// zero-width in layout (absolutely placed after the last typed character), so
+// the line wraps exactly as the finished text will.
+.typed { position: relative; }
+.typed__sr {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+.typed__rest::after { content: attr(data-rest); visibility: hidden; }
+.typed__cursor {
+  position: relative; display: inline-block; width: 0; vertical-align: baseline;
+  &::after {
+    content: ''; position: absolute; left: 0.06em; bottom: -0.12em;
+    width: 0.5em; height: 1.05em;
+    background: var(--ds-accent);
+    box-shadow: 0 0 0.45em color-mix(in srgb, var(--ds-accent) 70%, transparent);
+    animation: ds-cursor-blink calc(var(--ds-motion-base) * 5) steps(1, end) infinite; // ~1 s; keyframes in lib/ui/ds.scss
+  }
+}
+// Solid while it advances; it blinks only once the line has stopped.
+.typed__cursor.is-typing::after { animation: none; }
+@media (prefers-reduced-motion: reduce) { .typed__cursor::after { animation: none; } }

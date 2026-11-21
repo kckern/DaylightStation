@@ -1,5 +1,6 @@
 import { TouchButton } from "../../../../../../../frontend/src/lib/ui/index.js";
 import { useSchoolDebriefKeys, speak } from "../useSchoolDebriefKeys.js";
+import TypedText from "../../shared/TypedText.jsx";
 
 const LETTERS = ['a', 'b', 'c', 'd'];
 /** A frozen multiple-choice follow-up. 1–4 or A–D answer; result shows at once; Space/Enter continue. */
@@ -10,7 +11,7 @@ export default function ChoiceItem({ question, result = null, busy = false, onAn
     : { tab: () => speak(question.prompt), ...Object.fromEntries(question.options.flatMap((o, i) => [[String(i + 1), () => choose(o)], [LETTERS[i], () => choose(o)]])) });
   return (
     <section className="sd-item sd-choice" aria-label="Question">
-      <h2 className="sd-prompt__text">{question.prompt}</h2>
+      <h2 className="sd-prompt__text"><TypedText text={question.prompt} /></h2>
       <div className="sd-choices" role="group" aria-label="Choices">
         {question.options.map((opt, i) => (
           <TouchButton key={opt} variant="choice" keyHint={`${i + 1}`} disabled={busy || Boolean(result)} onClick={() => choose(opt)}
@@ -21,7 +22,7 @@ export default function ChoiceItem({ question, result = null, busy = false, onAn
       </div>
       {result && (
         <p className={`sd-result ${result.correct ? 'is-right' : 'is-wrong'}`} role="status">
-          {result.correct ? 'Yes!' : `The answer was: ${result.answer}`}
+          <TypedText text={result.correct ? 'Yes!' : `The answer was: ${result.answer}`} />
         </p>
       )}
       {result && <div className="sd-controls"><TouchButton variant="primary" keyHint="Space" onClick={onContinue}>Next</TouchButton></div>}

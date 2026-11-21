@@ -1,7 +1,7 @@
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import SchoolDebriefProgram from "./SchoolDebriefProgram.jsx";
-import SchoolDebriefHeaderForIdentity from "./SchoolDebriefHeader.jsx";
+import SchoolDebriefRail, { debriefSteps } from "./SchoolDebriefRail.jsx";
 const api = vi.hoisted(() => ({}));
 vi.mock("./schoolDebriefApi.js", () => ({ createSchoolDebriefApi: () => api }));
 vi.mock("./schoolDebriefLog.js", () => ({ schoolDebriefLog: new Proxy({}, { get: () => vi.fn() }) }));
@@ -68,7 +68,7 @@ describe('SchoolDebriefProgram start card', () => {
       school.earningsPreview.mockImplementation(async () => ok({ totals: { silver: calls++ ? 9 : 0 }, lines: calls > 1 ? [{ ruleId: 'fitness', label: 'Exercise', amount: { silver: 9, gems: 0 } }] : [] }));
       await run();
       expect(await screen.findByText(/Weekly earnings preview/i)).toBeInTheDocument();
-      expect(screen.getByText(/9 silver this week/)).toBeInTheDocument();
+      expect(screen.getByRole('group', { name: '9 silver this week' })).toHaveTextContent(/9\s*silver this week/);
       expect(screen.queryByText(/\+9 silver/)).toBeNull();
     });
   });
@@ -315,12 +315,17 @@ describe('SchoolDebriefProgram start card', () => {
       expect(screen.queryByRole('alert')).toBeNull();
       expect(api.clarify).toHaveBeenCalledTimes(1);
     });
-    it('summary shows the reason and the earned bonus lines', async () => {
+    // Owner, 2026-11-20: the summary quotes the CHILD, never the grader's
+    // levelReason (the model describing the child back to them).
+    it('summary quotes the child, not the grader, with the quiz and what was recognised', async () => {
       school.economyBank.mockReset(); school.economyBank.mockResolvedValue(ok({ mode: 'dry-run' }));
-      api.day = vi.fn(async (d) => ok({ studyDay: d, phase: 'completed', next: null, entries: {}, late: false,
-        summary: { level: 4, levelReason: 'You told me how the press squeezes the apples', rich: true, teachable: true, substantive: true, quiz: { right: 1, graded: 1 } } }));
+      api.day = vi.fn(async (d) => ok({ studyDay: d, phase: 'completed', next: null, late: false,
+        entries: { moment: { text: 'We pressed apples at the farm' } },
+        summary: { level: 4, levelReason: 'You told me how the press squeezes the apples', rich: true, teachable: true, substantive: true, quiz: { right: 1, graded: 2 } } }));
       render(<SchoolDebriefProgram learnerId="test-learner" debriefGrant="g" lateDay={null} today="2026-10-21" onExit={vi.fn()} />);
-      expect(await screen.findByText('You told me how the press squeezes the apples')).toBeInTheDocument();
+      expect(await screen.findByText('We pressed apples at the farm')).toBeInTheDocument();
+      expect(screen.queryByText('You told me how the press squeezes the apples')).toBeNull();
+      expect(screen.queryByText(/of 2|right/)).toBeNull(); // no score on the child's summary
       expect(screen.getByText('You told me a real moment')).toBeInTheDocument();
       expect(screen.getByText('You explained it so someone could try it')).toBeInTheDocument();
       expect(await screen.findByText('Coins start soon')).toBeInTheDocument();
@@ -367,9 +372,51 @@ describe('SchoolDebriefProgram start card', () => {
   });
 });
 
-it('shows whose debrief this is in the header', () => {
-  render(<SchoolDebriefHeaderForIdentity learnerId="kid" learnerName="Kid" view={null} promptIdx={0} promptCount={0} />);
-  const header = screen.getByRole('banner');
-  expect(header).toHaveTextContent('Kid');
-  expect(header.querySelector('img[src*="/img/users/kid"]')).toBeTruthy();
+it('shows whose debrief this is in the rail', () => {
+  render(<SchoolDebriefRail learnerId="kid" learnerName="Kid" steps={[]} />);
+  const rail = screen.getByRole('complementary', { name: 'Debrief progress' });
+  expect(rail).toHaveTextContent('Kid');
+  expect(rail.querySelector('img[src*="/img/users/kid"]')).toBeTruthy();
+});
+
+describe('debrief rail steps', () => {
+  const view = (extra) => ({ phase: 'answering', entries: {}, ...extra });
+  const states = (steps) => steps.map((s) => `${s.id}:${s.state}`);
+  it('names every server prompt and ends with Questions; nothing is current before starting', () => {
+    const steps = debriefSteps({ prompts: PROMPTS, view: null, day: null, promptIdx: 0 });
+    expect(steps.map((s) => s.label)).toEqual(['Classes', 'A moment', 'Teach it', 'What was hard', 'Questions']);
+    expect(steps.every((s) => s.state === 'todo')).toBe(true);
+  });
+  it('marks the prompt on screen current and the earlier ones done', () => {
+    expect(states(debriefSteps({ prompts: PROMPTS, view: view(), day: 'd', promptIdx: 2 })))
+      .toEqual(['classes:done', 'moment:done', 'teach:current', 'hard:todo', 'questions:todo']);
+  });
+  it('moves to Questions, with a count, once the server has them', () => {
+    const steps = debriefSteps({ prompts: PROMPTS, view: view({ questions: [{ id: 'q1' }, { id: 'q2' }], answers: { q1: {} } }), day: 'd', promptIdx: 4 });
+    expect(states(steps)).toEqual(['classes:done', 'moment:done', 'teach:done', 'hard:done', 'questions:current']);
+    expect(steps.at(-1).detail).toBe('1/2');
+  });
+  it('an unknown prompt id reads as its part number', () => {
+    expect(debriefSteps({ prompts: [{ id: 'new-one', text: 'x' }], view: null, day: null, promptIdx: 0 })[0].label).toBe('Part 1');
+  });
+  it('a finished day is all done', () => {
+    expect(debriefSteps({ prompts: PROMPTS, view: view({ phase: 'completed' }), day: 'd', promptIdx: 0 }).every((s) => s.state === 'done')).toBe(true);
+  });
+});
+
+describe('the way out', () => {
+  it('Stop for now leaves mid-debrief', async () => {
+    const onExit = vi.fn();
+    api.day = vi.fn(async (d) => ok({ studyDay: d, phase: 'not-started', next: { kind: 'prompt', id: 'classes' }, entries: {} }));
+    render(<SchoolDebriefProgram learnerId="test-learner" debriefGrant="g" lateDay={null} today="2026-10-21" onExit={onExit} />);
+    fireEvent.click(await screen.findByRole('button', { name: /stop for now/i }));
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
+  it('a finished day has exactly one Done and no Stop', async () => {
+    api.day = vi.fn(async (d) => ok({ studyDay: d, phase: 'completed', next: null, entries: {}, late: false, summary: { quiz: { right: 2, graded: 2 } } }));
+    render(<SchoolDebriefProgram learnerId="test-learner" debriefGrant="g" lateDay={null} today="2026-10-21" onExit={vi.fn()} />);
+    await screen.findByText('On time');
+    expect(screen.getAllByRole('button', { name: /^Done/ })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /stop for now/i })).toBeNull();
+  });
 });
