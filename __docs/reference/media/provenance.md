@@ -44,8 +44,8 @@ rent and buy listings never count. The household's tiers decide which one wins:
 2. **subscribed** services, in configured order (Prime Video, Peacock)
 3. any **other** known service, in the order found (Netflix, Disney+, ...)
 
-A service qualifies only if it has a logo in `data/content/providers/`. Unknown
-services are recorded but never shown.
+A service qualifies only if it has a logo in `data/content/providers/`. Services
+without a logo are recorded but not shown.
 
 ## Files
 
@@ -70,10 +70,13 @@ providers:
 ```
 
 Provider ids: `netflix`, `prime-video`, `hulu`, `disney-plus`, `peacock`, `hbo-max`,
-`paramount-plus`, `apple-tv`, `tubi`, `pluto-tv`, `hoopla`, `kanopy`, `roku-channel`.
-Watchmode's spellings map to them in `providerIdFor` (domain). Adding a service: add
-its alias there and drop its logo in the providers folder. A logo dropped in is seen
-within a minute, no restart. Policy edits need a restart (household config is cached).
+`paramount-plus`, `apple-tv`, `tubi`, `pluto-tv`, `hoopla`, `kanopy`, `roku-channel`,
+`amc-plus`, `philo`, `directv`. A few spellings map to these in `providerIdFor`
+(domain); **any other service is identified by its name's slug** ("Sling TV" →
+`sling-tv`, "AMC+" → `amc-plus`), so adding a service is only a matter of dropping
+`<slug>.svg` into the providers folder. It is seen within a minute, and stored
+records pick it up too: the provider is derived from the service name when the choice
+is made. Policy edits need a restart (household config is cached).
 
 ## Lookups and the monthly allowance
 

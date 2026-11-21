@@ -34,6 +34,9 @@ const PROVIDER_ALIASES = Object.freeze({
   hoopla: 'hoopla',
   kanopy: 'kanopy',
   therokuchannel: 'roku-channel', rokuchannel: 'roku-channel',
+  amcplus: 'amc-plus',
+  philo: 'philo',
+  directv: 'directv', directvondemand: 'directv', directvstream: 'directv',
 });
 
 /** Display names for the provider ids above (alt text, logs). */
@@ -41,30 +44,35 @@ export const PROVIDER_NAMES = Object.freeze({
   netflix: 'Netflix', 'prime-video': 'Prime Video', hulu: 'Hulu', 'disney-plus': 'Disney+',
   peacock: 'Peacock', 'hbo-max': 'HBO Max', 'paramount-plus': 'Paramount+', 'apple-tv': 'Apple TV',
   tubi: 'Tubi', 'pluto-tv': 'Pluto TV', hoopla: 'Hoopla', kanopy: 'Kanopy', 'roku-channel': 'The Roku Channel',
+  'amc-plus': 'AMC+', philo: 'Philo', directv: 'DirecTV',
 });
 
 export function normalizeServiceName(name) {
   return String(name ?? '').toLowerCase().replace(/\+/g, 'plus').replace(/[^a-z0-9]/g, '');
 }
 
+/** Slug for a service name: "AMC+" -> "amc-plus", "DirecTV On Demand" -> "directv-on-demand". */
+export function serviceSlug(name) {
+  return String(name ?? '').toLowerCase().replace(/\+/g, ' plus').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
 /**
- * Provider id for a service name, or null if it is not one we know.
- * "AppleTV" alone is Apple's store (rent/buy), not the Apple TV service, so only
- * the "+" spelling maps; stores never reach here anyway because their offers are
- * rent/buy, which are not streaming offers.
+ * Provider id for a service name: a known alias, else the name's slug, so any
+ * service shows once a logo named by its slug is dropped into the providers
+ * folder (no code change). Null for an empty name, and for "AppleTV" alone,
+ * which is Apple's store (rent/buy), not the Apple TV service.
  */
 export function providerIdFor(name) {
   const key = normalizeServiceName(name);
   if (!key) return null;
   if (key === 'appletv') return null;
-  return PROVIDER_ALIASES[key] ?? null;
+  return PROVIDER_ALIASES[key] ?? (serviceSlug(name) || null);
 }
 
 /**
  * Streaming offers from raw availability sources. Keeps subscription and free
  * offers only, one per provider (the first wins; a free offer beats a
- * subscription offer for the same provider). Unknown services are kept with
- * `provider: null` so the stored record still says what was found.
+ * subscription offer for the same provider).
  * @param {Array<{name:string,type:string,url?:string|null}>} sources
  * @returns {Array<{provider:string|null,name:string,type:string,url:string|null}>}
  */
@@ -104,7 +112,9 @@ export function tierOf(provider, tiers = {}) {
  */
 export function chooseProvider(offers, tiers = {}, canShow = () => true) {
   const ranked = [];
-  (Array.isArray(offers) ? offers : []).forEach((o, found) => {
+  (Array.isArray(offers) ? offers : []).forEach((raw, found) => {
+    // Records stored before a service had an id carry `provider: null`: derive it from the name.
+    const o = raw && !raw.provider && raw.name ? { ...raw, provider: providerIdFor(raw.name) } : raw;
     if (!o?.provider || !STREAMING_OFFER_TYPES.includes(o.type) || !canShow(o.provider)) return;
     const tier = tierOf(o.provider, tiers);
     const list = tier === 'free' ? tiers.free : tier === 'subscribed' ? tiers.subscribed : null;
