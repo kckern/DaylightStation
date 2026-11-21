@@ -261,6 +261,28 @@ name, HID usage, `down`/`up`/`repeat`; relayed to screens by
 
 Query: `context.module:fitness-controller AND _msg:~"bt.remote"`.
 
+**Input the kernel drops.** Some remotes send input on a HID report that their
+own report map does not declare: BlueZ receives it over the air and the kernel
+discards it, so neither evdev nor hidraw ever shows it. The helper also reads
+the HCI monitor channel (read-only, what `btmon` uses; `hcitool con` maps
+connection handles to addresses) and emits each ATT notification from a remote
+it reads as a `gatt` line. `remoteKeys.mjs` decodes known ones
+(`GATT_DECODERS`, keyed by Bluetooth name) into ordinary `bt.remote.key`
+presses (`key` like `ButtonA`, `usage: gatt:0x001f`, `raw` bytes);
+undecoded ones are logged at debug as `bt.remote.gatt`. If the monitor socket
+cannot open, `bt.remote.monitor-unavailable` is logged.
+
+The Magicsee R1 is the case that needed it. Its modes (hold M, press a
+letter): A music (default), **B gamepad**, C shutter, D mouse. Over Bluetooth
+it always presents the same media layout (Consumer + Keyboard), whatever the
+mode or when it was paired. In A, C and D most controls send duplicate media
+keys or nothing. In B every control is distinct, as 2-byte reports on ATT
+handle `0x001f`: byte 0 one bit per button (A `0x10`, B `0x01`, C `0x08`,
+D `0x02`, circle trigger `0x40`, back trigger `0x80`), byte 1 the stick (bits
+7-6 Y: 0 up, 1 centre, 2 down; bits 5-4 X: 0 left, 1 centre, 2 right).
+Captured on garage 2026-11-20; it matches UbiquityRobotics/bt_joystick and the
+libretro `Magicsee_R1.cfg` mode note. Keep it in B.
+
 The key test uses this feed when the host provides it
 (`bluetooth.subscribeRemoteKeys`): a key counts only when the tested remote's
 address sent it; a press from another remote shows as "(another remote …F1:98)"

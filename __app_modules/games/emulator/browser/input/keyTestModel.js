@@ -22,6 +22,10 @@ const KEY_NAMES = {
   MediaTrackNext: 'Next track', MediaTrackPrevious: 'Previous track',
   MediaFastForward: 'Fast forward', MediaRewind: 'Rewind',
   BrowserBack: 'Back', GoBack: 'Back', ContextMenu: 'Menu',
+  // Remote controls decoded by the garage box (bt.remote.key, not browser keys).
+  ButtonA: 'A button', ButtonB: 'B button', ButtonC: 'C button', ButtonD: 'D button',
+  TriggerCircle: 'Circle trigger', TriggerBack: 'Back trigger',
+  StickUp: 'Stick up', StickDown: 'Stick down', StickLeft: 'Stick left', StickRight: 'Stick right',
 };
 
 /** A short, plain name for a normalized key ('x' → 'X', 'AudioVolumeUp' → 'Volume up'). */

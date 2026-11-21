@@ -14,12 +14,22 @@ Lines:
         state = "down" | "up" | "repeat"
   {"type":"unmapped","address","report"}             a raw HID report with
         non-zero data that produced no key event: a button the kernel drops.
+  {"type":"gatt","address","name","att","value"}     an ATT notification from a
+        remote (read off the HCI monitor channel, like btmon). Some remotes send
+        input on a HID report their own report map does not declare, so BlueZ
+        receives it and the kernel drops it (Magicsee R1 gamepad mode: 2-byte
+        reports on ATT handle 0x001f). remoteKeys.mjs decodes known ones.
 
 Devices are rediscovered every 2 s, so a remote that sleeps and reconnects
 (new event/hidraw nodes) is picked up again. Never grabs: keys still reach X.
 """
+import ctypes
+import ctypes.util
 import glob
 import json
+import re
+import socket
+import subprocess
 import os
 import select
 import struct
@@ -71,18 +81,80 @@ def discover():
     return out
 
 
+AF_BLUETOOTH, BTPROTO_HCI, HCI_DEV_NONE, HCI_CHANNEL_MONITOR = 31, 1, 0xFFFF, 2
+MON_EVENT, MON_ACL_RX = 3, 5
+
+
+def open_monitor():
+    """Read-only HCI monitor socket (what btmon uses), or None."""
+    try:
+        libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+        sock = socket.socket(AF_BLUETOOTH, socket.SOCK_RAW, BTPROTO_HCI)
+        addr = struct.pack("<HHH", AF_BLUETOOTH, HCI_DEV_NONE, HCI_CHANNEL_MONITOR)
+        if libc.bind(sock.fileno(), ctypes.create_string_buffer(addr), len(addr)) != 0:
+            sock.close()
+            return None
+        sock.setblocking(False)
+        return sock
+    except OSError:
+        return None
+
+
+def connection_handles():
+    """{hci connection handle: ADDRESS} from `hcitool con`."""
+    out = {}
+    try:
+        text = subprocess.run(["hcitool", "con"], capture_output=True, text=True, timeout=3).stdout
+    except (OSError, subprocess.SubprocessError):
+        return out
+    for m in re.finditer(r"([0-9A-F:]{17}) handle (\d+)", text, re.I):
+        out[int(m.group(2))] = m.group(1).upper()
+    return out
+
+
+def parse_monitor(frame, handles):
+    """One monitor frame -> ("gatt", handle, att, value) | ("conn", handle, addr) | ("disc", handle) | None."""
+    if len(frame) < 6:
+        return None
+    opcode, _index, length = struct.unpack_from("<HHH", frame, 0)
+    d = frame[6:6 + length]
+    if opcode == MON_ACL_RX and len(d) >= 11:
+        hf, _dlen, _l2len, cid = struct.unpack_from("<HHHH", d, 0)
+        if (hf >> 12) & 0x3 != 0x2 or cid != 0x0004 or d[8] != 0x1B:
+            return None
+        return ("gatt", hf & 0x0FFF, struct.unpack_from("<H", d, 9)[0], bytes(d[11:]))
+    if opcode == MON_EVENT and len(d) >= 2:
+        code = d[0]
+        if code == 0x3E and len(d) >= 14 and d[2] in (0x01, 0x0A) and d[3] == 0:
+            addr = ":".join("%02X" % b for b in reversed(d[8:14]))
+            return ("conn", struct.unpack_from("<H", d, 4)[0] & 0x0FFF, addr)
+        if code == 0x05 and len(d) >= 6:
+            return ("disc", struct.unpack_from("<H", d, 3)[0] & 0x0FFF)
+    return None
+
+
 def main():
     open_fds = {}          # fd -> (path, kind, addr, name)
     scan = {}              # fd -> last MSC_SCAN value
     last_key = {}          # addr -> monotonic time of last key event
     pending = []           # [(t, addr, hex)] raw reports awaiting a key
     next_discover = 0.0
+    names = {}             # ADDRESS -> HID name, for remotes we read
+    monitor = open_monitor()
+    handles = connection_handles() if monitor else {}
+    if monitor is None:
+        emit({"type": "monitor-unavailable"})
     while True:
         now = time.monotonic()
         if now >= next_discover:
             next_discover = now + 2.0
             known = {v[0] for v in open_fds.values()}
-            for path, (kind, addr, name) in discover().items():
+            found = discover()
+            names = {}
+            for _p, (kind, addr, name) in found.items():
+                if kind == "raw" or addr not in names:
+                    names[addr] = name
+            for path, (kind, addr, name) in found.items():
                 if path in known:
                     continue
                 try:
@@ -92,7 +164,34 @@ def main():
                 open_fds[fd] = (path, kind, addr, name)
                 emit({"type": "open", "address": addr, "name": name, "node": path, "kind": kind})
         timeout = 0.05 if pending else 0.5
-        ready = select.select(list(open_fds), [], [], timeout)[0] if open_fds else (time.sleep(timeout) or [])
+        watch = list(open_fds) + ([monitor] if monitor else [])
+        ready = select.select(watch, [], [], timeout)[0] if watch else (time.sleep(timeout) or [])
+        if monitor in ready:
+            ready.remove(monitor)
+            while True:
+                try:
+                    frame = monitor.recv(4096)
+                except BlockingIOError:
+                    break
+                except OSError:
+                    monitor = None
+                    emit({"type": "monitor-unavailable"})
+                    break
+                ev = parse_monitor(frame, handles)
+                if not ev:
+                    continue
+                if ev[0] == "conn":
+                    handles[ev[1]] = ev[2]
+                elif ev[0] == "disc":
+                    handles.pop(ev[1], None)
+                else:
+                    _, hci, att, value = ev
+                    if hci not in handles:
+                        handles.update(connection_handles())
+                    addr = handles.get(hci)
+                    if addr in names:  # only remotes we read; never HR straps etc.
+                        emit({"type": "gatt", "address": addr, "name": names[addr],
+                              "att": att, "value": value.hex()})
         for fd in ready:
             path, kind, addr, name = open_fds[fd]
             try:

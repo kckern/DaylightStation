@@ -41,14 +41,69 @@ for (const [start, letters] of LETTER_ROWS) [...letters].forEach((ch, i) => { KE
 [59, 60, 61, 62, 63, 64, 65, 66, 67, 68].forEach((c, i) => { KEY_NAMES[c] = `F${i + 1}`; });
 KEY_NAMES[87] = 'F11'; KEY_NAMES[88] = 'F12';
 
+/**
+ * Remotes whose input arrives on a HID report their own report map does not
+ * declare, so the kernel drops it; the helper reads it off the HCI monitor as
+ * a `gatt` line and these decode it. Keyed by the remote's Bluetooth name.
+ *
+ * Magicsee R1 in gamepad mode (M + B): ATT handle 0x001f, 2 bytes. Byte 0 is
+ * one bit per button; byte 1 bits 7-6 are the stick's Y (0 up, 1 centre,
+ * 2 down) and bits 5-4 its X (0 left, 1 centre, 2 right). Captured on garage
+ * 2026-11-20 and matching UbiquityRobotics/bt_joystick's bit table.
+ */
+const GATT_DECODERS = {
+  'Magicsee R1': {
+    att: 0x001f,
+    decode(bytes) {
+      if (bytes.length < 2) return null;
+      const [b, stick] = bytes;
+      const y = (stick >> 6) & 0x3;
+      const x = (stick >> 4) & 0x3;
+      return {
+        ButtonA: !!(b & 0x10), ButtonB: !!(b & 0x01), ButtonC: !!(b & 0x08), ButtonD: !!(b & 0x02),
+        TriggerCircle: !!(b & 0x40), TriggerBack: !!(b & 0x80),
+        StickUp: y === 0, StickDown: y === 2, StickLeft: x === 0, StickRight: x === 2,
+      };
+    },
+  },
+};
+
+/**
+ * A gatt line -> key events, diffing against the remote's previous state.
+ * @param {Map<string, object>} prev  per-address last decoded state (mutated)
+ * @returns {Array<{key:string,state:'down'|'up'}>|null}  null = no decoder
+ */
+export function decodeGatt(prev, { address, name, att, value }) {
+  const dec = GATT_DECODERS[name];
+  if (!dec || dec.att !== att || typeof value !== 'string') return null;
+  const bytes = (value.match(/../g) || []).map((h) => parseInt(h, 16));
+  const now = dec.decode(bytes);
+  if (!now) return null;
+  const before = prev.get(address) || {};
+  prev.set(address, now);
+  const out = [];
+  for (const [key, on] of Object.entries(now)) {
+    if (on && !before[key]) out.push({ key, state: 'down' });
+    else if (!on && before[key]) out.push({ key, state: 'up' });
+  }
+  return out;
+}
+
 export function keyName(code) {
   return KEY_NAMES[code] ?? `Unidentified(${code})`;
 }
 
-/** One helper line -> { log: [level, event, data] | null, bus: payload | null }. */
-export function interpretLine(line) {
+/**
+ * One helper line -> { log, bus, extra } — log: [level, event, data] | null;
+ * bus: payload | null; extra: further [log, bus] pairs (a gatt report can
+ * press and release several controls at once).
+ * @param {string} line
+ * @param {Map<string, object>} [gattState]  per-remote decoded state
+ */
+export function interpretLine(line, gattState = new Map()) {
   let m;
   try { m = JSON.parse(line); } catch { return { log: null, bus: null }; }
+  if (m?.type === 'monitor-unavailable') return { log: ['warn', 'bt.remote.monitor-unavailable', {}], bus: null };
   const address = typeof m?.address === 'string' ? m.address.toUpperCase() : null;
   if (!address) return { log: null, bus: null };
   switch (m.type) {
@@ -60,6 +115,18 @@ export function interpretLine(line) {
     }
     case 'unmapped':
       return { log: ['warn', 'bt.remote.unmapped', { address, report: m.report }], bus: null };
+    case 'gatt': {
+      const raw = { address, name: m.name || null, att: `0x${Number(m.att).toString(16).padStart(4, '0')}`, value: m.value };
+      const events = decodeGatt(gattState, { address, name: m.name, att: m.att, value: m.value });
+      if (events == null) return { log: ['debug', 'bt.remote.gatt', raw], bus: null };
+      const extra = events.map(({ key, state }) => {
+        const data = { address, name: m.name || null, code: null, key, usage: `gatt:${raw.att}`, state, raw: m.value };
+        return [[state === 'down' ? 'info' : 'debug', 'bt.remote.key', data], data];
+      });
+      return { log: ['debug', 'bt.remote.gatt', raw], bus: null, extra };
+    }
+    case 'monitor-unavailable':
+      return { log: ['warn', 'bt.remote.monitor-unavailable', {}], bus: null };
     case 'open':
       return { log: ['info', 'bt.remote.open', { address, name: m.name || null, node: m.node, kind: m.kind }], bus: null };
     case 'gone':
@@ -89,17 +156,20 @@ export function startRemoteKeys({ logEvent, send, spawn = nodeSpawn, logger = co
     const startedAt = Date.now();
     child = spawn('python3', ['-u', HELPER], { stdio: ['ignore', 'pipe', 'pipe'] });
     let buf = '';
+    const gattState = new Map();
     child.stdout.on('data', (chunk) => {
       buf += chunk.toString();
       let nl;
       while ((nl = buf.indexOf('\n')) >= 0) {
         const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
-        const { log, bus } = interpretLine(line);
-        if (log) {
-          logEvent?.(...log);
-          if (log[2]?.state !== 'up' && log[2]?.state !== 'repeat') logger?.log?.(`🎛️ ${log[1]} ${JSON.stringify(log[2])}`);
+        const { log, bus, extra = [] } = interpretLine(line, gattState);
+        for (const [l, b] of [[log, bus], ...extra]) {
+          if (l) {
+            logEvent?.(...l);
+            if (l[0] !== 'debug') logger?.log?.(`🎛️ ${l[1]} ${JSON.stringify(l[2])}`);
+          }
+          if (b) send?.('bt.remote.key', b);
         }
-        if (bus) send?.('bt.remote.key', bus);
       }
     });
     child.stderr.on('data', (chunk) => logger?.error?.(`remote_keys_helper: ${chunk.toString().trim()}`));
