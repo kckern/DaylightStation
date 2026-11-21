@@ -6,14 +6,16 @@ export function UnitIntention({ step, content, responses, setResponse }) {
     return (
       <Stack gap="md">
         <Text size="sm" fw={500}>Active Goals</Text>
-        {(content?.activeGoals || []).map(g => (
-          <Paper key={g.id} p="xs" withBorder>
-            <Group justify="space-between">
-              <Text size="sm">{g.name}</Text>
-              <Badge size="xs" variant="light">{g.state}</Badge>
-            </Group>
-          </Paper>
-        ))}
+        {content?.activeGoals?.length
+          ? content.activeGoals.map(g => (
+            <Paper key={g.id} p="xs" withBorder>
+              <Group justify="space-between">
+                <Text size="sm">{g.name}</Text>
+                <Badge size="xs" variant="light">{g.state}</Badge>
+              </Group>
+            </Paper>
+          ))
+          : <Text size="xs" c="dimmed">No active goals for this unit.</Text>}
 
         {content?.rules?.length > 0 && (
           <>

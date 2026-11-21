@@ -101,7 +101,8 @@ export function WeekStrip({ date, today, onDateChange, viewportEnd, onViewportCh
               isToday ? 'health-weekstrip__cell--today' : '',
               crossesMonth ? 'health-weekstrip__cell--month-start' : '',
             ].filter(Boolean).join(' ')}
-            aria-current={isActive ? 'date' : undefined}
+            aria-current={isToday ? 'date' : undefined}
+            aria-pressed={isActive}
             disabled={d > today}
             aria-label={label}
             onFocus={({ currentTarget }) => {

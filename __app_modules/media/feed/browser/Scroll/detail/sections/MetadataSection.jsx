@@ -7,10 +7,10 @@ export default function MetadataSection({ data }) {
           display: 'flex',
           justifyContent: 'space-between',
           padding: '0.35rem 0',
-          borderBottom: '1px solid #1e1f23',
+          borderBottom: '1px solid var(--feed-border)',
         }}>
-          <span style={{ fontSize: '0.75rem', color: '#5c636a', textTransform: 'uppercase' }}>{m.label}</span>
-          <span style={{ fontSize: '0.8rem', color: '#c1c2c5' }}>{m.value}</span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--feed-text-2)', textTransform: 'uppercase' }}>{m.label}</span>
+          <span style={{ fontSize: '0.8rem', color: 'var(--feed-text-1)' }}>{m.value}</span>
         </div>
       ))}
     </div>
