@@ -182,6 +182,7 @@ export default function CallApp() {
   const media = useIndependentMedia();
   const peer = useWebRTCPeer(media.stream);
   const localVideoRef = useRef(null);
+  const [previewFrame, setPreviewFrame] = useState(null);
   const remoteVideoRef = useRef(null);
   const primaryActionRef = useRef(null);
   const [devices, setDevices] = useState({ status: 'loading', items: [], error: null });
@@ -194,6 +195,16 @@ export default function CallApp() {
   const resumeCheckedRef = useRef(false);
   const controller = useCallController({ peer, mediaStatus: media.status, remoteVideoRef });
   const { state } = controller;
+
+  const exitCall = () => {
+    const shortcut = window.DaylightPhoneShortcut;
+    if (typeof shortcut?.postMessage === 'function') {
+      controller.end('left_call');
+      shortcut.postMessage('call-exit');
+    } else {
+      window.history.back();
+    }
+  };
 
   const loadDevices = useCallback(() => {
     setDevices({ status: 'loading', items: [], error: null });
@@ -326,9 +337,11 @@ export default function CallApp() {
         <section className="call-app__stage" aria-label="Your camera preview">
           {/* Mirrored like a mirror, not like a camera: the preview is what the
               caller expects of their own face. The track sent to the TV is untouched. */}
-          <video ref={localVideoRef} autoPlay muted playsInline className="call-app__video call-app__video--tall" style={{ transform: 'scaleX(-1)' }} />
+          <video ref={localVideoRef} autoPlay muted playsInline onPlaying={() => setPreviewFrame(media.stream)}
+            className="call-app__video call-app__video--tall"
+            style={{ transform: 'scaleX(-1)', visibility: media.stream && previewFrame === media.stream ? 'visible' : 'hidden' }} />
           <div className="call-app__camera-status">
-            {media.status === 'loading' && <p className="call-app__camera-loading">Starting camera and microphone…</p>}
+            {media.status === 'loading' && <p role="status" className="call-app__camera-loading">Starting camera and microphone…</p>}
             {media.errors.video && <p className="call-app__camera-error">{mediaKindErrorCopy('video', media.errors.video)}</p>}
             {media.errors.audio && <p className="call-app__camera-error">{mediaKindErrorCopy('audio', media.errors.audio)}</p>}
             {partialMediaNote && <p className="call-app__camera-note">{partialMediaNote}</p>}
@@ -436,7 +449,7 @@ export default function CallApp() {
                   <p className="call-app__notice" role="status">You can call with {media.errors.audio ? 'video only' : 'audio only'}.</p>
                 )}
 
-                <button type="button" className="call-app__wide-btn call-app__wide-btn--danger" onClick={() => window.history.back()}>
+                <button type="button" className="call-app__wide-btn call-app__wide-btn--danger" onClick={exitCall}>
                   <PowerIcon />Exit
                 </button>
               </div>
