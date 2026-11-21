@@ -108,7 +108,7 @@ export function AnswerInput({ value, onChange, onSubmit, placeholder = 'Or say w
           radius="xl"
           variant={isRecording ? 'filled' : 'light'}
           color={isRecording ? 'red' : undefined}
-          aria-label={isRecording ? 'Stop recording' : 'Speak your answer'}
+          aria-label={transcribing ? 'Transcribing your answer' : isRecording ? 'Stop recording' : 'Speak your answer'}
           onClick={toggleMic}
           disabled={disabled || transcribing}
         >
@@ -116,6 +116,7 @@ export function AnswerInput({ value, onChange, onSubmit, placeholder = 'Or say w
         </ActionIcon>
       </div>
       {isRecording && <Text size="xs" c="dimmed" mt={4}>Listening… tap stop when you&apos;re done.</Text>}
+      {transcribing && <Text size="xs" c="dimmed" mt={4} role="status">Transcribing your answer…</Text>}
       {inlineError && <Text size="xs" c="red" mt={4} role="alert">{inlineError}</Text>}
     </form>
   );

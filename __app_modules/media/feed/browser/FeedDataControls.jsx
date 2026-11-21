@@ -88,8 +88,10 @@ export default function FeedDataControls({ onImported }) {
       const result = await DaylightAPI('/api/v1/feed/data/import', payload, 'POST');
       if (!isCurrent(scope)) return;
       const counts = result.imported || {};
+      const itemCount = counts.items || 0;
+      const stateCount = counts.states || 0;
       const noteCount = counts.annotations || 0;
-      setStatus(`Imported ${counts.items || 0} items, ${counts.states || 0} states, and ${noteCount} ${noteCount === 1 ? 'note' : 'notes'}.`);
+      setStatus(`Imported ${itemCount} ${itemCount === 1 ? 'item' : 'items'}, ${stateCount} ${stateCount === 1 ? 'state' : 'states'}, and ${noteCount} ${noteCount === 1 ? 'note' : 'notes'}.`);
       await refreshImportedView(scope);
     } catch (error) {
       if (!isCurrent(scope)) return;

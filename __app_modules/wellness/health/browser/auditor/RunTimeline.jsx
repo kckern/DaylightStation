@@ -92,7 +92,7 @@ function JournalPage({ filters, offset, minCost, isLast, onMore, onOpen, onShown
   useEffect(() => () => onShown(offset, null), [onShown, offset]);
   useEffect(() => { onSettled?.(settled); }, [onSettled, settled]);
 
-  const firstPageEmpty = offset === 0 && page.data?.rows.length === 0;
+  const firstPageEmpty = offset === 0 && minCost == null && page.data?.rows.length === 0;
   const canLoadMore = isLast && offset + PAGE_SIZE < page.data?.total;
   const hasResults = firstPageEmpty || rows.length > 0 || canLoadMore;
   // An explicitly retried page needs a visible destination even when all its
