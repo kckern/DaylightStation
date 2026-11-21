@@ -71,6 +71,29 @@ describe('ConfigFormWrapper', () => {
     expect(screen.queryByText('structured form')).toBeNull();
   });
 
+  it.each([
+    ['false', false],
+    ['a string', 'value'],
+    ['a number', 0],
+    ['a sequence', ['first', 'second']],
+  ])('routes a loaded YAML %s to the raw editor instead of a structured form', (_label, data) => {
+    mockConfig.data = data;
+    mockConfig.raw = 'valid YAML scalar or sequence';
+    r(
+      <MemoryRouter>
+        <ConfigFormWrapper filePath="household/gratitude/config.yml" title="Gratitude">
+          {() => <div>structured form</div>}
+        </ConfigFormWrapper>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText(/This file can't be displayed as a form/i)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open YAML editor' })).toHaveAttribute(
+      'href', '/admin/system/config/household/gratitude/config.yml',
+    );
+    expect(screen.queryByText('structured form')).toBeNull();
+  });
+
   it('shows the Unsaved badge when dirty', () => {
     mockConfig.dirty = true;
     r(

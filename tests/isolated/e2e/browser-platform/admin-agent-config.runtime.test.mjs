@@ -161,6 +161,28 @@ test('Admin opens the raw editor when a loaded app config has no structured valu
   ]);
 });
 
+test('Admin keeps a valid YAML scalar out of the Shopping structured editor', async ({ page }) => {
+  const writes = [];
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path === '/api/v1/admin/config/files/household/harvest/config.yml' && request.method() === 'GET') {
+      return route.fulfill({ json: { parsed: false, raw: 'false\n' } });
+    }
+    if (request.method() === 'PUT') writes.push(path);
+    return route.fulfill({ json: path.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+
+  await page.goto('/admin/apps/shopping');
+  await expect(page.getByText(/This file can't be displayed as a form/i)).toBeVisible();
+  await expect(page.getByRole('switch', { name: 'Enabled' })).toHaveCount(0);
+  await page.getByRole('link', { name: 'Open YAML editor' }).click();
+  await expect(page).toHaveURL('/admin/system/config/household/harvest/config.yml');
+  await expect(page.locator('.cm-content')).toContainText('false');
+  expect(writes).toEqual([]);
+});
+
 test('config Back preserves a dirty YAML draft until discard is confirmed', async ({ page }) => {
   const writes = [];
   await page.routeWebSocket('**/*', () => {});

@@ -27,9 +27,10 @@ function ConfigFormWrapper({ filePath, title, children, validate, rawMode = fals
     data, raw, loading, saving, error, readError, draftReady, dirty,
     save, revert, setData, setRaw, clearError, retryRead
   } = useAdminConfig(filePath);
-  const hasEditor = rawMode ? draftReady : data !== null;
+  const hasStructuredData = data !== null && typeof data === 'object' && !Array.isArray(data);
+  const hasEditor = rawMode ? draftReady : hasStructuredData;
   const { regionProps, retry } = useRetryRegion(retryRead, loading);
-  const structuredFormUnavailable = !rawMode && draftReady && !loading && !readError && data === null;
+  const structuredFormUnavailable = !rawMode && draftReady && !loading && !readError && !hasStructuredData;
 
   // Unsaved-changes guard: beforeunload + guarded Admin navigation (audit C1)
   useUnsavedGuard(dirty, { label: filePath });
