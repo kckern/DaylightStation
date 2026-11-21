@@ -6,7 +6,7 @@ In the list editor, open **List actions** for settings that apply to the whole l
 
 Search results keep their original section and row positions. Editing or duplicating a result acts on its original section. **Split Below** starts the new section after that row in the full list, including items hidden by the search. If a saved change needs a fresh snapshot, the list offers a read-only Retry.
 
-Deleting and undoing a list item preserves its scheduling dates. The list service accepts the Admin field names and stores the codec's canonical schedule fields, so Undo and later reads retain the same values.
+Deleting and undoing a list item restores its scheduling dates and original position. Undo uses the insertion index returned by the list service, so intervening edits do not make it move a neighboring row. The service accepts the Admin field names and stores the codec's canonical schedule fields, so later reads retain the same values.
 
 The item editor's **Section** choice saves the selected destination. When a move succeeds but its field update fails, retrying resolves the item by its stable UID in the refreshed list. Cross-section edits without a stable UID are blocked to prevent writes to the wrong positional row.
 

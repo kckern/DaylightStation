@@ -394,7 +394,6 @@ function FolderEditor({ type, listName }) {
   // full payload + position so Undo can re-insert it where it was.
   const handleDeleteItem = async (sectionIndex, itemIndex) => {
     const removed = sections[sectionIndex]?.items?.[itemIndex];
-    const preCount = sections[sectionIndex]?.items?.length ?? 0;
     const res = await mutate('lists.delete_item', 'Could not delete item', () => deleteItem(sectionIndex, itemIndex));
     if (!res.ok || !removed || !canEditList()) return;
     const { sectionIndex: _sectionIndex, itemIndex: _itemIndex, sectionTitle: _sectionTitle, index: _index, ...payload } = removed;
@@ -403,10 +402,13 @@ function FolderEditor({ type, listName }) {
       title: 'Item deleted',
       message: `Removed “${removed.label || removed.title || removed.input}”`,
       onUndo: () => mutate('lists.delete_undo', 'Could not restore item', async () => {
-        // addItem appends to the section end; after re-add the section holds
-        // `preCount` items again, so the restored item sits at index preCount-1.
-        await addItem(sectionIndex, payload);
-        const landedIndex = preCount - 1;
+        // The section may have changed since deletion, so trust the server's
+        // insertion receipt instead of deriving an index from stale UI state.
+        const added = await addItem(sectionIndex, payload);
+        if (!Number.isInteger(added?.index) || added.index < 0) {
+          throw new Error('Could not confirm the restored item position. Refresh the list before retrying.');
+        }
+        const landedIndex = added.index;
         if (itemIndex < landedIndex) {
           await moveItem(
             { section: sectionIndex, index: landedIndex },
