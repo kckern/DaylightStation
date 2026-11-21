@@ -75,38 +75,40 @@ export function FirstUseCard({ children = null }) {
         aria-labelledby="first-use-title"
       >
         <Text fw={600} id="first-use-title">What should we call this device?</Text>
-        <TextInput
-          aria-label="Name for this device"
-          value={name}
-          onChange={(e) => { setName(e.currentTarget.value); setAnswer(null); }}
-          data-testid="first-use-name"
-          mt="xs"
-        />
-        <Text size="sm" c="dimmed" mt="xs" data-testid="first-use-aim">
-          Things you play go to the device shown here. Tap it to change.
-        </Text>
-        {answer?.code === 'NAME_TAKEN' && (
-          <Group gap="xs" role="alert" data-testid="first-use-taken" mt="xs">
-            <Text size="sm">“{answer.name}” is already taken.</Text>
-            {answer.suggestion && (
-              <Button size="xs" variant="light" className="house-action" onClick={() => { setName(answer.suggestion); save(answer.suggestion); }}
-                data-testid="first-use-suggestion">
-                Use “{answer.suggestion}”
-              </Button>
-            )}
+        <form onSubmit={(event) => { event.preventDefault(); save(); }}>
+          <TextInput
+            aria-label="Name for this device"
+            value={name}
+            onChange={(e) => { setName(e.currentTarget.value); setAnswer(null); }}
+            data-testid="first-use-name"
+            mt="xs"
+          />
+          <Text size="sm" c="dimmed" mt="xs" data-testid="first-use-aim">
+            Things you play go to the device shown here. Tap it to change.
+          </Text>
+          {answer?.code === 'NAME_TAKEN' && (
+            <Group gap="xs" role="alert" data-testid="first-use-taken" mt="xs">
+              <Text size="sm">“{answer.name}” is already taken.</Text>
+              {answer.suggestion && (
+                <Button type="button" size="xs" variant="light" className="house-action" onClick={() => { setName(answer.suggestion); save(answer.suggestion); }}
+                  data-testid="first-use-suggestion">
+                  Use “{answer.suggestion}”
+                </Button>
+              )}
+            </Group>
+          )}
+          {answer && answer.code !== 'NAME_TAKEN' && (
+            <Text size="sm" className="house-tone--failed" role="alert" mt="xs">Couldn't save the name. You can skip and name it later in Settings.</Text>
+          )}
+          <Group gap="xs" mt="sm" justify="flex-end">
+            <Button type="button" variant="default" className="house-action" onClick={skip} data-testid="first-use-skip">
+              Not now
+            </Button>
+            <Button type="submit" className="house-action" disabled={!name.trim()} loading={busy} data-testid="first-use-save">
+              Save
+            </Button>
           </Group>
-        )}
-        {answer && answer.code !== 'NAME_TAKEN' && (
-          <Text size="sm" className="house-tone--failed" role="alert" mt="xs">Couldn't save the name. You can skip and name it later in Settings.</Text>
-        )}
-        <Group gap="xs" mt="sm" justify="flex-end">
-          <Button variant="default" className="house-action" onClick={skip} data-testid="first-use-skip">
-            Not now
-          </Button>
-          <Button className="house-action" disabled={!name.trim()} loading={busy} onClick={() => save()} data-testid="first-use-save">
-            Save
-          </Button>
-        </Group>
+        </form>
       </Popover.Dropdown>
     </Popover>
   );
