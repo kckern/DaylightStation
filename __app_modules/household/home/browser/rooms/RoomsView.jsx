@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { UnstyledButton } from '@mantine/core';
+import { UnstyledButton, VisuallyHidden } from '@mantine/core';
 import { IconChevronRight } from '@tabler/icons-react';
 import { EmptyState } from '@/lib/ui';
 import { summarizeRooms } from './summarizeRooms.js';
@@ -77,7 +77,7 @@ export function RoomsView({ entities, rooms, types, summary, haUrl, toggle, turn
               </span>
               <span className="home-room__temp">{room.temperature ? formatDegrees(room.temperature.value) : null}</span>
               <span className="home-room__motion">
-                {!room.motion ? null : room.motion.now ? 'now' : formatAge(room.motion.at)}
+                {!room.motion ? null : <><VisuallyHidden>Motion detected: </VisuallyHidden>{room.motion.now ? 'now' : formatAge(room.motion.at)}</>}
               </span>
               <IconChevronRight className="home-room__chevron" size={16} stroke={2} aria-hidden="true" />
             </UnstyledButton>

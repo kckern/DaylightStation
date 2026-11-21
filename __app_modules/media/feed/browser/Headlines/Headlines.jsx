@@ -156,7 +156,7 @@ export default function Headlines({ pageId }) {
             <button type="button" aria-pressed={view === 'outlets'} className={view === 'outlets' ? 'active' : ''} onClick={() => setView('outlets')}>Outlets</button>
             <button type="button" aria-pressed={view === 'briefing'} className={view === 'briefing' ? 'active' : ''} onClick={() => setView('briefing')}>Briefing</button>
           </div>
-          <span className="headlines-meta">{Object.keys(sources).length} sources{data?.lastHarvest && ` · updated ${formatTime(data.lastHarvest)}`}</span>
+          {data && <span className="headlines-meta">{Object.keys(sources).length} sources{data.lastHarvest && ` · updated ${formatTime(data.lastHarvest)}`}</span>}
         </div>
         <button className="headlines-harvest-btn" onClick={triggerHarvestAll} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh all'}</button>
       </header>

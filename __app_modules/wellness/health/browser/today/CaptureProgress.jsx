@@ -13,13 +13,14 @@ export function CaptureProgress({ startedAt, estimateMs = 15000, label = 'Food a
   const elapsed = Math.max(0, now - startedAt);
   const overdue = elapsed >= estimateMs;
   const value = Math.min(99, Math.round(elapsed / estimateMs * 100));
+  const overdueMessage = text ? `Still adding “${quote(text)}”…` : 'Still analyzing…';
   return <div className="health-capture-progress" aria-busy="true">
     <span className="health-capture-progress__label">{text
-      ? `${overdue ? 'Still adding' : 'Adding'} “${quote(text)}”…`
+      ? (overdue ? overdueMessage : `Adding “${quote(text)}”…`)
       : (overdue ? 'Still analyzing…' : 'Analyzing…')}</span>
     <div className={`health-capture-progress__track${overdue ? ' health-capture-progress__track--indefinite' : ''}`}
       role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100}
-      aria-valuenow={overdue ? undefined : value} aria-valuetext={overdue ? 'Still analyzing' : `About ${value}%`}
+      aria-valuenow={overdue ? undefined : value} aria-valuetext={overdue ? overdueMessage : `About ${value}%`}
     ><span style={{ width: overdue ? '100%' : `${value}%` }} /></div>
   </div>;
 }
