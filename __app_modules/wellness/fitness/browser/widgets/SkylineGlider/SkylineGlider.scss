@@ -283,6 +283,21 @@
 .skyline-glider__overlay[data-tone="crash"] .skyline-glider__overlay-window { --tone: var(--sg-b3); }
 .skyline-glider__overlay[data-tone="warn"] .skyline-glider__overlay-window { --tone: var(--sg-gold); }
 
+// The sound sheet over a live flight: a solid framed window high on the scene
+// so the glider stays in view below it. Only the window takes touches.
+.skyline-sound {
+  @include sg-sound-sheet;
+  @include sg-frame(var(--sg-gold));
+  position: absolute; z-index: 8; top: 16%; left: 50%; transform: translateX(-50%);
+  display: grid; justify-items: center; padding: 1.6vw 3vw 2vw; background: var(--sg-night);
+  &__title { margin: 0; color: var(--sg-gold); font-size: var(--sg-text-l); font-weight: 900; font-style: italic; line-height: 1; }
+  &__done {
+    margin: 1.4vw 0 0; min-width: 14vw; min-height: 48px; border: 0; border-radius: 0; font: inherit;
+    font-size: var(--sg-text-m); font-weight: 900; color: var(--sg-ink); background: var(--sg-gold); cursor: pointer;
+    box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 var(--sg-b2-shade), sg-ring(var(--sg-ink));
+  }
+}
+
 .skyline-glider__menu { position: relative; display: grid; justify-items: start; gap: calc(6 * var(--sg-px)); min-width: 0; }
 // Anything the game says outside the window: a flat ink strip, or a framed sign
 // when it is news (saved, failed).
