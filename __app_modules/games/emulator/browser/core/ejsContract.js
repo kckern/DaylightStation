@@ -24,6 +24,7 @@
  *   gamepadSelection                   — claimGamepads writes the pad→player slot mapping
  *   gamepad.gamepads                   — the pads EJS actually sees
  *   gameManager.functions.simulateInput — tapInput wraps this to observe consumed input
+ *   gameManager.simulateInput          — pressInput drives Bluetooth-remote presses through it
  *   setVolume                          — engine.setVolume delegates here
  */
 export const EJS_CONTRACT = [
@@ -32,6 +33,7 @@ export const EJS_CONTRACT = [
   { path: 'gamepadSelection', type: 'array' },
   { path: 'gamepad.gamepads', type: 'array' },
   { path: 'gameManager.functions.simulateInput', type: 'function' },
+  { path: 'gameManager.simulateInput', type: 'function' },
   { path: 'setVolume', type: 'function' },
 ];
 

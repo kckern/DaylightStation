@@ -66,7 +66,8 @@ Bluetooth screen takes its label from it, but gamepad status and the arcade's
 "controller connected" toasts skip it (`gamepadControllers` in
 `controllerStatus.js`). `buttons:` records what each physical button sends, as
 the browser's `KeyboardEvent.key`; it is a record for mapping keys to actions
-and is not read by code yet. For which remote sent a key, see Per-remote keys.
+and is what an `emulator:` map refers to (see Remotes as a game controller).
+For which remote sent a key, see Per-remote keys.
 
 - `steps` lead into the search: the last step points at **Search for it**.
 - `wake` shows under a paired row of that controller while it is asleep.
@@ -384,6 +385,7 @@ through `lib/remoteButtons/remoteButtonHolds.js` in the fitness app:
 |---|---|
 | `holdRemoteButtons(reason)` → `release()` | every remote belongs to the caller (Skyline Glider while mounted with a remote mapping, `reason: 'skyline-glider'`) |
 | `claimRemote(address)` → `release()` | one remote belongs to the caller (the Bluetooth screen while that remote's page is open) |
+| `bluetooth.claimRemoteKeys(address, fn)` → `release()` | one remote's presses are delivered only to the caller, and `claimRemote(address)` is held meanwhile (the arcade while a game plays, for each remote with an `emulator:` map; see Claiming a remote) |
 | `isRemoteHeld(address)` | a hold, or that address's claim, is on |
 | `remoteButtonHolds()` / `isRemoteClaimed(address)` | the reasons on hold / the claim alone |
 
@@ -392,6 +394,84 @@ through `lib/remoteButtons/remoteButtonHolds.js` in the fitness app:
 Holds and claims are counted, so each holder releases only its own. Skyline
 Invaders ignores remotes in a round (it reads no remote at all; a mapping
 layer that acts on remotes should take a hold for its rounds).
+
+### Claiming a remote
+
+`bluetooth.claimRemoteKeys(address, fn)` (next to `subscribeRemoteKeys` on the
+host's `bluetooth` object, `useFitnessBluetooth`) takes one remote's presses
+exclusively until the returned release is called: while a remote is claimed,
+its `bt.remote.key` messages go only to the newest claimant and never to the
+`subscribeRemoteKeys` listeners, so no other remote-mapping layer acts on them.
+Presses from other remotes fan out as before. Claims nest (newest wins; a
+release hands the presses back to the previous claimant). It also takes
+`claimRemote(address)` in `remoteButtonHolds.js` for as long, so a layer that
+checks `isRemoteHeld(address)` stands down too (Who owns a remote's presses,
+above). The arcade claims each remote with an `emulator:` map while a game is
+playing (next section).
+
+### Remotes as a game controller (`emulator:`)
+
+A remote the browser Gamepad API never sees can still play the arcade's
+browser games when the garage box reads it (`bt.remote.key`). Give its
+`input.yml` entry an `emulator:` map, physical control → RetroPad button:
+
+```yaml
+  - id: example_remote
+    kind: remote
+    address: "AA:BB:CC:00:00:01"
+    buttons:                    # physical control -> bt.remote.key name
+      upper_trigger: Trigger1
+      lower_trigger: Trigger2
+      a: Button1
+      stick_up: StickUp
+      ...
+    emulator:                   # physical control -> RetroPad button while a game plays
+      stick_up: up              # up down left right a b x y l r start select
+      upper_trigger: a
+      lower_trigger: b
+      a: start
+      systems:                  # optional: per-system overrides merged over the rest
+        genesis: { a: start }
+```
+
+- Keys of `emulator:` are the entry's `buttons:` names (a name not in
+  `buttons:` is taken as the `bt.remote.key` name itself). Values are RetroPad
+  buttons; an unknown one is dropped. Any remote, any key names: the code
+  names no device.
+- The buttons are RetroPad positions, not console labels: each core maps the
+  RetroPad onto its console. On a Genesis core RetroPad B / A / Y are Genesis
+  B / C / A (X, L, R are the 6-button pad's Y, X, Z), so a remote whose two
+  main controls are `a` and `b` plays the Genesis on B and C; on a SNES core
+  the names are the same as the console's. Use `systems:` only when a core
+  needs something different.
+- Only while the game is **playing**: not paused, the game menu, reset
+  confirm or recovery list closed, governance playable. During that time each
+  mapped remote is claimed (above). In menus the remote does what it does
+  everywhere else.
+- Holds follow down/up exactly (a held stick is a held D-pad). Two controls on
+  one button keep it held until both are up; a `repeat` without a `down`
+  counts as the down; an `up` without a `down` is ignored. Every held button
+  is released when the game stops playing, on unmount, when the window loses
+  focus or is hidden, and when the remote shows `connected: false` in the
+  inventory, so nothing sticks.
+
+Structure (ports and adapters): `input/remoteEmulatorInput.js` resolves the
+maps and tracks holds, vendor-free, against the `IEmulatorInput` port
+(`ports/IEmulatorInput.js`: `press(button)`, `release(button)`,
+`releaseAll()`, `isReady()`, `isEmulatorInput()`). `input/useRemoteEmulatorInput.js`
+claims the remotes and feeds the tracker. `adapters/EmulatorJSInputAdapter.js`
+is the only EmulatorJS-specific part: it turns a RetroPad button into
+EmulatorJS's control index and presses it through EmulatorJS's own input API
+(`gameManager.simulateInput`, wrapped as `engine.pressInput`), the call its
+keyboard and gamepad handlers make; the input LED counts it like any pad press.
+`EmulatorConsole` injects the adapter. Another emulator gets its own adapter.
+
+Logs (component `emulator-console`): `emulator.remote.mount` / `.unmount`
+(claim taken / released, with the remote ids and system),
+`emulator.remote.input` (the first press of each playing stretch at info,
+then sampled), `emulator.remote.stuck-release` (warn: buttons released by
+focus loss, pause, unmount or disconnect, with `reason` and count). The host
+logs `fitness.bt.remote-claim` / `-unclaim` at debug.
 
 The desktop must not grab media keys: on garage the XFCE PulseAudio panel
 plugin had `enable-keyboard-shortcuts` and `enable-multimedia-keys` on, which

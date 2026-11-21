@@ -6,6 +6,7 @@
 // dead one).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
+import { claimRemote } from '../lib/remoteButtons/remoteButtonHolds.js';
 import {
   ADDRESS_PAIR_MS, PAIR_WINDOW_MS, SCAN_ANSWER_MS, SCAN_END_GRACE_MS, SCAN_WINDOW_MS,
   buildInventoryRequest, buildPairRequest, buildRemoveRequest, buildScanRequest,
@@ -39,6 +40,11 @@ export function useFitnessBluetooth({ send }) {
   // Listeners for `bt.remote.key` (a press tagged with the remote's Bluetooth
   // address, from the garage box). Not state: presses must not re-render the host.
   const remoteKeyListeners = useRef(new Set());
+  // Claims (address -> handlers, newest last): while a remote is claimed its
+  // presses go ONLY to the newest claimant, never to the listeners above, so no
+  // other remote-mapping layer acts on them (the arcade claims a remote that
+  // drives the running game).
+  const remoteKeyClaims = useRef(new Map());
 
   useEffect(() => () => {
     timers.current.forEach(clearTimeout);
@@ -78,11 +84,17 @@ export function useFitnessBluetooth({ send }) {
         logger().info('fitness.bt.remove-result', { address: data.address, success: data.success, error: data.error });
         setForgetResult({ address: data.address, success: !!data.success, error: data.error || null });
         return true;
-      case 'bt.remote.key':
+      case 'bt.remote.key': {
+        const claimants = remoteKeyClaims.current.get(String(data.address || '').toUpperCase());
+        if (claimants && claimants.length > 0) {
+          try { claimants[claimants.length - 1](data); } catch (err) { logger().warn('fitness.bt.remote-key-claim-failed', { error: err?.message }); }
+          return true;
+        }
         remoteKeyListeners.current.forEach((fn) => {
           try { fn(data); } catch (err) { logger().warn('fitness.bt.remote-key-listener-failed', { error: err?.message }); }
         });
         return true;
+      }
       case 'bt.scan.progress':
         if (data.phase === 'nearby') {
           logger().sampled?.('fitness.bt.scan-nearby', {
@@ -218,9 +230,32 @@ export function useFitnessBluetooth({ send }) {
     return () => remoteKeyListeners.current.delete(fn);
   }, []);
 
+  /** Take one remote's presses exclusively until the returned release is called. */
+  const claimRemoteKeys = useCallback((address, fn) => {
+    const a = String(address || '').toUpperCase();
+    const claims = remoteKeyClaims.current;
+    if (!claims.has(a)) claims.set(a, []);
+    claims.get(a).push(fn);
+    // Also on the shared holds contract, so layers that check isRemoteHeld stand down.
+    const releaseHold = claimRemote(a);
+    logger().debug('fitness.bt.remote-claim', { address: a, claimants: claims.get(a).length });
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      releaseHold();
+      const list = claims.get(a);
+      if (!list) return;
+      const i = list.lastIndexOf(fn);
+      if (i >= 0) list.splice(i, 1);
+      if (list.length === 0) claims.delete(a);
+      logger().debug('fitness.bt.remote-unclaim', { address: a, claimants: list.length });
+    };
+  }, []);
+
   const bluetooth = useMemo(() => ({
-    inventory, scan, pairing, forgetResult, requestInventory, startScan, stopScan, pairAddress, forget, subscribeRemoteKeys,
-  }), [inventory, scan, pairing, forgetResult, requestInventory, startScan, stopScan, pairAddress, forget, subscribeRemoteKeys]);
+    inventory, scan, pairing, forgetResult, requestInventory, startScan, stopScan, pairAddress, forget, subscribeRemoteKeys, claimRemoteKeys,
+  }), [inventory, scan, pairing, forgetResult, requestInventory, startScan, stopScan, pairAddress, forget, subscribeRemoteKeys, claimRemoteKeys]);
 
   return { bluetooth, handleMessage, noteHealth, pairController, resetAfterReconnect };
 }

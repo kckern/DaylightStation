@@ -33,6 +33,8 @@ import { resolveOverlayValue, formatOverlayValue } from "./core/resolveOverlayVa
 import { HotspotLayer } from "./ui/HotspotLayer.jsx";
 import { OverlayLayer } from "./ui/OverlayLayer.jsx";
 import { useArcadeInput } from "./ui/useArcadeInput.js";
+import { useRemoteEmulatorInput } from "./input/useRemoteEmulatorInput.js";
+import { EmulatorJSInputAdapter } from "./adapters/EmulatorJSInputAdapter.js";
 import "./EmulatorConsole.scss";
 
 const STATUS_POLL_MS = 500;
@@ -306,6 +308,18 @@ export function EmulatorConsole({
   useEffect(() => {
     onArcadeGameSessionStateChange?.(effectiveArcadeGameSessionState);
   }, [effectiveArcadeGameSessionState, onArcadeGameSessionStateChange]);
+
+  // Bluetooth remotes with an input.yml `emulator:` map drive the game while
+  // it plays (claimed, so nothing else acts on their presses meanwhile).
+  const remoteInput = useMemo(() => new EmulatorJSInputAdapter({ getEngine: () => runtimeRef.current?.engine || null }), []);
+  useRemoteEmulatorInput({
+    bluetooth,
+    controllers,
+    system: game?.system || null,
+    active: effectiveArcadeGameSessionState === 'playing' && !resetOpen && !recoveryCopies,
+    input: remoteInput,
+    logger,
+  });
 
   // Continuous autosave: once the session is save-enabled AND user-scoped,
   // capture + persist the resume blob(s) every autosaveSeconds. Re-runs when
