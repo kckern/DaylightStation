@@ -10,6 +10,8 @@ Deleting and undoing a list item restores its scheduling dates and original posi
 
 Editing a list item sends changed fields, including values reset to their defaults. New items continue to omit default values.
 
+The list service maps Admin playback aliases to the codec's canonical `fixed_order` and `playbackrate` fields; shader remains a canonical field. Adds, edits, and fresh reads use that same mapping.
+
 Per-item playback controls are limited to settings consumed by list playback; the unsupported per-item Loop option is not exposed.
 
 Duplicating a list item gives the copy a distinct “(copy)” label while preserving its content and settings.

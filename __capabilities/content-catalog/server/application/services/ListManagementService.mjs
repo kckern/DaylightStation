@@ -26,6 +26,9 @@ const ITEM_FIELDS = Object.freeze({
     image: ['image'],
     shuffle: ['shuffle'],
     continuous: ['continuous'],
+    fixed_order: ['fixedOrder', 'fixed_order'],
+    playbackrate: ['playbackRate', 'playbackrate'],
+    shader: ['shader'],
     days: ['days'],
     hold: ['hold'],
     priority: ['priority'],
@@ -83,8 +86,12 @@ function denormalizeForAdmin(item) {
   if (!result.action) result.action = extractActionName(result);
   if (result.skipAfter === undefined && result.skip_after !== undefined) result.skipAfter = result.skip_after;
   if (result.waitUntil === undefined && result.wait_until !== undefined) result.waitUntil = result.wait_until;
+  if (result.fixedOrder === undefined && result.fixed_order !== undefined) result.fixedOrder = result.fixed_order;
+  if (result.playbackRate === undefined && result.playbackrate !== undefined) result.playbackRate = result.playbackrate;
   delete result.skip_after;
   delete result.wait_until;
+  delete result.fixed_order;
+  delete result.playbackrate;
   return result;
 }
 
