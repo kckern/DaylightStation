@@ -174,17 +174,17 @@ libretro's memory map (gambatte publishes HRAM there) — a core rebuild.
 
 ## Games mapped
 
-Per-game research (sources, every address including unreadable ones, trigger ideas, gaps) is in `game-memory-notes/<Game>.notes.md`. Drafts were gathered 2026-11-21 from disassemblies and wikis; only Super Mario Land (and parts of Crystal, Sonic, Red) have been watched live.
+Per-game research (sources, every address, trigger ideas, gaps) is in `game-memory-notes/<Game>.notes.md`. Addresses came from disassemblies and wikis (2026-11-21); the "Live" column says what has been watched in a running core.
 
-| Game | Sidecar | Readable today |
+| Game | Sidecar | Live |
 |---|---|---|
-| Super Mario Land | `gb/roms/SuperMarioLand.yml`: 24 states; `underground` → `underground_lights` | yes (WRAM); world/level/coins/pause are HRAM-only |
-| Pokémon Red | `gb/roms/PokemonRed.yml`: 36 states (HP now big-endian) | yes; not yet against a live session |
-| Pokémon Yellow | `gbc/roms/PokemonYellow.yml`: 38 states, addresses from pokeyellow.sym | yes; not live-checked |
-| Pokémon Crystal | `gbc/roms/PokemonCrystal.yml`: 43 states | WRAM banks 0-1 only; bank 2-7 offsets in notes |
-| Sonic the Hedgehog (REV00) | `genesis/roms/SonicTheHedgehog.yml`: 40 states | yes; `music` fingerprint needs a live check |
-| Super Mario Land 2 (V1.2) | `gb/roms/SuperMarioLand2.yml`: no states, map commented | no: state is in cartridge SRAM; game mode in HRAM |
-| Wario Land | `gb/roms/WarioLand.yml`: `sram_states:` inactive | no: state is in cartridge SRAM |
-| Mario Kart Super Circuit | `gba/roms/MarioKartSuperCircuit.yml`: `pending_states:` inactive | no: reader has no GBA support (IWRAM/EWRAM) |
+| Super Mario Land | `gb/roms/SuperMarioLand.yml`: 30 states; real HRAM underground flag `$FFF9` → `underground_lights` (music stand-in kept as `underground_music`) | music, HRAM world/level, coins, pause |
+| Pokémon Red | `gb/roms/PokemonRed.yml`: 36 states | no |
+| Pokémon Yellow | `gbc/roms/PokemonYellow.yml`: 38 states (Yellow's own symbols) | no |
+| Pokémon Crystal | `gbc/roms/PokemonCrystal.yml`: 43 states; WRAM banks 0-1 only | music, battle |
+| Sonic (REV00) | `genesis/roms/SonicTheHedgehog.yml`: 40 states | mode, zone, lives |
+| Super Mario Land 2 (V1.2) | `gb/roms/SuperMarioLand2.yml`: 26 states in save RAM + HRAM game mode | lives |
+| Wario Land | `gb/roms/WarioLand.yml`: 25 states in save RAM | music, game mode, lives |
+| Mario Kart Super Circuit | `gba/roms/MarioKartSuperCircuit.yml`: 32 states in IWRAM | scene, race phase, coins, retries |
 
-Two reader changes would unlock the rest: export libretro `RETRO_MEMORY_SAVE_RAM` from the patched core (SML2, Wario Land) and a GBA address map (Mario Kart). HRAM needs the memory-map export noted above.
+Saved games keep the v1 protected core, which has no memory-map exports, so HRAM and GBA IWRAM states read only in anonymous play (v2 core) until saves are migrated; save-RAM states work on both.
