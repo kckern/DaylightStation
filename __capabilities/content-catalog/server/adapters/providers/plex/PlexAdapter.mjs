@@ -172,7 +172,7 @@ export class PlexAdapter {
 
   /**
    * @param {Object} config
-   * @param {string} config.host - Plex server URL (e.g., http://10.0.0.10:32400)
+   * @param {string} config.host - Plex server URL (e.g., http://192.0.2.10:32400)
    * @param {string} [config.token] - Plex auth token
    * @param {string} [config.protocol] - Streaming protocol (default: 'hls')
    * @param {string} [config.platform] - Client platform (default: 'Chrome')

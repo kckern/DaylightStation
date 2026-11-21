@@ -9,7 +9,7 @@ void runSchoolCalcDiagnosticsTests() {
   Journal journal;
   assert(journal.size() == 0 && journal.nextSequence() == 1);
   assert(journal.record(10, Subsystem::Wifi, Severity::Info,
-                        "connected", "10.0.0.2", 7, 12, 200, 15) == 1);
+                        "connected", "10.20.30.2", 7, 12, 200, 15) == 1);
   Event event[EVENT_CAPACITY]{};
   assert(journal.copyOldest(event, EVENT_CAPACITY) == 1);
   assert(event[0].sequence == 1 && event[0].atMs == 10);

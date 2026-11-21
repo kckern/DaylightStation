@@ -15,11 +15,11 @@ const gamesConfig = { launch: { package: 'com.example.emulator' } };
 const metered = {
   arcade_session_observation: true,
   content_control: {
-    provider: 'fully-kiosk', host: '10.0.0.9', port: 2323, auth_ref: 'fullykiosk',
-    fallback: { provider: 'adb', host: '10.0.0.9', port: 5555 },
+    provider: 'fully-kiosk', host: '10.20.30.9', port: 2323, auth_ref: 'fullykiosk',
+    fallback: { provider: 'adb', host: '10.20.30.9', port: 5555 },
   },
 };
-const notMetered = { content_control: { provider: 'fully-kiosk', host: '10.0.0.8', port: 2323 } };
+const notMetered = { content_control: { provider: 'fully-kiosk', host: '10.20.30.8', port: 2323 } };
 
 const build = (devices, over = {}) => createArcadeGameSessionTracking({
   devicesConfig: { devices }, gamesConfig, configService, eventBus: { broadcast() {} },
@@ -103,7 +103,7 @@ describe('arcade-game-session wiring is opt-in per device', () => {
   });
 
   it('tolerates a device with no ADB fallback — degraded, not broken', () => {
-    const noAdb = { arcade_session_observation: true, content_control: { host: '10.0.0.9', port: 2323, auth_ref: 'fullykiosk' } };
+    const noAdb = { arcade_session_observation: true, content_control: { host: '10.20.30.9', port: 2323, auth_ref: 'fullykiosk' } };
     const r = build({ 'livingroom-tv': noAdb });
     expect(r.trackers).toHaveLength(1);
   });
@@ -116,7 +116,7 @@ describe('arcade-game-session wiring is opt-in per device', () => {
         devicesConfig: {
           'livingroom-tv': {
             arcade_session_observation: true,
-            content_control: { host: '10.0.0.9', port: 2323, password: 'pw' },
+            content_control: { host: '10.20.30.9', port: 2323, password: 'pw' },
           },
         },
         gamesConfig,
@@ -209,7 +209,7 @@ describe('catalog content resolver', () => {
 describe('overlay is a separate declaration from metering', () => {
   const meteredOnly = {
     arcade_session_observation: true,
-    content_control: { host: '10.0.0.9', port: 2323, auth_ref: 'fullykiosk', fallback: { provider: 'adb', host: '10.0.0.9' } },
+    content_control: { host: '10.20.30.9', port: 2323, auth_ref: 'fullykiosk', fallback: { provider: 'adb', host: '10.20.30.9' } },
   };
   const meteredWithOverlay = { ...meteredOnly, arcade_session_overlay: true };
 
@@ -355,6 +355,6 @@ describe('devices on the Android kiosk app', () => {
     await r.start();
     r.stop();
     expect(posts).toContainEqual(['http://kiosk.test:8780/kiosk/overlay', { url: '' }]);
-    expect(gets.some(url => url.startsWith('http://10.0.0.9:2323/') && url.includes('webOverlayUrl'))).toBe(true);
+    expect(gets.some(url => url.startsWith('http://10.20.30.9:2323/') && url.includes('webOverlayUrl'))).toBe(true);
   });
 });

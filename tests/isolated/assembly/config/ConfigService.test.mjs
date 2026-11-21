@@ -369,7 +369,7 @@ describe.skip('ConfigService integration', () => {
         const svc = createConfigService(fixturesDir);
         // secondary-household defines its own homeassistant
         const url = svc.resolveServiceUrl('secondary-household', 'homeassistant');
-        expect(url).toBe('http://10.0.0.20:8123');
+        expect(url).toBe('http://10.20.30.20:8123');
       } finally {
         process.env.DAYLIGHT_ENV = originalEnv;
       }

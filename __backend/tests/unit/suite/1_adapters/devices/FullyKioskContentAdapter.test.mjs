@@ -5,7 +5,7 @@ describe('FullyKioskContentAdapter', () => {
   let mockLogger;
 
   const defaultConfig = {
-    host: '10.0.0.11',
+    host: '10.20.30.11',
     port: 2323,
     password: 'testpass',
     daylightHost: 'http://localhost:3111',
@@ -659,7 +659,7 @@ describe('FullyKioskContentAdapter', () => {
 
       // Verify URL targets the configured host:port and includes password
       const url = loadStartUrlCalls[0];
-      expect(url).toContain('http://10.0.0.11:2323/');
+      expect(url).toContain('http://10.20.30.11:2323/');
       expect(url).toContain('cmd=loadStartURL');
       expect(url).toContain('password=testpass');
     });

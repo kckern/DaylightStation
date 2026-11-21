@@ -36,14 +36,14 @@ describe('ThermalPrinterAdapter.ping (byte-free)', () => {
     const sock = fakeSocket();
     mockCreateConnection.mockReturnValue(sock);
 
-    const adapter = new ThermalPrinterAdapter({ host: '10.0.0.50', port: 9100 });
+    const adapter = new ThermalPrinterAdapter({ host: '10.20.30.50', port: 9100 });
     const pingPromise = adapter.ping();
 
     process.nextTick(() => sock.emit('connect'));
     const result = await pingPromise;
 
     expect(result.success).toBe(true);
-    expect(result.host).toBe('10.0.0.50');
+    expect(result.host).toBe('10.20.30.50');
     expect(result.port).toBe(9100);
     expect(sock.write).not.toHaveBeenCalled();  // CRITICAL: no bytes written
     expect(sock.end).toHaveBeenCalled();
@@ -54,7 +54,7 @@ describe('ThermalPrinterAdapter.ping (byte-free)', () => {
     mockCreateConnection.mockReturnValue(sock);
 
     const adapter = new ThermalPrinterAdapter({
-      host: '10.0.0.99', port: 9100, timeout: 50,
+      host: '10.20.30.99', port: 9100, timeout: 50,
     });
     const result = await adapter.ping();
 
@@ -68,7 +68,7 @@ describe('ThermalPrinterAdapter.ping (byte-free)', () => {
     const sock = fakeSocket();
     mockCreateConnection.mockReturnValue(sock);
 
-    const adapter = new ThermalPrinterAdapter({ host: '10.0.0.99', port: 9100 });
+    const adapter = new ThermalPrinterAdapter({ host: '10.20.30.99', port: 9100 });
     const pingPromise = adapter.ping();
 
     process.nextTick(() => sock.emit('error', new Error('ECONNREFUSED')));

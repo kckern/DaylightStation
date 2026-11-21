@@ -30,11 +30,11 @@ describe('DataServiceAuthSessionStore', () => {
 
   it('never writes the token — a readable backup grants nobody anything', () => {
     const { s, file } = store();
-    s.create({ username: 'kckern', userAgent: 'Mozilla/5.0', ip: '10.0.0.5' });
+    s.create({ username: 'kckern', userAgent: 'Mozilla/5.0', ip: '10.20.30.5' });
     const serialized = JSON.stringify(file());
     expect(serialized).not.toMatch(/eyJ/);        // no JWT
     expect(serialized).toContain('kckern');
-    expect(serialized).toContain('10.0.0.5');
+    expect(serialized).toContain('10.20.30.5');
   });
 
   it('reports an unknown or absent id as inactive rather than throwing', () => {

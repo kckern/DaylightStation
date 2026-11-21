@@ -27,7 +27,7 @@ import FullyKioskConsole from './FullyKioskConsole.jsx';
 const NativeURL = URL;
 const statusFixture = {
   ok: true,
-  device: { id: 'tablet', name: 'Kitchen tablet', address: '10.0.0.50:2323' },
+  device: { id: 'tablet', name: 'Kitchen tablet', address: '10.20.30.50:2323' },
   summary: {
     manufacturer: 'Acme',
     model: 'WallTab',
@@ -39,7 +39,7 @@ const statusFixture = {
     batteryLevel: 80,
     plugged: true,
     ssid: 'House',
-    ipAddress: '10.0.0.50',
+    ipAddress: '10.20.30.50',
   },
   details: {
     deviceName: 'Kitchen tablet',

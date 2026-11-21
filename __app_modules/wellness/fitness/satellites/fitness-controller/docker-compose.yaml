@@ -21,7 +21,7 @@ services:
     # Environment variables
     environment:
       - PORT=3000
-      - DAYLIGHT_HOST=${DAYLIGHT_HOST:-10.0.0.10}
+      - DAYLIGHT_HOST=${DAYLIGHT_HOST:?set DAYLIGHT_HOST in .env to the DaylightStation host}
       - DAYLIGHT_PORT=${DAYLIGHT_PORT:-3113}
       - SERIAL_DEVICE=${SERIAL_DEVICE:-/dev/ttyUSB0}
       - TV_ON_COMMAND=${TV_ON_COMMAND:-01 30 41 30 41 30 43 02 43 32 30 33 44 36 30 30 30 31 03 73 0D}

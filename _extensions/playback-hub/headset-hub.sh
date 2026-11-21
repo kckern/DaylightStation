@@ -6,7 +6,9 @@ CONFIG_YML="$BASE_DIR/devices.yml"
 CONFIG_JSON_LEGACY="$BASE_DIR/devices.json"
 CONFIG_FILE="$BASE_DIR/.devices.runtime.json"
 API_BASE="https://daylightlocal.kckern.net"
-API_FALLBACK_BASE="http://10.0.0.10:3111"
+# LAN fallback when the public name fails: the app's LAN address, from the
+# environment (systemd drop-in PLAYBACK_HUB_API_FALLBACK=http://<host>:<port>). Empty = no fallback.
+API_FALLBACK_BASE="${PLAYBACK_HUB_API_FALLBACK:-}"
 REFRESH_INTERVAL=300       # seconds between queue refreshes (full playlist re-fetch)
 WATCHDOG_INTERVAL=5        # seconds between mpv liveness checks (tight respawn)
 SCHEDULE_TICK_INTERVAL=30  # seconds between scheduled-fire checks
@@ -555,6 +557,7 @@ device_tag() {
 
 with_api_fallback() {
     local url="$1"
+    [[ -z "$API_FALLBACK_BASE" ]] && { echo "$url"; return; }
     echo "${url/https:\/\/daylightlocal.kckern.net/$API_FALLBACK_BASE}"
 }
 

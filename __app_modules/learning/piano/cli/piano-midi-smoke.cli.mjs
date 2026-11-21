@@ -6,7 +6,10 @@
 // drum marker (channel 10), Acoustic Grand (channel 1), three notes, then a
 // final drum marker and all-notes-off.
 
-const host = process.env.PB_HOST || '10.0.0.245:8770';
+import { resolveDeviceHostOrExit } from '../../../../cli/_deviceHost.mjs';
+
+// The bridge: PB_HOST=<host>:8770, or PB_DEVICE=<device id> from the registry.
+const host = await resolveDeviceHostOrExit({ hostVar: 'PB_HOST', deviceVar: 'PB_DEVICE', port: 8770 });
 const base = `http://${host}`;
 const send = process.argv.includes('--send');
 const mini = process.argv.includes('--mini');

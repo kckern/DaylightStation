@@ -1,6 +1,6 @@
 # playback-hub — Bluetooth Auto-Play for headsets + BT speakers
 
-**Status:** Running on `{env.playback_hub_host}` (Ubuntu mini-PC, 10.0.0.109)
+**Status:** Running on `{env.playback_hub_host}` (Ubuntu mini-PC)
 **Last reviewed:** 2026-11-11
 
 ---
@@ -273,7 +273,7 @@ and, from this module directory, `lua test_wind_down.lua`.
 
 ### Adding a new device
 
-Web UI: `http://10.0.0.109:8080` → Bluetooth tab → Scan → Pair → Add → set queue.
+Web UI: `http://{env.playback_hub_host}:8080` → Bluetooth tab → Scan → Pair → Add → set queue.
 
 Manually:
 ```bash

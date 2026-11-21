@@ -44,12 +44,14 @@ const TSV_PATH = path.join(ROOT, 'strava-plex-media.tsv');
 const USER_AUTH_PATH = path.join(DATA_DIR, 'users', 'user_1', 'auth', 'strava.yml');
 const SYSTEM_AUTH_PATH = path.join(DATA_DIR, 'system', 'auth', 'strava.yml');
 const FITNESS_HISTORY_DIR = fitnessHistoryDir(DATA_DIR);
-const PLEX_HOST = 'http://10.0.0.10:32400';
+// The Plex server: PLEX_HOST=http://<host>:32400 (no default — lookups are skipped without it).
+const PLEX_HOST = process.env.PLEX_HOST || null;
 
 let PLEX_TOKEN = null;
 try {
   PLEX_TOKEN = yaml.load(fs.readFileSync(path.join(DATA_DIR, 'household', 'auth', 'plex.yml'), 'utf8')).token;
 } catch { /* Plex auth unavailable — Plex lookups will be skipped */ }
+if (!PLEX_HOST) PLEX_TOKEN = null; // no server address: skip Plex lookups
 
 const RATE_LIMIT_MS = 12000; // 12s between calls = 5/min = 75 per 15min (under 100 limit)
 

@@ -56,7 +56,7 @@ function delayedTransport(delayFor) {
 }
 
 const makeAdapter = (createTransport, logger) => new ThermalPrinterAdapter(
-  { host: '10.0.0.50', port: 9100, timeout: 5000, upsideDown: false },
+  { host: '10.20.30.50', port: 9100, timeout: 5000, upsideDown: false },
   { logger, createTransport, statusSettleMs: 5 },
 );
 const textJob = { items: [{ type: 'text', content: 'hello', align: 'left' }] };

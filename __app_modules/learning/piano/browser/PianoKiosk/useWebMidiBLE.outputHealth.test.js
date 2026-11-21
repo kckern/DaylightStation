@@ -5,7 +5,7 @@ import { useWebMidiBLE, isPortConnected } from './useWebMidiBLE.js';
 // Output mock carrying a real `state`, so tests can prove OUT health tracks the
 // port's BLE state (not mere object presence) — the silent-dead-output guard.
 function mockAccess({ outState = 'connected', outputs } = {}) {
-  const output = { id: 'o', name: 'jam-7e6', state: outState, send: () => {} };
+  const output = { id: 'o', name: 'midi-relay-01', state: outState, send: () => {} };
   const access = {
     inputs: new Map(),
     outputs: new Map((outputs || [['o', output]])),
@@ -39,17 +39,17 @@ describe('useWebMidiBLE output health (real port.state)', () => {
     const { result } = renderHook(() => useWebMidiBLE({ acquireInput: false }));
     await act(async () => { await result.current.connect(); });
     // Port exists (outputName set) but is dead → health must read false, not true.
-    expect(result.current.outputName).toBe('jam-7e6');
+    expect(result.current.outputName).toBe('midi-relay-01');
     expect(result.current.outputConnected).toBe(false);
   });
 
   it('prefers a CONNECTED output over a stale disconnected one', async () => {
     const dead = { id: 'dead', name: 'stale', state: 'disconnected', send: () => {} };
-    const live = { id: 'live', name: 'jam-7e6', state: 'connected', send: () => {} };
+    const live = { id: 'live', name: 'midi-relay-01', state: 'connected', send: () => {} };
     mockAccess({ outputs: [['dead', dead], ['live', live]] });
     const { result } = renderHook(() => useWebMidiBLE({ acquireInput: false }));
     await act(async () => { await result.current.connect(); });
-    expect(result.current.outputName).toBe('jam-7e6'); // picked the live one, not stale[0]
+    expect(result.current.outputName).toBe('midi-relay-01'); // picked the live one, not stale[0]
     expect(result.current.outputConnected).toBe(true);
   });
 });

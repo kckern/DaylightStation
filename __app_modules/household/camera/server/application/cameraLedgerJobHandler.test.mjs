@@ -50,8 +50,8 @@ const ledgerStore = {
 test('happy path: resolves host + auth from devices.yml and does the per-camera work', async () => {
   const runtimeGateway = makeRuntimeGateway({
     devices: {
-      'cam-a': { host: '10.0.0.56', auth_ref: 'reolink' },
-      'camera-nvr': { host: '10.0.0.70', auth_ref: 'reolink' },
+      'cam-a': { host: '10.20.30.56', auth_ref: 'reolink' },
+      'camera-nvr': { host: '10.20.30.70', auth_ref: 'reolink' },
     },
     cameras: [{ id: 'cam-a', nvrChannel: 1 }],
   });
@@ -72,7 +72,7 @@ test('happy path: resolves host + auth from devices.yml and does the per-camera 
 test('camera-nvr missing from devices.yml: graceful no-auth skip, does not throw', async () => {
   const runtimeGateway = makeRuntimeGateway({
     devices: {
-      'cam-a': { host: '10.0.0.56', auth_ref: 'reolink' },
+      'cam-a': { host: '10.20.30.56', auth_ref: 'reolink' },
       // camera-nvr intentionally absent
     },
     cameras: [{ id: 'cam-a', nvrChannel: 1 }],
@@ -92,11 +92,11 @@ test('camera-nvr missing from devices.yml: graceful no-auth skip, does not throw
 test('one camera failing (bad devices.yml entry) does not abort the other', async () => {
   const runtimeGateway = makeRuntimeGateway({
     devices: {
-      'cam-a': { host: '10.0.0.56', auth_ref: 'reolink' },
+      'cam-a': { host: '10.20.30.56', auth_ref: 'reolink' },
       // cam-b has no host in devices.yml -> resolveCameraEndpoint throws,
       // caught by the per-camera try/catch (not the auth-only call site).
       'cam-b': { auth_ref: 'reolink' },
-      'camera-nvr': { host: '10.0.0.70', auth_ref: 'reolink' },
+      'camera-nvr': { host: '10.20.30.70', auth_ref: 'reolink' },
     },
     cameras: [{ id: 'cam-a', nvrChannel: 1 }, { id: 'cam-b', nvrChannel: 0 }],
   });

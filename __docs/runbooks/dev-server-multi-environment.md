@@ -110,13 +110,13 @@ path:
   media: /media/{user}/DockerDrive/Dropbox/Apps/DaylightStation/media
 
 home_assistant:
-  host: http://172.18.0.22:8123
+  host: http://<ha-host>:8123
 
 plex:
-  host: http://10.0.0.10:32400
+  host: http://<plex-host>:32400
 
 mqtt:
-  host: 10.0.0.10
+  host: <mqtt-host>
   port: 1883
 ```
 

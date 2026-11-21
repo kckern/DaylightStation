@@ -411,10 +411,10 @@ uninitialised pin floating at the lit level. Source cannot distinguish them.
 so both levels are exposed rather than one being baked in:
 
 ```bash
-curl "http://10.0.0.35/led?mode=low"    # then look at the car
-curl "http://10.0.0.35/led?mode=high"   # if low did nothing
-curl "http://10.0.0.35/led?mode=float"  # restore the as-shipped default
-curl "http://10.0.0.35/led"             # read current mode (also on /status)
+curl "http://<relay-ip>/led?mode=low"    # then look at the car
+curl "http://<relay-ip>/led?mode=high"   # if low did nothing
+curl "http://<relay-ip>/led?mode=float"  # restore the as-shipped default
+curl "http://<relay-ip>/led"             # read current mode (also on /status)
 ```
 
 If **neither** level changes anything, it is case (a): hardwired, and the only

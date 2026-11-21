@@ -26,7 +26,7 @@ public class DeviceConfigMergeTest {
     @Test public void partialWrite_preservesSiblingKeys_theOutage() throws IOException {
         String existing =
                 "targetMac: aa:bb:cc:00:10:01\n" +
-                "targetName: jam-7e6\n" +
+                "targetName: midi-relay-01\n" +
                 "speakerMac: AA:BB:CC:00:10:02\n";
         String incoming = "fkbWakeSuppressUntilEpochMs: 1784082288995\n";
 
@@ -34,7 +34,7 @@ public class DeviceConfigMergeTest {
 
         // The whole point: a one-key POST must NOT drop the BLE-MIDI target.
         assertEquals("aa:bb:cc:00:10:01", merged.get("targetMac"));
-        assertEquals("jam-7e6", merged.get("targetName"));
+        assertEquals("midi-relay-01", merged.get("targetName"));
         assertEquals("AA:BB:CC:00:10:02", merged.get("speakerMac"));
         assertEquals("1784082288995", merged.get("fkbWakeSuppressUntilEpochMs"));
     }
@@ -72,15 +72,34 @@ public class DeviceConfigMergeTest {
     }
 
     @Test public void repeatedPartialWrites_neverErodeConfig() throws IOException {
-        String cfg = "targetMac: aa:bb:cc:00:10:01\ntargetName: jam-7e6\n";
+        String cfg = "targetMac: aa:bb:cc:00:10:01\ntargetName: midi-relay-01\n";
         // Simulate many wake-suppress relays back to back.
         for (int i = 0; i < 25; i++) {
             cfg = DeviceConfig.mergeOverride(cfg, "fkbWakeSuppressUntilEpochMs: " + (1_000 + i) + "\n");
         }
         Map<String, String> merged = parse(cfg);
         assertEquals("aa:bb:cc:00:10:01", merged.get("targetMac"));
-        assertEquals("jam-7e6", merged.get("targetName"));
+        assertEquals("midi-relay-01", merged.get("targetName"));
         assertEquals("1024", merged.get("fkbWakeSuppressUntilEpochMs")); // last write wins
         assertTrue("config must not accumulate junk", merged.size() == 3);
+    }
+
+    @Test public void lastKnownGood_fillsOnlyAMissingTarget() {
+        Map<String, String> lkg = new java.util.LinkedHashMap<>();
+        lkg.put("targetName", "midi-relay-01");
+        lkg.put("targetMac", "AA:BB:CC:00:10:01");
+
+        Map<String, String> lost = new java.util.LinkedHashMap<>();
+        lost.put("fkbWakeSuppressUntilEpochMs", "1");
+        assertTrue(DeviceConfig.fillTargetFromLastGood(lost, lkg));
+        assertEquals("midi-relay-01", lost.get("targetName"));
+        assertEquals("AA:BB:CC:00:10:01", lost.get("targetMac"));
+
+        Map<String, String> configured = new java.util.LinkedHashMap<>();
+        configured.put("targetName", "other-relay");
+        configured.put("targetMac", "AA:BB:CC:00:10:09");
+        assertTrue(!DeviceConfig.fillTargetFromLastGood(configured, lkg));
+        assertEquals("other-relay", configured.get("targetName"));
+        assertEquals("AA:BB:CC:00:10:09", configured.get("targetMac"));
     }
 }

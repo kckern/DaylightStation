@@ -46,7 +46,7 @@ describe('RetroArchSyncAdapter', () => {
     mockWriteCatalog = jest.fn();
 
     adapter = new RetroArchSyncAdapter({
-      sourceConfig: { host: '10.0.0.11', port: 1111, playlists_path: '/storage/emulated/0/RetroArch/playlists' },
+      sourceConfig: { host: '10.20.30.11', port: 1111, playlists_path: '/storage/emulated/0/RetroArch/playlists' },
       consoleConfig: {
         n64: { label: 'Nintendo 64', core: '/data/local/tmp/mupen64plus_next_gles3_libretro_android.so' }
       },

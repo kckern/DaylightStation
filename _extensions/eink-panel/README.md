@@ -17,8 +17,8 @@ low-power ESP32-S3 panel.
 
 | IP | Model | Display | Controller |
 |----|-------|---------|------------|
-| 10.0.0.63 | reTerminal **E1003** | 10.3" mono, 16-grayscale, 1872×1404 | **IT8951** |
-| 10.0.0.88 | reTerminal (E10xx — confirm model) | TBD | TBD |
+| <panel-ip> | reTerminal **E1003** | 10.3" mono, 16-grayscale, 1872×1404 | **IT8951** |
+| <panel-ip> | reTerminal (E10xx — confirm model) | TBD | TBD |
 
 Both are ESP32-S3 (MAC prefix `44:1b:f6` = Espressif). In stock SenseCraft
 firmware they expose no local ports (outbound-only cloud clients) — which is why

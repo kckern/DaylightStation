@@ -215,8 +215,9 @@ public class BleMidiConnector {
         final String targetMac = cfg.targetMac();
         if (targetMac.isEmpty()) {
             // No MAC — config was lost or corrupted (the 2026-07-15 outage). NEVER
-            // give up: fall back to a NAME scan for targetName (which always has a
-            // baked default, "jam-7e6"), and keep retrying so the link self-heals
+            // give up: fall back to a NAME scan for targetName (pushed by the backend
+            // from household config, else the last link that worked — see
+            // DeviceConfig.lastKnownGood), and keep retrying so the link self-heals
             // the instant the target reappears or config is restored. A terminal
             // FAILED here is exactly the "drops the connection and gives up" bug.
             final String targetName = cfg.targetName();
@@ -310,7 +311,7 @@ public class BleMidiConnector {
     /**
      * Unfiltered scan that connects the first non-blocklisted device whose NAME
      * matches {@code targetName}. This is the fallback when {@code targetMac} is
-     * missing (config loss/corruption) — the Jamcorder advertises as "jam-7e6", so
+     * missing (config loss/corruption) — the relay advertises a stable name, so
      * we can still find and open it with no MAC on file. Learns the MAC on connect.
      */
     private void startNameScan(final String targetName) {
@@ -413,6 +414,7 @@ public class BleMidiConnector {
                 noLinkStreak = 0;
                 setState(State.CONNECTED, null);
                 Log.i(TAG, "BLE-MIDI connected: " + name + " (" + mac + ") gatt after " + elapsed + "ms");
+                DeviceConfig.rememberLastKnownGood(ctx, name, mac);
                 listener.onMidiDeviceOpened(device, name, mac);
                 handler.postDelayed(() -> watchLink(dev, device, generation), GattLinkGate.WATCH_INTERVAL_MS);
                 break;

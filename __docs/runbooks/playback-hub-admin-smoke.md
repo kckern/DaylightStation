@@ -11,7 +11,7 @@ Automated coverage lives in `tests/integration/playback-hub-bootstrap.test.mjs`
 ## Pre-requisites
 
 - DS dev backend running (`npm run dev` — see `__docs/runbooks/dev-server-multi-environment.md`)
-- Real playback hub reachable at `{env.playback_hub_host}:8080` (SSH alias for `10.0.0.109`)
+- Real playback hub reachable at `{env.playback_hub_host}:8080`
 - Browser pointed at the dev frontend
 - `ssh {env.playback_hub_host}` works without password prompt
 
@@ -101,7 +101,7 @@ ssh {env.playback_hub_host} 'systemctl --user start playback-hub.service'
 ```
 
 - [ ] Admin recovers within ~3 s of the next successful broadcaster tick
-- [ ] Status data refreshes and matches `curl http://10.0.0.109:8080/api/status`
+- [ ] Status data refreshes and matches `curl http://{env.playback_hub_host}:8080/api/status`
 
 ## Reporting issues
 

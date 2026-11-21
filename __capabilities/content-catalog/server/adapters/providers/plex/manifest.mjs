@@ -12,7 +12,7 @@ export default {
   adapter: () => import("./PlexAdapter.mjs"),
 
   configSchema: {
-    host: { type: 'string', required: true, description: 'Plex server URL (e.g., http://192.168.1.100:32400)' },
+    host: { type: 'string', required: true, description: 'Plex server URL (e.g., http://192.0.2.10:32400)' },
     port: { type: 'number', default: 32400, description: 'Plex server port' },
     token: { type: 'string', secret: true, description: 'X-Plex-Token for authentication' },
   }

@@ -6,7 +6,7 @@
  *   node scripts/midi-simulator.mjs                    # Interactive mode
  *   node scripts/midi-simulator.mjs --demo             # Auto-play demo sequence
  *   node scripts/midi-simulator.mjs --random           # Random notes continuously
- *   node scripts/midi-simulator.mjs --host 10.0.0.10   # Custom host
+ *   node scripts/midi-simulator.mjs --host <daylight-host>   # Custom host
  */
 
 import WebSocket from 'ws';

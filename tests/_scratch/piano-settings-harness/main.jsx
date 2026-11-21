@@ -18,7 +18,7 @@ const typed = {
   },
 };
 const shortlist = [voice(0, 'Acoustic Grand'), voice(4, 'Electric Piano 1'), voice(19, 'Church Organ'), voice(40, 'Violin'), voice(73, 'Flute')];
-const ready = { state: 'ready', copy: 'ready', input: { state: 'bridge', name: 'jam-7e6' }, output: { state: 'up', name: 'jam-7e6' }, bridge: { state: 'connected', unavailable: false } };
+const ready = { state: 'ready', copy: 'ready', input: { state: 'bridge', name: 'midi-relay-01' }, output: { state: 'up', name: 'midi-relay-01' }, bridge: { state: 'connected', unavailable: false } };
 const down = { state: 'offline', copy: 'not connected', input: { state: 'down', name: null }, output: { state: 'down', name: null }, bridge: { state: 'reconnecting', unavailable: false } };
 const maintConfig = { screensaver: { deviceId: 'piano-tablet' } };
 
@@ -37,7 +37,7 @@ const SCENES = {
 const id = new URLSearchParams(window.location.search).get('scene') || 'sound-pianos';
 window.__SCENE__ = SCENES[id];
 // BluetoothPanel polls the tablet's audio bridge; answer with a fixed adapter.
-window.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: true, adapter: { supported: true, enabled: true, discovering: false, name: 'Piano tablet' }, devices: [{ address: 'AA:BB', name: 'jam-7e6', bond: 'bonded', connected: { midi: true } }, { address: 'CC:DD', name: 'Living room speaker', bond: 'bonded', connected: {} }], pairing: null, lastError: null, capabilities: { scan: true, pair: true, unpair: true, audio: true, midi: true, pin: true, confirm: false } }) });
+window.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: true, adapter: { supported: true, enabled: true, discovering: false, name: 'Piano tablet' }, devices: [{ address: 'AA:BB', name: 'midi-relay-01', bond: 'bonded', connected: { midi: true } }, { address: 'CC:DD', name: 'Living room speaker', bond: 'bonded', connected: {} }], pairing: null, lastError: null, capabilities: { scan: true, pair: true, unpair: true, audio: true, midi: true, pin: true, confirm: false } }) });
 
 function App() {
   const scene = window.__SCENE__;

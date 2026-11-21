@@ -257,7 +257,7 @@ describe('webSocketOriginRefusal', () => {
   });
 
   it('accepts a non-web Origin: arduinoWebSockets firmware sends file://', () => {
-    expect(webSocketOriginRefusal(upgrade({ host: '10.0.0.10:3111', origin: 'file://' }))).toBeNull();
+    expect(webSocketOriginRefusal(upgrade({ host: '10.20.30.10:3111', origin: 'file://' }))).toBeNull();
   });
 
   it('refuses the opaque origin "null" (sandboxed frame, data: page)', () => {
@@ -273,7 +273,7 @@ describe('webSocketOriginRefusal', () => {
 
   it('honours X-Forwarded-Host only from a loopback or private peer (the reverse proxy), like trust proxy', () => {
     const proxied = (ip) => ({ ...upgrade({ host: 'daylight-station:3111', 'x-forwarded-host': HOST, origin: `https://${HOST}` }), socket: { remoteAddress: ip } });
-    for (const ip of ['127.0.0.1', '::1', '::ffff:127.0.0.1', '10.0.0.5', '172.18.0.2', '192.168.1.4', 'fd00::1', 'fe80::1']) {
+    for (const ip of ['127.0.0.1', '::1', '::ffff:127.0.0.1', '10.20.30.5', '172.30.40.2', '192.168.1.4', 'fd00::1', 'fe80::1']) {
       expect(webSocketOriginRefusal(proxied(ip)), ip).toBeNull();
     }
     for (const ip of ['203.0.113.9', '::ffff:198.51.100.2', '2001:db8::1', undefined]) {

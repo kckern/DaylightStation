@@ -4,7 +4,7 @@ import { createIngestRateLimiter, ingestRateKey } from './ingestRateLimiter.mjs'
 const evt = (over = {}) => ({
   event: 'bridge.socket-error',
   level: 'error',
-  context: { app: 'piano-kiosk', component: 'piano-bridge-notes', ip: '172.18.0.88', userAgent: 'Mac/Chrome151' },
+  context: { app: 'piano-kiosk', component: 'piano-bridge-notes', ip: '172.30.40.88', userAgent: 'Mac/Chrome151' },
   ...over,
 });
 
@@ -48,7 +48,7 @@ describe('ingestRateLimiter', () => {
       data: { throttledEvent: 'bridge.socket-error', throttledLevel: 'error', phase: 'throttling' },
     });
     // The summary carries the client, so a flood is traceable to its origin.
-    expect(first.summary.context).toMatchObject({ ip: '172.18.0.88', component: 'piano-bridge-notes' });
+    expect(first.summary.context).toMatchObject({ ip: '172.30.40.88', component: 'piano-bridge-notes' });
   });
 
   it('does not emit a summary on every suppressed event', () => {
@@ -113,7 +113,7 @@ describe('ingestRateLimiter', () => {
     const c = clock();
     const rl = createIngestRateLimiter({ capacity: 5, refillPerMinute: 1, now: c.now });
     const laptop = evt();
-    const tablet = evt({ context: { ...evt().context, userAgent: 'Android/Tablet', ip: '10.0.0.245' } });
+    const tablet = evt({ context: { ...evt().context, userAgent: 'Android/Tablet', ip: '10.20.30.245' } });
     for (let i = 0; i < 50; i += 1) rl.check(laptop);
     expect(rl.check(laptop).allow).toBe(false);
     expect(rl.check(tablet).allow).toBe(true);
@@ -142,6 +142,6 @@ describe('ingestRateLimiter', () => {
     const a = ingestRateKey(evt());
     expect(ingestRateKey(evt())).toBe(a);
     expect(ingestRateKey(evt({ event: 'other' }))).not.toBe(a);
-    expect(ingestRateKey(evt({ context: { ...evt().context, ip: '10.0.0.9' } }))).not.toBe(a);
+    expect(ingestRateKey(evt({ context: { ...evt().context, ip: '10.20.30.9' } }))).not.toBe(a);
   });
 });

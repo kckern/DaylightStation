@@ -542,7 +542,7 @@ describe('PianoCourseProgramLauncher lesson media', () => {
   });
 
   it('drops a thumbnail no kiosk could fetch instead of passing it on', async () => {
-    const lesson = await lessonOf(episode({ thumbnail: 'http://10.0.0.5:32400/library/metadata/1/thumb' }));
+    const lesson = await lessonOf(episode({ thumbnail: 'http://10.20.30.5:32400/library/metadata/1/thumb' }));
     expect('thumbnail' in lesson).toBe(false);
   });
 
@@ -563,7 +563,7 @@ describe('PianoCourseProgramLauncher lesson media', () => {
   it('omits a course poster the kiosk could not fetch, or one that is missing', async () => {
     expect('thumbnail' in await courseOf(episode())).toBe(false);
     const result = episode();
-    result.info.image = 'http://10.0.0.5:32400/library/metadata/1/thumb';
+    result.info.image = 'http://10.20.30.5:32400/library/metadata/1/thumb';
     expect('thumbnail' in await courseOf(result)).toBe(false);
   });
 

@@ -75,8 +75,8 @@ public class FkbRestUrlTest {
 
     @Test
     public void hostAndPortComeFromTheArguments() {
-        String url = FkbRest.buildUrl("10.0.0.245", 2424, "", "screenOn", null);
-        assertTrue(url, url.startsWith("http://10.0.0.245:2424/?cmd=screenOn"));
+        String url = FkbRest.buildUrl("10.20.30.245", 2424, "", "screenOn", null);
+        assertTrue(url, url.startsWith("http://10.20.30.245:2424/?cmd=screenOn"));
     }
 
     // --- listSettings JSON parsing (pure; no network) ---------------------

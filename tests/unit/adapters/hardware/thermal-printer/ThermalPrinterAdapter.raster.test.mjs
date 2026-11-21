@@ -45,7 +45,7 @@ async function bytesFor(imagePath, width) {
     close() { return this; },
   };
   const adapter = new ThermalPrinterAdapter(
-    { host: '10.0.0.50', port: 9100, timeout: 5000, upsideDown: false },
+    { host: '10.20.30.50', port: 9100, timeout: 5000, upsideDown: false },
     { logger: quietLogger(), createTransport: () => transport },
   );
   await adapter.print({

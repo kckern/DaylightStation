@@ -14,7 +14,7 @@
 //
 //   node tools/ota-when-online.mjs                       # wait indefinitely
 //   node tools/ota-when-online.mjs --timeout-min 120     # give up after 2h
-//   node tools/ota-when-online.mjs --host 10.0.0.35
+//   node tools/ota-when-online.mjs --host <relay address>   # or OBD_RELAY_HOST
 //
 // Build first: pio run -e freematics-oneplus-b
 // =============================================================================
@@ -30,7 +30,11 @@ const arg = (name, dflt) => {
   const i = argv.indexOf(`--${name}`);
   return i !== -1 && argv[i + 1] ? argv[i + 1] : dflt;
 };
-const HOST = arg('host', '10.0.0.35');
+const HOST = arg('host', process.env.OBD_RELAY_HOST || null);
+if (!HOST) {
+  console.error('error: no relay address; pass --host <address> or set OBD_RELAY_HOST');
+  process.exit(2);
+}
 const TIMEOUT_MIN = Number(arg('timeout-min', 0));       // 0 = forever
 const POLL_S = Number(arg('poll-s', 15));
 const INHIBIT_MIN = Number(arg('inhibit-min', 30));

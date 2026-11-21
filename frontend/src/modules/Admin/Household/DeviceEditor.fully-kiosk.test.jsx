@@ -35,7 +35,7 @@ describe('DeviceEditor Fully Kiosk entry point', () => {
     renderEditor({
       id: 'tablet',
       type: 'shield-tv',
-      content_control: { provider: 'fully-kiosk', host: '10.0.0.50' },
+      content_control: { provider: 'fully-kiosk', host: '10.20.30.50' },
     });
     expect(await screen.findByRole('button', { name: 'Fully Kiosk Console' })).toBeTruthy();
   });

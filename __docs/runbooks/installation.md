@@ -253,7 +253,7 @@ network:
 services:
   # Thermal printer (if you have one)
   printer:
-    host: 10.0.0.50   # Printer IP
+    host: 192.0.2.50   # Printer IP
     port: 9100
 
   # MQTT broker (if you have one)
@@ -268,7 +268,7 @@ services:
 
   # TV control (if using Fully Kiosk)
   tv:
-    host: 10.0.0.11
+    host: 192.0.2.11
     port_kiosk: 2323
 ```
 
@@ -418,7 +418,7 @@ In `system.yml`:
 ```yaml
 services:
   printer:
-    host: 10.0.0.50   # Printer's IP address
+    host: 192.0.2.50   # Printer's IP address
     port: 9100        # Standard ESC/POS port
 ```
 
@@ -511,8 +511,8 @@ Common issues:
 
 ### Thermal Printer Not Working
 
-1. Verify printer IP: `ping 10.0.0.50`
-2. Verify port: `nc -zv 10.0.0.50 9100`
+1. Verify printer IP: `ping 192.0.2.50`
+2. Verify port: `nc -zv 192.0.2.50 9100`
 3. Check printer is ESC/POS compatible
 4. Try test print via API
 
