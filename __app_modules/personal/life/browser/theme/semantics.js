@@ -21,6 +21,11 @@ const DRIFT_STATUS_COLORS = {
 };
 export const driftStatusColor = (status) => DRIFT_STATUS_COLORS[status] || 'gray';
 
+const RULE_EFFECTIVENESS_COLORS = {
+  effective: 'green', mixed: 'yellow', ineffective: 'red', not_followed: 'red',
+};
+export const ruleEffectivenessColor = (effectiveness) => RULE_EFFECTIVENESS_COLORS[effectiveness] || 'gray';
+
 // Priority-card metadata — includes the two new types added backend-side in Phase 3.
 export const priorityTypeMeta = {
   goal_deadline:     { icon: IconTarget,          color: 'blue',   label: 'Goal' },

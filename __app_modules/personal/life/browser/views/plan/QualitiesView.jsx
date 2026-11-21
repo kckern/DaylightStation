@@ -4,13 +4,7 @@ import { IconShield, IconAlertTriangle } from '@tabler/icons-react';
 import { useLifePlan } from "../../hooks/useLifePlan.js";
 import { LifePage, LoadingState, ErrorState, EmptyState } from "../../components/index.js";
 import { humanize } from "../../lib/format.js";
-
-function effectivenessColor(effectiveness) {
-  if (effectiveness === 'effective') return 'green';
-  if (effectiveness === 'mixed') return 'yellow';
-  if (effectiveness === 'ineffective' || effectiveness === 'not_followed') return 'red';
-  return 'gray';
-}
+import { ruleEffectivenessColor } from "../../theme/semantics.js";
 
 function RuleItem({ rule }) {
   return (
@@ -21,7 +15,7 @@ function RuleItem({ rule }) {
           <Text size="xs" c="dimmed">{rule.action}</Text>
         </Stack>
         <Badge
-          color={effectivenessColor(rule.effectiveness)}
+          color={ruleEffectivenessColor(rule.effectiveness)}
           variant="light"
           size="sm"
         >

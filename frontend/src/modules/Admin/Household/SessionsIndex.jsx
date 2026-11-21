@@ -149,12 +149,12 @@ function SessionRoster({ busy, startRevocation }) {
               {sessions.map((row) => (
                 <Table.Tr key={row.id}>
                   <Table.Td>
-                    {row.username}{' '}
+                    <Text component="span" id={`session-user-${row.id}`}>{row.username}</Text>{' '}
                     {row.current ? <Badge size="xs" variant="light">this device</Badge> : null}
                   </Table.Td>
                   <Table.Td>
-                    <Text size="sm">{deviceLabel(row.userAgent)}</Text>
-                    <Text size="xs" c="dimmed">{row.ip ?? 'unknown address'} · since {when(row.createdAt)}</Text>
+                    <Text size="sm" id={`session-device-${row.id}`}>{deviceLabel(row.userAgent)}</Text>
+                    <Text size="xs" c="dimmed" id={`session-details-${row.id}`}>{row.ip ?? 'unknown address'} · since {when(row.createdAt)}</Text>
                   </Table.Td>
                   <Table.Td><Text size="sm">{when(row.lastSeenAt)}</Text></Table.Td>
                   <Table.Td align="right">
@@ -162,6 +162,7 @@ function SessionRoster({ busy, startRevocation }) {
                         not hidden — it is how you leave a borrowed machine. */}
                     <Button size="compact-xs" variant="subtle" color="red"
                       loading={busy === row.id} disabled={Boolean(busy)}
+                      aria-describedby={`session-user-${row.id} session-device-${row.id} session-details-${row.id}`}
                       onClick={() => revoke(row.id, deviceLabel(row.userAgent))}>
                       {row.current ? 'Sign out here' : 'Sign out'}
                     </Button>

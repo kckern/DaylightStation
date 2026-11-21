@@ -1,5 +1,5 @@
 import { Stack, Paper, Text, Group, Badge, Progress, Textarea } from '@mantine/core';
-import { driftStatusColor, goalStateColor } from "../../theme/semantics.js";
+import { driftStatusColor, goalStateColor, ruleEffectivenessColor } from "../../theme/semantics.js";
 
 export function CycleRetro({ step, content, responses, setResponse }) {
   if (step === 0) {
@@ -81,7 +81,7 @@ export function CycleRetro({ step, content, responses, setResponse }) {
           <Text size="sm" fw={500}>Rule Effectiveness</Text>
           {content.ruleEffectiveness.map((r, i) => (
             <Group key={i} gap="xs">
-              <Badge size="xs" color={r.effectiveness === 'effective' ? 'green' : 'yellow'}>
+              <Badge size="xs" color={ruleEffectivenessColor(r.effectiveness)}>
                 {r.effectiveness || 'untested'}
               </Badge>
               <Text size="xs">{r.trigger} → {r.action}</Text>
