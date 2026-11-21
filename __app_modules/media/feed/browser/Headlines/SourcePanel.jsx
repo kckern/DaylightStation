@@ -97,15 +97,16 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, o
             // http(s) only: a feed link is other people's data. No href = plain text.
             const href = webLink(isPaywalled ? paywallProxy + link : link) ?? undefined;
             const desc = item.desc && item.desc !== item.title ? item.desc : null;
+            const showPreview = (event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              event.currentTarget.classList.toggle('source-headline--tooltip-below', rect.top < 250);
+              setActivePreview(previewId);
+            };
             return (
               <li key={item.stateKey || item.id || href || i} className="source-headline"
-                onMouseEnter={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  e.currentTarget.classList.toggle('source-headline--tooltip-below', rect.top < 250);
-                  setActivePreview(previewId);
-                }}
+                onMouseEnter={showPreview}
                 onMouseLeave={() => setActivePreview(null)}
-                onFocus={() => setActivePreview(previewId)}
+                onFocus={showPreview}
                 onBlur={(event) => {
                   if (!event.currentTarget.contains(event.relatedTarget)) setActivePreview(null);
                 }}
