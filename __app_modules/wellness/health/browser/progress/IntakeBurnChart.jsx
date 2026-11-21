@@ -31,7 +31,7 @@ export function IntakeBurnChart({ days = [], loading = false, title = 'Intake vs
       <p className="health-intakeburn__legend"><span>↑ Exercise</span><span>↓ Food</span><span>kcal · same scale</span></p>
       <div className="health-intakeburn__plot" role="img"
         aria-label={known.length
-          ? `${known.length} days: average intake ${avgFood} kcal, average burn ${avgBurn} kcal${gaps ? `, ${gaps} days without data` : ''}`
+          ? `${known.length} days: ${avgFood == null ? 'no food intake logged' : `average intake ${avgFood} kcal`}, average burn ${avgBurn} kcal${gaps ? `, ${gaps} days without data` : ''}`
           : 'No intake or burn data yet'}>
         <div className="health-intakeburn__burn" style={{ height: `${exerciseAreaPct}%` }}>
           {bars.map((b) => (

@@ -91,6 +91,7 @@ export function PlayedEarlier({ screenId, currentContentId = null }) {
                   className="played-earlier-main"
                   data-testid={`${testId}-play`}
                   aria-label={`Play ${row.title ?? 'this'}`}
+                  aria-description={context || undefined}
                   onClick={() => run('tap', item)}
                 >
                   {row.thumbnail

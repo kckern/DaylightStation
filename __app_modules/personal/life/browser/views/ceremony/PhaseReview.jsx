@@ -20,16 +20,16 @@ export function PhaseReview({ step, content, responses, setResponse }) {
       <Stack gap="md">
         <Text size="sm" fw={500}>Deep Review</Text>
 
-        <Text size="sm">Are your goals still aligned with your purpose?</Text>
         <Textarea
+          label="Are your goals still aligned with your purpose?"
           value={responses.goalAlignment || ''}
           onChange={(e) => setResponse('goalAlignment', e.currentTarget.value)}
           autosize
           minRows={2}
         />
 
-        <Text size="sm">Are any beliefs ready to be confirmed or refuted?</Text>
         <Textarea
+          label="Are any beliefs ready to be confirmed or refuted?"
           value={responses.beliefUpdates || ''}
           onChange={(e) => setResponse('beliefUpdates', e.currentTarget.value)}
           autosize
