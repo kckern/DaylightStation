@@ -3,6 +3,7 @@ import { whileDocumentVisible } from '@/lib/hooks/useVisibleRefresh.js';
 import { RemuxPlayer } from "../../../../../__capabilities/playback/browser/remux.mjs";
 import { useFeedPlayer } from "./FeedPlayerContext.jsx";
 import { formatFeedPlaybackTime } from './formatTime.js';
+import { formatFeedVolume } from './formatVolume.js';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 
 // Recreate child each call to pick up sessionLog context set by FeedApp
@@ -317,6 +318,7 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
           value={volume}
           onChange={(e) => setVolume(parseFloat(e.target.value))}
           aria-label="Volume"
+          aria-valuetext={formatFeedVolume(volume)}
           style={{ width: '60px', accentColor: 'white', cursor: 'pointer' }}
         />
 

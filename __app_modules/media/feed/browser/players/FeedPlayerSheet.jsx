@@ -8,6 +8,7 @@ import { proxyImage, safeImage } from "../Scroll/cards/utils.js";
 import { feedLog } from "../Scroll/feedLog.js";
 import { useFeedPlayer, SPEED_STEPS } from "./FeedPlayerContext.jsx";
 import { formatFeedPlaybackTime } from './formatTime.js';
+import { formatFeedVolume } from './formatVolume.js';
 import "./FeedPlayerSheet.scss";
 
 export default function FeedPlayerSheet({ open, onClose, item, playback, openerRef }) {
@@ -297,6 +298,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
             onChange={(e) => setVolume(parseFloat(e.target.value))}
             ref={bindVolume}
             aria-label="Volume"
+            aria-valuetext={formatFeedVolume(muted ? 0 : volume)}
           />
         </div>}
 
