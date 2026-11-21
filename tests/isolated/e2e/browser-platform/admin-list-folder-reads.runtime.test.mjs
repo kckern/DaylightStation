@@ -77,9 +77,10 @@ test('Admin list commands use confirmed positions through search, split, reorder
   const rowActions = source.getByRole('button', { name: 'Actions for Needle match revised' });
   await rowActions.press('Enter');
   await page.getByRole('menuitem', { name: 'Duplicate', exact: true }).press('Enter');
-  await expect(region.getByText('Needle match revised', { exact: true })).toHaveCount(2);
+  await expect(region.getByText('Needle match revised', { exact: true })).toBeVisible();
+  await expect(region.getByText('Needle match revised (copy)', { exact: true })).toBeVisible();
   expect(calls[3]).toEqual(['POST', `${path}/items?section=1`, expect.objectContaining({
-    label: 'Needle match revised', input: 'plex:match', action: 'Play', title: 'Needle match revised (copy)',
+    label: 'Needle match revised (copy)', input: 'plex:match', action: 'Play',
   })]);
 
   await rowActions.press('Enter');

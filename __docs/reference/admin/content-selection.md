@@ -10,6 +10,8 @@ Deleting and undoing a list item restores its scheduling dates and original posi
 
 Editing a list item sends changed fields, including values reset to their defaults. New items continue to omit default values.
 
+Duplicating a list item gives the copy a distinct “(copy)” label while preserving its content and settings.
+
 The item editor's **Section** choice saves the selected destination. When a move succeeds but its field update fails, retrying resolves the item by its stable UID in the refreshed list. Cross-section edits without a stable UID are blocked to prevent writes to the wrong positional row.
 
 The list editor checks whether the selected item supports its row’s action. Rows looking up the same item share pending capability and alternate reads. A confirmed mismatch can suggest another ID for the same content. A failed capability read leaves the row quiet, and a failed alternate read leaves the confirmed mismatch without a suggestion. Changing the row’s item or action retires an obsolete suggestion.

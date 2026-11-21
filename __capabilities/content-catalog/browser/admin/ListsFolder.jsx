@@ -450,8 +450,9 @@ function FolderEditor({ type, listName }) {
   const handleDuplicateItem = async (sectionIndex, item) => {
     const newItem = {
       ...item,
-      title: `${item.title || item.label} (copy)`,
+      label: `${item.label || item.title || item.input || 'Untitled'} (copy)`,
     };
+    delete newItem.title;
     delete newItem.sectionIndex;
     delete newItem.itemIndex;
     delete newItem.sectionTitle;
