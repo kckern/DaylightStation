@@ -1,6 +1,8 @@
-import { Stack, Paper, Text, Group, Badge, Textarea } from '@mantine/core';
+import { useId } from 'react';
+import { Stack, Paper, Text, Group, Badge, Textarea, Chip } from '@mantine/core';
 
 export function UnitIntention({ step, content, responses, setResponse }) {
+  const energyLabelId = useId();
   if (step === 0) {
     // Context: show active goals and applicable rules
     return (
@@ -44,19 +46,14 @@ export function UnitIntention({ step, content, responses, setResponse }) {
           minRows={3}
         />
 
-        <Text size="sm" fw={500} mt="sm">Energy level</Text>
-        <Group gap="xs">
-          {['low', 'medium', 'high'].map(level => (
-            <Badge
-              key={level}
-              variant={responses.energy === level ? 'filled' : 'outline'}
-              style={{ cursor: 'pointer' }}
-              onClick={() => setResponse('energy', level)}
-            >
-              {level}
-            </Badge>
-          ))}
-        </Group>
+        <Text id={energyLabelId} size="sm" fw={500} mt="sm">Energy level</Text>
+        <Chip.Group multiple={false} value={responses.energy ?? null} onChange={value => setResponse('energy', value)}>
+          <Group gap="xs" role="radiogroup" aria-labelledby={energyLabelId}>
+            {['low', 'medium', 'high'].map(level => (
+              <Chip key={level} value={level} size="sm" variant="outline">{level}</Chip>
+            ))}
+          </Group>
+        </Chip.Group>
       </Stack>
     );
   }

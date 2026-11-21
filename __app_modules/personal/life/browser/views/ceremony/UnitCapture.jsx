@@ -1,6 +1,8 @@
-import { Stack, Text, Textarea, Group, Badge, Paper } from '@mantine/core';
+import { useId } from 'react';
+import { Stack, Text, Textarea, Group, Badge, Paper, Chip } from '@mantine/core';
 
 export function UnitCapture({ step, content, responses, setResponse }) {
+  const moodLabelId = useId();
   if (step === 0) {
     // Completion records may nest the POST body ({responses: {...}}) inside the
     // record's own responses field — normalize both shapes defensively.
@@ -45,19 +47,14 @@ export function UnitCapture({ step, content, responses, setResponse }) {
           minRows={3}
         />
 
-        <Text size="sm" fw={500}>Mood</Text>
-        <Group gap="xs">
-          {['frustrated', 'neutral', 'satisfied', 'energized'].map(mood => (
-            <Badge
-              key={mood}
-              variant={responses.mood === mood ? 'filled' : 'outline'}
-              style={{ cursor: 'pointer' }}
-              onClick={() => setResponse('mood', mood)}
-            >
-              {mood}
-            </Badge>
-          ))}
-        </Group>
+        <Text id={moodLabelId} size="sm" fw={500}>Mood</Text>
+        <Chip.Group multiple={false} value={responses.mood ?? null} onChange={value => setResponse('mood', value)}>
+          <Group gap="xs" role="radiogroup" aria-labelledby={moodLabelId}>
+            {['frustrated', 'neutral', 'satisfied', 'energized'].map(mood => (
+              <Chip key={mood} value={mood} size="sm" variant="outline">{mood}</Chip>
+            ))}
+          </Group>
+        </Chip.Group>
       </Stack>
     );
   }
