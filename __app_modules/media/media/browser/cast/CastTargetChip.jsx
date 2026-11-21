@@ -6,7 +6,7 @@
 // mode, persisted per browser. Inline cast pickers seed from these so a
 // configured household is one tap per cast. It absorbs the old cast icon; the
 // first-use naming popover anchors to it (identity/FirstUseCard.jsx).
-import React, { useState, useCallback, useContext, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useContext, useEffect, useId, useRef } from 'react';
 import { Popover, Text, UnstyledButton } from '@mantine/core';
 import { useMergedRef } from '@mantine/hooks';
 import { IconChevronDown } from '@tabler/icons-react';
@@ -20,6 +20,7 @@ import { useDestinationInteraction } from "./destinationInteraction.js";
 import "./Cast.scss";
 
 export function CastTargetChip({ controlRef }) {
+  const modeLabelId = `cast-mode-label-${useId()}`;
   const [open, setOpen] = useState(false);
   const trigger = useRef(null);
   const setTriggerRef = useMergedRef(trigger, controlRef);
@@ -69,27 +70,29 @@ export function CastTargetChip({ controlRef }) {
       <Popover.Target>{control}</Popover.Target>
       <Popover.Dropdown data-testid="cast-popover" className="cast-popover">
         <div className="cast-popover-section">
-          <Text size="sm" c="dimmed" fw={600} mb={4}>When playing elsewhere</Text>
-          <label className="cast-popover-row">
-            <input
-              type="radio"
-              name="cast-mode"
-              checked={mode === 'transfer'}
-              onChange={() => setMode('transfer')}
-              data-testid="cast-mode-transfer"
-            />
-            <span>Move playback to the device</span>
-          </label>
-          <label className="cast-popover-row">
-            <input
-              type="radio"
-              name="cast-mode"
-              checked={mode === 'fork'}
-              onChange={() => setMode('fork')}
-              data-testid="cast-mode-fork"
-            />
-            <span>Keep playing here too</span>
-          </label>
+          <Text size="sm" c="dimmed" fw={600} mb={4} id={modeLabelId}>When playing elsewhere</Text>
+          <div role="radiogroup" aria-labelledby={modeLabelId}>
+            <label className="cast-popover-row">
+              <input
+                type="radio"
+                name="cast-mode"
+                checked={mode === 'transfer'}
+                onChange={() => setMode('transfer')}
+                data-testid="cast-mode-transfer"
+              />
+              <span>Move playback to the device</span>
+            </label>
+            <label className="cast-popover-row">
+              <input
+                type="radio"
+                name="cast-mode"
+                checked={mode === 'fork'}
+                onChange={() => setMode('fork')}
+                data-testid="cast-mode-fork"
+              />
+              <span>Keep playing here too</span>
+            </label>
+          </div>
         </div>
         <div className="cast-popover-section">
           <Text size="sm" c="dimmed" fw={600} mb={4}>Play on</Text>
