@@ -158,7 +158,7 @@ for (const change of ['member', 'date']) {
       return route.fulfill({ json: path.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
     });
 
-    await page.goto('/admin/agents/health#dashboards');
+    await page.goto('/admin/agents/health-coach#dashboards');
     await started.promise;
     if (change === 'member') {
       await page.getByPlaceholder('Select user').click();
