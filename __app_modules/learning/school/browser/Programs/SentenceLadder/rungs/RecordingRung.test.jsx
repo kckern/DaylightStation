@@ -278,10 +278,12 @@ describe('recording rung — capture log', () => {
     expect(lines('silent-cleared')).toEqual([expect.objectContaining({ seq: 16, afterMs: 3100 })]);
   });
 
-  it('a take playback cut short by a key is "stopped", with how much of it was heard', async () => {
+  /** Record a one-go take whose playback never ends by itself; returns the take's element. */
+  async function hangingTake() {
+    let takeEl = null;
     window.HTMLMediaElement.prototype.play = vi.fn(function play() {
       const src = path(this.src);
-      if (src.startsWith('blob:')) return Promise.resolve(); // the take hangs
+      if (src.startsWith('blob:')) { takeEl = this; return Promise.resolve(); } // the take hangs
       setTimeout(() => this.onended?.(), 0);
       return Promise.resolve();
     });
@@ -292,9 +294,44 @@ describe('recording rung — capture log', () => {
     speak({ voiced: 1500 });
     pressKey(' ');
     await screen.findByRole('status', { name: 'Playing your recording' });
-    now += 700;
-    pressKey(' ');
-    expect(lastLine('playback')).toMatchObject({ what: 'take', outcome: 'stopped', ms: 700 });
+    return () => takeEl;
+  }
+
+  it('the take plays to its end: every key is held until it does (owner ruling 2026-11-20)', async () => {
+    const takeEl = await hangingTake();
+    now += 300;
+    for (const key of [' ', ' ', 'Enter', 'Tab', 'Backspace', 'ArrowLeft']) pressKey(key);
+    // Still playing, nothing stopped, no review offered, one held line.
+    expect(screen.getByRole('status', { name: 'Playing your recording' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Keep it' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Hear it again' })).toBeNull();
+    expect(lines('playback').filter((l) => l.what === 'take')).toEqual([]);
+    expect(lines('playback-held')).toEqual([expect.objectContaining({ seq: 16, via: 'key:Space', phase: 'playback' })]);
+    // It ends; only now can the learner keep it.
+    now += 1200;
+    act(() => takeEl().onended());
+    expect(lastLine('playback')).toMatchObject({ what: 'take', outcome: 'ended', ms: 1500 });
+    await screen.findByRole('button', { name: 'Keep it' });
+  });
+
+  it('a take player that never reports an end lifts the freeze after the take\'s length', async () => {
+    const realSetTimeout = globalThis.setTimeout;
+    const timers = [];
+    const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation((fn, ms, ...rest) => {
+      timers.push({ fn, ms });
+      return realSetTimeout(fn, ms > 1000 ? 1e9 : ms, ...rest);
+    });
+    try {
+      await hangingTake();
+      // The take was 1500 ms; the watchdog is its length plus the 2500 ms grace.
+      const watchdog = timers.find((t) => t.ms === 4000);
+      expect(watchdog).toBeTruthy();
+      act(() => watchdog.fn());
+      expect(lastLine('playback')).toMatchObject({ what: 'take', outcome: 'timeout' });
+      await screen.findByRole('button', { name: 'Keep it' });
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

@@ -68,6 +68,14 @@ const TAKE_SAMPLES = 4096;
  */
 const JOIN_TIMEOUT_MS = 10000;
 
+/**
+ * The take's playback holds the rung frozen (see `dispatch`). These bound the
+ * freeze when a player never reports an end: the take's own length plus a
+ * grace for decode and start-up, or a flat ceiling when the length is unknown.
+ */
+const PLAYBACK_GRACE_MS = 2500;
+const PLAYBACK_FALLBACK_MS = 20000;
+
 /** `promise`, or a rejection with Error('timeout') after `ms`. */
 function withTimeout(promise, ms) {
   let timer;
@@ -214,8 +222,28 @@ export default function RecordingRung({
     if (r && r.idleSince == null) r.idleSince = Date.now();
   };
 
+  /**
+   * THE TAKE PLAYS TO THE END (owner ruling 2026-11-20). While the learner's
+   * own take is playing back, the rung is frozen: every key and tile is
+   * swallowed here, Again and Start over included, until it ends. Hearing
+   * what they sounded like is the point of the playback, and the store showed
+   * one-go takes cut off at 230–650 ms on all 16 of 16 accepted takes: Space
+   * to stop, then a second reflexive Space that skipped the playback. One
+   * `playback-held` line per playback says presses were refused; the
+   * watchdog in `playBack` is what guarantees the freeze always lifts.
+   */
+  const heldRef = useRef(false);
   /** Every key and tile goes through here — the one place `via` is decided. */
   const dispatch = useCallback((via, action) => {
+    if (phaseRef.current === 'playback') {
+      if (!heldRef.current) {
+        heldRef.current = true;
+        languageLog.capture('playback-held', {
+          seq: entry.seq, ...(pieceRef.current != null ? { piece: pieceRef.current } : {}), via, phase: 'playback',
+        });
+      }
+      return;
+    }
     const intent = { via, phase: phaseRef.current };
     const r = reviewRef.current;
     if (intent.phase === 'review' && r) {
@@ -329,7 +357,15 @@ export default function RecordingRung({
   const [pausesFor, setPausesFor] = useState(null);
   const pauses = useModelPauses(modelUrl, pausesFor === modelUrl);
 
+  /** The freeze's safety net: see `playBack`. */
+  const playbackWatchdogRef = useRef(null);
+  const clearPlaybackWatchdog = () => {
+    if (playbackWatchdogRef.current) clearTimeout(playbackWatchdogRef.current);
+    playbackWatchdogRef.current = null;
+  };
+
   const stopPlayback = useCallback(() => {
+    clearPlaybackWatchdog();
     closePlay('take', 'stopped');
     const el = playbackRef.current;
     if (el) {
@@ -373,14 +409,25 @@ export default function RecordingRung({
    * gesture behind this play(), so autoplay policy is satisfied; if it still
    * refuses, the review controls appear and nothing is lost but the listen.
    */
-  const playBack = useCallback((url, piece = null) => {
+  const playBack = useCallback((url, piece = null, durationMs = null) => {
+    // Set synchronously, not left to the phase effect: a key arriving before
+    // React re-renders must already find the rung frozen.
+    phaseRef.current = 'playback';
+    heldRef.current = false;
     setPhase('playback');
     openPlay('take', 'take', piece != null ? { piece } : {});
     const el = new Audio(url);
     // The take plays back at the panel's master volume, like the prompt.
     unbindPlaybackRef.current = bindMediaToMaster(el);
     playbackRef.current = el;
+    let finished = false;
     const finish = (outcome) => () => {
+      if (finished) return;
+      finished = true;
+      clearPlaybackWatchdog();
+      el.onended = null;
+      el.onerror = null;
+      if (outcome === 'timeout') el.pause();
       closePlay('take', outcome);
       unbindPlaybackRef.current?.();
       unbindPlaybackRef.current = null;
@@ -389,6 +436,14 @@ export default function RecordingRung({
     };
     el.onended = finish('ended');
     el.onerror = finish('blocked');
+    // The freeze lifts on `ended`, an error, or a refused play(). A webview
+    // that never fires any of them would hold the child forever, so the
+    // take's own length plus a margin ends it too (`outcome: 'timeout'`).
+    clearPlaybackWatchdog();
+    playbackWatchdogRef.current = setTimeout(
+      finish('timeout'),
+      Number.isFinite(durationMs) && durationMs > 0 ? durationMs + PLAYBACK_GRACE_MS : PLAYBACK_FALLBACK_MS,
+    );
     const result = el.play();
     if (result?.catch) {
       result.catch((err) => {
@@ -440,7 +495,7 @@ export default function RecordingRung({
     const after = afterTakeRef.current;
     afterTakeRef.current = null;
     if (after === 'compare') routeRef.current.compare?.(null, 'recording');
-    else playBack(takeUrlRef.current);
+    else playBack(takeUrlRef.current, null, durationMs);
     decodeTake(blob).then((samples) => { if (blobRef.current === blob) setTake(samples); });
   }, [log, playBack]);
 
@@ -480,7 +535,7 @@ export default function RecordingRung({
     afterTakeRef.current = null;
     if (after === 'compare') routeRef.current.compare?.(i, 'recording');
     else if (after === 'finish' && !verdict) routeRef.current.finish?.(intent);
-    else playBack(pieceUrlRef.current, i);
+    else playBack(pieceUrlRef.current, i, durationMs);
     // The decode is slow and the learner may already have moved on — to the
     // next piece, or a redo — so the picture lands only if this piece's take
     // is still the one being heard or reviewed.
@@ -945,11 +1000,6 @@ export default function RecordingRung({
     stopCapture();
   }, [stopCapture]);
 
-  const skipPlayback = useCallback(() => {
-    stopPlayback();
-    toReview();
-  }, [stopPlayback, toReview]);
-
   const accept = useCallback(() => {
     // THE GATE. A take that cleared neither floor is not an attempt, and the
     // only way on is to record again. Enforced here rather than only by
@@ -1007,12 +1057,12 @@ export default function RecordingRung({
     if (current === 'idle') begin();
     else if (current === 'prompting') cut();
     else if (current === 'recording') stopRecording();
-    else if (current === 'playback') skipPlayback();
+    // No 'playback' branch: the take plays to its end (see `dispatch`).
     else if (current === 'review') {
       if (pieceRef.current != null) nextPiece();
       else accept();
     }
-  }, [accept, begin, cut, nextPiece, skipPlayback, stopRecording]);
+  }, [accept, begin, cut, nextPiece, stopRecording]);
 
   /**
    * THE KEYS (owner ruling 2026-09-23):
@@ -1311,22 +1361,24 @@ export default function RecordingRung({
             </SchoolButton>
           </>
         )}
-        {/* The secondary keys, as tiles: hear it again, start over, done. */}
-        {phase !== 'joining' && (
+        {/* The secondary keys, as tiles: hear it again, start over, done.
+            None of them is shown while the take plays: the rung is frozen
+            until it ends, and a tile that does nothing invites more taps. */}
+        {phase !== 'joining' && phase !== 'playback' && (
           <SchoolButton variant="plain" type="button" className="lang-tile lang-tile--minor" onClick={onTap(replaySentence)} aria-label="Hear it again">
             <Icon name="volume" className="lang-tile__glyph" />
             <span className="lang-tile__word" aria-hidden="true">Hear it</span>
             {key('Tab')}
           </SchoolButton>
         )}
-        {(inPieces || joinedRef.current) && phase !== 'joining' && (
+        {(inPieces || joinedRef.current) && phase !== 'joining' && phase !== 'playback' && (
           <SchoolButton variant="plain" type="button" className="lang-tile lang-tile--minor" onClick={onTap(startOver)} aria-label="Start over">
             <Icon name="restart" className="lang-tile__glyph" />
             <span className="lang-tile__word" aria-hidden="true">Start over</span>
             {key('←')}
           </SchoolButton>
         )}
-        {inPieces && said > 0 && phase !== 'joining' && !(phase === 'review' && lastPiece) && (
+        {inPieces && said > 0 && phase !== 'joining' && phase !== 'playback' && !(phase === 'review' && lastPiece) && (
           <SchoolButton variant="plain"
             type="button"
             className="lang-tile lang-tile--minor"
