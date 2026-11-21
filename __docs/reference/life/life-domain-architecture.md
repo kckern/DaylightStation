@@ -25,7 +25,7 @@ Pure business logic — no I/O, no external dependencies.
 | `value-objects/` | GoalState, BeliefState | Frozen enum-style state definitions |
 
 **State Machines:**
-- Goals: 9 states (considered → ready → active → progressing → paused → completed/abandoned/blocked/failed)
+- Goals: 9 states (`dream`, `considered`, `ready`, `committed`, `paused`, `achieved`, `failed`, `abandoned`, `invalidated`); the domain owns allowed transitions and the goal presenter exposes them to the browser.
 - Beliefs: 9 states (hypothesized → testing → confirmed/uncertain/refuted → questioning → revised/abandoned/dormant)
 
 #### CeremonyDueResolver (`services/CeremonyDueResolver.mjs`)
@@ -266,7 +266,7 @@ A small shared design system underpins every view, added alongside the "beautifu
 
 | Directory | Components |
 |-----------|------------|
-| `views/plan/` | PurposeView, QualitiesView, ValuesView, BeliefsView, GoalsView, GoalDetail, CeremonyConfig |
+| `views/plan/` | PurposeView, QualitiesView, ValuesView, BeliefsView, GoalsView, GoalDetail, CeremonyConfig. GoalDetail renders only the transitions returned by the presenter; terminal goals have no transition control, and invalidated goals remain in the Completed group. |
 | `views/now/` | **Dashboard** (not "Briefing" — see below), PriorityList |
 | `views/coach/` | CoachChat — chat UI for the lifeplan-guide agent, gated on a resolved `lifeUser` so agent memory keys to the right person |
 | `views/log/` | LogBrowser, LogTimeline, LogDayDetail, LogWeekView, LogMonthView, LogSeasonView, LogYearView, LogDecadeView, LogCategoryView, and `views/log/shared/` (ActivityHeatmap, CategoryFilter, ScopeSelector, SourceIcon) |

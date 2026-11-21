@@ -6,7 +6,7 @@ import {
 // One source of truth for goal-state color. Superset of every state the API emits.
 const GOAL_STATE_COLORS = {
   dream: 'grape', considered: 'blue', ready: 'cyan', committed: 'green',
-  achieved: 'teal', failed: 'red', abandoned: 'dark', paused: 'yellow', evolved: 'violet',
+  achieved: 'teal', failed: 'red', abandoned: 'dark', invalidated: 'gray', paused: 'yellow', evolved: 'violet',
 };
 export const goalStateColor = (state) => GOAL_STATE_COLORS[state] || 'gray';
 

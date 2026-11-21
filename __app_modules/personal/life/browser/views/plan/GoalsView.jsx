@@ -17,7 +17,7 @@ const STATE_GROUPS = [
   { label: 'Considered', states: ['considered'] },
   { label: 'Ready', states: ['ready'] },
   { label: 'Committed', states: ['committed'] },
-  { label: 'Completed', states: ['achieved', 'failed', 'abandoned', 'paused', 'evolved'] },
+  { label: 'Completed', states: ['achieved', 'failed', 'abandoned', 'invalidated', 'paused', 'evolved'] },
 ];
 
 function GoalCard({ goal }) {

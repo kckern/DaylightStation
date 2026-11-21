@@ -1,9 +1,13 @@
 import { Rule } from "../../domain/entities/Rule.mjs";
+import { GoalState } from "../../domain/value-objects/GoalState.mjs";
 
 const pick = (value, fields) => Object.fromEntries(fields.map(field => [field, value[field]]));
 
 export const presentPurpose = value => pick(value, ['statement', 'adopted', 'last_reviewed', 'review_cadence', 'notes', 'grounded_in']);
-export const presentGoal = value => pick(value, ['id', 'name', 'state', 'quality', 'why', 'sacrifice', 'deadline', 'metrics', 'audacity', 'milestones', 'state_history', 'dependencies', 'avoids_nightmare', 'nightmare_proximity', 'retrospective', 'achieved_date', 'failed_date', 'abandoned_reason', 'paused_reason', 'resume_conditions']);
+export const presentGoal = value => ({
+  ...pick(value, ['id', 'name', 'state', 'quality', 'why', 'sacrifice', 'deadline', 'metrics', 'audacity', 'milestones', 'state_history', 'dependencies', 'avoids_nightmare', 'nightmare_proximity', 'retrospective', 'achieved_date', 'failed_date', 'abandoned_reason', 'paused_reason', 'resume_conditions']),
+  validTransitions: [...GoalState.getValidTransitions(value.state)],
+});
 export const presentBelief = value => pick(value, ['id', 'if', 'then', 'state', 'confidence', 'foundational', 'signals', 'evidence_history', 'evidence_quality', 'depends_on', 'state_history', 'origin']);
 export const presentValue = value => pick(value, ['id', 'name', 'rank', 'description', 'justified_by', 'conflicts_with', 'alignment', 'drift_history']);
 // Rules gain their derived effectiveness for display (QualitiesView); it is never stored.

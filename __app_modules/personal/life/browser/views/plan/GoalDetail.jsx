@@ -6,8 +6,6 @@ import { goalStateColor } from "../../theme/semantics.js";
 import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
 import { formatDate, humanize } from "../../lib/format.js";
 
-const STATES = ['dream', 'considered', 'ready', 'committed', 'achieved', 'failed', 'abandoned', 'paused', 'evolved'];
-
 export function GoalDetail({ goalId, username }) {
   const { goal, loading, error, refetch, transitionGoal } = useGoalDetail(goalId, username);
   const [transitionState, setTransitionState] = useState(null);
@@ -19,7 +17,8 @@ export function GoalDetail({ goalId, username }) {
   if (error) return <ErrorState label="Goal" error={error} onRetry={refetch} />;
   if (!goal) return <Text c="dimmed">Goal not found</Text>;
 
-  const selectedTransition = transitionState === goal.state ? null : transitionState;
+  const transitions = goal.validTransitions || [];
+  const selectedTransition = transitions.includes(transitionState) ? transitionState : null;
   const canTransition = Boolean(selectedTransition) && !submitting;
   const handleTransition = async () => {
     if (!canTransition) return;
@@ -115,23 +114,25 @@ export function GoalDetail({ goalId, username }) {
         </Paper>
       )}
 
-      <Paper p="sm" withBorder>
-        <Text size="sm" fw={500} mb="xs">Transition</Text>
-        <Group>
-          <Select
-            disabled={submitting}
-            placeholder="New state"
-            data={STATES.filter(s => s !== goal.state).map(s => ({ value: s, label: s }))}
-            value={selectedTransition}
-            onChange={setTransitionState}
-            size="xs"
-          />
-          <Button size="xs" disabled={!canTransition} onClick={handleTransition}>
-            Transition
-          </Button>
-        </Group>
-        {submitError && <Alert color="red" title="Transition failed">{submitError}</Alert>}
-      </Paper>
+      {transitions.length > 0 && (
+        <Paper p="sm" withBorder>
+          <Text size="sm" fw={500} mb="xs">Transition</Text>
+          <Group>
+            <Select
+              disabled={submitting}
+              placeholder="New state"
+              data={transitions.map(s => ({ value: s, label: s }))}
+              value={selectedTransition}
+              onChange={setTransitionState}
+              size="xs"
+            />
+            <Button size="xs" disabled={!canTransition} onClick={handleTransition}>
+              Transition
+            </Button>
+          </Group>
+          {submitError && <Alert color="red" title="Transition failed">{submitError}</Alert>}
+        </Paper>
+      )}
 
       {goal.retrospective && (
         <Paper p="sm" withBorder>
