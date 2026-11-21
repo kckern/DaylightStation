@@ -1,7 +1,8 @@
 import { createDeliveryObserver } from '../lib/recovery/deliveryObservation.js';
 import { sameRecoveryTarget } from '../lib/recovery/recoveryIdentity.js';
 import { getRecoveryLedger } from '../lib/recoveryLedger.js';
-import { useVideoPresentation } from '../../presentation.mjs';
+import { useVideoPresentation, useVideoIntro } from '../../presentation.mjs';
+import { useIntroGate } from '../hooks/useIntroGate.js';
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import 'dash-video-element';
@@ -131,6 +132,11 @@ export function VideoPlayer({
     });
   }
 
+  // ?goto overrides the start position so the transcode mints AT the target
+  // (stall-free) and the saved resume can't fight it. Normal playback is unchanged.
+  const requestedStartSec = REVIEW_GOTO != null ? REVIEW_GOTO
+    : (media.segment ? media.segment.start : media.seconds);
+
   const {
     isDash,
     containerRef,
@@ -146,10 +152,7 @@ export function VideoPlayer({
     cancelMountedPlaybackOperation,
     handleTerminalCandidate
   } = useCommonMediaController({
-    // ?goto overrides the start position so the transcode mints AT the target
-    // (stall-free) and the saved resume can't fight it. Normal playback is unchanged.
-    start: REVIEW_GOTO != null ? REVIEW_GOTO
-      : (media.segment ? media.segment.start : media.seconds),
+    start: requestedStartSec,
     playbackRate: playbackRate || media.playbackRate || 1,
     onEnd: advance,
     onTerminalCandidate: resilienceBridge?.onTerminalCandidate,
@@ -216,7 +219,21 @@ export function VideoPlayer({
   const crtShaderActive = overlayProps.showCRT && crt.active;
   const crtOverlayFallback = overlayProps.showCRT && crt.fellBack;
 
-  const { overlay: filterOverlay } = useVideoPresentation({ media, isPlex, getMediaEl });
+  // An installed intro (e.g. Media's provenance scene) covers the load; the gate owns timing.
+  // The gate's start is where this mount will actually start: a remount carries
+  // its resume target as seekToIntentSeconds. A recovery remount (any remount
+  // that is not an owner operation) never shows the intro, wherever it resumes.
+  const intro = useVideoIntro({ media, isPlex });
+  const isRecoveryRemount = resilienceBridge?.remountDiagnostics != null && !isOwnerOperationMount;
+  const introStartSec = isRecoveryRemount
+    ? Infinity
+    : Math.max(Number(requestedStartSec) || 0, Number(resilienceBridge?.seekToIntentSeconds) || 0);
+  const introStage = useIntroGate({
+    intro, getMediaEl,
+    startSec: introStartSec,
+    resetKey: media?.assetId || media?.key || media?.mediaUrl || null,
+  });
+  const { overlay: filterOverlay } = useVideoPresentation({ media, isPlex, getMediaEl, introStage });
 
   // Render FPS monitoring for blur overlay performance diagnosis
   // (emits its own playback telemetry; the return value is unused since the
@@ -1046,6 +1063,10 @@ export function VideoPlayer({
         <div className={overlayProps.className} />
       )}
       {filterOverlay}
+      {intro && (introStage === 'covering' || introStage === 'holding' || introStage === 'playing') ? (
+        // Its own layer, below the loading/recovery layer (Player.scss): recovery UI paints over the scene.
+        <div className="player-intro-layer">{intro.render(introStage)}</div>
+      ) : null}
     </div>
   );
 }

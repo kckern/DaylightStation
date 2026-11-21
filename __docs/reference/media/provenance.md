@@ -7,10 +7,12 @@ clears and the logo shrinks into the top-right corner and fades. There are no wo
 on screen.
 
 It appears only for **confirmed** availability, and by default only before
-**movies** (`kinds: [movie]`; add `show` for TV). The player hook is installed for
-every player that loads the Media entry, Fitness, Piano and School included, so
-shows are opt-in to keep a workout or lesson episode from getting a service intro. A title found on no known service,
-one whose lookup has not finished by the first frame, or a resume shows nothing.
+**movies** (`kinds: [movie]`; add `show` for TV). The playback presentation contract
+is page-global: the intro is installed for every player on a page that loaded the
+Media entry, Fitness, Piano and School included, so the server-side `kinds` policy is
+the guard, and shows are opt-in to keep a workout or lesson episode from getting a
+service intro. A title found on no known service, one whose answer is not in before the
+film has rolled 1 s, a resume, or a recovery remount mid-film shows nothing.
 
 Later this is meant to front real handoffs to those services; today the film still
 plays from Plex and the bumper signals provenance only.
@@ -19,19 +21,55 @@ plays from Plex and the bumper signals provenance only.
 
 | Phase | Video | Scene |
 |---|---|---|
-| `linking` (~2.2 s) | held paused at the start | field covers the video at once; logo fades in; lines grow from both edges toward the centre; three dots pulse in the gap |
+| `linking` (random 5–10 s per play) | loading, or held on its first frame | field covers the video at once; logo fades in; lines creep in from both edges in uneven bursts and stalls over the whole hold; three dots pulse in the gap |
 | `linked` (~0.7 s) | resumed; begins on the video's `playing` | gap closes, a spark where the lines meet |
 | `docked` (~4 s) | playing | field and lines dissolve; logo moves to the top-right corner at 80% opacity |
 | `leaving` (~0.9 s) | playing | corner logo fades |
 
 Lines and dots take the service's brand colour (`PROVIDER_ACCENTS` in
-`ProvenanceHandoff.jsx`; white otherwise). Timings are `HANDOFF_TIMING` in
-`useProvenanceHandoff.js`. If resuming does not report `playing` within 2.5 s the
-lines meet anyway; a remote press that resumes early links at once.
+`ProvenanceHandoff.jsx`; white otherwise). Timings are `SCENE_TIMING` in
+`useSceneTimeline.js`; the hold is drawn uniformly from `linkMinMs`–`linkMaxMs` once
+per title, handed to the Player as the intro's `minHoldMs`, and passed to the scene as
+`--ph-link-ms`, so the lines take exactly that long. The Player holds longer if the
+video is still loading.
 
-It runs once per title, on the first `playing` within 5 s of the start. The
-content-filter bumper ("Edited for content") waits until the handoff has docked, so
-on a filtered title it follows the handoff instead of covering it.
+**Contrast.** When the logo preloads, the player measures it (`logoContrast.js`): the
+mean relative luminance of its opaque pixels against the field, as a WCAG ratio. Under
+3:1 (the large-graphics threshold) the logo rides on a light rounded plate, in the centre
+and docked. Disney+'s navy wordmark (about 2.5:1) gets one; Netflix and Kanopy red do
+not. A newly added dark logo gets a plate without any change.
+
+**The Player gates it.** The scene is the Media app's *intro* in the shared Player's
+intro slot (`useVideoIntro` in the playback presentation contract): `useProvenanceIntro`
+reports `pending` while the provider is looked up, `ready` once the logo has loaded,
+`none` otherwise (including a lookup that failed or did not answer within 8 s,
+`PROVENANCE_FETCH_TIMEOUT_MS`), plus `minHoldMs` and a `render(stage)` callback. A
+title whose id is not a numeric Plex rating key gets no intro at all (the lookup
+could never ask). The Player's `useIntroGate` owns all timing (see "Presentation
+contract and the intro slot" in `__docs/reference/content/content-playback.md`):
+
+- While `pending`, the Player holds its spinner back for up to 1.5 s
+  (`INTRO_WAIT_COVER_MS`) so the scene is not preceded by a spinner flash; past that
+  the spinner shows normally. If the answer arrives before the film has rolled 1 s,
+  the scene still appears (the first frame is paused and held); after that the gate
+  lets go (`late`).
+- Once `ready`, it covers the spinner, holds the first frame until `minHoldMs` is
+  over, resumes, and moves to `playing` (if resuming does not report `playing`
+  within 2.5 s it moves on anyway).
+- A video that has not produced a frame 20 s after the hold was due
+  (`INTRO_COVER_CEILING_MS`) ends the intro, so a broken stream is never hidden
+  behind the scene.
+- It shows nothing on a resume (start past 5 s, including the resume target a
+  remount carries) or on a recovery remount.
+- The scene is drawn in the Player's intro layer, below its loading layer: the
+  source-healing wait, its Skip and the exhausted/held recovery UI always paint over
+  the scene.
+
+`useSceneTimeline` maps the stage to the scene's phase: `covering`/`holding` draw
+`linking`; entering `playing` runs `linked` → `docked` → `leaving`. The
+content-filter bumper ("Edited for content") is held while the intro is up and, from
+the first `playing` render, until the lines have met and the field has dissolved, so
+on a filtered title it follows the scene instead of covering it.
 
 `?provenance=0` on the page URL turns it off for that load.
 
@@ -96,8 +134,9 @@ mount), and the answer is cached:
 - Concurrent plays of one title share one lookup.
 
 An uncached lookup took 160 to 460 ms in testing; a cached answer a few
-milliseconds. The bumper never waits for one: the first play of a title whose
-answer is not in yet plays plain, and the next play has it.
+milliseconds. The film never waits for one: the Player holds its spinner back for up
+to 1.5 s and the scene still appears if the answer is in before the film has rolled
+1 s; a slower first answer plays plain, and the next play has it.
 
 ## API
 
@@ -115,11 +154,11 @@ answer is not in yet plays plain, and the next play has it.
 | Use case | `server/application/provenance/GetTitleProvenance.mjs`, ports in `ports/` |
 | Adapters | `server/adapters/provenance/` (Watchmode, Plex identity, YAML store, logo catalog) |
 | Route + wiring | `server/api/provenance.mjs`, `server/composition/provenance.mjs` |
-| Player | `browser/provenance/` (`useProvenance`, `useProvenanceHandoff`, `ProvenanceHandoff`, `playbackPresentation.jsx`); installed by `browser/playback.mjs` |
+| Player | `browser/provenance/` (`useProvenance`, `useProvenanceIntro`, `useSceneTimeline`, `ProvenanceHandoff`, `playbackPresentation.jsx`); installed by `browser/playback.mjs` as the Player's `useVideoIntro` |
 
-The handoff's deliberate pause sets a loading-suppression flag
-(`provenanceHold.js`) so the player's buffering spinner does not read it as a stall,
-the same way the content filter's skip card does.
+The Player hides its own plain spinner while the intro covers (never a state with
+something to say), so Media's loading-suppression store is only the content filter's
+skip card.
 
 ## Logs
 
@@ -128,6 +167,7 @@ Backend (`context.module: provenance`): `provenance.lookup.done` (providers foun
 `provenance.lookup.no-external-id`, `provenance.disabled` (no key or no Plex at boot).
 
 Frontend (`component: provenance`): `provenance.ready`, `provenance.none`,
-`provenance.handoff.shown`, `provenance.handoff.skipped` (`reason: resume | not-ready`),
-`provenance.handoff.linked` / `.done` (debug), `provenance.handoff.resume-refused`,
-`provenance.fetch.failed`, `provenance.logo.failed`.
+`provenance.fetch.failed` (`error: 'timeout'` after 8 s), `provenance.logo.failed`.
+The gate itself logs from the Player (`component: intro-gate`): `intro.covering`,
+`intro.holding` (debug), `intro.playing`, `intro.off` (debug; warn for
+`cover-timeout`), `intro.resume-refused`.

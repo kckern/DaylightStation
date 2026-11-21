@@ -317,6 +317,16 @@
 
   
 
+/* An installed intro scene (VideoPlayer's intro slot). Below the loading layer,
+   so recovery UI (Retry/Skip, the source-healing notice) always paints over it.
+   The scene inside is opaque; it must never be lifted above the loading layer. */
+.player-intro-layer {
+    position: absolute;
+    inset: 0;
+    z-index: var(--player-layer-intro, 39);
+    pointer-events: none;
+}
+
 .loading-overlay {
     position: absolute;
     top: 0;

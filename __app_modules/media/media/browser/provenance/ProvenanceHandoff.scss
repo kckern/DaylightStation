@@ -1,14 +1,17 @@
-// Provenance handoff scene. Phases (class modifiers) come from useProvenanceHandoff:
-// linking -> linked -> docked -> leaving. Timings match HANDOFF_TIMING.
+// Provenance handoff scene. Phases (class modifiers) come from useSceneTimeline:
+// linking -> linked -> docked -> leaving. Timings match SCENE_TIMING.
+// Drawn inside the Player's .player-intro-layer, which sits below the loading
+// layer; the scene's own z-index only orders it within that layer.
 // Reference: __docs/reference/media/provenance.md
 
 $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
 
 .provenance-handoff {
   --ph-accent: #fff;
+  --ph-link-ms: 2200ms; // set per play from the random hold
   position: absolute;
   inset: 0;
-  z-index: 40;
+  z-index: 1;
   pointer-events: none;
   overflow: hidden;
   container-type: size;
@@ -42,7 +45,8 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
     box-shadow: 0 0 1cqh color-mix(in srgb, var(--ph-accent) 45%, transparent);
     transform: translateY(-50%);
     width: 0;
-    animation: ph-reach 1100ms $ph-ease 150ms forwards;
+    // Uneven bursts and stalls across the whole hold, like a connection negotiating.
+    animation: ph-reach var(--ph-link-ms) linear 150ms forwards;
     transition: width 420ms $ph-ease;
     &--left {
       left: 0;
@@ -90,13 +94,15 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   // ---- the logo: centred, then docked in the top-right corner ----
-  &__logo {
+  // The badge moves and resizes; the logo fills it. A logo too dark for the field
+  // (measured by logoContrast.js, e.g. Disney+ navy) rides on a light plate.
+  &__badge {
     position: absolute;
     left: 50%;
     top: 45%;
     width: 34cqw;
     height: 20cqh;
-    object-fit: contain;
+    box-sizing: border-box;
     transform: translate(-50%, -50%);
     animation: ph-logo-in 700ms $ph-ease both;
     transition:
@@ -104,7 +110,25 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
       top 900ms $ph-ease,
       width 900ms $ph-ease,
       height 900ms $ph-ease,
+      padding 900ms $ph-ease,
+      border-radius 900ms $ph-ease,
       opacity 800ms ease;
+
+    &--plate {
+      width: 32cqw;
+      height: 22cqh;
+      padding: 3.2cqh 2.6cqw;
+      border-radius: 1.6cqw;
+      background: linear-gradient(180deg, #ffffff 0%, #eceef3 100%);
+      box-shadow: 0 0 4cqw rgba(255, 255, 255, 0.12), 0 1cqh 3cqh rgba(0, 0, 0, 0.6);
+    }
+  }
+
+  &__logo {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
   }
 
   // Lines meet: the gap closes, dots give way to the spark.
@@ -124,7 +148,7 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
     // Animations with fill-mode hold their last frame over plain declarations: drop them.
     .provenance-handoff__field { opacity: 0; }
     .provenance-handoff__link { opacity: 0; }
-    .provenance-handoff__logo {
+    .provenance-handoff__badge {
       animation: none;
       left: 91%;
       top: 8%;
@@ -133,14 +157,28 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
       opacity: 0.8;
       filter: drop-shadow(0 0 0.6cqw rgba(0, 0, 0, 0.85));
     }
+    .provenance-handoff__badge--plate {
+      width: 11cqw;
+      height: 7cqh;
+      padding: 1cqh 1cqw;
+      border-radius: 0.7cqw;
+      opacity: 0.9;
+    }
   }
 
-  &--leaving .provenance-handoff__logo { opacity: 0; }
+  &--leaving .provenance-handoff__badge { opacity: 0; }
 }
 
 @keyframes ph-reach {
-  from { width: 0; }
-  to { width: 44%; }
+  0% { width: 0; }
+  12% { width: 16%; }
+  20% { width: 19%; }
+  34% { width: 21%; }
+  46% { width: 30%; }
+  58% { width: 32%; }
+  71% { width: 36%; }
+  86% { width: 42%; }
+  100% { width: 44%; }
 }
 
 @keyframes ph-dot {

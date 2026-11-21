@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import PropTypes from 'prop-types';
 import pause from '../../../../../frontend/src/assets/icons/pause.svg';
 import { playbackLog } from '../lib/playbackLogger.js';
+import { subscribeIntroCover, isIntroCovering } from '../../player-support/introCover.js';
 
 /**
  * Pause overlay shown when pause overlay preference is active and media is paused but healthy.
@@ -33,11 +34,18 @@ export function PlayerOverlayPaused({
   // We show the pause icon regardless of stall state — see the 2026-05-22
   // fitness-session-merge-and-resilience-failure audit.
   const isInitialPlayback = seconds === 0 && !stalled;
+  // An installed intro holds the first frame paused under its scene. On the
+  // video path no pause intent is reported, so that hold reads as the viewer's
+  // pause; the scrim is not drawn over the scene for it. (The hold is not
+  // reclassified as a system pause: that would arm the stall ladder against a
+  // deliberate hold.) See player-support/introCover.js.
+  const introCovering = useSyncExternalStore(subscribeIntroCover, isIntroCovering, isIntroCovering);
   const shouldShowPauseOverlay = shouldRender
     && isVisible
     && pauseOverlayActive
     && !waitingToPlay
-    && !isInitialPlayback;
+    && !isInitialPlayback
+    && !(introCovering && !stalled);
 
   const overlayContextRef = useRef({ source: 'PlayerOverlayPaused' });
   const visibilityRef = useRef(shouldShowPauseOverlay);

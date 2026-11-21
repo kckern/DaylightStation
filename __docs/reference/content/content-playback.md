@@ -421,3 +421,35 @@ Readalong content types (talks, scriptures) support ambient background audio —
 - **Volume**: Always 10% of the main volume (`mainVolume * 0.1`)
 - **Fade**: `fadeInDelay: 750ms`, `fadeOutStep: 0.01`, `fadeOutInterval: 400ms`
 - **Eligible types**: Determined by the collection manifest's `ambient: true` setting. The backend returns an `ambientUrl` field in the Play API response when ambient audio is enabled.
+
+## Presentation contract and the intro slot
+
+An app can dress the shared video player without changing it. It installs a contract once, before the first player renders, through `configurePlaybackPresentation` (`__capabilities/playback/browser/presentation.mjs`). The Media app installs one in `__app_modules/media/media/browser/playback.mjs`; apps that install nothing get the plain player.
+
+| Hook | Called with | Returns |
+|---|---|---|
+| `useVideoPresentation` | `{ media, isPlex, getMediaEl, introStage }` | `{ overlay }` drawn over the video (Media: content-filter chrome) |
+| `subscribeLoadingSuppression` / `getLoadingSuppression` | — | a store; while true the spinner hides (Media: the content filter's skip card) |
+| `useVideoIntro` (optional) | `{ media, isPlex }` | `null`, or an intro `{ status: 'pending' \| 'ready' \| 'none', minHoldMs, render(stage) }` |
+
+**The intro slot.** An intro is a scene that *is* the loading screen. The app decides what it shows and its minimum hold; the player (`player/hooks/useIntroGate.js`) owns all timing:
+
+| Stage | What happens | Spinner |
+|---|---|---|
+| `off` | no intro: none, a resume (start past 5 s), a recovery remount, the film rolled past 1 s first (`late`), or a video that never produced a frame (`cover-timeout`) | normal |
+| `waiting` | intro still deciding | held back for up to 1.5 s (`INTRO_WAIT_COVER_MS`), then normal |
+| `covering` | scene drawn; video loading; `minHoldMs` running | hidden, unless it has something to say |
+| `holding` | video reached its first frame before the hold ended; the player holds it paused on that frame | hidden, unless it has something to say |
+| `playing` | hold over and video playing; the scene plays out its own exit | normal |
+
+- **Start.** The gate's start is the larger of the requested start (`?goto`, a segment start, or `media.seconds`) and the resume target a remount carries (`resilienceBridge.seekToIntentSeconds`). Past 5 s it is a resume: `off`. A recovery remount (`remountDiagnostics` set, not an owner operation) is always `off`, so a stream that recovers mid-film never brings the scene back. If the first frame turns out to be past 5 s anyway (a remembered position), the gate goes `off` without pausing.
+- **Waiting is bounded.** While the intro decides, the gate watches the element; once the film is playing past 1 s (`INTRO_LATE_SEC`) the gate goes `off` (`late`). An answer that arrives before that still covers: the gate pauses the frame and holds it as usual.
+- **Covering is bounded.** If the video has not produced a frame `minHoldMs + 20 s` (`INTRO_COVER_CEILING_MS`) after covering began, the gate goes `off` (warn, `reason: 'cover-timeout'`) and the normal spinner and recovery take over.
+- A held video is resumed when the hold ends; if it never reports `playing`, the gate moves on after 2.5 s. A reset (new title, withdrawn intro) resumes a held element only if it is still in the document; an unmount never resumes it. The hold's pause and play are tagged `intro-hold` (`lib/playbackToggleSource.js`) in `playback.paused`/`resumed`.
+- **Recovery stays on top.** The scene is drawn inside `.player-intro-layer` (`z-index: var(--player-layer-intro, 39)`), below the loading layer (`--player-layer-loading`, 40), so anything the loading overlay draws paints over the opaque scene. While the intro covers, `PlayerOverlayLoading` hides only the *plain* spinner: exhausted/held recovery (Retry, Quality, Skip), the source-healing notice ("Fixing this video…") with its Skip, and the link notice all still render. `PlayerOverlayPaused` draws no pause scrim while the intro covers (unless stalled): on the video path the hold reads as a viewer pause, and it is deliberately not reclassified as a system pause, which would arm the stall ladder against it.
+- **The cover flag is page-global.** `player-support/introCover.js` is a module singleton (the gate in `VideoPlayer` and the overlays mounted by `Player`/`SinglePlayer` share no props path). Two `VideoPlayer`s mounted at once share it: one covering intro hides the plain spinner of the other.
+- **The contract is page-global too.** Any player on a page that loaded the installing app's entry gets its intro (Media's entry is loaded by Fitness, Piano and School as well). The app's own policy is the guard: for provenance, the server-side `kinds: [movie]`.
+- `introStage` is passed back to `useVideoPresentation`, so the app can sequence its own chrome after the intro (Media holds the content filter's bumper from the first `playing` render until the scene's field has dissolved).
+- Logs: component `intro-gate`, events `intro.covering`, `intro.holding`, `intro.playing` (`by`, `waitedMs`), `intro.off` (`reason`: `none`, `resume`, `late`, `resumed-elsewhere`, `cover-timeout`), `intro.resume-refused`.
+
+The Media app's intro is the provenance bumper: see `__docs/reference/media/provenance.md`.
