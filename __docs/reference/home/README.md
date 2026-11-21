@@ -58,8 +58,12 @@ records on motion, so the clip with the visitor may end just before the button
 or start just after. No clip that close reads "No recording near this ring",
 never a broken player. Clips are read per local day the rings could fall in
 (including a day just across midnight), one request per day; a failed day costs
-only its own clips. When every day fails, every ring is still listed with its
-time, under "Clips could not be loaded." and a Retry. The **4 newest** matched
+only its own clips. If a failed day could contain an unmatched ring, it reads
+"Recording availability unknown" with a Retry for only the unavailable days;
+already loaded clips remain visible while those days reload. A ring reads "No
+recording near this ring" only when every relevant day lookup succeeded. When
+every day fails, every ring is still listed with its time, under "Clips could
+not be loaded." and a Retry. The **4 newest** matched
 clips load eagerly; older ones offer **Show clip**. A clip is a picture until
 tapped: its first frame (no native controls, at most 12 rem tall) under one play
 button; the controls appear once it plays. A matched clip the camera then

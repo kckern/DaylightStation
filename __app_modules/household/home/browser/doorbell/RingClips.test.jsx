@@ -84,17 +84,31 @@ describe('RingClips', () => {
   });
 });
 
-it('keeps rings from both days when only one day has accessible clips', async () => {
+it('distinguishes a failed camera day from no recording and retries only that day', async () => {
   const tomorrow = base + 86_400_000;
+  let unavailableDayReads = 0;
+  let finishRetry;
   apiMock.mockImplementation(async path => {
-    if (path.endsWith('2026-10-29')) throw new Error('Camera offline');
-    return { clips: [clipAt(base, 0)] };
+    const day = path.split('day=')[1];
+    if (day === '2026-10-29' && unavailableDayReads++ === 0) throw new Error('Camera offline');
+    if (day === '2026-10-29') {
+      return new Promise(resolve => { finishRetry = () => resolve({ clips: [clipAt(tomorrow, 1)] }); });
+    }
+    return day === '2026-10-28' ? { clips: [clipAt(base, 0)] } : { clips: [] };
   });
   wrap(<RingClips camera="porch-cam" marks={[base, tomorrow]} timeZone="UTC" />);
-  await screen.findByText('No recording near this ring');
+  await screen.findByText('Recording availability unknown');
   expect(document.querySelectorAll('.home-rings__time')).toHaveLength(2);
   expect(document.querySelectorAll('video')).toHaveLength(1);
-  expect(screen.queryByRole('alert')).toBeNull();
+  const retry = screen.getByRole('button', { name: 'Retry unavailable day lookups' });
+  fireEvent.click(retry);
+  await waitFor(() => expect(finishRetry).toBeTypeOf('function'));
+  expect(document.querySelectorAll('video')).toHaveLength(1);
+  expect(apiMock.mock.calls.slice(2).map(([path]) => path.split('day=')[1])).toEqual(['2026-10-29']);
+  finishRetry();
+  await waitFor(() => expect(document.querySelectorAll('video')).toHaveLength(2));
+  expect(screen.queryByText('Recording availability unknown')).toBeNull();
+  expect(screen.queryByText('No recording near this ring')).toBeNull();
 });
 
 it('aborts reads from the previous camera when the selected camera changes', async () => {

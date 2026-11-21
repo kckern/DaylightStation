@@ -107,7 +107,7 @@ function RingClip({ camera, clip, ringMs, eager, label }) {
 export function RingClips({ camera, marks, timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone }) {
   const rings = useMemo(() => [...new Set(marks || [])].sort((a, b) => b - a), [marks]);
   const days = useMemo(() => ringDays(rings, timeZone), [rings, timeZone]);
-  const { clips, loading, error, reload } = useRingClips(camera, days);
+  const { clips, failedDays, loading, error, reload } = useRingClips(camera, days);
   const withDay = useMemo(() => new Set(rings.map((t) => dayFormat(timeZone).format(new Date(t)))).size > 1, [rings, timeZone]);
 
   useEffect(() => {
@@ -116,7 +116,7 @@ export function RingClips({ camera, marks, timeZone = Intl.DateTimeFormat().reso
 
   let body;
   if (!rings.length) body = <p className="home-rings__empty">No rings in this range</p>;
-  else if (loading) body = <Skeleton height={120} radius="sm" />;
+  else if (loading && clips.length === 0) body = <Skeleton height={120} radius="sm" />;
   else {
     // A failed clip read still lists every ring with its time: the ring
     // happened whether or not the camera answered.
@@ -132,13 +132,28 @@ export function RingClips({ camera, marks, timeZone = Intl.DateTimeFormat().reso
         <ol className="home-rings__list">
           {rings.map((t) => {
             const clip = error ? null : matchRingToClip(t, clips, { toleranceMs: TOLERANCE_MS });
+            const unavailableDays = !clip && !error
+              ? ringDays([t], timeZone).filter(day => failedDays.includes(day))
+              : [];
             const eager = clip ? players++ < EAGER_PLAYERS : false;
             return (
               <li key={t} className="home-rings__ring">
                 <time className="home-rings__time" dateTime={new Date(t).toISOString()}>{ringLabel(t, timeZone, withDay)}</time>
                 {clip
                   ? <RingClip camera={camera} clip={clip} ringMs={t} eager={eager} label={ringLabel(t, timeZone, withDay)} />
-                  : <p className="home-rings__none">No recording near this ring</p>}
+                  : unavailableDays.length > 0 ? (
+                    <p className="home-rings__failed" role="alert">
+                      <span>Recording availability unknown</span>
+                      <Button
+                        size="compact-xs"
+                        variant="subtle"
+                        disabled={loading}
+                        onClick={() => { logger.info('home.ring.clips.retry', { camera, days: unavailableDays }); reload(unavailableDays); }}
+                      >
+                        Retry unavailable day lookups
+                      </Button>
+                    </p>
+                  ) : <p className="home-rings__none">No recording near this ring</p>}
               </li>
             );
           })}

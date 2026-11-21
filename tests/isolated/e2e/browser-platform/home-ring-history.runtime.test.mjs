@@ -60,8 +60,9 @@ test('Home retires old doorbell clip reads and keeps the accessible recordings i
   await retired;
   await expect(rings.locator('video')).toHaveAttribute('src', new RegExp(days[0] + '\\.mp4'));
   await expect(rings.locator('time')).toHaveCount(2);
-  await expect(rings.getByText('No recording near this ring')).toHaveCount(1);
-  await expect(rings.getByRole('alert')).toHaveCount(0);
+  await expect(rings.getByText('Recording availability unknown')).toHaveCount(1);
+  await expect(rings.getByText('No recording near this ring')).toHaveCount(0);
+  await expect(rings.getByRole('alert')).toHaveCount(1);
   expect(reads.slice().sort()).toEqual(days);
 
   await sheet.getByText('24 h', { exact: true }).click();
