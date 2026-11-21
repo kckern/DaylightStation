@@ -3,7 +3,8 @@ import React from 'react';
 import { render, renderHook } from '@testing-library/react';
 
 const state = { data: null, status: 'idle', calls: [] };
-vi.mock('./useProvenance.js', () => ({
+vi.mock('./useProvenance.js', async (importOriginal) => ({
+  provenanceRatingKey: (await importOriginal()).provenanceRatingKey,
   useProvenance: (contentId, opts) => { state.calls.push({ contentId, ...opts }); return { data: state.data, status: state.status }; },
 }));
 
@@ -29,6 +30,12 @@ describe('useProvenanceIntro', () => {
     const { result } = renderHook(() => useProvenanceIntro({ media: { assetId: 'x' }, isPlex: false }));
     expect(result.current).toBeNull();
     expect(state.calls.at(-1)).toMatchObject({ contentId: null, enabled: false });
+  });
+
+  it('has no intro for a Plex id the lookup can never answer (not a numeric rating key)', () => {
+    const { result } = renderHook(() => useProvenanceIntro({ media: { assetId: 'plex:abc' }, isPlex: true }));
+    expect(result.current).toBeNull();
+    expect(state.calls.at(-1)).toMatchObject({ enabled: false });
   });
 
   it('has no intro when opted out with ?provenance=0', () => {

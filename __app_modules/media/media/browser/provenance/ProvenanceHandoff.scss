@@ -1,5 +1,7 @@
-// Provenance handoff scene. Phases (class modifiers) come from useProvenanceHandoff:
-// linking -> linked -> docked -> leaving. Timings match HANDOFF_TIMING.
+// Provenance handoff scene. Phases (class modifiers) come from useSceneTimeline:
+// linking -> linked -> docked -> leaving. Timings match SCENE_TIMING.
+// Drawn inside the Player's .player-intro-layer, which sits below the loading
+// layer; the scene's own z-index only orders it within that layer.
 // Reference: __docs/reference/media/provenance.md
 
 $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -9,7 +11,7 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --ph-link-ms: 2200ms; // set per play from the random hold
   position: absolute;
   inset: 0;
-  z-index: 40;
+  z-index: 1;
   pointer-events: none;
   overflow: hidden;
   container-type: size;

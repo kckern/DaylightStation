@@ -9,7 +9,7 @@
  * Reference: __docs/reference/media/provenance.md
  */
 import React, { useCallback, useMemo } from 'react';
-import { useProvenance } from './useProvenance.js';
+import { useProvenance, provenanceRatingKey } from './useProvenance.js';
 import { ProvenanceHandoff } from './ProvenanceHandoff.jsx';
 import { useSceneTimeline, pickLinkMs, SCENE_TIMING } from './useSceneTimeline.js';
 
@@ -29,7 +29,9 @@ export function ProvenanceScene({ stage, provenance, linkMs }) {
 export function useProvenanceIntro({ media, isPlex }) {
   const search = typeof window !== 'undefined' ? window.location.search : '';
   const contentId = isPlex ? (media?.assetId || media?.key || media?.plex || null) : null;
-  const eligible = !!contentId && !provenanceOptedOut(search);
+  // Only a numeric Plex rating key can be looked up; anything else would sit
+  // `pending` forever (the lookup never starts), so it gets no intro at all.
+  const eligible = !!provenanceRatingKey(contentId) && !provenanceOptedOut(search);
   const { data, status } = useProvenance(contentId, { enabled: eligible });
   const minHoldMs = useMemo(() => pickLinkMs(SCENE_TIMING), [contentId]);
 

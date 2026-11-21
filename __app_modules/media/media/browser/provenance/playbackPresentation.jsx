@@ -17,17 +17,20 @@ import { SCENE_TIMING } from './useSceneTimeline.js';
 
 const INTRO_UP = new Set(['waiting', 'covering', 'holding']);
 
-/** True while the intro covers the opening, and briefly after the film starts. */
+/**
+ * True while the intro covers the opening, and briefly after the film starts.
+ * Synchronous on the first `playing` render: the hold is on until a timer
+ * releases it, so the bumper cannot slip in before that timer is even set.
+ */
 export function useBumperHeld(introStage, linkedMs = SCENE_TIMING.linkedMs + SCENE_TIMING.dissolveMs) {
   const playing = introStage === 'playing';
-  const [linking, setLinking] = useState(false);
+  const [released, setReleased] = useState(false);
   useEffect(() => {
     if (!playing) return undefined;
-    setLinking(true);
-    const t = setTimeout(() => setLinking(false), linkedMs);
-    return () => { clearTimeout(t); setLinking(false); };
+    const t = setTimeout(() => setReleased(true), linkedMs);
+    return () => { clearTimeout(t); setReleased(false); };
   }, [playing, linkedMs]);
-  return INTRO_UP.has(introStage) || (playing && linking);
+  return INTRO_UP.has(introStage) || (playing && !released);
 }
 
 export function useMediaPlaybackPresentation({ media, isPlex, getMediaEl, introStage }) {

@@ -206,4 +206,28 @@ describe('bumper timing around the provenance intro', () => {
     act(() => { vi.advanceTimersByTime(SCENE_TIMING.dissolveMs); });
     expect(result.current).toBe(false);
   });
+
+  it('holds the bumper on the very render where the stage first becomes playing', async () => {
+    vi.useFakeTimers();
+    const { useBumperHeld } = await import('../provenance/playbackPresentation.jsx');
+    const seen = [];
+    const { rerender } = renderHook((p) => {
+      const held = useBumperHeld(p.stage);
+      seen.push([p.stage, held]);
+      return held;
+    }, { initialProps: { stage: 'holding' } });
+    seen.length = 0;
+    rerender({ stage: 'playing' });
+    expect(seen[0]).toEqual(['playing', true]);
+    expect(seen.every(([, held]) => held)).toBe(true);
+  });
+
+  it('never holds the bumper when the film plays straight from off', async () => {
+    vi.useFakeTimers();
+    const { useBumperHeld } = await import('../provenance/playbackPresentation.jsx');
+    const { result, rerender } = renderHook((p) => useBumperHeld(p.stage), { initialProps: { stage: 'off' } });
+    expect(result.current).toBe(false);
+    rerender({ stage: 'off' });
+    expect(result.current).toBe(false);
+  });
 });

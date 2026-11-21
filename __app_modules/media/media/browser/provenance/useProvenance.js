@@ -4,6 +4,8 @@
  * handoff only starts once there is something to draw.
  *
  * status: idle | loading | ready | none | failed
+ *   idle  -> disabled, or not a numeric Plex rating key (never fetched)
+ *   failed -> the request failed or did not answer in PROVENANCE_FETCH_TIMEOUT_MS
  *   ready -> { provider, name, tier, logo, logoUrl, plate } with the logo loaded;
  *            plate = the logo is too dark for the field and gets a light plate
  *   none  -> nothing confirmed (or the logo would not load): no handoff
@@ -30,23 +32,45 @@ function preload(src) {
   });
 }
 
+/** A lookup (fetch + logo) that has not answered in this long is given up as `failed`. */
+export const PROVENANCE_FETCH_TIMEOUT_MS = 8000;
+
+/** The numeric Plex rating key the lookup needs, or null when it can never ask. */
+export function provenanceRatingKey(contentId) {
+  const rk = String(contentId ?? '').replace(/^plex:/, '');
+  return /^\d+$/.test(rk) ? rk : null;
+}
+
+const IDLE = Object.freeze({ data: null, status: 'idle' });
+const LOADING = Object.freeze({ data: null, status: 'loading' });
+
 export function useProvenance(contentId, { enabled = true } = {}) {
-  const [state, setState] = useState({ data: null, status: 'idle' });
+  const rk = enabled ? provenanceRatingKey(contentId) : null;
+  // State is keyed by rating key: a new title never sees the last one's answer,
+  // not even on the first render before the effect runs.
+  const [state, setState] = useState({ key: null, data: null, status: 'idle' });
 
   useEffect(() => {
-    const rk = String(contentId ?? '').replace(/^plex:/, '');
-    if (!enabled || !/^\d+$/.test(rk)) { setState({ data: null, status: 'idle' }); return undefined; }
-    let cancelled = false;
+    if (!rk) return undefined;
+    let done = false; // cancelled, timed out, or answered
+    const settle = (next) => { if (done) return false; done = true; setState({ key: rk, ...next }); return true; };
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const startedAt = Date.now();
-    setState({ data: null, status: 'loading' });
+    setState({ key: rk, ...LOADING });
+    const timer = setTimeout(() => {
+      if (settle({ data: null, status: 'failed' })) {
+        ctrl?.abort();
+        logger().warn('provenance.fetch.failed', { ratingKey: rk, error: 'timeout', timeoutMs: PROVENANCE_FETCH_TIMEOUT_MS });
+      }
+    }, PROVENANCE_FETCH_TIMEOUT_MS);
     fetch(`/api/v1/provenance/${rk}`, { signal: ctrl?.signal })
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(async (body) => {
         const p = body?.provenance;
         if (!p?.provider) {
-          if (!cancelled) setState({ data: null, status: 'none' });
-          logger().debug('provenance.none', { ratingKey: rk, elapsedMs: Date.now() - startedAt });
+          if (settle({ data: null, status: 'none' })) {
+            logger().debug('provenance.none', { ratingKey: rk, elapsedMs: Date.now() - startedAt });
+          }
           return;
         }
         const logoUrl = logoUrlFor(p);
@@ -54,23 +78,27 @@ export function useProvenance(contentId, { enabled = true } = {}) {
         try {
           img = await preload(logoUrl);
         } catch (error) {
-          logger().warn('provenance.logo.failed', { ratingKey: rk, provider: p.provider });
-          if (!cancelled) setState({ data: null, status: 'none' });
+          if (settle({ data: null, status: 'none' })) {
+            logger().warn('provenance.logo.failed', { ratingKey: rk, provider: p.provider });
+          }
           return;
         }
-        if (cancelled) return;
         // A logo too dark for the field (Disney+ navy) is drawn on a light plate.
         const plate = img ? imageNeedsPlate(img) : false;
-        setState({ data: { ...p, logoUrl, plate }, status: 'ready' });
-        logger().info('provenance.ready', { ratingKey: rk, provider: p.provider, tier: p.tier, plate, elapsedMs: Date.now() - startedAt });
+        if (settle({ data: { ...p, logoUrl, plate }, status: 'ready' })) {
+          logger().info('provenance.ready', { ratingKey: rk, provider: p.provider, tier: p.tier, plate, elapsedMs: Date.now() - startedAt });
+        }
       })
       .catch((error) => {
-        if (cancelled || error?.name === 'AbortError') return;
-        setState({ data: null, status: 'failed' });
+        if (done || error?.name === 'AbortError') return;
+        settle({ data: null, status: 'failed' });
         logger().warn('provenance.fetch.failed', { ratingKey: rk, error: error?.message });
-      });
-    return () => { cancelled = true; ctrl?.abort(); };
-  }, [contentId, enabled]);
+      })
+      .finally(() => clearTimeout(timer));
+    return () => { done = true; clearTimeout(timer); ctrl?.abort(); };
+  }, [rk]);
 
-  return state;
+  if (!rk) return IDLE;
+  if (state.key !== rk) return LOADING;
+  return { data: state.data, status: state.status };
 }
