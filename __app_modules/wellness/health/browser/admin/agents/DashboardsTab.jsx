@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback } from 'react';
 import {
-  Stack, Paper, Text, Group, Button, Badge, Alert, Center, Loader,
+  Stack, Paper, Text, Group, Button, Badge, Alert,
   TextInput, Blockquote, Code, Collapse,
 } from '@mantine/core';
 import {
@@ -12,6 +12,7 @@ import {
 import { useAgentDashboard } from "./useAgentDashboard.js";
 import { ConfirmModal } from "../../../../../../frontend/src/lib/ui/ConfirmModal.jsx";
 import { Button as DsButton } from '../../../../../../frontend/src/lib/ui/Button.jsx';
+import { LoadingState } from '../../../../../../frontend/src/lib/ui/states.jsx';
 import { useSheetSubmission } from '../../../../../../frontend/src/lib/ui/useSheetSubmission.js';
 import { utcDateISO } from '../../../portable/contracts/health/isoDate.mjs';
 
@@ -87,7 +88,7 @@ function DashboardsTab({ agentId, userId }) {
         </Group>
       </Paper>
 
-      {loading && <Center py="xl"><Loader /></Center>}
+      {loading && <LoadingState label="dashboard" rows={1} />}
 
       {!loading && !date && (
         <Paper p="xl" ta="center">

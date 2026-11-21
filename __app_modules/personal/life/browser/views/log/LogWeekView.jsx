@@ -32,7 +32,7 @@ export function LogWeekView({ username, at, categories }) {
                 <Text size="sm" fw={500}>{formatDate(date)}</Text>
                 <Badge size="sm" variant="light">{sources.length} sources</Badge>
               </Group>
-              <Group gap="xs">
+              <Group gap="xs" role="img" aria-label={`Sources: ${sources.join(', ')}`}>
                 {sources.map(s => (
                   <SourceIcon key={s} source={s} size="sm" />
                 ))}

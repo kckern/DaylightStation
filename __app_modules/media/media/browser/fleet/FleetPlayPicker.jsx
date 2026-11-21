@@ -53,10 +53,10 @@ export function FleetPlayPicker({ deviceId, onClose, openerRef }) {
     const opener = openerRef?.current;
     return opener ? [panel, opener] : [panel];
   }, [panel, openerRef]);
-  const closeFromKeyboard = () => {
+  const closeFromKeyboard = useCallback(() => {
     onClose?.();
     openerRef?.current?.focus({ preventScroll: true });
-  };
+  }, [onClose, openerRef]);
   const usesDismissStack = useDismissLayer(true, closeFromKeyboard);
   useHotkey('escape', () => {
     if (usesDismissStack) return false;
@@ -95,8 +95,8 @@ export function FleetPlayPicker({ deviceId, onClose, openerRef }) {
     // fork: never touches the local session — see header comment.
     dispatchToTarget({ targetIds: [deviceId], play: id, title: displayTitle(row), mode: 'fork',
       itemAction: { kind: 'playNow', item: { ...row, contentId: id }, clearRest: isContainer(row) } });
-    onClose?.();
-  }, [dispatchToTarget, deviceId, onClose]);
+    closeFromKeyboard();
+  }, [dispatchToTarget, deviceId, closeFromKeyboard]);
 
   return (
     <div ref={setPanel} data-testid={`fleet-play-panel-${deviceId}`} className="fleet-play-panel">
