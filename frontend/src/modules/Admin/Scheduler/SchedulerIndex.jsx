@@ -288,7 +288,10 @@ function SchedulerIndex() {
         }}
         title="Create Scheduler Job"
       >
-        <Stack gap="md">
+        <Stack component="form" noValidate gap="md" onSubmit={event => {
+          event.preventDefault();
+          handleCreateSubmit();
+        }}>
           <TextInput
             label="ID"
             placeholder="my-job-id"
@@ -320,10 +323,10 @@ function SchedulerIndex() {
             error={createErrors.schedule}
           />
           <Group justify="flex-end">
-            <Button variant="default" onClick={() => setCreateModalOpen(false)}>
+            <Button type="button" variant="default" onClick={() => setCreateModalOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreateSubmit} loading={creating}>
+            <Button type="submit" loading={creating}>
               Create
             </Button>
           </Group>
