@@ -138,5 +138,7 @@ export function formatSince(iso, now = Date.now()) {
   if (sameDay) return time;
   const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
   if (then.toDateString() === yesterday.toDateString()) return `yesterday ${time}`;
-  return then.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const dateOptions = { month: 'short', day: 'numeric' };
+  if (then.getFullYear() !== today.getFullYear()) dateOptions.year = 'numeric';
+  return then.toLocaleDateString(undefined, dateOptions);
 }

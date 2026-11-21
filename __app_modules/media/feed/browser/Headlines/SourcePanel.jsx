@@ -148,7 +148,7 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, o
           })}
         </ul>
       )}
-      {refreshError && <div className="source-refresh-error" role="alert">Refresh failed. <button type="button" disabled={refreshing} onClick={handleRefresh}>Try again</button></div>}
+      {refreshError && <div className="source-refresh-error" role="alert">Refresh failed for {source.label}. <button type="button" aria-label={`Try again: refresh ${source.label}`} disabled={refreshing} onClick={handleRefresh}>Try again</button></div>}
     </div>
   );
 }

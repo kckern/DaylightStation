@@ -31,7 +31,7 @@ export function ActivityHeatmap({ days = {}, countFn }) {
 
     // Align to start of week (Sunday)
     const alignedStart = new Date(startDate);
-    alignedStart.setDate(alignedStart.getDate() - alignedStart.getDay());
+    alignedStart.setUTCDate(alignedStart.getUTCDate() - alignedStart.getUTCDay());
 
     const result = [];
     let current = new Date(alignedStart);
@@ -42,7 +42,7 @@ export function ActivityHeatmap({ days = {}, countFn }) {
         count: counts[dateStr] || 0,
         inRange: current >= startDate && current <= endDate,
       });
-      current.setDate(current.getDate() + 1);
+      current.setUTCDate(current.getUTCDate() + 1);
     }
 
     return { cells: result, maxCount: max, weeks: Math.ceil(result.length / 7) };
