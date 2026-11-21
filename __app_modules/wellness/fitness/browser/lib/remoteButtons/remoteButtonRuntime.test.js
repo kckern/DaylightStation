@@ -137,6 +137,27 @@ describe('by position', () => {
   });
 });
 
+describe('defaults', () => {
+  it("an inventory remote with nothing saved does its key's default, and its browser copy is held for the twin", () => {
+    let t = 0;
+    const performed = [];
+    const DEFAULTS = { MediaTrackNext: 'next' };
+    const rt = createRemoteButtonRuntime({
+      getRemotes: () => ({ [LEFT]: { positions: { down: 'none' } } }),
+      defaultFor: (address, key) => DEFAULTS[key] || null,
+      knownRemotes: () => [RIGHT, LEFT],
+      controlOf: (remote, key) => (remote === LEFT && key === 'MediaTrackNext' ? { kind: 'position', control: 'down' } : { kind: 'key', control: key }),
+      perform: (a, ctx) => performed.push([a.id, ctx.address]),
+      replay: () => {}, now: () => t, setTimer: () => ({}), clearTimer: () => {},
+    });
+    expect(rt.browserKeydown({ key: 'MediaTrackNext' })).toBe('swallow');
+    rt.input({ remote: RIGHT, kind: 'key', control: 'MediaTrackNext', key: 'MediaTrackNext', state: 'down' });
+    // Saved "Nothing" beats the default.
+    rt.input({ remote: LEFT, kind: 'position', control: 'down', key: 'MediaTrackNext', state: 'down' });
+    expect(performed).toEqual([['next', RIGHT]]);
+  });
+});
+
 describe('performRemoteAction', () => {
   it('navigate goes to a modal that captured it on the ActionBus, else as its key', () => {
     const bus = { hasCapture: (a) => a === 'navigate', emit: vi.fn(() => true) };

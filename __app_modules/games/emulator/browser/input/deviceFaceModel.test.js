@@ -49,6 +49,16 @@ describe('deviceFaceModel', () => {
     expect(savedFor(entry, remoteFace(ROW_REMOTE))).toBe(entry.buttons);
   });
 
+  it("an emulator: map puts each keycap's game button under it when nothing is set; a set action wins", () => {
+    const face = remoteFace({ ...STICK_REMOTE, emulator: { a: 'b', stick_up: 'up', circle_trigger: 'start' } });
+    const cap = (k) => face.caps.find((c) => c.key === k);
+    expect(capActionLabel(cap('ButtonA'), null, GROUPS)).toBe('Game: B');
+    expect(capActionLabel(cap('StickUp'), null, GROUPS)).toBe('Game: Up');
+    expect(capActionLabel(cap('TriggerCircle'), null, GROUPS)).toBe('Game: Start');
+    expect(capActionLabel(cap('ButtonB'), null, GROUPS)).toBe('Not set');
+    expect(capActionLabel(cap('ButtonA'), { ButtonA: 'up' }, GROUPS)).toBe('Up');
+  });
+
   it('no layout hint: a wrapped grid in buttons: order; stick-pad with no direction falls back to a grid', () => {
     expect(remoteFace({ buttons: { x: 'KeyX', y: 'KeyY' } }).layout).toBe('grid');
     expect(remoteFace({ layout: 'stick-pad', buttons: { x: 'KeyX' } }).layout).toBe('grid');

@@ -110,6 +110,12 @@ export function BluetoothScreen({
   faceRef.current = face;
   // A remote drawn as mounted keeps its actions by position; any other by key.
   const saved = (address && savedFor(rb?.remotes?.[address], face)) || null;
+  // What a button does with nothing saved: its key's default, from the host,
+  // for an inventory remote's face only.
+  const defaultFor = face?.defaults && typeof rb?.defaultActionFor === 'function' ? rb.defaultActionFor : null;
+  // What uses this remote, from config (the host reads which blocks name it).
+  const uses = kind === 'remote' && row?.controller?.kind === 'remote' && typeof rb?.usesFor === 'function'
+    ? rb.usesFor(row.controller) : null;
   const faceKeys = useMemo(() => new Set((face?.caps || []).map((c) => c.key)), [face]);
   const verdict = testVerdict({ keys: feed.keys, padInputs: feed.padInputs, gameKeys });
   const canEdit = !!rb && kind === 'remote' && typeof rb.requestEditUnlock === 'function' && typeof rb.save === 'function';
@@ -334,6 +340,8 @@ export function BluetoothScreen({
                   verdict={verdict}
                   savedButtons={saved}
                   groups={rb?.groups || null}
+                  defaultFor={defaultFor}
+                  uses={uses}
                   canEdit={canEdit}
                   editPending={editPending}
                   onEdit={openEditor}
@@ -367,6 +375,7 @@ export function BluetoothScreen({
             }}
             saving={edit.saving}
             error={edit.error}
+            defaultFor={defaultFor}
           />
         )}
 

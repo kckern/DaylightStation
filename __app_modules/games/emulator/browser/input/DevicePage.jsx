@@ -9,7 +9,7 @@ import { DeviceFace } from './DeviceFace.jsx';
 const ARM_MS = 4000;
 
 export function DevicePage({
-  row, face, feed, verdict, savedButtons = null, groups = null,
+  row, face, feed, verdict, savedButtons = null, groups = null, defaultFor = null, uses = null,
   canEdit = false, editPending = false, onEdit, onForget, onArm, onPairAgain, busy = false, message = null, armMs = ARM_MS,
 }) {
   const [armed, setArmed] = useState(false);
@@ -23,8 +23,10 @@ export function DevicePage({
 
   const connected = row.status === 'connected';
   const hasFace = face?.caps?.length > 0;
-  const prompt = verdict?.text
-    || (connected ? `Press a button on ${row.name}.` : null);
+  // A remote says what uses it (from config, `uses`); anything else what games can do with it.
+  const isRemoteUses = Array.isArray(uses);
+  const prompt = (isRemoteUses ? null : verdict?.text)
+    || (connected && !feed?.keys?.length ? `Press a button on ${row.name}.` : null);
 
   return (
     <section className="bts-page" aria-label={row.name} data-address={row.address}>
@@ -43,11 +45,18 @@ export function DevicePage({
 
       <div className="bts-page-face">
         {hasFace
-          ? <DeviceFace face={face} held={feed?.held} seen={feed?.seen} savedButtons={savedButtons} groups={groups} />
+          ? <DeviceFace face={face} held={feed?.held} seen={feed?.seen} savedButtons={savedButtons} groups={groups} defaultFor={defaultFor} />
           : <p className="bts-face-empty">{connected ? 'Press its buttons to add them here.' : 'Its buttons show here once it is connected and pressed.'}</p>}
       </div>
 
-      {prompt ? <p className={`bts-verdict bts-tone-${verdict?.tone || 'idle'}`} role="status">{prompt}</p> : null}
+      {prompt ? <p className={`bts-verdict bts-tone-${isRemoteUses ? 'idle' : verdict?.tone || 'idle'}`} role="status">{prompt}</p> : null}
+      {isRemoteUses ? (
+        <ul className="bts-uses" aria-label="What uses it">
+          {uses.length
+            ? uses.map((u) => <li key={u.id}><span className="bts-uses-who">{u.label}</span> {u.text}</li>)
+            : <li>No game uses it. Its buttons do what each keycap says.</li>}
+        </ul>
+      ) : null}
       {message ? <p className="bts-result" role="status">{message}</p> : null}
 
       <div className="bts-page-actions">

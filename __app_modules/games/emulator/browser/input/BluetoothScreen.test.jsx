@@ -17,7 +17,7 @@ const NEAR_RING = { address: 'AA:BB:CC:11:22:44', name: 'R2', kind: 'keyboard', 
 const NEAR_SPEAKER = { address: '11:22:33:44:55:66', name: 'JBL', kind: null, hid: false, rssi: -40 };
 const NEAR_PAD = { address: 'E4:17:D8:00:00:09', name: 'TestPad GamePad', kind: 'gamepad', hid: true, rssi: -70 };
 const GROUPS = [
-  { id: 'playback', label: 'Playback', actions: [{ id: 'play-pause', label: 'Play/pause' }, { id: 'next', label: 'Next' }] },
+  { id: 'playback', label: 'Playback', actions: [{ id: 'play-pause', label: 'Play/pause' }, { id: 'next', label: 'Next' }, { id: 'previous', label: 'Previous' }, { id: 'volume-up', label: 'Volume up' }, { id: 'volume-down', label: 'Volume down' }] },
   { id: 'navigate', label: 'Navigate', actions: [{ id: 'up', label: 'Up' }, { id: 'select', label: 'Select' }] },
   { id: 'nothing', label: 'Nothing', actions: [{ id: 'none', label: 'Nothing' }] },
 ];
@@ -250,6 +250,40 @@ describe('BluetoothScreen: editing buttons', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Up' }));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Done' })); });
     expect(remoteButtons.save).toHaveBeenCalledWith(dev.address, { positions: { center: 'play-pause', left: 'up' } }, { label: 'Mounted remote', updatedBy: 'a' });
+  });
+
+  it('mirrored remotes: with nothing saved each position says what its button\'s key does; a saved action wins; the editor agrees', async () => {
+    // Fixtures: one model mounted mirror-image on two sides; keys name standard media keys.
+    const BUTTONS = { call: 'MediaPlayPause', forward: 'MediaTrackNext', reverse: 'MediaTrackPrevious', plus: 'AudioVolumeUp', minus: 'AudioVolumeDown' };
+    const right = { id: 'r', kind: 'remote', label: 'Right handlebar', address: 'AA:BB:CD:00:00:01', buttons: BUTTONS,
+      positions: { up: 'forward', down: 'reverse', left: 'plus', right: 'minus', center: 'call' } };
+    const left = { id: 'l', kind: 'remote', label: 'Left handlebar', address: 'AA:BB:CD:00:00:02', buttons: BUTTONS,
+      positions: { up: 'reverse', down: 'forward', left: 'minus', right: 'plus', center: 'call' } };
+    const DEFAULTS = { MediaPlayPause: 'play-pause', MediaTrackNext: 'next', MediaTrackPrevious: 'previous', AudioVolumeUp: 'volume-up', AudioVolumeDown: 'volume-down' };
+    const remoteButtons = { remotes: { [left.address]: { positions: { up: 'volume-up' } } }, groups: GROUPS, claim: () => () => {},
+      defaultActionFor: (k) => DEFAULTS[k] || null, usesFor: () => [],
+      requestEditUnlock: vi.fn(async () => ({ granted: true, userId: 'a' })), save: vi.fn(async () => ({})) };
+    const inv = [{ ...REMOTE, address: right.address }, { ...REMOTE, address: left.address }];
+    render(ui(makeBt({ inventory: inv, remoteButtons }), { controllers: [right, left] }));
+    const labels = () => Object.fromEntries(['up', 'down', 'left', 'right', 'center'].map((p) => [p, cap(p).querySelector('.bts-cap-action').textContent]));
+    expect(labels()).toEqual({ up: 'Next', down: 'Previous', left: 'Volume up', right: 'Volume down', center: 'Play/pause' });
+    fireEvent.click(row(left.address));
+    expect(labels()).toEqual({ up: 'Volume up', down: 'Next', left: 'Volume down', right: 'Volume up', center: 'Play/pause' });
+    fireEvent.click(row(right.address));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Edit buttons' })); });
+    fireEvent.click(cap('left'));
+    expect(screen.getByText('Left does: Volume up')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Volume up' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('a remote says what uses it, from the host; with nothing, that no game does', () => {
+    const usesFor = vi.fn(() => [{ id: 'x', label: 'Flyer Game:', text: 'Up: missile.' }]);
+    const { rerender } = render(ui(makeBt({ inventory: [REMOTE], remoteButtons: { remotes: {}, groups: GROUPS, claim: () => () => {}, usesFor } })));
+    expect(usesFor).toHaveBeenCalledWith(expect.objectContaining({ id: 'remote_r' }));
+    expect(screen.getByRole('list', { name: 'What uses it' }).textContent).toBe('Flyer Game: Up: missile.');
+    expect(screen.queryByText("Games can't use these keys yet.")).toBeNull();
+    rerender(ui(makeBt({ inventory: [REMOTE], remoteButtons: { remotes: {}, groups: GROUPS, claim: () => () => {}, usesFor: () => [] } })));
+    expect(screen.getByRole('list', { name: 'What uses it' }).textContent).toBe('No game uses it. Its buttons do what each keycap says.');
   });
 
   it('a gamepad has no Edit buttons', () => {

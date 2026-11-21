@@ -38,6 +38,8 @@ export { claimRemote, holdRemoteButtons, isRemoteClaimed, remoteButtonHolds, res
 /**
  * @param {object} p
  * @param {() => object} p.getRemotes  { ADDRESS: { buttons, positions } } (saved)
+ * @param {(remote: string, key: string) => string|null} [p.defaultFor]  a key's action when nothing is saved
+ * @param {() => string[]} [p.knownRemotes]  addresses whose keys have defaults even with nothing saved
  * @param {(remote: string, key: string) => {kind, control}} p.controlOf  the source's resolver,
  *   used only to tell which control a BROWSER key would be on each remote
  * @param {(action: {id, label, group}, ctx: object) => void} p.perform
@@ -45,7 +47,7 @@ export { claimRemote, holdRemoteButtons, isRemoteClaimed, remoteButtonHolds, res
  * @param {(event: string, data: object, level?: string) => void} [p.log]
  */
 export function createRemoteButtonRuntime({
-  getRemotes, controlOf = (remote, key) => ({ kind: 'key', control: normalizeKey(key) }), perform, replay, log = () => {}, windowMs = 400,
+  getRemotes, controlOf = (remote, key) => ({ kind: 'key', control: normalizeKey(key) }), defaultFor = () => null, knownRemotes = () => [], perform, replay, log = () => {}, windowMs = 400,
   now = () => Date.now(), setTimer = setTimeout, clearTimer = clearTimeout,
   isHeld = isRemoteHeld,
 }) {
@@ -55,14 +57,16 @@ export function createRemoteButtonRuntime({
   const prune = () => { const t = now(); while (recentTagged.length && t - recentTagged[0].at > windowMs) recentTagged.shift(); };
 
   // The saved action of (address, key) when that remote is acting now.
-  const savedId = (address, control) => savedActionId(getRemotes()?.[address], control);
-  const actionFor = (address, control) => {
-    const id = savedId(address, control);
+  // The saved action, else (nothing saved for that control) its key's default.
+  const savedId = (address, control, key) => savedActionId(getRemotes()?.[address], control) || (key ? defaultFor(address, key) : null);
+  const actionFor = (address, control, key) => {
+    const id = savedId(address, control, key);
     if (!id || isHeld(address)) return null;
     return remoteButtonAction(id);
   };
   const keySetOnActing = (key) => Object.keys(getRemotes() || {})
-    .some((address) => savedId(address, controlOf(address, key)) && !isHeld(address));
+    .some((address) => savedId(address, controlOf(address, key), key) && !isHeld(address))
+    || knownRemotes().some((address) => !(address in (getRemotes() || {})) && defaultFor(address, key) && !isHeld(address));
 
   return {
     /** One abstract remote input: { remote, kind, control, state, key }. */
@@ -71,7 +75,7 @@ export function createRemoteButtonRuntime({
       const key = normalizeKey(ev.key ?? '');
       if (!address || !ev.control || ev.state === 'up') return;
       const control = { kind: ev.kind || 'key', control: ev.control };
-      const action = actionFor(address, control);
+      const action = actionFor(address, control, key);
       if (ev.state === 'repeat') {
         if (action && REPEATS.has(action.id)) perform(action, { address, control: ev.control, repeat: true });
         return;
@@ -87,7 +91,7 @@ export function createRemoteButtonRuntime({
         recentTagged.push({ key, address, acting: !!action, at: now() });
       }
       if (!action) {
-        const id = savedId(address, control);
+        const id = savedId(address, control, key);
         if (id) log('fitness.remote-buttons.held', { address, control: ev.control, action: id, reason: remoteButtonHolds().join(',') || 'claimed' }, 'debug');
         return;
       }

@@ -93,3 +93,19 @@ export function normalizeRemotePositions(positions) {
   }
   return out;
 }
+
+/**
+ * What a remote's button does when nothing is saved for it: the action its key
+ * stands for (standard browser key names, the same on every device). A button
+ * whose key is not here does nothing until it is set.
+ */
+export const DEFAULT_KEY_ACTIONS = Object.freeze({
+  MediaPlayPause: 'play-pause', MediaTrackNext: 'next', MediaTrackPrevious: 'previous',
+  AudioVolumeUp: 'volume-up', AudioVolumeDown: 'volume-down',
+  ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+  Enter: 'select', Escape: 'back',
+});
+
+export function defaultActionForKey(key) {
+  return DEFAULT_KEY_ACTIONS[String(key ?? '')] || null;
+}

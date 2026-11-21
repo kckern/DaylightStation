@@ -77,13 +77,13 @@ export function inventoryButtons(controller) {
 function stickPadCaps(buttons) {
   const caps = buttons.map(({ control, key }) => {
     const dir = directionOf(control, key);
-    if (dir) return { id: key, key, legend: humanizeControl(dir), role: dir };
+    if (dir) return { id: key, key, control, legend: humanizeControl(dir), role: dir };
     // The top row is the triggers: the legend drops the word.
     if (isTrigger(control, key)) {
       const short = String(control).replace(/[_\s-]*(trigger|shoulder|bumper)[_\s-]*/i, ' ').trim();
-      return { id: key, key, legend: humanizeControl(short || control), role: 'top' };
+      return { id: key, key, control, legend: humanizeControl(short || control), role: 'top' };
     }
-    return { id: key, key, legend: humanizeControl(control), role: 'grid' };
+    return { id: key, key, control, legend: humanizeControl(control), role: 'grid' };
   });
   // One cap per direction: a second "up" is just another button.
   const seen = new Set();
@@ -100,6 +100,20 @@ function stickPadCaps(buttons) {
  * keys it has sent this visit. `layout:` 'row' and 'stick-pad' are honoured;
  * anything else is a wrapped grid in `buttons:` order.
  */
+// The entry's `emulator:` map (physical control → RetroPad button, for the
+// arcade's games): each keycap carries its game button, shown when nothing
+// is set for it on fitness screens.
+const RETROPAD_WORD = { start: 'Start', select: 'Select', up: 'Up', down: 'Down', left: 'Left', right: 'Right' };
+function gameButtons(controller, face) {
+  const map = controller?.emulator;
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return face;
+  const caps = face.caps.map((c) => {
+    const b = typeof map[c.control] === 'string' ? map[c.control] : (typeof map[c.key] === 'string' ? map[c.key] : null);
+    return b ? { ...c, game: RETROPAD_WORD[b] || b.toUpperCase() } : c;
+  });
+  return { ...face, caps };
+}
+
 export function remoteFace(controller, seenKeys = []) {
   const positions = remotePositions(controller);
   if (positions.length) {
@@ -108,12 +122,12 @@ export function remoteFace(controller, seenKeys = []) {
     const toward = Object.fromEntries(['front', 'rear']
       .filter((side) => POSITIONS.includes(t[side]) && t[side] !== 'center')
       .map((side) => [t[side], side]));
-    return {
-      source: 'inventory', layout: 'cross', by: 'position', toward,
+    return gameButtons(controller, {
+      source: 'inventory', layout: 'cross', by: 'position', toward, defaults: controller?.kind === 'remote',
       caps: positions.map(({ position, button, key }) => ({
-        id: position, slot: position, key, legend: POSITION_LEGEND[position], printed: humanizeControl(button), role: position,
+        id: position, slot: position, key, control: button, legend: POSITION_LEGEND[position], printed: humanizeControl(button), role: position,
       })),
-    };
+    });
   }
   const buttons = inventoryButtons(controller);
   if (buttons.length) {
@@ -122,10 +136,10 @@ export function remoteFace(controller, seenKeys = []) {
     const hint = typeof controller?.layout === 'string' ? controller.layout.trim().toLowerCase() : null;
     if (hint === 'stick-pad') {
       const caps = stickPadCaps(unique);
-      if (caps.some((c) => DIRECTIONS.includes(c.role))) return { source: 'inventory', layout: 'stick-pad', by: 'key', caps: caps.map((c) => ({ ...c, slot: c.key })) };
+      if (caps.some((c) => DIRECTIONS.includes(c.role))) return gameButtons(controller, { source: 'inventory', layout: 'stick-pad', by: 'key', defaults: controller?.kind === 'remote', caps: caps.map((c) => ({ ...c, slot: c.key })) });
     }
     const layout = hint === 'row' ? 'row' : 'grid';
-    return { source: 'inventory', layout, by: 'key', caps: unique.map(({ control, key }) => ({ id: key, slot: key, key, legend: humanizeControl(control), role: layout })) };
+    return gameButtons(controller, { source: 'inventory', layout, by: 'key', defaults: controller?.kind === 'remote', caps: unique.map(({ control, key }) => ({ id: key, slot: key, key, control, legend: humanizeControl(control), role: layout })) });
   }
   const keys = [...new Set((seenKeys || []).map(normalizeKey).filter(Boolean))];
   return { source: 'seen', layout: 'grid', by: 'key', caps: keys.map((key) => ({ id: key, slot: key, key, legend: keyName(key), role: 'grid' })) };
@@ -178,10 +192,20 @@ export function savedFor(entry, face) {
   return (face.by === 'position' ? entry.positions : entry.buttons) || null;
 }
 
-/** The plain-words action under a keycap (by its slot): the saved one, else "Not set". */
-export function capActionLabel(cap, savedButtons, groups) {
+/** The action id a keycap has: the saved one, else its key's default (`defaultFor`, from the host), else null. */
+export function capActionId(cap, savedButtons, defaultFor = null) {
+  return savedButtons?.[cap?.slot ?? cap?.key] || (typeof defaultFor === 'function' ? defaultFor(cap?.key) : null) || null;
+}
+
+/**
+ * The plain-words action under a keycap (by its slot): the saved one, else what
+ * the key its button sends does by default (when the host gives `defaultFor`
+ * and the face is an inventory remote's), else "Not set".
+ */
+export function capActionLabel(cap, savedButtons, groups, defaultFor = null) {
   if (typeof cap?.action === 'string') return cap.action;
-  const id = savedButtons?.[cap?.slot ?? cap?.key];
+  const id = capActionId(cap, savedButtons, defaultFor);
+  if (!id && cap?.game) return `Game: ${cap.game}`;
   if (!id) return 'Not set';
   for (const g of groups || []) {
     const a = (g.actions || []).find((x) => x.id === id);

@@ -18,7 +18,10 @@ import { getActionBus } from '@/lib/input/ActionBus.js';
 import { useOptionalIdentity } from '../../identity/useIdentity.js';
 import { useFitnessBluetoothState } from '../../context/FitnessBluetoothContext.jsx';
 import UnlockPrompt from '../../player/overlays/UnlockPrompt.jsx';
-import { REMOTE_BUTTON_ACTION_GROUPS } from '../../../shared/remoteButtonActions.mjs';
+import { REMOTE_BUTTON_ACTION_GROUPS, defaultActionForKey } from '../../../shared/remoteButtonActions.mjs';
+import { useFitnessSelector } from '../../context/FitnessContext.jsx';
+import { getWidgetRegistry } from '../../../../../../__capabilities/screen-host/browser/public.mjs';
+import { remoteUses } from './remoteUses.js';
 import { NAV_SEMANTIC, PLAYBACK_METHOD, claimRemote, createRemoteButtonRuntime } from './remoteButtonRuntime.js';
 import { createRemoteInputSource } from './remoteInputSource.js';
 import { getPlaybackTarget } from './remotePlaybackTarget.js';
@@ -158,6 +161,12 @@ export function RemoteButtonsHost({ children, kiosk = isKioskEnv() }) {
     const runtime = createRemoteButtonRuntime({
       getRemotes: () => remotesRef.current,
       controlOf: source.controlOf,
+      // Nothing saved for a button of an inventory remote: its key's default.
+      defaultFor: (address, key) => {
+        const c = controllersRef.current.find((x) => String(x?.address || '').toUpperCase() === address);
+        return c?.kind === 'remote' ? defaultActionForKey(key) : null;
+      },
+      knownRemotes: () => controllersRef.current.filter((c) => c?.kind === 'remote' && c.address).map((c) => String(c.address).toUpperCase()),
       perform: (action, ctx) => {
         const to = performRemoteAction(action);
         logger().sampled('fitness.remote-buttons.performed', { ...ctx, action: action.id, to }, { maxPerMinute: 30, aggregate: true });
@@ -195,9 +204,22 @@ export function RemoteButtonsHost({ children, kiosk = isKioskEnv() }) {
     };
   }, [kiosk, subscribeRemoteKeys]);
 
+  // What uses a remote, from config: blocks keyed by a registered module's id.
+  const equipment = useFitnessSelector((c) => c?.equipmentConfig ?? null, Object.is);
+  const usesFor = useCallback((controller) => remoteUses({
+    controller,
+    equipment: equipment || [],
+    nameOf: (moduleId) => {
+      const registry = getWidgetRegistry();
+      const key = registry.list('fitness').find((k) => registry.getMeta(k)?.id === moduleId);
+      return key ? registry.getMeta(key)?.name || null : null;
+    },
+  }), [equipment]);
+
   const value = useMemo(() => ({
     remotes, loaded, groups: REMOTE_BUTTON_ACTION_GROUPS, save, requestEditUnlock, claim: claimRemote, reload: load,
-  }), [remotes, loaded, save, requestEditUnlock, load]);
+    defaultActionFor: defaultActionForKey, usesFor,
+  }), [remotes, loaded, save, requestEditUnlock, load, usesFor]);
 
   return (
     <RemoteButtonsContext.Provider value={value}>

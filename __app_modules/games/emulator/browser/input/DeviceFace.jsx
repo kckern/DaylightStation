@@ -34,7 +34,7 @@ function Cap({ cap, held, seen, picked, actionLabel, onPick }) {
   return <div className={cls} data-cap={cap.id} role="img" aria-label={label}>{body}</div>;
 }
 
-export function DeviceFace({ face, held, seen, savedButtons = null, groups = null, picked = null, onPick = null, labels = null }) {
+export function DeviceFace({ face, held, seen, savedButtons = null, groups = null, picked = null, onPick = null, labels = null, defaultFor = null }) {
   if (!face?.caps?.length) return null;
   const render = (cap) => (
     <Cap
@@ -43,7 +43,7 @@ export function DeviceFace({ face, held, seen, savedButtons = null, groups = nul
       held={held?.has(cap.key)}
       seen={seen?.has(cap.key)}
       picked={picked === cap.id}
-      actionLabel={labels?.[cap.slot ?? cap.key] ?? capActionLabel(cap, savedButtons, groups)}
+      actionLabel={labels?.[cap.slot ?? cap.key] ?? capActionLabel(cap, savedButtons, groups, defaultFor)}
       onPick={onPick}
     />
   );

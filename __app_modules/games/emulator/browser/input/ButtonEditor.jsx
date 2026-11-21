@@ -5,9 +5,9 @@
 // screen never names an action of its own.
 import React, { useEffect, useRef } from 'react';
 import { DeviceFace } from './DeviceFace.jsx';
-import { capActionLabel } from './deviceFaceModel.js';
+import { capActionId, capActionLabel } from './deviceFaceModel.js';
 
-export function ButtonEditor({ row, face, held, picked, onPick, draft, groups, onSet, saving = false, error = null }) {
+export function ButtonEditor({ row, face, held, picked, onPick, draft, groups, onSet, saving = false, error = null, defaultFor = null }) {
   const pickedCap = face?.caps?.find((c) => c.id === picked) || null;
   // A press on the remote picks its keycap: focus follows, so a gamepad or the
   // keys carry on from there.
@@ -18,8 +18,9 @@ export function ButtonEditor({ row, face, held, picked, onPick, draft, groups, o
   }, [picked]);
   // Drafts are keyed by each keycap's slot: its position on a remote drawn as
   // mounted, else the key it sends.
-  const labels = Object.fromEntries((face?.caps || []).map((c) => [c.slot ?? c.key, capActionLabel(c, draft, groups)]));
-  const current = pickedCap ? draft?.[pickedCap.slot ?? pickedCap.key] || null : null;
+  const labels = Object.fromEntries((face?.caps || []).map((c) => [c.slot ?? c.key, capActionLabel(c, draft, groups, defaultFor)]));
+  // The chip that is on: what the picked button does now (saved, or its key's default).
+  const current = pickedCap ? capActionId(pickedCap, draft, defaultFor) : null;
   return (
     <section className="bts-editor" ref={rootRef} aria-label={`Edit buttons on ${row?.name || 'this remote'}`}>
       <div className="bts-page-face">

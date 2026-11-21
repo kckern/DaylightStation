@@ -266,8 +266,15 @@ device, on a plate (`DeviceFace`, `deviceFaceModel.js`). A keycap sinks and
 lights in the accent colour the moment its button is held and lifts on
 release; a small green mark stays on a keycap pressed at least once this
 visit; a control never pressed is plain. Under each keycap, what it does in
-plain words: the saved action (Button mapping), else "Not set". Nothing is
-faked: a keycap lights only from a real press.
+plain words: the saved action (Button mapping); with nothing saved, on a
+`kind: remote` entry, what the key its button sends does by default
+(`DEFAULT_KEY_ACTIONS` in `remoteButtonActions.mjs`: standard key names such as
+`MediaTrackNext` → Next, `AudioVolumeUp` → Volume up, the arrows, Enter,
+Escape), resolved position → physical button (`positions:`) → key
+(`buttons:`); else, when the entry has an `emulator:` map, the game button
+that control presses in the arcade ("Game: B"); else "Not set". The runtime performs the same defaults, so the
+words are what a press does. Nothing is faked: a keycap lights only from a
+real press.
 
 | Device | Face | Lit from |
 |---|---|---|
@@ -281,12 +288,22 @@ On a remote's page the keys that remote sends light its face and do not move
 focus (`useScreenNav`'s `ignoreKey`); Escape, Backspace and Tab always
 navigate. A gamepad on its own page still drives the screen as usual.
 
-The sentence under the face says what games can do with the presses so far:
+Under the face, "Press a button on <name>." until the first press, and:
 
-- gamepad input: "Games can use this as a controller."
-- keys listed in `input.yml` `keyboard:`: "Games can use these keys: …"
-- other keys only: "Games can't use these keys yet."
-- before any press: "Press a button on <name>."
+- a `kind: remote` entry: **what uses it**, read from config (`remoteUses.js`,
+  through `remoteButtons.usesFor(controller)`): any block on its inventory
+  entry keyed by a registered fitness module's id ("<module name>: plays
+  with this remote.", e.g. an `emulator:` map), and any `<module id>.remote`
+  direction map on an equipment entry in the fitness config, for a remote
+  placed by `positions:` ("<module name>: Up: missile, Centre: laser, Front:
+  boost.", only the directions this remote has; front / rear from its
+  `toward:`). Module names come from the widget registry's manifests; nothing
+  names a game. None: "No game uses it. Its buttons do what each keycap
+  says."
+- anything else, what games can do with the presses so far: gamepad input
+  "Games can use this as a controller."; keys listed in `input.yml`
+  `keyboard:` "Games can use these keys: …"; other keys "Games can't use
+  these keys yet."
 
 Leaving a page that had presses logs `bluetooth-screen.test-result` (keys,
 distinctKeys, padInputs, verdict, keyNames).
@@ -340,8 +357,10 @@ bus or input.yml itself: it consumes abstract remote input
 `bt.remote.key` and input.yml into it. The key → button → position step is
 the shared resolver `remoteDirection(controller, key)`
 (`lib/remoteInput/remoteDirection.js`, see Remote directions). On the kiosk only (every fitness
-page hears the garage's remotes), each `bt.remote.key` press with a saved
-action performs it. The lookup (`resolveRemoteAction`) is (address, key) →
+page hears the garage's remotes), each `bt.remote.key` press performs its
+saved action, or with nothing saved for that control and a `kind: remote`
+inventory entry, its key's default (above; a saved "Nothing" turns a default
+off). The lookup is (address, key) →
 physical button → rider position → action for a remote with `positions:`
 (read from `input.yml`, `GET /api/v1/emulator/library`, once on the kiosk),
 else (address, key) → action:
