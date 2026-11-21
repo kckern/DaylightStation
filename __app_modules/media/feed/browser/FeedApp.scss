@@ -191,6 +191,7 @@
   button { flex: 1; min-height: 40px; border: 1px solid var(--feed-border-strong); border-radius: var(--feed-radius-sm); background: var(--feed-surface-3); color: inherit; cursor: pointer; }
   button:disabled { opacity: 0.55; cursor: wait; }
   small { color: var(--feed-text-2); line-height: 1.35; }
+  > .feed-data-controls__status { display: grid; gap: 0.35rem; }
 }
 
 .feed-source-preferences {

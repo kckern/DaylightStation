@@ -395,6 +395,9 @@ Search accepts `q`, `state`, `mode`, `source`, `from`, `to`, `limit`, and opaque
 ### Portable data and device-local editions
 
 `daylight.feed-export/v1` contains normalized preferences, source preferences, checkpoints, canonical state, annotations, and bounded normalized history records. Import is a merge: valid fields are normalized, invalid entries are ignored, imported synchronization state is reset to `synced`, and current unrelated account data is retained. It is not OPML and intentionally does not export a complete copy of publisher article bodies.
+After a successful import, a failed workspace readback keeps the confirmed import
+counts visible and offers **Refresh view**; retrying that action does not submit
+the import again.
 
 Offline editions are a separate device concern. `feedOfflineStore.js` stores up to 100 `{ item, detail }` snapshots per account in the `daylight-feed-offline-v1` IndexedDB database. The `editions` store keeps keys in `user:itemId` format. A download captures its account before opening the database and saves the new edition and prunes older editions for that account in one transaction. The offline reading list uses the current account at the time of each read.
 
