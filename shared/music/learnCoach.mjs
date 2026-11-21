@@ -15,6 +15,12 @@ const GOLD_TEMPOS = Object.freeze([50, 60, 75]);
 /** Where a timing-only miss steps down to, one rung at a time. */
 const SLOWER_TEMPOS = Object.freeze([40, ...GOLD_TEMPOS, 100]);
 const MAX_POLICY_PASSES = 20;
+/**
+ * How far a missed step can shrink: the way into the hard bar, the hard bar
+ * alone, then one hand of it. Was 2 until 2026-11, which stopped one short of
+ * the hand a learner was missing.
+ */
+const MAX_DRILL_DEPTH = 3;
 const wholeIn = (value, fallback) => (Number.isInteger(value) && value >= 1 && value <= MAX_POLICY_PASSES ? value : fallback);
 
 /** YAML-defined certification policy, with every invalid value replaced by its default. */
@@ -132,7 +138,7 @@ function validTask(plan, task) {
     && (task.assist == null || task.assist === 'none')
     && ['free', 'metronome', 'cued'].includes(task.mode)
     && (task.mode === 'free' || (Number.isFinite(task.tempoPercent) && task.tempoPercent > 0 && task.tempoPercent <= 100))
-    && (task.depth ?? 0) <= 2;
+    && (task.depth ?? 0) <= MAX_DRILL_DEPTH;
 }
 
 function receivedInput(result) {
@@ -357,8 +363,14 @@ export function entryShiftBeats(result) {
 }
 const SHIFT_WORDS = Object.freeze({ 1: 'one beat', 2: 'two beats' });
 
+/**
+ * The smaller step after two misses. Timing-only misses slow down. Otherwise the
+ * hardest bar (for an unfinished take, the first bar it did not reach) is
+ * practised with the bar before it, so the drill includes the way into it; when
+ * that is already the task, the bar alone; a one-bar task drops to its harder hand.
+ */
 function recovery(plan, task, result) {
-  if ((task.depth ?? 0) >= 2) return null;
+  if ((task.depth ?? 0) >= MAX_DRILL_DEPTH) return null;
   let range = { ...task.range };
   let parts = [...task.parts];
   let tempoPercent = task.tempoPercent;
@@ -375,8 +387,11 @@ function recovery(plan, task, result) {
     })).filter((span) => Number.isInteger(span.measure) && span.measure >= range.start && span.measure <= range.end && span.count > 0)
       .filter((span) => !unfinished || span.missed > 0)
       .sort((a, b) => (unfinished ? 0 : b.burden - a.burden) || a.measure - b.measure);
-    range = spans.length ? { start: spans[0].measure, end: spans[0].measure }
-      : { start: range.start, end: range.start + Math.max(1, Math.ceil((range.end - range.start + 1) / 2)) - 1 };
+    if (spans.length) {
+      const hard = spans[0].measure;
+      const linked = { start: Math.max(range.start, hard - 1), end: hard };
+      range = sameRange(linked, range) ? { start: hard, end: hard } : linked;
+    } else range = { start: range.start, end: range.start + Math.max(1, Math.ceil((range.end - range.start + 1) / 2)) - 1 };
   } else if (parts.length > 1) {
     parts.sort((a, b) => {
       const burden = (part) => {
@@ -393,13 +408,35 @@ function recovery(plan, task, result) {
     parent: task, depth: (task.depth ?? 0) + 1, reason, mastery: false, completes: false });
 }
 
+/**
+ * Back-chaining: a passed drill on the closing bars of the step it came from
+ * grows by one bar toward that step's start, so every take still ends on the
+ * bars already learned. Null when the next bar back is the parent step itself,
+ * or when the drill is not the parent's tail at the parent's hands and pace:
+ * the drill then returns to its parent as before.
+ */
+function backChain(plan, task) {
+  const parent = task.parent;
+  if (!parent || task.mode !== parent.mode || task.tempoPercent !== parent.tempoPercent || !sameParts(task.parts, parent.parts)) return null;
+  if (task.range.end !== parent.range.end || task.range.start <= parent.range.start) return null;
+  const range = { start: task.range.start - 1, end: task.range.end };
+  if (sameRange(range, parent.range)) return null;
+  return makeCoachTask(plan, { ...task, range, reason: 'back-chain', label: 'Practice these bars' });
+}
+
 export function applyCoachEvent(state, event, { plan, now, dayKey, legacy = {} }) {
   const current = stateFor(plan, state);
   if (!event?.id || current.evidence.some((prior) => prior.id === event.id)) return current;
   if (!validTask(plan, event.task)) throw new Error('Invalid coaching task identity');
   const task = makeCoachTask(plan, event.task);
   const slot = isGoldWork(task) ? 'goldResume' : 'resume';
-  if (event.type === 'selection') return { ...current, revision: current.revision + 1, [slot]: task };
+  // Starting a take on a passage set aside today brings it back: the learner chose
+  // it, so it is coached again (smaller steps, and "come back later" once more).
+  if (event.type === 'selection') {
+    const { [task.passageId]: _returned, ...setAside } = current.setAside ?? {};
+    return { ...current, revision: current.revision + 1, [slot]: task,
+      ...(current.setAside?.[task.passageId] ? { setAside } : {}) };
+  }
   if (event.type === 'set-aside') return { ...current, revision: current.revision + 1,
     setAside: { ...current.setAside, [task.passageId]: dayKey },
     resume: current.resume?.passageId === task.passageId ? null : current.resume ?? null };
@@ -430,7 +467,7 @@ export function applyCoachEvent(state, event, { plan, now, dayKey, legacy = {} }
   if (task.mastery && passedCredits.includes(task.key)) next.reviews[task.passageId] = { at: now, dayKey };
   const equivalent = next.evidence.filter((item) => item.task.key === task.key);
   const successful = equivalent.slice(-3).filter((item) => item.passedCredits.includes(task.key)).length >= 2;
-  if (task.parent && successful) next[slot] = task.parent;
+  if (task.parent && successful) next[slot] = backChain(plan, task) ?? task.parent;
   // A named shifted entry is a start that missed the count, not a passage too
   // hard to play: the same task again, never the smaller-task recovery.
   else if (equivalent.slice(-2).length === 2 && equivalent.slice(-2).every((item) => !item.passedCredits.includes(task.key))) {

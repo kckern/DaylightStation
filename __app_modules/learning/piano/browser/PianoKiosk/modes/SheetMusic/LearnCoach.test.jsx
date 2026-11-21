@@ -152,6 +152,20 @@ describe('LearnCoach', () => {
   // The piano's onward line says it as a sentence: "play any key to try a little slower (75%)".
   expect(h.lab.resultContinueLabel).toBe('try a little slower (75%)');
  });
+ it('a take that stalls in the last bar practises the way into it, then builds back a bar at a time', async () => {
+  render(<LearnCoach {...props} />);
+  const span = (missed) => ({ diagnostics: { expected_notes: 2, missed_notes: missed, wrong_notes: 0 } });
+  const stalled = { ...passed, verdict: { passed: false }, criteria: { completeness: .9, cleanliness: 1 },
+    spans: { 'measure:0': span(0), 'measure:1': span(0), 'measure:2': span(0), 'measure:3': span(2) } };
+  await outcome({ ...stalled, assessmentId: 'stall1' }); await outcome({ ...stalled, assessmentId: 'stall2' });
+  fireEvent.click(screen.getByRole('button', { name: 'Practice bars 3–4' }));
+  expect(h.lab.segment.barLabel).toBe('Bars 3–4');
+  await outcome({ ...passed, assessmentId: 'link1' }); await outcome({ ...passed, assessmentId: 'link2' });
+  // The pass card names what follows: the next bar back, not the step the drill came from.
+  expect(h.lab.card.copy.line).toBe('Next: Bars 2–4');
+  expect(h.lab.coachingTask).toMatchObject({ reason: 'back-chain', range: { start: 1, end: 3 } });
+  expect(h.lab.segment.barLabel).toBe('Bars 2–4');
+ });
  it('keeps the same step after a shifted entry, names it on the card, and logs the shift', async () => {
   h.log.info.mockClear();
   render(<LearnCoach {...props} skipping={{ default: 'open' }} />);

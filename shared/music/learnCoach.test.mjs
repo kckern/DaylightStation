@@ -83,7 +83,7 @@ describe('guided musical progression', () => {
 });
 
 describe('focused recovery and honest feedback', () => {
-  it('targets the hardest normalized measure only after two equivalent unsuccessful takes', () => {
+  it('targets the hardest normalized measure, with the bar before it, only after two equivalent unsuccessful takes', () => {
     const plan = planOf();const task = choose(plan, 'right');
     const result = { ...bad, criteria: { completeness: 1, cleanliness: 0.5 }, spans: {
       'measure:0': { diagnostics: { expected_notes: 20, missed_notes: 2, wrong_notes: 0 } },
@@ -92,7 +92,7 @@ describe('focused recovery and honest feedback', () => {
     let state = outcome(undefined, plan, task, result);
     expect(projection(plan, state).recommended.range).toEqual({ start: 0, end: 3 });
     state = outcome(state, plan, task, result);
-    expect(projection(plan, state).recommended).toMatchObject({ range: { start: 2, end: 2 }, parent: { skill: 'right' }, depth: 1 });
+    expect(projection(plan, state).recommended).toMatchObject({ range: { start: 1, end: 2 }, parent: { skill: 'right' }, depth: 1 });
   });
 
   it('falls back to the first half and cannot recurse endlessly on a one-bar task', () => {
@@ -102,9 +102,9 @@ describe('focused recovery and honest feedback', () => {
     expect(recovery.range).toEqual({ start: 0, end: 1 });
     state = outcome(outcome(state, plan, recovery, bad), plan, recovery, bad);
     recovery = projection(plan, state).recommended;
-    expect(recovery.depth).toBeLessThanOrEqual(2);
+    expect(recovery.depth).toBeLessThanOrEqual(3);
     state = outcome(outcome(state, plan, recovery, bad), plan, recovery, bad);
-    expect(projection(plan, state).recommended.depth).toBeLessThanOrEqual(2);
+    expect(projection(plan, state).recommended.depth).toBeLessThanOrEqual(3);
   });
 
   it('returns from successful short practice without banking a full-passage skill', () => {
