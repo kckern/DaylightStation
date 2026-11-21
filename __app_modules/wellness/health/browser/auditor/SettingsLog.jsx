@@ -40,7 +40,11 @@ export function SettingsLog() {
         : !entries.length ? <Text size="sm" c="dimmed">No settings changes yet.</Text>
         : <Stack gap={4}>
           {(all ? entries : entries.slice(0, COLLAPSED)).map((entry, i) => <Text size="sm" key={`${entry.at}:${entry.field}:${i}`}>{logLine(entry)}</Text>)}
-          {!all && entries.length > COLLAPSED ? <Button variant="subtle" size="xs" onClick={() => setAll(true)}>Show all ({entries.length})</Button> : null}
+          {entries.length > COLLAPSED ? (
+            <Button variant="subtle" size="xs" aria-expanded={all} onClick={() => setAll(value => !value)}>
+              {all ? 'Show fewer' : `Show all (${entries.length})`}
+            </Button>
+          ) : null}
         </Stack>}
     </section>
   </SectionCard>;
