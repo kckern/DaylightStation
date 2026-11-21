@@ -219,6 +219,87 @@ test('config Back preserves a dirty YAML draft until discard is confirmed', asyn
   expect(writes).toEqual([]);
 });
 
+test('Config Files keeps a YAML draft through native Back and Forward and clears confirmed discard', async ({ page }) => {
+  const writes = [];
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path === '/api/v1/admin/config/files') {
+      return route.fulfill({ json: { files: [
+        { name: 'sample.yml', path: 'household/sample.yml', directory: 'household' },
+      ] } });
+    }
+    if (path === '/api/v1/admin/config/files/household/sample.yml' && request.method() === 'GET') {
+      return route.fulfill({ json: { parsed: { enabled: true }, raw: 'enabled: true\n' } });
+    }
+    if (request.method() === 'PUT') writes.push(path);
+    return route.fulfill({ json: path.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+
+  await page.goto('/admin/system/config');
+  await page.getByRole('button', { name: /sample\.yml/ }).click();
+  await expect(page).toHaveURL('/admin/system/config/household/sample.yml');
+  const editor = page.locator('.cm-content');
+  await expect(editor).toContainText('enabled: true');
+  await editor.fill('enabled: false');
+
+  await page.goBack();
+  await expect(page).toHaveURL('/admin/system/config');
+  await expect(page.getByRole('dialog', { name: 'Discard unsaved changes?' })).toHaveCount(0);
+  await page.goForward();
+  await expect(page).toHaveURL('/admin/system/config/household/sample.yml');
+  await expect(editor).toContainText('enabled: false');
+  await expect(page.getByText('Unsaved', { exact: true })).toBeVisible();
+  expect(writes).toEqual([]);
+
+  await page.getByRole('link', { name: 'Back to Config', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Discard unsaved changes?' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Discard', exact: true }).click();
+  await expect(page).toHaveURL('/admin/system/config');
+  await page.goBack();
+  await expect(page).toHaveURL('/admin/system/config/household/sample.yml');
+  await expect(editor).toContainText('enabled: true');
+  await expect(page.getByText('Unsaved', { exact: true })).toHaveCount(0);
+  expect(writes).toEqual([]);
+});
+
+test('Config Files drops a history draft when the server baseline changed while away', async ({ page }) => {
+  let fileReads = 0;
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path === '/api/v1/admin/config/files') {
+      return route.fulfill({ json: { files: [
+        { name: 'sample.yml', path: 'household/sample.yml', directory: 'household' },
+      ] } });
+    }
+    if (path === '/api/v1/admin/config/files/household/sample.yml' && request.method() === 'GET') {
+      fileReads += 1;
+      return route.fulfill({ json: fileReads === 1
+        ? { parsed: { enabled: true }, raw: 'enabled: true\n' }
+        : { parsed: { enabled: false }, raw: 'enabled: false\n' } });
+    }
+    return route.fulfill({ json: path.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+
+  await page.goto('/admin/system/config');
+  await page.getByRole('button', { name: /sample\.yml/ }).click();
+  const editor = page.locator('.cm-content');
+  await expect(editor).toContainText('enabled: true');
+  await editor.fill('enabled: local draft');
+
+  await page.goBack();
+  await expect(page).toHaveURL('/admin/system/config');
+  await page.goForward();
+  await expect(page).toHaveURL('/admin/system/config/household/sample.yml');
+  await expect.poll(() => fileReads).toBe(2);
+  await expect(editor).toContainText('enabled: false');
+  await expect(page.getByText('Unsaved', { exact: true })).toHaveCount(0);
+});
+
 test('Finance ClickUp IDs reject lossy input and preserve existing IDs on save', async ({ page }) => {
   const writes = [];
   await page.routeWebSocket('**/*', () => {});

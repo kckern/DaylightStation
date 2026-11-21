@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invalidateApiResources } from '../../lib/hooks/useApiResource.js';
+import { clearAdminDraft } from '../../modules/Admin/shared/useAdminDraftState.js';
 
 const { apiState } = vi.hoisted(() => ({ apiState: { calls: [], respond: null } }));
 vi.mock('../../lib/api.mjs', () => ({
@@ -124,5 +125,113 @@ describe('useAdminConfig resource ownership', () => {
 
     act(() => result.current.revert());
     expect(result.current.data).toEqual({ file: 'server-2' });
+  });
+
+  it('restores an unmounted raw draft only against the exact raw server baseline', async () => {
+    const filePath = 'history-exact-baseline.yml';
+    const ownerKey = JSON.stringify(['config', 'anonymous', filePath, 'raw']);
+    let readCount = 0;
+    apiState.respond = async () => {
+      readCount += 1;
+      return {
+        parsed: { enabled: true },
+        raw: readCount === 1 ? '# original comment\nenabled: true\n' : '# changed comment\nenabled: true\n',
+      };
+    };
+
+    const first = renderHook(() => useAdminConfig(filePath, 'raw'));
+    await waitFor(() => expect(first.result.current.draftReady).toBe(true));
+    act(() => first.result.current.setRaw('# local comment\nenabled: false\n'));
+    first.unmount();
+
+    const second = renderHook(() => useAdminConfig(filePath, 'raw'));
+    await waitFor(() => expect(second.result.current.draftReady).toBe(true));
+    expect(second.result.current.raw).toBe('# changed comment\nenabled: true\n');
+    expect(second.result.current.dirty).toBe(false);
+    second.unmount();
+    clearAdminDraft(ownerKey);
+  });
+
+  it('keeps parsed and raw history drafts in separate editor modes', async () => {
+    const filePath = 'history-editor-mode.yml';
+    const parsedKey = JSON.stringify(['config', 'anonymous', filePath, 'parsed']);
+    const rawKey = JSON.stringify(['config', 'anonymous', filePath, 'raw']);
+    apiState.respond = async () => ({ parsed: { enabled: true }, raw: 'enabled: true\n' });
+
+    const raw = renderHook(() => useAdminConfig(filePath, 'raw'));
+    await waitFor(() => expect(raw.result.current.draftReady).toBe(true));
+    act(() => raw.result.current.setRaw('enabled: raw draft\n'));
+    raw.unmount();
+
+    const parsed = renderHook(() => useAdminConfig(filePath, 'parsed'));
+    await waitFor(() => expect(parsed.result.current.draftReady).toBe(true));
+    expect(parsed.result.current.data).toEqual({ enabled: true });
+    expect(parsed.result.current.dirty).toBe(false);
+    parsed.unmount();
+
+    const restoredRaw = renderHook(() => useAdminConfig(filePath, 'raw'));
+    await waitFor(() => expect(restoredRaw.result.current.draftReady).toBe(true));
+    expect(restoredRaw.result.current.raw).toBe('enabled: raw draft\n');
+    expect(restoredRaw.result.current.dirty).toBe(true);
+    restoredRaw.unmount();
+    clearAdminDraft(parsedKey);
+    clearAdminDraft(rawKey);
+  });
+
+  it('does not restore a draft across auth sessions', async () => {
+    const filePath = 'history-session-scope.yml';
+    const sessionOne = JSON.stringify(['config', JSON.stringify(['alice', 'session-one']), filePath, 'raw']);
+    const sessionTwo = JSON.stringify(['config', JSON.stringify(['bob', 'session-two']), filePath, 'raw']);
+    apiState.respond = async () => ({ parsed: { enabled: true }, raw: 'enabled: true\n' });
+    const setSession = (sub, sid) => {
+      const payload = btoa(JSON.stringify({ sub, sid }));
+      localStorage.setItem('ds_token', `header.${payload}.signature`);
+    };
+
+    setSession('alice', 'session-one');
+    const first = renderHook(() => useAdminConfig(filePath, 'raw'));
+    await waitFor(() => expect(first.result.current.draftReady).toBe(true));
+    act(() => first.result.current.setRaw('enabled: Alice draft\n'));
+    first.unmount();
+
+    setSession('bob', 'session-two');
+    const second = renderHook(() => useAdminConfig(filePath, 'raw'));
+    await waitFor(() => expect(second.result.current.draftReady).toBe(true));
+    expect(second.result.current.raw).toBe('enabled: true\n');
+    expect(second.result.current.dirty).toBe(false);
+    second.unmount();
+    localStorage.removeItem('ds_token');
+    clearAdminDraft(sessionOne);
+    clearAdminDraft(sessionTwo);
+  });
+
+  it('keeps a later draft when an earlier save acknowledges after unmount', async () => {
+    const filePath = 'history-late-save.yml';
+    const ownerKey = JSON.stringify(['config', 'anonymous', filePath, 'raw']);
+    let acknowledgeWrite;
+    apiState.respond = (path, body, method) => method === 'PUT'
+      ? new Promise(resolve => { acknowledgeWrite = resolve; })
+      : Promise.resolve({ parsed: { enabled: true }, raw: 'enabled: true\n' });
+
+    const first = renderHook(() => useAdminConfig(filePath, 'raw'));
+    await waitFor(() => expect(first.result.current.draftReady).toBe(true));
+    act(() => first.result.current.setRaw('enabled: submitted\n'));
+    let save;
+    act(() => { save = first.result.current.save({ useRaw: true }); });
+    act(() => first.result.current.setRaw('enabled: latest draft\n'));
+    first.unmount();
+
+    await act(async () => {
+      acknowledgeWrite({ parsed: { enabled: true }, raw: 'enabled: submitted\n' });
+      await save;
+    });
+    apiState.respond = async () => ({ parsed: { enabled: true }, raw: 'enabled: submitted\n' });
+
+    const second = renderHook(() => useAdminConfig(filePath, 'raw'));
+    await waitFor(() => expect(second.result.current.draftReady).toBe(true));
+    expect(second.result.current.raw).toBe('enabled: latest draft\n');
+    expect(second.result.current.dirty).toBe(true);
+    second.unmount();
+    clearAdminDraft(ownerKey);
   });
 });

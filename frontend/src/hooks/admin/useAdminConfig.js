@@ -4,19 +4,48 @@ import { useApiResource } from '../../lib/hooks/useApiResource.js';
 import { useDismissibleError } from '../../lib/hooks/useDismissibleError.js';
 import { notifications } from '@mantine/notifications';
 import getLogger from '../../lib/logging/Logger.js';
+import { getToken, getUser } from '../../lib/auth.js';
+import {
+  acknowledgeAdminDraft,
+  clearAdminDraft,
+  rememberAdminDraft,
+  restoreAdminDraft,
+} from '../../modules/Admin/shared/useAdminDraftState.js';
 
 const API_BASE = '/api/v1/admin/config/files';
+
+function adminSessionKey() {
+  try {
+    const user = getUser();
+    if (!user) return getToken() || 'anonymous';
+    return JSON.stringify([user.sub ?? null, user.sid ?? user.iat ?? 'legacy']);
+  } catch {
+    return 'anonymous';
+  }
+}
+
+function draftBaseline(snapshot) {
+  return { exists: snapshot.exists, data: snapshot.data, raw: snapshot.raw };
+}
+
+function draftValue(snapshot) {
+  return { data: snapshot.data, raw: snapshot.raw };
+}
 
 /**
  * Hook for loading and saving YAML config files via the admin config API.
  *
  * Provides both parsed (JS object) and raw (YAML string) representations,
- * dirty tracking, optimistic revert, and structured logging.
+ * dirty tracking, optimistic revert, and structured logging. Unsaved drafts
+ * survive route unmounts only while the auth session and server baseline match.
  *
  * @param {string} filePath - Config file path relative to data root, e.g. 'household/fitness/config.yml'
+ * @param {'parsed'|'raw'} mode - Editor representation, kept in its own history draft
  * @returns {object} Config state and actions
  */
-export function useAdminConfig(filePath) {
+export function useAdminConfig(filePath, mode = 'parsed') {
+  const sessionKey = adminSessionKey();
+  const ownerKey = JSON.stringify(['config', sessionKey, filePath, mode]);
   const logger = useMemo(() => getLogger().child({ hook: 'useAdminConfig', filePath }), [filePath]);
   const resourcePath = `${API_BASE}/${filePath}`;
   const { data: loaded, loading: readLoading, error: readError, reload: reloadResource } = useApiResource(resourcePath, {
@@ -25,73 +54,117 @@ export function useAdminConfig(filePath) {
   });
   const { error: visibleReadError, dismiss: dismissReadError } = useDismissibleError(readError);
 
-  const [draft, setDraft] = useState({ filePath: null, data: null, raw: '', dirty: false });
-  const [savingPath, setSavingPath] = useState(null);
+  const [draft, setDraft] = useState({ ownerKey: null, filePath: null, data: null, raw: '', dirty: false });
+  const [savingOwnerKey, setSavingOwnerKey] = useState(null);
   const [commandError, setCommandError] = useState(null);
 
-  // Store the original values from the last successful load for revert
-  const originalRef = useRef({ filePath: null, data: null, raw: '' });
-  const activeFilePath = useRef(filePath);
-  activeFilePath.current = filePath;
-  const draftMatches = draft.filePath === filePath;
+  // Keep refs in sync so input edits and late save acknowledgements can identify
+  // the current revision without relying on a stale render closure.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const originalRef = useRef({ ownerKey: null, filePath: null, exists: false, data: null, raw: '' });
+  const activeOwnerKey = useRef(ownerKey);
+  activeOwnerKey.current = ownerKey;
+  const draftMatches = draft.ownerKey === ownerKey && draft.filePath === filePath;
   const data = draftMatches ? draft.data : null;
   const raw = draftMatches ? draft.raw : '';
   const dirty = draftMatches && draft.dirty;
-  // Keep the form behind its loader until the selected resource has been
-  // copied into the keyed local draft. A failed read still needs to expose
-  // its error instead of waiting forever for a draft that cannot hydrate.
+  // A failed read still exposes its error instead of waiting for a draft that
+  // cannot hydrate. A cached draft is restored only after a successful read.
   const loading = readLoading || (!readError && !draftMatches);
-  const saving = savingPath === filePath;
-  const error = (commandError?.filePath === filePath ? commandError.error : null) || visibleReadError;
+  const saving = savingOwnerKey === ownerKey;
+  const error = (commandError?.ownerKey === ownerKey ? commandError.error : null) || visibleReadError;
+
+  useEffect(() => {
+    activeOwnerKey.current = ownerKey;
+    return () => {
+      if (activeOwnerKey.current === ownerKey) activeOwnerKey.current = null;
+    };
+  }, [ownerKey]);
 
   useEffect(() => {
     if (readLoading) return;
     if (readError) {
       // A confirmed missing allowed file is editable from the raw config
-      // editor. Seed its empty draft so keystrokes and the first PUT have the
-      // same keyed ownership as an existing file; other read failures stay
-      // unable to initialize a new draft. An existing matching draft stays
-      // available during a failed revalidation.
+      // editor. Missing and existing empty files have different baselines.
       if (readError.status === 404) {
-        setDraft(current => current.filePath === filePath
-          ? current
-          : { filePath, data: null, raw: '', dirty: false });
-        originalRef.current = { filePath, data: null, raw: '' };
+        const baseline = { ownerKey, filePath, exists: false, data: null, raw: '' };
+        originalRef.current = baseline;
+        const current = draftRef.current;
+        if (current.ownerKey === ownerKey && current.filePath === filePath && current.dirty) {
+          rememberAdminDraft(ownerKey, draftBaseline(baseline), draftValue(current));
+          return;
+        }
+        const restored = restoreAdminDraft(ownerKey, draftBaseline(baseline));
+        const next = restored
+          ? { ...baseline, ...restored.draft, dirty: true }
+          : { ...baseline, dirty: false };
+        draftRef.current = next;
+        setDraft(next);
       }
       return;
     }
-    const loadedData = loaded?.parsed ?? null;
-    const loadedRaw = loaded?.raw ?? '';
-    setDraft(current => current.filePath === filePath && current.dirty
-      ? current
-      : { filePath, data: loadedData, raw: loadedRaw, dirty: false });
-    originalRef.current = { filePath, data: loadedData, raw: loadedRaw };
+
+    const baseline = {
+      ownerKey,
+      filePath,
+      exists: true,
+      data: loaded?.parsed ?? null,
+      raw: loaded?.raw ?? '',
+    };
+    originalRef.current = baseline;
+    const current = draftRef.current;
+    if (current.ownerKey === ownerKey && current.filePath === filePath && current.dirty) {
+      // Preserve a mounted draft across refresh, while advancing the Revert
+      // baseline and cached revision to the latest accepted server contents.
+      rememberAdminDraft(ownerKey, draftBaseline(baseline), draftValue(current));
+    } else {
+      const restored = restoreAdminDraft(ownerKey, draftBaseline(baseline));
+      const next = restored
+        ? { ...baseline, ...restored.draft, dirty: true }
+        : { ...baseline, dirty: false };
+      draftRef.current = next;
+      setDraft(next);
+    }
     logger.info('admin.config.loaded', { filePath });
-  }, [filePath, loaded, logger, readError, readLoading, resourcePath]);
+  }, [filePath, loaded, logger, ownerKey, readError, readLoading, resourcePath]);
 
   // Save config to the API
   const save = useCallback(async ({ useRaw = false } = {}) => {
-    setSavingPath(filePath);
+    setSavingOwnerKey(ownerKey);
     setCommandError(null);
+    const submittedOriginal = originalRef.current;
+    const submittedDraft = draftValue(draft);
     try {
       const body = useRaw ? { raw } : { parsed: data };
       const result = await DaylightAPI(resourcePath, body, 'PUT');
-      // After a successful save, update the originals so revert goes back to saved state
-      const savedData = result.parsed ?? data;
-      const savedRaw = result.raw ?? raw;
-      if (activeFilePath.current === filePath) {
-        // The response acknowledges the submitted draft. Later edits still
-        // belong to the editor, while Revert should now return to this save.
-        setDraft(current => current === draft && current.filePath === filePath
-          ? { ...current, data: savedData, raw: savedRaw, dirty: false }
-          : current);
-        if (originalRef.current.filePath === filePath) {
-          originalRef.current = { filePath, data: savedData, raw: savedRaw };
+      const savedBaseline = {
+        ownerKey,
+        filePath,
+        exists: true,
+        data: result.parsed ?? data,
+        raw: result.raw ?? raw,
+      };
+      acknowledgeAdminDraft(
+        ownerKey,
+        draftBaseline(submittedOriginal),
+        submittedDraft,
+        draftBaseline(savedBaseline),
+      );
+
+      if (originalRef.current.ownerKey === ownerKey) originalRef.current = savedBaseline;
+      if (activeOwnerKey.current === ownerKey) {
+        const current = draftRef.current;
+        if (current.ownerKey === ownerKey && current.filePath === filePath) {
+          if (current === draft) {
+            const clean = { ...savedBaseline, dirty: false };
+            draftRef.current = clean;
+            setDraft(clean);
+          } else {
+            rememberAdminDraft(ownerKey, draftBaseline(savedBaseline), draftValue(current));
+          }
         }
         dismissReadError();
-      }
-      logger.info('admin.config.saved', { filePath, useRaw });
-      if (activeFilePath.current === filePath) {
         notifications.show({
           title: 'Saved',
           message: `${filePath} updated`,
@@ -99,11 +172,11 @@ export function useAdminConfig(filePath) {
           autoClose: 3000,
         });
       }
+      logger.info('admin.config.saved', { filePath, useRaw });
       return result;
     } catch (err) {
-      if (activeFilePath.current === filePath) setCommandError({ filePath, error: err });
-      logger.error('admin.config.save.failed', { filePath, message: err.message });
-      if (activeFilePath.current === filePath) {
+      if (activeOwnerKey.current === ownerKey) {
+        setCommandError({ ownerKey, error: err });
         notifications.show({
           title: 'Save failed',
           message: err.message || 'An error occurred',
@@ -111,21 +184,20 @@ export function useAdminConfig(filePath) {
           autoClose: false,
         });
       }
+      logger.error('admin.config.save.failed', { filePath, message: err.message });
       throw err;
     } finally {
-      setSavingPath(current => current === filePath ? null : current);
+      setSavingOwnerKey(current => current === ownerKey ? null : current);
     }
-  }, [filePath, resourcePath, data, raw, draft, logger, dismissReadError]);
+  }, [data, dismissReadError, draft, filePath, logger, ownerKey, raw, resourcePath]);
 
-  // Revert to the last-loaded values
+  // Revert to the last accepted server or saved snapshot.
   const revert = useCallback(() => {
-    if (originalRef.current.filePath !== filePath) return;
-    setDraft({
-      filePath,
-      data: originalRef.current.data,
-      raw: originalRef.current.raw,
-      dirty: false,
-    });
+    if (originalRef.current.ownerKey !== ownerKey || originalRef.current.filePath !== filePath) return;
+    clearAdminDraft(ownerKey);
+    const next = { ...originalRef.current, dirty: false };
+    draftRef.current = next;
+    setDraft(next);
     setCommandError(null);
     logger.info('admin.config.reverted', { filePath });
     notifications.show({
@@ -134,26 +206,39 @@ export function useAdminConfig(filePath) {
       color: 'gray',
       autoClose: 2000,
     });
-  }, [filePath, logger]);
+  }, [filePath, logger, ownerKey]);
 
-  // Stage a parsed data update and mark dirty.
-  // Accepts either a new object or an updater function: setData(prev => ({ ...prev, key: value }))
+  // Stage a parsed data update and synchronously remember it before navigation
+  // can unmount the editor.
   const setData = useCallback((newDataOrUpdater) => {
-    setDraft(current => {
-      if (current.filePath !== filePath) return current;
-      const next = typeof newDataOrUpdater === 'function'
-        ? newDataOrUpdater(current.data)
-        : newDataOrUpdater;
-      return { ...current, data: next, dirty: true };
-    });
-  }, [filePath]);
+    const current = draftRef.current;
+    if (current.ownerKey !== ownerKey || current.filePath !== filePath) return;
+    const nextData = typeof newDataOrUpdater === 'function'
+      ? newDataOrUpdater(current.data)
+      : newDataOrUpdater;
+    const next = { ...current, data: nextData, dirty: true };
+    draftRef.current = next;
+    setDraft(next);
+    const original = originalRef.current;
+    if (original.ownerKey === ownerKey && original.filePath === filePath) {
+      rememberAdminDraft(ownerKey, draftBaseline(original), draftValue(next));
+    }
+  }, [filePath, ownerKey]);
 
-  // Stage a raw YAML string update and mark dirty
+  // Stage a raw YAML string update and synchronously remember it.
   const setRaw = useCallback((newStr) => {
-    setDraft(current => current.filePath === filePath
-      ? { ...current, raw: newStr, dirty: true }
-      : current);
-  }, [filePath]);
+    const current = draftRef.current;
+    if (current.ownerKey !== ownerKey || current.filePath !== filePath) return;
+    const next = { ...current, raw: newStr, dirty: true };
+    draftRef.current = next;
+    setDraft(next);
+    const original = originalRef.current;
+    if (original.ownerKey === ownerKey && original.filePath === filePath) {
+      rememberAdminDraft(ownerKey, draftBaseline(original), draftValue(next));
+    }
+  }, [filePath, ownerKey]);
+
+  const discardDraft = useCallback(() => clearAdminDraft(ownerKey), [ownerKey]);
 
   // Clear error state
   const clearError = useCallback(() => {
@@ -180,6 +265,7 @@ export function useAdminConfig(filePath) {
     revert,
     setData,
     setRaw,
+    discardDraft,
     clearError,
     retryRead
   };

@@ -25,15 +25,15 @@ import SaveBar from './SaveBar.jsx';
 function ConfigFormWrapper({ filePath, title, children, validate, rawMode = false, headerExtra }) {
   const {
     data, raw, loading, saving, error, readError, draftReady, dirty,
-    save, revert, setData, setRaw, clearError, retryRead
-  } = useAdminConfig(filePath);
+    save, revert, setData, setRaw, clearError, retryRead, discardDraft
+  } = useAdminConfig(filePath, rawMode ? 'raw' : 'parsed');
   const hasStructuredData = data !== null && typeof data === 'object' && !Array.isArray(data);
   const hasEditor = rawMode ? draftReady : hasStructuredData;
   const { regionProps, retry } = useRetryRegion(retryRead, loading);
   const structuredFormUnavailable = !rawMode && draftReady && !loading && !readError && !hasStructuredData;
 
   // Unsaved-changes guard: beforeunload + guarded Admin navigation (audit C1)
-  useUnsavedGuard(dirty, { label: filePath });
+  useUnsavedGuard(dirty, { label: filePath, onDiscard: discardDraft });
 
   const handleSave = async () => {
     if (loading || saving) return;

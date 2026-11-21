@@ -14,24 +14,47 @@ export function clearAdminDraft(ownerKey) {
   drafts.delete(ownerKey);
 }
 
+/** Restore a draft only when the server baseline still matches exactly. */
+export function restoreAdminDraft(ownerKey, original) {
+  const cached = drafts.get(ownerKey);
+  if (!cached) return null;
+  if (!same(cached.original, original)) {
+    drafts.delete(ownerKey);
+    return null;
+  }
+  return { draft: clone(cached.draft) };
+}
+
+/** Remember only changed values, so a clean editor never leaves stale cache. */
+export function rememberAdminDraft(ownerKey, original, draft) {
+  if (same(original, draft)) {
+    drafts.delete(ownerKey);
+    return;
+  }
+  drafts.set(ownerKey, { original: clone(original), draft: clone(draft) });
+}
+
+/** Acknowledge the submitted revision without erasing a newer cached edit. */
+export function acknowledgeAdminDraft(ownerKey, submittedOriginal, submittedDraft, savedOriginal) {
+  const cached = drafts.get(ownerKey);
+  if (!cached || !same(cached.original, submittedOriginal)) return;
+  if (same(cached.draft, submittedDraft)) {
+    drafts.delete(ownerKey);
+    return;
+  }
+  rememberAdminDraft(ownerKey, savedOriginal, cached.draft);
+}
+
 /** Keep an editor's unsaved draft while its route is temporarily unmounted. */
 export function useAdminDraftState(ownerKey, initialValue) {
   const [state, setState] = useState(() => {
     const original = clone(initialValue);
-    const cached = drafts.get(ownerKey);
-    if (cached && same(cached.original, original)) {
-      return { original: cached.original, draft: cached.draft };
-    }
-    drafts.delete(ownerKey);
-    return { original, draft: original };
+    const cached = restoreAdminDraft(ownerKey, original);
+    return { original, draft: cached ? cached.draft : original };
   });
 
   useEffect(() => {
-    if (same(state.draft, state.original)) {
-      drafts.delete(ownerKey);
-      return;
-    }
-    drafts.set(ownerKey, { original: clone(state.original), draft: clone(state.draft) });
+    rememberAdminDraft(ownerKey, state.original, state.draft);
   }, [ownerKey, state]);
 
   const setDraft = useCallback((nextDraft) => {
