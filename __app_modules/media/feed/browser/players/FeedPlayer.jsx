@@ -274,6 +274,7 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
             value={Math.min(currentTime || 0, duration || 0)}
             onChange={event => seek(Number(event.target.value))}
             aria-label="Playback position"
+            aria-valuetext={`${formatFeedPlaybackTime(currentTime)} of ${formatFeedPlaybackTime(duration)}`}
             style={{ position: 'absolute', inset: 0, width: '100%', height: '20px', margin: 0, opacity: 0, cursor: 'pointer' }}
           />
         </div>

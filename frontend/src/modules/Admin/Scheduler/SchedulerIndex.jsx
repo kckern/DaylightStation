@@ -208,6 +208,7 @@ function SchedulerIndex() {
               <Table.Tbody>
                 {group.jobs.map(job => {
                   const jobLink = `/admin/system/scheduler/${encodeURIComponent(job.id)}`;
+                  const jobNameId = `scheduler-job-${encodeURIComponent(job.id)}`;
                   const status = job.runtime?.status || job.lastRun?.status || job.status || null;
                   const lastRunTime = job.runtime?.last_run || job.lastRun?.completedAt || job.lastRun?.startedAt || job.lastRunAt || null;
                   const durationMs = job.runtime?.duration_ms ?? job.lastRun?.duration_ms ?? job.duration_ms ?? null;
@@ -222,7 +223,7 @@ function SchedulerIndex() {
                       }}
                     >
                       <Table.Td>
-                        <Anchor component={Link} to={jobLink} c="inherit" size="sm" fw={500}>{job.name || job.id}</Anchor>
+                        <Anchor component={Link} to={jobLink} id={jobNameId} c="inherit" size="sm" fw={500}>{job.name || job.id}</Anchor>
                         {errorMsg && (
                           <Text size="xs" c="red" lineClamp={1}>{errorMsg}</Text>
                         )}
@@ -254,6 +255,7 @@ function SchedulerIndex() {
                           leftSection={<IconPlayerPlay size={14} />}
                           pending={triggeringIds.has(job.id)}
                           blocked={retrying || Boolean(readError)}
+                          aria-describedby={jobNameId}
                           onClick={() => handleTrigger(job.id)}
                         >
                           Run

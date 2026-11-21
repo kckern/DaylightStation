@@ -204,6 +204,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
           aria-valuemin={0}
           aria-valuemax={Math.round(duration || 0)}
           aria-valuenow={Math.round(displayTime || 0)}
+          aria-valuetext={`${formatFeedPlaybackTime(displayTime)} of ${formatFeedPlaybackTime(duration)}`}
           onKeyDown={(e) => {
             if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
             e.preventDefault();

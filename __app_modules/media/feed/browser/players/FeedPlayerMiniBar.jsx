@@ -100,7 +100,8 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose, ope
       )}
       <div className="feed-mini-bar-progress" onClick={handleProgressClick}>
         <div className="feed-mini-bar-progress-fill" ref={progressElRef} />
-        <input className="feed-mini-bar-progress-input" type="range" min="0" max={duration || 0} step="1" value={Math.min(currentTime || 0, duration || 0)} onChange={event => seek?.(Number(event.target.value))} aria-label="Playback position" />
+        <input className="feed-mini-bar-progress-input" type="range" min="0" max={duration || 0} step="1" value={Math.min(currentTime || 0, duration || 0)} onChange={event => seek?.(Number(event.target.value))} aria-label="Playback position"
+          aria-valuetext={`${formatFeedPlaybackTime(currentTime)} of ${formatFeedPlaybackTime(duration)}`} />
       </div>
     </div>
   );
