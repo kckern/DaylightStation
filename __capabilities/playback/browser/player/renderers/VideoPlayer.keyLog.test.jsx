@@ -152,4 +152,29 @@ describe('VideoPlayer — intro slot', () => {
     render(<VideoPlayer {...dashProps({ mediaUrl: '/a.mpd', assetId: 'movie-a', seconds: 42 })} />);
     expect(introSlot.gateArgs).toMatchObject({ startSec: 42, resetKey: 'movie-a' });
   });
+
+  it('draws the scene inside its own layer, below the loading layer', () => {
+    introSlot.intro = scene();
+    introSlot.stage = 'covering';
+    const { getByTestId } = render(<VideoPlayer {...dashProps({ mediaUrl: '/a.mpd' })} />);
+    expect(getByTestId('intro-scene').parentElement.classList.contains('player-intro-layer')).toBe(true);
+  });
+
+  it('hands the gate the resume target a remount carries, when it is past the requested start', () => {
+    render(<VideoPlayer {...dashProps({ mediaUrl: '/a.mpd', assetId: 'movie-a', seconds: 0 })}
+      resilienceBridge={{ seekToIntentSeconds: 1800 }} />);
+    expect(introSlot.gateArgs.startSec).toBe(1800);
+  });
+
+  it('keeps the requested start when the seek intent is earlier', () => {
+    render(<VideoPlayer {...dashProps({ mediaUrl: '/a.mpd', assetId: 'movie-a', seconds: 42 })}
+      resilienceBridge={{ seekToIntentSeconds: 3 }} />);
+    expect(introSlot.gateArgs.startSec).toBe(42);
+  });
+
+  it('never runs the intro on a recovery remount', () => {
+    render(<VideoPlayer {...dashProps({ mediaUrl: '/a.mpd', assetId: 'movie-a', seconds: 0 })}
+      resilienceBridge={{ seekToIntentSeconds: 0, remountDiagnostics: { reason: 'stall', remountClass: 'recovery' } }} />);
+    expect(introSlot.gateArgs.startSec).toBe(Infinity);
+  });
 });

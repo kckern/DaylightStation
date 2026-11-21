@@ -102,6 +102,13 @@ describe('useIntroGate', () => {
     expect(isIntroCovering()).toBe(false);
   });
 
+  it('never covers a recovery remount (startSec Infinity), even while the intro is pending', () => {
+    expect(setup({ intro: READY, startSec: Infinity }).result.current).toBe('off');
+    const { result } = setup({ intro: PENDING, startSec: Infinity });
+    expect(result.current).toBe('off');
+    expect(isIntroCovering()).toBe(false);
+  });
+
   it('steps aside when the first frame is far into the title', () => {
     const el = fakeVideo({ currentTime: 900 });
     const { result } = setup({ intro: READY, el });

@@ -220,10 +220,17 @@ export function VideoPlayer({
   const crtOverlayFallback = overlayProps.showCRT && crt.fellBack;
 
   // An installed intro (e.g. Media's provenance scene) covers the load; the gate owns timing.
+  // The gate's start is where this mount will actually start: a remount carries
+  // its resume target as seekToIntentSeconds. A recovery remount (any remount
+  // that is not an owner operation) never shows the intro, wherever it resumes.
   const intro = useVideoIntro({ media, isPlex });
+  const isRecoveryRemount = resilienceBridge?.remountDiagnostics != null && !isOwnerOperationMount;
+  const introStartSec = isRecoveryRemount
+    ? Infinity
+    : Math.max(Number(requestedStartSec) || 0, Number(resilienceBridge?.seekToIntentSeconds) || 0);
   const introStage = useIntroGate({
     intro, getMediaEl,
-    startSec: Number(requestedStartSec) || 0,
+    startSec: introStartSec,
     resetKey: media?.assetId || media?.key || media?.mediaUrl || null,
   });
   const { overlay: filterOverlay } = useVideoPresentation({ media, isPlex, getMediaEl, introStage });
@@ -1056,7 +1063,10 @@ export function VideoPlayer({
         <div className={overlayProps.className} />
       )}
       {filterOverlay}
-      {intro && (introStage === 'covering' || introStage === 'holding' || introStage === 'playing') ? intro.render(introStage) : null}
+      {intro && (introStage === 'covering' || introStage === 'holding' || introStage === 'playing') ? (
+        // Its own layer, below the loading/recovery layer (Player.scss): recovery UI paints over the scene.
+        <div className="player-intro-layer">{intro.render(introStage)}</div>
+      ) : null}
     </div>
   );
 }
