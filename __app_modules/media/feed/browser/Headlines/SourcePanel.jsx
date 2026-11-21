@@ -107,6 +107,12 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, o
                 onMouseEnter={showPreview}
                 onMouseLeave={() => setActivePreview(null)}
                 onFocus={showPreview}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Escape' || activePreview !== previewId) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setActivePreview(null);
+                }}
                 onBlur={(event) => {
                   if (!event.currentTarget.contains(event.relatedTarget)) setActivePreview(null);
                 }}
