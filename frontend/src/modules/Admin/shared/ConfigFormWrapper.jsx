@@ -1,9 +1,11 @@
 import React from 'react';
-import { Stack, Alert, Center, Loader, Button, Group } from '@mantine/core';
+import { Stack, Alert, Center, Loader, Button, Group, Anchor } from '@mantine/core';
 import { IconAlertCircle } from '@tabler/icons-react';
 import { useAdminConfig } from '../../../hooks/admin/useAdminConfig.js';
 import { useRetryRegion } from '../../../lib/ui/useRetryRegion.js';
+import { StateMessage } from '../../../lib/ui/states.jsx';
 import { useUnsavedGuard } from './useUnsavedGuard.js';
+import GuardedLink from './GuardedLink.jsx';
 import SaveBar from './SaveBar.jsx';
 
 /**
@@ -27,6 +29,7 @@ function ConfigFormWrapper({ filePath, title, children, validate, rawMode = fals
   } = useAdminConfig(filePath);
   const hasEditor = rawMode ? draftReady : data !== null;
   const { regionProps, retry } = useRetryRegion(retryRead, loading);
+  const structuredFormUnavailable = !rawMode && draftReady && !loading && !readError && data === null;
 
   // Unsaved-changes guard: beforeunload + guarded Admin navigation (audit C1)
   useUnsavedGuard(dirty, { label: filePath });
@@ -78,6 +81,17 @@ function ConfigFormWrapper({ filePath, title, children, validate, rawMode = fals
 
           <div className="ds-config-body">
             {hasEditor && children({ data, setData, raw, setRaw, error })}
+            {structuredFormUnavailable && (
+              <StateMessage
+                state="empty"
+                title="This file can't be displayed as a form"
+                detail="Open it in the YAML editor to view or repair its contents."
+              >
+                <Anchor component={GuardedLink} to={`/admin/system/config/${filePath}`}>
+                  Open YAML editor
+                </Anchor>
+              </StateMessage>
+            )}
           </div>
         </>
       )}

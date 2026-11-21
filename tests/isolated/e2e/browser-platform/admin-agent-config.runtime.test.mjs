@@ -135,6 +135,32 @@ test('the config editor retains focus in its region while Retry replaces the fai
   await expect(region).not.toHaveAttribute('aria-busy', 'true');
 });
 
+test('Admin opens the raw editor when a loaded app config has no structured value', async ({ page }) => {
+  const reads = [];
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path === '/api/v1/admin/config/files/household/gratitude/config.yml' && request.method() === 'GET') {
+      reads.push(path);
+      return route.fulfill({ json: { parsed: null, raw: 'categories: [\n' } });
+    }
+    return route.fulfill({ json: path.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+
+  await page.goto('/admin/apps/gratitude');
+  await expect(page.getByText(/This file can't be displayed as a form/i)).toBeVisible();
+  const rawEditor = page.getByRole('link', { name: 'Open YAML editor' });
+  await expect(rawEditor).toHaveAttribute('href', '/admin/system/config/household/gratitude/config.yml');
+  await rawEditor.click();
+  await expect(page).toHaveURL('/admin/system/config/household/gratitude/config.yml');
+  await expect(page.locator('.cm-content')).toContainText('categories: [');
+  expect(reads).toEqual([
+    '/api/v1/admin/config/files/household/gratitude/config.yml',
+    '/api/v1/admin/config/files/household/gratitude/config.yml',
+  ]);
+});
+
 test('config Back preserves a dirty YAML draft until discard is confirmed', async ({ page }) => {
   const writes = [];
   await page.routeWebSocket('**/*', () => {});

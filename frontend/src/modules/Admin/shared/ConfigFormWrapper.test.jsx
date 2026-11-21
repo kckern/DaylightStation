@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
+import { MemoryRouter } from 'react-router-dom';
 
 const mockConfig = {
   data: { key: 'value' },
@@ -32,6 +33,12 @@ function r(ui) {
 afterEach(() => {
   cleanup();
   mockConfig.dirty = false;
+  mockConfig.data = { key: 'value' };
+  mockConfig.raw = 'key: value\n';
+  mockConfig.error = null;
+  mockConfig.readError = null;
+  mockConfig.draftReady = true;
+  mockConfig.loading = false;
   mockConfig.save.mockClear();
   mockConfig.revert.mockClear();
 });
@@ -44,6 +51,24 @@ describe('ConfigFormWrapper', () => {
       </ConfigFormWrapper>
     );
     expect(screen.getByText(/value: value/)).toBeTruthy();
+  });
+
+  it('offers the raw YAML editor when a loaded file has no structured value', () => {
+    mockConfig.data = null;
+    mockConfig.raw = 'categories: [';
+    r(
+      <MemoryRouter>
+        <ConfigFormWrapper filePath="household/gratitude/config.yml" title="Gratitude">
+          {() => <div>structured form</div>}
+        </ConfigFormWrapper>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText(/This file can't be displayed as a form/i)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open YAML editor' })).toHaveAttribute(
+      'href', '/admin/system/config/household/gratitude/config.yml',
+    );
+    expect(screen.queryByText('structured form')).toBeNull();
   });
 
   it('shows the Unsaved badge when dirty', () => {
