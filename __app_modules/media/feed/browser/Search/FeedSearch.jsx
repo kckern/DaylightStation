@@ -35,9 +35,11 @@ function reconcileRows(items, current, before, pending) {
 export default function FeedSearch() {
   const [params, setParams] = useSearchParams();
   const requestKey = params.toString();
+  const committedQuery = params.get('q') || '';
+  const committedSource = params.get('source') || '';
   const activeState = params.get('state') || 'all';
-  const [query, setQuery] = useState(params.get('q') || '');
-  const [source, setSource] = useState(params.get('source') || '');
+  const [query, setQuery] = useState(committedQuery);
+  const [source, setSource] = useState(committedSource);
   const [resultPage, setResultPage] = useState(null);
   const [foreground, setForeground] = useState('initial');
   const [requestError, setRequestError] = useState(null);
@@ -74,11 +76,8 @@ export default function FeedSearch() {
   }, [appendFocus]);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
-  useEffect(() => {
-    const current = new URLSearchParams(requestKey);
-    setQuery(current.get('q') || '');
-    setSource(current.get('source') || '');
-  }, [requestKey]);
+  useEffect(() => { setQuery(committedQuery); }, [committedQuery]);
+  useEffect(() => { setSource(committedSource); }, [committedSource]);
 
   const readPage = useCallback((cursor, signal) => {
     const api = new URLSearchParams(requestKey);
