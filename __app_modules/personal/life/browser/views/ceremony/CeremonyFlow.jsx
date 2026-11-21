@@ -54,8 +54,9 @@ export function CeremonyFlow({ type, username, onComplete }) {
   }, [type, username, logger]);
 
   useEffect(() => {
+    if (!implemented) return;
     logger.info('life.ceremony.step', { type, step, stepLabel: steps[step] });
-  }, [step, type, logger, steps]);
+  }, [implemented, step, type, logger, steps]);
 
   useEffect(() => {
     if (completed) {
@@ -106,11 +107,13 @@ export function CeremonyFlow({ type, username, onComplete }) {
     <Stack gap="md">
       <Title order={4} tt="capitalize">{type.replace(/_/g, ' ')}</Title>
 
-      <Stepper active={step} size="sm">
-        {steps.map((label, i) => (
-          <Stepper.Step key={i} label={label} />
-        ))}
-      </Stepper>
+      {implemented && (
+        <Stepper active={step} size="sm">
+          {steps.map((label, i) => (
+            <Stepper.Step key={i} label={label} />
+          ))}
+        </Stepper>
+      )}
 
       <Paper p="md" withBorder>
         {CeremonyComponent ? (
@@ -129,27 +132,24 @@ export function CeremonyFlow({ type, username, onComplete }) {
 
       {/* Submit failures stay inline so the form (and the user's typed
           responses) remain mounted and Complete can simply be retried. */}
-      {submitError && (
+      {implemented && submitError && (
         <Alert color="red" title="Couldn't save your responses — try again." icon={<IconAlertCircle size={16} />}>
           {submitError.message}
         </Alert>
       )}
 
-      <Group justify="space-between">
-        <Button
-          variant="subtle"
-          leftSection={<IconArrowLeft size={16} />}
-          onClick={prevStep}
-          disabled={step === 0}
-        >
-          Back
-        </Button>
+      {implemented && (
+        <Group justify="space-between">
+          <Button
+            variant="subtle"
+            leftSection={<IconArrowLeft size={16} />}
+            onClick={prevStep}
+            disabled={step === 0}
+          >
+            Back
+          </Button>
 
-        {isLastStep ? (
-          // Unimplemented ceremony types must not be completable: posting empty
-          // responses would record the ceremony and clear its nudge for the
-          // whole period (audit A-4.2).
-          implemented && (
+          {isLastStep ? (
             <Button
               leftSection={<IconCheck size={16} />}
               onClick={submit}
@@ -157,16 +157,16 @@ export function CeremonyFlow({ type, username, onComplete }) {
             >
               Complete
             </Button>
-          )
-        ) : (
-          <Button
-            rightSection={<IconArrowRight size={16} />}
-            onClick={nextStep}
-          >
-            Next
-          </Button>
-        )}
-      </Group>
+          ) : (
+            <Button
+              rightSection={<IconArrowRight size={16} />}
+              onClick={nextStep}
+            >
+              Next
+            </Button>
+          )}
+        </Group>
+      )}
     </Stack>,
   );
 }
