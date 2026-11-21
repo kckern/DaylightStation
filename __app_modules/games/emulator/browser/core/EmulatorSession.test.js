@@ -296,6 +296,25 @@ describe('binding dispatch wiring (real BindingMatcher)', () => {
     expect(capture.stateMap).toBeNull();
   });
 
+  it('calibration.cheat: false never writes into the game; a protected core still reads it', async () => {
+    const createWramCalibrator = vi.fn();
+    const game = { ...GAME, calibration: { cheat: false } };
+    const anon = setup({ game, createWramCalibrator });
+    await anon.session.start({ mount: {} });
+    expect(createWramCalibrator).not.toHaveBeenCalled();
+    expect(anon.capture.stateMap).toBeNull();
+
+    const engine = makeEngine({ getWramBase: vi.fn(() => 4096) });
+    const saved = setup({ game, createWramCalibrator, engine });
+    saved.session = createEmulatorSession({
+      engine, mixer: makeMixer(), governanceGate: makeGate(), game,
+      engineConfig: { ...ENGINE_CONFIG, checkpointProvenance: { romHash: 'x' } },
+      deps: saved.deps, scheduler: makeScheduler(),
+    });
+    await saved.session.start({ mount: {} });
+    expect(saved.capture.stateMap.start).toHaveBeenCalled();
+  });
+
   it('stopping the session cancels a pending calibration retry', async () => {
     const clearTimer = vi.fn();
     const calibrate = vi.fn().mockRejectedValue(Object.assign(new Error('no frames'), { code: 'ENOFRAMES' }));

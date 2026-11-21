@@ -179,12 +179,15 @@ export function createEmulatorSession({
       // Missing optional state instrumentation cannot justify a destructive fallback.
       const nativeBase = engine.getWramBase?.();
       if (nativeBase != null) cal = { wramBase: nativeBase };
-    } else if (game.states && !CHEAT_CALIBRATED_SYSTEMS.has(system)) {
+    } else if (game.states && (!CHEAT_CALIBRATED_SYSTEMS.has(system) || game.calibration?.cheat === false)) {
       // The cheat ping writes Game Boy GameShark codes; another system's cheat
-      // engine must never be handed them. Without a protected core (a saved
-      // game) such a system has no way to find its RAM: no state map.
+      // engine must never be handed them, and a game whose sidecar says
+      // `cheat: false` has no safe bytes to write (Crystal's $C080 is its
+      // stack). Without a protected core (a saved game): no state map.
       cal = { unsupported: true };
-      childLog.info('emulator.calibration.skipped', { reason: 'no-memory-export', system });
+      childLog.info('emulator.calibration.skipped', {
+        reason: game.calibration?.cheat === false ? 'cheat-disabled' : 'no-memory-export', system,
+      });
     } else if (game.states) {
       calibrator = createWramCalibrator({
         setCheat: engine.setCheat,

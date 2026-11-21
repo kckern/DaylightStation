@@ -438,6 +438,13 @@ describe('aperture vs drawn screen', () => {
       expect(warn).toHaveBeenCalledWith('emulator.sidecar.calibration_invalid', expect.anything());
     });
 
+    it('passes calibration.cheat: false through (no writes into the game)', () => {
+      const cfg = makeLoader(manifest([{ id: 'a', rom: 'roms/A.gb' }]), {
+        readGameSidecar: () => ({ ...SML, calibration: { cheat: false } }),
+      });
+      expect(resolveGameRules(cfg, 'a').calibration).toEqual({ cheat: false });
+    });
+
     it('honors an explicit map: path', () => {
       const readGameSidecar = vi.fn(() => SML);
       makeLoader(manifest([{ id: 'a', rom: 'roms/A.gb', map: 'maps/a.yml' }]), { readGameSidecar });

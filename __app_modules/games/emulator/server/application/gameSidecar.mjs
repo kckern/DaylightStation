@@ -11,6 +11,9 @@
  *   calibration.scratch: WRAM addresses the browser may ping (32 bytes, a few
  *              frames) to locate WRAM when the core has no memory export. Only
  *              needed when the default page is ambiguous for this game.
+ *   calibration.cheat: false — never write into this game to find its RAM
+ *              (no safe 32 bytes are known, e.g. the default page is its stack
+ *              or audio state). Only a protected core (a saved game) reads it.
  *
  * The console manifest (gameboy.yml) only lists games; per-game memory maps
  * never live there. Everything here is validated before it reaches a browser:
@@ -93,6 +96,7 @@ export function normalizeSidecar(raw, { system, gameId, file, logger } = {}) {
     if (ok) calibration = { scratch: [...scratch] };
     else logger?.warn?.('emulator.sidecar.calibration_invalid', { ...at, scratch });
   }
+  if (raw.calibration?.cheat === false) calibration = { ...(calibration ?? {}), cheat: false };
 
   const hasStates = Object.keys(states).length > 0;
   return {

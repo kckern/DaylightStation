@@ -119,6 +119,14 @@ boot:
   and the calibrator keeps the base every ping agrees on and puts back the bytes
   under the later pings. Scratch addresses must be safe for the game to have
   overwritten for a few frames: say in the sidecar why each one is.
+- The cheat ping writes Game Boy GameShark codes, so it runs only for `gb` and
+  `gbc`. Any other system (Genesis) reads RAM only through a protected core;
+  without one it has no state map (`emulator.calibration.skipped`,
+  `no-memory-export`).
+- `calibration: { cheat: false }` forbids the ping for one game: use it when no
+  32 safe bytes are known. Pokémon Crystal's `$C000-$C0FF` is its stack and
+  Pokémon Red's `$C080` is audio state, so writing there can crash or garble
+  the game. Such a game is read only when played from a save (protected core).
 - `waitFrames` reports whether frames actually ran. A stalled boot (no frames,
   e.g. before the audio context starts) throws `ENOFRAMES` and the session
   retries every 5 s, six times (`emulator.calibration.retry-scheduled`), instead
