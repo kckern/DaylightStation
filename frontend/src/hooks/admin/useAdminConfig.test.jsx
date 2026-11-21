@@ -2,6 +2,8 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invalidateApiResources } from '../../lib/hooks/useApiResource.js';
 import { clearAdminDraft } from '../../modules/Admin/shared/useAdminDraftState.js';
+import { clearToken, getUser, setToken } from '../../lib/auth.js';
+import AdminSessionBoundary from '../../modules/Admin/shared/AdminSessionBoundary.jsx';
 
 const { apiState } = vi.hoisted(() => ({ apiState: { calls: [], respond: null } }));
 vi.mock('../../lib/api.mjs', () => ({
@@ -203,6 +205,31 @@ describe('useAdminConfig resource ownership', () => {
     localStorage.removeItem('ds_token');
     clearAdminDraft(sessionOne);
     clearAdminDraft(sessionTwo);
+  });
+
+  it('does not expose the previous session config while the replacement session loads', async () => {
+    let resolveBob;
+    apiState.respond = async () => {
+      if (getUser()?.sub === 'bob') return new Promise(resolve => { resolveBob = resolve; });
+      return { parsed: { owner: 'amy' }, raw: 'owner: amy\n' };
+    };
+    const token = owner => `header.${btoa(JSON.stringify({ sub: owner, sid: owner + '-session' }))}.signature`;
+    act(() => setToken(token('amy')));
+    const view = renderHook(() => useAdminConfig('session-switch.yml'), {
+      wrapper: ({ children }) => <AdminSessionBoundary>{children}</AdminSessionBoundary>,
+    });
+    await waitFor(() => expect(view.result.current.raw).toBe('owner: amy\n'));
+
+    act(() => setToken(token('bob')));
+    await waitFor(() => expect(apiState.calls).toHaveLength(2));
+    expect(view.result.current.loading).toBe(true);
+    expect(view.result.current.data).toBeNull();
+    expect(view.result.current.raw).toBe('');
+
+    resolveBob({ parsed: { owner: 'bob' }, raw: 'owner: bob\n' });
+    await waitFor(() => expect(view.result.current.raw).toBe('owner: bob\n'));
+    view.unmount();
+    act(() => clearToken());
   });
 
   it('keeps a later draft when an earlier save acknowledges after unmount', async () => {

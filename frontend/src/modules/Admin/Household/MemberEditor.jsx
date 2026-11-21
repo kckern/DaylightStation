@@ -18,12 +18,18 @@ import SaveBar from '../shared/SaveBar.jsx';
 import EditorReadRegion from '../shared/EditorReadRegion.jsx';
 import { useUnsavedGuard } from '../shared/useUnsavedGuard.js';
 import GuardedLink from '../shared/GuardedLink.jsx';
-import { clearAdminDraft, useAdminDraftState } from '../shared/useAdminDraftState.js';
+import { adminDraftOwnerKey, clearAdminDraft, useAdminDraftState } from '../shared/useAdminDraftState.js';
+import { useAdminSessionKey } from '../shared/useAdminSessionKey.js';
 
 const AVAILABLE_ROLES = ['sysadmin', 'admin', 'parent', 'member', 'kiosk'];
 
 function MemberEditor() {
   const { username } = useParams();
+  const sessionKey = useAdminSessionKey();
+  return <MemberEditorSession key={JSON.stringify([sessionKey, username])} username={username} sessionKey={sessionKey} />;
+}
+
+function MemberEditorSession({ username, sessionKey }) {
   const { data, loading, error, reload } = useApiResource(`/api/v1/admin/household/members/${username}`);
 
   const back = (
@@ -39,7 +45,7 @@ function MemberEditor() {
 
   return (
     <EditorReadRegion
-      key={username}
+      key={JSON.stringify([sessionKey, username])}
       label="Member editor"
       loading={loading && !data}
       error={!data && error}
@@ -47,15 +53,15 @@ function MemberEditor() {
       reload={reload}
       back={back}
     >
-      {data?.member && <MemberDraft username={username} initialProfile={data.member} authStatus={data.authStatus} />}
+      {data?.member && <MemberDraft username={username} sessionKey={sessionKey} initialProfile={data.member} authStatus={data.authStatus} />}
     </EditorReadRegion>
   );
 }
 
-function MemberDraft({ username, initialProfile, authStatus }) {
+function MemberDraft({ username, sessionKey, initialProfile, authStatus }) {
   const { generateInvite } = useAdminHousehold();
 
-  const draftKey = `member:${username}`;
+  const draftKey = adminDraftOwnerKey('member', sessionKey, username);
   const [profile, setProfile, original, setOriginal] = useAdminDraftState(draftKey, initialProfile);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);

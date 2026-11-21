@@ -4,25 +4,16 @@ import { useApiResource } from '../../lib/hooks/useApiResource.js';
 import { useDismissibleError } from '../../lib/hooks/useDismissibleError.js';
 import { notifications } from '@mantine/notifications';
 import getLogger from '../../lib/logging/Logger.js';
-import { getToken, getUser } from '../../lib/auth.js';
 import {
   acknowledgeAdminDraft,
   clearAdminDraft,
+  adminDraftOwnerKey,
   rememberAdminDraft,
   restoreAdminDraft,
 } from '../../modules/Admin/shared/useAdminDraftState.js';
+import { useAdminSessionKey } from '../../modules/Admin/shared/useAdminSessionKey.js';
 
 const API_BASE = '/api/v1/admin/config/files';
-
-function adminSessionKey() {
-  try {
-    const user = getUser();
-    if (!user) return getToken() || 'anonymous';
-    return JSON.stringify([user.sub ?? null, user.sid ?? user.iat ?? 'legacy']);
-  } catch {
-    return 'anonymous';
-  }
-}
 
 function draftBaseline(snapshot) {
   return { exists: snapshot.exists, data: snapshot.data, raw: snapshot.raw };
@@ -44,11 +35,12 @@ function draftValue(snapshot) {
  * @returns {object} Config state and actions
  */
 export function useAdminConfig(filePath, mode = 'parsed') {
-  const sessionKey = adminSessionKey();
-  const ownerKey = JSON.stringify(['config', sessionKey, filePath, mode]);
+  const sessionKey = useAdminSessionKey();
+  const ownerKey = adminDraftOwnerKey('config', sessionKey, filePath, mode);
   const logger = useMemo(() => getLogger().child({ hook: 'useAdminConfig', filePath }), [filePath]);
   const resourcePath = `${API_BASE}/${filePath}`;
   const { data: loaded, loading: readLoading, error: readError, reload: reloadResource } = useApiResource(resourcePath, {
+    deps: [sessionKey],
     label: `Admin config ${filePath}`,
     retryTransient: false,
   });

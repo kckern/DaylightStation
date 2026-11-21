@@ -18,6 +18,9 @@ The admin panel is built from a small set of reusable primitives that handle con
 | `TagInput` | `frontend/src/modules/Admin/shared/TagInput.jsx` |
 | `ConfirmModal` | `frontend/src/lib/ui/ConfirmModal.jsx` |
 | `useAdminConfig` | `frontend/src/hooks/admin/useAdminConfig.js` |
+| `AdminSessionBoundary` | `frontend/src/modules/Admin/shared/AdminSessionBoundary.jsx` |
+| `useAdminSessionKey` | `frontend/src/modules/Admin/shared/useAdminSessionKey.js` |
+| `adminDraftOwnerKey` | `frontend/src/modules/Admin/shared/useAdminDraftState.js` |
 | Config API router | `__backend/src/4_api/v1/routers/admin/config.mjs` |
 
 ---
@@ -172,6 +175,15 @@ Shared confirmation dialog for destructive actions. The caller controls whether 
 ## useAdminConfig Hook
 
 Manages loading, saving, dirty tracking, and revert for a single YAML config file.
+
+Admin mounts `AuthGate` and its routes inside `AdminSessionBoundary`. A token change
+remounts the authenticated Admin subtree so mounted API resources and transient
+form state cannot survive into another session. `useAdminSessionKey` supplies the
+shared identity for session-owned in-memory drafts; Member, Device, and config
+drafts remain separate by editor and resource. The draft map is not persisted to
+local storage, and restoring a draft still requires its original server baseline
+to match. Build owner keys with `adminDraftOwnerKey` so session and resource
+scoping stays consistent across Admin editors.
 
 **Import:**
 

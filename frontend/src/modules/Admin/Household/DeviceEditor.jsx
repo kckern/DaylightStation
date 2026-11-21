@@ -15,7 +15,8 @@ import GuardedLink from '../shared/GuardedLink.jsx';
 import { useGuardedNavigate } from '../shared/useGuardedNavigate.js';
 import { notifySuccess, notifyFailure } from '../shared/feedback.js';
 import { DEVICE_TYPES, deviceTypeBadgeColor } from '../utils/constants.js';
-import { clearAdminDraft, useAdminDraftState } from '../shared/useAdminDraftState.js';
+import { adminDraftOwnerKey, clearAdminDraft, useAdminDraftState } from '../shared/useAdminDraftState.js';
+import { useAdminSessionKey } from '../shared/useAdminSessionKey.js';
 
 /**
  * Section wrapper for grouping related fields.
@@ -224,6 +225,11 @@ function MidiKeyboardSections({ device, updateField }) {
 
 function DeviceEditor() {
   const { deviceId } = useParams();
+  const sessionKey = useAdminSessionKey();
+  return <DeviceEditorSession key={JSON.stringify([sessionKey, deviceId])} deviceId={deviceId} sessionKey={sessionKey} />;
+}
+
+function DeviceEditorSession({ deviceId, sessionKey }) {
   const { data, loading, error, reload } = useApiResource(`/api/v1/admin/household/devices/${deviceId}`);
 
   const back = (
@@ -239,7 +245,7 @@ function DeviceEditor() {
 
   return (
     <EditorReadRegion
-      key={deviceId}
+      key={JSON.stringify([sessionKey, deviceId])}
       label="Device editor"
       loading={loading && !data}
       error={!data && error}
@@ -247,7 +253,7 @@ function DeviceEditor() {
       reload={reload}
       back={back}
     >
-      {data?.device ? <DeviceDraft deviceId={deviceId} initialDevice={data.device} /> : (
+      {data?.device ? <DeviceDraft deviceId={deviceId} sessionKey={sessionKey} initialDevice={data.device} /> : (
         <Stack gap="md">
           {back}
           <Center h="40vh">
@@ -259,10 +265,10 @@ function DeviceEditor() {
   );
 }
 
-function DeviceDraft({ deviceId, initialDevice }) {
+function DeviceDraft({ deviceId, sessionKey, initialDevice }) {
   const navigate = useNavigate();
   const guardedNavigate = useGuardedNavigate();
-  const draftKey = `device:${deviceId}`;
+  const draftKey = adminDraftOwnerKey('device', sessionKey, deviceId);
   const [device, setDevice, original, setOriginal] = useAdminDraftState(draftKey, initialDevice);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);

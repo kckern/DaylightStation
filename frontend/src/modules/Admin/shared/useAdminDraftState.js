@@ -2,6 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 
 const drafts = new Map();
 
+/** Canonical owner key for an in-memory draft scoped to one Admin session. */
+export function adminDraftOwnerKey(owner, sessionKey, ...scope) {
+  return JSON.stringify([owner, sessionKey, ...scope]);
+}
+
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }

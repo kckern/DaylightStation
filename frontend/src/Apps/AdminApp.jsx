@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AppThemeProvider } from '../lib/ui/AppThemeProvider.jsx';
 import { ADMIN_PACK } from '../modules/Admin/adminTheme.js';
+import AdminSessionBoundary from '../modules/Admin/shared/AdminSessionBoundary.jsx';
 import getLogger from '../lib/logging/Logger.js';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import AdminLayout from '../modules/Admin/AdminLayout.jsx';
@@ -37,7 +38,6 @@ import SchoolSessionHistory from "../../../__app_modules/learning/school/browser
 import SchoolCurriculumPlanner from "../../../__app_modules/learning/school/browser/admin-curriculum.mjs";
 import ComboboxTestPage from '../modules/Admin/TestHarness/ComboboxTestPage.jsx';
 import { Notifications } from '@mantine/notifications';
-import AuthGate from '../modules/Auth/AuthGate.jsx';
 import './AdminApp.scss';
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
@@ -59,7 +59,7 @@ function AdminApp() {
       <div id="admin-portals" />
       <Notifications position="bottom-right" autoClose={3000} />
       <div className="App admin-app">
-        <AuthGate app="admin">
+        <AdminSessionBoundary>
           <Routes>
             {/* Test routes - outside AdminLayout */}
             <Route path="test/combobox" element={<ComboboxTestPage />} />
@@ -122,7 +122,7 @@ function AdminApp() {
               <Route path="*" element={<Navigate to="content/lists/menus" replace />} />
             </Route>
           </Routes>
-        </AuthGate>
+        </AdminSessionBoundary>
       </div>
     </AppThemeProvider>
   );

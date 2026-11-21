@@ -192,6 +192,44 @@ test('Device console navigation confirms before leaving its dirty editor', async
 });
 
 for (const editor of [
+  { resource: 'members', url: '/admin/household/members/alice', api: '/api/v1/admin/household/members/alice', label: 'Display Name', record: { member: { username: 'alice', display_name: 'Shared baseline', email: 'alice@example.invalid', type: 'family_member' } } },
+  { resource: 'devices', url: '/admin/household/devices/fixture', api: '/api/v1/admin/household/devices/fixture', label: 'fixtureField', record: { device: { id: 'fixture', type: 'linux-pc', os_control: { fixtureField: 'Shared baseline' } } } },
+]) {
+  test(`${editor.resource} drafts do not cross an account switch in the same tab`, async ({ page, context }) => {
+    const token = owner => 'header.' + Buffer.from(JSON.stringify({ sub: owner, sid: owner + '-session' })).toString('base64url') + '.signature';
+    let bobReads = 0;
+    const writes = [];
+    await page.addInitScript(amy => localStorage.setItem('ds_token', amy), token('amy'));
+    await page.routeWebSocket('**/*', () => {});
+    await page.route('**/api/**', route => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      if (path === editor.api && request.method() === 'GET') {
+        if (request.headers().authorization === 'Bearer ' + token('bob')) bobReads++;
+        return route.fulfill({ json: editor.record });
+      }
+      if (request.method() === 'PUT') writes.push(path);
+      return route.fulfill({ json: path.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+    });
+    await context.route('**/session-switch', route => route.fulfill({ contentType: 'text/html', body: '<title>Account switch</title>' }));
+
+    await page.goto(editor.url);
+    const field = page.getByRole('textbox', { name: editor.label, exact: true });
+    await expect(field).toHaveValue('Shared baseline');
+    await field.fill('Amy unsaved draft');
+
+    const switcher = await context.newPage();
+    await switcher.goto('/session-switch');
+    await switcher.evaluate(bob => localStorage.setItem('ds_token', bob), token('bob'));
+
+    await expect(field).toHaveValue('Shared baseline');
+    await expect.poll(() => bobReads).toBeGreaterThan(0);
+    expect(writes).toEqual([]);
+    await switcher.close();
+  });
+}
+
+for (const editor of [
   { resource: 'members', label: 'Display Name', identity: 'username', fieldValue: id => 'Name ' + id,
     record: id => ({ member: { username: id, display_name: 'Name ' + id, email: id + '@example.invalid', type: 'family_member' } }) },
   { resource: 'devices', label: 'fixtureField', identity: 'id', fieldValue: id => 'Field ' + id,
