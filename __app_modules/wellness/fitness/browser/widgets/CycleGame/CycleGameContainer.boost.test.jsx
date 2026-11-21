@@ -30,10 +30,10 @@ const START_COUNTDOWN_S = 3;
 let vitals;
 
 function makeCtx(cycleGameConfig = {}) {
-  const riders = { cycle_ace: 'user_1', tricycle: 'user_2' };
+  const riders = { bike_b: 'user_1', tricycle: 'user_2' };
   return {
     equipment: [
-      { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1, eligible_users: ['user_1'] },
+      { id: 'bike_b', name: 'Bike B', cadence: 10102, wheel_circumference_m: 2.1, eligible_users: ['user_1'] },
       { id: 'tricycle', name: 'Tricycle', cadence: 7153, wheel_circumference_m: 1.2 }
     ],
     configuredUsers: [

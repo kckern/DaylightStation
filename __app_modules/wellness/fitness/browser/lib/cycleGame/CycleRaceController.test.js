@@ -331,7 +331,7 @@ describe('CycleRaceController — a dead sensor is not a lazy child', () => {
   /**
    * The garage screen once told a child "Did Not Finish — Stopped pedaling for 30s"
    * while he was pedalling. His cadence sensor had sent nothing for four
-   * minutes. Verified in production: niceday's ANT+ sensor emitted no packets
+   * minutes. Verified in production: bike_a's ANT+ sensor emitted no packets
    * across three races that all forfeited him (under the old elimination rule)
    * at the threshold with rpm 0,
    * then woke, and his very next race registered 73 rpm.

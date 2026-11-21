@@ -35,7 +35,7 @@ const ZONE_COLORS = {
 
 // Equipment types
 const EQUIPMENT = [
-  { id: 'cycleace', name: 'CycleAce', type: 'bike' },
+  { id: 'bike_b', name: 'Bike B', type: 'bike' },
   { id: 'punching_bag', name: 'Punching Bag', type: 'bag' },
   { id: 'ab_roller', name: 'Ab Roller', type: 'accessory' },
   { id: 'treadmill', name: 'Treadmill', type: 'cardio' },
@@ -67,7 +67,7 @@ export function generateFitnessConfig() {
   });
 
   // Cadence sensor for bike
-  devices.cadence['200001'] = 'cycleace';
+  devices.cadence['200001'] = 'bike_b';
 
   return {
     devices,

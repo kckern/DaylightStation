@@ -41,12 +41,13 @@ export const TEST_DEVICES = {
   charlie: { deviceId: 90001, userId: 'user_3', name: 'User_3' }       // Real device
 };
 
-// Real cadence device IDs from production config (data/household/fitness/config.yml)
+// Fictional cadence devices. To drive a real install, use the equipment ids and
+// cadence sensor ids from that household's fitness config (equipment[].cadence).
 export const TEST_CADENCE_DEVICES = {
-  cycle_ace: { deviceId: 49904, equipmentId: 'cycle_ace', name: 'CycleAce' },
+  bike_b: { deviceId: 10102, equipmentId: 'bike_b', name: 'Bike B' },
   ab_roller: { deviceId: 7183, equipmentId: 'ab_roller', name: 'Ab Roller' },
   tricycle: { deviceId: 7153, equipmentId: 'tricycle', name: 'Tricycle' },
-  niceday: { deviceId: 7138, equipmentId: 'niceday', name: 'NiceDay' }
+  bike_a: { deviceId: 10101, equipmentId: 'bike_a', name: 'Bike A' }
 };
 
 // RPM device timeout scenarios
@@ -56,7 +57,7 @@ export const RPM_SCENARIOS = {
     description: 'Cycle for 10s, then stop transmission',
     duration: 25,
     cadence: {
-      cycle_ace: {
+      bike_b: {
         pattern: 'sequence',
         sequence: [
           { rpm: 80, duration: 10 },    // Active cycling
@@ -72,7 +73,7 @@ export const RPM_SCENARIOS = {
     description: 'Send RPM=0 then stop transmission',
     duration: 15,
     cadence: {
-      cycle_ace: {
+      bike_b: {
         pattern: 'sequence',
         sequence: [
           { rpm: 70, duration: 5 },     // Active

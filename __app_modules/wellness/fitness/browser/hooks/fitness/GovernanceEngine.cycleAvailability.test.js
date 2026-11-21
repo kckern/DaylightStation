@@ -11,7 +11,7 @@ vi.mock('../../../../../../frontend/src/lib/logging/Logger.js', () => {
 const POLICY = {
   governed_labels: ['cardio'], grace_period_seconds: 1,
   policies: { default: { name: 'Default', base_requirement: [{ active: 'all' }],
-    challenges: [{ interval: [1, 1], selections: [{ type: 'cycle', equipment: 'cycle_ace',
+    challenges: [{ interval: [1, 1], selections: [{ type: 'cycle', equipment: 'bike_b',
       hi_rpm_range: [60, 60], segment_count: [1, 1], segment_duration_seconds: [60, 60],
       ramp_seconds: [5, 5], init: { min_rpm: 30, time_allowed_seconds: 10 },
       lo_rpm_ratio: 0.5, time_allowed: 999 }] }] } }
@@ -20,7 +20,7 @@ const fresh = (now, rpm = 80) => ({ rpm, connected: true, ts: now });
 function fixture({ manual = true, governed = true } = {}) {
   let now = 100000;
   const session = {
-    _deviceRouter: { getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['user_2', 'user_3'] }] },
+    _deviceRouter: { getEquipmentCatalog: () => [{ id: 'bike_b', eligible_users: ['user_2', 'user_3'] }] },
     getParticipantProfile: () => null, zoneProfileStore: null, logEvent: vi.fn(),
     getActiveParticipantState: () => ({ participants: ['user_2', 'user_3'], zoneMap: { user_2: 'active', user_3: 'active' }, totalCount: 2 })
   };
@@ -33,7 +33,7 @@ function fixture({ manual = true, governed = true } = {}) {
       userZoneMap: { user_2: zone, user_3: zone }, totalCount: 2,
       zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3 },
       zoneInfoMap: { active: { id: 'active', name: 'Active' } },
-      equipmentCadenceMap: entry ? { cycle_ace: entry } : {} });
+      equipmentCadenceMap: entry ? { bike_b: entry } : {} });
     return engine.state;
   };
   if (manual) {
@@ -58,7 +58,7 @@ describe('cycle cadence availability and automatic selection', () => {
   it.each(unavailable)('does not automatically select %s cadence', (_name, entry) => {
     const f = fixture({ manual: false });
     f.tick(0, entry);
-    expect(f.engine._hasAvailableCycleCadence('cycle_ace', f.now())).toBe(false);
+    expect(f.engine._hasAvailableCycleCadence('bike_b', f.now())).toBe(false);
     expect(f.engine.challengeState.nextChallenge).toBeNull();
     f.tick(1500, entry);
     expect(f.engine.challengeState.activeChallenge).toBeNull();
@@ -66,7 +66,7 @@ describe('cycle cadence availability and automatic selection', () => {
   it.each([0, 80])('selects connected fresh %i RPM including the 2000ms boundary', (rpm) => {
     const f = fixture({ manual: false });
     f.tick(0, fresh(f.now() - 2000, rpm));
-    expect(f.engine._hasAvailableCycleCadence('cycle_ace', f.now())).toBe(true);
+    expect(f.engine._hasAvailableCycleCadence('bike_b', f.now())).toBe(true);
     expect(f.engine.challengeState.nextChallenge?.type).toBe('cycle');
     f.tick(1000, fresh(f.now() + 1000, rpm));
     expect(f.engine.challengeState.activeChallenge?.type).toBe('cycle');
@@ -103,11 +103,11 @@ describe('active cycle sensor recovery', () => {
     expect(f.engine.challengeState.activeChallenge).toBeNull();
     expect(f.engine.challengeState.challengeHistory.at(-1)).toMatchObject({ id: active.id, type: 'cycle', status: 'cancelled', cancelReason: 'sensor_offline' });
     expect(f.engine._cycleCooldowns).toEqual(cooldowns);
-    expect(f.session.logEvent).toHaveBeenCalledExactlyOnceWith('challenge_cancelled', expect.objectContaining({ challengeId: active.id, type: 'cycle', reason: 'sensor_offline', equipmentId: 'cycle_ace' }), f.now());
+    expect(f.session.logEvent).toHaveBeenCalledExactlyOnceWith('challenge_cancelled', expect.objectContaining({ challengeId: active.id, type: 'cycle', reason: 'sensor_offline', equipmentId: 'bike_b' }), f.now());
     f.tick(500, lost);
     expect(f.session.logEvent).toHaveBeenCalledTimes(1);
     expect(logged.filter(l => l.event === 'governance.cycle.sensor_unavailable')).toHaveLength(1);
-    expect(logged.filter(l => l.event === 'governance.cycle.cancelled')[0].data).toMatchObject({ challengeId: active.id, equipmentId: 'cycle_ace', unavailableMs: 10000 });
+    expect(logged.filter(l => l.event === 'governance.cycle.cancelled')[0].data).toMatchObject({ challengeId: active.id, equipmentId: 'bike_b', unavailableMs: 10000 });
   });
   it('resumes at the same progress before the boundary without catchup', () => {
     const f = fixture(); const active = f.engine.challengeState.activeChallenge;
@@ -122,7 +122,7 @@ describe('active cycle sensor recovery', () => {
     expect(active.phaseProgressMs).toBe(500);
     f.tick(200, fresh(f.now() + 200, 200));
     expect(active.phaseProgressMs).toBe(700);
-    expect(logged.filter(l => l.event === 'governance.cycle.sensor_recovered')[0].data).toMatchObject({ challengeId: active.id, equipmentId: 'cycle_ace', unavailableMs: 9999 });
+    expect(logged.filter(l => l.event === 'governance.cycle.sensor_recovered')[0].data).toMatchObject({ challengeId: active.id, equipmentId: 'bike_b', unavailableMs: 9999 });
   });
   it.each([10000, 10001])('cancels neutrally when fresh cadence returns after %i ms of loss', (elapsedMs) => {
     const f = fixture(); const active = f.engine.challengeState.activeChallenge;

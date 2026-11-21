@@ -83,12 +83,12 @@ describe('PersistenceManager — validation', () => {
       'alice:hr': [80, 85, 90, 88, 92, 95],           // real data — keep
       'bike:7153:rotations': [0, 0, 0, null, null],    // all zero/null — drop
       'bike:90003:rotations': [0, null, 0, null, 0],   // all zero/null — drop
-      'bike:49904:rotations': [0, 0, 5, 10, 15, 20],   // has real data — keep
+      'bike:10102:rotations': [0, 0, 5, 10, 15, 20],   // has real data — keep
     };
     const { encodedSeries } = pm.encodeSeries(series);
 
     expect(encodedSeries).toHaveProperty('alice:hr');
-    expect(encodedSeries).toHaveProperty('bike:49904:rotations');
+    expect(encodedSeries).toHaveProperty('bike:10102:rotations');
     expect(encodedSeries).not.toHaveProperty('bike:7153:rotations');
     expect(encodedSeries).not.toHaveProperty('bike:90003:rotations');
   });

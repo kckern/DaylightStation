@@ -23,14 +23,14 @@ const COUNTDOWN_TICK_MS = 1000;
 const START_COUNTDOWN_S = 3;
 
 function makeCtx(overrides = {}) {
-  const riders = { cycle_ace: 'user_1', tricycle: 'user_2' };
+  const riders = { bike_b: 'user_1', tricycle: 'user_2' };
   const vitals = {
     user_1: { name: 'KC', heartRate: 140, zoneId: 'hot', zoneColor: 'orange' },
     user_2: { name: 'User_2', heartRate: 120, zoneId: 'warm', zoneColor: 'yellow' }
   };
   return {
     equipment: [
-      { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1, eligible_users: ['user_1'] },
+      { id: 'bike_b', name: 'Bike B', cadence: 10102, wheel_circumference_m: 2.1, eligible_users: ['user_1'] },
       { id: 'tricycle', name: 'Tricycle', cadence: 7153, wheel_circumference_m: 1.2 }
     ],
     configuredUsers: [
@@ -94,9 +94,9 @@ describe('CycleGameContainer — drama events wired into the live tick (audit C2
     let phase = 1; // 1: user_1 ahead · 2: user_2 overtakes
     mockCtx = makeCtx({
       fitnessSessionInstance: {
-        getEquipmentRider: (id) => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id] || null,
+        getEquipmentRider: (id) => ({ bike_b: 'user_1', tricycle: 'user_2' })[id] || null,
         getEquipmentCadence: (id) => {
-          if (id === 'cycle_ace') return { rpm: phase === 1 ? 120 : 5, connected: true };
+          if (id === 'bike_b') return { rpm: phase === 1 ? 120 : 5, connected: true };
           return { rpm: phase === 1 ? 5 : 150, connected: true };
         }
       }
@@ -127,8 +127,8 @@ describe('CycleGameContainer — drama events wired into the live tick (audit C2
     // ceremony toast fires.
     mockCtx = makeCtx({
       fitnessSessionInstance: {
-        getEquipmentRider: (id) => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id] || null,
-        getEquipmentCadence: (id) => (id === 'cycle_ace' ? { rpm: 120, connected: true } : { rpm: 20, connected: true })
+        getEquipmentRider: (id) => ({ bike_b: 'user_1', tricycle: 'user_2' })[id] || null,
+        getEquipmentCadence: (id) => (id === 'bike_b' ? { rpm: 120, connected: true } : { rpm: 20, connected: true })
       }
     });
     const renderApi = render(<CycleGameContainer />);

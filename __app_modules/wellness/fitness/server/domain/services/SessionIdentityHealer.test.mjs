@@ -8,7 +8,7 @@ describe('discoverOccupantIds', () => {
       'grannie:hr': '[]',
       'device:10001:hr': '[]',
       'vib:punching-bag:hr': '[]',
-      'bike:7138:hr': '[]',
+      'bike:10101:hr': '[]',
       'global:hr': '[]'
     };
     const ids = discoverOccupantIds(series);

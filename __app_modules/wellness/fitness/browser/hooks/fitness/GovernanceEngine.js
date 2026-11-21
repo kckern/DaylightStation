@@ -477,7 +477,7 @@ export class GovernanceEngine {
   /**
    * Get eligible users (whitelist) for a piece of equipment from the session catalog.
    * Used to determine which participants are allowed to ride a given cycle.
-   * @param {string} equipmentId - Equipment identifier (e.g. 'cycle_ace')
+   * @param {string} equipmentId - Equipment identifier (e.g. 'bike_b')
    * @returns {string[]} Copy of the eligible_users array, or [] if not found/no list
    */
   _getEligibleUsers(equipmentId) {

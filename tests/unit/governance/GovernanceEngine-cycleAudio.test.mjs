@@ -33,7 +33,7 @@ describe('GovernanceEngine cycle audio cues', () => {
       id: 'test_0',
       type: 'cycle',
       rider: 'user_2',
-      equipment: 'cycle_ace',
+      equipment: 'bike_b',
       cycleState: 'init',
       status: 'pending',
       currentPhaseIndex: 0,

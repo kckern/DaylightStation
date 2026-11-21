@@ -5,7 +5,7 @@ import { SessionSerializerV3 } from "../../hooks/fitness/SessionSerializerV3.js"
 const state = {
   winCondition: 'distance',
   riders: {
-    user_3: { userId: 'user_3', displayName: 'User_3', equipmentId: 'cycle_ace', cumulativeDistanceM: 3000, distanceSeries: [1000, 2000, 3000], finishTimeS: 252 },
+    user_3: { userId: 'user_3', displayName: 'User_3', equipmentId: 'bike_b', cumulativeDistanceM: 3000, distanceSeries: [1000, 2000, 3000], finishTimeS: 252 },
     user_2: { userId: 'user_2', displayName: 'User_2', equipmentId: 'tricycle', cumulativeDistanceM: 2710, distanceSeries: [900, 1800, 2710], finishTimeS: null }
   },
   standings: [
@@ -31,7 +31,7 @@ describe('buildRaceRecord', () => {
     expect(rec.participants.user_3.final_distance_m).toBe(3000);
     expect(rec.participants.user_3.final_time_s).toBe(252);
     expect(rec.participants.user_3.placement).toBe(1);
-    expect(rec.participants.user_3.equipment).toBe('cycle_ace');
+    expect(rec.participants.user_3.equipment).toBe('bike_b');
     expect(rec.participants.user_3.distance_series).toBe('[1000,2000,3000]');
     expect(rec.participants.user_2.placement).toBe(2);
     expect(rec.participants.user_2.final_time_s).toBeNull();
@@ -61,7 +61,7 @@ describe('buildRaceRecord', () => {
   it('encodes each participant hr_series from the engine hrSeries', () => {
     const s = {
       riders: {
-        a: { userId: 'a', displayName: 'A', equipmentId: 'cycle_ace', cumulativeDistanceM: 100, finishTimeS: 50, distanceSeries: [50, 100], hrSeries: [150, 160] }
+        a: { userId: 'a', displayName: 'A', equipmentId: 'bike_b', cumulativeDistanceM: 100, finishTimeS: 50, distanceSeries: [50, 100], hrSeries: [150, 160] }
       },
       standings: [{ userId: 'a', placement: 1 }]
     };
@@ -72,7 +72,7 @@ describe('buildRaceRecord', () => {
     const s = {
       riders: {
         a: {
-          userId: 'a', displayName: 'A', equipmentId: 'cycle_ace', cumulativeDistanceM: 100, finishTimeS: 50,
+          userId: 'a', displayName: 'A', equipmentId: 'bike_b', cumulativeDistanceM: 100, finishTimeS: 50,
           distanceSeries: [50, 100], hrSeries: [150, 160], rpmSeries: [80, 92], zoneSeries: ['warm', 'hot']
         }
       },

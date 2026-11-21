@@ -45,7 +45,7 @@ function makeCtx(cycleGameConfig = {}) {
   };
   return {
     equipment: [
-      { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1 },
+      { id: 'bike_b', name: 'Bike B', cadence: 10102, wheel_circumference_m: 2.1 },
       { id: 'tricycle', name: 'Tricycle', cadence: 7153, wheel_circumference_m: 2.1 }
     ],
     zones: [
@@ -152,7 +152,7 @@ describe('CycleGameContainer — results that reward and restart', () => {
 
   beforeEach(() => {
     rpmByBike = {};
-    claims = { cycle_ace: 'user_1' };
+    claims = { bike_b: 'user_1' };
     mockCtx = makeCtx();
     Object.values(logSpy).forEach((fn) => fn.mockClear());
     global.fetch = makeFetch();
@@ -299,7 +299,7 @@ describe('CycleGameContainer — results that reward and restart', () => {
     });
 
     it('a group race compares each live rider from the loaded history, and not a rider stopped at the close', async () => {
-      claims = { cycle_ace: 'user_1', tricycle: 'user_2' };
+      claims = { bike_b: 'user_1', tricycle: 'user_2' };
       mockCtx = makeCtx({ race_idle_dnf_s: 3 });
       const view = await renderLobby({
         races: [raceRecord('20260101100000', { user_1: { distanceM: 100 }, user_2: { distanceM: 100 } }, { winCondition: 'time' })]

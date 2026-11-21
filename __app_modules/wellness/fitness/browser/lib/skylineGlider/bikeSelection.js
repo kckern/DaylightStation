@@ -1,4 +1,13 @@
-const priority = (id) => id === 'niceday' ? 0 : id === 'cycle_ace' ? 1 : 2;
+// Bike order is household config: each equipment entry may carry
+// `skyline_glider.priority` (lower first). Unranked bikes follow, in config order.
+const priority = (item) => {
+  const value = Number(item?.skyline_glider?.priority);
+  return Number.isFinite(value) ? value : Number.POSITIVE_INFINITY;
+};
+const byPriority = (left, right) => {
+  const a = priority(left.equipment), b = priority(right.equipment);
+  return (a === b ? 0 : a < b ? -1 : 1) || left.index - right.index;
+};
 
 export function listUsableSkylineBikes(equipment = [], session) {
   return (Array.isArray(equipment) ? equipment : [])
@@ -10,7 +19,7 @@ export function listUsableSkylineBikes(equipment = [], session) {
       index,
     }))
     .filter(({ riderId, cadence }) => riderId && cadence.connected && !cadence.transportStalled)
-    .sort((left, right) => priority(left.equipment.id) - priority(right.equipment.id) || left.index - right.index)
+    .sort(byPriority)
     .map(({ index: _index, ...item }) => item);
 }
 

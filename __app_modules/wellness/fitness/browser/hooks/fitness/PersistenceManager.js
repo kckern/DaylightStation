@@ -285,8 +285,8 @@ const buildParticipantsForPersist = (roster, deviceAssignments, options = {}) =>
  * - user:user_4:zone_id -> user_4:zone
  * - user:user_4:heart_beats -> user_4:beats
  * - user:user_4:rings_total -> user_4:rings
- * - device:7138:rpm -> bike:7138:rpm (equipment metrics)
- * - device:device_7138:rpm -> bike:7138:rpm (fix double-prefix)
+ * - device:10101:rpm -> bike:10101:rpm (equipment metrics)
+ * - device:device_10101:rpm -> bike:10101:rpm (fix double-prefix)
  * - global:rings-total -> global:rings
  *
  * @param {Object} series
@@ -327,7 +327,7 @@ const mapSeriesKeysForPersist = (series) => {
     } else if (parts[0] === 'device' && parts.length >= 3) {
       // device:id:metric -> bike:id:metric (for equipment) or device:id:metric (for wearables)
       let id = parts[1];
-      // Fix double-prefix: device_7138 -> 7138
+      // Fix double-prefix: device_10101 -> 10101
       if (id && id.startsWith('device_')) {
         id = id.slice('device_'.length);
       }

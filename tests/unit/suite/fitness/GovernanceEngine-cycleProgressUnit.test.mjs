@@ -17,14 +17,14 @@ describe('Cycle phaseProgressPct unit consistency', () => {
     engine._latestInputs = {
       activeParticipants: ['user_1'],
       userZoneMap: { user_1: 'hot' },
-      equipmentCadenceMap: { cycle_ace: { rpm: 90, connected: true } }
+      equipmentCadenceMap: { bike_b: { rpm: 90, connected: true } }
     };
     engine.challengeState = {
       activeChallenge: {
         id: 'cyc_1',
         type: 'cycle',
         cycleState: 'maintain',
-        equipment: 'cycle_ace',
+        equipment: 'bike_b',
         rider: 'user_1',
         manualTrigger: true,
         currentPhaseIndex: 0,

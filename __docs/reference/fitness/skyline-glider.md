@@ -43,6 +43,15 @@ The checkpoint/cue banner is the shared kit's `MomentBanner`; its colours come f
 
 **The step mat is the partner's bomb button.** While a flight is armed, every classified stomp on any step mat (`pressure-mat:stomp` on the fitness app event bus, see [`pressureMat`](../../../__app_modules/wellness/fitness/browser/context/fitnessPressureMat.js)) drops a bomb from the same rack, logged as `skyline_glider.input.fire` with `source: stomp-mat` plus `skyline_glider.stomp_mat.bomb`. Ordinary steps do nothing, so someone walking past never fires. Stomps outside a flight are ignored. How hard a press must be to count as a stomp is the mat's `stomp_gradient_vps` threshold, live-tunable on the mat.
 
+**Which bike flies.** Glider (and Skyline Invaders' partner boost) use a bike that has a rider claimed and a live cadence sensor. When several qualify, the one with the lowest `skyline_glider.priority` on its equipment entry wins; bikes without a priority follow in config order. No bike is preferred by id in code:
+
+```yaml
+equipment:
+  - id: <bike-id>
+    skyline_glider:
+      priority: 0        # lower flies first; omit to rank after every prioritised bike
+```
+
 **Handheld remotes.** A bike whose config has a `skyline_glider.remote` block takes presses from the handheld remotes mounted on it. The block maps a **rider direction** to an action: `up`, `down`, `left`, `right`, `center` (the remote's ring positions), or `front` / `rear` (the ring position toward the bike's front or rear, for a remote whose inventory entry says so). Actions are `laser`, `bomb`, `missile`, `boost` and `pause`. It lives on the bike's equipment entry in the household fitness config (loaded at boot, so an edit needs a restart):
 
 ```yaml
@@ -67,7 +76,7 @@ Unknown directions or actions are dropped and logged once as `skyline_glider.rem
 
 Numeric keys 1–4 operate the current panel; Escape opens the flight menu. Existing text-entry and browser shortcuts retain their meaning.
 
-On the garage's 8BitDo SFC30 (standard mapping in Firefox), that is the bottom face button (printed **B**) or **R** for the laser, and the right face button (printed **A**), **Y** or **L** for a bomb. The pad's letters follow the SNES layout, so they are swapped against the Xbox names above.
+On an 8BitDo SFC30 (standard mapping in Firefox), that is the bottom face button (printed **B**) or **R** for the laser, and the right face button (printed **A**), **Y** or **L** for a bomb. The pad's letters follow the SNES layout, so they are swapped against the Xbox names above.
 
 - Each press fires once; holding does not autofire. A button already held when flight starts is ignored until released. A press on a frame where no time passes waits for the next frame. Presses during a sensor pause or crash are dropped.
 - **Laser:** leaves the craft nose at the craft's altitude (entity boxes count as `laser_aim`, default 0.045, taller for it, so a shot a hair off a target lands; terrain stays exact) and travels `laser_speed_s` course-seconds per second faster than the craft, until it leaves the right edge of the screen (measured from the camera, so a boosted craft does not shoot further); a course may shorten that with `laser_range_s`. Each step sweeps its whole path, so thin objects cannot be skipped. It stops at the first terrain or non-scenery entity it reaches, destroying that entity if it is vulnerable to the laser and being absorbed otherwise. It is unlimited, with a `laser_cooldown_s` cooldown.

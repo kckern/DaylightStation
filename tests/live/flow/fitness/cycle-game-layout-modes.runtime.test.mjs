@@ -116,11 +116,11 @@ test.describe('Cycle Game — layout modes', () => {
     const bikeIds = await bootToRacing(page, 4);
 
     if (bikeIds.length < 4) {
-      // Hard fail — the sim must expose ≥4 cycle bikes (niceday, cycle_ace, tricycle, ab_roller).
+      // Hard fail — the sim must expose ≥4 cycle bikes in the household fitness config.
       // This is NOT a silent skip: it indicates a config problem.
       throw new Error(
         `Wide-mode test requires 4 riders but autoAssignRiders(4) only assigned ${bikeIds.length}. ` +
-        'Check that 4 cycle-capable bikes are configured in the sim (niceday, cycle_ace, tricycle, ab_roller).'
+        'Check that 4 cycle-capable bikes are configured in the household fitness config.'
       );
     }
 

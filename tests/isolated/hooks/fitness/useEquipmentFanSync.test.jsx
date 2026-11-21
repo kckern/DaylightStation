@@ -24,7 +24,7 @@ describe('useEquipmentFanSync', () => {
         enabled: true,
         sessionActive: true,
         householdId: 'test',
-        rpmDevices: [{ deviceId: '7138', cadence }],
+        rpmDevices: [{ deviceId: '10101', cadence }],
         participantRoster: [{ zoneId: 'warm', isActive: true }],
       })
     );
@@ -34,7 +34,7 @@ describe('useEquipmentFanSync', () => {
     expect(postMock).toHaveBeenCalledWith(
       'api/v1/fitness/equipment_fan',
       expect.objectContaining({
-        rpm: { '7138': 72 },
+        rpm: { '10101': 72 },
         zones: [{ zoneId: 'warm', isActive: true }],
         sessionEnded: false,
         householdId: 'test',
@@ -48,7 +48,7 @@ describe('useEquipmentFanSync', () => {
       enabled: true,
       sessionActive: true,
       householdId: 'test',
-      rpmDevices: [{ deviceId: '7138', cadence: 80 }],
+      rpmDevices: [{ deviceId: '10101', cadence: 80 }],
       participantRoster: [{ zoneId: 'warm', isActive: true }],
     };
     const { rerender } = renderHook((p) => useEquipmentFanSync(p), {
@@ -70,7 +70,7 @@ describe('useEquipmentFanSync', () => {
         enabled: false,
         sessionActive: true,
         householdId: 'test',
-        rpmDevices: [{ deviceId: '7138', cadence }],
+        rpmDevices: [{ deviceId: '10101', cadence }],
         participantRoster: [{ zoneId: 'warm', isActive: true }],
       })
     );

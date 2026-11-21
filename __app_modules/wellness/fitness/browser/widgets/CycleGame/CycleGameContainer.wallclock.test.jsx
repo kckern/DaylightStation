@@ -25,14 +25,14 @@ const GO_HOLD_MS = 800;
 const START_COUNTDOWN_S = 3;
 
 function makeCtx(overrides = {}) {
-  const riders = { cycle_ace: 'user_1', tricycle: 'user_2' };
+  const riders = { bike_b: 'user_1', tricycle: 'user_2' };
   const vitals = {
     user_1: { name: 'KC', heartRate: 140, zoneId: 'hot', zoneColor: 'orange' },
     user_2: { name: 'User_2', heartRate: 120, zoneId: 'warm', zoneColor: 'yellow' }
   };
   return {
     equipment: [
-      { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1, eligible_users: ['user_1'] },
+      { id: 'bike_b', name: 'Bike B', cadence: 10102, wheel_circumference_m: 2.1, eligible_users: ['user_1'] },
       { id: 'tricycle', name: 'Tricycle', cadence: 7153, wheel_circumference_m: 1.2 }
     ],
     configuredUsers: [
@@ -171,7 +171,7 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
   });
 
   it('logs a rider_overtime edge (never rider_dnf) for a mercy-kill straggler (audit game-design #7)', () => {
-    // user_1 (cycle_ace) rides hard and finishes the 100 m "Flash" tier fast;
+    // user_1 (bike_b) rides hard and finishes the 100 m "Flash" tier fast;
     // user_2 (tricycle) crawls the whole time (rpm > 0 — never idle-quits) and is
     // still short of the line when the mercy window closes 3s after the winner.
     mockCtx = makeCtx({
@@ -186,8 +186,8 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
         race_mercy_after_winner_s: 3
       },
       fitnessSessionInstance: {
-        getEquipmentRider: (id) => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id] || null,
-        getEquipmentCadence: (id) => (id === 'cycle_ace' ? { rpm: 100, connected: true } : { rpm: 1, connected: true })
+        getEquipmentRider: (id) => ({ bike_b: 'user_1', tricycle: 'user_2' })[id] || null,
+        getEquipmentCadence: (id) => (id === 'bike_b' ? { rpm: 100, connected: true } : { rpm: 1, connected: true })
       }
     });
     const renderApi = render(<CycleGameContainer />);
@@ -217,7 +217,7 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
   it('global transport loss uses zero cadence immediately while the race clock keeps its deadline', () => {
     let stalled = false;
     mockCtx = makeCtx({ fitnessSessionInstance: {
-      getEquipmentRider: id => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id],
+      getEquipmentRider: id => ({ bike_b: 'user_1', tricycle: 'user_2' })[id],
       getEquipmentCadence: () => ({ rpm: 100, connected: !stalled, transportStalled: stalled }),
     } });
     const view = render(<CycleGameContainer />);
@@ -256,9 +256,9 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
         race_idle_dnf_s: 5
       },
       fitnessSessionInstance: {
-        getEquipmentRider: (id) => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id] || null,
+        getEquipmentRider: (id) => ({ bike_b: 'user_1', tricycle: 'user_2' })[id] || null,
         getEquipmentCadence: (id) => {
-          if (id === 'cycle_ace') return { rpm: 100, connected: true }; // user_1 rides on, unaffected
+          if (id === 'bike_b') return { rpm: 100, connected: true }; // user_1 rides on, unaffected
           return { rpm: 100, connected: learnerTwoConnected };
         }
       }
@@ -308,9 +308,9 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
         race_idle_dnf_s: 5
       },
       fitnessSessionInstance: {
-        getEquipmentRider: (id) => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id] || null,
+        getEquipmentRider: (id) => ({ bike_b: 'user_1', tricycle: 'user_2' })[id] || null,
         getEquipmentCadence: (id) => {
-          if (id === 'cycle_ace') return { rpm: 100, connected: true };
+          if (id === 'bike_b') return { rpm: 100, connected: true };
           return { rpm: 100, connected: learnerTwoConnected };
         }
       }
@@ -357,9 +357,9 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
         race_start_grace_s: 30
       },
       fitnessSessionInstance: {
-        getEquipmentRider: (id) => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id] || null,
+        getEquipmentRider: (id) => ({ bike_b: 'user_1', tricycle: 'user_2' })[id] || null,
         getEquipmentCadence: (id) => {
-          if (id === 'cycle_ace') return { rpm: 100, connected: true }; // user_1 rides normally
+          if (id === 'bike_b') return { rpm: 100, connected: true }; // user_1 rides normally
           return { rpm: 0, connected: true }; // user_2 is on the bike, sensor fine, not pedalling
         }
       }
@@ -382,7 +382,7 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
      * The chip used to require a rider to have been connected once, so a sensor
      * that never appeared produced no warning ever — and the race then forfeited
      * them with "Stopped pedaling for 30s", which was the only thing anyone saw.
-     * Verified in production: niceday's ANT+ sensor emitted no packets across
+     * Verified in production: bike_a's ANT+ sensor emitted no packets across
      * three races that all forfeited the rider at the threshold with rpm 0,
      * then woke, and his very next race registered 73 rpm. He was on the bike
      * the whole time.
@@ -402,9 +402,9 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
         race_start_grace_s: 30
       },
       fitnessSessionInstance: {
-        getEquipmentRider: (id) => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id] || null,
+        getEquipmentRider: (id) => ({ bike_b: 'user_1', tricycle: 'user_2' })[id] || null,
         getEquipmentCadence: (id) => {
-          if (id === 'cycle_ace') return { rpm: 100, connected: true };
+          if (id === 'bike_b') return { rpm: 100, connected: true };
           return { rpm: 0, connected: false }; // user_2's sensor never speaks
         }
       }
