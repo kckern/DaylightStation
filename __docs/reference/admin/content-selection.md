@@ -8,6 +8,8 @@ Search results keep their original section and row positions. Editing or duplica
 
 Deleting and undoing a list item restores its scheduling dates and original position. Undo uses the insertion index returned by the list service, so intervening edits do not make it move a neighboring row. The service accepts the Admin field names and stores the codec's canonical schedule fields, so later reads retain the same values.
 
+Editing a list item sends changed fields, including values reset to their defaults. New items continue to omit default values.
+
 The item editor's **Section** choice saves the selected destination. When a move succeeds but its field update fails, retrying resolves the item by its stable UID in the refreshed list. Cross-section edits without a stable UID are blocked to prevent writes to the wrong positional row.
 
 The list editor checks whether the selected item supports its row’s action. Rows looking up the same item share pending capability and alternate reads. A confirmed mismatch can suggest another ID for the same content. A failed capability read leaves the row quiet, and a failed alternate read leaves the confirmed mismatch without a suggestion. Changing the row’s item or action retires an obsolete suggestion.

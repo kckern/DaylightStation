@@ -35,23 +35,29 @@ function extractCustomFields(item) {
 }
 
 /**
- * Build save payload with only non-default values
- * Always includes label and input as they are required
+ * Build a sparse save payload, preserving explicit resets for edits.
+ * Always includes label and input as they are required.
  */
-function buildSavePayload(formData, customFields, preserveImageClear) {
+function buildSavePayload(formData, customFields, preserveImageClear, originalItem) {
   const payload = {
     label: formData.label?.trim() || '',
     input: formData.input?.trim() || ''
   };
 
-  // Add non-default values
+  // Edits include changed values even when they equal a creation default.
   for (const [key, defaultValue] of Object.entries(ITEM_DEFAULTS)) {
     const currentValue = formData[key];
+    if (currentValue === undefined) continue;
+
+    if (originalItem) {
+      const originalValue = originalItem[key] ?? defaultValue;
+      if (currentValue !== originalValue) payload[key] = currentValue;
+      continue;
+    }
 
     // Skip if value matches default
     if (currentValue === defaultValue) continue;
     if (currentValue === null && defaultValue === null) continue;
-    if (currentValue === undefined) continue;
 
     // Special handling for booleans - only include if different from default
     if (typeof defaultValue === 'boolean') {
@@ -295,7 +301,7 @@ function ListsItemEditor({ hideSection = false, preserveImageClear = false, open
     e.preventDefault();
     if (!validate()) return;
 
-    const payload = buildSavePayload(formData, customFields, preserveImageClear);
+    const payload = buildSavePayload(formData, customFields, preserveImageClear, item);
     if (!hideSection) payload.sectionIndex = formData.sectionIndex;
     await onSave(payload);
   };
