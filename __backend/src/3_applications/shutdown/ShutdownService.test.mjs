@@ -37,8 +37,8 @@ const policy = () => ({
 test('activation persists the configured targets, publishes first, and resets the duration on repeat scan', async () => {
   const f = fakes();
   const service = new ShutdownService({ repo: f.repo, notifier: f.notifier, getPolicy: policy, cue: f.cue, portal: f.portal });
-  const first = await service.activate({ readerId: 'study-omr', tagUid: '04aa660fcb2a81', now: 1_000 });
-  const repeat = await service.activate({ readerId: 'study-omr', tagUid: '04aa660fcb2a81', now: 2_000 });
+  const first = await service.activate({ readerId: 'study-omr', tagUid: '04f00000000007', now: 1_000 });
+  const repeat = await service.activate({ readerId: 'study-omr', tagUid: '04f00000000007', now: 2_000 });
   assert.equal(first.lockedUntil, '1970-01-01T00:30:01.000Z');
   assert.equal(repeat.lockedUntil, '1970-01-01T00:30:02.000Z');
   assert.deepEqual(repeat.targets, ['school:portal', 'piano:yellow-room-tablet']);
@@ -65,7 +65,7 @@ test('failed Portal synchronization is retried without changing the persisted lo
   let attempts = 0;
   const portal = { async setLockdown() { attempts += 1; if (attempts === 1) throw new Error('offline'); } };
   const service = new ShutdownService({ repo: f.repo, notifier: f.notifier, getPolicy: policy, portal, logger: { warn() {} } });
-  await service.activate({ readerId: 'study-omr', tagUid: '04aa660fcb2a81', now: Date.now() });
+  await service.activate({ readerId: 'study-omr', tagUid: '04f00000000007', now: Date.now() });
   await service.reconcile();
   assert.equal(attempts, 2);
   assert.equal((await service.status('piano:yellow-room-tablet')).locked, true);
@@ -76,7 +76,7 @@ test('the lockdown cue carries a composed push in household local time', async (
   const service = new ShutdownService({
     repo: f.repo, notifier: f.notifier, getPolicy: policy, cue: f.cue, portal: f.portal, timezone: 'America/Los_Angeles',
   });
-  await service.activate({ readerId: 'study-omr', tagUid: '04aa660fcb2a81', now: Date.parse('2026-08-28T00:43:29.185Z') });
+  await service.activate({ readerId: 'study-omr', tagUid: '04f00000000007', now: Date.parse('2026-08-28T00:43:29.185Z') });
   await new Promise((resolve) => setImmediate(resolve));
   const { notification } = f.haCalls[0];
   assert.ok(notification.title.startsWith('🔒 Kiosks locked — 30 min, until'));
@@ -94,7 +94,7 @@ test('a bad timezone never withholds the cue: announce still runs', async () => 
     repo: f.repo, notifier: f.notifier, getPolicy: policy, cue: f.cue, portal: f.portal,
     timezone: 'America/LosAngeles', logger: { warn() {} },
   });
-  const state = await service.activate({ readerId: 'study-omr', tagUid: '04aa660fcb2a81', now: Date.parse('2026-08-28T00:43:29.185Z') });
+  const state = await service.activate({ readerId: 'study-omr', tagUid: '04f00000000007', now: Date.parse('2026-08-28T00:43:29.185Z') });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(f.haCalls.length, 1, 'the siren cue fires');
   assert.equal(f.haCalls[0].lockedUntil, state.lockedUntil);

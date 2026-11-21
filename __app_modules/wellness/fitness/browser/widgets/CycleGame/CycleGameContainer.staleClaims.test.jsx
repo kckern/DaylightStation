@@ -40,7 +40,7 @@ let claims;
 function makeCtx() {
   return {
     equipment: [
-      { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1 },
+      { id: 'bike_b', name: 'Bike B', cadence: 10102, wheel_circumference_m: 2.1 },
       { id: 'tricycle', name: 'Tricycle', cadence: 7153, wheel_circumference_m: 2.1 }
     ],
     zones: [{ id: 'warm', distance_multiplier: 1.5, color: 'yellow' }],
@@ -71,7 +71,7 @@ describe('CycleGameContainer — stale rider claims clear themselves', () => {
 
   beforeEach(() => {
     rpmByBike = {};
-    claims = { cycle_ace: 'user_1' };
+    claims = { bike_b: 'user_1' };
     mockCtx = makeCtx();
     Object.values(logSpy).forEach((fn) => fn.mockClear());
     global.fetch = vi.fn((url, opts) => {
@@ -100,11 +100,11 @@ describe('CycleGameContainer — stale rider claims clear themselves', () => {
   it('clears a claim idle for 31 minutes, through the unassign path, and logs it', () => {
     const view = render(<CycleGameContainer />);
     idleFor(31);
-    expect(claims.cycle_ace).toBeUndefined();
-    expect(cleared()).toEqual([{ equipmentId: 'cycle_ace', userId: 'user_1', idleMs: expect.any(Number) }]);
+    expect(claims.bike_b).toBeUndefined();
+    expect(cleared()).toEqual([{ equipmentId: 'bike_b', userId: 'user_1', idleMs: expect.any(Number) }]);
     expect(cleared()[0].idleMs).toBeGreaterThan(30 * MIN);
     expect(logsOf('info', 'cycle_game.rider_unassigned')).toEqual([
-      expect.objectContaining({ equipmentId: 'cycle_ace', control: 'lobby.auto-clear' })
+      expect.objectContaining({ equipmentId: 'bike_b', control: 'lobby.auto-clear' })
     ]);
     // The grid shows the bike free.
     expect(view.getByTestId('cycle-game-home')).toBeTruthy();
@@ -113,20 +113,20 @@ describe('CycleGameContainer — stale rider claims clear themselves', () => {
   it('leaves a claim idle for 29 minutes', () => {
     render(<CycleGameContainer />);
     idleFor(29);
-    expect(claims.cycle_ace).toBe('user_1');
+    expect(claims.bike_b).toBe('user_1');
     expect(cleared()).toEqual([]);
   });
 
   it('pedalling counts as activity: idle is measured from the last turn of the pedals', () => {
     render(<CycleGameContainer />);
     idleFor(20);
-    rpmByBike.cycle_ace = 60;
+    rpmByBike.bike_b = 60;
     act(() => { vi.advanceTimersByTime(2000); });
-    rpmByBike.cycle_ace = 0;
+    rpmByBike.bike_b = 0;
     idleFor(25); // 45 min since the claim, 25 since the pedals turned
-    expect(claims.cycle_ace).toBe('user_1');
+    expect(claims.bike_b).toBe('user_1');
     idleFor(6);
-    expect(claims.cycle_ace).toBeUndefined();
+    expect(claims.bike_b).toBeUndefined();
   });
 
   it('a fresh claim survives with no cadence while an old one beside it is cleared', () => {
@@ -134,17 +134,17 @@ describe('CycleGameContainer — stale rider claims clear themselves', () => {
     idleFor(20);
     claims.tricycle = 'user_2'; // claimed outside the picker (rider-select button)
     idleFor(11);
-    expect(claims.cycle_ace).toBeUndefined();
+    expect(claims.bike_b).toBeUndefined();
     expect(claims.tricycle).toBe('user_2');
-    expect(cleared().map((c) => c.equipmentId)).toEqual(['cycle_ace']);
+    expect(cleared().map((c) => c.equipmentId)).toEqual(['bike_b']);
   });
 
   it('a bike that changes hands is a fresh claim', () => {
     render(<CycleGameContainer />);
     idleFor(29);
-    claims.cycle_ace = 'user_2'; // someone else sits down
+    claims.bike_b = 'user_2'; // someone else sits down
     idleFor(5);
-    expect(claims.cycle_ace).toBe('user_2');
+    expect(claims.bike_b).toBe('user_2');
     expect(cleared()).toEqual([]);
   });
 
@@ -165,12 +165,12 @@ describe('CycleGameContainer — stale rider claims clear themselves', () => {
     if (anyway) act(() => { fireEvent.click(anyway); });
     expect(view.getByTestId('cycle-game-start').textContent).toContain('Starting');
     act(() => { vi.advanceTimersByTime(1000); }); // the 31-minute sweep, mid-lookup
-    expect(claims.cycle_ace).toBe('user_1');
+    expect(claims.bike_b).toBe('user_1');
     expect(cleared()).toEqual([]);
   });
 
   it('never during a race or on the results board; on the way back to the lobby it is', async () => {
-    claims = { cycle_ace: 'user_1', tricycle: 'user_2' };
+    claims = { bike_b: 'user_1', tricycle: 'user_2' };
     const view = render(<CycleGameContainer />);
     idleFor(29);
     act(() => { fireEvent.click(view.getByTestId('course-time')); });
@@ -191,10 +191,10 @@ describe('CycleGameContainer — stale rider claims clear themselves', () => {
     act(() => { fireEvent.pointerDown(view.getByTestId('race-results')); });
     idleFor(5);
     expect(view.getByTestId('race-results')).toBeTruthy();
-    expect(claims).toEqual({ cycle_ace: 'user_1', tricycle: 'user_2' });
+    expect(claims).toEqual({ bike_b: 'user_1', tricycle: 'user_2' });
     expect(cleared()).toEqual([]);
     act(() => { fireEvent.click(view.getByTestId('race-results-exit')); });
     expect(claims).toEqual({});
-    expect(cleared().map((c) => c.equipmentId).sort()).toEqual(['cycle_ace', 'tricycle']);
+    expect(cleared().map((c) => c.equipmentId).sort()).toEqual(['bike_b', 'tricycle']);
   });
 });

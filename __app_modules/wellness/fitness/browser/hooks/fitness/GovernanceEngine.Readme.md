@@ -195,7 +195,7 @@ governance:
             # existing zone / vibration selections...
             - type: cycle
               label: "Cycle sprint"
-              equipment: cycle_ace
+              equipment: bike_b
               weight: 1
               user_cooldown_seconds: 600
               init:
@@ -212,8 +212,8 @@ governance:
                 max_total_multiplier: 3.0
 
 equipment:
-  - id: cycle_ace
-    cadence: 49904
+  - id: bike_b
+    cadence: 10102
     eligible_users: [user_1, user_2, user_3]   # REQUIRED for cycle challenges
     ...
 ```

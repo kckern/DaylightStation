@@ -44,7 +44,7 @@ describe('Skyline Glider HTTP API', () => {
     const calls = [];
     const server = app({ logger: { error() {}, info: (...args) => calls.push(args) } });
     const payload = {
-      runId: 'run-live', riderId: 'test-rider', equipmentId: 'niceday',
+      runId: 'run-live', riderId: 'test-rider', equipmentId: 'bike_a',
       courseId: 'mountain-pass', courseVersion: 3, courseTime: 42.5,
       inputMode: 'inferred-slowdown', reason: 'pagehide',
     };

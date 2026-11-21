@@ -54,7 +54,7 @@ describe('computeDistanceDelta', () => {
 
 describe('resolveWheelCircumferenceM', () => {
   it('returns the configured wheel size', () => {
-    expect(resolveWheelCircumferenceM({ id: 'cycle_ace', wheel_circumference_m: 2.1 })).toBe(2.1);
+    expect(resolveWheelCircumferenceM({ id: 'bike_b', wheel_circumference_m: 2.1 })).toBe(2.1);
     expect(resolveWheelCircumferenceM({ id: 'ab_roller', wheel_circumference_m: 1.4 })).toBe(1.4);
   });
   it('falls back to the default when the bike has no usable wheel size (never 0)', () => {

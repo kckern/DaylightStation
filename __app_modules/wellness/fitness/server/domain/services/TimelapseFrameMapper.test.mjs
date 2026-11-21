@@ -14,7 +14,7 @@ function fakeSession() {
       tick_count: 12,
       series: {
         // RLE-encoded JSON strings (as persisted)
-        'bike:7138:rpm': [[80, 6], [90, 6]], // 80 for ticks 0-5, 90 for 6-11
+        'bike:10101:rpm': [[80, 6], [90, 6]], // 80 for ticks 0-5, 90 for 6-11
         'user_1:hr': [[140, 12]],
         'user_1:zone': [['active', 12]]
       },
@@ -85,16 +85,16 @@ test('honors a provided resolveName for participant display names', () => {
 
 test('builds per-bike cadence (equipment + assigned colour); excludes idle bikes', () => {
   const s = fakeSession();
-  s.timeline.series['bike:7138:rpm'] = [[66, 12]];
-  s.timeline.series['bike:49904:rpm'] = [[0, 12]];   // idle -> excluded
+  s.timeline.series['bike:10101:rpm'] = [[66, 12]];
+  s.timeline.series['bike:10102:rpm'] = [[0, 12]];   // idle -> excluded
   const frames = new TimelapseFrameMapper().buildFrames(s, {
     speedup: 10, outputFps: 10,
-    cadenceDevices: { 7138: 'niceday', 49904: 'cycle_ace' },
-    cadenceColors: { 7138: 'orange', 49904: 'yellow' }
+    cadenceDevices: { 10101: 'bike_a', 10102: 'bike_b' },
+    cadenceColors: { 10101: 'orange', 10102: 'yellow' }
   });
   const cad = frames[50].cadence;
   assert.equal(cad.length, 1);
-  assert.equal(cad[0].equipment, 'niceday');
+  assert.equal(cad[0].equipment, 'bike_a');
   assert.equal(cad[0].rpm, 66);
   assert.equal(cad[0].color, '#ff922b');   // orange via strapColors SSOT
 });

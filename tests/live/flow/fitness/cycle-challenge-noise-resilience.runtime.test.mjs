@@ -26,8 +26,9 @@
 
 import { test, expect } from '@playwright/test';
 import { FRONTEND_URL } from '#fixtures/runtime/urls.mjs';
+import { getCycleTestBikes } from '../../../_lib/fitnessTestBikes.mjs';
 
-const CYCLE_EQUIPMENT_ID = 'cycle_ace';
+const [{ id: CYCLE_EQUIPMENT_ID }] = getCycleTestBikes();
 
 test.describe('Cycle overlay noise resilience', () => {
   test.setTimeout(180000);
@@ -86,17 +87,17 @@ test.describe('Cycle overlay noise resilience', () => {
     );
 
     // Discover cycle selection + rider.
-    const { selectionId, riderId } = await page.evaluate(() => {
+    const { selectionId, riderId } = await page.evaluate((bikeId) => {
       const ctl = window.__fitnessSimController;
-      const eq = ctl.getEquipment().find((e) => e.equipmentId === 'cycle_ace');
-      const sel = ctl.listCycleSelections().find((s) => s.equipment === 'cycle_ace');
+      const eq = ctl.getEquipment().find((e) => e.equipmentId === bikeId);
+      const sel = ctl.listCycleSelections().find((s) => s.equipment === bikeId);
       return {
         selectionId: sel?.id || null,
         riderId: eq?.eligibleUsers?.[0] || null
       };
-    });
-    expect(selectionId, 'cycle_ace selection should exist').toBeTruthy();
-    expect(riderId, 'cycle_ace should have at least one eligible rider').toBeTruthy();
+    }, CYCLE_EQUIPMENT_ID);
+    expect(selectionId, `${CYCLE_EQUIPMENT_ID} selection should exist`).toBeTruthy();
+    expect(riderId, `${CYCLE_EQUIPMENT_ID} should have at least one eligible rider`).toBeTruthy();
 
     // Activate two HR participants so the engine reaches 'unlocked'.
     await page.evaluate(() => {

@@ -11,6 +11,7 @@ vi.mock('../../../../../frontend/src/lib/logging/Logger.js', () => ({
 }));
 
 import { useFitnessBluetooth, BT_TOPICS } from './useFitnessBluetooth.js';
+import { isRemoteHeld } from '../lib/remoteButtons/remoteButtonHolds.js';
 
 describe('useFitnessBluetooth', () => {
   let sent;
@@ -192,5 +193,25 @@ describe('useFitnessBluetooth', () => {
     act(() => { result.current.handleMessage({ topic: 'bt.pair.progress', requestId: id, phase: 'pairing', mode: 'address' }); });
     act(() => result.current.resetAfterReconnect());
     expect(result.current.bluetooth.pairing).toMatchObject({ phase: 'done', reason: 'interrupted' });
+  });
+  it('a claimed remote has its presses go only to the newest claimant; others still fan out', () => {
+    const { result } = setup();
+    const listener = vi.fn(); const first = vi.fn(); const second = vi.fn();
+    act(() => { result.current.bluetooth.subscribeRemoteKeys(listener); });
+    let releaseFirst; let releaseSecond;
+    act(() => { releaseFirst = result.current.bluetooth.claimRemoteKeys('aa:bb:cc:00:00:01', first); });
+    act(() => { releaseSecond = result.current.bluetooth.claimRemoteKeys('AA:BB:CC:00:00:01', second); });
+    const press = { topic: 'bt.remote.key', address: 'AA:BB:CC:00:00:01', key: 'ButtonA', state: 'down' };
+    const other = { topic: 'bt.remote.key', address: 'AA:BB:CC:00:00:02', key: 'AudioVolumeUp', state: 'down' };
+    act(() => { result.current.handleMessage(press); result.current.handleMessage(other); });
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(first).not.toHaveBeenCalled();
+    expect(listener.mock.calls.map(([m]) => m.address)).toEqual(['AA:BB:CC:00:00:02']);
+    act(() => { releaseSecond(); result.current.handleMessage(press); });
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(isRemoteHeld('AA:BB:CC:00:00:01')).toBe(true);
+    act(() => { releaseFirst(); result.current.handleMessage(press); });
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(isRemoteHeld('AA:BB:CC:00:00:01')).toBe(false);
   });
 });

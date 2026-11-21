@@ -19,7 +19,7 @@ describe('GovernanceEngine cycle config parsing', () => {
           interval: [30, 120],
           selections: [{
             type: 'cycle',
-            equipment: 'cycle_ace',
+            equipment: 'bike_b',
             hi_rpm_range: [50, 90],
             segment_count: [3, 5],
             segment_duration_seconds: [20, 45],
@@ -31,7 +31,7 @@ describe('GovernanceEngine cycle config parsing', () => {
     });
     const sel = policies[0].challenges[0].selections[0];
     expect(sel.type).toBe('cycle');
-    expect(sel.equipment).toBe('cycle_ace');
+    expect(sel.equipment).toBe('bike_b');
     expect(sel.hiRpmRange).toEqual([50, 90]);
     expect(sel.segmentCount).toEqual([3, 5]);
     expect(sel.segmentDurationSeconds).toEqual([20, 45]);
@@ -53,7 +53,7 @@ describe('GovernanceEngine cycle config parsing', () => {
           interval: [60, 60],
           selections: [{
             type: 'cycle',
-            equipment: 'cycle_ace',
+            equipment: 'bike_b',
             hi_rpm_range: [50, 90],
             segment_count: [3, 5],
             segment_duration_seconds: [20, 45],
@@ -90,7 +90,7 @@ describe('GovernanceEngine cycle config parsing', () => {
           interval: [60, 60],
           selections: [{
             type: 'cycle',
-            equipment: 'cycle_ace',
+            equipment: 'bike_b',
             phases: [
               { hi_rpm: 60, lo_rpm: 45, ramp_seconds: 15, maintain_seconds: 30 },
               { hi_rpm: 70, lo_rpm: 55, ramp_seconds: 20, maintain_seconds: 45 }
@@ -126,7 +126,7 @@ describe('GovernanceEngine cycle config parsing', () => {
           interval: [60, 60],
           selections: [{
             type: 'cycle',
-            equipment: 'cycle_ace',
+            equipment: 'bike_b',
             hi_rpm_range: [50, 90],
             segment_count: [3, 5],
             segment_duration_seconds: [20, 45],
@@ -155,7 +155,7 @@ describe('GovernanceEngine cycle config parsing', () => {
           interval: [60, 60],
           selections: [{
             type: 'cycle',
-            equipment: 'cycle_ace',
+            equipment: 'bike_b',
             phases: [
               { hi_rpm: 60, lo_rpm: 45, ramp_seconds: 15, maintain_seconds: 30 },
               { hi_rpm: 'garbage' }  // should be dropped

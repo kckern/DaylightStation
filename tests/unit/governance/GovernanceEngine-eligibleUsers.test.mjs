@@ -10,13 +10,13 @@ describe('GovernanceEngine eligible users lookup', () => {
     const session = {
       _deviceRouter: {
         getEquipmentCatalog: () => [
-          { id: 'cycle_ace', eligible_users: ['user_1', 'user_2'] },
+          { id: 'bike_b', eligible_users: ['user_1', 'user_2'] },
           { id: 'tricycle', eligible_users: ['user_3'] }
         ]
       }
     };
     const engine = new GovernanceEngine(session);
-    expect(engine._getEligibleUsers('cycle_ace')).toEqual(['user_1', 'user_2']);
+    expect(engine._getEligibleUsers('bike_b')).toEqual(['user_1', 'user_2']);
     expect(engine._getEligibleUsers('tricycle')).toEqual(['user_3']);
     expect(engine._getEligibleUsers('unknown')).toEqual([]);
   });
@@ -29,22 +29,22 @@ describe('GovernanceEngine eligible users lookup', () => {
   it('returns empty array when equipment has no eligible_users field', () => {
     const session = {
       _deviceRouter: {
-        getEquipmentCatalog: () => [{ id: 'cycle_ace' }]  // no eligible_users
+        getEquipmentCatalog: () => [{ id: 'bike_b' }]  // no eligible_users
       }
     };
     const engine = new GovernanceEngine(session);
-    expect(engine._getEligibleUsers('cycle_ace')).toEqual([]);
+    expect(engine._getEligibleUsers('bike_b')).toEqual([]);
   });
 
   it('returns a copy, not a reference', () => {
     const session = {
       _deviceRouter: {
-        getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['user_1'] }]
+        getEquipmentCatalog: () => [{ id: 'bike_b', eligible_users: ['user_1'] }]
       }
     };
     const engine = new GovernanceEngine(session);
-    const result = engine._getEligibleUsers('cycle_ace');
+    const result = engine._getEligibleUsers('bike_b');
     result.push('user_2');
-    expect(engine._getEligibleUsers('cycle_ace')).toEqual(['user_1']);
+    expect(engine._getEligibleUsers('bike_b')).toEqual(['user_1']);
   });
 });

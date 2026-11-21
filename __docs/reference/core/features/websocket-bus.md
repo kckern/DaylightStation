@@ -282,10 +282,10 @@ The controller connects as a WebSocket **client** to the backend server:
   "type": "ant",
   "timestamp": "2024-01-15T10:30:00.000Z",
   "profile": "HR",
-  "deviceId": 7138,
+  "deviceId": 10101,
   "dongleIndex": 0,
   "data": {
-    "DeviceID": 7138,
+    "DeviceID": 10101,
     "ComputedHeartRate": 142,
     "BeatCount": 1523,
     "BeatTime": 45678,
@@ -309,7 +309,7 @@ The controller connects as a WebSocket **client** to the backend server:
 The controller supports multiple ANT+ USB dongles simultaneously, allowing more sensors to be tracked. Each dongle operates on its own channel and can receive from multiple sensors.
 
 ```
-Dongle 0: HR sensors (deviceId 7138, 7183)
+Dongle 0: HR sensors (deviceId 10101, 7183)
 Dongle 1: Cadence sensors (deviceId 8001)
 Dongle 2: Power meters
 ```

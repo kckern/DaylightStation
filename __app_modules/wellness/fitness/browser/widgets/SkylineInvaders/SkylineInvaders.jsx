@@ -41,6 +41,7 @@ import useInvadersBoost from './useInvadersBoost.js';
 import useInvadersFire from './useInvadersFire.js';
 import useInvadersSetup from './useInvadersSetup.js';
 import useMenuInput from './useMenuInput.js';
+import { useRemoteButtonsHold } from '../../lib/remoteButtons/remoteButtonsContext.js';
 import './SkylineInvaders.scss';
 
 // The Skyline Invaders shell: loads the levels, runs the menu screens, drives
@@ -609,6 +610,10 @@ function SkylineInvadersGame({ onClose }) {
 
   // Gamepad B pauses, as Escape does.
   useGamepadKeys(phase === 'playing', (key) => { if (key === 'Escape') pause('player'); });
+
+  // A round ignores pads and keys; a Bluetooth remote's set buttons stay
+  // quiet too (remoteButtonRuntime), so no remote moves or pauses anything.
+  useRemoteButtonsHold(ROUND_PHASES.includes(phase), 'skyline-invaders');
 
   // ── The way out ───────────────────────────────────────────────────────────
   // Leaving is always allowed and never waits. A round in play is saved as

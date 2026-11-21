@@ -60,6 +60,22 @@ because `setupSettingsMenu()` resets `gamepadSelection` to `[]`.
 Power-cycling the pad after a game loads is the manual equivalent, and is the
 workaround if this ever regresses.
 
+## Remote input (`pressInput`)
+
+Bluetooth remotes the Gamepad API cannot see drive the game through
+`engine.pressInput(index, value, player)`, which calls EmulatorJS's own input
+API `gameManager.simulateInput` (the call its keyboard, gamepad and on-screen
+pad handlers make; listed in `ejsContract.js`). It refuses before `started`.
+Callers never use it directly: they hold an `IEmulatorInput` port
+(`ports/IEmulatorInput.js`), and `adapters/EmulatorJSInputAdapter.js` is the
+EmulatorJS implementation that knows the control indices. See "Remotes as a
+game controller" in [the Bluetooth screen doc](controller-pairing.md).
+
+The core reads input once per frame, so a press and release inside one frame
+is lost. Real presses last far longer than a frame at 60 fps; a headless
+harness under SwiftShader runs at a few frames a second, so its presses must be
+held for a second or more.
+
 ## Volume
 
 `EJS_volume` must carry the user's **persisted** level. EmulatorJS re-asserts

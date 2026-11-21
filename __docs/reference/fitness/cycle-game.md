@@ -189,7 +189,7 @@ React phases in `applySnapshot()`.
 
 The garage screen once told a child *"Did Not Finish — Stopped pedaling for 30s"* while he was
 pedalling (nothing on screen says DNF any more). His cadence sensor had sent nothing for four minutes. Verified in production: the
-`niceday` bike's ANT+ sensor emitted no packets at all across three races that each forfeited him
+`bike_a` bike's ANT+ sensor emitted no packets at all across three races that each forfeited him
 at the threshold with rpm 0, then woke, and his very next race registered 73 rpm. On the same day
 there were 29 `sensor_lost` events against 13 `sensor_recovered`, across all five machines.
 
@@ -1108,7 +1108,7 @@ race:
 participants:
   <userId>:
     display_name: "User_3"
-    equipment: "cycle_ace"
+    equipment: "bike_b"
     final_distance_m: 3000
     final_time_s: 142          # null if the rider did not finish / time race
     placement: 1               # null if unplaced

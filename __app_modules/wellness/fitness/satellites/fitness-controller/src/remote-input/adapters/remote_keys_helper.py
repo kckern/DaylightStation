@@ -1,24 +1,30 @@
 #!/usr/bin/env python3
-"""Bluetooth remote key reader: one JSON line per event on stdout.
+"""Bluetooth remote input reader: one JSON line per event on stdout.
+
+Usage: remote_keys_helper.py [kernel|gatt]   (no argument = both)
 
 Reads every Bluetooth input device that is NOT a game pad (pads go through the
-browser Gamepad API) straight from the kernel, tagged with the device's
-Bluetooth address, so two remotes of the same model stay apart. The browser
-cannot do this: a KeyboardEvent carries no device identity.
+browser Gamepad API), tagged with the device's Bluetooth address, so two
+remotes of the same model stay apart. The browser cannot do this: a
+KeyboardEvent carries no device identity. Two modes, each reached from Node
+through its own adapter (src/remote-input/adapters/):
 
-Lines:
-  {"type":"open","address","name","node"}           a device node was opened
+kernel  (LinuxEvdevRemoteSource) - evdev key events + hidraw reports:
+  {"type":"open","address","name","node","kind"}    a device node was opened
   {"type":"gone","address","node"}                   it went away (sleep/reconnect)
   {"type":"key","address","name","code","scan","state"}
         code  = kernel KEY_* number; scan = HID usage from MSC_SCAN (or null)
         state = "down" | "up" | "repeat"
   {"type":"unmapped","address","report"}             a raw HID report with
         non-zero data that produced no key event: a button the kernel drops.
-  {"type":"gatt","address","name","att","value"}     an ATT notification from a
-        remote (read off the HCI monitor channel, like btmon). Some remotes send
-        input on a HID report their own report map does not declare, so BlueZ
-        receives it and the kernel drops it (Magicsee R1 gamepad mode: 2-byte
-        reports on ATT handle 0x001f). remoteKeys.mjs decodes known ones.
+
+gatt  (BluezGattReportSource) - ATT notifications off the HCI monitor channel
+  (like btmon), connection handles mapped to addresses with `hcitool con`:
+  {"type":"gatt","address","name","att","value"}     a notification from a
+        remote the kernel lists. Some remotes send input on a HID report their
+        own report map does not declare, so BlueZ receives it and the kernel
+        drops it; the app's report decoders (input.yml) say what it means.
+  {"type":"monitor-unavailable"}
 
 Devices are rediscovered every 2 s, so a remote that sleeps and reconnects
 (new event/hidraw nodes) is picked up again. Never grabs: keys still reach X.
@@ -133,16 +139,18 @@ def parse_monitor(frame, handles):
     return None
 
 
-def main():
+def main(mode=None):
+    read_kernel = mode in (None, "kernel")
+    read_gatt = mode in (None, "gatt")
     open_fds = {}          # fd -> (path, kind, addr, name)
     scan = {}              # fd -> last MSC_SCAN value
     last_key = {}          # addr -> monotonic time of last key event
     pending = []           # [(t, addr, hex)] raw reports awaiting a key
     next_discover = 0.0
     names = {}             # ADDRESS -> HID name, for remotes we read
-    monitor = open_monitor()
+    monitor = open_monitor() if read_gatt else None
     handles = connection_handles() if monitor else {}
-    if monitor is None:
+    if read_gatt and monitor is None:
         emit({"type": "monitor-unavailable"})
     while True:
         now = time.monotonic()
@@ -154,7 +162,7 @@ def main():
             for _p, (kind, addr, name) in found.items():
                 if kind == "raw" or addr not in names:
                     names[addr] = name
-            for path, (kind, addr, name) in found.items():
+            for path, (kind, addr, name) in (found.items() if read_kernel else ()):
                 if path in known:
                     continue
                 try:
@@ -230,7 +238,10 @@ def main():
 
 
 if __name__ == "__main__":
+    arg = sys.argv[1] if len(sys.argv) > 1 else None
+    if arg not in (None, "kernel", "gatt"):
+        sys.exit("usage: remote_keys_helper.py [kernel|gatt]")
     try:
-        main()
+        main(arg)
     except KeyboardInterrupt:
         pass

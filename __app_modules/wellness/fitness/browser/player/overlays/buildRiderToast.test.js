@@ -3,16 +3,16 @@ import { buildRiderToast } from "./buildRiderToast.js";
 
 const resolvers = {
   resolveUserName: (uid) => ({ user_2: 'User_2' }[uid] || uid),
-  resolveEquipmentName: (eid) => ({ niceday: 'NiceDay' }[eid] || eid),
+  resolveEquipmentName: (eid) => ({ bike_a: 'Bike A' }[eid] || eid),
 };
 
 describe('buildRiderToast', () => {
   it('builds an avatar/title/subtitle payload from a rider_select event', () => {
-    const toast = buildRiderToast({ userId: 'user_2', equipmentId: 'niceday' }, resolvers);
+    const toast = buildRiderToast({ userId: 'user_2', equipmentId: 'bike_a' }, resolvers);
     expect(toast).toEqual({
       avatarUrl: '/api/v1/static/img/users/user_2',
       title: 'User_2',
-      subtitle: 'is riding the NiceDay',
+      subtitle: 'is riding the Bike A',
       variant: 'success',
     });
   });

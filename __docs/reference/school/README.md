@@ -2051,11 +2051,11 @@ Four traps worth knowing before editing any of that:
   per-reader override block and throws on an unknown reader id, so a nested
   `school: {learner: x}` fails at boot. Hence the flat `school_learner`.
 - **UIDs are canonical: lowercase, separators stripped.** Readers disagree — the
-  audiobook readers write `04_66_9c_0f_cb_2a_81`, the omr-relay's ST25R3916
-  reports `04669C0FCB2A81`. Before canonicalization those were two identities and
+  audiobook readers write `04_f0_00_00_00_00_05`, the omr-relay's ST25R3916
+  reports `04F00000000005`. Before canonicalization those were two identities and
   a registered card could read as unknown.
 - **Keys must stay QUOTED in YAML.** A separator-free hex uid can be valid
-  scientific notation: `838e6806` and `0421e521470289` both parse as float
+  scientific notation: `838e6806` and `0410e500000002` both parse as float
   `Infinity`, so an unquoted dump collapses two distinct tags into one duplicated
   mapping key and the file stops parsing. js-yaml quotes them correctly; a
   hand-rolled migration script did not. Locked down in

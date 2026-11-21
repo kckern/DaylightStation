@@ -10,7 +10,7 @@ from bt_pair_match import (  # noqa: E402
     address_step,
 )
 
-SFC30 = {"Address": "E4:17:D8:C6:54:F0", "Name": "8Bitdo SFC30 GamePad", "Icon": "input-gaming"}
+SFC30 = {"Address": "E4:17:D8:00:00:10", "Name": "8Bitdo SFC30 GamePad", "Icon": "input-gaming"}
 TARGETS = compile_targets([{"id": "8bitdo_sfc30", "label": "8BitDo SFC30",
                             "name": "8Bitdo|SFC30", "macPrefix": "E4:17:D8"}])
 
@@ -199,7 +199,7 @@ class Passkey(unittest.TestCase):
 
 PROC = """I: Bus=0005 Vendor=2dc8 Product=2830 Version=0001
 N: Name="8Bitdo SFC30 GamePad"
-U: Uniq=e4:17:d8:c6:54:f0
+U: Uniq=e4:17:d8:00:00:10
 H: Handlers=event5 js0
 
 I: Bus=0005 Vendor=0000 Product=0000 Version=0000
@@ -211,7 +211,7 @@ H: Handlers=kbd event6
 
 class InputDevicePresent(unittest.TestCase):
     def test_by_uniq(self):
-        self.assertTrue(input_device_present(PROC, "E4:17:D8:C6:54:F0"))
+        self.assertTrue(input_device_present(PROC, "E4:17:D8:00:00:10"))
 
     def test_name_fallback_only_when_uniq_blank(self):
         self.assertTrue(input_device_present(PROC, "11:22:33:44:55:66", "R1"))

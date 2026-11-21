@@ -199,7 +199,7 @@ Production config lives at `data/household/playback-hub/config.yml` in the Dayli
 devices:
   - slot: 1                              # 1..5
     color: red                           # human label, used in /api/play targets
-    mac: 41:42:3A:E5:43:07
+    mac: AA:BB:CC:00:30:07
     class: private                       # private | public — gates the speaker bulb
     name: musiCozy
     queue: '674397'                      # fallback queue (Plex ratingKey or url)

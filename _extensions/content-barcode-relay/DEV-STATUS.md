@@ -25,7 +25,7 @@ not); keep it docked to keep the DS2278 charged, or provide another charge metho
 Scan the **"HID Bluetooth Low Energy (Discoverable)"** host barcode from the DS2278 Product
 Reference Guide (p.6-6, "Human Interface Device (HID) Keyboard Emulation" — the **Low Energy**
 one, not Classic). The scanner then advertises as a standard BLE HID keyboard:
-- Name `DS2278 <serial>`, MAC **`C8:1C:FE:FD:CE:90`**, appearance `0x03C1` (keyboard), service `0x1812`.
+- Name `DS2278 <serial>`, MAC **`AA:BB:CC:00:40:01`**, appearance `0x03C1` (keyboard), service `0x1812`.
 That MAC is the `TARGET_MAC` in `firmware/src/main.cpp`.
 
 ## Firmware (`firmware/src/main.cpp`)

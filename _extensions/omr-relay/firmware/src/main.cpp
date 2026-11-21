@@ -90,7 +90,7 @@ static TaskHandle_t nfcTaskHandle = nullptr;
 // message over the same bus link the sheets use.
 //
 // Verified on hardware 2026-07-29: the chip answers at I2C 0x50 with IC Identity
-// 0x2A (ic_type 5, silicon rev 2), and an NTAG 215 read as uid 04669C0FCB2A81.
+// 0x2A (ic_type 5, silicon rev 2), and an NTAG 215 read as uid 04F00000000005.
 //
 // WHY THIS RUNS ON ITS OWN CORE: a FAILED detect() blocks for its entire timeout.
 // The UART reader in loop() is the only hard real-time path in this firmware — at

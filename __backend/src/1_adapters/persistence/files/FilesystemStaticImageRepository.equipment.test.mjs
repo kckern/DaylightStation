@@ -14,7 +14,7 @@ beforeAll(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'equip-img-'));
   fs.mkdirSync(path.join(root, 'equipment'));
   fs.writeFileSync(path.join(root, 'equipment', 'peddler.jpg'), Buffer.from([0xff, 0xd8, 0xff]));
-  fs.writeFileSync(path.join(root, 'equipment', 'niceday.jpg'), Buffer.from([0xff, 0xd8, 0xfe]));
+  fs.writeFileSync(path.join(root, 'equipment', 'bike_a.jpg'), Buffer.from([0xff, 0xd8, 0xfe]));
 });
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -29,20 +29,20 @@ describe('equipment image resolution', () => {
   });
 
   it('still finds equipment whose id names its file, with no declaration', async () => {
-    const image = await repo({ generic_pedaler: 'peddler.jpg' }).getImage('equipment', 'niceday');
-    expect(image?.identity).toBe('equipment/niceday.jpg');
+    const image = await repo({ generic_pedaler: 'peddler.jpg' }).getImage('equipment', 'bike_a');
+    expect(image?.identity).toBe('equipment/bike_a.jpg');
   });
 
   it('behaves as before when no map is supplied at all', async () => {
     const bare = new FilesystemStaticImageRepository({ imgBasePath: root });
-    expect((await bare.getImage('equipment', 'niceday'))?.identity).toBe('equipment/niceday.jpg');
+    expect((await bare.getImage('equipment', 'bike_a'))?.identity).toBe('equipment/bike_a.jpg');
     expect(await bare.getImage('equipment', 'generic_pedaler')).toBeNull();
   });
 
   it('does not silently fall back to the id when a declared filename is missing', async () => {
     // A typo in config must surface as the generic icon, not as a lucky
     // id-derived hit that hides the typo forever.
-    const image = await repo({ niceday: 'nicedya.jpg' }).getImage('equipment', 'niceday');
+    const image = await repo({ bike_a: 'bike-a-photo.jpg' }).getImage('equipment', 'bike_a');
     expect(image).toBeNull();
   });
 
@@ -66,8 +66,8 @@ describe('equipment under the generic image route', () => {
 
   it('still resolves undeclared equipment by id on that route', async () => {
     const image = await repo({ generic_pedaler: 'peddler.jpg' })
-      .getImage('image', 'equipment/niceday');
-    expect(image?.identity).toBe('equipment/niceday.jpg');
+      .getImage('image', 'equipment/bike_a');
+    expect(image?.identity).toBe('equipment/bike_a.jpg');
   });
 
   it('leaves non-equipment image paths alone', async () => {

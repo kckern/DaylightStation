@@ -38,7 +38,7 @@ describe('YamlReadingLogStore', () => {
 
   it('appends a read and reads it back for that study day', async () => {
     const store = makeStore();
-    await store.append({ learnerId: 'user_5', studyDay: '2026-08-26', at: '2026-08-26T18:04:00.000Z', contentId: 'plex:620681', title: 'The Jungle Book', tagUid: '04215172cc2a81', location: 'livingroom' });
+    await store.append({ learnerId: 'user_5', studyDay: '2026-08-26', at: '2026-08-26T18:04:00.000Z', contentId: 'plex:620681', title: 'The Jungle Book', tagUid: '04f00000000001', location: 'livingroom' });
     const rows = await store.listForDay('user_5', '2026-08-26');
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ contentId: 'plex:620681', title: 'The Jungle Book' });

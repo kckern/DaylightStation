@@ -647,14 +647,14 @@
 
       try {
         const equipment = controller.getEquipment?.() || [];
-        const cycleAce = equipment.find(e => e.equipmentId === 'cycle_ace');
-        if (!cycleAce) { alert('No cycle_ace equipment found.'); return; }
-
+        // First cycle selection whose bike is in the catalog (household config).
         const selections = controller.listCycleSelections?.() || [];
-        const sel = selections.find(s => s.equipment === 'cycle_ace');
-        if (!sel) { alert('No cycle selection found in policy set.'); return; }
+        const sel = selections.find(s => equipment.some(e => e.equipmentId === s.equipment));
+        if (!sel) { alert('No cycle selection with a bike in the catalog.'); return; }
+        const bike = equipment.find(e => e.equipmentId === sel.equipment);
+        const bikeId = bike.equipmentId;
 
-        const riderId = cycleAce.eligibleUsers?.[0];
+        const riderId = bike.eligibleUsers?.[0];
 
         // 1. Activate two HR devices
         setDemoStatus('1/8 Activating HR session for 2 devices…');
@@ -674,32 +674,32 @@
 
         // 3. INIT — RPM 0
         setDemoStatus('3/8 INIT — RPM 0, slate-blue ring (6s)');
-        setDemoRpm('cycle_ace', 0, false);
+        setDemoRpm(bikeId, 0, false);
         await sleep(6000);
 
         // 4. RAMP — RPM 35
         setDemoStatus('4/8 RAMP — RPM 35, ring should turn warm yellow (6s)');
-        setDemoRpm('cycle_ace', 35, true);
+        setDemoRpm(bikeId, 35, true);
         await sleep(6000);
 
         // 5. MAINTAIN — RPM 75
         setDemoStatus('5/8 MAINTAIN — RPM 75, ring should turn green (8s)');
-        setDemoRpm('cycle_ace', 75, true);
+        setDemoRpm(bikeId, 75, true);
         await sleep(8000);
 
         // 6. LOCKED — RPM 0
         setDemoStatus('6/8 LOCKED — RPM 0, ring red, video dims (8s)');
-        setDemoRpm('cycle_ace', 0, false);
+        setDemoRpm(bikeId, 0, false);
         await sleep(8000);
 
         // 7. RECOVER — RPM 80
         setDemoStatus('7/8 RECOVER — RPM 80, unlocking back to ramp/maintain (8s)');
-        setDemoRpm('cycle_ace', 80, true);
+        setDemoRpm(bikeId, 80, true);
         await sleep(8000);
 
         // 8. PHASES — RPM 85 sustained until clear or timeout
         setDemoStatus('8/8 PHASES — RPM 85, advancing to success…');
-        setDemoRpm('cycle_ace', 85, true);
+        setDemoRpm(bikeId, 85, true);
         const deadline = Date.now() + 120000;
         while (Date.now() < deadline) {
           const gov = window.opener?.__fitnessGovernance;

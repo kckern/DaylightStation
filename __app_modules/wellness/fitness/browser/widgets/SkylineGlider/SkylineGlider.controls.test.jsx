@@ -13,6 +13,7 @@ const gateMocks = vi.hoisted(() => ({
   entitlement: { items: [] },
   registerAdmin: vi.fn(),
   clearUnlock: vi.fn(),
+  library: { input: { controllers: [] } },
 }));
 const mockVolume = { volume: 0.4, muted: false, source: 'global', setVolume: vi.fn(), toggleMute: vi.fn() };
 vi.mock("../../nav/usePersistentVolume.js", () => ({ usePersistentVolume: () => mockVolume }));
@@ -23,7 +24,8 @@ vi.mock('@/lib/kioskEnv.js', () => ({
   isKioskEnv: () => !gateMocks.localDev,
 }));
 vi.mock('@/lib/api.mjs', () => ({
-  DaylightAPI: vi.fn(async () => {
+  DaylightAPI: vi.fn(async (url) => {
+    if (String(url).includes('emulator/library')) return gateMocks.library;
     if (gateMocks.entitlement instanceof Error) throw gateMocks.entitlement;
     return gateMocks.entitlement;
   }),
@@ -40,6 +42,8 @@ vi.mock("../../identity/useIdentity.js", () => ({
 }));
 import SkylineGlider from "./SkylineGlider.jsx";
 import { FlightScene, RpmGauge } from "./SkylineGlider.jsx";
+import { FitnessBluetoothContext } from "../../context/FitnessBluetoothContext.jsx";
+import { isRemoteHeld, resetRemoteButtonHolds } from "../../lib/remoteButtons/remoteButtonHolds.js";
 
 const course = { schema: 'skyline-glider-course/v1', id: 'mountain-pass', version: 1, name: 'Mountain Pass', description: 'A five minute alpine flight.', duration_s: 300, motion: { filter_s: .75, deadband_rpm: 2, response_s: 1.5, max_climb_rate: .3, max_descent_rate: .22, coast_s: 1, disconnect_grace_s: .75 }, rules: { lives: 3, invincibility_s: 1.25, restart_delay_s: 2 }, segments: [
   { id: 'open', type: 'open', start_s: 0, end_s: 300 },
@@ -98,6 +102,7 @@ const flush=()=>act(async()=>{await Promise.resolve();await Promise.resolve()});
 const press=async(position,gesture='single')=>{await act(async()=>{const action=position+'_'+gesture;mockCtx.selectorInputRouter.route({selectorId:'pad',equipmentId:'bike',action,userId:mockCtx.riderSelectors[0].buttons[action]})})};
 const advance=async ms=>{await act(async()=>vi.advanceTimersByTime(ms));await flush()};
 async function mount(options={}){
+ const wrap=options.wrap||(ui=>ui);
  vi.useFakeTimers();rpm=65;
  mockCtx.selectorInputRouter=createSelectorInputRouter();
  mockCtx.riderSelectors=[{id:'pad',equipment:'bike',buttons:{'1_single':'dad','2_single':'other','2_long':'adult'}}];
@@ -107,7 +112,7 @@ async function mount(options={}){
  if(options.nonSchoolAdult)mockCtx.getUserByName=id=>({id,schoolLearner:id!=='adult'});
  const duration=options.duration||100;
  apiFetch.mockResolvedValue({ok:true,json:async()=>({courses:[{...course,duration_s:duration,rules:{...course.rules,weapons:{enabled:!options.noWeapons}},segments:[{id:'finish',type:'finish',start_s:duration}]},...(options.extraCourses||[])]})});
- const view=render(<SkylineGlider/>);await flush();await press(1);await flush();return view;
+ const view=render(wrap(<SkylineGlider/>));await flush();await press(1);await flush();return view;
 }
 async function launch(){await press(4);await advance(4250);await advance(100)}
 describe('complete bike lifecycle',()=>{
@@ -407,3 +412,61 @@ const prior=await apiFetch('/courses');
  });
 });
 
+
+describe('Bluetooth remotes',()=>{
+ // Made-up remotes: one model mounted mirror-image on two handlebars.
+ const BUTTONS={call:'MediaPlayPause',forward:'MediaTrackNext',reverse:'MediaTrackPrevious',plus:'AudioVolumeUp',minus:'AudioVolumeDown'};
+ const RIGHT={id:'right',kind:'remote',address:'AA:BB:CC:00:00:01',buttons:BUTTONS,positions:{up:'forward',down:'reverse',left:'plus',right:'minus',center:'call'},toward:{front:'left',rear:'right'}};
+ const LEFT={id:'left',kind:'remote',address:'AA:BB:CC:00:00:02',buttons:BUTTONS,positions:{up:'reverse',down:'forward',left:'minus',right:'plus',center:'call'},toward:{front:'right',rear:'left'}};
+ let listeners;
+ const bluetooth={subscribeRemoteKeys:fn=>{listeners.add(fn);return ()=>listeners.delete(fn)}};
+ const wrap=ui=><FitnessBluetoothContext.Provider value={{bluetooth}}>{ui}</FitnessBluetoothContext.Provider>;
+ const remote=async(address,key,state='down')=>{await act(async()=>{for(const fn of [...listeners])fn({topic:'bt.remote.key',address,key,state,usage:0,code:0})})};
+ const fires=()=>mockLog.info.mock.calls.filter(([n])=>n==='skyline_glider.input.fire').map(([,d])=>d);
+ beforeEach(()=>{
+  listeners=new Set();resetRemoteButtonHolds();
+  gateMocks.library={input:{controllers:[RIGHT,LEFT]}};
+  mockCtx.equipment=[{id:'bike',name:'Bike',cadence:7,rpm:{min:30,max:100},skyline_glider:{remote:{up:'missile',down:'bomb',front:'boost',center:'laser',rear:'pause'}}}];
+ });
+ afterEach(()=>{gateMocks.library={input:{controllers:[]}};resetRemoteButtonHolds()});
+ it('one remote down fires once through the bike-button path, tagged with its remote and direction',async()=>{
+  const view=await mount({wrap});await flush();await launch();mockLog.info.mockClear();
+  await remote(LEFT.address,'MediaPlayPause');await remote(LEFT.address,'MediaPlayPause','repeat');await remote(LEFT.address,'MediaPlayPause','up');
+  expect(fires()).toEqual([expect.objectContaining({action:'laser',source:'remote',remote:LEFT.address,direction:'center'})]);
+  view.unmount();
+ });
+ it('mirrored remotes agree: plus toward the front is boost on both',async()=>{
+  await mount({wrap});await flush();await launch();mockLog.info.mockClear();
+  await remote(RIGHT.address,'AudioVolumeUp');
+  expect(fires()).toEqual([expect.objectContaining({action:'boost',direction:'front',remote:RIGHT.address})]);
+  expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.input.remote',expect.objectContaining({action:'boost',direction:'front',phase:'flight',position:4}));
+ });
+ it('the browser copy of a remote key does nothing in flight and reaches no one else',async()=>{
+  await mount({wrap});await flush();await launch();mockLog.info.mockClear();
+  const other=vi.fn();window.addEventListener('keydown',other);
+  fireEvent.keyDown(window,{key:'AudioVolumeUp'});fireEvent.keyDown(window,{key:'MediaPlayPause'});
+  window.removeEventListener('keydown',other);
+  expect(other).not.toHaveBeenCalled();
+  expect(fires()).toEqual([]);
+  expect(document.querySelector('[data-control-phase="flight"]')).not.toBeNull();
+ });
+ it('rear opens the flight menu; rear again resumes',async()=>{
+  await mount({wrap});await flush();await launch();
+  await remote(RIGHT.address,'AudioVolumeDown');
+  expect(document.querySelector('[data-control-phase="menu"]')).not.toBeNull();
+  await remote(LEFT.address,'AudioVolumeDown'); // rear on the mirrored remote too: the menu's way back is Resume
+  expect(document.querySelector('[data-control-phase="ready"]')).not.toBeNull();
+ });
+ it('holds every remote while mounted, and lets go on unmount',async()=>{
+  const view=await mount({wrap});await flush();
+  expect(isRemoteHeld(RIGHT.address)).toBe(true);
+  view.unmount();
+  expect(isRemoteHeld(RIGHT.address)).toBe(false);
+ });
+ it('a bike without a remote block neither loads the remotes nor holds them',async()=>{
+  mockCtx.equipment=[{id:'bike',name:'Bike',cadence:7,rpm:{min:30,max:100}}];
+  await mount({wrap});await flush();
+  expect(isRemoteHeld(RIGHT.address)).toBe(false);
+  expect(listeners.size).toBe(0);
+ });
+});

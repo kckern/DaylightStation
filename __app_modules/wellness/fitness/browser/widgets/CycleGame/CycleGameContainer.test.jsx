@@ -31,14 +31,14 @@ const optInRival = (v) => {
 };
 
 function makeCtx(overrides = {}) {
-  const riders = { cycle_ace: 'user_1', tricycle: 'user_2' };
+  const riders = { bike_b: 'user_1', tricycle: 'user_2' };
   const vitals = {
     user_1: { name: 'KC', heartRate: 140, zoneId: 'hot', zoneColor: 'orange' },
     user_2: { name: 'User_2', heartRate: 120, zoneId: 'warm', zoneColor: 'yellow' }
   };
   return {
     equipment: [
-      { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1, eligible_users: ['user_1'] },
+      { id: 'bike_b', name: 'Bike B', cadence: 10102, wheel_circumference_m: 2.1, eligible_users: ['user_1'] },
       { id: 'tricycle', name: 'Tricycle', cadence: 7153, wheel_circumference_m: 1.2 }
     ],
     configuredUsers: [
@@ -90,7 +90,7 @@ describe('CycleGameContainer (smoke)', () => {
 
   it('renders a starting grid slot per bike with the claimed rider', () => {
     const { getByTestId } = render(<CycleGameContainer />);
-    expect(getByTestId('bike-cycle_ace')).toBeTruthy();
+    expect(getByTestId('bike-bike_b')).toBeTruthy();
     expect(getByTestId('bike-tricycle')).toBeTruthy();
   });
 
@@ -116,7 +116,7 @@ describe('CycleGameContainer (smoke)', () => {
     // config, so a rider spinning 186 rpm scored 0 m for the whole race.
     mockCtx = makeCtx({
       equipment: [
-        { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1 },
+        { id: 'bike_b', name: 'Bike B', cadence: 10102, wheel_circumference_m: 2.1 },
         { id: 'tricycle', name: 'Tricycle', cadence: 7153 } // no wheel size
       ]
     });
@@ -137,7 +137,7 @@ describe('CycleGameContainer (smoke)', () => {
       'cycle_game.config',
       expect.objectContaining({
         riders: expect.arrayContaining([
-          expect.objectContaining({ userId: 'user_1', equipmentId: 'cycle_ace', wheelCircumferenceM: 2.1 }),
+          expect.objectContaining({ userId: 'user_1', equipmentId: 'bike_b', wheelCircumferenceM: 2.1 }),
           expect.objectContaining({ userId: 'user_2', equipmentId: 'tricycle', wheelCircumferenceM: DEFAULT_WHEEL_CIRCUMFERENCE_M })
         ])
       })
@@ -235,7 +235,7 @@ function historyFetch(races, { ladder = null, pool = null, byId = {}, pb = null 
   });
 }
 
-function soloCtx(riders = { cycle_ace: 'user_1' }, cycleGameConfig = {}) {
+function soloCtx(riders = { bike_b: 'user_1' }, cycleGameConfig = {}) {
   const base = makeCtx();
   return {
     ...base,
@@ -310,7 +310,7 @@ describe('CycleGameContainer — "Ride it" always races the weekly-course ghost'
   const leadRecord = raceRecord(LEAD_RACE, { user_3: { timeS: 250 }, 'ghost:20261109181504:user_4': { timeS: 260 } });
   const otherRecord = raceRecord(OTHER_RACE, { user_4: { timeS: 270 } });
   const byId = recordsById(leadRecord, otherRecord);
-  const twoRiders = () => soloCtx({ cycle_ace: 'user_1', tricycle: 'user_2' });
+  const twoRiders = () => soloCtx({ bike_b: 'user_1', tricycle: 'user_2' });
 
   beforeEach(() => {
     mockCtx = twoRiders();
@@ -491,7 +491,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
 
     it("reports kind 'none' and starts without a rival when even par cannot be built", async () => {
       // A 5-hour time race is past par's four-hour sample cap.
-      mockCtx = soloCtx({ cycle_ace: 'user_1' }, { time_cap_default_s: 18000 });
+      mockCtx = soloCtx({ bike_b: 'user_1' }, { time_cap_default_s: 18000 });
       const view = await renderLobby([]);
       await startRaceOf(view, 'time');
       const [cfg] = configLogs();
@@ -506,7 +506,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
   });
 
   it('two claimed riders race each other at once: no rival, no lookup, no pace_rival event', async () => {
-    mockCtx = soloCtx({ cycle_ace: 'user_1', tricycle: 'user_2' });
+    mockCtx = soloCtx({ bike_b: 'user_1', tricycle: 'user_2' });
     const view = await renderLobby([raceRecord('20260101100000', { user_1: { timeS: 300 } })]);
     act(() => { fireEvent.click(view.getByTestId('course-distance')); });
     optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
@@ -888,7 +888,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
     });
 
     it('"Ride it" in the same tick as a Start that already launched is ignored', async () => {
-      mockCtx = soloCtx({ cycle_ace: 'user_1', tricycle: 'user_2' });
+      mockCtx = soloCtx({ bike_b: 'user_1', tricycle: 'user_2' });
       const view = await renderLobby([], { ladder, byId });
       act(() => { fireEvent.click(view.getByTestId('course-time')); });
       act(() => {
@@ -1074,7 +1074,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
 
   describe('start guards', () => {
     it('two Start presses in the same tick produce one race', async () => {
-      mockCtx = soloCtx({ cycle_ace: 'user_1', tricycle: 'user_2' });
+      mockCtx = soloCtx({ bike_b: 'user_1', tricycle: 'user_2' });
       const view = await renderLobby([]);
       act(() => { fireEvent.click(view.getByTestId('course-distance')); });
       act(() => {
@@ -1120,7 +1120,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
     });
 
     it('a start invoked after the game has closed does nothing', async () => {
-      mockCtx = soloCtx({ cycle_ace: 'user_1', tricycle: 'user_2' });
+      mockCtx = soloCtx({ bike_b: 'user_1', tricycle: 'user_2' });
       const view = await renderLobby([]);
       const control = window.__cycleGameControl; // a caller still holding the handle
       act(() => { view.unmount(); });
@@ -1133,7 +1133,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
     });
 
     it('a race launched and cancelled in the same tick leaves the lobby startable', async () => {
-      mockCtx = soloCtx({ cycle_ace: 'user_1', tricycle: 'user_2' });
+      mockCtx = soloCtx({ bike_b: 'user_1', tricycle: 'user_2' });
       const view = await renderLobby([]);
       act(() => { fireEvent.click(view.getByTestId('course-distance')); });
       // Both in one batch: the phase state goes idle → countdown → idle without a
@@ -1152,7 +1152,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
     });
 
     it('a launch that throws halfway leaves no half-built race: start_failed, nothing staged, and Start works again', async () => {
-      mockCtx = soloCtx({ cycle_ace: 'user_1', tricycle: 'user_2' });
+      mockCtx = soloCtx({ bike_b: 'user_1', tricycle: 'user_2' });
       const view = await renderLobby([]);
       act(() => { fireEvent.click(view.getByTestId('course-distance')); });
       // The config event is logged after the controller and race meta are set.
@@ -1183,13 +1183,13 @@ describe('CycleGameContainer — automatic pace rival', () => {
     afterEach(() => { vi.useRealTimers(); });
 
     it('a bike claimed by someone else while Start was waiting does not change who is shown', async () => {
-      const claims = { cycle_ace: 'user_1' };
+      const claims = { bike_b: 'user_1' };
       mockCtx = soloCtx(claims);
       const view = await renderLobby([], { pool: never });
       act(() => { fireEvent.click(view.getByTestId('course-distance')); });
       optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
       // Written to the session outside React (hardware rider-select, the simulator).
-      claims.cycle_ace = 'user_2';
+      claims.bike_b = 'user_2';
       claims.tricycle = 'user_1';
       await act(async () => { vi.advanceTimersByTime(1500); });
       await flush();
@@ -1204,9 +1204,9 @@ describe('CycleGameContainer — automatic pace rival', () => {
     });
 
     it("shows the staged rider's live cadence from the bike they were staged on", async () => {
-      const claims = { cycle_ace: 'user_1' };
+      const claims = { bike_b: 'user_1' };
       mockCtx = soloCtx(claims, { staging_buffer_ms: 5000 });
-      mockCtx.fitnessSessionInstance.getEquipmentCadence = (id) => ({ rpm: id === 'cycle_ace' ? 77 : 0, connected: true });
+      mockCtx.fitnessSessionInstance.getEquipmentCadence = (id) => ({ rpm: id === 'bike_b' ? 77 : 0, connected: true });
       const view = await renderLobby([], { pool: never });
       act(() => { fireEvent.click(view.getByTestId('course-distance')); });
       optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
@@ -1223,7 +1223,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
     // Rolling start: the buffer elapsing is the only gate. A rider already
     // pedalling does not hold the race on the "to your bikes" screen.
     it('staging reaches the countdown when the buffer elapses, while a rider is pedalling', async () => {
-      const claims = { cycle_ace: 'user_1' };
+      const claims = { bike_b: 'user_1' };
       mockCtx = soloCtx(claims, { staging_buffer_ms: 5000 });
       mockCtx.fitnessSessionInstance.getEquipmentCadence = () => ({ rpm: 80, connected: true });
       const view = await renderLobby([], { pool: never });
@@ -1243,7 +1243,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
     });
 
     it('shows NO SIGNAL for a staged rider whose bike is not reporting', async () => {
-      const claims = { cycle_ace: 'user_1' };
+      const claims = { bike_b: 'user_1' };
       mockCtx = soloCtx(claims, { staging_buffer_ms: 5000 });
       mockCtx.fitnessSessionInstance.getEquipmentCadence = () => ({ rpm: 0, connected: false });
       const view = await renderLobby([], { pool: never });
@@ -1260,7 +1260,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
   });
 
   it('shows the automatic rival in the staging ("to your bikes") rider strip', async () => {
-    mockCtx = soloCtx({ cycle_ace: 'user_1' }, { staging_buffer_ms: 5000 });
+    mockCtx = soloCtx({ bike_b: 'user_1' }, { staging_buffer_ms: 5000 });
     const view = await renderLobby([raceRecord('20260101100000', { user_1: { timeS: 300 } })]);
     await startRaceOf(view);
     expect(view.getByTestId('cycle-game-staging')).toBeTruthy();
@@ -1315,7 +1315,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
     });
 
     it('par rides at par_speed_kmh from the cycle_game config', async () => {
-      mockCtx = soloCtx({ cycle_ace: 'user_1' }, { par_speed_kmh: 36 });
+      mockCtx = soloCtx({ bike_b: 'user_1' }, { par_speed_kmh: 36 });
       const view = await renderLobby([]);
       await startRaceOf(view);
       raceFiveSeconds();
@@ -1323,7 +1323,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
     });
 
     it('a Start that arrives while a race is running is dropped (sim autostart seam)', async () => {
-      mockCtx = soloCtx({ cycle_ace: 'user_1', tricycle: 'user_2' });
+      mockCtx = soloCtx({ bike_b: 'user_1', tricycle: 'user_2' });
       const view = await renderLobby([]);
       await startRaceOf(view);
       raceFiveSeconds();

@@ -13,9 +13,9 @@ describe('FitnessToast', () => {
   });
 
   it('renders the title and subtitle', () => {
-    render(<FitnessToast toast={{ id: 1, title: 'User_2', subtitle: 'is riding the NiceDay', durationMs: 4000 }} onDone={() => {}} />);
+    render(<FitnessToast toast={{ id: 1, title: 'User_2', subtitle: 'is riding the Bike A', durationMs: 4000 }} onDone={() => {}} />);
     expect(screen.getByText('User_2')).toBeTruthy();
-    expect(screen.getByText('is riding the NiceDay')).toBeTruthy();
+    expect(screen.getByText('is riding the Bike A')).toBeTruthy();
   });
 
   it.each([false, true])('gives contributors the full toast width (achievement %s)', (achievement) => {

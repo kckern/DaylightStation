@@ -18,7 +18,7 @@ describe('GovernanceEngine.onCycleStateChange callback', () => {
     const cb = jest.fn();
     engine.onCycleStateChange = cb;
     engine.challengeState = {
-      activeChallenge: { type: 'cycle', cycleState: 'init', equipment: 'cycle_ace', rider: 'user_2' }
+      activeChallenge: { type: 'cycle', cycleState: 'init', equipment: 'bike_b', rider: 'user_2' }
     };
     engine._updateGlobalState();
     expect(cb).toHaveBeenCalledTimes(1);
@@ -59,14 +59,14 @@ describe('GovernanceEngine.onCycleStateChange callback', () => {
     engine._latestInputs = {
       activeParticipants: ['user_1'],
       userZoneMap: { user_1: 'hot' },
-      equipmentCadenceMap: { cycle_ace: { rpm: 0, ts: 100, connected: true } }
+      equipmentCadenceMap: { bike_b: { rpm: 0, ts: 100, connected: true } }
     };
     engine.challengeState = {
       activeChallenge: {
         id: 'cyc_1',
         type: 'cycle',
         cycleState: 'init',
-        equipment: 'cycle_ace',
+        equipment: 'bike_b',
         rider: 'user_1',
         manualTrigger: true,
         currentPhaseIndex: 0,
@@ -84,7 +84,7 @@ describe('GovernanceEngine.onCycleStateChange callback', () => {
     const callsAfterFirst = cb.mock.calls.length;
 
     // A newer cadence sample whose filtered value clears the threshold advances init → ramp.
-    engine._latestInputs.equipmentCadenceMap.cycle_ace = { rpm: 100, ts: 101, connected: true };
+    engine._latestInputs.equipmentCadenceMap.bike_b = { rpm: 100, ts: 101, connected: true };
     engine.evaluate({});
     expect(cb.mock.calls.length).toBeGreaterThan(callsAfterFirst);
   });

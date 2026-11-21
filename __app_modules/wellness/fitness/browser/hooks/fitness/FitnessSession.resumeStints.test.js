@@ -36,7 +36,7 @@ function savedPayload(now) {
         'kid-f:hr': [130, 130, null, null],
         'kid-f:rings': [0, 2, 2, 2],
         'device:91002:heart-rate': [140, 141, 142, 143],
-        'bike:7138:rpm': [60, 61, 62, 63],
+        'bike:10101:rpm': [60, 61, 62, 63],
         'global:rings': [0, 4, 6, 8],
         'device:step_mat:steps_total': [1, 2, 3, 4],
       },
@@ -73,7 +73,7 @@ describe('FitnessSession resume — stints, counters and live keys', () => {
     expect(s['user:kid-a:zone_id'].slice(0, 4)).toEqual(['warm', 'warm', 'warm', 'warm']);
     expect(s['user:kid-a:heart_beats'][3]).toBeCloseTo(47.1);
     expect(s['device:91002:heart_rate'].slice(0, 4)).toEqual([140, 141, 142, 143]);
-    expect(s['device:7138:rpm'].slice(0, 4)).toEqual([60, 61, 62, 63]);
+    expect(s['device:10101:rpm'].slice(0, 4)).toEqual([60, 61, 62, 63]);
     expect(s['global:rings_total'].slice(0, 4)).toEqual([0, 4, 6, 8]);
     expect(s['device:step_mat:steps_total'].slice(0, 4)).toEqual([1, 2, 3, 4]);
     expect(s).not.toHaveProperty('kid-a:rings');

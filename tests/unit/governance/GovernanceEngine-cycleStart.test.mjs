@@ -19,7 +19,7 @@ describe('GovernanceEngine cycle challenge start', () => {
     const session = {
       _deviceRouter: {
         getEquipmentCatalog: () => [
-          { id: 'cycle_ace', eligible_users: ['user_2', 'user_3'] }
+          { id: 'bike_b', eligible_users: ['user_2', 'user_3'] }
         ]
       }
     };
@@ -29,7 +29,7 @@ describe('GovernanceEngine cycle challenge start', () => {
   const sampleSelection = () => ({
     id: 'test_cycle',
     type: 'cycle',
-    equipment: 'cycle_ace',
+    equipment: 'bike_b',
     label: 'Test cycle',
     init: { minRpm: 30, timeAllowedSeconds: 60 },
     hiRpmRange: [50, 80],
@@ -58,7 +58,7 @@ describe('GovernanceEngine cycle challenge start', () => {
     expect(active.totalLockEventsCount).toBe(0);
     expect(active.totalBoostedMs).toBe(0);
     expect(active.status).toBe('pending');
-    expect(active.equipment).toBe('cycle_ace');
+    expect(active.equipment).toBe('bike_b');
     expect(active.startedAt).toBe(nowValue);
     expect(active.selection).toBeTruthy();
     expect(active.boostContributors instanceof Set).toBe(true);

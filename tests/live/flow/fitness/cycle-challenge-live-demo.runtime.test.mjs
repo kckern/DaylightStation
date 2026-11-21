@@ -22,9 +22,10 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { getCycleTestBikes } from '../../../_lib/fitnessTestBikes.mjs';
 
 const URL = 'https://daylightlocal.kckern.net/fitness/play/674219';
-const EQUIPMENT_ID = 'cycle_ace';
+const [{ id: EQUIPMENT_ID }] = getCycleTestBikes();
 const RIDER_ID = 'user_2';
 
 const PAUSE = {
@@ -84,14 +85,14 @@ test.describe('Cycle challenge live demo', () => {
 
     // Confirm equipment + selection visibility — fail loudly if Tasks 1-2 didn't land.
     const equipment = await page.evaluate(() => window.__fitnessSimController.getEquipment());
-    const cycleAce = equipment.find(e => e.equipmentId === EQUIPMENT_ID);
-    expect(cycleAce, `${EQUIPMENT_ID} should be in the equipment catalog`).toBeTruthy();
+    const testBike = equipment.find(e => e.equipmentId === EQUIPMENT_ID);
+    expect(testBike, `${EQUIPMENT_ID} should be in the equipment catalog`).toBeTruthy();
     // eslint-disable-next-line no-console
-    console.log(`    Equipment: ${cycleAce.name} (cad ${cycleAce.cadenceDeviceId}) eligible=${cycleAce.eligibleUsers.join(',')}`);
+    console.log(`    Equipment: ${testBike.name} (cad ${testBike.cadenceDeviceId}) eligible=${testBike.eligibleUsers.join(',')}`);
 
     const selections = await page.evaluate(() => window.__fitnessSimController.listCycleSelections());
     const cycleSel = selections.find(s => s.equipment === EQUIPMENT_ID);
-    expect(cycleSel, 'a cycle selection should exist for cycle_ace').toBeTruthy();
+    expect(cycleSel, `a cycle selection should exist for ${EQUIPMENT_ID}`).toBeTruthy();
     const selectionId = cycleSel.id;
     // eslint-disable-next-line no-console
     console.log(`    Selection: ${selectionId} (${cycleSel.label})`);

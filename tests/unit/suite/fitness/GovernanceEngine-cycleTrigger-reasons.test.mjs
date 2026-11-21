@@ -11,7 +11,7 @@ const { GovernanceEngine } = await import("../../../../__app_modules/wellness/fi
 const BASE_SELECTION = {
   id: 'cycle_sprint',
   type: 'cycle',
-  equipment: 'cycle_ace',
+  equipment: 'bike_b',
   init: { minRpm: 30, timeAllowedSeconds: 60 },
   segmentCount: [3, 4],
   segmentDurationSeconds: [20, 40],
@@ -49,7 +49,7 @@ describe('GovernanceEngine.triggerChallenge — cycle rejection reasons', () => 
   });
 
   it('returns specific reason when equipment is missing from the catalog', () => {
-    // No session / empty catalog — equipment 'cycle_ace' won't be found
+    // No session / empty catalog — equipment 'bike_b' won't be found
     const result = engine.triggerChallenge({ type: 'cycle', selectionId: 'cycle_sprint' });
     expect(result.success).toBe(false);
     expect(['equipment_not_found', 'no_eligible_riders']).toContain(result.reason);
@@ -59,7 +59,7 @@ describe('GovernanceEngine.triggerChallenge — cycle rejection reasons', () => 
   it('returns specific reason when no riders are eligible', () => {
     engine.session = {
       _deviceRouter: {
-        getEquipmentCatalog: () => [{ id: 'cycle_ace', cadence: 49904, eligible_users: [] }]
+        getEquipmentCatalog: () => [{ id: 'bike_b', cadence: 10102, eligible_users: [] }]
       }
     };
     const result = engine.triggerChallenge({ type: 'cycle', selectionId: 'cycle_sprint' });
@@ -71,7 +71,7 @@ describe('GovernanceEngine.triggerChallenge — cycle rejection reasons', () => 
   it('returns specific reason when all eligible riders are on cooldown', () => {
     engine.session = {
       _deviceRouter: {
-        getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['user_2'] }]
+        getEquipmentCatalog: () => [{ id: 'bike_b', eligible_users: ['user_2'] }]
       }
     };
     // Put 'user_2' on cooldown far in the future
@@ -85,7 +85,7 @@ describe('GovernanceEngine.triggerChallenge — cycle rejection reasons', () => 
   it('succeeds when a rider is available', () => {
     engine.session = {
       _deviceRouter: {
-        getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['user_2'] }]
+        getEquipmentCatalog: () => [{ id: 'bike_b', eligible_users: ['user_2'] }]
       }
     };
     engine._cycleCooldowns = {};

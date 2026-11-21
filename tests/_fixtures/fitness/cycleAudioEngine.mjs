@@ -5,7 +5,7 @@ import { GovernanceEngine } from '../../../__app_modules/wellness/fitness/browse
 export function createCycleAudioEngine() {
   let now = 100000;
   const session = {
-    _deviceRouter: { getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['rider'] }] },
+    _deviceRouter: { getEquipmentCatalog: () => [{ id: 'bike_b', eligible_users: ['rider'] }] },
     getParticipantProfile: () => null,
     zoneProfileStore: null,
     getActiveParticipantState: () => ({ participants: ['rider'], zoneMap: { rider: 'active' }, totalCount: 1 }),
@@ -22,7 +22,7 @@ export function createCycleAudioEngine() {
       { id: 'hr_warning', trigger: 'governance_warning', sound: 'warning.mp3', duck_to: 0.15 },
     ],
     policies: { default: { base_requirement: [{ active: 'all' }], challenges: [{
-      interval: [999, 999], selections: [{ type: 'cycle', equipment: 'cycle_ace',
+      interval: [999, 999], selections: [{ type: 'cycle', equipment: 'bike_b',
         hi_rpm_range: [80, 80], lo_rpm_ratio: 0.75, segment_count: [1, 1],
         segment_duration_seconds: [60, 60], ramp_seconds: [5, 5],
         init: { min_rpm: 30, time_allowed_seconds: 10 }, time_allowed: 999,
@@ -34,7 +34,7 @@ export function createCycleAudioEngine() {
     now += delta;
     engine.evaluate({ activeParticipants: ['rider'], userZoneMap: { rider: zone }, totalCount: 1,
       zoneRankMap: { cool: 0, active: 1 }, zoneInfoMap: { active: { id: 'active', name: 'Active' } },
-      equipmentCadenceMap: rpm === null ? {} : { cycle_ace: { connected: true, rpm, ts: now } },
+      equipmentCadenceMap: rpm === null ? {} : { bike_b: { connected: true, rpm, ts: now } },
     });
     return engine.state;
   };

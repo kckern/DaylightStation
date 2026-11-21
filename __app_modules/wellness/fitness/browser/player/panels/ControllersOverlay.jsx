@@ -2,12 +2,13 @@
 // menu (Tools → Controllers). The screen owns its keys and focus
 // (BluetoothScreen / useScreenNav); this host only supplies the dialog layer,
 // input.yml (GET /api/v1/emulator/library → input) and the `bluetooth`
-// object from FitnessBluetoothContext.
+// object from FitnessBluetoothContext plus the remote buttons
+// (useBluetoothScreenBluetooth).
 import React, { useEffect, useId, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { DaylightAPI } from '@/lib/api.mjs';
 import getLogger from '@/lib/logging/Logger.js';
-import { useFitnessBluetoothState } from '../../context/FitnessBluetoothContext.jsx';
+import { useBluetoothScreenBluetooth } from '../../lib/remoteButtons/remoteButtonsContext.js';
 import { BluetoothScreen } from '../../../../../games/emulator/browser/input/BluetoothScreen.jsx';
 import './ControllersOverlay.scss';
 
@@ -17,7 +18,7 @@ const NO_CONTROLLERS = [];
 
 export default function ControllersOverlay({ open, onClose }) {
   const titleId = useId();
-  const bluetooth = useFitnessBluetoothState()?.bluetooth || null;
+  const bluetooth = useBluetoothScreenBluetooth();
   const [input, setInput] = useState(null);
   const [loadFailed, setLoadFailed] = useState(false);
 

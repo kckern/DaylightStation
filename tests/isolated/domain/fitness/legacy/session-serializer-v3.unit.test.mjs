@@ -89,7 +89,7 @@ describe('SessionSerializerV3', () => {
             is_primary: true,
             is_guest: false,
             hr_device: '40475',
-            cadence_device: '49904'
+            cadence_device: '10102'
           }
         },
         timeline: {
@@ -130,8 +130,8 @@ describe('SessionSerializerV3', () => {
             'user:user_1:zone_id': ['c', 'c', 'a', 'a', 'a'],
             'user:user_1:rings_total': [0, 1, 2, 3, 5],
             'user:user_1:heart_beats': [5.9, 12.2, 18.9, 26.4, 34.7],
-            'device:49904:rpm': [null, null, 60, 65, 70],
-            'device:49904:rotations': [null, null, 5, 10.5, 16.3],
+            'device:10102:rpm': [null, null, 60, 65, 70],
+            'device:10102:rotations': [null, null, 5, 10.5, 16.3],
             'global:rings_total': [0, 1, 2, 3, 5]
           }
         }
@@ -148,7 +148,7 @@ describe('SessionSerializerV3', () => {
       expect(result.timeline.participants.user_1.zone).toBeDefined();
 
       // Equipment nested
-      expect(result.timeline.equipment['49904'].rpm).toBeDefined();
+      expect(result.timeline.equipment['10102'].rpm).toBeDefined();
 
       // Global
       expect(result.timeline.global.rings).toBeDefined();

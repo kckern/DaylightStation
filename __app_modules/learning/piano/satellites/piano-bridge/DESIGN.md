@@ -219,7 +219,7 @@ touches no `shared_ptr` — it reads xruns from the `AudioStream*` Oboe passes i
 ### Invariant
 
 The tablet must **never** emit audio from its own built-in speaker. All audio goes
-out the piano's A2DP sink only — MAC `64:49:A5:8B:9B:75`, "J2-USB Bluetooth". The
+out the piano's A2DP sink only — MAC `AA:BB:CC:00:10:02`, "J2-USB Bluetooth". The
 guard is **fail-closed**: on any doubt about the route, audio is suppressed rather
 than risk playing out the tablet.
 
@@ -293,11 +293,11 @@ so an idle kiosk never holds the audio HAL open just to keep a stream alive.
 From the `Diag` ring (monotonic ms since boot) during `POST /audio-guard/bootstrap`:
 
 ```
-77584336  A2DP disconnect(64:49:A5:8B:9B:75) -> true
+77584336  A2DP disconnect(AA:BB:CC:00:10:02) -> true
 77584970  clamped built-in speaker STREAM_MUSIC to 0 (reason=no_a2dp_output)   +634 ms
 77584970  route GATED reason=no_a2dp_output
 77585032  A2DP "speaker disconnected — reconnecting (#1)"                      +696 ms
-77586889  connect(64:49:A5:8B:9B:75) -> true
+77586889  connect(AA:BB:CC:00:10:02) -> true
 77587636  speaker connected
 77588102  route OK reason=ok
 ```

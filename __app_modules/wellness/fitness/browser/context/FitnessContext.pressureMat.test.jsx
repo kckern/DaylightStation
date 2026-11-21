@@ -121,7 +121,7 @@ describe('FitnessProvider rider-selector websocket contract', () => {
       const context = useFitnessContext();
       const { subscribeToAppEvent } = context;
       useEffect(() => subscribeToAppEvent('rider-select', (event) => {
-        events.push({ event, rider: context.fitnessSessionInstance.getEquipmentRider('niceday') });
+        events.push({ event, rider: context.fitnessSessionInstance.getEquipmentRider('bike_a') });
       }), [context.fitnessSessionInstance, subscribeToAppEvent]);
       return null;
     }
@@ -133,7 +133,7 @@ describe('FitnessProvider rider-selector websocket contract', () => {
     });
 
     await act(async () => {
-      messageHandler({ topic: 'rider_select', equipmentId: 'niceday', userId: 'test-rider', action: '1_single' });
+      messageHandler({ topic: 'rider_select', equipmentId: 'bike_a', userId: 'test-rider', action: '1_single' });
     });
 
     expect(events).toHaveLength(1);
@@ -141,8 +141,8 @@ describe('FitnessProvider rider-selector websocket contract', () => {
       rider: 'test-rider',
       event: {
         type: 'rider-select',
-        source: 'niceday',
-        payload: { equipmentId: 'niceday', userId: 'test-rider', action: '1_single' },
+        source: 'bike_a',
+        payload: { equipmentId: 'bike_a', userId: 'test-rider', action: '1_single' },
       },
     });
   });

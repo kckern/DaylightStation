@@ -87,10 +87,10 @@ describe('mapIntentToResponse — learner cards', () => {
   it('maps the resolver\'s real learner intent, reader and all', () => {
     const registry = {
       locations: { study: { target: 'portal', action: 'play-next', learner_action: 'print-agenda', defaults: {} } },
-      tags: { '048ba600cc2a81': { global: { note: 'User_4 personal card', school_learner: 'user_4' }, overrides: {} } },
+      tags: { '04f00000000006': { global: { note: 'User_4 personal card', school_learner: 'user_4' }, overrides: {} } },
     };
     const intent = NfcResolver.resolve({
-      location: 'study', value: '04:8B:A6:00:CC:2A:81', registry,
+      location: 'study', value: '04:F0:00:00:00:00:06', registry,
       contentIdResolver: { resolve: (c) => c.startsWith('plex:') ? c : null },
     });
     expect(mapIntentToResponse(intent)).toMatchObject({
@@ -107,10 +107,10 @@ describe('mapIntentToResponse — content location, end to end from the resolver
   it('a book tap resolved at a reader maps to a content Response carrying that reader', () => {
     const registry = {
       locations: { livingroom: { target: 'livingroom-tv', action: 'play-next', defaults: {} } },
-      tags: { '048ba600cc2a81': { global: { content: 'plex:620681' }, overrides: {} } },
+      tags: { '04f00000000006': { global: { content: 'plex:620681' }, overrides: {} } },
     };
     const intent = NfcResolver.resolve({
-      location: 'livingroom', value: '04:8B:A6:00:CC:2A:81', registry,
+      location: 'livingroom', value: '04:F0:00:00:00:00:06', registry,
     });
     expect(mapIntentToResponse(intent)).toMatchObject({
       kind: 'content', target: 'livingroom-tv', location: 'livingroom',

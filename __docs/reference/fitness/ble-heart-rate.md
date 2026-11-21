@@ -90,6 +90,22 @@ device_colors:
     ble_user_b: purple
 ```
 
+Non-HR BLE equipment (e.g. a jump rope) is an ordinary `equipment` entry with
+a `ble:` address; the garage controller monitors every such entry whose `type`
+has a decoder:
+
+```yaml
+equipment:
+  - id: rope_a
+    name: Rope A
+    type: jumprope
+    ble: "AA:BB:CC:00:00:01"     # the decoder supplies the GATT characteristic
+```
+
+With none in the app config (or the app unreachable at boot) the controller
+falls back to an optional host-local `config/ble-devices.json` mounted into its
+container. No device is ever named in code.
+
 ## WebSocket Message Format
 
 BLE HR broadcasts the same shape as ANT+ HR:

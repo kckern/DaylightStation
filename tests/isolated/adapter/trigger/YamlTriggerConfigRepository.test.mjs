@@ -79,16 +79,16 @@ describe('YamlTriggerConfigRepository', () => {
     it('merges every grouped file into one registry', () => {
       const { registry } = harness({
         'books.yml': { '83_8e_68_06': { plex: 620707 } },
-        'cards.yml': { '04669C0FCB2A81': { note: 'personal card', school_learner: 'test-learner' } },
+        'cards.yml': { '04F00000000005': { note: 'personal card', school_learner: 'test-learner' } },
       });
-      expect(Object.keys(registry.nfc.tags).sort()).toEqual(['04669c0fcb2a81', '838e6806']);
-      expect(registry.nfc.tags['04669c0fcb2a81'].global.school_learner).toBe('test-learner');
+      expect(Object.keys(registry.nfc.tags).sort()).toEqual(['04f00000000005', '838e6806']);
+      expect(registry.nfc.tags['04f00000000005'].global.school_learner).toBe('test-learner');
     });
 
     it('rejects one uid claimed by two files instead of letting readdir order decide', () => {
       expect(() => harness({
-        'books.yml': { '04_66_9c_0f_cb_2a_81': { plex: 1 } },
-        'cards.yml': { '04669C0FCB2A81': { note: 'personal card' } },
+        'books.yml': { '04_f0_00_00_00_00_05': { plex: 1 } },
+        'cards.yml': { '04F00000000005': { note: 'personal card' } },
       })).toThrow(/appears in both.*books\.yml.*cards\.yml/i);
     });
 
@@ -104,12 +104,12 @@ describe('YamlTriggerConfigRepository', () => {
     it('writes a note back to the file the tag came from, not into one monolith', async () => {
       const { repo, saved } = harness({
         'books.yml': { '838e6806': { plex: 620707 } },
-        'cards.yml': { '04669c0fcb2a81': { note: 'personal card' } },
+        'cards.yml': { '04f00000000005': { note: 'personal card' } },
       });
-      await repo.setNfcNote('04_66_9C_0F_CB_2A_81', 'a personal card', '2026-07-29 20:19:17');
+      await repo.setNfcNote('04_F0_00_00_00_00_05', 'a personal card', '2026-07-29 20:19:17');
 
       expect(Object.keys(saved)).toEqual(['triggers/bindings/nfc/cards']);
-      expect(saved['triggers/bindings/nfc/cards']['04669c0fcb2a81'].note).toBe('a personal card');
+      expect(saved['triggers/bindings/nfc/cards']['04f00000000005'].note).toBe('a personal card');
       // Books must not be dragged into the cards file — collapsing groups back
       // together is exactly what the old whole-registry flush did.
       expect(saved['triggers/bindings/nfc/cards']['838e6806']).toBeUndefined();

@@ -7,6 +7,9 @@
  */
 
 export class RenphoJumpropeDecoder {
+  // Vendor GATT characteristic the rope notifies on (decoder mechanics, not household data).
+  static CHARACTERISTIC = '00005303-0000-0041-4c50-574953450000';
+
   constructor() {
     this.lastRawCounter = null;
     this.totalRevolutions = 0;

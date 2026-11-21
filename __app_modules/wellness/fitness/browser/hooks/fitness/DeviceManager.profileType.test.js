@@ -26,14 +26,14 @@ describe('DeviceManager — profile-authoritative classification', () => {
 
   it('classifies a CAD profile as cadence', () => {
     const dm = new DeviceManager();
-    const device = dm.updateDevice('7138', 'CAD', { CalculatedCadence: 88 });
+    const device = dm.updateDevice('10101', 'CAD', { CalculatedCadence: 88 });
     expect(device.type).toBe('cadence');
     expect(device.cadence).toBe(88);
   });
 
   it('classifies a PWR profile as power', () => {
     const dm = new DeviceManager();
-    const device = dm.updateDevice('49904', 'PWR', { InstantaneousPower: 210 });
+    const device = dm.updateDevice('10102', 'PWR', { InstantaneousPower: 210 });
     expect(device.type).toBe('power');
     expect(device.power).toBe(210);
   });

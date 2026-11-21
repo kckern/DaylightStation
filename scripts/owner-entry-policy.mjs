@@ -53,6 +53,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/games/arcade/server/api/arcadeGameSessions.mjs': 'api',
   '__app_modules/games/arcade/server/composition/arcadeBluetooth.mjs': 'composition',
   '__app_modules/games/emulator/browser/bluetooth.mjs': null,
+  '__app_modules/games/emulator/browser/remoteKeys.mjs': null,
   '__capabilities/exercise-catalog/server/adapters/index.mjs': 'adapters',
   '__capabilities/screen-host/server/application/ScreensQueryService.mjs': 'application',
   '__app_modules/games/party-games/server/application/effects/partyGamesBuzzerInput.mjs': 'application',

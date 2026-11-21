@@ -14,7 +14,7 @@ describe('GovernanceEngine.triggerChallenge with type=cycle', () => {
   beforeEach(() => {
     nowValue = 10000;
     const session = {
-      _deviceRouter: { getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['user_2', 'user_3'] }] },
+      _deviceRouter: { getEquipmentCatalog: () => [{ id: 'bike_b', eligible_users: ['user_2', 'user_3'] }] },
       getParticipantProfile: () => null, zoneProfileStore: null,
       getActiveParticipantState: () => ({ participants: ['user_2'], zoneMap: { user_2: 'warm' }, totalCount: 1 })
     };
@@ -27,7 +27,7 @@ describe('GovernanceEngine.triggerChallenge with type=cycle', () => {
           challenges: [{
             interval: [60, 60],
             selections: [{
-              type: 'cycle', equipment: 'cycle_ace',
+              type: 'cycle', equipment: 'bike_b',
               hi_rpm_range: [60, 60], segment_count: [1, 1],
               segment_duration_seconds: [2, 2], ramp_seconds: [5, 5],
               init: { min_rpm: 30, time_allowed_seconds: 10 },

@@ -38,14 +38,14 @@ const ENDED_EARLY_LINE = 'Ended early: saved to history, not counted for records
 let rpmByBike;
 
 function makeCtx(cycleGameConfig = {}) {
-  const riders = { cycle_ace: 'user_1', tricycle: 'user_2' };
+  const riders = { bike_b: 'user_1', tricycle: 'user_2' };
   const vitals = {
     user_1: { name: 'User_1', heartRate: 140, zoneId: 'hot', zoneColor: 'orange' },
     user_2: { name: 'User_2', heartRate: 120, zoneId: 'warm', zoneColor: 'yellow' }
   };
   return {
     equipment: [
-      { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1, eligible_users: ['user_1'] },
+      { id: 'bike_b', name: 'Bike B', cadence: 10102, wheel_circumference_m: 2.1, eligible_users: ['user_1'] },
       { id: 'tricycle', name: 'Tricycle', cadence: 7153, wheel_circumference_m: 1.2 }
     ],
     configuredUsers: [
@@ -439,7 +439,7 @@ describe('CycleGameContainer — the race menu is the one way to stop a race', (
     const rideFeatured = async () => {
       // One live rider (user_1) against the ladder rival's recording.
       const ctx = makeCtx();
-      ctx.fitnessSessionInstance.getEquipmentRider = (id) => (id === 'cycle_ace' ? 'user_1' : null);
+      ctx.fitnessSessionInstance.getEquipmentRider = (id) => (id === 'bike_b' ? 'user_1' : null);
       mockCtx = ctx;
       global.fetch = makeFetch({ ladder, ladderAfter, byId: { [RIVAL_RACE]: rivalRecord } });
       const view = render(<CycleGameContainer />);

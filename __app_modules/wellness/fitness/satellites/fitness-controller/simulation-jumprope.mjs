@@ -55,7 +55,7 @@ const SIMULATION_DURATION = durationArg
 
 const DEVICE_ID = deviceArg
   ? deviceArg.split('=')[1]
-  : '12:34:5B:E1:DD:85'; // Default from config
+  : 'AA:BB:CC:00:00:01'; // Made-up default; pass --device=<address from your ble_devices config>
 
 const DEVICE_NAME = 'R-Q008';
 

@@ -5,7 +5,7 @@ import { committedZoneId } from '../../lib/committedZone.js';
  * the backend owns all condition logic and the per-session latch.
  *
  * The rpm map is keyed by the device id (`device.deviceId`, which matches
- * `equipment[].cadence` in config, e.g. '7138') and its value is the live
+ * `equipment[].cadence` in config, e.g. '10101') and its value is the live
  * cadence reading (`device.cadence`) - the same field the RPM meters read
  * (see FullscreenVitalsOverlay.jsx: `Math.round(device.cadence || 0)`).
  */

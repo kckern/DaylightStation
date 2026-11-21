@@ -30,11 +30,11 @@ function harness(nfcFiles = {}) {
 describe('NFC bindings: the inbox is staging, not a peer', () => {
   it('lets the curated entry win when a uid is in BOTH the inbox and books.yml', () => {
     const { registry } = harness({
-      books: { '04ea9e72cc2a81': { note: 'Lady and tramp', plex: 620713 } },
-      unsorted: { '04ea9e72cc2a81': { note: 'Lady and tramp' } },
+      books: { '04f00000000009': { note: 'Lady and tramp', plex: 620713 } },
+      unsorted: { '04f00000000009': { note: 'Lady and tramp' } },
     });
     // The curated entry, with its plex id — not the note-only inbox stub.
-    expect(registry.nfc.tags['04ea9e72cc2a81'].global.plex).toBe(620713);
+    expect(registry.nfc.tags['04f00000000009'].global.plex).toBe(620713);
   });
 
   it('does not throw on that collision — naming a book must not unregister every tag', () => {

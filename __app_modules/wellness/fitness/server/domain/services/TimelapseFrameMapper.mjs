@@ -10,7 +10,7 @@ import { readRingSeries } from "./ringSeries.mjs";
  * Series-key conventions (verified against real session YAML):
  *   - per-participant HR:   `{participantId}:hr`   (e.g. `user_1:hr`)
  *   - per-participant zone: `{participantId}:zone`
- *   - bike cadence:         `bike:{deviceId}:rpm`  (e.g. `bike:7138:rpm`)
+ *   - bike cadence:         `bike:{deviceId}:rpm`  (e.g. `bike:10101:rpm`)
  */
 export class TimelapseFrameMapper {
   /**

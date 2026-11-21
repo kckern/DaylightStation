@@ -25,7 +25,7 @@ function mkSlot(overrides = {}) {
     color: 'red',
     name: 'musiCozy',
     class: 'private',
-    mac: '41:42:3A:E5:43:07',
+    mac: 'AA:BB:CC:00:30:07',
     volume: { default: 50, min: 0, max: 75 },
     ...overrides,
   };

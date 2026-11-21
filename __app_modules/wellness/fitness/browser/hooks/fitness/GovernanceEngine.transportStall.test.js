@@ -32,7 +32,7 @@ function seededRng(seed) {
 
 function buildSession() {
   return {
-    _deviceRouter: { getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['user_2'] }] },
+    _deviceRouter: { getEquipmentCatalog: () => [{ id: 'bike_b', eligible_users: ['user_2'] }] },
     getParticipantProfile: () => null,
     zoneProfileStore: null,
     getActiveParticipantState: () => ({ participants: ['user_2'], zoneMap: { user_2: 'active' }, totalCount: 1 })
@@ -49,7 +49,7 @@ const POLICY = {
       challenges: [{
         interval: [1, 1],
         selections: [{
-          type: 'cycle', equipment: 'cycle_ace',
+          type: 'cycle', equipment: 'bike_b',
           hi_rpm_range: [60, 60], segment_count: [1, 1], segment_duration_seconds: [6, 6],
           ramp_seconds: [5, 5], init: { min_rpm: 30, time_allowed_seconds: 10 },
           lo_rpm_ratio: 0.5, time_allowed: 999
@@ -77,7 +77,7 @@ function drive(fixture, samples) {
       zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
       zoneInfoMap: { active: { id: 'active', name: 'Active' }, warm: { id: 'warm', name: 'Warm' } },
       totalCount: 1,
-      equipmentCadenceMap: { cycle_ace: s.entry }
+      equipmentCadenceMap: { bike_b: s.entry }
     });
     void fixture.engine.state; // build the published snapshot, as the overlay would
   }

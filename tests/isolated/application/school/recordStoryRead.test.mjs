@@ -15,7 +15,7 @@ describe('RecordStoryRead', () => {
       clock: () => new Date('2026-08-27T01:30:00.000Z'),
       logger: silent,
     });
-    await useCase.execute({ learnerId: 'user_5', title: 'The Jungle Book', contentId: 'plex:620681', tagUid: '04215172cc2a81', location: 'livingroom' });
+    await useCase.execute({ learnerId: 'user_5', title: 'The Jungle Book', contentId: 'plex:620681', tagUid: '04f00000000001', location: 'livingroom' });
     expect(appended[0]).toMatchObject({ learnerId: 'user_5', studyDay: '2026-08-26', title: 'The Jungle Book' });
   });
 

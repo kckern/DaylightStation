@@ -26,7 +26,7 @@ describe('FitnessSession.getEquipmentCadence — ts advances on every packet', (
   it('emits a ts that advances when a 0-RPM packet follows a non-zero packet', () => {
     const session = new FitnessSession();
     // Register an equipment with a cadence device pointer.
-    const equipmentId = 'cycle_ace';
+    const equipmentId = 'bike_b';
     const cadenceDeviceId = 'cad-1';
     session._equipmentById.set(equipmentId, {
       id: equipmentId,
@@ -66,7 +66,7 @@ describe('FitnessSession.getEquipmentCadence — ts advances on every packet', (
 
   it('emits a ts that advances across consecutive 0-RPM packets', () => {
     const session = new FitnessSession();
-    const equipmentId = 'cycle_ace';
+    const equipmentId = 'bike_b';
     const cadenceDeviceId = 'cad-1';
     session._equipmentById.set(equipmentId, {
       id: equipmentId,
@@ -107,19 +107,19 @@ describe('FitnessSession cadence packet liveness', () => {
   it('keeps repeated fresh zero packets connected long past the last movement', () => {
     vi.useFakeTimers(); vi.setSystemTime(1_000_000);
     const session = new FitnessSession();
-    session._equipmentById.set('cycle_ace', { id: 'cycle_ace', cadence: 'cad-1' });
+    session._equipmentById.set('bike_b', { id: 'bike_b', cadence: 'cad-1' });
     const device = session.deviceManager.registerDevice({ id: 'cad-1', type: 'cadence' });
     device.update({ cadence: 80, lastSeen: Date.now() });
     for (let i = 1; i <= 80; i++) {
       vi.setSystemTime(1_000_000 + i * 500);
       device.update({ cadence: 0, lastSeen: Date.now() });
-      expect(session.getEquipmentCadence('cycle_ace')).toEqual({ rpm: 0, connected: true, ts: Date.now() });
+      expect(session.getEquipmentCadence('bike_b')).toEqual({ rpm: 0, connected: true, ts: Date.now() });
     }
   });
   it('uses a live zero sensor when the other wheel sensor is stale and HR remains live', () => {
     vi.useFakeTimers(); vi.setSystemTime(1_000_000);
     const session = new FitnessSession();
-    session._equipmentById.set('cycle_ace', { id: 'cycle_ace', cadence: ['cad-stale', 'cad-live'] });
+    session._equipmentById.set('bike_b', { id: 'bike_b', cadence: ['cad-stale', 'cad-live'] });
     const stale = session.deviceManager.registerDevice({ id: 'cad-stale', type: 'cadence' });
     const live = session.deviceManager.registerDevice({ id: 'cad-live', type: 'cadence' });
     stale.update({ cadence: 90, lastSeen: Date.now() });
@@ -127,6 +127,6 @@ describe('FitnessSession cadence packet liveness', () => {
     vi.setSystemTime(1_040_000);
     live.update({ cadence: 0, lastSeen: Date.now() });
     session.deviceManager.lastPacketAt = Date.now();
-    expect(session.getEquipmentCadence('cycle_ace')).toEqual({ rpm: 0, connected: true, ts: Date.now() });
+    expect(session.getEquipmentCadence('bike_b')).toEqual({ rpm: 0, connected: true, ts: Date.now() });
   });
 });

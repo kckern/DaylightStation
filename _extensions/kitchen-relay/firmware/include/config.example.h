@@ -37,5 +37,5 @@
 #define BARCODE_ENABLED    1
 #define BARCODE_ID         "content-barcode"
 #define BARCODE_ROUTE      "content"
-#define BARCODE_MAC        "c8:1c:fe:fd:ce:90"
+#define BARCODE_MAC        "aa:bb:cc:00:40:01"
 #define BARCODE_NAME       "DS2278"

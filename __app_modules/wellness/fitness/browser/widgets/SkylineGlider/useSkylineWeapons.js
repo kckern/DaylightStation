@@ -94,11 +94,11 @@ export function useSkylineWeapons({ enabled = true, getGamepads, onGamepad, onFi
     queue.current = [];
     return actions;
   }, []);
-  drain.enqueue = (actions, source = 'rider-button') => {
+  drain.enqueue = (actions, source = 'rider-button', detail = undefined) => {
     if (!enabledRef.current) return;
     for (const action of actions) {
       queue.current.push(action);
-      onFireRef.current?.({ action, source });
+      onFireRef.current?.({ action, source, ...(detail || {}) });
     }
   };
   drain.clear = () => { queue.current = []; };

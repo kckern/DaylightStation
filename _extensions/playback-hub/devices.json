@@ -5,14 +5,14 @@
     {
       "slot": 1,
       "color": "red",
-      "mac": "41:42:3A:E5:43:07",
+      "mac": "AA:BB:CC:00:30:07",
       "name": "musiCozy",
       "queue": "674397"
     },
     {
       "slot": 2,
       "color": "yellow",
-      "mac": "41:42:9A:E3:65:73",
+      "mac": "AA:BB:CC:00:31:02",
       "name": "musiCozy",
       "queue": "",
       "shuffle": false,
@@ -26,7 +26,7 @@
     {
       "slot": 3,
       "color": "green",
-      "mac": "41:42:8C:7C:77:5C",
+      "mac": "AA:BB:CC:00:31:03",
       "name": "musiCozy",
       "queue": "",
       "shuffle": false,
@@ -40,7 +40,7 @@
     {
       "slot": 4,
       "color": "blue",
-      "mac": "41:42:50:C8:85:13",
+      "mac": "AA:BB:CC:00:31:04",
       "name": "musiCozy",
       "queue": "",
       "shuffle": false,

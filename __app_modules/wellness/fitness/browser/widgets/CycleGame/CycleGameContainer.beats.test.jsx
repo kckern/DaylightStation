@@ -52,7 +52,7 @@ function makeCtx(riders, cycleGameConfig = {}) {
   };
   return {
     equipment: [
-      { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1 },
+      { id: 'bike_b', name: 'Bike B', cadence: 10102, wheel_circumference_m: 2.1 },
       { id: 'tricycle', name: 'Tricycle', cadence: 7153, wheel_circumference_m: 1.2 }
     ],
     zones: [
@@ -159,7 +159,7 @@ describe('CycleGameContainer — race beats', () => {
   const beeps = () => audios.filter((a) => a.src === '/sfx/beep.mp3').length;
 
   it('a configured sounds.countdown alone does not beep in the final seconds', async () => {
-    mockCtx = makeCtx({ cycle_ace: 'user_1' }, { sounds: { countdown: '/sfx/beep.mp3', end: '/sfx/end.mp3', racing: { dir: '/music', tracks: 1 } } });
+    mockCtx = makeCtx({ bike_b: 'user_1' }, { sounds: { countdown: '/sfx/beep.mp3', end: '/sfx/end.mp3', racing: { dir: '/music', tracks: 1 } } });
     const view = render(<CycleGameContainer />);
     await start(view, 'time', 'short');
     const beepsBeforeRace = beeps(); // the stoplight beeps
@@ -168,7 +168,7 @@ describe('CycleGameContainer — race beats', () => {
   });
 
   it('a 180 s solo time race: one halfway toast with the gap to the rival, splits, the last minute, the final ten seconds', async () => {
-    mockCtx = makeCtx({ cycle_ace: 'user_1' });
+    mockCtx = makeCtx({ bike_b: 'user_1' });
     const view = render(<CycleGameContainer />);
     await start(view, 'time', 'short'); // 180 s, against par (nobody has ridden it)
     expect(logsOf('info', 'cycle_game.config')[0].rivalKind).toBe('par');
@@ -220,7 +220,7 @@ describe('CycleGameContainer — race beats', () => {
   it('an unset game volume races audibly at the game default, whatever the video level', async () => {
     Object.assign(mockVolume, { volume: 0.1, source: 'global' });
     try {
-      mockCtx = makeCtx({ cycle_ace: 'user_1' });
+      mockCtx = makeCtx({ bike_b: 'user_1' });
       const view = render(<CycleGameContainer />);
       await start(view, 'time', 'short');
       ticksUntil(view, 10);
@@ -230,7 +230,7 @@ describe('CycleGameContainer — race beats', () => {
   });
 
   it('a group race has no rival: halfway without a gap, no split toasts, the last minute', () => {
-    mockCtx = makeCtx({ cycle_ace: 'user_1', tricycle: 'user_2' });
+    mockCtx = makeCtx({ bike_b: 'user_1', tricycle: 'user_2' });
     const view = render(<CycleGameContainer />);
     act(() => { fireEvent.click(view.getByTestId('course-time')); });
     act(() => { fireEvent.click(view.getByTestId('tier-short')); });
@@ -249,7 +249,7 @@ describe('CycleGameContainer — race beats', () => {
   });
 
   it('beats never fire while every live rider is parked', () => {
-    mockCtx = makeCtx({ cycle_ace: 'user_1', tricycle: 'user_2' }, { race_idle_dnf_s: 2 });
+    mockCtx = makeCtx({ bike_b: 'user_1', tricycle: 'user_2' }, { race_idle_dnf_s: 2 });
     const view = render(<CycleGameContainer />);
     act(() => { fireEvent.click(view.getByTestId('course-time')); });
     act(() => { fireEvent.click(view.getByTestId('tier-flash')); }); // 60 s: halfway at 30 s
@@ -259,7 +259,7 @@ describe('CycleGameContainer — race beats', () => {
     nowMs = 1000;
     act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
     ticksUntil(view, 20);
-    rpmByBike.cycle_ace = 0;
+    rpmByBike.bike_b = 0;
     rpmByBike.tricycle = 0;
     ticksUntil(view, 34); // both parked from ~22 s; the race closes 15 s later
     expect(logsOf('info', 'cycle_game.rider_parked')).toHaveLength(2);

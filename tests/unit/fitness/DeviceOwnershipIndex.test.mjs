@@ -41,9 +41,9 @@ describe('DeviceOwnershipIndex', () => {
 
     it('maps cadence devices', () => {
       index.rebuild([
-        { id: 'user1', name: 'User', hrDeviceIds: new Set(), cadenceDeviceId: '49904' }
+        { id: 'user1', name: 'User', hrDeviceIds: new Set(), cadenceDeviceId: '10102' }
       ]);
-      expect(index.getOwner('49904').id).toBe('user1');
+      expect(index.getOwner('10102').id).toBe('user1');
     });
 
     it('returns null for unknown device', () => {

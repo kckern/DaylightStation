@@ -5,7 +5,7 @@ import { mapRaceRecordToCandidate, buildGhostFromCandidate } from "./ghostCandid
 const REC = {
   race: { id: '20260630081500', date: '2026-06-30T15:15:00.000Z', win_condition: 'distance', goal_m: 1500, interval_seconds: 1 },
   participants: {
-    dad: { display_name: 'Dad', equipment: 'cycle_ace', final_distance_m: 1500, final_time_s: 150, placement: 1,
+    dad: { display_name: 'Dad', equipment: 'bike_b', final_distance_m: 1500, final_time_s: 150, placement: 1,
       distance_series: SessionSerializerV3.encodeSeries([0, 10, 20]) },
     user_3: { display_name: 'User_3', equipment: 'tricycle', final_distance_m: 1200, final_time_s: null, placement: 2,
       distance_series: SessionSerializerV3.encodeSeries([0, 5, 9]) }

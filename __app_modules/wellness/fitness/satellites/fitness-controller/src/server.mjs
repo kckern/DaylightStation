@@ -11,7 +11,10 @@ import { selectSimCandidate } from "./unlockSim.mjs";
 import { createReaderArbiter } from "./readerArbiter.mjs";
 import { createContinuousScanLoop, IDENTIFY_WINDOW_S } from "./continuousScanLoop.mjs";
 import { startBtInventoryBroadcast } from "./btInventory.mjs";
-import { startRemoteKeys } from "./remoteKeys.mjs";
+import { startRemoteInput } from "./remote-input/RemoteInputService.mjs";
+import { LinuxEvdevRemoteSource } from "./remote-input/adapters/LinuxEvdevRemoteSource.mjs";
+import { BluezGattReportSource } from "./remote-input/adapters/BluezGattReportSource.mjs";
+import { startDecoderRefresh } from "./remote-input/decoderConfig.mjs";
 import { handleBtPairRequest, handleBtRemoveRequest, isPairingWindowOpen } from "./btPairing.mjs";
 import { handleBtScanRequest, stopScanWindow } from "./btScan.mjs";
 import { createDataPathHealth, createFitnessDataBroadcaster } from "./dataPathHealth.mjs";
@@ -159,8 +162,10 @@ const serviceIdentity = Object.freeze({
 const dataPathHealth = createDataPathHealth({ bootId: randomUUID() });
 // Handle for the BlueZ bt_inventory broadcast loop (identity/inventory only).
 let btInventoryBroadcast = null;
-// Handle for the per-device Bluetooth remote key reader (remoteKeys.mjs).
+// Handle for the per-device Bluetooth remote input (src/remote-input/), and
+// the refresher that keeps its report decoders current from the app.
 let remoteKeys = null;
+let remoteDecoders = null;
 
 // Pending interactive unlock requests, keyed by requestId. Only populated when
 // FINGERPRINT_SIM === 'interactive': the request is held until a CLI resolves it
@@ -443,6 +448,9 @@ const websocketSupervisor = createWebSocketSupervisor({
     }
     console.log('🔐 Subscribed to unlock / enroll / delete / bt.pair / bt.remove / bt.scan / bt.inventory request topics');
     btInventoryBroadcast?.resend();
+    // Re-read the report decoders (input.yml may have changed while we were
+    // away) and log the count now that the store can hear it.
+    remoteDecoders?.refresh({ announce: true });
   },
   logger: {
     info: (message) => console.log(`✅ ${message}`),
@@ -507,8 +515,9 @@ app.get('/tv/off', async (req, res) => {
 
 // BLE control endpoints
 app.get('/ble/start/:device?', async (req, res) => {
-  const device = req.params.device || 'RENPHO_JUMPROPE';
-  console.log(`📱 Starting BLE monitoring for ${device}`);
+  const device = req.params.device;
+  console.log(`📱 Starting BLE monitoring for ${device || 'all configured devices'}`);
+  if (!device) return res.json({ success: true, devices: await bleManager.startAllMonitoring() });
   const result = await bleManager.startMonitoring(device);
   res.json({ success: result, device });
 });
@@ -609,6 +618,7 @@ process.on('SIGINT', async () => {
     btInventoryBroadcast.stop();
   }
   remoteKeys?.stop();
+  remoteDecoders?.stop();
 
   // Close WebSocket
   if (dataPathTimer != null) clearInterval(dataPathTimer);
@@ -635,6 +645,7 @@ process.on('SIGTERM', async () => {
     btInventoryBroadcast.stop();
   }
   remoteKeys?.stop();
+  remoteDecoders?.stop();
 
   // Close WebSocket
   if (dataPathTimer != null) clearInterval(dataPathTimer);
@@ -667,37 +678,40 @@ async function startServer() {
     // Continue without ANT+ - server can still handle other functions
   }
   
+  // Fetch the DaylightStation fitness config: BLE devices to monitor and BLE HR users
+  let fitnessConfig = null;
+  try {
+    const protocol = DAYLIGHT_PORT == 443 ? 'https' : 'http';
+    const configUrl = `${protocol}://${DAYLIGHT_HOST}:${DAYLIGHT_PORT}/api/v1/fitness`;
+    const res = await fetch(configUrl, { signal: AbortSignal.timeout(10_000) });
+    fitnessConfig = await res.json();
+  } catch (error) {
+    console.log('⚠️  Could not fetch fitness config for BLE devices/HR users:', error.message);
+  }
+  bleManager.configureDevices(fitnessConfig?.equipment);
+
   // Initialize BLE
   try {
     const bleSuccess = await bleManager.initialize();
     if (bleSuccess) {
       console.log('✅ BLE manager initialized');
-      // Auto-start monitoring for known devices
-      await bleManager.startMonitoring('RENPHO_JUMPROPE');
+      // Auto-start monitoring for every configured device
+      await bleManager.startAllMonitoring();
     }
   } catch (error) {
     console.error('❌ BLE initialization failed:', error.message);
     // Continue without BLE
   }
 
-  // Fetch BLE HR users from DaylightStation fitness config
-  try {
-    const protocol = DAYLIGHT_PORT == 443 ? 'https' : 'http';
-    const configUrl = `${protocol}://${DAYLIGHT_HOST}:${DAYLIGHT_PORT}/api/v1/fitness`;
-    const res = await fetch(configUrl);
-    const fitnessConfig = await res.json();
-    const users = fitnessConfig.ble_users || [];
-    if (users.length > 0) {
-      bleManager.configureBleUsers(users);
-      try {
-        await bleManager.startHRScan();
-        console.log('✅ BLE HR scan auto-started');
-      } catch (error) {
-        console.error('❌ BLE HR auto-start failed:', error.message);
-      }
+  const users = fitnessConfig?.ble_users || [];
+  if (users.length > 0) {
+    bleManager.configureBleUsers(users);
+    try {
+      await bleManager.startHRScan();
+      console.log('✅ BLE HR scan auto-started');
+    } catch (error) {
+      console.error('❌ BLE HR auto-start failed:', error.message);
     }
-  } catch (error) {
-    console.log('⚠️  Could not fetch fitness config for BLE HR users:', error.message);
   }
 
   // Connect to DaylightStation WebSocket
@@ -717,11 +731,24 @@ async function startServer() {
   });
   console.log('🎮 BlueZ bt_inventory broadcast started');
 
-  // Per-device Bluetooth remote keys, read from the kernel and tagged with the
-  // remote's address: logged to the store (bt.remote.*) and sent as
-  // `bt.remote.key`. Read-only — keys still reach the browser. A press while
-  // the socket is down is dropped silently (it is still in this container log).
-  remoteKeys = startRemoteKeys({
+  // Per-device Bluetooth remote input, tagged with the remote's address:
+  // logged to the store (bt.remote.*) and sent as `bt.remote.key`. Read-only —
+  // keys still reach the browser. A press while the socket is down is dropped
+  // silently (it is still in this container log). Two adapters: kernel keys,
+  // and input reports the kernel drops, decoded by input.yml `report_decoder`
+  // specs fetched from the app.
+  const gattReports = new BluezGattReportSource();
+  remoteDecoders = startDecoderRefresh({
+    url: `${DAYLIGHT_PORT == 443 ? 'https' : 'http'}://${DAYLIGHT_HOST}:${DAYLIGHT_PORT}/api/v1/emulator/input/report-decoders`,
+    apply: (entries) => {
+      const n = gattReports.setDecoders(entries);
+      console.log(`🎛️ remote report decoders loaded: ${n}`);
+      return n;
+    },
+    logEvent: logToStore,
+  });
+  remoteKeys = startRemoteInput({
+    sources: [new LinuxEvdevRemoteSource(), gattReports],
     logEvent: logToStore,
     send: (topic, payload) => {
       if (websocketClient?.readyState === WebSocket.OPEN) websocketClient.send(JSON.stringify({ topic, ...payload }));

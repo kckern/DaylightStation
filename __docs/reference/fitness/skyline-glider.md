@@ -39,12 +39,44 @@ The checkpoint/cue banner is the shared kit's `MomentBanner`; its colours come f
 | Gamepad standard indexes | A (0) / RT (7) | B (1) / X (2) / LT (6) | LB (4) | Y (3) |
 | Keyboard | Space / F | B | M | V |
 | Step mat (a partner) | — | Stomp | — | — |
+| Remote (per bike, config) | rider direction mapped to `laser` | … `bomb` | … `missile` | … `boost` |
 
 **The step mat is the partner's bomb button.** While a flight is armed, every classified stomp on any step mat (`pressure-mat:stomp` on the fitness app event bus, see [`pressureMat`](../../../__app_modules/wellness/fitness/browser/context/fitnessPressureMat.js)) drops a bomb from the same rack, logged as `skyline_glider.input.fire` with `source: stomp-mat` plus `skyline_glider.stomp_mat.bomb`. Ordinary steps do nothing, so someone walking past never fires. Stomps outside a flight are ignored. How hard a press must be to count as a stomp is the mat's `stomp_gradient_vps` threshold, live-tunable on the mat.
 
+**Which bike flies.** Glider (and Skyline Invaders' partner boost) use a bike that has a rider claimed and a live cadence sensor. When several qualify, the one with the lowest `skyline_glider.priority` on its equipment entry wins; bikes without a priority follow in config order. No bike is preferred by id in code:
+
+```yaml
+equipment:
+  - id: <bike-id>
+    skyline_glider:
+      priority: 0        # lower flies first; omit to rank after every prioritised bike
+```
+
+**Handheld remotes.** A bike whose config has a `skyline_glider.remote` block takes presses from the handheld remotes mounted on it. The block maps a **rider direction** to an action: `up`, `down`, `left`, `right`, `center` (the remote's ring positions), or `front` / `rear` (the ring position toward the bike's front or rear, for a remote whose inventory entry says so). Actions are `laser`, `bomb`, `missile`, `boost` and `pause`. It lives on the bike's equipment entry in the household fitness config (loaded at boot, so an edit needs a restart):
+
+```yaml
+equipment:
+  - id: <bike-id>
+    skyline_glider:
+      rpm: { min: 15, max: 100 }
+      remote:            # rider direction -> laser | bomb | missile | boost | pause
+        up: missile
+        down: bomb
+        front: boost
+        center: laser
+        rear: pause
+```
+
+Unknown directions or actions are dropped and logged once as `skyline_glider.remote.config_invalid` (`dropped`). A bike without the block, or a host without remotes, works exactly as before: nothing is loaded and nothing is held.
+
+- In flight a remote press goes through the same path as a bike button (the same cooldowns, refusals, flash, sounds and deny tone): `laser`/`bomb`/`missile`/`boost` are buttons 1–4, and `pause` is the hold on 4 (the flight menu). One `down` is one press; `repeat` and `up` are not presses. Presses during a sensor pause or crash are dropped like the others.
+- In the menus a remote action is its bike button number (laser 1, bomb 2, missile 3, boost 4), so the remote presses the same panel key. `pause` is the screen's way back where it has one: Resume on the flight menu, Back / Cancel on 3 for the rider list, sound sheet, save details, school lock, and the ready / countdown screens of a fresh start. It does nothing where 3 ends a flight or changes the rider (crash, result, flight list, ready after Resume).
+- Glider reads remotes through an injected **remote-direction source** (`lib/remoteInput/IRemoteDirectionSource.js`): presses arrive as `{ sourceId, direction, position, state }`, never as device keys. On the fitness host the source is `BluetoothRemoteDirectionSource` (per-remote `bt.remote.key` feed + the remote inventory, see [Per-remote keys](../gaming/controller-pairing.md#per-remote-keys-btremotekey)). It also stops those remotes' untagged browser copies (media and volume keys) at the window while Glider is mounted, so nothing else acts on them.
+- While mounted with a mapping and at least one remote, Glider holds every remote (`holdRemoteButtons('skyline-glider')`, see [Who owns a remote's presses](../gaming/controller-pairing.md#who-owns-a-remotes-presses)), so no other remote mapping acts on the same press.
+
 Numeric keys 1–4 operate the current panel; Escape opens the flight menu. Existing text-entry and browser shortcuts retain their meaning.
 
-On the garage's 8BitDo SFC30 (standard mapping in Firefox), that is the bottom face button (printed **B**) or **R** for the laser, and the right face button (printed **A**), **Y** or **L** for a bomb. The pad's letters follow the SNES layout, so they are swapped against the Xbox names above.
+On an 8BitDo SFC30 (standard mapping in Firefox), that is the bottom face button (printed **B**) or **R** for the laser, and the right face button (printed **A**), **Y** or **L** for a bomb. The pad's letters follow the SNES layout, so they are swapped against the Xbox names above.
 
 - Each press fires once; holding does not autofire. A button already held when flight starts is ignored until released. A press on a frame where no time passes waits for the next frame. Presses during a sensor pause or crash are dropped.
 - **Laser:** leaves the craft nose at the craft's altitude (entity boxes count as `laser_aim`, default 0.045, taller for it, so a shot a hair off a target lands; terrain stays exact) and travels `laser_speed_s` course-seconds per second faster than the craft, until it leaves the right edge of the screen (measured from the camera, so a boosted craft does not shoot further); a course may shorten that with `laser_range_s`. Each step sweeps its whole path, so thin objects cannot be skipped. It stops at the first terrain or non-scenery entity it reaches, destroying that entity if it is vulnerable to the laser and being absorbed otherwise. It is unlimited, with a `laser_cooldown_s` cooldown.
@@ -90,7 +122,7 @@ Sound slots `laser`, `bomb`, `missile`, `explosion`, `boost`, `hit`, `target`, `
 
 In flight, the crash hold and the ready/sensor notices are one solid framed window over the unchanged scene: nothing dims or dithers the scene. The scene's sky, parallax backdrops and terrain bleed past the 1000×600 viewBox (`SCENE_BLEED_X`/`SCENE_BLEED_Y` in `svgPresets.jsx`), so a stage of any aspect from 4:3 to about 2.3:1 shows no bands. A crash names its cause on the crash menu ("Hit the ground…", "Crashed into the cracked wall. Fire a missile…", "Hit the gate. … fly through it", "The gate shut before you got through. Boost…", "Crashed into a tower. Fly over it, or drop a bomb…", "Out of hearts — shoot the bracketed targets…"). The result screen lists bells, targets (armed acts), score and bumps. On the ready screen after Resume or Retry checkpoint, buttons 1–3 read "End flight", because they end and save that attempt.
 
-Logged events: `skyline_glider.flight.weapon.fired` (`weapon`, `count`, `bombsLeft` for bombs), `skyline_glider.flight.bomb.detonated` (`shotId`, `atSeconds`, `altitude`), `skyline_glider.flight.entity.destroyed` (`entityId`, `by`), `skyline_glider.input.gamepad` once per pad seen during a flight, and `skyline_glider.input.fire` per press (`action`, `source` `gamepad`|`keyboard`, `button` index and `padId`, or `key`). `skyline_glider.flight.gate.cleared` (`gateId`, `shutter`, `boostOffset`) fires when the craft's tail passes a gate, and `boost.activated` carries `cameraTime`. Per-second flight samples include `bombsLeft` and `boostOffset`. `skyline_glider.flight.crashed` carries `cause`, `segmentId`/`entityId`, and the `courseTime`, `altitude`, `filteredRpm` and `rawRpm` at the moment of the crash.
+Logged events: `skyline_glider.flight.weapon.fired` (`weapon`, `count`, `bombsLeft` for bombs), `skyline_glider.flight.bomb.detonated` (`shotId`, `atSeconds`, `altitude`), `skyline_glider.flight.entity.destroyed` (`entityId`, `by`), `skyline_glider.input.gamepad` once per pad seen during a flight, and `skyline_glider.input.fire` per press (`action`, `source` `gamepad`|`keyboard`|`rider-button`|`remote`|`stomp-mat`, `button` index and `padId`, or `key`; a remote press adds `remote`, the source's id for that remote (its Bluetooth address on the fitness host), and `direction`). Every remote press is also logged as `skyline_glider.input.remote` (`action`, `direction`, `remote`, `phase`, and the panel `position`/`gesture` it stood for, null when it does nothing there). `skyline_glider.remote.armed` (`remotes`, `mapping`) and `.released` bracket the hold; `.unmapped` (debug) is a press on a direction the block leaves out. The Bluetooth source logs `remote_input.unresolved` (debug), `remote_input.browser_copy_dropped` (sampled) and `remote_input.inventory_failed` (warn). `skyline_glider.flight.gate.cleared` (`gateId`, `shutter`, `boostOffset`) fires when the craft's tail passes a gate, and `boost.activated` carries `cameraTime`. Per-second flight samples include `bombsLeft` and `boostOffset`. `skyline_glider.flight.crashed` carries `cause`, `segmentId`/`entityId`, and the `courseTime`, `altitude`, `filteredRpm` and `rawRpm` at the moment of the crash.
 
 ## Game UI
 

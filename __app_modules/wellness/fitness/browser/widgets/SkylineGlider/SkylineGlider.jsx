@@ -29,6 +29,8 @@ import SkylineFlightHud, { CollectibleIcon, MoreButton } from "./SkylineFlightHu
 import RpmGauge from "./SkylineRpmGauge.jsx";
 import SkylineFlightOverlays from "./SkylineFlightOverlays.jsx";
 import SkylineSoundOverlay from "./SkylineSoundOverlay.jsx";
+import SkylineRemoteInput from "./SkylineRemoteInput.jsx";
+import { remotePanelPress } from "../../lib/skylineGlider/controllerModel.js";
 import { MomentBanner } from "../../../../../../__capabilities/gaming/browser/platform/ui/hud/index.js";
 import { createFrameDriver, createEffectDispatcher } from "../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
 import "./SkylineGlider.scss";
@@ -239,8 +241,8 @@ export default function SkylineGlider() {
     onGamepad: (pad) => log.info('skyline_glider.input.gamepad', { padId: pad.id, mapping: pad.mapping || null }),
     onFire: (press) => {
       log.info('skyline_glider.input.fire', press);
-      // Bike-button presses are flashed where they are accepted or refused.
-      if (press.source !== 'rider-button') flashPress(press.action, weaponRefusal(flightRef.current, press.action, course));
+      // Bike-button and remote presses are flashed where they are accepted or refused.
+      if (press.source !== 'rider-button' && press.source !== 'remote') flashPress(press.action, weaponRefusal(flightRef.current, press.action, course));
     },
   });
   // A partner on the step mat is the bombardier: every classified stomp drops
@@ -690,7 +692,7 @@ export default function SkylineGlider() {
         const cadence=fitnessSessionInstance?.getEquipmentCadence?.(equipment?.id);
         const refusal=cadence?.connected&&cadence.rpm===0?'paused':weaponRefusal(current,effect.action,course);
         flashPress(effect.action,refusal);
-        if(!refusal)drainWeapons.enqueue([effect.action]);
+        if(!refusal)drainWeapons.enqueue([effect.action],effect.source==='remote'?'remote':'rider-button',effect.input||undefined);
       }else if(effect.type==='clear-input')drainWeapons.clear?.();
       else if(effect.type==='commit-stall'){
         const current=flightRef.current;
@@ -744,16 +746,25 @@ export default function SkylineGlider() {
     onLevel:level=>{gameVolume.setLevel(level);log.info('skyline_glider.audio.level_set',{level,control:'touch'})},
     onToggleMute:()=>{gameVolume.toggleMute();log.info('skyline_glider.audio.mute_toggled',{muted:!gameVolume.muted,source:'touch'})}};
   const pressPanel=(position,gesture='single')=>controller.dispatch({type:'PRESS',position,gesture,source:'touch'});
+  // A Bluetooth remote press: the bike button its action stands for, on this screen.
+  const controllerRef=useRef(controller);controllerRef.current=controller;
+  const onRemotePress=useCallback(remote=>{
+    const {getState,dispatch}=controllerRef.current,state=getState(),pressAs=remotePanelPress(state,remote.action);
+    log.info('skyline_glider.input.remote',{action:remote.action,direction:remote.direction,remote:remote.sourceId,phase:state.phase,position:pressAs?.position??null,gesture:pressAs?.gesture??null});
+    if(pressAs)dispatch({type:'PRESS',...pressAs,source:'remote',input:{remote:remote.sourceId,direction:remote.direction}});
+  },[log]);
+  const remoteInput=<SkylineRemoteInput remoteConfig={equipment?.skyline_glider?.remote} onPress={onRemotePress} log={log}/>;
   const chooseAct = (act) => {
     if (act.status === 'locked') { void requestActUnlock(act); return; }
     setChosenActId(act.id);
     log.info('skyline_glider.act.chosen', { riderId, actId: act.id, status: act.status });
   };
 
-  if(phase==='loading')return <main className="skyline-glider skyline-glider--controls skyline-menu-screen" data-testid="skyline-glider-loading"><SkylineMenuLayout variant="bike" actions={<SkylineControlPanel controls={panelControls.map(c=>({...c,disabled:true}))} onPress={pressPanel}/>}><p className="skyline-glider__notice">Charting the course…</p></SkylineMenuLayout></main>;
-  if(phase==='error')return <main className="skyline-glider skyline-glider--controls skyline-menu-screen"><SkylineMenuLayout variant="bike" actions={<SkylineControlPanel controls={panelControls} onPress={pressPanel}/>}><p className="skyline-glider__notice" data-tone="bad" role="alert">{error}</p></SkylineMenuLayout></main>;
+  if(phase==='loading')return <main className="skyline-glider skyline-glider--controls skyline-menu-screen" data-testid="skyline-glider-loading">{remoteInput}<SkylineMenuLayout variant="bike" actions={<SkylineControlPanel controls={panelControls.map(c=>({...c,disabled:true}))} onPress={pressPanel}/>}><p className="skyline-glider__notice">Charting the course…</p></SkylineMenuLayout></main>;
+  if(phase==='error')return <main className="skyline-glider skyline-glider--controls skyline-menu-screen">{remoteInput}<SkylineMenuLayout variant="bike" actions={<SkylineControlPanel controls={panelControls} onPress={pressPanel}/>}><p className="skyline-glider__notice" data-tone="bad" role="alert">{error}</p></SkylineMenuLayout></main>;
   if(!['flight','stall'].includes(controller.state.phase))return <main className="skyline-glider skyline-glider--controls skyline-menu-screen"
     data-testid={controller.state.phase==='denied'?'skyline-glider-school-lock':controller.state.phase==='result'||controller.state.phase==='saving'?'skyline-glider-result':controller.state.phase==='countdown'?'skyline-glider-countdown':'skyline-glider-lobby'} data-control-phase={controller.state.phase}>
+    {remoteInput}
     <SkylineMenuLayout key={controller.state.phase} variant="bike" actions={<SkylineControlPanel controls={panelControls} onPress={pressPanel}/>} utility={!['settings','saving','loading'].includes(controller.state.phase)&&!(adminPromptOpen||actUnlock)&&<MoreButton onMore={openSoundSheet} className="skyline-glider__menu-more"/>}><SkylineMenus state={controller.state} riders={controller.state.riders} acts={controller.state.acts} onEvent={controller.dispatch} sound={soundSheet}
       crashNote={(()=>{const hit=course?.entities?.find(e=>e.id===flight?.lastCollisionEntityId);return crashReason(flight,hit&&{...hit,role:entityRole(hit,!!armory.enabled)})})()}
       summary={saveState.record?.run&&(()=>{const bells=saveState.record.collectibles?.length||0,targets=saveState.record.run.targets||0;
@@ -771,6 +782,7 @@ export default function SkylineGlider() {
   // One value for both the text and the key, so a banner replays exactly when its words change.
   const bannerText = effects.banner || activeCue(course, flight);
   return <main className="skyline-glider skyline-glider--flight" data-control-phase={controller.state.phase} data-rider-id={riderId} data-course-id={course.id} data-testid="skyline-glider-flight" data-course-time={flight.courseTime}>
+    {remoteInput}
     <FlightScene state={flight} course={course} effects={effects} assets={assets}/>
     <RpmGauge state={flight}/>
     <SkylineFlightHud flight={flight} course={course} assets={assets} armed={!!armory.enabled} press={pressFlash} onMore={openSoundSheet}

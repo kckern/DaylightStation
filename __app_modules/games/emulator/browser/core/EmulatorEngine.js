@@ -468,6 +468,28 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
   }
 
   /**
+   * Press (value 1) or release (0) one RetroPad control (buildEjsControls'
+   * SEMANTIC_INDEX) for `player`, through EmulatorJS's own input API
+   * `gameManager.simulateInput` — the call its keyboard, gamepad and on-screen
+   * pad handlers all make. Used for input the page cannot see as a key or a
+   * pad (Bluetooth remotes decoded by the garage box). Goes through the
+   * tapped funnel, so the input LED and telemetry count it. False before
+   * `started` or when the build lacks the call.
+   */
+  function pressInput(index, value, player = 0) {
+    if (!ready || !instance || !isStarted()) return false;
+    try {
+      const gm = instance.gameManager;
+      if (!gm || typeof gm.simulateInput !== 'function') return false;
+      gm.simulateInput(player, index, value);
+      return true;
+    } catch (err) {
+      log().warn('press-input.failed', { index, value, error: err?.message });
+      return false;
+    }
+  }
+
+  /**
    * True when EmulatorJS has finished its start chain.
    *
    * This is the settle barrier (see bootSettle.js): EJS sets `started = true` only
@@ -629,6 +651,7 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
     loadResume,
     restart,
     tapInput,
+    pressInput,
     claimGamepads,
     isStarted,
     isPaused,

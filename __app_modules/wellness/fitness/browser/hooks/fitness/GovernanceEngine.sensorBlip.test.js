@@ -29,7 +29,7 @@ function seededRng(seed) {
 function buildSession() {
   return {
     _deviceRouter: {
-      getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['user_2'] }]
+      getEquipmentCatalog: () => [{ id: 'bike_b', eligible_users: ['user_2'] }]
     },
     getParticipantProfile: () => null,
     zoneProfileStore: null,
@@ -52,7 +52,7 @@ const POLICY = {
         interval: [1, 1],
         selections: [{
           type: 'cycle',
-          equipment: 'cycle_ace',
+          equipment: 'bike_b',
           hi_rpm_range: [60, 60],
           segment_count: [1, 1],
           segment_duration_seconds: [2, 2],
@@ -87,7 +87,7 @@ function tick(engine, nowValue, { zone = 'active', rpm = 0, connected = true } =
     totalCount: 1,
     // ts mirrors the engine clock so the freshness gate in
     // _filteredCadenceFor sees each tick as a new sample.
-    equipmentCadenceMap: { cycle_ace: { rpm, connected, ts: nowValue } }
+    equipmentCadenceMap: { bike_b: { rpm, connected, ts: nowValue } }
   });
 }
 
@@ -147,7 +147,7 @@ function runCadenceSequence(samples, seed = 42) {
         warm: { id: 'warm', name: 'Warm' }
       },
       totalCount: 1,
-      equipmentCadenceMap: { cycle_ace: { rpm: sample.rpm, connected: true, ts: sample.ts } }
+      equipmentCadenceMap: { bike_b: { rpm: sample.rpm, connected: true, ts: sample.ts } }
     });
     // Reading engine.state forces _composeState → _buildChallengeSnapshot,
     // which is where the published-state debounce runs. Without this read,
@@ -246,7 +246,7 @@ describe('Cycle SM — cadence freshness', () => {
       zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
       zoneInfoMap: { warm: { id: 'warm', name: 'Warm' } },
       totalCount: 1,
-      equipmentCadenceMap: { cycle_ace: { rpm: 80, connected: true, ts: 1000 } }
+      equipmentCadenceMap: { bike_b: { rpm: 80, connected: true, ts: 1000 } }
     });
 
     // Now tick the engine clock forward, but pass the SAME cadence entry
@@ -263,7 +263,7 @@ describe('Cycle SM — cadence freshness', () => {
         zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
         zoneInfoMap: { warm: { id: 'warm', name: 'Warm' } },
         totalCount: 1,
-        equipmentCadenceMap: { cycle_ace: staleEntry }
+        equipmentCadenceMap: { bike_b: staleEntry }
       });
     }
 
@@ -532,7 +532,7 @@ describe('Cycle SM — health meter direct eval (maintain branch)', () => {
 
     // Snapshot exposes cycleHealthPct.
     engine._latestInputs.equipmentCadenceMap = {
-      cycle_ace: { rpm: phase.loRpm - 5, connected: true, ts: engine._now() }
+      bike_b: { rpm: phase.loRpm - 5, connected: true, ts: engine._now() }
     };
     engine._latestInputs.activeParticipants = ['user_2'];
     engine._latestInputs.userZoneMap = { user_2: 'warm' };
@@ -620,7 +620,7 @@ describe('Cycle SM — baseReqSatisfiedForRider snapshot exposure', () => {
     engine._latestInputs.activeParticipants = ['user_2'];
     engine._latestInputs.userZoneMap = { user_2: 'warm' };
     engine._latestInputs.equipmentCadenceMap = {
-      cycle_ace: { rpm: 80, connected: true, ts: engine._now() }
+      bike_b: { rpm: 80, connected: true, ts: engine._now() }
     };
 
     const snap = engine.state?.challenge;
@@ -645,7 +645,7 @@ describe('Cycle SM — baseReqSatisfiedForRider snapshot exposure', () => {
     engine._latestInputs.activeParticipants = ['user_2'];
     engine._latestInputs.userZoneMap = { user_2: 'cool' };
     engine._latestInputs.equipmentCadenceMap = {
-      cycle_ace: { rpm: 80, connected: true, ts: engine._now() }
+      bike_b: { rpm: 80, connected: true, ts: engine._now() }
     };
 
     const snap = engine.state?.challenge;
@@ -741,18 +741,18 @@ describe('Cycle SM — standing rider claim', () => {
     return engine;
   }
 
-  const SELECTION = { id: CYCLE_SELECTION_ID, equipment: 'cycle_ace', init: {}, hiRpmRange: [60, 60], segmentCount: [1, 1], segmentDurationSeconds: [2, 2], rampSeconds: [5, 5], loRpmRatio: 0.5 };
+  const SELECTION = { id: CYCLE_SELECTION_ID, equipment: 'bike_b', init: {}, hiRpmRange: [60, 60], segmentCount: [1, 1], segmentDurationSeconds: [2, 2], rampSeconds: [5, 5], loRpmRatio: 0.5 };
 
   it('uses the standing claim as the rider when one is set', () => {
-    const engine = makeEngine(42, { cycle_ace: 'user_2' });
+    const engine = makeEngine(42, { bike_b: 'user_2' });
     const active = engine._startCycleChallenge({ ...SELECTION }, {});
     expect(active.ok).not.toBe(false);
     expect(active.rider).toBe('user_2');
   });
 
   it('grants eligibility to a claimed rider not in eligible_users', () => {
-    const engine = makeEngine(42, { cycle_ace: 'user_1' });
-    expect(engine._getEligibleUsers('cycle_ace')).toContain('user_1');
+    const engine = makeEngine(42, { bike_b: 'user_1' });
+    expect(engine._getEligibleUsers('bike_b')).toContain('user_1');
     const active = engine._startCycleChallenge({ ...SELECTION }, {});
     expect(active.rider).toBe('user_1');
   });
@@ -764,7 +764,7 @@ describe('Cycle SM — standing rider claim', () => {
   });
 
   it('forceRiderId takes precedence over a standing claim', () => {
-    const engine = makeEngine(42, { cycle_ace: 'user_3' });
+    const engine = makeEngine(42, { bike_b: 'user_3' });
     const active = engine._startCycleChallenge({ ...SELECTION }, { forceRiderId: 'user_2' });
     expect(active.rider).toBe('user_2');
   });
@@ -780,7 +780,7 @@ describe('Cycle SM — live rider swap on claim change', () => {
     engine.triggerChallenge({ type: 'cycle', selectionId: CYCLE_SELECTION_ID, riderId: 'user_2' });
     expect(engine.challengeState.activeChallenge.rider).toBe('user_2');
 
-    engine._latestInputs.equipmentRiderMap = { cycle_ace: 'user_3' };
+    engine._latestInputs.equipmentRiderMap = { bike_b: 'user_3' };
     nowValue += 200;
     engine.evaluate({
       activeParticipants: ['user_2', 'user_3'],
@@ -788,8 +788,8 @@ describe('Cycle SM — live rider swap on claim change', () => {
       zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
       zoneInfoMap: { warm: { id: 'warm', name: 'Warm' } },
       totalCount: 2,
-      equipmentCadenceMap: { cycle_ace: { rpm: 70, connected: true, ts: nowValue } },
-      equipmentRiderMap: { cycle_ace: 'user_3' }
+      equipmentCadenceMap: { bike_b: { rpm: 70, connected: true, ts: nowValue } },
+      equipmentRiderMap: { bike_b: 'user_3' }
     });
 
     expect(engine.challengeState.activeChallenge.rider).toBe('user_3');
@@ -810,7 +810,7 @@ describe('Cycle SM — tag-team swap mid-challenge (any non-terminal state)', ()
     engine.setMedia({ id: 'v1', type: 'episode', labels: ['cardio'] });
     engine.triggerChallenge({ type: 'cycle', selectionId: CYCLE_SELECTION_ID, riderId: 'user_2' });
     // Make the incoming rider eligible via a standing claim (mirrors a real press).
-    engine._latestInputs.equipmentRiderMap = { cycle_ace: claim };
+    engine._latestInputs.equipmentRiderMap = { bike_b: claim };
     return { engine, active: engine.challengeState.activeChallenge, advance: (ms) => { nowValue += ms; } };
   };
 
@@ -853,7 +853,7 @@ describe('Cycle SM — tag-team swap mid-challenge (any non-terminal state)', ()
     const active = engine.challengeState.activeChallenge;
     active.cycleState = 'maintain'; // phase 0 maintain — old gate only allowed ramp@phase0
 
-    engine._latestInputs.equipmentRiderMap = { cycle_ace: 'user_3' };
+    engine._latestInputs.equipmentRiderMap = { bike_b: 'user_3' };
     nowValue += 200;
     engine.evaluate({
       activeParticipants: ['user_2', 'user_3'],
@@ -861,8 +861,8 @@ describe('Cycle SM — tag-team swap mid-challenge (any non-terminal state)', ()
       zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
       zoneInfoMap: { warm: { id: 'warm', name: 'Warm' } },
       totalCount: 2,
-      equipmentCadenceMap: { cycle_ace: { rpm: 70, connected: true, ts: nowValue } },
-      equipmentRiderMap: { cycle_ace: 'user_3' }
+      equipmentCadenceMap: { bike_b: { rpm: 70, connected: true, ts: nowValue } },
+      equipmentRiderMap: { bike_b: 'user_3' }
     });
 
     expect(engine.challengeState.activeChallenge.rider).toBe('user_3');
@@ -1003,7 +1003,7 @@ describe('Cycle SM — unavailable sample isolation', () => {
     engine.evaluate({
       activeParticipants: ['user_2'], userZoneMap: { user_2: 'active' }, totalCount: 1,
       zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3 },
-      equipmentCadenceMap: { cycle_ace: { rpm: 0, connected: true, ts: engine._now() + 60000 } }
+      equipmentCadenceMap: { bike_b: { rpm: 0, connected: true, ts: engine._now() + 60000 } }
     });
     expect(engine.state.challenge.sensorUnavailable).toBe(true);
     advance(200);

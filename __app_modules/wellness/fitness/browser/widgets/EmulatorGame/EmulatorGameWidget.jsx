@@ -19,7 +19,7 @@ import { fullscreenClass } from "./emulatorGameWidgetLayout.js";
 import { wsService } from "../../../../../../frontend/src/services/WebSocketService.js";
 import { formatClock, useArcadeGameBudget } from "./useArcadeGameBudget.js";
 import { findDirectLaunchGame } from "./directLaunch.js";
-import { useFitnessBluetoothState } from "../../context/FitnessBluetoothContext.jsx";
+import { useBluetoothScreenBluetooth } from "../../lib/remoteButtons/remoteButtonsContext.js";
 
 const ENGINE_PATH = '/api/v1/emulator/engine/';
 const DEFAULT_AUTOSAVE_SECONDS = 15;
@@ -56,11 +56,11 @@ function resolveControllerGamepad(controllers) {
 // fitnessContext). Only the components that render the screen read it, so a
 // running search re-renders them and not this whole widget.
 function ArcadeShellWithBluetooth(props) {
-  const bluetooth = useFitnessBluetoothState()?.bluetooth || null;
+  const bluetooth = useBluetoothScreenBluetooth();
   return <ArcadeShell {...props} bluetooth={bluetooth} />;
 }
 function EmulatorConsoleWithBluetooth(props) {
-  const bluetooth = useFitnessBluetoothState()?.bluetooth || null;
+  const bluetooth = useBluetoothScreenBluetooth();
   return <EmulatorConsole {...props} bluetooth={bluetooth} />;
 }
 

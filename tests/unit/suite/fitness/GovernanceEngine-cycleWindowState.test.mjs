@@ -37,7 +37,7 @@ describe('GovernanceEngine._updateGlobalState — cycle fields', () => {
         id: 'cyc_1',
         type: 'cycle',
         cycleState: 'ramp',
-        equipment: 'cycle_ace',
+        equipment: 'bike_b',
         rider: { id: 'user_2', name: 'User_2' },
         currentPhaseIndex: 1,
         totalPhases: 4,
@@ -54,12 +54,12 @@ describe('GovernanceEngine._updateGlobalState — cycle fields', () => {
     expect(gov.currentPhaseIndex).toBe(1);
     expect(gov.totalPhases).toBe(4);
     expect(gov.phaseProgressPct).toBe(42);
-    expect(gov.activeChallengeEquipment).toBe('cycle_ace');
+    expect(gov.activeChallengeEquipment).toBe('bike_b');
   });
 
   it('returns null for missing rider object (e.g. mid-swap)', () => {
     engine.challengeState = {
-      activeChallenge: { type: 'cycle', cycleState: 'init', equipment: 'cycle_ace', rider: null }
+      activeChallenge: { type: 'cycle', cycleState: 'init', equipment: 'bike_b', rider: null }
     };
     engine._updateGlobalState();
     expect(window.__fitnessGovernance.riderId).toBeNull();
@@ -70,7 +70,7 @@ describe('GovernanceEngine._updateGlobalState — cycle fields', () => {
       activeChallenge: {
         type: 'cycle',
         cycleState: 'maintain',
-        equipment: 'cycle_ace',
+        equipment: 'bike_b',
         rider: 'user_2' // live engine stores rider as a userId string
       }
     };

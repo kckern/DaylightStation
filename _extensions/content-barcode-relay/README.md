@@ -26,7 +26,7 @@ scales:
     barcode:
       id: content-barcode
       route: content
-      mac: "c8:1c:fe:fd:ce:90"
+      mac: "aa:bb:cc:00:40:01"
       name: DS2278
 ```
 
@@ -51,7 +51,7 @@ curl http://10.0.0.153/status      # or open it in a browser
   "now": "2026-07-12T02:30:43Z",    // device wall-clock (UTC, via NTP); absent until NTP syncs
   "wifi": { "connected": true, "ip": "10.0.0.153", "rssi": -36 },
   "ws":   { "connected": true, "host": "daylightlocal.{env.domain}", "port": 3111 },
-  "ble":  { "connected": true, "scanner": "c8:1c:fe:fd:ce:90", "streams": 2, "rssi": -37 },
+  "ble":  { "connected": true, "scanner": "aa:bb:cc:00:40:01", "streams": 2, "rssi": -37 },
   "scan_count": 0,                  // scans since boot
   "last_scan": null                 // null until the first scan; then an object (below)
 }

@@ -6,7 +6,7 @@ describe('equipmentImageMap', () => {
     expect(equipmentImageMap({
       equipment: [
         { id: 'generic_pedaler', image: 'peddler.jpg' },
-        { id: 'niceday' },
+        { id: 'bike_a' },
       ],
     })).toEqual({ generic_pedaler: 'peddler.jpg' });
   });

@@ -6,7 +6,7 @@ function makeController() {
   const session = {
     _deviceRouter: {
       getEquipmentCatalog: () => [
-        { id: 'cycle_ace', name: 'Ace', cadence: 'cad1', eligible_users: ['user_2', 'user_3'] },
+        { id: 'bike_b', name: 'Ace', cadence: 'cad1', eligible_users: ['user_2', 'user_3'] },
         { id: 'cycle_bee', name: 'Bee', cadence: 'cad2', eligible_users: ['kc'] }
       ]
     },
@@ -28,21 +28,21 @@ describe('FitnessSimulationController — autoAssignRiders', () => {
     const { ctrl, session } = makeController();
     const out = ctrl.autoAssignRiders(2);
     expect(out).toEqual([
-      { equipmentId: 'cycle_ace', userId: 'user_2' },
+      { equipmentId: 'bike_b', userId: 'user_2' },
       { equipmentId: 'cycle_bee', userId: 'kc' }
     ]);
-    expect(session.setEquipmentRider).toHaveBeenCalledWith('cycle_ace', 'user_2');
+    expect(session.setEquipmentRider).toHaveBeenCalledWith('bike_b', 'user_2');
     expect(session.setEquipmentRider).toHaveBeenCalledWith('cycle_bee', 'kc');
   });
 
   it('skips a bike when its only eligible rider is already taken', () => {
     const { ctrl, session } = makeController();
     session._deviceRouter.getEquipmentCatalog = () => ([
-      { id: 'cycle_ace', cadence: 'cad1', eligible_users: ['kc'] },
+      { id: 'bike_b', cadence: 'cad1', eligible_users: ['kc'] },
       { id: 'cycle_bee', cadence: 'cad2', eligible_users: ['kc'] }
     ]);
     const out = ctrl.autoAssignRiders(2);
-    expect(out).toEqual([{ equipmentId: 'cycle_ace', userId: 'kc' }]);
+    expect(out).toEqual([{ equipmentId: 'bike_b', userId: 'kc' }]);
   });
 });
 
@@ -52,12 +52,12 @@ describe('FitnessSimulationController — RPM arc driver', () => {
 
   it('driveRpmArc sends cadence each second and stopRpmArc stops it', () => {
     const { ctrl, wsService } = makeController();
-    ctrl.driveRpmArc('cycle_ace', { base: 80, amp: 0, periodS: 10 });
+    ctrl.driveRpmArc('bike_b', { base: 80, amp: 0, periodS: 10 });
     vi.advanceTimersByTime(1000);
     const sendsAfter1s = wsService.send.mock.calls.length;
     expect(sendsAfter1s).toBeGreaterThan(0);
 
-    ctrl.stopRpmArc('cycle_ace');
+    ctrl.stopRpmArc('bike_b');
     wsService.send.mockClear();
     vi.advanceTimersByTime(3000);
     expect(wsService.send).not.toHaveBeenCalled();
@@ -65,7 +65,7 @@ describe('FitnessSimulationController — RPM arc driver', () => {
 
   it('stopAllRpmArcs clears every running arc', () => {
     const { ctrl, wsService } = makeController();
-    ctrl.driveRpmArc('cycle_ace', { base: 70 });
+    ctrl.driveRpmArc('bike_b', { base: 70 });
     ctrl.driveRpmArc('cycle_bee', { base: 70 });
     ctrl.stopAllRpmArcs();
     wsService.send.mockClear();
@@ -81,7 +81,7 @@ describe('FitnessSimulationController — ambient + stop', () => {
     const arc = vi.spyOn(ctrl, 'driveRpmArc').mockReturnValue({ ok: true });
     ctrl.startAmbientWorkout();
     expect(sess).toHaveBeenCalledTimes(1);
-    expect(arc).toHaveBeenCalledWith('cycle_ace', expect.any(Object));
+    expect(arc).toHaveBeenCalledWith('bike_b', expect.any(Object));
     expect(arc).toHaveBeenCalledWith('cycle_bee', expect.any(Object));
   });
 
@@ -93,7 +93,7 @@ describe('FitnessSimulationController — ambient + stop', () => {
     ctrl.stopEverything();
     expect(hr).toHaveBeenCalledTimes(1);
     expect(arcs).toHaveBeenCalledTimes(1);
-    expect(eq).toHaveBeenCalledWith('cycle_ace');
+    expect(eq).toHaveBeenCalledWith('bike_b');
     expect(eq).toHaveBeenCalledWith('cycle_bee');
   });
 });

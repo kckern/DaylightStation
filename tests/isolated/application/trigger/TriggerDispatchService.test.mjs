@@ -1171,14 +1171,14 @@ describe('TriggerDispatchService.handleTrigger — re-read on an NFC miss', () =
     const tagWriter = {
       recordObserved: vi.fn().mockResolvedValue({ created: true }),
       refreshNfcTags: vi.fn(async () => {
-        registry.nfc.tags['04499aa58b2681'] = { global: { plex: 621333 }, overrides: {} };
-        return { added: ['04499aa58b2681'], updated: 0 };
+        registry.nfc.tags['04f00000000004'] = { global: { plex: 621333 }, overrides: {} };
+        return { added: ['04f00000000004'], updated: 0 };
       }),
       sweepInbox: vi.fn().mockResolvedValue({ swept: [] }),
     };
     const service = makeService(registry, tagWriter, logger);
 
-    const result = await service.handleTrigger('livingroom', 'nfc', '04499aa58b2681', { dryRun: true });
+    const result = await service.handleTrigger('livingroom', 'nfc', '04f00000000004', { dryRun: true });
 
     expect(result.ok).toBe(true);
     expect(result.response.expression.contentId).toBe('plex:621333');
@@ -1188,17 +1188,17 @@ describe('TriggerDispatchService.handleTrigger — re-read on an NFC miss', () =
   });
 
   it('plays a note-only stub once it has been curated (an update, not an add)', async () => {
-    const registry = makeRegistry({ '04499aa58b2681': { global: { note: 'Goodnight moon' }, overrides: {} } });
+    const registry = makeRegistry({ '04f00000000004': { global: { note: 'Goodnight moon' }, overrides: {} } });
     const tagWriter = {
       recordObserved: vi.fn().mockResolvedValue({ created: false }),
       refreshNfcTags: vi.fn(async () => {
-        registry.nfc.tags['04499aa58b2681'] = { global: { note: 'Goodnight moon', plex: 621333 }, overrides: {} };
+        registry.nfc.tags['04f00000000004'] = { global: { note: 'Goodnight moon', plex: 621333 }, overrides: {} };
         return { added: [], updated: 1 };
       }),
     };
     const service = makeService(registry, tagWriter, makeLogger());
 
-    const result = await service.handleTrigger('livingroom', 'nfc', '04499aa58b2681', { dryRun: true });
+    const result = await service.handleTrigger('livingroom', 'nfc', '04f00000000004', { dryRun: true });
 
     expect(result.ok).toBe(true);
     expect(result.response.expression.contentId).toBe('plex:621333');

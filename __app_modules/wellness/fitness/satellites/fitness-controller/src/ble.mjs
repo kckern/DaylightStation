@@ -13,23 +13,55 @@ import { BleHeartRateDecoder } from "./decoders/heart_rate.mjs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Load BLE devices configuration
-let KNOWN_DEVICES = {};
-try {
-  const configPath = join(__dirname, '../config/ble-devices.json');
-  KNOWN_DEVICES = JSON.parse(readFileSync(configPath, 'utf-8'));
-  console.log(`✅ Loaded ${Object.keys(KNOWN_DEVICES).length} BLE device configuration(s)`);
-} catch (error) {
-  console.warn('⚠️  Could not load BLE device config:', error.message);
-  // Fallback to hardcoded config
-  KNOWN_DEVICES = {
-    RENPHO_JUMPROPE: {
-      name: 'R-Q008',
-      address: '2B929968-AD91-44F5-ABCC-EB52B324CAF3',
-      characteristic: '00005303-0000-0041-4c50-574953450000',
-      type: 'jumprope'
-    }
-  };
+// BLE devices are household configuration, never code. They come from the
+// app's fitness config: every `equipment` entry with a `ble` address and a
+// `type` that has a decoder (see devicesFromEquipment). With no such entry
+// (or the app unreachable at boot) an optional host-local file mounted at
+// config/ble-devices.json is used, shaped
+//   { <key>: { name, address, type, characteristic? } }
+// The GATT characteristic belongs to the decoder; config may override it.
+const LOCAL_DEVICE_FILE = join(__dirname, '../config/ble-devices.json');
+
+export function loadLocalDeviceFile(path = LOCAL_DEVICE_FILE) {
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf-8'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch (error) {
+    if (error.code !== 'ENOENT') console.warn('⚠️  Could not read BLE device file:', error.message);
+    return {};
+  }
+}
+
+function deviceEntry(key, { name, address, type, characteristic }) {
+  const Decoder = DECODER_MAP[type];
+  const gatt = characteristic || Decoder?.CHARACTERISTIC;
+  if (!address || !Decoder || !gatt) return null;
+  return { name: name || key, address: String(address), characteristic: String(gatt), type };
+}
+
+/** Keep only entries a monitor can run: an address and a type with a decoder. */
+export function normalizeDeviceMap(devices) {
+  const out = {};
+  if (!devices || typeof devices !== 'object' || Array.isArray(devices)) return out;
+  for (const [key, cfg] of Object.entries(devices)) {
+    const entry = cfg && typeof cfg === 'object' ? deviceEntry(key, cfg) : null;
+    if (entry) out[key] = entry;
+    else console.warn(`⚠️  Skipping BLE device "${key}": needs an address and a type with a decoder`);
+  }
+  return out;
+}
+
+/** Fitness-config equipment entries with a `ble` address become monitored devices, keyed by id. */
+export function devicesFromEquipment(equipment) {
+  const out = {};
+  for (const item of Array.isArray(equipment) ? equipment : []) {
+    if (!item?.ble || !item.id) continue;
+    const entry = deviceEntry(item.id, {
+      name: item.name, address: item.ble, type: item.type, characteristic: item.ble_characteristic,
+    });
+    if (entry) out[item.id] = entry;
+  }
+  return out;
 }
 
 // Map device types to their decoders
@@ -51,6 +83,36 @@ export class BLEManager {
     this.hrDecoders = new Map();   // userId -> BleHeartRateDecoder
     this.hrMatched = new Map();    // deviceAddress -> userId
     this.bleUsers = [];            // configured BLE HR users
+
+    this.knownDevices = {};        // device key -> { name, address, characteristic, type }
+    this.deviceSource = 'none';
+  }
+
+  /**
+   * Set the devices to monitor from the app's fitness-config equipment; with
+   * none there, the host-local file is used. Returns the device keys.
+   */
+  configureDevices(equipment, localDevices = loadLocalDeviceFile()) {
+    const fromApp = devicesFromEquipment(equipment);
+    if (Object.keys(fromApp).length) {
+      this.knownDevices = fromApp;
+      this.deviceSource = 'app-config';
+    } else {
+      this.knownDevices = normalizeDeviceMap(localDevices);
+      this.deviceSource = Object.keys(this.knownDevices).length ? 'local-file' : 'none';
+    }
+    const keys = Object.keys(this.knownDevices);
+    console.log(`✅ BLE devices configured from ${this.deviceSource}: ${keys.join(', ') || 'none'}`);
+    return keys;
+  }
+
+  /** Start a monitor for every configured device. */
+  async startAllMonitoring() {
+    const results = {};
+    for (const key of Object.keys(this.knownDevices)) {
+      results[key] = await this.startMonitoring(key);
+    }
+    return results;
   }
 
   async initialize() {
@@ -90,8 +152,8 @@ export class BLEManager {
     }
   }
 
-  async startMonitoring(deviceKey = 'RENPHO_JUMPROPE') {
-    const deviceConfig = KNOWN_DEVICES[deviceKey];
+  async startMonitoring(deviceKey) {
+    const deviceConfig = this.knownDevices[deviceKey];
     if (!deviceConfig) {
       console.error(`❌ Unknown device: ${deviceKey}`);
       return false;

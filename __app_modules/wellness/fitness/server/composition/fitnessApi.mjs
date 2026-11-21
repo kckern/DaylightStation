@@ -3,6 +3,9 @@ import moment from 'moment-timezone';
 import { PlaybackBudgetService } from '../application/PlaybackBudgetService.mjs';
 import { YamlPlaybackBudgetStore } from '../adapters/persistence/YamlPlaybackBudgetStore.mjs';
 import { createFitnessPlaybackBudgetsRouter } from '../api/fitnessPlaybackBudgets.mjs';
+import { RemoteButtonService } from '../application/RemoteButtonService.mjs';
+import { YamlRemoteButtonMappingRepository } from '../adapters/persistence/YamlRemoteButtonMappingRepository.mjs';
+import { createFitnessRemoteButtonsRouter } from '../api/fitnessRemoteButtons.mjs';
 // __backend/src/5_composition/modules/fitnessApi.mjs
 // Composition wiring for Fitness API router(s). Extracted from bootstrap.mjs (Task P2.7-E).
 
@@ -512,6 +515,9 @@ export function createFitnessApiRouter(config) {
     logger,
   });
   fitnessRouter.use('/playback-budgets', createFitnessPlaybackBudgetsRouter({ service: playbackBudgetService, householdId }));
+  // What each Bluetooth remote's buttons do (Bluetooth screen → Edit buttons).
+  const remoteButtonService = new RemoteButtonService({ repository: new YamlRemoteButtonMappingRepository({ configService }), logger });
+  fitnessRouter.use('/remote-buttons', createFitnessRemoteButtonsRouter({ service: remoteButtonService, householdId }));
   fitnessRouter.recapSweep = recapSweep;
   fitnessRouter.trashRetentionSweep = trashRetentionSweep;
   fitnessRouter.voiceMemoRetryWorker = voiceMemoRetryWorker;
