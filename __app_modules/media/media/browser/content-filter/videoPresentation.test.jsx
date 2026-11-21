@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import React from 'react';
 import { act, render, renderHook, waitFor } from '@testing-library/react';
-import { subscribeMediaLoadingSuppression, getMediaLoadingSuppression } from '../provenance/playbackPresentation.jsx';
+import { subscribeSkipCard, isSkipCardPaused } from './skipCardState.js';
 
 // Exercise the real Media data/effect hooks; only external HTTP and media IO are synthetic.
 afterEach(() => { vi.unstubAllGlobals(); window.history.replaceState({}, '', '/'); });
@@ -23,8 +23,8 @@ describe('installed Media playback presentation', () => {
     expect(installed.PlayerOverlayLoading).toBe(raw.PlayerOverlayLoading);
     const contract = await import('../../../../../__capabilities/playback/browser/presentation.mjs');
     const store = contract.getLoadingPresentation();
-    expect(store.subscribeLoadingSuppression).toBe(subscribeMediaLoadingSuppression);
-    expect(store.getLoadingSuppression).toBe(getMediaLoadingSuppression);
+    expect(store.subscribeLoadingSuppression).toBe(subscribeSkipCard);
+    expect(store.getLoadingSuppression).toBe(isSkipCardPaused);
     const overlay = render(<installed.PlayerOverlayLoading shouldRender isVisible stalled seconds={100} status="recovering" />);
     expect(overlay.container.querySelector('.loading-overlay')).toBeInTheDocument();
     const el = document.createElement('video');
@@ -182,4 +182,26 @@ it('keeps the preview cues and artwork scoped to the playing title during a swit
   } finally {
     unsubscribe();
   }
+});
+
+describe('bumper timing around the provenance intro', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('holds the bumper while the intro is up and until the lines meet', async () => {
+    vi.useFakeTimers();
+    const { useBumperHeld } = await import('../provenance/playbackPresentation.jsx');
+    const { SCENE_TIMING } = await import('../provenance/useSceneTimeline.js');
+    const { result, rerender } = renderHook((p) => useBumperHeld(p.stage), { initialProps: { stage: undefined } });
+    expect(result.current).toBe(false);
+    rerender({ stage: 'off' });
+    expect(result.current).toBe(false);
+    for (const stage of ['waiting', 'covering', 'holding']) {
+      rerender({ stage });
+      expect(result.current).toBe(true);
+    }
+    rerender({ stage: 'playing' });
+    expect(result.current).toBe(true);
+    act(() => { vi.advanceTimersByTime(SCENE_TIMING.linkedMs); });
+    expect(result.current).toBe(false);
+  });
 });

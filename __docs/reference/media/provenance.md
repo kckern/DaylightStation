@@ -25,20 +25,31 @@ plays from Plex and the bumper signals provenance only.
 | `leaving` (~0.9 s) | playing | corner logo fades |
 
 Lines and dots take the service's brand colour (`PROVIDER_ACCENTS` in
-`ProvenanceHandoff.jsx`; white otherwise). Timings are `HANDOFF_TIMING` in
-`useProvenanceHandoff.js`; the hold is drawn uniformly from `linkMinMs`–`linkMaxMs`
-and passed to the scene as `--ph-link-ms`, so the lines take exactly that long.
+`ProvenanceHandoff.jsx`; white otherwise). Timings are `SCENE_TIMING` in
+`useSceneTimeline.js`; the hold is drawn uniformly from `linkMinMs`–`linkMaxMs` once
+per title, handed to the Player as the intro's `minHoldMs`, and passed to the scene as
+`--ph-link-ms`, so the lines take exactly that long. The Player holds longer if the
+video is still loading.
 
 **Contrast.** When the logo preloads, the player measures it (`logoContrast.js`): the
 mean relative luminance of its opaque pixels against the field, as a WCAG ratio. Under
 3:1 (the large-graphics threshold) the logo rides on a light rounded plate, in the centre
 and docked. Disney+'s navy wordmark (about 2.5:1) gets one; Netflix and Kanopy red do
-not. A newly added dark logo gets a plate without any change. If resuming does not report `playing` within 2.5 s the
-lines meet anyway; a remote press that resumes early links at once.
+not. A newly added dark logo gets a plate without any change.
 
-It runs once per title, on the first `playing` within 5 s of the start. The
-content-filter bumper ("Edited for content") waits until the handoff has docked, so
-on a filtered title it follows the handoff instead of covering it.
+**The Player gates it.** The scene is the Media app's *intro* in the shared Player's
+intro slot (`useVideoIntro` in the playback presentation contract): `useProvenanceIntro`
+reports `pending` while the provider is looked up, `ready` once the logo has loaded,
+`none` otherwise, plus `minHoldMs` and a `render(stage)` callback. The Player's
+`useIntroGate` owns all timing: it covers the spinner as soon as the intro is ready,
+holds the first frame until `minHoldMs` is over, resumes, and moves to `playing`
+(if resuming does not report `playing` within 2.5 s it moves on anyway). It shows
+nothing on a resume (a requested start past 5 s) or when the answer arrives after the
+film has rolled. `useSceneTimeline` maps the stage to the scene's phase:
+`covering`/`holding` draw `linking`; entering `playing` runs `linked` → `docked` →
+`leaving`. The content-filter bumper ("Edited for content") is held while the intro
+is up and until the lines meet, so on a filtered title it follows the scene instead
+of covering it.
 
 `?provenance=0` on the page URL turns it off for that load.
 
@@ -122,11 +133,10 @@ answer is not in yet plays plain, and the next play has it.
 | Use case | `server/application/provenance/GetTitleProvenance.mjs`, ports in `ports/` |
 | Adapters | `server/adapters/provenance/` (Watchmode, Plex identity, YAML store, logo catalog) |
 | Route + wiring | `server/api/provenance.mjs`, `server/composition/provenance.mjs` |
-| Player | `browser/provenance/` (`useProvenance`, `useProvenanceHandoff`, `ProvenanceHandoff`, `playbackPresentation.jsx`); installed by `browser/playback.mjs` |
+| Player | `browser/provenance/` (`useProvenance`, `useProvenanceIntro`, `useSceneTimeline`, `ProvenanceHandoff`, `playbackPresentation.jsx`); installed by `browser/playback.mjs` as the Player's `useVideoIntro` |
 
-The handoff's deliberate pause sets a loading-suppression flag
-(`provenanceHold.js`) so the player's buffering spinner does not read it as a stall,
-the same way the content filter's skip card does.
+The Player hides its own spinner while the intro covers, so Media's loading-suppression
+store is only the content filter's skip card.
 
 ## Logs
 
@@ -135,6 +145,6 @@ Backend (`context.module: provenance`): `provenance.lookup.done` (providers foun
 `provenance.lookup.no-external-id`, `provenance.disabled` (no key or no Plex at boot).
 
 Frontend (`component: provenance`): `provenance.ready`, `provenance.none`,
-`provenance.handoff.shown`, `provenance.handoff.skipped` (`reason: resume | not-ready`),
-`provenance.handoff.linked` / `.done` (debug), `provenance.handoff.resume-refused`,
-`provenance.fetch.failed`, `provenance.logo.failed`.
+`provenance.fetch.failed`, `provenance.logo.failed`. The gate itself logs from the
+Player (`component: intro-gate`): `intro.covering`, `intro.holding` (debug),
+`intro.playing`, `intro.off` (debug), `intro.resume-refused`.

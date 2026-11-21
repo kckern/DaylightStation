@@ -5,7 +5,7 @@
  * clears, and the logo shrinks into the top-right corner and fades.
  *
  * No words: the logo and the joining lines say it. Phases come from
- * useProvenanceHandoff. Reference: __docs/reference/media/provenance.md
+ * useSceneTimeline (driven by the Player's intro stage). Reference: __docs/reference/media/provenance.md
  */
 import React from 'react';
 import PropTypes from 'prop-types';
