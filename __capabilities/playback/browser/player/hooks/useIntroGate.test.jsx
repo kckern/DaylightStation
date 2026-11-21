@@ -115,7 +115,7 @@ describe('useIntroGate', () => {
     const el = fakeVideo();
     const { result, rerender } = setup({ intro: PENDING, el });
     act(() => { el.currentTime = 3; el.start(); });
-    expect(result.current).toBe('waiting');
+    expect(result.current).toBe('off'); // the film is rolling: the gate lets go at once (late)
     rerender({ intro: READY, el });
     expect(result.current).toBe('off');
     expect(isIntroCovering()).toBe(false);
@@ -142,13 +142,103 @@ describe('useIntroGate', () => {
     expect(isIntroCovering()).toBe(true); // the new title's pending intro holds the spinner back briefly
   });
 
-  it('resumes a held element and drops the cover on unmount', () => {
+  it('drops the cover on unmount but never resumes the element it leaves behind', () => {
     const { el, result, unmount } = setup({ intro: READY });
     act(() => { el.start(); });
     expect(result.current).toBe('holding');
     unmount();
-    expect(el.play).toHaveBeenCalledTimes(1);
+    expect(el.play).not.toHaveBeenCalled();
     expect(isIntroCovering()).toBe(false);
+  });
+
+  it('does not resume a held element that is no longer in the document on reset', () => {
+    const el = fakeVideo();
+    const { result, rerender } = setup({ intro: READY, el });
+    act(() => { el.start(); });
+    expect(result.current).toBe('holding');
+    el.isConnected = false;
+    rerender({ intro: PENDING, el, resetKey: 'b' });
+    expect(el.play).not.toHaveBeenCalled();
+  });
+
+  it('keeps the cover up across a reset from one covering title to another', () => {
+    const { result, rerender } = setup({ intro: READY });
+    expect(result.current).toBe('covering');
+    expect(isIntroCovering()).toBe(true);
+    rerender({ intro: { ...READY }, resetKey: 'b' });
+    expect(result.current).toBe('covering');
+    expect(isIntroCovering()).toBe(true);
+  });
+
+  it('gives up covering a video that never produces a frame', async () => {
+    const { INTRO_COVER_CEILING_MS } = await import('./useIntroGate.js');
+    expect(INTRO_COVER_CEILING_MS).toBe(20000);
+    const { result } = setup({ intro: READY });
+    act(() => { vi.advanceTimersByTime(HOLD + INTRO_COVER_CEILING_MS - 1); });
+    expect(result.current).toBe('covering');
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(result.current).toBe('off');
+    expect(isIntroCovering()).toBe(false);
+  });
+
+  it('does not apply the cover ceiling to a held video', async () => {
+    const { INTRO_COVER_CEILING_MS } = await import('./useIntroGate.js');
+    const { el, result } = setup({ intro: READY });
+    act(() => { el.start(); });
+    expect(result.current).toBe('holding');
+    el.play = vi.fn(() => new Promise(() => {})); // resume never settles; the play timeout ends it
+    act(() => { vi.advanceTimersByTime(HOLD + INTRO_COVER_CEILING_MS); });
+    expect(result.current).toBe('playing');
+  });
+
+  it('goes off when the film rolls past INTRO_LATE_SEC while the intro is still pending', () => {
+    const el = fakeVideo();
+    const { result, rerender } = setup({ intro: PENDING, el });
+    act(() => { el.start(); });
+    expect(result.current).toBe('waiting'); // first frame near the top: still in time
+    act(() => { el.currentTime = 1.5; el.fire('timeupdate'); });
+    expect(result.current).toBe('off');
+    expect(isIntroCovering()).toBe(false);
+    rerender({ intro: READY, el });
+    expect(result.current).toBe('off');
+    expect(el.pause).not.toHaveBeenCalled();
+  });
+
+  it('goes off on a late first frame while waiting', () => {
+    const el = fakeVideo({ currentTime: 2 });
+    const { result } = setup({ intro: PENDING, el });
+    act(() => { el.start(); });
+    expect(result.current).toBe('off');
+  });
+
+  it('still covers when the answer arrives before the film has rolled INTRO_LATE_SEC', () => {
+    const el = fakeVideo();
+    const { result, rerender } = setup({ intro: PENDING, el });
+    act(() => { el.start(); el.currentTime = 0.5; el.fire('timeupdate'); });
+    expect(result.current).toBe('waiting');
+    rerender({ intro: READY, el });
+    expect(result.current).toBe('holding');
+    expect(el.pause).toHaveBeenCalledTimes(1);
+  });
+
+  it('tags its hold pause and resume so they are not read as the viewer', () => {
+    const el = fakeVideo();
+    const seen = [];
+    el.pause = vi.fn(() => { seen.push(['pause', el.__pauseSource]); el.paused = true; });
+    el.play = vi.fn(() => { seen.push(['play', el.__playSource]); el.paused = false; return Promise.resolve(); });
+    setup({ intro: READY, el });
+    act(() => { el.start(); });
+    act(() => { vi.advanceTimersByTime(HOLD); });
+    expect(seen).toEqual([['pause', 'intro-hold'], ['play', 'intro-hold']]);
+  });
+
+  it('stops listening to the element once the gate is done', () => {
+    const el = fakeVideo();
+    const remove = vi.spyOn(el, 'removeEventListener');
+    const { result } = setup({ intro: READY, el });
+    act(() => { vi.advanceTimersByTime(HOLD); el.start(); });
+    expect(result.current).toBe('playing');
+    expect(remove).toHaveBeenCalledWith('playing', expect.any(Function));
   });
 
   it('follows a replaced element', () => {
