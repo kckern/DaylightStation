@@ -71,7 +71,7 @@ describe('remote entries in the inventory', () => {
 
   it('never reports a kind: remote entry as a controller (no arcade toast)', () => {
     const inv = [
-      { address: 'AA:BB:CC:00:00:01', name: 'QXS-001', connected: true, battery: null },
+      { address: 'AA:BB:CC:00:00:01', name: 'Handlebar remote', connected: true, battery: null },
       { address: 'e4:17:d8:00:00:10', name: '8Bitdo SFC30 GamePad', connected: true, battery: 75 },
     ];
     expect(knownControllerStates(inv, [SFC30, REMOTE]).map((s) => s.label)).toEqual(['8BitDo SFC30']);

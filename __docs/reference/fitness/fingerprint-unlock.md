@@ -244,6 +244,7 @@ consumer (menu / show / player each own one).
 | Governed show + sequential episode | `governance_bypass`, `skip_content` | "Unlock" affordance / locked-episode pill → on a `governance_bypass` match the whole show is marked to bypass governance; on a `skip_content` match the locked episode plays. State resets on show change |
 | Fitness Home session replay | `playback_unlock.lock` (for example `kids_playback`) | Protected recap stays locked; tap → scan prompt → a match unlocks that session only |
 | Show entry + video start while the supervising adult is away | admin (`registerAdmin('presence_gate')`) | Only when `presence_gate` is enabled; see [presence-gate.md](presence-gate.md) |
+| Bluetooth screen → Edit buttons (a remote's button mapping) | admin (`registerAdmin('remote_buttons')`) | Kiosk-only like the other locks; a match opens the editor; see [controller-pairing.md](../gaming/controller-pairing.md#button-mapping) |
 | In-player governance and cycling lock/failure overlays | `governance_bypass` | "Skip / Unlock" button → on a match a **per-item** runtime bypass releases the current lock only (cleared when the next item starts, so one unlock can't disable governance for the rest of the session) |
 
 The same “Skip / Unlock” control is available on promoted cycling init, ramp,

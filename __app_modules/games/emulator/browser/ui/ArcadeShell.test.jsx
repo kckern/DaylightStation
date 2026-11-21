@@ -126,11 +126,11 @@ describe('ArcadeShell controller indicator', () => {
 
   it('the chip opens the Bluetooth screen; Escape closes it', () => {
     const { container } = render(<ArcadeShell consoles={consoles} games={games} controllers={controllers} bluetooth={bt()} getGamepads={noPads} />);
-    expect(screen.queryByText('Paired devices')).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Paired devices' })).toBeNull();
     fireEvent.click(container.querySelector('.emu-controller-chip'));
-    expect(screen.getByText('Paired devices')).toBeTruthy();
+    expect(screen.getByRole('navigation', { name: 'Paired devices' })).toBeTruthy();
     fireEvent.keyDown(document.body, { key: 'Escape' });
-    expect(screen.queryByText('Paired devices')).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Paired devices' })).toBeNull();
   });
 
   it('the chip counts connected Bluetooth input devices, not browser pads', () => {
@@ -145,7 +145,7 @@ describe('ArcadeShell controller indicator', () => {
     fireEvent.keyDown(window, { key: 'ArrowUp' });
     expect(container.querySelector('.emu-controller-chip').className).toContain('is-focused');
     fireEvent.keyDown(window, { key: 'Enter' });
-    expect(screen.getByText('Paired devices')).toBeTruthy();
+    expect(screen.getByRole('navigation', { name: 'Paired devices' })).toBeTruthy();
     fireEvent.keyDown(document.body, { key: 'ArrowDown' });
     fireEvent.keyDown(document.body, { key: 'Enter' });
     expect(onSelectGame).not.toHaveBeenCalled();

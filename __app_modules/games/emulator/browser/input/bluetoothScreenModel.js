@@ -79,9 +79,13 @@ const STATUS_TEXT = {
   'not-connected': 'Not connected', 'needs-pairing': 'Needs pairing again',
 };
 
-export function statusText(status, battery) {
-  const t = STATUS_TEXT[status] || STATUS_TEXT['not-connected'];
-  return status === 'connected' && Number.isFinite(battery) ? `${t} · ${battery}%` : t;
+/** One status word (the battery is its own field: `batteryText`). */
+export function statusText(status) {
+  return STATUS_TEXT[status] || STATUS_TEXT['not-connected'];
+}
+
+export function batteryText(status, battery) {
+  return status === 'connected' && Number.isFinite(battery) ? `Battery ${battery}%` : null;
 }
 
 /** Paired list rows from bt_inventory: input devices, and anything input.yml names. */
@@ -101,7 +105,11 @@ export function pairedRows(inventory, controllers) {
         typeLabel: kindLabel(kind),
         tail: addressTail(d.address),
         status,
-        statusText: statusText(status, d.battery),
+        statusText: statusText(status),
+        battery: batteryText(status, d.battery),
+        // Where it lives (input.yml placement), else what it is.
+        detail: (typeof c?.placement === 'string' && c.placement.trim()) || (typeof c?.model === 'string' && c.model.trim()) || kindLabel(kind),
+        controller: c || null,
         controllerId: c?.id || null,
         pin: pinOf(c),
         wakeHint: status === 'asleep' && typeof c?.pairing?.wake === 'string' ? c.pairing.wake : null,
@@ -126,10 +134,31 @@ export function pairHints(controllers, inventory) {
     }));
 }
 
-/** Nearby rows: input devices unless showAll; a stable order (highlighted, then name) so the list does not jump. */
-export function nearbyRows(devices, { showAll = false, inventory, controllers, highlightId = null } = {}) {
+/**
+ * A search's first-seen order: `order` plus any address in `devices` it does
+ * not hold yet, appended in the order they arrive. Never reorders or drops.
+ */
+export function extendNearbyOrder(order, devices) {
+  const list = Array.isArray(order) ? order : [];
+  const known = new Set(list);
+  const added = [];
+  for (const d of Array.isArray(devices) ? devices : []) {
+    const a = d?.address ? String(d.address).toUpperCase() : null;
+    if (a && !known.has(a)) { known.add(a); added.push(a); }
+  }
+  return added.length ? [...list, ...added] : list;
+}
+
+/**
+ * Nearby rows: input devices unless showAll, in the search's first-seen
+ * `order` (extendNearbyOrder), so a late name or a new device never moves a
+ * row under the finger: new ones append at the bottom. A highlighted
+ * (configured) device is marked, not moved.
+ */
+export function nearbyRows(devices, { showAll = false, inventory, controllers, highlightId = null, order = null } = {}) {
   const paired = new Set((Array.isArray(inventory) ? inventory : [])
     .filter((d) => d?.address && d.paired !== false).map((d) => d.address.toUpperCase()));
+  const rank = new Map(extendNearbyOrder(order, devices).map((a, i) => [a, i]));
   return (Array.isArray(devices) ? devices : [])
     .filter((d) => d?.address && (showAll || isInputDevice(d)))
     .map((d) => {
@@ -141,14 +170,32 @@ export function nearbyRows(devices, { showAll = false, inventory, controllers, h
         kind: d.kind || null,
         typeLabel: kindLabel(d.kind),
         tail: addressTail(address),
-        bars: rssiBars(d.rssi),
+        bars: d.heard === false ? 0 : rssiBars(d.rssi),
         paired: d.paired === true || paired.has(address),
         controllerId: c?.id || null,
         pin: pinOf(c),
         highlight: !!highlightId && c?.id === highlightId,
       };
     })
-    .sort((a, b) => Number(b.highlight) - Number(a.highlight) || a.name.localeCompare(b.name) || a.address.localeCompare(b.address));
+    .sort((a, b) => rank.get(a.address) - rank.get(b.address));
+}
+
+/**
+ * Every device a search has heard, by address, latest report first: a device
+ * that drops out of the satellite's snapshot keeps its row (signal 0,
+ * `heard: false`), so rows below it never move up.
+ */
+export function mergeHeard(previous, snapshot) {
+  const next = new Map(previous instanceof Map ? previous : []);
+  const now = new Set();
+  for (const d of Array.isArray(snapshot) ? snapshot : []) {
+    if (!d?.address) continue;
+    const a = String(d.address).toUpperCase();
+    now.add(a);
+    next.set(a, { ...d, heard: true });
+  }
+  for (const [a, d] of next) if (!now.has(a) && d.heard !== false) next.set(a, { ...d, heard: false });
+  return next;
 }
 
 export function hiddenNearbyCount(devices) {

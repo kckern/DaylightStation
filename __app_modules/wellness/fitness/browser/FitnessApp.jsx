@@ -30,6 +30,7 @@ import { useDeviceAudience } from "../../../../__capabilities/playback/browser/s
 import { rosterAudience } from "./fitnessAudience.js";
 import EmergencyLockdownOverlay from "./player/overlays/EmergencyLockdownOverlay.jsx";
 import { IdentityProvider } from "./identity/IdentityProvider.jsx";
+import { RemoteButtonsHost } from "./lib/remoteButtons/RemoteButtonsHost.jsx";
 import ZoneTrustWarning from "./components/ZoneTrustWarning.jsx";
 import { useFitnessContext, useFitnessSelector } from "./context/FitnessContext.jsx";
 import ImmersiveFrame from "./nav/ImmersiveFrame.jsx";
@@ -1635,6 +1636,7 @@ const FitnessApp = () => {
           kioskMode={kioskUI}
         >
           <IdentityProvider>
+          <RemoteButtonsHost>
             <ZoneTrustWarning />
           <GlobalOverlays moduleLive={currentView === 'module' && Boolean(activeModule)} />
           <PressureMatEventBridge logger={logger} />
@@ -1877,6 +1879,7 @@ const FitnessApp = () => {
             )}
           </div>
         </div>
+          </RemoteButtonsHost>
           </IdentityProvider>
       </FitnessProvider>
     </VolumeProvider>

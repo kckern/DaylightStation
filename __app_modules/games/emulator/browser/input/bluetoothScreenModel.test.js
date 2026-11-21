@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  extendNearbyOrder, mergeHeard,
   addressTail, rssiBars, displayName, matchController, pairedRows, pairHints, nearbyRows,
   hiddenNearbyCount, pairView, scanView, forgetText,
 } from './bluetoothScreenModel.js';
@@ -35,9 +36,9 @@ describe('small helpers', () => {
 describe('pairedRows', () => {
   it('one status per row, config label, input devices only', () => {
     const rows = pairedRows([PAD, RING, SPEAKER], CONTROLLERS);
-    expect(rows.map((r) => [r.name, r.statusText, r.tail])).toEqual([
-      ['Garage Pad', 'Connected · 80%', '…00:01'],
-      ['R1', 'Not connected', '…22:33'],
+    expect(rows.map((r) => [r.name, r.statusText, r.battery, r.tail])).toEqual([
+      ['Garage Pad', 'Connected', 'Battery 80%', '…00:01'],
+      ['R1', 'Not connected', null, '…22:33'],
     ]);
     expect(rows[0]).toMatchObject({ address: 'E4:17:D8:00:00:01', controllerId: 'pad', pin: '0000', typeLabel: 'Controller', bonded: true });
   });
@@ -68,13 +69,26 @@ describe('nearbyRows', () => {
     { address: '11:22:33:44:55:66', name: 'JBL', kind: null, hid: false, rssi: -40 },
     { address: 'E4:17:D8:00:00:02', name: 'TestPad GamePad', kind: 'gamepad', hid: true, rssi: -80 },
   ];
-  it('input devices by default, highlight first, Paired badge from the inventory', () => {
+  it('input devices by default, in first-seen order; a highlight marks, never moves; Paired badge from the inventory', () => {
     const rows = nearbyRows(near, { inventory: [RING], controllers: CONTROLLERS, highlightId: 'pad' });
     expect(rows.map((r) => [r.name, r.highlight, r.paired, r.bars])).toEqual([
-      ['Garage Pad', true, false, 1],
       ['R1', false, true, 3],
+      ['Garage Pad', true, false, 1],
     ]);
-    expect(rows[0]).toMatchObject({ controllerId: 'pad', pin: '0000', kind: 'gamepad' });
+    expect(rows[1]).toMatchObject({ controllerId: 'pad', pin: '0000', kind: 'gamepad' });
+  });
+  it('a given order wins over arrival order; unknown addresses append', () => {
+    const order = ['E4:17:D8:00:00:02'];
+    expect(nearbyRows(near, { order }).map((r) => r.address)).toEqual(['E4:17:D8:00:00:02', 'AA:BB:CC:11:22:33']);
+    expect(extendNearbyOrder(order, near)).toEqual(['E4:17:D8:00:00:02', 'AA:BB:CC:11:22:33', '11:22:33:44:55:66']);
+    expect(extendNearbyOrder(order, [])).toBe(order);
+  });
+  it('mergeHeard keeps a device that dropped out, with no signal', () => {
+    const a = mergeHeard(new Map(), near);
+    const b = mergeHeard(a, [near[0]]);
+    expect([...b.keys()]).toEqual(near.map((d) => d.address));
+    expect(b.get('E4:17:D8:00:00:02').heard).toBe(false);
+    expect(nearbyRows([...b.values()], {}).find((r) => r.address === 'E4:17:D8:00:00:02').bars).toBe(0);
   });
   it('show everything adds the rest', () => {
     expect(nearbyRows(near, { showAll: true }).map((r) => r.name)).toContain('JBL');

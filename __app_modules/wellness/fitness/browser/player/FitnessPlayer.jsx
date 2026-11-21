@@ -29,6 +29,9 @@ import { useVolumeSync } from "../hooks/useVolumeSync.js";
 import { useGovernanceAudioDuck } from "./hooks/useGovernanceAudioDuck.js";
 import { installCueAudioUnlock } from "./hooks/audioCuePlayer.js";
 import UnlockPrompt from "./overlays/UnlockPrompt.jsx";
+import { registerPlaybackTarget } from "../lib/remoteButtons/remotePlaybackTarget.js";
+import { decideFooterPlayPause } from "./footer/footerPlayPause.js";
+import { snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from "../../../../../__capabilities/playback/browser/volume/touchVolumeModel.js";
 import PresenceGateNotice from "./overlays/PresenceGateNotice.jsx";
 import PlaybackBudgetNotice from "./overlays/PlaybackBudgetNotice.jsx";
 import usePresenceGate from "../hooks/usePresenceGate.js";
@@ -1947,6 +1950,45 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   const currentIndex = currentItem ? queue.findIndex(item => item.id === currentItem?.id) : -1;
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex >= 0 && currentIndex < queue.length - 1;
+
+  // A Bluetooth remote's Playback buttons (Bluetooth screen → Edit buttons)
+  // drive this player through the same controls as the footer and the
+  // Settings volume strip (remoteButtonRuntime → registerPlaybackTarget).
+  const remoteControlsRef = useRef(null);
+  remoteControlsRef.current = {
+    playIsGoverned: Boolean(effectiveGovernanceState?.videoLocked), hasNext, hasPrev, handleNext, handlePrev, videoVolume,
+  };
+  useEffect(() => registerPlaybackTarget({
+    id: 'fitness-player',
+    playPause: () => {
+      const c = remoteControlsRef.current;
+      if (c.playIsGoverned) { logger.info('fitness.remote-buttons.play-governed', {}); return; }
+      const api = playerRef.current; if (!api) return;
+      const media = api.getMediaElement?.() || null;
+      const action = decideFooterPlayPause({
+        elPaused: media ? media.paused : null,
+        readyState: media ? media.readyState : null,
+        hasToggle: typeof api.toggle === 'function',
+      });
+      logger.info('fitness.control.press', { control: 'remote-play-pause', action });
+      if (action === 'play') api.play?.();
+      else if (action === 'pause') api.pause?.();
+      else if (action === 'toggle') api.toggle();
+    },
+    // Next at the end of the queue would close the player: a button press never does.
+    next: () => { const c = remoteControlsRef.current; if (c.hasNext) c.handleNext(); },
+    previous: () => { const c = remoteControlsRef.current; if (c.hasPrev) c.handlePrev(); },
+    volumeUp: () => {
+      const v = remoteControlsRef.current.videoVolume;
+      const level = snapToTouchLevel(linearLevelFromVolume(v?.volume));
+      v?.setVolume?.(linearVolumeFromLevel(Math.min(100, level + 10)));
+    },
+    volumeDown: () => {
+      const v = remoteControlsRef.current.videoVolume;
+      const level = snapToTouchLevel(linearLevelFromVolume(v?.volume));
+      v?.setVolume?.(linearVolumeFromLevel(Math.max(0, level - 10)));
+    },
+  }), [logger]);
 
   // Prepare additional metadata that might be useful for the Player
   // const enhancedCurrentItem = { ... old implementation removed };

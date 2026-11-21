@@ -53,6 +53,11 @@ export class ActionBus {
     return () => this.captures.delete(entry);
   }
 
+  /** Whether an active modal has claimed this semantic action (capture()). */
+  hasCapture(action) {
+    return [...this.captures].some(entry => entry.actions.has(action));
+  }
+
   /**
    * Emit an action, returning whether a capture owner consumed it.
    * @param {string} action - Action name

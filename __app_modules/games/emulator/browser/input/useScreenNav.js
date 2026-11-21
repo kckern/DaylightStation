@@ -38,8 +38,12 @@ export function defaultFocus(root) {
  * @param {Function} p.onBack
  * @param {Function} [p.getGamepads]
  * @param {Function} [p.onRecover]  (why: 'key'|'render') => void, for a debug log.
+ * @param {Function} [p.ignoreKey]  (KeyboardEvent) => true to leave a key alone:
+ *   on a device page, the keys that remote sends are for trying it, not for moving.
  */
-export function useScreenNav({ rootRef, active = true, onBack, getGamepads, onRecover }) {
+export function useScreenNav({ rootRef, active = true, onBack, getGamepads, onRecover, ignoreKey }) {
+  const ignoreKeyRef = useRef(ignoreKey);
+  ignoreKeyRef.current = ignoreKey;
   const onBackRef = useRef(onBack);
   onBackRef.current = onBack;
   const onRecoverRef = useRef(onRecover);
@@ -69,6 +73,7 @@ export function useScreenNav({ rootRef, active = true, onBack, getGamepads, onRe
     const handler = (e) => {
       const name = e.key === 'Tab' ? (e.shiftKey ? 'up' : 'down') : KEY_INTENT[e.key];
       if (!name) return;
+      if (ignoreKeyRef.current?.(e)) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       // A held Enter or Escape repeats: only the first press acts, so holding

@@ -41,13 +41,20 @@ controllers:
     model: Example Remote                # what it calls itself over Bluetooth
     address: "AA:BB:CC:00:00:01"
     placement: "Exercise bike, right side"
-    buttons:                             # physical button -> browser KeyboardEvent.key
+    orientation: rotated-90-ccw          # a note for people; code reads positions:
+    positions:                           # what the rider presses -> physical button
+      up: forward
+      center: call
+      ...
+    toward: { front: left, rear: right } # optional: positions facing the bike's front/rear
+    buttons:                             # physical control -> key name it sends
       plus: AudioVolumeUp
       ...
   - id: stick_remote                     # a remote whose input the kernel drops
     kind: remote
     label: Stick remote
     address: "AA:BB:CC:00:00:03"
+    layout: stick-pad                    # optional face hint: row | stick-pad
     report_decoder:                      # see "Report decoders" below
       att_handle: 0x001f
       buttons: { ButtonA: { byte: 0, mask: 0x10 } }
@@ -64,14 +71,24 @@ only by `address`, so give each its own entry and a `placement` that says where
 it lives. An entry with `kind: remote` is a media or keyboard remote: the
 Bluetooth screen takes its label from it, but gamepad status and the arcade's
 "controller connected" toasts skip it (`gamepadControllers` in
-`controllerStatus.js`). `buttons:` records what each physical button sends, as
-the browser's `KeyboardEvent.key`; it is a record for mapping keys to actions
-and is what an `emulator:` map refers to (see Remotes as a game controller).
-For which remote sent a key, see Per-remote keys.
+`controllerStatus.js`). `buttons:` lists each physical control and the key
+name it sends (the browser's `KeyboardEvent.key`, or the name the garage box
+decodes it to, e.g. `ButtonA`); the device page draws one keycap per control
+from it, in file order. `layout:` says how to arrange them (see Device face).
+`positions:` is for a remote mounted at an angle: it maps each rider
+position (`up`, `down`, `left`, `right`, `center`) to the physical button
+there, so the face is drawn as mounted and its actions are kept by position
+(see Button mapping). `orientation:` is a note for people; code reads only
+`positions:`.
+`placement:` is the line under the device's name; without it, `model:`.
+What each button *does* on fitness screens is not in this file: it is set on
+the screen (see Button mapping). An `emulator:` map (physical control →
+RetroPad button) lets a remote drive a running game (see Remotes as a game
+controller). For which remote sent a key, see Per-remote keys.
 
 - `steps` lead into the search: the last step points at **Search for it**.
 - `wake` shows under a paired row of that controller while it is asleep.
-- `keyboard:` is read by the key test to say which keys games use.
+- `keyboard:` is read by the device page to say which keys games use.
 - The API serves the file as is (`GET /api/v1/emulator/library` → `input`),
   read for each request, so edits show on the next screen open.
 - Code never writes `input.yml`: the file is hand-commented and a YAML
@@ -84,21 +101,32 @@ For which remote sent a key, see Per-remote keys.
 
 | View | What it does |
 |---|---|
-| List | Paired devices on top (with "Pairing <name>…" while a pairing started elsewhere is running), a **Set up a controller** list with a How to pair entry per configured controller, then **Search for devices** |
+| List | Left: one tall row per paired device, then a **How to pair <label>** row per configured controller that is not paired, then **Search for devices** (and "Pairing <name>…" while a pairing started elsewhere is running). Right: the picked device's page |
+| Edit buttons | A remote's button editor (see Button mapping) |
 | How to pair | The controller's `steps` from `input.yml`, then **Search for it** |
-| Search | Live nearby devices; pick one to pair it |
+| Search | Every device this search has heard, in first-seen order; pick one to pair it |
 | Pairing | Progress for the one picked address; the passkey in large digits when the device asks for one |
-| Test | The key test |
 
-Every row is keyed by address. A paired row shows the name (the `input.yml`
-label when the device matches a controller by address, Bluetooth name or
-vendor prefix; otherwise its Bluetooth name, or "Unnamed keyboard" /
-"Unnamed device"), the type, the last two octets of the address, exactly one
-status, **Test** (connected only), **Forget** and **Pair again** (dropped bond).
+The screen fills a fixed-size sheet the host provides: a header, then one
+touch-scroll body (`.bts-body`: `overflow-y: auto`, `touch-action: pan-y`,
+`overscroll-behavior: contain`), with no scroll area nested in it. The two
+columns stack below a 60rem-wide body (a container query). House tokens only,
+solid fills; the one shadow is the keycap's depth.
+
+Every row is keyed by address. A paired row (5.5rem tall) shows the name (the
+`input.yml` label when the device matches a controller by address, Bluetooth
+name or vendor prefix; otherwise its Bluetooth name, or "Unnamed keyboard" /
+"Unnamed device"), the placement (else model, else type) and exactly one
+status word with a solid dot. Picking a row shows its page; the first
+connected device's page shows on open.
+
+The device page: name, status, placement and battery; the wake hint while
+asleep; the device face; one sentence (see Device face); **Edit buttons**
+(remotes, see Button mapping), **Pair again** (dropped bond) and **Forget**.
 
 | Status | Meaning |
 |---|---|
-| Connected · N% | Bonded, connected and up as an input device (N is the battery, when known) |
+| Connected | Bonded, connected and up as an input device (the battery, when known, is on the page) |
 | Connecting… | Connected, no input device yet |
 | Asleep | A gamepad that is not connected; the `wake` hint shows under it |
 | Not connected | Any other kind that is not connected |
@@ -129,6 +157,13 @@ Rows show name, type, address tail, signal bars from RSSI (≥ -55 dBm = 4,
 ≥ -67 = 3, ≥ -78 = 2, ≥ -90 = 1) and a "Paired" badge. By default only
 devices with input evidence (`hid`, or an input `kind`) are listed;
 **Show everything (N more)** adds the rest.
+
+Nothing on the list moves under a finger. Rows keep the order in which this
+search first heard them (`extendNearbyOrder`, an order the screen keeps per
+search): a new device appends at the bottom, a name that arrives late
+changes only its own row, and a device that drops out of the snapshot keeps
+its row with no signal bars (`mergeHeard`). A configured controller's rows
+are marked, not moved to the top.
 
 A device counts as nearby only while BlueZ reports it live in this discovery
 (a new object, or a change to its RSSI or advertising data) and drops out 15 s
@@ -169,7 +204,7 @@ Energy together, and touches that address and nothing else.
 - **No-input bond removal.** A bond this window made that never becomes an
   input device is removed (`error` code `no-input`, `done.reason: no-input`),
   so the next try starts clean. A bond that existed before the window stays.
-- **Success goes straight to the key test.**
+- **Success opens the device's page**, so it can be tried at once.
 
 `bt.pair.progress` phases: `scanning, seen, found, stale-bond-removed, pairing,
 passkey, pincode, agent, retry, bonded, connecting, hid-wait, hid-retry, warn,
@@ -221,29 +256,133 @@ phase follows, and the frontend logs `fitness.bt.satellite-outdated` (warn).
 
 **How to pair <label>** shows the `input.yml` steps; **Search for it** then
 opens the search with that controller's matching devices (by name regex, MAC
-prefix or address) highlighted and listed first. Picking one pairs by address
-with the controller's `pin`.
+prefix or address) marked. Picking one pairs by address with the
+controller's `pin`.
 
-## Key test
+## Device face
 
-Opened after a successful pair or with **Test** on a connected row. It shows
-what arrives in short words: keys ("X", "Up arrow", "Volume up", "Play/pause"),
-and gamepad presses ("A", "B", "D-pad up", "Stick left", else "Button N") with
-the pad's name shortened (no vendor/product suffix). The verdict:
+The device page shows a device's controls as keycaps laid out like the
+device, on a plate (`DeviceFace`, `deviceFaceModel.js`). A keycap sinks and
+lights in the accent colour the moment its button is held and lifts on
+release; a small green mark stays on a keycap pressed at least once this
+visit; a control never pressed is plain. Under each keycap, what it does in
+plain words: the saved action (Button mapping), else "Not set". Nothing is
+faked: a keycap lights only from a real press.
+
+| Device | Face | Lit from |
+|---|---|---|
+| Remote with `positions:` | drawn AS MOUNTED: a five-key cross from the rider's view, each keycap named by its position ("Up", "Centre"…) with the printed button's name small under it. `toward: { front, rear }` (which positions face the bike's front and rear) puts a quiet "Front" / "Rear" beside those keys. A press lights the keycap at the position whose physical button sent the key (key → button by `buttons:`, button → position by `positions:`) | `bt.remote.key` from THIS address only |
+| Remote with `buttons:` | one keycap per control, legend from the control name (`circle_trigger` → "Circle trigger"). `layout: row` one row in file order; `layout: stick-pad` a cross of the controls named or sending up/down/left/right, beside a 2-column grid of the rest, with any trigger above the grid (legend without the word "trigger"); no hint or anything else, a wrapped grid in file order | `bt.remote.key` from THIS address only (down/repeat hold it, up releases) |
+| Remote or keyboard with no entry | keycaps built from the keys it sends, in first-seen order | the same feed |
+| Gamepad (`kind: gamepad`, or a controller entry that is not a remote) | the browser's standard mapping: L, L2, R2, R on top; a D-pad cross; Select and Start; Y X B A as a diamond. Under A and Start "Select", B "Back", the cross its direction | `navigator.getGamepads()`, every connected pad (a browser pad has no address). The cross also lights from the left stick: some pads report their D-pad there |
+
+Without the per-remote feed (a host that has none), browser keys stand in.
+On a remote's page the keys that remote sends light its face and do not move
+focus (`useScreenNav`'s `ignoreKey`); Escape, Backspace and Tab always
+navigate. A gamepad on its own page still drives the screen as usual.
+
+The sentence under the face says what games can do with the presses so far:
 
 - gamepad input: "Games can use this as a controller."
 - keys listed in `input.yml` `keyboard:`: "Games can use these keys: …"
 - other keys only: "Games can't use these keys yet."
+- before any press: "Press a button on <name>."
 
-The test owns the keys while it is open, so nothing else acts on them. It ends
-with Escape (a held Escape's repeats are ignored), holding a press key (Enter,
-Space, a remote's play/pause) or the pad's back or select button
-(`useArcadeInput`'s `BACK_BUTTONS` / `SELECT_BUTTONS`: B; A or Start) for
-1.5 s, a touch on **Done**, or 20 s with no presses; the hint says so with the
-real idle time. **Done** shows no focus ring: keys are captured there, so A or
-Enter would not press it. A browser
-gamepad has no Bluetooth address, so pad presses count only when the tested
-device is a gamepad.
+Leaving a page that had presses logs `bluetooth-screen.test-result` (keys,
+distinctKeys, padInputs, verdict, keyNames).
+
+## Button mapping
+
+**Edit buttons** on a remote's page sets what each of its buttons does on
+the garage fitness screen.
+
+- **Unlock.** It asks for the admin fingerprint, the same unlock the fitness
+  locks use (`IdentityProvider.registerAdmin('remote_buttons')` and the
+  `UnlockPrompt`; see [fingerprint unlock](../fitness/fingerprint-unlock.md)).
+  Like every fitness lock it is kiosk-only (`isKioskEnv`): off the kiosk there
+  is no reader, and the editor opens without one. No PIN.
+- **Editor.** Press the physical button (or tap its keycap) to pick it, then
+  tap an action: Playback (Play/pause, Next, Previous, Volume up, Volume
+  down), Navigate (Up, Down, Left, Right, Select, Back), or Nothing. The face
+  shows each change at once; focus follows the picked keycap, so a gamepad
+  or the keys carry on from there. **Done** saves and returns to the page so
+  the new buttons can be tried; **Cancel** or Escape drops the changes. One
+  set of buttons per remote.
+- **Storage.** By Bluetooth address, in an app-written file:
+  `household[-{hid}]/fitness/remote-buttons.yml` (schema
+  `fitness.remote-buttons/v1`, written atomically), never `input.yml`.
+  `remotes: { ADDRESS: { positions: { <position>: <action id> }, buttons:
+  { <key name>: <action id> }, label, updatedAt, updatedBy } }`. A remote with
+  `positions:` in `input.yml` is kept by **position**, so two remotes mounted
+  at different angles map the same rider direction to the same action though
+  they send different keys. Any other remote is kept by the key name it
+  sends, so a remote with no `input.yml` entry can be set up too. A save
+  replaces the map it sends and keeps the other. Action ids:
+  `play-pause next previous volume-up volume-down up down left right select
+  back none` (`fitness/shared/remoteButtonActions.mjs`, shared by server and
+  browser).
+- **API.** `GET /api/v1/fitness/remote-buttons` → the document;
+  `PUT /api/v1/fitness/remote-buttons/:address` `{ buttons?, positions?,
+  label?, updatedBy? }` (at least one map) → the document (400 on a bad
+  address, an unknown action or position, or more than 64 buttons).
+- **Layers.** `RemoteButtonService` (application) owns the document through
+  the `IRemoteButtonMappingRepository` port (`load`, `save`;
+  `isRemoteButtonMappingRepository`); `YamlRemoteButtonMappingRepository`
+  (adapter, FileIO only) writes the file; `fitnessRemoteButtons.mjs` is the
+  router, mounted in the fitness composition. Saves are serialized and logged
+  (`fitness.remote-buttons.saved`, with the changed keys).
+
+**Runtime** (`RemoteButtonsHost`, mounted in the fitness app inside
+`IdentityProvider`; `remoteButtonRuntime.js`). The runtime never reads the
+bus or input.yml itself: it consumes abstract remote input
+`{ remote, kind: 'position' | 'key', control, state, key }` from
+`createRemoteInputSource` (`remoteInputSource.js`), the adapter that turns
+`bt.remote.key` and input.yml into it. The key → button → position step is
+the shared resolver `remoteDirection(controller, key)`
+(`lib/remoteInput/remoteDirection.js`, see Remote directions). On the kiosk only (every fitness
+page hears the garage's remotes), each `bt.remote.key` press with a saved
+action performs it. The lookup (`resolveRemoteAction`) is (address, key) →
+physical button → rider position → action for a remote with `positions:`
+(read from `input.yml`, `GET /api/v1/emulator/library`, once on the kiosk),
+else (address, key) → action:
+
+- Navigate goes to a modal that captured the action on the ActionBus
+  (`navigate` / `select` / `escape`, `ActionBus.hasCapture`); otherwise the key
+  it stands for (ArrowUp…, Enter, Escape) is dispatched to the focused
+  element, as the gamepad adapter does, so keyboard-driven fitness menus move
+  as they do for an arrow key.
+- Playback goes to the fitness player's own controls, registered while it is
+  mounted (`registerPlaybackTarget`): play/pause as the footer button does
+  (nothing while governance holds the video), next and previous within the
+  queue (Next at the end never closes the player), volume up and down by one
+  step of the Settings volume strip. No player open: nothing happens.
+- A repeat (held key) acts again only for the volume actions. Nothing
+  swallows the press.
+- **Never while tried.** A remote whose page is open on the Bluetooth screen
+  is claimed (`claimRemote`): its presses light its face and do nothing else.
+- **Never in a Skyline Invaders round** (countdown, playing, paused): the
+  round holds every remote, as it ignores pads and keys.
+- **Claims.** The runtime yields to every hold and claim in
+  `remoteButtonHolds.js` (see Who owns a remote's presses): it performs
+  nothing for a remote while `isRemoteHeld(address)` and lets that remote's
+  browser keys through. React code takes a hold with
+  `useRemoteButtonsHold(active, reason)` (`remoteButtonsContext.js`); Skyline
+  Invaders holds for its rounds and Skyline Glider while mounted with a
+  remote mapping.
+- **The browser's own copy.** A keyboard-mode remote's press also reaches the
+  page as a KeyboardEvent, in either order with its tagged twin. Browser keys
+  that an acting remote has set are held back up to 400 ms for the twin: a
+  twin from that remote drops the browser copy; a twin from another remote,
+  or none (a USB keyboard), replays it. Keys no acting remote has set pass at
+  once. The listener is installed before any other fitness key listener.
+
+Logs (component `fitness-remote-buttons`): `.loaded`, `.load-failed`,
+`.save-request`, `.save-done`, `.unlock-tap`, `.unlock-granted`,
+`.unlock-denied`, `.unlock-skipped` (off the kiosk), `.inventory-loaded`,
+`.inventory-failed` (warn), `.runtime-start`,
+`.performed` (sampled: address, key, action, where it went: `action-bus`,
+`key`, `player`, `no-player`), `.action` (sampled), `.held` (debug: claimed or
+held). Backend: `fitness.remote-buttons.saved`.
 
 ## Per-remote keys (`bt.remote.key`)
 
@@ -350,13 +489,9 @@ wires `decoderConfig` to the report adapter. Tests: `test/remoteInput.test.mjs`
 (port contract per adapter with fake helper lines, the decoder on captured
 bytes, the service with a fake source).
 
-The key test uses this feed when the host provides it
-(`bluetooth.subscribeRemoteKeys`): a key counts only when the tested remote's
-address sent it; a press from another remote shows as "(another remote …00:02)"
-and does not count. The browser's own copy of a press is matched to its tagged
-twin within 400 ms (either order) and dropped; a browser key with no twin
-counts, so a device the garage box does not read still tests
-(`createKeyAttributor` in `keyTestModel.js`).
+The device face (`bluetooth.subscribeRemoteKeys`) and the button runtime both
+read this feed by address: two remotes of the same model never light or act
+for one another.
 
 ### Remote directions (`positions:` and `toward:`)
 
@@ -392,8 +527,8 @@ through `lib/remoteButtons/remoteButtonHolds.js` in the fitness app:
 **Any layer that turns `bt.remote.key` presses into actions must check
 `isRemoteHeld(address)` before acting, and perform nothing when it is true.**
 Holds and claims are counted, so each holder releases only its own. Skyline
-Invaders ignores remotes in a round (it reads no remote at all; a mapping
-layer that acts on remotes should take a hold for its rounds).
+Invaders reads no remote; it holds every remote for its rounds so the button
+mapping runtime stays quiet too.
 
 ### Claiming a remote
 
@@ -493,7 +628,9 @@ took volume and play/next/previous before Firefox saw them. Both are off
   been seen within ±0.25 of centre, so a pad whose axis rests at ±1 neither
   holds an arrow forever nor masks the D-pad;
 - focus is put back on the default control after any render that left it on
-  the page body or on a disabled control, so focus never falls to `<body>`.
+  the page body or on a disabled control, so focus never falls to `<body>`;
+- `ignoreKey(e)` lets a view leave a key alone: on a remote's page and in its
+  editor, the keys that remote sends are for trying it.
 
 A host switches its own input off while the screen is open (arcade grid, game
 menu, fitness sidebar and menu gamepad hook). In a game the screen opens over
@@ -585,8 +722,11 @@ rules `bt_pair_match.py` and `bt_nearby.py` have no D-Bus imports).
 - Screen (component `bluetooth-screen`): `.mount` (host, controllers,
   inventory, available), `.unmount`, `.scan-start`, `.scan-stop` (reason),
   `.nearby` (sampled: heard, shown), `.pick`, `.pair-result` (outcome, code,
-  reason), `.test-start`, `.test-result` (keys, distinctKeys, padInputs,
-  verdict), `.forget-arm`, `.forget-confirm`, `.focus-recovered` (debug).
+  reason), `.select`, `.test-start` (a device page opened), `.test-result`
+  (keys, distinctKeys, padInputs, verdict, keyNames), `.edit-unlock-request`,
+  `.edit-unlock-denied`, `.edit-open`, `.edit-set` (debug), `.edit-save`,
+  `.edit-save-failed` (warn), `.edit-cancel`, `.forget-arm`, `.forget-confirm`,
+  `.focus-recovered` (debug).
 - Screen also logs `.view` on every view change.
 - Hosts: `arcade.bluetooth-open/close/toggle`;
   `emulator.console.bluetooth-open/close`.
