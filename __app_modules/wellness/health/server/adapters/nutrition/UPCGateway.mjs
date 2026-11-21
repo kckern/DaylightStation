@@ -73,13 +73,21 @@ export class UPCGateway {
    * @param {string} upc - UPC barcode (12-13 digits)
    * @returns {Promise<Object|null>} Product data or null if not found
    */
-  async lookup(upc) {
+  async lookup(upc, { strict = false } = {}) {
     this.#logger.debug?.('upc.lookup.start', { upc });
 
     const normalizedUpc = this.#normalizeUpc(upc);
 
     try {
-      const product = await this.#lookupOpenFoodFacts(normalizedUpc);
+      let failure;
+      const tryProvider = async action => {
+        try { return await action(); }
+        catch (error) {
+          if (error.status !== 404) failure = error;
+          return null;
+        }
+      };
+      const product = await tryProvider(() => this.#lookupOpenFoodFacts(normalizedUpc, strict));
       if (product) {
         this.#logger.info?.('upc.lookup.found', {
           upc: normalizedUpc,
@@ -92,7 +100,7 @@ export class UPCGateway {
 
       // Fallback to Nutritionix
       if (this.#nutritionix) {
-        const nxProduct = await this.#lookupNutritionix(normalizedUpc);
+        const nxProduct = await tryProvider(() => this.#lookupNutritionix(normalizedUpc, strict));
         if (nxProduct) {
           this.#logger.info?.('upc.lookup.found', {
             upc: normalizedUpc,
@@ -103,10 +111,12 @@ export class UPCGateway {
         }
       }
 
+      if (failure) throw failure;
       this.#logger.info?.('upc.lookup.notFound', { upc: normalizedUpc });
       return null;
     } catch (error) {
       this.#logger.error?.('upc.lookup.error', { upc: normalizedUpc, error: error.message });
+      if (strict) throw error;
       return null;
     }
   }
@@ -159,15 +169,17 @@ export class UPCGateway {
    * Look up product from Open Food Facts
    * @private
    */
-  async #lookupOpenFoodFacts(upc) {
+  async #lookupOpenFoodFacts(upc, strict) {
     try {
       const response = await this.#httpClient.get(`${OPEN_FOOD_FACTS_API}/${upc}.json`, {
         headers: {
           'User-Agent': 'DaylightStation/1.0 (nutribot)',
         },
+        ...(strict ? { timeout: 3500 } : {}),
       });
 
       if (!response.ok) {
+        if (strict && response.status !== 404) throw new Error(`Open Food Facts HTTP ${response.status}`);
         this.#logger.debug?.('upc.off.httpError', { upc, status: response.status });
         return null;
       }
@@ -196,6 +208,7 @@ export class UPCGateway {
       };
     } catch (error) {
       this.#logger.debug?.('upc.off.error', { upc, error: error.message });
+      if (strict) throw error;
       return null;
     }
   }
@@ -204,16 +217,18 @@ export class UPCGateway {
    * Look up product from Nutritionix (fallback)
    * @private
    */
-  async #lookupNutritionix(upc) {
+  async #lookupNutritionix(upc, strict) {
     try {
       const response = await this.#httpClient.get(`${NUTRITIONIX_API}?upc=${upc}`, {
         headers: {
           'x-app-id': this.#nutritionix.appId,
           'x-app-key': this.#nutritionix.appKey,
         },
+        ...(strict ? { timeout: 3500 } : {}),
       });
 
       if (!response.ok || !response.data?.foods?.length) {
+        if (strict && !response.ok && response.status !== 404) throw new Error(`Nutritionix HTTP ${response.status}`);
         this.#logger.debug?.('upc.nutritionix.notFound', { upc, status: response.status });
         return null;
       }
@@ -232,6 +247,7 @@ export class UPCGateway {
       };
     } catch (error) {
       this.#logger.debug?.('upc.nutritionix.error', { upc, error: error.message });
+      if (strict) throw error;
       return null;
     }
   }

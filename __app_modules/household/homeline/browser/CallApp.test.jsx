@@ -42,6 +42,28 @@ describe('CallApp presentation', () => {
   });
   afterEach(() => vi.useRealTimers());
 
+  it('keeps the browser video placeholder hidden during initial capture', async () => {
+    mocks.media.status = 'loading';
+    mocks.api.mockResolvedValue({ devices: [] });
+    const { container } = render(<CallApp />);
+    expect(await screen.findByText('Starting camera and microphone…')).toBeTruthy();
+    expect(container.querySelector('.call-app__stage video').style.visibility).toBe('hidden');
+  });
+
+  it('ends the local call and returns through the Android phone bridge', async () => {
+    const postMessage = vi.fn();
+    vi.stubGlobal('DaylightPhoneShortcut', { postMessage });
+    try {
+      mocks.api.mockResolvedValue({ devices: [] });
+      render(<CallApp />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Exit' }));
+      expect(mocks.end).toHaveBeenCalledWith('left_call');
+      expect(postMessage).toHaveBeenCalledWith('call-exit');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('names each callable screen by its room and never auto-starts a call', async () => {
     mocks.api.mockResolvedValue({ devices: [
       { id: 'livingroom-tv', name: 'Living Room TV', location: 'Living Room', icon: '\u{1F4FA}', capabilities: { contentControl: true, videoCall: true } },

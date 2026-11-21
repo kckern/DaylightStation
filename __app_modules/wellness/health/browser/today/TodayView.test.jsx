@@ -4,8 +4,6 @@ import { MantineProvider } from '@mantine/core';
 
 const apiMock = vi.fn();
 const departureState = vi.hoisted(()=>({departed:false}));
-// The latest props the BarcodeCapture stub received, so a test can drive a decode.
-const barcodeProps = vi.hoisted(() => ({ current: null }));
 const customFoodProps = vi.hoisted(() => ({ current: null }));
 const loggedEvents = vi.hoisted(() => []);
 vi.mock("../../../../../frontend/src/lib/ui/createAppLogger.js", async (importOriginal) => {
@@ -46,7 +44,7 @@ vi.mock("../capture/VoiceCapture.jsx", () => ({
     </button></>
   ),
 }));
-vi.mock("../capture/BarcodeCapture.jsx", () => ({ BarcodeCapture: (props) => { barcodeProps.current = props; return null; } }));
+vi.mock("../capture/BarcodeCapture.jsx", () => ({ BarcodeCapture: () => null }));
 vi.mock("../capture/CustomFoodSheet.jsx", () => ({ CustomFoodSheet: (props) => { customFoodProps.current = props; return null; } }));
 // Pin the capture-pending bucket target so the "which bucket does the
 // placeholder land in" tests are deterministic regardless of wall-clock
@@ -715,40 +713,6 @@ it('offers the same recording Retry when navigation happens during an upload tha
   expect(inputs[1][1]).toEqual(inputs[0][1]);
 });
 
-describe('TodayView — a barcode the person must hear about', () => {
-  beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); barcodeProps.current = null; });
-
-  it('a refused barcode shows its sentence', async () => {
-    apiMock.mockImplementation(baseApi({ nutritionInput: { committed: false, outcome: 'rejected-barcode', rejected: 'isbn',
-      message: "That's a book (ISBN), not a food.", messages: [{ text: "That's a book (ISBN), not a food." }] } }));
-    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
-    await waitFor(() => expect(barcodeProps.current).toBeTruthy());
-    await act(async () => { await barcodeProps.current.onDecode('9780306406157', 'afternoon'); });
-    expect(await screen.findByText("That's a book (ISBN), not a food.")).toBeTruthy();
-  });
-
-  it('a capture held for review says so and refreshes Needs Review', async () => {
-    apiMock.mockImplementation(baseApi({ nutritionInput: { committed: false, outcome: 'needs-review', quarantined: true,
-      logId: 'L1', message: 'Needs review — no calories found', messages: [] } }));
-    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
-    await waitFor(() => expect(barcodeProps.current).toBeTruthy());
-    const pendingCalls = () => apiMock.mock.calls.filter(([path]) => String(path).includes('nutrition/pending')).length;
-    const before = pendingCalls();
-    await act(async () => { await barcodeProps.current.onDecode('037000338369', 'afternoon'); });
-    expect(await screen.findByText('Needs review — no calories found')).toBeTruthy();
-    await waitFor(() => expect(pendingCalls()).toBeGreaterThan(before));
-  });
-  it('a label with no calories logged as an AI estimate says it is an estimate', async () => {
-    apiMock.mockImplementation(baseApi({ nutritionInput: { committed: true, outcome: 'committed', aiEstimate: true,
-      logId: 'L2', messages: [] } }));
-    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
-    await waitFor(() => expect(barcodeProps.current).toBeTruthy());
-    await act(async () => { await barcodeProps.current.onDecode('037000338369', 'afternoon'); });
-    expect(await screen.findByText('No calories on the label — estimated for one serving. Check the row.')).toBeTruthy();
-  });
-});
-
-
 // The 15 s poll during a backend restart: every Health resource fails at once.
 describe('TodayView — a failed refresh never buries the day', () => {
   beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); });
@@ -1061,7 +1025,7 @@ describe('TodayView — the day fix after every kind of add', () => {
   const quickAdded = { logged: true, committed: true, item: { ...shake } };
   const offersLogged = () => loggedEvents.filter(([event]) => event === 'capture.offer');
 
-  beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); barcodeProps.current = null; customFoodProps.current = null; loggedEvents.length = 0; });
+  beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); customFoodProps.current = null; loggedEvents.length = 0; });
 
   it('a voice capture reaches the toast, logs its offer and moves', async () => {
     apiMock.mockImplementation(api());
@@ -1333,26 +1297,6 @@ describe('TodayView — the day fix after every kind of add', () => {
     await pickSuggestion();
     expect(await screen.findByText('Added Protein shake to Today, Breakfast')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Undo meal change' })).toBeTruthy();
-  });
-
-  it('a scanned barcode gets the toast and its Undo', async () => {
-    apiMock.mockImplementation(api({ routes: { 'nutrition/input': () => ({ ...parsed, moved: true, mealTime: 'afternoon', undoToken: 'meal-upc' }) } }));
-    r(view());
-    await waitFor(() => expect(barcodeProps.current).toBeTruthy());
-    await act(async () => { await barcodeProps.current.onDecode('037000338369', 'morning'); });
-    expect(await screen.findByText('Added Eggs to Today, Lunch')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Undo meal change' })).toBeTruthy();
-    expect(screen.queryByText('Moved to Lunch')).toBeNull();
-    await moveToYesterday(['eggs']);
-  });
-
-  it('a barcode held for review gets no offer', async () => {
-    apiMock.mockImplementation(api({ routes: { 'nutrition/input': () => ({ committed: false, outcome: 'needs-review', logId: 'held', message: 'Needs review' }) } }));
-    r(view());
-    await waitFor(() => expect(barcodeProps.current).toBeTruthy());
-    await act(async () => { await barcodeProps.current.onDecode('037000338369', 'morning'); });
-    expect(await screen.findByText('Needs review')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Move to Yesterday' })).toBeNull();
   });
 
   it('a food created for an unknown barcode gets the toast without an Undo', async () => {

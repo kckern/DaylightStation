@@ -21,3 +21,14 @@ describe('UPCGateway product names', () => {
     expect((await gw.lookup('037600225250')).name).toBe('Macaroni and Cheese');
   });
 });
+
+describe('UPCGateway review lookup', () => {
+  it('distinguishes HttpClient not-found from a provider outage', async () => {
+    const get = vi.fn().mockRejectedValueOnce(Object.assign(new Error('Not found'), { status: 404 }))
+      .mockRejectedValue(new Error('Provider offline'));
+    const gw = new UPCGateway({ httpClient: { get }, logger });
+    await expect(gw.lookup('037600225250', { strict: true })).resolves.toBeNull();
+    await expect(gw.lookup('037600225250', { strict: true })).rejects.toThrow('Provider offline');
+    await expect(gw.lookup('037600225250')).resolves.toBeNull();
+  });
+});
