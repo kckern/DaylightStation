@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Stack, Text, Group, Paper, Loader, Center, Alert, Badge, UnstyledButton } from '@mantine/core';
-import { IconFile, IconLock, IconAlertCircle, IconFolder } from '@tabler/icons-react';
+import { Stack, Text, Group, Paper, Center, Badge, UnstyledButton } from '@mantine/core';
+import { IconFile, IconLock, IconFolder } from '@tabler/icons-react';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { ErrorState, LoadingState, useRetryRegion } from '../../../lib/ui/index.js';
 import { formatSize } from '../utils/formatters.js';
 
 /**
@@ -16,7 +17,8 @@ function formatDate(isoString) {
 
 function ConfigIndex() {
   const navigate = useNavigate();
-  const { data, loading, error } = useApiResource('/api/v1/admin/config/files');
+  const { data, loading, error, reload } = useApiResource('/api/v1/admin/config/files', { label: 'Config files' });
+  const { regionProps, retry } = useRetryRegion(reload, loading);
 
   const grouped = useMemo(() => {
     const groups = {};
@@ -32,27 +34,13 @@ function ConfigIndex() {
       .map(dir => ({ directory: dir, files: groups[dir] }));
   }, [data]);
 
-  if (loading) {
-    return (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
-  }
-
-  if (error) {
-    return (
-      <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error loading config files">
-        {error.message || 'Failed to load config file list'}
-      </Alert>
-    );
-  }
-
   return (
-    <Stack gap="lg">
+    <Stack component="section" gap="lg" aria-label="Config files" {...regionProps}>
       <Text size="xl" fw={600}>Config Files</Text>
 
-      {grouped.map(group => (
+      {loading && <LoadingState label="config files" />}
+      {!loading && error && <ErrorState error={error} onRetry={retry} label="Config files" />}
+      {!loading && !error && grouped.map(group => (
         <Stack key={group.directory} gap="xs">
           <Group gap="xs">
             <IconFolder size={16} stroke={1.5} />
@@ -110,7 +98,7 @@ function ConfigIndex() {
         </Stack>
       ))}
 
-      {grouped.length === 0 && (
+      {!loading && !error && grouped.length === 0 && (
         <Center h="40vh">
           <Text c="dimmed">No config files found.</Text>
         </Center>

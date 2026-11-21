@@ -71,6 +71,39 @@ test('the config directory groups files and opens the chosen editable path', asy
   await expect(page).toHaveURL(/\/admin\/system\/config\/household\/sample\.yml$/);
 });
 
+test('the config directory retries a failed read and keeps focus through recovery', async ({ page }) => {
+  const reads = [];
+  let retryRead;
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname === '/api/v1/admin/config/files') {
+      reads.push(route.request().method());
+      if (reads.length === 1) return route.fulfill({ status: 500, json: { message: 'Directory unavailable' } });
+      retryRead = route;
+      return;
+    }
+    return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+
+  await page.goto('/admin/system/config');
+  await expect(page.getByRole('alert')).toContainText('Config files failed to load');
+  const retry = page.getByRole('button', { name: 'Retry', exact: true });
+  await expect(retry).toBeVisible();
+  await retry.press('Enter');
+
+  const region = page.getByRole('region', { name: 'Config files', exact: true });
+  await expect.poll(() => reads).toEqual(['GET', 'GET']);
+  await expect(region).toBeFocused();
+  await expect(region).toHaveAttribute('aria-busy', 'true');
+  await retryRead.fulfill({ json: { files: [
+    { name: 'sample.yml', path: 'household/sample.yml', directory: 'household' },
+  ] } });
+  await expect(region.getByRole('button', { name: /sample\.yml/ })).toBeVisible();
+  await expect(region).toBeFocused();
+  await expect(region).not.toHaveAttribute('aria-busy', 'true');
+});
+
 test('config Back preserves a dirty YAML draft until discard is confirmed', async ({ page }) => {
   const writes = [];
   await page.routeWebSocket('**/*', () => {});
