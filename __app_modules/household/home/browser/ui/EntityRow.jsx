@@ -32,7 +32,7 @@ export function EntityRow({ entity, sub = null, value, name, plain = false, cont
     <>
       <span className="home-row__text">
         <span className="home-row__name">{shown}</span>
-        {sub ? <span className={`home-row__sub${inferred ? ' home-inferred' : ''}`}>{sub}</span> : null}
+        {sub ? <span id={`home-row-sub-${entity.id}`} className={`home-row__sub${inferred ? ' home-inferred' : ''}`}>{sub}</span> : null}
       </span>
       <span className="home-row__value">{text}</span>
     </>
@@ -42,7 +42,8 @@ export function EntityRow({ entity, sub = null, value, name, plain = false, cont
   return (
     <div className={classes} data-entity-id={entity.id}>
       {onOpen ? (
-        <UnstyledButton className="home-row__main ds-touch-target" onClick={() => onOpen(entity)} aria-label={`${shown}, ${text}`}>
+        <UnstyledButton className="home-row__main ds-touch-target" onClick={() => onOpen(entity)}
+          aria-label={`${shown}, ${text}`} aria-describedby={sub ? `home-row-sub-${entity.id}` : undefined}>
           {main}
         </UnstyledButton>
       ) : (

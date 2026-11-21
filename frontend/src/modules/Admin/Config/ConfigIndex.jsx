@@ -36,7 +36,7 @@ function ConfigIndex() {
 
   return (
     <Stack component="section" gap="lg" aria-label="Config files" {...regionProps}>
-      <Text size="xl" fw={600}>Config Files</Text>
+      <Text component="h1" size="xl" fw={600}>Config Files</Text>
 
       {loading && <LoadingState label="config files" />}
       {!loading && error && <ErrorState error={error} onRetry={retry} label="Config files" />}
@@ -44,7 +44,7 @@ function ConfigIndex() {
         <Stack key={group.directory} gap="xs">
           <Group gap="xs">
             <IconFolder size={16} stroke={1.5} />
-            <Text size="sm" fw={600} c="dimmed" tt="uppercase">
+            <Text component="h2" size="sm" fw={600} c="dimmed" tt="uppercase">
               {group.directory}
             </Text>
           </Group>
