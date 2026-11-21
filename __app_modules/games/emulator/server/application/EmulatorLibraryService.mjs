@@ -18,6 +18,11 @@ export class EmulatorLibraryService {
         governance: rules.governance ?? null, shader: rules.shader ?? null,
         chrome: rules.chrome ?? null, native: rules.native ?? null,
         presentation: rules.presentation ?? null,
+        // Memory map from the game's sidecar: the browser's StateMap and
+        // effect bindings read these. Without them nothing is watched.
+        states: rules.states ?? null,
+        bindings: rules.bindings ?? null,
+        calibration: rules.calibration ?? null,
       };
     });
     return { systems, consoles, games, input: config.input ?? null, settings: config.settings ?? null };

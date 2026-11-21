@@ -12,6 +12,7 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
+import { createEffectClient } from './core/effectClient.js';
 import { selectCheckpointVariant } from "./core/nativeCheckpoint.js";
 import { createCheckpointConsoleLifecycle, captureCheckpoint } from "./core/checkpointConsoleLifecycle.js";
 import { recoveryChoices } from "./core/recoveryChoices.js";
@@ -177,6 +178,15 @@ export function EmulatorConsole({
   const mountRef = useRef(null);
   const consoleRef = useRef(null);
   const runtimeRef = useRef(null); // { engine, mixer, session }
+
+  // A reload or navigation never unmounts React, so session.stop() would not
+  // run: exit any household effect (e.g. lights down underground) as the page
+  // goes away. The effect request uses keepalive and outlives the page.
+  useEffect(() => {
+    const onPageHide = () => runtimeRef.current?.session?.exitEffects?.('page-hide');
+    window.addEventListener('pagehide', onPageHide);
+    return () => window.removeEventListener('pagehide', onPageHide);
+  }, []);
   const gridCanvasRef = useRef(null);
   const volumeLevelRef = useRef(DEFAULT_VOLUME_LEVEL); // latest volume for the boot apply
   const controllerRef = useRef(null); // hotspot controller
@@ -907,7 +917,13 @@ export function EmulatorConsole({
       logger,
     });
 
-    const mergedHandlers = { ...actionHandlers, animation: (name) => triggerAnim(name) };
+    // `effect` (registry effects: lights, scenes) defaults to the backend
+    // effect endpoint; a host may supply its own.
+    const mergedHandlers = {
+      effect: createEffectClient({ logger }),
+      ...actionHandlers,
+      animation: (name) => triggerAnim(name),
+    };
 
     const session = fns.createSession({
       engine,

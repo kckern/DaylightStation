@@ -404,4 +404,81 @@ describe('aperture vs drawn screen', () => {
     }, logger);
     expect(warned(logger)).toBe(1);
   });
+
+  describe('per-ROM sidecar (memory map + bindings)', () => {
+    const manifest = (games) => [{ system: 'gb', dir: 'gb', manifest: { system: 'gb', games } }];
+    const SML = {
+      states: {
+        underground: { addr: 0xDFE9, type: 'flag', when: { equals: 4 }, hold: [0x0C, 0x02, 0x00] },
+      },
+      bindings: [{ on: 'underground', effect: 'underground_lights' }],
+    };
+
+    it('reads roms/<name>.yml next to the ROM and passes states + bindings through the catalog', () => {
+      const readGameSidecar = vi.fn((dir, rel) => (dir === 'gb' && rel === 'roms/SuperMarioLand.yml' ? SML : null));
+      const cfg = makeLoader(manifest([{ id: 'super-mario-land', title: 'SML', rom: 'roms/SuperMarioLand.gb' }]), { readGameSidecar });
+      expect(cfg.games[0].states).toEqual(SML.states);
+      expect(cfg.games[0].bindings).toEqual(SML.bindings);
+      const browserGame = resolveGameRules(cfg, 'super-mario-land');
+      expect(browserGame.states.underground.hold).toEqual([0x0C, 0x02, 0x00]);
+      expect(browserGame.bindings).toEqual(SML.bindings);
+    });
+
+    it('passes calibration scratch addresses through, and rejects ones outside WRAM', () => {
+      const warn = vi.fn();
+      const good = makeLoader(manifest([{ id: 'a', rom: 'roms/A.gb' }]), {
+        readGameSidecar: () => ({ ...SML, calibration: { scratch: [0xC080, 0xDC80] } }),
+      });
+      expect(resolveGameRules(good, 'a').calibration).toEqual({ scratch: [0xC080, 0xDC80] });
+      const bad = makeLoader(manifest([{ id: 'a', rom: 'roms/A.gb' }]), {
+        readGameSidecar: () => ({ ...SML, calibration: { scratch: [0xFFF0] } }),
+        logger: { warn, info() {}, debug() {}, error() {} },
+      });
+      expect(bad.games[0].calibration).toBeNull();
+      expect(warn).toHaveBeenCalledWith('emulator.sidecar.calibration_invalid', expect.anything());
+    });
+
+    it('honors an explicit map: path', () => {
+      const readGameSidecar = vi.fn(() => SML);
+      makeLoader(manifest([{ id: 'a', rom: 'roms/A.gb', map: 'maps/a.yml' }]), { readGameSidecar });
+      expect(readGameSidecar).toHaveBeenCalledWith('gb', 'maps/a.yml');
+    });
+
+    it('a game without a sidecar has no states (no calibration in the browser)', () => {
+      const cfg = makeLoader(manifest([{ id: 'a', rom: 'roms/A.gb' }]), { readGameSidecar: () => null });
+      expect(cfg.games[0].states).toBeNull();
+      expect(cfg.games[0].bindings).toBeNull();
+    });
+
+    it('drops malformed states and bindings with a warning', () => {
+      const warn = vi.fn();
+      const readGameSidecar = () => ({
+        states: {
+          ok: { addr: 0xC0A0, type: 'number' },
+          no_addr: { type: 'flag', when: { equals: 1 } },
+          flag_without_when: { addr: 0xC000, type: 'flag' },
+          weird_type: { addr: 0xC000, type: 'banana' },
+        },
+        bindings: [
+          { on: 'ok', do: { toast: 'hi' } },
+          { on: 'missing_state', effect: 'x' },
+          { on: 'ok' },
+          { on: 'ok', effect: '../etc' },
+        ],
+      });
+      const cfg = makeLoader(manifest([{ id: 'a', rom: 'roms/A.gb' }]), { readGameSidecar, logger: { warn, info() {}, debug() {}, error() {} } });
+      expect(Object.keys(cfg.games[0].states)).toEqual(['ok']);
+      expect(cfg.games[0].bindings).toEqual([{ on: 'ok', do: { toast: 'hi' } }]);
+      expect(warn.mock.calls.map(([e]) => e).filter((e) => e.startsWith('emulator.sidecar'))).toHaveLength(6);
+    });
+
+    it('ignores states/bindings written inline in the console manifest, with a warning', () => {
+      const warn = vi.fn();
+      const cfg = makeLoader(manifest([{ id: 'a', rom: 'roms/A.gb', states: SML.states, bindings: SML.bindings }]), {
+        readGameSidecar: () => null, logger: { warn, info() {}, debug() {}, error() {} },
+      });
+      expect(cfg.games[0].states).toBeNull();
+      expect(warn).toHaveBeenCalledWith('emulator.config.inline_states_ignored', expect.objectContaining({ move_to: 'roms/A.yml' }));
+    });
+  });
 });

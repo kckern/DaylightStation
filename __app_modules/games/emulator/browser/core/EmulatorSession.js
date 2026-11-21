@@ -15,12 +15,17 @@ import getLogger from '@/lib/logging/Logger.js';
 import { createWramCalibrator as realCreateWramCalibrator } from "./WramCalibrator.js";
 import { createStateMap as realCreateStateMap } from "./StateMap.js";
 import { createBindingMatcher as realCreateBindingMatcher } from "./BindingMatcher.js";
+import { createEffectBindings } from "./EffectBindings.js";
 import { loadShaderTextures, withShaderTextures, withoutShader } from "../shaders/customShaders.js";
 
 let _log;
 const log = () => (_log ??= getLogger().child({ component: 'emulator-session' }));
 
 const GATE_POLL_MS = 250;
+// A boot that has not produced frames yet cannot be calibrated; retry this
+// often, this many times (~30 s), before giving up on the state map.
+const CALIBRATION_RETRY_MS = 5000;
+const CALIBRATION_RETRY_LIMIT = 6;
 
 const DEFAULT_SCHEDULER = {
   set: (fn, ms) => setInterval(fn, ms),
@@ -34,7 +39,8 @@ const DEFAULT_SCHEDULER = {
  * @param {object} opts.governanceGate { mode, isPlayable, getStatus, onChange }
  * @param {object} opts.game { id, system='gb', romUrl, states, bindings }
  * @param {object} opts.engineConfig { pathtodata, core='gb' }
- * @param {object} [opts.actionHandlers] host-provided { haScene, animation, governance, toast }
+ * @param {object} [opts.actionHandlers] host-provided { haScene, animation, governance, toast, effect }.
+ *   `effect(effectId, phase, context)` runs a registry effect; phase is 'enter' | 'exit'.
  * @param {object} [opts.deps] { createWramCalibrator, createStateMap, createBindingMatcher, resolveMediaUrl }
  * @param {{set,clear}} [opts.scheduler] governance enforcement poll
  * @param {object} [opts.logger]
@@ -56,6 +62,8 @@ export function createEmulatorSession({
     createBindingMatcher = realCreateBindingMatcher,
     resolveMediaUrl = (p) => p,
     fetchBytes = (url) => globalThis.fetch(url),
+    setTimer = (fn, ms) => globalThis.setTimeout(fn, ms),
+    clearTimer = (id) => globalThis.clearTimeout(id),
   } = deps;
 
   const childLog = logger || log();
@@ -64,8 +72,11 @@ export function createEmulatorSession({
 
   let stateMap = null;
   let matcher = null;
+  let effects = null;
   let wramBase = null;
   let started = false;
+  let stopped = false;
+  let calibrationTimer = null;
 
   // Governance enforcement bookkeeping.
   let gateUnsub = null;
@@ -157,47 +168,45 @@ export function createEmulatorSession({
     // on every boot and, worse, reported `emulator.calibration.failed` at warn
     // level for every title without states (Sonic, and five of the seven Game
     // Boy titles) — a permanent false alarm that would bury a real failure.
+    stopped = false;
     let cal = null;
+    let calibrator = null;
     if (game.states && engineConfig.checkpointProvenance) {
       // Restored SRAM/WRAM must never be probed with writes or calibration frames.
       // Missing optional state instrumentation cannot justify a destructive fallback.
       const nativeBase = engine.getWramBase?.();
       if (nativeBase != null) cal = { wramBase: nativeBase };
     } else if (game.states) {
-      const calibrator = createWramCalibrator({
+      calibrator = createWramCalibrator({
         setCheat: engine.setCheat,
         resetCheat: engine.resetCheat,
         getHeap: engine.getHeap,
         waitFrames: engine.waitFrames,
         system,
+        // Per-game ping pages from the sidecar (Super Mario Land's sprite table
+        // makes the default page ambiguous).
+        scratchAddrs: game.calibration?.scratch ?? null,
         logger: childLog,
       });
       try {
         cal = await calibrator.calibrate();
       } catch (err) {
-        childLog.warn('emulator.calibration.error', { error: err && err.message });
+        if (err?.code === 'ENOFRAMES') {
+          // A stalled boot (no frames yet) says nothing about WRAM. Retry in
+          // the background once the core is running instead of giving up.
+          scheduleCalibrationRetry(calibrator, 1);
+          cal = { pending: true };
+        } else {
+          childLog.warn('emulator.calibration.error', { error: err && err.message });
+        }
       }
     } else {
       childLog.debug('emulator.calibration.skipped', { reason: 'no-states' });
     }
 
     if (cal && cal.wramBase != null && game.states) {
-      wramBase = cal.wramBase;
-      matcher = createBindingMatcher({
-        bindings: game.bindings || [],
-        handlers,
-        logger: childLog,
-      });
-      stateMap = createStateMap({
-        getHeap: engine.getHeap,
-        wramBase,
-        system,
-        states: game.states,
-        onState: (name, detail) => matcher.onStateChange(name, detail),
-      });
-      stateMap.start();
-      childLog.info('emulator.statemap.started', { wramBase });
-    } else if (game.states) {
+      startStateLayer(cal.wramBase);
+    } else if (game.states && !cal?.pending) {
       // Only a game that ASKED for a state map can fail to get one.
       childLog.warn('emulator.calibration.failed', {
         calibrated: cal != null,
@@ -214,7 +223,62 @@ export function createEmulatorSession({
     return { wramBase };
   }
 
+  /** Read the game's states from WRAM and dispatch bindings and effects. */
+  function startStateLayer(base) {
+    wramBase = base;
+    matcher = createBindingMatcher({
+      bindings: game.bindings || [],
+      handlers,
+      logger: childLog,
+    });
+    // Scoped effects (`effect:` bindings) enter and exit with their state.
+    effects = createEffectBindings({
+      bindings: game.bindings || [],
+      onEffect: (effectId, phase, ctx) => actionHandlers.effect?.(effectId, phase, { ...ctx, game: game.id }),
+      logger: childLog,
+    });
+    stateMap = createStateMap({
+      getHeap: engine.getHeap,
+      wramBase,
+      system,
+      states: game.states,
+      onState: (name, detail) => {
+        matcher.onStateChange(name, detail);
+        effects.onStateChange(name, detail);
+      },
+    });
+    stateMap.start();
+    childLog.info('emulator.statemap.started', { wramBase });
+  }
+
+  function scheduleCalibrationRetry(calibrator, attempt) {
+    if (stopped) return;
+    if (attempt > CALIBRATION_RETRY_LIMIT) {
+      childLog.warn('emulator.calibration.failed', { calibrated: false, hasStates: true, reason: 'no-frames', attempts: attempt - 1 });
+      return;
+    }
+    childLog.info('emulator.calibration.retry-scheduled', { attempt, delayMs: CALIBRATION_RETRY_MS, reason: 'no-frames' });
+    calibrationTimer = setTimer(async () => {
+      calibrationTimer = null;
+      if (stopped) return;
+      try {
+        const cal = await calibrator.calibrate();
+        if (stopped) return;
+        if (cal && cal.wramBase != null) startStateLayer(cal.wramBase);
+        else childLog.warn('emulator.calibration.failed', { calibrated: cal != null, hasStates: true, attempt });
+      } catch (err) {
+        if (err?.code === 'ENOFRAMES') scheduleCalibrationRetry(calibrator, attempt + 1);
+        else childLog.warn('emulator.calibration.error', { error: err && err.message, attempt });
+      }
+    }, CALIBRATION_RETRY_MS);
+  }
+
   function stop() {
+    stopped = true;
+    if (calibrationTimer != null) {
+      clearTimer(calibrationTimer);
+      calibrationTimer = null;
+    }
     if (gateTimer != null) {
       scheduler.clear(gateTimer);
       gateTimer = null;
@@ -224,6 +288,8 @@ export function createEmulatorSession({
       gateUnsub = null;
     }
     stateMap?.stop();
+    // Never leave the house in a game's state: a closed game exits its effects.
+    effects?.exitAll('session-stop');
     mixer.stopMusic();
     started = false;
     childLog.info('emulator.session.stop', {});
@@ -259,11 +325,21 @@ export function createEmulatorSession({
     return wramBase;
   }
 
+  /**
+   * Exit every active effect without stopping the session. For the page going
+   * away (reload, crash recovery, navigation), where React never unmounts and
+   * stop() would not run: the house must not stay in the game's state.
+   */
+  function exitEffects(reason = 'page-hide') {
+    effects?.exitAll(reason);
+  }
+
   return {
     start,
     stop,
     destroy,
     runActions,
+    exitEffects,
     getGameState,
     getWramBase,
     get _started() {

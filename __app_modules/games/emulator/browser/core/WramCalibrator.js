@@ -8,6 +8,14 @@
  * cheats apply, then scan HEAPU8 for the signature. Exactly one match yields
  * the base; the cheat is then removed and all future detection is pure reads.
  *
+ * Two matches happen when the scratch page is the game's OAM source: Super
+ * Mario Land keeps its sprite table at $C000-$C09F and copies it into OAM every
+ * frame, so the signature appears in WRAM and in the core's OAM copy. With more
+ * than one scratch address (`scratchAddrs`, from the game's sidecar), the
+ * calibrator pings the next address on another page and keeps only the base
+ * both pings agree on: OAM copies one page, WRAM holds them all. The bytes under
+ * every ping after the first are put back once the base is known.
+ *
  * All I/O is injected so this is unit-testable with NO real emulator.
  */
 
@@ -70,6 +78,9 @@ function findSignatureMatches(heap, signature) {
  * @param {()=>Promise<void>} deps.waitFrames resolves once cheats have landed
  * @param {string} [deps.system='gb']
  * @param {number} [deps.scratchAddr=0xC080] CPU address to ping
+ * @param {number[]} [deps.scratchAddrs] ping these in order until one base remains
+ *   (overrides scratchAddr). Each must be safe for the game to have 32 bytes
+ *   written into for a few frames; the sidecar names them per game.
  * @param {Uint8Array} [deps.signature=DEFAULT_SIGNATURE]
  * @param {{warn?:Function}} [deps.logger] optional logger (no-op default)
  */
@@ -80,6 +91,7 @@ export function createWramCalibrator({
   waitFrames,
   system = 'gb',
   scratchAddr = 0xc080,
+  scratchAddrs = null,
   signature = DEFAULT_SIGNATURE,
   logger,
 } = {}) {
@@ -90,35 +102,62 @@ export function createWramCalibrator({
     ? logger.info.bind(logger)
     : () => {};
 
-  async function calibrate() {
-    // 1. Ping: write each signature byte to scratchAddr + i.
+  const addrs = Array.isArray(scratchAddrs) && scratchAddrs.length ? scratchAddrs : [scratchAddr];
+
+  /**
+   * Write the signature at `addr` via cheats, let it land, scan, remove.
+   * Throws ENOFRAMES when the emulator ran no frames (a stalled boot): the
+   * cheats never applied, so an empty scan says nothing about the heap and
+   * must not be reported as a failed calibration. The caller can retry.
+   */
+  async function ping(addr) {
     for (let i = 0; i < signature.length; i++) {
-      const code = gameSharkCode(signature[i], scratchAddr + i);
-      setCheat(i, 1, code);
+      setCheat(i, 1, gameSharkCode(signature[i], addr + i));
+    }
+    const framesRan = await waitFrames();
+    if (framesRan === false) {
+      resetCheat();
+      throw Object.assign(new Error('no emulator frames ran during calibration'), { code: 'ENOFRAMES' });
+    }
+    const matches = findSignatureMatches(getHeap(), signature);
+    resetCheat(); // always, even on failure
+    return matches;
+  }
+
+  async function calibrate() {
+    let candidates = null; // possible WRAM bases
+    const restores = []; // { addr, saved: Map<base, Uint8Array> } for pings after the first
+    for (const addr of addrs) {
+      const offset = addr - SCRATCH_BASE;
+      // Remember what is under this ping at every candidate base, so it can be
+      // put back (the first ping has no candidates yet).
+      if (candidates) {
+        const heap = getHeap();
+        const saved = new Map(candidates.map((b) => [b, heap.slice(b + offset, b + offset + signature.length)]));
+        restores.push({ offset, saved });
+      }
+      const matches = await ping(addr);
+      const bases = matches.map((m) => m - offset);
+      candidates = candidates ? candidates.filter((b) => bases.includes(b)) : bases;
+      if (candidates.length <= 1) break;
     }
 
-    // 2. Let frames run so the cheats apply.
-    await waitFrames();
-
-    // 3. Scan the live heap for the signature.
-    const heap = getHeap();
-    const matches = findSignatureMatches(heap, signature);
-
-    // 4. Remove the ping (always, even on failure).
-    resetCheat();
-
-    // 5. Resolve.
-    if (matches.length === 1) {
-      const matchIndex = matches[0];
-      const wramBase = matchIndex - (scratchAddr - SCRATCH_BASE);
-      info('wram-calibrate-ok', { wramBase, matchIndex, system });
-      return { wramBase, matchIndex };
+    if (candidates && candidates.length === 1) {
+      const wramBase = candidates[0];
+      const heap = getHeap();
+      for (const { offset, saved } of restores) {
+        const bytes = saved.get(wramBase);
+        if (bytes) heap.set(bytes, wramBase + offset);
+      }
+      info('wram-calibrate-ok', { wramBase, matchIndex: wramBase + (addrs[0] - SCRATCH_BASE), system, pings: restores.length + 1 });
+      return { wramBase, matchIndex: wramBase + (addrs[0] - SCRATCH_BASE) };
     }
 
     warn('wram-calibrate-ambiguous', {
-      matches: matches.length,
+      matches: candidates ? candidates.length : 0,
       system,
-      scratchAddr,
+      scratchAddr: addrs[0],
+      scratchAddrs: addrs,
     });
     return null;
   }

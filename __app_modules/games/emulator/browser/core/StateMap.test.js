@@ -149,4 +149,35 @@ describe('createStateMap', () => {
     sm.sample();
     expect(onState).toHaveBeenLastCalledWith('battle', { type: 'enum', value: 'wild', raw: 1 });
   });
+
+  it('hold values keep the previous state (Super Mario Land music track)', () => {
+    const heap = makeHeap();
+    const onState = vi.fn();
+    const states = {
+      underground: { addr: 0xdfe9, type: 'flag', when: { equals: 0x04 }, hold: [0x0c, 0x02, 0x00] },
+    };
+    const sm = createStateMap({ getHeap: () => heap, wramBase: 0, states, onState });
+    const off = 0xdfe9 - 0xc000;
+    const play = (track) => { heap[off] = track; sm.sample(); };
+    const actives = () => onState.mock.calls.map(([, d]) => d.active);
+
+    play(0x07); // overworld (Birabuto)
+    play(0x04); // down the pipe
+    play(0x0c); // Starman in the pipe room: held
+    play(0x04); // star runs out
+    play(0x02); // death jingle: held
+    play(0x00); // silence before respawn: held
+    play(0x07); // respawned overground
+    expect(actives()).toEqual([false, true, false]);
+    expect(sm.getState().underground).toBe(false);
+  });
+
+  it('a hold value on the first sample still reports a state', () => {
+    const heap = makeHeap();
+    const onState = vi.fn();
+    const states = { underground: { addr: 0xdfe9, type: 'flag', when: { equals: 4 }, hold: [0] } };
+    const sm = createStateMap({ getHeap: () => heap, wramBase: 0, states, onState });
+    sm.sample();
+    expect(onState).toHaveBeenCalledWith('underground', { type: 'flag', active: false, value: 0 });
+  });
 });

@@ -191,6 +191,37 @@ describe('AmbientLedAdapter', () => {
     });
   });
 
+  describe('hold / release (arcade game effects)', () => {
+    const warm = { zones: [{ zoneId: 'warm', isActive: true }], sessionEnded: false, householdId: 'test-hid' };
+
+    test('zone colors stand down while held, and repaint the same zone after release', async () => {
+      await adapter.syncZone(warm);
+      expect(mockGateway.activateScene).toHaveBeenCalledTimes(1);
+
+      adapter.hold('arcade:underground_lights');
+      const held = await adapter.syncZone(warm);
+      expect(held).toMatchObject({ ok: true, skipped: true, reason: 'held' });
+
+      adapter.release('arcade:underground_lights');
+      vi.useFakeTimers();
+      vi.setSystemTime(Date.now() + 10_000);
+      await adapter.syncZone(warm);
+      vi.useRealTimers();
+      expect(mockGateway.activateScene).toHaveBeenCalledTimes(2);
+      expect(mockGateway.activateScene).toHaveBeenLastCalledWith('scene.led_yellow');
+    });
+
+    test('stays held until every holder releases; unknown releases are ignored', async () => {
+      adapter.hold('a');
+      adapter.hold('b');
+      adapter.release('nobody');
+      adapter.release('a');
+      expect((await adapter.syncZone(warm)).reason).toBe('held');
+      adapter.release('b');
+      expect((await adapter.syncZone(warm)).scene).toBe('scene.led_yellow');
+    });
+  });
+
   describe('getStatus', () => {
     test('returns status when enabled', () => {
       adapter.lastScene = 'scene.led_blue';

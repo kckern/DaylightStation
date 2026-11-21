@@ -1908,7 +1908,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     aiGateway: scopedGateway(sharedAiGateway, { app: 'media', feature: 'content-filter-cards' }),
   });
 
-  v1Routers.emulator = createEmulatorRuntime({configService,rootLogger,eventBus});
+  v1Routers.emulator = createEmulatorRuntime({
+    configService, rootLogger, eventBus,
+    // Game memory states drive household effects (Super Mario Land's pipe room
+    // darkens the garage); the zone LED controller stands down meanwhile.
+    haGateway: householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null,
+    lightingHold: fitnessServices?.ambientLedController ?? null,
+  });
 
   // Eink router — renders panels for hardware e-paper displays (Seeed reTerminal).
   const { createEinkModule } = await import("../../__app_modules/household/screens/server/display-runtime.mjs");

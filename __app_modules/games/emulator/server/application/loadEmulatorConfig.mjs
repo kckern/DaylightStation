@@ -1,5 +1,6 @@
 import { deepMerge } from "./lib/deepMerge.mjs";
 import { mergePresentation } from "./mergePresentation.mjs";
+import { sidecarPath, normalizeSidecar } from "./gameSidecar.mjs";
 
 const NOOP_LOGGER = { warn() {}, info() {}, debug() {}, error() {} };
 
@@ -108,6 +109,7 @@ export function loadEmulatorConfig({
   readInputConfig = configRepository?.readInputConfig?.bind(configRepository),
   readConsoles = configRepository?.readConsolesConfig?.bind(configRepository),
   readSettings = configRepository?.readSettingsConfig?.bind(configRepository),
+  readGameSidecar = configRepository?.readGameSidecar?.bind(configRepository),
   logger = NOOP_LOGGER,
 }) {
   const systems = {};
@@ -153,6 +155,15 @@ export function loadEmulatorConfig({
         continue;
       }
 
+      // Memory map + bindings live in a sidecar next to the ROM, never inline.
+      if (game.states || game.bindings) {
+        logger.warn('emulator.config.inline_states_ignored', { system: systemId, game: game.id, move_to: sidecarPath(game) });
+      }
+      const mapFile = sidecarPath(game);
+      const sidecar = mapFile && typeof readGameSidecar === 'function'
+        ? normalizeSidecar(readGameSidecar(entry.dir || systemId, mapFile), { system: systemId, gameId: game.id, file: mapFile, logger })
+        : { states: null, bindings: null, calibration: null };
+
       games.push({
         id: game.id,
         system: systemId,
@@ -180,6 +191,11 @@ export function loadEmulatorConfig({
         bezel: game.bezel ?? manifest.bezel ?? 'bezel.png',
         watches: game.watches,
         hooks: game.hooks,
+        // From the sidecar (see gameSidecar.mjs). null ⇒ no memory map: the
+        // browser skips calibration and the state layer entirely.
+        states: sidecar.states,
+        bindings: sidecar.bindings,
+        calibration: sidecar.calibration,
         // Deep-merge system defaults UNDER the game so the global-defaults pure
         // functions (resolveGameRules) stay correct with an empty cfg.defaults.
         governance: deepMerge(sysDefaults.governance ?? {}, game.governance ?? {}),

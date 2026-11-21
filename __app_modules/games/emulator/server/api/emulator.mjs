@@ -76,6 +76,7 @@ export function createEmulatorRouter({
   emulatorResources,
   emulatorLibrary,
   checkpointService,
+  effectService = null,
   publishBtPair = () => { logger.warn('emulator.bt_pair.no_publisher', {}); },
   makeRequestId = (() => { let n = 0; return () => `btpair-${++n}`; })(),
 }) {
@@ -83,6 +84,29 @@ export function createEmulatorRouter({
   const router = express.Router();
   if (checkpointService) router.use('/checkpoint', createEmulatorCheckpointRouter({ service: checkpointService, logger }));
   router.use(express.json());
+
+  // ---- POST /effects/:effectId ---------------------------------------------
+  // A game state entered or left a household effect (see EmulatorEffectService).
+  // Body: { phase: 'enter'|'exit', game?, reason? }. Only ids from effects.yml
+  // run; the page never names a Home Assistant entity. Answers immediately:
+  // applying | queued (inside the Zigbee interval) | unchanged.
+  const EFFECT_STATUS = { invalid_request: 400, unknown_effect: 404, unavailable: 503 };
+  router.post('/effects/:effectId', (req, res) => {
+    if (!effectService) return res.status(503).json({ ok: false, code: 'unavailable', error: 'effects are not configured' });
+    const { phase, game = null, reason = null } = req.body ?? {};
+    const result = effectService.request(req.params.effectId, phase, {
+      game: typeof game === 'string' ? game.slice(0, 128) : null,
+      reason: typeof reason === 'string' ? reason.slice(0, 64) : null,
+    });
+    if (!result.ok) return res.status(EFFECT_STATUS[result.code] ?? 400).json(result);
+    return res.json(result);
+  });
+
+  // ---- GET /effects --------------------------------------------------------
+  // Which effects are entered right now (diagnostics).
+  router.get('/effects', (req, res) => {
+    res.json({ effects: effectService?.getStatus?.() ?? {} });
+  });
 
   // ---- POST /bt/pair -------------------------------------------------------
   // Puts the garage box into controller-pairing mode without SSH: broadcasts a

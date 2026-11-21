@@ -155,4 +155,17 @@ describe('filesystem emulator repositories', () => {
     const absent = new FilesystemEmulatorConfigRepository({ emulationDir: path.join(root, 'absent') });
     expect(absent.readManifests()).toEqual([]);
   });
+
+  test('reads a game sidecar inside its system folder and nothing outside it', () => {
+    const gbDir = path.join(emulationDir, 'gb');
+    fs.mkdirSync(path.join(gbDir, 'roms'), { recursive: true });
+    fs.writeFileSync(path.join(gbDir, 'roms', 'A.yml'), 'states:\n  x: { addr: 49152 }\n');
+    fs.writeFileSync(path.join(emulationDir, 'effects.yml'), 'effects: {}\n');
+    const repository = new FilesystemEmulatorConfigRepository({ emulationDir });
+    expect(repository.readGameSidecar('gb', 'roms/A.yml')).toEqual({ states: { x: { addr: 49152 } } });
+    expect(repository.readGameSidecar('gb', 'roms/missing.yml')).toBeNull();
+    expect(repository.readGameSidecar('gb', '../effects.yml')).toBeNull();
+    expect(repository.readGameSidecar('gb', '/etc/hosts')).toBeNull();
+    expect(repository.readEffectsConfig()).toEqual({ effects: {} });
+  });
 });
