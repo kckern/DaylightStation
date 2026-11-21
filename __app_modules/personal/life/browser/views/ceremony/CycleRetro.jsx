@@ -1,5 +1,6 @@
-import { Stack, Paper, Text, Group, Badge, Progress, Textarea } from '@mantine/core';
+import { Stack, Paper, Text, Group, Badge, Textarea } from '@mantine/core';
 import { driftStatusColor, goalStateColor, ruleEffectivenessColor } from "../../theme/semantics.js";
+import { GoalProgressBar } from "../../widgets/GoalProgressBar.jsx";
 
 export function CycleRetro({ step, content, responses, setResponse }) {
   if (step === 0) {
@@ -13,7 +14,7 @@ export function CycleRetro({ step, content, responses, setResponse }) {
               <Text size="sm">{g.name}</Text>
               <Badge size="xs" color={goalStateColor(g.state)}>{g.state}</Badge>
             </Group>
-            <Progress value={(g.progress || 0) * 100} size="sm" />
+            <GoalProgressBar name={g.name} state={g.state} progress={g.progress || 0} showName={false} />
           </Paper>
         ))}
 
