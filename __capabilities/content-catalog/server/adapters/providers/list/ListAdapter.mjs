@@ -122,6 +122,14 @@ export class ListAdapter {
     return 'list';
   }
 
+  audioListSources() {
+    return [
+      { id: 'program:', title: 'Programs' },
+      { id: 'watchlist:', title: 'Watchlists' },
+      { id: 'menu:', title: 'Custom lists' },
+    ];
+  }
+
   get prefixes() {
     return [
       { prefix: 'menu', idTransform: (id) => `menu:${id}` },

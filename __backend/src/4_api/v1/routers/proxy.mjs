@@ -174,8 +174,38 @@ export function createProxyRouter(config = {}) {
     }
   }));
 
+  async function sendAudio(req, res, result) {
+    if (result.kind !== 'audio_stream') {
+      return res.status(422).json({ error: 'Audio rendition unavailable' });
+    }
+    const headers = { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff' };
+    if (req.method === 'HEAD') return res.set(headers).end();
+    const controller = new AbortController();
+    res.once('close', () => controller.abort());
+    const audio = await result.open(controller.signal);
+    if (!audio) return res.status(503).json({ error: 'Audio rendition capacity unavailable' });
+    audio.once('error', error => {
+      if (res.destroyed) return;
+      if (res.headersSent) res.destroy(error);
+      else res.type('json').status(502).json({ error: 'Audio rendition failed' });
+    });
+    res.set(headers);
+    return audio.pipe(res);
+  }
+
+  router.get('/audio/:source/*splat', asyncHandler(async (req, res) => {
+    if (req.query.stream !== 'audio') return res.status(400).json({ error: 'Expected an audio stream' });
+    const controller = new AbortController();
+    res.once('close', () => controller.abort());
+    const result = await proxyMediaService.getProviderAudio(req.params.source, splatPath(req), controller.signal);
+    return sendAudio(req, res, result);
+  }));
+
   router.get('/media/stream/*splat', asyncHandler(async (req, res) => {
-    const result = await proxyMediaService.getContentMedia(splatPath(req));
+    const stream = req.query.stream === 'audio' ? 'audio' : undefined;
+    const result = await proxyMediaService.getContentMedia(splatPath(req), stream ? { stream } : undefined);
+    if (stream) return sendAudio(req, res, result);
     if (result.kind === 'unconfigured') {
       return res.status(404).json({ error: 'Media adapter not configured' });
     }

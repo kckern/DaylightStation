@@ -8,11 +8,12 @@ export class ContentAccessService {
    * @param {() => number} [deps.random] - Injected entropy for station-ID spacing; required with sequenceStore
    * @param {Object} [deps.logger]
    */
-  constructor({ contentIdResolver, contentCatalog, queueService = null, sequenceStore = null, random = null, logger = null }) {
+  constructor({ contentIdResolver, contentCatalog, queueService = null, audioListConfig = () => null, sequenceStore = null, random = null, logger = null }) {
     if (!contentIdResolver?.resolve) throw new Error('ContentAccessService requires contentIdResolver');
     if (!contentCatalog?.getItem) throw new Error('ContentAccessService requires contentCatalog');
     this.resolver = contentIdResolver; this.catalog = contentCatalog; this.queueService = queueService;
     if (sequenceStore && typeof random !== 'function') throw new Error('ContentAccessService: sequenceStore requires an injected random');
+    this.audioListConfig = audioListConfig;
     this.sequenceStore = sequenceStore; this.random = random; this.logger = logger;
   }
 
@@ -45,7 +46,49 @@ export class ContentAccessService {
     };
   }
 
-  async queue({ compoundId, parsedSource, localId, shuffle }) {
+  audioListSources() {
+    const available = this.catalog.audioListSources?.() ?? [];
+    const configured = this.audioListConfig()?.sources;
+    if (!Array.isArray(configured)) return available;
+    const known = new Map(available.map(source => [source.id, source]));
+    return configured.flatMap(entry => {
+      const source = known.get(typeof entry === 'string' ? entry : entry?.id);
+      if (!source) return [];
+      return [{ ...source, title: entry?.title || source.title }];
+    });
+  }
+
+  async audioListCatalog({ source, skip, take }) {
+    const id = source.includes(':') ? source : `${source}:`;
+    if (!this.audioListSources().some(entry => entry.id === id)) return null;
+    const resolution = this.resolver.resolve(id);
+    if (!resolution) return null;
+    const specialized = await this.catalog.audioListPage?.(resolution, { skip, take });
+    const result = specialized ? null : await this.catalog.getList(resolution, id);
+    const candidates = Array.isArray(result) ? result : result?.items ?? result?.children ?? [];
+    const ordered = [...candidates].sort((a, b) => a.id.localeCompare(b.id));
+    const page = specialized?.items ?? ordered.slice(skip, skip + take);
+    const items = await Promise.all(page.map(async candidate => {
+      try {
+        if (specialized && !candidate.checkAudio) {
+          return { id: candidate.id, title: candidate.title, thumbnail: candidate.thumbnail || null };
+        }
+        const queue = await this.queue({ compoundId: candidate.id, profile: 'audio-only' });
+        if (!queue.items?.length) return null;
+        return {
+          id: candidate.id,
+          title: candidate.title,
+          thumbnail: candidate.thumbnail || queue.thumbnail || queue.items[0].thumbnail || null,
+        };
+      } catch (error) {
+        this.logger?.warn?.('queue.catalog.list_failed', { id: candidate.id, error: error.message });
+        return null;
+      }
+    }));
+    return { items: items.filter(Boolean), total: specialized?.total ?? ordered.length };
+  }
+
+  async queue({ compoundId, parsedSource, localId, shuffle, profile }) {
     let resolved = this.resolver.resolve(compoundId);
     if (!resolved && !localId && parsedSource) resolved = this.resolver.resolve(parsedSource);
     if (!resolved && !localId && parsedSource) resolved = this.resolver.resolve(`query:${parsedSource}`);
@@ -54,11 +97,33 @@ export class ContentAccessService {
     const finalId = `${resolved.source}:${resolved.localId}`;
     const playables = await this.catalog.resolvePlayables(resolved, finalId);
     if (playables === null) return { kind: 'unsupported', source };
+    const items = await this.#orderQueue(playables, source, finalId, shuffle);
     return {
       kind: 'found', source, finalId, audio: playables.audio || null,
       thumbnail: playables.thumbnail || null,
-      items: await this.#orderQueue(playables, source, finalId, shuffle),
+      items: profile === 'audio-only' ? await this.#projectAudio(items) : items,
     };
+  }
+
+  async #projectAudio(items) {
+    const audioItems = [];
+    for (const item of items) {
+      if (item.mediaType === 'audio' && item.mediaUrl) {
+        audioItems.push(item);
+      } else if (['video', 'hls_video', 'dash_video'].includes(item.mediaType)) {
+        const rendition = item.metadata?.audioRendition ?? await this.catalog.audioRendition?.(item);
+        if (rendition?.mediaUrl && rendition.format) {
+          audioItems.push({
+            ...item,
+            mediaType: 'audio',
+            mediaUrl: rendition.mediaUrl,
+            resumable: false, resumePosition: null,
+            metadata: { ...item.metadata, contentFormat: rendition.format },
+          });
+        }
+      }
+    }
+    return audioItems;
   }
 
   /**
