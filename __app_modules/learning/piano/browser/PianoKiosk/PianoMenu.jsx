@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
@@ -34,7 +34,13 @@ import { scoreViewPath } from './modes/SheetMusic/sheetMusicModel.js';
  * tiles and the progress strip are REPLACED by that one lesson
  * (TodaysLessonGate) — not greyed out, which is curfew's look and would read as
  * "everything is closed" rather than "here is the one thing". It clears itself
- * when School says the day is discharged. Curfew outranks it.
+ * when School says the day is discharged.
+ *
+ * Curfew does NOT cancel that lesson (owner, 2026-11-20): a child who still
+ * owes the day's assigned lesson may start it at any hour of the curfew
+ * window. Under curfew the lesson is the ONLY door — no progress strip, no
+ * Sheet Music column, no tiles — and once School discharges the day the menu
+ * falls back to the closed-for-the-night view.
  *
  * Until that verdict arrives the menu is PENDING: greyed like curfew, with one
  * caption, because nothing here is tappable *yet*. Reading `gated === false`
@@ -65,20 +71,32 @@ export function PianoMenu() {
   const onKiosk = Boolean(config?.screensaver?.deviceId) && KIOSK_DEVICE_ID === config.screensaver.deviceId;
   const curfewWindow = usePianoCurfew(config?.curfew, config?.timezone);
   const curfew = curfewWindow && onKiosk;
-  // Curfew wins outright: after bedtime there is nothing to offer, so the
-  // closed-for-the-night view stands rather than a launchable lesson card.
+  // The owed lesson survives curfew; everything else the gate leaves open
+  // (strip, Sheet Music column) does not. See the header.
   const lessonGate = usePianoLessonGate(currentUser);
   // Not a lock — see gameAccessPolicy.js. The tile stays PRESENT and disabled
   // rather than disappearing: a tile that vanishes for one player and not
   // another reads as a fault to a child, and invites the hunt for the way back
   // that a plain "not for you" ends.
   const gamesOff = gamesDisabledFor(config.gameAccess, currentUser);
-  const gated = !curfew && lessonGate.gated;
+  const gated = lessonGate.gated;
+  const lessonOnly = gated && (curfew || Boolean(lessonGate.challenge));
+  const curfewLessonOpen = curfew && gated;
+  useEffect(() => {
+    if (!curfewLessonOpen) return;
+    logger.info('piano.curfew.lesson-open', {
+      pianoId, userId: currentUser,
+      courseId: lessonGate.course?.id ?? null,
+      lessonId: lessonGate.lesson?.id ?? null,
+      challengeId: lessonGate.challenge?.id ?? null,
+    });
+  }, [curfewLessonOpen, currentUser, lessonGate.lesson?.id, lessonGate.challenge?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   // A learner whose verdict has not arrived is PENDING, not free: on
   // 2026-09-01 one walked out through the activity strip 3.5s into an 11.1s
   // read, so `gated === false` alone is not permission to open the menu. Who
-  // counts as waiting is the HOOK's rule, not re-derived here — this screen
-  // only adds that curfew outranks it, having nothing left to wait for.
+  // counts as waiting is the HOOK's rule, not re-derived here. Under curfew
+  // the menu is already shut, so there is no separate pending caption; an
+  // owed lesson still appears the moment the verdict lands.
   const pending = !curfew && lessonGate.pending;
   // The daily video cap. Enforcement lives in Videos.jsx (all three routes, so
   // a deep link cannot walk around it); this is the EXPLANATION. A tile left
@@ -136,7 +154,7 @@ export function PianoMenu() {
   return (
     <main className={`piano-home${curfew ? ' is-curfew' : ''}`}>
       <div className="piano-home__body">
-        {gated && lessonGate.challenge ? lessonCard : gated ? (
+        {lessonOnly ? lessonCard : gated ? (
           <>
             {desk}
             <div className="piano-home__owed">
@@ -208,7 +226,9 @@ export function PianoMenu() {
         )}
         {curfew && (
           <p className="piano-home__curfew" role="status">
-            Screen time is over for tonight — but the piano is still on. Just play.
+            {gated
+              ? 'Screen time is over for tonight, except today\'s lesson.'
+              : 'Screen time is over for tonight — but the piano is still on. Just play.'}
           </p>
         )}
         {pending && (
