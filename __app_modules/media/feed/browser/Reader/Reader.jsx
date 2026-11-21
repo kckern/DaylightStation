@@ -583,7 +583,7 @@ export default function Reader() {
             <span /><span /><span />
           </button>
           <span className="reader-mobile-title">
-            {HISTORY_VIEWS.has(activeView) ? `${activeView[0].toUpperCase()}${activeView.slice(1)} articles` : activeFeeds.size > 0 ? `${activeFeeds.size} feed${activeFeeds.size > 1 ? 's' : ''} selected` : 'All Articles'}
+            {activeView === 'offline' ? 'Offline articles' : HISTORY_VIEWS.has(activeView) ? `${activeView[0].toUpperCase()}${activeView.slice(1)} articles` : activeFeeds.size > 0 ? `${activeFeeds.size} feed${activeFeeds.size > 1 ? 's' : ''} selected` : 'All Articles'}
           </span>
         </div>
         <div className="reader-view-tabs" role="group" aria-label="Article state">

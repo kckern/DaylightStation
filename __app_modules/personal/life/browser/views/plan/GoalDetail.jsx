@@ -54,6 +54,7 @@ export function GoalDetail({ goalId, username }) {
                   <Text size="xs" c="dimmed">{m.current}/{m.target} {m.unit}</Text>
                 </Group>
                 <Progress
+                  aria-label={m.name}
                   value={m.target > 0 ? Math.min((m.current / m.target) * 100, 100) : 0}
                   color="blue"
                   size="xs"
