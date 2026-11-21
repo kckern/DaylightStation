@@ -192,3 +192,13 @@ describe('useGamepadStatus (hook)', () => {
     expect(container.querySelector('[data-testid="connected"]').textContent).toBe('1');
   });
 });
+
+describe('remote entries in the inventory', () => {
+  it('leaves kind: remote entries out of the known gamepad rows', () => {
+    const cfg = [
+      { id: 'sfc30', label: '8BitDo SFC30', match: '8Bitdo' },
+      { id: 'remote_x', label: 'Side remote', kind: 'remote', address: '9D:28:06:79:F3:A5' },
+    ];
+    expect(mergeKnown(cfg, [], null).map((r) => r.id)).toEqual(['sfc30']);
+  });
+});

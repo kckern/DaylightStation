@@ -65,3 +65,15 @@ describe('diffControllerConnections', () => {
     expect(diffControllerConnections([], [conn('a', false)])).toEqual({ connected: [], disconnected: [] });
   });
 });
+
+describe('remote entries in the inventory', () => {
+  const REMOTE = { id: 'remote_x', label: 'Side remote', kind: 'remote', address: '9D:28:06:79:F3:A5' };
+
+  it('never reports a kind: remote entry as a controller (no arcade toast)', () => {
+    const inv = [
+      { address: '9D:28:06:79:F3:A5', name: 'QXS-001', connected: true, battery: null },
+      { address: 'e4:17:d8:c6:54:f0', name: '8Bitdo SFC30 GamePad', connected: true, battery: 75 },
+    ];
+    expect(knownControllerStates(inv, [SFC30, REMOTE]).map((s) => s.label)).toEqual(['8BitDo SFC30']);
+  });
+});

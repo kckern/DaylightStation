@@ -9,6 +9,16 @@
  */
 
 /**
+ * `input.yml` `controllers:` is the garage's whole Bluetooth inventory: game pads
+ * and also `kind: remote` entries (media remotes and keyboard remotes kept there
+ * for their label, address and placement). Gamepad status and the arcade's
+ * connect toasts mean pads only, so they read this filtered list.
+ */
+export function gamepadControllers(controllers) {
+  return (Array.isArray(controllers) ? controllers : []).filter((c) => c?.kind !== 'remote');
+}
+
+/**
  * Connection state for each KNOWN controller, derived from the inventory.
  * - A controller with an `address` is always tracked (connected reflects the
  *   feed; absent address in the feed → disconnected).
@@ -25,7 +35,7 @@ export function knownControllerStates(btInventory, controllers = []) {
   const out = [];
   const seen = new Set();
 
-  for (const c of controllers || []) {
+  for (const c of gamepadControllers(controllers)) {
     let dev = null;
     if (c?.address) {
       const want = String(c.address).toLowerCase();

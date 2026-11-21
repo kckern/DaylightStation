@@ -35,10 +35,29 @@ controllers:
       wake: "Press START to wake it. It reconnects by itself."
       steps: [ "...", "...", "..." ]   # shown in order under How to pair
       troubleshoot: "..."              # shown when a window fails
+  - id: niceday_remote_right            # a media / keyboard remote, not a pad
+    kind: remote
+    label: NiceDay right remote
+    model: QXS-001                       # what it calls itself over Bluetooth
+    address: "9D:28:06:79:F3:A5"
+    placement: "NiceDay bike, right side"
+    buttons:                             # physical button -> browser KeyboardEvent.key
+      plus: AudioVolumeUp
+      ...
 keyboard:                              # key names the games use
   up: ArrowUp
   ...
 ```
+
+`controllers:` is the garage's whole Bluetooth inventory, one entry per
+physical device with its MAC `address`. Two of the same model are told apart
+only by `address`, so give each its own entry and a `placement` that says where
+it lives. An entry with `kind: remote` is a media or keyboard remote: the
+Bluetooth screen takes its label from it, but gamepad status and the arcade's
+"controller connected" toasts skip it (`gamepadControllers` in
+`controllerStatus.js`). `buttons:` records what each physical button sends, as
+the browser's `KeyboardEvent.key`; it is a record for mapping keys to actions
+and is not read by code yet.
 
 - `steps` lead into the search: the last step points at **Search for it**.
 - `wake` shows under a paired row of that controller while it is asleep.
