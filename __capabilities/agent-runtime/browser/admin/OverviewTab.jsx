@@ -12,6 +12,7 @@ import { triggerAssignment } from "./hooks/useAdminAgents.js";
 import { useAgentMemory } from "./hooks/useAgentMemory.js";
 import { ConfirmModal } from "../../../../frontend/src/lib/ui/ConfirmModal.jsx";
 import { useSheetSubmission } from '../../../../frontend/src/lib/ui/useSheetSubmission.js';
+import { ErrorState } from '../../../../frontend/src/lib/ui/states.jsx';
 
 function OverviewTab({ agentId, userId }) {
   const assignments = useApiResource(agentId ? `/api/v1/agents/${encodeURIComponent(agentId)}/assignments` : null, {
@@ -27,7 +28,7 @@ function OverviewTab({ agentId, userId }) {
 
 function MemberOverview({ agentId, userId, assignmentRead }) {
   const { entries, loading: memLoading, error: memError, deleteEntry, clearAll } = useAgentMemory(agentId, userId);
-  const { data, loading: assLoading, error: assignmentError } = assignmentRead;
+  const { data, loading: assLoading, error: assignmentError, reload: reloadAssignments } = assignmentRead;
   const assignments = data?.assignments || [];
   const [actionError, setActionError] = useState(null);
   const [dismissedError, setDismissedError] = useState(null);
@@ -61,9 +62,17 @@ function MemberOverview({ agentId, userId, assignmentRead }) {
     return clearAll();
   });
 
-  const readError = assignmentError || memError;
-  const error = actionError || (readError !== dismissedError && readError);
-  const onClearError = () => { setActionError(null); setDismissedError(readError); };
+  const error = actionError || (memError !== dismissedError && memError);
+  const onClearError = () => { setActionError(null); setDismissedError(memError); };
+  const registration = assLoading
+    ? { label: 'Checking registration', badge: 'Checking', color: 'gray' }
+    : assignmentError?.status === 404
+      ? { label: 'Agent not found', badge: 'Not found', color: 'red' }
+      : assignmentError
+        ? { label: 'Registration unavailable', badge: 'Unavailable', color: 'gray' }
+        : data
+          ? { label: 'Registered and active', badge: 'Active', color: 'green' }
+          : { label: 'Registration not confirmed', badge: 'Unknown', color: 'gray' };
 
   const memoryEntries = Object.entries(entries);
 
@@ -80,9 +89,9 @@ function MemberOverview({ agentId, userId, assignmentRead }) {
         <Group justify="space-between">
           <div>
             <Text size="lg" fw={600} ff="var(--ds-font-mono)">{agentId}</Text>
-            <Text size="sm" c="dimmed">Registered and active</Text>
+            <Text size="sm" c="dimmed">{registration.label}</Text>
           </div>
-          <Badge color="green" variant="light" size="lg">Active</Badge>
+          <Badge color={registration.color} variant="light" size="lg">{registration.badge}</Badge>
         </Group>
       </Paper>
 
@@ -94,6 +103,13 @@ function MemberOverview({ agentId, userId, assignmentRead }) {
 
         {assLoading ? (
           <Center py="md"><Loader size="sm" /></Center>
+        ) : assignmentError ? (
+          <ErrorState
+            error={assignmentError}
+            label="Agent assignments"
+            title={assignmentError.status === 404 ? 'Agent not found' : undefined}
+            onRetry={reloadAssignments}
+          />
         ) : assignments.length === 0 ? (
           <Text c="dimmed" size="sm">No assignments registered</Text>
         ) : (
