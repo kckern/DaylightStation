@@ -8,7 +8,7 @@ export function EntitySwitch({ entity, onToggle, size }) {
     <Switch
       checked={checked}
       size={size}
-      aria-label={`${entity.name}: turn ${checked ? 'off' : 'on'}`}
+      aria-label={entity.name}
       aria-disabled={pending || undefined}
       data-disabled={pending || undefined}
       onClick={event => {

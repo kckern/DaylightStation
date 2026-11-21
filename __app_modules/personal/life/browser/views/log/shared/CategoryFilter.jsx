@@ -13,7 +13,7 @@ const CATEGORIES = [
 export function CategoryFilter({ selected = [], onChange }) {
   return (
     <Chip.Group multiple value={selected} onChange={onChange}>
-      <Group gap="xs">
+      <Group gap="xs" role="group" aria-label="Filter log by category">
         {CATEGORIES.map(cat => (
           <Chip key={cat.value} value={cat.value} size="xs" variant="outline">
             {cat.label}
