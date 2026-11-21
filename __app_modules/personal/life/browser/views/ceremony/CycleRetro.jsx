@@ -68,8 +68,8 @@ export function CycleRetro({ step, content, responses, setResponse }) {
   // Next cycle planning
   return (
     <Stack gap="md">
-      <Text size="sm" fw={500}>Focus for next cycle</Text>
       <Textarea
+        label="Focus for next cycle"
         placeholder="What's the priority for the next cycle?"
         value={responses.nextFocus || ''}
         onChange={(e) => setResponse('nextFocus', e.currentTarget.value)}

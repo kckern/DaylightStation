@@ -41,8 +41,8 @@ export function PhaseReview({ step, content, responses, setResponse }) {
 
   return (
     <Stack gap="md">
-      <Text size="sm" fw={500}>Phase Adjustments</Text>
       <Textarea
+        label="Phase Adjustments"
         placeholder="What changes will you make for the next phase?"
         value={responses.adjustments || ''}
         onChange={(e) => setResponse('adjustments', e.currentTarget.value)}
