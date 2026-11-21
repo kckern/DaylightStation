@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
 
-test('agent settings save the selected member’s goals after the previous read is cancelled', async ({ page }) => {
+test('Health Coach config saves only to the selected member after the previous read is cancelled', async ({ page }) => {
   let pendingGoals;
   const writes = [];
   await page.routeWebSocket('**/*', () => {});
@@ -29,7 +29,7 @@ test('agent settings save the selected member’s goals after the previous read 
     }
     return route.fulfill({ json: path.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
   });
-  await page.goto('/admin/agents/fixture#config');
+  await page.goto('/admin/agents/health-coach#config');
   await expect.poll(() => Boolean(pendingGoals)).toBe(true);
   await page.getByPlaceholder('Select user').click();
   await page.getByRole('option', { name: 'beta' }).click();
@@ -39,16 +39,18 @@ test('agent settings save the selected member’s goals after the previous read 
   await expect.poll(() => pendingGoals.request().failure()).not.toBeNull();
   await expect(weight).toHaveValue('180');
   await page.getByRole('button', { name: 'Save Goals' }).click();
-  await expect.poll(() => writes).toEqual([{
-    path: '/api/v1/admin/config/files/users/beta/agents/fixture/goals',
+  const goalsWrite = {
+    path: '/api/v1/admin/health-coach/members/beta/config/goals',
     data: { parsed: { weight: { target_lbs: 180 }, owner: 'beta' } },
-  }]);
+  };
+  await expect.poll(() => writes).toEqual([goalsWrite]);
   await page.getByLabel('Program ID').fill('updated beta');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect.poll(() => writes[1]).toEqual({
-    path: '/api/v1/admin/config/files/users/beta/agents/fixture/program-state',
+  const programWrite = {
+    path: '/api/v1/admin/health-coach/members/beta/config/program-state',
     data: { parsed: { program: { id: 'updated beta' }, owner: 'beta' } },
-  });
+  };
+  await expect.poll(() => writes).toEqual([goalsWrite, programWrite]);
 });
 
 test('the config directory groups files and opens the chosen editable path', async ({ page }) => {
