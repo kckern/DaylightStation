@@ -31,18 +31,13 @@ import { canShowNotes, wasNameLabel } from "../house/houseCopy.js";
 import { useStartStatuses, useStartedByAll } from "../house/useHouseSignals.js";
 import { useMoveHere } from "../household/useMoveHere.js";
 import { useSlideshowStopGuard } from "./PlayerFeatureControls.jsx";
+import { formatTime } from "./formatTime.js";
 import { StartStatusLine, StartedByLine, AddOnlyNotice, RowNotes, ScreenStopControl } from "../house/RowExtras.jsx";
 import { HouseQuietBar } from "../house/HouseQuietControls.jsx";
 import "../house/House.scss";
 
 const MOVE_HERE_UNAVAILABLE = "This screen's playback can't be moved here.";
 const ACTIVE_STATES = new Set(['playing', 'paused', 'buffering', 'stalled']);
-
-function fmt(s) {
-  const t = Math.max(0, Math.floor(s ?? 0));
-  const m = Math.floor(t / 60);
-  return `${m}:${String(t % 60).padStart(2, '0')}`;
-}
 
 function FleetCard({ deviceId, startStatus, startedBy }) {
   const { device, entry } = useDevice(deviceId);
@@ -115,9 +110,9 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
             <Text size="sm" fw={600} lineClamp={1}>{item.title ?? item.contentId}</Text>
             {duration > 0 && (
               <Group gap="xs" wrap="nowrap">
-                <Text size="xs" c="dimmed">{fmt(snap.position)}</Text>
+                <Text size="xs" c="dimmed">{formatTime(snap.position)}</Text>
                 <Progress value={(100 * (snap.position ?? 0)) / duration} size="xs" style={{ flex: 1 }} />
-                <Text size="xs" c="dimmed">{fmt(duration)}</Text>
+                <Text size="xs" c="dimmed">{formatTime(duration)}</Text>
               </Group>
             )}
           </div>
