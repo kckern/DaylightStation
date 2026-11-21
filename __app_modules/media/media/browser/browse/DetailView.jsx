@@ -76,7 +76,7 @@ export function DetailView({ contentId }) {
     body = (
       <>
         {info.thumbnail && (
-          <Image src={info.thumbnail} alt={info.title ?? contentId} className="detail-poster" radius="md" />
+          <Image src={info.thumbnail} alt="" className="detail-poster" radius="md" />
         )}
         <Title order={1}>{info.title ?? contentId}</Title>
         {facts && <Text size="sm" c="dimmed" data-testid="detail-facts">{facts}</Text>}

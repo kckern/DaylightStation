@@ -1,6 +1,6 @@
 import { Title, Paper, Group, Badge, SimpleGrid } from '@mantine/core';
 import { useLogActivity } from './shared/useLogActivity.js';
-import { LifePage } from "../../components/index.js";
+import { EmptyState, LifePage } from "../../components/index.js";
 import { LogReadRegion } from './shared/LogReadRegion.jsx';
 
 /**
@@ -29,22 +29,24 @@ export function LogDecadeView({ username, at, categories }) {
 
   const content = (
     <LifePage title="Decade">
-      <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
-        {yearKeys.map(year => {
-          const y = years[year];
-          const activeRate = y.days > 0 ? Math.round((y.activeDays / y.days) * 100) : 0;
-          return (
-            <Paper key={year} p="md" withBorder>
-              <Title order={5} mb="xs">{year}</Title>
-              <Group gap="xs">
-                <Badge size="sm" variant="light">{y.activeDays} active days</Badge>
-                <Badge size="sm" variant="light" color="green">{activeRate}% coverage</Badge>
-                <Badge size="sm" variant="light" color="blue">{y.sources.size} sources</Badge>
-              </Group>
-            </Paper>
-          );
-        })}
-      </SimpleGrid>
+      {yearKeys.length === 0 ? <EmptyState title="No activity recorded for this decade." /> : (
+        <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
+          {yearKeys.map(year => {
+            const y = years[year];
+            const activeRate = y.days > 0 ? Math.round((y.activeDays / y.days) * 100) : 0;
+            return (
+              <Paper key={year} p="md" withBorder>
+                <Title order={5} mb="xs">{year}</Title>
+                <Group gap="xs">
+                  <Badge size="sm" variant="light">{y.activeDays} active days</Badge>
+                  <Badge size="sm" variant="light" color="green">{activeRate}% coverage</Badge>
+                  <Badge size="sm" variant="light" color="blue">{y.sources.size} sources</Badge>
+                </Group>
+              </Paper>
+            );
+          })}
+        </SimpleGrid>
+      )}
     </LifePage>
   );
   return <LogReadRegion read={read}>{content}</LogReadRegion>;

@@ -73,7 +73,7 @@ export function RoomsView({ entities, rooms, types, summary, haUrl, toggle, turn
               <span className="home-room__name">{room.name}</span>
               {/* A cell says something or stays blank: a column of "dark" and dashes is noise. */}
               <span className="home-room__lights">
-                {room.lightsOn ? <><span className="home-room__dot" aria-hidden="true" />{room.lightsOn} on</> : null}
+                {room.lightsOn ? <><span className="home-room__dot" aria-hidden="true" />{room.lightsOn}<VisuallyHidden> {room.lightsOn === 1 ? 'light' : 'lights'}</VisuallyHidden> on</> : null}
               </span>
               <span className="home-room__temp">{room.temperature ? formatDegrees(room.temperature.value) : null}</span>
               <span className="home-room__motion">
