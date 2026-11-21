@@ -23,7 +23,10 @@ export function useMediaPlaybackPresentation({ media, isPlex, getMediaEl }) {
   const contentId = isPlex ? (media?.assetId || media?.key || media?.plex || null) : null;
   const eligible = !!contentId && !provenanceOptedOut(search);
   const { data, status } = useProvenance(contentId, { enabled: eligible });
-  const { phase, afterHandoff, linkMs } = useProvenanceHandoff({ getMediaEl, contentId, eligible, status, provenance: data });
+  // Where the player was asked to start (same rule as VideoPlayer's controller): a resume shows nothing.
+  const goto = /[?&]goto=(\d+(?:\.\d+)?)/.exec(search)?.[1];
+  const startSec = goto != null ? Number(goto) : Number((media?.segment ? media.segment.start : media?.seconds) || 0);
+  const { phase, afterHandoff, linkMs } = useProvenanceHandoff({ getMediaEl, contentId, eligible, status, provenance: data, startSec });
   const filter = useMediaVideoPresentation({ media, isPlex, getMediaEl, bumperHeld: !afterHandoff });
 
   const scene = data && SCENE_PHASES.includes(phase)
