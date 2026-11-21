@@ -20,7 +20,7 @@ const films = [
 ];
 vi.mock('../../../lib/hooks/useApiResource.js', async original => ({
   ...await original(),
-  useApiResource: () => ({ data: { films, worker, meta: { indexedAt: '2026-06-30T00:00:00.000Z', total: 8, unlinked: 1, verified: 6, unmatched: 2 } }, loading: false, error: null, reload, poll }),
+  useApiResource: () => ({ data: { films, worker, meta: { indexedAt: '2026-06-30T00:00:00.000Z', total: 8, unlinked: 1, verified: 6, unmatched: 2 } }, hasResult: true, loading: false, error: null, reload, poll, revalidating: false }),
 }));
 vi.mock('../../../lib/api.mjs', () => ({
   DaylightAPI: async (path, body, method) => {

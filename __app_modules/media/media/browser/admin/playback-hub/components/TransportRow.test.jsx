@@ -3,10 +3,10 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { TransportRow } from "./TransportRow.jsx";
 
-// Stub LabeledContentPicker so we can drive its onChange directly.
+// Stub the catalog picker so we can drive its onChange directly.
 let pickerOnChangeRef = null;
-vi.mock("./LabeledContentPicker.jsx", () => ({
-  LabeledContentPicker: function PickerStub({ value, onChange, placeholder }) {
+vi.mock("../../../../../../../__capabilities/content-catalog/browser/picker.mjs", () => ({
+  default: function PickerStub({ value, onChange, placeholder }) {
     pickerOnChangeRef = onChange;
     return (
       <input

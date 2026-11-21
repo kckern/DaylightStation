@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { invalidateApiResources, resetApiResourceCache, useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { invalidateApiResources, readApiResource, resetApiResourceCache, useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { useLifeUsername } from "./useLifeUser.js";
@@ -29,14 +29,22 @@ function usePlanRead(path, user, label, swr = Boolean(user)) {
   const refetch = useCallback(async () => {
     try { await refresh(); } catch { /* The resource exposes the GET error. */ }
   }, [refresh]);
-  const afterWrite = useCallback(async (related = []) => {
+  const afterWrite = useCallback(async (related = [], { waitForReadback = false } = {}) => {
     // A committed change also affects the full plan. Drop both old snapshots
     // so returning to the dashboard cannot offer onboarding from a known-empty plan.
     const aggregate = `${API_BASE}/${memberQuery(user)}`;
     const changed = new Set([path, aggregate, ...related]);
     for (const key of changed) resetApiResourceCache(key);
     invalidateApiResources(key => changed.has(key));
-    await refetch();
+    if (waitForReadback) {
+      // The initiating view may unmount while a Values write is in flight.
+      // If another plan write supersedes this GET, retry until the shared cache
+      // accepts a canonical snapshot before releasing the member submission lock.
+      try { await readApiResource(path, { freshMs: 0, followSuperseding: true }); }
+      catch { /* Mounted readers retain their retryable GET error. */ }
+    } else {
+      await refetch();
+    }
   }, [path, user, refetch]);
   return { data, loading, revalidating, error: error?.message ?? null, refetch, afterWrite };
 }
@@ -67,15 +75,15 @@ export function useLifePlan(username) {
     await fetchPlan();
   }, [fetchPlan, setSectionError]);
 
-  const afterWrite = useCallback(async () => {
+  const afterWrite = useCallback(async ({ waitForReadback = false } = {}) => {
     setSectionError(null);
-    await refreshPlan();
+    await refreshPlan([], { waitForReadback });
   }, [refreshPlan, setSectionError]);
 
-  const updateSection = useCallback(async (sectionName, data) => {
+  const updateSection = useCallback(async (sectionName, data, { waitForReadback = false } = {}) => {
     try {
       await DaylightAPI(`${API_BASE}/${sectionName}${qs}`, data, 'PATCH');
-      await afterWrite();
+      await afterWrite({ waitForReadback });
       logger().info('section-updated', { section: sectionName });
     } catch (err) {
       setSectionError(err.message);
@@ -100,7 +108,7 @@ export function useLifePlan(username) {
   // the caller (modal) can surface the error inline; refetches on success.
   const createValue = useCallback(async ({ name, description } = {}) => {
     const value = await DaylightAPI(`${API_BASE}/values${qs}`, { name, description }, 'POST');
-    await afterWrite();
+    await afterWrite({ waitForReadback: true });
     logger().info('value-created', { valueId: value?.id });
     return value;
   }, [qs, afterWrite]);

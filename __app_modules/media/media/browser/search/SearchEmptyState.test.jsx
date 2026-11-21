@@ -9,6 +9,7 @@ describe('SearchEmptyState', () => {
 
     const el = screen.getByTestId('search-empty');
     expect(el).toHaveTextContent('No results for “bluey”. Try a different word.');
+    expect(screen.getByRole('status')).toHaveTextContent('No results for “bluey”. Try a different word.');
     expect(screen.queryByTestId('search-empty-retry')).toBeNull();
   });
 
@@ -24,6 +25,8 @@ describe('SearchEmptyState', () => {
 
     const el = screen.getByTestId('search-empty');
     expect(el).toHaveTextContent('Some libraries didn’t respond, so “bluey” may have been missed.');
+    expect(screen.getByRole('status')).toHaveTextContent('Some libraries didn’t respond, so “bluey” may have been missed.');
+    expect(screen.getByRole('status').querySelector('button')).toBeNull();
     fireEvent.click(screen.getByTestId('search-empty-retry'));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });

@@ -29,8 +29,8 @@ function AdminLayout() {
   }, [compact, key, openAt, opened]);
 
   return (
-    <UnsavedGuardProvider>
-      <DismissStackProvider>
+    <DismissStackProvider>
+      <UnsavedGuardProvider>
         <AppFrame
           className={opened ? 'admin-layout admin-layout--menu-open' : 'admin-layout'}
           onKeyDown={opened ? keepTabInPanel : undefined}
@@ -39,8 +39,8 @@ function AdminLayout() {
         >
           <div className="admin-content" ref={content} tabIndex={-1}><Outlet /></div>
         </AppFrame>
-      </DismissStackProvider>
-    </UnsavedGuardProvider>
+      </UnsavedGuardProvider>
+    </DismissStackProvider>
   );
 }
 

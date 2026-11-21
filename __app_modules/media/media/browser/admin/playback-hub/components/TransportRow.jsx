@@ -7,7 +7,7 @@ import {
   IconPlayerPlay,
   IconPlayerPause,
 } from '@tabler/icons-react';
-import { LabeledContentPicker } from "./LabeledContentPicker.jsx";
+import ContentCombobox from "../../../../../../../__capabilities/content-catalog/browser/picker.mjs";
 import getLogger from "../../../../../../../frontend/src/lib/logging/Logger.js";
 
 const VOLUME_DEBOUNCE_MS = 300;
@@ -21,7 +21,7 @@ const VERIFY_OK_AUTOCLOSE_MS = 3000;
 /**
  * TransportRow — transport controls for a device.
  *
- * Layout: [⏮] [⏯] [⏭] | volume slider | LabeledContentPicker | [Play Now]
+ * Layout: [⏮] [⏯] [⏭] | volume slider | ContentCombobox | [Play Now]
  *
  * Interstitial behavior: when a button is clicked, an optimistic prediction
  * is registered via `predict`/`pending`. The corresponding control reads
@@ -216,7 +216,7 @@ export function TransportRow({ slot, status, mutations, predict, pending }) {
         />
       </Box>
       <Box style={{ flex: 1, minWidth: 0 }}>
-        <LabeledContentPicker
+        <ContentCombobox
           value={pickedValue}
           onChange={(id) => setPickedValue(id || '')}
           placeholder="Pick content..."

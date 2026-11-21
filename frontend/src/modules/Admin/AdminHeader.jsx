@@ -1,7 +1,7 @@
 import React from 'react';
 import { useLocation } from 'react-router-dom';
 import { Group, Burger, Text, Anchor, Box } from '@mantine/core';
-import { Link } from 'react-router-dom';
+import GuardedLink from './shared/GuardedLink.jsx';
 
 function AdminHeader({ opened, toggle, opener }) {
   const location = useLocation();
@@ -37,7 +37,7 @@ function AdminHeader({ opened, toggle, opener }) {
           </Text>
         ) : (
           <Anchor
-            component={Link}
+            component={GuardedLink}
             to={path}
             size="12px"
             ff="var(--ds-font-mono)"

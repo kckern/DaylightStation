@@ -26,7 +26,7 @@ function ConfigFormWrapper({ filePath, title, children, validate, rawMode = fals
   } = useAdminConfig(filePath);
   const hasEditor = rawMode ? draftReady : data !== null;
 
-  // Unsaved-changes guard: beforeunload + AdminNav interception (audit C1)
+  // Unsaved-changes guard: beforeunload + guarded Admin navigation (audit C1)
   useUnsavedGuard(dirty, { label: filePath });
 
   const handleSave = async () => {

@@ -35,6 +35,10 @@ describe('Life primitives', () => {
     screen.getByText(/retry/i).click();
     expect(retried).toBe(true);
   });
+  it('ErrorState preserves a caller-provided title when adapting to the DS primitive', () => {
+    wrap(<ErrorState title="Ceremony unavailable" error="HTTP 503" onRetry={() => {}} />);
+    expect(screen.getByText('Ceremony unavailable')).toBeInTheDocument();
+  });
   it('SectionCard renders a heading', () => {
     wrap(<SectionCard title="Priorities">inner</SectionCard>);
     expect(screen.getByText('Priorities')).toBeInTheDocument();

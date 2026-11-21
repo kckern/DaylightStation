@@ -13,13 +13,13 @@ test('Admin wraps keyboard focus through the compact navigation and its header',
     }
     return route.fulfill({ json: {} });
   });
-  await page.goto('/admin/content/lists/menus');
+  await page.goto('/admin/system/config');
 
   const toggle = page.getByRole('button', { name: 'Toggle admin navigation' });
   const nav = page.getByRole('navigation', { name: 'Primary' });
   const notifications = nav.getByRole('link', { name: 'Notifications', exact: true });
   await toggle.press('Enter');
-  await expect(nav.getByRole('link', { name: 'Menus', exact: true })).toBeFocused();
+  await expect(nav.getByRole('link', { name: 'Config', exact: true })).toBeFocused();
   await expect(page.getByRole('main')).toBeHidden();
 
   await notifications.focus();
@@ -60,4 +60,52 @@ test('Admin transfers focus from the desktop rail when compact navigation replac
   await page.setViewportSize({ width: 767, height: 850 });
 
   await expect(page.getByRole('button', { name: 'Toggle admin navigation' })).toBeFocused();
+});
+
+test('Escape cancels the discard dialog before closing compact navigation', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 850 });
+  const writes = [];
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'PUT') writes.push(path);
+    if (path === '/api/v1/admin/household/members/alice') {
+      return route.fulfill({ json: { member: { username: 'alice', display_name: 'Alice', email: 'alice@example.invalid', type: 'family_member' } } });
+    }
+    return route.fulfill({ json: path.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+  await page.goto('/admin/household/members/alice');
+  await page.getByLabel('Display Name', { exact: true }).fill('Alice draft');
+
+  const toggle = page.getByRole('button', { name: 'Toggle admin navigation' });
+  const nav = page.getByRole('navigation', { name: 'Primary' });
+  const members = nav.getByRole('link', { name: 'Members', exact: true });
+  await toggle.press('Enter');
+  await expect(members).toBeFocused();
+  await members.press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'Discard unsaved changes?' });
+  await expect(dialog).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(nav).toBeVisible();
+  await expect(members).toBeFocused();
+  await expect(page.getByLabel('Display Name', { exact: true })).toHaveValue('Alice draft');
+  expect(writes).toEqual([]);
+
+  await page.keyboard.press('Escape');
+  await expect(nav).toBeHidden();
+  await expect(toggle).toBeFocused();
+
+  await toggle.press('Enter');
+  await members.press('Enter');
+  await expect(dialog).toBeVisible();
+  await page.setViewportSize({ width: 1440, height: 850 });
+  await expect(nav).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(page).toHaveURL('/admin/household/members/alice');
+  await expect(page.getByLabel('Display Name', { exact: true })).toHaveValue('Alice draft');
+  expect(writes).toEqual([]);
 });

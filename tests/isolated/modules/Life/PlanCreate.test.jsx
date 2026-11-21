@@ -7,14 +7,17 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { GoalsView } from "../../../../__app_modules/personal/life/browser/views/plan/GoalsView.jsx";
 import { ValuesView } from "../../../../__app_modules/personal/life/browser/views/plan/ValuesView.jsx";
 import { BeliefsView } from "../../../../__app_modules/personal/life/browser/views/plan/BeliefsView.jsx";
+import { LifePlanSubmissionProvider } from "../../../../__app_modules/personal/life/browser/hooks/LifePlanSubmissionContext.jsx";
 
 const renderAt = (element, initial = '/life/plan') => render(
   <MantineProvider>
-    <MemoryRouter initialEntries={[initial]}>
-      <Routes>
-        <Route path="*" element={element} />
-      </Routes>
-    </MemoryRouter>
+    <LifePlanSubmissionProvider>
+      <MemoryRouter initialEntries={[initial]}>
+        <Routes>
+          <Route path="*" element={element} />
+        </Routes>
+      </MemoryRouter>
+    </LifePlanSubmissionProvider>
   </MantineProvider>
 );
 

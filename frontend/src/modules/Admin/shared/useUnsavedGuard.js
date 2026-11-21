@@ -1,4 +1,4 @@
-import { useEffect, useId } from 'react';
+import { useEffect, useId, useLayoutEffect } from 'react';
 import { useUnsavedGuardRegistry } from './useUnsavedGuardRegistry.js';
 import getLogger from '../../../lib/logging/Logger.js';
 
@@ -14,7 +14,7 @@ function logger() {
  *
  * While `dirty` is true:
  *  - a `beforeunload` listener warns on tab close / hard reload
- *  - AdminNav intercepts in-app navigation via the shared registry
+ *  - Admin navigation controls consult the shared registry before leaving
  *
  * The listener is attached ONLY while dirty and removed when dirty goes
  * false or the component unmounts.
@@ -23,15 +23,15 @@ function logger() {
  * @param {object} [options]
  * @param {string} [options.label] - identifying context for logs
  */
-export function useUnsavedGuard(dirty, { label } = {}) {
+export function useUnsavedGuard(dirty, { label, onDiscard } = {}) {
   const id = useId();
   const registry = useUnsavedGuardRegistry();
 
   // Keep the registry in sync with this consumer's dirty flag.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!registry) return;
-    registry.register(id, dirty);
-  }, [registry, id, dirty]);
+    registry.register(id, dirty, onDiscard);
+  }, [registry, id, dirty, onDiscard]);
 
   // Remove this consumer from the registry on unmount.
   useEffect(() => {

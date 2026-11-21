@@ -116,7 +116,7 @@ describe('ScreenAdminView', () => {
     const routines = await screen.findByTestId('screen-admin-retire-routines');
     expect(routines).toHaveTextContent('Kitchen Button 1');
     expect(api.retireScreen).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByTestId('confirm-ok'));
+    fireEvent.click(screen.getByRole('button', { name: 'Retire', exact: true }));
     await waitFor(() => expect(api.retireScreen).toHaveBeenCalledWith('fleet:livingroom-tv', { confirm: true }));
   });
 
@@ -124,9 +124,9 @@ describe('ScreenAdminView', () => {
     wrap();
     fireEvent.click(screen.getByTestId('screen-admin-merge-browser:new'));
     const dialog = await screen.findByTestId('screen-admin-merge-dialog');
-    expect(screen.getByTestId('confirm-ok')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Merge', exact: true })).toBeDisabled();
     fireEvent.click(within(dialog).getByRole('radio', { name: 'Kitchen tablet · Kitchen' }));
-    fireEvent.click(screen.getByTestId('confirm-ok'));
+    fireEvent.click(screen.getByRole('button', { name: 'Merge', exact: true }));
     await waitFor(() => expect(api.mergeScreen).toHaveBeenCalledWith('browser:new', { into: 'browser:old', confirm: true }));
     const outcome = recordLocal.mock.calls.find(([r]) => r.kind === 'screenMerged')[0];
     expect(outcome.command.copy.primary).toBe('Merged Kitchen tablet (aaaa1111) into Kitchen tablet');

@@ -3,14 +3,24 @@ import { useState, useEffect, useRef } from 'react';
 
 import { DaylightAPI } from '../../../../frontend/src/lib/api.mjs';
 import { useApiResource } from '../../../../frontend/src/lib/hooks/useApiResource.js';
+import { ErrorState, LoadingState, useRetryRegion } from '@/lib/ui';
+import { useKeyedSubmission } from '@/lib/ui/useKeyedSubmission.js';
 
 export default function CameraControls({ cameraId, logger }) {
   const path = `/api/v1/camera/${encodeURIComponent(cameraId)}/controls`;
-  const { data, reload } = useApiResource(path);
+  const { data, reload, hasResult, loading, error, revalidating } = useApiResource(path, { clearDataOnError: true });
+  const [retainRetryRegion, setRetainRetryRegion] = useState(false);
   const controls = data?.controls || [];
+  const busy = loading || revalidating;
+  const { pending: pendingCommands, run: runCommand } = useKeyedSubmission();
+  const { regionProps, retry } = useRetryRegion(reload, busy);
   const [confirming, setConfirming] = useState(null);
   const timer = useRef(null);
   const [commandError, setCommandError] = useState(null);
+  const retryControls = () => {
+    setRetainRetryRegion(true);
+    return retry();
+  };
 
   useEffect(() => () => clearTimeout(timer.current), []);
 
@@ -32,26 +42,29 @@ export default function CameraControls({ cameraId, logger }) {
       clearTimeout(timer.current);
       if (confirming === ctrl.id) {
         setConfirming(null);
-        execute(ctrl.id, 'trigger');
+        runCommand(ctrl.id, () => execute(ctrl.id, 'trigger'));
       } else {
         setConfirming(ctrl.id);
         timer.current = setTimeout(() => setConfirming(null), 3000);
       }
     } else {
-      execute(ctrl.id, ctrl.state === 'on' ? 'off' : 'on');
+      runCommand(ctrl.id, () => execute(ctrl.id, ctrl.state === 'on' ? 'off' : 'on'));
     }
   }
 
-  if (controls.length === 0) return null;
+  if (!controls.length && !loading && !error && !commandError && !retainRetryRegion) return null;
 
   return (
-    <div className="camera-viewport__controls">
+    <div className="camera-viewport__controls" role="region" aria-label="Camera controls" {...regionProps}>
+      {!hasResult && loading && <LoadingState label="camera controls" rows={1} />}
+      {error && <ErrorState error={error} onRetry={retryControls} label="Camera controls" />}
       {commandError && <span role="alert">{commandError}</span>}
       {controls.map(ctrl => (
         <button
           key={ctrl.id}
           className={`camera-viewport__control-btn camera-viewport__control-btn--${ctrl.type} ${ctrl.state === 'on' ? 'active' : ''} ${confirming === ctrl.id ? 'confirming' : ''}`}
           onClick={() => handleClick(ctrl)}
+          disabled={busy || pendingCommands.has(ctrl.id)}
           aria-label={confirming === ctrl.id ? `Confirm ${ctrl.label}` : ctrl.label}
           title={ctrl.label}
         >

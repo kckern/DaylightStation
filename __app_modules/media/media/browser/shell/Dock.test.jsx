@@ -95,7 +95,7 @@ describe('Dock', () => {
     fireEvent.click(screen.getByTestId('settings-menu-trigger'));
     fireEvent.click(await screen.findByTestId('settings-reset-session'));
     expect(await screen.findByLabelText(/return aim to this device/i)).toBeChecked();
-    fireEvent.click(await screen.findByTestId('confirm-ok'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Start fresh', exact: true }));
 
     expect(lifecycleReset).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('aim-probe')).toHaveTextContent('This device');
@@ -110,7 +110,7 @@ describe('Dock', () => {
     fireEvent.click(screen.getByTestId('settings-menu-trigger'));
     fireEvent.click(await screen.findByTestId('settings-reset-session'));
     fireEvent.click(await screen.findByLabelText(/return aim to this device/i));
-    fireEvent.click(await screen.findByTestId('confirm-ok'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Start fresh', exact: true }));
 
     expect(lifecycleReset).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('aim-probe')).toHaveTextContent('office');
@@ -124,7 +124,7 @@ describe('Dock', () => {
 
     fireEvent.click(screen.getByTestId('settings-menu-trigger'));
     fireEvent.click(await screen.findByTestId('settings-reset-session'));
-    fireEvent.click(await screen.findByTestId('confirm-cancel'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel', exact: true }));
 
     expect(lifecycleReset).not.toHaveBeenCalled();
     expect(screen.getByTestId('aim-probe')).toHaveTextContent('office');

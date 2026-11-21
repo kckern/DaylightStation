@@ -2,6 +2,166 @@ import { expect, test } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
 
+test('Admin Content Filter keeps its recovery region through a failed first read', async ({ page, baseURL }) => {
+  const origin = new URL(baseURL).origin;
+  const library = '/api/v1/content-filter/library';
+  let reads = 0;
+  let heldRetry;
+  await page.context().route('**/*', route => (
+    new URL(route.request().url()).origin === origin ? route.fallback() : route.abort()
+  ));
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname === library) {
+      reads += 1;
+      if (reads === 1) return route.fulfill({ status: 403, json: { error: 'Library unavailable' } });
+      if (reads === 2) { heldRetry = route; return; }
+      return route.fulfill({ json: { films: [{ ratingKey: '77', title: 'Recovered film', stage: 'parent', job: null }] } });
+    }
+    return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.goto('/admin/content/filter');
+  const region = page.getByRole('region', { name: 'Content filter library', exact: true });
+  const search = page.getByRole('textbox', { name: 'Search titles' });
+  await expect(region).toBeVisible();
+  await expect(search).toBeVisible();
+  await expect(page.getByText(/\d+ of \d+ films/)).toHaveCount(0);
+  const retry = page.getByRole('alert').getByRole('button', { name: 'Retry', exact: true });
+  await retry.focus();
+  await page.keyboard.press('Enter');
+  await expect.poll(() => Boolean(heldRetry)).toBe(true);
+
+  await expect(region).toBeFocused();
+  await expect(region.getByTestId('content-filter-library-loading')).toBeVisible();
+  await expect(region.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
+  await expect(search).toBeVisible();
+  await expect(page.getByText(/\d+ of \d+ films/)).toHaveCount(0);
+  await heldRetry.fulfill({ json: { films: [{ ratingKey: '77', title: 'Recovered film', stage: 'parent', job: null }] } });
+
+  await expect(region.getByRole('link', { name: /Recovered film/ })).toBeVisible();
+  await expect(region).toBeFocused();
+  await expect(page.getByText('1 of 1 films')).toBeVisible();
+  expect(reads).toBe(2);
+});
+
+test('Admin Content Filter keeps a focused job action focused while its status refreshes', async ({ page, baseURL }) => {
+  const origin = new URL(baseURL).origin;
+  const library = '/api/v1/content-filter/library';
+  const reads = [];
+  const writes = [];
+  let heldRefresh;
+  await page.context().route('**/*', route => (
+    new URL(route.request().url()).origin === origin ? route.fallback() : route.abort()
+  ));
+  await page.addInitScript(() => {
+    window.filterVisibility = 'visible';
+    Object.defineProperty(document, 'visibilityState', { get: () => window.filterVisibility });
+  });
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const request = route.request();
+    const { pathname } = new URL(request.url());
+    if (pathname === library) {
+      reads.push(request.method());
+      if (reads.length === 1) return route.fulfill({ json: { films: [{ ratingKey: '77', title: 'Focused job', stage: 'parent', job: null }] } });
+      heldRefresh = route;
+      return;
+    }
+    if (pathname.startsWith('/api/v1/content-filter') && request.method() !== 'GET') writes.push(pathname);
+    return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+  const showDocument = visibility => page.evaluate(visibility => {
+    window.filterVisibility = visibility;
+    document.dispatchEvent(new Event('visibilitychange'));
+  }, visibility);
+
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.goto('/admin/content/filter');
+  const run = page.getByRole('button', { name: 'Run again', exact: true });
+  await run.focus();
+  await expect(run).toBeFocused();
+  await showDocument('hidden');
+  await showDocument('visible');
+  await expect.poll(() => Boolean(heldRefresh)).toBe(true);
+
+  await expect(run).toHaveAttribute('aria-disabled', 'true');
+  await expect(run).toBeFocused();
+  await page.keyboard.press('Enter');
+  expect(writes).toEqual([]);
+  await heldRefresh.fulfill({ json: { films: [{ ratingKey: '77', title: 'Focused job', stage: 'parent', job: null }] } });
+
+  await expect(run).not.toHaveAttribute('aria-disabled', 'true');
+  await expect(run).toBeFocused();
+  expect(reads).toEqual(['GET', 'GET']);
+});
+
+test('Admin Content Filter retains search and focus through a failed foreground refresh', async ({ page, baseURL }) => {
+  const origin = new URL(baseURL).origin;
+  const library = '/api/v1/content-filter/library';
+  const calls = [];
+  let heldRetry;
+  await page.context().route('**/*', route => (
+    new URL(route.request().url()).origin === origin ? route.fallback() : route.abort()
+  ));
+  await page.addInitScript(() => {
+    window.filterVisibility = 'visible';
+    Object.defineProperty(document, 'visibilityState', { get: () => window.filterVisibility });
+  });
+  await page.clock.install();
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const request = route.request();
+    const { pathname } = new URL(request.url());
+    if (pathname === library) {
+      calls.push(request.method());
+      if (calls.length === 1) return route.fulfill({ json: { films: [{ ratingKey: '77', title: 'Quiet fixture', stage: 'rough', job: null }] } });
+      if (calls.length === 2) return route.fulfill({ status: 403, json: { error: 'Library unavailable' } });
+      if (calls.length === 3) { heldRetry = route; return; }
+      return route.fulfill({ json: { films: [{ ratingKey: '77', title: 'Quiet fixture', stage: 'rough', job: null }] } });
+    }
+    return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+  const showDocument = visibility => page.evaluate(visibility => {
+    window.filterVisibility = visibility;
+    document.dispatchEvent(new Event('visibilitychange'));
+  }, visibility);
+
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.goto('/admin/content/filter');
+  const search = page.getByRole('textbox', { name: 'Search titles' });
+  await search.fill('Quiet');
+  await expect(page.getByRole('button', { name: 'Make filter' })).toBeEnabled();
+
+  await showDocument('hidden');
+  await showDocument('visible');
+  await expect.poll(() => calls.length).toBe(2);
+
+  await expect(search).toBeVisible();
+  await expect(search).toHaveValue('Quiet');
+  await expect(search).toBeFocused();
+  const error = page.getByRole('alert');
+  await expect(error).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Make filter' })).toHaveAttribute('aria-disabled', 'true');
+  const retry = error.getByRole('button', { name: 'Retry', exact: true });
+  await retry.focus();
+  await page.keyboard.press('Enter');
+  await expect.poll(() => Boolean(heldRetry)).toBe(true);
+
+  const region = page.getByRole('region', { name: 'Content filter library', exact: true });
+  await expect(region).toBeFocused();
+  await expect(search).toHaveValue('Quiet');
+  await expect(page.getByRole('button', { name: 'Make filter' })).toHaveAttribute('aria-disabled', 'true');
+  await heldRetry.fulfill({ json: { films: [{ ratingKey: '77', title: 'Quiet fixture', stage: 'rough', job: null }] } });
+  await expect(search).toBeVisible();
+  await expect(search).toHaveValue('Quiet');
+  await expect(region).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Make filter' })).toBeEnabled();
+  expect(calls).toEqual(['GET', 'GET', 'GET']);
+});
+
 test('Admin Content Filter discovers a remotely queued job on foreground return and polls only while active', async ({ page, baseURL }) => {
   const origin = new URL(baseURL).origin;
   const library = '/api/v1/content-filter/library';

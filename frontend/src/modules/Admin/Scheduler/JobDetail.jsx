@@ -13,6 +13,7 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 import { ADMIN_SCHEDULER_JOBS_PATH, schedulerJobPath, triggerSchedulerJob } from '../../../hooks/admin/useAdminScheduler.js';
 import { invalidateApiResources, useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { notifySuccess, notifyFailure } from '../shared/feedback.js';
+import { statusBadgeColor } from '../utils/constants.js';
 
 function cronToHuman(expr) {
   if (!expr) return '';
@@ -41,13 +42,7 @@ function StatusBadge({ runtime }) {
   if (!runtime || !runtime.status) {
     return <Badge color="gray" variant="light">never run</Badge>;
   }
-  if (runtime.status === 'success') {
-    return <Badge color="green" variant="light">success</Badge>;
-  }
-  if (runtime.status === 'failed') {
-    return <Badge color="red" variant="light">failed</Badge>;
-  }
-  return <Badge color="gray" variant="light">{runtime.status}</Badge>;
+  return <Badge color={statusBadgeColor(runtime.status)} variant="light">{runtime.status}</Badge>;
 }
 
 function InfoRow({ label, children }) {

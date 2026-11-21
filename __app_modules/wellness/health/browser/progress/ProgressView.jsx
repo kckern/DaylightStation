@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import HighchartsReact from 'highcharts-react-official';
 import Highcharts from 'highcharts';
 import { Button, NumberInput, SegmentedControl, Stack, Text } from '@mantine/core';
@@ -14,9 +14,9 @@ import { MonthBlock } from "../today/MonthBlock.jsx";
 import { IntakeBurnChart } from "./IntakeBurnChart.jsx";
 import { goalSaveMessage } from "./goalSaveError.js";
 import { addCalendarDays as addDays } from "../../../../../frontend/src/lib/calendarDay.js";
+import { useChartThemeTokens } from '@/lib/theme/useChartThemeTokens.js';
 import { normalizeWeightEntries, buildWeightSeries, fmtDelta, fmtLbs, TREND_ARROWS } from "../today/weightSeries.js";
 import { buildWeightChartOptions, daysToGoal, goalDate, DEFAULT_TARGET_BODY_FAT_PCT } from "./weightChart.js";
-import { readTokens } from "./WeightTrendChart.jsx";
 
 const goalsPath = 'api/v1/health/goals';
 const logger = createAppLogger('health').child('progress');
@@ -29,7 +29,6 @@ const PROJECTION_BLOCKED = {
   diverging: 'not on track',
 };
 
-// Token reading (readTokens) lives with the shared chart component.
 const emptyGoals = () => ({ sex: 'male', targetWeightLbs: '', weeklyRateLbs: 0,
   activityBaseline: 1.2, budgetFloor: '', heightIn: '', birthYear: '', targetBodyFatPct: '' });
 
@@ -38,10 +37,7 @@ const emptyGoals = () => ({ sex: 'male', targetWeightLbs: '', weeklyRateLbs: 0,
  * unchanged, as the `health` screen-framework panel widget). */
 export function ProgressView() {
   const containerRef = useRef(null);
-  const [tokens, setTokens] = useState(null);
-  useEffect(() => {
-    if (containerRef.current) setTokens(readTokens(containerRef.current));
-  }, []);
+  const tokens = useChartThemeTokens(containerRef);
 
   const weightRes = useApiResource('api/v1/health/weight', { label: 'weight', logger });
   const weightError = unavailableError(weightRes);

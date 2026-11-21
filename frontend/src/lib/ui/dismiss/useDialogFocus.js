@@ -30,7 +30,8 @@ export function useDialogFocus(active, panelRef, fallbackRef) {
     const panel = panelRef.current;
     const owner = panel.ownerDocument;
     const bodyRoot = Array.from(owner.body.children).find(node => node.contains(panel));
-    const unhide = bodyRoot ? hideOthers(bodyRoot) : undefined;
+    const dialog = panel.closest(dialogSelector) ?? panel;
+    const unhide = bodyRoot ? hideOthers(dialog, bodyRoot) : hideOthers(dialog);
     const opening = setTimeout(() => {
       if (panel.contains(owner.activeElement)) return;
       panel.querySelector('[data-autofocus]')?.focus({ preventScroll: true });

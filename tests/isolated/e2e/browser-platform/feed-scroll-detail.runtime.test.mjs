@@ -83,6 +83,154 @@ test('Feed detail actions keep independent pending commands across a responsive 
   await expect(page.getByRole('alert').filter({ hasText: 'Could not bookmark article.' })).toHaveCount(0);
 });
 
+for (const width of [390, 1440]) test(`Feed detail honors reduced motion at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 850 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const next = { ...article, id: 'reddit:reduced-motion-next', title: 'Reduced motion next article' };
+  await page.route('**/scroll/sessions', route => route.fulfill({ json: {
+    items: [article, next], sessionId: 'reduced-motion', hasMore: false,
+  } }));
+  await page.addInitScript(() => {
+    const animate = Element.prototype.animate;
+    window.__detailAnimations = [];
+    Element.prototype.animate = function (...args) {
+      if (this.classList.contains('detail-content') || this.classList.contains('detail-sticky-header')) {
+        window.__detailAnimations.push(this.className);
+      }
+      return animate.apply(this, args);
+    };
+    const NativeIntersectionObserver = window.IntersectionObserver;
+    window.IntersectionObserver = class extends NativeIntersectionObserver {
+      constructor(callback, options) {
+        super(callback, options);
+        this.callback = callback;
+      }
+      observe(target) {
+        if (target.classList.contains('detail-close')) window.__detailCloseObserver = this;
+        return super.observe(target);
+      }
+    };
+  });
+  await page.route('**/feed/detail/*', route => route.fulfill({ json: { sections } }));
+  await page.goto('/feed/scroll');
+  await page.getByRole('button', { name: `Open: ${article.title}` }).click();
+  await page.evaluate(() => window.__detailCloseObserver.callback([{ intersectionRatio: 0 }], window.__detailCloseObserver));
+  await expect(page.locator('.detail-sticky-header')).toHaveCSS('opacity', '1');
+  await page.keyboard.press('ArrowRight');
+
+  await expect(page).toHaveURL(scrollPath(next.id));
+  expect(await page.evaluate(() => window.__detailAnimations)).toEqual([]);
+  await expect(page.getByText(articleBody)).toBeVisible();
+});
+
+test('Feed clears a completed exit animation when reduced motion changes mid-transition', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const next = { ...article, id: 'reddit:motion-change-next', title: 'Motion change next article' };
+  await page.route('**/scroll/sessions', route => route.fulfill({ json: {
+    items: [article, next], sessionId: 'motion-change', hasMore: false,
+  } }));
+  await page.addInitScript(() => {
+    const animate = Element.prototype.animate;
+    window.__heldExitAnimation = null;
+    Element.prototype.animate = function (keyframes, options) {
+      const animation = animate.call(this, keyframes, options);
+      if (this.classList.contains('detail-content') && options?.duration === 150 && keyframes.at(-1)?.opacity === 0) {
+        window.__heldExitAnimation = animation;
+        animation.pause();
+      }
+      return animation;
+    };
+  });
+  await page.route('**/feed/detail/*', route => route.fulfill({ json: { sections } }));
+  await page.goto('/feed/scroll');
+  await page.getByRole('button', { name: `Open: ${article.title}` }).click();
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(() => page.evaluate(() => Boolean(window.__heldExitAnimation))).toBe(true);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.evaluate(() => window.__heldExitAnimation.finish());
+
+  await expect(page).toHaveURL(scrollPath(next.id));
+  await expect(page.locator('.detail-content')).toHaveCSS('opacity', '1');
+  await expect(page.locator('.detail-content')).toHaveCSS('transform', 'none');
+});
+
+test('Feed coalesces repeated article navigation while an exit is pending', async ({ page }) => {
+  const second = { ...article, id: 'reddit:repeat-second', title: 'Repeated navigation second article' };
+  const third = { ...article, id: 'reddit:repeat-third', title: 'Repeated navigation third article' };
+  await page.route('**/scroll/sessions', route => route.fulfill({ json: {
+    items: [article, second, third], sessionId: 'repeat-navigation', hasMore: false,
+  } }));
+  await page.addInitScript(() => {
+    window.__articleTransitions = [];
+    Element.prototype.animate = function () {
+      const transition = { onfinish: null, cancelled: false, cancel() { this.cancelled = true; } };
+      Object.defineProperty(transition, 'onfinish', {
+        get() { return this.activeFinish; },
+        set(callback) {
+          this.activeFinish = callback;
+          if (callback) this.originalFinish = callback;
+        },
+      });
+      window.__articleTransitions.push(transition);
+      return transition;
+    };
+  });
+  await page.route('**/feed/detail/*', route => route.fulfill({ json: { sections } }));
+  await page.goto('/feed/scroll');
+  await page.getByRole('button', { name: `Open: ${article.title}` }).click();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+
+  await expect.poll(() => page.evaluate(() => window.__articleTransitions.length)).toBe(1);
+  await page.evaluate(() => window.__articleTransitions[0].onfinish?.());
+  await expect(page).toHaveURL(scrollPath(second.id));
+  await expect(page).not.toHaveURL(scrollPath(third.id));
+});
+
+for (const departure of ['Back', 'responsive layout change']) test(`Feed cancels a delayed article transition on ${departure}`, async ({ page }) => {
+  const next = { ...article, id: 'reddit:cancel-transition-next', title: 'Cancel transition next article' };
+  await page.route('**/scroll/sessions', route => route.fulfill({ json: {
+    items: [article, next], sessionId: 'cancel-transition', hasMore: false,
+  } }));
+  await page.addInitScript(() => {
+    window.__articleTransitions = [];
+    const animate = Element.prototype.animate;
+    Element.prototype.animate = function (...args) {
+      if (this.classList.contains('detail-content') && args[1]?.duration === 150) {
+        const transition = { onfinish: null, originalFinish: null, cancelled: false, cancel() { this.cancelled = true; } };
+        Object.defineProperty(transition, 'onfinish', {
+          get() { return this.activeFinish; },
+          set(callback) {
+            this.activeFinish = callback;
+            if (callback) this.originalFinish = callback;
+          },
+        });
+        transition.fireStale = () => transition.originalFinish?.();
+        window.__articleTransitions.push(transition);
+        return transition;
+      }
+      return animate.apply(this, args);
+    };
+  });
+  await page.route('**/feed/detail/*', route => route.fulfill({ json: { sections } }));
+  await page.goto('/feed/scroll');
+  await page.getByRole('button', { name: `Open: ${article.title}` }).click();
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(() => page.evaluate(() => window.__articleTransitions.length)).toBe(1);
+  if (departure === 'Back') {
+    await page.keyboard.press('Escape');
+    await expect(page).toHaveURL('/feed/scroll');
+  } else {
+    await page.setViewportSize({ width: 1440, height: 850 });
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page).toHaveURL(scrollPath(article.id));
+  }
+
+  expect(await page.evaluate(() => window.__articleTransitions[0].cancelled)).toBe(true);
+  await page.evaluate(() => window.__articleTransitions[0].fireStale());
+  await expect(page).toHaveURL(departure === 'Back' ? '/feed/scroll' : scrollPath(article.id));
+});
+
 test('Feed detail action feedback stays with the article visit that submitted it', async ({ page }) => {
   const second = { ...article, id: 'reddit:next-action-article', title: 'Next Feed action fixture' };
   const endpoint = '/api/v1/feed/fixture-detail-action';

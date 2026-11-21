@@ -25,6 +25,7 @@ import { CeremonyFlow } from "./views/ceremony/CeremonyFlow.jsx";
 import CoachChat from "./views/coach/CoachChat.jsx";
 import { LifeUserContext, useLifeUser } from "./hooks/useLifeUser.js";
 import { useAppNotifications } from "./hooks/useAppNotifications.js";
+import { LifePlanSubmissionProvider } from "./hooks/LifePlanSubmissionContext.jsx";
 
 const logger = createAppLogger('life');
 const TriageSessionView = lazy(() => import('./views/now/triage/TriageSessionView.jsx'));
@@ -175,6 +176,7 @@ function LifeAppShell() {
   )] : undefined;
 
   return (
+    <LifePlanSubmissionProvider>
     <LifeUserContext.Provider value={lifeUser}>
       <AppChrome
         title="Life"
@@ -219,6 +221,7 @@ function LifeAppShell() {
         </LifePageScrollRef.Provider>
       </AppChrome>
     </LifeUserContext.Provider>
+    </LifePlanSubmissionProvider>
   );
 }
 

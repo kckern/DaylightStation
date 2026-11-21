@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import CameraFeed from './CameraFeed.jsx';
 import CameraRenderer from './CameraRenderer.jsx';
 
@@ -13,6 +13,35 @@ afterEach(() => {
 });
 
 describe('camera state ownership', () => {
+  it('does not render an empty controls region when a camera has no controls', async () => {
+    vi.stubGlobal('fetch', async url => Response.json(new URL(url).pathname.endsWith('/controls')
+      ? { controls: [] }
+      : { detections: [] }));
+    render(<CameraFeed cameraId="porch" renderHeader={open => <button onClick={open}>Open camera</button>} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open camera' }));
+    await act(async () => {});
+    expect(screen.queryByRole('region', { name: 'Camera controls' })).toBeNull();
+  });
+
+  it('keeps the retry region focused when a retry returns an empty controls list', async () => {
+    let reads = 0;
+    vi.stubGlobal('fetch', async url => {
+      if (new URL(url).pathname.endsWith('/controls')) {
+        reads += 1;
+        return reads === 1
+          ? Response.json({ error: 'Camera unavailable' }, { status: 404 })
+          : Response.json({ controls: [] });
+      }
+      return Response.json({ detections: [] });
+    });
+    render(<CameraFeed cameraId="porch" renderHeader={open => <button onClick={open}>Open camera</button>} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open camera' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(reads).toBe(2));
+    const region = await screen.findByRole('region', { name: 'Camera controls' });
+    await waitFor(() => expect(region).toHaveFocus());
+  });
+
   it('keeps focus on a camera control selected before opening focus runs', async () => {
     vi.useFakeTimers();
     vi.stubGlobal('fetch', async url => Response.json(new URL(url).pathname.endsWith('/controls')

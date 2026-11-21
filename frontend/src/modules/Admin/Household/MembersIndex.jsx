@@ -1,44 +1,16 @@
 import React, { useState } from 'react';
 import { FormDialog } from '@/lib/ui/FormDialog.jsx';
-import { useNavigate } from 'react-router-dom';
-import { Stack, Text, Table, Badge, Button, Group, TextInput, Select, NumberInput, Center, Alert, Paper, Divider }  from '@mantine/core';
+import { Link } from 'react-router-dom';
+import { Stack, Text, Table, Badge, Button, Group, TextInput, Select, NumberInput, Center, Alert, Paper, Divider, Anchor }  from '@mantine/core';
 import { IconPlus, IconAlertCircle, IconUsers, IconTrash } from '@tabler/icons-react';
 import { ADMIN_HOUSEHOLD_PATH, useAdminHousehold } from '../../../hooks/admin/useAdminHousehold.js';
 import { useAdminRoster } from '../shared/useAdminRoster.js';
 import { ErrorState, LoadingState } from '../../../lib/ui/states.jsx';
 import { useRetryRegion } from '../../../lib/ui/useRetryRegion.js';
 import { ConfirmModal } from '@/lib/ui/ConfirmModal.jsx';
-
-const TYPE_OPTIONS = [
-  { value: 'owner', label: 'Owner' },
-  { value: 'family_member', label: 'Family Member' }
-];
-
-const GROUP_OPTIONS = [
-  { value: 'primary', label: 'Primary' },
-  { value: 'secondary', label: 'Secondary' }
-];
-
-/**
- * Get a Badge color for a member type.
- */
-function typeBadgeColor(type) {
-  if (type === 'owner') return 'blue';
-  if (type === 'family_member') return 'teal';
-  return 'gray';
-}
-
-/**
- * Get a Badge color for a member group.
- */
-function groupBadgeColor(group) {
-  if (group === 'primary') return 'violet';
-  if (group === 'secondary') return 'orange';
-  return 'gray';
-}
+import { MEMBER_TYPES, MEMBER_GROUPS, typeBadgeColor, groupBadgeColor } from '../utils/constants.js';
 
 function MembersIndex() {
-  const navigate = useNavigate();
   const { error, createMember, removeMember, clearError } = useAdminHousehold();
   const { data, loading, error: readError, reload, invalidateAfterWrite, refreshAfterWrite } = useAdminRoster(ADMIN_HOUSEHOLD_PATH);
   const { regionProps, retry } = useRetryRegion(reload, loading);
@@ -127,10 +99,6 @@ function MembersIndex() {
     }
   };
 
-  const handleRowClick = (username) => {
-    navigate(`/admin/household/members/${username}`);
-  };
-
   return (
     <Stack gap="lg">
       {/* Household settings panel */}
@@ -205,13 +173,11 @@ function MembersIndex() {
               {members.map(member => (
                 <Table.Tr
                   key={member.username}
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => handleRowClick(member.username)}
                 >
                   <Table.Td>
-                    <Text size="sm" fw={500}>
+                    <Anchor component={Link} to={`/admin/household/members/${encodeURIComponent(member.username)}`} c="inherit" size="sm" fw={500}>
                       {member.display_name || member.username}
-                    </Text>
+                    </Anchor>
                     {member.birthyear && (
                       <Text size="xs" c="dimmed">Born {member.birthyear}</Text>
                     )}
@@ -291,13 +257,13 @@ function MembersIndex() {
           />
           <Select
             label="Type"
-            data={TYPE_OPTIONS}
+            data={MEMBER_TYPES}
             value={createForm.type}
             onChange={(value) => handleCreateFormChange('type', value)}
           />
           <Select
             label="Group"
-            data={GROUP_OPTIONS}
+            data={MEMBER_GROUPS}
             value={createForm.group}
             onChange={(value) => handleCreateFormChange('group', value)}
           />

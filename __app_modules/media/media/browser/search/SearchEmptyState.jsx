@@ -8,7 +8,7 @@ export function SearchEmptyState({ query, sourceErrors = [], onRetry }) {
   if (sourceErrors.length > 0) {
     return (
       <div data-testid="search-empty" className="search-state search-state--empty">
-        <span>
+        <span role="status">
           Some libraries didn&rsquo;t respond, so &ldquo;{query}&rdquo; may have been missed.
         </span>
         {typeof onRetry === 'function' && (
@@ -26,7 +26,7 @@ export function SearchEmptyState({ query, sourceErrors = [], onRetry }) {
   }
   return (
     <div data-testid="search-empty" className="search-state search-state--empty">
-      No results for &ldquo;{query}&rdquo;. Try a different word.
+      <span role="status">No results for &ldquo;{query}&rdquo;. Try a different word.</span>
     </div>
   );
 }

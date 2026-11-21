@@ -1,6 +1,7 @@
 // frontend/src/lib/ui/Sheet.test.jsx
 import { describe, it, expect, vi } from 'vitest';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { createPortal } from 'react-dom';
 import { useRef, useState } from 'react';
 import { MantineProvider } from '@mantine/core';
 import { DismissStackProvider } from './dismiss/DismissStackProvider.jsx';
@@ -51,6 +52,43 @@ describe('Sheet', () => {
     expect(document.body.style.overflow).toBe('');
   });
 
+  it('hides app background from assistive technology and preserves a portaled dialog choice', async () => {
+    const popupHost = document.createElement('div');
+    document.body.append(popupHost);
+
+    function AccessibleDialog() {
+      const [open, setOpen] = useState(true);
+      return (
+        <div className="ds-root">
+          <nav aria-label="Primary"><button>Fuel</button></nav>
+          <main><button>Log a fill-up</button></main>
+          <Sheet open={open} onClose={() => setOpen(false)} title="Log a fill-up">
+            <button>Save</button>
+            {createPortal(<button>Choose image</button>, popupHost)}
+          </Sheet>
+        </div>
+      );
+    }
+
+    try {
+      wrap(<AccessibleDialog />);
+      const nav = document.querySelector('[aria-label="Primary"]');
+      const main = document.querySelector('main');
+      const dialog = screen.getByRole('dialog', { name: 'Log a fill-up' });
+      expect(nav).toHaveAttribute('aria-hidden', 'true');
+      expect(main).toHaveAttribute('aria-hidden', 'true');
+      expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Choose image' })).toBeInTheDocument();
+      expect(dialog).not.toHaveAttribute('aria-hidden', 'true');
+
+      fireEvent.keyDown(dialog, { key: 'Escape' });
+      await waitFor(() => expect(nav).not.toHaveAttribute('aria-hidden', 'true'));
+      expect(main).not.toHaveAttribute('aria-hidden', 'true');
+    } finally {
+      popupHost.remove();
+    }
+  });
+
   it('keeps focus in the recovery region when Retry runs during sheet opening', () => {
     function Recovery() {
       const [pending, setPending] = useState(false);
@@ -93,8 +131,10 @@ describe('Sheet', () => {
       </>;
     }
     const view = wrap(<Frames first second />);
-    const [owner, other] = screen.getAllByRole('main');
+    const [owner, other] = screen.getAllByRole('main', { hidden: true });
     expect(owner.style.overflow).toBe('hidden');
+    expect(owner).not.toHaveAttribute('aria-hidden', 'true');
+    expect(other.closest('.ds-chrome')).toHaveAttribute('aria-hidden', 'true');
     expect(other.style.overflow).toBe('');
     view.rerender(<MantineProvider><DismissStackProvider>
       <Frames first={false} second />
@@ -174,7 +214,35 @@ describe('Sheet', () => {
     const close = replacement.querySelector('button[aria-label="Close"]');
     await waitFor(() => expect(document.activeElement).toBe(close), { timeout: 800 });
     fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Next' })).not.toBeInTheDocument());
     const entries = screen.getByRole('button', { name: 'Entries' });
     await waitFor(() => expect(document.activeElement).toBe(entries), { timeout: 800 });
+  });
+
+  it('uses the latest fallback target when it changes during an open visit', async () => {
+    function Flow() {
+      const [open, setOpen] = useState(false);
+      const [fallbackChoice, setFallbackChoice] = useState('first');
+      const firstFallback = useRef(null);
+      const nextFallback = useRef(null);
+      const getFallbackFocusTarget = () => (fallbackChoice === 'first' ? firstFallback : nextFallback).current;
+      return <>
+        {open ? null : <button onClick={() => setOpen(true)}>Open task</button>}
+        <button ref={firstFallback}>First fallback</button>
+        <button ref={nextFallback}>Next fallback</button>
+        <Sheet open={open} onClose={() => setOpen(false)} title="Task" getFallbackFocusTarget={getFallbackFocusTarget}>
+          <button>Keep focus here</button>
+          <button onClick={() => setFallbackChoice('next')}>Use next fallback</button>
+        </Sheet>
+      </>;
+    }
+    wrap(<Flow />);
+    const opener = screen.getByRole('button', { name: 'Open task' });
+    opener.focus();
+    fireEvent.click(opener);
+    fireEvent.click(screen.getByRole('button', { name: 'Use next fallback' }));
+    screen.getByRole('button', { name: 'Keep focus here' }).focus();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Next fallback' })));
   });
 });

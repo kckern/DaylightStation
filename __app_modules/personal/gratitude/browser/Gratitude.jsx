@@ -379,6 +379,7 @@ function GratitudeApp({
   const [webhookHighlightIds, setWebhookHighlightIds] = useState(new Set());
   const [categoryAnim, setCategoryAnim] = useState(null);
   const [userAnim, setUserAnim] = useState(null);
+  const legacySelectionControllers = useRef(new Set());
   
   const containerRef = useRef(null);
   const longPressTimerRef = useRef(null);
@@ -412,6 +413,11 @@ function GratitudeApp({
   // Focus container on mount
   useEffect(() => {
     containerRef.current?.focus();
+  }, []);
+
+  useEffect(() => () => {
+    for (const controller of legacySelectionControllers.current) controller.abort();
+    legacySelectionControllers.current.clear();
   }, []);
 
   // Reset focus index when category changes
@@ -451,12 +457,24 @@ function GratitudeApp({
     const persistIncoming = shouldPersistIncoming(payload);
     let persistedSelections = [];
     if (!persistIncoming && items.some(item => !item.selectionId)) {
+      const controller = new AbortController();
+      legacySelectionControllers.current.add(controller);
       try {
-        const response = await DaylightAPI(`/api/v1/gratitude/selections/${itemCategory}`);
+        const response = await DaylightAPI(
+          `/api/v1/gratitude/selections/${itemCategory}`,
+          undefined,
+          'GET',
+          { signal: controller.signal },
+        );
+        if (controller.signal.aborted) return;
         persistedSelections = response?.items || [];
       } catch (err) {
-        logger.error('gratitude.websocket.selection-read.failed', { error: err.message });
+        if (!controller.signal.aborted) {
+          logger.error('gratitude.websocket.selection-read.failed', { error: err.message });
+        }
         return;
+      } finally {
+        legacySelectionControllers.current.delete(controller);
       }
     }
 

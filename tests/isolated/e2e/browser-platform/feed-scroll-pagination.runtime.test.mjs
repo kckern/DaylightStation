@@ -86,6 +86,161 @@ test('changing the Feed Scroll filter retires the previous session’s pending p
   }
 });
 
+for (const visit of ['early default departure', 'filtered departure']) {
+  test(`Feed Scroll preserves the default reading checkpoint on ${visit}`, async ({ page }) => {
+    const checkpoint = { itemId: 'default-story', scrollOffset: 1700, visitedAt: '2026-10-01T12:00:00.000Z' };
+    await mockFeedStartup(page, { checkpoints: { scroll: checkpoint } });
+    const writes = [];
+    const initialStarted = Promise.withResolvers();
+    const releaseInitial = Promise.withResolvers();
+    await page.route('**/api/v1/feed/workspace/checkpoints/scroll', async route => {
+      const body = route.request().postDataJSON();
+      writes.push(body);
+      return route.fulfill({ json: { checkpoint: body } });
+    });
+    await page.route(`**${sessions}`, async route => {
+      const filter = route.request().postDataJSON().filter;
+      if (visit === 'early default departure') {
+        initialStarted.resolve();
+        await releaseInitial.promise;
+      }
+      return route.fulfill({ json: {
+        items: itemsFor(filter === 'library' ? 'goodreads' : 'reddit', 'Checkpoint fixture'),
+        sessionId: filter === 'library' ? 'checkpoint-library' : 'checkpoint-default', hasMore: false,
+      } });
+    });
+
+    await page.goto(visit === 'early default departure' ? '/feed/scroll' : '/feed/scroll?filter=library');
+    if (visit === 'early default departure') await initialStarted.promise;
+    else await expect(page.getByRole('button', { name: 'Open: Checkpoint fixture 1', exact: true })).toBeAttached();
+    await page.getByRole('link', { name: 'Headlines', exact: true }).click();
+    await expect(page).toHaveURL(/\/feed\/headlines\//);
+    releaseInitial.resolve();
+
+    if (visit === 'early default departure') {
+      await expect.poll(() => writes.length).toBeGreaterThanOrEqual(2);
+      for (const write of writes) expect(write).toMatchObject({ itemId: checkpoint.itemId, scrollOffset: checkpoint.scrollOffset });
+    } else {
+      await expect.poll(() => writes.length).toBe(0);
+    }
+  });
+}
+
+test('Feed Scroll restores its latest default position after a filtered Back round trip', async ({ page }) => {
+  await mockFeedStartup(page, { checkpoints: { scroll: { itemId: null, scrollOffset: 0 } } });
+  const rows = itemsFor('reddit', 'Warm default item', 60);
+  const writes = [];
+  await page.route(`**${sessions}`, route => route.fulfill({ json: { items: rows, sessionId: 'warm-default', hasMore: false } }));
+  await page.route(`**${sessions}/warm-default?**`, route => route.fulfill({ json: { items: rows, sessionId: 'warm-default', hasMore: false } }));
+  await page.route('**/api/v1/feed/workspace/checkpoints/scroll', route => {
+    const body = route.request().postDataJSON();
+    writes.push(body);
+    return route.fulfill({ json: { checkpoint: body } });
+  });
+  await page.goto('/feed/scroll');
+  const main = page.getByRole('main', { name: 'Feed' });
+  await expect(page.getByRole('button', { name: 'Open: Warm default item 1', exact: true })).toBeAttached();
+  await main.evaluate(el => { el.scrollTop = 1800; });
+  await expect.poll(() => main.evaluate(el => el.scrollTop)).toBeGreaterThan(1000);
+  const targetOffset = await main.evaluate(el => el.scrollTop);
+
+  await page.getByRole('button', { name: 'Library', exact: true }).click();
+  await expect(page).toHaveURL(/filter=library/);
+  await expect.poll(() => writes.length).toBeGreaterThan(0);
+  expect(writes.at(-1)).toMatchObject({ scrollOffset: targetOffset });
+  await page.goBack();
+  await expect(page).toHaveURL('/feed/scroll');
+  await expect.poll(() => main.evaluate(el => el.scrollTop)).toBeCloseTo(targetOffset, -1);
+});
+
+test('Feed Scroll keeps explicit focus=all isolated from the default session and checkpoint', async ({ page }) => {
+  await mockFeedStartup(page, { checkpoints: { scroll: { itemId: 'default-story', scrollOffset: 1700 } } });
+  await page.addInitScript(() => {
+    sessionStorage.setItem('feed:scroll:session:all:all', 'default-session');
+    sessionStorage.setItem('feed:scroll:session:@all:all', 'legacy-focus-at-all-session');
+    sessionStorage.setItem('feed:scroll:session:@v2%3Aall:all', 'legacy-token-shaped-session');
+  });
+  const calls = [];
+  const writes = [];
+  await page.route(`**${sessions}**`, route => {
+    calls.push({ method: route.request().method(), url: route.request().url(), body: route.request().postDataJSON() });
+    return route.fulfill({ json: { items: itemsFor('reddit', 'Explicit all focus'), sessionId: 'explicit-all', hasMore: false } });
+  });
+  await page.route('**/api/v1/feed/workspace/checkpoints/scroll', route => {
+    writes.push(route.request().postDataJSON());
+    return route.fulfill({ json: { checkpoint: route.request().postDataJSON() } });
+  });
+
+  await page.goto('/feed/scroll?focus=all');
+  await expect(page.getByRole('button', { name: 'Open: Explicit all focus 1', exact: true })).toBeAttached();
+  await expect.poll(() => calls.length).toBeGreaterThan(0);
+  expect(calls[0].method).toBe('POST');
+  expect(writes).toEqual([]);
+});
+
+test('Feed Scroll session keys distinguish colon-delimited query dimensions', async ({ page }) => {
+  await mockFeedStartup(page);
+  await page.addInitScript(() => sessionStorage.setItem('feed:scroll:session:reddit:reddit:library', 'colliding-session'));
+  const calls = [];
+  await page.route(`**${sessions}**`, route => {
+    calls.push({ method: route.request().method(), url: route.request().url(), body: route.request().postDataJSON() });
+    return route.fulfill({ json: { items: itemsFor('reddit', 'Tuple scoped item'), sessionId: 'tuple-scoped', hasMore: false } });
+  });
+
+  await page.goto('/feed/scroll?focus=reddit%3Areddit&filter=library');
+  await expect(page.getByRole('button', { name: 'Open: Tuple scoped item 1', exact: true })).toBeAttached();
+  await expect.poll(() => calls.length).toBeGreaterThan(0);
+  expect(calls[0].method).toBe('POST');
+});
+
+test('Feed Scroll v2 session keys encode ordinary dimensions when paired with exceptional values', async ({ page }) => {
+  await mockFeedStartup(page);
+  await page.addInitScript(() => sessionStorage.setItem('feed:scroll:session-v2:%40x:%61ll', 'colliding-v2-session'));
+  const calls = [];
+  await page.route(`**${sessions}**`, route => {
+    calls.push({ method: route.request().method(), url: route.request().url(), body: route.request().postDataJSON() });
+    return route.fulfill({ json: { items: itemsFor('reddit', 'Fully encoded tuple'), sessionId: 'encoded-tuple', hasMore: false } });
+  });
+
+  await page.goto('/feed/scroll?focus=%40x&filter=%2561ll');
+  await expect(page.getByRole('button', { name: 'Open: Fully encoded tuple 1', exact: true })).toBeAttached();
+  await expect.poll(() => calls.length).toBeGreaterThan(0);
+  expect(calls[0].method).toBe('POST');
+});
+
+test('Feed Scroll preserves its visible card checkpoint when leaving mobile detail', async ({ page }) => {
+  await mockFeedStartup(page, { checkpoints: { scroll: { itemId: null, scrollOffset: 0 } } });
+  const rows = itemsFor('reddit', 'Mobile anchor item', 60);
+  const writes = [];
+  await page.route(`**${sessions}`, route => route.fulfill({ json: { items: rows, sessionId: 'mobile-anchor', hasMore: false } }));
+  await page.route('**/api/v1/feed/detail/*', route => route.fulfill({ json: { sections: [] } }));
+  await page.route('**/api/v1/feed/workspace/checkpoints/scroll', route => {
+    const body = route.request().postDataJSON();
+    writes.push(body);
+    return route.fulfill({ json: { checkpoint: body } });
+  });
+  await page.goto('/feed/scroll');
+  const main = page.getByRole('main', { name: 'Feed' });
+  await expect(page.getByRole('button', { name: 'Open: Mobile anchor item 1', exact: true })).toBeAttached();
+  await main.evaluate(el => { el.scrollTop = 1500; });
+  await expect.poll(() => main.evaluate(el => el.scrollTop)).toBeGreaterThan(800);
+  const anchor = await main.evaluate(el => [...el.querySelectorAll('[data-feed-item-id]')].find(node => {
+    const bounds = node.getBoundingClientRect(), view = el.getBoundingClientRect();
+    return bounds.bottom > view.top + 8 && bounds.top < view.bottom;
+  })?.dataset.feedItemId);
+  expect(anchor).toBeTruthy();
+  const offset = await main.evaluate(el => el.scrollTop);
+  const opener = main.locator(`[data-feed-item-id="${anchor}"]`).getByRole('button', { name: /^Open:/ });
+  await opener.evaluate(node => node.click());
+  await expect(page).toHaveURL(/\/feed\/scroll\/[^/]+$/);
+  await expect(page.locator('.scroll-view')).toBeHidden();
+  await page.getByRole('link', { name: 'Headlines', exact: true }).click();
+  await expect(page).toHaveURL(/\/feed\/headlines\//);
+
+  await expect.poll(() => writes.length).toBeGreaterThan(0);
+  expect(writes.at(-1)).toMatchObject({ itemId: anchor, scrollOffset: offset });
+});
+
 test('Feed Scroll keeps a reading budget extension within the current filter visit', async ({ page }) => {
   await mockFeedStartup(page, { preferences: { sessionBudget: 30 } });
   await page.addInitScript(() => {

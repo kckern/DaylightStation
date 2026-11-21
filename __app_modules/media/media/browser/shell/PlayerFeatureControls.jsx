@@ -119,9 +119,8 @@ function TrackMenu({ kind, tracks, selected, onSelect, disabled }) {
 function MusicPicker({ open, onClose, onPick }) {
   const search = useContext(SearchContext);
   const musicScope = search?.scopes?.find?.((s) => s.key === 'music')?.params ?? FALLBACK_MUSIC_SCOPE;
-  const usesDismissStack = useDismissLayer(open, onClose);
   return (
-    <FormDialog opened={open} onClose={onClose} closeOnEscape={!usesDismissStack} title="Add music behind" centered size="md">
+    <FormDialog opened={open} onClose={onClose} title="Add music behind" centered size="md">
       <div data-testid="pf-music-picker">
         <Text size="sm" mb="sm">Choose a song, album or playlist. It plays under the photos.</Text>
         {open && <ContentCombobox

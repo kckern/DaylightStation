@@ -4,6 +4,7 @@ import { Sheet } from '@/lib/ui';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { operationRequest } from "./operationRequest.js";
+import { useHealthSessionGuard } from "../operations/HealthOperationsProvider.jsx";
 
 const logger = createAppLogger('health').child('custom-food');
 
@@ -13,6 +14,7 @@ export function CustomFoodSheet({ upc, open, onClose, onCreated, bucketId = null
 }
 
 function CustomFoodForm({ upc, onClose, onCreated, bucketId, date }) {
+  const isSessionActive = useHealthSessionGuard();
   const [form, setForm] = useState({ name: '', grams: '', calories: 0, protein: 0, carbs: 0, fat: 0 });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -30,17 +32,23 @@ function CustomFoodForm({ upc, onClose, onCreated, bucketId, date }) {
       // The scan that reached this sheet was launched from a specific meal on
       // a specific day; both were previously dropped on this branch, so a
       // custom food always landed in the clock's meal on the server's today.
+      if (!isSessionActive()) return;
       const logged = await DaylightAPI('api/v1/health/nutrition/catalog/quickadd', operationRequest(logRequest, {
         catalogEntryId: entry.id,
         ...(bucketId ? { mealTime: bucketId } : {}),
         ...(date ? { date } : {}),
       }), 'POST');
+      if (!isSessionActive()) return;
       logger.info('custom.created', { name: form.name, upc, bucket: bucketId || undefined, date: date || undefined });
       onCreated(logged);
     } catch (err) {
+      if (!isSessionActive()) return;
       logger.error('custom.failed', { error: err?.message });
       setError(err);
-    } finally { pending.current = false; setBusy(false); }
+    } finally {
+      pending.current = false;
+      if (isSessionActive()) setBusy(false);
+    }
   };
 
   return (

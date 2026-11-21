@@ -75,6 +75,138 @@ it('reconciles only the transitioned goal and owner and keeps the list command a
   expect(DaylightAPI.mock.calls.filter(([url]) => url === detail)).toHaveLength(2);
 });
 
+it('keeps a values write pending when another plan write supersedes its canonical readback', async () => {
+  let valuesCommitted = false;
+  let canonicalReady = false;
+  const readbacks = [];
+  DaylightAPI.mockImplementation((path, _data, method) => {
+    if (method === 'PATCH') { valuesCommitted = true; return Promise.resolve({}); }
+    if (method === 'POST') return Promise.resolve({ statement: 'Practice' });
+    if (valuesCommitted) {
+      if (canonicalReady) return Promise.resolve({ values: [], purpose: { statement: 'Practice' } });
+      return new Promise(resolve => readbacks.push(resolve));
+    }
+    return Promise.resolve({ values: [{ id: 'care', name: 'Care', rank: 1 }] });
+  });
+  const reader = renderHook(() => useLifePlan('alice'));
+  await waitFor(() => expect(reader.result.current.loading).toBe(false));
+
+  let valuesFinished = false;
+  let saveValues;
+  await act(async () => {
+    saveValues = reader.result.current.updateSection('values', [], { waitForReadback: true }).then(() => { valuesFinished = true; });
+  });
+  await waitFor(() => expect(readbacks).toHaveLength(1));
+
+  let savePurpose;
+  await act(async () => { savePurpose = reader.result.current.setPurpose('Practice'); });
+  await waitFor(() => expect(readbacks.length).toBeGreaterThan(1));
+  expect(valuesFinished).toBe(false);
+
+  // Let the superseded GET return late. It must not settle the Values command.
+  await act(async () => { readbacks[0]({ values: [{ id: 'care', name: 'Care', rank: 1 }] }); });
+  await Promise.resolve();
+  expect(valuesFinished).toBe(false);
+  canonicalReady = true;
+  await act(async () => {
+    readbacks.slice(1).forEach(resolve => resolve({ values: [], purpose: { statement: 'Practice' } }));
+  });
+  await expect(savePurpose).resolves.toEqual({ statement: 'Practice' });
+  await expect(saveValues).resolves.toBeUndefined();
+  expect(valuesFinished).toBe(true);
+});
+
+it('follows a replacement read when a superseded values read was retrying a transient failure', async () => {
+  let valuesCommitted = false;
+  let failedReadback = false;
+  let canonicalReady = false;
+  const replacementReads = [];
+  DaylightAPI.mockImplementation((_path, _data, method) => {
+    if (method === 'PATCH') { valuesCommitted = true; return Promise.resolve({}); }
+    if (method === 'POST') return Promise.resolve({ statement: 'Practice' });
+    if (!valuesCommitted) return Promise.resolve({ values: [{ id: 'care', name: 'Care', rank: 1 }] });
+    if (!failedReadback) {
+      failedReadback = true;
+      const error = new Error('Temporary read failure');
+      error.status = 503;
+      error.transient = true;
+      return Promise.reject(error);
+    }
+    if (canonicalReady) return Promise.resolve({ values: [], purpose: { statement: 'Practice' } });
+    return new Promise(resolve => replacementReads.push(resolve));
+  });
+  const reader = renderHook(() => useLifePlan('alice'));
+  await waitFor(() => expect(reader.result.current.loading).toBe(false));
+
+  let valuesFinished = false;
+  let saveValues;
+  await act(async () => {
+    saveValues = reader.result.current.updateSection('values', [], { waitForReadback: true }).then(() => { valuesFinished = true; });
+  });
+  await waitFor(() => expect(failedReadback).toBe(true));
+
+  let savePurpose;
+  await act(async () => { savePurpose = reader.result.current.setPurpose('Practice'); });
+  await waitFor(() => expect(replacementReads.length).toBeGreaterThan(0));
+  expect(valuesFinished).toBe(false);
+
+  // The superseded request's retry timer rejects with the original 503.
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  expect(valuesFinished).toBe(false);
+  canonicalReady = true;
+  await act(async () => {
+    replacementReads.forEach(resolve => resolve({ values: [], purpose: { statement: 'Practice' } }));
+  });
+  await expect(savePurpose).resolves.toEqual({ statement: 'Practice' });
+  await expect(saveValues).resolves.toBeUndefined();
+  expect(valuesFinished).toBe(true);
+});
+
+it('uses an accepted replacement snapshot after the superseded retry timer without another GET', async () => {
+  let valuesCommitted = false;
+  let failedReadback = false;
+  let canonicalReady = false;
+  let getCount = 0;
+  const replacementReads = [];
+  DaylightAPI.mockImplementation((_path, _data, method) => {
+    if (method === 'PATCH') { valuesCommitted = true; return Promise.resolve({}); }
+    if (method === 'POST') return Promise.resolve({ statement: 'Practice' });
+    getCount += 1;
+    if (!valuesCommitted) return Promise.resolve({ values: [{ id: 'care', name: 'Care', rank: 1 }] });
+    if (!failedReadback) {
+      failedReadback = true;
+      const error = new Error('Temporary read failure');
+      error.status = 503;
+      error.transient = true;
+      return Promise.reject(error);
+    }
+    if (canonicalReady) return Promise.resolve({ values: [], purpose: { statement: 'Practice' } });
+    return new Promise(resolve => replacementReads.push(resolve));
+  });
+  const reader = renderHook(() => useLifePlan('alice'));
+  await waitFor(() => expect(reader.result.current.loading).toBe(false));
+
+  let saveValues;
+  await act(async () => {
+    saveValues = reader.result.current.updateSection('values', [], { waitForReadback: true });
+  });
+  await waitFor(() => expect(failedReadback).toBe(true));
+
+  let savePurpose;
+  await act(async () => { savePurpose = reader.result.current.setPurpose('Practice'); });
+  await waitFor(() => expect(replacementReads.length).toBeGreaterThan(0));
+  canonicalReady = true;
+  await act(async () => {
+    replacementReads.forEach(resolve => resolve({ values: [], purpose: { statement: 'Practice' } }));
+  });
+  await expect(savePurpose).resolves.toEqual({ statement: 'Practice' });
+  const readsAfterReplacement = getCount;
+
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  await expect(saveValues).resolves.toBeUndefined();
+  expect(getCount).toBe(readsAfterReplacement);
+});
+
 it('shares the selected plan with explicit readers and serves it on remount', async () => {
   const plan = { purpose: { statement: 'Build things' } };
   let finish;

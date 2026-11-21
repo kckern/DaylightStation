@@ -9,7 +9,7 @@ import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
 import { Alert, Button, Group, List, Radio, Stack, Text, TextInput, Title } from '@mantine/core';
 import { IconAlertCircle, IconArchive, IconArrowBackUp, IconArrowMerge, IconEdit, IconPlus } from '@tabler/icons-react';
 import { useFleetContext } from "../fleet/useFleetContext.js";
-import { ConfirmDialog } from "../shell/ConfirmDialog.jsx";
+import { ConfirmModal } from '@/lib/ui/ConfirmModal.jsx';
 import { RenameScreenDialog } from "./RenameScreenDialog.jsx";
 import { RoomNeighboursSection } from "./RoomNeighboursSection.jsx";
 import { useScreenAdmin } from "./useScreenAdmin.js";
@@ -259,13 +259,13 @@ export function ScreenAdminView() {
         testid="screen-admin-rename"
       />
 
-      <ConfirmDialog
-        open={!!retiring}
+      <ConfirmModal
+        opened={!!retiring}
         title={retiring ? `Retire ${retiring.screen.name}?` : ''}
         message="It leaves the screen list and its name becomes free. You can restore it later."
         confirmLabel={retiring?.loading ? 'Checking routines…' : 'Retire'}
         onConfirm={() => { if (!retiring?.loading) confirmRetire(); }}
-        onCancel={() => setRetiring(null)}
+        onClose={() => setRetiring(null)}
       >
         {retiring && !retiring.loading && (
           <div data-testid="screen-admin-retire-routines" className="house-section">
@@ -278,16 +278,16 @@ export function ScreenAdminView() {
           </div>
         )}
         {retiring?.error && <Text size="sm" className="house-tone--failed" role="alert" mb="sm">{retiring.error}</Text>}
-      </ConfirmDialog>
+      </ConfirmModal>
 
-      <ConfirmDialog
-        open={!!merging}
+      <ConfirmModal
+        opened={!!merging}
         title={merging ? `Merge ${merging.screen.name}` : ''}
         message="Merge a duplicate into its earlier self: its plays, spots and routines follow, and you can unmerge it afterwards."
         confirmLabel="Merge"
         confirmDisabled={!merging?.into}
         onConfirm={() => { if (merging?.into) confirmMerge(); }}
-        onCancel={() => setMerging(null)}
+        onClose={() => setMerging(null)}
       >
         {merging && (
           <Stack gap="xs" mb="md" data-testid="screen-admin-merge-dialog">
@@ -313,7 +313,7 @@ export function ScreenAdminView() {
             {merging.error && <Text size="sm" className="house-tone--failed" role="alert">{merging.error}</Text>}
           </Stack>
         )}
-      </ConfirmDialog>
+      </ConfirmModal>
     </div>
   );
 }

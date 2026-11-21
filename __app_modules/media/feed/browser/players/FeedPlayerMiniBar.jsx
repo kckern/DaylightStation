@@ -50,7 +50,7 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose, ope
       onTouchStart={handleBarTouchStart}
       onTouchEnd={handleBarTouchEnd}
     >
-      <button ref={openerRef} type="button" className="feed-mini-bar-open" onClick={onOpen} aria-label={`Open player: ${item.title}`}>
+      <button ref={openerRef} type="button" className="feed-mini-bar-open ds-touch-target" onClick={onOpen} aria-label={`Open player: ${item.title}`}>
         {thumb && (
           <img
             src={thumb}
@@ -70,7 +70,7 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose, ope
         </span>
       )}
       <button
-        className="feed-mini-bar-toggle"
+        className="feed-mini-bar-toggle ds-touch-target"
         onClick={(e) => { e.stopPropagation(); toggle?.(); }}
         aria-label={playing ? 'Pause' : 'Play'}
       >
@@ -82,14 +82,14 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose, ope
         </svg>
       </button>
       <button
-        className="feed-mini-bar-speed"
+        className="feed-mini-bar-speed ds-touch-target"
         onClick={(e) => { e.stopPropagation(); cycleSpeed(); }}
         aria-label={`Playback speed ${speed ?? 1}x`}
       >
         {speed ?? 1}x
       </button>
       <button
-        className="feed-mini-bar-close"
+        className="feed-mini-bar-close ds-touch-target"
         onClick={(e) => { e.stopPropagation(); onClose(); }}
         aria-label="Stop playback"
       >
@@ -97,11 +97,10 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose, ope
       </button>
       {pausedMedia && (
         <button
-          className="feed-mini-bar-resume-paused"
+          className="feed-mini-bar-resume-paused ds-touch-target"
           onClick={(e) => { e.stopPropagation(); resumePaused(); }}
           aria-label="Resume previous"
           title={`Resume: ${pausedMedia.item?.title || 'previous'}`}
-          style={{ background: 'none', border: '1px solid rgba(255,255,255,0.3)', color: '#fff', cursor: 'pointer', padding: '1px 6px', borderRadius: '3px', fontSize: '10px', whiteSpace: 'nowrap' }}
         >
           ↩ Prev
         </button>

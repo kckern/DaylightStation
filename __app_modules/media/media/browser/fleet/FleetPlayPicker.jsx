@@ -14,7 +14,7 @@ import { deviceName } from "./deviceDisplay.js";
 import { useLiveSearch } from "../search/useLiveSearch.js";
 import { displayTitle, resultSubtitle } from "../search/resultPresentation.js";
 import { SearchEmptyState } from "../search/SearchEmptyState.jsx";
-import { SearchErrorState } from "../search/SearchErrorState.jsx";
+import { LoadErrorLine } from "../shared/LoadErrorLine.jsx";
 import { StreamStatusLine } from "../../../../../__capabilities/content-catalog/browser/search-status.mjs";
 import { describeBusy } from "../cast/castCopy.js";
 import { useDispatch } from "../cast/useDispatch.js";
@@ -132,7 +132,8 @@ export function FleetPlayPicker({ deviceId, onClose, openerRef }) {
         <SearchEmptyState query={state.query} sourceErrors={sourceErrors} onRetry={retry} />
       )}
       {failed && (
-        <SearchErrorState error={error} onRetry={retry} />
+        <LoadErrorLine kind="search" error={error} onRetry={retry}
+          testId="search-error" retryTestId="search-retry" className="search-state search-state--error" />
       )}
       {showStreamStatus && (
         <div data-testid={Object.values(state.sources).includes('pending') ? 'fleet-play-pending' : undefined}>

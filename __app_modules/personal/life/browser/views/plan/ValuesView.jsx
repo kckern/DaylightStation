@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import {
   Stack, Paper, Text, Group, Badge, ActionIcon,
   Button, TextInput, Alert,
@@ -8,6 +8,8 @@ import { useLifePlan } from "../../hooks/useLifePlan.js";
 import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
 import { humanize } from "../../lib/format.js";
 import { PlanCreateSheet } from "./PlanCreateSheet.jsx";
+import { useLifeUsername } from "../../hooks/useLifeUser.js";
+import { useLifePlanSubmission } from "../../hooks/LifePlanSubmissionContext.jsx";
 
 function alignmentColor(state) {
   if (state === 'aligned') return 'green';
@@ -16,10 +18,10 @@ function alignmentColor(state) {
   return 'gray';
 }
 
-function ValueCreateSheet({ onClose, createValue }) {
+function ValueCreateSheet({ onClose, createValue, getFallbackFocusTarget }) {
   const [name, setName] = useState('');
   return (
-    <PlanCreateSheet noun="value" onClose={onClose} save={() => createValue({ name: name.trim() })} valid={Boolean(name.trim())}>
+    <PlanCreateSheet noun="value" onClose={onClose} save={() => createValue({ name: name.trim() })} valid={Boolean(name.trim())} getFallbackFocusTarget={getFallbackFocusTarget}>
       <TextInput
         label="Value"
         placeholder="What principle guides you?"
@@ -33,12 +35,18 @@ function ValueCreateSheet({ onClose, createValue }) {
 }
 
 export function ValuesView({ username }) {
+  const headingRef = useRef(null);
+  const contextUsername = useLifeUsername();
   const { plan, loading, error, readError, refetch, updateSection, createValue } = useLifePlan(username);
+  const { pending, run } = useLifePlanSubmission();
+  const submissionKey = `${username || contextUsername || ''}:values`;
+  const valuesPending = pending.has(submissionKey);
 
   const values = useMemo(() => plan?.values || [], [plan?.values]);
 
   const [opened, setOpened] = useState(false);
   const close = () => setOpened(false);
+  const saveValue = useCallback(value => run(submissionKey, () => createValue(value)), [createValue, run, submissionKey]);
 
   const moveValue = useCallback(async (index, direction) => {
     const newValues = [...values];
@@ -53,20 +61,21 @@ export function ValuesView({ username }) {
     // Update rank numbers
     const updated = newValues.map((v, i) => ({ ...v, rank: i + 1 }));
     try {
-      await updateSection('values', updated);
+      await updateSection('values', updated, { waitForReadback: true });
     } catch {
       // The plan hook exposes the section update error to this view.
     }
   }, [values, updateSection]);
 
   const actions = (!loading && !readError) || opened
-    ? <Button onClick={() => setOpened(true)}>Add value</Button> : undefined;
+    ? <Button disabled={valuesPending} onClick={() => setOpened(true)}>Add value</Button> : undefined;
   let content;
   if (loading) content = <LoadingState />;
   else if (readError) content = <ErrorState label="Values" error={readError} onRetry={refetch} />;
   else content = (
     <>
       {error && <Alert color="red" title="Couldn’t reorder values">{error}</Alert>}
+      {valuesPending && <Text size="sm" role="status">Saving value changes…</Text>}
       {values.length === 0 && (
         <Text size="sm" c="dimmed">No values defined yet — add one to rank what matters most.</Text>
       )}
@@ -102,8 +111,8 @@ export function ValuesView({ username }) {
                   variant="subtle"
                   size="sm"
                   aria-label={`Move ${v.name} up`}
-                  disabled={i === 0}
-                  onClick={() => moveValue(i, -1)}
+                  disabled={valuesPending || i === 0}
+                  onClick={() => run(submissionKey, () => moveValue(i, -1))}
                 >
                   <IconArrowUp size={14} />
                 </ActionIcon>
@@ -112,8 +121,8 @@ export function ValuesView({ username }) {
                   variant="subtle"
                   size="sm"
                   aria-label={`Move ${v.name} down`}
-                  disabled={i === values.length - 1}
-                  onClick={() => moveValue(i, 1)}
+                  disabled={valuesPending || i === values.length - 1}
+                  onClick={() => run(submissionKey, () => moveValue(i, 1))}
                 >
                   <IconArrowDown size={14} />
                 </ActionIcon>
@@ -145,10 +154,10 @@ export function ValuesView({ username }) {
 
   return (
     <>
-      <LifePage title="Values" actions={actions} scrollReady={!loading && !readError}>
+      <LifePage title="Values" titleRef={headingRef} actions={actions} scrollReady={!loading && !readError}>
         {content}
       </LifePage>
-      {opened && <ValueCreateSheet createValue={createValue} onClose={close} />}
+      {opened && <ValueCreateSheet createValue={saveValue} onClose={close} getFallbackFocusTarget={() => headingRef.current} />}
     </>
   );
 }

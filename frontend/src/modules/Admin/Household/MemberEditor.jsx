@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { SectionCard } from '../../../lib/ui/cards.jsx';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import {
   Stack, Group, Text, Badge, Button, Tabs, TextInput, NumberInput, Select,
   Paper, Alert, Divider, Anchor, MultiSelect, CopyButton,
@@ -17,18 +17,20 @@ import { useAdminHousehold } from '../../../hooks/admin/useAdminHousehold';
 import SaveBar from '../shared/SaveBar.jsx';
 import EditorReadRegion from '../shared/EditorReadRegion.jsx';
 import { useUnsavedGuard } from '../shared/useUnsavedGuard.js';
+import GuardedLink from '../shared/GuardedLink.jsx';
+import { clearAdminDraft, useAdminDraftState } from '../shared/useAdminDraftState.js';
 
 const AVAILABLE_ROLES = ['sysadmin', 'admin', 'parent', 'member', 'kiosk'];
 
 function MemberEditor() {
   const { username } = useParams();
-  const navigate = useNavigate();
   const { data, loading, error, reload } = useApiResource(`/api/v1/admin/household/members/${username}`);
 
   const back = (
     <Anchor
+      component={GuardedLink}
+      to="/admin/household/members"
       size="sm"
-      onClick={() => navigate('/admin/household/members')}
       style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
     >
       <IconArrowBack size={14} /> Back to Members
@@ -51,11 +53,10 @@ function MemberEditor() {
 }
 
 function MemberDraft({ username, initialProfile, authStatus }) {
-  const navigate = useNavigate();
   const { generateInvite } = useAdminHousehold();
 
-  const [profile, setProfile] = useState(initialProfile);
-  const [original, setOriginal] = useState(initialProfile);
+  const draftKey = `member:${username}`;
+  const [profile, setProfile, original, setOriginal] = useAdminDraftState(draftKey, initialProfile);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [inviteUrl, setInviteUrl] = useState(null);
@@ -63,8 +64,9 @@ function MemberDraft({ username, initialProfile, authStatus }) {
 
   const dirty = JSON.stringify(profile) !== JSON.stringify(original);
 
-  // Unsaved-changes guard: beforeunload + AdminNav interception (audit C1)
-  useUnsavedGuard(dirty, { label: `member:${username}` });
+  // Unsaved-changes guard: beforeunload + guarded Admin navigation (audit C1)
+  const clearDraft = useCallback(() => clearAdminDraft(draftKey), [draftKey]);
+  useUnsavedGuard(dirty, { label: `member:${username}`, onDiscard: clearDraft });
 
   const handleGenerateInvite = useCallback(async () => {
     setInviteLoading(true);
@@ -133,8 +135,9 @@ function MemberDraft({ username, initialProfile, authStatus }) {
     <Stack gap="md" p="md">
       {/* Header */}
       <Anchor
+        component={GuardedLink}
+        to="/admin/household/members"
         size="sm"
-        onClick={() => navigate('/admin/household/members')}
         style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
       >
         <IconArrowBack size={14} /> Back to Members

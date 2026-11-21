@@ -3,7 +3,7 @@ import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiReso
 import { unavailableError } from "../healthResources.js";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { buildWeightSeries, normalizeWeightEntries, fmtLbs, fmtDelta, TREND_ARROWS } from "./weightSeries.js";
-import { ErrorState, StatCard, Skeleton } from '@/lib/ui';
+import { ErrorState, LoadingState, StatCard, Skeleton, useRetryRegion } from '@/lib/ui';
 
 const logger = createAppLogger('health').child('weight-chip');
 // Highcharts is lazy: it stays out of the Today bundle (the intake/burn chart does the same).
@@ -22,40 +22,60 @@ const CHART_HEIGHT = 150;
  */
 export function WeightChip({ asOf }) {
   const res = useApiResource('api/v1/health/weight', { label: 'weight-chip', logger, swr: true });
+  const busy = res.loading || res.revalidating;
+  const hasResult = Boolean(res.hasResult);
+  const { regionProps, retry } = useRetryRegion(res.reload, busy);
   const series = useMemo(() => buildWeightSeries(res.data, { asOf }), [res.data, asOf]);
   const { latestLbs, deltaLbs, direction, entries, latest, trendDays } = series;
+  const hasReadings = entries.length > 0;
   // The chart plots the full normalized history (it windows itself to 12 weeks, up to asOf).
   const chartEntries = useMemo(() => normalizeWeightEntries(res.data).filter(e => !asOf || e.date <= asOf), [res.data, asOf]);
-  if (unavailableError(res)) return <ErrorState error={res.error} onRetry={res.reload} label="Weight unavailable" />;
+  // A settled empty history is valid, but it is not useful stale content: if
+  // its refresh fails, offer Retry instead of presenting that empty snapshot
+  // as current. Populated history remains readable if a refresh fails.
+  const readError = busy
+    ? null
+    : unavailableError(res) ?? (!hasReadings ? res.error ?? null : null);
+  const showContent = hasResult && !readError && (!busy || hasReadings);
 
   const deltaText = fmtDelta(deltaLbs);
-  const label = latestLbs == null
+  const label = showContent && latestLbs == null
     ? 'Weight, no readings yet'
-    : `Weight ${fmtLbs(latestLbs)} pounds${deltaText ? `, ${deltaText.replace('−', 'minus ').replace('+', 'plus ').replace('±', 'no change, ')} pounds over ${trendDays} days` : ', no 7-day trend yet'}`;
+    : showContent
+      ? `Weight ${fmtLbs(latestLbs)} pounds${deltaText ? `, ${deltaText.replace('−', 'minus ').replace('+', 'plus ').replace('±', 'no change, ')} pounds over ${trendDays} days` : ', no 7-day trend yet'}`
+      : 'Weight history';
 
   return (
-    <div className="health-weightchip" role="group" aria-label={label} aria-busy={res.loading}>
-      <StatCard compact label={`Weight${latest?.date ? ` · as of ${latest.date}` : ''}`} value={res.loading ? <Skeleton width={64} height={24} /> : fmtLbs(latestLbs)} unit="lb"
-        trend={deltaText ? (
-          <span className={`health-weightchip__delta health-weightchip__delta--${direction}`} data-testid="weight-delta">
-            <span className="health-weightchip__arrow" aria-hidden="true">{TREND_ARROWS[direction]}</span>
-            {deltaText}
-            <span className="health-weightchip__window"> / {trendDays}d</span>
-          </span>
+    <div className="health-weightchip" role="group" aria-label={label} {...regionProps}>
+      {busy && !hasReadings ? <LoadingState label="weight history" rows={1} data-testid="weight-chip-loading" /> : null}
+      {readError ? <ErrorState error={readError} onRetry={retry} label="Weight unavailable" /> : null}
+      {showContent ? <>
+        <StatCard
+          compact
+          label={`Weight${latest?.date ? ` · as of ${latest.date}` : ''}`}
+          value={fmtLbs(latestLbs)}
+          unit="lb"
+          trend={deltaText ? (
+            <span className={`health-weightchip__delta health-weightchip__delta--${direction}`} data-testid="weight-delta">
+              <span className="health-weightchip__arrow" aria-hidden="true">{TREND_ARROWS[direction]}</span>
+              {deltaText}
+              <span className="health-weightchip__window"> / {trendDays}d</span>
+            </span>
+          ) : (
+            <span className="health-weightchip__delta health-weightchip__delta--none" data-testid="weight-delta-none">
+              no 7-day trend yet
+            </span>
+          )}
+        />
+        {entries.length > 1 ? (
+          <Suspense fallback={<Skeleton height={CHART_HEIGHT} />}>
+            <WeightTrendChart entries={chartEntries} height={CHART_HEIGHT} />
+          </Suspense>
         ) : (
-          <span className="health-weightchip__delta health-weightchip__delta--none" data-testid="weight-delta-none">
-            no 7-day trend yet
-          </span>
+          // One reading is not a line: say so rather than draw a flat month.
+          <span className="health-weightchip__empty" data-testid="spark-empty">Not enough weigh-ins for a trend yet</span>
         )}
-      />
-      {entries.length > 1 ? (
-        <Suspense fallback={<Skeleton height={CHART_HEIGHT} />}>
-          <WeightTrendChart entries={chartEntries} height={CHART_HEIGHT} />
-        </Suspense>
-      ) : (
-        // One reading is not a line: say so rather than draw a flat month.
-        <span className="health-weightchip__empty" data-testid="spark-empty">Not enough weigh-ins for a trend yet</span>
-      )}
+      </> : null}
     </div>
   );
 }

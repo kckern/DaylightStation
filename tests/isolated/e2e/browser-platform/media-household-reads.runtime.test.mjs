@@ -26,6 +26,51 @@ function returnToForeground(page) {
   });
 }
 
+test('Media Played earlier offers Retry when a refresh fails after an empty cached result', async ({ page }) => {
+  let reads = 0;
+  let heldRetry;
+  const item = {
+    contentId: 'plex:91', title: 'Recovered history', type: 'track', startedAt: '2026-11-20T12:00:00.000Z',
+  };
+  await page.route('**/api/**', route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    if (pathname.includes('/played-earlier')) {
+      reads += 1;
+      if (reads === 1) return route.fulfill({ json: { deviceId: 'browser:fixture', items: [] } });
+      if (reads === 2) return route.fulfill({ status: 403, json: { error: 'History unavailable' } });
+      if (reads === 3) { heldRetry = route; return; }
+      return route.fulfill({ json: { deviceId: 'browser:fixture', items: [item] } });
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto('/media?view=nowPlaying');
+  const history = page.getByTestId('played-earlier');
+  await expect(history.getByTestId('played-earlier-empty')).toBeVisible();
+  await expect.poll(() => reads).toBe(1);
+
+  await page.getByTestId('app-nav-fleet').click();
+  await expect(page).toHaveURL(/view=fleet/);
+  await page.goBack();
+  await expect(page).toHaveURL(/view=nowPlaying/);
+  await expect.poll(() => reads).toBe(2);
+  await expect(history.getByTestId('played-earlier-empty')).toHaveCount(0);
+
+  const retry = history.getByRole('button', { name: 'Retry', exact: true });
+  await expect(retry).toBeVisible();
+  await retry.focus();
+  await page.keyboard.press('Enter');
+  await expect.poll(() => Boolean(heldRetry)).toBe(true);
+  await expect(history.getByTestId('played-earlier-empty')).toHaveCount(0);
+  await expect(history.getByTestId('played-earlier-loading')).toBeVisible();
+  await expect(history).toBeFocused();
+  await heldRetry.fulfill({ json: { deviceId: 'browser:fixture', items: [item] } });
+  await expect(history.getByText('Recovered history', { exact: true })).toBeVisible();
+  await expect(history.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
+  expect(reads).toBe(3);
+});
+
 test('Media can dismiss the slideshow stop guard before keeping the music on Fleet', async ({ page }) => {
   const photo = { contentId: 'plex:71', title: 'Slideshow photo', format: 'image', duration: 90 };
   const song = {

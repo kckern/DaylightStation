@@ -18,6 +18,16 @@ export const MEMBER_GROUPS = [
   { value: 'secondary', label: 'Secondary' },
 ];
 
+/** Badge color by device type */
+export function deviceTypeBadgeColor(type) {
+  switch (type) {
+    case 'shield-tv': return 'blue';
+    case 'linux-pc': return 'green';
+    case 'midi-keyboard': return 'orange';
+    default: return 'gray';
+  }
+}
+
 export const INTEGRATION_CATEGORIES = {
   media: 'Media',
   gallery: 'Gallery',

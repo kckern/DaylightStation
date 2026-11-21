@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
+import { getReducedMotionQuery } from '@/lib/ui/browserMotion.js';
 import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { formatAge, proxyIcon, proxyImage, colorFromLabel } from "../cards/utils.js";
@@ -35,8 +36,19 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
   const dirRef = useRef(0); // -1 = prev, 1 = next
   const stickyRef = useRef(null);
   const stickyInitRef = useRef(true);
+  const articleTransitionRef = useRef(null);
   const heroLoadStartRef = useRef(performance.now());
   const [stickyVisible, setStickyVisible] = useState(false);
+
+  const cancelArticleTransition = useCallback(() => {
+    const animation = articleTransitionRef.current;
+    articleTransitionRef.current = null;
+    if (!animation) return;
+    animation.onfinish = null;
+    animation.cancel();
+  }, []);
+
+  useLayoutEffect(() => cancelArticleTransition, [cancelArticleTransition, item.id]);
 
   const updateStickyVisibility = useCallback(visible => {
     const outgoing = visible ? backRef.current : stickyBackRef.current;
@@ -103,6 +115,11 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
     if (stickyInitRef.current) { stickyInitRef.current = false; return; }
     feedLog.nav(stickyVisible ? 'sticky-visible' : 'sticky-hidden', { id: item.id });
     el.getAnimations().forEach(a => a.cancel());
+    if (getReducedMotionQuery(window)?.matches) {
+      el.style.opacity = stickyVisible ? '1' : '0';
+      el.style.pointerEvents = stickyVisible ? 'auto' : 'none';
+      return;
+    }
     el.animate(
       [{ opacity: stickyVisible ? 0 : 1 }, { opacity: stickyVisible ? 1 : 0 }],
       { duration: 150, easing: 'ease-out', fill: 'forwards' }
@@ -114,6 +131,10 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
   useEffect(() => {
     const el = contentRef.current;
     if (!el || !dirRef.current) return;
+    if (getReducedMotionQuery(window)?.matches) {
+      dirRef.current = 0;
+      return;
+    }
     const from = dirRef.current > 0 ? '60px' : '-60px';
     el.animate(
       [
@@ -127,6 +148,12 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
 
   const navigateWithAnimation = useCallback((direction, handler) => {
     if (!handler) return;
+    if (articleTransitionRef.current) return;
+    if (getReducedMotionQuery(window)?.matches) {
+      dirRef.current = 0;
+      handler();
+      return;
+    }
     const el = contentRef.current;
     if (!el) { handler(); return; }
     const to = direction > 0 ? '-60px' : '60px';
@@ -138,8 +165,13 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
       ],
       { duration: 150, easing: 'ease-in', fill: 'forwards' }
     );
-    anim.onfinish = () => handler();
-  }, []);
+    articleTransitionRef.current = anim;
+    anim.onfinish = () => {
+      if (articleTransitionRef.current !== anim) return;
+      cancelArticleTransition();
+      handler();
+    };
+  }, [cancelArticleTransition]);
 
   useEffect(() => {
     if (inModal || usesDismissStack) return undefined;

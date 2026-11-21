@@ -10,6 +10,7 @@ import { useAdminRoster } from '../shared/useAdminRoster.js';
 import { ErrorState, LoadingState } from '../../../lib/ui/states.jsx';
 import { useFocusAfterRemoval, useRetryRegion } from '../../../lib/ui/useRetryRegion.js';
 import { cronToHuman, formatDuration } from '../utils/formatters.js';
+import { statusBadgeColor } from '../utils/constants.js';
 
 /**
  * Classify a cron schedule into a frequency band for grouping.
@@ -41,15 +42,6 @@ function formatLastRun(isoString) {
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays < 7) return `${diffDays}d ago`;
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-}
-
-/**
- * Get a Badge color for a job status.
- */
-function statusBadgeColor(status) {
-  if (status === 'success') return 'green';
-  if (status === 'failed') return 'red';
-  return 'gray';
 }
 
 /**

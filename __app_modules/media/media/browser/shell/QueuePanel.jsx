@@ -63,7 +63,7 @@ export function QueuePanel({ target = 'local', availability = null }) {
   // FIND.11a: every screen's queue — this device's or a remote one's — ends
   // with what played there earlier, whether or not anything is queued.
   const earlier = (
-    <PlayedEarlier screenId={remoteId ?? getDeviceId()} currentContentId={snapshot?.currentItem?.contentId ?? null} />
+    <PlayedEarlier key={remoteId ?? getDeviceId()} screenId={remoteId ?? getDeviceId()} currentContentId={snapshot?.currentItem?.contentId ?? null} />
   );
 
   // A live channel has no list to shuffle, repeat or clear (STEER.7a/AC4): when the only thing here is the live

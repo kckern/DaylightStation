@@ -48,7 +48,7 @@ beforeEach(() => { vi.clearAllMocks(); aim = { targetIds: ['office-tv'] }; });
 describe('StartFreshDialog', () => {
   it('lists what is playing, the queue, the spot and the aim, all to be cleared by default', () => {
     renderDialog(controller());
-    const dialog = screen.getByTestId('confirm-dialog');
+    const dialog = screen.getByRole('dialog', { name: 'Start fresh on this device?' });
     expect(within(dialog).getByRole('checkbox', { name: /What's playing: Arrival/ })).toBeChecked();
     expect(within(dialog).getByRole('checkbox', { name: /Queue: 2 more items/ })).toBeChecked();
     expect(within(dialog).getByRole('checkbox', { name: /Spot: 2:05 into Arrival/ })).toBeChecked();
@@ -58,7 +58,7 @@ describe('StartFreshDialog', () => {
   it('nothing changes until confirmed', () => {
     const c = controller();
     const onClose = renderDialog(c);
-    fireEvent.click(screen.getByTestId('confirm-cancel'));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel', exact: true }));
     expect(onClose).toHaveBeenCalled();
     expect(c.getSnapshot().currentItem.contentId).toBe('plex:1');
     expect(clearTargets).not.toHaveBeenCalled();
@@ -69,7 +69,7 @@ describe('StartFreshDialog', () => {
     renderDialog(c);
     fireEvent.click(screen.getByRole('checkbox', { name: /Queue: 2 more items/ }));
     fireEvent.click(screen.getByRole('checkbox', { name: /Aim: Office TV/ }));
-    fireEvent.click(screen.getByTestId('confirm-ok'));
+    fireEvent.click(screen.getByRole('button', { name: 'Start fresh', exact: true }));
     expect(c.getSnapshot().currentItem).toBeNull();
     expect(c.getSnapshot().queue.items.map(e => e.contentId)).toEqual(['plex:2', 'plex:3']);
     expect(clearTargets).not.toHaveBeenCalled();
@@ -78,7 +78,7 @@ describe('StartFreshDialog', () => {
   it('clearing everything reads as new and returns the aim here', () => {
     const c = controller();
     renderDialog(c);
-    fireEvent.click(screen.getByTestId('confirm-ok'));
+    fireEvent.click(screen.getByRole('button', { name: 'Start fresh', exact: true }));
     expect(c.getSnapshot().sessionId).toBe('fresh');
     expect(c.getSnapshot().queue.items).toEqual([]);
     expect(clearTargets).toHaveBeenCalled();

@@ -155,7 +155,21 @@ export default function Scroll() {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const { getSnapshot, setSnapshot, getLastVisit, markVisited, mutateItems, readingPreferences, applyPendingMutations, checkpoints, sourcePreferences, setSourcePreference, pendingItemOperations, itemSyncRevision } = useFeedWorkspace();
-  const initialSnapshot = useRef(getSnapshot('scroll'));
+  // Checkpoints and the in-memory snapshot belong to the unfiltered Scroll
+  // visit. Session IDs are already scoped by both query dimensions below.
+  const focusSource = searchParams.get('focus');
+  const filterParam = searchParams.get('filter') || '';
+  // Keep established keys stable. Exceptional tuples use a new fixed prefix
+  // so neither delimiters nor any legacy raw query value can alias them.
+  const isExceptionalDimension = value => Boolean(value) && (value === 'all' || value.startsWith('@') || value.includes(':'));
+  const hasExceptionalDimension = isExceptionalDimension(focusSource) || isExceptionalDimension(filterParam);
+  const sessionDimension = value => !value ? 'all' : hasExceptionalDimension
+    ? value === 'all' ? '%61ll' : encodeURIComponent(value)
+    : value;
+  const sessionKeyNamespace = hasExceptionalDimension ? 'feed:scroll:session-v2:' : 'feed:scroll:session:';
+  const sessionStorageKey = `${sessionKeyNamespace}${sessionDimension(focusSource)}:${sessionDimension(filterParam)}`;
+  const isDefaultScroll = !focusSource && !filterParam;
+  const initialSnapshot = useRef(isDefaultScroll ? getSnapshot('scroll') : null);
   const initialCheckpoint = useRef(checkpoints.scroll);
   const previousVisit = useRef(getLastVisit('scroll'));
   const visitStarted = useRef(new Date().toISOString());
@@ -174,10 +188,6 @@ export default function Scroll() {
   const lastItemSync = useRef(itemSyncRevision);
   const latestItemSync = useRef(itemSyncRevision);
   latestItemSync.current = itemSyncRevision;
-  // focusSource is read into the ?focus= param; no UI currently sets it (F-29).
-  const focusSource = searchParams.get('focus');
-  const filterParam = searchParams.get('filter') || '';
-  const sessionStorageKey = `feed:scroll:session:${focusSource || 'all'}:${filterParam || 'all'}`;
   const storedSessionId = useMemo(() => browserPreference(sessionStorageKey, null, undefined, () => sessionStorage), [sessionStorageKey]);
   const sentinelRef = useRef(null);
   const containerRef = useRef(null);
@@ -197,7 +207,7 @@ export default function Scroll() {
   const effectiveBudget = budgetOverride?.scope === sessionStorageKey
     ? budgetOverride.limit
     : readingPreferences.sessionBudget;
-  snapshotRef.current = { items, hasMore, caughtUp, budgetReached, serverHasMore, sessionId };
+  snapshotRef.current = { items, loading, error, hasMore, caughtUp, budgetReached, serverHasMore, sessionId, sessionStorageKey };
 
   useEffect(() => {
     setBudgetOverride(null);
@@ -395,13 +405,24 @@ export default function Scroll() {
     timeoutMs: reconcileTimeoutMs, onTimeout: onReconcileTimeout,
   });
 
-  useEffect(() => { markVisited('scroll', visitStarted.current); }, [markVisited]);
+  useEffect(() => {
+    if (!isDefaultScroll) return;
+    visitStarted.current = new Date().toISOString();
+    markVisited('scroll', visitStarted.current, initialCheckpoint.current || {});
+  }, [isDefaultScroll, markVisited, sessionStorageKey]);
 
-  const lastListOffset = useRef(initialSnapshot.current?.scrollTop ?? initialCheckpoint.current?.scrollOffset ?? 0);
+  const lastListOffset = useRef(initialSnapshot.current?.scrollTop ?? (isDefaultScroll ? initialCheckpoint.current?.scrollOffset : 0) ?? 0);
   const restoringList = useRef(lastListOffset.current > 0);
+  useEffect(() => {
+    const savedOffset = isDefaultScroll
+      ? initialSnapshot.current?.scrollTop ?? initialCheckpoint.current?.scrollOffset ?? 0
+      : 0;
+    lastListOffset.current = savedOffset;
+    restoringList.current = savedOffset > 0;
+  }, [isDefaultScroll, sessionStorageKey]);
   useLayoutEffect(() => {
     const el = scrollRef?.current;
-    if (!el || urlSlug || loading || !items.length || !restoringList.current) return;
+    if (!isDefaultScroll || !el || urlSlug || loading || !items.length || !restoringList.current) return;
     const wanted = lastListOffset.current;
     // Masonry publishes estimated positions before its measured heights. A
     // first successful scroll can still be clamped during the next layout.
@@ -430,21 +451,29 @@ export default function Scroll() {
       el.removeEventListener('touchstart', stop);
       el.removeEventListener('keydown', stop);
     };
-  }, [items.length, loading, scrollRef, urlSlug]);
+  }, [items.length, isDefaultScroll, loading, scrollRef, urlSlug]);
 
   useLayoutEffect(() => {
     const el = scrollRef?.current;
+    const visitStorageKey = sessionStorageKey;
     return () => {
-      const scrollOffset = lastListOffset.current;
-      const itemId = [...(el?.querySelectorAll('[data-feed-item-id]') || [])]
+      if (!isDefaultScroll) return;
+      const acceptedEmpty = !snapshotRef.current.loading && !snapshotRef.current.error && !itemsRef.current.length;
+      const scrollOffset = acceptedEmpty ? 0 : listReturn.current?.scrollTop ?? lastListOffset.current;
+      const visibleItemId = [...(el?.querySelectorAll('[data-feed-item-id]') || [])]
         .find(node => node.getBoundingClientRect().bottom > el.getBoundingClientRect().top + 8)?.dataset.feedItemId || null;
-      setSnapshot('scroll', { ...snapshotRef.current, scrollTop: scrollOffset });
-      markVisited('scroll', new Date().toISOString(), { itemId, scrollOffset });
+      const itemId = acceptedEmpty ? null : visibleItemId || listReturn.current?.id || initialCheckpoint.current?.itemId || null;
+      const position = { itemId, scrollOffset };
+      initialCheckpoint.current = { ...initialCheckpoint.current, ...position };
+      const nextSnapshot = { ...snapshotRef.current, sessionStorageKey: visitStorageKey, scrollTop: scrollOffset };
+      initialSnapshot.current = nextSnapshot;
+      setSnapshot('scroll', nextSnapshot);
+      markVisited('scroll', new Date().toISOString(), position);
     };
-  }, [markVisited, scrollRef, setSnapshot]);
+  }, [isDefaultScroll, markVisited, scrollRef, sessionStorageKey, setSnapshot]);
 
   useEffect(() => {
-    if (checkpointRestoredRef.current || initialSnapshot.current?.scrollTop || initialCheckpoint.current?.scrollOffset
+    if (!isDefaultScroll || checkpointRestoredRef.current || initialSnapshot.current?.scrollTop || initialCheckpoint.current?.scrollOffset
       || !initialCheckpoint.current?.itemId || !items.length) return;
     const target = [...(scrollRef?.current?.querySelectorAll('[data-feed-item-id]') || [])]
       .find(node => node.dataset.feedItemId === initialCheckpoint.current.itemId);
@@ -453,7 +482,7 @@ export default function Scroll() {
       const frame = requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }));
       return () => cancelAnimationFrame(frame);
     }
-  }, [items.length, scrollRef]);
+  }, [isDefaultScroll, items.length, scrollRef, sessionStorageKey]);
 
   // Initial load + reset/refetch whenever the ?filter= identity changes. (F-11)
   useEffect(() => {

@@ -2,12 +2,194 @@ import { expect, test } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
 
+for (const resource of ['members', 'devices']) {
+  test(`${resource} list opens its editor from a keyboard link without activating its secondary action`, async ({ page }) => {
+    await page.routeWebSocket('**/*', () => {});
+    await page.route('**/api/**', route => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      if (resource === 'members' && path === '/api/v1/admin/household') {
+        return route.fulfill({ json: { household: { name: 'Home' }, members: [
+          { username: 'alice', display_name: 'Alice', type: 'family_member', group: 'primary' },
+        ] } });
+      }
+      if (resource === 'devices' && path === '/api/v1/admin/household/devices') {
+        return route.fulfill({ json: { devices: [
+          { id: 'living-room', name: 'Living Room', type: 'shield-tv' },
+        ] } });
+      }
+      if (path === '/api/v1/admin/household/members/alice') {
+        return route.fulfill({ json: { member: { username: 'alice', display_name: 'Alice', type: 'family_member' } } });
+      }
+      if (path === '/api/v1/admin/household/devices/living-room') {
+        return route.fulfill({ json: { device: { id: 'living-room', name: 'Living Room', type: 'shield-tv', os_control: {} } } });
+      }
+      return route.fulfill({ json: path.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+    });
+
+    await page.goto(`/admin/household/${resource}`);
+    const label = resource === 'members' ? 'Alice' : 'Living Room';
+    const editorPath = resource === 'members' ? '/admin/household/members/alice' : '/admin/household/devices/living-room';
+    const link = page.getByRole('link', { name: label, exact: true });
+    await expect(link).toHaveAttribute('href', editorPath);
+    await link.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(editorPath);
+    await expect(page.getByRole('region', { name: resource === 'members' ? 'Member editor' : 'Device editor' })).toBeVisible();
+
+    if (resource === 'members') {
+      await page.goto('/admin/household/members');
+      const remove = page.getByRole('button', { name: 'Remove', exact: true });
+      await remove.press('Enter');
+      await expect(page).toHaveURL('/admin/household/members');
+      await expect(page.getByRole('dialog', { name: /remove/i })).toBeVisible();
+    }
+  });
+}
+
+test('Member native Back preserves its draft through Forward while explicit discard stays guarded', async ({ page }) => {
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/v1/admin/household') return route.fulfill({ json: {
+      household: { name: 'Home' }, members: [{ username: 'alice', display_name: 'Alice', type: 'family_member', group: 'primary' }],
+    } });
+    if (path === '/api/v1/admin/household/members/alice') return route.fulfill({ json: {
+      member: { username: 'alice', display_name: 'Alice', email: 'alice@example.invalid', type: 'family_member' },
+    } });
+    return route.fulfill({ json: path.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+
+  await page.goto('/admin/household/members');
+  await page.getByRole('link', { name: 'Alice', exact: true }).click();
+  await expect(page).toHaveURL('/admin/household/members/alice');
+  const field = page.getByLabel('Display Name', { exact: true });
+  await expect(field).toHaveValue('Alice');
+  await field.fill('Unsaved Alice draft');
+
+  await page.goBack();
+  const dialog = page.getByRole('dialog', { name: 'Discard unsaved changes?' });
+  await expect(page).toHaveURL('/admin/household/members');
+  await expect(dialog).toHaveCount(0);
+
+  await page.goForward();
+  await expect(page).toHaveURL('/admin/household/members/alice');
+  await expect(field).toHaveValue('Unsaved Alice draft');
+
+  const breadcrumb = page.getByRole('banner').getByRole('link', { name: 'Members', exact: true });
+  await breadcrumb.click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(page).toHaveURL('/admin/household/members/alice');
+  await expect(field).toHaveValue('Unsaved Alice draft');
+
+  await breadcrumb.click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Discard', exact: true }).click();
+  await expect(page).toHaveURL('/admin/household/members');
+  await page.goBack();
+  await expect(page).toHaveURL('/admin/household/members/alice');
+  await expect(field).toHaveValue('Alice');
+});
+
 async function enterSibling(page, path) {
   await page.evaluate(path => {
     history.pushState({ idx: (history.state?.idx ?? 0) + 1, key: 'sibling-fixture', usr: null }, '', path);
     dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
   }, path);
 }
+
+test('Member Back keeps a dirty draft until Discard is confirmed', async ({ page }) => {
+  const writes = [];
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'PUT') writes.push(path);
+    if (path === '/api/v1/admin/household/members/alice') {
+      return route.fulfill({ json: { member: { username: 'alice', display_name: 'Alice', email: 'alice@example.invalid', type: 'family_member' } } });
+    }
+    return route.fulfill({ json: path.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+
+  await page.goto('/admin/household/members/alice');
+  const field = page.getByLabel('Display Name', { exact: true });
+  await expect(field).toHaveValue('Alice');
+  await field.fill('Alice draft');
+
+  const breadcrumb = page.getByRole('banner').getByRole('link', { name: 'Members', exact: true });
+  await breadcrumb.click();
+  const dialog = page.getByRole('dialog', { name: 'Discard unsaved changes?' });
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL('/admin/household/members/alice');
+  await expect(field).toHaveValue('Alice draft');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(breadcrumb).toBeFocused();
+  expect(writes).toEqual([]);
+
+  const back = page.getByRole('link', { name: 'Back to Members', exact: true }).last();
+  await expect(back).toHaveAttribute('href', '/admin/household/members');
+  await back.press('Enter');
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL('/admin/household/members/alice');
+  await expect(field).toHaveValue('Alice draft');
+  expect(writes).toEqual([]);
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(back).toBeFocused();
+  await expect(field).toHaveValue('Alice draft');
+
+  await back.press('Enter');
+  await page.getByRole('button', { name: 'Discard', exact: true }).click();
+  await expect(page).toHaveURL('/admin/household/members');
+  expect(writes).toEqual([]);
+
+  await page.goto('/admin/household/members/alice');
+  await expect(field).toHaveValue('Alice');
+  const cleanBack = page.getByRole('link', { name: 'Back to Members', exact: true }).last();
+  await cleanBack.press('Enter');
+  await expect(page).toHaveURL('/admin/household/members');
+  await expect(dialog).toHaveCount(0);
+  expect(writes).toEqual([]);
+});
+
+test('Device console navigation confirms before leaving its dirty editor', async ({ page }) => {
+  const writes = [];
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'PUT') writes.push(path);
+    if (path === '/api/v1/admin/household/devices/fixture') {
+      return route.fulfill({ json: { device: {
+        id: 'fixture', type: 'linux-pc', content_control: { provider: 'fully-kiosk' },
+        os_control: { fixtureField: 'Original' },
+      } } });
+    }
+    return route.fulfill({ json: path.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+
+  await page.goto('/admin/household/devices/fixture');
+  const field = page.getByLabel('fixtureField', { exact: true });
+  await expect(field).toHaveValue('Original');
+  await field.fill('Unsaved device draft');
+  const consoleButton = page.getByRole('button', { name: 'Fully Kiosk Console', exact: true });
+  await consoleButton.click();
+  const dialog = page.getByRole('dialog', { name: 'Discard unsaved changes?' });
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL('/admin/household/devices/fixture');
+  await expect(field).toHaveValue('Unsaved device draft');
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(consoleButton).toBeFocused();
+  expect(writes).toEqual([]);
+
+  await consoleButton.click();
+  await page.getByRole('button', { name: 'Discard', exact: true }).click();
+  await expect(page).toHaveURL('/admin/household/devices/fixture/fully-kiosk');
+  expect(writes).toEqual([]);
+});
 
 for (const editor of [
   { resource: 'members', label: 'Display Name', identity: 'username', fieldValue: id => 'Name ' + id,

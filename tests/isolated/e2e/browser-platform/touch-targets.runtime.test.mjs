@@ -188,3 +188,145 @@ test('Life value rank actions have accessible names and full touch targets', asy
     ] },
   ]);
 });
+
+test('Life keeps a value reorder pending across routes and isolates it by member', async ({ page }) => {
+  const users = ['alice', 'bob'].map(username => ({ username, displayName: username.toUpperCase() }));
+  const valuesByMember = Object.fromEntries(users.map(({ username }) => [username, [
+    { id: 'care', name: 'Care', rank: 1 },
+    { id: 'curiosity', name: 'Curiosity', rank: 2 },
+    { id: 'kindness', name: 'Kindness', rank: 3 },
+  ]]));
+  const writes = [];
+  let alicePatchArrived = false;
+  let releaseAlicePatch;
+  let holdAliceReadback = false;
+  let aliceReadbackArrived = false;
+  let releaseAliceReadback;
+  await page.addInitScript(() => localStorage.setItem('life.username', 'alice'));
+  await page.route('**/api/v1/life/**', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const username = url.searchParams.get('username') || 'alice';
+    if (url.pathname.endsWith('/users')) return route.fulfill({ json: { users } });
+    if (url.pathname.endsWith('/user')) return route.fulfill({ json: users.find(user => user.username === username) });
+    if (url.pathname.replace(/\/$/, '').endsWith('/plan') && request.method() === 'GET') {
+      if (username === 'alice' && holdAliceReadback) {
+        holdAliceReadback = false;
+        aliceReadbackArrived = true;
+        await new Promise(resolve => { releaseAliceReadback = resolve; });
+      }
+      return route.fulfill({ json: { values: valuesByMember[username] } });
+    }
+    if (url.pathname.endsWith('/plan/values') && request.method() === 'PATCH') {
+      const nextValues = request.postDataJSON();
+      writes.push({ username, values: nextValues });
+      valuesByMember[username] = nextValues;
+      if (username === 'alice' && !alicePatchArrived) {
+        alicePatchArrived = true;
+        await new Promise(resolve => { releaseAlicePatch = resolve; });
+      }
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  try {
+    await page.goto('/life/plan/values');
+    await expect(page.getByText('Kindness', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Move Curiosity up', exact: true }).press('Enter');
+    await expect.poll(() => alicePatchArrived).toBe(true);
+    expect(writes).toHaveLength(1);
+
+    await page.getByRole('link', { name: 'Purpose', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Purpose', exact: true })).toBeVisible();
+    await page.getByRole('link', { name: 'Values', exact: true }).click();
+    await expect(page.getByText('Curiosity', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Move Care up', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Add value', exact: true })).toBeDisabled();
+
+    const switcher = page.getByRole('textbox', { name: 'Switch household member' });
+    await switcher.press('ArrowDown');
+    const bobOption = page.getByRole('option', { name: 'BOB', exact: true });
+    await expect(bobOption).toBeVisible();
+    const bobOptionId = await bobOption.getAttribute('id');
+    for (let step = 0; step < 2 && await switcher.getAttribute('aria-activedescendant') !== bobOptionId; step += 1) {
+      await switcher.press('ArrowDown');
+    }
+    await switcher.press('Enter');
+    await expect(switcher).toHaveValue('BOB');
+    await page.getByRole('button', { name: 'Move Curiosity up', exact: true }).press('Enter');
+    await expect.poll(() => writes.filter(write => write.username === 'bob')).toHaveLength(1);
+    await expect(page.getByRole('button', { name: 'Move Care up', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Move Curiosity up', exact: true })).toBeDisabled();
+
+    await switcher.press('ArrowDown');
+    const aliceOption = page.getByRole('option', { name: 'ALICE', exact: true });
+    await expect(aliceOption).toBeVisible();
+    const aliceOptionId = await aliceOption.getAttribute('id');
+    for (let step = 0; step < 2 && await switcher.getAttribute('aria-activedescendant') !== aliceOptionId; step += 1) {
+      await switcher.press('ArrowDown');
+    }
+    await switcher.press('Enter');
+    await expect(switcher).toHaveValue('ALICE');
+    await expect(page.getByRole('button', { name: 'Add value', exact: true })).toBeDisabled();
+
+    holdAliceReadback = true;
+    releaseAlicePatch();
+    await expect.poll(() => aliceReadbackArrived).toBe(true);
+    await expect(page.getByRole('heading', { name: 'Values', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Add value', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Move Care up', exact: true })).toHaveCount(0);
+    releaseAliceReadback();
+    await expect(page.getByRole('button', { name: 'Add value', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Move Care up', exact: true })).toBeEnabled();
+    expect(writes).toEqual([
+      { username: 'alice', values: [
+        { id: 'curiosity', name: 'Curiosity', rank: 1 },
+        { id: 'care', name: 'Care', rank: 2 },
+        { id: 'kindness', name: 'Kindness', rank: 3 },
+      ] },
+      { username: 'bob', values: [
+        { id: 'curiosity', name: 'Curiosity', rank: 1 },
+        { id: 'care', name: 'Care', rank: 2 },
+        { id: 'kindness', name: 'Kindness', rank: 3 },
+      ] },
+    ]);
+  } finally {
+    releaseAlicePatch?.();
+    releaseAliceReadback?.();
+  }
+});
+
+test('Life releases a refused value reorder so the member can retry', async ({ page }) => {
+  let values = [
+    { id: 'care', name: 'Care', rank: 1 },
+    { id: 'curiosity', name: 'Curiosity', rank: 2 },
+  ];
+  const writes = [];
+  await page.addInitScript(() => localStorage.setItem('life.username', 'alice'));
+  await page.route('**/api/v1/life/**', route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname.endsWith('/users')) return route.fulfill({ json: { users: [{ username: 'alice', displayName: 'Alice' }] } });
+    if (url.pathname.endsWith('/user')) return route.fulfill({ json: { username: 'alice', displayName: 'Alice' } });
+    if (url.pathname.replace(/\/$/, '').endsWith('/plan') && request.method() === 'GET') return route.fulfill({ json: { values } });
+    if (url.pathname.endsWith('/plan/values') && request.method() === 'PATCH') {
+      writes.push(request.postDataJSON());
+      if (writes.length === 1) return route.fulfill({ status: 503, json: { error: 'Temporary refusal' } });
+      values = writes.at(-1);
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto('/life/plan/values');
+  const move = page.getByRole('button', { name: 'Move Curiosity up', exact: true });
+  await move.press('Enter');
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(move).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Add value', exact: true })).toBeEnabled();
+
+  await move.press('Enter');
+  await expect(page.getByRole('button', { name: 'Move Care up', exact: true })).toBeEnabled();
+  expect(writes).toHaveLength(2);
+});

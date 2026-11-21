@@ -67,3 +67,30 @@ for (const { tab, title, field, value, path, expected } of [
     expect(saves).toEqual([expect.objectContaining(expected), expect.objectContaining(expected)]);
   });
 }
+
+test('Auto Sheet hides the app navigation while open and restores access on Escape', async ({ page }) => {
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    return route.fulfill({ json: fixtures[pathname] ?? {} });
+  });
+
+  await page.goto('/auto');
+  const navigation = page.getByRole('navigation', { name: 'Primary' });
+  await page.getByRole('button', { name: 'Fuel', exact: true }).click();
+  const opener = page.getByRole('button', { name: 'Log a fill-up', exact: true });
+  await opener.click();
+  const dialog = page.getByRole('dialog', { name: 'Log a fill-up', exact: true });
+
+  await expect(dialog.getByLabel('Gallons', { exact: true })).toBeVisible();
+  await expect(navigation).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Fuel', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Log a fill-up', exact: true })).toHaveCount(0);
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(navigation).toBeVisible();
+  await expect(opener).toBeVisible();
+  await expect(opener).toBeFocused();
+});

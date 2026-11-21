@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { FormDialog } from '@/lib/ui/FormDialog.jsx';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import {
-  Stack, Text, SimpleGrid, Card, Badge, Button, Group,
+  Stack, Text, SimpleGrid, Card, Badge, Button, Group, Anchor,
   TextInput, Select, Alert
 } from '@mantine/core';
 import { IconPlus, IconAlertCircle } from '@tabler/icons-react';
@@ -14,27 +14,11 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 
 import { EmptyState, ErrorState, LoadingState } from '../../../lib/ui/states.jsx';
 import { useRetryRegion } from '../../../lib/ui/useRetryRegion.js';
+import { DEVICE_TYPES, deviceTypeBadgeColor } from '../utils/constants.js';
 
 const DEVICES_PATH = '/api/v1/admin/household/devices';
 
-const DEVICE_TYPE_OPTIONS = [
-  { value: 'shield-tv', label: 'Shield TV' },
-  { value: 'linux-pc', label: 'Linux PC' },
-  { value: 'midi-keyboard', label: 'MIDI Keyboard' }
-];
-
-/**
- * Get a Badge color for a device type.
- */
-function typeBadgeColor(type) {
-  if (type === 'shield-tv') return 'blue';
-  if (type === 'linux-pc') return 'green';
-  if (type === 'midi-keyboard') return 'orange';
-  return 'gray';
-}
-
 function DevicesIndex() {
-  const navigate = useNavigate();
   const [shutdown,setShutdown]=useState(null),[enforcementNow,setEnforcementNow]=useState(()=>Date.now());
   const { data, loading, error, reload, invalidateAfterWrite } = useAdminRoster(DEVICES_PATH, { retryTransient: true });
   const { regionProps, retry } = useRetryRegion(reload, loading);
@@ -146,8 +130,6 @@ function DevicesIndex() {
                 padding="lg"
                 radius="md"
                 withBorder
-                style={{ cursor: 'pointer' }}
-                onClick={() => navigate(`/admin/household/devices/${device.id}`)}
               >
                 <Stack gap="sm">
                   <Group justify="space-between" align="center">
@@ -156,11 +138,11 @@ function DevicesIndex() {
                         the API serves both; this card showed the raw slug anyway —
                         the same defect CallApp.jsx:218 records as "the defect that
                         put 'yellow-room-tablet' on screen". */}
-                    <Text size="md" fw={600}>
+                    <Anchor component={Link} to={`/admin/household/devices/${encodeURIComponent(device.id)}`} c="inherit" size="md" fw={600}>
                       {device.icon ? `${device.icon} ` : ''}{device.name || device.id}
-                    </Text>
+                    </Anchor>
                     <Badge
-                      color={typeBadgeColor(device.type)}
+                      color={deviceTypeBadgeColor(device.type)}
                       variant="light"
                       size="sm"
                     >
@@ -195,7 +177,7 @@ function DevicesIndex() {
             <Select
               label="Type"
               disabled={creating}
-              data={DEVICE_TYPE_OPTIONS}
+            data={DEVICE_TYPES}
               value={createForm.type}
               onChange={(value) => handleCreateFormChange('type', value)}
             />

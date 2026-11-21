@@ -1,7 +1,5 @@
-// LabeledContentPicker.test.jsx — pins the collapsed shape (2026-07-09 audit,
-// C6): the picker IS the unified ContentCombobox, so the combobox's own
-// resolved-title line (data-testid "combobox-resolved-title") is the ONLY
-// title rendered — the wrapper's duplicate <Text> above the input is gone.
+// Playback Hub consumes the shared catalog picker directly. Its resolved-title
+// line (data-testid "combobox-resolved-title") is the only title rendered.
 // The real hook + machine run here; fetch and EventSource are stubbed.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -17,7 +15,6 @@ vi.mock("../../../../../../../frontend/src/lib/logging/singleton.js", () => {
 });
 
 import { clearTitleCache, rememberTitle } from "../../../../../../../__capabilities/content-catalog/browser/lib/useContentTitle.js";
-import { LabeledContentPicker } from "./LabeledContentPicker.jsx";
 import ContentCombobox from "../../../../../../../__capabilities/content-catalog/browser/picker.mjs";
 
 const SIBLINGS_RESPONSE = {
@@ -39,7 +36,7 @@ function jsonResponse(body, ok = true, status = 200) {
 function renderPicker(props = {}) {
   return render(
     <MantineProvider>
-      <LabeledContentPicker
+      <ContentCombobox
         value={props.value ?? ''}
         onChange={props.onChange ?? vi.fn()}
         placeholder={props.placeholder}
@@ -48,7 +45,7 @@ function renderPicker(props = {}) {
   );
 }
 
-describe('LabeledContentPicker (collapsed onto unified ContentCombobox)', () => {
+describe('Playback Hub catalog picker', () => {
   beforeEach(() => {
     clearTitleCache();
     clearCache();
@@ -69,10 +66,6 @@ describe('LabeledContentPicker (collapsed onto unified ContentCombobox)', () => 
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
-  });
-
-  it('is the unified ContentCombobox (no wrapper layer left)', () => {
-    expect(LabeledContentPicker).toBe(ContentCombobox);
   });
 
   it('renders exactly ONE title line — the combobox-owned resolved title', async () => {

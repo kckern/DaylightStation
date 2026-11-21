@@ -9,7 +9,7 @@ import { IconAdjustments, IconLayoutDashboard, IconListCheck } from '@tabler/ico
 import {
   AppThemeProvider, AppChrome, Sheet, DismissStackProvider,
   LoadingState, ErrorState, EmptyState, SectionCard, StatCard,
-  DateStepper, AskAffordance, Button, Select, UiIcon,
+  DateStepper, Button, Select, UiIcon,
 } from '../../lib/ui/index.js';
 
 const tabs = [
@@ -69,7 +69,6 @@ export default function DsGallery() {
           tabs={tabs}
           activeTab={tab}
           onTabChange={setTab}
-          footer={<AskAffordance onActivate={() => setSheetOpen(true)} />}
         >
           {tab === 'choices' ? <ChoiceExamples /> : (
             <div style={{ display: 'grid', gap: 'var(--ds-space-md)' }} data-testid="gallery-grid">

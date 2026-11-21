@@ -391,16 +391,6 @@ html[data-browser-app-viewport] {
   &__label { font-weight: 600; min-width: 7.5rem; }
 }
 
-.ds-ask {
-  display: flex; align-items: center; gap: var(--ds-space-sm); width: 100%;
-  padding: var(--ds-space-sm) 0.9rem; border-radius: 999px;
-  background: var(--ds-surface); border: 1px solid var(--ds-border);
-  color: var(--ds-text-mid); cursor: pointer; font-size: var(--ds-type-detail);
-  &:focus-visible { outline: 2px solid var(--ds-accent, var(--ds-info)); outline-offset: 2px; }
-  &__placeholder { flex: 1; text-align: left; }
-  &__kbd { font-size: var(--ds-type-caption); color: var(--ds-text-low); border: 1px solid var(--ds-border); border-radius: 4px; padding: 0 0.3rem; }
-}
-
 .ds-playback-frame {
   display: flex;
   flex-direction: column;

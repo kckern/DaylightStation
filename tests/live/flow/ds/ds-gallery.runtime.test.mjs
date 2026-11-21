@@ -2,6 +2,10 @@
 // Visual verification for DS primitives — jsdom cannot see layout, this can.
 import { test, expect } from '@playwright/test';
 
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/v1/supervision/bootstrap', route => route.fulfill({ json: { enabled: false } }));
+});
+
 for (const viewport of [
   { name: 'phone', width: 390, height: 844 },
   { name: 'desktop', width: 1280, height: 900 },

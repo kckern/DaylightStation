@@ -478,12 +478,42 @@ export function isApiResourceFresh(path, maxAgeMs = PREFETCH_FRESH_MS) {
 }
 
 /** Read one resource now and publish its accepted snapshot to mounted SWR readers. */
-export async function readApiResource(path, { freshMs = PREFETCH_FRESH_MS, timeoutMs } = {}) {
-  if (!activeCacheReads.has(path) && isApiResourceFresh(path, freshMs)) return cacheGet(path).value;
-  const read = readCachedResource(path, { warm: true, timeoutMs });
-  const result = await read.promise;
-  if (!read.accepted) throw refreshAbortError();
-  return result;
+export async function readApiResource(path, { freshMs = PREFETCH_FRESH_MS, timeoutMs, followSuperseding = false } = {}) {
+  const startingEntry = swrCache.get(path);
+  const scope = registrationFor(path);
+  const epoch = scope?.epoch;
+  let superseded = false;
+  while (true) {
+    if (followSuperseding && superseded && !activeCacheReads.has(path)) {
+      const replacement = swrCache.get(path);
+      if (replacement && replacement !== startingEntry) return cacheGet(path).value;
+    }
+    if (!activeCacheReads.has(path) && isApiResourceFresh(path, freshMs)) return cacheGet(path).value;
+    const read = readCachedResource(path, { warm: true, timeoutMs });
+    let result;
+    try {
+      result = await read.promise;
+    } catch (error) {
+      // A replaced read can reject with its original transport error when it
+      // was already in transient backoff. Only an accepted failure belongs to
+      // this reader; otherwise the caller may follow the replacement read.
+      if (followSuperseding && !read.accepted) {
+        if (scope !== registrationFor(path) || scope?.epoch !== epoch) throw refreshAbortError();
+        superseded = true;
+        continue;
+      }
+      throw error;
+    }
+    if (!read.accepted) {
+      if (followSuperseding) {
+        if (scope !== registrationFor(path) || scope?.epoch !== epoch) throw refreshAbortError();
+        superseded = true;
+        continue;
+      }
+      throw refreshAbortError();
+    }
+    return result;
+  }
 }
 
 /** The cached payload for `path`, or undefined. Does not touch recency. */

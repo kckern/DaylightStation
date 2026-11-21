@@ -194,7 +194,10 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     catch (err) { setOrphanRetry(previous => previous && ({ ...previous, busy: false, error: err?.message || 'Still could not send it.' })); }
   };
   const mealUndoOperation = useRef(null);   // bucketId | null — F5 renders the combobox here
-  const [editingRow, setEditingRow] = useState(null); // row | null — F6 renders the edit sheet
+  const [editing, setEditing] = useState(null); // { row, date } — the edit sheet belongs to the day that opened it
+  useEffect(() => {
+    setEditing(current => current && (!active || current.date !== date) ? null : current);
+  }, [active, date]);
   const [captureMode, setCaptureMode] = useState(null); // 'barcode' | null
   // bucketId | null — which meal's add-row barcode button opened the
   // sheet (null = an unlabeled launch). Forwarded to BarcodeCapture so it
@@ -213,21 +216,34 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   // the VIEW so one dialog serves every row and the edit sheet alike — see
   // ConfirmDialog on why this is not per-row state.
   const [pendingDelete, setPendingDelete] = useState(null);
+  const deleteOwner = useRef(0);
+  const deleteBusyOwner = useRef(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
+  useEffect(() => {
+    if (pendingDelete && (!active || pendingDelete.date !== date)) {
+      deleteOwner.current += 1;
+      setPendingDelete(null);
+      setDeleteError(null);
+    }
+  }, [active, date, pendingDelete]);
   const confirmDelete = async () => {
     if (deleteBusy || !pendingDelete) return;
+    const owner = deleteOwner.current;
+    const row = pendingDelete.row;
+    deleteBusyOwner.current = owner;
     setDeleteBusy(true); setDeleteError(null);
     try {
-      const removed = await deleteEntry(pendingDelete, foodAPI);
-      logger.info('entry.delete', { uuid: pendingDelete.uuid || pendingDelete.id, count: removed.entryIds.length });
-      setPendingDelete(null); setUndoDelete(removed); day.reload();
+      const removed = await deleteEntry(row, foodAPI);
+      logger.info('entry.delete', { uuid: row.uuid || row.id, count: removed.entryIds.length });
+      if (deleteOwner.current === owner) setPendingDelete(null);
+      setUndoDelete(removed); day.reload();
     } catch (err) {
       // The dialog STAYS OPEN on failure. Closing it would report a delete that
       // did not happen, and the row is still there to prove otherwise.
-      logger.warn('entry.delete_failed', { uuid: pendingDelete.uuid || pendingDelete.id, error: err.message });
-      setDeleteError(err.message || 'Could not delete. Try again when connected.');
-    } finally { setDeleteBusy(false); }
+      logger.warn('entry.delete_failed', { uuid: row.uuid || row.id, error: err.message });
+      if (deleteOwner.current === owner) setDeleteError(err.message || 'Could not delete. Try again when connected.');
+    } finally { deleteBusyOwner.current = null; setDeleteBusy(false); }
   };
   const [undoBusy, setUndoBusy] = useState(false);
   const undoPending = useRef(false);
@@ -714,9 +730,10 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         dayOffers={captureToasts.offers} onMoveOffer={moveOffered}
         dayNotice={dayNotice} onDismissDayNotice={() => setDayNotice(null)} menuMoveSettled={menuMoveSettled} handedBackMove={handedBackMove}
         onDismissOffer={shown => setCaptureToasts(state => ({ ...state, offers: state.offers.filter(item => item.offer !== shown.offer) }))} />
-      <ConfirmDialog open={Boolean(pendingDelete)} title={pendingDelete ? `Delete ${entryLabel(pendingDelete)}?` : ''}
-        body={pendingDelete ? deleteConfirmBody(pendingDelete) : ''} busy={deleteBusy} error={deleteError}
-        onConfirm={confirmDelete} onCancel={() => { setPendingDelete(null); setDeleteError(null); }} />
+      <ConfirmDialog open={Boolean(active && pendingDelete?.date === date)} title={pendingDelete ? `Delete ${entryLabel(pendingDelete.row)}?` : ''}
+        body={pendingDelete ? deleteConfirmBody(pendingDelete.row) : ''}
+        busy={deleteBusy && deleteBusyOwner.current === deleteOwner.current} confirmDisabled={deleteBusy} error={deleteError}
+        onConfirm={confirmDelete} onCancel={() => { deleteOwner.current += 1; setPendingDelete(null); setDeleteError(null); }} />
       {/* A refresh that fails (the 15 s poll while the backend restarts) keeps
           what is on screen and says so in one line. A panel only when there
           is nothing to show, and one per outage: when the day itself failed,
@@ -737,7 +754,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
           exerciseAvailable={Boolean(day.budget)}
           fastedMeals={day.dayStatus?.fastedMeals || []} onMealFastChanged={day.reload}
           coldLoading={coldLoading} capturePendingBuckets={[...capturePending.values()].filter(pending => pending.date === date).map(pending => pending.bucket)}
-          onRowTap={setEditingRow} onConfirm={day.reload} onRequestDelete={row => { setDeleteError(null); setPendingDelete(row); }}
+          onRowTap={row => setEditing({ row, date })} onConfirm={day.reload} onRequestDelete={row => { deleteOwner.current += 1; setDeleteError(null); setPendingDelete({ row, date }); }}
           bucketHeaderAction={bucketHeaderAction}
           onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture}
           onMealChanged={result=>handleCaptureResult(result)} captureTasks={[...capturePending.values()]}
@@ -784,14 +801,14 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
           if (!result?.aiEstimate && result?.moved && !reported) setCaptureNotice(`Moved to ${bucketLabel(result.mealTime)}`);
           day.reload();
         }} />
-      <CustomFoodSheet upc={unknownUpc} open={active && Boolean(unknownUpc)}
+      <CustomFoodSheet upc={unknownUpc} open={Boolean(unknownUpc)}
         bucketId={barcodeTargetBucket} date={barcodeDate}
         onClose={() => setUnknownUpc(null)}
         onCreated={logged => { setUnknownUpc(null); day.reload(); offerAddedFood(logged, barcodeDate, { added: true }); }} />
-      <EntryEditor row={editingRow} open={active && Boolean(editingRow)}
-        onClose={() => setEditingRow(null)} onChanged={day.reload}
-        onRequestDelete={row => { setDeleteError(null); setEditingRow(null); setPendingDelete(row); }}
-        onCoach={() => { onCoachTap(editingRow); setEditingRow(null); }}
+      <EntryEditor row={editing?.row} open={active && Boolean(editing && editing.date === date)}
+        onClose={() => setEditing(null)} onChanged={day.reload}
+        onRequestDelete={row => { deleteOwner.current += 1; setDeleteError(null); setEditing(null); setPendingDelete({ row, date }); }}
+        onCoach={() => { onCoachTap(editing?.row); setEditing(null); }}
         observations={observationRows}
         onPaired={(err) => {
           // Re-pairing rewrites BOTH sides — the ledger and the entry's grams —

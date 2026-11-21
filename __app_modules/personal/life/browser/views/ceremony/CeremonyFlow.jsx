@@ -7,7 +7,7 @@ import { UnitIntention } from "./UnitIntention.jsx";
 import { UnitCapture } from "./UnitCapture.jsx";
 import { CycleRetro } from "./CycleRetro.jsx";
 import { PhaseReview } from "./PhaseReview.jsx";
-import { ErrorState } from '@/lib/ui';
+import { ErrorState, useRetryRegion } from '@/lib/ui';
 import { LoadingState } from "../../components/index.js";
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 
@@ -31,6 +31,12 @@ export function CeremonyFlow({ type, username, onComplete }) {
   const logger = useMemo(() => getLogger().child({ component: 'ceremony-flow' }), []);
   const ceremony = useCeremony(type, username);
   const { content, loading, error, submitError, step, nextStep, prevStep, submit, submitting, completed } = ceremony;
+  const { regionProps, retry } = useRetryRegion(ceremony.reload, loading);
+  const region = children => (
+    <section aria-label="Life ceremony" {...regionProps}>
+      {children}
+    </section>
+  );
 
   const steps = useMemo(() => CEREMONY_STEPS[type] || ['Step 1', 'Step 2', 'Confirm'], [type]);
   const implemented = type in CEREMONY_COMPONENTS;
@@ -57,11 +63,11 @@ export function CeremonyFlow({ type, username, onComplete }) {
     }
   }, [completed, type, content, logger]);
 
-  if (loading) return <LoadingState />;
+  if (loading) return region(<LoadingState label="ceremony" />);
   if (error) {
     logger.warn('life.ceremony.error', { type, status: error.status, code: error.code, message: error.message });
     if (error.code === 'NO_PLAN') {
-      return (
+      return region(
         <Paper p="xl" withBorder>
           <Stack align="center" gap="md">
             <Title order={4}>You don&apos;t have a life plan yet</Title>
@@ -71,14 +77,14 @@ export function CeremonyFlow({ type, username, onComplete }) {
               See the plan page
             </Anchor>
           </Stack>
-        </Paper>
+        </Paper>,
       );
     }
-    return <ErrorState title="Ceremony unavailable" error={error} onRetry={ceremony.reload} />;
+    return region(<ErrorState title="Ceremony unavailable" error={error} onRetry={retry} />);
   }
 
   if (completed) {
-    return (
+    return region(
       <Paper p="xl" withBorder>
         <Stack align="center" gap="md">
           <IconCheck size={48} color="green" />
@@ -90,13 +96,13 @@ export function CeremonyFlow({ type, username, onComplete }) {
             <Button onClick={onComplete}>Return to Dashboard</Button>
           )}
         </Stack>
-      </Paper>
+      </Paper>,
     );
   }
 
   const isLastStep = step >= steps.length - 1;
 
-  return (
+  return region(
     <Stack gap="md">
       <Title order={4} tt="capitalize">{type.replace(/_/g, ' ')}</Title>
 
@@ -161,6 +167,6 @@ export function CeremonyFlow({ type, username, onComplete }) {
           </Button>
         )}
       </Group>
-    </Stack>
+    </Stack>,
   );
 }

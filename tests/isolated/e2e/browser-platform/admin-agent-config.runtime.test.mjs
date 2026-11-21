@@ -70,3 +70,39 @@ test('the config directory groups files and opens the chosen editable path', asy
   await main.getByRole('button', { name: /sample\.yml/ }).click();
   await expect(page).toHaveURL(/\/admin\/system\/config\/household\/sample\.yml$/);
 });
+
+test('config Back preserves a dirty YAML draft until discard is confirmed', async ({ page }) => {
+  const writes = [];
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path === '/api/v1/admin/config/files/household/sample.yml' && request.method() === 'GET') {
+      return route.fulfill({ json: { parsed: { enabled: true }, raw: 'enabled: true\n' } });
+    }
+    if (request.method() === 'PUT') writes.push(path);
+    return route.fulfill({ json: path.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+
+  await page.goto('/admin/system/config/household/sample.yml');
+  const editor = page.locator('.cm-content');
+  await expect(editor).toContainText('enabled: true');
+  await editor.fill('enabled: false');
+  const back = page.getByRole('link', { name: 'Back to Config', exact: true });
+  await expect(back).toHaveAttribute('href', '/admin/system/config');
+  await back.press('Enter');
+
+  const dialog = page.getByRole('dialog', { name: 'Discard unsaved changes?' });
+  await expect(dialog).toBeVisible();
+  await expect(editor).toContainText('enabled: false');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(back).toBeFocused();
+  await expect(editor).toContainText('enabled: false');
+  expect(writes).toEqual([]);
+
+  await back.press('Enter');
+  await page.getByRole('button', { name: 'Discard', exact: true }).click();
+  await expect(page).toHaveURL('/admin/system/config');
+  expect(writes).toEqual([]);
+});

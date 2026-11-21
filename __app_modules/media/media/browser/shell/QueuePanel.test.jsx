@@ -9,10 +9,54 @@ import { DispatchProvider } from "../cast/DispatchProvider.jsx";
 import { DispatchProgressTray } from "../cast/DispatchProgressTray.jsx";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { createFleetStore } from "../fleet/fleetStore.js";
+import { PeekContext } from "../peek/PeekContext.js";
 
 vi.mock("./NavProvider.jsx", () => ({ useNav: () => ({ push: vi.fn() }) }));
-vi.mock("../household/PlayedEarlier.jsx", () => ({ PlayedEarlier: () => null }));
+vi.mock("../household/PlayedEarlier.jsx", async () => {
+  const { useState } = await import('react');
+  return {
+    PlayedEarlier: ({ screenId }) => {
+      const [mountedFor] = useState(screenId);
+      if (!screenId.startsWith('tv-')) return null;
+      return <span data-testid="played-history-owner">{mountedFor}</span>;
+    },
+  };
+});
 vi.mock("../net/ws.js", () => ({ subscribeTopicKind: () => () => {}, parseDeviceTopic: () => null }));
+
+it('resets played-history local state when QueuePanel changes remote screen owner', () => {
+  const snapshots = {
+    'tv-a': { state: 'ready', currentItem: { contentId: 'track:one' }, queue: { items: [] }, config: {} },
+    'tv-b': { state: 'ready', currentItem: { contentId: 'track:one' }, queue: { items: [] }, config: {} },
+  };
+  const controllers = Object.fromEntries(Object.entries(snapshots).map(([id, snapshot]) => [id, {
+    getSnapshot: () => snapshot,
+    subscribe: () => () => {},
+    queue: {},
+    config: {},
+  }]));
+  const peek = { getController: id => controllers[id] };
+  const view = render(
+    <MantineProvider>
+      <PeekContext.Provider value={peek}>
+        <FleetContext.Provider value={{ store: createFleetStore(), devices: [] }}>
+          <DispatchProvider><QueuePanel target={{ deviceId: 'tv-a' }} /></DispatchProvider>
+        </FleetContext.Provider>
+      </PeekContext.Provider>
+    </MantineProvider>,
+  );
+  expect(screen.getByTestId('played-history-owner')).toHaveTextContent('tv-a');
+  view.rerender(
+    <MantineProvider>
+      <PeekContext.Provider value={peek}>
+        <FleetContext.Provider value={{ store: createFleetStore(), devices: [] }}>
+          <DispatchProvider><QueuePanel target={{ deviceId: 'tv-b' }} /></DispatchProvider>
+        </FleetContext.Provider>
+      </PeekContext.Provider>
+    </MantineProvider>,
+  );
+  expect(screen.getByTestId('played-history-owner')).toHaveTextContent('tv-b');
+});
 
 it('removes a queue entry, reports it through the outcome tray, and restores it through ordinary Undo', async () => {
   const controller = createLocalSessionController({ clientId: 'queue-test' });

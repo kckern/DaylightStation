@@ -36,7 +36,9 @@ async function installCeremony(page, { holdRetry = false, missingPlan = false } 
 test('Life retries the selected member’s ceremony content without submitting a completion', async ({ page }) => {
   const requests = await installCeremony(page);
   await page.getByRole('button', { name: 'Retry' }).click();
+  await expect(page.getByRole('region', { name: 'Life ceremony', exact: true })).toBeFocused();
   await expect(page.getByText('amy walking goal')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Life ceremony', exact: true })).not.toHaveAttribute('aria-busy', 'true');
   expect(requests).toEqual([{ method: 'GET', username: 'amy' }, { method: 'GET', username: 'amy' }]);
 });
 

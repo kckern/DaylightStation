@@ -58,6 +58,105 @@ test('Health focuses the custom food name and returns to the barcode launcher', 
   await expect(opener).toBeFocused();
 });
 
+test('Health keeps an unknown-food form and its admitted save while Today is hidden', async ({ page }) => {
+  const started = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const catalogPosts = [];
+  const quickAdds = [];
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));
+  await page.route('**/api/v1/health/day?**', route => route.fulfill({
+    json: { items: [], budget: { budget: 2000, remaining: 2000 } },
+  }));
+  await page.route('**/api/v1/health/nutrition/input', route => route.fulfill({
+    json: { unknownUpc: true, upc: '012345678905' },
+  }));
+  await page.route('**/api/v1/health/nutrition/catalog', async route => {
+    catalogPosts.push(route.request().postDataJSON());
+    if (catalogPosts.length === 1) {
+      started.resolve();
+      await release.promise;
+    }
+    return route.fulfill({ json: { entry: { id: `food-${catalogPosts.length}` } } });
+  });
+  await page.route('**/api/v1/health/nutrition/catalog/quickadd', route => {
+    quickAdds.push(route.request().postDataJSON());
+    return route.fulfill({ json: { id: `log-${quickAdds.length}` } });
+  });
+
+  await page.goto('/health/progress');
+  await page.getByRole('link', { name: 'Today', exact: true }).click();
+  const opener = page.getByRole('button', { name: 'Scan barcode to Breakfast', exact: true });
+  await opener.press('Enter');
+  const scanner = page.getByRole('dialog', { name: 'Scan barcode' });
+  await scanner.getByRole('textbox', { name: 'Manual UPC entry' }).fill('012345678905');
+  await scanner.getByRole('button', { name: 'Look up' }).press('Enter');
+
+  const form = page.getByRole('dialog', { name: 'New food' });
+  const name = form.getByRole('textbox', { name: 'Name', exact: true });
+  await name.fill('Trail mix');
+  await form.getByLabel('Weight in grams', { exact: true }).fill('100');
+  await form.getByRole('button', { name: 'Create & log' }).click();
+  await started.promise;
+  await page.goBack();
+  await expect(page).toHaveURL('/health/progress');
+  await expect(form).toBeHidden();
+  await page.goForward();
+
+  await expect(page).toHaveURL('/health');
+  await expect(name).toHaveValue('Trail mix');
+  await expect(form.getByRole('button', { name: 'Create & log' })).toBeDisabled();
+  expect(catalogPosts).toHaveLength(1);
+  expect(quickAdds).toHaveLength(0);
+  release.resolve();
+  await expect.poll(() => quickAdds.length).toBe(1);
+  expect(catalogPosts).toHaveLength(1);
+});
+
+test('Health does not continue an unknown-food create after its Health session ends', async ({ page }) => {
+  const started = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const quickAdds = [];
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));
+  await page.route('**/api/v1/health/day?**', route => route.fulfill({
+    json: { items: [], budget: { budget: 2000, remaining: 2000 } },
+  }));
+  await page.route('**/api/v1/health/nutrition/input', route => route.fulfill({
+    json: { unknownUpc: true, upc: '012345678905' },
+  }));
+  await page.route('**/api/v1/health/nutrition/catalog', async route => {
+    started.resolve();
+    await release.promise;
+    return route.fulfill({ json: { entry: { id: 'food-after-session' } } });
+  });
+  await page.route('**/api/v1/health/nutrition/catalog/quickadd', route => {
+    quickAdds.push(route.request().postDataJSON());
+    return route.fulfill({ json: { id: 'log-after-session' } });
+  });
+  await page.goto('/health');
+  await page.getByRole('button', { name: 'Scan barcode to Breakfast', exact: true }).press('Enter');
+  const scanner = page.getByRole('dialog', { name: 'Scan barcode' });
+  await scanner.getByRole('textbox', { name: 'Manual UPC entry' }).fill('012345678905');
+  await scanner.getByRole('button', { name: 'Look up' }).press('Enter');
+  const form = page.getByRole('dialog', { name: 'New food' });
+  await form.getByRole('textbox', { name: 'Name', exact: true }).fill('Trail mix');
+  await form.getByLabel('Weight in grams', { exact: true }).fill('100');
+  await form.getByRole('button', { name: 'Create & log' }).click();
+  await started.promise;
+  const catalogResponse = page.waitForResponse(response => response.url().includes('/api/v1/health/nutrition/catalog')
+    && response.request().method() === 'POST');
+  await page.evaluate(() => {
+    window.history.pushState({}, '', '/home');
+    window.dispatchEvent(new PopStateEvent('popstate', { state: window.history.state }));
+  });
+  await expect(page.getByRole('region', { name: 'Home Assistant' })).toBeVisible();
+  release.resolve();
+  await catalogResponse;
+  await page.waitForTimeout(150);
+  expect(quickAdds).toHaveLength(0);
+});
+
 for (const size of [{ width: 390, height: 850 }, { width: 844, height: 390 }]) {
   test(`Health barcode controls stay inside the safe area and keyboard viewport at ${size.width}px`, async ({ page }) => {
     const insets = { top: 30, right: 27, bottom: 24, left: 40 };

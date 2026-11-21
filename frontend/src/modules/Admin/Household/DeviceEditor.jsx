@@ -11,23 +11,11 @@ import { ConfirmModal } from '@/lib/ui/ConfirmModal.jsx';
 import SaveBar from '../shared/SaveBar.jsx';
 import EditorReadRegion from '../shared/EditorReadRegion.jsx';
 import { useUnsavedGuard } from '../shared/useUnsavedGuard.js';
+import GuardedLink from '../shared/GuardedLink.jsx';
+import { useGuardedNavigate } from '../shared/useGuardedNavigate.js';
 import { notifySuccess, notifyFailure } from '../shared/feedback.js';
-
-const DEVICE_TYPE_OPTIONS = [
-  { value: 'shield-tv', label: 'Shield TV' },
-  { value: 'linux-pc', label: 'Linux PC' },
-  { value: 'midi-keyboard', label: 'MIDI Keyboard' }
-];
-
-/**
- * Get a Badge color for a device type.
- */
-function typeBadgeColor(type) {
-  if (type === 'shield-tv') return 'blue';
-  if (type === 'linux-pc') return 'green';
-  if (type === 'midi-keyboard') return 'orange';
-  return 'gray';
-}
+import { DEVICE_TYPES, deviceTypeBadgeColor } from '../utils/constants.js';
+import { clearAdminDraft, useAdminDraftState } from '../shared/useAdminDraftState.js';
 
 /**
  * Section wrapper for grouping related fields.
@@ -236,13 +224,13 @@ function MidiKeyboardSections({ device, updateField }) {
 
 function DeviceEditor() {
   const { deviceId } = useParams();
-  const navigate = useNavigate();
   const { data, loading, error, reload } = useApiResource(`/api/v1/admin/household/devices/${deviceId}`);
 
   const back = (
     <Anchor
+      component={GuardedLink}
+      to="/admin/household/devices"
       size="sm"
-      onClick={() => navigate('/admin/household/devices')}
       style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
     >
       <IconArrowBack size={14} /> Back to Devices
@@ -273,8 +261,9 @@ function DeviceEditor() {
 
 function DeviceDraft({ deviceId, initialDevice }) {
   const navigate = useNavigate();
-  const [device, setDevice] = useState(initialDevice);
-  const [original, setOriginal] = useState(initialDevice);
+  const guardedNavigate = useGuardedNavigate();
+  const draftKey = `device:${deviceId}`;
+  const [device, setDevice, original, setOriginal] = useAdminDraftState(draftKey, initialDevice);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -287,8 +276,9 @@ function DeviceDraft({ deviceId, initialDevice }) {
 
   const dirty = JSON.stringify(device) !== JSON.stringify(original);
 
-  // Unsaved-changes guard: beforeunload + AdminNav interception (audit C1)
-  useUnsavedGuard(dirty, { label: `device:${deviceId}` });
+  // Unsaved-changes guard: beforeunload + guarded Admin navigation (audit C1)
+  const clearDraft = React.useCallback(() => clearAdminDraft(draftKey), [draftKey]);
+  useUnsavedGuard(dirty, { label: `device:${deviceId}`, onDiscard: clearDraft });
 
   function updateField(path, value) {
     setDevice(prev => {
@@ -346,8 +336,9 @@ function DeviceDraft({ deviceId, initialDevice }) {
     <Stack gap="md">
       {/* Header */}
       <Anchor
+        component={GuardedLink}
+        to="/admin/household/devices"
         size="sm"
-        onClick={() => navigate('/admin/household/devices')}
         style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
       >
         <IconArrowBack size={14} /> Back to Devices
@@ -358,7 +349,7 @@ function DeviceDraft({ deviceId, initialDevice }) {
         title={(
           <Group gap="sm" align="center">
             <span className="ds-page-title">{device.id}</span>
-            <Badge color={typeBadgeColor(device.type)} variant="light" size="lg">
+            <Badge color={deviceTypeBadgeColor(device.type)} variant="light" size="lg">
               {device.type || 'unknown'}
             </Badge>
           </Group>
@@ -377,7 +368,7 @@ function DeviceDraft({ deviceId, initialDevice }) {
                 variant="light"
                 size="sm"
                 leftSection={<IconDeviceDesktopCog size={14} />}
-                onClick={() => navigate(`/admin/household/devices/${deviceId}/fully-kiosk`)}
+                onClick={() => guardedNavigate(`/admin/household/devices/${deviceId}/fully-kiosk`)}
               >
                 {device.content_control.provider === 'fully-kiosk' ? 'Fully Kiosk Console' : 'Kiosk Console'}
               </Button>
@@ -411,7 +402,7 @@ function DeviceDraft({ deviceId, initialDevice }) {
       <DeviceFieldsSection title="General">
         <Select
           label="Type"
-          data={DEVICE_TYPE_OPTIONS}
+          data={DEVICE_TYPES}
           value={device.type}
           readOnly
           description="Device type cannot be changed after creation"

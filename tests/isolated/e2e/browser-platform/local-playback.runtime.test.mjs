@@ -42,6 +42,46 @@ async function originalClock(page) {
   return () => node.evaluate(media => media.isConnected && !media.paused ? media.currentTime : -1);
 }
 
+test.describe('Feed mini player coarse-pointer controls', () => {
+  test.use({ hasTouch: true });
+
+  test('mini-bar controls and seek target meet 44px and playback survives resize', async ({ page }) => {
+    await page.routeWebSocket('**/ws', () => {});
+    await page.goto('/feed/scroll');
+    await page.getByRole('button', { name: 'Play', exact: true }).first().click();
+    const clock = await originalClock(page);
+    const audio = page.locator('audio[src$="fixture-audio.wav"]');
+    const region = page.getByRole('region', { name: 'Now playing' });
+    await expect(region).toBeVisible();
+    expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
+
+    const controls = [
+      region.getByRole('button', { name: /Open player/ }),
+      region.getByRole('button', { name: 'Pause', exact: true }),
+      region.getByRole('button', { name: /Playback speed/ }),
+      region.getByRole('button', { name: 'Stop playback', exact: true }),
+    ];
+    for (const control of controls) {
+      const bounds = await control.boundingBox();
+      expect(bounds.width).toBeGreaterThanOrEqual(44);
+      expect(bounds.height).toBeGreaterThanOrEqual(44);
+    }
+    const seek = region.getByRole('slider', { name: 'Playback position', exact: true });
+    const seekBounds = await seek.boundingBox();
+    expect(seekBounds.height).toBeGreaterThanOrEqual(44);
+
+    const pauseBounds = await controls[1].boundingBox();
+    await page.touchscreen.tap(pauseBounds.x + pauseBounds.width - 2, pauseBounds.y + pauseBounds.height / 2);
+    await expect.poll(() => audio.evaluate(node => node.paused)).toBe(true);
+    const pausedAt = await clock();
+    await page.setViewportSize({ width: 1440, height: 850 });
+    await expect.poll(() => audio.evaluate(node => node.isConnected && node.paused)).toBe(true);
+    expect(await clock()).toBeCloseTo(pausedAt, 0);
+    await region.getByRole('button', { name: 'Play', exact: true }).click();
+    await expect.poll(clock).toBeGreaterThan(pausedAt);
+  });
+});
+
 test('Media Start fresh forgets a Play URL only after a full reset', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 850 });
   await page.routeWebSocket('**/ws', () => {});

@@ -15,7 +15,6 @@ export { LoadingState, ErrorState, EmptyState, StateMessage } from './states.jsx
 export { SectionCard, StatCard } from './cards.jsx';
 export { default as Skeleton } from './Skeleton.jsx';
 export { DateStepper } from './DateStepper.jsx';
-export { AskAffordance } from './AskAffordance.jsx';
 export { createAppLogger } from './createAppLogger.js';
 export { TouchButton } from './TouchButton.jsx';
 export { ToastRegion, Toast } from './Toast.jsx';

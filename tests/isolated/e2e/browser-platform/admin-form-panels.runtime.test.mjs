@@ -136,13 +136,16 @@ for (const action of ['Play', 'Queue']) test(`Admin keeps the selected screen pr
   const song = {
     id: 'plex:42', contentId: 'plex:42', title: 'Preview song', format: 'audio', mediaType: 'audio', mediaUrl: '/preview-song.wav', duration: 30,
   };
+  const secondQueueSong = {
+    id: 'plex:43', contentId: 'plex:43', title: 'Second preview song', format: 'audio', mediaType: 'audio', mediaUrl: '/preview-song.wav', duration: 30,
+  };
   await page.route(url => decodeURIComponent(url.pathname) === '/api/v1/play/plex:42', route => route.fulfill({ json: song }));
   const queue = Promise.withResolvers();
   if (action === 'Queue') {
     await page.addInitScript(() => localStorage.setItem('daylight.adminPreview.screenId', 'portal'));
     await page.route(url => decodeURIComponent(url.pathname) === '/api/v1/queue/plex:42', async route => {
       await queue.promise;
-      return route.fulfill({ json: { items: [song] } });
+      return route.fulfill({ json: { items: [song, secondQueueSong] } });
     });
   }
 
@@ -205,6 +208,17 @@ for (const action of ['Play', 'Queue']) test(`Admin keeps the selected screen pr
   await expect.poll(geometry).toMatchObject(expectedFrame);
   expect((await geometry()).width).toBeGreaterThan(900);
   await expect.poll(() => audio.evaluate(el => el.isConnected && !el.paused ? el.currentTime : -1)).toBeGreaterThan(before);
+
+  if (action === 'Queue') {
+    const secondTrack = dialog.getByRole('button', { name: 'Second preview song', exact: true });
+    await secondTrack.focus();
+    await expect(secondTrack).toBeFocused();
+    await expect(secondTrack).toHaveAttribute('aria-pressed', 'false');
+    await secondTrack.press('Enter');
+    await expect(dialog.getByText('Playing 2 of 2')).toBeVisible();
+    await expect(secondTrack).toHaveAttribute('aria-pressed', 'true');
+    await expect(secondTrack).toBeFocused();
+  }
 });
 
 test('an Admin app preview owns its exact WebSocket topic while open', async ({ page }) => {
@@ -429,6 +443,85 @@ test('Admin Gratitude preview removes persisted events by selection ID and resol
   await expect.poll(() => subscriptionActions.filter(action => action === 'unsubscribe').length).toBe(2);
   expect(writes).toEqual([]);
   expect(bootstrapReads).toBe(2);
+});
+
+test('Admin Gratitude keeps overlapping legacy lookups independent and aborts them on preview close', async ({ page }) => {
+  await installFixtures(page);
+  await page.route('**/api/v1/admin/content/lists/menus/gratitude-overlap-fixture', route => route.fulfill({
+    json: {
+      name: 'gratitude-overlap-fixture',
+      sections: [{ items: [{ uid: 'gratitude-overlap', label: 'Gratitude overlap fixture', action: 'Open', input: 'app:gratitude' }] }],
+    },
+  }));
+
+  const legacyReads = [];
+  const failedLegacyReads = [];
+  await page.route('**/api/v1/gratitude/**', async route => {
+    const request = route.request();
+    const { pathname } = new URL(request.url());
+    if (pathname.endsWith('/bootstrap')) return route.fulfill({ json: {
+      users: [{ id: 'alice', name: 'Alice' }],
+      options: { gratitude: [], hopes: [] },
+      selections: { gratitude: [], hopes: [] },
+    } });
+    if (pathname.endsWith('/selections/gratitude') && request.method() === 'GET') {
+      legacyReads.push(route);
+      return;
+    }
+    return route.fulfill({ json: {} });
+  });
+  page.on('requestfailed', request => {
+    if (new URL(request.url()).pathname.endsWith('/selections/gratitude')) failedLegacyReads.push(request.failure());
+  });
+
+  let gratitudeSocket;
+  const subscriptionActions = [];
+  await page.routeWebSocket(url => url.pathname === '/ws', socket => {
+    gratitudeSocket = socket;
+    socket.onMessage(raw => {
+      const message = JSON.parse(raw);
+      if (message.type === 'bus_command' && message.topics?.includes('gratitude')) subscriptionActions.push(message.action);
+    });
+  });
+
+  await page.goto('/admin/content/lists/menus/gratitude-overlap-fixture');
+  const preview = page.getByTitle('Preview app', { exact: true });
+  await preview.click();
+  const dialog = page.getByRole('dialog', { name: 'Gratitude overlap fixture' });
+  await expect(dialog).toBeVisible();
+  await expect.poll(() => Boolean(gratitudeSocket && subscriptionActions.includes('subscribe'))).toBe(true);
+
+  let expectedReads = 0;
+  for (const [id, text] of [['legacy-a', 'Legacy event A'], ['legacy-b', 'Legacy event B']]) {
+    gratitudeSocket.send(JSON.stringify({
+      topic: 'gratitude', action: 'item_added', userId: 'alice', userName: 'Alice',
+      category: 'gratitude', source: 'homebot', items: [{ id, text }],
+    }));
+    await expect.poll(() => legacyReads.length).toBe(++expectedReads);
+  }
+  const snapshot = [
+    { id: 'selection-a', userId: 'alice', item: { id: 'legacy-a', text: 'Legacy event A' }, datetime: '2026-11-20T12:00:00.000Z' },
+    { id: 'selection-b', userId: 'alice', item: { id: 'legacy-b', text: 'Legacy event B' }, datetime: '2026-11-20T12:00:00.000Z' },
+  ];
+  await Promise.all(legacyReads.slice(0, 2).map((route, index) => route.fulfill({ json: { items: [snapshot[index]] } })));
+  const rows = dialog.locator('.selected-column .item-text');
+  await expect(rows).toHaveCount(2);
+  await expect(dialog.locator('.selected-column .selection-status')).toHaveCount(0);
+
+  gratitudeSocket.send(JSON.stringify({
+    topic: 'gratitude', action: 'item_added', userId: 'alice', userName: 'Alice',
+    category: 'gratitude', source: 'homebot', items: [{ id: 'legacy-c', text: 'Late event C' }],
+  }));
+  await expect.poll(() => legacyReads.length).toBe(3);
+  await dialog.locator('.gratitude-app-inner').focus();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect.poll(() => failedLegacyReads.length).toBeGreaterThan(0);
+  expect(subscriptionActions.filter(action => action === 'unsubscribe')).toHaveLength(1);
+
+  await preview.click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('.selected-column .item-text').filter({ hasText: 'Late event C' })).toHaveCount(0);
 });
 
 test('Admin Gratitude preview waits for selection acknowledgement before removal', async ({ page }) => {

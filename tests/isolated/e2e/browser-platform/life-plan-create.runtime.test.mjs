@@ -13,12 +13,6 @@ const forms = [
     row: draft => draft.name,
   },
   {
-    noun: 'value', section: 'values', read: '',
-    fields: { Value: 'name' },
-    result: (id, draft) => ({ id, ...draft, rank: id }),
-    row: draft => draft.name,
-  },
-  {
     noun: 'belief', section: 'beliefs', read: 'beliefs',
     fields: { 'If I…': 'if_hypothesis', '…then': 'then_outcome' },
     result: (id, draft) => ({ id, if_hypothesis: draft.if_hypothesis, then_expectation: draft.then_outcome, state: 'testing' }),
@@ -123,3 +117,64 @@ for (const { noun, section, read, fields, result, row } of forms) {
     });
   }
 }
+
+test('Life Values returns focus to the page while a submitted create remains locked', async ({ page }) => {
+  const submitted = [];
+  const saved = [];
+  const first = Promise.withResolvers();
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', async route => {
+    const request = route.request();
+    const { pathname } = new URL(request.url());
+    if (pathname === '/api/v1/life/users') return route.fulfill({ json: { users: [member] } });
+    if (pathname === '/api/v1/life/user') return route.fulfill({ json: member });
+    if (pathname === plan && request.method() === 'GET') return route.fulfill({ json: { values: saved } });
+    if (pathname === plan + 'values' && request.method() === 'POST') {
+      const body = request.postDataJSON();
+      submitted.push(body);
+      if (submitted.length === 1) await first.promise;
+      const value = { id: saved.length + 1, ...body, rank: saved.length + 1 };
+      saved.push(value);
+      return route.fulfill({ status: 201, json: value });
+    }
+    return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+
+  await page.goto('/life/plan/values');
+  const opener = page.getByRole('button', { name: 'Add value', exact: true });
+  const heading = page.getByRole('heading', { name: 'Values', exact: true });
+  await expect(opener).toBeEnabled();
+  await opener.press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'Add value', exact: true });
+  const input = dialog.getByRole('textbox', { name: 'Value', exact: true });
+  await input.fill('Original value');
+  await dialog.getByRole('button', { name: 'Create value', exact: true }).click();
+  await expect.poll(() => submitted).toEqual([{ name: 'Original value' }]);
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(heading).toBeFocused();
+  await expect(opener).toBeDisabled();
+  await page.keyboard.press('Enter');
+  await expect(dialog).toBeHidden();
+  expect(submitted).toEqual([{ name: 'Original value' }]);
+
+  const completed = page.waitForResponse(response =>
+    new URL(response.url()).pathname === plan + 'values' && response.request().method() === 'POST');
+  first.resolve();
+  const response = await completed;
+  expect(response.status()).toBe(201);
+  await expect(page.getByText('Original value', { exact: true })).toBeVisible();
+  await expect(opener).toBeEnabled();
+  await expect(heading).toBeFocused();
+
+  await opener.press('Enter');
+  await expect(dialog).toBeVisible();
+  await expect(input).toHaveValue('');
+  await input.fill('Replacement value');
+  await dialog.getByRole('button', { name: 'Create value', exact: true }).click();
+  await expect.poll(() => submitted).toEqual([{ name: 'Original value' }, { name: 'Replacement value' }]);
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText('Replacement value', { exact: true })).toBeVisible();
+  await expect(opener).toBeFocused();
+});

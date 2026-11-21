@@ -7,6 +7,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Text, UnstyledButton } from '@mantine/core';
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { ErrorState, LoadingState, useRetryRegion } from '@/lib/ui';
 import mediaLog from "../logging/mediaLog.js";
 import { playedEarlierPath } from "./householdApi.js";
 import { playedAtLabel, toItem } from "./householdModel.js";
@@ -17,6 +18,7 @@ import "./PlayedEarlier.scss";
 
 const PAGE = 20;
 const MAX = 200;
+const INVALID_HISTORY_RESPONSE = Object.freeze(new Error('The history response did not include a valid item list.'));
 // A music queue moves on every few minutes; refresh at most this often.
 export const REFRESH_MIN_MS = 60_000;
 
@@ -28,9 +30,11 @@ export const REFRESH_MIN_MS = 60_000;
 export function PlayedEarlier({ screenId, currentContentId = null }) {
   const [limit, setLimit] = useState(PAGE);
   const path = screenId ? playedEarlierPath(screenId, { limit }) : null;
-  const { data, loading, error, reload } = useApiResource(path, {
+  const { data, hasResult, loading, error, reload, revalidating } = useApiResource(path, {
     swr: true, label: 'media-played-earlier', logger: householdResourceLogger,
   });
+  const busy = loading || revalidating;
+  const { regionProps, retry } = useRetryRegion(reload, busy);
   // When the screen moves on, what it played becomes "earlier" — refresh,
   // but not on every track of a music queue.
   const lastRefreshRef = useRef(Date.now());
@@ -58,23 +62,20 @@ export function PlayedEarlier({ screenId, currentContentId = null }) {
   const favourites = useFavourites();
   const { run, overlays } = useItemVerbs();
   const items = Array.isArray(data?.items) ? data.items : [];
+  const invalidResponse = hasResult && !Array.isArray(data?.items);
+  const readError = error ?? (!busy && invalidResponse ? INVALID_HISTORY_RESPONSE : null);
 
   useEffect(() => {
-    if (data) mediaLog.playedEarlierShown({ screenId, count: items.length, limit });
-  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (hasResult && !invalidResponse) mediaLog.playedEarlierShown({ screenId, count: items.length, limit });
+  }, [data, hasResult, invalidResponse]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!screenId) return null;
   return (
-    <section className="played-earlier" data-testid="played-earlier" aria-labelledby="played-earlier-title">
+    <section className="played-earlier" data-testid="played-earlier" aria-labelledby="played-earlier-title" {...regionProps}>
       <Text component="h3" className="played-earlier-title" id="played-earlier-title">Played earlier</Text>
-      {loading && !data && <Text size="sm" c="dimmed" data-testid="played-earlier-loading">Loading…</Text>}
-      {error && !data && (
-        <Text size="sm" c="dimmed" data-testid="played-earlier-error">
-          Couldn&apos;t load what played earlier.{' '}
-          <Button size="compact-sm" variant="subtle" onClick={reload}>Try again</Button>
-        </Text>
-      )}
-      {data && items.length === 0 && (
+      {busy && items.length === 0 && <LoadingState label="played history" rows={1} data-testid="played-earlier-loading" />}
+      {readError && <ErrorState error={readError} onRetry={retry} label="Played earlier" title="Couldn’t load this history" />}
+      {hasResult && !readError && !busy && items.length === 0 && (
         <Text size="sm" c="dimmed" data-testid="played-earlier-empty">Nothing has played here yet.</Text>
       )}
       {items.length > 0 && (

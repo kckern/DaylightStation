@@ -8,7 +8,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Button, Group, List, Stack, Text, TextInput } from '@mantine/core';
 import { IconDeviceFloppy } from '@tabler/icons-react';
 import { FormDialog } from '@/lib/ui/FormDialog.jsx';
-import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 
 export function RenameScreenDialog({
   open, onClose, title = 'Rename this device', initialName = '', initialRoom = '', withRoom = true,
@@ -19,7 +18,6 @@ export function RenameScreenDialog({
   const [busy, setBusy] = useState(false);
   const [answer, setAnswer] = useState(null);
   const draftRef = useRef(null);
-  const usesDismissStack = useDismissLayer(open, onClose);
   useEffect(() => {
     if (!open) {
       draftRef.current = null;
@@ -55,7 +53,7 @@ export function RenameScreenDialog({
   };
 
   return (
-    <FormDialog opened={open} onClose={onClose} closeOnEscape={!usesDismissStack} title={title} centered>
+    <FormDialog opened={open} onClose={onClose} title={title} centered>
       <Stack gap="sm" data-testid={`${testid}-dialog`}>
         <TextInput
           label={nameLabel}

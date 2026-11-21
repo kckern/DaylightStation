@@ -5,7 +5,7 @@ import { useElementSize } from '@mantine/hooks';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { getPreferredScrollBehavior } from '../../../lib/ui/browserMotion.js';
-import { EmptyState, ErrorState, StateMessage } from '../../../lib/ui/states.jsx';
+import { Button, EmptyState, ErrorState, StateMessage } from '../../../lib/ui/index.js';
 import { Player as Player } from "../../../../../__app_modules/media/media/browser/playback.mjs";
 import { previewFrameVars } from './previewFrame.js';
 import { usePreviewScreens, FALLBACK_SCREEN } from './usePreviewScreens.js';
@@ -129,27 +129,35 @@ export default function AdminPreviewPlayer({ contentId, action, volume, playback
             <span>Playing {currentIndex + 1} of {queueItems.length}</span>
           </div>
           <div className="admin-preview-player__queue-bar">
-            {queueItems.map((item, i) => (
-              <div
-                key={item.id || i}
-                ref={i === currentIndex ? activeRef : undefined}
-                className={`admin-preview-player__queue-item${i === currentIndex ? ' admin-preview-player__queue-item--active' : ''}`}
-                onClick={() => setSelection({ path: queuePath, index: i })}
-                title={item.title}
-              >
-                {item.thumbnail ? (
-                  <img
-                    className="admin-preview-player__queue-thumb"
-                    src={DaylightMediaPath(item.thumbnail)}
-                    alt=""
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="admin-preview-player__queue-thumb" />
-                )}
-                <div className="admin-preview-player__queue-title">{item.title}</div>
-              </div>
-            ))}
+            {queueItems.map((item, i) => {
+              const trackLabel = item.title || item.contentId || item.id || `Track ${i + 1}`;
+              return (
+                <Button
+                  key={item.id || i}
+                  ref={i === currentIndex ? activeRef : undefined}
+                  className={`admin-preview-player__queue-item${i === currentIndex ? ' admin-preview-player__queue-item--active' : ''}`}
+                  variant="plain"
+                  density="compact"
+                  wrapLabel={false}
+                  aria-label={trackLabel}
+                  aria-pressed={i === currentIndex}
+                  onClick={() => setSelection({ path: queuePath, index: i })}
+                  title={trackLabel}
+                >
+                  {item.thumbnail ? (
+                    <img
+                      className="admin-preview-player__queue-thumb"
+                      src={DaylightMediaPath(item.thumbnail)}
+                      alt=""
+                      loading="lazy"
+                    />
+                  ) : (
+                    <span className="admin-preview-player__queue-thumb" aria-hidden="true" />
+                  )}
+                  <span className="admin-preview-player__queue-title">{trackLabel}</span>
+                </Button>
+              );
+            })}
           </div>
         </>
       )}

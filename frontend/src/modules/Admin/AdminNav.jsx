@@ -1,10 +1,9 @@
-import React, { useState, useMemo, useCallback, useLayoutEffect, useRef } from 'react';
-import { NavLink as RouterNavLink, useLocation, useNavigate } from 'react-router-dom';
+import React, { useCallback, useLayoutEffect, useRef } from 'react';
+import { NavLink as RouterNavLink, useLocation } from 'react-router-dom';
 import { NavLink, Stack, Text, Box } from '@mantine/core';
 import { useUnsavedGuardRegistry } from './shared/useUnsavedGuardRegistry.js';
+import { shouldGuardNavigation } from './shared/GuardedLink.jsx';
 import { useDismissLayer } from '../../lib/ui/dismiss/useDismissLayer.js';
-import { ConfirmModal } from '@/lib/ui/ConfirmModal.jsx';
-import getLogger from '../../lib/logging/Logger.js';
 import {
   IconMenu2, IconPlayerRecord, IconCalendarEvent,
   IconRun, IconCoin, IconHeart, IconShoppingCart,
@@ -80,39 +79,19 @@ const navSections = [
 function AdminNav({ opened, onDismiss }) {
   const list = useRef(null);
   const location = useLocation();
-  const navigate = useNavigate();
   const guardRegistry = useUnsavedGuardRegistry();
-  const logger = useMemo(() => getLogger().child({ component: 'admin-nav' }), []);
-
-  // Destination intercepted by the unsaved-changes guard (null = no modal).
-  const [pendingTo, setPendingTo] = useState(null);
 
   useDismissLayer(opened, onDismiss);
-  const cancelDiscard = useCallback(() => setPendingTo(null), []);
-  useDismissLayer(opened && pendingTo !== null, cancelDiscard);
   useLayoutEffect(() => {
     if (!opened) return;
     const current = list.current.querySelector('[aria-current="page"]') || list.current.querySelector('a[href]');
     current?.focus();
   }, [opened]);
 
-  // Intercept navigation while any registered editor is dirty (audit C1).
   const handleNavClick = useCallback((event, to) => {
-    if (guardRegistry?.isAnyDirty()) {
-      event.preventDefault();
-      setPendingTo(to);
-      logger.info('unsaved_guard.nav_blocked', { to });
-    }
-  }, [guardRegistry, logger]);
-
-  const handleDiscardConfirm = useCallback(() => {
-    const to = pendingTo;
-    setPendingTo(null);
-    if (to) {
-      logger.info('unsaved_guard.discard_confirmed', { to });
-      navigate(to);
-    }
-  }, [pendingTo, navigate, logger]);
+    if (guardRegistry && shouldGuardNavigation(event, event.currentTarget.target)
+      && !guardRegistry.prepareNavigation(to)) event.preventDefault();
+  }, [guardRegistry]);
 
   function handleBlur(event) {
     // The browser drops focus when the compact breakpoint hides the focused rail.
@@ -171,23 +150,12 @@ function AdminNav({ opened, onDismiss }) {
                 active={isActive}
                 variant="subtle"
                 className={`ds-nav-item ${isActive ? 'ds-nav-item-active' : ''}`}
-                onClick={(event) => handleNavClick(event, item.to)}
+                onClick={event => handleNavClick(event, item.to)}
               />
             );
           })}
         </Box>
       ))}
-
-      <ConfirmModal
-        opened={pendingTo !== null}
-        onClose={cancelDiscard}
-        closeOnEscape={!opened}
-        onConfirm={handleDiscardConfirm}
-        title="Discard unsaved changes?"
-        message="You have unsaved changes on this page."
-        impact="Your edits will be lost."
-        confirmLabel="Discard"
-      />
     </Stack>
   );
 }
