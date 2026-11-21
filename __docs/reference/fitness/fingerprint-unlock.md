@@ -254,6 +254,12 @@ skipped challenge as success. Denial or cancellation retains the lock; advancing
 to the next item clears the bypass, and a scan started for an earlier item cannot
 unlock the new one.
 
+The bypass is decided in `FitnessPlayer` but applied in one place:
+`FitnessContext` (`setGovernanceBypassed` → `applyGovernanceBypass`), whose
+`governanceState` is what the player, overlays, sidebar and the
+[playback-budget meter](playback-budgets.md) all read. The GovernanceEngine's own
+snapshot keeps its lock and is never handed to anything that can pause the video.
+
 During cadence sensor recovery, the frozen cycling lock is not promoted and its
 lock audio stops; the recovery dial stays visible. Base heart-rate governance can
 still hold playback and show its normal lock panel and configured fingerprint

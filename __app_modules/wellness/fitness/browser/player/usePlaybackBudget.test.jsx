@@ -7,6 +7,7 @@ vi.mock('../../../../../frontend/src/lib/api.mjs',()=>({DaylightAPI:vi.fn(async 
 })}));
 vi.mock('../../../../../frontend/src/lib/logging/Logger.js',()=>({default:()=>({warn:vi.fn()})}));
 import { usePlaybackBudget } from './usePlaybackBudget.js';
+import { applyGovernanceBypass } from './governanceBypass.js';
 afterEach(()=>{cleanup();fixture.bodies=[];});
 it('observes a supervisor joining an exhausted screen after the Player closes',async()=>{
  const mediaRef={current:null};const initial={deviceId:'tv',policies:[{id:'cap'}],supervisorIds:['parent'],participantRoster:[{id:'child',isActive:true}],currentMedia:{contentId:'plex:1'},governanceState:{isGoverned:true,videoLocked:false},mediaRef,externalHold:false};
@@ -51,5 +52,30 @@ it('with no device id an admin override still opens the item',async()=>{
  await waitFor(()=>expect(h.result.current).toMatchObject({blocked:true,status:'unavailable'}));
  act(()=>{h.result.current.grantOverride({userId:'parent'});});
  await waitFor(()=>expect(h.result.current).toMatchObject({blocked:false,status:'overridden'}));
+ h.unmount();
+});
+// 2026-11-20 (garage, Danny Go): a `governance_bypass` fingerprint released the
+// player's lock, but the meter was handed the engine snapshot (videoLocked: true),
+// held the media (status `held`, no cover) and re-paused it within 3 ms of each of
+// 14 play presses. The meter must be given the bypassed state FitnessContext publishes.
+function fakeVideo(){
+ const media=new EventTarget();Object.assign(media,{tagName:'VIDEO',paused:true,readyState:4,seeking:false,currentTime:0});
+ media.pause=()=>{if(media.paused)return;media.paused=true;media.dispatchEvent(new Event('pause'));};
+ media.play=async()=>{media.paused=false;media.dispatchEvent(new Event('play'));};
+ return media;
+}
+it('an engine lock holds the media on play; the bypassed state lets the unlocked item play',async()=>{
+ const media=fakeVideo();const mediaRef={current:media};
+ const engineLocked={status:'pending',isGoverned:true,videoLocked:true};
+ const props={deviceId:'tv',policies:[{id:'cap'}],supervisorIds:['parent'],participantRoster:[{id:'child',isActive:true}],currentMedia:{contentId:'plex:674297'},governanceState:engineLocked,mediaRef,externalHold:false};
+ const h=renderHook(p=>usePlaybackBudget(p),{initialProps:props});
+ await waitFor(()=>expect(h.result.current.status).toBe('held'));
+ await act(async()=>{await media.play();});
+ expect(media.paused).toBe(true); // the incident: the meter re-paused it
+ h.rerender({...props,governanceState:applyGovernanceBypass(engineLocked,true)});
+ await waitFor(()=>expect(h.result.current.status).toBe('inactive'));
+ await act(async()=>{await media.play();});
+ await new Promise(r=>setTimeout(r,120)); // several meter polls
+ expect(media.paused).toBe(false);
  h.unmount();
 });

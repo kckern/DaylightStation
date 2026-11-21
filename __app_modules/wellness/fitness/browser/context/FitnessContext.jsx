@@ -4,7 +4,8 @@ import { committedZoneId, earnedZoneFields } from '../lib/committedZone.js';
 import { displayZoneRecord } from '../lib/displayZone.js';
 import { publishLiveMemos } from '../lib/liveSessionStore.js';
 import { usePlaybackBudget } from '../player/usePlaybackBudget.js';
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useLayoutEffect, useReducer } from 'react';
+import { applyGovernanceBypass } from '../player/governanceBypass.js';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useLayoutEffect, useReducer, useMemo } from 'react';
 import {
   FitnessSession,
   setFitnessTimeouts,
@@ -2999,7 +3000,20 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // Legacy governance logic removed (delegated to GovernanceEngine)
 
   // Governance State from Engine
-  const governanceState = session?.governanceEngine?.state || { status: 'idle' };
+  const engineGovernanceState = session?.governanceEngine?.state || { status: 'idle' };
+  // Governance bypass (in-player `governance_bypass` fingerprint, a show-level
+  // unlock tagging the item `nogovern`, or the `?nogovern` URL param). FitnessPlayer
+  // decides it and publishes it here; THIS is the one place it is applied, and the
+  // result is the `governanceState` every consumer reads (the player, its overlays,
+  // the sidebar, the playback-budget meter). The engine snapshot above keeps its own
+  // lock and must not be handed to anything that can hold the video.
+  // 2026-11-20: the budget meter read the engine snapshot while the player read its
+  // own bypassed copy; an unlocked Danny Go was re-paused on every play press.
+  const [governanceBypassed, setGovernanceBypassed] = useState(false);
+  const governanceState = useMemo(
+    () => applyGovernanceBypass(engineGovernanceState, governanceBypassed),
+    [engineGovernanceState, governanceBypassed]
+  );
   const governanceChallenge = session?.governanceEngine?.challengeState || {};
 
   // Issue 4: freeze ALL governance while the video is paused for a reason that
@@ -3009,8 +3023,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // else the lock screen would deadlock. setPlaybackPaused freezes the grace
   // countdown, challenge scheduling, the active challenge timer, and the
   // always-on base-requirement lock; resuming continues exactly where it froze.
+  // Reads the ENGINE's own lock: this is about the engine's evaluation, not about
+  // whether the video may play.
   const freezeGovernanceForPause = Boolean(voiceMemoOverlayState.open)
-    || (videoPlayerPaused && !governanceState?.videoLocked);
+    || (videoPlayerPaused && !engineGovernanceState?.videoLocked);
   useEffect(() => {
     fitnessSessionRef.current?.governanceEngine?.setPlaybackPaused?.(freezeGovernanceForPause);
   }, [freezeGovernanceForPause]);
@@ -3166,6 +3182,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     setGovernanceSuspended,
     updateGovernancePhase,
     governanceState,
+    setGovernanceBypassed,
     governanceChallenge,
     activeGovernancePolicy: session?.governanceEngine?.activePolicy,
     triggerChallengeNow,

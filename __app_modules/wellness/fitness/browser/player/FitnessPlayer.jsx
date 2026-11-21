@@ -34,7 +34,7 @@ import PlaybackBudgetNotice from "./overlays/PlaybackBudgetNotice.jsx";
 import usePresenceGate from "../hooks/usePresenceGate.js";
 import usePresenceGatePrompt from "./usePresenceGatePrompt.js";
 import { useIdentity } from "../identity/useIdentity.js";
-import { shouldBypassGovernance } from "./governanceBypass.js";
+import { shouldBypassGovernance, applyGovernanceBypass } from "./governanceBypass.js";
 import { isKioskEnv } from '@/lib/kioskEnv.js';
 import { useRenderProfiler } from "../hooks/fitness/useRenderProfiler.js";
 import usePlayerFrameCapture from "../hooks/fitness/usePlayerFrameCapture.js";
@@ -200,6 +200,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     setVideoLoading,
     setGovernanceMedia,
     governanceState,
+    setGovernanceBypassed,
     plexConfig,
     fitnessSessionInstance,
     transportRecovery,
@@ -347,23 +348,22 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     bypassActive,
     itemNogovern: Boolean(currentItem?.nogovern)
   });
-  // Override the snapshot to a fully-unlocked state when bypassed. Null the
-  // lock-driven side-channels too (audioDuck / challenge / deadline) so nothing
-  // downstream (audio duck, cycle dim, warning scrim) keeps acting on the lock
-  // we just released — otherwise the override would be only half-applied.
-  const effectiveGovernanceState = useMemo(() => (
-    governanceBypassed
-      ? {
-          ...governanceState,
-          videoLocked: false,
-          isGoverned: false,
-          status: 'unlocked',
-          audioDuck: null,
-          challenge: null,
-          deadline: null
-        }
-      : governanceState
-  ), [governanceBypassed, governanceState]);
+  // Publish the bypass to FitnessContext, which applies it to the `governanceState`
+  // every other consumer reads — above all the playback-budget meter, which holds
+  // the media whenever it sees `videoLocked`. A bypass applied only here released
+  // the lock screen while the meter kept pausing the video (2026-11-20).
+  useEffect(() => {
+    setGovernanceBypassed?.(governanceBypassed);
+  }, [governanceBypassed, setGovernanceBypassed]);
+  useEffect(() => () => { setGovernanceBypassed?.(false); }, [setGovernanceBypassed]);
+  // Same function, same flag, applied to this render too, so the player never sees
+  // a locked frame in the one render before the context catches up. Idempotent on
+  // the context's already-bypassed state. Lock-driven side channels (audioDuck /
+  // challenge / deadline) are nulled by applyGovernanceBypass.
+  const effectiveGovernanceState = useMemo(
+    () => applyGovernanceBypass(governanceState, governanceBypassed),
+    [governanceBypassed, governanceState]
+  );
 
   // Clear a runtime bypass when the playing item changes so it never leaks past
   // the lock it was granted for. (The per-item `currentItem.nogovern` flag is
