@@ -24,7 +24,7 @@ describe('networkTrustResolver', () => {
 
   it('assigns household roles for private IPv4 (10.x.x.x)', (done) => {
     const middleware = networkTrustResolver({ householdRoles });
-    const req = mockReq('10.0.0.5');
+    const req = mockReq('10.20.30.5');
     middleware(req, mockRes(), () => {
       expect(req.roles).toEqual(['sysadmin', 'kiosk']);
       done();

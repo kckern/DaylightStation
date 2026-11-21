@@ -16,7 +16,7 @@ describe('AdbLauncher', () => {
 
     mockConfigService = {
       getDeviceConfig: jest.fn().mockReturnValue({
-        content_control: { fallback: { provider: 'adb', host: '10.0.0.11', port: 5555 } }
+        content_control: { fallback: { provider: 'adb', host: '10.20.30.11', port: 5555 } }
       })
     };
 

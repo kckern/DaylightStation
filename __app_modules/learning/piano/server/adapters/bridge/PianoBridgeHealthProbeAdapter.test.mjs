@@ -7,11 +7,11 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
 test('reads BLE state and the echo verdict from /status (ws:// url accepted)', async () => {
   const urls = [];
   const probe = new PianoBridgeHealthProbeAdapter({
-    bridgeUrl: 'ws://10.0.0.245:8770/',
+    bridgeUrl: 'ws://10.20.30.245:8770/',
     fetchImpl: async (url) => { urls.push(url); return ok({ ok: true, ble: { state: 'CONNECTED' }, outVerified: true }); },
   });
   assert.deepEqual(await probe.readHealth(), { reachable: true, ble: 'CONNECTED', outVerified: true, speaker: null, error: null });
-  assert.deepEqual(urls, ['http://10.0.0.245:8770/status']);
+  assert.deepEqual(urls, ['http://10.20.30.245:8770/status']);
 });
 
 test('falls back to /loopback when /status has no verdict', async () => {

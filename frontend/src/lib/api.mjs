@@ -8,7 +8,7 @@ import { getDeviceId } from './deviceIdentity.js';
  * `X-Daylight-Device` is the answer to "which machine is calling". All frontend
  * traffic arrives from the docker network, so `req.ip` is one shared address for
  * the whole house — on 2026-08-16 that put the garage fitness kiosk and the
- * piano tablet behind the same `172.18.0.53` and sent the investigation after
+ * piano tablet behind the same proxy address and sent the investigation after
  * the wrong screen.
  *
  * NOT carried by media traffic: `<video>`/dash segment fetches are issued by

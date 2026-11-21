@@ -127,7 +127,7 @@ export async function createConciergeServices(config) {
     } else {
       // Judge is optional — only built when concierge.yml.media.judge_model is set.
       // No hardcoded fallback model: a quietly-different default in source has
-      // bitten us before (10.0.0.5 default for ds_base_url). Fail loud here:
+      // bitten us before (a LAN-address default for ds_base_url). Fail loud here:
       // either the operator opts in by naming a model, or the use case runs
       // judge-less and picks top-of-rank.
       //

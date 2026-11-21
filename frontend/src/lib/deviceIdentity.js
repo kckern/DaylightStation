@@ -2,7 +2,7 @@
  * Which machine is this?
  *
  * Every frontend request reaches the backend over the docker network, so they
- * all share one source IP (`172.18.0.53` throughout the 2026-08-16
+ * all share one source IP (the proxy's address throughout the 2026-08-16
  * investigation). Filtering the backend log by IP therefore conflated the
  * garage fitness kiosk with the piano tablet, and the backend's own log context
  * is `{source, app, host}` where `host` is `os.hostname()` — the SERVER. Nothing

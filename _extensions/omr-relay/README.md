@@ -374,7 +374,7 @@ how the last life ended; the sequence tells you whether the board is cycling.
 >
 > On 2026-08-25 this cost real time: `boot_count`/`last_reset` were missing from
 > a sampled `relay-status`, which was read as "four firmware commits never
-> reached the reader." `curl http://10.0.0.19/health` showed `boot_count: 2,
+> reached the reader." `curl http://<reader-ip>/health` showed `boot_count: 2,
 > last_reset: "SW"` — they had shipped; only the watchdog (`wdt_s`) had not.
 > **Ask the board, not the bus.** One curl answers it; inference does not.
 
@@ -507,7 +507,7 @@ fix meant taking the reader apart for a cable. It now builds against
 ```bash
 cd firmware
 PLATFORMIO_UPLOAD_FLAGS="--auth=<ota.password>" \
-  pio run -e m5-atom-ota -t upload --upload-port 10.0.0.19
+  pio run -e m5-atom-ota -t upload --upload-port <reader-ip>
 ```
 
 The password lives in the household SSOT under the reader's `ota:` block, never
@@ -524,7 +524,7 @@ Two things that are easy to get wrong:
   always fails and means nothing. Do not read it as "OTA is off"; it cost a
   wrong diagnosis on 2026-08-25. Ask `/health` instead.
 - **Do not hunt for the board by scanning the LAN.** The address is written down
-  here (10.0.0.19) and in the household SSOT. An ARP sweep on 2026-08-25 turned
+  here and in the household SSOT. An ARP sweep on 2026-08-25 turned
   up an unrelated device with 3232 open and nearly had firmware pushed at it.
   A box that answers on a port is not an identity — `/health` returns
   `"id":"study-omr"`, and that is the identity check.

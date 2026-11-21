@@ -94,7 +94,7 @@ describe('ThermalPrinterAdapter post-job status timeout', () => {
       const { factory, connections } = makeHangOnSecondConnectionTransport();
       const adapter = new ThermalPrinterAdapter(
         // Same connect timeout production uses (adapters.yml thermal_printer_defaults.timeout).
-        { host: '10.0.0.50', port: 9100, timeout: DEFAULT_CONNECT_TIMEOUT_MS, upsideDown: false },
+        { host: '10.20.30.50', port: 9100, timeout: DEFAULT_CONNECT_TIMEOUT_MS, upsideDown: false },
         { logger: quietLogger(), createTransport: factory },
       );
 
@@ -136,7 +136,7 @@ describe('ThermalPrinterAdapter post-job status timeout', () => {
         onConnectionOpened: (index) => openedIndexes.push(index),
       });
       const adapter = new ThermalPrinterAdapter(
-        { host: '10.0.0.50', port: 9100, timeout: DEFAULT_CONNECT_TIMEOUT_MS, upsideDown: false },
+        { host: '10.20.30.50', port: 9100, timeout: DEFAULT_CONNECT_TIMEOUT_MS, upsideDown: false },
         { logger: quietLogger(), createTransport: factory },
       );
 
@@ -161,7 +161,7 @@ describe('ThermalPrinterAdapter post-job status timeout', () => {
       // A transport whose connect never completes on its own.
       const device = { open(cb) { this.cb = cb; return this; }, close(cb) { cb && cb(null, null); return this; } };
       const adapter = new ThermalPrinterAdapter(
-        { host: '10.0.0.50', port: 9100, timeout: DEFAULT_CONNECT_TIMEOUT_MS },
+        { host: '10.20.30.50', port: 9100, timeout: DEFAULT_CONNECT_TIMEOUT_MS },
         { logger: quietLogger(), createTransport: () => device },
       );
 
@@ -188,7 +188,7 @@ describe('ThermalPrinterAdapter post-job status timeout', () => {
     try {
       const device = { open(cb) { this.cb = cb; return this; }, close(cb) { cb && cb(null, null); return this; } };
       const adapter = new ThermalPrinterAdapter(
-        { host: '10.0.0.50', port: 9100, timeout: DEFAULT_CONNECT_TIMEOUT_MS },
+        { host: '10.20.30.50', port: 9100, timeout: DEFAULT_CONNECT_TIMEOUT_MS },
         { logger: quietLogger(), createTransport: () => device },
       );
 

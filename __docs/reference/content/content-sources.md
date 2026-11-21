@@ -10,8 +10,8 @@ A **driver** is a protocol-level adapter that knows how to communicate with a sp
 
 ```
 Driver: plex (knows how to talk to Plex API)
-  └─ Instance: plex-main   (host: 192.168.1.10, default: true)
-  └─ Instance: plex-kids   (host: 192.168.1.11)
+  └─ Instance: plex-main   (host: 192.0.2.10, default: true)
+  └─ Instance: plex-kids   (host: 192.0.2.11)
 
 Driver: filesystem (knows how to read local files)
   └─ Instance: home-videos      (path: /mnt/media/videos)

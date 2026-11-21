@@ -583,7 +583,7 @@ Telegram → Production Server → [Dev Proxy] → Your Local Machine
 1. **Configure LOCAL_DEV_HOST** in production:
    ```yaml
    # In secrets.yml or environment
-   LOCAL_DEV_HOST: "192.168.1.100:3112"  # Your dev machine's LAN IP
+   LOCAL_DEV_HOST: "192.0.2.100:3112"  # Your dev machine's LAN IP
    ```
 
 2. **Ensure connectivity** — Dev machine must be reachable from production (same network or VPN)

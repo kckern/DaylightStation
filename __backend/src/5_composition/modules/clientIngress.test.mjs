@@ -27,7 +27,7 @@ function fakeBus() {
     onClientMessage: fn => handlers.message.push(fn),
     broadcast: (topic, payload) => calls.push(['broadcast', topic, payload]),
     sendToClient: (id, payload) => calls.push(['send', id, payload]),
-    getClientMeta: () => ({ ip: '10.0.0.5', userAgent: 'UA', clientId: 'ctl-1' }),
+    getClientMeta: () => ({ ip: '10.20.30.5', userAgent: 'UA', clientId: 'ctl-1' }),
     emit: (clientId, message) => handlers.message.forEach(h => h(clientId, message)),
     disconnect: clientId => handlers.disconnect.forEach(h => h(clientId)),
     get subAuth() { return subAuth; },
@@ -178,7 +178,7 @@ describe('production client ingress composition', () => {
       expect(ingest).toHaveBeenCalledTimes(1);
       const [ingestedMessage, metadata, { onEvent }] = ingest.mock.calls[0];
       expect(ingestedMessage).toBe(message);
-      expect(metadata).toEqual({ ip: '10.0.0.5', userAgent: 'UA' });
+      expect(metadata).toEqual({ ip: '10.20.30.5', userAgent: 'UA' });
       expect(Object.keys(metadata).sort()).toEqual(['ip', 'userAgent']);
 
       onEvent('normalized-event');

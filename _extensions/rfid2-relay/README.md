@@ -8,7 +8,7 @@ checks that the reader answers on I²C; it does not yet read tags or emit events
 ## Verified bench state (2026-10-03)
 
 - USB serial: `/dev/cu.usbserial-7952C47E3B`
-- Board IP when tested: `10.0.0.47` (DHCP; may change after relocation)
+- Board IP when tested: `<board-ip>` (DHCP; may change after relocation)
 - `GET /status`: Wi-Fi connected, `ota.ready: true`, `rfid2.present: true`,
   `rfid2.i2c_error: 0`. An I²C ACK proves electrical communication at `0x28`;
   it does not yet prove that a card can be read.
@@ -35,8 +35,8 @@ From `_extensions/rfid2-relay/firmware`:
 ```bash
 node tools/gen-config.test.mjs
 node tools/flash.mjs "$DAYLIGHT_BASE_PATH/data/household/hardware/rfid2.yml" --port /dev/cu.usbserial-7952C47E3B
-node tools/flash.mjs "$DAYLIGHT_BASE_PATH/data/household/hardware/rfid2.yml" --ota --host 10.0.0.47
-node tools/flash.mjs "$DAYLIGHT_BASE_PATH/data/household/hardware/rfid2.yml" --ota --host 10.0.0.47 --via garage
+node tools/flash.mjs "$DAYLIGHT_BASE_PATH/data/household/hardware/rfid2.yml" --ota --host <board-ip>
+node tools/flash.mjs "$DAYLIGHT_BASE_PATH/data/household/hardware/rfid2.yml" --ota --host <board-ip> --via garage
 ```
 
 For later updates, use the board's current IP from DHCP or

@@ -36,7 +36,7 @@ test('rewrites relative + absolute segment/variant URIs through the proxy', () =
 test('SSRF guard blocks internal hosts, allows public', () => {
   assert.equal(isBlockedStreamHost('localhost'), true);
   assert.equal(isBlockedStreamHost('127.0.0.1'), true);
-  assert.equal(isBlockedStreamHost('10.0.0.5'), true);
+  assert.equal(isBlockedStreamHost('10.20.30.5'), true);
   assert.equal(isBlockedStreamHost('192.168.1.9'), true);
   assert.equal(isBlockedStreamHost('foo.local'), true);
   assert.equal(isBlockedStreamHost('cdn.soccerfull.net'), false);
@@ -47,13 +47,13 @@ test('safeStreamFetch blocks a redirect to an internal host', async () => {
   const fetchFn = async (url) => {
     calls++;
     // First (allowed public) hop 302-redirects to a private IP.
-    return fakeResponse({ status: 302, location: 'http://10.0.0.5/x' });
+    return fakeResponse({ status: 302, location: 'http://10.20.30.5/x' });
   };
   await assert.rejects(
     () => safeStreamFetch('https://cdn.x/live.m3u8', { fetchFn }),
     (err) => {
       assert.equal(err.code, 'STREAM_BLOCKED_HOST');
-      assert.equal(err.host, '10.0.0.5');
+      assert.equal(err.host, '10.20.30.5');
       assert.equal(err.via, 'redirect');
       // Confirm the guard was the cause.
       assert.equal(isBlockedStreamHost(err.host), true);

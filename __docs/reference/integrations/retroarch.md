@@ -41,7 +41,7 @@ This file is loaded by the config system's `loadHouseholdApps` function and made
 
 ```yaml
 source:
-  host: 10.0.0.11        # X-plore WiFi File Manager host
+  host: <device-ip>        # X-plore WiFi File Manager host
   port: 1111              # X-plore HTTP port
   playlists_path: /storage/emulated/0/RetroArch/playlists
   thumbnails_path: /storage/emulated/0/RetroArch/thumbnails

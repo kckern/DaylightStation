@@ -8,7 +8,12 @@
  *   bridge_supervisor:
  *     enabled: true
  *     device_id: yellow-room-tablet          # FKB device in the devices registry
- *     bridge_url: http://10.0.0.245:8770     # defaults to midi_wake.bridge_url
+ *     bridge_url: http://<tablet-ip>:8770     # defaults to midi_wake.bridge_url
+ *     midi_device_id: <device id>            # the devices.yml entry the bridge dials; its
+ *                                            # bluetooth: { name, address } are pushed to the
+ *                                            # APK as targetName / targetMac (piano-bridge only)
+ *     device_config:                         # extra flat keys kept set on the APK, e.g.
+ *       heartbeatLogStoreUrl: http://<log-store>:9428/insert/jsonline?...
  *     package: net.kckern.pianobridge
  *     location: Yellow Room                  # room name used in the push text
  *     notify_service: mobile_app_...         # HA notify target; unset = log error only
@@ -55,6 +60,7 @@ import { composePianoSpeakerPush } from "../domain/bridge/pianoSpeakerPush.mjs";
 import { PianoBridgeLifelineRestartAdapter } from "../adapters/bridge/PianoBridgeLifelineRestartAdapter.mjs";
 import { getPianoWakeHoldSync, _resetForTests as resetWakeHoldSync } from "./wake-hold-sync.mjs";
 import { resolvePianoBridgeEndpoint, DAYLIGHT_ANDROID } from "./bridge-endpoint.mjs";
+import { PianoBridgeConfigSyncAdapter, wantedBridgeConfig } from "../adapters/bridge/PianoBridgeConfigSyncAdapter.mjs";
 
 const DEFAULT_PACKAGE = 'net.kckern.pianobridge';
 
@@ -103,6 +109,7 @@ export function createPianoBridgeSupervisor({
   scheduler = new NodeApplicationScheduler(),
   restartFactory = (options) => new PianoBridgeLifelineRestartAdapter(options),
   wakeHoldSync = undefined,
+  configSyncFactory = (options) => new PianoBridgeConfigSyncAdapter(options),
 } = {}) {
   if (instance) {
     logger.warn?.('piano-bridge.supervisor.already-created');
@@ -220,6 +227,27 @@ export function createPianoBridgeSupervisor({
   const holdSync = wakeHoldSync !== undefined ? wakeHoldSync
     : getPianoWakeHoldSync({ endpoint, deviceId, getScreenOverrideService, logger });
 
+  // The old APK holds no household values; the backend keeps them set from config.
+  let configSync = null;
+  if (legacyRepair) {
+    const midiDeviceId = cfg.midi_device_id || null;
+    const midiDevice = midiDeviceId ? configService?.getDeviceConfig?.(midiDeviceId) ?? null : null;
+    if (midiDeviceId && !midiDevice?.bluetooth?.name) {
+      logger.warn?.('piano-bridge.config-sync.no-target', { midiDeviceId });
+    }
+    const wanted = wantedBridgeConfig({ deviceId, midiDevice, deviceConfig: cfg.device_config });
+    const checkIdle = queryLogs
+      ? createPianoKioskIdleCheck({ queryLogs, readScreenOn: createTabletScreenReader({ bridgeUrl }) })
+      : null;
+    configSync = configSyncFactory({ bridgeUrl: httpBase, wanted, checkIdle, logger });
+  }
+  const afterReachable = holdSync || configSync
+    ? async () => {
+      if (holdSync) await holdSync.reconcile();
+      if (configSync) await configSync.reconcile();
+    }
+    : null;
+
   const service = new PianoBridgeSupervisorService({
     probe: probeFactory({ bridgeUrl: httpBase, headers }),
     relaunch,
@@ -237,13 +265,13 @@ export function createPianoBridgeSupervisor({
     speaker,
     linkRepair,
     logModule: PIANO_BRIDGE_SUPERVISOR_LOG_MODULE,
-    afterReachable: holdSync ? () => holdSync.reconcile() : null,
+    afterReachable,
   });
   service.start();
   instance = service;
   logger.info?.('piano-bridge.supervisor.created', {
     deviceId, provider: endpoint.provider, bridgeUrl: httpBase, pkg: endpoint.provider === DAYLIGHT_ANDROID ? null : pkg, notifyService, powerEntity, speakerRecovery: !!speaker, plugEntity, screenHold: !!speaker?.holdScreen,
-    readiness: !!speaker?.checkReady, weeklySummary: !!speaker?.queryLogs, wakeHoldSync: !!holdSync, linkRepair: !!linkRepair,
+    readiness: !!speaker?.checkReady, weeklySummary: !!speaker?.queryLogs, wakeHoldSync: !!holdSync, linkRepair: !!linkRepair, configSyncKeys: configSync?.wantedKeys ?? null,
   });
   return { pianoBridgeSupervisor: service };
 }

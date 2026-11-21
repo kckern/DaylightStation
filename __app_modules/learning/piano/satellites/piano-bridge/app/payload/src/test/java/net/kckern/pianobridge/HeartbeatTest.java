@@ -16,7 +16,7 @@ public class HeartbeatTest {
 
     @Test public void logStoreLineCarriesTheStandardEnvelope() throws Exception {
         JSONObject body = new JSONObject()
-                .put("deviceId", "yellow-room-tablet")
+                .put("deviceId", "room-tablet")
                 .put("seq", 7)
                 .put("ble", "CONNECTED");
         JSONObject line = new JSONObject(Heartbeat.toLogStoreLine(body).trim());
@@ -24,7 +24,7 @@ public class HeartbeatTest {
         assertEquals("info", line.getString("level"));
         assertEquals("piano-bridge", line.getString("context.app"));
         assertEquals("piano-bridge", line.getString("context.source"));
-        assertEquals("yellow-room-tablet", line.getString("context.device"));
+        assertEquals("room-tablet", line.getString("context.device"));
         assertTrue("ISO-8601 UTC with Z", line.getString("_time").endsWith("Z"));
     }
 

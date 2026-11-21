@@ -32,7 +32,7 @@ import { useWebMidiBLE } from './useWebMidiBLE.js';
 function mockAccess() {
   const input = {
     id: 'i',
-    name: 'jam-7e6',
+    name: 'midi-relay-01',
     armed: false,
     opened: false,
     closed: false,
@@ -44,7 +44,7 @@ function mockAccess() {
   };
   const output = {
     id: 'o',
-    name: 'jam-7e6',
+    name: 'midi-relay-01',
     state: 'connected',
     connection: 'open',
     closed: false,

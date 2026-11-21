@@ -5,7 +5,7 @@ function fixture(execCommand) {
   const logger = {
     debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(),
   };
-  const adapter = new AdbAdapter({ host: '10.0.0.12' }, { logger, execCommand });
+  const adapter = new AdbAdapter({ host: '10.20.30.12' }, { logger, execCommand });
   return { adapter, logger };
 }
 
@@ -24,18 +24,18 @@ describe('AdbAdapter shell recovery', () => {
     expect(logger.error).not.toHaveBeenCalled();
     expect(logger.info).toHaveBeenCalledWith(
       'adb.shell.recovered',
-      expect.objectContaining({ serial: '10.0.0.12:5555' }),
+      expect.objectContaining({ serial: '10.20.30.12:5555' }),
     );
   });
 
   it('shellArgv passes the script as one argv element, with no host shell', async () => {
     const execFileCommand = vi.fn().mockResolvedValueOnce({ stdout: 'x\n', stderr: '' });
     const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-    const adapter = new AdbAdapter({ host: '10.0.0.12' }, { logger, execFileCommand });
+    const adapter = new AdbAdapter({ host: '10.20.30.12' }, { logger, execFileCommand });
     const script = "cat '/c/Mega Man'\\''s $HOME.cfg'";
 
     await expect(adapter.shellArgv(script)).resolves.toMatchObject({ ok: true, output: 'x' });
-    expect(execFileCommand).toHaveBeenCalledWith('adb', ['-s', '10.0.0.12:5555', 'shell', script], expect.any(Object));
+    expect(execFileCommand).toHaveBeenCalledWith('adb', ['-s', '10.20.30.12:5555', 'shell', script], expect.any(Object));
   });
 
   it('still records a genuine shell failure as an error', async () => {

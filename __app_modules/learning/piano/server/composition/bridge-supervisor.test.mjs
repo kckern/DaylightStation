@@ -324,3 +324,23 @@ test('Daylight keeps device reboot disabled even when every legacy repair depend
   createPianoBridgeSupervisor(d.args);
   assert.equal(d.logs.find((l) => l.event === 'piano-bridge.supervisor.created').data.linkRepair, false);
 });
+
+test('piano-bridge provider: wanted bridge config is built from the device registry', () => {
+  let built = null;
+  createPianoBridgeSupervisor({
+    configService: {
+      ...configService({
+        midi_wake: { device_id: 'room-tablet', bridge_url: 'ws://t:8770' },
+        bridge_supervisor: { enabled: true, midi_device_id: 'relay', device_config: { heartbeatLogStoreUrl: 'http://logs.example/insert' } },
+      }),
+      getDeviceConfig: (id) => (id === 'relay' ? { bluetooth: { name: 'midi-relay-01', address: 'aa:bb:cc:00:10:01' } } : null),
+    },
+    remoteAdmin: { performAction() {} }, logger: logger(), scheduler,
+    configSyncFactory: (options) => { built = options; return { wantedKeys: Object.keys(options.wanted), reconcile: async () => ({}) }; },
+  });
+  assert.equal(built.bridgeUrl, 'http://t:8770');
+  assert.deepEqual(built.wanted, {
+    heartbeatLogStoreUrl: 'http://logs.example/insert', heartbeatDeviceId: 'room-tablet',
+    targetName: 'midi-relay-01', targetMac: 'AA:BB:CC:00:10:01',
+  });
+});

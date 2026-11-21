@@ -26,11 +26,12 @@
 // Exit code is 0 only when both directions are healthy, so it can be scheduled.
 //
 // Hosts come from data/household/hardware/devices.yml (`midi-recorder.host` and
-// the piano tablet), overridable with JAMCORDER_HOST / PB_HOST / FKB_HOST.
+// the tablet: PB_HOST / FKB_HOST, or PB_DEVICE=<device id> read from the registry).
 
 import { readFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { gunzipSync } from 'node:zlib';
+import { resolveDeviceHostOrExit } from '../../../../cli/_deviceHost.mjs';
 
 const args = process.argv.slice(2);
 const ACTIVE = args.includes('--send');
@@ -65,8 +66,9 @@ function jamcorderHostFromConfig() {
 }
 
 const JAMCORDER = process.env.JAMCORDER_HOST || jamcorderHostFromConfig();
-const PB = process.env.PB_HOST || '10.0.0.245:8770';
-const FKB = process.env.FKB_HOST || '10.0.0.245:2323';
+// The tablet: PB_HOST / FKB_HOST, or PB_DEVICE=<device id> from the registry.
+const PB = await resolveDeviceHostOrExit({ hostVar: 'PB_HOST', deviceVar: 'PB_DEVICE', port: 8770 });
+const FKB = await resolveDeviceHostOrExit({ hostVar: 'FKB_HOST', deviceVar: 'PB_DEVICE', port: 2323 });
 
 if (!JAMCORDER) {
   console.error('Could not resolve the JamCorder host (devices.yml midi-recorder.host).');

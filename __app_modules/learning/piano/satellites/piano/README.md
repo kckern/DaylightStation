@@ -100,7 +100,7 @@ silence_timeout: 30  # End session after 30s of silence
 # WebSocket broadcasting
 websocket:
   enabled: true
-  host: 10.0.0.10    # Your DaylightStation IP
+  host: 192.0.2.10   # Your DaylightStation host
   port: 3112
   path: /ws
 ```
@@ -178,7 +178,7 @@ npm run demo
 npm run random
 
 # Custom DaylightStation host
-node simulation.mjs --host 10.0.0.10
+node simulation.mjs --host <daylight-host>
 ```
 
 ### Interactive Commands

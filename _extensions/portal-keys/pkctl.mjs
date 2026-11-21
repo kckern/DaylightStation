@@ -3,7 +3,8 @@
 //
 // The APK serves REST on the same NanoHTTPD socket as its WebSocket, bound on all
 // interfaces, so this works over the LAN with no ADB. Mirrors pbctl.mjs.
-// Host: PK_HOST env or default 10.0.0.92:8771.
+// Target: PK_HOST=<host>:8771, or PK_DEVICE=<device id> to read the Portal's
+// address from the household device registry (cli/_deviceHost.mjs). No default.
 //
 //   node pkctl.mjs status                 # serviceBound + keysSeen + display + config
 //   node pkctl.mjs log                    # recent key/screen/config events
@@ -23,8 +24,9 @@ import yaml from 'js-yaml';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { resolveDeviceHostOrExit } from '../../cli/_deviceHost.mjs';
 
-const HOST = process.env.PK_HOST || '10.0.0.92:8771';
+const HOST = await resolveDeviceHostOrExit({ hostVar: 'PK_HOST', deviceVar: 'PK_DEVICE', port: 8771 });
 const BASE = `http://${HOST}`;
 const DEVICE = HOST.split(':')[0];
 const SHELL_BASE = `http://${DEVICE}:8772`;

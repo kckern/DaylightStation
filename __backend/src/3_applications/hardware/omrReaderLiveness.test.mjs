@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest';
 import { createOmrReaderLiveness } from '#adapters/hardware/omrReaderLiveness.mjs';
 
 const READER_ID = 'study-omr';
-const READER_IP = '10.0.0.19';
+const READER_IP = '10.20.30.19';
 
 /**
  * A minimal fake IEventBus exposing exactly the four handler-registration
@@ -123,7 +123,7 @@ describe('createOmrReaderLiveness', () => {
     const h = harness({ graceMs: 5000 });
     // No seedKnownReader() — this IP/reader has never been seen before.
     const bus = h.bus;
-    bus.connect('client-unknown', { ip: '10.0.0.99' });
+    bus.connect('client-unknown', { ip: '10.20.30.99' });
     h.advance(10_000);
     h.liveness.check();
 
@@ -251,7 +251,7 @@ describe('createOmrReaderLiveness — reconnect bursts', () => {
     const h = harness();
     h.advance(120_000);
     // No seedKnownReader(): nothing here can be named, so nothing is claimed.
-    for (const id of ['x1', 'x2', 'x3', 'x4']) h.bus.connect(id, { ip: '10.0.0.99' });
+    for (const id of ['x1', 'x2', 'x3', 'x4']) h.bus.connect(id, { ip: '10.20.30.99' });
 
     expect(bursts(h)).toHaveLength(0);
   });

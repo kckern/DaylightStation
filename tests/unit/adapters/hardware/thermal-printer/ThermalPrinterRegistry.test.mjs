@@ -18,33 +18,33 @@ describe('ThermalPrinterRegistry', () => {
 
   describe('register', () => {
     it('stores an adapter under the given name', () => {
-      registry.register('upstairs', makeAdapter('10.0.0.137'));
+      registry.register('upstairs', makeAdapter('10.20.30.137'));
       expect(registry.has('upstairs')).toBe(true);
     });
 
     it('marks an adapter as default when isDefault: true', () => {
-      registry.register('downstairs', makeAdapter('10.0.0.50'), { isDefault: true });
-      expect(registry.getDefault().getHost()).toBe('10.0.0.50');
+      registry.register('downstairs', makeAdapter('10.20.30.50'), { isDefault: true });
+      expect(registry.getDefault().getHost()).toBe('10.20.30.50');
     });
 
     it('throws when registering the same name twice', () => {
-      registry.register('upstairs', makeAdapter('10.0.0.137'));
+      registry.register('upstairs', makeAdapter('10.20.30.137'));
       expect(() =>
-        registry.register('upstairs', makeAdapter('10.0.0.200'))
+        registry.register('upstairs', makeAdapter('10.20.30.200'))
       ).toThrow(/already registered/i);
     });
 
     it('throws when registering a second default', () => {
-      registry.register('a', makeAdapter('10.0.0.1'), { isDefault: true });
+      registry.register('a', makeAdapter('10.20.30.1'), { isDefault: true });
       expect(() =>
-        registry.register('b', makeAdapter('10.0.0.2'), { isDefault: true })
+        registry.register('b', makeAdapter('10.20.30.2'), { isDefault: true })
       ).toThrow(/default/i);
     });
   });
 
   describe('get', () => {
     it('returns the adapter registered under name', () => {
-      const adapter = makeAdapter('10.0.0.137');
+      const adapter = makeAdapter('10.20.30.137');
       registry.register('upstairs', adapter);
       expect(registry.get('upstairs')).toBe(adapter);
     });
@@ -56,27 +56,27 @@ describe('ThermalPrinterRegistry', () => {
 
   describe('getDefault', () => {
     it('throws when no default has been configured', () => {
-      registry.register('upstairs', makeAdapter('10.0.0.137'));
+      registry.register('upstairs', makeAdapter('10.20.30.137'));
       expect(() => registry.getDefault()).toThrow(/no default/i);
     });
   });
 
   describe('resolve', () => {
     beforeEach(() => {
-      registry.register('upstairs', makeAdapter('10.0.0.137'));
-      registry.register('downstairs', makeAdapter('10.0.0.50'), { isDefault: true });
+      registry.register('upstairs', makeAdapter('10.20.30.137'));
+      registry.register('downstairs', makeAdapter('10.20.30.50'), { isDefault: true });
     });
 
     it('returns the named adapter when a name is given', () => {
-      expect(registry.resolve('upstairs').getHost()).toBe('10.0.0.137');
+      expect(registry.resolve('upstairs').getHost()).toBe('10.20.30.137');
     });
 
     it('falls back to the default when name is undefined', () => {
-      expect(registry.resolve(undefined).getHost()).toBe('10.0.0.50');
+      expect(registry.resolve(undefined).getHost()).toBe('10.20.30.50');
     });
 
     it('falls back to the default when name is empty string', () => {
-      expect(registry.resolve('').getHost()).toBe('10.0.0.50');
+      expect(registry.resolve('').getHost()).toBe('10.20.30.50');
     });
 
     it('throws on unknown name even when a default exists', () => {
@@ -86,15 +86,15 @@ describe('ThermalPrinterRegistry', () => {
 
   describe('list', () => {
     it('returns one descriptor per registered printer', () => {
-      registry.register('upstairs', makeAdapter('10.0.0.137'));
-      registry.register('downstairs', makeAdapter('10.0.0.50'), { isDefault: true });
+      registry.register('upstairs', makeAdapter('10.20.30.137'));
+      registry.register('downstairs', makeAdapter('10.20.30.50'), { isDefault: true });
       const list = registry.list();
       expect(list).toHaveLength(2);
       expect(list).toContainEqual({
-        name: 'upstairs', host: '10.0.0.137', port: 9100, isDefault: false,
+        name: 'upstairs', host: '10.20.30.137', port: 9100, isDefault: false,
       });
       expect(list).toContainEqual({
-        name: 'downstairs', host: '10.0.0.50', port: 9100, isDefault: true,
+        name: 'downstairs', host: '10.20.30.50', port: 9100, isDefault: true,
       });
     });
 

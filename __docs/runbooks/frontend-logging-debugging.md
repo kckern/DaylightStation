@@ -113,7 +113,7 @@ All logs follow this JSON structure:
   "context": {
     "source": "frontend",
     "app": "frontend",
-    "ip": "172.18.0.53",
+    "ip": "<proxy-ip>",
     "userAgent": "Mozilla/5.0..."
   },
   "tags": []

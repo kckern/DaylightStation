@@ -534,7 +534,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Trust the reverse proxy in front of us, so `req.ip` is the CLIENT's address
   // rather than the docker peer's. Never set before, which is part of why every
-  // client looked like `172.18.0.53` on 2026-08-16.
+  // client looked like the proxy's own address on 2026-08-16.
   //
   // Scoped, not `true`. Blanket trust makes `req.ip` whatever the caller writes
   // in X-Forwarded-For — forgeable by anyone who can reach the port. With this

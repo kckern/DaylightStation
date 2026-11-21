@@ -16,7 +16,7 @@
  *
  * Usage:
  *   node cli/esp.cli.mjs <command> [device] [args]
- *   ESP_HOST=10.0.0.99 node cli/esp.cli.mjs status food-scale
+ *   ESP_HOST=192.0.2.99 node cli/esp.cli.mjs status food-scale
  *
  * @module cli/esp
  */
@@ -41,7 +41,7 @@ const REGISTRY = {
     label: 'Kitchen food scale + UPC scanner',
   },
   'content-barcode': {
-    host: '10.0.0.153',
+    host: null, // no mDNS on this board: set ESP_HOST=<its address>
     kind: 'content-barcode-relay',
     label: 'Content barcode scanner',
   },
@@ -81,6 +81,7 @@ function resolveDevice(name) {
   // Explicit override wins: a DHCP lease can move without warning, and being
   // stuck behind a stale registry entry is the one failure this tool must not have.
   const host = process.env.ESP_HOST || entry.host;
+  if (!host) throw new Error(`"${key}" has no stable name; set ESP_HOST=<its address>`);
   return { ...entry, key, host };
 }
 
@@ -361,7 +362,7 @@ const HELP = `esp — ESP32 relay fleet diagnostics
   esp blescan [device] on|off toggle the BLE scale scan
   esp list                    known devices
 
-Host override:  ESP_HOST=10.0.0.99 esp check food-scale
+Host override:  ESP_HOST=192.0.2.99 esp check food-scale
 `;
 
 // Only dispatch when run directly. Tests import `assessFoodScale`, and an

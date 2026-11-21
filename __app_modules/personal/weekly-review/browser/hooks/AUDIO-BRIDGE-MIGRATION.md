@@ -270,7 +270,7 @@ track.
 **FKB `microphoneAccess` is currently `false`.** This doesn't matter on Shield (bridge path
 is used), but if you want the getUserMedia fallback to work on Shield too, enable it:
 ```bash
-curl "http://10.0.0.11:2323/?cmd=setBooleanSetting&key=microphoneAccess&value=true&password=<rotated-fkb-password-urlencoded>"
+curl "http://<shield-ip>:2323/?cmd=setBooleanSetting&key=microphoneAccess&value=true&password=<rotated-fkb-password-urlencoded>"
 ```
 On all non-Shield devices the fallback goes through `getUserMedia` normally — FKB is
 irrelevant there.
@@ -315,5 +315,5 @@ On-device: open WeeklyReview, press record, speak. The logger should show
 `recorder.bridge-acquired` (not `recorder.bridge-unavailable`). If silence warning fires
 within 5s, check AudioBridge logs:
 ```bash
-adb -s 10.0.0.11:5555 logcat -s AudioBridge
+adb -s <shield-ip>:5555 logcat -s AudioBridge
 ```

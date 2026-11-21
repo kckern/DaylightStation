@@ -35,7 +35,7 @@ describe('FullyKioskContentAdapter.load verification', () => {
       return { status: 200, data: {} };
     });
     const adapter = new FullyKioskContentAdapter(
-      { host: '10.0.0.11', port: 2323, password: 'x', daylightHost: 'https://example.com' },
+      { host: '10.20.30.11', port: 2323, password: 'x', daylightHost: 'https://example.com' },
       { httpClient, logger }
     );
 
@@ -60,7 +60,7 @@ describe('FullyKioskContentAdapter.load verification', () => {
       return { status: 200, data: {} };
     });
     const adapter = new FullyKioskContentAdapter(
-      { host: '10.0.0.11', port: 2323, password: 'x', daylightHost: 'https://example.com' },
+      { host: '10.20.30.11', port: 2323, password: 'x', daylightHost: 'https://example.com' },
       { httpClient, logger }
     );
     const result = await adapter.load('/screen/living-room', { queue: 'plex:1' });
@@ -88,7 +88,7 @@ describe('FullyKioskContentAdapter.load verification', () => {
       return { status: 200, data: {} };
     });
     const adapter = new FullyKioskContentAdapter(
-      { host: '10.0.0.11', port: 2323, password: 'x', daylightHost: 'https://example.com' },
+      { host: '10.20.30.11', port: 2323, password: 'x', daylightHost: 'https://example.com' },
       { httpClient, logger }
     );
 
@@ -118,7 +118,7 @@ describe('FullyKioskContentAdapter.load verification', () => {
       return { status: 200, data: {} };
     });
     const adapter = new FullyKioskContentAdapter(
-      { host: '10.0.0.11', port: 2323, password: 'x', daylightHost: 'https://example.com' },
+      { host: '10.20.30.11', port: 2323, password: 'x', daylightHost: 'https://example.com' },
       { httpClient, logger }
     );
 
@@ -145,7 +145,7 @@ describe('FullyKioskContentAdapter.load verification', () => {
       return { status: 200, data: {} };
     });
     const adapter = new FullyKioskContentAdapter(
-      { host: '10.0.0.11', port: 2323, password: 'x', daylightHost: 'https://example.com' },
+      { host: '10.20.30.11', port: 2323, password: 'x', daylightHost: 'https://example.com' },
       { httpClient, logger }
     );
 

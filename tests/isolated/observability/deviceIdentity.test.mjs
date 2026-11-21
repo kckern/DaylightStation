@@ -3,7 +3,7 @@
 // Tier 2, Task 2.2 — per-device identity in backend logs.
 //
 // All frontend traffic reaches the backend over the docker network, so `req.ip`
-// is one address for the whole house (`172.18.0.53` throughout the 2026-08-16
+// is one address for the whole house (the proxy's address throughout the 2026-08-16
 // investigation) and the backend's own log context names the SERVER. Filtering
 // by IP conflated the garage fitness kiosk with the piano tablet.
 import { describe, it, expect, vi } from 'vitest';
@@ -171,7 +171,7 @@ describe('trust proxy does not move the auth boundary', () => {
     app.use(networkTrustResolver({ householdRoles: {} }));
     app.get('/x', (req, res) => res.json({ isLocal: req.isLocal, roles: req.roles }));
 
-    const res = await request(app).get('/x').set('X-Forwarded-For', '10.0.0.5');
+    const res = await request(app).get('/x').set('X-Forwarded-For', '10.20.30.5');
 
     expect(res.body.isLocal).toBe(false);
     expect(res.body.roles).toEqual([]);

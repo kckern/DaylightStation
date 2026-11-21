@@ -393,7 +393,7 @@ files instead.
 Services like Plex have different hostnames per environment:
 - Docker: `plex` (container hostname)
 - Dev on docker host: `localhost`
-- Dev on laptop: `10.0.0.10`
+- Dev on laptop: `192.0.2.10`
 
 Different households may have different service instances:
 - Default household: `plex`
@@ -410,34 +410,34 @@ One file maps logical service names to physical hosts per environment:
 mqtt:
   docker: mosquitto
   {env.prod_host}: localhost
-  {env.dev_host}: 10.0.0.10
+  {env.dev_host}: 192.0.2.10
 
 printer:
-  docker: 10.0.0.50
-  {env.prod_host}: 10.0.0.50
-  {env.dev_host}: 10.0.0.50
+  docker: 192.0.2.50
+  {env.prod_host}: 192.0.2.50
+  {env.dev_host}: 192.0.2.50
 
 # Default household services (base names)
 plex:
   docker: plex
   {env.prod_host}: localhost
-  {env.dev_host}: 10.0.0.10
+  {env.dev_host}: 192.0.2.10
 
 homeassistant:
   docker: homeassistant
   {env.prod_host}: localhost
-  {env.dev_host}: 10.0.0.10
+  {env.dev_host}: 192.0.2.10
 
 # Jones household services (suffixed names)
 plex-jones:
   docker: plex-jones
   {env.prod_host}: localhost
-  {env.dev_host}: 10.0.0.11
+  {env.dev_host}: 192.0.2.11
 
 homeassistant-jones:
   docker: ha-jones
   {env.prod_host}: localhost
-  {env.dev_host}: 10.0.0.11
+  {env.dev_host}: 192.0.2.11
 ```
 
 ### Naming Convention
@@ -480,11 +480,11 @@ unavailable" instead of failing to boot. See
 
 | Household | Service | docker | {env.prod_host} | {env.dev_host} |
 |-----------|---------|--------|---------------|----------------|
-| default | plex | `plex:32400` | `localhost:32400` | `10.0.0.10:32400` |
-| default | homeassistant | `homeassistant:8123` | `localhost:8123` | `10.0.0.10:8123` |
-| jones | plex | `plex-jones:32400` | `localhost:32400` | `10.0.0.11:32400` |
-| jones | homeassistant | `ha-jones:8123` | `localhost:8123` | `10.0.0.11:8123` |
-| (shared) | mqtt | `mosquitto:1883` | `localhost:1883` | `10.0.0.10:1883` |
+| default | plex | `plex:32400` | `localhost:32400` | `192.0.2.10:32400` |
+| default | homeassistant | `homeassistant:8123` | `localhost:8123` | `192.0.2.10:8123` |
+| jones | plex | `plex-jones:32400` | `localhost:32400` | `192.0.2.11:32400` |
+| jones | homeassistant | `ha-jones:8123` | `localhost:8123` | `192.0.2.11:8123` |
+| (shared) | mqtt | `mosquitto:1883` | `localhost:1883` | `192.0.2.10:1883` |
 
 ---
 

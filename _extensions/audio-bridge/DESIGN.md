@@ -251,9 +251,9 @@ On devices without `audio_bridge` config (desktop, phone, other TVs), the hook s
 # From repo root — build, install, and restart in one shot:
 cd _extensions/audio-bridge/app \
   && JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew assembleDebug \
-  && adb -s 10.0.0.11:5555 install -r app/build/outputs/apk/debug/app-debug.apk \
-  && adb -s 10.0.0.11:5555 shell am force-stop net.kckern.audiobridge \
-  && adb -s 10.0.0.11:5555 shell am start -n net.kckern.audiobridge/.MainActivity
+  && adb -s $SHIELD_IP:5555 install -r app/build/outputs/apk/debug/app-debug.apk \
+  && adb -s $SHIELD_IP:5555 shell am force-stop net.kckern.audiobridge \
+  && adb -s $SHIELD_IP:5555 shell am start -n net.kckern.audiobridge/.MainActivity
 ```
 
 ### Build Step-by-Step
@@ -274,16 +274,16 @@ Output: `app/build/outputs/apk/debug/app-debug.apk` (~214KB)
 
 ```bash
 # Install APK (use -r to replace existing)
-adb -s 10.0.0.11:5555 install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s $SHIELD_IP:5555 install -r app/build/outputs/apk/debug/app-debug.apk
 
 # Grant mic permission (required once after first install)
-adb -s 10.0.0.11:5555 shell pm grant net.kckern.audiobridge android.permission.RECORD_AUDIO
+adb -s $SHIELD_IP:5555 shell pm grant net.kckern.audiobridge android.permission.RECORD_AUDIO
 
 # Launch — MainActivity starts the foreground service and finishes
-adb -s 10.0.0.11:5555 shell am start -n net.kckern.audiobridge/.MainActivity
+adb -s $SHIELD_IP:5555 shell am start -n net.kckern.audiobridge/.MainActivity
 
 # Verify service is running
-adb -s 10.0.0.11:5555 shell dumpsys activity services net.kckern.audiobridge
+adb -s $SHIELD_IP:5555 shell dumpsys activity services net.kckern.audiobridge
 ```
 
 **Note:** You cannot start the service directly via `am startservice` — Android requires foreground services to be started from a component with foreground privileges. Use `MainActivity` which starts the service and immediately finishes.
@@ -359,9 +359,9 @@ Android's audio recording concurrency policy (API 29+) allows only one app to ac
 
 ```bash
 FULLY_PW="<rotated-fkb-password-urlencoded>"
-curl -s "http://10.0.0.11:2323/?cmd=setBooleanSetting&key=motionDetection&value=false&password=${FULLY_PW}"
-curl -s "http://10.0.0.11:2323/?cmd=setBooleanSetting&key=motionDetectionAcoustic&value=false&password=${FULLY_PW}"
-curl -s "http://10.0.0.11:2323/?cmd=setBooleanSetting&key=acousticScreenOn&value=false&password=${FULLY_PW}"
+curl -s "http://$SHIELD_IP:2323/?cmd=setBooleanSetting&key=motionDetection&value=false&password=${FULLY_PW}"
+curl -s "http://$SHIELD_IP:2323/?cmd=setBooleanSetting&key=motionDetectionAcoustic&value=false&password=${FULLY_PW}"
+curl -s "http://$SHIELD_IP:2323/?cmd=setBooleanSetting&key=acousticScreenOn&value=false&password=${FULLY_PW}"
 ```
 
 **Important:** The FKB REST API requires authentication. Unauthenticated requests return a login page but silently fail to change settings. Always include `&password=` in requests.
