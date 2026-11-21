@@ -24,6 +24,22 @@ const episode = (ratingKey, partIds) => ({
   })),
 });
 
+describe('audio list catalog', () => {
+  it('reads playlist types from converted Plex metadata and checks videos for audio', async () => {
+    const { plex } = adapter();
+    plex.client.getContainer = vi.fn(async () => ({ MediaContainer: { Metadata: [
+      { ratingKey: '8', type: 'playlist', playlistType: 'audio', title: 'Music' },
+      { ratingKey: '9', type: 'playlist', playlistType: 'video', title: 'Kids Videos' },
+      { ratingKey: '10', type: 'folder', title: 'Folder' },
+    ] } }));
+    const page = await plex.audioListPage({ skip: 0, take: 4 });
+    expect(page.total).toBe(2);
+    expect(page.items.map(({ id, checkAudio }) => [id, checkAudio])).toEqual([
+      ['plex:8', false], ['plex:9', true],
+    ]);
+  });
+});
+
 describe('part index', () => {
   it('_toPlayableItem indexes every part it hands out (all Media versions)', () => {
     const { plex } = adapter();

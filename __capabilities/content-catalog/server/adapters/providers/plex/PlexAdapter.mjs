@@ -689,7 +689,7 @@ export class PlexAdapter {
   async audioListPage({ skip, take }) {
     const result = await this.getList(`${this.source}:playlists`);
     const entries = Array.isArray(result) ? result : result?.items ?? result?.children ?? [];
-    const items = entries.filter(item => item.type === 'playlist');
+    const items = entries.filter(item => item.metadata?.type === 'playlist');
     return {
       items: items.slice(skip, skip + take).map(item => ({
         id: item.id, title: item.title, thumbnail: item.thumbnail,
