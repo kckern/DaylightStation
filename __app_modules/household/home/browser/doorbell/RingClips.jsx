@@ -56,6 +56,7 @@ function RingClip({ camera, clip, ringMs, eager, label }) {
         <Button
           size="compact-xs"
           variant="subtle"
+          aria-label={`Retry recording from the ${label} ring`}
           onClick={() => {
             logger.info('home.ring.clip.retry', { camera, ringMs, clip: clip.name, attempt: attempt + 1 });
             setFailed(false);
@@ -83,6 +84,7 @@ function RingClip({ camera, clip, ringMs, eager, label }) {
         preload="metadata"
         controls={started}
         playsInline
+        aria-label={`Recording from the ${label} ring`}
         src={clipFileUrl(camera, clip.name)}
         onPlay={() => logger.info('home.ring.play', { camera, ringMs, clip: clip.name })}
         onError={(e) => {
