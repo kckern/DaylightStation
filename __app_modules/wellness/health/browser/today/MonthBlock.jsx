@@ -42,7 +42,7 @@ export function MonthBlock({ days = [], loading = false, title }) {
       {!waitingForFirstRead && <div className="health-monthblock__bars" role="img"
         aria-label={known
           ? `${known} days with data, ${tally}, ${gaps} without data`
-          : 'No budget data for the last 30 days'}>
+          : 'No budget data for this period'}>
         {models.map(({ day, bar, key }) => (
           <span key={key} className="health-monthblock__slot">
             {bar.kind === 'day' && bar.floorPct != null ? <span className="health-monthblock__band"

@@ -37,16 +37,16 @@ export function CycleRetro({ step, content, responses, setResponse }) {
     // Reflection
     return (
       <Stack gap="md">
-        <Text size="sm" fw={500}>What worked well this cycle?</Text>
         <Textarea
+          label="What worked well this cycle?"
           value={responses.wins || ''}
           onChange={(e) => setResponse('wins', e.currentTarget.value)}
           autosize
           minRows={2}
         />
 
-        <Text size="sm" fw={500}>What would you do differently?</Text>
         <Textarea
+          label="What would you do differently?"
           value={responses.improvements || ''}
           onChange={(e) => setResponse('improvements', e.currentTarget.value)}
           autosize

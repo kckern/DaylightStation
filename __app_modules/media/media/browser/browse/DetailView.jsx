@@ -6,6 +6,7 @@ import React, { useState } from 'react';
 import { Stack, Title, Text, Button, Group, Image } from '@mantine/core';
 import { IconPlayerPlayFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd } from '@tabler/icons-react';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
+import { EmptyState } from '@/lib/ui/states.jsx';
 import { useRetryRegion } from '@/lib/ui/useRetryRegion.js';
 import { LoadErrorLine } from "../shared/LoadErrorLine.jsx";
 import { useContentInfo } from "./useContentInfo.js";
@@ -146,6 +147,8 @@ export function DetailView({ contentId }) {
         {overlays}
       </>
     );
+  } else {
+    body = <EmptyState title="No details available for this item" />;
   }
 
   return (
