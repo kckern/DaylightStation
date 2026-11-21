@@ -285,6 +285,17 @@ describe('binding dispatch wiring (real BindingMatcher)', () => {
     expect(capture.stateMap.stop).not.toHaveBeenCalled();
   });
 
+  it('never hands Game Boy cheat codes to another system: Genesis without a protected core skips calibration', async () => {
+    const createWramCalibrator = vi.fn();
+    const { session, capture } = setup({
+      game: { ...GAME, system: 'genesis', states: { lives: { addr: 0xfffe12, type: 'number' } } },
+      createWramCalibrator,
+    });
+    await session.start({ mount: {} });
+    expect(createWramCalibrator).not.toHaveBeenCalled();
+    expect(capture.stateMap).toBeNull();
+  });
+
   it('stopping the session cancels a pending calibration retry', async () => {
     const clearTimer = vi.fn();
     const calibrate = vi.fn().mockRejectedValue(Object.assign(new Error('no frames'), { code: 'ENOFRAMES' }));

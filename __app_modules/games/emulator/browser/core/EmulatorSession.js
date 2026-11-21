@@ -26,6 +26,9 @@ const GATE_POLL_MS = 250;
 // often, this many times (~30 s), before giving up on the state map.
 const CALIBRATION_RETRY_MS = 5000;
 const CALIBRATION_RETRY_LIMIT = 6;
+// Systems whose RAM the cheat ping can locate (Game Boy GameShark codes).
+// Others (Genesis) read RAM only through a protected core's memory export.
+const CHEAT_CALIBRATED_SYSTEMS = new Set(['gb', 'gbc']);
 
 const DEFAULT_SCHEDULER = {
   set: (fn, ms) => setInterval(fn, ms),
@@ -176,6 +179,12 @@ export function createEmulatorSession({
       // Missing optional state instrumentation cannot justify a destructive fallback.
       const nativeBase = engine.getWramBase?.();
       if (nativeBase != null) cal = { wramBase: nativeBase };
+    } else if (game.states && !CHEAT_CALIBRATED_SYSTEMS.has(system)) {
+      // The cheat ping writes Game Boy GameShark codes; another system's cheat
+      // engine must never be handed them. Without a protected core (a saved
+      // game) such a system has no way to find its RAM: no state map.
+      cal = { unsupported: true };
+      childLog.info('emulator.calibration.skipped', { reason: 'no-memory-export', system });
     } else if (game.states) {
       calibrator = createWramCalibrator({
         setCheat: engine.setCheat,
@@ -206,7 +215,7 @@ export function createEmulatorSession({
 
     if (cal && cal.wramBase != null && game.states) {
       startStateLayer(cal.wramBase);
-    } else if (game.states && !cal?.pending) {
+    } else if (game.states && !cal?.pending && !cal?.unsupported) {
       // Only a game that ASKED for a state map can fail to get one.
       childLog.warn('emulator.calibration.failed', {
         calibrated: cal != null,
