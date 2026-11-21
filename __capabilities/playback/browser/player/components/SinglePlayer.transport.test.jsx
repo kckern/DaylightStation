@@ -38,6 +38,19 @@ describe('SinglePlayer transport descriptor', () => {
     expect(fetchMediaInfo).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:55854' }));
   });
 
+  it('asks the server not to resume when the request fixes its own start', async () => {
+    fetchMediaInfo.mockResolvedValue({
+      id: 'plex:50896', contentId: 'plex:50896', mediaUrl: '/api/v1/proxy/plex/stream/50896', mediaType: 'dash_video', format: 'dash_video',
+    });
+    const { unmount } = render(<SinglePlayer contentId="plex:50896" seconds={0} clear={vi.fn()} advance={vi.fn()} />);
+    await screen.findByTestId('video-transport');
+    expect(fetchMediaInfo).toHaveBeenLastCalledWith(expect.objectContaining({ resume: false }));
+    unmount();
+    render(<SinglePlayer contentId="plex:50897" clear={vi.fn()} advance={vi.fn()} />);
+    await screen.findByTestId('video-transport');
+    expect(fetchMediaInfo).toHaveBeenLastCalledWith(expect.objectContaining({ resume: undefined }));
+  });
+
   it('keeps identity-less direct embeds on the direct-media bypass', async () => {
     render(<SinglePlayer
       mediaUrl="https://media.example.test/embed/opaque"
