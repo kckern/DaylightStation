@@ -71,6 +71,7 @@ function DashboardsTab({ agentId, userId }) {
           <IconCalendar size={18} />
           <TextInput
             type="date"
+            label="Dashboard date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
             style={{ flex: 1, maxWidth: 200 }}

@@ -164,7 +164,7 @@ for (const change of ['member', 'date']) {
       await page.getByPlaceholder('Select user').click();
       await page.getByRole('option', { name: 'Bob' }).click();
     } else {
-      await page.locator('input[type=date]').fill('2026-10-01');
+      await page.getByLabel('Dashboard date').fill('2026-10-01');
     }
     const selectedPath = change === 'member'
       ? firstPath.replace('/alice/', '/bob/')
