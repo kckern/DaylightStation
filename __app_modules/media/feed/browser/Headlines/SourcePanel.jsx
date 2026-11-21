@@ -41,7 +41,13 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, o
     setRefreshing(true);
     setRefreshError(false);
     try {
-      await DaylightAPI(`/api/v1/feed/headlines/harvest/${source.id}`, {}, 'POST');
+      const result = await DaylightAPI(`/api/v1/feed/headlines/harvest/${source.id}`, {}, 'POST');
+      if (result?.error === true) {
+        log.warn('headline.source.refresh_failed', { sourceId: source.id, itemCount: result.items ?? 0 });
+        setRefreshError(true);
+        if (Number(result.items) > 0) await onRefresh();
+        return;
+      }
       await onRefresh();
     } catch (err) {
       log.warn('headline.source.refresh_failed', { sourceId: source.id, error: err.message });
@@ -130,7 +136,7 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, o
           })}
         </ul>
       )}
-      {refreshError && <div className="source-refresh-error" role="alert">Refresh failed. <button type="button" onClick={handleRefresh}>Try again</button></div>}
+      {refreshError && <div className="source-refresh-error" role="alert">Refresh failed. <button type="button" disabled={refreshing} onClick={handleRefresh}>Try again</button></div>}
     </div>
   );
 }

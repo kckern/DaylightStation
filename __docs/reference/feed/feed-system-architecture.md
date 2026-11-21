@@ -349,6 +349,10 @@ Log events: `feed.headlines.jev-pair`, `feed.headlines.jev-label` (per new verdi
 | `POST` | `/api/v1/feed/headlines/harvest?page=ID` | Trigger harvest for all sources (or one page) |
 | `POST` | `/api/v1/feed/headlines/harvest/:source` | Harvest a single source by ID |
 
+Single-source harvest returns `{ items, error }`. When `error` is true, the
+source panel keeps its existing headlines and offers **Try again**; it still
+reloads the edition if the attempt saved any items.
+
 The page harvest response includes `{ harvested, errors, totalItems }`. `harvested`
 counts attempted sources, including failed sources. The Headlines view reloads the
 cached edition after the request and reports `errors` against that attempt count;
