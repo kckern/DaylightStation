@@ -98,7 +98,7 @@ export default function Headlines({ pageId }) {
   const reading = readState?.edition !== edition || readState.loading;
   const loading = reading || harvesting.has(pageId);
   const error = failedHarvest === edition
-    ? 'Sources could not be refreshed. Existing headlines are still available.'
+    ? 'Sources could not be refreshed. Existing headlines are still available; use Refresh all to try again.'
     : readState?.edition === edition && readState.error;
   const { regionProps, retry } = useRetryRegion(() => {
     setFailedHarvest(null);
@@ -163,7 +163,9 @@ export default function Headlines({ pageId }) {
       {error && (
         <div className="headlines-error" role="alert">
           <span>{error}</span>
-          <button type="button" disabled={loading} onClick={retry}>Retry</button>
+          <button type="button" disabled={loading} onClick={retry}>
+            {failedHarvest === edition ? 'Reload stored edition' : 'Retry'}
+          </button>
         </div>
       )}
       {partialHarvestMessage && <div className="headlines-error" role="status">{partialHarvestMessage}</div>}
