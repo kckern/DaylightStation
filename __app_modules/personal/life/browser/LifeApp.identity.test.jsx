@@ -26,7 +26,7 @@ it.each([['beliefs', 'beliefs'], ['ceremonies', 'cadence']])(
       }
       reads.push(path);
       return endpoint === 'beliefs'
-        ? { beliefs: [{ id: 'b', if_hypothesis: 'Bob marker' }] }
+        ? { beliefs: [{ id: 'b', if: 'Bob marker', then: 'Bob outcome' }] }
         : { ceremonies: { unit_intention: { enabled: true, streak: 18 } } };
     });
     render(<MemoryRouter initialEntries={['/life/plan/' + route]}><Routes>
@@ -60,7 +60,7 @@ it('keeps the saved member and their screen available when the optional switcher
     if (path === 'api/v1/life/user?username=bob') { identityReads += 1; return member; }
     if (path === '/api/v1/life/plan/beliefs?username=bob') {
       contentReads += 1;
-      return { beliefs: [{ id: 'b', if_hypothesis: 'Bob marker' }] };
+      return { beliefs: [{ id: 'b', if: 'Bob marker', then: 'Bob outcome' }] };
     }
     throw new Error('Unexpected fixture request ' + path);
   });

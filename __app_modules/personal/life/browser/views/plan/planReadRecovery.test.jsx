@@ -23,7 +23,7 @@ function page(path, user = 'amy') {
 }
 
 it('retries beliefs, retains a rejected creation draft, and shows the committed list after save', async () => {
-  const saved = { id: 'b', if_hypothesis: 'Practice' };
+  const saved = { id: 'b', if: 'Practice', then: 'Improve' };
   DaylightAPI.mockReset()
     .mockRejectedValueOnce(new Error('Unavailable'))
     .mockResolvedValueOnce({ beliefs: [] })
