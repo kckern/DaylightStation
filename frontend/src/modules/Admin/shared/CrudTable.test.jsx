@@ -1,9 +1,32 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import CrudTable from './CrudTable.jsx';
 
 describe('CrudTable pending delete ownership', () => {
+  it('clears delete confirmation on click-away without deleting a row', async () => {
+    const rows = [{ id: 'first', name: 'First' }];
+    const onChange = vi.fn();
+    render(
+      <MantineProvider>
+        <CrudTable items={rows} columns={[{ key: 'name', label: 'Name', type: 'text' }]}
+          onChange={onChange} confirmDelete />
+      </MantineProvider>,
+    );
+
+    const deleteButton = within(screen.getByRole('row', { name: /First/ })).getByRole('button');
+    fireEvent.click(deleteButton);
+    expect(deleteButton).toHaveAttribute('title', 'Click again to confirm delete');
+    await act(async () => new Promise(resolve => setTimeout(resolve, 0)));
+
+    fireEvent.mouseDown(document.body);
+    expect(deleteButton).toHaveAttribute('title', 'Delete row');
+    fireEvent.click(deleteButton);
+
+    expect(deleteButton).toHaveAttribute('title', 'Click again to confirm delete');
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it('retires confirmation when the caller removes its pending row', () => {
     const rows = [{ id: 'first', name: 'First' }, { id: 'second', name: 'Second' }];
     const onChange = vi.fn();

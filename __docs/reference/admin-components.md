@@ -78,7 +78,7 @@ Editable table for arrays of objects. Used for equipment lists, device mappings,
 | `columns` | `Array` | `[]` | Column definitions (see below) |
 | `createDefaults` | `object` | `{}` | Default values for new rows |
 | `addLabel` | `string` | `"Add Item"` | Label for the add button |
-| `confirmDelete` | `boolean` | `false` | Require two clicks to delete a row |
+| `confirmDelete` | `boolean` | `false` | Require two clicks to delete a row; clicking elsewhere cancels the armed confirmation |
 | `emptyMessage` | `string` | `"No items."` | Message when items array is empty |
 
 **Column definition:**

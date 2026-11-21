@@ -45,7 +45,7 @@ function CrudTable({
     const handleClickAway = (e) => {
       // If the click is not on the pending delete button, reset
       if (pendingDeleteRef.current && !pendingDeleteRef.current.contains(e.target)) {
-        setPendingDeleteIndex(null);
+        setPendingDeleteItem(null);
       }
     };
 
