@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
+import { clearToken } from '../../../lib/auth.js';
+import { adminDraftOwnerKey, clearAdminDraft } from '../shared/useAdminDraftState.js';
 
 const api = vi.fn();
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => api(...a) }));
@@ -8,6 +10,8 @@ import { NotificationsIndex } from './NotificationsIndex.jsx';
 
 const wrap = (ui) => render(<MantineProvider>{ui}</MantineProvider>);
 beforeEach(() => {
+  clearToken();
+  clearAdminDraft(adminDraftOwnerKey('notification-settings', 'anonymous', '/api/v1/admin/notifications'));
   api.mockReset();
   api.mockImplementation((pathArg) => {
     if (String(pathArg).includes('/ledger')) return Promise.resolve({ events: [{ at: 2, username: 'kckern', category: 'ceremony', delivered: false, suppressed: true, reason: 'cooldown' }] });

@@ -9,7 +9,7 @@ const initial = {
   cooldowns: { ceremony: 1200, default: 60 },
 };
 
-async function mockNotifications(page, baseURL) {
+async function mockNotifications(page, baseURL, { startAtDevices = false } = {}) {
   const origin = new URL(baseURL).origin;
   const writes = [];
   let heldSave;
@@ -21,6 +21,8 @@ async function mockNotifications(page, baseURL) {
   await page.route('**/api/**', route => {
     const request = route.request();
     const { pathname } = new URL(request.url());
+    if (pathname === '/api/v1/admin/household/devices') return route.fulfill({ json: { devices: [] } });
+    if (pathname === '/api/v1/admin/household/shutdown/status') return route.fulfill({ json: {} });
     if (pathname === settingsPath) {
       if (request.method() === 'GET') return route.fulfill({ json: initial });
       if (request.method() === 'PUT') {
@@ -33,7 +35,10 @@ async function mockNotifications(page, baseURL) {
     return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
   });
 
-  await page.goto(pagePath);
+  await page.goto(startAtDevices ? '/admin/household/devices' : pagePath);
+  if (startAtDevices) {
+    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Notifications', exact: true }).click();
+  }
   return {
     writes,
     acknowledge: config => heldSave.fulfill({ json: config }),
@@ -108,4 +113,26 @@ test('Admin Notifications guards a draft that matches the old baseline during a 
   await expect(start).toHaveValue('21:00');
   await expect(unsaved).toBeVisible();
   await expect(save).toBeEnabled();
+});
+
+test('Admin Notifications preserves an unsaved draft through native Back and Forward', async ({ page, baseURL }) => {
+  const { writes, start, unsaved, discard, devices } = await mockNotifications(page, baseURL, { startAtDevices: true });
+  await start.fill('20:00');
+
+  await page.goBack();
+  await expect(page).toHaveURL('/admin/household/devices');
+  await page.goForward();
+  await expect(page).toHaveURL(pagePath);
+  await expect(start).toHaveValue('20:00');
+  await expect(unsaved).toBeVisible();
+  expect(writes).toEqual([]);
+
+  await devices.click();
+  await expect(discard).toBeVisible();
+  await discard.getByRole('button', { name: 'Discard', exact: true }).click();
+  await page.goBack();
+  await expect(page).toHaveURL(pagePath);
+  await expect(start).toHaveValue('21:00');
+  await expect(unsaved).toHaveCount(0);
+  expect(writes).toEqual([]);
 });

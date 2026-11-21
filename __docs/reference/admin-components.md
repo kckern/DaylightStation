@@ -180,11 +180,11 @@ Manages loading, saving, dirty tracking, and revert for a single YAML config fil
 Admin mounts `AuthGate` and its routes inside `AdminSessionBoundary`. A token change
 remounts the authenticated Admin subtree so mounted API resources and transient
 form state cannot survive into another session. `useAdminSessionKey` supplies the
-shared identity for session-owned in-memory drafts; Member, Device, and config
-drafts remain separate by editor and resource. The draft map is not persisted to
-local storage, and restoring a draft still requires its original server baseline
-to match. Build owner keys with `adminDraftOwnerKey` so session and resource
-scoping stays consistent across Admin editors.
+shared identity for session-owned in-memory drafts; Member, Device, Notification,
+and config drafts remain separate by editor and resource. The draft map is not
+persisted to local storage, and restoring a draft still requires its original
+server baseline to match. Build owner keys with `adminDraftOwnerKey` so session
+and resource scoping stays consistent across Admin editors.
 
 **Import:**
 

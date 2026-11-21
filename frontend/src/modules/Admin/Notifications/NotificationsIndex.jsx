@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Stack, Paper, Title, Group, Switch, TextInput, Table, Button, Badge, NumberInput, Text, Loader } from '@mantine/core';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { ErrorState } from '../../../lib/ui/states.jsx';
@@ -6,6 +6,13 @@ import { useRetryRegion } from '../../../lib/ui/useRetryRegion.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import SaveBar from '../shared/SaveBar.jsx';
 import { useUnsavedGuard } from '../shared/useUnsavedGuard.js';
+import {
+  acknowledgeAdminDraft,
+  adminDraftOwnerKey,
+  clearAdminDraft,
+  useAdminDraftState,
+} from '../shared/useAdminDraftState.js';
+import { useAdminSessionKey } from '../shared/useAdminSessionKey.js';
 
 const settingsPath = '/api/v1/admin/notifications';
 const editableConfig = ({ quiet_hours, cooldowns }) => ({ quiet_hours, cooldowns });
@@ -43,21 +50,26 @@ export function NotificationsIndex() {
 }
 
 function NotificationSettings({ initial }) {
-  const [original, setOriginal] = useState(() => editableConfig(initial));
-  const [config, setConfig] = useState(original);
+  const sessionKey = useAdminSessionKey();
+  const ownerKey = adminDraftOwnerKey('notification-settings', sessionKey, settingsPath);
+  const [config, setConfig, original, setOriginal] = useAdminDraftState(ownerKey, editableConfig(initial));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const pendingSave = useRef(false);
   const dirty = JSON.stringify(config) !== JSON.stringify(original);
-  useUnsavedGuard(dirty || saving, { label: 'notification settings' });
+  const clearDraft = useCallback(() => clearAdminDraft(ownerKey), [ownerKey]);
+  useUnsavedGuard(dirty || saving, { label: 'notification settings', onDiscard: clearDraft });
 
   const save = async () => {
     if (!dirty || pendingSave.current) return;
     pendingSave.current = true;
     setSaving(true);
     setError(null);
+    const submittedOriginal = original;
+    const submittedConfig = config;
     try {
       const saved = editableConfig(await DaylightAPI(settingsPath, config, 'PUT'));
+      acknowledgeAdminDraft(ownerKey, submittedOriginal, submittedConfig, saved);
       setOriginal(saved);
       // Adopt confirmed values and carry forward only edits made during the PUT.
       setConfig(current => ({
@@ -73,6 +85,7 @@ function NotificationSettings({ initial }) {
   };
 
   const revert = () => {
+    clearDraft();
     setConfig(original);
     setError(null);
   };
