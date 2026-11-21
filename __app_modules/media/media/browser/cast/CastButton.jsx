@@ -28,7 +28,15 @@ export function CastButton({ contentId, queue, title, item, onAction }) {
     if (!open) return undefined;
     const button = buttonRef.current;
     const popover = popoverRef.current;
-    const stopObserving = observeVisualViewport(() => positionPicker(button, popover));
+    const reposition = () => positionPicker(button, popover);
+    const repositionOnAnchorScroll = (event) => {
+      if (event.target?.contains?.(button)) reposition();
+    };
+    const stopObserving = observeVisualViewport(reposition);
+    // Scroll events do not bubble, so capture them to reposition when a nested
+    // app scroller moves the trigger while the picker is portaled to body. Ignore
+    // scrolls inside the picker, which cannot change the trigger's coordinates.
+    window.addEventListener('scroll', repositionOnAnchorScroll, true);
     popover.focus({ preventScroll: true });
 
     const dismissOutside = (event) => {
@@ -38,6 +46,7 @@ export function CastButton({ contentId, queue, title, item, onAction }) {
     document.addEventListener('pointerdown', dismissOutside, true);
     return () => {
       stopObserving();
+      window.removeEventListener('scroll', repositionOnAnchorScroll, true);
       document.removeEventListener('pointerdown', dismissOutside, true);
     };
   }, [open]);

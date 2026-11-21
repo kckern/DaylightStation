@@ -146,3 +146,48 @@ test('Media Detail Cast stays reachable when the visual viewport excludes its tr
   await expect(trigger).toBeFocused();
   await expect(page).toHaveURL(/view=detail/);
 });
+
+test('Media Detail Cast stays anchored while its scroll container moves', async ({ page, baseURL }) => {
+  await openDetailsWithPlayback(page, baseURL);
+
+  const canvas = page.locator('.media-canvas');
+  await canvas.evaluate((element) => {
+    const detail = element.querySelector('.detail-view');
+    const spacer = document.createElement('div');
+    spacer.style.height = '900px';
+    detail.append(spacer);
+    element.style.height = '650px';
+    element.style.flex = 'none';
+  });
+
+  const trigger = page.getByRole('button', { name: 'Cast', exact: true });
+  await expect(trigger).toBeInViewport();
+  await trigger.press('Enter');
+  const popover = page.getByRole('dialog', { name: 'Cast to a device', exact: true });
+
+  const alignmentError = async () => {
+    const [anchor, picker] = await Promise.all([
+      trigger.evaluate((button) => button.getBoundingClientRect()),
+      popover.evaluate((panel) => ({ rect: panel.getBoundingClientRect(), opensAbove: !!panel.style.bottom })),
+    ]);
+    return picker.opensAbove
+      ? Math.abs(picker.rect.bottom - anchor.top + 6)
+      : Math.abs(picker.rect.top - anchor.bottom - 6);
+  };
+  await expect.poll(alignmentError).toBeLessThan(1);
+
+  const scrollTopBefore = await canvas.evaluate((element) => element.scrollTop);
+  const anchorTopBefore = await trigger.evaluate((button) => button.getBoundingClientRect().top);
+  await canvas.evaluate((element) => { element.scrollTop += 40; });
+  await expect.poll(() => canvas.evaluate((element) => element.scrollTop)).toBe(scrollTopBefore + 40);
+  await expect(trigger).toBeInViewport();
+  await expect.poll(() => trigger.evaluate((button) => button.getBoundingClientRect().top)).toBe(anchorTopBefore - 40);
+  await expect.poll(alignmentError).toBeLessThan(1);
+
+  const pickerPosition = await popover.evaluate((panel) => ({ top: panel.style.top, bottom: panel.style.bottom }));
+  await trigger.evaluate((button) => { button.style.transform = 'translateY(20px)'; });
+  await popover.evaluate((panel) => panel.dispatchEvent(new Event('scroll')));
+  await expect.poll(() => popover.evaluate((panel) => ({ top: panel.style.top, bottom: panel.style.bottom })))
+    .toEqual(pickerPosition);
+  await trigger.evaluate((button) => { button.style.transform = ''; });
+});
