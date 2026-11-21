@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Stack, Paper, Text, Group, Badge, Progress, Button, TextInput, Select } from '@mantine/core';
 import { IconFlask } from '@tabler/icons-react';
 import { Button as FormButton, Sheet, StateMessage, SubmitButton, createAppLogger, useSheetSubmission } from '@/lib/ui';
@@ -106,6 +106,7 @@ function BeliefCreateSheet({ onClose, createBelief }) {
 
 export function BeliefsView({ username }) {
   const { beliefs, loading, error, refetch, addEvidence, createBelief } = useBeliefs(username);
+  const beliefDescriptionPrefix = useId();
   const [addingTo, setAddingTo] = useState(null);
   const [creating, setCreating] = useState(false);
   const close = () => setCreating(false);
@@ -128,15 +129,17 @@ export function BeliefsView({ username }) {
       <Stack gap="sm">
         {beliefs.map(b => {
           const effectiveConf = b.effective_confidence ?? b.confidence ?? 0;
+          const statementId = `${beliefDescriptionPrefix}-statement-${b.id}`;
+          const outcomeId = `${beliefDescriptionPrefix}-outcome-${b.id}`;
           return (
             <Paper key={b.id} p="sm" withBorder>
               <Group justify="space-between" mb="xs">
                 <Stack gap={2} style={{ flex: 1 }}>
-                  <Text size="sm" fw={500}>
+                  <Text size="sm" fw={500} id={statementId}>
                     If {b.if}
                   </Text>
                   {b.then && (
-                    <Text size="xs" c="dimmed">Then {b.then}</Text>
+                    <Text size="xs" c="dimmed" id={outcomeId}>Then {b.then}</Text>
                   )}
                 </Stack>
                 <Group gap="xs">
@@ -171,6 +174,7 @@ export function BeliefsView({ username }) {
                   size="xs"
                   variant="subtle"
                   leftSection={<IconFlask size={14} />}
+                  aria-describedby={b.then ? `${statementId} ${outcomeId}` : statementId}
                   onClick={() => setAddingTo(b.id)}
                 >
                   Add Evidence

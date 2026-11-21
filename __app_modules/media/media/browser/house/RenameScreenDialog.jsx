@@ -51,10 +51,15 @@ export function RenameScreenDialog({
       setName(requestedName);
     }
   };
+  const canSave = Boolean(name.trim()) && answer?.code !== 'ROUTINES_TARGET';
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    if (!busy && canSave) submit();
+  };
 
   return (
     <FormDialog opened={open} onClose={onClose} title={title} centered>
-      <Stack gap="sm" data-testid={`${testid}-dialog`}>
+      <Stack component="form" gap="sm" data-testid={`${testid}-dialog`} onSubmit={handleSubmit}>
         <TextInput
           label={nameLabel}
           description="Every screen in the house has its own name."
@@ -79,7 +84,7 @@ export function RenameScreenDialog({
               “{answer.name}” is already the name of {answer.heldBy ? nameOf(answer.heldBy) : 'another screen'}.
             </Text>
             {answer.suggestion && (
-              <Button mt="xs" variant="light" className="house-action" data-testid={`${testid}-use-suggestion`} onClick={() => submit({ name: answer.suggestion })}>
+              <Button type="button" mt="xs" variant="light" className="house-action" data-testid={`${testid}-use-suggestion`} onClick={() => submit({ name: answer.suggestion })}>
                 Use “{answer.suggestion}”
               </Button>
             )}
@@ -91,7 +96,7 @@ export function RenameScreenDialog({
             <List size="sm" mt={4}>
               {(answer.routines ?? []).map((r) => <List.Item key={r.id}>{r.name}</List.Item>)}
             </List>
-            <Button mt="xs" className="house-action" data-testid={`${testid}-confirm`} loading={busy} onClick={() => submit({ confirm: true })}>
+            <Button type="button" mt="xs" className="house-action" data-testid={`${testid}-confirm`} loading={busy} onClick={() => submit({ confirm: true })}>
               Rename anyway
             </Button>
           </div>
@@ -102,13 +107,13 @@ export function RenameScreenDialog({
           </Text>
         )}
         <Group justify="flex-end">
-          <Button variant="default" className="house-action" onClick={onClose}>Cancel</Button>
+          <Button type="button" variant="default" className="house-action" onClick={onClose}>Cancel</Button>
           <Button
+            type="submit"
             className="house-action"
             leftSection={<IconDeviceFloppy size={16} aria-hidden />}
-            disabled={!name.trim() || answer?.code === 'ROUTINES_TARGET'}
+            disabled={!canSave}
             loading={busy && answer?.code !== 'ROUTINES_TARGET'}
-            onClick={() => submit()}
             data-testid={`${testid}-save`}
           >
             {saveLabel}
