@@ -14,7 +14,7 @@ const makeConfig = () => new HubConfig({
     new HubDevice({
       position: new SlotPosition(1),
       color: new SlotColor('red'),
-      mac: '41:42:3A:E5:43:07',
+      mac: 'AA:BB:CC:00:30:07',
       class: new SlotClass('private'),
       volumeBounds: new VolumeBounds({})
     })

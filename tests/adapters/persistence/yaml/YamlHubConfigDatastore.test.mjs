@@ -48,7 +48,7 @@ function makeConfig() {
       new HubDevice({
         position: new SlotPosition(1),
         color: new SlotColor('red'),
-        mac: '41:42:3A:E5:43:07',
+        mac: 'AA:BB:CC:00:30:07',
         class: new SlotClass('private'),
         volumeBounds: new VolumeBounds({})
       })
@@ -76,7 +76,7 @@ describe('YamlHubConfigDatastore', () => {
 devices:
   - slot: 1
     color: red
-    mac: "41:42:3A:E5:43:07"
+    mac: "AA:BB:CC:00:30:07"
     class: private
 `.trimStart();
       const { tmpDir: d, store } = await makeStore(ymlText);
@@ -138,7 +138,7 @@ devices:
       tmpDir = d;
       const yamlPath = path.join(d, 'devices.yml');
       // Seed an existing valid YAML so we have a baseline to compare against.
-      await writeFile(yamlPath, 'devices:\n  - slot: 1\n    color: red\n    mac: "41:42:3A:E5:43:07"\n    class: private\n');
+      await writeFile(yamlPath, 'devices:\n  - slot: 1\n    color: red\n    mac: "AA:BB:CC:00:30:07"\n    class: private\n');
       const originalBytes = await readFile(yamlPath);
       const store = new YamlHubConfigDatastore({ yamlPath });
 
@@ -190,7 +190,7 @@ devices:
       tmpDir = d;
       const yamlPath = path.join(d, 'devices.yml');
       // Seed an existing file
-      await writeFile(yamlPath, 'devices:\n  - slot: 1\n    color: red\n    mac: "41:42:3A:E5:43:07"\n    class: private\n');
+      await writeFile(yamlPath, 'devices:\n  - slot: 1\n    color: red\n    mac: "AA:BB:CC:00:30:07"\n    class: private\n');
       const store = new YamlHubConfigDatastore({ yamlPath });
 
       // Build two configs differing in volume.max — keep default within bounds.
@@ -198,7 +198,7 @@ devices:
         devices: [new HubDevice({
           position: new SlotPosition(1),
           color: new SlotColor('red'),
-          mac: '41:42:3A:E5:43:07',
+          mac: 'AA:BB:CC:00:30:07',
           class: new SlotClass('private'),
           volumeBounds: new VolumeBounds({ default: 40, max: 50 })
         })]
@@ -207,7 +207,7 @@ devices:
         devices: [new HubDevice({
           position: new SlotPosition(1),
           color: new SlotColor('red'),
-          mac: '41:42:3A:E5:43:07',
+          mac: 'AA:BB:CC:00:30:07',
           class: new SlotClass('private'),
           volumeBounds: new VolumeBounds({ default: 40, max: 60 })
         })]
@@ -233,7 +233,7 @@ devices:
       const d = await mkdtemp(path.join(tmpdir(), 'yaml-hub-config-'));
       tmpDir = d;
       const yamlPath = path.join(d, 'devices.yml');
-      await writeFile(yamlPath, 'devices:\n  - slot: 1\n    color: red\n    mac: "41:42:3A:E5:43:07"\n    class: private\n');
+      await writeFile(yamlPath, 'devices:\n  - slot: 1\n    color: red\n    mac: "AA:BB:CC:00:30:07"\n    class: private\n');
       const store = new YamlHubConfigDatastore({ yamlPath });
 
       // First call: monkey-patch rename to throw — first save fails.

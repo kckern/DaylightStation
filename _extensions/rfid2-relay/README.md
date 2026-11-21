@@ -1,7 +1,7 @@
 # Garage RFID2 shell
 
 An M5Stack ATOM Lite class controller (measured ESP32-PICO-D4, 4 MB flash,
-MAC `F0:16:1D:02:2A:88`) hosts an M5Stack Unit RFID2 (U031-B, WS1850S) on its
+MAC `AA:BB:CC:00:40:02`) hosts an M5Stack Unit RFID2 (U031-B, WS1850S) on its
 HY2.0 Grove port. This first image is a field-updatable diagnostic shell. It
 checks that the reader answers on I²C; it does not yet read tags or emit events.
 

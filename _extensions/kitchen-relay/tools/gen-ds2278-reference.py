@@ -272,7 +272,8 @@ def main(src_path, out_dir=None):
     y = y2 + 6
 
     rule(y); y += 12
-    text("Kitchen relay: _extensions/kitchen-relay | scanner MAC c8:1c:fe:fd:ce:90 | "
+    scanner_mac = os.environ.get("SCANNER_MAC", "<scanner MAC from config.yml>")
+    text(f"Kitchen relay: _extensions/kitchen-relay | scanner MAC {scanner_mac} | "
          "health at http://<relay-ip>/status",
          MARGIN, y, size=7, color=(0.45, 0.45, 0.45))
     text("Regenerate: python3 tools/gen-ds2278-reference.py <ds2278-prg-en.pdf> [OUT_DIR]",

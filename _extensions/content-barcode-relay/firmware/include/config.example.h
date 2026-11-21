@@ -21,5 +21,5 @@
 #define NUTRIBOT_USER_ID ""
 #define NUTRIBOT_CONVERSATION_ID ""
 
-#define SCANNER_MAC      "c8:1c:fe:fd:ce:90"           // DS2278 BLE MAC (from bluetoothctl discovery)
+#define SCANNER_MAC      "aa:bb:cc:00:40:01"           // DS2278 BLE MAC (from bluetoothctl discovery)
 #define SCANNER_NAME     "DS2278"

@@ -34,7 +34,7 @@ function makeService(overrides = {}) {
   // suppress if the service read-merge-writes instead of posting one key.
   const store = overrides.initialConfig
     ? { ...overrides.initialConfig }
-    : { targetMac: '10:65:36:36:62:66', targetName: 'jam-7e6', speakerMac: '64:49:A5:8B:9B:75' };
+    : { targetMac: 'aa:bb:cc:00:10:01', targetName: 'jam-7e6', speakerMac: 'AA:BB:CC:00:10:02' };
   delete overrides.initialConfig;
   const getFails = overrides.getFails; delete overrides.getFails;
   const fetchImpl = (url, opts = {}) => {
@@ -110,9 +110,9 @@ test('suppressWakeUntil MERGES — the wake relay must never erase targetMac (th
 
   // The POST replaced the whole override (truncating APK write). Because the
   // service merged, the BLE-MIDI target identities survived alongside the new key.
-  assert.equal(store.targetMac, '10:65:36:36:62:66', 'targetMac must survive a wake-suppress');
+  assert.equal(store.targetMac, 'aa:bb:cc:00:10:01', 'targetMac must survive a wake-suppress');
   assert.equal(store.targetName, 'jam-7e6');
-  assert.equal(store.speakerMac, '64:49:A5:8B:9B:75');
+  assert.equal(store.speakerMac, 'AA:BB:CC:00:10:02');
   assert.equal(store.fkbWakeSuppressUntilEpochMs, String(deadline));
 });
 
@@ -134,7 +134,7 @@ test('resumeWake clears the off override and relays a past deadline to the APK',
 
   assert.equal(screenOverride.get('yellow-room-tablet'), null);
   assert.equal(String(store.fkbWakeSuppressUntilEpochMs), '1000000');
-  assert.equal(store.targetMac, '10:65:36:36:62:66', 'resume must merge, never clobber targetMac');
+  assert.equal(store.targetMac, 'aa:bb:cc:00:10:01', 'resume must merge, never clobber targetMac');
   svc._handleNoteOnForTest();
   await Promise.resolve();
   assert.deepEqual(screenCalls, [true]);

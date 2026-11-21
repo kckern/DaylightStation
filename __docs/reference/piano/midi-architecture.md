@@ -18,7 +18,7 @@ for IN and Web MIDI for OUT.
 ## 1. Physical topology (as observed)
 
 There is **one physical path** between the browser and the piano, and it runs through the
-**JamCorder** — a networked DIN↔BLE MIDI relay (`jam-7e6`, BLE MAC `10:65:36:36:62:66`,
+**JamCorder** — a networked DIN↔BLE MIDI relay (`jam-7e6`, BLE MAC `aa:bb:cc:00:10:01`,
 HTTP at `http://10.0.0.243`). The piano connects to the JamCorder over **USB**; the
 JamCorder bridges that to **BLE-MIDI** (and to its 5-pin DIN). Verified from the
 JamCorder's own message counters (`GET /api/device-state/get` → `midiMsgCounts`):
@@ -253,7 +253,7 @@ command) plus routing browser OUT through the WS.
 - **Reload the kiosk** to pick up a new bundle: `cli/fkb.cli.mjs cmd clearCache` then
   `reload`. `FKB_PW` comes from `data/household/auth/fullykiosk-piano.yml`.
 - **Never blank the APK `targetMac`** (releases BLE → browser can't hold it alone → "no keys").
-  Keep `10:65:36:36:62:66`.
+  Keep `aa:bb:cc:00:10:01`.
 
 ---
 
@@ -267,4 +267,4 @@ command) plus routing browser OUT through the WS.
 | MIDI monitor byte decoder | `frontend/src/modules/Piano/PianoKiosk/midiDecode.js` |
 | Note store / history | `frontend/src/modules/Piano/PianoKiosk/noteStore.js` · `frontend/src/modules/Piano/noteHistory.js` |
 | Native bridge APK (synth + BLE reader) | `_extensions/piano-bridge/` (`DESIGN.md`, `README.md`, `pbctl.mjs`, `app/`) |
-| JamCorder relay | device at `http://10.0.0.243` (`jam-7e6`, `10:65:36:36:62:66`) |
+| JamCorder relay | device at `http://10.0.0.243` (`jam-7e6`, `aa:bb:cc:00:10:01`) |

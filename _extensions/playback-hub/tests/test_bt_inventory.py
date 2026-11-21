@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """web.py Bluetooth inventory: /api/bt/paired and /api/bt/scan's flags.
 
-Regression: 2026-11-10 GREEN's Bandou (41:42:F0:91:27:E8, slot 3) was
+Regression: 2026-11-10 GREEN's Bandou (AA:BB:CC:00:31:07, slot 3) was
 connected and playing on hci2 yet missing from /api/bt/paired, because
 bluetoothctl only sees the default controller and a failed `info` probe
 silently dropped the device. Fixture = real GetManagedObjects from the hub.
@@ -30,10 +30,10 @@ def check(cond, msg):
 
 
 BUSCTL = (HERE / "fixtures" / "bluez_managed_objects.json").read_text()
-GREEN, BLUE, YOTO = "41:42:F0:91:27:E8", "41:42:8D:B7:A0:11", "E8:68:E7:34:55:8E"
+GREEN, BLUE, YOTO = "AA:BB:CC:00:31:07", "AA:BB:CC:00:31:05", "AA:BB:CC:00:32:02"
 SLOTS = [{"slot": 3, "mac": GREEN}, {"slot": 4, "mac": BLUE}]
 
-INFO_BLUE = """Device 41:42:8D:B7:A0:11 (public)
+INFO_BLUE = """Device AA:BB:CC:00:31:05 (public)
 \tName: Bandou 3.0
 \tAlias: Bandou 3.0
 \tPaired: yes
@@ -42,7 +42,7 @@ INFO_BLUE = """Device 41:42:8D:B7:A0:11 (public)
 \tBlocked: no
 \tConnected: yes
 """
-INFO_MISSING = "Device 41:42:F0:91:27:E8 not available\n"
+INFO_MISSING = "Device AA:BB:CC:00:31:07 not available\n"
 
 
 def runner(table):
@@ -82,11 +82,11 @@ check([e["mac"] for e in lst][:2] == [GREEN, BLUE], "sorted by configured slot")
 TREE = """/
 /org/bluez
 /org/bluez/hci0
-/org/bluez/hci0/dev_41_42_8D_B7_A0_11
-/org/bluez/hci0/dev_41_42_8D_B7_A0_11/sep1
+/org/bluez/hci0/dev_AA_BB_CC_00_31_05
+/org/bluez/hci0/dev_AA_BB_CC_00_31_05/sep1
 /org/bluez/hci2
-/org/bluez/hci2/dev_41_42_F0_91_27_E8
-/org/bluez/hci4/dev_E8_68_E7_34_55_8E
+/org/bluez/hci2/dev_AA_BB_CC_00_31_07
+/org/bluez/hci4/dev_AA_BB_CC_00_32_02
 """
 GP = ("busctl", "--system", "get-property", "org.bluez")
 D1 = "org.bluez.Device1"
@@ -94,14 +94,14 @@ P6 = ("Address", "Alias", "Paired", "Trusted", "Connected", "Bonded")
 table = {
     BUSCTL_ARGV: "",
     ("busctl", "--system", "tree", "org.bluez", "--list"): TREE,
-    GP + ("/org/bluez/hci0/dev_41_42_8D_B7_A0_11", D1) + P6:
+    GP + ("/org/bluez/hci0/dev_AA_BB_CC_00_31_05", D1) + P6:
         f's "{BLUE}"\ns "Bandou 3.0"\nb true\nb true\nb true\nb true\n',
-    GP + ("/org/bluez/hci2/dev_41_42_F0_91_27_E8", D1) + P6:
+    GP + ("/org/bluez/hci2/dev_AA_BB_CC_00_31_07", D1) + P6:
         subprocess.TimeoutExpired("busctl", 3),
     # older BlueZ: no Bonded -> 6-prop call is partial, 5-prop call succeeds
-    GP + ("/org/bluez/hci4/dev_E8_68_E7_34_55_8E", D1) + P6:
+    GP + ("/org/bluez/hci4/dev_AA_BB_CC_00_32_02", D1) + P6:
         f's "{YOTO}"\ns "Yoto \\"Player\\""\nb false\nb true\nb false\n',
-    GP + ("/org/bluez/hci4/dev_E8_68_E7_34_55_8E", D1) + P6[:-1]:
+    GP + ("/org/bluez/hci4/dev_AA_BB_CC_00_32_02", D1) + P6[:-1]:
         f's "{YOTO}"\ns "Yoto \\"Player\\""\nb false\nb true\nb false\n',
 }
 by = {e["mac"]: e for e in web.bt_paired_list(run=runner(table), devices=SLOTS)}

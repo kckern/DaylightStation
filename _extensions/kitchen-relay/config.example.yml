@@ -68,7 +68,7 @@ scales:
       # AUTHORITATIVE when set: the firmware matches on this address alone. Leave
       # empty ONLY for bring-up before the LE address is known (adopt-by-name, which
       # will take any BLE HID keyboard in range). gen-config.mjs warns when empty.
-      mac: "c8:1c:fe:fd:ce:90"
+      mac: "aa:bb:cc:00:40:01"
 
 # ---------------------------------------------------------------------------
 # Nutribot integration: settled readings become density-logged food entries.

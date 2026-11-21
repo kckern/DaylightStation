@@ -76,7 +76,7 @@ links:activate()
 
 -- VALIDATION NOTES for the window (confirm each against the live graph):
 --  1. `target.object` on the mpv stream is the sink NODE.NAME string
---     (e.g. "bluez_output.41_42_3A_E5_43_07.1") — verified via pw-dump 2026-07-17.
+--     (e.g. "bluez_output.AA_BB_CC_00_30_07.1") — verified via pw-dump 2026-07-17.
 --  2. `Constraint { "object.id", "=", n }` and `link:request_destroy()` are the
 --     0.4.x idioms (see /usr/share/wireplumber/scripts/policy-node.lua). If lookup
 --     by object.id misbehaves, iterate nodes:iterate() and match by "object.id".

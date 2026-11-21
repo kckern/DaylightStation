@@ -41,8 +41,8 @@ assert_eq "1" "$?" "link down at start returns 1"
 unset -f date sleep
 
 # --- hci_for_mac: parse adapter name out of the BlueZ device path -----------
-device_path_for_mac() { echo "/org/bluez/hci2/dev_41_42_8C_7C_77_5C"; }
-assert_eq "hci2" "$(hci_for_mac 41:42:8C:7C:77:5C)" "hci_for_mac parses hciN"
+device_path_for_mac() { echo "/org/bluez/hci2/dev_AA_BB_CC_00_31_03"; }
+assert_eq "hci2" "$(hci_for_mac AA:BB:CC:00:31:03)" "hci_for_mac parses hciN"
 
 device_path_for_mac() { echo "/org/bluez/hci0/dev_DE_AD"; }
 assert_eq "hci0" "$(hci_for_mac de:ad)" "hci_for_mac parses hci0"

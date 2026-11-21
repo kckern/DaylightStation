@@ -2,11 +2,11 @@
  "type": "a{oa{sa{sv}}}",
  "data": [
   {
-   "/org/bluez/hci0/dev_41_42_8D_B7_A0_11": {
+   "/org/bluez/hci0/dev_AA_BB_CC_00_31_05": {
     "org.bluez.Device1": {
      "Address": {
       "type": "s",
-      "data": "41:42:8D:B7:A0:11"
+      "data": "AA:BB:CC:00:31:05"
      },
      "Alias": {
       "type": "s",
@@ -38,11 +38,11 @@
      }
     }
    },
-   "/org/bluez/hci0/dev_41_42_93_7B_A9_F2": {
+   "/org/bluez/hci0/dev_AA_BB_CC_00_31_06": {
     "org.bluez.Device1": {
      "Address": {
       "type": "s",
-      "data": "41:42:93:7B:A9:F2"
+      "data": "AA:BB:CC:00:31:06"
      },
      "Alias": {
       "type": "s",
@@ -74,11 +74,11 @@
      }
     }
    },
-   "/org/bluez/hci1/dev_41_42_3A_E5_43_07": {
+   "/org/bluez/hci1/dev_AA_BB_CC_00_30_07": {
     "org.bluez.Device1": {
      "Address": {
       "type": "s",
-      "data": "41:42:3A:E5:43:07"
+      "data": "AA:BB:CC:00:30:07"
      },
      "Alias": {
       "type": "s",
@@ -110,11 +110,11 @@
      }
     }
    },
-   "/org/bluez/hci2/dev_41_42_F0_91_27_E8": {
+   "/org/bluez/hci2/dev_AA_BB_CC_00_31_07": {
     "org.bluez.Device1": {
      "Address": {
       "type": "s",
-      "data": "41:42:F0:91:27:E8"
+      "data": "AA:BB:CC:00:31:07"
      },
      "Alias": {
       "type": "s",
@@ -146,11 +146,11 @@
      }
     }
    },
-   "/org/bluez/hci3/dev_9C_0C_35_75_B7_75": {
+   "/org/bluez/hci3/dev_AA_BB_CC_00_32_01": {
     "org.bluez.Device1": {
      "Address": {
       "type": "s",
-      "data": "9C:0C:35:75:B7:75"
+      "data": "AA:BB:CC:00:32:01"
      },
      "Alias": {
       "type": "s",
@@ -182,11 +182,11 @@
      }
     }
    },
-   "/org/bluez/hci4/dev_E8_68_E7_34_55_8E": {
+   "/org/bluez/hci4/dev_AA_BB_CC_00_32_02": {
     "org.bluez.Device1": {
      "Address": {
       "type": "s",
-      "data": "E8:68:E7:34:55:8E"
+      "data": "AA:BB:CC:00:32:02"
      },
      "Alias": {
       "type": "s",
@@ -218,11 +218,11 @@
      }
     }
    },
-   "/org/bluez/hci7/dev_41_42_9A_E3_65_73": {
+   "/org/bluez/hci7/dev_AA_BB_CC_00_31_02": {
     "org.bluez.Device1": {
      "Address": {
       "type": "s",
-      "data": "41:42:9A:E3:65:73"
+      "data": "AA:BB:CC:00:31:02"
      },
      "Alias": {
       "type": "s",

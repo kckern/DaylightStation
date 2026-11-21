@@ -15,7 +15,7 @@ it('lists every pad by observed status with the actions that status allows, and 
     pad({ address: 'E4:17:D8:00:00:01', connected: true, profiles: ['input'] }),
     pad({ address: 'E4:17:D8:00:00:02' }),
     pad({ address: 'E4:17:D8:00:00:03', bond: 'none', connected: false }),
-    { address: '3C:6D:66:06:E4:B5', name: 'NVIDIA SHIELD Remote', bond: 'bonded', connected: true, manageable: false },
+    { address: 'AA:BB:CC:00:20:01', name: 'NVIDIA SHIELD Remote', bond: 'bonded', connected: true, manageable: false },
   ]);
   render(<ControllerManager deviceId="tv" client={clientFor(() => state)} onClose={() => {}} />);
   expect(await screen.findByText('Connected')).toBeTruthy();
@@ -149,7 +149,7 @@ it('releases the bus when it closes', async () => {
 
 it('lists only paired non-controllers as view-only, not whatever a search turned up nearby', async () => {
   render(<ControllerManager deviceId="tv" client={clientFor(() => snapshot([pad(),
-    { address: '3C:6D:66:06:E4:B5', name: 'NVIDIA SHIELD Remote', bond: 'bonded', connected: true, manageable: false },
+    { address: 'AA:BB:CC:00:20:01', name: 'NVIDIA SHIELD Remote', bond: 'bonded', connected: true, manageable: false },
     { address: '11:22:33:44:55:66', name: '[LG] webOS TV', bond: 'none', connected: false, manageable: false },
     { address: '11:22:33:44:55:67', name: 'Unnamed device', bond: 'none', connected: false, manageable: false }]))} onClose={() => {}} />);
   expect(await screen.findByText(/NVIDIA SHIELD Remote — Connected/)).toBeTruthy();

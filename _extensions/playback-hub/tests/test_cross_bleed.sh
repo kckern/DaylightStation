@@ -20,7 +20,7 @@ STAMP="$BASE_DIR/.cross_bleed_active"
 # Real config so mac->slot resolution runs (underscore mac -> colon -> slot).
 CONFIG_FILE="$HOME/devices.json"
 cat > "$CONFIG_FILE" <<'JSON'
-{"devices":[{"slot":1,"color":"red","mac":"41:42:3A:E5:43:07"},{"slot":2,"color":"yellow","mac":"41:42:9A:E3:65:73"}]}
+{"devices":[{"slot":1,"color":"red","mac":"AA:BB:CC:00:30:07"},{"slot":2,"color":"yellow","mac":"AA:BB:CC:00:31:02"}]}
 JSON
 
 # --- stubs: record logev + dispatch_alert invocations ---
@@ -38,12 +38,12 @@ pw-link() {
     case "$GRAPH" in
         clean)  # each sink fed by exactly one mpv stream
             printf '%s\n' \
-                "bluez_output.41_42_3A_E5_43_07.1:playback_FL" "  |<- mpv:output_FL" \
-                "bluez_output.41_42_9A_E3_65_73.1:playback_FL" "  |<- mpv:output_FL" ;;
+                "bluez_output.AA_BB_CC_00_30_07.1:playback_FL" "  |<- mpv:output_FL" \
+                "bluez_output.AA_BB_CC_00_31_02.1:playback_FL" "  |<- mpv:output_FL" ;;
         doubled_yellow)  # yellow's sink fed by TWO mpv streams
             printf '%s\n' \
-                "bluez_output.41_42_9A_E3_65_73.1:playback_FL" "  |<- mpv:output_FL" "  |<- mpv:output_FL" \
-                "bluez_output.41_42_3A_E5_43_07.1:playback_FL" "  |<- mpv:output_FL" ;;
+                "bluez_output.AA_BB_CC_00_31_02.1:playback_FL" "  |<- mpv:output_FL" "  |<- mpv:output_FL" \
+                "bluez_output.AA_BB_CC_00_30_07.1:playback_FL" "  |<- mpv:output_FL" ;;
     esac
 }
 

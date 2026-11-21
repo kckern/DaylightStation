@@ -262,7 +262,7 @@ several rosters.
 
 ```json
 {"source":"omr-relay","type":"sheet","id":"<reader-id>","columns":39,"markedColumns":37,"marks":[2048,1024,512]}
-{"source":"omr-relay","type":"nfc","id":"<reader-id>","uid":"04669C0FCB2A81","piccType":"NTAG 215","atqa":68,"sak":0}
+{"source":"omr-relay","type":"nfc","id":"<reader-id>","uid":"04F00000000005","piccType":"NTAG 215","atqa":68,"sak":0}
 ```
 
 `marks[]` is one 12-bit mask per column in physical top-to-bottom order:

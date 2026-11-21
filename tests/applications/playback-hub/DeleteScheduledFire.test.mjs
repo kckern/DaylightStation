@@ -15,7 +15,7 @@ import { EntityNotFoundError } from '../../../__backend/src/2_domains/core/error
 const makeDevice = (color = 'red') => new HubDevice({
   position: new SlotPosition(1),
   color: new SlotColor(color),
-  mac: '41:42:3A:E5:43:07',
+  mac: 'AA:BB:CC:00:30:07',
   class: new SlotClass('private'),
   volumeBounds: new VolumeBounds({})
 });

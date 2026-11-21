@@ -25,7 +25,7 @@ describe('knownControllerStates', () => {
   });
 
   it('ignores connected devices that match no known controller (e.g. a speaker)', () => {
-    const inv = [{ address: '54:15:89:f9:96:19', name: 'JBL PartyBox 710', connected: true, battery: null }];
+    const inv = [{ address: 'aa:bb:cc:00:20:02', name: 'JBL PartyBox 710', connected: true, battery: null }];
     // Address-less controllers only → a non-matching speaker yields nothing tracked.
     expect(knownControllerStates(inv, [XBOX])).toEqual([]);
     // An address-configured controller is still always tracked (disconnected), and the

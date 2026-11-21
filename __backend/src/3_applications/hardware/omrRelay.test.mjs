@@ -239,7 +239,7 @@ describe('createOmrRelay', () => {
 
   // ---- NFC taps (optional Grove NFC unit on the same relay) ----------------
   // Values from the bench unit: an ST25R3916 reading an NTAG 215.
-  function nfcFrame(uid = '04669C0FCB2A81', over = {}) {
+  function nfcFrame(uid = '04F00000000005', over = {}) {
     return {
       source: 'omr-relay', type: 'nfc', id: READER_ID,
       uid, piccType: 'NTAG 215', atqa: 0x0044, sak: 0x00, ...over,
@@ -254,19 +254,19 @@ describe('createOmrRelay', () => {
     expect(live).toBeTruthy();
     expect(live.topic).toBe('omr');
     expect(live.payload).toMatchObject({
-      id: READER_ID, event: 'nfc', uid: '04669C0FCB2A81', piccType: 'NTAG 215',
+      id: READER_ID, event: 'nfc', uid: '04F00000000005', piccType: 'NTAG 215',
     });
 
     const recs = await waitForRecords(1);
     expect(recs).toHaveLength(1);
-    expect(recs[0]).toMatchObject({ event: 'nfc', uid: '04669C0FCB2A81', piccType: 'NTAG 215' });
+    expect(recs[0]).toMatchObject({ event: 'nfc', uid: '04F00000000005', piccType: 'NTAG 215' });
   });
 
   it('normalizes a lowercase UID so one card never reads as two students', async () => {
     const bus = wire();
-    bus.emit(nfcFrame('04669c0fcb2a81'));
+    bus.emit(nfcFrame('04f00000000005'));
     const live = bus.broadcasts.find((b) => b.payload.event === 'nfc');
-    expect(live.payload.uid).toBe('04669C0FCB2A81');
+    expect(live.payload.uid).toBe('04F00000000005');
 
     // The tap also queues a persist write; drain it before the test ends so
     // afterEach's fs.rm on dataDir doesn't race an in-flight append
@@ -310,10 +310,10 @@ describe('createOmrRelay', () => {
 
   it('records a DIFFERENT card tapped immediately after — dedup is per UID', async () => {
     const bus = wire({ config: { persistence: { dir: 'omr', dedupWindowMs: 2000 } } });
-    bus.emit(nfcFrame('04669C0FCB2A81'));
+    bus.emit(nfcFrame('04F00000000005'));
     bus.emit(nfcFrame('04AABBCCDDEE01'));
     const recs = await waitForRecords(2);
-    expect(recs.map((r) => r.uid)).toEqual(['04669C0FCB2A81', '04AABBCCDDEE01']);
+    expect(recs.map((r) => r.uid)).toEqual(['04F00000000005', '04AABBCCDDEE01']);
   });
 
   it('broadcasts one nfc event for a bouncing card, not five', async () => {
@@ -324,13 +324,13 @@ describe('createOmrRelay', () => {
     for (let i = 0; i < 5; i += 1) {
       bus.emit({
         source: 'omr-relay', type: 'nfc', id: READER_ID,
-        uid: '04DB930CCB2A81', piccType: 'NTAG 215',
+        uid: '04F00000000008', piccType: 'NTAG 215',
       });
     }
 
     const nfcBroadcasts = bus.broadcasts.filter((b) => b.payload?.event === 'nfc');
     expect(nfcBroadcasts).toHaveLength(1);
-    expect(nfcBroadcasts[0].payload.uid).toBe('04DB930CCB2A81');
+    expect(nfcBroadcasts[0].payload.uid).toBe('04F00000000008');
 
     // One persist write was queued for the surviving tap; drain it before the
     // test ends (afterEach fs.rm race — not in the original ~10 sleeps).
@@ -340,13 +340,13 @@ describe('createOmrRelay', () => {
   it('does not suppress a DIFFERENT card tapped immediately after', async () => {
     const bus = wire();
 
-    bus.emit({ source: 'omr-relay', type: 'nfc', id: READER_ID, uid: '04DB930CCB2A81' });
-    bus.emit({ source: 'omr-relay', type: 'nfc', id: READER_ID, uid: '048BA600CC2A81' });
+    bus.emit({ source: 'omr-relay', type: 'nfc', id: READER_ID, uid: '04F00000000008' });
+    bus.emit({ source: 'omr-relay', type: 'nfc', id: READER_ID, uid: '04F00000000006' });
 
     const uids = bus.broadcasts
       .filter((b) => b.payload?.event === 'nfc')
       .map((b) => b.payload.uid);
-    expect(uids).toEqual(['04DB930CCB2A81', '048BA600CC2A81']);
+    expect(uids).toEqual(['04F00000000008', '04F00000000006']);
 
     // Two persist writes were queued (different UIDs, no dedup); drain both
     // before the test ends. This is the exact ENOTEMPTY race reproduced while
@@ -357,7 +357,7 @@ describe('createOmrRelay', () => {
 
   it('backdates a queued tap by ageMs so it carries the TAP time', async () => {
     const bus = wire({ timezone: 'UTC' });
-    bus.emit(nfcFrame('04669C0FCB2A81', { ageMs: 90_000 }));
+    bus.emit(nfcFrame('04F00000000005', { ageMs: 90_000 }));
     const recs = await waitForRecords(1);
     const recorded = new Date(`${recs[0].ts.replace(' ', 'T')}Z`);
     expect(Date.now() - recorded.getTime()).toBeGreaterThan(60_000);

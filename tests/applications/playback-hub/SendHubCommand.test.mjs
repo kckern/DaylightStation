@@ -14,7 +14,7 @@ import { EntityNotFoundError } from '../../../__backend/src/2_domains/core/error
 import { InfrastructureError } from '../../../__backend/src/0_system/utils/errors/InfrastructureError.mjs';
 
 const makeDevice = ({
-  position = 1, color = 'red', mac = '41:42:3A:E5:43:07',
+  position = 1, color = 'red', mac = 'AA:BB:CC:00:30:07',
   cls = 'private', haEntityId = null, volumeBounds
 } = {}) => new HubDevice({
   position: new SlotPosition(position),
@@ -42,7 +42,7 @@ describe('SendHubCommand', () => {
   it('single-target play with valid content → CommandResult.applied contains that color', async () => {
     repo.setConfig(makeConfig([
       makeDevice({ color: 'red' }),
-      makeDevice({ position: 2, color: 'blue', mac: '41:42:3A:E5:43:08' })
+      makeDevice({ position: 2, color: 'blue', mac: 'AA:BB:CC:00:30:08' })
     ]));
     gateway.setNextCommandResult(new CommandResult({ applied: ['red'], skipped: [] }));
     const result = await useCase.execute({
@@ -55,9 +55,9 @@ describe('SendHubCommand', () => {
   it('"all" target expands to every device color', async () => {
     repo.setConfig(makeConfig([
       makeDevice({ color: 'red' }),
-      makeDevice({ position: 2, color: 'blue', mac: '41:42:3A:E5:43:08' }),
+      makeDevice({ position: 2, color: 'blue', mac: 'AA:BB:CC:00:30:08' }),
       makeDevice({
-        position: 3, color: 'white', mac: '41:42:3A:E5:43:09',
+        position: 3, color: 'white', mac: 'AA:BB:CC:00:30:09',
         cls: 'public', haEntityId: 'switch.living_room'
       })
     ]));
@@ -72,9 +72,9 @@ describe('SendHubCommand', () => {
   it('"all-private" target → only private devices', async () => {
     repo.setConfig(makeConfig([
       makeDevice({ color: 'red', cls: 'private' }),
-      makeDevice({ position: 2, color: 'blue', mac: '41:42:3A:E5:43:08', cls: 'private' }),
+      makeDevice({ position: 2, color: 'blue', mac: 'AA:BB:CC:00:30:08', cls: 'private' }),
       makeDevice({
-        position: 3, color: 'white', mac: '41:42:3A:E5:43:09',
+        position: 3, color: 'white', mac: 'AA:BB:CC:00:30:09',
         cls: 'public', haEntityId: 'switch.living_room'
       })
     ]));
@@ -89,11 +89,11 @@ describe('SendHubCommand', () => {
     repo.setConfig(makeConfig([
       makeDevice({ color: 'red', cls: 'private' }),
       makeDevice({
-        position: 2, color: 'white', mac: '41:42:3A:E5:43:09',
+        position: 2, color: 'white', mac: 'AA:BB:CC:00:30:09',
         cls: 'public', haEntityId: 'switch.living_room'
       }),
       makeDevice({
-        position: 3, color: 'green', mac: '41:42:3A:E5:43:10',
+        position: 3, color: 'green', mac: 'AA:BB:CC:00:30:10',
         cls: 'public', haEntityId: 'switch.kitchen'
       })
     ]));
@@ -107,8 +107,8 @@ describe('SendHubCommand', () => {
   it('comma-list target "red,blue" → both expanded', async () => {
     repo.setConfig(makeConfig([
       makeDevice({ color: 'red' }),
-      makeDevice({ position: 2, color: 'blue', mac: '41:42:3A:E5:43:08' }),
-      makeDevice({ position: 3, color: 'yellow', mac: '41:42:3A:E5:43:09' })
+      makeDevice({ position: 2, color: 'blue', mac: 'AA:BB:CC:00:30:08' }),
+      makeDevice({ position: 3, color: 'yellow', mac: 'AA:BB:CC:00:30:09' })
     ]));
     gateway.enqueueCommandResult(new CommandResult({ applied: ['red'], skipped: [] }));
     gateway.enqueueCommandResult(new CommandResult({ applied: ['blue'], skipped: [] }));
@@ -174,7 +174,7 @@ describe('SendHubCommand', () => {
   it('gateway InfrastructureError → recorded as skipped[{reason:unreachable}]', async () => {
     repo.setConfig(makeConfig([
       makeDevice({ color: 'red' }),
-      makeDevice({ position: 2, color: 'blue', mac: '41:42:3A:E5:43:08' })
+      makeDevice({ position: 2, color: 'blue', mac: 'AA:BB:CC:00:30:08' })
     ]));
     // First call (red) throws unreachable, second (blue) succeeds.
     gateway.setCommandError(new InfrastructureError('hub unreachable'));

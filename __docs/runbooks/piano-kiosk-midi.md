@@ -612,7 +612,7 @@ and in the log store with `piano-midi-wake.suppress-relayed` /
 ## 9. Reference
 
 - Tablet (kiosk): `10.0.0.245` — bridge API `:8770`, FKB REST `:2323`
-- JamCorder (`jam-7e6`): web `10.0.0.243` (**DHCP — it drifts**), BLE `10:65:36:36:62:66`
+- JamCorder (`jam-7e6`): web `10.0.0.243` (**DHCP — it drifts**), BLE `aa:bb:cc:00:10:01`
 - Piano: Roland MDG-400 / `MG-300 Grand Piano` on JamCorder USB
 - Path IN:  piano →USB→ JamCorder →BLE→ APK →WebSocket→ browser
 - Path OUT: browser →HTTP→ APK →BLE→ JamCorder →USB/DIN→ piano
