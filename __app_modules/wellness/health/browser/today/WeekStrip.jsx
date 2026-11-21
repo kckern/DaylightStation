@@ -14,7 +14,10 @@ const monthShort = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString(undef
 const rangeLabel = (from, to) => {
   const a = new Date(`${from}T12:00:00`);
   const b = new Date(`${to}T12:00:00`);
-  const left = a.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const left = a.toLocaleDateString(undefined, {
+    month: 'short', day: 'numeric',
+    ...(a.getFullYear() !== b.getFullYear() ? { year: 'numeric' } : {}),
+  });
   const right = b.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   return `${left} – ${right}`;
 };

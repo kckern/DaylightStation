@@ -1,5 +1,5 @@
 import { Stack, Paper, Text, Group, Badge, Progress, Textarea } from '@mantine/core';
-import { goalStateColor } from "../../theme/semantics.js";
+import { driftStatusColor, goalStateColor } from "../../theme/semantics.js";
 
 export function CycleRetro({ step, content, responses, setResponse }) {
   if (step === 0) {
@@ -22,7 +22,7 @@ export function CycleRetro({ step, content, responses, setResponse }) {
             <Text size="sm" fw={500} mt="sm">Value Alignment</Text>
             <Group gap="xs">
               {content.valueDrift.map(v => (
-                <Badge key={v.id} variant="light" color={v.alignment_state === 'aligned' ? 'green' : 'yellow'}>
+                <Badge key={v.id} variant="light" color={driftStatusColor(v.alignment_state)}>
                   {v.name}: {v.alignment_state}
                 </Badge>
               ))}

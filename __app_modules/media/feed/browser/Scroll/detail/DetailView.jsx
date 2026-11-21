@@ -17,7 +17,9 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
   const sourceName = item.meta?.sourceName || item.source || '';
   const iconUrl = proxyIcon(item.meta?.sourceIcon);
   const borderColor = colorFromLabel(sourceName);
-  const age = formatAge(item.timestamp);
+  const timestampDate = item.timestamp == null || item.timestamp === '' ? null : new Date(item.timestamp);
+  const validTimestamp = timestampDate && Number.isFinite(timestampDate.getTime()) ? timestampDate : null;
+  const age = validTimestamp ? formatAge(validTimestamp) : null;
   const heroImage = safeImage(item.image) || safeImage(ogImage);
   const isYouTube = item.contentType === 'youtube' && item.meta?.videoId;
   const subtitle = isYouTube ? null : (item.body || ogDescription);
@@ -31,7 +33,7 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
   const openUrl = webLink(rawOpenUrl);
   const iframeSrc = frameableLink(rawOpenUrl, typeof window !== 'undefined' ? window.location.origin : '');
   const showIframe = !loading && !hasContentSections && !!iframeSrc && !isYouTube;
-  const dateStr = item.timestamp ? new Date(item.timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : null;
+  const dateStr = validTimestamp?.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) ?? null;
 
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imagePhase, setImagePhase] = useState('original'); // original → proxy → hidden
@@ -240,7 +242,7 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
         <div className="detail-source-bar" style={{ borderTop: `2px solid ${borderColor}` }}>
           {iconUrl && <img src={iconUrl} alt="" className="detail-source-icon" onError={(e) => { e.target.style.display = 'none'; }} />}
           <span className="detail-source-label">{sourceName}</span>
-          <span className="detail-source-age">{age}</span>
+          {age && <span className="detail-source-age">{age}</span>}
         </div>
 
         {isYouTube ? (
