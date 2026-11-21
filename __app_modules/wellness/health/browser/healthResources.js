@@ -1,4 +1,4 @@
-import { invalidateApiResources, patchApiResource } from "../../../../frontend/src/lib/hooks/useApiResource.js";
+import { invalidateApiResources, patchApiResource, pollApiResources } from "../../../../frontend/src/lib/hooks/useApiResource.js";
 import { createAppLogger } from "../../../../frontend/src/lib/ui/createAppLogger.js";
 
 let _logger;
@@ -8,8 +8,10 @@ const logger = () => (_logger ??= createAppLogger('health').child('health-resour
 // seconds of server work that stalls every other request behind it, including
 // the day refetch a write is waiting on. Nothing a food write changes reaches
 // what Today reads from it (the coach line), so a write leaves it alone.
-const DASHBOARD_PATH = 'api/v1/health/dashboard';
-const isHealthResource = path => path.startsWith('api/v1/health/') || path === 'api/v1/lifelog/weight';
+export const HEALTH_DASHBOARD_PATH = 'api/v1/health/dashboard';
+const STATIC_ICON_PATH = 'api/v1/health/nutrition/icons';
+const isHealthResource = path => (path.startsWith('api/v1/health/') && !path.startsWith(STATIC_ICON_PATH))
+  || path === 'api/v1/lifelog/weight';
 
 /**
  * The error a reader should show in place of its content: only when there is
@@ -19,15 +21,19 @@ const isHealthResource = path => path.startsWith('api/v1/health/') || path === '
  */
 export const unavailableError = resource => (resource?.data == null ? resource?.error ?? null : null);
 
-export const refreshHealthResources = () => invalidateApiResources(path =>
-  isHealthResource(path) && path !== DASHBOARD_PATH);
+const isHealthRefreshResource = path => isHealthResource(path) && path !== HEALTH_DASHBOARD_PATH;
+export const refreshHealthResources = () => invalidateApiResources(isHealthRefreshResource);
+export const pollHealthResources = () => pollApiResources(isHealthRefreshResource);
 
 /** After a coach turn, which may have written the day's coaching. */
 export const refreshHealthResourcesWithDashboard = () => invalidateApiResources(isHealthResource);
 
 // The per-day resources Today reads. One home, so the readers and the
 // prefetcher build byte-identical cache keys.
-export const healthDayPath = date => `api/v1/health/day?date=${date}`;
+const DAY_PATH_PREFIX = 'api/v1/health/day?date=';
+const DAY_READ_TIMEOUT_MS = 25_000;
+export const healthDayPath = date => `${DAY_PATH_PREFIX}${date}`;
+export const healthDayTimeoutMs = path => path.startsWith(DAY_PATH_PREFIX) ? DAY_READ_TIMEOUT_MS : undefined;
 export const pendingReviewPath = date => `api/v1/health/nutrition/pending?date=${date}`;
 export const observationsPath = date => `api/v1/health/nutrition/observations?date=${date}`;
 export const healthDayPaths = date => [healthDayPath(date), pendingReviewPath(date), observationsPath(date)];

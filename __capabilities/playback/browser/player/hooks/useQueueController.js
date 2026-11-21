@@ -4,6 +4,7 @@ import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 import { guid } from '../lib/helpers.js';
 import { playbackLog } from '../lib/playbackLogger.js';
 import { shouldEmitTrackChanged } from '../lib/shouldEmitTrackChanged.js';
+import { resolveSourceContentKey } from '../utils/mediaIdentity.js';
 
 // Module-level signature cache — survives React remounts for the same content.
 // Prevents re-fetching queue when the player remounts during resilience recovery.
@@ -205,6 +206,14 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
                   || play?.playlist || play?.queue
                   || queue?.playlist || queue?.queue || queue?.media
                   || null;
+  const queueSourceSignature = useMemo(() => {
+    const items = Array.isArray(play) ? play : Array.isArray(queue) ? queue : null;
+    const reference = contentRef ? `ref:${contentRef}` : resolveSourceContentKey(play ?? queue);
+    if (!items) return reference;
+    const kind = items === play ? 'play' : 'queue';
+    const itemKeys = items.map(resolveSourceContentKey);
+    return JSON.stringify([reference, kind, itemKeys]);
+  }, [contentRef, play, queue]);
 
   const sourceSignatureRef = useRef(_signatureCache.get(contentRef) ?? null);
 
@@ -237,24 +246,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
       return undefined;
     }
     adoptedInputsRef.current = null;
-    const signatureParts = [];
-
-    if (contentRef) signatureParts.push(`ref:${contentRef}`);
-    signatureParts.push(`shuffle:${isShuffle ? '1' : '0'}`);
-
-    if (Array.isArray(play)) {
-      const playArraySignature = play
-        .map((item) => item?.guid || item?.media || item?.assetId || item?.id || item?.contentId || '')
-        .join('|');
-      signatureParts.push(`play:${play.length}:${playArraySignature}`);
-    } else if (Array.isArray(queue)) {
-      const queueArraySignature = queue
-        .map((item) => item?.guid || item?.media || item?.assetId || item?.id || item?.contentId || '')
-        .join('|');
-      signatureParts.push(`queue:${queue.length}:${queueArraySignature}`);
-    }
-
-    const nextSignature = signatureParts.join(';');
+    const nextSignature = JSON.stringify([queueSourceSignature, isShuffle]);
     const previousSignature = sourceSignatureRef.current;
 
     // Skip the fetch only when the signature is unchanged AND this instance
@@ -473,7 +465,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
     // core queue-init network-fetch effect; onError is an unmemoized parent prop —
     // adding it risks a fetch storm on unrelated parent re-renders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [play, queue, isShuffle, contentRef, issueOwnerRevision]);
+  }, [play, queue, isShuffle, contentRef, queueSourceSignature, issueOwnerRevision]);
 
   const advance = useCallback((step = 1) => {
     issueOwnerRevision({ playback: true, queue: true });
@@ -675,6 +667,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
     // Stable identity for the whole queue (volume/rate/etc. persist across item swaps).
     // Null for inline-array inputs that have no canonical id.
     queueSessionId: contentRef || null,
+    queueSourceSignature,
     queueSnapshot,
     onDeck,
     onDeckFlashKey,

@@ -43,8 +43,15 @@
 // Scroll the whole floating instance: reserving fixed mode/CTA space can
 // otherwise shrink a long device list to zero in a short viewport. The inline
 // Now Playing picker retains its existing natural-height layout.
+.cast-button-popover-portal {
+  position: fixed;
+  z-index: 1000;
+}
+
 .cast-button-popover-portal .cast-picker {
   box-sizing: border-box;
+  min-width: min(280px, var(--cast-picker-max-width));
+  max-width: min(340px, var(--cast-picker-max-width));
   max-height: var(--cast-picker-max-height);
   overflow-y: auto;
 }

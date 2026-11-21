@@ -1,17 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { computeScrollRestore, shouldPositionLevel } from "./comboboxScroll.js";
+import { shouldRunScrollToHighlighted, shouldPositionLevel } from "./comboboxScroll.js";
 
-describe('computeScrollRestore', () => {
-  it('offsets scrollTop by the height the prepended items added', () => {
-    expect(
-      computeScrollRestore({ prevScrollHeight: 300, newScrollHeight: 500, prevScrollTop: 40 }),
-    ).toBe(240);
+describe('shouldRunScrollToHighlighted', () => {
+  it('leaves scroll to the anchor when pagination shifts the same highlighted row', () => {
+    expect(shouldRunScrollToHighlighted({ highlightedIdx: 31, prevIdx: 10, hasSameHighlight: true }).run).toBe(false);
   });
 
-  it('is a no-op when the viewport height did not grow', () => {
-    expect(
-      computeScrollRestore({ prevScrollHeight: 500, newScrollHeight: 500, prevScrollTop: 40 }),
-    ).toBe(40);
+  it('reveals a different highlighted row during keyboard navigation', () => {
+    expect(shouldRunScrollToHighlighted({ highlightedIdx: 11, prevIdx: 10, hasSameHighlight: false }).run).toBe(true);
   });
 });
 

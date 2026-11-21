@@ -9,8 +9,10 @@ import { useListsContext } from "./ListsContext.js";
 import { isContentIdLike, shouldAutoAdd } from "../lib/contentSearchLogic.js";
 import ContentCombobox from "../combobox/ContentCombobox.jsx";
 import { useAutoResolve } from "../combobox/useAutoResolve.js";
-import { ContentValueCard, contentInfoFromPick, fetchContentMetadata } from "./ContentDisplays.jsx";
-import { AppParamPicker } from "./AppParamPicker.jsx";
+import { ContentValueCard, contentInfoFromPick } from './ContentDisplays.jsx';
+import { getCachedCatalogContentInfo, useCatalogContentInfo } from './catalogContentInfo.js';
+import { AppParamPicker, AppParamResolutionNotice } from "./AppParamPicker.jsx";
+import { useAppParamOptions } from "./useAppParamOptions.js";
 import { ActionChipSelect } from "./ActionChipSelect.jsx";
 
 // Lazy admin logger with session logging enabled
@@ -27,7 +29,8 @@ export function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
   const [label, setLabel] = useState('');
   const [action, setAction] = useState('Play');
   const [input, setInput] = useState('');
-  const [pendingApp, setPendingApp] = useState(null); // {appId, param, options}
+  const contentInfo = useCatalogContentInfo(input, contentInfoMap.get(input));
+  const { resolution: pendingApp, select: selectAppParam, retry: retryAppParam, clear: clearAppParam } = useAppParamOptions();
   const addedRef = useRef(false); // prevent double-add from rapid state changes
   const labelInputRef = useRef(null);
 
@@ -36,9 +39,10 @@ export function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
   // chain: freeform stays staged, a real content id persists).
   const { maybeResolve, cancel: cancelAutoResolve } = useAutoResolve({
     value: input,
-    onChange: (id) => setInput(id),
-    setContentInfo,
-    fetchMetadata: fetchContentMetadata,
+    onChange: (id, choice) => {
+      if (choice?.title) setContentInfo(id, contentInfoFromPick(id, choice));
+      setInput(id);
+    },
   });
 
   // Combobox change handler — receives (id, item?) from ContentCombobox.
@@ -46,17 +50,10 @@ export function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
     // App that needs a parameter → show the param picker instead of staging.
     if (selectedItem?.isApp && selectedItem.hasParam) {
       log.info('app_param.prompt', { nextIndex, appId: selectedItem.appId, paramName: selectedItem.param?.name });
-      import("../../../../frontend/src/lib/appRegistry.js")
-        .then(({ resolveParamOptions }) => resolveParamOptions(selectedItem.param))
-        .then((options) => {
-          setPendingApp({
-            appId: selectedItem.appId,
-            param: selectedItem.param,
-            options: options ? [{ value: 'random', label: 'Random' }, ...options] : null,
-          });
-        });
+      selectAppParam({ appId: selectedItem.appId, param: selectedItem.param });
       return;
     }
+    clearAppParam();
     // Seed the cache from picks so the staged card (and derived label on add)
     // uses the resolved title immediately.
     if (value && selectedItem?.title) {
@@ -73,7 +70,7 @@ export function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
     if (!currentInput) return;
     addedRef.current = true;
     // Derive label: explicit label > resolved content title > freeform input
-    const resolvedInfo = contentInfoMap.get(currentInput);
+    const resolvedInfo = getCachedCatalogContentInfo(currentInput, contentInfoMap.get(currentInput));
     const derivedLabel = currentLabel.trim()
       || resolvedInfo?.title
       || currentInput.replace(/^[^:]+:\s*/, '');
@@ -140,28 +137,31 @@ export function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
       </div>
       <div className="col-preview"></div>
       <div className="col-input">
-        {pendingApp ? (
+        {pendingApp?.phase === 'ready' ? (
           <AppParamPicker
             appId={pendingApp.appId}
             param={pendingApp.param}
             options={pendingApp.options}
-            onCommit={(fullId) => { setPendingApp(null); setInput(fullId); }}
-            onCancel={() => setPendingApp(null)}
+            onCommit={(fullId) => { clearAppParam(); setInput(fullId); }}
+            onCancel={clearAppParam}
           />
         ) : (
-          <ContentCombobox
-            value={input}
-            onChange={handleComboboxChange}
-            appResults
-            selectContainers
-            renderValue={({ onStartEdit }) => (
-              <ContentValueCard
-                value={input}
-                contentInfoMap={contentInfoMap}
-                onStartEdit={() => { cancelAutoResolve(); onStartEdit(); }}
-              />
-            )}
-          />
+          <>
+            <AppParamResolutionNotice resolution={pendingApp} onRetry={retryAppParam} onCancel={clearAppParam} />
+            <ContentCombobox
+              value={input}
+              onChange={handleComboboxChange}
+              appResults
+              selectContainers
+              renderValue={({ onStartEdit }) => (
+                <ContentValueCard
+                  value={input}
+                  contentInfo={contentInfo}
+                  onStartEdit={() => { cancelAutoResolve(); onStartEdit(); }}
+                />
+              )}
+            />
+          </>
         )}
       </div>
       {isWatchlist && (

@@ -1,44 +1,21 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Stack, Text, Table, Badge, Button, Group, Modal, TextInput, Select, NumberInput, Loader, Center, Alert, Paper, Divider }  from '@mantine/core';
+import React, { useState } from 'react';
+import { FormDialog } from '@/lib/ui/FormDialog.jsx';
+import { Link } from 'react-router-dom';
+import { Stack, Text, Table, Badge, Button, Group, TextInput, Select, NumberInput, Center, Alert, Paper, Divider, Anchor }  from '@mantine/core';
 import { IconPlus, IconAlertCircle, IconUsers, IconTrash } from '@tabler/icons-react';
-import { useAdminHousehold } from '../../../hooks/admin/useAdminHousehold.js';
-import ConfirmModal from '../shared/ConfirmModal.jsx';
-
-const TYPE_OPTIONS = [
-  { value: 'owner', label: 'Owner' },
-  { value: 'family_member', label: 'Family Member' }
-];
-
-const GROUP_OPTIONS = [
-  { value: 'primary', label: 'Primary' },
-  { value: 'secondary', label: 'Secondary' }
-];
-
-/**
- * Get a Badge color for a member type.
- */
-function typeBadgeColor(type) {
-  if (type === 'owner') return 'blue';
-  if (type === 'family_member') return 'teal';
-  return 'gray';
-}
-
-/**
- * Get a Badge color for a member group.
- */
-function groupBadgeColor(group) {
-  if (group === 'primary') return 'violet';
-  if (group === 'secondary') return 'orange';
-  return 'gray';
-}
+import { ADMIN_HOUSEHOLD_PATH, useAdminHousehold } from '../../../hooks/admin/useAdminHousehold.js';
+import { useAdminRoster } from '../shared/useAdminRoster.js';
+import { ErrorState, LoadingState } from '../../../lib/ui/states.jsx';
+import { useRetryRegion } from '../../../lib/ui/useRetryRegion.js';
+import { ConfirmModal } from '@/lib/ui/ConfirmModal.jsx';
+import { MEMBER_TYPES, MEMBER_GROUPS, typeBadgeColor, groupBadgeColor } from '../utils/constants.js';
 
 function MembersIndex() {
-  const navigate = useNavigate();
-  const {
-    household, members, loading, error,
-    fetchHousehold, createMember, removeMember, clearError
-  } = useAdminHousehold();
+  const { error, createMember, removeMember, clearError } = useAdminHousehold();
+  const { data, loading, error: readError, reload, invalidateAfterWrite, refreshAfterWrite } = useAdminRoster(ADMIN_HOUSEHOLD_PATH);
+  const { regionProps, retry } = useRetryRegion(reload, loading);
+  const household = data?.household;
+  const members = data?.members ?? [];
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createForm, setCreateForm] = useState({
@@ -53,10 +30,6 @@ function MembersIndex() {
 
   const [removeTarget, setRemoveTarget] = useState(null);
   const [removing, setRemoving] = useState(false);
-
-  useEffect(() => {
-    fetchHousehold().catch(() => {});
-  }, [fetchHousehold]);
 
   const handleCreateFormChange = (field, value) => {
     setCreateForm(prev => ({ ...prev, [field]: value }));
@@ -77,7 +50,8 @@ function MembersIndex() {
   };
 
   const handleCreateSubmit = async () => {
-    if (!validateCreateForm()) return;
+    if (creating || !validateCreateForm()) return;
+    clearError();
     setCreating(true);
     try {
       const payload = {
@@ -88,7 +62,6 @@ function MembersIndex() {
         birthyear: createForm.birthyear || undefined
       };
       await createMember(payload);
-      await fetchHousehold();
       setCreateModalOpen(false);
       setCreateForm({
         username: '',
@@ -98,8 +71,9 @@ function MembersIndex() {
         birthyear: null
       });
       setCreateErrors({});
+      invalidateAfterWrite();
     } catch {
-      // error is set in the hook
+      // The command hook reports the write error.
     } finally {
       setCreating(false);
     }
@@ -112,29 +86,18 @@ function MembersIndex() {
 
   const handleRemoveConfirm = async () => {
     if (!removeTarget) return;
+    clearError();
     setRemoving(true);
     try {
       await removeMember(removeTarget.username);
-      await fetchHousehold();
       setRemoveTarget(null);
+      await refreshAfterWrite();
     } catch {
-      // error is set in the hook
+      // Command and roster errors are reported by their respective hooks.
     } finally {
       setRemoving(false);
     }
   };
-
-  const handleRowClick = (username) => {
-    navigate(`/admin/household/members/${username}`);
-  };
-
-  if (loading && members.length === 0) {
-    return (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
-  }
 
   return (
     <Stack gap="lg">
@@ -173,6 +136,7 @@ function MembersIndex() {
         <Button
           leftSection={<IconPlus size={16} />}
           onClick={() => setCreateModalOpen(true)}
+          disabled={creating}
         >
           Add Member
         </Button>
@@ -189,83 +153,86 @@ function MembersIndex() {
           {error.message || 'Failed to load household data'}
         </Alert>
       )}
+      <Stack component="section" gap="lg" aria-label="Household members" {...regionProps}>
+        {readError && <ErrorState error={readError} label="Household members" onRetry={retry} />}
+        {loading && members.length === 0 && <LoadingState label="household members" />}
 
-      {/* Members table */}
-      {members.length > 0 && (
-        <Table highlightOnHover withTableBorder withColumnBorders={false}>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Display Name</Table.Th>
-              <Table.Th>Username</Table.Th>
-              <Table.Th>Type</Table.Th>
-              <Table.Th>Group</Table.Th>
-              <Table.Th style={{ width: 100 }}>Actions</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {members.map(member => (
-              <Table.Tr
-                key={member.username}
-                style={{ cursor: 'pointer' }}
-                onClick={() => handleRowClick(member.username)}
-              >
-                <Table.Td>
-                  <Text size="sm" fw={500}>
-                    {member.display_name || member.username}
-                  </Text>
-                  {member.birthyear && (
-                    <Text size="xs" c="dimmed">Born {member.birthyear}</Text>
-                  )}
-                </Table.Td>
-                <Table.Td>
-                  <Text size="sm" c="dimmed">{member.username}</Text>
-                </Table.Td>
-                <Table.Td>
-                  <Badge
-                    color={typeBadgeColor(member.type)}
-                    variant="light"
-                    size="sm"
-                  >
-                    {member.type === 'family_member' ? 'Family Member' : member.type || 'unknown'}
-                  </Badge>
-                </Table.Td>
-                <Table.Td>
-                  <Badge
-                    color={groupBadgeColor(member.group)}
-                    variant="light"
-                    size="sm"
-                  >
-                    {member.group_label || member.group || 'unknown'}
-                  </Badge>
-                </Table.Td>
-                <Table.Td>
-                  <Button
-                    size="xs"
-                    variant="light"
-                    color="red"
-                    leftSection={<IconTrash size={14} />}
-                    onClick={(e) => handleRemoveClick(e, member)}
-                  >
-                    Remove
-                  </Button>
-                </Table.Td>
+        {/* Members table */}
+        {members.length > 0 && (
+          <Table highlightOnHover withTableBorder withColumnBorders={false}>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Display Name</Table.Th>
+                <Table.Th>Username</Table.Th>
+                <Table.Th>Type</Table.Th>
+                <Table.Th>Group</Table.Th>
+                <Table.Th style={{ width: 100 }}>Actions</Table.Th>
               </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      )}
+            </Table.Thead>
+            <Table.Tbody>
+              {members.map(member => (
+                <Table.Tr
+                  key={member.username}
+                >
+                  <Table.Td>
+                    <Anchor component={Link} to={`/admin/household/members/${encodeURIComponent(member.username)}`} c="inherit" size="sm" fw={500}>
+                      {member.display_name || member.username}
+                    </Anchor>
+                    {member.birthyear && (
+                      <Text size="xs" c="dimmed">Born {member.birthyear}</Text>
+                    )}
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="sm" c="dimmed">{member.username}</Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Badge
+                      color={typeBadgeColor(member.type)}
+                      variant="light"
+                      size="sm"
+                    >
+                      {member.type === 'family_member' ? 'Family Member' : member.type || 'unknown'}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    <Badge
+                      color={groupBadgeColor(member.group)}
+                      variant="light"
+                      size="sm"
+                    >
+                      {member.group_label || member.group || 'unknown'}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    <Button
+                      size="xs"
+                      variant="light"
+                      color="red"
+                      leftSection={<IconTrash size={14} />}
+                      onClick={(e) => handleRemoveClick(e, member)}
+                      disabled={removing}
+                    >
+                      Remove
+                    </Button>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        )}
 
-      {members.length === 0 && !loading && (
-        <Center h="40vh">
-          <Stack align="center">
-            <IconUsers size={48} stroke={1} color="gray" />
-            <Text c="dimmed">No household members found. Add one to get started.</Text>
-          </Stack>
-        </Center>
-      )}
+        {members.length === 0 && !loading && !readError && (
+          <Center h="40vh">
+            <Stack align="center">
+              <IconUsers size={48} stroke={1} color="gray" />
+              <Text c="dimmed">No household members found. Add one to get started.</Text>
+            </Stack>
+          </Center>
+        )}
+      </Stack>
 
       {/* Add Member Modal */}
-      <Modal
+      <FormDialog
         opened={createModalOpen}
         onClose={() => {
           setCreateModalOpen(false);
@@ -290,13 +257,13 @@ function MembersIndex() {
           />
           <Select
             label="Type"
-            data={TYPE_OPTIONS}
+            data={MEMBER_TYPES}
             value={createForm.type}
             onChange={(value) => handleCreateFormChange('type', value)}
           />
           <Select
             label="Group"
-            data={GROUP_OPTIONS}
+            data={MEMBER_GROUPS}
             value={createForm.group}
             onChange={(value) => handleCreateFormChange('group', value)}
           />
@@ -317,7 +284,7 @@ function MembersIndex() {
             </Button>
           </Group>
         </Stack>
-      </Modal>
+      </FormDialog>
 
       {/* Remove Member Confirmation */}
       <ConfirmModal

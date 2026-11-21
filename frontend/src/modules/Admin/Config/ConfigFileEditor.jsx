@@ -1,9 +1,10 @@
 import React from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { Stack, Text, Breadcrumbs, Anchor } from '@mantine/core';
 import { IconArrowBack } from '@tabler/icons-react';
 import ConfigFormWrapper from '../shared/ConfigFormWrapper.jsx';
 import YamlEditor from '../shared/YamlEditor.jsx';
+import GuardedLink from '../shared/GuardedLink.jsx';
 
 /**
  * ConfigFileEditor - Raw YAML editor for an arbitrary config file.
@@ -13,7 +14,6 @@ import YamlEditor from '../shared/YamlEditor.jsx';
  */
 function ConfigFileEditor() {
   const { '*': filePath } = useParams();
-  const navigate = useNavigate();
 
   const breadcrumbSegments = filePath ? filePath.split('/') : [];
   const fileName = breadcrumbSegments[breadcrumbSegments.length - 1] || filePath;
@@ -32,8 +32,9 @@ function ConfigFileEditor() {
       </Breadcrumbs>
 
       <Anchor
+        component={GuardedLink}
+        to="/admin/system/config"
         size="sm"
-        onClick={() => navigate('/admin/system/config')}
         style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
       >
         <IconArrowBack size={14} /> Back to Config

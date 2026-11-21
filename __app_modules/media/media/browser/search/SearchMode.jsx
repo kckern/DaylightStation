@@ -24,8 +24,9 @@
 // same useContentDispatch path MediaContentSearch already uses.
 import { LoadErrorLine } from "../shared/LoadErrorLine.jsx";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { IconX, IconAlertTriangle } from '@tabler/icons-react';
 import { Button } from '@mantine/core';
+import { UiIcon } from '@/lib/ui/UiIcon.jsx';
+import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import { useContentCombobox } from "../../../../../__capabilities/content-catalog/browser/picker-controller.mjs";
 import { StreamStatusLine } from "../../../../../__capabilities/content-catalog/browser/search-status.mjs";
 import { ResultRow } from "../../../../../__capabilities/content-catalog/browser/result-row.mjs";
@@ -41,24 +42,40 @@ import { useRowLabels } from "./useRowLabels.js";
 import { displayTitle, resultSubtitle } from "./resultPresentation.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import mediaLog from "../logging/mediaLog.js";
+import { useDialogFocus } from '@/lib/ui/dismiss/useDialogFocus.js';
+import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import { ItemDestinationPicker } from "../actions/ItemDestinationPicker.jsx";
 import { useHouseholdResultActions } from "../household/useHouseholdResultActions.js";
 import "./Search.scss";
 import "../shell/SessionControls.scss";
 
+function SearchResultRow({ onAction, ...props }) {
+  const moreTriggerRef = useRef(null);
+  return (
+    <ResultRow
+      {...props}
+      MoreMenu={ActionMenu}
+      moreTriggerRef={moreTriggerRef}
+      onAction={({ kind, item }) => onAction(kind, item, moreTriggerRef)}
+    />
+  );
+}
+
 // `addTo` ({ deviceId, name }) opens this search for ONE addition to that
 // screen's queue (STEER.1b/AC7, RQ-STEER-22): every pick is added there, the
 // aim is untouched, and the surface closes once the addition is sent.
-export function SearchMode({ onClose, addTo = null }) {
+export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   const [oneShotAction, setOneShotAction] = useState(null);
-  const { scopes, currentScopeKey, currentScope, scopeError, resetScope } = useSearchContext();
+  const { scopes, currentScopeKey, currentScope, resetScope } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue, addToScreen } = useContentDispatch();
   const { rowLabelsFor, continueFor } = useRowLabels();
   const { extraActions, runHousehold } = useHouseholdResultActions();
   const { queue } = useSessionController('local');
   const { push } = useNav();
   const log = useMemo(() => getLogger().child({ component: 'search-mode' }), []);
-  const inputRef = useRef(null);
+  const dialogRef = useRef(null);
+  const searchInputRef = useRef(null);
+  const handleDialogKeys = useDialogFocus(true, dialogRef, searchInputRef);
   const priorFocusRef = useRef(typeof document !== 'undefined' ? document.activeElement : null);
   const priorScrollRef = useRef(typeof window !== 'undefined' ? window.scrollY : 0);
   // Guards against a close path AND the popstate it triggers both firing a
@@ -89,7 +106,11 @@ export function SearchMode({ onClose, addTo = null }) {
     mediaLog.searchModeExited({ reason });
     onClose?.();
     if (!opts.navigated) {
-      priorFocusRef.current?.focus?.({ preventScroll: true });
+      const previous = priorFocusRef.current;
+      previous?.focus?.({ preventScroll: true });
+      if (previous === document.body || document.activeElement !== previous) {
+        restoreSearchFocus?.();
+      }
       if (typeof window !== 'undefined' && window.scrollY !== priorScrollRef.current) {
         window.scrollTo?.({ top: priorScrollRef.current, behavior: 'instant' });
       }
@@ -109,7 +130,7 @@ export function SearchMode({ onClose, addTo = null }) {
     // left needing two backs. This fires a popstate too, but closedRef is
     // already set, so the listener below no-ops for it.
     window.history.back();
-  }, [onClose]);
+  }, [onClose, restoreSearchFocus]);
 
   // NavProvider's push, bound to replace this surface's marker entry — see
   // closeSurface. Handed to the ⋯ verb applier so "Open detail" gets the same
@@ -164,13 +185,22 @@ export function SearchMode({ onClose, addTo = null }) {
   // Trailing ⋯ on a leaf row: Play Now / Play Next / Up Next / Add to Queue
   // / Open detail. Reuses the exact appliers BrowseView rows use (queueOps
   // via LocalSessionController) — see resultRowVerbs.js.
-  const handleMore = useCallback((action, item) => {
+  const handleMore = useCallback((action, item, moreTriggerRef) => {
     const id = item?.id;
     if (!id) return;
     log.info('row_action', { contentId: id, action });
     if (addTo && action !== 'detail' && action !== 'details') { addOnce(id, item, action); return; }
     if (runHousehold(action, item)) return;
-    if (action === 'playOn' || action === 'addOn') { setOneShotAction({ kind: action, item }); return; }
+    if (action === 'playOn' || action === 'addOn') {
+      const returnFocusRef = {
+        get current() {
+          const trigger = moreTriggerRef.current;
+          return trigger?.isConnected ? trigger : searchInputRef.current;
+        },
+      };
+      setOneShotAction({ kind: action, item, returnFocusRef });
+      return;
+    }
     if (action !== 'detail' && action !== 'details') {
       dispatchLeafVerb(action === 'upNext' ? 'playFirst' : action, id, item);
       return;
@@ -202,14 +232,12 @@ export function SearchMode({ onClose, addTo = null }) {
   const searchText = state.search ?? '';
 
   // Every open resets scope to catalog-wide (spec D1: scope never carries
-  // over from a prior search session) and autofocuses the input. This is a
+  // over from a prior search session). This is a
   // mount-once effect — SearchMode is only ever in the tree while open (the
   // shell conditionally mounts it), so mount === open.
   useEffect(() => {
     resetScope();
     mediaLog.searchModeEntered({});
-    const raf = requestAnimationFrame(() => inputRef.current?.focus());
-    return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally once per mount
   }, []);
 
@@ -227,6 +255,8 @@ export function SearchMode({ onClose, addTo = null }) {
     if (addTo) mediaLog.addToQueueClosed({ deviceId: addTo.deviceId, reason: 'dismissed' });
     closeSurface('dismiss');
   }, [closeSurface, addTo]);
+
+  useDismissLayer(true, closeViaButton);
 
   const handleStreamRetry = useCallback((source) => {
     log.info('stream_status.retry', { source, text: searchText });
@@ -254,7 +284,7 @@ export function SearchMode({ onClose, addTo = null }) {
   const showWideningNotice = fellBackToAll && !isSearching && !streamError;
 
   return (
-    <div className="search-mode" data-testid="search-mode" role="dialog" aria-modal="true" aria-label="Search media">
+    <div ref={dialogRef} onKeyDown={handleDialogKeys} className="search-mode" data-testid="search-mode" role="dialog" aria-modal="true" aria-label="Search media">
       <div className="search-mode-header">
         <button
           type="button"
@@ -263,10 +293,11 @@ export function SearchMode({ onClose, addTo = null }) {
           aria-label="Close search"
           onClick={closeViaButton}
         >
-          <IconX size={22} />
+          <UiIcon name="close" size={22} />
         </button>
         <input
-          ref={inputRef}
+          ref={searchInputRef}
+          data-autofocus
           type="search"
           className="search-mode-input"
           data-testid="search-mode-input"
@@ -285,11 +316,6 @@ export function SearchMode({ onClose, addTo = null }) {
 
       <div className="search-mode-scope">
         <ScopeChips />
-        {scopeError && (
-          <span data-testid="scope-error" className="scope-error" title={scopeError.message}>
-            <IconAlertTriangle size={16} aria-label="Scope config failed to load" />
-          </span>
-        )}
       </div>
 
       <StreamStatusLine
@@ -328,7 +354,7 @@ export function SearchMode({ onClose, addTo = null }) {
         )}
         {results.map((item) => (
           <li key={item.id} className="result-row">
-            <ResultRow
+            <SearchResultRow
               item={item}
               title={displayTitle(item)}
               subtitle={rowLabelsFor(item)?.subtitle ?? resultSubtitle(item)}
@@ -340,15 +366,18 @@ export function SearchMode({ onClose, addTo = null }) {
               onTap={() => handleChange(item.id, item)}
               onPlayAll={() => handlePlayAll(item)}
               rowLabels={rowLabelsFor(item)}
-              onMore={(action) => handleMore(action, item)}
-              onAction={({ kind }) => handleMore(kind, item)}
+              onAction={handleMore}
               extraActions={extraActions}
               testId={`search-mode-result-${item.id}`}
             />
           </li>
         ))}
       </ul>
-      <ItemDestinationPicker action={oneShotAction} onClose={() => setOneShotAction(null)} />
+      <ItemDestinationPicker
+        action={oneShotAction}
+        onClose={() => setOneShotAction(null)}
+        returnFocusRef={oneShotAction?.returnFocusRef}
+      />
     </div>
   );
 }

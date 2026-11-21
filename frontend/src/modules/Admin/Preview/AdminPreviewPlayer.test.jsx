@@ -168,4 +168,50 @@ describe('AdminPreviewPlayer frame', () => {
     // Confirm we really are on the queue branch, not silently on Play mode.
     expect(container.querySelector('.admin-preview-player__queue-bar')).toBeTruthy();
   });
+
+  it('centers the active queue item using the current motion preference', async () => {
+    let reducedMotion = true;
+    const originalMatchMedia = window.matchMedia.bind(window);
+    const matchMedia = vi.spyOn(window, 'matchMedia').mockImplementation(query => (
+      query === '(prefers-reduced-motion: reduce)'
+        ? { get matches() { return reducedMotion; } }
+        : originalMatchMedia(query)
+    ));
+    daylightAPI.mockImplementation(async path => path.startsWith('api/v1/queue') ? QUEUE_ITEMS : SCREENS);
+
+    try {
+      renderQueuePreview();
+      const first = (await screen.findByText(QUEUE_ITEMS.items[0].title)).parentElement;
+      const second = screen.getByText(QUEUE_ITEMS.items[1].title).parentElement;
+      first.scrollIntoView = vi.fn();
+      second.scrollIntoView = vi.fn();
+
+      fireEvent.click(second);
+      expect(screen.getByText('Playing 2 of 2')).toBeVisible();
+      expect(second.scrollIntoView).toHaveBeenCalledExactlyOnceWith({ behavior: 'instant', block: 'nearest', inline: 'center' });
+
+      reducedMotion = false;
+      fireEvent.click(first);
+      expect(screen.getByText('Playing 1 of 2')).toBeVisible();
+      expect(first.scrollIntoView).toHaveBeenCalledExactlyOnceWith({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    } finally {
+      matchMedia.mockRestore();
+    }
+  });
+
+  it('retries a failed preview queue without refetching the screens', async () => {
+    let reads = 0;
+    daylightAPI.mockImplementation(path => {
+      if (path !== 'api/v1/queue/list:hymns') return Promise.resolve(SCREENS);
+      return ++reads === 1 ? Promise.reject(new Error('Queue unavailable')) : Promise.resolve(QUEUE_ITEMS);
+    });
+
+    renderQueuePreview();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Queue unavailable');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('Playing 1 of 2')).toBeVisible();
+    expect(daylightAPI.mock.calls.map(([path]) => path).sort()).toEqual([
+      'api/v1/queue/list:hymns', 'api/v1/queue/list:hymns', 'api/v1/screens',
+    ]);
+  });
 });

@@ -196,9 +196,9 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
   );
   const manual = (
     <Group gap="xs" wrap="nowrap">
-      <TextInput size="sm" inputMode="numeric" placeholder="UPC number"
+      <TextInput size="md" className="health-barcode__manual-input" inputMode="numeric" placeholder="UPC number"
         value={manualUpc} onChange={event => setManualUpc(event.target.value)} aria-label="Manual UPC entry" />
-      <Button size="sm" disabled={!manualUpc.trim()} onClick={() => decode(manualUpc.trim())}>Look up</Button>
+      <Button size="md" className="ds-touch-target" disabled={!manualUpc.trim()} onClick={() => decode(manualUpc.trim())}>Look up</Button>
     </Group>
   );
 
@@ -253,9 +253,9 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
       </Text>
       {['scanning', 'paused', 'lookup-error'].includes(phase) && (
         <div className="health-barcode__manual">
-          <TextInput size="sm" className="health-barcode__manual-input" inputMode="numeric" placeholder="UPC number"
+          <TextInput size="md" className="health-barcode__manual-input" inputMode="numeric" placeholder="UPC number"
             value={manualUpc} onChange={event => setManualUpc(event.target.value)} aria-label="Manual UPC entry" />
-          <Button size="sm" disabled={!manualUpc.trim()} onClick={() => decode(manualUpc.trim())}>Look up</Button>
+          <Button size="md" className="ds-touch-target" disabled={!manualUpc.trim()} onClick={() => decode(manualUpc.trim())}>Look up</Button>
         </div>
       )}
       {phase === 'review' && <>

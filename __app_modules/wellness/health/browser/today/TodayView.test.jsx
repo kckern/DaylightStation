@@ -60,6 +60,7 @@ import { TodayView } from "./TodayView.jsx";
 import { localTodayISO } from "./mealBuckets.js";
 import { addDaysISO } from "./moveDays.js";
 import { resetApiResourceCache } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { refreshHealthResources, refreshHealthResourcesWithDashboard } from "../healthResources.js";
 
 function r(ui) { return render(<MemoryRouter><MantineProvider>{ui}</MantineProvider></MemoryRouter>); }
 
@@ -76,6 +77,33 @@ const baseApi = (overrides = {}) => async (path) => {
   if (path.includes('nutrition/input')) return overrides.nutritionInput ?? {};
   return {};
 };
+
+it('waits for the day before reading the coach line and refreshes it after coaching', async () => {
+  apiMock.mockReset();
+  resetApiResourceCache();
+  const day = Promise.withResolvers();
+  const dashboardPath = 'api/v1/health/dashboard';
+  const dashboardReads = () => apiMock.mock.calls.filter(([path]) => path === dashboardPath);
+  let line = 'First coach line';
+  apiMock.mockImplementation(path => {
+    if (path === `api/v1/health/day?date=${localTodayISO()}`) return day.promise;
+    if (path === dashboardPath) return Promise.resolve({ today: { coaching: [{ text: `<b>${line}</b>\nDetails` }] } });
+    return baseApi()(path);
+  });
+  r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+  await waitFor(() => expect(apiMock).toHaveBeenCalledWith(`api/v1/health/day?date=${localTodayISO()}`, {}, 'GET', expect.anything()));
+  expect(dashboardReads()).toHaveLength(0);
+  await act(async () => day.resolve({ items: [], budget: BUDGET }));
+  expect(await screen.findByRole('button', { name: line })).toBeVisible();
+
+  await act(async () => refreshHealthResources());
+  expect(dashboardReads()).toHaveLength(1);
+
+  line = 'Updated coach line';
+  await act(async () => refreshHealthResourcesWithDashboard());
+  expect(await screen.findByRole('button', { name: line })).toBeVisible();
+  expect(dashboardReads()).toHaveLength(2);
+});
 
 // Captures are committed on arrival (Task 1.1): a successful photo/voice
 // submit already logged the row(s) as accepted+unsettled — there is no
@@ -208,7 +236,7 @@ describe('TodayView — Task 3.2: permanent chrome, SWR day data, in-place captu
     for (const meal of ['Breakfast', 'Lunch', 'Dinner', 'Snacks']) expect(screen.getByText(meal)).toBeTruthy();
     expect(screen.getAllByRole('combobox', { name: /^Add to / }).length).toBe(4);
     // The shimmer lives INSIDE a section body, not as a page-level spinner.
-    const shimmers = screen.getAllByLabelText(/^Loading /);
+    const shimmers = screen.getAllByLabelText(/^Loading /).filter(node => node.dataset.testid !== 'weight-chip-loading');
     expect(shimmers.length).toBeGreaterThan(0);
     for (const shimmer of shimmers) expect(shimmer.closest('section')).toBeTruthy();
   });
@@ -229,7 +257,8 @@ describe('TodayView — Task 3.2: permanent chrome, SWR day data, in-place captu
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
     // No waitFor: this must already be true on first paint of the remount.
     expect(screen.getByText('Bagel')).toBeTruthy();
-    expect(screen.queryByLabelText(/^Loading /)).toBeNull();
+    const dayShimmers = screen.queryAllByLabelText(/^Loading /).filter(node => node.dataset.testid !== 'weight-chip-loading');
+    expect(dayShimmers).toHaveLength(0);
   });
 
   it('a mutation-triggered day.reload() shows no shimmer at any point across the update (regression: onDiscard -> reload, I-4)', async () => {

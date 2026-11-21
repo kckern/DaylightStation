@@ -22,10 +22,9 @@ const renderFlow = (props) => render(
   </MantineProvider>
 );
 
-const jsonResponse = (status, body) => ({
-  ok: status >= 200 && status < 300,
+const jsonResponse = (status, body) => new Response(JSON.stringify(body), {
   status,
-  json: async () => body,
+  headers: { 'Content-Type': 'application/json' },
 });
 
 beforeEach(() => {
@@ -48,7 +47,7 @@ describe('CeremonyFlow error states', () => {
     expect(screen.queryByText(/HTTP \d+/)).toBeNull();
 
     // Primary CTA navigates to the coach
-    fireEvent.click(screen.getByRole('button', { name: 'Talk to your coach' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Talk to your coach' }));
     expect(screen.getByTestId('location-probe')).toHaveTextContent('/life/coach');
   });
 
@@ -76,11 +75,14 @@ describe('CeremonyFlow error states', () => {
       expect(screen.getByText('Unknown ceremony type: bogus')).toBeInTheDocument();
     });
     expect(screen.queryByText('HTTP 400')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Talk to your coach' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Talk to your coach' })).toBeNull();
   });
 
   it('falls back to a friendly message when the error body is not JSON', async () => {
-    fetch.mockResolvedValue({ ok: false, status: 502, json: async () => { throw new Error('not json'); } });
+    fetch.mockResolvedValue(new Response('<html>Bad Gateway</html>', {
+      status: 502,
+      headers: { 'Content-Type': 'text/html' },
+    }));
 
     renderFlow({ type: 'unit_intention' });
 

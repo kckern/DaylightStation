@@ -20,7 +20,7 @@ describe('useDevices', () => {
     });
     const { result } = renderHook(() => useDevices());
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(apiMock).toHaveBeenCalledWith('api/v1/device/config');
+    expect(apiMock).toHaveBeenCalledWith('api/v1/device/config', {}, 'GET', { signal: expect.any(AbortSignal) });
     expect(result.current.devices.map((d) => d.id)).toEqual(['livingroom-tv', 'office-tv']);
     expect(result.current.error).toBeNull();
   });
@@ -74,9 +74,24 @@ describe('useDevices', () => {
       .mockResolvedValueOnce({ devices: { 'a': { type: 'shield-tv', content_control: {} }, 'b': { type: 'linux-pc', content_control: {} } } });
     const { result } = renderHook(() => useDevices());
     await waitFor(() => expect(result.current.devices).toHaveLength(1));
-    await act(async () => { await result.current.refresh(); });
+    let refreshed;
+    act(() => { refreshed = result.current.refresh(); });
+    await act(async () => { await refreshed; });
     await waitFor(() => expect(result.current.devices).toHaveLength(2));
     expect(apiMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores an older failure after reconnect loads a fresh roster', async () => {
+    let failFirst;
+    apiMock.mockReturnValueOnce(new Promise((_, reject) => { failFirst = reject; }))
+      .mockResolvedValueOnce({ devices: { screen: { fleet: true } } });
+    const { result } = renderHook(() => useDevices());
+    let refreshed;
+    act(() => { refreshed = result.current.refresh(); });
+    await act(async () => { await refreshed; });
+    await act(async () => { failFirst(new Error('offline')); });
+    expect(result.current.devices.map(device => device.id)).toEqual(['screen']);
+    expect(result.current.error).toBeNull();
   });
 
   it('captures error and exposes empty device list', async () => {
@@ -85,5 +100,28 @@ describe('useDevices', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.error?.message).toBe('boom');
     expect(result.current.devices).toEqual([]);
+  });
+
+  it('settles a failed refresh and keeps its roster empty until recovery succeeds', async () => {
+    let recover;
+    apiMock.mockResolvedValueOnce({ devices: { screen: { fleet: true } } })
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockImplementationOnce(() => new Promise(resolve => { recover = resolve; }));
+    const { result } = renderHook(() => useDevices());
+    await waitFor(() => expect(result.current.devices).toHaveLength(1));
+    let refreshed;
+    act(() => { refreshed = result.current.refresh(); });
+    await act(async () => { await refreshed; });
+    expect(result.current.error?.message).toBe('offline');
+    expect(result.current.devices).toEqual([]);
+
+    act(() => { refreshed = result.current.refresh(); });
+    expect(result.current.loading).toBe(true);
+    expect(result.current.devices).toEqual([]);
+    await act(async () => {
+      recover({ devices: { replacement: { fleet: true } } });
+      await refreshed;
+    });
+    expect(result.current.devices.map(device => device.id)).toEqual(['replacement']);
   });
 });

@@ -243,4 +243,3 @@ export async function createPianoModule({configService, userService, rootLogger,
 
   return {router, sheetMusicAdminService, pianoStudioDatastore, composerSongStore, pianoContainer, pianoGameBudgetService, pianoDayActivity, pianoChallengeProfileService, schoolPianoChallengeCompletionService, schoolTeacherGate};
 }
-

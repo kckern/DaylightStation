@@ -6,37 +6,35 @@ import {
   Center, Loader, ActionIcon, Tooltip,
 } from '@mantine/core';
 import { IconPlayerPlay, IconTrash, IconAlertCircle } from '@tabler/icons-react';
-import { useAdminAgents } from "./hooks/useAdminAgents.js";
+import { useApiResource } from '../../../../frontend/src/lib/hooks/useApiResource.js';
+import getLogger from "../../../../frontend/src/lib/logging/Logger.js";
+import { triggerAssignment } from "./hooks/useAdminAgents.js";
 import { useAgentMemory } from "./hooks/useAgentMemory.js";
-import { ConfirmModal } from "../../../../frontend/src/modules/Admin/shared/index.js";
+import { ConfirmModal } from "../../../../frontend/src/lib/ui/ConfirmModal.jsx";
+import { useSheetSubmission } from '../../../../frontend/src/lib/ui/useSheetSubmission.js';
 
 function OverviewTab({ agentId, userId }) {
-  const { fetchAssignments, triggerAssignment, error: agentError, clearError: clearAgentError } = useAdminAgents();
-  const {
-    entries, loading: memLoading,
-    fetchMemory, deleteEntry, clearAll,
-    error: memError, clearError: clearMemError,
-  } = useAgentMemory();
+  const assignments = useApiResource(agentId ? `/api/v1/agents/${encodeURIComponent(agentId)}/assignments` : null, {
+    label: 'Agent assignments',
+  });
+  useEffect(() => {
+    if (assignments.data) getLogger().child({ hook: 'useAdminAgents' }).info('admin.agents.assignments.fetched', {
+      agentId, count: assignments.data.assignments?.length,
+    });
+  }, [agentId, assignments.data]);
+  return <MemberOverview key={JSON.stringify([agentId, userId])} agentId={agentId} userId={userId} assignmentRead={assignments} />;
+}
 
-  const [assignments, setAssignments] = useState([]);
-  const [assLoading, setAssLoading] = useState(true);
+function MemberOverview({ agentId, userId, assignmentRead }) {
+  const { entries, loading: memLoading, error: memError, deleteEntry, clearAll } = useAgentMemory(agentId, userId);
+  const { data, loading: assLoading, error: assignmentError } = assignmentRead;
+  const assignments = data?.assignments || [];
+  const [actionError, setActionError] = useState(null);
+  const [dismissedError, setDismissedError] = useState(null);
   const [runningId, setRunningId] = useState(null);
   const [runResult, setRunResult] = useState(null);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
-
-  // Fetch assignments on mount
-  useEffect(() => {
-    setAssLoading(true);
-    fetchAssignments(agentId)
-      .then(a => setAssignments(a))
-      .catch(() => {})
-      .finally(() => setAssLoading(false));
-  }, [agentId, fetchAssignments]);
-
-  // Fetch memory when userId changes
-  useEffect(() => {
-    if (userId) fetchMemory(agentId, userId).catch(() => {});
-  }, [agentId, userId, fetchMemory]);
+  const { run: submitClear, saving: clearing } = useSheetSubmission(() => setClearConfirmOpen(false), setActionError);
 
   const handleRunAssignment = useCallback(async (assignmentId) => {
     setRunningId(assignmentId);
@@ -49,20 +47,22 @@ function OverviewTab({ agentId, userId }) {
     } finally {
       setRunningId(null);
     }
-  }, [agentId, userId, triggerAssignment]);
+  }, [agentId, userId]);
 
-  const handleDeleteEntry = useCallback(async (key) => {
-    await deleteEntry(agentId, userId, key);
-    await fetchMemory(agentId, userId);
-  }, [agentId, userId, deleteEntry, fetchMemory]);
+  const handleDeleteEntry = async key => {
+    setActionError(null);
+    try { await deleteEntry(key); }
+    catch (error) { setActionError(error); }
+  };
 
-  const handleClearAll = useCallback(async () => {
-    await clearAll(agentId, userId);
-    setClearConfirmOpen(false);
-  }, [agentId, userId, clearAll]);
+  const handleClearAll = () => submitClear(() => {
+    setActionError(null);
+    return clearAll();
+  });
 
-  const error = agentError || memError;
-  const onClearError = agentError ? clearAgentError : clearMemError;
+  const readError = assignmentError || memError;
+  const error = actionError || (readError !== dismissedError && readError);
+  const onClearError = () => { setActionError(null); setDismissedError(readError); };
 
   const memoryEntries = Object.entries(entries);
 
@@ -206,6 +206,7 @@ function OverviewTab({ agentId, userId }) {
                     <Table.Td>
                       <Tooltip label="Delete entry">
                         <ActionIcon
+                          aria-label={`Delete memory entry ${key}`}
                           size="sm"
                           variant="subtle"
                           color="red"
@@ -230,6 +231,7 @@ function OverviewTab({ agentId, userId }) {
         title="Clear All Memory"
         message={`This will delete all working memory entries for ${agentId} / ${userId}. The agent will start fresh on its next run.`}
         confirmLabel="Clear All"
+        loading={clearing}
       />
     </Stack>
   );

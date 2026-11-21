@@ -30,12 +30,12 @@ Pure business logic — no I/O, no external dependencies.
 
 #### CeremonyDueResolver (`services/CeremonyDueResolver.mjs`)
 
-The SSOT for ceremony **dueness logic** — which ceremonies are due today for a plan, independent of delivery hour. Exports `CEREMONY_TIMING` (per-type timing keyword, e.g. `start_of_unit`/`end_of_cycle`), `CEREMONY_CADENCE_MAP` (type → cadence level), `DEFAULT_ENABLED` (`['unit_intention', 'unit_capture', 'cycle_retro', 'phase_review']`), and `CEREMONY_TITLES` (terse card labels), plus a `listDue({ plan, cadencePosition, cadenceConfig, today, hasRecord })` method that walks every ceremony type, checks `plan.ceremonies.<type>.enabled` (falling back to `DEFAULT_ENABLED`), skips types with no resolved `periodId` or an existing completion record, and delegates the actual due-check to `CadenceService.isCeremonyDue`.
+`CeremonyDueResolver` defines ceremony timing and cadence levels. Its `ceremonyEnabled(plan, type)` function resolves the canonical setting, an older saved toggle, then the ceremony default. `listDue({ plan, cadencePosition, cadenceConfig, today, hasRecord })` applies that policy, skips types with no period or an existing completion record, and uses `CadenceService.isCeremonyDue` to check the date.
 
-It has two consumers, deliberately sharing constants but not presentation:
+The same policy serves three workflows.
 - **AlignmentService** (dashboard) — calls `listDue()` with no time-of-day gate, to surface a `ceremony_due` priority as soon as the period opens.
-- **CeremonyToolFactory** (coach) — same resolver, for the `check_ceremony_status` tool.
-- **CeremonyScheduler** (notification sender) — imports only the shared constants (`CEREMONY_TIMING`/`CEREMONY_CADENCE_MAP`/`DEFAULT_ENABLED`) and additionally hour-gates delivery; it keeps its **own** `TITLES` map for push/Telegram copy ("Monthly Deep Review" vs. the dashboard's terse "Phase review") — two surfaces, one dueness SSOT, by design. See `__backend/src/3_applications/lifeplan/services/CeremonyScheduler.mjs:9-39`.
+- **CeremonyToolFactory** (coach) — uses the shared timing and enablement rules for `check_ceremony_status`.
+- **CeremonyScheduler** (notification sender) — applies the shared timing and enablement rules, household delivery hours and notification copy.
 
 #### Honesty pass — which domain services actually run
 
@@ -96,7 +96,7 @@ The notification bounded context routes NotificationIntents (title/body/category
 
 | Channel | Adapter | Delivery |
 |---------|---------|----------|
-| app | AppNotificationAdapter | WebSocketEventBus broadcast on the `notification` topic. The frontend `useAppNotifications` hook subscribes to the same shared WS client and renders a Mantine toast; intents carrying `metadata.username` are shown only to that user, unaddressed intents broadcast to everyone. Action urls are gated to `http(s)`/relative (`javascript:`/`mailto:`/`data:` fall back to a non-clickable toast) |
+| app | AppNotificationAdapter | WebSocketEventBus broadcast on the `notification` topic. Life subscribes through the shared WebSocket client and shows Mantine toasts. A toast addressed through `metadata.username` belongs to the selected member and is dismissed when that member changes or Life closes. Household broadcasts retain their normal lifetime. Actions accept relative and `http(s)` URLs. Other schemes render without an action. |
 | telegram | TelegramNotificationAdapter | Chat id resolved from profile `identities.telegram.user_id`; sends via the SystemBotLoader telegram adapter. Ceremony intents attach inline "Begin" buttons whose callback deep-links into the ceremony flow — this requires `system.public_url` to be configured; when it is unset (current state) the adapter degrades to a text-only message with no button |
 | push | PushNotificationAdapter | Home Assistant `notify.<service>`; service name from profile `identities.homeassistant.notify_service` |
 
@@ -147,7 +147,8 @@ Default routing: `ceremony` → telegram+push+app, `drift_alert` → telegram+ap
 | `POST /plan/purpose` | plan.mjs | Set or replace the purpose statement; **planless-safe** — creates the plan first via `planAuthoringService.setPurpose` if none exists, same as the goal/value/belief authoring routes. Returns the purpose (201) |
 | `/plan/...` | plan.mjs | Section updates, goal transitions, belief evidence, ceremony endpoints |
 | `GET /plan/ceremony/:type` | plan.mjs | Ceremony content; `404 { code: NO_PLAN }` when no plan exists, `400` for an unknown ceremony type |
-| `GET /plan/cadence` | plan.mjs | Resolved cadence for the current instant (unit/cycle/phase/season/era) |
+| `GET /plan/cadence` | plan.mjs | Cadence config, resolved position, and effective ceremony settings |
+| `PATCH /plan/ceremonies/:type` | plan.mjs | Set one ceremony's `enabled` boolean for the selected member while preserving its other settings |
 | `/now` | now.mjs | Alignment data, drift snapshots |
 | `/log` | log.mjs | Lifelog aggregation (day, range, scope, category) |
 | `/schedule` | schedule.mjs | Ceremony schedule export (rrule formats) |
@@ -156,6 +157,8 @@ Default routing: `ceremony` → telegram+push+app, `drift_alert` → telegram+ap
 | `/health` | (in life.mjs) | System health check |
 
 **User identity:** every life route resolves the user via `life/identity.mjs`: `?username=` query param, else the configured default (head of household from `configService.getHeadOfHousehold()`). Usernames are validated against `UserService.getProfile()` — unknown users get 404. Log routes validate their `:username` path param the same way.
+
+Plan → Ceremonies uses the effective `ceremonies` map returned by the cadence read. The settings page, Now and the notification scheduler use the same enablement policy. An explicit entry under `ceremonies.<type>.enabled` takes precedence. A boolean saved by an older settings page under `cadence.ceremonies.<type>.enabled` supplies the choice if the canonical field is absent. New toggles write the canonical field. The view keeps the switches in place while the accepted changes are read back. Retry after an accepted change only reloads the cadence resource.
 
 `GET /users` backs the household **user switcher** in the LifeApp header (lets a shared display switch whose plan is shown). The switcher only renders when the roster has more than one member. The roster is drawn from `households.<hid>.users` in `system.yml`, which **must be configured as a YAML array**; when it is a bare string (current state in some environments) the roster resolves empty and the switcher stays hidden. `GET /user` (singular) drives `useLifeUser`/`LifeUserContext`, which also keys CoachChat agent memory to the real user.
 
@@ -267,6 +270,10 @@ A small shared design system underpins every view, added alongside the "beautifu
 | `views/now/` | **Dashboard** (not "Briefing" — see below), PriorityList |
 | `views/coach/` | CoachChat — chat UI for the lifeplan-guide agent, gated on a resolved `lifeUser` so agent memory keys to the right person |
 | `views/log/` | LogBrowser, LogTimeline, LogDayDetail, LogWeekView, LogMonthView, LogSeasonView, LogYearView, LogDecadeView, LogCategoryView, and `views/log/shared/` (ActivityHeatmap, CategoryFilter, ScopeSelector, SourceIcon) |
+
+The Day Log's initial date uses the browser's local calendar day. A date saved
+in the current router visit remains authoritative while switching scopes, so
+Back/Forward navigation does not reset the selected day.
 | `views/ceremony/` | CeremonyFlow, UnitIntention, UnitCapture, CycleRetro, PhaseReview |
 
 **`views/now/` is `Dashboard.jsx` + `PriorityList.jsx`, not `Briefing.jsx`.** `Briefing.jsx` and its companion hook `useLifeStage.js` were deleted as orphans in the beautiful-and-usable merge — do not reference them; `Dashboard.jsx` now owns both the stage-driven setup checklist (reading `dashboard.stage`/`dashboard.completeness` from `useAlignment`) and the priority feed. `PriorityList.jsx` renders `AlignmentService`'s priorities per-user/per-day, is dismissable, tap-through to the relevant view, and is aware of the two newer priority types (`plan_gap`, `ceremony_due`) as well as the original three.

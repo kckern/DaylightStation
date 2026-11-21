@@ -2,13 +2,13 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
 }
 
-/* The VISIBLE box: fixed width, height derived from the target screen's own
-   aspect ratio. A hardcoded 540px forced every screen to 16:9 and cropped the
-   16:10 portal panel. */
+/* Fit the measured modal body and use the target screen's aspect ratio. */
 .admin-preview-player__video {
   width: var(--preview-width, 960px);
+  max-width: 100%;
   height: var(--preview-box-height, 540px);
   position: relative;
   background: #000;
@@ -56,6 +56,11 @@
 .admin-preview-player__queue-item {
   flex: 0 0 80px;
   width: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0;
   cursor: pointer;
   text-align: center;
   border-radius: 4px;
@@ -71,6 +76,14 @@
     outline: 2px solid var(--mantine-color-blue-5);
     outline-offset: -2px;
   }
+}
+
+.admin-preview-player__queue-item.ds-touch {
+  padding: 3px;
+  border-width: 0;
+  border-radius: 4px;
+  font-size: inherit;
+  font-weight: 400;
 }
 
 .admin-preview-player__queue-thumb {

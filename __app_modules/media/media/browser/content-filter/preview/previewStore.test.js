@@ -13,7 +13,7 @@ describe('previewStore', () => {
     expect(() => previewStore.replayLast()).not.toThrow();
     expect(() => previewStore.peek('x')).not.toThrow();
     expect(() => previewStore.close()).not.toThrow();
-    await expect(previewStore.refresh()).resolves.toBeUndefined();
+    await expect(previewStore.refresh()).resolves.toBe(false);
   });
 
   it('a stale binder cannot reset a newer binder’s store', () => {
@@ -75,11 +75,11 @@ describe('previewStore', () => {
 
   it('delegates peek, refresh and close to the bound handlers; unbind restores no-ops', async () => {
     const peek = vi.fn();
-    const refresh = vi.fn(async () => {});
+    const refresh = vi.fn(async () => true);
     const close = vi.fn();
     const unbind = previewStore.bind({ peek, refresh, close });
     previewStore.peek('va1');
-    await previewStore.refresh();
+    await expect(previewStore.refresh()).resolves.toBe(true);
     previewStore.close();
     expect(peek).toHaveBeenCalledWith('va1');
     expect(refresh).toHaveBeenCalledTimes(1);
@@ -87,6 +87,16 @@ describe('previewStore', () => {
     unbind();
     previewStore.peek('va1');
     expect(peek).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a refresh result from a replaced player binding', async () => {
+    const held = Promise.withResolvers();
+    previewStore.bind({ refresh: () => held.promise });
+    const refreshing = previewStore.refresh();
+    previewStore.bind({ refresh: async () => true });
+    held.resolve(true);
+    await expect(refreshing).resolves.toBe(false);
+    await expect(previewStore.refresh()).resolves.toBe(true);
   });
 
   it('useFilterPreview re-renders with the published snapshot', () => {

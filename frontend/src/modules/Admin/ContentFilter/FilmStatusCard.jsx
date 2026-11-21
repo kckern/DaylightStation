@@ -3,6 +3,7 @@ import { Button, Group, Loader, Progress, Stack, Text } from '@mantine/core';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/index.js';
 import { formatEta, measureEta, runPhases } from './runProgress.js';
+import { ApprovalFeedback, useApprovalRegion } from './FilmApprovalControls.jsx';
 
 /**
  * One film's two answers (are there filters? are they refined?) and the one thing to do next
@@ -21,10 +22,11 @@ function outcomeText({ cue, kind, status, detail }) {
   return `${what}: couldn't pin the edges${detail ? ` (${detail})` : ''}`;
 }
 
-export function FilmStatusCard({ ratingKey, status, job = null, approvedBy = null, auditError = null, worker = null, onChanged = () => {}, onReview = () => {} }) {
+export function FilmStatusCard({ ratingKey, status, approval, job = null, approvedBy = null, auditError = null, worker = null, onChanged = () => {}, onReview = () => {} }) {
   const [pending, setPending] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
   const [notice, setNotice] = useState(null);
+  const { regionProps, feedback, start, retry } = useApprovalRegion(approval, 'approve');
   if (!status) return null;
   const base = `${API}/${encodeURIComponent(ratingKey)}`;
   const act = async (action, path, body) => {
@@ -42,7 +44,7 @@ export function FilmStatusCard({ ratingKey, status, job = null, approvedBy = nul
   const eta = running ? formatEta(measureEta({ progress, now: Date.now() })) : null;
 
   return (
-    <Stack gap={6} className="cf-status" data-next={next}>
+    <Stack component="section" {...regionProps} aria-label="Film status" gap={6} className="cf-status" data-next={next}>
       <Text size="sm" fw={600}>{filters.present ? `Filters: Yes — ${filters.parts} parts` : 'Filters: None for this film yet'}</Text>
       {filters.present ? (
         <Text size="sm">{refined.present ? `Refined: Yes — ${refined.measured} of ${refined.of} measured to the millisecond` : 'Refined: No'}</Text>
@@ -80,8 +82,9 @@ export function FilmStatusCard({ ratingKey, status, job = null, approvedBy = nul
         </Group>
       ) : null}
       {next === 'review' ? <Group><Button size="xs" onClick={() => { logger.info('review.status.action', { ratingKey, action: 'review' }); onReview(); }}>Review</Button></Group> : null}
-      {next === 'approve' ? <Group><Button size="xs" loading={pending} onClick={() => act('approve', `${base}/signoff`, {})}>Approve for family</Button></Group> : null}
+      {next === 'approve' ? <Group><Button size="xs" loading={feedback?.busy} disabled={pending || approval.blocked} onClick={start}>Approve for family</Button></Group> : null}
       {notice ? <Text size="sm" role="status" c="red">{notice}</Text> : null}
+      <ApprovalFeedback feedback={feedback} onRetry={retry} />
     </Stack>
   );
 }

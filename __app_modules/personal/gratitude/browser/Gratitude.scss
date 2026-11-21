@@ -1143,6 +1143,13 @@ h2 {
     font-weight: 500;
     color: #e0e0e0;
   }
+
+  .selection-status {
+    flex-shrink: 0;
+    color: inherit;
+    font-size: 0.8em;
+    white-space: nowrap;
+  }
   
 }
 

@@ -73,9 +73,7 @@ const TYPE_ICONS = {
   default: IconFile
 };
 
-export function normalizeListSource(source) {
-  return source === 'list' ? 'menu' : source;
-}
+export { normalizeListSource } from "../lib/contentSearchLogic.js";
 
 // Source badge colors
 export const SOURCE_COLORS = {

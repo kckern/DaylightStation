@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect } from 'react';
 
 const MAX_BLUR_PX = 4;
 
@@ -64,93 +64,77 @@ function getRenderedImageSize(img) {
  * Only blurs when image is displayed larger than source resolution.
  * Blur amount: (ratio - 1) / 2 — smooths pixelation without losing detail.
  *
- * @param {React.RefObject} imageRef - ref to the img element
+ * @param {string|null} source - rendered src of the img element
  * @param {Object} options - { maxBlurPx, enabled }
- * @returns {Object} { blurStyle, ratio, debug }
+ * @returns {Object} { imageRef, blurStyle, ratio, debug }
  */
-export function useImageUpscaleBlur(imageRef, options = {}) {
+export function useImageUpscaleBlur(source, options = {}) {
   const { maxBlurPx = MAX_BLUR_PX, enabled = true } = options;
-  const [blurPx, setBlurPx] = useState(0);
-  const [debug, setDebug] = useState(null);
-  const resizeObserverRef = useRef(null);
+  const [img, imageRef] = useState(null);
+  const [measurement, setMeasurement] = useState(null);
 
-  const recalculate = useCallback(() => {
-    const img = imageRef?.current;
-    if (!img || !enabled) {
-      setBlurPx(0);
-      return;
-    }
-
-    const naturalW = img.naturalWidth;
-    const naturalH = img.naturalHeight;
-    if (!naturalW || !naturalH) {
-      setBlurPx(0);
-      return;
-    }
-
-    const rendered = getRenderedImageSize(img);
-    if (!rendered) {
-      setBlurPx(0);
-      return;
-    }
-
-    // Factor in device pixel ratio for true pixel density
-    const dpr = window.devicePixelRatio || 1;
-    const physicalW = rendered.width * dpr;
-    const physicalH = rendered.height * dpr;
-
-    // Use the dominant axis (max ratio)
-    const ratioW = physicalW / naturalW;
-    const ratioH = physicalH / naturalH;
-    const ratio = Math.max(ratioW, ratioH);
-
-    // Calculate blur: (ratio - 1) / 2, capped at max
-    // ratio <= 1 means downscaling or 1:1, no blur needed
-    const calculatedBlur = ratio <= 1
-      ? 0
-      : Math.min(maxBlurPx, (ratio - 1) / 2);
-
-    setBlurPx(calculatedBlur);
-    setDebug({
-      natural: { w: naturalW, h: naturalH },
-      rendered: { w: Math.round(rendered.width), h: Math.round(rendered.height) },
-      physical: { w: Math.round(physicalW), h: Math.round(physicalH) },
-      dpr,
-      ratio: ratio.toFixed(2),
-      blur: calculatedBlur.toFixed(2)
-    });
-  }, [imageRef, enabled, maxBlurPx]);
-
-  // Recalculate on load
   useEffect(() => {
-    const img = imageRef?.current;
-    if (!img) return;
-
-    const handleLoad = () => recalculate();
-    img.addEventListener('load', handleLoad);
-
-    // Initial check if already loaded
-    if (img.complete && img.naturalWidth > 0) {
-      recalculate();
+    if (!img || !source || !enabled) {
+      setMeasurement(null);
+      return;
     }
 
-    return () => img.removeEventListener('load', handleLoad);
-  }, [imageRef, recalculate]);
+    let retired = false;
+    const recalculate = () => {
+      if (retired) return;
+      // The previous resource can still supply intrinsic dimensions during a source change.
+      if (!img.complete || (img.currentSrc && img.currentSrc !== img.src)) {
+        setMeasurement(null);
+        return;
+      }
 
-  // Recalculate on resize
-  useEffect(() => {
-    const img = imageRef?.current;
-    if (!img || typeof ResizeObserver === 'undefined') return;
+      const rendered = getRenderedImageSize(img);
+      if (!rendered) {
+        setMeasurement(null);
+        return;
+      }
 
-    resizeObserverRef.current = new ResizeObserver(recalculate);
-    resizeObserverRef.current.observe(img);
+      // Use physical pixels and the dominant axis to measure upscaling.
+      const { naturalWidth: naturalW, naturalHeight: naturalH } = img;
+      const dpr = window.devicePixelRatio || 1;
+      const physicalW = rendered.width * dpr;
+      const physicalH = rendered.height * dpr;
+      const ratio = Math.max(physicalW / naturalW, physicalH / naturalH);
+      const blurPx = ratio <= 1 ? 0 : Math.min(maxBlurPx, (ratio - 1) / 2);
 
-    return () => resizeObserverRef.current?.disconnect();
-  }, [imageRef, recalculate]);
+      setMeasurement({
+        img,
+        source,
+        blurPx,
+        debug: {
+          natural: { w: naturalW, h: naturalH },
+          rendered: { w: Math.round(rendered.width), h: Math.round(rendered.height) },
+          physical: { w: Math.round(physicalW), h: Math.round(physicalH) },
+          dpr,
+          ratio: ratio.toFixed(2),
+          blur: blurPx.toFixed(2)
+        }
+      });
+    };
 
-  const blurStyle = blurPx > 0 ? { filter: `blur(${blurPx.toFixed(2)}px)` } : {};
+    img.addEventListener('load', recalculate);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(recalculate);
+    observer?.observe(img);
+    recalculate();
 
-  return { blurStyle, ratio: debug?.ratio, debug };
+    return () => {
+      retired = true;
+      img.removeEventListener('load', recalculate);
+      observer?.disconnect();
+    };
+  }, [img, source, enabled, maxBlurPx]);
+
+  const current = enabled && measurement?.img === img && measurement.source === source
+    ? measurement
+    : null;
+  const blurStyle = current?.blurPx > 0 ? { filter: `blur(${current.debug.blur}px)` } : {};
+
+  return { imageRef, blurStyle, ratio: current?.debug.ratio, debug: current?.debug ?? null };
 }
 
 export default useImageUpscaleBlur;

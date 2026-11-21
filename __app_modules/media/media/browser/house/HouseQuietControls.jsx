@@ -4,6 +4,7 @@
 // every screen not reached, arrive through the outcome tray.
 import React from 'react';
 import { ActionIcon, Button, Menu } from '@mantine/core';
+import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import { IconHome, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerStopFilled } from '@tabler/icons-react';
 import { useHouseQuiet } from "./houseQuiet.js";
 import "./House.scss";
@@ -61,8 +62,11 @@ export function HouseQuietBar() {
 export function HandleHouseMenu() {
   const { pauseAll, stopAll, resumeAll, busy, canResume, resumable, playingCount, activeCount } = useHouseQuiet();
   return (
-    <Menu position="top-end" withinPortal>
-      <Menu.Target>
+    <ActionMenu
+      position="top-end"
+      withinPortal
+      dropdownProps={{ 'data-testid': 'mini-house-menu-panel' }}
+      trigger={
         <ActionIcon
           size={44}
           variant="subtle"
@@ -72,21 +76,20 @@ export function HandleHouseMenu() {
         >
           <IconHome size={18} aria-hidden />
         </ActionIcon>
-      </Menu.Target>
-      <Menu.Dropdown data-testid="mini-house-menu-panel">
-        <Menu.Label>Whole house</Menu.Label>
-        <Menu.Item data-testid="mini-pause-all" leftSection={<IconPlayerPauseFilled size={16} aria-hidden />} disabled={playingCount === 0} onClick={pauseAll}>
-          Pause all
+      }
+    >
+      <Menu.Label>Whole house</Menu.Label>
+      <Menu.Item data-testid="mini-pause-all" leftSection={<IconPlayerPauseFilled size={16} aria-hidden />} disabled={playingCount === 0} onClick={pauseAll}>
+        Pause all
+      </Menu.Item>
+      <Menu.Item data-testid="mini-stop-all" leftSection={<IconPlayerStopFilled size={16} aria-hidden />} disabled={activeCount === 0} onClick={stopAll}>
+        Stop all
+      </Menu.Item>
+      {canResume && (
+        <Menu.Item data-testid="mini-resume-all" leftSection={<IconPlayerPlayFilled size={16} aria-hidden />} onClick={resumeAll}>
+          Resume all ({resumable.length})
         </Menu.Item>
-        <Menu.Item data-testid="mini-stop-all" leftSection={<IconPlayerStopFilled size={16} aria-hidden />} disabled={activeCount === 0} onClick={stopAll}>
-          Stop all
-        </Menu.Item>
-        {canResume && (
-          <Menu.Item data-testid="mini-resume-all" leftSection={<IconPlayerPlayFilled size={16} aria-hidden />} onClick={resumeAll}>
-            Resume all ({resumable.length})
-          </Menu.Item>
-        )}
-      </Menu.Dropdown>
-    </Menu>
+      )}
+    </ActionMenu>
   );
 }

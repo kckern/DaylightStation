@@ -54,7 +54,7 @@ describe('useHubMutations', () => {
 
       expect(global.fetch).toHaveBeenCalledTimes(1);
       const [url, opts] = global.fetch.mock.calls[0];
-      expect(url).toBe('/api/v1/playback-hub/command');
+      expect(url).toBe(`${location.origin}/api/v1/playback-hub/command`);
       expect(opts.method).toBe('POST');
       expect(opts.headers['Content-Type']).toBe('application/json');
       expect(JSON.parse(opts.body)).toEqual({
@@ -212,7 +212,7 @@ describe('useHubMutations', () => {
       });
 
       const [url, opts] = global.fetch.mock.calls[0];
-      expect(url).toBe('/api/v1/playback-hub/devices/red');
+      expect(url).toBe(`${location.origin}/api/v1/playback-hub/devices/red`);
       expect(opts.method).toBe('PATCH');
       expect(JSON.parse(opts.body)).toEqual({ volume: { max: 30 } });
       expect(revalidate).toHaveBeenCalledTimes(1);
@@ -228,7 +228,7 @@ describe('useHubMutations', () => {
       });
 
       expect(global.fetch.mock.calls[0][0]).toBe(
-        '/api/v1/playback-hub/devices/weird%20color'
+        `${location.origin}/api/v1/playback-hub/devices/weird%20color`
       );
     });
 
@@ -271,7 +271,7 @@ describe('useHubMutations', () => {
       });
 
       const [url, opts] = global.fetch.mock.calls[0];
-      expect(url).toBe('/api/v1/playback-hub/scheduled');
+      expect(url).toBe(`${location.origin}/api/v1/playback-hub/scheduled`);
       expect(opts.method).toBe('POST');
       expect(revalidate).toHaveBeenCalledTimes(1);
     });
@@ -295,7 +295,7 @@ describe('useHubMutations', () => {
       });
 
       const [url, opts] = global.fetch.mock.calls[0];
-      expect(url).toBe('/api/v1/playback-hub/scheduled/foo');
+      expect(url).toBe(`${location.origin}/api/v1/playback-hub/scheduled/foo`);
       expect(opts.method).toBe('PUT');
       expect(revalidate).toHaveBeenCalledTimes(1);
     });
@@ -309,7 +309,7 @@ describe('useHubMutations', () => {
       });
 
       expect(global.fetch.mock.calls[0][0]).toBe(
-        '/api/v1/playback-hub/scheduled/a%20b%2Fc'
+        `${location.origin}/api/v1/playback-hub/scheduled/a%20b%2Fc`
       );
     });
 
@@ -348,7 +348,7 @@ describe('useHubMutations', () => {
       });
 
       const [url, opts] = global.fetch.mock.calls[0];
-      expect(url).toBe('/api/v1/playback-hub/scheduled/foo');
+      expect(url).toBe(`${location.origin}/api/v1/playback-hub/scheduled/foo`);
       expect(opts.method).toBe('DELETE');
       expect(revalidate).toHaveBeenCalledTimes(1);
       expect(response).toEqual({ ok: true, result: { ok: true } });
@@ -500,7 +500,7 @@ describe('useHubMutations', () => {
       });
 
       const [url, opts] = global.fetch.mock.calls[0];
-      expect(url).toBe('/api/v1/playback-hub/verify/white');
+      expect(url).toBe(`${location.origin}/api/v1/playback-hub/verify/white`);
       expect(opts?.method ?? 'GET').toBe('GET');
       expect(response.audio_flowing).toBe(true);
       expect(response.peak_dbfs).toBe(-3.2);
@@ -513,7 +513,7 @@ describe('useHubMutations', () => {
         await result.current.verifyAudio('weird color');
       });
       expect(global.fetch.mock.calls[0][0]).toBe(
-        '/api/v1/playback-hub/verify/weird%20color'
+        `${location.origin}/api/v1/playback-hub/verify/weird%20color`
       );
     });
 
@@ -549,6 +549,25 @@ describe('useHubMutations', () => {
         await result.current.verifyAudio('white');
       });
       expect(revalidate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('fixSlot', () => {
+    it('POSTs to /fix/:color and returns the hub outcome', async () => {
+      const outcome = { ok: false, code: 'absent', result: "Couldn't reach the speaker" };
+      global.fetch.mockReturnValueOnce(ok(outcome));
+      const { result } = renderHook(() => useHubMutations({ revalidate }));
+
+      let response;
+      await act(async () => {
+        response = await result.current.fixSlot('green');
+      });
+
+      expect(global.fetch).toHaveBeenCalledExactlyOnceWith(
+        `${location.origin}/api/v1/playback-hub/fix/green`,
+        expect.objectContaining({ method: 'POST' }),
+      );
+      expect(response).toEqual(outcome);
     });
   });
 });

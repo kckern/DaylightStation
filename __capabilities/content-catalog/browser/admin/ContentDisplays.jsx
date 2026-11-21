@@ -1,28 +1,16 @@
 // ContentDisplays.jsx — display-mode cards for a row's committed content value
-// (resolved card, unresolved warning, resolving spinner, empty placeholder)
-// plus the content-metadata fetch layer (module-level cache + in-flight
-// dedupe) and the shared type/source display metadata they render with.
-// Extracted verbatim from ListsItemRow.jsx (Task 14). The module caches
-// (contentInfoCache / inflightRequests) are shared state — this module is
-// their single instance.
-import React, { useState, useEffect } from 'react';
+// (resolved card, unresolved warning, resolving spinner, empty placeholder).
+import React, { useState } from 'react';
+import { useDisplayClock } from '../../../../frontend/src/lib/hooks/useDisplayClock.js';
 import { Text, Loader, Group, Avatar, Badge, Box, ActionIcon } from '@mantine/core';
 import {
   IconChevronRight, IconAlertTriangle, IconCheck, IconPhoto, IconPlayerPlay,
   IconSearch, IconList,
 } from '@tabler/icons-react';
-import { getChildLogger } from "../../../../frontend/src/lib/logging/singleton.js";
 import { ShimmerAvatar } from "./ShimmerAvatar.jsx";
 import {
   isContainerItem, normalizeListSource, SOURCE_COLORS, getTypeIcon, TYPE_LABELS, parseSource,
 } from "./contentDisplaysUtils.jsx";
-
-// Lazy admin logger with session logging enabled
-let _adminLog;
-function adminLog(component) {
-  if (!_adminLog) _adminLog = getChildLogger({ app: 'admin', sessionLog: true });
-  return component ? _adminLog.child({ component }) : _adminLog;
-}
 
 // Color palette for seeded avatars (Mantine color names)
 const AVATAR_COLORS = [
@@ -165,12 +153,9 @@ function ContentItemDisplay({ item, isHighlighted: _isHighlighted, isCurrent, sh
 
 // Loading display with countup timer — shows user's intent while resolving
 export function ResolvingDisplay({ value, onClick }) {
-  const [elapsed, setElapsed] = useState(0);
-  useEffect(() => {
-    const t0 = Date.now();
-    const id = setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 1000);
-    return () => clearInterval(id);
-  }, []);
+  const [startedAt] = useState(Date.now);
+  const now = useDisplayClock();
+  const elapsed = Math.floor((now - startedAt) / 1000);
   return (
     <div onClick={onClick} className="content-display" style={{ cursor: 'pointer' }}>
       <Group gap={6} wrap="nowrap" style={{ flex: 1 }}>
@@ -267,12 +252,9 @@ export function UnresolvedContentDisplay({ item, onClick }) {
  * unified ContentCombobox as `renderValue` — clicking any card enters edit
  * mode via onStartEdit.
  */
-export function ContentValueCard({ value, contentInfoMap, onStartEdit }) {
-  const contentInfo = value ? contentInfoMap.get(value) : null;
-  const loadingInfo = !!value && !contentInfoMap.has(value);
-
+export function ContentValueCard({ value, contentInfoMap, contentInfo = contentInfoMap?.get(value), onStartEdit }) {
   // Loading state - show user's input text with a spinner and countup so intent is visible
-  if (loadingInfo) {
+  if (value && contentInfo === undefined) {
     return <ResolvingDisplay value={value} onClick={onStartEdit} />;
   }
 
@@ -308,7 +290,7 @@ export function ContentValueCard({ value, contentInfoMap, onStartEdit }) {
  * into the contentInfoMap entry format so the row card renders instantly
  * without waiting for ListsFolder's metadata refetch.
  */
-// eslint-disable-next-line react-refresh/only-export-components -- shares module-level cache/log state with the display components — judged not worth splitting out
+// eslint-disable-next-line react-refresh/only-export-components -- list editors share this display projection
 export function contentInfoFromPick(value, item) {
   return {
     value,
@@ -324,101 +306,4 @@ export function contentInfoFromPick(value, item) {
     number: item.number ?? item.metadata?.number ?? null,
     unresolved: false,
   };
-}
-
-// Cache for content info to avoid re-fetching
-const contentInfoCache = new Map();
-// Deduplicate in-flight requests so concurrent callers share one fetch
-const inflightRequests = new Map();
-
-// eslint-disable-next-line react-refresh/only-export-components -- shares module-level cache/log state with the display components — judged not worth splitting out
-export async function fetchContentMetadata(value) {
-  if (!value) return null;
-
-  // Check cache first
-  if (contentInfoCache.has(value)) {
-    return contentInfoCache.get(value);
-  }
-
-  // If a fetch is already in flight for this value, reuse it
-  if (inflightRequests.has(value)) {
-    return inflightRequests.get(value);
-  }
-
-  // Wrap the actual work in a shared promise so concurrent callers deduplicate
-  const promise = (async () => {
-    // Resolve app items locally from registry (no backend call needed)
-    if (value.startsWith('app:')) {
-      const { resolveAppDisplay, getApp } = await import("../../../../frontend/src/lib/appRegistry.js");
-      const appInfo = resolveAppDisplay(value);
-      if (appInfo) {
-        const entry = getApp(appInfo.appId);
-        const info = {
-          value,
-          title: appInfo.paramValue
-            ? `${appInfo.label} / ${appInfo.paramValue}`
-            : appInfo.label,
-          source: 'app',
-          type: 'app',
-          thumbnail: entry?.icon || null,
-          unresolved: false,
-        };
-        contentInfoCache.set(value, info);
-        return info;
-      }
-      // Unknown app — fall through to unresolved
-      return { value, title: value.slice(4), source: 'app', type: null, unresolved: true };
-    }
-
-    // Parse source:id format (trim whitespace from parts)
-    const match = value.match(/^([^:]+):\s*(.+)$/);
-    if (!match) {
-      // Format can't be parsed - return unresolved
-      return { value, unresolved: true };
-    }
-
-    const [, source, localId] = [null, match[1].trim(), match[2].trim()];
-    const normalizedSource = normalizeListSource(source);
-
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-      let response;
-      try {
-        response = await fetch(`/api/v1/info/${normalizedSource}/${localId}`, { signal: controller.signal });
-      } finally {
-        clearTimeout(timeoutId);
-      }
-      if (response.ok) {
-        const data = await response.json();
-        const info = {
-          value: value,
-          title: data.title || localId,
-          source: normalizedSource,
-          type: data.metadata?.type || data.type || null,
-          thumbnail: data.thumbnail,
-          grandparent: data.metadata?.grandparentTitle,
-          parent: data.metadata?.parentTitle,
-          library: data.metadata?.librarySectionTitle,
-          itemCount: data.metadata?.childCount ?? data.metadata?.leafCount ?? null,
-          itemIndex: data.metadata?.itemIndex ?? null,
-          number: data.metadata?.number ?? null,
-          unresolved: false
-        };
-        contentInfoCache.set(value, info);
-        return info;
-      } else {
-        // API returned error status - return unresolved
-        adminLog('fetchContentMetadata').warn('content_api.error_status', { value, status: response.status });
-        return { value, title: localId, source: normalizedSource, type: null, unresolved: true };
-      }
-    } catch (err) {
-      adminLog('fetchContentMetadata').error('content_info.fetch_error', { value, error: err.message });
-      // Return unresolved on network/parse failure
-      return { value, title: localId, source: normalizedSource, type: null, unresolved: true };
-    }
-  })().finally(() => inflightRequests.delete(value));
-
-  inflightRequests.set(value, promise);
-  return promise;
 }

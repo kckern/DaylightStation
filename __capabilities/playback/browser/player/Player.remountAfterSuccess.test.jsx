@@ -36,7 +36,7 @@ vi.mock('./lib/playbackLogger.js', async (importOriginal) => {
 
 // Capture the callbacks Player hands the resilience hook so the test can play
 // the hook's part: "reload please" and "status changed".
-const resilience = { onReload: null, onStateChange: null };
+const resilience = { onReload: null, onStateChange: null, playbackSessionKey: null };
 vi.mock('./hooks/useMediaResilience.js', async (importOriginal) => {
   const actual = await importOriginal();
   return {
@@ -44,6 +44,7 @@ vi.mock('./hooks/useMediaResilience.js', async (importOriginal) => {
     useMediaResilience: (opts) => {
       resilience.onReload = opts.onReload;
       resilience.onStateChange = opts.onStateChange;
+      resilience.playbackSessionKey = opts.playbackSessionKey;
       return { overlayProps: {}, cancelDeadline: () => {}, requestRecovery: () => {} };
     },
   };
@@ -52,6 +53,8 @@ vi.mock('./hooks/useMediaResilience.js', async (importOriginal) => {
 import Player from './Player.jsx';
 import { playbackLog } from './lib/playbackLogger.js';
 import { stallJoltPlan } from './lib/stallJolt.js';
+import { createRecoveryIdentity, recoverySessionKey } from './lib/recovery/recoveryIdentity.js';
+import { createRecoveryLedger, getRecoveryLedger, _setSharedLedgerForTests } from './lib/recoveryLedger.js';
 
 const remountLogs = () => playbackLog.mock.calls.filter(([event]) => event === 'player-remount');
 const skippedLogs = () => playbackLog.mock.calls.filter(([event]) => event === 'player-remount-skipped');
@@ -62,10 +65,41 @@ beforeEach(() => {
   singlePlayer.onPlaybackMetrics = null;
   resilience.onReload = null;
   resilience.onStateChange = null;
+  resilience.playbackSessionKey = null;
   playbackLog.mockClear();
   vi.useFakeTimers({ shouldAdvanceTime: true });
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
+
+it.each([
+  { title: 'publishes a new Player-owned visit and releases its previous ledger', owned: true },
+  { title: 'publishes a new external visit and leaves its previous ledger to the owner', owned: false },
+])('$title', async ({ owned }) => {
+  const previousLedger = getRecoveryLedger();
+  const ledger = createRecoveryLedger();
+  const suppliedIdentity = owned ? undefined : createRecoveryIdentity({ ownerId: 'external-player' });
+  const ref = { current: null };
+  let view;
+  _setSharedLedgerForTests(ledger);
+  try {
+    view = render(<Player ref={ref} recoveryIdentity={suppliedIdentity} play={{ contentId: 'plex:620561' }} />);
+    await waitFor(() => expect(ref.current).not.toBeNull());
+    const identity = ref.current.getRecoveryIdentity();
+    const previousKey = recoverySessionKey(identity.getTarget());
+    expect(ledger.reserveAction({ sessionKey: previousKey, actor: 'test', reason: 'stall' }).allowed).toBe(true);
+    expect(resilience.playbackSessionKey).toBe(previousKey);
+
+    act(() => identity.beginVisit());
+    expect(resilience.playbackSessionKey).toBe(recoverySessionKey(identity.getTarget()));
+    expect(resilience.playbackSessionKey).not.toBe(previousKey);
+    expect(ledger.snapshot(previousKey)?.count ?? null).toBe(owned ? null : 1);
+  } finally {
+    view?.unmount();
+    await Promise.resolve(); // Let the Player finish its deferred owner cleanup before restoring the ledger.
+    suppliedIdentity?.dispose();
+    _setSharedLedgerForTests(previousLedger);
+  }
+});
 
 describe('Player scheduled remount vs. playback success', () => {
   it('cancels a backoff-scheduled remount when the resilience hook reports playing', async () => {

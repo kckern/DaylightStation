@@ -16,8 +16,11 @@ The admin panel is built from a small set of reusable primitives that handle con
 | `CrudTable` | `frontend/src/modules/Admin/shared/CrudTable.jsx` |
 | `YamlEditor` | `frontend/src/modules/Admin/shared/YamlEditor.jsx` |
 | `TagInput` | `frontend/src/modules/Admin/shared/TagInput.jsx` |
-| `ConfirmModal` | `frontend/src/modules/Admin/shared/ConfirmModal.jsx` |
+| `ConfirmModal` | `frontend/src/lib/ui/ConfirmModal.jsx` |
 | `useAdminConfig` | `frontend/src/hooks/admin/useAdminConfig.js` |
+| `AdminSessionBoundary` | `frontend/src/modules/Admin/shared/AdminSessionBoundary.jsx` |
+| `useAdminSessionKey` | `frontend/src/modules/Admin/shared/useAdminSessionKey.js` |
+| `adminDraftOwnerKey` | `frontend/src/modules/Admin/shared/useAdminDraftState.js` |
 | Config API router | `__backend/src/4_api/v1/routers/admin/config.mjs` |
 
 ---
@@ -36,6 +39,7 @@ Wraps a config form with standard load/save/revert chrome. Internally uses `useA
 | `title` | `string` | Yes | Page title displayed in the header |
 | `children` | `function` | Yes | Render function: `({ data, setData }) => JSX` |
 | `validate` | `function` | No | `(data) => string|null` -- return error message or null |
+| `isDataSupported` | `function` | No | `(data) => boolean` -- return whether this form can safely edit the loaded structured value; unsupported shapes use the raw YAML recovery link |
 
 **Behavior:**
 - Shows a loading spinner until config is fetched
@@ -74,7 +78,7 @@ Editable table for arrays of objects. Used for equipment lists, device mappings,
 | `columns` | `Array` | `[]` | Column definitions (see below) |
 | `createDefaults` | `object` | `{}` | Default values for new rows |
 | `addLabel` | `string` | `"Add Item"` | Label for the add button |
-| `confirmDelete` | `boolean` | `false` | Require two clicks to delete a row |
+| `confirmDelete` | `boolean` | `false` | Require two clicks to delete a row; clicking elsewhere cancels the armed confirmation |
 | `emptyMessage` | `string` | `"No items."` | Message when items array is empty |
 
 **Column definition:**
@@ -151,7 +155,7 @@ Multi-value tag input for email lists, keywords, labels, and similar collections
 
 ### ConfirmModal
 
-Confirmation dialog for destructive actions.
+Shared confirmation dialog for destructive actions. The caller controls whether it is open and how the command outcome is presented.
 
 **Props:**
 
@@ -164,13 +168,23 @@ Confirmation dialog for destructive actions.
 | `message` | `string` | -- | Body text explaining the action |
 | `impact` | `string` | -- | Optional yellow warning text (e.g. "2 screens reference this device.") |
 | `confirmLabel` | `string` | `"Delete"` | Confirm button text |
-| `loading` | `boolean` | `false` | Show loading state on confirm button |
+| `loading` | `boolean` | `false` | While the command is pending, keep Confirm focusable and block repeat activation and dismissal from the dialog |
+| `closeOnEscape` | `boolean` | `true` | Allow Escape to dismiss an idle dialog |
 
 ---
 
 ## useAdminConfig Hook
 
 Manages loading, saving, dirty tracking, and revert for a single YAML config file.
+
+Admin mounts `AuthGate` and its routes inside `AdminSessionBoundary`. A token change
+remounts the authenticated Admin subtree so mounted API resources and transient
+form state cannot survive into another session. `useAdminSessionKey` supplies the
+shared identity for session-owned in-memory drafts; Member, Device, Notification,
+and config drafts remain separate by editor and resource. The draft map is not
+persisted to local storage, and restoring a draft still requires its original
+server baseline to match. Build owner keys with `adminDraftOwnerKey` so session
+and resource scoping stays consistent across Admin editors.
 
 **Import:**
 
@@ -338,14 +352,11 @@ Use `ConfirmModal` before any delete or irreversible operation. Pair it with `Cr
 `Player` inside the admin UI so a list entry can be checked without walking to
 the kiosk.
 
-Its frame imitates a chosen screen rather than picking a convenient size. The
-inner box is laid out at that screen's exact `resolution` in CSS px and then
-`zoom`ed down to the 960px preview surface (`previewFrame.js`). That is the only
-way the preview can be trusted for type size: the Player is sized entirely in
-`rem` against an unmodified 16px root, so it renders honestly only inside a box
-with the same CSS-pixel count the kiosk has. Before this, the preview hardcoded
-1920x1080 at `zoom: 0.5` — the right visual size at the wrong layout size, which
-rendered every glyph half-size against a 960x540 screen.
+The inner box uses the selected screen's exact `resolution` in CSS pixels.
+`previewFrame.js` scales that box to the measured modal body, up to 960px wide,
+and preserves the screen's aspect ratio. The Player lays out its `rem` sizes
+against the original 16px root. Resizing the modal changes the scale while the
+same playback item remains mounted.
 
 Note the two coordinate spaces when debugging: under `zoom`, `offsetWidth` and
 `clientHeight` report **unzoomed layout px** while `getBoundingClientRect()`

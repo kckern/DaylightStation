@@ -38,7 +38,7 @@ vi.mock("../../../../../frontend/src/lib/logging/singleton.js", () => ({
 import { MediaContentSearch } from "./MediaContentSearch.jsx";
 import { LocalSessionContext } from "../session/LocalSessionContext.js";
 import { createLocalSessionController } from "../session/LocalSessionController.js";
-import { DismissStackProvider } from "../shell/DismissStackProvider.jsx";
+import { DismissStackProvider } from "@/lib/ui/dismiss/DismissStackProvider.jsx";
 
 const leaf = { id: 'plex:697368', title: 'Disclosure Day', source: 'plex', type: 'movie' };
 

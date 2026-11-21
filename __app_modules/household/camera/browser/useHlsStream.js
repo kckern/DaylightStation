@@ -1,6 +1,25 @@
 // frontend/src/modules/CameraFeed/useHlsStream.js
 import { useState, useEffect } from 'react';
 import Hls from 'hls.js';
+import { daylightApiResponse } from '../../../../frontend/src/lib/api.mjs';
+
+// The server stop endpoint stops the camera's encoder, shared by the Home card and viewport.
+const viewers = new Map();
+const EMPTY_SIZE = { w: 0, h: 0 };
+function retainStream(path) {
+  viewers.set(path, (viewers.get(path) || 0) + 1);
+  return () => {
+    const remaining = viewers.get(path) - 1;
+    viewers.set(path, remaining);
+    if (remaining > 0) return;
+    // A replacement view can attach in the same React commit.
+    queueMicrotask(() => {
+      if (viewers.get(path) !== 0) return;
+      viewers.delete(path);
+      daylightApiResponse(path, { method: 'DELETE' }).catch(() => {});
+    });
+  };
+}
 
 /**
  * Attach an HLS live stream to a video element.
@@ -11,31 +30,34 @@ import Hls from 'hls.js';
  * @returns {{ ready: boolean, videoSize: {w:number, h:number} }}
  */
 export default function useHlsStream(cameraId, videoRef, logger) {
-  const [ready, setReady] = useState(false);
-  const [videoSize, setVideoSize] = useState({ w: 0, h: 0 });
+  const [playingCamera, setPlayingCamera] = useState(null);
+  const [dimensions, setDimensions] = useState(null);
 
   useEffect(() => {
     const video = videoRef.current;
+    setPlayingCamera(null);
+    setDimensions(null);
     if (!video || !cameraId) return;
-    setReady(false);
 
-    const playlistUrl = `/api/v1/camera/${cameraId}/live/stream.m3u8`;
+    const streamPath = `/api/v1/camera/${encodeURIComponent(cameraId)}/live`;
+    const playlistUrl = `${streamPath}/stream.m3u8`;
     logger?.info?.('hls.start', { url: playlistUrl });
 
     const onPlaying = () => {
-      setReady(true);
+      setPlayingCamera(cameraId);
       logger?.info?.('hls.playing');
     };
 
     const onMeta = () => {
       if (video.videoWidth && video.videoHeight) {
-        setVideoSize({ w: video.videoWidth, h: video.videoHeight });
+        setDimensions({ cameraId, size: { w: video.videoWidth, h: video.videoHeight } });
       }
     };
 
     // Native HLS (Safari)
     if (!Hls.isSupported()) {
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        const release = retainStream(streamPath);
         video.src = playlistUrl;
         video.play().catch(() => {});
         video.addEventListener('playing', onPlaying, { once: true });
@@ -43,8 +65,9 @@ export default function useHlsStream(cameraId, videoRef, logger) {
         return () => {
           video.removeEventListener('playing', onPlaying);
           video.removeEventListener('loadedmetadata', onMeta);
-          video.src = '';
-          fetch(`/api/v1/camera/${cameraId}/live`, { method: 'DELETE' }).catch(() => {});
+          video.removeAttribute('src');
+          video.load();
+          release();
         };
       }
       logger?.error?.('hls.unsupported');
@@ -58,6 +81,7 @@ export default function useHlsStream(cameraId, videoRef, logger) {
       liveMaxLatencyDurationCount: 3,
     });
 
+    const release = retainStream(streamPath);
     hls.loadSource(playlistUrl);
     hls.attachMedia(video);
     hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
@@ -72,10 +96,11 @@ export default function useHlsStream(cameraId, videoRef, logger) {
       video.removeEventListener('playing', onPlaying);
       video.removeEventListener('loadedmetadata', onMeta);
       hls.destroy();
-      fetch(`/api/v1/camera/${cameraId}/live`, { method: 'DELETE' }).catch(() => {});
+      release();
       logger?.info?.('hls.stop');
     };
   }, [cameraId, videoRef, logger]);
 
-  return { ready, videoSize };
+  return { ready: Boolean(cameraId && cameraId === playingCamera),
+    videoSize: dimensions && cameraId === dimensions.cameraId ? dimensions.size : EMPTY_SIZE };
 }

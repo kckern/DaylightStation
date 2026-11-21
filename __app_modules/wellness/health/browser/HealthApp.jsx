@@ -5,11 +5,13 @@ import { localDateISO } from "../portable/contracts/health/isoDate.mjs";
 import { useApiResource } from "../../../../frontend/src/lib/hooks/useApiResource.js";
 import { AgentConversationProvider, useAgentConversation } from "../../../../__capabilities/agent-runtime/browser/chat.mjs";
 import { refreshHealthResourcesWithDashboard } from "./healthResources.js";
-import { claimHealthCacheOwner, healthCacheHeldByOther, hydrateHealthCache, useHealthCacheHydrated } from "./healthCache.js";
+import { claimHealthCacheOwner, healthCacheHeldByOther, HEALTH_CONTEXT_PATH, hydrateHealthCache, useHealthCacheHydrated } from "./healthCache.js";
 import '@mantine/core/styles.css';
 import {
-  AppThemeProvider, AppChrome, DismissStackProvider, LoadingState, ErrorState,
+  AppThemeProvider, AppChrome, AppView, DismissStackProvider, LoadingState, ErrorState, useRetryRegion,
+  UiIcon,
 } from '@/lib/ui';
+import { useViewScroll } from '@/lib/ui/useViewScroll.js';
 import { useHotkey } from '@/lib/hooks/useHotkey.js';
 import useDocumentTitle from "../../../../frontend/src/hooks/useDocumentTitle.js";
 import CoachChat from "./CoachChat/index.jsx";
@@ -24,33 +26,17 @@ const MedicalView = lazy(() => import("./medical/MedicalView.jsx").then(module =
 const HealthSettings = lazy(() => import("./cleanup/HealthSettings.jsx").then(module => ({ default: module.HealthSettings })));
 const AuditorPage = lazy(() => import("./auditor/AuditorPage.jsx").then(module => ({ default: module.AuditorPage })));
 
-const Icon = ({ d }) => (
-  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-    <path d={d} stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
 const TABS = [
-  { id: 'today', label: 'Today', icon: <Icon d="M4 10h12M10 4v12" /> },
-  { id: 'progress', label: 'Progress', icon: <Icon d="M3 15l4-6 4 3 6-8" /> },
-  { id: 'health', label: 'Medical', icon: <Icon d="M10 17s-6-3.5-6-8a3.5 3.5 0 016-2.4A3.5 3.5 0 0116 9c0 4.5-6 8-6 8z" /> },
-  { id: 'coach', label: 'Coach', icon: <Icon d="M3 5h14v9H8l-4 3v-3H3z" /> },
+  { id: 'today', href: '/health', label: 'Today', icon: <UiIcon name="plus" size={20} /> },
+  { id: 'progress', href: '/health/progress', label: 'Progress', icon: <UiIcon name="chart" size={20} /> },
+  { id: 'health', href: '/health/medical', label: 'Medical', icon: <UiIcon name="heart" size={20} /> },
+  { id: 'coach', href: '/health/coach', label: 'Coach', icon: <UiIcon name="coach" size={20} /> },
 ];
 
-// A top-level tab's route, keyed by AppChrome's tab id. "today" is the bare
-// /health path (no trailing segment) — matches the index route below.
-const TAB_PATH = { today: '/health', progress: '/health/progress', health: '/health/medical', coach: '/health/coach' };
-
-// Which tab a pathname belongs to — the inverse of TAB_PATH. Any unrecognized
-// /health/* subpath (including the bare /health itself) falls through to
-// "today", matching the index route's <Navigate>-free default render.
 function tabForPath(pathname) {
-  if (pathname.startsWith('/health/settings')) return 'settings';
-  // The auditor is reached from Settings, so it keeps Settings' place in the chrome.
-  if (pathname.startsWith('/health/auditor')) return 'settings';
-  if (pathname.startsWith('/health/progress')) return 'progress';
-  if (pathname.startsWith('/health/medical')) return 'health';
-  if (pathname.startsWith('/health/coach')) return 'coach';
-  return 'today';
+  // The auditor opens from Settings, outside primary navigation.
+  if (pathname.startsWith('/health/settings') || pathname.startsWith('/health/auditor')) return 'settings';
+  return TABS.find(tab => pathname === tab.href || (tab.id !== 'today' && pathname.startsWith(tab.href + '/')))?.id || 'today';
 }
 
 // Start reading the disk cache while the bundle is still evaluating.
@@ -62,23 +48,39 @@ const HealthApp = () => (useHealthCacheHydrated() ? <HealthGate />
   : <AppThemeProvider pack="health"><LoadingState label="Health" /></AppThemeProvider>);
 
 const HealthGate = () => {
-  const context = useApiResource('api/v1/health/context', { swr: true });
-  const confirmedUserId = !context.revalidating && !context.loading && !context.error ? context.data?.userId : null;
+  const context = useApiResource(HEALTH_CONTEXT_PATH, { swr: true });
+  const confirmedContext = !context.revalidating && !context.loading && !context.error ? context.data : null;
   const [, setClaimedUserId] = useState(null);
   useEffect(() => {
-    if (!confirmedUserId) return;
-    claimHealthCacheOwner(confirmedUserId);
-    setClaimedUserId(confirmedUserId); // re-render once the cache is theirs
-  }, [confirmedUserId]);
+    if (!confirmedContext?.userId) return;
+    claimHealthCacheOwner(confirmedContext);
+    setClaimedUserId(confirmedContext.userId); // re-render once the cache is theirs
+  }, [confirmedContext]);
   // The server named someone other than whose snapshots the cache holds: do
   // not mount their shell on the other person's data; the claim above clears it.
   const heldByOther = healthCacheHeldByOther(context.data?.userId);
-  return context.data?.userId && !heldByOther ? <HealthDisplayPreferencesProvider key={context.data.userId} userId={context.data.userId}
-    densityLevels={context.data.densityLevels} densityRevision={context.data.densityRevision}>
-    <HealthOperationsProvider userId={context.data.userId}><HealthShell userId={context.data.userId} /></HealthOperationsProvider>
-  </HealthDisplayPreferencesProvider>
-    : <AppThemeProvider pack="health">{context.error ? <ErrorState error={context.error} onRetry={context.reload} label="Health" /> : <LoadingState label="Health" />}</AppThemeProvider>;
+  const canShowShell = Boolean(context.data?.userId) && !heldByOther;
+  const { regionProps, retry } = useRetryRegion(context.reload, !canShowShell && (context.loading || context.revalidating));
+  return (
+    <section aria-label="Health" {...regionProps}>
+      {canShowShell ? (
+        <HealthDisplayPreferencesProvider key={context.data.userId} userId={context.data.userId}
+          densityLevels={context.data.densityLevels} densityRevision={context.data.densityRevision}>
+          <HealthOperationsProvider userId={context.data.userId}><HealthShell userId={context.data.userId} /></HealthOperationsProvider>
+        </HealthDisplayPreferencesProvider>
+      ) : (
+        <AppThemeProvider pack="health">
+          {context.error ? <ErrorState error={context.error} onRetry={retry} label="Health" /> : <LoadingState label="Health" />}
+        </AppThemeProvider>
+      )}
+    </section>
+  );
 };
+
+function RouteReady({ route, onReady }) {
+  useLayoutEffect(() => { onReady(route); }, [route, onReady]);
+  return null;
+}
 
 const HealthShell = ({ userId }) => {
   useDocumentTitle('Health');
@@ -97,42 +99,41 @@ const HealthShell = ({ userId }) => {
   useHotkey('mod+k', () => openCoach(null));
 
   const activeTab = tabForPath(location.pathname);
+  const todayActive = activeTab === 'today';
   // Unexpected page movement, per 1 s burst (ui.layout-shift).
   useLayoutShiftLog({ route: location.pathname, tab: activeTab });
-  const shellRef = useRef(null);
-  const scrollPositions = useRef(new Map());
+  const mainRef = useRef(null);
+  const [readyPath, setReadyPath] = useState(null);
+  // Settings and Auditor share a navigation area but scroll independently.
+  const viewPath = location.pathname.replace(/\/+$/, '');
+  const routeReady = readyPath === viewPath;
+  useViewScroll({ mainRef, viewKey: viewPath, owner: userId, ready: routeReady });
   const visitedToday = useRef(false);
-  if (activeTab === 'today') visitedToday.current = true;
-  useLayoutEffect(() => {
-    const main = shellRef.current?.querySelector('.ds-chrome__main');
-    if (main) main.scrollTop = scrollPositions.current.get(activeTab) || 0;
-  }, [activeTab]);
-
+  if (todayActive) visitedToday.current = true;
   return (
     <AppThemeProvider pack="health">
       <AgentConversationProvider conversation={conversation}>
         <DismissStackProvider>
-          <div ref={shellRef} style={{ height: '100%' }} onScrollCapture={event => {
-            if (event.target.matches('.ds-chrome__main')) scrollPositions.current.set(activeTab, event.target.scrollTop);
-          }}>
-          <AppChrome title="Health" tabs={TABS} activeTab={activeTab}
-            sidebarRef={setSidebarTarget} sidebarActive={activeTab === 'today'}
+          <AppChrome title="Health" mainRef={mainRef} tabs={TABS.map(tab => ({ ...tab, href: tab.href + location.search }))} activeTab={activeTab}
+            sidebarRef={setSidebarTarget} sidebarActive={todayActive}
             headerActions={[
               <span key="follow-ups" ref={setFollowUpTarget} className="health-followups-slot" />,
-              <ActionIcon key="settings" aria-label="Health settings" variant="subtle" onClick={() => navigate('/health/settings')}><Icon d="M4 5h12M4 10h12M4 15h12M7 3v4M13 8v4M9 13v4" /></ActionIcon>,
-            ]}
-            onTabChange={(id) => navigate(`${TAB_PATH[id] || '/health'}${location.search}`)}>
+              <ActionIcon key="settings" className="ds-touch-target" aria-label="Health settings"
+                variant="subtle" onClick={() => navigate('/health/settings')}>
+                <UiIcon name="settings" size={20} />
+              </ActionIcon>,
+             ]}>
             {/* Keep the logging session (drafts, pending requests, retry bytes)
                 alive between tabs; hidden views do not poll or acquire media. */}
-            {visitedToday.current ? <div hidden={activeTab !== 'today'}>
-              <TodayView active={activeTab === 'today'} sidebarTarget={sidebarTarget} followUpTarget={followUpTarget} onSetupGoals={() => navigate(`/health/progress${location.search}`)} onCoachTap={openCoach} />
-            </div> : null}
+            {visitedToday.current ? <AppView active={todayActive} suspendOverlays={overlayOpen}>
+              <TodayView active={todayActive} sidebarTarget={sidebarTarget} followUpTarget={followUpTarget} onSetupGoals={() => navigate(`/health/progress${location.search}`)} onCoachTap={openCoach} />
+            </AppView> : null}
             <Suspense fallback={<LoadingState label="Health" />}><Routes>
               <Route index element={null} />
               <Route path="progress" element={<ProgressView />} />
               <Route path="medical" element={<MedicalView />} />
               <Route path="settings" element={<HealthSettings />} />
-              <Route path="auditor" element={<AuditorPage />} />
+              <Route path="auditor" element={<AuditorPage routeReady={routeReady} />} />
               {/* CoachChat only supports variant 'light'|'overlay' (see AgentChatSurface) —
                   'full' isn't a real variant. The default 'light' variant is already the
                   full-height flex-column layout (`.coach-chat { height: 100% }`), which is
@@ -140,12 +141,11 @@ const HealthShell = ({ userId }) => {
               <Route path="coach" element={<CoachChat userId={userId} conversation={conversation} style={{ height: '100%' }} />} />
               {/* Unknown subpath — render Today rather than 404ing the tab shell. */}
               <Route path="*" element={<Navigate to="/health" replace />} />
-            </Routes></Suspense>
+            </Routes><RouteReady route={viewPath} onReady={setReadyPath} /></Suspense>
+            <ChatOverlay open={overlayOpen} onClose={() => setOverlayOpen(false)} userId={userId}>
+              <CoachChat userId={userId} conversation={conversation} variant="overlay" />
+            </ChatOverlay>
           </AppChrome>
-          </div>
-          <ChatOverlay open={overlayOpen} onClose={() => setOverlayOpen(false)} userId={userId}>
-            <CoachChat userId={userId} conversation={conversation} variant="overlay" />
-          </ChatOverlay>
         </DismissStackProvider>
       </AgentConversationProvider>
     </AppThemeProvider>

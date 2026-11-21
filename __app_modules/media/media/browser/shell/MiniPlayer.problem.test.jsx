@@ -18,6 +18,34 @@ import { MiniPlayer } from "./MiniPlayer.jsx";
 const entry = (id, title) => ({ queueItemId: `q-${id}`, contentId: `plex:${id}`, format: 'audio', title, duration: 600, priority: 'queue', addedAt: '' });
 
 describe('MiniPlayer problem sign', () => {
+  it('updates and clears the problem sign without a session snapshot change', () => {
+    const controller = createLocalSessionController({ clientId: 'c1' });
+    controller.queue.playNow({ contentId: 'plex:1', format: 'video', title: 'Arrival', duration: 600 });
+    const snapshot = controller.getSnapshot();
+    const unsubscribe = vi.fn();
+    const originalSubscribe = controller.problems.subscribe;
+    const subscribe = vi.spyOn(controller.problems, 'subscribe').mockImplementation(listener => {
+      const dispose = originalSubscribe(listener);
+      return () => { dispose(); unsubscribe(); };
+    });
+    const view = render(<LocalSessionContext.Provider value={{ controller }}><MiniPlayer /></LocalSessionContext.Provider>);
+    const name = 'Playback problem: waiting for the file of Arrival';
+    expect(screen.queryByRole('img', { name })).toBeNull();
+
+    act(() => { controller.onPlayerHeld({ reason: 'source-unavailable' }); });
+    expect(controller.getSnapshot()).toBe(snapshot);
+    expect(screen.getByRole('img', { name })).toBeInTheDocument();
+    expect(screen.getByTestId('media-mini-player')).toHaveClass('mini-player--problem');
+
+    act(() => { controller.problems.clear(); });
+    expect(controller.getSnapshot()).toBe(snapshot);
+    expect(screen.queryByRole('img', { name })).toBeNull();
+    expect(screen.getByTestId('media-mini-player')).not.toHaveClass('mini-player--problem');
+    view.unmount();
+    expect(unsubscribe).toHaveBeenCalledTimes(subscribe.mock.calls.length);
+    controller.disposeRecovery();
+  });
+
   it('shows a problem sign naming the item after a skip and clears when playback recovers', () => {
     const controller = createLocalSessionController({
       clientId: 'c1',

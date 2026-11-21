@@ -1,5 +1,6 @@
+import { daylightApiResponse } from '../../../../../../../frontend/src/lib/api.mjs';
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { wsService } from "../../../../../../../frontend/src/services/WebSocketService.js";
+import { useWebSocketSubscription } from "../../../../../../../frontend/src/hooks/useWebSocket.js";
 
 /**
  * Live hub status. Returns BOTH a Map<color, SlotStatus> and the timestamp
@@ -30,23 +31,19 @@ export function useHubStatus() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    fetch('/api/v1/playback-hub/status')
+    const controller = new AbortController();
+    daylightApiResponse('/api/v1/playback-hub/status', { signal: controller.signal })
       .then((r) => r.json())
       .then((body) => {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         if (body?.ok) accept(body);
       })
       .catch(() => { /* WS will deliver shortly */ });
-    return () => { cancelled = true; };
+    return () => controller.abort();
   }, [accept]);
 
-  useEffect(() => {
-    return wsService.subscribe('playback-hub:status', (msg) => {
-      if (msg?.type === 'playback-hub.status.snapshot') {
-        accept(msg.data);
-      }
-    });
+  useWebSocketSubscription('playback-hub:status', msg => {
+    if (msg?.type === 'playback-hub.status.snapshot') accept(msg.data);
   }, [accept]);
 
   return useMemo(() => {

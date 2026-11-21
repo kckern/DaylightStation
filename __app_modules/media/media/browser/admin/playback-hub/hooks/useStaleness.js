@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useDisplayClock } from '@/lib/hooks/useDisplayClock.js';
 
 /**
  * Derive a staleness signal from a "last updated" timestamp.
@@ -12,12 +12,7 @@ import { useEffect, useState } from 'react';
  */
 export function useStaleness(fetchedAt, opts = {}) {
   const { staleAfterMs = 10000, tickMs = 1000 } = opts;
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), tickMs);
-    return () => clearInterval(id);
-  }, [tickMs]);
+  const now = useDisplayClock(!!fetchedAt, tickMs);
 
   if (!fetchedAt) {
     return { isStale: true, secondsSinceUpdate: null };

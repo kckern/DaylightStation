@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { DaylightAPI } from "../../../../frontend/src/lib/api.mjs";
+import { useDeviceConfig } from "../../../../frontend/src/lib/hooks/useDeviceConfig.js";
 import { useMediaDevices } from "../../../../frontend/src/modules/Input/hooks/useMediaDevices.js";
 import { useWebcamStream } from "../../../../frontend/src/modules/Input/hooks/useWebcamStream.js";
 import { useAudioProbe } from "../../../../frontend/src/modules/Input/hooks/useAudioProbe.js";
@@ -11,28 +12,23 @@ import getLogger from "../../../../frontend/src/lib/logging/Logger.js";
 import "./VideoCall.scss";
 
 export default function VideoCall({ deviceId, clear }) {
+  const { devices, loading, hasResult, error } = useDeviceConfig({
+    retryTransient: false,
+    clearDataOnError: true,
+  });
+  const inputConfig = loading && !hasResult ? undefined : devices[deviceId]?.input || null;
+  return <DeviceVideoCall key={deviceId} deviceId={deviceId} clear={clear} inputConfig={inputConfig} configError={error} />;
+}
+
+function DeviceVideoCall({ deviceId, clear, inputConfig, configError }) {
   const logger = useMemo(() => getLogger().child({ component: 'VideoCall', deviceId }), [deviceId]);
 
-  // Fetch device-specific input config (preferred camera/mic, audio bridge)
-  const [inputConfig, setInputConfig] = useState(undefined);
+  const configLoaded = inputConfig !== undefined;
   useEffect(() => {
-    DaylightAPI('api/v1/device/config')
-      .then(config => {
-        const devices = config?.devices || config || {};
-        const dev = devices[deviceId];
-        if (dev?.input) {
-          setInputConfig(dev.input);
-          logger.info('device-input-config', { deviceId, hasAudioBridge: !!dev.input.audio_bridge });
-        } else {
-          setInputConfig(null);
-          logger.info('device-input-config', { deviceId, hasAudioBridge: false });
-        }
-      })
-      .catch(err => {
-        setInputConfig(null);
-        logger.warn('device-config-fetch-failed', { error: err.message });
-      });
-  }, [deviceId, logger]);
+    if (!configLoaded) return;
+    if (configError) logger.warn('device-config-fetch-failed', { error: configError.message });
+    else logger.info('device-input-config', { deviceId, hasAudioBridge: !!inputConfig?.audio_bridge });
+  }, [configLoaded, configError, inputConfig, deviceId, logger]);
 
   const audioBridgeConfig = inputConfig?.audio_bridge || null;
 
@@ -40,13 +36,14 @@ export default function VideoCall({ deviceId, clear }) {
     audioDevices,
     selectedVideoDevice,
     selectedAudioDevice,
+    ready: devicesReady,
   } = useMediaDevices({
+    enabled: configLoaded,
     preferredCameraPattern: inputConfig?.preferred_camera,
     preferredMicPattern: inputConfig?.preferred_mic,
   });
 
   // ── Audio source strategy: bridge-first when configured ──
-  const configLoaded = inputConfig !== undefined;
   const hasBridge = !!audioBridgeConfig;
 
   // Enable bridge immediately when configured (don't wait for probe)
@@ -76,7 +73,7 @@ export default function VideoCall({ deviceId, clear }) {
 
   const { videoRef, stream, error: cameraError } = useWebcamStream(selectedVideoDevice, effectiveAudioDevice, {
     videoResolution: inputConfig?.video_resolution,
-    ready: configLoaded,
+    ready: configLoaded && devicesReady,
   });
 
   // Merge video-only stream with bridge audio for WebRTC.

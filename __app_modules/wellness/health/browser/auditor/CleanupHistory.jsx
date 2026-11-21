@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Button, Group, Stack, Text } from '@mantine/core';
-import { SectionCard, Sheet, LoadingState, ErrorState } from "../../../../../frontend/src/lib/ui/index.js";
+import { SectionCard, Sheet, LoadingState, ErrorState, useRetryRegion } from "../../../../../frontend/src/lib/ui/index.js";
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { refreshHealthResources, unavailableError } from "../healthResources.js";
+import { useHealthSessionGuard } from '../operations/HealthOperationsProvider.jsx';
 import { cleanupPath, RepairPreview } from "../cleanup/CleanupQuestions.jsx";
 import { RepairChanges } from "../cleanup/RepairChanges.jsx";
 
@@ -13,8 +14,10 @@ import { RepairChanges } from "../cleanup/RepairChanges.jsx";
  * cleanup status poll.
  */
 export function CleanupHistory({ resource }) {
+  const isSessionActive = useHealthSessionGuard();
   const [offset, setOffset] = useState(0);
   const history = useApiResource(`${cleanupPath}/history?offset=${offset}`, { swr: true });
+  const { regionProps, retry } = useRetryRegion(history.reload, history.loading || history.revalidating);
   const [selected, setSelected] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -23,10 +26,14 @@ export function CleanupHistory({ resource }) {
     setBusy(true); setError(null);
     try {
       await DaylightAPI(`${cleanupPath}/undo/${record.id}`, { operationId: crypto.randomUUID() }, 'POST');
-      resource.reload(); history.reload(); refreshHealthResources();
+      if (!isSessionActive()) return;
+      refreshHealthResources();
       setSelected(null);
-    } catch (err) { setError(err.message); }
-    finally { setBusy(false); }
+    } catch (err) {
+      if (isSessionActive()) setError(err.message);
+    } finally {
+      if (isSessionActive()) setBusy(false);
+    }
   };
   const runs = resource.data?.runs || [];
   return <>
@@ -42,11 +49,13 @@ export function CleanupHistory({ resource }) {
     </Stack></SectionCard>
     <SectionCard title="Repair history"><Stack gap="sm">
       <details><summary>View repairs ({history.data?.total ?? '—'})</summary>
-      {unavailableError(history) ? <ErrorState error={history.error} onRetry={history.reload} /> : null}
-      {!history.data && history.loading ? <LoadingState label="Repair history" /> : null}
-      {history.data?.records.map(record => <Group key={record.id} justify="space-between"><Text size="sm">{new Date(record.at).toLocaleString()} · {record.reason}</Text><Button size="xs" variant="subtle" onClick={() => setSelected(record)}>Details</Button></Group>)}
-      {history.data?.total === 0 ? <Text size="sm" c="dimmed">No repairs have been made.</Text> : null}
-      <Group><Button variant="subtle" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 30))}>Previous</Button><Button variant="subtle" disabled={offset + 30 >= (history.data?.total || 0)} onClick={() => setOffset(offset + 30)}>Next</Button></Group>
+        <section {...regionProps} aria-label="Repair history">
+          {unavailableError(history) ? <ErrorState error={history.error} onRetry={retry} /> : null}
+          {!history.data && history.loading ? <LoadingState label="Repair history" /> : null}
+          {history.data?.records.map(record => <Group key={record.id} justify="space-between"><Text size="sm">{new Date(record.at).toLocaleString()} · {record.reason}</Text><Button size="xs" variant="subtle" onClick={() => setSelected(record)}>Details</Button></Group>)}
+          {history.data?.total === 0 ? <Text size="sm" c="dimmed">No repairs have been made.</Text> : null}
+          <Group><Button variant="subtle" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 30))}>Previous</Button><Button variant="subtle" disabled={offset + 30 >= (history.data?.total || 0)} onClick={() => setOffset(offset + 30)}>Next</Button></Group>
+        </section>
       </details>
     </Stack></SectionCard>
     {selected ? <Sheet open title="Repair details" onClose={() => { if (!busy) setSelected(null); }}><Stack gap="sm">

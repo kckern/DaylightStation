@@ -82,6 +82,49 @@ describe('useFlipMoves', () => {
     expect(a.style.transform).toBe('');
   });
 
+  it('releases the transition on cancellation and cleans retained rows on exit', () => {
+    window.matchMedia = () => ({ matches: false });
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => { cb(); return 1; });
+    const { root, a, b, tops } = setup();
+    const { rerender, unmount } = renderHook(({ order }) => useFlipMoves({ current: root }, order),
+      { initialProps: { order: 'a|b' } });
+    tops.set(a, 30); tops.set(b, 0);
+    rerender({ order: 'b|a' });
+    const child = document.createElement('span');
+    a.append(child);
+    function transition(node, type) {
+      const event = new Event(type, { bubbles: true });
+      Object.defineProperty(event, 'propertyName', { value: 'transform' });
+      node.dispatchEvent(event);
+    }
+    transition(child, 'transitionend');
+    expect(a.classList.contains(FLIP_CLASS)).toBe(true);
+    transition(a, 'transitioncancel');
+    expect(a.classList.contains(FLIP_CLASS)).toBe(false);
+    const remove = vi.spyOn(b, 'removeEventListener');
+    unmount();
+    expect(b.classList.contains(FLIP_CLASS)).toBe(false);
+    expect(remove).toHaveBeenCalledWith('transitionend', expect.any(Function));
+    expect(remove).toHaveBeenCalledWith('transitioncancel', expect.any(Function));
+  });
+
+  it('restores pending row transforms when a reorder is superseded before paint', () => {
+    window.matchMedia = () => ({ matches: false });
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(7);
+    const { root, a, b, tops } = setup();
+    const { rerender, unmount } = renderHook(({ order }) => useFlipMoves({ current: root }, order),
+      { initialProps: { order: 'a|b' } });
+    tops.set(a, 30); tops.set(b, 0);
+    rerender({ order: 'b|a' });
+    expect(a.style.transform).toBe('translateY(-30px)');
+    expect(raf).toHaveBeenCalledTimes(1);
+    root.removeChild(a);
+    rerender({ order: 'b' });
+    expect(a.style.transform).toBe('');
+    unmount();
+    expect(b.style.transform).toBe('');
+  });
+
   it('re-measures on every commit, so movement between reorders is not replayed', () => {
     window.matchMedia = () => ({ matches: false });
     const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => { cb(); return 1; });

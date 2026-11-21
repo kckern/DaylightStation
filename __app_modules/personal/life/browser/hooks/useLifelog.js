@@ -1,13 +1,6 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
-import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
+import { useMemo } from 'react';
+import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { useLifeUsername } from "./useLifeUser.js";
-
-let _logger;
-function logger() {
-  if (!_logger) _logger = getLogger().child({ component: 'useLifelog' });
-  return _logger;
-}
 
 /**
  * Unified hook for all lifelog queries.
@@ -23,60 +16,39 @@ function logger() {
  * @param {string} [params.category] - filter by extractor category
  */
 export function useLifelog(params = {}) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
   // Default to the backend-resolved user from LifeUserContext (provided by
   // LifeApp); 'user_1' is the last-resort legacy fallback outside a provider.
   const contextUsername = useLifeUsername();
   const { username = contextUsername || 'user_1', date, start, end, scope, at, category } = params;
 
   const url = useMemo(() => {
-    const base = '/api/v1/life/log';
+    const base = `/api/v1/life/log/${encodeURIComponent(username)}`;
 
     if (category) {
       const qs = new URLSearchParams();
       if (start && end) { qs.set('start', start); qs.set('end', end); }
       else if (scope) { qs.set('scope', scope); }
       const q = qs.toString();
-      return `${base}/${username}/category/${category}${q ? '?' + q : ''}`;
+      return `${base}/category/${encodeURIComponent(category)}${q ? '?' + q : ''}`;
     }
 
     if (scope) {
-      const qs = at ? `?at=${at}` : '';
-      return `${base}/${username}/scope/${scope}${qs}`;
+      const qs = at ? `?at=${encodeURIComponent(at)}` : '';
+      return `${base}/scope/${encodeURIComponent(scope)}${qs}`;
     }
 
     if (start && end) {
-      return `${base}/${username}/range?start=${start}&end=${end}`;
+      return `${base}/range?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
     }
 
     if (date) {
-      return `${base}/${username}/${date}`;
+      return `${base}/${encodeURIComponent(date)}`;
     }
 
     // Default: week scope
-    return `${base}/${username}/scope/week`;
+    return `${base}/scope/week`;
   }, [username, date, start, end, scope, at, category]);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    logger().debug('fetch-start', { url });
-    try {
-      const json = await DaylightAPI(url);
-      setData(json);
-      logger().debug('fetch-complete', { url, dayCount: json.days ? Object.keys(json.days).length : 1 });
-    } catch (err) {
-      setError(err.message);
-      logger().error('fetch-error', { url, error: err.message });
-    } finally {
-      setLoading(false);
-    }
-  }, [url]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  return { data, loading, error, refetch: fetchData };
+  const { data, loading, error, reload } = useApiResource(url, { label: 'lifelog' });
+  return { data, loading, error: error?.message ?? null, refetch: reload };
 }

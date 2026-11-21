@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button, Modal, TextInput } from '@mantine/core';
 import { createAppLogger } from '../../../../../frontend/src/lib/ui/createAppLogger.js';
+import { useDismissLayer } from '../../../../../frontend/src/lib/ui/dismiss/useDismissLayer.js';
 import { useFoodMutation } from '../operations/useFoodMutation.js';
 import { VoiceCapture } from '../capture/VoiceCapture.jsx';
 import { MoveDayControl } from './MoveDayControl.jsx';
@@ -64,6 +65,7 @@ const MoveDayIcon = () => <svg width="18" height="18" viewBox="0 0 18 18" fill="
  * itself. What shows as moving is exactly what moves.
  */
 function MoveDaySheet({ date, today, entries, onMove, onClose, onClaimMove, onMoveHandedBack }) {
+  const stackHandlesEscape = useDismissLayer(true, onClose);
   const [unticked, setUnticked] = useState(() => new Set());
   const [strandedTicks, setStrandedTicks] = useState(() => new Set());
   const [note, setNote] = useState(null);
@@ -138,7 +140,7 @@ function MoveDaySheet({ date, today, entries, onMove, onClose, onClaimMove, onMo
   }));
   const locked = working || Boolean(retry);
   // Above the toast layer (350), so no earlier toast can sit over the sheet's controls.
-  return <Modal opened onClose={onClose} title="Move this day's food" centered returnFocus={false} closeOnEscape={!menuOpen}
+  return <Modal opened onClose={onClose} title="Move this day's food" centered returnFocus={false} closeOnEscape={!stackHandlesEscape && !menuOpen}
     zIndex={360} classNames={{ close: 'health-day-move__close' }}>
     <div className="health-day-move" ref={findModalRoot}>
       <div className="health-day-move__list">
@@ -214,8 +216,8 @@ export function DayInputBar({ date, today, entries, active = true, onResult, onM
     document.addEventListener('pointerdown', onPress, true);
     return () => document.removeEventListener('pointerdown', onPress, true);
   }, []);
-  // Choices are disabled until the request that raised the question has ended.
-  useEffect(() => {
+  // Focus the available choices before the question can be dismissed.
+  useLayoutEffect(() => {
     if (question && !busy && focusIsOurs(root)) questionPanel.current?.querySelector('button:not(:disabled), input:not(:disabled)')?.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [question, busy]);

@@ -161,12 +161,6 @@ function PlaybackCategory({ item, onChange }) {
       </Group>
       <Group grow>
         <Switch
-          label="Loop"
-          description="Repeat current item"
-          checked={item.loop === true}
-          onChange={(e) => onChange('loop', e.target.checked || null)}
-        />
-        <Switch
           label="Fixed Order"
           description="Maintain original order"
           checked={item.fixedOrder === true}

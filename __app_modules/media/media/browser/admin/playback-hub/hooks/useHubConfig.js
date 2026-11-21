@@ -1,3 +1,5 @@
+import { daylightApiResponse } from '../../../../../../../frontend/src/lib/api.mjs';
+import { useRefreshableRead } from '../../../../../../../frontend/src/lib/hooks/useRefreshableRead.js';
 import { useEffect, useState, useCallback } from 'react';
 
 /**
@@ -24,11 +26,12 @@ export function useHubConfig() {
     error: null,
   });
 
-  const revalidate = useCallback(async () => {
+  const readConfig = useCallback(async (isCurrent, signal) => {
     setState((s) => ({ ...s, loading: true }));
     try {
-      const r = await fetch('/api/v1/playback-hub/config');
+      const r = await daylightApiResponse('/api/v1/playback-hub/config', { signal });
       const body = await r.json();
+      if (!isCurrent()) return;
       if (!r.ok || body?.ok === false) {
         setState({
           config: null,
@@ -39,13 +42,13 @@ export function useHubConfig() {
       }
       setState({ config: body.config, loading: false, error: null });
     } catch (err) {
+      if (!isCurrent()) return;
       setState({ config: null, loading: false, error: err.message });
     }
   }, []);
 
-  useEffect(() => {
-    revalidate();
-  }, [revalidate]);
+  const { reload: revalidate } = useRefreshableRead(readConfig);
+  useEffect(() => { revalidate(); }, [revalidate]);
 
   return {
     config: state.config,

@@ -19,7 +19,6 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Text, Stack } from '@mantine/core';
 import {
-  IconChevronLeft,
   IconChevronRight,
   IconPlayerPlay,
   IconArrowsShuffle,
@@ -33,11 +32,15 @@ import { LoadErrorLine } from "../shared/LoadErrorLine.jsx";
 import { DestinationLine } from "../cast/DestinationLine.jsx";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import Skeleton from '@/lib/ui/Skeleton.jsx';
+import { Button } from '@/lib/ui/Button.jsx';
+import { UiIcon } from '@/lib/ui/UiIcon.jsx';
+import { useRetryRegion } from '@/lib/ui/useRetryRegion.js';
+import { StateMessage } from '@/lib/ui/states.jsx';
 import { ResultRow } from "../../../../../__capabilities/content-catalog/browser/result-row.mjs";
 import { ItemDestinationPicker } from "../actions/ItemDestinationPicker.jsx";
 import { sourceIconFor, dedupeSourceRows } from "./sourceIcons.jsx";
 import { sourceRootPresentation } from "../search/resultPresentation.js";
-import { useDismissLayer } from "../shell/useDismissLayer.js";
+import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 import { useHouseholdResultActions } from "../household/useHouseholdResultActions.js";
 
 function splitPath(path) {
@@ -83,8 +86,16 @@ export function BrowseView({
     () => (/^\/?[^/]+\/[^/]+/.test(String(path)) ? { ...modifiers, expand: true } : modifiers),
     [path, modifiers],
   );
-  const { items: rawItems, total, loading, loadingMore = false, error, loadMore, reload } = useListBrowse(
-    path, { modifiers: listModifiers, take, initialTake: loadedCount },
+  const retryButtonRef = useRef(null);
+  const appendFocusRef = useRef(null);
+  const rememberAppendFocus = React.useCallback((added) => {
+    if (retryButtonRef.current?.matches(':focus')) {
+      const first = added[0];
+      appendFocusRef.current = { path, id: first?.id ?? first?.itemId };
+    }
+  }, [path]);
+  const { items: rawItems, total, loading, loadingMore = false, error, appendError, loadMore, reload } = useListBrowse(
+    path, { modifiers: listModifiers, take, initialTake: loadedCount, onPageAppended: rememberAppendFocus },
   );
   const items = useMemo(() => dedupeSourceRows(naturalBrowseOrder(rawItems)), [rawItems]);
   const [oneShot, setOneShot] = useState(null);
@@ -95,7 +106,8 @@ export function BrowseView({
   const { dispatchLeafVerb, playContainerAsQueue, addContainerToQueue } = useContentDispatch();
   const { extraActions, runHousehold } = useHouseholdResultActions();
   const log = useMemo(() => getLogger().child({ component: 'browse-view' }), []);
-  const rootRef = useRef(null);
+  const { regionProps, retry } = useRetryRegion(reload, loading);
+  const rootRef = regionProps.ref;
   const sentinelRef = useRef(null);
   const restoredEntryRef = useRef(null);
 
@@ -126,15 +138,28 @@ export function BrowseView({
     focusTarget?.focus({ preventScroll: true });
   }, [focusedId, items, loading, path, scrollTop]);
 
+  useLayoutEffect(() => {
+    const target = appendFocusRef.current;
+    appendFocusRef.current = null;
+    if (!target || target.path !== path || document.activeElement !== document.body) return;
+    const rows = [...(rootRef.current?.querySelectorAll('[data-browse-focus-id]') ?? [])];
+    const row = rows.find(node => node.dataset.browseFocusId === String(target.id));
+    (row ?? rows.at(-1) ?? rootRef.current)?.focus();
+  }, [rawItems, path]);
+
   React.useEffect(() => {
     const node = sentinelRef.current;
-    if (!node || loading || loadingMore || items.length >= total || typeof IntersectionObserver === 'undefined') return undefined;
+    if (!node || loading || loadingMore || appendError || rawItems.length >= total || typeof IntersectionObserver === 'undefined') return undefined;
+    let active = true;
     const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) loadMore();
+      if (active && node.isConnected && entries.some((entry) => entry.isIntersecting)) loadMore();
     }, { root: findScrollHost(rootRef.current), rootMargin: '160px' });
     observer.observe(node);
-    return () => observer.disconnect();
-  }, [items.length, loadMore, loading, loadingMore, total]);
+    return () => {
+      active = false;
+      observer.disconnect();
+    };
+  }, [appendError, rawItems.length, loadMore, loading, loadingMore, total]);
 
   const pushFromBrowse = (view, params, focusedId) => {
     const host = findScrollHost(rootRef.current);
@@ -164,7 +189,7 @@ export function BrowseView({
   };
 
   return (
-    <Stack ref={rootRef} data-testid="browse-view" className="browse-view" gap="md">
+    <Stack role="region" aria-label="Browse results" {...regionProps} data-testid="browse-view" className="browse-view" gap="md">
       <nav className="browse-breadcrumb" aria-label="Breadcrumb">
         <button
           data-testid="browse-crumb-home"
@@ -176,7 +201,7 @@ export function BrowseView({
         {/* When Back would land on Home the Home crumb already says so; two Homes is clutter. */}
         {depth > 1 && breadcrumbs.length === 0 && backDestination && backDestination !== 'Home' && (
           <button data-testid="browse-crumb-back" className="browse-crumb" onClick={() => pop()}>
-            <IconChevronLeft size={16} aria-hidden /> {backDestination}
+            <UiIcon name="back" /> {backDestination}
           </button>
         )}
         {breadcrumbs.map((crumb, index) => (
@@ -236,7 +261,7 @@ export function BrowseView({
           {[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} height={56} radius="sm" />)}
         </Stack>
       )}
-      {error && <LoadErrorLine kind="section" testId="browse-view-error" onRetry={reload} />}
+      {error && <LoadErrorLine kind="section" testId="browse-view-error" onRetry={retry} />}
       {!loading && !error && items.length === 0 && (
         <Text c="dimmed" data-testid="browse-empty" className="browse-empty">Nothing here yet.</Text>
       )}
@@ -278,7 +303,16 @@ export function BrowseView({
           })}
         </ul>
       )}
-      {!loading && !error && items.length < total && (
+      {appendError && (
+        <StateMessage state="error" role="alert" detail="More titles couldn't be loaded.">
+          <Button ref={retryButtonRef} density="compact" variant="secondary"
+            aria-disabled={loadingMore || undefined} aria-busy={loadingMore || undefined}
+            onClick={() => { if (!loadingMore) loadMore(); }}>
+            {loadingMore ? 'Retrying…' : 'Retry'}
+          </Button>
+        </StateMessage>
+      )}
+      {!loading && !error && !appendError && rawItems.length < total && (
         <div ref={sentinelRef} data-testid="browse-page-sentinel" role="status" aria-label="Loading more titles" style={{ minHeight: 1 }}>
           {loadingMore ? 'Loading more…' : ''}
         </div>

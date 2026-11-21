@@ -25,12 +25,46 @@ describe('readLogDeviceId', () => {
 
   it('keeps the URL id per tab; the kiosk ids come from the kiosk store', () => {
     const tab = memoryStore();
-    const kiosk = memoryStore({ 'fitness.fleetDeviceId': 'garage-tv' });
+    const kiosk = memoryStore({
+      'fitness.fleetDeviceId': 'garage-tv',
+      'piano.kioskDeviceId': 'piano-tablet',
+    });
     expect(readLogDeviceId({ search: '?device=office-tv' }, tab, kiosk)).toBe('office-tv');
     expect(readLogDeviceId({ search: '' }, tab, kiosk)).toBe('office-tv');
     expect(kiosk.data[LOG_DEVICE_STORAGE_KEY]).toBeUndefined();
     expect(readLogDeviceId({ search: '' }, memoryStore(), kiosk)).toBe('garage-tv');
     expect(readLogDeviceId({ search: '' }, memoryStore(), memoryStore())).toBeNull();
+  });
+
+  it('falls back to the kiosk store when the tab lookup is blocked', () => {
+    const tab = {
+      getItem() { throw new DOMException('Storage access denied', 'SecurityError'); },
+    };
+    const kiosk = memoryStore({ 'fitness.fleetDeviceId': 'garage-tv' });
+
+    expect(readLogDeviceId({ search: '' }, tab, kiosk)).toBe('garage-tv');
+  });
+
+  it('falls back to the Piano id when the Fitness lookup is blocked', () => {
+    const kiosk = memoryStore({ 'piano.kioskDeviceId': 'piano-tablet' });
+    const getItem = kiosk.getItem;
+    kiosk.getItem = key => {
+      if (key === 'fitness.fleetDeviceId') {
+        throw new DOMException('Storage access denied', 'SecurityError');
+      }
+      return getItem(key);
+    };
+
+    expect(readLogDeviceId({ search: '' }, memoryStore(), kiosk)).toBe('piano-tablet');
+  });
+
+  it('continues past empty ids and returns null when all ids are empty', () => {
+    const tab = memoryStore({ [LOG_DEVICE_STORAGE_KEY]: '' });
+    const kiosk = memoryStore({ 'fitness.fleetDeviceId': '', 'piano.kioskDeviceId': 'piano-tablet' });
+
+    expect(readLogDeviceId({ search: '?device=' }, tab, kiosk)).toBe('piano-tablet');
+    kiosk.setItem('piano.kioskDeviceId', '');
+    expect(readLogDeviceId({ search: '?device=' }, tab, kiosk)).toBeNull();
   });
 
   it('is null when nothing identifies the screen, and never throws', () => {

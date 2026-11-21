@@ -24,7 +24,7 @@ describe('createAgentRuntime("health-coach").run', () => {
   it('posts input + attachments to /api/v1/agents/health-coach/run', async () => {
     let captured;
     globalThis.fetch = vi.fn(async (url, opts) => {
-      captured = { url, body: JSON.parse(opts.body) };
+      captured = { url, headers: opts.headers, body: JSON.parse(opts.body) };
       return { ok: true, json: async () => ({ output: 'ok response', toolCalls: [] }) };
     });
 
@@ -33,7 +33,8 @@ describe('createAgentRuntime("health-coach").run', () => {
     const attachments = [{ type: 'period', value: { rolling: 'last_30d' }, label: 'Last 30 days' }];
     const result = await runtime.run({ messages, userId: 'kc', attachments });
 
-    expect(captured.url).toBe('/api/v1/agents/health-coach/run');
+    expect(captured.url).toBe(`${location.origin}/api/v1/agents/health-coach/run`);
+    expect(captured.headers['X-Daylight-Device']).toBeTruthy();
     expect(captured.body.input).toBe('How are you?');
     expect(captured.body.context.userId).toBe('kc');
     expect(captured.body.context.attachments).toEqual(attachments);
@@ -51,7 +52,7 @@ describe('createAgentRuntime("health-coach").run', () => {
       messages: [{ role: 'user', content: [{ type: 'text', text: 'q' }] }],
       userId: 'default',
     });
-    expect(capturedUrl).toBe('/api/v1/agents/lifeplan-guide/run');
+    expect(capturedUrl).toBe(`${location.origin}/api/v1/agents/lifeplan-guide/run`);
   });
 
   it('returns assistant message with toolCalls in metadata', async () => {
@@ -105,7 +106,7 @@ describe('createAgentRuntime(...).runStream (async generator)', () => {
       messages: [{ role: 'user', content: [{ type: 'text', text: 'q' }] }],
       userId: 'default',
     })) { /* drain */ }
-    expect(capturedUrl).toBe('/api/v1/agents/lifeplan-guide/run-stream');
+    expect(capturedUrl).toBe(`${location.origin}/api/v1/agents/lifeplan-guide/run-stream`);
   });
 
   it('yields incremental message updates as text-deltas arrive', async () => {

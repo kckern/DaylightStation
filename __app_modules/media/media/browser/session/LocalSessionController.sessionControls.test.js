@@ -224,11 +224,14 @@ describe('end of queue: stop, repeat, keep similar playing (RQ-STEER-19)', () =>
     expect(states).not.toContain('ended');
   });
 
-  it('similar appends one marked batch from the resolver and plays on', async () => {
-    const resolveContinuation = vi.fn(async () => [
-      { id: 'plex:9', title: 'Nine', type: 'track', duration: 180 },
-      { id: 'plex:10', title: 'Ten', type: 'track', duration: 180 },
-    ]);
+  it('similar appends a marked batch and refills once when its last item becomes current', async () => {
+    const refill = Promise.withResolvers();
+    const resolveContinuation = vi.fn()
+      .mockResolvedValueOnce([
+        { id: 'plex:9', title: 'Nine', type: 'track', duration: 180 },
+        { id: 'plex:10', title: 'Ten', type: 'track', duration: 180 },
+      ])
+      .mockReturnValueOnce(refill.promise);
     const { c } = makeController({ resolveContinuation });
     c.queue.playNow(song('a'));
     playing(c);
@@ -241,6 +244,19 @@ describe('end of queue: stop, repeat, keep similar playing (RQ-STEER-19)', () =>
     expect(items.slice(1).every((it) => it.addedBy === 'auto-continue')).toBe(true);
     expect(c.getSnapshot().currentItem?.contentId).toBe('plex:9');
     expect(c.sessionControls.getState().endOfQueueStatus).toMatchObject({ code: 'SIMILAR_ADDED', count: 2 });
+    expect(resolveContinuation).toHaveBeenCalledTimes(1);
+
+    c.onPlayerEnded('plex:9');
+    expect(c.getSnapshot().currentItem?.contentId).toBe('plex:10');
+    playing(c);
+    expect(resolveContinuation).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      finished: expect.objectContaining({ contentId: 'plex:10' }),
+    }));
+    refill.resolve([{ id: 'plex:11', title: 'Eleven', type: 'track', duration: 180 }]);
+    await flush();
+    expect(c.getSnapshot().queue.items.map(item => item.contentId)).toEqual(['a', 'plex:9', 'plex:10', 'plex:11']);
+    expect(c.getSnapshot().currentItem?.contentId).toBe('plex:10');
+    expect(resolveContinuation).toHaveBeenCalledTimes(2);
   });
 
   it('nothing similar left stops and says so', async () => {

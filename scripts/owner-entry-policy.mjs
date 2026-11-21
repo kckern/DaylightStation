@@ -422,6 +422,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/media/media/server/domain/validateMediaSearchQuery.mjs': 'domain',
   '__capabilities/device-dispatch/server/application/scheduleCheck.mjs': 'application',
   '__capabilities/gaming/browser/platform/api/sessionClient.js': null,
+  '__capabilities/gaming/browser/session-projection.mjs': null,
   '__capabilities/gaming/browser/platform/authority/createCheckpointedLocalAuthority.js': null,
   '__capabilities/gaming/browser/platform/authority/createEphemeralLocalAuthority.js': null,
   '__capabilities/gaming/browser/platform/input/DrawingTabletAdapter.js': null,
@@ -535,6 +536,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   // The opt-in `classical` surround theme (concert-hall look); the capability frame is neutral.
   '__app_modules/media/media/browser/surround-classical.mjs': null,
   '__capabilities/content-catalog/browser/picker-controller.mjs': null,
+  '__capabilities/content-catalog/browser/descriptor.mjs': null,
   '__capabilities/content-catalog/browser/source-labels.mjs': null,
   '__capabilities/playback/browser/surround-frame.mjs': null,
   '__capabilities/playback/browser/surround-registry.mjs': null,

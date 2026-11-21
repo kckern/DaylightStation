@@ -3,10 +3,10 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { ScheduledFiresSection } from "./ScheduledFiresSection.jsx";
 
-// Stub LabeledContentPicker
+// Stub the catalog picker.
 let pickerOnChangeRefs = [];
-vi.mock("./LabeledContentPicker.jsx", () => ({
-  LabeledContentPicker: function PickerStub({ value, onChange }) {
+vi.mock("../../../../../../../__capabilities/content-catalog/browser/picker.mjs", () => ({
+  default: function PickerStub({ value, onChange }) {
     const idx = pickerOnChangeRefs.length;
     pickerOnChangeRefs.push(onChange);
     return (

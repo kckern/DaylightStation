@@ -18,35 +18,45 @@ export function isPlaceholderName(name) {
   return typeof name === 'string' && /^Browser [0-9a-zA-Z-]{1,8}$/.test(name.trim());
 }
 
-function persist(storage, identity) {
-  storage?.setItem?.(STORAGE_KEYS.CLIENT_ID, identity.clientId);
-  storage?.setItem?.(STORAGE_KEYS.DISPLAY_NAME, identity.name);
-  storage?.setItem?.(STORAGE_KEYS.BROWSER_IDENTITY, JSON.stringify(identity));
+export function browserIdentityStorage() {
+  try { return globalThis.localStorage ?? null; } catch { return null; }
+}
+
+function read(storage, key) {
+  try { return storage?.getItem?.(key); } catch { return null; }
+}
+
+export function persistBrowserIdentity(identity, storage = browserIdentityStorage()) {
+  try {
+    storage?.setItem?.(STORAGE_KEYS.CLIENT_ID, identity.clientId);
+    storage?.setItem?.(STORAGE_KEYS.DISPLAY_NAME, identity.name);
+    storage?.setItem?.(STORAGE_KEYS.BROWSER_IDENTITY, JSON.stringify(identity));
+  } catch { /* The current identity remains usable when writes are refused. */ }
   return identity;
 }
 
 export function createBrowserIdentity({
-  storage = globalThis.localStorage,
+  storage = browserIdentityStorage(),
   randomUuid = fallbackUuid,
   now = () => new Date(),
 } = {}) {
   let stored = null;
-  try { stored = JSON.parse(storage?.getItem?.(STORAGE_KEYS.BROWSER_IDENTITY) || 'null'); } catch { /* legacy recovery */ }
+  try { stored = JSON.parse(read(storage, STORAGE_KEYS.BROWSER_IDENTITY) || 'null'); } catch { /* legacy recovery */ }
   if (stored?.clientId && stored?.name && stored?.connectedAt) {
-    return persist(storage, {
+    return persistBrowserIdentity({
       ...stored,
       deviceId: `browser:${stored.clientId}`,
-    });
+    }, storage);
   }
 
-  const clientId = clean(storage?.getItem?.(STORAGE_KEYS.CLIENT_ID)) || randomUuid();
+  const clientId = clean(read(storage, STORAGE_KEYS.CLIENT_ID)) || randomUuid();
   const identity = {
     clientId,
     deviceId: `browser:${clientId}`,
-    name: clean(storage?.getItem?.(STORAGE_KEYS.DISPLAY_NAME)) || defaultName(clientId),
+    name: clean(read(storage, STORAGE_KEYS.DISPLAY_NAME)) || defaultName(clientId),
     connectedAt: now().toISOString(),
   };
-  return persist(storage, identity);
+  return persistBrowserIdentity(identity, storage);
 }
 
 export function renameBrowserIdentity(identity, {
@@ -73,7 +83,7 @@ export function renameBrowserIdentity(identity, {
     ...(clean(room) ? { room: clean(room) } : {}),
   };
   if (!clean(room)) delete next.room;
-  return storage ? persist(storage, next) : next;
+  return storage ? persistBrowserIdentity(next, storage) : next;
 }
 
 export default createBrowserIdentity;

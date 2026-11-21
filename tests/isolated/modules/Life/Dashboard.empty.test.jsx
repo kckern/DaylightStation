@@ -54,7 +54,7 @@ describe('Dashboard empty-plan funnel', () => {
     });
     expect(screen.getByText(/Ten minutes with your coach/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Talk to your coach' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Talk to your coach' }));
     expect(screen.getByTestId('location-probe')).toHaveTextContent('/life/coach');
   });
 

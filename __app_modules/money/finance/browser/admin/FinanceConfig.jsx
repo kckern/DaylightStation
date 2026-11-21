@@ -1,5 +1,6 @@
-import React from 'react';
-import { Stack, NumberInput, TagsInput, Paper, Text } from '@mantine/core';
+import React, { useState } from 'react';
+import { Stack, NumberInput, TagsInput } from '@mantine/core';
+import { SectionCard } from '../../../../../frontend/src/lib/ui/cards.jsx';
 import ConfigFormWrapper from "../../../../../frontend/src/modules/Admin/shared/ConfigFormWrapper.jsx";
 import { configPath } from "../../../../../frontend/src/modules/Admin/utils/adminConfigPaths.js";
 
@@ -15,6 +16,57 @@ function updateNested(data, path, value) {
   return next;
 }
 
+const CLICKUP_ID_ERROR = 'Enter a whole-number ID within the safe integer range.';
+
+function parseClickUpIds(tags, existingIds) {
+  const originalIds = new Map();
+  existingIds.forEach(id => {
+    const key = String(id);
+    const values = originalIds.get(key) || [];
+    values.push(id);
+    originalIds.set(key, values);
+  });
+
+  const ids = [];
+  for (const tag of tags) {
+    const originals = originalIds.get(tag);
+    if (originals?.length) {
+      ids.push(originals.shift());
+      continue;
+    }
+
+    if (!/^(0|[1-9]\d*)$/.test(tag)) return null;
+    const id = Number(tag);
+    if (!Number.isSafeInteger(id) || String(id) !== tag) return null;
+    ids.push(id);
+  }
+  return ids;
+}
+
+function ClickUpIdTagsInput({ label, ids, onChange, placeholder }) {
+  const [error, setError] = useState(null);
+
+  function handleChange(tags) {
+    const nextIds = parseClickUpIds(tags, ids);
+    if (nextIds === null) {
+      setError(CLICKUP_ID_ERROR);
+      return;
+    }
+    setError(null);
+    onChange(nextIds);
+  }
+
+  return (
+    <TagsInput
+      label={label}
+      value={ids.map(String)}
+      onChange={handleChange}
+      error={error}
+      placeholder={placeholder}
+    />
+  );
+}
+
 function FinanceConfigContent({ data, setData }) {
   const buxfer = data.buxfer || {};
   const clickup = data.clickup || {};
@@ -22,8 +74,7 @@ function FinanceConfigContent({ data, setData }) {
   return (
     <Stack gap="lg">
       {/* Buxfer Integration */}
-      <Paper p="md" withBorder className="ds-section-panel">
-        <Text className="ds-section-label">Buxfer Integration</Text>
+      <SectionCard variant="form" title="Buxfer Integration">
         <Stack gap="sm">
           <NumberInput
             label="Payroll Account ID"
@@ -45,23 +96,20 @@ function FinanceConfigContent({ data, setData }) {
             max={1}
           />
         </Stack>
-      </Paper>
+      </SectionCard>
 
       {/* ClickUp Integration */}
-      <Paper p="md" withBorder className="ds-section-panel">
-        <Text className="ds-section-label">ClickUp Integration</Text>
+      <SectionCard variant="form" title="ClickUp Integration">
         <Stack gap="sm">
           <NumberInput
             label="Team ID"
             value={clickup.team_id ?? ''}
             onChange={(val) => setData(updateNested(data, 'clickup.team_id', val))}
           />
-          <TagsInput
+          <ClickUpIdTagsInput
             label="Assignees"
-            value={(clickup.assignees || []).map(String)}
-            onChange={(tags) =>
-              setData(updateNested(data, 'clickup.assignees', tags.map(Number)))
-            }
+            ids={clickup.assignees || []}
+            onChange={(ids) => setData(updateNested(data, 'clickup.assignees', ids))}
             placeholder="Add assignee ID..."
           />
           <TagsInput
@@ -70,12 +118,10 @@ function FinanceConfigContent({ data, setData }) {
             onChange={(tags) => setData(updateNested(data, 'clickup.statuses', tags))}
             placeholder="Add status..."
           />
-          <TagsInput
+          <ClickUpIdTagsInput
             label="Todo Lists"
-            value={(clickup.todo_lists || []).map(String)}
-            onChange={(tags) =>
-              setData(updateNested(data, 'clickup.todo_lists', tags.map(Number)))
-            }
+            ids={clickup.todo_lists || []}
+            onChange={(ids) => setData(updateNested(data, 'clickup.todo_lists', ids))}
             placeholder="Add list ID..."
           />
           <TagsInput
@@ -91,7 +137,7 @@ function FinanceConfigContent({ data, setData }) {
             min={0}
           />
         </Stack>
-      </Paper>
+      </SectionCard>
     </Stack>
   );
 }

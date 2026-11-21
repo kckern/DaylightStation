@@ -147,7 +147,8 @@ describe('fetchMediaInfo — stream-URL request counting', () => {
 
     DaylightAPI.mockRejectedValueOnce(new Error('HTTP 404 Not Found'));
     vi.setSystemTime(BASE_TIME + 40);
-    await expect(fetchMediaInfo({ contentId: 'plex:694719', session: 's1' })).rejects.toThrow();
+    const { signal } = new AbortController();
+    await expect(fetchMediaInfo({ contentId: 'plex:694719', session: 's1', signal })).rejects.toThrow('HTTP 404 Not Found');
 
     expect(named('fetch-media-failed')).toHaveLength(1);
     // One numbering across the family, so a run of failures and a run of
@@ -157,6 +158,55 @@ describe('fetchMediaInfo — stream-URL request counting', () => {
       msSinceLastRequest: 40,
       session: 's1'
     });
+  });
+
+  it('forwards cancellation to the transport and suppresses the expected failure log', async () => {
+    const { fetchMediaInfo, DaylightAPI } = await loadApi();
+    const controller = new AbortController();
+    const { signal } = controller;
+    const transport = Promise.withResolvers();
+    DaylightAPI.mockReturnValueOnce(transport.promise);
+
+    const result = fetchMediaInfo({ contentId: 'plex:694719', session: 's1', signal });
+    const rejected = expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    controller.abort();
+    transport.reject(signal.reason);
+
+    await rejected;
+    expect(named('fetch-media-failed')).toHaveLength(0);
+    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/play/plex:694719?session=s1', {}, 'GET', { signal });
+  });
+
+  it.each([false, true])('counts a late mint without adopting its retired identity (shuffle: %s)', async (shuffle) => {
+    const { fetchMediaInfo, DaylightAPI } = await loadApi();
+    const controller = new AbortController();
+    const transport = Promise.withResolvers();
+    DaylightAPI
+      .mockReturnValueOnce(transport.promise)
+      .mockResolvedValueOnce({ id: 'current', plexClientIdentifier: 'current-plex' });
+
+    const result = fetchMediaInfo({ contentId: 'plex:1', signal: controller.signal, shuffle });
+    const rejected = expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    controller.abort();
+    await fetchMediaInfo({ contentId: 'plex:2' });
+    transport.resolve({ id: 'retired', plexClientIdentifier: 'retired-plex' });
+
+    await rejected;
+    expect(plexIdentityCalls).toEqual(['current-plex']);
+    expect(successes().map(({ data }) => data.contentId)).toEqual(['plex:2', 'plex:1']);
+    expect(named('fetch-media-failed')).toHaveLength(0);
+    expect(DaylightAPI).toHaveBeenNthCalledWith(1, `api/v1/play/plex:1${shuffle ? '/shuffle' : ''}`, {}, 'GET', { signal: controller.signal });
+    expect(DaylightAPI).toHaveBeenNthCalledWith(2, 'api/v1/play/plex:2');
+  });
+
+  it('does not issue a request if its owner has already canceled', async () => {
+    const { fetchMediaInfo, DaylightAPI } = await loadApi();
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(fetchMediaInfo({ contentId: 'plex:1', signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+    expect(DaylightAPI).not.toHaveBeenCalled();
+    expect(named('fetch-media-failed')).toHaveLength(0);
   });
 
   it('says so when it never asked at all', async () => {

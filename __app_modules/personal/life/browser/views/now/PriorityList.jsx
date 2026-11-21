@@ -1,11 +1,15 @@
 import { useState } from 'react';
+import { browserPreference } from '@/lib/browserPreference.js';
+import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { Stack, Paper, Group, Text, Badge, ThemeIcon, ActionIcon } from '@mantine/core';
-import { IconX } from '@tabler/icons-react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { priorityTypeMeta } from "../../theme/semantics.js";
 import { useLifeUsername } from "../../hooks/useLifeUser.js";
 
-const DISMISS_KEY = 'life.priorities.dismissed';
+const dismissalPreference = browserPreference('life.priorities.dismissed', [], raw => {
+  const parsed = JSON.parse(raw);
+  return Array.isArray(parsed) ? parsed : [];
+});
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -17,15 +21,10 @@ function todayStr() {
  * persisting the pruned set so localStorage doesn't grow unbounded.
  */
 function loadDismissed(today) {
-  try {
-    const raw = JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]');
-    const pruned = raw.filter((k) => k.split(':')[1] === today);
-    if (pruned.length !== raw.length) {
-      try { localStorage.setItem(DISMISS_KEY, JSON.stringify(pruned)); }
-      catch { /* ignore quota/private-mode errors */ }
-    }
-    return new Set(pruned);
-  } catch { return new Set(); }
+  const stored = dismissalPreference.read();
+  const current = stored.filter(key => typeof key === 'string' && key.split(':')[1] === today);
+  if (current.length !== stored.length) dismissalPreference.write(JSON.stringify(current));
+  return new Set(current);
 }
 
 function routeFor(item) {
@@ -42,17 +41,19 @@ function routeFor(item) {
 }
 
 export function PriorityList({ priorities = [] }) {
-  const navigate = useNavigate();
   const username = useLifeUsername();
   const today = todayStr();
   const keyOf = (item) => `${username || 'anon'}:${today}:${item.type}:${item.title}`;
   const [dismissed, setDismissed] = useState(() => loadDismissed(today));
 
   const dismiss = (item) => {
-    const next = new Set(dismissed); next.add(keyOf(item));
+    const next = loadDismissed(today);
+    for (const key of dismissed) {
+      if (key.split(':')[1] === today) next.add(key);
+    }
+    next.add(keyOf(item));
     setDismissed(next);
-    try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...next])); }
-    catch { /* ignore quota/private-mode errors */ }
+    dismissalPreference.write(JSON.stringify([...next]));
   };
 
   const visible = priorities.filter((p) => !dismissed.has(keyOf(p))).slice(0, 5);
@@ -66,20 +67,19 @@ export function PriorityList({ priorities = [] }) {
         const meta = priorityTypeMeta[item.type] || priorityTypeMeta.goal_deadline;
         const Icon = meta.icon;
         const route = routeFor(item);
+        const titleLink = route ? { component: Link, to: route, className: 'life-dashboard-link life-priority__link' } : {};
         return (
-          <Paper key={keyOf(item) + i} p="sm" withBorder
-            className={route ? 'life-clickable' : undefined}
-            onClick={route ? () => navigate(route) : undefined}>
+          <Paper key={keyOf(item) + i} p="sm" withBorder className="life-priority">
             <Group wrap="nowrap">
               <ThemeIcon color={meta.color} variant="light" size="lg"><Icon size={18} /></ThemeIcon>
               <Stack gap={2} style={{ flex: 1 }}>
-                <Text size="sm" fw={500}>{item.title}</Text>
+                <Text size="sm" fw={500} {...titleLink}>{item.title}</Text>
                 <Text size="xs" c="dimmed">{item.reason}</Text>
               </Stack>
               <Badge color={meta.color} variant="light" size="sm">{meta.label}</Badge>
               <ActionIcon variant="subtle" color="gray" aria-label={`Dismiss ${item.title}`}
-                onClick={(e) => { e.stopPropagation(); dismiss(item); }}>
-                <IconX size={14} />
+                className="life-priority__dismiss ds-touch-target" onClick={() => dismiss(item)}>
+                <UiIcon name="close" size={14} />
               </ActionIcon>
             </Group>
           </Paper>

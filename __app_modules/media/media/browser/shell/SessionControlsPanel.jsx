@@ -16,7 +16,9 @@ import { Button, Group, Menu, Text } from '@mantine/core';
 import {
   IconMoon, IconPlayerStop, IconPlaylistAdd, IconArrowBackUp, IconPlayerTrackNext, IconX,
 } from '@tabler/icons-react';
-import { useSessionControls, useSecondTick, secondsUntil, formatClock } from "../controller/useSessionControls.js";
+import { useDisplayClock } from '@/lib/hooks/useDisplayClock.js';
+import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
+import { useSessionControls, secondsUntil, formatClock } from "../controller/useSessionControls.js";
 import { useSessionController } from "../controller/useSessionController.js";
 import { DispatchContext } from "../cast/DispatchProvider.jsx";
 import mediaLog from "../logging/mediaLog.js";
@@ -48,7 +50,7 @@ export function SessionControlsPanel({ target, targetName = null }) {
   const targetId = isLocal ? 'local' : target?.deviceId ?? null;
   const ticking = !!controls?.countdown || controls?.sleepTimer?.mode === 'minutes'
     || (controls?.notes ?? []).some((note) => note.putBack);
-  const now = useSecondTick(ticking);
+  const now = useDisplayClock(ticking);
   const [busy, setBusy] = useState(null);
 
   const hasItem = !!snapshot?.currentItem;
@@ -152,8 +154,9 @@ export function SessionControlsPanel({ target, targetName = null }) {
       )}
 
       <Group gap="xs" className="session-controls-row" wrap="wrap">
-        <Menu position="top-start" withinPortal shadow="md" disabled={controlsDisabled}>
-          <Menu.Target>
+        <ActionMenu position="top-start" withinPortal shadow="md" disabled={controlsDisabled}
+          dropdownProps={{ 'data-testid': 'sleep-timer-menu' }}
+          trigger={
             <Button
               data-testid="sleep-timer-button"
               className="session-controls-btn"
@@ -165,38 +168,36 @@ export function SessionControlsPanel({ target, targetName = null }) {
             >
               {sleepTimer ? <span data-testid="sleep-timer-left">{sleepLabel(sleepTimer, now)}</span> : 'Sleep timer'}
             </Button>
-          </Menu.Target>
-          <Menu.Dropdown data-testid="sleep-timer-menu">
-            <Menu.Label>Stop playback</Menu.Label>
-            {SLEEP_MINUTE_CHOICES.map((minutes) => (
-              <Menu.Item
-                key={minutes}
-                data-testid={`sleep-option-${minutes}`}
-                className="session-controls-menu-item"
-                onClick={() => run('sleepTimer', 'the sleep timer', () => actions.setSleepTimer({ minutes }), minutes)}
-              >
-                In {minutes} minutes
-              </Menu.Item>
-            ))}
+          }>
+          <Menu.Label>Stop playback</Menu.Label>
+          {SLEEP_MINUTE_CHOICES.map((minutes) => (
             <Menu.Item
-              data-testid="sleep-option-end"
+              key={minutes}
+              data-testid={`sleep-option-${minutes}`}
               className="session-controls-menu-item"
-              disabled={!hasItem}
-              onClick={() => run('sleepTimer', 'the sleep timer', () => actions.setSleepTimer({ atEnd: 'item' }), 'item')}
+              onClick={() => run('sleepTimer', 'the sleep timer', () => actions.setSleepTimer({ minutes }), minutes)}
             >
-              At the end of this item
+              In {minutes} minutes
             </Menu.Item>
-            {sleepTimer && (
-              <Menu.Item
-                data-testid="sleep-option-off"
-                className="session-controls-menu-item"
-                onClick={() => run('cancelSleepTimer', 'the sleep timer', () => actions.cancelSleepTimer())}
-              >
-                Turn the sleep timer off
-              </Menu.Item>
-            )}
-          </Menu.Dropdown>
-        </Menu>
+          ))}
+          <Menu.Item
+            data-testid="sleep-option-end"
+            className="session-controls-menu-item"
+            disabled={!hasItem}
+            onClick={() => run('sleepTimer', 'the sleep timer', () => actions.setSleepTimer({ atEnd: 'item' }), 'item')}
+          >
+            At the end of this item
+          </Menu.Item>
+          {sleepTimer && (
+            <Menu.Item
+              data-testid="sleep-option-off"
+              className="session-controls-menu-item"
+              onClick={() => run('cancelSleepTimer', 'the sleep timer', () => actions.cancelSleepTimer())}
+            >
+              Turn the sleep timer off
+            </Menu.Item>
+          )}
+        </ActionMenu>
 
         <Button
           data-testid="stop-after-current"

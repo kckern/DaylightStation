@@ -1,12 +1,13 @@
 import { useMemo, useEffect, useRef } from 'react';
 import { Stack, Paper, Title, Text, Group, Button, Stepper, Alert, Anchor } from '@mantine/core';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { IconCheck, IconArrowRight, IconArrowLeft, IconAlertCircle } from '@tabler/icons-react';
 import { useCeremony } from "../../hooks/useCeremony.js";
 import { UnitIntention } from "./UnitIntention.jsx";
 import { UnitCapture } from "./UnitCapture.jsx";
 import { CycleRetro } from "./CycleRetro.jsx";
 import { PhaseReview } from "./PhaseReview.jsx";
+import { ErrorState, useRetryRegion } from '@/lib/ui';
 import { LoadingState } from "../../components/index.js";
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 
@@ -28,9 +29,14 @@ const CEREMONY_COMPONENTS = {
 
 export function CeremonyFlow({ type, username, onComplete }) {
   const logger = useMemo(() => getLogger().child({ component: 'ceremony-flow' }), []);
-  const navigate = useNavigate();
   const ceremony = useCeremony(type, username);
   const { content, loading, error, submitError, step, nextStep, prevStep, submit, submitting, completed } = ceremony;
+  const { regionProps, retry } = useRetryRegion(ceremony.reload, loading);
+  const region = children => (
+    <section aria-label="Life ceremony" {...regionProps}>
+      {children}
+    </section>
+  );
 
   const steps = useMemo(() => CEREMONY_STEPS[type] || ['Step 1', 'Step 2', 'Confirm'], [type]);
   const implemented = type in CEREMONY_COMPONENTS;
@@ -57,32 +63,28 @@ export function CeremonyFlow({ type, username, onComplete }) {
     }
   }, [completed, type, content, logger]);
 
-  if (loading) return <LoadingState />;
+  if (loading) return region(<LoadingState label="ceremony" />);
   if (error) {
     logger.warn('life.ceremony.error', { type, status: error.status, code: error.code, message: error.message });
     if (error.code === 'NO_PLAN') {
-      return (
+      return region(
         <Paper p="xl" withBorder>
           <Stack align="center" gap="md">
             <Title order={4}>You don&apos;t have a life plan yet</Title>
             <Text c="dimmed">Ceremonies work against your plan — create one first.</Text>
-            <Button onClick={() => navigate('/life/coach')}>Talk to your coach</Button>
-            <Anchor size="sm" c="dimmed" onClick={() => navigate('/life/plan')}>
+            <Button component={Link} to="/life/coach">Talk to your coach</Button>
+            <Anchor component={Link} to="/life/plan" size="sm" c="dimmed">
               See the plan page
             </Anchor>
           </Stack>
-        </Paper>
+        </Paper>,
       );
     }
-    return (
-      <Alert color="red" title="Ceremony unavailable" icon={<IconAlertCircle size={16} />}>
-        {error.message || 'Something went wrong loading this ceremony.'}
-      </Alert>
-    );
+    return region(<ErrorState title="Ceremony unavailable" error={error} onRetry={retry} />);
   }
 
   if (completed) {
-    return (
+    return region(
       <Paper p="xl" withBorder>
         <Stack align="center" gap="md">
           <IconCheck size={48} color="green" />
@@ -94,13 +96,13 @@ export function CeremonyFlow({ type, username, onComplete }) {
             <Button onClick={onComplete}>Return to Dashboard</Button>
           )}
         </Stack>
-      </Paper>
+      </Paper>,
     );
   }
 
   const isLastStep = step >= steps.length - 1;
 
-  return (
+  return region(
     <Stack gap="md">
       <Title order={4} tt="capitalize">{type.replace(/_/g, ' ')}</Title>
 
@@ -165,6 +167,6 @@ export function CeremonyFlow({ type, username, onComplete }) {
           </Button>
         )}
       </Group>
-    </Stack>
+    </Stack>,
   );
 }

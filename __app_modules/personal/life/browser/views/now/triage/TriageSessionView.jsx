@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Group, Text, Title } from '@mantine/core';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { IconAlertCircle, IconCircleCheck } from '@tabler/icons-react';
+import { useRetryRegion } from '@/lib/ui';
 import { useTriage } from "../../../hooks/useTriage.js";
+import { LifeUserContext } from "../../../hooks/useLifeUser.js";
 import { LoadingState } from "../../../components/index.js";
 import LoginScreen from "../../../../../../../frontend/src/modules/Auth/LoginScreen.jsx";
 import getLogger from "../../../../../../../frontend/src/lib/logging/Logger.js";
@@ -23,9 +25,10 @@ const FAILED_REASONS = {
  */
 export function TriageSessionView() {
   const logger = useMemo(() => getLogger().child({ component: 'triage-session' }), []);
-  const navigate = useNavigate();
   const t = useTriage({ withSession: true });
-  const { session, summary, needsLogin } = t;
+  const { session, summary, needsLogin, signInReason } = t;
+  const selectedMember = useContext(LifeUserContext);
+  const { regionProps, retry } = useRetryRegion(t.refetch, t.loading);
 
   const [cards, setCards] = useState([]);
   const [idx, setIdx] = useState(0);
@@ -73,7 +76,7 @@ export function TriageSessionView() {
   const handleError = (err, retry, current) => {
     const code = err?.code ?? null;
     logger.warn('triage.card.error', { cardId: current?.cardId ?? null, code, status: err?.status ?? null });
-    if (code === 'login_required') return; // the login screen takes the card's place
+    if (err?.signInReason) return; // the login screen takes the card's place
     if (code === 'pass_running' || code === 'busy') { setNotice({ text: BUSY_LINE, retry }); return; }
     if (code === 'answer_in_doubt') { replaceCard({ ...current, status: 'applying', applying: true }); return; }
     if (code === 'card_not_open' || code === 'card_not_found') {
@@ -134,29 +137,32 @@ export function TriageSessionView() {
   }, [logger]);
 
   if (needsLogin) {
+    const ownerName = selectedMember?.displayName || selectedMember?.username;
     return (
-      <div className="life-triage">
-        <SessionHeader onStop={() => navigate('/life/now')} />
-        <Text size="sm" c="dimmed" ta="center">Sign in to answer triage cards.</Text>
+      <SessionLayout regionProps={regionProps}>
+        <Text size="sm" c="dimmed" ta="center" role="status">
+          {signInReason === 'session_user_mismatch' && ownerName
+            ? `Sign in as ${ownerName} to answer their triage cards.`
+            : 'Sign in to answer triage cards.'}
+        </Text>
         <div className="life-triage__login"><LoginScreen onLogin={() => t.refetch()} /></div>
-      </div>
+      </SessionLayout>
     );
   }
-  if (t.loading && !session) return <LoadingState />;
+  if (t.loading && !session) return <SessionLayout regionProps={regionProps}><LoadingState /></SessionLayout>;
   if (!session) {
     return (
-      <div className="life-triage">
-        <SessionHeader onStop={() => navigate('/life/now')} />
+      <SessionLayout regionProps={regionProps}>
         {summary && summary.enrolled !== true ? (
           <Text c="dimmed">Triage isn&apos;t set up for this person.</Text>
         ) : (
           <Group gap="xs" role="status">
             <IconAlertCircle size={16} color="var(--ds-text-mid)" />
             <Text size="sm" c="dimmed">Triage unavailable</Text>
-            <Button variant="subtle" size="compact-sm" onClick={() => t.refetch()}>retry</Button>
+            <Button variant="subtle" size="compact-sm" onClick={retry}>retry</Button>
           </Group>
         )}
-      </div>
+      </SessionLayout>
     );
   }
 
@@ -183,8 +189,7 @@ export function TriageSessionView() {
   const onResolve = (happened) => perform(card, happened ? 'resolve_yes' : 'resolve_no', () => t.resolve(card.cardId, happened));
 
   return (
-    <div className="life-triage">
-      <SessionHeader onStop={() => navigate('/life/now')} />
+    <SessionLayout regionProps={regionProps}>
       {summary?.mode === 'dryRun' && !hasRecap && <Text size="xs" c="dimmed">{DRY_RUN_NOTE}</Text>}
       <StepStrip steps={steps} currentStep={card ? stepId : null} stepPos={stepPos} position={card ? position : total} total={total} />
       {notice && (
@@ -210,7 +215,7 @@ export function TriageSessionView() {
           onSkip={onSkip}
           onResolve={onResolve}
           onUndo={(entryId) => t.undo(entryId)}
-          onLoadLog={() => t.log(7)}
+          onLoadLog={(options) => t.log(7, options)}
           wouldHave={summary?.wouldHave ?? null}
         />
       ) : (
@@ -219,14 +224,24 @@ export function TriageSessionView() {
           <Text size="sm" c="dimmed">
             {tally.answered} answered{tally.skipped ? ` · ${tally.skipped} skipped for later` : ''}
           </Text>
-          <Button size="sm" className="life-triage__end-action" onClick={() => navigate('/life/now')}>Back to Now</Button>
+          <Button component={Link} to="/life/now" size="sm"
+            className="life-triage__end-action ds-touch-target">Back to Now</Button>
         </article>
       )}
-    </div>
+    </SessionLayout>
   );
 }
 
-function SessionHeader({ onStop }) {
+function SessionLayout({ regionProps, children }) {
+  return (
+    <section className="life-triage" aria-label="Triage session" {...regionProps}>
+      <SessionHeader />
+      {children}
+    </section>
+  );
+}
+
+function SessionHeader() {
   const day = new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   return (
     <Group justify="space-between" align="center" wrap="nowrap">
@@ -234,7 +249,8 @@ function SessionHeader({ onStop }) {
         <Title order={3}>Triage</Title>
         <Text size="xs" c="dimmed">{day}</Text>
       </div>
-      <Button variant="subtle" size="compact-sm" color="gray" onClick={onStop}>Stop for now</Button>
+      <Button component={Link} to="/life/now" variant="subtle" size="compact-sm" color="gray"
+        className="ds-touch-target">Stop for now</Button>
     </Group>
   );
 }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Anchor, Group, Stack, Table, Text } from '@mantine/core';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
-import { SectionCard, StatCard, LoadingState, ErrorState, EmptyState } from "../../../../../frontend/src/lib/ui/index.js";
+import { SectionCard, StatCard, LoadingState, ErrorState, EmptyState, useRetryRegion } from "../../../../../frontend/src/lib/ui/index.js";
 import { formatUsd } from "../auditor/auditorFormat.js";
 import { DailyChart } from "../auditor/SpendPanel.jsx";
 import { featureLabel, FEATURE_LINKS } from "./aiUsageFormat.js";
@@ -77,13 +77,19 @@ function BeforeTracking({ before }) {
  * `compact` is the Settings version: totals, the top three features and a
  * link to the full card on the auditor page.
  */
-export function AiUsageCard({ compact = false }) {
+export function AiUsageCard({ compact = false, anchorReady = true }) {
   const logger = useMemo(() => getLogger().child({ component: 'health-ai-usage' }), []);
   const usage = useHealthAiUsage();
   const location = useLocation();
   const cardRef = useRef(null);
+  const anchorHandled = useRef(false);
+  const anchorRequested = !compact && location.hash === `#${AI_USAGE_ANCHOR}`;
   const onAuditorPage = location.pathname.startsWith('/health/auditor');
   const loaded = !!usage.data;
+  const { regionProps, retry } = useRetryRegion(() => {
+    anchorHandled.current = true;
+    usage.reload();
+  }, !loaded && usage.loading);
 
   useEffect(() => { logger.info('health-ai-usage.mounted', { compact }); }, [logger, compact]);
   useEffect(() => {
@@ -92,12 +98,35 @@ export function AiUsageCard({ compact = false }) {
   useEffect(() => {
     if (!loaded) return;
     logger.debug('health-ai-usage.loaded', { features: usage.data.byFeature?.length ?? 0, month: usage.data.month });
-    // Arriving from Settings' "See all" (…/auditor#ai-usage): bring the card into view once it has content.
-    if (!compact && location.hash === `#${AI_USAGE_ANCHOR}`) cardRef.current?.scrollIntoView?.({ block: 'start' });
   }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!anchorRequested) {
+      anchorHandled.current = false;
+      return undefined;
+    }
+    if (anchorHandled.current) return undefined;
+    // Wait for the frame's scroll restoration and the sections above this card.
+    if (anchorReady && loaded) {
+      anchorHandled.current = true;
+      cardRef.current?.scrollIntoView?.({ block: 'start' });
+      return undefined;
+    }
+    const ownerDocument = cardRef.current?.ownerDocument;
+    if (!ownerDocument) return undefined;
+    const interaction = new AbortController();
+    const cancel = () => {
+      anchorHandled.current = true;
+      interaction.abort();
+    };
+    for (const type of ['focusin', 'pointerdown', 'keydown', 'wheel']) {
+      ownerDocument.addEventListener(type, cancel, { capture: true, passive: true, signal: interaction.signal });
+    }
+    return () => interaction.abort();
+  }, [anchorRequested, anchorReady, loaded]);
+
   const body = () => {
-    if (!usage.data) return usage.error ? <ErrorState error={usage.error} onRetry={usage.reload} label="AI usage" /> : <LoadingState label="AI usage" />;
+    if (!usage.data) return usage.error ? <ErrorState error={usage.error} onRetry={retry} label="AI usage" /> : <LoadingState label="AI usage" />;
     const { byFeature = [], days = [], beforeTracking = null } = usage.data;
     if (!byFeature.length) return <Stack gap="sm">
       <EmptyState title="No Health AI use in the last 30 days" />
@@ -122,8 +151,12 @@ export function AiUsageCard({ compact = false }) {
     </Stack>;
   };
 
-  return <div id={compact ? undefined : AI_USAGE_ANCHOR} ref={cardRef} className="health-ai-usage">
-    <SectionCard title="AI usage">{body()}</SectionCard>
+  // The route handles the fragment after the frame is ready. A matching DOM
+  // id would also let the browser scroll before the layout has settled.
+  return <div ref={cardRef} className="health-ai-usage">
+    <SectionCard title="AI usage">
+      <section {...regionProps} aria-label="AI usage">{body()}</section>
+    </SectionCard>
   </div>;
 }
 

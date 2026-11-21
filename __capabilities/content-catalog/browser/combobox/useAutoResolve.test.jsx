@@ -33,8 +33,6 @@ function setup(initialProps = {}) {
     initialProps: {
       value: '',
       onChange: vi.fn(),
-      setContentInfo: vi.fn(),
-      fetchMetadata: vi.fn(() => Promise.resolve(null)),
       ...initialProps,
     },
   });
@@ -62,7 +60,7 @@ describe('useAutoResolve', () => {
     expect(started).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, opts] = fetchMock.mock.calls[0];
-    expect(url).toBe('/api/v1/content/query/search?text=blue%20danube&take=1&tier=1');
+    expect(url).toBe(`${location.origin}/api/v1/content/query/search?text=blue%20danube&take=1&tier=1`);
     expect(opts.signal).toBeInstanceOf(AbortSignal);
   });
 
@@ -84,20 +82,15 @@ describe('useAutoResolve', () => {
 
   it('resolves to the top hit when the committed value is still the freeform text', async () => {
     const onChange = vi.fn();
-    const setContentInfo = vi.fn();
-    const info = { value: 'plex:123', title: 'Blue Danube', unresolved: false };
-    const fetchMetadata = vi.fn(() => Promise.resolve(info));
     fetchMock.mockImplementation(() => jsonResponse({ items: [HIT] }));
 
-    const { result } = setup({ value: 'blue danube', onChange, setContentInfo, fetchMetadata });
+    const { result } = setup({ value: 'blue danube', onChange });
 
     await act(async () => { result.current.maybeResolve('blue danube'); });
 
     await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
     expect(onChange).toHaveBeenCalledWith('plex:123', HIT);
     expect(showUndoToast).toHaveBeenCalledTimes(1);
-    expect(fetchMetadata).toHaveBeenCalledWith('plex:123');
-    await waitFor(() => expect(setContentInfo).toHaveBeenCalledWith('plex:123', info));
   });
 
   it('auto-resolve is undoable: undo restores the original freeform text', async () => {
@@ -134,7 +127,6 @@ describe('useAutoResolve', () => {
     // User manually edits the row before the search returns.
     rerender({
       value: 'plex:999', onChange,
-      setContentInfo: vi.fn(), fetchMetadata: vi.fn(() => Promise.resolve(null)),
     });
 
     await act(async () => {
@@ -189,7 +181,6 @@ describe('useAutoResolve', () => {
 
     rerender({
       value: 'second text', onChange,
-      setContentInfo: vi.fn(), fetchMetadata: vi.fn(() => Promise.resolve(null)),
     });
     act(() => { result.current.maybeResolve('second text'); });
 

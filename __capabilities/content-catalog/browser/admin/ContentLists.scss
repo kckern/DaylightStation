@@ -3,7 +3,7 @@
   background: var(--ds-bg-elevated) !important;
   border: 1px solid var(--ds-border) !important;
   border-left: 3px solid var(--ds-border) !important;
-  padding: var(--ds-space-4) var(--ds-space-5) !important;
+  padding: var(--ds-space-4) var(--ds-space-xl) !important;
   transition:
     transform var(--ds-transition-base),
     box-shadow var(--ds-transition-base),
@@ -61,6 +61,7 @@
 
   // Compact spreadsheet-style rows
   .item-row {
+    position: relative;
     display: flex;
     align-items: center;
     padding: var(--ds-space-1) var(--ds-space-2);
@@ -337,7 +338,10 @@
     }
 
     // Swap confirmation flash
-    &.swap-flash {
+    > .swap-flash {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
       animation: swap-confirm 300ms ease-out;
     }
 
@@ -370,6 +374,7 @@
     border-radius: 6px;
     box-shadow: var(--ds-shadow-elevated);
     opacity: 0.9;
+    width: max-content;
     max-width: 300px;
     height: 36px;
     pointer-events: none;
@@ -509,6 +514,9 @@
 }
 
 .image-picker-thumb {
+  padding: 0;
+  border: 0;
+  background: transparent;
   width: 100%;
   aspect-ratio: 1;
   border-radius: var(--ds-radius-sm);
@@ -523,7 +531,7 @@
     display: block;
   }
 
-  &:hover {
+  &:hover, &:focus-visible {
     outline: 2px solid var(--ds-text-secondary);
     outline-offset: 1px;
   }

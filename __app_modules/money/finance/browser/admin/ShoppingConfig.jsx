@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import {
-  Stack, Switch, TextInput, TagsInput, Paper, Text, Group, Button, ActionIcon, Select
+  Stack, Switch, TextInput, TagsInput, Text, Group, Button, ActionIcon, Select
 } from '@mantine/core';
 import { IconPlus, IconTrash } from '@tabler/icons-react';
+import { SectionCard } from '../../../../../frontend/src/lib/ui/cards.jsx';
 import ConfigFormWrapper from "../../../../../frontend/src/modules/Admin/shared/ConfigFormWrapper.jsx";
-import ConfirmModal from "../../../../../frontend/src/modules/Admin/shared/ConfirmModal.jsx";
+import { ConfirmModal } from "../../../../../frontend/src/lib/ui/ConfirmModal.jsx";
 import { configPath } from "../../../../../frontend/src/modules/Admin/utils/adminConfigPaths.js";
 
 const US_TIMEZONES = [
@@ -19,6 +20,12 @@ const US_TIMEZONES = [
 
 function updateRetailer(retailers, index, field, value) {
   return retailers.map((r, i) => i === index ? { ...r, [field]: value } : r);
+}
+
+function isShoppingDataSupported(data) {
+  if (!Object.prototype.hasOwnProperty.call(data, 'shopping')) return true;
+  const shopping = data.shopping;
+  return shopping !== null && typeof shopping === 'object' && !Array.isArray(shopping);
 }
 
 function ShoppingConfigContent({ data, setData }) {
@@ -59,7 +66,7 @@ function ShoppingConfigContent({ data, setData }) {
   return (
     <Stack gap="lg">
       {/* General Settings */}
-      <Text className="ds-section-label">General Settings</Text>
+      <Text>General Settings</Text>
 
       <Group gap="lg">
         <Switch
@@ -81,7 +88,7 @@ function ShoppingConfigContent({ data, setData }) {
 
       {/* Retailers */}
       <Group justify="space-between">
-        <Text className="ds-section-label">Retailers</Text>
+        <Text>Retailers</Text>
         <Button
           leftSection={<IconPlus size={16} />}
           variant="light"
@@ -97,7 +104,7 @@ function ShoppingConfigContent({ data, setData }) {
       )}
 
       {retailers.map((retailer, index) => (
-        <Paper key={index} p="md" withBorder className="ds-section-panel">
+        <SectionCard key={index} variant="form">
           <Stack gap="sm">
             <Group justify="space-between" align="flex-start">
               <Group gap="sm" grow style={{ flex: 1 }}>
@@ -140,7 +147,7 @@ function ShoppingConfigContent({ data, setData }) {
               placeholder="Add keyword..."
             />
           </Stack>
-        </Paper>
+        </SectionCard>
       ))}
 
       {retailers.length > 3 && (
@@ -175,6 +182,7 @@ function ShoppingConfig() {
     <ConfigFormWrapper
       filePath={configPath('harvest')}
       title="Shopping Configuration"
+      isDataSupported={isShoppingDataSupported}
     >
       {({ data, setData }) => (
         <ShoppingConfigContent data={data} setData={setData} />

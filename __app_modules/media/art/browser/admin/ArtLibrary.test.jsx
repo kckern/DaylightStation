@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const api = vi.fn();
@@ -8,10 +8,6 @@ vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...a) 
 vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => ({
   default: () => ({ child: () => ({ info: () => {}, debug: () => {}, warn: () => {}, error: () => {} }) }),
 }));
-vi.mock("../../../../../frontend/src/hooks/admin/useAdminConfig.js", () => ({
-  useAdminConfig: () => ({ data: { quickTags: ['impressionism', 'baroque'] }, load: () => {} }),
-}));
-
 import ArtLibrary from "./ArtLibrary.jsx";
 
 const renderLib = () => render(<MantineProvider><ArtLibrary /></MantineProvider>);
@@ -19,6 +15,7 @@ const renderLib = () => render(<MantineProvider><ArtLibrary /></MantineProvider>
 beforeEach(() => {
   api.mockReset();
   api.mockImplementation((path) => {
+    if (path.includes('/config/files/')) return Promise.resolve({ parsed: { quickTags: ['impressionism', 'baroque'] } });
     if (path.startsWith('api/v1/admin/art/works')) {
       return Promise.resolve({ total: 1, works: [
         { id: 'a', image: '/img/a.png', meta: { title: 'Sunrise', artist: 'Monet', tags: [], hidden: false, flagged: false } },
@@ -29,9 +26,61 @@ beforeEach(() => {
 });
 
 describe('ArtLibrary', () => {
+  it.each([['/config/files/', 'Artwork settings'], ['/art/works', 'Artwork']])('recovers a failed %s request', async (fragment, label) => {
+    const success = api.getMockImplementation();
+    let failed = false;
+    api.mockImplementation((path, ...args) => {
+      if (!failed && path.includes(fragment)) {
+        failed = true;
+        return Promise.reject(new Error('Unavailable'));
+      }
+      return success(path, ...args);
+    });
+    renderLib();
+    expect(await screen.findByText(label + ' failed to load')).toBeTruthy();
+    if (fragment.includes('config')) expect(await screen.findByText('Sunrise')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(await screen.findByText('Sunrise')).toBeTruthy();
+    expect(await screen.findByText(/1–2 quick-tag/)).toBeTruthy();
+  });
+
   it('renders the focused work title', async () => {
     renderLib();
     await waitFor(() => expect(screen.getByText('Sunrise')).toBeTruthy());
+  });
+
+  it('keeps saved visible for 800 ms after the most recent completed save', async () => {
+    renderLib();
+    await screen.findByText('Sunrise');
+    vi.useFakeTimers();
+    try {
+      await act(async () => fireEvent.keyDown(window, { key: 'x' }));
+      act(() => vi.advanceTimersByTime(400));
+      await act(async () => fireEvent.keyDown(window, { key: 'x' }));
+      act(() => vi.advanceTimersByTime(400));
+      expect(screen.getByText(/✓ saved/)).toBeVisible();
+      act(() => vi.advanceTimersByTime(400));
+      expect(screen.queryByText(/✓ saved/)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not start feedback when a save completes after exiting Art Library', async () => {
+    const { unmount } = renderLib();
+    await screen.findByText('Sunrise');
+    let finishSave;
+    api.mockReturnValueOnce(new Promise(resolve => { finishSave = resolve; }));
+    fireEvent.keyDown(window, { key: 'x' });
+    unmount();
+    const schedule = vi.spyOn(globalThis, 'setTimeout');
+    try {
+      await act(async () => finishSave({ ok: true, meta: { hidden: true } }));
+      expect(schedule.mock.calls.some(([, delay]) => delay === 800)).toBe(false);
+    } finally {
+      schedule.mockRestore();
+    }
   });
 
   it('pressing "1" applies the first quick-tag via PATCH', async () => {

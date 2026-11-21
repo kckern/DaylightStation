@@ -30,6 +30,18 @@ describe('previewFrameVars', () => {
     expect(previewFrameVars({ width: 1280, height: 800 })['--preview-box-height']).toBe('600px');
   });
 
+  it('measures a narrow host and caps a wider host without changing the kiosk layout', () => {
+    const resolution = { width: 1280, height: 800 };
+    expect(previewFrameVars(resolution, 320)).toEqual({
+      '--preview-width': '320px',
+      '--preview-screen-width': '1280px',
+      '--preview-screen-height': '800px',
+      '--preview-scale': '0.25',
+      '--preview-box-height': '200px',
+    });
+    expect(previewFrameVars(resolution, 1100)).toEqual(previewFrameVars(resolution));
+  });
+
   it('rounds the box height to whole pixels', () => {
     // 960/1366 = 0.7027818448023426; 768 × that = 539.7364568081991.
     // Without Math.round the box height would carry that full tail.

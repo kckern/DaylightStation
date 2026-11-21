@@ -79,11 +79,19 @@
         justify-content: center;
         align-items: center;
         
-        img {
+        img,
+        svg {
           width: 24px;
           height: 24px;
+        }
+
+        img {
           filter: invert(1) brightness(0.9);
           transition: all 0.3s ease;
+        }
+
+        svg {
+          color: white;
         }
         
         span {

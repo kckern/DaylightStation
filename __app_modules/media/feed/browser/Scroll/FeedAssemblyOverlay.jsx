@@ -1,4 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
+import { Sheet } from '@/lib/ui/Sheet.jsx';
+import { useTemporaryIndicator } from '../../../../../frontend/src/lib/hooks/useTemporaryIndicator.js';
 import "./FeedAssemblyOverlay.scss";
 
 const TIER_COLORS = {
@@ -18,13 +20,15 @@ function TierBar({ tier, data, maxAllocated, activeTiers, activeSources, onToggl
   return (
     <div className={`assembly-tier${tierDimmed ? ' assembly-tier--dimmed' : ''}`}>
       <div className="assembly-tier-header">
-        <span
-          className={`assembly-tier-name assembly-tier-name--clickable${tierActive ? ' assembly-tier-name--active' : ''}`}
+        <button
+          type="button"
+          className={`assembly-tier-name assembly-tier-name--clickable ds-touch-target${tierActive ? ' assembly-tier-name--active' : ''}`}
+          aria-pressed={tierActive}
           style={{ color }}
           onClick={() => onToggleTier(tier)}
         >
           {tier}
-        </span>
+        </button>
         <span className="assembly-tier-count">{data.selected}/{data.allocated}</span>
       </div>
       <div className="assembly-tier-bar-bg">
@@ -38,13 +42,15 @@ function TierBar({ tier, data, maxAllocated, activeTiers, activeSources, onToggl
               const srcActive = activeSources.has(src);
               const srcDimmed = hasAnyFilter && !srcActive && !tierActive;
               return (
-                <span
+                <button
+                  type="button"
                   key={src}
-                  className={`assembly-source-chip assembly-source-chip--clickable${srcActive ? ' assembly-source-chip--active' : ''}${srcDimmed ? ' assembly-source-chip--dimmed' : ''}`}
+                  className={`assembly-source-chip assembly-source-chip--clickable ds-touch-target${srcActive ? ' assembly-source-chip--active' : ''}${srcDimmed ? ' assembly-source-chip--dimmed' : ''}`}
+                  aria-pressed={srcActive}
                   onClick={() => onToggleSource(src)}
                 >
                   {src} <strong>{count}</strong>
-                </span>
+                </button>
               );
             })}
         </div>
@@ -84,11 +90,22 @@ function BatchBlock({ batch, index, activeTiers, activeSources, onToggleTier, on
   );
 }
 
+function CopyAssemblyButton({ batches }) {
+  const [copied, showCopied] = useTemporaryIndicator(1500);
+  const copy = () => navigator.clipboard.writeText(JSON.stringify(batches, null, 2)).then(showCopied);
+  return (
+    <button type="button" className="assembly-copy-btn ds-touch-target" onClick={copy}>
+      {copied ? 'Copied!' : 'Copy JSON'}
+    </button>
+  );
+}
+
 export default function FeedAssemblyOverlay({ batches, onFilterChange }) {
   const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [activeTiers, setActiveTiers] = useState(() => new Set());
   const [activeSources, setActiveSources] = useState(() => new Set());
+  const openerRef = useRef(null);
+  const hasAnyFilter = activeTiers.size > 0 || activeSources.size > 0;
 
   const emitFilter = useCallback((tiers, sources) => {
     onFilterChange?.({ tiers: [...tiers], sources: [...sources] });
@@ -115,28 +132,23 @@ export default function FeedAssemblyOverlay({ batches, onFilterChange }) {
   }, [emitFilter]);
 
   const handleClearAll = useCallback(() => {
+    if (!hasAnyFilter) return;
     setActiveTiers(new Set());
     setActiveSources(new Set());
     emitFilter(new Set(), new Set());
-  }, [emitFilter]);
-
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(JSON.stringify(batches, null, 2)).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  }, [batches]);
+  }, [emitFilter, hasAnyFilter]);
 
   if (!batches || batches.length === 0) return null;
-
-  const hasAnyFilter = activeTiers.size > 0 || activeSources.size > 0;
 
   return (
     <>
       <button
-        className={`assembly-fab${hasAnyFilter ? ' assembly-fab--filtering' : ''}`}
+        ref={openerRef}
+        type="button"
+        className={`assembly-fab ds-touch-target${hasAnyFilter ? ' assembly-fab--filtering' : ''}`}
         onClick={() => setOpen(true)}
         title="Feed Assembly Debug"
+        aria-label="Open Feed Assembly Debug"
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <rect x="3" y="3" width="7" height="7" rx="1" />
@@ -146,41 +158,34 @@ export default function FeedAssemblyOverlay({ batches, onFilterChange }) {
         </svg>
       </button>
 
-      {open && (
-        <div className="assembly-overlay" onClick={() => setOpen(false)}>
-          <div className="assembly-modal" onClick={e => e.stopPropagation()}>
-            <div className="assembly-modal-header">
-              <h3>Feed Assembly</h3>
-              <div className="assembly-modal-actions">
-                {hasAnyFilter && (
-                  <button className="assembly-clear-btn" onClick={handleClearAll}>
-                    Clear All
-                  </button>
-                )}
-                <button className="assembly-copy-btn" onClick={handleCopy}>
-                  {copied ? 'Copied!' : 'Copy JSON'}
-                </button>
-                <button className="assembly-close-btn" onClick={() => setOpen(false)}>
-                  &times;
-                </button>
-              </div>
-            </div>
-            <div className="assembly-modal-body">
-              {batches.map((batch, i) => (
-                <BatchBlock
-                  key={i}
-                  batch={batch}
-                  index={i}
-                  activeTiers={activeTiers}
-                  activeSources={activeSources}
-                  onToggleTier={handleToggleTier}
-                  onToggleSource={handleToggleSource}
-                />
-              ))}
-            </div>
+      <Sheet open={open} onClose={() => setOpen(false)} title="Feed Assembly" returnFocusRef={openerRef}>
+        <div className="assembly-sheet-content">
+          <div className="assembly-sheet-actions">
+            <button
+              type="button"
+              className="assembly-clear-btn ds-touch-target"
+              aria-disabled={!hasAnyFilter}
+              onClick={handleClearAll}
+            >
+              Clear All
+            </button>
+            <CopyAssemblyButton batches={batches} />
+          </div>
+          <div className="assembly-batch-list">
+            {batches.map((batch, i) => (
+              <BatchBlock
+                key={i}
+                batch={batch}
+                index={i}
+                activeTiers={activeTiers}
+                activeSources={activeSources}
+                onToggleTier={handleToggleTier}
+                onToggleSource={handleToggleSource}
+              />
+            ))}
           </div>
         </div>
-      )}
+      </Sheet>
     </>
   );
 }

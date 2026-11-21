@@ -12,8 +12,9 @@
 
 import { LoadingState, ErrorState, EmptyState } from '@/lib/ui';
 import { formatDay } from "./format.js";
+import VehicleReminderStatus from "./VehicleReminderStatus.jsx";
 
-export default function GlovePanel({ documents, reminders, loading, error, onReload }) {
+export default function GlovePanel({ documents, overview, reminders, loading, error, onReload }) {
   if (loading) return <LoadingState label="documents" />;
   if (error) return <ErrorState error={error} onRetry={onReload} label="Documents" />;
 
@@ -24,10 +25,13 @@ export default function GlovePanel({ documents, reminders, loading, error, onRel
 
   if (docs.length === 0) {
     return (
-      <EmptyState
-        title="Glove box is empty"
-        hint="Drop files into the vehicle's files/ folder and list them in documents.yml — insurance, registration, title, the manual."
-      />
+      <>
+        <EmptyState
+          title="Glove box is empty"
+          hint="Drop files into the vehicle's files/ folder and list them in documents.yml — insurance, registration, title, the manual."
+        />
+        <VehicleReminderStatus overview={overview} reminders={reminders} />
+      </>
     );
   }
 
@@ -48,7 +52,7 @@ export default function GlovePanel({ documents, reminders, loading, error, onRel
                 <span className="auto-doc__label">{doc.label}</span>
                 {doc.expires && (
                   <span className={`auto-doc__expiry${reminder && reminder.status !== 'ok' ? ` auto-doc__expiry--${reminder.status}` : ''}`}>
-                    {reminder && reminder.daysUntilDue < 0 ? 'Expired ' : 'Expires '}
+                    {!reminder ? 'Expiry date ' : reminder.daysUntilDue < 0 ? 'Expired ' : 'Expires '}
                     {formatDay(doc.expires)}
                   </span>
                 )}
@@ -57,6 +61,7 @@ export default function GlovePanel({ documents, reminders, loading, error, onRel
           );
         })}
       </ul>
+      <VehicleReminderStatus overview={overview} reminders={reminders} />
     </div>
   );
 }

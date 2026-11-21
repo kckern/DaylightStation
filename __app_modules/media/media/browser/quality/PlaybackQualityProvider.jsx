@@ -1,8 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { PlaybackQualityForm } from '../../../../../__capabilities/playback/browser/public.mjs';
+import { browserPreference } from '@/lib/browserPreference.js';
 import { Sheet } from '@/lib/ui';
 import { normalizePlaybackQuality } from '@shared-contracts/media/playbackQuality.mjs';
-import { useDismissLayer } from '../shell/useDismissLayer.js';
 import mediaLog from '../logging/mediaLog.js';
 
 const Context = createContext(null);
@@ -10,21 +10,20 @@ const STORAGE_KEY = 'media-app.quality-overrides.v1';
 const EMPTY = Object.freeze({});
 let sequence = 0;
 
-function restoreOverrides() {
-  try {
-    const values = JSON.parse(sessionStorage.getItem(STORAGE_KEY) ?? '{}');
-    return Object.fromEntries(Object.entries(values).flatMap(([id, value]) => {
-      try { return [[id, normalizePlaybackQuality(value)]]; } catch { return []; }
-    }));
-  } catch { return {}; }
+function decodeOverrides(raw) {
+  return Object.fromEntries(Object.entries(JSON.parse(raw)).flatMap(([id, value]) => {
+    try { return [[id, normalizePlaybackQuality(value)]]; } catch { return []; }
+  }));
 }
+
+const overridePreference = browserPreference(STORAGE_KEY, EMPTY, decodeOverrides, () => sessionStorage);
 
 /** Preferences are scoped to an item and this browser tab, never a fleet default. */
 export function PlaybackQualityProvider({ children }) {
-  const [overrides, setOverrides] = useState(restoreOverrides);
+  const [overrides, setOverrides] = useState(overridePreference.read);
   const [request, setRequest] = useState(null);
   useEffect(() => {
-    try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(overrides)); } catch { /* private mode */ }
+    overridePreference.write(JSON.stringify(overrides));
   }, [overrides]);
   const getOverrides = useCallback(id => overrides[id] ?? EMPTY, [overrides]);
   const close = useCallback(() => setRequest(null), []);
@@ -80,11 +79,10 @@ export function PlaybackQualityProvider({ children }) {
 
 export const usePlaybackQuality = () => useContext(Context);
 
-/** Mounted inside MediaAppShell so Escape participates in Media's dismiss stack. */
+/** The shared Sheet owns dismissal within MediaAppShell. */
 export function PlaybackQualityHost() {
   const context = usePlaybackQuality();
   const request = context?.request;
-  useDismissLayer(!!request, context?.close);
   return <Sheet open={!!request} onClose={context?.close} title="Playback quality">
     {request && <PlaybackQualityForm key={request.sequence} request={request} onApply={context.apply} />}
   </Sheet>;

@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
+import { whileDocumentVisible } from '@/lib/hooks/useVisibleRefresh.js';
 import { peekApiResource, prefetchApiResources } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
-import { healthDayPaths, shortlistPath } from "../healthResources.js";
+import { healthDayPaths, healthDayTimeoutMs, shortlistPath } from "../healthResources.js";
 import { BUCKETS, localTodayISO } from "./mealBuckets.js";
 import { addDays, weekEnd } from "./WeekStrip.jsx";
 import { preloadFoodIcon } from "./FoodIcon.jsx";
@@ -42,8 +43,8 @@ const weekRangePath = end => budgetRangePath(addDays(end, -6), end);
  * Keep a ±7-day buffer of Today's per-day resources warm around the viewed
  * day, plus every meal's add-row shortlist, so flipping days and opening an
  * add row paint from cache. Waits until the viewed day itself has loaded:
- * the day on screen always goes first. Each move replaces the queue with the
- * new neighbourhood.
+ * the day on screen always goes first. Only the visible Today visit queues
+ * neighbours. Already admitted reads can settle after departure.
  */
 export function useHealthDayPrefetch(date, { enabled = true, ready = true } = {}) {
   const previous = useRef(date);
@@ -55,29 +56,35 @@ export function useHealthDayPrefetch(date, { enabled = true, ready = true } = {}
 
   useEffect(() => {
     if (!enabled || !ready) return;
-    const today = localTodayISO();
-    // The one or two days a single flip reaches go first; the rest after.
-    const order = prefetchOrder(date, today, direction.current);
-    const nearest = order.slice(0, 2);
-    const farther = order.slice(2);
-    const week = weekEnd(date);
-    const paths = [
-      ...nearest.flatMap(healthDayPaths),
-      ...BUCKETS.map(bucket => shortlistPath(bucket.id)),
-      ...nearest.map(day => monthRangePath(day, today)),
-      weekRangePath(addDays(week, -7)),
-      ...(addDays(week, 7) <= weekEnd(today) ? [weekRangePath(addDays(week, 7))] : []),
-      ...farther.flatMap(healthDayPaths),
-    ];
-    const queued = prefetchApiResources(paths, {
-      onDone: (error, path) => {
-        if (error) { logger.debug('prefetch.failed', { path, error: error.message }); return; }
-        if (path.includes('catalog/suggest') || path.includes('health/day?')) preloadIcons(peekApiResource(path));
-      },
-      // One info line each time a neighbourhood finishes warming — cumulative
-      // counters since load, so the store can see the hit rate's cost.
-      onIdle: stats => logger.sampled('prefetch.summary', { date, ...stats }, { maxPerMinute: 6 }),
+    return whileDocumentVisible(() => {
+      const controller = new AbortController();
+      const today = localTodayISO();
+      // The one or two days a single flip reaches go first; the rest after.
+      const order = prefetchOrder(date, today, direction.current);
+      const nearest = order.slice(0, 2);
+      const farther = order.slice(2);
+      const week = weekEnd(date);
+      const paths = [
+        ...nearest.flatMap(healthDayPaths),
+        ...BUCKETS.map(bucket => shortlistPath(bucket.id)),
+        ...nearest.map(day => monthRangePath(day, today)),
+        weekRangePath(addDays(week, -7)),
+        ...(addDays(week, 7) <= weekEnd(today) ? [weekRangePath(addDays(week, 7))] : []),
+        ...farther.flatMap(healthDayPaths),
+      ];
+      const queued = prefetchApiResources(paths, {
+        signal: controller.signal,
+        timeoutMsForPath: healthDayTimeoutMs,
+        onDone: (error, path) => {
+          if (error) { logger.debug('prefetch.failed', { path, error: error.message }); return; }
+          if (path.includes('catalog/suggest') || path.includes('health/day?')) preloadIcons(peekApiResource(path));
+        },
+        // One info line each time a neighbourhood finishes warming — cumulative
+        // counters since load, so the store can see the hit rate's cost.
+        onIdle: stats => logger.sampled('prefetch.summary', { date, ...stats }, { maxPerMinute: 6 }),
+      });
+      logger.debug('prefetch.queued', { date, direction: direction.current, queued, candidates: paths.length });
+      return () => controller.abort();
     });
-    logger.debug('prefetch.queued', { date, direction: direction.current, queued, candidates: paths.length });
   }, [date, enabled, ready]);
 }

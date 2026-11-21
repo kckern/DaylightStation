@@ -41,6 +41,50 @@ describe('WebSocketService coalesced transport recovery', () => {
     service._stopStaleCheck();
   });
 
+  it('releases a topic on the wire only after its last subscriber leaves', () => {
+    vi.stubGlobal('WebSocket', { OPEN: 1 });
+    const send = vi.fn();
+    service.ws = { readyState: 1, send };
+    service.connected = true;
+    const releaseFirst = service.subscribe('diagnostics', vi.fn());
+    const releaseSecond = service.subscribe('diagnostics', vi.fn());
+    const releaseOther = service.subscribe('other', vi.fn());
+    const commands = () => send.mock.calls.map(([message]) => JSON.parse(message));
+    expect(commands()).toEqual([
+      { type: 'bus_command', action: 'subscribe', topics: ['diagnostics'] },
+      { type: 'bus_command', action: 'subscribe', topics: ['other'] },
+    ]);
+
+    releaseFirst();
+    expect(send).toHaveBeenCalledTimes(2);
+    releaseSecond();
+    expect(commands().at(-1)).toEqual({ type: 'bus_command', action: 'unsubscribe', topics: ['diagnostics'] });
+    releaseOther();
+    expect(commands().at(-1)).toEqual({ type: 'bus_command', action: 'unsubscribe', topics: ['other'] });
+    expect(send).toHaveBeenCalledTimes(4);
+  });
+
+  it('accepts an exact topic and rejects blank or wildcard topic names', () => {
+    vi.stubGlobal('WebSocket', { OPEN: 1 });
+    const send = vi.fn();
+    service.ws = { readyState: 1, send };
+    service.connected = true;
+    const receive = vi.fn();
+    service.subscribeTopic(undefined, receive)();
+    service.subscribeTopic(' ', receive)();
+    service.subscribeTopic('*', receive)();
+    expect(send).not.toHaveBeenCalled();
+
+    const release = service.subscribeTopic('diagnostics', receive);
+    expect(JSON.parse(send.mock.calls[0][0])).toEqual({ type: 'bus_command', action: 'subscribe', topics: ['diagnostics'] });
+    service._dispatch({ topic: 'other', type: 'diagnostics' });
+    const exact = { topic: 'diagnostics', type: 'sample' };
+    service._dispatch(exact);
+    release();
+    service._dispatch(exact);
+    expect(receive.mock.calls).toEqual([[exact]]);
+  });
+
   it('cancels only its pending recovery while preserving an ordinary reconnect owner', () => {
     service.connect = vi.fn();
     const cancel = service.requestRecovery?.({ owner: 'fitness', reason: 'lost' });

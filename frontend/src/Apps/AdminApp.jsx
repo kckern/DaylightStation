@@ -1,6 +1,8 @@
 import React, { useMemo } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { MantineProvider, createTheme } from '@mantine/core';
+import { AppThemeProvider } from '../lib/ui/AppThemeProvider.jsx';
+import { ADMIN_PACK } from '../modules/Admin/adminTheme.js';
+import AdminSessionBoundary from '../modules/Admin/shared/AdminSessionBoundary.jsx';
 import getLogger from '../lib/logging/Logger.js';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import AdminLayout from '../modules/Admin/AdminLayout.jsx';
@@ -16,7 +18,7 @@ import JobDetail from '../modules/Admin/Scheduler/JobDetail.jsx';
 import MembersIndex from '../modules/Admin/Household/MembersIndex.jsx';
 import MemberEditor from '../modules/Admin/Household/MemberEditor.jsx';
 import DevicesIndex from '../modules/Admin/Household/DevicesIndex.jsx';
-import SessionsIndex from '../modules/Admin/Household/SessionsIndex.jsx';
+import SessionsIndex, { SessionRevocationProvider } from '../modules/Admin/Household/SessionsIndex.jsx';
 import DeviceEditor from '../modules/Admin/Household/DeviceEditor.jsx';
 import FullyKioskConsole from '../modules/Admin/Household/FullyKioskConsole.jsx';
 import IntegrationsIndex from '../modules/Admin/System/IntegrationsIndex.jsx';
@@ -36,100 +38,9 @@ import SchoolSessionHistory from "../../../__app_modules/learning/school/browser
 import SchoolCurriculumPlanner from "../../../__app_modules/learning/school/browser/admin-curriculum.mjs";
 import ComboboxTestPage from '../modules/Admin/TestHarness/ComboboxTestPage.jsx';
 import { Notifications } from '@mantine/notifications';
-import AuthGate from '../modules/Auth/AuthGate.jsx';
 import './AdminApp.scss';
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
-
-const DS_BLUE = [
-  '#e8f0fe', '#c4d7fc', '#9ebcfa', '#789ff7', '#4A7BF7',
-  '#3d6be0', '#3360cc', '#2952b3', '#1f4499', '#163680'
-];
-
-const theme = createTheme({
-  primaryColor: 'ds-blue',
-  fontFamily: '"IBM Plex Sans", -apple-system, sans-serif',
-  fontFamilyMonospace: '"JetBrains Mono", "Fira Code", monospace',
-  headings: {
-    fontFamily: '"JetBrains Mono", monospace',
-    fontWeight: '600',
-    sizes: {
-      h1: { fontSize: '24px', lineHeight: '1.3' },
-      h2: { fontSize: '20px', lineHeight: '1.35' },
-      h3: { fontSize: '16px', lineHeight: '1.4' },
-    },
-  },
-  colors: {
-    'ds-blue': DS_BLUE,
-  },
-  defaultRadius: 'sm',
-  components: {
-    Button: {
-      defaultProps: { radius: 'sm' },
-    },
-    Paper: {
-      defaultProps: { radius: 'md' },
-      styles: {
-        root: {
-          backgroundColor: 'var(--ds-bg-elevated)',
-          border: '1px solid var(--ds-border)',
-        },
-      },
-    },
-    TextInput: {
-      defaultProps: { radius: 'sm' },
-      styles: {
-        input: {
-          backgroundColor: 'var(--ds-bg-base)',
-          borderColor: 'var(--ds-border)',
-        },
-      },
-    },
-    NumberInput: {
-      defaultProps: { radius: 'sm' },
-      styles: {
-        input: {
-          backgroundColor: 'var(--ds-bg-base)',
-          borderColor: 'var(--ds-border)',
-        },
-      },
-    },
-    Select: {
-      defaultProps: { radius: 'sm' },
-      styles: {
-        input: {
-          backgroundColor: 'var(--ds-bg-base)',
-          borderColor: 'var(--ds-border)',
-        },
-      },
-    },
-    Badge: {
-      defaultProps: { radius: 'sm', variant: 'light' },
-    },
-    Modal: {
-      styles: {
-        content: {
-          backgroundColor: 'var(--ds-bg-elevated)',
-          border: '1px solid var(--ds-border)',
-        },
-        header: {
-          backgroundColor: 'var(--ds-bg-elevated)',
-        },
-      },
-    },
-    Table: {
-      styles: {
-        th: {
-          fontFamily: '"JetBrains Mono", monospace',
-          fontSize: '11px',
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          color: 'var(--ds-text-secondary)',
-        },
-      },
-    },
-  },
-});
 
 const participantEditors = {
   'party-games': { consumer:{id:'party-games',version:1}, Panel:CharadesParticipantSettings, defaultSettings:defaultParticipantSettings, remapParticipantKeys },
@@ -144,15 +55,16 @@ function AdminApp() {
   }, [logger]);
 
   return (
-    <MantineProvider theme={theme} defaultColorScheme="dark" forceColorScheme="dark">
+    <AppThemeProvider pack={ADMIN_PACK} className="admin-theme" scopeId="admin-theme" forceColorScheme="dark">
+      <div id="admin-portals" />
       <Notifications position="bottom-right" autoClose={3000} />
       <div className="App admin-app">
-        <AuthGate app="admin">
+        <AdminSessionBoundary>
           <Routes>
             {/* Test routes - outside AdminLayout */}
             <Route path="test/combobox" element={<ComboboxTestPage />} />
 
-            <Route element={<AdminLayout />}>
+            <Route element={<SessionRevocationProvider><AdminLayout /></SessionRevocationProvider>}>
               <Route index element={<Navigate to="content/lists/menus" replace />} />
               <Route path="content/lists/:type" element={<ListsIndex />} />
               <Route path="content/lists/:type/:name" element={<ListsFolder />} />
@@ -210,9 +122,9 @@ function AdminApp() {
               <Route path="*" element={<Navigate to="content/lists/menus" replace />} />
             </Route>
           </Routes>
-        </AuthGate>
+        </AdminSessionBoundary>
       </div>
-    </MantineProvider>
+    </AppThemeProvider>
   );
 }
 

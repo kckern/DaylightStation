@@ -5,9 +5,9 @@
  * Tests only need the public-facing port - same topology as prod.
  */
 
-import fs from 'fs';
+import fs from 'node:fs';
 import path from 'path';
-import yaml from 'js-yaml';
+import { resolvePorts } from '../../frontend/vite.ports.mjs';
 
 /**
  * Get the data path from environment
@@ -56,52 +56,11 @@ function getEnvName() {
 }
 
 /**
- * Load system config from YAML
- */
-function loadSystemConfig() {
-  const dataPath = getDataPath();
-  const envName = getEnvName();
-
-  if (!dataPath) {
-    console.warn('[configHelper] Could not determine data path');
-    return null;
-  }
-
-  // Try environment-specific config first
-  const localConfigPath = path.join(dataPath, 'system', 'config', `system-local.${envName}.yml`);
-  const baseConfigPath = path.join(dataPath, 'system', 'config', 'system.yml');
-
-  if (fs.existsSync(localConfigPath)) {
-    try {
-      return yaml.load(fs.readFileSync(localConfigPath, 'utf8'));
-    } catch (err) {
-      console.warn(`[configHelper] Failed to load ${localConfigPath}: ${err.message}`);
-    }
-  }
-
-  if (fs.existsSync(baseConfigPath)) {
-    try {
-      return yaml.load(fs.readFileSync(baseConfigPath, 'utf8'));
-    } catch (err) {
-      console.warn(`[configHelper] Failed to load ${baseConfigPath}: ${err.message}`);
-    }
-  }
-
-  return null;
-}
-
-/**
  * Get the public-facing app port
  * This is the only port tests need - same topology as prod
  */
 export function getAppPort() {
-  const config = loadSystemConfig();
-  const envName = getEnvName();
-  const ports = config?.app?.ports;
-  if (ports && typeof ports === 'object') {
-    return ports[envName] ?? ports.default ?? 3111;
-  }
-  return config?.app?.port ?? 3111;
+  return resolvePorts({ dataPath: getDataPath(), envName: getEnvName() }).app;
 }
 
 /**

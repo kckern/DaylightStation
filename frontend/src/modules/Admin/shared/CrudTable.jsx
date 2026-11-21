@@ -29,18 +29,23 @@ function CrudTable({
   confirmDelete = false,
   emptyMessage = 'No items.',
 }) {
-  // Track which row index is pending delete confirmation
-  const [pendingDeleteIndex, setPendingDeleteIndex] = useState(null);
+  // Track the row itself so a caller reorder cannot transfer confirmation to
+  // another item at the same index.
+  const [pendingDeleteItem, setPendingDeleteItem] = useState(null);
   const pendingDeleteRef = useRef(null);
 
   // Click-away listener to reset pending delete
   useEffect(() => {
-    if (pendingDeleteIndex === null) return;
+    if (pendingDeleteItem === null) return;
+    if (!items.includes(pendingDeleteItem)) {
+      setPendingDeleteItem(null);
+      return;
+    }
 
     const handleClickAway = (e) => {
       // If the click is not on the pending delete button, reset
       if (pendingDeleteRef.current && !pendingDeleteRef.current.contains(e.target)) {
-        setPendingDeleteIndex(null);
+        setPendingDeleteItem(null);
       }
     };
 
@@ -53,7 +58,7 @@ function CrudTable({
       clearTimeout(timer);
       document.removeEventListener('mousedown', handleClickAway);
     };
-  }, [pendingDeleteIndex]);
+  }, [items, pendingDeleteItem]);
 
   const handleCellChange = useCallback((rowIndex, key, value) => {
     const updated = items.map((item, i) => {
@@ -63,15 +68,17 @@ function CrudTable({
     onChange(updated);
   }, [items, onChange]);
 
-  const handleDelete = useCallback((rowIndex) => {
-    if (confirmDelete && pendingDeleteIndex !== rowIndex) {
-      setPendingDeleteIndex(rowIndex);
+  const handleDelete = useCallback((item) => {
+    if (confirmDelete && pendingDeleteItem !== item) {
+      setPendingDeleteItem(item);
       return;
     }
-    setPendingDeleteIndex(null);
+    setPendingDeleteItem(null);
+    const rowIndex = items.indexOf(item);
+    if (rowIndex < 0) return;
     const updated = items.filter((_, i) => i !== rowIndex);
     onChange(updated);
-  }, [items, onChange, confirmDelete, pendingDeleteIndex]);
+  }, [items, onChange, confirmDelete, pendingDeleteItem]);
 
   const handleAdd = useCallback(() => {
     const newItem = { ...createDefaults };
@@ -177,7 +184,7 @@ function CrudTable({
         </Table.Thead>
         <Table.Tbody>
           {items.map((item, rowIndex) => {
-            const isPendingDelete = confirmDelete && pendingDeleteIndex === rowIndex;
+            const isPendingDelete = confirmDelete && pendingDeleteItem === item;
 
             return (
               <Table.Tr key={rowIndex}>
@@ -192,7 +199,7 @@ function CrudTable({
                       variant={isPendingDelete ? 'filled' : 'subtle'}
                       color={isPendingDelete ? 'red' : 'gray'}
                       size="sm"
-                      onClick={() => handleDelete(rowIndex)}
+                      onClick={() => handleDelete(item)}
                       title={isPendingDelete ? 'Click again to confirm delete' : 'Delete row'}
                     >
                       <IconTrash size={14} />

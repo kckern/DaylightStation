@@ -1,38 +1,24 @@
-// frontend/src/modules/CameraFeed/useDetections.js
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { DaylightAPI } from '../../../../frontend/src/lib/api.mjs';
+import { useRefreshableRead } from '../../../../frontend/src/lib/hooks/useRefreshableRead.js';
+import { useVisibleRefresh } from '../../../../frontend/src/lib/hooks/useVisibleRefresh.js';
 
-/**
- * Poll camera detection state (motion, person, vehicle, animal).
- * @param {string} cameraId
- * @param {object} logger - child logger instance
- * @param {number} [intervalMs=2000]
- * @returns {{ type: string, active: boolean }[]}
- */
+/** Poll while visible. A stalled state read gets two polling periods before replacement. */
 export default function useDetections(cameraId, logger, intervalMs = 2000) {
-  const [detections, setDetections] = useState([]);
+  const [snapshot, setSnapshot] = useState(null);
+  const read = useCallback(async (isCurrent, signal) => {
+    try {
+      const data = await DaylightAPI(`/api/v1/camera/${encodeURIComponent(cameraId)}/state`, {}, 'GET', { signal });
+      if (isCurrent()) setSnapshot({ cameraId, detections: data.detections || [] });
+    } catch (error) {
+      if (isCurrent()) logger?.debug?.('detection.poll.error', { error: error.message });
+    }
+  }, [cameraId, logger]);
 
+  const { reload, poll } = useRefreshableRead(read, { timeoutMs: 2 * intervalMs });
   useEffect(() => {
-    if (!cameraId) return;
-    let active = true;
-
-    const poll = async () => {
-      try {
-        const res = await fetch(`/api/v1/camera/${cameraId}/state`);
-        if (!res.ok) {
-          logger?.debug?.('detection.poll.httpError', { status: res.status });
-          return;
-        }
-        const data = await res.json();
-        if (active) setDetections(data.detections || []);
-      } catch (err) {
-        logger?.debug?.('detection.poll.error', { error: err.message });
-      }
-    };
-
-    poll();
-    const timer = setInterval(poll, intervalMs);
-    return () => { active = false; clearInterval(timer); };
-  }, [cameraId, logger, intervalMs]);
-
-  return detections;
+    if (cameraId && document.visibilityState === 'visible') reload();
+  }, [cameraId, reload]);
+  useVisibleRefresh({ active: Boolean(cameraId), intervalMs, reload, poll });
+  return snapshot && snapshot.cameraId === cameraId ? snapshot.detections : [];
 }

@@ -3,6 +3,8 @@
 // (refreshed when the tab regains focus), live state from device-state:*
 // broadcasts, staleness from WS connection status.
 import React, { createContext, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
+import { useVisibleRefresh } from '@/lib/hooks/useVisibleRefresh.js';
+import { observeSocketStatus } from '../../../../../frontend/src/services/observeSocketStatus.js';
 import { subscribeTopic, subscribeTopicKind, onStatus, topics } from "../net/ws.js";
 import { useDevices } from "./useDevices.js";
 import { createFleetStore } from "./fleetStore.js";
@@ -16,6 +18,18 @@ import { useScreenRegistry, mergeRegistryNames, registryLagsLiveNames } from "..
 export const FleetContext = createContext(null);
 
 const browserDeviceId = (clientId) => `browser:${clientId}`;
+
+// Announcing a screen also advances lastSeen. Only registry changes that
+// affect its name, room, aliases or listing need another household read.
+function sameRegistration(previous, screen) {
+  return previous?.id === screen.id && previous.name === screen.name
+    && (previous.room ?? null) === (screen.room ?? null)
+    && previous.renamedAt === screen.renamedAt
+    && (previous.retiredAt ?? null) === (screen.retiredAt ?? null)
+    && Boolean(previous.lastPlayed) === Boolean(screen.lastPlayed)
+    && (previous.aliases?.length ?? 0) === (screen.aliases?.length ?? 0)
+    && (screen.aliases ?? []).every(id => previous.aliases.includes(id));
+}
 
 function playbackSnapshot(message) {
   return {
@@ -38,7 +52,7 @@ function playbackSnapshot(message) {
 export function FleetProvider({ children }) {
   const { devices, loading, error, refresh } = useDevices();
   const [connected, setConnected] = useState(true);
-  const { clientId, displayName, markPlaying } = useClientIdentity();
+  const { clientId, displayName, room, markPlaying, registered } = useClientIdentity();
   const storeRef = useRef(null);
   if (!storeRef.current) storeRef.current = createFleetStore();
   const store = storeRef.current;
@@ -46,14 +60,20 @@ export function FleetProvider({ children }) {
   // RQ-HOUSE-06: every row is named by the household screen registry.
   const registry = useScreenRegistry();
   const refreshRegistry = registry.refresh;
-  const lastNameRef = useRef(displayName);
+  const initialIdentity = useRef({ id: browserDeviceId(clientId), name: displayName, room: room ?? null });
+  const lastRegistration = useRef(null);
   useEffect(() => {
-    // This browser was renamed here: re-read so every row (and the rename's
-    // "(was …)") shows the registry's answer, not only this device's guess.
-    if (lastNameRef.current === displayName) return;
-    lastNameRef.current = displayName;
-    refreshRegistry();
-  }, [displayName, refreshRegistry]);
+    if (!registered?.id || lastRegistration.current === registered) return;
+    // Let a cold-start announce share the initial list read. Its answer may
+    // already include this browser, even when the announce resolved first.
+    const previous = lastRegistration.current;
+    if (!registry.loaded && !previous && registered.id === initialIdentity.current.id
+      && registered.name === initialIdentity.current.name && (registered.room ?? null) === initialIdentity.current.room) return;
+    lastRegistration.current = registered;
+    const known = previous ?? registry.byId.get(registered.id);
+    const wasNotSeenLately = !previous && registry.notSeenLately.some(screen => screen.id === registered.id);
+    if (!sameRegistration(known, registered) || wasNotSeenLately) refreshRegistry();
+  }, [registered, registry, refreshRegistry]);
   // A browser that actually plays becomes a registered screen even if nobody named it.
   const localState = browserEntries.get(browserDeviceId(clientId))?.snapshot?.state;
   useEffect(() => {
@@ -141,25 +161,23 @@ export function FleetProvider({ children }) {
   }, [browserEntries]);
 
   useEffect(() => {
-    return onStatus((status) => {
+    return observeSocketStatus(onStatus, (status, recovered) => {
       if (status && status.connected === false) {
         setConnected(false);
         store.markAllStale({ exclude: id => id.startsWith('browser:') });
         mediaLog.wsDisconnected({});
       } else if (status && status.connected === true) {
+        if (recovered) {
+          refresh();
+          refreshRegistry();
+        }
         setConnected(true);
         mediaLog.wsConnected({});
       }
     });
-  }, [store]);
+  }, [store, refresh, refreshRegistry]);
 
-  useEffect(() => {
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') refresh();
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [refresh]);
+  useVisibleRefresh({ reload: refresh });
 
   const fleetDevices = useMemo(() => {
     const configured = mergeCanonicalFleetState(devices, browserEntries);
@@ -191,11 +209,12 @@ export function FleetProvider({ children }) {
   // every 10 s) so its room and "(was …)" catch up too.
   const lastLagRefresh = useRef(0);
   useEffect(() => {
-    if (!registryLagsLiveNames(fleetDevices, registry.byId)) return;
+    const otherDevices = fleetDevices.filter(device => device.id !== browserDeviceId(clientId));
+    if (!registryLagsLiveNames(otherDevices, registry.byId)) return;
     if (Date.now() - lastLagRefresh.current < 10_000) return;
     lastLagRefresh.current = Date.now();
     refreshRegistry();
-  }, [fleetDevices, registry.byId, refreshRegistry]);
+  }, [clientId, fleetDevices, registry.byId, refreshRegistry]);
 
   const value = useMemo(
     () => ({ devices: fleetDevices, store, loading, error, refresh, connected, identity: { clientId, deviceId: browserDeviceId(clientId) }, registry, quiet }),

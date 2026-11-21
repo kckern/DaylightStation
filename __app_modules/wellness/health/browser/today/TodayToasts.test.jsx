@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
-import { useState } from 'react';
+import { createRef, useState } from 'react';
 import { MantineProvider } from '@mantine/core';
+import { AppFrame } from '@/lib/ui';
 import { TodayToasts } from "./TodayToasts.jsx";
 
 const noMoves = { undo: null, error: null, clearError: () => {} };
@@ -30,15 +31,15 @@ describe('TodayToasts', () => {
   it('offers only the newest undo, and retires the older one rather than hiding it', async () => {
     const controls = { current: null };
     render(<Host controls={controls} />);
-    await waitFor(() => controls.current.setUndoDelete({ label: 'Eggs', entryIds: ['e1'] }));
+    act(() => controls.current.setUndoDelete({ label: 'Eggs', entryIds: ['e1'] }));
     expect(await screen.findByText('Eggs deleted.')).toBeTruthy();
 
-    await waitFor(() => controls.current.setMoveUndo('Moved Toast to Lunch'));
+    act(() => controls.current.setMoveUndo('Moved Toast to Lunch'));
     expect(await screen.findByRole('button', { name: 'Undo move' })).toBeTruthy();
     expect(screen.queryByText('Eggs deleted.')).toBeNull();
 
     // Dismissing the newer one must not resurrect the older.
-    await waitFor(() => controls.current.setMoveUndo(null));
+    act(() => controls.current.setMoveUndo(null));
     expect(screen.queryByText('Eggs deleted.')).toBeNull();
     expect(screen.queryAllByRole('button', { name: /undo/i })).toHaveLength(0);
   });
@@ -189,19 +190,29 @@ describe('TodayToasts', () => {
   });
 
   it('the page keeps room for toasts until the view has left it', async () => {
-    const view = props => <MantineProvider><div className="ds-root"><div className="ds-chrome__main"><div className="health-today"><TodayToasts moves={noMoves} {...props} /></div></div></div></MantineProvider>;
-    const { container, rerender } = render(view({ dayNotice: 'Hello', onDismissDayNotice: () => {} }));
+    const pageRef = createRef();
+    const view = props => <MantineProvider><div className="ds-root">
+      <div className="health-today" data-testid="other-view" />
+      <AppFrame><div className="health-today" ref={pageRef}>
+        <TodayToasts moves={noMoves} pageRef={pageRef} {...props} />
+      </div></AppFrame>
+    </div></MantineProvider>;
+    const { rerender, unmount } = render(view({ dayNotice: 'Hello', onDismissDayNotice: () => {} }));
     await screen.findByText('Hello');
     rerender(view({ dayNotice: 'Hello again', onDismissDayNotice: () => {} }));
-    const page = container.querySelector('.health-today'), scroller = container.querySelector('.ds-chrome__main');
+    const page = pageRef.current;
+    const scroller = screen.getByRole('main');
     const clearance = () => page.style.getPropertyValue('--health-toast-clearance');
     expect(clearance()).toBe('8px');
+    expect(screen.getByTestId('other-view').style.getPropertyValue('--health-toast-clearance')).toBe('');
     rerender(view());
     expect(clearance()).toBe('8px'); // the view is at the end, standing in that room
     Object.defineProperty(scroller, 'scrollHeight', { value: 1000 });
     Object.defineProperty(scroller, 'clientHeight', { value: 100 });
     fireEvent.scroll(scroller);
     expect(clearance()).toBe('0px');
+    unmount();
+    expect(clearance()).toBe('');
   });
 
   describe('focus when the focused control leaves', () => {

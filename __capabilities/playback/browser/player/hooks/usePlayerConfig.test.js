@@ -1,30 +1,44 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
-import { usePlayerConfig } from './usePlayerConfig.js';
+import { act, renderHook } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({
-  DaylightAPI: vi.fn(),
-}));
+const { request } = vi.hoisted(() => ({ request: vi.fn() }));
+vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: request }));
 
-import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
+let usePlayerConfig;
+beforeEach(async () => {
+  vi.resetModules();
+  request.mockReset();
+  ({ usePlayerConfig } = await import('./usePlayerConfig.js'));
+});
 
 describe('usePlayerConfig', () => {
-  beforeEach(() => {
-    DaylightAPI.mockReset();
+  it('shares one pending read and the resolved config across player mounts', async () => {
+    let finish;
+    request.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const first = renderHook(() => usePlayerConfig());
+    const second = renderHook(() => usePlayerConfig());
+    expect(request.mock.calls).toEqual([['api/v1/config/player']]);
+
+    first.unmount();
+    const config = { preempt_seconds: 42, displace_to_queue: true };
+    await act(async () => { finish({ on_deck: config }); });
+    expect(second.result.current.onDeck).toEqual(config);
+    second.unmount();
+    const later = renderHook(() => usePlayerConfig());
+    expect(later.result.current.onDeck).toEqual(config);
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
-  it('fetches /api/v1/config/player and exposes on_deck', async () => {
-    DaylightAPI.mockResolvedValue({ on_deck: { preempt_seconds: 15, displace_to_queue: false } });
-    const { result } = renderHook(() => usePlayerConfig());
-    await waitFor(() => expect(result.current.onDeck).toBeTruthy());
-    expect(result.current.onDeck.preempt_seconds).toBe(15);
-    expect(result.current.onDeck.displace_to_queue).toBe(false);
-  });
-
-  it('returns defaults if fetch fails', async () => {
-    DaylightAPI.mockRejectedValue(new Error('network'));
-    const { result } = renderHook(() => usePlayerConfig());
-    await waitFor(() => expect(result.current.onDeck).toBeTruthy());
-    expect(result.current.onDeck.preempt_seconds).toBe(15);
+  it('reuses the default after a failed read for the rest of the page', async () => {
+    let refuse;
+    request.mockImplementation(() => new Promise((_, reject) => { refuse = reject; }));
+    const { result, unmount } = renderHook(() => usePlayerConfig());
+    expect(request.mock.calls).toEqual([['api/v1/config/player']]);
+    await act(async () => { refuse(new Error('network')); });
+    const defaults = { preempt_seconds: 15, displace_to_queue: false };
+    expect(result.current.onDeck).toEqual(defaults);
+    unmount();
+    expect(renderHook(() => usePlayerConfig()).result.current.onDeck).toEqual(defaults);
+    expect(request).toHaveBeenCalledTimes(1);
   });
 });

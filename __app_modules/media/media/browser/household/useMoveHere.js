@@ -12,41 +12,15 @@ import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { PeekContext } from "../peek/PeekContext.js";
 import { DispatchContext } from "../cast/DispatchProvider.jsx";
 import { createMoveRequest, executeMove } from "../cast/movePlayback.js";
+import { createLocalMoveDestination } from '../cast/localMoveDestination.js';
 import mediaLog from "../logging/mediaLog.js";
 import { bareScreenId } from "./householdModel.js";
 import { deviceName } from "../fleet/deviceDisplay.js";
-
-export const MOVE_HERE_EVIDENCE_TIMEOUT_MS = 20_000;
 
 function ownerIdentity(snapshot) {
   const owner = snapshot?.meta?.playbackOwner;
   if (!owner || typeof owner.ownerInstanceId !== 'string' || !Number.isInteger(owner.playbackRevision)) return null;
   return { sourceOwnerId: owner.ownerInstanceId, sourceRevision: owner.playbackRevision };
-}
-
-/** Resolves true once this device's native element is playing `contentId`. */
-export function waitForLocalPlayback(local, contentId, { timeoutMs = MOVE_HERE_EVIDENCE_TIMEOUT_MS, interval = 250 } = {}) {
-  return new Promise((resolve) => {
-    let done = false;
-    let unsubscribe = () => {};
-    const finish = (value) => {
-      if (done) return;
-      done = true;
-      clearInterval(timer);
-      clearTimeout(deadline);
-      unsubscribe();
-      resolve(value);
-    };
-    const check = () => {
-      const obs = local?.portability?.getNativeObservation?.();
-      if (obs?.identity && String(obs.identity.contentId) === String(contentId)
-        && obs.paused === false && obs.readyState >= 2) finish(true);
-    };
-    const timer = setInterval(check, interval);
-    const deadline = setTimeout(() => finish(false), timeoutMs);
-    unsubscribe = local?.portability?.subscribeNative?.(check) ?? (() => {});
-    check();
-  });
 }
 
 function newOperationId() {
@@ -92,28 +66,18 @@ export function useMoveHere() {
     }
 
     const outcome = await executeMove(request, {
-      destination: {
-        adopt: async (req) => {
-          const adopted = local.lifecycle.adoptSnapshot(req.snapshot, { autoplay: true });
-          if (adopted?.ok === false) return { status: 'rejected', reason: adopted.code ?? 'adopt-rejected' };
-          const playing = await waitForLocalPlayback(local, contentId);
-          return playing ? { status: 'adopted' } : { status: 'uncertain', reason: 'not-playing-here' };
-        },
-      },
+      destination: createLocalMoveDestination({ localController: local, forcePlayback: true }),
       source: {
         getIdentity: () => ownerIdentity(fleet?.store?.getEntry?.(deviceId)?.snapshot),
-        stopIfCurrent: async () => {
-          const result = await peek?.getController?.(deviceId)?.transport?.stop?.();
-          return result ?? { ok: true };
-        },
+        stopIfCurrent: () => peek?.getController?.(deviceId)?.transport?.stop?.(),
       },
     });
 
     if (outcome.status !== 'adopted') {
-      return fail(outcome.status === 'rejected' ? 'This device could not take it.' : "It didn't start here; the other screen keeps playing.", outcome.reason);
+      return fail(outcome.status === 'rejected' ? 'This device could not take it.' : "This device didn't confirm playback. The other screen keeps playing.", outcome.reason);
     }
     if (outcome.sourceStopped !== true) {
-      return fail('It plays here now, but the other screen is still playing.', outcome.reason ?? 'source-not-stopped');
+      return fail('It plays here now. Could not confirm the other screen stopped.', outcome.reason ?? 'source-not-stopped');
     }
     mediaLog.moveHereSucceeded({ deviceId, contentId, operationId });
     outcomes?.resolveLocal?.(attemptId, { phase: 'confirmed' });

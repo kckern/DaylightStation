@@ -2,6 +2,8 @@ import React, { useContext } from 'react';
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const identity = { clientId: 'observer-browser', displayName: 'Observer browser', registered: null };
+const refreshDevices = vi.fn();
 const playbackSubscribers = [];
 const playbackUnsubscribes = [];
 const deviceStateSubscribers = [];
@@ -12,10 +14,10 @@ vi.mock("./useDevices.js", () => ({
   // A configured (physical) device row for the liveness/re-render tests
   // below — round-0's browser test only ever asserted absence/shape of
   // browser rows via `some`/`find`/`filter`, unaffected by this extra entry.
-  useDevices: () => ({ devices: [{ id: 'tv-1', name: 'Living Room TV' }], loading: false, error: null, refresh: vi.fn() }),
+  useDevices: () => ({ devices: [{ id: 'tv-1', name: 'Living Room TV' }], loading: false, error: null, refresh: refreshDevices }),
 }));
 vi.mock("../identity/useClientIdentity.js", () => ({
-  useClientIdentity: () => ({ clientId: 'observer-browser', displayName: 'Observer browser' }),
+  useClientIdentity: () => identity,
 }));
 vi.mock("../controller/useSessionController.js", () => ({
   useSessionController: () => ({ controller: {}, snapshot: observerSnapshot }),
@@ -41,6 +43,7 @@ vi.mock("../logging/mediaLog.js", () => ({ default: new Proxy({}, { get: () => v
 
 import { FleetContext, FleetProvider } from "./FleetProvider.jsx";
 import { adoptBrowserDeviceId, getDeviceId, _resetDeviceIdForTests } from "../../../../../frontend/src/lib/deviceIdentity.js";
+import { houseApi } from "../house/houseApi.js";
 import { bareScreenId } from "../household/householdModel.js";
 
 afterEach(() => {
@@ -215,4 +218,112 @@ describe('FleetProvider configured-device liveness re-render', () => {
     expect(result.entries.find(([id]) => id === 'tv-1')[1].isStale).toBe(false);
     unmount();
   });
+});
+
+it('reloads the authoritative roster once after a connection is lost and recovered', () => {
+  refreshDevices.mockClear();
+  render(<FleetProvider><Probe /></FleetProvider>);
+  const notify = statusSubscribers.at(-1);
+  act(() => notify({ connected: true }));
+  expect(refreshDevices).not.toHaveBeenCalled();
+  act(() => { notify({ connected: false }); notify({ connected: false }); });
+  act(() => { notify({ connected: true }); notify({ connected: true }); });
+  expect(refreshDevices).toHaveBeenCalledTimes(1);
+});
+
+it('reconciles a newly registered screen and room changes once, skipping matching announcements', async () => {
+  const self = { id: 'browser:observer-browser', name: identity.displayName, room: 'Den' };
+  let screens = [];
+  const list = vi.spyOn(houseApi, 'listScreens').mockImplementation(async () => ({ screens }));
+  try {
+    const tree = () => <FleetProvider><Probe /></FleetProvider>;
+    const { rerender } = render(tree());
+    await act(async () => {});
+    expect(list).toHaveBeenCalledTimes(1);
+    screens = [self];
+    identity.registered = self;
+    rerender(tree());
+    await act(async () => {});
+    expect(list).toHaveBeenCalledTimes(2);
+
+    identity.registered = { ...self, lastSeen: new Date().toISOString() };
+    rerender(tree());
+    expect(list).toHaveBeenCalledTimes(2);
+
+    screens = [{ ...self, room: 'Kitchen' }];
+    identity.registered = screens[0];
+    rerender(tree());
+    await act(async () => {});
+    expect(list).toHaveBeenCalledTimes(3);
+
+    screens = [{ ...self, name: 'Renamed browser', room: 'Kitchen' }];
+    identity.registered = screens[0];
+    identity.displayName = screens[0].name;
+    act(() => {
+      playbackSubscribers.at(-1).callback({
+        identity: { clientId: identity.clientId, name: identity.displayName },
+        deviceId: self.id, state: 'idle', ts: new Date().toISOString(),
+      });
+      rerender(tree());
+    });
+    await act(async () => {});
+    expect(list).toHaveBeenCalledTimes(4);
+  } finally {
+    identity.displayName = 'Observer browser';
+    identity.registered = null;
+    list.mockRestore();
+  }
+});
+
+it('shares the first list read with an unchanged startup announcement', async () => {
+  const self = { id: 'browser:observer-browser', name: identity.displayName };
+  let finishList;
+  const list = vi.spyOn(houseApi, 'listScreens').mockImplementation(() => new Promise(resolve => { finishList = resolve; }));
+  try {
+    const tree = () => <FleetProvider><Probe /></FleetProvider>;
+    const { rerender } = render(tree());
+    identity.registered = self;
+    rerender(tree());
+    await act(async () => finishList({ screens: [self] }));
+    expect(list).toHaveBeenCalledTimes(1);
+  } finally {
+    identity.registered = null;
+    list.mockRestore();
+  }
+});
+
+it('reconciles a confirmed retirement of this browser', async () => {
+  const self = { id: 'browser:observer-browser', name: identity.displayName };
+  const retired = { ...self, retiredAt: '2026-11-19T10:00:00Z' };
+  const list = vi.spyOn(houseApi, 'listScreens')
+    .mockResolvedValueOnce({ screens: [self] })
+    .mockResolvedValueOnce({ retired: [retired] });
+  try {
+    const tree = () => <FleetProvider><Probe /></FleetProvider>;
+    const { rerender } = render(tree());
+    await act(async () => {});
+    identity.registered = retired;
+    rerender(tree());
+    await act(async () => {});
+    expect(list).toHaveBeenCalledTimes(2);
+  } finally {
+    identity.registered = null;
+    list.mockRestore();
+  }
+});
+
+it('refreshes a confirmed self room change while the initial list is still pending', async () => {
+  const list = vi.spyOn(houseApi, 'listScreens').mockImplementation(() => new Promise(() => {}));
+  try {
+    const tree = () => <FleetProvider><Probe /></FleetProvider>;
+    const { rerender } = render(tree());
+    identity.room = 'Pantry';
+    identity.registered = { id: 'browser:observer-browser', name: identity.displayName, room: identity.room };
+    rerender(tree());
+    expect(list).toHaveBeenCalledTimes(2);
+  } finally {
+    delete identity.room;
+    identity.registered = null;
+    list.mockRestore();
+  }
 });

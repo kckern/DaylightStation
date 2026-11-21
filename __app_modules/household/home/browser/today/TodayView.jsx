@@ -1,6 +1,7 @@
+import { browserPreference } from '@/lib/browserPreference.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { SegmentedControl } from '@mantine/core';
-import { LoadingState, ErrorState, EmptyState } from '@/lib/ui';
+import { LoadingState, ErrorState, EmptyState, useRetryRegion } from '@/lib/ui';
 import { composeNow } from '../now/composeStatus.js';
 import homeLogger from '../homeLogger.js';
 import { useTimeline } from './useTimeline.js';
@@ -17,18 +18,8 @@ const RANGES = [
   { value: 'yesterday', label: 'Yesterday' },
   { value: 'week', label: 'Week' },
 ];
-const RANGE_KEY = 'home.today.range';
-
-// The range is a per-viewer convenience; storage may be unavailable.
-function readSavedRange() {
-  try {
-    const saved = window.localStorage.getItem(RANGE_KEY);
-    return RANGES.some((r) => r.value === saved) ? saved : 'today';
-  } catch { return 'today'; }
-}
-function saveRange(range) {
-  try { window.localStorage.setItem(RANGE_KEY, range); } catch { /* storage unavailable */ }
-}
+const rangePreference = browserPreference('home.today.range', 'today', saved =>
+  RANGES.some(option => option.value === saved) ? saved : 'today');
 
 /** The 6-hour guides and labels for a day, memoised per window. */
 function useTicks(timeZone) {
@@ -82,9 +73,10 @@ function Timeline({ timeline, onOpen }) {
  * adds (where the power goes, the rings' clips).
  */
 export function TodayView({ entities, rooms, summary, haUrl, toggle }) {
-  const [range, setRange] = useState(readSavedRange);
+  const [range, setRange] = useState(rangePreference.read);
   const [openLaneId, setOpenLaneId] = useState(null);
-  const { timeline, loading, error, reload } = useTimeline(range);
+  const { timeline, loading, revalidating, error, reload } = useTimeline(range);
+  const { regionProps, retry } = useRetryRegion(reload, loading || revalidating);
   const sentence = useMemo(() => composeNow({ entities, rooms, summary }).sentences[0] || null, [entities, rooms, summary]);
 
   useEffect(() => {
@@ -97,7 +89,7 @@ export function TodayView({ entities, rooms, summary, haUrl, toggle }) {
   const changeRange = (next) => {
     logger.info('home.today.range', { from: range, to: next });
     setRange(next);
-    saveRange(next);
+    rangePreference.write(next);
   };
   const openLane = useCallback((lane) => {
     logger.info('home.lane.open', { laneId: lane.id, kind: lane.kind });
@@ -108,7 +100,7 @@ export function TodayView({ entities, rooms, summary, haUrl, toggle }) {
   const shownLane = openLaneId && timeline ? timeline.lanes.find((l) => l.id === openLaneId) || null : null;
 
   let body;
-  if (!timeline && error) body = <ErrorState error={error} onRetry={reload} label="Timeline" />;
+  if (!timeline && error) body = <ErrorState error={error} onRetry={retry} label="Timeline" />;
   else if (!timeline) body = <LoadingState label="the timeline" rows={6} />;
   else if (!timeline.lanes?.length) {
     body = <EmptyState title="No timeline lanes" hint="Add lanes under timeline.lanes in household/home/dashboard.yml" />;
@@ -120,7 +112,7 @@ export function TodayView({ entities, rooms, summary, haUrl, toggle }) {
       <div className="home-today__range">
         <SegmentedControl size="sm" data={RANGES} value={range} onChange={changeRange} aria-label="Timeline range" />
       </div>
-      {body}
+      <section aria-label="Timeline" {...regionProps}>{body}</section>
       <LaneDetailSheet
         lane={shownLane}
         entities={entities}

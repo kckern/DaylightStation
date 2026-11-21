@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { Group, Slider, Button, ActionIcon, Box } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
@@ -7,7 +7,7 @@ import {
   IconPlayerPlay,
   IconPlayerPause,
 } from '@tabler/icons-react';
-import { LabeledContentPicker } from "./LabeledContentPicker.jsx";
+import ContentCombobox from "../../../../../../../__capabilities/content-catalog/browser/picker.mjs";
 import getLogger from "../../../../../../../frontend/src/lib/logging/Logger.js";
 
 const VOLUME_DEBOUNCE_MS = 300;
@@ -21,7 +21,7 @@ const VERIFY_OK_AUTOCLOSE_MS = 3000;
 /**
  * TransportRow — transport controls for a device.
  *
- * Layout: [⏮] [⏯] [⏭] | volume slider | LabeledContentPicker | [Play Now]
+ * Layout: [⏮] [⏯] [⏭] | volume slider | ContentCombobox | [Play Now]
  *
  * Interstitial behavior: when a button is clicked, an optimistic prediction
  * is registered via `predict`/`pending`. The corresponding control reads
@@ -46,6 +46,7 @@ export function TransportRow({ slot, status, mutations, predict, pending }) {
     []
   );
   const verifyTimerRef = useRef(null);
+  const deviceGeneration = useRef(0);
   const userInteractingRef = useRef(false);
   useEffect(() => {
     if (userInteractingRef.current) return;
@@ -73,10 +74,12 @@ export function TransportRow({ slot, status, mutations, predict, pending }) {
     }, VOLUME_DEBOUNCE_MS);
   }, [mutations, slot.color, predict]);
 
-  useEffect(() => () => {
+  useLayoutEffect(() => () => {
+    deviceGeneration.current += 1;
+    userInteractingRef.current = false;
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     if (verifyTimerRef.current) clearTimeout(verifyTimerRef.current);
-  }, []);
+  }, [slot.color]);
 
   const handlePrev = () => {
     pending?.(slot.color, ['now_playing']);
@@ -93,6 +96,7 @@ export function TransportRow({ slot, status, mutations, predict, pending }) {
   };
   const handlePlayNow = async () => {
     if (!pickedValue) return;
+    const generation = deviceGeneration.current;
     pending?.(slot.color, ['now_playing']);
     predict?.(slot.color, { paused: false });
     let cmdResult;
@@ -108,6 +112,7 @@ export function TransportRow({ slot, status, mutations, predict, pending }) {
       });
       return;
     }
+    if (generation !== deviceGeneration.current) return;
     const applied = Array.isArray(cmdResult?.applied) ? cmdResult.applied : [];
     if (!applied.includes(slot.color)) {
       logger.debug('play-now.not-applied-skip-verify', {
@@ -130,6 +135,7 @@ export function TransportRow({ slot, status, mutations, predict, pending }) {
         });
         return;
       }
+      if (generation !== deviceGeneration.current) return;
       if (!result || result.ok === false) {
         logger.warn('play-now.verify-network-failed', {
           color: slot.color, error: result?.error,
@@ -210,7 +216,7 @@ export function TransportRow({ slot, status, mutations, predict, pending }) {
         />
       </Box>
       <Box style={{ flex: 1, minWidth: 0 }}>
-        <LabeledContentPicker
+        <ContentCombobox
           value={pickedValue}
           onChange={(id) => setPickedValue(id || '')}
           placeholder="Pick content..."

@@ -1,44 +1,18 @@
-import { useState, useEffect, useCallback } from 'react';
-import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
-import { mediaLog } from "../logging/mediaLog.js";
+import { useEffect } from 'react';
+import { useApiResource } from '../../../../../frontend/src/lib/hooks/useApiResource.js';
+import { mediaLog } from '../logging/mediaLog.js';
 
 export function useContentInfo(contentId) {
-  const [info, setInfo] = useState(null);
-  const [loading, setLoading] = useState(typeof contentId === 'string' && contentId.includes(':'));
-  const [error, setError] = useState(null);
-  const [attempt, setAttempt] = useState(0);
+  const separator = typeof contentId === 'string' ? contentId.indexOf(':') : -1;
+  const path = separator < 0 ? null
+    : `api/v1/info/${contentId.slice(0, separator)}/${contentId.slice(separator + 1)}`;
+  const { data, loading, error, reload } = useApiResource(path);
 
   useEffect(() => {
-    if (typeof contentId !== 'string' || !contentId.includes(':')) {
-      setInfo(null);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-    const idx = contentId.indexOf(':');
-    const source = contentId.slice(0, idx);
-    const localId = contentId.slice(idx + 1);
-    const url = `api/v1/info/${source}/${localId}`;
-    setLoading(true);
-    setError(null);
-    let cancelled = false;
-    DaylightAPI(url)
-      .then((res) => {
-        if (cancelled) return;
-        setInfo(res ?? null);
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        mediaLog.loadFailed({ surface: 'detail', contentId, error: err?.message });
-        setError(err);
-        setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [contentId, attempt]);
+    if (error) mediaLog.loadFailed({ surface: 'detail', contentId, error: error.message });
+  }, [contentId, error]);
 
-  const reload = useCallback(() => setAttempt((n) => n + 1), []);
-  return { info, loading, error, reload };
+  return { info: data ?? null, loading, error, reload };
 }
 
 export default useContentInfo;

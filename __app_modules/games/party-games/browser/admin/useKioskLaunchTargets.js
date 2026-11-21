@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
+import { useApiResource } from '../../../../../frontend/src/lib/hooks/useApiResource.js';
+import { useDeviceConfig } from '../../../../../frontend/src/lib/hooks/useDeviceConfig.js';
 
 const LAUNCH_TARGETS_URL = '/api/v1/content/launch-targets/retroarch';
-const DEVICE_CONFIG_URL = '/api/v1/device/config';
 
 /**
  * Which devices a parent may launch a game on, and which titles on each.
@@ -26,45 +27,19 @@ const DEVICE_CONFIG_URL = '/api/v1/device/config';
  * rather than "yellow-room-tablet".
  *
  * @returns {{targets: Array<{deviceId: string, label: string, allow: string[]}>,
- *            loading: boolean, error: string|null}}
+ *            loading: boolean, error: Error|null, reload: () => void}}
  */
 export function useKioskLaunchTargets() {
-  const [state, setState] = useState({ targets: [], loading: true, error: null });
+  const roster = useApiResource(LAUNCH_TARGETS_URL);
+  const { devices } = useDeviceConfig();
+  const targets = useMemo(() =>
+    (roster.data?.targets || []).map(target => ({
+      deviceId: target.deviceId,
+      label: devices[target.deviceId]?.name || target.deviceId,
+      allow: Array.isArray(target.allow) ? target.allow.filter(Boolean) : [],
+    })), [roster.data, devices]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const json = (url) => fetch(url).then((r) => {
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json();
-    });
-
-    Promise.all([
-      json(LAUNCH_TARGETS_URL),
-      // Labels are cosmetic — a failure here must not cost us the targets.
-      json(DEVICE_CONFIG_URL).catch(() => null)
-    ])
-      .then(([launchTargets, deviceConfig]) => {
-        if (cancelled) return;
-        const devices = deviceConfig?.devices || deviceConfig || {};
-
-        const targets = (launchTargets?.targets || []).map((t) => ({
-          deviceId: t.deviceId,
-          label: devices?.[t.deviceId]?.name || t.deviceId,
-          allow: Array.isArray(t.allow) ? t.allow.filter(Boolean) : []
-        }));
-
-        setState({ targets, loading: false, error: null });
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setState({ targets: [], loading: false, error: err.message });
-      });
-
-    return () => { cancelled = true; };
-  }, []);
-
-  return state;
+  return { targets, loading: roster.loading, error: roster.error, reload: roster.reload };
 }
 
 export default useKioskLaunchTargets;

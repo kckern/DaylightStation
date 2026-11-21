@@ -2,46 +2,41 @@
 // The webapp shell: slim header, main scroll region, primary nav rendered
 // as a bottom tab bar on mobile and a left rail on tablet-up (same DOM,
 // CSS-switched). Nav pattern adopted from Media's PrimaryNav.
-import './ds.scss';
-
-/**
- * The class of the chrome's one scroll region (below the header). Content
- * that positions overlays against what is on screen (a tooltip that must not
- * slide under the header) finds it with `.closest('.' + CHROME_SCROLL_CLASS)`.
- */
-export const CHROME_SCROLL_CLASS = 'ds-chrome__main';
-
-export function AppChrome({ title, tabs = [], activeTab, onTabChange, headerActions, footer, sidebarRef, sidebarActive = false, children }) {
+import { Link } from 'react-router-dom';
+import { AppFrame } from './AppFrame.jsx';
+export function AppChrome({ title, tabs = [], activeTab, onTabChange, headerActions, notices, footer, mainRef, sidebarRef, sidebarActive = false, children }) {
   const actions = Array.isArray(headerActions) ? headerActions : (headerActions ? [headerActions] : []);
   if (actions.length > 3) {
     throw new Error('AppChrome allows at most 3 header actions — quiet chrome is the contract');
   }
   return (
-    <div className={`ds-chrome${sidebarActive ? ' ds-chrome--context' : ''}`}>
-      <header className="ds-chrome__header">
+    <AppFrame
+      mainRef={mainRef}
+      expandedContext={sidebarActive}
+      header={<>
         <h1 className="ds-chrome__title">{title}</h1>
         {actions.length ? <div className="ds-chrome__actions">{actions}</div> : null}
-      </header>
-      <nav className="ds-chrome__nav" aria-label="Primary">
-        {tabs.map((tab) => (
-          <a
-            key={tab.id}
-            role="link"
-            tabIndex={0}
-            className={`ds-chrome__tab${tab.id === activeTab ? ' ds-chrome__tab--active' : ''}`}
-            aria-current={tab.id === activeTab ? 'page' : undefined}
-            onClick={() => onTabChange(tab.id)}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onTabChange(tab.id); } }}
-          >
-            <span className="ds-chrome__tab-icon">{tab.icon}</span>
-            <span className="ds-chrome__tab-label">{tab.label}</span>
-          </a>
-        ))}
-        {sidebarRef ? <div ref={sidebarRef} className="ds-chrome__context" hidden={!sidebarActive} /> : null}
-      </nav>
-      <main className={CHROME_SCROLL_CLASS}>{children}</main>
-      {footer ? <div className="ds-chrome__footer">{footer}</div> : null}
-    </div>
+      </>}
+      navigation={tabs.length > 0 && tabs.map(tab => {
+        const active = tab.id === activeTab;
+        const props = {
+          className: `ds-chrome__tab${active ? ' ds-chrome__tab--active' : ''}`,
+          'aria-current': active ? 'page' : undefined,
+        };
+        const label = <>
+          <span className="ds-chrome__tab-icon">{tab.icon}</span>
+          <span className="ds-chrome__tab-label">{tab.label}</span>
+        </>;
+        return tab.href
+          ? <Link key={tab.id} to={tab.href} state={tab.state} {...props}>{label}</Link>
+          : <button key={tab.id} type="button" {...props} onClick={() => onTabChange(tab.id)}>{label}</button>;
+      })}
+      context={sidebarRef && <div ref={sidebarRef} className="ds-chrome__context" hidden={!sidebarActive} />}
+      notices={notices}
+      footer={footer}
+    >
+      {children}
+    </AppFrame>
   );
 }
 

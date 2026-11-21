@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const apiMock = vi.fn();
@@ -64,7 +64,9 @@ describe('TemplatePicker', () => {
     await waitFor(() => screen.getByText('Keep'));
     fireEvent.click(screen.getByText('Keep'));
     await waitFor(() => expect(apiMock.mock.calls.some(([p]) => p.endsWith('/p1/approve'))).toBe(true));
-    fireEvent.click(screen.getByText('No thanks'));
+    const dismiss = screen.getByRole('button', { name: 'No thanks' });
+    await waitFor(() => expect(dismiss.getAttribute('aria-disabled')).toBeNull());
+    fireEvent.click(dismiss);
     await waitFor(() => expect(apiMock.mock.calls.some(([p]) => p.endsWith('/p1/dismiss'))).toBe(true));
   });
 
@@ -140,6 +142,45 @@ describe('TemplatePicker', () => {
     r(<TemplatePicker open={false} onClose={() => {}} onLogged={() => {}} bucketId="morning" />);
     expect(apiMock).not.toHaveBeenCalled();
   });
+
+  it('joins a saved-meal operation across visits and retains its ID after an unconfirmed response', async () => {
+    const breakfast = Promise.withResolvers();
+    const meals = [];
+    const onLogged = vi.fn();
+    apiMock.mockImplementation(async (path, body) => {
+      if (path.includes('nutrition/templates?')) return { templates: [FLAT, SMOOTHIE] };
+      meals.push(body);
+      return meals.length === 1 ? breakfast.promise : { committed: true };
+    });
+    const picker = (open, bucketId) => <MantineProvider><DismissStackProvider>
+      <TemplatePicker open={open} bucketId={bucketId} onClose={() => {}} onLogged={onLogged} />
+    </DismissStackProvider></MantineProvider>;
+    const view = render(picker(true, 'morning'));
+    const chooseBreakfast = async variantNames => {
+      fireEvent.click(await screen.findByText('Morning smoothie'));
+      for (const name of variantNames) fireEvent.click(screen.getByRole('switch', { name: new RegExp(name) }));
+      fireEvent.click(screen.getByRole('button', { name: 'Log 440 kcal' }));
+    };
+
+    await chooseBreakfast(['Mango', 'Blueberries']);
+    view.rerender(picker(false, 'morning'));
+    view.rerender(picker(true, 'afternoon'));
+    fireEvent.click(await screen.findByText('Protein breakfast'));
+    await waitFor(() => expect(onLogged).toHaveBeenCalledOnce());
+    expect(meals.map(meal => meal.mealTime)).toEqual(['morning', 'afternoon']);
+    expect(meals[0].operationId).not.toBe(meals[1].operationId);
+
+    view.rerender(picker(false, 'afternoon'));
+    view.rerender(picker(true, 'morning'));
+    await chooseBreakfast(['Blueberries', 'Mango']);
+    expect(meals).toHaveLength(2);
+    await act(async () => { breakfast.reject(new Error('Connection was lost')); });
+    expect(await screen.findByText('Connection was lost')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Log 440 kcal' }));
+    await waitFor(() => expect(onLogged).toHaveBeenCalledTimes(2));
+    expect(meals).toHaveLength(3);
+    expect(meals[2]).toEqual(meals[0]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -156,7 +197,7 @@ describe('TemplatePicker', () => {
 //
 // The sheet's WRITE paths were checked too, because a surface can be replaced
 // and still strand the things that fed it: `TodayView`'s "Save as meal" and
-// `EntryEditSheet`'s "Save as meal" both wrote saved meals, which nothing would
+// `EntryEditor`'s "Save as meal" both wrote saved meals, which nothing would
 // list any more. Both now write templates, pinned in their own test files.
 // Copy-day-to-today still uses the meals endpoints as ephemeral transport
 // (create → log → delete), which nothing ever lists.

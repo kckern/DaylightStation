@@ -86,7 +86,7 @@ describe('SettingsPanel', () => {
     expect(screen.getByRole('button', { name: 'Reset this film' }).disabled).toBe(true);
     fireEvent.click(within(violence).getByRole('button', { name: 'Skip' }));
     await waitFor(() => expect(within(violence).getByRole('button', { name: 'Skip' }).getAttribute('aria-pressed')).toBe('true'));
-    expect(screen.getByRole('button', { name: 'Reset this film' }).disabled).toBe(false);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Reset this film' }).disabled).toBe(false));
   });
 });
 

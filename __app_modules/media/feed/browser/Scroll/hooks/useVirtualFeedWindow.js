@@ -23,24 +23,15 @@ export function calculateVirtualRange(items, getHeight, {
   let end = start;
   while (end < items.length && offsets[end] < max && end - start < maxMounted) end += 1;
   end = Math.max(end, Math.min(items.length, start + Math.min(12, maxMounted)));
-  return { start, end, paddingTop: offsets[start], paddingBottom: Math.max(0, offsets.at(-1) - offsets[end]) };
+  return { start, end, offsets, paddingTop: offsets[start], paddingBottom: Math.max(0, offsets.at(-1) - offsets[end]) };
 }
 
-export function useVirtualFeedWindow(containerRef, items, enabled, options = {}) {
-  const scrollRef = options.scrollRef;
-  const estimatedHeight = options.estimatedHeight ?? DEFAULT_ESTIMATED_HEIGHT;
-  const overscan = options.overscan ?? DEFAULT_OVERSCAN_PX;
-  const maxMounted = options.maxMounted ?? DEFAULT_MAX_MOUNTED;
-  const gap = options.gap ?? 10;
-  const heightsRef = useRef(new Map());
-  const observersRef = useRef(new Map());
-  const callbacksRef = useRef(new Map());
-  const [, bump] = useReducer(value => value + 1, 0);
+function useScrollViewport(scrollRef, enabled) {
   const [viewport, setViewport] = useState({ top: 0, height: 900 });
 
   useEffect(() => {
     if (!enabled) return undefined;
-    const scrollEl = scrollRef?.current || document.querySelector('.feed-content');
+    const scrollEl = scrollRef?.current;
     if (!scrollEl) return undefined;
     let frame = null;
     const update = () => {
@@ -57,6 +48,21 @@ export function useVirtualFeedWindow(containerRef, items, enabled, options = {})
       if (frame !== null) cancelAnimationFrame(frame);
     };
   }, [enabled, scrollRef]);
+
+  return viewport;
+}
+
+export function useVirtualFeedWindow(containerRef, items, enabled, options = {}) {
+  const scrollRef = options.scrollRef;
+  const estimatedHeight = options.estimatedHeight ?? DEFAULT_ESTIMATED_HEIGHT;
+  const overscan = options.overscan ?? DEFAULT_OVERSCAN_PX;
+  const maxMounted = options.maxMounted ?? DEFAULT_MAX_MOUNTED;
+  const gap = options.gap ?? 10;
+  const heightsRef = useRef(new Map());
+  const observersRef = useRef(new Map());
+  const callbacksRef = useRef(new Map());
+  const [, bump] = useReducer(value => value + 1, 0);
+  const viewport = useScrollViewport(scrollRef, enabled);
 
   useEffect(() => () => {
     for (const observer of observersRef.current.values()) observer.disconnect();
@@ -101,6 +107,7 @@ export function useVirtualFeedWindow(containerRef, items, enabled, options = {})
     return {
       items: items.slice(range.start, range.end),
       startIndex: range.start,
+      offsets: range.offsets,
       paddingTop: range.paddingTop,
       paddingBottom: range.paddingBottom,
       measureRef,
@@ -108,28 +115,8 @@ export function useVirtualFeedWindow(containerRef, items, enabled, options = {})
   }, [containerRef, enabled, estimatedHeight, gap, items, maxMounted, measureRef, overscan, viewport]);
 }
 
-export function useMasonryVirtualWindow(containerRef, items, enabled, getItemMetrics) {
-  const [viewport, setViewport] = useState({ top: 0, height: 900 });
-  useEffect(() => {
-    if (!enabled) return undefined;
-    const scrollEl = document.querySelector('.feed-content');
-    if (!scrollEl) return undefined;
-    let frame = null;
-    const update = () => {
-      frame = null;
-      setViewport({ top: scrollEl.scrollTop, height: scrollEl.clientHeight });
-    };
-    const schedule = () => { if (frame === null) frame = requestAnimationFrame(update); };
-    update();
-    scrollEl.addEventListener('scroll', schedule, { passive: true });
-    window.addEventListener('resize', schedule);
-    return () => {
-      scrollEl.removeEventListener('scroll', schedule);
-      window.removeEventListener('resize', schedule);
-      if (frame !== null) cancelAnimationFrame(frame);
-    };
-  }, [enabled]);
-
+export function useMasonryVirtualWindow(containerRef, items, enabled, getItemMetrics, scrollRef) {
+  const viewport = useScrollViewport(scrollRef, enabled);
   if (!enabled || items.length <= DEFAULT_MAX_MOUNTED) return items;
   const localTop = Math.max(0, viewport.top - (containerRef.current?.offsetTop || 0));
   const min = Math.max(0, localTop - DEFAULT_OVERSCAN_PX);

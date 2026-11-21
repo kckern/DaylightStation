@@ -44,6 +44,7 @@ describe('SourcePanel', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Refresh failed.');
 
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(screen.getByRole('region', { name: 'Headlines from Daily News' })).toHaveFocus();
     await waitFor(() => expect(apiMock).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
     expect(onRefresh).toHaveBeenCalledTimes(1);

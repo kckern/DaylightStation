@@ -178,7 +178,7 @@ export function reducer(state, event) {
     case 'HIGHLIGHT':
       return { ...state, highlight: { idx: event.idx, userNavigated: !!event.userNavigated } };
     case 'VALUE_CHANGED':
-      return { ...initialState(event.value), results: state.results };
+      return initialState(event.value);
     case 'CLOSE':
       return { ...initialState(state.value), search: event.retainSearch ?? null };
     default:

@@ -30,7 +30,10 @@ const api = async (path, body) => {
   if (path.includes('/nutrition/barcode-lookup?')) return lookupBarcode();
   if (path === 'api/v1/health/nutrition/barcode-commit') return commitBarcode(body);
   if (path === 'api/v1/health/nutrition/input') return { transcribeFailed: true, audioRef: 'va_1', responseText: 'Your recording is saved.' };
-  if (path.includes('health/day?')) { dayReads += 1; return { items, budget: { budget: 2000, food: 0, exercise: 0, remaining: 2000, sessions: [] } }; }
+  if (path.includes('health/day?')) {
+    if (path === `api/v1/health/day?date=${today}`) dayReads += 1;
+    return { items, budget: { budget: 2000, food: 0, exercise: 0, remaining: 2000, sessions: [] } };
+  }
   if (path.includes('nutrition/pending')) return { pending: [] };
   if (path.includes('observations')) return { observations: [] };
   return {};
@@ -40,6 +43,7 @@ const open = async ({ session = false, path = '/health' } = {}) => {
   const view = <TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />;
   render(<MemoryRouter initialEntries={[path]}><LocationProbe /><MantineProvider><DismissStackProvider>{session ? <HealthOperationsProvider userId="u" send={apiMock}>{view}</HealthOperationsProvider> : view}</DismissStackProvider></MantineProvider></MemoryRouter>);
   await waitFor(() => expect(dayReads).toBeGreaterThan(0));
+  if (/[?&]capture=/.test(path)) return null;
   return screen.findByRole('textbox', { name: 'Log food or change this day' });
 };
 const say = async words => {

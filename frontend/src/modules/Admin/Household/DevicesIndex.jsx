@@ -1,88 +1,55 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useState } from 'react';
+import { FormDialog } from '@/lib/ui/FormDialog.jsx';
+import { Link } from 'react-router-dom';
 import {
-  Stack, Text, SimpleGrid, Card, Badge, Button, Group, Modal,
-  TextInput, Select, Loader, Center, Alert
+  Stack, Text, SimpleGrid, Card, Badge, Button, Group, Anchor,
+  TextInput, Select, Alert
 } from '@mantine/core';
-import { IconPlus, IconAlertCircle, IconDevices } from '@tabler/icons-react';
+import { IconPlus, IconAlertCircle } from '@tabler/icons-react';
 import {EnforcementStatus} from '../../../../../__app_modules/household/supervision/browser/index.js';
+import { useVisibleRefresh } from '../../../lib/hooks/useVisibleRefresh.js';
+import { useAdminRoster } from '../shared/useAdminRoster.js';
+import { useRefreshableRead } from '../../../lib/hooks/useRefreshableRead.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 
-const DEVICE_TYPE_OPTIONS = [
-  { value: 'shield-tv', label: 'Shield TV' },
-  { value: 'linux-pc', label: 'Linux PC' },
-  { value: 'midi-keyboard', label: 'MIDI Keyboard' }
-];
+import { EmptyState, ErrorState, LoadingState } from '../../../lib/ui/states.jsx';
+import { useRetryRegion } from '../../../lib/ui/useRetryRegion.js';
+import { DEVICE_TYPES, deviceTypeBadgeColor } from '../utils/constants.js';
 
-/**
- * Get a Badge color for a device type.
- */
-function typeBadgeColor(type) {
-  if (type === 'shield-tv') return 'blue';
-  if (type === 'linux-pc') return 'green';
-  if (type === 'midi-keyboard') return 'orange';
-  return 'gray';
-}
+const DEVICES_PATH = '/api/v1/admin/household/devices';
 
 function DevicesIndex() {
-  const navigate = useNavigate();
   const [shutdown,setShutdown]=useState(null),[enforcementNow,setEnforcementNow]=useState(()=>Date.now());
-  const [devices, setDevices] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { data, loading, error, reload, invalidateAfterWrite } = useAdminRoster(DEVICES_PATH, { retryTransient: true });
+  const { regionProps, retry } = useRetryRegion(reload, loading);
+  const devices = data?.devices || [];
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createForm, setCreateForm] = useState({ id: '', type: 'shield-tv' });
   const [createErrors, setCreateErrors] = useState({});
   const [creating, setCreating] = useState(false);
 
-  const fetchDevices = async () => {
-    setLoading(true);
-    setError(null);
+  const readEnforcement = useCallback(async (isCurrent, signal) => {
+    setEnforcementNow(Date.now());
     try {
-      const result = await DaylightAPI('/api/v1/admin/household/devices');
-      setDevices(result.devices || []);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const result = await DaylightAPI('/api/v1/admin/household/devices');
-        if (!cancelled) {
-          setDevices(result.devices || []);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, []);
-
-  useEffect(()=>{
-    let disposed=false;
-    const refresh=async()=>{
+      const status = await DaylightAPI('/api/v1/admin/household/shutdown/status', {}, 'GET', { signal });
+      if (!isCurrent()) return;
+      setShutdown(status);
       setEnforcementNow(Date.now());
-      try{const status=await DaylightAPI('/api/v1/admin/household/shutdown/status');if(!disposed){setShutdown(status);setEnforcementNow(Date.now());}}
-      catch{if(!disposed)setShutdown(null);}
-    };
-    void refresh();const timer=setInterval(()=>void refresh(),2000);
-    return()=>{disposed=true;clearInterval(timer);};
-  },[]);
+    } catch {
+      if (isCurrent()) setShutdown(null);
+    }
+  }, []);
+  const { reload: refreshEnforcement, poll } = useRefreshableRead(readEnforcement);
+  const pollEnforcement = useCallback(() => {
+    // Age the displayed acknowledgement even when an in-flight read skips this tick.
+    setEnforcementNow(Date.now());
+    return poll();
+  }, [poll]);
+  useEffect(() => {
+    if (document.visibilityState === 'visible') refreshEnforcement();
+  }, [refreshEnforcement]);
+  useVisibleRefresh({ intervalMs: 2000, reload: refreshEnforcement, poll: pollEnforcement });
 
   const handleCreateFormChange = (field, value) => {
     setCreateForm(prev => ({ ...prev, [field]: value }));
@@ -102,136 +69,130 @@ function DevicesIndex() {
     return Object.keys(errors).length === 0;
   };
 
-  const handleCreateSubmit = async () => {
-    if (!validateCreateForm()) return;
+  const handleCreateSubmit = async event => {
+    event.preventDefault();
+    if (creating || !validateCreateForm()) return;
     setCreating(true);
     try {
       const payload = {
         id: createForm.id.trim(),
         type: createForm.type
       };
-      await DaylightAPI('/api/v1/admin/household/devices', payload, 'POST');
-      await fetchDevices();
+      await DaylightAPI(DEVICES_PATH, payload, 'POST');
       setCreateModalOpen(false);
       setCreateForm({ id: '', type: 'shield-tv' });
       setCreateErrors({});
-    } catch {
-      // error displayed via general error state
+      invalidateAfterWrite();
+    } catch (err) {
+      setCreateErrors({ submit: err.message || 'Could not add device. Try again.' });
     } finally {
       setCreating(false);
     }
   };
 
-  if (loading) {
-    return (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
-  }
+  const rosterState = loading
+    ? <LoadingState label="devices" />
+    : error && <ErrorState label="Devices" error={error} onRetry={retry} />;
+  const showManagement = Boolean(data) || !rosterState;
 
-  if (error) {
-    return (
-      <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error loading devices">
-        {error.message || 'Failed to load device list'}
-      </Alert>
-    );
-  }
+  const closeCreate = () => {
+    if (creating) return;
+    setCreateModalOpen(false);
+    setCreateErrors({});
+  };
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" className="ds-page-header">
-        <span className="ds-page-title">Devices</span>
-        <Button
-          leftSection={<IconPlus size={16} />}
-          onClick={() => setCreateModalOpen(true)}
+      {showManagement && (<>
+        <Group justify="space-between" className="ds-page-header">
+          <span className="ds-page-title">Devices</span>
+          <Button
+            leftSection={<IconPlus size={16} />}
+            onClick={() => setCreateModalOpen(true)}
+          >
+            Add Device
+          </Button>
+        </Group>
+
+        <Card padding="lg" withBorder>
+          <Text fw={600}>Kiosk Stop enforcement</Text>
+          {shutdown?.mode==='legacy' && <Text>{shutdown.locked?'Timed Stop requested':'No active timed Stop'}</Text>}
+          <EnforcementStatus {...shutdown?.enforcement} nowMs={enforcementNow}/>
+        </Card>
+      </>)}
+
+      <section aria-label="Devices" {...regionProps}>
+        {rosterState || (devices.length > 0 ? (
+          <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
+            {devices.map(device => (
+              <Card
+                key={device.id}
+                padding="lg"
+                radius="md"
+                withBorder
+              >
+                <Stack gap="sm">
+                  <Group justify="space-between" align="center">
+                    {/* A kebab id is the canonical key, never what a person reads.
+                        devices.yml has carried `name` and `icon` from the start and
+                        the API serves both; this card showed the raw slug anyway —
+                        the same defect CallApp.jsx:218 records as "the defect that
+                        put 'yellow-room-tablet' on screen". */}
+                    <Anchor component={Link} to={`/admin/household/devices/${encodeURIComponent(device.id)}`} c="inherit" size="md" fw={600}>
+                      {device.icon ? `${device.icon} ` : ''}{device.name || device.id}
+                    </Anchor>
+                    <Badge
+                      color={deviceTypeBadgeColor(device.type)}
+                      variant="light"
+                      size="sm"
+                    >
+                      {device.type || 'unknown'}
+                    </Badge>
+                  </Group>
+                </Stack>
+              </Card>
+            ))}
+          </SimpleGrid>
+        ) : (
+          <EmptyState title="No devices found" hint="Add a device to get started." />
+        ))}
+      </section>
+
+      {showManagement && (
+        <FormDialog
+          opened={createModalOpen}
+          onClose={closeCreate}
+          title="Add Device"
         >
-          Add Device
-        </Button>
-      </Group>
-
-      <Card padding="lg" withBorder>
-        <Text fw={600}>Kiosk Stop enforcement</Text>
-        {shutdown?.mode==='legacy' && <Text>{shutdown.locked?'Timed Stop requested':'No active timed Stop'}</Text>}
-        <EnforcementStatus {...shutdown?.enforcement} nowMs={enforcementNow}/>
-      </Card>
-
-      {devices.length > 0 ? (
-        <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
-          {devices.map(device => (
-            <Card
-              key={device.id}
-              padding="lg"
-              radius="md"
-              withBorder
-              style={{ cursor: 'pointer' }}
-              onClick={() => navigate(`/admin/household/devices/${device.id}`)}
-            >
-              <Stack gap="sm">
-                <Group justify="space-between" align="center">
-                  {/* A kebab id is the canonical key, never what a person reads.
-                      devices.yml has carried `name` and `icon` from the start and
-                      the API serves both; this card showed the raw slug anyway —
-                      the same defect CallApp.jsx:218 records as "the defect that
-                      put 'yellow-room-tablet' on screen". */}
-                  <Text size="md" fw={600}>
-                    {device.icon ? `${device.icon} ` : ''}{device.name || device.id}
-                  </Text>
-                  <Badge
-                    color={typeBadgeColor(device.type)}
-                    variant="light"
-                    size="sm"
-                  >
-                    {device.type || 'unknown'}
-                  </Badge>
-                </Group>
-              </Stack>
-            </Card>
-          ))}
-        </SimpleGrid>
-      ) : (
-        <Center h="40vh">
-          <Stack align="center">
-            <IconDevices size={48} stroke={1} color="gray" />
-            <Text c="dimmed">No devices found. Add one to get started.</Text>
+          <Stack component="form" gap="md" onSubmit={handleCreateSubmit}>
+            <TextInput
+              label="Device ID"
+              placeholder="living-room-shield"
+              required
+              disabled={creating}
+              value={createForm.id}
+              onChange={(e) => handleCreateFormChange('id', e.currentTarget.value)}
+              error={createErrors.id}
+            />
+            <Select
+              label="Type"
+              disabled={creating}
+            data={DEVICE_TYPES}
+              value={createForm.type}
+              onChange={(value) => handleCreateFormChange('type', value)}
+            />
+            {createErrors.submit && <Alert role="alert" color="red" icon={<IconAlertCircle size={16} />}>{createErrors.submit}</Alert>}
+            <Group justify="flex-end">
+              <Button type="button" variant="default" disabled={creating} onClick={closeCreate}>
+                Cancel
+              </Button>
+              <Button type="submit" loading={creating}>
+                Add Device
+              </Button>
+            </Group>
           </Stack>
-        </Center>
+        </FormDialog>
       )}
-
-      {/* Add Device Modal */}
-      <Modal
-        opened={createModalOpen}
-        onClose={() => {
-          setCreateModalOpen(false);
-          setCreateErrors({});
-        }}
-        title="Add Device"
-      >
-        <Stack gap="md">
-          <TextInput
-            label="Device ID"
-            placeholder="living-room-shield"
-            required
-            value={createForm.id}
-            onChange={(e) => handleCreateFormChange('id', e.currentTarget.value)}
-            error={createErrors.id}
-          />
-          <Select
-            label="Type"
-            data={DEVICE_TYPE_OPTIONS}
-            value={createForm.type}
-            onChange={(value) => handleCreateFormChange('type', value)}
-          />
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setCreateModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleCreateSubmit} loading={creating}>
-              Add Device
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
     </Stack>
   );
 }

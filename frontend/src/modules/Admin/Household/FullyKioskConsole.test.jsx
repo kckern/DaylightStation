@@ -9,7 +9,7 @@ import {
   within,
 } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
 
 const api = vi.hoisted(() => ({
   status: vi.fn(),
@@ -77,10 +77,11 @@ function screenshotResult(label = 'png') {
   };
 }
 
-function renderConsole() {
+function renderConsole(otherDeviceLink = false) {
   return render(
     <MantineProvider>
       <MemoryRouter initialEntries={['/admin/household/devices/tablet/fully-kiosk']}>
+        {otherDeviceLink && <Link to="/admin/household/devices/office/fully-kiosk">Office console</Link>}
         <Routes>
           <Route path="/admin/household/devices/:deviceId/fully-kiosk" element={<FullyKioskConsole />} />
         </Routes>
@@ -121,6 +122,40 @@ afterEach(() => {
 });
 
 describe('FullyKioskConsole', () => {
+  it('keeps newer status and settings when superseded reads resolve or fail late', async () => {
+    const oldStatus = deferred();
+    const oldSettings = deferred();
+    api.status
+      .mockResolvedValueOnce(statusFixture)
+      .mockReturnValueOnce(oldStatus.promise)
+      .mockResolvedValue({ ...statusFixture, device: { ...statusFixture.device, name: 'Fresh tablet' } });
+    api.settings
+      .mockResolvedValueOnce(settingsFixture)
+      .mockReturnValueOnce(oldSettings.promise)
+      .mockResolvedValue({ settings: [{ key: 'startURL', value: 'https://fixture.test/fresh', type: 'url', editable: true }] });
+    renderConsole();
+    await ready();
+    await openSettings();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Screen on' }));
+    await waitFor(() => expect(api.status).toHaveBeenCalledTimes(2));
+    const refresh = screen.getByRole('button', { name: 'Refresh device' });
+    fireEvent.click(refresh);
+    await screen.findByText('Fresh tablet');
+    fireEvent.click(refresh);
+    await screen.findByDisplayValue('https://fixture.test/fresh');
+
+    await act(async () => {
+      oldStatus.reject(new Error('Stale status failed'));
+      oldSettings.resolve(settingsFixture);
+    });
+    expect(screen.queryByText('Stale status failed')).toBeNull();
+    expect(screen.getByText('Online')).toBeVisible();
+    expect(screen.getByDisplayValue('https://fixture.test/fresh')).toBeVisible();
+    expect(api.status.mock.calls[1][1]?.signal.aborted).toBe(true);
+    expect(api.settings.mock.calls[1][1]?.signal.aborted).toBe(true);
+  });
+
   it('renders current device status, missing-field fallbacks, screenshot links, and safe quick controls', async () => {
     renderConsole();
 
@@ -281,6 +316,43 @@ describe('FullyKioskConsole', () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:test-shot-2');
   });
 
+  it('captures the new device while a screenshot for the previous device is still outstanding', async () => {
+    const old = deferred();
+    api.screenshot.mockImplementationOnce(() => old.promise);
+    api.status.mockImplementation(async id => ({
+      ...statusFixture, device: { id, name: id === 'office' ? 'Office tablet' : 'Kitchen tablet' },
+    }));
+    renderConsole(true);
+    await waitFor(() => expect(api.screenshot).toHaveBeenCalledTimes(1));
+    const signal = api.screenshot.mock.calls[0][1].signal;
+    fireEvent.click(screen.getByRole('link', { name: 'Office console' }));
+    await waitFor(() => expect(api.screenshot).toHaveBeenCalledWith('office', { signal: expect.anything() }));
+    expect(signal.aborted).toBe(true);
+    const officeShot = await screen.findByAltText('Current screen on Office tablet');
+    const currentUrl = officeShot.src;
+    await act(async () => old.resolve(screenshotResult('tablet')));
+    expect(officeShot.src).toBe(currentUrl);
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+  });
+
+  it('replaces an outstanding screenshot on foreground recovery and ignores its late failure', async () => {
+    const old = deferred();
+    api.screenshot.mockImplementationOnce(() => old.promise);
+    renderConsole();
+    await waitFor(() => expect(api.screenshot).toHaveBeenCalledTimes(1));
+    const signal = api.screenshot.mock.calls[0][1].signal;
+    fireEvent.click(screen.getByRole('switch', { name: 'Every 5s' }));
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    fireEvent(document, new Event('visibilitychange'));
+    visibility.mockReturnValue('visible');
+    fireEvent(document, new Event('visibilitychange'));
+    expect(await ready()).toHaveAttribute('src', 'blob:test-shot-1');
+    expect(signal.aborted).toBe(true);
+    await act(async () => old.reject(new Error('Expired screenshot')));
+    expect(screen.queryByText('Expired screenshot')).toBeNull();
+    expect(screen.getByAltText('Current screen on Kitchen tablet')).toHaveAttribute('src', 'blob:test-shot-1');
+  });
+
   it('runs 5-second screenshot refresh without overlap and aborts/cleans up on unmount', async () => {
     const rendered = renderConsole();
     await ready();
@@ -289,6 +361,12 @@ describe('FullyKioskConsole', () => {
     vi.useFakeTimers();
 
     fireEvent.click(screen.getByRole('switch', { name: 'Every 5s' }));
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    fireEvent(document, new Event('visibilitychange'));
+    await act(async () => { vi.advanceTimersByTime(10_000); });
+    expect(api.screenshot).toHaveBeenCalledTimes(1);
+    visibility.mockReturnValue('visible');
+    fireEvent(document, new Event('visibilitychange'));
     await act(async () => { vi.advanceTimersByTime(5000); });
     expect(api.screenshot).toHaveBeenCalledTimes(2);
     const signal = api.screenshot.mock.calls[1][1].signal;

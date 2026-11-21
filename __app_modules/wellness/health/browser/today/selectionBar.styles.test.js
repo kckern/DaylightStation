@@ -55,7 +55,7 @@ it('the sticky bar spans the page gutter the ticks reach into', () => {
 });
 it('fingers get 44 px on the sheet close button and the date field', () => {
   expect(coarse).toMatch(/\.health-day-move__close[^{]*\{[^}]*min-width: 44px; min-height: 44px/);
-  expect(coarse).toMatch(/\.health-move-date input \{[^}]*min-height: 44px/);
+  expect(coarse).toMatch(/\.health-move-date input \{[^}]*min-height: var\(--ds-control-touch-target\)/);
 });
 it('the day keeps room below it for the toasts over it', () => {
   expect(rule('.health-today::after')).toContain('height: var(--health-toast-clearance, 0px)');

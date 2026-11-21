@@ -1,8 +1,9 @@
 import { useHealthOperations } from "../operations/HealthOperationsProvider.jsx";
 import { FoodOperationStatus } from "../operations/FoodOperationStatus.jsx";
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button, NativeSelect } from '@mantine/core';
-import { CHROME_SCROLL_CLASS, LoadingState } from '@/lib/ui';
+import { browserPreference } from '@/lib/browserPreference.js';
+import { LoadingState, useAppMainRef } from '@/lib/ui';
 import { sumCounted } from "../../portable/contracts/nutrition/countedRows.mjs";
 import { MacroBadges } from "./MacroBadges.jsx";
 import { ExerciseSection } from "./ExerciseSection.jsx";
@@ -31,10 +32,15 @@ const SENTENCE_ESTIMATE_MS = 6000;
 const NO_IDS = new Set();
 const OWN_REPORTING = /\/nutrition\/(day-input|foods-move|meal-undo)$/;
 
+const collapsedDishes = browserPreference('health:collapsed-dishes', [], raw => {
+  const parsed = JSON.parse(raw);
+  return Array.isArray(parsed) ? parsed : [];
+}, () => sessionStorage);
+
 const kcal = (rows) => Math.round(sumCounted(rows, 'calories'));
 
 function Section({
-  label, rows, renderAddRow = null, onRowTap, onConfirm, onRequestDelete, headerAction, coldLoading, pending,
+  label, rows, active, renderAddRow = null, onRowTap, onConfirm, onRequestDelete, headerAction, coldLoading, pending,
   measuredByUuid, addedIds = null, kcalScale = null, date, bucket, onVoiceCapture, onTextCapture, onChanged, captureTasks = [], externalClarification, onClearClarification,
   fasted = false, onFastChanged = null, selecting = false, onSelectionMode = () => {}, onMealCommandDone = () => {}, selection = [], setSelection = () => {},
 }) {
@@ -72,10 +78,7 @@ function Section({
         ref={node=>{ if (node) node.indeterminate = ticked > 0 && !all; }} checked={all} onChange={e=>setTicked(e.target.checked)}/></label>
       <EntryRow {...props} selecting onTap={()=>setTicked(!all)}/></div>;
   };
-  const [collapsed, setCollapsed] = useState(() => {
-    try { return new Set(JSON.parse(sessionStorage.getItem('health:collapsed-dishes') || '[]')); }
-    catch { return new Set(); }
-  });
+  const [collapsed, setCollapsed] = useState(() => new Set(collapsedDishes.read()));
   // Heaviest first, and each calorie cell carries its share of the meal's
   // largest entry (an ingredient: of its dish) for the inline bar.
   // While a portion/numeric drag (or its save) is live, the order holds still
@@ -110,17 +113,17 @@ function Section({
   // Add/remove an ingredient in place — only in a real meal, not while picking foods.
   const dish = useDishMembership({ date, bucket, rows, onChanged });
   const dishEditable = Boolean(bucket && onChanged && !selecting);
-  const toggle = (key) => setCollapsed((prev) => {
-    const next = new Set(prev);
-    if (next.has(key)) next.delete(key); else next.add(key);
-    try {
-      // Other meal sections may have changed since this section mounted.
-      const stored = new Set(JSON.parse(sessionStorage.getItem('health:collapsed-dishes') || '[]'));
-      if (next.has(key)) stored.add(key); else stored.delete(key);
-      sessionStorage.setItem('health:collapsed-dishes', JSON.stringify([...stored]));
-    } catch { /* Storage is optional. */ }
-    return next;
-  });
+  const toggle = (key, shouldCollapse) => {
+    // Merge only this key; other meal sections can write after this section mounts.
+    const stored = new Set(collapsedDishes.read());
+    if (shouldCollapse) stored.add(key); else stored.delete(key);
+    collapsedDishes.write(JSON.stringify([...stored]));
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      if (shouldCollapse) next.add(key); else next.delete(key);
+      return next;
+    });
+  };
 
   return (
     <section className={['health-meal', drop.dragging && 'health-meal--drop-candidate', drop.over && 'health-meal--drop-over'].filter(Boolean).join(' ')}
@@ -161,7 +164,7 @@ function Section({
         // kind:'group' rows carry children. Gating on kind here would
         // silently drop the children from the screen.
         //
-        // CROSS-REFERENCE: EntryEditSheet.jsx's group mode and the backend
+        // CROSS-REFERENCE: EntryEditor.jsx's group mode and the backend
         // cascade (HealthOperations#cascadeMealTimeToChildren) gate the
         // OPPOSITE way — strictly on `row.kind === 'group'`, never on "has
         // children" — because they must never act on a row nothing marked
@@ -186,10 +189,10 @@ function Section({
             {/* `children` is attached to the row object here — not read
                 by EntryRow's own rendering (which uses rollupKcal/isGroup
                 for display) — purely so the tap handler forwards them to
-                whatever opens next (EntryEditSheet's group mode needs the
+                whatever opens next (EntryEditor's group mode needs the
                 full child list to scale/move/delete them together). */}
             {renderRow({ row:{...row,children},densityRow:{kind:'group',children},onTap:onRowTap,onConfirm,onRequestDelete,onChanged,measured,kcalShare:entryShares[entryIndex],
-              isGroup:true,expanded:isOpen,onToggle:()=>toggle(key),rollupKcal:rollup.calories })}
+              isGroup:true,expanded:isOpen,onToggle:()=>toggle(key, isOpen),rollupKcal:rollup.calories })}
             {isOpen ? children.map((c,index)=>renderRow({row:c,onTap:onRowTap,onConfirm,onRequestDelete,onChanged,child:true,lastChild:index===children.length-1 && !dishEditable,kcalShare:childShares[index],
               measured:measuredByUuid?.get(c.uuid) ?? measuredByUuid?.get(c.id) ?? null})) : null}
             {isOpen && dishEditable ? <DishAddRow dishName={row.name || row.item || row.label} candidates={dishOptions(rows, key)}
@@ -203,12 +206,12 @@ function Section({
           bucket), never as a page-level spinner. `aria-busy` on the row
           itself, not the whole section — the heading/kcal/add-row above
           stay fully interactive while a capture is in flight. */}
-      {captureTasks.length ? captureTasks.map(task=><CaptureProgress key={task.id} startedAt={task.startedAt} label={`${label} food analysis`}
+      {captureTasks.length ? captureTasks.map(task=><CaptureProgress key={task.id} startedAt={task.startedAt} label={`${label} food analysis`} active={active}
         text={task.text ?? null} estimateMs={task.text ? SENTENCE_ESTIMATE_MS : undefined}/>) : pending ?
-        <CaptureProgress startedAt={Date.now()} label={`${label} food analysis`}/> : null}
+        <CaptureProgress startedAt={Date.now()} label={`${label} food analysis`} active={active} /> : null}
       {/* The meal's add input is its last child, so a new food is typed right
           under the foods it joins. */}
-      {sentenceOperations.map(operation => <FoodOperationStatus key={operation.id} operation={operation} />)}
+      {sentenceOperations.map(operation => <FoodOperationStatus key={operation.id} operation={operation} active={active} />)}
       {addRow}
     </section>
   );
@@ -278,7 +281,7 @@ function DaySelectionBar({ barRef, byBucket, date, selection, moving, setMoving,
 }
 
 export function LogTable({
-  byBucket, date, sessions = [], exerciseAvailable = false, onRowTap, onConfirm, onRequestDelete,
+  byBucket, date, active = true, sessions = [], exerciseAvailable = false, onRowTap, onConfirm, onRequestDelete,
   bucketHeaderAction, coldLoading = false, capturePendingBucket = null, capturePendingBuckets = [],
   measuredByUuid = null, onVoiceCapture, onTextCapture, onMealChanged, captureTasks = [], clarifications, onClearClarification,
   renderAddRow = null, addedIds = null, onMoveEntry = null, onMoveMeal = null, onMoveToDay = null,
@@ -286,6 +289,7 @@ export function LogTable({
 }) {
   // "Select foods" spans the viewed day's meals and ends with that day.
   const [selecting, setSelecting] = useState(false);
+  const mainRef = useAppMainRef();
   const [selection, setSelectionState] = useState([]);
   const [moving, setMoving] = useState(false);
   const logRef = useRef(null);
@@ -306,12 +310,29 @@ export function LogTable({
   // back. The scroller absorbs the difference and the foods stay put. This code is
   // the only thing correcting the position: the browser's scroll anchoring would
   // otherwise make the same correction, so it is off for the change.
-  const scrollerOf = node => node?.closest(`.${CHROME_SCROLL_CLASS}`) || null;
+  const anchoring = useRef(null);
+  const restoreScrollAnchoring = useCallback(() => {
+    const hold = anchoring.current;
+    if (!hold) return;
+    anchoring.current = null;
+    if (hold.frame !== null) cancelAnimationFrame(hold.frame);
+    hold.scroller.style.overflowAnchor = hold.previous;
+  }, []);
+  useLayoutEffect(() => restoreScrollAnchoring, [date, restoreScrollAnchoring]);
+
   const holdScrollAnchoring = () => {
-    const scroller = scrollerOf(logRef.current);
-    if (!scroller) return;
+    const scroller = mainRef?.current;
+    if (!scroller?.contains(logRef.current)) return;
+    if (anchoring.current?.scroller !== scroller) {
+      restoreScrollAnchoring();
+      anchoring.current = { scroller, previous: scroller.style.overflowAnchor, frame: null };
+    }
+    const hold = anchoring.current;
+    if (hold.frame !== null) cancelAnimationFrame(hold.frame);
     scroller.style.overflowAnchor = 'none';
-    requestAnimationFrame(() => requestAnimationFrame(() => { scroller.style.overflowAnchor = ''; }));
+    hold.frame = requestAnimationFrame(() => {
+      hold.frame = requestAnimationFrame(restoreScrollAnchoring);
+    });
   };
   // Focus inside the bar would be lost with it. Only a close of the open bar on
   // this day is recorded: a late move can call this after selection ended, and a
@@ -336,8 +357,8 @@ export function LogTable({
     if (selecting) {
       const opened = opening.current;
       opening.current = null;
-      const scroller = scrollerOf(opened?.anchor);
-      if (!scroller || !opened.anchor.isConnected) return;
+      const scroller = mainRef?.current;
+      if (!opened || !scroller?.contains(opened.anchor)) return;
       const shift = opened.anchor.getBoundingClientRect().top - opened.top;
       // A short day cannot scroll by the bar's height, so it gets the room while the bar
       // is open. A page held at a minimum height absorbs some of that room, so what is
@@ -364,8 +385,8 @@ export function LogTable({
     const log = logRef.current;
     closing.current = null;
     if (!closed || !log || closed.date !== date) return;
-    const scroller = scrollerOf(log);
-    if (scroller) scroller.scrollTop += log.getBoundingClientRect().top - closed.top;
+    const scroller = mainRef?.current;
+    if (scroller?.contains(log)) scroller.scrollTop += log.getBoundingClientRect().top - closed.top;
     if (!closed.refocus) return;
     const target = log.querySelector('[data-select-foods]') || log;
     if (target === log) log.setAttribute('tabindex', '-1');
@@ -425,7 +446,7 @@ export function LogTable({
     const rows = byBucket.get(b.id) || [];
     return (
       <div key={`${date}:${b.id}`}>
-        <Section label={b.label} rows={rows} date={date} bucket={b.id}
+        <Section label={b.label} rows={rows} date={date} bucket={b.id} active={active}
           onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture} onChanged={onMealChanged}
           externalClarification={clarifications === undefined ? undefined : clarifications.get(`${date}:${b.id}`) || null}
           onClearClarification={()=>onClearClarification?.(`${date}:${b.id}`)}
@@ -454,12 +475,12 @@ export function LogTable({
         <div key={index} className="health-log__column">
           {ids.map(id => BUCKETS.find(b => b.id === id)).map(renderBucket)}
           {/* Workouts sit under Snacks, a meal-width column like any food. */}
-          {index === 1 && showExercise ? <ExerciseSection date={date} sessions={sessions} /> : null}
+          {index === 1 && showExercise ? <ExerciseSection date={date} sessions={sessions} active={active} /> : null}
         </div>
       ))}
       {orphans.length ? (
         <div className="health-log__wide">
-          <Section label={UNGROUPED.label} rows={orphans} onRowTap={onRowTap} onConfirm={onConfirm} onRequestDelete={onRequestDelete}
+          <Section label={UNGROUPED.label} rows={orphans} active={active} onRowTap={onRowTap} onConfirm={onConfirm} onRequestDelete={onRequestDelete}
             measuredByUuid={measuredByUuid} kcalScale={kcalScale} />
         </div>
       ) : null}

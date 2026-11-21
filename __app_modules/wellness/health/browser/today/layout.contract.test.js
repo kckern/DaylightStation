@@ -109,7 +109,7 @@ describe('Today layout stylesheet', () => {
   it('opts Health into the left context rail without changing other apps', () => {
     const chrome = readFileSync(new URL("../../../../../frontend/src/lib/ui/ds.scss", import.meta.url), 'utf8');
     expect(chrome).toContain('&--context { grid-template-columns: 320px minmax(0, 1fr); }');
-    expect(chrome).toContain('grid-template-columns: 200px 1fr;');
+    expect(chrome).toContain('grid-template-columns: 200px minmax(0, 1fr);');
     expect(rule('.health-history > summary')).toMatch(/min-height: 44px/);
   });
 
@@ -140,13 +140,17 @@ describe('add-food suggestion panel', () => {
   });
 
   it('inline: the popup overlays what follows instead of pushing it down', () => {
-    expect(rule('.health-suggest--inline')).toMatch(/position: relative/);
+    const inline = rule('.health-suggest--inline');
+    expect(inline).toMatch(/position: relative/);
+    expect(inline).toContain('--health-suggest-gap: 2px');
     const popup = rule('.health-suggest--inline .health-suggest__popup');
     expect(popup).toMatch(/position: absolute/);
-    expect(popup).toMatch(/top: calc\(100% \+ 2px\)/);
+    expect(popup).toContain('top: calc(100% + var(--health-suggest-gap))');
+    expect(popup).toMatch(/max-block-size:[^;]*var\(--health-suggest-available-height/);
     expect(popup).toMatch(/z-index: \d+/);
     expect(popup).toMatch(/background: var\(--ds-surface\)/);
-    expect(css).toMatch(/\.health-suggest--inline\.health-suggest--above \.health-suggest__popup \{[^}]*bottom: calc\(100% \+ 2px\)/);
+    expect(rule('.health-suggest--inline.health-suggest--above .health-suggest__popup'))
+      .toContain('bottom: calc(100% + var(--health-suggest-gap))');
     // The sheet mode's popup stays in flow: no unscoped popup rule positions it.
     expect(css).not.toMatch(/\} \.health-suggest__popup \{[^}]*position: absolute/);
   });
@@ -184,7 +188,9 @@ describe('month block stylesheet', () => {
 
 describe('week strip stylesheet', () => {
   it('makes selection and week navigation visually explicit', () => {
-    expect(rule('.health-weekstrip__nav')).toMatch(/grid-template-columns: 44px 1fr 44px/);
+    expect(rule('.health-weekstrip__nav')).toContain(
+      'grid-template-columns: var(--ds-control-touch-target) 1fr var(--ds-control-touch-target)',
+    );
     expect(rule('.health-weekstrip__cell--active')).toMatch(/border-color: var\(--ds-accent\)/);
     expect(rule('.health-weekstrip__cell--month-start')).toMatch(/border-left-color: var\(--ds-border\)/);
   });

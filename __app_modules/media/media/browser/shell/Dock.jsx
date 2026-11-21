@@ -11,8 +11,8 @@
 // tablet-up-gated in MediaShell.scss); the fleet signal mobile still needs
 // moved to a badge on the Devices tab (PrimaryNav.jsx) instead. The settings
 // gear is the one control both layouts keep, so it renders once, unscoped.
+import { UiIcon } from '../../../../../frontend/src/lib/ui/UiIcon.jsx';
 import React, { useState, useCallback, useMemo } from 'react';
-import { IconSearch } from '@tabler/icons-react';
 import { MediaContentSearch } from "../search/MediaContentSearch.jsx";
 import { FleetIndicator } from "./FleetIndicator.jsx";
 import { SettingsMenu } from "./SettingsMenu.jsx";
@@ -21,7 +21,7 @@ import { CastTargetChip } from "../cast/CastTargetChip.jsx";
 import { FirstUseCard } from "../identity/FirstUseCard.jsx";
 import { DestinationInteractionContext } from "../cast/destinationInteraction.js";
 
-export function Dock({ onOpenSearch }) {
+export function Dock({ onOpenSearch, searchInputRef, launcherRef, destinationControlRef }) {
   const [startFreshOpen, setStartFreshOpen] = useState(false);
   const openStartFresh = useCallback(() => setStartFreshOpen(true), []);
   // Set while the destination control is being used, so an open search stays open.
@@ -34,15 +34,16 @@ export function Dock({ onOpenSearch }) {
       {/* The destination control: where the next Play goes. On every width. The
           first-use naming popover anchors to it. */}
       <div className="media-dock-destination">
-        <FirstUseCard><CastTargetChip /></FirstUseCard>
+        <FirstUseCard><CastTargetChip controlRef={destinationControlRef} /></FirstUseCard>
       </div>
       <button
         type="button"
+        ref={launcherRef}
         className="media-search-launcher"
         data-testid="media-search-launcher"
         onClick={() => onOpenSearch?.()}
       >
-        <IconSearch size={18} aria-hidden="true" />
+        <UiIcon name="search" size={18} />
         <span>Search media…</span>
       </button>
       {/* No wrapper div: MediaContentSearch's own root, `.media-search-bar`,
@@ -53,7 +54,7 @@ export function Dock({ onOpenSearch }) {
           at 1200px before this fix). Mobile hides `.media-search-bar`
           directly by its own class (mobile-only rule below), not via a
           wrapper. */}
-      <MediaContentSearch />
+      <MediaContentSearch inputRef={searchInputRef} />
       <FleetIndicator />
       <SettingsMenu onResetSession={openStartFresh} />
       <StartFreshDialog open={startFreshOpen} onClose={() => setStartFreshOpen(false)} />

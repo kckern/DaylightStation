@@ -1,8 +1,16 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useFeedListShortcuts } from '../useFeedListShortcuts.js';
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
+import { COMPACT_VIEWPORT_QUERY, useCompactViewport } from '@/lib/ui/useCompactViewport.js';
+import { UiIcon } from '@/lib/ui/UiIcon.jsx';
+import { useRetryRegion } from '@/lib/ui/useRetryRegion.js';
+import { keepTabInPanel } from '@/lib/ui/dismiss/useDialogFocus.js';
+import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import { useSearchParams } from 'react-router-dom';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { useFeedWorkspace } from "../FeedWorkspaceContext.jsx";
+import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
 import ReaderSidebar from "./ReaderSidebar.jsx";
 import ArticleRow from "./ArticleRow.jsx";
 import { useVirtualFeedWindow } from "../Scroll/hooks/useVirtualFeedWindow.js";
@@ -11,6 +19,7 @@ import "./Reader.scss";
 
 const log = getLogger().child({ app: 'feed', module: 'reader' });
 const HISTORY_VIEWS = new Set(['unread', 'saved', 'archived']);
+const streamTimeoutMs = 10_000;
 
 function historyItemToArticle(item) {
   return {
@@ -162,215 +171,246 @@ function smartGroup(articles, isFiltered) {
 
 export default function Reader() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { getSnapshot, setSnapshot, getLastVisit, markVisited, mutateItems, applyPendingMutations, checkpoints } = useFeedWorkspace();
-  const initialSnapshot = useRef(getSnapshot('reader'));
-  const initialCheckpoint = useRef(checkpoints.reader);
+  const { getSnapshot, setSnapshot, getLastVisit, markVisited, mutateItems, applyPendingMutations, pendingItemOperations, itemSyncRevision, checkpoints } = useFeedWorkspace();
+  const activeView = searchParams.get('view') || 'all';
+  const feedsParam = searchParams.get('feeds') || '';
+  const cached = getSnapshot('reader');
+  const initialSnapshot = useRef(cached?.view === activeView && cached.feeds === feedsParam ? cached : null);
+  const initialCheckpoint = useRef(checkpoints.reader ?? {});
   const previousVisit = useRef(getLastVisit('reader'));
   const visitStarted = useRef(new Date().toISOString());
-  const [feeds, setFeeds] = useState([]);
+  const {
+    data: feedsData, error: feedsReadError, loading: feedsLoading, revalidating: feedsRevalidating, reload: reloadFeeds,
+  } = useApiResource('/api/v1/feed/reader/feeds', { label: 'Feed subscriptions', dedupe: false });
+  const { regionProps: feedsRegion, retry: retryFeeds } = useRetryRegion(reloadFeeds, feedsLoading || feedsRevalidating);
+  const feeds = feedsData || [];
   const [articles, setArticles] = useState(() => applyPendingMutations(initialSnapshot.current?.articles || []));
   const [continuation, setContinuation] = useState(initialSnapshot.current?.continuation || null);
   const [exhausted, setExhausted] = useState(initialSnapshot.current?.exhausted || false);
-  const feedsParam = searchParams.get('feeds') || '';
   const activeFeeds = useMemo(() => new Set(feedsParam.split(',').filter(Boolean)), [feedsParam]);
-  const activeView = searchParams.get('view') || 'all';
   const [loading, setLoading] = useState(!initialSnapshot.current?.articles?.length);
   const [loadingMore, setLoadingMore] = useState(false);
   const [streamError, setStreamError] = useState(null);
   const [offlineError, setOfflineError] = useState(null);
-  const [feedsError, setFeedsError] = useState(null);
   const [offlineItems, setOfflineItems] = useState([]);
   const [offlineLoading, setOfflineLoading] = useState(false);
+  const [offlineAttempt, setOfflineAttempt] = useState(0);
   const [collapsedGroups, setCollapsedGroups] = useState(new Set());
+  const compact = useCompactViewport();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawerActive = compact && drawerOpen;
+  const wasDrawerActive = useRef(false);
+  const drawerOpenerRef = useRef(null);
   const sentinelRef = useRef(null);
-  const inboxRef = useRef(null);
   const listRef = useRef(null);
   const sidebarRef = useRef(null);
-  const requestRef = useRef(null);
-  const appendLockRef = useRef(false);
+  const inFlightEdits = useRef(null);
+  const loadedPages = useRef(1);
+  const lastItemSync = useRef(itemSyncRevision);
+  const streamFilter = useRef({
+    view: initialSnapshot.current?.view ?? 'all',
+    feeds: initialSnapshot.current?.feeds ?? '',
+  });
   const snapshotRef = useRef(null);
+  const entryFilter = useRef({ view: activeView, feeds: feedsParam });
   const checkpointRestoredRef = useRef(false);
-  snapshotRef.current = { articles, continuation, exhausted };
+  snapshotRef.current = activeView === 'offline'
+    ? { view: activeView, feeds: feedsParam }
+    : { articles, continuation, exhausted, view: activeView, feeds: feedsParam };
 
-  useEffect(() => { markVisited('reader', visitStarted.current); }, [markVisited]);
+  useEffect(() => { markVisited('reader', visitStarted.current, initialCheckpoint.current); }, [markVisited]);
 
-  useEffect(() => {
-    if (!drawerOpen) return undefined;
-    const previous = document.activeElement;
-    sidebarRef.current?.focus();
-    const onKeyDown = event => {
-      if (event.key === 'Escape') setDrawerOpen(false);
-      if (event.key !== 'Tab' || !sidebarRef.current) return;
-      const focusable = [...sidebarRef.current.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])')];
-      if (!focusable.length) { event.preventDefault(); sidebarRef.current.focus(); return; }
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && (document.activeElement === first || document.activeElement === sidebarRef.current)) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => { document.removeEventListener('keydown', onKeyDown); previous?.focus?.(); };
-  }, [drawerOpen]);
+  useLayoutEffect(() => {
+    if (drawerActive) {
+      sidebarRef.current?.focus({ preventScroll: true });
+    } else if (wasDrawerActive.current) {
+      const target = compact ? drawerOpenerRef.current : sidebarRef.current;
+      target?.focus({ preventScroll: true });
+    } else if (compact && sidebarRef.current?.contains(document.activeElement)) {
+      drawerOpenerRef.current?.focus({ preventScroll: true });
+    }
+    // Dock an open drawer. An open request may arrive before the media-query
+    // listener has reported that the compact control is visible again.
+    if (!compact && wasDrawerActive.current) setDrawerOpen(false);
+    wasDrawerActive.current = drawerActive;
+  }, [compact, drawerActive]);
 
-  useEffect(() => {
-    const inbox = inboxRef.current;
-    if (!inbox) return undefined;
-    if (drawerOpen) inbox.setAttribute('inert', '');
-    else inbox.removeAttribute('inert');
-    return () => inbox.removeAttribute('inert');
-  }, [drawerOpen]);
-
-  useEffect(() => {
-    const onKeyDown = event => {
-      if (!['j', 'k'].includes(event.key) || event.metaKey || event.ctrlKey || event.altKey) return;
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || event.target?.isContentEditable) return;
-      const rows = [...document.querySelectorAll('.article-row-header')];
-      if (!rows.length) return;
-      const activeIndex = rows.findIndex(row => row === document.activeElement);
-      const nextIndex = event.key === 'j' ? Math.min(rows.length - 1, activeIndex + 1) : Math.max(0, activeIndex <= 0 ? 0 : activeIndex - 1);
+  const openDrawer = () => {
+    if (window.matchMedia(COMPACT_VIEWPORT_QUERY).matches) setDrawerOpen(true);
+  };
+  const closeDrawer = () => setDrawerOpen(false);
+  const usesDismissStack = useDismissLayer(drawerActive, closeDrawer);
+  const handleDrawerKeyDown = event => {
+    if (event.defaultPrevented) return;
+    if (event.key === 'Escape' && !usesDismissStack) {
       event.preventDefault();
-      rows[nextIndex].focus({ preventScroll: true });
-      rows[nextIndex].scrollIntoView({ block: 'center', behavior: 'smooth' });
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
+      event.stopPropagation();
+      closeDrawer();
+      return;
+    }
+    keepTabInPanel(event);
+  };
+
+  useFeedListShortcuts(listRef, '.article-row-header', !drawerActive);
+
+  const feedsError = feedsReadError ? 'Subscriptions are unavailable. The inbox can still be used.' : null;
+
+  const readPage = useCallback(async (cursor, signal) => {
+    if (HISTORY_VIEWS.has(activeView)) {
+      const params = new URLSearchParams({ state: activeView, mode: 'reader', limit: '100' });
+      if (cursor) params.set('cursor', cursor);
+      const data = await DaylightAPI(`/api/v1/feed/search?${params}`, {}, 'GET', { signal });
+      return { items: (data.items || []).map(historyItemToArticle), next: data.nextCursor || null, exhausted: !data.nextCursor };
+    }
+    const params = activeFeeds.size
+      ? new URLSearchParams({ count: '50', feeds: [...activeFeeds].join(',') })
+      : new URLSearchParams({ days: '3', count: '100' });
+    if (cursor) params.set('continuation', cursor);
+    const data = await DaylightAPI(`/api/v1/feed/reader/stream?${params}`, {}, 'GET', { signal });
+    return { items: data.items || [], next: data.continuation || null, exhausted: !!data.exhausted };
+  }, [activeFeeds, activeView]);
+
+  const finishStreamRead = useCallback(() => {
+    inFlightEdits.current = null;
+    setLoading(false);
+    setLoadingMore(false);
   }, []);
 
-  // Load feeds for sidebar
-  const loadFeeds = useCallback(() => {
-    const controller = new AbortController();
-    setFeedsError(null);
-    DaylightAPI('/api/v1/feed/reader/feeds', {}, 'GET', { signal: controller.signal })
-      .then(f => { setFeeds(f || []); setFeedsError(null); })
-      .catch(err => {
-        if (err.name === 'AbortError') return;
-        log.warn('reader.feeds.failed', { error: err.message });
-        setFeedsError('Subscriptions are unavailable. The inbox can still be used.');
-      });
-    return controller;
+  const reportStreamError = useCallback((cursor, pages, error) => {
+    const append = cursor !== null;
+    log.warn('reader.stream.failed', { append, error });
+    setStreamError({ cursor, pages, message: append ? 'More articles could not be loaded.' : 'Articles could not be refreshed.' });
   }, []);
 
-  useEffect(() => {
-    const controller = loadFeeds();
-    return () => controller.abort();
-  }, [loadFeeds]);
-
-  // Fetch stream articles
-  // Unfiltered: day-based primer (days=3)
-  // Filtered:   count-based backlog (count=50), full feed history
-  const fetchStream = useCallback(async (cont = null, append = false) => {
-    if (append && appendLockRef.current) return;
-    if (append) appendLockRef.current = true;
-    if (!append) requestRef.current?.abort();
-    const controller = new AbortController();
-    if (!append) requestRef.current = controller;
-    if (!append) setLoading(true);
-    else setLoadingMore(true);
+  const readStream = useCallback(async (isCurrent, signal, { cursor: startCursor = null, pages = 1 } = {}) => {
+    const append = startCursor !== null;
+    const editedStates = new Map();
+    inFlightEdits.current = editedStates;
+    setLoading(!append);
+    setLoadingMore(append);
     setStreamError(null);
     try {
-      if (HISTORY_VIEWS.has(activeView)) {
-        const params = new URLSearchParams({ state: activeView, mode: 'reader', limit: '100' });
-        if (cont) params.set('cursor', cont);
-        const data = await DaylightAPI(`/api/v1/feed/search?${params}`, {}, 'GET', { signal: controller.signal });
-        const incoming = applyPendingMutations((data.items || []).map(historyItemToArticle));
-        setArticles(prev => append ? [...prev, ...incoming.filter(item => !prev.some(existing => existing.stateKey === item.stateKey))] : incoming);
-        setContinuation(data.nextCursor || null);
-        setExhausted(!data.nextCursor);
-        return;
-      }
-      const isFiltered = activeFeeds.size > 0;
-      const params = new URLSearchParams();
-      if (isFiltered) {
-        params.set('count', '50');
-        params.set('feeds', [...activeFeeds].join(','));
-      } else {
-        params.set('days', '3');
-        params.set('count', '100');
-      }
-      if (cont) params.set('continuation', cont);
-      const data = await DaylightAPI(`/api/v1/feed/reader/stream?${params}`, {}, 'GET', { signal: controller.signal });
-      const incoming = applyPendingMutations(data.items || []);
-      setArticles(prev => append ? [...prev, ...incoming] : incoming);
-      setContinuation(data.continuation || null);
-      setExhausted(data.exhausted || false);
+      let cursor = startCursor;
+      const results = [];
+      let page;
+      do {
+        page = await readPage(cursor, signal);
+        if (!isCurrent()) return;
+        results.push(page.items);
+        cursor = page.next;
+      } while (cursor && !page.exhausted && results.length < pages);
+      loadedPages.current = (append ? loadedPages.current : 0) + results.length;
+      setArticles(prev => {
+        const rows = append ? [...prev] : [];
+        for (const items of results) {
+          const incoming = applyPendingMutations(items.map(item => {
+            const state = editedStates.get(item.id);
+            return state ? { ...item, state, isRead: state.isRead } : item;
+          }));
+          const accepted = HISTORY_VIEWS.has(activeView) && rows.length
+            ? incoming.filter(item => !rows.some(existing => existing.stateKey === item.stateKey))
+            : incoming;
+          rows.push(...accepted);
+        }
+        return rows;
+      });
+      setContinuation(cursor);
+      setExhausted(page.exhausted);
     } catch (err) {
-      if (err.name !== 'AbortError') {
-        log.warn('reader.stream.failed', { append, error: err.message });
-        setStreamError('Articles could not be refreshed.');
-      }
+      if (isCurrent() && err.name !== 'AbortError') reportStreamError(startCursor, pages, err.message);
     } finally {
-      if (!controller.signal.aborted) {
-        setLoading(false);
-        setLoadingMore(false);
-      }
-      appendLockRef.current = false;
+      if (isCurrent()) finishStreamRead();
     }
-  }, [activeFeeds, activeView, applyPendingMutations]);
+  }, [activeView, applyPendingMutations, readPage, reportStreamError, finishStreamRead]);
+  const onStreamTimeout = useCallback(({ cursor = null, pages = 1 } = {}) => {
+    reportStreamError(cursor, pages, 'Reader request timed out');
+    finishStreamRead();
+  }, [reportStreamError, finishStreamRead]);
+  const { reload: reloadStream, poll: loadMore } = useRefreshableRead(readStream, {
+    timeoutMs: streamTimeoutMs, onTimeout: onStreamTimeout,
+  });
+
+  const retryArticles = () => {
+    if (activeView === 'offline') setOfflineAttempt(attempt => attempt + 1);
+    else if (streamError.cursor === null) reloadStream(streamError);
+    else loadMore(streamError);
+  };
+  const { regionProps: inboxRegion, retry } = useRetryRegion(
+    retryArticles, activeView === 'offline' ? offlineLoading : loading || loadingMore,
+  );
+  const inboxRef = inboxRegion.ref;
 
   // Initial load + reload on filter change
-  useEffect(() => {
-    if (activeView === 'offline') return undefined;
-    fetchStream();
-    return () => requestRef.current?.abort();
-  }, [activeView, fetchStream]);
+  useLayoutEffect(() => {
+    const reconciled = lastItemSync.current !== itemSyncRevision;
+    lastItemSync.current = itemSyncRevision;
+    if (activeView === 'offline') {
+      inFlightEdits.current = null;
+      return;
+    }
+    if (streamFilter.current.view !== activeView || streamFilter.current.feeds !== feedsParam) {
+      streamFilter.current = { view: activeView, feeds: feedsParam };
+      loadedPages.current = 1;
+      setArticles([]);
+      setContinuation(null);
+      setExhausted(false);
+    }
+    // Keep every loaded page mounted until its canonical replacement is ready.
+    reloadStream({ pages: reconciled ? loadedPages.current : 1 });
+  }, [activeView, feedsParam, reloadStream, itemSyncRevision]);
 
-  const loadOffline = useCallback(() => {
+  useEffect(() => {
+    if (activeView !== 'offline') return;
     let active = true;
     setOfflineLoading(true);
     setOfflineError(null);
     listOfflineEditions()
       .then(rows => { if (active) setOfflineItems(applyPendingMutations(rows.map(row => row.item))); })
       .catch(error => {
-        if (active) setOfflineError('Downloaded articles could not be opened on this device.');
+        if (!active) return;
+        setOfflineError('Downloaded articles could not be opened on this device.');
         log.warn('reader.offline_editions.failed', { error: error.message });
       })
       .finally(() => { if (active) setOfflineLoading(false); });
     return () => { active = false; };
-  }, [applyPendingMutations]);
+  }, [activeView, applyPendingMutations, offlineAttempt]);
 
-  useEffect(() => {
-    if (activeView !== 'offline') return undefined;
-    return loadOffline();
-  }, [activeView, loadOffline]);
-
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = inboxRef.current;
-    const initialOffset = initialSnapshot.current?.scrollTop ?? initialCheckpoint.current?.scrollOffset;
-    if (el && initialOffset) requestAnimationFrame(() => { el.scrollTop = initialOffset; });
     return () => {
-      const scrollOffset = el?.scrollTop || 0;
-      const itemId = [...(el?.querySelectorAll('[data-feed-item-id]') || [])]
-        .find(node => node.getBoundingClientRect().bottom > el.getBoundingClientRect().top + 8)?.dataset.feedItemId || null;
-      setSnapshot('reader', { ...snapshotRef.current, scrollTop: scrollOffset });
-      markVisited('reader', new Date().toISOString(), { itemId, scrollOffset });
+      const snapshot = snapshotRef.current;
+      let position = initialCheckpoint.current;
+      const rows = el?.querySelectorAll('[data-feed-item-id]');
+      if (rows?.length) {
+        const scrollOffset = el.scrollTop;
+        setSnapshot('reader', { ...snapshot, scrollTop: scrollOffset });
+        if (snapshot.view === 'all' && !snapshot.feeds) {
+          const itemId = [...rows].find(node => node.getBoundingClientRect().bottom > el.getBoundingClientRect().top + 8)?.dataset.feedItemId || null;
+          position = { itemId, scrollOffset };
+        }
+      }
+      markVisited('reader', new Date().toISOString(), position);
     };
   }, [markVisited, setSnapshot]);
 
-  useEffect(() => {
-    if (checkpointRestoredRef.current || initialSnapshot.current?.scrollTop || !initialCheckpoint.current?.itemId || !articles.length) return;
-    const target = [...(inboxRef.current?.querySelectorAll('[data-feed-item-id]') || [])]
-      .find(node => node.dataset.feedItemId === initialCheckpoint.current.itemId);
-    if (target) {
-      checkpointRestoredRef.current = true;
-      requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }));
-    }
-  }, [articles.length]);
-
   // Infinite scroll via IntersectionObserver
   useEffect(() => {
-    if (!sentinelRef.current) return;
+    if (loading || loadingMore || streamError || !sentinelRef.current) return;
+    let active = true;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && continuation && !loadingMore) {
-          fetchStream(continuation, true);
+        if (active && entry.isIntersecting && continuation) {
+          loadMore({ cursor: continuation });
         }
       },
       { rootMargin: '200px' }
     );
     observer.observe(sentinelRef.current);
-    return () => observer.disconnect();
-  }, [continuation, loadingMore, fetchStream]);
+    return () => {
+      active = false;
+      observer.disconnect();
+    };
+  }, [continuation, loading, loadingMore, streamError, loadMore]);
 
   // Sidebar filter toggle (single feed)
   const handleToggleFeed = (feedId, multiSelect) => {
@@ -404,8 +444,19 @@ export default function Reader() {
     }
   };
 
+  // Apply queued changes to the pages already on screen, including downloads.
+  useEffect(() => {
+    if (pendingItemOperations?.length) {
+      setArticles(applyPendingMutations);
+      setOfflineItems(applyPendingMutations);
+    }
+  }, [applyPendingMutations, pendingItemOperations]);
+
   // Mark as read (single article)
   const applyUpdatedItems = useCallback(updated => {
+    // A read started before a local write can still update all other rows.
+    const edited = inFlightEdits.current;
+    if (edited) for (const item of updated) edited.set(item.id, item.state);
     const apply = current => current.map(value => updated.find(item => item.id === value.id) || value);
     setArticles(apply);
     setOfflineItems(apply);
@@ -457,6 +508,29 @@ export default function Reader() {
     overscan: 600,
   });
 
+  useLayoutEffect(() => {
+    if (checkpointRestoredRef.current) return;
+    if (entryFilter.current.view !== activeView || entryFilter.current.feeds !== feedsParam) {
+      checkpointRestoredRef.current = true;
+      return;
+    }
+    const inbox = inboxRef.current;
+    if (!inbox || !listRef.current || !readerRows.length) return;
+    checkpointRestoredRef.current = true;
+    const snapshot = initialSnapshot.current;
+    if (snapshot?.scrollTop != null) {
+      inbox.scrollTop = snapshot.scrollTop;
+      return;
+    }
+    // Durable Reader positions have no filter identity and belong to the default inbox.
+    if (activeView !== 'all' || feedsParam) return;
+    const checkpoint = initialCheckpoint.current;
+    const anchor = checkpoint?.itemId && [...listRef.current.querySelectorAll('[data-feed-item-id]')]
+      .find(node => node.dataset.feedItemId === checkpoint.itemId);
+    if (anchor) inbox.scrollTop += anchor.getBoundingClientRect().top - inbox.getBoundingClientRect().top;
+    else if (checkpoint?.scrollOffset) inbox.scrollTop = checkpoint.scrollOffset;
+  }, [activeView, feedsParam, readerRows.length]);
+
   // Keep the drawer open while choosing feeds so touch users can build a
   // multi-feed selection without modifier keys. The explicit close button
   // completes the selection.
@@ -472,23 +546,39 @@ export default function Reader() {
     setSearchParams(params);
   };
 
+  const errorMessage = activeView === 'offline' ? offlineError : streamError?.message;
+
   return (
     <div className="reader-view">
-      {drawerOpen && <div className="reader-drawer-backdrop" onClick={() => setDrawerOpen(false)} aria-hidden="true" />}
-      <aside ref={sidebarRef} tabIndex={-1} id="reader-subscriptions" aria-label="Subscriptions" role={drawerOpen ? 'dialog' : undefined} aria-modal={drawerOpen || undefined} className={`reader-sidebar-wrapper ${drawerOpen ? 'open' : ''}`}>
-        <button type="button" className="reader-drawer-close" onClick={() => setDrawerOpen(false)} aria-label="Close subscriptions">×</button>
-        {feedsError && <div className="reader-inline-error" role="status">{feedsError}<button onClick={loadFeeds}>Retry</button></div>}
-        <ReaderSidebar
-          feeds={feeds}
-          activeFeeds={activeFeeds}
-          onToggleFeed={handleMobileToggleFeed}
-          onToggleCategory={handleMobileToggleCategory}
-          onClearFilters={handleMobileClearFilters}
-        />
+      {drawerActive && <div className="reader-drawer-backdrop" onClick={closeDrawer} aria-hidden="true" />}
+      <aside
+        ref={sidebarRef}
+        tabIndex={-1}
+        id="reader-subscriptions"
+        aria-label="Subscriptions"
+        role={drawerActive ? 'dialog' : undefined}
+        aria-modal={drawerActive || undefined}
+        inert={compact && !drawerActive ? '' : undefined}
+        onKeyDown={drawerActive ? handleDrawerKeyDown : undefined}
+        className={`reader-sidebar-wrapper ${drawerActive ? 'open' : ''}`}
+      >
+        <button type="button" className="reader-drawer-close" onClick={closeDrawer} aria-label="Close subscriptions">
+          <UiIcon name="close" size={22} />
+        </button>
+        <section className="reader-subscriptions-list" aria-label="Feed list" {...feedsRegion}>
+          {feedsError && <div className="reader-inline-error" role="status">{feedsError}<button onClick={retryFeeds}>Retry</button></div>}
+          <ReaderSidebar
+            feeds={feeds}
+            activeFeeds={activeFeeds}
+            onToggleFeed={handleMobileToggleFeed}
+            onToggleCategory={handleMobileToggleCategory}
+            onClearFilters={handleMobileClearFilters}
+          />
+        </section>
       </aside>
-      <main className="reader-inbox" ref={inboxRef}>
+      <section className="reader-inbox" aria-label="Reader articles" {...inboxRegion} inert={drawerActive ? '' : undefined}>
         <div className="reader-mobile-toolbar">
-          <button className="reader-hamburger" onClick={() => setDrawerOpen(true)} aria-label="Open subscriptions" aria-expanded={drawerOpen} aria-controls="reader-subscriptions">
+          <button ref={drawerOpenerRef} className="reader-hamburger" onClick={openDrawer} aria-label="Open subscriptions" aria-expanded={drawerActive} aria-controls="reader-subscriptions">
             <span /><span /><span />
           </button>
           <span className="reader-mobile-title">
@@ -501,10 +591,10 @@ export default function Reader() {
             if (view === 'all') params.delete('view'); else params.set('view', view);
             setSearchParams(params);
           }}>{view}</button>)}
-          {activeView !== 'offline' && <button onClick={() => fetchStream()} disabled={loading}>Refresh</button>}
+          {activeView !== 'offline' && <button onClick={() => reloadStream()} disabled={loading}>Refresh</button>}
         </div>
-        {(activeView === 'offline' ? offlineError : streamError) && <div className="reader-inline-error" role="alert">{activeView === 'offline' ? offlineError : streamError}<button onClick={() => activeView === 'offline' ? loadOffline() : fetchStream()}>Retry</button></div>}
-        {(activeView === 'offline' ? offlineLoading : loading) ? (
+        {errorMessage && <div className="reader-inline-error" role="alert">{errorMessage}<button onClick={retry}>Retry</button></div>}
+        {(activeView === 'offline' ? offlineLoading : loading && !articles.length) ? (
           <div className="reader-loading">Loading...</div>
         ) : (
           <>
@@ -563,7 +653,7 @@ export default function Reader() {
             )}
           </>
         )}
-      </main>
+      </section>
     </div>
   );
 }

@@ -1,19 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { clearToken, setToken } from '../../../lib/auth.js';
 
 const calls = [];
 const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn(), child: () => log };
-const reload = vi.fn();
+const reload = vi.fn(async () => {});
 let payload;
 let failNext = null;
+let pendingWrite;
 vi.mock('../../../lib/logging/Logger.js', () => ({ default: () => log }));
-vi.mock('../../../lib/hooks/useApiResource.js', () => ({ useApiResource: () => ({ data: payload, loading: false, error: null, reload }) }));
+vi.mock('../../../lib/hooks/useApiResource.js', () => ({
+  useApiResource: () => ({ data: payload, loading: false, error: null, reload, refresh: reload }),
+  invalidateApiResources: vi.fn(),
+}));
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: async (path, body, method) => {
   calls.push({ path, body, method });
   if (failNext && failNext(path, method)) throw new Error('nope');
-  return {};
+  return pendingWrite ?? {};
 } }));
 vi.mock('../../../../../__app_modules/media/media/browser/playback.mjs', () => ({ default: () => <div /> }));
 const { previewStore } = await import('../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs');
@@ -23,13 +28,17 @@ const row = (id, label, over = {}) => ({ id, peekId: id.split(':')[1], members: 
 const base = (rows) => ({ title: 'F', certification: { level: 'machine' }, audit: { ok: true, fresh: true }, wordRulings: {}, rows,
   reviewed: rows.filter((r) => r.reviewed).length, total: rows.length, job: null, signOff: { ready: false, missing: [], parent: null } });
 const three = () => base([row('cue:w1', 'alpha', { in: 10, out: 10.5 }), row('cue:w2', 'bravo', { in: 20, out: 20.5 }), row('subject:p1', 'poster', { kind: 'picture', modality: 'shown', effect: 'blur', in: 30, out: 34, members: ['p1'] })]);
-const show = (path = '/admin/content/filter/77') => render(<MantineProvider><MemoryRouter initialEntries={[path]}><Routes><Route path="/admin/content/filter/:ratingKey/:rowId?" element={<ContentFilterReview />} /></Routes></MemoryRouter></MantineProvider>);
+function FilmNavigation() {
+  const { pathname } = useLocation();
+  return <><Link to="/admin/content/filter/88">Next film</Link><Link to="/admin/content/filter/77">Previous film</Link><span aria-label="Review path">{pathname}</span></>;
+}
+const show = (path = '/admin/content/filter/77') => render(<MantineProvider><MemoryRouter initialEntries={[path]}><FilmNavigation /><Routes><Route path="/admin/content/filter/:ratingKey/:rowId?" element={<ContentFilterReview />} /></Routes></MemoryRouter></MantineProvider>);
 const press = (key, init = {}, target = document.body) => fireEvent.keyDown(target, { key, ...init });
 const selected = () => document.querySelector('.is-selected')?.getAttribute('data-row-id') ?? null;
 const reviewCalls = () => calls.filter((c) => c.path.includes('/review/'));
 const verdictLogs = () => log.info.mock.calls.filter((c) => c[0] === 'content_filter.review.verdict');
 
-beforeEach(() => { calls.length = 0; vi.clearAllMocks(); failNext = null; previewStore.reset(); payload = three(); });
+beforeEach(() => { calls.length = 0; vi.clearAllMocks(); failNext = null; pendingWrite = null; previewStore.reset(); payload = three(); });
 
 describe('review station keys', () => {
   it('arrow keys move the cursor, seek 4 s ahead of it, and log it', () => {
@@ -97,6 +106,24 @@ describe('review station keys', () => {
     await waitFor(() => expect(reviewCalls()).toHaveLength(1));
     expect(calls[0].body).toEqual({ nudge: { in: 9.5, out: 11 } });
     expect(calls[1].body).toEqual(expect.objectContaining({ verdict: 'approve', change: { from: { in: 10, out: 10.5 }, to: { in: 9.5, out: 11 } } }));
+  });
+  it('keeps the new film open when a prior verdict finishes', async () => {
+    let finish;
+    pendingWrite = new Promise(resolve => { finish = resolve; });
+    const jump = vi.spyOn(previewStore, 'jumpToCue');
+    show();
+    press('ArrowRight');
+    press('a');
+    expect(reviewCalls()).toEqual([expect.objectContaining({
+      path: 'api/v1/content-filter/77/review/cue%3Aw1', method: 'PUT',
+      body: expect.objectContaining({ verdict: 'approve' }),
+    })]);
+    fireEvent.click(screen.getByRole('link', { name: 'Next film' }));
+    jump.mockClear();
+    await act(async () => { finish({}); });
+    expect(screen.getByLabelText('Review path')).toHaveTextContent('/admin/content/filter/88');
+    expect(jump).not.toHaveBeenCalled();
+    expect(reload).not.toHaveBeenCalled();
   });
   it('a failed action does not record a verdict or advance', async () => {
     failNext = (p) => p.includes('/cues/');
@@ -185,18 +212,12 @@ describe('review station keys', () => {
     expect(jump).toHaveBeenCalledTimes(1);
   });
   it('does not drag the cursor back when the user moved while a verdict was saving', async () => {
-    let release; failNext = null;
+    let finish;
+    pendingWrite = new Promise(resolve => { finish = resolve; });
     show(); press('ArrowRight');
-    const gate = new Promise((r) => { release = r; });
-    const orig = calls.push.bind(calls);
-    calls.push = (c) => { orig(c); return 0; };
-    // hold the PUT open via a slow response
-    failNext = () => false;
-    press('a'); fireEvent.click(screen.getByText('poster')); // user jumps to the picture row at once
-    release();
-    await gate;
-    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
-    await new Promise((r) => setTimeout(r, 20));
+    press('a'); fireEvent.click(screen.getByText('poster'));
+    await act(async () => { finish({}); });
+    expect(reviewCalls()).toHaveLength(1);
     expect(selected()).toBe('subject:p1');
   });
   it('keys are ignored inside a modal dialog, and a focused button keeps Space', () => {
@@ -215,6 +236,7 @@ describe('bleep level keys', () => {
   const settingsPuts = () => calls.filter((c) => c.path.endsWith('/77/settings'));
   it('] and [ step the per-film level by 0.05, one debounced write, replaying the cue', async () => {
     payload = { ...three(), bleepLevel: { film: null, profile: 0.3 } };
+    previewStore.bind({ refresh: async () => true });
     const jump = vi.spyOn(previewStore, 'jumpToCue');
     show();
     press('ArrowRight');
@@ -225,6 +247,172 @@ describe('bleep level keys', () => {
     expect(settingsPuts()[0]).toEqual({ path: 'api/v1/content-filter/77/settings', method: 'PUT', body: { settings: { bleepLevel: 0.35 } } });
     expect(screen.getByRole('status').textContent).toMatch(/Bleep level 35%/);
     await waitFor(() => expect(jump).toHaveBeenCalledWith({ in: 10 }));
+  });
+  it.each(['debounced', 'flushed on departure'])('saves the prior film level once (%s) without refreshing the new player', async mode => {
+    let finish;
+    pendingWrite = new Promise(resolve => { finish = resolve; });
+    const jump = vi.spyOn(previewStore, 'jumpToCue');
+    const refresh = vi.spyOn(previewStore, 'refresh');
+    show();
+    press('ArrowRight');
+    press(']');
+    if (mode === 'debounced') await waitFor(() => expect(settingsPuts()).toHaveLength(1));
+    fireEvent.click(screen.getByRole('link', { name: 'Next film' }));
+    jump.mockClear();
+    await act(async () => { finish({}); });
+    expect(refresh).not.toHaveBeenCalled();
+    expect(jump).not.toHaveBeenCalled();
+    expect(reload).not.toHaveBeenCalled();
+    expect(calls).toEqual([{
+      path: 'api/v1/content-filter/77/settings', method: 'PUT', body: { settings: { bleepLevel: 0.3 } },
+    }]);
+  });
+  it('leaves the new player alone when an active refresh finishes after departure', async () => {
+    let finish;
+    const pendingRefresh = new Promise(resolve => { finish = resolve; });
+    const refresh = vi.spyOn(previewStore, 'refresh').mockReturnValueOnce(pendingRefresh);
+    const jump = vi.spyOn(previewStore, 'jumpToCue');
+    show();
+    press('ArrowRight');
+    press(']');
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('link', { name: 'Next film' }));
+    jump.mockClear();
+    reload.mockClear();
+    await act(async () => { finish(); });
+    expect(jump).not.toHaveBeenCalled();
+    expect(reload).not.toHaveBeenCalled();
+    expect(settingsPuts()).toHaveLength(1);
+  });
+  it('keeps the newer cursor when the saved preview refresh returns', async () => {
+    const held = Promise.withResolvers();
+    const refresh = vi.fn(() => held.promise);
+    previewStore.bind({ refresh });
+    const jump = vi.spyOn(previewStore, 'jumpToCue');
+    show();
+    press('ArrowRight');
+    press(']');
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    press('ArrowRight');
+    expect(selected()).toBe('cue:w2');
+    jump.mockClear();
+    await act(async () => { held.resolve(true); });
+    expect(jump).not.toHaveBeenCalled();
+    expect(settingsPuts()).toHaveLength(1);
+  });
+  it('serializes another settings write behind a held write', async () => {
+    vi.useFakeTimers();
+    try {
+      const held = Promise.withResolvers();
+      pendingWrite = held.promise;
+      const refresh = vi.fn(async () => true);
+      previewStore.bind({ refresh });
+      show();
+      press('ArrowRight');
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      expect(settingsPuts().map(request => request.body.settings.bleepLevel)).toEqual([0.3]);
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      expect(settingsPuts()).toHaveLength(1);
+      expect(refresh).not.toHaveBeenCalled();
+      pendingWrite = null;
+      await act(async () => { held.resolve({}); });
+      expect(settingsPuts().map(request => request.body.settings.bleepLevel)).toEqual([0.3, 0.35]);
+      expect(refresh).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('continues stepping from the saved level while the review read is pending', async () => {
+    vi.useFakeTimers();
+    const held = Promise.withResolvers();
+    try {
+      reload.mockReturnValueOnce(held.promise);
+      previewStore.bind({ refresh: async () => true });
+      show();
+      press('ArrowRight');
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      expect(reload).toHaveBeenCalledTimes(1);
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      expect(settingsPuts().map(request => request.body.settings.bleepLevel)).toEqual([0.3, 0.35]);
+    } finally {
+      await act(async () => { held.resolve(); });
+      vi.useRealTimers();
+    }
+  });
+  it('reads back the earlier commit when a newer bleep write fails', async () => {
+    vi.useFakeTimers();
+    const held = Promise.withResolvers();
+    try {
+      pendingWrite = held.promise;
+      const refresh = vi.fn(async () => true);
+      previewStore.bind({ refresh });
+      const jump = vi.spyOn(previewStore, 'jumpToCue');
+      show();
+      press('ArrowRight');
+      jump.mockClear();
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      failNext = path => path.endsWith('/77/settings');
+      await act(async () => { held.resolve({}); });
+      expect(settingsPuts().map(request => request.body.settings.bleepLevel)).toEqual([0.3, 0.35]);
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(refresh).toHaveBeenCalledTimes(1);
+      expect(jump).not.toHaveBeenCalled();
+    } finally {
+      held.resolve({});
+      vi.useRealTimers();
+    }
+  });
+  it('keeps settings writes ordered after reopening the same film', async () => {
+    vi.useFakeTimers();
+    const held = Promise.withResolvers();
+    try {
+      pendingWrite = held.promise;
+      show();
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      fireEvent.click(screen.getByRole('link', { name: 'Next film' }));
+      payload = { ...three(), bleepLevel: { film: 0.4 } };
+      fireEvent.click(screen.getByRole('link', { name: 'Previous film' }));
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      expect(settingsPuts().map(request => request.body.settings.bleepLevel)).toEqual([0.3]);
+      pendingWrite = null;
+      await act(async () => { held.resolve({}); });
+      expect(settingsPuts().map(request => request.body.settings.bleepLevel)).toEqual([0.3, 0.35, 0.45]);
+    } finally {
+      await act(async () => { held.resolve({}); });
+      vi.useRealTimers();
+    }
+  });
+  it('leaves a queued prior-owner level out of the new session', async () => {
+    vi.useFakeTimers();
+    const held = Promise.withResolvers();
+    try {
+      setToken('first-fixture-session');
+      pendingWrite = held.promise;
+      show();
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      setToken('second-fixture-session');
+      await act(async () => { held.resolve({}); });
+      expect(settingsPuts().map(request => request.body.settings.bleepLevel)).toEqual([0.3]);
+      expect(reload).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => { held.resolve({}); });
+      clearToken();
+      vi.useRealTimers();
+    }
   });
   it('starts from the film level, else the household level, else 0.25, and clamps', async () => {
     payload = { ...three(), bleepLevel: { film: 0.98, profile: 0.3 } };

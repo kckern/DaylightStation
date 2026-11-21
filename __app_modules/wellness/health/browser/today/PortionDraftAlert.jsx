@@ -1,13 +1,16 @@
 import { Button } from '@mantine/core';
 import { entryId } from "./entryCommands.js";
+import { SubmitButton } from '../../../../../frontend/src/lib/ui/SubmitButton.jsx';
 
 // Is the entry a portion draft edits still on this day (top level or inside a group)?
 export function dayHasEntry(items, id) {
   return items.some(row => String(entryId(row)) === String(id) || (row.children && dayHasEntry(row.children, id)));
 }
 
-// Has the draft something to say? A draft that is simply being edited is silent.
-export const draftHasAlert = draft => Boolean(draft && (draft.validationError || draft.status === 'error'));
+const recovering = draft => draft.status === 'reloading' || (draft.status === 'saving' && draft.error != null);
+
+// Keep the same action mounted through an explicit retry of a refused draft.
+export const draftHasAlert = draft => Boolean(draft && (draft.validationError || draft.status === 'error' || recovering(draft)));
 
 // Does this alert belong on `row`?
 export const portionAlertFor = (control, row) => draftHasAlert(control?.draft)
@@ -27,9 +30,13 @@ export function PortionDraftAlert({ control, onReload, className = 'health-porti
     <span>{draft.validationError}</span>
     <Button size="compact-xs" onClick={() => control.cancel()}>Discard change</Button>
   </div>;
+  const pending = recovering(draft);
   return <div role={role || undefined} className={className}>
     <span>{draft.error} Intended {draft.numericEdit ? `${draft.numericEdit.field}: ${draft.numericEdit.value}` : `portion: ${draft.portion.value} ${draft.portion.unit}`}.</span>
-    <Button size="compact-xs" onClick={() => control.retry()}>{draft.conflict ? 'Reload & apply intended change' : 'Retry same change'}</Button>
-    <Button size="compact-xs" variant="subtle" onClick={() => { control.cancel(); (onReload || control.reloadDay)?.(); }}>Discard draft &amp; reload</Button>
+    <SubmitButton as={Button} type="button" size="compact-xs" pending={pending} data-portion-retry onClick={() => control.retry()}>
+      {draft.conflict ? 'Reload & apply intended change' : 'Retry same change'}
+    </SubmitButton>
+    <Button size="compact-xs" variant="subtle" disabled={pending}
+      onClick={() => { control.cancel(); (onReload || control.reloadDay)?.(); }}>Discard draft &amp; reload</Button>
   </div>;
 }

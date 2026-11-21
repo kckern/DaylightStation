@@ -6,7 +6,7 @@
 // touched.
 import React, { useEffect, useState } from 'react';
 import { Checkbox, Stack, Text } from '@mantine/core';
-import { ConfirmDialog } from "./ConfirmDialog.jsx";
+import { ConfirmModal } from '@/lib/ui/ConfirmModal.jsx';
 import { useSessionController } from "../controller/useSessionController.js";
 import { useCastTarget } from "../cast/useCastTarget.js";
 import { useFleetContext } from "../fleet/useFleetContext.js";
@@ -47,8 +47,8 @@ export function StartFreshDialog({ open, onClose }) {
   };
 
   return (
-    <ConfirmDialog
-      open={open}
+    <ConfirmModal
+      opened={open}
       title="Start fresh on this device?"
       message={parts.length
         ? 'Ticked items will be cleared; untick anything you want to keep. It does not stop anything playing on other screens.'
@@ -56,9 +56,9 @@ export function StartFreshDialog({ open, onClose }) {
       confirmLabel="Start fresh"
       cancelLabel="Cancel"
       onConfirm={confirm}
-      onCancel={() => onClose?.()}
+      onClose={() => onClose?.()}
     >
-      <Stack gap="xs" mb="md" data-testid="start-fresh-items">
+      <Stack gap="xs" data-testid="start-fresh-items">
         {parts.map(({ part, label }) => (
           <Checkbox
             key={part}
@@ -73,7 +73,7 @@ export function StartFreshDialog({ open, onClose }) {
           <Text size="xs" c="dimmed">The spot is kept only with what&apos;s playing.</Text>
         )}
       </Stack>
-    </ConfirmDialog>
+    </ConfirmModal>
   );
 }
 

@@ -8,9 +8,9 @@
 
 .feed-app {
   // Surfaces (darkest → lightest)
-  --feed-canvas: #0f1113;
-  --feed-surface-1: #17191c;
-  --feed-surface-2: #1e2125;
+  --feed-canvas: var(--ds-background);
+  --feed-surface-1: var(--ds-surface);
+  --feed-surface-2: var(--ds-surface-alt);
   --feed-surface-3: #262a2f;
 
   // Borders
@@ -18,12 +18,12 @@
   --feed-border-strong: rgba(255, 255, 255, 0.16);
 
   // Text (primary → muted)
-  --feed-text-1: #f1f3f5;
-  --feed-text-2: #a9b1b9;
-  --feed-text-3: #71787f;
+  --feed-text-1: var(--ds-text-high);
+  --feed-text-2: var(--ds-text-mid);
+  --feed-text-3: var(--ds-text-low);
 
   // Accent — one blue family
-  --feed-accent: #4dabf7;
+  --feed-accent: var(--ds-accent);
   --feed-accent-strong: #74c0fc;
   --feed-accent-bg: rgba(77, 171, 247, 0.16);
 
@@ -39,21 +39,17 @@
   --feed-radius-sm: 4px;
   --feed-radius-md: 8px;
   --feed-radius-lg: 12px;
-  --feed-control: 36px;
+  --feed-control: var(--ds-control-compact-height);
 
   // Type
   --feed-font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
   --feed-font-condensed: 'Roboto Condensed', 'Arial Narrow', system-ui, sans-serif;
 
   // Reading surface (article body card) — overridden per reading theme below.
-  --feed-reading-surface: #17191c;
+  --feed-reading-surface: var(--feed-surface-1);
   --feed-reading-ink: #e9ecef;
   --feed-reading-link: #74c0fc;
 
-  height: 100vh;
-  height: 100dvh; // dynamic viewport unit avoids mobile chrome/keyboard clipping (F-24)
-  display: flex;
-  flex-direction: column;
   background: var(--feed-canvas);
   color: var(--feed-text-1);
   font-family: var(--feed-font-ui);
@@ -61,11 +57,15 @@
 }
 
 .feed-tabs {
+  --feed-tabs-gutter: 1rem;
+  position: relative;
   display: flex;
+  flex: none;
+  flex-wrap: wrap;
   gap: 0;
   background: var(--feed-surface-1);
   border-bottom: 1px solid var(--feed-border);
-  padding: 0 1rem;
+  padding: 0 var(--feed-tabs-gutter);
   align-items: center;
   min-width: 0;
 
@@ -93,7 +93,13 @@
 
 .feed-tabs__icon { white-space: nowrap; }
 
-.feed-edition-picker select,
+.feed-edition-picker {
+  max-width: 100%;
+  min-width: 0;
+
+  select { max-width: 100%; background: var(--feed-surface-2); }
+}
+
 .feed-density-toggle,
 .feed-reading-settings summary {
   min-height: var(--feed-control);
@@ -135,7 +141,6 @@
 .feed-density-toggle { margin-left: 0.4rem; cursor: pointer; }
 
 .feed-reading-settings {
-  position: relative;
   margin-left: 0.4rem;
 
   summary {
@@ -155,8 +160,13 @@
   position: absolute;
   z-index: 40;
   top: calc(100% + 0.4rem);
-  right: 0;
-  width: min(18rem, calc(100vw - 1rem));
+  right: var(--feed-tabs-gutter);
+  width: min(18rem, calc(100% - 2 * var(--feed-tabs-gutter)));
+  max-block-size: calc(100vh - var(--browser-safe-area-top) - var(--browser-safe-area-bottom) - var(--feed-tabs-height) - var(--ds-space-md));
+  max-block-size: calc(100dvh - var(--browser-safe-area-top) - var(--browser-safe-area-bottom) - var(--feed-tabs-height) - var(--ds-space-md));
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: grid;
   gap: 0.75rem;
   padding: 1rem;
@@ -167,7 +177,7 @@
   color: var(--feed-text-1);
 
   label { display: grid; gap: 0.3rem; font-size: 0.82rem; }
-  select { min-height: 40px; border: 1px solid var(--feed-border-strong); border-radius: var(--feed-radius-sm); background: var(--feed-surface-3); color: inherit; padding: 0.35rem; }
+  select { background: var(--feed-surface-3); }
 }
 
 .feed-data-controls {
@@ -181,6 +191,7 @@
   button { flex: 1; min-height: 40px; border: 1px solid var(--feed-border-strong); border-radius: var(--feed-radius-sm); background: var(--feed-surface-3); color: inherit; cursor: pointer; }
   button:disabled { opacity: 0.55; cursor: wait; }
   small { color: var(--feed-text-2); line-height: 1.35; }
+  > .feed-data-controls__status { display: grid; gap: 0.35rem; }
 }
 
 .feed-source-preferences {
@@ -218,7 +229,7 @@
 // Compact persistent switcher shown while scrolling — keeps Reader/Headlines
 // reachable without dominating the immersive scroll view. (F-12)
 .feed-tabs--compact {
-  padding: 0 0.5rem;
+  --feed-tabs-gutter: 0.5rem;
   background: rgba(23, 25, 28, 0.92);
 
   a {
@@ -262,8 +273,7 @@
 @media (max-width: 600px) {
   .feed-tabs,
   .feed-tabs--compact {
-    padding: 0 0.35rem;
-    gap: 0;
+    --feed-tabs-gutter: 0.35rem;
 
     a { padding: 0.7rem 0.55rem; font-size: 0.78rem; }
   }
@@ -272,7 +282,6 @@
   .feed-reading-settings { margin-left: 0; }
   .feed-sync-status { width: 36px; padding: 0; justify-content: center; }
   .feed-sync-status__label { display: none; }
-  .feed-edition-picker { position: absolute; top: 3.25rem; right: 0.5rem; z-index: 5; }
 }
 
 @media (min-width: 1600px) and (pointer: coarse) {

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Group, Text, Badge } from '@mantine/core';
-import { useContentTitle } from "../hooks/useContentTitle.js";
+import { useContentTitle } from "../../../../../../../__capabilities/content-catalog/browser/picker-controller.mjs";
 
 export function ScheduledFireSummary({ row }) {
   const title = useContentTitle(row?.queue || '');

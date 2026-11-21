@@ -8,12 +8,13 @@ import React, {
   } from "react";
   import moment from "moment";
   import "../styles/ContentScroller.scss";
-import { DaylightAPI, DaylightMediaPath } from "../../../../../frontend/src/lib/api.mjs";
+import { DaylightMediaPath } from "../../../../../frontend/src/lib/api.mjs";
 import { useMediaKeyboardHandler } from "../../player-support/useMediaKeyboardHandler.js";
 import { useDynamicDimensions } from "../../player-support/useDynamicDimensions.js";
 import { useMediaReporter } from '../hooks/useMediaReporter.js';
 import { useEndOfContentWatchdog } from '../hooks/useEndOfContentWatchdog.js';
 import { useScreenVolume } from '../../../../../frontend/src/lib/volume/ScreenVolumeContext.js';
+import { recordPlaybackProgress } from '../lib/recordPlaybackProgress.js';
   import { playbackLog } from '../lib/playbackLogger.js';
   
   /**
@@ -203,28 +204,15 @@ import { useScreenVolume } from '../../../../../frontend/src/lib/volume/ScreenVo
       return candidateType;
     }, []);
 
-    const logTime = useCallback(async (type, assetId, percent, title) => {
+    const logTime = useCallback((type, assetId, percent, title) => {
       const now = Date.now();
       const timeSinceLastLog = now - lastLoggedTimeRef.current;
-      if (timeSinceLastLog > 10000 && parseFloat(percent) > 0) {
+      if (!(timeSinceLastLog > 10000 && parseFloat(percent) > 0)) return;
       const seconds = Math.round((duration * percent) / 100);
-      if (!assetId || seconds < 10) {
-        return;
-      }
+      if (!assetId || seconds < 10) return;
       const logType = resolvePlayLogType(type, assetId);
       lastLoggedTimeRef.current = now;
-      try {
-        await DaylightAPI(`api/v1/play/log`, { title, type: logType, assetId, seconds, percent: Math.round(percent), listId });
-      } catch (error) {
-        playbackLog('play.log.failed', {
-          type: logType,
-          assetId,
-          seconds,
-          percent: Math.round(percent),
-          message: error?.message || 'unknown'
-        }, { level: 'warn' });
-      }
-      }
+      recordPlaybackProgress({ title, type: logType, assetId, seconds, percent: Math.round(percent), listId });
     }, [duration, resolvePlayLogType, listId]);
 
     const onTimeUpdate = useCallback(() => {
@@ -387,13 +375,7 @@ import { useScreenVolume } from '../../../../../frontend/src/lib/volume/ScreenVo
       completionLoggedRef.current = mainMediaUrl;
       const logType = resolvePlayLogType(type, assetId);
       const seconds = Math.round(total);
-      DaylightAPI(`api/v1/play/log`, { title, type: logType, assetId, seconds, percent: 100, listId })
-        .catch((error) => {
-          playbackLog('play.log.failed', {
-            type: logType, assetId, seconds, percent: 100, completion: true,
-            message: error?.message || 'unknown'
-          }, { level: 'warn' });
-        });
+      recordPlaybackProgress({ title, type: logType, assetId, seconds, percent: 100, listId }, { completion: true });
     }, [assetId, duration, listId, mainMediaUrl, resolvePlayLogType, title, type]);
 
     const handleEnded = useCallback(() => {

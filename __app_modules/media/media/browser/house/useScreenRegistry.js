@@ -5,7 +5,9 @@
 // and after every change made here. An unwired registry (501) is
 // "unavailable" — names then come from devices.yml and the browsers' own
 // broadcasts, as before.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
+import { useVisibleRefresh } from '@/lib/hooks/useVisibleRefresh.js';
 import { houseApi as defaultApi, screenIdFor } from "./houseApi.js";
 import houseLog from "./houseLog.js";
 
@@ -14,13 +16,17 @@ export const REGISTRY_POLL_MS = 120_000;
 
 export function useScreenRegistry({ api = defaultApi, pollMs = REGISTRY_POLL_MS } = {}) {
   const [state, setState] = useState({ ...EMPTY, loaded: false, available: true, error: null });
-  const mounted = useRef(true);
-  useEffect(() => () => { mounted.current = false; }, []);
-
-  const refresh = useCallback(async () => {
+  const roomWriteScope = useRef(null);
+  const [roomSavePending, setRoomSavePending] = useState(false);
+  useLayoutEffect(() => {
+    roomWriteScope.current = { api, pending: false };
+    setRoomSavePending(false);
+    return () => { roomWriteScope.current = null; };
+  }, [api]);
+  const readRegistry = useCallback(async (isCurrent, signal) => {
     try {
-      const res = await api.listScreens();
-      if (!mounted.current) return;
+      const res = await api.listScreens({ signal });
+      if (!isCurrent()) return;
       const next = {
         screens: Array.isArray(res?.screens) ? res.screens : [],
         notSeenLately: Array.isArray(res?.notSeenLately) ? res.notSeenLately : [],
@@ -31,24 +37,46 @@ export function useScreenRegistry({ api = defaultApi, pollMs = REGISTRY_POLL_MS 
       houseLog.registryLoaded({ screens: next.screens.length, notSeenLately: next.notSeenLately.length, retired: next.retired.length });
       setState({ ...next, loaded: true, available: true, error: null });
     } catch (error) {
-      if (!mounted.current) return;
+      if (!isCurrent()) return;
       const unavailable = error?.status === 501 || error?.status === 404;
       houseLog.registryFailed({ status: error?.status ?? null, error: error?.message, unavailable });
-      setState((prev) => ({ ...prev, loaded: true, available: !unavailable && prev.available, error: unavailable ? null : error }));
+      setState(prev => unavailable
+        ? { ...EMPTY, loaded: true, available: false, error: null }
+        : { ...prev, loaded: true, error });
     }
   }, [api]);
 
-  useEffect(() => { refresh(); }, [refresh]);
-
+  const { reload: refresh, poll } = useRefreshableRead(readRegistry);
   useEffect(() => {
-    const onVisibility = () => { if (document.visibilityState === 'visible') refresh(); };
-    document.addEventListener('visibilitychange', onVisibility);
-    const timer = pollMs > 0 ? setInterval(refresh, pollMs) : null;
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibility);
-      if (timer) clearInterval(timer);
-    };
-  }, [refresh, pollMs]);
+    refresh();
+  }, [refresh]);
+
+  useVisibleRefresh({ intervalMs: pollMs, reload: refresh, poll });
+
+  const setRoomNeighbours = useCallback(async (room, neighbours) => {
+    const scope = roomWriteScope.current;
+    if (scope?.api !== api) throw new Error('The screen registry changed');
+    if (scope.pending) throw new Error('Another room save is in progress');
+    scope.pending = true;
+    setRoomSavePending(true);
+    try {
+      const result = await api.setRoomNeighbours(room, neighbours);
+      if (roomWriteScope.current !== scope) return result;
+      // Retire reads that began before the write. The accepted adjacency stays
+      // available if the follow-up read cannot refresh the rest of the registry.
+      const revalidation = refresh();
+      const adjacency = result?.roomAdjacency;
+      if (adjacency && typeof adjacency === 'object' && !Array.isArray(adjacency)) {
+        setState(current => ({ ...current, roomAdjacency: adjacency }));
+      } else {
+        await revalidation;
+      }
+      return result;
+    } finally {
+      scope.pending = false;
+      if (roomWriteScope.current === scope) setRoomSavePending(false);
+    }
+  }, [api, refresh]);
 
   const byId = useMemo(() => {
     const map = new Map();
@@ -61,7 +89,10 @@ export function useScreenRegistry({ api = defaultApi, pollMs = REGISTRY_POLL_MS 
     return map;
   }, [state.screens, state.notSeenLately, state.retired, state.unnamed]);
 
-  return useMemo(() => ({ ...state, byId, refresh }), [state, byId, refresh]);
+  return useMemo(
+    () => ({ ...state, byId, refresh, roomSavePending, setRoomNeighbours }),
+    [state, byId, refresh, roomSavePending, setRoomNeighbours],
+  );
 }
 
 /** Browser rows whose live name differs from the cached registry: it is stale. */

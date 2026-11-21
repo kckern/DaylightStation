@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState } from 'react';
-import { SegmentedControl, Switch } from '@mantine/core';
-import { Sheet, Skeleton, ErrorState } from '@/lib/ui';
+import { SegmentedControl } from '@mantine/core';
+import { Sheet, Skeleton, ErrorState, useRetryRegion } from '@/lib/ui';
+import { EntitySwitch } from './EntitySwitch.jsx';
 import { displayName, formatEntityState, formatSince } from '../entities/formatEntityState.js';
 import { useEntityHistory } from '../history/useEntityHistory.js';
 import { RingClips } from '../doorbell/RingClips.jsx';
@@ -34,12 +35,12 @@ function defaultExtra(history) {
 }
 
 /** The history section: a 24 h / 7 d switch over the chart, or why there is none. */
-function EntityHistory({ entity, range, onRange, history, loading, error, reload }) {
+function EntityHistory({ entity, range, onRange, history, busy, error, reload }) {
+  const { regionProps, retry } = useRetryRegion(reload, busy);
   const kind = history?.kind;
   const height = CHART_HEIGHT[kind] || CHART_HEIGHT.line;
   let body;
-  if (error) body = <ErrorState error={error} onRetry={reload} label="History" />;
-  else if (loading || !history) body = <Skeleton height={height} radius="sm" />;
+  if (!history) body = error ? null : <Skeleton height={height} radius="sm" />;
   // hasData: the entity held a known value somewhere in the range. A lamp off
   // all day, a door kept shut or a doorbell nobody rang still has a history
   // (a flat band, an empty axis); only no known value at all is "none".
@@ -52,12 +53,19 @@ function EntityHistory({ entity, range, onRange, history, loading, error, reload
     );
   }
   return (
-    <section className="home-history" aria-label="History">
+    <section {...regionProps} className="home-history" aria-label="History">
       <div className="home-history__head">
         <h4 className="home-history__title">History</h4>
-        <SegmentedControl size="xs" data={RANGES} value={range} onChange={onRange} aria-label="History range" />
+        <SegmentedControl
+          size="xs"
+          data={RANGES}
+          value={range}
+          onChange={onRange}
+          aria-label="History range"
+        />
       </div>
       {body}
+      {error ? <ErrorState error={error} onRetry={retry} label="History" title={history ? 'History could not refresh' : undefined} /> : null}
     </section>
   );
 }
@@ -69,11 +77,11 @@ function EntityHistory({ entity, range, onRange, history, loading, error, reload
  * a lane drawer's own detail), its room (italic when guessed from the id) and
  * when it last changed, the link into Home Assistant, and its id, muted, last.
  */
-export function EntityDetailSheet({ entity, haUrl, onToggle, onClose, extra = null }) {
+export function EntityDetailSheet({ entity, haUrl, onToggle, onClose, getFallbackFocusTarget, extra = null }) {
   const open = Boolean(entity);
   if (!open) return null;
   return (
-    <Sheet open={open} onClose={onClose} title={displayName(entity)} placement="side">
+    <Sheet open={open} onClose={onClose} title={displayName(entity)} placement="side" getFallbackFocusTarget={getFallbackFocusTarget}>
       <EntityDetailBody key={entity.id} entity={entity} haUrl={haUrl} onToggle={onToggle} extra={extra} />
     </Sheet>
   );
@@ -81,7 +89,7 @@ export function EntityDetailSheet({ entity, haUrl, onToggle, onClose, extra = nu
 
 function EntityDetailBody({ entity, haUrl, onToggle, extra }) {
   const [range, setRange] = useState('24h');
-  const { history, loading, error, reload } = useEntityHistory(entity.id, range);
+  const { history, loading, revalidating, error, reload } = useEntityHistory(entity.id, range);
   const onRange = (next) => {
     logger.info('home.history.range', { entityId: entity.id, from: range, to: next });
     setRange(next);
@@ -95,17 +103,10 @@ function EntityDetailBody({ entity, haUrl, onToggle, extra }) {
     <div className={`home-detail${lit ? ' home-detail--lit' : ''}${silent ? ' home-detail--silent' : ''}`} data-entity-id={entity.id}>
       <div className="home-detail__state">
         <span>{formatEntityState(entity)}</span>
-        {entity.controllable ? (
-          <Switch
-            checked={entity.stateClass === 'on'}
-            onChange={() => onToggle?.(entity)}
-            disabled={Boolean(entity.pending)}
-            aria-label={`${entity.name}: turn ${entity.stateClass === 'on' ? 'off' : 'on'}`}
-            size="lg"
-          />
-        ) : null}
+        {entity.controllable ? <EntitySwitch entity={entity} onToggle={onToggle} size="lg" /> : null}
       </div>
-      <EntityHistory entity={entity} range={range} onRange={onRange} history={history} loading={loading} error={error} reload={reload} />
+      <EntityHistory entity={entity} range={range} onRange={onRange} history={history}
+        busy={loading || revalidating} error={error} reload={reload} />
       {below ? <div className="home-detail__extra">{below}</div> : null}
       {entity.room || since ? (
         <dl className="home-detail__facts">

@@ -52,16 +52,9 @@ const RULES = [
   },
 ];
 
-// Manifest of legal --ds-* names, derived from the token contract. Kept as a
-// literal list here (scripts can't import frontend ESM with JSX deps): update
-// it when tokens.mjs changes — the tokens test pins the roles, this pins usage.
-const DS_TOKEN_NAMES = new Set([
-  '--ds-background', '--ds-surface', '--ds-surface-alt', '--ds-border',
-  '--ds-text-high', '--ds-text-mid', '--ds-text-low',
-  '--ds-success', '--ds-warning', '--ds-danger', '--ds-info', '--ds-live',
-  '--ds-motion-fast', '--ds-motion-base', '--ds-motion-reveal', '--ds-motion-easing',
-  '--ds-accent',
-]);
+import { dsCssVars } from '../frontend/src/lib/theme/tokens.mjs';
+
+const DS_TOKEN_NAMES = new Set(Object.keys(dsCssVars()));
 
 export function scanSource(filePath, source, { strict = false } = {}) {
   const hits = [];

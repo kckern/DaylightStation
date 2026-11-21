@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
+import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 import PropTypes from 'prop-types';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
 
@@ -65,7 +66,8 @@ export function AudioLayer({
 }) {
   const containerRef = useRef(null);
   const isPausedForVideoRef = useRef(false);
-  const [audioQueue, setAudioQueue] = useState(null);
+  const [resolved, setResolved] = useState(null);
+  const audioQueue = resolved?.contentId === contentId ? resolved?.items : null;
 
   /** Find the audio/video element rendered by the nested Player */
   const getAudioEl = useCallback(() => {
@@ -85,18 +87,18 @@ export function AudioLayer({
   useEffect(() => {
     if (!contentId) return;
 
-    let cancelled = false;
+    const controller = new AbortController();
+    const { signal } = controller;
     const resolve = async () => {
       try {
-        const response = await fetch(`/api/v1/queue/${encodeURIComponent(contentId)}`);
-        if (!response.ok) {
-          logger.warn('audio-layer-resolve-failed', { contentId, status: response.status });
-          return;
-        }
-        const data = await response.json();
-        if (!cancelled) {
+        const data = await DaylightAPI(`/api/v1/queue/${encodeURIComponent(contentId)}`, {}, 'GET', { signal });
+        if (!signal.aborted) {
           const items = data.items || data;
-          setAudioQueue(items);
+          if (!Array.isArray(items)) {
+            logger.warn('audio-layer-resolve-failed', { contentId, reason: 'invalid-queue' });
+            return;
+          }
+          setResolved({ contentId, items });
           logger.info('audio-layer-resolved', {
             contentId,
             itemCount: items.length,
@@ -104,12 +106,17 @@ export function AudioLayer({
           });
         }
       } catch (err) {
+        if (signal.aborted) return;
+        if (err.status) {
+          logger.warn('audio-layer-resolve-failed', { contentId, status: err.status });
+          return;
+        }
         logger.error('audio-layer-resolve-error', { contentId, error: err.message });
       }
     };
 
     resolve();
-    return () => { cancelled = true; };
+    return () => { controller.abort(); };
   }, [contentId]);
 
   const isVideo = currentItemMediaType === 'video';
@@ -164,6 +171,7 @@ export function AudioLayer({
   return (
     <div ref={containerRef} className={containerClass} style={containerStyle} data-track="audio">
       <Player
+        auxiliary
         playerType="background"
         queue={audioQueue}
         clear={noop}

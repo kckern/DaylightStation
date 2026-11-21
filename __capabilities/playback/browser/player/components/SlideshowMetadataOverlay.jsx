@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react';
+import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 import PropTypes from 'prop-types';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
 import './SlideshowMetadataOverlay.scss';
@@ -91,13 +92,12 @@ export function SlideshowMetadataOverlay({
     if (!mediaId) return;
     if (preloaded) return; // parent already provided metadata
 
-    let cancelled = false;
+    const controller = new AbortController();
+    const { signal } = controller;
     const fetchMeta = async () => {
       try {
-        const res = await fetch(`/api/v1/info/${encodeURIComponent(mediaId)}`);
-        if (!res.ok || cancelled) return;
-        const data = await res.json();
-        if (cancelled) return;
+        const data = await DaylightAPI(`/api/v1/info/${encodeURIComponent(mediaId)}`, {}, 'GET', { signal });
+        if (signal.aborted) return;
         const meta = data.metadata || {};
         setFetched({
           forId: mediaId,
@@ -114,11 +114,12 @@ export function SlideshowMetadataOverlay({
           hasLocation: !!meta.location,
         });
       } catch (err) {
+        if (signal.aborted) return;
         logger.warn('metadata-overlay-fetch-error', { mediaId, error: err.message });
       }
     };
     fetchMeta();
-    return () => { cancelled = true; };
+    return () => { controller.abort(); };
   }, [mediaId, preloaded]);
 
   // Reset fetched state when mediaId changes

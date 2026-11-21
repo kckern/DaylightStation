@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const api = vi.fn();
@@ -8,6 +8,7 @@ const show = vi.fn();
 vi.mock("../healthResources.js", () => ({ showDayStatus: (...args) => show(...args) }));
 
 import { MealFastToggle } from "./MealFastToggle.jsx";
+import { HealthOperationsProvider } from '../operations/HealthOperationsProvider.jsx';
 
 const mount = (props) => render(<MantineProvider><MealFastToggle date="2026-09-24" bucket="morning" label="Breakfast" {...props} /></MantineProvider>);
 
@@ -32,6 +33,27 @@ describe('MealFastToggle', () => {
     expect(button.getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(button);
     await waitFor(() => expect(api).toHaveBeenCalledWith('api/v1/health/nutrition/meal-fast', { date: '2026-09-24', meal: 'morning', fasted: false }, 'POST'));
+  });
+
+  it('ignores a departed account’s delayed meal-skip acknowledgement', async () => {
+    let complete;
+    api.mockReturnValue(new Promise(resolve => { complete = resolve; }));
+    const onChanged = vi.fn();
+    const session = userId => (
+      <MantineProvider>
+        <HealthOperationsProvider userId={userId}>
+          <MealFastToggle date="2026-09-24" bucket="morning" label="Breakfast" onChanged={onChanged} />
+        </HealthOperationsProvider>
+      </MantineProvider>
+    );
+    const view = render(session('alice'));
+    fireEvent.click(screen.getByRole('button', { name: /Skipped Breakfast/ }));
+    expect(api).toHaveBeenCalledTimes(1);
+
+    view.rerender(session('bob'));
+    await act(async () => { complete({ status: null, fastedMeals: ['morning'] }); });
+    expect(show).not.toHaveBeenCalled();
+    expect(onChanged).not.toHaveBeenCalled();
   });
 
   it('says so when the save fails', async () => {

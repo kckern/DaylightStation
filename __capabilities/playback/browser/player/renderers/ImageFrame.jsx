@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useMemo, useState, useCallback } from 'react';
+import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 import PropTypes from 'prop-types';
 import './ImageFrame.scss';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
@@ -37,7 +38,7 @@ export function ImageFrame({
   const timerRef = useRef(null);
   const startTimeRef = useRef(null);
   const rafRef = useRef(null);
-  const prevMediaIdRef = useRef(null);
+  const hasDisplayedImageRef = useRef(false);
   const expectedIdRef = useRef(null);
   const pausedRef = useRef(false);
   const remainingRef = useRef(0);
@@ -158,13 +159,12 @@ export function ImageFrame({
     }
 
     // Fallback: defer fetch to idle time so it doesn't collide with animation setup
-    let cancelled = false;
+    const controller = new AbortController();
+    const { signal } = controller;
     const fetchMetadata = async () => {
       try {
-        const response = await fetch(`/api/v1/info/${encodeURIComponent(imageId)}`);
-        if (!response.ok || cancelled) return;
-        const data = await response.json();
-        if (cancelled) return;
+        const data = await DaylightAPI(`/api/v1/info/${encodeURIComponent(imageId)}`, {}, 'GET', { signal });
+        if (signal.aborted) return;
         const meta = data.metadata || {};
         logger.debug('image-frame-jit-metadata', {
           imageId,
@@ -182,6 +182,7 @@ export function ImageFrame({
           location: meta.location || null,
         });
       } catch (err) {
+        if (signal.aborted) return;
         logger.warn('image-frame-jit-metadata-error', { imageId, error: err.message });
       }
     };
@@ -191,16 +192,16 @@ export function ImageFrame({
     let idleHandle;
     if (typeof requestIdleCallback === 'function') {
       idleHandle = requestIdleCallback(() => {
-        if (!cancelled) fetchMetadata();
+        if (!signal.aborted) fetchMetadata();
       }, { timeout: 2000 });
     } else {
       idleHandle = setTimeout(() => {
-        if (!cancelled) fetchMetadata();
+        if (!signal.aborted) fetchMetadata();
       }, 200);
     }
 
     return () => {
-      cancelled = true;
+      controller.abort();
       if (typeof cancelIdleCallback === 'function' && typeof requestIdleCallback === 'function') {
         cancelIdleCallback(idleHandle);
       } else {
@@ -306,11 +307,13 @@ export function ImageFrame({
     const origUrl = nextMedia.mediaUrl;
     const nextId = nextMedia.id;
     const t0 = performance.now();
-    let cancelled = false;
+    const controller = new AbortController();
+    const { signal } = controller;
 
     // Preload images (existing logic)
     const thumbImg = new Image();
     thumbImg.onload = () => {
+      if (signal.aborted) return;
       preloadRef.current.thumbDone = true;
       perfLog.info('slideshow.preload-thumb', { nextId, ms: Math.round(performance.now() - t0) });
     };
@@ -321,6 +324,7 @@ export function ImageFrame({
     if (origUrl && origUrl !== thumbUrl) {
       const origImg = new Image();
       origImg.onload = () => {
+        if (signal.aborted) return;
         preloadRef.current.origDone = true;
         perfLog.info('slideshow.preload-orig', { nextId, ms: Math.round(performance.now() - t0) });
       };
@@ -333,10 +337,8 @@ export function ImageFrame({
     // Preload metadata for next slide
     const fetchNextMeta = async () => {
       try {
-        const response = await fetch(`/api/v1/info/${encodeURIComponent(nextId)}`);
-        if (!response.ok || cancelled) return;
-        const data = await response.json();
-        if (cancelled) return;
+        const data = await DaylightAPI(`/api/v1/info/${encodeURIComponent(nextId)}`, {}, 'GET', { signal });
+        if (signal.aborted) return;
         const meta = data.metadata || {};
         preloadedEnrichmentRef.current = {
           forId: nextId,
@@ -350,14 +352,15 @@ export function ImageFrame({
         };
         logger.debug('image-frame-preload-meta', { nextId, peopleCount: meta.people?.length || 0 });
       } catch (err) {
+        if (signal.aborted) return;
         logger.warn('image-frame-preload-meta-error', { nextId, error: err.message });
       }
     };
-    fetchNextMeta();
+    if (nextId) fetchNextMeta();
 
     logger.debug('image-frame-preload-start', { nextId });
     return () => {
-      cancelled = true;
+      controller.abort();
       preloadRef.current = { thumb: null, orig: null, thumbDone: false, origDone: false };
     };
   }, [nextMedia?.id, nextMedia?.mediaUrl, nextMedia?.thumbnail, perfLog]);
@@ -367,15 +370,15 @@ export function ImageFrame({
     if (!media?.mediaUrl) return;
 
     const currentId = media.id || media.mediaUrl;
-    const isFirstImage = prevMediaIdRef.current === null;
-    const mediaChanged = currentId !== prevMediaIdRef.current;
-
-    if (!mediaChanged) return;
+    const isFirstImage = !hasDisplayedImageRef.current;
+    let disposed = false;
+    let showMetadataTimer;
+    let hideMetadataTimer;
+    let original;
 
     // Flush metrics from previous slide before starting new one
     perfFlush();
 
-    prevMediaIdRef.current = currentId;
     expectedIdRef.current = currentId;
 
     // Start perf collection for this slide
@@ -412,8 +415,8 @@ export function ImageFrame({
     });
 
     const onIncomingLoad = () => {
-      // Guard against stale loads from a previous image
-      if (expectedIdRef.current !== currentId) return;
+      if (disposed) return;
+      hasDisplayedImageRef.current = true;
 
       // Record thumbnail load time
       if (p && p.thumbLoadMs === null) {
@@ -468,16 +471,16 @@ export function ImageFrame({
       if (slideshow.showMetadata) {
         const metaDelay = isFirstImage ? 500 : DISSOLVE_MS + 200;
         const FADE_OUT_MS = 800;
-        setTimeout(() => {
-          if (expectedIdRef.current !== currentId) return;
+        showMetadataTimer = setTimeout(() => {
+          if (disposed) return;
           setSettledImageId(currentId);
           setMetadataVisible(true);
         }, metaDelay);
         // Schedule fade-out before advance
         const fadeOutAt = duration - FADE_OUT_MS - 200;
         if (fadeOutAt > metaDelay + 600) {
-          setTimeout(() => {
-            if (expectedIdRef.current !== currentId) return;
+          hideMetadataTimer = setTimeout(() => {
+            if (disposed) return;
             setMetadataVisible(false);
           }, fadeOutAt);
         }
@@ -506,9 +509,9 @@ export function ImageFrame({
       // Upgrade thumbnail → original
       if (thumbnailUrl !== originalUrl) {
         if (p) p.origStartMs = performance.now() - p.t0;
-        const original = new Image();
+        original = new Image();
         original.onload = () => {
-          if (expectedIdRef.current === currentId && activeLayerRef.current === incomingKey) {
+          if (!disposed && activeLayerRef.current === incomingKey) {
             incomingImg.src = originalUrl;
             if (p) {
               p.origLoadMs = performance.now() - p.t0;
@@ -529,12 +532,19 @@ export function ImageFrame({
     incomingImg.style.opacity = isFirstImage ? '1' : '0';
     incomingImg.onload = onIncomingLoad;
     incomingImg.onerror = () => {
+      if (disposed) return;
       logger.warn('image-frame-load-error', { imageId: currentId, mediaUrl: thumbnailUrl });
       manualAdvanceRef.current?.();
     };
     incomingImg.src = thumbnailUrl;
 
     return () => {
+      disposed = true;
+      incomingImg.onload = null;
+      incomingImg.onerror = null;
+      if (original) original.onload = null;
+      clearTimeout(showMetadataTimer);
+      clearTimeout(hideMetadataTimer);
       if (timerRef.current) clearTimeout(timerRef.current);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };

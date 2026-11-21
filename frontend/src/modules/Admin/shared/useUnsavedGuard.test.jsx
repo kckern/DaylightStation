@@ -35,7 +35,7 @@ function RegistryGrabber({ onGrab }) {
 function renderWithProviders(ui) {
   return render(
     <MantineProvider>
-      <UnsavedGuardProvider>{ui}</UnsavedGuardProvider>
+      <MemoryRouter><UnsavedGuardProvider>{ui}</UnsavedGuardProvider></MemoryRouter>
     </MantineProvider>
   );
 }
@@ -60,9 +60,9 @@ describe('useUnsavedGuard — beforeunload lifecycle', () => {
 
     const { rerender } = render(
       <MantineProvider>
-        <UnsavedGuardProvider>
+        <MemoryRouter><UnsavedGuardProvider>
           <GuardConsumer dirty={true} />
-        </UnsavedGuardProvider>
+        </UnsavedGuardProvider></MemoryRouter>
       </MantineProvider>
     );
 
@@ -78,9 +78,9 @@ describe('useUnsavedGuard — beforeunload lifecycle', () => {
 
     rerender(
       <MantineProvider>
-        <UnsavedGuardProvider>
+        <MemoryRouter><UnsavedGuardProvider>
           <GuardConsumer dirty={false} />
-        </UnsavedGuardProvider>
+        </UnsavedGuardProvider></MemoryRouter>
       </MantineProvider>
     );
 
@@ -123,22 +123,22 @@ describe('UnsavedGuardContext — dirty registry', () => {
     let registry;
     const { rerender } = render(
       <MantineProvider>
-        <UnsavedGuardProvider>
+        <MemoryRouter><UnsavedGuardProvider>
           <GuardConsumer dirty={true} label="a" />
           <GuardConsumer dirty={false} label="b" />
           <RegistryGrabber onGrab={(r) => { registry = r; }} />
-        </UnsavedGuardProvider>
+        </UnsavedGuardProvider></MemoryRouter>
       </MantineProvider>
     );
     expect(registry.isAnyDirty()).toBe(true);
 
     rerender(
       <MantineProvider>
-        <UnsavedGuardProvider>
+        <MemoryRouter><UnsavedGuardProvider>
           <GuardConsumer dirty={false} label="a" />
           <GuardConsumer dirty={false} label="b" />
           <RegistryGrabber onGrab={(r) => { registry = r; }} />
-        </UnsavedGuardProvider>
+        </UnsavedGuardProvider></MemoryRouter>
       </MantineProvider>
     );
     expect(registry.isAnyDirty()).toBe(false);
@@ -148,19 +148,19 @@ describe('UnsavedGuardContext — dirty registry', () => {
     let registry;
     const { rerender } = render(
       <MantineProvider>
-        <UnsavedGuardProvider>
+        <MemoryRouter><UnsavedGuardProvider>
           <GuardConsumer dirty={true} label="doomed" />
           <RegistryGrabber onGrab={(r) => { registry = r; }} />
-        </UnsavedGuardProvider>
+        </UnsavedGuardProvider></MemoryRouter>
       </MantineProvider>
     );
     expect(registry.isAnyDirty()).toBe(true);
 
     rerender(
       <MantineProvider>
-        <UnsavedGuardProvider>
+        <MemoryRouter><UnsavedGuardProvider>
           <RegistryGrabber onGrab={(r) => { registry = r; }} />
-        </UnsavedGuardProvider>
+        </UnsavedGuardProvider></MemoryRouter>
       </MantineProvider>
     );
     expect(registry.isAnyDirty()).toBe(false);
@@ -208,5 +208,14 @@ describe('AdminNav — navigation interception', () => {
     fireEvent.click(screen.getByText('Menus'));
 
     expect(screen.queryByText(/discard unsaved changes/i)).toBeNull();
+  });
+
+  it('leaves modified link clicks to the browser', () => {
+    renderNav({ dirty: true });
+
+    fireEvent.click(screen.getByRole('link', { name: 'Menus' }), { ctrlKey: true });
+
+    expect(screen.queryByText(/discard unsaved changes/i)).toBeNull();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });

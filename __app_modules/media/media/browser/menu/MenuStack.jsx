@@ -69,7 +69,7 @@ export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT =
   const sourceRef = React.useRef(sourceController);
   useEffect(() => { const previous=sourceRef.current; if(previous && previous!==sourceController) previous.cancel(); sourceRef.current=sourceController; }, [sourceController]);
   useEffect(() => () => sourceRef.current?.cancel(), []);
-  const { registerEscapeInterceptor, unregisterEscapeInterceptor, dismissOverlay } = useScreenOverlay();
+  const { registerEscapeInterceptor, unregisterEscapeInterceptor, dismissOverlay, overlayOwnsNavStack } = useScreenOverlay();
 
   // Reset navigation state when rootMenu changes (including initial mount).
   // Without this, the nav stack from a previous menu persists — e.g., auto-selected
@@ -277,14 +277,12 @@ export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT =
     return () => unregisterMenuBackHandler?.(handler);
   }, [rootMenu, currentContent, onHostErrorBack, registerMenuBackHandler, unregisterMenuBackHandler, returnPolicy, resolveMenuSource, sourceController, navigationError, closeNavigationError]);
 
-  // Player exits dismiss the entire MenuStack overlay rather than popping back to
-  // the source menu. The auto-select countdown on the source menu would otherwise
-  // re-launch the first item, trapping the user; "exit means home" matches the
-  // NFC/voice launch path's behavior (ScreenActionHandler).
+  // A fullscreen menu owns dismissal for its Player. An embedded menu pops
+  // its own activity, even when a different fullscreen overlay is open.
   const exitToHome = useCallback(() => {
-    if (returnPolicy === 'return-to-selected') clear();
-    else dismissOverlay?.();
-  }, [dismissOverlay, rootMenu, clear, returnPolicy]);
+    if (overlayOwnsNavStack && returnPolicy !== 'return-to-selected') dismissOverlay();
+    else clear();
+  }, [dismissOverlay, overlayOwnsNavStack, clear, returnPolicy]);
 
   if (navigationError) {
     const closeError = closeNavigationError;

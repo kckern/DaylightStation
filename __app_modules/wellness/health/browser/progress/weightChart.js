@@ -7,7 +7,7 @@
 // nothing but hand the result to <HighchartsReact>, the same split dayBars.js
 // and intakeBurn.js already use.
 //
-import { addDays } from "../today/WeekStrip.jsx";
+import { addCalendarDays as addDays } from "../../../../../frontend/src/lib/calendarDay.js";
 
 /** The window the chart covers. Twelve weeks: a weight trend is a season, not a month. */
 export const WINDOW_DAYS = 84;

@@ -12,7 +12,11 @@ export function createAppTheme(pack) {
   const colors = { ...DS_TOKENS.colors, ...(pack?.colors || {}) };
   const base = {
     primaryColor: pack?.primaryColor || 'blue',
+    ...(pack?.fontFamily ? { fontFamily: pack.fontFamily } : {}),
+    ...(pack?.fontFamilyMonospace ? { fontFamilyMonospace: pack.fontFamilyMonospace } : {}),
+    ...(pack?.headings ? { headings: pack.headings } : {}),
     colors: {
+      ...pack?.colorRamps,
       background: ramp(colors.background),
       surface:    ramp(colors.surface),
       surfaceAlt: ramp(colors.surfaceAlt),
@@ -21,7 +25,7 @@ export function createAppTheme(pack) {
       textMid:    ramp(colors.textMid),
       textLow:    ramp(colors.textLow),
     },
-    other: { ...DS_TOKENS.status, accent: pack?.accent || null },
+    other: { ...DS_TOKENS.status, ...pack?.status, accent: pack?.accent || null },
     components: {
       Button: { defaultProps: { size: 'md' } },
       ActionIcon: { defaultProps: { size: 'lg', variant: 'subtle' } },
@@ -35,8 +39,7 @@ export function createAppTheme(pack) {
   // contract. `themeExtras` is a top-level, NOT deep-merged, override: keys
   // it sets (colors/other/components/...) fully replace the base's, so an
   // app's own component defaults are never silently blended with the base's
-  // generic ones. Additive: no existing pack sets this, so every other app's
-  // theme is unchanged. See __app_modules/Media/theme/mediaTheme.js (Phase 6).
+  // generic ones. Admin and Media supply their own native component defaults.
   return createTheme(pack?.themeExtras ? { ...base, ...pack.themeExtras } : base);
 }
 

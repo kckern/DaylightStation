@@ -1,6 +1,6 @@
 import React from 'react';
 import { Group, Text } from '@mantine/core';
-import { useContentTitle } from "../hooks/useContentTitle.js";
+import { useContentTitle } from "../../../../../../../__capabilities/content-catalog/browser/picker-controller.mjs";
 
 const DASH = '—';
 

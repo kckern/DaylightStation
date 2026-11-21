@@ -17,7 +17,7 @@ vi.mock("../logging/mediaLog.js", () => {
 });
 
 import { PlayedEarlier } from "./PlayedEarlier.jsx";
-import { resetApiResourceCache } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { invalidateApiResources, resetApiResourceCache } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 
 const rows = [
   { contentId: 'plex:2', startedAt: new Date(Date.now() - 60_000).toISOString(), title: 'Song B', thumbnail: '/b.jpg', type: 'track', grandparentTitle: 'Artist' },
@@ -31,7 +31,6 @@ beforeEach(() => {
     if (method && method !== 'GET') return Promise.resolve({ ok: true });
     if (path.startsWith('api/v1/media/screens/livingroom-tv/played-earlier')) return Promise.resolve({ deviceId: 'fleet:livingroom-tv', items: rows });
     if (path === 'api/v1/media/household/favourites') return Promise.resolve({ items: [] });
-    if (path === 'api/v1/media/screens') return Promise.resolve({ screens: [] });
     return Promise.reject(new Error(path));
   });
 });
@@ -54,6 +53,60 @@ describe('PlayedEarlier', () => {
     fireEvent.click(screen.getByTestId('played-earlier-0-more'));
     fireEvent.click(await screen.findByTestId('played-earlier-0-verb-favourite'));
     expect(apiMock).toHaveBeenCalledWith('api/v1/media/household/favourites', expect.objectContaining({ id: 'plex:2', kind: 'item' }), 'POST');
+  });
+
+  it('keeps cached history visible and offers Retry after a refresh failure', async () => {
+    let failReads = false;
+    apiMock.mockImplementation((path, body, method) => {
+      if (method && method !== 'GET') return Promise.resolve({ ok: true });
+      if (path.startsWith('api/v1/media/screens/livingroom-tv/played-earlier')) {
+        return failReads ? Promise.reject(new Error('History unavailable'))
+          : Promise.resolve({ deviceId: 'fleet:livingroom-tv', items: rows });
+      }
+      if (path === 'api/v1/media/household/favourites') return Promise.resolve({ items: [] });
+      return Promise.reject(new Error(path));
+    });
+    render(<MantineProvider><PlayedEarlier screenId="livingroom-tv" /></MantineProvider>);
+    const first = await screen.findByTestId('played-earlier-0');
+
+    failReads = true;
+    act(() => invalidateApiResources(path => path.includes('/played-earlier')));
+
+    await screen.findByRole('button', { name: 'Retry', exact: true });
+    expect(first).toBeInTheDocument();
+    expect(screen.queryByTestId('played-earlier-empty')).not.toBeInTheDocument();
+
+    failReads = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry', exact: true }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry', exact: true })).not.toBeInTheDocument());
+    expect(screen.getByTestId('played-earlier-0')).toHaveTextContent('Song B');
+  });
+
+  it('offers Retry for a successful response without an items list instead of showing empty', async () => {
+    let historyReads = 0;
+    let resolveRetry;
+    apiMock.mockImplementation((path, body, method) => {
+      if (method && method !== 'GET') return Promise.resolve({ ok: true });
+      if (path.startsWith('api/v1/media/screens/livingroom-tv/played-earlier')) {
+        historyReads += 1;
+        if (historyReads === 1) return Promise.resolve({ deviceId: 'fleet:livingroom-tv' });
+        return new Promise(resolve => { resolveRetry = resolve; });
+      }
+      if (path === 'api/v1/media/household/favourites') return Promise.resolve({ items: [] });
+      return Promise.reject(new Error(path));
+    });
+    render(<MantineProvider><PlayedEarlier screenId="livingroom-tv" /></MantineProvider>);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry', exact: true }));
+
+    await waitFor(() => expect(historyReads).toBe(2));
+    expect(screen.queryByRole('button', { name: 'Retry', exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('played-earlier-empty')).not.toBeInTheDocument();
+    expect(screen.getByTestId('played-earlier-loading')).toBeInTheDocument();
+    await act(async () => resolveRetry({ deviceId: 'fleet:livingroom-tv', items: [] }));
+    await screen.findByTestId('played-earlier-empty');
+    expect(screen.queryByRole('button', { name: 'Retry', exact: true })).not.toBeInTheDocument();
+    expect(apiMock.mock.calls.filter(call => String(call[0]).includes('/played-earlier'))).toHaveLength(2);
   });
 });
 

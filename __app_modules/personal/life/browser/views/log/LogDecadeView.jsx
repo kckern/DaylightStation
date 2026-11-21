@@ -1,17 +1,16 @@
 import { Title, Paper, Group, Badge, SimpleGrid } from '@mantine/core';
-import { useLifelog } from "../../hooks/useLifelog.js";
-import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
+import { useLogActivity } from './shared/useLogActivity.js';
+import { LifePage } from "../../components/index.js";
+import { LogReadRegion } from './shared/LogReadRegion.jsx';
 
 /**
  * Decade view showing year-by-year summary cards.
  */
-export function LogDecadeView({ username, at }) {
-  const { data, loading, error, refetch } = useLifelog({ scope: 'decade', username, at });
+export function LogDecadeView({ username, at, categories }) {
+  const read = useLogActivity({ scope: 'decade', username, at, categories });
+  if (read.loading || read.error) return <LogReadRegion read={read} />;
+  const { days } = read;
 
-  if (loading) return <LoadingState />;
-  if (error) return <ErrorState error={error} onRetry={refetch} />;
-
-  const days = data?.days || {};
   const dates = Object.keys(days).sort();
 
   // Group by year
@@ -28,7 +27,7 @@ export function LogDecadeView({ username, at }) {
 
   const yearKeys = Object.keys(years).sort().reverse();
 
-  return (
+  const content = (
     <LifePage title="Decade">
       <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
         {yearKeys.map(year => {
@@ -48,4 +47,5 @@ export function LogDecadeView({ username, at }) {
       </SimpleGrid>
     </LifePage>
   );
+  return <LogReadRegion read={read}>{content}</LogReadRegion>;
 }

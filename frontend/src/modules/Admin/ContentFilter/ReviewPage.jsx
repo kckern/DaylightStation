@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Anchor, Badge, Button, Group, Stack, Text } from '@mantine/core';
 import { DaylightAPI } from '../../../lib/api.mjs';
+import { useVisibleRefresh } from '../../../lib/hooks/useVisibleRefresh.js';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 import { LoadingState, ErrorState, SectionCard, createAppLogger } from '../../../lib/ui/index.js';
@@ -14,6 +15,7 @@ import { ReviewPlayer } from './ReviewPlayer.jsx';
 import { RowEditor } from './RowEditor.jsx';
 import { SignOffPanel } from './SignOffPanel.jsx';
 import { FilmStatusCard } from './FilmStatusCard.jsx';
+import { useFilmApproval, useFilmReviewOwner } from './useFilmApproval.js';
 import { runText } from './FilterLibrary.jsx';
 import './ContentFilterAdmin.scss';
 
@@ -36,12 +38,23 @@ const EMPTY = {
 
 export function ReviewPage() {
   const { ratingKey, rowId } = useParams();
+  const owner = useFilmReviewOwner();
+  const [session, setSession] = useState({ owner, visit: 0 });
+  if (owner !== session.owner) setSession({ owner, visit: session.visit + 1 });
+  return <FilmReview key={`${ratingKey}:${session.visit}`} ratingKey={ratingKey} rowId={rowId} owner={owner} />;
+}
+
+function FilmReview({ ratingKey, rowId, owner }) {
   const navigate = useNavigate();
   const url = `${API}/${encodeURIComponent(ratingKey)}/review`;
-  const { data, loading, error, reload } = useApiResource(url, { label: 'review', logger });
+  // A new signed-in visit needs its own HTTP read even at the same film URL.
+  const { data, loading, error, reload, refresh, poll } = useApiResource(url, { label: 'review', logger, dedupe: false });
   const [selected, setSelected] = useState(null);
   const [picked, setPicked] = useState(() => new Set());
   const [notice, setNotice] = useState(null);
+  const [sending, setSending] = useState(false);
+  const activeView = useRef(true);
+  const approval = useFilmApproval({ ratingKey, owner, data, error, reload, activeView });
   const running = data?.job && (data.job.status === 'queued' || data.job.status === 'running');
   const waiting = !!data && (running || (data.audit && !data.audit.fresh) || data.status?.next === 'checking');
 
@@ -52,9 +65,15 @@ export function ReviewPage() {
     if (r?.id) opened.current = r.id;
     if (r?.id && r.id !== rowId) navigate(`/admin/content/filter/${encodeURIComponent(ratingKey)}/${encodeURIComponent(r.id)}`, { replace: true });
   };
+  useEffect(() => {
+    activeView.current = true;
+    return () => {
+      activeView.current = false;
+      opened.current = null;
+      previewStore.clearPending();
+    };
+  }, []);
   // Opening a permalink: select the row and seek to it once (the store holds the jump until the player binds).
-  // A different film on a mounted page: forget the old selection, parked jump and handled permalink.
-  useEffect(() => () => { opened.current = null; setSelected(null); setNotice(null); previewStore.clearPending(); }, [ratingKey]);
   useEffect(() => {
     if (!rowId || !data?.rows || opened.current === rowId) return;
     opened.current = rowId;
@@ -68,13 +87,9 @@ export function ReviewPage() {
   // The keyboard station: the cursor is `selected`; scope, verdicts and stepping live in the hook.
   // Not matched to Plex: a key that still holds household work shows its review; runs are refused.
   const notMatched = data?.match === 'unmatched';
-  const station = useReviewStation({ ratingKey, data, reload, selected, select, runBusy: running || notMatched });
+  const station = useReviewStation({ ratingKey, data, reload, refreshReview: refresh, selected, select, activeView, runBusy: running || notMatched });
   const { redoOpen } = useReviewKeys(station.handlers, { enabled: Boolean(data?.rows) });
-  useEffect(() => {
-    if (!waiting) return undefined;
-    const id = setInterval(() => reload(), POLL_MS);
-    return () => clearInterval(id);
-  }, [waiting, reload]);
+  useVisibleRefresh({ active: Boolean(waiting), intervalMs: POLL_MS, reload, poll });
 
   // Rows in a queued/running send-back carry its step ("Sent back: refine").
   const sentBack = useMemo(() => {
@@ -88,21 +103,26 @@ export function ReviewPage() {
   const pick = (id, on) => setPicked((prev) => { const next = new Set(prev); if (on) next.add(id); else next.delete(id); return next; });
   const sendBackPicked = async () => {
     const cues = [...new Set((data?.rows || []).filter((r) => picked.has(r.id)).flatMap((r) => r.members || []))];
+    if (sending || !cues.length) return;
+    setSending(true);
     setNotice(null);
     try {
       await DaylightAPI(`${API}/${encodeURIComponent(ratingKey)}/jobs`, { kind: 'send-back', cues }, 'POST');
       logger.info('review.send-back', { ratingKey, rows: picked.size, cues: cues.length });
-      setPicked(new Set());
+      if (!activeView.current) return;
+      setPicked(current => new Set([...current].filter(id => !picked.has(id))));
       setNotice(`Sent ${cues.length} back to the pipeline.`);
       reload();
     } catch (err) {
       logger.warn('review.send-back_failed', { ratingKey, error: err.message });
-      setNotice(err.message || 'That did not work.');
+      if (activeView.current) setNotice(err.message || 'That did not work.');
+    } finally {
+      if (activeView.current) setSending(false);
     }
   };
 
   if (loading && !data) return <LoadingState label="review" rows={6} />;
-  if (error) return <ErrorState error={error} onRetry={reload} label="Review" />;
+  if (error && (!data || !approval.blocked)) return <ErrorState error={error} onRetry={reload} label="Review" />;
   if (notMatched && !Array.isArray(data.rows)) return <UnmatchedFilm ratingKey={ratingKey} data={data} />;
   const row =data.rows.find((r) => r.id === selected?.id) || null;
   const busyText = running ? `Running: ${data.job.step || 'starting'}` : null;
@@ -115,14 +135,15 @@ export function ReviewPage() {
           <Badge variant="light" color={data.certification.level === 'none' ? 'gray' : 'green'}>{LEVEL[data.certification.level] || data.certification.level}</Badge>
           {data.job && data.status?.next !== 'running' ? <Text size="sm" c={data.job.status === 'failed' ? 'red' : 'dimmed'}>{runText(data.job)}</Text> : null}
         </Group>
-        <FilmStatusCard ratingKey={ratingKey} status={data.status} job={data.job} approvedBy={data.signOff?.parent?.by || null} auditError={data.auditError || null} worker={data.worker || null}
+        <FilmStatusCard ratingKey={ratingKey} status={data.status} job={data.job} approvedBy={data.signOff?.parent?.by || null} auditError={data.auditError || null} worker={data.worker || null} approval={approval}
           onChanged={reload} onReview={() => { const first = station.scoped.find((r) => !r.verdict) || data.rows[0]; if (first) station.pick(first); }} />
         {notMatched ? (
           <Text size="sm" c="orange">{`Not matched to Plex: ${data.unmatched?.text || 'no Plex film'}. The review and override here are kept; runs are blocked.`}</Text>
         ) : null}
         {data.rows.length ? <ReviewTimeline rows={station.scoped} selectedId={row?.id ?? null} onSelect={(r) => station.pick(r)} /> : null}
         <ReviewKeyBar row={row} tally={station.tally} canUndo={station.canUndo} redoOpen={redoOpen}
-          helpOpen={station.helpOpen} message={station.message} bleepLevel={station.bleepLevel} />
+          helpOpen={station.helpOpen} onToggleHelp={station.handlers.help} onCloseHelp={station.handlers.escape}
+          message={station.message} bleepLevel={station.bleepLevel} previewRecovery={station.previewRecovery} />
         <div className="cf-review">
           <Stack gap="sm" className="cf-review__side">
             <ReviewPlayer ratingKey={ratingKey} />
@@ -135,12 +156,12 @@ export function ReviewPage() {
                 Rework {station.flagged} flagged
               </Button>
             ) : null}
-            <SignOffPanel ratingKey={ratingKey} signOff={data.signOff} onChanged={reload} busyText={busyText} />
+            <SignOffPanel signOff={data.signOff} approval={approval} busyText={busyText} />
           </Stack>
           <Stack gap="xs">
             {picked.size ? (
               <Group gap="xs">
-                <Button size="compact-xs" disabled={Boolean(runBlock)} onClick={sendBackPicked}>Send back {picked.size} selected</Button>
+                <Button size="compact-xs" loading={sending} disabled={sending || Boolean(runBlock)} onClick={sendBackPicked}>Send back {picked.size} selected</Button>
                 <Button size="compact-xs" variant="subtle" onClick={() => setPicked(new Set())}>Clear selection</Button>
               </Group>
             ) : null}

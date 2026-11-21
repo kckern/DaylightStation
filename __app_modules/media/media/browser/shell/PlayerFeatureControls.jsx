@@ -10,18 +10,21 @@
 //
 // Plus the stop guard for TransportBar: stopping a slideshow with music
 // behind asks whether to keep the music playing.
-import React, { useCallback, useContext, useMemo, useState, useSyncExternalStore } from 'react';
+import { UiIcon } from '../../../../../frontend/src/lib/ui/UiIcon.jsx';
+import React, { useCallback, useContext, useLayoutEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Button, Group, Menu, Modal, Text } from '@mantine/core';
 import {
   IconBadgeCc, IconCheck, IconLanguage, IconMusic, IconPlayerPauseFilled, IconPlayerPlayFilled,
-  IconPlayerSkipForwardFilled, IconPlayerStopFilled, IconX,
+  IconPlayerSkipForwardFilled, IconPlayerStopFilled,
 } from '@tabler/icons-react';
 import { isSlideshowItem, SUBTITLES_OFF } from '@shared-contracts/media/playerFeatures.mjs';
 import { useSessionController } from "../controller/useSessionController.js";
 import { getLocalPlayerFeatures } from "../session/localPlayerFeatures.js";
 import { ContentCombobox } from "../../../../../__capabilities/content-catalog/browser/picker.mjs";
 import { SearchContext } from "../search/SearchProvider.jsx";
-import { useDismissLayer } from "./useDismissLayer.js";
+import { FormDialog } from '@/lib/ui/FormDialog.jsx';
+import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
+import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import mediaLog from "../logging/mediaLog.js";
 import "./PlayerFeatureControls.scss";
 
@@ -82,8 +85,9 @@ function TrackMenu({ kind, tracks, selected, onSelect, disabled }) {
   return (
     // flip + size: open toward the larger free side and never past the
     // viewport — a file can carry dozens of subtitle streams.
-    <Menu position="top" withinPortal middlewares={{ flip: true, shift: true, size: { padding: 8 } }}>
-      <Menu.Target>
+    <ActionMenu position="top" withinPortal middlewares={{ flip: true, shift: true, size: { padding: 8 } }}
+      dropdownProps={{ 'data-testid': `pf-${isSubs ? 'subtitles' : 'audio'}-menu`, className: 'pf-track-menu' }}
+      trigger={
         <Button
           variant="default" size="sm" disabled={disabled}
           leftSection={isSubs ? <IconBadgeCc size={16} /> : <IconLanguage size={16} />}
@@ -92,37 +96,34 @@ function TrackMenu({ kind, tracks, selected, onSelect, disabled }) {
         >
           {label}
         </Button>
-      </Menu.Target>
-      <Menu.Dropdown data-testid={`pf-${isSubs ? 'subtitles' : 'audio'}-menu`} className="pf-track-menu">
-        {isSubs && (
-          <Menu.Item data-testid="pf-subtitle-off" onClick={() => onSelect({ subtitle: SUBTITLES_OFF })}
-            data-selected={!selected || undefined} leftSection={<Mark on={!selected} />}>Off</Menu.Item>
-        )}
-        {list.map((t) => (
-          <Menu.Item
-            key={t.id}
-            data-selected={t.id === selected || undefined}
-            leftSection={<Mark on={t.id === selected} />}
-            data-testid={`pf-${isSubs ? 'subtitle' : 'audio'}-${t.id}`}
-            onClick={() => onSelect(isSubs ? { subtitle: t.id } : { audio: t.id })}
-          >
-            {t.label}
-          </Menu.Item>
-        ))}
-      </Menu.Dropdown>
-    </Menu>
+      }>
+      {isSubs && (
+        <Menu.Item data-testid="pf-subtitle-off" onClick={() => onSelect({ subtitle: SUBTITLES_OFF })}
+          data-selected={!selected || undefined} leftSection={<Mark on={!selected} />}>Off</Menu.Item>
+      )}
+      {list.map((t) => (
+        <Menu.Item
+          key={t.id}
+          data-selected={t.id === selected || undefined}
+          leftSection={<Mark on={t.id === selected} />}
+          data-testid={`pf-${isSubs ? 'subtitle' : 'audio'}-${t.id}`}
+          onClick={() => onSelect(isSubs ? { subtitle: t.id } : { audio: t.id })}
+        >
+          {t.label}
+        </Menu.Item>
+      ))}
+    </ActionMenu>
   );
 }
 
 function MusicPicker({ open, onClose, onPick }) {
   const search = useContext(SearchContext);
   const musicScope = search?.scopes?.find?.((s) => s.key === 'music')?.params ?? FALLBACK_MUSIC_SCOPE;
-  useDismissLayer(open, onClose, { managed: true });
   return (
-    <Modal opened={open} onClose={onClose} title="Add music behind" centered size="md">
+    <FormDialog opened={open} onClose={onClose} title="Add music behind" centered size="md">
       <div data-testid="pf-music-picker">
         <Text size="sm" mb="sm">Choose a song, album or playlist. It plays under the photos.</Text>
-        <ContentCombobox
+        {open && <ContentCombobox
           value=""
           onChange={(id, item) => { if (id) onPick(id, item); }}
           placeholder="Search music…"
@@ -133,9 +134,9 @@ function MusicPicker({ open, onClose, onPick }) {
           scopeLabel="Music"
           logApp="media"
           allowFreeform={false}
-        />
+        />}
       </div>
-    </Modal>
+    </FormDialog>
   );
 }
 
@@ -170,7 +171,7 @@ export function PlayerFeatureControls({ target, snapshot: snapshotOverride = nul
         <div className="pf-row pf-brief" data-testid="pf-brief" role="status">
           <Text size="sm" className="pf-brief-label">{`Showing ${f.brief.label}`}{f.brief.remainingSeconds != null ? ` · ${f.brief.remainingSeconds}s` : ''}</Text>
           {f.closeBrief && (
-            <Button size="sm" variant="default" leftSection={<IconX size={16} />} data-testid="pf-brief-close"
+            <Button size="sm" variant="default" leftSection={<UiIcon name="close" />} data-testid="pf-brief-close"
               onClick={() => run('brief', 'close', () => f.closeBrief())}>Close</Button>
           )}
         </div>
@@ -209,14 +210,14 @@ export function PlayerFeatureControls({ target, snapshot: snapshotOverride = nul
             disabled={!f.musicBehindCommand} onClick={() => setPickerOpen(true)}>Add music behind</Button>
         </Group>
       )}
-      {pickerOpen && <MusicPicker
+      <MusicPicker
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
         onPick={(contentId, item) => {
           setPickerOpen(false);
           run('music-behind', 'start', () => f.musicBehindCommand('start', { contentId, title: item?.title ?? null }));
         }}
-      />}
+      />
       {feedback && <div className="pf-feedback" role="status" data-testid="pf-feedback">{feedback}</div>}
     </div>
   );
@@ -224,42 +225,56 @@ export function PlayerFeatureControls({ target, snapshot: snapshotOverride = nul
 
 /**
  * Stopping a slideshow with music behind asks whether to keep the music
- * (PLAY.9a/AC3). Returns [guardStop(stop), dialog] for TransportBar.
+ * (PLAY.9a/AC3). Returns [guardStop(stop, opener), dialog] for TransportBar.
  */
-export function useSlideshowStopGuard(target, snapshotOverride = null) {
+export function useSlideshowStopGuard(target, snapshotOverride = null, { available = true } = {}) {
   const f = usePlayerFeatures(target, snapshotOverride);
   const [pending, setPending] = useState(null);
-  const ask = isSlideshowItem(f.snapshot?.currentItem) && !!f.musicBehind && !!f.musicBehindCommand;
+  const targetKey = f.isLocal ? 'local' : target?.deviceId;
+  const ask = available && isSlideshowItem(f.snapshot?.currentItem) && !!f.musicBehind && !!f.musicBehindCommand;
+  const open = Boolean(ask && pending && pending.targetKey === targetKey);
   // `stop` receives { keepMusic } — the explicit answer, sent on the stop
   // command so the screen never has to guess it from who sent the Stop.
-  const guardStop = useCallback((stop) => {
+  const guardStop = useCallback((stop, opener) => {
     if (!ask) { stop({ keepMusic: false }); return; }
-    setPending(() => stop);
-  }, [ask]);
+    opener?.focus({ preventScroll: true });
+    setPending({ stop, opener, targetKey });
+  }, [ask, targetKey]);
   const close = useCallback(() => setPending(null), []);
-  useDismissLayer(!!pending, close, { managed: true });
-  const dialog = useMemo(() => (!pending ? null : (
-    <Modal opened onClose={close} title="Stop the slideshow" centered size="sm">
-      <div data-testid="pf-stop-guard">
+  const usesDismissStack = useDismissLayer(open, close);
+  useLayoutEffect(() => {
+    if (!pending || open) return;
+    setPending(null);
+    const { opener } = pending;
+    if (!available || pending.targetKey !== targetKey || !opener?.isConnected) return;
+    // Eligibility can remove the modal before Mantine's focus return runs.
+    queueMicrotask(() => {
+      if (opener.isConnected && document.activeElement === document.body) opener.focus({ preventScroll: true });
+    });
+  }, [available, open, pending, targetKey]);
+  // Keep the modal mounted while this prompt is available so Mantine can return focus on cancel.
+  const dialog = useMemo(() => !ask && !pending ? null : (
+    <Modal key={targetKey} opened={open} onClose={close} closeOnEscape={!usesDismissStack} title="Stop the slideshow" centered size="sm">
+      {open && <div data-testid="pf-stop-guard">
         <Text size="sm" mb="md">Keep the music playing?</Text>
         <Group justify="flex-end" gap="sm">
           <Button variant="default" data-testid="pf-stop-cancel" onClick={close}>Cancel</Button>
           <Button variant="default" data-testid="pf-stop-both" onClick={() => {
-            const stop = pending; setPending(null);
+            const { stop } = pending; close();
             mediaLog.playerFeature({ feature: 'music-behind', action: 'stop-with-slideshow', target: f.isLocal ? 'local' : target?.deviceId });
             stop?.({ keepMusic: false });
             Promise.resolve(f.musicBehindCommand('stop')).catch(() => {});
           }}>Stop music too</Button>
           <Button data-testid="pf-stop-keep-music" onClick={() => {
-            const stop = pending; setPending(null);
+            const { stop } = pending; close();
             mediaLog.playerFeature({ feature: 'music-behind', action: 'keep-after-slideshow', target: f.isLocal ? 'local' : target?.deviceId });
             if (f.isLocal) getLocalPlayerFeatures().keepMusicAfterStop();
             stop?.({ keepMusic: true });
           }}>Keep music</Button>
         </Group>
-      </div>
+      </div>}
     </Modal>
-  )), [pending, close, f, target]);
+  ), [ask, open, pending, close, usesDismissStack, f, target, targetKey]);
   return [guardStop, dialog];
 }
 

@@ -35,9 +35,9 @@ export async function executeMove(request, { source, destination }) {
     return { status: 'uncertain', reason: error?.message ?? 'destination-not-confirmed' };
   }
   if (!validResult(adoption)) return { status: 'uncertain', reason: 'invalid-destination-result' };
-  if (adoption.status !== 'adopted' || request.keepSource) {
-    return { ...adoption, sourceStopped: false };
-  }
+  const { confirm, ...result } = adoption;
+  if (result.status !== 'adopted' || request.keepSource) return { ...result, sourceStopped: false };
+  if (confirm && !confirm()) return { status: 'uncertain', sourceStopped: false, reason: 'destination-changed' };
 
   const expected = {
     sourceOwnerId: request.sourceOwnerId,
@@ -47,12 +47,17 @@ export async function executeMove(request, { source, destination }) {
   if (!current
     || current.sourceOwnerId !== expected.sourceOwnerId
     || current.sourceRevision !== expected.sourceRevision) {
-    return { ...adoption, sourceStopped: false, reason: 'source-changed' };
+    return { ...result, sourceStopped: false, reason: 'source-changed' };
   }
-  const stopped = await source.stopIfCurrent?.(expected);
+  let stopped;
+  try {
+    stopped = await source.stopIfCurrent?.(expected);
+  } catch (error) {
+    return { ...result, sourceStopped: false, reason: error?.code ?? 'source-not-stopped' };
+  }
   const sourceStopped = stopped === true || stopped?.ok === true;
   return {
-    ...adoption,
+    ...result,
     sourceStopped,
     ...(!sourceStopped ? { reason: stopped?.code ?? 'source-not-stopped' } : {}),
   };

@@ -839,6 +839,8 @@ It starts collapsed; open state of all sections is kept in `localStorage`. Ready
 and Running start open. A verified card with a runtime warning shows a small "Runtime 162 min (VidAngel 124)"
 note (Plex file / VidAngel). A title search flattens the verified films into one grid with stage
 chips and filters the Not matched section alike; the "N of M films" count covers both.
+When a build request is acknowledged, the shared library read refreshes any
+open library view, including one reopened while the request was pending.
 
 An unmatched film's page (`GET /:rk/review`) answers `200 { title, year, match: 'unmatched',
 unmatched }` when there is nothing to review, and the page says why the film can't be reviewed
@@ -1050,8 +1052,10 @@ level. `?` opens the whole keymap, Esc closes it.
   row's redo reason is stored on the run.
 - **Bleep level.** The bleep tone volume, effective = film setting, else household profile `bleepLevel`,
   else 0.25 (clamped 0 to 1). `[` / `]` change the film's level by 0.05; a debounced write saves it to
-  the film's settings, the player re-reads its profile and the cue replays. Applied at playback, no
-  re-render.
+  the film's settings. After the player accepts the refreshed profile, Review replays the cue if it
+  is still selected. If the preview read fails, Review keeps the saved level visible and offers
+  Retry preview. Press Enter from the review station or activate the button to reread the preview
+  without saving the setting again. The level applies at playback.
 
 ### Review history and `review-stats`
 

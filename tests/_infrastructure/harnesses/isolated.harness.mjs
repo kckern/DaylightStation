@@ -16,6 +16,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ISOLATED_DIR = path.resolve(__dirname, '../../isolated');
 const ROOT_DIR = path.resolve(__dirname, '../../..');
+const BROWSER_PLATFORM_DIR = path.join(ISOLATED_DIR, 'e2e', 'browser-platform') + path.sep;
 // Every directory under tests/isolated/ MUST appear in one of these lists.
 // A directory in neither is silently never run by `npm run test:isolated` —
 // which is exactly how tests/isolated/e2e/ (the School lifecycle proof) rotted
@@ -153,15 +154,12 @@ async function main() {
   // Vitest targets may include both `.test.mjs` and `.test.jsx` specs (the
   // existing tests/isolated/modules/Fitness/*.test.jsx files were never
   // matched by the old finder). Pass extensions explicitly here.
-  const vitestFiles = [...findOwnerIsolatedFiles(
-    VITEST_TARGETS, vitestArgs,
-    { extensions: ['.test.mjs', '.test.jsx', '.test.js'] }
-  ), ...findTestFiles(
-    ISOLATED_DIR,
-    VITEST_TARGETS,
-    vitestArgs,
-    { extensions: ['.test.mjs', '.test.jsx', '.test.js'] }
-  )];
+  const vitestOptions = { extensions: ['.test.mjs', '.test.jsx', '.test.js'] };
+  const vitestFiles = [
+    ...findOwnerIsolatedFiles(VITEST_TARGETS, vitestArgs, vitestOptions),
+    ...findTestFiles(ISOLATED_DIR, VITEST_TARGETS, vitestArgs, vitestOptions)
+      .filter(file => !(file.startsWith(BROWSER_PLATFORM_DIR) && file.endsWith('.runtime.test.mjs'))),
+  ];
   // Colocated frontend specs (live alongside the source they cover, e.g.
   // frontend/src/hooks/fitness/CycleStateMachine.test.js). These never lived
   // under tests/isolated/, so they need a separate walk.

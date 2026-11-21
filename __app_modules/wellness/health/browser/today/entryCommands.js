@@ -30,7 +30,7 @@ export const entryPins = row => [...new Set([...(row?.manualFields || []), ...(r
  * `affectedIds`; that is what Undo restores. Counting here is about never
  * offering "Delete Asian Chicken Plate?" for a gesture that removes five rows.
  *
- * Gated on `kind === 'group'`, deliberately matching EntryEditSheet and the
+ * Gated on `kind === 'group'`, deliberately matching EntryEditor and the
  * backend cascade rather than LogTable's has-children test — this decides what a
  * destructive sentence CLAIMS, so it follows the same rule as the code that does
  * the destroying. A row with children that nothing marked as a group is not one.

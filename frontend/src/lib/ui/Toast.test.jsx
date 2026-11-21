@@ -41,6 +41,24 @@ describe('Toast', () => {
     expect(onAutoClose).toHaveBeenCalledTimes(1);
   });
 
+  it.each(['focus', 'pointer'])('stays open while %s remains on the notice', remaining => {
+    vi.useFakeTimers();
+    const onAutoClose = vi.fn();
+    render(<Toast message="Copied" autoCloseMs={6000} onAutoClose={onAutoClose}><button>Dismiss</button></Toast>);
+    const toast = screen.getByRole('status');
+    const dismiss = screen.getByRole('button', { name: 'Dismiss' });
+    fireEvent.focus(dismiss);
+    fireEvent.pointerEnter(toast);
+    if (remaining === 'focus') fireEvent.pointerLeave(toast);
+    else fireEvent.blur(dismiss);
+    act(() => vi.advanceTimersByTime(6000));
+    expect(onAutoClose).not.toHaveBeenCalled();
+    if (remaining === 'focus') fireEvent.blur(dismiss);
+    else fireEvent.pointerLeave(toast);
+    act(() => vi.advanceTimersByTime(6000));
+    expect(onAutoClose).toHaveBeenCalledTimes(1);
+  });
+
   it('never auto-closes without autoCloseMs (anything carrying an action)', () => {
     vi.useFakeTimers();
     const onAutoClose = vi.fn();

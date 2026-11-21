@@ -28,6 +28,12 @@ function dispatchKey(key, { trusted = true } = {}) {
   window.dispatchEvent(event);
 }
 
+function dispatchKeyOn(target, key) {
+  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+  target.dispatchEvent(event);
+  return event;
+}
+
 describe('useAdvancedKeyboardHandler double-click detection', () => {
   let actionHandlers;
   const config = () => ({
@@ -100,5 +106,26 @@ describe('useAdvancedKeyboardHandler double-click detection', () => {
 
     expect(actionHandlers.previousTrack).not.toHaveBeenCalled();
     expect(actionHandlers.seekBackward).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves Enter on a native button for browser activation', () => {
+    actionHandlers.togglePlayPause = vi.fn();
+    const { container } = render(<Harness config={{
+      ...config(), playbackKeys: { togglePlayPause: ['MediaPlayPause'] },
+    }} />);
+    const button = document.createElement('button');
+    container.append(button);
+
+    for (const key of ['Enter', ' ', 'Tab']) {
+      const event = dispatchKeyOn(button, key);
+      expect(event.defaultPrevented, key).toBe(false);
+    }
+
+    expect(actionHandlers.togglePlayPause).not.toHaveBeenCalled();
+
+    const mediaKeyEvent = dispatchKeyOn(button, 'MediaPlayPause');
+
+    expect(mediaKeyEvent.defaultPrevented).toBe(true);
+    expect(actionHandlers.togglePlayPause).toHaveBeenCalledOnce();
   });
 });

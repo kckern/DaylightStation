@@ -1,4 +1,4 @@
-import React, { useEffect, useReducer, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { Alert, Badge, Button, Checkbox, Group, Stack, Text, TextInput, Title } from '@mantine/core';
 import { Link, useParams } from 'react-router-dom';
 import { ListDraftEditor } from '../../../../../__capabilities/content-catalog/browser/list-editor.jsx';
@@ -6,6 +6,7 @@ import { ParticipantPicker } from '../../../../../__capabilities/household-ident
 import {copyContent,replaceDraftContent} from '../../portable/copyContent.mjs';
 import GuestDirectory from './GuestDirectory.jsx';
 import ActivitySettings, {useDescriptors,materializeBindings,bindingErrors} from './ActivitySettings.jsx';
+import { useRefreshableRead } from '../../../../../frontend/src/lib/hooks/useRefreshableRead.js';
 import { useUnsavedGuard } from '../../../../../frontend/src/modules/Admin/shared/useUnsavedGuard.js';
 import { agendaClient } from './agendaClient.js';
 import {getLogger} from '../../../../../frontend/src/lib/logging/Logger.js';
@@ -20,12 +21,11 @@ export default function AgendaPlanEditor({client=agendaClient,editors={}}) {
   const [state,dispatch]=useReducer(planDraftReducer,null);
   const [context,setContext]=useState(null), [directory,setDirectory]=useState({people:[],etag:null}), [error,setError]=useState(''), [directoryError,setDirectoryError]=useState(''), [artworkBusy,setArtworkBusy]=useState(false), [operationBusy,setOperationBusy]=useState(false);
   useUnsavedGuard(!!state?.dirty,{label:'agenda plan'});
-  useEffect(()=>{let active=true; Promise.all([client.plan(seriesId,planId),client.planningContext(seriesId)]).then(([plan,week])=>{if(active){dispatch({type:'load',...plan,scope:JSON.stringify([seriesId,planId]),generation});setContext(week.document);}}).catch(e=>active&&setError(e.message));client.people().then(people=>{if(active){setDirectory({people:people.document.people,etag:people.etag});setDirectoryError('');}}).catch(e=>active&&setDirectoryError(e.message));return()=>{active=false;};},[client,seriesId,planId]);
   const draft=state?.draft;
   useEffect(()=>{setArtworkBusy(false);setOperationBusy(false);setError('');setDirectoryError('');},[seriesId,planId]);
   const current=useRef(null);
   const pendingOperation=useRef(null);
-  const refreshRequest=useRef(0);
+  const onDirectoryRefresh=useRef(null);
   const mounted=useRef(true);
   const scopeKey=JSON.stringify([seriesId,planId]);
   const scopeGeneration=useRef({key:scopeKey,value:0});
@@ -36,6 +36,44 @@ export default function AgendaPlanEditor({client=agendaClient,editors={}}) {
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const sameScope=snapshot=>mounted.current && current.current.scopeKey===snapshot.scopeKey && current.current.generation===snapshot.generation;
   const stillCurrent=snapshot=>sameScope(snapshot) && current.current.draft===snapshot.draft;
+
+  const readPlan = useCallback(async (isCurrent, signal) => {
+    const ownsPlan = () => isCurrent() &&
+      current.current.scopeKey === scopeKey && current.current.generation === generation;
+    const reads = [];
+    try {
+      reads.push(client.plan(seriesId, planId, { signal }));
+      reads.push(client.planningContext(seriesId, { signal }));
+      const [plan, week] = await Promise.all(reads);
+      if (!ownsPlan()) return;
+      dispatch({ type: 'load', ...plan, scope: scopeKey, generation });
+      setContext(week.document);
+    } catch (error) {
+      if (ownsPlan()) setError(error.message);
+      // Report the first failure immediately and keep its pending sibling cancelable.
+      await Promise.allSettled(reads);
+    }
+  }, [client, seriesId, planId, scopeKey, generation]);
+  const { reload: loadPlan } = useRefreshableRead(readPlan);
+  useEffect(() => { loadPlan(); }, [loadPlan]);
+
+  const readDirectory = useCallback(async (isCurrent, signal) => {
+    const applySnapshots = onDirectoryRefresh.current;
+    onDirectoryRefresh.current = null;
+    const ownsDirectory = () => isCurrent() &&
+      current.current.scopeKey === scopeKey && current.current.generation === generation;
+    try {
+      const { document, etag } = await client.people({ signal });
+      if (!ownsDirectory()) return;
+      setDirectory({ people: document.people, etag });
+      setDirectoryError('');
+      applySnapshots?.(document.people);
+    } catch (error) {
+      if (ownsDirectory()) setDirectoryError(error.message);
+    }
+  }, [client, scopeKey, generation]);
+  const { reload: reloadDirectory } = useRefreshableRead(readDirectory);
+  useEffect(() => { reloadDirectory(); }, [reloadDirectory]);
 
   const discovery=useDescriptors(client,draft?.list), descriptors=discovery.values;
   const staleBindings=draft && !discovery.loading && !discovery.error ? bindingErrors(draft,descriptors) : [];
@@ -107,26 +145,20 @@ export default function AgendaPlanEditor({client=agendaClient,editors={}}) {
       setError('The draft changed while the request was pending. Your newer edits were retained; reload or resolve any save conflict.');
     }
   };
-  const refreshSnapshots=async()=>{
+  const refreshSnapshots=()=>{
     const snapshot=current.current;
-    const request=++refreshRequest.current;
-    try {
-      const result=await client.people();
-      if (!sameScope(snapshot) || request!==refreshRequest.current) return;
-      setDirectory({people:result.document.people,etag:result.etag});
-      setDirectoryError('');
+    onDirectoryRefresh.current = people => {
       if (!stillCurrent(snapshot)) {
         setError('The draft changed while the directory was loading. Refresh snapshots again.');
         return;
       }
       const refreshed=snapshot.draft.participants.map(participant=>{
-        const entry=participant.person && result.document.people.find(person=>person.active!==false && person.person.kind===participant.person.kind && person.person.id===participant.person.id);
+        const entry=participant.person && people.find(person=>person.active!==false && person.person.kind===participant.person.kind && person.person.id===participant.person.id);
         return entry ? {...participant,display:structuredClone(entry.display)} : participant;
       });
       rosterChange(refreshed);
-    } catch (error) {
-      if (sameScope(snapshot) && request===refreshRequest.current) setDirectoryError(error.message);
-    }
+    };
+    reloadDirectory();
   };
   const save=async publish=>{
     const operation=startOperation();

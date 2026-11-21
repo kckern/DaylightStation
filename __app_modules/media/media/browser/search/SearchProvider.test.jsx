@@ -27,6 +27,7 @@ vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({
   }),
 }));
 
+import { invalidateApiResources } from '../../../../../frontend/src/lib/hooks/useApiResource.js';
 import { SearchProvider } from "./SearchProvider.jsx";
 import { useSearchContext } from "./useSearchContext.js";
 
@@ -97,6 +98,16 @@ describe('SearchProvider', () => {
     act(() => { screen.getByTestId('pick-video-movies').click(); });
     await waitFor(() => expect(screen.getByTestId('current')).toHaveTextContent('video-movies'));
     expect(screen.getByTestId('current-params')).toHaveTextContent('type=movie');
+  });
+
+  it('retains a selected scope when a refreshed config adds children', async () => {
+    render(<SearchProvider><Probe /></SearchProvider>);
+    await waitFor(() => expect(screen.getByTestId('current')).toHaveTextContent('all'));
+    act(() => screen.getByTestId('pick-video').click());
+    mockBehavior = 'children';
+    act(() => invalidateApiResources(path => path === 'api/v1/media/config'));
+    await waitFor(() => expect(screen.getByTestId('current-params').textContent).toBe('source=plex'));
+    expect(screen.getByTestId('current')).toHaveTextContent('video');
   });
 
   it('exposes scopeError when the config fetch rejects', async () => {

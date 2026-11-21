@@ -61,14 +61,40 @@ describe('moveScreenPlayback', () => {
     expect(http).not.toHaveBeenCalled();
   });
 
-  it('moves it to this device: the local session adopts the same item at the same spot', async () => {
+  it('confirms the paused item at its native position before claiming the source', async () => {
     const local = createLocalSessionController({ clientId: 'me', sessionControls: { storage: null } });
     const http = vi.fn(async () => ({ ok: true }));
-    const result = await moveScreenPlayback({ sourceId: 'kitchen', destinationId: 'local', fleetStore: storeWith(published({ state: 'paused' })), http, localController: local });
-    expect(result.ok).toBe(true);
+    const pending = moveScreenPlayback({ sourceId: 'kitchen', destinationId: 'local', fleetStore: storeWith(published({ state: 'paused' })), http, localController: local });
+    await Promise.resolve();
     expect(local.getSnapshot().currentItem.contentId).toBe('plex:1');
     expect(local.getSnapshot().position).toBe(100);
+    expect(http).not.toHaveBeenCalled();
+
+    const decoder = { paused: true, seeking: false, ended: false, readyState: 4, currentTime: 0, duration: 420 };
+    local.setPlayerHandle({ getMediaElement: () => decoder, getMountedContentId: () => 'plex:1', getMountedMediaGeneration: () => 1 });
+    local.portability.getNativeObservation();
+    local.onNativeObservationEvent(decoder, 'loadeddata');
+    await Promise.resolve();
+    expect(http).not.toHaveBeenCalled();
+    decoder.currentTime = 100;
+    local.onNativeObservationEvent(decoder, 'seeked');
+    await expect(pending).resolves.toMatchObject({ ok: true, sourceStopped: true });
     expect(http).toHaveBeenCalledWith('api/v1/device/kitchen/session/claim', expect.any(Object), 'POST');
+    local.disposeRecovery();
+  });
+
+  it('keeps the slideshow adoption path for a renderer without a native media element', async () => {
+    const photo = { contentId: 'photo:1', title: 'Slideshow', format: 'image', queueItemId: 'photo-entry' };
+    const initial = published();
+    const snapshot = published({ currentItem: photo, queue: { ...initial.queue, items: [photo] },
+      meta: { ...initial.meta, playbackOwner: { ...initial.meta.playbackOwner,
+        contentId: photo.contentId, queueItemId: photo.queueItemId } } });
+    const localController = createLocalSessionController({ clientId: 'me', sessionControls: { storage: null } });
+    const http = vi.fn(async () => ({ ok: true }));
+    const result = await moveScreenPlayback({ sourceId: 'kitchen', destinationId: 'local', fleetStore: storeWith(snapshot), http, localController });
+    expect(result).toMatchObject({ ok: true, sourceStopped: true });
+    expect(localController.getSnapshot().currentItem.contentId).toBe(photo.contentId);
+    localController.disposeRecovery();
   });
 
   it('refuses a screen that publishes no playback owner identity, touching nothing', async () => {

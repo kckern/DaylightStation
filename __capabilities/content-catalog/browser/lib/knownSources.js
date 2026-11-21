@@ -1,3 +1,5 @@
+import { DaylightAPI } from '../../../../frontend/src/lib/api.mjs';
+
 /**
  * Known content-source prefixes, for validating a hand-typed content id.
  *
@@ -10,9 +12,8 @@
  *
  * The set is the union of registered adapter sources, their categories and
  * providers, and the query aliases (`hymn:`, `scripture:`, …) — anything the
- * backend will resolve. Fetched once per page load; a failure leaves the set
- * unknown, and callers treat unknown as "cannot judge" rather than "invalid",
- * so a fetch problem never produces a false alarm.
+ * backend will resolve. Cache the first complete lookup for this page.
+ * Until both catalogs are known, callers cannot judge a typed prefix.
  */
 
 let knownSources = null;
@@ -28,15 +29,14 @@ export function loadKnownSources() {
 
   inflight = (async () => {
     try {
-      const [sourcesRes, aliasesRes] = await Promise.all([
-        fetch('/api/v1/content/sources'),
-        fetch('/api/v1/content/aliases')
+      const [sources, aliases] = await Promise.all([
+        DaylightAPI('/api/v1/content/sources'),
+        DaylightAPI('/api/v1/content/aliases').catch(error => {
+          // Only the catalog's explicit unwired response confirms no aliases.
+          if (error.status === 501 && error.body?.code === 'ALIAS_RESOLVER_NOT_CONFIGURED') return {};
+          throw error;
+        }),
       ]);
-      if (!sourcesRes.ok) return null;
-
-      const sources = await sourcesRes.json();
-      // Aliases are optional — the endpoint 501s when no resolver is wired.
-      const aliases = aliasesRes.ok ? await aliasesRes.json() : {};
 
       const all = [
         ...(sources.sources || []),

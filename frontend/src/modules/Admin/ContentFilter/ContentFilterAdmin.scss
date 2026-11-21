@@ -14,10 +14,11 @@
 .cf-card__meta { display: flex; gap: var(--ds-space-2); align-items: center; font-size: 11px; color: var(--ds-text-secondary); height: 18px; }
 .cf-card__run { font-size: 11px; line-height: 1.2; height: 2.4em; overflow: hidden; color: var(--ds-text-secondary); }
 .cf-card__run.is-failed { color: var(--ds-danger); }
+.cf-card__run-action[data-read-unavailable='true'] { opacity: 0.45; cursor: not-allowed; }
 .cf-card__note { flex: none; font-size: 11px; line-height: 1.25; max-height: 2.5em; overflow: hidden; color: var(--ds-warning, var(--ds-text-secondary)); }
 
 // Films not matched to Plex: one plain list below the stage groups, set apart and muted.
-.mantine-Accordion-item.cf-unmatched { margin-top: var(--ds-space-6); background: transparent; border: 1px dashed var(--ds-text-secondary); }
+.mantine-Accordion-item.cf-unmatched { margin-top: var(--ds-space-xxl); background: transparent; border: 1px dashed var(--ds-text-secondary); }
 .cf-unmatched__list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 0 var(--ds-space-4); }
 .cf-unmatched__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title year" "reason reason"; column-gap: var(--ds-space-2); padding: var(--ds-space-2) 0; border-bottom: 1px solid var(--ds-border); min-width: 0; }
 .cf-unmatched__title { grid-area: title; font-size: 13px; font-weight: 600; color: var(--ds-text-primary); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -55,7 +56,6 @@
 .cf-keybar__tally { font-variant-numeric: tabular-nums; }
 .cf-keybar__item { font-size: 12px; color: var(--ds-text-secondary); }
 .cf-keybar__key { display: inline-block; min-width: 20px; padding: 0 var(--ds-space-1); text-align: center; font-family: var(--ds-font-mono); font-size: 11px; color: var(--ds-text-primary); background: var(--ds-bg-elevated); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-sm); }
-.cf-keybar__help { position: absolute; top: 100%; left: 0; z-index: var(--ds-z-dropdown); margin-top: var(--ds-space-1); padding: var(--ds-space-3); display: flex; flex-direction: column; gap: var(--ds-space-1); background: var(--ds-bg-overlay); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); box-shadow: var(--ds-shadow-elevated); max-width: 480px; }
 .cf-keybar__help-row { display: flex; gap: var(--ds-space-2); align-items: baseline; font-size: 12px; }
 .cf-keybar__help-row .cf-keybar__key { flex: 0 0 auto; min-width: 88px; }
 

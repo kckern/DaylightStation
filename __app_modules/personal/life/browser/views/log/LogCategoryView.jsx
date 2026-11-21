@@ -2,7 +2,8 @@ import { Stack, Text, Paper, Group, Badge } from '@mantine/core';
 import { useLifelog } from "../../hooks/useLifelog.js";
 import { SourceIcon } from "./shared/SourceIcon.jsx";
 import { ActivityHeatmap } from "./shared/ActivityHeatmap.jsx";
-import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
+import { LifePage } from "../../components/index.js";
+import { LogReadRegion } from './shared/LogReadRegion.jsx';
 import { formatDate, humanize } from "../../lib/format.js";
 
 /**
@@ -14,16 +15,14 @@ import { formatDate, humanize } from "../../lib/format.js";
  * @param {string} [props.username]
  */
 export function LogCategoryView({ category, scope = 'month', username }) {
-  const { data, loading, error, refetch } = useLifelog({ category, scope, username });
+  const read = useLifelog({ category, scope, username });
+  if (read.loading || read.error) return <LogReadRegion read={read} />;
 
-  if (loading) return <LoadingState />;
-  if (error) return <ErrorState error={error} onRetry={refetch} />;
-
-  const days = data?.days || {};
+  const days = read.data?.days || {};
   const sortedDates = Object.keys(days).sort().reverse();
   const activeDays = sortedDates.filter(d => Object.keys(days[d].sources || {}).length > 0);
 
-  return (
+  const content = (
     <LifePage
       title={humanize(category)}
       actions={<Badge size="sm" variant="light">{activeDays.length} active days</Badge>}
@@ -55,4 +54,5 @@ export function LogCategoryView({ category, scope = 'month', username }) {
       </Stack>
     </LifePage>
   );
+  return <LogReadRegion read={read}>{content}</LogReadRegion>;
 }

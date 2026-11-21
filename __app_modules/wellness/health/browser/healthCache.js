@@ -3,16 +3,18 @@
 // reopened /health paints yesterday's-last-seen day, budget, weight and coach
 // line on its first frame and then revalidates each one quietly — instead of
 // a spinner until the slowest request answers. See
-// attachApiResourcePersistence in lib/hooks/useApiResource.js.
+// registerResourcePersistence in lib/hooks/useApiResource.js.
 import { useEffect, useState } from 'react';
-import { attachApiResourcePersistence, claimApiResourceOwner, getApiResourceOwner } from "../../../../frontend/src/lib/hooks/useApiResource.js";
+import { patchApiResource, primeApiResource, registerResourcePersistence } from "../../../../frontend/src/lib/hooks/useApiResource.js";
 import { createIdbResourceStore } from "../../../../frontend/src/lib/hooks/persistentResourceStore.js";
 import { createAppLogger } from "../../../../frontend/src/lib/ui/createAppLogger.js";
 
 const logger = createAppLogger('health').child('cache');
 
 export const HEALTH_CACHE_PREFIXES = ['api/v1/health/'];
+export const HEALTH_CONTEXT_PATH = 'api/v1/health/context';
 
+let registration;
 let hydration = null;
 let hydrated = false;
 
@@ -20,7 +22,8 @@ let hydrated = false;
 export function hydrateHealthCache() {
   if (hydration) return hydration;
   const startedAt = performance.now();
-  hydration = attachApiResourcePersistence({ store: createIdbResourceStore('daylight-health-cache', { maxEntries: 100 }), prefixes: HEALTH_CACHE_PREFIXES })
+  registration = registerResourcePersistence({ store: createIdbResourceStore('daylight-health-cache', { maxEntries: 100 }), prefixes: HEALTH_CACHE_PREFIXES });
+  hydration = registration.ready
     .catch(() => 0)
     .then(restored => {
       hydrated = true;
@@ -47,8 +50,17 @@ export function useHealthCacheHydrated() {
  * confirmed (never a restored one). A different person than last time drops
  * the previous person's snapshots and refetches.
  */
-export function claimHealthCacheOwner(userId) {
-  if (claimApiResourceOwner(userId)) logger.info('cache.owner-changed', { userId });
+export function claimHealthCacheOwner(context) {
+  const previousOwner = registration?.owner;
+  if (registration?.setOwner(context.userId)) logger.info('cache.owner-changed', { userId: context.userId });
+  if (previousOwner !== registration?.owner) {
+    // Publish the confirmed context to the reader in the same claim that
+    // clears the namespace, so the current shell survives revalidation.
+    patchApiResource(HEALTH_CONTEXT_PATH, () => context, { create: true });
+  } else {
+    // A same-owner confirmation seeds persistence without another revalidation.
+    primeApiResource(HEALTH_CONTEXT_PATH, context);
+  }
 }
 
 /**
@@ -57,6 +69,6 @@ export function claimHealthCacheOwner(userId) {
  * person's data. Unknown or first-visit owners hold nothing to mix up.
  */
 export function healthCacheHeldByOther(userId) {
-  const owner = getApiResourceOwner();
+  const owner = registration?.owner;
   return Boolean(owner && userId && owner !== userId);
 }

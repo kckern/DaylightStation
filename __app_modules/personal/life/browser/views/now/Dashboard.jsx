@@ -1,7 +1,8 @@
 import { useMemo, useEffect } from 'react';
 import { Stack, Paper, Title, Text, Group, SimpleGrid, Button, Anchor } from '@mantine/core';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { IconCircleCheck, IconCircle } from '@tabler/icons-react';
+import { useRetryRegion } from '@/lib/ui';
 import { useAlignment } from "../../hooks/useAlignment.js";
 import { useLifePlan } from "../../hooks/useLifePlan.js";
 import { CadenceIndicator } from "../../widgets/CadenceIndicator.jsx";
@@ -12,13 +13,14 @@ import { ValueAllocationChart } from "../../widgets/ValueAllocationChart.jsx";
 import { TriageSummaryCard } from "./TriageSummaryCard.jsx";
 import { useTriage } from "../../hooks/useTriage.js";
 import { PriorityList } from "./PriorityList.jsx";
-import { LoadingState, SectionCard } from "../../components/index.js";
+import { LoadingState, ErrorState, SectionCard } from "../../components/index.js";
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 
-function ChecklistRow({ done, label, onClick }) {
+function ChecklistRow({ done, label, to }) {
+  const action = done ? {} : { component: Link, to, className: 'life-dashboard-link ds-touch-target' };
   return (
-    <Group gap="xs" className={done ? undefined : 'life-clickable'} onClick={done ? undefined : onClick}>
-      {done ? <IconCircleCheck size={18} color="var(--mantine-color-teal-5)" /> : <IconCircle size={18} color="var(--mantine-color-dimmed)" />}
+    <Group gap="xs" {...action}>
+      {done ? <IconCircleCheck size={18} color="var(--mantine-color-teal-5)" aria-hidden /> : <IconCircle size={18} color="var(--mantine-color-dimmed)" aria-hidden />}
       <Text size="sm" c={done ? 'dimmed' : undefined} td={done ? 'line-through' : undefined}>{label}</Text>
     </Group>
   );
@@ -26,12 +28,18 @@ function ChecklistRow({ done, label, onClick }) {
 
 export function Dashboard() {
   const logger = useMemo(() => getLogger().child({ component: 'life-dashboard' }), []);
-  const navigate = useNavigate();
-  const { data: priorityData, loading: pLoading } = useAlignment('priorities');
-  const { data: dashData, loading: dLoading } = useAlignment('dashboard');
-  const { summary: triageSummary, error: triageError, refetch: refetchTriage } = useTriage();
-  const { isEmpty: planIsEmpty, loading: planLoading } = useLifePlan();
-  const dashboard = dashData?.dashboard;
+  const priorityRead = useAlignment('priorities');
+  const summaryRead = useAlignment('dashboard');
+  const { summary: triageSummary, loading: triageLoading, error: triageError, refetch: refetchTriage } = useTriage();
+  const { isEmpty: planIsEmpty, loading: planLoading, revalidating: planRevalidating, error: planError, refetch: refetchPlan } = useLifePlan();
+  const { regionProps: planRegion, retry: retryPlan } = useRetryRegion(refetchPlan, planLoading || planRevalidating);
+  const { regionProps: priorityRegion, retry: retryPriorities } = useRetryRegion(
+    priorityRead.refetch, priorityRead.loading,
+  );
+  const { regionProps: summaryRegion, retry: retrySummary } = useRetryRegion(
+    summaryRead.refetch, summaryRead.loading,
+  );
+  const dashboard = summaryRead.data?.dashboard;
   const stage = dashboard?.stage;
   const completeness = dashboard?.completeness;
 
@@ -41,27 +49,32 @@ export function Dashboard() {
   }, [logger]);
 
   useEffect(() => {
-    if (!pLoading && !dLoading && !planLoading) {
-      const dashboard = dashData?.dashboard;
+    if (!priorityRead.loading && !summaryRead.loading && !planLoading
+      && !priorityRead.error && !summaryRead.error && !planError) {
       logger.info('life.dashboard.loaded', {
         goalCount: dashboard?.goalProgress?.length || 0,
         beliefCount: dashboard?.beliefConfidence?.length || 0,
         hasDrift: !!dashboard?.valueDrift,
-        priorityCount: priorityData?.priorities?.length || 0,
+        priorityCount: priorityRead.data?.priorities?.length || 0,
         planEmpty: planIsEmpty,
       });
     }
-  }, [pLoading, dLoading, planLoading, planIsEmpty, dashData, priorityData, logger]);
+  }, [priorityRead.loading, priorityRead.error, priorityRead.data, summaryRead.loading, summaryRead.error, dashboard, planLoading, planError, planIsEmpty, logger]);
 
-  if (pLoading || dLoading || planLoading) {
-    return <LoadingState />;
-  }
-
-  const priorities = priorityData?.priorities || [];
+  const planBlocked = planLoading || Boolean(planError);
+  const planStatus = (
+    <section aria-label="Life plan" {...planRegion} className={planBlocked ? undefined : 'life-plan-status--quiet'}>
+      {planLoading ? <LoadingState /> : planError
+        ? <ErrorState label="Life plan" error={planError} onRetry={retryPlan} />
+        : <Text role="status" size="sm" c="dimmed">{planRevalidating ? 'Refreshing life plan…' : 'Life plan loaded.'}</Text>}
+    </section>
+  );
+  if (planBlocked) return <Stack gap="md">{planStatus}</Stack>;
 
   return (
     <Stack gap="md">
-      <TriageSummaryCard summary={triageSummary} error={triageError} onRetry={refetchTriage} />
+      {planStatus}
+      <TriageSummaryCard summary={triageSummary} loading={triageLoading} error={triageError} onRetry={refetchTriage} />
 
       {planIsEmpty && (
         <SectionCard>
@@ -72,8 +85,8 @@ export function Dashboard() {
               and your first check-in tomorrow morning.
             </Text>
             <Group gap="md" mt="xs">
-              <Button onClick={() => navigate('/life/coach')}>Talk to your coach</Button>
-              <Anchor size="sm" c="dimmed" onClick={() => navigate('/life/log')}>
+              <Button component={Link} to="/life/coach">Talk to your coach</Button>
+              <Anchor component={Link} to="/life/log" size="sm" c="dimmed">
                 Browse my life log first
               </Anchor>
             </Group>
@@ -84,9 +97,9 @@ export function Dashboard() {
       {!planIsEmpty && stage === 'scaffolding' && completeness && (
         <SectionCard title="Finish setting up">
           <Stack gap="xs">
-            <ChecklistRow done={completeness.hasPurpose} label="Name your purpose" onClick={() => navigate('/life/plan')} />
-            <ChecklistRow done={completeness.valueCount >= 2} label="Add a couple of values" onClick={() => navigate('/life/plan/values')} />
-            <ChecklistRow done={completeness.goalCount >= 1} label="Set your first goal" onClick={() => navigate('/life/plan/goals')} />
+            <ChecklistRow done={completeness.hasPurpose} label="Name your purpose" to="/life/plan" />
+            <ChecklistRow done={completeness.valueCount >= 2} label="Add a couple of values" to="/life/plan/values" />
+            <ChecklistRow done={completeness.goalCount >= 1} label="Set your first goal" to="/life/plan/goals" />
           </Stack>
         </SectionCard>
       )}
@@ -96,12 +109,16 @@ export function Dashboard() {
       )}
 
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-        <Paper p="md" withBorder>
+        <Paper component="section" aria-label="Priorities" {...priorityRegion} p="md" withBorder>
           <Title order={5} mb="sm">Priorities</Title>
-          <PriorityList priorities={priorities} />
+          {priorityRead.loading ? <LoadingState label="priorities" rows={2} /> : priorityRead.error ? (
+            <ErrorState label="Priorities" error={priorityRead.error} onRetry={retryPriorities} />
+          ) : <PriorityList priorities={priorityRead.data?.priorities ?? []} />}
         </Paper>
 
-        <Stack gap="md">
+        <Stack component="section" aria-label="Dashboard summary" {...summaryRegion} className="life-dashboard-summary" gap="md">
+          {summaryRead.loading && <LoadingState label="dashboard summary" rows={2} />}
+          {summaryRead.error && <ErrorState label="Dashboard summary" error={summaryRead.error} onRetry={retrySummary} />}
           {dashboard?.valueDrift && (
             <Paper p="md" withBorder>
               <DriftGauge
@@ -112,6 +129,9 @@ export function Dashboard() {
                 <ValueAllocationChart allocation={dashboard.valueDrift.allocation} />
               )}
             </Paper>
+          )}
+          {!dashboard?.valueDrift && summaryRead.data && !summaryRead.loading && !summaryRead.error && (
+            <Text className="life-summary-read-status" role="status" size="sm" c="dimmed">Dashboard summary loaded.</Text>
           )}
         </Stack>
       </SimpleGrid>

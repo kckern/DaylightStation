@@ -66,7 +66,7 @@ describe('DayInputBar', () => {
     await waitFor(() => expect(onResult).toHaveBeenCalledWith(expect.objectContaining({ undoToken: 'meal-1' }), { date }));
     expect(apiMock.mock.calls[0]).toEqual(['api/v1/health/nutrition/day-input', expect.objectContaining({ type: 'text', content: 'move the tea to snacks', date }), 'POST']);
     expect(body(0).operationId).toBeTruthy();
-    expect(field().value).toBe('');
+    await waitFor(() => expect(field()).toHaveValue(''));
   });
   it('sends a recording as voice', async () => {
     apiMock.mockResolvedValue({ committed: true, outcome: 'committed' });
@@ -683,10 +683,16 @@ describe("Move this day's food", () => {
     setup();
     await openSheet();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Tea' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Move 2 selected to another day' }));
+    const picker = screen.getByRole('button', { name: 'Move 2 selected to another day' });
+    fireEvent.click(picker);
     await screen.findByRole('menuitem', { name: 'Yesterday' });
+    const dateField = screen.getByLabelText('Move to another day');
+    dateField.addEventListener('keydown', event => event.preventDefault(), { once: true });
+    fireEvent.keyDown(dateField, { key: 'Escape' });
+    expect(picker.getAttribute('aria-expanded')).toBe('true');
     fireEvent.keyDown(document.body, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Yesterday' })).toBeNull());
+    expect(document.activeElement).toBe(picker);
     expect(screen.getByRole('checkbox', { name: 'Tea' }).checked).toBe(false);
     fireEvent.keyDown(document.body, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('checkbox', { name: 'Tea' })).toBeNull());

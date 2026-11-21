@@ -3,9 +3,6 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core';
 import { MemoryRouter } from 'react-router-dom';
 
-const navigate = vi.fn();
-vi.mock('react-router-dom', async (orig) => ({ ...(await orig()), useNavigate: () => navigate }));
-
 let triage;
 vi.mock("../../../hooks/useTriage.js", () => ({ useTriage: () => triage, default: () => triage }));
 vi.mock("../../../../../../../frontend/src/modules/Auth/LoginScreen.jsx", () => ({
@@ -43,7 +40,7 @@ function makeTriage(over = {}) {
 }
 const wrap = () => render(<MantineProvider><MemoryRouter><TriageSessionView /></MemoryRouter></MantineProvider>);
 
-beforeEach(() => { navigate.mockReset(); api.mockReset(); triage = makeTriage(); });
+beforeEach(() => { api.mockReset(); triage = makeTriage(); });
 
 describe('TriageSessionView', () => {
   it('renders the first card with the overall count left', () => {
@@ -173,7 +170,7 @@ describe('TriageSessionView', () => {
     expect(screen.getByText('Archived')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Review' }));
     await waitFor(() => expect(screen.getByText('Receipt #42')).toBeInTheDocument());
-    expect(triage.log).toHaveBeenCalledWith(7);
+    expect(triage.log).toHaveBeenCalledWith(7, { signal: expect.any(AbortSignal) });
     expect(screen.getByText('Re: Deck quote')).toBeInTheDocument();
     expect(screen.getByText('auto')).toBeInTheDocument();
     expect(screen.getByText('you')).toBeInTheDocument();
@@ -181,6 +178,31 @@ describe('TriageSessionView', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Undo' })); });
     expect(triage.undo).toHaveBeenCalledWith('log.1');
     await waitFor(() => expect(screen.getByText('Undone')).toBeInTheDocument());
+  });
+
+  it('keeps a focused retry for an undo that failed before execution', async () => {
+    triage = makeTriage({ session: { steps: [{ id: 'recap', count: 1 }], cards: [recap], total: 1, done: 0 } });
+    triage.log.mockResolvedValue(logBody);
+    triage.undo
+      .mockResolvedValueOnce({ outcome: 'failed', reason: 'propose_failed' })
+      .mockResolvedValueOnce({ outcome: 'undone' });
+    wrap();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }));
+    await waitFor(() => expect(screen.getByText('Receipt #42')).toBeInTheDocument());
+    const undoButton = screen.getByRole('button', { name: 'Undo' });
+    undoButton.focus();
+    await act(async () => { fireEvent.click(undoButton); });
+
+    const retryButton = await screen.findByRole('button', { name: 'Retry undo' });
+    expect(screen.getByText(/undo could not be started/i)).toBeInTheDocument();
+    expect(retryButton).toHaveFocus();
+    await act(async () => { fireEvent.click(retryButton); });
+
+    await waitFor(() => expect(screen.getByText('Undone')).toBeInTheDocument());
+    expect(triage.undo).toHaveBeenCalledTimes(2);
+    expect(triage.undo).toHaveBeenNthCalledWith(1, 'log.1');
+    expect(triage.undo).toHaveBeenNthCalledWith(2, 'log.1');
   });
 
   it('in a dry run the recap reads what would have been done, from wouldHave', () => {
@@ -198,10 +220,9 @@ describe('TriageSessionView', () => {
     expect(screen.getByText(/Dry run — nothing was done automatically; your taps are real\./)).toBeInTheDocument();
   });
 
-  it('Stop for now returns to Now', () => {
+  it('links back to Now from Stop for now', () => {
     wrap();
-    fireEvent.click(screen.getByRole('button', { name: /Stop for now/ }));
-    expect(navigate).toHaveBeenCalledWith('/life/now');
+    expect(screen.getByRole('link', { name: /Stop for now/ })).toHaveAttribute('href', '/life/now');
   });
 
   it('voice: the transcript lands in the answer box without submitting', async () => {
@@ -211,7 +232,9 @@ describe('TriageSessionView', () => {
     wrap();
     fireEvent.click(screen.getByRole('button', { name: /Stop recording/ }));
     await waitFor(() => expect(screen.getByLabelText('Answer in your own words')).toHaveValue('make a todo'));
-    expect(api).toHaveBeenCalledWith('api/v1/ai/transcribe', { audioBase64: expect.any(String) }, 'POST');
+    expect(api).toHaveBeenCalledWith('api/v1/ai/transcribe', { audioBase64: expect.any(String) }, 'POST', {
+      signal: expect.any(AbortSignal),
+    });
     expect(triage.answer).not.toHaveBeenCalled();
     recorder.isRecording = false;
   });

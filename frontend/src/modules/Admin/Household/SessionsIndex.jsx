@@ -1,10 +1,59 @@
-import { useCallback, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState } from 'react';
 import { Badge, Button, Group, Stack, Table, Text } from '@mantine/core';
 import { DaylightAPI } from '../../../lib/api.mjs';
-import { useApiResource } from '../../../lib/hooks/useApiResource.js';
-import { LoadingState, ErrorState, EmptyState, SectionCard, createAppLogger } from '@/lib/ui';
+import { subscribeToken } from '../../../lib/auth.js';
+import { invalidateApiResources, useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { LoadingState, ErrorState, EmptyState, SectionCard, StateMessage, createAppLogger, useRetryRegion } from '@/lib/ui';
 
+const sessionsPath = 'api/v1/auth/sessions';
 const logger = createAppLogger('admin').child('sessions');
+const SessionRevocationContext = createContext(null);
+
+// The Admin layout owns the active command across visits to the roster.
+export function SessionRevocationProvider({ children }) {
+  const pending = useRef(null);
+  const [busy, setBusy] = useState(null);
+  const [authVisit, setAuthVisit] = useState(0);
+
+  useLayoutEffect(() => {
+    const unsubscribe = subscribeToken(() => {
+      pending.current = null;
+      setBusy(null);
+      setAuthVisit(visit => visit + 1);
+    });
+    return () => {
+      unsubscribe();
+      pending.current = null;
+    };
+  }, []);
+
+  const startRevocation = useCallback(id => {
+    if (pending.current) return null;
+    const operation = Symbol();
+    pending.current = operation;
+    setBusy(id);
+
+    return DaylightAPI(`${sessionsPath}/${encodeURIComponent(id)}`, {}, 'DELETE')
+      .then(() => {
+        logger.info('session.revoked', { id });
+        if (pending.current === operation) invalidateApiResources(path => path === sessionsPath);
+      })
+      .catch(err => {
+        logger.warn('session.revoke_failed', { id, error: err.message });
+        throw err;
+      })
+      .finally(() => {
+        if (pending.current === operation) {
+          pending.current = null;
+          setBusy(null);
+        }
+      });
+  }, []);
+
+  return <SessionRevocationContext.Provider value={{ authVisit, busy, startRevocation }}>
+    {children}
+  </SessionRevocationContext.Provider>;
+}
 
 /** A user agent is a paragraph; this is the two words that identify a device. */
 function deviceLabel(userAgent) {
@@ -40,47 +89,50 @@ const when = (iso) => {
  * reason to rotate a household secret.
  */
 export default function SessionsIndex() {
-  const { data, loading, error, reload } = useApiResource('api/v1/auth/sessions', { label: 'sessions', logger });
-  const [busy, setBusy] = useState(null);
+  const { authVisit, busy, startRevocation } = useContext(SessionRevocationContext);
+  return <SessionRoster key={authVisit} busy={busy} startRevocation={startRevocation} />;
+}
+
+function SessionRoster({ busy, startRevocation }) {
+  // The current-device flag belongs to the reader's authentication.
+  const { data, loading, error, reload } = useApiResource(sessionsPath, { dedupe: false, label: 'sessions', logger });
+  const { regionProps, retry } = useRetryRegion(reload, loading);
   const [notice, setNotice] = useState(null);
 
-  const sessions = useMemo(() => data?.sessions ?? [], [data]);
+  const sessions = data?.sessions ?? [];
+  const revocable = data?.revocable !== false;
   const others = sessions.filter((row) => !row.current).length;
 
-  const revoke = useCallback(async (id, label) => {
-    if (busy) return;
-    setBusy(id); setNotice(null);
+  const revoke = async (id, label) => {
+    const result = startRevocation(id);
+    if (!result) return;
+    setNotice(null);
     try {
-      await DaylightAPI(`api/v1/auth/sessions/${encodeURIComponent(id)}`, {}, 'DELETE');
-      logger.info('session.revoked', { id });
+      await result;
       setNotice(id === 'others' ? 'Signed out everywhere else.' : `Signed out ${label}.`);
-      reload();
     } catch (err) {
-      logger.warn('session.revoke_failed', { id, error: err.message });
       setNotice(err.message || 'Could not sign that device out.');
-    } finally { setBusy(null); }
-  }, [busy, reload]);
+    }
+  };
 
-  if (loading) return <LoadingState label="sessions" rows={3} />;
-  if (error) return <ErrorState error={error} onRetry={reload} label="Sessions" />;
-
-  return (
+  let body;
+  if (loading) body = <LoadingState label="sessions" rows={3} />;
+  else if (error) body = <ErrorState error={error} onRetry={retry} label="Sessions" />;
+  else body = (
     <SectionCard
       title="Signed-in devices"
-      actions={others > 0 ? (
-        <Button size="compact-xs" color="red" variant="light" loading={busy === 'others'}
+      actions={revocable && others > 0 ? (
+        <Button size="compact-xs" color="red" variant="light" loading={busy === 'others'} disabled={Boolean(busy)}
           onClick={() => revoke('others', 'every other device')}>
           Sign out {others} other{others === 1 ? '' : 's'}
         </Button>
       ) : null}
     >
       <Stack gap="xs">
-        {data?.revocable === false ? (
-          <Text size="sm" c="dimmed">
-            This deployment has no session store, so sessions cannot be listed or revoked.
-          </Text>
-        ) : null}
-        {!sessions.length ? (
+        {!revocable ? (
+          <StateMessage state="unavailable" title="Session management unavailable"
+            detail="This deployment has no session store, so sessions cannot be listed or revoked." />
+        ) : !sessions.length ? (
           <EmptyState title="Nobody is signed in"
             hint="A session appears here the first time someone signs in on a device." />
         ) : (
@@ -123,4 +175,6 @@ export default function SessionsIndex() {
       </Stack>
     </SectionCard>
   );
+
+  return <section aria-label="Sessions" {...regionProps}>{body}</section>;
 }

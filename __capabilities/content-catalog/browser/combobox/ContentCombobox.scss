@@ -14,6 +14,39 @@
 // the highlight `color: white` rules still override where intended.
 .content-combobox-dropdown {
   color: var(--ds-text-primary, #E8EAF0);
+  display: flex;
+  flex-direction: column;
+
+  // The positioning middleware caps the dropdown. Let the existing results
+  // viewport take the space left by breadcrumbs, scope and status controls.
+  > :not(.content-combobox-options) { flex-shrink: 0; }
+
+  .content-combobox-options {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    position: relative;
+  }
+
+  .content-combobox-scroll { min-height: 0; }
+
+  // The loading indicator must leave the option positions and scroll range intact.
+  .content-combobox-page-loader {
+    position: absolute;
+    inset-inline: 0;
+    margin-inline: auto;
+    width: fit-content;
+    display: grid;
+    place-items: center;
+    padding: calc(var(--ds-space-sm) / 2);
+    z-index: 1;
+    pointer-events: none;
+    background: var(--ds-surface);
+    border-radius: 50%;
+
+    &[data-direction="before"] { inset-block-start: 0; }
+    &[data-direction="after"] { inset-block-end: 0; }
+  }
 
   // ── Rows shrink to the dropdown, not to the widest row ──
   // Mantine 7's ScrollArea wraps the options in an inline `display: table;
@@ -137,9 +170,10 @@
     box-shadow: inset 0 0 0 1px var(--mantine-color-teal-9);
   }
 
-  // Wrap-around flash — draws eye to new position after pac-man wrap
-  &.wrap-flash {
-    animation: ccb-wrap-flash 400ms ease-out;
+  @media (prefers-reduced-motion: no-preference) {
+    &.wrap-flash {
+      animation: ccb-wrap-flash var(--ds-motion-reveal) var(--ds-motion-easing);
+    }
   }
 }
 

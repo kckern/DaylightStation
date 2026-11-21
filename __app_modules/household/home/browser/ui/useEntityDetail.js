@@ -9,7 +9,9 @@ const logger = homeLogger.child({ component: 'entity-detail' });
  */
 export function useEntityDetail(entities) {
   const [selectedId, setSelectedId] = useState(null);
-  const selected = useMemo(() => (selectedId ? entities.find((e) => e.id === selectedId) || null : null), [entities, selectedId]);
+  const selected = useMemo(() => (selectedId === null ? null : entities.find(e => e.id === selectedId) ?? null), [entities, selectedId]);
+  // Once an accepted reading removes the entity, its detail visit is over.
+  if (selectedId !== null && selected === null) setSelectedId(null);
   const open = useCallback((entity) => {
     logger.info('home.entity.detail', { entityId: entity.id, type: entity.type, stateClass: entity.stateClass });
     setSelectedId(entity.id);

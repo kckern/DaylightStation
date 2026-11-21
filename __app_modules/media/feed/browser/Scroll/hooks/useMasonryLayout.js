@@ -108,13 +108,17 @@ export function useMasonryLayout(containerRef, items, isDesktop) {
     const colCountChanged = numCols !== prevNumCols && prevNumCols > 0;
     const widthChanged = cw !== prevWidthRef.current && prevWidthRef.current > 0;
 
-    let didFullRecalc = false;
     if (itemsChanged || colCountChanged) {
       // Hard reset — items changed or column count changed: re-measure everything
       log.debug('masonry.reset', { reason: itemsChanged ? 'items' : 'colCount', numCols, cw, items: currIds.length });
       posMapRef.current.clear();
       lastPosRef.current.clear();
-      heightMapRef.current.clear();
+      // Ref measurements arrive before layout effects. Keep the measured
+      // cards in this batch, including the first desktop render.
+      const currentIds = new Set(currIds);
+      for (const id of heightMapRef.current.keys()) {
+        if (!currentIds.has(id)) heightMapRef.current.delete(id);
+      }
       colHeightsRef.current = new Array(numCols).fill(0);
       dirtyRef.current = false;
     } else if (widthChanged || dirtyRef.current) {
@@ -124,7 +128,6 @@ export function useMasonryLayout(containerRef, items, isDesktop) {
       posMapRef.current.clear();
       colHeightsRef.current = new Array(numCols).fill(0);
       dirtyRef.current = false;
-      didFullRecalc = true;
     }
 
     prevWidthRef.current = cw;
@@ -185,14 +188,16 @@ export function useMasonryLayout(containerRef, items, isDesktop) {
         positioned: posMapRef.current.size, numCols,
         colW: Math.round(actualColW),
         colHeights: colHeightsRef.current.map(Math.round),
-        overlaps, recalc: didFullRecalc,
+        overlaps,
       });
     }
 
     // After a dirty recalc, items are still at lastPosRef positions in the DOM.
     // Bump once more so getItemStyle reads the fresh posMap on re-render.
-    if (didFullRecalc && placed > 0) bump();
+    if (placed > 0) bump();
   }, [items, isDesktop, containerRef, layoutPass]);
+
+  const hasItems = items.length > 0;
 
   // ResizeObserver for container width changes — only bump when column count changes
   // or width drifts significantly (avoids scrollbar-induced thrashing)
@@ -208,7 +213,7 @@ export function useMasonryLayout(containerRef, items, isDesktop) {
     });
     ro.observe(containerRef.current);
     return () => ro.disconnect();
-  }, [isDesktop, containerRef]);
+  }, [isDesktop, containerRef, hasItems]);
 
   const containerHeight = isDesktop
     ? Math.max(0, ...(colHeightsRef.current.length ? colHeightsRef.current : [0]))

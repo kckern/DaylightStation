@@ -7,12 +7,12 @@ import { SHARED_LOG_IDS } from "../../portable/contracts/nutrition/sharedLogIds.
 import { useSearchParams } from 'react-router-dom';
 import { isISODate } from "../../portable/contracts/health/isoDate.mjs";
 import { ActionIcon, Button, Menu } from '@mantine/core';
-import { ErrorState } from '@/lib/ui';
+import { ErrorState, LoadingState, useDismissLayer, useFocusAfterRemoval, useRetryRegion } from '@/lib/ui';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { useHealthDay } from "./useHealthDay.js";
-import { pendingReviewPath, observationsPath, healthDayPath } from "../healthResources.js";
+import { HEALTH_DASHBOARD_PATH, pendingReviewPath, observationsPath, healthDayPath, unavailableError } from "../healthResources.js";
 import { useHealthDayPrefetch } from "./useHealthDayPrefetch.js";
 import { useAddedRowHighlight } from "./addFlow.js";
 import { EquationStrip } from "./EquationStrip.jsx";
@@ -114,7 +114,44 @@ function afterCompletedMove(state, { ids, logIds, toDate }) {
 }
 const stayedInDish = rows => `${rows.length === 1 ? entryLabel(rows[0]) : `${rows.length} foods`} ${rows.length === 1 ? 'is' : 'are'} part of a dish and can't move alone`;
 
+function MealActionsMenu({ label, children }) {
+  const [open, setOpen] = useState(false);
+  const trigger = useRef(null);
+  const stackHandlesEscape = useDismissLayer(open, () => {
+    setOpen(false);
+    trigger.current?.focus({ preventScroll: true });
+  });
+  return <Menu opened={open} onChange={setOpen} closeOnEscape={!stackHandlesEscape} position="bottom-end" classNames={MENU_CLASSES}>
+    <Menu.Target><ActionIcon ref={trigger} className="health-meal__capture-btn" variant="subtle" aria-label={`${label} actions`}>⋯</ActionIcon></Menu.Target>
+    <Menu.Dropdown>{children}</Menu.Dropdown>
+  </Menu>;
+}
+
+function FoodReviewRecovery({ resource, suppressError }) {
+  const [requestedRetry, setRequestedRetry] = useState(false);
+  const error = suppressError && !requestedRetry ? null : unavailableError(resource);
+  const busy = resource.loading || resource.revalidating;
+  const { regionProps, retry } = useRetryRegion(() => {
+    setRequestedRetry(true);
+    return resource.reload();
+  }, busy);
+
+  if (!error && !(requestedRetry && (busy || resource.data))) return null;
+  const count = resource.data?.pending?.length ?? 0;
+  return (
+    <section aria-label="Food review" {...regionProps} onBlur={event => {
+      if (!event.currentTarget.contains(event.relatedTarget)) setRequestedRetry(false);
+    }}>
+      {error ? <ErrorState error={error} onRetry={retry} label="Food review unavailable" />
+        : resource.data ? <p role="status">{count === 0 ? 'No food captures need review.'
+          : `${count} food ${count === 1 ? 'capture needs' : 'captures need'} review below.`}</p>
+        : <LoadingState label="food review" rows={1} />}
+    </section>
+  );
+}
+
 export function TodayView({ active = true, sidebarTarget, followUpTarget = null, onSetupGoals, onCoachTap }) {
+  const pageRef = useRef(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const dateParam = searchParams.get('date');
   const date = isISODate(dateParam) && dateParam <= todayISO() ? dateParam : todayISO();
@@ -122,6 +159,8 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   const weekParam = searchParams.get('week');
   const viewportEnd = isISODate(weekParam) && weekParam <= weekEnd(todayISO()) ? weekEnd(weekParam) : weekEnd(date);
   const day = useHealthDay(date, { enabled: active });
+  const { regionProps: foodLogRegion, focus: focusFoodLog, retry: retryDay } = useRetryRegion(day.reload, day.loading || day.revalidating);
+  const foodLogFocus = useFocusAfterRemoval(focusFoodLog);
   const foodAPI = useFoodMutation(day.items);
   // Drag-to-meal moves wear their new meal from the drop until the day
   // reloads with them (mealDrag.jsx), so the portion overlay reads that view.
@@ -157,7 +196,10 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     catch (err) { setOrphanRetry(previous => previous && ({ ...previous, busy: false, error: err?.message || 'Still could not send it.' })); }
   };
   const mealUndoOperations = useRef(new Map());
-  const [editingRow, setEditingRow] = useState(null); // row | null — F6 renders the edit sheet
+  const [editing, setEditing] = useState(null); // { row, date } — the edit sheet belongs to the day that opened it
+  useEffect(() => {
+    setEditing(current => current && (!active || current.date !== date) ? null : current);
+  }, [active, date]);
   const healthOperations = useHealthOperations();
   const [selectedCapture, setSelectedCapture] = useState(null);
   const captureStatusOpen = searchParams.get('capture') === 'status';
@@ -179,19 +221,19 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   useEffect(() => {
     if (!active || !mealLog || day.loading || day.revalidating || day.error || !day.authoritative) return;
     const row = day.items.find(item => (item.logId || item.logUuid) === mealLog);
-    if (row) setEditingRow(row);
+    if (row) setEditing({ row, date });
     else setCaptureNotice('This saved meal was not found on this day.');
     setSearchParams(previous => {
       const next = new URLSearchParams(previous);
       next.delete('mealLog');
       return next;
     }, { replace: true });
-  }, [active, day.items, day.loading, day.revalidating, day.error, day.authoritative, mealLog, setSearchParams]);
+  }, [active, date, day.items, day.loading, day.revalidating, day.error, day.authoritative, mealLog, setSearchParams]);
   useEffect(() => {
     if (!selectedCapture || selectedCapture.date !== date) return;
     const row = day.items.find(item => selectedCapture.entryIds.includes(String(entryId(item))));
     if (row) {
-      setEditingRow(row);
+      setEditing({ row, date: selectedCapture.date });
       setSelectedCapture(null);
     }
   }, [date, day.items, selectedCapture]);
@@ -206,13 +248,11 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   // The meal launching the scanner supplies its default review target.
   const [barcodeTargetBucket, setBarcodeTargetBucket] = useState(null);
   const [unknownUpc, setUnknownUpc] = useState(null);
-  // bucketId | null — which meal's add row opened the template picker
-  // (PRD F6.3: one meals surface, and this is it).
-  const [templatesFor, setTemplatesFor] = useState(null);
+  const [templateVisit, setTemplateVisit] = useState(null);
+  useEffect(() => {
+    if (templateVisit && (!active || templateVisit.date !== date)) setTemplateVisit(null);
+  }, [active, date, templateVisit]);
   const [manageFoods, setManageFoods] = useState(false);
-  // template id | null — set when the add-combobox picked a MEAL suggestion,
-  // so the picker opens straight onto its variant step (PRD F8.2 → F6.1).
-  const [focusTemplateId, setFocusTemplateId] = useState(null);
   const [captureNotice, setCaptureNotice] = useState(null); // string | null — e.g. "no food detected"
   const [dayNotice, setDayNotice] = useState(null); // string | null — the day input's reply when it has no Undo
   const [undoDelete, setUndoDelete] = useState(null);
@@ -220,21 +260,34 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   // the VIEW so one dialog serves every row and the edit sheet alike — see
   // ConfirmDialog on why this is not per-row state.
   const [pendingDelete, setPendingDelete] = useState(null);
+  const deleteOwner = useRef(0);
+  const deleteBusyOwner = useRef(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
+  useEffect(() => {
+    if (pendingDelete && (!active || pendingDelete.date !== date)) {
+      deleteOwner.current += 1;
+      setPendingDelete(null);
+      setDeleteError(null);
+    }
+  }, [active, date, pendingDelete]);
   const confirmDelete = async () => {
     if (deleteBusy || !pendingDelete) return;
+    const owner = deleteOwner.current;
+    const row = pendingDelete.row;
+    deleteBusyOwner.current = owner;
     setDeleteBusy(true); setDeleteError(null);
     try {
-      const removed = await deleteEntry(pendingDelete, foodAPI);
-      logger.info('entry.delete', { uuid: pendingDelete.uuid || pendingDelete.id, count: removed.entryIds.length });
-      setPendingDelete(null); setUndoDelete(removed); day.reload();
+      const removed = await deleteEntry(row, foodAPI);
+      logger.info('entry.delete', { uuid: row.uuid || row.id, count: removed.entryIds.length });
+      if (deleteOwner.current === owner) setPendingDelete(null);
+      setUndoDelete(removed); day.reload();
     } catch (err) {
       // The dialog STAYS OPEN on failure. Closing it would report a delete that
       // did not happen, and the row is still there to prove otherwise.
-      logger.warn('entry.delete_failed', { uuid: pendingDelete.uuid || pendingDelete.id, error: err.message });
-      setDeleteError(err.message || 'Could not delete. Try again when connected.');
-    } finally { setDeleteBusy(false); }
+      logger.warn('entry.delete_failed', { uuid: row.uuid || row.id, error: err.message });
+      if (deleteOwner.current === owner) setDeleteError(err.message || 'Could not delete. Try again when connected.');
+    } finally { deleteBusyOwner.current = null; setDeleteBusy(false); }
   };
   const [undoBusy, setUndoBusy] = useState(false);
   const undoPending = useRef(false);
@@ -272,7 +325,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   // Waiting its turn with nothing cached reads as loading, not as an empty month.
   const monthLoading = monthRange.loading || (!settled && !monthRange.days.length);
   // Only the coach line reads this, and it is the slowest call Health makes.
-  const dash = useApiResource('api/v1/health/dashboard', { enabled: active && settled, label: 'dashboard', logger, swr: true });
+  const dash = useApiResource(HEALTH_DASHBOARD_PATH, { enabled: active && settled, label: 'dashboard', logger, swr: true });
   // Review belongs to the shared food log, regardless of capture surface.
   // In particular, scanner/Telegram UPC captures can remain pending until
   // a portion is confirmed. Health must offer confirmation for those too.
@@ -287,6 +340,9 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   // after a dismiss/pair revalidates quietly instead of blanking the section.
   const observations = useApiResource(observationsPath(date),
     { deps: [date], enabled: active, label: 'observations', logger, swr: true });
+  const { regionProps: measurementsRegion, retry: retryMeasurements } = useRetryRegion(
+    observations.reload, observations.loading || observations.revalidating,
+  );
   const observationRows = useMemo(() => observations.data?.observations || [], [observations.data]);
   // What is on screen stayed; the latest refresh of it did not land.
   const staleResources = [['day', day.loaded, day.error], ['pending-review', pendingReview.data, pendingReview.error],
@@ -627,21 +683,18 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     setMenuMoveSettled(count => count + 1);
   };
   const bucketHeaderAction = (bucketId, rows, label) => {
-    if (!rows.length) return null;
-    return <Menu position="bottom-end" classNames={MENU_CLASSES}>
-      <Menu.Target><ActionIcon className="health-meal__capture-btn" variant="subtle" aria-label={`${label} actions`}>⋯</ActionIcon></Menu.Target>
-      <Menu.Dropdown>
-        {date !== todayISO() ? <Menu.Item onClick={() => copyMealToToday(rows, bucketId, label)}>Copy to today</Menu.Item> : null}
-        <Menu.Item onClick={() => saveBucketAsMeal(rows, label)}>Save as meal</Menu.Item>
-        <Menu.Divider />
-        <Menu.Label>Move all to day</Menu.Label>
-        <MoveDayItems date={date} today={todayISO()} onPick={iso => moveFromMealMenu(bucketId, () => moves.moveToDay(mealEntries(rows), iso))} />
-        <Menu.Divider />
-        <Menu.Label>Move all to</Menu.Label>
-        {BUCKETS.filter(bucket => bucket.id !== bucketId).map(bucket => <Menu.Item key={bucket.id}
-          aria-label={`Move all of ${label} to ${bucket.label}`} onClick={() => moveFromMealMenu(bucketId, () => moves.moveMeal(mealEntries(rows), bucket.id, bucketId))}>{bucket.label}</Menu.Item>)}
-      </Menu.Dropdown>
-    </Menu>;
+    if (!active || !rows.length) return null;
+    return <MealActionsMenu label={label}>
+      {date !== todayISO() ? <Menu.Item onClick={() => copyMealToToday(rows, bucketId, label)}>Copy to today</Menu.Item> : null}
+      <Menu.Item onClick={() => saveBucketAsMeal(rows, label)}>Save as meal</Menu.Item>
+      <Menu.Divider />
+      <Menu.Label>Move all to day</Menu.Label>
+      <MoveDayItems date={date} today={todayISO()} onPick={iso => moveFromMealMenu(bucketId, () => moves.moveToDay(mealEntries(rows), iso))} />
+      <Menu.Divider />
+      <Menu.Label>Move all to</Menu.Label>
+      {BUCKETS.filter(bucket => bucket.id !== bucketId).map(bucket => <Menu.Item key={bucket.id}
+        aria-label={`Move all of ${label} to ${bucket.label}`} onClick={() => moveFromMealMenu(bucketId, () => moves.moveMeal(mealEntries(rows), bucket.id, bucketId))}>{bucket.label}</Menu.Item>)}
+    </MealActionsMenu>;
   };
 
   // The day's STRUCTURE (headings, section frames, add rows) renders
@@ -718,7 +771,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   </>;
 
   return (
-    <PortionContext.Provider value={portionControl}><div className="health-today">
+    <PortionContext.Provider value={portionControl}><div ref={pageRef} className="health-today">
       <EquationStrip budget={preview.budget} baseline={day.budget} budgetError={day.budgetError} goals={preview.budget?.goals}
         macroCoverage={nutrientSummary(preview.items)} date={date} today={todayISO()}
         onDateChange={setDate} onSetupGoals={onSetupGoals}
@@ -733,9 +786,10 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
       {/* Follow-ups arrive on their own schedule (a 15 s poll, a scale), so they
           take no room on the page: a bell in the header (followUpTarget). */}
       <FollowUpTray active={active} target={followUpTarget} observations={unmatched}
+        bellRegionProps={{ ...measurementsRegion, role: 'group', 'aria-label': 'Measurements' }}
         onObservationsChanged={() => observations.reload()} onChanged={day.reload} />
       {wideViewport && sidebarTarget ? createPortal(history, sidebarTarget) : null}
-      <TodayToasts captureNotice={captureNotice} captureRetry={captureRetry} retryBusy={nutrition.busy}
+      <TodayToasts pageRef={pageRef} captureNotice={captureNotice} captureRetry={captureRetry} retryBusy={nutrition.busy}
         onRetryCapture={retryVoiceCapture} onDismissCapture={() => { setCaptureNotice(null); setCaptureRetry(null); }}
         orphanRetry={orphanRetry} onRetryOrphan={retryOrphanedRecording} onDismissOrphan={() => setOrphanRetry(null)}
         moves={moves} unresolvedMoves={unresolvedMoves} mealUndo={mealUndo} onUndoMeal={undoMealChange} onDismissMealUndo={clearMealUndo}
@@ -745,35 +799,42 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         dayOffers={captureToasts.offers} onMoveOffer={moveOffered}
         dayNotice={dayNotice} onDismissDayNotice={() => setDayNotice(null)} menuMoveSettled={menuMoveSettled} handedBackMove={handedBackMove}
         onDismissOffer={shown => setCaptureToasts(state => ({ ...state, offers: state.offers.filter(item => item.offer !== shown.offer) }))} />
-      <ConfirmDialog open={Boolean(pendingDelete)} title={pendingDelete ? `Delete ${entryLabel(pendingDelete)}?` : ''}
-        body={pendingDelete ? deleteConfirmBody(pendingDelete) : ''} busy={deleteBusy} error={deleteError}
-        onConfirm={confirmDelete} onCancel={() => { setPendingDelete(null); setDeleteError(null); }} />
+      <ConfirmDialog open={Boolean(active && pendingDelete?.date === date)} title={pendingDelete ? `Delete ${entryLabel(pendingDelete.row)}?` : ''}
+        body={pendingDelete ? deleteConfirmBody(pendingDelete.row) : ''}
+        busy={deleteBusy && deleteBusyOwner.current === deleteOwner.current} confirmDisabled={deleteBusy} error={deleteError}
+        onConfirm={confirmDelete} onCancel={() => { deleteOwner.current += 1; setPendingDelete(null); setDeleteError(null); }} />
       {/* A refresh that fails (the 15 s poll while the backend restarts) keeps
           what is on screen and says so in one line. A panel only when there
           is nothing to show, and one per outage: when the day itself failed,
           the review and measurement failures are the same outage. */}
-      {day.error && !day.loaded ? <ErrorState error={day.error} onRetry={day.reload} label="Food log" /> : null}
-      {!day.error && pendingReview.error && !pendingReview.data ? <ErrorState error={pendingReview.error} onRetry={pendingReview.reload} label="Food review unavailable" /> : null}
-      {!day.error && observations.error && !observations.data ? <ErrorState error={observations.error} onRetry={observations.reload} label="Measurements unavailable" /> : null}
-      {refreshFailed ? <Button variant="subtle" size="compact-xs" color="gray" className="health-refresh-failed" onClick={day.reload}>
+      {day.error && !day.loaded ? <ErrorState error={day.error} onRetry={retryDay} label="Food log" /> : null}
+      <FoodReviewRecovery key={date} resource={pendingReview} suppressError={Boolean(day.error)} />
+      {!day.error && observations.error && !observations.data ? <ErrorState error={observations.error} onRetry={retryMeasurements} label="Measurements unavailable" /> : null}
+      {refreshFailed ? <Button variant="subtle" size="compact-xs" color="gray" className="health-refresh-failed" onClick={retryDay}>
         Couldn't refresh · Retry</Button> : null}
       <DayInputBar date={date} today={todayISO()} active={active} entries={dayEntries(movedDay.items)} onResult={handleDayInput}
         onMoveDay={(rows, iso, options) => moves.moveFromDay(rows, iso, null, options)} onClaimMove={setSheetMove} onMoveHandedBack={setHandedBackMove} />
-      <LogTable clarifications={mealClarifications} onClearClarification={clearMealClarification} byBucket={preview.byBucket} date={date} sessions={preview.budget?.sessions || []}
-        exerciseAvailable={Boolean(day.budget)}
-        fastedMeals={day.dayStatus?.fastedMeals || []} onMealFastChanged={day.reload}
-        coldLoading={coldLoading} capturePendingBuckets={[...capturePending.values()].filter(pending => pending.date === date).map(pending => pending.bucket)}
-        onRowTap={setEditingRow} onConfirm={day.reload} onRequestDelete={row => { setDeleteError(null); setPendingDelete(row); }}
-        bucketHeaderAction={bucketHeaderAction}
-        onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture}
-        onMealChanged={result=>handleCaptureResult(result)} captureTasks={[...capturePending.values()]}
-        hiddenIds={moves.hiddenIds} measuredByUuid={measuredByUuid} addedIds={addedIds} onMoveEntry={moves.move} onMoveMeal={moves.moveMeal} onMoveToDay={moves.moveToDay}
-        onNotice={message => { setCaptureRetry(null); setCaptureNotice(message); }}
-        renderAddRow={(bucket, label, meal) => <MealAddRow bucket={bucket} label={label} date={date} active={active}
-          onVoiceCapture={meal?.onVoiceCapture} selectedCount={meal?.selectedIds?.length || 0} busy={false} onOrphanedRetry={keepOrphanedRecording}
-          onAdded={() => day.reload()} onFoodAdded={offerAddedFood} onSentencePending={text => beginSentencePending(bucket, text)} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode}
-          onOpenTemplates={(target, templateId) => { setFocusTemplateId(templateId); setTemplatesFor(target); }}
-          onManageFoods={() => setManageFoods(true)} />} />
+      <section aria-label="Food log" {...foodLogRegion}
+        onFocusCapture={event => {
+          if (event.target.hasAttribute('data-portion-retry')) foodLogFocus.onFocusCapture(event);
+        }}
+        onBlurCapture={foodLogFocus.onBlurCapture}>
+        <LogTable active={active} clarifications={mealClarifications} onClearClarification={clearMealClarification} byBucket={preview.byBucket} date={date} sessions={preview.budget?.sessions || []}
+          exerciseAvailable={Boolean(day.budget)}
+          fastedMeals={day.dayStatus?.fastedMeals || []} onMealFastChanged={day.reload}
+          coldLoading={coldLoading} capturePendingBuckets={[...capturePending.values()].filter(pending => pending.date === date).map(pending => pending.bucket)}
+          onRowTap={row => setEditing({ row, date })} onConfirm={day.reload} onRequestDelete={row => { deleteOwner.current += 1; setDeleteError(null); setPendingDelete({ row, date }); }}
+          bucketHeaderAction={bucketHeaderAction}
+          onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture}
+          onMealChanged={result=>handleCaptureResult(result)} captureTasks={[...capturePending.values()]}
+          hiddenIds={moves.hiddenIds} measuredByUuid={measuredByUuid} addedIds={addedIds} onMoveEntry={moves.move} onMoveMeal={moves.moveMeal} onMoveToDay={moves.moveToDay}
+          onNotice={message => { setCaptureRetry(null); setCaptureNotice(message); }}
+          renderAddRow={(bucket, label, meal) => <MealAddRow bucket={bucket} label={label} date={date} active={active}
+            onVoiceCapture={meal?.onVoiceCapture} selectedCount={meal?.selectedIds?.length || 0} busy={false} onOrphanedRetry={keepOrphanedRecording}
+            onAdded={() => day.reload()} onFoodAdded={offerAddedFood} onSentencePending={text => beginSentencePending(bucket, text)} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode}
+            onOpenTemplates={(bucketId, focusTemplateId) => setTemplateVisit({ date, bucketId, focusTemplateId })}
+            onManageFoods={() => setManageFoods(true)} />} />
+      </section>
       <NeedsReviewSection pending={pendingLogs} onChanged={day.reload} onConfirmed={(entry, placed) => offerAddedFood(
         { committed: true, logId: entry.id, items: entry.items, date: placed.date || entry.date, mealTime: placed.mealTime }, date)} />
       {!wideViewport || !sidebarTarget ? <details className="health-history"><summary>Week &amp; weight history</summary>{history}</details> : null}
@@ -810,16 +871,16 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         onView={result => {
           closeBarcode();
           const row = (result.items || []).find(item => String(entryId(item)) === result.entryIds[0]);
-          if (row) { if (row.date !== date) setDate(row.date); setEditingRow(row); }
+          if (row) { if (row.date !== date) setDate(row.date); setEditing({ row, date: row.date || date }); }
         }} />
-      <CustomFoodSheet upc={unknownUpc} open={active && Boolean(unknownUpc)}
+      <CustomFoodSheet upc={unknownUpc} open={Boolean(unknownUpc)}
         bucketId={barcodeTargetBucket} date={barcodeDate}
         onClose={() => setUnknownUpc(null)}
         onCreated={logged => { setUnknownUpc(null); day.reload(); offerAddedFood(logged, barcodeDate, { added: true }); }} />
-      <EntryEditor row={editingRow} open={active && Boolean(editingRow)}
-        onClose={() => setEditingRow(null)} onChanged={day.reload}
-        onRequestDelete={row => { setDeleteError(null); setEditingRow(null); setPendingDelete(row); }}
-        onCoach={() => { onCoachTap(editingRow); setEditingRow(null); }}
+      <EntryEditor row={editing?.row} open={active && Boolean(editing && editing.date === date)}
+        onClose={() => setEditing(null)} onChanged={day.reload}
+        onRequestDelete={row => { deleteOwner.current += 1; setDeleteError(null); setEditing(null); setPendingDelete({ row, date }); }}
+        onCoach={() => { onCoachTap(editing?.row); setEditing(null); }}
         observations={observationRows}
         onPaired={(err) => {
           // Re-pairing rewrites BOTH sides — the ledger and the entry's grams —
@@ -830,10 +891,11 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
           day.reload();
           if (err) setCaptureNotice(err.message);
         }} />
-      <FoodCatalogManager open={active && manageFoods} onClose={() => setManageFoods(false)} onChanged={day.reload} />
-      <TemplatePicker open={active && Boolean(templatesFor)} bucketId={templatesFor} date={date} focusTemplateId={focusTemplateId}
-        onLogged={logged => { setTemplatesFor(null); setFocusTemplateId(null); day.reload(); offerAddedFood(logged, date, { added: true }); }}
-        onClose={() => { setTemplatesFor(null); setFocusTemplateId(null); }} />
+      <FoodCatalogManager open={manageFoods} active={active} onClose={() => setManageFoods(false)} onChanged={day.reload} />
+      <TemplatePicker open={active && templateVisit?.date === date} bucketId={templateVisit?.bucketId}
+        date={templateVisit?.date} focusTemplateId={templateVisit?.focusTemplateId}
+        onLogged={logged => offerAddedFood(logged, date, { added: true })}
+        onClose={() => setTemplateVisit(null)} />
     </div></PortionContext.Provider>
   );
 }

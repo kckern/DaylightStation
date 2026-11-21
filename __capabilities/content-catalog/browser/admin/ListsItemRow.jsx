@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Text, Checkbox, ActionIcon, Menu, TextInput, Modal } from '@mantine/core';
+import { Text, Checkbox, ActionIcon, Menu, TextInput, Modal, UnstyledButton } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
   IconGripVertical, IconTrash, IconCopy, IconDotsVertical, IconPlus,
@@ -13,20 +13,20 @@ import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import ConfigIndicators from "./ConfigIndicators.jsx";
 import ProgressDisplay from "./ProgressDisplay.jsx";
-import { getCacheEntry, setCacheEntry } from "../lib/siblingsCache.js";
+import { hasCacheEntry, loadSiblings } from "../lib/siblingsCache.js";
 import { useListsContext } from "./ListsContext.js";
 import { isContentIdLike } from "../lib/contentSearchLogic.js";
 import ContentCombobox from "../combobox/ContentCombobox.jsx";
 import { useAutoResolve } from "../combobox/useAutoResolve.js";
 import { ShimmerAvatar } from "./ShimmerAvatar.jsx";
-import {
-  ContentValueCard, contentInfoFromPick, fetchContentMetadata,
-} from "./ContentDisplays.jsx";
-import { normalizeListSource } from "./contentDisplaysUtils.jsx";
+import { ContentValueCard, contentInfoFromPick } from './ContentDisplays.jsx';
+import { getCachedCatalogContentInfo, useCatalogContentInfo } from './catalogContentInfo.js';
 import { ItemDetailsDrawer } from "./ItemDetailsDrawer.jsx";
-import { AppParamPicker } from "./AppParamPicker.jsx";
+import { AppParamPicker, AppParamResolutionNotice } from "./AppParamPicker.jsx";
+import { useAppParamOptions } from "./useAppParamOptions.js";
 import { ActionChipSelect } from "./ActionChipSelect.jsx";
 import { CapabilityWarning } from "./CapabilityWarning.jsx";
+import { ActionMenu } from "../../../../frontend/src/lib/ui/ActionMenu.jsx";
 import { DaylightMediaPath } from "../../../../frontend/src/lib/api.mjs";
 import ImagePickerModal from "./ImagePickerModal.jsx";
 import AdminPreviewPlayer from "../../../../frontend/src/modules/Admin/Preview/AdminPreviewPlayer.jsx";
@@ -41,82 +41,24 @@ function adminLog(component) {
   return component ? _adminLog.child({ component }) : _adminLog;
 }
 
-/**
- * Fetch siblings data for an item. Returns processed data ready for state.
- * This is the core fetch logic extracted for use by both preload and direct calls.
- */
-async function doFetchSiblings(contentId, contentInfo) {
-  const match = contentId.match(/^([^:]+):\s*(.+)$/);
-  if (!match) {
-    adminLog('doFetchSiblings').debug('skip', { contentId, reason: 'no_match' });
-    return null;
-  }
-
-  const source = contentInfo?.source || normalizeListSource(match[1].trim());
-  const localId = match[2].trim();
-  const response = await fetch(`/api/v1/siblings/${source}/${encodeURIComponent(localId)}`);
-  if (!response.ok) return null;
-
-  const data = await response.json();
-  const browseItems = (data.items || []).map(item => ({
-    value: item.id,
-    title: item.title,
-    source: item.source,
-    type: item.type || item.itemType,
-    thumbnail: item.thumbnail,
-    grandparent: item.grandparentTitle,
-    parent: item.parentTitle,
-    library: item.libraryTitle,
-    itemCount: item.childCount ?? null,
-    itemIndex: item.itemIndex ?? null,
-    number: item.number ?? null,
-    isContainer: item.isContainer || item.itemType === 'container'
-  }));
-
-  const currentParent = data.parent ? {
-    id: data.parent.id,
-    title: data.parent.title,
-    source: data.parent.source,
-    thumbnail: data.parent.thumbnail,
-    parentKey: data.parent.parentId ?? null,
-    libraryId: data.parent.libraryId ?? null
-  } : null;
-
-  return {
-    browseItems,
-    currentParent,
-    pagination: data.pagination || null,
-    referenceIndex: data.referenceIndex ?? -1
-  };
-}
-
-/**
- * Preload siblings for an item into the cache.
- * Skips if already cached or pending. Returns the promise for optional awaiting.
- */
 async function preloadSiblings(contentId, contentInfo) {
-  if (!contentId || !contentInfo || contentInfo.unresolved) return null;
-
-  // Skip if already cached or pending
-  const existing = getCacheEntry(contentId);
-  if (existing) return existing.promise;
-
-  // Mark as pending immediately to prevent duplicate requests
-  const promise = doFetchSiblings(contentId, contentInfo);
-  setCacheEntry(contentId, { status: 'pending', data: null, promise });
-
+  if (!contentId || !contentInfo || contentInfo.unresolved || hasCacheEntry(contentId)) return;
   try {
-    const data = await promise;
-    setCacheEntry(contentId, { status: 'loaded', data, promise: null });
-    return data;
+    await loadSiblings(contentId, contentInfo.source);
   } catch (err) {
     adminLog('preloadSiblings').error('preload_siblings.error', { contentId, error: err.message });
-    setCacheEntry(contentId, { status: 'error', data: null, promise: null });
-    return null;
   }
 }
 
-function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, isWatchlist, onEdit, onSplit, sectionIndex, sectionCount, sections, itemCount, onMoveItem, activeContentDrag, dragId, allowSublistNavigation = true, allowNewSection = true }) {
+const SIBLING_PRELOAD_RADIUS = 2;
+
+function getNearbyItems(flatItems, sectionIndex, itemIndex) {
+  const index = flatItems.findIndex(item => item.sectionIndex === sectionIndex && item.itemIndex === itemIndex);
+  if (index < 0) return [];
+  return flatItems.slice(Math.max(0, index - SIBLING_PRELOAD_RADIUS), index + SIBLING_PRELOAD_RADIUS + 1);
+}
+
+function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, isWatchlist, onEdit, onSplit, sectionIndex, sectionCount, sections, itemCount, onMoveItem, activeContentDrag, swapFlashKey, dragId, allowSublistNavigation = true, allowNewSection = true }) {
   const log = useMemo(() => adminLog('ListsItemRow'), []);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: dragId ? `row:${dragId}` : `row-${sectionIndex}-${item.index}`
@@ -132,15 +74,15 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
 
   const navigate = useNavigate();
   const { type: currentListType } = useParams();
-  const { getNearbyItems, setContentInfo, contentInfoMap, inUseImages } = useListsContext();
+  const { flatItems, setContentInfo, contentInfoMap, inUseImages } = useListsContext();
 
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [dragMenuOpen, setDragMenuOpen] = useState(false);
 
   // Resolve thumbnail for icon column: override image > UID image > input thumbnail
-  const cachedInfo = contentInfoMap.get(item.input);
-  const inheritedImage = cachedInfo?.thumbnail || null;
+  const contentInfo = useCatalogContentInfo(item.input, contentInfoMap.get(item.input));
+  const inheritedImage = contentInfo?.thumbnail || null;
   const uidImage = item.uid ? DaylightMediaPath(`/media/img/lists/${item.uid}.jpg`) : null;
   const explicitImage = item.image
     ? (item.image.startsWith('/media/') || item.image.startsWith('media/')
@@ -154,30 +96,20 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
   const [labelValue, setLabelValue] = useState(item.label || '');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const labelInputRef = useRef(null);
+  const rowActionsRef = useRef(null);
 
   const handleRowHover = useCallback(() => {
     if (!item.input) return;
 
-    const nearbyItems = getNearbyItems(item.index, 2);
+    const nearbyItems = getNearbyItems(flatItems, sectionIndex, item.index);
     nearbyItems.forEach(nearbyItem => {
       if (!nearbyItem.input) return;
 
-      // Get or fetch content info
-      let info = nearbyItem.contentInfo || contentInfoMap.get(nearbyItem.input);
-
-      if (info && !info.unresolved) {
-        preloadSiblings(nearbyItem.input, info);
-      } else if (!contentInfoMap.has(nearbyItem.input)) {
-        // Fetch content info first, then preload
-        fetchContentMetadata(nearbyItem.input).then(fetchedInfo => {
-          if (fetchedInfo && !fetchedInfo.unresolved) {
-            setContentInfo(nearbyItem.input, fetchedInfo);
-            preloadSiblings(nearbyItem.input, fetchedInfo);
-          }
-        });
-      }
+      const info = nearbyItem.input === item.input ? contentInfo
+        : getCachedCatalogContentInfo(nearbyItem.input, contentInfoMap.get(nearbyItem.input));
+      preloadSiblings(nearbyItem.input, info);
     });
-  }, [item.input, item.index, getNearbyItems, contentInfoMap, setContentInfo]);
+  }, [item.input, item.index, sectionIndex, flatItems, contentInfo, contentInfoMap]);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -250,8 +182,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
   };
 
   // ── Content input (unified ContentCombobox wiring) ──
-  // App-param picker state: {appId, param, options} while waiting for a param.
-  const [pendingApp, setPendingApp] = useState(null);
+  const { resolution: pendingApp, select: selectAppParam, retry: retryAppParam, clear: clearAppParam } = useAppParamOptions();
 
   // Autosave the committed content id (twin parity: ignore empty/unchanged).
   const commitInput = (value) => {
@@ -265,9 +196,10 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
   // the background and replace the value only if it hasn't changed since.
   const { maybeResolve, cancel: cancelAutoResolve } = useAutoResolve({
     value: item.input,
-    onChange: (id) => commitInput(id),
-    setContentInfo,
-    fetchMetadata: fetchContentMetadata,
+    onChange: (id, choice) => {
+      if (choice?.title) setContentInfo(id, contentInfoFromPick(id, choice));
+      commitInput(id);
+    },
   });
 
   // Input (content) change handler — receives (id, item?) from ContentCombobox.
@@ -275,18 +207,10 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
     // App that needs a parameter → show the param picker instead of saving.
     if (selectedItem?.isApp && selectedItem.hasParam) {
       log.info('app_param.prompt', { index: item.index, appId: selectedItem.appId, paramName: selectedItem.param?.name });
-      import("../../../../frontend/src/lib/appRegistry.js")
-        .then(({ resolveParamOptions }) => resolveParamOptions(selectedItem.param))
-        .then((options) => {
-          setPendingApp({
-            appId: selectedItem.appId,
-            param: selectedItem.param,
-            // Prepend "Random" option for dropdown-style params (twin parity)
-            options: options ? [{ value: 'random', label: 'Random' }, ...options] : null,
-          });
-        });
+      selectAppParam({ appId: selectedItem.appId, param: selectedItem.param });
       return;
     }
+    clearAppParam();
     // Seed the shared content-info cache from the picked item so the display
     // card renders instantly instead of flashing "Resolving...".
     if (value && selectedItem?.title) {
@@ -309,6 +233,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
 
   return (
     <div ref={setNodeRef} style={style} className={rowClassName} data-testid={`item-row-${sectionIndex}-${item.index}`} onMouseEnter={handleRowHover}>
+      {swapFlashKey != null && <span key={swapFlashKey} className="swap-flash" aria-hidden="true" />}
       <div className="col-active">
         <Checkbox
           checked={item.active !== false}
@@ -376,11 +301,11 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
         <Text size="xs" c="dimmed">{item.index + 1}</Text>
       </div>
 
-      <div className="col-icon" onClick={() => { log.info('image_picker.open', { index: item.index }); setImagePickerOpen(true); }}>
+      <UnstyledButton type="button" className="col-icon" aria-label={`Edit image for ${item.label || item.input || 'item'}`} onClick={() => { log.info('image_picker.open', { index: item.index }); setImagePickerOpen(true); }}>
         <ShimmerAvatar src={rowThumbnail} size={28} radius="sm">
           {item.label ? item.label.charAt(0).toUpperCase() : '#'}
         </ShimmerAvatar>
-      </div>
+      </UnstyledButton>
       <ImagePickerModal
         opened={imagePickerOpen}
         onClose={() => setImagePickerOpen(false)}
@@ -495,17 +420,14 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
           onClose={() => { log.info('preview.close', { index: item.index }); setPreviewOpen(false); }}
           title={item.label || 'Preview'}
           centered
-          // 980 is sized to hold AdminPreviewPlayer's 960px frame surface
-          // (PREVIEW_WIDTH in previewFrame.js) plus "xs" padding. Shrink it and
-          // the preview overflows.
           size={item.action === 'Display' ? 'lg' : item.action === 'Open' ? 'xl' : 980}
           padding="xs"
-          styles={{ content: { marginLeft: 'var(--app-shell-navbar-width, 250px)' } }}
         >
           {previewOpen && item.action === 'Display' && (
             <div style={{ height: 500 }}>
               <Displayer
-                display={{ id: item.input?.replace(/^(\w+):\s+/, '$1:').trim() }}
+                display={{ id: item.input }}
+                reuseRecentDescriptor
                 onClose={() => setPreviewOpen(false)}
               />
             </div>
@@ -541,28 +463,31 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
       </div>
 
       <div className="col-input">
-        {pendingApp ? (
+        {pendingApp?.phase === 'ready' ? (
           <AppParamPicker
             appId={pendingApp.appId}
             param={pendingApp.param}
             options={pendingApp.options}
-            onCommit={(fullId) => { setPendingApp(null); commitInput(fullId); }}
-            onCancel={() => setPendingApp(null)}
+            onCommit={(fullId) => { clearAppParam(); commitInput(fullId); }}
+            onCancel={clearAppParam}
           />
         ) : (
-          <ContentCombobox
-            value={item.input}
-            onChange={handleRowInputChange}
-            appResults
-            selectContainers
-            renderValue={({ onStartEdit }) => (
-              <ContentValueCard
-                value={item.input}
-                contentInfoMap={contentInfoMap}
-                onStartEdit={() => { cancelAutoResolve(); onStartEdit(); }}
-              />
-            )}
-          />
+          <>
+            <AppParamResolutionNotice resolution={pendingApp} onRetry={retryAppParam} onCancel={clearAppParam} />
+            <ContentCombobox
+              value={item.input}
+              onChange={handleRowInputChange}
+              appResults
+              selectContainers
+              renderValue={({ onStartEdit }) => (
+                <ContentValueCard
+                  value={item.input}
+                  contentInfo={contentInfo}
+                  onStartEdit={() => { cancelAutoResolve(); onStartEdit(); }}
+                />
+              )}
+            />
+          </>
         )}
         {/* Catches an action pointed at a source that can't perform it — the
             failure mode that rendered `action: Display` on a files: image as a
@@ -585,30 +510,27 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
       </div>
 
       <div className="col-menu">
-        <Menu position="bottom-end">
-          <Menu.Target>
-            <ActionIcon variant="subtle" size="sm" data-testid={`row-menu-${sectionIndex}-${item.index}`}>
-              <IconDotsVertical size={14} />
-            </ActionIcon>
-          </Menu.Target>
-          <Menu.Dropdown>
-            <Menu.Item leftSection={<IconInfoCircle size={14} />} onClick={() => { log.info('menu.more_info', { index: item.index, input: item.input }); setDrawerOpen(true); }}>
-              More Info
+        <ActionMenu position="bottom-end" trigger={
+          <ActionIcon ref={rowActionsRef} variant="subtle" size="sm" aria-label={`Actions for ${item.label || item.input || 'item'}`} data-testid={`row-menu-${sectionIndex}-${item.index}`}>
+            <IconDotsVertical size={14} />
+          </ActionIcon>
+        }>
+          <Menu.Item leftSection={<IconInfoCircle size={14} />} onClick={() => { log.info('menu.more_info', { index: item.index, input: item.input }); setDrawerOpen(true); }}>
+            More Info
+          </Menu.Item>
+          <Menu.Item leftSection={<IconCopy size={14} />} onClick={() => { log.info('menu.duplicate', { index: item.index }); onDuplicate(); }}>
+            Duplicate
+          </Menu.Item>
+          {onSplit && (
+            <Menu.Item leftSection={<IconArrowBarDown size={14} />} onClick={() => { log.info('menu.split', { index: item.index }); onSplit(); }}>
+              Split Below
             </Menu.Item>
-            <Menu.Item leftSection={<IconCopy size={14} />} onClick={() => { log.info('menu.duplicate', { index: item.index }); onDuplicate(); }}>
-              Duplicate
-            </Menu.Item>
-            {onSplit && (
-              <Menu.Item leftSection={<IconArrowBarDown size={14} />} onClick={() => { log.info('menu.split', { index: item.index }); onSplit(); }}>
-                Split Below
-              </Menu.Item>
-            )}
-            <Menu.Divider />
-            <Menu.Item color="red" data-testid={`row-delete-${sectionIndex}-${item.index}`} leftSection={<IconTrash size={14} />} onClick={() => { log.info('menu.delete', { index: item.index, label: item.label }); onDelete(); }}>
-              Delete
-            </Menu.Item>
-          </Menu.Dropdown>
-        </Menu>
+          )}
+          <Menu.Divider />
+          <Menu.Item color="red" data-testid={`row-delete-${sectionIndex}-${item.index}`} leftSection={<IconTrash size={14} />} onClick={() => { log.info('menu.delete', { index: item.index, label: item.label }); onDelete(); }}>
+            Delete
+          </Menu.Item>
+        </ActionMenu>
       </div>
       </div>
 
@@ -616,6 +538,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
         opened={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         contentValue={item.input}
+        returnFocusRef={rowActionsRef}
       />
     </div>
   );

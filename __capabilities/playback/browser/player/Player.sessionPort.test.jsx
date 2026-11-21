@@ -2,7 +2,8 @@ import React, { createRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, waitFor } from '@testing-library/react';
 
-vi.mock('../../../../frontend/src/lib/api.mjs', () => ({
+vi.mock('../../../../frontend/src/lib/api.mjs', async importOriginal => ({
+  ...await importOriginal(),
   DaylightAPI: vi.fn(() => Promise.resolve({ items: [], audio: null })),
 }));
 

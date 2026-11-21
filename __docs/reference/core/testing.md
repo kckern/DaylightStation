@@ -137,6 +137,24 @@ node tests/lib/migrate-imports.mjs
 | Integration | `node tests/integration/harness.mjs` | testDataService |
 | Live | `npm run test:live` | Live APIs and real backend (`tests/live/`) |
 | Runtime | `npm run test:browser --` | Real backend |
+| Browser platform | `npm run test:browser-platform --` | Built frontend and Playwright API fixtures |
+
+### Browser-platform fixtures
+
+Build the frontend, install the Playwright browsers, then run the isolated fixtures:
+
+```bash
+npm run build --prefix frontend
+npx playwright install chromium firefox webkit
+npm run test:browser-platform
+```
+
+The runner serves `frontend/dist` on loopback and returns HTTP 404 for API requests
+that the tests leave unintercepted. Set `BROWSER_PLATFORM_DIST` to serve a different
+build, or set `BASE_URL` to use an existing loopback static frontend server.
+Use `npm run test:browser-platform -- --list` to inspect the suite without starting
+a server, or `npm run test:browser-platform -- search-shortcuts --project=chromium`
+to run a single fixture file in Chromium.
 
 ## testDataService
 

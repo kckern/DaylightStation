@@ -1,6 +1,6 @@
 // frontend/src/modules/Admin/Agents/DashboardsTab.jsx
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   Stack, Paper, Text, Group, Button, Badge, Alert, Center, Loader,
   TextInput, Blockquote, Code, Collapse,
@@ -10,33 +10,28 @@ import {
   IconChevronDown, IconChevronRight,
 } from '@tabler/icons-react';
 import { useAgentDashboard } from "./useAgentDashboard.js";
-import { ConfirmModal } from "../../../../../../frontend/src/modules/Admin/shared/index.js";
+import { ConfirmModal } from "../../../../../../frontend/src/lib/ui/ConfirmModal.jsx";
+import { useSheetSubmission } from '../../../../../../frontend/src/lib/ui/useSheetSubmission.js';
 
 function DashboardsTab({ agentId, userId }) {
   const today = new Date().toISOString().split('T')[0];
   const [date, setDate] = useState(today);
   const [rawOpen, setRawOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const { run: submitDelete, saving: deleting } = useSheetSubmission(() => setDeleteOpen(false));
 
   const {
     dashboard, loading, regenerating, error,
     fetchDashboard, deleteDashboard, regenerate, clearError,
-  } = useAgentDashboard();
-
-  useEffect(() => {
-    if (userId && date) fetchDashboard(userId, date).catch(() => {});
-  }, [userId, date, fetchDashboard]);
+  } = useAgentDashboard(userId, date);
 
   const handleRegenerate = useCallback(async () => {
     await regenerate(agentId, userId);
     // Refresh after regeneration
-    await fetchDashboard(userId, date);
+    fetchDashboard();
   }, [agentId, userId, date, regenerate, fetchDashboard]);
 
-  const handleDelete = useCallback(async () => {
-    await deleteDashboard(userId, date);
-    setDeleteOpen(false);
-  }, [userId, date, deleteDashboard]);
+  const handleDelete = () => submitDelete(() => deleteDashboard(userId, date));
 
   if (!userId) {
     return <Text c="dimmed" p="md">Select a user to view dashboards</Text>;
@@ -235,6 +230,7 @@ function DashboardsTab({ agentId, userId }) {
         title="Delete Dashboard"
         message={`Delete the dashboard for ${userId} on ${date}? The agent will regenerate it on its next scheduled run.`}
         confirmLabel="Delete"
+        loading={deleting}
       />
     </Stack>
   );

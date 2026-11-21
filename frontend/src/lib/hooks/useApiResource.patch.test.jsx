@@ -55,6 +55,33 @@ describe('patchApiResource', () => {
     expect(peekApiResource('api/v1/day')).toEqual({ items: ['a', 'b'] });
   });
 
+  it('shares one post-patch read and excludes a request issued before the patch', async () => {
+    const path = 'api/v1/day';
+    let resolveBefore;
+    let resolveAfter;
+    apiMock
+      .mockResolvedValueOnce({ items: ['a'] })
+      .mockReturnValueOnce(new Promise(resolve => { resolveBefore = resolve; }))
+      .mockReturnValue(new Promise(resolve => { resolveAfter = resolve; }));
+    const first = renderHook(() => useApiResource(path, { swr: true }));
+    await waitFor(() => expect(first.result.current.data).toEqual({ items: ['a'] }));
+    const second = renderHook(() => useApiResource(path, { swr: true }));
+    expect(apiMock).toHaveBeenCalledTimes(2);
+
+    act(() => { patchApiResource(path, day => ({ items: [...day.items, 'b'] })); });
+    expect(first.result.current.data).toEqual({ items: ['a', 'b'] });
+    expect(second.result.current.data).toEqual({ items: ['a', 'b'] });
+    expect(apiMock).toHaveBeenCalledTimes(3);
+    await act(async () => { resolveBefore({ items: ['a'] }); });
+    expect(first.result.current.data).toEqual({ items: ['a', 'b'] });
+    expect(second.result.current.data).toEqual({ items: ['a', 'b'] });
+    const snapshot = { items: ['a', 'b'], revision: 2 };
+    await act(async () => { resolveAfter(snapshot); });
+    expect(first.result.current.data).toBe(snapshot);
+    expect(second.result.current.data).toBe(snapshot);
+    expect(peekApiResource(path)).toBe(snapshot);
+  });
+
   it('does nothing for a path nothing has loaded yet', () => {
     expect(patchApiResource('api/v1/never', () => ({ x: 1 }))).toBe(false);
     expect(peekApiResource('api/v1/never')).toBeUndefined();

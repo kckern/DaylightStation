@@ -1,5 +1,8 @@
 // frontend/src/modules/CameraFeed/useSnapshotFetch.js
+import { daylightApiResponse } from '../../../../frontend/src/lib/api.mjs';
 import { useState, useEffect, useCallback } from 'react';
+
+const EMPTY_SIZE = { w: 0, h: 0 };
 
 /**
  * Fetch a single camera snapshot. Returns a blob URL and natural dimensions.
@@ -10,50 +13,48 @@ import { useState, useEffect, useCallback } from 'react';
  * @returns {{ src: string|null, loading: boolean, error: boolean, naturalSize: {w:number, h:number}, onImgLoad: function }}
  */
 export default function useSnapshotFetch(cameraId, logger) {
-  const [src, setSrc] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [naturalSize, setNaturalSize] = useState({ w: 0, h: 0 });
+  const [snapshot, setSnapshot] = useState(null);
+  const [size, setSize] = useState(null);
 
   useEffect(() => {
     if (!cameraId) return;
-    let active = true;
-    setLoading(true);
-    setError(false);
+    const controller = new AbortController();
+    let url;
+    setSnapshot(null);
 
     const t0 = performance.now();
-    fetch(`/api/v1/camera/${cameraId}/snap?t=${Date.now()}`)
+    daylightApiResponse(`/api/v1/camera/${encodeURIComponent(cameraId)}/snap?t=${Date.now()}`, { signal: controller.signal })
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.blob();
       })
       .then(blob => {
-        if (!active) return;
-        const url = URL.createObjectURL(blob);
-        setSrc(prev => { if (prev) URL.revokeObjectURL(prev); return url; });
-        setLoading(false);
+        if (controller.signal.aborted) return;
+        url = URL.createObjectURL(blob);
+        setSnapshot({ cameraId, src: url, error: false });
         const durationMs = Math.round(performance.now() - t0);
         logger?.info?.('snapshot.fetched', { durationMs, sizeBytes: blob.size });
       })
       .catch(err => {
-        if (!active) return;
-        setError(true);
-        setLoading(false);
+        if (controller.signal.aborted) return;
+        setSnapshot({ cameraId, src: null, error: true });
         logger?.warn?.('snapshot.error', { error: err.message });
       });
 
     return () => {
-      active = false;
-      setSrc(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
+      controller.abort();
+      if (url) URL.revokeObjectURL(url);
     };
   }, [cameraId, logger]);
 
   const onImgLoad = useCallback((e) => {
     const { naturalWidth, naturalHeight } = e.target;
     if (naturalWidth && naturalHeight) {
-      setNaturalSize({ w: naturalWidth, h: naturalHeight });
+      setSize({ cameraId, naturalSize: { w: naturalWidth, h: naturalHeight } });
     }
-  }, []);
+  }, [cameraId]);
 
-  return { src, loading, error, naturalSize, onImgLoad };
+  const naturalSize = size && size.cameraId === cameraId ? size.naturalSize : EMPTY_SIZE;
+  const current = snapshot?.cameraId === cameraId ? snapshot : null;
+  return { src: current?.src || null, loading: Boolean(cameraId && !current), error: current?.error || false, naturalSize, onImgLoad };
 }

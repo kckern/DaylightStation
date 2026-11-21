@@ -1,7 +1,9 @@
+@use "../feedMixins.scss" as feed;
+
 .feed-player-sheet-scrim {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  z-index: feed.$feed-modal-scrim;
   background: rgba(0, 0, 0, 0.5);
   opacity: 0;
   transition: opacity 300ms ease;
@@ -16,9 +18,9 @@
 .feed-player-sheet {
   position: fixed;
   bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 201;
+  left: var(--browser-safe-area-left);
+  right: var(--browser-safe-area-right);
+  z-index: feed.$feed-modal-panel;
   background: var(--feed-surface-2, #1e2125);
   border-radius: 16px 16px 0 0;
   transform: translateY(100%);
@@ -26,9 +28,9 @@
   transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1), visibility 300ms step-end;
   user-select: none;
   -webkit-user-select: none;
-  touch-action: none;
-  padding: 0 1.5rem 2rem;
+  padding: 0 1.5rem calc(2rem + var(--browser-safe-area-bottom));
   max-height: 80vh;
+  max-height: min(80dvh, calc(100dvh - var(--browser-safe-area-top)));
   overflow-y: auto;
 
   &.open {
@@ -42,8 +44,9 @@
   }
 
   @media (min-width: 900px) {
-    max-width: 420px;
-    left: 50%;
+    width: min(420px, calc(100% - var(--browser-safe-area-left) - var(--browser-safe-area-right)));
+    left: calc((100% + var(--browser-safe-area-left) - var(--browser-safe-area-right)) / 2);
+    right: auto;
     transform: translateX(-50%) translateY(100%);
 
     &.open {
@@ -57,17 +60,18 @@
 }
 
 .sheet-close {
+  display: grid;
+  place-items: center;
   position: absolute;
   top: 0.75rem;
   right: 0.75rem;
   z-index: 2;
-  width: 44px;
-  height: 44px;
+  width: var(--ds-control-touch-target);
+  height: var(--ds-control-touch-target);
   border: 0;
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.45);
   color: #fff;
-  font-size: 1.5rem;
   cursor: pointer;
 }
 
@@ -76,6 +80,7 @@
   justify-content: center;
   padding: 12px 0 8px;
   cursor: grab;
+  touch-action: none;
 
   &::after {
     content: '';
@@ -85,7 +90,7 @@
     background: var(--feed-text-3, #71787f);
   }
 
-  @media (min-width: 900px) {
+  @media (min-width: 900px) and (pointer: fine) {
     display: none;
   }
 }
@@ -228,6 +233,7 @@
 // Speed selector
 .sheet-speed-row {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   gap: 0.5rem;
   margin-bottom: 1rem;
@@ -257,15 +263,11 @@
 
 // Volume (desktop only)
 .sheet-volume-row {
-  display: none;
-
-  @media (min-width: 900px) {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    margin-bottom: 1rem;
-    padding: 0 1rem;
-  }
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0 1rem;
 }
 
 .sheet-volume-icon {

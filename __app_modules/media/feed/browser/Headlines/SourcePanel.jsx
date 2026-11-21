@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
+import { useFocusRegion } from "../../../../../frontend/src/lib/ui/useRetryRegion.js";
 import "./Headlines.scss";
 import { webLink } from "../../shared/webLink.mjs";
 import { safeImage } from "../Scroll/cards/utils.js";
@@ -21,6 +22,7 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, o
   const [activePreview, setActivePreview] = useState(null);
   const [refreshError, setRefreshError] = useState(false);
   const imgRef = useRef(null);
+  const { regionProps, focus } = useFocusRegion(refreshing);
 
   if (!source) return <div className="source-cell source-cell--empty" />;
 
@@ -35,10 +37,17 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, o
   const handleRefresh = async (e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (refreshError) focus();
     setRefreshing(true);
     setRefreshError(false);
     try {
-      await DaylightAPI(`/api/v1/feed/headlines/harvest/${source.id}`, {}, 'POST');
+      const result = await DaylightAPI(`/api/v1/feed/headlines/harvest/${source.id}`, {}, 'POST');
+      if (result?.error === true) {
+        log.warn('headline.source.refresh_failed', { sourceId: source.id, itemCount: result.items ?? 0 });
+        setRefreshError(true);
+        if (Number(result.items) > 0) await onRefresh();
+        return;
+      }
       await onRefresh();
     } catch (err) {
       log.warn('headline.source.refresh_failed', { sourceId: source.id, error: err.message });
@@ -51,7 +60,7 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, o
   const handleFaviconError = () => setFaviconError(true);
 
   return (
-    <div className="source-cell">
+    <div {...regionProps} role="region" aria-label={`Headlines from ${source.label}`} className="source-cell">
       <div className="source-cell-header" style={{ backgroundColor: headerColor }}>
         {!faviconError ? (
           <img
@@ -127,7 +136,7 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, o
           })}
         </ul>
       )}
-      {refreshError && <div className="source-refresh-error" role="alert">Refresh failed. <button type="button" onClick={handleRefresh}>Try again</button></div>}
+      {refreshError && <div className="source-refresh-error" role="alert">Refresh failed. <button type="button" disabled={refreshing} onClick={handleRefresh}>Try again</button></div>}
     </div>
   );
 }

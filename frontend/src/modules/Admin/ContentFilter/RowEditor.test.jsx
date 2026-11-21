@@ -81,15 +81,15 @@ describe('RowEditor states', () => {
 describe('SignOffPanel', () => {
   beforeEach(() => { calls.length = 0; });
   it('lists what is missing; approving is the status card\'s (no button here, no stage dropdown)', () => {
-    render(<MantineProvider><SignOffPanel ratingKey="77" signOff={{ ready: false, missing: ['3 of 9 parts not reviewed'], parent: null }} onChanged={() => {}} /></MantineProvider>);
+    render(<MantineProvider><SignOffPanel signOff={{ ready: false, missing: ['3 of 9 parts not reviewed'], parent: null }} approval={{}} /></MantineProvider>);
     expect(screen.getByText('3 of 9 parts not reviewed')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Approve for family' })).toBeNull();
     expect(screen.queryByText('Stage again')).toBeNull();
   });
-  it('offers Withdraw once approved, and withdraws', async () => {
-    render(<MantineProvider><SignOffPanel ratingKey="77" signOff={{ ready: false, missing: [], parent: { by: 'p', at: 'x' } }} onChanged={() => {}} /></MantineProvider>);
+  it('offers Withdraw once approved and delegates it to the approval owner', () => {
+    const submit = vi.fn();
+    render(<MantineProvider><SignOffPanel signOff={{ ready: false, missing: [], parent: { by: 'p', at: 'x' } }} approval={{ submit }} /></MantineProvider>);
     fireEvent.click(screen.getByRole('button', { name: 'Withdraw approval' }));
-    await waitFor(() => expect(calls).toHaveLength(1));
-    expect(calls[0]).toEqual({ path: 'api/v1/content-filter/77/signoff', body: {}, method: 'DELETE' });
+    expect(submit).toHaveBeenCalledWith('withdraw');
   });
 });

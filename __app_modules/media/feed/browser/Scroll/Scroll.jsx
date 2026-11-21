@@ -1,10 +1,13 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import { useFeedListShortcuts } from '../useFeedListShortcuts.js';
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
+import { useParams, useNavigate, useSearchParams, useLocation, useOutletContext } from 'react-router-dom';
+import { browserPreference } from "@/lib/browserPreference.js";
+import { useRefreshableRead } from "@/lib/hooks/useRefreshableRead.js";
 import { renderFeedCard } from "./cards/index.jsx";
 import DetailView from "./detail/DetailView.jsx";
 import DetailModal from "./detail/DetailModal.jsx";
+import { useDetailActions } from './detail/useDetailActions.js';
 import { useFeedPlayer } from "../players/FeedPlayerContext.jsx";
-import { usePlaybackObserver } from "./hooks/usePlaybackObserver.js";
 import { useMasonryLayout } from "./hooks/useMasonryLayout.js";
 import { usePerfMonitor } from "./hooks/usePerfMonitor.js";
 import { useMasonryVirtualWindow, useVirtualFeedWindow } from "./hooks/useVirtualFeedWindow.js";
@@ -16,6 +19,10 @@ import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { useFeedWorkspace } from "../FeedWorkspaceContext.jsx";
 import { getOfflineEdition } from "../offline/feedOfflineStore.js";
 import "./Scroll.scss";
+
+const reconcileTimeoutMs = 10_000;
+const scrollSessions = '/api/v1/feed/scroll/sessions';
+const scrollSessionPath = sessionId => `${scrollSessions}/${encodeURIComponent(sessionId)}`;
 
 /** Base64url-encode an item ID for use in the URL path (UTF-8 safe). */
 function encodeFeedItemId(id) {
@@ -100,6 +107,8 @@ function ScrollCard({ item, isNew, colors, onDismiss, onPlay, onClick, onFilter,
     }
   };
 
+  const tune = level => onSourcePreference?.(item.source, sourcePreference === level ? 'normal' : level)?.catch(() => {});
+
   return (
     <div
       ref={setRefs}
@@ -128,9 +137,9 @@ function ScrollCard({ item, isNew, colors, onDismiss, onPlay, onClick, onFilter,
           </p>
           {item.source && <button type="button" onClick={() => onFilter?.(item.source)}>Show only this source</button>}
           {item.source && <div className="scroll-source-tuning" role="group" aria-label={`Tune ${item.sourceInfo?.label || item.source}`}>
-            <button type="button" className={sourcePreference === 'more' ? 'active' : ''} onClick={() => onSourcePreference?.(item.source, sourcePreference === 'more' ? 'normal' : 'more')}>More</button>
-            <button type="button" className={sourcePreference === 'less' ? 'active' : ''} onClick={() => onSourcePreference?.(item.source, sourcePreference === 'less' ? 'normal' : 'less')}>Less</button>
-            <button type="button" className={sourcePreference === 'mute' ? 'active' : ''} onClick={() => onSourcePreference?.(item.source, sourcePreference === 'mute' ? 'normal' : 'mute')}>Mute</button>
+            <button type="button" className={sourcePreference === 'more' ? 'active' : ''} onClick={() => tune('more')}>More</button>
+            <button type="button" className={sourcePreference === 'less' ? 'active' : ''} onClick={() => tune('less')}>Less</button>
+            <button type="button" className={sourcePreference === 'mute' ? 'active' : ''} onClick={() => tune('mute')}>Mute</button>
           </div>}
         </details>
         <button type="button" className="scroll-card-open" onClick={onClick} aria-label={item.title ? `Open: ${item.title}` : 'Open item'}>Open</button>
@@ -139,16 +148,28 @@ function ScrollCard({ item, isNew, colors, onDismiss, onPlay, onClick, onFilter,
   );
 }
 
-/** Scroll container is .feed-content (overflow-y: auto), NOT the window. */
-function getScrollEl() { return document.querySelector('.feed-content'); }
-
 export default function Scroll() {
+  const { scrollRef, playback } = useOutletContext();
   const { feedItemId: urlSlug } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const location = useLocation();
-  const { getSnapshot, setSnapshot, getLastVisit, markVisited, mutateItems, readingPreferences, applyPendingMutations, checkpoints, sourcePreferences, setSourcePreference } = useFeedWorkspace();
-  const initialSnapshot = useRef(getSnapshot('scroll'));
+  const { getSnapshot, setSnapshot, getLastVisit, markVisited, mutateItems, readingPreferences, applyPendingMutations, checkpoints, sourcePreferences, setSourcePreference, pendingItemOperations, itemSyncRevision } = useFeedWorkspace();
+  // Checkpoints and the in-memory snapshot belong to the unfiltered Scroll
+  // visit. Session IDs are already scoped by both query dimensions below.
+  const focusSource = searchParams.get('focus');
+  const filterParam = searchParams.get('filter') || '';
+  // Keep established keys stable. Exceptional tuples use a new fixed prefix
+  // so neither delimiters nor any legacy raw query value can alias them.
+  const isExceptionalDimension = value => Boolean(value) && (value === 'all' || value.startsWith('@') || value.includes(':'));
+  const hasExceptionalDimension = isExceptionalDimension(focusSource) || isExceptionalDimension(filterParam);
+  const sessionDimension = value => !value ? 'all' : hasExceptionalDimension
+    ? value === 'all' ? '%61ll' : encodeURIComponent(value)
+    : value;
+  const sessionKeyNamespace = hasExceptionalDimension ? 'feed:scroll:session-v2:' : 'feed:scroll:session:';
+  const sessionStorageKey = `${sessionKeyNamespace}${sessionDimension(focusSource)}:${sessionDimension(filterParam)}`;
+  const isDefaultScroll = !focusSource && !filterParam;
+  const initialSnapshot = useRef(isDefaultScroll ? getSnapshot('scroll') : null);
   const initialCheckpoint = useRef(checkpoints.scroll);
   const previousVisit = useRef(getLastVisit('scroll'));
   const visitStarted = useRef(new Date().toISOString());
@@ -163,38 +184,35 @@ export default function Scroll() {
   const [budgetOverride, setBudgetOverride] = useState(null);
   const [sessionId, setSessionId] = useState(initialSnapshot.current?.sessionId || null);
   const [error, setError] = useState(null);
-  // focusSource is read into the ?focus= param; no UI currently sets it (F-29).
-  const focusSource = searchParams.get('focus');
-  const filterParam = searchParams.get('filter') || '';
-  const sessionStorageKey = `feed:scroll:session:${focusSource || 'all'}:${filterParam || 'all'}`;
-  const observerRef = useRef(null);
+  const [syncError, setSyncError] = useState(false);
+  const lastItemSync = useRef(itemSyncRevision);
+  const latestItemSync = useRef(itemSyncRevision);
+  latestItemSync.current = itemSyncRevision;
+  const storedSessionId = useMemo(() => browserPreference(sessionStorageKey, null, undefined, () => sessionStorage), [sessionStorageKey]);
   const sentinelRef = useRef(null);
   const containerRef = useRef(null);
   const itemsRef = useRef(items);
   itemsRef.current = items;
-  const [detailData, setDetailData] = useState(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState(null);
+  const [settledDetail, setSettledDetail] = useState(null);
   const [detailRetry, setDetailRetry] = useState(0);
-  const { activeMedia, play: contextPlay, stop: contextStop, playerRef, speed } = useFeedPlayer();
+  const { activeMedia, play: contextPlay, stop: contextStop } = useFeedPlayer();
   const [colors, setColors] = useState({});
   const [assemblyBatches, setAssemblyBatches] = useState([]);
   const [assemblyFilter, setAssemblyFilter] = useState({ tiers: [], sources: [] });
-  const savedScrollRef = useRef(0);
-  const listAbortRef = useRef(null);
-  const appendLockRef = useRef(false);
-  const detailAbortRef = useRef(null);
+  const listReturn = useRef(null);
+  const wasOnDetail = useRef(false);
+  const listRequestRef = useRef(null);
   const snapshotRef = useRef(null);
   const checkpointRestoredRef = useRef(false);
-  const effectiveBudget = budgetOverride ?? readingPreferences.sessionBudget;
-  snapshotRef.current = { items, hasMore, caughtUp, budgetReached, serverHasMore, sessionId };
+  const effectiveBudget = budgetOverride?.scope === sessionStorageKey
+    ? budgetOverride.limit
+    : readingPreferences.sessionBudget;
+  snapshotRef.current = { items, loading, error, hasMore, caughtUp, budgetReached, serverHasMore, sessionId, sessionStorageKey };
 
   useEffect(() => {
     setBudgetOverride(null);
     setBudgetReached(false);
   }, [sessionStorageKey]);
-
-  const playback = usePlaybackObserver(playerRef, !!activeMedia, speed);
 
   const handlePlay = useCallback((item, contentId) => {
     if (!item) { feedLog.player('clear activeMedia'); contextStop(); return; }
@@ -205,9 +223,6 @@ export default function Scroll() {
   const handleAssemblyFilter = useCallback((filter) => {
     setAssemblyFilter(filter);
   }, []);
-
-  // Deep-linked item (fetched from server when not in scroll batch)
-  const [deepLinkedItem, setDeepLinkedItem] = useState(null);
 
   // Viewport-aware rendering
   const [isDesktop, setIsDesktop] = useState(
@@ -221,24 +236,37 @@ export default function Scroll() {
   }, []);
 
   // Performance monitoring — active when scroll list is visible (not detail view)
-  usePerfMonitor(searchParams.get('debug') === '1' && !loading && !(urlSlug && !isDesktop));
+  usePerfMonitor(searchParams.get('debug') === '1' && !loading && !(urlSlug && !isDesktop), scrollRef);
 
   // Decode URL slug to full item ID
   const fullId = urlSlug ? decodeFeedItemId(urlSlug) : null;
+  const detailActions = useDetailActions(fullId);
+  const detailKey = urlSlug ? `${urlSlug}:${detailRetry}` : null;
+  const detail = settledDetail?.key === detailKey ? settledDetail : null;
+  const detailData = detail?.data;
+  const detailLoading = Boolean(fullId && !detail);
+  const detailError = urlSlug && !fullId
+    ? 'This Feed link is invalid. Return to Scroll and choose an item again.'
+    : detail?.error;
 
   // Find selected item in loaded list or from deep-link fetch
   const selectedItem = fullId
-    ? (items.find(i => i.id === fullId) || (deepLinkedItem?.id === fullId ? deepLinkedItem : null))
+    ? (items.find(i => i.id === fullId) || (detail?.item?.id === fullId ? detail.item : null))
     : null;
 
   const fetchItems = useCallback(async (append = false, requestedSession = sessionId) => {
-    if (append && appendLockRef.current) return;
-    if (append) appendLockRef.current = true;
-    if (!append) listAbortRef.current?.abort();
+    if (append && listRequestRef.current) return;
+    listRequestRef.current?.abort();
     const controller = new AbortController();
-    if (!append) listAbortRef.current = controller;
+    listRequestRef.current = controller;
     if (append) setLoadingMore(true);
-    else setLoading(true);
+    else {
+      // A session load started after settlement already reads canonical state.
+      lastItemSync.current = latestItemSync.current;
+      setSyncError(false);
+      setLoadingMore(false);
+      setLoading(true);
+    }
     setError(null);
 
     try {
@@ -257,32 +285,33 @@ export default function Scroll() {
       let result;
       if (append) {
         if (!requestedSession) throw new Error('Scroll session is unavailable');
-        result = await DaylightAPI(`/api/v1/feed/scroll/sessions/${encodeURIComponent(requestedSession)}?${params}`, {}, 'GET', { signal: controller.signal });
+        result = await DaylightAPI(`${scrollSessionPath(requestedSession)}?${params}`, {}, 'GET', { signal: controller.signal });
       } else if (requestedSession) {
         const resumeParams = new URLSearchParams(params);
         resumeParams.set('resume', '1');
         try {
-          result = await DaylightAPI(`/api/v1/feed/scroll/sessions/${encodeURIComponent(requestedSession)}?${resumeParams}`, {}, 'GET', { signal: controller.signal });
+          result = await DaylightAPI(`${scrollSessionPath(requestedSession)}?${resumeParams}`, {}, 'GET', { signal: controller.signal });
         } catch (resumeError) {
           if (controller.signal.aborted) throw resumeError;
           if (!String(resumeError.message).startsWith('HTTP 404:')) throw resumeError;
-          sessionStorage.removeItem(sessionStorageKey);
-          result = await DaylightAPI('/api/v1/feed/scroll/sessions', {
+          storedSessionId.clear();
+          result = await DaylightAPI(scrollSessions, {
             focus: focusSource || null,
             filter: filterParam || null,
             limit: effectiveBudget > 0 ? Math.min(15, effectiveBudget) : undefined,
           }, 'POST', { signal: controller.signal });
         }
       } else {
-        result = await DaylightAPI('/api/v1/feed/scroll/sessions', {
+        result = await DaylightAPI(scrollSessions, {
           focus: focusSource || null,
           filter: filterParam || null,
           limit: effectiveBudget > 0 ? Math.min(15, effectiveBudget) : undefined,
         }, 'POST', { signal: controller.signal });
       }
+      if (controller.signal.aborted) return;
       if (result.sessionId) {
         setSessionId(result.sessionId);
-        sessionStorage.setItem(sessionStorageKey, result.sessionId);
+        storedSessionId.write(result.sessionId);
       }
       feedLog.timing('scroll-fetch', { durationMs: Math.round(performance.now() - fetchStart), append, cursor, count: (result.items || []).length });
 
@@ -327,84 +356,186 @@ export default function Scroll() {
         setCaughtUp(!!result.caughtUp);
       }
     } catch (err) {
-      if (err.name === 'AbortError') return;
+      if (controller.signal.aborted || err.name === 'AbortError') return;
       feedLog.scroll('fetchError', err.message);
       // Surface an error state and stop the infinite sentinel from retrying
       // an outage in a tight loop. (F-11)
       setError(err.message || 'Failed to load feed');
       setHasMore(false);
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
-      appendLockRef.current = false;
+      if (listRequestRef.current === controller) {
+        listRequestRef.current = null;
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
+      }
     }
-  }, [applyPendingMutations, effectiveBudget, filterParam, focusSource, searchParams, sessionId, sessionStorageKey]);
-
-  useEffect(() => () => listAbortRef.current?.abort(), []);
-  useEffect(() => { markVisited('scroll', visitStarted.current); }, [markVisited]);
+  }, [applyPendingMutations, effectiveBudget, filterParam, focusSource, searchParams, sessionId, storedSessionId]);
 
   useEffect(() => {
-    const scrollEl = getScrollEl();
-    const initialOffset = initialSnapshot.current?.scrollTop ?? initialCheckpoint.current?.scrollOffset;
-    if (scrollEl && initialOffset) requestAnimationFrame(() => { scrollEl.scrollTop = initialOffset; });
+    if (pendingItemOperations?.length) setItems(applyPendingMutations);
+  }, [applyPendingMutations, pendingItemOperations]);
+
+  const readSettledItems = useCallback(async (isCurrent, signal) => {
+    if (!sessionId) return;
+    setSyncError(false);
+    const loadedAtRead = new Set(itemsRef.current);
+    const params = new URLSearchParams({ resume: '1' });
+    if (filterParam) params.set('filter', filterParam);
+    if (focusSource) params.set('focus', focusSource);
+    try {
+      // Resume reads the session's existing rows without advancing its cursor.
+      const result = await DaylightAPI(`${scrollSessionPath(sessionId)}?${params}`, {}, 'GET', { signal });
+      if (!isCurrent()) return;
+      const byId = new Map((result.items || []).map(item => [item.id, item.state]));
+      setItems(current => applyPendingMutations(current.map(item => {
+        const state = byId.get(item.id);
+        // A newer local edit may have replaced this row while the GET was pending.
+        return state && loadedAtRead.has(item) ? { ...item, state, isRead: state.isRead } : item;
+      })));
+    } catch (err) {
+      if (!isCurrent()) return;
+      feedLog.scroll('reconcileError', err.message);
+      setSyncError(true);
+    }
+  }, [applyPendingMutations, filterParam, focusSource, sessionId]);
+  const onReconcileTimeout = useCallback(() => setSyncError(true), []);
+  const { reload: syncSettledItems } = useRefreshableRead(readSettledItems, {
+    timeoutMs: reconcileTimeoutMs, onTimeout: onReconcileTimeout,
+  });
+
+  useEffect(() => {
+    if (!isDefaultScroll) return;
+    visitStarted.current = new Date().toISOString();
+    markVisited('scroll', visitStarted.current, initialCheckpoint.current || {});
+  }, [isDefaultScroll, markVisited, sessionStorageKey]);
+
+  const lastListOffset = useRef(initialSnapshot.current?.scrollTop ?? (isDefaultScroll ? initialCheckpoint.current?.scrollOffset : 0) ?? 0);
+  const restoringList = useRef(lastListOffset.current > 0);
+  useEffect(() => {
+    const savedOffset = isDefaultScroll
+      ? initialSnapshot.current?.scrollTop ?? initialCheckpoint.current?.scrollOffset ?? 0
+      : 0;
+    lastListOffset.current = savedOffset;
+    restoringList.current = savedOffset > 0;
+  }, [isDefaultScroll, sessionStorageKey]);
+  useLayoutEffect(() => {
+    const el = scrollRef?.current;
+    if (!isDefaultScroll || !el || urlSlug || loading || !items.length || !restoringList.current) return;
+    const wanted = lastListOffset.current;
+    // Masonry publishes estimated positions before its measured heights. A
+    // first successful scroll can still be clamped during the next layout.
+    let frame;
+    let previousHeight = -1;
+    let stableFrames = 0;
+    function stop() {
+      cancelAnimationFrame(frame);
+      restoringList.current = false;
+    }
+    function restore() {
+      if (!restoringList.current) return;
+      el.scrollTop = wanted;
+      stableFrames = el.scrollHeight === previousHeight ? stableFrames + 1 : 0;
+      previousHeight = el.scrollHeight;
+      if (stableFrames >= 3) stop();
+      else frame = requestAnimationFrame(restore);
+    }
+    frame = requestAnimationFrame(restore);
+    el.addEventListener('wheel', stop, { passive: true });
+    el.addEventListener('touchstart', stop, { passive: true });
+    el.addEventListener('keydown', stop);
     return () => {
-      const scrollOffset = getScrollEl()?.scrollTop || 0;
-      const scrollEl = getScrollEl();
-      const itemId = [...(scrollEl?.querySelectorAll('[data-feed-item-id]') || [])]
-        .find(node => node.getBoundingClientRect().bottom > scrollEl.getBoundingClientRect().top + 8)?.dataset.feedItemId || null;
-      setSnapshot('scroll', { ...snapshotRef.current, scrollTop: scrollOffset });
-      markVisited('scroll', new Date().toISOString(), { itemId, scrollOffset });
+      cancelAnimationFrame(frame);
+      el.removeEventListener('wheel', stop);
+      el.removeEventListener('touchstart', stop);
+      el.removeEventListener('keydown', stop);
     };
-  }, [markVisited, setSnapshot]);
+  }, [items.length, isDefaultScroll, loading, scrollRef, urlSlug]);
+
+  useLayoutEffect(() => {
+    const el = scrollRef?.current;
+    const visitStorageKey = sessionStorageKey;
+    return () => {
+      if (!isDefaultScroll) return;
+      const acceptedEmpty = !snapshotRef.current.loading && !snapshotRef.current.error && !itemsRef.current.length;
+      const scrollOffset = acceptedEmpty ? 0 : listReturn.current?.scrollTop ?? lastListOffset.current;
+      const visibleItemId = [...(el?.querySelectorAll('[data-feed-item-id]') || [])]
+        .find(node => node.getBoundingClientRect().bottom > el.getBoundingClientRect().top + 8)?.dataset.feedItemId || null;
+      const itemId = acceptedEmpty ? null : visibleItemId || listReturn.current?.id || initialCheckpoint.current?.itemId || null;
+      const position = { itemId, scrollOffset };
+      initialCheckpoint.current = { ...initialCheckpoint.current, ...position };
+      const nextSnapshot = { ...snapshotRef.current, sessionStorageKey: visitStorageKey, scrollTop: scrollOffset };
+      initialSnapshot.current = nextSnapshot;
+      setSnapshot('scroll', nextSnapshot);
+      markVisited('scroll', new Date().toISOString(), position);
+    };
+  }, [isDefaultScroll, markVisited, scrollRef, sessionStorageKey, setSnapshot]);
 
   useEffect(() => {
-    if (checkpointRestoredRef.current || initialSnapshot.current?.scrollTop || !initialCheckpoint.current?.itemId || !items.length) return;
-    const target = [...(getScrollEl()?.querySelectorAll('[data-feed-item-id]') || [])]
+    if (!isDefaultScroll || checkpointRestoredRef.current || initialSnapshot.current?.scrollTop || initialCheckpoint.current?.scrollOffset
+      || !initialCheckpoint.current?.itemId || !items.length) return;
+    const target = [...(scrollRef?.current?.querySelectorAll('[data-feed-item-id]') || [])]
       .find(node => node.dataset.feedItemId === initialCheckpoint.current.itemId);
     if (target) {
       checkpointRestoredRef.current = true;
-      requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }));
+      const frame = requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }));
+      return () => cancelAnimationFrame(frame);
     }
-  }, [items.length]);
+  }, [isDefaultScroll, items.length, scrollRef, sessionStorageKey]);
 
   // Initial load + reset/refetch whenever the ?filter= identity changes. (F-11)
   useEffect(() => {
-    const storedSession = sessionStorage.getItem(sessionStorageKey);
-    setSessionId(storedSession);
+    const storedSession = storedSessionId.read();
+    // Only a successful list response establishes the session for reconciliation.
+    setSessionId(null);
     setItems([]);
     setHasMore(true);
     setError(null);
     fetchItems(false, storedSession);
+    return () => listRequestRef.current?.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionStorageKey]);
 
+  useEffect(() => {
+    if (lastItemSync.current === itemSyncRevision || !sessionId || !items.length || loading || loadingMore || listRequestRef.current) return;
+    lastItemSync.current = itemSyncRevision;
+    syncSettledItems();
+  }, [itemSyncRevision, items.length, loading, loadingMore, sessionId, syncSettledItems]);
+
   // Infinite scroll via IntersectionObserver
   useEffect(() => {
-    if (!sentinelRef.current || !hasMore || loadingMore) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel || !hasMore || loading || loadingMore) return;
 
-    observerRef.current = new IntersectionObserver(
+    let observing = true;
+    const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && hasMore && !loadingMore) {
-          feedLog.scroll('sentinel intersecting — triggering fetchMore', { scrollY: getScrollEl()?.scrollTop || 0, itemCount: itemsRef.current.length });
+        if (observing && entry?.isIntersecting) {
+          feedLog.scroll('sentinel intersecting — triggering fetchMore', { scrollY: scrollRef?.current?.scrollTop || 0, itemCount: itemsRef.current.length });
           fetchItems(true);
         }
       },
-      { threshold: 0.1 }
+      { root: scrollRef?.current, threshold: 0.1 }
     );
 
-    observerRef.current.observe(sentinelRef.current);
-    return () => observerRef.current?.disconnect();
-  }, [hasMore, loadingMore, fetchItems, loading]);
+    observer.observe(sentinel);
+    return () => {
+      observing = false;
+      observer.disconnect();
+    };
+  }, [hasMore, loading, loadingMore, fetchItems, scrollRef]);
 
   // Scroll activity tracking (throttled to ~5/sec to reduce main-thread work)
   useEffect(() => {
-    const scrollEl = getScrollEl();
+    const scrollEl = scrollRef?.current;
     if (!scrollEl) return;
     let lastY = scrollEl.scrollTop;
     let lastTime = performance.now();
     let lastLogTime = 0;
 
     const handler = () => {
+      if (!urlSlug && !loading && !restoringList.current) lastListOffset.current = scrollEl.scrollTop;
       const now = performance.now();
       if (now - lastLogTime < 200) return;
       lastLogTime = now;
@@ -425,7 +556,7 @@ export default function Scroll() {
 
     scrollEl.addEventListener('scroll', handler, { passive: true });
     return () => scrollEl.removeEventListener('scroll', handler);
-  }, []);
+  }, [loading, scrollRef, urlSlug]);
 
   // Card viewport tracking (enter/exit with dwell time)
   const enterTimesRef = useRef(new Map());
@@ -439,56 +570,42 @@ export default function Scroll() {
           if (!id) continue;
           if (entry.isIntersecting) {
             enterTimesRef.current.set(id, performance.now());
-            feedLog.viewport('enter', { id, scrollY: Math.round(getScrollEl()?.scrollTop || 0) });
+            feedLog.viewport('enter', { id, scrollY: Math.round(scrollRef?.current?.scrollTop || 0) });
           } else if (enterTimesRef.current.has(id)) {
             const dwellMs = Math.round(performance.now() - enterTimesRef.current.get(id));
             enterTimesRef.current.delete(id);
-            feedLog.viewport('exit', { id, dwellMs, scrollY: Math.round(getScrollEl()?.scrollTop || 0) });
+            feedLog.viewport('exit', { id, dwellMs, scrollY: Math.round(scrollRef?.current?.scrollTop || 0) });
           }
         }
       },
-      { threshold: 0.5 }
+      { root: scrollRef?.current, threshold: 0.5 }
     );
     return () => viewportObserverRef.current?.disconnect();
   }, []);
 
-  // Fetch detail when URL slug changes (route-driven)
-  const prevSlugRef = useRef(null);
-  // Monotonic generation guard: a slower, older detail request must not
-  // overwrite the sections of a newer selection. (F-11)
-  const detailGenRef = useRef(0);
+  // Opening an item marks it read. Retrying its detail does not reopen it.
   useEffect(() => {
-    const requestKey = `${urlSlug || ''}:${detailRetry}`;
-    if (!urlSlug || requestKey === prevSlugRef.current) return;
-    prevSlugRef.current = requestKey;
-
-    if (!fullId) {
-      setDetailError('This Feed link is invalid. Return to Scroll and choose an item again.');
-      setDetailLoading(false);
-      return;
-    }
-
-    const gen = ++detailGenRef.current;
-    const isCurrent = () => gen === detailGenRef.current;
-
-    // Opening an item marks it read, but never archives it.
-    const matchedItem = itemsRef.current.find(i => i.id === fullId);
-    if (matchedItem && !(matchedItem.state?.isRead ?? matchedItem.isRead)) {
-      mutateItems([matchedItem], 'read', {
+    if (!fullId) return;
+    const item = itemsRef.current.find(i => i.id === fullId);
+    if (item && !(item.state?.isRead ?? item.isRead)) {
+      mutateItems([item], 'read', {
         onApply: updated => setItems(current => current.map(value => updated.find(next => next.id === value.id) || value)),
       }).catch(() => {});
     }
+  }, [fullId, mutateItems]);
 
-    // Check if item is already in the loaded list
+  // Each route and Retry owns a detail request, including its offline fallback.
+  const readDetail = useCallback((isCurrent, signal) => {
+    setSettledDetail(null);
+    if (!fullId) return;
+    const publish = (data, { item, error } = {}) => {
+      if (isCurrent()) setSettledDetail({ key: detailKey, data, item, error });
+    };
     const item = itemsRef.current.find(i => i.id === fullId);
 
     if (item) {
       // Item is in the scroll batch — fetch detail the normal way
       feedLog.detail('open (in batch)', { id: fullId, source: item.source, title: item.title });
-      setDetailData(null);
-      setDetailError(null);
-      setDetailLoading(true);
-      if (!isDesktop) { const el = getScrollEl(); if (el) el.scrollTop = 0; }
 
       const params = new URLSearchParams();
       if (item.contentType === 'youtube') params.set('quality', '480p');
@@ -504,58 +621,41 @@ export default function Scroll() {
       }
 
       const detailStart = performance.now();
-      detailAbortRef.current?.abort();
-      const controller = new AbortController();
-      detailAbortRef.current = controller;
-      DaylightAPI(`/api/v1/feed/detail/${encodeURIComponent(item.id)}?${params}`, {}, 'GET', { signal: controller.signal })
+      return DaylightAPI(`/api/v1/feed/detail/${encodeURIComponent(item.id)}?${params}`, {}, 'GET', { signal })
         .then(result => {
-          if (!isCurrent()) return; // a newer selection superseded this request
+          if (!isCurrent()) return;
           feedLog.timing('detail-sections', { durationMs: Math.round(performance.now() - detailStart), id: fullId, sectionCount: result.sections?.length || 0 });
           feedLog.detail('loaded', { id: fullId, sections: result.sections?.length || 0 });
-          setDetailData(result);
-          setDetailError(null);
+          publish(result);
         })
         .catch(async err => {
           if (!isCurrent() || err.name === 'AbortError') return;
           feedLog.detail('fetchError', { id: fullId, error: err.message });
+          const error = 'The reader view could not be loaded. You can still open the original article.';
           try {
             const offline = await getOfflineEdition(item.id);
-            if (!isCurrent()) return;
-            setDetailData(offline?.item ? (offline.detail || { sections: [], ogImage: null, ogDescription: offline.item.summary || item.summary || null }) : null);
-            setDetailError(offline?.item ? null : 'The reader view could not be loaded. You can still open the original article.');
+            if (offline?.item) {
+              publish(offline.detail || { sections: [], ogImage: null, ogDescription: offline.item.summary || item.summary || null });
+            } else publish(null, { error });
           } catch {
-            if (isCurrent()) {
-              setDetailData(null);
-              setDetailError('The reader view could not be loaded. You can still open the original article.');
-            }
+            publish(null, { error });
           }
-        })
-        .finally(() => { if (isCurrent()) setDetailLoading(false); });
+        });
     } else {
       // Cold load / deep link — fetch item + detail from server cache
       feedLog.detail('open (deep link)', { slug: urlSlug, fullId });
-      setDetailData(null);
-      setDetailError(null);
-      setDetailLoading(true);
-      setDeepLinkedItem(null);
-      if (!isDesktop) { const el = getScrollEl(); if (el) el.scrollTop = 0; }
 
       const detailStart = performance.now();
-      detailAbortRef.current?.abort();
-      const controller = new AbortController();
-      detailAbortRef.current = controller;
-      DaylightAPI(`/api/v1/feed/items/${urlSlug}`, {}, 'GET', { signal: controller.signal })
+      return DaylightAPI(`/api/v1/feed/items/${urlSlug}`, {}, 'GET', { signal })
         .then(result => {
-          if (!isCurrent()) return; // superseded by a newer selection
+          if (!isCurrent()) return;
           feedLog.timing('deeplink-fetch', { durationMs: Math.round(performance.now() - detailStart), slug: urlSlug, hasItem: !!result.item, sectionCount: result.sections?.length || 0 });
           feedLog.detail('deep link loaded', { hasItem: !!result.item, sections: result.sections?.length || 0 });
-          if (result.item) setDeepLinkedItem(result.item);
-          setDetailData({
+          publish({
             sections: result.sections || [],
             ogImage: result.ogImage || null,
             ogDescription: result.ogDescription || null,
-          });
-          setDetailError(null);
+          }, { item: result.item });
         })
         .catch(async err => {
           if (!isCurrent() || err.name === 'AbortError') return;
@@ -564,55 +664,33 @@ export default function Scroll() {
             if (!isCurrent()) return;
             if (offline?.item) {
               feedLog.detail('deep link loaded from offline edition', { slug: urlSlug });
-              setDeepLinkedItem(applyPendingMutations([offline.item])[0]);
-              setDetailData(offline.detail || { sections: [], ogImage: null, ogDescription: offline.item.summary || null });
+              publish(offline.detail || { sections: [], ogImage: null, ogDescription: offline.item.summary || null }, {
+                item: applyPendingMutations([offline.item])[0],
+              });
               return;
             }
           } catch (offlineError) {
+            if (!isCurrent()) return;
             feedLog.detail('offline edition unavailable', { slug: urlSlug, error: offlineError.message });
           }
           feedLog.detail('deep link unavailable', { slug: urlSlug, error: err.message });
-          setDetailError('This item is no longer available in Feed history or on this device.');
-        })
-        .finally(() => { if (isCurrent()) setDetailLoading(false); });
+          publish(null, { error: 'This item is no longer available in Feed history or on this device.' });
+        });
     }
-    return () => detailAbortRef.current?.abort();
-  }, [applyPendingMutations, urlSlug, fullId, detailRetry, mutateItems, isDesktop]);
+  }, [applyPendingMutations, detailKey, fullId, urlSlug]);
+  const { reload: loadDetail } = useRefreshableRead(readDetail);
+  useEffect(() => { loadDetail(); }, [loadDetail]);
 
-  // Restore scroll position when navigating back to list
-  const scrollLog = useCallback(() => getLogger().child({ module: 'scroll-restore' }), []);
-  useEffect(() => {
-    if (!urlSlug) {
-      const savedY = savedScrollRef.current;
-      const el = getScrollEl();
-      scrollLog().info('nav.backToList', { savedY, itemCount: items.length, scrollHeight: el?.scrollHeight || 0 });
-      setDetailData(null);
-      setDetailError(null);
-      setDetailLoading(false);
-      setDeepLinkedItem(null);
-      prevSlugRef.current = null;
-
-      // Restore scroll on .feed-content — retry if content hasn't laid out yet
-      let attempts = 0;
-      const tryRestore = () => {
-        const scrollEl = getScrollEl();
-        if (!scrollEl) return;
-        scrollEl.scrollTop = savedY;
-        attempts++;
-        const actual = scrollEl.scrollTop;
-        scrollLog().info('nav.scrollRestore', { savedY, actualY: actual, attempt: attempts, scrollHeight: scrollEl.scrollHeight });
-        if (savedY > 0 && Math.abs(actual - savedY) > 50 && attempts < 5) {
-          requestAnimationFrame(tryRestore);
-        }
-      };
-      requestAnimationFrame(tryRestore);
-    }
-  }, [items.length, scrollLog, urlSlug]);
+  useLayoutEffect(() => {
+    if (!urlSlug) return;
+    wasOnDetail.current = true;
+    if (fullId && !isDesktop && scrollRef?.current) scrollRef.current.scrollTop = 0;
+  }, [detailKey, fullId, isDesktop, scrollRef, urlSlug]);
 
   // Lock the actual Feed scroller while the desktop modal is open.
   useEffect(() => {
     if (urlSlug && isDesktop) {
-      const scrollEl = getScrollEl();
+      const scrollEl = scrollRef?.current;
       if (!scrollEl) return undefined;
       const previous = scrollEl.style.overflow;
       scrollEl.style.overflow = 'hidden';
@@ -639,37 +717,89 @@ export default function Scroll() {
       return tierMatch && sourceMatch;
     });
   })();
-  useEffect(() => {
-    if (urlSlug) return undefined;
-    const onKeyDown = event => {
-      if (!['j', 'k'].includes(event.key) || event.metaKey || event.ctrlKey || event.altKey) return;
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || event.target?.isContentEditable) return;
-      const cards = [...document.querySelectorAll('.scroll-item-wrapper .scroll-card-open')];
-      if (!cards.length) return;
-      const activeIndex = cards.findIndex(card => card === document.activeElement);
-      const nextIndex = event.key === 'j' ? Math.min(cards.length - 1, activeIndex + 1) : Math.max(0, activeIndex <= 0 ? 0 : activeIndex - 1);
-      event.preventDefault();
-      cards[nextIndex].focus({ preventScroll: true });
-      cards[nextIndex].scrollIntoView({ block: 'center', behavior: 'smooth' });
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [urlSlug]);
+  useFeedListShortcuts(containerRef, '.scroll-card-open', !urlSlug);
 
   const { containerStyle, getItemStyle, getItemMetrics, measureRef } = useMasonryLayout(containerRef, visibleItems, isDesktop);
-  const mobileWindow = useVirtualFeedWindow(containerRef, visibleItems, !isDesktop);
-  const desktopWindow = useMasonryVirtualWindow(containerRef, visibleItems, isDesktop, getItemMetrics);
+  const mobileWindow = useVirtualFeedWindow(containerRef, visibleItems, !isDesktop, { scrollRef });
+  const desktopWindow = useMasonryVirtualWindow(containerRef, visibleItems, isDesktop, getItemMetrics, scrollRef);
   const renderedItems = isDesktop ? desktopWindow : mobileWindow.items;
   const renderedContainerStyle = isDesktop ? containerStyle : {
     paddingTop: `${mobileWindow.paddingTop}px`,
     paddingBottom: `${mobileWindow.paddingBottom}px`,
   };
 
+  // The virtual window may not have mounted the opener in the new layout yet.
+  const openerIndex = listReturn.current ? visibleItems.findIndex(item => item.id === listReturn.current.id) : -1;
+  const openerPosition = useRef(null);
+  openerPosition.current = {
+    available: openerIndex >= 0,
+    top: isDesktop ? getItemMetrics(listReturn.current?.id)?.top : mobileWindow.offsets?.[openerIndex],
+  };
+
+  useLayoutEffect(() => {
+    if (urlSlug || !wasOnDetail.current) return;
+    wasOnDetail.current = false;
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const visit = listReturn.current;
+    const reflowed = visit && visit.width !== scroller.clientWidth;
+    const focusAtReturn = document.activeElement;
+    let frame;
+    let previousTop;
+    let stableFrames = 0;
+    let attempts = 0;
+    function stop() {
+      cancelAnimationFrame(frame);
+      if (listReturn.current === visit) listReturn.current = null;
+      document.removeEventListener('wheel', stop, true);
+      document.removeEventListener('touchstart', stop, true);
+      document.removeEventListener('keydown', stop, true);
+    }
+    function restore() {
+      const container = containerRef.current;
+      const position = openerPosition.current;
+      const card = visit && container?.querySelector(`[data-feed-item-id="${CSS.escape(visit.id)}"] .scroll-card-open`);
+      const active = document.activeElement;
+      if (active !== focusAtReturn && active !== document.body && active?.getClientRects().length) {
+        stop();
+        return;
+      }
+      let target = visit?.scrollTop ?? 0;
+      if (reflowed && position.available && container) {
+        const viewportTop = scroller.getBoundingClientRect().top;
+        if (card) {
+          target = scroller.scrollTop + card.getBoundingClientRect().top - viewportTop - scroller.clientHeight / 2;
+        } else if (position.top != null) {
+          target = scroller.scrollTop + container.getBoundingClientRect().top - viewportTop + position.top - scroller.clientHeight / 2;
+        }
+      }
+      scroller.scrollTop = target;
+      const actual = scroller.scrollTop;
+      stableFrames = previousTop === actual ? stableFrames + 1 : 0;
+      previousTop = actual;
+      // Let the destination window measure and settle around the requested row.
+      if (++attempts < 30 && ((position.available && !card) || stableFrames < 2)) {
+        frame = requestAnimationFrame(restore);
+        return;
+      }
+      lastListOffset.current = actual;
+      stop();
+      (card || scroller).focus({ preventScroll: true });
+    }
+    document.addEventListener('wheel', stop, { capture: true, passive: true });
+    document.addEventListener('touchstart', stop, { capture: true, passive: true });
+    document.addEventListener('keydown', stop, true);
+    frame = requestAnimationFrame(restore);
+    return stop;
+  }, [scrollRef, urlSlug]);
+
   const handleCardClick = useCallback((e, item) => {
     e.preventDefault();
-    const el = getScrollEl();
+    const el = scrollRef?.current;
     const scrollY = el ? el.scrollTop : 0;
-    savedScrollRef.current = scrollY;
+    // The opening card supersedes any initial checkpoint still settling.
+    restoringList.current = false;
+    listReturn.current = { id: item.id, scrollTop: scrollY, width: el?.clientWidth };
     getLogger().child({ module: 'scroll-restore' }).info('nav.saveScroll', {
       scrollY: Math.round(scrollY),
       scrollHeight: el ? el.scrollHeight : 0,
@@ -776,7 +906,7 @@ export default function Scroll() {
             <p>You’ve reached the end of the current source pool.</p>
             <div className="scroll-end__actions">
               <button className="scroll-load-more" onClick={() => {
-                sessionStorage.removeItem(sessionStorageKey);
+                storedSessionId.clear();
                 setSessionId(null);
                 fetchItems(false, null);
               }}>Refresh sources</button>
@@ -790,7 +920,7 @@ export default function Scroll() {
             <p>You reached your {effectiveBudget}-item reading boundary.</p>
             <div className="scroll-end__actions">
               <button className="scroll-load-more" disabled={!serverHasMore} onClick={() => {
-                setBudgetOverride(items.length + 30);
+                setBudgetOverride({ scope: sessionStorageKey, limit: items.length + 30 });
                 setBudgetReached(false);
                 setHasMore(serverHasMore);
               }}>Continue 30 more</button>
@@ -803,10 +933,21 @@ export default function Scroll() {
             <span>Couldn’t load the feed.</span>
             <button
               className="scroll-load-more"
-              onClick={() => { setError(null); setHasMore(true); fetchItems(items.length > 0); }}
+              onClick={() => {
+                setError(null);
+                setHasMore(true);
+                if (items.length) fetchItems(true);
+                else fetchItems(false, storedSessionId.read());
+              }}
             >
               Retry
             </button>
+          </div>
+        )}
+        {syncError && (
+          <div className="scroll-error" role="alert">
+            <span>Couldn’t refresh feed changes.</span>
+            <button type="button" className="scroll-load-more" onClick={syncSettledItems}>Retry refresh</button>
           </div>
         )}
         {!error && !hasMore && items.length === 0 && (
@@ -826,6 +967,7 @@ export default function Scroll() {
       {selectedItem && isDesktop && (
         <DetailModal
           item={selectedItem}
+          detailActions={detailActions}
           sections={detailData?.sections || []}
           ogImage={detailData?.ogImage || null}
           ogDescription={detailData?.ogDescription || null}
@@ -844,7 +986,9 @@ export default function Scroll() {
       )}
       {selectedItem && !isDesktop && (
         <DetailView
+          focusOnEntry
           item={selectedItem}
+          detailActions={detailActions}
           sections={detailData?.sections || []}
           ogImage={detailData?.ogImage || null}
           ogDescription={detailData?.ogDescription || null}

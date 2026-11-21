@@ -1,22 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { DEFAULT_DENSITY_LEVELS } from "../../portable/contracts/health/densityLevels.mjs";
 import { densityRevision } from "../../portable/contracts/health/foodDensity.mjs";
-import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
+import { browserPreference, subscribeToStorageKey } from "../../../../../frontend/src/lib/browserPreference.js";
 
-const logger = createAppLogger('health').child('display-preferences');
+const DEFAULT_PLACEMENT = 'before';
 const validPlacement = value => value === 'before' || value === 'after';
-const readPlacement = key => {
-  try {
-    const value = JSON.parse(localStorage.getItem(key));
-    return validPlacement(value?.densityPlacement) ? value.densityPlacement : 'before';
-  } catch (error) {
-    logger.warn('preference.read_failed', { key, error: error?.message });
-    return 'before';
-  }
+const decodePlacement = raw => {
+  const placement = JSON.parse(raw)?.densityPlacement;
+  return validPlacement(placement) ? placement : DEFAULT_PLACEMENT;
 };
-
 const defaults = {
-  densityPlacement: 'before',
+  densityPlacement: DEFAULT_PLACEMENT,
   setDensityPlacement: () => {},
   densityLevels: DEFAULT_DENSITY_LEVELS,
   densityRevision: densityRevision(DEFAULT_DENSITY_LEVELS),
@@ -28,28 +22,19 @@ export function HealthDisplayPreferencesProvider({
   userId, densityLevels = DEFAULT_DENSITY_LEVELS, densityRevision: revision, children,
 }) {
   const key = `health:display:${userId}`;
-  const [densityPlacement, setPlacement] = useState(() => readPlacement(key));
-  useEffect(() => setPlacement(readPlacement(key)), [key]);
+  const preference = useMemo(() => browserPreference(key, DEFAULT_PLACEMENT, decodePlacement), [key]);
+  const [densityPlacement, setPlacement] = useState(preference.read);
   useEffect(() => {
-    const onStorage = event => {
-      if (event.key !== key) return;
-      try {
-        const next = event.newValue === null ? 'before' : JSON.parse(event.newValue)?.densityPlacement;
-        setPlacement(validPlacement(next) ? next : 'before');
-      } catch (error) {
-        logger.warn('preference.storage_event_failed', { key, error: error?.message });
-        setPlacement('before');
-      }
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, [key]);
+    const readCurrentPlacement = () => setPlacement(preference.read());
+    const unsubscribe = subscribeToStorageKey(key, readCurrentPlacement);
+    readCurrentPlacement();
+    return unsubscribe;
+  }, [key, preference]);
   const setDensityPlacement = useCallback((next) => {
     if (!validPlacement(next)) return;
     setPlacement(next);
-    try { localStorage.setItem(key, JSON.stringify({ densityPlacement: next })); }
-    catch (error) { logger.warn('preference.write_failed', { key, error: error?.message }); }
-  }, [key]);
+    preference.write(JSON.stringify({ densityPlacement: next }));
+  }, [preference]);
   const value = useMemo(() => ({
     densityPlacement, setDensityPlacement, densityLevels,
     densityRevision: revision ?? densityRevision(densityLevels),

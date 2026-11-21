@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   getDeviceId: vi.fn(() => 'admin-browser'),
 }));
 
-vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: mocks.daylightApi }));
+vi.mock('../../../lib/api.mjs', async importOriginal => ({ ...await importOriginal(), DaylightAPI: mocks.daylightApi }));
 vi.mock('../../../lib/deviceIdentity.js', () => ({ getDeviceId: mocks.getDeviceId }));
 
 import fullyKioskAdminApi from './fullyKioskAdminApi.js';
@@ -22,14 +22,17 @@ afterEach(() => {
 
 describe('fullyKioskAdminApi', () => {
   it('uses the registered device route for JSON reads and semantic mutations', async () => {
-    await fullyKioskAdminApi.status('kitchen/tablet');
+    const { signal } = new AbortController();
+    await fullyKioskAdminApi.status('kitchen/tablet', { signal });
     expect(mocks.daylightApi).toHaveBeenLastCalledWith(
       '/api/v1/admin/household/devices/kitchen%2Ftablet/fully-kiosk/status',
+      {}, 'GET', { signal },
     );
 
-    await fullyKioskAdminApi.settings('tablet');
+    await fullyKioskAdminApi.settings('tablet', { signal });
     expect(mocks.daylightApi).toHaveBeenLastCalledWith(
       '/api/v1/admin/household/devices/tablet/fully-kiosk/settings',
+      {}, 'GET', { signal },
     );
 
     await fullyKioskAdminApi.action('tablet', 'load/url', { url: 'https://example.test/' });
@@ -85,8 +88,10 @@ describe('fullyKioskAdminApi', () => {
     expect(fetch).toHaveBeenCalledWith(
       `${window.location.origin}/api/v1/admin/household/devices/tablet/fully-kiosk/screenshot`,
       {
+        method: 'GET',
         signal: controller.signal,
         headers: {
+          'Content-Type': 'application/json',
           Authorization: 'Bearer admin-token',
           'X-Daylight-Device': 'admin-browser',
         },
@@ -106,7 +111,8 @@ describe('fullyKioskAdminApi', () => {
 
     const result = await fullyKioskAdminApi.screenshot('tablet');
     expect(result.capturedAt).toEqual(expect.any(String));
-    expect(fetch.mock.calls[0][1].headers).toEqual({ 'X-Daylight-Device': 'admin-browser' });
+    expect(fetch.mock.calls[0][1].headers).toMatchObject({ 'X-Daylight-Device': 'admin-browser' });
+    expect(fetch.mock.calls[0][1].headers.Authorization).toBeUndefined();
   });
 
   it('surfaces safe JSON screenshot errors and handles non-JSON failures', async () => {

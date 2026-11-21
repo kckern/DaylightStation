@@ -1,6 +1,9 @@
 // frontend/src/modules/Displayer/Displayer.jsx
 import { useState, useEffect, useMemo } from "react";
-import { DaylightAPI } from "../../lib/api.mjs";
+import { useApiResource } from "../../lib/hooks/useApiResource.js";
+import {
+  catalogDescriptorOptions, parseCatalogDescriptor, recentCatalogDescriptorOptions,
+} from '../../../../__capabilities/content-catalog/browser/descriptor.mjs';
 import getLogger from "../../lib/logging/Logger.js";
 import { resolveImageSrc } from "./resolveImageSrc.js";
 import "./Displayer.scss";
@@ -84,12 +87,18 @@ const MODE_FRAME_DEFAULTS = {
   card: 'none',
 };
 
-export default function Displayer({ display, onClose }) {
-  // Pre-hydrated when the caller already handed us something renderable — test
-  // the whole fallback chain, not just `imageUrl`, or a caller passing a
-  // mediaUrl-only payload triggers a pointless refetch.
-  const [data, setData] = useState(resolveImageSrc(display) ? display : null);
-  const [error, setError] = useState(null);
+export default function Displayer({ display, onClose, reuseRecentDescriptor = false }) {
+  // A renderable payload from the caller is authoritative and needs no read.
+  // Otherwise the request key follows the selected display ID.
+  const providedData = resolveImageSrc(display) ? display : null;
+  const displayId = typeof display?.id === 'string' ? display.id : '';
+  const path = providedData ? null : parseCatalogDescriptor(displayId, { allowUnqualified: true })?.path;
+  const { data: resolvedData, error: readError } = useApiResource(path, {
+    ...(reuseRecentDescriptor ? recentCatalogDescriptorOptions : catalogDescriptorOptions),
+    label: `Display ${displayId || 'item'}`,
+  });
+  const data = providedData || resolvedData;
+  const error = !data && (readError?.message || (displayId && !path ? 'Invalid display content ID' : null));
   const logger = useMemo(() => getLogger().child({ component: 'displayer' }), []);
 
   // Resolve mode via cascade: display.mode -> mode default
@@ -98,25 +107,10 @@ export default function Displayer({ display, onClose }) {
   // Resolve frame via cascade: display.frame (URL) -> data.frameStyle (item) -> mode default
   const frame = display?.frame || data?.frameStyle || MODE_FRAME_DEFAULTS[mode] || 'none';
 
-  // Fetch if only ID provided
-  const hydratedSrc = resolveImageSrc(data);
   useEffect(() => {
-    if (hydratedSrc) return; // Already hydrated
-    if (!display?.id) return;
-
-    const fetchItem = async () => {
-      try {
-        const [source, ...rest] = display.id.split(':');
-        const localId = rest.join(':');
-        const result = await DaylightAPI(`/api/v1/info/${source}/${localId}`);
-        setData(result);
-      } catch (err) {
-        logger.warn('resolve.failed', { contentId: display.id, error: err.message });
-        setError(err.message);
-      }
-    };
-    fetchItem();
-  }, [display?.id, hydratedSrc, logger]);
+    if (!readError) return;
+    logger.warn('resolve.failed', { contentId: displayId, error: readError.message });
+  }, [displayId, logger, readError]);
 
   // Escape key handler
   useEffect(() => {

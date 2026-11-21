@@ -11,7 +11,7 @@ vi.mock("../../../../../frontend/src/lib/ui/createAppLogger.js", () => {
 });
 
 import { useHealthDay } from "./useHealthDay.js";
-import { resetApiResourceCache, primeApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { resetApiResourceCache, primeApiResource, useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 
 const ROWS = [
   { uuid: '1', name: 'Eggs', calories: 140, mealTime: 'morning' },
@@ -42,6 +42,30 @@ describe('useHealthDay', () => {
     expect(result.current.budget.remaining).toBe(1460);
   });
 
+  it('releases the day refresh interval while hidden and starts a fresh interval after foreground return', async () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const intervals = vi.spyOn(globalThis, 'setInterval');
+    const clear = vi.spyOn(globalThis, 'clearInterval');
+    const hook = renderHook(() => useHealthDay('2026-09-02'));
+    try {
+      await waitFor(() => expect(hook.result.current.loading).toBe(false));
+      const index = intervals.mock.calls.findIndex(([, delay]) => delay === 15000);
+      expect(index).toBeGreaterThanOrEqual(0);
+      visibility.mockReturnValue('hidden');
+      act(() => document.dispatchEvent(new Event('visibilitychange')));
+      expect(clear).toHaveBeenCalledWith(intervals.mock.results[index].value);
+      visibility.mockReturnValue('visible');
+      act(() => document.dispatchEvent(new Event('visibilitychange')));
+      await waitFor(() => expect(apiMock).toHaveBeenCalledTimes(2));
+      expect(intervals.mock.calls.filter(([, delay]) => delay === 15000)).toHaveLength(2);
+    } finally {
+      hook.unmount();
+      visibility.mockRestore();
+      intervals.mockRestore();
+      clear.mockRestore();
+    }
+  });
+
   it('quietly adopts Telegram/reviewer ledger changes when the tab regains focus', async () => {
     const { result } = renderHook(() => useHealthDay('2026-09-02'));
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -51,6 +75,58 @@ describe('useHealthDay', () => {
     await waitFor(() => expect(result.current.revision).toBe(2));
     expect(result.current.items).toEqual([{ ...ROWS[0], name: 'Revised Eggs', calories: 280 }]);
     expect(result.current.budget.food).toBe(280);
+  });
+
+  it('polls other mounted Health readers while a day waits and recovers after the deadline', async () => {
+    vi.useFakeTimers();
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const date = '2026-09-02';
+    const dayPath = `api/v1/health/day?date=${date}`;
+    const pendingPath = `api/v1/health/nutrition/pending?date=${date}`;
+    const observationsPath = `api/v1/health/nutrition/observations?date=${date}`;
+    const reads = new Map();
+    let resolveDay;
+    const dayResponse = new Promise(resolve => { resolveDay = resolve; });
+    apiMock.mockImplementation(path => {
+      const read = (reads.get(path) ?? 0) + 1;
+      reads.set(path, read);
+      if (path === dayPath) return read === 1 ? dayResponse : Promise.resolve({ items: ROWS, revision: 2 });
+      return Promise.resolve({ revision: read });
+    });
+    try {
+      const { result, rerender, unmount } = renderHook(({ enabled }) => ({
+        day: useHealthDay(date, { enabled }),
+        pending: useApiResource(pendingPath),
+        anotherPendingReader: useApiResource(pendingPath),
+        observations: useApiResource(observationsPath),
+        dashboard: useApiResource('api/v1/health/dashboard'),
+      }), { initialProps: { enabled: true } });
+      await act(async () => {});
+      await act(async () => vi.advanceTimersByTimeAsync(15000));
+      expect(reads.get(dayPath)).toBe(1);
+      expect(reads.get(pendingPath)).toBe(2);
+      expect(result.current.pending.data.revision).toBe(2);
+      expect(result.current.day.loading).toBe(true);
+
+      await act(async () => vi.advanceTimersByTimeAsync(15000));
+      expect(reads.get(dayPath)).toBe(2);
+      expect(reads.get(pendingPath)).toBe(3);
+      expect(result.current.pending.data.revision).toBe(3);
+      expect(result.current.anotherPendingReader.data.revision).toBe(3);
+      expect(result.current.observations.data.revision).toBe(3);
+      expect(result.current.dashboard.data.revision).toBe(1);
+
+      await act(async () => resolveDay({ items: [], revision: 1 }));
+      expect(result.current.day.items).toEqual(ROWS);
+      expect(result.current.day.revision).toBe(2);
+      rerender({ enabled: false });
+      await act(async () => vi.advanceTimersByTimeAsync(15000));
+      expect(reads.get(pendingPath)).toBe(3);
+      unmount();
+    } finally {
+      visibility.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it('a failing budget endpoint leaves the log usable', async () => {

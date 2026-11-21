@@ -15,6 +15,8 @@
  * piano kiosks already persist (localStorage), so they are covered.
  */
 
+import { browserPreference } from '../browserPreference.js';
+
 export const LOG_DEVICE_STORAGE_KEY = 'daylight.log.deviceId';
 const LEGACY_KEYS = ['fitness.fleetDeviceId', 'piano.kioskDeviceId'];
 
@@ -26,15 +28,16 @@ const LEGACY_KEYS = ['fitness.fleetDeviceId', 'piano.kioskDeviceId'];
  */
 export function readLogDeviceId(loc, store, kioskStore = store) {
   try {
+    const tabDeviceId = browserPreference(LOG_DEVICE_STORAGE_KEY, null, undefined, () => store);
     const fromUrl = new URLSearchParams(loc?.search || '').get('device');
     if (fromUrl) {
-      try { store?.setItem(LOG_DEVICE_STORAGE_KEY, fromUrl); } catch { /* storage blocked */ }
+      tabDeviceId.write(fromUrl);
       return fromUrl;
     }
-    const remembered = store?.getItem(LOG_DEVICE_STORAGE_KEY);
+    const remembered = tabDeviceId.read();
     if (remembered) return remembered;
     for (const key of LEGACY_KEYS) {
-      const value = kioskStore?.getItem(key);
+      const value = browserPreference(key, null, undefined, () => kioskStore).read();
       if (value) return value;
     }
     return null;

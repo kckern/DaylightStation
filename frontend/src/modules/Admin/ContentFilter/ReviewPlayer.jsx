@@ -22,9 +22,9 @@ export function ReviewPlayer({ ratingKey }) {
   return (
     <div className="cf-review__player">
       <Suspense fallback={<LoadingState label="player" rows={1} />}>
-        {/* auxiliary: no watch-progress logging (a parent reviewing must not move the family's
-            place or mark the film watched) and no screen-level queue commands. */}
-        <Player play={play} clear={() => {}} playerType="preview" auxiliary />
+        {/* The auxiliary preview leaves viewing progress and queue commands alone.
+            Review owns shortcuts and native controls keep their activation keys. */}
+        <Player play={play} clear={() => {}} playerType="preview" auxiliary ignoreKeys />
       </Suspense>
     </div>
   );

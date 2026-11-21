@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { DaylightAPI } from '@/lib/api.mjs';
+import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
 import homeLogger from '../homeLogger.js';
 
 const logger = homeLogger.child({ component: 'ring-clips' });
@@ -13,30 +14,66 @@ export const clipsPath = (camera, day) => `api/v1/camera/${encodeURIComponent(ca
  * the list an error.
  */
 export function useRingClips(camera, days) {
-  const key = camera && days?.length ? `${camera}|${days.join(',')}` : null;
-  const [state, setState] = useState({ clips: [], loading: Boolean(key), error: null });
-  const [nonce, setNonce] = useState(0);
-  const reload = useCallback(() => setNonce((n) => n + 1), []);
-
-  useEffect(() => {
-    if (!key) { setState({ clips: [], loading: false, error: null }); return undefined; }
-    let live = true;
-    const [cam, dayList] = key.split('|');
-    const list = dayList.split(',');
-    setState((s) => ({ ...s, loading: true, error: null }));
-    Promise.allSettled(list.map((day) => DaylightAPI(clipsPath(cam, day)))).then((results) => {
-      if (!live) return;
-      const clips = results.flatMap((r) => (r.status === 'fulfilled' ? r.value?.clips || [] : []));
-      const failed = results.filter((r) => r.status === 'rejected');
-      logger.debug('home.ring.clips', { camera: cam, days: list, clips: clips.length, failedDays: failed.length });
-      if (failed.length) logger.warn('home.ring.clips.failed', { camera: cam, failedDays: failed.length, error: failed[0].reason?.message });
-      const error = failed.length === results.length ? (failed[0].reason || new Error('Clips failed to load')) : null;
-      setState({ clips, loading: false, error });
+  const dayList = days?.join(',') || '';
+  const [state, setState] = useState(null);
+  const read = useCallback(async (isCurrent, signal, retryDays) => {
+    if (!camera || !dayList) {
+      setState(null);
+      return;
+    }
+    const allDays = dayList.split(',');
+    const list = retryDays?.length
+      ? [...new Set(retryDays.filter(day => allDays.includes(day)))]
+      : allDays;
+    if (!list.length) return;
+    setState(current => {
+      const retained = current?.camera === camera && current.dayList === dayList ? current : null;
+      return {
+        camera,
+        dayList,
+        clips: retained?.clips || [],
+        failedDays: retained?.failedDays || [],
+        loading: true,
+        error: null,
+      };
     });
-    return () => { live = false; };
-  }, [key, nonce]);
+    const results = await Promise.allSettled(list.map(day => DaylightAPI(clipsPath(camera, day), {}, 'GET', { signal })));
+    if (!isCurrent()) return;
+    const failed = results.flatMap((result, index) => result.status === 'rejected' ? [list[index]] : []);
+    const fetchedClips = results.flatMap(result => result.status === 'fulfilled' ? result.value?.clips || [] : []);
+    logger.debug('home.ring.clips', { camera, days: list, clips: fetchedClips.length, failedDays: failed.length });
+    if (failed.length) {
+      const firstFailure = results.find(result => result.status === 'rejected')?.reason;
+      logger.warn('home.ring.clips.failed', { camera, failedDays: failed.length, error: firstFailure?.message });
+    }
+    setState(current => {
+      const retained = current?.camera === camera && current.dayList === dayList ? current : null;
+      const failedDaySet = new Set(retained?.failedDays || []);
+      list.forEach((day, index) => {
+        if (results[index].status === 'rejected') failedDaySet.add(day);
+        else failedDaySet.delete(day);
+      });
+      const failedDays = allDays.filter(day => failedDaySet.has(day));
+      const error = failedDays.length === allDays.length
+        ? (results.find(result => result.status === 'rejected')?.reason || retained?.error || new Error('Clips failed to load'))
+        : null;
+      return {
+        camera,
+        dayList,
+        clips: [...(retained?.clips || []), ...fetchedClips],
+        failedDays,
+        loading: false,
+        error,
+      };
+    });
+  }, [camera, dayList]);
+  const { reload } = useRefreshableRead(read);
+  useEffect(() => { reload(); }, [reload]);
 
-  return { ...state, reload };
+  if (!state || state.camera !== camera || state.dayList !== dayList) {
+    return { clips: [], failedDays: [], loading: Boolean(camera && dayList), error: null, reload };
+  }
+  return { clips: state.clips, failedDays: state.failedDays || [], loading: state.loading, error: state.error, reload };
 }
 
 export default useRingClips;

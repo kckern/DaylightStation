@@ -3,9 +3,11 @@ import { ActiveQualityButton } from "../quality/PlaybackQualityButtons.jsx";
 // Remote control for one device. The shared TransportBar remains target-bound;
 // this panel supplies only the remote overlay policy (predicted state and
 // pending fields) rather than a second set of transport controls.
-import React, { useCallback, useContext, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Button, Title, Text, Group, Stack, Badge, Menu } from '@mantine/core';
-import { IconPlaylistAdd, IconChevronLeft, IconSwitchHorizontal } from '@tabler/icons-react';
+import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
+import { IconPlaylistAdd, IconSwitchHorizontal } from '@tabler/icons-react';
+import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { useSessionController } from "../controller/useSessionController.js";
 import { usePeek } from "../peek/usePeek.js";
 import { useDevice } from "../fleet/useDevice.js";
@@ -39,6 +41,19 @@ export function PeekPanel({ deviceId }) {
   const realSnap = ctl.snapshot;
   const { device, entry } = useDevice(deviceId);
   const { push, pop, backDestination } = useNav();
+  const visit = useRef(null);
+  useLayoutEffect(() => {
+    visit.current = {};
+    return () => { visit.current = null; };
+  }, [deviceId]);
+  const captureLocalMoveNavigation = () => {
+    // A stopped screen can remove MoveToMenu before its claim settles. The
+    // selected Peek visit still owns navigation until the user leaves it.
+    const startedIn = visit.current;
+    return () => {
+      if (startedIn && visit.current === startedIn) push('nowPlaying', {});
+    };
+  };
   const devices = useContext(FleetContext)?.devices ?? [];
   // Steer another screen in one step (STEER.1b/AC3): the controls move to it; my aim is untouched.
   const otherScreens = devices.filter((d) => typeof d?.id === 'string' && d.id !== deviceId);
@@ -106,24 +121,25 @@ export function PeekPanel({ deviceId }) {
     <Stack data-testid="peek-panel" className="peek-panel" gap="md">
       <Group justify="space-between">
         <Button data-testid="peek-back" variant="subtle" color="gray" onClick={() => pop()}>
-          <IconChevronLeft size={16} aria-hidden /> {backDestination ?? 'Home'}
+          <UiIcon name="back" /> {backDestination ?? 'Home'}
         </Button>
         {otherScreens.length > 0 && (
-          <Menu position="bottom-start" withinPortal shadow="md">
-            <Menu.Target>
+          <ActionMenu
+            position="bottom-start" withinPortal shadow="md"
+            dropdownProps={{ 'data-testid': 'peek-switch-menu' }}
+            trigger={
               <Button data-testid="peek-switch" className="session-controls-btn" variant="subtle" color="gray" leftSection={<IconSwitchHorizontal size={16} aria-hidden />}>
                 Switch screen
               </Button>
-            </Menu.Target>
-            <Menu.Dropdown data-testid="peek-switch-menu">
-              <Menu.Label>Steer another screen</Menu.Label>
-              {otherScreens.map((d) => (
-                <Menu.Item key={d.id} data-testid={`peek-switch-${d.id}`} className="session-controls-menu-item" onClick={() => switchTo(d.id)}>
-                  {deviceName(d, d.id)}{deviceLocation(d) ? ` · ${deviceLocation(d)}` : ''}
-                </Menu.Item>
-              ))}
-            </Menu.Dropdown>
-          </Menu>
+            }
+          >
+            <Menu.Label>Steer another screen</Menu.Label>
+            {otherScreens.map((d) => (
+              <Menu.Item key={d.id} data-testid={`peek-switch-${d.id}`} className="session-controls-menu-item" onClick={() => switchTo(d.id)}>
+                {deviceName(d, d.id)}{deviceLocation(d) ? ` · ${deviceLocation(d)}` : ''}
+              </Menu.Item>
+            ))}
+          </ActionMenu>
         )}
         {entry?.isStale && <Badge color="yellow" variant="light">Out of date</Badge>}
         {entry?.offline && <Badge color="gray" variant="light">Offline</Badge>}
@@ -187,7 +203,8 @@ export function PeekPanel({ deviceId }) {
 
       <Group gap="xs">
         {snap?.currentItem && (
-          <MoveToMenu sourceId={deviceId} available={availability.available !== false} title={itemTitle} />
+          <MoveToMenu key={deviceId} sourceId={deviceId} available={availability.available !== false} title={itemTitle}
+            captureLocalMoveNavigation={captureLocalMoveNavigation} />
         )}
         {searchLauncher && (
           <Button

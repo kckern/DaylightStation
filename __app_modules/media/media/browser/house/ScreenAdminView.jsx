@@ -4,11 +4,12 @@
 // duplicate into its earlier self (confirm first, Unmerge afterwards); retire
 // a screen after seeing which routines point at it; restore a retired one.
 // Screens silent for 30 days fold into "Not seen lately".
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
 import { Alert, Button, Group, List, Radio, Stack, Text, TextInput, Title } from '@mantine/core';
 import { IconAlertCircle, IconArchive, IconArrowBackUp, IconArrowMerge, IconEdit, IconPlus } from '@tabler/icons-react';
 import { useFleetContext } from "../fleet/useFleetContext.js";
-import { ConfirmDialog } from "../shell/ConfirmDialog.jsx";
+import { ConfirmModal } from '@/lib/ui/ConfirmModal.jsx';
 import { RenameScreenDialog } from "./RenameScreenDialog.jsx";
 import { RoomNeighboursSection } from "./RoomNeighboursSection.jsx";
 import { useScreenAdmin } from "./useScreenAdmin.js";
@@ -133,11 +134,31 @@ export function ScreenAdminView() {
   const live = [...screens, ...notSeen];
   const nameOf = (id) => registry?.byId?.get?.(id)?.name ?? 'another screen';
 
-  const openRetire = async (screen) => {
-    setRetiring({ screen, routines: [], loading: true, error: null });
-    const result = await admin.routinesFor(screen);
-    setRetiring({ screen, routines: result.ok ? result.routines : [], loading: false, error: result.ok ? null : result.error });
-  };
+  const { routinesFor } = admin;
+  const retireScreen = retiring?.screen;
+  const mergeScreen = merging?.screen;
+  const mergeTarget = merging?.into;
+  const readRetireRoutines = useCallback(async (isCurrent, signal) => {
+    if (!retireScreen) return;
+    const result = await routinesFor(retireScreen, { signal });
+    if (!isCurrent()) return;
+    setRetiring(current => current && {
+      ...current, routines: result.ok ? result.routines : [], loading: false, error: result.ok ? null : result.error,
+    });
+  }, [retireScreen, routinesFor]);
+  const { reload: loadRetireRoutines } = useRefreshableRead(readRetireRoutines);
+  useEffect(() => { if (retireScreen) loadRetireRoutines(); }, [retireScreen, loadRetireRoutines]);
+
+  const readMergeRoutines = useCallback(async (isCurrent, signal) => {
+    if (!mergeScreen || !mergeTarget) return;
+    const [a, b] = await Promise.all([routinesFor(mergeScreen, { signal }), routinesFor(mergeTarget, { signal })]);
+    if (!isCurrent()) return;
+    setMerging(current => current && { ...current, routines: [...(a.routines ?? []), ...(b.routines ?? [])] });
+  }, [mergeScreen, mergeTarget, routinesFor]);
+  const { reload: loadMergeRoutines } = useRefreshableRead(readMergeRoutines);
+  useEffect(() => { if (mergeTarget) loadMergeRoutines(); }, [mergeTarget, loadMergeRoutines]);
+
+  const openRetire = screen => setRetiring({ screen, routines: [], loading: true, error: null });
   const confirmRetire = async () => {
     const result = await admin.retire(retiring.screen);
     if (result.ok) setRetiring(null);
@@ -146,12 +167,9 @@ export function ScreenAdminView() {
   const openMerge = async (screen) => {
     setMerging({ screen, into: null, routines: [], error: null });
   };
-  const chooseMergeTarget = async (intoId) => {
+  const chooseMergeTarget = (intoId) => {
     const into = live.find((s) => s.id === intoId) ?? null;
-    setMerging((m) => ({ ...m, into, routines: [] }));
-    if (!into) return;
-    const [a, b] = await Promise.all([admin.routinesFor(merging.screen), admin.routinesFor(into)]);
-    setMerging((m) => (m?.into?.id === into.id ? { ...m, routines: [...(a.routines ?? []), ...(b.routines ?? [])] } : m));
+    setMerging(current => current && { ...current, into, routines: [] });
   };
   const confirmMerge = async () => {
     const { screen, into } = merging;
@@ -192,7 +210,8 @@ export function ScreenAdminView() {
         <Title order={2} size="h4" id="screen-admin-list-title">Every screen</Title>
         <ul className="house-list" data-testid="screen-admin-list">{screens.map(item)}</ul>
       </section>
-      <RoomNeighboursSection screens={live} adjacency={registry?.roomAdjacency ?? {}} admin={admin} />
+      <RoomNeighboursSection screens={live} adjacency={registry?.roomAdjacency ?? {}}
+        savePending={registry?.roomSavePending} admin={admin} />
       {notSeen.length > 0 && (
         <details className="house-section" data-testid="screen-admin-not-seen">
           <summary><Text span fw={600}>Not seen lately ({notSeen.length})</Text> <Text span size="sm" c="dimmed">— silent for more than 30 days</Text></summary>
@@ -230,20 +249,23 @@ export function ScreenAdminView() {
         title={renaming ? `Name and room: ${renaming.name}` : ''}
         initialName={renaming?.name ?? ''}
         initialRoom={renaming?.room ?? ''}
-        onSubmit={(input) => admin.nameScreen(renaming, input)}
+        onSubmit={input => {
+          const current = registry?.byId?.get(renaming.id);
+          return admin.nameScreen(current?.id === renaming.id ? current : renaming, input);
+        }}
         nameOf={nameOf}
         saveLabel="Save"
         nameLabel="Name"
         testid="screen-admin-rename"
       />
 
-      <ConfirmDialog
-        open={!!retiring}
+      <ConfirmModal
+        opened={!!retiring}
         title={retiring ? `Retire ${retiring.screen.name}?` : ''}
         message="It leaves the screen list and its name becomes free. You can restore it later."
         confirmLabel={retiring?.loading ? 'Checking routines…' : 'Retire'}
         onConfirm={() => { if (!retiring?.loading) confirmRetire(); }}
-        onCancel={() => setRetiring(null)}
+        onClose={() => setRetiring(null)}
       >
         {retiring && !retiring.loading && (
           <div data-testid="screen-admin-retire-routines" className="house-section">
@@ -256,16 +278,16 @@ export function ScreenAdminView() {
           </div>
         )}
         {retiring?.error && <Text size="sm" className="house-tone--failed" role="alert" mb="sm">{retiring.error}</Text>}
-      </ConfirmDialog>
+      </ConfirmModal>
 
-      <ConfirmDialog
-        open={!!merging}
+      <ConfirmModal
+        opened={!!merging}
         title={merging ? `Merge ${merging.screen.name}` : ''}
         message="Merge a duplicate into its earlier self: its plays, spots and routines follow, and you can unmerge it afterwards."
         confirmLabel="Merge"
         confirmDisabled={!merging?.into}
         onConfirm={() => { if (merging?.into) confirmMerge(); }}
-        onCancel={() => setMerging(null)}
+        onClose={() => setMerging(null)}
       >
         {merging && (
           <Stack gap="xs" mb="md" data-testid="screen-admin-merge-dialog">
@@ -291,7 +313,7 @@ export function ScreenAdminView() {
             {merging.error && <Text size="sm" className="house-tone--failed" role="alert">{merging.error}</Text>}
           </Stack>
         )}
-      </ConfirmDialog>
+      </ConfirmModal>
     </div>
   );
 }

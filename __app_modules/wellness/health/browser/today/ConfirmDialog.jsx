@@ -21,7 +21,7 @@ import { Sheet } from '@/lib/ui';
  * operation behind an already-dismissed dialog.
  */
 export function ConfirmDialog({
-  open, title, body, confirmLabel = 'Delete', busy = false, error = null, onConfirm, onCancel,
+  open, title, body, confirmLabel = 'Delete', busy = false, confirmDisabled = false, error = null, onConfirm, onCancel,
 }) {
   if (!open) return null;
   return <Sheet open onClose={() => { if (!busy) onCancel(); }} title={title}>
@@ -30,7 +30,7 @@ export function ConfirmDialog({
       {error ? <Text size="sm" role="alert" c="red">{error}</Text> : null}
       <Group justify="flex-end" gap="xs">
         <Button size="sm" variant="subtle" disabled={busy} onClick={onCancel}>Cancel</Button>
-        <Button size="sm" color="red" loading={busy} onClick={onConfirm}>{confirmLabel}</Button>
+        <Button size="sm" color="red" loading={busy} disabled={confirmDisabled} onClick={onConfirm}>{confirmLabel}</Button>
       </Group>
     </Stack>
   </Sheet>;

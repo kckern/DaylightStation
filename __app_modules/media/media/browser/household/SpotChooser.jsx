@@ -6,14 +6,17 @@
 import React from 'react';
 import { Button, Modal, Stack, Text } from '@mantine/core';
 import { IconPlayerPlayFilled, IconRotate } from '@tabler/icons-react';
+import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 import { spotLine } from "./householdModel.js";
 
 export function SpotChooser({ choice, nameFor, onChoose, onClose }) {
-  if (!choice) return null;
-  const title = choice.item?.title ?? 'this';
+  const open = Boolean(choice);
+  const usesDismissStack = useDismissLayer(open, onClose);
+  const title = choice?.item?.title ?? 'this';
   return (
-    <Modal opened onClose={onClose} title={`Continue ${title} from…`} data-testid="spot-chooser" centered>
-      <Stack gap="sm">
+    <Modal opened={open} onClose={onClose} closeOnEscape={!usesDismissStack}
+      title={`Continue ${title} from…`} data-testid="spot-chooser" centered>
+      {choice && <Stack gap="sm">
         {choice.spots.map((spot, index) => {
           return (
             <Button
@@ -42,7 +45,7 @@ export function SpotChooser({ choice, nameFor, onChoose, onClose }) {
           From the beginning
         </Button>
         <Text size="xs" c="dimmed">Each screen keeps its own place.</Text>
-      </Stack>
+      </Stack>}
     </Modal>
   );
 }

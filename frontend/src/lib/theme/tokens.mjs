@@ -21,6 +21,14 @@ export const DS_TOKENS = Object.freeze({
     info:    '#58a6ff',
     live:    '#ff6b6b',
   }),
+  spacing: Object.freeze({ sm: '0.5rem', md: '0.75rem', lg: '1rem', xl: '1.25rem', xxl: '1.5rem' }),
+  type: Object.freeze({ caption: '0.7rem', label: '0.8125rem', detail: '0.85rem', heading: '1rem' }),
+  controls: Object.freeze({
+    'control-compact-height': '36px',
+    'control-touch-target': '44px',
+    'control-compact-radius': '9px',
+    'focus-width': '3px',
+  }),
   motion: Object.freeze({
     fast:   '120ms',
     base:   '200ms',
@@ -30,7 +38,7 @@ export const DS_TOKENS = Object.freeze({
   // The accent a surface gets when no pack names one (kiosk screens, auth,
   // anything outside an AppThemeProvider). Packs override it.
   accent: '#4a7bf7',
-  // Mirrors frontend/src/styles/_breakpoints.scss — change both together.
+  // Regenerate the Sass projection with node frontend/scripts/generate-browser-breakpoints.mjs.
   breakpoints: Object.freeze({ md: 768, lg: 1200 }),
 });
 
@@ -46,14 +54,21 @@ export function dsCssVars(pack = null) {
   for (const [role, hex] of Object.entries(colors)) {
     vars[`--ds-${role.replace(/([A-Z])/g, '-$1').toLowerCase()}`] = hex;
   }
-  for (const [name, hex] of Object.entries(DS_TOKENS.status)) {
+  for (const [name, hex] of Object.entries({ ...DS_TOKENS.status, ...pack?.status })) {
     vars[`--ds-${name}`] = hex;
+  }
+  for (const [name, value] of Object.entries(DS_TOKENS.spacing)) vars[`--ds-space-${name}`] = value;
+  for (const [name, value] of Object.entries(DS_TOKENS.type)) vars[`--ds-type-${name}`] = value;
+  for (const [name, value] of Object.entries(DS_TOKENS.controls)) {
+    vars[`--ds-${name}`] = value;
   }
   vars['--ds-motion-fast'] = DS_TOKENS.motion.fast;
   vars['--ds-motion-base'] = DS_TOKENS.motion.base;
   vars['--ds-motion-reveal'] = DS_TOKENS.motion.reveal;
   vars['--ds-motion-easing'] = DS_TOKENS.motion.easing;
   vars['--ds-accent'] = pack?.accent || DS_TOKENS.accent;
+  if (pack?.fontFamily) vars['--ds-font-family'] = pack.fontFamily;
+  if (pack?.fontFamilyMonospace) vars['--ds-font-family-monospace'] = pack.fontFamilyMonospace;
   return vars;
 }
 

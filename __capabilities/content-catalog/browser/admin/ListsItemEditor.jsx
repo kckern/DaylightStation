@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { FormDialog } from '../../../../frontend/src/lib/ui/FormDialog.jsx';
 import {
-  Modal,
   TextInput,
   Select,
   Switch,
@@ -35,23 +35,29 @@ function extractCustomFields(item) {
 }
 
 /**
- * Build save payload with only non-default values
- * Always includes label and input as they are required
+ * Build a sparse save payload, preserving explicit resets for edits.
+ * Always includes label and input as they are required.
  */
-function buildSavePayload(formData, customFields, preserveImageClear) {
+function buildSavePayload(formData, customFields, originalItem) {
   const payload = {
     label: formData.label?.trim() || '',
     input: formData.input?.trim() || ''
   };
 
-  // Add non-default values
+  // Edits include changed values even when they equal a creation default.
   for (const [key, defaultValue] of Object.entries(ITEM_DEFAULTS)) {
     const currentValue = formData[key];
+    if (currentValue === undefined) continue;
+
+    if (originalItem) {
+      const originalValue = originalItem[key] ?? defaultValue;
+      if (currentValue !== originalValue) payload[key] = currentValue;
+      continue;
+    }
 
     // Skip if value matches default
     if (currentValue === defaultValue) continue;
     if (currentValue === null && defaultValue === null) continue;
-    if (currentValue === undefined) continue;
 
     // Special handling for booleans - only include if different from default
     if (typeof defaultValue === 'boolean') {
@@ -75,9 +81,10 @@ function buildSavePayload(formData, customFields, preserveImageClear) {
     }
   }
 
-  // Controlled hosts can request an explicit null when an override is removed.
-  if (formData.image || preserveImageClear) {
-    payload.image = formData.image || null;
+  const originalImage = originalItem?.image ?? null;
+  const currentImage = formData.image ?? null;
+  if (currentImage !== originalImage) {
+    payload.image = currentImage;
   }
 
   // Merge custom fields
@@ -195,7 +202,7 @@ function SimpleMode({ formData, onChange, errors, sections, hideSection }) {
 /**
  * ListsItemEditor - Modal for editing list items with Simple/Full mode toggle
  */
-function ListsItemEditor({ hideSection = false, preserveImageClear = false, opened, onClose, onSave, item, loading, sections = [], isWatchlist = false }) {
+function ListsItemEditor({ hideSection = false, opened, onClose, onSave, item, loading, sections = [], isWatchlist = false }) {
   const [mode, setMode] = useState('simple');
   const [formData, setFormData] = useState({});
   const [customFields, setCustomFields] = useState({});
@@ -216,7 +223,6 @@ function ListsItemEditor({ hideSection = false, preserveImageClear = false, open
           // Playback
           shuffle: item.shuffle ?? ITEM_DEFAULTS.shuffle,
           continuous: item.continuous ?? ITEM_DEFAULTS.continuous,
-          loop: item.loop ?? ITEM_DEFAULTS.loop,
           fixedOrder: item.fixedOrder ?? ITEM_DEFAULTS.fixedOrder,
           volume: item.volume ?? ITEM_DEFAULTS.volume,
           playbackRate: item.playbackRate ?? ITEM_DEFAULTS.playbackRate,
@@ -243,7 +249,6 @@ function ListsItemEditor({ hideSection = false, preserveImageClear = false, open
           image: null,
           shuffle: ITEM_DEFAULTS.shuffle,
           continuous: ITEM_DEFAULTS.continuous,
-          loop: ITEM_DEFAULTS.loop,
           fixedOrder: ITEM_DEFAULTS.fixedOrder,
           volume: ITEM_DEFAULTS.volume,
           playbackRate: ITEM_DEFAULTS.playbackRate,
@@ -295,12 +300,13 @@ function ListsItemEditor({ hideSection = false, preserveImageClear = false, open
     e.preventDefault();
     if (!validate()) return;
 
-    const payload = buildSavePayload(formData, customFields, preserveImageClear);
+    const payload = buildSavePayload(formData, customFields, item);
+    if (!hideSection) payload.sectionIndex = formData.sectionIndex;
     await onSave(payload);
   };
 
   return (
-    <Modal
+    <FormDialog
       opened={opened}
       onClose={onClose}
       title={item ? 'Edit Item' : 'Add Item'}
@@ -367,7 +373,7 @@ function ListsItemEditor({ hideSection = false, preserveImageClear = false, open
           </Group>
         </Stack>
       </form>
-    </Modal>
+    </FormDialog>
   );
 }
 

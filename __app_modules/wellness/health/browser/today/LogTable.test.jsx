@@ -147,6 +147,43 @@ describe('LogTable', () => {
       [null, []],
     ]);
 
+    it.each(['{broken', '"bad"', '{}'])('repairs malformed collapse state on the next toggle (%s)', raw => {
+      const key = 'health:collapsed-dishes';
+      sessionStorage.setItem(key, raw);
+      const table = <LogTable byBucket={groupBucket} sessions={[]} onRowTap={() => {}} />;
+      const first = render(table, { wrapper });
+      fireEvent.click(screen.getByRole('button', { name: /collapse smoothie/i }));
+      expect(JSON.parse(sessionStorage.getItem(key))).toEqual(['g1']);
+      first.unmount();
+      render(table, { wrapper });
+      expect(screen.getByRole('button', { name: /expand smoothie/i })).toBeTruthy();
+    });
+
+    it('allows collapse and expand when the tab cannot access session storage', () => {
+      const storage = vi.spyOn(window, 'sessionStorage', 'get').mockImplementation(() => {
+        throw new DOMException('Storage blocked', 'SecurityError');
+      });
+      try {
+        render(<LogTable byBucket={groupBucket} sessions={[]} onRowTap={() => {}} />, { wrapper });
+        fireEvent.click(screen.getByRole('button', { name: /collapse smoothie/i }));
+        expect(screen.queryByText('Banana')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: /expand smoothie/i }));
+        expect(screen.getByText('Banana')).toBeTruthy();
+      } finally {
+        storage.mockRestore();
+      }
+    });
+
+    it('preserves another section’s newer collapse choice when toggling this dish', () => {
+      const key = 'health:collapsed-dishes';
+      render(<LogTable byBucket={groupBucket} sessions={[]} onRowTap={() => {}} />, { wrapper });
+      sessionStorage.setItem(key, JSON.stringify(['evening-dish']));
+      fireEvent.click(screen.getByRole('button', { name: /collapse smoothie/i }));
+      expect(JSON.parse(sessionStorage.getItem(key))).toEqual(['evening-dish', 'g1']);
+      fireEvent.click(screen.getByRole('button', { name: /expand smoothie/i }));
+      expect(JSON.parse(sessionStorage.getItem(key))).toEqual(['evening-dish']);
+    });
+
     it('a collapsed group shows its rolled-up kcal while its children are not rendered', () => {
       render(<LogTable byBucket={groupBucket} sessions={[]} onRowTap={() => {}} />, { wrapper });
       fireEvent.click(screen.getByRole('button', { name: /collapse smoothie/i }));

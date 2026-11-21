@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { DeviceHeader } from "./DeviceHeader.jsx";
 
@@ -121,6 +121,31 @@ describe('DeviceHeader', () => {
     await waitFor(() => expect(screen.getByTestId('hub-slot-detail').textContent)
       .toMatch(/^Couldn't reach the speaker/));
     expect(onFix).toHaveBeenCalledOnce();
+  });
+
+  it.each(['replace', 'unmount'])('ignores a deferred Fix result after %s without scheduling an expiry', async change => {
+    vi.useFakeTimers();
+    const schedule = vi.spyOn(globalThis, 'setTimeout');
+    try {
+      let settle;
+      const onFix = vi.fn(() => new Promise(resolve => { settle = resolve; }));
+      const header = color => <MantineProvider>
+        <DeviceHeader slot={{ ...baseSlot, color }} status={baseStatus} onFix={onFix} />
+      </MantineProvider>;
+      const view = render(header('red'));
+      fireEvent.click(screen.getByRole('button', { name: 'fix red' }));
+      if (change === 'unmount') view.unmount();
+      else view.rerender(header('blue'));
+      schedule.mockClear();
+      await act(async () => { settle({ result: 'Red recovered' }); });
+      expect(onFix).toHaveBeenCalledTimes(1);
+      expect(schedule).not.toHaveBeenCalledWith(expect.any(Function), 60000);
+      expect(screen.queryByText('Red recovered')).toBeNull();
+      if (change === 'replace') expect(screen.getByRole('button', { name: 'fix blue' })).toBeEnabled();
+    } finally {
+      schedule.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it('no Fix button without a handler', () => {

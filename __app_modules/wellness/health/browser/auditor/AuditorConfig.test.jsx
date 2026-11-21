@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { AuditorConfig } from "./AuditorConfig.jsx";
 import { cleanupPath as statusPath, useCleanup } from "../cleanup/CleanupQuestions.jsx";
 import { SettingsLog } from "./SettingsLog.jsx";
+import { HealthOperationsProvider } from '../operations/HealthOperationsProvider.jsx';
 const cleanupPath = statusPath;
-import { resetApiResourceCache } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { peekApiResource, resetApiResourceCache } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 
 const api = vi.fn();
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...args) => api(...args) }));
@@ -21,7 +22,7 @@ beforeEach(() => {
     triggers: all(TRIGGERS), permissions: all(PERMISSIONS) }, runs: [], questions: [], nextEligibleAt: null,
     options: { models: ['gpt-4o', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-5.6-luna'], triggers: TRIGGERS, permissions: PERMISSIONS, minGapMinutes: [0, 15, 30, 60], maxDailyCapUsd: 50 } };
   api.mockImplementation(async (path, body, method) => {
-    if (method) return {};
+    if (method === 'PATCH' || method === 'POST') return {};
     if (path.endsWith('/settings/log')) return { entries: [] };
     return structuredClone(status);
   });
@@ -117,9 +118,41 @@ describe('Auditor configuration', () => {
     fireEvent.click(screen.getByLabelText('Food edited'));
     await waitFor(() => patched({ expectedSettingsVersion: 8, triggers: { edits: false } }));
   });
+  it('keeps the new owner’s settings when a departed session finishes a save', async () => {
+    const alice = status;
+    const bob = { ...alice, version: 21, settingsVersion: 14, settings: { ...alice.settings, dailyCapUsd: 2 } };
+    let finish;
+    let reads = () => Promise.resolve(structuredClone(alice));
+    const save = new Promise(resolve => { finish = resolve; });
+    api.mockImplementation((path, _body, method) => {
+      if (path === `${cleanupPath}/settings` && method === 'PATCH') return save;
+      if (path === `${cleanupPath}/settings/log`) return Promise.resolve({ entries: [] });
+      return reads();
+    });
+    function Live() { return <><AuditorConfig resource={useCleanup()} spend={spend} /><SettingsLog /></>; }
+    const session = userId => <MantineProvider><HealthOperationsProvider userId={userId}><Live /></HealthOperationsProvider></MantineProvider>;
+    const view = render(session('alice'));
+    const label = 'Automatic cleanup';
+    fireEvent.click(await screen.findByLabelText(label));
+    patched({ expectedSettingsVersion: 3, enabled: true });
+
+    reads = () => Promise.resolve(structuredClone(bob));
+    view.rerender(session('bob'));
+    await waitFor(() => expect(screen.getByLabelText('Daily cap').value).toBe('$2'));
+    reads = () => new Promise(() => {});
+    const logReads = () => api.mock.calls.filter(([path]) => path === `${cleanupPath}/settings/log`).length;
+    const before = logReads();
+
+    await act(async () => { finish({ ...alice, version: 8, settingsVersion: 4, settings: { ...alice.settings, enabled: true } }); });
+    expect(peekApiResource(cleanupPath)).toEqual(bob);
+    expect(screen.getByLabelText(label).checked).toBe(false);
+    expect(screen.getByLabelText('Daily cap').value).toBe('$2');
+    expect(logReads()).toBe(before);
+    expect(api.mock.calls.filter(([, , method]) => method === 'PATCH')).toHaveLength(1);
+  });
   it('shows the value being saved and disables every control while the save is in flight', async () => {
     let finish;
-    api.mockImplementation((path, body, method) => (method ? new Promise(resolve => { finish = resolve; }) : Promise.resolve(structuredClone(status))));
+    api.mockImplementation((path, body, method) => (method === 'PATCH' ? new Promise(resolve => { finish = resolve; }) : Promise.resolve(structuredClone(status))));
     mount();
     fireEvent.click(screen.getByRole('switch', { name: /^Nutrient values/ }));
     await waitFor(() => expect(screen.getByRole('switch', { name: /^Nutrient values/ }).disabled).toBe(true));
@@ -145,7 +178,7 @@ describe('Auditor configuration', () => {
   });
   it('puts the cap back when saving it fails', async () => {
     api.mockImplementation(async (path, body, method) => {
-      if (method) throw Object.assign(new Error('HTTP 400: Bad Request - {"error":"Invalid daily cap"}'), { status: 400 });
+      if (method === 'PATCH') throw Object.assign(new Error('HTTP 400: Bad Request - {"error":"Invalid daily cap"}'), { status: 400 });
       return structuredClone(status);
     });
     mount();
@@ -157,7 +190,7 @@ describe('Auditor configuration', () => {
   });
   it('says settings changed and reloads on a version conflict', async () => {
     api.mockImplementation(async (path, body, method) => {
-      if (method) throw Object.assign(new Error('HTTP 409: Conflict - {"error":"Settings changed. Reload first."}'), { status: 409 });
+      if (method === 'PATCH') throw Object.assign(new Error('HTTP 409: Conflict - {"error":"Settings changed. Reload first."}'), { status: 409 });
       return structuredClone(status);
     });
     const res = mount();
@@ -167,7 +200,7 @@ describe('Auditor configuration', () => {
   });
   it('shows the server message on a bad request', async () => {
     api.mockImplementation(async (path, body, method) => {
-      if (method) throw Object.assign(new Error('HTTP 400: Bad Request - {"error":"Invalid daily cap"}'), { status: 400 });
+      if (method === 'PATCH') throw Object.assign(new Error('HTTP 400: Bad Request - {"error":"Invalid daily cap"}'), { status: 400 });
       return structuredClone(status);
     });
     mount();

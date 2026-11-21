@@ -80,7 +80,7 @@ const baseControls = {
 
 let outcomes;
 beforeEach(() => { outcomes = { recordLocal: vi.fn(() => 'a1'), resolveLocal: vi.fn() }; });
-afterEach(() => { vi.useRealTimers(); });
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe('SessionControlsPanel — this device', () => {
   it('sets a sleep timer from the menu and shows the time left on the controls and the handle', async () => {
@@ -228,6 +228,32 @@ describe('SessionControlsPanel — another screen (same controls, same layout)',
     expect(screen.getByTestId('sleep-timer-button').disabled).toBe(true);
     expect(screen.getByTestId('add-only-toggle').disabled).toBe(true);
     expect(screen.getByTestId('session-controls-unavailable').textContent).toMatch(/not reported its session controls/);
+  });
+
+  it('resumes the remote countdown from its deadline after a hidden interval without sending a command', () => {
+    vi.useFakeTimers();
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const endsAt = new Date(Date.now() + 20000).toISOString();
+    const { ctl, http } = remoteSetup({ ...baseControls, countdown: { endsAt, next: { title: 'Next episode' } } });
+    const view = render(<Providers remote={ctl}><SessionControlsPanel target={{ deviceId: 'tv' }} /></Providers>);
+    act(() => {
+      visibility.mockReturnValue('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+      vi.advanceTimersByTime(9000);
+    });
+    expect(screen.getByTestId('countdown-seconds')).toHaveTextContent('20');
+    act(() => {
+      visibility.mockReturnValue('visible');
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(screen.getByTestId('countdown-seconds')).toHaveTextContent('11');
+    expect(http).not.toHaveBeenCalled();
+    const timersWhileMounted = vi.getTimerCount();
+    view.unmount();
+    expect(vi.getTimerCount()).toBeLessThan(timersWhileMounted);
+    const timersAfterUnmount = vi.getTimerCount();
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    expect(vi.getTimerCount()).toBe(timersAfterUnmount);
   });
 
   it('cancels and starts a remote countdown', async () => {

@@ -17,7 +17,7 @@ import "./CameraRenderer.scss";
  * @param {boolean} [props.interactive=false] - click-to-center, drag-to-pan
  * @param {function} [props.onError] - error callback
  */
-export default function CameraRenderer({ cameraId, crop = true, interactive = false, onError: _onError }) {
+export function CameraView({ cameraId, detections, crop = true, interactive = false, onError: _onError }) {
   const logger = useMemo(() => getChildLogger({ component: 'CameraRenderer', cameraId }), [cameraId]);
   const videoRef = useRef(null);
   const containerRef = useRef(null);
@@ -25,7 +25,6 @@ export default function CameraRenderer({ cameraId, crop = true, interactive = fa
   // --- Data hooks ---
   const { src, loading, error, naturalSize, onImgLoad } = useSnapshotFetch(cameraId, logger);
   const { ready: liveReady, videoSize } = useHlsStream(cameraId, videoRef, logger);
-  const detections = useDetections(cameraId, logger);
 
   // --- Warmup phase ---
   const [previewVisible, setPreviewVisible] = useState(false);
@@ -191,4 +190,10 @@ export default function CameraRenderer({ cameraId, crop = true, interactive = fa
 
     </div>
   );
+}
+
+// A standalone renderer owns its detections. Home supplies one feed to both views.
+export default function CameraRenderer(props) {
+  const detections = useDetections(props.cameraId);
+  return <CameraView {...props} detections={detections} />;
 }

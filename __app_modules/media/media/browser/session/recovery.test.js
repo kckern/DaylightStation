@@ -51,13 +51,23 @@ describe('paused restore (RELY.7a)', () => {
     expect(mediaLog.sessionRestoredPaused).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'old', contentId: 'plex:1', position: 321 }));
   });
 
-  it('only an explicit Play releases the hold', () => {
+  it('reports explicit Play as the cause of releasing the hold', () => {
     const { controller } = makeController({ persistedSnapshot: persisted() });
     const listener = vi.fn();
     controller.restore.subscribe(listener);
     controller.transport.play();
     expect(controller.restore.isHeld()).toBe(false);
-    expect(listener).toHaveBeenCalled();
+    expect(listener).toHaveBeenCalledExactlyOnceWith(false, 'play');
+  });
+
+  it('releases the restore hold when Stop commits and preserves the queue', () => {
+    const { controller } = makeController({ persistedSnapshot: persisted() });
+    const listener = vi.fn();
+    controller.restore.subscribe(listener);
+    controller.transport.stop();
+    expect(controller.restore.isHeld()).toBe(false);
+    expect(listener).toHaveBeenCalledExactlyOnceWith(false, 'stop');
+    expect(controller.getSnapshot().queue.items.map(entry => entry.contentId)).toEqual(['plex:1', 'plex:2']);
   });
 
   it('a seek while held moves the restored spot without touching a player', () => {

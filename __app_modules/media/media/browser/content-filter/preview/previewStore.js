@@ -32,7 +32,7 @@ const NOOP_BINDING = Object.freeze({
   seek() {},
   play() {},
   peek() {},
-  refresh: async () => {},
+  refresh: async () => false,
   close() {},
 });
 
@@ -103,7 +103,11 @@ export const previewStore = {
   /** Force the filter on for one title (rating key or content id); null clears. */
   forceFilter(id) { forced = id == null ? null : digits(id); },
   isForced(id) { return forced != null && forced !== '' && digits(id) === forced; },
-  refresh() { return Promise.resolve(binding.refresh()).then(() => undefined); },
+  async refresh() {
+    const renderer = binding;
+    const accepted = await renderer.refresh();
+    return binding === renderer && accepted === true;
+  },
   close() { binding.close(); },
 };
 

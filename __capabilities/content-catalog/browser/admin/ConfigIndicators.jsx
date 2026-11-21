@@ -1,5 +1,5 @@
 import React from 'react';
-import { Group, Tooltip, Badge, ActionIcon } from '@mantine/core';
+import { Group, Tooltip, Badge, ThemeIcon, UnstyledButton } from '@mantine/core';
 import {
   IconArrowsShuffle,
   IconRepeat,
@@ -89,6 +89,10 @@ function ConfigIndicators({ item, onClick }) {
   return (
     <Tooltip label={tooltipContent} withArrow position="top">
       <Group
+        component={onClick ? UnstyledButton : 'span'}
+        type={onClick ? 'button' : undefined}
+        aria-label={onClick ? `Edit settings for ${item.label || item.input || 'item'} (${tooltipContent})` : tooltipContent}
+        role={onClick ? undefined : 'img'}
         gap={2}
         wrap="nowrap"
         style={{ cursor: onClick ? 'pointer' : 'default' }}
@@ -99,15 +103,14 @@ function ConfigIndicators({ item, onClick }) {
           if (!IconComponent) return null;
 
           return (
-            <ActionIcon
+            <ThemeIcon component="span" aria-hidden="true"
               key={indicator.field}
               size="xs"
               variant="subtle"
               color="dimmed"
-              style={{ pointerEvents: 'none' }}
             >
               <IconComponent size={14} />
-            </ActionIcon>
+            </ThemeIcon>
           );
         })}
 

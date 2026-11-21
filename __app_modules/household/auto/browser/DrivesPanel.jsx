@@ -9,7 +9,9 @@
 // beside it is worth tapping.
 
 import { useState } from 'react';
-import { LoadingState, ErrorState, EmptyState, Sheet } from '@/lib/ui';
+import { addCalendarDays, localDateKey } from '@/lib/calendarDay.js';
+import { LoadingState, ErrorState, EmptyState, Sheet, Select, useRetryRegion, useSheetSubmission } from '@/lib/ui';
+import { AutoSheetActions } from './AutoSheetActions.jsx';
 import { formatDistance, formatDuration, formatDay, formatTime, formatSpeed } from "./format.js";
 import { autoApi } from "./useAutoApi.js";
 import FuelSheet from "./FuelSheet.jsx";
@@ -18,19 +20,26 @@ import autoLog from "./autoLog.js";
 const PLACE_KINDS = ['home', 'school', 'church', 'work', 'fuel', 'store', 'service', 'other'];
 
 export default function DrivesPanel({
-  vehicleId, journeys, hidden, fuelLogs, loading, error, onReload, onFuelLogged,
+  vehicleId, journeys, hidden, fuelLogs, loading, busy, error, onReload,
   includeShuffles, onToggleShuffles,
 }) {
   const [naming, setNaming] = useState(null);
   const [fueling, setFueling] = useState(null);
-
-  if (loading) return <LoadingState label="drives" />;
-  if (error) return <ErrorState error={error} onRetry={onReload} label="Drives" />;
+  const [changedShortFilter, setChangedShortFilter] = useState(false);
+  const { regionProps, retry } = useRetryRegion(onReload, busy);
 
   const rows = journeys || [];
+  // Keep the used filter available for this visit, including when its
+  // next query has no hidden recordings.
+  const showShortFilter = hidden > 0 || includeShuffles || changedShortFilter;
+  const toggleShortFilter = () => {
+    setChangedShortFilter(true);
+    onToggleShuffles();
+  };
 
-  return (
-    <div className="auto-panel">
+  const content = loading ? <LoadingState label="drives" />
+    : error ? <ErrorState error={error} onRetry={retry} label="Drives" />
+    : <>
       {rows.length === 0 ? (
         <EmptyState
           title="No drives yet"
@@ -53,21 +62,27 @@ export default function DrivesPanel({
           ))}
         </ul>
       )}
+    </>;
 
-      {(hidden > 0 || includeShuffles) && (
-        <button type="button" className="auto-btn auto-btn--ghost auto-shuffle-toggle" onClick={onToggleShuffles}>
-          {includeShuffles
-            ? 'Hide very short recordings'
-            : `Show ${hidden} very short recording${hidden === 1 ? '' : 's'}`}
-        </button>
-      )}
-
+  return (
+    <>
+      <section {...regionProps} className="auto-panel auto-panel--drives" aria-label="Drives">
+        {showShortFilter && (
+          <button type="button" className="auto-btn auto-btn--ghost auto-shuffle-toggle" onClick={toggleShortFilter}>
+            {includeShuffles
+              ? 'Hide very short recordings'
+              : hidden > 0
+                ? `Show ${hidden} very short recording${hidden === 1 ? '' : 's'}`
+                : 'Show very short recordings'}
+          </button>
+        )}
+        {content}
+      </section>
       {fueling && (
         <FuelSheet
           vehicleId={vehicleId}
           initial={fueling}
           onClose={() => setFueling(null)}
-          onSaved={() => { setFueling(null); onFuelLogged?.(); }}
         />
       )}
 
@@ -75,10 +90,9 @@ export default function DrivesPanel({
         <NamePlaceSheet
           point={naming}
           onClose={() => setNaming(null)}
-          onSaved={() => { setNaming(null); onReload(); }}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -115,26 +129,26 @@ function caveats(journey) {
  * Returns null when there is nothing to ask about.
  */
 function pendingFuelStop(journey, fuelLogs) {
-  if (!journey.has_fuel_stop) return null;
+  if (!journey.has_fuel_stop || !Array.isArray(fuelLogs)) return null;
   const stop = [journey.origin, ...journey.stops, journey.destination]
     .find((point) => point?.is_fuel_stop);
   if (!stop) return null;
 
   const when = stop.arrived_at || journey.started_at || journey.ended_at;
   if (!when) return null;
-  const day = when.slice(0, 10);
+  const instant = new Date(when);
+  if (Number.isNaN(instant.getTime())) return null;
+  const day = localDateKey(instant);
+  const matchingDays = [addCalendarDays(day, -1), day, addCalendarDays(day, 1)];
 
-  const alreadyLogged = (fuelLogs || []).some((log) => {
+  const alreadyLogged = fuelLogs.some((log) => {
     if (log.place && stop.place_id && log.place !== stop.place_id) return false;
-    return Math.abs(daysBetween(log.date, day)) <= 1;
+    return matchingDays.includes(log.date);
   });
   if (alreadyLogged) return null;
 
   return { date: day, placeId: stop.place_id, placeLabel: stop.label };
 }
-
-const daysBetween = (a, b) =>
-  Math.round((new Date(`${a}T00:00:00`) - new Date(`${b}T00:00:00`)) / 86400000);
 
 function JourneyRow({ journey, onName, onLogFuel, fuelPrompt }) {
   const unnamed = [journey.origin, ...journey.stops, journey.destination]
@@ -204,60 +218,44 @@ function JourneyRow({ journey, onName, onLogFuel, fuelPrompt }) {
  * a thumb: it rises from the bottom, where the thumb already is, instead of
  * appearing in the middle where the reach is worst.
  */
-function NamePlaceSheet({ point, onClose, onSaved }) {
+function NamePlaceSheet({ point, onClose }) {
   const [label, setLabel] = useState('');
   const [kind, setKind] = useState('other');
-  const [saving, setSaving] = useState(false);
-  const [failure, setFailure] = useState(null);
+  const { submit, saving, failure } = useSheetSubmission(onClose, error => {
+    autoLog.warn('place.name_failed', { error: error?.message });
+  });
+  const valid = Boolean(label.trim());
 
-  const submit = async (event) => {
-    event.preventDefault();
-    if (!label.trim()) return;
-    setSaving(true);
-    setFailure(null);
-    try {
-      await autoApi.namePlace({ label: label.trim(), kind, lat: point.fix.lat, lon: point.fix.lon });
-      autoLog.info('place.named', { kind });
-      onSaved();
-    } catch (err) {
-      setFailure(err);
-      autoLog.warn('place.name_failed', { error: err?.message });
-    } finally {
-      setSaving(false);
-    }
+  const save = async () => {
+    await autoApi.namePlace({ label: label.trim(), kind, lat: point.fix.lat, lon: point.fix.lon });
+    autoLog.info('place.named', { kind });
   };
 
   return (
     <Sheet open onClose={onClose} title="Name this place">
-      <form onSubmit={submit} aria-label="Name this place">
+      <form onSubmit={event => submit(event, save, valid)} aria-label="Name this place">
         <label className="auto-field">
           <span>What is it?</span>
           <input
-            className="auto-input"
+            className="ds-input"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="Costco Gas"
-            autoFocus
+            data-autofocus
           />
         </label>
         <label className="auto-field">
           <span>Kind</span>
-          <select className="auto-input" value={kind} onChange={(e) => setKind(e.target.value)}>
+          <Select density="compact" className="ds-input" value={kind} onChange={(e) => setKind(e.target.value)}>
             {PLACE_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
-          </select>
+          </Select>
         </label>
         {kind === 'fuel' && (
           <p className="auto-field__note">
             Marking this a fuel stop lets the app spot fill-ups on the timeline.
           </p>
         )}
-        {failure && <p className="auto-field__error">{failure.message}</p>}
-        <div className="auto-sheet__actions">
-          <button type="button" className="auto-btn auto-btn--ghost" onClick={onClose}>Cancel</button>
-          <button type="submit" className="auto-btn auto-btn--primary" disabled={saving || !label.trim()}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
+        <AutoSheetActions failure={failure} onCancel={onClose} saving={saving} valid={valid} />
       </form>
     </Sheet>
   );

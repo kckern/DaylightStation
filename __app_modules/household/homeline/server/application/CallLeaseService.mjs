@@ -1,3 +1,5 @@
+import { HOMELINE_CALL_TOPIC, HOMELINE_CALL_TOPIC_PREFIX } from '#shared/contracts/media/topics.mjs';
+
 export const HOMELINE_SETUP_TTL_MS = 180_000;
 export const HOMELINE_HEARTBEAT_STALE_MS = 20_000;
 
@@ -89,7 +91,7 @@ export class CallLeaseService {
     const callId = this.#identityIssuer.newCallId();
     const lease = {
       callId, attemptId, dispatchId: this.#identityIssuer.newDispatchId(), deviceId, callerId, phonePeerId,
-      tvPeerId: null, topic: `homeline-call:${callId}`, state: 'reserved', priorState,
+      tvPeerId: null, topic: HOMELINE_CALL_TOPIC(callId), state: 'reserved', priorState,
       createdAt: now, expiresAt: now + HOMELINE_SETUP_TTL_MS, hardRecoveryUsed: false,
       softRecoveryUsed: false, wakeUsed: false, hardExtensionUsed: false,
       callTurnedDeviceOn: false, participants: new Map(), timer: null,
@@ -279,13 +281,13 @@ export class CallLeaseService {
   }
 
   canSubscribe(clientId, topic) {
-    if (!String(topic).startsWith('homeline-call:')) return true;
+    if (!String(topic).startsWith(HOMELINE_CALL_TOPIC_PREFIX)) return true;
     return [...this.#credentials.values()].some(record => !record.revoked && record.clientId === clientId
       && this.#byCall.get(record.callId)?.topic === topic);
   }
 
   validateSignal(clientId, message) {
-    if (!String(message?.topic).startsWith('homeline-call:')) return { ok: true, message };
+    if (!String(message?.topic).startsWith(HOMELINE_CALL_TOPIC_PREFIX)) return { ok: true, message };
     const record = [...this.#credentials.values()].find(item => !item.revoked && item.clientId === clientId
       && item.callId === message.callId && item.role === message.role && item.peerId === message.peerId);
     const lease = record && this.#byCall.get(record.callId);

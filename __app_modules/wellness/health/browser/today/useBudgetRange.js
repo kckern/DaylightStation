@@ -21,7 +21,7 @@ const logger = createAppLogger('health').child('budget-range');
 /**
  * @param {string} from - YYYY-MM-DD, inclusive
  * @param {string} to - YYYY-MM-DD, inclusive
- * @returns {{ days: Array, byDate: Map, loading: boolean, error: any, reload: Function }}
+ * @returns {{ days: Array, byDate: Map, data: object | null, loading: boolean, revalidating: boolean, error: any, reload: Function }}
  *   `days` is the server's array verbatim: an entry is either a computed day or
  *   a gap `{ date, error }`. Gaps are NOT filtered out — a caller that wants to
  *   draw a hole needs to know where the holes are.
@@ -33,7 +33,7 @@ export function useBudgetRange(from, to, { enabled = true } = {}) {
   const res = useApiResource(path, { label: 'budget-range', logger, swr: true, enabled });
   const days = useMemo(() => res.data?.days || [], [res.data]);
   const byDate = useMemo(() => new Map(days.map((d) => [d.date, d])), [days]);
-  return { days, byDate, data: res.data, loading: res.loading, error: res.error, reload: res.reload };
+  return { days, byDate, data: res.data, loading: res.loading, revalidating: res.revalidating, error: res.error, reload: res.reload };
 }
 
 export default useBudgetRange;

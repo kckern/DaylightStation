@@ -1,7 +1,8 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
+import { resetApiResourceCache } from '../../../../../frontend/src/lib/hooks/useApiResource.js';
 
 const dispatchLeafVerb = vi.fn();
 const queuePlayNow = vi.fn();
@@ -25,6 +26,7 @@ import { DetailView } from "./DetailView.jsx";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetApiResourceCache();
   contentState = { info: { title: 'Episode 3', type: 'episode', thumbnail: 'episode.jpg' }, loading: false, error: null };
   backDestination = 'Browse';
   apiMock.mockReset();
@@ -54,6 +56,47 @@ describe('DetailView facts (FIND.8a/AC2)', () => {
 });
 
 describe('DetailView Play Now', () => {
+  it.each([
+    ['recent fallback', [], 1440, '36 min left'],
+    ['carry-on precedence', [{ contentId: 'plex:55854', playhead: 2460, duration: 3600 }], 2460, '19 min left'],
+  ])('waits for the preferred resume source on a cold item link with %s', async (_case, carryOn, startAt, progress) => {
+    contentState.info = { title: 'Arrival', type: 'movie', duration: 3600 };
+    let finishCarryOn;
+    const pending = new Promise(resolve => { finishCarryOn = resolve; });
+    apiMock.mockImplementation(path => {
+      if (path === 'api/v1/media/household/carry-on?limit=12') return pending;
+      if (path === 'api/v1/media/household/recent?limit=24') {
+        return Promise.resolve({ items: [{ contentId: 'plex:55854', playhead: 1440, duration: 3600 }] });
+      }
+      return Promise.resolve({ items: [] });
+    });
+    render(<MantineProvider><DetailView contentId="plex:55854" /></MantineProvider>);
+    const play = screen.getByTestId('detail-play-now');
+    await act(async () => {});
+    expect(apiMock).toHaveBeenCalledWith('api/v1/media/household/carry-on?limit=12', {}, 'GET', { signal: expect.any(AbortSignal) });
+    expect(apiMock).toHaveBeenCalledWith('api/v1/media/household/recent?limit=24', {}, 'GET', { signal: expect.any(AbortSignal) });
+    expect(play).toBeDisabled();
+    expect(screen.queryByTestId('detail-progress')).toBeNull();
+    fireEvent.click(play);
+    expect(dispatchLeafVerb).not.toHaveBeenCalled();
+
+    await act(async () => { finishCarryOn({ items: carryOn }); });
+    expect(screen.getByTestId('detail-progress')).toHaveTextContent(progress);
+    expect(play).toBeEnabled();
+    fireEvent.click(play);
+    expect(dispatchLeafVerb).toHaveBeenCalledWith('playNow', 'plex:55854', expect.any(Object), { startAt });
+  });
+
+  it('lets the playback resolver start the item when both household reads fail', async () => {
+    apiMock.mockImplementation(path => path.includes('/household/')
+      ? Promise.reject(new Error('History unavailable')) : Promise.resolve({ items: [] }));
+    render(<MantineProvider><DetailView contentId="plex:685088" /></MantineProvider>);
+    const play = screen.getByTestId('detail-play-now');
+    await waitFor(() => expect(play).toBeEnabled());
+    fireEvent.click(play);
+    expect(dispatchLeafVerb).toHaveBeenCalledWith('playNow', 'plex:685088', expect.any(Object));
+  });
+
   it('keeps the visible aim beside every detail-page playback verb', () => {
     render(<MantineProvider><DetailView contentId="plex:685088" /></MantineProvider>);
     expect(screen.getByTestId('detail-aim')).toHaveTextContent('Aim: This device');
@@ -97,9 +140,11 @@ describe('DetailView Play Now', () => {
     expect(pop).toHaveBeenCalledTimes(1);
   });
 
-  it('routes the loaded detail item through the current destination dispatcher', () => {
+  it('routes the loaded detail item through the current destination dispatcher', async () => {
     render(<MantineProvider><DetailView contentId="plex:685088" /></MantineProvider>);
-    fireEvent.click(screen.getByTestId('detail-play-now'));
+    const play = screen.getByTestId('detail-play-now');
+    await waitFor(() => expect(play).toBeEnabled());
+    fireEvent.click(play);
 
     expect(dispatchLeafVerb).toHaveBeenCalledWith('playNow', 'plex:685088', expect.objectContaining({
       id: 'plex:685088', title: 'Episode 3', thumbnail: 'episode.jpg',

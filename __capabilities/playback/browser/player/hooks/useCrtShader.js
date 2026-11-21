@@ -14,7 +14,7 @@ import { createCrtRenderer, CRT_GEOM_PRESET, DEFAULT_PRE_FILTER } from '../lib/c
  *
  * @param {Object} options
  * @param {React.RefObject} options.canvasRef  - canvas to render into
- * @param {React.RefObject} options.mediaRef   - the video element, or its host
+ * @param {HTMLVideoElement|null} options.video - current native video element
  * @param {boolean} options.enabled            - whether the effect should run
  * @param {Object} [options.params]            - crt-geom parameter overrides
  * @param {Object} [options.preFilter]         - { blurRadiusSourcePx, blurMix }
@@ -23,7 +23,7 @@ import { createCrtRenderer, CRT_GEOM_PRESET, DEFAULT_PRE_FILTER } from '../lib/c
  */
 export function useCrtShader({
   canvasRef,
-  mediaRef,
+  video,
   enabled = false,
   params,
   preFilter,
@@ -34,14 +34,6 @@ export function useCrtShader({
   const [active, setActive] = useState(false);
   const [fellBack, setFellBack] = useState(false);
 
-  // dash-video keeps the real <video> in shadow DOM.
-  const resolveVideo = () => {
-    const el = mediaRef?.current;
-    if (!el) return null;
-    if (el.shadowRoot) return el.shadowRoot.querySelector('video') || el;
-    return el;
-  };
-
   useEffect(() => {
     if (!enabled) {
       setActive(false);
@@ -49,7 +41,6 @@ export function useCrtShader({
       return undefined;
     }
     const canvas = canvasRef?.current;
-    const video = resolveVideo();
     if (!canvas || !video) return undefined;
 
     let disposed = false;
@@ -118,7 +109,7 @@ export function useCrtShader({
       if (teardown) teardown();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, canvasRef, mediaRef, logger, renderScale]);
+  }, [enabled, canvasRef, video, logger, renderScale]);
 
   // Parameter tweaks should not tear the renderer down and remint everything.
   useEffect(() => {

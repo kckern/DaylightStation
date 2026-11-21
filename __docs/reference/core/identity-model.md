@@ -76,6 +76,12 @@ Within a household, people are represented as either **profiles** or **users**.
 
 ---
 
+## Admin sign-in
+
+Claiming a profile sets its password on the server. If the browser cannot save the session after a successful claim or sign-in, Admin keeps the username and opens the sign-in form. Once site storage is available, the user can sign in with the password they already set.
+
+---
+
 ## Social Links
 
 Social links connect internal entities (households, users) to external protocol accounts for federation.

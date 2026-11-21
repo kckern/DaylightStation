@@ -2,8 +2,9 @@ import { DaylightAPI } from '@/lib/api.mjs';
 
 const commandId = () => `web:${crypto.randomUUID?.() || `${Date.now()}:${Math.random()}`}`;
 
-export function fetchSession(id) {
-  return DaylightAPI(`api/v1/gaming/sessions/${id}`);
+export function fetchSession(id, { signal } = {}) {
+  const path = `api/v1/gaming/sessions/${id}`;
+  return signal ? DaylightAPI(path, {}, 'GET', { signal }) : DaylightAPI(path);
 }
 
 export function fetchExperienceContent(experienceId, contentId) {

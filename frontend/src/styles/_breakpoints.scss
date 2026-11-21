@@ -2,10 +2,10 @@
 // Global responsive breakpoints — import in any app or module SCSS.
 // Mobile-first: styles outside mixins apply to all viewports.
 
-$bp-md: 768px;   // 2-column threshold (tablet)
-$bp-lg: 1200px;  // 3-column threshold (desktop)
+@forward 'breakpoint-values';
+@use 'breakpoint-values' as values;
 
-@mixin mobile-only  { @media (max-width: #{$bp-md - 1}) { @content; } }
-@mixin tablet-up    { @media (min-width: $bp-md) { @content; } }
-@mixin desktop-up   { @media (min-width: $bp-lg) { @content; } }
-@mixin tablet-only  { @media (min-width: $bp-md) and (max-width: #{$bp-lg - 1}) { @content; } }
+@mixin mobile-only  { @media (max-width: #{values.$bp-md - 1}) { @content; } }
+@mixin tablet-up    { @media (min-width: values.$bp-md) { @content; } }
+@mixin desktop-up   { @media (min-width: values.$bp-lg) { @content; } }
+@mixin tablet-only  { @media (min-width: values.$bp-md) and (max-width: #{values.$bp-lg - 1}) { @content; } }

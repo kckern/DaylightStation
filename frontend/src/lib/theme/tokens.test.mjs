@@ -1,6 +1,9 @@
+import { fileURLToPath } from 'node:url';
+import * as sass from 'sass';
 import { describe, it, expect } from 'vitest';
 import { DS_TOKENS, dsCssVars, dsRootCss } from './tokens.mjs';
 import { installRootTokens } from './installRootTokens.js';
+import { ADMIN_PACK } from '../../modules/Admin/adminTheme.js';
 import { PACKS } from './packs.mjs';
 import { createAppTheme } from './createAppTheme.js';
 
@@ -22,9 +25,22 @@ describe('DS token contract', () => {
 
   it('emits every token as a --ds-* CSS var', () => {
     const vars = dsCssVars();
+    for (const [name, value] of Object.entries(DS_TOKENS.spacing)) expect(vars[`--ds-space-${name}`]).toBe(value);
+    for (const [name, value] of Object.entries(DS_TOKENS.type)) expect(vars[`--ds-type-${name}`]).toBe(value);
     expect(vars['--ds-surface']).toBe(DS_TOKENS.colors.surface);
     expect(vars['--ds-danger']).toBe(DS_TOKENS.status.danger);
     expect(vars['--ds-motion-base']).toBe('200ms');
+  });
+
+  it('shares compact control geometry across theme packs', () => {
+    for (const pack of [PACKS.health, PACKS.home]) {
+      expect(dsCssVars(pack)).toMatchObject({
+        '--ds-control-compact-height': '36px',
+        '--ds-control-touch-target': '44px',
+        '--ds-control-compact-radius': '9px',
+        '--ds-focus-width': '3px',
+      });
+    }
   });
 
   it('a surface with no pack still gets the base accent', () => {
@@ -55,6 +71,17 @@ describe('DS token contract', () => {
     expect(vars['--ds-accent']).toBe(PACKS.health.accent);
   });
 
+  it('keeps app typography in the shared theme pack and emits its CSS token', () => {
+    expect(dsCssVars(PACKS.auto)['--ds-font-family']).toBe(PACKS.auto.fontFamily);
+    expect(createAppTheme(PACKS.auto).fontFamily).toBe(PACKS.auto.fontFamily);
+    expect(createAppTheme(PACKS.home).fontFamily).toBe(PACKS.home.fontFamily);
+    expect(createAppTheme(PACKS.admin).fontFamily).toBe(PACKS.admin.fontFamily);
+    expect(createAppTheme(PACKS.admin).fontFamilyMonospace).toBe(PACKS.admin.fontFamilyMonospace);
+    expect(createAppTheme(PACKS.admin).headings).toMatchObject(PACKS.admin.headings);
+    expect(dsCssVars(PACKS.health)['--ds-font-family']).toBeUndefined();
+    expect(dsCssVars(PACKS.admin)['--ds-font-family-monospace']).toBe(PACKS.admin.fontFamilyMonospace);
+  });
+
   it('every pack has name, character, primaryColor, accent', () => {
     for (const [key, pack] of Object.entries(PACKS)) {
       expect(pack.name, key).toBeTruthy();
@@ -70,4 +97,33 @@ describe('DS token contract', () => {
     expect(theme.colors.surface).toHaveLength(10);
     expect(theme.other.success).toBe(DS_TOKENS.status.success);
   });
+});
+
+it('supplies the Admin palette to CSS and keeps both semantic and branded Mantine ramps', () => {
+  const theme = createAppTheme(ADMIN_PACK);
+  expect(dsCssVars(PACKS.admin)['--ds-border']).toBe('#2A2E3D');
+  expect(theme.colors.border[0]).toBe('#2A2E3D');
+  expect(theme.colors['ds-blue'][4]).toBe('#4A7BF7');
+  expect(theme.components.Portal.defaultProps.target).toBe('#admin-portals');
+});
+
+it('exposes the Feed reading chrome colors through the shared semantic roles', () => {
+  expect(dsCssVars(PACKS.feed)).toMatchObject({
+    '--ds-background': '#0f1113', '--ds-surface': '#17191c', '--ds-text-high': '#f1f3f5',
+  });
+});
+
+it('compiles the shared Sass mixins at the JavaScript breakpoint boundaries', () => {
+  const { md, lg } = DS_TOKENS.breakpoints;
+  const { css } = sass.compileString(`
+    @use 'breakpoints' as bp;
+    @include bp.mobile-only { .mobile { display: block } }
+    @include bp.tablet-up { .tablet { display: block } }
+    @include bp.desktop-up { .desktop { display: block } }
+    @include bp.tablet-only { .middle { display: block } }
+  `, { loadPaths: [fileURLToPath(new URL('../../styles/', import.meta.url))] });
+  expect(css).toContain(`(max-width: ${md - 1}px)`);
+  expect(css).toContain(`(min-width: ${md}px)`);
+  expect(css).toContain(`(min-width: ${lg}px)`);
+  expect(css).toContain(`(min-width: ${md}px) and (max-width: ${lg - 1}px)`);
 });

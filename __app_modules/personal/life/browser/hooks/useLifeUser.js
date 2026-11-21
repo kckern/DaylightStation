@@ -1,6 +1,9 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useApiResource } from '@/lib/hooks/useApiResource.js';
+import { browserPreference } from '@/lib/browserPreference.js';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
-import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
+
+const EMPTY_USERS = [];
 
 let _logger;
 function logger() {
@@ -9,7 +12,7 @@ function logger() {
 }
 
 /** localStorage key holding the manually-selected household username. */
-const STORAGE_KEY = 'life.username';
+const memberPreference = browserPreference('life.username', null, username => username || null);
 
 /**
  * Context carrying the backend-resolved life user ({ username, displayName }).
@@ -23,16 +26,6 @@ export function useLifeUsername() {
   return useContext(LifeUserContext)?.username || null;
 }
 
-/** Read the stored username selection, tolerating environments without localStorage. */
-function readStoredUsername() {
-  try {
-    if (typeof localStorage === 'undefined') return null;
-    return localStorage.getItem(STORAGE_KEY) || null;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Resolve the current life user + the household roster for the switcher.
  *
@@ -43,71 +36,49 @@ function readStoredUsername() {
  * Select.
  *
  * @returns {{ user: object|null, users: Array<{username,displayName}>,
- *   setUsername: (username: string|null) => void, loading: boolean, error: string|null }}
+ *   setUsername: (username: string|null) => void, loading: boolean, error: string|null,
+ *   rosterError: Error|null, rosterLoading: boolean, rosterRetrying: boolean,
+ *   retryRoster: () => Promise<void> }}
  */
 export function useLifeUser() {
-  const [selected, setSelected] = useState(readStoredUsername);
-  const [user, setUser] = useState(null);
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [selected, setSelected] = useState(memberPreference.read);
+  const [rosterRetrying, setRosterRetrying] = useState(false);
+  const roster = useApiResource('api/v1/life/users', { label: 'Life household roster', logger: logger() });
+  const users = Array.isArray(roster.data?.users) ? roster.data.users : EMPTY_USERS;
+  const qs = selected ? `?username=${encodeURIComponent(selected)}` : '';
+  const identity = useApiResource(`api/v1/life/user${qs}`, { label: 'Life household member', logger: logger() });
+  const resolved = identity.data;
+  const matches = typeof resolved?.username === 'string' && !!resolved.username && (!selected || resolved.username === selected);
+  const user = matches ? resolved : null;
+  const error = identity.error?.message || (!identity.loading && !user ? 'Could not resolve the selected household member.' : null);
 
-  // Resolve the active user, re-running when the selection changes.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const qs = selected ? `?username=${encodeURIComponent(selected)}` : '';
-        const json = await DaylightAPI(`api/v1/life/user${qs}`);
-        if (!cancelled) {
-          setUser(json);
-          logger().info('life.user.resolved', { username: json.username, selected: !!selected });
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err.message);
-          logger().warn('life.user.error', { error: err.message });
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [selected]);
+    if (user) logger().info('life.user.resolved', { username: user.username, selected: !!selected });
+    else if (error) logger().warn('life.user.error', { error });
+  }, [user, error, selected]);
 
-  // Load the household roster once for the switcher.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const json = await DaylightAPI('api/v1/life/users');
-        if (!cancelled) {
-          const list = Array.isArray(json.users) ? json.users : [];
-          setUsers(list);
-          logger().debug('life.users.loaded', { count: list.length });
-        }
-      } catch (err) {
-        if (!cancelled) logger().warn('life.users.error', { error: err.message });
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+    if (roster.error) logger().warn('life.users.error', { error: roster.error.message });
+    else if (roster.data) logger().debug('life.users.loaded', { count: users.length });
+  }, [roster.data, roster.error, users.length]);
 
   // Persist + apply a new user selection; the resolve effect refetches /user.
   const setUsername = useCallback((username) => {
-    try {
-      if (typeof localStorage !== 'undefined') {
-        if (username) localStorage.setItem(STORAGE_KEY, username);
-        else localStorage.removeItem(STORAGE_KEY);
-      }
-    } catch {
-      // Storage unavailable (private mode, etc.) — selection still applies for the session.
-    }
+    if (username) memberPreference.write(username);
+    else memberPreference.clear();
     setSelected(username || null);
     logger().info('life.user.switched', { username });
   }, []);
 
-  return { user, users, setUsername, loading, error };
+  const retryRoster = useCallback(async () => {
+    setRosterRetrying(true);
+    try { await roster.refresh(); }
+    catch { /* The resource exposes the read error to the header. */ }
+    finally { setRosterRetrying(false); }
+  }, [roster.refresh]);
+
+  return {
+    user, users, setUsername, loading: identity.loading, error, retry: identity.reload,
+    rosterError: roster.error, rosterLoading: roster.loading, rosterRetrying, retryRoster,
+  };
 }

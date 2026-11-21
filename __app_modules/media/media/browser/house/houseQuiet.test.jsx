@@ -3,11 +3,15 @@
 // playing; screens that couldn't be reached are listed.
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, act } from '@testing-library/react';
+import { render, act, fireEvent } from '@testing-library/react';
+import { MantineProvider } from '@mantine/core';
+import { HouseQuietBar } from "./HouseQuietControls.jsx";
+import { getLocalPlayerFeatures } from "../session/localPlayerFeatures.js";
 import { planQuiet, useHouseQuiet } from "./houseQuiet.js";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { PeekContext } from "../peek/PeekContext.js";
 import { LocalSessionContext } from "../session/LocalSessionContext.js";
+import { createLocalSessionController } from "../session/LocalSessionController.js";
 import { DispatchContext } from "../cast/DispatchProvider.jsx";
 
 const devices = [
@@ -79,6 +83,61 @@ function harness({ controllers, localTransport, resumable = null }) {
 }
 
 describe('useHouseQuiet', () => {
+  it('updates the mounted house controls when the local session reports playback', async () => {
+    const controller = createLocalSessionController({ clientId: 'c1' });
+    const pause = vi.fn();
+    controller.setPlayerHandle({ pause });
+    controller.queue.playNow({ contentId: 'plex:1', format: 'audio', title: 'Arrival' });
+    controller.onPlayerStateChange('paused', 'plex:1');
+    const unsubscribe = vi.fn();
+    const originalSubscribe = controller.subscribe;
+    const subscribe = vi.spyOn(controller, 'subscribe').mockImplementation(listener => {
+      const dispose = originalSubscribe(listener);
+      return () => { dispose(); unsubscribe(); };
+    });
+    const view = render(
+      <MantineProvider>
+        <LocalSessionContext.Provider value={{ controller }}><HouseQuietBar /></LocalSessionContext.Provider>
+      </MantineProvider>,
+    );
+    expect(view.getByRole('button', { name: 'Stop all' })).toBeEnabled();
+    expect(view.queryByRole('button', { name: 'Pause all' })).toBeNull();
+
+    act(() => controller.onPlayerStateChange('playing', 'plex:1'));
+    await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Pause all' })); });
+    expect(pause).toHaveBeenCalledTimes(1);
+    act(() => controller.onPlayerStateChange('paused', 'plex:1'));
+    expect(view.queryByRole('button', { name: 'Pause all' })).toBeNull();
+    expect(view.getByRole('button', { name: 'Stop all' })).toBeEnabled();
+
+    view.unmount();
+    expect(unsubscribe).toHaveBeenCalledTimes(subscribe.mock.calls.length);
+    controller.disposeRecovery();
+  });
+
+  it('offers Stop all only while music remains on an otherwise idle device', () => {
+    const features = getLocalPlayerFeatures();
+    const fleet = { devices: [], store: { getEntry } };
+    const local = { controller: { subscribe: () => () => {}, getSnapshot: () => ({ state: 'idle' }) } };
+    const view = render(
+      <MantineProvider>
+        <FleetContext.Provider value={fleet}>
+          <LocalSessionContext.Provider value={local}><HouseQuietBar /></LocalSessionContext.Provider>
+        </FleetContext.Provider>
+      </MantineProvider>,
+    );
+    try {
+      expect(view.queryByRole('button', { name: 'Stop all' })).toBeNull();
+      act(() => features.setMusicState({ contentId: 'plex:5', state: 'playing' }));
+      expect(view.getByRole('button', { name: 'Stop all' })).toBeEnabled();
+      act(() => features.setMusicState(null));
+      expect(view.queryByRole('button', { name: 'Stop all' })).toBeNull();
+    } finally {
+      view.unmount();
+      features.setMusicState(null);
+    }
+  });
+
   it('Pause all remembers the screens it paused and reports the ones it could not reach', async () => {
     const tv = { transport: { pause: vi.fn(async () => ({ ok: true })) } };
     const local = { pause: vi.fn(), play: vi.fn(), stop: vi.fn() };

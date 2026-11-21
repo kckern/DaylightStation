@@ -173,7 +173,7 @@ The shell's `Aa` menu persists theme, text size, line spacing, reading width, de
 
 Expanded articles expose notes and quoted highlights. Capturing a selection stores a portable `TextQuoteSelector` locator containing exact text plus short prefix/suffix context. Notes are account-scoped and included in Feed export/import.
 
-The Download action stores the normalized item and currently available detail in user-scoped IndexedDB. The `?view=offline` Reader view lists up to 100 device-local editions, and Scroll detail can fall back to a downloaded edition when its API request fails. Cached annotations remain readable; note creation/edit/delete and read/save/archive actions queue in user-scoped local storage and replay in order when connectivity returns. Remote media availability still depends on the original resource.
+The Download action stores the normalized item and currently available detail in user-scoped IndexedDB. The `?view=offline` Reader view lists up to 100 device-local editions, and Scroll detail can fall back to a downloaded edition when its API request fails. Cached annotations remain readable; note creation/edit/delete and read/save/archive actions queue in user-scoped local storage and replay in order when connectivity returns. Reader and Scroll detail show pending note changes over the latest server or cached notes, including changes queued after an article closed. Open tabs refresh their view when another tab changes the note queue. Reader also applies queued item actions to mounted rows and downloads. After an item queue drains, it reloads the current stream or history filter through the number of pages already loaded, keeping the existing rows visible until the server replies. A later edit or deletion of a pending note follows the earlier write during replay. Remote media availability still depends on the original resource.
 
 ---
 
@@ -254,7 +254,11 @@ Each article renders as a single-line row that expands into an accordion on clic
 
 ### Expanded State
 
-Shows article metadata (feed title, author, date), full HTML content (capped at 400px with fade gradient, "Read more" to uncap), and "Open original" link.
+Shows article metadata (feed title, author, date), full HTML or plain-text
+content (capped at 400px with fade gradient, "Read more" to uncap), and "Open
+original" link. While the row is open, a resize observer recalculates whether
+the visible content exceeds its cap; it disconnects when the row closes so a
+phone rotation can reveal or remove "Read more" without reopening the article.
 
 ### Read/Unread Styling
 
@@ -333,7 +337,7 @@ Legacy compatibility endpoint for marking Reader items read or unread. Current c
 }
 ```
 
-New clients use the unified `PATCH /api/v1/feed/items/state` endpoint for read, unread, save, unsave, archive, and unarchive. The legacy Reader mark endpoint remains for compatibility. Local mutations roll back on request failure; an accepted local mutation whose FreshRSS write fails remains visible with `syncStatus: "pending"` and is retried durably.
+New clients use the unified `PATCH /api/v1/feed/items/state` endpoint for read, unread, save, unsave, archive, and unarchive. The legacy Reader mark endpoint remains for compatibility. Local mutations roll back on request failure; an accepted local mutation whose FreshRSS write fails remains visible with `syncStatus: "pending"` and is retried durably. Overlapping actions for one item rebase from the last acknowledged state by action group, so a failed save cannot undo an acknowledged read and a late save response cannot overwrite newer read state.
 
 ---
 

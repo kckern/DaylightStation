@@ -1,8 +1,9 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Group, Text, Button } from '@mantine/core';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { IconCheck, IconCircleFilled, IconPencil, IconAlertCircle } from '@tabler/icons-react';
-import { SectionCard } from "../../components/index.js";
+import { useRetryRegion } from '@/lib/ui';
+import { LoadingState, SectionCard } from "../../components/index.js";
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -11,25 +12,34 @@ const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
  * Compact head-of-dashboard card. Counts as the content, one action. Renders nothing
  * for a user who is not enrolled. `summary` is the /api/v1/triage/summary body.
  */
-export function TriageSummaryCard({ summary, error = null, onRetry = null }) {
-  const navigate = useNavigate();
+export function TriageSummaryCard({ summary, loading = false, error = null, onRetry = null }) {
   const logger = useMemo(() => getLogger().child({ component: 'triage-summary-card' }), []);
   const enrolled = summary?.enrolled === true;
+  const [requestedRetry, setRequestedRetry] = useState(false);
+  const { regionProps, retry } = useRetryRegion(() => {
+    setRequestedRetry(true);
+    return onRetry?.();
+  }, loading);
   useEffect(() => {
     if (enrolled) logger.debug('life.triage.card.shown', { mode: summary.mode, mailbox: summary.mailbox });
   }, [enrolled, summary?.mode, summary?.mailbox, logger]);
 
-  // A failed fetch with nothing to show: one quiet line in the card's place.
-  if (!summary && error) {
+  if (!enrolled) {
+    const failed = !summary && error;
+    if (!failed && !requestedRetry) return null;
     return (
-      <Group gap="xs" role="status">
-        <IconAlertCircle size={16} color="var(--mantine-color-dimmed)" />
-        <Text size="sm" c="dimmed">Triage unavailable</Text>
-        {onRetry && <Button variant="subtle" size="compact-xs" onClick={onRetry}>retry</Button>}
-      </Group>
+      <section aria-label="Triage summary" {...regionProps}>
+        {failed ? (
+          <Group gap="xs" role="status">
+            <IconAlertCircle size={16} color="var(--mantine-color-dimmed)" />
+            <Text size="sm" c="dimmed">Triage unavailable</Text>
+            {onRetry && <Button variant="subtle" size="compact-xs" onClick={retry}>retry</Button>}
+          </Group>
+        ) : loading ? <LoadingState label="triage summary" rows={1} />
+          : <Text role="status" size="sm" c="dimmed">Triage is not set up for this member.</Text>}
+      </section>
     );
   }
-  if (!enrolled) return null;
 
   const open = summary.open ?? {};
   const pre = summary.preDone ?? {};
@@ -52,23 +62,21 @@ export function TriageSummaryCard({ summary, error = null, onRetry = null }) {
   parts.push({ key: 'call', icon: icon(IconCircleFilled, 'var(--mantine-color-orange-6)'), text: `${needCall} need your call` });
   parts.push({ key: 'drafted', icon: icon(IconPencil, 'var(--mantine-color-dimmed)'), text: `${plural(drafted, 'reply', 'replies')} drafted` });
 
-  const start = () => {
-    logger.info('life.triage.card.start', { open: total });
-    navigate('/life/now/triage');
-  };
-
   return (
-    <SectionCard title="Triage">
-      <Group justify="space-between" align="center" wrap="wrap" gap="sm">
-        <Group gap="md" wrap="wrap">
-          {parts.map((p) => (
-            <Group key={p.key} gap={4} wrap="nowrap">{p.icon}<Text size="sm">{p.text}</Text></Group>
-          ))}
+    <section aria-label="Triage summary" {...regionProps}>
+      <SectionCard title="Triage">
+        <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+          <Group gap="md" wrap="wrap">
+            {parts.map((p) => (
+              <Group key={p.key} gap={4} wrap="nowrap">{p.icon}<Text size="sm">{p.text}</Text></Group>
+            ))}
+          </Group>
+          <Button component={Link} to="/life/now/triage" className="ds-touch-target" size="xs"
+            onClick={() => logger.info('life.triage.card.start', { open: total })}>Start triage →</Button>
         </Group>
-        <Button size="xs" onClick={start}>Start triage →</Button>
-      </Group>
-      {reconnect && <Text size="sm" c="red" mt="xs">Reconnect {summary.mailboxName || 'your mailbox'}: mail can&apos;t be archived until it is reconnected.</Text>}
-    </SectionCard>
+        {reconnect && <Text size="sm" c="red" mt="xs">Reconnect {summary.mailboxName || 'your mailbox'}: mail can&apos;t be archived until it is reconnected.</Text>}
+      </SectionCard>
+    </section>
   );
 }
 

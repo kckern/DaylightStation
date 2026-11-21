@@ -15,7 +15,7 @@ import {
   IconChevronDown,
   IconChevronUp,
 } from '@tabler/icons-react';
-import { LabeledContentPicker } from "./LabeledContentPicker.jsx";
+import ContentCombobox from "../../../../../../../__capabilities/content-catalog/browser/picker.mjs";
 import { ScheduleWindowSummary } from "./ScheduleWindowSummary.jsx";
 
 /**
@@ -195,7 +195,7 @@ export function SchedulesSection({ slot, mutations }) {
               />
               <div style={{ flex: 1, minWidth: 180 }}>
                 <Text size="xs" mb={4}>Queue</Text>
-                <LabeledContentPicker
+                    <ContentCombobox
                   value={row.queue || ''}
                   onChange={(id) => updateWindow(idx, { queue: id || '' })}
                   placeholder="Pick a queue..."

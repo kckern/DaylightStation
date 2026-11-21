@@ -1,4 +1,6 @@
-import { Group, Text } from '@mantine/core';
+import { Group, Stack, Text } from '@mantine/core';
+import { Button } from '../../../lib/ui/Button.jsx';
+import { Sheet } from '../../../lib/ui/Sheet.jsx';
 import { actionKeysFor } from './reviewScope.js';
 
 /**
@@ -12,14 +14,14 @@ const KEYMAP = [
   ['D', 'Redo, then 1 edges, 2 category, 3 action, 4 timing, Enter no reason'], ['U', 'Undo the last verdict'], ['Shift+D', 'Rework every row flagged redo'],
   ['F', 'Cycle the kind: all, words, picture, scenes'], ['M / P', 'Words: mute / bleep'],
   ['B / K', 'Picture: blur / skip. Scenes: hide picture / skip'], ['W', 'Widen 0.5 s each edge'],
-  ['[ / ]', 'Bleep level down / up'], ['?', 'This list'], ['Esc', 'Close'],
+  ['[ / ]', 'Bleep level down / up'], ['Enter', 'Retry an unavailable preview'], ['?', 'This list'], ['Esc', 'Close'],
 ];
 
 const Key = ({ k, children }) => (
   <span className="cf-keybar__item"><kbd className="cf-keybar__key" data-key={k}>{k}</kbd> {children}</span>
 );
 
-export function ReviewKeyBar({ row = null, tally = { done: 0, total: 0, redo: 0 }, canUndo = false, redoOpen = false, helpOpen = false, message = null, bleepLevel = null }) {
+export function ReviewKeyBar({ row = null, tally = { done: 0, total: 0, redo: 0 }, canUndo = false, redoOpen = false, helpOpen = false, onToggleHelp, onCloseHelp, message = null, bleepLevel = null, previewRecovery = null }) {
   const tallyText = `${tally.done}/${tally.total}${tally.redo ? ` · ${tally.redo} redo` : ''}`;
   return (
     <div className="cf-keybar">
@@ -44,19 +46,25 @@ export function ReviewKeyBar({ row = null, tally = { done: 0, total: 0, redo: 0 
               </>
             ) : null}
             {bleepLevel != null ? <Key k="[ ]">{`bleep ${Math.round(bleepLevel * 100)}%`}</Key> : null}
-            <Key k="F">view</Key><Key k="?">all keys</Key>
+            <Key k="F">view</Key><Button density="compact" variant="secondary" keyHint="?" aria-haspopup="dialog" aria-expanded={helpOpen} onClick={onToggleHelp}>All keys</Button>
           </>
         )}
       </Group>
       {message ? <Text size="sm" role="status" className="cf-keybar__message">{message}</Text> : null}
-      {helpOpen ? (
-        <div role="dialog" aria-label="Review keys" className="cf-keybar__help">
-          <Text fw={600} size="sm">Keys</Text>
+      {previewRecovery ? (
+        <Group gap="xs">
+          <Text size="sm" role="status">{previewRecovery.message}</Text>
+          <Button density="compact" variant="secondary" keyHint="Enter" aria-keyshortcuts="Enter" aria-disabled={previewRecovery.retrying}
+            aria-busy={previewRecovery.retrying} onClick={previewRecovery.retry}>Retry preview</Button>
+        </Group>
+      ) : null}
+      <Sheet open={helpOpen} onClose={onCloseHelp} title="Review keys">
+        <Stack gap="xs">
           {KEYMAP.map(([k, what]) => (
             <div key={k} className="cf-keybar__help-row"><kbd className="cf-keybar__key">{k}</kbd><span>{what}</span></div>
           ))}
-        </div>
-      ) : null}
+        </Stack>
+      </Sheet>
     </div>
   );
 }

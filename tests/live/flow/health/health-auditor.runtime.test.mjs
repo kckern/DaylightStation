@@ -89,6 +89,7 @@ async function installAuditorApi(page) {
 for (const width of [1440, 390]) test(`auditor page: header, run detail, permission change, AI usage at ${width}px`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width, height: 1000 });
   const fixture = await installHealthFixtures(page, { items: [] });
+  await page.route('**/api/v1/supervision/bootstrap', route => route.fulfill({ json: { enabled: false } }));
   const api = await installAuditorApi(page);
 
   await page.goto('/health/settings');
@@ -124,10 +125,10 @@ for (const width of [1440, 390]) test(`auditor page: header, run detail, permiss
   await expect(detail).toHaveCount(0);
 
   // Switch off "Nutrient values": a versioned PATCH, then the change log shows it.
-  const nutrients = page.getByLabel('Nutrient values', { exact: true });
+  const nutrients = page.getByRole('switch', { name: /^Nutrient values\b/ });
   await expect(nutrients).toBeChecked();
   await expect(page.getByText('Change nutrient values', { exact: true })).toBeVisible();
-  await page.getByText('Nutrient values', { exact: true }).click();
+  await nutrients.press('Space');
   await expect(nutrients).not.toBeChecked();
   await expect.poll(() => api.patches.length).toBe(1);
   expect(api.patches).toEqual([{ expectedSettingsVersion: 3, permissions: { nutrients: false } }]);
@@ -135,8 +136,8 @@ for (const width of [1440, 390]) test(`auditor page: header, run detail, permiss
   await expect(changes.getByText(/^Nutrient values permission: On → Off · /)).toBeVisible();
 
   // Health AI usage card: totals and a feature row.
-  const usage = page.locator('#ai-usage');
-  await expect(usage.getByRole('heading', { name: 'AI usage', exact: true })).toBeVisible();
+  const usage = page.getByRole('region', { name: 'AI usage', exact: true });
+  await expect(page.getByRole('heading', { name: 'AI usage', exact: true })).toBeVisible();
   const auditorRow = usage.getByRole('table', { name: 'Health AI cost by feature' }).getByRole('row', { name: /Nutrition auditor/ });
   await expect(auditorRow).toContainText('9');
   await expect(auditorRow).toContainText('$0.31');

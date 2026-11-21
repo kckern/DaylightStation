@@ -1,5 +1,4 @@
-import { DaylightAPI } from '../../../lib/api.mjs';
-import { getDeviceId } from '../../../lib/deviceIdentity.js';
+import { DaylightAPI, daylightApiResponse } from '../../../lib/api.mjs';
 
 const base = deviceId => `/api/v1/admin/household/devices/${encodeURIComponent(deviceId)}/fully-kiosk`;
 
@@ -26,8 +25,8 @@ async function jsonRequest(request) {
 }
 
 export const fullyKioskAdminApi = {
-  status: deviceId => jsonRequest(DaylightAPI(`${base(deviceId)}/status`)),
-  settings: deviceId => jsonRequest(DaylightAPI(`${base(deviceId)}/settings`)),
+  status: (deviceId, { signal } = {}) => jsonRequest(DaylightAPI(`${base(deviceId)}/status`, {}, 'GET', { signal })),
+  settings: (deviceId, { signal } = {}) => jsonRequest(DaylightAPI(`${base(deviceId)}/settings`, {}, 'GET', { signal })),
   action: (deviceId, action, params = {}) => jsonRequest(DaylightAPI(
     `${base(deviceId)}/actions/${encodeURIComponent(action)}`,
     params,
@@ -39,14 +38,7 @@ export const fullyKioskAdminApi = {
     'PUT',
   )),
   async screenshot(deviceId, { signal } = {}) {
-    const token = localStorage.getItem('ds_token');
-    const response = await fetch(`${window.location.origin}${base(deviceId)}/screenshot`, {
-      signal,
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        'X-Daylight-Device': getDeviceId(),
-      },
-    });
+    const response = await daylightApiResponse(`${base(deviceId)}/screenshot`, { signal });
     if (!response.ok) {
       let message = `Screenshot failed (${response.status})`;
       try {

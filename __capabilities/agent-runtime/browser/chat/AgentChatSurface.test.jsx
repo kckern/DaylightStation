@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, render, fireEvent, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import { MantineProvider } from '@mantine/core';
 import { AgentChatSurface, AgentConversationProvider, useAgentConversation } from "./AgentChatSurface.jsx";
@@ -50,7 +50,7 @@ describe('AgentChatSurface — basic rendering', () => {
     expect(container.querySelector('.coach-chat--overlay')).toBeTruthy();
   });
 
-  it.each([false, true])('lets overlay Escape dismiss without clearing the draft (mentions=%s)', withMentions => {
+  it.each([false, true])('lets overlay Escape dismiss without clearing the draft (mentions=%s)', async withMentions => {
     const onClose = vi.fn();
     render(<MantineProvider><DismissStackProvider>
       <Sheet open title="Coach" onClose={onClose}>
@@ -62,17 +62,38 @@ describe('AgentChatSurface — basic rendering', () => {
     input.focus();
     fireEvent.change(input, { target: { value: 'Keep this draft' } });
     fireEvent.keyDown(input, { key: 'Escape' });
-    expect(onClose).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     expect(input.value).toBe('Keep this draft');
   });
 
+  it('shows the submitted message and expandable tool attribution in the conversation', async () => {
+    const frames = [
+      { type: 'tool-start', toolName: 'verify_fixture', args: { record: 'session' } },
+      { type: 'tool-end', toolName: 'verify_fixture', result: { checked: true }, latencyMs: 12 },
+      { type: 'text-delta', text: 'Recorded answer' },
+      { type: 'done' },
+    ];
+    const body = frames.map(frame => 'data: ' + JSON.stringify(frame) + '\n\n').join('');
+    globalThis.fetch = vi.fn(async () => new Response(body, { headers: { 'Content-Type': 'text/event-stream' } }));
+    render(<MantineProvider><AgentChatSurface agentId="fixture" userId="fixture" /></MantineProvider>);
+    const composer = screen.getByRole('textbox');
+    fireEvent.change(composer, { target: { value: 'Verify the stored record' } });
+    fireEvent.submit(composer.closest('form'));
+    expect(await screen.findByText('Verify the stored record')).toBeVisible();
+    expect(await screen.findByText('Recorded answer')).toBeVisible();
+    fireEvent.click(await screen.findByText('verify_fixture'));
+    expect(screen.getByText(/"record": "session"/)).toBeVisible();
+    expect(screen.getByText(/"checked": true/)).toBeVisible();
+  });
+
   it('preserves a real thread while its view is closed and replaced', async () => {
+    const onComplete = vi.fn();
     globalThis.fetch = vi.fn(async () => new Response(
       'data: {"type":"text-delta","text":"Retained answer"}\n\ndata: {"type":"done"}\n\n',
       { headers: { 'Content-Type': 'text/event-stream' } },
     ));
     function Flow() {
-      const conversation = useAgentConversation({ agentId: 'fixture', userId: 'fixture' });
+      const conversation = useAgentConversation({ agentId: 'fixture', userId: 'fixture', onComplete });
       const [surface, setSurface] = useState('overlay');
       return <AgentConversationProvider conversation={conversation}>
         <button onClick={() => setSurface(null)}>Close view</button>
@@ -90,6 +111,56 @@ describe('AgentChatSurface — basic rendering', () => {
     fireEvent.click(screen.getByText('Open tab'));
     await waitFor(() => expect(screen.getByText('Retained answer')).toBeTruthy());
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops writing the transcript when its conversation owner leaves', () => {
+    const threadKey = 'daylight-station:agent-thread:fixture:persist-probe';
+    const transcriptKey = 'agent-session:fixture:persist-probe:fixture-thread';
+    localStorage.setItem(threadKey, 'fixture-thread');
+    try {
+      let thread;
+      function Conversation() {
+        const conversation = useAgentConversation({
+          agentId: 'fixture', userId: 'persist-probe', persistSession: true,
+        });
+        thread = conversation.runtime.thread;
+        return <AgentConversationProvider conversation={conversation}>
+          <AgentChatSurface variant="light" />
+        </AgentConversationProvider>;
+      }
+      const { unmount } = render(<MantineProvider><Conversation /></MantineProvider>);
+      act(() => thread.reset([{ role: 'assistant', content: 'Saved conversation' }]));
+      const saved = sessionStorage.getItem(transcriptKey);
+      expect(JSON.parse(saved)).toMatchObject([
+        { role: 'assistant', content: [{ type: 'text', text: 'Saved conversation' }] },
+      ]);
+
+      unmount();
+      act(() => thread.reset([{ role: 'assistant', content: 'Retired answer' }]));
+      expect(thread.getState().messages[0].content).toEqual([{ type: 'text', text: 'Retired answer' }]);
+      expect(sessionStorage.getItem(transcriptKey)).toBe(saved);
+    } finally {
+      localStorage.removeItem(threadKey);
+      sessionStorage.removeItem(transcriptKey);
+    }
+  });
+
+  it('does not refresh app resources when a stream finishes after its conversation owner leaves', async () => {
+    const onComplete = vi.fn();
+    let finish;
+    const body = new ReadableStream({ start(controller) { finish = () => controller.close(); } });
+    globalThis.fetch = vi.fn(async () => new Response(body, { headers: { 'Content-Type': 'text/event-stream' } }));
+    const { unmount } = render(<MantineProvider>
+      <AgentChatSurface agentId="health-coach" userId="fixture" onComplete={onComplete} />
+    </MantineProvider>);
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Review this fixture' } });
+    fireEvent.submit(input.closest('form'));
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
+    unmount();
+    await act(async () => finish());
+    expect(onComplete).not.toHaveBeenCalled();
   });
 
   it('does NOT apply coach-chat--overlay for the default (light) variant', () => {
@@ -142,22 +213,16 @@ describe('AgentChatSurface — no mentions when prop omitted', () => {
 
 describe('AgentChatSurface — mentions prop wiring', () => {
   let originalFetch;
-  let fetchCalls;
   beforeEach(() => {
     originalFetch = globalThis.fetch;
-    fetchCalls = [];
     globalThis.fetch = vi.fn(async (url) => {
-      fetchCalls.push(url);
       if (typeof url === 'string' && url.includes('/health/mentions/')) {
-        return {
-          ok: true,
-          json: async () => ({
-            suggestions: [
-              { slug: 'last_30d', label: 'Last 30 days', description: 'rolling', group: 'period' },
-              { slug: 'weight_lbs', label: 'Weight (lbs)', description: 'metric', group: 'metric_snapshot' },
-            ],
-          }),
-        };
+        return Response.json({
+          suggestions: [
+            { slug: 'last_30d', label: 'Last 30 days', description: 'rolling', group: 'period' },
+            { slug: 'weight_lbs', label: 'Weight (lbs)', description: 'metric', group: 'metric_snapshot' },
+          ],
+        });
       }
       return { ok: true, json: async () => ({ output: '', toolCalls: [] }) };
     });
@@ -181,7 +246,7 @@ describe('AgentChatSurface — mentions prop wiring', () => {
     expect(container.querySelector('.coach-chat__mention-popover, [data-mention-popover]')).toBeTruthy();
   });
 
-  it('fetches the mention suggestions URL on mount when mentions prop is present', async () => {
+  it('loads mention suggestions through the authenticated API on mount', async () => {
     const mentions = {
       fetchUrl: '/api/v1/health/mentions/all?user=kc',
       categories: [{ key: 'period', label: 'Period', icon: null }],
@@ -192,8 +257,15 @@ describe('AgentChatSurface — mentions prop wiring', () => {
         <AgentChatSurface agentId="health-coach" userId="kc" mentions={mentions} />
       </MantineProvider>
     );
-    await new Promise(r => setTimeout(r, 10));
-    expect(fetchCalls.some(u => typeof u === 'string' && u.includes('/health/mentions/'))).toBe(true);
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining(mentions.fetchUrl),
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({ 'X-Daylight-Device': expect.any(String) }),
+        signal: expect.any(AbortSignal),
+      }),
+    ));
+    expect(globalThis.fetch.mock.calls[0][1]).not.toHaveProperty('body');
   });
 
   it('does not fetch suggestions when mentions prop is absent', async () => {
@@ -202,7 +274,6 @@ describe('AgentChatSurface — mentions prop wiring', () => {
         <AgentChatSurface agentId="lifeplan-guide" userId="default" />
       </MantineProvider>
     );
-    await new Promise(r => setTimeout(r, 10));
-    expect(fetchCalls.filter(u => typeof u === 'string' && u.includes('/mentions/'))).toHaveLength(0);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });

@@ -1,66 +1,92 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useDialogFocus } from '@/lib/ui/dismiss/useDialogFocus.js';
+import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import DetailView from "./DetailView.jsx";
 import "./DetailView.scss";
 
-export default function DetailModal({ item, sections, ogImage, ogDescription, loading, error, onRetry, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem, onStateAction }) {
-  const panelRef = useRef(null);
-  useEffect(() => {
-    const previous = document.activeElement;
-    const panel = panelRef.current;
-    panel?.focus();
-    const onKeyDown = event => {
-      if (event.key === 'Escape') { event.preventDefault(); onBack(); return; }
-      if (event.key !== 'Tab' || !panel) return;
-      const focusable = [...panel.querySelectorAll('a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])')];
-      if (!focusable.length) { event.preventDefault(); panel.focus(); return; }
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => { document.removeEventListener('keydown', onKeyDown); previous?.focus?.(); };
-  }, [onBack]);
+export default function DetailModal({ item, sections, detailActions, ogImage, ogDescription, loading, error, onRetry, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem, onStateAction }) {
+  const dialogRef = useRef(null);
+  const usesDismissStack = useDismissLayer(true, onBack);
+  const handleDialogKeys = useDialogFocus(true, dialogRef, dialogRef);
 
-  return (
-    <div className="detail-modal-scrim" onClick={onBack}>
+  useLayoutEffect(() => {
+    // An adjacent item control can disappear at either end of the list.
+    if (document.activeElement === document.body) {
+      dialogRef.current?.querySelector('[data-autofocus]')?.focus({ preventScroll: true });
+    }
+  }, [item?.id]);
+
+  useEffect(() => {
+    if (usesDismissStack) return;
+    const handleEscape = event => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if (event.target?.getAttribute?.('data-mantine-stop-propagation') === 'true') return;
+      event.preventDefault();
+      onBack();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [usesDismissStack, onBack]);
+
+  const renderDialog = (article, onKeyDown) => (
+    <div
+      ref={dialogRef}
+      onKeyDown={event => {
+        onKeyDown?.(event);
+        handleDialogKeys(event);
+      }}
+      className="detail-modal-scrim"
+      onClick={event => { if (event.target === event.currentTarget) onBack(); }}
+      role="dialog"
+      aria-modal="true"
+      aria-label={item?.title || 'Feed item detail'}
+      tabIndex={-1}
+    >
+      <div className="detail-modal-panel">
+        {article}
+      </div>
       {onPrev && (
         <button
+          type="button"
           className="detail-modal-arrow detail-modal-arrow--left"
-          onClick={(e) => { e.stopPropagation(); onPrev(); }}
+          onClick={() => onPrev()}
           aria-label="Previous item"
         >
           &#8249;
         </button>
       )}
-      <div ref={panelRef} className="detail-modal-panel" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={item?.title || 'Feed item detail'} tabIndex={-1}>
-        <DetailView
-          item={item}
-          sections={sections}
-          ogImage={ogImage}
-          ogDescription={ogDescription}
-          loading={loading}
-          error={error}
-          onRetry={onRetry}
-          onBack={onBack}
-          onNext={onNext}
-          onPrev={onPrev}
-          onPlay={onPlay}
-          activeMedia={activeMedia}
-          playback={playback}
-          onNavigateToItem={onNavigateToItem}
-          onStateAction={onStateAction}
-        />
-      </div>
       {onNext && (
         <button
+          type="button"
           className="detail-modal-arrow detail-modal-arrow--right"
-          onClick={(e) => { e.stopPropagation(); onNext(); }}
+          onClick={() => onNext()}
           aria-label="Next item"
         >
           &#8250;
         </button>
       )}
     </div>
+  );
+
+  return (
+    <DetailView
+      renderDialog={renderDialog}
+      item={item}
+      sections={sections}
+      detailActions={detailActions}
+      ogImage={ogImage}
+      ogDescription={ogDescription}
+      loading={loading}
+      error={error}
+      onRetry={onRetry}
+      onBack={onBack}
+      onNext={onNext}
+      onPrev={onPrev}
+      onPlay={onPlay}
+      activeMedia={activeMedia}
+      playback={playback}
+      onNavigateToItem={onNavigateToItem}
+      onStateAction={onStateAction}
+    />
   );
 }

@@ -1,6 +1,7 @@
+import { browserPreference } from '@/lib/browserPreference.js';
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { SegmentedControl, UnstyledButton } from '@mantine/core';
-import { CHROME_SCROLL_CLASS, EmptyState, useDismissLayer } from '@/lib/ui';
+import { EmptyState, useAppMainRef, useDismissLayer } from '@/lib/ui';
 import { displayName, formatEntityState, formatSince } from '../entities/formatEntityState.js';
 import { EntityDetailSheet } from '../ui/EntityDetailSheet.jsx';
 import { useEntityDetail } from '../ui/useEntityDetail.js';
@@ -11,21 +12,12 @@ import './MosaicView.scss';
 
 const logger = homeLogger.child({ component: 'mosaic' });
 
+const EMPTY_ENTITIES = [];
 const MODES = [{ value: 'room', label: 'By room' }, { value: 'type', label: 'By type' }];
-const MODE_KEY = 'home.mosaic.mode';
+const modePreference = browserPreference('home.mosaic.mode', 'room', saved =>
+  MODES.some(option => option.value === saved) ? saved : 'room');
 // A tap's compatibility mouse events land within this long of its pointerdown.
 const TOUCH_WINDOW_MS = 1000;
-
-// The grouping is a per-viewer convenience; storage may be unavailable.
-function readSavedMode() {
-  try {
-    const saved = window.localStorage.getItem(MODE_KEY);
-    return MODES.some((m) => m.value === saved) ? saved : 'room';
-  } catch { return 'room'; }
-}
-function saveMode(mode) {
-  try { window.localStorage.setItem(MODE_KEY, mode); } catch { /* storage unavailable */ }
-}
 
 /** The groups to draw: each with its squares' entities and tones, in server order. */
 function buildGroups(groups, byId, flags) {
@@ -51,7 +43,7 @@ function tipText(entity) {
 }
 
 function squareClass(tone) {
-  let cls = `home-square home-square--${tone.fill}`;
+  let cls = `home-square home-square--${tone.fill} ds-touch-target`;
   if (isLoudAttention(tone)) cls += ' home-square--attention';
   else if (tone.attention === 'silent') cls += ' home-square--silent';
   return cls;
@@ -130,16 +122,18 @@ function MosaicTooltip({ id, tip, text, boxRef }) {
  * first tap on a touch screen) and opens its drawer on a click (or a second
  * tap).
  */
-export function MosaicView({ entities, mosaic, summary, haUrl, toggle }) {
-  const [mode, setMode] = useState(readSavedMode);
+export function MosaicView({ entities, mosaic, summary, haUrl, toggle, getFallbackFocusTarget }) {
+  const mainRef = useAppMainRef();
+  const [mode, setMode] = useState(modePreference.read);
   const [tip, setTip] = useState(null);
   const boxRef = useRef(null);
   const tipIdRef = useRef(null);
-  const touchRef = useRef({ at: 0, tipBefore: null });
-  const detail = useEntityDetail(entities || []);
+  const touchRef = useRef({ at: 0, entityId: null, tipBefore: null });
+  const readings = entities ?? EMPTY_ENTITIES;
+  const detail = useEntityDetail(mosaic ? readings : EMPTY_ENTITIES);
   const tipDomId = useId();
 
-  const byId = useMemo(() => new Map((entities || []).map((e) => [e.id, e])), [entities]);
+  const byId = useMemo(() => new Map(readings.map(entity => [entity.id, entity])), [readings]);
   const flags = useMemo(() => toneFlags(summary), [summary]);
   const groups = useMemo(
     () => (mosaic ? buildGroups(mode === 'type' ? mosaic.byType : mosaic.byRoom, byId, flags) : []),
@@ -156,7 +150,7 @@ export function MosaicView({ entities, mosaic, summary, haUrl, toggle }) {
   const changeMode = (next) => {
     logger.info('home.mosaic.mode', { from: mode, to: next });
     setMode(next);
-    saveMode(next);
+    modePreference.write(next);
     setTip(null);
     tipIdRef.current = null;
   };
@@ -185,13 +179,12 @@ export function MosaicView({ entities, mosaic, summary, haUrl, toggle }) {
     tipIdRef.current = entity.id;
     // The chrome's scroll region starts under the app header: that edge is the
     // ceiling. Outside AppChrome nothing covers the page, so the viewport top is.
-    const scroller = box.closest(`.${CHROME_SCROLL_CLASS}`);
-    const ceiling = scroller ? scroller.getBoundingClientRect().top : 0;
+    const ceiling = mainRef?.current?.getBoundingClientRect().top ?? 0;
     setTip({
       id: entity.id, x: r.left - b.left + r.width / 2,
       top: r.top - b.top, bottom: r.bottom - b.top, viewTop: r.top, ceiling,
     });
-  }, [byId]);
+  }, [byId, mainRef]);
 
   // Only a square on this board: the drawer also carries a data-entity-id.
   const squareOf = (e) => {
@@ -202,7 +195,11 @@ export function MosaicView({ entities, mosaic, summary, haUrl, toggle }) {
 
   const onPointerDown = (e) => {
     if (e.pointerType === 'touch' || e.pointerType === 'pen') {
-      touchRef.current = { at: Date.now(), tipBefore: tipIdRef.current };
+      touchRef.current = {
+        at: Date.now(), entityId: squareOf(e)?.dataset.entityId, tipBefore: tipIdRef.current,
+      };
+    } else {
+      touchRef.current = { at: 0, entityId: null, tipBefore: null };
     }
   };
   const onMouseOver = (e) => {
@@ -215,11 +212,15 @@ export function MosaicView({ entities, mosaic, summary, haUrl, toggle }) {
     if (!sq) { hideTip(); return; }
     const entity = byId.get(sq.dataset.entityId);
     if (!entity) return;
-    // A tap first explains the square; tapping the same square again opens it.
-    if (recentTouch() && touchRef.current.tipBefore !== entity.id) {
-      touchRef.current.tipBefore = entity.id;
-      showTip(sq);
-      return;
+    // A touch can emit a compatibility mouse click. Match it to its square
+    // and consume it once. Keyboard activation has a click count of zero.
+    const touch = touchRef.current;
+    if (e.detail > 0 && recentTouch() && touch.entityId === entity.id) {
+      touch.entityId = null;
+      if (touch.tipBefore !== entity.id) {
+        showTip(sq);
+        return;
+      }
     }
     hideTip();
     detail.open(entity);
@@ -277,6 +278,7 @@ export function MosaicView({ entities, mosaic, summary, haUrl, toggle }) {
         haUrl={haUrl}
         onToggle={toggle}
         onClose={detail.close}
+        getFallbackFocusTarget={getFallbackFocusTarget}
       />
     </div>
   );

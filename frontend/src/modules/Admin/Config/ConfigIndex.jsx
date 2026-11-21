@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Stack, Text, Group, Paper, Loader, Center, Alert, Badge, UnstyledButton } from '@mantine/core';
-import { IconFile, IconLock, IconAlertCircle, IconFolder } from '@tabler/icons-react';
-import { DaylightAPI } from '../../../lib/api.mjs';
+import { Stack, Text, Group, Paper, Center, Badge, UnstyledButton } from '@mantine/core';
+import { IconFile, IconLock, IconFolder } from '@tabler/icons-react';
+import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { ErrorState, LoadingState, useRetryRegion } from '../../../lib/ui/index.js';
 import { formatSize } from '../utils/formatters.js';
 
 /**
@@ -16,37 +17,12 @@ function formatDate(isoString) {
 
 function ConfigIndex() {
   const navigate = useNavigate();
-  const [files, setFiles] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function fetchFiles() {
-      setLoading(true);
-      setError(null);
-      try {
-        const result = await DaylightAPI('/api/v1/admin/config/files');
-        if (!cancelled) {
-          setFiles(result.files || []);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-    fetchFiles();
-    return () => { cancelled = true; };
-  }, []);
+  const { data, loading, error, reload } = useApiResource('/api/v1/admin/config/files', { label: 'Config files' });
+  const { regionProps, retry } = useRetryRegion(reload, loading);
 
   const grouped = useMemo(() => {
     const groups = {};
-    files.forEach(file => {
+    (data?.files || []).forEach(file => {
       const dir = file.directory || 'other';
       if (!groups[dir]) {
         groups[dir] = [];
@@ -56,29 +32,15 @@ function ConfigIndex() {
     return Object.keys(groups)
       .sort((a, b) => a.localeCompare(b))
       .map(dir => ({ directory: dir, files: groups[dir] }));
-  }, [files]);
-
-  if (loading) {
-    return (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
-  }
-
-  if (error) {
-    return (
-      <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error loading config files">
-        {error.message || 'Failed to load config file list'}
-      </Alert>
-    );
-  }
+  }, [data]);
 
   return (
-    <Stack gap="lg">
+    <Stack component="section" gap="lg" aria-label="Config files" {...regionProps}>
       <Text size="xl" fw={600}>Config Files</Text>
 
-      {grouped.map(group => (
+      {loading && <LoadingState label="config files" />}
+      {!loading && error && <ErrorState error={error} onRetry={retry} label="Config files" />}
+      {!loading && !error && grouped.map(group => (
         <Stack key={group.directory} gap="xs">
           <Group gap="xs">
             <IconFolder size={16} stroke={1.5} />
@@ -136,7 +98,7 @@ function ConfigIndex() {
         </Stack>
       ))}
 
-      {files.length === 0 && (
+      {!loading && !error && grouped.length === 0 && (
         <Center h="40vh">
           <Text c="dimmed">No config files found.</Text>
         </Center>

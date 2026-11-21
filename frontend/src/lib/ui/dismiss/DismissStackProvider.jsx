@@ -1,47 +1,60 @@
-// frontend/src/lib/ui/dismiss/DismissStackProvider.jsx
-// Ported from frontend/src/modules/Media/shell/DismissStackProvider.jsx —
-// see that file for the original. One Escape handler for the whole app:
-// layers (search dropdown, popovers, sheets) register while open; Escape
-// dismisses the topmost layer, and with no layers open it falls through to
-// the base action (view back). This replaces the old pattern of competing
-// document keydown listeners.
-//
-// Mantine overlays (Modal/Drawer/Popover/Menu) close themselves on Escape;
-// they register with `managed: true` so this handler knows a layer is open
-// (and suppresses the base action) without double-dismissing it.
-import React, { createContext, useRef, useEffect, useCallback } from 'react';
+import { createContext, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 
 export const DismissContext = createContext(null);
 
 export function DismissStackProvider({ children, onBaseDismiss }) {
-  const layersRef = useRef([]); // [{ id, onDismiss, managed }]
+  const layersRef = useRef([]);
   const baseRef = useRef(onBaseDismiss);
-  baseRef.current = onBaseDismiss;
+  useLayoutEffect(() => {
+    baseRef.current = onBaseDismiss;
+  }, [onBaseDismiss]);
 
-  const register = useCallback((id, onDismiss, managed) => {
-    layersRef.current = [...layersRef.current.filter((l) => l.id !== id), { id, onDismiss, managed }];
+  const register = useCallback(callbacks => {
+    const layer = { callbacks };
+    layersRef.current.push(layer);
     return () => {
-      layersRef.current = layersRef.current.filter((l) => l.id !== id);
+      layersRef.current = layersRef.current.filter(item => item !== layer);
     };
   }, []);
 
   useEffect(() => {
-    const onKey = (e) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return;
+    const pendingTasks = new Set();
+    const onKey = event => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      // Mantine's input popup may close itself during target handling without
+      // preventing the event. Honor the same ownership marker as Mantine Modal.
+      if (event.target?.getAttribute?.('data-mantine-stop-propagation') === 'true') return;
       const layers = layersRef.current;
-      if (layers.length > 0) {
-        const top = layers[layers.length - 1];
-        if (!top.managed) {
-          e.stopPropagation();
-          top.onDismiss?.();
+      let top = null;
+      for (let index = layers.length - 1; index >= 0; index -= 1) {
+        if (layers[index].callbacks.current.isActive?.(event) !== false) {
+          top = layers[index];
+          break;
         }
-        // managed layers dismiss themselves; either way the base action is suppressed
-        return;
       }
-      baseRef.current?.();
+      if (!top && !baseRef.current) return;
+      const managed = top?.callbacks.current.managed;
+      // Snapshot the owner at capture and give target/portal handlers the
+      // full native event before dismissing or falling back to route Back.
+      const task = setTimeout(() => {
+        pendingTasks.delete(task);
+        if (event.defaultPrevented) return;
+        if (top) {
+          const current = top.callbacks.current;
+          if (!managed && layersRef.current.includes(top) && current.isActive?.(event) !== false) {
+            current.onDismiss?.(event);
+          }
+          return;
+        }
+        baseRef.current?.();
+      }, 0);
+      pendingTasks.add(task);
     };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      pendingTasks.forEach(task => clearTimeout(task));
+    };
   }, []);
 
   return <DismissContext.Provider value={register}>{children}</DismissContext.Provider>;

@@ -17,8 +17,7 @@ export const TIMING = {
   BROWSER_HEARTBEAT_MS: 30_000,         // HOUSE.3a — open browsers report even while idle
   BROWSER_UNCERTAIN_AFTER_MS: 120_000,  // HOUSE.3a — silence becomes uncertain after 2m
   DEVICE_STALE_AFTER_MS: 15_000,        // §7.4 — missed device heartbeats → stale
-  VOLUME_APPLY_RETRY_MS: 200,           // PlayerBridge: media element may mount after the effect
-  VOLUME_APPLY_GIVE_UP_MS: 5_000,
+  NATIVE_MEDIA_BIND_INTERVAL_MS: 200,   // PlayerBridge: detect a replacement exposed by the accessor
   SEARCH_DEBOUNCE_MS: 250,
   ACTION_FLASH_MS: 600,                 // row feedback flash after a queue action
   DISPATCH_TRAY_LINGER_MS: 3_000,       // success strip auto-hide

@@ -1,6 +1,6 @@
 // frontend/src/modules/Health/CoachChat/index.jsx
+import { FALLBACK_SUGGEST_ENDPOINT, MENTION_CATEGORIES, buildAttachment } from "./mentions/vocabulary.config.js";
 import { AgentChatSurface } from "../../../../../__capabilities/agent-runtime/browser/chat.mjs";
-import { MENTION_CATEGORIES, buildAttachment } from "./mentions/index.js";
 
 /**
  * Health-coach chat surface — thin wrapper around <AgentChatSurface> that
@@ -16,7 +16,7 @@ import { MENTION_CATEGORIES, buildAttachment } from "./mentions/index.js";
 export function CoachChat({ userId, variant = 'light', style, conversation }) {
   const mentions = userId
     ? {
-        fetchUrl: `/api/v1/health/mentions/all?user=${encodeURIComponent(userId)}`,
+        fetchUrl: `${FALLBACK_SUGGEST_ENDPOINT}?user=${encodeURIComponent(userId)}`,
         categories: MENTION_CATEGORIES,
         buildAttachment,
       }

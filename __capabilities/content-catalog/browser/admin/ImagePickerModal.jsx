@@ -1,11 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { Modal, Tabs, Image, Button, TextInput, Group, Stack, Text, Box, Loader } from '@mantine/core';
+import { useApiResource, invalidateApiResources } from '../../../../frontend/src/lib/hooks/useApiResource.js';
+import { FormDialog } from '../../../../frontend/src/lib/ui/FormDialog.jsx';
+import { ErrorState } from '../../../../frontend/src/lib/ui/states.jsx';
+import React, { useState, useEffect, useCallback, useLayoutEffect, useRef } from 'react';
+import { Tabs, Image, Button, TextInput, Group, Stack, Text, Box, Loader } from '@mantine/core';
 import { Dropzone, IMAGE_MIME_TYPE } from '@mantine/dropzone';
 import { notifications } from '@mantine/notifications';
 import { IconUpload, IconPhoto, IconLink, IconX, IconTrash } from '@tabler/icons-react';
-import { DaylightMediaPath } from "../../../../frontend/src/lib/api.mjs";
+import { DaylightMediaPath, daylightApiResponse } from "../../../../frontend/src/lib/api.mjs";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
+const imageListPath = '/api/v1/admin/images/list';
 
 /**
  * ImagePickerModal — Pick, upload, or paste URL for item override thumbnails.
@@ -16,21 +21,60 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 function ImagePickerModal({ opened, onClose, currentImage, inheritedImage, onSave, inUseImages = new Set() }) {
   const [activeTab, setActiveTab] = useState('upload');
   const [uploading, setUploading] = useState(false);
-  const [browseImages, setBrowseImages] = useState(null); // null = not loaded yet
-  const [browseLoading, setBrowseLoading] = useState(false);
+  const pending = useRef(null);
   const [urlValue, setUrlValue] = useState('');
+
+  useLayoutEffect(() => {
+    setUploading(false);
+    return () => { pending.current = null; };
+  }, [opened]);
+
+  function selectImage(value) {
+    pending.current = null;
+    setUploading(false);
+    onSave(value);
+  }
 
   // Reset URL input when modal opens
   useEffect(() => {
     if (opened) setUrlValue('');
   }, [opened]);
 
+  const upload = useCallback(async (input, errorTitle, filename) => {
+    if (pending.current) return;
+    const request = Symbol();
+    pending.current = request;
+    setUploading(true);
+    try {
+      const fromUrl = typeof input === 'string';
+      const data = fromUrl ? { url: input } : new FormData();
+      if (!fromUrl) data.append('image', input, filename || input.name);
+      const endpoint = fromUrl ? '/api/v1/admin/images/upload-url' : '/api/v1/admin/images/upload';
+      const response = await daylightApiResponse(endpoint, { method: 'POST', data });
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({}));
+        throw new Error(detail.error || (fromUrl ? 'URL upload failed' : 'Upload failed'));
+      }
+      const result = await response.json();
+      if (!result?.path) throw new Error('Upload did not return an image path');
+      invalidateApiResources(path => path === imageListPath);
+      if (pending.current === request) onSave(result.path);
+    } catch (err) {
+      if (pending.current === request) notifications.show({ title: errorTitle, message: err.message, color: 'red' });
+    } finally {
+      if (pending.current === request) {
+        pending.current = null;
+        setUploading(false);
+      }
+    }
+  }, [onSave]);
+
   // Ctrl+V paste support: image data or URL string
   useEffect(() => {
     if (!opened) return;
 
     async function handlePaste(e) {
-      if (uploading) return;
+      if (pending.current) return;
 
       const items = e.clipboardData?.items;
       if (!items) return;
@@ -41,19 +85,7 @@ function ImagePickerModal({ opened, onClose, currentImage, inheritedImage, onSav
           e.preventDefault();
           const blob = item.getAsFile();
           if (!blob) return;
-          setUploading(true);
-          try {
-            const formData = new FormData();
-            formData.append('image', blob, `paste-${Date.now()}.${blob.type.split('/')[1] || 'png'}`);
-            const res = await fetch('/api/v1/admin/images/upload', { method: 'POST', body: formData });
-            if (!res.ok) throw new Error('Upload failed');
-            const result = await res.json();
-            onSave(result.path);
-          } catch (err) {
-            notifications.show({ title: 'Paste upload failed', message: err.message, color: 'red' });
-          } finally {
-            setUploading(false);
-          }
+          await upload(blob, 'Paste upload failed', `paste-${Date.now()}.${blob.type.split('/')[1] || 'png'}`);
           return;
         }
       }
@@ -62,30 +94,13 @@ function ImagePickerModal({ opened, onClose, currentImage, inheritedImage, onSav
       const text = e.clipboardData.getData('text/plain')?.trim();
       if (text && text.startsWith('http')) {
         e.preventDefault();
-        setUploading(true);
-        try {
-          const res = await fetch('/api/v1/admin/images/upload-url', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: text })
-          });
-          if (!res.ok) {
-            const errData = await res.json().catch(() => ({}));
-            throw new Error(errData.error || 'URL upload failed');
-          }
-          const result = await res.json();
-          onSave(result.path);
-        } catch (err) {
-          notifications.show({ title: 'Paste URL failed', message: err.message, color: 'red' });
-        } finally {
-          setUploading(false);
-        }
+        await upload(text, 'Paste URL failed');
       }
     }
 
     document.addEventListener('paste', handlePaste);
     return () => document.removeEventListener('paste', handlePaste);
-  }, [opened, uploading, onSave]);
+  }, [opened, upload]);
 
   // Resolve display URL for preview
   const previewSrc = currentImage
@@ -98,68 +113,15 @@ function ImagePickerModal({ opened, onClose, currentImage, inheritedImage, onSav
 
   // --- Upload handlers ---
 
-  async function handleFileDrop(files) {
-    if (!files.length) return;
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('image', files[0]);
-      const res = await fetch('/api/v1/admin/images/upload', { method: 'POST', body: formData });
-      if (!res.ok) throw new Error('Upload failed');
-      const result = await res.json();
-      onSave(result.path);
-    } catch (err) {
-      notifications.show({ title: 'Upload failed', message: err.message, color: 'red' });
-    } finally {
-      setUploading(false);
-    }
+  function handleFileDrop(files) {
+    if (files[0]) upload(files[0], 'Upload failed');
   }
 
-  async function handleUrlDrop(e) {
-    // Detect URL drops onto the dropzone
+  function handleUrlDrop(e) {
     const uri = e.dataTransfer?.getData('text/uri-list') || e.dataTransfer?.getData('text/plain') || '';
     if (!uri.startsWith('http')) return;
     e.preventDefault();
-    setUploading(true);
-    try {
-      const res = await fetch('/api/v1/admin/images/upload-url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: uri })
-      });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || 'URL upload failed');
-      }
-      const result = await res.json();
-      onSave(result.path);
-    } catch (err) {
-      notifications.show({ title: 'URL upload failed', message: err.message, color: 'red' });
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  // --- Browse handlers ---
-
-  async function loadBrowseImages() {
-    if (browseImages !== null) return; // already loaded
-    setBrowseLoading(true);
-    try {
-      const res = await fetch('/api/v1/admin/images/list');
-      if (!res.ok) throw new Error('Failed to load images');
-      const data = await res.json();
-      setBrowseImages(data.images || []);
-    } catch (err) {
-      notifications.show({ title: 'Failed to load images', message: err.message, color: 'red' });
-      setBrowseImages([]);
-    } finally {
-      setBrowseLoading(false);
-    }
-  }
-
-  function handleBrowseSelect(img) {
-    onSave(img.path);
+    upload(uri, 'URL upload failed');
   }
 
   // --- URL handler ---
@@ -167,18 +129,18 @@ function ImagePickerModal({ opened, onClose, currentImage, inheritedImage, onSav
   function handleUrlSet() {
     const trimmed = urlValue.trim();
     if (!trimmed) return;
-    onSave(trimmed);
+    selectImage(trimmed);
     setUrlValue('');
   }
 
   // --- Remove ---
 
   function handleRemove() {
-    onSave(null);
+    selectImage(null);
   }
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Item Image" centered size="md">
+    <FormDialog opened={opened} onClose={onClose} title="Item Image" centered size="md">
       <Stack gap="md">
         {/* Current image preview */}
         <Box style={{ textAlign: 'center' }}>
@@ -217,10 +179,7 @@ function ImagePickerModal({ opened, onClose, currentImage, inheritedImage, onSav
         </Box>
 
         {/* Tabs */}
-        <Tabs value={activeTab} onChange={(v) => {
-          setActiveTab(v);
-          if (v === 'browse') loadBrowseImages();
-        }}>
+        <Tabs value={activeTab} onChange={setActiveTab}>
           <Tabs.List>
             <Tabs.Tab value="upload" leftSection={<IconUpload size={14} />}>Upload</Tabs.Tab>
             <Tabs.Tab value="browse" leftSection={<IconPhoto size={14} />}>Browse</Tabs.Tab>
@@ -260,31 +219,8 @@ function ImagePickerModal({ opened, onClose, currentImage, inheritedImage, onSav
           </Tabs.Panel>
 
           <Tabs.Panel value="browse" pt="sm">
-            {browseLoading ? (
-              <Group justify="center" mih={120}><Loader size="sm" /></Group>
-            ) : browseImages && browseImages.length > 0 ? (
-              <div className="image-picker-grid">
-                {browseImages.map(img => {
-                  const imgSrc = DaylightMediaPath(img.path);
-                  const isInUse = inUseImages.has(img.path);
-                  const isSelected = currentImage === img.path;
-                  const cls = ['image-picker-thumb'];
-                  if (isInUse) cls.push('in-use');
-                  if (isSelected) cls.push('selected');
-                  return (
-                    <div
-                      key={img.filename}
-                      className={cls.join(' ')}
-                      onClick={() => handleBrowseSelect(img)}
-                      title={img.filename}
-                    >
-                      <img src={imgSrc} alt={img.filename} />
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <Text size="sm" c="dimmed" ta="center" py="xl">No uploaded images yet</Text>
+            {opened && activeTab === 'browse' && (
+              <ImageInventory currentImage={currentImage} inUseImages={inUseImages} onSelect={selectImage} />
             )}
           </Tabs.Panel>
 
@@ -307,7 +243,37 @@ function ImagePickerModal({ opened, onClose, currentImage, inheritedImage, onSav
           <Button variant="subtle" onClick={onClose}>Done</Button>
         </Group>
       </Stack>
-    </Modal>
+    </FormDialog>
+  );
+}
+
+function ImageInventory({ currentImage, inUseImages, onSelect }) {
+  const { data, loading, error, reload } = useApiResource(imageListPath, { swr: true });
+  if (loading) return <Group justify="center" mih={120}><Loader size="sm" /></Group>;
+  if (error) return <ErrorState label="Uploaded images" error={error} onRetry={reload} />;
+  const images = data?.images || [];
+  if (!images.length) return <Text size="sm" c="dimmed" ta="center" py="xl">No uploaded images yet</Text>;
+  return (
+    <div className="image-picker-grid">
+      {images.map(img => {
+        const imgSrc = DaylightMediaPath(img.path);
+        const isInUse = inUseImages.has(img.path);
+        const isSelected = currentImage === img.path;
+        const cls = ['image-picker-thumb'];
+        if (isInUse) cls.push('in-use');
+        if (isSelected) cls.push('selected');
+        return (
+          <button type="button"
+            key={img.filename}
+            className={cls.join(' ')}
+            onClick={() => onSelect(img.path)}
+            title={img.filename}
+          >
+            <img src={imgSrc} alt={img.filename} />
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

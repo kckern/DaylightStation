@@ -4,10 +4,10 @@
 // back here, never as a toast: a taken name offers its free suggestion; a
 // screen routines use lists them first and needs "Rename anyway" (routines
 // follow the screen, so they keep working).
-import React, { useEffect, useState } from 'react';
-import { Button, Group, List, Modal, Stack, Text, TextInput } from '@mantine/core';
+import React, { useEffect, useRef, useState } from 'react';
+import { Button, Group, List, Stack, Text, TextInput } from '@mantine/core';
 import { IconDeviceFloppy } from '@tabler/icons-react';
-import { useDismissLayer } from "../shell/useDismissLayer.js";
+import { FormDialog } from '@/lib/ui/FormDialog.jsx';
 
 export function RenameScreenDialog({
   open, onClose, title = 'Rename this device', initialName = '', initialRoom = '', withRoom = true,
@@ -17,36 +17,61 @@ export function RenameScreenDialog({
   const [room, setRoom] = useState(initialRoom ?? '');
   const [busy, setBusy] = useState(false);
   const [answer, setAnswer] = useState(null);
-  useDismissLayer(open, onClose, { managed: true });
+  const draftRef = useRef(null);
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      draftRef.current = null;
+      return;
+    }
+    if (draftRef.current) return;
+    draftRef.current = { nameEdited: false, roomEdited: false };
     setName(initialName);
     setRoom(initialRoom ?? '');
+    setBusy(false);
     setAnswer(null);
   }, [open, initialName, initialRoom]);
 
   const submit = async (extra = {}) => {
+    const draft = draftRef.current;
+    const requestedName = (extra.name ?? name).trim();
+    const changes = { ...extra };
+    if (draft.nameEdited || extra.name != null) changes.name = requestedName;
+    if (draft.roomEdited) changes.room = room.trim();
     setBusy(true);
-    const result = await onSubmit({ name: (extra.name ?? name).trim(), room: room.trim(), ...extra });
+    const result = await onSubmit(changes);
+    if (draftRef.current !== draft) return;
     setBusy(false);
     if (result?.ok) { onClose(); return; }
-    setAnswer({ ...result, name: (extra.name ?? name).trim() });
-    if (extra.name) setName(extra.name);
+    setAnswer({ ...result, name: requestedName });
+    if (result?.savedName != null) {
+      draft.nameEdited = false;
+      setName(result.savedName);
+    } else if (extra.name != null) {
+      draft.nameEdited = true;
+      setName(requestedName);
+    }
   };
 
   return (
-    <Modal opened={open} onClose={onClose} title={title} centered>
+    <FormDialog opened={open} onClose={onClose} title={title} centered>
       <Stack gap="sm" data-testid={`${testid}-dialog`}>
         <TextInput
           label={nameLabel}
           description="Every screen in the house has its own name."
           value={name}
-          onChange={(e) => { setName(e.currentTarget.value); setAnswer(null); }}
+          onChange={event => {
+            draftRef.current.nameEdited = true;
+            setName(event.currentTarget.value);
+            setAnswer(null);
+          }}
           data-testid={`${testid}-name`}
-          autoFocus
+          data-autofocus
         />
         {withRoom && (
-          <TextInput label="Room" value={room} onChange={(e) => setRoom(e.currentTarget.value)} data-testid={`${testid}-room`} />
+          <TextInput label="Room" value={room} data-testid={`${testid}-room`} onChange={event => {
+            draftRef.current.roomEdited = true;
+            setRoom(event.currentTarget.value);
+          }} />
         )}
         {answer?.code === 'NAME_TAKEN' && (
           <div data-testid={`${testid}-taken`} role="alert">
@@ -73,7 +98,7 @@ export function RenameScreenDialog({
         )}
         {answer && !['NAME_TAKEN', 'ROUTINES_TARGET'].includes(answer.code) && (
           <Text size="sm" className="house-tone--failed" role="alert" data-testid={`${testid}-error`}>
-            Couldn't save the name. {answer.error ?? ''}
+            Couldn't save all changes. {answer.error ?? ''}
           </Text>
         )}
         <Group justify="flex-end">
@@ -90,7 +115,7 @@ export function RenameScreenDialog({
           </Button>
         </Group>
       </Stack>
-    </Modal>
+    </FormDialog>
   );
 }
 

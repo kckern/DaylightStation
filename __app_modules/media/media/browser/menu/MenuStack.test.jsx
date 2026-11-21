@@ -1,8 +1,8 @@
-import { render, act } from '@testing-library/react';
+import { render, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
 import { MenuNavigationProvider } from "../../../../../__capabilities/screen-host/browser/menu-context.mjs";
-import { ScreenOverlayProvider } from "../../../../../__capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx";
+import { ScreenOverlayProvider, useScreenOverlay } from "../../../../../__capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx";
 import MenuStack from "./MenuStack.jsx";
 
 // Mock the heavy list-fetching menu view and Plex router — this test only
@@ -54,17 +54,28 @@ vi.mock("../../../../../__capabilities/playback/browser/player/Player.jsx", () =
         data-testid="player"
         data-play={typeof props.play === 'object' ? JSON.stringify(props.play) : props.play ?? ''}
         data-queue={typeof props.queue === 'object' ? JSON.stringify(props.queue) : props.queue ?? ''}
-      />
+      >
+        <button type="button" data-testid="finish-player" onClick={props.clear}>Finish</button>
+      </div>
     );
   }),
   PlayerOverlayLoading: () => <div data-testid="loading" />,
 }));
 
-function renderStack() {
+function OverlayControls({ ownedMenu }) {
+  const { showOverlay } = useScreenOverlay();
+  return <button type="button" onClick={() => {
+    if (ownedMenu) showOverlay(MenuStack, { rootMenu: 'test-menu' }, { ownsNavStack: true });
+    else showOverlay(() => <div data-testid="unrelated-overlay" />);
+  }}>Open overlay</button>;
+}
+
+function renderStack({ ownedMenu = false } = {}) {
   return render(
     <MenuNavigationProvider>
       <ScreenOverlayProvider>
-        <MenuStack rootMenu="test-menu" />
+        {!ownedMenu && <MenuStack rootMenu="test-menu" />}
+        <OverlayControls ownedMenu={ownedMenu} />
       </ScreenOverlayProvider>
     </MenuNavigationProvider>
   );
@@ -95,5 +106,34 @@ describe('MenuStack selection -> Player prop mapping', () => {
     const play = JSON.parse(player.dataset.play);
     expect(play.shader).toBe('dark');
     expect(play.contentId).toBe('plex:663147');
+  });
+
+  it('returns an embedded player to its menu when it completes', async () => {
+    const view = renderStack();
+    act(() => view.getByTestId('select-play-with-shader').click());
+    const finish = await view.findByTestId('finish-player');
+    act(() => finish.click());
+    expect(await view.findByTestId('select-play-with-shader')).toBeInTheDocument();
+  });
+
+  it('keeps a newer, unrelated overlay when an embedded player completes', async () => {
+    const view = renderStack();
+    act(() => view.getByTestId('select-play-with-shader').click());
+    const finish = await view.findByTestId('finish-player');
+    act(() => view.getByRole('button', { name: 'Open overlay' }).click());
+    expect(view.getByTestId('unrelated-overlay')).toBeInTheDocument();
+    act(() => finish.click());
+    expect(await view.findByTestId('select-play-with-shader')).toBeInTheDocument();
+    expect(view.getByTestId('unrelated-overlay')).toBeInTheDocument();
+  });
+
+  it('dismisses the fullscreen overlay when it owns the completing player', async () => {
+    const view = renderStack({ ownedMenu: true });
+    act(() => view.getByRole('button', { name: 'Open overlay' }).click());
+    act(() => view.getByTestId('select-play-with-shader').click());
+    const finish = await view.findByTestId('finish-player');
+    act(() => finish.click());
+    await waitFor(() => expect(view.queryByTestId('player')).not.toBeInTheDocument());
+    expect(view.queryByTestId('select-play-with-shader')).not.toBeInTheDocument();
   });
 });

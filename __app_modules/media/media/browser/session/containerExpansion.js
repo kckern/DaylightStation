@@ -15,6 +15,7 @@
 // single-item behavior — a tap must never be dead.
 
 /** Metadata types that mark a container in search/browse rows. */
+import { daylightApiResponse } from '../../../../../frontend/src/lib/api.mjs';
 import { normalizePlaybackQuality } from '@shared-contracts/media/playbackQuality.mjs';
 
 export const CONTAINER_TYPES = new Set([
@@ -103,7 +104,7 @@ export async function expandContainerInput(input, {
   limit = EXPANSION_LIMIT,
   maxDepth = MAX_NESTED_DEPTH,
 } = {}) {
-  const doFetch = fetchImpl ?? ((...args) => globalThis.fetch(...args));
+  const doFetch = fetchImpl ?? daylightApiResponse;
   const containerTitle = input?.title ?? null;
   const containerContentId = typeof input?.contentId === 'string' ? input.contentId : null;
   const inheritedFormat = input?.format ?? null;

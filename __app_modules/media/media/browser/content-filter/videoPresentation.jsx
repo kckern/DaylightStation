@@ -1,4 +1,5 @@
 import React, { useMemo, useEffect, useRef, useCallback, useState } from 'react';
+import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 import { useFilterData } from './useFilterData.js';
 import { useContentFilter, baseId } from './useContentFilter.js';
 import { FilterOverlay } from './FilterOverlay.jsx';
@@ -105,14 +106,13 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl, bumperHel
     setFetchedCardArt(null);
     if (!filterContentId || !filterEnabled || !hasEdl) return undefined;
     const rk = String(filterContentId).replace(/^plex:/, '');
-    let cancelled = false;
-    fetch(`/api/v1/content-filter/${rk}/art`)
-      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then((a) => { if (!cancelled && a && 'source' in a) setFetchedCardArt({ poster: a.poster, background: a.background, logo: a.logo }); })
-      .catch((error) => { if (!cancelled) logger().warn('content-filter.art.fetch-failed', { rk, error: error?.message }); });
-    return () => { cancelled = true; };
+    const controller = new AbortController();
+    DaylightAPI(`/api/v1/content-filter/${encodeURIComponent(rk)}/art`, {}, 'GET', { signal: controller.signal })
+      .then((a) => { if (!controller.signal.aborted && a && 'source' in a) setFetchedCardArt({ contentId: filterContentId, art: { poster: a.poster, background: a.background, logo: a.logo } }); })
+      .catch((error) => { if (!controller.signal.aborted) logger().warn('content-filter.art.fetch-failed', { rk, error: error?.message }); });
+    return () => controller.abort();
   }, [filterContentId, filterEnabled, hasEdl]);
-  const filterCardArt = fetchedCardArt || defaultCardArt;
+  const filterCardArt = fetchedCardArt && fetchedCardArt.contentId === filterContentId ? fetchedCardArt.art : defaultCardArt;
 
   // --- Preview surround: publish live state; bind the transport and actions ---
   const ratingKey = filterContentId ? String(filterContentId).replace(/^plex:/, '') : null;

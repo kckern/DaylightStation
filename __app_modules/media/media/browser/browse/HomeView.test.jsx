@@ -4,7 +4,7 @@
 // where it played, and a lead into Browse when there is nothing to suggest.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const apiMock = vi.fn();
@@ -26,10 +26,12 @@ vi.mock("../logging/mediaLog.js", () => {
 });
 
 import { HomeView, tileMeta } from "./HomeView.jsx";
+import { createFleetStore } from "../fleet/fleetStore.js";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
-import { resetApiResourceCache } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { invalidateApiResources, resetApiResourceCache, useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { HOUSEHOLD_PATHS } from '../household/householdApi.js';
 
-const SCREENS = { screens: [
+const SCREENS = { available: true, screens: [
   { id: 'fleet:livingroom-tv', screenId: 'livingroom-tv', name: 'Living Room TV', aliases: [] },
   { id: 'browser:kid', name: "Kid's tablet", aliases: [] },
 ] };
@@ -61,7 +63,6 @@ function routes(overrides = {}) {
         playedOn: { deviceId: 'fleet:livingroom-tv' }, plays: [], spots: [] },
     ] },
     'api/v1/media/household/favourites': { items: [{ id: 'plex:100' }] },
-    'api/v1/media/screens': SCREENS,
     ...overrides,
   };
   apiMock.mockImplementation((path, body, method) => {
@@ -71,6 +72,8 @@ function routes(overrides = {}) {
   });
 }
 
+const readCount = path => apiMock.mock.calls.filter(([requested]) => requested === path).length;
+
 let fleetEntries = {};
 const fleetStore = {
   getEntry: (id) => fleetEntries[id] ?? null,
@@ -78,10 +81,10 @@ const fleetStore = {
   subscribeAll: () => () => {},
 };
 
-function renderHome() {
+function renderHome(store = fleetStore, registry = SCREENS) {
   return render(
     <MantineProvider>
-      <FleetContext.Provider value={{ store: fleetStore, devices: [] }}><HomeView /></FleetContext.Provider>
+      <FleetContext.Provider value={{ store, devices: [], registry }}><HomeView /></FleetContext.Provider>
     </MantineProvider>,
   );
 }
@@ -141,6 +144,18 @@ describe('HomeView start page', () => {
     expect(within(card).getByRole('button', { name: /Move here/ })).toBeInTheDocument();
     fireEvent.click(within(card).getByRole('button', { name: /Remote/ }));
     expect(push).toHaveBeenCalledWith('peek', { deviceId: 'livingroom-tv' });
+  });
+
+  it('offers Move here only after a live playback owner arrives for the suggested screen', async () => {
+    const store = createFleetStore();
+    renderHome(store);
+    const card = await screen.findByTestId('home-tile-now-on-livingroom-tv-plex:9');
+    expect(within(card).queryByRole('button', { name: /Move here/ })).toBeNull();
+    act(() => store.receive({
+      deviceId: 'livingroom-tv', ts: new Date().toISOString(),
+      snapshot: { currentItem: { contentId: 'plex:9' }, meta: { playbackOwner: { ownerInstanceId: 'tv', playbackRevision: 1 } } },
+    }));
+    expect(within(card).getByRole('button', { name: /Move here/ })).toBeInTheDocument();
   });
 
   it('labels recent items from any screen with where they played', async () => {
@@ -217,6 +232,105 @@ describe('HomeView start page', () => {
     }
   });
 
+  it('revalidates each delayed partial response once and keeps other reads undisturbed', async () => {
+    vi.useFakeTimers();
+    try {
+      const { recent, carryOn } = HOUSEHOLD_PATHS;
+      const delayed = Promise.withResolvers();
+      routes({ [recent]: { degraded: true, items: [] } });
+      const respond = apiMock.getMockImplementation();
+      apiMock.mockImplementation((path, ...args) =>
+        path === carryOn && readCount(carryOn) === 1 ? delayed.promise : respond(path, ...args));
+      await act(async () => { renderHome(); });
+      expect(readCount(recent)).toBe(1);
+      expect(readCount(carryOn)).toBe(1);
+
+      await act(() => vi.advanceTimersByTimeAsync(10_000));
+      expect(readCount(recent)).toBe(2);
+      expect(readCount(carryOn)).toBe(1);
+
+      await act(async () => { delayed.resolve({ degraded: true, items: [], nowOn: [] }); });
+      await act(() => vi.advanceTimersByTimeAsync(10_000));
+      expect(readCount(carryOn)).toBe(2);
+      await act(() => vi.advanceTimersByTimeAsync(30_000));
+      expect(readCount(recent)).toBe(2);
+      expect(readCount(carryOn)).toBe(2);
+      expect(readCount(SUGGESTIONS)).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels the pending recovery for a healthy response and retires all retries when Home unmounts', async () => {
+    vi.useFakeTimers();
+    try {
+      const { recent, carryOn } = HOUSEHOLD_PATHS;
+      routes({ [recent]: { degraded: true, items: [] } });
+      let view;
+      await act(async () => { view = renderHome(); });
+      await act(() => vi.advanceTimersByTimeAsync(5_000));
+      routes({ [recent]: { items: [] }, [carryOn]: { degraded: true, items: [], nowOn: [] } });
+      await act(async () => { invalidateApiResources(path => path === recent || path === carryOn); });
+      expect(readCount(recent)).toBe(2);
+      expect(readCount(carryOn)).toBe(2);
+      await act(() => vi.advanceTimersByTimeAsync(5_000));
+      expect(readCount(recent)).toBe(2);
+      expect(readCount(carryOn)).toBe(2);
+      view.unmount();
+      await act(() => vi.advanceTimersByTimeAsync(20_000));
+      expect(readCount(recent)).toBe(2);
+      expect(readCount(carryOn)).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('releases a pending partial-response retry while hidden and starts it again on return', async () => {
+    vi.useFakeTimers();
+    let visibility = 'visible';
+    const visible = vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility);
+    try {
+      const { recent } = HOUSEHOLD_PATHS;
+      routes({ [recent]: { degraded: true, items: [] } });
+      await act(async () => { renderHome(); });
+      visibility = 'hidden';
+      document.dispatchEvent(new Event('visibilitychange'));
+      await act(() => vi.advanceTimersByTimeAsync(20_000));
+      expect(readCount(recent)).toBe(1);
+
+      visibility = 'visible';
+      document.dispatchEvent(new Event('visibilitychange'));
+      await act(() => vi.advanceTimersByTimeAsync(10_000));
+      expect(readCount(recent)).toBe(2);
+      await act(() => vi.advanceTimersByTimeAsync(20_000));
+      expect(readCount(recent)).toBe(2);
+    } finally {
+      visible.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('lets a queued shared invalidation own the partial-response recovery read', async () => {
+    vi.useFakeTimers();
+    try {
+      const { recent } = HOUSEHOLD_PATHS;
+      routes({ [recent]: { degraded: true, items: [] } });
+      await act(async () => {
+        renderHook(() => useApiResource(recent, { swr: true }));
+        renderHome();
+      });
+      expect(readCount(recent)).toBe(1);
+      routes({ [recent]: { items: [] } });
+      await act(async () => {
+        invalidateApiResources(path => path === recent);
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(readCount(recent)).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('leads into Browse when there is nothing to suggest', async () => {
     routes({ 'api/v1/media/suggestions?deviceId=browser%3Ame': { deviceId: 'browser:me', rows: [], empty: true } });
     renderHome();
@@ -275,12 +389,11 @@ describe('HomeView start page', () => {
   });
 
   it('never shows a machine browser name: an unnamed browser is "a browser"', async () => {
-    routes({ 'api/v1/media/screens': { screens: [{ id: 'browser:kid', name: 'Browser 4778f429', aliases: [] }] },
-      'api/v1/media/household/recent?limit=24': { items: [
+    routes({ 'api/v1/media/household/recent?limit=24': { items: [
         { contentId: 'plex:50', title: 'Last Night Film', type: 'movie', lastPlayed: '2026-10-02 21:30:00', finished: true,
           playedOn: { deviceId: 'browser:kid' }, plays: [], spots: [] },
       ] } });
-    renderHome();
+    renderHome(fleetStore, { ...SCREENS, screens: [{ id: 'browser:kid', name: 'Browser 4778f429', aliases: [] }] });
     const tile = await screen.findByTestId('home-tile-recent-plex:50');
     await waitFor(() => expect(tile).toHaveTextContent('a browser'));
     expect(document.body.textContent).not.toMatch(/Browser [0-9a-f]{8}/);

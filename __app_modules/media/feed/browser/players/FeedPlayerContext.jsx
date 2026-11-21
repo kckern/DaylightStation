@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- provider and its required consumer hook form one context module */
-import { createContext, useContext, useReducer, useRef, useCallback, useEffect, useMemo } from 'react';
+import { createContext, useContext, useReducer, useRef, useCallback, useMemo } from 'react';
+import { browserPreference } from '@/lib/browserPreference.js';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 
 // Recreate child each call to pick up sessionLog context set by FeedApp
@@ -11,53 +12,63 @@ function log() { return getLogger().child({ module: 'feed-player' }); }
 
 export const SPEED_STEPS = [1, 1.25, 1.5, 1.75, 2];
 
-const LS_VOLUME = 'feedPlayer:volume';
-const LS_SPEED = 'feedPlayer:speed';
-
-// ---------------------------------------------------------------------------
-// localStorage helpers
-// ---------------------------------------------------------------------------
-
-function readFloat(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    if (raw === null) return fallback;
-    const n = parseFloat(raw);
-    return Number.isFinite(n) ? n : fallback;
-  } catch {
-    return fallback;
-  }
+function decodeNumber(raw) {
+  if (!raw.trim()) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
 }
 
-function writeFloat(key, value) {
-  try {
-    localStorage.setItem(key, String(value));
-  } catch {
-    /* quota or private-mode — ignore */
-  }
-}
+const volumePreference = browserPreference('feedPlayer:volume', 1, raw => {
+  const value = decodeNumber(raw);
+  return value !== null && value >= 0 && value <= 1 ? value : null;
+});
+const speedPreference = browserPreference('feedPlayer:speed', 1, raw => {
+  const value = decodeNumber(raw);
+  return SPEED_STEPS.includes(value) ? value : null;
+});
 
 // ---------------------------------------------------------------------------
 // Initial state
 // ---------------------------------------------------------------------------
 
 function buildInitialState() {
-  const volume = readFloat(LS_VOLUME, 1);
-  const speed = readFloat(LS_SPEED, 1);
+  const volume = volumePreference.read();
+  const speed = speedPreference.read();
   return {
-    activeMedia: null,      // null | { item, contentId }
+    activeMedia: null,      // null | { item, contentId, position? }
     pausedMedia: null,       // null | { item, contentId, position }
     volume,                  // 0-1
     speed,                   // playback rate
     muted: false,
     preMuteVolume: volume,
-    playerVisible: false,
   };
 }
 
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
+
+// The renderer boundary seeks within one mounted on-demand item. A collection,
+// live stream, or unmapped source must reopen through its normal playback entry.
+function capturePosition(handle) {
+  const contentId = handle?.getMountedContentId();
+  if (!contentId) return null;
+  const item = handle.getNowPlaying()?.item;
+  const timeline = item?.contentTimeline;
+  // The mounted operation seeks in renderer seconds; a remapped transport may
+  // reopen at a different origin and cannot safely use this absolute target.
+  if (item?.isLive || timeline?.rendererStartSeconds !== timeline?.contentStartSeconds) return null;
+  const position = handle.getContentTime();
+  const native = handle.getCurrentTime();
+  const duration = handle.getDuration();
+  return Number.isFinite(position) && position >= 0 && Number.isFinite(native) && native >= 0
+    && Number.isFinite(duration) && native < duration
+    ? { contentId, position } : null;
+}
+
+function parkMedia(active, captured) {
+  return { ...active, position: captured?.contentId === active.contentId ? captured?.position : null };
+}
 
 function feedPlayerReducer(state, action) {
   switch (action.type) {
@@ -66,15 +77,12 @@ function feedPlayerReducer(state, action) {
       log().info('player.play', { title: item?.title, contentId, hadActive: !!state.activeMedia });
       // Pause current active → pausedMedia (capture position from caller)
       const pausedMedia = state.activeMedia
-        ? {
-            item: state.activeMedia.item,
-            contentId: state.activeMedia.contentId,
-            position: currentPosition ?? 0,
-          }
+        ? parkMedia(state.activeMedia, currentPosition)
         : state.pausedMedia;
       return {
         ...state,
-        activeMedia: { item, contentId },
+        // Reader inline playback parks the previous source without claiming the persistent renderer.
+        activeMedia: contentId ? { item, contentId } : null,
         pausedMedia,
       };
     }
@@ -89,22 +97,18 @@ function feedPlayerReducer(state, action) {
       // Swap paused ↔ active; capture current active position from caller
       const { currentPosition } = action.payload || {};
       const newPaused = state.activeMedia
-        ? {
-            item: state.activeMedia.item,
-            contentId: state.activeMedia.contentId,
-            position: currentPosition ?? 0,
-          }
+        ? parkMedia(state.activeMedia, currentPosition)
         : null;
       return {
         ...state,
-        activeMedia: { item: state.pausedMedia.item, contentId: state.pausedMedia.contentId },
+        activeMedia: state.pausedMedia,
         pausedMedia: newPaused,
       };
     }
 
     case 'SET_VOLUME': {
       const volume = Math.max(0, Math.min(1, action.payload));
-      writeFloat(LS_VOLUME, volume);
+      volumePreference.write(volume);
       return { ...state, volume, muted: false };
     }
 
@@ -117,22 +121,15 @@ function feedPlayerReducer(state, action) {
 
     case 'SET_SPEED': {
       const speed = action.payload;
-      writeFloat(LS_SPEED, speed);
+      speedPreference.write(speed);
       return { ...state, speed };
     }
 
     case 'CYCLE_SPEED': {
       const idx = SPEED_STEPS.indexOf(state.speed);
       const next = SPEED_STEPS[(idx + 1) % SPEED_STEPS.length];
-      writeFloat(LS_SPEED, next);
+      speedPreference.write(next);
       return { ...state, speed: next };
-    }
-
-    case 'SET_PLAYER_VISIBLE': {
-      const visible = !!action.payload;
-      if (visible === state.playerVisible) return state; // no-op guard
-      log().info('player.visibility', { visible });
-      return { ...state, playerVisible: visible };
     }
 
     default:
@@ -153,13 +150,11 @@ const FeedPlayerContext = createContext(null);
 export function FeedPlayerProvider({ children }) {
   const [state, dispatch] = useReducer(feedPlayerReducer, undefined, buildInitialState);
   const playerRef = useRef(null);
-  const observerRef = useRef(null);
-  const observedElRef = useRef(null);
 
   // ---- actions ----
 
   const play = useCallback((item, contentId) => {
-    const currentPosition = playerRef.current?.getCurrentTime?.() ?? 0;
+    const currentPosition = capturePosition(playerRef.current);
     dispatch({ type: 'PLAY', payload: { item, contentId, currentPosition } });
   }, []);
 
@@ -168,7 +163,7 @@ export function FeedPlayerProvider({ children }) {
   }, []);
 
   const resumePaused = useCallback(() => {
-    const currentPosition = playerRef.current?.getCurrentTime?.() ?? 0;
+    const currentPosition = capturePosition(playerRef.current);
     dispatch({ type: 'RESUME_PAUSED', payload: { currentPosition } });
   }, []);
 
@@ -188,45 +183,6 @@ export function FeedPlayerProvider({ children }) {
     dispatch({ type: 'CYCLE_SPEED' });
   }, []);
 
-  const setPlayerVisible = useCallback((visible) => {
-    dispatch({ type: 'SET_PLAYER_VISIBLE', payload: visible });
-  }, []);
-
-  // ---- IntersectionObserver for inline player visibility ----
-
-  const registerPlayerEl = useCallback((domElement) => {
-    // Tear down previous observer if element changed
-    if (observerRef.current) {
-      observerRef.current.disconnect();
-      observerRef.current = null;
-    }
-    observedElRef.current = domElement;
-
-    if (!domElement) {
-      dispatch({ type: 'SET_PLAYER_VISIBLE', payload: false });
-      return;
-    }
-
-    const io = new IntersectionObserver(
-      ([entry]) => {
-        dispatch({ type: 'SET_PLAYER_VISIBLE', payload: entry.isIntersecting });
-      },
-      { threshold: 0.5 }
-    );
-    io.observe(domElement);
-    observerRef.current = io;
-  }, []);
-
-  // Cleanup observer on unmount
-  useEffect(() => {
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-        observerRef.current = null;
-      }
-    };
-  }, []);
-
   // Memoize context value to prevent unnecessary consumer re-renders.
   // Without this, every provider render creates a new object reference,
   // triggering all consumers (Scroll, FeedLayout, etc.) to re-render.
@@ -240,13 +196,11 @@ export function FeedPlayerProvider({ children }) {
     toggleMute,
     setSpeed,
     cycleSpeed,
-    setPlayerVisible,
-    registerPlayerEl,
     dispatch,
   }), [
     state,
     play, stop, resumePaused, setVolume, toggleMute,
-    setSpeed, cycleSpeed, setPlayerVisible, registerPlayerEl,
+    setSpeed, cycleSpeed,
   ]);
 
   return (

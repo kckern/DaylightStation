@@ -23,7 +23,7 @@ vi.mock("../fleet/useFleetContext.js", () => ({
 }));
 
 const dismissLayer = vi.fn();
-vi.mock("../shell/useDismissLayer.js", () => ({
+vi.mock("@/lib/ui/dismiss/useDismissLayer.js", () => ({
   useDismissLayer: (...a) => dismissLayer(...a),
 }));
 

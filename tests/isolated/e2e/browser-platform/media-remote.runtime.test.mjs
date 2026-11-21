@@ -1,0 +1,144 @@
+import { expect, test } from '@playwright/test';
+
+test.use({ serviceWorkers: 'block', viewport: { width: 390, height: 850 } });
+
+test('a remote screen supplies its own clock and recovers a missed start outcome on reconnect', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('media-app.first-use-done', 'done'));
+  let socket;
+  let connections = 0;
+  let reads = 0;
+  const attributionReads = [];
+  let origin = 'Kitchen tablet';
+  const commands = [];
+  await page.routeWebSocket('**/ws', connection => {
+    socket = connection;
+    connections++;
+    connection.onMessage(raw => {
+      const envelope = JSON.parse(raw);
+      if (/^(device-control|client-control):/.test(envelope.topic || '')) commands.push(envelope);
+    });
+  });
+  await page.route('**/api/**', route => {
+    const path = decodeURIComponent(new URL(route.request().url()).pathname);
+    if (path.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    if (path.endsWith('/device/config')) {
+      return route.fulfill({ json: { devices: { fixture: { name: 'Fixture screen', fleet: true } } } });
+    }
+    if (path.endsWith('/device/fixture/start-status')) {
+      reads++;
+      const status = connections > 1 ? { phase: 'failed', updatedAt: new Date().toISOString() } : null;
+      return route.fulfill({ json: { ok: true, status } });
+    }
+    if (path.endsWith('/media/screens/fleet:fixture/started-by')) {
+      attributionReads.push(connections);
+      return route.fulfill({ json: { startedBy: { kind: 'device', name: origin } } });
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  const item = { id: 'plex:42', contentId: 'plex:42', title: 'Remote track', duration: 60 };
+  function sendPosition(position) {
+    socket.send(JSON.stringify({ topic: 'device-state:fixture', deviceId: 'fixture', ts: new Date().toISOString(),
+      snapshot: { state: 'playing', currentItem: item, position, duration: 60, queue: { items: [item] } } }));
+  }
+
+  await page.goto('/media');
+  await page.getByTestId('app-tab-fleet').click();
+  const target = page.getByTestId('fleet-peek-fixture');
+  await expect(target).toBeVisible();
+  await expect.poll(() => reads).toBe(1);
+  socket.close({ code: 1001, reason: 'fixture restart' });
+  await expect.poll(() => connections, { timeout: 20000 }).toBe(2);
+  await expect(page.getByTestId('house-start-status-fixture')).toHaveAttribute('data-tone', 'failed');
+  expect(reads).toBe(2);
+  sendPosition(12);
+  await target.click();
+  const panel = page.getByTestId('peek-panel');
+  await expect(panel).toContainText('Remote track');
+  const seek = panel.getByRole('slider', { name: 'Seek' });
+  await expect(seek).toHaveAttribute('aria-valuenow', '12');
+  sendPosition(24);
+  await expect(seek).toHaveAttribute('aria-valuenow', '24');
+
+  const attribution = panel.getByTestId('house-started-by-fixture');
+  await expect(attribution).toHaveText('Started by Kitchen tablet');
+  origin = 'Desk laptop';
+  socket.close({ code: 1001, reason: 'same title started on a different device' });
+  await expect.poll(() => connections, { timeout: 20000 }).toBe(3);
+  sendPosition(4);
+  await expect(seek).toHaveAttribute('aria-valuenow', '4');
+  await expect(attribution).toHaveText('Started by Desk laptop');
+  expect(attributionReads).toEqual([2, 3]);
+  await expect(page.locator('audio[src],video[src]')).toHaveCount(0);
+  expect(commands).toEqual([]);
+});
+
+test('Media Fleet updates the same playing item’s attribution after reconnect and foreground return', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('media-app.first-use-done', 'done');
+    window.attributionFixtureVisible = true;
+    Object.defineProperty(document, 'visibilityState', {
+      get: () => window.attributionFixtureVisible ? 'visible' : 'hidden',
+    });
+  });
+  let socket;
+  let connections = 0;
+  let origin = 'Kitchen tablet';
+  const reads = [];
+  const commands = [];
+  await page.routeWebSocket('**/ws', connection => {
+    socket = connection;
+    connections += 1;
+    connection.onMessage(raw => {
+      const envelope = JSON.parse(raw);
+      if (/^(device-control|client-control):/.test(envelope.topic || '')) commands.push(envelope);
+    });
+  });
+  await page.route('**/api/**', route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    if (pathname.endsWith('/device/config')) return route.fulfill({ json: { devices: {} } });
+    if (pathname.endsWith('/media/started-by')) {
+      reads.push(connections);
+      return route.fulfill({ json: { items: [{ deviceId: 'browser:guest', startedBy: { kind: 'device', name: origin } }] } });
+    }
+    return route.fulfill({ json: {} });
+  });
+  const setVisible = visible => page.evaluate(visible => {
+    window.attributionFixtureVisible = visible;
+    document.dispatchEvent(new Event('visibilitychange'));
+  }, visible);
+  const sendPlayback = position => socket.send(JSON.stringify({
+    topic: 'playback_state', deviceId: 'browser:guest', sessionId: 'guest', state: 'playing', position,
+    identity: { clientId: 'guest', name: 'Guest browser' }, connected: true, ts: new Date().toISOString(),
+    currentItem: { contentId: 'plex:42', title: 'Remote track', duration: 60 },
+  }));
+  const reconnect = async count => {
+    socket.close({ code: 1001, reason: 'fixture restart' });
+    await expect.poll(() => connections, { timeout: 20_000 }).toBe(count);
+    await expect(page.getByTestId('fleet-connection-warning')).toBeHidden();
+    sendPlayback(5);
+  };
+
+  await page.goto('/media');
+  await page.getByTestId('app-tab-fleet').click();
+  await expect.poll(() => connections).toBe(1);
+  sendPlayback(15);
+  const attribution = page.getByTestId('fleet-view').getByTestId('house-started-by-browser:guest');
+  await expect(attribution).toHaveText('Started by Kitchen tablet');
+  const initialReads = reads.length;
+
+  origin = 'Desk laptop';
+  await reconnect(2);
+  await expect(attribution).toHaveText('Started by Desk laptop');
+  expect(reads.slice(initialReads)).toEqual([2]);
+
+  await setVisible(false);
+  origin = 'Living room remote';
+  await reconnect(3);
+  expect(reads.slice(initialReads)).toEqual([2]);
+  await setVisible(true);
+  await expect(attribution).toHaveText('Started by Living room remote');
+  expect(reads.slice(initialReads)).toEqual([2, 3]);
+  expect(commands).toEqual([]);
+});

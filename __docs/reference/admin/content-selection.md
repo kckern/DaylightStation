@@ -2,6 +2,28 @@
 
 When creating list items (playlists, watchlists, workout queues), admins specify content via the `input` field. Content lives across multiple sources - Plex libraries, local media, Immich photos, YouTube, etc. Each uses standardized `source:localId` format.
 
+In the list editor, open **List actions** for settings that apply to the whole list. Each named section has its own actions menu and expand or collapse button. Pressing Escape returns focus to the menu button. The compact controls use the shared 44px touch target on coarse pointers. [Design-system reference](../frontend/design-system.md)
+
+Search results keep their original section and row positions. Editing or duplicating a result acts on its original section. **Split Below** starts the new section after that row in the full list, including items hidden by the search. If a saved change needs a fresh snapshot, the list offers a read-only Retry.
+
+Deleting and undoing a list item restores its scheduling dates and original position. Undo uses the insertion index returned by the list service, so intervening edits do not make it move a neighboring row. The service accepts the Admin field names and stores the codec's canonical schedule fields, so later reads retain the same values.
+
+Editing a list item sends changed fields, including values reset to their defaults. New items continue to omit default values.
+
+Clearing an existing item image sends an explicit null to remove its override; an untouched missing image remains omitted.
+
+The list service maps Admin playback aliases to the codec's canonical `fixed_order` and `playbackrate` fields; shader remains a canonical field. Adds, edits, and fresh reads use that same mapping.
+
+Watchlist item metadata such as `hold`, `priority`, `progress`, and `watched` survives Admin saves even when a legacy watchlist row is normalized to the current input/action form.
+
+Per-item playback controls are limited to settings consumed by list playback; the unsupported per-item Loop option is not exposed.
+
+Duplicating a list item gives the copy a distinct “(copy)” label while preserving its content and settings.
+
+The item editor's **Section** choice saves the selected destination. When a move succeeds but its field update fails, retrying resolves the item by its stable UID in the refreshed list. Cross-section edits without a stable UID are blocked to prevent writes to the wrong positional row.
+
+The list editor checks whether the selected item supports its row’s action. Rows looking up the same item share pending capability and alternate reads. A confirmed mismatch can suggest another ID for the same content. A failed capability read leaves the row quiet, and a failed alternate read leaves the confirmed mismatch without a suggestion. Changing the row’s item or action retires an obsolete suggestion.
+
 ## Content ID Format
 
 All content references follow `source:localId`:

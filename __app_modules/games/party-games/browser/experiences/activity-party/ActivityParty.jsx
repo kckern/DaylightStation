@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useWebSocketSubscription } from '@/hooks/useWebSocket.js';
-import { fetchDrawingCheckpoint, fetchSession, saveDrawingCheckpoint, sendRuleCommand } from "../../../../../../__capabilities/gaming/browser/platform/api/sessionClient.js";
+import { fetchDrawingCheckpoint, saveDrawingCheckpoint, sendRuleCommand } from "../../../../../../__capabilities/gaming/browser/platform/api/sessionClient.js";
+import { useGamingSession } from "../../../../../../__capabilities/gaming/browser/session-projection.mjs";
 import DrawingCanvas from "./presentation/DrawingCanvas.jsx";
 import { DecoderText, HighContrastMask } from "./presentation/DecoderPresenter.jsx";
 import Scoreboard from "../../../../../../__capabilities/gaming/browser/platform/ui/Scoreboard.jsx";
@@ -21,17 +21,20 @@ function ChallengeTimer({ running, onExpire, deadline, durationMs = 60_000 }) {
   return <div className="activity-party__timer"><TimerRing progress={countdown.progress} remaining={countdown.remaining} /><strong>{Math.ceil(countdown.remaining)}</strong></div>;
 }
 
-export default function ActivityParty({ seats = [], sessionId, onComplete, gamingServices }) {
+export default function ActivityParty({ seats = [], sessionId, onComplete, gamingServices, reconciledSession }) {
   const teams = seats;
   const audio = gamingServices?.audio;
-  const [state, setState] = useState(null); const [definition, setDefinition] = useState(null); const [error, setError] = useState(null);
-  const [completion, setCompletion] = useState(null);
+  const { session, error: readError, acceptSession } = useGamingSession(sessionId, reconciledSession);
+  const state = session?.state;
+  const definition = session?.definition;
+  const completion = session?.result || null;
+  const [error, setError] = useState(null);
   const completedRef = useRef(false);
   const [drawingCheckpoint, setDrawingCheckpoint] = useState([]);
   const checkpointQueue = useRef(Promise.resolve());
   const command = useCallback(async (value, options) => {
     try {
-      const result = await sendRuleCommand(sessionId, value, options); setState(result.state); setCompletion(result.result || null); setError(null);
+      const result = await sendRuleCommand(sessionId, value, options); acceptSession(result); setError(null);
       if (value.type === 'outcome.correct') audio?.play('correct');
       else if (value.type === 'outcome.incorrect') audio?.play('wrong');
       else if (value.type === 'challenge.next') audio?.play('handoff');
@@ -39,13 +42,11 @@ export default function ActivityParty({ seats = [], sessionId, onComplete, gamin
       return result;
     }
     catch (cause) { setError(cause.message); return null; }
-  }, [audio, sessionId]);
-  useEffect(() => { let live = true; fetchSession(sessionId).then((result) => { if (live) { setState(result.state); setDefinition(result.definition); setCompletion(result.result || null); } }).catch((cause) => setError(cause.message)); return () => { live = false; }; }, [sessionId]);
+  }, [acceptSession, audio, sessionId]);
   useEffect(() => { let live = true; fetchDrawingCheckpoint(sessionId).then((result) => { if (live) setDrawingCheckpoint(result.strokes || []); }).catch((cause) => setError(cause.message)); return () => { live = false; }; }, [sessionId]);
   useEffect(() => {
     if (state?.phase === 'challenge-complete' || state?.phase === 'complete') setDrawingCheckpoint([]);
   }, [state?.challenge_index, state?.phase]);
-  useWebSocketSubscription('gaming', (message) => { if (message?.kind === 'session-updated' && message.sessionId === sessionId) fetchSession(sessionId).then((result) => { setState(result.state); setCompletion(result.result || null); }).catch((cause) => setError(cause.message)); }, [sessionId]);
   useEffect(() => { if (state?.phase === 'complete' && completion && !completedRef.current) { completedRef.current = true; audio?.play('win'); onComplete?.(completion); } }, [audio, completion, onComplete, state?.phase]);
   const checkpointDrawing = useCallback((strokes) => {
     setDrawingCheckpoint(strokes);
@@ -53,7 +54,7 @@ export default function ActivityParty({ seats = [], sessionId, onComplete, gamin
     checkpointQueue.current.catch((cause) => setError(cause.message));
   }, [sessionId]);
   const performer = useMemo(() => teams.find((team) => team.id === state?.performer_id), [teams, state?.performer_id]);
-  if (error) return <div className="party-games__error">{error}</div>;
+  if (error || readError) return <div className="party-games__error">{error || readError.message}</div>;
   if (!state || !definition) return <TitleCard title="Activity Party" subtitle="Loading…" />;
   const challenge = state.challenge;
   return <div className="activity-party" data-phase={state.phase}>

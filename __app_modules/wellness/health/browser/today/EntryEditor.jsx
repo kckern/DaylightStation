@@ -3,7 +3,7 @@ import { usePortionControl } from "./usePortionDraft.js";
 import { useFoodMutation } from "../operations/useFoodMutation.js";
 import { useEffect, useRef, useState } from 'react';
 import { Button, Group, NumberInput, SegmentedControl, Stack, Text, TextInput, UnstyledButton } from '@mantine/core';
-import { Sheet, ErrorState } from '@/lib/ui';
+import { Sheet, ErrorState, LoadingState } from '@/lib/ui';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
@@ -51,7 +51,6 @@ function Editor({ row, onClose, onChanged, onRequestDelete, onCoach, observation
   const [error, setError] = useState(null);
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState('');
-  const [icons, setIcons] = useState([]);
   const pending = useRef(false);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -68,15 +67,6 @@ function Editor({ row, onClose, onChanged, onRequestDelete, onCoach, observation
       : catalog.data?.items?.find(item => item.name?.toLowerCase() === nameOf(row).toLowerCase());
     setFavorite(Boolean(entry?.favorite));
   }, [catalog.data, row, isGroup]);
-
-  useEffect(() => {
-    if (!picking) return;
-    let live = true;
-    DaylightAPI(`api/v1/health/nutrition/icons?q=${encodeURIComponent(query)}&limit=60`)
-      .then(result => { if (live) setIcons(result.icons || []); })
-      .catch(err => { if (live) setError(err); });
-    return () => { live = false; };
-  }, [picking, query]);
 
   const run = async (action, { close = false, rethrow = false } = {}) => {
     if (pending.current) return;
@@ -132,11 +122,8 @@ function Editor({ row, onClose, onChanged, onRequestDelete, onCoach, observation
       }, { close: true, rethrow: true })} /> : null}
       <SegmentedControl aria-label="Meal" size="xs" fullWidth value={mealTime || ''} disabled={busy}
         data={BUCKETS.map(bucket => ({ value: bucket.id, label: bucket.label }))} onChange={setMealTime} />
-      {picking ? <>
-        <TextInput aria-label="Search icons" placeholder="Search icons" value={query} onChange={event => setQuery(event.target.value)} />
-        <div className="health-icon-grid">{icons.map(slug => <UnstyledButton key={slug} aria-label={slug} aria-pressed={icon === slug}
-          className="health-icon-grid__cell" onClick={() => { setIcon(slug); setPicking(false); }}><FoodIcon icon={slug} /></UnstyledButton>)}</div>
-      </> : null}
+      {picking ? <FoodIconPicker query={query} onQueryChange={setQuery} selectedIcon={icon}
+        onSelect={slug => { setIcon(slug); setPicking(false); }} logger={logger} /> : null}
       <details className="health-edit__advanced"><summary>Nutrition, date &amp; evidence</summary>
         <Stack gap="xs" mt="xs">
           {onCoach ? <Button size="compact-xs" variant="light" onClick={onCoach} disabled={busy}>Ask coach about this entry</Button> : null}
@@ -183,4 +170,20 @@ function Editor({ row, onClose, onChanged, onRequestDelete, onCoach, observation
       </Group>
     </Stack>
   </Sheet>;
+}
+
+function FoodIconPicker({ query, onQueryChange, selectedIcon, onSelect, logger }) {
+  const resource = useApiResource(
+    `api/v1/health/nutrition/icons?q=${encodeURIComponent(query)}&limit=60`,
+    { label: 'Food icon search', logger, retryTransient: false },
+  );
+  const icons = resource.data?.icons || [];
+
+  return <>
+    <TextInput aria-label="Search icons" placeholder="Search icons" value={query} onChange={event => onQueryChange(event.target.value)} />
+    {resource.error ? <ErrorState error={resource.error} onRetry={resource.reload} label="Food icons" />
+      : resource.loading ? <LoadingState label="food icons" rows={2} />
+        : <div className="health-icon-grid">{icons.map(slug => <UnstyledButton key={slug} aria-label={slug} aria-pressed={selectedIcon === slug}
+          className="health-icon-grid__cell" onClick={() => onSelect(slug)}><FoodIcon icon={slug} /></UnstyledButton>)}</div>}
+  </>;
 }

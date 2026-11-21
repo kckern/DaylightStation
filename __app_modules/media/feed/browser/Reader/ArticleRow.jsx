@@ -3,7 +3,7 @@ import DOMPurify from 'dompurify';
 import { colorFromLabel, safeImage } from "../Scroll/cards/utils.js";
 import FeedPlayer from "../players/FeedPlayer.jsx";
 import { useFeedPlayer } from "../players/FeedPlayerContext.jsx";
-import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
+import { inlineYouTubeDetailPath, useInlineYouTubeDetail } from "../players/useInlineYouTubeDetail.js";
 import AnnotationPanel from "../Annotations/AnnotationPanel.jsx";
 import OfflineEditionButton from "../offline/OfflineEditionButton.jsx";
 import { webLink } from "../../shared/webLink.mjs";
@@ -23,10 +23,22 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
   const [overflows, setOverflows] = useState(false);
 
   useEffect(() => {
-    if (expanded && contentRef.current) {
-      setOverflows(contentRef.current.scrollHeight > 400);
+    const content = contentRef.current;
+    if (!expanded || !content) {
+      setOverflows(false);
+      return;
     }
-  }, [expanded]);
+
+    const measureOverflow = () => {
+      setOverflows(content.scrollHeight > content.clientHeight);
+    };
+    measureOverflow();
+
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measureOverflow);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [article.content, article.preview, expanded]);
 
   const handleExpand = () => {
     if (!expanded) {
@@ -63,6 +75,8 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
   const cleanPreview = (article.preview || '').replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '').replace(/\s+/g, ' ').trim();
 
   const faviconUrl = safeImage(article.iconUrl);
+  const videoId = article.contentType === 'youtube' && article.meta?.videoId;
+  const detailPath = videoId && inlineYouTubeDetailPath(`youtube:${videoId}`, videoId);
 
   return (
     <div className={`article-row ${expanded ? 'expanded' : ''} ${(article.state?.isRead ?? article.isRead) ? 'read' : 'unread'}`}>
@@ -104,9 +118,9 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
             <button type="button" onClick={() => onStateAction?.(article, (article.state?.isRead ?? article.isRead) ? 'unread' : 'read')}>{(article.state?.isRead ?? article.isRead) ? 'Mark unread' : 'Mark read'}</button>
             <OfflineEditionButton item={article} />
           </div>
-          {article.contentType === 'youtube' && article.meta?.videoId ? (
+          {detailPath ? (
             <>
-              <ReaderYouTubePlayer article={article} />
+              <ReaderYouTubePlayer key={detailPath} article={article} detailPath={detailPath} />
               {article.preview && (
                 <p className="article-content">{article.preview}</p>
               )}
@@ -154,10 +168,9 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
   );
 }
 
-function ReaderYouTubePlayer({ article }) {
+function ReaderYouTubePlayer({ article, detailPath }) {
   const { play } = useFeedPlayer();
-  const [playerData, setPlayerData] = useState(null);
-  const [fetchDone, setFetchDone] = useState(false);
+  const { playerData, loading } = useInlineYouTubeDetail(detailPath);
   const [useEmbed, setUseEmbed] = useState(false);
   const articleRef = useRef(article);
   articleRef.current = article;
@@ -169,20 +182,6 @@ function ReaderYouTubePlayer({ article }) {
       play({ ...current, id: `youtube:${current.meta.videoId}` });
     }
   }, [play, playerData]);
-
-  // Fetch detail from API to get Piped stream URL
-  useEffect(() => {
-    const params = new URLSearchParams();
-    params.set('quality', '720p');
-    if (article.meta) params.set('meta', JSON.stringify(article.meta));
-    DaylightAPI(`/api/v1/feed/detail/${encodeURIComponent(`youtube:${article.meta.videoId}`)}?${params}`)
-      .then(result => {
-        const section = result?.sections?.find(s => s.type === 'player' && s.data?.provider === 'youtube');
-        if (section) setPlayerData(section.data);
-        setFetchDone(true);
-      })
-      .catch(() => setFetchDone(true)); // fall back to embed
-  }, [article.meta]);
 
   const handleStreamError = useCallback(() => {
     setUseEmbed(true);
@@ -198,7 +197,7 @@ function ReaderYouTubePlayer({ article }) {
   } : undefined;
 
   // Loading — don't show iframe yet
-  if (!fetchDone) {
+  if (loading) {
     return (
       <div style={isPortrait ? { maxWidth: '360px' } : undefined}>
         <div className="youtube-embed-wrapper" style={wrapperStyle}>

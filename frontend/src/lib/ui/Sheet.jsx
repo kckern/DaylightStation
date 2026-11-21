@@ -1,74 +1,50 @@
-import { useEffect, useLayoutEffect } from 'react';
-import { ActionIcon, FocusTrap } from '@mantine/core';
+import { ActionIcon } from '@mantine/core';
+import { useMergedRef } from '@mantine/hooks';
+import { useRef } from 'react';
+import { useViewOverlaysActive } from './AppFrame.jsx';
+import { useDialogFocus } from './dismiss/useDialogFocus.js';
 import { useDismissLayer } from './dismiss/useDismissLayer.js';
+import { useOverlayFocusReturn } from './dismiss/useOverlayFocusReturn.js';
+import { UiIcon } from './UiIcon.jsx';
+import { useKeyboardViewport } from './useKeyboardViewport.js';
+import { useOverlayScrollLock } from './useOverlayScrollLock.js';
 import './ds.scss';
-
-// A dialog can be replaced in the same commit (entry -> coach). Transfer its
-// return target before the detached button in the old dialog loses focus.
-let pendingFocusReturn = null;
-
-const CloseIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-    <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-  </svg>
-);
 
 /**
  * The house overlay: bottom sheet on mobile; on desktop a centered dialog by
- * default, or — `placement="side"` — a full-height panel on the right edge, for
- * a drill-in that sits beside the page it came from (CSS). Registers on the dismiss stack (Escape), closes on scrim click, locks
- * body scroll while open.
+ * default. Use `placement="side"` for a desktop drill-in or
+ * `placement="fullscreen"` for an edge-to-edge camera stage. A visible sheet
+ * registers on the dismiss stack and locks its frame and the document.
  */
-export function Sheet({ open, onClose, title, children, placement = 'center' }) {
-  useDismissLayer(open, onClose);
-  // Also handle sheets mounted already open and removed on close. A hook
-  // listening only for opened -> false misses that common lifecycle.
-  useLayoutEffect(() => {
-    if (!open) return undefined;
-    const opener = pendingFocusReturn?.opener?.isConnected
-      ? pendingFocusReturn.opener : document.activeElement;
-    pendingFocusReturn = null;
-    return () => {
-      const request = { opener };
-      pendingFocusReturn = request;
-      queueMicrotask(() => {
-        if (pendingFocusReturn !== request) return;
-        pendingFocusReturn = null;
-        if (opener?.isConnected) opener.focus?.({ preventScroll: true });
-      });
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    return lockSheetScroll();
-  }, [open]);
+export function Sheet({ open, onClose, title, children, placement = 'center', scrollRef, returnFocusRef, getFallbackFocusTarget }) {
+  const overlaysActive = useViewOverlaysActive();
+  const visible = open && overlaysActive;
+  const sheetRef = useKeyboardViewport(visible);
+  const panelRef = useRef(null);
+  const setPanelRef = useMergedRef(panelRef, scrollRef);
+  const closeRef = useRef(null);
+  useDismissLayer(open, onClose, { isActive: () => visible });
+  useOverlayFocusReturn(open, returnFocusRef, getFallbackFocusTarget);
+  useOverlayScrollLock(visible);
+  const handleKeys = useDialogFocus(visible, panelRef, closeRef);
 
   if (!open) return null;
+  const className = placement === 'side' || placement === 'fullscreen'
+    ? `ds-sheet ds-sheet--${placement}` : 'ds-sheet';
   return (
-    <div className={placement === 'center' ? 'ds-sheet' : `ds-sheet ds-sheet--${placement}`} role="dialog" aria-modal="true" aria-label={title}>
+    <div ref={sheetRef} className={className} hidden={!visible} role="dialog" aria-modal={visible || undefined} aria-label={title}>
       <div className="ds-sheet__scrim" onClick={onClose} />
-      <FocusTrap active={open}><div className="ds-sheet__panel" tabIndex={-1}>
+      <div className="ds-sheet__panel" ref={setPanelRef} tabIndex={-1} onKeyDown={handleKeys}>
         <header className="ds-sheet__header">
           <h3 className="ds-sheet__title">{title}</h3>
-          <ActionIcon onClick={onClose} aria-label="Close"><CloseIcon /></ActionIcon>
+          <ActionIcon ref={closeRef} className="ds-touch-target" onClick={onClose} aria-label="Close">
+            <UiIcon name="close" />
+          </ActionIcon>
         </header>
         <div className="ds-sheet__body">{children}</div>
-      </div></FocusTrap>
+      </div>
     </div>
   );
-}
-
-let locks = 0;
-let restoreScroll = () => {};
-function lockSheetScroll() {
-  if (locks++ === 0) {
-    const elements = [document.body, ...document.querySelectorAll('.ds-chrome__main')];
-    const previous = elements.map(element => element.style.overflow);
-    elements.forEach(element => { element.style.overflow = 'hidden'; });
-    restoreScroll = () => elements.forEach((element, index) => { element.style.overflow = previous[index]; });
-  }
-  return () => { if (--locks === 0) restoreScroll(); };
 }
 
 export default Sheet;

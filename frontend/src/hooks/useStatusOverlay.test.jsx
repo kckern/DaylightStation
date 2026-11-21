@@ -27,6 +27,25 @@ describe('useStatusOverlay', () => {
     expect(view._pending.size).toBe(0);
   });
 
+  it('clears optimistic status expiry timers when the view unmounts', () => {
+    const real = mapOf([
+      { color: 'red', paused: false },
+      { color: 'blue', position: 10 },
+    ]);
+    const { result, unmount } = renderHook(() => useStatusOverlay(real));
+
+    act(() => {
+      result.current.predict('red', { paused: true });
+      result.current.pending('blue', ['position']);
+    });
+    expect(result.current.statusView.get('red').paused).toBe(true);
+    expect(result.current.statusView.get('blue')._pending.has('position')).toBe(true);
+    expect(vi.getTimerCount()).toBe(2);
+
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   describe('predict (match-to-clear)', () => {
     it('overlays predicted value and marks field as pending', () => {
       const real = mapOf([{ color: 'red', paused: false }]);

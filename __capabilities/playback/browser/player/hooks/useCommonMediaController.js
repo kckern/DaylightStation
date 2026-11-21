@@ -1,7 +1,7 @@
 import { toContentSeconds } from '../lib/recovery/contentTimeline.js';
 import { sameRecoveryTarget } from '../lib/recovery/recoveryIdentity.js';
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
+import { recordPlaybackProgress } from '../lib/recordPlaybackProgress.js';
 import { getProgressPercent } from '../lib/helpers.js';
 import { shouldLogAtDurationStuck, buildAtDurationStuckPayload } from '../lib/atDurationStuck.js';
 import { decideStallVerdict, readVideoFrames } from '../lib/stallVerdict.js';
@@ -1088,7 +1088,7 @@ export function useCommonMediaController({
     const mediaEl = getMediaEl();
     if (!mediaEl) return;
 
-    const logProgress = async () => {
+    const logProgress = () => {
       const now = Date.now();
       lastUpdatedTimeRef.current = now;
       const diff = now - lastLoggedTimeRef.current;
@@ -1100,7 +1100,10 @@ export function useCommonMediaController({
         const secs = progress.contentSeconds;
         if (secs > 10) {
           const title = meta.title + (meta.grandparentTitle ? ` (${meta.grandparentTitle} - ${meta.parentTitle})` : '');
-          await DaylightAPI(`api/v1/play/log`, { title, type, assetId, seconds: secs, percent: pct, listId: meta?.listId || null, ...(meta?.origin ? { origin: meta.origin } : {}) });
+          recordPlaybackProgress({
+            title, type, assetId, seconds: secs, percent: pct, listId: meta?.listId || null,
+            ...(meta?.origin ? { origin: meta.origin } : {}),
+          });
         }
       }
     };
@@ -1674,7 +1677,10 @@ export function useCommonMediaController({
       const title = capturedMeta.title + (capturedMeta.grandparentTitle ? ` (${capturedMeta.grandparentTitle} - ${capturedMeta.parentTitle})` : '');
       if (isAuxiliaryRef.current) return;
       mcLog().info('playback.unmount-progress-save', { assetId: capturedAssetId, pos, pct });
-      DaylightAPI(`api/v1/play/log`, { title, type: capturedType, assetId: capturedAssetId, seconds: pos, percent: pct, listId: capturedMeta?.listId || null, ...(capturedMeta?.origin ? { origin: capturedMeta.origin } : {}) });
+      recordPlaybackProgress({
+        title, type: capturedType, assetId: capturedAssetId, seconds: pos, percent: pct,
+        listId: capturedMeta?.listId || null, ...(capturedMeta?.origin ? { origin: capturedMeta.origin } : {}),
+      });
     };
   }, [assetId]); // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -1,11 +1,16 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Button, Menu } from '@mantine/core';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Button, Menu, TextInput } from '@mantine/core';
+import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
+import { useDismissLayer } from "../../../../../frontend/src/lib/ui/dismiss/useDismissLayer.js";
 import { useDayDropTarget, useMealDragActive } from "./mealDrag.jsx";
 import { addDaysISO, dayLabel, EARLIEST_MOVE_DAY, recentDays } from "./moveDays.js";
 import { BUCKETS } from "./mealBuckets.js";
 
 // Food menus: full-height items under a finger (health.scss).
 export const MENU_CLASSES = { item: 'health-move-menu__item' };
+const earliestMoveDayLabel = new Date(`${EARLIEST_MOVE_DAY}T00:00:00Z`).toLocaleDateString(undefined, {
+  year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC',
+});
 
 export function useMoveInFlight(onMove) {
   const [busy, setBusy] = useState(false);
@@ -15,14 +20,25 @@ export function useMoveInFlight(onMove) {
 
 /** The day choices as menu items, plus a date picker for anything older. */
 export function MoveDayItems({ date, today, onPick }) {
+  const [error, setError] = useState(null);
+  const changeDate = event => {
+    const { value } = event.currentTarget;
+    let message = null;
+    if (value === date) message = 'Choose a different day.';
+    else if (value && value < EARLIEST_MOVE_DAY) message = `Choose ${earliestMoveDayLabel} or later.`;
+    else if (value > today) message = 'Choose today or an earlier day.';
+    setError(message);
+    if (value && !message) onPick(value);
+  };
+
   return <>
     {recentDays(today, date).map(iso => <Menu.Item key={iso} onClick={() => onPick(iso)}>{dayLabel(iso, today)}</Menu.Item>)}
     <Menu.Divider />
-    <Menu.Label>Another day</Menu.Label>
     <div className="health-move-date" style={{ padding: '0 0.75rem 0.5rem' }}>
-      <input type="date" aria-label="Move to another day" max={today} defaultValue=""
+      <TextInput type="date" size="xs" label="Another day" aria-label="Move to another day"
+        min={EARLIEST_MOVE_DAY} max={today} defaultValue="" error={error}
         onClick={event => event.stopPropagation()}
-        onChange={event => { const value = event.target.value; if (value && value >= EARLIEST_MOVE_DAY && value <= today && value !== date) onPick(value); }} />
+        onChange={changeDate} />
     </div>
   </>;
 }
@@ -37,23 +53,31 @@ export function MoveDayItems({ date, today, onPick }) {
 export function MoveDayControl({ date, today, count, onMove, disabled = false, portalTarget, onMenuChange }) {
   const [busy, pick] = useMoveInFlight(onMove);
   const [open, setOpen] = useState(false);
-  const change = value => { setOpen(value); onMenuChange?.(value); };
+  const trigger = useRef(null);
+  const change = useCallback(value => { setOpen(value); onMenuChange?.(value); }, [onMenuChange]);
+  const dismiss = useCallback(() => {
+    change(false);
+    trigger.current?.focus({ preventScroll: true });
+  }, [change]);
+  const stackHandlesEscape = useDismissLayer(open, dismiss);
   // A menu that leaves with this control must not stay "open" for its owner.
   const reportMenu = useRef(onMenuChange);
   reportMenu.current = onMenuChange;
   useEffect(() => () => reportMenu.current?.(false), []);
+  // Embedded controls without the stack still let the date input consume Escape first.
   useEffect(() => {
-    if (!open) return undefined;
-    const onKey = event => { if (event.key === 'Escape') change(false); };
+    if (!open || stackHandlesEscape) return undefined;
+    const onKey = event => {
+      if (event.key === 'Escape' && !event.defaultPrevented) dismiss();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-  // A menu inside the modal has to clear the modal's own layer.
-  return <Menu opened={open} onChange={change} position="bottom-start" disabled={busy || disabled} classNames={MENU_CLASSES}
+  }, [open, stackHandlesEscape, dismiss]);
+  // Disable Mantine's capture-phase Escape so the input can cancel the key.
+  return <Menu opened={open} onChange={change} position="bottom-start" disabled={busy || disabled} classNames={MENU_CLASSES} closeOnEscape={false}
     zIndex={portalTarget ? 400 : undefined} portalProps={portalTarget ? { target: portalTarget } : undefined}>
     <Menu.Target>
-      <Button size="compact-xs" variant="light" loading={busy} disabled={disabled && !busy} aria-label={`Move ${count} selected to another day`}>
+      <Button ref={trigger} size="compact-xs" variant="light" loading={busy} disabled={disabled && !busy} aria-label={`Move ${count} selected to another day`}>
         Move {count} to another day…
       </Button>
     </Menu.Target>
@@ -102,14 +126,14 @@ export function CaptureDayActions({ date, today, onMove, busy = false, disabled 
 /** Selection mode: move every ticked food into one meal. */
 export function MoveMealControl({ count, onMove, disabled = false }) {
   const [busy, pick] = useMoveInFlight(onMove);
-  return <Menu position="bottom-start" disabled={busy || disabled} classNames={MENU_CLASSES}>
-    <Menu.Target>
+  return <ActionMenu position="bottom-start" disabled={busy || disabled} classNames={MENU_CLASSES}
+    trigger={
       <Button size="compact-xs" variant="light" loading={busy} disabled={disabled && !busy} aria-label={`Move ${count} selected to a meal`}>
         Move {count} to a meal…
       </Button>
-    </Menu.Target>
-    <Menu.Dropdown>{BUCKETS.map(bucket => <Menu.Item key={bucket.id} onClick={() => pick(bucket.id)}>{bucket.label}</Menu.Item>)}</Menu.Dropdown>
-  </Menu>;
+    }>
+    {BUCKETS.map(bucket => <Menu.Item key={bucket.id} onClick={() => pick(bucket.id)}>{bucket.label}</Menu.Item>)}
+  </ActionMenu>;
 }
 
 function DayChip({ iso, today }) {

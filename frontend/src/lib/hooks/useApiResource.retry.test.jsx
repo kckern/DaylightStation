@@ -24,6 +24,25 @@ describe('useApiResource transient retry', () => {
     expect(apiMock).toHaveBeenCalledTimes(2);
   });
 
+  it('shares a pending transient retry between readers of the same resource', async () => {
+    let rejectInitial;
+    let resolveRetry;
+    apiMock
+      .mockReturnValueOnce(new Promise((_, reject) => { rejectInitial = reject; }))
+      .mockReturnValue(new Promise(resolve => { resolveRetry = resolve; }));
+    const first = renderHook(() => useApiResource('/records', { swr: true }));
+    const second = renderHook(() => useApiResource('/records'));
+    expect(apiMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => { rejectInitial(transient()); });
+    await waitOut(TRANSIENT_RETRY_DELAYS_MS[0]);
+    expect(apiMock).toHaveBeenCalledTimes(2);
+    const snapshot = { records: ['restored'] };
+    await act(async () => { resolveRetry(snapshot); });
+    expect(first.result.current.data).toBe(snapshot);
+    expect(second.result.current.data).toBe(snapshot);
+  });
+
   it('reports the failure once every retry has also failed', async () => {
     apiMock.mockRejectedValue(transient(503));
     const { result } = renderHook(() => useApiResource('api/v1/thing'));
@@ -37,6 +56,14 @@ describe('useApiResource transient retry', () => {
     apiMock.mockRejectedValue(Object.assign(new Error('HTTP 404: Not Found'), { status: 404, transient: false }));
     const { result } = renderHook(() => useApiResource('api/v1/thing'));
     await waitFor(() => expect(result.current.error?.status).toBe(404));
+    await waitOut(TRANSIENT_RETRY_DELAYS_MS.reduce((a, b) => a + b, 0));
+    expect(apiMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('supports a current consumer that owns its one-shot transient failure policy', async () => {
+    apiMock.mockRejectedValue(transient());
+    const { result } = renderHook(() => useApiResource('api/v1/thing', { retryTransient: false }));
+    await waitFor(() => expect(result.current.error?.status).toBe(502));
     await waitOut(TRANSIENT_RETRY_DELAYS_MS.reduce((a, b) => a + b, 0));
     expect(apiMock).toHaveBeenCalledTimes(1);
   });

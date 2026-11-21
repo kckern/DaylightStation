@@ -16,7 +16,7 @@ import { WebSocketServer } from 'ws';
 import { nowTs, nowTs24 } from '#system/utils/index.mjs';
 import crypto from 'crypto';
 import { originAllowList, webSocketOriginRefusal } from '#system/http/middleware/crossSiteGuard.mjs';
-import { parseDeviceTopic, PLAYBACK_STATE_TOPIC, ARCADE_SESSIONS_TOPIC } from '#shared-contracts/media/topics.mjs';
+import { parseDeviceTopic, PLAYBACK_STATE_TOPIC, ARCADE_SESSIONS_TOPIC, HOMELINE_CALL_TOPIC_PREFIX } from '#shared-contracts/media/topics.mjs';
 import {
   buildDeviceStateBroadcast,
   validateCommandEnvelope,
@@ -482,7 +482,7 @@ export class WebSocketEventBus {
 
     // Call signaling is capability-protected and exact-topic only. Wildcard
     // subscribers must never observe SDP/candidate/control envelopes.
-    if (typeof topic === 'string' && topic.startsWith('homeline-call:')) {
+    if (typeof topic === 'string' && topic.startsWith(HOMELINE_CALL_TOPIC_PREFIX)) {
       let sentCount = 0;
       for (const [clientId, { ws, meta }] of this.#clients) {
         if (ws.readyState !== ws.OPEN || !meta.subscriptions.has(topic)) continue;

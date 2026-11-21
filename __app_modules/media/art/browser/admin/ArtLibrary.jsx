@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { TextInput, Group, Switch, Badge, Button } from '@mantine/core';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
-import { useAdminConfig } from "../../../../../frontend/src/hooks/admin/useAdminConfig.js";
+import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { useTemporaryIndicator } from "../../../../../frontend/src/lib/hooks/useTemporaryIndicator.js";
+import { ErrorState } from "../../../../../frontend/src/lib/ui/states.jsx";
 import { useArtCuration } from "./useArtCuration.js";
 import { keyToAction } from "./keymap.js";
 import Loupe from "./Loupe.jsx";
@@ -18,19 +20,20 @@ export default function ArtLibrary() {
   const [filters, setFilters] = useState({});
   const [view, setView] = useState('loupe');   // 'loupe' | 'grid'
   const [editMode, setEditMode] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [saved, flash] = useTemporaryIndicator(800);
   const searchRef = useRef(null);
 
-  const cfg = useAdminConfig(configPath('art'));
-  useEffect(() => { cfg.load?.(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
-  const quickTags = useMemo(() => cfg.data?.quickTags || [], [cfg.data?.quickTags]);
+  const settingsPath = `/api/v1/admin/config/files/${configPath('art')}`;
+  const { data: settings, error: settingsError, reload: reloadSettings } = useApiResource(settingsPath, {
+    label: 'Admin Art settings',
+    retryTransient: false,
+  });
+  const quickTags = useMemo(() => settings?.parsed?.quickTags || [], [settings?.parsed?.quickTags]);
 
   const {
-    works, focused, index, loading, autoAdvance,
+    works, focused, index, loading, error, reload, autoAdvance,
     setAutoAdvance, next, prev, goto, mutate, undo,
   } = useArtCuration(filters);
-
-  const flash = useCallback(() => { setSaved(true); setTimeout(() => setSaved(false), 800); }, []);
 
   // The collection the list is currently filtered to (for remove-from-collection).
   const currentCollection = filters.tag || null;
@@ -147,7 +150,7 @@ export default function ArtLibrary() {
           onChange={(e) => { const on = e.currentTarget.checked; setFilters((f) => ({ ...f, flagged: on ? 'true' : '' })); }} />
         <Switch size="xs" label="auto-advance" checked={autoAdvance}
           onChange={(e) => setAutoAdvance(e.currentTarget.checked)} />
-        <Badge size="sm" variant="light">{works.length} works</Badge>
+        {!loading && !error && <Badge size="sm" variant="light">{works.length} works</Badge>}
         <Button size="xs" variant="default"
           onClick={() => setView((v) => (v === 'loupe' ? 'grid' : 'loupe'))}>
           {view === 'loupe' ? 'Grid' : 'Loupe'} (Enter)
@@ -159,8 +162,10 @@ export default function ArtLibrary() {
         {quickTags.length ? ` · 1–${quickTags.length} quick-tag` : ''} · X hide · F flag · E edit · A auto-advance · U undo
       </div>
 
+      {settingsError && <ErrorState label="Artwork settings" error={settingsError} onRetry={reloadSettings} />}
       <ArtErrorBoundary>
-        {loading ? <div className="art-library__loading">Loading…</div>
+        {error ? <ErrorState label="Artwork" error={error} onRetry={reload} />
+          : loading ? <div className="art-library__loading">Loading…</div>
           : view === 'loupe'
             ? <Loupe work={focused} total={works.length} index={index} saved={saved} onAnchor={setAnchor} onCrop={setCrop} />
             : <GridView works={works} index={index} onPick={(i) => { goto(i); setView('loupe'); }} />}

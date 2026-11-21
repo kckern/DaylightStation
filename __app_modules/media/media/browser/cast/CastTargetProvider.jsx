@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { browserPreference } from "../../../../../frontend/src/lib/browserPreference.js";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { PeekContext } from "../peek/PeekContext.js";
 import mediaLog from "../logging/mediaLog.js";
@@ -12,18 +13,7 @@ import {
 export const CAST_TARGET_KEY = 'media-app.cast-target';
 export const CastTargetContext = createContext(null);
 
-function readPersisted(now) {
-  try {
-    const raw = localStorage.getItem(CAST_TARGET_KEY);
-    return restoreAimState(raw, { now });
-  } catch {
-    return restoreAimState(null, { now });
-  }
-}
-
-function writePersisted(state) {
-  try { localStorage.setItem(CAST_TARGET_KEY, JSON.stringify(state)); } catch { /* ignore */ }
-}
+const aimPreference = browserPreference(CAST_TARGET_KEY, null);
 
 export function CastTargetProvider({ children }) {
   const fleet = useContext(FleetContext);
@@ -33,7 +23,7 @@ export function CastTargetProvider({ children }) {
   // would persist over a real remote aim before restoration could happen.
   const [initial] = useState(() => {
     const now = Date.now();
-    const restored = readPersisted(now);
+    const restored = restoreAimState(aimPreference.read(), { now });
     // A matching confirmed send/steer plus a fresh playing snapshot is current
     // positive evidence, even during restoration. Everything else still
     // expires before first layout so stale destinations never flash onscreen.
@@ -65,7 +55,7 @@ export function CastTargetProvider({ children }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => { writePersisted(aim); }, [aim]);
+  useEffect(() => { aimPreference.write(JSON.stringify(aim)); }, [aim]);
 
   const reconcileLifetime = useCallback(() => {
     setAim((previous) => {

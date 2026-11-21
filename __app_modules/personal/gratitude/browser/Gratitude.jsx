@@ -1,9 +1,11 @@
 import { mergeGratitudeItems,shouldPersistIncoming } from './gratitudeLiveItems.js';
 import { MantineProvider } from "@mantine/core";
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { WebSocketProvider, useWebSocket } from "../../../../frontend/src/contexts/WebSocketContext.jsx";
+import { useWebSocketSubscription } from "../../../../frontend/src/hooks/useWebSocket.js";
 import { getChildLogger } from '@/lib/logging/singleton.js';
 import { DaylightAPI, DaylightMediaPath } from '@/lib/api.mjs';
+import { useApiResource } from '../../../../frontend/src/lib/hooks/useApiResource.js';
+import { ErrorState, LoadingState } from '@/lib/ui/index.js';
 import { isToday, format } from 'date-fns';
 import "./Gratitude.scss";
 import { useFitText } from "./fitText.js";
@@ -300,6 +302,7 @@ function SelectedColumn({
           />
         </div>
         <span className="item-text">{item.text}</span>
+        {item.pending && <span className="selection-status" role="status">Saving…</span>}
       </div>
     );
   };
@@ -376,6 +379,7 @@ function GratitudeApp({
   const [webhookHighlightIds, setWebhookHighlightIds] = useState(new Set());
   const [categoryAnim, setCategoryAnim] = useState(null);
   const [userAnim, setUserAnim] = useState(null);
+  const legacySelectionControllers = useRef(new Set());
   
   const containerRef = useRef(null);
   const longPressTimerRef = useRef(null);
@@ -383,13 +387,37 @@ function GratitudeApp({
   const keyDownActiveRef = useRef(false); // Track if keydown started in this component
   const lastActionTimeRef = useRef(0); // Debounce protection
   const animatingRef = useRef(false); // Ref to track animation state for callbacks
-  
-  // WebSocket integration
-  const { registerPayloadCallback, unregisterPayloadCallback } = useWebSocket();
 
+  const dropProvisionalSelection = useCallback((itemCategory, provisionalId) => {
+    setSelected(prev => ({
+      ...prev,
+      [itemCategory]: (prev[itemCategory] || []).filter(selection => selection.id !== provisionalId),
+    }));
+  }, []);
+  const persistProvisionalSelection = useCallback(async (itemCategory, provisionalId, userId, option) => {
+    const response = await DaylightAPI(`/api/v1/gratitude/selections/${itemCategory}`, {
+      userId,
+      item: { id: option.id, text: option.text },
+    }, 'POST');
+    const selectionId = response?.selection?.id;
+    if (!selectionId) throw new Error('Selection acknowledgement did not include an ID.');
+
+    setSelected(prev => ({
+      ...prev,
+      [itemCategory]: (prev[itemCategory] || []).map(selection =>
+        selection.id === provisionalId ? { ...selection, id: selectionId, pending: false } : selection
+      ),
+    }));
+  }, []);
+  
   // Focus container on mount
   useEffect(() => {
     containerRef.current?.focus();
+  }, []);
+
+  useEffect(() => () => {
+    for (const controller of legacySelectionControllers.current) controller.abort();
+    legacySelectionControllers.current.clear();
   }, []);
 
   // Reset focus index when category changes
@@ -401,7 +429,7 @@ function GratitudeApp({
   // WebSocket Handler
   // =========================================================================
   
-  const handleWebSocketPayload = useCallback((payload) => {
+  const handleWebSocketPayload = useCallback(async (payload) => {
     if (payload.topic !== 'gratitude') return;
     if (payload.action !== 'item_added') return;
     
@@ -426,13 +454,54 @@ function GratitudeApp({
     
     // 3. Add items directly to selected with timestamps
     const now = new Date().toISOString();
-    const newItems = items.map(item => ({
-      id: item.id || crypto.randomUUID(),
-      text: item.text,
-      userId,
-      userName,
-      datetime: now,
-    }));
+    const persistIncoming = shouldPersistIncoming(payload);
+    let persistedSelections = [];
+    if (!persistIncoming && items.some(item => !item.selectionId)) {
+      const controller = new AbortController();
+      legacySelectionControllers.current.add(controller);
+      try {
+        const response = await DaylightAPI(
+          `/api/v1/gratitude/selections/${itemCategory}`,
+          undefined,
+          'GET',
+          { signal: controller.signal },
+        );
+        if (controller.signal.aborted) return;
+        persistedSelections = response?.items || [];
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          logger.error('gratitude.websocket.selection-read.failed', { error: err.message });
+        }
+        return;
+      } finally {
+        legacySelectionControllers.current.delete(controller);
+      }
+    }
+
+    const newItems = items.map(item => {
+      const optionId = item.id || crypto.randomUUID();
+      const persistedSelection = persistIncoming
+        ? null
+        : persistedSelections.find(selection => selection.item?.id === optionId && selection.userId === userId);
+      const selectionId = persistIncoming ? null : item.selectionId || persistedSelection?.id;
+      return {
+        id: persistIncoming ? crypto.randomUUID() : selectionId,
+        optionId,
+        text: item.text || persistedSelection?.item?.text,
+        userId,
+        userName,
+        datetime: persistedSelection?.datetime || now,
+        pending: persistIncoming,
+      };
+    }).filter(item => item.id);
+
+    if (newItems.length < items.length) {
+      logger.error('gratitude.websocket.selection-id.missing', {
+        userId,
+        category: itemCategory,
+        count: items.length - newItems.length,
+      });
+    }
     
     setSelected(prev => ({
       ...prev,
@@ -453,23 +522,20 @@ function GratitudeApp({
     }, 4000);
     
     // 6. Persist to backend (only if NOT from homebot - homebot already persists)
-    if (shouldPersistIncoming(payload)) {
-      newItems.forEach(item => {
-        DaylightAPI(`/api/v1/gratitude/selections/${itemCategory}`, {
-          userId,
-          item: { id: item.id, text: item.text }
-        }, 'POST').catch(err => {
+    if (persistIncoming) {
+      newItems.forEach(async item => {
+        try {
+          await persistProvisionalSelection(itemCategory, item.id, userId, { id: item.optionId, text: item.text });
+        } catch (err) {
           logger.error('gratitude.websocket.persist.failed', { error: err.message });
-        });
+          dropProvisionalSelection(itemCategory, item.id);
+        }
       });
     }
     
-  }, [users]);
+  }, [users, dropProvisionalSelection, persistProvisionalSelection]);
 
-  useEffect(() => {
-    registerPayloadCallback(handleWebSocketPayload);
-    return () => unregisterPayloadCallback();
-  }, [registerPayloadCallback, unregisterPayloadCallback, handleWebSocketPayload]);
+  useWebSocketSubscription('gratitude', handleWebSocketPayload, [handleWebSocketPayload]);
 
   // =========================================================================
   // Action Handlers
@@ -505,6 +571,7 @@ function GratitudeApp({
         userId: currentUser?.id,
         userName: getUserLabel(currentUser),
         datetime: new Date().toISOString(),
+        pending: true,
       };
       
       setSelected(prev => ({
@@ -521,25 +588,26 @@ function GratitudeApp({
       
       // Persist to backend
       try {
-        const response = await DaylightAPI(`/api/v1/gratitude/selections/${category}`, {
-          userId: currentUser?.id,
-          item: { id: item.id, text: item.text }
-        }, 'POST');
-        
-        // Update with server-confirmed ID
-        if (response?.selection?.id) {
-          setSelected(prev => ({
-            ...prev,
-            [category]: prev[category].map(s => 
-              s.optionId === item.id ? { ...s, id: response.selection.id } : s
-            )
-          }));
-        }
+        await persistProvisionalSelection(category, newSelection.id, currentUser?.id, item);
       } catch (err) {
         logger.error('gratitude.select.failed', { error: err.message });
+        dropProvisionalSelection(category, newSelection.id);
+        if (item.discarded) {
+          setSessionDiscarded(prev => {
+            const current = prev[category] || [];
+            if (current.some(discarded => discarded.id === item.id)) return prev;
+            return { ...prev, [category]: [...current, { ...item, discarded: true }] };
+          });
+        } else {
+          setQueue(prev => {
+            const current = prev[category] || [];
+            if (current.some(queued => queued.id === item.id)) return prev;
+            return { ...prev, [category]: [{ ...item }, ...current] };
+          });
+        }
       }
     }, 300);
-  }, [category, currentUser]);
+  }, [category, currentUser, dropProvisionalSelection, persistProvisionalSelection]);
 
   const handleDismiss = useCallback(async (item) => {
     if (animatingRef.current) return;
@@ -585,7 +653,7 @@ function GratitudeApp({
   }, [category]);
 
   const handleRemove = useCallback(async (selection) => {
-    if (animatingRef.current) return;
+    if (animatingRef.current || selection.pending) return;
     
     animatingRef.current = true;
     setAnimatingItem(selection);
@@ -1010,85 +1078,61 @@ function GratitudeApp({
 }
 
 // ============================================================================
-// Main Gratitude Container (Bootstrap + WebSocket Provider)
+// Main Gratitude Container (Bootstrap + topic subscription)
 // ============================================================================
 
 export default function Gratitude({ clear }) {
-  const [users, setUsers] = useState([]);
-  const [queue, setQueue] = useState({ gratitude: [], hopes: [] });
-  const [selected, setSelected] = useState({ gratitude: [], hopes: [] });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { data, hasResult, loading, error, reload } = useApiResource('/api/v1/gratitude/bootstrap', {
+    retryTransient: false,
+    label: 'gratitude bootstrap',
+  });
+  const resourceError = error || (hasResult && !Array.isArray(data?.users)
+    ? new Error('The household response did not include a valid roster.')
+    : null);
 
-  const loadBootstrapData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await DaylightAPI('/api/v1/gratitude/bootstrap');
-      
-      setUsers(data.users || []);
-      setQueue(data.options || { gratitude: [], hopes: [] });
-      
-      // Transform selections: flatten item structure
-      const transformSelections = (selections) => {
-        const result = { gratitude: [], hopes: [] };
-        for (const cat of ['gratitude', 'hopes']) {
-          result[cat] = (selections?.[cat] || []).map(s => ({
-            id: s.id,
-            text: s.item?.text || s.text,
-            optionId: s.item?.id || s.optionId,
-            userId: s.userId,
-            userName: s.userName,
-            datetime: s.datetime,
-          }));
-        }
-        return result;
-      };
-      
-      setSelected(transformSelections(data.selections));
-      setError(null);
-    } catch (e) {
-      logger.error('gratitude.bootstrap.failed', { error: e.message });
-      setError(e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadBootstrapData();
-  }, [loadBootstrapData]);
-
-  if (loading) {
+  if (!resourceError && (loading || !hasResult)) {
     return (
       <MantineProvider>
         <div className="app gratitude-app">
-          <div className="loading">Loading…</div>
+          <LoadingState label="Gratitude" rows={2} />
         </div>
       </MantineProvider>
     );
   }
 
-  if (error) {
+  if (resourceError) {
     return (
       <MantineProvider>
         <div className="app gratitude-app">
-          <div className="error">Failed to load. Please retry.</div>
+          <ErrorState error={resourceError} label="Gratitude" onRetry={reload} />
         </div>
       </MantineProvider>
     );
+  }
+
+  const users = data.users || [];
+  const queue = data.options || { gratitude: [], hopes: [] };
+  const selected = { gratitude: [], hopes: [] };
+  for (const category of ['gratitude', 'hopes']) {
+    selected[category] = (data.selections?.[category] || []).map(selection => ({
+      id: selection.id,
+      text: selection.item?.text || selection.text,
+      optionId: selection.item?.id || selection.optionId,
+      userId: selection.userId,
+      userName: selection.userName,
+      datetime: selection.datetime,
+    }));
   }
 
   return (
     <MantineProvider>
       <div className="app gratitude-app">
-        <WebSocketProvider>
-          <GratitudeApp
-            users={users}
-            initialQueue={queue}
-            initialSelected={selected}
-            onExit={clear}
-          />
-        </WebSocketProvider>
+        <GratitudeApp
+          users={users}
+          initialQueue={queue}
+          initialSelected={selected}
+          onExit={clear}
+        />
       </div>
     </MantineProvider>
   );

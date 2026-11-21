@@ -10,6 +10,15 @@ describe('DateStepper', () => {
     expect(change).toHaveBeenCalledWith('2026-09-01');
   });
 
+  it('moves one calendar date across a month boundary in either direction', () => {
+    const change = vi.fn();
+    render(<DateStepper date="2028-03-01" onChange={change} max="2028-03-02" />);
+    expect(screen.getByText('Yesterday')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Previous day'));
+    fireEvent.click(screen.getByLabelText('Next day'));
+    expect(change.mock.calls).toEqual([['2028-02-29'], ['2028-03-02']]);
+  });
+
   it('disables forward at max and labels max as Today', () => {
     render(<DateStepper date="2026-09-02" onChange={() => {}} max="2026-09-02" />);
     expect(screen.getByLabelText('Next day').disabled).toBe(true);

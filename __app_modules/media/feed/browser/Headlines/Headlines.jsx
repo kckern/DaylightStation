@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import { SourcePanel } from "./SourcePanel.jsx";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
+import { useRefreshableRead } from "../../../../../frontend/src/lib/hooks/useRefreshableRead.js";
+import { useRetryRegion } from "../../../../../frontend/src/lib/ui/useRetryRegion.js";
 import { useFeedWorkspace } from "../FeedWorkspaceContext.jsx";
 import { buildHeadlineGrid } from "./buildHeadlineGrid.js";
 import "./Headlines.scss";
@@ -10,8 +12,12 @@ import { webLink } from "../../shared/webLink.mjs";
 
 export default function Headlines({ pageId }) {
   const [pages, setPages] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [readState, setReadState] = useState(null);
+  const [harvesting, setHarvesting] = useState(() => new Set());
+  const [failedHarvest, setFailedHarvest] = useState(null);
+  const [partialHarvestByPage, setPartialHarvestByPage] = useState({});
+  const edition = useMemo(() => ({ pageId }), [pageId]);
+  const activeReader = useRef(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const view = searchParams.get('view') === 'briefing' ? 'briefing' : 'outlets';
   const data = pages[pageId] || null;
@@ -21,48 +27,98 @@ export default function Headlines({ pageId }) {
 
   useEffect(() => { markVisited('headlines', visitStarted.current); }, [markVisited]);
 
-  const fetchHeadlines = useCallback(async ({ signal } = {}) => {
-    setError(null);
-    setLoading(true);
+  const readEdition = useCallback(async (isCurrent, signal) => {
+    const { pageId } = edition;
+    setReadState({ edition, loading: true, error: null });
     try {
       const result = await DaylightAPI(`/api/v1/feed/headlines?page=${encodeURIComponent(pageId || '')}`, {}, 'GET', { signal });
+      if (!isCurrent()) return;
       const sources = Object.fromEntries(Object.entries(result.sources || {}).map(([id, source]) => [id, { ...source, items: applyPendingMutations(source.items || []) }]));
       const briefing = (result.briefing || []).map(story => {
         const coverage = applyPendingMutations(story.coverage || []);
         return { ...story, coverage, state: coverage[0]?.state || story.state };
       });
-      if (!signal?.aborted) setPages(current => ({ ...current, [pageId]: { ...result, sources, briefing } }));
-    } catch (err) {
-      if (err.name !== 'AbortError') setError('This edition could not be refreshed.');
-    } finally {
-      if (!signal?.aborted) setLoading(false);
-    }
-  }, [applyPendingMutations, pageId]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetchHeadlines({ signal: controller.signal });
-    return () => controller.abort();
-  }, [fetchHeadlines]);
-
-  const triggerHarvestAll = async () => {
-    setLoading(true);
-    try {
-      await DaylightAPI(`/api/v1/feed/headlines/harvest?page=${encodeURIComponent(pageId || '')}`, {}, 'POST');
-      await fetchHeadlines();
+      setPages(current => ({ ...current, [pageId]: { ...result, sources, briefing } }));
+      setReadState({ edition, loading: false, error: null });
     } catch {
-      setError('Sources could not be refreshed. Existing headlines are still available.');
-      notifications.show({ color: 'red', title: 'Refresh failed', message: 'Showing the last available edition.' });
-    } finally { setLoading(false); }
+      if (isCurrent()) setReadState({ edition, loading: false, error: 'This edition could not be refreshed.' });
+    }
+  }, [applyPendingMutations, edition]);
+  const { reload } = useRefreshableRead(readEdition);
+
+  useLayoutEffect(() => {
+    activeReader.current = { edition, reload };
+    return () => { activeReader.current = null; };
+  }, [edition, reload]);
+  useEffect(() => { reload(); }, [reload]);
+
+  // A harvest may finish after navigation. Re-read only when its edition is visible.
+  const getActiveReaderForEdition = () => {
+    const reader = activeReader.current;
+    return reader && reader.edition.pageId === pageId ? reader : null;
+  };
+  const refreshAfterHarvest = () => getActiveReaderForEdition()?.reload();
+
+  const clearPartialHarvest = targetPageId => {
+    setPartialHarvestByPage(current => {
+      if (!current[targetPageId]) return current;
+      const next = { ...current };
+      delete next[targetPageId];
+      return next;
+    });
   };
 
-  if (loading && !data) return <div className="feed-placeholder" role="status">Loading headlines…</div>;
+  const triggerHarvestAll = async () => {
+    setHarvesting(current => new Set(current).add(pageId));
+    setFailedHarvest(null);
+    clearPartialHarvest(pageId);
+    try {
+      const result = await DaylightAPI(`/api/v1/feed/headlines/harvest?page=${encodeURIComponent(pageId || '')}`, {}, 'POST');
+      const errors = Number(result?.errors);
+      const harvested = Number(result?.harvested);
+      if (Number.isInteger(errors) && errors > 0) {
+        setPartialHarvestByPage(current => ({ ...current, [pageId]: { errors, harvested } }));
+      }
+      await refreshAfterHarvest();
+    } catch {
+      const reader = getActiveReaderForEdition();
+      if (reader) {
+        setFailedHarvest(reader.edition);
+        notifications.show({ color: 'red', title: 'Refresh failed', message: 'Showing the last available edition.' });
+      }
+    } finally {
+      setHarvesting(current => {
+        const next = new Set(current);
+        next.delete(pageId);
+        return next;
+      });
+    }
+  };
+
+  const reading = readState?.edition !== edition || readState.loading;
+  const loading = reading || harvesting.has(pageId);
+  const error = failedHarvest === edition
+    ? 'Sources could not be refreshed. Existing headlines are still available; use Refresh all to try again.'
+    : readState?.edition === edition && readState.error;
+  const { regionProps, retry } = useRetryRegion(() => {
+    setFailedHarvest(null);
+    clearPartialHarvest(pageId);
+    reload();
+  }, reading);
+  const initialLoading = loading && !data;
 
   const sources = data?.sources || {};
+  const briefingStories = (data?.briefing || []).filter(story => !story.state?.isArchived);
   const grid = data?.grid;
   const rows = grid?.rows || [];
   const cols = grid?.cols || [];
   const cells = buildHeadlineGrid(sources, rows, cols);
+  const partialHarvest = partialHarvestByPage[pageId];
+  const partialHarvestMessage = partialHarvest
+    ? partialHarvest.harvested > partialHarvest.errors
+      ? `${partialHarvest.errors} of ${partialHarvest.harvested} sources could not refresh.`
+      : `${partialHarvest.errors} source${partialHarvest.errors === 1 ? '' : 's'} could not refresh.`
+    : null;
 
   const setView = nextView => {
     const next = new URLSearchParams(searchParams);
@@ -90,8 +146,10 @@ export default function Headlines({ pageId }) {
     }),
   }).catch(() => {});
 
-  return (
-    <main className="headlines-view">
+  const content = initialLoading ? (
+    <div className="feed-placeholder" role="status">Loading headlines…</div>
+  ) : (
+    <>
       <header className="headlines-toolbar">
         <div>
           <div className="headlines-view-switcher" role="group" aria-label="Headline view">
@@ -102,12 +160,20 @@ export default function Headlines({ pageId }) {
         </div>
         <button className="headlines-harvest-btn" onClick={triggerHarvestAll} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh all'}</button>
       </header>
-      {error && <div className="headlines-error" role="alert"><span>{error}</span><button onClick={() => fetchHeadlines()}>Retry</button></div>}
+      {error && (
+        <div className="headlines-error" role="alert">
+          <span>{error}</span>
+          <button type="button" disabled={loading} onClick={retry}>
+            {failedHarvest === edition ? 'Reload stored edition' : 'Retry'}
+          </button>
+        </div>
+      )}
+      {partialHarvestMessage && <div className="headlines-error" role="status">{partialHarvestMessage}</div>}
       {!!data?.configWarnings?.length && <div className="headlines-error" role="status">{data.configWarnings.length} source placement{data.configWarnings.length === 1 ? '' : 's'} need configuration attention.</div>}
 
       {view === 'briefing' ? (
         <section className="headline-briefing" aria-label="Top stories">
-          {(data?.briefing || []).filter(story => !story.state?.isArchived).map((story, index) => (
+          {briefingStories.map((story, index) => (
             <article className={`briefing-story ${index === 0 ? 'briefing-story--lead' : ''}`} key={story.id}>
               <div className="briefing-story__eyebrow">{!!previousVisit.current && new Date(story.publishedAt || 0).getTime() > new Date(previousVisit.current).getTime() && <span className="briefing-story__new">New · </span>}{story.sourceCount > 1 ? `${story.sourceCount} outlets` : story.leadSource}{story.publishedAt ? ` · ${formatTime(story.publishedAt)}` : ''}</div>
               <h2><a href={webLink(story.coverage?.[0]?.url) ?? undefined} target="_blank" rel="noreferrer">{story.title}</a></h2>
@@ -123,18 +189,23 @@ export default function Headlines({ pageId }) {
               </details>}
             </article>
           ))}
-          {!data?.briefing?.length && <p className="feed-empty">No headlines are available for this edition.</p>}
+          {data && briefingStories.length === 0 && <p className="feed-empty">No headlines are available for this edition.</p>}
         </section>
       ) : (
         <section className="headlines-matrix" aria-label="Outlet matrix">
           {cells.map((row, r) => (
-            <div key={rows[r] ?? r} className="matrix-row">
-              {row.map((cell, c) => <SourcePanel key={cell?.id || `empty-${r}-${c}`} source={cell} col={c} totalCols={cols.length} paywallProxy={data?.paywallProxy || null} onRefresh={() => fetchHeadlines()} onStateAction={updateHeadlineState} colColors={data?.col_colors || null} />)}
+            <div key={`${pageId}:${rows[r] ?? r}`} className="matrix-row">
+              {row.map((cell, c) => <SourcePanel key={cell?.id || `empty-${r}-${c}`} source={cell} col={c} totalCols={cols.length} paywallProxy={data?.paywallProxy || null} onRefresh={refreshAfterHarvest} onStateAction={updateHeadlineState} colColors={data?.col_colors || null} />)}
             </div>
           ))}
         </section>
       )}
-    </main>
+    </>
+  );
+  return (
+    <section {...regionProps} key={pageId} aria-label="Headlines" className={initialLoading ? undefined : 'headlines-view'}>
+      {content}
+    </section>
   );
 }
 

@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import HighchartsReact from 'highcharts-react-official';
 import Highcharts from 'highcharts';
 import { Button, NumberInput, SegmentedControl, Stack, Text } from '@mantine/core';
-import { SectionCard, StatCard, Sheet, LoadingState, ErrorState } from '@/lib/ui';
-import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { SectionCard, StatCard, Sheet, LoadingState, ErrorState, useRetryRegion } from '@/lib/ui';
+import { invalidateApiResources, useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { unavailableError } from "../healthResources.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
@@ -13,11 +13,12 @@ import { useBudgetRange } from "../today/useBudgetRange.js";
 import { MonthBlock } from "../today/MonthBlock.jsx";
 import { IntakeBurnChart } from "./IntakeBurnChart.jsx";
 import { goalSaveMessage } from "./goalSaveError.js";
-import { addDays } from "../today/WeekStrip.jsx";
+import { addCalendarDays as addDays } from "../../../../../frontend/src/lib/calendarDay.js";
+import { useChartThemeTokens } from '@/lib/theme/useChartThemeTokens.js';
 import { normalizeWeightEntries, buildWeightSeries, fmtDelta, fmtLbs, TREND_ARROWS } from "../today/weightSeries.js";
 import { buildWeightChartOptions, daysToGoal, goalDate, DEFAULT_TARGET_BODY_FAT_PCT } from "./weightChart.js";
-import { readTokens } from "./WeightTrendChart.jsx";
 
+const goalsPath = 'api/v1/health/goals';
 const logger = createAppLogger('health').child('progress');
 
 // A projection that cannot be made says why. "⚠" alone leaves the reader
@@ -28,7 +29,6 @@ const PROJECTION_BLOCKED = {
   diverging: 'not on track',
 };
 
-// Token reading (readTokens) lives with the shared chart component.
 const emptyGoals = () => ({ sex: 'male', targetWeightLbs: '', weeklyRateLbs: 0,
   activityBaseline: 1.2, budgetFloor: '', heightIn: '', birthYear: '', targetBodyFatPct: '' });
 
@@ -37,24 +37,18 @@ const emptyGoals = () => ({ sex: 'male', targetWeightLbs: '', weeklyRateLbs: 0,
  * unchanged, as the `health` screen-framework panel widget). */
 export function ProgressView() {
   const containerRef = useRef(null);
-  const [tokens, setTokens] = useState(null);
-  useEffect(() => {
-    if (containerRef.current) setTokens(readTokens(containerRef.current));
-  }, []);
+  const tokens = useChartThemeTokens(containerRef);
 
   const weightRes = useApiResource('api/v1/health/weight', { label: 'weight', logger });
-  const goalsRes = useApiResource('api/v1/health/goals', { label: 'goals', logger });
+  const weightError = unavailableError(weightRes);
+  const { regionProps: weightRegion, retry: retryWeight } = useRetryRegion(weightRes.reload, weightRes.loading || weightRes.revalidating);
+  const goalsRes = useApiResource(goalsPath, { label: 'goals', logger });
+  const goalsError = unavailableError(goalsRes);
+  const { regionProps: goalsRegion, retry: retryGoals } = useRetryRegion(goalsRes.reload, goalsRes.loading || goalsRes.revalidating);
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [editingGoals, setEditingGoals] = useState(false);
-
-  // Seed the form once goals load; a later reload (after save) must not
-  // clobber in-progress edits, so only seed while form is still null.
-  useEffect(() => {
-    if (goalsRes.data && !form) setForm(goalsRes.data.goals || emptyGoals());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [goalsRes.data]);
 
   // ONE request for the whole window. This used to be 14 parallel
   // `GET /budget?date=` calls fired from an effect — the same fan-out the week
@@ -63,13 +57,16 @@ export function ProgressView() {
   const adherence = useBudgetRange(addDays(today, -13), today);
   // 30 days of intake vs burn, its own range because it is a different window.
   const intakeBurn = useBudgetRange(addDays(today, -29), today);
+  const { regionProps: adherenceRegion, retry: retryAdherence } = useRetryRegion(adherence.reload, adherence.loading || adherence.revalidating);
+  const { regionProps: intakeBurnRegion, retry: retryIntakeBurn } = useRetryRegion(intakeBurn.reload, intakeBurn.loading || intakeBurn.revalidating);
 
   const entries = useMemo(() => normalizeWeightEntries(weightRes.data), [weightRes.data]);
 
   const latest = entries[entries.length - 1] || null;
   const weightTrend = useMemo(() => buildWeightSeries(weightRes.data), [weightRes.data]);
 
-  const goalLbs = form?.targetWeightLbs ?? goalsRes.data?.goals?.targetWeightLbs ?? null;
+  const displayedGoals = editingGoals ? form : goalsRes.data?.goals;
+  const goalLbs = displayedGoals?.targetWeightLbs ?? null;
   const chartOptions = useMemo(
     () => buildWeightChartOptions({ entries, tokens, goalLbs: goalLbs || null }),
     [tokens, entries, goalLbs],
@@ -80,7 +77,7 @@ export function ProgressView() {
   // futures for the same day.
   // Number() rather than ?? — a cleared NumberInput is '', which is not nullish
   // and would otherwise be handed to the projection as a target of "".
-  const targetBodyFatPct = Number(form?.targetBodyFatPct ?? goalsRes.data?.goals?.targetBodyFatPct)
+  const targetBodyFatPct = Number(displayedGoals?.targetBodyFatPct)
     || DEFAULT_TARGET_BODY_FAT_PCT;
   const projection = useMemo(() => daysToGoal({
     lbs: latest?.avg ?? latest?.lbs ?? null,
@@ -95,9 +92,11 @@ export function ProgressView() {
     setSaveError(null);
     try {
       const payload = Object.fromEntries(Object.entries(form).filter(([, value]) => value !== ''));
-      await DaylightAPI('api/v1/health/goals', payload, 'PUT');
+      await DaylightAPI(goalsPath, payload, 'PUT');
       logger.info('goals.saved', {});
-      goalsRes.reload();
+      // Both the daily ledger and range charts include budgets calculated from these goals.
+      invalidateApiResources(path => path === goalsPath || path.startsWith('api/v1/health/budget/range?')
+        || path.startsWith('api/v1/health/day?'));
       setEditingGoals(false);
     } catch (err) {
       logger.error('goals.save.failed', { error: err?.message });
@@ -110,58 +109,69 @@ export function ProgressView() {
   return (
     <div className="health-progress" ref={containerRef}>
       <SectionCard title="Goals">
-        <div className="health-goals-summary"><Text size="sm">{goalsRes.data?.goals
-          ? `Target ${goalsRes.data.goals.targetWeightLbs ?? '—'} lb · ${goalsRes.data.goals.weeklyRateLbs ?? '—'} lb/week · Floor ${goalsRes.data.goals.budgetFloor ?? '—'} kcal${goalsRes.data.goals.maintenanceKcal ? ` · Break even ${goalsRes.data.goals.maintenanceKcal} kcal` : ''}`
-          : 'Set your goals to calculate a daily budget.'}</Text>
-          <Button variant="light" onClick={() => { setForm(goalsRes.data?.goals || emptyGoals()); setSaveError(null); setEditingGoals(true); }}>Edit goals</Button></div>
+        <section {...goalsRegion} aria-label="Goals">
+          {goalsError ? <ErrorState error={goalsError} onRetry={retryGoals} label="Goals" />
+            : goalsRes.loading && !goalsRes.data ? <LoadingState label="goals" rows={1} />
+              : <div className="health-goals-summary"><Text size="sm">{goalsRes.data?.goals
+                ? `Target ${goalsRes.data.goals.targetWeightLbs ?? '—'} lb · ${goalsRes.data.goals.weeklyRateLbs ?? '—'} lb/week · Floor ${goalsRes.data.goals.budgetFloor ?? '—'} kcal${goalsRes.data.goals.maintenanceKcal ? ` · Break even ${goalsRes.data.goals.maintenanceKcal} kcal` : ''}`
+                : 'Set your goals to calculate a daily budget.'}</Text>
+                <Button variant="light" onClick={() => { setForm(goalsRes.data?.goals || emptyGoals()); setSaveError(null); setEditingGoals(true); }}>Edit goals</Button></div>}
+        </section>
       </SectionCard>
-      {weightRes.loading ? <LoadingState label="weight history" rows={5} /> : null}
-      {unavailableError(weightRes) ? <ErrorState error={weightRes.error} onRetry={weightRes.reload} label="Weight history" /> : null}
-      {!weightRes.loading && !unavailableError(weightRes) ? (
-        <SectionCard title="Weight">
-          {chartOptions ? <HighchartsReact highcharts={Highcharts} options={chartOptions} /> : null}
-          {latest ? (
-            <div className="health-progress__stats">
-              <StatCard label={`Weight · as of ${latest.date}`}
-                value={fmtLbs(latest.avg ?? latest.lbs)} unit="lbs" emphasis />
-              <StatCard label="Composition"
-                value={latest.fatPct != null ? Math.round(latest.fatPct * 10) / 10 : '—'} unit="%" />
-              <StatCard label={`Trend · ${weightTrend.trendDays ?? 7} days`}
-                value={weightTrend.deltaLbs == null ? 'no trend yet' : (
-                  <span className={`health-progress__trend health-progress__trend--${weightTrend.direction}`}>
-                    <span aria-hidden="true">{TREND_ARROWS[weightTrend.direction]}</span> {fmtDelta(weightTrend.deltaLbs)}
-                  </span>
-                )} unit={weightTrend.deltaLbs == null ? '' : 'lb'} />
-              {/* Zero is BALANCED, not a missing figure — and an absent
-                  calorie_balance is the missing one. */}
-              <StatCard label="Daily calories"
-                value={latest.calorieBalance == null ? '—' : (latest.calorieBalance === 0 ? 'Balanced' : `${latest.calorieBalance > 0 ? '+' : '−'}${Math.abs(latest.calorieBalance)}`)}
-                unit={latest.calorieBalance ? 'kcal' : ''} />
-              <StatCard label={`Days to ${targetBodyFatPct}%`}
-                value={projection.days == null ? PROJECTION_BLOCKED[projection.reason] : (projection.days === 0 ? 'reached' : projection.days)}
-                unit={projection.days ? goalDate(latest.date, projection.days) || '' : ''} />
-            </div>
-          ) : null}
-        </SectionCard>
-      ) : null}
+      <section {...weightRegion} aria-label="Weight history">
+        {weightError ? <ErrorState error={weightError} onRetry={retryWeight} label="Weight history" />
+          : weightRes.loading && weightRes.data == null ? <LoadingState label="weight history" rows={5} /> : (
+            <SectionCard title="Weight">
+              {chartOptions ? <HighchartsReact highcharts={Highcharts} options={chartOptions} /> : null}
+              {latest ? (
+                <div className="health-progress__stats">
+                  <StatCard label={`Weight · as of ${latest.date}`}
+                    value={fmtLbs(latest.avg ?? latest.lbs)} unit="lbs" emphasis />
+                  <StatCard label="Composition"
+                    value={latest.fatPct != null ? Math.round(latest.fatPct * 10) / 10 : '—'} unit="%" />
+                  <StatCard label={`Trend · ${weightTrend.trendDays ?? 7} days`}
+                    value={weightTrend.deltaLbs == null ? 'no trend yet' : (
+                      <span className={`health-progress__trend health-progress__trend--${weightTrend.direction}`}>
+                        <span aria-hidden="true">{TREND_ARROWS[weightTrend.direction]}</span> {fmtDelta(weightTrend.deltaLbs)}
+                      </span>
+                    )} unit={weightTrend.deltaLbs == null ? '' : 'lb'} />
+                  {/* Zero is BALANCED, not a missing figure — and an absent
+                      calorie_balance is the missing one. */}
+                  <StatCard label="Daily calories"
+                    value={latest.calorieBalance == null ? '—' : (latest.calorieBalance === 0 ? 'Balanced' : `${latest.calorieBalance > 0 ? '+' : '−'}${Math.abs(latest.calorieBalance)}`)}
+                    unit={latest.calorieBalance ? 'kcal' : ''} />
+                  <StatCard label={`Days to ${targetBodyFatPct}%`}
+                    value={projection.days == null ? PROJECTION_BLOCKED[projection.reason] : (projection.days === 0 ? 'reached' : projection.days)}
+                    unit={projection.days ? goalDate(latest.date, projection.days) || '' : ''} />
+                </div>
+              ) : null}
+            </SectionCard>
+          )}
+      </section>
 
       {/* MonthBlock is the same bar block the Today sidebar draws — one
           component, one arithmetic, one honesty rule (a hole is hollow), rather
           than a second local copy that can drift from it. */}
       <SectionCard title="Logged intake — last 14 days · current goals">
-        {unavailableError(adherence) ? <ErrorState error={adherence.error} onRetry={adherence.reload} label="Logged intake" /> : adherence.loading ? <LoadingState label="adherence" rows={2} /> : (
-          <MonthBlock days={adherence.days} loading={adherence.loading} title={null} />
-        )}
+        <section {...adherenceRegion} aria-label="Logged intake">
+          {unavailableError(adherence) ? <ErrorState error={adherence.error} onRetry={retryAdherence} label="Logged intake" />
+            : adherence.loading ? <LoadingState label="adherence" rows={2} /> : (
+              <MonthBlock days={adherence.days} loading={adherence.loading} title={null} />
+            )}
+        </section>
       </SectionCard>
 
       <SectionCard title="Intake vs burn — last 30 days">
-        {unavailableError(intakeBurn) ? <ErrorState error={intakeBurn.error} onRetry={intakeBurn.reload} label="Intake vs burn" /> : intakeBurn.loading ? <LoadingState label="intake vs burn" rows={2} /> : (
-          <IntakeBurnChart days={intakeBurn.days} loading={intakeBurn.loading} title={null} />
-        )}
+        <section {...intakeBurnRegion} aria-label="Intake vs burn">
+          {unavailableError(intakeBurn) ? <ErrorState error={intakeBurn.error} onRetry={retryIntakeBurn} label="Intake vs burn" />
+            : intakeBurn.loading ? <LoadingState label="intake vs burn" rows={2} /> : (
+              <IntakeBurnChart days={intakeBurn.days} loading={intakeBurn.loading} title={null} />
+            )}
+        </section>
       </SectionCard>
 
       <Sheet open={editingGoals} onClose={() => { if (!saving) { setEditingGoals(false); setForm(goalsRes.data?.goals || null); } }} title="Edit goals">
-        {unavailableError(goalsRes) ? <ErrorState error={goalsRes.error} onRetry={goalsRes.reload} label="Goals" /> : !form ? <LoadingState label="goals" rows={4} /> : (
+        {form && (
           <Stack gap="sm">
             {saveError ? <Text size="sm" c="red">{goalSaveMessage(saveError)}</Text> : null}
             <SegmentedControl aria-label="Sex for budget calculation" value={form.sex || 'male'} onChange={(v) => setForm({ ...form, sex: v })}
@@ -209,7 +219,7 @@ export function ProgressView() {
                     value={watch?.limit ?? ''}
                     onChange={(v) => setForm(setWatchMicro(form, f.key, { limit: v }))} />
                   {watch ? (
-                    <SegmentedControl size="xs" value={watch.direction}
+                    <SegmentedControl aria-label={`${f.label} direction`} size="xs" value={watch.direction}
                       onChange={(v) => setForm(setWatchMicro(form, f.key, { direction: v }))}
                       data={[{ label: 'Stay under', value: 'ceiling' }, { label: 'Reach', value: 'floor' }]} />
                   ) : null}

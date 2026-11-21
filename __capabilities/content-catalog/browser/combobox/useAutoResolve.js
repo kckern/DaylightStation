@@ -1,9 +1,10 @@
+import { daylightApiResponse } from '../../../../frontend/src/lib/api.mjs';
 // useAutoResolve.js — row-level auto-resolve for freeform content values.
 // Ported from the inline row combobox's commitFreeformText (ListsItemRow.jsx,
 // Phase 0 behavior): when a committed value is freeform text (not a content
 // id), search the backend in the background and — only if the committed value
-// is still that exact text — replace it with the top hit, toast, and seed the
-// content-info cache. Port, not a redesign: timeout, staleness guard, and log
+// is still that exact text — replace it with the top hit and toast.
+// Timeout, staleness guard, and log
 // event names (`search.auto_resolve.*`) are unchanged.
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { getChildLogger } from "../../../../frontend/src/lib/logging/singleton.js";
@@ -22,18 +23,13 @@ const CONTENT_ID_RE = /^[^:]+:\s*.+$/;
  *   a resolve result is dropped unless `value` still equals the freeform text)
  * @param {(id: string, item?: object) => void} args.onChange - called with the
  *   resolved content id when the guard passes
- * @param {(id: string, info: object) => void} [args.setContentInfo] - shared
- *   content-info cache writer (ListsContext)
- * @param {(id: string) => Promise<object|null>} [args.fetchMetadata] - metadata
- *   fetcher used to seed the cache after a successful resolve (injected to
- *   avoid a module cycle with ListsItemRow's fetchContentMetadata)
  * @returns {{ maybeResolve: (freeformText: string, trigger?: string) => boolean,
  *             cancel: () => void }}
  *   maybeResolve returns true when a background resolve was started
  *   (non-id-like text), false otherwise. cancel aborts any in-flight resolve
  *   (call it when the user re-enters edit mode, as the twin did).
  */
-export function useAutoResolve({ value, onChange, setContentInfo, fetchMetadata } = {}) {
+export function useAutoResolve({ value, onChange } = {}) {
   const log = useMemo(
     () => getChildLogger({ component: 'useAutoResolve', app: 'admin', sessionLog: true }),
     []
@@ -44,10 +40,6 @@ export function useAutoResolve({ value, onChange, setContentInfo, fetchMetadata 
   valueRef.current = value;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
-  const setContentInfoRef = useRef(setContentInfo);
-  setContentInfoRef.current = setContentInfo;
-  const fetchMetadataRef = useRef(fetchMetadata);
-  fetchMetadataRef.current = fetchMetadata;
 
   // {query, controller, startedAt} of the in-flight resolve, or null.
   const autoResolveRef = useRef(null);
@@ -70,12 +62,13 @@ export function useAutoResolve({ value, onChange, setContentInfo, fetchMetadata 
     const timeout = setTimeout(() => {
       log.warn('search.auto_resolve.timeout', { query: freeformText, timeoutMs: AUTO_RESOLVE_TIMEOUT_MS });
       controller.abort();
+      if (autoResolveRef.current === entry) autoResolveRef.current = null;
     }, AUTO_RESOLVE_TIMEOUT_MS);
     const entry = { query: freeformText, controller, startedAt: Date.now() };
     autoResolveRef.current = entry;
     log.info('search.auto_resolve.start', { query: freeformText, trigger, timeoutMs: AUTO_RESOLVE_TIMEOUT_MS });
 
-    fetch(
+    daylightApiResponse(
       `/api/v1/content/query/search?text=${encodeURIComponent(freeformText)}&take=1&tier=1`,
       { signal: controller.signal }
     )
@@ -84,7 +77,7 @@ export function useAutoResolve({ value, onChange, setContentInfo, fetchMetadata 
         // A newer resolve (or cancel) supersedes this continuation. Identity
         // check (not just query text) so an aborted twin of the same query
         // can never race the live one.
-        if (autoResolveRef.current !== entry) return;
+        if (autoResolveRef.current !== entry || controller.signal.aborted) return;
         const items = data?.items || [];
         if (items.length > 0 && valueRef.current === freeformText) {
           // Only replace if the committed value is still the freeform text —
@@ -106,14 +99,6 @@ export function useAutoResolve({ value, onChange, setContentInfo, fetchMetadata 
               onChangeRef.current?.(freeformText);
             },
           });
-          // Eagerly populate the content cache so the row doesn't stay in
-          // its loading state.
-          const fetchMeta = fetchMetadataRef.current;
-          if (fetchMeta) {
-            fetchMeta(resolved).then((info) => {
-              if (info) setContentInfoRef.current?.(resolved, info);
-            });
-          }
         } else if (items.length > 0) {
           log.info('search.auto_resolve.skipped_stale_value', { query: freeformText, currentValue: valueRef.current });
         } else {

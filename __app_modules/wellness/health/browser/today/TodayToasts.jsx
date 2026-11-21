@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { Button } from '@mantine/core';
-import { CHROME_SCROLL_CLASS, ToastRegion, Toast } from '@/lib/ui';
+import { ToastRegion, Toast, useAppMainRef } from '@/lib/ui';
 import { PortionDraftAlert } from "./PortionDraftAlert.jsx";
 import { CaptureDayActions, useMoveInFlight } from "./MoveDayControl.jsx";
 import { dayBarFallback } from "./DayInputBar.jsx";
@@ -123,7 +123,8 @@ function useHandedBackMoveFocus(moveId) {
  * toast arrives. Room the view is standing in is kept until it scrolls away, so a
  * toast leaving does not pull the page either.
  */
-function useToastClearance() {
+function useToastClearance(pageRef) {
+  const mainRef = useAppMainRef();
   const watching = useRef(null);
   const update = useRef(() => {});
   update.current = () => {
@@ -141,9 +142,9 @@ function useToastClearance() {
   useEffect(() => {
     if (!watching.current) {
       const region = document.querySelector(REGION);
-      const page = document.querySelector('.health-today');
-      const scroller = page?.closest(`.${CHROME_SCROLL_CLASS}`);
-      if (region && page && scroller) {
+      const page = pageRef?.current;
+      const scroller = mainRef?.current;
+      if (region && page && scroller?.contains(page)) {
         const onChange = () => update.current();
         scroller.addEventListener('scroll', onChange, { passive: true });
         const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(onChange);
@@ -194,12 +195,12 @@ export function TodayToasts({
   orphanRetry, onRetryOrphan, onDismissOrphan,
   moves, mealUndo, onUndoMeal, onDismissMealUndo, undoDelete, onUndoDelete, onDismissUndoDelete, undoBusy,
   strandedPortion, today, onMoveCapture, onSupersedeMealUndo, dayOffers = [], onMoveOffer, onDismissOffer,
-  dayNotice = null, onDismissDayNotice, unresolvedMoves = [], menuMoveSettled = 0, handedBackMove = null,
+  dayNotice = null, onDismissDayNotice, unresolvedMoves = [], menuMoveSettled = 0, handedBackMove = null, pageRef,
 }) {
   useToastFocusRecovery();
   useMenuMoveFocus(menuMoveSettled);
   useHandedBackMoveFocus(handedBackMove);
-  useToastClearance();
+  useToastClearance(pageRef);
   const newestUndo = useNewestUndo([
     moves.undo && { key: `move:${moves.undo.label}`, clear: moves.undo.dismiss },
     // A newer action retires the Undo. What else the toast offers is the view's to keep.

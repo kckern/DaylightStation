@@ -1,11 +1,5 @@
-// frontend/src/modules/Media/house/houseApi.js
-// The house contracts (tech doc §2.5 screens, §2.6 routines, §2.7 started
-// by, §4.10 start status) as plain calls. Not DaylightAPI: a 409 from the
-// screen registry carries what the person must see next (`suggestion`,
-// `heldBy`, the `routines` a rename or retire touches), and DaylightAPI
-// truncates error bodies to 300 characters inside a message string. This
-// keeps the whole body on the error.
-import getDeviceId from "../../../../../frontend/src/lib/deviceIdentity.js";
+// Registry refusals carry the full list of routines affected by a rename or retirement.
+import { daylightApiResponse } from '../../../../../frontend/src/lib/api.mjs';
 
 export class HouseApiError extends Error {
   constructor(message, { status = null, code = null, details = {}, transient = false } = {}) {
@@ -31,30 +25,20 @@ export function deviceIdForScreen(screenId) {
   return screenId.startsWith('fleet:') ? screenId.slice('fleet:'.length) : screenId;
 }
 
-function headers() {
-  const out = { 'Content-Type': 'application/json' };
-  try {
-    const token = globalThis.localStorage?.getItem?.('ds_token');
-    if (token) out.Authorization = `Bearer ${token}`;
-  } catch { /* storage refused */ }
-  try { out['X-Daylight-Device'] = getDeviceId(); } catch { /* no window */ }
-  return out;
-}
-
-async function call(path, { method = 'GET', body } = {}) {
-  const base = typeof window !== 'undefined' ? window.location.origin : '';
+async function call(path, { method = 'GET', body, signal } = {}) {
   let response;
   try {
-    response = await fetch(`${base}/${path}`, {
-      method,
-      headers: headers(),
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    });
+    response = await daylightApiResponse(path, { method, data: body, signal });
   } catch (error) {
+    if (error?.name === 'AbortError') throw error;
     throw new HouseApiError(`Network error: ${error?.message ?? 'request failed'}`, { transient: true });
   }
   let payload = null;
-  try { payload = await response.json(); } catch { payload = null; }
+  try {
+    payload = await response.json();
+  } catch (error) {
+    if (error?.name === 'AbortError') throw error;
+  }
   if (!response.ok) {
     const { error, code, ...details } = payload && typeof payload === 'object' ? payload : {};
     throw new HouseApiError(error || `HTTP ${response.status}`, {
@@ -71,7 +55,7 @@ const media = (path) => `api/v1/media/${path}`;
 const screen = (id) => media(`screens/${encodeURIComponent(id)}`);
 
 export const houseApi = {
-  listScreens: () => call(media('screens')),
+  listScreens: ({ signal } = {}) => call(media('screens'), { signal }),
   announceScreen: ({ id, name, room, playing, previousId } = {}) => call(media('screens/announce'), {
     method: 'POST',
     body: { id, ...(name ? { name } : {}), ...(room ? { room } : {}), ...(playing ? { playing: true } : {}),
@@ -93,12 +77,12 @@ export const houseApi = {
     method: 'POST', body: confirm ? { confirm: true } : {},
   }),
   restoreScreen: (id) => call(`${screen(id)}/restore`, { method: 'POST', body: {} }),
-  screenRoutines: (id) => call(`${screen(id)}/routines`),
-  startedByAll: () => call(media('started-by')),
-  startedBy: (id) => call(`${screen(id)}/started-by`),
-  routineHistory: ({ limit = 50 } = {}) => call(media(`routines/history?limit=${limit}`)),
-  routineFlags: () => call(media('routines/flags')),
-  startStatus: (deviceId) => call(`api/v1/device/${encodeURIComponent(deviceId)}/start-status`),
+  screenRoutines: (id, { signal } = {}) => call(`${screen(id)}/routines`, { signal }),
+  startedByAll: ({ signal } = {}) => call(media('started-by'), { signal }),
+  startedBy: (id, { signal } = {}) => call(`${screen(id)}/started-by`, { signal }),
+  routineHistory: ({ limit = 50, signal } = {}) => call(media(`routines/history?limit=${limit}`), { signal }),
+  routineFlags: ({ signal } = {}) => call(media('routines/flags'), { signal }),
+  startStatus: (deviceId, { signal } = {}) => call(`api/v1/device/${encodeURIComponent(deviceId)}/start-status`, { signal }),
   screenOff: (deviceId) => call(`api/v1/device/${encodeURIComponent(deviceId)}/off`),
 };
 

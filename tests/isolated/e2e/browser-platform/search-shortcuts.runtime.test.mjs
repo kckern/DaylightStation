@@ -1,0 +1,481 @@
+import { expect, test } from '@playwright/test';
+import { startSseServer, streamItem } from '../../../live/flow/media/lib/sseServer.mjs';
+
+test.use({ serviceWorkers: 'block' });
+
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('media-app.first-use-done', 'done'));
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/reader/feeds')) return route.fulfill({ json: [] });
+    if (path.endsWith('/reader/stream')) return route.fulfill({ json: { items: [], continuation: null } });
+    return route.fulfill({ json: path.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+});
+
+test('Feed leaves an active dialog alone, types a slash in search and adds one history entry', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.goto('/feed/reader');
+  const subscriptions = page.getByRole('button', { name: 'Open subscriptions' });
+  await subscriptions.click();
+  const dialog = page.getByRole('dialog', { name: 'Subscriptions' });
+  await expect(dialog).toBeFocused();
+  await page.keyboard.press('/');
+  await expect(dialog).toBeFocused();
+  await expect(page).toHaveURL(/\/feed\/reader$/);
+  await page.keyboard.press('Escape');
+  await expect(subscriptions).toBeFocused();
+
+  await page.keyboard.press('/');
+  const search = page.getByRole('textbox', { name: 'Search feed history' });
+  await expect(page).toHaveURL(/\/feed\/search$/);
+  await expect(search).toBeFocused();
+  await page.keyboard.press('/');
+  await expect(search).toHaveValue('/');
+  await page.getByRole('main', { name: 'Feed' }).focus();
+  await page.keyboard.press('/');
+  await page.goBack();
+  await expect(page).toHaveURL(/\/feed\/reader$/);
+});
+
+for (const width of [390, 1440]) {
+  test(`Media opens the search control for ${width}px and types a slash into it`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 850 });
+    await page.goto('/media');
+    await expect(page.getByTestId('media-dock')).toBeVisible();
+    const mobile = width === 390;
+    const search = mobile
+      ? page.getByRole('searchbox', { name: 'Search media', exact: true })
+      : page.getByRole('textbox', { name: 'Search media…', exact: true });
+    await page.keyboard.press('/');
+    await expect(search).toBeFocused();
+    await page.keyboard.press('/');
+    await expect(search).toHaveValue('/');
+  });
+}
+
+test('Media Start fresh owns Escape before Browse Back and returns focus to Settings', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 850 });
+  await page.goto('/media');
+  await page.getByTestId('app-nav-browse').click();
+  await expect(page).toHaveURL(/view=browse/);
+  const settings = page.getByRole('button', { name: 'Settings', exact: true });
+  await settings.click();
+  await page.getByTestId('settings-reset-session').click();
+  const dialog = page.getByRole('dialog', { name: 'Start fresh on this device?' });
+  const cancel = dialog.getByRole('button', { name: 'Cancel', exact: true });
+  await cancel.focus();
+  await page.keyboard.press('/');
+  await expect(cancel).toBeFocused();
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(page).toHaveURL(/view=browse/);
+  await expect(settings).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page).toHaveURL(/\/media$/);
+});
+
+
+async function installMediaSearchResult(page, extraItems = []) {
+  const item = {
+    id: 'plex:43', source: 'plex', title: 'Queued track', itemType: 'leaf',
+    metadata: { type: 'track', category: 'work' }, children: [], childCount: 0,
+  };
+  await page.route('**/api/v1/content/query/search/stream**', route => route.fulfill({
+    contentType: 'text/event-stream',
+    body: [{ event: 'results', source: 'plex', items: [item, ...extraItems], pending: [] }, { event: 'complete' }]
+      .map(frame => 'data: ' + JSON.stringify(frame) + '\n\n').join(''),
+  }));
+  return item;
+}
+
+test('desktop Media retries and widens when the same scoped query is entered again', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 850 });
+  await page.route('**/api/v1/media/config', route => route.fulfill({ json: { searchScopes: [
+    { key: 'all', label: 'All', params: '' },
+    { key: 'video', label: 'Video', params: 'mediaType=video' },
+  ] } }));
+  const title = 'Recorded story';
+  const requests = [];
+  await page.route('**/api/v1/content/query/search/stream**', route => {
+    const params = new URL(route.request().url()).searchParams;
+    const mediaType = params.get('mediaType');
+    const source = params.get('source');
+    requests.push([params.get('text'), mediaType, source]);
+    const items = mediaType ? [] : [streamItem({ id: 'plex:43', title, type: 'movie' })];
+    const frame = mediaType && !source
+      ? { event: 'source_error', source: 'plex', error: 'Fixture source unavailable', pending: [] }
+      : { event: 'results', source: 'plex', items, pending: [] };
+    return route.fulfill({
+      contentType: 'text/event-stream',
+      body: [frame, { event: 'complete' }].map(event => 'data: ' + JSON.stringify(event) + '\n\n').join(''),
+    });
+  });
+
+  await page.goto('/media');
+  await page.getByTestId('app-nav-browse').click();
+  const scope = page.getByRole('button', { name: 'Video', exact: true });
+  await scope.click();
+  const search = page.getByRole('textbox', { name: 'Search media…', exact: true });
+  const result = page.getByTestId('combobox-option-plex:43');
+  const oneSearch = [[title, 'video', null], [title, 'video', 'plex'], [title, null, null]];
+
+  await search.fill(title);
+  await expect(result).toBeVisible();
+  expect(requests).toEqual(oneSearch);
+
+  await search.clear();
+  await expect(result).toBeHidden();
+  await search.fill(title);
+  await expect.poll(() => requests).toEqual([...oneSearch, ...oneSearch]);
+  await expect(result).toBeVisible();
+  await expect(scope).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('desktop Media closes results before Back when Escape restores input focus', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 850 });
+  const item = await installMediaSearchResult(page);
+  await page.goto('/media');
+  const browse = page.getByTestId('app-nav-browse');
+  const home = page.getByTestId('app-nav-home');
+  await browse.click();
+  await expect(browse).toHaveAttribute('aria-current', 'page');
+  await expect(page).toHaveURL(/view=browse/);
+
+  const search = page.getByRole('textbox', { name: 'Search media…', exact: true });
+  await search.fill(item.title);
+  const results = page.getByRole('listbox');
+  const more = page.getByRole('button', { name: 'More actions' });
+  const playOn = page.getByRole('menuitem', { name: 'Play on…', exact: true });
+  await more.press('Enter');
+  await playOn.focus();
+  await page.keyboard.press('Escape');
+  await expect(playOn).toBeHidden();
+  await expect(more).toBeFocused();
+  await expect(results).toBeVisible();
+
+  await more.click();
+  await playOn.click();
+  const picker = page.getByRole('dialog', { name: 'Play on…', exact: true });
+  await expect(picker).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(picker).toBeHidden();
+  await expect(search).toHaveValue(item.title);
+  await expect(results).toBeVisible();
+
+  await more.click();
+  const add = page.getByRole('menuitem', { name: 'Add to Queue', exact: true });
+  await add.click();
+  await expect(add).toBeHidden();
+  await expect(results).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(results).toBeHidden();
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue(item.title);
+  await expect(browse).toHaveAttribute('aria-current', 'page');
+
+  await page.keyboard.press('Escape');
+  await expect(page).toHaveURL(/\/media$/);
+  await expect(home).toHaveAttribute('aria-current', 'page');
+});
+
+async function installSlideshow(page) {
+  await page.addInitScript(() => {
+    const photo = { contentId: 'plex:71', title: 'Slideshow photo', format: 'image', duration: 90 };
+    const updatedAt = new Date().toISOString();
+    localStorage.setItem('media-app.session', JSON.stringify({
+      schemaVersion: 1, sessionId: 'fixture', updatedAt, wasPlayingOnUnload: false,
+      snapshot: {
+        sessionId: 'fixture', state: 'paused', currentItem: photo, position: 0,
+        queue: { items: [{ ...photo, queueItemId: 'photo' }], currentIndex: 0, upNextCount: 0 },
+        config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1 },
+        meta: { ownerId: 'fixture', updatedAt },
+      },
+    }));
+  });
+}
+
+test('desktop Media closes slideshow music search and dialog before leaving Now Playing', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 850 });
+  await installSlideshow(page);
+  const item = await installMediaSearchResult(page);
+  await page.goto('/media?view=fleet');
+  await page.getByTestId('mini-player-open-nowplaying').click();
+  await expect(page).toHaveURL(/view=nowPlaying/);
+
+  const opener = page.getByTestId('pf-music-add');
+  await opener.click();
+  const dialog = page.getByRole('dialog', { name: 'Add music behind' });
+  const search = dialog.getByRole('textbox', { name: 'Search music…' });
+  const result = page.getByTestId(`combobox-option-${item.id}`);
+  await search.fill(item.title);
+  await expect(result).toBeVisible();
+  await dialog.locator('.mantine-Modal-close').click();
+  // The dialog can still be fading, but it no longer owns a live picker.
+  expect(await page.getByPlaceholder('Search music…').count()).toBe(0);
+  await page.keyboard.press('Escape');
+  await expect(page).toHaveURL(/view=fleet/);
+
+  await page.getByTestId('mini-player-open-nowplaying').click();
+  await opener.click();
+  await expect(search).toHaveValue('');
+  await search.fill(item.title);
+  await expect(result).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(result).toBeHidden();
+  await expect(dialog).toBeVisible();
+  await expect(search).toBeFocused();
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(page).toHaveURL(/view=nowPlaying/);
+  await expect(opener).toBeFocused();
+
+  await page.keyboard.press('Escape');
+  await expect(page).toHaveURL(/view=fleet/);
+});
+
+test.describe('phone Media slideshow music', () => {
+  test.use({ viewport: { width: 390, height: 850 }, hasTouch: true });
+
+  for (const { options, offset } of [{ options: 1, offset: 0 }, { options: 12, offset: 30 }]) {
+    test(`keeps ${options} music ${options === 1 ? 'result' : 'results'} reachable above the keyboard`, async ({ page }) => {
+      await installSlideshow(page);
+      const extraItems = Array.from({ length: options - 1 }, (_, index) => ({
+        id: `plex:${101 + index}`, source: 'plex', title: `Queued track ${index + 2}`, itemType: 'leaf',
+        metadata: { type: 'track' }, children: [], childCount: 0,
+      }));
+      const first = await installMediaSearchResult(page, extraItems);
+      const picked = extraItems.at(-1) ?? first;
+      const queueRequests = [];
+      const media = { id: picked.id, contentId: picked.id, format: 'audio', mediaType: 'audio',
+        title: picked.title, mediaUrl: '/music-picker-fixture.wav', duration: 30 };
+      await page.route('**/api/**', route => {
+        const path = decodeURIComponent(new URL(route.request().url()).pathname);
+        if (path.endsWith(`/queue/${picked.id}`)) {
+          queueRequests.push(picked.id);
+          return route.fulfill({ json: { items: [media] } });
+        }
+        if (path.endsWith(`/play/${picked.id}`)) return route.fulfill({ json: media });
+        return route.fallback();
+      });
+
+      await page.goto('/media?view=fleet');
+      await page.getByTestId('mini-player-open-nowplaying').click();
+      await expect(page).toHaveURL(/view=nowPlaying/);
+      const opener = page.getByTestId('pf-music-add');
+      const dialog = page.getByRole('dialog', { name: 'Add music behind' });
+      const search = dialog.getByRole('textbox', { name: 'Search music…' });
+      const result = page.getByTestId(`combobox-option-${picked.id}`);
+      const setKeyboardViewport = (height, offsetTop) => page.evaluate(({ height, offsetTop }) => {
+        const viewport = window.visualViewport;
+        Object.defineProperties(viewport, {
+          height: { configurable: true, value: height },
+          offsetTop: { configurable: true, value: offsetTop },
+        });
+        viewport.dispatchEvent(new Event('resize'));
+      }, { height, offsetTop });
+      const openResults = async () => {
+        await opener.click();
+        await search.fill(first.title);
+        await expect(result).toBeVisible();
+        await expect(search).toBeFocused();
+        await setKeyboardViewport(300, offset);
+      };
+
+      await openResults();
+      await page.keyboard.press('Escape');
+      await expect(result).toBeHidden();
+      await expect(search).toBeFocused();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+      await expect(opener).toBeFocused();
+      await expect(page).toHaveURL(/view=nowPlaying/);
+      expect(queueRequests).toEqual([]);
+
+      await setKeyboardViewport(850, 0);
+      await openResults();
+      await expect.poll(() => result.evaluate(element => {
+        const { top, bottom } = element.closest('[role="listbox"]').getBoundingClientRect();
+        const { offsetTop, height } = window.visualViewport;
+        return Math.max(offsetTop - top, bottom - offsetTop - height);
+      }), { message: 'the music results scrollport fits above the keyboard' }).toBeLessThanOrEqual(1);
+      if (options > 1) {
+        const scrollport = () => result.evaluate(element => {
+          const viewport = element.closest('.mantine-ScrollArea-viewport');
+          const box = viewport.getBoundingClientRect();
+          return { x: box.left + box.width / 2, y: box.top + box.height / 2,
+            scrollTop: viewport.scrollTop, range: viewport.scrollHeight - viewport.clientHeight };
+        });
+        const { x, y, range } = await scrollport();
+        expect(range).toBeGreaterThan(0);
+        await page.mouse.move(x, y);
+        await expect(async () => {
+          const { scrollTop } = await scrollport();
+          if (scrollTop < range - 1) await page.mouse.wheel(0, range);
+          expect(scrollTop).toBeGreaterThanOrEqual(range - 1);
+        }).toPass({ timeout: 5000 });
+      }
+      const resultBounds = () => result.evaluate(element => {
+        const box = element.getBoundingClientRect();
+        const { offsetTop, height } = window.visualViewport;
+        const x = (box.left + box.right) / 2;
+        const y = (box.top + box.bottom) / 2;
+        return { x, y, top: box.top, bottom: box.bottom, viewportBottom: offsetTop + height,
+          fits: box.top >= offsetTop - 1 && box.bottom <= offsetTop + height + 1,
+          hits: element.contains(document.elementFromPoint(x, y)) };
+      });
+      await expect.poll(resultBounds, { message: 'a scrolled music result fits above the keyboard and receives a hit' })
+        .toMatchObject({ fits: true, hits: true, viewportBottom: offset + 300 });
+      await expect.poll(() => search.evaluate(element => {
+        const { top, bottom } = element.getBoundingClientRect();
+        const { offsetTop, height } = window.visualViewport;
+        return top >= offsetTop - 1 && bottom <= offsetTop + height + 1;
+      })).toBe(true);
+      const { x, y } = await resultBounds();
+      await page.touchscreen.tap(x, y);
+      await expect(dialog).toBeHidden();
+      await expect.poll(() => queueRequests).toEqual([picked.id]);
+      await expect(page).toHaveURL(/view=nowPlaying/);
+    });
+  }
+});
+
+async function openSearchPlayOnWithKeyboard(page) {
+  await page.keyboard.press('Enter');
+  for (let step = 0; step < 4; step++) await page.keyboard.press('ArrowDown');
+  await expect(page.getByRole('menuitem', { name: 'Play on…', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  const picker = page.getByRole('dialog', { name: 'Play on…', exact: true });
+  await expect(picker).toBeVisible();
+  return picker;
+}
+
+test('phone Media gives More native Tab order and lets the destination picker dismiss before Search', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 850 });
+  const item = await installMediaSearchResult(page);
+  await page.goto('/media');
+  const home = page.getByTestId('app-tab-home');
+  const browse = page.getByTestId('app-tab-browse');
+  await browse.click();
+  await expect(browse).toHaveAttribute('aria-current', 'page');
+  const launcher = page.getByTestId('app-tab-search');
+  await launcher.press('Enter');
+  const search = page.getByRole('searchbox', { name: 'Search media' });
+  await search.fill(item.title);
+  const more = page.getByRole('button', { name: 'More actions' });
+  await expect(more).toBeVisible();
+  const close = page.getByRole('button', { name: 'Close search' });
+  await search.press('Shift+Tab');
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(more).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
+
+  await more.press('Shift+Tab');
+  const previous = await page.evaluateHandle(() => document.activeElement);
+  const playOn = page.getByRole('menuitem', { name: 'Play on…', exact: true });
+  await more.press('Enter');
+  await expect(playOn).toBeVisible();
+  const menu = page.getByRole('menu');
+  await playOn.focus();
+  await page.keyboard.press('Tab');
+  await expect(menu).toBeHidden();
+  await expect(close).toBeFocused();
+
+  await more.press('Enter');
+  await page.keyboard.press('ArrowDown');
+  await expect(menu.getByRole('menuitem', { name: 'Play Next', exact: true })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(menu).toBeHidden();
+  await expect.poll(() => previous.evaluate(element => document.activeElement === element)).toBe(true);
+  await previous.dispose();
+  await expect(search).toHaveValue(item.title);
+  expect(await page.evaluate(() => history.state.mediaSearchMode)).toBe(true);
+
+  await more.press('Enter');
+  await expect(menu.getByRole('menuitem', { name: 'Play Now', exact: true })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(playOn).toBeHidden();
+  await expect(more).toBeFocused();
+  await expect(search).toHaveValue(item.title);
+
+  const picker = await openSearchPlayOnWithKeyboard(page);
+  await expect(menu).toBeHidden();
+  await expect(picker.locator(':focus')).toHaveCount(1);
+  await page.keyboard.press('Shift+Tab');
+  await expect(picker.locator(':focus')).toHaveCount(1);
+  await page.keyboard.press('Tab');
+  await expect(picker.locator(':focus')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(picker).toBeHidden();
+  await expect(more).toBeFocused();
+  await expect(search).toHaveValue(item.title);
+  expect(await page.evaluate(() => history.state.mediaSearchMode)).toBe(true);
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
+
+  await page.keyboard.press('Escape');
+  await expect(search).toBeHidden();
+  await expect(launcher).toBeFocused();
+  await expect(browse).toHaveAttribute('aria-current', 'page');
+  await expect.poll(() => page.evaluate(() => !!history.state.mediaSearchMode)).toBe(false);
+  await page.goBack();
+  await expect(home).toHaveAttribute('aria-current', 'page');
+});
+
+test('phone Media gives focus to Search when the picked row is replaced during streaming', async ({ page }) => {
+  const server = await startSseServer();
+  try {
+    const title = 'Recorded story';
+    const incoming = streamItem({ id: 'abs:7', title, source: 'abs', type: 'audiobook' });
+    const preferred = streamItem({ id: 'plex:43', title, type: 'audiobook' });
+    server.script(async stream => {
+      stream.send({ event: 'results', source: 'abs', items: [incoming], pending: ['plex'] });
+      await stream.gate('plex');
+      stream.send({ event: 'results', source: 'plex', items: [preferred], pending: [] });
+      stream.send({ event: 'complete' });
+      stream.end();
+    });
+    await server.install(page);
+    await page.setViewportSize({ width: 390, height: 850 });
+    await page.goto('/media');
+    const launcher = page.getByTestId('app-tab-search');
+    await launcher.press('Enter');
+    const search = page.getByRole('searchbox', { name: 'Search media' });
+    await search.fill(title);
+    const initialMore = page.getByTestId('result-more-abs:7');
+    const preferredMore = page.getByTestId('result-more-plex:43');
+    await expect(initialMore).toBeVisible();
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Shift+Tab');
+    await expect(initialMore).toBeFocused();
+    const picker = await openSearchPlayOnWithKeyboard(page);
+
+    server.release('plex');
+    await expect(initialMore).toHaveCount(0);
+    await expect(preferredMore).toBeVisible();
+    await expect(picker).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(picker).toBeHidden();
+    await expect(search).toBeFocused();
+    await expect(search).toHaveValue(title);
+
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Shift+Tab');
+    await expect(preferredMore).toBeFocused();
+    await openSearchPlayOnWithKeyboard(page);
+    await page.goBack();
+    await expect(picker).toBeHidden();
+    await expect(search).toBeHidden();
+    await expect(launcher).toBeFocused();
+    await expect.poll(() => page.evaluate(() => !!history.state?.mediaSearchMode)).toBe(false);
+  } finally {
+    await server.close();
+  }
+});

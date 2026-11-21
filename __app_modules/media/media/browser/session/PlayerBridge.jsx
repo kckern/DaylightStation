@@ -8,9 +8,8 @@
 //    (audio continues across all views: "playback is ambient, not modal").
 //    Guarded by PlayerBridge.test.jsx — do not go back to conditionally
 //    portalling; see the note at the render for why that remounts.
-//  - Volume is applied imperatively via getMediaElement() with a bounded
-//    retry, because the element may not exist when the effect first runs and
-//    routing volume through the play prop would remount the Player.
+//  - Volume follows the native media binding, including decoder replacements.
+//    Routing volume through the play prop would remount the Player.
 //  - Position ticks feed the hot position channel only; the durable
 //    snapshot position is written on the ≥5s cadence (§11.3).
 //  - Stall detection (C9.3) is suppressed for live content, which has no
@@ -32,7 +31,9 @@ import { registerTrackOwner, createTrackPreferenceStore, readContentPosition } f
 import { getLocalPlayerFeatures } from "./localPlayerFeatures.js";
 import { playLogOrigin } from "./playOrigin.js";
 
-const RENDERER_BOUNDARY_FORMATS = new Set(['video', 'hls_video', 'dash_video', 'audio']);
+import { hasNativePlaybackRenderer } from '@shared-contracts/media/playback-owner.mjs';
+
+const VOLUME_REAPPLY_EVENTS = ['loadedmetadata', 'loadeddata', 'canplay'];
 // Media waits out a refused (unreadable) file for 60 s, then lets the queue
 // move on; kiosks keep the Player's 30-minute default (RELY.5a ruling).
 export const MEDIA_SOURCE_UNAVAILABLE_MAX_MS = 60_000;
@@ -62,18 +63,39 @@ export function PlayerBridge() {
   const bindNativeOperationRef = useRef(null);
   const rendererOperationSequenceRef = useRef(0);
   const pendingInitialRendererOperationRef = useRef(null);
+  const prepareInitialRendererOperation = useCallback((item, targetSeconds, source, autoplay) => {
+    pendingInitialRendererOperationRef.current = {
+      operationId: `local-owner-${++rendererOperationSequenceRef.current}`,
+      expectedContentId: item.contentId,
+      targetSeconds,
+      autoplay,
+      source,
+      format: item.format,
+      isLive: item.isLive === true,
+    };
+  }, []);
   const [restoreHeld, setRestoreHeld] = useState(() => controller.restore?.isHeld?.() === true);
   useEffect(() => {
     if (!controller.restore?.subscribe) return undefined;
-    const sync = () => {
-      const held = controller.restore.isHeld();
-      // Start where the held session now says (a seek while held moved it).
-      if (!held) startSecondsRef.current = controller.getSnapshot().position ?? 0;
+    const sync = (held, reason) => {
+      if (!held) {
+        const { currentItem: item, position } = controller.getSnapshot();
+        // A seek while held changes the spot that the first decoder should use.
+        startSecondsRef.current = position ?? 0;
+        const timeline = item?.contentTimeline;
+        if (reason === 'play' && item?.contentId && item.format === 'audio' && item.isLive !== true
+          && timeline?.rendererStartSeconds === timeline?.contentStartSeconds
+          && Number.isFinite(position) && position > 0 && Number.isFinite(item.duration) && position < item.duration) {
+          // Generic audio starts can restart short tracks. Explicitly resuming
+          // a held track uses the current item's exact renderer seek.
+          prepareInitialRendererOperation(item, position, 'local-restore-audio', true);
+        }
+      }
       setRestoreHeld(held);
     };
-    sync();
+    sync(controller.restore.isHeld());
     return controller.restore.subscribe(sync);
-  }, [controller]);
+  }, [controller, prepareInitialRendererOperation]);
 
   // Subtitles and audio language (RQ-STEER-14): this device claims only its
   // own Player; the choice is remembered per show on this device.
@@ -126,7 +148,7 @@ export function PlayerBridge() {
 
   const hasCurrentItem = Boolean(currentItem);
   useEffect(() => {
-    if (!hasCurrentItem || typeof playerRef.current?.subscribeMountedMediaOperations !== 'function') return undefined;
+    if (restoreHeld || !hasCurrentItem || typeof playerRef.current?.subscribeMountedMediaOperations !== 'function') return undefined;
     const subscription = playerRef.current.subscribeMountedMediaOperations((binding) => {
       const ready = bindNativeOperationRef.current?.(binding) === true;
       return ready ? { ready: true, ...binding } : { ready: false };
@@ -148,7 +170,7 @@ export function PlayerBridge() {
   // on an A -> B adoption removes the exact observer ID that the synchronous
   // renderer-boundary request just marked as required, so B can never admit
   // its mounted decoder operation and its native resume seek remains at zero.
-  }, [hasCurrentItem]);
+  }, [hasCurrentItem, restoreHeld]);
 
   // Track volume so we can sync it to the media element as the user adjusts it.
   const [volume, setVolume] = useState(() => controller.getSnapshot().config?.volume ?? 100);
@@ -170,37 +192,17 @@ export function PlayerBridge() {
   useEffect(() => controller.output?.subscribe?.((value) => setOutputFade(value)) ?? undefined, [controller]);
   useEffect(() => { playerRef.current?.setPlaybackRate?.(playbackRate); }, [playbackRate, currentItem?.contentId]);
   useEffect(() => { playerRef.current?.setShader?.(sessionShader); }, [sessionShader, currentItem?.contentId]);
+  const targetVolume = Math.max(0, Math.min(1, (volume / 100) * outputFade));
+  const targetVolumeRef = useRef(targetVolume);
+  const applyVolume = useCallback((event) => {
+    const el = playerRef.current?.getMediaElement?.();
+    if (!el || (event && event.currentTarget !== el)) return;
+    try { el.volume = targetVolumeRef.current; } catch { /* unsupported volume control */ }
+  }, []);
   useEffect(() => {
-    let cancelled = false;
-    const target = Math.max(0, Math.min(1, (volume / 100) * outputFade));
-    // The Player resets the element's volume to 1 when its metadata loads
-    // (the bridge passes it no volume prop, to avoid remounting), so the
-    // session level is applied again at each of these points.
-    const REAPPLY_EVENTS = ['loadedmetadata', 'loadeddata', 'canplay'];
-    let attached = null;
-    const set = (el) => { try { el.volume = target; } catch { /* ignore */ } };
-    const apply = () => {
-      const el = playerRef.current?.getMediaElement?.();
-      if (!el) return false;
-      set(el);
-      if (attached !== el && typeof el.addEventListener === 'function') {
-        attached = el;
-        for (const name of REAPPLY_EVENTS) el.addEventListener(name, onMedia);
-      }
-      return true;
-    };
-    const onMedia = (event) => { if (!cancelled) set(event.currentTarget ?? attached); };
-    const detach = () => {
-      if (attached && typeof attached.removeEventListener === 'function') {
-        for (const name of REAPPLY_EVENTS) attached.removeEventListener(name, onMedia);
-      }
-      attached = null;
-    };
-    if (apply()) return () => { cancelled = true; detach(); };
-    const id = setInterval(() => { if (cancelled || apply()) clearInterval(id); }, TIMING.VOLUME_APPLY_RETRY_MS);
-    const timeout = setTimeout(() => clearInterval(id), TIMING.VOLUME_APPLY_GIVE_UP_MS);
-    return () => { cancelled = true; detach(); clearInterval(id); clearTimeout(timeout); };
-  }, [volume, outputFade, currentItem?.contentId]);
+    targetVolumeRef.current = targetVolume;
+    applyVolume();
+  }, [targetVolume, applyVolume]);
 
   useEffect(() => () => {
     if (stallTimerRef.current) {
@@ -225,17 +227,10 @@ export function PlayerBridge() {
         const requestedStart = Number.isFinite(snap.position) ? snap.position : 0;
         startSecondsRef.current = requestedStart;
         playbackGenerationRef.current += 1;
+        pendingInitialRendererOperationRef.current = null;
         if (action.type === 'ADOPT_SNAPSHOT' && next?.contentId && !playerRef.current
-          && next.isLive !== true && RENDERER_BOUNDARY_FORMATS.has(next.format)) {
-          pendingInitialRendererOperationRef.current = {
-            operationId: `local-owner-${++rendererOperationSequenceRef.current}`,
-            expectedContentId: next.contentId,
-            targetSeconds: requestedStart,
-            autoplay: action.autoplay !== false,
-            source: 'local-adopt_snapshot',
-            format: next.format,
-            isLive: next.isLive === true,
-          };
+          && next.isLive !== true && hasNativePlaybackRenderer(next.format)) {
+          prepareInitialRendererOperation(next, requestedStart, 'local-adopt_snapshot', action.autoplay !== false);
         }
         const mountedMatchesRequested = next?.contentId
           && playerRef.current?.getMountedContentId?.() === next.contentId;
@@ -283,11 +278,8 @@ export function PlayerBridge() {
       });
     };
     check(controller.getSnapshot());
-    if (controller.store?.onTransition) {
-      return controller.store.onTransition((_prev, next, action) => check(next, action));
-    }
-    return controller.subscribe(check);
-  }, [controller]);
+    return controller.store.onTransition((_prev, next, action) => check(next, action));
+  }, [controller, prepareInitialRendererOperation]);
 
   // Reset per-item progress gating when the current item changes.
   useEffect(() => {
@@ -477,10 +469,16 @@ export function PlayerBridge() {
           playerRef.current?.getNowPlaying?.()?.item?.contentTimeline ?? controller.getSnapshot().currentItem?.contentTimeline);
         if (Number.isFinite(contentSeconds)) controller.onPlayerPositionTick(contentSeconds, contentId);
       };
+      const observeReady = () => { observeNative('loadeddata'); };
       const observeTimeUpdate = () => { observeNative('timeupdate'); };
       const observeEnded = () => { observeNative('ended'); };
       const observeError = () => { observeNative('error'); };
+      // The Player can restore full volume as a decoder becomes ready.
+      // Keep these listeners with the decoder that owns native observation.
+      applyVolume();
+      for (const type of VOLUME_REAPPLY_EVENTS) bound.addEventListener(type, applyVolume);
       bound.addEventListener('loadedmetadata', observeDuration);
+      bound.addEventListener('loadeddata', observeReady);
       bound.addEventListener('durationchange', observeDuration);
       bound.addEventListener('pause', observePaused);
       bound.addEventListener('playing', observePlaying);
@@ -492,7 +490,9 @@ export function PlayerBridge() {
       bound.addEventListener('error', observeError);
       observeDuration();
       detach = () => {
+        for (const type of VOLUME_REAPPLY_EVENTS) bound?.removeEventListener(type, applyVolume);
         bound?.removeEventListener('loadedmetadata', observeDuration);
+        bound?.removeEventListener('loadeddata', observeReady);
         bound?.removeEventListener('durationchange', observeDuration);
         bound?.removeEventListener('pause', observePaused);
         bound?.removeEventListener('playing', observePlaying);
@@ -508,7 +508,7 @@ export function PlayerBridge() {
 
     bindNativeOperationRef.current = bind;
     bind();
-    const poll = setInterval(bind, TIMING.VOLUME_APPLY_RETRY_MS);
+    const poll = setInterval(bind, TIMING.NATIVE_MEDIA_BIND_INTERVAL_MS);
     return () => {
       clearInterval(poll);
       if (bindNativeOperationRef.current === bind) bindNativeOperationRef.current = null;
@@ -525,7 +525,7 @@ export function PlayerBridge() {
         controller.releaseNativeObservation?.(retired, retiredGeneration);
       }
     };
-  }, [controller, contentId, playbackGeneration, onProgress]);
+  }, [controller, contentId, playbackGeneration, onProgress, applyVolume]);
 
   // Stable play prop across re-renders of the same item. The platform
   // Player honors `seconds` as the start offset.

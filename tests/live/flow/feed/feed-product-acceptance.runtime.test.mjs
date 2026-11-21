@@ -133,6 +133,9 @@ test.describe('Feed product acceptance', () => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto('/feed/headlines/mainstream', { waitUntil: 'networkidle' });
 
+    await expect(page.getByRole('button', { name: 'Outlets' })).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: 'Briefing' }).click();
+    await expect(page).toHaveURL(/view=briefing/);
     await expect(page.getByRole('heading', { name: 'Update: coastal communities prepare for major storm' })).toBeVisible();
     await expect(page.getByText('2 outlets', { exact: false })).toBeVisible();
     await page.getByText('Story timeline', { exact: true }).click();
@@ -193,5 +196,28 @@ test.describe('Feed product acceptance', () => {
     await page.goto(`/feed/scroll/${slug}`, { waitUntil: 'networkidle' });
     await expect(page.getByRole('heading', { name: 'Downloaded storm analysis' })).toBeVisible();
     await expect(page.getByText('Downloaded body remains readable.', { exact: true })).toBeVisible();
+  });
+});
+
+test.describe('Feed touch controls', () => {
+  test.use({ viewport: { width: 390, height: 850 }, hasTouch: true, serviceWorkers: 'block' });
+
+  test('reading and search choices keep a touch target and update their own state', async ({ page }) => {
+    await page.route('**/api/**', route => route.fulfill({ json: {} }));
+    await page.route('**/supervision/bootstrap', route => route.fulfill({ json: { enabled: false } }));
+    await page.routeWebSocket('**/*', () => {});
+    await installFeedRoutes(page);
+    await page.goto('/feed/search');
+    const mode = page.getByRole('combobox', { name: 'Mode', exact: true });
+    await expect(mode).toBeVisible();
+    expect((await mode.boundingBox()).height).toBeGreaterThanOrEqual(44);
+    await mode.selectOption('reader');
+    await expect(page).toHaveURL(/[?&]mode=reader/);
+    await page.getByLabel('Reading appearance').click();
+    const theme = page.getByRole('combobox', { name: 'Theme', exact: true });
+    expect((await theme.boundingBox()).height).toBeGreaterThanOrEqual(44);
+    await theme.selectOption('sepia');
+    await expect(theme).toHaveValue('sepia');
+    await expect(mode).toHaveValue('reader');
   });
 });

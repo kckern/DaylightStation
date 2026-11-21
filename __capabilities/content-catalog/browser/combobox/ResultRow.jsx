@@ -31,6 +31,15 @@ import { IconPlayerPlay, IconDotsVertical } from '@tabler/icons-react';
 import { isContainer } from "./comboboxMachine.js";
 import { usePressHoldOffer } from "../../../../frontend/src/lib/ui/usePressHoldOffer.js";
 
+function CatalogMoreMenu({ trigger, dropdownProps, children, ...menuProps }) {
+  return (
+    <Menu {...menuProps}>
+      <Menu.Target>{trigger}</Menu.Target>
+      <Menu.Dropdown {...dropdownProps}>{children}</Menu.Dropdown>
+    </Menu>
+  );
+}
+
 /**
  * Trailing action control for a result row: a container gets a single ▶
  * (play-as-queue) button; a leaf gets a ⋯ menu with the four queue verbs +
@@ -41,12 +50,13 @@ import { usePressHoldOffer } from "../../../../frontend/src/lib/ui/usePressHoldO
  */
 export function ResultRowActions({
   item, isContainerItem, onPlayAll, onDetails, detailsTestId, onMore, onAction, testId, extraActions = null,
-  playLabel = null, playOnLabel = null,
+  playLabel = null, playOnLabel = null, MoreMenu = CatalogMoreMenu, moreTriggerRef: suppliedMoreTriggerRef,
   onMoreMenuPointerDown, onMoreMenuChange, onMoreMenuAction, onMoreMenuTriggerFocus, onMoreBoundaryBlur,
 }) {
   const container = isContainerItem ?? (item ? isContainer(item) : false);
   const idPart = testId ?? item?.id ?? 'row';
-  const moreTriggerRef = React.useRef(null);
+  const localMoreTriggerRef = React.useRef(null);
+  const moreTriggerRef = suppliedMoreTriggerRef ?? localMoreTriggerRef;
   // PLAY.5a/AC3: pressing and holding Play Next offers "At the very front".
   const hold = usePressHoldOffer();
 
@@ -122,8 +132,12 @@ export function ResultRowActions({
     {container && onAction && onPlayAll && !playLabel && <ActionIcon size="sm" variant="subtle" aria-label="Play as queue" data-testid={`result-play-all-${idPart}`}
       onMouseDown={event => event.preventDefault()} onClick={event => { event.preventDefault(); event.stopPropagation(); onPlayAll(); }}><IconPlayerPlay size={16} /></ActionIcon>}
     {(onMore || onAction) && (
-    <Menu withinPortal position="bottom-end" shadow="sm" onChange={onMoreMenuChange}>
-      <Menu.Target>
+    <MoreMenu
+      withinPortal
+      position="bottom-end"
+      shadow="sm"
+      onChange={onMoreMenuChange}
+      trigger={
         <ActionIcon
           ref={moreTriggerRef}
           size="sm"
@@ -146,20 +160,19 @@ export function ResultRowActions({
         >
           <IconDotsVertical size={16} />
         </ActionIcon>
-      </Menu.Target>
-      <Menu.Dropdown
-        // Menu items render in a second portal. Their pointerdown must retain
-        // the combobox's focus for the same reason as the trigger above;
-        // keyboard focus remains under Mantine's normal menu management.
-        onPointerDown={(e) => retainMenuPointerFocus(e, true)}
-        onMouseDown={(e) => e.preventDefault()}
-        onBlur={(e) => {
+      }
+      dropdownProps={{
+        // Retain the combobox's focus through pointerdown in the menu portal.
+        onPointerDown: (e) => retainMenuPointerFocus(e, true),
+        onMouseDown: (e) => e.preventDefault(),
+        onBlur: (e) => {
           if (!isMoreBoundary(e.relatedTarget)) onMoreBoundaryBlur?.(e.relatedTarget);
-        }}
-        onClick={(e) => e.stopPropagation()}
-        data-content-combobox-more-boundary
-        data-testid={`result-more-menu-${idPart}`}
-      >
+        },
+        onClick: (e) => e.stopPropagation(),
+        'data-content-combobox-more-boundary': true,
+        'data-testid': `result-more-menu-${idPart}`,
+      }}
+    >
         <Menu.Item data-testid={`result-action-playNow-${idPart}`} onClick={fire('playNow')}>Play Now</Menu.Item>
         {container && onAction && <Menu.Item onClick={fire('shuffle')}>Shuffle</Menu.Item>}
         <Menu.Item data-testid={`result-action-playNext-${idPart}`} closeMenuOnClick={!hold.offered} {...hold.bind} onClick={hold.guardClick(fire('playNext'))}>Play Next</Menu.Item>
@@ -179,8 +192,7 @@ export function ResultRowActions({
             {extra.label}
           </Menu.Item>
         ))}
-      </Menu.Dropdown>
-    </Menu>
+    </MoreMenu>
     )}
     </>
   );
@@ -204,12 +216,13 @@ export function ResultRowActions({
  * @param {() => void} [props.onDetails] - leaf-only: an explicit inline Detail verb
  * @param {(action: string) => void} [props.onMore] - leaf-only: the ⋯ verb
  * @param {string} [props.testId] - testid for the tap button (defaults to `result-row-${item.id}`)
- * @param {(opened: boolean) => void} [props.onMenuOpenChange] - the ⋯ menu opened/closed, so a host
- *   can register it as a dismiss layer (Escape closes the menu and nothing else)
+ * @param {React.ComponentType} [props.MoreMenu] - renders the shared trigger and items and owns dismissal and focus
+ * @param {React.RefObject} [props.moreTriggerRef] - persistent More button for focus return from a follow-up surface
+ * @param {(opened: boolean) => void} [props.onMenuOpenChange] - the default menu's lifecycle notification
  * @param {(item: object) => Array<{kind: string, label: string}>} [props.extraActions] - additive
  *   menu verbs, delivered through onAction({ kind, item }) (onAction contract only)
  */
-export function ResultRow({ item, title, subtitle, thumbnail, leading = null, onTap, onPlayAll, onDetails, detailsTestId, onMore, onAction, testId, focusId, extraActions = null, rowLabels = null, onMenuOpenChange }) {
+export function ResultRow({ item, title, subtitle, thumbnail, leading = null, onTap, onPlayAll, onDetails, detailsTestId, onMore, onAction, testId, focusId, extraActions = null, rowLabels = null, MoreMenu, moreTriggerRef, onMenuOpenChange }) {
   const container = item ? isContainer(item) : false;
   const idPart = item?.id ?? 'row';
   const rowTestId = testId ?? `result-row-${idPart}`;
@@ -242,7 +255,12 @@ export function ResultRow({ item, title, subtitle, thumbnail, leading = null, on
           (flex, gap 4px, flex-shrink 0) — reused here rather than inventing a
           new one, mirroring .browse-row-actions' role in BrowseView.jsx. */}
       <span className="media-result-actions">
-        <ResultRowActions item={item} isContainerItem={container} onPlayAll={onPlayAll} onDetails={onDetails} detailsTestId={detailsTestId} onMore={onMore} onAction={onAction} testId={idPart} extraActions={extraActions} playLabel={rowLabels?.play ?? null} playOnLabel={rowLabels?.playOn ?? null} onMoreMenuChange={onMenuOpenChange} />
+        <ResultRowActions
+          item={item} isContainerItem={container} onPlayAll={onPlayAll} onDetails={onDetails} detailsTestId={detailsTestId}
+          onMore={onMore} onAction={onAction} testId={idPart} extraActions={extraActions}
+          playLabel={rowLabels?.play ?? null} playOnLabel={rowLabels?.playOn ?? null}
+          MoreMenu={MoreMenu} moreTriggerRef={moreTriggerRef} onMoreMenuChange={onMenuOpenChange}
+        />
       </span>
     </>
   );

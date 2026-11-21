@@ -1,39 +1,61 @@
+import { useRefreshableRead } from '../../../../frontend/src/lib/hooks/useRefreshableRead.js';
+import { browserPreference } from '../../../../frontend/src/lib/browserPreference.js';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { notifications } from '@mantine/notifications';
 import { DaylightAPI } from "../../../../frontend/src/lib/api.mjs";
 import getLogger from "../../../../frontend/src/lib/logging/Logger.js";
-import { offlineStorageUser } from "./offline/feedOfflineStore.js";
+import { createBrowserMutationQueue } from "../../../../frontend/src/lib/browserMutationQueue.js";
+import { feedQueueOwner } from "./offline/feedOfflineStore.js";
 
 const FeedWorkspaceContext = createContext(null);
 const log = getLogger().child({ app: 'feed', module: 'workspace' });
-const PREFERENCES_KEY = 'feed:reading-preferences';
+const storedPreferences = browserPreference('feed:reading-preferences', {}, JSON.parse);
+const storedDensity = browserPreference('feed:density', null);
+const lastVisit = mode => browserPreference(`feed:last-visit:${mode}`, null);
 const PENDING_PREFIX = 'feed:pending-mutations:';
 const DEFAULT_READING_PREFERENCES = Object.freeze({ theme: 'dark', density: 'comfortable', fontScale: 1, lineHeight: 1.65, measure: 72, sessionBudget: 0 });
+const READING_PREFERENCES_PATH = '/api/v1/feed/workspace/preferences';
+const workspaceTails = new Map();
+const pendingVisits = new Map();
 
-function loadJson(key, fallback) {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(key) || 'null');
-    return parsed ?? fallback;
-  } catch {
-    return fallback;
-  }
+function pendingPositions(owner) {
+  return Object.fromEntries([...pendingVisits.values()]
+    .filter(visit => visit.owner === owner)
+    .map(visit => [visit.mode, visit.position]));
 }
+
+// A write accepted before navigation must finish before the replacement
+// workspace reads or writes state for the same account.
+function enqueueWorkspaceTask(scope, task) {
+  const result = (workspaceTails.get(scope) ?? Promise.resolve()).then(task);
+  const tail = result.catch(() => {});
+  workspaceTails.set(scope, tail);
+  tail.then(() => {
+    if (workspaceTails.get(scope) === tail) workspaceTails.delete(scope);
+  });
+  return result;
+}
+
+const actionStateRules = Object.freeze({
+  read: Object.freeze({ group: 'read', fields: ['isRead', 'readAt'] }),
+  unread: Object.freeze({ group: 'read', fields: ['isRead', 'readAt'] }),
+  save: Object.freeze({ group: 'save', fields: ['isSaved', 'savedAt'] }),
+  unsave: Object.freeze({ group: 'save', fields: ['isSaved', 'savedAt'] }),
+  archive: Object.freeze({ group: 'archive', fields: ['isArchived', 'archivedAt'] }),
+  unarchive: Object.freeze({ group: 'archive', fields: ['isArchived', 'archivedAt'] }),
+});
+const actions = new Set(Object.keys(actionStateRules));
+const itemMutations = createBrowserMutationQueue({
+  prefix: PENDING_PREFIX,
+  getOwner: feedQueueOwner,
+  idOf: row => row.id,
+  valid: row => row?.id && actions.has(row.action) && Array.isArray(row.itemIds),
+});
 
 function loadReadingPreferences() {
-  const stored = loadJson(PREFERENCES_KEY, {});
-  const density = localStorage.getItem('feed:density');
+  const stored = storedPreferences.read();
+  const density = storedDensity.read();
   return { ...DEFAULT_READING_PREFERENCES, ...stored, ...(density ? { density } : {}) };
-}
-
-function pendingKey(user = offlineStorageUser()) {
-  return `${PENDING_PREFIX}${user}`;
-}
-
-function loadPendingMutations(user = offlineStorageUser()) {
-  const stored = loadJson(pendingKey(user), []);
-  if (!Array.isArray(stored)) return [];
-  const actions = new Set(['read', 'unread', 'save', 'unsave', 'archive', 'unarchive']);
-  return stored.slice(0, 500).filter(entry => entry?.id && actions.has(entry.action) && Array.isArray(entry.itemIds));
 }
 
 function updateItemState(item, state) {
@@ -52,6 +74,20 @@ function applyAction(item, action, { pending = false, now = new Date().toISOStri
   return updateItemState(item, state);
 }
 
+function mutationKey(owner, itemId) {
+  return JSON.stringify([owner, itemId]);
+}
+
+function acknowledgedState(state, action, responseState, now) {
+  const { fields } = actionStateRules[action];
+  const projected = applyAction({ state }, action, { now }).state;
+  const next = { ...state };
+  for (const field of fields) {
+    next[field] = Object.hasOwn(responseState || {}, field) ? responseState[field] : projected[field];
+  }
+  return next;
+}
+
 function isNetworkFailure(error) {
   return (typeof navigator !== 'undefined' && navigator.onLine === false)
     || error?.name === 'TypeError'
@@ -63,119 +99,171 @@ function mutationId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export function FeedWorkspaceProvider({ children }) {
-  const userScopeRef = useRef(offlineStorageUser());
+export function FeedWorkspaceProvider({ children, owner = feedQueueOwner() }) {
+  const mountedOwner = useRef(owner);
+  const userScopeRef = useRef(feedQueueOwner());
   const snapshotsRef = useRef(new Map());
   const checkpointsRef = useRef({});
-  const pendingRef = useRef(loadPendingMutations(userScopeRef.current));
-  const flushRef = useRef(false);
+  const localVisits = useRef(new Map());
+  const pendingRef = useRef(itemMutations.snapshot(userScopeRef.current));
+  const activeReplayOwner = useRef(null);
+  const itemStateMutations = useRef(new Map());
+  const itemMutationSequence = useRef(0);
   const [readingPreferences, setReadingPreferencesState] = useState(loadReadingPreferences);
   const readingPreferencesRef = useRef(readingPreferences);
+  const preferenceView = useRef(null);
+  const preferenceRevision = useRef(0);
+  const preferenceEdits = useRef(new Map());
   const [checkpoints, setCheckpoints] = useState({});
   const [sourcePreferences, setSourcePreferences] = useState({});
-  const sourcePreferencesRef = useRef({});
+  const confirmedSources = useRef(null);
+  const pendingSources = useRef(new Map());
   const [workspaceReady, setWorkspaceReady] = useState(false);
+  const [itemSyncRevision, setItemSyncRevision] = useState(0);
   const [pendingMutations, setPendingMutations] = useState(pendingRef.current);
   const [revision, setRevision] = useState(0);
   const [summary, setSummary] = useState({ unread: 0, readerUnread: 0, saved: 0, archived: 0, pendingSync: 0 });
 
-  const refreshSummary = useCallback(async () => {
+  const readSummary = useCallback(async (isCurrent, signal) => {
+    const owner = feedQueueOwner();
     try {
-      const value = await DaylightAPI('/api/v1/feed/items/state/summary');
-      setSummary(value);
-      return value;
+      const value = await DaylightAPI('/api/v1/feed/items/state/summary', {}, 'GET', { signal });
+      if (isCurrent() && owner === feedQueueOwner()) setSummary(value);
     } catch (error) {
-      log.warn('feed.state.summary_failed', { error: error.message });
-      return null;
+      if (isCurrent()) log.warn('feed.state.summary_failed', { error: error.message });
     }
   }, []);
+  const { reload: refreshSummary } = useRefreshableRead(readSummary);
+  useEffect(() => { refreshSummary(); }, [refreshSummary]);
 
-  const refreshWorkspace = useCallback(async ({ migrateLocal = false } = {}) => {
-    const workspace = await DaylightAPI('/api/v1/feed/workspace');
-    const localPreferences = loadReadingPreferences();
-    const nextPreferences = workspace?.preferencesStored
-      ? { ...DEFAULT_READING_PREFERENCES, ...(workspace.preferences || {}) }
-      : localPreferences;
-    readingPreferencesRef.current = nextPreferences;
-    setReadingPreferencesState(nextPreferences);
-    localStorage.setItem(PREFERENCES_KEY, JSON.stringify(nextPreferences));
-    localStorage.setItem('feed:density', nextPreferences.density);
-
-    const nextCheckpoints = workspace?.checkpoints || {};
-    checkpointsRef.current = nextCheckpoints;
-    setCheckpoints(nextCheckpoints);
-    const nextSourcePreferences = workspace?.sourcePreferences || {};
-    sourcePreferencesRef.current = nextSourcePreferences;
-    setSourcePreferences(nextSourcePreferences);
-
-    if (migrateLocal && !workspace?.preferencesStored) {
-      DaylightAPI('/api/v1/feed/workspace/preferences', nextPreferences, 'PATCH')
-        .catch(error => log.warn('feed.preferences.migration_failed', { error: error.message }));
-    }
-    return workspace;
+  const publishReadingPreferences = useCallback(next => {
+    readingPreferencesRef.current = next;
+    setReadingPreferencesState(next);
+    storedPreferences.write(JSON.stringify(next));
+    storedDensity.write(next.density);
   }, []);
 
-  const commitPending = useCallback((value) => {
-    const next = typeof value === 'function' ? value(pendingRef.current) : value;
+  const acceptReadingPreferences = useCallback((preferences, revision, keys = Object.keys(DEFAULT_READING_PREFERENCES)) => {
+    if (!preferences) return;
+    const next = { ...readingPreferencesRef.current };
+    for (const key of keys) {
+      if (Object.hasOwn(preferences, key) && (preferenceEdits.current.get(key) ?? 0) <= revision) {
+        next[key] = preferences[key];
+      }
+    }
+    publishReadingPreferences(next);
+  }, [publishReadingPreferences]);
+
+  const publishSourcePreferences = useCallback(() => {
+    const owner = feedQueueOwner();
+    const next = confirmedSources.current?.owner === owner ? { ...confirmedSources.current.levels } : {};
+    for (const [source, edit] of pendingSources.current) {
+      if (edit.owner !== owner) continue;
+      if (edit.level === 'normal') delete next[source];
+      else next[source] = edit.level;
+    }
+    setSourcePreferences(next);
+  }, []);
+
+  const refreshWorkspace = useCallback(({ migrateLocal = false } = {}) => {
+    const owner = feedQueueOwner();
+    const view = preferenceView.current;
+    const revision = preferenceRevision.current;
+    const localBeforeRead = readingPreferencesRef.current;
+    const isCurrent = () => view && preferenceView.current === view && owner === feedQueueOwner();
+    return enqueueWorkspaceTask(owner, async () => {
+      if (!isCurrent()) return null;
+      const visitsAtRead = new Map(localVisits.current);
+      const pendingAtRead = pendingPositions(owner);
+      const workspace = await DaylightAPI('/api/v1/feed/workspace');
+      if (!isCurrent()) return workspace;
+
+      if (workspace?.preferencesStored) {
+        acceptReadingPreferences({ ...DEFAULT_READING_PREFERENCES, ...workspace.preferences }, revision);
+      } else {
+        publishReadingPreferences(readingPreferencesRef.current);
+      }
+      const nextCheckpoints = { ...workspace?.checkpoints, ...pendingAtRead };
+      for (const [mode, visit] of localVisits.current) {
+        if (visit.owner === owner && visit !== visitsAtRead.get(mode)) nextCheckpoints[mode] = visit.position;
+      }
+      Object.assign(nextCheckpoints, pendingPositions(owner));
+      checkpointsRef.current = nextCheckpoints;
+      setCheckpoints(nextCheckpoints);
+      confirmedSources.current = { owner, levels: workspace?.sourcePreferences || {} };
+      publishSourcePreferences();
+
+      if (migrateLocal && !workspace?.preferencesStored) {
+        // Render using the local snapshot during migration. Later writes wait
+        // in order, so a partial edit cannot prevent the initial full save.
+        setWorkspaceReady(true);
+        try {
+          const result = await DaylightAPI(READING_PREFERENCES_PATH, localBeforeRead, 'PATCH');
+          if (isCurrent()) acceptReadingPreferences(result?.preferences, revision);
+        } catch (error) {
+          log.warn('feed.preferences.migration_failed', { error: error.message });
+        }
+      }
+      return workspace;
+    });
+  }, [acceptReadingPreferences, publishReadingPreferences, publishSourcePreferences]);
+
+  const publishPending = useCallback(next => {
     pendingRef.current = next;
     setPendingMutations(next);
-    localStorage.setItem(pendingKey(userScopeRef.current), JSON.stringify(next));
-    return next;
   }, []);
+
+  useEffect(() => itemMutations.subscribe(mountedOwner.current, next => {
+    publishPending(next);
+    if (!next.length) {
+      setItemSyncRevision(value => value + 1);
+      refreshSummary();
+    }
+  }), [publishPending, refreshSummary]);
 
   const synchronizeUserScope = useCallback(() => {
-    const currentUser = offlineStorageUser();
+    const currentUser = feedQueueOwner();
     if (currentUser === userScopeRef.current) return currentUser;
     userScopeRef.current = currentUser;
-    const next = loadPendingMutations(currentUser);
+    const next = itemMutations.snapshot(currentUser);
     pendingRef.current = next;
     setPendingMutations(next);
-    flushRef.current = false;
     return currentUser;
   }, []);
 
   const flushPendingMutations = useCallback(async () => {
-    synchronizeUserScope();
-    if (flushRef.current || !pendingRef.current.length || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
-    const userScope = userScopeRef.current;
-    flushRef.current = true;
-    let completed = 0;
+    const owner = synchronizeUserScope();
+    if (!owner || activeReplayOwner.current === owner || navigator.onLine === false) return;
+    activeReplayOwner.current = owner;
     try {
-      for (const operation of [...pendingRef.current]) {
-        try {
-          await DaylightAPI('/api/v1/feed/items/state', { itemIds: operation.itemIds, action: operation.action }, 'PATCH');
-          if (offlineStorageUser() !== userScope) break;
-          commitPending(current => current.filter(entry => entry.id !== operation.id));
-          completed += 1;
-        } catch (error) {
-          if (!isNetworkFailure(error)) log.warn('feed.offline_replay.failed', { operationId: operation.id, error: error.message });
-          break;
-        }
-      }
-      if (completed) {
-        await refreshSummary();
+      const completed = await itemMutations.flush(owner, operation =>
+        DaylightAPI('/api/v1/feed/items/state', { itemIds: operation.itemIds, action: operation.action }, 'PATCH'), {
+        onDequeue: publishPending,
+        onError(error, operation) {
+          if (!isNetworkFailure(error)) log.warn('feed.offline_replay.failed', { operationId: operation?.id, error: error.message });
+        },
+      });
+      if (completed && owner === feedQueueOwner()) {
+        publishPending(itemMutations.snapshot(owner));
+        setItemSyncRevision(value => value + 1);
+        refreshSummary();
         notifications.show({ title: 'Offline changes synchronized', message: `${completed} queued change${completed === 1 ? '' : 's'} saved.` });
       }
     } finally {
-      flushRef.current = false;
+      if (activeReplayOwner.current === owner) activeReplayOwner.current = null;
     }
-  }, [commitPending, refreshSummary, synchronizeUserScope]);
+  }, [publishPending, refreshSummary, synchronizeUserScope]);
 
   useEffect(() => {
-    let active = true;
-    Promise.allSettled([
-      refreshWorkspace({ migrateLocal: true }),
-      refreshSummary(),
-    ]).then(([workspaceResult]) => {
-      if (!active) return;
-      if (workspaceResult.status === 'rejected') {
-        log.warn('feed.workspace.load_failed', { error: workspaceResult.reason?.message });
-      }
+    const view = {};
+    preferenceView.current = view;
+    refreshWorkspace({ migrateLocal: true }).catch(error => {
+      if (preferenceView.current === view) log.warn('feed.workspace.load_failed', { error: error.message });
     }).finally(() => {
-      if (active) setWorkspaceReady(true);
+      if (preferenceView.current === view) setWorkspaceReady(true);
     });
-    return () => { active = false; };
-  }, [refreshSummary, refreshWorkspace]);
+    return () => { preferenceView.current = null; };
+  }, [refreshWorkspace]);
 
   useEffect(() => {
     const handleOnline = () => flushPendingMutations();
@@ -185,65 +273,84 @@ export function FeedWorkspaceProvider({ children }) {
   }, [flushPendingMutations]);
 
   const setReadingPreference = useCallback((key, value) => {
-    const next = { ...readingPreferencesRef.current, [key]: value };
-    readingPreferencesRef.current = next;
-    setReadingPreferencesState(next);
-    localStorage.setItem(PREFERENCES_KEY, JSON.stringify(next));
-    if (key === 'density') localStorage.setItem('feed:density', value);
-    DaylightAPI('/api/v1/feed/workspace/preferences', { [key]: value }, 'PATCH')
-      .then(result => {
-        if (result?.preferences) {
-          readingPreferencesRef.current = result.preferences;
-          setReadingPreferencesState(result.preferences);
-          localStorage.setItem(PREFERENCES_KEY, JSON.stringify(result.preferences));
-        }
-      })
-      .catch(error => log.warn('feed.preferences.save_failed', { key, error: error.message }));
-  }, []);
+    const view = preferenceView.current;
+    if (!view) return;
+    const owner = feedQueueOwner();
+    const revision = ++preferenceRevision.current;
+    preferenceEdits.current.set(key, revision);
+    publishReadingPreferences({ ...readingPreferencesRef.current, [key]: value });
+    enqueueWorkspaceTask(owner, async () => {
+      if (owner !== feedQueueOwner()) return;
+      const result = await DaylightAPI(READING_PREFERENCES_PATH, { [key]: value }, 'PATCH');
+      if (preferenceView.current === view && owner === feedQueueOwner()) {
+        acceptReadingPreferences(result?.preferences, revision, [key]);
+      }
+    }).catch(error => log.warn('feed.preferences.save_failed', { key, error: error.message }));
+  }, [acceptReadingPreferences, publishReadingPreferences]);
 
   const setDensity = useCallback((value) => setReadingPreference('density', value === 'compact' ? 'compact' : 'comfortable'), [setReadingPreference]);
   const density = readingPreferences.density;
 
-  const setSourcePreference = useCallback(async (sourceKey, level) => {
-    const previous = sourcePreferencesRef.current;
-    const optimistic = { ...previous };
-    if (level === 'normal') delete optimistic[sourceKey]; else optimistic[sourceKey] = level;
-    sourcePreferencesRef.current = optimistic;
-    setSourcePreferences(optimistic);
-    try {
-      const result = await DaylightAPI(`/api/v1/feed/workspace/sources/${encodeURIComponent(sourceKey)}`, { level }, 'PUT');
-      sourcePreferencesRef.current = result.sourcePreferences || {};
-      setSourcePreferences(sourcePreferencesRef.current);
-      notifications.show({ title: 'Feed preference saved', message: level === 'mute' ? `${sourceKey} will be hidden from For you.` : level === 'normal' ? `${sourceKey} is back to normal.` : `${sourceKey} will appear ${level} often.` });
-      return result.sourcePreferences || {};
-    } catch (error) {
-      sourcePreferencesRef.current = previous;
-      setSourcePreferences(previous);
-      notifications.show({ color: 'red', title: 'Preference not saved', message: 'Your feed mix was not changed.' });
-      throw error;
-    }
-  }, []);
+  const setSourcePreference = useCallback((sourceKey, level) => {
+    const owner = feedQueueOwner();
+    const view = preferenceView.current;
+    const edit = { owner, level };
+    pendingSources.current.set(sourceKey, edit);
+    publishSourcePreferences();
+    const currentView = () => view && preferenceView.current === view && owner === feedQueueOwner();
+    const currentEdit = () => currentView() && pendingSources.current.get(sourceKey) === edit;
+    return enqueueWorkspaceTask(owner, async () => {
+      try {
+        if (owner !== feedQueueOwner()) return;
+        const result = await DaylightAPI(`/api/v1/feed/workspace/sources/${encodeURIComponent(sourceKey)}`, { level }, 'PUT');
+        const confirmed = result.sourcePreferences || {};
+        if (currentView()) confirmedSources.current = { owner, levels: confirmed };
+        if (currentEdit()) notifications.show({ title: 'Feed preference saved', message: level === 'mute' ? `${sourceKey} will be hidden from For you.` : level === 'normal' ? `${sourceKey} is back to normal.` : `${sourceKey} will appear ${level} often.` });
+        return confirmed;
+      } catch (error) {
+        if (currentEdit()) notifications.show({ color: 'red', title: 'Preference not saved', message: 'Your feed mix was not changed.' });
+        throw error;
+      } finally {
+        if (pendingSources.current.get(sourceKey) === edit) pendingSources.current.delete(sourceKey);
+        if (currentView()) publishSourcePreferences();
+      }
+    });
+  }, [publishSourcePreferences]);
 
   const getSnapshot = useCallback((key) => snapshotsRef.current.get(key) || null, []);
   const setSnapshot = useCallback((key, value) => {
+    if (mountedOwner.current !== feedQueueOwner()) return;
     snapshotsRef.current.set(key, typeof value === 'function' ? value(snapshotsRef.current.get(key)) : value);
     setRevision(value => value + 1);
   }, []);
 
-  const getLastVisit = useCallback((mode) => checkpointsRef.current[mode]?.visitedAt || localStorage.getItem(`feed:last-visit:${mode}`), []);
+  const getLastVisit = useCallback((mode) => checkpointsRef.current[mode]?.visitedAt || lastVisit(mode).read(), []);
   const markVisited = useCallback((mode, timestamp = new Date().toISOString(), position = {}) => {
+    if (mountedOwner.current !== feedQueueOwner()) return;
     const optimistic = { itemId: position.itemId || null, scrollOffset: Math.max(0, Math.round(position.scrollOffset || 0)), visitedAt: timestamp };
-    localStorage.setItem(`feed:last-visit:${mode}`, timestamp);
+    const owner = feedQueueOwner();
+    const view = preferenceView.current;
+    const scope = JSON.stringify(['feed-checkpoint', owner, mode]);
+    const edit = { owner, mode, position: optimistic };
+    localVisits.current.set(mode, edit);
+    pendingVisits.set(scope, edit);
+    lastVisit(mode).write(timestamp);
     checkpointsRef.current = { ...checkpointsRef.current, [mode]: optimistic };
     setCheckpoints(checkpointsRef.current);
-    DaylightAPI(`/api/v1/feed/workspace/checkpoints/${encodeURIComponent(mode)}`, optimistic, 'PUT')
-      .then(result => {
-        if (!result?.checkpoint) return;
+    enqueueWorkspaceTask(scope, async () => {
+      try {
+        if (owner !== feedQueueOwner()) return;
+        const result = await DaylightAPI(`/api/v1/feed/workspace/checkpoints/${encodeURIComponent(mode)}`, optimistic, 'PUT');
+        if (!result?.checkpoint || !view || preferenceView.current !== view
+          || owner !== feedQueueOwner() || pendingVisits.get(scope) !== edit) return;
+        localVisits.current.set(mode, { owner, position: result.checkpoint });
         checkpointsRef.current = { ...checkpointsRef.current, [mode]: result.checkpoint };
         setCheckpoints(checkpointsRef.current);
-        localStorage.setItem(`feed:last-visit:${mode}`, result.checkpoint.visitedAt);
-      })
-      .catch(error => log.warn('feed.checkpoint.save_failed', { mode, error: error.message }));
+        lastVisit(mode).write(result.checkpoint.visitedAt);
+      } finally {
+        if (pendingVisits.get(scope) === edit) pendingVisits.delete(scope);
+      }
+    }).catch(error => log.warn('feed.checkpoint.save_failed', { mode, error: error.message }));
   }, []);
 
   const applyPendingMutations = useCallback((items) => {
@@ -253,39 +360,118 @@ export function FeedWorkspaceProvider({ children }) {
   }, []);
 
   const mutateItems = useCallback(async (items, action, { onApply } = {}) => {
-    if (!items.length) return null;
-    synchronizeUserScope();
+    const owner = mountedOwner.current;
+    const view = preferenceView.current;
+    const isCurrent = () => view && view === preferenceView.current && owner === feedQueueOwner();
+    if (!items.length || !isCurrent()) return null;
     const previous = new Map(items.map(item => [item.id, item.state]));
     const now = new Date().toISOString();
     const optimistic = items.map(item => applyAction(item, action, { now }));
-    onApply?.(optimistic);
 
-    const queueOffline = () => {
+    const queueOffline = (transaction = null) => {
       const operation = { id: mutationId(), itemIds: items.map(item => item.id), action, createdAt: now };
-      commitPending(current => [...current, operation].slice(-500));
-      const queued = optimistic.map(item => updateItemState(item, { ...item.state, syncStatus: 'pending' }));
-      onApply?.(queued);
-      notifications.show({ title: 'Saved offline', message: 'This change will synchronize when the connection returns.' });
+      try {
+        const pending = itemMutations.enqueue(owner, operation);
+        if (isCurrent()) publishPending(pending);
+      } catch (error) {
+        if (transaction) settleTransaction(transaction);
+        else if (isCurrent()) onApply?.(items.map(item => updateItemState(item, previous.get(item.id))));
+        if (isCurrent()) notifications.show({ color: 'red', title: 'Change not saved', message: 'The offline change could not be stored. Try again when connected.' });
+        throw error;
+      }
+      const queued = transaction
+        ? settleTransaction(transaction, { queued: true })
+        : optimistic.map(item => updateItemState(item, { ...item.state, syncStatus: 'pending' }));
+      if (isCurrent()) {
+        if (!transaction) onApply?.(queued);
+        notifications.show({ title: 'Saved offline', message: 'This change will synchronize when the connection returns.' });
+      }
       return { items: queued.map(item => ({ id: item.id, state: item.state })), queued: true };
     };
 
     if (pendingRef.current.length || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
+      onApply?.(optimistic);
       const result = queueOffline();
       flushPendingMutations();
       return result;
     }
 
+    const transaction = {
+      id: mutationId(),
+      owner,
+      sequence: ++itemMutationSequence.current,
+      action,
+      now,
+      items,
+      onApply,
+      entries: [],
+    };
+    for (const item of items) {
+      const key = mutationKey(owner, item.id);
+      let record = itemStateMutations.current.get(key);
+      if (!record) {
+        record = { state: item.state || {}, groupSequences: {}, syncSequence: 0, active: new Map() };
+        itemStateMutations.current.set(key, record);
+      }
+      record.active.set(transaction.id, { sequence: transaction.sequence, action, now });
+      transaction.entries.push({ key, item });
+    }
+
+    const project = (entry, record) => {
+      let state = record.state;
+      const active = [...record.active.values()].sort((left, right) => left.sequence - right.sequence);
+      for (const pending of active) {
+        state = applyAction({ ...entry.item, state }, pending.action, { now: pending.now }).state;
+      }
+      return updateItemState(entry.item, state);
+    };
+
+    function settleTransaction(current, { successStates = new Map(), accepted = false, queued = false } = {}) {
+      const updates = current.entries.map(entry => {
+        const record = itemStateMutations.current.get(entry.key);
+        if (!record) return entry.item;
+        const pending = record.active.get(current.id);
+        const responseState = successStates.get(entry.item.id);
+        if (pending && (accepted || queued) && current.owner === feedQueueOwner()) {
+          const { group } = actionStateRules[current.action];
+          if (pending.sequence >= (record.groupSequences[group] || 0)) {
+            record.state = acknowledgedState(record.state, current.action, responseState, current.now);
+            record.groupSequences[group] = pending.sequence;
+          }
+          if (queued && pending.sequence >= record.syncSequence) {
+            record.state = { ...record.state, syncStatus: 'pending' };
+            record.syncSequence = pending.sequence;
+          } else if (Object.hasOwn(responseState || {}, 'syncStatus') && pending.sequence >= record.syncSequence) {
+            record.state = { ...record.state, syncStatus: responseState.syncStatus };
+            record.syncSequence = pending.sequence;
+          }
+        }
+        record.active.delete(current.id);
+        return project(entry, record);
+      });
+      if (isCurrent()) current.onApply?.(updates);
+      for (const entry of current.entries) {
+        const record = itemStateMutations.current.get(entry.key);
+        if (record && record.active.size === 0) itemStateMutations.current.delete(entry.key);
+      }
+      return updates;
+    }
+
+    const pendingProjection = transaction.entries.map(entry => project(entry, itemStateMutations.current.get(entry.key)));
+    onApply?.(pendingProjection);
+
     try {
       const result = await DaylightAPI('/api/v1/feed/items/state', { itemIds: items.map(item => item.id), action }, 'PATCH');
       const byId = new Map((result.items || []).map(item => [item.id, item.state]));
-      onApply?.(optimistic.map(item => byId.has(item.id) ? updateItemState(item, byId.get(item.id)) : item));
+      const settled = settleTransaction(transaction, { successStates: byId, accepted: true });
+      if (!isCurrent()) return result;
       const inverse = { read: 'unread', unread: 'read', save: 'unsave', unsave: 'save', archive: 'unarchive', unarchive: 'archive' }[action];
       notifications.show({
         title: action === 'archive' ? 'Archived' : action === 'save' ? 'Saved' : 'Updated',
         message: (
           <span>
             {result.items?.some(item => item.state?.syncStatus === 'pending') ? 'Saved locally; source sync will retry. ' : 'Change saved. '}
-            {inverse && <button type="button" className="feed-toast-undo" onClick={() => mutateItems(optimistic, inverse, { onApply })}>Undo</button>}
+            {inverse && <button type="button" className="feed-toast-undo" onClick={() => mutateItems(settled, inverse, { onApply }).catch(() => {})}>Undo</button>}
           </span>
         ),
         autoClose: 5000,
@@ -294,31 +480,37 @@ export function FeedWorkspaceProvider({ children }) {
       refreshSummary();
       return result;
     } catch (error) {
-      if (isNetworkFailure(error)) return queueOffline();
-      onApply?.(items.map(item => updateItemState(item, previous.get(item.id))));
-      notifications.show({ color: 'red', title: 'Change not saved', message: 'The item was restored. Try again.' });
+      if (owner === feedQueueOwner() && isNetworkFailure(error)) return queueOffline(transaction);
+      settleTransaction(transaction);
+      if (isCurrent()) notifications.show({ color: 'red', title: 'Change not saved', message: 'The item was restored. Try again.' });
       log.warn('feed.state.mutation_failed', { action, count: items.length, error: error.message });
       throw error;
     }
-  }, [commitPending, flushPendingMutations, refreshSummary, synchronizeUserScope]);
+  }, [publishPending, flushPendingMutations, refreshSummary]);
 
   const retrySync = useCallback(async () => {
+    const owner = feedQueueOwner();
+    const view = preferenceView.current;
+    const isCurrent = () => view && preferenceView.current === view && owner === feedQueueOwner();
     try {
       await flushPendingMutations();
+      if (!isCurrent()) return;
       const value = await DaylightAPI('/api/v1/feed/items/state/retry', {}, 'POST');
-      setSummary(value);
+      if (!isCurrent()) return;
+      refreshSummary();
       notifications.show({ title: value.pendingSync ? 'Sync still pending' : 'Feed synchronized', message: value.pendingSync ? `${value.pendingSync} change${value.pendingSync === 1 ? '' : 's'} will retry again.` : 'All source changes are up to date.' });
     } catch (error) {
+      if (!isCurrent()) return;
       log.warn('feed.state.retry_failed', { error: error.message });
       notifications.show({ color: 'red', title: 'Sync retry failed', message: 'Local changes are safe and will remain queued.' });
     }
-  }, [flushPendingMutations]);
+  }, [flushPendingMutations, refreshSummary]);
 
   const value = useMemo(() => ({
     density, setDensity, readingPreferences, setReadingPreference, checkpoints, workspaceReady, sourcePreferences, setSourcePreference,
     getSnapshot, setSnapshot, getLastVisit, markVisited, mutateItems, applyPendingMutations,
-    pendingMutations: pendingMutations.length, flushPendingMutations, revision, summary, refreshSummary, refreshWorkspace, retrySync,
-  }), [applyPendingMutations, checkpoints, density, flushPendingMutations, getLastVisit, getSnapshot, markVisited, mutateItems, pendingMutations.length, readingPreferences, refreshSummary, refreshWorkspace, retrySync, revision, setDensity, setReadingPreference, setSnapshot, setSourcePreference, sourcePreferences, summary, workspaceReady]);
+    itemSyncRevision, pendingItemOperations: pendingMutations, pendingMutations: pendingMutations.length, flushPendingMutations, revision, summary, refreshSummary, refreshWorkspace, retrySync,
+  }), [applyPendingMutations, checkpoints, density, flushPendingMutations, getLastVisit, getSnapshot, markVisited, mutateItems, itemSyncRevision, pendingMutations, readingPreferences, refreshSummary, refreshWorkspace, retrySync, revision, setDensity, setReadingPreference, setSnapshot, setSourcePreference, sourcePreferences, summary, workspaceReady]);
 
   return <FeedWorkspaceContext.Provider value={value}>{children}</FeedWorkspaceContext.Provider>;
 }

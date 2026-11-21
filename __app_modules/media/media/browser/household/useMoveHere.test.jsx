@@ -10,6 +10,8 @@ vi.mock("../logging/mediaLog.js", () => {
   return { default: stub, mediaLog: stub };
 });
 
+import { createRecoveryIdentity } from '../../../../../__capabilities/playback/browser/contracts.mjs';
+import { createLocalSessionController } from '../session/LocalSessionController.js';
 import { useMoveHere } from "./useMoveHere.js";
 import { LocalSessionContext } from "../session/LocalSessionContext.js";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
@@ -18,12 +20,19 @@ import { DispatchContext } from "../cast/DispatchProvider.jsx";
 
 const remoteSnapshot = (revision = 3) => ({
   sessionId: 's', state: 'playing', position: 600,
-  currentItem: { contentId: 'plex:9', title: 'Playing Thing' },
+  currentItem: { contentId: 'plex:9', title: 'Playing Thing', format: 'audio', duration: 900 },
   queue: { items: [{ queueItemId: 'q1', contentId: 'plex:9' }], currentIndex: 0, upNextCount: 0 },
-  config: {}, meta: { ownerId: 'livingroom-tv', playbackOwner: { ownerInstanceId: 'owner-1', playbackRevision: revision } },
+  config: {}, meta: { ownerId: 'livingroom-tv', updatedAt: new Date().toISOString(), playbackOwner: {
+    ownerInstanceId: 'owner-1', playbackRevision: revision, queueRevision: 0,
+    sessionId: 's', contentId: 'plex:9', queueItemId: 'q1',
+  } },
 });
 
 let fleetSnapshot; let observation; let local; let remote; let outcomes;
+const playing = () => ({
+  identity: { sessionId: 's', queueItemId: 'q1', contentId: 'plex:9' },
+  nodeGeneration: 1, paused: false, readyState: 4, contentSeconds: 600, currentTime: 600, advancedObserved: true,
+});
 function harness() {
   const wrapper = ({ children }) => (
     <LocalSessionContext.Provider value={{ controller: local }}>
@@ -42,7 +51,12 @@ beforeEach(() => {
   fleetSnapshot = remoteSnapshot();
   observation = null;
   local = {
-    lifecycle: { adoptSnapshot: vi.fn(() => { observation = { identity: { contentId: 'plex:9' }, paused: false, readyState: 4 }; return { ok: true }; }) },
+    recoveryIdentity: createRecoveryIdentity({ ownerId: 'local' }),
+    lifecycle: { adoptSnapshot: vi.fn(() => {
+      local.recoveryIdentity.beginVisit();
+      observation = playing();
+      return { ok: true };
+    }) },
     portability: { getNativeObservation: () => observation, subscribeNative: () => () => {} },
   };
   remote = { transport: { stop: vi.fn(() => Promise.resolve({ ok: true })) } };
@@ -62,6 +76,55 @@ describe('useMoveHere', () => {
     expect(outcomes.resolveLocal).toHaveBeenCalledWith('mv', { phase: 'confirmed' });
   });
 
+  it('observes a clock advance on the adopted decoder when playing preceded observation setup', async () => {
+    local = createLocalSessionController({ clientId: 'me', sessionControls: { storage: null } });
+    const { result } = harness();
+    let pending;
+    act(() => { pending = result.current('fleet:livingroom-tv'); });
+    const decoder = { paused: false, seeking: false, ended: false, readyState: 4, currentTime: 600, duration: 900 };
+    local.setPlayerHandle({ getMediaElement: () => decoder, getMountedContentId: () => 'plex:9', getMountedMediaGeneration: () => 1 });
+    local.portability.getNativeObservation();
+    local.onNativeObservationEvent(decoder, 'loadeddata');
+    local.onNativeObservationEvent(decoder, 'timeupdate');
+    expect(remote.transport.stop).not.toHaveBeenCalled();
+    decoder.currentTime += 0.3;
+    await act(async () => { local.onNativeObservationEvent(decoder, 'timeupdate'); });
+    await expect(pending).resolves.toEqual({ ok: true });
+    expect(remote.transport.stop).toHaveBeenCalledTimes(1);
+    local.disposeRecovery();
+  });
+
+  it('leaves the source alone when another visit starts the same queue entry locally', async () => {
+    local = createLocalSessionController({ clientId: 'me', sessionControls: { storage: null } });
+    const { result } = harness();
+    let pending;
+    act(() => { pending = result.current('fleet:livingroom-tv'); });
+    expect(local.getSnapshot().currentItem.contentId).toBe('plex:9');
+    expect(remote.transport.stop).not.toHaveBeenCalled();
+
+    // A second visit may reuse the same session and queue entry IDs.
+    local.lifecycle.adoptSnapshot(fleetSnapshot, { autoplay: true });
+    const decoder = { paused: false, seeking: false, ended: false, readyState: 4, currentTime: 600, duration: 900 };
+    local.setPlayerHandle({ getMediaElement: () => decoder, getMountedContentId: () => 'plex:9', getMountedMediaGeneration: () => 2 });
+    local.portability.getNativeObservation();
+    local.onNativeObservationEvent(decoder, 'playing');
+    decoder.currentTime += 0.3;
+    local.onNativeObservationEvent(decoder, 'timeupdate');
+    await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+    expect(remote.transport.stop).not.toHaveBeenCalled();
+    await expect(pending).resolves.toMatchObject({ ok: false, code: 'destination-changed' });
+    local.disposeRecovery();
+  });
+
+  it('reports failure when the source stop has no acknowledgement', async () => {
+    remote = undefined;
+    const { result } = harness();
+    await act(async () => {
+      await expect(result.current('fleet:livingroom-tv')).resolves.toMatchObject({ ok: false, code: 'source-not-stopped' });
+    });
+    expect(outcomes.resolveLocal).toHaveBeenCalledWith('mv', expect.objectContaining({ phase: 'failed' }));
+  });
+
   it('never stops the screen when this device does not start playing', async () => {
     local.lifecycle.adoptSnapshot = vi.fn(() => ({ ok: true }));
     const { result } = harness();
@@ -76,7 +139,8 @@ describe('useMoveHere', () => {
 
   it('does not stop the screen when its playback changed meanwhile', async () => {
     local.lifecycle.adoptSnapshot = vi.fn(() => {
-      observation = { identity: { contentId: 'plex:9' }, paused: false, readyState: 4 };
+      local.recoveryIdentity.beginVisit();
+      observation = playing();
       fleetSnapshot = remoteSnapshot(4);
       return { ok: true };
     });

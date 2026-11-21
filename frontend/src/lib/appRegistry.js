@@ -23,7 +23,7 @@ export const APP_REGISTRY = {
   'keycode':         { label: 'Key Test',         icon: keycodeIcon,        param: null, component: () => import('../modules/AppContainer/Apps/KeyTest/KeyTest.jsx') },
   'family-selector': { label: 'Family Selector',  icon: familySelectorIcon, param: { name: 'winner', options: 'household' }, component: () => import('../../../__capabilities/household-identity/browser/public.mjs') },
   'glympse':         { label: 'Glympse',          icon: glympseIcon,        param: { name: 'id' }, component: () => import('../modules/AppContainer/Apps/Glympse/Glympse.jsx') },
-  'websocket':       { label: 'WebSocket',        icon: websocketIcon,      param: { name: 'path' }, component: () => import('../modules/AppContainer/Apps/WebSocket/WebSocket.jsx') },
+  'websocket':       { label: 'WebSocket',        icon: websocketIcon,      param: { name: 'topic' }, component: () => import('../modules/AppContainer/Apps/WebSocket/WebSocket.jsx') },
   'weekly-review':   { label: 'Weekly Review',    icon: null,               param: null, component: () => import("../../../__app_modules/personal/weekly-review/browser/widget.mjs") },
   'party-games':      { participantLaunch:{consumer:{id:'party-games',version:1},outputSchema:'party-games-launch-result/v1'}, label: 'Party Games',       icon: null,               param: { name: 'definitionId' }, component: () => import("../../../__app_modules/games/party-games/browser/widget.mjs") },
   'school':          { label: 'School',           icon: null,               param: null, component: () => import("../../../__app_modules/learning/school/browser/kiosk.mjs") },
@@ -85,8 +85,8 @@ export function resolveAppDisplay(input) {
 }
 
 const OPTION_RESOLVERS = {
-  household: async () => {
-    const data = await DaylightAPI('/api/v1/gratitude/bootstrap');
+  household: async ({ signal } = {}) => {
+    const data = await DaylightAPI('/api/v1/gratitude/bootstrap', {}, 'GET', { signal });
     return (data.users || []).map(u => ({
       value: u.id,
       label: u.group_label || u.name || u.id,
@@ -100,11 +100,11 @@ const OPTION_RESOLVERS = {
  * @param {object|null} param - The param descriptor from a registry entry
  * @returns {Promise<Array<{value: string, label: string}>|null>}
  */
-export async function resolveParamOptions(param) {
+export async function resolveParamOptions(param, { signal } = {}) {
   if (!param?.options) return null;
   if (param.options.includes(',')) {
     return param.options.split(',').map(v => ({ value: v.trim(), label: v.trim() }));
   }
   const resolver = OPTION_RESOLVERS[param.options];
-  return resolver ? resolver() : null;
+  return resolver ? resolver({ signal }) : null;
 }

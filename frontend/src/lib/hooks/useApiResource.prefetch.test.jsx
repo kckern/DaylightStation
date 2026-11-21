@@ -6,7 +6,7 @@ vi.mock('../api.mjs', () => ({ DaylightAPI: (...args) => apiMock(...args) }));
 
 import {
   useApiResource, resetApiResourceCache, prefetchApiResources, isApiResourceFresh,
-  peekApiResource, invalidateApiResources, getPrefetchStats,
+  peekApiResource, invalidateApiResources, getPrefetchStats, isPrefetchIdle,
 } from './useApiResource.js';
 
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
@@ -68,6 +68,48 @@ describe('prefetchApiResources', () => {
     expect(calls.map(c => c.path)).toEqual(['a', 'b', 'x']);
   });
 
+  it('cancels queued work and callbacks when its owner leaves, allowing admitted reads to settle', async () => {
+    const first = deferred();
+    const second = deferred();
+    const owner = new AbortController();
+    const onDone = vi.fn();
+    const onIdle = vi.fn();
+    apiMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise).mockResolvedValue({});
+
+    prefetchApiResources(['a', 'b', 'c'], { signal: owner.signal, onDone, onIdle });
+    owner.abort();
+    first.resolve({ keep: true });
+    second.resolve({});
+    await flush();
+
+    expect(apiMock.mock.calls.map(([path]) => path)).toEqual(['a', 'b']);
+    expect(peekApiResource('a')).toEqual({ keep: true });
+    expect(isPrefetchIdle()).toBe(true);
+    expect(onDone).not.toHaveBeenCalled();
+    expect(onIdle).not.toHaveBeenCalled();
+  });
+
+  it('keeps the replacement queue when an earlier owner leaves', async () => {
+    const first = deferred();
+    const second = deferred();
+    const previous = new AbortController();
+    const current = new AbortController();
+    const previousDone = vi.fn();
+    const currentIdle = vi.fn();
+    apiMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise).mockResolvedValue({});
+
+    prefetchApiResources(['a', 'b', 'c'], { signal: previous.signal, onDone: previousDone });
+    prefetchApiResources(['x'], { signal: current.signal, onIdle: currentIdle });
+    previous.abort();
+    first.resolve({});
+    second.resolve({});
+    await flush();
+
+    expect(apiMock.mock.calls.map(([path]) => path)).toEqual(['a', 'b', 'x']);
+    expect(previousDone).not.toHaveBeenCalled();
+    expect(currentIdle).toHaveBeenCalledOnce();
+  });
+
   it('skips fresh paths, and refetches them after an invalidation', async () => {
     apiMock.mockResolvedValue({ v: 1 });
     prefetchApiResources(['p']);
@@ -80,6 +122,42 @@ describe('prefetchApiResources', () => {
     expect(prefetchApiResources(['p'])).toBe(1);
   });
 
+  it('keeps an invalidated in-flight prefetch from warming the cache', async () => {
+    const before = deferred();
+    apiMock.mockReturnValueOnce(before.promise)
+      .mockResolvedValueOnce({ v: 'replacement' })
+      .mockResolvedValueOnce({ v: 'after' });
+    prefetchApiResources(['p']);
+    const nonCachingReader = renderHook(() => useApiResource('p'));
+    act(() => nonCachingReader.result.current.reload());
+    await waitFor(() => expect(nonCachingReader.result.current.data).toEqual({ v: 'replacement' }));
+    nonCachingReader.unmount();
+    invalidateApiResources(path => path === 'p');
+    before.resolve({ v: 'before' });
+    await flush();
+    expect(peekApiResource('p')).toBeUndefined();
+
+    const { result } = renderHook(() => useApiResource('p', { swr: true }));
+    expect(result.current.loading).toBe(true);
+    await waitFor(() => expect(result.current.data).toEqual({ v: 'after' }));
+    expect(apiMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('a reader can leave a shared prefetch pending without dropping its admitted result', async () => {
+    const pending = deferred();
+    apiMock.mockReturnValue(pending.promise);
+    prefetchApiResources(['future-day']);
+    const reader = renderHook(() => useApiResource('future-day', { swr: true }));
+    expect(apiMock).toHaveBeenCalledTimes(1);
+    reader.unmount();
+
+    const day = { entries: ['breakfast'] };
+    pending.resolve(day);
+    await flush();
+    expect(peekApiResource('future-day')).toBe(day);
+    expect(getPrefetchStats()).toEqual({ queued: 1, completed: 1, failed: 0 });
+  });
+
   it('a reader mounting during a prefetch joins it instead of requesting again', async () => {
     const slow = deferred();
     apiMock.mockReturnValueOnce(slow.promise);
@@ -90,6 +168,42 @@ describe('prefetchApiResources', () => {
     await waitFor(() => expect(result.current.data).toEqual({ v: 'shared' }));
     expect(apiMock).toHaveBeenCalledTimes(1);
     expect(peekApiResource('j')).toEqual({ v: 'shared' });
+  });
+
+  it('joins a bounded prefetch after three seconds and keeps its original deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const day = deferred();
+      const other = deferred();
+      const calls = [];
+      apiMock.mockImplementation((path, _body, _method, { signal }) => {
+        calls.push({ path, signal });
+        return path === 'day' ? day.promise : other.promise;
+      });
+      const timeoutMs = 25_000;
+      const onDone = vi.fn();
+      prefetchApiResources(['day', 'other'], {
+        timeoutMsForPath: path => path === 'day' ? timeoutMs : undefined,
+        onDone,
+      });
+      await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+      const { result } = renderHook(() => useApiResource('day', { swr: true, timeoutMs }));
+      expect(calls.map(call => call.path)).toEqual(['day', 'other']);
+      expect(result.current.loading).toBe(true);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+      expect(calls.map(call => call.signal.aborted)).toEqual([true, false]);
+      expect(result.current.loading).toBe(false);
+      expect(result.current.error?.message).toBe('Resource GET timed out');
+      expect(onDone).toHaveBeenCalledWith(result.current.error, 'day');
+
+      await act(async () => { day.resolve({ expired: true }); other.resolve({ accepted: true }); });
+      expect(peekApiResource('day')).toBeUndefined();
+      expect(peekApiResource('other')).toEqual({ accepted: true });
+      expect(isPrefetchIdle()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('never overwrites a newer reader response', async () => {

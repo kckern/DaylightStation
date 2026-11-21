@@ -210,7 +210,10 @@ wraps at phone width, so nothing is lost to a narrow screen.
   device**. The destination picks up at the same moment; only once it has
   started is the original stopped (it shows "Moved by …"). If the
   destination can't confirm, the original keeps playing and the outcome says
-  so. Moving to this device opens Now Playing.
+  so. Moving to this device opens Now Playing when the original Remote visit
+  is still active. After navigation or a screen change, the move completes
+  in the playing session and the selected view stays in place. The outcome
+  tray keeps the move pending until the source stop resolves.
 - **Play on a screen** (fling). While something plays (or is paused) on this
   device, the handle and Now Playing's transport carry one cast icon: **Play
   on a screen**. It opens a short list of screens (the Move to… list: content
@@ -818,8 +821,10 @@ and a **canvas** that shows exactly one view at a time:
 - the **destination control** — "Playing on <name> ⌄": where a plain Play goes
   (this browser's own name, "this device" when it has none, the named screen,
   or "Kitchen + Living Room"). It absorbs the old cast icon: tapping it opens
-  the cast preferences (preferred devices, move or keep playing here too), and
-  the same destination line ("Playing on …") opens the one destination picker
+  the cast preferences (preferred devices, move or keep playing here too).
+  Escape closes these preferences and focuses the destination control. Clicking
+  outside closes them while focus follows the click. The same destination line
+  ("Playing on …") opens the one destination picker
   in Search Mode, on Browse and Detail, and on **Now Playing**. A machine name
   ("Browser 4778f429") is never shown: an unnamed browser reads "this device"
   for its owner and "a browser" to everyone else. An
@@ -1078,6 +1083,8 @@ off-screen park and was then remounted by the arriving claim; recovery fell to
 the 15s stall watchdog, 19s after the tap. Guarded by
 `PlayerBridge.test.jsx`.
 
+The bridge initializes from the local controller’s snapshot and observes its session-store transitions. The action identifies an explicit restart even when the content ID stays the same.
+
 `contentId` is the bridge's playback identity. Resolved metadata, duration,
 position, and native paused/playing state are reconciled into the current
 session and matching queue entry without replacing the active Player item.
@@ -1176,6 +1183,12 @@ and bound to either side. This symmetry is what makes J2/J5 "identical
 semantics" cheap, and it should survive any rebuild. A stopped session keeps
 that same queue reachable through the mini-player's explicitly named queue
 handle until clear/reset removes it.
+
+React components observe a resolved controller through `useControllerSnapshot`.
+It returns the current durable snapshot, or `null` while the controller is
+unavailable. `useSessionController` resolves the local or remote target and
+exposes its commands. Progress displays subscribe to the separate position
+channel through `usePlaybackPosition`.
 
 ### Platform relationships
 

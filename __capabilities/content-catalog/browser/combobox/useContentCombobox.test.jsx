@@ -2,7 +2,8 @@
 // fetch and EventSource are fully stubbed; no test touches the network.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
-import { clearCache, getCacheEntry, setCacheEntry } from "../lib/siblingsCache.js";
+import { clearCache, getCacheEntry, loadSiblings, setCacheEntry } from "../lib/siblingsCache.js";
+import { isKnownSource, loadKnownSources, resetKnownSources } from "../lib/knownSources.js";
 
 // Hoisted so tests (Task 5: search.settled / search.source_error /
 // search.retry_after_source_error) can assert on calls — vi.hoisted runs
@@ -37,7 +38,8 @@ vi.mock("../../../../frontend/src/lib/appRegistry.js", () => ({
 // `import()` resolves instantly (keeps the app-results test deterministic).
 import "../../../../frontend/src/lib/appRegistry.js";
 
-import { useContentCombobox, titleCache, Modes } from "./useContentCombobox.js";
+import { clearTitleCache } from "../lib/useContentTitle.js";
+import { useContentCombobox, Modes } from "./useContentCombobox.js";
 import { notifyWarning } from "./notify.js";
 
 class MockEventSource {
@@ -86,12 +88,15 @@ async function openBrowse(result) {
 describe('useContentCombobox', () => {
   beforeEach(() => {
     clearCache();
-    titleCache.clear();
+    clearTitleCache();
     MockEventSource.instances = [];
     // Default: no SSE — forces the batch fallback path (supportsSSE() false).
     vi.stubGlobal('EventSource', undefined);
     fetchMock = vi.fn(() => jsonResponse({ items: [] }));
-    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('fetch', (url, options) => {
+      const { pathname, search } = new URL(url, location.origin);
+      return fetchMock(pathname + search, options);
+    });
     notifyWarning.mockClear();
     mockLog.debug.mockClear(); mockLog.info.mockClear();
     mockLog.warn.mockClear(); mockLog.error.mockClear();
@@ -102,7 +107,8 @@ describe('useContentCombobox', () => {
     vi.useRealTimers();
   });
 
-  it('value-prop change dispatches VALUE_CHANGED and returns to DISPLAY', () => {
+  it('discards a queued edit when the committed value is replaced', async () => {
+    vi.useFakeTimers();
     const onChange = vi.fn();
     const { result, rerender } = setup({ value: 'plex:1', onChange });
 
@@ -114,6 +120,116 @@ describe('useContentCombobox', () => {
     expect(result.current.state.mode).toBe('display');
     expect(result.current.state.value).toBe('plex:2');
     expect(result.current.state.search).toBeNull();
+    expect(result.current.isSearching).toBe(false);
+
+    await act(async () => { vi.advanceTimersByTime(350); });
+    expect(fetchMock.mock.calls.filter(([path]) => path.startsWith('/api/v1/content/query/search?'))).toHaveLength(0);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('aborts an active batch when the committed value is replaced and ignores its response', async () => {
+    vi.useFakeTimers();
+    const older = Promise.withResolvers();
+    fetchMock.mockImplementation(path => path.includes('text=older')
+      ? older.promise
+      : jsonResponse({ items: path.includes('text=newer') ? [{ id: 'plex:4', title: 'New result' }] : [] }));
+    const onChange = vi.fn();
+    const { result, rerender } = setup({ value: 'plex:1', onChange });
+
+    act(() => { result.current.handleInput('older'); });
+    await act(async () => { vi.advanceTimersByTime(350); });
+    const searchRequest = fetchMock.mock.calls.find(([path]) => path.includes('text=older'));
+    expect(searchRequest?.[1].signal.aborted).toBe(false);
+
+    rerender({ value: 'plex:2', onChange });
+    expect(searchRequest[1].signal.aborted).toBe(true);
+    expect(result.current.isSearching).toBe(false);
+
+    act(() => { result.current.handleInput('newer'); });
+    await act(async () => { vi.advanceTimersByTime(350); });
+    await act(async () => older.resolve(await jsonResponse({ items: [{ id: 'plex:3', title: 'Old result' }] })));
+    expect(result.current.state.results.map(item => item.id)).toEqual(['plex:4']);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('closes an active stream and clears partial results when the committed value is replaced', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('EventSource', MockEventSource);
+    const onChange = vi.fn();
+    const { result, rerender } = setup({ value: 'plex:1', onChange });
+
+    act(() => { result.current.handleInput('older'); });
+    await act(async () => { vi.advanceTimersByTime(350); });
+    const [oldStream] = MockEventSource.instances;
+    act(() => oldStream.simulateMessage({
+      event: 'results', source: 'plex', items: [{ id: 'plex:3', title: 'Old result' }], pending: ['files'],
+    }));
+    expect(result.current.state.results.map(item => item.id)).toEqual(['plex:3']);
+    expect(oldStream.readyState).not.toBe(2);
+
+    rerender({ value: 'plex:2', onChange });
+    expect(oldStream.readyState).toBe(2);
+    expect(result.current.state.results).toEqual([]);
+    expect(result.current.isSearching).toBe(false);
+
+    act(() => oldStream.simulateMessage({
+      event: 'results', source: 'files', items: [{ id: 'files:late', title: 'Late result' }], pending: [],
+    }));
+    expect(result.current.state.results).toEqual([]);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('recognizes recovered aliases when the same picker opens after an outage', async () => {
+    resetKnownSources();
+    let aliasesAvailable = false;
+    fetchMock.mockImplementation(path => {
+      if (path === '/api/v1/content/sources') return jsonResponse({ sources: ['plex'] });
+      if (path === '/api/v1/content/aliases') return Promise.resolve(aliasesAvailable
+        ? Response.json({ userDefined: ['family-alias'] })
+        : Response.json({ error: 'Service unavailable' }, { status: 503 }));
+      return jsonResponse({ items: [] });
+    });
+    const onChange = vi.fn();
+    const { result } = setup({ onChange });
+    await act(async () => { await loadKnownSources(); });
+
+    act(() => { result.current.handleInput('family-alias:first'); });
+    act(() => { result.current.commit('enter'); });
+    expect(onChange).toHaveBeenCalledWith('family-alias:first');
+    expect(notifyWarning).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Saved as raw id' }));
+
+    aliasesAvailable = true;
+    await openBrowse(result);
+    await waitFor(() => expect(isKnownSource('family-alias')).toBe(true));
+    expect(fetchMock.mock.calls.filter(([path]) => path === '/api/v1/content/aliases')).toHaveLength(2);
+
+    act(() => { result.current.handleInput('invented:second'); });
+    act(() => { result.current.commit('enter'); });
+    expect(onChange).toHaveBeenCalledWith('invented:second');
+    expect(notifyWarning).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Unknown source “invented”' }));
+  });
+
+  it('warms accepted sources only when freeform entry is enabled', async () => {
+    resetKnownSources();
+    fetchMock.mockImplementation(path => {
+      if (path === '/api/v1/content/sources') return jsonResponse({ sources: ['plex'] });
+      if (path === '/api/v1/content/aliases') return jsonResponse({ userDefined: ['fixture-cold'] });
+      return jsonResponse({ items: [] });
+    });
+    const reads = () => fetchMock.mock.calls.map(([path]) => path)
+      .filter(path => ['/api/v1/content/sources', '/api/v1/content/aliases'].includes(path));
+    const { result, rerender } = setup({ allowFreeform: false });
+    await openBrowse(result);
+    expect(reads()).toEqual([]);
+
+    rerender({ allowFreeform: true });
+    await waitFor(() => expect(isKnownSource('fixture-cold')).toBe(true));
+    expect(reads().sort()).toEqual(['/api/v1/content/aliases', '/api/v1/content/sources']);
+
+    rerender({ allowFreeform: false });
+    rerender({ allowFreeform: true });
+    await act(async () => {});
+    expect(reads()).toHaveLength(2);
   });
 
   it("handleClose('outside') with exploratory text calls onChange ZERO times and resets state", async () => {
@@ -198,6 +314,43 @@ describe('useContentCombobox', () => {
     expect(result.current.state.browse.items.map((i) => i.id)).toEqual(['plex:c1']);
     expect(result.current.state.browse.breadcrumbs).toHaveLength(2);
   });
+
+  it.each(['typing', 'dismissal', 'another expansion', 'a changed value', 'unmount'])(
+    'aborts an encoded container GET on %s and ignores its late result', async change => {
+      const previous = '/api/v1/list/plex/series%2Fone%3Aseason/expand';
+      const next = '/api/v1/list/plex/series%2Ftwo/expand';
+      const held = Promise.withResolvers();
+      fetchMock.mockImplementation(url => {
+        if (url === previous) return held.promise;
+        if (url === next) return jsonResponse({ items: [{ id: 'plex:new-child', title: 'New child' }] });
+        return jsonResponse({ items: [] });
+      });
+      const { result, unmount, rerender } = setup({ value: 'plex:10' });
+      let opening;
+      act(() => {
+        opening = result.current.drill({ id: 'plex:series/one:season', title: 'Original container' });
+      });
+      const [, request] = fetchMock.mock.calls.find(([path]) => path === previous);
+      expect(request).toMatchObject({ method: 'GET', signal: expect.any(AbortSignal) });
+      expect(request).not.toHaveProperty('body');
+      if (change === 'typing') act(() => result.current.handleInput('new search'));
+      if (change === 'dismissal') act(() => result.current.handleClose('escape'));
+      if (change === 'another expansion') {
+        await act(async () => result.current.drill({ id: 'plex:series/two', title: 'Replacement container' }));
+      }
+      if (change === 'a changed value') rerender({ value: 'plex:20' });
+      if (change === 'unmount') unmount();
+      expect(request.signal.aborted).toBe(true);
+      await act(async () => {
+        held.resolve(await jsonResponse({ items: [{ id: 'plex:stale-child', title: 'Retired child' }] }));
+        await opening;
+      });
+      if (change === 'unmount') return;
+      const ids = result.current.state.browse.items.map(item => item.id);
+      expect(ids).not.toContain('plex:stale-child');
+      if (change === 'another expansion') expect(ids).toEqual(['plex:new-child']);
+    },
+  );
 
   it('committed value absent from the window highlights nothing (idx -1), not row 0 (F1)', async () => {
     fetchMock.mockImplementation((url) => {
@@ -336,6 +489,37 @@ describe('useContentCombobox', () => {
     await act(async () => { vi.advanceTimersByTime(350); });
 
     expect(result.current.state.results.map((r) => r.id)).toEqual(['plex:5']);
+  });
+
+  it('retires the old batch before the replacement debounce and ignores its late response', async () => {
+    vi.useFakeTimers();
+    const older = Promise.withResolvers();
+    const newer = Promise.withResolvers();
+    fetchMock.mockImplementation(url => {
+      if (url.includes('text=older')) return older.promise;
+      if (url.includes('text=newer')) return newer.promise;
+      return jsonResponse({ items: [] });
+    });
+    const searches = () => fetchMock.mock.calls.filter(([url]) => url.startsWith('/api/v1/content/query/search?'));
+    const { result } = setup({});
+
+    act(() => result.current.handleInput('older'));
+    await act(async () => { vi.advanceTimersByTime(300); });
+    expect(searches()).toHaveLength(1);
+    act(() => result.current.handleInput('newer'));
+    expect(searches()[0][1].signal?.aborted).toBe(true);
+    expect(result.current.isSearching).toBe(true);
+    await act(async () => { vi.advanceTimersByTime(299); });
+    expect(searches()).toHaveLength(1);
+    await act(async () => { vi.advanceTimersByTime(1); });
+    expect(searches()).toHaveLength(2);
+
+    await act(async () => older.resolve(await jsonResponse({ items: [{ id: 'plex:1', title: 'Older' }] })));
+    expect(result.current.state.results).toEqual([]);
+    expect(result.current.isSearching).toBe(true);
+    await act(async () => newer.resolve(await jsonResponse({ items: [{ id: 'plex:2', title: 'Newer' }] })));
+    expect(result.current.state.results.map(item => item.id)).toEqual(['plex:2']);
+    expect(result.current.isSearching).toBe(false);
   });
 
   it('F13: a bare source prefix ("singalong:") dispatches an empty search, not a literal', async () => {
@@ -506,11 +690,11 @@ describe('useContentCombobox', () => {
 
   it('resolvedTitle fetches /info once and reuses the module cache on a second mount', async () => {
     fetchMock.mockImplementation((url) => (
-      url.startsWith('/api/v1/info/plex/777')
+      new URL(url, location.origin).pathname === '/api/v1/info/plex/777'
         ? jsonResponse({ title: 'Solo Piano' })
         : jsonResponse({ items: [] })
     ));
-    const infoCalls = () => fetchMock.mock.calls.filter(([u]) => u.startsWith('/api/v1/info/')).length;
+    const infoCalls = () => fetchMock.mock.calls.filter(([u]) => new URL(u, location.origin).pathname.startsWith('/api/v1/info/')).length;
 
     const first = setup({ value: 'plex:777' });
     await waitFor(() => expect(first.result.current.resolvedTitle).toBe('Solo Piano'));
@@ -522,7 +706,7 @@ describe('useContentCombobox', () => {
     expect(infoCalls()).toBe(1); // cache hit — no second /info fetch
   });
 
-  it('applyBrowseData builds the FULL sanitized ancestor trail when the siblings response carries ancestors', async () => {
+  it('opening during an Admin preload shares the metadata source request and preserves the full sanitized ancestor trail', async () => {
     const RESPONSE_WITH_ANCESTORS = {
       items: [
         { id: 'plex:642196', title: 'Ep 32', source: 'plex', type: 'episode' },
@@ -540,13 +724,19 @@ describe('useContentCombobox', () => {
         { id: 'plex:700', title: 'Season 8', source: 'plex', localId: '700', type: 'season' },
       ],
     };
-    fetchMock.mockImplementation((url) => (
-      url.startsWith('/api/v1/siblings/plex/642197') ? jsonResponse(RESPONSE_WITH_ANCESTORS) : jsonResponse({ items: [] })
-    ));
-    const { result } = setup({ value: 'plex:642197' });
+    let finishPreload;
+    const pending = new Promise(resolve => { finishPreload = resolve; });
+    fetchMock.mockImplementation(url => url.startsWith('/api/v1/siblings/') ? pending : jsonResponse({}));
+    const { result } = setup({ value: 'legacy:642197' });
+    const preload = loadSiblings('legacy:642197', 'plex');
+    await act(async () => {
+      const opening = result.current.openWithSiblings();
+      finishPreload(await jsonResponse(RESPONSE_WITH_ANCESTORS));
+      await Promise.all([preload, opening]);
+    });
 
-    await openBrowse(result);
-
+    const siblingPaths = fetchMock.mock.calls.map(([url]) => url).filter(url => url.includes('/siblings/'));
+    expect(siblingPaths).toEqual(['/api/v1/siblings/plex/642197']);
     expect(result.current.state.mode).toBe('browse');
     // Junk library + duplicate removed; full chain root-first with usable localId/source.
     expect(result.current.state.browse.breadcrumbs).toEqual([
@@ -555,6 +745,77 @@ describe('useContentCombobox', () => {
       expect.objectContaining({ id: 'plex:700', title: 'Season 8', source: 'plex', localId: '700' }),
     ]);
     expect(result.current.state.highlight.idx).toBe(1); // referenceIndex unchanged
+  });
+
+  it('pages through the same canonical source that supplied a preloaded sibling window', async () => {
+    const location = '/api/v1/siblings/plex/10';
+    const next = { id: 'plex:12', title: 'Next episode' };
+    fetchMock.mockImplementation(url => {
+      if (url === location) return jsonResponse(SIBLINGS_RESPONSE);
+      if (url === location + '?offset=43&limit=21') return jsonResponse({ items: [next] });
+      return jsonResponse({});
+    });
+    await loadSiblings('legacy:10', 'plex');
+    const { result } = setup({ value: 'legacy:10' });
+    await openBrowse(result);
+
+    await act(async () => { expect(await result.current.paginate('after')).toBe(true); });
+
+    expect(fetchMock.mock.calls.map(([url]) => url).filter(url => url.startsWith('/api/v1/siblings/')))
+      .toEqual([location, location + '?offset=43&limit=21']);
+    expect(result.current.state.browse.items.map(item => item.id)).toContain(next.id);
+  });
+
+  it('allows the current sibling window to page while a previous window is still pending', async () => {
+    const firstWindow = '/api/v1/siblings/plex/10';
+    const nextWindow = '/api/v1/siblings/plex/20';
+    const pageQuery = '?offset=43&limit=21';
+    let finishFirst;
+    let finishNext;
+    const firstPage = new Promise(resolve => { finishFirst = resolve; });
+    const nextPage = new Promise(resolve => { finishNext = resolve; });
+    const newItem = { id: 'plex:20', title: 'New reference' };
+    fetchMock.mockImplementation(url => {
+      if (url === firstWindow) return jsonResponse(SIBLINGS_RESPONSE);
+      if (url === nextWindow) return jsonResponse({ ...SIBLINGS_RESPONSE, items: [newItem], referenceIndex: 0 });
+      if (url === firstWindow + pageQuery) return firstPage;
+      if (url === nextWindow + pageQuery) return nextPage;
+      return jsonResponse({});
+    });
+
+    const { result, rerender } = setup({ value: 'plex:10' });
+    await openBrowse(result);
+    let oldPagination;
+    act(() => { oldPagination = result.current.paginate('after'); });
+    rerender({ value: 'plex:20', onChange: vi.fn() });
+    await openBrowse(result);
+    let newPagination;
+    act(() => { newPagination = result.current.paginate('after'); });
+    try {
+      const pages = fetchMock.mock.calls.filter(([url]) => url.endsWith(pageQuery));
+      expect(pages.map(([url]) => url)).toEqual([firstWindow + pageQuery, nextWindow + pageQuery]);
+      for (const [, request] of pages) {
+        expect(request).toMatchObject({ method: 'GET', signal: expect.any(AbortSignal) });
+        expect(request).not.toHaveProperty('body');
+      }
+      expect(pages[0][1].signal.aborted).toBe(true);
+      expect(pages[1][1].signal.aborted).toBe(false);
+
+      await act(async () => {
+        finishFirst(await jsonResponse({ items: [{ id: 'plex:12' }] }));
+        expect(await oldPagination).toBe(false);
+      });
+      await act(async () => { expect(await result.current.paginate('after')).toBe(false); });
+      await act(async () => {
+        finishNext(await jsonResponse({ items: [{ id: 'plex:21' }] }));
+        expect(await newPagination).toBe(true);
+      });
+      expect(result.current.state.browse.items.map(item => item.id)).toEqual(['plex:20', 'plex:21']);
+    } finally {
+      finishFirst(await jsonResponse({ items: [] }));
+      finishNext(await jsonResponse({ items: [] }));
+      await act(async () => { await Promise.all([oldPagination, newPagination]); });
+    }
   });
 
   it('applyBrowseData falls back to the single parent crumb when the response has NO ancestors (no regression)', async () => {

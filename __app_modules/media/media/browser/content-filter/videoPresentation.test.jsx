@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { act, renderHook, waitFor } from '@testing-library/react';
+import React from 'react';
+import { act, render, renderHook, waitFor } from '@testing-library/react';
 import { subscribeMediaLoadingSuppression, getMediaLoadingSuppression } from '../provenance/playbackPresentation.jsx';
 
 // Exercise the real Media data/effect hooks; only external HTTP and media IO are synthetic.
@@ -24,6 +25,8 @@ describe('installed Media playback presentation', () => {
     const store = contract.getLoadingPresentation();
     expect(store.subscribeLoadingSuppression).toBe(subscribeMediaLoadingSuppression);
     expect(store.getLoadingSuppression).toBe(getMediaLoadingSuppression);
+    const overlay = render(<installed.PlayerOverlayLoading shouldRender isVisible stalled seconds={100} status="recovering" />);
+    expect(overlay.container.querySelector('.loading-overlay')).toBeInTheDocument();
     const el = document.createElement('video');
     el.pause = vi.fn();
     el.play = vi.fn(() => Promise.resolve());
@@ -31,10 +34,11 @@ describe('installed Media playback presentation', () => {
     const { result, unmount } = renderHook(() => contract.useVideoPresentation({
       media: { assetId: 'plex:42' }, isPlex: true, getMediaEl,
     }));
-    await waitFor(() => expect(fetchFixture).toHaveBeenCalledWith('/api/v1/content-filter/42?profile=family'));
+    await waitFor(() => expect(fetchFixture).toHaveBeenCalledWith(`${location.origin}/api/v1/content-filter/42?profile=family`, expect.objectContaining({ method: 'GET' })));
     await waitFor(() => expect(result.current.overlay).toBeTruthy());
     act(() => { el.currentTime = 2; el.dispatchEvent(new Event('timeupdate')); });
     await waitFor(() => expect(store.getLoadingSuppression()).toBe(true));
+    expect(overlay.container.querySelector('.loading-overlay')).toBeNull();
     expect(el.pause).toHaveBeenCalledTimes(1);
     expect(el.currentTime).toBeGreaterThan(5);
     expect(result.current.overlay.props.activeCard).toEqual({ text: 'Fixture card' });
@@ -43,6 +47,7 @@ describe('installed Media playback presentation', () => {
       .toThrow('already configured');
     unmount();
     expect(store.getLoadingSuppression()).toBe(false);
+    expect(overlay.container.querySelector('.loading-overlay')).toBeInTheDocument();
   });
 
   it('passes a badge (provisional when a mute is approximate) and a bumper summary to the overlay', async () => {
@@ -142,4 +147,39 @@ describe('partFromSrc', () => {
     expect(partFromSrc('/api/v1/proxy/plex/video/:/transcode/universal/start.mpd?x')).toBeNull();
     expect(partFromSrc(undefined)).toBeNull();
   });
+});
+
+it('keeps the preview cues and artwork scoped to the playing title during a switch', async () => {
+  const { useMediaVideoPresentation } = await import('./videoPresentation.jsx');
+  const { previewStore } = await import('./preview/previewStore.js');
+  window.history.replaceState({}, '', '/?filter=1');
+  vi.stubGlobal('fetch', vi.fn(async url => {
+    const id = new URL(url).pathname.split('/')[4];
+    if (url.endsWith('/art')) {
+      return Response.json({ source: 'plex', poster: '/fixture/' + id, logo: null });
+    }
+    return Response.json({ edl: { cues: [{ id, effect: 'mute', in: 30, out: 31, category: 'language/x' }] },
+      profile: { categories: {} }, override: {} });
+  }));
+  const log = [];
+  const unsubscribe = previewStore.subscribe(() => log.push(previewStore.getSnapshot()));
+  try {
+    const el = document.createElement('video');
+    const getMediaEl = () => el;
+    const frames = [];
+    const { result, rerender } = renderHook(({ id }) => {
+      const presentation = useMediaVideoPresentation({ media: { assetId: 'plex:' + id }, isPlex: true, getMediaEl });
+      frames.push([id, presentation.overlay?.props?.art?.poster]);
+      return presentation;
+    }, { initialProps: { id: '60' } });
+    await waitFor(() => expect(result.current.overlay?.props?.art).toMatchObject({ poster: '/fixture/60', logo: null }));
+    rerender({ id: '61' });
+    await waitFor(() => expect(result.current.overlay?.props?.art?.poster).toBe('/fixture/61'));
+    expect(frames.filter(([id]) => id === '61').some(([, poster]) => poster?.includes('60'))).toBe(false);
+    const next = log.filter(s => s.ratingKey === '61');
+    expect(next.some(s => s.cues.some(c => c.id === '61'))).toBe(true);
+    expect(next.every(s => s.cues.every(c => c.id !== '60'))).toBe(true);
+  } finally {
+    unsubscribe();
+  }
 });

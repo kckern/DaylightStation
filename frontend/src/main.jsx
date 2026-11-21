@@ -1,8 +1,8 @@
 import { usePortalPageHeartbeat } from '../../__app_modules/learning/school/browser/page-evidence.mjs';
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import {SupervisionHost} from '../../__app_modules/household/supervision/browser/index.js';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Routes, Route, useParams, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Outlet, useParams, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { MantineProvider } from '@mantine/core';
 import '@mantine/core/styles.css';
 // Shared utility classes (.tabular-nums …) — every route needs them, so they
@@ -13,6 +13,8 @@ import { createAppTheme } from './lib/theme/createAppTheme.js';
 import PhoneServiceAuth from './modules/Auth/PhoneServiceAuth.jsx';
 import { OfficeRedirect, TVRedirect, SchoolDeepLinkRedirect, TeacherNextRedirect } from './routeRedirects.jsx';
 import { WebSocketProvider } from './contexts/WebSocketContext.jsx';
+import { useViewportContent } from './lib/hooks/useViewportContent.js';
+import { SetupCheck } from './modules/Auth/PublicAuthContext.jsx';
 // Every route is its own chunk: a page downloads the app it shows, not all
 // of them (the single bundle had grown past 11 MB). A long-lived tab whose
 // chunk hashes rotate under it on a deploy is recovered by chunkReload.js.
@@ -146,41 +148,6 @@ const AppDirectRoute = () => {
   );
 };
 
-// Wrapper that redirects to /setup when no users have been created yet
-function SetupCheck({ children }) {
-  const [checked, setChecked] = useState(false);
-  const [needsSetup, setNeedsSetup] = useState(false);
-  const location = useLocation();
-
-  useEffect(() => {
-    // Skip check on setup and invite pages
-    if (location.pathname === '/setup' || location.pathname.startsWith('/invite/')) {
-      setChecked(true);
-      return;
-    }
-    // Bounded: this fetch gates the ENTIRE app boot (render is null until it
-    // settles). A congested backend that never answers must not blank every
-    // page — after 5s, proceed without the setup redirect (login/claim flows
-    // still enforce auth; this check is a fresh-install convenience).
-    fetch('/api/v1/auth/context', { signal: AbortSignal.timeout(5000) })
-      .then(r => r.json())
-      .then(data => {
-        // Only redirect to setup wizard for fresh installs (no profiles at all).
-        // When profiles exist but no passwords (setupAdmin present), the
-        // LoginScreen claim flow handles it instead.
-        setNeedsSetup(data.needsSetup && !data.setupAdmin);
-        setChecked(true);
-      })
-      .catch(() => setChecked(true));
-  }, [location.pathname]);
-
-  if (!checked) return null;
-  if (needsSetup && location.pathname !== '/setup') {
-    return <Navigate to="/setup" replace />;
-  }
-  return children;
-}
-
 /** One boundary covers nested app, screen, bank and native-game routes alike. */
 function SupervisedRoutes({children}) {
   const {pathname}=useLocation();
@@ -190,6 +157,21 @@ function SupervisedRoutes({children}) {
   return <SupervisionHost routePath={pathname} homeHref={homeHref}>{children}</SupervisionHost>;
 }
 
+function edgeToEdgeViewport(content) {
+  const directives = content.split(',').map(part => part.trim()).filter(part => part && !/^viewport-fit\s*=/i.test(part));
+  return [...directives, 'viewport-fit=cover'].join(', ');
+}
+
+function BrowserAppViewport() {
+  useViewportContent(edgeToEdgeViewport);
+  useEffect(() => {
+    const root = document.documentElement;
+    root.setAttribute('data-browser-app-viewport', '');
+    return () => root.removeAttribute('data-browser-app-viewport');
+  }, []);
+  return <Outlet />;
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <MantineProvider theme={createAppTheme(null)} defaultColorScheme="dark">
   <BrowserRouter>
@@ -197,8 +179,18 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <React.Suspense fallback={null}>
       <SupervisedRoutes>
       <Routes>
-        <Route path="/" element={<AdminApp />} />
-        <Route path="/home" element={<PhoneServiceAuth><HomeApp /></PhoneServiceAuth>} />
+        <Route element={<BrowserAppViewport />}>
+          <Route path="/" element={<Navigate to="/admin" replace />} />
+          <Route path="/admin/*" element={<AdminApp />} />
+          <Route path="/home" element={<PhoneServiceAuth><HomeApp /></PhoneServiceAuth>} />
+          <Route path="/health" element={<PhoneServiceAuth><HealthApp /></PhoneServiceAuth>} />
+          <Route path="/health/*" element={<PhoneServiceAuth><HealthApp /></PhoneServiceAuth>} />
+          <Route path="/auto" element={<AutoApp />} />
+          <Route path="/auto/*" element={<AutoApp />} />
+          <Route path="/life/*" element={<PhoneServiceAuth><LifeApp /></PhoneServiceAuth>} />
+          <Route path="/feed/*" element={<FeedApp />} />
+          <Route path="/media" element={<PhoneServiceAuth><MediaApp /></PhoneServiceAuth>} />
+        </Route>
         <Route path="/office" element={<OfficeRedirect />} />
         <Route path="/office/*" element={<OfficeRedirect />} />
         <Route path="/budget" element={<FinanceApp />} />
@@ -220,21 +212,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/app/:appId" element={<AppDirectRoute />} />
         <Route path="/tv/*" element={<TVRedirect />} />
         <Route path="/tv" element={<TVRedirect />} />
-        <Route path="/media" element={<PhoneServiceAuth><MediaApp /></PhoneServiceAuth>} />
         <Route path="/media/channels/*" element={<LiveStreamApp />} />
-        <Route path="/health" element={<PhoneServiceAuth><HealthApp /></PhoneServiceAuth>} />
-        <Route path="/health/*" element={<PhoneServiceAuth><HealthApp /></PhoneServiceAuth>} />
-        {/* Vehicle record system — mobile-first; see ops:docs/_wip/plans/2026-08-12-auto-app-design.md */}
-        <Route path="/auto" element={<AutoApp />} />
-        <Route path="/auto/*" element={<AutoApp />} />
         <Route path="/fitness/*" element={<FitnessApp />} />
         <Route path="/piano/*" element={<PianoApp />} />
         <Route path="/dev/gaming/*" element={<React.Suspense fallback={null}><GamingApp /></React.Suspense>} />
         <Route path="/dev/game-presentation-harness" element={<React.Suspense fallback={null}><GamePresentationHarness /></React.Suspense>} />
         <Route path="/dev/ds-gallery" element={<React.Suspense fallback={null}><DsGallery /></React.Suspense>} />
         <Route path="/dev/decoder-swatches" element={<React.Suspense fallback={null}><DecoderSwatches /></React.Suspense>} />
-        <Route path="/life/*" element={<PhoneServiceAuth><LifeApp /></PhoneServiceAuth>} />
-        <Route path="/admin/*" element={<AdminApp />} />
         {["/screen/:screenId/*", "/screens/:screenId/*"].map(p => <Route key={p} path={p} element={<WebSocketProvider><ScreenRenderer /></WebSocketProvider>} />)}
         {/* Host companion talks to the singleton wsService directly (auto-connects on
             first subscription) — no WebSocketProvider needed. Commands go out via HTTP. */}
@@ -243,7 +227,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/setup" element={<SetupWizard onComplete={() => window.location.href = '/'} />} />
         <Route path="/invite/:token" element={<InviteAccept />} />
         <Route path="/filter-poc" element={<FilterPoc />} />
-        <Route path="/feed/*" element={<FeedApp />} />
         {/* Deliberately ungated. Home Line is a tin can: no user provisioning,
             no sign-in, no identification. It is reachable only from the house
             network or over the VPN, and that is the access boundary. Whoever

@@ -9,7 +9,7 @@ and keeps every device one tab away on **Mosaic**.
 |---|---|
 | **Today** (default) | A live status sentence ("The house is drawing 505 W, with 9 lights on and a door open in the garage. Someone is in the office." — it names only rooms with someone in them right now; otherwise "The last movement was in the kitchen, 8 minutes ago."), then a **Today / Yesterday / Week** switch (remembered per viewer) over the household's timeline lanes: **power** as a filled area with the day's kWh, **events** (a doorbell's rings) as dots at mid-height with a ring count (a dot, not a full-height tick, so a ring never reads as the now line), **occupancy** (a room's presence) as bars with hours occupied, **screen** (a TV plug) as bars with hours on and kWh. A day strip runs midnight to midnight with 6-hour guides (12a / 6a / 12p / 6p); today's strip carries a **now** line and the hours still to come are dimmed. Week is seven thin rows per lane, oldest first, today last, each with a two-letter weekday (Su Mo Tu …); eight lanes of a week fit a 900 px-tall screen. A day has data only when the lane's entity held a known value somewhere inside that day (a value carried in from before midnight counts; a day before its first point, or one it spent unavailable, does not). A lane with no history on any day says "No history" and claims no total — never "0 rings" or "0 h". Today re-reads every minute while the page is visible; Yesterday and Week are settled and read once. |
 | **Mosaic** | Every device as one small square carrying an icon for its kind, grouped **by room** or **by type** (remembered per viewer). The colour is what it is doing: amber on, blue someone there, orange open, a cool-to-warm round **dot** for a temperature (55 °F blue to 85 °F red; °C converted), dark for quiet. Attention is graded: a red outline on top of any fill for **needs attention** (stuck "on", low battery); a device **not answering** (unavailable) is dimmed (45 %) with a faint red hairline instead, and its tooltip and label say "not answering" — a large install has dozens of sleeping sensors, and a red ring on each would drown the stuck one. Squares are 22 px (34 px with 20 px icons and 4 px gaps on a coarse pointer). A group header counts what is lively ("3 on"). The only words on the board are group names: a square explains itself in a tooltip ("Kitchen light · On · changed 8:29 pm") on hover, keyboard focus or a first tap, and opens its drawer on a click or a second tap. A legend names the colours, "Not answering" included. |
-| **Rooms** | One row per room: name, lights ("2 on" with an amber dot; a dark room says nothing), temperature, last motion — a cell is a figure or blank, never a dash. Tap a row to open the room in place: lights with switches (and a room-level "Turn off all N"), then plugs / doors / media / fans, then "Show all N readings and switches" for sensors, batteries, meters and automation flags. Roomless entities gather under "Elsewhere", last. |
+| **Rooms** | One row per room: name, lights ("2 on" with an amber dot; a dark room says nothing), temperature, last motion — a cell is a figure or blank, never a dash. Tap a row to open the room in place: lights with switches (and a room-level "Turn off all N"), then plugs / doors / media / fans, then "Show all N readings and switches" for sensors, batteries, meters and automation flags. Roomless entities gather under "Elsewhere", last. Turning off a group keeps keyboard focus on the room header and shows progress in the expanded room. A partial failure names the lamps and offers Retry for those still on. A confirmed off reading retires a lamp from that command, including while the acknowledgement is pending. If a refresh removes a focused Retry, focus returns to the room header. |
 | **Cameras** | The camera grid, unchanged. |
 
 **Where the old views went.** **Now**'s sentence heads Today; its On list and
@@ -34,6 +34,14 @@ a lamp off all day draws a flat band, a door kept shut the same, and a doorbell
 nobody rang an empty axis over "No rings in this range". Highcharts is lazy-loaded, so it stays out of the home
 bundle until a drawer opens.
 
+Rooms and Mosaic keep the drawer on the currently selected device through
+polls. A failed poll keeps the accepted reading and focus. If a successful
+poll removes the device, the drawer closes and focus returns to the expanded
+room header when present, or to the Home Assistant region. A device that
+returns can be opened again from its row or square. If Mosaic's grouping is
+unavailable, the board and its drawer close until grouping returns and a
+device is selected again.
+
 Tapping a **lane** opens the same drawer for the lane's primary entity, plus
 what the lane adds below the history: the Power lane gets **where the power
 goes** (the draw, today's and this month's kWh in a sentence, then the top
@@ -50,8 +58,12 @@ records on motion, so the clip with the visitor may end just before the button
 or start just after. No clip that close reads "No recording near this ring",
 never a broken player. Clips are read per local day the rings could fall in
 (including a day just across midnight), one request per day; a failed day costs
-only its own clips. When every day fails, every ring is still listed with its
-time, under "Clips could not be loaded." and a Retry. The **4 newest** matched
+only its own clips. If a failed day could contain an unmatched ring, it reads
+"Recording availability unknown" with a Retry for only the unavailable days;
+already loaded clips remain visible while those days reload. A ring reads "No
+recording near this ring" only when every relevant day lookup succeeded. When
+every day fails, every ring is still listed with its time, under "Clips could
+not be loaded." and a Retry. The **4 newest** matched
 clips load eagerly; older ones offer **Show clip**. A clip is a picture until
 tapped: its first frame (no native controls, at most 12 rem tall) under one play
 button; the controls appear once it plays. A matched clip the camera then
@@ -92,7 +104,7 @@ where control is allowed *and* plausibly wanted.
 | Camera | `__app_modules/household/camera/server/adapters/CameraClipLibrary.mjs` | A camera's recorded clips for a day (ledger, else a live camera search) and one clip's bytes, cached on disk. See [camera-feed.md](../camera-feed.md#recorded-clips). |
 | API | `__backend/src/4_api/v1/handlers/home-dashboard/entities.mjs` | `GET /api/v1/home-dashboard/entities`; presents each `HomeEntity` as the response DTO and passes `summary` and `mosaic` through; `Cache-Control: no-store`. |
 | API | `__backend/src/4_api/v1/handlers/home-dashboard/timeline.mjs` | `GET /api/v1/home-dashboard/timeline` and `GET /api/v1/home-dashboard/entities/:entityId/history`; pass the range (default `today` / `24h`) through — validation and the 400/404 mapping live in the use cases; `Cache-Control: no-store`. |
-| Browser | `__app_modules/household/home/browser/` | `HomeApp` (AppChrome: Today / Mosaic / Rooms / Cameras; bottom tabs on mobile, rail on tablet-up; one `DismissStackProvider`), `entities/useHomeEntities` (10 s poll while visible; a toggle sends an explicit `on`/`off`, shows the expected state until a reading agrees or 5 s pass, and blocks a second tap meanwhile; `turnOff(list)` fans out; `summary`, `mosaic` and `fetchedAt`), `entities/formatEntityState`, `now/composeStatus` (pure: the status sentence), `today/` (`TodayView`, `useTimeline`, `TimelineLane`, `laneGeometry` — time onto a 0..1000 viewBox, `dayWindow` running a day to its coming midnight with `nowMs`, `hourTicks` — `formatLaneTotal`, `LaneDetailSheet`, `PowerBreakdown`), `mosaic/` (`MosaicView`, `squareTone` — the one colour rule — `mosaicIcons`), `history/` (`useEntityHistory`, `historyChart` pure options, `HistoryChart`), `doorbell/` (`RingClips`, `useRingClips`, `matchRingToClip`), `rooms/summarizeRooms` (pure) + `rooms/RoomsView`, and `ui/` (`Disclosure`, `EntityRow`, `EntityDetailSheet`, `useEntityDetail`, `turnOffLabel`, `home-ui.scss` — the shared vocabulary). |
+| Browser | `__app_modules/household/home/browser/` | `HomeApp` (AppChrome: Today / Mosaic / Rooms / Cameras; bottom tabs on mobile, rail on tablet-up; one `DismissStackProvider`), `entities/useHomeEntities` (10 s poll while visible; a toggle sends an explicit `on`/`off`, shows the expected state until a reading agrees or 5 s pass, and blocks a second tap meanwhile; `turnOff(roomId, list)` fans out; `summary`, `mosaic` and `fetchedAt`), `entities/formatEntityState`, `now/composeStatus` (pure: the status sentence), `today/` (`TodayView`, `useTimeline`, `TimelineLane`, `laneGeometry` — time onto a 0..1000 viewBox, `dayWindow` running a day to its coming midnight with `nowMs`, `hourTicks` — `formatLaneTotal`, `LaneDetailSheet`, `PowerBreakdown`), `mosaic/` (`MosaicView`, `squareTone` — the one colour rule — `mosaicIcons`), `history/` (`useEntityHistory`, `historyChart` pure options, `HistoryChart`), `doorbell/` (`RingClips`, `useRingClips`, `matchRingToClip`), `rooms/summarizeRooms` (pure) + `rooms/RoomsView`, and `ui/` (`Disclosure`, `EntityRow`, `EntityDetailSheet`, `useEntityDetail`, `turnOffLabel`, `home-ui.scss` — the shared vocabulary). |
 
 ## API
 

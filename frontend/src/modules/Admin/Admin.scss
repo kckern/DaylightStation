@@ -1,3 +1,4 @@
+@use '../../styles/breakpoints' as bp;
 @import './Admin.variables.scss';
 
 // ──────────────────────────────────────────────
@@ -5,30 +6,60 @@
 // ──────────────────────────────────────────────
 
 .admin-layout {
-  // Sidebar
-  .mantine-AppShell-navbar {
-    background-color: var(--ds-bg-base);
+  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-rows: 48px minmax(0, 1fr);
+  grid-template-areas: "header header" "nav main";
+
+  > .ds-chrome__nav {
+    display: block;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0;
+    background: var(--ds-bg-base);
+    border: 0;
     border-right: 1px solid var(--ds-border);
-  }
-
-  // Header — sits atop the content area, inherits its background
-  .mantine-AppShell-header {
-    background-color: var(--ds-bg-surface);
-    border-bottom: 1px solid var(--ds-border);
-  }
-
-  // Main content area — the recessed "instrument panel"
-  // DO NOT set padding shorthand here — Mantine uses padding-top/inline-start
-  // for header (48px) and navbar (260px) offsets. Overriding kills those.
-  .mantine-AppShell-main {
-    background-color: var(--ds-bg-surface);
-    min-width: 0;
-    height: 100dvh;          // Fixed height so overflow-y actually engages
-    overflow-y: auto;         // Independent scroll for the main area
-    overflow-x: hidden;
-    box-shadow: var(--ds-shadow-inset);
-
     @include ds-scrollbar;
+  }
+
+  > .ds-chrome__header {
+    display: block;
+    padding: 0;
+    background: var(--ds-bg-surface);
+  }
+
+  > .ds-chrome__main {
+    min-width: 0;
+    padding: 0;
+    overflow-x: hidden;
+    background: var(--ds-bg-surface);
+    box-shadow: var(--ds-shadow-inset);
+    @include ds-scrollbar;
+  }
+
+  .admin-navigation-toggle { display: none; flex: none; }
+
+  .admin-breadcrumbs {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  @include bp.mobile-only {
+    .admin-navigation-toggle { display: inline-flex; }
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "header" "main";
+
+    > .ds-chrome__nav {
+      display: none;
+      grid-area: main;
+      z-index: var(--ds-z-sticky);
+    }
+
+    &--menu-open > .ds-chrome__nav { display: block; }
+    &--menu-open > .ds-chrome__main { visibility: hidden; }
   }
 
   // Apply themed scrollbar to all scrollable elements inside admin
@@ -44,7 +75,7 @@
 // ──────────────────────────────────────────────
 
 .admin-content {
-  padding: var(--ds-space-6) var(--ds-space-8);
+  padding: var(--ds-space-xxl) var(--ds-space-8);
 
   @media (max-width: 768px) {
     padding: var(--ds-space-4);
@@ -87,8 +118,8 @@
 // ──────────────────────────────────────────────
 
 .ds-page-header {
-  padding-bottom: var(--ds-space-5);
-  margin-bottom: var(--ds-space-6);
+  padding-bottom: var(--ds-space-xl);
+  margin-bottom: var(--ds-space-xxl);
   border-bottom: 1px solid var(--ds-border);
 
   .ds-page-title {
@@ -114,31 +145,6 @@
 .ds-field--select { max-width: 360px; }
 
 // ──────────────────────────────────────────────
-// Section Panels — replaces raw Paper for config sections
-// ──────────────────────────────────────────────
-
-.ds-section-panel {
-  position: relative;
-  border-left: 3px solid var(--ds-border);
-  transition: border-color var(--ds-transition-base);
-  padding: var(--ds-space-5) var(--ds-space-6) !important;
-
-  .ds-section-label {
-    font-family: var(--ds-font-mono);
-    font-size: 13px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    color: var(--ds-text-secondary);
-    margin-bottom: var(--ds-space-4);
-    text-transform: uppercase;
-  }
-
-  &:hover {
-    border-left-color: var(--ds-accent);
-  }
-}
-
-// ──────────────────────────────────────────────
 // Navigation items
 // ──────────────────────────────────────────────
 
@@ -149,6 +155,12 @@
   transition:
     background-color var(--ds-transition-fast),
     border-color var(--ds-transition-fast);
+
+  // Links fill the scroll rail, so keep the complete focus ring inside its clip.
+  &:focus-visible {
+    outline: var(--ds-focus-width) solid var(--ds-accent);
+    outline-offset: calc(-1 * var(--ds-focus-width));
+  }
 
   &:hover {
     background-color: var(--ds-bg-elevated) !important;

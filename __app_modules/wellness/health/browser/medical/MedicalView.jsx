@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Autocomplete, Button, Group, NumberInput, Stack, Text, TextInput } from '@mantine/core';
-import { SectionCard, StatCard, Sheet, LoadingState, ErrorState, EmptyState } from '@/lib/ui';
-import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { Autocomplete, Button, Group, NumberInput, Stack, TextInput } from '@mantine/core';
+import { SubmitButton, SectionCard, StatCard, Sheet, LoadingState, ErrorState, EmptyState, StateMessage, useRetryRegion, useSheetSubmission } from '@/lib/ui';
+import { invalidateApiResources, useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { unavailableError } from "../healthResources.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
@@ -10,6 +10,7 @@ import { MEDICAL_METRICS } from "../../portable/contracts/health/medicalMetrics.
 
 const logger = createAppLogger('health').child('medical');
 
+const medicalPath = 'api/v1/health/medical';
 const METRIC_SUGGESTIONS = Object.keys(MEDICAL_METRICS);
 const labelFor = (metric) => MEDICAL_METRICS[metric]?.label || metric;
 const formatValue = (r) => (r?.value2 != null ? `${r.value}/${r.value2}` : r?.value ?? '—');
@@ -17,63 +18,36 @@ const emptyForm = () => ({ metric: '', value: '', value2: '', unit: '', date: lo
 
 /** Grouped medical readings (BP, labs, vitals) — manual entry, no interpretation. */
 export function MedicalView() {
-  const med = useApiResource('api/v1/health/medical', { label: 'medical', logger });
+  const med = useApiResource(medicalPath, { label: 'medical', logger });
+  const { regionProps, retry } = useRetryRegion(med.reload, med.loading);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState(emptyForm());
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const [removeError, setRemoveError] = useState(null);
 
-  const openAdd = () => { setForm(emptyForm()); setError(null); setOpen(true); };
-
-  const save = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      const isBp = form.metric.trim() === 'bp';
-      const body = {
-        metric: form.metric.trim(),
-        value: Number(form.value),
-        value2: isBp && form.value2 !== '' ? Number(form.value2) : null,
-        unit: form.unit,
-        date: form.date,
-        note: form.note,
-      };
-      await DaylightAPI('api/v1/health/medical', body, 'POST');
-      logger.info('reading.added', { metric: body.metric });
-      setOpen(false);
-      med.reload();
-    } catch (err) {
-      logger.error('reading.add.failed', { error: err?.message });
-      setError(err);
-    } finally {
-      setSaving(false);
-    }
-  };
+  const openAdd = () => { setRemoveError(null); setOpen(true); };
 
   const remove = async (id, metric) => {
     if (!window.confirm('Delete this reading?')) return;
     try {
-      await DaylightAPI(`api/v1/health/medical/${id}`, {}, 'DELETE');
+      await DaylightAPI(`${medicalPath}/${id}`, {}, 'DELETE');
       logger.info('reading.removed', { id, metric });
-      med.reload();
+      invalidateApiResources(path => path === medicalPath);
     } catch (err) {
       logger.error('reading.remove.failed', { id, error: err?.message });
-      setError(err);
+      setRemoveError(err);
     }
   };
 
   const metrics = med.data?.metrics || [];
-  const isBp = form.metric.trim() === 'bp';
 
   return (
-    <div className="health-medical">
+    <section className="health-medical" aria-label="Medical readings" {...regionProps}>
       {metrics.length ? <Group justify="flex-end" mb="sm">
         <Button size="xs" onClick={openAdd}>Add reading</Button>
       </Group> : null}
 
       {med.loading ? <LoadingState label="medical readings" rows={4} /> : null}
-      {unavailableError(med) ? <ErrorState error={med.error} onRetry={med.reload} label="Medical readings" /> : null}
-      {!open && error ? <ErrorState error={error} onRetry={() => { setError(null); med.reload(); }} label="Reading could not be deleted" /> : null}
+      {unavailableError(med) ? <ErrorState error={med.error} onRetry={retry} label="Medical readings" /> : null}
+      {!open && removeError ? <ErrorState error={removeError} onRetry={() => { setRemoveError(null); retry(); }} label="Reading could not be deleted" /> : null}
       {!med.loading && !unavailableError(med) && !metrics.length ? (
         <EmptyState title="No medical readings yet"
           hint="Add a blood pressure, glucose, or lab reading to start tracking."
@@ -95,30 +69,58 @@ export function MedicalView() {
         </SectionCard>
       )) : null}
 
-      <Sheet open={open} onClose={() => setOpen(false)} title="Add reading">
-        <Stack gap="sm">
-          {error ? <Text size="sm" c="red">{error.message}</Text> : null}
-          <Autocomplete label="Metric" placeholder="e.g. bp, glucose, resting_hr"
-            data={METRIC_SUGGESTIONS} value={form.metric}
-            onChange={(v) => setForm({ ...form, metric: v, unit: MEDICAL_METRICS[v]?.units[0] || form.unit })} />
-          <NumberInput label={isBp ? 'Systolic' : 'Value'} value={form.value}
-            onChange={(v) => setForm({ ...form, value: v })} />
-          {isBp ? (
-            <NumberInput label="Diastolic" value={form.value2}
-              onChange={(v) => setForm({ ...form, value2: v })} />
-          ) : null}
-          <TextInput label="Unit" placeholder="e.g. mmHg, mg/dL, bpm" value={form.unit}
-            onChange={(e) => setForm({ ...form, unit: e.currentTarget.value })} />
-          <TextInput type="date" label="Date" value={form.date}
-            onChange={(e) => setForm({ ...form, date: e.currentTarget.value })} />
-          <TextInput label="Note" placeholder="optional" value={form.note}
-            onChange={(e) => setForm({ ...form, note: e.currentTarget.value })} />
-          <Button onClick={save} loading={saving} disabled={!form.metric.trim() || form.value === ''}>
-            Save reading
-          </Button>
-        </Stack>
-      </Sheet>
-    </div>
+      {open && <MedicalReadingSheet onClose={() => setOpen(false)} />}
+    </section>
+  );
+}
+
+function MedicalReadingSheet({ onClose }) {
+  const [form, setForm] = useState(emptyForm);
+  const { submit, saving, failure } = useSheetSubmission(onClose, error => {
+    logger.error('reading.add.failed', { error: error?.message });
+  });
+  const metric = form.metric.trim();
+  const isBp = metric === 'bp';
+  const valid = Boolean(metric) && form.value !== '';
+
+  const save = async () => {
+    const body = {
+      metric,
+      value: Number(form.value),
+      value2: isBp && form.value2 !== '' ? Number(form.value2) : null,
+      unit: form.unit,
+      date: form.date,
+      note: form.note,
+    };
+    await DaylightAPI(medicalPath, body, 'POST');
+    logger.info('reading.added', { metric });
+    invalidateApiResources(path => path === medicalPath);
+  };
+
+  return (
+    <Sheet open onClose={onClose} title="Add reading">
+      <Stack component="form" gap="sm" onSubmit={event => submit(event, save, valid)} aria-label="Add reading">
+        {failure && <StateMessage state="error" role="alert" title="Could not save reading" detail={failure.message} />}
+        <Autocomplete label="Metric" placeholder="e.g. bp, glucose, resting_hr"
+          data={METRIC_SUGGESTIONS} value={form.metric}
+          onChange={(v) => setForm({ ...form, metric: v, unit: MEDICAL_METRICS[v]?.units[0] || form.unit })} />
+        <NumberInput label={isBp ? 'Systolic' : 'Value'} value={form.value}
+          onChange={(v) => setForm({ ...form, value: v })} />
+        {isBp ? (
+          <NumberInput label="Diastolic" value={form.value2}
+            onChange={(v) => setForm({ ...form, value2: v })} />
+        ) : null}
+        <TextInput label="Unit" placeholder="e.g. mmHg, mg/dL, bpm" value={form.unit}
+          onChange={(e) => setForm({ ...form, unit: e.currentTarget.value })} />
+        <TextInput type="date" label="Date" value={form.date}
+          onChange={(e) => setForm({ ...form, date: e.currentTarget.value })} />
+        <TextInput label="Note" placeholder="optional" value={form.note}
+          onChange={(e) => setForm({ ...form, note: e.currentTarget.value })} />
+        <SubmitButton density="compact" disabled={!valid} pending={saving} aria-label="Save reading">
+          {saving ? 'Saving reading…' : 'Save reading'}
+        </SubmitButton>
+      </Stack>
+    </Sheet>
   );
 }
 export default MedicalView;

@@ -3,8 +3,8 @@
 ## Layout Structure
 
 ```
-.feed-app              (height: 100vh, overflow: hidden)
-  .feed-tabs           (nav bar — hidden on /feed/scroll routes)
+.feed-app              (viewport height, safe-area padding, overflow: hidden)
+  .feed-tabs           (persistent nav, compact on /feed/scroll routes)
   .feed-content        (flex: 1, overflow-y: auto)  ← SCROLL CONTAINER
     .scroll-layout     (display: flex, min-height: 100vh)
       .scroll-view     (max-width: 540px on mobile, flex: 1 on desktop)
@@ -15,7 +15,10 @@
 
 ### Critical: Scroll Container
 
-**The scroll container is `.feed-content`, NOT `window`.** The `.feed-app` has `height: 100vh; overflow: hidden`, so the document/window never scrolls. All scrolling happens on `.feed-content` which has `overflow-y: auto`.
+The `.feed-app` uses `PlaybackFrame` to fit the viewport and keep its routed content inside the safe area. The `.feed-content` element has `overflow-y: auto` and owns scrolling.
+
+The player mini bar and expanded sheet position themselves against the viewport
+and use its safe-area insets. They remain available while changing Feed modes.
 
 This means:
 - Use `el.scrollTop` (not `window.scrollY`) to read scroll position
@@ -134,6 +137,18 @@ The monitor is enabled only by `?debug=1`; normal reading sessions do not run it
 
 Uses `IntersectionObserver` on a sentinel div at the bottom of the card list. A fresh view creates a server-owned session with `POST /api/v1/feed/scroll/sessions`; subsequent batches use `GET /api/v1/feed/scroll/sessions/:id`. The browser keeps that ID in `sessionStorage` under the active focus/filter identity. On reload it requests `?resume=1`, restoring the complete served-item sequence as well as pool/cursor state. Snapshots are persisted per user for 24 hours, survive a server restart, and are physically pruned after expiry. When sources exhaust, the sentinel stops and the UI renders a caught-up state.
 
+The active focus and filter own the current list request, including pagination. Changing either cancels the previous request and disconnects its sentinel. The new filter loads its own session before observing for the next page.
+
+Closing detail restores the opener and the previous pixel offset at the same list width. After the layout changes width, Scroll locates the original card in the destination virtual window and returns keyboard focus to it. Wheel, touch, keyboard input, or moving focus to another visible control ends a pending return. A persistent control that already held focus when detail closed allows the opener to regain focus. Opening a card supersedes an unfinished initial checkpoint restoration.
+
+Scroll applies queued item actions from the active account to its loaded cards. When replay settles, it resumes the current session with a GET and updates the loaded rows with the returned item state. The window keeps its position and cursor, and newer local edits are preserved. A failed refresh, including one that stalls for ten seconds, leaves the cards available with a retry for the same read. A stored session ID qualifies for reconciliation once its list has loaded. Changing the focus or filter cancels the refresh.
+
+“Continue 30 more” extends the reading boundary for the current filter visit. Retry keeps that extension. Switching filters or returning to a previous filter starts with the saved reading preference, including when resuming a server session that has already served more items.
+
+The Feed tab bar wraps when the available width narrows. Reading appearance opens
+below the full tab bar and uses the height between that bar and the safe bottom
+edge to size its own scroll region.
+
 Card rendering is windowed to at most 60 mounted cards. Phone layouts use measured top/bottom spacers; desktop masonry keeps its complete position map while mounting only viewport and measurement-window cards. This bounds React, media, observer, layout, and paint work without truncating scroll history.
 
 `content-visibility: auto` applies on both phone and desktop to reduce off-screen layout/paint work. Route-level snapshots preserve the loaded items and scroll position while switching Feed modes. Masonry measurement and placement events are debug-only; normal sessions retain error-level overlap reporting without per-card log traffic.
@@ -141,6 +156,8 @@ Card rendering is windowed to at most 60 mounted cards. Phone layouts use measur
 The sticky product controls expose the four tier moods and every source discovered in the current session through shareable `?filter=` state. On phones the controls are a single-line horizontal strip and the source chooser opens as a bounded sheet. Each card includes an explicit keyboard-focusable Open action and a “Why shown” disclosure identifying its source and tier, with `more`, `less`, `mute`, reset, and one-step source-focus actions. Preferences are account-scoped; muted sources are removed immediately in the client and excluded from future assembled batches, while explicit filtered views remain available for inspection/reset. Items newer than the prior visit are marked. The reading settings can optionally stop Scroll after 30, 60, or 100 items; the completion surface can extend the current session by 30 or move directly to saved items.
 
 Scroll detail offers notes/highlights and a device-local Download action. A failed cold detail request checks the user-scoped IndexedDB edition before presenting an actionable error without discarding the deep link. Extraction failures retain a visible original-publisher link even when an iframe fallback is attempted, and completed empty YouTube responses fall back to the embed instead of spinning indefinitely. Phone detail provides visible Previous and Next buttons in addition to swipe and keyboard navigation. Downloading stores the normalized item and the current detail response; it does not promise that third-party images or streaming media remain available offline.
+
+On desktop, the named article dialog opens with focus on Back to feed and keeps Tab within the dialog and its Previous and Next controls. Moving between articles keeps focus on the active control when it is still available. Escape follows the shared dismiss stack, and closing the dialog returns focus to the opening card when it is available.
 
 ## File Map
 

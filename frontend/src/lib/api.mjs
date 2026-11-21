@@ -1,3 +1,4 @@
+import { getToken } from './auth.js';
 import {readRequestContextHeaders} from './requestContextHeaders.mjs';
 import getLogger from './logging/Logger.js';
 import { getDeviceId } from './deviceIdentity.js';
@@ -28,11 +29,34 @@ export const buildHeaders = (token, withContentType = true) => ({
 
 // In dev mode, Vite proxy handles forwarding to backend (see vite.config.js)
 // In production, frontend and backend are served from same origin
-const getBaseUrl = () => window.location.origin;
-const getWsBaseUrl = () => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${protocol}//${window.location.host}`;
-};
+const getBaseUrl = () => globalThis.window?.location?.origin || '';
+
+function requestToken() {
+    try { return getToken(); }
+    catch { return null; } // Same-origin requests can still authenticate with cookies.
+}
+
+function prepareApiRequest(path, { method = 'GET', data, signal, ifMatch, withContentType = true, keepalive = false } = {}) {
+    const route = path.replace(/^\/|\/$/g, '');
+    const url = `${getBaseUrl()}/${route}`;
+    const multipart = typeof FormData !== 'undefined' && data instanceof FormData;
+    const headers = buildHeaders(requestToken(), withContentType && !multipart);
+    if (ifMatch != null) headers['If-Match'] = ifMatch;
+    const options = {
+        method,
+        headers,
+        signal,
+        ...(keepalive ? { keepalive: true } : {}),
+        ...(data === undefined ? {} : { body: multipart ? data : JSON.stringify(data) }),
+    };
+    return { url, options };
+}
+
+/** Same-origin request with JSON or FormData for consumers that interpret status and body together. */
+export async function daylightApiResponse(path, init, fetcher = fetch) {
+    const { url, options } = prepareApiRequest(path, init);
+    return fetcher(url, options);
+}
 
 export const DaylightAPI = async (path, data = {}, method = 'GET', requestOptions = {}) => {
 
@@ -41,27 +65,18 @@ export const DaylightAPI = async (path, data = {}, method = 'GET', requestOption
         method = 'POST';
     }
     
-   // console.log("DaylightAPI called with path:", path, "data:", data, "method:", method);
-    //remove leading and trailing slashes
-    path = path.replace(/^\/|\/$/g,'');
-    const baseUrl = getBaseUrl();
-
-    const token = localStorage.getItem('ds_token');
     const requestPage = window.location.pathname;
-    const options = {
+    const token = requestToken();
+    const requestPath = path.replace(/^\/+|\/+$/g, '');
+    const { url, options } = prepareApiRequest(path, {
         method,
-        headers: buildHeaders(token),
+        data: method === 'GET' ? undefined : data,
         signal: requestOptions.signal,
-        ...(requestOptions.keepalive ? { keepalive: true } : {}),
-    };
-
-    if (method !== 'GET') {
-        options.body = JSON.stringify(data);
-    }
-
+        keepalive: requestOptions.keepalive,
+    });
     let response;
     try {
-        response = await fetch(`${baseUrl}/${path}`, options);
+        response = await fetch(url, options);
     } catch (err) {
         if (err?.name === 'AbortError') throw err;
         getLogger().warn('api.network.error', { path, error: err?.message });
@@ -71,12 +86,15 @@ export const DaylightAPI = async (path, data = {}, method = 'GET', requestOption
     }
 
     if (!response.ok) {
+        const errorText = await response.text().catch(error => {
+            if (error?.name === 'AbortError') throw error;
+            return '';
+        });
         if (response.status === 401 && window.daylight?.deviceId === 'phone'
-            && requestPage === window.location.pathname && !path.startsWith('api/v1/auth/')
-            && token === localStorage.getItem('ds_token')) {
+            && requestPage === window.location.pathname && !requestPath.startsWith('api/v1/auth/')
+            && token === requestToken()) {
             window.dispatchEvent(new Event('daylight:phone-sign-in-needed'));
         }
-        const errorText = await response.text().catch(() => '');
         const transient = TRANSIENT_STATUSES.has(response.status);
         getLogger()[transient ? 'warn' : 'error']('api.response.error', { path, status: response.status, statusText: response.statusText });
         // `status` is attached (not just embedded in the message string) so a
@@ -99,7 +117,8 @@ export const DaylightAPI = async (path, data = {}, method = 'GET', requestOption
     if (response.status === 204) return null;
     try {
         return await response.json();
-    } catch {
+    } catch (err) {
+        if (err?.name === 'AbortError') throw err;
         getLogger().warn('api.response.unreadable', { path, status: response.status });
         const error = new Error(`Unreadable response (HTTP ${response.status})`);
         error.status = response.status;
@@ -132,87 +151,28 @@ const errorBodyDetail = (text) => {
  * @returns {Promise<string>} the response body as text
  */
 export const DaylightAPIText = async (path) => {
-    path = path.replace(/^\/|\/$/g, '');
-    const baseUrl = getBaseUrl();
-    const token = localStorage.getItem('ds_token');
-    const response = await fetch(`${baseUrl}/${path}`, {
-        headers: buildHeaders(token, false),
-    });
+    const response = await daylightApiResponse(path, { withContentType: false });
     if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     return response.text();
 };
 
-export const DaylightWebsocketUnsubscribe = (path) => {
-    const baseUrl = getWsBaseUrl();
-    const ws = new WebSocket(`${baseUrl}/ws/${path}`);
-
-    return () => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.close();
-            console.log("WebSocket connection closed for path:", path);
-        }
-    };
-};
-const activeWebsockets = new Map();
-
-export const DaylightWebsocketSubscribe = (path, callback) => {
-    if (activeWebsockets.has(path)) {
-        getLogger().warn('api.websocket.already_active', { path });
-        return activeWebsockets.get(path).unsubscribe;
-    }
-
-    const baseUrl = getWsBaseUrl();
-    const ws = new WebSocket(`${baseUrl}/ws/${path}`);
-
-    ws.onopen = () => console.log("WebSocket connection opened for path:", path);
-    ws.onmessage = (event) => {
-        try {
-            const message = JSON.parse(event.data);
-            callback(message);
-        } catch (error) {
-            console.error("Error parsing WebSocket message:", error);
-        }
-    };
-    ws.onclose = () => {
-        console.log("WebSocket connection closed for path:", path);
-        activeWebsockets.delete(path);
-    };
-    ws.onerror = (error) => console.error("WebSocket error for path:", path, error);
-
-    const unsubscribe = () => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.close();
-        }
-        activeWebsockets.delete(path);
-    };
-
-    activeWebsockets.set(path, { ws, unsubscribe });
-    return unsubscribe;
-};
-
-
-
 export const DaylightStatusCheck = async (path, data = {}, method = 'GET') => {
-    //remove leading and trailing slashes
-    path = path.replace(/^\/|\/$/g, '');
-    const baseUrl = getBaseUrl();
-    //same as DaylightAPI but only returns the status code
-    const token = localStorage.getItem('ds_token');
-    const options = {
+    const { url, options } = prepareApiRequest(path, {
         method,
-        headers: buildHeaders(token),
-    };
-    if (method !== 'GET') {
-        options.body = JSON.stringify(data);
-    }
-    let response = await fetch(`${baseUrl}/${path}`, options);
-    while (response.redirected) {
+        data: method === 'GET' ? undefined : data,
+    });
+    let response = await fetch(url, options);
+    // A fetch response already carries the final status after a redirect. Keep
+    // the legacy GET recheck inside this origin. Writes must execute only once.
+    const checked = new Set([url]);
+    while (method === 'GET' && response.redirected && !checked.has(response.url)
+        && new URL(response.url).origin === getBaseUrl()) {
+        checked.add(response.url);
         response = await fetch(response.url, options);
     }
-    const status = response.status;
-    return status;
+    return response.status;
 };
 
 export const DaylightMediaPath = (path) => {

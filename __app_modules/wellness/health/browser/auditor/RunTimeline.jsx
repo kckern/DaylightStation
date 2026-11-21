@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Group, NumberInput, Select, Stack, Switch, Text, UnstyledButton } from '@mantine/core';
-import { SectionCard, LoadingState, ErrorState, EmptyState } from "../../../../../frontend/src/lib/ui/index.js";
+import { SectionCard, LoadingState, ErrorState, EmptyState, useRetryRegion } from "../../../../../frontend/src/lib/ui/index.js";
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { cleanupPath } from "../cleanup/CleanupQuestions.jsx";
@@ -78,24 +78,43 @@ function SkipRow({ row }) {
  * reports how many rows survive the min-cost filter, so the timeline can say
  * when none on any loaded page do.
  */
-function JournalPage({ filters, offset, minCost, isLast, onMore, onOpen, onShown }) {
+function JournalPage({ filters, offset, minCost, isLast, onMore, onOpen, onShown, onSettled }) {
   const page = useApiResource(journalPath({ ...filters, offset }), { swr: true });
+  const settled = !page.loading && !page.revalidating;
+  const [requestedRetry, setRequestedRetry] = useState(false);
+  const { regionProps, retry } = useRetryRegion(() => {
+    setRequestedRetry(true);
+    page.reload();
+  }, !page.data && page.loading);
   const rows = (page.data?.rows || []).filter(row => minCost == null || (row.runId && (row.costUsd ?? 0) >= minCost));
   const shown = page.data ? rows.length : null;
   useEffect(() => { onShown(offset, shown); }, [onShown, offset, shown]);
   useEffect(() => () => onShown(offset, null), [onShown, offset]);
-  if (!page.data) return page.error ? <ErrorState error={page.error} onRetry={page.reload} label="Run timeline" /> : <LoadingState label="Run timeline" />;
-  if (offset === 0 && !page.data.rows.length) return <EmptyState title="No runs in this range" hint="Runs from the last seven days appear here." />;
-  return <>
-    {rows.map((row, i) => (row.runId
-      ? <RunRow key={`${row.runId}:${row.at}`} row={row} onOpen={onOpen} />
-      : <SkipRow key={`skip:${row.at}:${i}`} row={row} />))}
-    {isLast && offset + PAGE_SIZE < page.data.total ? <Button variant="subtle" onClick={onMore}>Load more</Button> : null}
-  </>;
+  useEffect(() => { onSettled?.(settled); }, [onSettled, settled]);
+
+  const firstPageEmpty = offset === 0 && page.data?.rows.length === 0;
+  const canLoadMore = isLast && offset + PAGE_SIZE < page.data?.total;
+  const hasResults = firstPageEmpty || rows.length > 0 || canLoadMore;
+  // An explicitly retried page needs a visible destination even when all its
+  // rows are filtered out. Ordinary empty pages keep the timeline's layout.
+  if (page.data && !hasResults && !requestedRetry) return null;
+
+  return <Stack component="section" {...regionProps} gap="xs" aria-label={offset ? `Run timeline, page ${offset / PAGE_SIZE + 1}` : 'Run timeline'}
+    onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setRequestedRetry(false); }}>
+    {!page.data ? (page.error ? <ErrorState error={page.error} onRetry={retry} label="Run timeline" /> : <LoadingState label="Run timeline" />)
+      : firstPageEmpty ? <EmptyState title="No runs in this range" hint="Runs from the last seven days appear here." />
+      : <>
+        {rows.map((row, i) => (row.runId
+          ? <RunRow key={`${row.runId}:${row.at}`} row={row} onOpen={onOpen} />
+          : <SkipRow key={`skip:${row.at}:${i}`} row={row} />))}
+        {canLoadMore ? <Button variant="subtle" onClick={onMore}>Load more</Button> : null}
+        {!hasResults ? <Text role="status" size="sm" c="dimmed">{minCost == null ? 'No more runs.' : 'No matching runs on this page.'}</Text> : null}
+      </>}
+  </Stack>;
 }
 
 /** The auditor's run journal, newest first, with filters and paging. */
-export function RunTimeline({ onOpen }) {
+export function RunTimeline({ onOpen, onFirstPageSettled }) {
   const logger = useMemo(() => getLogger().child({ component: 'health-auditor' }), []);
   const [changed, setChanged] = useState(false);
   const [trigger, setTrigger] = useState(null);
@@ -121,7 +140,8 @@ export function RunTimeline({ onOpen }) {
       <Stack gap="xs">
         {filteredEmpty ? <EmptyState title={`No runs at or above ${formatUsd(cost)} on the loaded pages`} /> : null}
         {Array.from({ length: pages }, (_, i) => <JournalPage key={`${changed}:${trigger}:${i}`} filters={filters}
-          offset={i * PAGE_SIZE} minCost={cost} isLast={i === pages - 1} onMore={() => setPages(pages + 1)} onOpen={onOpen} onShown={onShown} />)}
+          offset={i * PAGE_SIZE} minCost={cost} isLast={i === pages - 1} onMore={() => setPages(pages + 1)}
+          onOpen={onOpen} onShown={onShown} onSettled={i === 0 ? onFirstPageSettled : undefined} />)}
       </Stack>
     </Stack>
   </SectionCard>;

@@ -1,15 +1,5 @@
-import { useEffect } from "react";
-import { DaylightAPI } from "../../../../../../frontend/src/lib/api.mjs";
-import "./OfficeOff.scss";
+import PowerOffAction from '../PowerOffAction.jsx';
 
 export default function OfficeOff({ clear }) {
-  useEffect(() => {
-    DaylightAPI("api/v1/home/office_tv/off").then(() => {
-      const event = new KeyboardEvent("keydown", { key: "Escape" });
-      window.dispatchEvent(event);
-      clear();
-    });
-  }, [clear]);
-
-  return null;
+  return <PowerOffAction path="api/v1/home/office_tv/off" target="the office TV" clear={clear} />;
 }

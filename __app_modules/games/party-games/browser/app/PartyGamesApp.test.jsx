@@ -16,15 +16,16 @@ vi.mock("./sessionClient.js",async original=>({...await original(),fetchBoot:vi.
 vi.mock('@/hooks/useWebSocket.js',()=>({useWebSocketStatus:()=>({connected:socket.connected}),useWebSocketSubscription:(_,fn)=>{socket.handler=fn;}}));
 vi.mock("../../../../../__capabilities/screen-host/browser/input/adapters/GamepadAdapter.js",()=>({acquireGamepadInputHost:()=>({release:()=>{}}),bindNextGamepadPress:()=>{},cancelPendingGamepadBind:()=>{},clearGamepadRoleBindings:()=>{},restoreGamepadRoleBindings:()=>{}}));
 vi.mock("../effects/EffectOverlay.jsx",()=>({default:()=> <div>Effect rail</div>}));
-vi.mock("./PartyGamesExperience.jsx",()=>({default:function Experience({onComplete,sessionId,setId,registerRemoteAction,seats}) {
+vi.mock("./PartyGamesExperience.jsx",()=>({default:function Experience({onComplete,sessionId,setId,registerRemoteAction,seats,reconciledSession}) {
  React.useEffect(()=>setId==='remote-navigation'?registerRemoteAction(()=>false):undefined,[setId,registerRemoteAction]);
+ if (reconciledSession) return <span data-testid="reconciled-session">{reconciledSession.header?.revision}:{reconciledSession.state?.phase}</span>;
  if (sessionId === 'game:one') return <><span data-testid="attached-seats">{seats.map(seat=>seat.id).join(',')}</span><button onClick={()=>onComplete({outcome:{kind:'completed'},scores:[]})}>Complete {sessionId}</button></>;
  return setId==='remote-navigation'?<><button>Decrease wager</button><button>Increase wager</button><button>Lock wager</button></>:<button onClick={()=>onComplete({outcome:{kind:'completed'},scores:[]})}>Complete {sessionId}</button>;
 }}));
 const config={household_members:[{id:'a',name:'Alice'},{id:'b',name:'Bob'}],team_presets:[]};
 const sets=[{id:'charades:family',definitionId:'charades:family',game:'charades',setId:'family',presenter_id:'charades-stage',setup:'individuals',setupProfile:{kind:'individuals'},competition:false,valid:true}];
 afterEach(()=>vi.restoreAllMocks());
-beforeEach(()=>{socket.connected=true;window.localStorage.clear();window.history.replaceState({},'','/screens/living-room/fhe'); fetchBoot.mockReset().mockResolvedValue({config,sets});createSession.mockReset().mockResolvedValue({header:{session_id:'session-one'}});});
+beforeEach(()=>{socket.connected=true;window.localStorage.clear();window.history.replaceState({},'','/screens/living-room/fhe');fetchSession.mockReset();fetchBoot.mockReset().mockResolvedValue({config,sets});createSession.mockReset().mockResolvedValue({header:{session_id:'session-one'}});});
 it('propagates AppContainer definition into casual setup and creates only one session in StrictMode', async()=>{
  render(<React.StrictMode><AppContainer open={{app:'party-games/charades:family'}} clear={()=>{}}/></React.StrictMode>);
  const start=await screen.findByRole('button',{name:'Start with 2 players'});
@@ -304,6 +305,18 @@ it('reconciles a missed restart on WebSocket reconnect', async () => {
   socket.connected = true; view.rerender(<PartyGamesApp definitionId="jeopardy:night" />);
   await screen.findByRole('button', { name: 'Complete new' });
   expect(fetchSession).toHaveBeenCalledWith('old');
+});
+
+it('passes a same-session reconnect snapshot to the mounted experience', async () => {
+  window.history.replaceState({}, '', '/screens/living-room/party-games/jeopardy:night?session=old');
+  fetchBoot.mockResolvedValueOnce({ config, sets: [jeopardySet], attachedSession: attached('old') });
+  fetchSession.mockResolvedValue({ ...attached('old'), header: { ...attached('old').header, revision: 4 }, state: { phase: 'recovered' } });
+  const view = render(<PartyGamesApp definitionId="jeopardy:night" />);
+  await screen.findByRole('button', { name: 'Complete old' });
+  socket.connected = false; view.rerender(<PartyGamesApp definitionId="jeopardy:night" />);
+  socket.connected = true; view.rerender(<PartyGamesApp definitionId="jeopardy:night" />);
+  expect(await screen.findByTestId('reconciled-session')).toHaveTextContent('4:recovered');
+  expect(fetchSession).toHaveBeenCalledTimes(1);
 });
 
 it('rejects an explicit URL attachment for a different requested pack', async () => {

@@ -4,11 +4,8 @@
 // The desktop sidebar is not only a CSS arrangement: the widgets that live in
 // it are 30-day surfaces, and mounting them on a phone would fire a range
 // request for something nobody can see. So the breakpoint has to exist in JS
-// as well as in SCSS — and two hand-copied numbers that must agree is exactly
-// the kind of pair that silently drifts. `health.scss` declares
-// `$health-aside-breakpoint` with the same value and a pointer back here;
-// layout.contract.test.js reads the COMPILED stylesheet and fails if they ever
-// disagree (jsdom cannot see layout, but it can read a compiled rule).
+// and in Sass. The shared tokens supply this query and generate the Sass
+// variables. The stylesheet contract checks the compiled Health layout.
 import { useEffect, useState } from 'react';
 import { DS_TOKENS } from "../../../../../frontend/src/lib/theme/tokens.mjs";
 

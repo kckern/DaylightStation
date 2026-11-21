@@ -112,8 +112,7 @@ export function AudioPlayer({
   const footer = `${title}${effectiveAlbumArtist && effectiveAlbumArtist !== effectiveArtist ? ` (${effectiveAlbumArtist})` : ''}`;
 
   // Image upscale blur for album art
-  const coverImageRef = useRef(null);
-  const { blurStyle: coverBlurStyle } = useImageUpscaleBlur(coverImageRef);
+  const { imageRef: coverImageRef, blurStyle: coverBlurStyle } = useImageUpscaleBlur(effectiveImage);
 
   // Shader diagnostics - track dimensions for debugging coverage issues
   const shaderRef = useRef(null);

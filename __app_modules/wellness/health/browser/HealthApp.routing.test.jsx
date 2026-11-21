@@ -6,7 +6,7 @@ import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 // MedicalView, CoachChat) has its own test suite already. Stubbing them here
 // keeps this suite focused on HealthApp's own job: mapping /health/* paths
 // to tabs and back, per the LifeApp `/life/*` precedent.
-vi.mock("./today/TodayView.jsx", () => ({ TodayView: () => <div>TodayStub</div> }));
+vi.mock("./today/TodayView.jsx", () => ({ TodayView: ({ active }) => <div>TodayStub<input aria-label="Today draft" disabled={!active} /></div> }));
 vi.mock("./progress/ProgressView.jsx", () => ({ ProgressView: () => <div>ProgressStub</div> }));
 vi.mock("./medical/MedicalView.jsx", () => ({ MedicalView: () => <div>MedicalStub</div> }));
 vi.mock("./auditor/AuditorPage.jsx", () => ({ AuditorPage: () => <div>AuditorStub</div> }));
@@ -70,6 +70,22 @@ describe('HealthApp routed tabs', () => {
   it('an unknown /health subpath renders Today rather than a blank/404 tab', async () => {
     renderApp('/health/bogus-subpath');
     expect(await screen.findByText('TodayStub')).toBeTruthy();
+  });
+
+  it('restores the Today draft and scroll position after visiting another tab', async () => {
+    renderApp('/health');
+    const draft = await screen.findByRole('textbox', { name: 'Today draft' });
+    fireEvent.change(draft, { target: { value: 'Lunch note' } });
+    const main = screen.getByRole('main');
+    main.scrollTop = 180;
+    fireEvent.scroll(main);
+    fireEvent.click(screen.getByRole('link', { name: 'Progress' }));
+    await screen.findByText('ProgressStub');
+    expect(draft.disabled).toBe(true);
+    fireEvent.click(screen.getByRole('link', { name: 'Today' }));
+    expect(await screen.findByRole('textbox', { name: 'Today draft' })).toBe(draft);
+    expect(draft.value).toBe('Lunch note');
+    expect(main.scrollTop).toBe(180);
   });
 
   it('tapping the Progress tab navigates to /health/progress', async () => {

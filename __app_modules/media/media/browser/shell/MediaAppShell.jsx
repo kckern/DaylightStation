@@ -2,9 +2,11 @@
 // The shell: persistent dock (top), primary nav (rail on tablet+/tabs on
 // mobile), and a canvas showing exactly one view. Playback chrome (mini
 // player, dispatch tray) docks between canvas and tab bar on mobile.
-import React, { useCallback, useState } from 'react';
+import { PlaybackFrame } from '@/lib/ui/AppFrame.jsx';
+import { useHotkey } from '@/lib/hooks/useHotkey.js';
+import React, { useCallback, useRef, useState } from 'react';
 import { NavProvider, useNav } from "./NavProvider.jsx";
-import { DismissStackProvider } from "./DismissStackProvider.jsx";
+import { DismissStackProvider } from "@/lib/ui/dismiss/DismissStackProvider.jsx";
 import { Dock } from "./Dock.jsx";
 import { NavRail, TabBar } from "./PrimaryNav.jsx";
 import { Canvas } from "./Canvas.jsx";
@@ -17,12 +19,18 @@ import { LocalPlaybackOutcomes } from "./LocalPlaybackOutcomes.jsx";
 import { RemoteScreenProblems } from "./RemoteScreenProblems.jsx";
 import { LocalStopFeedbackProvider, useLocalStopFeedbackCount } from "./LocalStopFeedbackContext.jsx";
 import { SearchLauncherContext } from "./SearchLauncherContext.js";
-import { slashIsNotForSearch } from "./searchShortcut.js";
 import { PlaybackQualityHost } from "../quality/PlaybackQualityProvider.jsx";
 import mediaLog from "../logging/mediaLog.js";
 import "./MediaShell.scss";
 
 function ShellInner() {
+  const searchInputRef = React.useRef(null);
+  const launcherRef = React.useRef(null);
+  const destinationControlRef = useRef(null);
+  const restoreSearchFocus = useCallback(() => {
+    const target = searchInputRef.current?.getClientRects().length ? searchInputRef.current : launcherRef.current;
+    target?.focus({ preventScroll: true });
+  }, []);
   const { pop, depth } = useNav();
   const [searchOpen, setSearchOpen] = useState(false);
   // Add to this queue: the one search, for one addition to one screen.
@@ -42,53 +50,50 @@ function ShellInner() {
     if (depth > 1) pop();
   }, [depth, pop]);
 
-  // `/` focuses search from anywhere (unless already typing somewhere).
-  React.useEffect(() => {
-    const onKey = (e) => {
-      if (slashIsNotForSearch(e)) return;
-      // Tablet/laptop: the dock's search field. Phone: its field is hidden, so
-      // the same key opens the full-screen search instead (NF-DEV-03).
-      const input = document.querySelector('.media-dock .media-search-bar input');
-      if (input && input.getClientRects().length > 0) { e.preventDefault(); input.focus(); return; }
-      if (document.querySelector('[data-testid="media-search-launcher"]')?.getClientRects().length > 0) {
-        e.preventDefault();
-        setSearchOpen(true);
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, []);
+  useHotkey('/', () => {
+    if (searchOpen) return false;
+    // Desktop uses the dock input. On phones the launcher opens a sheet.
+    const input = searchInputRef.current;
+    if (input?.getClientRects().length) input.focus();
+    else if (launcherRef.current?.getClientRects().length) searchLauncher.openSearch();
+    else return false;
+  });
 
   return (
     <SearchLauncherContext.Provider value={searchLauncher}>
     <DismissStackProvider onBaseDismiss={baseDismiss}>
-      <div className="media-shell" data-testid="media-shell">
-        <Dock onOpenSearch={() => setSearchOpen(true)} />
+      <PlaybackFrame className="media-shell" data-testid="media-shell"
+        header={<Dock searchInputRef={searchInputRef} launcherRef={launcherRef} destinationControlRef={destinationControlRef} onOpenSearch={() => setSearchOpen(true)} />}
+        controls={<>
+          <ReconnectingNote />
+          <LocalPlaybackOutcomes />
+          <RemoteScreenProblems />
+          {/* Outcome notices float over the canvas: a zero-height anchor sits
+              directly above the mini player (or tab bar), so a row appearing
+              never takes page space or moves anything, and never covers the
+              handle's controls. Only the row's own buttons take pointer input. */}
+          <div className="media-outcome-anchor" data-testid="media-outcome-anchor">
+            <DispatchProgressTray />
+          </div>
+          <ScreenHandle />
+          <MiniPlayer />
+          {queueKeptCount != null && (
+            <div className="np-queue-kept" data-testid="np-queue-kept" role="status">
+              Queue kept: {queueKeptCount} item{queueKeptCount === 1 ? '' : 's'}
+            </div>
+          )}
+        </>}
+        navigation={<TabBar />}
+        overlays={<>
+          <PlaybackQualityHost />
+          {searchOpen && <SearchMode restoreSearchFocus={restoreSearchFocus} addTo={searchAddTo} onClose={() => { setSearchOpen(false); setSearchAddTo(null); }} />}
+        </>}
+      >
         <div className="media-shell-body">
           <NavRail />
-          <Canvas />
+          <Canvas destinationControlRef={destinationControlRef} />
         </div>
-        <ReconnectingNote />
-        <LocalPlaybackOutcomes />
-        <RemoteScreenProblems />
-        {/* Outcome notices float over the canvas: a zero-height anchor sits
-            directly above the mini player (or tab bar), so a row appearing
-            never takes page space or moves anything, and never covers the
-            handle's controls. Only the row's own buttons take pointer input. */}
-        <div className="media-outcome-anchor" data-testid="media-outcome-anchor">
-          <DispatchProgressTray />
-        </div>
-        <ScreenHandle />
-        <MiniPlayer />
-        {queueKeptCount != null && (
-          <div className="np-queue-kept" data-testid="np-queue-kept" role="status">
-            Queue kept: {queueKeptCount} item{queueKeptCount === 1 ? '' : 's'}
-          </div>
-        )}
-        <TabBar />
-        <PlaybackQualityHost />
-        {searchOpen && <SearchMode addTo={searchAddTo} onClose={() => { setSearchOpen(false); setSearchAddTo(null); }} />}
-      </div>
+      </PlaybackFrame>
     </DismissStackProvider>
     </SearchLauncherContext.Provider>
   );

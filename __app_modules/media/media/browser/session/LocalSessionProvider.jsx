@@ -3,7 +3,8 @@
 // attaches side effects (persistence, logging), and mounts the
 // player bridge plus the URL-command / external-control / state-broadcast
 // hooks. Everything below the provider sees only the controller interface.
-import React, { useMemo, useEffect, useRef } from 'react';
+import React, { useMemo, useEffect, useLayoutEffect, useRef } from 'react';
+import { browserPreference } from "@/lib/browserPreference.js";
 import { LocalSessionContext } from "./LocalSessionContext.js";
 import { PlayerHostProvider } from "./PlayerHostProvider.jsx";
 import { createLocalSessionController } from "./LocalSessionController.js";
@@ -13,17 +14,18 @@ import {
   writePersistedSession,
   clearPersistedSession,
 } from "./persistence.js";
-import { STORAGE_KEYS } from "../constants.js";
 import { useClientIdentity } from "../identity/useClientIdentity.js";
 import { PlayerBridge } from "./PlayerBridge.jsx";
 import { MusicBehindHost } from "./MusicBehindHost.jsx";
 import { useSessionController } from "../controller/useSessionController.js";
-import { useUrlCommand } from "../externalControl/useUrlCommand.js";
+import { clearUrlCommandToken, useUrlCommand } from "../externalControl/useUrlCommand.js";
 import { useExternalControl } from "../externalControl/useExternalControl.js";
 import { usePlaybackStateBroadcast } from "../shared/usePlaybackStateBroadcast.js";
 import { publish } from "../net/ws.js";
 import { useMediaSession } from "./useMediaSession.js";
 import mediaLog from "../logging/mediaLog.js";
+
+const legacyRecents = browserPreference('media-app.recents', null);
 
 function SessionSideEffects() {
   const identity = useClientIdentity();
@@ -59,7 +61,7 @@ export function LocalSessionProvider({ children }) {
       // so a deep link works again after an explicit reset.
       clearPersisted: () => {
         clearPersistedSession();
-        try { localStorage.removeItem(STORAGE_KEYS.URL_COMMAND_TOKEN); } catch { /* ignore */ }
+        clearUrlCommandToken();
       },
     });
     // Attach side effects synchronously: child effects (URL command,
@@ -67,9 +69,9 @@ export function LocalSessionProvider({ children }) {
     // their first mutations must be persisted/logged too.
     // The browser-only recents list is gone (Home's Recent is the
     // household's); drop its leftover key.
-    try { localStorage.removeItem('media-app.recents'); } catch { /* storage unavailable */ }
+    legacyRecents.clear();
+    ctl.detachPersistence = attachPersistence(ctl.store, { write: writePersistedSession });
     ctl.detachers = [
-      attachPersistence(ctl.store, { write: writePersistedSession }),
       attachLogging(ctl.store),
       attachSlowStartWatchdog(ctl.store),
     ];
@@ -84,11 +86,19 @@ export function LocalSessionProvider({ children }) {
     return ctl;
   }, [clientId]);
 
+  const committedController = useRef(null);
+  useLayoutEffect(() => {
+    committedController.current = controller;
+  }, [controller]);
+
   const recoveryLifecycleRef = useRef(null);
   useEffect(() => {
     const lifecycle = {};
     recoveryLifecycleRef.current = { controller, lifecycle };
     return () => {
+      // A route exit commits its final snapshot. A replaced controller no
+      // longer owns persistence once the new controller has committed.
+      controller.detachPersistence({ flush: committedController.current === controller });
       controller.detachers?.forEach((d) => d());
       queueMicrotask(() => {
         if (recoveryLifecycleRef.current?.controller !== controller || recoveryLifecycleRef.current?.lifecycle === lifecycle) controller.disposeRecovery?.();

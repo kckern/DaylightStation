@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/api.mjs', () => ({ DaylightAPI: vi.fn() }));
 import { DaylightAPI } from '@/lib/api.mjs';
-import { fetchExperienceContent, finishSession, sendRuleCommand } from "./sessionClient.js";
+import { fetchExperienceContent, fetchSession, finishSession, sendRuleCommand } from "./sessionClient.js";
 
 describe('gaming session client', () => {
   beforeEach(() => DaylightAPI.mockReset());
@@ -25,6 +25,12 @@ describe('gaming session client', () => {
   it('loads authored content independently of an environment', async () => {
     await fetchExperienceContent('dice', 'standard');
     expect(DaylightAPI).toHaveBeenCalledWith('api/v1/gaming/experiences/dice/content/standard');
+  });
+
+  it('forwards the shared read signal to a session GET', async () => {
+    const controller = new AbortController();
+    await fetchSession('game:1', { signal: controller.signal });
+    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/gaming/sessions/game:1', {}, 'GET', { signal: controller.signal });
   });
 
   it('closes through the canonical endpoint', async () => {

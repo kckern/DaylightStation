@@ -1,12 +1,15 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import {
   Stack, Paper, Text, Group, Badge, ActionIcon,
-  Button, Modal, TextInput, Alert,
+  Button, TextInput, Alert,
 } from '@mantine/core';
 import { IconArrowUp, IconArrowDown } from '@tabler/icons-react';
 import { useLifePlan } from "../../hooks/useLifePlan.js";
-import { LifePage, LoadingState } from "../../components/index.js";
+import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
 import { humanize } from "../../lib/format.js";
+import { PlanCreateSheet } from "./PlanCreateSheet.jsx";
+import { useLifeUsername } from "../../hooks/useLifeUser.js";
+import { useLifePlanSubmission } from "../../hooks/LifePlanSubmissionContext.jsx";
 
 function alignmentColor(state) {
   if (state === 'aligned') return 'green';
@@ -15,35 +18,35 @@ function alignmentColor(state) {
   return 'gray';
 }
 
+function ValueCreateSheet({ onClose, createValue, getFallbackFocusTarget }) {
+  const [name, setName] = useState('');
+  return (
+    <PlanCreateSheet noun="value" onClose={onClose} save={() => createValue({ name: name.trim() })} valid={Boolean(name.trim())} getFallbackFocusTarget={getFallbackFocusTarget}>
+      <TextInput
+        label="Value"
+        placeholder="What principle guides you?"
+        required
+        data-autofocus
+        value={name}
+        onChange={(e) => setName(e.currentTarget.value)}
+      />
+    </PlanCreateSheet>
+  );
+}
+
 export function ValuesView({ username }) {
-  const { plan, loading, updateSection, createValue } = useLifePlan(username);
+  const headingRef = useRef(null);
+  const contextUsername = useLifeUsername();
+  const { plan, loading, error, readError, refetch, updateSection, createValue } = useLifePlan(username);
+  const { pending, run } = useLifePlanSubmission();
+  const submissionKey = `${username || contextUsername || ''}:values`;
+  const valuesPending = pending.has(submissionKey);
 
   const values = useMemo(() => plan?.values || [], [plan?.values]);
 
   const [opened, setOpened] = useState(false);
-  const [name, setName] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [formError, setFormError] = useState(null);
-
-  const closeModal = () => {
-    setOpened(false);
-    setName('');
-    setFormError(null);
-  };
-
-  const handleSubmit = async () => {
-    if (!name.trim() || submitting) return;
-    setSubmitting(true);
-    setFormError(null);
-    try {
-      await createValue({ name: name.trim() });
-      closeModal();
-    } catch (err) {
-      setFormError(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  const close = () => setOpened(false);
+  const saveValue = useCallback(value => run(submissionKey, () => createValue(value)), [createValue, run, submissionKey]);
 
   const moveValue = useCallback(async (index, direction) => {
     const newValues = [...values];
@@ -58,19 +61,21 @@ export function ValuesView({ username }) {
     // Update rank numbers
     const updated = newValues.map((v, i) => ({ ...v, rank: i + 1 }));
     try {
-      await updateSection('values', updated);
+      await updateSection('values', updated, { waitForReadback: true });
     } catch {
-      // updateSection() records the failure in useLifePlan's internal `error`
-      // state (which this view doesn't currently surface); swallow here so a
-      // failed reorder doesn't become an unhandled promise rejection now that
-      // updateSection() rethrows for callers (e.g. PurposeView) that do want it.
+      // The plan hook exposes the section update error to this view.
     }
   }, [values, updateSection]);
 
-  if (loading) return <LoadingState />;
-
-  return (
-    <LifePage title="Values" actions={<Button onClick={() => setOpened(true)}>Add value</Button>}>
+  const actions = (!loading && !readError) || opened
+    ? <Button disabled={valuesPending} onClick={() => setOpened(true)}>Add value</Button> : undefined;
+  let content;
+  if (loading) content = <LoadingState />;
+  else if (readError) content = <ErrorState label="Values" error={readError} onRetry={refetch} />;
+  else content = (
+    <>
+      {error && <Alert color="red" title="Couldn’t reorder values">{error}</Alert>}
+      {valuesPending && <Text size="sm" role="status">Saving value changes…</Text>}
       {values.length === 0 && (
         <Text size="sm" c="dimmed">No values defined yet — add one to rank what matters most.</Text>
       )}
@@ -102,18 +107,22 @@ export function ValuesView({ username }) {
                   </Badge>
                 )}
                 <ActionIcon
+                  className="ds-touch-target"
                   variant="subtle"
                   size="sm"
-                  disabled={i === 0}
-                  onClick={() => moveValue(i, -1)}
+                  aria-label={`Move ${v.name} up`}
+                  disabled={valuesPending || i === 0}
+                  onClick={() => run(submissionKey, () => moveValue(i, -1))}
                 >
                   <IconArrowUp size={14} />
                 </ActionIcon>
                 <ActionIcon
+                  className="ds-touch-target"
                   variant="subtle"
                   size="sm"
-                  disabled={i === values.length - 1}
-                  onClick={() => moveValue(i, 1)}
+                  aria-label={`Move ${v.name} down`}
+                  disabled={valuesPending || i === values.length - 1}
+                  onClick={() => run(submissionKey, () => moveValue(i, 1))}
                 >
                   <IconArrowDown size={14} />
                 </ActionIcon>
@@ -140,27 +149,15 @@ export function ValuesView({ username }) {
           </Paper>
         ))}
       </Stack>
+    </>
+  );
 
-      <Modal opened={opened} onClose={closeModal} title="Add value">
-        <Stack gap="sm">
-          {formError && (
-            <Alert color="red" title="Couldn't create the value">{formError}</Alert>
-          )}
-          <TextInput
-            label="Value"
-            placeholder="What principle guides you?"
-            required
-            value={name}
-            onChange={(e) => setName(e.currentTarget.value)}
-          />
-          <Group justify="flex-end">
-            <Button variant="subtle" onClick={closeModal}>Cancel</Button>
-            <Button onClick={handleSubmit} loading={submitting} disabled={!name.trim()}>
-              Create value
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
-    </LifePage>
+  return (
+    <>
+      <LifePage title="Values" titleRef={headingRef} actions={actions} scrollReady={!loading && !readError}>
+        {content}
+      </LifePage>
+      {opened && <ValueCreateSheet createValue={saveValue} onClose={close} getFallbackFocusTarget={() => headingRef.current} />}
+    </>
   );
 }

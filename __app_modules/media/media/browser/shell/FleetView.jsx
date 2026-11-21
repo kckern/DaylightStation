@@ -10,7 +10,7 @@
 // recent rename (RQ-HOUSE-06) and Stop "and turn the screen off" where the
 // screen supports it (RQ-STEER-11). The view offers Pause all / Stop all /
 // Resume all (RQ-STEER-13) and leads to screen admin and routine history.
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Title, Text, Badge, Button, Progress, Group, Alert, Stack } from '@mantine/core';
 import { IconDeviceRemote, IconAlertCircle, IconPlayerPlay, IconPlayerPauseFilled, IconDevices, IconHistory, IconArrowBarToDown } from '@tabler/icons-react';
 import { useFleetContext } from "../fleet/useFleetContext.js";
@@ -24,6 +24,8 @@ import { usePeek } from "../peek/usePeek.js";
 import { stateColor } from "../theme/mediaTheme.js";
 import { deviceStateLabel } from "./stateCopy.js";
 import Skeleton from '@/lib/ui/Skeleton.jsx';
+import { Button as UiButton } from '@/lib/ui/Button.jsx';
+import { StateMessage } from '@/lib/ui/states.jsx';
 import { deviceKind } from "../cast/castCopy.js";
 import { canShowNotes, wasNameLabel } from "../house/houseCopy.js";
 import { useStartStatuses, useStartedByAll } from "../house/useHouseSignals.js";
@@ -49,6 +51,7 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
   const moveHere = useMoveHere();
   // Inline "play something on this device" panel (FleetPlayPicker).
   const [playOpen, setPlayOpen] = useState(false);
+  const playOpenerRef = useRef(null);
   const closePlay = useCallback(() => setPlayOpen(false), []);
   const offline = !!entry?.offline;
   const snap = entry?.snapshot;
@@ -69,7 +72,7 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
   const canMoveHere = !!snap?.meta?.playbackOwner;
   // Stopping a slideshow with music behind asks "Keep the music?" here too,
   // and the answer rides the stop command (never inferred from who sent it).
-  const [guardStop, stopGuardDialog] = useSlideshowStopGuard({ deviceId }, snap ?? null);
+  const [guardStop, stopGuardDialog] = useSlideshowStopGuard({ deviceId }, snap ?? null, { available: isActive });
   const sendTransport = (action, opts) => {
     const result = getController(deviceId)?.transport?.[action]?.(opts);
     result?.catch?.(() => {});
@@ -138,12 +141,9 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
         >
           Remote
         </Button>
-        {/* data-play-toggle lets the panel's outside-tap dismissal ignore
-            this button, so a second tap toggles closed instead of
-            dismiss-then-reopen. */}
         <Button
+          ref={playOpenerRef}
           data-testid={`fleet-play-${deviceId}`}
-          data-play-toggle={deviceId}
           size="compact-sm"
           variant="default"
           leftSection={<IconPlayerPlay size={16} />}
@@ -157,7 +157,7 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
             <Button data-testid={`fleet-pause-${deviceId}`} size="compact-sm" variant="default" leftSection={<IconPlayerPauseFilled size={14} aria-hidden />} onClick={() => sendTransport('pause')}>
               Pause
             </Button>
-            <ScreenStopControl device={device ?? { id: deviceId }} name={name} onStop={() => guardStop((opts) => sendTransport('stop', opts))} />
+            <ScreenStopControl device={device ?? { id: deviceId }} name={name} onStop={event => guardStop((opts) => sendTransport('stop', opts), event.currentTarget)} />
             {stopGuardDialog}
             {!device?.isLocal && (
               <Button
@@ -180,13 +180,13 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
           </>
         )}
       </Group>
-      {playOpen && <FleetPlayPicker deviceId={deviceId} onClose={closePlay} />}
+      {playOpen && <FleetPlayPicker deviceId={deviceId} onClose={closePlay} openerRef={playOpenerRef} />}
     </li>
   );
 }
 
 export function FleetView() {
-  const { devices, loading, error, connected, store } = useFleetContext();
+  const { devices, loading, error, connected, store, refresh } = useFleetContext();
   const { push } = useNav();
   const deviceIds = useMemo(() => devices.map((d) => d.id), [devices]);
   const startStatuses = useStartStatuses(deviceIds);
@@ -206,13 +206,13 @@ export function FleetView() {
   }
   if (error) {
     return (
-      <Alert data-testid="fleet-error" color="red" variant="light" icon={<IconAlertCircle size={18} />}>
-        Couldn&apos;t load your devices. Check the connection and try again.
+      <StateMessage data-testid="fleet-error" state="error" role="alert" title="Couldn’t load your devices">
+        <UiButton density="compact" variant="secondary" onClick={refresh}>Retry</UiButton>
         <details className="error-detail">
           <summary>Technical details</summary>
           {error.message}
         </details>
-      </Alert>
+      </StateMessage>
     );
   }
   if (!devices.length) {

@@ -17,8 +17,8 @@ import {
   IconChevronDown,
   IconChevronUp,
 } from '@tabler/icons-react';
-import { LabeledContentPicker } from "./LabeledContentPicker.jsx";
-import ConfirmModal from "../../../../../../../frontend/src/modules/Admin/shared/ConfirmModal.jsx";
+import ContentCombobox from "../../../../../../../__capabilities/content-catalog/browser/picker.mjs";
+import { ConfirmModal } from "../../../../../../../frontend/src/lib/ui/ConfirmModal.jsx";
 import { ScheduledFireSummary } from "./ScheduledFireSummary.jsx";
 
 const DAY_PRESETS = ['all', 'weekdays', 'weekends'];
@@ -285,7 +285,7 @@ export function ScheduledFiresSection({ target, fires, slotMaxVolume, mutations 
                   />
                   <div style={{ flex: 1, minWidth: 200 }}>
                     <Text size="xs" mb={4}>Queue</Text>
-                    <LabeledContentPicker
+                    <ContentCombobox
                       value={r.queue || ''}
                       onChange={(id) => updateRow(idx, { queue: id || '' })}
                       placeholder="Pick a queue..."

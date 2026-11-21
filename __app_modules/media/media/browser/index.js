@@ -9,8 +9,8 @@ export { mediaTheme, stateColor } from "./theme/mediaTheme.js";
 // Navigation & shell
 export { MediaAppShell } from "./shell/MediaAppShell.jsx";
 export { NavProvider, useNav } from "./shell/NavProvider.jsx";
-export { DismissStackProvider } from "./shell/DismissStackProvider.jsx";
-export { useDismissLayer } from "./shell/useDismissLayer.js";
+export { DismissStackProvider } from "@/lib/ui/dismiss/DismissStackProvider.jsx";
+export { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 
 // Controller seam — one interface, local and remote implementations
 export { assertController, CONTROLLER_METHOD_GROUPS } from "./controller/controllerShape.js";

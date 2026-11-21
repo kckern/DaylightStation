@@ -1,4 +1,5 @@
 import getLogger from "../../../../../../../frontend/src/lib/logging/Logger.js";
+import { formatFeedPlaybackTime } from '../../../players/formatTime.js';
 
 function log() { return getLogger().child({ module: 'feed-player-section' }); }
 
@@ -40,13 +41,6 @@ export default function PlayerSection({ data, onPlay, activeMedia, item, playbac
 
   const { playing, currentTime, duration, toggle, seek, progressElRef } = playback || {};
 
-  const formatTime = (s) => {
-    if (!s || !Number.isFinite(s)) return '0:00';
-    const m = Math.floor(s / 60);
-    const sec = Math.floor(s % 60);
-    return `${m}:${sec.toString().padStart(2, '0')}`;
-  };
-
   return (
     <div style={{
       background: '#1a1b1e',
@@ -78,7 +72,7 @@ export default function PlayerSection({ data, onPlay, activeMedia, item, playbac
           </svg>
         </button>
         <span style={{ fontSize: '0.75rem', color: '#868e96', fontVariantNumeric: 'tabular-nums' }}>
-          {formatTime(currentTime)} / {formatTime(duration)}
+          {formatFeedPlaybackTime(currentTime)} / {formatFeedPlaybackTime(duration)}
         </span>
         <button
           onClick={() => {

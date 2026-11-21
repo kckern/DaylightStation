@@ -208,14 +208,15 @@ export function useAdvancedKeyboardHandler(config = {}) {
       if (event.repeat) return;
       if (event._menuNav) return;
 
-      // Never hijack typing: key events originating in editable elements
-      // (search boxes, forms) belong to those elements. Kiosk surfaces have
-      // no editable elements, so playback hotkeys are unaffected there.
+      // Editable fields own all their keys. Native interactive controls own
+      // activation and Tab traversal; other playback keys (such as
+      // MediaPlayPause) still reach the player while one is focused.
       const t = event.target;
-      if (t instanceof Element && (
-        t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' ||
-        t.tagName === 'SELECT' || t.isContentEditable
-      )) return;
+      if (t instanceof Element) {
+        if (t.closest('input, textarea, select') || t.isContentEditable) return;
+        if (t.closest('button, a[href], [role="button"]')
+          && ['Enter', ' ', 'Space', 'Spacebar', 'Tab'].includes(event.key)) return;
+      }
 
       // Log arrow key presses for debugging
       if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {

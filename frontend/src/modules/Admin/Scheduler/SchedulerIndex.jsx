@@ -1,9 +1,16 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Stack, Text, Table, Badge, Button, Group, Modal, TextInput, Loader, Center, Alert }  from '@mantine/core';
+import React, { useLayoutEffect, useState, useMemo } from 'react';
+import { FormDialog } from '@/lib/ui/FormDialog.jsx';
+import { SubmitButton } from '@/lib/ui/SubmitButton.jsx';
+import { useKeyedSubmission } from '@/lib/ui/useKeyedSubmission.js';
+import { Link, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
+import { Stack, Text, Table, Badge, Button, Group, TextInput, Center, Alert, Anchor }  from '@mantine/core';
 import { IconPlus, IconPlayerPlay, IconAlertCircle, IconClock } from '@tabler/icons-react';
-import { useAdminScheduler } from '../../../hooks/admin/useAdminScheduler.js';
+import { ADMIN_SCHEDULER_JOBS_PATH, useAdminScheduler } from '../../../hooks/admin/useAdminScheduler.js';
+import { useAdminRoster } from '../shared/useAdminRoster.js';
+import { ErrorState, LoadingState } from '../../../lib/ui/states.jsx';
+import { useFocusAfterRemoval, useRetryRegion } from '../../../lib/ui/useRetryRegion.js';
 import { cronToHuman, formatDuration } from '../utils/formatters.js';
+import { statusBadgeColor } from '../utils/constants.js';
 
 /**
  * Classify a cron schedule into a frequency band for grouping.
@@ -38,18 +45,10 @@ function formatLastRun(isoString) {
 }
 
 /**
- * Get a Badge color for a job status.
- */
-function statusBadgeColor(status) {
-  if (status === 'success') return 'green';
-  if (status === 'failed') return 'red';
-  return 'gray';
-}
-
-/**
  * Frequency band display order and labels.
  */
 const BAND_ORDER = ['Frequent', 'Hourly', 'Daily', 'Other'];
+const EMPTY_JOBS = [];
 const BAND_LABELS = {
   Frequent: 'Frequent (Sub-hourly)',
   Hourly: 'Hourly',
@@ -59,16 +58,24 @@ const BAND_LABELS = {
 
 function SchedulerIndex() {
   const navigate = useNavigate();
-  const { jobs, loading, error, fetchJobs, createJob, triggerJob, clearError } = useAdminScheduler();
+  const { key: visit, state } = useLocation();
+  const navigationType = useNavigationType();
+  const { error, createJob, triggerJob, clearError } = useAdminScheduler();
+  const { data, loading, error: readError, refresh, invalidateAfterWrite, refreshAfterWrite } = useAdminRoster(ADMIN_SCHEDULER_JOBS_PATH);
+  const [retrying, setRetrying] = useState(false);
+  const { regionProps, focus, retry } = useRetryRegion(retryRoster, loading || retrying);
+  const rosterRef = regionProps.ref;
+  const focusHandlers = useFocusAfterRemoval(focus);
+  const focusJobs = state?.focusJobs;
+  useLayoutEffect(() => {
+    if (navigationType === 'PUSH' && focusJobs) rosterRef.current?.focus({ preventScroll: true });
+  }, [visit, navigationType, focusJobs, rosterRef]);
+  const jobs = Array.isArray(data) ? data : (data?.jobs ?? EMPTY_JOBS);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createForm, setCreateForm] = useState({ id: '', name: '', module: '', schedule: '' });
   const [createErrors, setCreateErrors] = useState({});
   const [creating, setCreating] = useState(false);
-  const [triggeringId, setTriggeringId] = useState(null);
-
-  useEffect(() => {
-    fetchJobs().catch(() => {});
-  }, [fetchJobs]);
+  const { pending: triggeringIds, run: submitRun } = useKeyedSubmission();
 
   // Group jobs by frequency band
   const groupedJobs = useMemo(() => {
@@ -104,8 +111,20 @@ function SchedulerIndex() {
     return Object.keys(errors).length === 0;
   };
 
+  async function retryRoster() {
+    setRetrying(true);
+    try {
+      await refresh({ followSuperseding: true });
+    } catch {
+      // The read region presents its current error.
+    } finally {
+      setRetrying(false);
+    }
+  }
+
   const handleCreateSubmit = async () => {
-    if (!validateCreateForm()) return;
+    if (creating || !validateCreateForm()) return;
+    clearError();
     setCreating(true);
     try {
       await createJob({
@@ -114,41 +133,29 @@ function SchedulerIndex() {
         module: createForm.module.trim() || undefined,
         schedule: createForm.schedule.trim()
       });
-      await fetchJobs();
       setCreateModalOpen(false);
       setCreateForm({ id: '', name: '', module: '', schedule: '' });
       setCreateErrors({});
+      invalidateAfterWrite();
     } catch {
-      // error is set in the hook
+      // The command hook reports the write error.
     } finally {
       setCreating(false);
     }
   };
 
-  const handleTrigger = async (e, jobId) => {
-    e.stopPropagation();
-    setTriggeringId(jobId);
-    try {
-      await triggerJob(jobId);
-      await fetchJobs();
-    } catch {
-      // error is set in the hook
-    } finally {
-      setTriggeringId(null);
-    }
+  const handleTrigger = jobId => {
+    if (retrying || readError) return;
+    return submitRun(jobId, async () => {
+      clearError();
+      try {
+        await triggerJob(jobId);
+        await refreshAfterWrite({ followSuperseding: true });
+      } catch {
+        // Command and roster errors are reported by their respective hooks.
+      }
+    });
   };
-
-  const handleRowClick = (jobId) => {
-    navigate(`/admin/system/scheduler/${jobId}`);
-  };
-
-  if (loading && jobs.length === 0) {
-    return (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
-  }
 
   return (
     <Stack gap="lg">
@@ -157,6 +164,7 @@ function SchedulerIndex() {
         <Button
           leftSection={<IconPlus size={16} />}
           onClick={() => setCreateModalOpen(true)}
+          disabled={creating}
         >
           Create Job
         </Button>
@@ -173,94 +181,104 @@ function SchedulerIndex() {
           {error.message || 'Failed to load scheduler jobs'}
         </Alert>
       )}
+      <Stack component="section" gap="lg" aria-label="Scheduler jobs" {...regionProps} {...focusHandlers}>
+        {readError && <ErrorState error={readError} label="Scheduler jobs" onRetry={retry} />}
+        {loading && jobs.length === 0 && <LoadingState label="scheduler jobs" />}
 
-      {groupedJobs.map(group => (
-        <Stack key={group.band} gap="xs">
-          <Group gap="xs">
-            <IconClock size={16} stroke={1.5} />
-            <Text size="sm" fw={600} c="dimmed" tt="uppercase">
-              {group.label}
-            </Text>
-          </Group>
+        {groupedJobs.map(group => (
+          <Stack key={group.band} gap="xs">
+            <Group gap="xs">
+              <IconClock size={16} stroke={1.5} />
+              <Text size="sm" fw={600} c="dimmed" tt="uppercase">
+                {group.label}
+              </Text>
+            </Group>
 
-          <Table highlightOnHover withTableBorder withColumnBorders={false}>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Name</Table.Th>
-                <Table.Th>Schedule</Table.Th>
-                <Table.Th>Last Run</Table.Th>
-                <Table.Th>Status</Table.Th>
-                <Table.Th>Duration</Table.Th>
-                <Table.Th style={{ width: 100 }}>Actions</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {group.jobs.map(job => {
-                const status = job.lastRun?.status || job.status || null;
-                const lastRunTime = job.lastRun?.completedAt || job.lastRun?.startedAt || job.lastRunAt || null;
-                const durationMs = job.lastRun?.duration_ms ?? job.duration_ms ?? null;
-                const errorMsg = status === 'failed' ? (job.lastRun?.error || job.error || null) : null;
+            <Table highlightOnHover withTableBorder withColumnBorders={false}>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Name</Table.Th>
+                  <Table.Th>Schedule</Table.Th>
+                  <Table.Th>Last Run</Table.Th>
+                  <Table.Th>Status</Table.Th>
+                  <Table.Th>Duration</Table.Th>
+                  <Table.Th style={{ width: 100 }}>Actions</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {group.jobs.map(job => {
+                  const jobLink = `/admin/system/scheduler/${encodeURIComponent(job.id)}`;
+                  const status = job.runtime?.status || job.lastRun?.status || job.status || null;
+                  const lastRunTime = job.runtime?.last_run || job.lastRun?.completedAt || job.lastRun?.startedAt || job.lastRunAt || null;
+                  const durationMs = job.runtime?.duration_ms ?? job.lastRun?.duration_ms ?? job.duration_ms ?? null;
+                  const errorMsg = status === 'failed' ? (job.runtime?.error || job.lastRun?.error || job.error || null) : null;
 
-                return (
-                  <Table.Tr
-                    key={job.id}
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => handleRowClick(job.id)}
-                  >
-                    <Table.Td>
-                      <Text size="sm" fw={500}>{job.name || job.id}</Text>
-                      {errorMsg && (
-                        <Text size="xs" c="red" lineClamp={1}>{errorMsg}</Text>
-                      )}
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm">{cronToHuman(job.schedule)}</Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm" c="dimmed">{formatLastRun(lastRunTime)}</Text>
-                    </Table.Td>
-                    <Table.Td>
-                      {status ? (
-                        <Badge color={statusBadgeColor(status)} variant="light" size="sm">
-                          {status}
-                        </Badge>
-                      ) : (
-                        <Badge color="gray" variant="light" size="sm">never run</Badge>
-                      )}
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm" c="dimmed">{formatDuration(durationMs)}</Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Button
-                        size="xs"
-                        variant="light"
-                        leftSection={<IconPlayerPlay size={14} />}
-                        loading={triggeringId === job.id}
-                        onClick={(e) => handleTrigger(e, job.id)}
-                      >
-                        Run
-                      </Button>
-                    </Table.Td>
-                  </Table.Tr>
-                );
-              })}
-            </Table.Tbody>
-          </Table>
-        </Stack>
-      ))}
-
-      {jobs.length === 0 && !loading && (
-        <Center h="40vh">
-          <Stack align="center">
-            <IconClock size={48} stroke={1} color="gray" />
-            <Text c="dimmed">No scheduler jobs found. Create one to get started.</Text>
+                  return (
+                    <Table.Tr
+                      key={job.id}
+                      style={{ cursor: 'pointer' }}
+                      onClick={event => {
+                        if (!event.target.closest('a, button')) navigate(jobLink);
+                      }}
+                    >
+                      <Table.Td>
+                        <Anchor component={Link} to={jobLink} c="inherit" size="sm" fw={500}>{job.name || job.id}</Anchor>
+                        {errorMsg && (
+                          <Text size="xs" c="red" lineClamp={1}>{errorMsg}</Text>
+                        )}
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm">{cronToHuman(job.schedule)}</Text>
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm" c="dimmed">{formatLastRun(lastRunTime)}</Text>
+                      </Table.Td>
+                      <Table.Td>
+                        {status ? (
+                          <Badge color={statusBadgeColor(status)} variant="light" size="sm">
+                            {status}
+                          </Badge>
+                        ) : (
+                          <Badge color="gray" variant="light" size="sm">never run</Badge>
+                        )}
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm" c="dimmed">{formatDuration(durationMs)}</Text>
+                      </Table.Td>
+                      <Table.Td>
+                        <SubmitButton
+                          as={Button}
+                          type="button"
+                          size="xs"
+                          variant="light"
+                          leftSection={<IconPlayerPlay size={14} />}
+                          pending={triggeringIds.has(job.id)}
+                          blocked={retrying || Boolean(readError)}
+                          onClick={() => handleTrigger(job.id)}
+                        >
+                          Run
+                        </SubmitButton>
+                      </Table.Td>
+                    </Table.Tr>
+                  );
+                })}
+              </Table.Tbody>
+            </Table>
           </Stack>
-        </Center>
-      )}
+        ))}
+
+        {jobs.length === 0 && !loading && !readError && (
+          <Center h="40vh">
+            <Stack align="center">
+              <IconClock size={48} stroke={1} color="gray" />
+              <Text c="dimmed">No scheduler jobs found. Create one to get started.</Text>
+            </Stack>
+          </Center>
+        )}
+      </Stack>
 
       {/* Create Job Modal */}
-      <Modal
+      <FormDialog
         opened={createModalOpen}
         onClose={() => {
           setCreateModalOpen(false);
@@ -308,7 +326,7 @@ function SchedulerIndex() {
             </Button>
           </Group>
         </Stack>
-      </Modal>
+      </FormDialog>
     </Stack>
   );
 }

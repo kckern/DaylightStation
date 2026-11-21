@@ -37,7 +37,8 @@
  * without any gate noticing. Ownership is therefore decided by what a file
  * imports: an explicit `from 'vitest'`, or bare globals (`describe`/`it`)
  * with no runner import at all, which vitest supplies via `globals: true`.
- * A `node:test` or `@jest/globals` import means another runner owns it.
+ * A `node:test`, `@jest/globals`, or `@playwright/test` import means another
+ * runner owns it.
  *
  * Ratchet semantics (mirrors scripts/audit-layer-imports.mjs):
  *   node scripts/gate-vitest.mjs            # check: exit 1 if a NEW file fails
@@ -76,6 +77,7 @@ function isVitestOwned(src) {
   // Another runner named explicitly always wins.
   if (/from ['"]node:test['"]|require\(['"]node:test['"]\)/.test(src)) return false;
   if (/from ['"]@jest\/globals['"]/.test(src)) return false;
+  if (/from\s+['"]@playwright\/test['"]|require\(\s*['"]@playwright\/test['"]\s*\)/.test(src)) return false;
   // No runner import at all: vitest's `globals: true` is what supplies these.
   return /^\s*(describe|it|test)\s*[(.]/m.test(src);
 }

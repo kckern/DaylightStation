@@ -22,7 +22,7 @@ Automated coverage lives in `tests/integration/playback-hub-bootstrap.test.mjs`
 Open `/admin/playback-hub` in the browser.
 
 - [ ] Five device cards render (red, yellow, green, blue, white)
-- [ ] BT-connected slots show `Now: <title>` (LabeledContentPicker resolved the
+- [ ] BT-connected slots show `Now: <title>` (the catalog picker resolved the
       queue's display title without a flicker)
 - [ ] BT-disconnected slots show `—` as the now-playing label
 - [ ] Each card shows the hub's one status word (Playing / Connected – idle /

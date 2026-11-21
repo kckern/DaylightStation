@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useCallback } from 'react';
+import { invalidateApiResources, readApiResource, resetApiResourceCache, useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { useLifeUsername } from "./useLifeUser.js";
@@ -10,6 +11,43 @@ function logger() {
 }
 
 const API_BASE = '/api/v1/life/plan';
+const memberQuery = user => user ? `?username=${encodeURIComponent(user)}` : '';
+const goalPath = (goalId, user, action = '') =>
+  `${API_BASE}/goals/${encodeURIComponent(goalId)}${action}${memberQuery(user)}`;
+const EMPTY_LIST = [];
+const EMPTY_CONFIG = {};
+
+function usePlanMember(username) {
+  const selected = useLifeUsername();
+  return username || selected;
+}
+
+// Await the GET after a write. A read failure belongs to the retryable view,
+// while the caller still receives the successful write and closes its editor.
+function usePlanRead(path, user, label, swr = Boolean(user)) {
+  const { data, loading, revalidating, error, refresh } = useApiResource(path, { swr, label, logger: logger() });
+  const refetch = useCallback(async () => {
+    try { await refresh(); } catch { /* The resource exposes the GET error. */ }
+  }, [refresh]);
+  const afterWrite = useCallback(async (related = [], { waitForReadback = false } = {}) => {
+    // A committed change also affects the full plan. Drop both old snapshots
+    // so returning to the dashboard cannot offer onboarding from a known-empty plan.
+    const aggregate = `${API_BASE}/${memberQuery(user)}`;
+    const changed = new Set([path, aggregate, ...related]);
+    for (const key of changed) resetApiResourceCache(key);
+    invalidateApiResources(key => changed.has(key));
+    if (waitForReadback) {
+      // The initiating view may unmount while a Values write is in flight.
+      // If another plan write supersedes this GET, retry until the shared cache
+      // accepts a canonical snapshot before releasing the member submission lock.
+      try { await readApiResource(path, { freshMs: 0, followSuperseding: true }); }
+      catch { /* Mounted readers retain their retryable GET error. */ }
+    } else {
+      await refetch();
+    }
+  }, [path, user, refetch]);
+  return { data, loading, revalidating, error: error?.message ?? null, refetch, afterWrite };
+}
 
 // A plan is "empty" when it has no substance yet: no object, no keys, or no
 // goals/values/beliefs/qualities/purpose. Consumers (e.g. the dashboard
@@ -23,59 +61,36 @@ export function planIsEmpty(plan) {
     && !plan.purpose;
 }
 
-// Transport for every hook in this file, over DaylightAPI (auth token +
-// X-Daylight-Device header) instead of a bare fetch. `options.body` keeps
-// arriving pre-stringified from call sites below (JSON.stringify(data)) so
-// none of them need to change — this just parses it back out, since
-// DaylightAPI does its own stringification.
-async function api(path, options = {}) {
-  const { method = 'GET', body } = options;
-  const data = body ? JSON.parse(body) : {};
-  return DaylightAPI(`${API_BASE}${path}`, data, method);
-}
-
-/**
- * Fetches full life plan and provides mutation helpers.
- */
 export function useLifePlan(username) {
-  const [plan, setPlan] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const user = usePlanMember(username);
+  const qs = memberQuery(user);
+  const { data: plan, loading, revalidating, error: readError, refetch: fetchPlan, afterWrite: refreshPlan } = usePlanRead(`${API_BASE}/${qs}`, user, 'life plan');
+  const [section, setSection] = useState({ user, error: null });
+  if (section.user !== user) setSection({ user, error: null });
+  const setSectionError = useCallback(error => {
+    setSection(current => current.user === user && current.error !== error ? { user, error } : current);
+  }, [user]);
+  const refetch = useCallback(async () => {
+    setSectionError(null);
+    await fetchPlan();
+  }, [fetchPlan, setSectionError]);
 
-  const ctxUsername = useLifeUsername();
-  const user = username || ctxUsername;
-  const qs = user ? `?username=${encodeURIComponent(user)}` : '';
+  const afterWrite = useCallback(async ({ waitForReadback = false } = {}) => {
+    setSectionError(null);
+    await refreshPlan([], { waitForReadback });
+  }, [refreshPlan, setSectionError]);
 
-  const fetchPlan = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const updateSection = useCallback(async (sectionName, data, { waitForReadback = false } = {}) => {
     try {
-      const data = await api(`/${qs}`);
-      setPlan(data);
-      logger().debug('plan-loaded', { hasPurpose: !!data.purpose });
+      await DaylightAPI(`${API_BASE}/${sectionName}${qs}`, data, 'PATCH');
+      await afterWrite({ waitForReadback });
+      logger().info('section-updated', { section: sectionName });
     } catch (err) {
-      setError(err.message);
-      logger().error('plan-load-error', { error: err.message });
-    } finally {
-      setLoading(false);
-    }
-  }, [qs]);
-
-  useEffect(() => { fetchPlan(); }, [fetchPlan]);
-
-  const isEmpty = useMemo(() => planIsEmpty(plan), [plan]);
-
-  const updateSection = useCallback(async (section, data) => {
-    try {
-      await api(`/${section}${qs}`, { method: 'PATCH', body: JSON.stringify(data) });
-      await fetchPlan();
-      logger().info('section-updated', { section });
-    } catch (err) {
-      setError(err.message);
-      logger().error('section-update-error', { section, error: err.message });
+      setSectionError(err.message);
+      logger().error('section-update-error', { section: sectionName, error: err.message });
       throw err;
     }
-  }, [qs, fetchPlan]);
+  }, [qs, afterWrite, setSectionError]);
 
   // Create-or-update the purpose statement. Unlike updateSection('purpose', ...)
   // (a PATCH against an existing plan section, which 404s for a planless user),
@@ -83,202 +98,118 @@ export function useLifePlan(username) {
   // Throws on failure so the caller (the editor) can surface the error inline
   // instead of losing the user's draft.
   const setPurpose = useCallback(async (statement) => {
-    const purpose = await api(`/purpose${qs}`, { method: 'POST', body: JSON.stringify({ statement }) });
-    await fetchPlan();
+    const purpose = await DaylightAPI(`${API_BASE}/purpose${qs}`, { statement }, 'POST');
+    await afterWrite();
     logger().info('purpose-set');
     return purpose;
-  }, [qs, fetchPlan]);
+  }, [qs, afterWrite]);
 
   // Author a new value (backend assigns the next rank). Throws on failure so
   // the caller (modal) can surface the error inline; refetches on success.
   const createValue = useCallback(async ({ name, description } = {}) => {
-    const value = await api(`/values${qs}`, {
-      method: 'POST',
-      body: JSON.stringify({ name, description }),
-    });
-    await fetchPlan();
+    const value = await DaylightAPI(`${API_BASE}/values${qs}`, { name, description }, 'POST');
+    await afterWrite({ waitForReadback: true });
     logger().info('value-created', { valueId: value?.id });
     return value;
-  }, [qs, fetchPlan]);
+  }, [qs, afterWrite]);
 
-  return { plan, isEmpty, loading, error, refetch: fetchPlan, updateSection, setPurpose, createValue };
+  return {
+    plan, isEmpty: planIsEmpty(plan), loading, revalidating, readError, error: readError ?? section.error,
+    refetch, updateSection, setPurpose, createValue,
+  };
+}
+
+function goalListPath(user, state) {
+  const params = new URLSearchParams();
+  if (user) params.set('username', user);
+  if (state) params.set('state', state);
+  return `${API_BASE}/goals${params.size ? `?${params}` : ''}`;
+}
+
+function useGoalTransition(user, afterWrite) {
+  return useCallback(async (goalId, newState, reason) => {
+    const result = await DaylightAPI(goalPath(goalId, user, '/transition'), { state: newState, reason }, 'POST');
+    await afterWrite([goalPath(goalId, user), goalListPath(user)]);
+    return result;
+  }, [user, afterWrite]);
 }
 
 /**
  * Fetches goals, optionally filtered by state.
  */
 export function useGoals(username, state) {
-  const [goals, setGoals] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const ctxUsername = useLifeUsername();
-  const user = username || ctxUsername;
-
-  const qs = useMemo(() => {
-    const params = new URLSearchParams();
-    if (user) params.set('username', user);
-    if (state) params.set('state', state);
-    const s = params.toString();
-    return s ? `?${s}` : '';
-  }, [user, state]);
-
-  const fetchGoals = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await api(`/goals${qs}`);
-      setGoals(data.goals || []);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [qs]);
-
-  useEffect(() => { fetchGoals(); }, [fetchGoals]);
-
-  const transitionGoal = useCallback(async (goalId, newState, reason) => {
-    const userQs = user ? `?username=${encodeURIComponent(user)}` : '';
-    const result = await api(`/goals/${goalId}/transition${userQs}`, {
-      method: 'POST',
-      body: JSON.stringify({ state: newState, reason }),
-    });
-    await fetchGoals();
-    return result;
-  }, [user, fetchGoals]);
+  const user = usePlanMember(username);
+  const { data, loading, revalidating, error, refetch, afterWrite } = usePlanRead(goalListPath(user, state), user, 'life goals');
+  const transitionGoal = useGoalTransition(user, afterWrite);
 
   // Author a new goal. Throws on failure so the caller can surface the error
   // inline; refetches the goal list on success and returns the created goal.
   const createGoal = useCallback(async ({ name, why, milestone } = {}) => {
-    const userQs = user ? `?username=${encodeURIComponent(user)}` : '';
-    const goal = await api(`/goals${userQs}`, {
-      method: 'POST',
-      body: JSON.stringify({ name, why, milestone }),
-    });
-    await fetchGoals();
+    const goal = await DaylightAPI(`${API_BASE}/goals${memberQuery(user)}`, { name, why, milestone }, 'POST');
+    await afterWrite();
     logger().info('goal-created', { goalId: goal?.id });
     return goal;
-  }, [user, fetchGoals]);
+  }, [user, afterWrite]);
 
-  return { goals, loading, error, refetch: fetchGoals, transitionGoal, createGoal };
+  return { goals: data?.goals || EMPTY_LIST, loading, revalidating, error, refetch, transitionGoal, createGoal };
 }
 
 /**
  * Fetches a single goal by ID with full detail.
  */
 export function useGoalDetail(goalId, username) {
-  const [goal, setGoal] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const ctxUsername = useLifeUsername();
-  const user = username || ctxUsername;
-  const qs = user ? `?username=${encodeURIComponent(user)}` : '';
-
-  const fetchGoal = useCallback(async () => {
-    if (!goalId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await api(`/goals/${goalId}${qs}`);
-      setGoal(data);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [goalId, qs]);
-
-  useEffect(() => { fetchGoal(); }, [fetchGoal]);
-
-  return { goal, loading, error, refetch: fetchGoal };
+  const user = usePlanMember(username);
+  const path = goalId ? goalPath(goalId, user) : null;
+  const { data: goal, loading, error, refetch, afterWrite } = usePlanRead(path, user, 'goal detail', false);
+  const transitionGoal = useGoalTransition(user, afterWrite);
+  return { goal, loading, error, refetch, transitionGoal };
 }
 
 /**
  * Fetches beliefs with evidence management.
  */
 export function useBeliefs(username) {
-  const [beliefs, setBeliefs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const ctxUsername = useLifeUsername();
-  const user = username || ctxUsername;
-  const qs = user ? `?username=${encodeURIComponent(user)}` : '';
-
-  const fetchBeliefs = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await api(`/beliefs${qs}`);
-      setBeliefs(data.beliefs || []);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [qs]);
-
-  useEffect(() => { fetchBeliefs(); }, [fetchBeliefs]);
+  const user = usePlanMember(username);
+  const qs = memberQuery(user);
+  const path = `${API_BASE}/beliefs${qs}`;
+  const { data, loading, error, refetch, afterWrite } = usePlanRead(path, user, 'life beliefs');
 
   const addEvidence = useCallback(async (beliefId, evidence) => {
-    const result = await api(`/beliefs/${beliefId}/evidence${qs}`, {
-      method: 'POST',
-      body: JSON.stringify(evidence),
-    });
-    await fetchBeliefs();
+    const result = await DaylightAPI(`${API_BASE}/beliefs/${beliefId}/evidence${qs}`, evidence, 'POST');
+    await afterWrite();
     return result;
-  }, [qs, fetchBeliefs]);
+  }, [qs, afterWrite]);
 
   // Author a new belief. Throws on failure so the caller can surface the error
   // inline; refetches on success and returns the created belief.
   const createBelief = useCallback(async ({ if_hypothesis, then_outcome } = {}) => {
-    const belief = await api(`/beliefs${qs}`, {
-      method: 'POST',
-      body: JSON.stringify({ if_hypothesis, then_outcome }),
-    });
-    await fetchBeliefs();
+    const belief = await DaylightAPI(path, { if_hypothesis, then_outcome }, 'POST');
+    await afterWrite();
     logger().info('belief-created', { beliefId: belief?.id });
     return belief;
-  }, [qs, fetchBeliefs]);
+  }, [path, afterWrite]);
 
-  return { beliefs, loading, error, refetch: fetchBeliefs, addEvidence, createBelief };
+  return { beliefs: data?.beliefs || EMPTY_LIST, loading, error, refetch, addEvidence, createBelief };
 }
 
 /**
  * Fetches ceremony/cadence configuration.
  */
 export function useCeremonyConfig(username) {
-  const [config, setConfig] = useState(null);
-  const [current, setCurrent] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const user = usePlanMember(username);
+  const qs = memberQuery(user);
+  const path = `${API_BASE}/cadence${qs}`;
+  const { data, loading, error, refetch, afterWrite } = usePlanRead(path, user, 'life cadence');
+  const setCeremonyEnabled = useCallback(async (type, enabled) => {
+    await DaylightAPI(`${API_BASE}/ceremonies/${encodeURIComponent(type)}${qs}`, { enabled }, 'PATCH');
+    await afterWrite();
+  }, [qs, afterWrite]);
 
-  const ctxUsername = useLifeUsername();
-  const user = username || ctxUsername;
-  const qs = user ? `?username=${encodeURIComponent(user)}` : '';
-
-  const fetchCadence = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await api(`/cadence${qs}`);
-      setConfig(data.config || {});
-      setCurrent(data.current || {});
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [qs]);
-
-  useEffect(() => { fetchCadence(); }, [fetchCadence]);
-
-  const updateCadence = useCallback(async (updates) => {
-    await api(`/cadence${qs}`, { method: 'PATCH', body: JSON.stringify(updates) });
-    await fetchCadence();
-  }, [qs, fetchCadence]);
-
-  return { config, current, loading, error, refetch: fetchCadence, updateCadence };
+  return {
+    ceremonies: data?.ceremonies || EMPTY_CONFIG,
+    current: data ? data.current || EMPTY_CONFIG : null,
+    loading: loading && !data,
+    readingBack: loading && Boolean(data),
+    error, refetch, setCeremonyEnabled,
+  };
 }

@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
  * (frontend/src/lib/hooks/useHotkey.js, whose single-key/no-shift grammar cannot say Shift+Tab or ?).
  *
  * handlers: next, prev, replay, verdict(verdict, reason), undo, cycleKind, effect(key), widen,
- * rework(), help(), escape() -> true when it closed something, bleepLevel(delta) (Task 6; optional).
+ * rework(), help(), escape() -> true when it closed something, bleepLevel(delta), retryPreview().
  */
 const NON_TEXT_INPUT = new Set(['radio', 'checkbox', 'button', 'range', 'submit', 'reset', 'image', 'file', 'color']);
 const REASONS = { 1: 'edges', 2: 'category', 3: 'action', 4: 'timing' };
@@ -43,6 +43,15 @@ export function useReviewKeys(handlers, { enabled = true } = {}) {
       const lower = key.length === 1 ? key.toLowerCase() : key;
       const active = document.activeElement;
       if (key !== 'Escape' && isTypingTarget(active)) return;
+      // Keep the station shortcuts quiet and leave native dialog navigation alone.
+      if (h.helpOpen) {
+        if (key === '?' || key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!e.repeat) h.escape?.();
+        }
+        return;
+      }
       // A modal owns the keyboard; a focused button keeps Space/Enter to press itself.
       if (key !== 'Escape' && (active?.closest?.('[role=dialog]') || e.target?.closest?.('[role=dialog]'))) return;
       if ((key === ' ' || key === 'Enter') && (active?.tagName === 'BUTTON' || active?.tagName === 'A' || active?.getAttribute?.('role') === 'button')) return;
@@ -56,8 +65,7 @@ export function useReviewKeys(handlers, { enabled = true } = {}) {
         return take(() => openRedo(false));
       }
       if (key === 'Escape') { if (h.escape?.()) take(); return; }
-      // The help sheet is read-only: only Esc and ? (which closes it) act while it is open.
-      if (h.helpOpen && key !== '?') return take();
+      if (key === 'Enter' && h.retryPreview) return take(h.retryPreview);
       if (key === 'ArrowRight' || (key === 'Tab' && !e.shiftKey)) return take(h.next);
       if (key === 'ArrowLeft' || (key === 'Tab' && e.shiftKey)) return take(h.prev);
       if (key === ' ') return take(h.replay);

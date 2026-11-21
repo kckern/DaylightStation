@@ -6,7 +6,6 @@ export const ListsContext = createContext({
   flatItems: [],
   contentInfoMap: new Map(),
   setContentInfo: () => {},
-  getNearbyItems: () => [],
   inUseImages: new Set(),
 });
 

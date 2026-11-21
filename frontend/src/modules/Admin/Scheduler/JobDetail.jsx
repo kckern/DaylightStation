@@ -1,15 +1,19 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useLayoutEffect, useRef, useState } from 'react';
+import { FormDialog } from '@/lib/ui/FormDialog.jsx';
+import { ConfirmModal, EmptyState, ErrorState, LoadingState, SubmitButton, useRetryRegion, useSheetSubmission } from '@/lib/ui';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import {
-  Stack, Group, Text, Badge, Button, Paper, Alert, Center, Loader,
-  Modal, TextInput, NumberInput, Divider, Code, Anchor
+  Stack, Group, Text, Badge, Button, Paper, Alert,
+  TextInput, NumberInput, Divider, Code, Anchor
 } from '@mantine/core';
 import {
   IconArrowBack, IconPlayerPlay, IconEdit, IconTrash, IconAlertCircle, IconClock
 } from '@tabler/icons-react';
 import { DaylightAPI } from '../../../lib/api.mjs';
-import ConfirmModal from '../shared/ConfirmModal.jsx';
+import { ADMIN_SCHEDULER_JOBS_PATH, schedulerJobPath, triggerSchedulerJob } from '../../../hooks/admin/useAdminScheduler.js';
+import { invalidateApiResources, useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { notifySuccess, notifyFailure } from '../shared/feedback.js';
+import { statusBadgeColor } from '../utils/constants.js';
 
 function cronToHuman(expr) {
   if (!expr) return '';
@@ -38,13 +42,7 @@ function StatusBadge({ runtime }) {
   if (!runtime || !runtime.status) {
     return <Badge color="gray" variant="light">never run</Badge>;
   }
-  if (runtime.status === 'success') {
-    return <Badge color="green" variant="light">success</Badge>;
-  }
-  if (runtime.status === 'failed') {
-    return <Badge color="red" variant="light">failed</Badge>;
-  }
-  return <Badge color="gray" variant="light">{runtime.status}</Badge>;
+  return <Badge color={statusBadgeColor(runtime.status)} variant="light">{runtime.status}</Badge>;
 }
 
 function InfoRow({ label, children }) {
@@ -56,61 +54,83 @@ function InfoRow({ label, children }) {
   );
 }
 
+function refreshJobConfiguration(path) {
+  invalidateApiResources(key => key === ADMIN_SCHEDULER_JOBS_PATH || key === path);
+}
+
 function JobDetail() {
   const { jobId } = useParams();
-  const navigate = useNavigate();
+  return <JobDetailView key={jobId} jobId={jobId} />;
+}
 
-  const [job, setJob] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [runQueued, setRunQueued] = useState(false);
+function JobDetailView({ jobId }) {
+  const navigate = useNavigate();
+  const path = schedulerJobPath(jobId);
+  const { data, loading, error: readError, reload, refresh } = useApiResource(path);
+  const { regionProps, retry } = useRetryRegion(reload, loading);
+  const job = data?.job ?? (data?.id ? data : null);
+  const [actionError, setActionError] = useState(null);
+  const mounted = useRef(false);
+  const cancelRunDelay = useRef(null);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      cancelRunDelay.current?.();
+    };
+  }, []);
+  const { run: submitRun, saving: runQueued } = useSheetSubmission(null, error => {
+    if (!mounted.current) return;
+    const message = error.message || 'Failed to trigger job';
+    setActionError(message);
+    notifyFailure({ title: 'Trigger failed', message });
+  });
 
   // Edit modal state
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({ name: '', module: '', schedule: '', dependencies: '', window: 0 });
-  const [editSaving, setEditSaving] = useState(false);
-  const [editError, setEditError] = useState(null);
+  const closeEdit = () => setEditOpen(false);
+  const { submit: submitEdit, saving: editSaving, failure: editFailure, clearFailure: clearEditFailure } = useSheetSubmission(() => {
+    closeEdit();
+    setActionError(null);
+  });
 
   // Delete modal state
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteLoading, setDeleteLoading] = useState(false);
+  const { run: submitDelete, saving: deleteLoading } = useSheetSubmission(() => {
+    notifySuccess({ title: 'Job deleted', message: jobId });
+    navigate('/admin/system/scheduler', { state: { focusJobs: true } });
+  }, error => {
+    if (!mounted.current) return;
+    const message = error.message || 'Failed to delete job';
+    setActionError(message);
+    notifyFailure({ title: 'Delete failed', message });
+    setDeleteOpen(false);
+  });
 
-  const fetchJob = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const handleRunNow = () => submitRun(async () => {
+    setActionError(null);
+    await triggerSchedulerJob(jobId);
+    if (!mounted.current) return;
+    notifySuccess({ title: 'Job triggered', message: jobId });
+    // Allow runtime status to update before reading the queued job again.
+    await new Promise(resolve => {
+      const timer = setTimeout(resolve, 2000);
+      cancelRunDelay.current = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+    });
+    cancelRunDelay.current = null;
+    if (!mounted.current) return;
     try {
-      const result = await DaylightAPI(`/api/v1/admin/scheduler/jobs/${jobId}`);
-      setJob(result.job);
-    } catch (err) {
-      setError(err.message || 'Failed to load job');
-    } finally {
-      setLoading(false);
+      await refresh({ followSuperseding: true });
+    } catch {
+      // The job reader reports a refused GET and offers its own Retry.
     }
-  }, [jobId]);
+  }, { valid: !loading && !readError, onSuccess: null });
 
-  useEffect(() => {
-    fetchJob();
-  }, [fetchJob]);
-
-  const handleRunNow = useCallback(async () => {
-    setRunQueued(true);
-    try {
-      await DaylightAPI(`/api/v1/admin/scheduler/jobs/${jobId}/run`, {}, 'POST');
-      notifySuccess({ title: 'Job triggered', message: jobId });
-      // Re-fetch to update runtime status after a short delay
-      setTimeout(() => {
-        fetchJob();
-        setRunQueued(false);
-      }, 2000);
-    } catch (err) {
-      const msg = err.message || 'Failed to trigger job';
-      setError(msg);
-      notifyFailure({ title: 'Trigger failed', message: msg });
-      setRunQueued(false);
-    }
-  }, [jobId, fetchJob]);
-
-  const openEditModal = useCallback(() => {
+  const openEditModal = () => {
     if (!job) return;
     setEditForm({
       name: job.name || '',
@@ -119,101 +139,41 @@ function JobDetail() {
       dependencies: Array.isArray(job.dependencies) ? job.dependencies.join(', ') : (job.dependencies || ''),
       window: job.window || 0
     });
-    setEditError(null);
+    clearEditFailure();
     setEditOpen(true);
-  }, [job]);
+  };
 
-  const handleEditSave = useCallback(async () => {
-    setEditSaving(true);
-    setEditError(null);
-    try {
-      const deps = editForm.dependencies
-        ? editForm.dependencies.split(',').map(d => d.trim()).filter(Boolean)
-        : [];
-      await DaylightAPI(`/api/v1/admin/scheduler/jobs/${jobId}`, {
-        name: editForm.name,
-        module: editForm.module,
-        schedule: editForm.schedule,
-        dependencies: deps,
-        window: editForm.window
-      }, 'PUT');
-      setEditOpen(false);
-      await fetchJob();
-    } catch (err) {
-      setEditError(err.message || 'Failed to save changes');
-    } finally {
-      setEditSaving(false);
-    }
-  }, [jobId, editForm, fetchJob]);
+  const setEditField = (field, value) => {
+    if (!editSaving) setEditForm(previous => ({ ...previous, [field]: value }));
+  };
 
-  const handleDelete = useCallback(async () => {
-    setDeleteLoading(true);
-    try {
-      await DaylightAPI(`/api/v1/admin/scheduler/jobs/${jobId}`, {}, 'DELETE');
-      notifySuccess({ title: 'Job deleted', message: jobId });
-      navigate('/admin/system/scheduler');
-    } catch (err) {
-      const msg = err.message || 'Failed to delete job';
-      setError(msg);
-      notifyFailure({ title: 'Delete failed', message: msg });
-      setDeleteLoading(false);
-      setDeleteOpen(false);
-    }
-  }, [jobId, navigate]);
+  const handleEditSave = event => submitEdit(event, async () => {
+    const dependencies = editForm.dependencies.split(',').map(dependency => dependency.trim()).filter(Boolean);
+    const minutes = Number(editForm.window);
+    const window = Number.isFinite(minutes) ? Math.max(0, minutes) : 0;
+    await DaylightAPI(path, { ...editForm, dependencies, window }, 'PUT');
+    refreshJobConfiguration(path);
+  });
 
-  // Loading state
-  if (loading && !job) {
-    return (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
-  }
+  const handleDelete = () => submitDelete(async () => {
+    await DaylightAPI(path, {}, 'DELETE');
+    refreshJobConfiguration(path);
+  });
 
-  // Error / 404 state (no job loaded)
-  if (error && !job) {
-    return (
-      <Stack gap="md">
-        <Anchor
-          size="sm"
-          onClick={() => navigate('/admin/system/scheduler')}
-          style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-        >
-          <IconArrowBack size={14} /> Back to Scheduler
-        </Anchor>
-        <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error">
-          {error}
-        </Alert>
-      </Stack>
-    );
-  }
-
-  if (!job) return null;
-
-  const runtime = job.runtime || null;
-
-  return (
-    <Stack gap="md">
-      {/* Header */}
-      <Anchor
-        size="sm"
-        onClick={() => navigate('/admin/system/scheduler')}
-        style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-      >
-        <IconArrowBack size={14} /> Back to Scheduler
-      </Anchor>
-
+  const runtime = job?.runtime || null;
+  const details = job && (
+    <>
       <Text size="xl" fw={700}>{job.name || job.id}</Text>
 
-      {error && (
+      {actionError && (
         <Alert
           icon={<IconAlertCircle size={16} />}
           color="red"
           title="Error"
           withCloseButton
-          onClose={() => setError(null)}
+          onClose={() => setActionError(null)}
         >
-          {error}
+          {actionError}
         </Alert>
       )}
 
@@ -282,14 +242,17 @@ function JobDetail() {
       {/* Actions */}
       <Divider />
       <Group gap="sm">
-        <Button
+        <SubmitButton
+          as={Button}
+          type="button"
           leftSection={<IconPlayerPlay size={16} />}
           variant="light"
           onClick={handleRunNow}
-          disabled={runQueued}
+          pending={runQueued}
+          blocked={loading || Boolean(readError)}
         >
           {runQueued ? 'Queued' : 'Run Now'}
-        </Button>
+        </SubmitButton>
         <Button
           leftSection={<IconEdit size={16} />}
           variant="default"
@@ -308,57 +271,65 @@ function JobDetail() {
       </Group>
 
       {/* Edit Modal */}
-      <Modal
+      <FormDialog
         opened={editOpen}
-        onClose={() => setEditOpen(false)}
+        onClose={closeEdit}
+        closeOnEscape={!editSaving}
+        closeOnClickOutside={!editSaving}
+        closeButtonProps={{ disabled: editSaving }}
         title="Edit Job"
         centered
         size="md"
       >
-        <Stack gap="sm">
-          {editError && (
+        <Stack component="form" gap="sm" onSubmit={handleEditSave}>
+          {editFailure && (
             <Alert icon={<IconAlertCircle size={16} />} color="red" title="Save Error">
-              {editError}
+              {editFailure.message || 'Failed to save changes'}
             </Alert>
           )}
           <TextInput
             label="Name"
             value={editForm.name}
-            onChange={(e) => setEditForm(prev => ({ ...prev, name: e.currentTarget.value }))}
+            readOnly={editSaving}
+            onChange={event => setEditField('name', event.currentTarget.value)}
           />
           <TextInput
             label="Module"
             value={editForm.module}
-            onChange={(e) => setEditForm(prev => ({ ...prev, module: e.currentTarget.value }))}
+            readOnly={editSaving}
+            onChange={event => setEditField('module', event.currentTarget.value)}
           />
           <TextInput
             label="Schedule (cron)"
             description="Standard 5-field cron expression"
             value={editForm.schedule}
-            onChange={(e) => setEditForm(prev => ({ ...prev, schedule: e.currentTarget.value }))}
+            readOnly={editSaving}
+            onChange={event => setEditField('schedule', event.currentTarget.value)}
           />
           <TextInput
             label="Dependencies"
             description="Comma-separated list of job IDs"
             value={editForm.dependencies}
-            onChange={(e) => setEditForm(prev => ({ ...prev, dependencies: e.currentTarget.value }))}
+            readOnly={editSaving}
+            onChange={event => setEditField('dependencies', event.currentTarget.value)}
           />
           <NumberInput
             label="Window (minutes)"
             value={editForm.window}
-            onChange={(val) => setEditForm(prev => ({ ...prev, window: val || 0 }))}
+            readOnly={editSaving}
+            onChange={value => setEditField('window', value || 0)}
             min={0}
           />
           <Group justify="flex-end" gap="sm" mt="md">
-            <Button variant="subtle" onClick={() => setEditOpen(false)} disabled={editSaving}>
+            <Button type="button" variant="subtle" onClick={closeEdit} disabled={editSaving}>
               Cancel
             </Button>
-            <Button onClick={handleEditSave} loading={editSaving}>
+            <SubmitButton as={Button} pending={editSaving}>
               Save
-            </Button>
+            </SubmitButton>
           </Group>
         </Stack>
-      </Modal>
+      </FormDialog>
 
       {/* Delete Confirmation */}
       <ConfirmModal
@@ -370,6 +341,21 @@ function JobDetail() {
         confirmLabel="Delete"
         loading={deleteLoading}
       />
+    </>
+  );
+
+  return (
+    <Stack gap="md">
+      <Anchor component={Link} to="/admin/system/scheduler" size="sm"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <IconArrowBack size={14} aria-hidden="true" /> Back to Scheduler
+      </Anchor>
+      <Stack component="section" gap="md" aria-label="Scheduler job" {...regionProps}>
+        {readError && <ErrorState error={readError} label="Scheduler job" onRetry={retry} />}
+        {!job && loading && <LoadingState label="scheduler job" />}
+        {!job && !loading && !readError && <EmptyState title="Scheduler job not found" />}
+        {details}
+      </Stack>
     </Stack>
   );
 }

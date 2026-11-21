@@ -8,7 +8,7 @@ import { ClientIdentityProvider, FIRST_USE_KEY } from "./ClientIdentityProvider.
 import { useClientIdentity } from "./useClientIdentity.js";
 import { HouseApiError } from "../house/houseApi.js";
 import { STORAGE_KEYS } from "../constants.js";
-import { getDeviceId } from "../../../../../frontend/src/lib/deviceIdentity.js";
+import { getDeviceId, _resetDeviceIdForTests } from "../../../../../frontend/src/lib/deviceIdentity.js";
 
 vi.mock("../externalControl/useControlRegistration.js", () => ({ useControlRegistration: () => ({ ready: false }) }));
 
@@ -54,12 +54,33 @@ describe('ClientIdentityProvider and the screen registry', () => {
   });
 
   it('sends the previous header token on announce until the registry has folded it', async () => {
+    const previousKey = 'media-app.previous-device-id';
+    const previousId = 'browser:0123456789abcdef';
+    const id = 'browser:aaaa1111-2222';
+    localStorage.setItem('ds_device_id', '0123456789abcdef');
     localStorage.setItem(STORAGE_KEYS.DISPLAY_NAME, 'Kitchen tab');
-    localStorage.setItem('media-app.previous-device-id', 'browser:0123456789abcdef');
-    const houseApi = api();
-    render(<ClientIdentityProvider api={houseApi}><Probe /></ClientIdentityProvider>);
-    await waitFor(() => expect(houseApi.announceScreen).toHaveBeenCalledWith(expect.objectContaining({ previousId: 'browser:0123456789abcdef' })));
-    await waitFor(() => expect(localStorage.getItem('media-app.previous-device-id')).toBe(null));
+    _resetDeviceIdForTests();
+    const first = Promise.withResolvers();
+    const retry = Promise.withResolvers();
+    const houseApi = api({ announceScreen: vi.fn()
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(retry.promise) });
+    const view = <ClientIdentityProvider api={houseApi}><Probe /></ClientIdentityProvider>;
+
+    const mounted = render(view);
+    expect(localStorage.getItem(previousKey)).toBe(previousId);
+    expect(houseApi.announceScreen).toHaveBeenNthCalledWith(1, expect.objectContaining({ id, previousId }));
+    await act(async () => { first.reject(new Error('Registry unavailable')); });
+    expect(localStorage.getItem(previousKey)).toBe(previousId);
+    mounted.unmount();
+
+    _resetDeviceIdForTests();
+    render(view);
+    expect(houseApi.announceScreen).toHaveBeenNthCalledWith(2, expect.objectContaining({ id, previousId }));
+    expect(localStorage.getItem(previousKey)).toBe(previousId);
+    await act(async () => { retry.resolve({ screen: { id, name: 'Kitchen tab' } }); });
+    expect(localStorage.getItem(previousKey)).toBeNull();
+    expect(houseApi.announceScreen).toHaveBeenCalledTimes(2);
   });
 
   it('makes every request name this browser by its registry id (X-Daylight-Device)', () => {
@@ -67,14 +88,49 @@ describe('ClientIdentityProvider and the screen registry', () => {
     expect(getDeviceId()).toBe('browser:aaaa1111-2222');
   });
 
-  it('renames through the registry and keeps the registry answer', async () => {
-    const houseApi = api();
+  it('renames through the registry without clearing a room omitted from the edit', async () => {
+    localStorage.setItem(STORAGE_KEYS.DISPLAY_NAME, 'Old name');
+    const houseApi = api({
+      announceScreen: vi.fn(async ({ id, name }) => ({ screen: { id, name, room: 'Den' } })),
+      renameScreen: vi.fn(async (id, { name }) => ({ screen: { id, name, room: 'Den' }, routines: [] })),
+    });
     render(<ClientIdentityProvider api={houseApi}><Probe /></ClientIdentityProvider>);
+    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('Old name|Den|'));
     let result;
     await act(async () => { result = await captured.rename({ name: 'Poo' }); });
     expect(houseApi.renameScreen).toHaveBeenCalledWith('browser:aaaa1111-2222', { name: 'Poo', confirm: false, onCollision: undefined });
     expect(result.ok).toBe(true);
-    expect(screen.getByTestId('probe')).toHaveTextContent('Poo|');
+    expect(houseApi.setScreenRoom).not.toHaveBeenCalled();
+    expect(screen.getByTestId('probe')).toHaveTextContent('Poo|Den|');
+  });
+
+  it('keeps a confirmed rename when the separate room change fails', async () => {
+    localStorage.setItem(STORAGE_KEYS.DISPLAY_NAME, 'Old name');
+    const houseApi = api({
+      renameScreen: vi.fn(async id => ({ screen: { id, name: 'Chosen (2)', room: 'Den' } })),
+      setScreenRoom: vi.fn(async () => { throw new HouseApiError('Room offline', { transient: true }); }),
+    });
+    render(<ClientIdentityProvider api={houseApi}><Probe /></ClientIdentityProvider>);
+    await waitFor(() => expect(captured.registered?.name).toBe('Old name'));
+    let result;
+    await act(async () => { result = await captured.rename({ name: 'Chosen', room: 'Kitchen' }); });
+    expect(result).toMatchObject({ ok: false, error: 'Room offline' });
+    expect(captured.registered).toMatchObject({ name: 'Chosen (2)', room: 'Den' });
+    expect(screen.getByTestId('probe')).toHaveTextContent('Chosen (2)|Den');
+  });
+
+  it('keeps a room write when the older startup announce finishes later', async () => {
+    localStorage.setItem(STORAGE_KEYS.DISPLAY_NAME, 'Kitchen tab');
+    let finishAnnounce;
+    const houseApi = api({
+      announceScreen: vi.fn(() => new Promise(resolve => { finishAnnounce = resolve; })),
+      setScreenRoom: vi.fn(async (id, room) => ({ screen: { id, name: 'Kitchen tab', room } })),
+    });
+    render(<ClientIdentityProvider api={houseApi}><Probe /></ClientIdentityProvider>);
+    await act(async () => { await captured.rename({ name: 'Kitchen tab', room: 'Pantry' }); });
+    await act(async () => finishAnnounce({ screen: { id: captured.deviceId, name: 'Kitchen tab', room: 'Kitchen' } }));
+    expect(captured.registered?.room).toBe('Pantry');
+    expect(screen.getByTestId('probe')).toHaveTextContent('Kitchen tab|Pantry');
   });
 
   it('hands a taken name back with the suggestion, and routines back for confirmation', async () => {

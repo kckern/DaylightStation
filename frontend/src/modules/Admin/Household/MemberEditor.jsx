@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useState, useCallback } from 'react';
+import { SectionCard } from '../../../lib/ui/cards.jsx';
+import { useParams } from 'react-router-dom';
 import {
   Stack, Group, Text, Badge, Button, Tabs, TextInput, NumberInput, Select,
-  Paper, Alert, Center, Loader, Divider, Anchor, MultiSelect, CopyButton,
+  Paper, Alert, Divider, Anchor, MultiSelect, CopyButton,
   ActionIcon, Tooltip
 } from '@mantine/core';
 import {
@@ -10,23 +11,58 @@ import {
   IconSettings, IconLink, IconApple, IconHeartbeat, IconShield,
   IconCopy, IconCheck
 } from '@tabler/icons-react';
-import { useHotkeys } from '@mantine/hooks';
+import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { useAdminHousehold } from '../../../hooks/admin/useAdminHousehold';
 import SaveBar from '../shared/SaveBar.jsx';
+import EditorReadRegion from '../shared/EditorReadRegion.jsx';
 import { useUnsavedGuard } from '../shared/useUnsavedGuard.js';
+import GuardedLink from '../shared/GuardedLink.jsx';
+import { adminDraftOwnerKey, clearAdminDraft, useAdminDraftState } from '../shared/useAdminDraftState.js';
+import { useAdminSessionKey } from '../shared/useAdminSessionKey.js';
 
 const AVAILABLE_ROLES = ['sysadmin', 'admin', 'parent', 'member', 'kiosk'];
 
 function MemberEditor() {
   const { username } = useParams();
-  const navigate = useNavigate();
+  const sessionKey = useAdminSessionKey();
+  return <MemberEditorSession key={JSON.stringify([sessionKey, username])} username={username} sessionKey={sessionKey} />;
+}
+
+function MemberEditorSession({ username, sessionKey }) {
+  const { data, loading, error, reload } = useApiResource(`/api/v1/admin/household/members/${username}`);
+
+  const back = (
+    <Anchor
+      component={GuardedLink}
+      to="/admin/household/members"
+      size="sm"
+      style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+    >
+      <IconArrowBack size={14} /> Back to Members
+    </Anchor>
+  );
+
+  return (
+    <EditorReadRegion
+      key={JSON.stringify([sessionKey, username])}
+      label="Member editor"
+      loading={loading && !data}
+      error={!data && error}
+      errorTitle="Error loading member profile"
+      reload={reload}
+      back={back}
+    >
+      {data?.member && <MemberDraft username={username} sessionKey={sessionKey} initialProfile={data.member} authStatus={data.authStatus} />}
+    </EditorReadRegion>
+  );
+}
+
+function MemberDraft({ username, sessionKey, initialProfile, authStatus }) {
   const { generateInvite } = useAdminHousehold();
 
-  const [profile, setProfile] = useState(null);
-  const [original, setOriginal] = useState(null);
-  const [authStatus, setAuthStatus] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const draftKey = adminDraftOwnerKey('member', sessionKey, username);
+  const [profile, setProfile, original, setOriginal] = useAdminDraftState(draftKey, initialProfile);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [inviteUrl, setInviteUrl] = useState(null);
@@ -34,23 +70,9 @@ function MemberEditor() {
 
   const dirty = JSON.stringify(profile) !== JSON.stringify(original);
 
-  // Unsaved-changes guard: beforeunload + AdminNav interception (audit C1)
-  useUnsavedGuard(dirty, { label: `member:${username}` });
-
-  const fetchProfile = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await DaylightAPI(`/api/v1/admin/household/members/${username}`);
-      setProfile(result.member);
-      setOriginal(JSON.parse(JSON.stringify(result.member)));
-      setAuthStatus(result.authStatus || null);
-    } catch (err) {
-      setError(err.message || 'Failed to load member profile');
-    } finally {
-      setLoading(false);
-    }
-  }, [username]);
+  // Unsaved-changes guard: beforeunload + guarded Admin navigation (audit C1)
+  const clearDraft = useCallback(() => clearAdminDraft(draftKey), [draftKey]);
+  useUnsavedGuard(dirty, { label: `member:${username}`, onDiscard: clearDraft });
 
   const handleGenerateInvite = useCallback(async () => {
     setInviteLoading(true);
@@ -65,10 +87,6 @@ function MemberEditor() {
       setInviteLoading(false);
     }
   }, [username, generateInvite]);
-
-  useEffect(() => {
-    fetchProfile();
-  }, [fetchProfile]);
 
   function updateField(path, value) {
     setProfile(prev => {
@@ -119,52 +137,13 @@ function MemberEditor() {
     setError(null);
   }, [original]);
 
-  useHotkeys([
-    ['mod+s', (e) => {
-      e.preventDefault();
-      if (dirty && !saving) handleSave();
-    }],
-    ['mod+z', (e) => {
-      e.preventDefault();
-      if (dirty && !saving) handleRevert();
-    }],
-  ]);
-
-  // Loading state
-  if (loading && !profile) {
-    return (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
-  }
-
-  // Error with no profile loaded
-  if (error && !profile) {
-    return (
-      <Stack gap="md" p="md">
-        <Anchor
-          size="sm"
-          onClick={() => navigate('/admin/household/members')}
-          style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-        >
-          <IconArrowBack size={14} /> Back to Members
-        </Anchor>
-        <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error">
-          {error}
-        </Alert>
-      </Stack>
-    );
-  }
-
-  if (!profile) return null;
-
   return (
     <Stack gap="md" p="md">
       {/* Header */}
       <Anchor
+        component={GuardedLink}
+        to="/admin/household/members"
         size="sm"
-        onClick={() => navigate('/admin/household/members')}
         style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
       >
         <IconArrowBack size={14} /> Back to Members
@@ -313,8 +292,7 @@ function MemberEditor() {
 
         {/* Identities Tab */}
         <Tabs.Panel value="identities" pt="md">
-          <Paper withBorder p="md" className="ds-section-panel">
-            <Text fw={600} mb="sm" className="ds-section-label">Telegram</Text>
+          <SectionCard variant="form" title="Telegram">
             <Stack gap="sm">
               <TextInput
                 label="User ID"
@@ -327,13 +305,12 @@ function MemberEditor() {
                 onChange={(e) => updateField('identities.telegram.default_bot', e.currentTarget.value)}
               />
             </Stack>
-          </Paper>
+          </SectionCard>
         </Tabs.Panel>
 
         {/* Nutribot Tab */}
         <Tabs.Panel value="nutribot" pt="md">
-          <Paper withBorder p="md" className="ds-section-panel">
-            <Text fw={600} mb="sm" className="ds-section-label">Nutrition Goals</Text>
+          <SectionCard variant="form" title="Nutrition Goals">
             <Stack gap="sm">
               <Group grow>
                 <NumberInput
@@ -384,13 +361,12 @@ function MemberEditor() {
                 min={0}
               />
             </Stack>
-          </Paper>
+          </SectionCard>
         </Tabs.Panel>
 
         {/* Fitness Tab */}
         <Tabs.Panel value="fitness" pt="md">
-          <Paper withBorder p="md" className="ds-section-panel">
-            <Text fw={600} mb="sm" className="ds-section-label">Heart Rate Zone Overrides</Text>
+          <SectionCard variant="form" title="Heart Rate Zone Overrides">
             <Stack gap="sm">
               <NumberInput
                 label="Active (bpm)"
@@ -417,15 +393,14 @@ function MemberEditor() {
                 min={0}
               />
             </Stack>
-          </Paper>
+          </SectionCard>
         </Tabs.Panel>
 
         {/* Auth Tab */}
         <Tabs.Panel value="auth" pt="md">
           <Stack gap="md">
             {/* Roles Section */}
-            <Paper withBorder p="md" className="ds-section-panel">
-              <Text fw={600} mb="sm" className="ds-section-label">Roles</Text>
+            <SectionCard variant="form" title="Roles">
               <MultiSelect
                 label="Assigned Roles"
                 description="Controls what this user can access"
@@ -436,11 +411,10 @@ function MemberEditor() {
                 searchable
                 clearable
               />
-            </Paper>
+            </SectionCard>
 
             {/* Auth Status Section */}
-            <Paper withBorder p="md" className="ds-section-panel">
-              <Text fw={600} mb="sm" className="ds-section-label">Auth Status</Text>
+            <SectionCard variant="form" title="Auth Status">
               <Stack gap="xs">
                 <Group gap="sm">
                   <Text size="sm" c="dimmed" w={120}>Password set:</Text>
@@ -473,11 +447,10 @@ function MemberEditor() {
                   </Group>
                 )}
               </Stack>
-            </Paper>
+            </SectionCard>
 
             {/* Invite Link Section */}
-            <Paper withBorder p="md" className="ds-section-panel">
-              <Text fw={600} mb="sm" className="ds-section-label">Invite Link</Text>
+            <SectionCard variant="form" title="Invite Link">
               <Stack gap="sm">
                 <Text size="sm" c="dimmed">
                   Generate a one-time invite link for this user to set their password.
@@ -517,7 +490,7 @@ function MemberEditor() {
                   </Group>
                 )}
               </Stack>
-            </Paper>
+            </SectionCard>
           </Stack>
         </Tabs.Panel>
       </Tabs>

@@ -18,7 +18,8 @@ import { useSessionController } from "../controller/useSessionController.js";
 import { usePlaybackPosition } from "../controller/usePlaybackPosition.js";
 import { useNav } from "./NavProvider.jsx";
 import { usePlayerHost } from "../session/usePlayerHost.js";
-import { useSessionControls, useSecondTick, secondsUntil, formatClock } from "../controller/useSessionControls.js";
+import { useDisplayClock } from '@/lib/hooks/useDisplayClock.js';
+import { useSessionControls, secondsUntil, formatClock } from "../controller/useSessionControls.js";
 import { useSlideshowStopGuard } from "./PlayerFeatureControls.jsx";
 import { HandleHouseMenu } from "../house/HouseQuietControls.jsx";
 import { FlingButton } from "./FlingButton.jsx";
@@ -55,7 +56,7 @@ function problemLabel(problem) {
 function useSleepLeft() {
   const { controls } = useSessionControls('local');
   const sleepTimer = controls?.sleepTimer ?? null;
-  const now = useSecondTick(sleepTimer?.mode === 'minutes');
+  const now = useDisplayClock(sleepTimer?.mode === 'minutes');
   if (!sleepTimer) return null;
   if (sleepTimer.mode === 'atEnd') return { text: 'end', label: 'Sleep timer: stops at the end of this item' };
   const left = formatClock(secondsUntil(sleepTimer.endsAt, now) ?? sleepTimer.remainingSeconds);
@@ -78,12 +79,17 @@ export function MiniPlayer() {
   const sleepLeft = useSleepLeft();
   const identity = useContext(ClientIdentityContext);
   const { push, view } = useNav();
-  // Stopping a slideshow with music behind asks whether to keep the music.
-  const [guardStop, stopGuardDialog] = useSlideshowStopGuard('local');
   const item = snapshot?.currentItem;
   const queueItems = Array.isArray(snapshot?.queue?.items) ? snapshot.queue.items : [];
   const queueCount = queueItems.length;
   const displayItem = item ?? queueItems[0] ?? null;
+  // The handle hides when the full local controls own Now Playing.
+  const isNowPlayingOpen = view === 'nowPlaying';
+  const hasActiveFullLocalControls = isNowPlayingOpen && !!item;
+  const [guardStop, stopGuardDialog] = useSlideshowStopGuard('local', null, {
+    available: Boolean(displayItem) && !hasActiveFullLocalControls,
+  });
+
 
   const dockRef = useRef(null);
   // `format` is the canonical signal (set by resultToQueueInput/formatForChild);
@@ -113,11 +119,6 @@ export function MiniPlayer() {
   const repeat = snapshot.config?.repeat ?? 'off';
   const hasNext = queuePos >= 0
     && (queuePos < queueCount - 1 || (repeat === 'all' && queueCount > 1));
-  // Now Playing has no nav tab; the mini player IS its affordance, so it
-  // lights up while that view is open (see PrimaryNav HIGHLIGHT note).
-  const isNowPlayingOpen = view === 'nowPlaying';
-  const hasActiveFullLocalControls = isNowPlayingOpen && !!item;
-
   const duration = item?.duration ?? 0;
   const positionSeconds = live.seconds ?? snapshot.position ?? 0;
   const progressFraction = duration > 0
@@ -215,7 +216,7 @@ export function MiniPlayer() {
           className="np-icon-btn"
           aria-label="Stop"
           title="Stop playback and keep the queue"
-          onClick={() => guardStop((opts) => transport.stop(opts))}
+          onClick={event => guardStop((opts) => transport.stop(opts), event.currentTarget)}
         >
           <IconPlayerStopFilled size={18} />
         </button>

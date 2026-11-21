@@ -9,6 +9,7 @@ import { PlayerHostProvider } from "./PlayerHostProvider.jsx";
 import { LocalSessionContext } from "./LocalSessionContext.js";
 import { usePlayerHost } from "./usePlayerHost.js";
 import { createLocalSessionController } from "./LocalSessionController.js";
+import { TIMING } from "../constants.js";
 import { applyCommandEnvelope } from "../externalControl/commandHandler.js";
 
 // Count how many times the platform Player is actually mounted. A remount is
@@ -57,31 +58,6 @@ const { PlayerBridge } = await import("./PlayerBridge.jsx");
 
 afterEach(() => vi.useRealTimers());
 
-function makeController() {
-  const snapshot = {
-    currentItem: {
-      contentId: 'plex:592837',
-      title: 'Faith (Music)',
-      format: 'audio',
-      duration: 1729,
-      thumbnail: null,
-    },
-    position: 0,
-    config: { volume: 100 },
-    state: 'loading',
-  };
-  return {
-    getSnapshot: () => snapshot,
-    subscribe: () => () => {},
-    setPlayerHandle: () => {},
-    onPlayerEnded: () => {},
-    onPlayerStateChange: () => {},
-    onPlayerStalled: () => {},
-    onPlayerPositionTick: () => {},
-    onPlayerProgress: () => {},
-  };
-}
-
 function makeRealController() {
   return createLocalSessionController({
     clientId: 'bridge-client',
@@ -113,6 +89,15 @@ function Harness({ controller }) {
 }
 
 describe('PlayerBridge host transitions', () => {
+  function renderWithAudio() {
+    const controller = makeRealController();
+    const view = render(<Harness controller={controller} />);
+    act(() => {
+      controller.queue.playNow({ contentId: 'plex:592837', title: 'Faith (Music)', format: 'audio', duration: 1729 });
+    });
+    return view;
+  }
+
   beforeEach(() => {
     mountSpy.mockClear();
     latestPlayerProps = null;
@@ -129,7 +114,7 @@ describe('PlayerBridge host transitions', () => {
     // Reproduces the 2026-08-16 mobile session: an audio track is dispatched
     // while no view holds a host claim, so the Player mounts into the
     // off-screen park (left:-10000px). A host claim then arrives.
-    const { getByTestId } = render(<Harness controller={makeController()} />);
+    const { getByTestId } = renderWithAudio();
     expect(mountSpy).toHaveBeenCalledTimes(1);
 
     act(() => { getByTestId('toggle').click(); });
@@ -139,7 +124,7 @@ describe('PlayerBridge host transitions', () => {
   });
 
   it('does not remount the Player when the host claim is released', () => {
-    const { getByTestId } = render(<Harness controller={makeController()} />);
+    const { getByTestId } = renderWithAudio();
     act(() => { getByTestId('toggle').click(); });
     mountSpy.mockClear();
 
@@ -855,6 +840,37 @@ describe('PlayerBridge — held natural end replays (duplicate-completion guard)
 });
 
 describe('PlayerBridge — session volume survives the Player resetting the element', () => {
+  it('moves the mute setting and metadata listeners to a replacement decoder for the same item', () => {
+    vi.useFakeTimers();
+    const controller = makeRealController();
+    mountedContentId = 'plex:replaced-audio';
+    controller.queue.playNow({ contentId: mountedContentId, format: 'audio' });
+    controller.config.setVolume(0);
+    const retired = document.createElement('audio');
+    mediaElement = retired;
+    const { unmount } = render(<Harness controller={controller} />);
+    expect(retired.volume).toBe(0);
+
+    const replacement = document.createElement('audio');
+    mediaElement = replacement;
+    act(() => vi.advanceTimersByTime(TIMING.NATIVE_MEDIA_BIND_INTERVAL_MS));
+    expect(replacement.volume).toBe(0);
+
+    retired.volume = 1;
+    replacement.volume = 1;
+    act(() => {
+      retired.dispatchEvent(new Event('loadedmetadata'));
+      replacement.dispatchEvent(new Event('loadedmetadata'));
+    });
+    expect(retired.volume).toBe(1);
+    expect(replacement.volume).toBe(0);
+
+    unmount();
+    replacement.volume = 1;
+    replacement.dispatchEvent(new Event('canplay'));
+    expect(replacement.volume).toBe(1);
+  });
+
   it('re-applies the session volume when the element loads its metadata (the Player writes volume 1 then)', async () => {
     vi.useFakeTimers();
     const controller = makeRealController();

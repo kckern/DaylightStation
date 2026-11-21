@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useLayoutEffect, useRef } from 'react';
 import { Anchor, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useWebSocketSubscription } from "../../../../../frontend/src/hooks/useWebSocket.js";
@@ -108,9 +108,20 @@ function resolveAction(intent, navigate) {
  */
 export function useAppNotifications({ username, navigate } = {}) {
   const seenRef = useRef(new Set());
+  const sessionRef = useRef(null);
+
+  useLayoutEffect(() => {
+    const session = { username, toastIds: new Set() };
+    sessionRef.current = session;
+    return () => {
+      sessionRef.current = null;
+      for (const id of session.toastIds) notifications.hide(id);
+    };
+  }, [username]);
 
   const handleNotification = useCallback((intent) => {
-    if (!intent || intent.topic !== 'notification') return;
+    const session = sessionRef.current;
+    if (!session || intent?.topic !== 'notification') return;
 
     logger().debug('notification.received', {
       category: intent.category,
@@ -118,10 +129,10 @@ export function useAppNotifications({ username, navigate } = {}) {
       addressed: !!intent.metadata?.username,
     });
 
-    if (!isForUser(intent, username)) {
+    if (!isForUser(intent, session.username)) {
       logger().debug('notification.skipped.not_for_user', {
         target: intent.metadata?.username,
-        current: username,
+        current: session.username,
       });
       return;
     }
@@ -139,6 +150,7 @@ export function useAppNotifications({ username, navigate } = {}) {
     const onAction = resolveAction(intent, navigate);
     const actionLabel = intent.actions?.[0]?.label || 'Open';
     const body = intent.body || '';
+    const toastIds = intent.metadata?.username ? session.toastIds : null;
 
     const message = onAction
       ? React.createElement(
@@ -150,7 +162,10 @@ export function useAppNotifications({ username, navigate } = {}) {
             {
               component: 'button',
               type: 'button',
-              onClick: onAction,
+              onClick: () => {
+                // A retiring notification can still be mounted during its exit transition.
+                if (!toastIds || sessionRef.current === session) onAction();
+              },
               display: 'block',
               mt: body ? 4 : 0,
               'data-testid': 'notification-action',
@@ -160,19 +175,21 @@ export function useAppNotifications({ username, navigate } = {}) {
         )
       : body;
 
-    notifications.show({
+    const id = notifications.show({
       title: intent.title || 'Notification',
       message,
       color: colorForUrgency(intent.urgency),
       autoClose: intent.urgency === 'critical' ? false : 8000,
+      onClose: toastIds ? ({ id }) => toastIds.delete(id) : undefined,
     });
+    toastIds?.add(id);
 
     logger().info('notification.shown', {
       category: intent.category,
       urgency: intent.urgency,
       actionable: !!onAction,
     });
-  }, [username, navigate]);
+  }, [navigate]);
 
   useWebSocketSubscription('notification', handleNotification, [handleNotification]);
 }

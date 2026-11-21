@@ -1,3 +1,4 @@
+import { whileDocumentVisible } from '@/lib/hooks/useVisibleRefresh.js';
 import { useEffect } from 'react';
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 import { heapSnapshotFields, reportMemoryMonitoringAvailability } from "../../../../../../frontend/src/lib/perf/memoryProbe.js";
@@ -14,137 +15,141 @@ function log() { return getLogger().child({ component: 'feed-perf' }); }
  * @param {boolean} active - Whether monitoring is active
  * @param {number} [snapshotIntervalMs=5000] - How often to emit a summary snapshot
  */
-export function usePerfMonitor(active, snapshotIntervalMs = 5000) {
+export function usePerfMonitor(active, scrollRef, snapshotIntervalMs = 5000) {
   useEffect(() => {
     if (!active) return;
 
-    // Say once, up front, whether heap figures are obtainable here. Without
-    // this a Firefox session looks identical to a healthy one: heap fields
-    // null, no threshold ever crossed, nothing in the logs explaining why.
-    reportMemoryMonitoringAvailability({ monitor: 'feed-scroll' });
+    return whileDocumentVisible(() => monitorScroll(scrollRef, snapshotIntervalMs));
+  }, [active, scrollRef, snapshotIntervalMs]);
+}
 
-    // ── FPS + jank tracking via rAF ──
-    let rafId;
-    let lastFrameTime = performance.now();
-    let droppedFrames = 0;
-    let worstFrameMs = 0;
-    let frameTimes = [];
+function monitorScroll(scrollRef, snapshotIntervalMs) {
+  // Say once, up front, whether heap figures are obtainable here. Without
+  // this a Firefox session looks identical to a healthy one: heap fields
+  // null, no threshold ever crossed, nothing in the logs explaining why.
+  reportMemoryMonitoringAvailability({ monitor: 'feed-scroll' });
 
-    // ── Scroll smoothness tracking (correlated inside the single tick) ──
-    let scrollFrames = 0;
-    let scrollJanks = 0;
-    let isScrolling = false;
-    let scrollTimer;
+  // ── FPS + jank tracking via rAF ──
+  let rafId;
+  let lastFrameTime = performance.now();
+  let droppedFrames = 0;
+  let worstFrameMs = 0;
+  let frameTimes = [];
 
-    const JANK_THRESHOLD_MS = 50; // >50ms = dropped frame (< 20fps)
-    const LONG_FRAME_MS = 100;    // >100ms = log individual jank event
+  // ── Scroll smoothness tracking (correlated inside the single tick) ──
+  let scrollFrames = 0;
+  let scrollJanks = 0;
+  let isScrolling = false;
+  let scrollTimer;
 
-    function tick(now) {
-      const delta = now - lastFrameTime;
-      lastFrameTime = now;
-      frameTimes.push(delta);
+  const JANK_THRESHOLD_MS = 50; // >50ms = dropped frame (< 20fps)
+  const LONG_FRAME_MS = 100;    // >100ms = log individual jank event
 
-      if (delta > worstFrameMs) worstFrameMs = delta;
-      if (delta > JANK_THRESHOLD_MS) {
-        droppedFrames++;
-        if (isScrolling) scrollJanks++;
-      }
+  function tick(now) {
+    const delta = now - lastFrameTime;
+    lastFrameTime = now;
+    frameTimes.push(delta);
 
-      if (delta > LONG_FRAME_MS) {
-        // Don't querySelectorAll here — it's expensive and would worsen jank.
-        // Node count is captured in the periodic snapshot instead.
-        log().info('perf.jank', { frameMs: Math.round(delta) });
-      }
-
-      rafId = requestAnimationFrame(tick);
+    if (delta > worstFrameMs) worstFrameMs = delta;
+    if (delta > JANK_THRESHOLD_MS) {
+      droppedFrames++;
+      if (isScrolling) scrollJanks++;
     }
+
+    if (delta > LONG_FRAME_MS) {
+      // Don't querySelectorAll here — it's expensive and would worsen jank.
+      // Node count is captured in the periodic snapshot instead.
+      log().info('perf.jank', { frameMs: Math.round(delta) });
+    }
+
     rafId = requestAnimationFrame(tick);
+  }
+  rafId = requestAnimationFrame(tick);
 
-    // ── Long Task observer (tasks > 50ms blocking main thread) ──
-    let longTaskCount = 0;
-    let longTaskTotalMs = 0;
-    let longTaskObserver;
-    if (typeof PerformanceObserver !== 'undefined') {
-      try {
-        longTaskObserver = new PerformanceObserver((list) => {
-          for (const entry of list.getEntries()) {
-            longTaskCount++;
-            longTaskTotalMs += entry.duration;
-          }
-        });
-        longTaskObserver.observe({ type: 'longtask', buffered: false });
-      } catch { /* longtask not supported */ }
-    }
-
-    // ── Scroll session tracking ──
-    function onScroll() {
-      if (!isScrolling) {
-        isScrolling = true;
-        scrollFrames = 0;
-        scrollJanks = 0;
-      }
-      scrollFrames++;
-      clearTimeout(scrollTimer);
-      scrollTimer = setTimeout(() => {
-        if (scrollFrames > 5) {
-          log().info('perf.scroll-session', {
-            frames: scrollFrames,
-            janks: scrollJanks,
-            smoothness: scrollFrames > 0 ? Math.round((1 - scrollJanks / scrollFrames) * 100) : 100,
-          });
+  // ── Long Task observer (tasks > 50ms blocking main thread) ──
+  let longTaskCount = 0;
+  let longTaskTotalMs = 0;
+  let longTaskObserver;
+  if (typeof PerformanceObserver !== 'undefined') {
+    try {
+      longTaskObserver = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          longTaskCount++;
+          longTaskTotalMs += entry.duration;
         }
-        isScrolling = false;
-      }, 150);
+      });
+      longTaskObserver.observe({ type: 'longtask', buffered: false });
+    } catch { /* longtask not supported */ }
+  }
+
+  // ── Scroll session tracking ──
+  function onScroll() {
+    if (!isScrolling) {
+      isScrolling = true;
+      scrollFrames = 0;
+      scrollJanks = 0;
     }
+    scrollFrames++;
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => {
+      if (scrollFrames > 5) {
+        log().info('perf.scroll-session', {
+          frames: scrollFrames,
+          janks: scrollJanks,
+          smoothness: scrollFrames > 0 ? Math.round((1 - scrollJanks / scrollFrames) * 100) : 100,
+        });
+      }
+      isScrolling = false;
+    }, 150);
+  }
 
-    const scrollEl = document.querySelector('.feed-content') || window;
-    scrollEl.addEventListener('scroll', onScroll, { passive: true });
+  const scrollEl = scrollRef?.current;
+  scrollEl?.addEventListener('scroll', onScroll, { passive: true });
 
-    // ── Periodic snapshot ──
-    const snapshotId = setInterval(() => {
-      const fps = frameTimes.length > 0
-        ? Math.round(1000 / (frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length))
-        : 0;
+  // ── Periodic snapshot ──
+  const snapshotId = setInterval(() => {
+    const fps = frameTimes.length > 0
+      ? Math.round(1000 / (frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length))
+      : 0;
 
-      const p50 = percentile(frameTimes, 0.5);
-      const p95 = percentile(frameTimes, 0.95);
-      const p99 = percentile(frameTimes, 0.99);
+    const p50 = percentile(frameTimes, 0.5);
+    const p95 = percentile(frameTimes, 0.95);
+    const p99 = percentile(frameTimes, 0.99);
 
-      const snapshot = {
-        fps,
-        frameP50Ms: p50,
-        frameP95Ms: p95,
-        frameP99Ms: p99,
-        droppedFrames,
-        worstFrameMs: Math.round(worstFrameMs),
-        longTasks: longTaskCount,
-        longTaskMs: Math.round(longTaskTotalMs),
-        nodeCount: document.querySelectorAll('*').length,
-      };
-
-      // Heap figures where the browser provides them. Always carries
-      // heapSource so a null is never mistaken for a real reading.
-      Object.assign(snapshot, heapSnapshotFields({ precision: 0 }));
-
-      log().info('perf.snapshot', snapshot);
-
-      // Reset accumulators
-      droppedFrames = 0;
-      worstFrameMs = 0;
-      frameTimes = [];
-      longTaskCount = 0;
-      longTaskTotalMs = 0;
-    }, snapshotIntervalMs);
-
-    // ── Cleanup ──
-    return () => {
-      cancelAnimationFrame(rafId);
-      clearInterval(snapshotId);
-      clearTimeout(scrollTimer);
-      scrollEl.removeEventListener('scroll', onScroll);
-      longTaskObserver?.disconnect();
+    const snapshot = {
+      fps,
+      frameP50Ms: p50,
+      frameP95Ms: p95,
+      frameP99Ms: p99,
+      droppedFrames,
+      worstFrameMs: Math.round(worstFrameMs),
+      longTasks: longTaskCount,
+      longTaskMs: Math.round(longTaskTotalMs),
+      nodeCount: document.querySelectorAll('*').length,
     };
-  }, [active, snapshotIntervalMs]);
+
+    // Heap figures where the browser provides them. Always carries
+    // heapSource so a null is never mistaken for a real reading.
+    Object.assign(snapshot, heapSnapshotFields({ precision: 0 }));
+
+    log().info('perf.snapshot', snapshot);
+
+    // Reset accumulators
+    droppedFrames = 0;
+    worstFrameMs = 0;
+    frameTimes = [];
+    longTaskCount = 0;
+    longTaskTotalMs = 0;
+  }, snapshotIntervalMs);
+
+  // ── Cleanup ──
+  return () => {
+    cancelAnimationFrame(rafId);
+    clearInterval(snapshotId);
+    clearTimeout(scrollTimer);
+    scrollEl?.removeEventListener('scroll', onScroll);
+    longTaskObserver?.disconnect();
+  };
 }
 
 function percentile(arr, p) {

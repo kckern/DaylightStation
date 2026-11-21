@@ -41,3 +41,18 @@ export function isDirectSourceIdQuery(text, results = []) {
   if (term.includes('/')) return true;
   return Array.isArray(results) && results.some((r) => r?.id === text);
 }
+
+export function normalizeListSource(source) {
+  return source === 'list' ? 'menu' : source;
+}
+
+/** Split `source:localId`, tolerating the legacy `source: localId` spacing. */
+export function splitContentId(contentId) {
+  if (typeof contentId !== 'string') return null;
+  const colonIndex = contentId.indexOf(':');
+  if (colonIndex === -1) return null;
+  return {
+    source: normalizeListSource(contentId.slice(0, colonIndex).trim()),
+    localId: contentId.slice(colonIndex + 1).trim(),
+  };
+}

@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
+import { useCallback, useMemo } from 'react';
+import { useDeviceConfig } from '@/lib/hooks/useDeviceConfig.js';
 
 function filterPlaybackSurfaces(rawDevices) {
   if (!rawDevices || typeof rawDevices !== 'object') return [];
@@ -9,27 +9,16 @@ function filterPlaybackSurfaces(rawDevices) {
 }
 
 export function useDevices() {
-  const [devices, setDevices] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await DaylightAPI('api/v1/device/config');
-      setDevices(filterPlaybackSurfaces(res?.devices));
-      setLoading(false);
-    } catch (err) {
-      setError(err);
-      setDevices([]);
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  return { devices, loading, error, refresh: load };
+  const { devices: roster, loading, error, refresh } = useDeviceConfig({
+    retryTransient: false,
+    clearDataOnError: true,
+  });
+  const devices = useMemo(() => filterPlaybackSurfaces(roster), [roster]);
+  // Socket recovery and visibility callbacks also call this without awaiting it.
+  const refreshDevices = useCallback(async () => {
+    try { await refresh(); } catch { /* The resource publishes the read error. */ }
+  }, [refresh]);
+  return { devices, loading, error, refresh: refreshDevices };
 }
 
 export default useDevices;

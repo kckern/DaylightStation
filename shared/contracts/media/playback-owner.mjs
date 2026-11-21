@@ -10,6 +10,8 @@ const IDENTITY_FIELDS = Object.freeze([
   'sessionId', 'contentId', 'queueItemId',
 ]);
 const SESSION_STATES = new Set(['idle', 'loading', 'playing', 'paused', 'buffering', 'stalled', 'ended', 'error', 'ready']);
+const NATIVE_PLAYBACK_FORMATS = new Set(['video', 'hls_video', 'dash_video', 'audio']);
+export const hasNativePlaybackRenderer = (format) => NATIVE_PLAYBACK_FORMATS.has(format);
 const PLAYABLE_FORMATS = new Set([
   'video', 'dash_video', 'hls_video', 'audio', 'singalong', 'readalong',
   'readable_paged', 'readable_flow', 'app', 'image', 'composite', 'game',

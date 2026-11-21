@@ -19,11 +19,12 @@
 // MediaContentSearch) and the full-screen mobile Search Mode surface
 // (Task 13).
 import React, { useMemo, useState } from 'react';
+import { IconRefresh } from '@tabler/icons-react';
 import { useSearchContext } from "./useSearchContext.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 
 export function ScopeChips() {
-  const { scopes, currentScopeKey, setScopeKey } = useSearchContext();
+  const { scopes, currentScopeKey, scopeError, retryScopes, setScopeKey } = useSearchContext();
   const log = useMemo(() => getLogger().child({ component: 'scope-chips' }), []);
 
   // The child row auto-opens under whichever parent currently owns the
@@ -40,6 +41,11 @@ export function ScopeChips() {
   const selectScope = (scope) => {
     setScopeKey(scope.key);
     log.info('search.scope_selected', { scopeKey: scope.key, viaFallback: false });
+  };
+
+  const retryScopeConfig = () => {
+    log.info('search.scope_config_retry');
+    retryScopes();
   };
 
   const handleTopLevelClick = (scope) => {
@@ -69,7 +75,10 @@ export function ScopeChips() {
             className="media-scope-chip"
             data-testid={`scope-chip-${scope.key}`}
             data-ignore-outside-clicks
-            aria-pressed={scope.key === currentScopeKey}
+            aria-pressed={scope.children?.length > 0 && scope.params == null
+              ? undefined
+              : scope.key === currentScopeKey}
+            aria-expanded={scope.children?.length > 0 ? scope.key === expandedKey : undefined}
             // Desktop scope chips live beside the active Combobox input. Keep
             // its focus through a pointer click so Mantine does not interpret
             // this in-surface narrowing action as an outside dismissal.
@@ -101,6 +110,19 @@ export function ScopeChips() {
             </button>
           ))}
         </div>
+      )}
+      {scopeError && (
+        <button
+          type="button"
+          className="media-scope-retry"
+          aria-label="Retry loading search scopes"
+          title={scopeError.message}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={retryScopeConfig}
+        >
+          <IconRefresh size={16} aria-hidden="true" />
+          <span>Scopes unavailable · Retry</span>
+        </button>
       )}
     </div>
   );

@@ -1,70 +1,37 @@
 // frontend/src/modules/Media/cast/screenRooms.js
-// Rooms of the household's screens, from the screen registry
-// (GET /api/v1/media/screens, tech doc §2.5), for the several-screen drift
-// warning (PLACE.4a/AC6, RQ-PLACE-10): screens started together drift apart,
-// and in the same room that drift is audible.
+// Project the Fleet screen registry snapshot for the several-screen drift
+// warning (PLACE.4a/AC6, RQ-PLACE-10).
 //
 // The registry names a room per screen and records which rooms neighbour
 // which (`roomAdjacency`, set in screen admin), so the warning covers screens
 // in the same room and in neighbouring rooms. A screen the registry does not
 // know falls back to its configured fleet location. The rooms Map carries the
 // adjacency as `rooms.adjacency` (lower-case room → Set of lower-case rooms).
-import { useEffect, useState } from 'react';
-import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { deviceLocation, deviceName } from "../fleet/deviceDisplay.js";
-import mediaLog from "../logging/mediaLog.js";
-
-const CACHE_MS = 60_000;
-let cache = null; // { at, promise }
 
 const bareId = (id) => String(id ?? '').replace(/^fleet:/, '');
+const norm = (room) => String(room ?? '').trim().toLowerCase();
 
-/** Map of fleet device id (bare) or browser id → room, from the registry. */
-export function fetchScreenRooms({ api = DaylightAPI, now = () => Date.now() } = {}) {
-  if (cache && now() - cache.at < CACHE_MS) return cache.promise;
-  const promise = Promise.resolve()
-    .then(() => api('api/v1/media/screens'))
-    .then((body) => {
-      const rooms = new Map();
-      for (const screen of Array.isArray(body?.screens) ? body.screens : []) {
-        const room = typeof screen?.room === 'string' ? screen.room.trim() : '';
-        if (!room) continue;
-        rooms.set(bareId(screen.id), room);
-        if (screen.screenId) rooms.set(String(screen.screenId), room);
-        for (const alias of Array.isArray(screen.aliases) ? screen.aliases : []) rooms.set(bareId(alias), room);
-      }
-      const adjacency = new Map();
-      for (const [room, list] of Object.entries(body?.roomAdjacency && typeof body.roomAdjacency === 'object' ? body.roomAdjacency : {})) {
-        const set = adjacency.get(room.trim().toLowerCase()) ?? new Set();
-        for (const other of Array.isArray(list) ? list : []) set.add(String(other).trim().toLowerCase());
-        adjacency.set(room.trim().toLowerCase(), set);
-      }
-      rooms.adjacency = adjacency;
-      return rooms;
-    })
-    .catch((error) => {
-      mediaLog.aimDriftWarned({ state: 'registry-unreadable', error: error?.message ?? String(error) });
-      cache = null;
-      return new Map();
-    });
-  cache = { at: now(), promise };
-  return promise;
-}
-
-export function resetScreenRoomsCache() { cache = null; }
-
-export function useScreenRooms(active = true) {
-  const [rooms, setRooms] = useState(() => new Map());
-  useEffect(() => {
-    if (!active) return undefined;
-    let cancelled = false;
-    fetchScreenRooms().then((next) => { if (!cancelled) setRooms(next); });
-    return () => { cancelled = true; };
-  }, [active]);
+/** Map of bare fleet device ids and browser ids to rooms for active screens. */
+export function screenRoomsFromRegistry(registry) {
+  const rooms = new Map();
+  for (const screen of Array.isArray(registry?.screens) ? registry.screens : []) {
+    const room = typeof screen?.room === 'string' ? screen.room.trim() : '';
+    if (!room) continue;
+    rooms.set(bareId(screen.id), room);
+    if (screen.screenId) rooms.set(String(screen.screenId), room);
+    for (const alias of Array.isArray(screen.aliases) ? screen.aliases : []) rooms.set(bareId(alias), room);
+  }
+  const adjacency = new Map();
+  for (const [room, list] of Object.entries(registry?.roomAdjacency ?? {})) {
+    const key = norm(room);
+    const neighbours = adjacency.get(key) ?? new Set();
+    for (const other of Array.isArray(list) ? list : []) neighbours.add(norm(other));
+    adjacency.set(key, neighbours);
+  }
+  rooms.adjacency = adjacency;
   return rooms;
 }
-
-const norm = (room) => String(room ?? '').trim().toLowerCase();
 
 /**
  * Screens among `targetIds` that share a room, as groups of display names:

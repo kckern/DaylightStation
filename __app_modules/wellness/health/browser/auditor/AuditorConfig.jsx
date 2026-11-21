@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { Button, Checkbox, NumberInput, SegmentedControl, Select, SimpleGrid, Stack, Switch, Text } from '@mantine/core';
-import { SectionCard, LoadingState, ErrorState } from "../../../../../frontend/src/lib/ui/index.js";
+import { SectionCard, LoadingState, ErrorState, useRetryRegion } from "../../../../../frontend/src/lib/ui/index.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { invalidateApiResources, patchApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { refreshHealthResources } from "../healthResources.js";
+import { useHealthSessionGuard } from '../operations/HealthOperationsProvider.jsx';
 import { cleanupPath } from "../cleanup/CleanupQuestions.jsx";
 import { settingsLogPath } from "./SettingsLog.jsx";
 import {
@@ -38,11 +39,14 @@ function parseCap(value, max) {
  * auditorFormat, and a kind it has no label for shows its key.
  */
 export function AuditorConfig({ resource, spend }) {
+  const gapLabelId = useId();
+  const isSessionActive = useHealthSessionGuard();
   const logger = useMemo(() => getLogger().child({ component: 'health-auditor' }), []);
   const [busy, setBusy] = useState(null);
   const [pending, setPending] = useState(null);
   const [error, setError] = useState(null);
   const saved = resource.data?.settings;
+  const { regionProps, retry } = useRetryRegion(resource.reload, !saved && resource.loading);
   // While a save is in flight the control shows the value being saved; the
   // server's answer replaces it as soon as it arrives.
   const settings = saved && pending ? withChange(saved, pending) : saved;
@@ -57,20 +61,24 @@ export function AuditorConfig({ resource, spend }) {
     setBusy(field); setPending(change); setError(null);
     try {
       const next = await DaylightAPI(`${cleanupPath}/settings`, { expectedSettingsVersion: settingsVersion ?? 0, ...change }, 'PATCH');
+      if (!isSessionActive()) return;
       // The PATCH answers with the new status: adopt it now, so the next edit carries the new settings version.
       if (!next || !patchApiResource(cleanupPath, () => next)) resource.reload();
       logger.info('health-auditor.settings.saved', { field, settingsVersion: next?.settingsVersion ?? null });
       if (field === 'enabled' || field === 'dryRun') refreshHealthResources();
       if (field === 'dailyCapUsd') spend?.reload?.();
     } catch (err) {
+      if (!isSessionActive()) return;
       const message = err.status === 409 ? 'Settings changed. Reload first.' : serverMessage(err);
       if (field === 'dailyCapUsd') setCap(capText(saved?.dailyCapUsd));
       resource.reload();
       setError(message);
       logger.warn('health-auditor.settings.failed', { field, status: err.status ?? null, error: message });
     } finally {
-      setBusy(null); setPending(null);
-      invalidateApiResources(path => path === settingsLogPath);
+      if (isSessionActive()) {
+        setBusy(null); setPending(null);
+        invalidateApiResources(path => path === settingsLogPath);
+      }
     }
   };
   const runNow = async () => {
@@ -78,11 +86,18 @@ export function AuditorConfig({ resource, spend }) {
     setBusy('run'); setError(null);
     try {
       await DaylightAPI(`${cleanupPath}/run`, {}, 'POST');
+      if (!isSessionActive()) return;
       logger.info('health-auditor.run-now', { dryRun: settings.dryRun });
     } catch (err) {
+      if (!isSessionActive()) return;
       setError(serverMessage(err));
       logger.warn('health-auditor.run-now.failed', { error: err.message });
-    } finally { setBusy(null); resource.reload(); }
+    } finally {
+      if (isSessionActive()) {
+        setBusy(null);
+        resource.reload();
+      }
+    }
   };
   const options = resource.data?.options || {};
   const maxCap = Number.isFinite(options.maxDailyCapUsd) ? options.maxDailyCapUsd : 0;
@@ -93,7 +108,9 @@ export function AuditorConfig({ resource, spend }) {
     save('dailyCapUsd', { dailyCapUsd: next });
   };
 
-  if (!settings) return resource.error ? <ErrorState error={resource.error} onRetry={resource.reload} label="Auditor settings" /> : <LoadingState label="Auditor settings" />;
+  if (!settings) return <section {...regionProps} aria-label="Auditor settings">
+    {resource.error ? <ErrorState error={resource.error} onRetry={retry} label="Auditor settings" /> : <LoadingState label="Auditor settings" />}
+  </section>;
   const disabled = !!busy;
   const running = (resource.data.runs || []).some(run => ['queued', 'running', 'retry'].includes(run.status));
   const byModel = Object.fromEntries((spend?.data?.byModel || []).map(row => [row.model, row]));
@@ -103,7 +120,7 @@ export function AuditorConfig({ resource, spend }) {
     label: `${model} · ${!byModel[model]?.runs ? 'no runs yet' : byModel[model].avgUsd == null ? 'cost unknown' : `≈ ${formatUsd(byModel[model].avgUsd, 3)} / run`}`,
   }));
 
-  return <SectionCard title="Auditor settings">
+  const card = <SectionCard title="Auditor settings">
     <Stack gap="md">
       {error ? <Text size="sm" className="health-auditor__error" role="alert">{error}</Text> : null}
       <Stack gap="xs">
@@ -122,8 +139,8 @@ export function AuditorConfig({ resource, spend }) {
           onKeyDown={event => { if (event.key === 'Enter') commitCap(); }} />
       </SimpleGrid>
       <Stack gap={4}>
-        <Text size="sm" fw={500}>Minimum gap between automatic runs</Text>
-        <SegmentedControl data={list(options.minGapMinutes).map(minutes => ({ label: gapLabel(minutes), value: String(minutes) }))} value={String(settings.minGapMinutes ?? 0)} disabled={disabled} fullWidth
+        <Text id={gapLabelId} size="sm" fw={500}>Minimum gap between automatic runs</Text>
+        <SegmentedControl aria-labelledby={gapLabelId} data={list(options.minGapMinutes).map(minutes => ({ label: gapLabel(minutes), value: String(minutes) }))} value={String(settings.minGapMinutes ?? 0)} disabled={disabled} fullWidth
           onChange={value => save('minGapMinutes', { minGapMinutes: Number(value) })} />
       </Stack>
 
@@ -141,6 +158,7 @@ export function AuditorConfig({ resource, spend }) {
       </Stack>
     </Stack>
   </SectionCard>;
+  return <section {...regionProps} aria-label="Auditor settings">{card}</section>;
 }
 
 export default AuditorConfig;

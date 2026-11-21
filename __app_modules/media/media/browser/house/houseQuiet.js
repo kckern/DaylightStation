@@ -21,6 +21,10 @@ const ANSWER_TIMEOUT_MS = 8_000;
 const NO_SUB = () => () => {};
 const NO_SNAP = () => null;
 
+function hasLocalMusic() {
+  return !!getLocalPlayerFeatures().getState().musicBehind;
+}
+
 function stateOf(device, entry) {
   return device?.state ?? entry?.snapshot?.state ?? 'unknown';
 }
@@ -83,6 +87,7 @@ export function useHouseQuiet() {
     local?.getSnapshot ? () => local.getSnapshot()?.state ?? null : NO_SNAP,
     local?.getSnapshot ? () => local.getSnapshot()?.state ?? null : NO_SNAP,
   );
+  const localMusic = useSyncExternalStore(getLocalPlayerFeatures().subscribe, hasLocalMusic, hasLocalMusic);
   const devices = fleet?.devices ?? [];
   const store = fleet?.store ?? null;
   const resumable = fleet?.quiet?.resumable ?? null;
@@ -90,7 +95,7 @@ export function useHouseQuiet() {
 
   const run = useCallback(async (verb) => {
     const getEntry = (id) => store?.getEntry?.(id) ?? null;
-    const { targets, missed } = planQuiet(verb, { devices, getEntry, localState, resumable, localMusic: !!getLocalPlayerFeatures().getState()?.musicBehind });
+    const { targets, missed } = planQuiet(verb, { devices, getEntry, localState, resumable, localMusic: hasLocalMusic() });
     setBusy(verb);
     const done = [];
     const doneIds = [];
@@ -159,12 +164,12 @@ export function useHouseQuiet() {
   const counts = useMemo(() => {
     const getEntry = (id) => store?.getEntry?.(id) ?? null;
     const playing = planQuiet('pause', { devices, getEntry, localState });
-    const active = planQuiet('stop', { devices, getEntry, localState, localMusic: !!getLocalPlayerFeatures().getState()?.musicBehind });
+    const active = planQuiet('stop', { devices, getEntry, localState, localMusic });
     return {
       playing: playing.targets.length + playing.missed.length,
       active: active.targets.length + active.missed.length,
     };
-  }, [devices, store, localState]);
+  }, [devices, store, localState, localMusic]);
 
   return {
     pauseAll, stopAll, resumeAll, busy,

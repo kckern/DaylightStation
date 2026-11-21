@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { render, renderHook, screen, act, waitFor } from '@testing-library/react';
 
 const apiMock = vi.fn();
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...args) => apiMock(...args) }));
@@ -10,7 +10,9 @@ vi.mock("../logging/mediaLog.js", () => {
 });
 
 import { DispatchContext } from "../cast/DispatchProvider.jsx";
+import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { useHouseholdActions, useFavourites, useScreenNamer } from "./useHousehold.js";
+import { getDeviceId } from "../../../../../frontend/src/lib/deviceIdentity.js";
 import { resetApiResourceCache } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 
 function wrapperWith(outcomes) {
@@ -86,9 +88,69 @@ describe('read hooks', () => {
     expect(result.current.has('plex:3')).toBe(false);
   });
 
-  it('names screens from the registry', async () => {
-    apiMock.mockResolvedValue({ screens: [{ id: 'fleet:livingroom-tv', screenId: 'livingroom-tv', name: 'Living Room TV' }] });
-    const { result } = renderHook(() => useScreenNamer());
-    await waitFor(() => expect(result.current('fleet:livingroom-tv')).toBe('Living Room TV'));
+  it('shares one fresh favourites read across consumers after a household write', async () => {
+    const path = 'api/v1/media/household/favourites';
+    let resolveBefore;
+    let resolveAfter;
+    const before = new Promise(resolve => { resolveBefore = resolve; });
+    const after = new Promise(resolve => { resolveAfter = resolve; });
+    const reads = () => apiMock.mock.calls.filter(([requested, , method]) => requested === path && method === 'GET').length;
+    apiMock.mockImplementation((_path, _body, method) => method === 'POST'
+      ? Promise.resolve({ ok: true })
+      : reads() === 1 ? before : after);
+    const first = renderHook(useFavourites);
+    const second = renderHook(useFavourites);
+    const { result: actions } = renderHook(useHouseholdActions, { wrapper: wrapperWith(outcomes) });
+    expect(reads()).toBe(1);
+
+    await act(() => actions.current.toggleFavourite({ id: 'plex:9', title: 'Bluey' }, false));
+    expect(reads()).toBe(2);
+    await act(async () => { resolveBefore({ items: [{ id: 'plex:old' }] }); });
+    expect([...first.result.current]).toEqual([]);
+    expect([...second.result.current]).toEqual([]);
+    await act(async () => { resolveAfter({ items: [{ id: 'plex:9' }] }); });
+    expect([...first.result.current]).toEqual(['plex:9']);
+    expect([...second.result.current]).toEqual(['plex:9']);
+  });
+
+  it('updates the same mounted consumer from the fleet registry without an independent GET', async () => {
+    const screenRow = { id: 'fleet:livingroom-tv', screenId: 'livingroom-tv', aliases: ['browser:old1'] };
+    const registry = {
+      available: true,
+      screens: [{ ...screenRow, name: 'Family Screen' }],
+      notSeenLately: [{ id: 'browser:tablet', name: 'Reading Tablet' }],
+      retired: [{ id: 'screen:projector', name: 'Old Projector' }],
+    };
+    const deviceIds = [screenRow.id, screenRow.screenId, ...screenRow.aliases, 'browser:tablet', 'screen:projector', getDeviceId()];
+    function ScreenNames() {
+      const nameFor = useScreenNamer();
+      return <output>{deviceIds.map(nameFor).join(' · ')}</output>;
+    }
+    const view = (snapshot) => (
+      <FleetContext.Provider value={{ registry: snapshot }}><ScreenNames /></FleetContext.Provider>
+    );
+    apiMock.mockResolvedValue({ screens: [] });
+    const { rerender } = render(view(registry));
+    await act(async () => {});
+    const labels = screen.getByRole('status');
+    expect(apiMock).not.toHaveBeenCalled();
+    expect(labels).toHaveTextContent('Family Screen · Family Screen · Family Screen · Reading Tablet · Old Projector · this device');
+
+    const renamed = { ...registry, screens: [{ ...screenRow, name: 'Movie Room' }] };
+    rerender(view(renamed));
+    expect(screen.getByRole('status')).toBe(labels);
+    expect(labels).toHaveTextContent('Movie Room · Movie Room · Movie Room · Reading Tablet · Old Projector · this device');
+
+    rerender(view({ available: false, screens: [], notSeenLately: [], retired: [] }));
+    expect(labels).toHaveTextContent('Living Room TV · Living Room TV · a browser · a browser · Projector · this device');
+    expect(apiMock).not.toHaveBeenCalled();
+  });
+
+  it('uses fallback labels without a fleet registry', () => {
+    const { result } = renderHook(useScreenNamer);
+    expect(result.current('browser:unknown')).toBe('a browser');
+    expect(result.current('fleet:den-tv')).toBe('Den TV');
+    expect(result.current(null)).toBeNull();
+    expect(apiMock).not.toHaveBeenCalled();
   });
 });

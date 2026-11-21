@@ -1,6 +1,6 @@
 import { NavRailSkeletonItems } from './NavRailSkeleton.jsx';
 import React, { useMemo, useEffect } from 'react';
-import { DaylightImagePath } from '@/lib/api.mjs';
+import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import SidebarFooter from "./SidebarFooter.jsx";
 import { sortNavItems, getNavItemClasses, isNavItemActive } from "../lib/navigationUtils.js";
 import { getChildLogger } from '@/lib/logging/singleton.js';
@@ -44,11 +44,6 @@ const FitnessNavbar = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeItem?.name]);
   
-  const getCollectionIcon = (icon) => {
-    if (!icon) return null;
-    return DaylightImagePath(`icons/${icon}.svg`);
-  };
-
   const handleItemClick = (item) => {
     if (onNavigate) {
       onNavigate(item.type, item.target, item);
@@ -76,19 +71,11 @@ const FitnessNavbar = ({
                 onPointerDown={() => handleItemClick(item)}
               >
                 <div className="nav-icon">
-                  {item.icon ? (
-                    <img 
-                      src={getCollectionIcon(item.icon)} 
-                      alt={item.name}
-                      onError={(e) => {
-                        e.target.style.display = 'none';
-                        e.target.nextSibling.style.display = 'inline';
-                      }}
-                    />
-                  ) : (
-                    <span>📺</span>
-                  )}
-                  <span style={{display: 'none'}}>📺</span>
+                  <UiIcon
+                    name="television"
+                    assetName={item.icon}
+                    size={24}
+                  />
                 </div>
                 <span className="nav-label">{item.name}</span>
               </button>

@@ -26,7 +26,11 @@ export default defineConfig({
     {
       name: 'default',
       testMatch: '**/*.runtime.test.mjs',
-      testIgnore: ['live/flow/media/**', '**/skyline-menu-layout.runtime.test.mjs'],
+      testIgnore: [
+        'live/flow/media/**',
+        '**/skyline-menu-layout.runtime.test.mjs',
+        '**/isolated/e2e/browser-platform/**',
+      ],
     },
   ],
   use: {

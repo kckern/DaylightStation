@@ -18,9 +18,18 @@ Three tiers:
 3. **Copilot.** Mail that needs a reply gets a draft to edit and send; tasks get
    *do this week / push to next month / drop / turn into a smaller next step*.
 
+A voice transcript is added to the current card’s draft for review. Moving to
+another card or leaving Triage cancels the pending transcript request. The
+answer is sent only when the person submits it.
+
 The session runs urgent replies first, then **Recap → Unsure → Replies → Todos**,
 skipping empty steps. Stopping part-way leaves the rest queued; nothing unreached
 is decided by default.
+
+**Start triage** links from Now to `/life/now/triage`. **Stop for now** and
+**Back to Now** return to `/life/now`. The Now destination stays selected
+throughout the session, and switching household members opens the new member's
+triage view.
 
 ## Never-auto rules
 
@@ -131,6 +140,24 @@ built yet.
 | `POST /api/v1/triage/cards/:id/resolve` | login | `{ happened }` for an in-doubt card |
 | `GET /api/v1/triage/log?sinceDays=7` | login | what was done |
 | `POST /api/v1/triage/log/:entryId/undo` | login | undo one action |
+
+The browser scopes each read to the view that displays it. Leaving Now or Triage
+aborts that view's pending read, and closing Review aborts its log read. Each
+read flow has a 10-second deadline. The guided session shares its deadline
+between the enrollment summary and the authenticated session read. After a
+timeout, Retry repeats only the affected GET flow.
+
+A current protected read or command that receives `401 login_required` opens
+sign-in. If someone else is signed in, `403 session_user_mismatch` names the
+selected member and offers the same sign-in form. Choosing a household member
+leaves the signed-in account in place. Signing in reloads the selected member's
+guided session. Triage commands keep their own outcome and retry controls.
+
+In the action log, Undo can be retried when the server reports
+`failed/propose_failed`, which means the undo command did not start. Other
+unconfirmed failures do not offer resubmission because the original action's
+state may be unknown. When keyboard focus was on Undo, it moves to Retry undo
+after this safe-to-retry response.
 
 ## Logs
 

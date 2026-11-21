@@ -17,8 +17,7 @@
 }
 
 .feed-annotations h3 { margin: 0; font-size: 1rem; }
-.feed-annotations button,
-.feed-annotations select {
+.feed-annotations button {
   min-height: 36px;
   border: 1px solid rgba(128, 128, 128, 0.45);
   border-radius: var(--feed-radius-sm, 4px);

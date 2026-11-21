@@ -50,9 +50,11 @@ export function normalizeStreamContentId(contentId) {
  * @param {string|number} params.maxVideoBitrate - Preferred maximum video bitrate param
  * @param {string|number} params.maxResolution - Preferred maximum resolution param
  * @param {string} params.session - Optional session identifier
+ * @param {AbortSignal} params.signal - Optional lifecycle cancellation
  * @returns {Promise<Object>} Media information
  */
-export async function fetchMediaInfo({ contentId, plex, media, shuffle, maxVideoBitrate, maxResolution, transcode, adaptive, session, resume }) {
+export async function fetchMediaInfo({ contentId, plex, media, shuffle, maxVideoBitrate, maxResolution, transcode, adaptive, session, resume, signal }) {
+  signal?.throwIfAborted();
   // Normalize legacy params to contentId — backend handles all source resolution
   const rawContentId = contentId || (plex != null ? String(plex) : null) || media || null;
   if (!rawContentId) {
@@ -127,7 +129,8 @@ export async function fetchMediaInfo({ contentId, plex, media, shuffle, maxVideo
     // playback logger's context so every subsequent line from this player
     // carries the key that joins our log to Plex's. Passing the field through
     // untouched keeps its three states apart (see setPlexSessionIdentity).
-    setPlexSessionIdentity(playResponse?.plexClientIdentifier);
+    if (!signal?.aborted) setPlexSessionIdentity(playResponse?.plexClientIdentifier);
+    // A late response still represents a mint by the backend.
     mintLogger().sampled('playback.fetch-media-succeeded', {
       ...requestFacts,
       // A completed request that returned nothing still cost a backend call, so
@@ -137,30 +140,29 @@ export async function fetchMediaInfo({ contentId, plex, media, shuffle, maxVideo
   };
 
   try {
-    if (shuffle) {
-      const url = buildUrl(`api/v1/play/${effectiveContentId}/shuffle`, queryCommon);
-      const playResponse = await DaylightAPI(url);
-      logSuccess(playResponse);
-      if (playResponse) {
-        return { ...playResponse, ...quality, assetId: playResponse.assetId || playResponse.id };
-      }
-      return null;
-    }
-
-    const url = buildUrl(`api/v1/play/${effectiveContentId}`, queryCommon);
-    const playResponse = await DaylightAPI(url);
+    const path = `api/v1/play/${effectiveContentId}${shuffle ? '/shuffle' : ''}`;
+    const url = buildUrl(path, queryCommon);
+    const playResponse = signal
+      ? await DaylightAPI(url, {}, 'GET', { signal })
+      : await DaylightAPI(url);
     logSuccess(playResponse);
+    signal?.throwIfAborted();
+    if (shuffle) {
+      return playResponse ? { ...playResponse, ...quality, assetId: playResponse.assetId || playResponse.id } : null;
+    }
     // Map resume_position → seconds so VideoPlayer/AudioPlayer can seek on load
     if (playResponse.resume_position !== undefined && playResponse.seconds === undefined) {
       playResponse.seconds = playResponse.resume_position;
     }
     return { ...playResponse, ...quality, assetId: playResponse.assetId || playResponse.id };
   } catch (error) {
-    playbackLog('fetch-media-failed', {
-      ...requestFacts,
-      error: error?.message,
-      httpStatus: error?.message?.match(/^HTTP (\d+)/)?.[1],
-    }, { level: 'error' });
+    if (!signal?.aborted) {
+      playbackLog('fetch-media-failed', {
+        ...requestFacts,
+        error: error?.message,
+        httpStatus: error?.message?.match(/^HTTP (\d+)/)?.[1],
+      }, { level: 'error' });
+    }
     throw error; // re-throw so caller still handles it
   }
 }

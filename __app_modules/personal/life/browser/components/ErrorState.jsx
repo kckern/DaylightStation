@@ -10,9 +10,9 @@ import { ErrorState as DSErrorState } from '@/lib/ui';
  * only real prop mismatch between the two; `error`/`onRetry` otherwise pass
  * straight through.
  */
-export function ErrorState({ error, onRetry, label }) {
+export function ErrorState({ error, onRetry, label, title }) {
   const normalized = typeof error === 'string' ? { message: error } : error;
-  return <DSErrorState error={normalized} onRetry={onRetry} label={label} />;
+  return <DSErrorState error={normalized} onRetry={onRetry} label={label} title={title} />;
 }
 
 export default ErrorState;

@@ -9,13 +9,14 @@ import { useCallback, useContext, useMemo } from 'react';
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { getDeviceId } from "../../../../../frontend/src/lib/deviceIdentity.js";
 import { DispatchContext } from "../cast/DispatchProvider.jsx";
+import { FleetContext } from "../fleet/FleetProvider.jsx";
 import mediaLog from "../logging/mediaLog.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import {
   HOUSEHOLD_PATHS, addFavourite, removeFavourite, removeFromHouseholdList,
   restoreToHouseholdList, markWatched as postWatched, refreshHouseholdViews,
 } from "./householdApi.js";
-import { createScreenNamer } from "./householdModel.js";
+import { createScreenNamer, resolveHouseholdEntry } from "./householdModel.js";
 
 export const HOUSEHOLD_UNDO_MS = 10_000;
 
@@ -52,20 +53,14 @@ export function useFavourites() {
 export function useHouseholdEntry(contentId) {
   const carryOn = useApiResource(HOUSEHOLD_PATHS.carryOn, { swr: true, label: 'media-carry-on', logger: householdResourceLogger });
   const recent = useApiResource(HOUSEHOLD_PATHS.recent, { swr: true, label: 'media-recent', logger: householdResourceLogger });
-  return useMemo(() => {
-    if (!contentId) return null;
-    for (const list of [carryOn.data?.items, recent.data?.items]) {
-      const found = Array.isArray(list) ? list.find(entry => entry?.contentId === contentId) : null;
-      if (found) return found;
-    }
-    return null;
-  }, [contentId, carryOn.data, recent.data]);
+  return resolveHouseholdEntry(contentId, carryOn, recent);
 }
 
-/** `nameFor(deviceId)` from GET /api/v1/media/screens; this device is "this device". */
+/** `nameFor(deviceId)` from Fleet's screen registry; this device is "this device". */
 export function useScreenNamer() {
-  const { data } = useApiResource(HOUSEHOLD_PATHS.screens, { swr: true, label: 'media-screens', logger: householdResourceLogger });
-  return useMemo(() => createScreenNamer(data, { selfId: getDeviceId() }), [data]);
+  const registry = useContext(FleetContext)?.registry;
+  const selfId = getDeviceId();
+  return useMemo(() => createScreenNamer(registry, { selfId }), [registry, selfId]);
 }
 
 function outcomeItem(item) {

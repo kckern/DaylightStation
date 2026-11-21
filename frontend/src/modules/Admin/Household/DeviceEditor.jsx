@@ -1,42 +1,31 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
+import { SectionCard } from '../../../lib/ui/cards.jsx';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Stack, Group, Text, Badge, Button, Paper, TextInput, Select, Alert, Center, Loader, Anchor }  from '@mantine/core';
+import { Stack, Group, Text, Badge, Button, Paper, TextInput, Select, Alert, Center, Anchor }  from '@mantine/core';
 import {
   IconArrowBack, IconTrash, IconAlertCircle, IconDeviceDesktopCog
 } from '@tabler/icons-react';
+import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
-import ConfirmModal from '../shared/ConfirmModal.jsx';
+import { ConfirmModal } from '@/lib/ui/ConfirmModal.jsx';
 import SaveBar from '../shared/SaveBar.jsx';
+import EditorReadRegion from '../shared/EditorReadRegion.jsx';
 import { useUnsavedGuard } from '../shared/useUnsavedGuard.js';
+import GuardedLink from '../shared/GuardedLink.jsx';
+import { useGuardedNavigate } from '../shared/useGuardedNavigate.js';
 import { notifySuccess, notifyFailure } from '../shared/feedback.js';
-
-const DEVICE_TYPE_OPTIONS = [
-  { value: 'shield-tv', label: 'Shield TV' },
-  { value: 'linux-pc', label: 'Linux PC' },
-  { value: 'midi-keyboard', label: 'MIDI Keyboard' }
-];
-
-/**
- * Get a Badge color for a device type.
- */
-function typeBadgeColor(type) {
-  if (type === 'shield-tv') return 'blue';
-  if (type === 'linux-pc') return 'green';
-  if (type === 'midi-keyboard') return 'orange';
-  return 'gray';
-}
+import { DEVICE_TYPES, deviceTypeBadgeColor } from '../utils/constants.js';
+import { adminDraftOwnerKey, clearAdminDraft, useAdminDraftState } from '../shared/useAdminDraftState.js';
+import { useAdminSessionKey } from '../shared/useAdminSessionKey.js';
 
 /**
  * Section wrapper for grouping related fields.
  */
-function Section({ title, children }) {
+function DeviceFieldsSection({ title, children }) {
   return (
-    <Paper p="md" withBorder className="ds-section-panel">
-      <Stack gap="sm">
-        <Text size="sm" fw={600} c="dimmed" tt="uppercase" className="ds-section-label">{title}</Text>
-        {children}
-      </Stack>
-    </Paper>
+    <SectionCard variant="form" title={title}>
+      <Stack gap="sm">{children}</Stack>
+    </SectionCard>
   );
 }
 
@@ -113,7 +102,7 @@ function ShieldTVSections({ device, updateField }) {
 
   return (
     <>
-      <Section title="Device Control - Displays">
+      <DeviceFieldsSection title="Device Control - Displays">
         <DisplayFields
           displays={displays}
           onUpdate={(subPath, value) => updateField(`device_control.displays.${subPath}`, value)}
@@ -121,9 +110,9 @@ function ShieldTVSections({ device, updateField }) {
         {Object.keys(displays).length === 0 && (
           <Text size="sm" c="dimmed">No displays configured.</Text>
         )}
-      </Section>
+      </DeviceFieldsSection>
 
-      <Section title="Content Control">
+      <DeviceFieldsSection title="Content Control">
         <ObjectFields
           data={contentControl}
           pathPrefix="content_control"
@@ -132,7 +121,7 @@ function ShieldTVSections({ device, updateField }) {
         {Object.keys(contentControl).length === 0 && (
           <Text size="sm" c="dimmed">No content control configured.</Text>
         )}
-      </Section>
+      </DeviceFieldsSection>
     </>
   );
 }
@@ -149,7 +138,7 @@ function LinuxPCSections({ device, updateField }) {
 
   return (
     <>
-      <Section title="Device Control - Displays">
+      <DeviceFieldsSection title="Device Control - Displays">
         <DisplayFields
           displays={displays}
           onUpdate={(subPath, value) => updateField(`device_control.displays.${subPath}`, value)}
@@ -157,9 +146,9 @@ function LinuxPCSections({ device, updateField }) {
         {Object.keys(displays).length === 0 && (
           <Text size="sm" c="dimmed">No displays configured.</Text>
         )}
-      </Section>
+      </DeviceFieldsSection>
 
-      <Section title="OS Control">
+      <DeviceFieldsSection title="OS Control">
         <ObjectFields
           data={osControl}
           pathPrefix="os_control"
@@ -168,9 +157,9 @@ function LinuxPCSections({ device, updateField }) {
         {Object.keys(osControl).length === 0 && (
           <Text size="sm" c="dimmed">No OS control configured.</Text>
         )}
-      </Section>
+      </DeviceFieldsSection>
 
-      <Section title="Content Control">
+      <DeviceFieldsSection title="Content Control">
         <ObjectFields
           data={contentControl}
           pathPrefix="content_control"
@@ -179,9 +168,9 @@ function LinuxPCSections({ device, updateField }) {
         {Object.keys(contentControl).length === 0 && (
           <Text size="sm" c="dimmed">No content control configured.</Text>
         )}
-      </Section>
+      </DeviceFieldsSection>
 
-      <Section title="Modules">
+      <DeviceFieldsSection title="Modules">
         {Object.entries(modules).map(([moduleName, moduleConfig]) => (
           <Paper key={moduleName} p="sm" withBorder variant="light">
             <Stack gap="xs">
@@ -214,7 +203,7 @@ function LinuxPCSections({ device, updateField }) {
         {Object.keys(modules).length === 0 && (
           <Text size="sm" c="dimmed">No modules configured.</Text>
         )}
-      </Section>
+      </DeviceFieldsSection>
     </>
   );
 }
@@ -224,50 +213,78 @@ function LinuxPCSections({ device, updateField }) {
  */
 function MidiKeyboardSections({ device, updateField }) {
   return (
-    <Section title="MIDI Configuration">
+    <DeviceFieldsSection title="MIDI Configuration">
       <TextInput
         label="Extension Path"
         value={device.extension_path || ''}
         onChange={(e) => updateField('extension_path', e.currentTarget.value)}
       />
-    </Section>
+    </DeviceFieldsSection>
   );
 }
 
 function DeviceEditor() {
   const { deviceId } = useParams();
-  const navigate = useNavigate();
+  const sessionKey = useAdminSessionKey();
+  return <DeviceEditorSession key={JSON.stringify([sessionKey, deviceId])} deviceId={deviceId} sessionKey={sessionKey} />;
+}
 
-  const [device, setDevice] = useState(null);
-  const [original, setOriginal] = useState(null);
-  const [loading, setLoading] = useState(true);
+function DeviceEditorSession({ deviceId, sessionKey }) {
+  const { data, loading, error, reload } = useApiResource(`/api/v1/admin/household/devices/${deviceId}`);
+
+  const back = (
+    <Anchor
+      component={GuardedLink}
+      to="/admin/household/devices"
+      size="sm"
+      style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+    >
+      <IconArrowBack size={14} /> Back to Devices
+    </Anchor>
+  );
+
+  return (
+    <EditorReadRegion
+      key={JSON.stringify([sessionKey, deviceId])}
+      label="Device editor"
+      loading={loading && !data}
+      error={!data && error}
+      errorTitle="Error loading device"
+      reload={reload}
+      back={back}
+    >
+      {data?.device ? <DeviceDraft deviceId={deviceId} sessionKey={sessionKey} initialDevice={data.device} /> : (
+        <Stack gap="md">
+          {back}
+          <Center h="40vh">
+            <Text c="dimmed">Device not found.</Text>
+          </Center>
+        </Stack>
+      )}
+    </EditorReadRegion>
+  );
+}
+
+function DeviceDraft({ deviceId, sessionKey, initialDevice }) {
+  const navigate = useNavigate();
+  const guardedNavigate = useGuardedNavigate();
+  const draftKey = adminDraftOwnerKey('device', sessionKey, deviceId);
+  const [device, setDevice, original, setOriginal] = useAdminDraftState(draftKey, initialDevice);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const active = useRef(false);
+  useLayoutEffect(() => {
+    active.current = true;
+    return () => { active.current = false; };
+  }, []);
 
   const dirty = JSON.stringify(device) !== JSON.stringify(original);
 
-  // Unsaved-changes guard: beforeunload + AdminNav interception (audit C1)
-  useUnsavedGuard(dirty, { label: `device:${deviceId}` });
-
-  const fetchDevice = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await DaylightAPI(`/api/v1/admin/household/devices/${deviceId}`);
-      setDevice(result.device);
-      setOriginal(JSON.parse(JSON.stringify(result.device)));
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [deviceId]);
-
-  useEffect(() => {
-    fetchDevice();
-  }, [fetchDevice]);
+  // Unsaved-changes guard: beforeunload + guarded Admin navigation (audit C1)
+  const clearDraft = React.useCallback(() => clearAdminDraft(draftKey), [draftKey]);
+  useUnsavedGuard(dirty, { label: `device:${deviceId}`, onDiscard: clearDraft });
 
   function updateField(path, value) {
     setDevice(prev => {
@@ -288,9 +305,11 @@ function DeviceEditor() {
     setError(null);
     try {
       await DaylightAPI(`/api/v1/admin/household/devices/${deviceId}`, device, 'PUT');
+      if (!active.current) return;
       setOriginal(JSON.parse(JSON.stringify(device)));
       notifySuccess({ title: 'Device saved', message: deviceId });
     } catch (err) {
+      if (!active.current) return;
       setError(err);
       notifyFailure({ title: 'Save failed', message: err.message });
     } finally {
@@ -306,9 +325,11 @@ function DeviceEditor() {
     setDeleting(true);
     try {
       await DaylightAPI(`/api/v1/admin/household/devices/${deviceId}`, {}, 'DELETE');
+      if (!active.current) return;
       notifySuccess({ title: 'Device deleted', message: deviceId });
       navigate('/admin/household/devices');
     } catch (err) {
+      if (!active.current) return;
       setError(err);
       notifyFailure({ title: 'Delete failed', message: err.message });
     } finally {
@@ -317,54 +338,13 @@ function DeviceEditor() {
     }
   };
 
-  if (loading) {
-    return (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
-  }
-
-  if (error && !device) {
-    return (
-      <Stack gap="md">
-        <Anchor
-          size="sm"
-          onClick={() => navigate('/admin/household/devices')}
-          style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-        >
-          <IconArrowBack size={14} /> Back to Devices
-        </Anchor>
-        <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error loading device">
-          {error.message || 'Failed to load device'}
-        </Alert>
-      </Stack>
-    );
-  }
-
-  if (!device) {
-    return (
-      <Stack gap="md">
-        <Anchor
-          size="sm"
-          onClick={() => navigate('/admin/household/devices')}
-          style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-        >
-          <IconArrowBack size={14} /> Back to Devices
-        </Anchor>
-        <Center h="40vh">
-          <Text c="dimmed">Device not found.</Text>
-        </Center>
-      </Stack>
-    );
-  }
-
   return (
     <Stack gap="md">
       {/* Header */}
       <Anchor
+        component={GuardedLink}
+        to="/admin/household/devices"
         size="sm"
-        onClick={() => navigate('/admin/household/devices')}
         style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
       >
         <IconArrowBack size={14} /> Back to Devices
@@ -375,7 +355,7 @@ function DeviceEditor() {
         title={(
           <Group gap="sm" align="center">
             <span className="ds-page-title">{device.id}</span>
-            <Badge color={typeBadgeColor(device.type)} variant="light" size="lg">
+            <Badge color={deviceTypeBadgeColor(device.type)} variant="light" size="lg">
               {device.type || 'unknown'}
             </Badge>
           </Group>
@@ -394,7 +374,7 @@ function DeviceEditor() {
                 variant="light"
                 size="sm"
                 leftSection={<IconDeviceDesktopCog size={14} />}
-                onClick={() => navigate(`/admin/household/devices/${deviceId}/fully-kiosk`)}
+                onClick={() => guardedNavigate(`/admin/household/devices/${deviceId}/fully-kiosk`)}
               >
                 {device.content_control.provider === 'fully-kiosk' ? 'Fully Kiosk Console' : 'Kiosk Console'}
               </Button>
@@ -425,15 +405,15 @@ function DeviceEditor() {
       )}
 
       {/* Type (read-only display) */}
-      <Section title="General">
+      <DeviceFieldsSection title="General">
         <Select
           label="Type"
-          data={DEVICE_TYPE_OPTIONS}
+          data={DEVICE_TYPES}
           value={device.type}
           readOnly
           description="Device type cannot be changed after creation"
         />
-      </Section>
+      </DeviceFieldsSection>
 
       {/* Type-specific sections */}
       {device.type === 'shield-tv' && (

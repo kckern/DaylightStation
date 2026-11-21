@@ -68,6 +68,23 @@
   }
 }
 
+.media-scope-retry {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: var(--media-muted);
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible { color: var(--media-text); }
+}
+
 // Subtle straggler indicator at the bottom of the result list while slower
 // sources are still streaming in.
 .search-still-searching {
@@ -116,7 +133,8 @@
   display: flex;
   flex-direction: column;
   background: var(--mantine-color-dark-7);
-  padding-top: env(safe-area-inset-top, 0px);
+  padding: var(--browser-safe-area-top) var(--browser-safe-area-right)
+    var(--browser-safe-area-bottom) var(--browser-safe-area-left);
 }
 
 .search-mode-header {
@@ -132,8 +150,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 44px;
-    height: 44px;
+    width: var(--ds-control-touch-target);
+    height: var(--ds-control-touch-target);
     background: none;
     border: none;
     border-radius: var(--mantine-radius-sm);

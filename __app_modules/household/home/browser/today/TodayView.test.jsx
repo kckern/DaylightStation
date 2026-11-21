@@ -71,7 +71,7 @@ describe('TodayView', () => {
     route();
     view();
     await screen.findByText('Power');
-    expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/timeline?range=today');
+    expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/timeline?range=today', {}, 'GET', { signal: expect.any(AbortSignal) });
     const sentence = 'The house is quiet, drawing 505 W with nothing on.';
     expect(screen.getAllByText((t) => plain(t) === sentence)).toHaveLength(1);
     const lanes = [...document.querySelectorAll('.home-lane')];
@@ -94,7 +94,7 @@ describe('TodayView', () => {
     view();
     await screen.findByText('Power');
     fireEvent.click(screen.getByText('Week'));
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/timeline?range=week'));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/timeline?range=week', {}, 'GET', { signal: expect.any(AbortSignal) }));
     await waitFor(() => expect(document.querySelectorAll('.home-lane')[0].querySelectorAll('.home-lane__week-row')).toHaveLength(7));
     const [power, doorbell, den] = document.querySelectorAll('.home-lane');
     expect(power.querySelectorAll('.home-lane__week-row')).toHaveLength(7);
@@ -110,7 +110,7 @@ describe('TodayView', () => {
     route();
     view();
     fireEvent.click(await screen.findByRole('button', { name: 'Doorbell: 2 rings, open details' }));
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(`api/v1/camera/porch-cam/clips?day=${DAY}`));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(`api/v1/camera/porch-cam/clips?day=${DAY}`, {}, 'GET', { signal: expect.any(AbortSignal) }));
     expect(await screen.findByText('No recording near this ring')).toBeTruthy();
     const videos = document.querySelectorAll('video');
     expect(videos).toHaveLength(1);

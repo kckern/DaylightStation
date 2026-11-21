@@ -14,7 +14,9 @@
 // inventing a separate chore.
 
 import { useState } from 'react';
-import { Sheet } from '@/lib/ui';
+import { localDateKey } from '@/lib/calendarDay.js';
+import { Sheet, useSheetSubmission } from '@/lib/ui';
+import { AutoSheetActions } from './AutoSheetActions.jsx';
 import { autoApi } from "./useAutoApi.js";
 import autoLog from "./autoLog.js";
 
@@ -24,9 +26,9 @@ import autoLog from "./autoLog.js";
  * @param {{date?: string, placeId?: string, placeLabel?: string, volumeGal?: string,
  *          partial?: boolean}} [props.initial] prefill from a detected fill-up
  */
-export default function FuelSheet({ vehicleId, initial = {}, onClose, onSaved }) {
-  const [form, setForm] = useState({
-    date: initial.date || new Date().toISOString().slice(0, 10),
+export default function FuelSheet({ vehicleId, initial = {}, onClose }) {
+  const [form, setForm] = useState(() => ({
+    date: initial.date || localDateKey(),
     odometerMi: '',
     // Estimated from the gauge rise when a tank capacity is configured. Left
     // editable rather than locked — the pump receipt is authoritative, and the
@@ -34,49 +36,39 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose, onSaved })
     volumeGal: initial.volumeGal || '',
     priceTotal: '',
     partial: Boolean(initial.partial),
+  }));
+  const { submit, saving, failure } = useSheetSubmission(onClose, error => {
+    autoLog.warn('fuel.log_failed', { error: error?.message });
   });
-  const [saving, setSaving] = useState(false);
-  const [failure, setFailure] = useState(null);
 
   const set = (key) => (event) => setForm((f) => ({
     ...f,
     [key]: event.target.type === 'checkbox' ? event.target.checked : event.target.value,
   }));
 
-  const submit = async (event) => {
-    event.preventDefault();
-    setSaving(true);
-    setFailure(null);
-    try {
-      // Miles and gallons go out as-is; the backend converts once, at the
-      // application edge. The wire never carries a mixed-unit payload.
-      await autoApi.logFuel(vehicleId, {
-        date: form.date,
-        volumeGal: Number(form.volumeGal),
-        odometerMi: form.odometerMi === '' ? undefined : Number(form.odometerMi),
-        priceTotal: form.priceTotal === '' ? null : Number(form.priceTotal),
-        placeId: initial.placeId || null,
-        partial: form.partial,
-      });
-      autoLog.info('fuel.logged', {
-        hasOdometer: form.odometerMi !== '',
-        partial: form.partial,
-        fromPrompt: Boolean(initial.placeId),
-      });
-      onSaved();
-    } catch (err) {
-      setFailure(err);
-      autoLog.warn('fuel.log_failed', { error: err?.message });
-    } finally {
-      setSaving(false);
-    }
+  const save = async () => {
+    // Miles and gallons go out as-is; the backend converts once, at the
+    // application edge. The wire never carries a mixed-unit payload.
+    await autoApi.logFuel(vehicleId, {
+      date: form.date,
+      volumeGal: Number(form.volumeGal),
+      odometerMi: form.odometerMi === '' ? undefined : Number(form.odometerMi),
+      priceTotal: form.priceTotal === '' ? null : Number(form.priceTotal),
+      placeId: initial.placeId || null,
+      partial: form.partial,
+    });
+    autoLog.info('fuel.logged', {
+      hasOdometer: form.odometerMi !== '',
+      partial: form.partial,
+      fromPrompt: Boolean(initial.placeId),
+    });
   };
 
   const valid = Number(form.volumeGal) > 0;
 
   return (
     <Sheet open onClose={onClose} title="Log a fill-up">
-      <form onSubmit={submit} aria-label="Log a fill-up">
+      <form onSubmit={event => submit(event, save, valid)} aria-label="Log a fill-up">
         {initial.placeLabel && (
           <p className="auto-field__note">At {initial.placeLabel}</p>
         )}
@@ -88,14 +80,14 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose, onSaved })
 
         <label className="auto-field">
           <span>Date</span>
-          <input className="auto-input" type="date" value={form.date} onChange={set('date')} />
+          <input className="ds-input" type="date" value={form.date} onChange={set('date')} />
         </label>
 
         <label className="auto-field">
           <span>Odometer (mi)</span>
           {/* inputMode numeric so phones show the number pad, not a full keyboard */}
           <input
-            className="auto-input" type="number" inputMode="decimal" step="1"
+            className="ds-input" type="number" inputMode="decimal" step="1"
             value={form.odometerMi} onChange={set('odometerMi')} placeholder="from the dash"
           />
           <span className="auto-field__note">Optional, but it’s what makes mileage and mpg work.</span>
@@ -105,20 +97,20 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose, onSaved })
           <label className="auto-field">
             <span>Gallons</span>
             <input
-              className="auto-input" type="number" inputMode="decimal" step="0.001"
+              className="ds-input" type="number" inputMode="decimal" step="0.001"
               value={form.volumeGal} onChange={set('volumeGal')} required
             />
           </label>
           <label className="auto-field">
             <span>Total ($)</span>
             <input
-              className="auto-input" type="number" inputMode="decimal" step="0.01"
+              className="ds-input" type="number" inputMode="decimal" step="0.01"
               value={form.priceTotal} onChange={set('priceTotal')}
             />
           </label>
         </div>
 
-        <label className="auto-field auto-field--check">
+        <label className="auto-field auto-field--check ds-touch-target">
           <input type="checkbox" checked={form.partial} onChange={set('partial')} />
           <span>Partial fill (didn’t fill the tank)</span>
         </label>
@@ -129,14 +121,7 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose, onSaved })
           </p>
         )}
 
-        {failure && <p className="auto-field__error">{failure.message}</p>}
-
-        <div className="auto-sheet__actions">
-          <button type="button" className="auto-btn auto-btn--ghost" onClick={onClose}>Cancel</button>
-          <button type="submit" className="auto-btn auto-btn--primary" disabled={saving || !valid}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
+        <AutoSheetActions failure={failure} onCancel={onClose} saving={saving} valid={valid} />
       </form>
     </Sheet>
   );

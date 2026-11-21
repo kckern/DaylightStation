@@ -42,6 +42,7 @@ describe('useStreamingSearch', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.useRealTimers();
   });
@@ -358,6 +359,30 @@ describe('useStreamingSearch', () => {
     });
 
     expect(result.current.sourceErrors).toEqual([{ source: 'slow', error: 'Search stream timed out.' }]);
+  });
+
+  it('closes the main stream and its source retry with their deadlines on unmount', () => {
+    vi.useFakeTimers();
+    const schedule = vi.spyOn(globalThis, 'setTimeout');
+    const cancel = vi.spyOn(globalThis, 'clearTimeout');
+    const streamDeadlineMs = 321;
+    const { result, unmount } = renderHook(() => useStreamingSearch('/api/search/stream', '', { streamDeadlineMs }));
+
+    act(() => {
+      result.current.search('arrival');
+      result.current.retry('plex');
+    });
+    expect(MockEventSource.instances).toHaveLength(2);
+    const deadlines = schedule.mock.calls.flatMap(([, delay], index) =>
+      delay === streamDeadlineMs ? [schedule.mock.results[index].value] : []
+    );
+    expect(deadlines).toHaveLength(2);
+
+    unmount();
+    expect(MockEventSource.instances.map(stream => stream.readyState)).toEqual([2, 2]);
+    for (const deadline of deadlines) {
+      expect(cancel).toHaveBeenCalledWith(deadline);
+    }
   });
 
   it('revokes a superseded request timer and ignores its late callbacks', () => {

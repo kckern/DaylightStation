@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const apiMock = vi.fn();
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...a) => apiMock(...a) }));
 vi.mock("../history/HistoryChart.jsx", () => ({
-  default: ({ history }) => <div data-testid="history-chart" data-kind={history.kind} />,
+  default: ({ history }) => <div data-testid="history-chart" data-kind={history.kind}>{history.points?.[0]?.v}</div>,
 }));
 
 import { EntityDetailSheet } from './EntityDetailSheet.jsx';
@@ -26,10 +26,10 @@ describe('EntityDetailSheet history', () => {
   it('loads 24 h of history, switches to 7 d, and keeps the switch only for a controllable entity', async () => {
     apiMock.mockResolvedValue(line([{ t: 1, v: 70, max: 71 }]));
     wrap(<EntityDetailSheet entity={temperature} haUrl="https://ha.example" onClose={() => {}} />);
-    expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/entities/sensor.den_temperature/history?range=24h');
+    expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/entities/sensor.den_temperature/history?range=24h', {}, 'GET', { signal: expect.any(AbortSignal) });
     expect((await screen.findByTestId('history-chart')).dataset.kind).toBe('line');
     fireEvent.click(screen.getByText('7 d'));
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/entities/sensor.den_temperature/history?range=7d'));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/entities/sensor.den_temperature/history?range=7d', {}, 'GET', { signal: expect.any(AbortSignal) }));
     expect(screen.queryByRole('switch')).toBeNull();
   });
 
@@ -76,6 +76,38 @@ describe('EntityDetailSheet history', () => {
     expect(await screen.findByTestId('history-chart')).toBeTruthy();
   });
 
+  it('keeps the selected range’s cached chart visible when refresh fails and retries that range', async () => {
+    const dailyPath = 'api/v1/home-dashboard/entities/sensor.den_temperature/history?range=24h';
+    const weeklyPath = 'api/v1/home-dashboard/entities/sensor.den_temperature/history?range=7d';
+    let failRefresh;
+    apiMock
+      .mockResolvedValueOnce(line([{ t: 1, v: 70 }]))
+      .mockResolvedValueOnce({ ...line([{ t: 1, v: 65 }]), range: '7d' })
+      .mockReturnValueOnce(new Promise((_resolve, reject) => { failRefresh = reject; }))
+      .mockResolvedValueOnce(line([{ t: 1, v: 72 }]));
+    wrap(<EntityDetailSheet entity={temperature} onClose={() => {}} />);
+    const chart = () => screen.getByTestId('history-chart');
+
+    expect((await screen.findByTestId('history-chart')).textContent).toBe('70');
+    fireEvent.click(screen.getByText('7 d'));
+    await waitFor(() => expect(chart().textContent).toBe('65'));
+    fireEvent.click(screen.getByText('24 h'));
+    expect(chart().textContent).toBe('70');
+    const dailyRead = [dailyPath, {}, 'GET', { signal: expect.any(AbortSignal) }];
+    const weeklyRead = [weeklyPath, {}, 'GET', { signal: expect.any(AbortSignal) }];
+    expect(apiMock.mock.calls).toEqual([dailyRead, weeklyRead, dailyRead]);
+
+    await act(async () => { failRefresh(new Error('Connection lost')); });
+    expect(screen.getByRole('alert').textContent).toContain('Connection lost');
+    expect(screen.getByText('History could not refresh')).toBeTruthy();
+    expect(chart().textContent).toBe('70');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(chart().textContent).toBe('72'));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(apiMock.mock.calls).toEqual([dailyRead, weeklyRead, dailyRead, dailyRead]);
+  });
+
   it('a lamp keeps its switch; extra renders between the history and the link', async () => {
     apiMock.mockResolvedValue({ entityId: 'light.panel_lamp', range: '24h', kind: 'state', hasData: true, camera: null, intervals: [{ from: 1, to: 2 }], sinceIso: '2026-10-27T00:00:00.000Z', endIso: '2026-10-28T00:00:00.000Z' });
     wrap(<EntityDetailSheet entity={entity('light.panel_lamp', { controllable: true })} haUrl="https://ha.example" onClose={() => {}} extra={<p data-testid="extra">lane</p>} />);
@@ -110,7 +142,7 @@ describe('EntityDetailSheet history', () => {
     await waitFor(() => expect(document.querySelectorAll('video')).toHaveLength(1));
     expect(document.querySelector('video').getAttribute('src')).toContain('/api/v1/camera/porch-cam/clips/file?name=');
     // 17:00 UTC is 02:00 on the 29th in the history's zone: that day is the one asked for.
-    expect(apiMock).toHaveBeenCalledWith('api/v1/camera/porch-cam/clips?day=2026-10-29');
+    expect(apiMock).toHaveBeenCalledWith('api/v1/camera/porch-cam/clips?day=2026-10-29', {}, 'GET', { signal: expect.any(AbortSignal) });
   });
 
   it('an events history with no camera adds nothing', async () => {

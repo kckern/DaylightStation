@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { act, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 
 const apiMock = vi.fn();
 vi.mock("../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...a) => apiMock(...a) }));
@@ -100,7 +100,7 @@ function routeApi({ entities = entitiesPayload, cameras = { cameras: [] } } = {}
   });
 }
 
-const openView = (name) => fireEvent.click(screen.getByRole('link', { name }));
+const openView = (name) => fireEvent.click(screen.getByRole('button', { name }));
 const STATUS = 'The house is drawing 505 W, with 2 lights on and a door open in the office.';
 const statusLines = () => [...document.querySelectorAll('.home-today__now')].map((el) => plain(el.textContent));
 const laneLabels = () => [...document.querySelectorAll('.home-lane__label')].map((el) => el.textContent);
@@ -119,7 +119,31 @@ describe('HomeApp — Today', () => {
     render(<HomeApp />);
     await lanesShown();
     expect(statusLines()).toEqual([STATUS]);
-    expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/timeline?range=today');
+    expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/timeline?range=today', {}, 'GET', { signal: expect.any(AbortSignal) });
+  });
+
+  it('switches the visible timeline and restores the selected range on reopening Home', async () => {
+    routeApi();
+    const first = render(<HomeApp />);
+    await lanesShown();
+    fireEvent.click(screen.getByRole('radio', { name: 'Yesterday' }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/timeline?range=yesterday', {}, 'GET', { signal: expect.any(AbortSignal) }));
+    expect(screen.getByRole('radio', { name: 'Yesterday' })).toBeChecked();
+    first.unmount();
+    render(<HomeApp />);
+    await lanesShown();
+    expect(screen.getByRole('radio', { name: 'Yesterday' })).toBeChecked();
+  });
+
+  it('restores Rooms after choosing it and reopening the dashboard', async () => {
+    routeApi();
+    const first = render(<HomeApp />);
+    await lanesShown();
+    openView('Rooms');
+    first.unmount();
+    render(<HomeApp />);
+    expect(screen.getByRole('button', { name: 'Rooms' })).toHaveAttribute('aria-current', 'page');
+    await waitFor(() => expect(document.querySelectorAll('.home-room__row').length).toBeGreaterThan(0));
   });
 
   it('offers exactly Today, Mosaic, Rooms and Cameras', async () => {
@@ -138,7 +162,7 @@ describe('HomeApp — Today', () => {
     if (opens === 'Today') await lanesShown();
     if (opens === 'Mosaic') await waitFor(() => expect(document.querySelectorAll('.home-square').length).toBeGreaterThan(0));
     if (opens === 'Rooms') await waitFor(() => expect(document.querySelectorAll('.home-room__row').length).toBeGreaterThan(0));
-    expect(screen.getByRole('link', { name: opens }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('button', { name: opens }).getAttribute('aria-current')).toBe('page');
   });
 
   it('shows ErrorState with a working retry when Home Assistant cannot be read', async () => {
@@ -238,9 +262,38 @@ describe('HomeApp — Rooms', () => {
     await waitFor(() => expect(entitiesCalls).toBeGreaterThan(1));
     const sw = screen.getByLabelText('Kitchen light: turn on');
     expect(sw.checked).toBe(false);
-    expect(sw.disabled).toBe(true);
+    expect(sw).toHaveAttribute('aria-disabled', 'true');
     fireEvent.click(sw);
     expect(apiMock.mock.calls.filter(([p]) => p.includes('toggle'))).toHaveLength(1);
+  });
+
+  it('keeps a slow switch unavailable and starts the confirmation deadline after acknowledgement', async () => {
+    let acknowledge;
+    const pending = new Promise(resolve => { acknowledge = resolve; });
+    const routed = apiMock.getMockImplementation();
+    apiMock.mockImplementation((path, ...args) => path.endsWith('/toggle') ? pending : routed(path, ...args));
+    render(<HomeApp />);
+    await lanesShown();
+    openView('Rooms');
+    fireEvent.click(document.querySelector('[data-room-id="kitchen"] .home-room__row'));
+
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    try {
+      fireEvent.click(screen.getByLabelText('Kitchen light: turn off'));
+      await act(async () => vi.advanceTimersByTimeAsync(6000));
+      const switched = screen.getByLabelText('Kitchen light: turn on');
+      expect(switched).toHaveAttribute('aria-disabled', 'true');
+      fireEvent.click(switched);
+      expect(apiMock.mock.calls.filter(([path]) => path.endsWith('/toggle'))).toHaveLength(1);
+
+      await act(async () => { acknowledge({ ok: true }); });
+      await act(async () => vi.advanceTimersByTimeAsync(4999));
+      expect(switched).toHaveAttribute('aria-disabled', 'true');
+      await act(async () => vi.advanceTimersByTimeAsync(101));
+      expect(screen.getByLabelText('Kitchen light: turn off')).not.toHaveAttribute('aria-disabled');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

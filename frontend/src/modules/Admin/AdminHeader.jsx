@@ -1,9 +1,9 @@
 import React from 'react';
 import { useLocation } from 'react-router-dom';
 import { Group, Burger, Text, Anchor, Box } from '@mantine/core';
-import { Link } from 'react-router-dom';
+import GuardedLink from './shared/GuardedLink.jsx';
 
-function AdminHeader({ opened, toggle }) {
+function AdminHeader({ opened, toggle, opener }) {
   const location = useLocation();
 
   const pathParts = location.pathname.split('/').filter(Boolean);
@@ -37,7 +37,7 @@ function AdminHeader({ opened, toggle }) {
           </Text>
         ) : (
           <Anchor
-            component={Link}
+            component={GuardedLink}
             to={path}
             size="12px"
             ff="var(--ds-font-mono)"
@@ -52,14 +52,11 @@ function AdminHeader({ opened, toggle }) {
   });
 
   return (
-    <Group h="100%" px="md" justify="space-between">
-      <Group gap="sm">
-        <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-        <Box style={{ display: 'flex', alignItems: 'center' }}>
-          {breadcrumbs}
-        </Box>
-      </Group>
-      <div />
+    <Group h="100%" px="md" gap="sm" wrap="nowrap">
+      <Burger ref={opener} aria-label="Toggle admin navigation" aria-expanded={opened} opened={opened} onClick={toggle} className="admin-navigation-toggle" size="sm" />
+      <Box className="admin-breadcrumbs">
+        {breadcrumbs}
+      </Box>
     </Group>
   );
 }

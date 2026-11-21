@@ -1,5 +1,5 @@
 import { Badge, Group, SimpleGrid, Stack, Text } from '@mantine/core';
-import { SectionCard, LoadingState, ErrorState } from "../../../../../frontend/src/lib/ui/index.js";
+import { SectionCard, LoadingState, ErrorState, useRetryRegion } from "../../../../../frontend/src/lib/ui/index.js";
 import { formatUsd, formatWhen, spentToday } from "./auditorFormat.js";
 
 const stateOf = settings => (!settings.enabled ? 'Off' : settings.dryRun ? 'Preview only' : 'On');
@@ -17,14 +17,24 @@ function Fact({ label, children }) {
  * spend summary.
  */
 export function AuditorHeader({ resource, spend, now = new Date() }) {
-  if (!resource.data) return resource.error ? <ErrorState error={resource.error} onRetry={resource.reload} label="Auditor status" /> : <LoadingState label="Auditor status" rows={2} />;
-  const { settings, runs = [], nextEligibleAt } = resource.data;
+  const { data } = resource;
+  const { regionProps, retry } = useRetryRegion(resource.reload, !data && resource.loading);
+  return <section {...regionProps} aria-label="Auditor status">
+    {data ? <AuditorSummary status={data} spend={spend} now={now} />
+      : resource.error ? <ErrorState error={resource.error} onRetry={retry} label="Auditor status" />
+      : <LoadingState label="Auditor status" rows={2} />}
+  </section>;
+}
+
+function AuditorSummary({ status, spend, now }) {
+  const { settings, runs = [], nextEligibleAt } = status;
   const state = stateOf(settings);
   const lastRun = runs[0];
   // Off: nothing is eligible. Never run: no gap to wait out yet, and no history to measure from.
   const next = !settings.enabled ? 'Off' : !lastRun && !nextEligibleAt ? '—'
     : nextEligibleAt && Date.parse(nextEligibleAt) > now.getTime() ? formatWhen(nextEligibleAt, now) : 'now';
   const data = spend.data;
+  const { regionProps, retry } = useRetryRegion(spend.reload, !data && spend.loading);
   const today = spentToday(data);
   // The cap comes from the status poll, which a settings save updates at once; spend may lag a moment.
   const cap = settings.dailyCapUsd ?? null;
@@ -40,15 +50,17 @@ export function AuditorHeader({ resource, spend, now = new Date() }) {
         <Fact label="Next eligible">{next}</Fact>
         <Fact label="Daily cap">{cap == null ? 'No daily cap' : formatUsd(cap, 2)}</Fact>
       </SimpleGrid>
-      {spend.error && !data ? <ErrorState error={spend.error} onRetry={spend.reload} label="Auditor spend" /> : null}
-      {data ? <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
-        <Fact label="Today">
-          {cap == null ? `${formatUsd(today, 2)} today` : `${formatUsd(today, 2)} of ${formatUsd(cap, 2)} today`}
-          {ledger ? <Text span size="xs" c="dimmed"> (includes failed runs)</Text> : null}
-        </Fact>
-        <Fact label="Last 7 days">{formatUsd(data.week, 2)}</Fact>
-        <Fact label="This month">{formatUsd(data.month, 2)}</Fact>
-      </SimpleGrid> : null}
+      {data || spend.error || spend.loading ? <section {...regionProps} aria-label="Auditor spend summary">
+        {data ? <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+          <Fact label="Today">
+            {cap == null ? `${formatUsd(today, 2)} today` : `${formatUsd(today, 2)} of ${formatUsd(cap, 2)} today`}
+            {ledger ? <Text span size="xs" c="dimmed"> (includes failed runs)</Text> : null}
+          </Fact>
+          <Fact label="Last 7 days">{formatUsd(data.week, 2)}</Fact>
+          <Fact label="This month">{formatUsd(data.month, 2)}</Fact>
+        </SimpleGrid> : spend.error ? <ErrorState error={spend.error} onRetry={retry} label="Auditor spend" />
+          : <LoadingState label="Auditor spend" rows={1} />}
+      </section> : null}
     </Stack>
   </SectionCard>;
 }

@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import {
-  Stack, Text, SimpleGrid, Card, Badge, Group, Loader, Center, Alert
+  Stack, Text, SimpleGrid, Card, Badge, Group,
 } from '@mantine/core';
-import { IconAlertCircle, IconPlugConnected } from '@tabler/icons-react';
-import { useAdminIntegrations } from '../../../hooks/admin/useAdminIntegrations.js';
+import { IconPlugConnected } from '@tabler/icons-react';
+import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { EmptyState, ErrorState, LoadingState, useRetryRegion } from '../../../lib/ui/index.js';
 
 const CATEGORY_LABELS = {
   media: 'Media',
@@ -40,12 +41,10 @@ function truncateUrl(url, maxLen = 40) {
 }
 
 function IntegrationsIndex() {
-  const navigate = useNavigate();
-  const { integrations, loading, error, fetchIntegrations, clearError } = useAdminIntegrations();
-
-  useEffect(() => {
-    fetchIntegrations().catch(() => {});
-  }, [fetchIntegrations]);
+  const { data, loading, error, reload } = useApiResource('/api/v1/admin/integrations', { label: 'Integrations' });
+  const { regionProps, retry } = useRetryRegion(reload, loading);
+  const integrations = data?.integrations || [];
+  const ready = !loading && !error;
 
   // Group integrations by category, maintaining defined order
   const groupedIntegrations = useMemo(() => {
@@ -71,33 +70,17 @@ function IntegrationsIndex() {
     return ordered;
   }, [integrations]);
 
-  if (loading && integrations.length === 0) {
-    return (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
-  }
-
   return (
-    <Stack gap="lg">
+    <Stack component="section" gap="lg" aria-label="Integrations" {...regionProps}>
       <Group justify="space-between" className="ds-page-header">
-        <span className="ds-page-title">Integrations</span>
+        <Text component="h1" className="ds-page-title">Integrations</Text>
       </Group>
 
-      {error && (
-        <Alert
-          icon={<IconAlertCircle size={16} />}
-          color="red"
-          title="Error"
-          withCloseButton
-          onClose={clearError}
-        >
-          {error.message || 'Failed to load integrations'}
-        </Alert>
-      )}
+      {loading && <LoadingState label="integrations" />}
+      {!loading && error && <ErrorState error={error} onRetry={retry} label="Integrations" />}
+      {ready && integrations.length === 0 && <EmptyState title="No integrations found." />}
 
-      {groupedIntegrations.map(group => (
+      {ready && groupedIntegrations.map(group => (
         <Stack key={group.category} gap="xs">
           <Text size="sm" fw={600} c="dimmed" tt="uppercase">
             {group.label}
@@ -107,14 +90,15 @@ function IntegrationsIndex() {
             {group.items.map(integration => (
               <Card
                 key={integration.provider}
+                component={Link}
+                to={`/admin/system/integrations/${encodeURIComponent(integration.provider)}`}
                 withBorder
                 padding="lg"
-                style={{ cursor: 'pointer' }}
-                onClick={() => navigate(`/admin/system/integrations/${integration.provider}`)}
+                style={{ color: 'inherit', textDecoration: 'none' }}
               >
                 <Group justify="space-between" mb="xs">
                   <Group gap="sm">
-                    <IconPlugConnected size={20} stroke={1.5} />
+                    <IconPlugConnected size={20} stroke={1.5} aria-hidden="true" />
                     <Text fw={500}>{capitalize(integration.provider)}</Text>
                   </Group>
                   <Badge size="sm" variant="light">
@@ -140,15 +124,6 @@ function IntegrationsIndex() {
           </SimpleGrid>
         </Stack>
       ))}
-
-      {integrations.length === 0 && !loading && (
-        <Center h="40vh">
-          <Stack align="center">
-            <IconPlugConnected size={48} stroke={1} color="gray" />
-            <Text c="dimmed">No integrations found.</Text>
-          </Stack>
-        </Center>
-      )}
     </Stack>
   );
 }

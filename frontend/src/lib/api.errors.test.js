@@ -2,7 +2,7 @@
 // restarts sends an HTML page; that page used to become the error message
 // every ErrorState printed.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { DaylightAPI } from './api.mjs';
+import { DaylightAPI, daylightApiResponse } from './api.mjs';
 
 const response = ({ status = 200, statusText = 'OK', body = '', json } = {}) => ({
   ok: status >= 200 && status < 300,
@@ -66,6 +66,25 @@ describe('DaylightAPI failures', () => {
     expect((await failure()).message.length).toBeLessThan(400);
   });
 
+  it('refuses invalid request bodies before fetch without claiming a transient failure', async () => {
+    const data = { value: 1n };
+    const error = await DaylightAPI('api/v1/example', data, 'POST').catch(err => err);
+    expect(error).toBeInstanceOf(TypeError);
+    expect(error.transient).toBeUndefined();
+    await expect(daylightApiResponse('api/v1/example', { method: 'POST', data })).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('sends a cookie-authenticated request when local storage is unavailable', async () => {
+    vi.stubGlobal('localStorage', { getItem() { throw new DOMException('Denied', 'SecurityError'); } });
+    const reply = response({ status: 409 });
+    fetchMock.mockResolvedValue(reply);
+    expect(await daylightApiResponse('/api/v1/example')).toBe(reply);
+    const { headers } = fetchMock.mock.calls[0][1];
+    expect(headers.Authorization).toBeUndefined();
+    expect(headers['X-Daylight-Device']).toBeTruthy();
+  });
+
   it('a dropped connection is transient', async () => {
     fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
     const err = await failure();
@@ -77,6 +96,26 @@ describe('DaylightAPI failures', () => {
     const abort = new DOMException('The operation was aborted.', 'AbortError');
     fetchMock.mockRejectedValue(abort);
     expect(await failure()).toBe(abort);
+  });
+
+  it.each([200, 409])('preserves cancellation while reading the HTTP %i response body', async status => {
+    const controller = new AbortController();
+    const { signal } = controller;
+    const abort = new DOMException('The operation was aborted.', 'AbortError');
+    const body = new ReadableStream({
+      start(stream) {
+        stream.enqueue(new TextEncoder().encode('{"unfinished":'));
+        signal.addEventListener('abort', () => stream.error(signal.reason), { once: true });
+      },
+    });
+    const reply = new Response(body, { status });
+    fetchMock.mockResolvedValue(reply);
+
+    const request = DaylightAPI('api/v1/example', {}, 'GET', { signal });
+    const canceled = expect(request).rejects.toBe(abort);
+    await expect.poll(() => reply.bodyUsed).toBe(true);
+    controller.abort(abort);
+    await canceled;
   });
 
   it('a 200 that is not JSON says so instead of a parser error', async () => {

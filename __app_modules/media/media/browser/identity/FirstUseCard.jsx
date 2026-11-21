@@ -10,7 +10,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Group, Popover, Text, TextInput } from '@mantine/core';
 import { useClientIdentity } from "./useClientIdentity.js";
-import { useDismissLayer } from "../shell/useDismissLayer.js";
+import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 import houseLog from "../house/houseLog.js";
 import "../house/House.scss";
 

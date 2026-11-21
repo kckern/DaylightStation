@@ -23,8 +23,7 @@
 // behavior change) that light up ResultRowActions on the container ▶ and
 // leaf ⋯ respectively, wired to the exact same playContainerAsQueue /
 // applyResultRowVerb plumbing SearchMode uses.
-import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { IconAlertTriangle } from '@tabler/icons-react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { ContentCombobox } from "../../../../../__capabilities/content-catalog/browser/picker.mjs";
 import { useSearchContext } from "./useSearchContext.js";
 import { ScopeChips } from "./ScopeChips.jsx";
@@ -32,7 +31,6 @@ import { useContentDispatch } from "./useContentDispatch.js";
 import { useDestinationInteraction } from "../cast/destinationInteraction.js";
 import { useSessionController } from "../controller/useSessionController.js";
 import { useNav } from "../shell/NavProvider.jsx";
-import { useDismissLayer } from "../shell/useDismissLayer.js";
 import { collapseResultEditions } from "./collapseResultEditions.js";
 import { applyResultRowVerb } from "./resultRowVerbs.js";
 import { useRowLabels } from "./useRowLabels.js";
@@ -42,42 +40,17 @@ import { ItemDestinationPicker } from "../actions/ItemDestinationPicker.jsx";
 import { useHouseholdResultActions } from "../household/useHouseholdResultActions.js";
 import "./Search.scss";
 
-export function MediaContentSearch() {
+export function MediaContentSearch({ inputRef }) {
   const [oneShotAction, setOneShotAction] = useState(null);
-  const { scopes, currentScopeKey, currentScope, scopeError, resetScope } = useSearchContext();
+  const { scopes, currentScopeKey, currentScope, resetScope } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue } = useContentDispatch();
   const { rowLabelsFor, continueFor } = useRowLabels();
   const { extraActions, runHousehold } = useHouseholdResultActions();
   const { queue } = useSessionController('local');
   const { push } = useNav();
   const log = useMemo(() => getLogger().child({ component: 'media-content-search' }), []);
-  const searchBarRef = useRef(null);
   // The header's destination control is in use: keep this search open (FIND.1b).
   const { active: destinationInteractionActive } = useDestinationInteraction();
-
-  // ContentCombobox owns its editing state. Its input handles Escape when it
-  // has focus, but a pointer action in the portaled More menu can leave focus
-  // on document.body while the results remain open. Register that actual open
-  // portal in the shell stack so Escape cannot fall through to view Back.
-  const activeSearchInput = useCallback(
-    () => searchBarRef.current?.querySelector('input[data-expanded="true"]') ?? null,
-    []
-  );
-  const isSearchOpen = useCallback(() => activeSearchInput() !== null, [activeSearchInput]);
-  const dismissSearch = useCallback(() => {
-    const input = activeSearchInput();
-    if (!input) return;
-    input.focus({ preventScroll: true });
-    input.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Escape',
-      code: 'Escape',
-      bubbles: true,
-      cancelable: true,
-    }));
-  }, [activeSearchInput]);
-  useDismissLayer(true, dismissSearch, {
-    isActive: isSearchOpen,
-  });
 
   // Transient: ContentCombobox reverts to value="" on close, so a selection is
   // a one-shot dispatch, never a committed/persisted value.
@@ -129,17 +102,13 @@ export function MediaContentSearch() {
   }, [queue, push, log, dispatchLeafVerb, runHousehold]);
 
   return (
-    <div ref={searchBarRef} data-testid="media-search-bar" className="media-search-bar">
+    <div data-testid="media-search-bar" className="media-search-bar">
       <ItemDestinationPicker action={oneShotAction} onClose={() => setOneShotAction(null)} />
       <div className="media-search-controls">
         <ScopeChips />
-        {scopeError && (
-          <span data-testid="scope-error" className="scope-error" title={scopeError.message}>
-            <IconAlertTriangle size={16} aria-label="Scope config failed to load" />
-          </span>
-        )}
         <div className="media-search-input-wrap">
           <ContentCombobox
+            inputRef={inputRef}
             value=""
             onChange={handleChange}
             onPlayAll={handlePlayAll}

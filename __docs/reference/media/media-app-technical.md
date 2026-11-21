@@ -421,10 +421,10 @@ warn on every call.
 **Exists.** The household's shared memory of what has played on every screen:
 recent (RQ-FIND-11), carry on with per-screen spots (RQ-FIND-12, RQ-PLAY-08/09),
 watched marks (RQ-FIND-13), favourites (RQ-FIND-14) and removal from the
-household list (RQ-FIND-15). Router: `__backend/src/4_api/v1/routers/media.mjs`;
-service: `__backend/src/3_applications/media/HouseholdMediaMemoryService.mjs`;
-list rules: `__backend/src/2_domains/media/householdMediaList.mjs`; spot rules:
-`__backend/src/2_domains/content/services/mediaSpots.mjs`.
+household list (RQ-FIND-15). The router is `__app_modules/media/media/server/api/media.mjs`.
+The service is `__app_modules/media/media/server/application/HouseholdMediaMemoryService.mjs`.
+List rules live in `__app_modules/media/media/server/domain/householdMediaList.mjs`.
+Spot rules live in `__capabilities/playback/server/domain/services/mediaSpots.mjs`.
 
 All routes take the optional `?household=<id>` used by the rest of
 `/api/v1/media`. Content ids travel in the **body or query, never the path**
@@ -512,6 +512,12 @@ library's) are merged: newest record's fields, every screen's newest spot.
   at most 4 lookups in flight; each bounded at 4 s and the whole
   recent/carry-on request at 8 s. On a miss the fields are `null` and the
   entry is still returned.
+
+Item details use a carry-on match first and fall back to recent after the
+preferred read settles. Play Now waits for an unresolved cold lookup. A
+settled miss or failure lets the normal playback resolver check the item's
+saved position. The spot chooser belongs to the current detail item and
+closes when the item changes.
 
 `PlayLedgerRow`:
 
@@ -661,6 +667,13 @@ An announce from a known screen refreshes an in-memory `lastSeen` and
 persists it at most every 10 min. `lastSeen` also comes from fleet
 `device-state` heartbeats (online/offline) and each screen's newest play-ledger
 start.
+
+Fleet owns the browser's registry snapshot. Fleet rows, household playback
+labels, screen settings and cast room warnings use that snapshot. Confirmed
+screen edits refresh it even when a subsequent room save fails. An open
+rename form retains the room draft so the user can retry. A temporary
+read failure keeps the last snapshot. A 404 or 501 clears registry data so
+displays can fall back to the device's configured or broadcast information.
 
 **Names.** Trimmed, single-spaced, ≤ 48 chars, unique case-insensitively among
 live (not retired) screens, including configured names. A rename to a taken
@@ -891,10 +904,11 @@ start before origins were recorded). `kind` may be `unknown` for legacy text.
 **Client.** The house view reads `GET /started-by` when it opens, whenever what
 plays on any row changes, and every 60 s, and shows
 `houseCopy.startedByText` — "Started by <name>, <h:mm>" (weekday added when not
-today) — on rows that are active. `StartedByLine` with only a `deviceId`
-reads `GET /screens/:id/started-by` itself (re-read when the item changes); it
-is mounted in the screen's controls header (`shell/PeekPanel.jsx`, under the
-status line) while an item plays. Events `house.started-by-loaded|failed`.
+today) — on rows that are active. In the screen controls header, `StartedByLine`
+reads `GET /screens/:id/started-by` for the active remote item. It refreshes on a
+screen or item change, a reconnect, and foreground return, and polls every 60 s
+while visible. A failed read clears the attribution until recovery.
+Events `house.started-by-loaded|failed`.
 
 ### 2.8 Played earlier
 
@@ -1019,9 +1033,10 @@ How the Media frontend consumes §2.4–2.9 (`frontend/src/modules/Media/househo
   so `nowOn`) carried the separate `ds_device_id` token until the app adopts its clientId as the
   request id; such a card shows no steering verbs rather than ones that cannot work.
 - **Move here** (one at a time per screen) adopts the fleet `device-state` snapshot of that screen through
-  `lifecycle.adoptSnapshot`, waits up to 20 s for native playing evidence of the same content
-  (`portability.getNativeObservation`), then stops the screen through its remote controller only
-  if `meta.playbackOwner` (owner + revision) is unchanged (`movePlayback.executeMove`).
+  `lifecycle.adoptSnapshot` and waits up to 20 s for native playback from that local visit and queue entry.
+  That evidence includes the rendered position for seekable media. `movePlayback.executeMove` checks
+  the destination again and compares the source owner's last published revision before sending Stop.
+  The outcome becomes confirmed after the source acknowledges.
 - **Progress**: every `play/log` carries `X-Daylight-Device`. When the session's `meta.origin` for
   the current item is a routine or another device, PlayerBridge puts it on the Player's play prop
   and `play/log` sends it as `origin` (`session/playOrigin.js`); this device's own default origin is
@@ -1323,6 +1338,9 @@ view, so the wildcard replay alone would not reach it) and then follows
 sends `transport.pause` to every row playing/buffering, Stop all
 `transport.stop` to every active row, each through that screen's session
 controller (§4.3, or the browser route), plus this device's local session.
+Fleet and the dock also observe the local player feature store. This keeps
+Stop all available while music continues after its slideshow, and removes it
+when the music ends and no other target is active.
 Offline rows are not sent anything and are reported "not reachable"; a refusal
 or no answer within 8 s is "didn't answer". The ids actually paused are kept
 in `FleetProvider` (`quiet.resumable`) and Resume all sends `transport.play`
@@ -1394,10 +1412,13 @@ published snapshot with its spot carried forward; it must carry
 (`capture` → `start`); if that is refused outright (an idle screen answers
 `INVALID_CAPTURE`) or the capture never confirms, through
 `POST /device/:id/load` `{ mode: "adopt" }`, counted only once that screen
-reports the same item (45 s). This device adopts locally. Only after the
-destination is adopted and the source still has the same owner revision is
-the source stopped, by `POST /session/claim` (stop with `intent: "move"`, so
-the source shows "Moved by …"). Any other result leaves the source playing.
+reports the same item (45 s). This device uses the same local native confirmation
+as Move here for audio and video. A paused source waits for the decoder to be
+ready and paused at the captured spot. Slideshow and other non-native renderers
+use their existing local snapshot adoption path. After destination confirmation,
+the source can be claimed with `POST /session/claim` if its last published owner
+revision still matches. The move stays pending until the source acknowledges the
+claim, and ambiguous responses report an unconfirmed stop.
 
 **Fling: this device → a screen** (`shell/FlingButton.jsx`, on the handle and
 the local transport). The same destination as above through `useHandOff(id,

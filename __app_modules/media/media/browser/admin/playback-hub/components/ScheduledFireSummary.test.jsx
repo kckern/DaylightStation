@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { ScheduledFireSummary } from "./ScheduledFireSummary.jsx";
 
-vi.mock("../hooks/useContentTitle.js", () => ({
+vi.mock("../../../../../../../__capabilities/content-catalog/browser/picker-controller.mjs", () => ({
   useContentTitle: (id) => (id === 'plex:1' ? 'Wake-up Playlist' : null),
 }));
 

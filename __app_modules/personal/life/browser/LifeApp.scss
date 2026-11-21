@@ -1,4 +1,25 @@
-.life-clickable { cursor: pointer; }
+.life-dashboard-link,
+.life-goal-link {
+  color: inherit;
+  text-decoration: none;
+
+  &:focus-visible { outline: var(--ds-focus-width) solid var(--ds-accent); outline-offset: 2px; }
+}
+
+.life-dashboard-link { border-radius: var(--ds-control-compact-radius); }
+
+.life-plan-status--quiet:not(:focus-within),
+.life-dashboard-summary:not(:focus-within) > .life-summary-read-status {
+  display: none;
+}
+
+.life-priority {
+  position: relative;
+
+  // Keep the card clickable with a sibling dismiss button and one real link.
+  &__link::after { content: ''; position: absolute; inset: 0; }
+  &__dismiss { position: relative; z-index: 1; }
+}
 
 // Definite height, matching AppChrome's `__main` grid-stretch box, so a
 // height:100% child (CoachChat) has something real to size against — an
@@ -221,7 +242,8 @@
   }
   &__log-text { min-width: 0; flex: 1; }
   &__log-title { overflow-wrap: anywhere; }
-  &__log-result { text-align: right; max-width: 45%; }
+  &__log-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 0.5rem; min-width: 0; }
+  &__log-result { text-align: right; max-width: 12rem; }
 
   &__login {
     .auth-container { min-height: 0; padding: 0; background: none; }

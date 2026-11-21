@@ -6,7 +6,7 @@ const apiMock = vi.fn();
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...a) => apiMock(...a) }));
 
 import { AddCombobox, popupPlacement } from "./AddCombobox.jsx";
-import { resetApiResourceCache, primeApiResource, peekApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { resetApiResourceCache, primeApiResource, peekApiResource, registerResourcePersistence } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { shortlistPath, healthDayPath } from "../healthResources.js";
 import { noteVisibleRows, resetAddFlow } from "./addFlow.js";
 
@@ -30,7 +30,7 @@ describe('AddCombobox', () => {
     // The combobox now also fetches on MOUNT (Task 9.2), and this mock answers
     // every path with the same payload — so waiting on the rendered row would
     // pass on the mount response alone. Wait for the QUERY request itself.
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(expect.stringContaining('suggest?q=chick')));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(expect.stringContaining('suggest?q=chick'), {}, 'GET', expect.anything()));
     await waitFor(() => expect(screen.getByText('Chicken breast')).toBeTruthy());
     expect(screen.getByText('Chicken breast').closest('.health-suggest__item--fav')).toBeTruthy();
   });
@@ -231,6 +231,36 @@ describe('AddCombobox', () => {
 describe('AddCombobox — zero-keystroke suggestions', () => {
   beforeEach(() => { apiMock.mockReset(); });
 
+  it('keeps a departing member’s pending shortlist out of the next member’s cache', async () => {
+    const pendingPath = shortlistPath('afternoon');
+    const registration = registerResourcePersistence({
+      store: {
+        load: async () => ({ owner: 'alice', entries: [] }),
+        claimOwner: vi.fn(),
+        put: vi.fn(),
+      },
+      prefixes: ['api/v1/health/nutrition/catalog/suggest'],
+    });
+    try {
+      await registration.ready;
+      let resolveOld;
+      apiMock.mockReturnValueOnce(new Promise(resolve => { resolveOld = resolve; }));
+      const first = r(<AddCombobox bucketId="afternoon" />);
+      expect(apiMock).toHaveBeenCalledWith(pendingPath, {}, 'GET', expect.anything());
+      first.unmount();
+      registration.setOwner('bob');
+      await act(async () => { resolveOld({ items: [{ id: 'old', name: 'Old member’s food' }] }); });
+      expect(peekApiResource(pendingPath)).toBeUndefined();
+
+      apiMock.mockResolvedValue(SUGGEST);
+      r(<AddCombobox bucketId="afternoon" />);
+      expect(screen.queryByText('Old member’s food')).toBeNull();
+      expect(await screen.findByText('Chicken breast')).toBeTruthy();
+    } finally {
+      registration.dispose();
+    }
+  });
+
   const OPEN = { items: [
     { id: 'oat', name: 'Oatmeal', favorite: false, icon: 'oatmeal', nutrients: { calories: 150 } },
     { id: 'egg', name: 'Fried Eggs', favorite: false, icon: null, nutrients: { calories: 200 } },
@@ -412,7 +442,7 @@ describe('AddCombobox inline', () => {
     expect(apiMock).not.toHaveBeenCalled();
     expect(screen.queryByRole('listbox')).toBeNull();
     fireEvent.focus(input);
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(expect.stringContaining('bucket=evening&limit=16')));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(expect.stringContaining('bucket=evening&limit=16'), {}, 'GET', expect.anything()));
     expect(await screen.findByText('Chicken breast')).toBeTruthy();
   });
 
@@ -422,7 +452,7 @@ describe('AddCombobox inline', () => {
     inline();
     fireEvent.focus(screen.getByRole('combobox', { name: 'Add to Dinner' }));
     expect(screen.getByText('Chicken breast')).toBeTruthy();
-    expect(apiMock).toHaveBeenCalledWith(shortlistPath('evening'));
+    expect(apiMock).toHaveBeenCalledWith(shortlistPath('evening'), {}, 'GET', expect.anything());
   });
 
   it('Enter on free text parses into this meal and day, then clears and stays focused', async () => {
@@ -682,7 +712,7 @@ it('does not restore failed quick-add text over the next submitted sentence',asy
  const input=screen.getByRole('combobox');input.focus();
  await waitFor(()=>screen.getByText('Chicken breast'));
  fireEvent.change(input,{target:{value:'chick'}});
- fireEvent.click(screen.getByText('Chicken breast'));
+ fireEvent.click(await screen.findByText('Chicken breast'));
  fireEvent.change(input,{target:{value:'toast'}});fireEvent.keyDown(input,{key:'Enter'});
  expect(input.value).toBe('');
  await act(async()=>rejectPick(new Error('pick offline')));

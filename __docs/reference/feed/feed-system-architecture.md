@@ -174,7 +174,7 @@ At the HTTP/application boundary, `normalizeFeedItem()` adds the cross-mode cont
 - `state`: independent `isRead`, `isSaved`, and `isArchived` values plus timestamps and source-sync status
 - Legacy `source`, `image`, `link`, `timestamp`, `preview`, and `isRead` aliases remain during frontend migration
 
-State is user-scoped in `feed/item-state.yml`. It is locally authoritative: FreshRSS write failures are persisted as a per-item `pendingSync` queue, retried with bounded exponential backoff, and exposed to the shell for a manual retry. Browser-network failures use a separate `feed:pending-mutations:{username}` local queue; the workspace overlays only the current account's operations on fetched items and replays them sequentially when connectivity returns. An account change reloads that scope before another mutation or replay can begin. Search documents are retained in monthly `feed/history/YYYY-MM.jsonl` shards for 12 months; expired shards are physically deleted. Saved documents are also snapshotted in `feed/saved-items.yml` and remain addressable indefinitely. An in-memory token index narrows text candidates before ranking, while source, mode, state, and date filters remain composable. Reader/search use triggers a bounded background FreshRSS backfill (up to the 12-month cutoff); its persisted progress survives restarts and is returned as search coverage. Legacy household dismissals are lazily migrated into per-user archived state as their items are encountered.
+State is user-scoped in `feed/item-state.yml`. It is locally authoritative: FreshRSS write failures are persisted as a per-item `pendingSync` queue, retried with bounded exponential backoff, and exposed to the shell for a manual retry. Browser-network failures use a separate `feed:pending-mutations:{username}` local queue; the workspace overlays only the current account's operations on fetched items and replays them sequentially when connectivity returns. The item and annotation queues use one native Web Lock per account and queue on browsers that support it. A tab that finds the lock occupied ends that replay attempt. A later online event or manual retry can drain a retained operation. The Feed shell observes the current account’s item queue and refreshes its counts after a remote drain. An account change reloads that scope before another mutation or replay can begin. Search documents are retained in monthly `feed/history/YYYY-MM.jsonl` shards for 12 months; expired shards are physically deleted. Saved documents are also snapshotted in `feed/saved-items.yml` and remain addressable indefinitely. An in-memory token index narrows text candidates before ranking, while source, mode, state, and date filters remain composable. Reader/search use triggers a bounded background FreshRSS backfill (up to the 12-month cutoff); its persisted progress survives restarts and is returned as search coverage. Legacy household dismissals are lazily migrated into per-user archived state as their items are encountered.
 
 `FeedStateService` also owns the account workspace: normalized reading preferences, mode checkpoints, top-level source weighting, notes/highlights, and portable import/export. Preferences are server-authoritative after first migration. Checkpoints store a stable item ID, pixel fallback, and visit time. Annotation locators are opaque to the backend; the frontend currently writes W3C-style text-quote selector JSON with exact/prefix/suffix context.
 
@@ -237,7 +237,7 @@ Adapters return sections with these types, rendered by matching React components
 | `embed` | `EmbedSection` | Embedded iframe (YouTube videos) |
 | `media` | `MediaSection` | Image gallery with captions |
 | `player` | `PlayerSection` | Playback controller — play button (idle) or scrubber/controls (active). Actual Player lives in PersistentPlayer at Scroll level |
-| `actions` | `ActionsSection` | Action buttons |
+| `actions` | `ActionsSection` | Shared pending buttons for supplied action descriptors. Scroll owns each in-flight action across phone and desktop layouts and presents refusals in the submitting article visit. |
 | `gallery` | `GallerySection` | Photo gallery with navigation |
 | `scripture` | `ScriptureSection` | Scripture verse display |
 | `timeline` | `TimelineSection` | Timeline/history display |
@@ -279,6 +279,14 @@ headline_pages:
 ```
 
 Grid coordinates are zero-based and must fall within the declared row/column indexes.
+
+The browser retains loaded editions for the current Headlines session and
+projects pending item actions onto each edition's read. The active edition
+owns its read and refresh feedback. Switching editions cancels the previous
+read. A submitted harvest can finish on the server after navigation. Its
+acknowledgement refreshes the submitted edition when that edition is visible,
+and a later visit reads it normally. A failed edition harvest shows its error
+when the submitted edition is active, even if the reader has returned to it.
 
 ### RSS Harvesting
 
@@ -341,7 +349,25 @@ Log events: `feed.headlines.jev-pair`, `feed.headlines.jev-label` (per new verdi
 | `POST` | `/api/v1/feed/headlines/harvest?page=ID` | Trigger harvest for all sources (or one page) |
 | `POST` | `/api/v1/feed/headlines/harvest/:source` | Harvest a single source by ID |
 
+Single-source harvest returns `{ items, error }`. When `error` is true, the
+source panel keeps its existing headlines and offers **Try again**; it still
+reloads the edition if the attempt saved any items.
+
+The page harvest response includes `{ harvested, errors, totalItems }`. `harvested`
+counts attempted sources, including failed sources. The Headlines view reloads the
+cached edition after the request and reports `errors` against that attempt count;
+the warning is scoped to the page that was refreshed, so switching editions does
+not transfer it.
+If the source harvest request itself fails, the view keeps the stored headlines;
+the alert's **Reload stored edition** action repeats only the cached-edition read.
+Use **Refresh all** to retry fetching from sources.
+
 `GET /headlines` returns both the configured outlet matrix and a `briefing`, built in `HeadlineService#buildBriefing` (backend; `Headlines.jsx` only renders it). Briefing clusters exact canonical URLs, then cross-outlet titles within 36 hours whose normalized form (≥ 5 words) scores ≥ 0.72 string similarity against the cluster's lead title. Its displayed excerpt is always attributed source material; no generated claims are introduced. Each cluster includes chronological harvested coverage; each timeline entry carries a `kind`: by default a keyword label (`correction`/`corrected` → `correction`; `update`/`updated`/`developing`/`live` → `update`; else `report`). With the story judge promoted (below), pairs scoring in the ambiguous band can also merge and `kind` can be `live`, `update`, `correction`, `analysis`, or `report`. This is coverage chronology, not publisher-page revision tracking.
+
+The browser hides archived briefing stories and derives its empty message from
+that same visible list. It only shows the empty message after an edition has
+loaded; a failed first read shows the error and Retry without claiming the
+edition is empty.
 
 ### Reader & Other
 
@@ -369,8 +395,13 @@ Search accepts `q`, `state`, `mode`, `source`, `from`, `to`, `limit`, and opaque
 ### Portable data and device-local editions
 
 `daylight.feed-export/v1` contains normalized preferences, source preferences, checkpoints, canonical state, annotations, and bounded normalized history records. Import is a merge: valid fields are normalized, invalid entries are ignored, imported synchronization state is reset to `synced`, and current unrelated account data is retained. It is not OPML and intentionally does not export a complete copy of publisher article bodies.
+After a successful import, a failed workspace readback keeps the confirmed import
+counts visible and offers **Refresh view**; retrying that action does not submit
+the import again.
 
-Offline editions are a separate device concern. `feedOfflineStore.js` stores at most 100 `{ item, detail }` snapshots in IndexedDB, keyed by authenticated user scope. `annotationOfflineStore.js` keeps a bounded annotation cache and ordered mutation queue under the same scope; client-generated annotation IDs make create→edit→delete replay deterministic. The service worker caches the application shell and same-origin build assets but excludes `/api/` and `/media/`, preventing account responses from entering a shared cache. Freshness is decided by whether a URL carries a content hash: Vite's hashed bundles under `/assets/` are immutable and served cache-first, while stably-named assets (icons, fonts, `manifest.json`) are fetched network-first and fall back to cache only when offline. Navigations are always network-first. Anything that does not clearly look hashed takes the revalidating path, so a misclassification costs a round trip rather than serving a stale asset forever. A downloaded detail may still reference third-party media that requires a network connection.
+Offline editions are a separate device concern. `feedOfflineStore.js` stores up to 100 `{ item, detail }` snapshots per account in the `daylight-feed-offline-v1` IndexedDB database. The `editions` store keeps keys in `user:itemId` format. A download captures its account before opening the database and saves the new edition and prunes older editions for that account in one transaction. The offline reading list uses the current account at the time of each read.
+
+`annotationOfflineStore.js` keeps a bounded annotation cache and ordered mutation queue under the same scope; client-generated annotation IDs make create→edit→delete replay deterministic. The service worker caches the application shell and same-origin build assets but excludes `/api/` and `/media/`, preventing account responses from entering a shared cache. Freshness is decided by whether a URL carries a content hash: Vite's hashed bundles under `/assets/` are immutable and served cache-first, while stably-named assets (icons, fonts, `manifest.json`) are fetched network-first and fall back to cache only when offline. Navigations are always network-first. Anything that does not clearly look hashed takes the revalidating path, so a misclassification costs a round trip rather than serving a stale asset forever. A downloaded detail may still reference third-party media that requires a network connection.
 
 ---
 
@@ -416,9 +447,14 @@ Offline editions are a separate device concern. `feedOfflineStore.js` stores at 
 /feed/scroll/:feedItemId → Detail view (base64url-encoded item ID)
 ```
 
+Search uses the URL query and filters to own its rows, result count and cursor. A replacement query shows its own loading or retry state. Indexing updates can refresh an appended result without replacing its continuation cursor.
+
+Open Search pages apply the current account’s queued state to loaded items. When replay settles, Search rereads its loaded page count from the beginning of the current URL query using the returned cursors. It keeps results mounted during the read and preserves newer item edits. A failed or stalled refresh retains the results and offers a read-only retry before continuing pagination.
+
 ### Scroll Navigation
 
 - **Card tap** → navigates to `/feed/scroll/{base64url(item.id)}`, saves scroll position
+- **Archive** on image and text cards uses the shared 44px minimum on coarse pointers. It updates the card in place and keeps the reader on Scroll.
 - **Back button** → traverses browser history when opened in-app; cold links fall back to the query-preserving list URL
 - **Swipe left/right** → navigates to next/previous item in the loaded list
 - **Primary tabs** remain available in a compact shell
@@ -426,20 +462,18 @@ Offline editions are a separate device concern. `feedOfflineStore.js` stores at 
 
 ### Persistent Media Player
 
-Media playback (Plex, Immich video) uses a persistent player architecture where the `<Player>` component lives at the Scroll level and never unmounts during navigation.
+Feed mounts the persistent `<Player>` in `FeedLayout` above the routed content. The same player continues during navigation while a track is active.
 
 ```
-Scroll.jsx
-├── scroll-view (card list)
-│   └── FeedCard → play button (e.stopPropagation → handlePlay, bypasses detail)
-├── DetailView / DetailModal
-│   └── PlayerSection (controller-only: play/pause, scrubber, time — no <Player>)
-├── PersistentPlayer (owns <Player ref={playerRef}>, visually hidden for audio)
-└── FeedPlayerMiniBar (thumbnail, play/pause toggle, progress bar)
+FeedLayout / PlaybackFrame
+├── Outlet (Search, Reader, Headlines, Scroll and detail)
+├── PersistentPlayer (owns <Player ref={playerRef}>)
+├── FeedPlayerMiniBar (thumbnail, playback controls, progress bar)
+└── FeedPlayerSheet (expanded controls)
 ```
 
 **State flow:**
-- `activeMedia` (`{ item, contentId }`) lives in Scroll — set by card play button or detail play button
+- `FeedPlayerProvider` owns `activeMedia` and the playback settings shared by the inline and expanded controls. Speed must match a supported preset and volume must be between 0 and 1. The existing `feedPlayer:speed` and `feedPlayer:volume` keys store raw numbers and invalid values use `1`. Mute applies zero volume to the running player and Unmute restores the prior setting.
 - `playerRef` (useRef) points to Player's imperative handle: `seek()`, `play()`, `pause()`, `toggle()`, `getCurrentTime()`, `getDuration()`, `getMediaElement()`
 - `usePlaybackObserver` hook polls playerRef at 500ms intervals for React state (`playing`, `currentTime`, `duration`) and uses `requestAnimationFrame` for smooth progress bar updates via direct DOM manipulation (`progressElRef`)
 

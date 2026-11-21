@@ -1,17 +1,14 @@
 import { useState, useEffect } from 'react';
+import { localDateKey } from '../lib/calendarDay.js';
 import getLogger from '../lib/logging/Logger.js';
 import { msUntilNextMidnight } from './useDayOfWeek.js';
+
+export { localDateKey };
 
 let _logger;
 function logger() {
   if (!_logger) _logger = getLogger().child({ component: 'useLocalDate' });
   return _logger;
-}
-
-/** Local calendar date as 'YYYY-MM-DD' (not UTC — toISOString would be). */
-export function localDateKey(now = new Date()) {
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
 /**

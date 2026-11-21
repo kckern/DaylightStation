@@ -8,6 +8,7 @@ import { useCallController } from "./call/useCallController.js";
 import { deviceLabel } from "./call/deviceLabel.js";
 import { PhoneIcon, PowerIcon, HangupIcon, MicIcon, CameraIcon } from "./call/callIcons.jsx";
 import { AppThemeProvider } from '@/lib/ui';
+import { useViewportContent } from '@/lib/hooks/useViewportContent.js';
 import "./CallApp.scss";
 
 const BUSY_COPY = 'This TV is already in a call.';
@@ -64,16 +65,7 @@ const mediaErrorCopy = (errors) => {
  * `viewport-fit=cover` is what makes the safe-area insets this layout pads with
  * resolve to real values on a notched phone.
  */
-const FIXED_VIEWPORT = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
-function useFixedViewport() {
-  useEffect(() => {
-    const meta = document.querySelector('meta[name="viewport"]');
-    if (!meta) return undefined;
-    const previous = meta.getAttribute('content');
-    meta.setAttribute('content', FIXED_VIEWPORT);
-    return () => meta.setAttribute('content', previous);
-  }, []);
-}
+const fixedCallViewport = () => 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
 
 /**
  * The width this layout is drawn for. A phone's layout viewport is ~390-430
@@ -131,7 +123,7 @@ const TargetRow = React.forwardRef(function TargetRow({ device, disabled, onClic
 
 export default function CallApp() {
   useDocumentTitle('Call');
-  useFixedViewport();
+  useViewportContent(fixedCallViewport);
   const layoutScale = useLayoutScale();
   const logger = useMemo(() => getLogger().child({ component: 'CallApp' }), []);
 

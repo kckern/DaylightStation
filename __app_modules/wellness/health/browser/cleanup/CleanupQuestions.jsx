@@ -1,18 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { useVisibleRefresh } from '../../../../../frontend/src/lib/hooks/useVisibleRefresh.js';
+import { useRef, useState } from 'react';
 import { Button, Group, Stack, Text, Textarea } from '@mantine/core';
 import { SectionCard } from "../../../../../frontend/src/lib/ui/index.js";
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { refreshHealthResources } from "../healthResources.js";
+import { useHealthSessionGuard } from '../operations/HealthOperationsProvider.jsx';
 
 export const cleanupPath = 'api/v1/health/nutrition/cleanup';
 export function useCleanup(active = true) {
   const resource = useApiResource(cleanupPath, { enabled: active, swr: true });
-  useEffect(() => {
-    if (!active) return undefined;
-    const timer = setInterval(resource.reload, 15000);
-    return () => clearInterval(timer);
-  }, [active, resource.reload]);
+  useVisibleRefresh({ active, intervalMs: 15000, reload: resource.reload, poll: resource.poll });
   return resource;
 }
 
@@ -32,6 +30,7 @@ export function RepairPreview({ repair, entryNames = {} }) {
  * list and the Today card deck.
  */
 export function useQuestionAnswer({ question, onChanged = () => {}, onFeedback = () => {} }) {
+  const isSessionActive = useHealthSessionGuard();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const operation = useRef(null);
@@ -44,11 +43,16 @@ export function useQuestionAnswer({ question, onChanged = () => {}, onFeedback =
       const result = await DaylightAPI(`${cleanupPath}/questions/${question.id}/answer`, {
         ...payload, expectedVersion: question.version, operationId: operation.current.id,
       }, 'POST');
+      if (!isSessionActive()) return false;
       if (result.status === 'stale') onFeedback(result.outcome?.message || 'The entry changed. Please review it manually.');
       refreshHealthResources(); onChanged();
       return true;
-    } catch (err) { setError(err.message); return false; }
-    finally { setBusy(false); }
+    } catch (err) {
+      if (isSessionActive()) setError(err.message);
+      return false;
+    } finally {
+      if (isSessionActive()) setBusy(false);
+    }
   };
   return { answer, busy, error, disabled: busy || question.status === 'answering' };
 }

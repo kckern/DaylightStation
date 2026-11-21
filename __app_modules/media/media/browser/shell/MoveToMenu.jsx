@@ -2,10 +2,11 @@
 // "Move to…" on another screen's controls (PLACE.9a, RQ-PLACE-13): lists
 // every other screen, including this device; the destination picks up at
 // the same moment and the original stops (cast/screenMove.js). The result is
-// one outcome, named with the destination; a move to this device opens Now
-// Playing.
+// one outcome, named with the destination. Remote controls can open Now
+// Playing after moving to this device.
 import React, { useContext, useState } from 'react';
 import { Button, Menu } from '@mantine/core';
+import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import { IconArrowForwardUp } from '@tabler/icons-react';
 import { useFleetContext } from "../fleet/useFleetContext.js";
 import { deviceName, deviceLocation } from "../fleet/deviceDisplay.js";
@@ -13,7 +14,6 @@ import { LocalSessionContext } from "../session/LocalSessionContext.js";
 import { ClientIdentityContext } from "../identity/ClientIdentityProvider.jsx";
 import { DispatchContext } from "../cast/DispatchProvider.jsx";
 import { moveScreenPlayback, moveFailureReason } from "../cast/screenMove.js";
-import { useNav } from "./NavProvider.jsx";
 import "./SessionControls.scss";
 
 /** Screens playback can move to: content screens other than the source. */
@@ -24,17 +24,17 @@ export function moveDestinations(devices = [], sourceId) {
     && (device.content_control || device.fleet === true));
 }
 
-export function MoveToMenu({ sourceId, available = true, title = null }) {
+export function MoveToMenu({ sourceId, available = true, title = null, captureLocalMoveNavigation }) {
   const { devices = [], store, identity: fleetIdentity } = useFleetContext();
   const localController = useContext(LocalSessionContext)?.controller ?? null;
   const identity = useContext(ClientIdentityContext);
   const outcomes = useContext(DispatchContext);
-  const { push } = useNav();
   const [moving, setMoving] = useState(false);
   const choices = moveDestinations(devices, sourceId);
 
   const move = async (destinationId) => {
     if (moving) return;
+    const navigateAfterMove = destinationId === 'local' ? captureLocalMoveNavigation?.() : null;
     setMoving(true);
     const destinationName = destinationId === 'local' ? null : deviceName(devices.find((d) => d.id === destinationId), destinationId);
     // PLACE.7a/AC3: the confirmation says which screen it came from.
@@ -51,15 +51,17 @@ export function MoveToMenu({ sourceId, available = true, title = null }) {
     setMoving(false);
     if (result.ok) {
       outcomes?.resolveLocal?.(attemptId, { phase: 'confirmed' });
-      if (destinationId === 'local') push('nowPlaying', {});
+      navigateAfterMove?.();
     } else {
       outcomes?.resolveLocal?.(attemptId, { phase: 'failed', reason: moveFailureReason(result) });
     }
   };
 
   return (
-    <Menu position="bottom-start" withinPortal shadow="md" disabled={!available || moving}>
-      <Menu.Target>
+    <ActionMenu
+      position="bottom-start" withinPortal shadow="md" disabled={!available || moving}
+      dropdownProps={{ 'data-testid': 'move-to-menu' }}
+      trigger={
         <Button
           data-testid="peek-move-to"
           className="session-controls-btn"
@@ -70,24 +72,23 @@ export function MoveToMenu({ sourceId, available = true, title = null }) {
         >
           Move to…
         </Button>
-      </Menu.Target>
-      <Menu.Dropdown data-testid="move-to-menu">
-        <Menu.Label>Move this playback to</Menu.Label>
-        <Menu.Item data-testid="move-to-local" className="session-controls-menu-item" onClick={() => move('local')}>
-          This device
+      }
+    >
+      <Menu.Label>Move this playback to</Menu.Label>
+      <Menu.Item data-testid="move-to-local" className="session-controls-menu-item" onClick={() => move('local')}>
+        This device
+      </Menu.Item>
+      {choices.map((device) => (
+        <Menu.Item
+          key={device.id}
+          data-testid={`move-to-${device.id}`}
+          className="session-controls-menu-item"
+          onClick={() => move(device.id)}
+        >
+          {deviceName(device, device.id)}{deviceLocation(device) ? ` · ${deviceLocation(device)}` : ''}
         </Menu.Item>
-        {choices.map((device) => (
-          <Menu.Item
-            key={device.id}
-            data-testid={`move-to-${device.id}`}
-            className="session-controls-menu-item"
-            onClick={() => move(device.id)}
-          >
-            {deviceName(device, device.id)}{deviceLocation(device) ? ` · ${deviceLocation(device)}` : ''}
-          </Menu.Item>
-        ))}
-      </Menu.Dropdown>
-    </Menu>
+      ))}
+    </ActionMenu>
   );
 }
 

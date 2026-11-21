@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { DaylightAPI } from '../../../lib/api.mjs';
+import { useMemo, useEffect } from 'react';
+import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import getLogger from '../../../lib/logging/Logger.js';
 import { isPreviewableResolution } from './previewFrame.js';
 
@@ -26,6 +26,8 @@ export const FALLBACK_SCREEN = Object.freeze({
   resolution: Object.freeze({ width: 1280, height: 720 }),
 });
 
+const fallbackScreens = Object.freeze([FALLBACK_SCREEN]);
+
 /**
  * usePreviewScreens
  * -----------------
@@ -40,40 +42,16 @@ export const FALLBACK_SCREEN = Object.freeze({
  * @returns {{screens: Array<{id: string, name: string, resolution: {width: number, height: number}}>, loading: boolean}}
  */
 export function usePreviewScreens() {
-  const [screens, setScreens] = useState([FALLBACK_SCREEN]);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, error } = useApiResource('api/v1/screens');
+  const sized = useMemo(() => (data?.screens || []).filter(screen =>
+    isPreviewableResolution(screen?.resolution)), [data]);
 
   useEffect(() => {
-    let cancelled = false;
+    if (error) logger().warn('screens-load-failed', { message: error.message });
+    else if (data) logger().debug('screens-loaded', { total: data.screens?.length || 0, sized: sized.length });
+  }, [data, error, sized]);
 
-    // Two-arg form, not `.then().catch()`: a trailing catch would also swallow
-    // anything thrown inside the success handler and report a local logic bug as
-    // `screens-load-failed`. This way the error handler only ever sees a rejected
-    // request.
-    DaylightAPI('api/v1/screens').then(
-      (data) => {
-        if (cancelled) return;
-        // The filter is `previewFrameVars`'s own guard, imported rather than
-        // restated, so membership in this list always implies a renderable
-        // frame — an entry that produced no variables would be a picker option
-        // that renders nothing.
-        const sized = (data?.screens || []).filter((s) => isPreviewableResolution(s?.resolution));
-        logger().debug('screens-loaded', { total: data?.screens?.length || 0, sized: sized.length });
-        setScreens(sized.length ? sized : [FALLBACK_SCREEN]);
-        setLoading(false);
-      },
-      (err) => {
-        if (cancelled) return;
-        logger().warn('screens-load-failed', { message: err?.message });
-        setScreens([FALLBACK_SCREEN]);
-        setLoading(false);
-      }
-    );
-
-    return () => { cancelled = true; };
-  }, []);
-
-  return { screens, loading };
+  return { screens: sized.length && !error ? sized : fallbackScreens, loading };
 }
 
 export default usePreviewScreens;

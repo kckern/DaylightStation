@@ -1,20 +1,17 @@
-import { useEffect, lazy, Suspense } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Select } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
-import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
-import {
-  IconDashboard, IconTimeline, IconTarget, IconHeart, IconBrain, IconDiamond, IconShield,
-  IconCalendarEvent, IconMessageCircle,
-} from '@tabler/icons-react';
+import { Routes, Route, Link, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 import "./LifeApp.scss";
-import { AppThemeProvider, AppChrome, createAppLogger } from '@/lib/ui';
+import { AppThemeProvider, AppChrome, Button, DismissStackProvider, LoadingState, createAppLogger, UiIcon, useFocusRegion, useViewScroll } from '@/lib/ui';
 import { configure } from "../../../../frontend/src/lib/logging/Logger.js";
 import useDocumentTitle from "../../../../frontend/src/hooks/useDocumentTitle.js";
+import { ErrorState } from './components/ErrorState.jsx';
+import { LifePageScrollRef } from './components/LifePage.jsx';
 import { Dashboard } from "./views/now/Dashboard.jsx";
-const TriageSessionView = lazy(() => import("./views/now/triage/TriageSessionView.jsx"));
-import { LogBrowser } from "./views/log/LogBrowser.jsx";
+import { LogBrowser, readLogVisit } from "./views/log/LogBrowser.jsx";
 import { LogDayDetail } from "./views/log/LogDayDetail.jsx";
 import { LogCategoryView } from "./views/log/LogCategoryView.jsx";
 import { PurposeView } from "./views/plan/PurposeView.jsx";
@@ -28,18 +25,20 @@ import { CeremonyFlow } from "./views/ceremony/CeremonyFlow.jsx";
 import CoachChat from "./views/coach/CoachChat.jsx";
 import { LifeUserContext, useLifeUser } from "./hooks/useLifeUser.js";
 import { useAppNotifications } from "./hooks/useAppNotifications.js";
+import { LifePlanSubmissionProvider } from "./hooks/LifePlanSubmissionContext.jsx";
 
 const logger = createAppLogger('life');
+const TriageSessionView = lazy(() => import('./views/now/triage/TriageSessionView.jsx'));
 
 // Top-level tabs. Every child that used to live under the navbar's "Plan"
 // disclosure group now lives one level down, inside the Plan tab's own body —
 // see PLAN_LINKS below — so this list matches the four things that used to be
 // directly clickable from the root of the old navbar (Now / Log / Plan / Coach).
 const TABS = [
-  { id: 'now', label: 'Now', icon: <IconDashboard size={20} /> },
-  { id: 'log', label: 'Log', icon: <IconTimeline size={20} /> },
-  { id: 'plan', label: 'Plan', icon: <IconTarget size={20} /> },
-  { id: 'coach', label: 'Coach', icon: <IconMessageCircle size={20} /> },
+  { id: 'now', href: '/life/now', label: 'Now', icon: <UiIcon name="dashboard" size={20} /> },
+  { id: 'log', href: '/life/log', label: 'Log', icon: <UiIcon name="timeline" size={20} /> },
+  { id: 'plan', href: '/life/plan', label: 'Plan', icon: <UiIcon name="target" size={20} /> },
+  { id: 'coach', href: '/life/coach', label: 'Coach', icon: <UiIcon name="coach" size={20} /> },
 ];
 
 // The old navbar's nested "Plan" NavLink group, ported to an in-view secondary
@@ -48,30 +47,27 @@ const TABS = [
 // identical: Purpose only lights up for the bare /life/plan path (every other
 // child route also starts with /life/plan and would otherwise always match it).
 const PLAN_LINKS = [
-  { path: '/life/plan', label: 'Purpose', icon: <IconHeart size={14} />, match: (p) => p === '/life/plan' },
-  { path: '/life/plan/goals', label: 'Goals', icon: <IconTarget size={14} />, match: (p) => p.startsWith('/life/plan/goals') },
-  { path: '/life/plan/beliefs', label: 'Beliefs', icon: <IconBrain size={14} />, match: (p) => p.startsWith('/life/plan/beliefs') },
-  { path: '/life/plan/values', label: 'Values', icon: <IconDiamond size={14} />, match: (p) => p.startsWith('/life/plan/values') },
-  { path: '/life/plan/qualities', label: 'Qualities', icon: <IconShield size={14} />, match: (p) => p.startsWith('/life/plan/qualities') },
-  { path: '/life/plan/ceremonies', label: 'Ceremonies', icon: <IconCalendarEvent size={14} />, match: (p) => p.startsWith('/life/plan/ceremonies') },
+  { path: '/life/plan', label: 'Purpose', icon: <UiIcon name="heart" size={14} />, match: (p) => p === '/life/plan' },
+  { path: '/life/plan/goals', label: 'Goals', icon: <UiIcon name="target" size={14} />, match: (p) => p.startsWith('/life/plan/goals') },
+  { path: '/life/plan/beliefs', label: 'Beliefs', icon: <UiIcon name="brain" size={14} />, match: (p) => p.startsWith('/life/plan/beliefs') },
+  { path: '/life/plan/values', label: 'Values', icon: <UiIcon name="diamond" size={14} />, match: (p) => p.startsWith('/life/plan/values') },
+  { path: '/life/plan/qualities', label: 'Qualities', icon: <UiIcon name="shield" size={14} />, match: (p) => p.startsWith('/life/plan/qualities') },
+  { path: '/life/plan/ceremonies', label: 'Ceremonies', icon: <UiIcon name="calendar" size={14} />, match: (p) => p.startsWith('/life/plan/ceremonies') },
 ];
 
-function PlanSecondaryNav({ pathname, navigate }) {
+function PlanSecondaryNav({ pathname }) {
   return (
     <nav className="life-plan-subnav" aria-label="Plan sections">
       {PLAN_LINKS.map((link) => (
-        <a
+        <Link
           key={link.path}
-          role="link"
-          tabIndex={0}
-          className={`life-plan-subnav__link${link.match(pathname) ? ' life-plan-subnav__link--active' : ''}`}
+          to={link.path}
+          className={`ds-touch-target life-plan-subnav__link${link.match(pathname) ? ' life-plan-subnav__link--active' : ''}`}
           aria-current={link.match(pathname) ? 'page' : undefined}
-          onClick={() => navigate(link.path)}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(link.path); } }}
         >
           {link.icon}
           <span>{link.label}</span>
-        </a>
+        </Link>
       ))}
     </nav>
   );
@@ -89,7 +85,7 @@ const LogCategoryRoute = () => {
 
 const GoalDetailRoute = () => {
   const { goalId } = useParams();
-  return <GoalDetail goalId={goalId} />;
+  return <GoalDetail key={goalId} goalId={goalId} />;
 };
 
 const CeremonyRoute = () => {
@@ -113,7 +109,8 @@ function LifeAppShell() {
   useDocumentTitle('Life');
   const navigate = useNavigate();
   const location = useLocation();
-  const { user: lifeUser, users: lifeUsers, setUsername } = useLifeUser();
+  const { user: lifeUser, users: lifeUsers, setUsername, error: identityError, retry: retryIdentity,
+    rosterError, rosterLoading, rosterRetrying, retryRoster } = useLifeUser();
 
   // Render the in-app fallback channel for the notification service. Most
   // household members have no Telegram/HA push, so this WS toast is the only
@@ -136,10 +133,31 @@ function LifeAppShell() {
   }, [location.pathname]);
 
   const activeTab = tabForPath(location.pathname);
+  const mainRef = useRef(null);
+  const owner = lifeUser?.username;
+  const pathname = location.pathname;
+  const logVisit = /^\/life\/log\/?$/.test(pathname) ? readLogVisit(location, owner) : null;
+  const logTabState = logVisit && !location.search && !location.hash ? location.state : null;
+  const tabs = logTabState
+    ? TABS.map(tab => tab.href === pathname ? { ...tab, state: logTabState } : tab)
+    : TABS;
+  const viewKey = logVisit ? `${pathname}:${logVisit.visitKey}:${logVisit.scope}` : pathname;
+  const scrollScope = useMemo(() => ({ owner, viewKey }), [owner, viewKey]);
+  const [readyScope, setReadyScope] = useState(null);
+  const registerPage = useCallback((node) => {
+    setReadyScope(current => node ? scrollScope : current === scrollScope ? null : current);
+  }, [scrollScope]);
+  // Plan and Log publish their loaded content. Coach scrolls its own thread.
+  const managedPage = activeTab === 'plan' || activeTab === 'log';
+  useViewScroll({ mainRef, owner, viewKey, ready: managedPage && readyScope === scrollScope });
 
-  const headerActions = lifeUsers.length > 1 ? [(
+  const { regionProps: pageFocusRegion, focus: focusLifePage } = useFocusRegion(false);
+  const retryRosterFromHeader = useCallback(() => {
+    focusLifePage();
+    return retryRoster();
+  }, [focusLifePage, retryRoster]);
+  const memberAction = lifeUsers.length > 1 ? (
     <Select
-      key="user-switch"
       size="xs"
       w={150}
       aria-label="Switch household member"
@@ -148,47 +166,70 @@ function LifeAppShell() {
       value={lifeUser?.username || null}
       onChange={(val) => { if (val) setUsername(val); }}
     />
+  ) : (rosterError || rosterRetrying) ? (
+    <Button density="compact" variant="secondary" busy={rosterLoading || rosterRetrying} onClick={retryRosterFromHeader}>
+      Retry household members
+    </Button>
+  ) : null;
+  const headerActions = memberAction ? [(
+    <div key="member-action">{memberAction}</div>
   )] : undefined;
 
   return (
+    <LifePlanSubmissionProvider>
     <LifeUserContext.Provider value={lifeUser}>
-      <Notifications position="top-right" autoClose={8000} />
       <AppChrome
         title="Life"
-        tabs={TABS}
+        mainRef={mainRef}
+        tabs={tabs}
         activeTab={activeTab}
-        onTabChange={(id) => navigate(`/life/${id}`)}
         headerActions={headerActions}
+        notices={<Notifications
+          withinPortal={false}
+          position="top-right"
+          autoClose={8000}
+          styles={{ root: { position: 'static', width: '100%', zIndex: 'auto' } }}
+        />}
       >
-        <div className="life-app-root">
-          {activeTab === 'plan' && <PlanSecondaryNav pathname={location.pathname} navigate={navigate} />}
-          <Routes>
-            <Route index element={<Navigate to="now" />} />
-            <Route path="now" element={<Dashboard />} />
-            <Route path="now/triage" element={<Suspense fallback={null}><TriageSessionView /></Suspense>} />
-            <Route path="log" element={<LogBrowser />} />
-            <Route path="log/:date" element={<LogDayRoute />} />
-            <Route path="log/category/:category" element={<LogCategoryRoute />} />
-            <Route path="plan" element={<PurposeView />} />
-            <Route path="plan/goals" element={<GoalsView onGoalClick={(id) => navigate(`/life/plan/goals/${id}`)} />} />
-            <Route path="plan/goals/:goalId" element={<GoalDetailRoute />} />
-            <Route path="plan/beliefs" element={<BeliefsView />} />
-            <Route path="plan/values" element={<ValuesView />} />
-            <Route path="plan/qualities" element={<QualitiesView />} />
-            <Route path="plan/ceremonies" element={<CeremonyConfig />} />
-            <Route path="ceremony/:type" element={<CeremonyRoute />} />
-            {/* Gate on resolved user so agent memory keys to the right person */}
-            <Route path="coach" element={lifeUser ? <CoachChat userId={lifeUser.username} /> : null} />
-          </Routes>
-        </div>
+        <LifePageScrollRef.Provider value={managedPage ? registerPage : null}>
+          <div id="life-page-content" className="life-app-root" role="region" aria-label="Life page content" {...pageFocusRegion}>
+            {activeTab === 'plan' && <PlanSecondaryNav pathname={location.pathname} />}
+            {identityError ? <ErrorState label="Household member" error={identityError} onRetry={retryIdentity} />
+              : !lifeUser ? <LoadingState label="household member" />
+              : <Routes key={lifeUser.username}>
+                <Route index element={<Navigate to="now" />} />
+                <Route path="now" element={<Dashboard />} />
+                <Route path="now/triage" element={
+                  <Suspense fallback={<LoadingState label="inbox triage" />}>
+                    <TriageSessionView />
+                  </Suspense>
+                } />
+                <Route path="log" element={<LogBrowser />} />
+                <Route path="log/:date" element={<LogDayRoute />} />
+                <Route path="log/category/:category" element={<LogCategoryRoute />} />
+                <Route path="plan" element={<PurposeView />} />
+                <Route path="plan/goals" element={<GoalsView />} />
+                <Route path="plan/goals/:goalId" element={<GoalDetailRoute />} />
+                <Route path="plan/beliefs" element={<BeliefsView />} />
+                <Route path="plan/values" element={<ValuesView />} />
+                <Route path="plan/qualities" element={<QualitiesView />} />
+                <Route path="plan/ceremonies" element={<CeremonyConfig />} />
+                <Route path="ceremony/:type" element={<CeremonyRoute />} />
+                <Route path="coach" element={<CoachChat userId={lifeUser.username} />} />
+              </Routes>}
+          </div>
+        </LifePageScrollRef.Provider>
       </AppChrome>
     </LifeUserContext.Provider>
+    </LifePlanSubmissionProvider>
   );
 }
 
 const LifeApp = () => (
   <AppThemeProvider pack="life">
-    <LifeAppShell />
+    <DismissStackProvider>
+      <LifeAppShell />
+    </DismissStackProvider>
   </AppThemeProvider>
 );
 

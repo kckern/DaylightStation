@@ -46,6 +46,7 @@ beforeEach(() => {
     restoreScreen: vi.fn(async (id) => ({ screen: { id, name: 'Attic TV' } })),
     setRoomNeighbours: vi.fn(async (room, neighbours) => ({ roomAdjacency: { [room]: neighbours } })),
   });
+  ctx.registry.setRoomNeighbours = api.setRoomNeighbours;
 });
 
 describe('ScreenAdminView room neighbours (PLACE.4a/AC6)', () => {
@@ -59,7 +60,6 @@ describe('ScreenAdminView room neighbours (PLACE.4a/AC6)', () => {
     fireEvent.click(kitchen);
     fireEvent.click(screen.getByTestId('room-neighbours-save'));
     await waitFor(() => expect(api.setRoomNeighbours).toHaveBeenCalledWith('Den', []));
-    expect(ctx.registry.refresh).toHaveBeenCalled();
   });
 
   it('is hidden while the household has fewer than two rooms', () => {
@@ -99,13 +99,24 @@ describe('ScreenAdminView', () => {
     await waitFor(() => expect(api.setScreenRoom).toHaveBeenCalledWith('browser:new', 'Pantry'));
   });
 
+  it('refreshes a committed rename when the subsequent room update fails', async () => {
+    api.setScreenRoom.mockRejectedValueOnce(new Error('Room unavailable'));
+    wrap();
+    fireEvent.click(screen.getByTestId('screen-admin-rename-browser:new'));
+    fireEvent.change(await screen.findByTestId('screen-admin-rename-name'), { target: { value: 'Pantry tablet' } });
+    fireEvent.change(screen.getByTestId('screen-admin-rename-room'), { target: { value: 'Pantry' } });
+    fireEvent.click(screen.getByTestId('screen-admin-rename-save'));
+    expect(await screen.findByText(/Room unavailable/)).toBeInTheDocument();
+    expect(ctx.registry.refresh).toHaveBeenCalledTimes(1);
+  });
+
   it('retires only after showing the routines that point at the screen', async () => {
     wrap();
     fireEvent.click(screen.getByTestId('screen-admin-retire-fleet:livingroom-tv'));
     const routines = await screen.findByTestId('screen-admin-retire-routines');
     expect(routines).toHaveTextContent('Kitchen Button 1');
     expect(api.retireScreen).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByTestId('confirm-ok'));
+    fireEvent.click(screen.getByRole('button', { name: 'Retire', exact: true }));
     await waitFor(() => expect(api.retireScreen).toHaveBeenCalledWith('fleet:livingroom-tv', { confirm: true }));
   });
 
@@ -113,9 +124,9 @@ describe('ScreenAdminView', () => {
     wrap();
     fireEvent.click(screen.getByTestId('screen-admin-merge-browser:new'));
     const dialog = await screen.findByTestId('screen-admin-merge-dialog');
-    expect(screen.getByTestId('confirm-ok')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Merge', exact: true })).toBeDisabled();
     fireEvent.click(within(dialog).getByRole('radio', { name: 'Kitchen tablet · Kitchen' }));
-    fireEvent.click(screen.getByTestId('confirm-ok'));
+    fireEvent.click(screen.getByRole('button', { name: 'Merge', exact: true }));
     await waitFor(() => expect(api.mergeScreen).toHaveBeenCalledWith('browser:new', { into: 'browser:old', confirm: true }));
     const outcome = recordLocal.mock.calls.find(([r]) => r.kind === 'screenMerged')[0];
     expect(outcome.command.copy.primary).toBe('Merged Kitchen tablet (aaaa1111) into Kitchen tablet');
