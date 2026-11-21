@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { MemoryRouter, useLocation } from 'react-router-dom';
+import { addCalendarDays, localDateKey } from '@/lib/calendarDay.js';
 
 let mockUsername = 'alice';
 vi.mock("../../hooks/useLifeUser.js", () => ({ useLifeUsername: () => mockUsername }));
@@ -49,7 +50,7 @@ describe('PriorityList', () => {
   });
   it('preserves sibling and other member dismissals written since mounting', () => {
     const key = 'life.priorities.dismissed';
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDateKey();
     wrap(<PriorityList priorities={items} />);
     const sibling = `alice:${today}:plan_gap:Name your purpose`;
     const otherMember = `bob:${today}:ceremony_due:Set your intention`;
@@ -73,7 +74,7 @@ describe('PriorityList', () => {
     } finally { vi.unstubAllGlobals(); }
   });
   it('prunes dismissed entries from a prior day so a stable-titled daily card (e.g. ceremony_due) is not hidden forever', () => {
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const yesterday = addCalendarDays(localDateKey(), -1);
     localStorage.setItem('life.priorities.dismissed', JSON.stringify([`alice:${yesterday}:ceremony_due:Set your intention`]));
     wrap(<PriorityList priorities={items} />);
     expect(screen.getByText('Set your intention')).toBeInTheDocument();

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { browserPreference } from '@/lib/browserPreference.js';
+import { localDateKey } from '@/lib/calendarDay.js';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { Stack, Paper, Group, Text, Badge, ThemeIcon, ActionIcon } from '@mantine/core';
 import { Link } from 'react-router-dom';
@@ -10,10 +11,6 @@ const dismissalPreference = browserPreference('life.priorities.dismissed', [], r
   const parsed = JSON.parse(raw);
   return Array.isArray(parsed) ? parsed : [];
 });
-
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 /**
  * Load the dismissed-card set, dropping any entries whose date segment isn't
@@ -42,7 +39,7 @@ function routeFor(item) {
 
 export function PriorityList({ priorities = [] }) {
   const username = useLifeUsername();
-  const today = todayStr();
+  const today = localDateKey();
   const keyOf = (item) => `${username || 'anon'}:${today}:${item.type}:${item.title}`;
   const [dismissed, setDismissed] = useState(() => loadDismissed(today));
 
