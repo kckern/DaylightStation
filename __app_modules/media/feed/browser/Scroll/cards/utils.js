@@ -11,6 +11,7 @@ import { webLink, feedImageSrc } from '../../../shared/webLink.mjs';
 export function formatAge(timestamp) {
   if (!timestamp) return '';
   const diff = Date.now() - new Date(timestamp).getTime();
+  if (!Number.isFinite(diff)) return '';
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return 'now';
   if (mins < 60) return `${mins}m`;

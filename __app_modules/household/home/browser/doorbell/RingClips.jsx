@@ -47,7 +47,7 @@ function RingClip({ camera, clip, ringMs, eager, label }) {
   const [started, setStarted] = useState(false);
   const video = useRef(null);
   if (!shown) {
-    return <Button size="xs" variant="light" onClick={() => setShown(true)}>Show clip</Button>;
+    return <Button size="xs" variant="light" aria-label={`Show clip of the ${label} ring`} onClick={() => setShown(true)}>Show clip</Button>;
   }
   if (failed) {
     return (

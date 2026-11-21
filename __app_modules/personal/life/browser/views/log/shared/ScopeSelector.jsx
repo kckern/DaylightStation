@@ -16,6 +16,7 @@ export function ScopeSelector({ value, onChange }) {
       value={value}
       onChange={onChange}
       size="sm"
+      aria-label="Log time range"
     />
   );
 }
