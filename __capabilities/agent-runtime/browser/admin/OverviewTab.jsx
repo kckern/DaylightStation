@@ -37,6 +37,7 @@ function MemberOverview({ agentId, userId, assignmentRead }) {
   const { run: submitClear, saving: clearing } = useSheetSubmission(() => setClearConfirmOpen(false), setActionError);
 
   const handleRunAssignment = useCallback(async (assignmentId) => {
+    if (!userId) return;
     setRunningId(assignmentId);
     setRunResult(null);
     try {
@@ -122,6 +123,7 @@ function MemberOverview({ agentId, userId, assignmentRead }) {
                       size="xs"
                       variant="light"
                       leftSection={<IconPlayerPlay size={14} />}
+                      disabled={!userId}
                       loading={runningId === a.id}
                       onClick={() => handleRunAssignment(a.id)}
                     >

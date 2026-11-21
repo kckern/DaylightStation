@@ -15,7 +15,7 @@ const forms = [
   {
     noun: 'belief', section: 'beliefs', read: 'beliefs',
     fields: { 'If I…': 'if_hypothesis', '…then': 'then_outcome' },
-    result: (id, draft) => ({ id, if_hypothesis: draft.if_hypothesis, then_expectation: draft.then_outcome, state: 'testing' }),
+    result: (id, draft) => ({ id, if: draft.if_hypothesis, then: draft.then_outcome, state: 'testing' }),
     row: draft => 'If ' + draft.if_hypothesis,
   },
 ];

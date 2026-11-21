@@ -637,7 +637,7 @@ test(`Life recovers the ${recoveredUsers.length}-member roster in place`, async 
     }
     if (pathname === '/api/v1/life/plan/beliefs') {
       contentReads++;
-      return route.fulfill({ json: { beliefs: [{ id: 'b', if_hypothesis: 'Bob marker' }] } });
+      return route.fulfill({ json: { beliefs: [{ id: 'b', if: 'Bob marker', then: 'Bob outcome' }] } });
     }
     return route.fulfill({ json: {} });
   });

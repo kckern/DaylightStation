@@ -156,10 +156,19 @@ Interactive chat retains its existing tools and memory behavior.
 uses canonical observations; mixed model coach CTAs/prompts are discarded. A
 fitness CTA is rendered only when the selected content ID resolves to gathered
 canonical content, using that title. `HealthCoachAgent` explicitly persists the
-dashboard after validated execution returns. This is separate from notification
-receipt history. The deterministic guarantee covers automated coach/nutrition
+dashboard after validated execution returns and fails the assignment if that write
+returns an unsuccessful result, so Admin does not report a generation as complete
+when the dashboard was not saved. This is separate from notification receipt
+history. The deterministic guarantee covers automated coach/nutrition
 assessment prose; arbitrary curated fitness rationale and conversational chat
 are outside that guarantee. Invalid dashboard schemas still fail validation.
+
+Admin dashboard history reads and writes the shared UTC date key. Generate and
+Regenerate apply only to the current UTC key, matching the assignment writer and
+the date-free dashboard reader. A confirmed 404 shows the missing-dashboard state;
+other read failures keep the existence unknown and offer a retry before generation.
+`DailyDashboard` gathers a local-day budget, and deleting a historical dashboard
+does not schedule a backfill.
 
 ## Triggers, delivery and failure limits
 

@@ -2,6 +2,7 @@ import {
   AssistantRuntimeProvider,
   useLocalRuntime,
   useMessage,
+  ActionBarPrimitive,
   ThreadPrimitive,
   ComposerPrimitive,
   MessagePrimitive,
@@ -14,6 +15,8 @@ import "./AgentChatSurface.scss";
 import { createAgentRuntime, getOrCreateThreadId } from "./runtime.js";
 import { MarkdownText } from "./MarkdownText.jsx";
 import { ToolCallAttribution } from "./ToolCallAttribution.jsx";
+
+const RETRY_ATTACHMENTS_KEY = 'submittedAgentAttachments';
 
 /**
  * Shared agent chat surface — every agent in the app renders through this
@@ -31,6 +34,9 @@ import { ToolCallAttribution } from "./ToolCallAttribution.jsx";
  */
 export function useAgentConversation({ agentId, userId, onComplete, context = null, persistSession = false }) {
   const pendingMentionsRef = useRef([]);
+  // Retries reuse their user-message ID; keep their context separate from newer draft mentions.
+  const submittedAttachmentsRef = useRef(new Map());
+  const retiredRetryMessageIdsRef = useRef(new Set());
   const contextRef = useRef(context);
   contextRef.current = context;
   const owner = useMemo(() => {
@@ -52,11 +58,19 @@ export function useAgentConversation({ agentId, userId, onComplete, context = nu
 
   const adapter = useMemo(() => ({
     async *run({ messages, abortSignal }) {
-      const attachments = [
-        ...collectAttachments(messages),
-        ...pendingMentionsRef.current,
-      ];
-      pendingMentionsRef.current = [];
+      const userMessage = messages.at(-1);
+      const messageId = userMessage?.id;
+      const hasRetainedAttachments = messageId && submittedAttachmentsRef.current.has(messageId);
+      const persistedAttachments = userMessage?.metadata?.custom?.[RETRY_ATTACHMENTS_KEY];
+      const hasPersistedAttachments = Array.isArray(persistedAttachments);
+      const attachments = hasRetainedAttachments
+        ? submittedAttachmentsRef.current.get(messageId)
+        : hasPersistedAttachments
+          ? persistedAttachments
+          : [...collectAttachments(messages), ...pendingMentionsRef.current];
+      if (!hasRetainedAttachments && !hasPersistedAttachments) pendingMentionsRef.current = [];
+      if (messageId) submittedAttachmentsRef.current.set(messageId, attachments);
+      let retainAttachmentsForRetry = false;
       try {
         for await (const chunk of owner.agentRuntime.runStream({ messages, userId, attachments, abortSignal, context: contextRef.current, threadId: owner.threadId })) {
           yield {
@@ -68,7 +82,14 @@ export function useAgentConversation({ agentId, userId, onComplete, context = nu
             },
           };
         }
+      } catch (error) {
+        retainAttachmentsForRetry = !abortSignal?.aborted && error?.name !== 'AbortError';
+        throw error;
       } finally {
+        if (messageId && !retainAttachmentsForRetry) {
+          submittedAttachmentsRef.current.delete(messageId);
+          if (hasPersistedAttachments) retiredRetryMessageIdsRef.current.add(messageId);
+        }
         if (liveOwner.current === owner) onComplete?.();
       }
     },
@@ -79,9 +100,29 @@ export function useAgentConversation({ agentId, userId, onComplete, context = nu
     if (!owner.transcript) return;
     return runtime.thread.subscribe(() => {
       if (runtime.thread.getState().isRunning) return;
-      const messages = runtime.thread.getState().messages.slice(-80).map(message => ({
-        id: message.id, role: message.role, content: message.content, metadata: message.metadata,
-      }));
+      const currentMessages = runtime.thread.getState().messages.slice(-80);
+      const currentMessageIds = new Set(currentMessages.map(message => message.id));
+      const messages = currentMessages.map(message => {
+        const hasSubmittedAttachments = submittedAttachmentsRef.current.has(message.id);
+        const custom = { ...message.metadata?.custom };
+        if (hasSubmittedAttachments) {
+          custom[RETRY_ATTACHMENTS_KEY] = submittedAttachmentsRef.current.get(message.id);
+        } else if (retiredRetryMessageIdsRef.current.has(message.id)) {
+          delete custom[RETRY_ATTACHMENTS_KEY];
+        }
+        return {
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          status: message.status,
+          metadata: hasSubmittedAttachments || retiredRetryMessageIdsRef.current.has(message.id)
+            ? { ...message.metadata, custom }
+            : message.metadata,
+        };
+      });
+      for (const id of retiredRetryMessageIdsRef.current) {
+        if (!currentMessageIds.has(id)) retiredRetryMessageIdsRef.current.delete(id);
+      }
       owner.transcript.write(JSON.stringify(messages));
     });
   }, [runtime, owner]);
@@ -288,6 +329,12 @@ function AssistantMessage() {
         }}
       />
       <AssistantMessageToolCalls />
+      <MessagePrimitive.Error>
+        <div className="coach-chat__message-error" role="alert">
+          <span>The reply didn’t finish.</span>
+          <ActionBarPrimitive.Reload className="coach-chat__retry">Retry reply</ActionBarPrimitive.Reload>
+        </div>
+      </MessagePrimitive.Error>
     </MessagePrimitive.Root>
   );
 }

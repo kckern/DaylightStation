@@ -2,9 +2,10 @@
 
 import React, { useState, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { Tabs, Group, Select, Text, Stack, Loader } from '@mantine/core';
+import { Tabs, Group, Select, Text, Stack, Loader, Button } from '@mantine/core';
 import { IconSettings, IconLayoutDashboard, IconAdjustments } from '@tabler/icons-react';
 import { useApiResource } from "../../../../frontend/src/lib/hooks/useApiResource.js";
+import { useRetryRegion } from "../../../../frontend/src/lib/ui/useRetryRegion.js";
 import OverviewTab from "./OverviewTab.jsx";
 import ConfigTab from "./ConfigTab.jsx";
 import "./AgentDetail.scss";
@@ -15,13 +16,23 @@ function AgentDetail({ DashboardView }) {
   const navigate = useNavigate();
 
   const activeTab = location.hash.slice(1) || 'overview';
-  const { data, loading: usersLoading } = useApiResource('/api/v1/admin/household');
+  const {
+    data,
+    loading: usersLoading,
+    error: usersError,
+    reload: reloadUsers,
+  } = useApiResource('/api/v1/admin/household');
   const users = (data?.members || []).map(member => ({
     value: member.username || member.id,
     label: member.display_name || member.username || member.id,
   }));
   const [selectedUser, setSelectedUser] = useState();
-  const userId = selectedUser === undefined ? users[0]?.value ?? null : selectedUser;
+  const userId = selectedUser === null
+    ? null
+    : users.some(user => user.value === selectedUser)
+      ? selectedUser
+      : users[0]?.value ?? null;
+  const { regionProps, retry: retryUsers } = useRetryRegion(reloadUsers, usersLoading);
 
   // Sync tab to URL hash
   const handleTabChange = useCallback((tab) => {
@@ -35,18 +46,30 @@ function AgentDetail({ DashboardView }) {
         <Text size="xl" fw={600} ff="var(--ds-font-mono)">{agentId}</Text>
         <Group gap="sm">
           <Text size="sm" c="dimmed">User:</Text>
-          {usersLoading ? (
-            <Loader size="xs" />
-          ) : (
-            <Select
-              size="xs"
-              w={180}
-              value={userId}
-              onChange={setSelectedUser}
-              data={users}
-              placeholder="Select user"
-            />
-          )}
+          <Group gap="xs" {...regionProps}>
+            {users.length > 0 ? (
+              <Select
+                size="xs"
+                w={180}
+                value={userId}
+                onChange={setSelectedUser}
+                data={users}
+                placeholder="Select user"
+              />
+            ) : usersLoading ? (
+              <Loader size="xs" />
+            ) : (
+              <Text size="xs" c="dimmed">No household members available</Text>
+            )}
+            {usersError && (
+              <Group gap="xs" role="alert">
+                <Text size="xs" c="red">Couldn’t load household members</Text>
+                <Button size="xs" variant="subtle" loading={usersLoading} onClick={retryUsers}>
+                  Retry
+                </Button>
+              </Group>
+            )}
+          </Group>
         </Group>
       </Group>
 

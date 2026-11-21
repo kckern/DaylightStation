@@ -9,8 +9,8 @@ const today = '2026-11-19';
 async function loadBeliefs(page, baseURL, write, read = (route, beliefs) => route.fulfill({ json: { beliefs } })) {
   const origin = new URL(baseURL).origin;
   const beliefs = [
-    { id: 'first', if_hypothesis: 'First hypothesis', state: 'testing', evidence_history: [] },
-    { id: 'second', if_hypothesis: 'Second hypothesis', state: 'testing', evidence_history: [] },
+    { id: 'first', if: 'First hypothesis', then: 'First outcome', state: 'testing', evidence_history: [] },
+    { id: 'second', if: 'Second hypothesis', then: 'Second outcome', state: 'testing', evidence_history: [] },
   ];
   await page.context().route('**/*', route => (
     new URL(route.request().url()).origin === origin ? route.fallback() : route.abort()

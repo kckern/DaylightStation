@@ -214,6 +214,31 @@
   text-align: left;
 }
 
+.coach-chat__message-error {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  color: var(--mantine-color-red-7);
+  font-size: var(--mantine-font-size-xs);
+}
+
+.coach-chat__retry {
+  border: 1px solid currentColor;
+  border-radius: var(--mantine-radius-sm);
+  padding: 0.2rem 0.5rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
 // ── Tool call attribution ─────────────────────────────────────────────────────
 .tool-call-attribution {
   margin-top: 8px;

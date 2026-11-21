@@ -10,13 +10,7 @@ import { humanize } from "../../lib/format.js";
 import { PlanCreateSheet } from "./PlanCreateSheet.jsx";
 import { useLifeUsername } from "../../hooks/useLifeUser.js";
 import { useLifePlanSubmission } from "../../hooks/LifePlanSubmissionContext.jsx";
-
-function alignmentColor(state) {
-  if (state === 'aligned') return 'green';
-  if (state === 'drifting') return 'yellow';
-  if (state === 'reconsidering') return 'red';
-  return 'gray';
-}
+import { driftStatusColor } from "../../theme/semantics.js";
 
 function ValueCreateSheet({ onClose, createValue, getFallbackFocusTarget }) {
   const [name, setName] = useState('');
@@ -97,13 +91,13 @@ export function ValuesView({ username }) {
               </Group>
 
               <Group gap="xs">
-                {v.alignment_state && (
+                {v.alignment && (
                   <Badge
-                    color={alignmentColor(v.alignment_state)}
+                    color={driftStatusColor(v.alignment)}
                     variant="light"
                     size="sm"
                   >
-                    {v.alignment_state}
+                    {v.alignment}
                   </Badge>
                 )}
                 <ActionIcon
@@ -133,7 +127,9 @@ export function ValuesView({ username }) {
               <Group gap="xs" mt="xs">
                 <Text size="xs" c="dimmed">Justified by:</Text>
                 {v.justified_by.map((ref, j) => (
-                  <Badge key={j} variant="light" size="xs">{humanize(ref)}</Badge>
+                  <Badge key={j} variant="light" size="xs">
+                    {humanize(typeof ref === 'string' ? ref : ref?.belief)}
+                  </Badge>
                 ))}
               </Group>
             )}

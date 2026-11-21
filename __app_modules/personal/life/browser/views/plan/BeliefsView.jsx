@@ -133,10 +133,10 @@ export function BeliefsView({ username }) {
               <Group justify="space-between" mb="xs">
                 <Stack gap={2} style={{ flex: 1 }}>
                   <Text size="sm" fw={500}>
-                    If {b.if_hypothesis || b.id}
+                    If {b.if}
                   </Text>
-                  {b.then_expectation && (
-                    <Text size="xs" c="dimmed">Then {b.then_expectation}</Text>
+                  {b.then && (
+                    <Text size="xs" c="dimmed">Then {b.then}</Text>
                   )}
                 </Stack>
                 <Group gap="xs">

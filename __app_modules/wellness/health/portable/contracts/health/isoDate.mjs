@@ -29,6 +29,9 @@ export const localDateISO = (d) => {
   return `${y}-${m}-${day}`;
 };
 
+/** UTC `YYYY-MM-DD` key used by persisted daily dashboards. */
+export const utcDateISO = (d = new Date()) => d.toISOString().slice(0, 10);
+
 /**
  * The meal a capture lands in when nothing else names one, for a given target
  * day. See decision 2.24: a day that is not today has no "current hour", so the
