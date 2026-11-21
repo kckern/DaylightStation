@@ -187,7 +187,7 @@ it('keeps the preview cues and artwork scoped to the playing title during a swit
 describe('bumper timing around the provenance intro', () => {
   afterEach(() => { vi.useRealTimers(); });
 
-  it('holds the bumper while the intro is up and until the lines meet', async () => {
+  it('holds the bumper while the intro is up and until the field has dissolved', async () => {
     vi.useFakeTimers();
     const { useBumperHeld } = await import('../provenance/playbackPresentation.jsx');
     const { SCENE_TIMING } = await import('../provenance/useSceneTimeline.js');
@@ -202,6 +202,8 @@ describe('bumper timing around the provenance intro', () => {
     rerender({ stage: 'playing' });
     expect(result.current).toBe(true);
     act(() => { vi.advanceTimersByTime(SCENE_TIMING.linkedMs); });
+    expect(result.current).toBe(true); // lines met, field still dissolving
+    act(() => { vi.advanceTimersByTime(SCENE_TIMING.dissolveMs); });
     expect(result.current).toBe(false);
   });
 });

@@ -15,6 +15,7 @@ export const SCENE_TIMING = Object.freeze({
   linkMinMs: 5000,  // the scene holds for a random time in this range
   linkMaxMs: 10000, //   (the Player holds longer if the video is still loading)
   linkedMs: 700,    // lines meet; the scene starts to clear
+  dissolveMs: 900,  // field dissolves and the logo moves to the corner (matches the SCSS transitions)
   dockMs: 4000,     // logo in the corner
   leaveMs: 900,     // corner logo fades
 });

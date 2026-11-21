@@ -47,6 +47,9 @@ describe('useIntroGate', () => {
     expect(setup({ intro: { status: 'none', minHoldMs: HOLD } }).result.current).toBe('off');
     const { result } = setup({ intro: PENDING });
     expect(result.current).toBe('waiting');
+    // Pending holds the spinner back briefly (INTRO_WAIT_COVER_MS), then lets it show.
+    expect(isIntroCovering()).toBe(true);
+    act(() => { vi.advanceTimersByTime(1500); });
     expect(isIntroCovering()).toBe(false);
   });
 
@@ -136,7 +139,7 @@ describe('useIntroGate', () => {
     rerender({ intro: PENDING, el, resetKey: 'b' });
     expect(el.play).toHaveBeenCalledTimes(1);
     expect(result.current).toBe('waiting');
-    expect(isIntroCovering()).toBe(false);
+    expect(isIntroCovering()).toBe(true); // the new title's pending intro holds the spinner back briefly
   });
 
   it('resumes a held element and drops the cover on unmount', () => {
@@ -183,4 +186,32 @@ describe('useIntroGate', () => {
     act(() => { vi.advanceTimersByTime(2500); });
     expect(result.current).toBe('playing');
   });
+
+  it('holds the spinner back while a pending intro decides, for at most INTRO_WAIT_COVER_MS', async () => {
+    const { INTRO_WAIT_COVER_MS } = await import('./useIntroGate.js');
+    const el = fakeVideoForWait();
+    const { result } = renderHook((p) => useIntroGate({ getMediaEl: () => el, resetKey: 'k', ...p }), {
+      initialProps: { intro: { status: 'pending', minHoldMs: 7500, render: () => null } },
+    });
+    expect(result.current).toBe('waiting');
+    expect(isIntroCovering()).toBe(true);
+    act(() => { vi.advanceTimersByTime(INTRO_WAIT_COVER_MS); });
+    expect(isIntroCovering()).toBe(false);
+  });
+
+  it('releases the spinner at once when the pending intro turns out to be none', () => {
+    const el = fakeVideoForWait();
+    const { rerender } = renderHook((p) => useIntroGate({ getMediaEl: () => el, resetKey: 'k', ...p }), {
+      initialProps: { intro: { status: 'pending', minHoldMs: 7500, render: () => null } },
+    });
+    expect(isIntroCovering()).toBe(true);
+    rerender({ intro: { status: 'none', minHoldMs: 0, render: () => null } });
+    expect(isIntroCovering()).toBe(false);
+  });
 });
+
+function fakeVideoForWait() {
+  const el = new EventTarget();
+  Object.assign(el, { currentTime: 0, paused: true, readyState: 0, pause: vi.fn(), play: vi.fn(() => Promise.resolve()) });
+  return el;
+}

@@ -5,7 +5,7 @@
  * it and passes its stage back here as `introStage`.
  *
  * The filter's opening bumper waits while the intro is up and until the lines
- * have met (`SCENE_TIMING.linkedMs` into playback), so the two never cover each
+ * have met and the field has dissolved (`linkedMs + dissolveMs` into playback), so the two never cover each
  * other. With no intro (`off` or no stage) the bumper behaves as before.
  *
  * Reference: __docs/reference/media/provenance.md
@@ -18,7 +18,7 @@ import { SCENE_TIMING } from './useSceneTimeline.js';
 const INTRO_UP = new Set(['waiting', 'covering', 'holding']);
 
 /** True while the intro covers the opening, and briefly after the film starts. */
-export function useBumperHeld(introStage, linkedMs = SCENE_TIMING.linkedMs) {
+export function useBumperHeld(introStage, linkedMs = SCENE_TIMING.linkedMs + SCENE_TIMING.dissolveMs) {
   const playing = introStage === 'playing';
   const [linking, setLinking] = useState(false);
   useEffect(() => {

@@ -28,6 +28,11 @@ const logger = () => (_logger ||= getLogger().child({ component: 'intro-gate' })
 export const INTRO_START_WINDOW_SEC = 5;
 /** An intro that is ready after the film has rolled this far is too late. */
 export const INTRO_LATE_SEC = 1;
+/**
+ * While an intro is still deciding, the spinner is held back this long so it
+ * does not flash before the scene; past it (slow lookup) the spinner returns.
+ */
+export const INTRO_WAIT_COVER_MS = 1500;
 
 const FINAL = new Set(['off', 'playing']);
 const COVERING = new Set(['covering', 'holding']);
@@ -126,10 +131,17 @@ export function useIntroGate({ intro, getMediaEl, startSec = 0, resetKey, playTi
     after(Math.max(0, Number(minHoldMs) || 0), onHoldDone);
   }, [status, minHoldMs, startSec, resetKey]);
 
-  // Publish the cover flag for the loading overlay.
+  // Publish the cover flag for the loading overlay. A pending intro holds the
+  // spinner back briefly too, so a scene that is about to appear is not
+  // preceded by a spinner flash.
+  const pending = stage === 'waiting' && status === 'pending';
   useEffect(() => {
-    setIntroCovering(COVERING.has(stage));
-  }, [stage]);
+    if (COVERING.has(stage)) { setIntroCovering(true); return undefined; }
+    if (!pending) { setIntroCovering(false); return undefined; }
+    setIntroCovering(true);
+    const t = setTimeout(() => setIntroCovering(false), INTRO_WAIT_COVER_MS);
+    return () => clearTimeout(t);
+  }, [stage, pending]);
 
   // While covering: watch the (current) video element for its first frame.
   useEffect(() => {
