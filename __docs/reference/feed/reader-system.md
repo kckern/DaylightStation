@@ -333,7 +333,7 @@ Legacy compatibility endpoint for marking Reader items read or unread. Current c
 }
 ```
 
-New clients use the unified `PATCH /api/v1/feed/items/state` endpoint for read, unread, save, unsave, archive, and unarchive. The legacy Reader mark endpoint remains for compatibility. Local mutations roll back on request failure; an accepted local mutation whose FreshRSS write fails remains visible with `syncStatus: "pending"` and is retried durably.
+New clients use the unified `PATCH /api/v1/feed/items/state` endpoint for read, unread, save, unsave, archive, and unarchive. The legacy Reader mark endpoint remains for compatibility. Local mutations roll back on request failure; an accepted local mutation whose FreshRSS write fails remains visible with `syncStatus: "pending"` and is retried durably. Overlapping actions for one item rebase from the last acknowledged state by action group, so a failed save cannot undo an acknowledged read and a late save response cannot overwrite newer read state.
 
 ---
 

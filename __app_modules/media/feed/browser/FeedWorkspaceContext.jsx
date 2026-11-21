@@ -36,7 +36,15 @@ function enqueueWorkspaceTask(scope, task) {
   return result;
 }
 
-const actions = new Set(['read', 'unread', 'save', 'unsave', 'archive', 'unarchive']);
+const actionStateRules = Object.freeze({
+  read: Object.freeze({ group: 'read', fields: ['isRead', 'readAt'] }),
+  unread: Object.freeze({ group: 'read', fields: ['isRead', 'readAt'] }),
+  save: Object.freeze({ group: 'save', fields: ['isSaved', 'savedAt'] }),
+  unsave: Object.freeze({ group: 'save', fields: ['isSaved', 'savedAt'] }),
+  archive: Object.freeze({ group: 'archive', fields: ['isArchived', 'archivedAt'] }),
+  unarchive: Object.freeze({ group: 'archive', fields: ['isArchived', 'archivedAt'] }),
+});
+const actions = new Set(Object.keys(actionStateRules));
 const itemMutations = createBrowserMutationQueue({
   prefix: PENDING_PREFIX,
   getOwner: feedQueueOwner,
@@ -66,6 +74,20 @@ function applyAction(item, action, { pending = false, now = new Date().toISOStri
   return updateItemState(item, state);
 }
 
+function mutationKey(owner, itemId) {
+  return JSON.stringify([owner, itemId]);
+}
+
+function acknowledgedState(state, action, responseState, now) {
+  const { fields } = actionStateRules[action];
+  const projected = applyAction({ state }, action, { now }).state;
+  const next = { ...state };
+  for (const field of fields) {
+    next[field] = Object.hasOwn(responseState || {}, field) ? responseState[field] : projected[field];
+  }
+  return next;
+}
+
 function isNetworkFailure(error) {
   return (typeof navigator !== 'undefined' && navigator.onLine === false)
     || error?.name === 'TypeError'
@@ -85,6 +107,8 @@ export function FeedWorkspaceProvider({ children, owner = feedQueueOwner() }) {
   const localVisits = useRef(new Map());
   const pendingRef = useRef(itemMutations.snapshot(userScopeRef.current));
   const activeReplayOwner = useRef(null);
+  const itemStateMutations = useRef(new Map());
+  const itemMutationSequence = useRef(0);
   const [readingPreferences, setReadingPreferencesState] = useState(loadReadingPreferences);
   const readingPreferencesRef = useRef(readingPreferences);
   const preferenceView = useRef(null);
@@ -343,45 +367,111 @@ export function FeedWorkspaceProvider({ children, owner = feedQueueOwner() }) {
     const previous = new Map(items.map(item => [item.id, item.state]));
     const now = new Date().toISOString();
     const optimistic = items.map(item => applyAction(item, action, { now }));
-    onApply?.(optimistic);
 
-    const queueOffline = () => {
+    const queueOffline = (transaction = null) => {
       const operation = { id: mutationId(), itemIds: items.map(item => item.id), action, createdAt: now };
       try {
         const pending = itemMutations.enqueue(owner, operation);
         if (isCurrent()) publishPending(pending);
       } catch (error) {
-        if (!isCurrent()) throw error;
-        onApply?.(items.map(item => updateItemState(item, previous.get(item.id))));
-        notifications.show({ color: 'red', title: 'Change not saved', message: 'The offline change could not be stored. Try again when connected.' });
+        if (transaction) settleTransaction(transaction);
+        else if (isCurrent()) onApply?.(items.map(item => updateItemState(item, previous.get(item.id))));
+        if (isCurrent()) notifications.show({ color: 'red', title: 'Change not saved', message: 'The offline change could not be stored. Try again when connected.' });
         throw error;
       }
-      const queued = optimistic.map(item => updateItemState(item, { ...item.state, syncStatus: 'pending' }));
+      const queued = transaction
+        ? settleTransaction(transaction, { queued: true })
+        : optimistic.map(item => updateItemState(item, { ...item.state, syncStatus: 'pending' }));
       if (isCurrent()) {
-        onApply?.(queued);
+        if (!transaction) onApply?.(queued);
         notifications.show({ title: 'Saved offline', message: 'This change will synchronize when the connection returns.' });
       }
       return { items: queued.map(item => ({ id: item.id, state: item.state })), queued: true };
     };
 
     if (pendingRef.current.length || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
+      onApply?.(optimistic);
       const result = queueOffline();
       flushPendingMutations();
       return result;
     }
 
+    const transaction = {
+      id: mutationId(),
+      owner,
+      sequence: ++itemMutationSequence.current,
+      action,
+      now,
+      items,
+      onApply,
+      entries: [],
+    };
+    for (const item of items) {
+      const key = mutationKey(owner, item.id);
+      let record = itemStateMutations.current.get(key);
+      if (!record) {
+        record = { state: item.state || {}, groupSequences: {}, syncSequence: 0, active: new Map() };
+        itemStateMutations.current.set(key, record);
+      }
+      record.active.set(transaction.id, { sequence: transaction.sequence, action, now });
+      transaction.entries.push({ key, item });
+    }
+
+    const project = (entry, record) => {
+      let state = record.state;
+      const active = [...record.active.values()].sort((left, right) => left.sequence - right.sequence);
+      for (const pending of active) {
+        state = applyAction({ ...entry.item, state }, pending.action, { now: pending.now }).state;
+      }
+      return updateItemState(entry.item, state);
+    };
+
+    function settleTransaction(current, { successStates = new Map(), accepted = false, queued = false } = {}) {
+      const updates = current.entries.map(entry => {
+        const record = itemStateMutations.current.get(entry.key);
+        if (!record) return entry.item;
+        const pending = record.active.get(current.id);
+        const responseState = successStates.get(entry.item.id);
+        if (pending && (accepted || queued) && current.owner === feedQueueOwner()) {
+          const { group } = actionStateRules[current.action];
+          if (pending.sequence >= (record.groupSequences[group] || 0)) {
+            record.state = acknowledgedState(record.state, current.action, responseState, current.now);
+            record.groupSequences[group] = pending.sequence;
+          }
+          if (queued && pending.sequence >= record.syncSequence) {
+            record.state = { ...record.state, syncStatus: 'pending' };
+            record.syncSequence = pending.sequence;
+          } else if (Object.hasOwn(responseState || {}, 'syncStatus') && pending.sequence >= record.syncSequence) {
+            record.state = { ...record.state, syncStatus: responseState.syncStatus };
+            record.syncSequence = pending.sequence;
+          }
+        }
+        record.active.delete(current.id);
+        return project(entry, record);
+      });
+      if (isCurrent()) current.onApply?.(updates);
+      for (const entry of current.entries) {
+        const record = itemStateMutations.current.get(entry.key);
+        if (record && record.active.size === 0) itemStateMutations.current.delete(entry.key);
+      }
+      return updates;
+    }
+
+    const pendingProjection = transaction.entries.map(entry => project(entry, itemStateMutations.current.get(entry.key)));
+    onApply?.(pendingProjection);
+
     try {
       const result = await DaylightAPI('/api/v1/feed/items/state', { itemIds: items.map(item => item.id), action }, 'PATCH');
-      if (!isCurrent()) return result;
       const byId = new Map((result.items || []).map(item => [item.id, item.state]));
-      onApply?.(optimistic.map(item => byId.has(item.id) ? updateItemState(item, byId.get(item.id)) : item));
+      const settled = settleTransaction(transaction, { successStates: byId, accepted: true });
+      if (!isCurrent()) return result;
       const inverse = { read: 'unread', unread: 'read', save: 'unsave', unsave: 'save', archive: 'unarchive', unarchive: 'archive' }[action];
       notifications.show({
         title: action === 'archive' ? 'Archived' : action === 'save' ? 'Saved' : 'Updated',
         message: (
           <span>
             {result.items?.some(item => item.state?.syncStatus === 'pending') ? 'Saved locally; source sync will retry. ' : 'Change saved. '}
-            {inverse && <button type="button" className="feed-toast-undo" onClick={() => mutateItems(optimistic, inverse, { onApply }).catch(() => {})}>Undo</button>}
+            {inverse && <button type="button" className="feed-toast-undo" onClick={() => mutateItems(settled, inverse, { onApply }).catch(() => {})}>Undo</button>}
           </span>
         ),
         autoClose: 5000,
@@ -390,10 +480,9 @@ export function FeedWorkspaceProvider({ children, owner = feedQueueOwner() }) {
       refreshSummary();
       return result;
     } catch (error) {
-      if (owner === feedQueueOwner() && isNetworkFailure(error)) return queueOffline();
-      if (!isCurrent()) throw error;
-      onApply?.(items.map(item => updateItemState(item, previous.get(item.id))));
-      notifications.show({ color: 'red', title: 'Change not saved', message: 'The item was restored. Try again.' });
+      if (owner === feedQueueOwner() && isNetworkFailure(error)) return queueOffline(transaction);
+      settleTransaction(transaction);
+      if (isCurrent()) notifications.show({ color: 'red', title: 'Change not saved', message: 'The item was restored. Try again.' });
       log.warn('feed.state.mutation_failed', { action, count: items.length, error: error.message });
       throw error;
     }

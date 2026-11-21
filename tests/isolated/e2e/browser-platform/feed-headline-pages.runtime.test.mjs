@@ -46,6 +46,44 @@ test('Feed keeps focus in Headlines while retrying an unavailable edition', asyn
   await expect(section).not.toHaveAttribute('aria-busy', 'true');
 });
 
+test('Feed keeps an acknowledged headline read when an earlier save fails', async ({ page }) => {
+  const actions = [];
+  let saveRequest;
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', async route => {
+    const request = route.request();
+    const { pathname, searchParams } = new URL(request.url());
+    if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    if (pathname.endsWith('/workspace')) return route.fulfill({ json: { preferencesStored: true } });
+    if (pathname.endsWith('/items/state/summary')) return route.fulfill({ json: { readerUnread: 1, pendingSync: 0 } });
+    if (pathname.endsWith('/items/state')) {
+      const operation = request.postDataJSON().action;
+      actions.push(operation);
+      if (operation === 'save') {
+        saveRequest = route;
+        return;
+      }
+      return route.fulfill({ json: { items: [{ id: 'local', state: { isRead: true, isSaved: false } }] } });
+    }
+    if (pathname.endsWith('/headlines/pages')) return route.fulfill({ json: [{ id: 'local', label: 'Local' }] });
+    if (pathname.endsWith('/headlines') && searchParams.has('page')) {
+      return route.fulfill({ json: editionResponse('local', 'Morning story') });
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto('/feed/headlines/local');
+  await page.getByRole('button', { name: 'Save Morning story' }).press('Enter');
+  await expect.poll(() => actions.slice()).toEqual(['save']);
+  await page.getByRole('button', { name: 'Mark read: Morning story' }).press('Enter');
+  await expect.poll(() => actions.slice()).toEqual(['save', 'read']);
+  await expect(page.getByRole('button', { name: 'Mark unread: Morning story' })).toBeVisible();
+
+  await saveRequest.fulfill({ status: 500, json: { error: 'Save failed' } });
+  await expect(page.getByRole('button', { name: 'Mark unread: Morning story' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save Morning story' })).toBeVisible();
+});
+
 test('Feed links to the first configured edition and keeps a usable default when the pages read fails', async ({ page }) => {
   let available = true;
   await page.routeWebSocket('**/*', () => {});

@@ -42,9 +42,11 @@ function MutationProbe() {
   return (
     <>
       <output aria-label="saved">{String(item.state.isSaved)}</output>
+      <output aria-label="read">{String(item.state.isRead)}</output>
       <output aria-label="failure">{error}</output>
       <output aria-label="pending">{pendingMutations}</output>
       <button onClick={() => mutateItems([item], 'save', { onApply: updated => setItem(updated[0]) }).catch(err => setError(err.message))}>Save item</button>
+      <button onClick={() => mutateItems([item], 'read', { onApply: updated => setItem(updated[0]) }).catch(err => setError(err.message))}>Mark item read</button>
     </>
   );
 }
@@ -527,6 +529,48 @@ describe('FeedWorkspaceProvider reading preferences', () => {
 
     await waitFor(() => expect(JSON.parse(localStorage.getItem('feed:pending-mutations:household'))).toEqual([]));
     expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/items/state', { itemIds: ['one'], action: 'save' }, 'PATCH');
+  });
+
+  test('a failed earlier action cannot roll back a later acknowledged action', async () => {
+    const save = deferred();
+    const read = deferred();
+    apiMock.mockImplementation((path, body) => {
+      if (path === '/api/v1/feed/items/state' && body.action === 'save') return save.promise;
+      if (path === '/api/v1/feed/items/state' && body.action === 'read') return read.promise;
+      return Promise.resolve({ unread: 0, saved: 0, archived: 0, pendingSync: 0, preferencesStored: true });
+    });
+    render(<FeedWorkspaceProvider><MutationProbe /></FeedWorkspaceProvider>);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save item' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mark item read' }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/items/state', { itemIds: ['one'], action: 'read' }, 'PATCH'));
+
+    await act(async () => read.resolve({ items: [{ id: 'one', state: { isRead: true, isSaved: false, isArchived: false } }] }));
+    await act(async () => save.reject(new Error('save refused')));
+
+    expect(screen.getByLabelText('read')).toHaveTextContent('true');
+    expect(screen.getByLabelText('saved')).toHaveTextContent('false');
+  });
+
+  test('a delayed earlier success merges its action without replacing a newer acknowledgement', async () => {
+    const save = deferred();
+    const read = deferred();
+    apiMock.mockImplementation((path, body) => {
+      if (path === '/api/v1/feed/items/state' && body.action === 'save') return save.promise;
+      if (path === '/api/v1/feed/items/state' && body.action === 'read') return read.promise;
+      return Promise.resolve({ unread: 0, saved: 0, archived: 0, pendingSync: 0, preferencesStored: true });
+    });
+    render(<FeedWorkspaceProvider><MutationProbe /></FeedWorkspaceProvider>);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save item' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mark item read' }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/items/state', { itemIds: ['one'], action: 'read' }, 'PATCH'));
+
+    await act(async () => read.resolve({ items: [{ id: 'one', state: { isRead: true, isSaved: false, isArchived: false } }] }));
+    await act(async () => save.resolve({ items: [{ id: 'one', state: { isRead: false, isSaved: true, isArchived: false } }] }));
+
+    expect(screen.getByLabelText('read')).toHaveTextContent('true');
+    expect(screen.getByLabelText('saved')).toHaveTextContent('true');
   });
 
   test('retries a failed queue removal without replaying an acknowledged action twice', async () => {
