@@ -41,6 +41,8 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
   // can find a preset's binary textures — see the note there.
   let shaderTable = {};
   let protectedAssets = null, checkpointBridge = null;
+  // True when the patched core was booted unprotected for its RAM export.
+  let memoryExport = false;
   let progressPlayable = true;
 
   /**
@@ -78,25 +80,27 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
     }
   }
 
-  async function boot({ mount, romUrl, pathtodata, core = 'gb', controls, volume, shaders, checkpointProvenance } = {}) {
+  async function boot({ mount, romUrl, pathtodata, core = 'gb', controls, volume, shaders, checkpointProvenance, memoryCore } = {}) {
     if (bootPromise) return bootPromise;
 
     const generation = ++bootGeneration;
     let ownedAssets = null;
     shaderTable = shaders || {};
-    log().info('boot.start', { core, customShaders: Object.keys(shaderTable) });
+    if (checkpointProvenance) memoryCore = null;
+    log().info('boot.start', { core, customShaders: Object.keys(shaderTable), memoryCore: memoryCore ? `${memoryCore.name}-${memoryCore.variant}` : null });
     if (checkpointProvenance) progressPlayable = false;
     bootPromise = Promise.resolve().then(async () => {
       if (checkpointProvenance) ownedAssets = await prepareAssets({ provenance: checkpointProvenance, romUrl, pathtodata, win, cryptoImpl });
       if (generation !== bootGeneration) { ownedAssets?.dispose(); throw new Error('Emulator boot cancelled'); }
       protectedAssets = ownedAssets;
-      return load({ player: mount, core, romUrl, pathtodata, controls, volume, shaders, win, protectedAssets });
+      return load({ player: mount, core, romUrl, pathtodata, controls, volume, shaders, win, protectedAssets, memoryCore });
     })
       .then((emu) => {
         if (generation !== bootGeneration) { emu?.pause?.(); throw new Error('Emulator boot cancelled'); }
         if (checkpointProvenance) { emu?.pause?.(); assertProtectedBoot(emu, ownedAssets); }
         instance = emu;
         ready = true;
+        memoryExport = Boolean(memoryCore);
         if (checkpointProvenance) checkpointBridge = createNativeCheckpointBridge({ instance, provenance: checkpointProvenance, cryptoImpl });
         const audioCtxState = getAudioContextState();
         log().info('boot.ready', { core, audioContext: audioCtxState });
@@ -105,7 +109,7 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
       .catch((err) => {
         if (generation === bootGeneration) {
           instance?.pause?.(); instance = null; ready = false;
-          protectedAssets?.dispose(); protectedAssets = null; checkpointBridge = null;
+          protectedAssets?.dispose(); protectedAssets = null; checkpointBridge = null; memoryExport = false;
           bootPromise = null; // allow a retry after a hard failure
         }
         log().error('boot.failed', { error: err?.message });
@@ -265,9 +269,9 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
     return instance.gameManager.Module.HEAPU8;
   }
 
-  /** Protected cores expose system RAM without writing a calibration signature. */
+  /** The patched cores (saved or anonymous play) expose system RAM without a calibration write. */
   function getWramBase() {
-    if (!ready || !checkpointBridge) return null;
+    if (!ready || !(checkpointBridge || memoryExport)) return null;
     const m = instance.gameManager.Module;
     const pointer = m._daylight_memory_data_v1?.(2), size = m._daylight_memory_size_v1?.(2);
     return Number.isInteger(pointer) && pointer > 0 && Number.isInteger(size) && size > 0
@@ -615,7 +619,7 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
     } catch (err) {
       log().warn('destroy.loader-reset-failed', { error: err?.message });
     }
-    protectedAssets?.dispose(); protectedAssets = null; checkpointBridge = null;
+    protectedAssets?.dispose(); protectedAssets = null; checkpointBridge = null; memoryExport = false;
     instance = null;
     ready = false;
     bootPromise = null;

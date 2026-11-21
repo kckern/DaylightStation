@@ -36,7 +36,7 @@ const LOADER_SCRIPT_ID = 'ejs-loader';
  *   `resources` reach EmulatorJS — see below.
  * @returns {object} key/value map of EJS_* globals.
  */
-export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onReady, onGameStart, controls, volume, shaders, protectedAssets } = {}) {
+export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onReady, onGameStart, controls, volume, shaders, protectedAssets, memoryCore } = {}) {
   if (!player) throw new Error('buildEjsGlobals: player (mount selector/element) is required');
   if (!romUrl) throw new Error('buildEjsGlobals: romUrl is required');
   if (!pathtodata) throw new Error('buildEjsGlobals: pathtodata is required');
@@ -79,6 +79,19 @@ export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onRea
     // NOTE: deliberately NOT setting EJS_DEBUG_XX — it forces unminified
     // src/* loads that 404 on the self-hosted bundle.
   };
+  // A game with a memory map and no save (anonymous play) boots the patched core
+  // without enabling its save protection: it plays like the stock core and
+  // exports system RAM read-only (daylight_memory_data_v1), so states need no
+  // calibration write. Asset databases are off so EJS's cached stock core of the
+  // same name can't stand in for it.
+  if (memoryCore && !protectedAssets) {
+    const file = `${normalizedPath}cores/${memoryCore.name}-${memoryCore.variant}.protected-v1.data`;
+    Object.assign(globals, {
+      EJS_paths: Object.fromEntries(['wasm', 'legacy-wasm', 'thread-wasm', 'thread-legacy-wasm'].map(v => [`${memoryCore.name}-${v}.data`, file])),
+      EJS_disableDatabases: true,
+      EJS_forceLegacyCores: memoryCore.variant === 'legacy-wasm',
+    });
+  }
   if (protectedAssets) Object.assign(globals, {
     EJS_paths: protectedAssets.paths,
     EJS_disableDatabases: true,
@@ -110,7 +123,8 @@ let _loadPromise = null;
 // made a second game silently never appear.
 let _loadedKey = null;
 
-const loadKey = (core, romUrl, assets) => `${core}::${romUrl}::${assets ? JSON.stringify(assets.provenance) : 'unprotected'}`;
+const loadKey = (core, romUrl, assets, memoryCore) => `${core}::${romUrl}::${assets ? JSON.stringify(assets.provenance)
+  : memoryCore ? `memory:${memoryCore.name}-${memoryCore.variant}` : 'unprotected'}`;
 
 /**
  * Tear down the single-instance EmulatorJS so a different game can boot clean:
@@ -175,8 +189,8 @@ export function forceNearestFiltering(win = window) {
  * @param {object} [args.controls] - EJS_defaultControls (keyboard+gamepad mapping).
  * @returns {Promise<object>} resolves with win.EJS_emulator
  */
-export function loadEmulatorJS({ player, core = 'gb', romUrl, pathtodata, win = window, timeoutMs = DEFAULT_TIMEOUT_MS, controls, volume, shaders, protectedAssets } = {}) {
-  const requestedKey = loadKey(core, romUrl, protectedAssets);
+export function loadEmulatorJS({ player, core = 'gb', romUrl, pathtodata, win = window, timeoutMs = DEFAULT_TIMEOUT_MS, controls, volume, shaders, protectedAssets, memoryCore } = {}) {
+  const requestedKey = loadKey(core, romUrl, protectedAssets, memoryCore);
   if (_loadPromise) {
     if (_loadedKey === requestedKey) {
       // Same game/core: legitimate single-instance reuse. Logged at info (not
@@ -225,7 +239,7 @@ export function loadEmulatorJS({ player, core = 'gb', romUrl, pathtodata, win = 
 
     let globals;
     try {
-      globals = buildEjsGlobals({ player, core, romUrl, pathtodata, onGameStart: handleGameStart, controls, volume, shaders, protectedAssets });
+      globals = buildEjsGlobals({ player, core, romUrl, pathtodata, onGameStart: handleGameStart, controls, volume, shaders, protectedAssets, memoryCore });
     } catch (err) {
       fail(err);
       return;

@@ -215,3 +215,20 @@ it('does not reuse a boot when the verified core identity changes at the same RO
   expect(second).not.toBe(first);
   win.EJS_emulator = {}; win.EJS_onGameStart(); await second;
 });
+
+describe('memory-core boot globals (anonymous play with a state map)', () => {
+  it('points every variant name at the patched bundle and disables the asset databases', () => {
+    const g = buildEjsGlobals({ player: '#p', core: 'segaMD', romUrl: '/r.bin', pathtodata: '/engine',
+      memoryCore: { name: 'genesis_plus_gx', variant: 'wasm' } });
+    expect(g.EJS_paths['genesis_plus_gx-wasm.data']).toBe('/engine/cores/genesis_plus_gx-wasm.protected-v1.data');
+    expect(g.EJS_paths['genesis_plus_gx-legacy-wasm.data']).toBe('/engine/cores/genesis_plus_gx-wasm.protected-v1.data');
+    expect(g.EJS_disableDatabases).toBe(true);
+    expect(g.EJS_forceLegacyCores).toBe(false);
+    expect(g.EJS_gameUrl).toBe('/r.bin');
+  });
+
+  it('forces legacy cores for the legacy variant', () => {
+    const g = buildEjsGlobals({ player: '#p', romUrl: '/r.gb', pathtodata: '/e/', memoryCore: { name: 'gambatte', variant: 'legacy-wasm' } });
+    expect(g.EJS_forceLegacyCores).toBe(true);
+  });
+});

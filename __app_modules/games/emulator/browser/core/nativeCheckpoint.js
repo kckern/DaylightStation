@@ -2,6 +2,11 @@ import { checkpointDigest, ownCheckpointBytes, validProvenance } from './checkpo
 
 const fail = message => Object.assign(new Error(message), { code: 'ECHECKPOINTRESTORE' });
 
+// EJS core id → native core name of the patched `*.protected-v1.data` bundles
+// (same table as the server's EmulatorCheckpointService CORE_NAMES).
+const NATIVE_CORE_NAMES = Object.freeze({ gb: 'gambatte', gba: 'mgba', segaMD: 'genesis_plus_gx', segaGG: 'genesis_plus_gx' });
+export const nativeCoreName = ejsCore => NATIVE_CORE_NAMES[ejsCore] ?? null;
+
 /** Choose the actual native format before requesting its progress metadata. */
 export function selectCheckpointVariant({ win = globalThis.window, preferred } = {}) {
   if (preferred != null) {

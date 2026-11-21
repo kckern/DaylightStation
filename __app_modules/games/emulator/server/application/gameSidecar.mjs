@@ -9,11 +9,12 @@
  *   bindings:  household reactions — `{ on, do }` one-shot actions and
  *              `{ on, effect }` scoped effects that enter and exit with a state.
  *   calibration.scratch: WRAM addresses the browser may ping (32 bytes, a few
- *              frames) to locate WRAM when the core has no memory export. Only
- *              needed when the default page is ambiguous for this game.
+ *              frames) to locate WRAM if the patched core failed to boot and
+ *              the stock core (no memory export) is running. Only needed when
+ *              the default page is ambiguous for this game.
  *   calibration.cheat: false — never write into this game to find its RAM
  *              (no safe 32 bytes are known, e.g. the default page is its stack
- *              or audio state). Only a protected core (a saved game) reads it.
+ *              or audio state). The patched core's export still reads it.
  *
  * The console manifest (gameboy.yml) only lists games; per-game memory maps
  * never live there. Everything here is validated before it reaches a browser:

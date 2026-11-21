@@ -109,9 +109,21 @@ effects:
 States are read from the emulator's WASM heap at a WRAM base found once per
 boot:
 
-- **Protected cores** (a saved game, checkpoint provenance) export the libretro
-  system RAM pointer (`daylight_memory_data_v1`); no writes.
-- **The stock core** (anonymous "just play") has no export. `WramCalibrator`
+- **Every game with states boots the patched core** (`emulation/_engine/cores/
+  <core>-<variant>.protected-v1.data`, built by `_extensions/emulator-checkpoint`).
+  It exports the libretro system RAM pointer (`daylight_memory_data_v1`); no
+  writes, no frames, all systems (`emulator.calibration.native`, `source`).
+  - A saved game boots it with checkpoint provenance and save protection on.
+  - Anonymous "just play" boots it with protection off (`memoryCore` in
+    `loadEmulatorJS`): it plays, resets, and save-states like the stock core.
+    EJS asset databases are off for that boot so a cached stock core of the
+    same name cannot stand in. Verified headless on 2026-11-21 for Super Mario
+    Land, Pokémon Crystal (title `wMusicID` `0x01`, menu `0x54`) and Sonic
+    (`game_mode` SEGA → title → level, lives 3).
+  - If the patched core fails to boot (`emulator.memory-core.boot-failed`),
+    the session plays on the stock core and falls back to the cheat ping below.
+  - A game without states always boots the stock core.
+- **Fallback, stock core only:** `WramCalibrator`
   writes a 32-byte signature into WRAM with GameShark cheats, lets frames run,
   and searches the heap. A game that copies the scratch page into OAM every
   frame (Super Mario Land's sprite table at `$C000-$C09F`) makes the signature
@@ -120,13 +132,12 @@ boot:
   under the later pings. Scratch addresses must be safe for the game to have
   overwritten for a few frames: say in the sidecar why each one is.
 - The cheat ping writes Game Boy GameShark codes, so it runs only for `gb` and
-  `gbc`. Any other system (Genesis) reads RAM only through a protected core;
-  without one it has no state map (`emulator.calibration.skipped`,
-  `no-memory-export`).
+  `gbc`. On the stock core, any other system (Genesis) has no state map
+  (`emulator.calibration.skipped`, `no-memory-export`).
 - `calibration: { cheat: false }` forbids the ping for one game: use it when no
   32 safe bytes are known. Pokémon Crystal's `$C000-$C0FF` is its stack and
   Pokémon Red's `$C080` is audio state, so writing there can crash or garble
-  the game. Such a game is read only when played from a save (protected core).
+  the game. Such a game has states only on the patched core.
 - `waitFrames` reports whether frames actually ran. A stalled boot (no frames,
   e.g. before the audio context starts) throws `ENOFRAMES` and the session
   retries every 5 s, six times (`emulator.calibration.retry-scheduled`), instead
@@ -141,7 +152,9 @@ libretro's memory map (gambatte publishes HRAM there) — a core rebuild.
 
 | Event | Meaning |
 |---|---|
-| `wram-calibrate-ok` / `wram-calibrate-ambiguous` | calibration result (`pings`) |
+| `emulator.calibration.native` | RAM read through the patched core's export (`source`: `checkpoint-core` / `memory-core`) |
+| `emulator.memory-core.boot-failed` | patched core would not boot; playing on the stock core |
+| `wram-calibrate-ok` / `wram-calibrate-ambiguous` | cheat-ping fallback result (`pings`) |
 | `emulator.statemap.started` | states are being read |
 | `emulator.state.change` (debug) | a state changed value |
 | `emulator.effect.enter` / `.exit` | the browser asked for an effect |

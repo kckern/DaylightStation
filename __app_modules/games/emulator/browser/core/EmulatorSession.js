@@ -16,6 +16,7 @@ import { createWramCalibrator as realCreateWramCalibrator } from "./WramCalibrat
 import { createStateMap as realCreateStateMap } from "./StateMap.js";
 import { createBindingMatcher as realCreateBindingMatcher } from "./BindingMatcher.js";
 import { createEffectBindings } from "./EffectBindings.js";
+import { nativeCoreName, selectCheckpointVariant } from "./nativeCheckpoint.js";
 import { loadShaderTextures, withShaderTextures, withoutShader } from "../shaders/customShaders.js";
 
 let _log;
@@ -26,8 +27,9 @@ const GATE_POLL_MS = 250;
 // often, this many times (~30 s), before giving up on the state map.
 const CALIBRATION_RETRY_MS = 5000;
 const CALIBRATION_RETRY_LIMIT = 6;
-// Systems whose RAM the cheat ping can locate (Game Boy GameShark codes).
-// Others (Genesis) read RAM only through a protected core's memory export.
+// Systems whose RAM the cheat ping can locate (Game Boy GameShark codes). The
+// ping is only the fallback now: a game with states boots the patched core,
+// whose read-only RAM export needs no write (saved and anonymous play alike).
 const CHEAT_CALIBRATED_SYSTEMS = new Set(['gb', 'gbc']);
 
 const DEFAULT_SCHEDULER = {
@@ -67,6 +69,7 @@ export function createEmulatorSession({
     fetchBytes = (url) => globalThis.fetch(url),
     setTimer = (fn, ms) => globalThis.setTimeout(fn, ms),
     clearTimer = (id) => globalThis.clearTimeout(id),
+    selectVariant = () => selectCheckpointVariant(),
   } = deps;
 
   const childLog = logger || log();
@@ -147,11 +150,20 @@ export function createEmulatorSession({
 
     const shaders = await resolveShaderTable();
 
-    await engine.boot({
+    // A game with a memory map and no save still boots the patched core (save
+    // protection left off) so its RAM export works in anonymous play.
+    const ejsCore = engineConfig.core || system;
+    const memoryCoreName = game.states && !engineConfig.checkpointProvenance ? nativeCoreName(ejsCore) : null;
+    let memoryCore = null;
+    if (memoryCoreName) {
+      try { memoryCore = { name: memoryCoreName, variant: selectVariant() }; }
+      catch (err) { childLog.warn('emulator.memory-core.variant-failed', { error: err?.message }); }
+    }
+    const bootArgs = {
       mount,
       romUrl: game.romUrl,
       pathtodata: engineConfig.pathtodata,
-      core: engineConfig.core || system,
+      core: ejsCore,
       controls: engineConfig.controls,
       checkpointProvenance: engineConfig.checkpointProvenance,
       // Hand EJS the user's persisted volume so the value it re-asserts during
@@ -161,7 +173,19 @@ export function createEmulatorSession({
       // registered with EmulatorJS at boot so presentation.ejs_shader can name
       // them at the settle barrier.
       shaders,
-    });
+    };
+    if (memoryCore) {
+      try {
+        await engine.boot({ ...bootArgs, memoryCore });
+      } catch (err) {
+        if (/cancel/i.test(err?.message || '')) throw err;
+        // The game matters more than its hooks: play on the stock core.
+        childLog.warn('emulator.memory-core.boot-failed', { game: game.id, core: memoryCore.name, variant: memoryCore.variant, error: err?.message });
+        await engine.boot(bootArgs);
+      }
+    } else {
+      await engine.boot(bootArgs);
+    }
 
     await engineConfig.afterBoot?.(engine);
 
@@ -174,11 +198,15 @@ export function createEmulatorSession({
     stopped = false;
     let cal = null;
     let calibrator = null;
-    if (game.states && engineConfig.checkpointProvenance) {
+    const nativeBase = game.states ? engine.getWramBase?.() ?? null : null;
+    if (nativeBase != null) {
+      cal = { wramBase: nativeBase };
+      childLog.info('emulator.calibration.native', {
+        system, source: engineConfig.checkpointProvenance ? 'checkpoint-core' : 'memory-core',
+      });
+    } else if (game.states && engineConfig.checkpointProvenance) {
       // Restored SRAM/WRAM must never be probed with writes or calibration frames.
       // Missing optional state instrumentation cannot justify a destructive fallback.
-      const nativeBase = engine.getWramBase?.();
-      if (nativeBase != null) cal = { wramBase: nativeBase };
     } else if (game.states && (!CHEAT_CALIBRATED_SYSTEMS.has(system) || game.calibration?.cheat === false)) {
       // The cheat ping writes Game Boy GameShark codes; another system's cheat
       // engine must never be handed them, and a game whose sidecar says

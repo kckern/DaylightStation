@@ -102,6 +102,7 @@ function setup(opts = {}) {
   // Default fake deps factories; allow overrides.
   const capture = { onState: null, stateMap: null };
   const deps = {
+    selectVariant: () => 'wasm',
     createWramCalibrator:
       opts.createWramCalibrator ||
       (() => ({ calibrate: vi.fn(async () => ({ wramBase: 0 })) })),
@@ -148,6 +149,7 @@ describe('createEmulatorSession.start', () => {
       romUrl: GAME.romUrl,
       pathtodata: ENGINE_CONFIG.pathtodata,
       core: ENGINE_CONFIG.core,
+      memoryCore: { name: 'gambatte', variant: 'wasm' },
     });
   });
 
@@ -313,6 +315,36 @@ describe('binding dispatch wiring (real BindingMatcher)', () => {
     });
     await saved.session.start({ mount: {} });
     expect(saved.capture.stateMap.start).toHaveBeenCalled();
+  });
+
+  it('anonymous play boots the patched core and reads RAM through its export, with no cheat write', async () => {
+    const createWramCalibrator = vi.fn();
+    const engine = makeEngine({ getWramBase: vi.fn(() => 8192) });
+    const game = { ...GAME, system: 'genesis', states: { lives: { addr: 0xfffe12, type: 'number' } } };
+    const { deps } = setup({ game, createWramCalibrator, engine });
+    const s = createEmulatorSession({ engine, mixer: makeMixer(), governanceGate: makeGate(), game,
+      engineConfig: { pathtodata: '/x', core: 'segaMD' }, deps: { ...deps, selectVariant: () => 'legacy-wasm' }, scheduler: makeScheduler() });
+    await s.start({ mount: {} });
+    expect(engine.boot.mock.calls[0][0].memoryCore).toEqual({ name: 'genesis_plus_gx', variant: 'legacy-wasm' });
+    expect(createWramCalibrator).not.toHaveBeenCalled();
+    expect(engine.setCheat).not.toHaveBeenCalled();
+    expect(s.getWramBase()).toBe(8192);
+  });
+
+  it('a patched-core boot failure falls back to the stock core so the game still plays', async () => {
+    const boot = vi.fn().mockRejectedValueOnce(new Error('core 404')).mockResolvedValueOnce(undefined);
+    const engine = makeEngine({ boot });
+    const { session } = setup({ engine });
+    await session.start({ mount: {} });
+    expect(boot).toHaveBeenCalledTimes(2);
+    expect(boot.mock.calls[0][0].memoryCore).toBeTruthy();
+    expect(boot.mock.calls[1][0].memoryCore).toBeUndefined();
+  });
+
+  it('a game without states boots the stock core', async () => {
+    const { session, engine } = setup({ game: { ...GAME, states: undefined } });
+    await session.start({ mount: {} });
+    expect(engine.boot.mock.calls[0][0].memoryCore).toBeUndefined();
   });
 
   it('stopping the session cancels a pending calibration retry', async () => {
