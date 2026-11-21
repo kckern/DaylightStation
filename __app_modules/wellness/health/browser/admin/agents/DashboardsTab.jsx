@@ -23,7 +23,7 @@ function DashboardsTab({ agentId, userId }) {
   const { run: submitDelete, saving: deleting } = useSheetSubmission(() => setDeleteOpen(false));
 
   const {
-    dashboard, loading, regenerating, error,
+    dashboard, dashboardMissing, dashboardReadError, loading, regenerating, error,
     fetchDashboard, deleteDashboard, regenerate, clearError,
   } = useAgentDashboard(userId, date);
 
@@ -42,9 +42,19 @@ function DashboardsTab({ agentId, userId }) {
 
   return (
     <Stack gap="md">
-      {error && (
-        <Alert color="red" icon={<IconAlertCircle size={16} />} withCloseButton onClose={clearError}>
-          {error.message || 'An error occurred'}
+      {error && (!dashboardReadError || dashboard) && (
+        <Alert
+          color="red"
+          icon={<IconAlertCircle size={16} />}
+          withCloseButton={!dashboardReadError}
+          onClose={clearError}
+        >
+          <Group justify="space-between">
+            <Text size="sm">{error.message || 'An error occurred'}</Text>
+            {dashboardReadError && (
+              <Button size="xs" variant="light" onClick={fetchDashboard}>Retry</Button>
+            )}
+          </Group>
         </Alert>
       )}
 
@@ -71,7 +81,16 @@ function DashboardsTab({ agentId, userId }) {
 
       {loading && <Center py="xl"><Loader /></Center>}
 
-      {!loading && !dashboard && (
+      {!loading && dashboardReadError && !dashboard && (
+        <Paper p="xl" ta="center">
+          <Text c="dimmed" mb="md">
+            {dashboardReadError.message || `Couldn’t load the dashboard for ${date}. Retry the lookup before generating.`}
+          </Text>
+          <Button leftSection={<IconRefresh size={16} />} onClick={fetchDashboard}>Retry</Button>
+        </Paper>
+      )}
+
+      {!loading && dashboardMissing && !dashboard && (
         <Paper p="xl" ta="center">
           <Text c="dimmed" mb="md">No dashboard generated for {date}</Text>
           {canGenerateForDate ? (

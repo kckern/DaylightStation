@@ -19,8 +19,10 @@ export function useAgentDashboard(userId, date) {
   const { data, loading, error: readError, reload } = useApiResource(path, { label: 'Agent dashboard' });
   const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState(null);
-  const { error: visibleReadError, dismiss: dismissReadError } = useDismissibleError(readError?.status === 404 ? null : readError);
-  const dashboard = readError?.status === 404 ? null : data?.dashboard || null;
+  const dashboardMissing = readError?.status === 404;
+  const dashboardReadError = readError && !dashboardMissing ? readError : null;
+  const { error: visibleReadError, dismiss: dismissReadError } = useDismissibleError(dashboardMissing ? null : readError);
+  const dashboard = dashboardMissing ? null : data?.dashboard || null;
   const visibleError = error || visibleReadError;
 
   const fetchDashboard = useCallback(async (userId, date) => {
@@ -64,7 +66,7 @@ export function useAgentDashboard(userId, date) {
   }, [dismissReadError]);
 
   return {
-    dashboard, loading, regenerating, error: visibleError,
+    dashboard, dashboardMissing, dashboardReadError, loading, regenerating, error: visibleError,
     fetchDashboard, deleteDashboard, regenerate, clearError,
   };
 }

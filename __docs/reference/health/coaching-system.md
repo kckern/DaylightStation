@@ -165,8 +165,10 @@ are outside that guarantee. Invalid dashboard schemas still fail validation.
 
 Admin dashboard history reads and writes the shared UTC date key. Generate and
 Regenerate apply only to the current UTC key, matching the assignment writer and
-the date-free dashboard reader. `DailyDashboard` gathers a local-day budget, and
-deleting a historical dashboard does not schedule a backfill.
+the date-free dashboard reader. A confirmed 404 shows the missing-dashboard state;
+other read failures keep the existence unknown and offer a retry before generation.
+`DailyDashboard` gathers a local-day budget, and deleting a historical dashboard
+does not schedule a backfill.
 
 ## Triggers, delivery and failure limits
 
