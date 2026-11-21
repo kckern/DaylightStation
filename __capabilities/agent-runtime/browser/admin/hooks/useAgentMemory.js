@@ -7,7 +7,7 @@ export function useAgentMemory(agentId, userId) {
   const logger = useMemo(() => getLogger().child({ hook: 'useAgentMemory' }), []);
   const path = agentId && userId
     ? `/api/v1/agents/${encodeURIComponent(agentId)}/memory/${encodeURIComponent(userId)}` : null;
-  const { data, loading, error } = useApiResource(path, { label: 'Agent working memory' });
+  const { data, loading, error, reload } = useApiResource(path, { label: 'Agent working memory' });
   const latestSnapshot = useRef(data);
   latestSnapshot.current = data;
   const [clearedSnapshot, setClearedSnapshot] = useState(null);
@@ -33,7 +33,7 @@ export function useAgentMemory(agentId, userId) {
 
   return {
     entries: unconfigured || clearedSnapshot === data ? {} : data?.entries || {},
-    loading, error: unconfigured ? null : error, deleteEntry, clearAll,
+    loading, error: unconfigured ? null : error, reload, deleteEntry, clearAll,
   };
 }
 

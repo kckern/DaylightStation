@@ -27,11 +27,10 @@ function OverviewTab({ agentId, userId }) {
 }
 
 function MemberOverview({ agentId, userId, assignmentRead }) {
-  const { entries, loading: memLoading, error: memError, deleteEntry, clearAll } = useAgentMemory(agentId, userId);
+  const { entries, loading: memLoading, error: memError, reload: reloadMemory, deleteEntry, clearAll } = useAgentMemory(agentId, userId);
   const { data, loading: assLoading, error: assignmentError, reload: reloadAssignments } = assignmentRead;
   const assignments = data?.assignments || [];
   const [actionError, setActionError] = useState(null);
-  const [dismissedError, setDismissedError] = useState(null);
   const [runningId, setRunningId] = useState(null);
   const [runResult, setRunResult] = useState(null);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
@@ -62,8 +61,7 @@ function MemberOverview({ agentId, userId, assignmentRead }) {
     return clearAll();
   });
 
-  const error = actionError || (memError !== dismissedError && memError);
-  const onClearError = () => { setActionError(null); setDismissedError(memError); };
+  const error = actionError;
   const registration = assLoading
     ? { label: 'Checking registration', badge: 'Checking', color: 'gray' }
     : assignmentError?.status === 404
@@ -79,7 +77,7 @@ function MemberOverview({ agentId, userId, assignmentRead }) {
   return (
     <Stack gap="md">
       {error && (
-        <Alert color="red" icon={<IconAlertCircle size={16} />} withCloseButton onClose={onClearError}>
+        <Alert color="red" icon={<IconAlertCircle size={16} />} withCloseButton onClose={() => setActionError(null)}>
           {error.message || 'An error occurred'}
         </Alert>
       )}
@@ -170,7 +168,7 @@ function MemberOverview({ agentId, userId, assignmentRead }) {
           <Text size="sm" fw={600} tt="uppercase" c="dimmed" ff="var(--ds-font-mono)">
             Working Memory
           </Text>
-          {memoryEntries.length > 0 && (
+          {memoryEntries.length > 0 && !memError && (
             <Button
               size="xs"
               variant="light"
@@ -189,11 +187,15 @@ function MemberOverview({ agentId, userId, assignmentRead }) {
 
         {userId && memLoading && <Center py="md"><Loader size="sm" /></Center>}
 
-        {userId && !memLoading && memoryEntries.length === 0 && (
+        {userId && !memLoading && memError && (
+          <ErrorState error={memError} label="Working Memory" onRetry={reloadMemory} />
+        )}
+
+        {userId && !memLoading && !memError && memoryEntries.length === 0 && (
           <Text c="dimmed" size="sm">No memory entries</Text>
         )}
 
-        {userId && !memLoading && memoryEntries.length > 0 && (
+        {userId && !memLoading && !memError && memoryEntries.length > 0 && (
           <Table>
             <Table.Thead>
               <Table.Tr>
