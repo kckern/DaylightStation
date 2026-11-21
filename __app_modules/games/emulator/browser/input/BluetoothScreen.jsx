@@ -166,6 +166,8 @@ export function BluetoothScreen({
   const finishTest = ({ keys, padInputs, verdict }) => {
     logger().info('bluetooth-screen.test-result', {
       address: view.address, from: view.from, keys: keys.length, distinctKeys: new Set(keys).size, padInputs, verdict,
+      // Which keys, in order (capped): counts alone cannot say which buttons worked.
+      keyNames: keys.slice(0, 40).join(','),
     });
     setView({ name: 'list' });
   };
