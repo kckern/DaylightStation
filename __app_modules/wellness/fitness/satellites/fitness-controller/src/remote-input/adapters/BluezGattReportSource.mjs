@@ -11,7 +11,7 @@
  */
 import { IRemoteInputSource } from '../ports/IRemoteInputSource.mjs';
 import { runHelper, upperAddress } from './helperProcess.mjs';
-import { normalizeDecoder, decodeReport, diffStates, hexBytes } from '../reportDecoder.mjs';
+import { normalizeDecoder, decodeReport, diffStates, hexBytes, holdAxesUnderButtons } from '../reportDecoder.mjs';
 
 const hex4 = (n) => `0x${Number(n).toString(16).padStart(4, '0')}`;
 
@@ -55,9 +55,11 @@ export class BluezGattReportSource extends IRemoteInputSource {
     const out = [{ kind: 'report', source: this.id, address, name, channel, raw: m.value }];
     const dec = this.#decoders.get(address);
     if (!dec || dec.channel !== Number(m.att)) return out;
-    const now = decodeReport(dec, hexBytes(m.value));
-    if (!now) return out;
+    const decoded = decodeReport(dec, hexBytes(m.value));
+    if (!decoded) return out;
     const before = this.#state.get(address);
+    // A remote whose button reports hide the stick keeps the stick as it was.
+    const now = holdAxesUnderButtons(dec, before, decoded);
     this.#state.set(address, now);
     for (const { control, state } of diffStates(before, now)) {
       out.push({ kind: 'control', source: this.id, address, name, control, state,

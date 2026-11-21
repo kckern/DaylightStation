@@ -12,6 +12,14 @@
  * A control is "on" when its bit is set / its field holds that value; anything
  * else (e.g. an axis at centre) is "off". Press/release come from diffing two
  * decoded states.
+ *
+ *     axes_hold_while_buttons: true # the remote's button reports hide the stick
+ *
+ * Some remotes send one control at a time: while a button is down the stick
+ * reads centre whatever the thumb does (captured on a stick-and-buttons remote:
+ * hold right 0060, press the trigger 4050, let go 0060). With this set, a report
+ * that has a button down and every axis at centre keeps the axes as they were;
+ * the first report with no button down says where the stick really is.
  */
 
 const int = (v) => {
@@ -47,7 +55,25 @@ export function normalizeDecoder(entry) {
     if (values.length) axes.push({ byte, shift, mask: (1 << bits) - 1, values });
   }
   if (!buttons.length && !axes.length) return null;
-  return { address, channel, buttons, axes };
+  return { address, channel, buttons, axes, holdAxesWhileButtons: spec.axes_hold_while_buttons === true };
+}
+
+/**
+ * For a remote whose button reports hide the stick (`axes_hold_while_buttons`):
+ * when `now` has a button down and no axis control on, carry the axis controls
+ * over from `before` (what the stick last really said). Otherwise `now` as is.
+ * @param {ReturnType<typeof normalizeDecoder>} dec
+ * @param {object|undefined} before the previous effective state
+ * @param {object} now the decoded report
+ */
+export function holdAxesUnderButtons(dec, before, now) {
+  if (!dec.holdAxesWhileButtons || !before) return now;
+  const anyButton = dec.buttons.some((b) => now[b.control]);
+  const axisControls = dec.axes.flatMap((a) => a.values.map((v) => v.control));
+  if (!anyButton || axisControls.some((c) => now[c])) return now;
+  const held = { ...now };
+  for (const c of axisControls) held[c] = Boolean(before[c]);
+  return held;
 }
 
 /** Every control a decoder can report, each false. */

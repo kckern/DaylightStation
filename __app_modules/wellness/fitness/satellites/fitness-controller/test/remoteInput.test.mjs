@@ -78,7 +78,7 @@ test('a decoder spec decodes the captured reports to distinct controls', () => {
 
 test('specs accept hex strings and skip what they cannot use', () => {
   const d = normalizeDecoder({ address: REMOTE_1, report_decoder: { att_handle: '0x0020', buttons: { X: { byte: '0', mask: '0x04' }, Bad: { byte: 0 } } } });
-  assert.deepEqual(d, { address: REMOTE_1, channel: 0x20, buttons: [{ control: 'X', byte: 0, mask: 4 }], axes: [] });
+  assert.deepEqual(d, { address: REMOTE_1, channel: 0x20, buttons: [{ control: 'X', byte: 0, mask: 4 }], axes: [], holdAxesWhileButtons: false });
   assert.equal(normalizeDecoder({ address: REMOTE_1, report_decoder: { att_handle: 1 } }), null, 'no controls');
   assert.equal(normalizeDecoder({ report_decoder: STICK_PAD.report_decoder }), null, 'no address');
   assert.equal(normalizeDecoder({ address: REMOTE_1 }), null);
@@ -127,6 +127,55 @@ test('gatt adapter: normalized event shape, unavailable and exit', () => {
   r.exit({ code: 1, signal: null, restartInMs: 1000 });
   assert.deepEqual(events, [{ kind: 'unavailable', source: 'gatt' },
     { kind: 'source-exit', source: 'gatt', code: 1, signal: null, restartInMs: 1000 }]);
+});
+
+// A remote whose button reports hide the stick (the stick reads centre while a
+// button is down), declared by `axes_hold_while_buttons`.
+const HIDING_PAD = { ...STICK_PAD, report_decoder: { ...STICK_PAD.report_decoder, axes_hold_while_buttons: true } };
+
+/** Feed hex reports through a gatt adapter; return [control, state] pairs. */
+function playReports(decoder, reports) {
+  const r = fakeRunner();
+  const src = new BluezGattReportSource({ runHelper: r.run, decoders: [decoder] });
+  const out = [];
+  src.start({ onEvent: (e) => { if (e.kind === 'control') out.push([e.control, e.state]); } });
+  for (const value of reports) r.line({ type: 'gatt', address: PAD_REMOTE, att: 31, value });
+  return out;
+}
+
+test('axes_hold_while_buttons: a held stick survives button taps (captured: hold right, tap trigger twice, let go)', () => {
+  assert.deepEqual(playReports(HIDING_PAD, ['0060', '4050', '0060', '4050', '0050']), [
+    ['StickRight', 'down'],
+    ['TriggerCircle', 'down'],
+    ['TriggerCircle', 'up'],
+    ['TriggerCircle', 'down'],
+    ['TriggerCircle', 'up'], ['StickRight', 'up'], // released together: the stick was centred too
+  ]);
+});
+
+test('axes_hold_while_buttons: hold left, tap A (captured 0040 1052 0040)', () => {
+  assert.deepEqual(playReports(HIDING_PAD, ['0040', '1052', '0040', '0050']), [
+    ['StickLeft', 'down'], ['ButtonA', 'down'], ['ButtonA', 'up'], ['StickLeft', 'up'],
+  ]);
+});
+
+test('axes_hold_while_buttons: a stick already let go is not brought back by a button', () => {
+  assert.deepEqual(playReports(HIDING_PAD, ['0060', '0050', '4050', '0050']), [
+    ['StickRight', 'down'], ['StickRight', 'up'], ['TriggerCircle', 'down'], ['TriggerCircle', 'up'],
+  ]);
+});
+
+test('axes_hold_while_buttons: a stick moved to another direction during a button wins once the button is up', () => {
+  assert.deepEqual(playReports(HIDING_PAD, ['0060', '4050', '0040']), [
+    // one report's changes come out in spec order, as for any direction change
+    ['StickRight', 'down'], ['TriggerCircle', 'down'], ['TriggerCircle', 'up'], ['StickLeft', 'down'], ['StickRight', 'up'],
+  ]);
+});
+
+test('without axes_hold_while_buttons the stick follows each report as before', () => {
+  assert.deepEqual(playReports(STICK_PAD, ['0060', '4050', '0060']), [
+    ['StickRight', 'down'], ['TriggerCircle', 'down'], ['StickRight', 'up'], ['TriggerCircle', 'up'], ['StickRight', 'down'],
+  ]);
 });
 
 // ---- Linux evdev adapter (fake helper) -----------------------------------

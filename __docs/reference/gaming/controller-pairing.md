@@ -464,6 +464,12 @@ no device: the spec is the whole description.
   field `(byte >> shift) & (2^bits - 1)` holds its value; any other value
   (centre) releases it. Presses and releases come from diffing each report
   against the remote's previous one.
+- `axes_hold_while_buttons: true` is for a remote that sends one control per
+  report: while a button is down its stick reads centre whatever the thumb does.
+  A report with a button down and every axis at centre then keeps the axes as
+  they were, and the first report with no button down says where the stick
+  really is. Without it, holding a direction and pressing a button releases the
+  direction for as long as the button is down (run-and-jump stops dead).
 - Numbers may be YAML integers (`0x1f`, `31`) or strings (`"0x1f"`). Invalid
   rows are skipped; an entry with no usable control is ignored.
 - The control names are what `bt.remote.key` carries as `key`; name them for
@@ -484,7 +490,10 @@ so the kernel drops its gamepad reports. Reports are 2 bytes on handle
 circle trigger `0x40`, back trigger `0x80`), byte 1 the stick (bits 7-6 Y:
 0 up, 1 centre, 2 down; bits 5-4 X: 0 left, 1 centre, 2 right). So `0050` is
 idle, `1052` A down, `0010` stick up. It matches UbiquityRobotics/bt_joystick
-and the libretro `Magicsee_R1.cfg` mode note.
+and the libretro `Magicsee_R1.cfg` mode note. In this mode it sends one control per
+report (hold right `0060`, press the trigger `4050`, let go `0060`), and a
+diagonal never arrives as one value, so its entry sets
+`axes_hold_while_buttons: true`.
 
 ### Structure (fitness controller)
 
