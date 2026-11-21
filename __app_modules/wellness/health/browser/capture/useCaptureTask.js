@@ -26,6 +26,11 @@ export function useCaptureTask() {
       if (live.current) setPending(false);
     }
   };
+  const clear = () => {
+    if (pendingRef.current) return;
+    taskRef.current = null;
+    if (live.current) setError(null);
+  };
   // `failed` is the task itself, so an owner that is going away can hand it on.
-  return { pending, error, run, retry: error && taskRef.current ? () => run(taskRef.current) : null, failed: error ? taskRef.current : null };
+  return { pending, error, run, clear, retry: error && taskRef.current ? () => run(taskRef.current) : null, failed: error ? taskRef.current : null };
 }

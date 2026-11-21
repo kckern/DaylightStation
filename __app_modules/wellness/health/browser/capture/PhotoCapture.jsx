@@ -42,6 +42,7 @@ export function PhotoCapture({ onCapture, busy, bucket, mealLabel, labelPrefix, 
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (!file || pendingRef.current) return;
+          task.clear();
           pendingRef.current = true; setPending(true); setError(null);
           const reader = new FileReader();
           readerRef.current = reader;

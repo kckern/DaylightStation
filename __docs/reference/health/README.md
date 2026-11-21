@@ -1092,6 +1092,10 @@ to the name; on touch, a tap on the picture opens it and a tap elsewhere closes 
 A suggestion shows the barcode product photo when the saved food
 has one (`photoRef`), else its icon, and a label serving ("325 ml") when it has no grams.
 
+Selecting a replacement photo retires any failed upload retry for the previous
+photo immediately. If the new file cannot be read, the control reports that error
+without leaving a retry action that could submit the previous photo.
+
 The add row's mic adds by default ("Speak foods to Lunch"). While foods in that meal are
 selected ("Select foods"), the same mic carries the selection and edits those foods
 ("Speak changes to 2 selected to Lunch") — the route the header mic used to own.
