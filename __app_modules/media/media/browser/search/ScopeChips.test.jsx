@@ -92,7 +92,9 @@ describe('ScopeChips', () => {
 
     expect(screen.getByTestId('scope-chip-all')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTestId('scope-chip-video')).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByTestId('scope-chip-music')).toHaveAttribute('aria-pressed', 'false');
+    // Music only groups (children, no params of its own): a disclosure, not a toggle.
+    expect(screen.getByTestId('scope-chip-music')).not.toHaveAttribute('aria-pressed');
+    expect(screen.getByTestId('scope-chip-music')).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByTestId('scope-chip-books')).toHaveAttribute('aria-pressed', 'false');
   });
 

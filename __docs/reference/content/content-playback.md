@@ -421,3 +421,31 @@ Readalong content types (talks, scriptures) support ambient background audio —
 - **Volume**: Always 10% of the main volume (`mainVolume * 0.1`)
 - **Fade**: `fadeInDelay: 750ms`, `fadeOutStep: 0.01`, `fadeOutInterval: 400ms`
 - **Eligible types**: Determined by the collection manifest's `ambient: true` setting. The backend returns an `ambientUrl` field in the Play API response when ambient audio is enabled.
+
+## Presentation contract and the intro slot
+
+An app can dress the shared video player without changing it. It installs a contract once, before the first player renders, through `configurePlaybackPresentation` (`__capabilities/playback/browser/presentation.mjs`). The Media app installs one in `__app_modules/media/media/browser/playback.mjs`; apps that install nothing get the plain player.
+
+| Hook | Called with | Returns |
+|---|---|---|
+| `useVideoPresentation` | `{ media, isPlex, getMediaEl, introStage }` | `{ overlay }` drawn over the video (Media: content-filter chrome) |
+| `subscribeLoadingSuppression` / `getLoadingSuppression` | — | a store; while true the spinner hides (Media: the content filter's skip card) |
+| `useVideoIntro` (optional) | `{ media, isPlex }` | `null`, or an intro `{ status: 'pending' \| 'ready' \| 'none', minHoldMs, render(stage) }` |
+
+**The intro slot.** An intro is a scene that *is* the loading screen. The app decides what it shows and its minimum hold; the player (`player/hooks/useIntroGate.js`) owns all timing:
+
+| Stage | What happens | Spinner |
+|---|---|---|
+| `off` | no intro: none, a resume (requested start past 5 s), or ready only after the film rolled past 1 s | normal |
+| `waiting` | intro still deciding | normal |
+| `covering` | scene drawn; video loading; `minHoldMs` running | hidden |
+| `holding` | video reached its first frame before the hold ended; the player holds it paused on that frame | hidden |
+| `playing` | hold over and video playing; the scene plays out its own exit | normal |
+
+- The requested start is the same value the media controller gets (`?goto`, a segment start, or `media.seconds`). If the first frame turns out to be past 5 s anyway (a remembered position), the gate goes `off` without pausing.
+- A held video is resumed when the hold ends; if it never reports `playing`, the gate moves on after 2.5 s.
+- **Recovery stays on top.** The spinner hides while covering (`player-support/introCover.js`), but `PlayerOverlayLoading` still renders its exhausted/held recovery UI (Retry, Skip) over the scene.
+- `introStage` is passed back to `useVideoPresentation`, so the app can sequence its own chrome after the intro (Media holds the content filter's bumper until the scene's lines have met).
+- Logs: component `intro-gate`, events `intro.covering`, `intro.holding`, `intro.playing` (`by`, `waitedMs`), `intro.off` (`reason`), `intro.resume-refused`.
+
+The Media app's intro is the provenance bumper: see `__docs/reference/media/provenance.md`.
