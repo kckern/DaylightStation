@@ -556,6 +556,8 @@ export class HealthOperations {
     return { ...result, ...undo };
   }
 
+  lookupBarcode(username, upc, sources) { return this.mealCommands.lookupBarcode(username, upc, sources); }
+  logBarcode(username, input) { return this.mealCommands.logBarcode(username, input); }
   mealFoodCommand(username, input) { return this.mealCommands.execute(username, input); }
   undoMealFoodCommand(username, input) { return this.mealCommands.undo(username, input); }
   moveFoods(username, input) { return this.mealCommands.moveFoods(username, { ...input, today: this.today() }); }
