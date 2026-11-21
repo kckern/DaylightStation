@@ -296,6 +296,7 @@ function ListsItemEditor({ hideSection = false, preserveImageClear = false, open
     if (!validate()) return;
 
     const payload = buildSavePayload(formData, customFields, preserveImageClear);
+    if (!hideSection) payload.sectionIndex = formData.sectionIndex;
     await onSave(payload);
   };
 

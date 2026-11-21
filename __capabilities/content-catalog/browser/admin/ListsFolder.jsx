@@ -52,6 +52,19 @@ const TYPE_LABELS = {
   programs: 'Program'
 };
 
+function findItemPosition(sections, uid) {
+  if (!uid) return null;
+  let position = null;
+  for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex += 1) {
+    for (let itemIndex = 0; itemIndex < (sections[sectionIndex]?.items?.length ?? 0); itemIndex += 1) {
+      if (sections[sectionIndex].items[itemIndex]?.uid !== uid) continue;
+      if (position) return null;
+      position = { sectionIndex, itemIndex };
+    }
+  }
+  return position;
+}
+
 /**
  * Custom collision detection that filters targets based on active drag type.
  * Row drags (id starts with 'row-') collide with sortable items.
@@ -315,21 +328,35 @@ function FolderEditor({ type, listName }) {
 
   
   const handleSaveItem = async (itemData) => {
-    const oldSection = editingItem?.sectionIndex ?? 0;
+    const fallbackPosition = editingItem && !editingItem.uid
+      ? { sectionIndex: editingItem.sectionIndex, itemIndex: editingItem.itemIndex }
+      : null;
+    const currentPosition = editingItem
+      ? (editingItem.uid ? findItemPosition(sections, editingItem.uid) : fallbackPosition)
+      : null;
+    const oldSection = currentPosition?.sectionIndex ?? editingItem?.sectionIndex ?? 0;
     const newSection = itemData.sectionIndex ?? oldSection;
     const moving = Boolean(editingItem && newSection !== oldSection);
     const res = await mutate('lists.save_item', 'Could not save item', async () => {
       if (editingItem) {
-        const { sectionIndex: _sectionIndex, ...cleanData } = itemData;
+        if (!currentPosition) throw new Error('This item is no longer in the list. Refresh before saving.');
+        if (moving && !editingItem.uid) throw new Error('This item has no stable identity and cannot be moved safely.');
+        const {
+          sectionIndex: _sectionIndex,
+          itemIndex: _itemIndex,
+          sectionTitle: _sectionTitle,
+          index: _index,
+          ...cleanData
+        } = itemData;
 
         if (moving) {
           await moveItem(
-            { section: oldSection, index: editingItem.itemIndex },
+            { section: currentPosition.sectionIndex, index: currentPosition.itemIndex },
             { section: newSection, index: 0 }
           );
           await updateItem(newSection, 0, cleanData);
         } else {
-          await updateItem(oldSection, editingItem.itemIndex, cleanData);
+          await updateItem(currentPosition.sectionIndex, currentPosition.itemIndex, cleanData);
         }
       } else {
         const { sectionIndex, ...cleanData } = itemData;

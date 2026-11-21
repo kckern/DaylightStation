@@ -115,6 +115,70 @@ test('Admin list commands use confirmed positions through search, split, reorder
   ]);
 });
 
+test('Admin list editor retries a moved item by UID after its field update fails', async ({ page }) => {
+  const path = `/api/v1${menuRoute}`;
+  const row = (uid, label, extra = {}) => ({ uid, label, input: `plex:${uid}`, action: 'Play', ...extra });
+  let stored = { sections: [
+    { title: 'Source', items: [row('item-a', 'Item A', { shuffle: true }), row('item-b', 'Item B')] },
+    { title: 'Destination', items: [row('item-c', 'Item C')] },
+  ] };
+  const service = new ListManagementService({
+    logger: {},
+    listStore: {
+      getList: () => structuredClone(stored),
+      saveList: (_type, _name, _household, value) => { stored = structuredClone(value); },
+    },
+  });
+  const api = express().use(express.json()).use('/api/v1/admin/content', createAdminContentRouter({
+    listManagementService: service, householdContext: { resolve: () => 'fixture' }, logger: {},
+  }));
+  const calls = [];
+  let failFirstFieldUpdate = true;
+  await page.route('**/api/**', async route => {
+    const incoming = route.request();
+    const { pathname, search } = new URL(incoming.url());
+    if (pathname !== path && !pathname.startsWith(`${path}/`)) {
+      return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+    }
+    const method = incoming.method();
+    const body = method === 'GET' ? null : incoming.postDataJSON();
+    const target = pathname + search;
+    calls.push([method, target, body]);
+    if (failFirstFieldUpdate && method === 'PUT' && target === `${path}/items/0?section=1`) {
+      failFirstFieldUpdate = false;
+      return route.fulfill({ status: 500, json: { error: 'Field update failed' } });
+    }
+    const command = request(api)[method.toLowerCase()](target);
+    const response = body == null ? await command : await command.send(body);
+    return route.fulfill({ status: response.status, json: response.body });
+  });
+
+  await page.goto(menuRoute);
+  const region = page.getByRole('region', { name: 'List contents' });
+  await region.getByRole('button', { name: 'Edit settings for Item A (Shuffle)' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Edit Item' });
+  await dialog.getByLabel('Label').fill('Edited Item A');
+  await dialog.getByRole('textbox', { name: 'Section' }).click();
+  await page.getByRole('option', { name: 'Destination' }).click();
+  await expect(dialog.getByRole('textbox', { name: 'Section' })).toHaveValue('Destination');
+  await dialog.getByRole('button', { name: 'Save Changes' }).click();
+
+  await expect.poll(() => calls.map(([method, target, body]) => [method, target, body])).toEqual(
+    expect.arrayContaining([['PUT', expect.stringContaining('/items/move'), expect.any(Object)]]),
+  );
+  await expect(dialog.getByRole('button', { name: 'Save Changes' })).toBeVisible();
+  expect(stored.sections.map(section => section.items.map(item => item.uid))).toEqual([
+    ['item-b'], ['item-a', 'item-c'],
+  ]);
+
+  await dialog.getByRole('button', { name: 'Save Changes' }).click();
+  await expect(dialog).toBeHidden();
+  expect(stored.sections.map(section => section.items.map(({ uid, label }) => [uid, label]))).toEqual([
+    [['item-b', 'Item B']], [['item-a', 'Edited Item A'], ['item-c', 'Item C']],
+  ]);
+  expect(calls.filter(([method, target]) => method === 'PUT' && target.endsWith('/items/move'))).toHaveLength(1);
+});
+
 test('Admin Menu editor keeps the newest snapshot across overlapping item saves', async ({ page }) => {
   const path = `/api/v1${menuRoute}`;
   const labels = ['First item', 'Second item'];

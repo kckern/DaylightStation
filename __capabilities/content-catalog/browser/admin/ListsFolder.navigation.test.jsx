@@ -189,3 +189,23 @@ it('moves to the newly created section index before refreshing the compound chan
     'GET',
   ]));
 });
+
+it('keeps a cross-section edit open without writing when the item has no stable UID', async () => {
+  DaylightAPI.mockImplementation(async path => {
+    if (path === api + '/first') return { sections: [
+      { title: 'Source', items: [{ label: 'Item A', input: 'plex:item-a', action: 'Play', shuffle: true }] },
+      { title: 'Destination', items: [] },
+    ] };
+    return {};
+  });
+  openFolder();
+  const region = await screen.findByRole('region', { name: 'List contents' });
+  fireEvent.click(within(region).getByRole('button', { name: 'Edit settings for Item A (Shuffle)' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Edit Item' });
+  fireEvent.click(within(dialog).getByRole('textbox', { name: 'Section' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Destination' }));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save Changes' }));
+
+  await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Save Changes' })).toBeEnabled());
+  expect(DaylightAPI.mock.calls.filter(([, , method]) => method !== 'GET')).toEqual([]);
+});
