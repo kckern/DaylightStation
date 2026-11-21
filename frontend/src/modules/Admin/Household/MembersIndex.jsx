@@ -209,6 +209,7 @@ function MembersIndex() {
                       variant="light"
                       color="red"
                       leftSection={<IconTrash size={14} />}
+                      aria-label={`Remove ${member.username} from household`}
                       onClick={(e) => handleRemoveClick(e, member)}
                       disabled={removing}
                     >
