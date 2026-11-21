@@ -353,10 +353,18 @@ export class HealthCoachAgent extends BaseAgent {
 
     if (assignmentId === 'daily-dashboard' && result) {
       const writeTool = this.getTools().find(t => t.name === 'write_dashboard');
-      if (writeTool) {
-        const userId = opts.userId ?? opts.context?.userId ?? null;
-        const today = utcDateISO();
-        await writeTool.execute({ userId, date: today, dashboard: result });
+      if (!writeTool) {
+        throw new Error('Cannot save daily dashboard: write_dashboard tool is not registered');
+      }
+
+      const userId = opts.userId ?? opts.context?.userId ?? null;
+      const today = utcDateISO();
+      const writeResult = await writeTool.execute({ userId, date: today, dashboard: result });
+      if (writeResult?.success !== true) {
+        const reason = typeof writeResult?.error === 'string' && writeResult.error.trim()
+          ? `: ${writeResult.error}`
+          : '';
+        throw new Error(`Failed to save daily dashboard${reason}`);
       }
     }
 
