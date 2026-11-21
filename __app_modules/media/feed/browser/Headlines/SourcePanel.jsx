@@ -117,7 +117,12 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, o
                   if (!event.currentTarget.contains(event.relatedTarget)) setActivePreview(null);
                 }}
               >
-                <a href={href} target="_blank" rel="noopener noreferrer">
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-description={desc ? smartQuotes(desc) : undefined}
+                >
                   {smartQuotes(item.title)}
                 </a>
                 <div className="headline-quick-actions">
