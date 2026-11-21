@@ -33,6 +33,20 @@ vi.mock('../../../../../frontend/src/lib/logging/Logger.js', () => {
   return { __esModule: true, getLogger: () => stub, default: () => stub };
 });
 
+// Intro slot wiring: a controllable installed intro and gate stage. Defaults
+// (no intro, gate off) leave the re-key cases above untouched.
+const introSlot = vi.hoisted(() => ({ intro: null, stage: 'off', gateArgs: null }));
+vi.mock('../../presentation.mjs', () => ({
+  useVideoPresentation: () => ({ overlay: null, debug: null }),
+  useVideoIntro: () => introSlot.intro,
+  getLoadingPresentation: () => ({
+    subscribeLoadingSuppression: () => () => {}, getLoadingSuppression: () => false,
+  }),
+}));
+vi.mock('../hooks/useIntroGate.js', () => ({
+  useIntroGate: (args) => { introSlot.gateArgs = args; return introSlot.stage; },
+}));
+
 import { VideoPlayer } from './VideoPlayer.jsx';
 
 const dashProps = (media) => ({
@@ -43,7 +57,12 @@ const dashProps = (media) => ({
 
 const rekeys = () => sampled.filter((s) => s.event === 'playback.dash-element-rekeyed');
 
-beforeEach(() => { sampled.length = 0; });
+beforeEach(() => {
+  sampled.length = 0;
+  introSlot.intro = null;
+  introSlot.stage = 'off';
+  introSlot.gateArgs = null;
+});
 
 describe('VideoPlayer — dash element re-key logging', () => {
   it('says nothing on the first element: a mount is not a re-key', () => {
@@ -101,5 +120,36 @@ describe('VideoPlayer — dash element re-key logging', () => {
     rerender(<VideoPlayer {...dashProps({ mediaUrl: '/b.mpd' })} />);
     expect(rekeys()[0].data.mountId).toMatch(/^video-mount-\d+$/);
     expect(rekeys()[0].data.isDash).toBe(true);
+  });
+});
+
+describe('VideoPlayer — intro slot', () => {
+  const scene = () => ({
+    status: 'ready', minHoldMs: 0,
+    render: (stage) => <div data-testid="intro-scene" data-stage={stage} />,
+  });
+
+  it('draws nothing when no intro is installed', () => {
+    const { queryByTestId } = render(<VideoPlayer {...dashProps({ mediaUrl: '/a.mpd' })} />);
+    expect(queryByTestId('intro-scene')).toBeNull();
+  });
+
+  it('draws nothing while the gate is still waiting', () => {
+    introSlot.intro = scene();
+    introSlot.stage = 'waiting';
+    const { queryByTestId } = render(<VideoPlayer {...dashProps({ mediaUrl: '/a.mpd' })} />);
+    expect(queryByTestId('intro-scene')).toBeNull();
+  });
+
+  it.each(['covering', 'holding', 'playing'])('draws the scene with the %s stage', (stage) => {
+    introSlot.intro = scene();
+    introSlot.stage = stage;
+    const { getByTestId } = render(<VideoPlayer {...dashProps({ mediaUrl: '/a.mpd' })} />);
+    expect(getByTestId('intro-scene').dataset.stage).toBe(stage);
+  });
+
+  it('hands the gate the requested start and a per-title reset key', () => {
+    render(<VideoPlayer {...dashProps({ mediaUrl: '/a.mpd', assetId: 'movie-a', seconds: 42 })} />);
+    expect(introSlot.gateArgs).toMatchObject({ startSec: 42, resetKey: 'movie-a' });
   });
 });
