@@ -349,6 +349,12 @@ Log events: `feed.headlines.jev-pair`, `feed.headlines.jev-label` (per new verdi
 | `POST` | `/api/v1/feed/headlines/harvest?page=ID` | Trigger harvest for all sources (or one page) |
 | `POST` | `/api/v1/feed/headlines/harvest/:source` | Harvest a single source by ID |
 
+The page harvest response includes `{ harvested, errors, totalItems }`. `harvested`
+counts attempted sources, including failed sources. The Headlines view reloads the
+cached edition after the request and reports `errors` against that attempt count;
+the warning is scoped to the page that was refreshed, so switching editions does
+not transfer it.
+
 `GET /headlines` returns both the configured outlet matrix and a `briefing`, built in `HeadlineService#buildBriefing` (backend; `Headlines.jsx` only renders it). Briefing clusters exact canonical URLs, then cross-outlet titles within 36 hours whose normalized form (≥ 5 words) scores ≥ 0.72 string similarity against the cluster's lead title. Its displayed excerpt is always attributed source material; no generated claims are introduced. Each cluster includes chronological harvested coverage; each timeline entry carries a `kind`: by default a keyword label (`correction`/`corrected` → `correction`; `update`/`updated`/`developing`/`live` → `update`; else `report`). With the story judge promoted (below), pairs scoring in the ambiguous band can also merge and `kind` can be `live`, `update`, `correction`, `analysis`, or `report`. This is coverage chronology, not publisher-page revision tracking.
 
 The browser hides archived briefing stories and derives its empty message from

@@ -15,6 +15,7 @@ export default function Headlines({ pageId }) {
   const [readState, setReadState] = useState(null);
   const [harvesting, setHarvesting] = useState(() => new Set());
   const [failedHarvest, setFailedHarvest] = useState(null);
+  const [partialHarvestByPage, setPartialHarvestByPage] = useState({});
   const edition = useMemo(() => ({ pageId }), [pageId]);
   const activeReader = useRef(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -58,11 +59,26 @@ export default function Headlines({ pageId }) {
   };
   const refreshAfterHarvest = () => getActiveReaderForEdition()?.reload();
 
+  const clearPartialHarvest = targetPageId => {
+    setPartialHarvestByPage(current => {
+      if (!current[targetPageId]) return current;
+      const next = { ...current };
+      delete next[targetPageId];
+      return next;
+    });
+  };
+
   const triggerHarvestAll = async () => {
     setHarvesting(current => new Set(current).add(pageId));
     setFailedHarvest(null);
+    clearPartialHarvest(pageId);
     try {
-      await DaylightAPI(`/api/v1/feed/headlines/harvest?page=${encodeURIComponent(pageId || '')}`, {}, 'POST');
+      const result = await DaylightAPI(`/api/v1/feed/headlines/harvest?page=${encodeURIComponent(pageId || '')}`, {}, 'POST');
+      const errors = Number(result?.errors);
+      const harvested = Number(result?.harvested);
+      if (Number.isInteger(errors) && errors > 0) {
+        setPartialHarvestByPage(current => ({ ...current, [pageId]: { errors, harvested } }));
+      }
       await refreshAfterHarvest();
     } catch {
       const reader = getActiveReaderForEdition();
@@ -86,6 +102,7 @@ export default function Headlines({ pageId }) {
     : readState?.edition === edition && readState.error;
   const { regionProps, retry } = useRetryRegion(() => {
     setFailedHarvest(null);
+    clearPartialHarvest(pageId);
     reload();
   }, reading);
   const initialLoading = loading && !data;
@@ -96,6 +113,12 @@ export default function Headlines({ pageId }) {
   const rows = grid?.rows || [];
   const cols = grid?.cols || [];
   const cells = buildHeadlineGrid(sources, rows, cols);
+  const partialHarvest = partialHarvestByPage[pageId];
+  const partialHarvestMessage = partialHarvest
+    ? partialHarvest.harvested > partialHarvest.errors
+      ? `${partialHarvest.errors} of ${partialHarvest.harvested} sources could not refresh.`
+      : `${partialHarvest.errors} source${partialHarvest.errors === 1 ? '' : 's'} could not refresh.`
+    : null;
 
   const setView = nextView => {
     const next = new URLSearchParams(searchParams);
@@ -143,6 +166,7 @@ export default function Headlines({ pageId }) {
           <button type="button" disabled={loading} onClick={retry}>Retry</button>
         </div>
       )}
+      {partialHarvestMessage && <div className="headlines-error" role="status">{partialHarvestMessage}</div>}
       {!!data?.configWarnings?.length && <div className="headlines-error" role="status">{data.configWarnings.length} source placement{data.configWarnings.length === 1 ? '' : 's'} need configuration attention.</div>}
 
       {view === 'briefing' ? (

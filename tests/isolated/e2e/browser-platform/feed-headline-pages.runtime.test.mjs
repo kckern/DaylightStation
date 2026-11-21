@@ -209,9 +209,12 @@ test('Feed entry redirects replace their history entries and share the main regi
 for (const refresh of [
   { button: 'Refresh all', endpoint: '/headlines/harvest' },
   { button: 'Refresh Local source', endpoint: '/headlines/harvest/daily' },
+  { button: 'Refresh all', endpoint: '/headlines/harvest', partial: { harvested: 2, errors: 1 } },
   { button: 'Refresh all', endpoint: '/headlines/harvest', rejected: true },
 ]) {
-  const title = refresh.rejected
+  const title = refresh.partial
+    ? 'Feed reports partial headline source failures only on the submitted edition'
+    : refresh.rejected
     ? 'Feed reports a failed harvest after returning to the submitted edition'
     : `Feed ${refresh.button} completion stays with the submitted headline edition`;
   test(title, async ({ page }) => {
@@ -233,7 +236,7 @@ for (const refresh of [
         await releaseHarvest.promise;
         if (refresh.rejected) return route.fulfill({ status: 500, json: { message: 'Harvest unavailable' } });
         harvested = true;
-        return route.fulfill({ json: {} });
+        return route.fulfill({ json: refresh.partial || {} });
       }
       if (pathname.endsWith('/headlines') && searchParams.has('page')) {
         const edition = searchParams.get('page');
@@ -257,6 +260,19 @@ for (const refresh of [
     await edition.selectOption('world');
     await expect(page.getByRole('link', { name: 'World headline' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Refresh all', exact: true })).toBeEnabled();
+
+    if (refresh.partial) {
+      releaseHarvest.resolve();
+      const result = page.waitForResponse(response => new URL(response.url()).pathname.endsWith(refresh.endpoint));
+      await (await result).finished();
+      await expect(page.getByRole('status').filter({ hasText: /1 of 2 sources could not refresh/ })).toHaveCount(0);
+      await edition.selectOption('local');
+      await expect(page.getByRole('link', { name: 'Updated local headline', exact: true })).toBeVisible();
+      await expect(page.getByRole('status').filter({ hasText: '1 of 2 sources could not refresh' })).toBeVisible();
+      expect(reads).toEqual(['local', 'world', 'local']);
+      expect(harvests).toBe(1);
+      return;
+    }
 
     if (refresh.rejected) {
       await edition.selectOption('local');
