@@ -9,7 +9,7 @@ abis: []
 # all. Its installed components (the link activity, the tiles, the widget) reach the
 # payload in-process. Debugging is over adb: logcat, and run-as for its files.
 control: { port: 8780, lifelinePort: 8781, bind: none }
-shell: { versionCode: 52, versionName: "0.1-phone.52" }
+shell: { versionCode: 77, versionName: "0.1-phone.77" }
 # The household site's host, so an https link to it (in a relayed push, say) can open in
 # the app. Private: resolved from `placeholders:` when this device's manifest is built.
 appLinks: { host: "{phone_link_host}" }
@@ -83,12 +83,12 @@ defaults:
   widgets.actions: "journal,meal,meal-photo,media"
   # The tabs a car (and any media browser) shows, at most four: "Label=target;...", a
   # target being recent, catalog or a container's content id.
-  media.roots: "Recent=recent;Browse=catalog"
+  media.roots: "Drive=drive:;Recent=recent;Library=catalog"
   # The apps that may connect to the media session beside this app and the system (a
   # car, an assistant): "package=sha256 of its signing certificate", comma-separated.
-  # Empty: none, so the first connection from a car is refused and logged with the entry
-  # to add here. See "Who may connect" in __docs/reference/android/phone.md.
-  media.controllerPins: ""
+  # Signer verified on the Play-installed Android Auto app. The package must also
+  # belong to the calling UID. See "Who may connect" in the phone reference.
+  media.controllerPins: "com.google.android.projection.gearhead=1ca8dcc0bed3cbd872d2cb791200c0292ca9975768a82d676b8b424fb65b5295"
   # The car screen's list in Android Auto (car-actions): ids of the actions above, at most
   # six. A household call (api:), "On my way" and a voice input can be listed; a web page,
   # media, text and photo cannot. A tap runs the action in process; a tap on a voice input

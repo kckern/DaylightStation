@@ -202,6 +202,9 @@ public final class MediaServiceCapability implements Capability {
     Outcome call(JSONObject request) {
         try {
             String op = Json.str(request, "op");
+            if ("playlistSources".equals(op)) {
+                return new Outcome(200, Replies.ok().put("items", api.audioSources().getJSONArray("items")));
+            }
             if ("playlists".equals(op)) return playlists(request);
             if ("browse".equals(op)) return browse(request);
             if ("resolve".equals(op)) return resolve(request);
@@ -227,25 +230,28 @@ public final class MediaServiceCapability implements Capability {
     private static Router.Response respond(Outcome o) { return Router.Response.json(o.status, o.body); }
 
     private Outcome playlists(JSONObject request) throws Exception {
-        final int pageSize = (Integer) core.settings().get(PAGE_SIZE);
         final int offset = request.optInt("cursor", 0);
-        if (offset < 0 || offset > Integer.MAX_VALUE - pageSize) throw new IllegalArgumentException("invalid playlist page");
-        JSONObject result = api.list("plex:playlists", pageSize, offset);
+        if (offset < 0 || offset > MediaId.MAX_SKIP) throw new IllegalArgumentException("invalid playlist page");
+        String source = Json.str(request, "source");
+        if (!ContentId.valid(source)) throw new IllegalArgumentException("unknown list source");
+        JSONObject result = api.audioLists(source, offset);
         JSONArray entries = result.getJSONArray("items");
         JSONArray playlists = new JSONArray();
         for (int i = 0; i < entries.length(); i++) {
             JSONObject item = entries.optJSONObject(i);
-            if (item == null || !"playlist".equals(item.optString("type"))) continue;
+            if (item == null) continue;
             String id = item.optString("id");
             String title = item.optString("title");
             if (ContentId.valid(id) && !title.trim().isEmpty()) {
-                playlists.put(new JSONObject().put("contentId", id).put("title", title));
+                JSONObject playlist = new JSONObject().put("contentId", id).put("title", title);
+                String art = BrowseTree.art(backend, Json.str(item, "thumbnail"));
+                if (art != null) playlist.put("thumbnail", art);
+                playlists.put(playlist);
             }
         }
         JSONObject response = Replies.ok().put("items", playlists);
-        if (offset + pageSize < result.optInt("total", offset + entries.length())) {
-            response.put("nextCursor", offset + pageSize);
-        }
+        int next = result.optInt("nextCursor", -1);
+        if (next > offset && next <= MediaId.MAX_SKIP) response.put("nextCursor", next);
         return new Outcome(200, response);
     }
 
@@ -274,7 +280,14 @@ public final class MediaServiceCapability implements Capability {
         if (id.kind == MediaId.Kind.RECENT) {
             nodes = BrowseTree.fromRecent(api.recent((Integer) core.settings().get(RECENT_LIMIT)), backend);
         } else if (id.kind == MediaId.Kind.CATALOG) {
-            nodes = BrowseTree.fromList(api.rootList(), null, backend).nodes;
+            nodes = BrowseTree.fromAudioListCatalog(api.rootList(), "", 0, backend);
+            nodes.add(new MediaNode(MediaId.container("audio-lists:"), "All playlists", "", null, true, false));
+        } else if ("audio-lists:".equals(id.contentId)) {
+            return BrowseTree.audioListSources(api.audioSources());
+        } else if (id.kind == MediaId.Kind.AUDIO_SOURCE) {
+            return BrowseTree.fromAudioListCatalog(api.audioLists(id.contentId, id.skip), id.contentId, id.skip, backend);
+        } else if (id.kind == MediaId.Kind.AUDIO_LIST) {
+            return BrowseTree.fromAudioQueue(api.queue(id.contentId), id.contentId, id.skip, pageSize, backend);
         } else {
             return BrowseTree.paged(BrowseTree.fromList(api.list(id.contentId, pageSize, id.skip), id.contentId, backend),
                     id.contentId, id.skip, pageSize);
@@ -291,7 +304,7 @@ public final class MediaServiceCapability implements Capability {
             mediaIds.add(id instanceof String ? (String) id : null);
         }
         Resolver.Resolved r = Resolver.resolve(mediaIds, request.optInt("startIndex", -1), request.optBoolean("explicitPosition"),
-                api, backend, "daylight-" + core.deviceId());
+                api, backend, "daylight-" + core.deviceId(), request.optBoolean("shuffle"));
         JSONArray tracks = new JSONArray();
         for (Track t : r.tracks) tracks.put(t.toJson());
         return new Outcome(200, Replies.ok().put("tracks", tracks).put("startIndex", r.startIndex)

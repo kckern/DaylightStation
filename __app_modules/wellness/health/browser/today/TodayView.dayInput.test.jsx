@@ -368,17 +368,15 @@ describe('TodayView barcode review', () => {
     expect(screen.queryByRole('dialog', { name: 'Scan barcode' })).toBeNull();
     expect(screen.getByRole('textbox', { name: 'Log food or change this day' })).toBeTruthy();
   });
-  it('sends the shortcut host its finish event only when the person taps Done', async () => {
+  it('logs one physical shortcut scan and returns to the host automatically', async () => {
     const finish = vi.fn();
     window.addEventListener('daylight:barcode-shortcut-done', finish);
     try {
       await open({ session: true, path: '/health?capture=barcode' });
       await act(async () => { camera.current.onDecode(upc); });
-      fireEvent.click(await screen.findByRole('button', { name: 'Log item' }));
-      expect(await screen.findByText('Logged')).toBeTruthy();
-      expect(finish).not.toHaveBeenCalled();
-      fireEvent.click(screen.getByRole('button', { name: 'Done' }));
-      expect(finish).toHaveBeenCalledTimes(1);
+      expect(await screen.findByText(/^Logged /)).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Log item' })).toBeNull();
+      await waitFor(() => expect(finish).toHaveBeenCalledTimes(1), { timeout: 2500 });
     } finally {
       window.removeEventListener('daylight:barcode-shortcut-done', finish);
     }

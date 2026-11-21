@@ -284,6 +284,7 @@ export const EXPECTED_COMPONENTS = {
   'service net.kckern.daylight.cap.accessibility.shell.DaylightAccessibilityService': { exported: true, permission: 'android.permission.BIND_ACCESSIBILITY_SERVICE' },
   'provider net.kckern.daylight.cap.micbridge.shell.MicAnchorProvider': { exported: false, permission: null },
   'provider net.kckern.daylight.cap.synth.shell.SynthEngineProvider': { exported: false, permission: null },
+  'activity net.kckern.daylight.cap.widgets.shell.FreematicsActivity': { exported: false, permission: null },
   'activity net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity': { exported: true, permission: null },
   'receiver net.kckern.daylight.cap.widgets.shell.ButtonWidgetProvider': { exported: false, permission: null },
   // Exported with no permission: the launcher starts it when a one-action button is

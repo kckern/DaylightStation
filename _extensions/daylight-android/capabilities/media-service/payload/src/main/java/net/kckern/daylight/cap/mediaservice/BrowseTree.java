@@ -88,13 +88,69 @@ final class BrowseTree {
             String art = art(backend, Json.str(item, "thumbnail"));
             if ("container".equals(Json.str(item, "itemType"))) {
                 out.add(new MediaNode(MediaId.container(id), title, subtitle, art, true, false));
-            } else if (item.optJSONObject("play") != null) {
+            } else if (item.optJSONObject("play") != null && !NOT_AUDIO.contains(mediaType(item))) {
                 // The route gives an item a play object only when it has a stream.
                 out.add(new MediaNode(MediaId.leaf(id, parentContentId), title, subtitle, art, false, true));
             }
         }
         int total = response != null && response.opt("total") instanceof Number ? response.optInt("total", -1) : -1;
         return new Level(out, received, total);
+    }
+
+    static List<MediaNode> audioListSources(JSONObject response) {
+        List<MediaNode> nodes = new ArrayList<>();
+        JSONArray items = response.optJSONArray("items");
+        for (int index = 0; items != null && index < items.length(); index++) {
+            JSONObject item = items.optJSONObject(index);
+            if (item == null) continue;
+            String id = Json.str(item, "id");
+            String title = Json.str(item, "title");
+            if (ContentId.valid(id) && !title.isEmpty()) {
+                nodes.add(new MediaNode(MediaId.audioSource(id, 0), title, "", null, true, false));
+            }
+        }
+        return nodes;
+    }
+
+    static List<MediaNode> fromAudioListCatalog(JSONObject response, String parent, int skip, Backend backend) {
+        List<MediaNode> nodes = new ArrayList<>();
+        JSONArray items = response.optJSONArray("items");
+        for (int index = 0; items != null && index < items.length(); index++) {
+            JSONObject item = items.optJSONObject(index);
+            if (item == null) continue;
+            String id = Json.str(item, "id");
+            String title = Json.str(item, "title");
+            if (ContentId.valid(id) && !title.isEmpty()) {
+                nodes.add(new MediaNode(MediaId.audioList(id, 0), title, "",
+                        art(backend, Json.str(item, "thumbnail")), true, false));
+            }
+        }
+        int next = response.optInt("nextCursor", -1);
+        if (next > skip && next <= MediaId.MAX_SKIP) {
+            nodes.add(new MediaNode(MediaId.audioSource(parent, next), "More lists", "", null, true, false));
+        }
+        return nodes;
+    }
+
+    static List<MediaNode> fromAudioQueue(JSONObject response, String parent, int skip, int pageSize, Backend backend) {
+        List<MediaNode> nodes = new ArrayList<>();
+        JSONArray items = response.optJSONArray("items");
+        int count = items == null ? 0 : items.length();
+        int end = Math.min(count, skip + pageSize);
+        for (int index = skip; index < end; index++) {
+            JSONObject item = items.optJSONObject(index);
+            if (item == null || !"audio".equals(Json.str(item, "mediaType"))) continue;
+            String id = QueueMapper.id(item);
+            String title = Json.str(item, "title");
+            if (!id.isEmpty() && !title.isEmpty()) {
+                nodes.add(new MediaNode(MediaId.leaf(id, parent), title, Json.str(item, "artist"),
+                        art(backend, Json.str(item, "thumbnail")), false, true));
+            }
+        }
+        if (end < count && end <= MediaId.MAX_SKIP) {
+            nodes.add(new MediaNode(MediaId.audioList(parent, end), "More tracks", "", null, true, false));
+        }
+        return nodes;
     }
 
     /** A GET /api/v1/media/household/recent response. An entry whose lookup failed has null display fields and is left out. */
@@ -106,8 +162,14 @@ final class BrowseTree {
             if (item == null) continue;
             String id = Json.str(item, "contentId");
             String title = Json.str(item, "title");
-            if (!ContentId.valid(id) || title.isEmpty()) continue;
+            if (!ContentId.valid(id) || title.isEmpty() || !RECENT_AUDIO.contains(mediaType(item))) continue;
             String subtitle = Json.first(Json.str(item, "grandparentTitle"), Json.str(item, "parentTitle"));
+            long played = item.optLong("playhead", 0);
+            long duration = item.optLong("duration", 0);
+            if (!item.optBoolean("finished") && played >= 5 && (duration <= 0 || played < duration)) {
+                String elapsed = android.text.format.DateUtils.formatElapsedTime(played);
+                subtitle = "Resume at " + elapsed + (subtitle.isEmpty() ? "" : " · " + subtitle);
+            }
             out.add(new MediaNode(MediaId.leaf(id, null), title, subtitle, art(backend, Json.str(item, "thumbnail")), false, true));
         }
         return out;
@@ -115,9 +177,18 @@ final class BrowseTree {
 
     /** The longest query sent, in characters (code points). */
     static final int MAX_QUERY = 200;
+    private static final java.util.Set<String> RECENT_AUDIO = new java.util.HashSet<>(java.util.Arrays.asList(
+            "audio", "track", "song", "audiobook", "podcast"));
+
+    private static String mediaType(JSONObject item) {
+        JSONObject metadata = item.optJSONObject("metadata");
+        return Json.first(Json.str(item, "mediaType"), Json.str(item, "type"),
+                metadata == null ? "" : Json.str(metadata, "type")).trim().toLowerCase(java.util.Locale.ROOT);
+    }
+
     /** Media types a search result may name that the native player does not play. */
     private static final java.util.Set<String> NOT_AUDIO = new java.util.HashSet<>(java.util.Arrays.asList(
-            "video", "image", "photo", "movie", "episode", "show", "season", "clip", "dash_video", "readable", "book", "comic"));
+            "video", "image", "photo", "movie", "episode", "show", "season", "clip", "dash_video", "hls_video", "readable", "book", "comic"));
 
     /**
      * A query as it is sent: control characters become spaces, the ends are trimmed and
@@ -165,7 +236,7 @@ final class BrowseTree {
                 out.add(new MediaNode(MediaId.container(id), title, subtitle, art, true, false));
                 continue;
             }
-            String type = Json.first(Json.str(item, "mediaType"), meta == null ? "" : Json.str(meta, "type")).toLowerCase(java.util.Locale.ROOT);
+            String type = mediaType(item);
             if (Json.str(item, "mediaUrl").isEmpty() || NOT_AUDIO.contains(type)) continue;
             out.add(new MediaNode(MediaId.leaf(id, null), title, subtitle, art, false, true));
         }

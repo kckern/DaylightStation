@@ -24,6 +24,9 @@ import com.google.common.util.concurrent.ListenableFuture;
 import net.kckern.daylight.api.DirectPlay;
 import net.kckern.daylight.shellkit.ShellStart;
 import net.kckern.daylight.shellkit.DirectPlayIntents;
+import net.kckern.daylight.shellkit.PlaylistWidgetState;
+import net.kckern.daylight.shellkit.PlaylistWidgetState.Phase;
+import net.kckern.daylight.shellkit.PlaylistWidgetState.Tap;
 
 /**
  * Plays a media action with no window: a tap on a widget button or a tile starts this
@@ -94,11 +97,28 @@ public class PlayActionService extends Service {
             else currentStartId = startId;
             return START_NOT_STICKY;
         }
+        if (actionId == null) {
+            Tap tap = PlaylistWidgetState.get(playlist).tap(intent.getStringExtra(DirectPlayIntents.EXTRA_PLAYLIST_REVISION));
+            if (tap != Tap.START) {
+                currentStartId = startId;
+                if (tap == Tap.PAUSE || tap == Tap.RESUME) DaylightMediaService.controlPlaylist(playlist, tap);
+                else if (PlaylistWidgetState.get(playlist).phase != Phase.STARTING) PlaylistWidgetState.redraw(this);
+                if (attempt == null) {
+                    if (tap == Tap.RESUME) main.postDelayed(() -> {
+                        if (attempt == null && currentStartId == startId) finish(null, startId);
+                    }, 3000);
+                    else finish(null, startId);
+                }
+                return START_NOT_STICKY;
+            }
+        }
         releaseAttempt();
         currentStartId = startId;
         failed = false;
-        PlayStart.Attempt requested = new PlayStart.Attempt(actionId == null ? playlist : null, SystemClock.elapsedRealtime());
+        PlayStart.Attempt requested = new PlayStart.Attempt(actionId == null ? playlist : null, SystemClock.elapsedRealtime(),
+                actionId == null && intent.getBooleanExtra(DirectPlayIntents.EXTRA_PLAYLIST_SHUFFLE, true));
         attempt = requested;
+        PlaylistWidgetState.show(this, requested.playlist, Phase.STARTING);
         ShellStart.ensure(this);
         Thread ask = new Thread(() -> {
             String mediaId;
@@ -190,7 +210,9 @@ public class PlayActionService extends Service {
     }
 
     private void finish(String message, int startId) {
+        String playlist = attempt == null ? null : attempt.playlist;
         releaseAttempt();
+        if (message != null) PlaylistWidgetState.show(this, playlist, Phase.FAILED);
         if (message != null) Toast.makeText(getApplicationContext(), message, Toast.LENGTH_SHORT).show();
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelfResult(startId);
@@ -200,8 +222,10 @@ public class PlayActionService extends Service {
         main.removeCallbacks(poll);
         if (attempt != null) {
             attempt.cancel();
-            if (!attempt.played())
+            if (!attempt.played()) {
                 DaylightMediaService.stopShortcut(attempt);
+                PlaylistWidgetState.show(this, attempt.playlist, Phase.READY);
+            }
             attempt = null;
         }
         if (controller != null) controller.release();

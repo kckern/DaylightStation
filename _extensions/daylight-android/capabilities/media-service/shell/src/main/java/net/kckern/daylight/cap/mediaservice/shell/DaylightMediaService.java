@@ -4,6 +4,8 @@ import net.kckern.daylight.shellkit.AndroidPackageFacts;
 
 import android.app.PendingIntent;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.net.Uri;
 import android.util.Log;
 import android.os.Handler;
 import android.os.Looper;
@@ -15,13 +17,20 @@ import java.util.List;
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
+import androidx.media3.common.ForwardingPlayer;
+import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+import androidx.media3.common.Timeline;
 import androidx.media3.exoplayer.ExoPlayer;
+import net.kckern.daylight.shellkit.DrivingRadioSettings;
 import androidx.media3.session.MediaLibraryService;
 import androidx.media3.session.MediaSession;
 
 import net.kckern.daylight.shellkit.ShellStart;
 import net.kckern.daylight.shellkit.SurfaceCache;
+import net.kckern.daylight.shellkit.PlaylistWidgetState;
+import net.kckern.daylight.shellkit.PlaylistArtwork;
+import net.kckern.daylight.shellkit.PlaylistWidgetState.Phase;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -50,9 +59,25 @@ public class DaylightMediaService extends MediaLibraryService {
     private ExoPlayer player;
     private PayloadMedia media;
     private PlayStart.Attempt shortcutOwner;
+    private String displayedPlaylist;
+    private PlayStart.Attempt artworkOwner;
+    private Uri artworkUri;
     private MediaLibrarySession session;
     private PlaybackEvents events;
     private ExecutorService io;
+    private DrivingRadio radio;
+    private android.content.SharedPreferences radioPrefs;
+    private final android.content.SharedPreferences.OnSharedPreferenceChangeListener driveChanged = (prefs, key) -> {
+        if (session != null && DrivingRadioSettings.affectsDrive(key)) {
+            cancelRadioHandoff();
+            session.notifyChildrenChanged(DrivingRadio.DRIVE, radio.staples().size() + (radio.enabled() ? 1 : 0), null);
+        }
+    };
+    private final Handler widgetUpdates = new Handler(Looper.getMainLooper());
+    private final Runnable widgetTick = this::publishPlaylistProgress;
+    private int widgetTrackNumber;
+    private long handoffGeneration;
+    private boolean playedQueue;
 
     @Override
     public void onCreate() {
@@ -64,6 +89,7 @@ public class DaylightMediaService extends MediaLibraryService {
             return t;
         });
         media = new PayloadMedia();
+        radio = new DrivingRadio(new DrivingRadioSettings(this), media);
 
         // Audio focus and "headphones unplugged" are the player's: it pauses for a call,
         // ducks for a prompt and stops when the output goes away. The wake mode holds the
@@ -76,7 +102,41 @@ public class DaylightMediaService extends MediaLibraryService {
                 .build();
 
         player.addListener(new Player.Listener() {
+            @Override public void onEvents(Player player, Player.Events events) {
+                publishPlaylistState();
+            }
+
+            @Override public void onTimelineChanged(androidx.media3.common.Timeline timeline, int reason) {
+                if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
+                    cancelRadioHandoff();
+                    playedQueue = false;
+                }
+            }
+
+            @Override public void onPlaybackStateChanged(int state) {
+                if (state == Player.STATE_ENDED) continueDrivingRadio();
+            }
+
+            @Override public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
+                if (!playWhenReady) cancelRadioHandoff();
+            }
+
+            @Override public void onPlayerError(PlaybackException error) {
+                MediaItem failed = player.getCurrentMediaItem();
+                if (failed == null || failed.localConfiguration == null
+                        || !"audio".equals(failed.localConfiguration.uri.getQueryParameter("stream"))) return;
+                widgetUpdates.post(() -> {
+                    if (current != DaylightMediaService.this || player.getCurrentMediaItem() != failed
+                            || player.getPlayerError() != error || !player.getPlayWhenReady()
+                            || !player.hasNextMediaItem()) return;
+                    player.seekToNextMediaItem();
+                    player.prepare();
+                    player.play();
+                });
+            }
+
             @Override public void onIsPlayingChanged(boolean playing) {
+                if (playing) playedQueue = true;
                 PlayStart.Attempt attempt = shortcutOwner;
                 if (playing && attempt != null && ownsPlaylist(attempt)) {
                     attempt.recordPlaying(SystemClock.elapsedRealtime());
@@ -84,9 +144,19 @@ public class DaylightMediaService extends MediaLibraryService {
             }
         });
 
-        MediaLibrarySession.Builder builder = new MediaLibrarySession.Builder(this, player,
+        Player sessionPlayer = new ForwardingPlayer(player) {
+            @Override public long getDuration() {
+                return NodeItems.durationMs(player.getCurrentMediaItem(), super.getDuration());
+            }
+
+            @Override public long getContentDuration() {
+                return NodeItems.durationMs(player.getCurrentMediaItem(), super.getContentDuration());
+            }
+        };
+        MediaLibrarySession.Builder builder = new MediaLibrarySession.Builder(this, sessionPlayer,
                 new LibraryCallback(media, io, getPackageName(), new AndroidPackageFacts(getPackageManager()),
-                        () -> SurfaceCache.get(this, ControllerPins.KEY), DaylightMediaService::stopPlayback));
+                        () -> SurfaceCache.get(this, ControllerPins.KEY), DaylightMediaService::stopPlayback)
+                        .withDrivingRadio(radio, this::cancelRadioHandoff));
         builder.setCustomLayout(Collections.singletonList(LibraryCallback.stopButton()));
         // A tap on the media notification opens this app's own window. Nothing from a
         // controller is in the intent.
@@ -96,6 +166,8 @@ public class DaylightMediaService extends MediaLibraryService {
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
         }
         session = builder.build();
+        radioPrefs = getSharedPreferences(DrivingRadioSettings.PLAYLIST_PREFS, MODE_PRIVATE);
+        radioPrefs.registerOnSharedPreferenceChangeListener(driveChanged);
 
         setListener(new Listener() {
             @Override public void onForegroundServiceStartNotAllowedException() {
@@ -120,7 +192,7 @@ public class DaylightMediaService extends MediaLibraryService {
         service.io.execute(() -> {
             TrackAnswer tracks;
             try {
-                tracks = service.media.resolveShortcut(mediaId, 8000);
+                tracks = service.media.resolveShortcut(mediaId, attempt.shuffle, 8000);
             } catch (Exception failure) {
                 tracks = null;
             }
@@ -134,6 +206,7 @@ public class DaylightMediaService extends MediaLibraryService {
                     service.shortcutOwner = attempt;
                     ExoPlayer player = service.player;
                     player.pause();
+                    player.setShuffleModeEnabled(false);
                     player.setMediaItems(items, answer.startIndex, answer.startPositionMs > 0
                             ? answer.startPositionMs : C.TIME_UNSET);
                     player.prepare();
@@ -145,6 +218,38 @@ public class DaylightMediaService extends MediaLibraryService {
         });
     }
 
+    private void cancelRadioHandoff() {
+        handoffGeneration++;
+    }
+
+    private boolean canContinueDrivingRadio() {
+        return session != null && session.getConnectedControllers().stream().anyMatch(DrivingRadio::isCar)
+                && player.getPlayWhenReady() && player.getPlayerError() == null && playedQueue
+                && player.getPlaybackState() == Player.STATE_ENDED && radio.enabled();
+    }
+
+    private void continueDrivingRadio() {
+        if (!canContinueDrivingRadio()) return;
+        long generation = ++handoffGeneration;
+        io.execute(() -> {
+            final TrackAnswer answer;
+            try {
+                answer = radio.resolve();
+            } catch (Exception unavailable) {
+                Log.w(TAG, "Driving Radio queue unavailable");
+                return;
+            }
+            widgetUpdates.post(() -> {
+                if (generation != handoffGeneration || !canContinueDrivingRadio()) return;
+                player.setShuffleModeEnabled(false);
+                player.setMediaItems(NodeItems.tracks(answer.tracks), answer.startIndex,
+                        answer.startPositionMs > 0 ? answer.startPositionMs : C.TIME_UNSET);
+                player.prepare();
+                player.play();
+            });
+        });
+    }
+
     static void stopPlayback() {
         PlayActionService.cancelCurrentStart();
         DaylightMediaService service = current;
@@ -152,16 +257,97 @@ public class DaylightMediaService extends MediaLibraryService {
     }
 
     private void stopPlayer() {
+        cancelRadioHandoff();
         player.pause();
         player.stop();
         player.clearMediaItems();
         shortcutOwner = null;
+        publishPlaylistState();
     }
 
     private boolean ownsPlaylist(PlayStart.Attempt attempt) {
         if (shortcutOwner != attempt || player.getMediaItemCount() == 0) return false;
         MediaItem.LocalConfiguration first = player.getMediaItemAt(0).localConfiguration;
         return first != null && first.tag == attempt;
+    }
+
+    private void publishPlaylistState() {
+        PlayStart.Attempt owner = shortcutOwner;
+        String playlist = owner != null && ownsPlaylist(owner) ? owner.playlist : null;
+        if (displayedPlaylist != null && !displayedPlaylist.equals(playlist))
+            PlaylistWidgetState.show(this, displayedPlaylist, Phase.READY);
+        displayedPlaylist = playlist;
+        if (playlist == null) {
+            widgetUpdates.removeCallbacks(widgetTick);
+            PlaylistWidgetState.progress(this, null, null);
+            updateTrackArtwork(null, null);
+            return;
+        }
+        Phase phase;
+        if (player.getPlayerError() != null) phase = Phase.FAILED;
+        else if (player.getPlaybackState() == Player.STATE_ENDED) phase = Phase.READY;
+        else if (player.isPlaying()) phase = Phase.PLAYING;
+        else if (player.getPlayWhenReady()) phase = Phase.STARTING;
+        else if (owner.played()) phase = Phase.PAUSED;
+        else phase = Phase.STARTING;
+        if (phase == Phase.PLAYING || phase == Phase.PAUSED)
+            updateTrackArtwork(owner, player.getMediaMetadata().artworkUri);
+        else if (phase == Phase.READY || phase == Phase.FAILED) updateTrackArtwork(null, null);
+        widgetTrackNumber = phase == Phase.PLAYING || phase == Phase.PAUSED
+                ? playlistTrackNumber() : 0;
+        publishPlaylistProgress();
+        PlaylistWidgetState.show(this, playlist, phase);
+    }
+
+    private int playlistTrackNumber() {
+        if (!player.getShuffleModeEnabled()) return player.getCurrentMediaItemIndex() + 1;
+
+        Timeline timeline = player.getCurrentTimeline();
+        int playingIndex = player.getCurrentMediaItemIndex();
+        int index = timeline.getFirstWindowIndex(true);
+        for (int track = 1; track <= timeline.getWindowCount(); track++) {
+            if (index == playingIndex) return track;
+            if (index == C.INDEX_UNSET) break;
+            index = timeline.getNextWindowIndex(index, Player.REPEAT_MODE_OFF, true);
+        }
+        return 0;
+    }
+
+    private void publishPlaylistProgress() {
+        widgetUpdates.removeCallbacks(widgetTick);
+        if (displayedPlaylist == null || widgetTrackNumber == 0) {
+            PlaylistWidgetState.progress(this, null, null);
+            return;
+        }
+        PlaylistWidgetState.progress(this, displayedPlaylist, new PlaylistWidgetState.Progress(
+                player.getCurrentPosition(), NodeItems.durationMs(player.getCurrentMediaItem(), player.getDuration()),
+                widgetTrackNumber, player.getMediaItemCount()));
+        if (player.isPlaying()) widgetUpdates.postDelayed(widgetTick, 2000);
+    }
+
+    private void updateTrackArtwork(PlayStart.Attempt owner, Uri uri) {
+        if (owner == artworkOwner && java.util.Objects.equals(uri, artworkUri)) return;
+        artworkOwner = owner;
+        artworkUri = uri;
+        PlaylistWidgetState.trackArtwork(this, null, null);
+        if (owner == null || uri == null) return;
+        io.execute(() -> {
+            Bitmap bitmap = PlaylistArtwork.load(uri.toString(), 240);
+            if (bitmap == null) return;
+            new Handler(Looper.getMainLooper()).post(() -> {
+                if (current == this && artworkOwner == owner && uri.equals(artworkUri) && ownsPlaylist(owner))
+                    PlaylistWidgetState.trackArtwork(this, owner.playlist, bitmap);
+            });
+        });
+    }
+
+    static void controlPlaylist(String playlist, PlaylistWidgetState.Tap command) {
+        DaylightMediaService service = current;
+        PlayStart.Attempt owner = service == null ? null : service.shortcutOwner;
+        if (owner == null || !playlist.equals(owner.playlist) || !service.ownsPlaylist(owner)) return;
+        if (command == PlaylistWidgetState.Tap.PAUSE) service.player.pause();
+        else service.player.play();
+        service.publishPlaylistState();
     }
 
     static boolean shortcutPlaying(PlayStart.Attempt attempt) {
@@ -214,7 +400,12 @@ public class DaylightMediaService extends MediaLibraryService {
 
     @Override
     public void onDestroy() {
+        if (radioPrefs != null) radioPrefs.unregisterOnSharedPreferenceChangeListener(driveChanged);
         if (current == this) current = null;
+        widgetUpdates.removeCallbacks(widgetTick);
+        PlaylistWidgetState.progress(this, null, null);
+        PlaylistWidgetState.show(this, displayedPlaylist, Phase.READY);
+        updateTrackArtwork(null, null);
         clearListener();
         if (events != null) { events.detach(); events = null; }
         if (session != null) { session.release(); session = null; }

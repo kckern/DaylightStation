@@ -44,15 +44,11 @@ callback, **Placement unconfirmed** lets you check your home screen and retry.
 Launchers such as Apex can also offer Daylight in their shortcut chooser. Choose
 a supported service or capture action there when assigning a gesture.
 
-Tap **Play a playlist ›** to pick a Plex playlist and add its named 1×1 widget.
-If placement is unconfirmed or unavailable, choose **Place manually** beside that
-playlist in Daylight. Open Widgets on Android Home, add **Daylight playlist** and
-choose the playlist shown there. Each widget keeps its own assignment. If a late
-Android confirmation creates a second widget after manual placement, touch and hold
-the extra widget and choose **Remove**. Tap the widget to start playback and use
-Android media controls to pause or stop. The start attempt has a 15-second
-budget and counts as started once the player reaches playing state. Existing
-1×1 Call widgets keep their assignments.
+Use **Play on demand → Playlists** to stage a playlist, then use **Staged**
+or the launcher's **Daylight playlist** widget picker to place its 1×1 widget.
+See the [phone experience guide](../../../_extensions/daylight-android/PHONE-EXPERIENCE.md)
+for catalog selection, search and recents in the picker, Drive staples, and
+Driving Radio.
 
 ## What makes it a phone and not a kiosk
 
@@ -418,42 +414,20 @@ publishing.
 
 ## `widgets`
 
-Two widgets, both drawn from the surface cache by installed code that never
-calls the payload.
+New phone placements use the one-cell **Daylight playlist** widget. Legacy
+action assignments continue to draw and launch from the surface cache.
+A playlist tap uses the native play service and keeps the launcher visible.
+The widget provider validates widget ownership before recording an assignment.
+It preserves an existing assignment when a late placement callback arrives.
 
-**"Daylight actions"**: up to four buttons bound to the same actions.
-`widgets.actions` lists the ids in order; empty means the first four. Without
-`one-tap-actions`, or before the payload has ever run, the widget has one button,
-"Daylight", that opens the app.
-
-**"Daylight playlist"** is a one-cell button for the playlist selected in
-Daylight. A tap starts the play service with that widget's playlist ID and plays
-without opening an app window. Existing buttons assigned to an older action
-continue to draw and launch from the surface cache.
-
-- The widget stores its own content ID and label in the app's private
-  `daylight_buttons` preferences. Removing a widget clears its assignment.
-- Each pin request stores the content ID and title before asking Android to
-  place it. A callback can bind only a widget Android identifies as a Daylight
-  playlist widget. An existing assignment stays intact.
-- The manual chooser receives a widget ID from Android and verifies its provider.
-  The chooser opens with the selection prepared in Daylight and keeps that
-  selection if the activity is recreated. Choosing the playlist binds it to that
-  widget ID. Closing the chooser cancels placement. The chooser opens no service
-  or capture UI and starts no playback.
+The [phone experience guide](../../../_extensions/daylight-android/PHONE-EXPERIENCE.md)
+covers the playlist visual states, the Apex chooser, and the distinction between
+staging and placement.
 
 | Method | Route | Answer |
 |---|---|---|
 | GET | `/widgets` | `{slots: [{id, label}], problems: [...]}` |
-| POST | `/widgets/refresh` | Writes the slots and every action, and asks the widgets to redraw |
-
-Both widgets are redrawn when the payload starts and whenever the actions are
-published.
-
-Unproven on a phone: that the launcher offers a one-cell widget with a
-configuration step, how it sizes `minWidth` 40dp before Android 12, and the look
-of the button on the owner's launcher (a dark tile, a white icon over a two-line
-label).
+| POST | `/widgets/refresh` | Writes the slots and actions, and asks the widgets to redraw |
 
 ## `media-service`
 
@@ -832,20 +806,22 @@ same mechanism as `POST /actions/pin`'s shortcuts).
 
 ## `android-auto`
 
-Declarations only: a `com.google.android.gms.car.application` meta-data entry
-pointing at `automotive_app_desc.xml` (`<uses name="media"/>`; in a build that also
-lists `car-actions`, that capability's copy of the file replaces it and adds
-`<uses name="template"/>`) and a one-colour attribution icon. Browsing and playback are `media-service`, which the capability
-requires; the verifier fails a build that has the declaration without it, or has it
-without listing `android-auto`.
+The phone APK declares Android Auto's standard media browser through
+`com.google.android.gms.car.application` and the media-only
+`automotive_app_desc.xml` in the phone flavor. Android Auto opens the native
+Daylight media library with Playlists, Recent, and Browse tabs. The household
+action templates use a separate Android for Cars App Library surface and are
+outside the sideloaded phone's media declaration.
 
-The app is sideloaded, so Android Auto lists it only after a one-time developer
-setting on the phone:
+The sideloaded media build needs Android Auto's **Unknown sources** developer
+setting on the phone. This setting is separate from Android's USB debugging:
 
 1. Open Android Auto's settings, scroll to "Version and permission info" and tap
    it ten times; accept developer mode.
-2. In the three-dot menu open "Developer settings" and turn on the option for apps
-   from unknown sources. Its exact label is not confirmed.
+2. In the three-dot menu open "Developer settings" and turn on **Unknown sources**.
+3. Reconnect the head unit and open Daylight from the car's app menu. Verify that
+   its media icon appears, the Playlists tab opens, and choosing a playlist
+   starts playback. A working media card alone verifies playback only.
 
 Testing without a car, with the Desktop Head Unit:
 

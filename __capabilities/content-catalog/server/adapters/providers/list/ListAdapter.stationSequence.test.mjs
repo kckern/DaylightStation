@@ -85,3 +85,23 @@ describe('ListAdapter — station sequences in a program Queue item', () => {
     expect(result).toHaveLength(7);
   });
 });
+
+describe('ListAdapter audio catalog presentation', () => {
+  it('does not expand menus beyond the first eligible audio item', async () => {
+    const { adapter } = makeAdapter(null);
+    adapter._listCache.set('menus:audio-demo', {
+      mtime: 1,
+      data: {
+        title: 'audio-demo', metadata: {},
+        sections: [{ items: ['image', 'audio', 'later'].map(id => ({ queue: { contentId: 'plex:' + id } })) }],
+      },
+    });
+    const result = await adapter.findAudioListItem('list:menu:audio-demo',
+      async item => item.id === 'plex:audio' ? item : null);
+    expect(result.id).toBe('plex:audio');
+    const later = adapter.registry.resolve.mock.results[2].value.adapter;
+    expect(later.resolvePlayables).not.toHaveBeenCalled();
+    const metadata = await adapter.getItem('menu:audio-demo');
+    expect(metadata.title).toBe('Audio Demo');
+  });
+});

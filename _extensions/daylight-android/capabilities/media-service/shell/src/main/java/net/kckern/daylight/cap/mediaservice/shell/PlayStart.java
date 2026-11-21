@@ -29,11 +29,17 @@ final class PlayStart {
     static final class Attempt {
         final String playlist;
         final long startedAt;
+        final boolean shuffle;
         private boolean cancelled, played;
 
         Attempt(String playlist, long startedAt) {
+            this(playlist, startedAt, false);
+        }
+
+        Attempt(String playlist, long startedAt, boolean shuffle) {
             this.playlist = playlist;
             this.startedAt = startedAt;
+            this.shuffle = shuffle;
         }
 
         void cancel() { cancelled = true; }

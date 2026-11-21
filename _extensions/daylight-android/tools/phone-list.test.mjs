@@ -28,12 +28,14 @@ test('the phone is a personal build that lists quick-input and car-actions', () 
     'media-service', 'android-auto', 'quick-input', 'car-actions']);
 });
 
-test('the phone asks for exactly these thirteen permissions', () => {
+test('the phone asks for exactly these fifteen permissions', () => {
   const names = new Set([...BASE.map((p) => `android.permission.${p}`), ...permissionsFor(phone, capabilities).map((p) => p.name),
     ...(phone.permissions || [])]);
   assert.deepEqual([...names].sort(), [
     'android.permission.ACCESS_NETWORK_STATE',
     'android.permission.ACCESS_WIFI_STATE',
+    'android.permission.BLUETOOTH',
+    'android.permission.BLUETOOTH_CONNECT',
     'android.permission.CAMERA',
     'android.permission.FOREGROUND_SERVICE',
     'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
@@ -75,12 +77,16 @@ test('another app can reach exactly these eleven components of the phone build',
   ]);
 });
 
-test('the one-action button added one exported component, its chooser, and no permission', () => {
+test('the widget chooser is exported and Freematics setup is private', () => {
   assert.deepEqual(capabilities.widgets.exported, ['net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity', 'net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity']);
-  assert.deepEqual(capabilities.widgets.permissions, []);
+  assert.deepEqual(capabilities.widgets.permissions, [
+    { name: 'android.permission.BLUETOOTH', maxSdkVersion: 30 },
+    'android.permission.BLUETOOTH_CONNECT',
+  ]);
   const own = Object.entries(EXPECTED_COMPONENTS).filter(([key]) => key.includes('.cap.widgets.'));
   assert.deepEqual(own.map(([key, row]) => `${key} exported=${row.exported} permission=${row.permission}`).sort(), [
     'activity net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity exported=true permission=null',
+    'activity net.kckern.daylight.cap.widgets.shell.FreematicsActivity exported=false permission=null',
     'activity net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity exported=true permission=null',
     'receiver net.kckern.daylight.cap.widgets.shell.ButtonWidgetProvider exported=false permission=null',
   ]);

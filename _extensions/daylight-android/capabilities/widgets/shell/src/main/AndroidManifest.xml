@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-feature android:name="android.software.companion_device_setup" android:required="false" />
+    <queries>
+        <package android:name="com.anddoes.launcher" />
+    </queries>
     <application>
+        <activity android:name="net.kckern.daylight.cap.widgets.shell.FreematicsActivity"
+            android:exported="false" android:label="Freematics"
+            android:theme="@android:style/Theme.Material.Light" />
         <activity android:name="net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity"
             android:exported="true" android:theme="@android:style/Theme.Material.Light.NoActionBar">
             <intent-filter>

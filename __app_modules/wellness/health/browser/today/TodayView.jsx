@@ -791,10 +791,13 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
             return next;
           }, { replace: true });
         }} />
-      <BarcodeCapture open={active && captureMode === 'barcode'} bucket={barcodeTargetBucket || currentMealBucketId()}
+      <BarcodeCapture open={active && captureMode === 'barcode'} quickScan={barcodeShortcut.current} bucket={barcodeTargetBucket || currentMealBucketId()}
         meals={BUCKETS.map(meal => ({ value: meal.id, label: meal.label }))}
         undoBusy={undoBusy} onUndo={undoMealChange}
-        onClose={closeBarcode} onStatus={showHealthCaptureStatus}
+        onClose={() => {
+          if (barcodeShortcut.current) window.dispatchEvent(new Event('daylight:barcode-shortcut-done'));
+          closeBarcode();
+        }} onStatus={barcodeShortcut.current ? undefined : showHealthCaptureStatus}
         onDecode={(upc, _bucket, signal) => nutrition.lookupBarcode(upc, signal)}
         onConfirm={prepared => nutrition.commitBarcode({ ...prepared, date: barcodeDate }, result => {
           offerAddedFood(result, barcodeDate, { added: true });

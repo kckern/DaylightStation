@@ -6,7 +6,9 @@ import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -50,6 +52,10 @@ public class PhotoCaptureActivity extends Activity {
     private boolean used;
     private boolean preparing;
     private boolean preparationAttempted;
+    private boolean stagingCamera;
+    private boolean retakeAfterStaging;
+    private File previewSource;
+    private Bitmap previewBitmap;
     private boolean completed;
     private boolean launchCamera;
     private boolean resumed;
@@ -125,9 +131,9 @@ public class PhotoCaptureActivity extends Activity {
             return;
         }
         render();
-        if (!preparationAttempted && rawName == null && draft != null && draft.confirmedPhoto().isFile()) {
-            prepare();
-        } else if (launchCamera) {
+        if (cameraApproved && !stagingCamera) stageCameraResult();
+        else if (used && !preparationAttempted && rawName == null && draft != null && draft.confirmedPhoto().isFile()) prepare();
+        else if (launchCamera) {
             launchCamera = false;
             requestCamera();
         }
@@ -245,34 +251,107 @@ public class PhotoCaptureActivity extends Activity {
         } else {
             revokeCamera(rawName);
             cameraApproved = true;
+            previewSource = null;
+            previewBitmap = null;
             used = false;
-            stageCameraResult();
+            preparationAttempted = false;
+            try {
+                if (!store.recordCameraResult(draft.id, rawName, true)) clearCamera();
+                else stageCameraResult();
+            } catch (IOException failed) {
+                Log.w(TAG, "Could not record camera receipt");
+            }
         }
         if (resumed) refreshBinding();
     }
 
     private void stageCameraResult() {
-        try {
-            if (store.retainCameraResult(draft.id, rawName, true)) preparationAttempted = false;
-            rawName = null;
-            cameraApproved = false;
-        } catch (IOException failed) {
-            Log.w(TAG, "Could not stage confirmed camera output");
-            if (CaptureScope.currentIs(owner)) say("Could not save camera output. Try saving it again.");
-        }
+        if (stagingCamera || draft == null || rawName == null) return;
+        stagingCamera = true;
+        CaptureDraftStore.Draft selected = draft;
+        String cameraName = rawName;
+        new Thread(() -> {
+            boolean failed = false;
+            try {
+                store.retainCameraResult(selected.id, cameraName, true);
+            } catch (IOException failure) {
+                failed = true;
+                Log.w(TAG, "Could not stage confirmed camera output");
+            }
+            boolean unavailable = failed;
+            runOnUiThread(() -> {
+                stagingCamera = false;
+                if (completed || isDestroyed() || isFinishing() || !cameraName.equals(rawName)) return;
+                if (unavailable) {
+                    render();
+                    if (CaptureScope.currentIs(owner)) say("Could not save camera output. Try saving it again.");
+                    return;
+                }
+                rawName = null;
+                cameraApproved = false;
+                if (retakeAfterStaging) {
+                    retakeAfterStaging = false;
+                    requestCamera();
+                } else if (used) prepare();
+                render();
+            });
+        }, "Daylight-camera-stage").start();
     }
 
-    private void retryCameraStaging() {
-        if (!CaptureScope.currentIs(owner) || !cameraApproved || rawName == null) return;
-        stageCameraResult();
-        showAuthorizedDraft();
+    private void acceptPreview() {
+        if (!CaptureScope.currentIs(owner)) return;
+        used = true;
+        if (!stagingCamera && draft.confirmedPhoto().isFile() && !cameraApproved) prepare();
+        else render();
+    }
+
+    private void retake() {
+        if (stagingCamera) {
+            retakeAfterStaging = true;
+            used = false;
+            return;
+        }
+        requestCamera();
+    }
+
+    private void loadPreview(File source, ImageView view) {
+        if (!source.equals(previewSource)) {
+            previewSource = source;
+            previewBitmap = null;
+            new Thread(() -> {
+                BitmapFactory.Options options = new BitmapFactory.Options();
+                options.inJustDecodeBounds = true;
+                BitmapFactory.decodeFile(source.getPath(), options);
+                options.inJustDecodeBounds = false;
+                options.inSampleSize = PhotoPlan.sampleSize(options.outWidth, options.outHeight, 720);
+                Bitmap bitmap = BitmapFactory.decodeFile(source.getPath(), options);
+                if (bitmap != null) {
+                    PhotoPlan.Turn turn = PhotoPlan.turn(PhotoPlan.readOrientation(() ->
+                            new android.media.ExifInterface(source.getPath()).getAttributeInt(
+                                    android.media.ExifInterface.TAG_ORIENTATION, 1)));
+                    if (turn.degrees != 0 || turn.mirror) {
+                        Matrix matrix = new Matrix();
+                        matrix.postRotate(turn.degrees);
+                        if (turn.mirror) matrix.postScale(-1, 1);
+                        bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+                    }
+                }
+                Bitmap result = bitmap;
+                runOnUiThread(() -> {
+                    if (completed || isDestroyed() || isFinishing() || !source.equals(previewSource)
+                            || !CaptureScope.currentIs(owner)) return;
+                    previewBitmap = result;
+                    if (result != null) render();
+                });
+            }, "Daylight-photo-preview").start();
+        }
+        view.setImageBitmap(previewBitmap);
     }
 
     private void prepare() {
         if (!CaptureScope.currentIs(owner) || preparing) return;
         preparing = true;
         preparationAttempted = true;
-        used = false;
         render();
         CaptureDraftStore.Draft selected = draft;
         new Thread(() -> {
@@ -319,33 +398,43 @@ public class PhotoCaptureActivity extends Activity {
         destination.setText(label);
         destination.setTextSize(22);
         layout.addView(destination);
-        boolean review = !cameraApproved && draft != null && draft.hasContent();
+        File source = null;
+        if (draft != null && (rawName == null || cameraApproved)) {
+            if (cameraApproved && rawFile(rawName).isFile()) source = rawFile(rawName);
+            else if (draft.confirmedPhoto().isFile()) source = draft.confirmedPhoto();
+            else if (!cameraApproved && draft.hasContent()) source = draft.file;
+        }
+        boolean review = source != null;
         boolean busy = preparing || asking || rawName != null && !cameraApproved;
         boolean awaitingPreparation = draft != null && draft.confirmedPhoto().isFile();
         if (review) {
             ImageView preview = new ImageView(this);
-            BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inSampleSize = 2;
-            preview.setImageBitmap(BitmapFactory.decodeFile(draft.file.getPath(), options));
+            loadPreview(source, preview);
             preview.setContentDescription("Photo draft");
             preview.setScaleType(ImageView.ScaleType.FIT_CENTER);
             layout.addView(preview, new LinearLayout.LayoutParams(-1, Math.round(240 * getResources().getDisplayMetrics().density)));
         }
-        if (cameraApproved) {
-            addButton(layout, "Try saving photo again", this::retryCameraStaging);
+        if (cameraApproved && !stagingCamera) {
+            addButton(layout, "Try saving photo again", this::stageCameraResult);
         } else if (busy) {
             TextView status = new TextView(this);
             status.setText(preparing ? "Preparing photo…" : asking ? "Waiting for permission…" : "Camera is open");
             layout.addView(status);
+        } else if (review && !used) {
+            addButton(layout, "Use photo", this::acceptPreview);
+            addButton(layout, "Retake", this::retake);
+        } else if (stagingCamera) {
+            TextView status = new TextView(this);
+            status.setText("Saving photo…");
+            layout.addView(status);
+        } else if (awaitingPreparation) {
+            addButton(layout, "Prepare photo again", this::prepare);
+            addButton(layout, "Retake", this::retake);
+        } else if (review) {
+            addButton(layout, "Send", this::send);
+            addButton(layout, "Retake", this::retake);
         } else {
-            if (awaitingPreparation) {
-                addButton(layout, "Prepare photo again", this::prepare);
-            } else if (review && !used) {
-                addButton(layout, "Use photo", () -> { used = true; render(); });
-            } else if (review) {
-                addButton(layout, "Send", this::send);
-            }
-            addButton(layout, review ? "Retake" : "Open camera", this::requestCamera);
+            addButton(layout, "Open camera", this::requestCamera);
         }
         addButton(layout, "Discard", this::confirmDiscard);
         setContentView(layout);

@@ -227,6 +227,10 @@ export class RegistryContentCatalogGateway extends IContentCatalogGateway {
     return this.sourceNames().flatMap(name => this.registry.get(name)?.audioListSources?.() ?? []);
   }
 
+  async findAudioListItem(resolution, contentRef, firstMatch) {
+    return this.#source(resolution)?.findAudioListItem?.(contentRef, firstMatch);
+  }
+
   async audioListPage(resolution, page) {
     return this.#source(resolution)?.audioListPage?.(page) ?? null;
   }

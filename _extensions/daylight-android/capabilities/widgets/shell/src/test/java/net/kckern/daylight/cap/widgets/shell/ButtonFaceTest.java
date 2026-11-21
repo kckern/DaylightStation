@@ -10,6 +10,12 @@ import java.util.List;
 import java.util.Map;
 
 public class ButtonFaceTest {
+    @Test public void aSquareCoverLeavesRoomForTheOverlappingBadge() {
+        assertEquals(50, ButtonFace.coverSide(52, 92));
+        assertEquals(23, ButtonFace.coverSide(108, 41));
+        assertEquals(50, ButtonFace.coverSide(0, 0));
+    }
+
     @Test public void aButtonWhoseActionIsInTheCacheShowsItsLabelAndIconAndLaunchesItsLink() {
         ButtonFace face = ButtonFace.of("journal", "Journal", "mic", "daylight://action/journal#k=a");
         assertTrue(face.set);

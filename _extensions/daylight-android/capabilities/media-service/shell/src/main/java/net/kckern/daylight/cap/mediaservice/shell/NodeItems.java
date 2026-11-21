@@ -13,6 +13,7 @@ import java.util.List;
 final class NodeItems {
     static final String ROOT = "root";
     static final String EXTRA_LIST_ID = "listId";
+    private static final String EXTRA_DURATION_MS = "durationMs";
 
     private NodeItems() { }
 
@@ -20,6 +21,19 @@ final class NodeItems {
         return new MediaItem.Builder().setMediaId(ROOT)
                 .setMediaMetadata(new MediaMetadata.Builder().setTitle("Daylight").setIsBrowsable(true).setIsPlayable(false).build())
                 .build();
+    }
+
+    static MediaItem drivingRadio(String today) {
+        return new MediaItem.Builder().setMediaId(net.kckern.daylight.shellkit.DrivingRadioSettings.MEDIA_ID)
+                .setMediaMetadata(new MediaMetadata.Builder().setTitle("Driving Radio")
+                        .setSubtitle(today).setArtist(today).setIsBrowsable(false).setIsPlayable(true).build())
+                .build();
+    }
+
+    static MediaItem named(String id, String title, boolean folder) {
+        return new MediaItem.Builder().setMediaId(id)
+                .setMediaMetadata(new MediaMetadata.Builder().setTitle(title)
+                        .setIsBrowsable(folder).setIsPlayable(!folder).build()).build();
     }
 
     static List<MediaItem> nodes(List<BrowseAnswer.Entry> entries) {
@@ -36,11 +50,19 @@ final class NodeItems {
         return out;
     }
 
+    /** A finite original can supply duration even if the encoded stream has no index. */
+    static long durationMs(MediaItem item, long playerDurationMs) {
+        if (playerDurationMs > 0 || item == null || item.mediaMetadata.extras == null) return playerDurationMs;
+        long declared = item.mediaMetadata.extras.getLong(EXTRA_DURATION_MS, 0);
+        return declared > 0 ? declared : playerDurationMs;
+    }
+
     static List<MediaItem> tracks(List<TrackAnswer.Track> tracks) {
         List<MediaItem> out = new ArrayList<>();
         for (TrackAnswer.Track t : tracks) {
             Bundle extras = new Bundle();
             extras.putString(EXTRA_LIST_ID, t.listId);
+            if (t.durationMs > 0) extras.putLong(EXTRA_DURATION_MS, t.durationMs);
             MediaMetadata.Builder meta = new MediaMetadata.Builder()
                     .setTitle(t.title)
                     .setIsBrowsable(false)

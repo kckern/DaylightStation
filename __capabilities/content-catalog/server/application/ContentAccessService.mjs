@@ -58,6 +58,16 @@ export class ContentAccessService {
     });
   }
 
+  audioBrowse() {
+    const entries = this.audioListConfig()?.browse;
+    if (!Array.isArray(entries)) return [];
+    return entries.flatMap(entry => {
+      if (typeof entry?.id !== 'string' || typeof entry?.title !== 'string'
+          || !entry.title.trim() || !this.resolver.resolve(entry.id)) return [];
+      return [{ id: entry.id, title: entry.title.trim() }];
+    });
+  }
+
   async audioListCatalog({ source, skip, take }) {
     const id = source.includes(':') ? source : `${source}:`;
     if (!this.audioListSources().some(entry => entry.id === id)) return null;
@@ -72,6 +82,22 @@ export class ContentAccessService {
       try {
         if (specialized && !candidate.checkAudio) {
           return { id: candidate.id, title: candidate.title, thumbnail: candidate.thumbnail || null };
+        }
+        const resolution = this.resolver.resolve(candidate.id);
+        if (resolution) {
+          const ref = `${resolution.source}:${resolution.localId}`;
+          let sequenced;
+          try { sequenced = this.sequenceStore?.lookup(ref); } catch { sequenced = true; }
+          if (!sequenced) {
+            const sample = await this.catalog.findAudioListItem?.(resolution, ref,
+              async item => (await this.#projectAudio([item]))[0]);
+            if (sample !== undefined) {
+              return sample ? {
+                id: candidate.id, title: candidate.title,
+                thumbnail: candidate.thumbnail || sample.thumbnail || null,
+              } : null;
+            }
+          }
         }
         const queue = await this.queue({ compoundId: candidate.id, profile: 'audio-only' });
         if (!queue.items?.length) return null;

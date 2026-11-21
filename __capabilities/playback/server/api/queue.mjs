@@ -93,6 +93,11 @@ export function createQueueRouter(config) {
   const { queuePresentationService } = config;
   const router = express.Router();
 
+  router.get('/catalog/audio-browse', asyncHandler(async (req, res) => {
+    if (req.query.profile !== 'audio-only') return res.status(400).json({ error: 'Unknown playback profile' });
+    return res.json({ items: contentAccessService.audioBrowse() });
+  }));
+
   router.get('/catalog/audio-sources', asyncHandler(async (req, res) => {
     if (req.query.profile !== 'audio-only') return res.status(400).json({ error: 'Unknown playback profile' });
     return res.json({ items: contentAccessService.audioListSources() });

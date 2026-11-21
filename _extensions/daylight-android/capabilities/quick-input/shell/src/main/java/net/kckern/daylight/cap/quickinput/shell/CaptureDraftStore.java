@@ -249,7 +249,7 @@ final class CaptureDraftStore {
         return name;
     }
 
-    boolean retainCameraResult(String id, String rawName, boolean cameraConfirmed) throws IOException {
+    boolean recordCameraResult(String id, String rawName, boolean cameraConfirmed) throws IOException {
         synchronized (LOCK) {
             Draft draft = get(id);
             if (draft == null || draft.kind != Kind.PHOTO || !draft.dest.equals(CaptureFiles.destOf(rawName))) return false;
@@ -271,6 +271,16 @@ final class CaptureDraftStore {
             } else if (!cameraConfirmed || !rawName.equals(recorded)) {
                 return false;
             }
+            syncDirectory(draft.directory);
+            return true;
+        }
+    }
+
+    boolean retainCameraResult(String id, String rawName, boolean cameraConfirmed) throws IOException {
+        synchronized (LOCK) {
+            if (!recordCameraResult(id, rawName, cameraConfirmed)) return false;
+            Draft draft = get(id);
+            File raw = cameraFile(rawName);
             syncDirectory(draft.directory);
 
             if (raw.isFile()) {

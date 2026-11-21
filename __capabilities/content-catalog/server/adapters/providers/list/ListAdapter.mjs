@@ -122,6 +122,12 @@ export class ListAdapter {
     return 'list';
   }
 
+  async findAudioListItem(contentRef, firstMatch) {
+    const id = contentRef.replace(/^list:/, '');
+    if (!id.startsWith('menu:')) return undefined;
+    return (await this.resolvePlayables(contentRef, { firstMatch }))[0] ?? null;
+  }
+
   audioListSources() {
     return [
       { id: 'program:', title: 'Programs' },
@@ -346,7 +352,7 @@ export class ListAdapter {
     const items = listData.sections.flatMap(s => s.items);
 
     // Get title: prefer explicit title, then format from name
-    const title = listData.title || formatListTitle(parsed.name);
+    const title = listData.title && listData.title !== parsed.name ? listData.title : formatListTitle(parsed.name);
 
     // Try to get thumbnail from first item in list (if available)
     let thumbnail = listData.image || null;
@@ -428,7 +434,7 @@ export class ListAdapter {
       return names.map(name => {
         const listData = this._loadList(listType, name);
         const items = listData?.sections?.flatMap(s => s.items) || [];
-        const title = listData?.title || formatListTitle(name);
+        const title = listData?.title && listData.title !== name ? listData.title : formatListTitle(name);
 
         // Try to get thumbnail from list config or first item
         let thumbnail = listData?.image || null;
@@ -475,7 +481,7 @@ export class ListAdapter {
       }
     }
 
-    const title = listData.title || formatListTitle(parsed.name);
+    const title = listData.title && listData.title !== parsed.name ? listData.title : formatListTitle(parsed.name);
 
     // Try to get thumbnail from list config or first item
     let thumbnail = listData.image || null;
@@ -916,7 +922,7 @@ export class ListAdapter {
    * @returns {Promise<Array>}
    */
   async resolvePlayables(id, options = {}) {
-    const { applySchedule = true, forceAll = false, limit = 0 } = options;
+    const { applySchedule = true, forceAll = false, limit = 0, firstMatch = null } = options;
 
     // Strip source prefix only when it wraps a known list prefix (same as getList)
     const strippedId = id.replace(/^list:(?=(menu|program|watchlist|query):)/, '');
@@ -1102,6 +1108,17 @@ export class ListAdapter {
           }
         }
       }
+    }
+
+    if (firstMatch && listType === 'menus') {
+      for (const task of tasks) {
+        const entries = await task();
+        for (const item of entries ?? []) {
+          const match = await firstMatch(item);
+          if (match) return [match];
+        }
+      }
+      return [];
     }
 
     // Run resolution tasks — sequential for programs (order matters), batched for menus

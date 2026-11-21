@@ -54,6 +54,22 @@ public class JpegCheckTest {
         assertFalse("XMP can hold it too", JpegCheck.clean(file(jpeg(false, true))));
     }
 
+    @Test public void removesSamsungExifAndXmpAndDropsImagesAppendedAfterEnd() throws Exception {
+        ByteArrayOutputStream source = new ByteArrayOutputStream();
+        source.write(jpeg(true, true));
+        source.write(withExif());
+        File result = tmp.newFile();
+        JpegCheck.stripPrivateHeaders(file(source.toByteArray()), result);
+        assertTrue(JpegCheck.clean(result));
+        assertArrayEquals(plain(), Files.readAllBytes(result.toPath()));
+    }
+
+    @Test(expected = java.io.IOException.class)
+    public void refusesATruncatedScan() throws Exception {
+        byte[] bytes = plain();
+        JpegCheck.stripPrivateHeaders(file(java.util.Arrays.copyOf(bytes, bytes.length - 1)), tmp.newFile());
+    }
+
     @Test public void whatIsNotAJpegIsNotClean() throws Exception {
         assertFalse(JpegCheck.clean(file(new byte[0])));
         assertFalse(JpegCheck.clean(file(new byte[] { 1, 2, 3, 4 })));

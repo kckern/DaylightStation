@@ -20,7 +20,10 @@ function makeApp() {
   };
   const catalog = new ContentAccessService({
     contentIdResolver: { resolve: id => ({ source: 'list', localId: id }) },
-    audioListConfig: () => ({ sources: [{ id: 'menu:', title: 'Household lists' }, 'unknown:'] }),
+    audioListConfig: () => ({
+      sources: [{ id: 'menu:', title: 'Household lists' }, 'unknown:'],
+      browse: [{ id: 'menu:music', title: 'Music' }, { id: 'menu:television' }],
+    }),
     contentCatalog: {
       audioListSources: () => [{ id: 'menu:', title: 'Menus' }, { id: 'library:albums', title: 'Albums' }],
       getItem: async () => null,
@@ -48,6 +51,11 @@ describe('audio-only list playback', () => {
     const result = await app.get('/api/v1/queue/catalog/audio-sources?profile=audio-only').expect(200);
     expect(result.body.items).toEqual([{ id: 'menu:', title: 'Household lists' }]);
     await app.get('/api/v1/queue/catalog/audio-lists?profile=audio-only&source=library:albums').expect(400);
+  });
+
+  it('uses configured listening destinations as the audio Browse root', async () => {
+    const result = await makeApp().get('/api/v1/queue/catalog/audio-browse?profile=audio-only').expect(200);
+    expect(result.body.items).toEqual([{ id: 'menu:music', title: 'Music' }]);
   });
 
   it('discovers lists that produce audio and advances over filtered candidates', async () => {

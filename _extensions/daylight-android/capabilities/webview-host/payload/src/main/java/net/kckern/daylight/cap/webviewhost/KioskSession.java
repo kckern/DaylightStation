@@ -398,11 +398,14 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
             WebViewCompat.addWebMessageListener(view, "DaylightPhoneShortcut", site, (sender, message, source, mainFrame, reply) -> {
                 if (sender != web || !resumed || !documentCommitted || errorPage) return;
                 String requester = source.toString();
-                if ("barcode-done".equals(message.getData())
+                if (("barcode-done".equals(message.getData()) || "barcode-beep".equals(message.getData()))
                         && CallCapturePolicy.allowsBarcode(startUrl(), committingUrl, requester, false)
                         && CallCapturePolicy.finishesBarcode(
                         core.deviceId(), startUrl(), shortcutLaunch, mainUrl, requester,
-                        mainFrame, trust.openedFromOutside())) finishPhoneShortcut();
+                        mainFrame, trust.openedFromOutside())) {
+                    if ("barcode-done".equals(message.getData())) finishPhoneShortcut();
+                    else playBarcodeTone();
+                }
                 if ("call-exit".equals(message.getData()) && mainFrame
                         && CallCapturePolicy.allows(startUrl(), mainUrl, requester, false))
                     finishPhoneShortcut();
@@ -415,6 +418,17 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
                     + "if(location.pathname==='/call'||location.pathname==='/call/')bridge.postMessage('call-exit');});})();", site);
         } catch (RuntimeException unsupported) {
             note("phone shortcut completion bridge unavailable");
+        }
+    }
+
+    private void playBarcodeTone() {
+        try {
+            android.media.ToneGenerator tone = new android.media.ToneGenerator(
+                    android.media.AudioManager.STREAM_MUSIC, 65);
+            tone.startTone(android.media.ToneGenerator.TONE_PROP_ACK, 140);
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(tone::release, 220);
+        } catch (RuntimeException unavailable) {
+            note("barcode scan tone unavailable");
         }
     }
 

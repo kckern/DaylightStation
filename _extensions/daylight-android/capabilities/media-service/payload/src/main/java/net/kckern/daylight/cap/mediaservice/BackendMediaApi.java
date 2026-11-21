@@ -20,7 +20,7 @@ final class BackendMediaApi implements MediaApi {
         this.http = http;
     }
 
-    @Override public JSONObject rootList() throws Exception { return get("list", "/api/v1/list/"); }
+    @Override public JSONObject rootList() throws Exception { return get("audio browse", "/api/v1/queue/catalog/audio-browse?profile=audio-only"); }
 
     @Override public JSONObject list(String contentId, int take, int skip) throws Exception {
         return get("list", ContentPath.of("list", contentId) + "?take=" + take + "&skip=" + skip);
@@ -30,7 +30,22 @@ final class BackendMediaApi implements MediaApi {
         return get("recent", "/api/v1/media/household/recent?limit=" + limit);
     }
 
-    @Override public JSONObject queue(String contentId) throws Exception { return get("queue", ContentPath.of("queue", contentId)); }
+    @Override public JSONObject audioSources() throws Exception {
+        return get("audio list sources", "/api/v1/queue/catalog/audio-sources?profile=audio-only");
+    }
+
+    @Override public JSONObject audioLists(String source, int cursor) throws Exception {
+        return get("audio list catalog", "/api/v1/queue/catalog/audio-lists?profile=audio-only&source="
+                + ContentPath.encode(source) + "&skip=" + cursor);
+    }
+
+    @Override public JSONObject queue(String contentId) throws Exception {
+        return queue(contentId, false);
+    }
+
+    @Override public JSONObject queue(String contentId, boolean shuffle) throws Exception {
+        return get("queue", ContentPath.of("queue", contentId) + "?profile=audio-only" + (shuffle ? "&shuffle=true" : ""));
+    }
 
     @Override public JSONObject play(String contentId, boolean resume) throws Exception {
         return get("play", ContentPath.of("play", contentId) + (resume ? "" : "?resume=false"));

@@ -58,6 +58,20 @@ public class PlayStartTest {
         assertEquals(Arrays.asList("c:plex:first", "c:plex:second"), resolved);
     }
 
+    @Test public void stationShuffleIsRequestedFromThePayloadAndPreservesItsFirstItem() throws Exception {
+        handler = raw -> {
+            JSONObject request = new JSONObject(raw);
+            assertTrue(request.getBoolean("shuffle"));
+            assertEquals("c:plex:757556", request.getJSONArray("ids").getString(0));
+            JSONArray tracks = new JSONArray()
+                    .put(new JSONObject().put("id", "plex:757863").put("url", "https://kiosk.example/ident"))
+                    .put(new JSONObject().put("id", "plex:song").put("url", "https://kiosk.example/song"));
+            return new JSONObject().put("ok", true).put("tracks", tracks).toString();
+        };
+        PayloadPort.named(PayloadMedia.PORT).attach(handler);
+        assertEquals("plex:757863", new PayloadMedia().resolveShortcut("c:plex:757556", true, 0).tracks.get(0).id);
+    }
+
     @Test public void stopFromStartingNoticeStopsThePreviousQueueAndCancelsThePendingQueue() {
         PlayStart.Attempt first = new PlayStart.Attempt("c:plex:first", 100);
         first.recordPlaying(110);

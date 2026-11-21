@@ -43,6 +43,20 @@ describe('CallApp presentation', () => {
   });
   afterEach(() => vi.useRealTimers());
 
+  it('sends Exit to the native phone bridge even before the general bridge is ready', async () => {
+    const postMessage = vi.fn();
+    vi.stubGlobal('DaylightPhoneShortcut', { postMessage });
+    try {
+      mocks.api.mockResolvedValue({ devices: [] });
+      render(<CallApp />);
+      fireEvent.click(await screen.findByRole('button', { name: /Exit/ }));
+      expect(mocks.media.stop).toHaveBeenCalled();
+      expect(postMessage).toHaveBeenCalledWith('call-exit');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('names each callable screen by its room and never auto-starts a call', async () => {
     mocks.api.mockResolvedValue({ devices: [
       { id: 'livingroom-tv', name: 'Living Room TV', location: 'Living Room', icon: '\u{1F4FA}', capabilities: { contentControl: true, videoCall: true } },

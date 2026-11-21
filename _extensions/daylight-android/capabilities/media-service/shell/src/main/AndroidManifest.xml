@@ -5,6 +5,10 @@
          target bump is a config change. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
+    <queries>
+        <package android:name="com.google.android.projection.gearhead" />
+    </queries>
+
     <application>
         <!-- Exported: a car (Android Auto), the system's media controls and Bluetooth reach
              it by binding it, and no permission exists that only they hold. So any app can

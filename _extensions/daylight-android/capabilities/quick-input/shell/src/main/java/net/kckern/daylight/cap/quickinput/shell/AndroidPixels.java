@@ -14,8 +14,8 @@ import java.io.IOException;
  * (the size, the turn, the quality) is PhotoPlan's. Not covered by JVM tests: it needs
  * Android's decoder.
  *
- * Bitmap.compress writes the picture and no EXIF, so the written file holds nothing of
- * where or when the photo was taken. PhotoPlan checks that afterwards.
+ * Some Android encoders add EXIF or XMP while compressing. Remove those generated
+ * headers before handing the result to PhotoPlan's independent privacy check.
  */
 final class AndroidPixels implements PhotoPlan.Pixels {
     @Override public boolean encode(File raw, File out, PhotoPlan.Step step) throws Exception {
@@ -47,13 +47,18 @@ final class AndroidPixels implements PhotoPlan.Pixels {
             if (turn.degrees != 0) m.postRotate(turn.degrees);
             if (turn.mirror) m.postScale(-1, 1);
             upright = Bitmap.createBitmap(decoded, 0, 0, decoded.getWidth(), decoded.getHeight(), m, true);
-            try (FileOutputStream stream = new FileOutputStream(out)) {
-                if (!upright.compress(Bitmap.CompressFormat.JPEG, step.quality, stream)) {
-                    throw new PhotoPlan.WriteFailure();
+            File encoded = File.createTempFile("encoder-", ".tmp", out.getParentFile());
+            try {
+                try (FileOutputStream stream = new FileOutputStream(encoded)) {
+                    if (!upright.compress(Bitmap.CompressFormat.JPEG, step.quality, stream)) {
+                        throw new PhotoPlan.WriteFailure();
+                    }
                 }
-                stream.getFD().sync();
+                JpegCheck.stripPrivateHeaders(encoded, out);
             } catch (IOException failed) {
                 throw new PhotoPlan.WriteFailure();
+            } finally {
+                encoded.delete();
             }
             return true;
         } finally {

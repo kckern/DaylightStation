@@ -10,6 +10,8 @@ import android.content.SharedPreferences;
 import android.content.pm.ShortcutInfo;
 import android.content.pm.ShortcutManager;
 import android.content.res.ColorStateList;
+import android.graphics.Bitmap;
+import net.kckern.daylight.shellkit.PlaylistArtwork;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -21,21 +23,22 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.view.Gravity;
 import android.view.View;
+import android.view.animation.DecelerateInterpolator;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.*;
 
 import net.kckern.daylight.api.PayloadPort;
 import net.kckern.daylight.shellkit.ShellStart;
+import net.kckern.daylight.shellkit.PlaylistWidgetState;
 import net.kckern.daylight.shellkit.SurfaceCache;
+import net.kckern.daylight.shellkit.DrivingRadioSettings;
 import net.kckern.daylight.shellkit.LauncherCaptureShortcut;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -46,15 +49,19 @@ public class PhoneHomeActivity extends Activity {
     private JSONArray pages = new JSONArray();
     private JSONArray configuredActions = new JSONArray();
     private LinearLayout column;
+    private LinearLayout buttonRow;
     private LinearLayout placementPanel;
     private PlacementStore placements;
     private final List<View> setupRows = new ArrayList<>();
-    private final List<Button> retryButtons = new ArrayList<>();
     private final Handler timer = new Handler(android.os.Looper.getMainLooper());
     private final Runnable placementTimeout = this::drawPlacement;
     private final SharedPreferences.OnSharedPreferenceChangeListener placementChanged =
             (prefs, key) -> drawPlacement();
-    private boolean openingPlaylist;
+    private final ExecutorService artworkWorker = Executors.newFixedThreadPool(3);
+    private LinearLayout playlistScreen;
+    private LinearLayout playlistGrid;
+    private LinearLayout playlistRow;
+    private TextView playlistStatus;
     private boolean observingPlacement;
     private boolean loading = true;
     private boolean launcherPicker;
@@ -92,6 +99,7 @@ public class PhoneHomeActivity extends Activity {
 
     @Override protected void onDestroy() {
         worker.shutdownNow();
+        artworkWorker.shutdownNow();
         super.onDestroy();
     }
 
@@ -145,16 +153,17 @@ public class PhoneHomeActivity extends Activity {
 
     private void draw() {
         setupRows.clear();
+        buttonRow = null;
         placementPanel = null;
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(PAPER);
         column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
-        column.setPadding(dp(20), dp(28), dp(20), dp(24));
+        column.setPadding(dp(16), dp(16), dp(16), dp(16));
         scroll.addView(column);
         setContentView(scroll);
-        TextView title = label("Daylight", 32, INK);
+        TextView title = label("Daylight", 28, INK);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         column.addView(title);
         column.addView(label(launcherPicker ? "Choose a shortcut" : "Add to your Android home screen", 16, INK));
@@ -170,7 +179,7 @@ public class PhoneHomeActivity extends Activity {
             placementPanel.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
             column.addView(placementPanel);
         }
-        column.addView(label("Services", 20, INK));
+        section("Services");
         for (int i = 0; i < pages.length(); i++) {
             JSONObject page = pages.optJSONObject(i);
             if (page == null) continue;
@@ -186,7 +195,7 @@ public class PhoneHomeActivity extends Activity {
                         () -> pinPage(page));
             }
         }
-        column.addView(label("Quick capture", 20, INK));
+        section("Quick capture");
         for (int i = 0; i < configuredActions.length(); i++) {
             JSONObject action = configuredActions.optJSONObject(i);
             if (action == null || !("INPUT".equals(action.optString("kind")) || "meal-barcode".equals(action.optString("id")))) continue;
@@ -201,8 +210,13 @@ public class PhoneHomeActivity extends Activity {
             }
         }
         if (launcherPicker) return;
-        column.addView(label("Play on demand", 20, INK));
-        row("Play a playlist", "Choose playlist", "play", "›", () -> showMediaChoices(0));
+        section("Play on demand");
+        row("Playlists", "Stage playlists and Daylight lists", "play", "›", () -> showMediaChoices(false));
+        row("Staged", "Manage staged playlists", "play", "›", () -> showMediaChoices(true));
+        row("Driving Radio", "Set the default and day rules", "play", "›", this::showDrivingRadio);
+        section("Connections");
+        row("Freematics", "Manage Bluetooth connection", "open", "›",
+                () -> startActivity(new Intent(this, FreematicsActivity.class)));
         drawPlacement();
     }
 
@@ -271,68 +285,343 @@ public class PhoneHomeActivity extends Activity {
                 .show();
     }
 
-    private void showMediaChoices(int cursor) {
-        if (openingPlaylist || placementActive()) return;
-        openingPlaylist = true;
-        updateSetupAvailability(true);
-        call("media", request("playlists", "cursor", String.valueOf(cursor)).toString(), result -> {
-            openingPlaylist = false;
-            drawPlacement();
+    private void showDrivingRadio() {
+        List<PlacementStore.StagedPlaylist> staged = placements.staged();
+        if (staged.isEmpty()) {
+            new AlertDialog.Builder(this).setTitle("Driving Radio")
+                    .setMessage("Stage a playlist to use it as your driving default.")
+                    .setNegativeButton("Close", null)
+                    .setPositiveButton("Playlists", (dialog, which) -> showMediaChoices(false)).show();
+            return;
+        }
+        DrivingRadioSettings radio = new DrivingRadioSettings(this);
+        String[] days = new java.text.DateFormatSymbols().getWeekdays();
+        days[0] = "Default";
+        String[] rows = days.clone();
+        for (int day = 0; day < rows.length; day++) {
+            String id = radio.get(day);
+            String title = day == 0 ? "Off" : "Use default";
+            for (PlacementStore.StagedPlaylist entry : staged) {
+                if (entry.contentId.equals(id)) title = entry.title;
+            }
+            rows[day] += " · " + title;
+        }
+        new AlertDialog.Builder(this).setTitle("Driving Radio").setItems(rows, (dialog, day) -> {
+            String[] choices = new String[staged.size() + 1];
+            choices[0] = day == 0 ? "Off" : "Use default";
+            for (int i = 0; i < staged.size(); i++) choices[i + 1] = staged.get(i).title;
+            new AlertDialog.Builder(this).setTitle(days[day]).setItems(choices, (picker, selected) -> {
+                radio.set(day, selected == 0 ? "" : staged.get(selected - 1).contentId);
+                showDrivingRadio();
+            }).setNegativeButton("Cancel", null).show();
+        }).setNegativeButton("Done", null).show();
+    }
+
+    private void showMediaChoices(boolean staged) {
+        if (playlistScreen != null) return;
+        showMediaChoices(staged, null, null);
+    }
+
+    private void showMediaChoices(boolean staged, String source, JSONArray choices) {
+        boolean entering = playlistScreen == null;
+        playlistRow = null;
+        playlistScreen = new LinearLayout(this);
+        playlistScreen.setOrientation(LinearLayout.VERTICAL);
+        playlistScreen.setBackgroundColor(PAPER);
+        playlistScreen.setPadding(dp(16), dp(8), dp(16), 0);
+
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        Button back = actionButton("‹", "back to setup", this::closeMediaChoices);
+        back.setContentDescription("Back to setup");
+        header.addView(back, dp(48), dp(48));
+        TextView heading = label(staged ? "Staged playlists" : "Play on demand", 24, INK);
+        heading.setAccessibilityHeading(true);
+        header.addView(heading);
+        playlistScreen.addView(header);
+        if (!staged && choices != null) {
+            HorizontalScrollView sourceScroll = new HorizontalScrollView(this);
+            sourceScroll.setHorizontalScrollBarEnabled(false);
+            LinearLayout sources = new LinearLayout(this);
+            for (int i = 0; i < choices.length(); i++) {
+                JSONObject choice = choices.optJSONObject(i);
+                if (choice == null) continue;
+                String key = choice.optString("id");
+                String title = choice.optString("title");
+                if (key.isEmpty() || title.isEmpty()) continue;
+                Button tab = actionButton(title, title, () -> showMediaChoices(false, key, choices));
+                tab.setSelected(key.equals(source));
+                tab.setEnabled(!key.equals(source));
+                sources.addView(tab, new LinearLayout.LayoutParams(-2, dp(48)));
+            }
+            sourceScroll.addView(sources);
+            playlistScreen.addView(sourceScroll);
+        }
+
+        ScrollView scroll = new ScrollView(this);
+        playlistScreen.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        scroll.addView(content);
+        playlistGrid = new LinearLayout(this);
+        playlistGrid.setOrientation(LinearLayout.VERTICAL);
+        content.addView(playlistGrid);
+        playlistStatus = label("Loading playlists…", 16, INK);
+        playlistStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        content.addView(playlistStatus);
+        setContentView(playlistScreen);
+        if (entering) slideIn(playlistScreen, 1);
+        if (staged) drawStagedPlaylists();
+        else if (source == null) loadPlaylistSources(playlistScreen);
+        else loadPlaylistPage(playlistScreen, source, 0);
+    }
+
+    private void loadPlaylistSources(LinearLayout screen) {
+        playlistStatus.setText("Loading playlist sources…");
+        playlistStatus.setOnClickListener(null);
+        call("media", request("playlistSources").toString(), result -> {
+            if (playlistScreen != screen) return;
             JSONArray items = result.optJSONArray("items");
             if (!result.optBoolean("ok") || items == null) {
-                toast("Could not load playlists. Tap Play a playlist to retry.");
+                showPlaylistSourcesRetry();
+            } else if (items.length() == 0) {
+                playlistStatus.setText("No audio list sources configured.");
+            } else {
+                showMediaChoices(false, items.optJSONObject(0).optString("id"), items);
+            }
+        }, message -> {
+            if (playlistScreen == screen) showPlaylistSourcesRetry();
+        });
+    }
+
+    private void showPlaylistSourcesRetry() {
+        playlistStatus.setText("Could not load playlist sources. Tap to retry.");
+        playlistStatus.setOnClickListener(view -> loadPlaylistSources(playlistScreen));
+    }
+
+    private void drawStagedPlaylists() {
+        playlistGrid.removeAllViews();
+        playlistRow = null;
+        List<PlacementStore.StagedPlaylist> staged = placements.staged();
+        for (PlacementStore.StagedPlaylist playlist : staged) {
+            addPlaylist(playlistScreen, playlist.contentId, playlist.title, "", true);
+        }
+        playlistStatus.setVisibility(staged.isEmpty() ? View.VISIBLE : View.GONE);
+        playlistStatus.setText("No staged playlists. Choose a playlist from the library to stage it.");
+    }
+
+    private void chooseShuffle(String contentId, String title, Runnable saved) {
+        DrivingRadioSettings radio = new DrivingRadioSettings(this);
+        boolean[] options = {placements.shuffle(contentId), radio.isStaple(contentId)};
+        new AlertDialog.Builder(this).setTitle(title)
+                .setMultiChoiceItems(new String[]{"Shuffle", "Show on Drive"}, options, (dialog, which, checked) -> options[which] = checked)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton(placements.isStaged(contentId) ? "Save" : "Stage playlist", (dialog, which) -> {
+                    placements.stage(contentId, title, options[0]);
+                    radio.setStaple(contentId, options[1]);
+                    PlaylistWidgetState.redraw(this);
+                    saved.run();
+                }).show();
+    }
+
+    private void managePlaylist(String contentId, String title) {
+        String instructions = (placements.shuffle(contentId) ? "Shuffle on. " : "Playlist order. ")
+                + "Available in Android Home → Widgets → Daylight playlist.";
+        LauncherPlacement recent = placements.requests().stream()
+                .filter(request -> request.playlist && request.contentId.equals(contentId))
+                .max(java.util.Comparator.comparingLong(request -> request.updatedAt)).orElse(null);
+        if (recent != null) {
+            LauncherPlacement.Status status = recent.status(System.currentTimeMillis());
+            if (status == LauncherPlacement.Status.CONFIRM) instructions = "Confirm placement in Android. " + instructions;
+            if (status == LauncherPlacement.Status.UNCONFIRMED) instructions = "Placement unconfirmed. Check Android Home before adding it again. " + instructions;
+        }
+        new AlertDialog.Builder(this).setTitle(title)
+                .setMessage(instructions)
+                .setPositiveButton("Add widget", (dialog, which) -> pinWidget(contentId, title))
+                .setNeutralButton("Unstage", (dialog, which) -> {
+                    placements.unstage(contentId);
+                    drawStagedPlaylists();
+                })
+                .setNegativeButton("Playback options", (dialog, which) -> chooseShuffle(contentId, title, this::drawStagedPlaylists))
+                .show();
+    }
+
+    private void slideIn(View screen, int direction) {
+        screen.setTranslationX(direction * getResources().getDisplayMetrics().widthPixels);
+        screen.animate().translationX(0).setDuration(220)
+                .setInterpolator(new DecelerateInterpolator()).start();
+    }
+
+    @Override public void onBackPressed() {
+        if (playlistScreen == null) super.onBackPressed();
+        else closeMediaChoices();
+    }
+
+    private void closeMediaChoices() {
+        playlistScreen = null;
+        playlistGrid = null;
+        playlistRow = null;
+        playlistStatus = null;
+        draw();
+        slideIn(column, -1);
+    }
+
+    private void loadPlaylistPage(LinearLayout screen, String source, int cursor) {
+        playlistStatus.setVisibility(View.VISIBLE);
+        playlistStatus.setText("Loading playlists…");
+        playlistStatus.setOnClickListener(null);
+        playlistStatus.setClickable(false);
+        call("media", request("playlists", "cursor", String.valueOf(cursor), "source", source).toString(), result -> {
+            if (playlistScreen != screen) return;
+            JSONArray items = result.optJSONArray("items");
+            if (!result.optBoolean("ok") || items == null) {
+                showPlaylistRetry(screen, source, cursor);
                 return;
+            }
+            for (int i = 0; i < items.length(); i++) {
+                JSONObject item = items.optJSONObject(i);
+                if (item != null) addPlaylist(screen, item.optString("contentId"), item.optString("title"),
+                        item.optString("thumbnail"), false);
             }
             int next = result.optInt("nextCursor", -1);
-            if (items.length() == 0 && next < 0) {
-                toast("No playlists are available.");
-                return;
-            }
-            String[] names = new String[items.length() + (next >= 0 ? 1 : 0)];
-            for (int i = 0; i < items.length(); i++) names[i] = items.optJSONObject(i).optString("title");
-            if (next >= 0) names[items.length()] = "More playlists";
-            new AlertDialog.Builder(this).setTitle("Choose a playlist")
-                    .setItems(names, (dialog, index) -> {
-                        if (index == items.length()) { showMediaChoices(next); return; }
-                        JSONObject item = items.optJSONObject(index);
-                        String title = item.optString("title");
-                        String contentId = item.optString("contentId");
-                        new AlertDialog.Builder(this).setTitle(title).setNegativeButton("Cancel", null)
-                                .setMessage("Add a one-tap playlist widget to Android Home.")
-                                .setPositiveButton("Add widget", (d, w) -> pinWidget(contentId, title)).show();
-                    }).setNegativeButton("Cancel", null).show();
+            if (next > cursor) loadPlaylistPage(screen, source, next);
+            else if (playlistGrid.getChildCount() == 0) playlistStatus.setText("No lists with playable audio found.");
+            else playlistStatus.setVisibility(View.GONE);
         }, message -> {
-            openingPlaylist = false;
-            drawPlacement();
-            toast("Could not load playlists. Tap Play a playlist to retry.");
+            if (playlistScreen == screen) showPlaylistRetry(screen, source, cursor);
+        });
+    }
+
+    private void showPlaylistRetry(LinearLayout screen, String source, int cursor) {
+        playlistStatus.setText("Could not load playlists. Tap to retry.");
+        playlistStatus.setMinHeight(dp(48));
+        playlistStatus.setOnClickListener(v -> loadPlaylistPage(screen, source, cursor));
+    }
+
+    private void addPlaylist(LinearLayout screen, String contentId, String title, String thumbnail, boolean staged) {
+        if (contentId.isEmpty() || title.isEmpty()) return;
+        if (playlistRow == null || playlistRow.getChildCount() == 3) {
+            playlistRow = new LinearLayout(this);
+            playlistRow.setWeightSum(3);
+            playlistGrid.addView(playlistRow, new LinearLayout.LayoutParams(-1, -2));
+        }
+        LinearLayout tile = new LinearLayout(this);
+        tile.setOrientation(LinearLayout.VERTICAL);
+        tile.setPadding(dp(4), dp(4), dp(4), dp(12));
+        tile.setFocusable(true);
+        boolean alreadyStaged = staged || placements.isStaged(contentId);
+        tile.setContentDescription((staged ? "Manage " : alreadyStaged ? "Staged: " : "Stage ") + title);
+        ImageView cover = new ImageView(this) {
+            @Override protected void onMeasure(int width, int height) {
+                int side = View.MeasureSpec.getSize(width);
+                setMeasuredDimension(side, side);
+            }
+        };
+        cover.setBackgroundColor(0xffdcebe4);
+        cover.setImageResource(drawable("play"));
+        cover.setScaleType(ImageView.ScaleType.CENTER);
+        cover.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        tile.addView(cover, new LinearLayout.LayoutParams(-1, -2));
+        TextView name = label(!staged && alreadyStaged ? "✓ " + title : title, 14, INK);
+        tile.setOnClickListener(view -> {
+            if (staged) managePlaylist(contentId, title);
+            else chooseShuffle(contentId, title, () -> {
+                name.setText("✓ " + title);
+                tile.setContentDescription("Staged: " + title);
+            });
+        });
+        name.setPadding(0, dp(6), 0, 0);
+        name.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        tile.addView(name);
+        playlistRow.addView(tile, new LinearLayout.LayoutParams(0, -2, 1));
+
+        Bitmap cached = PlaylistWidgetArtwork.read(this, "c:" + contentId);
+        if (cached != null) {
+            cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            cover.setImageBitmap(cached);
+        }
+        if (!staged && thumbnail.startsWith("https://")) artworkWorker.execute(() -> {
+            Bitmap art = PlaylistArtwork.load(thumbnail, 600);
+            if (art == null) return;
+            PlaylistWidgetArtwork.save(getApplicationContext(), "c:" + contentId, art);
+            runOnUiThread(() -> {
+                PlaylistWidgetState.redraw(getApplicationContext());
+                if (playlistScreen != screen) return;
+                cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                cover.setImageBitmap(art);
+            });
         });
     }
 
     private void pinWidget(String contentId, String title) {
-        requestPinWidget(beginPlacement(contentId, title, true));
-    }
-
-    private void retryWidget(LauncherPlacement previous) {
-        if (placementActive()) return;
-        LauncherPlacement retry = placements.retry(previous);
-        if (retry == null) {
-            toast("Could not prepare placement. Try again.");
+        Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+        android.content.pm.ResolveInfo launcher = getPackageManager().resolveActivity(home,
+                android.content.pm.PackageManager.MATCH_DEFAULT_ONLY);
+        String launcherPackage = launcher == null || launcher.activityInfo == null
+                ? "" : launcher.activityInfo.packageName;
+        AppWidgetManager manager = AppWidgetManager.getInstance(this);
+        if ("com.anddoes.launcher".equals(launcherPackage) || manager == null
+                || !manager.isRequestPinAppWidgetSupported()) {
+            showManualWidgetPlacement(title);
             return;
         }
-        requestPinWidget(retry);
-    }
 
-    private void requestPinWidget(LauncherPlacement placement) {
-        if (placement == null) return;
-        AppWidgetManager manager = AppWidgetManager.getInstance(this);
+        LauncherPlacement placement = beginPlacement(contentId, title, true);
+        if (placement == null) {
+            if (placementActive()) showManualWidgetPlacement(title);
+            return;
+        }
         try {
-            if (manager != null && manager.isRequestPinAppWidgetSupported()
-                    && manager.requestPinAppWidget(new ComponentName(this, ButtonWidgetProvider.class), null,
-                        callback(placement))) return;
+            if (manager.requestPinAppWidget(new ComponentName(this, ButtonWidgetProvider.class), null,
+                    callback(placement))) {
+                showWidgetHandoff(placement);
+                return;
+            }
         } catch (RuntimeException unavailable) {
-            // Report a refused handoff below.
+            // A launcher can become unavailable between checking and requesting.
         }
         refused(placement);
+        showManualWidgetPlacement(title);
+    }
+
+    private void showWidgetHandoff(LauncherPlacement request) {
+        AlertDialog progress = new AlertDialog.Builder(this).setTitle(request.title)
+                .setMessage("Confirm placement in Android.")
+                .setNegativeButton("Close", null)
+                .setNeutralButton("Place manually", (dialog, which) -> showManualWidgetPlacement(request.title))
+                .show();
+        Runnable check = new Runnable() {
+            @Override public void run() {
+                if (!progress.isShowing() || isFinishing() || isDestroyed()) return;
+                LauncherPlacement current = placements.get(request.requestId);
+                LauncherPlacement.Status status = current == null ? LauncherPlacement.Status.REFUSED
+                        : current.status(System.currentTimeMillis());
+                switch (status) {
+                    case ADDED:
+                    case EXTRA_WIDGET:
+                        progress.setMessage("Widget added to Android Home.");
+                        progress.getButton(AlertDialog.BUTTON_NEUTRAL).setVisibility(View.GONE);
+                        break;
+                    case CONFIRM:
+                        timer.postDelayed(this, 300);
+                        break;
+                    default:
+                        progress.setMessage("Android did not confirm placement. Check Home before trying again, or choose Place manually.");
+                }
+            }
+        };
+        progress.setOnDismissListener(dialog -> timer.removeCallbacks(check));
+        timer.post(check);
+    }
+
+    private void showManualWidgetPlacement(String title) {
+        new AlertDialog.Builder(this).setTitle("Add " + title)
+                .setMessage("Touch and hold an empty spot on Android Home. Open Widgets, add Daylight playlist, then choose " + title + ".")
+                .setNegativeButton("Stay here", null)
+                .setPositiveButton("Go to Home", (dialog, which) -> startActivity(
+                        new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)))
+                .show();
     }
 
     private PendingIntent callback(LauncherPlacement placement) {
@@ -368,34 +657,23 @@ public class PhoneHomeActivity extends Activity {
         return placements.requests().stream().anyMatch(request -> request.status(now) == LauncherPlacement.Status.CONFIRM);
     }
 
-    private void showManualPlacement(LauncherPlacement placement) {
-        placements.prepareManual(placement);
-        new AlertDialog.Builder(this).setTitle("Place " + placement.title + " on Android Home")
-                .setMessage("Open Widgets on Android Home, add Daylight playlist, then choose Play " + placement.title + ".")
-                .setPositiveButton("OK", null).show();
-    }
-
     private void drawPlacement() {
         if (!observingPlacement || placementPanel == null) return;
         timer.removeCallbacks(placementTimeout);
         placementPanel.removeAllViews();
-        retryButtons.clear();
         long now = System.currentTimeMillis();
         boolean active = false;
         List<LauncherPlacement> requests = placements.requests();
-        Set<String> guided = new HashSet<>();
+        requests.removeIf(request -> request.playlist);
         for (LauncherPlacement request : LauncherPlacement.visible(requests, now)) {
             LauncherPlacement.Status status = request.status(now);
             if (status == LauncherPlacement.Status.CONFIRM) {
                 active = true;
                 timer.postDelayed(placementTimeout, Math.max(1, request.startedAt + LauncherPlacement.TIMEOUT_MS - now));
             }
-            if (request.hasExtraWidget(requests)) {
-                status = guided.add(request.lineageId) ? LauncherPlacement.Status.EXTRA_WIDGET : LauncherPlacement.Status.ADDED;
-            }
             addPlacementStatus(request, status);
         }
-        updateSetupAvailability(active || openingPlaylist);
+        updateSetupAvailability(active);
     }
 
     private void addPlacementStatus(LauncherPlacement request, LauncherPlacement.Status status) {
@@ -411,16 +689,7 @@ public class PhoneHomeActivity extends Activity {
         }
         placementPanel.addView(label(request.title + " — " + message, 16, INK));
         if (status != LauncherPlacement.Status.UNCONFIRMED && status != LauncherPlacement.Status.REFUSED) return;
-        if (request.playlist && request.manualWidget == 0) {
-            placementPanel.addView(actionButton("Place manually", request.title, () -> showManualPlacement(request)));
-            Button retry = actionButton("Retry widget placement", request.title,
-                    () -> retryWidget(request));
-            retryButtons.add(retry);
-            placementPanel.addView(retry);
-        }
-        if (!request.playlist) {
-            placementPanel.addView(label("Tap the item below to retry, or check your launcher's shortcuts.", 14, INK));
-        }
+        placementPanel.addView(label("Tap the item below to retry, or check your launcher's shortcuts.", 14, INK));
     }
 
     private void updateSetupAvailability(boolean busy) {
@@ -428,7 +697,6 @@ public class PhoneHomeActivity extends Activity {
             row.setEnabled(!busy);
             row.setAlpha(busy ? 0.5f : 1f);
         }
-        for (Button button : retryButtons) button.setEnabled(!busy);
     }
 
     private int drawable(String name) {
@@ -436,11 +704,18 @@ public class PhoneHomeActivity extends Activity {
         return found == 0 ? android.R.drawable.ic_menu_view : found;
     }
 
+    private void section(String name) {
+        buttonRow = null;
+        TextView heading = label(name, 18, INK);
+        heading.setPadding(0, dp(10), 0, dp(2));
+        column.addView(heading);
+    }
+
     private void row(String name, String action, String glyph, String indicator, Runnable click) {
         LinearLayout line = new LinearLayout(this);
         line.setGravity(Gravity.CENTER_VERTICAL);
         line.setMinimumHeight(dp(48));
-        line.setPaddingRelative(dp(10), dp(6), dp(12), dp(6));
+        line.setPaddingRelative(dp(8), dp(4), dp(8), dp(4));
         line.setBackground(new RippleDrawable(ColorStateList.valueOf(0x30125b47),
                 round(Color.WHITE, 10), null));
         line.setOnClickListener(v -> click.run());
@@ -458,10 +733,10 @@ public class PhoneHomeActivity extends Activity {
         icon.setPadding(dp(6), dp(6), dp(6), dp(6));
         icon.setImageResource(drawable(glyph));
         icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        line.addView(icon, dp(28), dp(28));
+        line.addView(icon, dp(24), dp(24));
 
-        TextView heading = label(name, 16, INK);
-        heading.setPaddingRelative(dp(10), 0, dp(8), 0);
+        TextView heading = label(name, 14, INK);
+        heading.setPaddingRelative(dp(6), 0, dp(4), 0);
         heading.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         line.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
 
@@ -469,9 +744,16 @@ public class PhoneHomeActivity extends Activity {
         cue.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         line.addView(cue);
 
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.topMargin = dp(4);
-        column.addView(line, lp);
+        if (buttonRow == null || buttonRow.getChildCount() == 2) {
+            buttonRow = new LinearLayout(this);
+            buttonRow.setWeightSum(2);
+            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1, -2);
+            rowParams.topMargin = dp(4);
+            column.addView(buttonRow, rowParams);
+        }
+        LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(0, -1, 1);
+        if (buttonRow.getChildCount() == 0) buttonParams.setMarginEnd(dp(6));
+        buttonRow.addView(line, buttonParams);
         if (placementPanel != null) setupRows.add(line);
     }
 

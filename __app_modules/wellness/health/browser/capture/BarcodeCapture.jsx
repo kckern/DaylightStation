@@ -10,7 +10,7 @@ export function BarcodeCapture({ open, ...props }) {
   return open ? <BarcodeSession {...props} /> : null;
 }
 
-function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknown, onUndo, onStatus, undoBusy, bucket, meals }) {
+function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknown, onUndo, onStatus, undoBusy, bucket, meals, quickScan = false }) {
   const videoRef = useRef(null);
   const audio = useRef(null);
   const live = useRef(false);
@@ -20,6 +20,7 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
   const scanGeneration = useRef(0);
   const commitRequest = useRef(null);
   const [manualUpc, setManualUpc] = useState('');
+  const [showManual, setShowManual] = useState(false);
   const [phase, setPhase] = useState('scanning');
   const [error, setError] = useState(null);
   const [read, setRead] = useState(null);
@@ -29,6 +30,14 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
   const undone = currentUndo?.undone;
   const [target, setTarget] = useState(bucket);
   const [generation, setGeneration] = useState(0);
+  const doneRef = useRef(onDone);
+  doneRef.current = onDone;
+
+  useEffect(() => {
+    if (!quickScan || !['logged', 'unknown'].includes(phase)) return;
+    const timeout = setTimeout(() => doneRef.current?.(), 1600);
+    return () => clearTimeout(timeout);
+  }, [quickScan, phase]);
 
   const { cameraState, stop } = useBarcodeScanner({
     active: phase === 'scanning', restartKey: generation, videoRef, logger,
@@ -71,6 +80,11 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
   };
 
   const beep = () => {
+    const bridge = quickScan ? window.DaylightPhoneShortcut : null;
+    if (typeof bridge?.postMessage === 'function') {
+      bridge.postMessage('barcode-beep');
+      return;
+    }
     const context = audio.current;
     if (context?.state !== 'running') return;
     try {
@@ -108,7 +122,8 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
       const found = await onDecode(upc, target, controller.signal);
       if (!live.current || controller.signal.aborted || !found) return;
       setRead(found);
-      setPhase(found.product ? 'review' : 'unknown');
+      if (quickScan && fromCamera && found.product) await confirm(found);
+      else setPhase(found.product ? 'review' : 'unknown');
     } catch (err) {
       if (!live.current || controller.signal.aborted) return;
       setError(err?.body?.error || 'Could not look up the barcode. Try again.');
@@ -131,12 +146,12 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
     setPhase('scanning');
   };
 
-  const confirm = async () => {
-    if (saving.current) return;
+  const confirm = async (item = read) => {
+    if (saving.current || !item?.product) return;
     saving.current = true;
     setError(null);
     setPhase('committing');
-    commitRequest.current ??= { operationId: crypto.randomUUID(), upc: read.upc, product: read.product, bucket: target };
+    commitRequest.current ??= { operationId: crypto.randomUUID(), upc: item.upc, product: item.product, bucket: target };
     try {
       const confirmed = await onConfirm(commitRequest.current);
       if (!live.current) return;
@@ -162,29 +177,78 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
     if (success && live.current) setUndoFeedback({ token, undone: true });
   };
 
+  const camera = phase === 'scanning' && cameraState !== 'denied' && (
+    <div onPointerDown={unlockSound} style={{
+      position: quickScan ? 'absolute' : 'relative', inset: quickScan ? 0 : undefined,
+      overflow: 'hidden', borderRadius: quickScan ? 0 : 14, background: '#12211b',
+      aspectRatio: quickScan ? undefined : '4 / 3',
+    }}>
+      <video ref={videoRef} muted playsInline autoPlay
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', maxHeight: 'none',
+          display: 'block', objectFit: 'cover', objectPosition: 'center' }} />
+      <div aria-hidden="true" style={{ position: 'absolute', left: '8%', right: '8%', top: '50%',
+        transform: 'translateY(-50%)', height: quickScan ? 'min(22vw, 22dvh)' : '30%',
+        border: '2px solid white', borderRadius: 10, boxShadow: '0 0 0 100vmax #0006',
+        pointerEvents: 'none' }} />
+      <div aria-hidden="true" style={{ position: 'absolute', top: '50%', left: '8%',
+        right: '8%', height: 2, background: '#6deab0', pointerEvents: 'none' }} />
+    </div>
+  );
+  const manual = (
+    <Group gap="xs" wrap="nowrap">
+      <TextInput size="sm" inputMode="numeric" placeholder="UPC number"
+        value={manualUpc} onChange={event => setManualUpc(event.target.value)} aria-label="Manual UPC entry" />
+      <Button size="sm" disabled={!manualUpc.trim()} onClick={() => decode(manualUpc.trim())}>Look up</Button>
+    </Group>
+  );
+
+  if (quickScan) {
+    const liveCamera = phase === 'scanning' && cameraState !== 'denied';
+    const message = {
+      scanning: liveCamera ? 'Center the barcode inside the guide.' : 'Camera unavailable.',
+      'looking-up': 'Looking up barcode…',
+      committing: read?.product?.name ? `Logging ${read.product.name}…` : 'Logging item…',
+      logged: undone ? 'Log undone' : `Logged ${read?.product?.name || 'item'}`,
+      unknown: 'No matching food found.',
+      paused: 'Camera paused.',
+      review: read?.product?.name,
+    }[phase];
+    return (
+      <Sheet open onClose={close} title="Scan barcode" placement="fullscreen">
+        {camera}
+        <div style={{
+          position: 'absolute', display: 'grid', gap: '0.75rem', justifyItems: 'center',
+          padding: '1rem', color: 'white', textAlign: 'center',
+          ...(liveCamera ? { bottom: 'max(1rem, env(safe-area-inset-bottom))', left: 0, right: 0,
+            textShadow: '0 1px 6px black' } : { inset: '3.5rem 0 0', alignContent: 'center' }),
+        }}>
+          {error ? <Text role="alert">{error}</Text> : <Text role="status">{message}</Text>}
+          {phase === 'scanning' && liveCamera && !showManual && (
+            <Button variant="default" onClick={() => setShowManual(true)}>Enter UPC</Button>
+          )}
+          {((phase === 'scanning' && (showManual || !liveCamera)) || phase === 'lookup-error') && manual}
+          {['paused', 'lookup-error'].includes(phase) && <Button onClick={scanAnother}>Scan again</Button>}
+          {phase === 'review' && <Button onClick={() => confirm()}>Log item</Button>}
+          {phase === 'uncertain' && <Button onClick={() => confirm()}>Retry log</Button>}
+          {['logged', 'unknown'].includes(phase) && <Button variant="subtle" onClick={onDone}>Done</Button>}
+        </div>
+      </Sheet>
+    );
+  }
+
   return (
     <Sheet open onClose={close} title="Scan barcode">
       {error && <Text role="alert" c="red" size="sm">{error}</Text>}
-      {phase === 'scanning' && (cameraState !== 'denied' ? (
-        <div onPointerDown={unlockSound} style={{ position: 'relative', overflow: 'hidden', borderRadius: 14,
-          background: '#12211b', aspectRatio: '4 / 3' }}>
-          <video ref={videoRef} muted playsInline
-            style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }} />
-          <div aria-hidden="true" style={{ position: 'absolute', inset: '35% 10%',
-            border: '2px solid white', borderRadius: 10, boxShadow: '0 0 0 100vmax #0006',
-            pointerEvents: 'none' }} />
-          <div aria-hidden="true" style={{ position: 'absolute', top: '50%', left: '10%',
-            right: '10%', height: 2, background: '#6deab0', pointerEvents: 'none' }} />
-        </div>
-      ) : (
+      {camera}
+      {phase === 'scanning' && cameraState === 'denied' && (
         <Text size="sm" c="dimmed">Camera unavailable — enter the barcode number instead.</Text>
-      ))}
+      )}
       <Text size="sm" c="dimmed" role="status">
         {phase === 'looking-up' && 'Barcode read. Looking up food…'}
         {phase === 'review' && 'Barcode read. Review the food and meal.'}
         {phase === 'scanning' && cameraState !== 'denied' && 'Center the barcode inside the guide.'}
         {phase === 'committing' && 'Logging item…'}
-        {phase === 'logged' && (undone ? 'Log undone' : 'Logged')}
+        {phase === 'logged' && (undone ? 'Log undone' : quickScan && read?.product?.name ? `Logged ${read.product.name}` : 'Logged')}
         {phase === 'paused' && 'Camera paused.'}
       </Text>
       {['scanning', 'paused', 'lookup-error'].includes(phase) && (
@@ -204,14 +268,14 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
       <Group mt="md">
         {(['scanning', 'review', 'unknown', 'lookup-error', 'paused'].includes(phase)) && <Button variant="subtle" onClick={close}>Cancel</Button>}
         {(['looking-up', 'committing', 'uncertain'].includes(phase)) && <Button variant="subtle" onClick={close}>Back</Button>}
-        {phase === 'review' && <Button onClick={confirm}>Log item</Button>}
-        {phase === 'uncertain' && <Button onClick={confirm}>Retry log</Button>}
-        {phase === 'unknown' && <Button onClick={() => onUnknown(read.upc, target)}>Enter food details</Button>}
-        {(['logged', 'unknown', 'lookup-error', 'paused'].includes(phase)) && <Button variant="default" onClick={scanAnother}>Scan another</Button>}
+        {phase === 'review' && <Button onClick={() => confirm()}>Log item</Button>}
+        {phase === 'uncertain' && <Button onClick={() => confirm()}>Retry log</Button>}
+        {!quickScan && phase === 'unknown' && <Button onClick={() => onUnknown(read.upc, target)}>Enter food details</Button>}
+        {((!quickScan && ['logged', 'unknown'].includes(phase)) || ['lookup-error', 'paused'].includes(phase)) && <Button variant="default" onClick={scanAnother}>Scan another</Button>}
         {onStatus && ['scanning', 'committing', 'uncertain', 'logged'].includes(phase)
           && <Button variant="subtle" onClick={() => { close(); onStatus(); }}>Health status</Button>}
         {phase === 'logged' && <>
-          {!undone && <Button variant="subtle" onClick={() => onView(result)}>View in Health</Button>}
+          {!quickScan && !undone && <Button variant="subtle" onClick={() => onView(result)}>View in Health</Button>}
           {!undone && result.undoToken && <Button variant="subtle" aria-label="Undo logged item" loading={undoBusy}
             onClick={undoLogged}>Undo</Button>}
           <Button onClick={onDone}>Done</Button>

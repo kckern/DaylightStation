@@ -120,6 +120,19 @@ public class BrowseTreeTest {
         assertTrue(nodes.get(0).toJson().getBoolean("playable"));
     }
 
+    @Test public void recentOnlyAdvertisesAudioAndKeepsItsOrder() throws Exception {
+        JSONObject response = new JSONObject("{\"items\":["
+                + "{\"contentId\":\"plex:1\",\"title\":\"Film\",\"type\":\"movie\"},"
+                + "{\"contentId\":\"plex:2\",\"title\":\"Track\",\"type\":\"track\"},"
+                + "{\"contentId\":\"plex:3\",\"title\":\"Episode\",\"type\":\"episode\"},"
+                + "{\"contentId\":\"plex:4\",\"title\":\"Unknown\"},"
+                + "{\"contentId\":\"plex:5\",\"title\":\"Podcast\",\"type\":\"podcast\"}]}");
+        List<MediaNode> nodes = BrowseTree.fromRecent(response, backend);
+        assertEquals(2, nodes.size());
+        assertEquals("p:plex:2", nodes.get(0).id);
+        assertEquals("p:plex:5", nodes.get(1).id);
+    }
+
     @Test public void aLongContainerIsShownAPageAtATimeWithAWayToTheRest() {
         java.util.List<MediaNode> fifty = new java.util.ArrayList<>();
         for (int i = 0; i < 50; i++) fifty.add(new MediaNode("p:plex:" + i + "|plex:9", "Track " + i, "", null, false, true));
