@@ -31,14 +31,14 @@ let rpmByBike;
 let connectedByBike;
 
 function makeCtx(cycleGameConfig = {}) {
-  const riders = { cycle_ace: 'user_1', tricycle: 'user_2' };
+  const riders = { bike_b: 'user_1', tricycle: 'user_2' };
   const vitals = {
     user_1: { name: 'User_1', heartRate: 140, zoneId: 'hot', zoneColor: 'orange' },
     user_2: { name: 'User_2', heartRate: 120, zoneId: 'warm', zoneColor: 'yellow' }
   };
   return {
     equipment: [
-      { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1, eligible_users: ['user_1'] },
+      { id: 'bike_b', name: 'Bike B', cadence: 10102, wheel_circumference_m: 2.1, eligible_users: ['user_1'] },
       { id: 'tricycle', name: 'Tricycle', cadence: 7153, wheel_circumference_m: 1.2 }
     ],
     configuredUsers: [
@@ -229,14 +229,14 @@ describe('CycleGameContainer — parked riders on screen', () => {
     // user_1 waits, then sprints past user_2 and stops at once: parked while
     // still ahead, before the challenger hold (3 s) could announce them.
     mockCtx = makeCtx({ race_idle_dnf_s: 1 });
-    rpmByBike.cycle_ace = 0;
+    rpmByBike.bike_b = 0;
     const view = render(<CycleGameContainer />);
     startDistanceRace(view);
     toRacing();          // t1
     tick(1);             // t2
-    rpmByBike.cycle_ace = 300;
+    rpmByBike.bike_b = 300;
     tick(2);             // t3, t4: user_1 ahead by a wide margin
-    rpmByBike.cycle_ace = 0;
+    rpmByBike.bike_b = 0;
     tick(6);             // t5..t10: user_1 parked, still ahead on distance
     const lastTick = logsOf('debug', 'cycle_game.tick').slice(-1)[0].riders;
     const dist = Object.fromEntries(lastTick.map((r) => [r.userId, r.distanceM]));

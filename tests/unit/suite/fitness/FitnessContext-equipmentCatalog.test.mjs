@@ -14,7 +14,7 @@ describe('fitnessConfigBridge.applyEquipmentCatalogFromConfig', () => {
     const cfg = {
       fitness: {
         equipment: [
-          { id: 'cycle_ace', cadence: 49904, eligible_users: ['user_2'] }
+          { id: 'bike_b', cadence: 10102, eligible_users: ['user_2'] }
         ]
       }
     };

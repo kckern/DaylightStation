@@ -136,5 +136,6 @@ export function useSkylineController({ctx,courses=[],world,access,saved,saveStat
    prior=now;
   },50);return ()=>clearInterval(timer);
  },[state.phase]);
- return {state,controls:describeSkylineControls(state),dispatch};
+ const getState=useCallback(()=>stateRef.current,[]);
+ return {state,controls:describeSkylineControls(state),dispatch,getState};
 }

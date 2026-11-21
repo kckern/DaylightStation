@@ -16,8 +16,9 @@
 import { test, expect } from '@playwright/test';
 import { FRONTEND_URL } from '#fixtures/runtime/urls.mjs';
 import { getEquipment, setEquipmentRider, launchCycleGame } from '#testlib/FitnessSimHelper.mjs';
+import { getCycleTestBikes } from '../../../_lib/fitnessTestBikes.mjs';
 
-const BIKE = 'cycle_ace'; // cadence 49904
+const [{ id: BIKE }] = getCycleTestBikes(); // from the household fitness config
 
 // The sim controller is exposed via an effect and DELETED on unmount, so it is
 // transiently undefined across full-page navigations. Every access right

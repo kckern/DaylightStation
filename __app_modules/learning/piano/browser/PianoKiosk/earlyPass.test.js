@@ -4,7 +4,7 @@ vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: vi.fn(a
 
 import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 import {
-  canBuyPass, canEnterLock, consumePass, errorBody, nextSheetLabel, offersFromBank, refundPass, schoolProgress, passCapUsed,
+  canBuyPass, canEnterLock, consumePass, errorBody, nextSheetCard, nextSheetLabel, offersFromBank, schoolSections, refundPass, schoolProgress, passCapUsed,
 } from './earlyPass.js';
 
 const access = (pass, offers = [{ coin: 'silver', price: 3, affordable: true }]) => ({
@@ -67,6 +67,20 @@ describe('earlyPass', () => {
     expect(nextSheetLabel({ ...next, reward: { gems: 2 } })).toBe('Print my next sheet (+2 gems · Math 4-02)');
     expect(nextSheetLabel({ ...next, printable: false })).toBeNull();
     expect(nextSheetLabel(null)).toBeNull();
+  });
+
+  it('builds the print card without inventing a reward', () => {
+    const next = { subject: 'math', unit: { unitId: 'm-4-02', title: 'Math 4-02', subject: 'math' }, printable: true, reward: null };
+    expect(nextSheetCard(next)).toEqual({ subject: 'math', title: 'Math 4-02', silver: 0, gems: 0 });
+    expect(nextSheetCard({ ...next, reward: { silver: 1, gems: 0 } })).toMatchObject({ silver: 1, gems: 0 });
+    expect(nextSheetCard({ ...next, printable: false })).toBeNull();
+  });
+
+  it('lists served and obligated sections in plan order', () => {
+    expect(schoolSections({ sections: [
+      { subject: 'english', state: 'served' }, { subject: 'science', state: 'excused' }, { subject: 'math', state: 'obligated' },
+    ] })).toEqual([{ subject: 'english', done: true }, { subject: 'math', done: false }]);
+    expect(schoolSections(null)).toEqual([]);
   });
 
   it('counts served against served plus obligated', () => {

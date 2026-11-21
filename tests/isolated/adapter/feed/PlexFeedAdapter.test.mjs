@@ -140,7 +140,7 @@ describe('PlexFeedAdapter', () => {
       const registry = makeMockRegistry(mockItems);
       const adapter = new PlexFeedAdapter({
         contentRegistry: registry,
-        plexHost: 'http://10.0.0.10:32400',
+        plexHost: 'http://10.20.30.10:32400',
         plexToken: 'test-token',
         logger,
       });
@@ -153,7 +153,7 @@ describe('PlexFeedAdapter', () => {
 
       const result = await adapter.fetchItems(query, 'testuser');
       expect(probeImageDimensions).toHaveBeenCalledWith(
-        'http://10.0.0.10:32400/library/metadata/200/thumb?X-Plex-Token=test-token',
+        'http://10.20.30.10:32400/library/metadata/200/thumb?X-Plex-Token=test-token',
         8000
       );
       expect(result[0].meta.imageWidth).toBe(500);

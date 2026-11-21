@@ -47,6 +47,9 @@ public class ActionWidgetProvider extends AppWidgetProvider {
             int view = VIEWS[button.slot - 1];
             views.setViewVisibility(view, View.VISIBLE);
             views.setTextViewText(view, button.label);
+            String icon = SurfaceCache.get(context, SurfaceKeys.widget(button.slot, SurfaceKeys.ICON));
+            int drawable = context.getResources().getIdentifier("ic_action_" + icon, "drawable", context.getPackageName());
+            views.setTextViewCompoundDrawables(view, 0, drawable, 0, 0);
             if (!button.link.isEmpty() && DirectPlay.path(DirectPlay.Surface.WIDGET, Build.VERSION.SDK_INT,
                     direct[button.slot - 1], player) == DirectPlay.Path.SERVICE) {
                 // A media action plays with no window: the play service gets its action id.

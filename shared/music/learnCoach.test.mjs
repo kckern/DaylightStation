@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createCoachPlan, projectCoach, applyCoachEvent, coachFeedback, coachTaskKey } from './learnCoach.mjs';
+import { createCoachPlan, projectCoach, applyCoachEvent, coachFeedback, coachTaskKey, entryShiftBeats } from './learnCoach.mjs';
 
 const segments = [
   { id: 'opening', inMeasure: 0, outMeasure: 3, printedMeasures: ['1', '4'], playableParts: ['rh', 'lh'] },
@@ -83,7 +83,7 @@ describe('guided musical progression', () => {
 });
 
 describe('focused recovery and honest feedback', () => {
-  it('targets the hardest normalized measure only after two equivalent unsuccessful takes', () => {
+  it('targets the hardest normalized measure, with the bar before it, only after two equivalent unsuccessful takes', () => {
     const plan = planOf();const task = choose(plan, 'right');
     const result = { ...bad, criteria: { completeness: 1, cleanliness: 0.5 }, spans: {
       'measure:0': { diagnostics: { expected_notes: 20, missed_notes: 2, wrong_notes: 0 } },
@@ -92,7 +92,7 @@ describe('focused recovery and honest feedback', () => {
     let state = outcome(undefined, plan, task, result);
     expect(projection(plan, state).recommended.range).toEqual({ start: 0, end: 3 });
     state = outcome(state, plan, task, result);
-    expect(projection(plan, state).recommended).toMatchObject({ range: { start: 2, end: 2 }, parent: { skill: 'right' }, depth: 1 });
+    expect(projection(plan, state).recommended).toMatchObject({ range: { start: 1, end: 2 }, parent: { skill: 'right' }, depth: 1 });
   });
 
   it('falls back to the first half and cannot recurse endlessly on a one-bar task', () => {
@@ -102,9 +102,9 @@ describe('focused recovery and honest feedback', () => {
     expect(recovery.range).toEqual({ start: 0, end: 1 });
     state = outcome(outcome(state, plan, recovery, bad), plan, recovery, bad);
     recovery = projection(plan, state).recommended;
-    expect(recovery.depth).toBeLessThanOrEqual(2);
+    expect(recovery.depth).toBeLessThanOrEqual(3);
     state = outcome(outcome(state, plan, recovery, bad), plan, recovery, bad);
-    expect(projection(plan, state).recommended.depth).toBeLessThanOrEqual(2);
+    expect(projection(plan, state).recommended.depth).toBeLessThanOrEqual(3);
   });
 
   it('returns from successful short practice without banking a full-passage skill', () => {
@@ -125,6 +125,36 @@ describe('focused recovery and honest feedback', () => {
     state = outcome(outcome(state, plan, slower, timing), plan, slower, timing);
     expect(projection(plan, state).goldResume.tempoPercent).toBe(40);
     expect(projection(plan, state).goldResume.range.end).toBeLessThan(3);
+  });
+
+  it('keeps the same task after a named shifted entry: the start was wrong, not the passage', () => {
+    const plan = planOf();const task = choose(plan, 'timed-50');
+    const shifted = { ...bad, criteria: { completeness: 0.25, cleanliness: 0.25, placement: 0 }, entryShift: { beats: 1, matched: 4, possible: 4 } };
+    const state = outcome(outcome(undefined, plan, task, shifted), plan, task, shifted);
+    expect(projection(plan, state).goldResume).toMatchObject({ key: task.key, depth: 0 });
+    // Without the shift the same two takes step down to a smaller task.
+    const { entryShift: ignored, ...unnamed } = shifted;void ignored;
+    const plain = outcome(outcome(undefined, plan, task, unnamed), plan, task, unnamed);
+    expect(projection(plan, plain).goldResume.depth).toBe(1);
+  });
+
+  it('reads an entry shift as null when untested and 0 when tested and none was named', () => {
+    expect(entryShiftBeats(bad)).toBeNull();
+    expect(entryShiftBeats({ ...bad, entryShift: { beats: 0 } })).toBe(0);
+    expect(entryShiftBeats({ ...bad, entryShift: { beats: -1 } })).toBe(-1);
+    const plan = planOf();const task = choose(plan, 'timed-50');
+    const none = { ...bad, entryShift: { beats: 0 } };
+    expect(projection(plan, outcome(outcome(undefined, plan, task, none), plan, task, none)).goldResume.depth).toBe(1);
+  });
+
+  it('names a shifted entry in the feedback on a cued step, never on a passed take', () => {
+    const task = choose(planOf(), 'timed-50');
+    expect(coachFeedback({ ...bad, entryShift: { beats: 1 } }, task)).toMatchObject({ reason: 'entry-late', entryShiftBeats: 1,
+      title: 'Start on the click', detail: 'You started one beat late — start on the click after the count.' });
+    expect(coachFeedback({ ...bad, entryShift: { beats: -2 } }, task)).toMatchObject({ reason: 'entry-early', entryShiftBeats: -2,
+      title: 'Wait for the click', detail: 'You started two beats early — wait for the click after the count.' });
+    expect(coachFeedback({ ...good, entryShift: { beats: 1 } }, task).reason).toBe('passed');
+    expect(coachFeedback({ ...bad, entryShift: { beats: 1 } }, choose(planOf(), 'right')).reason).not.toMatch(/^entry-/);
   });
 
   it('never describes metronome practice as measured timing accuracy', () => {

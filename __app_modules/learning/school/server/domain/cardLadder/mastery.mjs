@@ -22,7 +22,13 @@ const SOURCES = new Set(['verify', 'recheck', 'paper']);
 const GRADED_DEMOTABLE = new Set(['familiar', 'claimed', 'mastered']);
 /** Graded tasks that ask the child to type the word with no model: the sign-off. */
 export const TYPED_TASKS = Object.freeze(['3.3', '1.4']);
-const isTypedTask = (task) => TYPED_TASKS.includes(task);
+/**
+ * Every graded task that signs a word off: the typed tasks plus see-and-type's
+ * K.1 (the card shown and typed exactly — no judge, so not in TYPED_TASKS,
+ * which lists the judged answers a grown-up may re-grade).
+ */
+export const SIGN_OFF_TASKS = Object.freeze([...TYPED_TASKS, 'K.1']);
+const isTypedTask = (task) => SIGN_OFF_TASKS.includes(task);
 
 export function emptyWordV3() {
   return {

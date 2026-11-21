@@ -55,6 +55,39 @@ shapes, behavior model).
   does log-then-transmit; we replace its Freematics-Hub protocol with our WS
   event-bus JSON.
 
+## Bluetooth telemetry candidate
+
+The opt-in `freematics-oneplus-b-ble` PlatformIO target adds a local BLE
+peripheral named **Daylight OBD Relay**. It uses the existing sampled vehicle
+data. It adds no OBD commands and sends no location, VIN, or readings in
+advertisements. Connections do not inhibit the existing standby timer.
+The phone is the BLE central. Android Auto projection itself does not pair
+with the relay.
+
+Service UUID `6f2da9b0-7f19-4c7b-a8a8-525a39116f05` exposes the encrypted,
+read-only status characteristic `6f2da9b1-7f19-4c7b-a8a8-525a39116f05`.
+The peripheral supports Just Works bonding, which provides link encryption
+without authenticating the peer against active interception. Read at up to
+1 Hz while the phone is displaying status.
+
+| Offset | Field |
+| --- | --- |
+| 0 | Wire version, unsigned byte, currently 1 |
+| 1 | Flags, unsigned byte. Bit 0 means fresh sample, bit 1 means ECU linked. Bits 2, 3 and 4 mark speed, RPM and coolant valid. |
+| 2–3 | Speed in km/h, signed little-endian |
+| 4–5 | RPM, signed little-endian |
+| 6–7 | Coolant in °C, signed little-endian |
+| 8–9 | Battery millivolts, unsigned little-endian. Zero means unavailable. |
+| 10–11 | Sample age in milliseconds, unsigned little-endian. 65535 means no sample or an age at or above that value. |
+
+Ignore speed, RPM and coolant unless their validity bits are set. A fresh
+sample is at most five seconds old. Disconnect or a stale snapshot should
+clear live readings from the consumer. Use `pio test -e native` for packet
+checks. Before flashing the BLE target, build it with the vehicle's generated
+configuration, verify the exact USB serial device, and retain the 16 MB
+partition layout. Qualify bonding, ignition-off standby, reconnect, and
+Wi-Fi trip upload on hardware before enabling it by default.
+
 ## Behavior
 
 - **Ignition on → device powered** (OBD port): open a trip file, sample ~1Hz
@@ -378,10 +411,10 @@ uninitialised pin floating at the lit level. Source cannot distinguish them.
 so both levels are exposed rather than one being baked in:
 
 ```bash
-curl "http://10.0.0.35/led?mode=low"    # then look at the car
-curl "http://10.0.0.35/led?mode=high"   # if low did nothing
-curl "http://10.0.0.35/led?mode=float"  # restore the as-shipped default
-curl "http://10.0.0.35/led"             # read current mode (also on /status)
+curl "http://<relay-ip>/led?mode=low"    # then look at the car
+curl "http://<relay-ip>/led?mode=high"   # if low did nothing
+curl "http://<relay-ip>/led?mode=float"  # restore the as-shipped default
+curl "http://<relay-ip>/led"             # read current mode (also on /status)
 ```
 
 If **neither** level changes anything, it is case (a): hardwired, and the only

@@ -1,0 +1,221 @@
+// Sheet music score page: the measure strip and the engraving overlay. Everything
+// else is Mantine's. Segment colours cycle through six Mantine hues; the strip and
+// the overlay use the same class so a band and its bars match.
+@use 'sass:list';
+
+$sm-seg-hues: (blue, grape, teal, orange, cyan, lime);
+
+@for $i from 0 through 5 {
+  $hue: list.nth($sm-seg-hues, $i + 1);
+  .sm-seg-c#{$i} {
+    --sm-seg: var(--mantine-color-#{$hue}-6);
+    --sm-seg-tint: var(--mantine-color-#{$hue}-light);
+    // On the white paper the theme's -light tints read muddy; a thin wash of -6 does not.
+    --sm-seg-paper: color-mix(in srgb, var(--mantine-color-#{$hue}-6) 16%, transparent);
+  }
+}
+
+.sm-strip {
+  &__scroll {
+    overflow-x: auto;
+    // Room for the handles that straddle the outer barlines.
+    padding: 0 10px 4px;
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-rows: 26px 30px;
+    row-gap: 4px;
+    min-width: min-content;
+
+    &--boundaries { grid-template-rows: 26px 30px 14px; }
+  }
+
+  // Proposed p(phrase ends) on the barline after a cell.
+  &__p {
+    justify-self: end;
+    transform: translateX(50%);
+    padding: 0 3px;
+    border-radius: 3px;
+    font-size: 9px;
+    line-height: 14px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ds-text-primary, inherit);
+    background: var(--mantine-color-blue-light);
+
+    &--weak {
+      color: var(--ds-text-secondary, var(--mantine-color-dimmed));
+      background: transparent;
+      opacity: 0.7;
+    }
+  }
+
+  &__cell {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    // Neighbouring cells overlap by a pixel so barlines read as single lines.
+    margin-right: -1px;
+    border: 1px solid var(--ds-border, var(--mantine-color-dark-4));
+    font-size: 11px;
+    color: var(--ds-text-secondary, var(--mantine-color-dimmed));
+
+    &--uncovered {
+      background: repeating-linear-gradient(
+        45deg,
+        transparent 0 4px,
+        var(--mantine-color-yellow-light) 4px 8px
+      );
+    }
+  }
+
+  &__split,
+  &__handle {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform: translate(50%, -50%);
+    border: 1px solid var(--ds-border, var(--mantine-color-dark-4));
+    border-radius: 4px;
+    background: var(--ds-bg-elevated, var(--mantine-color-body));
+    color: var(--ds-text-secondary, var(--mantine-color-dimmed));
+    cursor: pointer;
+    padding: 0;
+
+    &:focus-visible {
+      outline: 2px solid var(--mantine-color-blue-5);
+      outline-offset: 1px;
+    }
+  }
+
+  &__split {
+    width: 16px;
+    height: 16px;
+    opacity: 0.35;
+
+    &:hover, &:focus-visible { opacity: 1; }
+  }
+
+  &__handle {
+    width: 14px;
+    height: 24px;
+    cursor: ew-resize;
+    touch-action: none; // a drag moves the boundary instead of scrolling the strip
+    border-color: var(--mantine-color-blue-5);
+    color: var(--mantine-color-blue-4);
+  }
+
+  &__band {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    margin: 0 1px;
+    padding: 0 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    overflow: hidden;
+    color: var(--ds-text-primary, inherit);
+    background: var(--sm-seg-tint);
+    border: 1px solid var(--sm-seg);
+    font-family: inherit;
+    text-align: left;
+  }
+
+  &--draft &__band {
+    cursor: pointer;
+    background: transparent;
+    border-width: 2px;
+  }
+
+  &__band--selected {
+    box-shadow: 0 0 0 2px var(--mantine-color-blue-4);
+  }
+
+  &__band--error {
+    border-color: var(--mantine-color-red-6);
+    border-style: dashed;
+  }
+
+  &__add {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    margin: 0 1px;
+    padding: 0 6px;
+    border: 1px dashed var(--mantine-color-yellow-6);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--ds-text-secondary, inherit);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    overflow: hidden;
+
+    &:hover, &:focus-visible { color: var(--ds-text-primary, inherit); border-style: solid; }
+  }
+
+  &__handle--leading {
+    right: auto;
+    left: 0;
+    transform: translate(-50%, -50%);
+  }
+
+  &__handle--edge {
+    border-color: var(--mantine-color-yellow-6);
+    color: var(--mantine-color-yellow-5);
+  }
+
+  &__band-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+.sm-score {
+  &__sheet {
+    position: relative;
+    // The engraving is black ink; it needs paper under it on the dark admin theme.
+    background: #fff;
+    border-radius: 4px;
+    overflow-x: auto;
+    // Room above the first system for its segment labels, which sit above the bar.
+    padding-top: 18px;
+  }
+
+  &__page { position: relative; }
+
+  &__host { position: relative; }
+
+  &__overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  &__box {
+    position: absolute;
+
+    &--approved { background: var(--sm-seg-paper); }
+    &--draft { border: 2px solid var(--sm-seg); border-radius: 3px; }
+  }
+
+  &__box-label {
+    position: absolute;
+    top: -16px;
+    left: 0;
+    padding: 0 4px;
+    border-radius: 3px;
+    font-size: 10px;
+    line-height: 14px;
+    white-space: nowrap;
+    color: #fff;
+    background: var(--sm-seg);
+  }
+}

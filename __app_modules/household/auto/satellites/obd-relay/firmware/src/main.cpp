@@ -32,6 +32,11 @@
 #include <Update.h>
 #include "config.h"
 #include "telemetry_logic.h"
+#ifdef ENABLE_RELAY_BLE
+#include <limits.h>
+#include "ble_relay.h"
+#include "ble_status.h"
+#endif
 
 // ---- standby / battery protection ------------------------------------------
 // The OBD-II port is typically always-hot, so the device keeps drawing with the
@@ -108,6 +113,10 @@ struct Sample {
   int16_t heading;   // degrees 0-359, -1 when unknown
   int8_t hdop;       // horizontal dilution of precision, -1 when unknown
   int8_t sat;        // satellites used, -1 when unknown
+#ifdef ENABLE_RELAY_BLE
+  uint32_t measuredAtMs;
+  uint8_t bleFields;
+#endif
 };
 
 #ifdef USE_FREEMATICS
@@ -926,6 +935,12 @@ static uint8_t sampleVehicle(bool readEcu) {
 
   Sample s{};
   s.t = millis();
+#ifdef ENABLE_RELAY_BLE
+  s.measuredAtMs = s.t;
+  if (readEcu && pidValue(g_hotPids, HOT_PID_COUNT, PID_SPEED, INT_MIN) != INT_MIN) s.bleFields |= obdrelay::BLE_SPEED;
+  if (readEcu && pidValue(g_hotPids, HOT_PID_COUNT, PID_RPM, INT_MIN) != INT_MIN) s.bleFields |= obdrelay::BLE_RPM;
+  if (readEcu && pidValue(g_hotPids, HOT_PID_COUNT, PID_COOLANT_TEMP, INT_MIN) != INT_MIN) s.bleFields |= obdrelay::BLE_COOLANT;
+#endif
   s.speedKph = readEcu ? (int16_t)pidValue(g_hotPids, HOT_PID_COUNT, PID_SPEED, 0) : 0;
   s.rpm      = readEcu ? (int16_t)pidValue(g_hotPids, HOT_PID_COUNT, PID_RPM, 0) : 0;
   s.coolantC = readEcu ? (int16_t)pidValue(g_hotPids, HOT_PID_COUNT, PID_COOLANT_TEMP, 0) : 0;
@@ -940,6 +955,9 @@ static uint8_t sampleVehicle(bool readEcu) {
     // GPS-derived speed by ~1.85x and silently corrupt trip distance.
     if (s.speedKph == 0 && gpsData->sat > 3)
       s.speedKph = (int16_t)(gpsData->speed * 1.852f);
+#ifdef ENABLE_RELAY_BLE
+    if (gpsData->sat > 3) s.bleFields |= obdrelay::BLE_SPEED;
+#endif
     // Same struct, same read — previously thrown away.
     s.altM    = gpsData->alt;
     s.heading = (int16_t)gpsData->heading;
@@ -1668,6 +1686,9 @@ void setup() {
   // time. Measured association is 200-700ms with it enabled, which is fine.
   WiFi.setSleep(true);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+#ifdef ENABLE_RELAY_BLE
+  obdrelay::startBleRelay();
+#endif
   uint32_t t0 = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) delay(100);
   g_wifiAssociateMs = millis() - t0;
@@ -1829,6 +1850,19 @@ void loop() {
     Sample s;
     if (readSample(s)) { lastSample = s; haveSample = true; tripAppend(s); }
   }
+
+#ifdef ENABLE_RELAY_BLE
+  static uint32_t lastBleStatusMs = 0;
+  const uint32_t now = millis();
+  if (now - lastBleStatusMs >= 1000) {
+    lastBleStatusMs = now;
+    const float battery = g_batteryV;
+    const uint16_t batteryMv = g_batteryAgeMs && now - g_batteryAgeMs <= 5000
+        && battery > 0 && battery < 65 ? static_cast<uint16_t>(battery * 1000 + 0.5f) : 0;
+    obdrelay::updateBleRelay(g_obdReady, haveSample ? now - lastSample.measuredAtMs : UINT32_MAX,
+                             lastSample.bleFields, lastSample.speedKph, lastSample.rpm, lastSample.coolantC, batteryMv);
+  }
+#endif
 
   // live snapshot while on the bus
   if (wsConnected && millis() - lastSnapshotMs >= (uint32_t)SNAPSHOT_S * 1000) {

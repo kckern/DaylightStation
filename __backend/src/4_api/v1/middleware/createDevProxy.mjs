@@ -39,7 +39,9 @@ export function createDevProxy({ logger, forwarder } = {}) {
 
   const router = express.Router();
 
-  router.all('/proxy_toggle', (req, res) => {
+  // POST only: a GET can come from any page (an <img>, a link), and the
+  // cross-site guard refuses only cross-site writes.
+  router.post('/proxy_toggle', (req, res) => {
     proxyEnabled = !proxyEnabled;
     const targetHost = forwarder.getTargetHost() || 'not configured';
     logger?.info?.('devProxy.toggled', { enabled: proxyEnabled, targetHost });

@@ -102,6 +102,7 @@ export function Games() {
   // had (2026-09-02 incident, repeated here because this one call site
   // omitted the option the hook was already built to consume).
   const learnerId = pianoUser?.currentUser ?? null;
+  const learnerName = (pianoUser?.users || []).find((u) => u.id === learnerId)?.name ?? null;
   // True while a pass game is on screen: the hook must not re-read the bank
   // then, or the game's own consume would read back as a lock under it.
   const passGameRef = useRef(false);
@@ -147,7 +148,7 @@ export function Games() {
   // school's to open. Unless school itself has opened Games since, in which
   // case there is nothing to relock.
   if (earlyPass.relocked && !(gameAccess.unlocked && gameAccess.via !== 'pass')) {
-    return <RelockScreen learnerId={learnerId} deviceId={deviceId} outcome={earlyPass.outcome} played={earlyPass.played} />;
+    return <RelockScreen learnerId={learnerId} learnerName={learnerName} deviceId={deviceId} outcome={earlyPass.outcome} played={earlyPass.played} />;
   }
 
   // `holding`: a pass is open — live from access until the game mounts, then
@@ -155,7 +156,7 @@ export function Games() {
   // child has finished reading the result, and the lock must wait for the
   // game to end rather than cut it off.
   if (!gameAccess.unlocked && !earlyPass.holding) {
-    return <SchoolLock access={gameAccess} learnerId={learnerId} deviceId={deviceId} />;
+    return <SchoolLock access={gameAccess} learnerId={learnerId} learnerName={learnerName} deviceId={deviceId} />;
   }
 
   const session = earlyPass.holding ? earlyPass : null;

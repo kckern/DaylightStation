@@ -17,15 +17,15 @@ import {
 } from "./rpmGhostFilter.js";
 
 const equipmentConfig = [
-  { id: 'cycle_ace', name: 'Cycle Ace', cadence: 49904 },
-  { id: 'niceday', name: 'NiceDay', cadence: 7138 },
+  { id: 'bike_b', name: 'Bike B', cadence: 10102 },
+  { id: 'bike_a', name: 'Bike A', cadence: 10101 },
 ];
 
 describe('rpmGhostFilter', () => {
   it('builds a set of configured device ids from equipment config', () => {
     const ids = buildConfiguredDeviceIdSet(equipmentConfig);
-    expect(ids.has('49904')).toBe(true);
-    expect(ids.has('7138')).toBe(true);
+    expect(ids.has('10102')).toBe(true);
+    expect(ids.has('10101')).toBe(true);
     expect(ids.has('29199')).toBe(false);
   });
 
@@ -43,7 +43,7 @@ describe('rpmGhostFilter', () => {
 
   it('never flags a registered (configured) device, even when idle at 0 RPM', () => {
     const ids = buildConfiguredDeviceIdSet(equipmentConfig);
-    const idleBike = { id: '49904', type: 'cadence', cadence: 0 };
+    const idleBike = { id: '10102', type: 'cadence', cadence: 0 };
     expect(isGhostRpmDevice(idleBike, ids)).toBe(false);
   });
 
@@ -56,11 +56,11 @@ describe('rpmGhostFilter', () => {
   it('filters a device list, dropping only the ghost', () => {
     const ids = buildConfiguredDeviceIdSet(equipmentConfig);
     const devices = [
-      { id: '49904', type: 'cadence', cadence: 0 },   // registered idle — keep
+      { id: '10102', type: 'cadence', cadence: 0 },   // registered idle — keep
       { id: '29199', type: 'cadence', cadence: 0 },   // ghost — drop
-      { id: '7138', type: 'cadence', cadence: 90 },   // registered active — keep
+      { id: '10101', type: 'cadence', cadence: 90 },   // registered active — keep
     ];
     const kept = filterGhostRpmDevices(devices, ids).map(d => d.id);
-    expect(kept).toEqual(['49904', '7138']);
+    expect(kept).toEqual(['10102', '10101']);
   });
 });

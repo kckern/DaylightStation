@@ -68,9 +68,12 @@ public class OneTapActionsCapabilityTest {
         };
     }
 
+    private RecordingSink launcher;
+
     @Before public void setUp() throws Exception {
         core = TestCore.create(tmp.newFolder());
-        cap = new OneTapActionsCapability(http, new RecordingSink());
+        launcher = new RecordingSink();
+        cap = new OneTapActionsCapability(http, launcher);
         core.add(cap);
         core.prepare(new JSONObject());
         core.services().provide(LinkKeySource.class, () -> KEY);
@@ -85,6 +88,28 @@ public class OneTapActionsCapabilityTest {
         if (hold != null) hold.countDown();
         cap.stop();
         TestCore.releaseMainThread();
+    }
+
+    @Test public void phoneSetupReadsConfiguredActionsWithoutAWidgetCache() throws Exception {
+        cap.start();
+        net.kckern.daylight.api.PayloadPort port = net.kckern.daylight.api.PayloadPort.named("phone-pin-action");
+        JSONObject result = new JSONObject(port.call("", 0));
+        assertEquals("feed", result.getJSONArray("items").getJSONObject(0).getString("id"));
+        assertEquals("Feed", result.getJSONArray("items").getJSONObject(0).getString("label"));
+    }
+
+    @Test public void setupPinsTheExistingActionWithItsOwnCallbackIdentity() throws Exception {
+        cap.start();
+        net.kckern.daylight.api.PayloadPort port = net.kckern.daylight.api.PayloadPort.named("phone-pin-action");
+        String requestId = "00000000-0000-0000-0000-000000000001";
+        String request = new JSONObject().put("op", "pin").put("id", "feed")
+                .put("requestId", requestId).toString();
+        port.call(request, 0);
+
+        assertEquals("feed daylight://action/feed#k=" + KEY, launcher.pinned);
+        assertTrue(launcher.pinnedIds.contains("pin-feed"));
+        assertEquals(requestId, launcher.setupRequestId);
+        assertNull(launcher.token);
     }
 
     private LinkHandler actionLink() {

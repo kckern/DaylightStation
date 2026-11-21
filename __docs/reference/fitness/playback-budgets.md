@@ -45,6 +45,22 @@ cover hid the governance lock screen and its unlock. The supervisor joining
 gate (`state: on`) were both fine; neither could reach a request that was never
 made.
 
+**The meter reads the bypassed governance state (2026-11-20).** `held` waits on
+`videoLocked`, so the meter must see the same lock the player does. A
+`governance_bypass` fingerprint, a show-level unlock (item tagged `nogovern`)
+or `?nogovern` is decided in `FitnessPlayer` and published with
+`setGovernanceBypassed`; `FitnessContext` applies it once
+(`applyGovernanceBypass` in `player/governanceBypass.js`) and hands that one
+`governanceState` to the player, its overlays, the sidebar and
+`usePlaybackBudget`. The engine is not told, so its own snapshot still says
+`videoLocked: true`; nothing that can hold the video may read it. A bypassed
+item is not governed (`isGoverned: false`), so the meter does not match it
+and does not meter it, like an admin override. Before this, the player applied
+the bypass to a private copy: on the garage a child's unlocked Danny Go showed
+no lock screen while the meter, still reading the engine, kept `held` and
+re-paused the video 2–5 ms after each of 14 play presses (`playback.resumed`
+then `playback.paused {source: dom-event}`), with no cover and no unlock.
+
 The cover (`overlays/PlaybackBudgetNotice.jsx`, `data-testid="playback-budget-overlay"`,
 `data-status`) says what is happening for each blocking status and always offers
 **Unlock** and **Back**:

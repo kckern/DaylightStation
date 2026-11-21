@@ -22,6 +22,35 @@ public class InputQueueTest {
 
     @Before public void setUp() throws Exception { state = new File(tmp.newFolder(), "memo-queue.json"); }
 
+    @Test public void rollbackReaderCannotClaimAlreadyIndexedScopedCapture() throws Exception {
+        String legacyId = "1700000000000-ab12cd34";
+        String ownedId = "1700000001000-ab12cd34";
+        String scope = net.kckern.daylight.cap.quickinput.shell.CaptureScope.key("https://home.example", "alice");
+        File inbox = tmp.newFolder("inbox");
+        File ownedInbox = new File(inbox, "owner-" + scope);
+        assertTrue(ownedInbox.mkdir());
+        File owned = new File(ownedInbox, ownedId + ".journal.ogg");
+        Files.write(owned.toPath(), new byte[] { 1 });
+        InputQueue queue = new InputQueue(state);
+        queue.add(legacyId, new File(inbox, legacyId + ".ogg").getPath(), 1700000000000L);
+        queue.add(ownedId, owned.getPath(), 1700000001000L);
+        queue.park(ownedId, "known refusal");
+        JSONObject saved = new JSONObject(new String(Files.readAllBytes(state.toPath()), StandardCharsets.UTF_8));
+        assertEquals(1, saved.getJSONArray("inputs").length());
+        assertEquals(legacyId, saved.getJSONArray("inputs").getJSONObject(0).getString("id"));
+        InputQueue reopened = new InputQueue(state);
+        assertEquals(1, reopened.parked());
+
+        // Older code writes only its known fields. The file remains private to the
+        // scoped scanner and can still be re-indexed under exactly its original ID.
+        JSONObject rewrittenByOlderPayload = new JSONObject().put("inputs", saved.getJSONArray("inputs"));
+        Files.write(state.toPath(), rewrittenByOlderPayload.toString().getBytes(StandardCharsets.UTF_8));
+        InputQueue afterRollback = new InputQueue(state);
+        assertEquals(0, InputInbox.scan(inbox, afterRollback));
+        assertEquals(1, InputInbox.scan(ownedInbox, afterRollback));
+        assertEquals(ownedId, afterRollback.describe().getJSONArray("inputs").getJSONObject(1).getString("id"));
+    }
+
     @Test public void addingTheSameMemoTwiceQueuesItOnce() {
         InputQueue q = new InputQueue(state);
         assertTrue(q.add("1000-a", "/inbox/1000-a.m4a", 1000));
@@ -271,11 +300,11 @@ public class InputQueueTest {
         q.add("200-b", "/x/200-b.ogg", 200);
         q.claim(1000);
         q.park("100-a", "HTTP 422 empty_transcription");
-        assertEquals(java.util.Collections.singletonList("/x/100-a.ogg"), q.discardParked());
+        assertEquals(java.util.Collections.singletonList("/x/100-a.ogg"), q.discardParked(entry -> true));
         assertEquals(0, q.parked());
         assertEquals("a memo that is only waiting is never discarded", 1, q.waiting());
         assertEquals(1, q.describe().getInt("discarded"));
-        assertTrue(q.discardParked().isEmpty());
+        assertTrue(q.discardParked(entry -> true).isEmpty());
         assertEquals(1, new InputQueue(state).describe().getInt("discarded"));
     }
     // ── kind and destination ─────────────────────────────────────────────────
@@ -373,5 +402,20 @@ public class InputQueueTest {
         q.park("100-a", "HTTP 422 empty_transcription");
         assertEquals("{meal-photo=1, journal=1}", q.waitingByDest().toString());
         assertEquals("{journal=1}", q.parkedByDest().toString());
+    }
+
+    @Test public void statusPersistsOwnerScopedAcceptanceAndRefusesASecondSubmission() throws Exception {
+        String owner = net.kckern.daylight.cap.quickinput.shell.CaptureScope.key("https://home.example", "alice");
+        String other = net.kckern.daylight.cap.quickinput.shell.CaptureScope.key("https://home.example", "bob");
+        InputQueue queue = new InputQueue(state);
+        String file = "/inputs/owner-" + owner + "/original.journal.ogg";
+        queue.add("original", file, 1000);
+        queue.uploaded("original");
+        InputQueue reopened = new InputQueue(state);
+        JSONObject row = reopened.captureStatus(owner, 5).getJSONObject(0);
+        assertEquals("ACCEPTED", row.getString("state"));
+        assertEquals(0, reopened.captureStatus(other, 5).length());
+        assertFalse(reopened.retryCapture("original", owner, 5));
+        assertFalse(reopened.add("original", file, 1000));
     }
 }

@@ -18,8 +18,8 @@ sys.path.insert(0, str(HERE.parent))
 import slot_link as sl  # noqa: E402
 
 FIXTURE = (HERE / "fixtures" / "bluez_managed_objects.json").read_text()
-RED, YELLOW, GREEN, BLUE = "41:42:3A:E5:43:07", "41:42:9A:E3:65:73", "41:42:F0:91:27:E8", "41:42:8D:B7:A0:11"
-BULB, YOTO, WHITE = "9C:0C:35:75:B7:75", "E8:68:E7:34:55:8E", "41:42:93:7B:A9:F2"
+RED, YELLOW, GREEN, BLUE = "AA:BB:CC:00:30:07", "AA:BB:CC:00:31:02", "AA:BB:CC:00:31:07", "AA:BB:CC:00:31:05"
+BULB, YOTO, WHITE = "AA:BB:CC:00:32:01", "AA:BB:CC:00:32:02", "AA:BB:CC:00:31:06"
 
 
 def rec(mac, adapter="hci1", paired=True, connected=False, rssi=None, trusted=True):

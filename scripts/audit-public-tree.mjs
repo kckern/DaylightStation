@@ -32,13 +32,16 @@ const A_SCOPE = ['.claude/', 'docker/', 'scripts/', '.github/', '.githooks/',
   'package.json', 'Readme.md', 'CONTRIBUTING.md', 'AGENTS.md', 'CLAUDE.md'];
 // Whole tree: a rule moves here once its area is scrubbed.
 const TREE = [''];
+const TEST_PATH = /(^|\/)(tests?\/|[^/]*\.test\.[^/]+$|[^/]*Test\.java$)/;
 
 export const CONTENT_RULES = [
   { id: 'private-host', re: /\b(homeserver\.local|kckern-(?:server|macbook))\b/, scope: TREE, why: 'private hostname' },
   { id: 'host-path', re: /\/(Users|media|home)\/kckern\b/, scope: TREE, why: 'absolute host path' },
   { id: 'personal-domain', re: /\b[\w.-]*kckern\.(net|com|info)\b/, scope: A_SCOPE, why: 'personal domain' },
   // RFC1918 hosts, but not network/example notations (x.x.x.0, /8 CIDR) or RFC5737 doc ranges.
-  { id: 'lan-address', re: /\b(?:10\.\d{1,3}\.\d{1,3}\.(?!0\b)\d{1,3}|192\.168\.\d{1,3}\.(?!0\b)\d{1,3})\b(?!\/)/, scope: A_SCOPE, why: 'LAN address' },
+  // Whole tree except tests, which may need a private address to test private-range
+  // handling; real household addresses there are caught by the local secret guard.
+  { id: 'lan-address', re: /\b(?:10\.\d{1,3}\.\d{1,3}\.(?!0\b)\d{1,3}|192\.168\.\d{1,3}\.(?!0\b)\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.(?!0\b)\d{1,3})\b(?!\/)/, scope: TREE, exclude: (p) => TEST_PATH.test(p), why: 'LAN address' },
 ];
 
 const BINARY_EXT = /\.(png|jpe?g|gif|webp|ico|pdf|zip|gz|wasm|woff2?|ttf|otf|mp[34]|webm|wav|mid|sf2|ogg|flac|m4a|mov|bmp|ttc|sqlite|a|o|so|jar|class|pyc)$/i;
@@ -61,7 +64,7 @@ const inScope = (path, scope) => scope.some((s) => s === '' || (s.endsWith('/') 
 export function auditContent(path, text) {
   if (CONTENT_EXEMPT.has(path)) return [];
   const out = [];
-  const rules = CONTENT_RULES.filter((r) => inScope(path, r.scope));
+  const rules = CONTENT_RULES.filter((r) => inScope(path, r.scope) && !r.exclude?.(path));
   if (!rules.length) return out;
   text.split('\n').forEach((line, i) => {
     for (const rule of rules) if (rule.re.test(line)) out.push({ rule: rule.id, path, line: i + 1 });

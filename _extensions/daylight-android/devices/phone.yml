@@ -1,6 +1,5 @@
 # The owner's phone. Sideloaded. Not a kiosk: no lockdown, so it is never offered as the
 # home app. Reaches the backend over the always-on VPN at the address the kiosks use.
-# Nothing here has run on a phone yet.
 id: phone
 package: net.kckern.daylight.phone
 android: { minSdk: 26, targetSdk: 33 }
@@ -10,7 +9,7 @@ abis: []
 # all. Its installed components (the link activity, the tiles, the widget) reach the
 # payload in-process. Debugging is over adb: logcat, and run-as for its files.
 control: { port: 8780, lifelinePort: 8781, bind: none }
-shell: { versionCode: 38, versionName: "0.1-phone" }
+shell: { versionCode: 77, versionName: "0.1-phone.77" }
 # The household site's host, so an https link to it (in a relayed push, say) can open in
 # the app. Private: resolved from `placeholders:` when this device's manifest is built.
 appLinks: { host: "{phone_link_host}" }
@@ -29,10 +28,8 @@ defaults:
   # The household site as the phone reaches it: a full https URL, resolved from
   # `placeholders:` in the private tokens file when the payload is built.
   webview.startUrl: "{phone_start_url}"
-  # Somebody's own phone: the site (admin, finance, health) stays behind the lock screen,
-  # and no page is given the microphone or the camera. Calling from the phone is not
-  # in scope yet; quick inputs record through the app's own recorder and take photos
-  # through the system's camera app, not through a page.
+  # Only the household Call page can ask for camera and microphone access.
+  webview.callPermissions: true
   webview.showWhenLocked: false
   webview.allowMic: false
   webview.allowCamera: false
@@ -45,7 +42,10 @@ defaults:
   # Pages of the site that an action, or a link without the install key, may open. Each
   # is "id|label|icon|path"; a path is a page of the site, never an API route.
   bookmarks.1: "media|Media|play|/media"
-  bookmarks.2: "call|Call|open|/call"
+  bookmarks.3: "health|Health|health|/health"
+  bookmarks.2: "call|Call|call|/call"
+  bookmarks.4: "home|Home|home|/home"
+  bookmarks.5: "lifelog|Lifelog|lifelog|/life/log"
   # Where a quick input goes is a settings line, input.dest.<n>: "id|label|kind|route",
   # the kind being voice, text or photo and the route a path under /api/v1/ on the
   # backend. The five of the intake contract are the capability's own defaults (journal,
@@ -56,20 +56,25 @@ defaults:
   # widget. Each is "id|label|icon|target"; a target is input:<voice|text|photo>:<destination id>,
   # open:/page, bookmark:<id>, media:<content id> or api:/api/... (an empty POST to that
   # path) or location:share. memo:new still means input:voice:journal.
-  # A voice action opens the recorder; tapped again while a recording is under way, it
-  # stops and saves it. A text action opens a field with Send; a photo action opens the
+  # A voice action opens the recorder; only Send memo queues a recording.
+  # A text action opens a field with Send; a photo action opens the
   # camera. Each needs this install's link key, which only the app's own surfaces have.
-  actions.1: "journal|Journal|mic|input:voice:journal"
-  actions.2: "meal|Meal|mic|input:voice:meal"
+  actions.1: "journal|Journal voice|mic|input:voice:journal"
+  actions.2: "meal|Meal voice|mic|input:voice:meal"
   actions.3: "meal-photo|Meal photo|camera|input:photo:meal-photo"
-  actions.4: "journal-note|Journal note|note|input:text:journal-note"
-  actions.5: "meal-note|Meal note|note|input:text:meal-note"
+  actions.4: "journal-note|Journal text|note|input:text:journal-note"
+  actions.5: "meal-note|Meal text|note|input:text:meal-note"
   actions.6: "media|Media|play|bookmark:media"
-  actions.7: "call|Call|open|bookmark:call"
+  actions.7: "call|Call|call|bookmark:call"
   # PLACEHOLDER: "On my way". A tap says location sharing is not built yet and does
   # nothing else; the phone asks for no location permission. On no surface by default:
   # add its id to a list below (or a one-action button) to place it.
+  actions.9: "health|Health|health|bookmark:health"
+  actions.10: "home|Home|home|bookmark:home"
+  actions.12: "meal-barcode|Meal barcode|camera|open:/health?capture=barcode"
+  actions.11: "lifelog|Lifelog|lifelog|bookmark:lifelog"
   actions.8: "omw|On my way|bolt|location:share"
+  actions.13: "capture-status|Capture status|note|input:status"
   # Launcher (long-press) shortcuts, in order, and the action of each quick-settings
   # slot ("Daylight 1" to "Daylight 4"; an empty entry leaves a slot unassigned).
   actions.shortcuts: "journal,meal,meal-photo,journal-note"
@@ -78,12 +83,12 @@ defaults:
   widgets.actions: "journal,meal,meal-photo,media"
   # The tabs a car (and any media browser) shows, at most four: "Label=target;...", a
   # target being recent, catalog or a container's content id.
-  media.roots: "Recent=recent;Browse=catalog"
+  media.roots: "Drive=drive:;Recent=recent;Library=catalog"
   # The apps that may connect to the media session beside this app and the system (a
   # car, an assistant): "package=sha256 of its signing certificate", comma-separated.
-  # Empty: none, so the first connection from a car is refused and logged with the entry
-  # to add here. See "Who may connect" in __docs/reference/android/phone.md.
-  media.controllerPins: ""
+  # Signer verified on the Play-installed Android Auto app. The package must also
+  # belong to the calling UID. See "Who may connect" in the phone reference.
+  media.controllerPins: "com.google.android.projection.gearhead=1ca8dcc0bed3cbd872d2cb791200c0292ca9975768a82d676b8b424fb65b5295"
   # The car screen's list in Android Auto (car-actions): ids of the actions above, at most
   # six. A household call (api:), "On my way" and a voice input can be listed; a web page,
   # media, text and photo cannot. A tap runs the action in process; a tap on a voice input

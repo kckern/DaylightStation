@@ -171,7 +171,7 @@ describe('contextual launch card lesson media', () => {
     // A direct Plex URL carries no credentials a kiosk holds; a broken image is
     // worse than no image.
     expect('artwork' in cardWith({
-      id: 'u1', title: 'Lesson', thumbnail: 'http://10.0.0.5:32400/library/metadata/1/thumb',
+      id: 'u1', title: 'Lesson', thumbnail: 'http://10.20.30.5:32400/library/metadata/1/thumb',
     })).toBe(false);
   });
 

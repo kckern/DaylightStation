@@ -46,12 +46,12 @@ describe('InvadersTouchKeys', () => {
 });
 
 describe('InvadersMenus: choose your controls', () => {
-  it('offers every gesture and the gamepad as tiles, the defender\'s own marked, the cursor pressed', () => {
+  it('offers every gesture as a tile and no gamepad, the defender\'s own marked, the cursor pressed', () => {
     const onMethod = vi.fn();
     const { container } = render(<InvadersMenus screen="method" shooterName="Kid" setup={{ cursor: 3, current: 'wings', camera: 'on' }} onMethod={onMethod} />);
     const tiles = [...container.querySelectorAll('.skyline-invaders__method')];
-    expect(tiles.map((tile) => tile.dataset.method)).toEqual([...GESTURES, 'gamepad']);
-    expect(tiles.map((tile) => tile.querySelector('strong').textContent)).toEqual([...GESTURES.map((g) => GESTURE_INFO[g].label), 'Gamepad']);
+    expect(tiles.map((tile) => tile.dataset.method)).toEqual([...GESTURES]);
+    expect(tiles.map((tile) => tile.querySelector('strong').textContent)).toEqual(GESTURES.map((g) => GESTURE_INFO[g].label));
     expect(container.querySelector('[data-current]').dataset.method).toBe('wings');
     expect(container.querySelector('[data-current] .skyline-invaders__method-yours').textContent).toBe('Yours');
     expect(container.querySelector('[aria-pressed="true"]').dataset.method).toBe('wheel');
@@ -61,11 +61,11 @@ describe('InvadersMenus: choose your controls', () => {
     expect(screen.queryByTestId('invaders-setup-note')).toBeNull();
   });
 
-  it('with the camera off only the gamepad can be chosen, and the screen says why', () => {
+  it('with the camera off nothing can be chosen, and the screen says why', () => {
     render(<InvadersMenus screen="method" setup={{ cursor: 0, camera: 'off' }} />);
-    expect(screen.getByTestId('invaders-method-wiper').disabled).toBe(true);
-    expect(screen.getByTestId('invaders-method-gamepad').disabled).toBe(false);
-    expect(screen.getByTestId('invaders-setup-note').textContent).toBe('The camera is off. Aim with the gamepad.');
+    for (const gesture of GESTURES) expect(screen.getByTestId(`invaders-method-${gesture}`).disabled).toBe(true);
+    expect(screen.queryByTestId('invaders-method-gamepad')).toBeNull();
+    expect(screen.getByTestId('invaders-setup-note').textContent).toBe('The camera is off.');
   });
 });
 

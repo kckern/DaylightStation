@@ -5,8 +5,8 @@
  *
  * WHY THIS EXISTS: the same physical tag arrives spelled differently depending
  * on which reader saw it. The household's audiobook readers write byte-separated
- * lowercase (`04_66_9c_0f_cb_2a_81`); the omr-relay's ST25R3916 emits packed
- * uppercase (`04669C0FCB2A81`). Before this existed the trigger path only
+ * lowercase (`04_f0_00_00_00_00_05`); the omr-relay's ST25R3916 emits packed
+ * uppercase (`04F00000000005`). Before this existed the trigger path only
  * lowercased, so those two spellings of ONE card resolved as two different
  * tags — one registered to a learner, the other unknown.
  *

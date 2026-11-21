@@ -126,4 +126,77 @@ describe('createWramCalibrator.calibrate', () => {
     expect(await cal.calibrate()).toBeNull();
     expect(warn).toHaveBeenCalled();
   });
+
+  it('throws ENOFRAMES (not a failed calibration) when no frames ran, and removes the cheats', async () => {
+    const heap = new Uint8Array(0x10000);
+    const resetCheat = vi.fn();
+    const cal = createWramCalibrator({
+      setCheat: vi.fn(),
+      resetCheat,
+      getHeap: () => heap,
+      waitFrames: async () => false, // stalled boot: the cap hit first
+      scratchAddr: 0xc080,
+    });
+    await expect(cal.calibrate()).rejects.toMatchObject({ code: 'ENOFRAMES' });
+    expect(resetCheat).toHaveBeenCalledTimes(1);
+  });
+
+  describe('a game whose sprite table sits on the scratch page (Super Mario Land)', () => {
+    // WRAM at heap 20000; the core's OAM copy of $C000-$C09F at heap 60000.
+    const WRAM = 20000;
+    const OAM = 60000;
+    function smlCore(heap) {
+      const codes = new Map();
+      return {
+        setCheat: (i, enabled, code) => codes.set(i, code),
+        resetCheat: () => codes.clear(),
+        waitFrames: async () => {
+          for (const code of codes.values()) {
+            const value = parseInt(code.slice(2, 4), 16);
+            const addr = parseInt(code.slice(6, 8) + code.slice(4, 6), 16);
+            heap[WRAM + (addr - 0xc000)] = value;
+            if (addr <= 0xc09f) heap[OAM + (addr - 0xc000)] = value; // OAM DMA mirror
+          }
+        },
+      };
+    }
+
+    it('one ping on the sprite page is ambiguous', async () => {
+      const heap = new Uint8Array(0x20000);
+      const cal = createWramCalibrator({ ...smlCore(heap), getHeap: () => heap, scratchAddrs: [0xc080] });
+      expect(await cal.calibrate()).toBeNull();
+    });
+
+    it('a second ping on another page settles it and puts its bytes back', async () => {
+      const heap = new Uint8Array(0x20000);
+      const second = WRAM + (0xdc80 - 0xc000);
+      heap.set([1, 2, 3, 4], second); // game data under the second ping
+      const setCheat = vi.fn();
+      const core = smlCore(heap);
+      const cal = createWramCalibrator({
+        ...core,
+        setCheat: (...a) => { setCheat(...a); core.setCheat(...a); },
+        getHeap: () => heap,
+        scratchAddrs: [0xc080, 0xdc80],
+      });
+      const result = await cal.calibrate();
+      expect(result.wramBase).toBe(WRAM);
+      expect(setCheat).toHaveBeenCalledTimes(64);
+      expect([...heap.slice(second, second + 6)]).toEqual([1, 2, 3, 4, 0, 0]);
+    });
+
+    it('stops after the first ping when it is already unambiguous', async () => {
+      const heap = new Uint8Array(0x20000);
+      const setCheat = vi.fn();
+      const core = smlCore(heap);
+      const cal = createWramCalibrator({
+        ...core,
+        setCheat: (...a) => { setCheat(...a); core.setCheat(...a); },
+        getHeap: () => heap,
+        scratchAddrs: [0xdc80, 0xc080],
+      });
+      expect((await cal.calibrate()).wramBase).toBe(WRAM);
+      expect(setCheat).toHaveBeenCalledTimes(32);
+    });
+  });
 });

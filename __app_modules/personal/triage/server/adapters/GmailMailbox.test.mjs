@@ -201,3 +201,14 @@ describe('GmailMailbox', () => {
     await expect(mb.senderHistory('u', 'a@b.com')).rejects.toMatchObject({ code: 'MAILBOX_SCOPE_MISSING' });
   });
 });
+
+describe('decodeSnippet', () => {
+  it('decodes the entities Gmail puts in snippets, once', async () => {
+    const { decodeSnippet } = await import('./GmailMailbox.mjs');
+    expect(decodeSnippet('If you didn&#39;t request this email &amp; more')).toBe("If you didn't request this email & more");
+    expect(decodeSnippet('&quot;hi&quot; &#x27;x&#x27; &lt;b&gt;')).toBe('"hi" \'x\' <b>');
+    expect(decodeSnippet('&amp;lt; stays one level')).toBe('&lt; stays one level');
+    expect(decodeSnippet('&bogus; &#0; plain')).toBe('&bogus; &#0; plain');
+    expect(decodeSnippet(undefined)).toBe('');
+  });
+});

@@ -11,14 +11,14 @@ describe('GovernanceEngine.swapCycleRider', () => {
     nowValue = 10000;
     const session = {
       _deviceRouter: {
-        getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['user_2', 'user_3', 'user_1'] }]
+        getEquipmentCatalog: () => [{ id: 'bike_b', eligible_users: ['user_2', 'user_3', 'user_1'] }]
       }
     };
     engine = new GovernanceEngine(session, { now: () => nowValue });
     // Set up a fake active cycle challenge in init state
     engine.challengeState.activeChallenge = {
       id: 'cyc_1', type: 'cycle', cycleState: 'init', rider: 'user_2',
-      ridersUsed: ['user_2'], equipment: 'cycle_ace', currentPhaseIndex: 0,
+      ridersUsed: ['user_2'], equipment: 'bike_b', currentPhaseIndex: 0,
       initStartedAt: 10000, initElapsedMs: 3000, initTotalMs: 60000,
       rampElapsedMs: 0, phaseProgressMs: 0,
       generatedPhases: [{ hiRpm: 60, loRpm: 45, rampSeconds: 10, maintainSeconds: 30 }],

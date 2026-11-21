@@ -95,6 +95,8 @@ const systemPrompt = (targetLanguage, script) => [
   'Reply with JSON {"score": <integer 1-10>, "reason": "<one short sentence>"}.',
 ].join('\n');
 
+/** On a spelling card, a letter-distance score at or above this is a near miss (one jamo on a short word, ≤ 20% longer). */
+const NEAR_SCORE = 6;
 /** Below this, Jev's score does not overrule the letter rules (see the header). */
 const MIN_CONFIDENCE = 0.4;
 /** Match kinds that say "right" / "wrong" — a score on the other side contradicts them. */
@@ -120,6 +122,19 @@ export class CardLadderTypedJudge {
   #verdict(score, judge, reason = null, match = null) {
     return { score, judge, reason, pass: score >= this.#passScore, ...(match ? { match } : {}) };
   }
+  /**
+   * SPELLING IS THE TEST (owner ruling 2026-11-20). On a dictation card the child
+   * heard the word and types it, so only the exact spelling passes; meaning
+   * (Jev, synonyms) has no say. A letter slip — the distance bands at or above
+   * NEAR_SCORE — is `near`: shown as "So close!" with the spelling, and the word
+   * neither signs off nor drops back. 만돌다 for 만들다 passed as `distance` 6
+   * and signed the word off before this.
+   */
+  #spellingVerdict(base) {
+    if (base.judge === 'exact') return this.#verdict(base.score, 'exact');
+    const near = base.judge === 'distance' && base.score >= NEAR_SCORE;
+    return { score: base.score, judge: base.judge === 'distance' ? 'spelling' : base.judge, reason: null, pass: false, ...(near ? { near: true } : {}) };
+  }
   #hasModel() { return Boolean(this.#decision) || Boolean(this.#ai && this.#model); }
 
   /**
@@ -127,7 +142,7 @@ export class CardLadderTypedJudge {
    * the script picks the deterministic scorer's units and floor, the language
    * name goes into the model's instructions.
    */
-  async judge({ pkg, entry, typed, otherWords = [], targetScript = null, targetLanguage = null, heard = false }) {
+  async judge({ pkg, entry, typed, otherWords = [], targetScript = null, targetLanguage = null, heard = false, spelling = false }) {
     // A grown-up's re-grade (spec §6) is the last word on this exact answer.
     // Every cache key is the target script's normalize (Hangul: normalizeAnswer, unchanged).
     const rule = ruleForTarget(entry.term, targetScript);
@@ -141,6 +156,7 @@ export class CardLadderTypedJudge {
     const overruled = this.#cache.get(pkg, entry.id, normalized);
     if (overruled?.judge === 'grown-up') return this.#verdict(overruled.score, 'grown-up', overruled.reason ?? null);
     const base = scoreTypedDeterministic({ target: entry.term, typed, otherWords: termsOf(otherWords), targetScript: rule.script });
+    if (spelling) return this.#spellingVerdict(base);
     if (this.#decision) return this.#judgeByDecision({ pkg, entry, typed, normalized, otherWords, rule, base, targetLanguage, heard });
     if (base.judge !== 'distance') return this.#verdict(base.score, base.judge);
     if (isShortTarget(entry.term, rule.script) || !modelMayRaise(base) || !this.#hasModel()) return this.#verdict(base.score, 'distance');

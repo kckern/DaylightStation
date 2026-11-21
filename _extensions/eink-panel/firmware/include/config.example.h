@@ -13,5 +13,5 @@
 #define WIFI_PASSWORD    "YOUR_WIFI_PASSWORD"
 
 #define PANEL_ID         "kitchen-eink"     // matches screens/<id>.yml; identity + config locator
-#define DS_HOST          "10.0.0.68"        // DaylightStation backend host
+#define DS_HOST          "192.0.2.10"        // DaylightStation backend host
 #define DS_PORT          3112               // backend port (env.ports.backend)

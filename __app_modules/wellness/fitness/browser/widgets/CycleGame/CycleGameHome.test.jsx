@@ -4,7 +4,7 @@ import CycleGameHome from "./CycleGameHome.jsx";
 import * as uiLogMod from "./home/uiLog.js";
 
 const bikes = [
-  { id: 'cycle_ace', name: 'CycleAce', rider: 'user_3' },
+  { id: 'bike_b', name: 'Bike B', rider: 'user_3' },
   { id: 'tricycle', name: 'Tricycle', rider: null }
 ];
 const people = [
@@ -86,11 +86,11 @@ describe('CycleGameHome', () => {
     const { getByTestId } = render(
       <CycleGameHome bikes={bikes} people={people} records={[]} />
     );
-    expect(getByTestId('bike-cycle_ace')).toBeTruthy();
+    expect(getByTestId('bike-bike_b')).toBeTruthy();
     expect(getByTestId('bike-tricycle')).toBeTruthy();
     // a filled slot keeps the equipment hero AND shows the rider's avatar
     // the rider's name sits under the filled slot (guests share an avatar)
-    const filled = getByTestId('bike-cycle_ace');
+    const filled = getByTestId('bike-bike_b');
     expect(filled.querySelector('.cgh-slot__device')).toBeTruthy();
     expect(filled.querySelector('.cgh-slot__rider-avatar')).toBeTruthy();
     expect(filled.querySelector('.cgh-slot__name').textContent).toBe('User_3');
@@ -131,10 +131,10 @@ describe('CycleGameHome', () => {
       <CycleGameHome bikes={bikes} people={people} records={[]} onUnassign={onUnassign} />
     );
     // clicking a filled slot reopens the picker, which offers Clear
-    fireEvent.click(getByTestId('bike-cycle_ace').querySelector('.cgh-slot__main'));
+    fireEvent.click(getByTestId('bike-bike_b').querySelector('.cgh-slot__main'));
     expect(getByTestId('rider-picker')).toBeTruthy();
     fireEvent.click(getByTestId('rider-clear'));
-    expect(onUnassign).toHaveBeenCalledWith('cycle_ace');
+    expect(onUnassign).toHaveBeenCalledWith('bike_b');
   });
 
   it('separates guests behind a tab; household shows on the main tab', () => {
@@ -456,11 +456,11 @@ describe('CycleGameHome', () => {
     const { getByTestId } = render(
       <CycleGameHome bikes={bikes} people={people} records={[]} />
     );
-    expect(getByTestId('bike-cycle_ace').querySelector('.cgh-slot__lane')).toBeTruthy();
+    expect(getByTestId('bike-bike_b').querySelector('.cgh-slot__lane')).toBeTruthy();
     expect(getByTestId('bike-tricycle').querySelector('.cgh-slot__lane')).toBeTruthy();
     // empty slot advertises how to fill it; filled slot does not
     expect(getByTestId('bike-tricycle').querySelector('.cgh-slot__add')).toBeTruthy();
-    expect(getByTestId('bike-cycle_ace').querySelector('.cgh-slot__add')).toBeNull();
+    expect(getByTestId('bike-bike_b').querySelector('.cgh-slot__add')).toBeNull();
   });
 
   // audit C6 / user feedback 2026-07-02: a selected ghost used to be
@@ -474,7 +474,7 @@ describe('CycleGameHome', () => {
       <CycleGameHome bikes={bikes} people={people} records={[]} ghostRoster={ghostRoster} />
     );
     // Real bikes still render.
-    expect(getByTestId('bike-cycle_ace')).toBeTruthy();
+    expect(getByTestId('bike-bike_b')).toBeTruthy();
     expect(getByTestId('bike-tricycle')).toBeTruthy();
     // The ghost gets its own lane in the same grid.
     const ghostSlot = getByTestId('ghost-slot-ghost:20260701120000:user_1');
@@ -632,7 +632,7 @@ describe('CycleGameHome — busy (a start is pending)', () => {
 
   it('bike slots do not open the rider picker', () => {
     const { getByTestId, queryByTestId } = renderHome({ busy: true });
-    ['bike-cycle_ace', 'bike-tricycle'].forEach((id) => {
+    ['bike-bike_b', 'bike-tricycle'].forEach((id) => {
       const btn = getByTestId(id).querySelector('button');
       expect(btn.disabled).toBe(true);
       fireEvent.click(btn);
@@ -705,7 +705,7 @@ describe('CycleGameHome — busy (a start is pending)', () => {
     it('an open rider picker cannot clear the rider', () => {
       const h = handlers();
       const { getByTestId, rerender } = render(home(h));
-      fireEvent.click(getByTestId('bike-cycle_ace').querySelector('button'));
+      fireEvent.click(getByTestId('bike-bike_b').querySelector('button'));
       rerender(home(h, { busy: true }));
       fireEvent.click(getByTestId('rider-clear'));
       expect(h.onUnassign).not.toHaveBeenCalled();

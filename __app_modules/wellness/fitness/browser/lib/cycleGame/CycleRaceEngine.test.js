@@ -5,7 +5,7 @@ const HOT = [{ id: 'hot', distance_multiplier: 2 }];
 const distRace = () => new CycleRaceEngine({
   winCondition: 'distance', goalM: 63, intervalMs: 5000, zones: HOT, hrlessMultiplier: 1,
   riders: [
-    { userId: 'a', displayName: 'A', equipmentId: 'cycle_ace', wheelCircumferenceM: 2.1 },
+    { userId: 'a', displayName: 'A', equipmentId: 'bike_b', wheelCircumferenceM: 2.1 },
     { userId: 'b', displayName: 'B', equipmentId: 'tricycle', wheelCircumferenceM: 1.2 }
   ]
 });

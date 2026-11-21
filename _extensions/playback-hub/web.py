@@ -528,10 +528,14 @@ def slot_status(device, bt_records=None, bt_ok=False):
     }
 
 API_BASE = "https://daylightlocal.kckern.net"
-API_FALLBACK_BASE = "http://10.0.0.10:3111"
+# LAN fallback when the public name fails, from the environment
+# (PLAYBACK_HUB_API_FALLBACK=http://<host>:<port>). Empty = no fallback.
+API_FALLBACK_BASE = os.environ.get("PLAYBACK_HUB_API_FALLBACK", "")
 MIN_AUDIO_BYTES = 2048
 
 def with_api_fallback(url):
+    if not API_FALLBACK_BASE:
+        return url
     return url.replace(API_BASE, API_FALLBACK_BASE, 1)
 
 def api_open(url, timeout=5):

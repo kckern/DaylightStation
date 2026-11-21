@@ -7,17 +7,11 @@ routes (which the phone registers and serves to nobody), settings and the fleet 
 `__docs/reference/android/README.md`; the web view and its page bridge are in
 `__docs/reference/android/kiosk.md`.
 
-**None of this has run on a phone.** The build passes its unit tests, lint and the
-build verifier. Nothing has been installed. A security review of the build was
-answered before any install; what it changed is in "The lock screen, the
-microphone and the camera", "The link key", "Who may connect", "The exact list"
-and the `quick-input` section. The quick inputs (text, photo, more than one
-destination) were added after that review and have had none of their own. A later
-review of the car screen and of pinning media changed "Who may bind the car screen"
-(the binder gate) and "What a pin does" (recorded only on the owner's confirmation). Every statement below about what
-Android does (cold starts, tiles, the launcher, link handling) is from the
-platform's documentation and is unproven until the on-device checklist is run.
-"Unproven on a phone" below marks the places where that matters most.
+Build 49 was observed on Android 17 with Apex as the active launcher. Build 50 is
+a signed debug checkpoint for testing the upgrade with a private draft. The acceptance
+runbook records setup and actual use separately for each launcher and identifies
+which steps need the paired web and backend build, a physical fixture, or another
+person. See [phone acceptance](../../runbooks/android/phone-acceptance.md).
 
 What the phone build has: the site's mobile web views (`webview-host`), links
 (`notifications`), `bookmarks`, `one-tap-actions` (with the "On my way"
@@ -29,6 +23,33 @@ Journalist and Nutribot (`quick-input`: a recording, typed text or a photo) and
 the app's own local notifications. What it does not have is
 under "What the phone does not have".
 
+## Phone home
+
+The Daylight app icon opens setup. Choose Health, Home, Lifelog, Media or
+Call to add its own shortcut to Android Home. Journal and Meal capture shortcuts
+open the recorder, text form or camera directly from Android Home. **Meal
+barcode** opens the Health scanner. **Capture status** opens receipt and retry
+controls. Full Journal needs a supported mobile destination.
+
+A service shortcut starts a fresh service WebView. Back follows that service’s
+history and returns to Android Home from its root. Health, Home, Lifelog and
+Media can show sign-in in place and reload the requested address after sign-in.
+Call uses the household network and opens local preview before screen selection.
+
+Tap the named service or capture row marked **+** to request a shortcut.
+The row announces **Add to home screen** with its name in TalkBack. **Confirm
+in Android** means Daylight is waiting for the launcher. **Added** means the launcher
+reported success. Check Android Home for the icon. After 10 seconds without a
+callback, **Placement unconfirmed** lets you check your home screen and retry.
+Launchers such as Apex can also offer Daylight in their shortcut chooser. Choose
+a supported service or capture action there when assigning a gesture.
+
+Use **Play on demand → Playlists** to stage a playlist, then use **Staged**
+or the launcher's **Daylight playlist** widget picker to place its 1×1 widget.
+See the [phone experience guide](../../../_extensions/daylight-android/PHONE-EXPERIENCE.md)
+for catalog selection, search and recents in the picker, Drive staples, and
+Driving Radio.
+
 ## What makes it a phone and not a kiosk
 
 | | Kiosk (`piano`, `portal`, `shield`) | `phone` |
@@ -39,7 +60,7 @@ under "What the phone does not have".
 | `debug-tools`, `app-launcher` | Listed | Not listed: both exist to be driven over the control API. The payload test fails a device that is not a kiosk and lists either |
 | Heartbeats and log shipping | On, to the household log store | Off (`heartbeat.enabled: false`, no log store URL). The test requires heartbeats of kiosks only |
 | Self-update and secure-settings permissions | `REQUEST_INSTALL_PACKAGES`, `WRITE_SECURE_SETTINGS` | Neither. They come from a kiosk build's generated manifest only |
-| Drawing over other apps, the page's camera | `SYSTEM_ALERT_WINDOW`, `CAMERA` (marked `kioskOnly` in `webview-host`'s `capability.yml`) | Neither: the phone's generated manifest removes them |
+| Drawing over other apps | `SYSTEM_ALERT_WINDOW` | Removed from the phone manifest |
 | Lock task, TV launcher entry | `lockTaskMode="if_whitelisted"` and a `LEANBACK_LAUNCHER` category on the kiosk Activity | Neither: removed by the phone's generated manifest |
 | Setup activity (`MainActivity`) | Exported, startable by name over adb | Not exported |
 | Plain-http traffic | Allowed (LAN services) | Refused by the platform: `usesCleartextTraffic="false"`, and the build fails on an address setting that is not https |
@@ -99,25 +120,18 @@ and `lockdown`, which the phone does not list (the same test fails a phone build
 that lists either). The Activity never turns the screen on and never dismisses the
 keyguard.
 
-When a build does allow capture, a request is granted only when all of these hold:
-
-1. The asking origin is the start URL's or one in `webview.bridgeOrigins`.
-2. The setting for that resource is true.
-3. The app holds the Android permission (`RECORD_AUDIO`, `CAMERA`). On the phone
-   the app holds `RECORD_AUDIO` after the first voice input, so this condition alone
-   protects nothing there. The phone build never holds `CAMERA`: a photo input is
-   taken by the system's camera app.
-4. The document was not opened by a link without the install key. The app
-   remembers how the document in the page got there. A link from another app or a
-   web page (`daylight://bookmark/call`, say) marks it; the mark stays through a
-   retry, a reload and a redirect the page makes by script, and is cleared by a
-   load the app started (the start page, a keyed link) or by a navigation the owner
-   started with a tap inside the page. A kiosk has no link activity and never sets
-   the mark.
-
-So with capture allowed, a page can start the microphone when the owner opened it
-from inside the app or from one of the app's own keyed surfaces, and cannot when
-another app or a web link opened it. With the phone's settings no page can.
+On the phone, `webview.callPermissions` scopes runtime prompts to trusted
+household capture pages. Call can request camera and microphone. The Health
+barcode route can request camera for barcode scanning. Open the Call widget and allow Camera and
+Microphone while using Daylight. A denial offers **App settings**. Choose
+**Permissions**, change the relevant permission, then return and retry.
+A call page opened from an external unkeyed link cannot request capture.
+Other phone pages keep general web audio and video capture disabled. The barcode
+scanner releases the camera at review and when backgrounded. **Log item**
+commits the reviewed product, portion and meal with an operation ID. Verify the
+entry reference and Undo, or open it through **View in Health**. **Scan another**
+begins a separate attempt. **Done** on the trusted originating shortcut returns
+to Android Home. An ordinary Health scanner closes in Health.
 
 ## Private values a phone build needs
 
@@ -153,9 +167,10 @@ Two forms are links:
 | `daylight://open?path=/media[#k=<key>]` | Open that page of the site in the app | no, when the path is exactly a configured bookmark's; yes for any other page |
 | `daylight://bookmark/<id>` | Open a configured bookmark | no |
 | `daylight://action/<id>#k=<key>` | Run a one-tap action | yes |
-| `daylight://input/voice?to=<destination id>#k=<key>` | Open the recorder and start a recording for that destination; while one is being recorded, stop and save it | yes |
+| `daylight://input/voice?to=<destination id>#k=<key>` | Open the recorder or resume the active recording | yes |
 | `daylight://input/text?to=<destination id>#k=<key>` | Open the text screen for that destination | yes |
-| `daylight://input/photo?to=<destination id>#k=<key>` | Open the system's camera app; the photo it takes is queued for that destination | yes |
+| `daylight://input/photo?to=<destination id>#k=<key>` | Open the system camera or the destination’s private photo review | yes |
+| `daylight://input/status#k=<key>` | Open Capture status | yes |
 | `daylight://input/queue#k=<key>` | Try every waiting and parked input again, and say how many there are | yes |
 | `daylight://input/discard#k=<key>` | Throw away the inputs that could not be sent. Asks first; a second tap within twenty seconds deletes | yes |
 | `daylight://memo/new#k=<key>`, `memo/queue`, `memo/discard` | The earlier names of `input/voice?to=journal`, `input/queue` and `input/discard` | yes |
@@ -319,17 +334,17 @@ characters.
 |---|---|
 | `open:/path` | Opens that page of the site in the app |
 | `bookmark:<id>` | Opens a bookmark |
-| `input:<kind>:<destination id>` | A quick input: `input:voice:journal` opens the recorder (tapped again while one is being recorded, it stops and saves it), `input:text:journal-note` opens the text screen, `input:photo:meal-photo` opens the camera. In a build with no `quick-input` it is a stand-in that opens the app at `actions.memoFallbackPath` and `GET /actions` marks it `placeholder: true`. A per-device test fails a phone build where that is so, or where an action names a destination that is not configured or does not take its kind |
+| `input:<kind>:<destination id>` | A quick input: `input:voice:journal` opens the recorder (another tap shows the current draft), `input:text:journal-note` opens the text screen, `input:photo:meal-photo` opens the camera. In a build with no `quick-input` it is a stand-in that opens the app at `actions.memoFallbackPath` and `GET /actions` marks it `placeholder: true`. A per-device test fails a phone build where that is so, or where an action names a destination that is not configured or does not take its kind |
 | `memo:new` | The earlier name of `input:voice:journal`. Still accepted |
 | `media:<contentId>` | Plays that household item natively (`media-service`) |
 | `api:/api/...` | Sends an empty `POST` to that backend path and shows the outcome |
 | `location:share` | A placeholder. A tap shows "Location sharing is not built yet" and does nothing else; `GET /actions` marks it `placeholder: true`. See "On my way" below |
 
-The phone's actions: Journal, Meal (both by voice), Meal photo, Journal note,
-Meal note, Media, Call, On my way. The first four are its launcher shortcuts and its four
-tiles; the widget has Journal, Meal, Meal photo and Media. Two icon names were
-added for them, `camera` and `note`, beside `bolt`, `mic`, `open`, `play` and
-`star`.
+Long-press Daylight for four shortcuts. **Journal voice** and **Meal voice** open
+the recorder for their respective destinations. **Meal photo** opens the camera.
+**Journal text** opens the keyboard. The four Quick Settings tiles use the same
+actions. The four-button widget initially shows Journal voice, Meal voice, Meal
+photo and Media. Meal text is also available for a configurable button.
 
 An action exists as a settings line, or as a pinned media action (up to 24, made
 at the owner's media page through the page bridge's `pinMedia` and Android's pin
@@ -399,67 +414,20 @@ publishing.
 
 ## `widgets`
 
-Two widgets, both drawn from the surface cache by installed code that never
-calls the payload.
+New phone placements use the one-cell **Daylight playlist** widget. Legacy
+action assignments continue to draw and launch from the surface cache.
+A playlist tap uses the native play service and keeps the launcher visible.
+The widget provider validates widget ownership before recording an assignment.
+It preserves an existing assignment when a late placement callback arrives.
 
-**"Daylight actions"**: up to four buttons bound to the same actions.
-`widgets.actions` lists the ids in order; empty means the first four. Without
-`one-tap-actions`, or before the payload has ever run, the widget has one button,
-"Daylight", that opens the app.
-
-**"Daylight button"**: one cell, one action. Placing it opens a chooser
-(`ButtonWidgetConfigActivity`) that lists every action by its label; a tap on one
-binds the button to that action. The button shows the action's label and icon,
-and a tap launches the action's keyed link, the same link every other surface
-launches. A `media:` action is the exception on both widgets: its button starts the
-play service with the action's id and plays with no window (see "Playing with no
-window").
-
-- The widget remembers an action id and nothing else, in a private preferences
-  file of the installed app (`daylight_buttons`, key `button.<widget id>.action`).
-  The label, the icon and the link are read from the surface cache each time the
-  button is drawn. Removing the widget removes its entry.
-- The payload writes every action under its own id (`action.ids`, and
-  `action.<id>.label`, `.icon`, `.uri`) at start and whenever the actions are
-  published, and asks the buttons to redraw. A button's link is therefore under
-  the key in force; a tap on a cold start carries the key of the run before,
-  which is honoured for a minute.
-- A button whose action no longer exists (the settings line was removed, or the
-  widget was never given one) shows "Not set", and a tap opens the chooser again.
-  The payload empties the cache fields of an action that is gone, so the button
-  cannot launch a stale link.
-- From Android 9 the widget's own menu offers the chooser again
-  (`widgetFeatures="reconfigurable"`).
-- Before the payload has ever run the chooser has nothing to list. It says
-  "Daylight has no actions to show yet. Open the app once, then add the button
-  again." and starts the shell service, so the list is there the next time.
-
-The chooser is exported, because the launcher starts it and no permission exists
-that only a launcher holds. What it does with an intent from anybody:
-
-1. It reads the widget id and nothing else.
-2. It asks Android which provider that widget belongs to, and goes on only when
-   the answer is this app's button provider. An id of another app's widget, of
-   the four-button widget, or of no widget ends there.
-3. It lists the action labels and stores the id the owner taps, for that widget.
-
-It runs no action, starts no capture and no playback, opens no page and returns
-nothing but the widget id. Another app that starts it can put the list of action
-labels in front of the owner, and a tap by the owner then rebinds that one
-button. It is not shown over the lock screen.
+The [phone experience guide](../../../_extensions/daylight-android/PHONE-EXPERIENCE.md)
+covers the playlist visual states, the Apex chooser, and the distinction between
+staging and placement.
 
 | Method | Route | Answer |
 |---|---|---|
 | GET | `/widgets` | `{slots: [{id, label}], problems: [...]}` |
-| POST | `/widgets/refresh` | Writes the slots and every action, and asks the widgets to redraw |
-
-Both widgets are redrawn when the payload starts and whenever the actions are
-published.
-
-Unproven on a phone: that the launcher offers a one-cell widget with a
-configuration step, how it sizes `minWidth` 40dp before Android 12, and the look
-of the button on the owner's launcher (a dark tile, a white icon over a two-line
-label).
+| POST | `/widgets/refresh` | Writes the slots and actions, and asks the widgets to redraw |
 
 ## `media-service`
 
@@ -838,20 +806,22 @@ same mechanism as `POST /actions/pin`'s shortcuts).
 
 ## `android-auto`
 
-Declarations only: a `com.google.android.gms.car.application` meta-data entry
-pointing at `automotive_app_desc.xml` (`<uses name="media"/>`; in a build that also
-lists `car-actions`, that capability's copy of the file replaces it and adds
-`<uses name="template"/>`) and a one-colour attribution icon. Browsing and playback are `media-service`, which the capability
-requires; the verifier fails a build that has the declaration without it, or has it
-without listing `android-auto`.
+The phone APK declares Android Auto's standard media browser through
+`com.google.android.gms.car.application` and the media-only
+`automotive_app_desc.xml` in the phone flavor. Android Auto opens the native
+Daylight media library with Playlists, Recent, and Browse tabs. The household
+action templates use a separate Android for Cars App Library surface and are
+outside the sideloaded phone's media declaration.
 
-The app is sideloaded, so Android Auto lists it only after a one-time developer
-setting on the phone:
+The sideloaded media build needs Android Auto's **Unknown sources** developer
+setting on the phone. This setting is separate from Android's USB debugging:
 
 1. Open Android Auto's settings, scroll to "Version and permission info" and tap
    it ten times; accept developer mode.
-2. In the three-dot menu open "Developer settings" and turn on the option for apps
-   from unknown sources. Its exact label is not confirmed.
+2. In the three-dot menu open "Developer settings" and turn on **Unknown sources**.
+3. Reconnect the head unit and open Daylight from the car's app menu. Verify that
+   its media icon appears, the Playlists tab opens, and choosing a playlist
+   starts playback. A working media card alone verifies playback only.
 
 Testing without a car, with the Desktop Head Unit:
 
@@ -1090,8 +1060,9 @@ through the same queue.
 
 The contract with the backend is
 `ops:docs/superpowers/specs/2026-11-17-daylight-quick-input-intake-contract.md`.
-The backend's side was built in parallel on another branch; **no request has
-been sent to it from this app.**
+The paired backend adds per-ID destination receipts. The older intake contract
+can acknowledge transport. The acceptance runbook distinguishes that
+acknowledgment from a saved destination entry.
 
 ### Destinations
 
@@ -1146,8 +1117,7 @@ action is an `input:` line), or a keyed `input` link the app built itself.
   tap on that entry on the car's screen, into this same queue (see "A voice memo in
   the car"). Both hold the car to a pinned certificate.
 - A page's own use of the microphone or camera (`getUserMedia`) is a separate
-  path, through the web view, and is off on the phone (`webview.allowMic` and
-  `webview.allowCamera` are false).
+  path, through the web view, and follows the scoped Call and Health rules above.
 
 With `identity.user` empty, or `identity.device` not `fleet:<key>`, no screen
 opens: the action answers "Quick inputs are not set up on this phone: identity
@@ -1155,168 +1125,55 @@ not configured" (or "device identity not configured").
 
 ### Voice
 
-A recording for a destination. The recorder is the one the voice memo had,
-unchanged but for one thing: it is told the destination's id and puts it in the
-file's name (`<id>.<destination>.ogg`), so a recording still goes where it was
-meant to after the process was killed. A recording with no destination in its
-name (one made by an earlier build) is the journal's.
-
-Tapping any voice button while a recording is under way stops and saves that
-recording, whichever destination the button is for; it does not start another.
-
-**A recording is filed at the time it started.** The upload carries
-`X-Daylight-Recorded-At`, the epoch milliseconds at which the recording began, as
-kept in the queue entry (it is the leading number of the input's id, and for a
-recording recovered after a cut-off it is the start of that recording). The
-backend uses that time when it is within the last 30 days and no more than five
-minutes ahead of its own clock; outside that window it uses the time it received
-the input. A memo recorded with no connection and uploaded hours later is
-therefore journaled when it was said. Text and photos carry the same header: the
-time Send was tapped, and the time the camera was opened.
+Open the voice shortcut to record. Another tap returns to the active recording
+with its original destination. **Send memo** publishes the draft to the upload
+queue. The top-right **×** and Android Back ask before discarding a draft with
+content. Rotation keeps the recording. Loss of audio focus, recorder failure,
+service shutdown, or the recording limit ends the draft privately. Reopen the
+same destination and use **Resume draft** to play a recoverable recording, then
+send or discard it. An unreadable recording stays private with an interruption
+message. Phone audio uses Ogg/Opus where supported, with an AAC fallback. Car
+recording retains its own capture and send flow.
 
 ### Text
 
-`TextInputActivity`: a small dialog window titled with the destination's label,
-one multi-line field, Cancel and Send.
-
-- Nothing leaves the screen until Send. Cancel and the back button discard the
-  draft; a touch beside the window does nothing, so a draft is not lost to a
-  stray tap.
-- The intake's limit of 16,384 bytes is held as the text is typed, counted in
-  UTF-8 bytes (a Korean syllable is three, most emoji four). What does not fit is
-  not taken, and a character of several bytes is taken whole or not at all. A
-  line under the field says how much is left once under 2,048 bytes remain.
-- Send trims the space around the text. A draft with no character that shows is
-  not sent ("Nothing to send"): the intake would refuse it.
-- Send writes the text to `files/inputs/inbox/<id>.<destination>.txt` (to a
-  `.part` file, synced, then renamed) and tells the payload. From there it is in
-  the queue on disk: it survives the process being killed and is sent when the
-  backend can be reached. If the file cannot be written the draft stays in the
-  field and a message says nothing was sent.
-- The window is not shown over the lock screen, is kept out of the recents list,
-  and from Android 13 the system takes no recents picture of it; the field is
-  emptied before the window closes. `FLAG_SECURE` is not set, on purpose:
-  screenshots work.
-- A second input link while the screen is up changes nothing: the draft and its
-  destination stay.
+The named text shortcut opens a multiline editor. Edits are saved to a private
+draft, including across process restart. The 16,384-byte limit counts UTF-8 bytes
+and keeps each character intact. Send trims surrounding whitespace and requires
+visible content. Back or Cancel asks before discarding a draft with content.
+If the write fails, the draft remains available.
 
 ### Photo
 
-`PhotoCaptureActivity` has no window. Opening it opens the system's camera app
-(`MediaStore.ACTION_IMAGE_CAPTURE`), which writes the picture to a file of this
-app. When the camera returns, the photo is prepared and queued, a short message
-says where it is going, and nothing else is shown: there is no review step.
+Open **Meal photo** and grant Camera if prompted. Android’s camera app writes
+to a single-URI grant provided by `InputFileProvider`. After the camera confirms
+the image and the grant is withdrawn, Daylight shows a private review. **Use
+photo** reveals **Send**. **Retake** opens the camera again and retains the
+previous photo if canceled. **Discard** and Back ask before dropping a photo
+draft. Daylight recovers the capture where Android delivers the camera result
+after process recreation.
 
-**The app has no camera permission.** Android lets an app use the system camera
-through that intent without holding `CAMERA`, as long as the app does not
-declare it; an app that declares `CAMERA` must hold it or the intent is refused.
-The phone build does not declare it (`webview-host` marks it `kioskOnly`), so it
-is never asked for. In a build that does declare it the screen asks for it first
-(`CameraAsk`).
+Daylight applies EXIF orientation, scales the long edge to at most 2048 pixels,
+and re-encodes the image as JPEG. It checks the encoded file for EXIF, XMP and
+IPTC blocks and removes the camera source after processing. Upload uses the
+processed image and the capture timestamp kept separately.
 
-**How the camera app gets the file.** `InputFileProvider` is a content provider
-that is not exported. The photo screen creates an empty file,
-`files/inputs/inbox/<id>.<destination>.raw.part`, and gives the camera app a
-grant for that one URI (`content://<package>.inputs/capture/<that name>`), which
-it withdraws when the camera returns. The manifest allows grants for `/capture/`
-only (`grantUriPermissions="false"` with one `grant-uri-permission` path prefix;
-the verifier fails a build where that is wider). The provider serves a name of
-exactly that shape, for writing, and nothing else: not a finished photo, not
-typed text, not a recording, not any other file of the app.
+### Capture status
 
-**What is queued is never the camera's file.** Every capture is decoded and
-written again as a JPEG (`PhotoPlan`):
+Voice, text and photo drafts live in app-private storage under
+`files/capture-drafts`. They retain their ID, destination and capture time.
+An explicit Send publishes the draft to the appropriate inbox. Sending opens
+**Capture status** with that operation first. The same surface is available from
+its home shortcut or a single-item notification. It displays the configured
+destination, kind, time, delivery state and any saved reference.
 
-| Step | What |
-|---|---|
-| Turn | The camera's EXIF orientation is applied to the pixels, since the tag itself does not survive |
-| Scale | The long edge is at most 2048 pixels; a smaller photo is not enlarged |
-| Encode | JPEG quality 85 |
-| Fit | If the file is over the intake's 15,728,640 bytes it is written again at quality 70, then at 1536 pixels, then at 1024 pixels and quality 60 |
-| Check | The written file's headers are read (`JpegCheck`): a file with an EXIF or XMP segment (APP1) or an IPTC segment (APP13) is refused and deleted |
-| Clean up | The camera's file is deleted whatever the outcome |
-
-Writing the pixels again is what removes the EXIF block, and with it the
-position the photo was taken at, the phone's model and the capture time. **A
-photo's position does not leave the phone**; the check after writing is there so
-that a change to the encoder cannot undo that without a failure.
-
-A cancelled capture (back, or a rejected photo in the camera's own review)
-leaves no file. A capture whose screen was killed leaves the camera's file,
-which is removed once it is thirty minutes old, at the next pass of the queue or
-the next time a capture screen opens. If Android ends the app's process while
-the camera is in front, the screen is rebuilt when the camera returns and the
-photo is still prepared.
-
-### The pieces
-
-| Piece | Installed (shell half) | Payload | With no payload loaded |
-|---|---|---|---|
-| `RecordActivity` (not exported) | Asks for the microphone, starts the recorder, shows a clock and "Stop and save" | Opens it, on a keyed `input/voice` link, after checking the destination and that `identity.user` and `identity.device` are usable | Not reached through a link: the link activity waited for the payload. From the recording's notification it works as always |
-| `MemoRecorderService` (not exported; foreground service of type `microphone`) | Records into `<files>/memos/inbox/`, to a file ending `.part` that is renamed when whole | Told over the `inputs` port | Recording does not need the payload. The file waits in the inbox for the payload's next scan |
-| `TextInputActivity` (not exported) | The field; writes `<files>/inputs/inbox/<id>.<destination>.txt` on Send | Opens it, on a keyed `input/text` link; told over the `inputs` port | As above: the file waits for the next scan |
-| `PhotoCaptureActivity` (not exported) and `InputFileProvider` (not exported) | Opens the camera app, prepares the photo, writes `<files>/inputs/inbox/<id>.<destination>.jpg` | Opens it, on a keyed `input/photo` link; told over the `inputs` port | As above |
-
-Text and photos have an inbox of their own because the recorder's recovery
-treats a `.part` file as a recording that was cut off, which is right for audio
-only. A capture screen an older installed app does not have answers "<label>:
-not available in the installed app" and nothing else happens.
-
-### Recording
-
-- What can start a recording is under "Who can start a capture" above.
-- The record screen's button, the notification's Stop, and the memo tile, widget
-  button or shortcut tapped again all stop and save. A second tap within 1.5
-  seconds of the start is taken as the same tap.
-- The screen acts on its intent once. When Android builds the screen again (the
-  phone is turned, the theme or the font size changes) it shows the recording
-  under way and does nothing else. Before, that rebuild was read as a second tap
-  and stopped the memo.
-- Hard cap: 30 minutes (and 24 MB), then it stops and saves.
-- A call, or another app taking audio focus, stops the recording and saves what
-  was said so far. So does an error from the recorder.
-- Discarded: a recording under one second, and an empty file.
-- A memo's id is `<start ms>-<8 hex>`. Files are in the app's private storage.
-
-**With notifications denied.** A foreground service's notification is then not
-shown in the shade, so there is no "Recording a voice memo" notice and no Stop
-action. The recording runs all the same. It is stopped from the record screen,
-or by tapping the memo tile, widget button or shortcut again; the record screen
-says so when notifications are off. The tile and the widget do not change their
-look while a memo is being recorded. Android's own list of running apps (the
-"active apps" entry in the shade on Android 13 and later) still names Daylight.
-
-### The container, and a recording that is cut off
-
-One recording is one memo, and a recording whose process is killed is still a
-memo. The container is chosen for that:
-
-| Android | Written as | When the app is killed mid-recording |
-|---|---|---|
-| 10 and later (API 29) | One Ogg/Opus file, `<id>.<destination>.ogg`, mono: 16 kHz at 32 kbit/s, and where the encoder refuses that, 48 kHz at 64 kbit/s. Sent as `audio/ogg` | Ogg is a stream of pages with its headers first, so the file plays up to where it stops. It becomes a finished memo, queued with its real start time, and is uploaded |
-| 8 and 9 (API 26 to 28) | MP4/AAC in five-minute segments (the recorder moves to the next file by size, `setNextOutputFile`), each a whole file `<id>-<nn>.<destination>@<segment start ms>.m4a`. Sent as `audio/mp4`, each segment a memo of its own with the id `<id>-<nn>` and its own start time | Every finished segment is already a memo. The segment being written has no index and cannot be played; it is kept aside. At most the last five minutes are lost |
-
-Why Ogg and not segments everywhere: the intake takes one body per memo id and
-allows 60 memos a user a day. A thirty-minute memo is one of the sixty as Ogg and
-six as five-minute segments. MP4 cannot be made to survive a kill at all (its
-index is written at the end), and Ogg/Opus is only written by `MediaRecorder`
-from Android 10, so the segments are the fallback and nothing more.
-
-Recovery is `MemoRecovery`, in the installed half, because only the recorder
-knows whether a recording is under way. It runs before each new recording and at
-each pass of the upload queue (at payload start, when a network comes up, and at
-least every fifteen minutes):
-
-- `<id>.<destination>.ogg.part` with no recorder writing it becomes
-  `<id>.<destination>.ogg` and is queued for that destination.
-- A cut-off `.m4a.part`, and an Ogg file under 4 KiB (headers and less than a
-  second), is moved to `<files>/memos/cutoff/` and kept. A notice says how many
-  recordings are kept there and that they are not sent.
-- **Nothing that holds audio is deleted.** Only an empty file is removed.
-
-Unproven on a phone: that a cut-off Ogg file from this phone's encoder is
-accepted and transcribed by the intake, that the recorder accepts 16 kHz Opus,
-and everything about the segment fallback, which needs a phone on Android 8 or 9.
+**Accepted** means the intake acknowledged the capture. **Delivered** requires
+a final destination receipt. Journal receipts identify the saved entry. Meal
+receipts identify the saved meal log and can offer **View in Health**. **Retry**
+reuses the same capture ID. **Replace capture** opens a new private draft and
+requires a new Send. **Health status** opens the barcode operation history.
+Capture status shows items for the current household binding. The older queue
+continues to support legacy uploads with its existing aggregate controls.
 
 ### The upload queue
 
@@ -1495,23 +1352,15 @@ Twelve:
 | `POST_NOTIFICATIONS` | base | The service's and the app's own notifications |
 | `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | base | Declared; the phone build has no screen that asks for it (the setup activity is not reachable) |
 | `ACCESS_WIFI_STATE`, `ACCESS_NETWORK_STATE` | base, `webview-host`, `media-service`, `quick-input` | Reload and upload when a network returns |
-| `RECORD_AUDIO` | `webview-host`, `quick-input`, `car-actions` | Voice inputs, on the phone and through the car's microphone. No page is given it (`webview.allowMic` is false) |
+| `RECORD_AUDIO` | `webview-host`, `quick-input`, `car-actions` | Voice inputs, on the phone and through the car's microphone. The trusted Call page can request it |
+| `CAMERA` | `webview-host` | Video calls and permission to launch the system camera for meal photos |
 | `MODIFY_AUDIO_SETTINGS` | `webview-host` | Page audio |
 | `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | `media-service` | The media library service |
 | `FOREGROUND_SERVICE_MICROPHONE` | `quick-input` | The recorder service |
 
-The text and photo inputs added no permission: the list is the same twelve as
-before them, and `tools/phone-list.test.mjs` writes it out. A photo is taken by
-the system's camera app, so there is no `CAMERA`; the photo is written to the
-app's own files, so there is no storage or media permission; and nothing asks
-for a location.
-
-Not in the phone's APK, though a kiosk has them: `SYSTEM_ALERT_WINDOW`, `CAMERA`,
-`REQUEST_INSTALL_PACKAGES`, `WRITE_SECURE_SETTINGS`. Turning the page camera on
-for the phone later means taking `kioskOnly` off `CAMERA` in `webview-host`'s
-`capability.yml` as well as setting `webview.allowCamera`; the photo screen would
-then have to ask for the permission before it opens the camera app, which it
-does (`CameraAsk`).
+The phone keeps meal photos in its own files and requires no media-library,
+storage or location permission. Kiosk-only permissions include
+`SYSTEM_ALERT_WINDOW`, `REQUEST_INSTALL_PACKAGES` and `WRITE_SECURE_SETTINGS`.
 
 ### Application settings
 
@@ -1576,7 +1425,7 @@ What another app on the phone can reach, and what stands in the way.
 | `DaylightCarAppService` (`car-actions`) | Not exported | The Car App Library's service; bound only by the gate, in process |
 | `ButtonWidgetConfigActivity` (`widgets`) | The launcher starts it when a one-action button is placed | No permission exists that only a launcher holds. It reads the widget id, uses it only when Android says that widget is this app's button, lists the action labels and stores the owner's choice. It runs nothing |
 | `ActionWidgetProvider`, `ButtonWidgetProvider` | Not exported | Reached by the system's widget host and by the app only |
-| `PlayActivity`, `RecordActivity`, `TextInputActivity`, `PhotoCaptureActivity`, `MemoRecorderService` | Not exported | Started by this app only, by the payload on a keyed link |
+| `PlayActivity`, `RecordActivity`, `TextInputActivity`, `PhotoCaptureActivity`, `CaptureStatusActivity`, `MemoRecorderService` | Not exported | Started by this app only, by the payload on a keyed link |
 | `PlayActionService` (`media-service`) | Not exported | Started by this app's own widget buttons (an immutable `PendingIntent`) and tiles. Reads one action id; the payload decides what it plays |
 | `InputFileProvider` (`quick-input`) | Not exported | Reached by the camera app through a grant for the one file of a capture, made by the photo screen and withdrawn when the camera returns. Grants are limited to `/capture/` in the manifest, and the provider serves a capture file's exact name and nothing else |
 | `PinResultReceiver` (`one-tap-actions`) | Not exported | Reached only through the immutable, one-shot `PendingIntent` the payload hands `requestPinShortcut`, which the system sends once the owner has pinned a media shortcut. It passes a single-use token to the payload and nothing else |
@@ -1627,12 +1476,12 @@ components.
   of a real photo and the memory that takes, the rebuild of the screen after the
   process was ended behind the camera. Their decisions are in `PhotoPlan`,
   `JpegCheck`, `CameraAsk` and `CaptureFiles`, which are tested with made-up
-  files; no real photo has been through them.
+  files. Record physical camera review and upload separately.
 - `MemoRecorderService` and `RecordActivity`: the microphone, the encoder (Ogg/Opus,
-  and the MP4 segment rotation below Android 10), the foreground service, the
+  and the AAC fallback), the foreground service, the
   permission dialogs, a rebuild of the screen. Their decisions are in
   `RecorderMachine`, `MemoFiles`, `MemoRecovery` and `PermissionAsk`, which are
-  tested; that a cut-off Ogg file plays has not been tried.
+  tested. Playability after interruption requires a phone check.
 - `CarHostGateService`, `DaylightCarAppService`, `ActionsScreen`, `RecordScreen`,
   `CarRecorder` and `CarMemoWriter`: Android Auto binding the gate, the forward to
   the library's binder, the templates on a head unit, the car's microphone, the
@@ -1646,7 +1495,7 @@ components.
 - `AndroidNotices`: a notification on a screen. On the JVM it runs over a context
   with no notification service, which shows only that it does nothing there.
 - The backend's side of every media and quick-input request. The tests use a fake backend
-  built from the backend's code as read; no request has been sent.
+  to exercise request and response handling. Use the paired deployment for outcome checks.
 - That nothing listens on a real phone. The tests start the payload for the phone's
   configuration and show no control socket is bound and the port stays free; the
   shell's decision not to start a lifeline is one line that reads the same value

@@ -1,9 +1,9 @@
 import { applyCoachEvent, coachSummary, createCoachPlan, coachTaskKey, isGoldWork, projectCoach, COACH_VERSION } from '#shared/music/learnCoach.mjs';
 import { resolveSkipMode, stepAccess } from '#shared/music/learnSkipping.mjs';
+import { practiceKeyOfScore as keyOfScore } from '../../portable/music/practiceKey.mjs';
 
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 const SCORE = /^[a-z0-9-]{1,120}$/;
-const keyOfScore = (id) => String(id).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120);
 const identity = (state) => JSON.stringify([state?.scoreId, state?.fingerprint]);
 const canonical = (value) => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
   ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])])) : value;

@@ -34,8 +34,8 @@ describe('parseNfcTags', () => {
 
   it('rejects two spellings of one uid instead of letting key order decide', () => {
     expect(() => parseNfcTags({
-      '04_66_9c_0f_cb_2a_81': { plex: 1 },
-      '04669C0FCB2A81': { plex: 2 },
+      '04_f0_00_00_00_00_05': { plex: 1 },
+      '04F00000000005': { plex: 2 },
     }, KNOWN_READERS)).toThrow(/duplicates.*canonicalize/i);
   });
 

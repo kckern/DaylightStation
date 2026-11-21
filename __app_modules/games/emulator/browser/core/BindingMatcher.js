@@ -37,7 +37,7 @@ export function parseOn(on) {
 /**
  * Does a parsed descriptor match the given detail?
  */
-function matches(desc, detail) {
+export function matches(desc, detail) {
   switch (desc.kind) {
     case 'truthy':
       return detail.active === true;

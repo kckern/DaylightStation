@@ -16,7 +16,7 @@ import { EntityNotFoundError } from '../../../__backend/src/2_domains/core/error
 const makeDevice = ({
   position = 1,
   color = 'red',
-  mac = '41:42:3A:E5:43:07',
+  mac = 'AA:BB:CC:00:30:07',
   cls = 'private',
   haEntityId = null,
   volumeBounds = new VolumeBounds({})
@@ -82,7 +82,7 @@ describe('HubConfig', () => {
     it('enforces device color uniqueness (DomainInvariantError)', () => {
       expect(() => new HubConfig({
         devices: [
-          makeDevice({ position: 1, color: 'red', mac: '41:42:3A:E5:43:07' }),
+          makeDevice({ position: 1, color: 'red', mac: 'AA:BB:CC:00:30:07' }),
           makeDevice({ position: 2, color: 'red', mac: '99:99:99:99:99:99' })
         ]
       })).toThrow(DomainInvariantError);
@@ -91,8 +91,8 @@ describe('HubConfig', () => {
     it('enforces device MAC uniqueness (DomainInvariantError)', () => {
       expect(() => new HubConfig({
         devices: [
-          makeDevice({ position: 1, color: 'red', mac: '41:42:3A:E5:43:07' }),
-          makeDevice({ position: 2, color: 'blue', mac: '41:42:3A:E5:43:07' })
+          makeDevice({ position: 1, color: 'red', mac: 'AA:BB:CC:00:30:07' }),
+          makeDevice({ position: 2, color: 'blue', mac: 'AA:BB:CC:00:30:07' })
         ]
       })).toThrow(DomainInvariantError);
     });
@@ -212,7 +212,7 @@ describe('HubConfig', () => {
       expect(y.devices).toEqual([{
         slot: 1,
         color: 'red',
-        mac: '41:42:3A:E5:43:07',
+        mac: 'AA:BB:CC:00:30:07',
         class: 'private'
       }]);
       expect(y.scheduled).toBeUndefined();

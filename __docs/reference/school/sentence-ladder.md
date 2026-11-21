@@ -658,6 +658,18 @@ Space ─▶ the chunk plays straight back ─▶ Space: on from where it paused
 | tap a **segment** | redo that chunk | — |
 | **Shift+Tab** | hear the meaning — or, **in chunk mode**, the whole sentence from the top (a listen: allowed wherever hearing is, never at a live mic or while the prompt sounds); the sentence line carries the hint on a keyboard device | destroys anything |
 
+**The take plays to its end (owner ruling 2026-11-20).** While the learner's
+own take (or chunk) plays back, the rung is frozen: every key and tile is
+swallowed in `dispatch`, Again and Start over included, and the minor tiles
+are hidden. Hearing what they sounded like, so they can adjust, is the point
+of the playback. Before this, Space was forward in every phase, so a second
+reflexive Space skipped it: in the store, all 16 accepted one-go takes of
+2026-11-17..19 were cut off 230–650 ms in. The first refused press logs
+`capture.playback-held`. The freeze always lifts: on `ended`, on an error, on
+a refused `play()`, or after the take's own length plus 2.5 s
+(`PLAYBACK_GRACE_MS`; 20 s when the length is unknown), logged as
+`outcome: timeout`.
+
 **Tab at a live mic stops and keeps rather than being ignored.** A child who
 presses "hear it again" and hears nothing presses it again; on seq 16 that
 was three presses in 5s, and until this ruling each one threw the take away
@@ -1090,7 +1102,8 @@ playback ending, the silent warning). It is set in one place — the rung's
 | `piece-stop` | `piece, durationMs, heard, bytes, fromMs, toMs, spanMs, voicedMs, silentMs, endSilentMs` |
 | `stop` | `durationMs, heard, bytes, voicedMs, silentMs, endSilentMs` — a one-go take, or the joined take straight after `stitched` |
 | `refused` | `reason, durationMs, heard, measurable, piece?`, voice fields |
-| `playback` | `what: sentence\|span\|take\|compare, piece?, language?, ms, outcome: ended\|stopped\|blocked` — the ding alone is not logged |
+| `playback` | `what: sentence\|span\|take\|compare, piece?, language?, ms, outcome: ended\|stopped\|blocked\|timeout` — the ding alone is not logged; a `take` is never `stopped` by a key (it plays to its end), only by leaving the rung |
+| `playback-held` | `piece?` — a key or tap arrived while the take was playing and was refused; once per playback, `via` is the first press |
 | `review-idle` | `piece?, ms, reviewMs` — logged when the learner acts on a review; `ms` excludes a compare/listen started from it |
 | `silent-warning` / `silent-cleared` | `piece?, afterMs` — once each per take, never per frame |
 | `piece-next` / `piece-redo` / `piece-resume` | `piece` |

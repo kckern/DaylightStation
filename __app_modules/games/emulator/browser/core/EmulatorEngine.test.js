@@ -221,7 +221,7 @@ describe('EmulatorEngine waitFrames', () => {
     // Cross the threshold (>= 100 + 70).
     frame = 175;
     await vi.advanceTimersByTimeAsync(50);
-    await p;
+    expect(await p).toBe(true);
     expect(resolved).toBe(true);
   });
 
@@ -251,7 +251,7 @@ describe('EmulatorEngine waitFrames', () => {
     let resolved = false;
     p.then(() => { resolved = true; });
     await vi.advanceTimersByTimeAsync(3100);
-    await p;
+    expect(await p).toBe(false); // the cap is not success: no frames ran
     expect(resolved).toBe(true);
   });
 });

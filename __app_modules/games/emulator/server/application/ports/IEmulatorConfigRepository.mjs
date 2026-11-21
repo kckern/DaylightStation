@@ -4,6 +4,10 @@ export class IEmulatorConfigRepository {
   readInputConfig() { throw new Error('IEmulatorConfigRepository.readInputConfig not implemented'); }
   readConsolesConfig() { throw new Error('IEmulatorConfigRepository.readConsolesConfig not implemented'); }
   readSettingsConfig() { throw new Error('IEmulatorConfigRepository.readSettingsConfig not implemented'); }
+  /** Optional: household effect registry (effects.yml). */
+  readEffectsConfig() { return null; }
+  /** Optional: a game's sidecar memory map, relative to its system folder. */
+  readGameSidecar() { return null; }
 }
 
 export function isEmulatorConfigRepository(candidate) {

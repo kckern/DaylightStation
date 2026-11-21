@@ -81,13 +81,58 @@ public final class BookmarksCapability implements Capability {
     }
 
     /** Says once what is wrong with the list. Never throws: a bad line is left out, the rest work. */
+    private final net.kckern.daylight.api.PayloadPort home = net.kckern.daylight.api.PayloadPort.named("phone-bookmarks");
+    private final net.kckern.daylight.api.PayloadPort.Handler homeHandler = this::homeRequest;
+
+    private synchronized String homeRequest(String json) throws Exception {
+        JSONObject request = new JSONObject(json);
+        Bookmarks bookmarks = current(null);
+        switch (request.getString("op")) {
+            case "list":
+                JSONArray items = new JSONArray();
+                for (Bookmarks.Bookmark b : bookmarks.items) items.put(new JSONObject()
+                        .put("id", b.id).put("label", b.label).put("icon", b.icon).put("path", b.path));
+                return new JSONObject().put("items", items).toString();
+            case "save":
+                String label = request.getString("label").trim();
+                String path = request.getString("path").trim();
+                if (path.startsWith("https://") && path.startsWith(backend.baseUrl() + "/"))
+                    path = path.substring(backend.baseUrl().length());
+                Backend.pagePath(path);
+                if (label.contains("|") || path.contains("|")) throw new IllegalArgumentException("Use a name and page without |.");
+                if (bookmarks.hasPath(path)) throw new IllegalArgumentException("This page is already saved.");
+                String id = "saved-" + java.util.UUID.randomUUID().toString().substring(0, 12);
+                for (int i = 1; i <= SLOTS; i++) {
+                    String key = "bookmarks." + i;
+                    if (!"".equals(core.settings().get(key))) continue;
+                    core.settings().set(key, id + "|" + label + "|star|" + path);
+                    return "{}";
+                }
+                throw new IllegalArgumentException("Your bookmarks are full. Remove a saved page first.");
+            case "remove":
+                String savedId = request.getString("id");
+                if (!savedId.startsWith("saved-")) throw new IllegalArgumentException("Choose a saved page.");
+                for (int i = 1; i <= SLOTS; i++) {
+                    String key = "bookmarks." + i;
+                    if (String.valueOf(core.settings().get(key)).startsWith(savedId + "|")) core.settings().set(key, "");
+                }
+                return "{}";
+            case "open":
+                Bookmarks.Bookmark selected = bookmarks.find(request.getString("id"));
+                if (selected == null) throw new IllegalArgumentException("This bookmark is no longer available.");
+                return open(selected.path, true).toString();
+            default: throw new IllegalArgumentException("Unknown bookmark operation.");
+        }
+    }
+
     @Override public void start() {
+        home.attach(homeHandler);
         List<String> problems = new ArrayList<>();
         current(problems);
         for (String problem : problems) core.shell().note("BOOKMARK", problem);
     }
 
-    @Override public void stop() { }
+    @Override public void stop() { home.detach(homeHandler); }
 
     private Bookmarks current(List<String> problems) {
         List<String> lines = new ArrayList<>();

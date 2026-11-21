@@ -9,7 +9,9 @@ vi.mock('../../../../../../../frontend/src/lib/logging/Logger.js', () => {
   return { default: () => logger };
 });
 
-import SchoolLock, { buyNotice, PrintNextButton, SNEAK_USED_COPY } from './SchoolLock.jsx';
+import SchoolLock, {
+  buyNotice, DEBOUNCED_COPY, PRINT_FALLBACK, PRINTED_COPY, PrintNextButton, printResult, SNEAK_USED_COPY,
+} from './SchoolLock.jsx';
 
 const httpError = (status, body) => Object.assign(new Error(`HTTP ${status}: x`), { status, ...(body ? { body } : {}) });
 
@@ -53,13 +55,51 @@ describe('buyNotice', () => {
   });
 });
 
+describe('printResult', () => {
+  it('uses the kiosk’s own words on success, never the grown-up reprint sentence', () => {
+    expect(printResult({ outcome: 'done', sentence: 'Regenerating that worksheet with the current print layout.' }))
+      .toEqual({ tone: 'ok', text: PRINTED_COPY });
+    expect(printResult({ outcome: 'debounced', sentence: 'x' })).toEqual({ tone: 'ok', text: DEBOUNCED_COPY });
+  });
+
+  it('keeps the reply’s reason on a refusal or failure, with a fallback', () => {
+    expect(printResult({ outcome: 'refused', sentence: 'Math is done for today.' })).toEqual({ tone: 'warn', text: 'Math is done for today.' });
+    expect(printResult({ outcome: 'failed' })).toEqual({ tone: 'warn', text: PRINT_FALLBACK });
+    expect(printResult(null)).toEqual({ tone: 'warn', text: PRINT_FALLBACK });
+  });
+});
+
 describe('PrintNextButton', () => {
   it('reads the next sheet again after a print', async () => {
     render(<PrintNextButton learnerId="kid" deviceId="tablet" />);
-    fireEvent.click(await screen.findByText('Print my next sheet (Math 4-02)'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Print my next sheet (Math 4-02)' }));
     expect(await screen.findByText('Your sheet is printing.')).toBeTruthy();
-    expect(await screen.findByText('Print my next sheet (Math 4-03)')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Print my next sheet (Math 4-03)' })).toBeTruthy();
     expect(api.nextReads).toBe(2);
+  });
+});
+
+describe('SchoolLock layout', () => {
+  const access = {
+    status: 'ready', state: 'incomplete', unlocked: false, refresh: vi.fn(),
+    pass: { passId: null, state: 'none', capUsed: false }, offers: [],
+  };
+
+  it('draws today’s subjects as done and to-do tiles, skipping excused ones', async () => {
+    api.fn.mockImplementation(async (path) => {
+      const p = String(path);
+      if (p.endsWith('/completion')) {
+        return { sections: [
+          { subject: 'english', state: 'served' }, { subject: 'math', state: 'obligated' }, { subject: 'science', state: 'excused' },
+        ] };
+      }
+      return {};
+    });
+    const { container } = render(<SchoolLock access={access} learnerId="kid" learnerName="Kid" />);
+    expect(await screen.findByText('School today: 1 of 2 done')).toBeTruthy();
+    const tiles = [...container.querySelectorAll('.piano-school-lock__subject')].map((li) => li.className.split('--')[1]);
+    expect(tiles).toEqual(['done', 'todo']);
+    expect(container.querySelector('.piano-school-lock__face img').getAttribute('src')).toContain('/img/users/kid');
   });
 });
 
@@ -74,9 +114,9 @@ describe('SchoolLock accessibility', () => {
     const section = container.querySelector('section');
     expect(section.getAttribute('role')).toBeNull();
     expect(document.getElementById(section.getAttribute('aria-labelledby')).textContent).toBe('Games are locked');
-    await screen.findByText('Print my next sheet (Math 4-02)');
+    await screen.findByRole('button', { name: 'Print my next sheet (Math 4-02)' });
     const live = [...container.querySelectorAll('[role="status"]')].map((el) => el.className);
-    expect(live).toEqual(['piano-school-lock__notice', 'piano-school-lock__sentence']);
+    expect(live).toEqual(['piano-school-lock__sentence', 'piano-school-lock__notice']);
   });
 
   it('makes the confirm step a labelled group and moves focus to "Not now"', async () => {

@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GetPianoDesk, practiceKeyOfScore } from './GetPianoDesk.mjs';
+import { createCoachPlan } from '#shared/music/learnCoach.mjs';
+import { createLearnSegmentsReader } from '../../composition/learnSegments.mjs';
 
 const SCORE = 'files:docs/sheet-music/christmas/piece.mxl';
 const KEY = practiceKeyOfScore(SCORE);
@@ -140,3 +142,79 @@ test('without a piece log, or when it cannot be read, a piece holds no Polish aw
   assert.deepEqual(warned, ['piano.desk.polish_unreadable']);
 });
 
+
+// A coached record whose passages are all Gold: the score-tempo step earned on each range.
+function goldRecord(ranges, { sha = 'c', parts = ['rh', 'lh'] } = {}) {
+  const plan = createCoachPlan({ scoreId: SCORE, fingerprint: sha,
+    segments: ranges.map(([start, end]) => ({ id: `m${start}-${end}`, inMeasure: start, outMeasure: end, playableParts: parts })) });
+  const achievements = Object.fromEntries(plan.tasks.filter((task) => task.mastery).map((task) => [task.key, { at: '2026-11-10T00:00:00Z', dayKey: '2026-11-10', provenance: 'demonstrated' }]));
+  const summary = { total: ranges.length, silver: ranges.length, gold: ranges.length,
+    passages: ranges.map(([start, end]) => ({ id: `m${start}-${end}`, start, end, parts, silver: 'x', gold: 'x' })) };
+  return { fingerprint: { contentSha256: sha }, updatedAt: '2026-11-10T00:00:00Z',
+    learnCoach: { version: 1, scoreId: SCORE, fingerprint: sha, revision: 1, achievements, counts: {}, evidence: [], reviews: {}, resume: null, summary } };
+}
+const learnDesk = (r, learnSegments) => new GetPianoDesk({
+  learnSegments,
+  datastore: { listPractice: () => [{ scoreKey: KEY, record: r }], listSheetMusicIds: () => [SCORE] },
+  configProjection: { roster: () => ['a'], profile: (id) => ({ display_name: id }), raw: () => ({}) },
+  clock: () => new Date('2026-11-18T20:00:00Z'), timezone: 'UTC',
+}).execute().players[0].piece;
+const shape = (piece) => piece.passages.map((p) => [p.id, p.start, p.end, p.state]);
+
+test('approved segments replace the stored passages: kept ranges keep Gold, changed ones start over', () => {
+  const calls = [];
+  const piece = learnDesk(goldRecord([[0, 3], [4, 7]]), (id, sha) => { calls.push([id, sha]); return [{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 9 }]; });
+  assert.deepEqual(calls, [[SCORE, 'c']]);
+  assert.deepEqual(shape(piece), [['a', 0, 3, 'gold'], ['b', 4, 9, 'todo']]);
+  assert.deepEqual({ gold: piece.gold, total: piece.total }, { gold: 1, total: 2 });
+});
+
+test('without approved segments the stored passages stand', () => {
+  const piece = learnDesk(goldRecord([[0, 3], [4, 7]]), () => null);
+  assert.deepEqual(shape(piece), [['m0-3', 0, 3, 'gold'], ['m4-7', 4, 7, 'gold']]);
+  assert.deepEqual({ gold: piece.gold, total: piece.total }, { gold: 2, total: 2 });
+});
+
+test('a one-hand piece keeps Gold on approved ranges it already holds, and only there', () => {
+  const r = goldRecord([[0, 3], [4, 7]], { parts: ['rh'] });
+  const same = learnDesk(r, () => [{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 7 }]);
+  assert.deepEqual({ gold: same.gold, total: same.total }, { gold: 2, total: 2 });
+  const changed = learnDesk(r, () => [{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 9 }]);
+  assert.deepEqual(shape(changed), [['a', 0, 3, 'gold'], ['b', 4, 9, 'todo']]);
+});
+
+test('a new range takes the hands every saved passage agrees on', () => {
+  const r = goldRecord([[0, 3], [4, 7]], { parts: ['rh'] });
+  const piece = learnDesk(r, () => [{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 9 }]);
+  // One hand: the first step is "Find the notes", not the right hand alone.
+  assert.equal(piece.next.passageId, 'b');
+  assert.equal(piece.next.skill, 'notes');
+});
+
+test('a new range is two-handed when the saved passages disagree on hands', () => {
+  const r = goldRecord([[0, 3], [4, 7]], { parts: ['rh'] });
+  r.learnCoach.summary.passages[1].parts = ['rh', 'lh'];
+  const piece = learnDesk(r, () => [{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 8, end: 9 }]);
+  assert.equal(piece.next.passageId, 'b');
+  assert.equal(piece.next.skill, 'right');
+});
+
+test('hands the admin set on a segment win over the saved passage', () => {
+  // Gold was earned two-handed on 0-3; the admin now says 0-3 is right hand only.
+  const piece = learnDesk(goldRecord([[0, 3], [4, 7]]), () => [{ id: 'a', start: 0, end: 3, parts: ['rh'] }, { id: 'b', start: 4, end: 7 }]);
+  assert.deepEqual(shape(piece), [['a', 0, 3, 'todo'], ['b', 4, 7, 'gold']]);
+  assert.equal(piece.next.skill, 'notes');
+});
+
+test('a Learn file cut against other XML is ignored, end to end through the reader', () => {
+  const r = goldRecord([[0, 3], [4, 7]]);
+  const learnSegments = createLearnSegmentsReader({
+    datastore: { getSheetMusicLearn: () => ({ contentSha256: 'not-c', segments: [{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 9 }] }) },
+    logger: { warn() { throw new Error('should not warn'); } },
+  });
+  assert.deepEqual(shape(learnDesk(r, learnSegments)), [['m0-3', 0, 3, 'gold'], ['m4-7', 4, 7, 'gold']]);
+  const matching = createLearnSegmentsReader({
+    datastore: { getSheetMusicLearn: () => ({ contentSha256: 'c', segments: [{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 9 }] }) },
+  });
+  assert.deepEqual(shape(learnDesk(r, matching)), [['a', 0, 3, 'gold'], ['b', 4, 9, 'todo']]);
+});

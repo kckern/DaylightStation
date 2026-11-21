@@ -77,7 +77,7 @@ import { useSchoolRingGates } from './useSchoolRingGates.js';
 import { schoolLog } from "../schoolLog.js";
 import DayGrid from "../shared/dayGrid/DayGrid.jsx";
 import { weekStart, addDays } from "../shared/dayGrid/dayGridModel.js";
-import { dayOffTitle, dayStatus, makeupHint, summarize, ringProgressByLearner, triangleRows, earningsByLearner, figureInWeek } from "./agendaStatusModel.js";
+import { dayOffTitle, dayStatus, summarize, ringProgressByLearner, triangleRows, earningsByLearner, figureInWeek } from "./agendaStatusModel.js";
 import CoinIcon from "../../../../../frontend/src/lib/icons/CoinIcon.jsx";
 import { coinFigure } from "../../../../../frontend/src/lib/coins/coinFigure.js";
 import RewardsChest from '../rewards/RewardsChest.jsx';
@@ -644,13 +644,25 @@ export default function AgendaStatusBoard({ kids = NO_KIDS, day, onOpenSegment =
       )));
     };
 
-    // The digest supplies one authoritative study day and the completed
-    // evidence for the whole roster, shared rather than refetched per card.
-    const digest = (schoolApi.teacherDay ? (day ? schoolApi.teacherDay(day) : schoolApi.teacherDay()) : Promise.resolve({ ok: false }))
+    // EACH CARD READS ITS OWN DIGEST, AND ITS PLAN AT THE SAME TIME (2026-11-20).
+    // The roster digest cost 1.7 s alone and 9.5 s beside the board's other
+    // first-paint reads, and every plan waited for it: a finished child's card
+    // sat grey 12-20 s on the Portal. One learner's digest is ~0.36 s, the four
+    // run side by side, and the plan no longer waits — the card settles when
+    // the slower of its own two reads lands.
+    const digestFor = (kidId) => (schoolApi.teacherDay
+      ? schoolApi.teacherDay(day ?? null, { learnerId: kidId })
+      : Promise.resolve({ ok: false }))
       .catch((error) => {
-        schoolLog.selfServiceError?.('status-board.digest-failed', { error: error?.message });
+        schoolLog.selfServiceError?.('status-board.digest-failed', { learnerId: kidId, error: error?.message });
         return { ok: false };
       });
+    const digests = [];
+    // The plan's day when it is already known — pinned, last shown, or the
+    // painted snapshot's — so the plan can start beside the digest. Unknown, it
+    // waits for the digest's day: a dayless preview reads the LIVE day, which
+    // is not the household study day before the 4 a.m. boundary.
+    const planDay = day ?? shownDayRef.current ?? readBoardCache()?.studyDay ?? null;
 
     const readLearner = (kid) => {
       const generation = (generationRef.current[kid.id] ?? 0) + 1;
@@ -672,6 +684,10 @@ export default function AgendaStatusBoard({ kids = NO_KIDS, day, onOpenSegment =
 
       // A live board uses the household study day, including its pre-4am
       // boundary. Each learner settles independently after the shared digest.
+      const digest = digestFor(kid.id);
+      digests.push(digest);
+      const planRead = planDay === null ? null : Promise.resolve().then(() => schoolApi.agendaPreview(kid.id, planDay));
+      planRead?.catch(() => {}); // awaited below when used; a skipped read must not be an unhandled rejection
       (async () => {
         const dayResponse = await digest;
         if (!aliveRef.current || generationRef.current[kid.id] !== generation) return;
@@ -685,21 +701,19 @@ export default function AgendaStatusBoard({ kids = NO_KIDS, day, onOpenSegment =
           settle(kid.id, generation, { summary: summary.segments.length ? summary : null });
         };
         try {
-          const plan = await schoolApi.agendaPreview(kid.id, effectiveDay);
+          // Read beside the digest; re-read only if the digest names another day.
+          const plan = planRead && effectiveDay === planDay
+            ? await planRead
+            : await schoolApi.agendaPreview(kid.id, effectiveDay);
           if (!plan?.ok) return settleWithoutPlan();
-          const makeupLine = makeupHint(plan.data?.makeup);
           settle(kid.id, generation, {
             summary: {
               ...withServerVerdict(
                 summarize(plan.data?.sections, learner?.sessions ?? [], plan.data?.entries, readingActivity, fitnessActivity,
                   plan.data?.dayOff ?? null),
                 learner?.dayCompletion),
-              ...(makeupLine ? { makeupHint: makeupLine } : {}),
             },
           });
-          if (makeupLine) {
-            schoolLog.selfServiceDebug('status-board.makeup', { learnerId: kid.id, items: plan.data.makeup.items.length });
-          }
           if (plan.data?.dayOff) {
             schoolLog.selfServiceDebug('status-board.day-off', { learnerId: kid.id, tier: plan.data.dayOff.tier });
           }
@@ -714,7 +728,10 @@ export default function AgendaStatusBoard({ kids = NO_KIDS, day, onOpenSegment =
 
     scope.forEach(readLearner);
 
-    digest.then((dayResponse) => {
+    // The study day comes from whichever card's digest answers first with one.
+    Promise.any(digests.map((d) => d.then((r) => (r?.data?.studyDay ? r : Promise.reject(new Error('no day'))))))
+      .catch(() => ({ ok: false }))
+      .then((dayResponse) => {
       if (!aliveRef.current) return;
       const effectiveDay = day ?? dayResponse?.data?.studyDay ?? null;
       if (!effectiveDay) return;
@@ -978,14 +995,6 @@ export default function AgendaStatusBoard({ kids = NO_KIDS, day, onOpenSegment =
               ) : (
                 <span className="school-status-board__status school-status-board__status--none">No plan to show</span>
               )}
-              {/* MAKEUP WORK beside any of the above: earlier days this week
-                  still owed. A pinned day gets no hint, since the sheet
-                  prints from TODAY's agenda. */}
-              {!loading && summary?.makeupHint && !day ? (
-                <span className="school-status-board__status school-status-board__status--makeup" data-testid="board-makeup">
-                  {summary.makeupHint}
-                </span>
-              ) : null}
             </div>
             <div className="school-status-board__coins" data-testid="board-coins">
               {onOpenRewards ? (

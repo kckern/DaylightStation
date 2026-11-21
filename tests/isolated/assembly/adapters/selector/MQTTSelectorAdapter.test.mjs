@@ -5,9 +5,9 @@ const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 
 const SELECTORS = [
   {
-    id: 'niceday_rider_selector',
+    id: 'bike_a_rider_selector',
     mqtt_topic: 'zigbee2mqtt-usb/Garage Cycling Selector',
-    equipment: 'niceday',
+    equipment: 'bike_a',
     buttons: { '1_single': 'user_2', '2_single': 'user_3', '3_single': 'user_1', '4_single': 'user_4' },
   },
 ];
@@ -63,7 +63,7 @@ describe('MQTTSelectorAdapter', () => {
     it('delivers unmapped physical gestures without fabricating an assignment', () => {
       const topic = SELECTORS[0].mqtt_topic;
       for (const action of ['1_single', '2_long', '3_hold', '4_double']) {
-        expect(adapter.resolveInput(topic, { action })).toMatchObject({ selectorId: 'niceday_rider_selector', equipmentId: 'niceday', action });
+        expect(adapter.resolveInput(topic, { action })).toMatchObject({ selectorId: 'bike_a_rider_selector', equipmentId: 'bike_a', action });
       }
       expect(adapter.resolveInput(topic, { action: '4_double' }).userId).toBeUndefined();
       expect(adapter.resolveInput(topic, { action: '9_long' })).toBeNull();
@@ -77,8 +77,8 @@ describe('MQTTSelectorAdapter', () => {
         { action: '2_single' }
       );
       expect(sel).toEqual({
-        selectorId: 'niceday_rider_selector',
-        equipmentId: 'niceday',
+        selectorId: 'bike_a_rider_selector',
+        equipmentId: 'bike_a',
         userId: 'user_3',
         action: '2_single',
       });

@@ -9,40 +9,32 @@ final class PendingOpen {
     /** A link that led to no window within this long is forgotten. */
     static final long KEEP_MS = 60_000;
 
-    private String url;
-    private String loadId;
-    private long setAt;
-    private boolean outside;
+    static final class Request {
+        final String url, loadId;
+        final long setAt;
+        final boolean outside, shortcut;
 
-    synchronized void set(String url, long nowMs) { set(url, null, nowMs, false); }
-
-    synchronized void set(String url, String loadId, long nowMs) { set(url, loadId, nowMs, false); }
-
-    /**
-     * Keep one URL, replacing any that was waiting: the latest wins, so what waits is
-     * bounded at one. loadId is the id the caller was given for this load, or null.
-     * fromOutside: the URL came from a link that did not carry the install key (see
-     * DocumentTrust).
-     */
-    synchronized void set(String url, String loadId, long nowMs, boolean fromOutside) {
-        this.url = url;
-        this.loadId = loadId;
-        this.setAt = nowMs;
-        this.outside = fromOutside;
+        Request(String url, String loadId, long setAt, boolean outside, boolean shortcut) {
+            this.url = url;
+            this.loadId = loadId;
+            this.setAt = setAt;
+            this.outside = outside;
+            this.shortcut = shortcut;
+        }
     }
 
-    /** Whether the URL take() returns next came from outside the app. Read before take(). */
-    synchronized boolean fromOutside() { return url != null && outside; }
+    private Request pending;
 
-    /** The id that goes with the URL take() returns next, or null. Read before take(). */
-    synchronized String loadId() { return loadId; }
+    synchronized void set(String url, String loadId, long nowMs) { pending = new Request(url, loadId, nowMs, false, false); }
 
-    /** The kept URL, once, or null when there is none or it is too old. */
-    synchronized String take(long nowMs) {
-        String u = url;
-        url = null;
-        loadId = null;
-        outside = false;
-        return u != null && nowMs - setAt <= KEEP_MS ? u : null;
+    synchronized void set(String url, String loadId, long nowMs, boolean fromOutside) {
+        pending = new Request(url, loadId, nowMs, fromOutside, true);
+    }
+
+    /** Consume the complete launch together, including where it came from. */
+    synchronized Request takeRequest(long nowMs) {
+        Request request = pending;
+        pending = null;
+        return request != null && nowMs - request.setAt <= KEEP_MS ? request : null;
     }
 }

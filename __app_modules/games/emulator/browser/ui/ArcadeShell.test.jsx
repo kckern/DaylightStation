@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, screen } from '@testing-library/react';
 import { ArcadeShell } from "./ArcadeShell.jsx";
 import { ConsoleTabs } from "./ConsoleTabs.jsx";
 import { GameCover } from "./GameCover.jsx";
@@ -87,9 +87,6 @@ describe('ArcadeShell controller indicator', () => {
   const controllers = [
     { id: 'a', label: '8BitDo', match: '8bitdo', address: 'AA:BB:CC:DD:EE:FF' },
   ];
-  const btInventory = [
-    { address: 'AA:BB:CC:DD:EE:FF', name: '8BitDo SN30 Pro', connected: true, battery: 80 },
-  ];
   const connectedPad = () => [{ index: 0, id: '8BitDo SN30 Pro', buttons: [], axes: [] }];
   const noPads = () => [];
 
@@ -99,7 +96,6 @@ describe('ArcadeShell controller indicator', () => {
         consoles={consoles}
         games={games}
         controllers={controllers}
-        btInventory={btInventory}
         getGamepads={connectedPad}
       />,
     );
@@ -114,7 +110,6 @@ describe('ArcadeShell controller indicator', () => {
         consoles={consoles}
         games={games}
         controllers={controllers}
-        btInventory={btInventory}
         getGamepads={noPads}
       />,
     );
@@ -123,41 +118,36 @@ describe('ArcadeShell controller indicator', () => {
     expect(indicator.getAttribute('data-connected')).toBe('0');
   });
 
-  it('toggles the controller panel (ControllerStatus content) on chip click', () => {
-    const { container, queryByText, getByText } = render(
-      <ArcadeShell
-        consoles={consoles}
-        games={games}
-        controllers={controllers}
-        btInventory={btInventory}
-        getGamepads={noPads}
-      />,
-    );
-    // Panel closed initially.
-    expect(queryByText('Known controllers')).toBeNull();
-    fireEvent.click(container.querySelector('.emu-controller-chip'));
-    expect(getByText('Known controllers')).toBeTruthy();
-    // Toggling again closes it.
-    fireEvent.click(container.querySelector('.emu-controller-chip'));
-    expect(queryByText('Known controllers')).toBeNull();
+  const bt = () => ({
+    inventory: [{ address: 'AA:BB:CC:11:22:33', name: 'R1', kind: 'keyboard', hid: true, paired: true, connected: true, input: true }],
+    scan: null, pairing: null, forgetResult: null,
+    requestInventory: vi.fn(), startScan: vi.fn(), stopScan: vi.fn(), pairAddress: vi.fn(), forget: vi.fn(),
   });
 
-  it('renders the Pair button in the open panel and calls onPairController', () => {
-    const onPairController = vi.fn();
-    const { container, getByText } = render(
-      <ArcadeShell
-        consoles={consoles}
-        games={games}
-        controllers={controllers}
-        btInventory={btInventory}
-        getGamepads={noPads}
-        onPairController={onPairController}
-      />,
-    );
+  it('the chip opens the Bluetooth screen; Escape closes it', () => {
+    const { container } = render(<ArcadeShell consoles={consoles} games={games} controllers={controllers} bluetooth={bt()} getGamepads={noPads} />);
+    expect(screen.queryByRole('navigation', { name: 'Paired devices' })).toBeNull();
     fireEvent.click(container.querySelector('.emu-controller-chip'));
-    const pairButton = getByText('🎮 Pair controller');
-    expect(pairButton).toBeTruthy();
-    fireEvent.click(pairButton);
-    expect(onPairController).toHaveBeenCalled();
+    expect(screen.getByRole('navigation', { name: 'Paired devices' })).toBeTruthy();
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(screen.queryByRole('navigation', { name: 'Paired devices' })).toBeNull();
+  });
+
+  it('the chip counts connected Bluetooth input devices, not browser pads', () => {
+    const { container } = render(<ArcadeShell consoles={consoles} games={games} controllers={controllers} bluetooth={bt()} getGamepads={noPads} />);
+    expect(container.querySelector('.emu-controller-chip').textContent).toBe('🎮 Bluetooth · 1 connected');
+    expect(container.querySelector('.emu-controller-indicator').getAttribute('data-connected')).toBe('1');
+  });
+
+  it('Up from the top row reaches the chip, Enter opens it, and the grid ignores keys while it is open', () => {
+    const onSelectGame = vi.fn();
+    const { container } = render(<ArcadeShell consoles={consoles} games={games} controllers={controllers} bluetooth={bt()} getGamepads={noPads} onSelectGame={onSelectGame} />);
+    fireEvent.keyDown(window, { key: 'ArrowUp' });
+    expect(container.querySelector('.emu-controller-chip').className).toContain('is-focused');
+    fireEvent.keyDown(window, { key: 'Enter' });
+    expect(screen.getByRole('navigation', { name: 'Paired devices' })).toBeTruthy();
+    fireEvent.keyDown(document.body, { key: 'ArrowDown' });
+    fireEvent.keyDown(document.body, { key: 'Enter' });
+    expect(onSelectGame).not.toHaveBeenCalled();
   });
 });

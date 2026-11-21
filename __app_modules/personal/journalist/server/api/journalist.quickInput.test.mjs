@@ -7,6 +7,9 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
 import { createJournalistRouter } from './journalist.mjs';
@@ -77,17 +80,29 @@ function build({ failReplies = 0, files = new Map(), limits, logger = nullLogger
     logger,
   });
   const app = express();
+  let lostReply;
+  app.use((req, res, next) => {
+    if (req.get('X-Fixture-Drop-Reply') === 'yes') {
+      res.json = body => {
+        lostReply = body;
+        req.socket.destroy();
+        return res;
+      };
+    }
+    next();
+  });
   app.use('/api/v1/journalist', createJournalistRouter(journalistApi, { logger, quickInput: quick.endpoints }));
 
   const entries = (prefix) => (files.get('user_1/lifelog/journalist/messages')?.messages || [])
     .filter((m) => String(m.id).startsWith(prefix));
-  return { app, telegram, entries, journal, files };
+  return { app, get lostReply() { return lostReply; }, telegram, entries, journal, files };
 }
 
-const send = (app, route, { id = '1700000000000-0a1b2c3d', user = 'user_1', recordedAt = null, device = 'fleet:phone', idHeader = 'X-Daylight-Input-Id', type, body } = {}) => request(app)
+const send = (app, route, { id = '1700000000000-0a1b2c3d', user = 'user_1', recordedAt = null, device = 'fleet:phone', idHeader = 'X-Daylight-Input-Id', receipt = false, dropReply = false, type, body } = {}) => request(app)
   .post(`/api/v1/journalist/${route}`).query({ user })
   .set(device ? { 'X-Daylight-Device': device } : {})
-  .set(idHeader, id).set(recordedAt ? { 'X-Daylight-Recorded-At': String(recordedAt) } : {})
+  .set(idHeader, id).set(receipt ? { 'X-Daylight-Capture-Receipt': '1' } : {})
+  .set(dropReply ? { 'X-Fixture-Drop-Reply': 'yes' } : {}).set(recordedAt ? { 'X-Daylight-Recorded-At': String(recordedAt) } : {})
   .set('Content-Type', type ?? (route === 'text' ? 'text/plain; charset=utf-8' : 'audio/ogg'))
   .send(body ?? (route === 'text' ? NOTE : Buffer.from('opus bytes')));
 
@@ -251,4 +266,33 @@ test('nothing typed reaches the log anywhere on the way through', async () => {
     else if (value && typeof value === 'object') Object.values(value).forEach(walk);
   };
   logger.events.forEach((e) => walk(e.data));
+});
+
+test('an opted-in retry after a lost acknowledgment reads the original journal entry reference', async () => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'daylight-journal-capture-'));
+  try {
+    for (const [route, prefix] of [['voice', 'memo:'], ['text', 'note:']]) {
+      const id = '1700000000000-0a1b2c3d';
+      const file = path.join(temporary, route + '.json');
+      writeFileSync(file, '{}');
+      const newFixtureStore = () => ({
+        get(key) { return JSON.parse(readFileSync(file, 'utf8'))[key]; },
+        set(key, value) {
+          const data = JSON.parse(readFileSync(file, 'utf8'));
+          writeFileSync(file, JSON.stringify({ ...data, [key]: value }));
+        },
+      });
+      const first = build({ files: newFixtureStore() });
+      await assert.rejects(send(first.app, route, { id, receipt: true, dropReply: true }), { code: 'ECONNRESET' });
+      const restarted = build({ files: newFixtureStore() });
+      const replay = await send(restarted.app, route, { id, receipt: true });
+      assert.equal(replay.body.duplicate, true);
+      assert.equal(replay.body.finalReceipt?.entryId, prefix + id);
+      assert.deepEqual(replay.body.finalReceipt, first.lostReply.finalReceipt);
+      assert.equal(restarted.entries(prefix).length, 1);
+      assert.equal(restarted.telegram.transcribed.length, 0);
+    }
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
 });

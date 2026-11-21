@@ -7,8 +7,8 @@ import './SkylineInvaders.scss';
 // where the camera can see you. Once head and shoulders have been in view for
 // a second the round starts by itself. There is nothing to calibrate: every
 // aim gesture has a fixed gain, so no reach is measured here.
-// Without the camera the shell never comes here (gamepad aim, straight to the
-// countdown); with a gamepad connected its panel offers Skip.
+// Without the camera the shell never comes here (the aim drifts on its own,
+// straight to the countdown).
 // Framing asks for head and shoulders only: at rest the wrists hang below the
 // camera frame.
 
@@ -90,7 +90,7 @@ export default function InvadersReady({ tracker, poseStatus = null, onDone, wave
           <span style={{ width: `${view.hold * 100}%` }} />
         </div>
       </div>
-      <p className="skyline-invaders__legend">{mat ? 'Step to fire · Keep stepping · Stomp for the bomb' : 'A or Space to fire · B or X for the bomb'}</p>
+      <p className="skyline-invaders__legend">{mat ? 'Step to fire · Keep stepping · Stomp for the bomb' : 'Fire comes from the mat: pick a defender on one'}</p>
     </div>
   );
 }

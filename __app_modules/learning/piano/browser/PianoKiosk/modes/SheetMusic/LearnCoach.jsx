@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { coachFeedback, isGoldWork, passageProgress } from '../../../../../../../shared/music/learnCoach.mjs';
+import { coachFeedback, entryShiftBeats, isGoldWork, passageProgress } from '../../../../../../../shared/music/learnCoach.mjs';
 import { currentStep, passageAccess, resolveSkipMode } from '../../../../../../../shared/music/learnSkipping.mjs';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
 import { roundScore } from '../../../performance/timedVerdicts.js';
@@ -56,6 +56,12 @@ export function recoveryWording(recovery) {
 }
 /** The plan step a task belongs to: itself, or the step a recovery drill came from. */
 const rootOf = (task) => { let at = task; while (at?.parent) at = at.parent; return at; };
+/** What a drill's pass card says comes next: a smaller or growing drill by its bars, otherwise its step. */
+const nextName = (task, segment) => {
+  if (!(task.depth > 0) || task.reason === 'one-hand' || task.reason === 'slower-beat') return setName(rootOf(task));
+  if (task.range.start === segment.inMeasure && task.range.end === segment.outMeasure) return setName(rootOf(task));
+  return task.range.start === task.range.end ? `Bar ${task.range.start + 1}` : `Bars ${task.range.start + 1}–${task.range.end + 1}`;
+};
 const freshId = () => `coach-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
 
 /** A step the child cannot start yet: its picture, dimmed, under a small lock. */
@@ -177,7 +183,9 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
       // The wider full-credit share a below-score-tempo take is judged with
       // (LearnLab `learnPracticeRequirement`), or null for the strict curve.
       placementShare,
-      placement: roundScore(raw.criteria?.placement), completeness: roundScore(raw.criteria?.completeness), cleanliness: roundScore(raw.criteria?.cleanliness) });
+      placement: roundScore(raw.criteria?.placement), completeness: roundScore(raw.criteria?.completeness), cleanliness: roundScore(raw.criteria?.cleanliness),
+      // A whole-beat shifted entry the run tested for: ±k, 0 none named, null not tested.
+      entryShiftBeats: entryShiftBeats(raw) });
     setLane(isGoldWork(played) ? 'gold' : null);
     coach.record(played, raw);
     if (passed) { setMoment({ id: raw.assessmentId, task: played, raw, was: { silver: Boolean(certification.silver), gold: Boolean(certification.gold), flower: Boolean(projected?.flower) } }); setResult(null); }
@@ -220,7 +228,7 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
     const step = (played.depth ?? 0) === 0 ? steps[index] : null;
     const upNext = task && task.key !== played.key ? task : null;
     if (!step) return { id, score: raw.score ?? null,
-      copy: { eyebrow: barsOf(segment), headline: Number.isFinite(raw.score) ? `${Math.round(raw.score * 100)}%` : 'Passed', line: upNext ? `Next: ${setName(rootOf(upNext))}` : 'Again' } };
+      copy: { eyebrow: barsOf(segment), headline: Number.isFinite(raw.score) ? `${Math.round(raw.score * 100)}%` : 'Passed', line: upNext ? `Next: ${nextName(upNext, segment)}` : 'Again' } };
     const repCount = step.requirement.required_passes;
     return { id, score: raw.score ?? null, setIndex: index + 1, setCount: steps.length, repIndex: Math.max(1, step.pass_count), repCount,
       setClear: step.passed, next: { key: step.passed && upNext ? setName(rootOf(upNext)) : step.display.key, hand: null } };

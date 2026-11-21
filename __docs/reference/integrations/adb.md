@@ -63,12 +63,12 @@ devices:
     type: shield-tv
     content_control:
       provider: fully-kiosk
-      host: 10.0.0.11
+      host: <device-ip>
       port: 2323
       auth_ref: fullykiosk
       fallback:
         provider: adb
-        host: 10.0.0.11        # Device IP (same as FKB host)
+        host: <device-ip>        # Device IP (same as FKB host)
         port: 5555              # ADB port (default 5555)
         launch_activity: de.ozerov.fully/.TvActivity
 ```
@@ -317,9 +317,9 @@ and the in-page bridge in
 ### AdbAdapter API
 
 ```javascript
-const adb = new AdbAdapter({ host: '10.0.0.11', port: 5555 }, { logger });
+const adb = new AdbAdapter({ host: '<device-ip>', port: 5555 }, { logger });
 
-await adb.connect();                        // adb connect 10.0.0.11:5555
+await adb.connect();                        // adb connect <device-ip>:5555
 await adb.shell('input keyevent KEYCODE_WAKEUP');  // Run shell command
 await adb.launchActivity('de.ozerov.fully/.TvActivity');  // am start -n ...
 await adb.isProcessRunning('de.ozerov.fully');  // Check if FKB is alive
@@ -411,9 +411,9 @@ adb connect <device-ip>:<debug-port>
 
 ```bash
 # From the machine running the backend (or inside the Docker container)
-adb connect 10.0.0.11:5555
-adb devices          # Should show "10.0.0.11:5555   device"
-adb -s 10.0.0.11:5555 shell echo ok    # Should print "ok"
+adb connect <device-ip>:5555
+adb devices          # Should show "<device-ip>:5555   device"
+adb -s <device-ip>:5555 shell echo ok    # Should print "ok"
 ```
 
 If `adb devices` shows `unauthorized`, accept the RSA key prompt on the Android device's screen.
@@ -439,8 +439,8 @@ ssh {env.prod_host} '
 ssh {env.prod_host} '
   docker exec {env.docker_container} adb kill-server
   docker exec {env.docker_container} adb start-server
-  docker exec {env.docker_container} adb connect 10.0.0.11:5555
-  docker exec {env.docker_container} adb -s 10.0.0.11:5555 shell echo ok
+  docker exec {env.docker_container} adb connect <device-ip>:5555
+  docker exec {env.docker_container} adb -s <device-ip>:5555 shell echo ok
 '
 ```
 

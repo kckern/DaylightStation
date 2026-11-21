@@ -250,6 +250,106 @@ describe('binding dispatch wiring (real BindingMatcher)', () => {
     );
   });
 
+  it('a stalled boot (ENOFRAMES) retries calibration later instead of failing', async () => {
+    const timers = [];
+    const noFrames = Object.assign(new Error('no frames'), { code: 'ENOFRAMES' });
+    const calibrate = vi.fn()
+      .mockRejectedValueOnce(noFrames)
+      .mockRejectedValueOnce(noFrames)
+      .mockResolvedValueOnce({ wramBase: 0 });
+    const { session, capture } = setup({
+      createWramCalibrator: () => ({ calibrate }),
+      deps: { setTimer: (fn) => { timers.push(fn); return timers.length; }, clearTimer: vi.fn() },
+    });
+    await session.start({ mount: {} });
+    expect(capture.stateMap).toBeNull();
+    await timers.shift()();
+    expect(capture.stateMap).toBeNull();
+    await timers.shift()();
+    expect(calibrate).toHaveBeenCalledTimes(3);
+    expect(capture.stateMap.start).toHaveBeenCalled();
+  });
+
+  it('exitEffects exits active effects without stopping the session (page hide)', async () => {
+    const effect = vi.fn();
+    const game = {
+      ...GAME,
+      states: { underground: { addr: 0xdfe9, type: 'flag', when: { equals: 4 } } },
+      bindings: [{ on: 'underground', effect: 'underground_lights' }],
+    };
+    const { session, capture } = setup({ game, actionHandlers: { effect } });
+    await session.start({ mount: {} });
+    capture.onState('underground', { type: 'flag', active: true, value: 4 });
+    session.exitEffects('page-hide');
+    expect(effect.mock.calls.map(([, phase, ctx]) => [phase, ctx.reason])).toEqual([['enter', 'state'], ['exit', 'page-hide']]);
+    expect(capture.stateMap.stop).not.toHaveBeenCalled();
+  });
+
+  it('never hands Game Boy cheat codes to another system: Genesis without a protected core skips calibration', async () => {
+    const createWramCalibrator = vi.fn();
+    const { session, capture } = setup({
+      game: { ...GAME, system: 'genesis', states: { lives: { addr: 0xfffe12, type: 'number' } } },
+      createWramCalibrator,
+    });
+    await session.start({ mount: {} });
+    expect(createWramCalibrator).not.toHaveBeenCalled();
+    expect(capture.stateMap).toBeNull();
+  });
+
+  it('calibration.cheat: false never writes into the game; a protected core still reads it', async () => {
+    const createWramCalibrator = vi.fn();
+    const game = { ...GAME, calibration: { cheat: false } };
+    const anon = setup({ game, createWramCalibrator });
+    await anon.session.start({ mount: {} });
+    expect(createWramCalibrator).not.toHaveBeenCalled();
+    expect(anon.capture.stateMap).toBeNull();
+
+    const engine = makeEngine({ getWramBase: vi.fn(() => 4096) });
+    const saved = setup({ game, createWramCalibrator, engine });
+    saved.session = createEmulatorSession({
+      engine, mixer: makeMixer(), governanceGate: makeGate(), game,
+      engineConfig: { ...ENGINE_CONFIG, checkpointProvenance: { romHash: 'x' } },
+      deps: saved.deps, scheduler: makeScheduler(),
+    });
+    await saved.session.start({ mount: {} });
+    expect(saved.capture.stateMap.start).toHaveBeenCalled();
+  });
+
+  it('stopping the session cancels a pending calibration retry', async () => {
+    const clearTimer = vi.fn();
+    const calibrate = vi.fn().mockRejectedValue(Object.assign(new Error('no frames'), { code: 'ENOFRAMES' }));
+    const { session } = setup({
+      createWramCalibrator: () => ({ calibrate }),
+      deps: { setTimer: () => 'retry-handle', clearTimer },
+    });
+    await session.start({ mount: {} });
+    session.stop();
+    expect(clearTimer).toHaveBeenCalledWith('retry-handle');
+  });
+
+  it('effect bindings enter and exit with their state, and exit on stop', async () => {
+    const effect = vi.fn();
+    const game = {
+      ...GAME,
+      id: 'super-mario-land',
+      states: { underground: { addr: 0xdfe9, type: 'flag', when: { equals: 4 } } },
+      bindings: [{ on: 'underground', effect: 'underground_lights' }],
+    };
+    const { session, capture } = setup({ game, actionHandlers: { effect } });
+    await session.start({ mount: {} });
+    capture.onState('underground', { type: 'flag', active: false, value: 7 });
+    capture.onState('underground', { type: 'flag', active: true, value: 4 });
+    capture.onState('underground', { type: 'flag', active: false, value: 7 });
+    capture.onState('underground', { type: 'flag', active: true, value: 4 });
+    session.stop();
+    expect(effect.mock.calls.map(([id, phase, ctx]) => [id, phase, ctx.reason, ctx.game])).toEqual([
+      ['underground_lights', 'enter', 'state', 'super-mario-land'],
+      ['underground_lights', 'exit', 'state', 'super-mario-land'],
+      ['underground_lights', 'enter', 'state', 'super-mario-land'],
+      ['underground_lights', 'exit', 'session-stop', 'super-mario-land'],
+    ]);
+  });
+
   it('music handler applies resolveMediaUrl and defaults loop true', async () => {
     const { session, mixer, capture, resolveMediaUrl } = setup();
     await session.start({ mount: {} });

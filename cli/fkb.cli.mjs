@@ -6,8 +6,8 @@
 // wraps every command used to administer the kiosk SPA, plus a couple of
 // higher-level helpers (JS injection, an fps jank probe).
 //
-// Target:   Set FKB_HOST=<device-ip>:2323 for any FKB device in the fleet.
-//           It defaults to the piano tablet at 10.0.0.245:2323 for convenience.
+// Target:   FKB_HOST=<device-ip>:2323, or FKB_DEVICE=<device id> to read the
+//           address from the household device registry. No default.
 // Password: Set FKB_PW to the selected device's password. When omitted, the
 //           legacy fallbacks are piano-specific: /tmp/fkb_piano_pw, then
 //           `op read op://Private/Fully Kiosk Piano/value`.
@@ -23,7 +23,7 @@
 //
 // Examples:
 //   node fkb.cli.mjs info                       # deviceInfo (RAM/battery/wifi)
-//   FKB_HOST=10.0.0.12:2323 FKB_PW=... node fkb.cli.mjs info  # another fleet device
+//   FKB_DEVICE=<device id> FKB_PW=... node fkb.cli.mjs info  # any fleet device
 //   node fkb.cli.mjs shot /tmp/p.png            # screenshot
 //   node fkb.cli.mjs get forceScreenOrientation
 //   node fkb.cli.mjs set forceScreenOrientation 2
@@ -36,8 +36,9 @@
 
 import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { resolveDeviceHostOrExit } from './_deviceHost.mjs';
 
-const HOST = process.env.FKB_HOST || '10.0.0.245:2323';
+const HOST = await resolveDeviceHostOrExit({ hostVar: 'FKB_HOST', deviceVar: 'FKB_DEVICE', port: 2323 });
 const BASE = `http://${HOST}`;
 const PW_CACHE = '/tmp/fkb_piano_pw';
 

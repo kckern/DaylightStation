@@ -150,7 +150,7 @@ failure pauses play so an entire session cannot quietly remain unsaved.
 The native restore contract returns the actual paused deserialize result and a
 request identity, with no gameplay frame during restoration. Semantic game-state
 tracking reads the native RAM pointer; protected sessions never probe restored
-memory with calibration cheats. Battery restoration
+memory with calibration cheats (memory maps and effects: [emulator game hooks](emulator-game-hooks.md)). Battery restoration
 checks native SRAM against the supplied bytes. The browser hashes the actual ROM
 and core archive before boot and checks the processed emulator configuration;
 old asset databases cannot substitute another game. Each protected boot uses a

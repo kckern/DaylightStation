@@ -67,3 +67,16 @@ describe('boardCache', () => {
     expect(readBoardCache(store).gold).toEqual({});
   });
 });
+
+describe('markDayDoneInBoardCache', () => {
+  it('ticks a learner already painted for the same day, and nothing else', async () => {
+    const { writeBoardCache, readBoardCache, markDayDoneInBoardCache } = await import('./boardCache.js');
+    const store = new Map();
+    const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v), removeItem: (k) => store.delete(k) };
+    writeBoardCache({ studyDay: '2026-11-20', learners: { learner1: { summary: { done: 3, total: 5 } } } }, storage);
+    expect(markDayDoneInBoardCache('learner1', '2026-11-20', storage)).toBe(true);
+    expect(readBoardCache(storage).learners.learner1.summary).toEqual({ done: 3, total: 5, serverDone: true });
+    expect(markDayDoneInBoardCache('learner1', '2026-11-19', storage)).toBe(false);
+    expect(markDayDoneInBoardCache('learner2', '2026-11-20', storage)).toBe(false);
+  });
+});

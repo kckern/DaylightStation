@@ -113,6 +113,7 @@ export function useHealthDay(date, { enabled = true } = {}) {
     // whether anything at all should visually acknowledge an in-flight
     // refetch, and it must never be true at the same time as a cold `loading`.
     revalidating: list.revalidating,
+    authoritative: readToken >= 0,
     error: list.error,
     // The day has been on screen, so a failed refresh need not replace it.
     loaded: list.data != null,

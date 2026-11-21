@@ -147,6 +147,23 @@ public final class Backend {
         return baseUrl().equals(Origins.of(ref)) ? ref : null;
     }
 
+    /** The canonical origin and user as one snapshot for an operation bound to a household. */
+    public SiteUser siteUser() {
+        synchronized (settings) {
+            return new SiteUser(baseUrl(), user());
+        }
+    }
+
+    public static final class SiteUser {
+        public final String origin;
+        public final String user;
+
+        private SiteUser(String origin, String user) {
+            this.origin = origin;
+            this.user = user;
+        }
+    }
+
     /** The household user this install acts for. Empty when unset. */
     public String user() { return (String) settings.get(USER); }
 

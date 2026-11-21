@@ -6,6 +6,7 @@
  *   - fitnessPlayableService — shared Plex-backed playable-episodes service
  *   - userVideoProgressStore — per-user video course progress
  *   - configProjection       — semantic piano settings and user projections
+ *   - learnSegments          — (scoreId, contentSha256) → approved Learn segments | null
  *
  * Per Decision D1 it does NOT import concrete adapters; they arrive via config.
  * Use cases are lazily memoized (mirrors PlaybackHubContainer / NutribotContainer).
@@ -29,6 +30,7 @@ export class PianoContainer {
   #learningService;
   #schoolAssignments;
   #pieceLog;
+  #learnSegments;
   #timezone;
   #logger;
 
@@ -42,6 +44,8 @@ export class PianoContainer {
     this.#timezone = arguments[0]?.timezone ?? null;
     // Whole-piece Silver/Gold and Polish gem/diamond; the desk shows the Polish awards.
     this.#pieceLog = arguments[0]?.pieceLog ?? null;
+    // The score's admin-approved Learn segments; the desk follows them over saved passages.
+    this.#learnSegments = arguments[0]?.learnSegments ?? null;
     if (!studioDatastore) throw new Error('PianoContainer: studioDatastore required');
     if (!configProjection) throw new Error('PianoContainer: configProjection required');
     this.#studioDatastore = studioDatastore;
@@ -111,6 +115,7 @@ export class PianoContainer {
         datastore: this.#studioDatastore,
         configProjection: this.#configProjection,
         pieceLog: this.#pieceLog,
+        learnSegments: this.#learnSegments,
         timezone: this.#timezone,
         logger: this.#logger,
       });

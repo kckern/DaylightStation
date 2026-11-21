@@ -247,8 +247,8 @@ until then, so there's a one-cycle lag, no reflash.
 
 | Panel `id` | IP | Model | Status |
 |-----------|-----|-------|--------|
-| `kitchen-eink` | 10.0.0.63 | reTerminal E1003 (1872×1404 mono) | Working end-to-end (firmware flashed; fetch + dither + push verified) |
-| _(second unit)_ | 10.0.0.88 | reTerminal E10xx — model TBD | Hardware present, not yet provisioned |
+| `kitchen-eink` | <panel-ip> | reTerminal E1003 (1872×1404 mono) | Working end-to-end (firmware flashed; fetch + dither + push verified) |
+| _(second unit)_ | <panel-ip> | reTerminal E10xx — model TBD | Hardware present, not yet provisioned |
 
 **Available widgets:**
 
@@ -419,7 +419,7 @@ the gaps tractable. Known gaps, roughly in priority order:
    toggle) instead of the current no-op, so panels can be more than linear paging.
 4. **Persisted / scheduled views.** Optionally let the active view be time-driven (morning
    agenda → evening summary) rather than only button-paged, and survive restarts.
-5. **Multi-panel scaling.** Provision the second unit (10.0.0.88) and confirm the SSOT
+5. **Multi-panel scaling.** Provision the second unit and confirm the SSOT
    schema is genuinely panel-agnostic across different resolutions/controllers.
 
 Until then, treat e-ink as a **static, paged, config-driven image surface**: configs are

@@ -340,6 +340,14 @@ recover from the rough edges of an aging WebView.
   and `end` are local `HH:MM` (start inclusive, end exclusive; `start > end` means an
   overnight window), and the kiosk re-evaluates on a 30s timer, so a wall tablet parked on
   the menu for days crosses the boundary without a reload.
+  **The day's assigned lesson is the exception** (owner, 2026-11-20): a child who still
+  owes today's School piano lesson (a video lesson or a PianoChallenge) sees that lesson
+  alone under curfew, at any hour of the window, with the caption "Screen time is over for
+  tonight, except today's lesson." The progress strip, the Sheet Music column and every
+  tile stay shut. Once School discharges the day the menu goes back to the plain curfew
+  view. Curfew is enforced on the menu only, so a lesson already playing is never cut off.
+  `piano.curfew.lesson-open` (info, `{ pianoId, userId, courseId, lessonId, challengeId }`)
+  logs each time the curfew view shows an owed lesson.
 - **Household clock, not the tablet's.** Curfew and screensaver quiet hours are read in
   the household timezone (`system.yml` → `timezone`), which the backend serves beside the
   piano config as `householdTimezone` (`GET /api/v1/admin/apps/piano/config`) and the

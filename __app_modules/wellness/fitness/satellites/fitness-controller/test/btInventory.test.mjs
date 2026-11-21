@@ -9,6 +9,7 @@ import {
   startBtInventoryBroadcast,
   hasInputDevice,
   nextReconnectDelay,
+  shouldReconnect,
 } from "../src/btInventory.mjs";
 
 // ── parseConnectedDevices ─────────────────────────────────────────────────
@@ -148,20 +149,20 @@ test('pollBtInventory: a failing info call does not sink the whole poll', async 
 
 test('pollBtInventory: a paired pad that is asleep reports connected:false (trusted gamepad, no input)', async () => {
   const exec = makeExec({
-    'bluetoothctl --agent off devices Paired': 'Device E4:17:D8:C6:54:F0 8Bitdo SFC30 GamePad',
-    'bluetoothctl --agent off info E4:17:D8:C6:54:F0': '\tPaired: yes\n\tTrusted: yes\n\tIcon: input-gaming\n\tConnected: no\n\tUUID: Human Interface Device... (00001124-0000-1000-8000-00805f9b34fb)',
+    'bluetoothctl --agent off devices Paired': 'Device E4:17:D8:00:00:10 8Bitdo SFC30 GamePad',
+    'bluetoothctl --agent off info E4:17:D8:00:00:10': '\tPaired: yes\n\tTrusted: yes\n\tIcon: input-gaming\n\tConnected: no\n\tUUID: Human Interface Device... (00001124-0000-1000-8000-00805f9b34fb)',
   });
   assert.deepEqual(await pollBtInventory({ exec, readInputDevices: NO_INPUT }), [
-    { address: 'E4:17:D8:C6:54:F0', name: '8Bitdo SFC30 GamePad', connected: false, battery: null, paired: true, trusted: true, gamepad: true, kind: 'gamepad', input: false, hid: true },
+    { address: 'E4:17:D8:00:00:10', name: '8Bitdo SFC30 GamePad', connected: false, battery: null, paired: true, trusted: true, gamepad: true, kind: 'gamepad', input: false, hid: true },
   ]);
 });
 
 test('pollBtInventory: input reflects the kernel input table, by MAC', async () => {
   const exec = makeExec({
-    'bluetoothctl --agent off devices Paired': 'Device E4:17:D8:C6:54:F0 8Bitdo SFC30 GamePad',
-    'bluetoothctl --agent off info E4:17:D8:C6:54:F0': '\tTrusted: yes\n\tIcon: input-gaming\n\tConnected: yes',
+    'bluetoothctl --agent off devices Paired': 'Device E4:17:D8:00:00:10 8Bitdo SFC30 GamePad',
+    'bluetoothctl --agent off info E4:17:D8:00:00:10': '\tTrusted: yes\n\tIcon: input-gaming\n\tConnected: yes',
   });
-  const table = 'N: Name="8Bitdo SFC30 GamePad"\nU: Uniq=e4:17:d8:c6:54:f0\n';
+  const table = 'N: Name="8Bitdo SFC30 GamePad"\nU: Uniq=e4:17:d8:00:00:10\n';
   const [d] = await pollBtInventory({ exec, readInputDevices: async () => table });
   assert.equal(d.input, true);
   assert.equal(hasInputDevice(table, 'AA:BB:CC:DD:EE:FF'), false);
@@ -170,8 +171,8 @@ test('pollBtInventory: input reflects the kernel input table, by MAC', async () 
 test('pollBtInventory: a connected device with no bond is reported paired:false', async () => {
   const exec = makeExec({
     'bluetoothctl --agent off devices Paired': '',
-    'bluetoothctl --agent off devices Connected': 'Device E4:17:D8:C6:54:F0 8Bitdo SFC30 GamePad',
-    'bluetoothctl --agent off info E4:17:D8:C6:54:F0': '\tPaired: no\n\tConnected: yes',
+    'bluetoothctl --agent off devices Connected': 'Device E4:17:D8:00:00:10 8Bitdo SFC30 GamePad',
+    'bluetoothctl --agent off info E4:17:D8:00:00:10': '\tPaired: no\n\tConnected: yes',
   });
   const [d] = await pollBtInventory({ exec, readInputDevices: NO_INPUT });
   assert.equal(d.paired, false);
@@ -183,7 +184,7 @@ test('startBtInventoryBroadcast: an unbonded pad dialing in stays "attempting" b
   let dialing = true;
   const exec = async (cmd) => {
     if (cmd.endsWith('devices Paired')) return { stdout: '' };
-    if (cmd.endsWith('devices Connected')) return { stdout: dialing ? 'Device E4:17:D8:C6:54:F0 8Bitdo SFC30 GamePad' : '' };
+    if (cmd.endsWith('devices Connected')) return { stdout: dialing ? 'Device E4:17:D8:00:00:10 8Bitdo SFC30 GamePad' : '' };
     return { stdout: '\tPaired: no\n\tConnected: yes' };
   };
   const sent = [];
@@ -210,7 +211,7 @@ test('startBtInventoryBroadcast: reconnects a trusted, asleep gamepad with backo
   let t = 0;
   const connects = [];
   const exec = async (cmd) => {
-    if (cmd.endsWith('devices Paired')) return { stdout: 'Device E4:17:D8:C6:54:F0 8Bitdo SFC30 GamePad' };
+    if (cmd.endsWith('devices Paired')) return { stdout: 'Device E4:17:D8:00:00:10 8Bitdo SFC30 GamePad' };
     if (cmd.endsWith('devices Connected')) return { stdout: '' };
     if (cmd.includes(' connect ')) { connects.push(t); throw new Error('Device not available'); }
     return { stdout: '\tPaired: yes\n\tTrusted: yes\n\tIcon: input-gaming\n\tConnected: no' };
@@ -247,7 +248,7 @@ test('pollBtInventory: bluetoothctl entirely unavailable → []', async () => {
 
 const flush = () => new Promise((r) => setImmediate(r));
 const fakeExec = async (cmd) => (cmd === 'bluetoothctl --agent off devices Paired'
-  ? { stdout: 'Device E4:17:D8:C6:54:F0 8Bitdo SFC30 GamePad' }
+  ? { stdout: 'Device E4:17:D8:00:00:10 8Bitdo SFC30 GamePad' }
   : { stdout: 'Connected: yes' });
 
 test('startBtInventoryBroadcast: a failed send is retried, not recorded as sent', async () => {
@@ -273,7 +274,7 @@ test('hasInputDevice: same rule as the pairing helper (input_device_present)', (
   const blankUniqBt = 'I: Bus=0005 Vendor=1234 Product=5678 Version=0001\nN: Name="Ring Remote"\nU: Uniq=\n';
   const missingUniqBt = 'I: Bus=0005 Vendor=1234 Product=5678 Version=0001\nN: Name="Ring Remote"\n';
   const usb = 'I: Bus=0003 Vendor=1234 Product=5678 Version=0001\nN: Name="Ring Remote"\nU: Uniq=\n';
-  const byUniq = 'I: Bus=0005 Vendor=2dc8 Product=ab21 Version=0001\nN: Name="8Bitdo SFC30 GamePad"\nU: Uniq=e4:17:d8:c6:54:f0\n';
+  const byUniq = 'I: Bus=0005 Vendor=2dc8 Product=ab21 Version=0001\nN: Name="8Bitdo SFC30 GamePad"\nU: Uniq=e4:17:d8:00:00:10\n';
   // Blank or missing Uniq on a Bluetooth block: exact name match counts.
   assert.equal(hasInputDevice(blankUniqBt, 'AA:BB:CC:DD:EE:FF', 'Ring Remote'), true);
   assert.equal(hasInputDevice(missingUniqBt, 'AA:BB:CC:DD:EE:FF', 'Ring Remote'), true);
@@ -283,7 +284,7 @@ test('hasInputDevice: same rule as the pairing helper (input_device_present)', (
   // A USB block (Bus=0003) never matches by name.
   assert.equal(hasInputDevice(usb, 'AA:BB:CC:DD:EE:FF', 'Ring Remote'), false);
   // Uniq match still works; a Uniq for another MAC does not fall back to the name.
-  assert.equal(hasInputDevice(byUniq, 'E4:17:D8:C6:54:F0', 'whatever'), true);
+  assert.equal(hasInputDevice(byUniq, 'E4:17:D8:00:00:10', 'whatever'), true);
   assert.equal(hasInputDevice(byUniq, 'AA:BB:CC:DD:EE:FF', '8Bitdo SFC30 GamePad'), false);
   // Blocks are separate: a name in one block and a blank Uniq in another do not combine.
   assert.equal(hasInputDevice(`${usb}\n${byUniq}`, 'AA:BB:CC:DD:EE:FF', 'Ring Remote'), false);
@@ -297,4 +298,72 @@ test('pollBtInventory: input passes the device name for the blank-Uniq fallback'
   const table = 'I: Bus=0005 Vendor=1234 Product=5678 Version=0001\nN: Name="Ring Remote"\nU: Uniq=\n';
   const [d] = await pollBtInventory({ exec, readInputDevices: async () => table });
   assert.equal(d.input, true);
+});
+
+test('shouldReconnect: any trusted, bonded input device; never a speaker or an unbonded one', () => {
+  assert.equal(shouldReconnect({ trusted: true, gamepad: true }), true);
+  assert.equal(shouldReconnect({ trusted: true, kind: 'keyboard' }), true);
+  assert.equal(shouldReconnect({ trusted: true, hid: true }), true);           // BLE ring with no Icon
+  assert.equal(shouldReconnect({ trusted: false, kind: 'keyboard' }), false);
+  assert.equal(shouldReconnect({ trusted: true, kind: null, hid: false }), false); // speaker
+  assert.equal(shouldReconnect({ trusted: true, kind: 'keyboard', paired: false }), false);
+});
+
+test('startBtInventoryBroadcast: reconnects a trusted keyboard; pause({reconnectOnly}) keeps the poll, stops reconnects', async () => {
+  let t = 0;
+  const connects = [];
+  const sends = [];
+  const exec = async (cmd) => {
+    if (cmd.endsWith('devices Paired')) return { stdout: 'Device AA:BB:CC:11:22:33 R1' };
+    if (cmd.endsWith('devices Connected')) return { stdout: '' };
+    if (cmd.includes(' connect ')) { connects.push(t); throw new Error('not available'); }
+    return { stdout: '\tPaired: yes\n\tTrusted: yes\n\tIcon: input-keyboard\n\tConnected: no' };
+  };
+  const handle = startBtInventoryBroadcast({
+    intervalMs: 60000, exec, readInputDevices: NO_INPUT, now: () => t, logger: null, send: (topic) => { sends.push(topic); return true; },
+  });
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  assert.equal(connects.length, 1);
+  handle.pause({ reconnectOnly: true });
+  t = 500000;
+  await handle.resend();
+  assert.equal(connects.length, 1);               // no reconnect during a search
+  assert.equal(sends.filter((s) => s === 'bt_inventory').length, 2); // but the poll still sends
+  handle.stop();
+});
+
+test('startBtInventoryBroadcast: a search ending mid-pairing does not resume the paused poll', async () => {
+  const sends = [];
+  const exec = async (cmd) => (cmd.includes('devices') ? { stdout: '' } : { stdout: '' });
+  const handle = startBtInventoryBroadcast({
+    intervalMs: 60000, exec, readInputDevices: NO_INPUT, logger: null, send: (topic) => { sends.push(topic); return true; },
+  });
+  await new Promise((r) => setImmediate(r));
+  const before = sends.length;
+  handle.pause({ reconnectOnly: true });   // search
+  handle.pause();                           // pairing window
+  await handle.resume({ reconnectOnly: true }); // search stopped by the pairing window
+  await handle.resend();
+  assert.equal(sends.length, before);       // still paused for the pairing window
+  await handle.resume();
+  assert.equal(sends.length, before + 1);
+  handle.stop();
+});
+
+test('startBtInventoryBroadcast: a pause during the reconnect loop stops the next page', async () => {
+  const connects = [];
+  let handle;
+  const exec = async (cmd) => {
+    if (cmd.endsWith('devices Paired')) return { stdout: 'Device AA:BB:CC:11:22:33 P1\nDevice AA:BB:CC:11:22:34 P2' };
+    if (cmd.endsWith('devices Connected')) return { stdout: '' };
+    if (cmd.includes(' connect ')) { connects.push(cmd); handle.pause({ reconnectOnly: true }); throw new Error('not available'); }
+    return { stdout: '\tPaired: yes\n\tTrusted: yes\n\tIcon: input-gaming\n\tConnected: no' };
+  };
+  handle = startBtInventoryBroadcast({
+    intervalMs: 60000, exec, readInputDevices: NO_INPUT, now: () => 0, logger: null, send: () => true,
+  });
+  for (let i = 0; i < 6; i += 1) await new Promise((r) => setImmediate(r));
+  assert.equal(connects.length, 1);
+  handle.stop();
 });

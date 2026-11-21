@@ -510,7 +510,7 @@ export class CardLadderSittingService {
     return item;
   }
 
-  #progress({ dayFile, settings, status, day, pool, sittingId = null, dictation = null }) {
+  #progress({ dayFile, settings, status, day, pool, lexicon = null, sittingId = null, dictation = null }) {
     const round = dayFile.rounds.find((r) => r.phase !== 'done') ?? null;
     const rechecksLeft = dayFile.rechecks.order.filter((id) => !dayFile.rechecks.answered[id]).length;
     const drill = (dayFile.drills ?? []).find((d) => !d.done) ?? null;
@@ -529,6 +529,8 @@ export class CardLadderSittingService {
     else if (practicing) phase = 'practice';
     return {
       phase,
+      // The package's card variety: see-and-type has no Sort and no Match step.
+      cards: lexicon?.cards ?? 'standard',
       rechecksLeft,
       drill: drill ? { at: drill.index + 1, of: drill.steps.length } : null,
       practice: practicing ? { mode: run.mode, at: run.index + 1, of: run.queue.length } : null,
@@ -826,6 +828,7 @@ export class CardLadderSittingService {
       gloss: { code: lexicon.gloss.code, name: lexicon.gloss.name },
       target: { code: lexicon.language.code, name: lexicon.language.name, script: lexicon.targetScript ?? scriptFor(lexicon.language.code) },
       anchor: { code: lexicon.gloss.code, name: lexicon.gloss.name },
+      cards: lexicon.cards ?? 'standard',
       item: this.#publicItem(item, ctx), progress,
     };
   }
@@ -848,8 +851,8 @@ export class CardLadderSittingService {
       ].filter((other) => other.term);
       // The target side's script and language: the judge's one script seam.
       verdict = await this.#judge.judge({
-        // 1.4: the child heard the word (dictation sign-off), not its meaning.
-        pkg, entry, typed: response.typed, otherWords, heard: item.task === '1.4',
+        // 1.4: the child heard the word (dictation sign-off): spelling is the test.
+        pkg, entry, typed: response.typed, otherWords, heard: item.task === '1.4', spelling: item.task === '1.4',
         targetScript: lexicon.targetScript ?? scriptFor(lexicon.language?.code), targetLanguage: (lexicon.targetLanguage ?? lexicon.language)?.name ?? null,
       });
     }

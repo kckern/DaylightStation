@@ -3,7 +3,9 @@ import { createSchoolDebriefApi } from "./schoolDebriefApi.js";
 import { schoolDebriefLog } from "./schoolDebriefLog.js";
 import { useInputStall } from "../shared/useInputStall.js";
 import SchoolDebriefStartCard from "./SchoolDebriefStartCard.jsx";
-import SchoolDebriefHeader from "./SchoolDebriefHeader.jsx";
+import SchoolDebriefRail, { debriefSteps } from "./SchoolDebriefRail.jsx";
+import Icon from "../../home/icons/Icon.jsx";
+import TypedText from "../shared/TypedText.jsx";
 import PromptItem from "./items/PromptItem.jsx";
 import ChipsItem from "./items/ChipsItem.jsx";
 import ChoiceItem from "./items/ChoiceItem.jsx";
@@ -184,21 +186,27 @@ export default function SchoolDebriefProgram({ learnerId, learnerName = null, de
 
   const tryAgain = () => { setError(null); if (!day && failedStart) start(failedStart); else setRetry((n) => n + 1); };
   const waiting = (text) => (
-    <>
-      <p className="sd-thinking" role="status">{text}</p>
-      {error && <RetryButton onRetry={tryAgain} />}
-    </>
+    <section className="sd-item sd-waiting">
+      <p className="sd-thinking" role="status"><TypedText text={text} hold /></p>
+      {error && <div className="sd-controls"><RetryButton onRetry={tryAgain} /></div>}
+    </section>
+  );
+  const notice = (text, withRetry = false) => (
+    <section className="sd-item sd-waiting">
+      <p className="sd-notice">{text}</p>
+      {withRetry && <div className="sd-controls"><RetryButton onRetry={tryAgain} /></div>}
+    </section>
   );
 
   let body;
-  if (!debriefGrant) body = <p className="sd-notice">Open your debrief with the code on your agenda.</p>;
-  else if (error && !view && !todayView) body = <><p className="sd-notice">{error}</p><RetryButton onRetry={tryAgain} /></>;
+  if (!debriefGrant) body = notice('Open your debrief with the code on your agenda.');
+  else if (error && !view && !todayView) body = notice(error, true);
   else if (doneOnOpen) body = <SummaryItem view={todayView} earned={null} coinsLive={coinsLive} onFinish={onExit} />;
   else if (!day && todayView?.phase === 'rejected' && !lateDay) body = <TalkToGrownUpItem onFinish={onExit} />;
-  else if (!day && error && failedStart) body = <RetryButton onRetry={tryAgain} />;
-  else if (!day) body = todayView ? <SchoolDebriefStartCard today={todayView} lateDay={lateDay} onStart={start} /> : <p className="sd-notice">Loading…</p>;
-  else if (!view) body = <p className="sd-notice">Loading…</p>;
-  else if (!['completed', 'excused', 'rejected'].includes(view.phase) && !prompts) body = <><p className="sd-notice">{LOAD_FAILED}</p><RetryButton onRetry={tryAgain} /></>;
+  else if (!day && error && failedStart) body = notice(error, true);
+  else if (!day) body = todayView ? <SchoolDebriefStartCard today={todayView} lateDay={lateDay} onStart={start} /> : waiting('Loading…');
+  else if (!view) body = waiting('Loading…');
+  else if (!['completed', 'excused', 'rejected'].includes(view.phase) && !prompts) body = notice(LOAD_FAILED, true);
   else if (['completed', 'excused'].includes(view.phase)) body = <SummaryItem view={view} earned={earned} coinsLive={coinsLive} onFinish={onExit} />;
   else if (view.phase === 'rejected') body = <TalkToGrownUpItem onFinish={onExit} />;
   else if (promptIdx < prompts.length && !view.questions && view.phase !== 'clarify') {
@@ -218,12 +226,29 @@ export default function SchoolDebriefProgram({ learnerId, learnerName = null, de
   } else if (view.next?.kind === 'complete') body = waiting('Saving…');
   else body = waiting('Reading your answer…');
 
+  // Finished screens carry their own Done; every other screen keeps the
+  // rail's way out, so the shell's corner Done is not drawn over this program.
+  const finished = ['completed', 'excused', 'rejected'].includes(view?.phase) || doneOnOpen || (!day && todayView?.phase === 'rejected' && !lateDay);
+  const qs = view?.questions ?? null;
+  const answered = qs ? Object.keys(view.answers ?? {}).length : 0;
+  const stepLabel = !view || finished || !day ? null
+    : qs ? `Question ${Math.min(answered + 1, qs.length)} of ${qs.length}`
+      : view.phase === 'clarify' ? 'One more thing'
+        : prompts?.length && promptIdx < prompts.length ? `Part ${promptIdx + 1} of ${prompts.length}` : null;
+  const steps = debriefSteps({ prompts, view: day ? view : (doneOnOpen ? todayView : null), day: day ?? (doneOnOpen ? todayView?.studyDay : null), promptIdx });
+  const stop = onExit && !finished ? () => { schoolDebriefLog.stop({ day, phase: view?.phase ?? null, promptIdx }); onExit(); } : null;
+
   return (
     <div className="sd-program">
-      <SchoolDebriefHeader learnerId={learnerId} learnerName={learnerName} view={view} late={view?.late ?? (day && day === lateDay)} promptIdx={promptIdx} promptCount={prompts?.length ?? 0} />
-      {nudge && <p className="sd-nudge" role="status">Still there? Press any key to keep going.</p>}
-      {error && view && <p className="sd-notice" role="alert">{error}</p>}
-      {body}
+      <SchoolDebriefRail learnerId={learnerId} learnerName={learnerName} late={Boolean(view?.late ?? (day && day === lateDay))} steps={steps} onStop={stop} />
+      <main className="sd-main">
+        {nudge && !finished && <p className="sd-nudge" role="status">Still there? Press any key to keep going.</p>}
+        {error && view && <p className="sd-alert" role="alert">{error}</p>}
+        <div className="sd-panel">
+          {stepLabel && <p className="sd-panel__step">{stepLabel}</p>}
+          {body}
+        </div>
+      </main>
     </div>
   );
 }

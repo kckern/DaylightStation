@@ -89,7 +89,7 @@ What that rules out with no further testing:
 
 ## 4. Root cause (2026-08-26) — two GATT clients, one queue
 
-Android exposes **one `BluetoothGatt`** for `jam-7e6`, shared by the piano-bridge APK
+Android exposes **one `BluetoothGatt`** for `midi-relay-01`, shared by the piano-bridge APK
 and Chromium's Web MIDI, and it permits **one outstanding GATT operation at a time**.
 
 When the kiosk page re-acquires Web MIDI while the BLE link is rebuilding, its
@@ -611,8 +611,8 @@ and in the log store with `piano-midi-wake.suppress-relayed` /
 
 ## 9. Reference
 
-- Tablet (kiosk): `10.0.0.245` — bridge API `:8770`, FKB REST `:2323`
-- JamCorder (`jam-7e6`): web `10.0.0.243` (**DHCP — it drifts**), BLE `10:65:36:36:62:66`
+- Tablet (kiosk): `<tablet-ip>` — bridge API `:8770`, FKB REST `:2323`
+- JamCorder (`midi-relay-01`): web `<jamcorder-ip>` (**DHCP — it drifts**), BLE `aa:bb:cc:00:10:01`
 - Piano: Roland MDG-400 / `MG-300 Grand Piano` on JamCorder USB
 - Path IN:  piano →USB→ JamCorder →BLE→ APK →WebSocket→ browser
 - Path OUT: browser →HTTP→ APK →BLE→ JamCorder →USB/DIN→ piano

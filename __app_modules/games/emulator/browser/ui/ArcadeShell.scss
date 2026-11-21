@@ -48,6 +48,10 @@
     &:focus-visible { outline: none; box-shadow: 0 0 0 0.3vh rgba(124, 131, 255, 0.4); }
   }
 
+  // Reached from the grid with Up (a pad has no Tab): the same yellow ring the
+  // Bluetooth screen uses, so it is seen from across the room.
+  .emu-controller-chip.is-focused { outline: 0.4vh solid #facc15; outline-offset: 0.3vh; }
+
   // Connected: green text + glow.
   &[data-connected='1'] .emu-controller-chip {
     color: #4ade80;
@@ -63,16 +67,18 @@
   top: calc(100% + 1vh);
   right: 0;
   z-index: 30;
-  min-width: 34vh;
-  max-width: 80vw;
-  max-height: 70vh;
-  overflow: auto;
-  padding: 1.6vh 1.8vh;
-  border-radius: 1.2vh;
-  border: 1px solid #262a38;
-  background: #12141b;
-  box-shadow: 0 1.2vh 3vh rgba(0, 0, 0, 0.65);
-  color: #e8e8ee;
+  // A fixed-size sheet: the Bluetooth screen inside owns the one scroll area.
+  display: flex;
+  flex-direction: column;
+  width: min(94vw, 1500px);
+  height: 82vh;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 1.25rem 1.5rem;
+  border-radius: 1rem;
+  border: 1px solid var(--ds-border);
+  background: var(--ds-surface);
+  color: var(--ds-text-high);
   font-family: 'Roboto Condensed', system-ui, sans-serif;
 }
 

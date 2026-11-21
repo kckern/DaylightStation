@@ -1,4 +1,5 @@
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
+import { scoreViewPath } from './modes/SheetMusic/sheetMusicModel.js';
 
 let _logger;
 function logger() {
@@ -25,14 +26,13 @@ export function isSheetMusicContentId(contentId) {
 }
 
 /**
- * The SheetMusic view route for a content id — mirrors
- * `ScoreGridRoute`'s `onSelect` (`navigate('view/' + item.id)`) in
- * `SheetMusic.jsx`, absolute rather than relative. The id is used verbatim
- * (it may contain slashes, e.g. a file path) — SheetMusic's splat param
- * round-trips it unencoded, so this does the same.
+ * The SheetMusic view route for a content id — the same `scoreViewPath`
+ * `ScoreGridRoute`'s `onSelect` uses in `SheetMusic.jsx`, absolute rather
+ * than relative. Slashes stay path segments; `#`, `?` and `%` are encoded so
+ * the id survives (and a `?play=` suffix is not mistaken for part of it).
  */
 export function sheetMusicViewPath(basePath, contentId) {
-  return `${basePath}/sheetmusic/view/${contentId}`;
+  return `${basePath}/sheetmusic/${scoreViewPath(contentId)}`;
 }
 
 export function pianoCourseLessonPath(basePath, courseId, lessonId) {

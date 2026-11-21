@@ -25,6 +25,14 @@ const USERS = {
   ],
   friends: [{ id: 'kid-b', name: 'Kid B' }, { id: 'guest-c', name: 'Guest C' }],
 };
+// What FitnessContext does with every accepted packet: ingest it, then report
+// delivery. Since 543d400778 only that report releases collection held after a
+// transport gap (e.g. the 6 s baseline wait below), so a harness that only
+// ingests would hold forever and earn no rings.
+const deliver = (session, packet) => {
+  session.ingestData(packet);
+  session.setTransportState({ state: 'healthy', reason: 'sample-delivered', at: Date.now() });
+};
 const hr = (deviceId, bpm) => ({
   topic: 'fitness', type: 'ant', deviceId, profile: 'HR',
   data: { ComputedHeartRate: bpm, timestamp: Date.now() },
@@ -53,13 +61,13 @@ function run(session, ticks, readings) {
       // A strap changing chests is not a 150 -> 80 bpm drop inside a second;
       // the slew gate would rightly hold that. Let the old reading age out.
       vi.advanceTimersByTime(2500);
-      for (let i = 0; i < 4; i++) session.ingestData(hr(dev, 80));
+      for (let i = 0; i < 4; i++) deliver(session, hr(dev, 80));
       vi.advanceTimersByTime(6000);
     }
   }
   for (let s = 0; s < ticks * 5; s += 1) {
     vi.advanceTimersByTime(1000);
-    for (const [dev, bpm] of Object.entries(readings)) session.ingestData(hr(dev, bpm));
+    for (const [dev, bpm] of Object.entries(readings)) deliver(session, hr(dev, bpm));
   }
 }
 const series = (session, id, metric) => session.timeline.series[`user:${id}:${metric}`] || [];

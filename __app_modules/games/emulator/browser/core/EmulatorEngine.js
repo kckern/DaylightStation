@@ -302,6 +302,10 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
    * Resolve once the frame counter has advanced by >= n since the call.
    * Polls every ~16ms. If getFrameNum is unavailable, falls back to a
    * time-based delay (~n*16ms). Total wait is capped at ~3s.
+   *
+   * Resolves `true` when the frames ran (or with no counter to check), and
+   * `false` when the cap hit first: a stalled boot. Callers that need the
+   * frames, like the WRAM calibrator, must not treat the cap as success.
    */
   function waitFrames(n = 70) {
     return new Promise((resolve) => {
@@ -314,7 +318,7 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
 
       // No frame counter -> time-based fallback.
       if (start === null) {
-        setTimeout(resolve, n * FRAME_INTERVAL_MS);
+        setTimeout(() => resolve(true), n * FRAME_INTERVAL_MS);
         return;
       }
 
@@ -323,7 +327,7 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
         const current = readFrameNum();
         const advanced = current !== null && current - start >= n;
         if (advanced || elapsed >= WAIT_FRAMES_CAP_MS) {
-          resolve();
+          resolve(advanced);
           return;
         }
         tick(poll);
@@ -461,6 +465,28 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
         if (fnsRef.simulateInput === wrapped) fnsRef.simulateInput = orig;
       } catch { /* best-effort restore */ }
     };
+  }
+
+  /**
+   * Press (value 1) or release (0) one RetroPad control (buildEjsControls'
+   * SEMANTIC_INDEX) for `player`, through EmulatorJS's own input API
+   * `gameManager.simulateInput` — the call its keyboard, gamepad and on-screen
+   * pad handlers all make. Used for input the page cannot see as a key or a
+   * pad (Bluetooth remotes decoded by the garage box). Goes through the
+   * tapped funnel, so the input LED and telemetry count it. False before
+   * `started` or when the build lacks the call.
+   */
+  function pressInput(index, value, player = 0) {
+    if (!ready || !instance || !isStarted()) return false;
+    try {
+      const gm = instance.gameManager;
+      if (!gm || typeof gm.simulateInput !== 'function') return false;
+      gm.simulateInput(player, index, value);
+      return true;
+    } catch (err) {
+      log().warn('press-input.failed', { index, value, error: err?.message });
+      return false;
+    }
   }
 
   /**
@@ -625,6 +651,7 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
     loadResume,
     restart,
     tapInput,
+    pressInput,
     claimGamepads,
     isStarted,
     isPaused,

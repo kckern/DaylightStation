@@ -220,7 +220,7 @@ describe('createQuizScanRecorder', () => {
 
   it('ignores nfc and other non-sheet events', async () => {
     start();
-    bus.broadcast('omr', { id: READER_ID, event: 'nfc', uid: '04669C0FCB2A81', ts: '2026-07-30 21:16:43' });
+    bus.broadcast('omr', { id: READER_ID, event: 'nfc', uid: '04F00000000005', ts: '2026-07-30 21:16:43' });
     await flush();
     await expect(readDay()).rejects.toMatchObject({ code: 'ENOENT' });
   });
@@ -261,7 +261,7 @@ describe('rebuildQuizDayFiles', () => {
     const historyDir = path.join(historyRoot, READER_ID);
     await fs.mkdir(historyDir, { recursive: true });
     const manifest = [
-      { ts: '2026-07-30 20:51:35', event: 'nfc', uid: '04669C0FCB2A81', piccType: 'NTAG 215' },
+      { ts: '2026-07-30 20:51:35', event: 'nfc', uid: '04F00000000005', piccType: 'NTAG 215' },
       { ts: '2026-07-30 21:16:43', event: 'sheet', columns: 32, markedColumns: 17, marks: CALIBRATION_MARKS },
     ];
     await fs.writeFile(path.join(historyDir, '2026-07-30.yml'), yaml.dump(manifest), 'utf8');

@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { createNfcTapIngress } from '#composition/modules/nfcTapIngress.mjs';
 
 const NOOP = { warn() {}, info() {}, debug() {}, error() {} };
-const CARD_UID = '04669c0fcb2a81';
+const CARD_UID = '04f00000000005';
 
 function makeBus() {
   const subs = new Map();
@@ -42,7 +42,7 @@ function harness({ readerLocations = READERS, trigger = true } = {}) {
 describe('createNfcTapIngress — transport only', () => {
   it('hands a learner card to the trigger pipeline like any other tag', async () => {
     const { ingress, triggerDispatchService } = harness();
-    const out = await ingress.handleTap({ uid: '04:66:9C:0F:CB:2A:81', id: 'study-omr' });
+    const out = await ingress.handleTap({ uid: '04:F0:00:00:00:00:05', id: 'study-omr' });
 
     expect(triggerDispatchService.handleEvent).toHaveBeenCalledWith({
       location: 'study', source: 'nfc', value: CARD_UID,
@@ -178,13 +178,13 @@ describe('createNfcTapIngress — the shutdown tag outranks everything', () => {
       eventBus: { subscribe() { return () => {}; } },
       triggerDispatchService: { async handleEvent() { calls.push('trigger'); return { ok: true }; } },
       shutdownService: { async activate(payload) { calls.push(payload); return { lockedUntil: '2030-01-01T00:00:00.000Z' }; } },
-      getShutdownConfig: () => ({ nfc: { reader_id: 'study-omr', tag_uid: '04aa660fcb2a81' } }),
+      getShutdownConfig: () => ({ nfc: { reader_id: 'study-omr', tag_uid: '04f00000000007' } }),
       readerLocations: { 'study-omr': 'study' },
       logger: NOOP,
     });
-    const result = await ingress.handleTap({ id: 'study-omr', uid: '04-AA-66-0F-CB-2A-81' });
+    const result = await ingress.handleTap({ id: 'study-omr', uid: '04-F0-00-00-00-00-07' });
     expect(result).toEqual({ status: 'shutdown_locked', lockedUntil: '2030-01-01T00:00:00.000Z' });
-    expect(calls).toEqual([{ readerId: 'study-omr', tagUid: '04aa660fcb2a81' }]);
+    expect(calls).toEqual([{ readerId: 'study-omr', tagUid: '04f00000000007' }]);
   });
 
   it('the configured shutdown card cannot activate from a different reader', async () => {
@@ -192,10 +192,10 @@ describe('createNfcTapIngress — the shutdown tag outranks everything', () => {
     const ingress = createNfcTapIngress({
       eventBus: { subscribe() { return () => {}; } },
       shutdownService: { async activate() { activations += 1; } },
-      getShutdownConfig: () => ({ nfc: { reader_id: 'study-omr', tag_uid: '04aa660fcb2a81' } }),
+      getShutdownConfig: () => ({ nfc: { reader_id: 'study-omr', tag_uid: '04f00000000007' } }),
       logger: NOOP,
     });
-    const result = await ingress.handleTap({ id: 'other-reader', uid: '04aa660fcb2a81' });
+    const result = await ingress.handleTap({ id: 'other-reader', uid: '04f00000000007' });
     // `unrouted` in the old module; the reader is simply not mapped now.
     expect(result.status).toBe('unmapped_reader');
     expect(activations).toBe(0);
@@ -208,11 +208,11 @@ describe('createNfcTapIngress — the shutdown tag outranks everything', () => {
     const ingress = createNfcTapIngress({
       eventBus: { subscribe() { return () => {}; } },
       shutdownService: { async activate() { return { lockedUntil: '2030-01-01T00:00:00.000Z' }; } },
-      getShutdownConfig: () => ({ nfc: { tag_uid: '04aa660fcb2a81' } }),
+      getShutdownConfig: () => ({ nfc: { tag_uid: '04f00000000007' } }),
       readerLocations: {},
       logger: NOOP,
     });
-    expect(await ingress.handleTap({ id: 'no-such-reader', uid: '04aa660fcb2a81' }))
+    expect(await ingress.handleTap({ id: 'no-such-reader', uid: '04f00000000007' }))
       .toMatchObject({ status: 'shutdown_locked' });
   });
 });

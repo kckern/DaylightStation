@@ -96,4 +96,10 @@ public class QueueNoticeTest {
         assertEquals("1 input could not be sent (Meal photo 1), 1 waiting. Tap to try again.", n.text);
         assertEquals("Quick inputs", n.title);
     }
+
+    @org.junit.Test public void unusableMealOffersAnExplicitReplacement() {
+        assertEquals("Couldn’t identify food", QueueNotice.captureMessage("UNUSABLE"));
+        assertEquals("Replace capture", QueueNotice.captureAction("UNUSABLE"));
+        assertEquals("Queued", QueueNotice.captureMessage("QUEUED"));
+    }
 }

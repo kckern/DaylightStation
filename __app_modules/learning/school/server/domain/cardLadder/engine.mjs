@@ -16,6 +16,7 @@ import { extraNewWords, newAllowance, planNextRound } from "./rounds.mjs";
 import { answersMatch } from "./scriptRules.mjs";
 import { drillSteps, matchBoard, tilesFor } from "./drill.mjs";
 import { PRACTICE_MODES, VERIFY_TASKS, buildPractice } from "./practice.mjs";
+import { SEE_AND_TYPE_PRACTICE_MODES, SEE_AND_TYPE_TASK, isSeeAndType } from "./seeAndType.mjs";
 import { BLIND_PASSES_TO_FINISH, applyDictationAttempt, nextDictationWord } from "./dictation.mjs";
 
 const IDLE_CAP_MS = 45000;
@@ -124,7 +125,8 @@ function roundTouched(dayFile, round) {
 // stage ≥ 1) is typed — 3.3 from the cue, or 1.4 dictation from the term audio
 // when there is some, alternating per word from a side seeded by the word id.
 // Every other recheck is recognition: 2.2 and 3.1 alternate the same way.
-function recheckTask(word, wordId, media = {}) {
+function recheckTask(word, wordId, media = {}, seeAndType = false) {
+  if (seeAndType) return SEE_AND_TYPE_TASK;
   const n = (word.rechecks ?? 0) + 1;
   const side = (n + hashString(wordId)) % 2 === 0;
   if (readyForSignOff(word)) return media.audio === true && !side ? '1.4' : '3.3';
@@ -143,6 +145,9 @@ function gradedItem(ctx, id, wordId, task, source) {
   const media = ctx.media[wordId] ?? {};
   const seed = `${ctx.learnerId}|${ctx.day}|${id}`;
   // 1.4 graded dictation: the term's audio is the whole prompt (the service sends it).
+  // See-and-type (K.1): the card itself, graded on the first attempt — the
+  // term on screen, its audio played, typed exactly. No cue, no choices.
+  if (task === SEE_AND_TYPE_TASK) return { id, type: 'copy', task, source, wordId, graded: true };
   if (task === '1.4') return { id, type: 'typed', task, source, wordId };
   if (task === '3.3') return { id, type: 'typed', task, source, wordId, cue: cueFor(entry, media, seed) };
   if (task === '3.1') {
@@ -204,6 +209,8 @@ function newDrill(ctx, wordId, source) {
 // Spec §4 Order 2: up to drill.perSitting tricky words per study day, oldest
 // tricky first, from the at-open snapshot, only while the drill estimate fits.
 function maybeStartTrickyDrill(ctx) {
+  // See-and-type has one card variety; a drill walks through others.
+  if (isSeeAndType(ctx.lexicon)) return false;
   const drills = ctx.dayFile.drills ?? (ctx.dayFile.drills = []);
   const perDay = ctx.settings.drill?.perSitting ?? 1;
   // A drill a grown-up's exclusion ended never ran; it does not use up the day's drill.
@@ -297,13 +304,28 @@ function nextRound(ctx) {
 }
 
 function roundFrom(ctx, planned) {
-  return {
+  const round = {
     ...planned,
     phase: planned.newWords.length ? 'intro' : 'stream',
     intro: { index: 0, step: 'flash' },
     stream: { queue: seededShuffle(planned.words, hashString(`${ctx.learnerId}|${ctx.day}|${planned.id}`)), latest: {}, views: 0, viewsPer: {}, undo: null },
     quiz: { queue: [], index: 0, failed: [], passed: [] },
   };
+  if (!isSeeAndType(ctx.lexicon)) return round;
+  // See-and-type: Learn (copy, ungraded) › Quiz (the same card, graded). No
+  // flash, no sort, no match. A carry round has nothing to learn: its quiz.
+  round.variety = 'see-and-type';
+  round.intro.step = 'copy';
+  if (!planned.newWords.length) startSeeAndTypeQuiz(ctx, round);
+  return round;
+}
+
+// Every word of the round not already failed today, in the stream's shuffled order.
+function startSeeAndTypeQuiz(ctx, round) {
+  const eligible = round.stream.queue.filter((id) => wordOf(ctx.status, id).verifyFailedDay !== ctx.day);
+  round.stream.queue = [];
+  round.quiz.queue = eligible.map((wordId) => ({ wordId, task: SEE_AND_TYPE_TASK }));
+  round.phase = round.quiz.queue.length ? 'quiz' : 'done';
 }
 
 // A Match board for words just verified (a round's quiz or a practice Quiz
@@ -342,7 +364,7 @@ function startMatch(ctx, round) {
 // quiz does the same), so a word verified in practice can still be signed
 // off. Mutates `run`.
 function appendPracticeMatch(ctx, run) {
-  if (run.mode !== 'quiz' || run.matchAdded) return;
+  if (run.mode !== 'quiz' || run.matchAdded || isSeeAndType(ctx.lexicon)) return;
   run.matchAdded = true;
   const seed = `${ctx.learnerId}|${ctx.day}|${run.id}|match`;
   const wordIds = matchWordIds(ctx, run.passed, seed);
@@ -358,7 +380,7 @@ function appendPracticeMatch(ctx, run) {
  * over, only a round that actually started a Match has one. Pure, read-only.
  */
 export function roundHasMatch(round) {
-  if (!round) return false;
+  if (!round || round.variety === 'see-and-type') return false;
   if (round.match || round.phase === 'match') return true;
   if (round.phase === 'intro' || round.phase === 'stream') return true;
   if (round.phase === 'quiz') return (round.quiz?.passed?.length ?? 0) > 0 || (round.quiz?.index ?? 0) < (round.quiz?.queue?.length ?? 0);
@@ -366,7 +388,7 @@ export function roundHasMatch(round) {
 }
 
 function afterQuiz(ctx, round) {
-  if (!startMatch(ctx, round)) endRound(ctx, round);
+  if (round.variety === 'see-and-type' || !startMatch(ctx, round)) endRound(ctx, round);
 }
 
 function itemForRound(ctx, round) {
@@ -400,7 +422,7 @@ export function currentItem(ctx) {
   const early = !ctx.dayFile.doneAt ? openPractice(ctx) : null;
   if (early) return practiceItem(ctx, early);
   const pending = ctx.dayFile.rechecks.order.find((id) => !ctx.dayFile.rechecks.answered[id]);
-  if (pending) return gradedItem(ctx, `rc:${pending}`, pending, recheckTask(wordOf(ctx.status, pending), pending, ctx.media?.[pending]), 'recheck');
+  if (pending) return gradedItem(ctx, `rc:${pending}`, pending, recheckTask(wordOf(ctx.status, pending), pending, ctx.media?.[pending], isSeeAndType(ctx.lexicon)), 'recheck');
   const drill = openDrill(ctx);
   if (drill) return drillItem(ctx, drill);
   const round = openRound(ctx);
@@ -417,11 +439,16 @@ function openPractice(ctx) {
 }
 
 function buildRun(ctx, capabilities, { mode, help = true, filter = 'introduced', chosen = [], frontSide = 'term' }, seed) {
+  const seeAndType = isSeeAndType(ctx.lexicon);
   return buildPractice({
     mode, help, filter, chosen, frontSide, words: ctx.status.words, entries: ctx.lexicon.entries,
     media: ctx.media ?? {}, day: ctx.day, seed, capabilities: capabilities ?? {},
+    ...(seeAndType ? { verifyTasks: [SEE_AND_TYPE_TASK], writeFromMemory: false } : {}),
   });
 }
+
+/** The practice modes this lexicon's card variety offers. */
+const practiceModesFor = (lexicon) => (isSeeAndType(lexicon) ? SEE_AND_TYPE_PRACTICE_MODES : PRACTICE_MODES);
 
 // A mode is offered only when its default run (with help, every introduced
 // word) would have something in it. Say is the exception: With help
@@ -437,7 +464,7 @@ function menuItem(ctx) {
   // Write Without help types from memory, so it has a run only once a word is
   // ready for its sign-off; the menu shows it locked until then.
   const writeHelp = [true, false].filter((help) => runs({ mode: 'write', help }));
-  const modes = PRACTICE_MODES.filter((mode) => (mode === 'say' ? sayHelp.length > 0 : runs({ mode })));
+  const modes = practiceModesFor(ctx.lexicon).filter((mode) => (mode === 'say' ? sayHelp.length > 0 : runs({ mode })));
   return { id: 'menu', type: 'menu', modes, sayHelp, writeHelp, quizzed: quizzedCount(ctx.dayFile), learnMore: extraFor(ctx).length };
 }
 
@@ -696,7 +723,7 @@ function respondCourseReview(ctx, item, response, verdict) {
  */
 export function startPractice(ctx, { mode, help = true, filter = 'introduced', chosen = [], frontSide = 'term' } = {}) {
   // Owner ruling 2026-11-06: flashcard review is open anytime, goal or not.
-  if (!PRACTICE_MODES.includes(mode)) throw new ValidationError(`unknown practice mode '${mode}'`);
+  if (!practiceModesFor(ctx.lexicon).includes(mode)) throw new ValidationError(`unknown practice mode '${mode}'`);
   if (!PRACTICE_FILTERS.includes(filter)) throw new ValidationError(`unknown practice filter '${filter}'`);
   if (!FRONT_SIDES.includes(frontSide)) throw new ValidationError(`unknown flashcard front side '${frontSide}'`);
   const dayFile = clone(ctx.dayFile);
@@ -808,8 +835,9 @@ function gradeQuizTask(ctx, round, task, correct) {
   if (gradeVerifyTask(ctx, round.quiz, task, correct)) afterQuiz(ctx, round);
 }
 
-function gradedResult(ctx, item, correct, verdict) {
-  return { correct, answer: answerFor(ctx, item), ...(verdict ? { score: verdict.score, judge: verdict.judge, ...(verdict.match ? { match: verdict.match } : {}) } : {}) };
+function gradedResult(ctx, item, correct, verdict, response = null) {
+  const dontKnow = item.task === SEE_AND_TYPE_TASK && response && gaveUp(response) ? { dontKnow: true } : {};
+  return { correct, answer: answerFor(ctx, item), ...dontKnow, ...(verdict ? { score: verdict.score, judge: verdict.judge, ...(verdict.match ? { match: verdict.match } : {}), ...(verdict.near ? { near: true } : {}) } : {}) };
 }
 
 // Practice never grades except a Quiz me task (rule 1). Sorts obey rule 2 via
@@ -825,7 +853,7 @@ function respondPractice(ctx, item, response, verdict) {
   if (task.kind === 'graded') {
     const correct = gradedCorrect(ctx, item, response, verdict);
     if (gradeVerifyTask(ctx, run, task, correct)) appendPracticeMatch(ctx, run);
-    return { result: gradedResult(ctx, item, correct, verdict), advance: true };
+    return { result: gradedResult(ctx, item, correct, verdict, response), advance: true };
   }
   if (task.kind === 'match') matchWords(ctx, task.board.pairs.map((pair) => pair.wordId));
   if (task.kind === 'drill') {
@@ -855,6 +883,11 @@ function matchWords(ctx, wordIds) {
 }
 
 function gradedCorrect(ctx, item, response, verdict) {
+  if (item.type === 'copy' && item.task === SEE_AND_TYPE_TASK) {
+    // Exact, under the target script's normalize — no judge: the answer is on screen.
+    if (gaveUp(response)) return false;
+    return answersMatch(response.typed, ctx.lexicon.entries.get(item.wordId).term, ctx.lexicon?.targetScript);
+  }
   if (item.type === 'typed') {
     if (!verdict || typeof verdict.pass !== 'boolean') throw new ValidationError('typed answers need a judge verdict');
     return verdict.pass;
@@ -864,9 +897,12 @@ function gradedCorrect(ctx, item, response, verdict) {
   return response.choice === answerFor(ctx, item);
 }
 
-function nextIntro(round) {
-  round.intro = { index: round.intro.index + 1, step: 'flash' };
-  if (round.intro.index >= round.newWords.length) round.phase = 'stream';
+function nextIntro(ctx, round) {
+  const seeAndType = round.variety === 'see-and-type';
+  round.intro = { index: round.intro.index + 1, step: seeAndType ? 'copy' : 'flash' };
+  if (round.intro.index < round.newWords.length) return;
+  round.phase = 'stream';
+  if (seeAndType) startSeeAndTypeQuiz(ctx, round);
 }
 
 const NOT_FIT = 'response does not fit this item';
@@ -1008,9 +1044,12 @@ function applyResponse(ctx, item, itemId, response, { at, verdict }) {
     ctx.dayFile.summarySeen = true;
   } else if (item.id.startsWith('rc:')) {
     const correct = gradedCorrect(ctx, item, response, verdict);
-    ctx.status.words[item.wordId] = applyGraded(wordOf(ctx.status, item.wordId), { source: 'recheck', correct, day: ctx.day, task: item.task, settings: gradedSettings(ctx.settings) });
-    ctx.dayFile.rechecks.answered[item.wordId] = { task: item.task, correct };
-    result = gradedResult(ctx, item, correct, verdict);
+    // A near miss on a spelling card (owner 2026-11-20): not credit, not a drop
+    // back either — the word is left exactly as it was and comes round again.
+    const near = !correct && verdict?.near === true;
+    if (!near) ctx.status.words[item.wordId] = applyGraded(wordOf(ctx.status, item.wordId), { source: 'recheck', correct, day: ctx.day, task: item.task, settings: gradedSettings(ctx.settings) });
+    ctx.dayFile.rechecks.answered[item.wordId] = { task: item.task, correct, ...(near ? { near: true } : {}) };
+    result = gradedResult(ctx, item, correct, verdict, response);
   } else {
     const round = openRound(ctx);
     if (!round) throw new ValidationError('stale item');
@@ -1018,7 +1057,7 @@ function applyResponse(ctx, item, itemId, response, { at, verdict }) {
       const met = introduce(wordOf(ctx.status, item.wordId), ctx.day);
       ctx.status.words[item.wordId] = round.extra && wordOf(ctx.status, item.wordId).state === 'new' ? { ...met, introducedExtra: true } : met;
       round.intro.step = 'copy';
-    } else if (item.type === 'copy') {
+    } else if (item.type === 'copy' && !item.task) {
       const term = ctx.lexicon.entries.get(item.wordId).term;
       if (gaveUp(response)) result = gaveUpResult(term, true);
       else {
@@ -1026,10 +1065,15 @@ function applyResponse(ctx, item, itemId, response, { at, verdict }) {
         result = { correct, answer: term };
         if (!correct) return { status: ctx.status, dayFile: ctx.dayFile, result };
       }
-      if (ctx.dayFile.capabilities?.microphone === true && ctx.media?.[item.wordId]?.audio === true) round.intro.step = 'say';
-      else nextIntro(round);
+      if (round.variety === 'see-and-type') {
+        // No flash card: the copy IS the introduction.
+        const met = introduce(wordOf(ctx.status, item.wordId), ctx.day);
+        ctx.status.words[item.wordId] = round.extra && wordOf(ctx.status, item.wordId).state === 'new' ? { ...met, introducedExtra: true } : met;
+        nextIntro(ctx, round);
+      } else if (ctx.dayFile.capabilities?.microphone === true && ctx.media?.[item.wordId]?.audio === true) round.intro.step = 'say';
+      else nextIntro(ctx, round);
     } else if (item.type === 'say') {
-      nextIntro(round);
+      nextIntro(ctx, round);
     } else if (item.type === 'match') {
       matchWords(ctx, round.match.wordIds);
       endRound(ctx, round);
@@ -1053,7 +1097,7 @@ function applyResponse(ctx, item, itemId, response, { at, verdict }) {
     } else {
       const correct = gradedCorrect(ctx, item, response, verdict);
       gradeQuizTask(ctx, round, round.quiz.queue[round.quiz.index], correct);
-      result = gradedResult(ctx, item, correct, verdict);
+      result = gradedResult(ctx, item, correct, verdict, response);
     }
   }
   ctx.dayFile.items[itemId] = { at, response, result, ...itemMeta(item, verdict) };

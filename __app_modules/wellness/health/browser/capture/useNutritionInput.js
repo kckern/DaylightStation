@@ -1,3 +1,4 @@
+import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 import { useCallback, useRef, useState } from 'react';
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { useFoodMutation } from "../operations/useFoodMutation.js";
@@ -58,6 +59,28 @@ export function useNutritionInput() {
     } finally { activeCount.current--; setBusy(activeCount.current > 0); }
   }, [foodAPI]);
 
-  return { submit, busy, error };
+  async function lookupBarcode(upc, signal) {
+    const timeout = new AbortController();
+    const abort = () => timeout.abort();
+    if (signal?.aborted) abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    const timer = setTimeout(abort, 10000);
+    try {
+      return await DaylightAPI(`api/v1/health/nutrition/barcode-lookup?upc=${encodeURIComponent(upc)}`, {}, 'GET', { signal: timeout.signal });
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
+    }
+  }
+  const commitBarcode = async (prepared, onResult) => {
+    try {
+      return await foodAPI.withContinuation('api/v1/health/nutrition/barcode-commit', prepared, 'POST', onResult);
+    } catch (err) {
+      if (err?.status >= 400 && err.status < 500 && ![408, 425, 429].includes(err.status)) foodAPI.release(prepared.operationId);
+      throw err;
+    }
+  };
+
+  return { submit, busy, error, lookupBarcode, commitBarcode };
 }
 export default useNutritionInput;

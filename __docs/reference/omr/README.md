@@ -418,7 +418,7 @@ a student taps a card to start a session. Same relay, same bus link, same
   "source": "omr-relay",
   "type": "nfc",
   "id": "<reader-id>",
-  "uid": "04669C0FCB2A81",
+  "uid": "04F00000000005",
   "piccType": "NTAG 215",
   "atqa": 68,
   "sak": 0

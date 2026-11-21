@@ -64,9 +64,9 @@ describe('FitnessTimeline pruning', () => {
 
   test('long-running timeline prunes a constant one tick per tick after cap', () => {
     const LONG = CAP * 2 + 500;
-    for (let i = 0; i < LONG; i++) timeline.tick({ 'device:7138:rpm': i });
+    for (let i = 0; i < LONG; i++) timeline.tick({ 'device:10101:rpm': i });
 
-    const series = timeline.series['device:7138:rpm'];
+    const series = timeline.series['device:10101:rpm'];
     expect(series.length).toBe(CAP);
     expect(timeline.timebase.tickCount).toBe(LONG);
     expect(timeline.timebase.prunedTickCount).toBe(LONG - CAP);

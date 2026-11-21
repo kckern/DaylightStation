@@ -9,7 +9,7 @@ import { getDeviceId } from './deviceIdentity.js';
  * `X-Daylight-Device` is the answer to "which machine is calling". All frontend
  * traffic arrives from the docker network, so `req.ip` is one shared address for
  * the whole house — on 2026-08-16 that put the garage fitness kiosk and the
- * piano tablet behind the same `172.18.0.53` and sent the investigation after
+ * piano tablet behind the same proxy address and sent the investigation after
  * the wrong screen.
  *
  * NOT carried by media traffic: `<video>`/dash segment fetches are issued by
@@ -36,7 +36,7 @@ function requestToken() {
     catch { return null; } // Same-origin requests can still authenticate with cookies.
 }
 
-function prepareApiRequest(path, { method = 'GET', data, signal, ifMatch, withContentType = true } = {}) {
+function prepareApiRequest(path, { method = 'GET', data, signal, ifMatch, withContentType = true, keepalive = false } = {}) {
     const route = path.replace(/^\/|\/$/g, '');
     const url = `${getBaseUrl()}/${route}`;
     const multipart = typeof FormData !== 'undefined' && data instanceof FormData;
@@ -46,6 +46,7 @@ function prepareApiRequest(path, { method = 'GET', data, signal, ifMatch, withCo
         method,
         headers,
         signal,
+        ...(keepalive ? { keepalive: true } : {}),
         ...(data === undefined ? {} : { body: multipart ? data : JSON.stringify(data) }),
     };
     return { url, options };
@@ -64,10 +65,14 @@ export const DaylightAPI = async (path, data = {}, method = 'GET', requestOption
         method = 'POST';
     }
     
+    const requestPage = window.location.pathname;
+    const token = requestToken();
+    const requestPath = path.replace(/^\/+|\/+$/g, '');
     const { url, options } = prepareApiRequest(path, {
         method,
         data: method === 'GET' ? undefined : data,
         signal: requestOptions.signal,
+        keepalive: requestOptions.keepalive,
     });
     let response;
     try {
@@ -85,6 +90,11 @@ export const DaylightAPI = async (path, data = {}, method = 'GET', requestOption
             if (error?.name === 'AbortError') throw error;
             return '';
         });
+        if (response.status === 401 && window.daylight?.deviceId === 'phone'
+            && requestPage === window.location.pathname && !requestPath.startsWith('api/v1/auth/')
+            && token === requestToken()) {
+            window.dispatchEvent(new Event('daylight:phone-sign-in-needed'));
+        }
         const transient = TRANSIENT_STATUSES.has(response.status);
         getLogger()[transient ? 'warn' : 'error']('api.response.error', { path, status: response.status, statusText: response.statusText });
         // `status` is attached (not just embedded in the message string) so a

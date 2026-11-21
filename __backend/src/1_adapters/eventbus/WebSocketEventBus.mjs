@@ -15,6 +15,7 @@
 import { WebSocketServer } from 'ws';
 import { nowTs, nowTs24 } from '#system/utils/index.mjs';
 import crypto from 'crypto';
+import { originAllowList, webSocketOriginRefusal } from '#system/http/middleware/crossSiteGuard.mjs';
 import { parseDeviceTopic, PLAYBACK_STATE_TOPIC, ARCADE_SESSIONS_TOPIC, HOMELINE_CALL_TOPIC_PREFIX } from '#shared-contracts/media/topics.mjs';
 import {
   buildDeviceStateBroadcast,
@@ -79,6 +80,7 @@ export class WebSocketEventBus {
   #httpServer = null;
   #path;
   #logger;
+  #allowedOrigins;
   #running = false;
   #pingInterval = null;
 
@@ -127,10 +129,15 @@ export class WebSocketEventBus {
    * @param {string} [options.path='/ws'] - WebSocket path
    * @param {Object} [options.logger] - Logger instance
    * @param {Object} [options.livenessService] - DeviceLivenessService for snapshot replay
+   * @param {Set<string>|string[]} [options.allowedOrigins] - Other sites' pages allowed to
+   *   connect (`http.allowed_origins`); every other web page must be this app's own.
    */
   constructor(options = {}) {
     this.#path = options.path || '/ws';
     this.#logger = options.logger || console;
+    this.#allowedOrigins = options.allowedOrigins instanceof Set
+      ? options.allowedOrigins
+      : originAllowList(options.allowedOrigins || [], { logger: this.#logger });
     this.#livenessService = options.livenessService || null;
   }
 
@@ -191,7 +198,13 @@ export class WebSocketEventBus {
     }
 
     this.#httpServer = server;
-    this.#wss = new WebSocketServer({ server, path: this.#path });
+    // A page on another site may not connect: it would read every broadcast
+    // and could send client messages. __docs/reference/core/network-exposure.md.
+    this.#wss = new WebSocketServer({
+      server,
+      path: this.#path,
+      verifyClient: (info, accept) => accept(...this.#verifyOrigin(info.req)),
+    });
     this.#running = true;
     this.#metrics.startedAt = Date.now();
 
@@ -237,6 +250,22 @@ export class WebSocketEventBus {
         if (ws.readyState === ws.OPEN) ws.send(beat);
       }
     }, 30000);
+  }
+
+  /** `[true]`, or `[false, 403, reason]` for verifyClient. */
+  #verifyOrigin(req) {
+    const reason = webSocketOriginRefusal(req, this.#allowedOrigins);
+    if (!reason) return [true];
+    const data = {
+      origin: req?.headers?.origin ?? null,
+      secFetchSite: req?.headers?.['sec-fetch-site'] ?? null,
+      host: req?.headers?.host ?? null,
+      ip: req?.socket?.remoteAddress ?? null,
+      reason,
+    };
+    if (this.#logger.sampled) this.#logger.sampled('security.ws-origin-refused', data, { maxPerMinute: 20, aggregate: true, level: 'warn' });
+    else this.#logger.warn?.('security.ws-origin-refused', data);
+    return [false, 403, 'Forbidden'];
   }
 
   /**
@@ -902,6 +931,7 @@ export class WebSocketEventBus {
       id: clientId,
       ip: req?.socket?.remoteAddress,
       userAgent: req?.headers?.['user-agent'],
+      origin: req?.headers?.origin,
       subscriptions: new Set(),
       connectedAt: nowTs24()
     };
@@ -909,7 +939,7 @@ export class WebSocketEventBus {
     this.#clients.set(clientId, { ws, meta });
     this.#metrics.clientsConnected++;
 
-    this.#logger.info?.('eventbus.client_connected', { clientId, ip: meta.ip, userAgent: meta.userAgent });
+    this.#logger.info?.('eventbus.client_connected', { clientId, ip: meta.ip, userAgent: meta.userAgent, origin: meta.origin ?? null });
 
     // Notify handlers
     for (const handler of this.#connectionHandlers) {

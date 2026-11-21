@@ -136,6 +136,11 @@ public class KioskActivity extends Activity implements KioskHost {
         forward("resume", KioskController::onHostResumed);
     }
 
+    @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(code, permissions, results);
+        forward("permissions", c -> c.onHostPermissionsResult(code));
+    }
+
     @Override protected void onPause() {
         resumed = false;
         forward("pause", KioskController::onHostPaused);

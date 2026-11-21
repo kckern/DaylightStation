@@ -6,7 +6,9 @@ CONFIG_YML="$BASE_DIR/devices.yml"
 CONFIG_JSON_LEGACY="$BASE_DIR/devices.json"
 CONFIG_FILE="$BASE_DIR/.devices.runtime.json"
 API_BASE="https://daylightlocal.kckern.net"
-API_FALLBACK_BASE="http://10.0.0.10:3111"
+# LAN fallback when the public name fails: the app's LAN address, from the
+# environment (systemd drop-in PLAYBACK_HUB_API_FALLBACK=http://<host>:<port>). Empty = no fallback.
+API_FALLBACK_BASE="${PLAYBACK_HUB_API_FALLBACK:-}"
 # Default prefix for bare queue ratingKeys when the config omits queue_base.
 # MUST stay in parity with web.py's DEFAULT_QUEUE_BASE — both resolve a bare
 # id like "674397" to <base>674397. Without this, queue_base() returned ""
@@ -744,6 +746,7 @@ device_tag() {
 
 with_api_fallback() {
     local url="$1"
+    [[ -z "$API_FALLBACK_BASE" ]] && { echo "$url"; return; }
     echo "${url/https:\/\/daylightlocal.kckern.net/$API_FALLBACK_BASE}"
 }
 
@@ -767,7 +770,8 @@ curl_api() {
 curl_api_dump() { # url body_dest header_dest
     local url="$1" body="$2" hdrs="$3"
     if curl -fsSL --max-time 60 -D "$hdrs" -o "$body" "$url"; then return 0; fi
-    local fb="${url/$API_BASE/$API_FALLBACK_BASE}"
+    local fb
+    fb=$(with_api_fallback "$url")
     [[ "$fb" != "$url" ]] && curl -fsSL --max-time 60 -D "$hdrs" -o "$body" "$fb"
 }
 

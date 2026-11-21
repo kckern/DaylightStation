@@ -34,6 +34,9 @@ public class DeviceConfig {
     private static final String TAG = "PianoBridge-Config";
     public static final String ASSET_NAME = "piano-devices.yml";
     public static final String OVERRIDE_NAME = "piano-devices.yml";
+    /** The last BLE-MIDI target that actually connected. Written by the bridge itself,
+     *  never by POST /config, so it survives an override that lost its keys. */
+    public static final String LAST_GOOD_NAME = "piano-devices.last-good.yml";
 
     private final Map<String, String> values = new LinkedHashMap<>();
 
@@ -56,10 +59,50 @@ public class DeviceConfig {
                 Log.w(TAG, "failed to read override " + override, e);
             }
         }
+        File lastGood = new File(ctx.getFilesDir(), LAST_GOOD_NAME);
+        if (lastGood.exists()) {
+            try (InputStream in = new java.io.FileInputStream(lastGood)) {
+                LinkedHashMap<String, String> lkg = new LinkedHashMap<>();
+                parseFlat(in, lkg);
+                if (fillTargetFromLastGood(cfg.values, lkg)) Log.w(TAG, "target missing from config; using last known good " + lkg);
+            } catch (IOException e) {
+                Log.w(TAG, "failed to read " + lastGood, e);
+            }
+        }
         return cfg;
     }
 
     private void parseInto(InputStream in) throws IOException { parseFlat(in, values); }
+
+    /**
+     * Recovery for a config that lost its target (the 2026-07-15 outage): fill an
+     * absent targetName / targetMac from the last link that connected. Configured
+     * values always win. Pure (JVM-testable). Returns true when it filled anything.
+     */
+    static boolean fillTargetFromLastGood(Map<String, String> values, Map<String, String> lastGood) {
+        boolean filled = false;
+        for (String key : new String[] { "targetName", "targetMac" }) {
+            String have = values.get(key);
+            String lkg = lastGood.get(key);
+            if ((have == null || have.trim().isEmpty()) && lkg != null && !lkg.trim().isEmpty()) {
+                values.put(key, lkg.trim());
+                filled = true;
+            }
+        }
+        return filled;
+    }
+
+    /** Persist the target that just connected, so a later config loss can still find it. */
+    public static synchronized void rememberLastKnownGood(Context ctx, String name, String mac) {
+        if (name == null || name.trim().isEmpty() || mac == null || mac.trim().isEmpty()) return;
+        File f = new File(ctx.getFilesDir(), LAST_GOOD_NAME);
+        String yaml = "targetName: " + name.trim() + "\ntargetMac: " + mac.trim() + "\n";
+        try (FileOutputStream out = new FileOutputStream(f)) {
+            out.write(yaml.getBytes(StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            Log.w(TAG, "could not persist last known good target", e);
+        }
+    }
 
     /** Parse the flat `key: value` subset into {@code out} (later keys win). Shared
      *  by config load AND the merging writeOverride so both use one parser. */
@@ -147,7 +190,9 @@ public class DeviceConfig {
     /** Target MAC, normalized upper-case (Android returns upper-case addresses). */
     public String targetMac() { return norm(values.get("targetMac")); }
 
-    public String targetName() { return values.getOrDefault("targetName", "jam-7e6"); }
+    /** No compiled-in instrument: the backend pushes it from household config
+     *  (devices.yml, see the piano bridge supervisor); last-known-good covers a loss. */
+    public String targetName() { return values.getOrDefault("targetName", ""); }
 
     public Set<String> blocklistMacs() {
         String raw = values.get("blocklistMacs");
@@ -225,11 +270,10 @@ public class DeviceConfig {
     // is the Portal's BLUETOOTH gate (allowlisted, different semantics) — not used.
     public boolean heartbeatEnabled() { return boolOr("heartbeatEnabled", true); }
     public long heartbeatIntervalMs() { return intOr("heartbeatIntervalMs", 60_000); }
-    public String heartbeatDeviceId() { return values.getOrDefault("heartbeatDeviceId", "yellow-room-tablet"); }
-    public String heartbeatLogStoreUrl() {
-        return values.getOrDefault("heartbeatLogStoreUrl",
-            "http://10.0.0.10:9428/insert/jsonline?_stream_fields=context.source,context.app,context.device&_msg_field=_msg&_time_field=_time");
-    }
+    // Both are pushed by the backend (piano bridge supervisor) from household config.
+    // An empty log-store URL means no heartbeat is shipped.
+    public String heartbeatDeviceId() { return values.getOrDefault("heartbeatDeviceId", "piano-bridge"); }
+    public String heartbeatLogStoreUrl() { return values.getOrDefault("heartbeatLogStoreUrl", ""); }
     /** Optional second sink. Empty = off (the default; see note above). */
     public String heartbeatBackendUrl() { return values.getOrDefault("heartbeatBackendUrl", ""); }
 

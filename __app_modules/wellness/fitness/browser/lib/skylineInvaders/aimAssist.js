@@ -1,5 +1,5 @@
 // Aim without a live pose: a slow drift toward the most urgent threat while
-// the camera has lost the player, and stick/keyboard aim. Pure; dt in seconds,
+// the camera has lost the player, and arrow-key aim in a dev build. Pure; dt in seconds,
 // aim in 0..1 (0 = screen left).
 import { xToAim } from './threats.js';
 
@@ -15,5 +15,5 @@ export function driftAim(aim, threats, dt, { rate = 0.1 } = {}) {
   return Math.abs(goal - aim) <= stride ? goal : aim + Math.sign(goal - aim) * stride;
 }
 
-/** Gamepad / keyboard aim: `axis` in -1..1, `speed` of the screen per second. */
+/** Arrow-key aim (dev builds only; the game reads no gamepad): `axis` in -1..1, `speed` of the screen per second. */
 export const manualAim = (aim, axis, dt, { speed = 0.6 } = {}) => clamp01(aim + axis * speed * dt);

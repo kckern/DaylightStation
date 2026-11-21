@@ -14,6 +14,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
+import { gamepadControllers } from './controllerStatus.js';
 
 let _logger;
 function logger() {
@@ -91,7 +92,7 @@ function lookupOsStatus(config, btInventory) {
  * @returns {object[]}
  */
 export function mergeKnown(controllersConfig, connected, btInventory) {
-  const list = Array.isArray(controllersConfig) ? controllersConfig : [];
+  const list = gamepadControllers(controllersConfig);
   const conn = Array.isArray(connected) ? connected : [];
   return list.map((config) => {
     const connectedCount = conn.filter((c) => c.matchedId === config.id).length;
@@ -118,7 +119,7 @@ export function mergeKnown(controllersConfig, connected, btInventory) {
  * @returns {{ connected: object[], known: object[] }}
  */
 export function computeStatus(gamepads, controllersConfig, { btInventory } = {}) {
-  const matchers = buildMatchers(controllersConfig);
+  const matchers = buildMatchers(gamepadControllers(controllersConfig));
   const live = Array.from(gamepads || []).filter((gp) => gp != null);
 
   const connected = live.map((gp) => {

@@ -18,6 +18,16 @@ final class TextDraft {
     /** The counter is shown once this few bytes are left. */
     static final int COUNTER_FROM = 2_048;
 
+    static final class Snapshot {
+        final String body;
+        final long revision;
+
+        Snapshot(String body, long revision) {
+            this.body = body;
+            this.revision = revision;
+        }
+    }
+
     private TextDraft() { }
 
     /** The bytes s[start, end) takes as UTF-8. A surrogate pair is four; half of one is counted as three. */

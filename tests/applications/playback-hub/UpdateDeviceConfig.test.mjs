@@ -11,7 +11,7 @@ import { EntityNotFoundError } from '../../../__backend/src/2_domains/core/error
 import { DomainInvariantError } from '../../../__backend/src/2_domains/core/errors/DomainInvariantError.mjs';
 
 const makeDevice = ({
-  position = 1, color = 'red', mac = '41:42:3A:E5:43:07',
+  position = 1, color = 'red', mac = 'AA:BB:CC:00:30:07',
   cls = 'private', haEntityId = null, volumeBounds
 } = {}) => new HubDevice({
   position: new SlotPosition(position),

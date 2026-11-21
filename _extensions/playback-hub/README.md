@@ -1,6 +1,6 @@
 # playback-hub — Bluetooth Auto-Play for headsets + BT speakers
 
-**Status:** Running on `{env.playback_hub_host}` (Ubuntu mini-PC, 10.0.0.109)
+**Status:** Running on `{env.playback_hub_host}` (Ubuntu mini-PC)
 **Last reviewed:** 2026-11-11
 
 ---
@@ -199,7 +199,7 @@ Production config lives at `data/household/playback-hub/config.yml` in the Dayli
 devices:
   - slot: 1                              # 1..5
     color: red                           # human label, used in /api/play targets
-    mac: 41:42:3A:E5:43:07
+    mac: AA:BB:CC:00:30:07
     class: private                       # private | public — gates the speaker bulb
     name: musiCozy
     queue: '674397'                      # fallback queue (Plex ratingKey or url)
@@ -273,7 +273,7 @@ and, from this module directory, `lua test_wind_down.lua`.
 
 ### Adding a new device
 
-Web UI: `http://10.0.0.109:8080` → Bluetooth tab → Scan → Pair → Add → set queue.
+Web UI: `http://{env.playback_hub_host}:8080` → Bluetooth tab → Scan → Pair → Add → set queue.
 
 Manually:
 ```bash

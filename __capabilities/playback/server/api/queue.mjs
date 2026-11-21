@@ -93,6 +93,33 @@ export function createQueueRouter(config) {
   const { queuePresentationService } = config;
   const router = express.Router();
 
+  router.get('/catalog/audio-browse', asyncHandler(async (req, res) => {
+    if (req.query.profile !== 'audio-only') return res.status(400).json({ error: 'Unknown playback profile' });
+    return res.json({ items: contentAccessService.audioBrowse() });
+  }));
+
+  router.get('/catalog/audio-sources', asyncHandler(async (req, res) => {
+    if (req.query.profile !== 'audio-only') return res.status(400).json({ error: 'Unknown playback profile' });
+    return res.json({ items: contentAccessService.audioListSources() });
+  }));
+
+  router.get('/catalog/audio-lists', asyncHandler(async (req, res) => {
+    const { source, profile } = req.query;
+    const skip = Number(req.query.skip ?? 0);
+    if (profile !== 'audio-only' || typeof source !== 'string'
+        || !Number.isSafeInteger(skip) || skip < 0) {
+      return res.status(400).json({ error: 'Invalid audio list catalog request' });
+    }
+    const take = 4;
+    const result = await contentAccessService.audioListCatalog({ source, skip, take });
+    if (!result) return res.status(400).json({ error: 'Unknown audio list source' });
+    const { items, total } = result;
+    return res.json({
+      items: presentPublicResources(items),
+      ...(skip + take < total && { nextCursor: skip + take }),
+    });
+  }));
+
   const handleQueueRequest = asyncHandler(async (req, res) => {
     const { source } = req.params;
     const rawPath = splatPath(req);
@@ -108,7 +135,13 @@ export function createQueueRouter(config) {
     const limitParsed = Number.parseInt(limitRaw, 10);
     const limit = Number.isFinite(limitParsed) && limitParsed > 0 ? limitParsed : null;
 
-    const outcome = await contentAccessService.queue({ compoundId, parsedSource, localId, shuffle });
+    const profile = req.query.profile;
+    if (profile !== undefined && profile !== 'audio-only') {
+      return res.status(400).json({ error: 'Unknown playback profile' });
+    }
+    const outcome = await contentAccessService.queue({
+      compoundId, parsedSource, localId, shuffle, ...(profile && { profile }),
+    });
     const resolvedSource = outcome.source;
 
     if (outcome.kind === 'unknown_source') {
@@ -130,6 +163,7 @@ export function createQueueRouter(config) {
       containerId: finalId,
       items: outcome.items,
       limit,
+      ...(profile && { profile }),
     });
 
     logger.info?.('queue.resolve', {

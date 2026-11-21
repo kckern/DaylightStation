@@ -16,7 +16,7 @@ describe('FitnessSimulationController cycling', () => {
     mockSession = {
       _deviceRouter: {
         getEquipmentCatalog: () => [
-          { id: 'cycle_ace', type: 'stationary_bike', cadence: 49904, eligible_users: ['user_2', 'user_3'] },
+          { id: 'bike_b', type: 'stationary_bike', cadence: 10102, eligible_users: ['user_2', 'user_3'] },
           { id: 'tricycle', type: 'stationary_bike', cadence: 7153, eligible_users: ['niels'] },
           // No cadence — should be filtered
           { id: 'treadmill', type: 'treadmill', eligible_users: ['user_2'] }
@@ -30,7 +30,7 @@ describe('FitnessSimulationController cycling', () => {
           challenges: [{
             id: 'ch0',
             selections: [
-              { id: 'default_0_0', type: 'cycle', label: 'Sprint', equipment: 'cycle_ace' },
+              { id: 'default_0_0', type: 'cycle', label: 'Sprint', equipment: 'bike_b' },
               { id: 'default_0_1', type: 'zone', zone: 'warm' }
             ]
           }]
@@ -55,35 +55,35 @@ describe('FitnessSimulationController cycling', () => {
   it('getEquipment returns entries with cadence devices', () => {
     const list = controller.getEquipment();
     expect(list.length).toBe(2);
-    expect(list[0].equipmentId).toBe('cycle_ace');
-    expect(list[0].cadenceDeviceId).toBe('49904');
+    expect(list[0].equipmentId).toBe('bike_b');
+    expect(list[0].cadenceDeviceId).toBe('10102');
     expect(list[0].eligibleUsers).toEqual(['user_2', 'user_3']);
     expect(list[0].currentRpm).toBeNull();
     expect(list[0].isActive).toBe(false);
   });
 
   it('setRpm sends ANT+ cadence message', () => {
-    const result = controller.setRpm('cycle_ace', 75);
+    const result = controller.setRpm('bike_b', 75);
     expect(result.ok).toBe(true);
     expect(result.rpm).toBe(75);
     expect(sentMessages.length).toBe(1);
     const msg = sentMessages[0];
     expect(msg.profile).toBe('CAD');
-    expect(msg.deviceId).toBe('49904');
+    expect(msg.deviceId).toBe('10102');
     expect(msg.data.CalculatedCadence).toBe(75);
   });
 
   it('setRpm updates getEquipment currentRpm and isActive', () => {
-    controller.setRpm('cycle_ace', 65);
+    controller.setRpm('bike_b', 65);
     const list = controller.getEquipment();
-    const ace = list.find(e => e.equipmentId === 'cycle_ace');
+    const ace = list.find(e => e.equipmentId === 'bike_b');
     expect(ace.currentRpm).toBe(65);
     expect(ace.isActive).toBe(true);
   });
 
   it('setRpm rejects invalid values', () => {
-    expect(controller.setRpm('cycle_ace', -5).ok).toBe(false);
-    expect(controller.setRpm('cycle_ace', 500).ok).toBe(false);
+    expect(controller.setRpm('bike_b', -5).ok).toBe(false);
+    expect(controller.setRpm('bike_b', 500).ok).toBe(false);
   });
 
   it('setRpm unknown equipment returns error', () => {
@@ -92,10 +92,10 @@ describe('FitnessSimulationController cycling', () => {
   });
 
   it('stopEquipment clears lastRpm', () => {
-    controller.setRpm('cycle_ace', 70);
-    controller.stopEquipment('cycle_ace');
+    controller.setRpm('bike_b', 70);
+    controller.stopEquipment('bike_b');
     const list = controller.getEquipment();
-    const ace = list.find(e => e.equipmentId === 'cycle_ace');
+    const ace = list.find(e => e.equipmentId === 'bike_b');
     expect(ace.currentRpm).toBeNull();
   });
 
@@ -116,6 +116,6 @@ describe('FitnessSimulationController cycling', () => {
   it('listCycleSelections returns only type=cycle selections', () => {
     const list = controller.listCycleSelections();
     expect(list).toHaveLength(1);
-    expect(list[0]).toEqual({ id: 'default_0_0', label: 'Sprint', equipment: 'cycle_ace' });
+    expect(list[0]).toEqual({ id: 'default_0_0', label: 'Sprint', equipment: 'bike_b' });
   });
 });

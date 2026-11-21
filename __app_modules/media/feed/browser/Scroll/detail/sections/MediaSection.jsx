@@ -1,8 +1,10 @@
+import { safeImage } from '../../cards/utils.js';
 export default function MediaSection({ data }) {
-  if (!data?.images?.length) return null;
+  const images = (data?.images || []).map((img) => ({ ...img, url: safeImage(img?.url) })).filter((img) => img.url);
+  if (!images.length) return null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      {data.images.map((img, i) => (
+      {images.map((img, i) => (
         <div key={i}>
           <img src={img.url} alt="" loading="lazy" decoding="async" style={{ width: '100%', display: 'block', borderRadius: '8px' }} />
           {img.caption && (

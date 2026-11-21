@@ -1,2 +1,2 @@
 devices:
-  - { slot: 1, color: white, mac: "9C:0C:35:75:B7:75", class: public }
+  - { slot: 1, color: white, mac: "AA:BB:CC:00:32:01", class: public }

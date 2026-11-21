@@ -40,10 +40,19 @@ This allows multiple apps (OfficeApp, FitnessApp, TVApp) to share a single WebSo
 
 ### Connection Lifecycle
 
-1. **Connect**: Frontend opens WebSocket to `ws://server:3112/ws`
+1. **Connect**: Frontend opens a WebSocket to `/ws` on its own origin (in dev, Vite proxies `/ws` to the backend)
 2. **Subscribe**: Client sends subscription commands for desired topics
 3. **Receive**: Server routes matching messages to the client
 4. **Reconnect**: On disconnect, client retries with exponential backoff (up to 10 attempts)
+
+### Who may connect
+
+The handshake's `Origin` is checked (`verifyClient`): no Origin (Node, Python,
+native clients) and non-web origins (relay firmware sends `Origin: file://`)
+connect; `Origin: null` is refused; a web page must be the app's own (same host,
+or `Sec-Fetch-Site: same-origin`) or listed in `http.allowed_origins`. Refusals
+answer `403` and log `security.ws-origin-refused`. Full rules:
+[network-exposure.md](../network-exposure.md#cross-site-requests-application-layer).
 
 ## Topics
 
@@ -273,10 +282,10 @@ The controller connects as a WebSocket **client** to the backend server:
   "type": "ant",
   "timestamp": "2024-01-15T10:30:00.000Z",
   "profile": "HR",
-  "deviceId": 7138,
+  "deviceId": 10101,
   "dongleIndex": 0,
   "data": {
-    "DeviceID": 7138,
+    "DeviceID": 10101,
     "ComputedHeartRate": 142,
     "BeatCount": 1523,
     "BeatTime": 45678,
@@ -300,7 +309,7 @@ The controller connects as a WebSocket **client** to the backend server:
 The controller supports multiple ANT+ USB dongles simultaneously, allowing more sensors to be tracked. Each dongle operates on its own channel and can receive from multiple sensors.
 
 ```
-Dongle 0: HR sensors (deviceId 7138, 7183)
+Dongle 0: HR sensors (deviceId 10101, 7183)
 Dongle 1: Cadence sensors (deviceId 8001)
 Dongle 2: Power meters
 ```
@@ -449,7 +458,7 @@ If the WebSocket server becomes unresponsive, it can be restarted via API:
 
 ```javascript
 const restartWebSocketServer = async () => {
-  await fetch('/exe/ws/restart', { method: 'POST' });
+  await fetch('/api/v1/admin/ws/restart', { method: 'POST' });
 };
 ```
 

@@ -13,7 +13,8 @@ import { ConsoleTabs } from "./ConsoleTabs.jsx";
 import { useArcadeInput } from "./useArcadeInput.js";
 import { nextGridIndex } from "./gridNav.js";
 import { useGamepadStatus } from "../input/useGamepadStatus.js";
-import { ControllerStatus } from "../input/ControllerStatus.jsx";
+import { BluetoothScreen } from "../input/BluetoothScreen.jsx";
+import { pairedRows } from "../input/bluetoothScreenModel.js";
 import getLogger from '@/lib/logging/Logger.js';
 import "./ArcadeShell.scss";
 
@@ -35,11 +36,10 @@ export function ArcadeShell({
   inputEnabled = true,
   getGamepads,
   controllers = [],
-  btInventory,
-  controllerPairing,
-  onPairController,
-  onForgetController,
-  controllerForget,
+  // The host's Bluetooth state + actions (see useFitnessBluetooth) and
+  // input.yml's keyboard map, for the Bluetooth screen behind the chip.
+  bluetooth = null,
+  keyboardMap = null,
 }) {
   const logger = useMemo(() => getLogger().child({ component: 'emu-arcade-shell' }), []);
   // Default the active console to the first real one when not driven externally.
@@ -60,6 +60,8 @@ export function ArcadeShell({
 
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [columns, setColumns] = useState(1);
+  const [chipFocused, setChipFocused] = useState(false);
+  const [ctrlPanelOpen, setCtrlPanelOpen] = useState(false);
 
   const selectConsole = useCallback((system) => {
     setFocusedIndex(0);
@@ -68,55 +70,67 @@ export function ArcadeShell({
   }, [onSelectConsole]);
 
   const handleIntent = useCallback((intent) => {
+    if (chipFocused) {
+      if (intent === 'select') { setCtrlPanelOpen(true); logger.info('arcade.bluetooth-open', { via: 'chip-focus' }); return; }
+      if (intent === 'down' || intent === 'back') setChipFocused(false);
+      return;
+    }
     if (intent === 'select') {
       const game = visibleGames[focusedIndex];
       if (game) onSelectGame?.(game);
       return;
     }
     if (intent === 'back') { onExit?.(); return; }
+    // Up from the top row reaches the Bluetooth chip, so a pad can open it.
+    if (intent === 'up' && focusedIndex < columns) { setChipFocused(true); return; }
     setFocusedIndex((i) => nextGridIndex({ index: i, count: visibleGames.length, columns, dir: intent }));
-  }, [visibleGames, focusedIndex, columns, onSelectGame, onExit]);
+  }, [chipFocused, visibleGames, focusedIndex, columns, onSelectGame, onExit, logger]);
 
-  useArcadeInput({ onIntent: handleIntent, enabled: inputEnabled, getGamepads });
+  // The Bluetooth screen owns the keys and the pad while it is open.
+  useArcadeInput({ onIntent: handleIntent, enabled: inputEnabled && !ctrlPanelOpen, getGamepads });
 
   // Controller connection status (browser pads + optional OS-level BT feed).
   // Forward a stable reference (module-level EMPTY when none) so the hook's
   // identity-keyed subscribe effect doesn't loop on the `= []` default param.
   const controllerList = (Array.isArray(controllers) && controllers.length > 0) ? controllers : EMPTY_CONTROLLERS;
-  const { connected } = useGamepadStatus(controllerList, { getGamepads, btInventory });
-  const anyConnected = connected.length > 0;
-  const [ctrlPanelOpen, setCtrlPanelOpen] = useState(false);
+  const { connected } = useGamepadStatus(controllerList, { getGamepads, btInventory: bluetooth?.inventory });
+  // Bluetooth truth when the garage feed is there (the paired rows the screen
+  // shows as Connected); browser pads only as a fallback.
+  const btConnected = Array.isArray(bluetooth?.inventory)
+    ? pairedRows(bluetooth.inventory, controllerList).filter((r) => r.status === 'connected').length
+    : null;
+  const connectedCount = btConnected ?? connected.length;
+  const anyConnected = connectedCount > 0;
+  const closePanel = useCallback(() => { setCtrlPanelOpen(false); logger.info('arcade.bluetooth-close', {}); }, [logger]);
 
   // Log connection-state transitions so we can see controller drops in prod.
   useEffect(() => {
-    logger.debug('arcade.controller-connection-change', { connected: anyConnected, count: connected.length });
-  }, [anyConnected, connected.length, logger]);
+    logger.debug('arcade.controller-connection-change', { connected: anyConnected, count: connectedCount });
+  }, [anyConnected, connectedCount, logger]);
 
   return (
     <div className="emu-arcade-shell">
       <div className="emu-controller-indicator" data-connected={anyConnected ? '1' : '0'}>
         <button
           type="button"
-          className="emu-controller-chip"
+          className={`emu-controller-chip${chipFocused ? ' is-focused' : ''}`}
           aria-expanded={ctrlPanelOpen}
           onClick={() => {
             setCtrlPanelOpen((v) => !v);
-            logger.debug('arcade.controller-panel-toggle', { open: !ctrlPanelOpen });
+            logger.info('arcade.bluetooth-toggle', { open: !ctrlPanelOpen });
           }}
         >
-          🎮 {anyConnected ? 'Controller connected' : 'No controller'}
+          🎮 Bluetooth{anyConnected ? ` · ${connectedCount} connected` : ''}
         </button>
         {ctrlPanelOpen && (
-          <div className="emu-controller-panel" role="dialog" aria-label="Controllers">
-            <ControllerStatus
+          <div className="emu-controller-panel" role="dialog" aria-modal="true" aria-label="Bluetooth">
+            <BluetoothScreen
+              host="arcade"
               controllers={controllerList}
-              btInventory={btInventory}
+              keyboardMap={keyboardMap}
+              bluetooth={bluetooth}
               getGamepads={getGamepads}
-              pairing={controllerPairing}
-              onPair={onPairController}
-              canAdd={typeof onPairController === 'function'}
-              onForget={onForgetController}
-              forgetResult={controllerForget}
+              onClose={closePanel}
             />
           </div>
         )}

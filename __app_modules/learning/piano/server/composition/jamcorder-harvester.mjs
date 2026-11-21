@@ -7,7 +7,12 @@ export function registerPianoJamCorderHarvester({httpClient,registerHarvester,co
     registerHarvester('jamcorder', () => {
       // Recorder address comes from the device registry (hardware/devices.yml),
       // not an app config — it is a device, not an app.
-      const host = configService?.getDeviceConfig?.('midi-recorder')?.host || '10.0.0.243';
+      // No address, no harvester: there is no household default to fall back on.
+      const host = configService?.getDeviceConfig?.('midi-recorder')?.host;
+      if (!host) {
+        logger?.info?.('jamcorder.harvester.not-configured', { device: 'midi-recorder' });
+        return null;
+      }
       const source = new HttpJamCorderSource({ httpClient, host, logger });
       const archive = new FsJamCorderArchive({ configService, logger });
       const harvestUseCase = new HarvestMidiRecordings({ source, archive, logger });

@@ -333,6 +333,8 @@ Cross-cutting concerns that apply broadly:
 - `tracingMiddleware` - Request tracing
 - `requestLoggerMiddleware` - Request logging
 - `errorHandlerMiddleware` - Error → HTTP status mapping
+- `crossSiteGuard` / `corsOptionsFor` - Refuse cross-site writes; CORS only for `http.allowed_origins` (see `network-exposure.md`)
+- `exceptPaths` - Keep app-wide middleware off routes that guard themselves
 - `asyncHandler` - Async error wrapper
 
 ### Layer-Specific Middleware (4_api/middleware/)

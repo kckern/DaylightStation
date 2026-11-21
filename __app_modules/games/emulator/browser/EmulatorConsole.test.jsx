@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
-import { render, act, within } from '@testing-library/react';
+import { render, act, within, screen, fireEvent } from '@testing-library/react';
 import { EmulatorConsole } from "./EmulatorConsole.jsx";
 import { computeScreenBox } from "./screenBoxGeometry.js";
 
@@ -695,128 +695,35 @@ describe('EmulatorConsole', () => {
       expect(container.querySelector('.emulator-controller-panel')).toBeNull();
     });
 
-    it('clicking Pair calls the injected fetch with the right URL/body and flips local pairing to scanning', async () => {
-      const fetchSpy = vi.fn(() => Promise.resolve({ ok: true, status: 202 }));
-      const { container } = renderConsole({
-        props: { getGamepads: noPads, fetchImpl: () => fetchSpy },
-      });
-      await act(async () => {});
-
-      // Panel no longer auto-opens; open it via the toggle first.
-      act(() => container.querySelector('.emulator-controller-toggle').click());
-
-      const button = container.querySelector('.ccs-pair-button');
-      expect(button).toBeTruthy();
-      await act(async () => {
-        button.click();
-      });
-
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
-      const [url, opts] = fetchSpy.mock.calls[0];
-      expect(url).toBe('/api/v1/emulator/bt/pair');
-      expect(opts.method).toBe('POST');
-      expect(opts.headers['Content-Type']).toBe('application/json');
-      expect(JSON.parse(opts.body)).toEqual({ durationMs: 30000 });
-
-      // Local pairing flipped to scanning → button disabled + scanning label.
-      const scanning = container.querySelector('.ccs-pair-button');
-      expect(scanning.disabled).toBe(true);
-      expect(scanning.textContent).toContain('Scanning for controllers');
-
-      // After the window elapses, local pairing flips to done.
-      await act(async () => {
-        vi.advanceTimersByTime(30000);
-      });
-      expect(container.querySelector('.ccs-pair-button').textContent).toContain('Done');
+    const bt = () => ({
+      inventory: [], scan: null, pairing: null, forgetResult: null,
+      requestInventory: vi.fn(), startScan: vi.fn(), stopScan: vi.fn(), pairAddress: vi.fn(), forget: vi.fn(),
     });
 
-    it('sets error local pairing when the fetch rejects', async () => {
-      const fetchSpy = vi.fn(() => Promise.reject(new Error('bridge offline')));
-      const { container } = renderConsole({
-        props: { getGamepads: noPads, fetchImpl: () => fetchSpy },
-      });
+    it('the game menu has a Bluetooth button that opens the screen over the paused menu', async () => {
+      const { container } = renderConsole({ props: { getGamepads: noPads, bluetooth: bt(), menuInitiallyOpen: true } });
       await act(async () => {});
-      act(() => container.querySelector('.emulator-controller-toggle').click());
-      await act(async () => {
-        container.querySelector('.ccs-pair-button').click();
-      });
-      const button = container.querySelector('.ccs-pair-button');
-      expect(button.textContent).toContain('Pairing failed — bridge offline');
-      expect(button.disabled).toBe(false);
+      act(() => { screen.getByRole('button', { name: 'Bluetooth' }).click(); });
+      expect(container.ownerDocument.querySelector('.emulator-controller-panel .bluetooth-screen')).toBeTruthy();
+      expect(container.ownerDocument.querySelector('.emulator-settings-modal')).toBeTruthy();
+      act(() => { fireEvent.keyDown(document.body, { key: 'Escape' }); });
+      expect(container.ownerDocument.querySelector('.bluetooth-screen')).toBeNull();
+      expect(container.ownerDocument.querySelector('.emulator-settings-modal')).toBeTruthy();
     });
 
-    it('host pairing prop overrides console-managed local pairing', async () => {
-      const fetchSpy = vi.fn(() => Promise.resolve({ ok: true, status: 202 }));
-      const { container } = renderConsole({
-        props: {
-          getGamepads: noPads,
-          fetchImpl: () => fetchSpy,
-          pairing: { phase: 'scanning', durationMs: 30000 },
-        },
-      });
+    it('closing the game menu (touch on ✕ or the backdrop) also closes Bluetooth, so the game never runs under it', async () => {
+      const { container } = renderConsole({ props: { getGamepads: noPads, bluetooth: bt(), menuInitiallyOpen: true } });
       await act(async () => {});
-      act(() => container.querySelector('.emulator-controller-toggle').click());
-      // Host says scanning even though no local pair was triggered.
-      const button = container.querySelector('.ccs-pair-button');
-      expect(button.disabled).toBe(true);
-      expect(button.textContent).toContain('Scanning for controllers');
+      act(() => { screen.getByRole('button', { name: 'Bluetooth' }).click(); });
+      expect(container.ownerDocument.querySelector('.bluetooth-screen')).toBeTruthy();
+      act(() => { screen.getByRole('button', { name: 'Close menu' }).click(); });
+      expect(container.ownerDocument.querySelector('.bluetooth-screen')).toBeNull();
     });
 
-    it('host onPairController override is called instead of the internal fetch', async () => {
-      const fetchSpy = vi.fn(() => Promise.resolve({ ok: true, status: 202 }));
-      const onPairController = vi.fn();
-      const { container } = renderConsole({
-        props: { getGamepads: noPads, fetchImpl: () => fetchSpy, onPairController },
-      });
+    it('no Bluetooth button without a host bluetooth object', async () => {
+      renderConsole({ props: { getGamepads: noPads, menuInitiallyOpen: true } });
       await act(async () => {});
-      act(() => container.querySelector('.emulator-controller-toggle').click());
-      await act(async () => {
-        container.querySelector('.ccs-pair-button').click();
-      });
-      expect(onPairController).toHaveBeenCalledTimes(1);
-      expect(fetchSpy).not.toHaveBeenCalled();
-    });
-
-    it('offers no Add a new device on the built-in pairing path (it cannot add)', async () => {
-      const { container } = renderConsole({ props: { getGamepads: noPads } });
-      await act(async () => {});
-      act(() => container.querySelector('.emulator-controller-toggle').click());
-      expect(container.querySelector('.ccs-pair-button')).toBeTruthy();
-      expect(container.querySelector('.ccs-add-button')).toBeNull();
-    });
-
-    it('a host onPairController offers Add a new device and gets an add-mode request', async () => {
-      const fetchSpy = vi.fn(() => Promise.resolve({ ok: true, status: 202 }));
-      const onPairController = vi.fn();
-      const { container } = renderConsole({
-        props: { getGamepads: noPads, fetchImpl: () => fetchSpy, onPairController },
-      });
-      await act(async () => {});
-      act(() => container.querySelector('.emulator-controller-toggle').click());
-      act(() => container.querySelector('.ccs-add-button').click());
-      await act(async () => {
-        container.querySelector('.ccs-add-guide .ccs-guide-start').click();
-      });
-      expect(onPairController).toHaveBeenCalledTimes(1);
-      expect(onPairController.mock.calls[0][0]).toMatchObject({ mode: 'add', controllerId: null });
-      expect(fetchSpy).not.toHaveBeenCalled();
-    });
-
-    it('passes the host forget handler and result through to the panel', async () => {
-      const onForgetController = vi.fn();
-      const controllers = [{ id: 'sfc30', label: 'SFC30', match: '8Bitdo', address: 'E4:17:D8:C6:54:F0' }];
-      const btInventory = [{ address: 'E4:17:D8:C6:54:F0', name: '8Bitdo SFC30 GamePad', connected: false, paired: true }];
-      const { container } = renderConsole({
-        props: {
-          getGamepads: noPads, controllers, btInventory, onPairController: vi.fn(), onForgetController,
-          controllerForget: { address: 'E4:17:D8:C6:54:F0', success: true },
-        },
-      });
-      await act(async () => {});
-      act(() => container.querySelector('.emulator-controller-toggle').click());
-      act(() => container.querySelector('.ccs-forget-button').click());
-      expect(onForgetController).toHaveBeenCalledWith('E4:17:D8:C6:54:F0');
-      expect(container.querySelector('.ccs-forget-result').textContent).toMatch(/^Forgotten/);
+      expect(screen.queryByRole('button', { name: 'Bluetooth' })).toBeNull();
     });
   });
 });

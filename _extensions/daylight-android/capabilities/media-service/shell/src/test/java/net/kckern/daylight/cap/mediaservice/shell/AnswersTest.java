@@ -71,6 +71,7 @@ public class AnswersTest {
         assertEquals("A", two.artist);
         assertEquals("B", two.album);
         assertEquals("list-9", two.listId);
+        assertEquals(100_000, two.durationMs);
         assertEquals("https://kiosk.example/t/12", two.artUrl);
     }
 
@@ -82,6 +83,7 @@ public class AnswersTest {
                 + "{\"id\":\"plex:14\",\"url\":\"https://kiosk.example/s/14\",\"title\":\"Four\"}]}");
         assertEquals(1, answer.tracks.size());
         assertEquals("plex:14", answer.tracks.get(0).id);
+        assertEquals(0, answer.tracks.get(0).durationMs);
         assertEquals(0, answer.startIndex);
         assertEquals(0, answer.startPositionMs);
         try { TrackAnswer.parse("{\"ok\":true,\"tracks\":[]}"); fail("an empty queue is not something to play"); }

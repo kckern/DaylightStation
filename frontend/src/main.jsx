@@ -10,6 +10,7 @@ import '@mantine/core/styles.css';
 import './styles/utilities.scss';
 import { installRootTokens } from './lib/theme/installRootTokens.js';
 import { createAppTheme } from './lib/theme/createAppTheme.js';
+import PhoneServiceAuth from './modules/Auth/PhoneServiceAuth.jsx';
 import { OfficeRedirect, TVRedirect, SchoolDeepLinkRedirect, TeacherNextRedirect } from './routeRedirects.jsx';
 import { WebSocketProvider } from './contexts/WebSocketContext.jsx';
 import { useViewportContent } from './lib/hooks/useViewportContent.js';
@@ -181,14 +182,14 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route element={<BrowserAppViewport />}>
           <Route path="/" element={<Navigate to="/admin" replace />} />
           <Route path="/admin/*" element={<AdminApp />} />
-          <Route path="/home" element={<HomeApp />} />
-          <Route path="/health" element={<HealthApp />} />
-          <Route path="/health/*" element={<HealthApp />} />
+          <Route path="/home" element={<PhoneServiceAuth><HomeApp /></PhoneServiceAuth>} />
+          <Route path="/health" element={<PhoneServiceAuth><HealthApp /></PhoneServiceAuth>} />
+          <Route path="/health/*" element={<PhoneServiceAuth><HealthApp /></PhoneServiceAuth>} />
           <Route path="/auto" element={<AutoApp />} />
           <Route path="/auto/*" element={<AutoApp />} />
-          <Route path="/life/*" element={<LifeApp />} />
+          <Route path="/life/*" element={<PhoneServiceAuth><LifeApp /></PhoneServiceAuth>} />
           <Route path="/feed/*" element={<FeedApp />} />
-          <Route path="/media" element={<MediaApp />} />
+          <Route path="/media" element={<PhoneServiceAuth><MediaApp /></PhoneServiceAuth>} />
         </Route>
         <Route path="/office" element={<OfficeRedirect />} />
         <Route path="/office/*" element={<OfficeRedirect />} />

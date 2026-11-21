@@ -6,6 +6,7 @@ import {
   readBinaryFromPathAsync,
 } from '#system/utils/FileIO.mjs';
 import { IProxyMediaRepository } from "../../../../__capabilities/content-catalog/server/application/proxy/ports/IProxyMediaRepository.mjs";
+import { extractMusicXmlFromMxl } from "../../../../__capabilities/music-notation/server/mxlArchive.mjs";
 
 const LOCAL_MIME_TYPES = Object.freeze({
   '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.mp4': 'video/mp4',
@@ -30,33 +31,15 @@ function resource(filePath, mimeType, stat = getFileStats(filePath)) {
   });
 }
 
-/** Extract MusicXML text from a compressed score archive. */
-export async function extractMusicXmlFromMxl(buffer) {
-  const AdmZip = (await import('adm-zip')).default;
-  const zip = new AdmZip(buffer);
-  const container = zip.getEntry('META-INF/container.xml');
-  if (container) {
-    const xml = container.getData().toString('utf-8');
-    const match = xml.match(/<rootfile\b[^>]*\bfull-path\s*=\s*(?:"([^"]+)"|'([^']+)')/i);
-    const rootPath = match && (match[1] || match[2]);
-    if (rootPath) {
-      const entry = zip.getEntry(rootPath);
-      if (entry) return entry.getData().toString('utf-8');
-    }
-  }
-  const entry = zip.getEntries().find((candidate) =>
-    !candidate.entryName.startsWith('META-INF/') && /\.(musicxml|xml)$/i.test(candidate.entryName));
-  if (entry) return entry.getData().toString('utf-8');
-  throw new Error('No MusicXML entry found in .mxl archive');
-}
-
 /** Filesystem/content-registry implementation for proxy media resources. */
 export class FilesystemProxyMediaRepository extends IProxyMediaRepository {
   #registry;
   #mediaBasePath;
   #logger;
+  #providerAccess;
+  #audioStreams;
 
-  constructor({ registry, mediaBasePath = null, logger = console } = {}) {
+  constructor({ registry, mediaBasePath = null, logger = console, providerAccess = () => {}, audioStreams = null } = {}) {
     super();
     if (!registry || typeof registry.get !== 'function') {
       throw new Error('FilesystemProxyMediaRepository requires registry');
@@ -64,14 +47,21 @@ export class FilesystemProxyMediaRepository extends IProxyMediaRepository {
     this.#registry = registry;
     this.#mediaBasePath = mediaBasePath;
     this.#logger = logger;
+    this.#providerAccess = providerAccess;
+    this.#audioStreams = audioStreams;
   }
 
-  async findContentMedia(mediaRef) {
+  async findContentMedia(mediaRef, { stream } = {}) {
     const adapter = this.#registry.get('files') || this.#registry.get('media');
     if (!adapter) return { kind: 'unconfigured' };
     const item = await adapter.getItem(mediaRef);
     const filePath = item?.metadata?.filePath;
     if (!filePath) return { kind: 'not_found' };
+    if (stream === 'audio') {
+      const source = await adapter.audioSource?.(item);
+      if (!source || !this.#audioStreams) return { kind: 'unsupported_audio' };
+      return { kind: 'audio_stream', open: signal => this.#audioStreams.file(source, signal) };
+    }
 
     if (/\.mxl$/i.test(filePath)) {
       try {
@@ -88,6 +78,15 @@ export class FilesystemProxyMediaRepository extends IProxyMediaRepository {
       kind: 'found',
       resource: resource(filePath, item.metadata.mimeType || 'application/octet-stream'),
     };
+  }
+
+  async findProviderAudio(source, mediaRef, signal) {
+    const adapter = this.#registry.get(source);
+    if (!adapter?.openAudioSource || !this.#audioStreams) return { kind: 'unsupported_audio' };
+    await this.#providerAccess(source);
+    const input = await adapter.openAudioSource(mediaRef, signal);
+    if (!input) return { kind: 'unsupported_audio' };
+    return { kind: 'audio_stream', open: signal => this.#audioStreams.provider(input, signal) };
   }
 
   async findLocalContentMedia(type, mediaRef) {

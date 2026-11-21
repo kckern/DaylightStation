@@ -15,6 +15,26 @@ export function isNotationId(id) {
 }
 
 /**
+ * A content id as URL path segments. Ids are file paths (`files:docs/sheet-music/
+ * a.musicxml`), so slashes stay real segments and the colon stays readable; every
+ * other reserved character is percent-encoded so `#`, `?`, `%` and spaces survive
+ * the trip through the router. A `view/*` splat decodes it back to the id.
+ * One known limit: react-router turns a decoded `%2F` back into `/`, so an id
+ * that literally contains "%2F" does not round-trip.
+ */
+export function encodeContentIdPath(id) {
+  return String(id ?? '')
+    .split('/')
+    .map((segment) => encodeURIComponent(segment).replace(/%3A/gi, ':'))
+    .join('/');
+}
+
+/** The relative SheetMusic score route for a content id (kiosk and admin). */
+export function scoreViewPath(id) {
+  return `view/${encodeContentIdPath(id)}`;
+}
+
+/**
  * Map a configured collection ref to a generic list path. Supports source-prefixed
  * refs (`files:docs/sheet-music`, `plex:359812`) and bare Plex ids (legacy).
  */

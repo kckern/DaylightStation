@@ -272,7 +272,7 @@ commands; see `cli/README.md` for syntax.
 > `context.app:piano-bridge AND _msg:bridge.heartbeat AND data.linkVerdict:ZOMBIE AND _time:10m`
 > — and ABSENCE (`…AND _time:5m` returning 0 rows) means the tablet is dark.
 >
-> **5. Self-reported diagnosis — `http://10.0.0.245:8770/`** in a browser. One page,
+> **5. Self-reported diagnosis — `http://<tablet-ip>:8770/`** in a browser. One page,
 > 30 s refresh: MIDI link verdict, BLE, FKB, page fps, a11y, speaker, heartbeat, payload +
 > rollback slot, IP, uptime, battery, thermal, last death, recent events.
 > `GET /midi/tap` = the raw bytes the read port delivered (the ground truth when the
@@ -334,13 +334,39 @@ project's `DESIGN.md` "Service lifecycle" for the divergence.
 **Design goal (2026-07-02): the SM-T590 never needs USB/ADB again.** Everything you
 used to reach over `adb` is exposed over plain HTTP on `:8770` (NanoHTTPD binds all
 interfaces → reachable on the LAN). Drive it with `pbctl.mjs`
-(`PB_HOST=10.0.0.245:8770 node pbctl.mjs …`). No auth — same LAN-only trust model as
+(`PB_DEVICE=<tablet device id> node pbctl.mjs …` reads the address from the household
+device registry through the app API; `PB_HOST=<host>:8770` overrides it; with neither it
+stops and says so — there is no built-in address). No auth — same LAN-only trust model as
 the Fully REST API (and this plane already exposes `/exec`, an in-sandbox shell).
 
 The privileged perms this relies on are **granted once over USB and then persist**
 across reboots *and* across same-signature self-updates (lost only on a full
 uninstall). Currently granted on the device: `WRITE_SECURE_SETTINGS`, `READ_LOGS`,
 `DUMP`, `ACCESS_FINE_LOCATION`, and the `REQUEST_INSTALL_PACKAGES` appop.
+
+### Household values come from the backend, not the APK
+
+The payload compiles in no household values. What it dials and where it reports are
+pushed by the backend's bridge supervisor from household config, on each reachable
+tick, and only when a value differs:
+
+| Bridge key | Source |
+|---|---|
+| `targetName` / `targetMac` | `bluetooth.name` / `bluetooth.address` of the devices.yml entry named by `bridge_supervisor.midi_device_id` in the piano config |
+| `heartbeatDeviceId` | the tablet's device id (`bridge_supervisor.device_id`, else `midi_wake.device_id`) |
+| any other flat key, e.g. `heartbeatLogStoreUrl` | `bridge_supervisor.device_config` in the piano config |
+
+A push is a read-merge-write `POST /config`, which rebuilds the Bluetooth links, so it
+waits for an idle kiosk (the same check the link repair uses: no game, no human
+activity) and never repeats within 10 minutes. It logs
+`piano-bridge.config-sync.pushed` with the key names only. An empty
+`heartbeatLogStoreUrl` ships no heartbeat.
+
+**Recovery without a compiled-in name.** On every confirmed connect the bridge writes
+the target it reached to `files/piano-devices.last-good.yml`, a file `POST /config`
+never touches. When a config arrives with no `targetName` / `targetMac` (the
+2026-07-15 truncation outage), load fills the gap from that file and the name scan
+finds the instrument; the backend re-pushes the configured values on its next tick.
 
 ### Speaker repair endpoints (payload p32, 2026-10-23)
 
@@ -707,7 +733,7 @@ in-place update kills the process) — relaunch it ADB-free with
 
 ### 🚀 The no-fumble deploy checklist (copy-paste, verified 2026-07-15)
 
-Every wasted-time trap is a step here. Do them **in order**. `PB=10.0.0.245:8770`.
+Every wasted-time trap is a step here. Do them **in order**. `PB=<tablet-ip>:8770`.
 
 ```bash
 cd _extensions/piano-bridge/app
@@ -720,7 +746,7 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@11/libexec/openjdk.jdk/Contents/Home
 ./gradlew :app:assembleDebug          # → app/build/outputs/apk/debug/app-debug.apk
 
 # 3. SERVE it on the LAN (the tablet PULLs it; there is no upload endpoint).
-IP=$(ipconfig getifaddr en0)          # your Mac's LAN IP, e.g. 10.0.0.68
+IP=$(ipconfig getifaddr en0)          # your Mac's LAN IP, e.g. 192.0.2.68
 ( cd app/build/outputs/apk/debug && python3 -m http.server 8799 --bind 0.0.0.0 ) &
 # verify the TABLET can reach it (not just your Mac):
 PB_HOST=$PB node ../pbctl.mjs exec "curl -sI http://$IP:8799/app-debug.apk | head -1"   # want 200

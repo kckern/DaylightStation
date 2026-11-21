@@ -28,6 +28,19 @@ function strictHeader(name, value) {
 }
 /** Value copied from inbound mail (untrusted): strip line breaks. */
 const cleanHeader = (v) => String(v ?? '').replace(/[\r\n]+/g, ' ').trim();
+
+// Gmail's `snippet` is HTML-escaped ("didn&#39;t"); headers are not. One pass, so
+// "&amp;lt;" becomes "&lt;" (what the sender wrote), never "<".
+const NAMED = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+export function decodeSnippet(text) {
+  return String(text ?? '').replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi, (m, e) => {
+    if (e[0] === '#') {
+      const code = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+      return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : m;
+    }
+    return NAMED[e.toLowerCase()] ?? m;
+  });
+}
 /** RFC 2047 encode a subject when it holds non-ASCII. */
 const encodeSubject = (s) => (/^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${Buffer.from(s, 'utf8').toString('base64')}?=`);
 
@@ -154,7 +167,7 @@ export class GmailMailbox {
       from,
       to: splitAddresses(headers['to']),
       subject: headers['subject'] || '',
-      snippet: msg.snippet || '',
+      snippet: decodeSnippet(msg.snippet),
       receivedAt: Number(msg.internalDate) || (Number.isNaN(dateMs) ? 0 : dateMs),
       labels,
       starred: labels.includes('STARRED'),

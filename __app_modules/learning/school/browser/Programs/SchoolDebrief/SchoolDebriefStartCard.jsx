@@ -10,10 +10,12 @@ export default function SchoolDebriefStartCard({ today, lateDay = null, onStart 
   if (today && !['completed', 'excused', 'rejected'].includes(today.phase)) {
     offers.push({ key: 'today', day: today.studyDay, label: today.phase === 'not-started' ? 'Tell me about school today' : 'Pick up where you left off' });
   }
+  const count = today?.prompts?.length ?? 0;
   useSchoolDebriefKeys({ enter: () => offers[0] && onStart(offers[0].day), ...Object.fromEntries(offers.map((o, i) => [String(i + 1), () => onStart(o.day)])) });
   return (
     <section className="sd-item sd-start" aria-label="After-school debrief">
-      <h1><Icon name="writing" /> After-school debrief</h1>
+      <h1 className="sd-start__title"><Icon name="writing" /> After-school debrief</h1>
+      {count > 0 && <p className="sd-start__lede">{count} short parts about your day, then a couple of questions.</p>}
       <div className="sd-controls sd-controls--stack">
         {offers.map((o, i) => (
           <TouchButton key={o.key} variant={i === 0 ? 'primary' : 'secondary'} keyHint={i === 0 ? 'Enter' : String(i + 1)} onClick={() => onStart(o.day)}>{o.label}</TouchButton>

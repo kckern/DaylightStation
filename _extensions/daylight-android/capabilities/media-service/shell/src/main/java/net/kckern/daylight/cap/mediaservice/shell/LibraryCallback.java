@@ -1,14 +1,19 @@
 package net.kckern.daylight.cap.mediaservice.shell;
 
+import net.kckern.daylight.shellkit.DrivingRadioSettings;
 import net.kckern.daylight.shellkit.PackageFacts;
 
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Process;
 import android.util.Log;
 
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.session.LibraryResult;
+import androidx.media3.session.CommandButton;
+import androidx.media3.session.SessionCommand;
+import androidx.media3.session.SessionResult;
 import androidx.media3.session.MediaLibraryService.LibraryParams;
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession;
 import androidx.media3.session.MediaSession;
@@ -38,6 +43,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * again once a payload attaches. A play request then fails; nothing crashes.
  */
 final class LibraryCallback implements MediaLibrarySession.Callback {
+    private static final String STOP_ACTION = "net.kckern.daylight.media.STOP";
+
+    static CommandButton stopButton() {
+        return new CommandButton.Builder().setSessionCommand(new SessionCommand(STOP_ACTION, Bundle.EMPTY))
+                .setIconResId(android.R.drawable.ic_menu_close_clear_cancel).setDisplayName("Stop").build();
+    }
     private static final String TAG = "Daylight-Media";
     /** How long a browse waits for a payload after a cold start. Short: a car gives up on a slow answer. */
     private static final long BROWSE_WAIT_MS = 4000;
@@ -51,15 +62,43 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
     private final PackageFacts facts;
     /** The pinned controllers as the payload last cached them; read at each connection. */
     private final java.util.function.Supplier<String> pinCache;
+    private final Runnable stopPlayback;
+    private DrivingRadio radio;
+    private Runnable cancelHandoff = () -> {};
     private final AtomicBoolean waitingForPayload = new AtomicBoolean();
 
     LibraryCallback(PayloadMedia media, ExecutorService io, String myPackage, PackageFacts facts,
-                    java.util.function.Supplier<String> pinCache) {
+                    java.util.function.Supplier<String> pinCache, Runnable stopPlayback) {
         this.media = media;
         this.io = io;
         this.myPackage = myPackage;
         this.facts = facts;
         this.pinCache = pinCache;
+        this.stopPlayback = stopPlayback;
+    }
+
+    LibraryCallback withDrivingRadio(DrivingRadio drivingRadio, Runnable cancel) {
+        radio = drivingRadio;
+        cancelHandoff = cancel;
+        return this;
+    }
+
+    @Override
+    public int onPlayerCommandRequest(MediaSession session, MediaSession.ControllerInfo controller, int command) {
+        if (command == androidx.media3.common.Player.COMMAND_PLAY_PAUSE
+                || command == androidx.media3.common.Player.COMMAND_STOP
+                || command == androidx.media3.common.Player.COMMAND_CHANGE_MEDIA_ITEMS) cancelHandoff.run();
+        return MediaLibrarySession.Callback.super.onPlayerCommandRequest(session, controller, command);
+    }
+
+    @Override
+    public ListenableFuture<MediaSession.MediaItemsWithStartPosition> onPlaybackResumption(
+            MediaSession session, MediaSession.ControllerInfo controller) {
+        if (radio == null || !DrivingRadio.isCar(controller) || !radio.enabled()) {
+            return MediaLibrarySession.Callback.super.onPlaybackResumption(session, controller);
+        }
+        MediaItem request = new MediaItem.Builder().setMediaId(DrivingRadioSettings.MEDIA_ID).build();
+        return onSetMediaItems(session, controller, Collections.singletonList(request), C.INDEX_UNSET, C.TIME_UNSET);
     }
 
     @Override
@@ -73,7 +112,34 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
             Log.w(TAG, decision.logLine(String.valueOf(controller.getPackageName())));
             return MediaSession.ConnectionResult.reject();
         }
-        return MediaLibrarySession.Callback.super.onConnect(session, controller);
+        return new MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
+                        .buildUpon().add(new SessionCommand(STOP_ACTION, Bundle.EMPTY)).build())
+                .build();
+    }
+
+    @Override
+    public ListenableFuture<SessionResult> onCustomCommand(MediaSession session, MediaSession.ControllerInfo controller,
+                                                            SessionCommand command, Bundle arguments) {
+        if (!STOP_ACTION.equals(command.customAction))
+            return MediaLibrarySession.Callback.super.onCustomCommand(session, controller, command, arguments);
+        stopPlayback.run();
+        return Futures.immediateFuture(new SessionResult(SessionResult.RESULT_SUCCESS));
+    }
+
+    @Override
+    public void onDisconnected(MediaSession session, MediaSession.ControllerInfo controller) {
+        if (DrivingRadio.isCar(controller)) cancelHandoff.run();
+    }
+
+    @Override
+    public ListenableFuture<LibraryResult<MediaItem>> onGetItem(
+            MediaLibrarySession session, MediaSession.ControllerInfo browser, String mediaId) {
+        if (radio != null && DrivingRadio.isCar(browser) && radio.enabled()
+                && DrivingRadioSettings.MEDIA_ID.equals(mediaId)) {
+            return Futures.immediateFuture(LibraryResult.ofItem(NodeItems.drivingRadio(radio.todayTitle()), null));
+        }
+        return MediaLibrarySession.Callback.super.onGetItem(session, browser, mediaId);
     }
 
     @Override
@@ -91,6 +157,12 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
         try {
             io.execute(() -> {
                 try {
+                    if (radio != null && DrivingRadio.DRIVE.equals(parentId)) {
+                        List<MediaItem> drive = page == 0 ? radio.staples() : Collections.emptyList();
+                        if (page == 0 && radio.enabled()) drive.add(0, NodeItems.drivingRadio(radio.todayTitle()));
+                        future.set(LibraryResult.ofItemList(drive, params));
+                        return;
+                    }
                     List<BrowseAnswer.Entry> entries;
                     if (BrowseAnswer.STARTING_ID.equals(parentId)) {
                         entries = Collections.emptyList();
@@ -102,7 +174,8 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
                             tellWhenReady(session);
                         }
                     }
-                    future.set(LibraryResult.ofItemList(NodeItems.nodes(entries), params));
+                    List<MediaItem> nodes = NodeItems.nodes(entries);
+                    future.set(LibraryResult.ofItemList(nodes, params));
                 } catch (BrowseAnswer.Failed refused) {
                     future.set(LibraryResult.<ImmutableList<MediaItem>>ofError(LibraryResult.RESULT_ERROR_IO));
                 } catch (Throwable broke) {
@@ -159,6 +232,7 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
     public ListenableFuture<MediaSession.MediaItemsWithStartPosition> onSetMediaItems(
             MediaSession session, MediaSession.ControllerInfo controller, final List<MediaItem> requested,
             int startIndex, long startPositionMs) {
+        cancelHandoff.run();
         final SettableFuture<MediaSession.MediaItemsWithStartPosition> future = SettableFuture.create();
         try {
             io.execute(() -> {
@@ -190,10 +264,20 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
             ids.add(item.mediaId);
             queries.add(item.requestMetadata == null ? null : item.requestMetadata.searchQuery);
         }
+        if (radio != null && ids.size() == 1 && DrivingRadioSettings.MEDIA_ID.equals(ids.get(0))) {
+            return radio.resolve();
+        }
+        if (radio != null && ids.size() == 1 && radio.isStaple(ids.get(0))) {
+            return radio.resolveStaple(ids.get(0));
+        }
         String query = SearchAnswer.playFromSearch(ids, queries);
         if (query != null) {
             // The words are never logged; their length is.
             Log.i(TAG, "play from search, " + query.length() + " characters");
+            if (radio != null) {
+                MediaItem staple = radio.exactStaple(query);
+                if (staple != null) return radio.resolveStaple(staple.mediaId);
+            }
             String best = SearchAnswer.best(media.search(query, PLAY_WAIT_MS));
             if (best == null) throw new IllegalStateException("nothing found");
             ids = java.util.Collections.singletonList(best);
@@ -216,7 +300,8 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
             io.execute(() -> {
                 int count;
                 try {
-                    count = BrowseAnswer.parse(media.search(query, BROWSE_WAIT_MS)).size();
+                    MediaItem staple = radio == null ? null : radio.exactStaple(query);
+                    count = staple == null ? BrowseAnswer.parse(media.search(query, BROWSE_WAIT_MS)).size() : 1;
                 } catch (Throwable failedOrNoPayload) {
                     count = 0;
                 }
@@ -246,6 +331,12 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
         try {
             io.execute(() -> {
                 try {
+                    MediaItem staple = radio == null ? null : radio.exactStaple(query);
+                    if (staple != null) {
+                        future.set(LibraryResult.ofItemList(page == 0 ? Collections.singletonList(staple)
+                                : Collections.emptyList(), params));
+                        return;
+                    }
                     // The payload keeps the answer for a minute, so asking again for a page is cheap.
                     List<BrowseAnswer.Entry> entries = BrowseAnswer.parse(media.search(query, BROWSE_WAIT_MS));
                     future.set(LibraryResult.ofItemList(NodeItems.nodes(SearchAnswer.page(entries, page, pageSize)), params));

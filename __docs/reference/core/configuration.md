@@ -127,7 +127,29 @@ logging:
     path: null            # Absolute path; default <mediaDir>/logs/backend.log
     maxSizeMb: 25         # Rotate at this size
     maxFiles: 8           # Generations kept, including the live file
+
+http:
+  allowed_origins: []     # Extra web origins allowed to write to the API and
+                          # get CORS headers (default none)
+  frame_ancestors: true   # Send `frame-ancestors 'self' <allowed_origins>` on
+                          # the app's pages; false turns it off
 ```
+
+**`http.allowed_origins`.** Web origins other than the app's own that may send
+`POST`/`PUT`/`PATCH`/`DELETE` to the API from a browser, and that get CORS
+headers. Each entry is `scheme://host[:port]`; a path is dropped and an entry
+that is not an http(s) origin is skipped with a `security.allowed-origin.invalid`
+warning. Empty by default: the app's own pages are allowed under any hostname
+without being listed, and non-browser callers are never affected. Read once at
+startup by `app.mjs`; see
+[network-exposure.md](network-exposure.md#cross-site-requests-application-layer).
+
+**`http.frame_ancestors`.** On by default: every page of the built frontend is
+served with `Content-Security-Policy: frame-ancestors 'self'` plus the
+`http.allowed_origins` entries, so no other site can frame the app. Set it to
+`false` only if a dashboard on another origin must frame the app and cannot be
+listed. Read once at startup; production (Docker) only, since Vite serves the
+pages in dev.
 
 **`logging.fileSink`.** The durable general backend log — the sink that carries
 `http.response`, `plex.stream.mint` and every other backend event, and the one
@@ -225,7 +247,12 @@ harvest's LLM tagger and its Jev category judge, both narrowed in
 `createFinanceServices`), `feed`, `lifeplan`, `fitness` (`voice-memo`),
 `harvester` (`shopping`), `feedback` (`transcription`), `gaming`,
 `piano-games` (`opponent-dialogue`, the gpt-5.6-luna table talk, narrowed in
-`__app_modules/learning/piano/server/composition/pianoGames.mjs`), `school` (`card-ladder`,
+`__app_modules/learning/piano/server/composition/pianoGames.mjs`), `piano`
+(`lesson-good-faith`, `lesson-legit-notes`, and `sheetmusic-segments`: the Jev
+boundary scorer for Learn segment proposals, which spends nothing unless the
+household piano config sets `sheetmusic.admin.boundaryScorer` to `calibrate` or
+`jev`; see `__docs/reference/piano/sheet-music-player.md`, Admin: sheet music),
+`school` (`card-ladder`,
 `language`), `trigger`, `agents` (paged-media-toc rows are
 `media/paged-media-toc`), `weekly-review`, `ai-console`.
 `5_composition/aiUsageAttribution.consumers.test.mjs` drives a real call
@@ -366,7 +393,7 @@ files instead.
 Services like Plex have different hostnames per environment:
 - Docker: `plex` (container hostname)
 - Dev on docker host: `localhost`
-- Dev on laptop: `10.0.0.10`
+- Dev on laptop: `192.0.2.10`
 
 Different households may have different service instances:
 - Default household: `plex`
@@ -383,34 +410,34 @@ One file maps logical service names to physical hosts per environment:
 mqtt:
   docker: mosquitto
   {env.prod_host}: localhost
-  {env.dev_host}: 10.0.0.10
+  {env.dev_host}: 192.0.2.10
 
 printer:
-  docker: 10.0.0.50
-  {env.prod_host}: 10.0.0.50
-  {env.dev_host}: 10.0.0.50
+  docker: 192.0.2.50
+  {env.prod_host}: 192.0.2.50
+  {env.dev_host}: 192.0.2.50
 
 # Default household services (base names)
 plex:
   docker: plex
   {env.prod_host}: localhost
-  {env.dev_host}: 10.0.0.10
+  {env.dev_host}: 192.0.2.10
 
 homeassistant:
   docker: homeassistant
   {env.prod_host}: localhost
-  {env.dev_host}: 10.0.0.10
+  {env.dev_host}: 192.0.2.10
 
 # Jones household services (suffixed names)
 plex-jones:
   docker: plex-jones
   {env.prod_host}: localhost
-  {env.dev_host}: 10.0.0.11
+  {env.dev_host}: 192.0.2.11
 
 homeassistant-jones:
   docker: ha-jones
   {env.prod_host}: localhost
-  {env.dev_host}: 10.0.0.11
+  {env.dev_host}: 192.0.2.11
 ```
 
 ### Naming Convention
@@ -453,11 +480,11 @@ unavailable" instead of failing to boot. See
 
 | Household | Service | docker | {env.prod_host} | {env.dev_host} |
 |-----------|---------|--------|---------------|----------------|
-| default | plex | `plex:32400` | `localhost:32400` | `10.0.0.10:32400` |
-| default | homeassistant | `homeassistant:8123` | `localhost:8123` | `10.0.0.10:8123` |
-| jones | plex | `plex-jones:32400` | `localhost:32400` | `10.0.0.11:32400` |
-| jones | homeassistant | `ha-jones:8123` | `localhost:8123` | `10.0.0.11:8123` |
-| (shared) | mqtt | `mosquitto:1883` | `localhost:1883` | `10.0.0.10:1883` |
+| default | plex | `plex:32400` | `localhost:32400` | `192.0.2.10:32400` |
+| default | homeassistant | `homeassistant:8123` | `localhost:8123` | `192.0.2.10:8123` |
+| jones | plex | `plex-jones:32400` | `localhost:32400` | `192.0.2.11:32400` |
+| jones | homeassistant | `ha-jones:8123` | `localhost:8123` | `192.0.2.11:8123` |
+| (shared) | mqtt | `mosquitto:1883` | `localhost:1883` | `192.0.2.10:1883` |
 
 ---
 

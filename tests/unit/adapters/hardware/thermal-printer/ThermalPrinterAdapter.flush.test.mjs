@@ -54,7 +54,7 @@ const quietLogger = () => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(),
 
 function makeAdapter(logger) {
   return new ThermalPrinterAdapter(
-    { host: '10.0.0.50', port: 9100, timeout: 5000 },
+    { host: '10.20.30.50', port: 9100, timeout: 5000 },
     { logger, createTransport: (host, port) => new MockNetwork(host, port) },
   );
 }

@@ -9,9 +9,12 @@ import { GESTURES } from './gestures.js';
 import { LANES } from './lanes.js';
 import { INVADERS_TUNABLES } from './tunables.js';
 
-/** The methods a defender can choose from: every aim gesture, then gamepad / keys aim (no test needed). */
-export const MANUAL_METHOD = 'gamepad';
-export const SETUP_METHODS = Object.freeze([...GESTURES, MANUAL_METHOD]);
+/**
+ * The methods a defender can choose from: the aim gestures, nothing else. The
+ * gamepad was a method until 2026-11-20, when children played it instead of
+ * exercising; the game no longer reads one (useInvadersFire).
+ */
+export const SETUP_METHODS = Object.freeze([...GESTURES]);
 
 export const SETUP_STEPS = Object.freeze([
   Object.freeze({ id: 'left', lane: 0, label: 'Go left', how: 'Move the cannon to the left edge.' }),

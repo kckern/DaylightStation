@@ -12,7 +12,7 @@
 //   method   1 previous  2 next  3 back  4 choose (the methods are tiles to tap)   6 exit
 //   sweep    1 try again (after a step was not detected)  3 choose another   6 exit
 //   locked   1 admin unlock  3 back  4 change defender   6 exit
-//   ready    3 back  4 skip (only with a gamepad connected)   6 exit
+//   ready    3 back   6 exit
 //   paused   1 resume  2 sound  3 end round  4 controls (with a camera)   6 exit
 //   result   1 replay  2 next wave  3 waves  4 change defender   6 exit
 //   sound    1 quieter  2 louder  3 back  4 mute
@@ -44,7 +44,7 @@ const key = (position, label, hint, icon, extra = {}) => ({ position, label, hin
  * @param {object} view
  * @param {string} view.screen   who | roster | waves | method | sweep | locked | ready | paused | result | sound | loading | error
  * @param {boolean} [view.canExit]        the host gave the game a way to close
- * @param {boolean} [view.cameraOff]      the camera is denied or failed: aim is the gamepad, nothing to choose
+ * @param {boolean} [view.cameraOff]      the camera is denied or failed: the aim drifts on its own, nothing to choose
  * @param {string} [view.controlsName]    the defender's method, by name
  * @param {string} [view.setupFrom]       where the setup was opened: start | lobby | paused
  * @param {string} [view.sweep]           the test sweep's status: running | timeout | passed
@@ -98,7 +98,7 @@ export function invadersControls(view) {
     case 'locked':
       return [key(1, 'Admin unlock', 'Grown-up fingerprint', '✓'), blank(2, 'Locked'), key(3, 'Back', 'Choose defender', '×'), key(4, 'Change defender', 'Someone else', '●'), ...exit()];
     case 'ready':
-      return [blank(1), blank(2), key(3, 'Back', 'Pick a wave', '×'), v.gamepad ? key(4, 'Skip', 'Gamepad aim', '✓') : blank(4, 'Reach', 'Arms out'), ...exit()];
+      return [blank(1), blank(2), key(3, 'Back', 'Pick a wave', '×'), blank(4, 'Reach', 'Arms out'), ...exit()];
     case 'paused':
       return [
         key(1, 'Resume', 'Clock starts', '✓'), key(2, 'Sound', 'Volume and mute', '♫'), key(3, 'End round', 'Save it as ended', '×'),
@@ -155,7 +155,7 @@ export function invadersAction(view, position, gesture = 'single') {
     method: { 1: 'method-prev', 2: 'method-next', 3: 'setup-close', 4: 'method-choose', 6: 'exit' },
     sweep: { 1: 'sweep-retry', 3: 'sweep-other', 6: 'exit' },
     locked: { 1: 'admin-unlock', 3: 'change-shooter', 4: 'change-shooter', 6: 'exit' },
-    ready: { 3: 'back-to-waves', 4: 'skip-ready', 6: 'exit' },
+    ready: { 3: 'back-to-waves', 6: 'exit' },
     paused: { 1: 'resume', 2: 'open-sound', 3: 'end-round', 4: 'open-controls', 6: 'exit' },
     result: v.saveStatus === 'error' ? { 1: 'retry-save', 6: 'exit' } : { 1: 'replay', 2: 'next-wave', 3: 'waves', 4: 'change-shooter', 6: 'exit' },
     sound: { 1: 'quieter', 2: 'louder', 3: 'close-sound', 4: 'toggle-mute' },

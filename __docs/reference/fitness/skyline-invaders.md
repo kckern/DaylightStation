@@ -10,6 +10,7 @@ Code: engine and rules in `__app_modules/wellness/fitness/browser/lib/skylineInv
 - A round passes when the defender has at least `pass.kills` kills and at least `pass.base_hp_min` percent of the skyline left at the end. Every World 1 level asks for kills only (`base_hp_min: 0`); the skyline decides the stars. Passing a level opens the next one in world order.
 - Stars: 1 = pass, 2 = skyline at 75% or more, 3 = no damage. A pass pays 10 / 20 / 30 rings.
 - Phases: `loading → lobby → ready → countdown → playing ↔ paused → result`. The setup (choose your controls, then the test sweep) covers the lobby or a paused round without changing the phase, as the Sound sheet does. The touch Pause key, gamepad Start, gamepad B and Escape pause the clock. A paused Fitness session or a hidden tab pauses it too. Escape or B during the 3-2-1 goes back to the wave list.
+- **No gamepad play** (since 2026-11-20: children were playing rounds on the gamepad instead of exercising). In a round the game reads a gamepad only to stop: Start and B pause, Select leaves. Nothing on it fires, bombs or aims, and there is no Gamepad method. The game keys (Space/F fuel, B bomb, the arrows aim) play only in a dev build (`gameKeysAllowed()` in `SkylineInvaders.jsx`, `import.meta.env.DEV`), never in the kiosk, because the garage's Bluetooth remotes and keyboards send keys too. Each ignored press logs `skyline_invaders.input.ignored` (sampled). Menus keep the gamepad and the keys: they only navigate, and nothing in a menu advances a round. See "Inputs a round ignores".
 - The result screen shows each number alone with what the level asked for under it ("Shot down 25, needed 12"), green when met and red when short. A new round is not offered until the record is saved.
 - The HUD shows skyline, kills against the target (`7 / 12`, then `25 ✓` once the target is reached), time left, score, the kill streak, the weapon ladder with its power meter and fuel gauge, the controls in use, and the boost meter.
 
@@ -56,7 +57,7 @@ Sign conventions, for anyone reading traces:
 
 `offset` (wrist offset from the shoulder midpoint at a fixed gain, `offsetReachSw` 1.2) is the release-one gesture without its calibration. It is computed on every frame for the trace and is not offered to players.
 
-**Lost and held.** A gesture that cannot read its signal (arms down, a wrist unseen) holds the aim. The defender is lost only when the torso (both shoulders) has been out of view for `poseLostAfterMs` (800). While lost the cannon keeps its aim and drifts toward the threat nearest the ground, the HUD says "Step into view", and the timer keeps running. With the camera denied or failed, before it has seen anyone, or when the defender chose **Gamepad**, aim is manual (gamepad left stick or the arrow keys) and the HUD wears a "Gamepad aim" badge. The game never blocks on the camera.
+**Lost and held.** A gesture that cannot read its signal (arms down, a wrist unseen) holds the aim. The defender is lost only when the torso (both shoulders) has been out of view for `poseLostAfterMs` (800). While lost the cannon keeps its aim and drifts toward the threat nearest the ground, the HUD says "Step into view", and the timer keeps running. With the camera denied or failed, or before it has seen anyone, the aim is manual: it drifts toward the threat nearest the ground on its own, and the HUD wears an "Auto aim" badge when the camera is off. Fire still comes only from the mat. (In a dev build the arrow keys steer it.) The game never blocks on the camera.
 
 **Aim help.** In a round played on a gesture, the shell watches whether the cannon is following. Out of view for `aimHelpLostS` (3 s) after being lost, or in view with the cannon in one lane for `aimHelpStuckS` (12 s), a solid strip at the bottom left of the street says "Can't see you" or "Cannon not moving?" with a **Controls** key. The key pauses the round and opens the setup over the pause screen. The strip goes as soon as the cannon moves again; the timer never stops for it. Each appearance logs `skyline_invaders.round.aim_help` (`kind: lost | stuck`). It counts game time from when play last started: a pause (or a setup opened from it) starts both clocks over, and it is off while the camera is not detecting (the HUD's own badge says why).
 
@@ -66,13 +67,11 @@ Sign conventions, for anyone reading traces:
 
 **Why.** On 2026-11-13 a defender played a round that ignored his gestures. The old controls intro walked a card per gesture and took a mat **step** as Next and a **stomp** as "Use these". Standing on the mat, his weight shifts turned five cards in under twenty seconds, and a stomp 0.48 s into the sixth card chose **Slide** (`drag`), which he never tried. He then steered like a wheel: under Slide, hands in front are inside the dead zone, so the cannon sat in the right edge lane for half a minute, and the pause screen had no way to change the gesture. The setup replaces that intro.
 
-**When.** Start on the wave list goes through the setup until the defender's method has **passed its test in this visit** (`verified`, per defender, kept while the game is mounted). After that Start is the Ready screen. The setup also opens from the **Controls** key on the wave list (position 5; up on the keys), from **Controls** on the pause screen (position 4; up), and from the aim help key in a round. With the camera denied or failed there is nothing to choose: Start goes straight to the countdown on gamepad aim, and Controls is not drawn.
+**When.** Start on the wave list goes through the setup until the defender's method has **passed its test in this visit** (`verified`, per defender, kept while the game is mounted). After that Start is the Ready screen. The setup also opens from the **Controls** key on the wave list (position 5; up on the keys), from **Controls** on the pause screen (position 4; up), and from the aim help key in a round. With the camera denied or failed there is nothing to choose: Start goes straight to the countdown on auto aim, and Controls is not drawn.
 
 **The mat does nothing in the setup** except as the sweep's fire step. The defender is standing on it, and a weight shift must never choose for them.
 
-**1. Choose your controls** (the `method` screen of `InvadersMenus.jsx`). Nine tiles in a 3 × 3 grid: the eight gestures, each with its stick-figure demo (`GestureDemo.jsx`) and name, and **Gamepad**. The defender's own method is ringed and says "Yours". Tap a tile to choose it. The keys and the gamepad move a cursor (left/right) and choose it (accept); the cursor is drawn only once a key or the gamepad is driving, since under touch a lit tile reads as already chosen, and when the screen was opened by touch the first accept only shows the cursor (the foot pad is an accept key: it must not choose a tile nobody saw). Back returns to the wave list, or to the pause screen when it was opened from a round. With the camera off the gesture tiles are disabled and the window says so; while the camera is starting it says that.
-
-**Gamepad** needs no test: choosing it makes it the defender's method for this visit (it is not saved; the saved method stays a gesture), and from Start the round counts down at once.
+**1. Choose your controls** (the `method` screen of `InvadersMenus.jsx`). Eight tiles: the eight gestures, each with its stick-figure demo (`GestureDemo.jsx`) and name. There is no Gamepad tile (removed 2026-11-20). The defender's own method is ringed and says "Yours". Tap a tile to choose it. The keys and the gamepad move a cursor (left/right) and choose it (accept); the cursor is drawn only once a key or the gamepad is driving, since under touch a lit tile reads as already chosen, and when the screen was opened by touch the first accept only shows the cursor (the foot pad is an accept key: it must not choose a tile nobody saw). Back returns to the wave list, or to the pause screen when it was opened from a round. With the camera off every tile is disabled and the window says so ("The camera is off."); while the camera is starting it says that.
 
 **2. The test sweep** (the `sweep` screen; `lib/skylineInvaders/setupTest.js`, driven by `widgets/SkylineInvaders/useInvadersSetup.js`). The window sits at the top of the screen with the method's demo and its one line of how; under it the real cannon follows the defender with that method, starting from the middle, and two targets mark the left and right edge lanes. Three steps, in order, each ticked only when it is **detected**:
 
@@ -80,7 +79,7 @@ Sign conventions, for anyone reading traces:
 |---|---|
 | Go left | the cannon arrives on lane 0 and rests there `setupHoldMs` (400 ms) with the defender in view. A cannon already parked there when the test starts must leave and come back; one resting there when the step times out finishes its hold, and after Try again a cannon already on the edge counts from then. |
 | Go right | the same on lane 7 |
-| Stomp to fire | a step or a stomp on the defender's mat (another mat does not count). Accept on the keys (Space, Enter, gamepad A, the foot pad) also counts, mat or not; without a mat the step reads "Press fire". |
+| Stomp to fire | a step or a stomp on the defender's mat (another mat does not count). With a mat only the mat counts. Without one, accept on the keys (Space, Enter, gamepad A, the foot pad) counts and the step reads "Press fire" (the round itself will not fire without a mat, outside a dev build). |
 
 A step not detected within `setupStepTimeoutS` (15 s) stops the test: the heading says **Not detected**, the step is marked with a cross, and the keys offer **Try again** (that step, from now; accept on the keys) and **Choose another** (back to the list; Escape or B). Choose another is there until the test passes. While the defender is out of view the line says "Stand where the camera can see you." When all three pass the heading says **It works!** for `setupPassedMs` (1.5 s) and then:
 
@@ -92,7 +91,7 @@ A passed method becomes the defender's: a gesture is saved **per defender** with
 
 ### Ready
 
-Start on the wave list, once the defender's method has passed its test in this visit, goes to the **Ready** screen (`InvadersReady.jsx`): "Stand on the mat." Once head and shoulders have been in view for a second the countdown starts by itself; wrists at rest may hang out of frame. The screen shows the one line of how the defender's own gesture works and how to fire. A camera still starting after 20 s (`READY_CAMERA_WAIT_MS`) gives up and plays on gamepad aim. Ready offers Back, Exit, and Skip (gamepad aim) only when a gamepad is connected. Replay and Next wave on the result go straight to the countdown.
+Start on the wave list, once the defender's method has passed its test in this visit, goes to the **Ready** screen (`InvadersReady.jsx`): "Stand on the mat." Once head and shoulders have been in view for a second the countdown starts by itself; wrists at rest may hang out of frame. The screen shows the one line of how the defender's own gesture works and how to fire. A camera still starting after 20 s (`READY_CAMERA_WAIT_MS`) gives up and plays on auto aim. Ready offers Back and Exit; there is no Skip, gamepad or not. Replay and Next wave on the result go straight to the countdown.
 
 ### Lanes
 
@@ -107,7 +106,21 @@ The cannon's lane is lit from the street to the top of the sky, and the threat t
 - A `pressure-mat:step` from **the defender's mat** buys `fuelPerStepS` (1.5 s) of fuel, up to `fuelCapS` (5 s). While there is fuel the cannon fires a volley every `streamIntervalS` (0.25 s) by itself, the first one on the step. Spamming the mat only fills the tank. Steps from any other mat are ignored (and logged, sampled).
 - The fuel gauge is in the HUD and as a strip of the street under the cannon's lane (red when empty). An empty tank reads "Step!" in the HUD.
 - The player is the **defender**: the person assigned to the mat; the "Who's defending?" screen asks when the mat has none. Invaders is played standing on the mat and driven by touch, not riding: no screen says "rider", "shooter" or "bike" (only the boost partner rides), and the game never listens to the bike buttons. (Code, logs and saved records still call the defender `shooterId` / `rider.user_id`.) A mat has two ids: the equipment id (session API) and the hardware id (the app-event bus). `matSelection.js` carries both.
-- Without a mat: Space or F, gamepad A or RT buy fuel the same way.
+- Only the mat buys fuel. A gamepad never does. Space or F do only in a dev build (no mat to hand at a desk); in the kiosk they are ignored and logged.
+
+### Inputs a round ignores
+
+The round is played with the body: the pose aims, the mat fuels and bombs, a partner's cadence boosts. Since 2026-11-20 nothing else plays, because children were playing rounds on a gamepad instead of exercising.
+
+| Input | In a round | In a dev build | Where |
+|---|---|---|---|
+| Gamepad A, RT (were fuel), X, Y (were the bomb), D-pad and left stick (were aim), any other button | ignored, logged | ignored, logged | `useInvadersFire.js` watches the pads and logs; nothing reads them for play |
+| Gamepad Start / B / Select | pause / pause / leave the game | same | `SkylineInvaders.jsx` (`startPressed`, `useGamepadKeys`, `selectPressed`) |
+| Space or F, B (keyboard, Bluetooth remote) | ignored, logged | fuel, bomb | `useInvadersFire.js` `allowKeys` |
+| Arrow left / right | ignored, logged | aim | `SkylineInvaders.jsx` `readAimAxis`, `gameKeysAllowed()` |
+| Escape | pause | pause | |
+
+Pausing and leaving are kept on the gamepad because they only stop a round. Every menu keeps the gamepad and the keys (`useMenuInput`): they navigate, and a round still has to be played with the body. The setup's fire step accepts a key or gamepad A only when there is no mat. Skyline Glider and the arcade emulators are unchanged: this lives in the Invaders consumer, not in `useGamepadKeys` or the real-time kit.
 
 ### Power meter and the weapon ladder
 
@@ -122,7 +135,7 @@ Kills and firing time fill the power meter: `powerPerKill` (0.08) per kill and `
 
 Every shot does 1 damage. A stream left idle for `weaponIdleDropS` (8 s) drops one level and empties the meter; it drops again after another 8 s.
 
-**Bomb.** A `pressure-mat:stomp` with a bomb ready blasts a circle (`nuke.radius`, default 160 scene units; `nuke.damage`, default 3) around the lowest threat in the cannon's lane, or with that lane clear around the nearest threat, or in the empty sky above the cannon. It spends the meter. Pods caught in it are destroyed without splitting; a full-HP bomber (4 HP) survives one. The mat reports a stomp instead of a step, never both, so a stomp always buys fuel too; a stomp with no bomb ready is just a step. Without a mat: B on the keyboard, X or Y on the gamepad.
+**Bomb.** A `pressure-mat:stomp` with a bomb ready blasts a circle (`nuke.radius`, default 160 scene units; `nuke.damage`, default 3) around the lowest threat in the cannon's lane, or with that lane clear around the nearest threat, or in the empty sky above the cannon. It spends the meter. Pods caught in it are destroyed without splitting; a full-HP bomber (4 HP) survives one. The mat reports a stomp instead of a step, never both, so a stomp always buys fuel too; a stomp with no bomb ready is just a step. Only the mat drops it (B on the keyboard too, in a dev build alone).
 
 ### Partner boosts
 
@@ -145,8 +158,8 @@ Invaders is a **touch-screen** game: the defender stands on the mat, so nothing 
 | Choose your controls | a tile per method; keys Back and Exit | Previous / Next / Back / Choose (a cursor on the tiles; opened by touch, the first accept only shows the cursor); down does nothing (touch Exit) | nothing |
 | Test sweep | Choose another; Try again once a step was not detected; Exit | accept = Try again (and fire on the fire step), back = Choose another; down does nothing (touch Exit) | step or stomp = the fire step |
 | Round locked (school day) | Admin unlock, Back, Change defender, Exit | 1 / — / 3 / 4; down = Exit | |
-| Ready | Back; Skip with a gamepad connected; Exit | — / — / 3 / 4; down = Exit | |
-| Round | **Pause** and **Exit** (solid keys on the street strip, bottom right, where nothing falls); the aim help's **Controls** when it is up | gamepad Start, B, Escape pause; gamepad Select exits | fire |
+| Ready | Back; Exit | — / — / 3 / —; down = Exit | |
+| Round | **Pause** and **Exit** (solid keys on the street strip, bottom right, where nothing falls); the aim help's **Controls** when it is up | gamepad Start, B, Escape pause; gamepad Select exits; nothing else on the gamepad or the keys plays (dev builds: Space/F, B, arrows) | fire |
 | Paused | Resume, Sound, End round, Controls (with a camera), Exit | 1 / 2 / 3 / up; down = Exit | |
 | Result (once saved) | Replay, Next wave (only when open), Waves, Change defender, Exit (Exit also while saving or unsaved) | 1 / 2 / 3 / 4; down = Exit | next wave after a pass, else Replay |
 | Sound | the sheet's own volume strip and Mute; key Back | Quieter / Louder / Back / Mute | |
@@ -328,7 +341,7 @@ Browser events use the `skyline-invaders` component; filter the log store with `
 | `.setup.method_chosen` | `setupId`, `shooterId`, `method`, `how`, `previous` | a tile (or the cursor) was chosen: its test starts |
 | `.setup.step` | `setupId`, `method`, `step` (`left`, `right`, `fire`), `result` (`passed`, `timeout`), `ms`, `attempt`, `source` (fire), `lost`, `lane` (timeout) | a timeout is logged at warn: the method did not work for this defender |
 | `.setup.retry`, `.setup.other` | `setupId`, `method`, `step`, `attempt` / `status` | Try again; Choose another |
-| `.setup.passed` | `setupId`, `shooterId`, `method`, `from`, `runId` | all three steps detected (or Gamepad chosen) |
+| `.setup.passed` | `setupId`, `shooterId`, `method`, `from`, `runId` | all three steps detected |
 | `.setup.method_changed` | `setupId`, `shooterId`, `method`, `label`, `previous`, `saved`, `error` | the defender's method changed; warn when the save failed (the choice holds for the visit) |
 | `.round.aim_help` | `runId`, `levelId`, `kind` (`lost`, `stuck`), `gesture`, `lane`, `time` | the round told the defender the cannon is not following |
 | `.pose.camera_ready`, `.pose.camera_unavailable` | `enabled` / `error` | |
@@ -339,7 +352,8 @@ Browser events use the `skyline-invaders` component; filter the log store with `
 | `.fire.armed`, `.fire.no_mat`, `.fire.other_mat` | `matId` / `hasEventBus` / `from` | other_mat is sampled |
 | `.level.countdown`, `.level.countdown_cancelled` | `runId`, `levelId`, `shooterId` | |
 | `.level.start` | `seed`, `partnerId`, `gesture`, `gestureChosen`, `aimMode`, `lane`, `matId`, `cannons`, `durationS`, `pose`, `poseFps` | the seed replays the round |
-| `.fuel` | `source` (`mat`, `keyboard`, `gamepad`), `fuel`, `lane`, `time` | one per step, sampled, 30 a minute |
+| `.fuel` | `source` (`mat`; `keyboard` only in a dev build), `fuel`, `lane`, `time` | one per step, sampled, 30 a minute |
+| `.input.ignored` | `source` (`gamepad`, `keyboard`); gamepad: `input` (`button`, `stick`), `button`, `padId`; keyboard: `key`, `kind` (`step`, `stomp`, `aim`) | a gamepad or game-key press in a round that did nothing; sampled, 6 a minute, aggregated. Start, B and Select (pause, leave) also log here when pressed, as well as acting |
 | `.mat.press_to_fuel_ms` | `ms` | sampled; app event to the engine, not foot to screen |
 | `.round.weapon.level`, `.round.bomb.ready`, `.round.bomb`, `.round.boost.activated`, `.round.base.hit` and other `.round.<engine event>` | the event's data | per-volley and per-threat events are not logged |
 | `.round.paused` / `.round.resumed` | `reason` (`player`, `lifecycle`, `hidden`), `time` / `how`, `pausedBy` | |
@@ -603,6 +617,8 @@ Threats, the cannon and buildings are original 11 × 8 pixel grids in `lib/skyli
 **Stepping does nothing.** `skyline_invaders.fire.no_mat` means no mat hardware id reached the game; `fire.other_mat` means steps are arriving from a mat that is not the defender's. Pick the defender on the right mat. The first `fire.armed` line names the mat in use, and each step that counts logs `skyline_invaders.fuel`.
 
 **The weapon keeps dropping back to Single.** The stream was idle for `weaponIdleDropS`. `level.end` records `steps`, `firingS` and `weaponPeak`.
+
+**The gamepad does nothing in a round.** By design (see "Inputs a round ignores"). `skyline_invaders.input.ignored` shows who tried, with `source`, `input` and `button`.
 
 **The cannon will not follow.** `level.start` records `gesture`, `gestureChosen` and `aimMode`. `aimMode: manual` means the camera had not seen a torso when the round began. If the HUD says "Step into view", both shoulders are under `keypointMinScore`. If neither, the gesture is holding: its signal could not be read (the `held` share in the trace analysis). `twist` and `sprinkler` hold on every frame when the pose carries no `keypoints3D`.
 

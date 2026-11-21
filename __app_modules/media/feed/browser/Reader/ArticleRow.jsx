@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import DOMPurify from 'dompurify';
-import { colorFromLabel } from "../Scroll/cards/utils.js";
+import { colorFromLabel, safeImage } from "../Scroll/cards/utils.js";
 import FeedPlayer from "../players/FeedPlayer.jsx";
 import { useFeedPlayer } from "../players/FeedPlayerContext.jsx";
 import { inlineYouTubeDetailPath, useInlineYouTubeDetail } from "../players/useInlineYouTubeDetail.js";
 import AnnotationPanel from "../Annotations/AnnotationPanel.jsx";
 import OfflineEditionButton from "../offline/OfflineEditionButton.jsx";
+import { webLink } from "../../shared/webLink.mjs";
 
 /**
  * Single article row with collapsed/expanded accordion states.
@@ -14,6 +15,8 @@ import OfflineEditionButton from "../offline/OfflineEditionButton.jsx";
  * @param {Function} props.onMarkRead - (articleId) => void
  */
 export default function ArticleRow({ article, isNew = false, onMarkRead, onStateAction }) {
+  // Feed links are other people's data: only an absolute http(s) URL is linked.
+  const sourceLink = webLink(article.link);
   const [expanded, setExpanded] = useState(false);
   const [fullHeight, setFullHeight] = useState(false);
   const contentRef = useRef(null);
@@ -59,7 +62,7 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
   // Strip emojis from preview text
   const cleanPreview = (article.preview || '').replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '').replace(/\s+/g, ' ').trim();
 
-  const faviconUrl = article.iconUrl || null;
+  const faviconUrl = safeImage(article.iconUrl);
   const videoId = article.contentType === 'youtube' && article.meta?.videoId;
   const detailPath = videoId && inlineYouTubeDetailPath(`youtube:${videoId}`, videoId);
 
@@ -109,10 +112,10 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
               {article.preview && (
                 <p className="article-content">{article.preview}</p>
               )}
-              {article.link && (
+              {sourceLink && (
                 <a
                   className="article-source-link"
-                  href={article.link}
+                  href={sourceLink}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}
@@ -133,10 +136,10 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
                   Read more
                 </button>
               )}
-              {article.link && (
+              {sourceLink && (
                 <a
                   className="article-source-link"
-                  href={article.link}
+                  href={sourceLink}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}

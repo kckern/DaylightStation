@@ -13,7 +13,7 @@ import { serializeHubDevice } from '../../../__app_modules/media/media/server/ad
 const validArgs = (overrides = {}) => ({
   position: new SlotPosition(1),
   color: new SlotColor('red'),
-  mac: '41:42:3A:E5:43:07',
+  mac: 'AA:BB:CC:00:30:07',
   class: new SlotClass('private'),
   haEntityId: null,
   haTurnOffOnStop: false,
@@ -28,7 +28,7 @@ describe('HubDevice', () => {
       const d = new HubDevice(validArgs());
       expect(d.position).toBeInstanceOf(SlotPosition);
       expect(d.color).toBeInstanceOf(SlotColor);
-      expect(d.mac).toBe('41:42:3A:E5:43:07');
+      expect(d.mac).toBe('AA:BB:CC:00:30:07');
       expect(d.class).toBeInstanceOf(SlotClass);
       expect(d.haEntityId).toBeNull();
       expect(d.haTurnOffOnStop).toBe(false);
@@ -141,7 +141,7 @@ describe('HubDevice', () => {
       expect(serializeHubDevice(d)).toEqual({
         slot: 1,
         color: 'red',
-        mac: '41:42:3A:E5:43:07',
+        mac: 'AA:BB:CC:00:30:07',
         class: 'private'
       });
     });

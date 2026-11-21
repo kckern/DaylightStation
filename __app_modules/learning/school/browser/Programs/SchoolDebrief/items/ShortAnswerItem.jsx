@@ -1,6 +1,7 @@
 import PromptItem from "./PromptItem.jsx";
 import { TouchButton } from "../../../../../../../frontend/src/lib/ui/index.js";
 import { useSchoolDebriefKeys } from "../useSchoolDebriefKeys.js";
+import TypedText from "../../shared/TypedText.jsx";
 
 /** The one short-answer follow-up: the prompt field, then its grade. Ungraded (null) reads as neither right nor wrong. */
 export default function ShortAnswerItem({ question, result = null, onAnswer, onContinue, onTake, busy = false }) {
@@ -12,7 +13,7 @@ export default function ShortAnswerItem({ question, result = null, onAnswer, onC
   return (
     <section className="sd-item sd-short" aria-label="Question">
       <h2 className="sd-prompt__text">{question.prompt}</h2>
-      <p className="sd-result" role="status">{words}</p>
+      <p className="sd-result" role="status"><TypedText text={words} /></p>
       <div className="sd-controls"><TouchButton variant="primary" keyHint="Space" onClick={onContinue}>Next</TouchButton></div>
     </section>
   );

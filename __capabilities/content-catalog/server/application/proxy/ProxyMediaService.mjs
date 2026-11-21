@@ -14,8 +14,12 @@ export class ProxyMediaService {
     this.#repository = repository;
   }
 
-  async getContentMedia(mediaRef) {
-    return this.#repository.findContentMedia(mediaRef);
+  async getContentMedia(mediaRef, options) {
+    return this.#repository.findContentMedia(mediaRef, options);
+  }
+
+  async getProviderAudio(source, mediaRef, signal) {
+    return this.#repository.findProviderAudio(source, mediaRef, signal);
   }
 
   async getLocalContentMedia({ type, mediaRef }) {

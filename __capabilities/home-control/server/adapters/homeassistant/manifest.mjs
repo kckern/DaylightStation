@@ -8,7 +8,7 @@ export default {
   adapter: () => import("./HomeAssistantAdapter.mjs"),
 
   configSchema: {
-    host: { type: 'string', required: true, description: 'Home Assistant URL (e.g., http://192.168.1.50:8123)' },
+    host: { type: 'string', required: true, description: 'Home Assistant URL (e.g., http://192.0.2.20:8123)' },
     port: { type: 'number', default: 8123, description: 'Home Assistant port' },
     token: { type: 'string', secret: true, required: true, description: 'Long-lived access token' },
   }

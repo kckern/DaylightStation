@@ -655,17 +655,18 @@ let eventBusInstance = null;
  * @param {Object} config.httpServer - HTTP server to attach WebSocket to
  * @param {string} [config.path='/ws'] - WebSocket path
  * @param {Object} [config.logger] - Logger instance
+ * @param {Set<string>|string[]} [config.allowedOrigins] - `http.allowed_origins`, normalized
  * @returns {Promise<WebSocketEventBus>}
  */
 export async function createEventBus(config) {
-  const { httpServer, path = '/ws', logger = console } = config;
+  const { httpServer, path = '/ws', logger = console, allowedOrigins = [] } = config;
 
   if (eventBusInstance) {
     logger.warn?.('eventbus.already_created', { message: 'EventBus already exists, returning existing instance' });
     return eventBusInstance;
   }
 
-  eventBusInstance = new WebSocketEventBus({ path, logger });
+  eventBusInstance = new WebSocketEventBus({ path, logger, allowedOrigins });
   await eventBusInstance.start(httpServer);
 
   return eventBusInstance;

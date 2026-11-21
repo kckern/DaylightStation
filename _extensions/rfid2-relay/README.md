@@ -1,14 +1,14 @@
 # Garage RFID2 shell
 
 An M5Stack ATOM Lite class controller (measured ESP32-PICO-D4, 4 MB flash,
-MAC `F0:16:1D:02:2A:88`) hosts an M5Stack Unit RFID2 (U031-B, WS1850S) on its
+MAC `AA:BB:CC:00:40:02`) hosts an M5Stack Unit RFID2 (U031-B, WS1850S) on its
 HY2.0 Grove port. This first image is a field-updatable diagnostic shell. It
 checks that the reader answers on I²C; it does not yet read tags or emit events.
 
 ## Verified bench state (2026-10-03)
 
 - USB serial: `/dev/cu.usbserial-7952C47E3B`
-- Board IP when tested: `10.0.0.47` (DHCP; may change after relocation)
+- Board IP when tested: `<board-ip>` (DHCP; may change after relocation)
 - `GET /status`: Wi-Fi connected, `ota.ready: true`, `rfid2.present: true`,
   `rfid2.i2c_error: 0`. An I²C ACK proves electrical communication at `0x28`;
   it does not yet prove that a card can be read.
@@ -35,8 +35,8 @@ From `_extensions/rfid2-relay/firmware`:
 ```bash
 node tools/gen-config.test.mjs
 node tools/flash.mjs "$DAYLIGHT_BASE_PATH/data/household/hardware/rfid2.yml" --port /dev/cu.usbserial-7952C47E3B
-node tools/flash.mjs "$DAYLIGHT_BASE_PATH/data/household/hardware/rfid2.yml" --ota --host 10.0.0.47
-node tools/flash.mjs "$DAYLIGHT_BASE_PATH/data/household/hardware/rfid2.yml" --ota --host 10.0.0.47 --via garage
+node tools/flash.mjs "$DAYLIGHT_BASE_PATH/data/household/hardware/rfid2.yml" --ota --host <board-ip>
+node tools/flash.mjs "$DAYLIGHT_BASE_PATH/data/household/hardware/rfid2.yml" --ota --host <board-ip> --via garage
 ```
 
 For later updates, use the board's current IP from DHCP or

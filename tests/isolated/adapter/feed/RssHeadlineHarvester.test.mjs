@@ -94,6 +94,35 @@ describe('RssHeadlineHarvester', () => {
     expect(result.error).toBe('http://bad-url.com/rss: Network error');
   });
 
+  test('drops items whose link is not http(s)', async () => {
+    mockRssParser.parseURL.mockResolvedValue({
+      title: 'Hostile feed',
+      items: [
+        { title: 'Script', link: 'javascript:alert(1)', pubDate: 'Sat, 15 Feb 2026 09:00:00 GMT' },
+        { title: 'Data', link: 'data:text/html,<script>1</script>', pubDate: 'Sat, 15 Feb 2026 09:00:00 GMT' },
+        { title: 'Relative', link: '/api/v1/admin/ws/restart', pubDate: 'Sat, 15 Feb 2026 09:00:00 GMT' },
+        { title: 'Fine', link: ' https://example.com/fine ', pubDate: 'Sat, 15 Feb 2026 09:00:00 GMT' },
+      ],
+    });
+    const result = await harvester.harvest({ id: 'test', label: 'Test', url: 'http://example.com/rss' });
+    expect(result.items.map((item) => [item.title, item.link])).toEqual([['Fine', 'https://example.com/fine']]);
+  });
+
+  test('drops a headline image that is relative or points into /api or /admin', async () => {
+    mockRssParser.parseURL.mockResolvedValue({
+      title: 'Hostile images',
+      items: [
+        { title: 'Relative', link: 'https://example.com/1', 'media:content': [{ '$': { url: '/api/v1/home/script/run', type: 'image/jpeg' } }] },
+        { title: 'Absolute', link: 'https://example.com/2', 'media:content': [{ '$': { url: 'https://app.example.test/api/v1/admin/x', type: 'image/jpeg' } }] },
+        { title: 'Fine', link: 'https://example.com/3', 'media:content': [{ '$': { url: 'https://cdn.example/pic.jpg', type: 'image/jpeg' } }] },
+      ],
+    });
+    const result = await harvester.harvest({ id: 'test', label: 'Test', url: 'http://example.com/rss' });
+    expect(result.items.map((item) => [item.title, item.image ?? null])).toEqual([
+      ['Relative', null], ['Absolute', null], ['Fine', 'https://cdn.example/pic.jpg'],
+    ]);
+  });
+
   test('includes imageWidth and imageHeight from media:content attributes', async () => {
     mockRssParser.parseURL.mockResolvedValue({
       title: 'Feed with image dims',

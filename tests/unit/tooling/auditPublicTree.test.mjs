@@ -54,8 +54,13 @@ describe('auditContent', () => {
     expect(rules).toEqual(['host-path', 'personal-domain', 'lan-address', 'lan-address']);
   });
 
-  it('ignores files outside the rule scope (widened by later sub-projects)', () => {
-    expect(auditContent('__app_modules/x/cli/a.mjs', 'curl http://10.1.2.3/')).toEqual([]);
+  it('applies lan-address to the whole tree, including 172.16/12, but not to tests', () => {
+    expect(auditContent('__app_modules/x/cli/a.mjs', 'curl http://10.1.2.3:80\nhost: 172.30.40.53').map((x) => x.rule))
+      .toEqual(['lan-address', 'lan-address']);
+    expect(auditContent('__app_modules/x/a.test.mjs', 'curl http://10.1.2.3/')).toEqual([]);
+    expect(auditContent('tests/unit/a.mjs', 'curl http://10.1.2.3/')).toEqual([]);
+    expect(auditContent('x/src/test/java/FooTest.java', '"10.1.2.3"')).toEqual([]);
+    expect(auditContent('x/a.mjs', "['172.16.0.0', 12]")).toEqual([]);
   });
 
   it('applies host-path to the whole tree', () => {

@@ -25,7 +25,7 @@ function seededRng(seed) {
 function buildSession() {
   return {
     _deviceRouter: {
-      getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['user_2'] }]
+      getEquipmentCatalog: () => [{ id: 'bike_b', eligible_users: ['user_2'] }]
     },
     getParticipantProfile: () => null,
     zoneProfileStore: null,
@@ -47,7 +47,7 @@ function tick(engine, nowValue, { zone = 'active', rpm = 0, connected = true } =
     // ts mirrors the engine clock so the freshness gate in _filteredCadenceFor
     // sees each tick as a new sample. Without ts, samples are filtered out
     // and rpm collapses to 0 — see the cycle-challenge-remediation audit.
-    equipmentCadenceMap: { cycle_ace: { rpm, connected, ts: nowValue } }
+    equipmentCadenceMap: { bike_b: { rpm, connected, ts: nowValue } }
   });
 }
 
@@ -68,7 +68,7 @@ describe('GovernanceEngine cycle challenge dispatch', () => {
             interval: [1, 1],
             selections: [{
               type: 'cycle',
-              equipment: 'cycle_ace',
+              equipment: 'bike_b',
               hi_rpm_range: [60, 60],
               segment_count: [1, 1],
               segment_duration_seconds: [2, 2],
@@ -100,7 +100,7 @@ describe('GovernanceEngine cycle challenge dispatch', () => {
     expect(active.type).toBe('cycle');
     expect(active.cycleState).toBe('init');
     expect(active.rider).toBe('user_2');
-    expect(active.equipment).toBe('cycle_ace');
+    expect(active.equipment).toBe('bike_b');
 
     // Tick 3: rider above min_rpm (30) while base_req is satisfied → init→ramp.
     // Use rpm=80 (well above min_rpm) so the EMA-smoothed value clears the
@@ -149,7 +149,7 @@ describe('GovernanceEngine cycle challenge dispatch', () => {
             interval: [1, 1],
             selections: [{
               type: 'cycle',
-              equipment: 'cycle_ace',
+              equipment: 'bike_b',
               hi_rpm_range: [60, 60],
               segment_count: [1, 1],
               segment_duration_seconds: [2, 2],

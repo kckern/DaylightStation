@@ -447,6 +447,27 @@ export async function getFileStatsAsync(filePath) {
   return fs.promises.stat(filePath);
 }
 
+/**
+ * Read at most `maxBytes` from the start of a file as UTF-8 text (a multi-byte
+ * character cut at the end decodes as U+FFFD). For sniffing a header without
+ * reading a large file whole.
+ */
+export async function readTextPrefixAsync(filePath, maxBytes) {
+  const handle = await fs.promises.open(filePath, 'r');
+  try {
+    const buffer = Buffer.alloc(Math.max(0, maxBytes));
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    return buffer.subarray(0, bytesRead).toString('utf8');
+  } finally {
+    await handle.close();
+  }
+}
+
+/** Asynchronously lstat a path (a symlink is reported as itself, not followed). */
+export async function getLinkStatsAsync(filePath) {
+  return fs.promises.lstat(filePath);
+}
+
 /** Asynchronously test for a path while treating only absence as false. */
 export async function fileExistsAsync(filePath) {
   try {

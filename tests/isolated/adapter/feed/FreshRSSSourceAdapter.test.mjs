@@ -48,6 +48,20 @@ describe('FreshRSSSourceAdapter', () => {
       feedTitle, feedId, categories: [],
     });
 
+    test('takes a hero image only from an http(s) URL outside /api and /admin', async () => {
+      const items = [
+        { ...makeItem('a', 'Action'), content: '<p><img src="/api/v1/home/script/run"></p>' },
+        { ...makeItem('b', 'Absolute action'), content: '<img src="https://app.example.test/API/v1/admin/x">' },
+        { ...makeItem('c', 'Fine'), content: '<img src="https://cdn.example/pic.jpg">' },
+      ];
+      mockFreshRSSAdapter.getItems
+        .mockResolvedValueOnce({ items, continuation: null })
+        .mockResolvedValueOnce({ items: [], continuation: null });
+      const result = await adapter.fetchPage({ tier: 'wire', limit: 20 }, 'user_1', {});
+      const byTitle = Object.fromEntries(result.items.map((item) => [item.title, item.image]));
+      expect(byTitle).toEqual({ Action: null, 'Absolute action': null, Fine: 'https://cdn.example/pic.jpg' });
+    });
+
     test('returns unread items first, then read items shuffled', async () => {
       const unreadItems = [makeItem('u1', 'Unread 1'), makeItem('u2', 'Unread 2')];
       const allItems = [makeItem('u1', 'Unread 1'), makeItem('u2', 'Unread 2'), makeItem('r1', 'Read 1'), makeItem('r2', 'Read 2')];

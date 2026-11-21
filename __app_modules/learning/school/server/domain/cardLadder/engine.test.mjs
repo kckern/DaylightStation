@@ -850,6 +850,20 @@ describe('engine — transitions and graded records (plan 4, spec §8 events)', 
     expect(last.out.transitions).toEqual([{ wordId: choice.wordId, from: { state: 'claimed', stage: null }, to: { state: 'mastered', stage: 0 }, source: 'verify' }]);
   });
 
+  it('a spelling near miss on a typed recheck is not credit and leaves the word as it was (owner 2026-11-20)', () => {
+    const status = emptyStatusV3();
+    status.words.chaek = { ...emptyWordV3(), state: 'mastered', stage: 1, dueDay: D, introducedDay: '2026-09-01', recognizedCount: 2, matched: true };
+    const ctx = start(status);
+    const item = currentItem(ctx);
+    expect(item).toMatchObject({ type: 'typed', source: 'recheck' });
+    const before = structuredClone(ctx.status.words.chaek);
+    const { out } = stepOut(ctx, { typed: '착' }, { score: 6, judge: 'spelling', reason: null, pass: false, near: true });
+    expect(out.result).toMatchObject({ correct: false, near: true });
+    expect(out.status.words.chaek).toEqual(before);
+    expect(out.transitions).toEqual([]);
+    expect(out.dayFile.rechecks.answered.chaek).toMatchObject({ correct: false, near: true });
+  });
+
   it('a recheck miss is graded (source recheck) and transitions mastered → familiar', () => {
     const status = emptyStatusV3();
     status.words.gawi = { ...emptyWordV3(), state: 'mastered', stage: 1, dueDay: D, introducedDay: '2026-09-10' };

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { TouchButton } from "../../../../../../../frontend/src/lib/ui/index.js";
 import Icon from "../../../home/icons/Icon.jsx";
+import TypedText from "../../shared/TypedText.jsx";
 import { useSchoolDebriefKeys, speak } from "../useSchoolDebriefKeys.js";
 import { schoolDebriefLog } from "../schoolDebriefLog.js";
 
@@ -47,7 +48,7 @@ export default function ChipsItem({ prompt, options = [], initial = '', onSubmit
 
   return (
     <section className="sd-item sd-prompt sd-chips" aria-label="Classes">
-      <h2 className="sd-prompt__text">{prompt.text}</h2>
+      <h2 className="sd-prompt__text"><TypedText text={prompt.text} /></h2>
       <div className="sd-chips__grid">
         {options.map((opt, i) => (
           <TouchButton key={opt} variant={selected.includes(opt) ? 'primary' : 'secondary'} keyHint={i < 10 ? DIGITS[i] : undefined}

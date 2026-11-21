@@ -2,12 +2,13 @@ import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react
 import { getReducedMotionQuery } from '@/lib/ui/browserMotion.js';
 import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
-import { formatAge, proxyIcon, proxyImage, colorFromLabel } from "../cards/utils.js";
+import { formatAge, proxyIcon, proxyImage, colorFromLabel, safeImage } from "../cards/utils.js";
 import { renderSection } from "./sections/index.jsx";
 import { feedLog } from "../feedLog.js";
 import FeedPlayer from "../../players/FeedPlayer.jsx";
 import AnnotationPanel from "../../Annotations/AnnotationPanel.jsx";
 import OfflineEditionButton from "../../offline/OfflineEditionButton.jsx";
+import { webLink, frameableLink } from "../../../shared/webLink.mjs";
 import "./DetailView.scss";
 
 export default function DetailView({ renderDialog, focusOnEntry = false, item, sections, detailActions, ogImage, ogDescription, loading, error, onRetry, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem, onStateAction }) {
@@ -17,14 +18,19 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
   const iconUrl = proxyIcon(item.meta?.sourceIcon);
   const borderColor = colorFromLabel(sourceName);
   const age = formatAge(item.timestamp);
-  const heroImage = item.image || ogImage;
+  const heroImage = safeImage(item.image) || safeImage(ogImage);
   const isYouTube = item.contentType === 'youtube' && item.meta?.videoId;
   const subtitle = isYouTube ? null : (item.body || ogDescription);
   const hasArticle = sections.length > 0 && !loading;
   const CONTENT_TYPES = new Set(['body', 'article', 'player', 'embed', 'gallery', 'media', 'comments', 'scripture', 'timeline']);
   const hasContentSections = hasArticle && sections.some(s => CONTENT_TYPES.has(s.type));
-  const showIframe = !loading && !hasContentSections && item.link && !isYouTube;
-  const iframeSrc = item.meta?.paywall && item.meta?.paywallProxy ? item.meta.paywallProxy + item.link : item.link;
+  // Feed links are other people's data: only absolute http(s) URLs become an
+  // anchor, and only ones off this app's origin fill the scripts+same-origin
+  // sandboxed iframe. Anything else is shown as plain text.
+  const rawOpenUrl = item.link && item.meta?.paywall && item.meta?.paywallProxy ? item.meta.paywallProxy + item.link : item.link;
+  const openUrl = webLink(rawOpenUrl);
+  const iframeSrc = frameableLink(rawOpenUrl, typeof window !== 'undefined' ? window.location.origin : '');
+  const showIframe = !loading && !hasContentSections && !!iframeSrc && !isYouTube;
   const dateStr = item.timestamp ? new Date(item.timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : null;
 
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -293,9 +299,10 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
             <button type="button" onClick={() => onStateAction?.((item.state?.isRead ?? item.isRead) ? 'unread' : 'read')}>{(item.state?.isRead ?? item.isRead) ? 'Mark unread' : 'Mark read'}</button>
             <OfflineEditionButton item={item} detail={{ sections, ogImage, ogDescription }} />
           </div>
-          {item.link && (
+          {item.link && !openUrl && <span className="detail-link-text">{item.link}</span>}
+          {openUrl && (
             <a
-              href={item.meta?.paywall && item.meta?.paywallProxy ? item.meta.paywallProxy + item.link : item.link}
+              href={openUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="detail-open-link"

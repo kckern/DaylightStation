@@ -2,9 +2,9 @@
  * liveSeriesKeys — the inverse of PersistenceManager's mapSeriesKeysForPersist.
  *
  * A saved session stores series under compact on-disk keys (`kid-a:rings`,
- * `bike:7138:rpm`, `device:D:heart-rate`, zone letters). A resumed session
+ * `bike:10101:rpm`, `device:D:heart-rate`, zone letters). A resumed session
  * must put them back under the live keys the recorders write (`user:kid-a:
- * rings_total`, `device:7138:rpm`, …). Left on-disk-keyed, the live keys start
+ * rings_total`, `device:10101:rpm`, …). Left on-disk-keyed, the live keys start
  * empty after a reload and — both mapping to the same saved key — overwrite the
  * restored history at the next save.
  */

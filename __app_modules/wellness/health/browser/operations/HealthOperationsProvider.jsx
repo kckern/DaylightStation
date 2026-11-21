@@ -19,7 +19,11 @@ export function HealthOperationsProvider({ userId, children, send = DaylightAPI 
   return <Session key={userId} userId={userId} send={send}>{children}</Session>;
 }
 function Session({ userId, children, send }) {
-  const store = useMemo(() => createHealthOperations({ userId }), [userId]);
+  const store = useMemo(() => {
+    let durableStorage;
+    try { durableStorage = globalThis.localStorage; } catch { /* Storage can be disabled for this browser. */ }
+    return createHealthOperations({ userId, durableStorage });
+  }, [userId]);
   const running = useRef(new Map());
   const continuations = useRef(new Map());
   const reconciliation = useMemo(createHealthReconciliation, [userId]);
@@ -71,15 +75,23 @@ function Session({ userId, children, send }) {
       if (onResult) continuations.current.set(id, onResult);
       if (running.current.has(id)) return running.current.get(id);
       const op = store.getSnapshot().operations.get(id);
-      if (!op || store.disposed) return Promise.resolve();
+      if (!op || store.disposed || (op.kind === 'barcode-commit' && op.phase === 'succeeded')) return Promise.resolve(op?.response);
       const owner = lease.current;
       const submittedEpoch = op.submittedEpoch ?? reconciliation.beginRead();
       const submitted = { ...op, submittedEpoch };
       store.transition(id, { phase: 'pending', error: null, submittedEpoch });
       logger.info('operation.pending', { operationId: id, kind: op.kind, affected: op.targetIds.length });
-      const request = op.response ? Promise.resolve(op.response) : send(op.request.path, structuredClone(op.request.body), op.request.method);
+      const timeout = op.kind === 'barcode-commit' && !op.response ? new AbortController() : null;
+      const timer = timeout && setTimeout(() => timeout.abort(), 15000);
+      const request = op.response ? Promise.resolve(op.response) : timeout
+        ? send(op.request.path, structuredClone(op.request.body), op.request.method, { signal: timeout.signal })
+        : send(op.request.path, structuredClone(op.request.body), op.request.method);
       const promise = Promise.resolve(request).then(async response => {
         if (!owner?.active || store.disposed) return;
+        if (op.kind === 'barcode-commit' && !(response?.committed === true && response.entryIds?.length === 1 && response.undoToken)) {
+          throw new Error('Could not confirm this barcode log. Retry to check its result.');
+        }
+        if (op.kind === 'barcode-commit') store.transition(id, { response });
         await accept(response, submitted, owner);
         if (!owner?.active || store.disposed) return;
         const continuation = continuations.current.get(id);
@@ -100,7 +112,7 @@ function Session({ userId, children, send }) {
       }).catch(error => {
         if (owner?.active && !store.disposed) store.transition(id, { phase: error.status === 409 ? 'conflict' : 'error', error: error.message });
         throw error;
-      }).finally(() => running.current.delete(id));
+      }).finally(() => { clearTimeout(timer); running.current.delete(id); });
       running.current.set(id, promise);
       return promise;
     };

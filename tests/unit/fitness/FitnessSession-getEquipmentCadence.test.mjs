@@ -51,9 +51,9 @@ describe('FitnessSession.getEquipmentCadence', () => {
     setFitnessTimeouts({ rpmZero: originalRpmZero });
 
     session = new FitnessSession();
-    // Configure a bike equipment whose cadence sensor is ANT+ device 49904.
+    // Configure a bike equipment whose cadence sensor is ANT+ device 10102.
     session.setEquipmentCatalog([
-      { id: 'bike-1', name: 'Bike 1', type: 'bike', cadence: 49904 },
+      { id: 'bike-1', name: 'Bike 1', type: 'bike', cadence: 10102 },
       { id: 'bike-2', name: 'Bike 2', type: 'bike', cadence: 49905 }
     ]);
   });
@@ -63,8 +63,8 @@ describe('FitnessSession.getEquipmentCadence', () => {
   });
 
   it('returns { rpm, connected } for a configured equipment id with a fresh reading', () => {
-    // Simulate an ANT+ cadence packet arriving for device 49904
-    session.deviceManager.updateDevice('49904', 'bike_cadence', {
+    // Simulate an ANT+ cadence packet arriving for device 10102
+    session.deviceManager.updateDevice('10102', 'bike_cadence', {
       CalculatedCadence: 82,
       timestamp: Date.now()
     });
@@ -91,11 +91,11 @@ describe('FitnessSession.getEquipmentCadence', () => {
 
   it('returns { rpm: 0, connected: false } when the reading is older than FITNESS_TIMEOUTS.rpmZero', () => {
     // Push a reading, then forcibly age it beyond the rpmZero window.
-    session.deviceManager.updateDevice('49904', 'bike_cadence', {
+    session.deviceManager.updateDevice('10102', 'bike_cadence', {
       CalculatedCadence: 75,
       timestamp: Date.now()
     });
-    const device = session.deviceManager.getDevice('49904');
+    const device = session.deviceManager.getDevice('10102');
     const { rpmZero } = getFitnessTimeouts();
     // Push the "last significant activity" far enough into the past.
     device.lastSignificantActivity = Date.now() - (rpmZero + 1000);

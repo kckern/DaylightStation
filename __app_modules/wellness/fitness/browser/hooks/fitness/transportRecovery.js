@@ -75,7 +75,11 @@ export function createTransportRecovery({
         onIncident({ ...event('recovered', sampleAt - incident.startedAt), state: 'healthy', reason: 'sample-delivered' });
         incident = null;
       }
-      publish('healthy', 'sample-delivered');
+      // Only a watched (active) session reports health. With no session, tick()
+      // holds 'quiet/inactive'; publishing 'healthy' here would flip the state
+      // twice a second while sensors stream and re-render the fitness provider
+      // each time (render budget 30 -> 60 per 30 s, 2026-11-20).
+      if (activeSince !== null) publish('healthy', 'sample-delivered');
       return true;
     },
     tick({ active, stopped = false }) {

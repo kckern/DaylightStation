@@ -136,9 +136,16 @@ export function hasInputDevice(inputDevicesText, mac, name = null) {
   return false;
 }
 
+/**
+ * Read synchronously: `fs/promises.readFile` on this procfs file stops after the
+ * first short read (measured on garage 2026-11-20: 3911 of 6942 bytes), and
+ * Bluetooth devices are appended at the END of the table — so every newly
+ * paired remote or keyboard read as `input:false` ("Connecting…" forever).
+ * `readFileSync` reads until EOF.
+ */
 async function defaultReadInputDevices() {
-  const { readFile } = await import('fs/promises');
-  return readFile('/proc/bus/input/devices', 'utf8');
+  const { readFileSync } = await import('fs');
+  return readFileSync('/proc/bus/input/devices', 'utf8');
 }
 
 /**
@@ -220,14 +227,30 @@ export function nextReconnectDelay(previousMs, { baseMs = 30000, maxMs = 600000 
   return Math.min(previousMs * 2, maxMs);
 }
 
+const RECONNECT_KINDS = new Set(['gamepad', 'keyboard', 'mouse', 'tablet']);
+
+/**
+ * Keep this device connected? Every bonded, trusted input device: a gamepad,
+ * a known input kind, or anything advertising a HID service (a BLE ring often
+ * has no Icon). The Bluetooth screen trusts every device it pairs, so this
+ * covers everything added there; a trusted speaker is not an input device and
+ * is left alone.
+ */
+export function shouldReconnect(d) {
+  return !!d && d.paired !== false && d.trusted === true
+    && (d.gamepad === true || d.hid === true || RECONNECT_KINDS.has(d.kind));
+}
+
 /**
  * Start an interval that polls the BT inventory and broadcasts it via `send`.
  * Skips the broadcast when the device list is byte-identical to the previous
  * poll (cheap JSON compare) to avoid spamming the WS.
  *
- * Also owns RECONNECT of trusted controllers (`gamepad` + `trusted`, not
- * connected), with per-device backoff. `pause()`/`resume()` stop both while a
- * pairing window is open so nothing else talks to BlueZ during the pair.
+ * Also owns RECONNECT of trusted input devices of any kind (`shouldReconnect`:
+ * gamepads, keyboards, HID rings…, not connected), with per-device backoff.
+ * `pause()`/`resume()` stop both while a pairing window is open so nothing
+ * else talks to BlueZ during the pair; `pause({ reconnectOnly: true })` stops
+ * only the reconnect pages while a nearby search runs.
  *
  * @param {object} opts
  * @param {Function} opts.send                - (topic, payload) => void
@@ -246,6 +269,7 @@ export function startBtInventoryBroadcast({
   let lastJson = null;
   let stopped = false;
   let paused = false;
+  let reconnectPaused = false;
   const backoff = new Map(); // address → { delayMs, nextAt }
   // An unbonded pad's connection lasts a moment before the kernel rejects it,
   // so a 3s poll catches it only sometimes. Remember each sighting for
@@ -268,9 +292,12 @@ export function startBtInventoryBroadcast({
   };
 
   const maybeReconnect = async (devices) => {
-    if (!reconnect) return;
+    if (!reconnect || reconnectPaused) return;
     for (const d of devices) {
-      if (!d.gamepad || !d.trusted) continue;
+      // Each page can take ~8 s: a window or search that opened meanwhile
+      // stops the loop before the next one.
+      if (stopped || paused || reconnectPaused) return;
+      if (!shouldReconnect(d)) continue;
       if (d.connected) { backoff.delete(d.address); continue; }
       const b = backoff.get(d.address) || { delayMs: 0, nextAt: 0 };
       if (now() < b.nextAt) continue;
@@ -320,13 +347,24 @@ export function startBtInventoryBroadcast({
       lastJson = null;
       return tick();
     },
-    /** Stop polling + reconnecting (a pairing window is open). */
-    pause() {
-      paused = true;
+    /**
+     * Stop polling and reconnecting (a pairing window), or with
+     * { reconnectOnly: true } keep polling and stop only the reconnect pages
+     * (a nearby search: the list's "Paired" badges stay live).
+     */
+    pause({ reconnectOnly = false } = {}) {
+      if (reconnectOnly) reconnectPaused = true;
+      else paused = true;
     },
-    /** Resume after a pairing window; re-sends and resets reconnect backoff. */
-    resume() {
-      paused = false;
+    /**
+     * Undo the matching pause: resume() ends a pairing window's pause,
+     * resume({ reconnectOnly: true }) ends a search's. Neither clears the
+     * other, so a search that ends while a pairing window is open leaves the
+     * window's pause in place. Re-sends and resets reconnect backoff.
+     */
+    resume({ reconnectOnly = false } = {}) {
+      if (reconnectOnly) reconnectPaused = false;
+      else paused = false;
       backoff.clear();
       lastJson = null;
       return tick();

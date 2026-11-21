@@ -4,15 +4,19 @@ touch, and what counts as "up as an input device". No D-Bus imports, so the
 rules are unit-tested (test/test_bt_pair_match.py).
 
 Two modes:
-  repair  re-pair a configured pad (default; the behaviour before 2026-11-20):
-          classic-only discovery, gamepads only for unlisted devices, a bonded
-          pad found discoverable has forgotten us so its stale bond is removed.
-  add     add a device nobody configured: classic + LE discovery, any HID
-          kind, and an existing bond is never touched.
+  repair   re-pair a configured pad (the default; the backend route sends no
+           mode): classic-only discovery, gamepads only for unlisted devices,
+           a bonded pad found discoverable has forgotten us so its stale bond
+           is removed.
+  address  pair exactly one address the person picked from the Bluetooth
+           screen's nearby list: classic + LE discovery, nothing else is ever
+           matched, an old bond is tried before it is replaced.
+The blind `add` mode (pair the first input-looking device) was retired
+2026-11-20; btPairing.mjs refuses it.
 """
 import re
 
-GAMEPAD_NAME = re.compile(r"8bitdo|xbox|dualshock|dualsense|pro controller|gamepad|controller|joy-?con", re.I)
+GAMEPAD_NAME = re.compile(r"gamepad|game pad|controller|joystick", re.I)
 HID_UUIDS = {"00001812-0000-1000-8000-00805f9b34fb",  # HID over GATT (LE)
              "00001124-0000-1000-8000-00805f9b34fb"}  # HID (classic)
 RETRYABLE = re.compile(r"AuthenticationFailed|AuthenticationRejected|AuthenticationCanceled|ConnectionAttemptFailed|Rejected|AlreadyExists|InProgress", re.I)
@@ -88,17 +92,26 @@ def compile_targets(raw):
             except re.error:
                 name_re = None
         prefix = str(t.get("macPrefix") or "").upper() or None
-        if not name_re and not prefix:
+        address = str(t.get("address") or "").upper() or None
+        if not name_re and not prefix and not address:
             continue
         pin = t.get("pin")
         out.append({"id": t.get("id"), "label": t.get("label"), "name_re": name_re,
-                    "prefix": prefix, "pin": str(pin) if pin not in (None, "") else None})
+                    "prefix": prefix, "address": address,
+                    "pin": str(pin) if pin not in (None, "") else None})
     return out
 
 
 def match(props, targets, mode="repair"):
-    """The matched target, a generic target for an acceptable unlisted device, or None."""
+    """The matched target, a generic target for an acceptable unlisted device, or None.
+
+    Address mode matches the picked address exactly and nothing else."""
     addr = str(props.get("Address", "")).upper()
+    if mode == "address":
+        for t in targets:
+            if t.get("address") and addr == t["address"]:
+                return t
+        return None
     name = _name(props)
     for t in targets:
         if t["prefix"] and addr.startswith(t["prefix"]):
@@ -108,12 +121,6 @@ def match(props, targets, mode="repair"):
     kind = classify_hid(props)
     if kind is None:
         return None
-    if mode == "add":
-        # classify_hid falls back to the name; add mode accepts any HID kind,
-        # so it needs real HID evidence first (repair mode keeps the name rule).
-        if not hid_evidence(props):
-            return None
-        return {"id": None, "label": None, "pin": None, "kind": kind}
     if kind == "gamepad" or _peripheral_gamepad_class(props) \
             or (name and GAMEPAD_NAME.search(name)):
         return {"id": None, "label": None, "pin": None, "kind": kind}
@@ -121,21 +128,47 @@ def match(props, targets, mode="repair"):
 
 
 def candidate_action(props, mode):
-    """'pair' | 'remove-stale' | 'skip' for a device seen live in this discovery."""
+    """What a window does with a matched device seen live.
+
+    repair:  'skip' (bonded and connected) | 'remove-stale' (bonded, not connected) | 'pair'
+    address: 'already-connected' | 'connect-first' (bonded, not connected: try the
+             old bond before replacing it) | 'pair'
+    """
     paired = bool(props.get("Paired", False))
-    if paired and bool(props.get("Connected", False)):
+    connected = bool(props.get("Connected", False))
+    if mode == "address":
+        if paired and connected:
+            return "already-connected"
+        return "connect-first" if paired else "pair"
+    if paired and connected:
         return "skip"  # in use: never break a working bond
-    if paired:
-        return "skip" if mode == "add" else "remove-stale"
-    return "pair"
+    return "remove-stale" if paired else "pair"
+
+
+def address_step(action, has_input, replaced):
+    """Address mode: what the window does with the picked device once found.
+
+    'done-paired'    bonded, connected and up as an input device already
+    'no-input'       connected but no input device: fail and remove nothing
+                     (Connect() would only fail AlreadyConnected, and
+                     replacing the bond would delete a working one)
+    'connect-first'  bonded, not connected: try the old bond once
+    'give-up'        that old bond was already replaced in this window
+    'pair'           not bonded: pair it
+    """
+    if action == "already-connected":
+        return "done-paired" if has_input else "no-input"
+    if action == "connect-first":
+        return "give-up" if replaced else "connect-first"
+    return action
 
 
 def may_remove_bond(mode, paired_now, made_here):
     """Whether a failed attempt may RemoveDevice.
 
-    Add mode never deletes a bond that existed before this window. A bond the
+    Address mode never deletes a bond that existed before this window. A bond the
     window's own Pair() just made (made_here) is half-made and is removed, or
-    it would show as paired and every later add window would skip it.
+    it would show as paired and every later address window would skip it.
     """
     return mode == "repair" or made_here or not paired_now
 
@@ -149,16 +182,16 @@ def paired_after_read_error(dbus_error_name):
 
 
 def is_retryable(error_name, mode):
-    """A Pair error worth remove-and-retry. In add mode AlreadyExists means the
+    """A Pair error worth remove-and-retry. In address mode AlreadyExists means the
     device is bonded already, so it is final (a retry would delete that bond)."""
     name = str(error_name or "")
     if not RETRYABLE.search(name):
         return False
-    return not (mode == "add" and "alreadyexists" in name.lower())
+    return not (mode == "address" and "alreadyexists" in name.lower())
 
 
 def discovery_transport(mode):
-    return "auto" if mode == "add" else "bredr"
+    return "auto" if mode == "address" else "bredr"
 
 
 def input_device_present(proc_text, mac, name=None):
@@ -185,3 +218,34 @@ def input_device_present(proc_text, mac, name=None):
         if not uniq and bluetooth and name and dev_name == name:
             return True
     return False
+
+
+ERROR_CODES = (
+    (re.compile(r"AuthenticationFailed|AuthenticationRejected", re.I), "auth-failed"),
+    (re.compile(r"AuthenticationCanceled", re.I), "auth-canceled"),
+    (re.compile(r"AuthenticationTimeout|NoReply|Timeout", re.I), "timeout"),
+    (re.compile(r"ConnectionAttemptFailed|PageTimeout|HostDown|NotAvailable", re.I), "unreachable"),
+    (re.compile(r"AlreadyExists", re.I), "already-paired"),
+    (re.compile(r"InProgress", re.I), "busy"),
+)
+
+
+def error_code(dbus_error_name):
+    """A short code for a D-Bus error name. The screen turns the code into a
+    plain sentence; the raw name stays in `message` for the logs."""
+    name = str(dbus_error_name or "")
+    for rx, code in ERROR_CODES:
+        if rx.search(name):
+            return code
+    return "unknown"
+
+
+def remove_after_no_input(made_here):
+    """A bond this window made that never became an input device is removed,
+    so the next try pairs from scratch. A bond from before the window stays."""
+    return bool(made_here)
+
+
+def format_passkey(passkey):
+    """BlueZ passkeys are shown as six digits, zero-padded."""
+    return f"{int(passkey) % 1000000:06d}"

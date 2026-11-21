@@ -1,0 +1,261 @@
+// useFitnessBluetooth — the fitness host's Bluetooth state and bus actions,
+// handed to the Bluetooth screen (BluetoothScreen) as one `bluetooth` object:
+// inventory, nearby search, pairing by address, forget. FitnessContext routes
+// the bus messages in BT_TOPICS to handleMessage and calls noteHealth on each
+// fitness.transport.health (how a silent search tells an old satellite from a
+// dead one).
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
+import { claimRemote } from '../lib/remoteButtons/remoteButtonHolds.js';
+import {
+  ADDRESS_PAIR_MS, PAIR_WINDOW_MS, SCAN_ANSWER_MS, SCAN_END_GRACE_MS, SCAN_WINDOW_MS,
+  buildInventoryRequest, buildPairRequest, buildRemoveRequest, buildScanRequest,
+  mergePairingProgress, mergeScanProgress, scanSilenceReason,
+} from './fitnessBtActions.js';
+
+export const BT_TOPICS = ['bt_inventory', 'bt.pair.progress', 'bt.remove.result', 'bt.scan.progress', 'bt.remote.key'];
+const PAIR_ANSWER_MS = 15000;
+// The pairing helper ends every window by its own cap (window + 120 s); a
+// pairing still open 10 s after that lost its `done` on the way.
+const PAIR_DONE_GRACE_MS = 130000;
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'fitness-bluetooth' });
+  return _logger;
+}
+
+export function useFitnessBluetooth({ send }) {
+  const sendRef = useRef(send);
+  sendRef.current = send;
+  const seq = useRef(0);
+  const lastHealthAt = useRef(0);
+  const timers = useRef(new Set());
+  const [inventory, setInventory] = useState(null);
+  const [pairing, setPairing] = useState(null);
+  const [forgetResult, setForgetResult] = useState(null);
+  const [scan, setScan] = useState(null);
+  const scanRef = useRef(null);
+  scanRef.current = scan;
+  // Listeners for `bt.remote.key` (a press tagged with the remote's Bluetooth
+  // address, from the garage box). Not state: presses must not re-render the host.
+  const remoteKeyListeners = useRef(new Set());
+  // Claims (address -> handlers, newest last): while a remote is claimed its
+  // presses go ONLY to the newest claimant, never to the listeners above, so no
+  // other remote-mapping layer acts on them (the arcade claims a remote that
+  // drives the running game).
+  const remoteKeyClaims = useRef(new Map());
+
+  useEffect(() => () => {
+    timers.current.forEach(clearTimeout);
+    timers.current.clear();
+  }, []);
+
+  // These read refs only, so the [] callbacks below never go stale.
+  const nextId = (prefix) => `${prefix}-${Date.now().toString(36)}-${++seq.current}`;
+  const post = (msg) => {
+    try { sendRef.current?.(msg); }
+    catch (err) { logger().warn('fitness.bt.send-failed', { topic: msg.topic, error: err?.message }); }
+  };
+  const later = (fn, ms) => {
+    const t = setTimeout(() => { timers.current.delete(t); fn(); }, ms);
+    timers.current.add(t);
+  };
+
+  const handleMessage = useCallback((data) => {
+    switch (data?.topic) {
+      case 'bt_inventory':
+        setInventory(Array.isArray(data.devices) ? data.devices : []);
+        return true;
+      case 'bt.pair.progress':
+        logger().info('fitness.bt.pair-progress', {
+          requestId: data.requestId, phase: data.phase, address: data.device?.address, controllerId: data.controllerId,
+          attempt: data.attempt, reason: data.reason, code: data.code, message: data.message, mode: data.mode,
+        });
+        setPairing((cur) => {
+          const next = mergePairingProgress(cur, data);
+          if (next.satelliteOutdated && !cur?.satelliteOutdated) {
+            logger().warn('fitness.bt.satellite-outdated', { requestId: data.requestId, phase: data.phase, requestedMode: cur?.mode });
+          }
+          return next;
+        });
+        return true;
+      case 'bt.remove.result':
+        logger().info('fitness.bt.remove-result', { address: data.address, success: data.success, error: data.error });
+        setForgetResult({ address: data.address, success: !!data.success, error: data.error || null });
+        return true;
+      case 'bt.remote.key': {
+        const claimants = remoteKeyClaims.current.get(String(data.address || '').toUpperCase());
+        if (claimants && claimants.length > 0) {
+          try { claimants[claimants.length - 1](data); } catch (err) { logger().warn('fitness.bt.remote-key-claim-failed', { error: err?.message }); }
+          return true;
+        }
+        remoteKeyListeners.current.forEach((fn) => {
+          try { fn(data); } catch (err) { logger().warn('fitness.bt.remote-key-listener-failed', { error: err?.message }); }
+        });
+        return true;
+      }
+      case 'bt.scan.progress':
+        if (data.phase === 'nearby') {
+          logger().sampled?.('fitness.bt.scan-nearby', {
+            requestId: data.requestId, count: Array.isArray(data.devices) ? data.devices.length : 0,
+          }, { maxPerMinute: 6, aggregate: true });
+        } else {
+          logger().info('fitness.bt.scan-progress', { requestId: data.requestId, phase: data.phase, reason: data.reason, message: data.message });
+        }
+        setScan((cur) => {
+          const next = mergeScanProgress(cur, data, Date.now());
+          if (data.phase === 'scanning' && next !== cur && next?.phase === 'scanning') watchScanEnd(next.requestId, next.endsAt);
+          return next;
+        });
+        return true;
+      default:
+        return false;
+    }
+  }, []);
+
+  // A search whose `done` never arrives (lost on the bus, satellite gone) ends
+  // SCAN_END_GRACE_MS after its end time, so the screen never counts forever.
+  function watchScanEnd(requestId, endsAt) {
+    const check = () => {
+      setScan((cur) => {
+        if (!cur || cur.requestId !== requestId || cur.phase === 'done') return cur;
+        if (cur.endsAt && Date.now() < cur.endsAt + SCAN_END_GRACE_MS) {
+          later(check, cur.endsAt + SCAN_END_GRACE_MS - Date.now());
+          return cur;
+        }
+        logger().warn('fitness.bt.scan-no-done', { requestId });
+        return { ...cur, phase: 'done', optimistic: false, reason: 'no-response', devices: [] };
+      });
+    };
+    later(check, Math.max(0, (Number(endsAt) || Date.now()) + SCAN_END_GRACE_MS - Date.now()));
+  }
+
+  /** The bus reconnected: a search or a pairing still running here may have lost its `done`. */
+  const resetAfterReconnect = useCallback(() => {
+    setScan((cur) => {
+      if (!cur || cur.phase === 'done') return cur;
+      logger().info('fitness.bt.scan-reset', { requestId: cur.requestId, phase: cur.phase });
+      return { ...cur, phase: 'done', optimistic: false, reason: 'interrupted', devices: [] };
+    });
+    setPairing((cur) => {
+      if (!cur || cur.phase === 'done') return cur;
+      logger().info('fitness.bt.pair-reset', { requestId: cur.requestId, phase: cur.phase });
+      return { phase: 'done', paired: [], reason: 'interrupted', requestId: cur.requestId, mode: cur.mode, device: cur.device };
+    });
+  }, []);
+
+  const noteHealth = useCallback(() => { lastHealthAt.current = Date.now(); }, []);
+
+  const requestInventory = useCallback(() => {
+    const requestId = nextId('inv');
+    post(buildInventoryRequest({ requestId }));
+    logger().debug('fitness.bt.inventory-request', { requestId });
+  }, []);
+
+  const startScan = useCallback(({ durationMs = SCAN_WINDOW_MS } = {}) => {
+    const requestId = nextId('scan');
+    const next = { phase: 'starting', requestId, optimistic: true, devices: [], endsAt: null, reason: null };
+    scanRef.current = next;
+    setScan(next);
+    post(buildScanRequest({ requestId, action: 'start', durationMs }));
+    logger().info('fitness.bt.scan-request', { requestId, durationMs });
+    // A current satellite answers within a second with `scanning`. Silence
+    // from a live satellite means it predates searches.
+    later(() => {
+      setScan((cur) => {
+        if (!cur || cur.requestId !== requestId) return cur;
+        // Stopped before any answer: it is over, whatever the satellite's age.
+        if (cur.phase === 'stopping') return { ...cur, phase: 'done', optimistic: false, reason: 'stopped', devices: [] };
+        if (!cur.optimistic) return cur;
+        const reason = scanSilenceReason({ lastHealthAt: lastHealthAt.current, now: Date.now() });
+        logger().warn('fitness.bt.scan-no-response', { requestId, reason });
+        return { ...cur, phase: 'done', optimistic: false, reason, devices: [] };
+      });
+    }, SCAN_ANSWER_MS);
+    return requestId;
+  }, []);
+
+  const stopScan = useCallback((reason = 'user') => {
+    const cur = scanRef.current;
+    if (!cur || cur.phase === 'done' || cur.phase === 'stopping') return;
+    post(buildScanRequest({ requestId: cur.requestId, action: 'stop' }));
+    logger().info('fitness.bt.scan-stop', { requestId: cur.requestId, reason });
+    const next = { ...cur, phase: 'stopping', optimistic: false };
+    scanRef.current = next;
+    setScan(next);
+  }, []);
+
+  const pairController = useCallback(({ targets = [], controllerId = null, durationMs = PAIR_WINDOW_MS, mode = 'repair', address } = {}) => {
+    const requestId = nextId('pair');
+    setPairing({ phase: 'scanning', durationMs, requestId, optimistic: true, mode, ...(address ? { device: { address: String(address).toUpperCase() } } : {}) });
+    post(buildPairRequest({ requestId, durationMs, targets, mode, address }));
+    logger().info('fitness.bt.pair-request', { requestId, durationMs, controllerId, mode, address: address || null, targets: targets.length });
+    // The garage box answers within a second with its own `scanning`. Silence
+    // means it is offline: say so instead of spinning forever.
+    later(() => {
+      setPairing((cur) => {
+        if (!cur || cur.requestId !== requestId || !cur.optimistic) return cur;
+        logger().warn('fitness.bt.pair-no-response', { requestId, mode: cur.mode });
+        return { phase: 'done', paired: [], reason: 'no-response', requestId, mode: cur.mode, device: cur.device };
+      });
+    }, PAIR_ANSWER_MS);
+    // Answered but never finished: without this the screen stays busy (Forget,
+    // Pair again and picks disabled) until the page reloads.
+    later(() => {
+      setPairing((cur) => {
+        if (!cur || cur.requestId !== requestId || cur.phase === 'done') return cur;
+        logger().warn('fitness.bt.pair-no-done', { requestId, phase: cur.phase, mode: cur.mode });
+        return { phase: 'done', paired: [], reason: 'no-response', requestId, mode: cur.mode, device: cur.device };
+      });
+    }, durationMs + PAIR_DONE_GRACE_MS);
+    return requestId;
+  }, []);
+
+  const pairAddress = useCallback(({ address, controllerId = null, label = null, pin = null }) => pairController({
+    mode: 'address', address, controllerId, durationMs: ADDRESS_PAIR_MS,
+    targets: [{ id: controllerId, label, ...(pin ? { pin } : {}) }],
+  }), [pairController]);
+
+  const forget = useCallback((address) => {
+    setForgetResult(null);
+    const requestId = nextId('forget');
+    post(buildRemoveRequest({ requestId, address }));
+    logger().info('fitness.bt.remove-request', { requestId, address });
+    return requestId;
+  }, []);
+
+  const subscribeRemoteKeys = useCallback((fn) => {
+    remoteKeyListeners.current.add(fn);
+    return () => remoteKeyListeners.current.delete(fn);
+  }, []);
+
+  /** Take one remote's presses exclusively until the returned release is called. */
+  const claimRemoteKeys = useCallback((address, fn) => {
+    const a = String(address || '').toUpperCase();
+    const claims = remoteKeyClaims.current;
+    if (!claims.has(a)) claims.set(a, []);
+    claims.get(a).push(fn);
+    // Also on the shared holds contract, so layers that check isRemoteHeld stand down.
+    const releaseHold = claimRemote(a);
+    logger().debug('fitness.bt.remote-claim', { address: a, claimants: claims.get(a).length });
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      releaseHold();
+      const list = claims.get(a);
+      if (!list) return;
+      const i = list.lastIndexOf(fn);
+      if (i >= 0) list.splice(i, 1);
+      if (list.length === 0) claims.delete(a);
+      logger().debug('fitness.bt.remote-unclaim', { address: a, claimants: list.length });
+    };
+  }, []);
+
+  const bluetooth = useMemo(() => ({
+    inventory, scan, pairing, forgetResult, requestInventory, startScan, stopScan, pairAddress, forget, subscribeRemoteKeys, claimRemoteKeys,
+  }), [inventory, scan, pairing, forgetResult, requestInventory, startScan, stopScan, pairAddress, forget, subscribeRemoteKeys, claimRemoteKeys]);
+
+  return { bluetooth, handleMessage, noteHealth, pairController, resetAfterReconnect };
+}

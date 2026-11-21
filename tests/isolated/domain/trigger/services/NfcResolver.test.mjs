@@ -245,14 +245,14 @@ describe('NfcResolver — metadata-only tags', () => {
       const registry = {
         locations: { livingroom: { action: 'play-next', target: 'livingroom-tv' } },
         tags: {
-          '0428d471cc2a81': {
+          '04f00000000003': {
             global: { scanned_at: '2026-05-10 11:51:19', note: 'Eyes shuts', plex: '621568' },
             overrides: {},
           },
         },
       };
       const intent = NfcResolver.resolve({
-        location: 'livingroom', value: '04_28_D4_71_CC_2A_81',
+        location: 'livingroom', value: '04_F0_00_00_00_00_03',
         registry, contentIdResolver: makeContentIdResolver(),
       });
       expect(intent).not.toBeNull();
@@ -283,13 +283,13 @@ describe('school learner cards', () => {
       office: { target: 'office-tv', action: 'play-next', learner_action: null, defaults: {} },
     },
     tags: {
-      '048ba600cc2a81': { global: { note: 'user_4 personal card', school_learner: 'user_4' }, overrides: {} },
+      '04f00000000006': { global: { note: 'user_4 personal card', school_learner: 'user_4' }, overrides: {} },
     },
   };
 
   it('resolves to the reader location learner_action, carrying the learner', () => {
     const intent = NfcResolver.resolve({
-      location: 'study', value: '04:8B:A6:00:CC:2A:81', registry,
+      location: 'study', value: '04:F0:00:00:00:00:06', registry,
       contentIdResolver: makeContentIdResolver(),
     });
     expect(intent).toMatchObject({ action: 'print-agenda', learnerId: 'user_4' });
@@ -297,7 +297,7 @@ describe('school learner cards', () => {
 
   it('carries the reader it was tapped at, since the reader is part of the answer', () => {
     const intent = NfcResolver.resolve({
-      location: 'livingroom', value: '048ba600cc2a81', registry,
+      location: 'livingroom', value: '04f00000000006', registry,
       contentIdResolver: makeContentIdResolver(),
     });
     expect(intent.location).toBe('livingroom');
@@ -305,7 +305,7 @@ describe('school learner cards', () => {
 
   it('gives the SAME card a different action at a different reader', () => {
     const intent = NfcResolver.resolve({
-      location: 'livingroom', value: '048ba600cc2a81', registry,
+      location: 'livingroom', value: '04f00000000006', registry,
       contentIdResolver: makeContentIdResolver(),
     });
     expect(intent.action).toBe('reading-session');
@@ -314,14 +314,14 @@ describe('school learner cards', () => {
 
   it('resolves to null at a reader that declares no learner_action', () => {
     expect(NfcResolver.resolve({
-      location: 'office', value: '048ba600cc2a81', registry,
+      location: 'office', value: '04f00000000006', registry,
       contentIdResolver: makeContentIdResolver(),
     })).toBeNull();
   });
 
   it('never leaks school_learner into params', () => {
     const intent = NfcResolver.resolve({
-      location: 'study', value: '048ba600cc2a81', registry,
+      location: 'study', value: '04f00000000006', registry,
       contentIdResolver: makeContentIdResolver(),
     });
     expect(intent.params).not.toHaveProperty('school_learner');
@@ -331,7 +331,7 @@ describe('school learner cards', () => {
 describe('school learner cards — config-surface guards', () => {
   const learnerRegistry = (locations, tagGlobal) => ({
     locations,
-    tags: { '048ba600cc2a81': { global: tagGlobal, overrides: {} } },
+    tags: { '04f00000000006': { global: tagGlobal, overrides: {} } },
   });
 
   // A learner card is a TAG fact. Reading it from `merged` would let a
@@ -361,14 +361,14 @@ describe('school learner cards — config-surface guards', () => {
     const registry = {
       locations: { study: { target: 'portal', learner_action: 'print-agenda', defaults: {} } },
       tags: {
-        '048ba600cc2a81': {
+        '04f00000000006': {
           global: { school_learner: 'user_4' },
           overrides: { study: { school_learner: 'user_5' } },
         },
       },
     };
     const intent = NfcResolver.resolve({
-      location: 'study', value: '048ba600cc2a81', registry,
+      location: 'study', value: '04f00000000006', registry,
       contentIdResolver: makeContentIdResolver(),
     });
     expect(intent.learnerId).toBe('user_5');
@@ -376,7 +376,7 @@ describe('school learner cards — config-surface guards', () => {
 
   it('accepts an unquoted numeric learner id as a string', () => {
     const intent = NfcResolver.resolve({
-      location: 'study', value: '048ba600cc2a81',
+      location: 'study', value: '04f00000000006',
       registry: learnerRegistry(
         { study: { target: 'portal', learner_action: 'print-agenda', defaults: {} } },
         { school_learner: 42 }
@@ -401,14 +401,14 @@ describe('school learner cards — config-surface guards', () => {
       { school_learner: value }
     );
     expect(() => NfcResolver.resolve({
-      location: 'study', value: '048ba600cc2a81', registry,
+      location: 'study', value: '04f00000000006', registry,
       contentIdResolver: makeContentIdResolver(),
     })).toThrow(/school_learner/i);
   });
 
   it('trims a padded learner id', () => {
     const intent = NfcResolver.resolve({
-      location: 'study', value: '048ba600cc2a81',
+      location: 'study', value: '04f00000000006',
       registry: learnerRegistry(
         { study: { target: 'portal', learner_action: 'print-agenda', defaults: {} } },
         { school_learner: '  user_4  ' }
@@ -431,11 +431,11 @@ describe('school learner cards — config-surface guards', () => {
           defaults: { plex: 620707, files: 'chime.mp3' },
         },
       },
-      tags: { '048ba600cc2a81': { global: { school_learner: 'user_4' }, overrides: {} } },
+      tags: { '04f00000000006': { global: { school_learner: 'user_4' }, overrides: {} } },
     };
     const bothResolve = { resolve: (c) => /^(plex|files):/.test(c) ? c : null };
     const intent = NfcResolver.resolve({
-      location: 'study', value: '048ba600cc2a81', registry,
+      location: 'study', value: '04f00000000006', registry,
       contentIdResolver: bothResolve,
     });
     expect(intent).toMatchObject({ action: 'print-agenda', learnerId: 'user_4' });

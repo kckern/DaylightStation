@@ -26,6 +26,14 @@ final class CameraAsk {
         return false;
     }
 
+    enum Reply { IGNORE, OPEN, DENIED, RETRY }
+
+    static Reply afterReply(boolean waiting, boolean granted, boolean ownerVerified) {
+        if (!waiting) return Reply.IGNORE;
+        if (!granted) return Reply.DENIED;
+        return ownerVerified ? Reply.OPEN : Reply.RETRY;
+    }
+
     /** Whether the dialog's answer gave the camera. */
     static boolean granted(String[] permissions, int[] results) {
         if (permissions == null || results == null) return false;

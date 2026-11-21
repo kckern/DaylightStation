@@ -67,6 +67,41 @@ a single collection gets the tabless grid unchanged. The last tab a player
 picked is remembered per device, so returning to Sheet Music opens where they
 left off.
 
+### Posters
+
+A score's poster is the same-name picture beside it in the library
+(`fur-elise.jpg` next to `fur-elise.musicxml`). The tile, the loading splash and
+the home desk all use it, and it is hidden from the listing as the score's
+sidecar. Raster scans win: `.jpg`, `.jpeg`, `.png`, `.webp`, then `.svg`. With no
+poster the grid draws its engraved plate stand-in.
+
+A score without a scan can get a **generated** SVG poster from the admin
+(Content → Sheet music, see [Admin: sheet music](#admin-sheet-music)): **Generate poster** on a score's page cuts the first two
+systems from the engraving on screen, and **Generate missing posters** on the
+library page walks the visible scores that have none, one engraving at a time in
+an off-screen host, with a progress line, Stop, and a list of failures. Both
+upload to `POST /api/v1/admin/sheet-music/poster?id=<score id>` (body: the SVG
+text as `image/svg+xml`, at most 300 KB), which writes `<basename>.svg` beside
+the score. Only `.musicxml`/`.mxl` scores take a poster. The server accepts plain
+static SVG by allow-list (`portable/music/svgSafety.mjs`): UTF-8 text with no XML
+declaration, byte-order mark or control characters; an `<svg>` root in the SVG
+namespace, and no namespace but SVG and XLink; only the shape, text and grouping
+elements VexFlow draws with; only presentation and geometry attributes (no
+`style`, no `on*`), with no character references in their values; and no
+references at all (no `<use>`, `href` or `clip-path`: a kilobyte of nested
+`<use>` can hang the kiosk's browser, and VexFlow never draws one). It refuses a score that
+has a scan (`has-scan`, it would never show) and never replaces an SVG it did not
+generate (`poster-exists`; a generated poster carries
+`data-daylight-poster="generated"` on its root element). The browser serializer
+strips the engraving to the same allow-lists before uploading. Fonts are not
+inlined: the music glyphs are paths, but measure numbers and other text stay
+`<text>` and render in the viewing device's own fonts. The stream route serves
+every SVG as `image/svg+xml; charset=utf-8` with
+`Content-Security-Policy: sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:`,
+so opening one directly runs nothing. Logs:
+`piano.sheetmusic.poster-saved`, `.poster-rejected`; admin
+`admin.sheetmusic.poster-generated`, `.poster-failed`, `.posters-start|done|cancelled`.
+
 ## Modes — a learning progression
 
 Four modes, **Listen · Learn · Polish · Perform**, selected from the header's
@@ -429,8 +464,11 @@ their own resume slot. When every passage has Silver, the score offers Gold.
 **Play it on your own** is the Silver check: all playable parts, the learner's own
 pace, no metronome, no lit keys and no stuck-ladder note names. It can be attempted
 at any time. Two straight misses on a Silver step or drill offer **Come back to this
-later**, which skips that passage until the next household day. If every remaining
-passage is set aside, the earliest returns. The check ends as a miss after
+later**, which skips that passage until the next household day, or until the
+learner starts a take on it again: choosing a set-aside passage from the rail brings
+it back, smaller steps and all (until 2026-11-20 a passage reopened that way got no
+smaller steps for the rest of the day, only **Try again** on the whole check). If
+every remaining passage is set aside, the earliest returns. The check ends as a miss after
 `stallSeconds` with no newly matched note, including when the first note is never found.
 
 Policy comes from `sheetmusic.learn.certification` and resolves through the same
@@ -707,7 +745,53 @@ household-local day, alongside continuing the unfinished work.
 Each deliberate start installs one take in the existing LearnLab/ExerciseRun.
 Free practice waits for and counts the first expected note. Timed practice starts
 its visible, audible count-in without a sacrificial arming note. During the
-count-in, input is excluded from grading. Timed assessment receives individual
+count-in, input is excluded from grading.
+
+**A clear start (cued Learn passages).** Any key **arms** the take; it is never
+graded. The count-in starts when every key held at arming is released, or 1 s
+after arming (`ARM_RELEASE_MS`), whichever is first, and then waits
+`min(one click, 600 ms)` (`START_GAP_MAX_MS`, never less than the click pre-roll)
+before the first click — so the first click is not hidden under the arming key
+press. Keys pressed while armed are ignored and do not re-arm
+(`piano.exercise-input-ignored`, `reason: 'armed'`). The count band appears in its
+armed form the moment the key lands (`data-start-armed` on the run), and the
+standing line reads "Listen for the clicks." `piano.exercise-armed` records the
+arming; `piano.exercise-countdown-started` carries `reason` (`armed-released` or
+`armed-timeout`), `prerollMs`, `armedAt` and `waitedMs`. A pause or a new take
+drops the arming and its onsets. Other cued callers (exercises, gates) still start their
+count-in on the arming key itself; `startOnReady` (no live caller) starts with no
+arming key and no armed state.
+
+**Shifted entry (cued Learn passages).** ExerciseRun keeps a raw onset log of the
+take (`{ midi, t, phase }`, MIDI timestamps, from the arming key until the result,
+count-in onsets included and flagged `armed` / `countdown` / `running` / `after`).
+A failed take is tested against the expectation shifted by k ∈ {−2, −1, +1, +2}
+clicks (`performance/entryShift.js`): a shift is named when it matches ≥ 75% of
+the notes the log could hold at that shift (and at least N − |k|), the unshifted
+take matches less than that, the shift does strictly better than no shift, and
+the shift explains the **entry**: the first note was played at its shifted target,
+with no onset of it on time before that. (On repeated pitches such as Jingle
+Bells' E E E, a steady rush or drag from an on-time start would otherwise line up
+with a whole-beat shift.)
+"One beat" is one count-in click: at a tempo where the count-in coarsens to half
+notes, a quarter late is not a whole-beat shift. When the take's first two onsets
+already sit a click or two late (onset i against note i), the result waits for the last note (until its
+shifted window closes, at most two clicks after the last target); otherwise
+timing is unchanged. The card then reads "You started one beat late — start on
+the click after the count" or "… early — wait for the click after the count"
+("two beats" for |k| = 2) in place of the timing line, and the coached title is
+**Start on the click** / **Wait for the click** (`coachFeedback` reasons
+`entry-late` / `entry-early`). Pass/fail and every score are unchanged. The result
+carries `entryShift: { beats, matched, possible }` into the saved attempt, and a
+named shift never triggers the smaller-task recovery: the coach offers the same
+step again. `piano.exercise-timing-summary`, `piano.learn.coach.take` and
+`piano.learn.terminal` gain `entryShiftBeats`: ±k for a named shift, `0` when the
+take was tested and none was named, `null` when it was not tested (a passed take,
+or a run outside cued Learn). A tested take's result carries `entryShift`
+(`{ beats: 0 }` when none was named); `entryShiftBeats(result)` in
+`shared/music/learnCoach.mjs` reads it the same way. The click keeps sounding
+while a late entry's last note is awaited, and `piano.exercise-onset-log`
+records the test and the onsets as `[midi, ms from the first click, phase]`. Timed assessment receives individual
 fresh MIDI attacks with original timestamps; held-set observations remain
 limited to the cursor/held contracts. Malformed timed input is an operational
 failure, never an extra wrong note.
@@ -729,11 +813,23 @@ graded timing.
 
 After two equivalent valid failures, offer a smaller task deliberately. Prioritize
 missing/extra notes in the measure with the greatest normalized burden, breaking
-ties by earlier score order; without spans use the first half. Continued
-coordination difficulty can narrow to a hand. Timing-only difficulty steps down a
+ties by earlier score order; a take that stopped early (the stall timer, or the
+learner) targets the first bar it did not finish. The drill is that bar **with the
+bar before it**, so it practises the way into the hard spot; when that pair is
+already the task, the bar alone. Without spans use the first half. Continued
+coordination difficulty on one bar narrows to its harder hand. Timing-only difficulty steps down a
 named tempo stage (100, 75, 60, 50, 40), with an automatic floor of 40%, then shortens the range. There
-are at most two recovery levels. Two successful recovery takes recommend the
-parent again without completing its quota. Manual tempo choices under Change
+are at most three recovery levels (`MAX_DRILL_DEPTH`): for a stall in a passage's
+last bar, bars 3–4 of 4, then bar 4, then bar 4 with one hand.
+
+Two successful takes out of the last three on a drill move it on without completing
+the parent's quota. A drill that is its parent's closing bars, at the parent's hands
+and pace, **back-chains** (`reason: 'back-chain'`): it grows one bar toward the
+parent's start (bars 3–4, then 2–4) and returns to the parent only when the next bar
+back would be the parent itself. Every take of the chain ends on the bars already
+learned, so the hard spot is never met tired. Any other drill (a middle bar, one
+hand, a slower tempo) returns to its parent directly. The pass card names a drill
+that follows by its bars ("Next: Bars 2–4"). Manual tempo choices under Change
 practice remain available at 15, 25, 40, 60, 80 and 100 percent. Preparation shows
 the starting effective BPM as well as its percentage of score tempo.
 
@@ -773,6 +869,15 @@ level is stored under `piano.learn.click-level`; unavailable browser storage
 still permits a selection for the current lab visit. Changing loudness updates
 future scheduled clicks without recreating the scheduler, restarting the take,
 or moving its anchored beat grid. Callers outside Learn keep the default gain.
+
+On a **cued Learn passage** the count-in counts **up** with the clicks: a band
+across the top of the stage (`CountUpOverlay`, `countUpPresentation`) holds one
+numbered pip per click, lit as each click sounds, the first accented; during the
+last click it says **next click: play**, so the cue arrives before the first beat
+rather than on it. Nothing is shown on the first beat (no PLAY), and the music is
+not greyed (`data-count-style="up"`), because the child is about to read the first
+notes. The clicks are the plan's (`exerciseCountInPlan`, ≤ 4), whatever the meter.
+Everything below about the countdown describes every other timed run.
 
 The timed run counts at most four pulses on the ask's selected musical grid,
 then displays a brief **PLAY** cue at the first graded beat. The stage-bounded
@@ -1095,8 +1200,14 @@ turns it back on.
 stored in the practice record. "All Gold" is read from the piece log's dated
 `gold` entry (the one the `piano-piece` milestone pays from) or, for a piece
 finished before the log existed, the saved coach summary showing every passage
-Gold. What was earned is appended to the [piece log](#piece-log-and-the-piece-gems)
-as `polish-gem` / `polish-diamond`, which is how the economy's milestones date it.
+Gold. When the score has admin-approved Learn segments for the XML the child
+practised, that second check projects the record onto them instead of trusting
+the saved summary (the same projection as the [home strip](home-desk.md#data)):
+a passage the admin cut differently must be earned again. A piece Gold already
+recorded in the piece log survives re-segmentation: earned credit is never taken
+back. What was earned is appended to the
+[piece log](#piece-log-and-the-piece-gems) as `polish-gem` / `polish-diamond`,
+which is how the economy's milestones date it.
 `reason` names the verdict: `qualified`, `guest`, `invalid-run`, `wrong-score`,
 `incomplete`, `metronome-off`, `one-hand`, `low-score`, `slow-tempo`,
 `not-all-gold` or `log-unavailable`. The check never fails the write it rides on.
@@ -1320,6 +1431,258 @@ pianos:
       clickLeadMs: 280   # written by Click timing; null/absent = not measured
 ```
 
+## Admin: sheet music
+
+Admin → Content → **Sheet music** (`/admin/content/sheet-music`) manages the score
+library and the **Learn file** of each score: the segments Learn teaches, cut by a
+grown-up instead of generated by the kiosk. Code: `browser/admin/` (pages, editor,
+proposals, crops), `server/application/SheetMusicAdminService.mjs`,
+`server/application/ProposeLearnSegments.mjs`, `server/api/admin/sheetMusic.mjs`,
+`portable/music/sheetMusicLearnFile.mjs`, `portable/music/phraseSegments.mjs` (all
+under `__app_modules/learning/piano/`).
+
+### Library
+
+One row per score in the configured collections (`sheetmusic.collections`):
+title and composer from the score header, format (MusicXML or MXL), poster
+(`scan`, `generated` or `none`), Learn state (`none`, `draft`, `approved`,
+`approved + draft`, `stale`), the learners with Silver or Gold on any passage, and a
+row error when the file, its cover, its Learn file or a practice record cannot be
+read (each part fails on its own). Filters: All, No poster, No segments, Draft
+pending, Stale, each with its count. **Generate missing posters** runs from here
+(see [Posters](#posters)).
+
+### Upload
+
+**Upload score** takes one `.musicxml` (at most 32 MB) or `.mxl` (at most 16 MB)
+into one of the configured library folders: a folder is offered only when a
+collection ref names it directly (`files:docs/sheet-music/<folder>`). The file name
+is suggested from the score's title and composer; a typed name must be lowercase
+letters, digits and hyphens, start with a letter or digit, and keep the uploaded
+extension. The bytes are stored as uploaded and never overwrite anything.
+Practice records and Learn files are keyed by a slug of the id (at most 120
+characters), so an id whose slug matches another score's is refused too.
+
+Refusals (`POST /upload`, `{ error: code }`): `invalid-request` (400; no file, a
+bad multipart body, a file under another field name), `bad-folder` and
+`bad-filename` (400), `basename-exists` (409; the same stem in either format is
+already in the folder) and `slug-collides` (409), `SCORE_TOO_LARGE` (413),
+`bad-extension` (415), and 422 for `bad-mxl`, `not-xml`, `timewise` (export it
+as partwise), `not-partwise`, `no-notes` and `slug-too-long`.
+
+### The Learn file
+
+`<household>/piano/sheetmusic/<practiceKey>.yml`, one per library score (the key
+is `practiceKeyOfScore(id)`, the same slug as the practice records):
+
+```yaml
+version: 1
+scoreId: files:docs/sheet-music/classical/fur-elise.musicxml
+contentSha256: 3f1c…            # the score bytes the approved segments were cut against
+segments:                       # approved; what the kiosk plays
+  - { id: a, start: 0, end: 3, parts: [rh, lh] }
+  - { id: b, start: 4, end: 7, name: Bridge, parts: [rh, lh] }
+approved:
+  at: 2026-11-20T10:00:00.000Z
+  proposal: { scorer: manual, … }   # the draft's proposal, kept with the approval
+draft:                          # admin-only; the kiosk never sees it
+  segments: [ … ]
+  proposal: { … }
+```
+
+- `start` and `end` are inclusive **positions in the kiosk's `layout.measures`**
+  (`buildMeasures(steps)`), not printed bar numbers. A bar with no onsets (all
+  rests) has no position, so positions and printed numbers can differ.
+- `parts` are the hands the kiosk computes for those bars (`playableParts`, via
+  `fillParts` in `browser/admin/scorePlan.js`), written by the admin on every
+  save so the home strip and Polish agree with the kiosk. The page will not save a
+  segment with no notes for the kiosk to play.
+- A segment may also carry `name` (shown instead of "Segment N") and `ladder`.
+- **Precedence**: household `sheetmusic.learn.pieces.<scoreId>.segments` beats an
+  approved file (the score page warns when that entry exists), which beats the
+  kiosk's generated segments.
+
+`proposal` records how a draft was made; the server keeps only these keys
+(`cleanProposal`):
+
+| Key | Meaning |
+|---|---|
+| `scorer` | `manual` (cut by hand), `heuristic` or `jev` |
+| `model`, `at` | Jev's model id (null for the heuristic) and when it was made |
+| `edited` | `true` once a scorer's cuts were changed by hand (renames do not count) |
+| `boundaries` | `{ k: p }`, the probability a phrase ends after position `k` |
+| `featureKeys`, `features` | the barline features as numeric rows, one row per barline (at most `measureCount − 1`, each exactly `featureKeys` long) |
+| `beatsPerMeasure` | quarter notes per bar for bars with no score timing |
+| `contentSha256` | the score bytes the proposal was computed on |
+| `seams` | barlines whose Jev picture was two pieces joined (a system break or jump) |
+| `failedCalls`, `failedBarlines` | Jev batches and barlines that got no answer |
+
+Every draft carries `featureKeys`, `features`, `seams` and `contentSha256`,
+hand-made ones included, so calibration can re-score them later. Stored
+boundaries show on the strip only while `contentSha256` matches the score.
+
+### How the kiosk reads it
+
+`GET /api/v1/piano/sheet-music/learn?id=<score id>` answers
+`{ segments, contentSha256 }`, or `{}` when nothing valid is approved. The draft
+and approval metadata stay on the server. Stored segments that do not validate are
+logged as `piano.sheetmusic.learn-invalid` and answered `{}`; a read failure is a
+500, never `{}`.
+
+The score page fetches this alongside the XML and does not open until both have
+settled. Progress is keyed by bar range, so opening on generated segments while
+approved ones exist would let a saved take rewrite the child's summary: a failed
+fetch gets one retry and then shows the same "Could not load this score. Try
+again" screen as an XML failure. The player applies the segments only when
+`contentSha256` matches the XML it loaded (`score.learn.sidecar-applied`);
+otherwise it logs `score.learn.sidecar-stale` and generates its own. The home
+desk strip and the Polish reward follow the approved segments the same way (see
+`home-desk.md`).
+
+### Editing, approving, reverting
+
+The score page engraves the score with the kiosk's own renderer and indexing,
+overlays the segments on the engraving, and shows a **measure strip**: one cell
+per position, the segments as bands below. In edit mode:
+
+- a scissors button in a barline gap splits a segment there;
+- a handle between two touching segments moves their shared boundary (drag it, or
+  focus it and use the arrow keys); a handle on an edge that borders uncovered
+  bars moves that edge;
+- each run of uncovered bars gets an **Add segment** button;
+- selecting a band opens rename, **Merge with next** and remove.
+
+Errors show live (overlap, out of range, a segment with no notes, an empty draft),
+and uncovered bars get a warning. **Save draft** writes `draft` only; the kiosk
+keeps playing the approved segments. **Approve** saves first when the draft is
+unsaved, or when its stored hands no longer match what the kiosk computes, then
+shows the impact: per learner, the passages whose bar range no longer exists
+(their Silver and Gold are orphaned, not deleted: restoring the same range brings
+them back) and whether an all-Gold piece stops being all Gold. Approval is pinned
+to the reviewed draft (`draftRevision`); if another tab changed it, the server
+answers `draft-changed` and the page reloads. Approving stamps `contentSha256`
+from a fresh read of the score and moves the draft to `segments`, keeping its
+proposal under `approved`. When the score file later changes, the library shows
+**stale**, the kiosk ignores the file, and the page asks for a new approval.
+
+**Revert to generated** removes the approved segments (the draft stays). Its
+dialog shows the impact against the generated plan, which only the browser can
+compute (`POST /impact`).
+
+### Proposals
+
+**Propose segments** cuts the piece at phrase ends. It asks before replacing
+unsaved edits or a stored draft it would change, and nothing is saved until
+**Save draft**. Each barline's p is shown under the strip (below 0.6 is drawn
+weak).
+
+**Features** (`barlineFeatures`, one record per barline after position k):
+`tailGapQuarters` and `tailGapRatio` (the gap between the last melody onset in k
+and the first in k+1, as a fraction of bar k's length from the score's own bar
+timing), `sectionStart` (a rehearsal mark starts k+1), `bassMotion` (semitones
+from the lowest bass-staff note at k's last bass onset to k+1's first; the bass
+is the piece's highest staff id, so voice plus piano reads the piano's left
+hand), `densityChange` (notes per beat either side) and `restBar` (k+1 opens with
+a rest).
+
+**Heuristic p** (`heuristicBoundaryP`): a section start is 1; otherwise the
+logistic of `−1.2 + 2.2·min(tailGapRatio, 1) + 0.8·[bass falls a fifth or rises a
+fourth, any octave]·w + 0.4·min(densityChange, 2)`. `w` is 1 minus the share of
+the piece's barlines where that bass motion happens, and 0 once that share is
+over 40%: a left hand that rises G to C into every bar says nothing about
+phrases.
+
+**Partition** (`partitionSegments`): over every way to cut the bars, first the
+fewest segments shorter than `minLen` (2), then the highest
+`Σ log p (cuts) + Σ log(1 − p) (barlines left whole) − 0.6·Σ |length − targetLen|`,
+with p clamped to [0.02, 0.98], p = 1 always cut and no segment over 8 bars.
+`targetLen` is the household `sheetmusic.learn.passages.targetMeasures` (default
+4). The length term keeps music with no phrase signal at the target length
+instead of drifting to 8 bars; a clear phrase end still outweighs it. The result
+is exact (a test checks it against exhaustive search) and deterministic.
+
+### Jev and calibration
+
+`sheetmusic.admin.boundaryScorer` in the household piano config:
+
+| Value | What the admin can do |
+|---|---|
+| `heuristic` (default) | Propose with the heuristic only; `POST /propose` answers 409 `jev-disabled` before reading the body |
+| `calibrate` | On a score whose approved segments are current and were cut by hand (`approved.proposal.scorer: manual`), **Compare with Jev** asks Jev and shows Jev's and the heuristic's precision and recall against the approved cuts, overall, within one bar, at system breaks and elsewhere. Nothing is applied. Other scores get `no-reference` (409) |
+| `jev` | A Heuristic/Jev switch beside Propose; Jev's cuts are applied as a draft like the heuristic's |
+
+Jev also needs a configured decision gateway; without one the server answers 503
+`jev-unavailable` and the page offers nothing (`jevOffered` in `GET /learn`).
+
+For each barline that is not a section start the browser draws a PNG of up to two
+bars either side from the engraving on screen, with a red triangle over the
+barline (`browser/admin/jevCrops.js`). The bars come only from the barline's own
+system and in engraved order; at a system break or a jump the two sides are
+separate strips side by side with the marker at the seam, and the question says
+so. Crops are scaled and padded to Jev's 280–1568 px per side; a blank crop or a
+bar without bounds stops the request in the browser (`crop-failed`). The server
+asks one yes/no per barline in batches of 10, two at a time, 30 s per call, with
+each picture's measurements alongside it. A rate limit is waited out once when it
+is 15 s or less. No batch starts after 60 s or after the admin leaves the page.
+A barline without an answer gets p 0.5; more than 20% of them fails the proposal
+(502 `proposal-failed`). Section starts are p 1 and never sent.
+
+**Calibration before `jev`.** The heuristic is measured offline:
+
+```bash
+node cli/piano-segment-calibrate.cli.mjs [--dir <learn dir>] [--household <id>] [--target 4] [--min 4] [--json]
+```
+
+It reads the Learn files, keeps pieces whose approved segments were cut by hand
+from scratch and kept their features, re-runs the heuristic from those features,
+and prints boundary precision and recall per piece and overall (exact and within
+one bar, and split at system breaks when the drafts recorded `seams`). Approved
+edits of a scorer's proposal started from that scorer's cuts: they are listed
+apart and left out of the totals. With fewer than `--min` pieces it exits 3 and
+says so. To build references: on several pieces, open the score page, cut the
+segments by hand (no Propose), **Save draft**, then **Approve**. Jev's side comes
+from **Compare with Jev** in `calibrate` mode on those pieces, logged as
+`piano.sheetmusic.propose.compared`. Switch to `jev` only if Jev beats the
+heuristic there.
+
+### Admin API
+
+Mounted at `/api/v1/admin/sheet-music` behind the admin gate. The score is named
+by `?id=<URL-encoded content id>`.
+
+| Route | Answer |
+|---|---|
+| `GET /` | `{ scores, folders, boundaryScorer }` |
+| `POST /upload` | 201 `{ id, title, composer, filename }`; multipart `file`, `folder`, optional `filename` |
+| `GET /learn` | the Learn file plus `poster`, `currentSha256`, `stale`, `draftRevision`, `boundaryScorer`, `jevOffered` |
+| `PUT /learn` | `{ action: 'draft', segments, proposal, measureCount }`, `{ action: 'approve', measureCount, expectedDraftRevision }` (→ `{ file, impact }`), or `{ action: 'revert' }` (→ `{ file, impact: null, changed }`) |
+| `GET /learn/draft-impact` | `{ draftRevision, impact }` |
+| `POST /impact` | `{ impact }` for `{ segments }` (the revert dialog) |
+| `POST /poster` | 201 `{ id, poster, url, bytes }`; body the SVG as `image/svg+xml` |
+| `POST /propose` | `{ segments, proposal, mode, comparison? }`; multipart `features` (JSON `{ features, measureCount, targetLen, seams }`) and `crop_<k>` PNGs (1 MB each; body at most 64 MB with a Content-Length) |
+
+Codes beyond upload's: 400 `invalid-request`, `NOT_LIBRARY_SCORE`; 404
+`SCORE_NOT_FOUND`; 409 `no-draft`, `draft-changed` (with `draftRevision`),
+`has-scan`, `poster-exists`, `jev-disabled`, `no-reference`; 413 `too-large`;
+422 `invalid-segments` (with `errors`), `SCORE_UNREADABLE`, `bad-crop` and the
+poster checker's codes; 502 `proposal-failed`; 503 `jev-unavailable`. Anything
+else is a 500 without its message.
+
+### Logs
+
+Server (`context.app: piano`): `piano.sheetmusic.learn-saved` (status draft,
+approved or reverted, with orphaned counts on approval), `.upload`,
+`.upload-rejected`, `.upload-failed`, `.row-unreadable`, `.learn-invalid`,
+`.poster-saved`, `.poster-rejected`, `.propose.start|done|failed|aborted`,
+`.propose.rate-limited`, `.propose.call-failed`, `.propose.compared` (Jev and
+heuristic precision and recall, overall, within a bar, at seams and elsewhere);
+router `admin.sheetmusic.request-rejected` / `.request-failed`. Admin browser:
+`admin.sheetmusic.score-mounted`, `.engraved`, `.edit-started`, `.draft-saved`,
+`.save-failed`, `.approved`, `.reverted`, `.propose` (scorer, segments, ms,
+replacedEdits), `.propose-compared`, `.propose-failed`, `.upload-start|done|failed`,
+`.poster-generated`, `.poster-failed`, `.posters-start|done|cancelled`. Kiosk:
+`score.learn.sidecar-applied`, `score.learn.sidecar-stale`.
+
 ## Config (`piano.yml` → `sheetmusic:`)
 
 Resolved (with defaults) by `sheetMusicConfig.resolveSheetMusicConfig`:
@@ -1333,6 +1696,9 @@ sheetmusic:
     thresholds: { green: 0.9, yellow: 0.6 }   # combined note+timing score
   learn:
     defaultHands: both          # both|rh|lh — household default; per-user overrides in preferences
+    passages: { targetMeasures: 4, minMeasures: 3, maxMeasures: 5 }   # generated segments; targetMeasures also sets Propose's target
+  admin:
+    boundaryScorer: heuristic   # heuristic|calibrate|jev — see Admin: sheet music → Jev and calibration
 ```
 
 The hand preference resolves user → household → `both`; if the preferred
@@ -1434,6 +1800,7 @@ during an active run so the judge and falling highway cannot jump timelines.
 | `NoteHighlightLayer.jsx` / `MeasureGradeLayer.jsx` | per-notehead chips / per-measure R/Y/G washes |
 | `FocusRangeLayer.jsx` | loop range's per-system tint band |
 | `countIn.js` / `useCountIn.js` | count-in beats before a run |
+| `CountUpOverlay.jsx` | Learn passage count-in band: pips 1..N, "next click: play" on the last click, armed form |
 | `clickScheduler.js` | look-ahead scheduling for the metronome click; anchored grid (`anchorEpochMs`/`leadMs`) + `epochToContextMap` |
 | `clickLead.js` | `resolveClickLead` (config › browser › none) and the `piano.click.anchored` log helper |
 | `RunSummary.jsx` | Polish end-of-run summary, extended with run score/tier + tier-best strip |

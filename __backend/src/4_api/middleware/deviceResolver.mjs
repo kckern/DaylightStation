@@ -4,7 +4,7 @@
  * Middleware that answers "which device made this request".
  *
  * Every frontend in the house reaches this server over the docker network, so
- * `req.ip` is one address for all of them (`172.18.0.53` throughout the
+ * `req.ip` is one address for all of them (the proxy's own address throughout the
  * 2026-08-16 investigation). The backend's own log context is
  * `{source, app, host}` where `host` is `os.hostname()` — the SERVER — and
  * frontend-forwarded events get `ip`/`userAgent` injected at ingestion while

@@ -5,8 +5,8 @@
  * (ops:docs/_wip/audits/2026-04-30-cycling-challenge-simulator-unusable-audit.md).
  *
  * Walks the full lifecycle:
- *   1. App boots, fitness config loads, equipment catalog includes cycle_ace.
- *   2. Sim controller exposes cycle_ace with eligible riders.
+ *   1. App boots, fitness config loads, equipment catalog includes the test bike.
+ *   2. Sim controller exposes the test bike with eligible riders.
  *   3. HR sliders activate two participants in the active zone.
  *   4. Trigger cycle challenge -> success.
  *   5. Drive RPM through init -> ramp -> maintain.
@@ -26,8 +26,9 @@ import {
   getEquipment,
   listCycleSelections
 } from '#testlib/FitnessSimHelper.mjs';
+import { getCycleTestBikes } from '../../../_lib/fitnessTestBikes.mjs';
 
-const CYCLE_EQUIPMENT_ID = 'cycle_ace';
+const [{ id: CYCLE_EQUIPMENT_ID, cadence: CYCLE_CADENCE_ID }] = getCycleTestBikes();
 // Selection id is generated from policy structure — discovered at runtime.
 
 test.describe('Cycle challenge full lifecycle', () => {
@@ -52,19 +53,19 @@ test.describe('Cycle challenge full lifecycle', () => {
       { timeout: 15000 }
     );
 
-    // ---- 2. Catalog populated, cycle_ace present ----
+    // ---- 2. Catalog populated, test bike present ----
     const equipment = await getEquipment(page);
-    const cycleAce = equipment.find(e => e.equipmentId === CYCLE_EQUIPMENT_ID);
-    expect(cycleAce, 'cycle_ace should appear in simulator equipment list').toBeTruthy();
-    expect(cycleAce.cadenceDeviceId).toBe('49904');
-    expect(cycleAce.eligibleUsers.length).toBeGreaterThan(0);
+    const testBike = equipment.find(e => e.equipmentId === CYCLE_EQUIPMENT_ID);
+    expect(testBike, `${CYCLE_EQUIPMENT_ID} should appear in simulator equipment list`).toBeTruthy();
+    expect(testBike.cadenceDeviceId).toBe(CYCLE_CADENCE_ID);
+    expect(testBike.eligibleUsers.length).toBeGreaterThan(0);
 
     // ---- 3. Cycle selection visible in policy set ----
     const selections = await listCycleSelections(page);
     const cycleSel = selections.find(s => s.equipment === CYCLE_EQUIPMENT_ID);
-    expect(cycleSel, 'at least one cycle selection should target cycle_ace').toBeTruthy();
+    expect(cycleSel, `at least one cycle selection should target ${CYCLE_EQUIPMENT_ID}`).toBeTruthy();
     const selectionId = cycleSel.id;
-    const riderId = cycleAce.eligibleUsers[0];
+    const riderId = testBike.eligibleUsers[0];
 
     // ---- 4. Discover a cycling episode via the API and navigate to it ----
     // Discovery path:
@@ -271,7 +272,7 @@ test.describe('Cycle challenge full lifecycle', () => {
     // Then use a non-existent rider so the engine rejects with a specific reason
     // rather than the old catch-all 'failed_to_start'.
     const selections = await listCycleSelections(page);
-    const cycleSel = selections.find(s => s.equipment === 'cycle_ace');
+    const cycleSel = selections.find(s => s.equipment === CYCLE_EQUIPMENT_ID);
     // Use the discovered selection id (or a nonexistent one if no cycle selection found).
     const selectionId = cycleSel?.id || 'nonexistent_selection';
 

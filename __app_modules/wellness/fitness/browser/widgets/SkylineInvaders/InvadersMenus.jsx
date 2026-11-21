@@ -7,7 +7,7 @@ import { PixelIcon, iconForSymbol } from '../SkylineGlider/SkylinePixelIcons.jsx
 import PixelSprite from '../../../../../../__capabilities/gaming/browser/platform/ui/PixelSprite.jsx';
 import { INVADER_SPRITES } from '../../lib/skylineInvaders/sprites.js';
 import { GESTURE_INFO } from '../../lib/skylineInvaders/gestures.js';
-import { MANUAL_METHOD, SETUP_METHODS, SETUP_STEPS, setupStepId, setupStepsView } from '../../lib/skylineInvaders/setupTest.js';
+import { SETUP_METHODS, SETUP_STEPS, setupStepId, setupStepsView } from '../../lib/skylineInvaders/setupTest.js';
 import { DRAWN_HINTS } from '../../lib/skylineInvaders/invadersPanel.js';
 import GestureDemo from './GestureDemo.jsx';
 
@@ -198,29 +198,16 @@ export default function InvadersMenus(props) {
 }
 
 // ── The setup ────────────────────────────────────────────────────────────────
-const methodLabel = (method) => (method === MANUAL_METHOD ? 'Gamepad' : GESTURE_INFO[method]?.label || '');
+const methodLabel = (method) => GESTURE_INFO[method]?.label || '';
 const CAMERA_NOTES = Object.freeze({
-  off: 'The camera is off. Aim with the gamepad.',
+  off: 'The camera is off.',
   starting: 'The camera is starting…',
 });
 
-/** A gamepad in pixels, for the method that needs no camera. */
-function GamepadGlyph() {
-  return (
-    <svg className="skyline-invaders__method-pad" viewBox="0 0 24 14" aria-hidden="true" shapeRendering="crispEdges">
-      <rect x="2" y="2" width="20" height="10" />
-      <rect className="skyline-invaders__method-pad-key" x="5" y="6" width="6" height="2" />
-      <rect className="skyline-invaders__method-pad-key" x="7" y="4" width="2" height="6" />
-      <rect className="skyline-invaders__method-pad-key" x="15" y="4" width="2" height="2" />
-      <rect className="skyline-invaders__method-pad-key" x="18" y="7" width="2" height="2" />
-    </svg>
-  );
-}
-
 /**
- * Choose how you aim: every aim gesture and the gamepad, as tiles to tap. The
- * defender's own method is marked. Choosing a gesture goes to its test sweep;
- * the gamepad needs none. The mat does nothing here.
+ * Choose how you aim: every aim gesture, as tiles to tap. The defender's own
+ * method is marked. Choosing one goes to its test sweep. The mat does nothing
+ * here. There is no gamepad tile: the game does not read a gamepad.
  */
 function MethodScreen({ setup = {}, shooterName = '', onMethod }) {
   // `setup.cursor` is null under touch: a gold tile would read as already chosen.
@@ -233,14 +220,13 @@ function MethodScreen({ setup = {}, shooterName = '', onMethod }) {
       <h1>Choose your controls</h1>
       <div className="skyline-invaders__methods" ref={methodsRef} role="group" aria-label="Controls">
         {SETUP_METHODS.map((method, index) => {
-          const gesture = method !== MANUAL_METHOD;
           return (
             <button
               key={method} type="button" className="skyline-invaders__method" data-testid={`invaders-method-${method}`} data-method={method}
               aria-pressed={index === setup.cursor} data-current={method === setup.current || undefined}
-              disabled={gesture && cameraOff} onClick={() => onMethod?.(method)}
+              disabled={cameraOff} onClick={() => onMethod?.(method)}
             >
-              <span className="skyline-invaders__method-art" aria-hidden="true">{gesture ? <GestureDemo gesture={method} /> : <GamepadGlyph />}</span>
+              <span className="skyline-invaders__method-art" aria-hidden="true"><GestureDemo gesture={method} /></span>
               <strong>{methodLabel(method)}</strong>
               {method === setup.current && <small className="skyline-invaders__method-yours">Yours</small>}
             </button>

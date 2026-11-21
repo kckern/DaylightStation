@@ -174,6 +174,7 @@ export default function CallApp() {
   const media = useIndependentMedia();
   const peer = useWebRTCPeer(media.stream);
   const localVideoRef = useRef(null);
+  const [previewFrame, setPreviewFrame] = useState(null);
   const remoteVideoRef = useRef(null);
   const primaryActionRef = useRef(null);
   const [devices, setDevices] = useState({ status: 'loading', items: [], error: null });
@@ -184,8 +185,43 @@ export default function CallApp() {
   // and the self-view keeps the rest (see `--connected` in CallApp.scss).
   const [remoteAspect, setRemoteAspect] = useState(null);
   const resumeCheckedRef = useRef(false);
-  const controller = useCallController({ peer, mediaStatus: media.status, remoteVideoRef });
-  const { state } = controller;
+  const controller = useCallController({ peer, mediaStatus: media.status, retryLocalMedia: media.retry, remoteVideoRef });
+  const { state, end } = controller;
+  const stopMedia = media.stop;
+  const leaveCall = useCallback(reason => {
+    stopMedia();
+    setMuted({ audio: false, video: false });
+    end(reason);
+  }, [end, stopMedia]);
+
+  useEffect(() => {
+    if (state.value === 'ending' || state.value === 'ended') stopMedia();
+  }, [state.value, stopMedia]);
+
+  useEffect(() => {
+    const hide = () => leaveCall('left_call');
+    const visibility = () => { if (document.hidden) hide(); };
+    window.addEventListener('pagehide', hide);
+    window.addEventListener('daylight:hidden', hide);
+    document.addEventListener('visibilitychange', visibility);
+    return () => {
+      window.removeEventListener('pagehide', hide);
+      window.removeEventListener('daylight:hidden', hide);
+      document.removeEventListener('visibilitychange', visibility);
+    };
+  }, [leaveCall]);
+
+  function exit() {
+    leaveCall('left_call');
+    const phoneShortcut = window.DaylightPhoneShortcut;
+    if (typeof phoneShortcut?.postMessage === 'function') {
+      phoneShortcut.postMessage('call-exit');
+    } else if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      window.location.assign('/home');
+    }
+  }
 
   const loadDevices = useCallback(() => {
     setDevices({ status: 'loading', items: [], error: null });
@@ -231,8 +267,8 @@ export default function CallApp() {
   }, [controller, devices, media.status, state.value]);
 
   useEffect(() => {
-    if (!localVideoRef.current || !media.stream) return;
-    localVideoRef.current.srcObject = new MediaStream(media.stream.getVideoTracks());
+    if (localVideoRef.current) localVideoRef.current.srcObject = media.stream
+      ? new MediaStream(media.stream.getVideoTracks()) : null;
   }, [media.stream]);
   useEffect(() => {
     const element = remoteVideoRef.current;
@@ -263,6 +299,7 @@ export default function CallApp() {
     measure();
     return () => {
       clearTimeout(retry);
+      element.srcObject = null;
       element.removeEventListener('loadedmetadata', measure);
       element.removeEventListener('resize', measure);
     };
@@ -318,9 +355,11 @@ export default function CallApp() {
         <section className="call-app__stage" aria-label="Your camera preview">
           {/* Mirrored like a mirror, not like a camera: the preview is what the
               caller expects of their own face. The track sent to the TV is untouched. */}
-          <video ref={localVideoRef} autoPlay muted playsInline className="call-app__video call-app__video--tall" style={{ transform: 'scaleX(-1)' }} />
+          <video ref={localVideoRef} autoPlay muted playsInline onPlaying={() => setPreviewFrame(media.stream)}
+            className="call-app__video call-app__video--tall"
+            style={{ transform: 'scaleX(-1)', visibility: media.stream && previewFrame === media.stream ? 'visible' : 'hidden' }} />
           <div className="call-app__camera-status">
-            {media.status === 'loading' && <p className="call-app__camera-loading">Starting camera and microphone…</p>}
+            {media.status === 'loading' && <p role="status" className="call-app__camera-loading">Starting camera and microphone…</p>}
             {media.errors.video && <p className="call-app__camera-error">{mediaKindErrorCopy('video', media.errors.video)}</p>}
             {media.errors.audio && <p className="call-app__camera-error">{mediaKindErrorCopy('audio', media.errors.audio)}</p>}
             {partialMediaNote && <p className="call-app__camera-note">{partialMediaNote}</p>}
@@ -341,7 +380,7 @@ export default function CallApp() {
                 <MicIcon off={audioMuted} />
               </button>
               <button type="button" className="call-app__round-btn call-app__round-btn--hangup" aria-label="End call"
-                onClick={() => controller.end('user_hangup')}>
+                onClick={() => leaveCall('user_hangup')}>
                 <HangupIcon size={26} />
               </button>
               <button type="button" className="call-app__round-btn" aria-label={videoMuted ? 'Turn camera on' : 'Turn camera off'}
@@ -385,8 +424,8 @@ export default function CallApp() {
                       onClick={() => controller.dispatch({ type: 'HARD_RECOVERY', attemptId: state.attemptId })}>
                       {countdown > 0 ? `Confirm restart in ${countdown}` : 'Confirm restart'}
                     </button>}
-                <button type="button" className="call-app__wide-btn" onClick={() => controller.end('retry_requested')}>Try a new call</button>
-                <button type="button" className="call-app__wide-btn call-app__wide-btn--danger" onClick={() => controller.end('recovery_cancelled')}>
+                <button type="button" className="call-app__wide-btn" onClick={() => leaveCall('retry_requested')}>Try a new call</button>
+                <button type="button" className="call-app__wide-btn call-app__wide-btn--danger" onClick={() => leaveCall('recovery_cancelled')}>
                   <HangupIcon size={20} />End call
                 </button>
               </div>
@@ -397,11 +436,15 @@ export default function CallApp() {
             {state.value === 'failed' && (
               <div role="alert" className="call-app__stack">
                 <p className="call-app__notice call-app__notice--warn">{state.reason === 'boot_failed' ? mediaErrorCopy(media.errors) : state.error}</p>
-                <button type="button" ref={primaryActionRef} className="call-app__wide-btn" onClick={() => controller.dispatch({ type: 'DISMISS' })}>Back</button>
+                {state.reason === 'boot_failed' && <button type="button" className="call-app__wide-btn" onClick={() => {
+                  controller.dismiss();
+                  void media.retry();
+                }}>Retry media</button>}
+                <button type="button" ref={primaryActionRef} className="call-app__wide-btn" onClick={() => controller.dismiss()}>Back</button>
               </div>
             )}
 
-            {['idle', 'ended'].includes(state.value) && (
+            {(['idle', 'ended'].includes(state.value) || (state.value === 'booting' && media.status === 'idle')) && (
               <div className="call-app__stack">
                 {devices.status === 'loading' && <p className="call-app__notice" role="status">Looking for screens…</p>}
                 {devices.status === 'failed' && (
@@ -425,10 +468,15 @@ export default function CallApp() {
                   </div>
                 )}
                 {media.status === 'ready' && (media.errors.audio || media.errors.video) && (
-                  <p className="call-app__notice" role="status">You can call with {media.errors.audio ? 'video only' : 'audio only'}.</p>
+                  <div className="call-app__stack">
+                    <p className="call-app__notice" role="status">You can call with {media.errors.audio ? 'video only' : 'audio only'}.</p>
+                    <button type="button" className="call-app__wide-btn" onClick={media.retry}>Retry media</button>
+                  </div>
                 )}
 
-                <button type="button" className="call-app__wide-btn call-app__wide-btn--danger" onClick={() => window.history.back()}>
+                {media.status === 'idle' && <button type="button" className="call-app__wide-btn" onClick={media.retry}>Start preview</button>}
+
+                <button type="button" className="call-app__wide-btn call-app__wide-btn--danger" onClick={exit}>
                   <PowerIcon />Exit
                 </button>
               </div>
@@ -436,7 +484,7 @@ export default function CallApp() {
 
             {active && state.value !== 'recovery_prompt' && (
               <button type="button" ref={primaryActionRef} className="call-app__wide-btn call-app__wide-btn--danger"
-                onClick={() => controller.end('user_cancelled')}>
+                onClick={() => leaveCall('user_cancelled')}>
                 <HangupIcon size={20} />Cancel
               </button>
             )}

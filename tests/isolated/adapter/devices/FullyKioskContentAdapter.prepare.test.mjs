@@ -16,7 +16,7 @@ function makeHttpClient(handler) {
 
 function makeAdapter(handler, logger = makeLogger()) {
   return new FullyKioskContentAdapter(
-    { host: '10.0.0.245', port: 2323, password: 'x', daylightHost: 'https://example.com' },
+    { host: '10.20.30.245', port: 2323, password: 'x', daylightHost: 'https://example.com' },
     { httpClient: makeHttpClient(handler), logger }
   );
 }

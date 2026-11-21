@@ -1,5 +1,5 @@
 import { describe,it,expect } from 'vitest';
-import { createSkylineControlState,reduceSkylineControl,describeSkylineControls } from './controllerModel.js';
+import { createSkylineControlState,reduceSkylineControl,describeSkylineControls,remotePanelPress,remoteBackPosition } from './controllerModel.js';
 const riders=[{id:'child',name:'Child',position:1,avatarSrc:'/child.jpg'},{id:'dad',name:'Dad'}];
 const acts=[{id:'one',name:'One',status:'completed'},{id:'two',name:'Two',status:'open'}];
 const start=()=>createSkylineControlState({riders,acts});
@@ -93,10 +93,20 @@ describe('sound settings sheet',()=>{
   expect(reduceSkylineControl(s,{type:'PRESS',position:4}).effects).toContainEqual(expect.objectContaining({type:'toggle-sound'}));
   expect(press(s,3).phase).toBe('menu');
  });
- it('a touch on the more button mid-flight pauses into the sheet and Back lands on the flight menu',()=>{
+ it('a touch on the more button mid-flight opens the sheet over the flight, which keeps flying',()=>{
   const r=reduceSkylineControl(flying(),{type:'OPEN_SETTINGS'});
-  expect(r.state.phase).toBe('settings');expect(r.effects.map(e=>e.type)).toContain('pause');
-  expect(press(r.state,3).phase).toBe('menu');
+  expect(r.state).toMatchObject({phase:'flight',soundOverlay:true});
+  expect(r.effects.map(e=>e.type)).not.toContain('pause');
+  expect(describeSkylineControls(r.state).map(c=>c.label)).toEqual(describeSkylineControls(flying()).map(c=>c.label));
+  expect(event(r.state,{type:'CLOSE_SETTINGS'})).toMatchObject({phase:'flight',soundOverlay:false});
+ });
+ it('the bike buttons keep their flight meaning under the sheet, and leaving flight closes it',()=>{
+  const open=event(flying(),{type:'OPEN_SETTINGS'});
+  expect(reduceSkylineControl(open,{type:'PRESS',position:1,gesture:'single'}).effects).toContainEqual(expect.objectContaining({type:'combat',action:'laser'}));
+  expect(press(open,4,'long')).toMatchObject({phase:'menu',soundOverlay:false});
+ });
+ it('starts with the overlay closed',()=>{
+  expect(start().soundOverlay).toBe(false);
  });
  it('from a lobby screen the sheet returns to that screen; a countdown returns to ready',()=>{
   const flights=press(start(),1);
@@ -118,5 +128,35 @@ describe('sound settings sheet',()=>{
   expect(describeSkylineControls(s)[3].label).toBe('Unmute');
   expect(describeSkylineControls({...s,sound:{level:100,muted:false}})[1].disabled).toBe(true);
   expect(describeSkylineControls({...s,sound:{level:0,muted:true}})[0].disabled).toBe(true);
+ });
+});
+
+describe('Bluetooth remote presses',()=>{
+ const flying=()=>{let s=press(press(start(),1),4);s=event(s,{type:'FLIGHT_CHANGED',flight:{phase:'playing'},weaponsEnabled:true});return {...s,phase:'flight'}};
+ it('in flight, a weapon is its bike button and pause is the hold on 4',()=>{
+  const s=flying();
+  expect(remotePanelPress(s,'laser')).toEqual({position:1,gesture:'single'});
+  expect(remotePanelPress(s,'missile')).toEqual({position:3,gesture:'single'});
+  expect(remotePanelPress(s,'boost')).toEqual({position:4,gesture:'single'});
+  const paused=reduceSkylineControl(s,{type:'PRESS',...remotePanelPress(s,'pause'),source:'remote'});
+  expect(paused.state.phase).toBe('menu');
+ });
+ it('a remote combat press carries its source and where it came from',()=>{
+  const s=flying(),input={remote:'AA:BB:CC:00:00:01',direction:'center'};
+  const {effects}=reduceSkylineControl(s,{type:'PRESS',position:1,gesture:'single',source:'remote',input});
+  expect(effects).toContainEqual({type:'combat',action:'laser',source:'remote',input});
+  expect(reduceSkylineControl(s,{type:'PRESS',position:1,gesture:'single'}).effects).toContainEqual({type:'combat',action:'laser'});
+ });
+ it('pause is the way back only where the screen has one',()=>{
+  let s=flying();s=event(s,{type:'PRESS',position:4,gesture:'long'});
+  expect(remoteBackPosition(s)).toBe(1); // flight menu: Resume
+  expect(event(s,{type:'PRESS',...remotePanelPress(s,'pause')}).phase).toBe('ready');
+  expect(remotePanelPress({...s,phase:'settings'},'pause')).toEqual({position:3,gesture:'single'});
+  expect(remotePanelPress({...s,phase:'ready',resumeIntent:'new'},'pause')).toEqual({position:3,gesture:'single'});
+  // 3 here ends the flight or changes the rider: never reached by the remote's back.
+  expect(remotePanelPress({...s,phase:'ready',resumeIntent:'live'},'pause')).toBeNull();
+  expect(remotePanelPress({...s,phase:'crash'},'pause')).toBeNull();
+  expect(remotePanelPress({...s,phase:'flights'},'pause')).toBeNull();
+  expect(remotePanelPress({...s,phase:'crash'},'bomb')).toEqual({position:2,gesture:'single'});
  });
 });

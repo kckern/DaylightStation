@@ -2,6 +2,7 @@
 import path from 'path';
 import crypto from 'crypto';
 import { parseFile } from 'music-metadata';
+import { resolveFileAudioSource } from './FileAudioRendition.mjs';
 import { ListableItem } from "../../../../../../__capabilities/content-catalog/server/items.mjs";
 import { PlayableItem } from "../../../../../../__capabilities/content-catalog/server/items.mjs";
 import { ItemSelectionService } from "../../../../../../__capabilities/content-catalog/server/domain/services/ItemSelectionService.mjs";
@@ -55,8 +56,12 @@ const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp'];
 const NOTATION_EXTS = ['.musicxml', '.mxl'];
 const DOC_EXTS = ['.pdf'];
 // Image extensions honored as a same-basename sidecar poster for a notation/document
-// file (e.g. fur-elise.jpg next to fur-elise.musicxml). Order = preference.
-const SIDECAR_IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp'];
+// file (e.g. fur-elise.jpg next to fur-elise.musicxml). Order = preference: a
+// curated raster scan wins over a generated `.svg` poster (the sheet music admin
+// writes those), and either one is hidden from listings as a sidecar. Sidecars
+// apply to documents too: a `.svg` beside a `.pdf` is now that PDF's thumbnail
+// rather than a tile of its own.
+const SIDECAR_IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.svg'];
 
 const VALID_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const MAX_COVER_SIZE = 10 * 1024 * 1024; // 10MB
@@ -181,6 +186,16 @@ export class FileAdapter extends IContentSource {
       // File doesn't have ID3 tags or can't be parsed
       return {};
     }
+  }
+
+  async audioSource(item) {
+    if (item?.mediaType !== 'video') return null;
+    return resolveFileAudioSource(this.mediaBasePath, item.metadata?.filePath);
+  }
+
+  async audioRendition(item) {
+    if (!await this.audioSource(item)) return null;
+    return { mediaUrl: `${item.mediaUrl}?stream=audio`, format: 'mp3' };
   }
 
   /**

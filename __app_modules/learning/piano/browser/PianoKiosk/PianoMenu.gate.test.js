@@ -9,8 +9,9 @@ import { PENDING_CAPTION } from './usePianoLessonGate.js';
 
 // The lesson gate: while a learner still owes today's assigned piano lesson,
 // the home screen is that ONE lesson and nothing else. It clears the moment
-// School says the obligation is discharged. Curfew outranks it — there is no
-// point offering a lesson after bedtime — and the piano's own
+// School says the obligation is discharged. Curfew does not cancel it: under
+// curfew the owed lesson is the one thing left open (owner, 2026-11-20). The
+// piano's own
 // auto-enter-Studio path (useAutoStudioEntry, wired in PianoApp on the menu
 // ROUTE, not in this component) is untouched either way.
 
@@ -139,6 +140,17 @@ describe('PianoMenu with an owed lesson', () => {
     expect(navigate).toHaveBeenCalledWith('/piano/sheetmusic/view/files:docs/sheet-music/jesu.mxl?learnPassage=b');
   });
 
+  it('encodes a score id with # and ? into the route, so the passage query survives', async () => {
+    gateState = GATED;
+    const scoreId = 'files:docs/sheet-music/odd #1 ?50%.musicxml';
+    const piece = { scoreId, cover: null, practicedAt: '2026-08-21T11:00:00Z', total: 1, silver: 0, gold: 0,
+      next: { passageId: 'a' }, nextGoldPassageId: null, passages: [{ id: 'a', start: 0, end: 4, state: 'todo' }] };
+    activityResponse = { players: [{ ...ACTIVITY.players[0], piece }] };
+    renderMenu();
+    fireEvent.click(await screen.findByRole('button', { name: /^Play / }));
+    expect(navigate).toHaveBeenCalledWith(`/piano/sheetmusic/view/files:docs/sheet-music/${encodeURIComponent('odd #1 ?50%.musicxml')}?learnPassage=a`);
+  });
+
   it('leaves a PianoChallenge its whole screen, with no strip or tile', () => {
     gateState = { ...GATED, challenge: { id: 'c', ask: { id: 'a' }, materialSpec: {}, framing: null } };
     renderMenu();
@@ -172,14 +184,52 @@ describe('PianoMenu with an owed lesson', () => {
     expect(renderMenu().getByTestId('live-keyboard')).toBeTruthy();
   });
 
-  it('lets curfew outrank the gate — no lesson offered after bedtime', () => {
+  // Owner, 2026-11-20: curfew no longer cancels the day's assigned lesson. A
+  // child who still owes it may start it at any hour of the curfew window; the
+  // lesson is the ONLY door open — no strip, no Sheet Music tile, no modes.
+  it('keeps the owed lesson open under curfew, and nothing else', () => {
     gateState = GATED;
     curfewConfig = CURFEW_ON;
     atClock(20);
     renderMenu();
-    expect(screen.queryByText('Lesson 5: Broken Chords')).toBeNull();
-    expect(screen.getByText(/the piano is still on/i)).toBeTruthy();
+    expect(screen.getByText('Lesson 5: Broken Chords')).toBeTruthy();
+    expect(tiles()).toHaveLength(0);
+    expect(document.querySelector('.piano-desk')).toBeNull();
+    expect(document.querySelector('.piano-home__side')).toBeNull();
+    expect(screen.getByText(/except today.s lesson/i)).toBeTruthy();
+    expect(screen.queryByText(/the piano is still on/i)).toBeNull();
+  });
+
+  it('launches the owed lesson from the curfew view', () => {
+    gateState = GATED;
+    curfewConfig = CURFEW_ON;
+    atClock(23, 30);
+    renderMenu();
+    fireEvent.click(screen.getByRole('button', { name: /start today.s lesson/i }));
+    expect(navigate).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps an owed PianoChallenge open under curfew', () => {
+    gateState = { ...GATED, challenge: { id: 'c', ask: { id: 'a' }, materialSpec: {}, framing: null } };
+    curfewConfig = CURFEW_ON;
+    atClock(20);
+    renderMenu();
+    expect(screen.getByTestId('ask-session')).toBeTruthy();
+    expect(tiles()).toHaveLength(0);
+  });
+
+  it('goes back to the plain curfew view once the lesson is discharged', async () => {
+    gateState = GATED;
+    curfewConfig = CURFEW_ON;
+    atClock(20);
+    const view = renderMenu();
+    expect(tiles()).toHaveLength(0);
+
+    gateState = NOT_GATED;
+    view.rerender(createElement(MemoryRouter, null, createElement(PianoMenu)));
+    await waitFor(() => expect(tiles()).toHaveLength(PIANO_MODES.length));
     expect(tiles().every((t) => t.disabled)).toBe(true);
+    expect(screen.getByText(/the piano is still on/i)).toBeTruthy();
   });
 
   it('clears live when School says the lesson landed — no reload', async () => {

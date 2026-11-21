@@ -9,11 +9,17 @@ import getLogger from '@/lib/logging/Logger.js';
 // The engine runs no step on a frame with no elapsed time and would drop that
 // frame's presses, so the loop must drain only on a frame it is going to step
 // (`elapsedS > 0 ? drain() : EMPTY`). Undrained presses wait here in order.
-export const FIRE_BUTTONS = Object.freeze([0, 7]);      // A / RT: fuel
-export const BOMB_BUTTONS = Object.freeze([2, 3]);      // X / Y: bomb
+//
+// The mat is the only thing that fires in the kiosk. A gamepad never does:
+// children played rounds on one instead of stepping (2026-11-20), so its
+// buttons and stick are only watched, and a press is logged as
+// `skyline_invaders.input.ignored` (sampled). The keyboard fires only when
+// `allowKeys` is set, which the shell does in a dev build alone: the garage's
+// Bluetooth remotes and keyboards send keys too.
 export const FIRE_KEYS = Object.freeze([' ', 'f', 'F']);
 export const BOMB_KEYS = Object.freeze(['b', 'B']);
-const TRIGGER_THRESHOLD = 0.5;
+const PRESS_THRESHOLD = 0.5;
+const IGNORED_PER_MINUTE = 6;
 const TYPING_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
 
 // A game key, unless it is a browser shortcut or typed into a field.
@@ -32,11 +38,16 @@ function keyKind(event) {
  * @param {string|null} options.matId     the shooter mat's HARDWARE id (matSelection.js)
  * @param {function} options.subscribeToAppEvent  from FitnessContext
  * @param {object} [options.tracker]      createAimTracker(): a mat press holds the cannon's lane for a moment
+ * @param {boolean} [options.allowKeys]   Space/F and B fire and bomb (dev builds only; never in the kiosk)
+ * @param {function} [options.getGamepads] for tests: the pads to watch (default navigator.getGamepads)
  * @param {function} [options.onPress]    hears every queued press: { kind, source, at, ... }
  * @returns {function} drain() -> { steps, stomps } for the engine's intents; drain.clear() empties the queue
  */
-export default function useInvadersFire({ enabled = true, matId = null, subscribeToAppEvent, tracker = null, getGamepads, onPress } = {}) {
+export default function useInvadersFire({ enabled = true, matId = null, subscribeToAppEvent, tracker = null, allowKeys = false, getGamepads, onPress } = {}) {
   const log = useMemo(() => getLogger().child({ component: 'skyline-invaders-fire' }), []);
+  const ignored = useCallback((source, data) => {
+    log.sampled('skyline_invaders.input.ignored', { source, ...data }, { maxPerMinute: IGNORED_PER_MINUTE, aggregate: true });
+  }, [log]);
   const queue = useRef({ steps: [], stomps: [] });
   const live = useRef({});
   live.current = { tracker, onPress };
@@ -83,6 +94,7 @@ export default function useInvadersFire({ enabled = true, matId = null, subscrib
       const target = event.target;
       if (target && target !== document.body && typeof target.blur === 'function') target.blur();
       if (event.repeat) return;
+      if (!allowKeys) { ignored('keyboard', { key: event.key, kind }); return; }
       push(kind, 'keyboard', Date.now(), { key: event.key });
     };
     const onKeyUp = (event) => { if (keyKind(event)) event.preventDefault(); };
@@ -92,33 +104,37 @@ export default function useInvadersFire({ enabled = true, matId = null, subscrib
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [enabled, push]);
+  }, [enabled, allowKeys, push, ignored]);
 
+  // A gamepad is watched, never played: a new press of any button or a push of
+  // the stick is logged and goes no further. The pause (Start, B) and the exit
+  // (Select) are the shell's, and only stop the round.
   useEffect(() => {
     if (!enabled) return undefined;
     const read = getGamepads || (() => (typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : []));
     const held = new Map();
-    const seen = new Set();
     let frame = 0;
-    const down = (pad, buttons) => buttons.find((index) => pad.buttons?.[index]?.pressed || pad.buttons?.[index]?.value > TRIGGER_THRESHOLD);
     const poll = () => {
-      for (const pad of Array.from(read() || [])) {
+      let pads = [];
+      try { pads = Array.from(read() || []); } catch { pads = []; }
+      for (const pad of pads) {
         if (!pad) continue;
-        // A button already down when polling starts is held, not pressed.
-        const primed = seen.has(pad.index);
-        seen.add(pad.index);
-        for (const [kind, buttons] of [['step', FIRE_BUTTONS], ['stomp', BOMB_BUTTONS]]) {
-          const button = down(pad, buttons);
-          const key = `${pad.index}:${kind}`;
-          if (primed && button !== undefined && !held.get(key)) push(kind, 'gamepad', Date.now(), { button, padId: pad.id });
-          held.set(key, button !== undefined);
+        const down = Array.from(pad.buttons || []).map((button) => !!button?.pressed || (button?.value ?? 0) > PRESS_THRESHOLD);
+        const stick = Array.from(pad.axes || []).slice(0, 2).some((value) => Math.abs(value || 0) > PRESS_THRESHOLD);
+        const prior = held.get(pad.index);
+        // What is already down when watching starts is held, not pressed.
+        if (prior) {
+          const button = down.findIndex((isDown, index) => isDown && !prior.down[index]);
+          if (button >= 0) ignored('gamepad', { input: 'button', button, padId: pad.id });
+          else if (stick && !prior.stick) ignored('gamepad', { input: 'stick', padId: pad.id });
         }
+        held.set(pad.index, { down, stick });
       }
       frame = requestAnimationFrame(poll);
     };
     frame = requestAnimationFrame(poll);
     return () => cancelAnimationFrame(frame);
-  }, [enabled, getGamepads, push]);
+  }, [enabled, getGamepads, ignored]);
 
   const drain = useCallback(() => { const presses = queue.current; queue.current = { steps: [], stomps: [] }; return presses; }, []);
   drain.clear = () => { queue.current = { steps: [], stomps: [] }; };

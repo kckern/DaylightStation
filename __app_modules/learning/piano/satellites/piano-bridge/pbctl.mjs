@@ -3,7 +3,8 @@
 //
 // The bridge APK serves a REST control plane on the same NanoHTTPD socket as its
 // WebSocket. NanoHTTPD binds all interfaces, so this works over the LAN — no ADB.
-// Host: PB_HOST env or default 10.0.0.245:8770.
+// Target: PB_HOST=<host>:8770, or PB_DEVICE=<device id> to read the tablet's
+// address from the household device registry (cli/_deviceHost.mjs). No default.
 //
 //   node pbctl.mjs status            # BLE/MIDI connection state (diagnose)
 //   node pbctl.mjs connect           # force scan + connect the configured WIDI
@@ -32,8 +33,9 @@
 //   node pbctl.mjs kiosk-rearm       # resume drift repair now
 
 import { bluetoothUsage, runBluetoothCommand } from '../../cli/bluetooth-control.mjs';
+import { resolveDeviceHostOrExit } from '../../../../../cli/_deviceHost.mjs';
 
-const HOST = process.env.PB_HOST || '10.0.0.245:8770';
+const HOST = await resolveDeviceHostOrExit({ hostVar: 'PB_HOST', deviceVar: 'PB_DEVICE', port: 8770 });
 const BASE = `http://${HOST}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

@@ -178,14 +178,14 @@ for (const [width,height] of sizes) test(`Steering wheel and Yours have disjoint
 });
 test('every method is reachable after scrolling and resizing @methods', async ({page})=>{
   await scenario(page,{game:'invaders',screen:'method',methodCursor:0,host:{width:700,height:600}});
-  for(let i=0;i<8;i++)await page.keyboard.press('ArrowRight');
-  const last=page.getByTestId('invaders-method-gamepad');
+  for(let i=0;i<7;i++)await page.keyboard.press('ArrowRight');
+  const last=page.getByTestId('invaders-method-hop');
   await expect(last).toHaveAttribute('aria-pressed','true');
   await expect.poll(async()=>{const r=await last.boundingBox(),g=await readMenuGeometry(page);return r.y>=g.content.top-1&&r.y+r.height<=g.content.bottom+1;}).toBe(true);
   await scenario(page,{host:{width:1101,height:777}});
   await expect(last).toHaveAttribute('aria-pressed','true');
   await page.keyboard.press('Enter');
-  expect(await page.evaluate(()=>window.__skylineLayout.actions.at(-1))).toEqual({type:'method',value:'gamepad'});
+  expect(await page.evaluate(()=>window.__skylineLayout.actions.at(-1))).toEqual({type:'method',value:'hop'});
 });
 test('long people names stay in their tiles without a nested scroller @methods',async({page})=>{
   await scenario(page,{game:'invaders',screen:'roster',longText:true,host:{width:700,height:600}});

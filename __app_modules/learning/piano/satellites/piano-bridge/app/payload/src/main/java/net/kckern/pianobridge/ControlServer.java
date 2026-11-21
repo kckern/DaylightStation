@@ -132,7 +132,7 @@ public class ControlServer extends NanoWSD {
     // --- HTTP control plane (pbctl CLI) ----------------------------------
     //
     // NanoWSD routes non-WebSocket requests here. Same :8770 socket; NanoHTTPD
-    // binds all interfaces, so this is reachable on the LAN (10.0.0.245:8770)
+    // binds all interfaces, so this is reachable on the LAN (<tablet-ip>:8770)
     // for the external pbctl CLI as well as localhost for the kiosk. Administrative
     // routes require the device-local token plus current native run authority.
 

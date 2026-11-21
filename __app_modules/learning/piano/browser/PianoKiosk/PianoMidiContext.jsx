@@ -55,7 +55,7 @@ export function PianoMidiProvider({ children, preferredInputName }) {
       : 'requesting'; // bridge-first, still trying
 
   // Unified MIDI health — ONE signal covering BOTH directions. IN and OUT travel
-  // different transports (bridge WS vs Web MIDI output on jam-7e6) and fail
+  // different transports (bridge WS vs Web MIDI output on midi-relay-01) and fail
   // independently, so without this a consumer can read "connected" while OUT is
   // silently dead (the failure this whole surface is meant to make visible).
   //   in:  'bridge' | 'webmidi' | 'down'  — which note-in path is live

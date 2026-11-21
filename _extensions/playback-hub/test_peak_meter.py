@@ -156,7 +156,7 @@ class VerifyRouteTests(unittest.TestCase):
     def test_verify_bt_disconnected_returns_null_peak_without_sampling(self):
         h, web = self._make_handler()
         device = {
-            "color": "white", "mac": "9C:0C:35:75:B7:75", "slot": 5,
+            "color": "white", "mac": "AA:BB:CC:00:32:01", "slot": 5,
             "name": "10-SYNC", "class": "public",
         }
         with mock.patch.object(web, "read_devices", return_value=[device]), \
@@ -169,7 +169,7 @@ class VerifyRouteTests(unittest.TestCase):
         body = h._json_calls[0]["data"]
         self.assertEqual(h._json_calls[0]["status"], 200)
         self.assertEqual(body["color"], "white")
-        self.assertEqual(body["sink"], "bluez_output.9C_0C_35_75_B7_75.1")
+        self.assertEqual(body["sink"], "bluez_output.AA_BB_CC_00_32_01.1")
         self.assertIsNone(body["peak_dbfs"])
         self.assertFalse(body["audio_flowing"])
         self.assertFalse(body["bt_connected"])
@@ -187,7 +187,7 @@ class VerifyRouteTests(unittest.TestCase):
     def test_verify_bt_connected_samples_and_returns_audio_flowing_true(self):
         h, web = self._make_handler()
         device = {
-            "color": "white", "mac": "9C:0C:35:75:B7:75", "slot": 5,
+            "color": "white", "mac": "AA:BB:CC:00:32:01", "slot": 5,
             "name": "10-SYNC", "class": "public",
         }
         with mock.patch.object(web, "read_devices", return_value=[device]), \
@@ -195,7 +195,7 @@ class VerifyRouteTests(unittest.TestCase):
              mock.patch("peak_meter.sample_peak_dbfs", return_value=-3.2) as sampler:
             h._verify_audio("white")
         sampler.assert_called_once_with(
-            "bluez_output.9C_0C_35_75_B7_75.1",
+            "bluez_output.AA_BB_CC_00_32_01.1",
             duration_sec=0.5,
         )
         body = h._json_calls[0]["data"]
@@ -207,7 +207,7 @@ class VerifyRouteTests(unittest.TestCase):
     def test_verify_bt_connected_below_threshold_returns_audio_flowing_false(self):
         h, web = self._make_handler()
         device = {
-            "color": "white", "mac": "9C:0C:35:75:B7:75", "slot": 5,
+            "color": "white", "mac": "AA:BB:CC:00:32:01", "slot": 5,
             "name": "10-SYNC", "class": "public",
         }
         with mock.patch.object(web, "read_devices", return_value=[device]), \
@@ -221,7 +221,7 @@ class VerifyRouteTests(unittest.TestCase):
     def test_verify_bt_connected_sample_returns_none_means_audio_flowing_false(self):
         h, web = self._make_handler()
         device = {
-            "color": "red", "mac": "41:42:3A:E5:43:07", "slot": 1,
+            "color": "red", "mac": "AA:BB:CC:00:30:07", "slot": 1,
             "name": "musiCozy", "class": "private",
         }
         with mock.patch.object(web, "read_devices", return_value=[device]), \

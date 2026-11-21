@@ -42,7 +42,7 @@ ssh {env.prod_host} 'docker stop daylight-station && docker rm daylight-station 
 ssh {env.prod_host} 'docker ps | grep daylight'
 
 # Test endpoint directly
-curl -s http://10.0.0.10:3111/api/v1/info | jq '.logging'
+curl -s http://{env.prod_host}:3111/api/v1/info | jq '.logging'
 
 # Check mounts
 ssh {env.prod_host} 'docker exec daylight-station ls -la /usr/src/app/data/system/'

@@ -42,6 +42,8 @@ import { FoodCatalogManager } from "./FoodCatalogManager.jsx";
 import { localTodayISO as todayISO, currentMealBucketId, bucketLabel, BUCKETS } from "./mealBuckets.js";
 import { useNutritionInput } from "../capture/useNutritionInput.js";
 import { BarcodeCapture } from "../capture/BarcodeCapture.jsx";
+import { BarcodeOperationStatus } from '../operations/BarcodeOperationStatus.jsx';
+import { useHealthOperations } from '../operations/HealthOperationsProvider.jsx';
 import { CustomFoodSheet } from "../capture/CustomFoodSheet.jsx";
 
 const logger = createAppLogger('health').child('today');
@@ -193,15 +195,57 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     try { await orphanRetry.run(); setOrphanRetry(null); logger.info('voice.retry_handoff.sent'); }
     catch (err) { setOrphanRetry(previous => previous && ({ ...previous, busy: false, error: err?.message || 'Still could not send it.' })); }
   };
-  const mealUndoOperation = useRef(null);   // bucketId | null — F5 renders the combobox here
+  const mealUndoOperations = useRef(new Map());
   const [editing, setEditing] = useState(null); // { row, date } — the edit sheet belongs to the day that opened it
   useEffect(() => {
     setEditing(current => current && (!active || current.date !== date) ? null : current);
   }, [active, date]);
-  const [captureMode, setCaptureMode] = useState(null); // 'barcode' | null
-  // bucketId | null — which meal's add-row barcode button opened the
-  // sheet (null = an unlabeled launch). Forwarded to BarcodeCapture so it
-  // can hand the same id back on decode.
+  const healthOperations = useHealthOperations();
+  const [selectedCapture, setSelectedCapture] = useState(null);
+  const captureStatusOpen = searchParams.get('capture') === 'status';
+  const showHealthCaptureStatus = () => {
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      next.set('capture', 'status');
+      return next;
+    }, { replace: true });
+  };
+  const closeHealthCaptureStatus = () => {
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      next.delete('capture');
+      return next;
+    }, { replace: true });
+  };
+  const mealLog = searchParams.get('mealLog');
+  useEffect(() => {
+    if (!active || !mealLog || day.loading || day.revalidating || day.error || !day.authoritative) return;
+    const row = day.items.find(item => (item.logId || item.logUuid) === mealLog);
+    if (row) setEditing({ row, date });
+    else setCaptureNotice('This saved meal was not found on this day.');
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      next.delete('mealLog');
+      return next;
+    }, { replace: true });
+  }, [active, date, day.items, day.loading, day.revalidating, day.error, day.authoritative, mealLog, setSearchParams]);
+  useEffect(() => {
+    if (!selectedCapture || selectedCapture.date !== date) return;
+    const row = day.items.find(item => selectedCapture.entryIds.includes(String(entryId(item))));
+    if (row) {
+      setEditing({ row, date: selectedCapture.date });
+      setSelectedCapture(null);
+    }
+  }, [date, day.items, selectedCapture]);
+  const [captureMode, setCaptureMode] = useState(() => searchParams.get('capture') === 'barcode' ? 'barcode' : null);
+  const barcodeShortcut = useRef(searchParams.get('capture') === 'barcode');
+  useEffect(() => {
+    if (!active) {
+      setCaptureMode(null);
+      barcodeShortcut.current = false;
+    }
+  }, [active]);
+  // The meal launching the scanner supplies its default review target.
   const [barcodeTargetBucket, setBarcodeTargetBucket] = useState(null);
   const [unknownUpc, setUnknownUpc] = useState(null);
   const [templateVisit, setTemplateVisit] = useState(null);
@@ -401,7 +445,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     }
   };
 
-  // Photo/voice/barcode submissions land immediately as an already-logged
+  // Photo and voice submissions land immediately as an already-logged
   // (unsettled) NutriLog (food detected — the day reload shows it in place
   // with the unsettled cue) or as a plain status message (e.g. "no food
   // detected") with no choices at all. The no-food-detected case must still
@@ -434,7 +478,6 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     return { ...undo, label: capturePlace(what, landed, mealId), offer: { logId: result.logId, ids, what, date: landed } };
   };
   const showAdded = undo => {
-    if (undo.token) mealUndoOperation.current = null;
     if (undo.offer) logger.info('capture.offer', { logId: undo.offer.logId ?? null, count: undo.offer.ids.length, date: undo.offer.date, undo: Boolean(undo.token) });
     setCaptureToasts(state => announceCapture(state, undo));
   };
@@ -503,7 +546,6 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     // A replayed reply can come without the flag the capture toast reads.
     if (result.kind === 'added' && offerAddedFood({ ...result, committed: true }, asked, { added: true })) return;
     if (!result.undoToken) { setDayNotice(result.message || null); return; }
-    mealUndoOperation.current = null;
     const rows = result.items || [];
     const moved = { ids: [...new Set([...(result.entryIds || []), ...(result.affectedIds || []), ...rows.map(entryId)].map(String))],
       logIds: [...new Set(rows.map(row => row.logId).filter(Boolean))], toDate: result.toDate ?? null };
@@ -545,7 +587,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     day.reload();
   };
 
-  // Wraps any capture submit (photo/voice/barcode) with the in-place pending
+  // Wraps any capture submit (photo/voice) with the in-place pending
   // placeholder: mark the bucket a new entry would land in NOW as pending
   // before the request goes out, always clear it afterward regardless of
   // outcome — a failed capture must not leave a stuck "Analyzing…" row.
@@ -618,9 +660,16 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   const onTextCapture = (text,bucket,context) => handleVoiceOrPhotoCapture('text',text,bucket,context);
   const onPhotoCapture = (dataUrl, bucket) => handleVoiceOrPhotoCapture('image', dataUrl, bucket);
 
-  // Opens the barcode sheet, pre-targeted at the meal whose add row asked.
+  const closeBarcode = () => {
+    setCaptureMode(null);
+    barcodeShortcut.current = false;
+    if (searchParams.get('capture') === 'barcode') {
+      setSearchParams(previous => { const next = new URLSearchParams(previous); next.delete('capture'); return next; }, { replace: true });
+    }
+  };
   const openBarcode = (bucketId = null) => {
-    setBarcodeTargetBucket(bucketId);
+    barcodeShortcut.current = false;
+    setBarcodeTargetBucket(bucketId || (date === todayISO() ? currentMealBucketId() : BUCKETS[0].id));
     setBarcodeDate(date);
     setCaptureMode('barcode');
   };
@@ -656,20 +705,40 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   // `day.loading` false the whole time, so it never re-triggers this.
   const coldLoading = day.loading && !day.items.length;
 
-  const undoMealChange = async () => {
-    if (undoPending.current || !mealUndo) return;
+  const undoMealChange = async (tokenToUndo, reportFailure, stableOperationId) => {
+    const token = typeof tokenToUndo === 'string' ? tokenToUndo : mealUndo?.token;
+    if (undoPending.current || !token) return false;
     undoPending.current = true; setUndoBusy(true);
-    mealUndoOperation.current ??= crypto.randomUUID();
-    const { token } = mealUndo, operationId = mealUndoOperation.current;
+    const barcodeReceipt = [...(healthOperations?.snapshot.operations.values() || [])].find(op =>
+      op.kind === 'barcode-commit' && (op.receipt?.undoToken || op.response?.undoToken) === token);
+    const operationId = mealUndoOperations.current.get(token) || stableOperationId
+      || (barcodeReceipt ? `undo-${barcodeReceipt.id}` : crypto.randomUUID());
+    mealUndoOperations.current.set(token, operationId);
     const onThisUndo = change => setCaptureToasts(state => (state.undo?.token === token ? { ...state, undo: change(state.undo) } : state));
     onThisUndo(undo => ({ ...undo, failure: null }));
     try {
-      // In the continuation, so a retry from the page's toast finishes it the same way.
-      await foodAPI.withContinuation('api/v1/health/nutrition/meal-undo', { undoToken: token, operationId }, 'POST', () => { setCaptureToasts(state => afterMealUndo(state, token)); day.reload(); });
+      // The sheet can outlive the page's latest Undo toast. Each token owns its retry.
+      await foodAPI.withContinuation('api/v1/health/nutrition/meal-undo', { undoToken: token, operationId }, 'POST', () => {
+        mealUndoOperations.current.delete(token);
+        setCaptureToasts(state => afterMealUndo(state, token));
+        healthOperations?.store.markBarcodeUndone(token);
+        day.reload();
+      });
+      return true;
     } catch (err) {
       logger.warn('meal-undo.failed', { status: err?.status, error: err?.message });
-      if (isDefiniteRefusal(err)) { foodAPI.release(operationId); mealUndoOperation.current = null; setCaptureNotice(refusalReason(err) || "Couldn't undo that."); }
-      else onThisUndo(undo => ({ ...undo, failure: "Couldn't confirm that undo. Try again when connected." }));
+      if (isDefiniteRefusal(err)) {
+        foodAPI.release(operationId);
+        mealUndoOperations.current.delete(token);
+        const failure = refusalReason(err) || "Couldn't undo that.";
+        if (reportFailure) reportFailure(failure);
+        else setCaptureNotice(failure);
+      } else {
+        const failure = "Couldn't confirm that undo. Try again when connected.";
+        reportFailure?.(failure);
+        onThisUndo(undo => ({ ...undo, failure }));
+      }
+      return false;
     } finally { undoPending.current = false; setUndoBusy(false); }
   };
   const undoDeletedEntry = async () => {
@@ -685,7 +754,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   };
   // A move with no known outcome is reported by whatever is showing it. Anything
   // no longer showing one falls to the page's toast, which can retry or release it.
-  const shownMoves = new Set([sheetMove, moves.undo?.operationId, mealUndo ? mealUndoOperation.current : null,
+  const shownMoves = new Set([sheetMove, moves.undo?.operationId, mealUndo ? mealUndoOperations.current.get(mealUndo.token) : null,
     ...[mealUndo, ...captureToasts.offers].map(shown => shown?.retryMove?.operationId)].filter(Boolean));
   const unresolvedMoves = moves.unresolved.filter(move => !shownMoves.has(move.id));
   // A portion edit's error is shown on its own row (EntryRow). The one case
@@ -770,36 +839,39 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         { committed: true, logId: entry.id, items: entry.items, date: placed.date || entry.date, mealTime: placed.mealTime }, date)} />
       {!wideViewport || !sidebarTarget ? <details className="health-history"><summary>Week &amp; weight history</summary>{history}</details> : null}
       {coachLine ? <Button variant="subtle" onClick={() => onCoachTap()}>{coachLine}</Button> : null}
-      <BarcodeCapture open={active && captureMode === 'barcode'} busy={false} bucket={barcodeTargetBucket}
-        onClose={() => { setCaptureMode(null); setBarcodeTargetBucket(null); }}
-        onDecode={async (upc, bucket) => {
-          const result = await submitWithPending('barcode', upc, { bucket, date: barcodeDate });
-          if (result?.unknownUpc) { setCaptureMode(null); setUnknownUpc(result.upc); return; }
-          setCaptureMode(null);
-          // Not a food barcode (bad check digit, an ISBN): nothing was logged,
-          // and the server sends the one sentence that says why.
-          if (result?.outcome === 'rejected-barcode') {
-            logger.info('barcode.rejected', { reason: result.rejected ?? null });
-            setCaptureNotice(result.message || "That isn't a food barcode.");
-            return;
-          }
-          // Saved, but no calories were found: it waits in Needs Review
-          // instead of adding an unknown to the day's totals.
-          if (result?.outcome === 'needs-review') {
-            logger.info('barcode.needs-review', { logId: result.logId ?? null, quarantined: result.quarantined === true });
-            setCaptureNotice(result.message || 'Needs review — no calories found');
-            pendingReview.reload();
-            return;
-          }
-          // No calories on the label: logged anyway as an unconfirmed AI
-          // estimate of one typical serving. Say so — it is a guess to check.
-          if (result?.aiEstimate) {
-            logger.info('barcode.ai-estimate', { logId: result.logId ?? null });
-            setCaptureNotice('No calories on the label — estimated for one serving. Check the row.');
-          }
-          const reported = offerAddedFood(result, barcodeDate);
-          if (!result?.aiEstimate && result?.moved && !reported) setCaptureNotice(`Moved to ${bucketLabel(result.mealTime)}`);
-          day.reload();
+      <BarcodeOperationStatus open={active && captureStatusOpen} onClose={closeHealthCaptureStatus}
+        undoBusy={undoBusy} onUndo={undoMealChange} onView={receipt => {
+          setSelectedCapture(receipt);
+          setSearchParams(previous => {
+            const next = new URLSearchParams(previous);
+            next.delete('capture');
+            if (receipt.date !== date) {
+              next.set('date', receipt.date);
+              next.set('week', weekEnd(receipt.date));
+            }
+            return next;
+          }, { replace: true });
+        }} />
+      <BarcodeCapture open={active && captureMode === 'barcode'} quickScan={barcodeShortcut.current} bucket={barcodeTargetBucket || currentMealBucketId()}
+        meals={BUCKETS.map(meal => ({ value: meal.id, label: meal.label }))}
+        undoBusy={undoBusy} onUndo={undoMealChange}
+        onClose={() => {
+          if (barcodeShortcut.current) window.dispatchEvent(new Event('daylight:barcode-shortcut-done'));
+          closeBarcode();
+        }} onStatus={barcodeShortcut.current ? undefined : showHealthCaptureStatus}
+        onDecode={(upc, _bucket, signal) => nutrition.lookupBarcode(upc, signal)}
+        onConfirm={prepared => nutrition.commitBarcode({ ...prepared, date: barcodeDate }, result => {
+          offerAddedFood(result, barcodeDate, { added: true });
+        })}
+        onUnknown={(upc, bucket) => { closeBarcode(); setBarcodeTargetBucket(bucket); setUnknownUpc(upc); }}
+        onDone={() => {
+          if (barcodeShortcut.current) window.dispatchEvent(new Event('daylight:barcode-shortcut-done'));
+          closeBarcode();
+        }}
+        onView={result => {
+          closeBarcode();
+          const row = (result.items || []).find(item => String(entryId(item)) === result.entryIds[0]);
+          if (row) { if (row.date !== date) setDate(row.date); setEditing({ row, date: row.date || date }); }
         }} />
       <CustomFoodSheet upc={unknownUpc} open={Boolean(unknownUpc)}
         bucketId={barcodeTargetBucket} date={barcodeDate}

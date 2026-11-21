@@ -29,12 +29,15 @@ import { useVolumeSync } from "../hooks/useVolumeSync.js";
 import { useGovernanceAudioDuck } from "./hooks/useGovernanceAudioDuck.js";
 import { installCueAudioUnlock } from "./hooks/audioCuePlayer.js";
 import UnlockPrompt from "./overlays/UnlockPrompt.jsx";
+import { registerPlaybackTarget } from "../lib/remoteButtons/remotePlaybackTarget.js";
+import { decideFooterPlayPause } from "./footer/footerPlayPause.js";
+import { snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from "../../../../../__capabilities/playback/browser/volume/touchVolumeModel.js";
 import PresenceGateNotice from "./overlays/PresenceGateNotice.jsx";
 import PlaybackBudgetNotice from "./overlays/PlaybackBudgetNotice.jsx";
 import usePresenceGate from "../hooks/usePresenceGate.js";
 import usePresenceGatePrompt from "./usePresenceGatePrompt.js";
 import { useIdentity } from "../identity/useIdentity.js";
-import { shouldBypassGovernance } from "./governanceBypass.js";
+import { shouldBypassGovernance, applyGovernanceBypass } from "./governanceBypass.js";
 import { isKioskEnv } from '@/lib/kioskEnv.js';
 import { useRenderProfiler } from "../hooks/fitness/useRenderProfiler.js";
 import usePlayerFrameCapture from "../hooks/fitness/usePlayerFrameCapture.js";
@@ -200,6 +203,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     setVideoLoading,
     setGovernanceMedia,
     governanceState,
+    setGovernanceBypassed,
     plexConfig,
     fitnessSessionInstance,
     transportRecovery,
@@ -347,23 +351,22 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     bypassActive,
     itemNogovern: Boolean(currentItem?.nogovern)
   });
-  // Override the snapshot to a fully-unlocked state when bypassed. Null the
-  // lock-driven side-channels too (audioDuck / challenge / deadline) so nothing
-  // downstream (audio duck, cycle dim, warning scrim) keeps acting on the lock
-  // we just released — otherwise the override would be only half-applied.
-  const effectiveGovernanceState = useMemo(() => (
-    governanceBypassed
-      ? {
-          ...governanceState,
-          videoLocked: false,
-          isGoverned: false,
-          status: 'unlocked',
-          audioDuck: null,
-          challenge: null,
-          deadline: null
-        }
-      : governanceState
-  ), [governanceBypassed, governanceState]);
+  // Publish the bypass to FitnessContext, which applies it to the `governanceState`
+  // every other consumer reads — above all the playback-budget meter, which holds
+  // the media whenever it sees `videoLocked`. A bypass applied only here released
+  // the lock screen while the meter kept pausing the video (2026-11-20).
+  useEffect(() => {
+    setGovernanceBypassed?.(governanceBypassed);
+  }, [governanceBypassed, setGovernanceBypassed]);
+  useEffect(() => () => { setGovernanceBypassed?.(false); }, [setGovernanceBypassed]);
+  // Same function, same flag, applied to this render too, so the player never sees
+  // a locked frame in the one render before the context catches up. Idempotent on
+  // the context's already-bypassed state. Lock-driven side channels (audioDuck /
+  // challenge / deadline) are nulled by applyGovernanceBypass.
+  const effectiveGovernanceState = useMemo(
+    () => applyGovernanceBypass(governanceState, governanceBypassed),
+    [governanceBypassed, governanceState]
+  );
 
   // Clear a runtime bypass when the playing item changes so it never leaks past
   // the lock it was granted for. (The per-item `currentItem.nogovern` flag is
@@ -1947,6 +1950,45 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   const currentIndex = currentItem ? queue.findIndex(item => item.id === currentItem?.id) : -1;
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex >= 0 && currentIndex < queue.length - 1;
+
+  // A Bluetooth remote's Playback buttons (Bluetooth screen → Edit buttons)
+  // drive this player through the same controls as the footer and the
+  // Settings volume strip (remoteButtonRuntime → registerPlaybackTarget).
+  const remoteControlsRef = useRef(null);
+  remoteControlsRef.current = {
+    playIsGoverned: Boolean(effectiveGovernanceState?.videoLocked), hasNext, hasPrev, handleNext, handlePrev, videoVolume,
+  };
+  useEffect(() => registerPlaybackTarget({
+    id: 'fitness-player',
+    playPause: () => {
+      const c = remoteControlsRef.current;
+      if (c.playIsGoverned) { logger.info('fitness.remote-buttons.play-governed', {}); return; }
+      const api = playerRef.current; if (!api) return;
+      const media = api.getMediaElement?.() || null;
+      const action = decideFooterPlayPause({
+        elPaused: media ? media.paused : null,
+        readyState: media ? media.readyState : null,
+        hasToggle: typeof api.toggle === 'function',
+      });
+      logger.info('fitness.control.press', { control: 'remote-play-pause', action });
+      if (action === 'play') api.play?.();
+      else if (action === 'pause') api.pause?.();
+      else if (action === 'toggle') api.toggle();
+    },
+    // Next at the end of the queue would close the player: a button press never does.
+    next: () => { const c = remoteControlsRef.current; if (c.hasNext) c.handleNext(); },
+    previous: () => { const c = remoteControlsRef.current; if (c.hasPrev) c.handlePrev(); },
+    volumeUp: () => {
+      const v = remoteControlsRef.current.videoVolume;
+      const level = snapToTouchLevel(linearLevelFromVolume(v?.volume));
+      v?.setVolume?.(linearVolumeFromLevel(Math.min(100, level + 10)));
+    },
+    volumeDown: () => {
+      const v = remoteControlsRef.current.videoVolume;
+      const level = snapToTouchLevel(linearLevelFromVolume(v?.volume));
+      v?.setVolume?.(linearVolumeFromLevel(Math.max(0, level - 10)));
+    },
+  }), [logger]);
 
   // Prepare additional metadata that might be useful for the Player
   // const enhancedCurrentItem = { ... old implementation removed };

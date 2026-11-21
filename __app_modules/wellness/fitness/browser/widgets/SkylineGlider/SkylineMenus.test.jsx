@@ -88,3 +88,16 @@ it('a muted sheet says so and offers Unmute',()=>{
  expect(screen.getByRole('button',{name:'Unmute'})).toHaveAttribute('aria-pressed','true');
  expect(container.querySelectorAll('.touch-volume-button.on')).toHaveLength(0);
 });
+// 2026-11-20: a resume showed "Pedal to take off", the same screen as a new launch.
+it('a resume reads as continuing, never as a new take-off',()=>{
+ const acts=[{id:'mp',name:'Mountain Pass',status:'open'}];
+ const base={riders:[],acts,actId:'mp',cadence:{rpm:0},countdown:3};
+ const { rerender } = render(<SkylineMenus state={{...base,phase:'ready',resumeIntent:'live',flight:{courseTime:103.8}}} riders={[]} acts={acts}/>);
+ expect(screen.getByRole('heading')).toHaveTextContent('Pedal to continue');
+ expect(screen.getByText(/paused at 1:43/)).toBeInTheDocument();
+ rerender(<SkylineMenus state={{...base,phase:'ready',resumeIntent:'checkpoint',flight:{courseTime:80}}} riders={[]} acts={acts}/>);
+ expect(screen.getByRole('heading')).toHaveTextContent('Pedal to continue');
+ expect(screen.getByText(/from the last windsock/)).toBeInTheDocument();
+ rerender(<SkylineMenus state={{...base,phase:'ready',resumeIntent:'new'}} riders={[]} acts={acts}/>);
+ expect(screen.getByRole('heading')).toHaveTextContent('Pedal to take off');
+});

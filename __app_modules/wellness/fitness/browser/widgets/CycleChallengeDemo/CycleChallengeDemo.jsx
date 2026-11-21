@@ -72,13 +72,16 @@ export default function CycleChallengeDemo({ onClose }) {
   // tick is a 500ms force-recompute counter (see mount effect above)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const equipment = useMemo(() => ctl?.getEquipment?.() || [], [ctl, tick]);
-  const cycleAce = equipment.find((e) => e.equipmentId === 'cycle_ace') || null;
+  // The demo drives the first cycle selection whose bike is in the catalog —
+  // which bike that is comes from the household's config, never from code.
   const selection = useMemo(() => {
     const list = ctl?.listCycleSelections?.() || [];
-    return list.find((s) => s.equipment === 'cycle_ace') || null;
+    return list.find((s) => equipment.some((e) => e.equipmentId === s.equipment)) || null;
     // tick is a 500ms force-recompute counter (see mount effect above)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctl, tick]);
+  }, [ctl, tick, equipment]);
+  const demoBike = selection ? equipment.find((e) => e.equipmentId === selection.equipment) || null : null;
+  const demoBikeId = demoBike?.equipmentId || null;
 
   const gov = safeReadGov();
   const session = safeReadSession();
@@ -88,12 +91,12 @@ export default function CycleChallengeDemo({ onClose }) {
       clearInterval(sustainRef.current);
       sustainRef.current = null;
     }
-    if (!ctl) return;
-    ctl.setRpm('cycle_ace', rpm);
+    if (!ctl || !demoBikeId) return;
+    ctl.setRpm(demoBikeId, rpm);
     if (rpm > 0) {
-      sustainRef.current = setInterval(() => ctl.setRpm('cycle_ace', rpm), 1000);
+      sustainRef.current = setInterval(() => ctl.setRpm(demoBikeId, rpm), 1000);
     }
-  }, [ctl]);
+  }, [ctl, demoBikeId]);
 
   const clearChallenge = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -146,12 +149,12 @@ export default function CycleChallengeDemo({ onClose }) {
           if (cancelRef.current) { clearInterval(hrInterval); return; }
 
           // 2. Trigger — forced so it bypasses governance gates.
-          if (!cycleAce || !selection) {
-            stageLog('cycle_ace or selection not in catalog — cannot trigger.');
+          if (!demoBike || !selection) {
+            stageLog('No cycle selection with a bike in the catalog — cannot trigger.');
             clearInterval(hrInterval);
             return;
           }
-          const riderId = cycleAce.eligibleUsers[0];
+          const riderId = demoBike.eligibleUsers[0];
           stageLog(`2/8 Triggering cycle (rider=${riderId})`);
           const trig = ctl.triggerCycleChallenge({ selectionId: selection.id, riderId });
           if (!trig?.success) {
@@ -225,11 +228,11 @@ export default function CycleChallengeDemo({ onClose }) {
       cancelRef.current = true;
       if (sustainRef.current) clearInterval(sustainRef.current);
     };
-    // cycleAce/selection are useMemo'd off tick (recreated every 500ms); this action-effect
+    // demoBike/selection are useMemo'd off tick (recreated every 500ms); this action-effect
     // drives a live async device-triggering sequence, so it's narrowed to equipmentId/id to
     // avoid restarting the whole sequence every tick.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running, ctl, cycleAce?.equipmentId, selection?.id, setSustainedRpm, clearChallenge, logger, iteration]);
+  }, [running, ctl, demoBikeId, selection?.id, setSustainedRpm, clearChallenge, logger, iteration]);
 
   const handleStop = () => {
     setRunning(false);
@@ -238,7 +241,7 @@ export default function CycleChallengeDemo({ onClose }) {
       clearInterval(sustainRef.current);
       sustainRef.current = null;
     }
-    if (ctl) ctl.setRpm('cycle_ace', 0);
+    if (ctl && demoBikeId) ctl.setRpm(demoBikeId, 0);
     setStage('Stopped.');
   };
 
@@ -260,10 +263,10 @@ export default function CycleChallengeDemo({ onClose }) {
     if (typeof window === 'undefined') return null;
     const session = window.__fitnessSession;
     const engine = session?.governanceEngine || session?.session?.governanceEngine;
-    return engine?._latestInputs?.equipmentCadenceMap?.cycle_ace || null;
+    return (demoBikeId && engine?._latestInputs?.equipmentCadenceMap?.[demoBikeId]) || null;
     // tick is a 500ms force-recompute counter (see mount effect above)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tick]);
+  }, [tick, demoBikeId]);
 
   const rowStyle = (active) => ({
     background: active ? 'rgba(34,197,94,0.18)' : 'transparent',

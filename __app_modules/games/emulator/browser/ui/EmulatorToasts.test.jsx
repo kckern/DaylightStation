@@ -3,9 +3,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import { EmulatorToasts } from "./EmulatorToasts.jsx";
 
-const SFC30 = { id: 'sfc30', label: '8BitDo SFC30', address: 'E4:17:D8:C6:54:F0' };
+const SFC30 = { id: 'sfc30', label: '8BitDo SFC30', address: 'E4:17:D8:00:00:10' };
 const inv = (connected) => (connected
-  ? [{ address: 'e4:17:d8:c6:54:f0', name: '8Bitdo SFC30 GamePad', connected: true, battery: 60 }]
+  ? [{ address: 'e4:17:d8:00:00:10', name: '8Bitdo SFC30 GamePad', connected: true, battery: 60 }]
   : []);
 
 describe('EmulatorToasts', () => {
@@ -43,7 +43,7 @@ describe('EmulatorToasts', () => {
     act(() => {
       rerender(
         <EmulatorToasts
-          btInventory={[{ address: 'e4:17:d8:c6:54:f0', name: '8Bitdo SFC30 GamePad', connected: true, battery: 55 }]}
+          btInventory={[{ address: 'e4:17:d8:00:00:10', name: '8Bitdo SFC30 GamePad', connected: true, battery: 55 }]}
           controllers={[SFC30]}
           autoDismissMs={4000}
         />,

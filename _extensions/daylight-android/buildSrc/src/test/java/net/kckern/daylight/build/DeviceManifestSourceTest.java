@@ -150,6 +150,14 @@ public class DeviceManifestSourceTest {
                 Collections.emptyList(), Collections.emptyList(), "loopback", appLinksHost);
     }
 
+    @Test public void phoneServiceWindowUsesItsOwnTask() {
+        DeviceSpec personal = new DeviceSpec("phone", "net.kckern.daylight.phone", 26, 33, Collections.emptyList(),
+                8780, 8781, 1, "0.1", Arrays.asList("webview-host", "widgets"), Collections.emptyMap(),
+                Collections.emptyList(), Collections.emptyList(), "none", "");
+        String xml = DeviceManifestSource.render(personal);
+        assertTrue(xml, xml.contains("android:taskAffinity=\"net.kckern.daylight.phone.service\""));
+    }
+
     private static Placeholders placeholders(String yaml) throws Exception {
         java.io.File f = java.io.File.createTempFile("private", ".yml");
         f.deleteOnExit();

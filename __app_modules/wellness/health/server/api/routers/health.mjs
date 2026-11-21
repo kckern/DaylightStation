@@ -735,7 +735,7 @@ export function createHealthRouter(config) {
   // ==========================================================================
 
   if (healthOperations.nutritionItemsAvailable) {
-    for (const [route, method] of [['meal-command', 'mealFoodCommand'], ['meal-undo', 'undoMealFoodCommand'], ['foods-move', 'moveFoods']]) {
+    for (const [route, method] of [['meal-command', 'mealFoodCommand'], ['barcode-commit', 'logBarcode'], ['meal-undo', 'undoMealFoodCommand'], ['foods-move', 'moveFoods']]) {
       router.post(`/nutrition/${route}`, asyncHandler(async (req, res) => {
         const userId = getDefaultUsername(req);
         try {
@@ -915,6 +915,20 @@ export function createHealthRouter(config) {
   // ==========================================================================
   // Food Catalog Endpoints
   // ==========================================================================
+
+  if (catalogService?.getByUpc) {
+    router.get('/nutrition/barcode-lookup', asyncHandler(async (req, res) => {
+      res.set('Cache-Control', 'no-store');
+      if (typeof req.query.upc !== 'string') return res.status(400).json({ error: 'A barcode number is required.' });
+      try {
+        return res.json(await healthOperations.lookupBarcode(getDefaultUsername(req), req.query.upc, { catalogService, provider: config.barcodeLookup }));
+      } catch (err) {
+        if (err.code === 'INVALID_BARCODE') return res.status(400).json({ error: err.message, code: err.code });
+        logger.warn?.('health.barcode.lookup.failed', { error: err.message });
+        return res.status(503).json({ error: 'Barcode lookup is unavailable. Try again.' });
+      }
+    }));
+  }
 
   if (catalogService) {
 

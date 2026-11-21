@@ -11,12 +11,12 @@ const sum = (o) => COLORS.reduce((s, c) => s + (o[c] || 0), 0);
 test('isCumulativeKey: cumulative suffixes only', () => {
   assert.equal(isCumulativeKey('user_3:beats'), true);
   assert.equal(isCumulativeKey('user_3:rings'), true);
-  assert.equal(isCumulativeKey('bike:7138:rotations'), true);
+  assert.equal(isCumulativeKey('bike:10101:rotations'), true);
   assert.equal(isCumulativeKey('vib:step-platform:impacts'), true);
   assert.equal(isCumulativeKey('global:rings'), true);
   assert.equal(isCumulativeKey('user_3:hr'), false);
   assert.equal(isCumulativeKey('user_3:zone'), false);
-  assert.equal(isCumulativeKey('bike:7138:rpm'), false);
+  assert.equal(isCumulativeKey('bike:10101:rpm'), false);
   assert.equal(isCumulativeKey('device:90001:heart-rate'), false);
 });
 

@@ -1,3 +1,4 @@
+import { parseGtin } from '../../nutrition-scan.mjs';
 import { sha256Text } from '#system/utils/sha256.mjs';
 import { v5 as uuidv5 } from 'uuid';
 import { isISODate } from '../../../portable/contracts/health/isoDate.mjs';
@@ -84,6 +85,56 @@ function amendmentPatch(row, requested, { voiceCorrection = false } = {}) {
 /** Meal-scoped, version-checked commands. All snapshots and replies commit with the ledger. */
 export class MealFoodCommands {
   constructor({ nutritionItems, logger = {} }) { this.store = nutritionItems; this.logger = logger; }
+
+  async lookupBarcode(userId, rawCode, { catalogService, provider }) {
+    const gtin = parseGtin(rawCode);
+    if (!gtin.ok) throw Object.assign(new Error("That isn't a food barcode."), { code: 'INVALID_BARCODE' });
+    const upc = gtin.code;
+    const entry = await catalogService.getByUpc(upc, userId);
+    const upstream = entry ? null : await provider?.(upc);
+    const portion = entry?.proposedPortion() || (upstream && {
+      amount: upstream.serving.size, unit: upstream.serving.unit,
+      grams: upstream.serving.unit === 'g' ? upstream.serving.size : null,
+      nutrients: upstream.nutrition,
+    });
+    const name = entry?.name || upstream?.name;
+    if (!name || !(portion?.amount > 0) || !portion.unit || !Number.isFinite(portion.nutrients?.calories) || portion.nutrients.calories < 0) {
+      return { upc, product: null };
+    }
+    const { amount, unit, grams, nutrients } = portion;
+    const product = { name, amount, unit, grams, ...Object.fromEntries(NUTRIENT_KEYS
+      .filter(key => Number.isFinite(nutrients[key]) && nutrients[key] >= 0).map(key => [key, nutrients[key]])) };
+    return { upc, product };
+  }
+
+  async logBarcode(userId, input) {
+    const { operationId, date, bucket, upc, product } = input;
+    if (typeof operationId !== 'string' || !operationPattern.test(operationId) || !isISODate(date) || !isMeal(bucket)) {
+      fail('A valid operation ID, date and meal are required');
+    }
+    const gtin = parseGtin(upc);
+    if (!gtin.ok || gtin.code !== upc) fail('A valid barcode is required');
+    if (!isPlainObject(product)) fail('A reviewed product is required');
+    const allowed = ['name', 'amount', 'unit', 'grams', ...NUTRIENT_KEYS];
+    if (Object.keys(product).some(key => !allowed.includes(key))) fail('Unsupported barcode product field');
+    const values = Object.fromEntries(allowed.filter(key => Object.hasOwn(product, key)).map(key => [key, product[key]]));
+    validateChanges(values);
+    if (!values.name || !values.unit || !(values.amount > 0) || !Number.isFinite(values.calories) || (values.grams != null && !(values.grams > 0))) {
+      fail('A food name, portion and calories are required');
+    }
+    const payload = { operation: 'barcode-commit', date, bucket, upc, product: values };
+    return this.store.runOperation(userId, operationId, payload, async () => {
+      const undoToken = `meal-${uuidv5(`${userId}:${operationId}:barcode-undo`, uuidv5.URL)}`;
+      const name = values.name.trim();
+      return this.store.mutateEntries(userId, {
+        creates: [{ ...values, name, item: name, label: name, upc, userId, date, mealTime: bucket, kind: 'food',
+          uuid: uuidv5(`${userId}:${operationId}:barcode-entry`, uuidv5.URL), settled: true, settledBy: 'user' }],
+        allowFoodCreates: true, auditCreated: true,
+        audit: { id: undoToken, fingerprint: fingerprint(payload), type: 'meal-command', date, bucket },
+        resultMeta: { committed: true, date, bucket, undoToken },
+      });
+    });
+  }
 
   /** `options` comes from server code only; the HTTP body cannot reach it. */
   async execute(userId, input, options = {}) {

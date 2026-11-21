@@ -9,6 +9,7 @@ import { useRetryRegion } from '@/lib/ui/useRetryRegion.js';
 import { useVisibleRefresh } from "@/lib/hooks/useVisibleRefresh.js";
 import { useFeedWorkspace } from "../FeedWorkspaceContext.jsx";
 import "../FeedShared.scss";
+import { webLink } from "../../shared/webLink.mjs";
 
 const resultKey = item => item.stateKey || item.id;
 const NO_RESULTS = { items: [], nextCursor: null, total: 0, coverage: null };
@@ -272,7 +273,7 @@ export default function FeedSearch() {
           return <article className="feed-result" key={key}>
             <div className="feed-result__meta">{item.sourceInfo?.label || item.source} · {item.publishedAt ? new Date(item.publishedAt).toLocaleDateString() : ''}{item.state?.syncStatus === 'pending' ? ' · sync pending' : ''}</div>
             <h2 ref={isFocusTarget ? appendedHeadingRef : null} tabIndex={isFocusTarget ? -1 : undefined}>
-              {item.url ? <a href={item.url} target="_blank" rel="noreferrer">{item.title}</a> : item.title}
+              {webLink(item.url) ? <a href={webLink(item.url)} target="_blank" rel="noreferrer">{item.title}</a> : item.title}
             </h2>
             {item.summary && <p>{item.summary}</p>}
             <div className="feed-item-actions">

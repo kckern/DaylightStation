@@ -18,13 +18,13 @@ for IN and Web MIDI for OUT.
 ## 1. Physical topology (as observed)
 
 There is **one physical path** between the browser and the piano, and it runs through the
-**JamCorder** — a networked DIN↔BLE MIDI relay (`jam-7e6`, BLE MAC `10:65:36:36:62:66`,
-HTTP at `http://10.0.0.243`). The piano connects to the JamCorder over **USB**; the
+**JamCorder** — a networked DIN↔BLE MIDI relay (`midi-relay-01`, BLE MAC `aa:bb:cc:00:10:01`,
+HTTP at `http://<jamcorder-ip>`). The piano connects to the JamCorder over **USB**; the
 JamCorder bridges that to **BLE-MIDI** (and to its 5-pin DIN). Verified from the
 JamCorder's own message counters (`GET /api/device-state/get` → `midiMsgCounts`):
 
 ```
-  piano ──USB──▶ JamCorder ──BLE(jam-7e6)──▶ tablet
+  piano ──USB──▶ JamCorder ──BLE(midi-relay-01)──▶ tablet
         ◀─USB──           ◀─BLE──────────
   usb.in  = piano→JamCorder (notes played)     → routed to ble.out (to tablet) + uart.out
   ble.in  = tablet→JamCorder (voice/notes OUT) → routed to usb.out (to piano) + uart.out
@@ -35,12 +35,12 @@ Routing on the JamCorder is config (`/api/midi-io/settings/get`): `dinToBle`, `b
 matters for OUT confirmation — see §6).
 
 The tablet is the single BLE **radio**, but there are **two logical clients** on it that
-both claim the `jam-7e6` device — this split is the root of every risk in §5:
+both claim the `midi-relay-01` device — this split is the root of every risk in §5:
 
 - The **native piano-bridge APK** (`_extensions/piano-bridge`, `net.kckern.pianobridge`,
-  control server at `10.0.0.245:8770`) opens `jam-7e6` via Android `MidiManager` and
+  control server at `<tablet-ip>:8770`) opens `midi-relay-01` via Android `MidiManager` and
   **reads** notes.
-- The **browser** (FKB WebView) opens `jam-7e6` via **Web MIDI** and **writes** output.
+- The **browser** (FKB WebView) opens `midi-relay-01` via **Web MIDI** and **writes** output.
 
 ---
 
@@ -51,7 +51,7 @@ MIDI IN and MIDI OUT travel **different client transports over the same BLE devi
 | Direction | Path | Owner | Frontend surface |
 |-----------|------|-------|------------------|
 | **IN** (notes played → UI) | piano → USB → JamCorder → BLE → **APK reads** → **WebSocket** `:8770` → browser | native APK | `usePianoBridgeNotes` → `feedNote()` → note store |
-| **OUT** (voice/effects/notes → piano) | browser → **Web MIDI output** (`jam-7e6`) → BLE → JamCorder → USB → piano | browser | `useWebMidiBLE` `sendProgramChange`/`sendVoice`/`pressNote`/… |
+| **OUT** (voice/effects/notes → piano) | browser → **Web MIDI output** (`midi-relay-01`) → BLE → JamCorder → USB → piano | browser | `useWebMidiBLE` `sendProgramChange`/`sendVoice`/`pressNote`/… |
 
 So IN is a **native-read-then-relay**, OUT is a **direct browser write**. They are not
 symmetric and they fail independently.
@@ -128,7 +128,7 @@ with wake locks.
    *output* port alone did not attach Chrome to the write path (JamCorder `ble.in` stayed 0).
    `holdInputForOutput` opens the input port (no note handler — the bridge is still the note
    source) so OUTPUT traverses BLE. **This is a compromise, not free:** it means the browser
-   opens a port on `jam-7e6`, i.e. the browser becomes a *second claimant* on the APK's
+   opens a port on `midi-relay-01`, i.e. the browser becomes a *second claimant* on the APK's
    device (§5.1). Verified working: `ble.in`/`usb.out` increment in lockstep on send.
 
 ---
@@ -139,7 +139,7 @@ The danger is not "two transports" per se — it is **two clients claiming one B
 plus **independent, asymmetric failure**.
 
 ### 5.1 Dual claimants on one BLE device → contention (biggest, but latent here)
-The APK and the browser both open `jam-7e6` through the one radio (the APK reads; the
+The APK and the browser both open `midi-relay-01` through the one radio (the APK reads; the
 browser opens the input via `holdInputForOutput` so OUTPUT attaches — §4.5). This *is* a
 dual-claimant setup and the coupling is invisible until it flaps. **In practice on this
 hardware the MIDI link has stayed stable** — `ble.reconnects` held at ~13 with
@@ -212,7 +212,7 @@ Commit `c7fa91b86`. Both are additive and scoped to the browser surface.
 
 ## 7. The resilient endgame (single BLE owner)
 
-The durable fix for §5.1–§5.4 is **one claimant**: the APK owns `jam-7e6` **full-duplex**
+The durable fix for §5.1–§5.4 is **one claimant**: the APK owns `midi-relay-01` **full-duplex**
 (reads *and* writes), and the browser sends OUT over the **bridge WS** → APK writes it to
 BLE. One GATT, one reconnect state machine, zero contention, and a natural place to confirm
 delivery. This is ~20 lines of Java (`openInputPort` + a `midi.raw`/`note`/`program` inbound
@@ -238,11 +238,11 @@ command) plus routing browser OUT through the WS.
   reload) and proves `ble.in` climbs; `--json` for machines. Host comes from
   `devices.yml` → `midi-recorder.host`.
 - **Is OUT reaching the piano?** Watch the JamCorder counters across a send:
-  `GET http://10.0.0.243/api/device-state/get` (gzip; parse `midiMsgCounts`). Browser OUT ⇒
+  `GET http://<jamcorder-ip>/api/device-state/get` (gzip; parse `midiMsgCounts`). Browser OUT ⇒
   `ble.in` ↑ **and** forwarded to piano ⇒ `usb.out` ↑ (they move in lockstep). The kiosk's
   output burst fires on every connect, so a tablet reload is a free OUT test.
 - **Is IN flowing?** `usb.in` (piano→JamCorder) and `ble.out` (JamCorder→tablet) climb as you
-  play. Bridge WS clients: `GET http://10.0.0.245:8770/status` → `wsClients`, `state`,
+  play. Bridge WS clients: `GET http://<tablet-ip>:8770/status` → `wsClients`, `state`,
   `reconnects`, `connectedSeconds`.
 - **Is BLE flapping?** `reconnects` on the bridge status climbing over ~30s = active flapping.
   A high absolute count can just be accumulated churn from heavy reloads — check the *rate*.
@@ -253,7 +253,7 @@ command) plus routing browser OUT through the WS.
 - **Reload the kiosk** to pick up a new bundle: `cli/fkb.cli.mjs cmd clearCache` then
   `reload`. `FKB_PW` comes from `data/household/auth/fullykiosk-piano.yml`.
 - **Never blank the APK `targetMac`** (releases BLE → browser can't hold it alone → "no keys").
-  Keep `10:65:36:36:62:66`.
+  Keep `aa:bb:cc:00:10:01`.
 
 ---
 
@@ -267,4 +267,5 @@ command) plus routing browser OUT through the WS.
 | MIDI monitor byte decoder | `frontend/src/modules/Piano/PianoKiosk/midiDecode.js` |
 | Note store / history | `frontend/src/modules/Piano/PianoKiosk/noteStore.js` · `frontend/src/modules/Piano/noteHistory.js` |
 | Native bridge APK (synth + BLE reader) | `_extensions/piano-bridge/` (`DESIGN.md`, `README.md`, `pbctl.mjs`, `app/`) |
-| JamCorder relay | device at `http://10.0.0.243` (`jam-7e6`, `10:65:36:36:62:66`) |
+| JamCorder relay | devices.yml entry (`host`, `bluetooth.name`, `bluetooth.address`); the bridge supervisor pushes its Bluetooth identity to the APK (`bridge_supervisor.midi_device_id`) |
+| Bridge config sync | `__app_modules/learning/piano/server/adapters/bridge/PianoBridgeConfigSyncAdapter.mjs` |

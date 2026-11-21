@@ -45,7 +45,7 @@ const SHORT_TIMEOUT = 300;
 
 function makeAdapter(logger) {
   return new ThermalPrinterAdapter(
-    { host: '10.0.0.50', port: 9100, timeout: SHORT_TIMEOUT },
+    { host: '10.20.30.50', port: 9100, timeout: SHORT_TIMEOUT },
     { logger, createTransport: (host, port) => new LateNetwork(host, port) },
   );
 }
@@ -94,7 +94,7 @@ describe('ThermalPrinterAdapter abort-on-timeout contract', () => {
 
     expect(logger.warn).toHaveBeenCalledWith(
       'thermalPrinter.open.after-abort',
-      expect.objectContaining({ target: '10.0.0.50:9100' }),
+      expect.objectContaining({ target: '10.20.30.50:9100' }),
     );
   });
 });
@@ -104,7 +104,7 @@ describe('connect timeout default', () => {
     jest.useFakeTimers();
     try {
       const adapter = new ThermalPrinterAdapter(
-        { host: '10.0.0.50', port: 9100 },              // NO explicit timeout
+        { host: '10.20.30.50', port: 9100 },              // NO explicit timeout
         { logger: quietLogger(), createTransport: (h, p) => new LateNetwork(h, p) },
       );
       const settled = jest.fn();
@@ -126,7 +126,7 @@ describe('connect timeout default', () => {
     jest.useFakeTimers();
     try {
       const adapter = new ThermalPrinterAdapter(
-        { host: '10.0.0.50', port: 9100, timeout: 250 },
+        { host: '10.20.30.50', port: 9100, timeout: 250 },
         { logger: quietLogger(), createTransport: (h, p) => new LateNetwork(h, p) },
       );
       const settled = jest.fn();
@@ -149,7 +149,7 @@ describe('connect timeout default', () => {
     jest.useFakeTimers();
     try {
       const adapter = new ThermalPrinterAdapter(
-        { host: '10.0.0.50', port: 9100, timeout: PRODUCTION_STYLE_TIMEOUT },
+        { host: '10.20.30.50', port: 9100, timeout: PRODUCTION_STYLE_TIMEOUT },
         { logger: quietLogger(), createTransport: (h, p) => new LateNetwork(h, p) },
       );
       const settled = jest.fn();

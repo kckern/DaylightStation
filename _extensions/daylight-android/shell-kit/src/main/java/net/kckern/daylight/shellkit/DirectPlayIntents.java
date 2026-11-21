@@ -22,6 +22,19 @@ import net.kckern.daylight.api.DirectPlay;
 public final class DirectPlayIntents {
     static final String INTENT_ACTION_PREFIX = "net.kckern.daylight.PLAY_ACTION.";
 
+    public static final String EXTRA_PLAYLIST = "net.kckern.daylight.EXTRA_PLAYLIST";
+
+    public static final String EXTRA_PLAYLIST_SHUFFLE = "net.kckern.daylight.EXTRA_PLAYLIST_SHUFFLE";
+    public static final String EXTRA_PLAYLIST_REVISION = "net.kckern.daylight.EXTRA_PLAYLIST_REVISION";
+
+    public static PendingIntent forPlaylistWidget(Context context, int widgetId, String mediaId, String revision, boolean shuffle) {
+        Intent play = new Intent(INTENT_ACTION_PREFIX + "playlist." + revision).setClassName(context, DirectPlay.SERVICE)
+                .putExtra(EXTRA_PLAYLIST, mediaId).putExtra(EXTRA_PLAYLIST_REVISION, revision)
+                .putExtra(EXTRA_PLAYLIST_SHUFFLE, shuffle);
+        return PendingIntent.getForegroundService(context, widgetId, play,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
     private DirectPlayIntents() { }
 
     /** Whether this build has the play service. */

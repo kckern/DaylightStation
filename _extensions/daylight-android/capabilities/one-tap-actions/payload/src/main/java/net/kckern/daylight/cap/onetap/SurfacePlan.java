@@ -113,6 +113,7 @@ final class SurfacePlan {
     static Pins pins(ActionCatalog catalog, List<String> pinnedIds) {
         Pins pins = new Pins();
         for (String id : pinnedIds) {
+            if (id.startsWith("bookmark-")) continue; // Managed by the phone bookmark library.
             String actionId = id.startsWith(PIN_PREFIX) ? id.substring(PIN_PREFIX.length()) : id;
             Action a = catalog.find(actionId);
             if (a != null) pins.update.put(id, a);

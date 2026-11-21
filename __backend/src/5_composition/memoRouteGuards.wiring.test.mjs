@@ -28,7 +28,7 @@ describe('app.mjs keeps app-wide CORS and body parsing off self-guarded routes',
   });
 
   it('wraps cors and both body parsers', () => {
-    expect(app).toMatch(/app\.use\(selfGuarded\(cors\(\)\)\);/);
+    expect(app).toMatch(/app\.use\(selfGuarded\(cors\(corsOptionsFor\(allowedOrigins\)\)\)\);/);
     expect(app).toMatch(/app\.use\(selfGuarded\(express\.json\(/);
     expect(app).toMatch(/app\.use\(selfGuarded\(express\.urlencoded\(/);
   });
@@ -37,5 +37,44 @@ describe('app.mjs keeps app-wide CORS and body parsing off self-guarded routes',
     expect(app).not.toMatch(/app\.use\(cors\(/);
     expect(app).not.toMatch(/app\.use\(express\.json\(/);
     expect(app).not.toMatch(/app\.use\(express\.urlencoded\(/);
+  });
+});
+
+describe('app.mjs refuses cross-site writes before anything reads a body', () => {
+  const index = (pattern) => app.search(pattern);
+
+  it('mounts crossSiteGuard, wrapped like CORS, with the configured allow-list', () => {
+    expect(app).toMatch(/app\.use\(selfGuarded\(crossSiteGuard\(\{ allowedOrigins, logger: crossSiteLogger \}\)\)\);/);
+    expect(app).toMatch(/configService\.get\('http\.allowed_origins'\)/);
+  });
+
+  it('mounts it before CORS, every body parser and every /api router', () => {
+    const guard = index(/app\.use\(selfGuarded\(crossSiteGuard\(/);
+    expect(guard).toBeGreaterThan(0);
+    for (const later of [
+      /app\.use\(selfGuarded\(cors\(/,
+      /app\.use\('\/api\/v1\/fitness\/provider\/webhook', express\.json/,
+      /app\.use\(selfGuarded\(express\.json\(/,
+      /app\.use\(selfGuarded\(express\.urlencoded\(/,
+      /app\.use\('\/api/,
+    ]) {
+      expect(index(later), String(later)).toBeGreaterThan(guard);
+    }
+  });
+});
+
+describe('app.mjs mounts the event bus admin router only behind /api/v1', () => {
+  it('has no bare /admin/ws mount outside the authenticated pipeline', () => {
+    // The router restarts the bus and broadcasts to every client; outside
+    // /api/v1 it skipped device, household, trust, token and permission checks.
+    expect(app).not.toMatch(/app\.use\(\s*['"]\/admin\/ws['"]/);
+  });
+});
+
+describe('app.mjs serves frontend documents with frame-ancestors', () => {
+  it('serves the built frontend through createFrontendStaticRouter with the policy', () => {
+    expect(app).toMatch(/createFrontendStaticRouter\(\{ frontendPath, frameAncestors \}\)/);
+    expect(app).toMatch(/frameAncestorsPolicy\(\{/);
+    expect(app).toMatch(/configService\.get\('http\.frame_ancestors'\)/);
   });
 });

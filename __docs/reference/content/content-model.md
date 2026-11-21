@@ -50,13 +50,13 @@ sources:
   # Remote API instances
   plex-main:
     driver: plex
-    host: 192.168.1.10
+    host: 192.0.2.10
     token: xxx
     default: true
 
   plex-kids:
     driver: plex
-    host: 192.168.1.11
+    host: 192.0.2.11
     token: yyy
 
   family-photos:

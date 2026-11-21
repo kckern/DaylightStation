@@ -3,7 +3,7 @@ const combat = ['laser','bomb','missile','boost'];
 const openNextAct = s => {const next=s.acts[s.acts.findIndex(a=>a.id===s.actId)+1];return next&&next.status!=='locked'?next:null};
 const chooseAct = (acts,last) => acts.find(a=>a.status==='open')?.id || acts.find(a=>a.id===last&&a.status!=='locked')?.id || acts.find(a=>a.status!=='locked')?.id || acts[0]?.id;
 export function createSkylineControlState({riders=[],acts=[],lastPlayedByRider={}}={}) {
-  return { phase:'identity',riders,acts,lastPlayedByRider,riderId:null,actId:null,rosterIndex:0,steady:0,countdown:3,allowed:true,saveStatus:'idle',weaponsEnabled:false,resumeIntent:'new' };
+  return { phase:'identity',riders,acts,lastPlayedByRider,riderId:null,actId:null,rosterIndex:0,steady:0,countdown:3,allowed:true,saveStatus:'idle',weaponsEnabled:false,resumeIntent:'new',soundOverlay:false };
 }
 export function reduceSkylineControl(current,event) {
   let state={...current},effects=[];
@@ -16,18 +16,21 @@ export function reduceSkylineControl(current,event) {
     effect('assign-rider',{riderId:rider.id});state.saveStatus='idle';
   };
   const finish=afterSave=>{state.phase='saving';state.afterSave=afterSave;effect('finalize',{status:'abandoned'})};
-  // The sound sheet: opened by the touch "more" button anywhere a rider could
-  // reasonably stop, or by button 2 of the flight menu. Mid-flight it pauses
-  // first, and Back lands on the flight menu (resuming needs pedal readiness).
+  // The sound sheet. Mid-flight a touch on "more" opens it OVER the flight,
+  // which keeps going (2026-11-20: pausing into a full screen, then Back ->
+  // flight menu -> Resume -> "Pedal to take off" read as a restart). The bike
+  // buttons keep their flight meaning; the sheet is touch-only there. From the
+  // flight menu (button 2) and the lobby screens it is the paused full sheet.
   const openSettings=()=>{
    if(['stall','saving','loading','settings'].includes(state.phase))return;
-   if(state.phase==='flight'){state.settingsReturn='menu';effect('pause')}
-   else if(state.phase==='countdown'){state.settingsReturn='ready';state.steady=0;state.countdown=3}
+   if(state.phase==='flight'){state.soundOverlay=true;return}
+   if(state.phase==='countdown'){state.settingsReturn='ready';state.steady=0;state.countdown=3}
    else state.settingsReturn=state.phase;
    state.phase='settings';
   };
   if(event.type==='SOUND_CHANGED'){state.sound={level:event.level,muted:!!event.muted};return {state,effects}}
   if(event.type==='OPEN_SETTINGS')openSettings();
+  else if(event.type==='CLOSE_SETTINGS'){state.soundOverlay=false;return {state,effects}}
   else if(event.type==='CONFIG_CHANGED'){
     state={...state,...event.config};
     if(event.resetIdentity)identity();
@@ -88,7 +91,7 @@ export function reduceSkylineControl(current,event) {
     }else if(state.phase==='countdown'){if(i===2){if(['live','checkpoint'].includes(state.resumeIntent))finish('flights');else state.phase='flights'}}
     else if(state.phase==='flight'){
       if(gesture==='long'&&i===3&&!state.flight?.stalled){state.phase='menu';effect('pause')}
-      else if(gesture==='single'&&state.weaponsEnabled&&!state.flight?.pausedForSensor)effect('combat',{action:combat[i]});
+      else if(gesture==='single'&&state.weaponsEnabled&&!state.flight?.pausedForSensor)effect('combat',{action:combat[i],...(event.source==='remote'?{source:'remote',input:event.input||null}:{})});
     }else if(state.phase==='menu'){
       if(i===0)ready('live');else if(i===1)openSettings();else finish(i===3?'identity':null);
     }else if(state.phase==='settings'){
@@ -110,6 +113,7 @@ export function reduceSkylineControl(current,event) {
     }else if(state.phase==='save-details'){if(i===2)state.phase='result'}
     else if(state.phase==='denied'){if(i===0)effect('request-admin');else if(i===2||i===3)identity()}
   }
+  if(state.phase!=='flight')state.soundOverlay=false;
   if(state.phase!==current.phase)effect('clear-input');
   return {state,effects};
 }
@@ -146,4 +150,25 @@ export function describeSkylineControls(s){
  return choices.map(([label,hint,icon,avatarSrc],i)=>({position:i+1,action:combat[i],label,hint:hint||'',icon,avatarSrc,
   disabled:['stall','saving','loading'].includes(s.phase)||(s.phase==='settings'&&((i===0&&(s.sound?.muted||s.sound?.level===0))||(i===1&&s.sound?.level>=100&&!s.sound?.muted)))||(s.phase==='result'&&s.saveStatus==='error'&&[1,3].includes(i))||(s.phase==='result'&&['saved','unsaved'].includes(s.saveStatus)&&i===1&&!openNextAct(s)),
   reason:s.phase==='stall'?'This attempt will crash':null}));
+}
+
+// A Bluetooth remote's action as the bike-button press it stands for. In flight
+// the weapons are buttons 1-4 and `pause` is the hold on 4 (the flight menu).
+// In a menu each weapon is its button number and `pause` is that screen's way
+// back, where it has one: the flight menu's Resume, or a Back / Cancel on 3.
+// Screens whose 3 ends a flight or changes the rider have no way back here.
+const REMOTE_BUTTON={laser:1,bomb:2,missile:3,boost:4};
+export function remoteBackPosition(s){
+ const resuming=['live','checkpoint'].includes(s.resumeIntent);
+ switch(s.phase){
+ case 'menu':return 1;
+ case 'roster':case 'settings':case 'save-details':case 'denied':return 3;
+ case 'ready':case 'countdown':return resuming?null:3;
+ default:return null;
+ }
+}
+export function remotePanelPress(s,action){
+ if(s.phase==='flight'||s.phase==='stall')return action==='pause'?{position:4,gesture:'long'}:REMOTE_BUTTON[action]?{position:REMOTE_BUTTON[action],gesture:'single'}:null;
+ if(action==='pause'){const position=remoteBackPosition(s);return position?{position,gesture:'single'}:null}
+ return REMOTE_BUTTON[action]?{position:REMOTE_BUTTON[action],gesture:'single'}:null;
 }

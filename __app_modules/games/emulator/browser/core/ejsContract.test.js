@@ -8,7 +8,7 @@ function validInstance(overrides = {}) {
     volume: 0.1,
     gamepadSelection: ['', '', '', ''],
     gamepad: { gamepads: [] },
-    gameManager: { functions: { simulateInput: () => {} } },
+    gameManager: { functions: { simulateInput: () => {} }, simulateInput: () => {} },
     setVolume: () => {},
     ...overrides,
   };
@@ -73,7 +73,7 @@ describe('assertEjsContract', () => {
   it('detects a missing deep path', () => {
     const res = assertEjsContract(validInstance({ gameManager: {} }));
     expect(res.ok).toBe(false);
-    expect(res.missing.map((m) => m.path)).toEqual(['gameManager.functions.simulateInput']);
+    expect(res.missing.map((m) => m.path)).toEqual(['gameManager.functions.simulateInput', 'gameManager.simulateInput']);
   });
 
   it('reports every contract entry missing when there is no instance', () => {

@@ -230,6 +230,7 @@ test('a failure while processing answers 500 without the cause', async () => {
   assert.equal(res.status, 500);
   assert.deepEqual(res.body, { ok: false, error: 'processing_failed', inputId: 'i1' });
   assert.equal(events(seen, 'quick_input.failed')[0].level, 'error');
+  assert.equal(JSON.stringify(seen).includes('the secret words'), false);
 });
 
 test('with the bot unavailable the route says so', async () => {

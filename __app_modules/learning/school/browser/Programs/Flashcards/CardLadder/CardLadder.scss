@@ -192,6 +192,12 @@
     animation: ds-pop-in calc(var(--ds-motion-reveal) * 0.9) var(--ds-motion-easing);
     .wl-result__heading { color: var(--ds-success); }
   }
+  // Owner, 2026-11-20: green right, YELLOW a spelling slip (encouraged, still
+  // corrected, not credit), RED a real miss.
+  &--wrong {
+    border-color: var(--ds-danger);
+    .wl-result__heading { color: var(--ds-danger); }
+  }
 }
 .wl-result__heading { margin: 0; font-size: 2rem; color: var(--ds-warning); }
 .wl-result__row { display: flex; align-items: center; justify-content: center; gap: 1rem; width: 100%; margin: 0; }

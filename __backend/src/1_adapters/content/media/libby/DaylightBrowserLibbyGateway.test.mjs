@@ -26,7 +26,7 @@ describe('DaylightBrowserLibbyGateway', () => {
     expect(() => fixture(vi.fn(), { baseUrl })).toThrow('private HTTP');
   });
 
-  it.each(['http://127.0.0.1:3000', 'http://10.0.0.2:3000', 'http://172.16.0.2:3000', 'http://192.168.0.2:3000', 'http://[::1]:3000'])('accepts private literal %s', async baseUrl => {
+  it.each(['http://127.0.0.1:3000', 'http://10.20.30.2:3000', 'http://172.16.0.2:3000', 'http://192.168.0.2:3000', 'http://[::1]:3000'])('accepts private literal %s', async baseUrl => {
     const fetch = vi.fn(async () => Response.json(spine()));
     await fixture(fetch, { baseUrl }).bootstrapLoan(input);
     expect(fetch.mock.calls[0][0]).toBe(`${baseUrl}/v1/operations/libby.bootstrap-loan`);

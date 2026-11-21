@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { SshMediaHostHealer } from "./SshMediaHostHealer.mjs";
 
 const CONFIG = {
-  host: '172.19.0.1',
+  host: '172.30.40.1',
   user: 'ds',
   privateKey: 'data/system/ssh/media-heal_ed25519',
   knownHostsPath: 'data/system/ssh/known_hosts',
@@ -34,7 +34,7 @@ describe('SshMediaHostHealer', () => {
     expect(result).toMatchObject({ ok: true, chmodApplied: true, siblingsFixed: 3 });
     const [cmd, args] = execFile.mock.calls[0];
     expect(cmd).toBe('ssh');
-    expect(args).toContain('ds@172.19.0.1');
+    expect(args).toContain('ds@172.30.40.1');
     expect(args).toContain('UserKnownHostsFile=data/system/ssh/known_hosts');
     const encoded = args[args.length - 1];
     expect(Buffer.from(encoded, 'base64').toString('utf8'))

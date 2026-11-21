@@ -46,12 +46,10 @@ vi.mock("../../../../../games/emulator/browser/EmulatorConsole.jsx", () => ({
         data-hold-paused={props.holdPaused ? '1' : '0'}
         data-menu-open-request={String(props.menuOpenRequest ?? 0)}
         data-controllers={String(props.controllers?.length ?? 0)}
-        data-bt-count={String(props.btInventory?.length ?? -1)}
-        data-pair-phase={props.pairing?.phase || ''}
-        data-forget-address={props.controllerForget?.address || ''}
+        data-bt-count={String(props.bluetooth?.inventory?.length ?? -1)}
+        data-keyboard={props.keyboardMap ? '1' : '0'}
       />
-      <button data-testid="pair" onClick={() => props.onPairController?.({ mode: 'add' })}>pair</button>
-      <button data-testid="forget" onClick={() => props.onForgetController?.('AA:BB:CC:DD:EE:FF')}>forget</button>
+      <button data-testid="search" onClick={() => props.bluetooth?.startScan?.()}>search</button>
       {props.menuSection && (
         <div data-testid="menu">
           {typeof props.menuSection === 'function'
@@ -87,6 +85,7 @@ const saveClient = { loadResume: vi.fn(), persistResume: vi.fn(), clearResume: v
 vi.mock("../../../../../games/emulator/browser/core/saveClient.js", () => ({ createSaveClient: () => saveClient }));
 
 import EmulatorGameWidget from "./EmulatorGameWidget.jsx";
+import { FitnessBluetoothContext } from "../../context/FitnessBluetoothContext.jsx";
 import { fullscreenClass } from "./emulatorGameWidgetLayout.js";
 
 const fitnessContext = {
@@ -756,32 +755,26 @@ it('does not treat a failed save-owner list as permission to claim over an unkno
   expect(screen.getByTestId('console').getAttribute('data-persist')).toBe('0');
 });
 
-describe('EmulatorGameWidget in-game controllers panel', () => {
-  it('wires the in-game console to the fitness pairing path', async () => {
+describe('EmulatorGameWidget in-game Bluetooth screen', () => {
+  it('passes the fitness bluetooth object and the keyboard map to the in-game console', async () => {
     api.mockImplementation((path) => (path === 'api/v1/emulator/library'
-      ? Promise.resolve({ ...libraryWith('none'), input: { keyboard: {}, controllers: [{ id: 'sfc30', match: '8Bitdo' }] } })
+      ? Promise.resolve({ ...libraryWith('none'), input: { keyboard: { up: 'ArrowUp' }, controllers: [{ id: 'sfc30', match: '8Bitdo' }] } })
       : Promise.resolve({})));
-    const pairController = vi.fn();
-    const forgetController = vi.fn();
-    const ctx = {
-      ...fitnessContext,
-      pairController,
-      forgetController,
-      controllerPairing: { phase: 'scanning', mode: 'add', requestId: 'r' },
-      controllerForget: { address: 'AA:BB:CC:DD:EE:FF', success: true },
-      btInventory: [{ address: 'AA:BB:CC:DD:EE:FF', name: 'R1', paired: true }],
-    };
-    render(<EmulatorGameWidget fitnessContext={ctx} onClose={() => {}} config={{}} onMount={() => {}} />);
+    const startScan = vi.fn();
+    const bluetooth = { inventory: [{ address: 'AA:BB:CC:DD:EE:FF', name: 'R1', paired: true }], startScan };
+    // The Bluetooth state comes from FitnessBluetoothContext, not fitnessContext.
+    render(
+      <FitnessBluetoothContext.Provider value={{ bluetooth }}>
+        <EmulatorGameWidget fitnessContext={{ ...fitnessContext, btInventory: [] }} onClose={() => {}} config={{}} onMount={() => {}} />
+      </FitnessBluetoothContext.Provider>,
+    );
     await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
     fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
     const el = await screen.findByTestId('console');
     expect(el.getAttribute('data-controllers')).toBe('1');
     expect(el.getAttribute('data-bt-count')).toBe('1');
-    expect(el.getAttribute('data-pair-phase')).toBe('scanning');
-    expect(el.getAttribute('data-forget-address')).toBe('AA:BB:CC:DD:EE:FF');
-    fireEvent.click(screen.getByTestId('pair'));
-    expect(pairController).toHaveBeenCalledWith({ mode: 'add' });
-    fireEvent.click(screen.getByTestId('forget'));
-    expect(forgetController).toHaveBeenCalledWith('AA:BB:CC:DD:EE:FF');
+    expect(el.getAttribute('data-keyboard')).toBe('1');
+    fireEvent.click(screen.getByTestId('search'));
+    expect(startScan).toHaveBeenCalled();
   });
 });

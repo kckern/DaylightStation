@@ -5,8 +5,8 @@
  *
  * Keys are CANONICAL uids (see domains/trigger/nfcUid). Keying by a merely
  * lowercased uid split one physical tag across two records once a reader
- * reported it packed (`04669c0fcb2a81`) where an older reader had written it
- * separated (`04_66_9c_0f_cb_2a_81`) — which also made a long-known tag look
+ * reported it packed (`04f00000000005`) where an older reader had written it
+ * separated (`04_f0_00_00_00_00_05`) — which also made a long-known tag look
  * like a first sighting and fire `notify_unknown`. Legacy separated keys are
  * folded on load rather than left to accumulate a second record each.
  *

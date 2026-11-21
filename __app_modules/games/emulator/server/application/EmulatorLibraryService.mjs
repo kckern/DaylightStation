@@ -18,9 +18,27 @@ export class EmulatorLibraryService {
         governance: rules.governance ?? null, shader: rules.shader ?? null,
         chrome: rules.chrome ?? null, native: rules.native ?? null,
         presentation: rules.presentation ?? null,
+        // Memory map from the game's sidecar: the browser's StateMap and
+        // effect bindings read these. Without them nothing is watched.
+        states: rules.states ?? null,
+        bindings: rules.bindings ?? null,
+        calibration: rules.calibration ?? null,
       };
     });
     return { systems, consoles, games, input: config.input ?? null, settings: config.settings ?? null };
+  }
+
+  /**
+   * input.yml controllers that carry a `report_decoder` (input a remote sends
+   * that the kernel drops), for the garage box to decode: [{ id, address,
+   * report_decoder }]. Address upper-cased; entries without one are skipped.
+   */
+  getRemoteReportDecoders() {
+    const controllers = this.loadConfig()?.input?.controllers;
+    if (!Array.isArray(controllers)) return [];
+    return controllers
+      .filter((c) => c && typeof c.address === 'string' && c.address.trim() && c.report_decoder && typeof c.report_decoder === 'object')
+      .map((c) => ({ id: c.id ?? null, address: c.address.trim().toUpperCase(), report_decoder: c.report_decoder }));
   }
 }
 

@@ -79,7 +79,7 @@ governance:
           selections:
             - type: cycle
               label: "Cycle sprints"
-              equipment: cycle_ace          # references an equipment entry
+              equipment: bike_b          # references an equipment entry
               weight: 1
               user_cooldown_seconds: 600    # per-rider cooldown (default 600)
 
@@ -111,10 +111,10 @@ governance:
 
 ```yaml
 equipment:
-  - id: cycle_ace
-    name: CycleAce
+  - id: bike_b
+    name: Bike B
     type: stationary_bike
-    cadence: 49904
+    cadence: 10102
     eligible_users: [user_1, user_2, user_3]   # required for cycle challenges
 ```
 

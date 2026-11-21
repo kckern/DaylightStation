@@ -1,45 +1,290 @@
-/* The school lock and the relock after an early-pass game. One column: the
-   lock's sentence, today's progress, the buy buttons (or the confirm step),
-   the notice, and Print. */
+/* The school lock and the relock after an early-pass game. One centred column
+   sized to the kiosk (960×550 CSS px under the chrome): the child's face with
+   a lock on it and the reason, today's subjects as tiles, the next sheet as
+   one big card, and the coin offer as a small "or". Flat, opaque surfaces —
+   kiosk standard: nothing translucent, no in-between states. */
 .piano-school-lock {
   --sl-fg: var(--piano-fg, #f1f1f4);
   --sl-muted: var(--piano-muted, #9a9aa6);
   --sl-border: var(--piano-border, #34343f);
-  --sl-warn: var(--piano-warn, #e0a83a);
+  --sl-card: #23232c;
+  --sl-card-hi: #2b2b36;
+  --sl-ok: var(--piano-accent, #2ec46f);
+  --sl-ok-text: var(--piano-accent-text, #5fe39a);
+  --sl-ok-ink: var(--piano-accent-ink, #07210f);
+  --sl-todo: var(--piano-warn, #e0a83a);
+  --sl-todo-bg: #3a2e16;
 
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--sp-3, 0.75rem);
+  justify-content: center;
+  gap: clamp(0.75rem, 3vh, 1.5rem);
+  width: 100%;
+  min-height: 100%;
+  padding: clamp(0.75rem, 3vh, 1.75rem) var(--sp-5, 24px);
+  color: var(--sl-fg);
   text-align: center;
+  font-style: normal;
 }
 
+/* Buttons are native and do not inherit the kiosk's face; a coin sits on the
+   label's centre line, not its top. */
+.piano-school-lock .ds-touch {
+  font-family: inherit;
+  font-style: normal;
+}
+.piano-school-lock .ds-touch__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ---- hero: avatar with a lock, the reason ---------------------------------- */
+.piano-school-lock__hero {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5, 24px);
+  text-align: left;
+
+  h2 {
+    margin: 0;
+    font-size: var(--t-display, 2.2rem);
+    font-weight: 800;
+    line-height: 1.05;
+  }
+  p {
+    margin: 0.35rem 0 0;
+    color: var(--sl-muted);
+    font-size: 1.15rem;
+  }
+}
+
+.piano-school-lock__face {
+  position: relative;
+  flex: 0 0 auto;
+
+  .piano-avatar {
+    width: 6rem;
+    height: 6rem;
+    border: 3px solid var(--sl-border);
+  }
+  .piano-avatar--fallback { font-size: 2rem; }
+}
+
+.piano-school-lock__face-lock {
+  position: absolute;
+  right: -0.35rem;
+  bottom: -0.35rem;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  border: 3px solid var(--piano-bg, #16161b);
+  background: var(--sl-todo);
+  color: #1d1504;
+  font-size: 1.15rem;
+
+  svg { width: 1.1em; height: 1.1em; }
+}
+
+/* ---- the column under the hero ---------------------------------------------- */
 .piano-school-lock__offer,
 .piano-school-lock__print {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--sp-3, 0.75rem);
-  width: min(32rem, 100%);
+  width: min(44rem, 100%);
 }
 
-/* `.piano-mode__placeholder` italicises; buttons and the facts under the lock
-   read upright. */
-.piano-school-lock .ds-touch,
-.piano-school-lock__progress,
-.piano-school-lock__used,
-.piano-school-lock__notice,
-.piano-school-lock__sentence {
-  font-style: normal;
+/* ---- today's subjects ------------------------------------------------------ */
+.piano-school-lock__today {
+  width: 100%;
 }
 
 .piano-school-lock__progress {
-  color: var(--sl-fg);
+  margin: 0 0 0.6rem;
+  color: var(--sl-muted);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.piano-school-lock__subjects {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3, 0.75rem);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.piano-school-lock__subject {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  width: 5.25rem;
+}
+
+.piano-school-lock__subject-tile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 3.75rem;
+  height: 3.75rem;
+  border-radius: 14px;
+  font-size: 1.9rem;
+}
+
+.piano-school-lock__subject-name {
+  font-size: 0.9rem;
   font-weight: 600;
+  line-height: 1.1;
+}
+
+.piano-school-lock__subject--done {
+  .piano-school-lock__subject-tile { background: var(--sl-ok); color: var(--sl-ok-ink); }
+  .piano-school-lock__subject-name { color: var(--sl-muted); }
+}
+
+.piano-school-lock__subject--todo {
+  .piano-school-lock__subject-tile {
+    background: var(--sl-todo-bg);
+    color: var(--sl-todo);
+    box-shadow: inset 0 0 0 2px var(--sl-todo);
+  }
+  .piano-school-lock__subject-name { color: var(--sl-fg); }
+}
+
+.piano-school-lock__subject-check {
+  position: absolute;
+  right: -0.4rem;
+  top: -0.4rem;
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  border: 2px solid var(--piano-bg, #16161b);
+  background: #ffffff;
+  color: #13803f;
+  font-size: 1rem;
+}
+
+.piano-school-lock__visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---- the next-sheet card --------------------------------------------------- */
+.piano-school-lock .piano-school-lock__sheet {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--sp-5, 24px);
+  width: 100%;
+  min-height: 0;
+  padding: 1rem 1rem 1rem 1rem;
+  border: 2px solid var(--sl-border);
+  border-radius: var(--r-lg, 16px);
+  background: var(--sl-card);
+  color: var(--sl-fg);
+  text-align: left;
+  font-style: normal;
+
+  &:active:not(:disabled) { background: var(--sl-card-hi); }
+}
+
+.piano-school-lock__sheet-art {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 4.75rem;
+  height: 4.75rem;
+  border-radius: 14px;
+  background: var(--sl-todo-bg);
+  color: var(--sl-todo);
+  font-size: 2.6rem;
+}
+
+.piano-school-lock__sheet-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.piano-school-lock__sheet-kicker {
+  color: var(--sl-muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.piano-school-lock__sheet-title {
+  font-size: 1.45rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.piano-school-lock__sheet-reward {
+  display: flex;
+  gap: 0.75rem;
+  color: var(--piano-silver, #c9d0da);
+  font-size: 1.05rem;
+  font-weight: 700;
+
+  > span { display: inline-flex; align-items: center; gap: 0.35rem; }
+}
+
+.piano-school-lock__sheet-go {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  width: 6.5rem;
+  align-self: stretch;
+  border-radius: 12px;
+  background: var(--sl-ok);
+  color: var(--sl-ok-ink);
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.piano-school-lock__sheet-go-icon { font-size: 2rem; }
+
+/* ---- print result, notices -------------------------------------------------- */
+.piano-school-lock__sentence {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+
+  &--ok { color: var(--sl-ok-text); }
+  &--warn { color: var(--sl-todo); }
+  svg { font-size: 1.4em; }
 }
 
 .piano-school-lock__used,
-.piano-school-lock__sentence {
+.piano-school-lock__notice {
+  margin: 0;
   color: var(--sl-muted);
 }
 
@@ -47,7 +292,26 @@
    fills) but take no room. */
 .piano-school-lock__notice:empty,
 .piano-school-lock__sentence:empty {
-  margin: 0;
+  display: none;
+}
+
+/* ---- coins: a small "or", never competing with the sheet ------------------ */
+.piano-school-lock__buy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3, 0.75rem);
+  flex-wrap: wrap;
+}
+
+.piano-school-lock__or {
+  color: var(--sl-muted);
+  font-size: 1rem;
+}
+
+.piano-school-lock .piano-school-lock__coin-offer {
+  gap: 0.5rem;
+  font-size: 1.05rem;
 }
 
 /* The confirm step is visibly a different moment from the offer. */
@@ -58,13 +322,18 @@
   gap: var(--sp-2, 0.5rem);
   width: 100%;
   padding: var(--sp-3, 0.75rem);
-  border: 1px solid var(--sl-warn);
+  border: 2px solid var(--sl-todo);
   border-radius: var(--r-md, 12px);
+  background: var(--sl-card);
 
   > p {
     margin: 0;
-    color: var(--sl-fg);
-    font-style: normal;
-    font-weight: 600;
+    font-weight: 700;
+    font-size: 1.15rem;
   }
+}
+
+.piano-school-lock__confirm-actions {
+  display: flex;
+  gap: var(--sp-3, 0.75rem);
 }

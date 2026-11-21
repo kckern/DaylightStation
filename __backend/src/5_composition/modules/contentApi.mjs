@@ -129,7 +129,7 @@ export function createApiRouters(config) {
       play: createPlayRouter({ recordPlaybackProgress, playbackReadService, logger }),
       list: createListRouter({ browseCatalog, listBrowse, viewerForRequest, resourceAliases, recordMenuSelection: itemService.recordMenuSelection.bind(itemService), logger }),
       siblings: createSiblingsRouter({ siblingsService, contentIdResolver, logger }),
-      queue: createPlaybackQueueRouter({ contentIdResolver, contentCatalog, mediaProgressMemory, surroundStore, surroundEnforceOrder, sequenceStore, dataPath, logger }),
+      queue: createPlaybackQueueRouter({ contentIdResolver, contentCatalog, mediaProgressMemory, surroundStore, surroundEnforceOrder, sequenceStore, dataPath, configService, logger }),
       local: createLocalMediaRouter({ localMediaAdapter, getLocalMediaResource, getLocalMediaThumbnail, logger }),
       stream: createStreamRouter({
         getContentMediaResource,

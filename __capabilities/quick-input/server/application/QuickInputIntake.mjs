@@ -116,15 +116,18 @@ export class QuickInputIntake {
    */
   async execute(input) {
     const key = JSON.stringify([this.#bot, this.#kind, input.username, input.inputId]);
-    const running = this.#inFlight.get(key);
-    if (running) return running;
-
-    const work = this.#run(input).finally(() => this.#inFlight.delete(key));
-    this.#inFlight.set(key, work);
-    return work;
+    let work = this.#inFlight.get(key);
+    if (!work) {
+      work = this.#run(input).finally(() => this.#inFlight.delete(key));
+      this.#inFlight.set(key, work);
+    }
+    const result = await work;
+    if (input.wantsFinalReceipt || !result.finalReceipt) return result;
+    const { finalReceipt, ...legacy } = result;
+    return legacy;
   }
 
-  async #run({ conversationId, username, inputId, body, mimeType, recordedAt = null }) {
+  async #run({ conversationId, username, inputId, body, mimeType, recordedAt = null, wantsFinalReceipt = false }) {
     const kind = this.#kind;
     const steps = this.#handler.replies || [];
     const noted = (step) => `${step}Sent`;
@@ -133,9 +136,22 @@ export class QuickInputIntake {
     if (record?.outcome) return { kind: record.outcome, inputId };
 
     const input = { conversationId, username, inputId, body, mimeType, capturedAt: null };
+    const storedReceipt = () => this.#handler.storedReceipt
+      ? { finalReceipt: this.#handler.storedReceipt(input) } : {};
 
     // A meal is durable before its processing and receipt are complete.
     // Recover from that checkpoint without re-uploading bytes to the parser.
+    if (this.#handler.findCapture && record?.saved && !record.acknowledgement?.finalReceipt) {
+      // A still-unresolved caller can recover a receipt saved by an older payload
+      // without ever invoking the parser or writing another destination entry.
+      if (wantsFinalReceipt) {
+        const capture = await this.#handler.findCapture(input);
+        if (capture?.complete && capture.acknowledgement?.finalReceipt) {
+          this.#ledger.mark(username, kind, inputId, { saved: true, acknowledgement: capture.acknowledgement });
+          return { kind: 'duplicate', inputId, ...capture.acknowledgement };
+        }
+      }
+    }
     if (this.#handler.findCapture && !record?.saved) {
       const capture = await this.#handler.findCapture(input);
       if (capture) {
@@ -155,7 +171,7 @@ export class QuickInputIntake {
     // whether the replies went out. Stored with no ledger record is finished.
     let state = this.#handler.lookup ? await this.#handler.lookup(input) : (record?.saved ? {} : null);
     if (state && (!record || steps.every(({ step }) => record[noted(step)]))) {
-      return { kind: 'duplicate', inputId, ...record?.acknowledgement };
+      return { kind: 'duplicate', inputId, ...record?.acknowledgement, ...storedReceipt() };
     }
     const resuming = Boolean(state);
 
@@ -208,7 +224,7 @@ export class QuickInputIntake {
       this.#ledger.mark(username, kind, inputId, { [noted(step)]: true });
     }
 
-    return resuming ? { kind: 'resumed', inputId } : { kind: 'accepted', inputId, ...summary };
+    return { kind: resuming ? 'resumed' : 'accepted', inputId, ...summary, ...storedReceipt() };
   }
 }
 

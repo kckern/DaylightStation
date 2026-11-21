@@ -57,7 +57,7 @@ scanners:
     # same bus link the sheets use.
     #
     # Verified on hardware 2026-07-29: ST25R3916 at I2C 0x50, IC Identity 0x2A
-    # (ic_type 5, silicon rev 2); an NTAG 215 read as uid 04669C0FCB2A81.
+    # (ic_type 5, silicon rev 2); an NTAG 215 read as uid 04F00000000005.
     #
     # Grove is GPIO26/32 and the OMR UART is GPIO22/19, so there is no conflict —
     # and gen-config.mjs rejects the file outright if they ever do collide.

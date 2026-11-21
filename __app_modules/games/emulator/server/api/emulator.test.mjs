@@ -126,6 +126,28 @@ function makeApp(overrides = {}) {
 }
 
 describe('createEmulatorRouter', () => {
+  describe('GET /input/report-decoders', () => {
+    it('serves only controllers with an address and a report_decoder, address upper-cased', async () => {
+      const decoder = { att_handle: 31, buttons: { ButtonA: { byte: 0, mask: 16 } } };
+      const cfg = makeCfg();
+      cfg.input.controllers.push(
+        { id: 'stick_pad', kind: 'remote', address: 'aa:bb:cc:00:00:03', report_decoder: decoder },
+        { id: 'no_address', kind: 'remote', report_decoder: decoder },
+        { id: 'plain_remote', kind: 'remote', address: 'AA:BB:CC:00:00:01' },
+      );
+      const { app } = makeApp({ loadConfig: () => cfg });
+      const res = await request(app).get('/api/v1/emulator/input/report-decoders');
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ decoders: [{ id: 'stick_pad', address: 'AA:BB:CC:00:00:03', report_decoder: decoder }] });
+    });
+
+    it('is empty when input.yml has no controllers', async () => {
+      const { app } = makeApp({ loadConfig: () => ({ ...makeCfg(), input: null }) });
+      const res = await request(app).get('/api/v1/emulator/input/report-decoders');
+      expect(res.body).toEqual({ decoders: [] });
+    });
+  });
+
   describe('GET /library', () => {
     it('returns systems and games with URLs', async () => {
       const { app } = makeApp();
@@ -473,6 +495,49 @@ describe('createEmulatorRouter', () => {
       const { app } = makeApp();
       const res = await request(app).get('/api/v1/emulator/saves/gb/..%2Fetc');
       expect(res.status).toBe(400);
+    });
+  });
+
+  describe('GET /library memory map', () => {
+    it('serves a game\'s sidecar states, bindings and calibration to the browser', async () => {
+      const cfg = makeCfg();
+      cfg.games[0].states = { underground: { addr: 0xdfe9, type: 'flag', when: { equals: 4 } } };
+      cfg.games[0].bindings = [{ on: 'underground', effect: 'underground_lights' }];
+      cfg.games[0].calibration = { scratch: [0xc080, 0xdc80] };
+      const { app } = makeApp({ loadConfig: () => cfg });
+      const res = await request(app).get('/api/v1/emulator/library');
+      const game = res.body.games.find((g) => g.id === 'example-quest');
+      expect(game.states).toEqual(cfg.games[0].states);
+      expect(game.bindings).toEqual(cfg.games[0].bindings);
+      expect(game.calibration).toEqual({ scratch: [0xc080, 0xdc80] });
+    });
+  });
+
+  describe('POST /effects/:effectId', () => {
+    it('passes id, phase and game to the effect service', async () => {
+      const effectService = { request: vi.fn(() => ({ ok: true, status: 'applying' })), getStatus: () => ({}) };
+      const { app } = makeApp({ effectService });
+      const res = await request(app).post('/api/v1/emulator/effects/underground_lights')
+        .send({ phase: 'enter', game: 'super-mario-land', reason: 'state' });
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true, status: 'applying' });
+      expect(effectService.request).toHaveBeenCalledWith('underground_lights', 'enter', { game: 'super-mario-land', reason: 'state' });
+    });
+
+    it('maps service refusals to HTTP statuses', async () => {
+      const codes = { unknown_effect: 404, invalid_request: 400, unavailable: 503 };
+      for (const [code, status] of Object.entries(codes)) {
+        const effectService = { request: () => ({ ok: false, code, error: code }) };
+        const { app } = makeApp({ effectService });
+        const res = await request(app).post('/api/v1/emulator/effects/x').send({ phase: 'enter' });
+        expect(res.status).toBe(status);
+      }
+    });
+
+    it('503 when no effect service is wired', async () => {
+      const { app } = makeApp({});
+      const res = await request(app).post('/api/v1/emulator/effects/x').send({ phase: 'enter' });
+      expect(res.status).toBe(503);
     });
   });
 

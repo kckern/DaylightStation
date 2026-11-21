@@ -10,7 +10,7 @@ public class PayloadLoaderNamingTest {
     private static final String SHA = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     @Test public void usesTheUrlBasename() {
-        assertEquals("p2-midi-write.jar", PayloadLoader.jarNameFrom("http://10.0.0.68:8899/p2-midi-write.jar", SHA));
+        assertEquals("p2-midi-write.jar", PayloadLoader.jarNameFrom("http://10.20.30.68:8899/p2-midi-write.jar", SHA));
     }
 
     @Test public void stripsQueryStrings() {

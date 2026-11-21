@@ -39,7 +39,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * One-tap actions. The list is settings (actions.1 to actions.12); every surface
+ * One-tap actions. The list is settings (actions.1 to actions.13); every surface
  * (launcher shortcuts, pinned shortcuts, tiles, and the widget through ActionList) is
  * built from it and launches the same keyed link, daylight://action/<id>#k=<key>.
  *
@@ -48,7 +48,7 @@ import java.util.concurrent.TimeoutException;
  * the method, the path or the body.
  */
 public final class OneTapActionsCapability implements Capability, ActionList {
-    static final int SLOTS = 12;
+    static final int SLOTS = 13;
     static final String WORKER = "Daylight-action";
     private static final String MEMO_FALLBACK = "actions.memoFallbackPath";
     private static final String SHORTCUTS = "actions.shortcuts";
@@ -163,6 +163,8 @@ public final class OneTapActionsCapability implements Capability, ActionList {
             sink = new AndroidSurfaces((Context) context);
         }
         pinPort.attach(onPinConfirmed);
+        actionPinPort.attach(onActionPin);
+        launcherCapturePort.attach(onLauncherCapture);
         List<String> problems = new ArrayList<>();
         try {
             publish(problems);
@@ -175,6 +177,8 @@ public final class OneTapActionsCapability implements Capability, ActionList {
     /** May be called twice. */
     @Override public void stop() {
         pinPort.detach(onPinConfirmed);
+        actionPinPort.detach(onActionPin);
+        launcherCapturePort.detach(onLauncherCapture);
         ExecutorService w = worker;
         worker = null;
         if (w != null) w.shutdownNow();
@@ -233,6 +237,42 @@ public final class OneTapActionsCapability implements Capability, ActionList {
     private final java.util.LinkedHashMap<String, PendingPin> pendingPins = new java.util.LinkedHashMap<>();
     private final java.util.ArrayDeque<Long> acceptedAt = new java.util.ArrayDeque<>();
     volatile java.util.function.LongSupplier clock = System::currentTimeMillis;
+    private final net.kckern.daylight.api.PayloadPort launcherCapturePort = net.kckern.daylight.api.PayloadPort.named("launcher-capture");
+    private final net.kckern.daylight.api.PayloadPort.Handler onLauncherCapture = id -> {
+        Action action = catalog(null).find(id);
+        if (action != null && (action.kind == Kind.INPUT || ("meal-barcode".equals(id)
+                && action.kind == Kind.OPEN && "/health?capture=barcode".equals(action.value)))) {
+            return run(id).toString();
+        }
+        return LinkEffect.toast("This capture shortcut is unavailable. Add it again from your launcher.").toString();
+    };
+    private final net.kckern.daylight.api.PayloadPort actionPinPort = net.kckern.daylight.api.PayloadPort.named("phone-pin-action");
+    private final net.kckern.daylight.api.PayloadPort.Handler onActionPin = id -> {
+        if (id.isEmpty()) {
+            JSONArray items = new JSONArray();
+            for (Action configured : catalog(null).all()) {
+                items.put(new JSONObject().put("id", configured.id).put("label", configured.label)
+                        .put("icon", configured.icon).put("kind", configured.kind.name()));
+            }
+            return new JSONObject().put("items", items).toString();
+        }
+        String actionId = id;
+        String requestId = null;
+        if (id.startsWith("{")) {
+            JSONObject request = new JSONObject(id);
+            actionId = request.getString("id");
+            requestId = request.getString("requestId");
+            if (!"pin".equals(request.getString("op"))
+                    || !java.util.UUID.fromString(requestId).toString().equals(requestId)) {
+                throw new IllegalArgumentException("Invalid pin request");
+            }
+        }
+        Action action = catalog(null).find(actionId);
+        if (action == null) throw new IllegalArgumentException("Unknown action");
+        if (requestId == null) requireSink().pin(action, uri(action), null);
+        else requireSink().pinFromSetup(action, uri(action), requestId);
+        return "{}";
+    };
     private final net.kckern.daylight.api.PayloadPort pinPort = net.kckern.daylight.api.PayloadPort.named(PIN_PORT);
     private final net.kckern.daylight.api.PayloadPort.Handler onPinConfirmed = request -> {
         JSONObject r = new JSONObject(request);

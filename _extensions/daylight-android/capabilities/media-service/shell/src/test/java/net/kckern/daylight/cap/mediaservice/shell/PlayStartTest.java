@@ -26,6 +26,67 @@ public class PlayStartTest {
         if (handler != null) PayloadPort.named(PayloadMedia.PORT).detach(handler);
     }
 
+    @Test public void eachAttemptOwnsItsPlaylistAndCanNoLongerStartAfterCancellation() {
+        PlayStart.Attempt first = new PlayStart.Attempt("c:plex:first", 100);
+        PlayStart.Attempt second = new PlayStart.Attempt("c:plex:second", 200);
+        assertEquals("c:plex:first", first.playlist);
+        assertEquals("c:plex:second", second.playlist);
+        first.cancel();
+        assertFalse(first.canApply(300));
+        first.recordPlaying(300);
+        assertFalse(first.played());
+        assertTrue(second.canApply(300));
+        assertFalse(second.canApply(200 + PlayStart.GIVE_UP_MS));
+        second.recordPlaying(200 + PlayStart.GIVE_UP_MS);
+        assertFalse(second.played());
+        second.recordPlaying(200 + PlayStart.GIVE_UP_MS - 1);
+        assertTrue(second.played());
+    }
+
+    @Test public void twoWidgetStartsResolveTheIdsOfTheirOwnPlaylists() throws Exception {
+        java.util.List<String> resolved = new java.util.ArrayList<>();
+        handler = raw -> {
+            String id = new JSONObject(raw).getJSONArray("ids").getString(0);
+            resolved.add(id);
+            return new JSONObject().put("ok", true).put("tracks", new JSONArray().put(new JSONObject()
+                    .put("id", id + "-song").put("url", "https://kiosk.example/track").put("listId", id))).toString();
+        };
+        PayloadPort.named(PayloadMedia.PORT).attach(handler);
+        PayloadMedia media = new PayloadMedia();
+        assertEquals("c:plex:first-song", media.resolveShortcut("c:plex:first", 0).tracks.get(0).id);
+        assertEquals("c:plex:second-song", media.resolveShortcut("c:plex:second", 0).tracks.get(0).id);
+        assertEquals(Arrays.asList("c:plex:first", "c:plex:second"), resolved);
+    }
+
+    @Test public void stationShuffleIsRequestedFromThePayloadAndPreservesItsFirstItem() throws Exception {
+        handler = raw -> {
+            JSONObject request = new JSONObject(raw);
+            assertTrue(request.getBoolean("shuffle"));
+            assertEquals("c:plex:757556", request.getJSONArray("ids").getString(0));
+            JSONArray tracks = new JSONArray()
+                    .put(new JSONObject().put("id", "plex:757863").put("url", "https://kiosk.example/ident"))
+                    .put(new JSONObject().put("id", "plex:song").put("url", "https://kiosk.example/song"));
+            return new JSONObject().put("ok", true).put("tracks", tracks).toString();
+        };
+        PayloadPort.named(PayloadMedia.PORT).attach(handler);
+        assertEquals("plex:757863", new PayloadMedia().resolveShortcut("c:plex:757556", true, 0).tracks.get(0).id);
+    }
+
+    @Test public void stopFromStartingNoticeStopsThePreviousQueueAndCancelsThePendingQueue() {
+        PlayStart.Attempt first = new PlayStart.Attempt("c:plex:first", 100);
+        first.recordPlaying(110);
+        PlayStart.Attempt second = new PlayStart.Attempt("c:plex:second", 120);
+        PlayStart.Attempt[] audible = { first };
+
+        PlayActionService.stopFromNotification(second::cancel, () -> {
+            assertFalse("the pending queue is invalidated before clearing the player", second.canApply(130));
+            audible[0] = null;
+        });
+
+        if (second.canApply(150)) audible[0] = second;
+        assertNull("the previous queue is silent and the pending queue cannot replace it", audible[0]);
+    }
+
     @Test public void theMediaIdIsTakenFromThePayloadsAnswerOnlyWhenItIsAnItemId() {
         assertEquals("p:plex:12345", PlayStart.mediaId("{\"ok\":true,\"mediaId\":\"p:plex:12345\"}"));
         for (String bad : new String[] { null, "", "not json", "{\"ok\":false,\"error\":\"unknown_action\"}",
@@ -88,7 +149,7 @@ public class PlayStartTest {
         };
         PayloadPort.named(PayloadMedia.PORT).attach(handler);
         ListeningExecutorService executor = MoreExecutors.newDirectExecutorService();
-        LibraryCallback callback = new LibraryCallback(new PayloadMedia(), executor, "test", null, () -> "");
+        LibraryCallback callback = new LibraryCallback(new PayloadMedia(), executor, "test", null, () -> "", () -> {});
         MediaSession.MediaItemsWithStartPosition result = callback.onSetMediaItems(null, null,
                 Arrays.asList(new MediaItem.Builder().setMediaId("c:plex:1").build(),
                         new MediaItem.Builder().setMediaId("p:plex:2").build()), index, position).get();

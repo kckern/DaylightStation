@@ -107,3 +107,18 @@ describe('ChoiceItem result panel', () => {
     expect(within(panel()).getByRole('heading')).toHaveTextContent(/^(Got it!|Nice!|Yes!)$/);
   });
 });
+
+describe('spelling near miss (owner 2026-11-20)', () => {
+  it('a near miss is yellow "So close!" with what was typed and the spelling; a real miss is red', () => {
+    typedWith({ correct: false, near: true, answer: '만들다', score: 6, judge: 'spelling' }, '만돌다');
+    expect(panel()).toHaveClass('wl-result--near');
+    expect(within(panel()).getByText('So close!')).toBeInTheDocument();
+    expect(within(panel()).getByText('만돌다')).toBeInTheDocument();
+    expect(within(panel()).getByText("It's spelled:")).toBeInTheDocument();
+  });
+  it('a far miss stays "Not quite" (red)', () => {
+    typedWith({ correct: false, answer: '만들다', score: 2, judge: 'spelling' }, '가방');
+    expect(panel()).toHaveClass('wl-result--wrong');
+    expect(within(panel()).getByText('Not quite')).toBeInTheDocument();
+  });
+});

@@ -16,10 +16,10 @@ describe('GovernanceEngine equipmentCadenceMap input', () => {
       zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
       zoneInfoMap: {},
       totalCount: 1,
-      equipmentCadenceMap: { cycle_ace: { rpm: 72, connected: true } }
+      equipmentCadenceMap: { bike_b: { rpm: 72, connected: true } }
     });
     expect(engine._latestInputs.equipmentCadenceMap).toEqual({
-      cycle_ace: { rpm: 72, connected: true }
+      bike_b: { rpm: 72, connected: true }
     });
   });
 
@@ -50,16 +50,16 @@ describe('GovernanceEngine equipmentCadenceMap input', () => {
       zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
       zoneInfoMap: {},
       totalCount: 1,
-      equipmentCadenceMap: { cycle_ace: { rpm: 72, connected: true } }
+      equipmentCadenceMap: { bike_b: { rpm: 72, connected: true } }
     });
     expect(engine._latestInputs.equipmentCadenceMap).toEqual({
-      cycle_ace: { rpm: 72, connected: true }
+      bike_b: { rpm: 72, connected: true }
     });
 
     // Directly invoke the idle reset and verify the map survives.
     engine._resetToIdle();
     expect(engine._latestInputs.equipmentCadenceMap).toEqual({
-      cycle_ace: { rpm: 72, connected: true }
+      bike_b: { rpm: 72, connected: true }
     });
   });
 
@@ -88,12 +88,12 @@ describe('GovernanceEngine equipmentCadenceMap input', () => {
       zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
       zoneInfoMap: { active: { id: 'active', name: 'Active', color: null } },
       totalCount: 0,
-      equipmentCadenceMap: { cycle_ace: { rpm: 72, connected: true } }
+      equipmentCadenceMap: { bike_b: { rpm: 72, connected: true } }
     });
 
     expect(engine._latestInputs.activeParticipants).toEqual([]);
     expect(engine._latestInputs.equipmentCadenceMap).toEqual({
-      cycle_ace: { rpm: 72, connected: true }
+      bike_b: { rpm: 72, connected: true }
     });
   });
 });

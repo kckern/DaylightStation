@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { PianoPieceLog } from './PianoPieceLog.mjs';
 import { PianoPolishReward, judgePolishRun } from './PianoPolishReward.mjs';
+import { createCoachPlan } from '#shared/music/learnCoach.mjs';
 
 const SCORE = 'files:sheets/fur-elise.mxl';
 const KEY = 'files-sheets-fur-elise-mxl';
@@ -109,6 +110,48 @@ describe('PianoPolishReward', () => {
     });
     expect(reward.evaluate({ userId: 'kid', scoreKey: KEY, run: run(), record: {} })).toMatchObject({ reason: 'log-unavailable', gem: false, newGem: false });
     expect(logs[0][0]).toBe('piano.polish.reward-failed');
+  });
+});
+
+// A coached record all Gold on `ranges`: the score-tempo step earned on each.
+function goldRecord(ranges, parts = ['rh', 'lh']) {
+  const plan = createCoachPlan({ scoreId: SCORE, fingerprint: 'sha',
+    segments: ranges.map(([start, end]) => ({ id: `m${start}-${end}`, inMeasure: start, outMeasure: end, playableParts: parts })) });
+  const achievements = Object.fromEntries(plan.tasks.filter((task) => task.mastery).map((task) => [task.key, { at: '2026-11-10T00:00:00Z', provenance: 'demonstrated' }]));
+  const summary = { total: ranges.length, silver: ranges.length, gold: ranges.length,
+    passages: ranges.map(([start, end]) => ({ id: `m${start}-${end}`, start, end, parts, silver: 'x', gold: 'x' })) };
+  return { fingerprint: { contentSha256: 'sha' },
+    learnCoach: { version: 1, scoreId: SCORE, fingerprint: 'sha', revision: 1, achievements, counts: {}, evidence: [], reviews: {}, resume: null, summary } };
+}
+
+describe('PianoPolishReward with approved Learn segments', () => {
+  const evaluateWith = (record, learnSegments) => {
+    const calls = [];
+    const reward = new PianoPolishReward({ pieceLog: new PianoPieceLog({ store: memory([]), clock }), logger: null,
+      ...(learnSegments ? { learnSegments: (id, sha) => { calls.push([id, sha]); return learnSegments(id, sha); } } : {}) });
+    return { result: reward.evaluate({ userId: 'kid', scoreKey: KEY, run: run(), record }), calls };
+  };
+
+  it('a changed passage means the piece is no longer all Gold', () => {
+    const { result, calls } = evaluateWith(goldRecord([[0, 3], [4, 7]]), () => [{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 9 }]);
+    expect(result.reason).toBe('not-all-gold');
+    expect(calls).toEqual([[SCORE, 'sha']]);
+  });
+
+  it('approved ranges the child already holds Gold on still qualify', () => {
+    const { result } = evaluateWith(goldRecord([[0, 3], [4, 7]]), () => [{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 7 }]);
+    expect(result).toMatchObject({ reason: 'qualified', newGem: true });
+  });
+
+  it('a one-hand piece qualifies on unchanged ranges and not after a re-cut', () => {
+    const record = goldRecord([[0, 3], [4, 7]], ['rh']);
+    expect(evaluateWith(record, () => [{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 7 }]).result.reason).toBe('qualified');
+    expect(evaluateWith(record, () => [{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 9 }]).result.reason).toBe('not-all-gold');
+  });
+
+  it('without approved segments the saved summary decides, as before', () => {
+    expect(evaluateWith(goldRecord([[0, 3], [4, 7]]), () => null).result.reason).toBe('qualified');
+    expect(evaluateWith(goldRecord([[0, 3], [4, 7]])).result.reason).toBe('qualified');
   });
 });
 

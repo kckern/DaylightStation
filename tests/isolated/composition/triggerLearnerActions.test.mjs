@@ -25,7 +25,7 @@ const registry = {
       livingroom: { target: 'livingroom-tv', action: 'play-next', learner_action: 'reading-session', auth_token: null, notify_unknown: null, defaults: {} },
     },
     tags: {
-      '048ba600cc2a81': { global: { note: 'user_2 personal card', school_learner: 'user_2' }, overrides: {} },
+      '04f00000000006': { global: { note: 'user_2 personal card', school_learner: 'user_2' }, overrides: {} },
     },
   },
 };
@@ -64,7 +64,7 @@ describe('trigger learner actions — composition contract', () => {
     const learnerActions = createLearnerActions({ logger: silent });
     learnerActions.register('print-agenda', async (args) => { seen.push(args); return { status: 'agenda_printed' }; });
 
-    const result = await makeService(learnerActions).handleTrigger('study', 'nfc', '04:8B:A6:00:CC:2A:81');
+    const result = await makeService(learnerActions).handleTrigger('study', 'nfc', '04:F0:00:00:00:00:06');
 
     expect(result.ok).toBe(true);
     expect(result.action).toBe('print-agenda');
@@ -90,7 +90,7 @@ describe('trigger learner actions — composition contract', () => {
     const sessions = new ReadingSessionService({ logger: silent });
     learnerActions.register('reading-session', makeReadingSessionHandler({ sessions, logger: silent }));
 
-    const result = await makeService(learnerActions).handleTrigger('livingroom', 'nfc', '048ba600cc2a81');
+    const result = await makeService(learnerActions).handleTrigger('livingroom', 'nfc', '04f00000000006');
 
     expect(result.dispatch).toMatchObject({ status: 'reading_session_presenting', learnerId: 'user_2' });
     expect(sessions.current('livingroom')).toMatchObject({ learnerId: 'user_2', state: 'presenting' });
@@ -107,7 +107,7 @@ describe('trigger learner actions — composition contract', () => {
     const sessions = new ReadingSessionService({ logger: silent });
     learnerActions.register('reading-session', makeReadingSessionHandler({ sessions, logger: silent }));
 
-    const result = await makeService(learnerActions).handleTrigger('study', 'nfc', '048ba600cc2a81');
+    const result = await makeService(learnerActions).handleTrigger('study', 'nfc', '04f00000000006');
 
     expect(result.dispatch).toMatchObject({ status: 'agenda_printed' });
     expect(printed).toHaveLength(1);
@@ -119,7 +119,7 @@ describe('trigger learner actions — composition contract', () => {
   // store it needs actually exists.
   it('an unwired reading session degrades to the same named refusal', async () => {
     const learnerActions = createLearnerActions({ logger: silent });
-    const result = await makeService(learnerActions).handleTrigger('livingroom', 'nfc', '048ba600cc2a81');
+    const result = await makeService(learnerActions).handleTrigger('livingroom', 'nfc', '04f00000000006');
     expect(result.dispatch).toMatchObject({ status: 'no_handler', op: 'reading-session' });
   });
 
@@ -143,7 +143,7 @@ describe('trigger learner actions — composition contract', () => {
       logger: silent,
     });
 
-    await service.handleTrigger('livingroom', 'nfc', '048ba600cc2a81');
+    await service.handleTrigger('livingroom', 'nfc', '04f00000000006');
 
     expect(haGateway.callService).not.toHaveBeenCalled();
   });
@@ -153,7 +153,7 @@ describe('trigger learner actions — composition contract', () => {
     // placeholder write and a phone push would misname the problem.
     const tagWriter = { recordObserved: vi.fn().mockResolvedValue({ created: true }) };
     const learnerActions = createLearnerActions({ logger: silent });
-    await makeService(learnerActions, tagWriter).handleTrigger('livingroom', 'nfc', '048ba600cc2a81');
+    await makeService(learnerActions, tagWriter).handleTrigger('livingroom', 'nfc', '04f00000000006');
     expect(tagWriter.recordObserved).not.toHaveBeenCalled();
   });
 
@@ -161,7 +161,7 @@ describe('trigger learner actions — composition contract', () => {
     // What app.mjs does when `schoolLifecycle.useCases.resolvePersonalCard` is
     // absent: register nothing, log it, and let the tap answer for itself.
     const learnerActions = createLearnerActions({ logger: silent });
-    const result = await makeService(learnerActions).handleTrigger('study', 'nfc', '048ba600cc2a81');
+    const result = await makeService(learnerActions).handleTrigger('study', 'nfc', '04f00000000006');
     expect(result.dispatch).toMatchObject({ status: 'no_handler', op: 'print-agenda' });
   });
 });
@@ -180,8 +180,8 @@ describe('trigger learner actions — a failed action must be retryable', () => 
     });
     const service = makeService(learnerActions);
 
-    await service.handleTrigger('study', 'nfc', '048ba600cc2a81');
-    const second = await service.handleTrigger('study', 'nfc', '048ba600cc2a81');
+    await service.handleTrigger('study', 'nfc', '04f00000000006');
+    const second = await service.handleTrigger('study', 'nfc', '04f00000000006');
 
     expect(second.debounced).toBeUndefined();
     expect(attempts).toEqual(['tap', 'tap']);
@@ -198,8 +198,8 @@ describe('trigger learner actions — a failed action must be retryable', () => 
     });
     const service = makeService(learnerActions);
 
-    await service.handleTrigger('study', 'nfc', '048ba600cc2a81');
-    await service.handleTrigger('study', 'nfc', '048ba600cc2a81');
+    await service.handleTrigger('study', 'nfc', '04f00000000006');
+    await service.handleTrigger('study', 'nfc', '04f00000000006');
 
     expect(attempts).toEqual(['tap', 'tap']);
   });
@@ -213,8 +213,8 @@ describe('trigger learner actions — a failed action must be retryable', () => 
     });
     const service = makeService(learnerActions);
 
-    await service.handleTrigger('study', 'nfc', '048ba600cc2a81');
-    const second = await service.handleTrigger('study', 'nfc', '048ba600cc2a81');
+    await service.handleTrigger('study', 'nfc', '04f00000000006');
+    const second = await service.handleTrigger('study', 'nfc', '04f00000000006');
 
     expect(second.debounced).toBe(true);
     expect(attempts).toEqual(['tap']);
@@ -224,8 +224,8 @@ describe('trigger learner actions — a failed action must be retryable', () => 
     const learnerActions = createLearnerActions({ logger: silent });
     const service = makeService(learnerActions);
 
-    await service.handleTrigger('livingroom', 'nfc', '048ba600cc2a81');
-    const second = await service.handleTrigger('livingroom', 'nfc', '048ba600cc2a81');
+    await service.handleTrigger('livingroom', 'nfc', '04f00000000006');
+    const second = await service.handleTrigger('livingroom', 'nfc', '04f00000000006');
 
     expect(second.debounced).toBe(true);
   });
@@ -309,7 +309,7 @@ describe('print-agenda — the cooldown acknowledgement', () => {
       logger: silent,
     }));
 
-    const result = await makeService(learnerActions).handleTrigger('study', 'nfc', '048ba600cc2a81');
+    const result = await makeService(learnerActions).handleTrigger('study', 'nfc', '04f00000000006');
 
     expect(result.dispatch.status).toBe('agenda_suppressed');
     expect(broadcasts.map((b) => b.payload.event)).toEqual(['agenda-suppressed']);

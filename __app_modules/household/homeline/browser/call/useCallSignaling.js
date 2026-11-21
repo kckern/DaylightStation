@@ -6,6 +6,7 @@ const SIGNAL_TYPES = new Set(['offer', 'answer', 'candidate', 'mute-state', 'han
 
 export function useCallSignaling({ role, session, peer, onEvent }) {
   const sequenceRef = useRef(0);
+  const activeSession = useRef(null);
   const revisionRef = useRef(0);
   // Releases the degraded-mode reload hold taken on authorize-ack.
   const releaseAutoReload = useRef(null);
@@ -18,7 +19,7 @@ export function useCallSignaling({ role, session, peer, onEvent }) {
   if (!loggerRef.current) loggerRef.current = getLogger().child({ component: 'useCallSignaling', role });
 
   const send = useCallback((type, payload = {}) => {
-    if (!session || !SIGNAL_TYPES.has(type)) return false;
+    if (!session || activeSession.current !== session || !SIGNAL_TYPES.has(type)) return false;
     const sequence = sequenceRef.current++;
     const delivered = wsService.sendEphemeral({
       topic: session.topic, callId: session.callId, attemptId: session.attemptId,
@@ -38,6 +39,8 @@ export function useCallSignaling({ role, session, peer, onEvent }) {
 
   useEffect(() => {
     if (!session) return undefined;
+    activeSession.current = session;
+    let subscribed = true;
     revisionRef.current = session.peerRevision || 0;
     sequenceRef.current = 0;
     answeredRevisionRef.current = null;
@@ -45,6 +48,7 @@ export function useCallSignaling({ role, session, peer, onEvent }) {
     const unsubscribe = wsService.subscribeAuthorized({
       topic: session.topic, credential: session.credential, role, peerId: session.peerId,
     }, async message => {
+      if (!subscribed) return;
       if (message.type === 'homeline-authorize-ack' && message.ok) {
         // Held for the life of THIS effect, not forever. The old call flipped a
         // tab-wide boolean off here with no matching re-enable, so one call left
@@ -74,20 +78,23 @@ export function useCallSignaling({ role, session, peer, onEvent }) {
           // flap must not tear down an ICE attempt that is about to succeed.
           onEventRef.current?.({ type: 'tv-ready' });
           const offer = await peerRef.current.createOffer({ revision: revisionRef.current });
+          if (!subscribed) return;
           const delivered = send('offer', { description: offer });
           loggerRef.current.info('signaling.offer', { callId: session.callId, peerRevision: revisionRef.current, delivered });
         } else if (message.type === 'offer' && role === 'tv') {
           revisionRef.current = message.revision;
           const answer = await peerRef.current.handleOffer(payload.description, { revision: message.revision });
-          send('answer', { description: answer });
+          if (subscribed) send('answer', { description: answer });
         } else if (message.type === 'answer' && role === 'phone') {
           await peerRef.current.handleAnswer(payload.description, { revision: message.revision });
+          if (!subscribed) return;
           answeredRevisionRef.current = message.revision;
           onEventRef.current?.({ type: 'answered' });
         } else if (message.type === 'candidate') await peerRef.current.addIceCandidate(payload.candidate, message.revision);
         else if (message.type === 'hangup') onEventRef.current?.({ type: 'hangup' });
         else if (message.type === 'mute-state') onEventRef.current?.({ type: 'mute-state', ...payload });
       } catch (error) {
+        if (!subscribed) return;
         loggerRef.current.warn('signaling.failed', { callId: session.callId, reason: error.message, peerRevision: revisionRef.current });
         onEventRef.current?.({ type: 'error', error });
       }
@@ -95,6 +102,8 @@ export function useCallSignaling({ role, session, peer, onEvent }) {
     const statusUnsub = wsService.onStatusChange(status => onEventRef.current?.({ type: 'control-status', ...status }));
     const heartbeat = setInterval(() => send('heartbeat'), 5_000);
     return () => {
+      subscribed = false;
+      activeSession.current = null;
       clearInterval(heartbeat); unsubscribe(); statusUnsub(); peerRef.current.onIceCandidate(null);
       releaseAutoReload.current?.();
       releaseAutoReload.current = null;
@@ -102,17 +111,19 @@ export function useCallSignaling({ role, session, peer, onEvent }) {
   }, [role, send, session]);
 
   const restartIce = useCallback(async () => {
+    if (!session || activeSession.current !== session) return;
     const offer = await peerRef.current.restartIce(revisionRef.current);
     send('offer', { description: offer, iceRestart: true });
-  }, [send]);
+  }, [send, session]);
   const rebuild = useCallback(async () => {
+    if (!session || activeSession.current !== session) return;
     revisionRef.current += 1;
     sequenceRef.current = 0;
     answeredRevisionRef.current = null;
     const offer = await peerRef.current.rebuild(revisionRef.current);
     send('offer', { description: offer, rebuild: true });
     return revisionRef.current;
-  }, [send]);
+  }, [send, session]);
 
   return useMemo(() => ({ send, restartIce, rebuild, revisionRef }), [rebuild, restartIce, send]);
 }

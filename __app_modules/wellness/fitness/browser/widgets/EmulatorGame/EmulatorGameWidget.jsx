@@ -19,6 +19,7 @@ import { fullscreenClass } from "./emulatorGameWidgetLayout.js";
 import { wsService } from "../../../../../../frontend/src/services/WebSocketService.js";
 import { formatClock, useArcadeGameBudget } from "./useArcadeGameBudget.js";
 import { findDirectLaunchGame } from "./directLaunch.js";
+import { useBluetoothScreenBluetooth } from "../../lib/remoteButtons/remoteButtonsContext.js";
 
 const ENGINE_PATH = '/api/v1/emulator/engine/';
 const DEFAULT_AUTOSAVE_SECONDS = 15;
@@ -51,6 +52,18 @@ function resolveControllerGamepad(controllers) {
  * The console + engine lifecycle lives in EmulatorConsole; this widget owns
  * the session unlock, identity surface, and save decisions.
  */
+// The Bluetooth screen's state + actions live in FitnessBluetoothContext (not
+// fitnessContext). Only the components that render the screen read it, so a
+// running search re-renders them and not this whole widget.
+function ArcadeShellWithBluetooth(props) {
+  const bluetooth = useBluetoothScreenBluetooth();
+  return <ArcadeShell {...props} bluetooth={bluetooth} />;
+}
+function EmulatorConsoleWithBluetooth(props) {
+  const bluetooth = useBluetoothScreenBluetooth();
+  return <EmulatorConsole {...props} bluetooth={bluetooth} />;
+}
+
 export default function EmulatorGameWidget({ fitnessContext, deviceId = null, onClose, config, onMount, registerCloseGuard }) {
   const logger = useMemo(() => getLogger().child({ component: 'fitness-emulator' }), []);
   const { registerIdentify, registerAdmin, clearUnlock, unlockState, unlockedUser } = useIdentity();
@@ -590,7 +603,7 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
         btInventory={fitnessContext?.btInventory}
         controllers={library.input?.controllers || []}
       />
-      <ArcadeShell
+      <ArcadeShellWithBluetooth
         consoles={library.consoles}
         games={library.games}
         systems={library.systems}
@@ -599,11 +612,7 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
         resolveMediaUrl={(p) => DaylightMediaPath(p)}
         inputEnabled={view === 'arcade'}
         controllers={library.input?.controllers || []}
-        btInventory={fitnessContext?.btInventory}
-        controllerPairing={fitnessContext?.controllerPairing}
-        onPairController={fitnessContext?.pairController}
-        onForgetController={fitnessContext?.forgetController}
-        controllerForget={fitnessContext?.controllerForget}
+        keyboardMap={library.input?.keyboard || null}
       />
       {notice && createPortal(
         <div className="fitness-emulator-notice" role="status">{notice}</div>,
@@ -625,7 +634,7 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
       {view !== 'arcade' && launch && createPortal(
         <div className={fullscreenClass(isKioskEnv())}>
 
-          <EmulatorConsole
+          <EmulatorConsoleWithBluetooth
             key={launch.key}
             game={launch.game}
             engineConfig={launch.engineConfig}
@@ -649,11 +658,7 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
             menuOpenRequest={menuOpenNonce}
             holdPaused={view === 'identify'}
             controllers={library.input?.controllers || []}
-            btInventory={fitnessContext?.btInventory}
-            pairing={fitnessContext?.controllerPairing}
-            onPairController={fitnessContext?.pairController}
-            onForgetController={fitnessContext?.forgetController}
-            controllerForget={fitnessContext?.controllerForget}
+            keyboardMap={library.input?.keyboard || null}
           />
         </div>,
         document.body,

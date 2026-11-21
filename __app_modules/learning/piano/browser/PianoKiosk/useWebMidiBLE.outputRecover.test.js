@@ -20,7 +20,7 @@ const COOLDOWN_MS = 5 * 60 * 1000;
 
 function mockAccess({ outState = 'connected', connection = 'open' } = {}) {
   const calls = { requests: 0 };
-  const output = { id: 'o', name: 'jam-7e6', state: outState, connection, send: () => {} };
+  const output = { id: 'o', name: 'midi-relay-01', state: outState, connection, send: () => {} };
   const access = {
     inputs: new Map(),
     outputs: new Map([['o', output]]),

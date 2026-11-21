@@ -42,7 +42,7 @@ describe('YamlTriggerConfigRepository root resolution', () => {
     const io = makeDisk({
       [`${GROUPED}/sources`]: SOURCES,
       [`${GROUPED}/bindings/nfc/books`]: { '838e6806': { plex: 620707 } },
-      [`${GROUPED}/bindings/nfc/cards`]: { '04669c0fcb2a81': { note: 'personal card' } },
+      [`${GROUPED}/bindings/nfc/cards`]: { '04f00000000005': { note: 'personal card' } },
       // Machine-written runtime state living beside the config. It must not
       // disturb the bindings resolution.
       [`${GROUPED}/nfc.observed`]: {},
@@ -57,25 +57,25 @@ describe('YamlTriggerConfigRepository root resolution', () => {
     // Reload from the very same disk: BOTH groups must still resolve.
     const second = load(io);
     expect(second.repo.root).toBe(GROUPED);
-    expect(Object.keys(second.registry.nfc.tags).sort()).toEqual(['04669c0fcb2a81', '838e6806']);
+    expect(Object.keys(second.registry.nfc.tags).sort()).toEqual(['04f00000000005', '838e6806']);
     expect(second.registry.nfc.tags['838e6806'].global.note).toBe('Star Wars');
-    expect(second.registry.nfc.tags['04669c0fcb2a81'].global.note).toBe('personal card');
+    expect(second.registry.nfc.tags['04f00000000005'].global.note).toBe('personal card');
   });
 
   it('uses the grouped root for reads AND writes', async () => {
     const io = makeDisk({
       [`${GROUPED}/sources`]: SOURCES,
       [`${GROUPED}/bindings/nfc/books`]: { '838e6806': { plex: 620707 } },
-      [`${GROUPED}/bindings/nfc/cards`]: { '04669c0fcb2a81': { note: 'personal card' } },
+      [`${GROUPED}/bindings/nfc/cards`]: { '04f00000000005': { note: 'personal card' } },
       [`${GROUPED}/nfc.observed`]: {},
     });
 
     const { repo, registry } = load(io);
     expect(repo.root).toBe(GROUPED);
-    expect(Object.keys(registry.nfc.tags).sort()).toEqual(['04669c0fcb2a81', '838e6806']);
+    expect(Object.keys(registry.nfc.tags).sort()).toEqual(['04f00000000005', '838e6806']);
 
-    await repo.setNfcNote('04669c0fcb2a81', 'renamed', '2026-08-21 10:00:00');
-    expect(io.disk[`${GROUPED}/bindings/nfc/cards`]['04669c0fcb2a81'].note).toBe('renamed');
+    await repo.setNfcNote('04f00000000005', 'renamed', '2026-08-21 10:00:00');
+    expect(io.disk[`${GROUPED}/bindings/nfc/cards`]['04f00000000005'].note).toBe('renamed');
     expect(Object.keys(io.disk).filter((k) => k.startsWith(`${RETIRED}/`))).toEqual([]);
   });
 
@@ -99,14 +99,14 @@ describe('YamlTriggerConfigRepository root resolution', () => {
   it('boots normally when a stale copy still sits under the retired root', () => {
     const io = makeDisk({
       [`${RETIRED}/sources`]: SOURCES,
-      [`${RETIRED}/bindings/nfc/cards`]: { '04669c0fcb2a81': { note: 'stale copy' } },
+      [`${RETIRED}/bindings/nfc/cards`]: { '04f00000000005': { note: 'stale copy' } },
       [`${GROUPED}/sources`]: SOURCES,
       [`${GROUPED}/bindings/nfc/books`]: { '838e6806': { plex: 620707 } },
     });
     const { repo, registry } = load(io);
     expect(repo.root).toBe(GROUPED);
     expect(Object.keys(registry.nfc.tags)).toEqual(['838e6806']);
-    expect(registry.nfc.tags['04669c0fcb2a81']).toBeUndefined();
+    expect(registry.nfc.tags['04f00000000005']).toBeUndefined();
   });
 
   // INVERTED (was 'falls back to the legacy root when neither root holds any

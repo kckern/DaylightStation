@@ -12,6 +12,7 @@
  *  - `buildLearnerQuizSource` — only words a learner has been introduced to,
  *    across every deck in a package, addressed to that learner (per-learner id).
  */
+import { isSeeAndType } from "./seeAndType.mjs";
 import { hashString, seededShuffle } from "./checkItem.mjs";
 import { isExcluded, isUnsettled } from "./mastery.mjs";
 import { deckDirOf, isoWeekOf, learnerQuizDocumentId, quizDocumentIdFor } from "./quizId.mjs";
@@ -45,6 +46,7 @@ export function buildWordQuizSource({ deck, lexicon, seed }) {
   if (!deck?.id || !Array.isArray(deck.words) || deck.words.length === 0) throw new Error('a quiz needs a deck with words');
   const entries = lexicon?.entries;
   if (!(entries instanceof Map)) throw new Error('a quiz needs a validated lexicon');
+  if (isSeeAndType(lexicon)) throw new Error('a see-and-type package has no anchor side to print a quiz from');
   const missing = deck.words.filter((wordId) => !entries.has(wordId));
   if (missing.length) throw new Error(`words not in the lexicon: ${missing.join(', ')}`);
   const blocks = deck.words.map((wordId, index) => questionBlock(entries.get(wordId), index, lexicon, seed));
@@ -74,6 +76,7 @@ export function buildLearnerQuizSource({
 }) {
   const entries = lexicon?.entries;
   if (!(entries instanceof Map)) throw new Error('a quiz needs a validated lexicon');
+  if (isSeeAndType(lexicon)) throw new Error('a see-and-type package has no anchor side to print a quiz from');
   if (!Array.isArray(decks) || decks.length === 0) throw new Error('a quiz needs at least one deck');
   const deckDir = deckDirOf(decks[0].id);
   const isoWeek = isoWeekOf(day);

@@ -8,7 +8,7 @@ describe('FakeHubGateway.verifyAudio', () => {
   it('returns the seeded result and records the call', async () => {
     gateway.setNextVerifyResult({
       color: 'white',
-      sink: 'bluez_output.9C_0C_35_75_B7_75.1',
+      sink: 'bluez_output.AA_BB_CC_00_32_01.1',
       peak_dbfs: -3.2,
       audio_flowing: true,
       sampled_ms: 500,

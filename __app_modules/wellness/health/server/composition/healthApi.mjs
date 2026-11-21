@@ -254,6 +254,7 @@ export function createHealthApiRouter(config) {
     cleanupProvider: config.cleanupProvider,
     aiUsageService,
     artworkProvider: config.artworkProvider,
+    barcodeLookup: config.barcodeLookup,
     receiptPublisherProvider: config.receiptPublisherProvider,
     healthService: healthServices.healthService,
     healthOperations,

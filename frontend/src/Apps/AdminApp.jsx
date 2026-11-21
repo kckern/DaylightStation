@@ -8,6 +8,7 @@ import AdminLayout from '../modules/Admin/AdminLayout.jsx';
 import ListsIndex from "../../../__capabilities/content-catalog/browser/admin-lists.mjs";
 import ListsFolder from "../../../__capabilities/content-catalog/browser/admin-folder.mjs";
 import { ArtLibrary } from "../../../__app_modules/media/art/browser/admin/index.js";
+import { SheetMusicLibrary, SheetMusicScore } from "../../../__app_modules/learning/piano/browser/admin/index.js";
 import AppConfigEditor from '../modules/Admin/Apps/AppConfigEditor.jsx';
 import ConfigIndex from '../modules/Admin/Config/ConfigIndex.jsx';
 import ConfigFileEditor from '../modules/Admin/Config/ConfigFileEditor.jsx';
@@ -74,6 +75,8 @@ function AdminApp() {
               <Route path="content/games" element={<GamesIndex />} />
               <Route path="content/games/:consoleId" element={<ConsoleDetail />} />
               <Route path="content/art" element={<ArtLibrary />} />
+              <Route path="content/sheet-music" element={<SheetMusicLibrary />} />
+              <Route path="content/sheet-music/view/*" element={<SheetMusicScore />} />
               <Route path="content/filter" element={<ContentFilterLibrary />} />
               <Route path="content/filter/:ratingKey/:rowId?" element={<ContentFilterReview />} />
               {/* Apps */}

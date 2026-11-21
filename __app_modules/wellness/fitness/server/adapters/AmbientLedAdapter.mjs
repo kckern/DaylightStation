@@ -39,6 +39,7 @@ export class AmbientLedAdapter extends IZoneLedController {
   #loadFitnessConfig;
   #logger;
   #isSuppressed;
+  #holds = new Set();
 
   /**
    * @param {Object} config
@@ -295,6 +296,12 @@ export class AmbientLedAdapter extends IZoneLedController {
         reason: 'feature_disabled',
         message: 'ambient_led not configured or missing required scenes'
       };
+    }
+
+    // A game effect (e.g. Super Mario Land's pipe room) owns the strips.
+    if (this.#holds.size > 0) {
+      this.#logger.debug?.('fitness.zone_led.skipped', { reason: 'held', holders: [...this.#holds], householdId });
+      return { ok: true, skipped: true, reason: 'held' };
     }
 
     // An ambience (e.g. the Halloween tab) owns the strips while it runs.
@@ -613,6 +620,31 @@ export class AmbientLedAdapter extends IZoneLedController {
           : 0
       }
     };
+  }
+
+  /**
+   * Another feature takes the strips (an arcade game effect). Zone colors
+   * stand down until every holder has released.
+   * @param {string} source who holds them, e.g. 'arcade:underground_lights'
+   */
+  hold(source) {
+    if (!source || this.#holds.has(source)) return;
+    this.#holds.add(source);
+    this.#logger.info?.('fitness.zone_led.held', { source, holders: [...this.#holds] });
+  }
+
+  /**
+   * Give the strips back. When the last holder leaves, the next zone sync
+   * repaints even if the zone has not changed (the holder changed the lights).
+   * @param {string} source
+   */
+  release(source) {
+    if (!this.#holds.delete(source)) return;
+    if (this.#holds.size === 0) {
+      this.lastScene = null;
+      this.lastActivatedAt = 0;
+    }
+    this.#logger.info?.('fitness.zone_led.released', { source, holders: [...this.#holds] });
   }
 
   /**

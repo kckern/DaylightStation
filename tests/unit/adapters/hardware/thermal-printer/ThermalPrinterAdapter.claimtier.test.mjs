@@ -96,7 +96,7 @@ function transportFactory({ replies = [], openFails = false } = {}) {
 
 function makeAdapter(createTransport, logger = quietLogger()) {
   return new ThermalPrinterAdapter(
-    { host: '10.0.0.50', port: 9100, timeout: 5000, upsideDown: false },
+    { host: '10.20.30.50', port: 9100, timeout: 5000, upsideDown: false },
     { logger, createTransport, statusSettleMs: 5 },
   );
 }

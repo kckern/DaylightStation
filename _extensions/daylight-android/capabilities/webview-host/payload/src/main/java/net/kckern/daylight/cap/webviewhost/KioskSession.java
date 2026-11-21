@@ -115,6 +115,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
     /** The renderer was ended on request (POST /kiosk/renderer/reset): not a crash to count. */
     private boolean resetRequested;
     private volatile TouchObserver touches;
+    private String shortcutLaunch;
     private volatile boolean resumed, rendererAlive, errorPage, keepScreenOn, immersive;
     private volatile String mainUrl = "", intendedUrl = "", backMode = DEFAULT_BACK_MODE, lastLaunched;
     private volatile long pausedAt, lastLaunchAt;
@@ -192,13 +193,12 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         if (!LockScreenRule.apply(h, bool("webview.showWhenLocked"))) note("this shell cannot be told webview.showWhenLocked");
         // A link, or a load asked for with wait:false, that arrived with no window up is
         // why this Activity was opened: show it, under the id its caller was given.
-        String queuedId = pendingOpen.loadId();
-        boolean linkedFromOutside = pendingOpen.fromOutside();
-        String linked = pendingOpen.take(System.currentTimeMillis());
-        if (linked != null && linkedFromOutside) trust.loadedFromOutside(); else trust.loadedByApp();
-        String start = linked != null ? linked : startUrl();
-        if (start.isEmpty()) showNotConfigured();
-        else load(start, linked != null && queuedId != null ? queuedId : loads.newLoadId());
+        shortcutLaunch = null;
+        if (!openPendingLink(false)) {
+            trust.loadedByApp();
+            String start = startUrl();
+            if (start.isEmpty()) showNotConfigured(); else load(start);
+        }
         // A layer that was drawn inside the previous Activity's window is drawn again in this one.
         renderText();
         renderWeb();
@@ -212,6 +212,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         if (!overlayWebOverApps) removeOverlayWeb();
         root = null;
         banner = null;
+        requestedCallPermissions.clear();
         activity = null;
         host = null;
         resumed = false;
@@ -220,11 +221,20 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
     @Override public void onHostVisible(boolean visible) {
         if (web == null) return;
         // onPause does not stop JavaScript; it lets the WebView drop what it can while another app is in front.
-        if (visible) web.onResume(); else web.onPause();
+        if (visible) {
+            web.onResume();
+        } else {
+            if ("phone".equals(core.deviceId())) {
+                clearCallRequests();
+                notifyPhoneHidden();
+            }
+            web.onPause();
+        }
     }
 
     @Override public void onHostResumed() {
         resumed = true;
+        openPendingLink(true);
         applyWindowFlags();
         long now = System.currentTimeMillis();
         LockdownControl lc = core.services().find(LockdownControl.class);
@@ -272,8 +282,10 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
                 case BACK_EVENT: emit("back", new JSONObject()); return true;
                 case HISTORY:
                     // Not a kiosk: Back leaves the app once the page history is used up.
-                    if (web != null && web.canGoBack()) web.goBack();
-                    else if (activity != null) activity.moveTaskToBack(true);
+                    if ("phone".equals(core.deviceId()) && (errorPage && shortcutLaunch != null
+                            || CallCapturePolicy.serviceRoot(shortcutLaunch, mainUrl))) finishPhoneShortcut();
+                    else if (web != null && web.canGoBack()) web.goBack();
+                    else if (activity != null) activity.finish();
                     return true;
                 case RELOAD:
                     if (web != null) {
@@ -288,7 +300,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         }
     }
 
-    @Override public void onHostNewIntent(Object intent) { /* a recall; nothing to do */ }
+    @Override public void onHostNewIntent(Object intent) { openPendingLink(true); }
 
     // ── the WebView (main thread) ─────────────────────────────────────────────
 
@@ -305,6 +317,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         // The phone lists the origins its links may open; they may be navigated to as well.
         navigation = NavigationPolicy.of(startUrl(), str("webview.allowedOrigins"), foreign("links.origins"));
         web = new WebView(activity);
+        installPhoneShortcutListener(web);
         WebSettings s = web.getSettings();
         s.setUserAgentString(s.getUserAgentString() + " DaylightKiosk/1");
         s.setJavaScriptEnabled(true);
@@ -322,7 +335,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         web.setFocusable(true);
         web.setFocusableInTouchMode(true);
         web.setWebViewClient(new PageClient());
-        web.setWebChromeClient(new ChromeClient());
+        web.setWebChromeClient(new ChromeClient(web));
         // The bridge exists only where its shim can be injected at document start, into
         // frames of an allowed origin. There is no fallback: evaluating the shim when a
         // load starts runs it in the outgoing document, whatever its origin.
@@ -372,6 +385,69 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         rendererAlive = true;
         note("webview built; bridge=" + availability.state() + " origins=" + origins.rules()
                 + " navigation=" + navigation.origins());
+    }
+
+    @android.annotation.SuppressLint("RestrictedApi")
+    private void installPhoneShortcutListener(WebView view) {
+        String origin = OriginPolicy.originOf(startUrl());
+        if (!"phone".equals(core.deviceId()) || origin == null || !origin.startsWith("https://")
+                || !WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)
+                || !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return;
+        java.util.Set<String> site = java.util.Collections.singleton(origin);
+        try {
+            WebViewCompat.addWebMessageListener(view, "DaylightPhoneShortcut", site, (sender, message, source, mainFrame, reply) -> {
+                if (sender != web || !resumed || !documentCommitted || errorPage) return;
+                String requester = source.toString();
+                if (("barcode-done".equals(message.getData()) || "barcode-beep".equals(message.getData()))
+                        && CallCapturePolicy.allowsBarcode(startUrl(), committingUrl, requester, false)
+                        && CallCapturePolicy.finishesBarcode(
+                        core.deviceId(), startUrl(), shortcutLaunch, mainUrl, requester,
+                        mainFrame, trust.openedFromOutside())) {
+                    if ("barcode-done".equals(message.getData())) finishPhoneShortcut();
+                    else playBarcodeTone();
+                }
+                if ("call-exit".equals(message.getData()) && mainFrame
+                        && CallCapturePolicy.allows(startUrl(), mainUrl, requester, false))
+                    finishPhoneShortcut();
+            });
+            WebViewCompat.addDocumentStartJavaScript(view, "(function(){if(window!==window.top)return;"
+                    + "var bridge=window.DaylightPhoneShortcut;if(!bridge)return;"
+                    + "if(location.pathname==='/health'&&location.search==='?capture=barcode')"
+                    + "window.addEventListener('daylight:barcode-shortcut-done',function(){bridge.postMessage('barcode-done');},{once:true});"
+                    + "window.addEventListener('daylight:call-exit',function(){"
+                    + "if(location.pathname==='/call'||location.pathname==='/call/')bridge.postMessage('call-exit');});})();", site);
+        } catch (RuntimeException unsupported) {
+            note("phone shortcut completion bridge unavailable");
+        }
+    }
+
+    private void playBarcodeTone() {
+        try {
+            android.media.ToneGenerator tone = new android.media.ToneGenerator(
+                    android.media.AudioManager.STREAM_MUSIC, 65);
+            tone.startTone(android.media.ToneGenerator.TONE_PROP_ACK, 140);
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(tone::release, 220);
+        } catch (RuntimeException unavailable) {
+            note("barcode scan tone unavailable");
+        }
+    }
+
+    private void notifyPhoneHidden() {
+        if (web != null && !errorPage && origins.allows(mainUrl))
+            web.evaluateJavascript(BridgeScript.event("hidden", "{}"), null);
+    }
+
+    private void finishPhoneShortcut() {
+        if (activity == null || activity.isFinishing()) return;
+        shortcutLaunch = null;
+        notifyPhoneHidden();
+        try {
+            activity.startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (RuntimeException unavailable) {
+            activity.moveTaskToBack(true);
+        }
+        activity.finish();
     }
 
     private volatile boolean windowFocused, documentCommitted;
@@ -465,6 +541,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
     }
 
     private void destroyWebView() {
+        clearCallRequests();
         documentCommitted = false;
         detachPortal();
         detachPiano();
@@ -596,6 +673,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         @Override public void onPageStarted(WebView view, String url, Bitmap favicon) {
             if (view != web) return;
             documentCommitted = false;
+            clearCallRequests();
             committingUrl = url;
             detachPiano();
             detachPortal();
@@ -729,8 +807,104 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         }
     }
 
+    private static final int CALL_PERMISSIONS = 9342;
+    private final List<String> requestedCallPermissions = new ArrayList<>();
+    private final List<PermissionRequest> callRequests = new ArrayList<>();
+
+    private boolean callPage(PermissionRequest request) {
+        if (activity == null || web == null || errorPage || !origins.allows(mainUrl)) return false;
+        String requester = String.valueOf(request.getOrigin());
+        boolean external = trust.openedFromOutside();
+        if (CallCapturePolicy.allows(startUrl(), web.getUrl(), requester, external)) return true;
+        String[] resources = request.getResources();
+        return resources.length == 1 && PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resources[0])
+                && CallCapturePolicy.allowsBarcode(startUrl(), web.getUrl(), requester, external);
+    }
+
+    private static String callPermission(String resource) {
+        if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) return android.Manifest.permission.RECORD_AUDIO;
+        if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)) return android.Manifest.permission.CAMERA;
+        return null;
+    }
+
+    private void clearCallRequests() {
+        List<PermissionRequest> canceled = new ArrayList<>(callRequests);
+        callRequests.clear();
+        for (PermissionRequest request : canceled) request.deny();
+    }
+
+    private void handleCallRequest(PermissionRequest request) {
+        if (!callPage(request)) { request.deny(); return; }
+        List<String> missing = new ArrayList<>();
+        for (String resource : request.getResources()) {
+            String permission = callPermission(resource);
+            if (permission != null && !holds(permission)) missing.add(permission);
+        }
+        if (missing.isEmpty()) { finishCallRequest(request); return; }
+        callRequests.add(request);
+        if (!requestedCallPermissions.isEmpty()) return;
+        requestedCallPermissions.addAll(missing);
+        activity.requestPermissions(missing.toArray(new String[0]), CALL_PERMISSIONS);
+    }
+
+    private void finishCallRequest(PermissionRequest request) {
+        List<String> allowed = new ArrayList<>();
+        if (callPage(request)) {
+            for (String resource : request.getResources()) {
+                String permission = callPermission(resource);
+                if (permission != null && holds(permission)) allowed.add(resource);
+            }
+        }
+        if (allowed.isEmpty()) request.deny(); else request.grant(allowed.toArray(new String[0]));
+    }
+
+    @Override public void onHostPermissionsResult(int code) {
+        if (code != CALL_PERMISSIONS || requestedCallPermissions.isEmpty()) return;
+        List<String> attempted = new ArrayList<>(requestedCallPermissions);
+        requestedCallPermissions.clear();
+        List<PermissionRequest> requests = new ArrayList<>(callRequests);
+        callRequests.clear();
+        boolean denied = false;
+        for (PermissionRequest request : requests) {
+            boolean needsAnotherPrompt = false;
+            boolean requestDenied = false;
+            if (callPage(request)) {
+                for (String resource : request.getResources()) {
+                    String permission = callPermission(resource);
+                    if (permission != null && !holds(permission)) {
+                        if (attempted.contains(permission)) requestDenied = true;
+                        else needsAnotherPrompt = true;
+                    }
+                }
+            }
+            denied |= requestDenied;
+            if (needsAnotherPrompt && !requestDenied) handleCallRequest(request); else finishCallRequest(request);
+        }
+        if (denied && activity != null) {
+            new AlertDialog.Builder(activity).setTitle("Call permissions")
+                    .setMessage("To enable camera or microphone, open Permissions in Daylight’s app settings, then return and retry the call.")
+                    .setNegativeButton("Close", null)
+                    .setPositiveButton("App settings", (dialog, which) -> activity.startActivity(new Intent(
+                            android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            android.net.Uri.fromParts("package", app.getPackageName(), null)))).show();
+        }
+    }
+
     private final class ChromeClient extends WebChromeClient {
+        private final WebView owner;
+
+        ChromeClient(WebView owner) { this.owner = owner; }
+
+        @Override public void onPermissionRequestCanceled(PermissionRequest request) {
+            callRequests.remove(request);
+        }
+
         @Override public void onPermissionRequest(PermissionRequest request) {
+            if (owner != web) { request.deny(); return; }
+            if (bool("webview.callPermissions")) {
+                if (resumed) handleCallRequest(request); else request.deny();
+                return;
+            }
             if (!origins.allows(String.valueOf(request.getOrigin()))) {
                 note("denied a media request from " + request.getOrigin());
                 request.deny();
@@ -1146,20 +1320,26 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
 
     private String open(final String url, final boolean fromOutside) {
         requireHttp(url);
-        if (attached()) {
-            final String loadId = loads.newLoadId();
-            ui.post(() -> {
-                if (web != null) {
-                    if (fromOutside) trust.loadedFromOutside(); else trust.loadedByApp();
-                    load(url, loadId);
-                } else {
-                    pendingOpen.set(url, null, System.currentTimeMillis(), fromOutside);
-                }
-            });
-            return "loading";
+        boolean attached = attached();
+        pendingOpen.set(url, loads.newLoadId(), System.currentTimeMillis(), fromOutside);
+        ui.post(() -> {
+            if (web != null && (!"history".equals(backMode) || resumed)) openPendingLink(true);
+        });
+        return attached ? "loading" : "pending";
+    }
+
+    private boolean openPendingLink(boolean replacePage) {
+        if (web == null) return false;
+        PendingOpen.Request request = pendingOpen.takeRequest(System.currentTimeMillis());
+        if (request == null) return false;
+        if (replacePage && "history".equals(backMode)) {
+            destroyWebView();
+            buildWebView();
         }
-        pendingOpen.set(url, null, System.currentTimeMillis(), fromOutside);
-        return "pending";
+        shortcutLaunch = request.shortcut ? request.url : null;
+        if (request.outside) trust.loadedFromOutside(); else trust.loadedByApp();
+        load(request.url, request.loadId);
+        return true;
     }
 
     LoadTracker.Result loadAndWait(final String url) throws Exception {
@@ -1168,6 +1348,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         if (!ensureAttached()) return new LoadTracker.Result(loadId, url, false, "no_kiosk_activity", System.currentTimeMillis(), 0);
         CompletableFuture<LoadTracker.Result> f = MainThread.call(() -> {
             if (web == null) return null;
+            shortcutLaunch = null;
             trust.loadedByApp();     // a control route: the caller presented the device token
             return load(url, loadId);
         }, 5000);
@@ -1191,7 +1372,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
             return loadId;
         }
         ui.post(() -> {
-            if (web != null) { trust.loadedByApp(); load(url, loadId); }
+            if (web != null) { shortcutLaunch = null; trust.loadedByApp(); load(url, loadId); }
             else loads.refused(url, loadId, "no_kiosk_activity", System.currentTimeMillis());
         });
         return loadId;

@@ -121,12 +121,19 @@ const behaviorRung = (rung) => ({
   tempoPercents: rung.tempoPercents,
 });
 
-/** Resolve every Learn configuration layer into the one immutable UI/runtime plan. */
-export function resolveLearnPlan({ defaults = SHEET_MUSIC_DEFAULTS.learn, category, piece, user, userPiece, score = {} } = {}) {
-  const merged = [defaults, category, piece, user, userPiece].reduce(mergeSafe, {});
+/**
+ * Resolve every Learn configuration layer into the one immutable UI/runtime plan.
+ *
+ * Layers merge in order defaults → category → scoreFile → piece → user → userPiece.
+ * `scoreFile` is the admin-approved per-score Learn file (`{ segments?, ladder? }`); it sits under
+ * the household `pieces[id]` layer so household config still wins. Arrays (segments, ladder)
+ * replace wholesale in `mergeSafe`, so a later layer's segment list never merges by index.
+ */
+export function resolveLearnPlan({ defaults = SHEET_MUSIC_DEFAULTS.learn, category, scoreFile, piece, user, userPiece, score = {} } = {}) {
+  const merged = [defaults, category, scoreFile, piece, user, userPiece].reduce(mergeSafe, {});
   const normalized = resolveSheetMusicConfig({ learn: merged }).learn;
   const authoredLadder = !normalized.configFallback && [
-    ...(defaults === SHEET_MUSIC_DEFAULTS.learn ? [] : [defaults]), category, piece, user, userPiece,
+    ...(defaults === SHEET_MUSIC_DEFAULTS.learn ? [] : [defaults]), category, scoreFile, piece, user, userPiece,
   ].some((layer) => isObject(layer) && Object.hasOwn(layer, 'ladder'));
   const configuredLadder = normalized.ladder.map((rung) => ({
     ...rung,

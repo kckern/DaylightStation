@@ -122,6 +122,10 @@ async function installWorld(page) {
     if (pathname === '/api/v1/school/sentence-ladder/courses' || pathname === '/api/v1/school/banks') return json([]);
     if (pathname === '/api/v1/school/surfaces/profile') return json({ surfaceId: 'portal' });
     if (pathname === '/api/v1/state-gates') return json({ gates: [] });
+    // Parental supervision (2026-11-15) gates every activity; off here, as in
+    // the other school flows. Without it the catch-all `{}` leaves the gate on
+    // "Checking access…" and the debrief never mounts.
+    if (pathname === '/api/v1/supervision/bootstrap') return json({ enabled: false });
     if (pathname.endsWith('/direct-launch') && method === 'POST') {
       return json({ ok: true, target: { kind: 'program', program: 'school-debrief', programId: 'school-debrief', learnerId: LEARNER, debriefGrant: 'test-grant', today: TODAY, lateDay: null } });
     }
@@ -237,12 +241,14 @@ test('debrief: start -> class chips -> three prompts -> a probe -> two choices +
   await shot(page, 'r11-12-question-3-graded');
   await page.keyboard.press('Space');
 
-  // Summary: thanks, the level reason, the visible bonus reasons, on time, no
-  // level number, no quiz tally, and no silver figure (bank is dry-run).
+  // Summary: thanks, the child's OWN words (never the grader's levelReason,
+  // 2026-11-20), the visible bonus reasons, on time, no level number, no quiz
+  // tally, and no silver figure (bank is dry-run).
   const summary = page.getByRole('region', { name: 'Summary' });
   await expect(summary).toBeVisible({ timeout: 15_000 });
   await expect(summary.getByText(/Thanks for telling me about school/)).toBeVisible();
-  await expect(summary.getByText(LEVEL_REASON)).toBeVisible();
+  await expect(summary.getByText(answers[0])).toBeVisible();
+  await expect(summary).not.toContainText(LEVEL_REASON);
   await expect(summary.getByText('You told me a real moment')).toBeVisible();
   await expect(summary.getByText('You explained it so someone could try it')).toBeVisible();
   await expect(summary.getByText('On time')).toBeVisible();
@@ -279,7 +285,8 @@ test('debrief: today already done shows the summary with "Coins start soon" (ban
   await expect(summary).toBeVisible({ timeout: 30_000 });
   await expect(summary.getByText('Coins start soon')).toBeVisible();
   await expect(summary).not.toContainText(/silver/i);
-  await expect(summary.getByText(LEVEL_REASON)).toBeVisible();
+  await expect(summary.getByText('Plants need light')).toBeVisible();
+  await expect(summary).not.toContainText(LEVEL_REASON);
   await shot(page, 'r11-15-done-today-summary');
   expect(world.economyReads.length).toBeGreaterThan(0);
 });

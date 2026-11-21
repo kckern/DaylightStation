@@ -58,7 +58,7 @@ export class FilesystemEmulatorConfigRepository extends IEmulatorConfigRepositor
         continue;
       }
       if (!manifest) continue;
-      manifests.push({ system: manifest.system || entry.name, manifest });
+      manifests.push({ system: manifest.system || entry.name, dir: entry.name, manifest });
     }
     return manifests;
   }
@@ -66,6 +66,20 @@ export class FilesystemEmulatorConfigRepository extends IEmulatorConfigRepositor
   readInputConfig() { return readOptionalYaml(path.join(this.#emulationDir, 'input.yml')); }
   readConsolesConfig() { return readOptionalYaml(path.join(this.#emulationDir, 'consoles.yml')); }
   readSettingsConfig() { return readOptionalYaml(path.join(this.#emulationDir, 'settings.yml')); }
+  readEffectsConfig() { return readOptionalYaml(path.join(this.#emulationDir, 'effects.yml')); }
+
+  /**
+   * A game's sidecar (memory map + bindings), e.g. `gb/roms/SuperMarioLand.yml`.
+   * `relPath` is relative to the system folder and must stay inside it.
+   * @returns {object|null} parsed YAML, or null when absent/unreadable
+   */
+  readGameSidecar(dir, relPath) {
+    if (typeof dir !== 'string' || typeof relPath !== 'string' || !relPath) return null;
+    const systemDir = path.resolve(this.#emulationDir, dir);
+    const target = path.resolve(systemDir, relPath);
+    if (!target.startsWith(systemDir + path.sep)) return null;
+    return readOptionalYaml(target);
+  }
 }
 
 export default FilesystemEmulatorConfigRepository;

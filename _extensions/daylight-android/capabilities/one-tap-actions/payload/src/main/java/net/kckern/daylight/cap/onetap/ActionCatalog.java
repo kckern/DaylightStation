@@ -18,6 +18,7 @@ import java.util.regex.Pattern;
  *   bookmark:<id>       a configured bookmark
  *   memo:new            start a voice memo: the earlier name of input:voice:journal
  *   input:<kind>:<dest> a quick input (voice, text or photo) to a configured destination
+ *   input:status       open capture status
  *   media:<contentId>   play natively
  *   api:/api/...        an empty POST to that backend path, and a message with the outcome
  *   location:share      "On my way": a reserved slot. It says the feature is not built yet
@@ -61,7 +62,7 @@ final class ActionCatalog {
         String linkArg() {
             switch (kind) {
                 case BOOKMARK: case MEMO: return value;
-                case INPUT: return value.substring(0, value.indexOf(':'));
+                case INPUT: return "status".equals(value) ? value : value.substring(0, value.indexOf(':'));
                 case MEDIA: return "play";
                 default: return "";
             }
@@ -72,7 +73,7 @@ final class ActionCatalog {
             Map<String, String> query = new LinkedHashMap<>();
             if (kind == Kind.OPEN) query.put("path", value);
             if (kind == Kind.MEDIA) query.put("id", value);
-            if (kind == Kind.INPUT) query.put("to", value.substring(value.indexOf(':') + 1));
+            if (kind == Kind.INPUT && !"status".equals(value)) query.put("to", value.substring(value.indexOf(':') + 1));
             return query;
         }
     }
@@ -176,7 +177,7 @@ final class ActionCatalog {
                 if (!"new".equals(rest)) throw new IllegalArgumentException("memo: only 'new' is supported");
                 return new Action(id, label, icon, Kind.MEMO, rest);
             case "input":
-                if (!INPUT.matcher(rest).matches()) throw new IllegalArgumentException("input: needs voice, text or photo and a destination id");
+                if (!"status".equals(rest) && !INPUT.matcher(rest).matches()) throw new IllegalArgumentException("input: needs voice, text or photo and a destination id");
                 return new Action(id, label, icon, Kind.INPUT, rest);
             case "media":
                 if (!CONTENT_ID.matcher(rest).matches()) throw new IllegalArgumentException("media: needs a content id such as plex:12345");

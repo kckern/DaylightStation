@@ -725,7 +725,7 @@ describe('Games mode — early pass', () => {
     daylightApi.mockImplementation(async (path) => {
       const p = String(path);
       if (p.endsWith('/completion')) {
-        return { state: 'incomplete', sections: [{ state: 'served' }, { state: 'obligated' }, { state: 'obligated' }, { state: 'excused' }] };
+        return { state: 'incomplete', sections: [{ subject: 'english', state: 'served' }, { subject: 'math', state: 'obligated' }, { subject: 'civilization', state: 'obligated' }, { subject: 'science', state: 'excused' }] };
       }
       if (p.endsWith('/next')) return { subject: 'math', unit: { unitId: 'math-4-02', title: 'Math 4-02' }, printable: true, reward: null };
       if (p.endsWith('/print-next')) return { sentence: 'Your sheet is printing.' };
@@ -751,12 +751,12 @@ describe('Games mode — early pass', () => {
     renderGames('/games/probe-game', 'learner1');
     expect(screen.getByText('Games are locked')).toBeTruthy();
     expect(screen.getByText('Finish today’s schoolwork to unlock Games.')).toBeTruthy();
-    expect(await screen.findByText('School: 1 of 3 done today')).toBeTruthy();
+    expect(await screen.findByText('School today: 1 of 3 done')).toBeTruthy();
     expect(screen.getByText('Spend 3 silver: one game')).toBeTruthy();
     // Gold is quoted but not affordable: no button, rather than one that fails.
     expect(screen.queryByText(/Spend 1 gold/)).toBeNull();
     // `reward: null` (the economy cannot price it): no amount is invented.
-    const print = await screen.findByText('Print my next sheet (Math 4-02)');
+    const print = await screen.findByRole('button', { name: 'Print my next sheet (Math 4-02)' });
     expect(screen.queryByText(/\+\d+ silver/)).toBeNull();
 
     fireEvent.click(print);
@@ -841,7 +841,7 @@ describe('Games mode — early pass', () => {
     fireEvent.click(screen.getByText('probe-rematch'));
     expect(await screen.findByText('Good game!')).toBeTruthy();
     expect(screen.getByText('Games lock again until school is done.')).toBeTruthy();
-    expect(await screen.findByText('Print my next sheet (Math 4-02)')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Print my next sheet (Math 4-02)' })).toBeTruthy();
     expect(screen.queryByTestId('probe-game')).toBeNull();
     expect(probe.mounts).toBe(1);
     expect(terminalCalls()).toHaveLength(1);
@@ -921,7 +921,7 @@ describe('Games mode — early pass', () => {
     // No game was played, so no "Good game!".
     expect(screen.getByText('Games are locked again until school is done.')).toBeTruthy();
     expect(screen.queryByText('Good game!')).toBeNull();
-    expect(await screen.findByText('Print my next sheet (Math 4-02)')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Print my next sheet (Math 4-02)' })).toBeTruthy();
   });
 
   it('a failed access read during the challenge keeps the challenge and the pass', async () => {

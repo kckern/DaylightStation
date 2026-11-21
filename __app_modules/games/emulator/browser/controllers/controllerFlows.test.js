@@ -1,7 +1,7 @@
 import { it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { runControllerFlow, FlowError } from './controllerFlows.js';
 
-const PAD = 'E4:17:D8:1C:7C:7A';
+const PAD = 'E4:17:D8:00:00:0A';
 
 /**
  * A fake audio bridge with Android's timing quirks: createBond and discovery
@@ -10,7 +10,7 @@ const PAD = 'E4:17:D8:1C:7C:7A';
  */
 function fakeBridge({ inPairingModeAfterMs = 0, pinPrompt = false, confirmPrompt = false, wakes = true, rejectConnect = false, rejectFirstScans = 0, pairIgnored = false, staleBonding = false, forgetsFromList = false } = {}) {
   const pad = { address: PAD, name: '8Bitdo SN30 Pro', manageable: true, bond: 'bonded', connected: false, profiles: [] };
-  const state = { ok: true, adapter: { supported: true, enabled: true, discovering: false }, devices: [pad, { address: '3C:6D:66:06:E4:B5', name: 'Remote', manageable: false, bond: 'bonded', connected: true }], pairing: null, capabilities: { scan: true, pair: true, unpair: true, input: true, pin: true, confirm: false } };
+  const state = { ok: true, adapter: { supported: true, enabled: true, discovering: false }, devices: [pad, { address: 'AA:BB:CC:00:20:01', name: 'Remote', manageable: false, bond: 'bonded', connected: true }], pairing: null, capabilities: { scan: true, pair: true, unpair: true, input: true, pin: true, confirm: false } };
   const t0 = Date.now();
   const log = [];
   const later = (ms, fn) => setTimeout(fn, ms);

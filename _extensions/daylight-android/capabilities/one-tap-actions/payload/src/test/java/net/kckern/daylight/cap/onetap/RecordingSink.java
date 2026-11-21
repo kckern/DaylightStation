@@ -52,6 +52,12 @@ final class RecordingSink implements SurfaceSink {
 
     /** The confirmation token of the last request; null for a pin of a configured action. */
     String token;
+    String setupRequestId;
+
+    @Override public void pinFromSetup(Action action, String uri, String requestId) {
+        pin(action, uri, null);
+        setupRequestId = requestId;
+    }
 
     @Override public void pin(Action action, String uri, String confirmToken) {
         token = confirmToken;

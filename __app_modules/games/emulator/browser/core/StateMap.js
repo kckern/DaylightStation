@@ -6,6 +6,11 @@
  * interpreted value changes (or on the first sample), `onState(name, detail)`
  * fires so a BindingMatcher can react. `.start()`/`.stop()` drive sampling on
  * an injected scheduler.
+ *
+ * `hold: [raw, ...]` on any state lists raw values that mean "no change": while
+ * memory reads one of them, the state keeps its previous value. Super Mario
+ * Land's music track is the example: Starman (0x0C) or the death jingle (0x02)
+ * replace the underground theme for a while without Mario leaving the pipe room.
  */
 
 import { readValue } from "./memoryRead.js";
@@ -26,6 +31,13 @@ function popcount(n) {
     count++;
   }
   return count;
+}
+
+/** The raw memory value behind an interpreted detail (count has none). */
+function rawOf(detail) {
+  if (detail.type === 'enum') return detail.raw;
+  if (detail.type === 'flag' || detail.type === 'number') return detail.value;
+  return undefined;
 }
 
 /**
@@ -93,8 +105,9 @@ export function createStateMap({
         continue;
       }
       const { detail, value } = result;
-      current[name] = value;
       const had = prev.has(name);
+      if (had && Array.isArray(def.hold) && def.hold.includes(rawOf(detail))) continue;
+      current[name] = value;
       if (!had || prev.get(name) !== value) {
         logger.debug?.('emulator.state.change', { name, value });
         prev.set(name, value);

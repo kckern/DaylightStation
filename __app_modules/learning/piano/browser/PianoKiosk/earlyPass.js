@@ -127,6 +127,37 @@ export function schoolProgress(completion) {
 }
 
 /**
+ * Today's sections for the lock's subject strip, in plan order: `{subject,
+ * done}` for each served or obligated section (excused ones are not school
+ * the child owes, so they are not drawn). Empty when there is nothing to show.
+ */
+export function schoolSections(completion) {
+  const sections = Array.isArray(completion?.sections) ? completion.sections : [];
+  return sections
+    .filter((s) => s?.subject && (s.state === 'served' || s.state === 'obligated'))
+    .map((s) => ({ subject: s.subject, done: s.state === 'served' }));
+}
+
+/**
+ * The print card's content from `GET .../next`: the subject (for its icon),
+ * the unit's title and the priced reward. Null when nothing would print. Same
+ * rules as `nextSheetLabel`: the reward is never made up.
+ */
+export function nextSheetCard(next) {
+  const unit = next?.unit;
+  if (!unit || next.printable !== true) return null;
+  const title = unit.title || unit.unitId;
+  if (!title) return null;
+  const count = (n) => (Number.isFinite(n) && n > 0 ? n : 0);
+  return {
+    subject: unit.subject ?? next.subject ?? null,
+    title,
+    silver: count(next.reward?.silver),
+    gems: count(next.reward?.gems),
+  };
+}
+
+/**
  * The Print button's label from `GET .../next`: "Print my next sheet (Math
  * 4-02)", with "+2 silver · " / "+1 gem · " only when the economy prices the
  * unit — the same reward words as the Portal's bank strip. Null when nothing

@@ -3,6 +3,7 @@ import { CompositeHeroService } from "../application/proxy/CompositeHeroService.
 import { RemoteThumbnailService } from "../application/proxy/RemoteThumbnailService.mjs";
 import { DynamicStreamService } from "../application/proxy/DynamicStreamService.mjs";
 import { MintPlaybackStream } from "../application/proxy/MintPlaybackStream.mjs";
+import { openFileAudioStream, openProviderAudioStream } from "#adapters/content/media/files/FileAudioRendition.mjs";
 import { FilesystemProxyMediaRepository } from "#adapters/proxy/FilesystemProxyMediaRepository.mjs";
 import { FilesystemProxyAssetCache } from "#adapters/proxy/FilesystemProxyAssetCache.mjs";
 import { KomgaCompositeImageSource } from "#adapters/proxy/KomgaCompositeImageSource.mjs";
@@ -15,7 +16,11 @@ export function createCatalogProxyServices({ logger, mediaBasePath, registry, pr
   const proxyLogger = logger.child?.({ module: 'proxy-api' }) || logger;
   const proxyAssetCache = new FilesystemProxyAssetCache({ mediaBasePath });
   const proxyMediaService = new ProxyMediaService({
-    repository: new FilesystemProxyMediaRepository({ registry, mediaBasePath, logger: proxyLogger }),
+    repository: new FilesystemProxyMediaRepository({
+      registry, mediaBasePath, logger: proxyLogger,
+      audioStreams: { file: openFileAudioStream, provider: openProviderAudioStream },
+      providerAccess: source => proxyService?.getAdapter?.(source)?.checkShutoffValve?.(),
+    }),
   });
   const mintPlaybackStream = new MintPlaybackStream({
     gateway: new RegistryPlaybackStreamGateway({ registry, logger: proxyLogger }),

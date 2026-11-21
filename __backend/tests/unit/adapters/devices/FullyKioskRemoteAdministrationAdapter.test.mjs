@@ -8,7 +8,7 @@ const deviceSource = {
     type: 'tablet',
     content_control: {
       provider: 'fully-kiosk',
-      host: '10.0.0.50',
+      host: '10.20.30.50',
       port: 2323,
       auth_ref: 'fkb',
       companion_apps: ['org.example.player'],
@@ -26,7 +26,7 @@ describe('FullyKioskRestClient', () => {
     const httpClient = { get: vi.fn(async () => response) };
     return {
       client: new FullyKioskRestClient(
-        { host: '10.0.0.50', port: 2323, password: 'super-secret' },
+        { host: '10.20.30.50', port: 2323, password: 'super-secret' },
         { httpClient, logger },
       ),
       httpClient,
@@ -49,7 +49,7 @@ describe('FullyKioskRestClient', () => {
     expect(JSON.stringify(logger.debug.mock.calls)).not.toContain('private announcement');
     expect(logger.debug).toHaveBeenCalledWith('fullykiosk.rest.request', expect.objectContaining({
       command: 'textToSpeech',
-      host: '10.0.0.50',
+      host: '10.20.30.50',
       parameterNames: ['text', 'locale'],
     }));
   });
@@ -85,7 +85,7 @@ describe('FullyKioskRestClient', () => {
     const logger = { debug: vi.fn(), warn: vi.fn() };
     const httpClient = { get: vi.fn(async () => { throw error; }) };
     const client = new FullyKioskRestClient(
-      { host: '10.0.0.50', password: 'secret' },
+      { host: '10.20.30.50', password: 'secret' },
       { httpClient, logger },
     );
 
@@ -157,7 +157,7 @@ describe('FullyKioskRemoteAdministrationAdapter', () => {
     } } });
     const result = await modern.adapter.readStatus('tablet');
 
-    expect(result.device).toMatchObject({ id: 'tablet', name: 'Kitchen tablet', address: '10.0.0.50:2323' });
+    expect(result.device).toMatchObject({ id: 'tablet', name: 'Kitchen tablet', address: '10.20.30.50:2323' });
     expect(result.summary).toMatchObject({
       manufacturer: 'Acme',
       model: 'Pixel C',
@@ -267,7 +267,7 @@ describe('FullyKioskRemoteAdministrationAdapter', () => {
     ['missing', deviceSource, { password: 'secret' }, 'DEVICE_NOT_FOUND'],
     ['tablet', { tablet: { content_control: { provider: 'chromecast' } } }, { password: 'secret' }, 'NOT_FULLY_KIOSK'],
     ['tablet', { tablet: { content_control: { provider: 'fully-kiosk', auth_ref: 'fkb' } } }, { password: 'secret' }, 'FKB_CONFIGURATION_ERROR'],
-    ['tablet', { tablet: { content_control: { provider: 'fully-kiosk', host: '10.0.0.50' } } }, { password: 'secret' }, 'FKB_CONFIGURATION_ERROR'],
+    ['tablet', { tablet: { content_control: { provider: 'fully-kiosk', host: '10.20.30.50' } } }, { password: 'secret' }, 'FKB_CONFIGURATION_ERROR'],
     ['tablet', deviceSource, {}, 'FKB_CONFIGURATION_ERROR'],
   ])('rejects invalid registry/auth target %# before making a request', async (deviceId, devices, auth, code) => {
     const { adapter, httpClient } = build({ devices, auth });

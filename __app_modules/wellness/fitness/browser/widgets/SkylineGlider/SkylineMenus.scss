@@ -73,30 +73,7 @@
     img { width: sgvw(11); height: sgvw(11); object-fit: cover; @include sg-frame; }
     strong { font-size: var(--sg-text-xl); font-weight: 900; line-height: 1; }
   }
-  // The sound sheet: a readout, the house touch volume strip in the game's
-  // colours (solid plates, never see-through), and a mute key.
-  &__readout {
-    display: flex; align-items: center; gap: sgvw(1); margin: sgvw(1) 0 0; color: var(--sg-gold); font-size: var(--sg-text-l); font-weight: 900; line-height: 1;
-    &[data-muted] { color: var(--sg-red); }
-  }
-  &__volume {
-    margin: sgvw(1.4) 0 0; width: min(100%, sgvw(52));
-    .touch-volume { display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: var(--sg-px); width: 100%; }
-    .touch-volume-button {
-      height: max(48px, sgvw(5)); padding: 0; border: 0; border-radius: 0; cursor: pointer; color: transparent;
-      background: var(--sg-night-lift); box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 var(--sg-ink);
-      &.on { background: var(--sg-gold); box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 var(--sg-b2-shade); }
-      &:first-child { background: var(--sg-ink); box-shadow: inset 0 0 0 var(--sg-line) var(--sg-red); }
-      &:first-child.active { background: var(--sg-red); box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 #8f1430; }
-      &.active:not(:first-child) { box-shadow: inset 0 0 0 var(--sg-line) var(--sg-paper); }
-    }
-  }
-  &__mute {
-    margin: sgvw(1.4) 0 0; min-width: sgvw(14); min-height: 48px; padding: sgvw(.7) sgvw(2); border: 0; border-radius: 0; font: inherit;
-    font-size: var(--sg-text-m); font-weight: 900; color: var(--sg-ink); background: var(--sg-paper); cursor: pointer;
-    box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 var(--sg-mute), sg-ring(var(--sg-ink));
-    &[aria-pressed="true"] { color: var(--sg-paper); background: var(--sg-red); box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 #8f1430, sg-ring(var(--sg-ink)); }
-  }
+  @include sg-sound-sheet;
   &__count { display: block; margin: .08em 0 0; color: var(--sg-gold); font-size: var(--sg-text-xxl); font-weight: 900; font-style: italic; line-height: 1; text-shadow: var(--sg-px) var(--sg-px) 0 var(--sg-ink); }
   p.skyline-menus__cause { margin-top: sgvw(1.1); padding: sgvw(.8) sgvw(1.2); color: var(--sg-ink); background: var(--sg-gold); font-weight: 700; }
 

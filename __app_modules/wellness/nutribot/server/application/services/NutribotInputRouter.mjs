@@ -276,6 +276,15 @@ export class NutribotInputRouter extends BaseInputRouter {
     return log;
   }
 
+  async quickCaptureReceipt(log) {
+    if (log?.status !== 'accepted' || log.metadata.quickInput?.finished !== true) return null;
+    const rows = await this.container.getNutriListStore?.()?.findByLogId?.(log.userId, log.id);
+    if (!rows?.length) return null;
+    const saved = new Set(rows.map(row => row.uuid || row.id));
+    if (!log.items.length || log.items.some(item => !saved.has(item.uuid || item.id))) return null;
+    return { entryId: log.id, date: rows[0].date };
+  }
+
   async finishQuickCapture(log) {
     const { userId, conversationId, id: logId } = log;
     const checkpoint = log.metadata.quickInput;

@@ -8,6 +8,7 @@ import android.widget.Toast;
 
 import net.kckern.daylight.api.PayloadPort;
 import net.kckern.daylight.shellkit.ShellStart;
+import net.kckern.daylight.shellkit.LauncherCaptureShortcut;
 
 /**
  * Receives a link (daylight://, or an https link of the household site), hands it to
@@ -27,6 +28,9 @@ import net.kckern.daylight.shellkit.ShellStart;
 public class LinkActivity extends Activity {
     private static final String TAG = "Daylight-Link";
     private static final long WAIT_FOR_PAYLOAD_MS = 8000;
+    // Port dispatch and its posted front effect keep the order Android delivered the taps.
+    private static final java.util.concurrent.ExecutorService LINKS =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> new Thread(r, "Daylight-link"));
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -39,10 +43,16 @@ public class LinkActivity extends Activity {
             return;
         }
         ShellStart.ensure(this);
-        new Thread(() -> {
+        LINKS.execute(() -> {
             LinkAnswer answer;
             try {
-                answer = LinkAnswer.of(PayloadPort.named(PayloadPort.LINKS).call(LinkRequest.body(link), WAIT_FOR_PAYLOAD_MS));
+                if (LauncherCaptureShortcut.isCaptureLink(link)) {
+                    String id = LauncherCaptureShortcut.authorizedId(this, link);
+                    answer = id == null ? LinkAnswer.of("{\"ok\":false,\"message\":\"Add this shortcut again from your launcher.\"}")
+                            : LinkAnswer.of(PayloadPort.named(LauncherCaptureShortcut.PORT).call(id, WAIT_FOR_PAYLOAD_MS));
+                } else {
+                    answer = LinkAnswer.of(PayloadPort.named(PayloadPort.LINKS).call(LinkRequest.body(link), WAIT_FOR_PAYLOAD_MS));
+                }
             } catch (PayloadPort.NotReadyException noPayload) {
                 answer = LinkAnswer.notReady();
             } catch (Throwable failed) {
@@ -55,7 +65,7 @@ public class LinkActivity extends Activity {
                 perform(result);
                 finish();
             });
-        }, "Daylight-link").start();
+        });
     }
 
     private void perform(LinkAnswer answer) {
@@ -66,6 +76,8 @@ public class LinkActivity extends Activity {
                 // This app's own launcher activity, asked of the package manager by this
                 // app's own package name. Nothing from the link or the answer is in the intent.
                 Intent front = getPackageManager().getLaunchIntentForPackage(getPackageName());
+                Intent page = new Intent().setClassName(this, "net.kckern.daylight.cap.webviewhost.shell.KioskActivity");
+                if (page.resolveActivity(getPackageManager()) != null) front = page;
                 if (front != null) startActivity(front.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
             }
         } catch (RuntimeException e) {

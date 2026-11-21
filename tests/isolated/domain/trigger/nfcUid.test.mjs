@@ -6,21 +6,21 @@ describe('canonicalizeNfcUid', () => {
   it('folds the two spellings of one physical card onto the same identity', () => {
     // The bug this exists for: the audiobook readers write separated lowercase,
     // the omr-relay's ST25R3916 reports packed uppercase. Same NTAG 215.
-    const fromConfig = canonicalizeNfcUid('04_66_9c_0f_cb_2a_81');
-    const fromRelay = canonicalizeNfcUid('04669C0FCB2A81');
+    const fromConfig = canonicalizeNfcUid('04_f0_00_00_00_00_05');
+    const fromRelay = canonicalizeNfcUid('04F00000000005');
     expect(fromRelay).toBe(fromConfig);
-    expect(fromConfig).toBe('04669c0fcb2a81');
+    expect(fromConfig).toBe('04f00000000005');
   });
 
   it.each([
-    ['underscores', '04_66_9C_0F_CB_2A_81'],
-    ['colons', '04:66:9c:0f:cb:2a:81'],
-    ['hyphens', '04-66-9C-0F-CB-2A-81'],
-    ['spaces', '04 66 9c 0f cb 2a 81'],
-    ['already canonical', '04669c0fcb2a81'],
-    ['surrounding whitespace', '  04669C0FCB2A81\n'],
+    ['underscores', '04_F0_00_00_00_00_05'],
+    ['colons', '04:f0:00:00:00:00:05'],
+    ['hyphens', '04-F0-00-00-00-00-05'],
+    ['spaces', '04 f0 00 00 00 00 05'],
+    ['already canonical', '04f00000000005'],
+    ['surrounding whitespace', '  04F00000000005\n'],
   ])('accepts %s', (_label, input) => {
-    expect(canonicalizeNfcUid(input)).toBe('04669c0fcb2a81');
+    expect(canonicalizeNfcUid(input)).toBe('04f00000000005');
   });
 
   it('keeps short legacy registry keys usable', () => {
@@ -35,8 +35,8 @@ describe('canonicalizeNfcUid', () => {
   });
 
   it('does not merge two genuinely different tags', () => {
-    expect(canonicalizeNfcUid('04_66_9c_0f_cb_2a_81'))
-      .not.toBe(canonicalizeNfcUid('04_66_9c_0f_cc_2a_81'));
+    expect(canonicalizeNfcUid('04_f0_00_00_00_00_05'))
+      .not.toBe(canonicalizeNfcUid('04_f0_00_00_00_00_0a'));
   });
 
   // Found the hard way while migrating the live registry: stripping separators
@@ -46,9 +46,9 @@ describe('canonicalizeNfcUid', () => {
   // and the file stops parsing at all.
   it('produces uids that stay DISTINCT even when they look like scientific notation', () => {
     const a = canonicalizeNfcUid('83_8e_68_06');
-    const b = canonicalizeNfcUid('04_21_e5_21_47_02_89');
+    const b = canonicalizeNfcUid('04_10_e5_00_00_00_02');
     expect(a).toBe('838e6806');
-    expect(b).toBe('0421e521470289');
+    expect(b).toBe('0410e500000002');
     expect(a).not.toBe(b);
     // The trap itself: as numbers they are indistinguishable.
     expect(Number(a)).toBe(Infinity);
@@ -61,11 +61,11 @@ describe('canonicalizeNfcUid', () => {
     const { default: yaml } = await import('js-yaml');
     const registry = {
       [canonicalizeNfcUid('83_8e_68_06')]: { plex: 620707 },
-      [canonicalizeNfcUid('04_21_e5_21_47_02_89')]: { plex: 456598 },
+      [canonicalizeNfcUid('04_10_e5_00_00_00_02')]: { plex: 456598 },
     };
     const reloaded = yaml.load(yaml.dump(registry));
     expect(Object.keys(reloaded)).toHaveLength(2);
     expect(reloaded['838e6806'].plex).toBe(620707);
-    expect(reloaded['0421e521470289'].plex).toBe(456598);
+    expect(reloaded['0410e500000002'].plex).toBe(456598);
   });
 });

@@ -31,10 +31,10 @@ let rpmByBike;
 let vitals;
 
 function makeCtx(cycleGameConfig = {}) {
-  const riders = { cycle_ace: 'user_1', tricycle: 'user_2', trainer: 'user_3' };
+  const riders = { bike_b: 'user_1', tricycle: 'user_2', trainer: 'user_3' };
   return {
     equipment: [
-      { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1 },
+      { id: 'bike_b', name: 'Bike B', cadence: 10102, wheel_circumference_m: 2.1 },
       { id: 'tricycle', name: 'Tricycle', cadence: 7153, wheel_circumference_m: 1.2 },
       { id: 'trainer', name: 'Trainer', cadence: 7154, wheel_circumference_m: 2.1 }
     ],
@@ -169,13 +169,13 @@ describe('CycleGameContainer — toasts never arrive late', () => {
   it('a toast that waited past the age limit is dropped and never rendered', () => {
     const view = render(<CycleGameContainer />);
     start(view);
-    rpmByBike.cycle_ace = 120;
+    rpmByBike.bike_b = 120;
     rpmByBike.tricycle = 20;
     tick(3); // user_1 leads
     // One fire: user_1 boosts on its first tick (shown), user_3 parks two ticks
     // later and user_2 takes the lead after that (both queued, same instant).
     vitals.user_1 = { ...vitals.user_1, zoneId: 'hot' };
-    rpmByBike.cycle_ace = 10;
+    rpmByBike.bike_b = 10;
     rpmByBike.tricycle = 400;
     rpmByBike.trainer = 0;
     burst(12);
@@ -200,7 +200,7 @@ describe('CycleGameContainer — toasts never arrive late', () => {
     // the line (queued behind the park notice). user_2 is still riding, so the
     // race stays live.
     vitals.user_2 = { ...vitals.user_2, zoneId: 'hot' };
-    rpmByBike.cycle_ace = 120;
+    rpmByBike.bike_b = 120;
     rpmByBike.trainer = 0;
     burst(20);
     expect(logsOf('debug', 'cycle_game.drama_event').some((e) => e.type === 'RIDER_FINISHED')).toBe(true);

@@ -34,7 +34,7 @@ sources:
   # Remote API sources
   plex-main:
     driver: plex
-    host: 192.168.1.10
+    host: 192.0.2.10
     port: 32400
     token: xxxxxxxxxxxx
     default: true
@@ -45,7 +45,7 @@ sources:
 
   plex-kids:
     driver: plex
-    host: 192.168.1.11
+    host: 192.0.2.11
     port: 32400
     token: yyyyyyyyyyyy
 

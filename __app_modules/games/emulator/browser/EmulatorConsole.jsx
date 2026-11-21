@@ -12,6 +12,7 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
+import { createEffectClient } from './core/effectClient.js';
 import { selectCheckpointVariant } from "./core/nativeCheckpoint.js";
 import { createCheckpointConsoleLifecycle, captureCheckpoint } from "./core/checkpointConsoleLifecycle.js";
 import { recoveryChoices } from "./core/recoveryChoices.js";
@@ -19,7 +20,7 @@ import { createEmulatorEngine } from "./core/EmulatorEngine.js";
 import { createAudioMixer } from "./audio/AudioMixer.js";
 import { createEmulatorSession } from "./core/EmulatorSession.js";
 import { createHtmlAudioClip } from "./audio/htmlAudioClip.js";
-import { ControllerStatus } from "./input/ControllerStatus.jsx";
+import { BluetoothScreen } from "./input/BluetoothScreen.jsx";
 import { ControllerIndicator } from "./input/ControllerIndicator.jsx";
 import { assertEjsContract } from "./core/ejsContract.js";
 import { settleBoot } from "./core/bootSettle.js";
@@ -33,6 +34,8 @@ import { resolveOverlayValue, formatOverlayValue } from "./core/resolveOverlayVa
 import { HotspotLayer } from "./ui/HotspotLayer.jsx";
 import { OverlayLayer } from "./ui/OverlayLayer.jsx";
 import { useArcadeInput } from "./ui/useArcadeInput.js";
+import { useRemoteEmulatorInput } from "./input/useRemoteEmulatorInput.js";
+import { EmulatorJSInputAdapter } from "./adapters/EmulatorJSInputAdapter.js";
 import "./EmulatorConsole.scss";
 
 const STATUS_POLL_MS = 500;
@@ -55,8 +58,6 @@ const LCD_SHADES = [
 const SHADE_STORAGE_KEY = 'emulator:lcd-shade';
 const VOLUME_STORAGE_KEY = 'emulator:volume-level';
 const ANIM_DURATION_MS = 1000;
-const PAIR_DURATION_MS = 30000;
-const PAIR_ENDPOINT = '/api/v1/emulator/bt/pair';
 
 // Session badge field → format + overlayData source. `player` reuses the
 // existing player_card rendering and reads from the pre-existing
@@ -158,21 +159,16 @@ export function EmulatorConsole({
   factories,
   // Controller panel
   controllers = [],
-  btInventory,
-  pairing,
-  // Host pairing handler. When given, it must honour `mode` ('repair'|'add'),
-  // e.g. the fitness WebSocket path; without it the console falls back to its
-  // own POST, which can only re-pair.
-  onPairController,
-  onForgetController,
-  controllerForget,
+  // Bluetooth screen: the host's bluetooth object (see useFitnessBluetooth) and
+  // input.yml's keyboard map. Without one the menu has no Bluetooth button.
+  bluetooth = null,
+  keyboardMap = null,
   getGamepads,
   // Show the dual gamepad-activity LED on the chrome (browser-seen vs
   // emulator-consumed) and emit the matching diagnostic logs. Default on — it's
   // subtle and host-agnostic; a host can disable it.
   showInputActivity = true,
   onArcadeGameSessionStateChange = null,
-  fetchImpl = () => globalThis.fetch,
 }) {
   const fns = useMemo(() => ({ ...DEFAULT_FACTORIES, ...(factories || {}) }), [factories]);
   // Per-mount correlation id: stamped on every console/session/engine/mixer event
@@ -184,6 +180,15 @@ export function EmulatorConsole({
   const mountRef = useRef(null);
   const consoleRef = useRef(null);
   const runtimeRef = useRef(null); // { engine, mixer, session }
+
+  // A reload or navigation never unmounts React, so session.stop() would not
+  // run: exit any household effect (e.g. lights down underground) as the page
+  // goes away. The effect request uses keepalive and outlives the page.
+  useEffect(() => {
+    const onPageHide = () => runtimeRef.current?.session?.exitEffects?.('page-hide');
+    window.addEventListener('pagehide', onPageHide);
+    return () => window.removeEventListener('pagehide', onPageHide);
+  }, []);
   const gridCanvasRef = useRef(null);
   const volumeLevelRef = useRef(DEFAULT_VOLUME_LEVEL); // latest volume for the boot apply
   const controllerRef = useRef(null); // hotspot controller
@@ -314,6 +319,18 @@ export function EmulatorConsole({
     onArcadeGameSessionStateChange?.(effectiveArcadeGameSessionState);
   }, [effectiveArcadeGameSessionState, onArcadeGameSessionStateChange]);
 
+  // Bluetooth remotes with an input.yml `emulator:` map drive the game while
+  // it plays (claimed, so nothing else acts on their presses meanwhile).
+  const remoteInput = useMemo(() => new EmulatorJSInputAdapter({ getEngine: () => runtimeRef.current?.engine || null }), []);
+  useRemoteEmulatorInput({
+    bluetooth,
+    controllers,
+    system: game?.system || null,
+    active: effectiveArcadeGameSessionState === 'playing' && !resetOpen && !recoveryCopies,
+    input: remoteInput,
+    logger,
+  });
+
   // Continuous autosave: once the session is save-enabled AND user-scoped,
   // capture + persist the resume blob(s) every autosaveSeconds. Re-runs when
   // persistence flips active (the claim path), so saving starts without remount.
@@ -353,10 +370,8 @@ export function EmulatorConsole({
     'session.coins': overlayDataProp['session.coins'] ?? '—',
   }), [overlayDataProp, nowPlaying, systemLabel, sessionTimer]);
 
-  // Controller panel: visibility + console-managed local pairing state.
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [localPairing, setLocalPairing] = useState(null);
-  const pairTimerRef = useRef(null);
+  // Bluetooth screen, opened from the 🎮 toggle or the game menu.
+  const [btOpen, setBtOpen] = useState(false);
 
   const [volumeLevel, setVolumeLevel] = useState(() => {
     try {
@@ -757,8 +772,8 @@ export function EmulatorConsole({
   // Focus the default on open — and again once the game is ready, because the
   // emulator core takes focus for itself when it finishes booting.
   useEffect(() => {
-    if (!holdPaused && (settingsOpen || modalInputActive)) menuDefaultButton()?.focus?.();
-  }, [settingsOpen, playReady, launchChoice, resetOpen, eraseConfirm, recoveryCopies, error, progress?.phase, modalInputActive, holdPaused]);
+    if (!holdPaused && !btOpen && (settingsOpen || modalInputActive)) menuDefaultButton()?.focus?.();
+  }, [settingsOpen, playReady, launchChoice, resetOpen, eraseConfirm, recoveryCopies, error, progress?.phase, modalInputActive, holdPaused, btOpen]);
   const onMenuIntent = useCallback((intent) => {
     const sheet = activeInputSheet();
     if (!sheet) return;
@@ -791,7 +806,8 @@ export function EmulatorConsole({
     const next = at < 0 ? 0 : Math.max(0, Math.min(buttons.length - 1, at + step));
     buttons[next].focus();
   }, []);
-  useArcadeInput({ onIntent: onMenuIntent, enabled: (settingsOpen || modalInputActive) && !holdPaused, getGamepads, primeOnStart: true });
+  // The Bluetooth screen owns keys and pad while it is up over the menu.
+  useArcadeInput({ onIntent: onMenuIntent, enabled: (settingsOpen || modalInputActive) && !holdPaused && !btOpen, getGamepads, primeOnStart: true });
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -801,40 +817,25 @@ export function EmulatorConsole({
     logger.info('emulator.console.volume-applied', { reason: 'panel-open', level, volume: v, bus: 'game' });
   }, [settingsOpen, logger]);
 
-  // Internal default pairing trigger: POST to this app's own backend, then flip
-  // local pairing to scanning → done (or error). Host can override via
-  // `onPairController`, or feed a `pairing` prop to drive the UI directly.
-  const defaultPair = useCallback(async () => {
-    if (pairTimerRef.current) {
-      clearTimeout(pairTimerRef.current);
-      pairTimerRef.current = null;
+  // The Bluetooth screen opens over the game menu, so the game stays paused
+  // (settingsOpen) and the menu's own input is off while it is up.
+  const openBluetooth = useCallback((via) => {
+    setSettingsOpen(true);
+    setBtOpen(true);
+    logger.info('emulator.console.bluetooth-open', { game: game?.id, via });
+  }, [logger, game?.id]);
+  // The pause comes from the menu: if the menu closes (a touch on ✕ or the
+  // backdrop), Bluetooth closes with it, so the game never runs under it.
+  useEffect(() => {
+    if (!settingsOpen && btOpen) {
+      setBtOpen(false);
+      logger.info('emulator.console.bluetooth-close', { game: game?.id, via: 'menu-closed' });
     }
-    setLocalPairing({ phase: 'scanning', durationMs: PAIR_DURATION_MS });
-    logger.info('emulator.console.pair-start', { durationMs: PAIR_DURATION_MS });
-    try {
-      const doFetch = fetchImpl();
-      if (typeof doFetch !== 'function') throw new Error('no fetch implementation');
-      const res = await doFetch(PAIR_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ durationMs: PAIR_DURATION_MS }),
-      });
-      if (res && res.ok === false) throw new Error(`pair request failed (${res.status})`);
-      pairTimerRef.current = setTimeout(() => {
-        setLocalPairing({ phase: 'done' });
-        pairTimerRef.current = null;
-        logger.info('emulator.console.pair-done', {});
-      }, PAIR_DURATION_MS);
-    } catch (err) {
-      const message = (err && err.message) || 'pairing failed';
-      setLocalPairing({ phase: 'error', message });
-      logger.warn('emulator.console.pair-error', { error: message });
-    }
-  }, [fetchImpl, logger]);
-
-  const effectiveOnPair = onPairController || defaultPair;
-  // Host-provided pairing prop takes precedence over console-managed local state.
-  const effectivePairing = pairing ?? localPairing;
+  }, [settingsOpen, btOpen, logger, game?.id]);
+  const closeBluetooth = useCallback(() => {
+    setBtOpen(false);
+    logger.info('emulator.console.bluetooth-close', { game: game?.id });
+  }, [logger, game?.id]);
 
   // Reset / "start over": erase the user's save, then restart the ROM fresh.
   const resetFlightRef = useRef(null);
@@ -930,7 +931,13 @@ export function EmulatorConsole({
       logger,
     });
 
-    const mergedHandlers = { ...actionHandlers, animation: (name) => triggerAnim(name) };
+    // `effect` (registry effects: lights, scenes) defaults to the backend
+    // effect endpoint; a host may supply its own.
+    const mergedHandlers = {
+      effect: createEffectClient({ logger }),
+      ...actionHandlers,
+      animation: (name) => triggerAnim(name),
+    };
 
     const session = fns.createSession({
       engine,
@@ -1281,17 +1288,6 @@ export function EmulatorConsole({
   // 🎮 toggle. Keyboard always works (arrows = D-pad, Enter = Start, Space =
   // Select), so a controller-less user is never interrupted on mount.
 
-  // Clear any pending pair timer on unmount.
-  useEffect(
-    () => () => {
-      if (pairTimerRef.current) {
-        clearTimeout(pairTimerRef.current);
-        pairTimerRef.current = null;
-      }
-    },
-    [],
-  );
-
   const showOverlay = status.state !== 'playing';
 
   // Bezel screen cutout (config-driven, % of frame): position the emulator video
@@ -1497,25 +1493,23 @@ export function EmulatorConsole({
       {osd && (
       <button
         type="button"
-        className={`emulator-controller-toggle${panelOpen ? ' is-open' : ''}`}
-        aria-label={panelOpen ? 'Hide controller panel' : 'Show controller panel'}
-        aria-expanded={panelOpen}
-        onClick={() => setPanelOpen((v) => !v)}
+        className={`emulator-controller-toggle${btOpen ? ' is-open' : ''}`}
+        aria-label={btOpen ? 'Hide Bluetooth' : 'Show Bluetooth'}
+        aria-expanded={btOpen}
+        onClick={() => (btOpen ? closeBluetooth() : openBluetooth('toggle'))}
       >
         🎮
       </button>
       )}
-      {osd && panelOpen && (
-        <div className="emulator-controller-panel" role="dialog" aria-label="Controllers">
-          <ControllerStatus
+      {btOpen && (
+        <div className="emulator-controller-panel" role="dialog" aria-modal="true" aria-label="Bluetooth">
+          <BluetoothScreen
+            host="in-game"
             controllers={controllers}
-            btInventory={btInventory}
+            keyboardMap={keyboardMap}
+            bluetooth={bluetooth}
             getGamepads={getGamepads}
-            pairing={effectivePairing}
-            onPair={effectiveOnPair}
-            canAdd={typeof onPairController === 'function'}
-            onForget={onForgetController}
-            forgetResult={controllerForget}
+            onClose={closeBluetooth}
           />
         </div>
       )}
@@ -1561,6 +1555,9 @@ export function EmulatorConsole({
                 {shade.name}
               </button>
             </div>
+            {bluetooth ? (
+              <button type="button" className="emulator-settings-modal__bluetooth" onClick={() => openBluetooth('menu')}>Bluetooth</button>
+            ) : null}
             {checkpointKey && <button type="button" onClick={inspectRecovery}>Recover progress</button>}
             {typeof onExit === 'function' && (
               <button type="button" className="emulator-settings-modal__exit" onClick={requestExit}>

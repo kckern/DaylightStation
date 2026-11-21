@@ -65,9 +65,9 @@ describe('useInvadersFire', () => {
     renderHook(() => useInvadersFire({ enabled: true, matId: null, subscribeToAppEvent: bus().subscribeToAppEvent, tracker: tracker() }));
     expect(mockLog.warn).toHaveBeenCalledWith('skyline_invaders.fire.no_mat', { matId: null, hasEventBus: true });
   });
-  it('adds fuel from Space or F and drops a bomb from B, not on repeat, not while typing, and does not freeze the lane', () => {
+  it('with keys allowed (a dev build): fuel from Space or F, a bomb from B, not on repeat, not while typing, and the lane is not frozen', () => {
     const aim = tracker();
-    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: null, tracker: aim }));
+    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: null, tracker: aim, allowKeys: true }));
     act(() => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
       window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', repeat: true }));
@@ -85,26 +85,45 @@ describe('useInvadersFire', () => {
     expect(presses.stomps.map((press) => press.source)).toEqual(['keyboard']);
     expect(aim.freezeLane).not.toHaveBeenCalled();
   });
-  it('adds fuel from gamepad A or RT and drops a bomb from X or Y, on the button edge', () => {
+  it('in the kiosk (keys not allowed) Space, F and B fire nothing, and the attempt is logged', () => {
+    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: null, tracker: tracker() }));
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f' }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'b' }));
+    });
+    expect(result.current()).toEqual({ steps: [], stomps: [] });
+    expect(mockLog.sampled).toHaveBeenCalledWith('skyline_invaders.input.ignored', { source: 'keyboard', key: ' ', kind: 'step' }, expect.objectContaining({ maxPerMinute: 6, aggregate: true }));
+    expect(mockLog.sampled).toHaveBeenCalledWith('skyline_invaders.input.ignored', { source: 'keyboard', key: 'b', kind: 'stomp' }, expect.anything());
+  });
+  it('a gamepad never fires or bombs, keys allowed or not: every button and the stick are logged as ignored', () => {
     const run = frames();
     let buttons = [];
-    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: null, tracker: tracker(), getGamepads: () => [pad(buttons)] }));
-    run();                      // first poll: nothing held
-    buttons = [0]; run(); run();  // A down, held for two polls
+    let axes = [0, 0];
+    const getGamepads = () => [{ ...pad(buttons), axes }];
+    const b = bus();
+    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: 'mat-a1', subscribeToAppEvent: b.subscribeToAppEvent, tracker: tracker(), allowKeys: true, getGamepads }));
+    run();                          // first poll: nothing held
+    buttons = [0]; run(); run();    // A (was fuel), held for two polls
     buttons = []; run();
-    buttons = [2]; run();
-    buttons = []; run();
-    buttons = [7, 3]; run();
-    const presses = result.current();
-    expect(presses.steps).toHaveLength(2);
-    expect(presses.stomps).toHaveLength(2);
-    expect(presses.steps[0].source).toBe('gamepad');
-  });
-  it('a button already held when polling starts does not count', () => {
-    const run = frames();
-    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: null, tracker: tracker(), getGamepads: () => [pad([0, 2])] }));
-    run(); run();
+    buttons = [7, 3]; run();        // RT and Y (were fuel and bomb)
+    buttons = []; axes = [0.9, 0]; run();   // the stick (was aim)
     expect(result.current()).toEqual({ steps: [], stomps: [] });
+    const ignored = mockLog.sampled.mock.calls.filter(([name]) => name === 'skyline_invaders.input.ignored').map(([, data]) => data);
+    expect(ignored).toEqual([
+      { source: 'gamepad', input: 'button', button: 0, padId: 'test-pad' },
+      { source: 'gamepad', input: 'button', button: 3, padId: 'test-pad' },
+      { source: 'gamepad', input: 'stick', padId: 'test-pad' },
+    ]);
+    // The mat still fires.
+    act(() => { b.emit('pressure-mat:step', 'mat-a1'); });
+    expect(result.current().steps.map((press) => press.source)).toEqual(['mat']);
+  });
+  it('a button already held when watching starts is not logged', () => {
+    const run = frames();
+    renderHook(() => useInvadersFire({ enabled: true, matId: null, tracker: tracker(), getGamepads: () => [pad([0, 2])] }));
+    run(); run();
+    expect(mockLog.sampled).not.toHaveBeenCalledWith('skyline_invaders.input.ignored', expect.anything(), expect.anything());
   });
   it('drops everything and unsubscribes when disabled', () => {
     const b = bus();

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
 const api = vi.fn();
@@ -13,7 +13,8 @@ vi.mock('../../../../../../../frontend/src/lib/api.mjs', () => ({
 // only assert the right view mounts and the raw XML reaches it.
 vi.mock('./ScorePlayer.jsx', () => ({
   default: ({ score }) => (
-    <div data-testid="score-player" data-splash={score?.splashImage || ''}>player:{score?.musicXml}</div>
+    <div data-testid="score-player" data-splash={score?.splashImage || ''}
+      data-learn={JSON.stringify(score?.learnFile ?? null)}>player:{score?.musicXml}</div>
   ),
 }));
 
@@ -21,7 +22,7 @@ import { ActivePianoProvider } from '../../PianoConfig.jsx';
 import { __clearPianoListCache } from '../../usePianoList.js';
 import { getRecentEvents } from '../../../../../../../frontend/src/lib/logging/Logger.js';
 import { SheetMusic } from './SheetMusic.jsx';
-import { collectionListPath, isNotationId } from './sheetMusicModel.js';
+import { collectionListPath, isNotationId, scoreViewPath, encodeContentIdPath } from './sheetMusicModel.js';
 
 // The recent-events ring buffer tails every emitted event with its context, so
 // it is the cheapest way to assert BOTH what was emitted and which log file it
@@ -73,6 +74,17 @@ describe('isNotationId (H4)', () => {
   });
 });
 
+describe('scoreViewPath', () => {
+  it('keeps slashes and colons readable', () => {
+    expect(scoreViewPath('files:docs/sheet-music/fur-elise.musicxml'))
+      .toBe('view/files:docs/sheet-music/fur-elise.musicxml');
+  });
+  it('encodes characters a URL would otherwise swallow (# ? % space)', () => {
+    expect(encodeContentIdPath('files:docs/a b/#1?.musicxml')).toBe('files:docs/a%20b/%231%3F.musicxml');
+    expect(encodeContentIdPath('files:x/100%25.mxl')).toBe('files:x/100%2525.mxl');
+  });
+});
+
 describe('SheetMusic mode', () => {
   it('lists notation files from the configured folder (index route)', async () => {
     api.mockImplementation((path) => {
@@ -116,6 +128,25 @@ describe('SheetMusic mode', () => {
     expect(await screen.findByTestId('score-player')).toHaveTextContent('player:<score-partwise/>');
     expect(apiText).toHaveBeenCalledWith(
       'api/v1/proxy/media/stream/docs%2Fsheet-music%2Ffur-elise-super-easy.musicxml'
+    );
+  });
+
+  it('opens a score whose id contains # and ? (the id is encoded into the path)', async () => {
+    const id = 'files:docs/sheet-music/etude #3? 100%25.musicxml';
+    api.mockImplementation((path) => {
+      if (path === 'api/v1/list/files/docs/sheet-music') {
+        return Promise.resolve({ items: [{ id, title: 'odd-name-etude', type: 'notation' }] });
+      }
+      return Promise.resolve({});
+    });
+    apiText.mockResolvedValue('<score-partwise/>');
+
+    renderSheet({ collection: 'files:docs/sheet-music' });
+    fireEvent.click(await screen.findByTitle('Odd Name Etude'));
+
+    expect(await screen.findByTestId('score-player')).toHaveTextContent('player:<score-partwise/>');
+    expect(apiText).toHaveBeenCalledWith(
+      `api/v1/proxy/media/stream/${encodeURIComponent('docs/sheet-music/etude #3? 100%25.musicxml')}`
     );
   });
 
@@ -192,6 +223,137 @@ describe('SheetMusic mode', () => {
     // ...and it must NOT open another session file: a fresh sessionLog CHILD would
     // auto-emit session-log.start (Logger.js:217), fragmenting the run log.
     expect(recent('session-log.start').length).toBe(startsBefore);
+  });
+
+  describe('approved Learn segments', () => {
+    const SCORE_ID = 'files:docs/sheet-music/minuet.musicxml';
+    const LEARN_PATH = `api/v1/piano/sheet-music/learn?id=${encodeURIComponent(SCORE_ID)}`;
+    const deepLink = `/sheetmusic/view/${SCORE_ID}`;
+    // Route the api mock by URL: useScoreImage also calls DaylightAPI (info).
+    const routeApi = (learn) => api.mockImplementation((path) => {
+      if (path === LEARN_PATH) return learn();
+      return Promise.resolve({});
+    });
+    const learnCalls = () => api.mock.calls.filter(([p]) => p === LEARN_PATH).length;
+    const learnOf = (el) => JSON.parse(el.getAttribute('data-learn'));
+
+    it('fetches the score\'s Learn file and hands it to the player', async () => {
+      const file = { segments: [{ id: 'a', start: 1, end: 4, name: 'Opening' }], contentSha256: 'x' };
+      routeApi(() => Promise.resolve(file));
+      apiText.mockResolvedValue('<score-partwise/>');
+      renderSheet({ collection: 'files:docs/sheet-music' }, deepLink);
+      const player = await screen.findByTestId('score-player');
+      expect(learnOf(player)).toEqual(file);
+      expect(learnCalls()).toBe(1);
+    });
+
+    it('shows the retry screen and logs to the session file when the Learn fetch fails twice', async () => {
+      routeApi(() => Promise.reject(new Error('learn 500')));
+      apiText.mockResolvedValue('<score-partwise/>');
+      const startsBefore = recent('session-log.start').length;
+      renderSheet({ collection: 'files:docs/sheet-music' }, deepLink);
+      expect(await screen.findByText('Could not load this score.')).toBeTruthy();
+      expect(screen.queryByTestId('score-player')).toBeNull();
+      expect(learnCalls()).toBe(2);
+      const failures = recent('piano.score-learn-failed')
+        .filter((e) => e.data?.id === 'docs/sheet-music/minuet.musicxml');
+      expect(failures.length).toBe(1);
+      expect(failures[0].data).toMatchObject({ error: 'learn 500' });
+      expect(failures[0].context).toMatchObject({ app: 'piano-sheetmusic', sessionLog: true });
+      expect(recent('session-log.start').length).toBe(startsBefore);
+    });
+
+    it('retries the Learn fetch once, and {} opens the score with no segments', async () => {
+      let n = 0;
+      routeApi(() => (n++ === 0 ? Promise.reject(new Error('blip')) : Promise.resolve({})));
+      apiText.mockResolvedValue('<score-partwise/>');
+      renderSheet({ collection: 'files:docs/sheet-music' }, deepLink);
+      const player = await screen.findByTestId('score-player');
+      expect(learnOf(player)).toEqual({});
+      expect(learnCalls()).toBe(2);
+    });
+
+    it('holds the splash while the Learn fetch is pending, even once the XML is in', async () => {
+      let resolveLearn;
+      routeApi(() => new Promise((r) => { resolveLearn = r; }));
+      apiText.mockResolvedValue('<score-partwise/>');
+      renderSheet({ collection: 'files:docs/sheet-music' }, deepLink);
+      await waitFor(() => expect(apiText).toHaveBeenCalled());
+      await waitFor(() => expect(learnCalls()).toBe(1));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(screen.queryByTestId('score-player')).toBeNull();
+      resolveLearn({});
+      expect(await screen.findByTestId('score-player')).toBeTruthy();
+    });
+
+    it('backs off before retrying a transient Learn failure, and logs status + transient', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: false, toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const transientErr = () => Object.assign(new Error('HTTP 503'), { status: 503, transient: true });
+        routeApi(() => Promise.reject(transientErr()));
+        apiText.mockResolvedValue('<score-partwise/>');
+        renderSheet({ collection: 'files:docs/sheet-music' }, deepLink);
+        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+        expect(learnCalls()).toBe(1);
+        await act(async () => { await vi.advanceTimersByTimeAsync(700); });
+        expect(learnCalls()).toBe(1); // still waiting out the back-off
+        await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+        expect(learnCalls()).toBe(2);
+        expect(screen.getByText('Could not load this score.')).toBeTruthy();
+        const failures = recent('piano.score-learn-failed')
+          .filter((e) => e.data?.id === 'docs/sheet-music/minuet.musicxml' && e.data?.status === 503);
+        expect(failures.at(-1).data).toEqual({
+          id: 'docs/sheet-music/minuet.musicxml', error: 'HTTP 503', status: 503, transient: true,
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('a score closed while its Learn fetch is pending stays quiet: no retry, no failure log', async () => {
+      const id = 'files:docs/sheet-music/closed-early.musicxml';
+      const path = `api/v1/piano/sheet-music/learn?id=${encodeURIComponent(id)}`;
+      let rejectLearn;
+      api.mockImplementation((p) => (p === path ? new Promise((_, rej) => { rejectLearn = rej; }) : Promise.resolve({})));
+      apiText.mockResolvedValue('<score-partwise/>');
+      const { unmount } = renderSheet({ collection: 'files:docs/sheet-music' }, `/sheetmusic/view/${id}`);
+      await waitFor(() => expect(rejectLearn).toBeTypeOf('function'));
+      unmount();
+      rejectLearn(new Error('late'));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(api.mock.calls.filter(([p]) => p === path).length).toBe(1);
+      expect(recent('piano.score-learn-failed')
+        .filter((e) => e.data?.id === 'docs/sheet-music/closed-early.musicxml')).toHaveLength(0);
+    });
+
+    it('a score closed while its XML fetch is pending logs no open failure', async () => {
+      let rejectXml;
+      api.mockResolvedValue({});
+      apiText.mockImplementation(() => new Promise((_, rej) => { rejectXml = rej; }));
+      const { unmount } = renderSheet({ collection: 'files:docs/sheet-music' },
+        '/sheetmusic/view/files:docs/sheet-music/closed-xml.musicxml');
+      await waitFor(() => expect(rejectXml).toBeTypeOf('function'));
+      unmount();
+      rejectXml(new Error('late'));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(recent('piano.score-open-failed')
+        .filter((e) => e.data?.id === 'docs/sheet-music/closed-xml.musicxml')).toHaveLength(0);
+    });
+
+    it('"Try again" after a Learn failure refetches both and opens the player', async () => {
+      let fail = true;
+      routeApi(() => (fail ? Promise.reject(new Error('down')) : Promise.resolve({ segments: [], contentSha256: 'x' })));
+      apiText.mockResolvedValue('<score-partwise/>');
+      renderSheet({ collection: 'files:docs/sheet-music' }, deepLink);
+      expect(await screen.findByText('Could not load this score.')).toBeTruthy();
+      const xmlCallsBefore = apiText.mock.calls.length;
+      fail = false;
+      fireEvent.click(screen.getByText('Try again'));
+      const player = await screen.findByTestId('score-player');
+      expect(learnOf(player)).toEqual({ segments: [], contentSha256: 'x' });
+      expect(apiText.mock.calls.length).toBe(xmlCallsBefore + 1);
+      expect(learnCalls()).toBe(3);
+    });
   });
 
   it('falls back to the page-image viewer for a non-notation (Plex) score', async () => {

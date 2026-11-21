@@ -71,6 +71,27 @@ public class InputUploaderTest {
         assertNull("the earlier header name is not sent beside the new one", seenHeaders.get("X-Daylight-Memo-Id"));
     }
 
+    @Test public void scopedQueuedInputOnlyUploadsForItsOriginalUserAndOrigin() throws Exception {
+        String scope = net.kckern.daylight.cap.quickinput.shell.CaptureScope.key("https://kiosk.example", "example-user");
+        File scoped = new File(tmp.getRoot(), "owner-" + scope);
+        assertTrue(scoped.mkdir());
+        File file = new File(scoped, CAPTURE_ID + ".journal.ogg");
+        Files.write(file.toPath(), new byte[] { 1 });
+        InputQueue.Entry entry = new InputQueue.Entry(CAPTURE_ID, file.getPath(), 1700000000000L);
+        InputUploader uploader = new InputUploader(backend, http);
+        core.settings().set(Backend.USER, "another-user");
+        assertEquals(Outcome.OTHER_OWNER, uploader.upload(entry).outcome);
+        core.settings().set(Backend.USER, "example-user");
+        core.settings().set(Backend.BASE_URL, "https://other.example");
+        assertEquals(Outcome.OTHER_OWNER, uploader.upload(entry).outcome);
+        assertEquals(0, calls);
+        assertTrue(file.isFile());
+        core.settings().set(Backend.BASE_URL, "https://kiosk.example");
+        assertEquals(Outcome.UPLOADED, uploader.upload(entry).outcome);
+        assertEquals(1, calls);
+        assertEquals("https://kiosk.example/api/v1/journalist/voice?user=example-user", seenUrl);
+    }
+
     @Test public void aDuplicateAnswerIsAsGoodAsTheFirst() throws Exception {
         body = receipt("inputId", true);
         assertEquals(Outcome.UPLOADED, upload().outcome);
@@ -433,4 +454,22 @@ public class InputUploaderTest {
             assertEquals(before, calls);
         }
     }
+
+    @Test public void intakeReceiptWithoutAnEntryReferenceIsAccepted() throws Exception {
+        Result result = upload();
+        assertEquals("ACCEPTED", result.receiptState);
+        assertNull(result.entryId);
+    }
+    @Test public void deviceDeliveryRequiresTheDestinationReferenceAndMatchingInputId() throws Exception {
+        body = "{\"ok\":true,\"inputId\":\"" + CAPTURE_ID + "\",\"duplicate\":true,"
+                + "\"receiptDelivery\":\"delivered\"}";
+        assertEquals("ACCEPTED", upload().receiptState);
+        body = body.substring(0, body.length() - 1) + ",\"finalReceipt\":{\"entryId\":\"memo:" + CAPTURE_ID + "\"}}";
+        Result receipt = upload();
+        assertEquals("DELIVERED", receipt.receiptState);
+        assertEquals("memo:" + CAPTURE_ID, receipt.entryId);
+        body = body.replace("\"inputId\":\"" + CAPTURE_ID, "\"inputId\":\"other");
+        assertEquals(Outcome.RETRY_UNCOUNTED, upload().outcome);
+    }
+
 }

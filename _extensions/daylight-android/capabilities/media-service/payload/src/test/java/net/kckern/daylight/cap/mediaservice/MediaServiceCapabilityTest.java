@@ -77,12 +77,12 @@ public class MediaServiceCapabilityTest {
 
     @Test public void theRecentTabAsksForTheConfiguredNumber() throws Exception {
         core.settings().set("media.recentLimit", 12);
-        api.responses.put("recent 12", "{\"items\":[{\"contentId\":\"plex:11\",\"title\":\"So What\"}]}");
+        api.responses.put("recent 12", "{\"items\":[{\"contentId\":\"plex:11\",\"title\":\"So What\",\"type\":\"track\"}]}");
         assertEquals("p:plex:11", browse("recent", 0, 50).getJSONArray("items").getJSONObject(0).getString("id"));
     }
 
     @Test public void aLevelIsServedFromMemoryWhileItIsFreshAndWhenTheBackendIsOutOfReach() throws Exception {
-        api.responses.put("recent 30", "{\"items\":[{\"contentId\":\"plex:11\",\"title\":\"So What\"}]}");
+        api.responses.put("recent 30", "{\"items\":[{\"contentId\":\"plex:11\",\"title\":\"So What\",\"type\":\"track\"}]}");
         browse("recent", 0, 50);
         browse("recent", 0, 50);
         assertEquals(1, api.calls.size());
@@ -295,7 +295,7 @@ public class MediaServiceCapabilityTest {
     }
 
     @Test public void anEmptyQueryAnswersTheRecentList() throws Exception {
-        api.responses.put("recent 30", "{\"items\":[{\"contentId\":\"plex:11\",\"title\":\"So What\"}]}");
+        api.responses.put("recent 30", "{\"items\":[{\"contentId\":\"plex:11\",\"title\":\"So What\",\"type\":\"track\"}]}");
         JSONObject r = search("  ");
         assertEquals("p:plex:11", r.getJSONArray("items").getJSONObject(0).getString("id"));
         assertEquals("p:plex:11", r.getString("best"));
@@ -362,6 +362,54 @@ public class MediaServiceCapabilityTest {
         assertEquals("https://kiosk.example" + proxied + "&offset=30",
                 fallback.getJSONArray("tracks").getJSONObject(0).getString("url"));
         assertFalse(fallback.getBoolean("selectionResolved"));
+    }
+
+    @Test public void daylightListsUseTheSameQueueForWidgetAndCarPlayback() throws Exception {
+        api.responses.put("audioSources", "{\"items\":[{\"id\":\"program:\",\"title\":\"Programs\"}]}");
+        api.responses.put("audioLists program: 0", new JSONObject().put("nextCursor", 4)
+                .put("items", new org.json.JSONArray().put(new JSONObject()
+                        .put("id", "program:music-queue").put("title", "Music Queue"))).toString());
+        api.responses.put("queue program:music-queue", new JSONObject().put("items",
+                new org.json.JSONArray().put(new JSONObject().put("id", "files:episode")
+                        .put("title", "Episode").put("mediaType", "audio")
+                        .put("mediaUrl", "/api/v1/proxy/media/stream/episode?stream=audio"))).toString());
+
+        JSONObject picker = cap.call(new JSONObject().put("op", "playlists").put("source", "program:")).body;
+        String list = picker.getJSONArray("items").getJSONObject(0).getString("contentId");
+        assertEquals("program:music-queue", list);
+        assertEquals(4, picker.getInt("nextCursor"));
+
+        assertEquals("s:0|program:", browse("c:audio-lists:", 0, 50)
+                .getJSONArray("items").getJSONObject(0).getString("id"));
+        assertEquals("s:4|program:", browse("s:0|program:", 0, 50)
+                .getJSONArray("items").getJSONObject(1).getString("id"));
+        String leaf = browse("a:0|" + list, 0, 50).getJSONArray("items").getJSONObject(0).getString("id");
+        assertEquals("p:files:episode|program:music-queue", leaf);
+
+        JSONObject widget = cap.call(new JSONObject().put("op", "resolve")
+                .put("ids", new org.json.JSONArray().put("c:" + list))).body;
+        JSONObject car = cap.call(new JSONObject().put("op", "resolve")
+                .put("ids", new org.json.JSONArray().put(leaf))).body;
+        assertTrue(widget.getBoolean("ok"));
+        assertTrue(car.getBoolean("ok"));
+        assertEquals(widget.getJSONArray("tracks").toString(), car.getJSONArray("tracks").toString());
+    }
+
+    @Test public void playlistPickerConsumesProviderNeutralPages() throws Exception {
+        api.responses.put("audioLists library:mixes 0",
+                new JSONObject().put("nextCursor", 4).put("items", new org.json.JSONArray()
+                        .put(new JSONObject().put("id", "library:11").put("title", "Mix")
+                                .put("thumbnail", "/api/v1/display/library/11"))).toString());
+        api.responses.put("audioLists library:mixes 4",
+                new JSONObject().put("items", new org.json.JSONArray()
+                        .put(new JSONObject().put("id", "library:12").put("title", "Other"))).toString());
+        JSONObject request = new JSONObject().put("op", "playlists").put("source", "library:mixes");
+        JSONObject first = cap.call(request).body;
+        assertTrue(first.getBoolean("ok"));
+        assertEquals("library:11", first.getJSONArray("items").getJSONObject(0).getString("contentId"));
+        JSONObject next = cap.call(request.put("cursor", first.getInt("nextCursor"))).body;
+        assertEquals("library:12", next.getJSONArray("items").getJSONObject(0).getString("contentId"));
+        assertFalse(next.has("nextCursor"));
     }
 
     @Test public void theInstalledServiceAsksOverThePortAndGetsTheSameAnswers() throws Exception {
