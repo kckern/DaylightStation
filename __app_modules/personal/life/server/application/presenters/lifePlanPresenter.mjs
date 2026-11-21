@@ -9,7 +9,11 @@ export const presentGoal = value => ({
   progress: value.getProgress(),
   validTransitions: [...GoalState.getValidTransitions(value.state)],
 });
-export const presentBelief = value => pick(value, ['id', 'if', 'then', 'state', 'confidence', 'foundational', 'signals', 'evidence_history', 'evidence_quality', 'depends_on', 'state_history', 'origin']);
+// Preserve raw confidence and expose the domain-adjusted value used by the UI.
+export const presentBelief = value => ({
+  ...pick(value, ['id', 'if', 'then', 'state', 'confidence', 'foundational', 'signals', 'evidence_history', 'evidence_quality', 'depends_on', 'state_history', 'origin']),
+  effective_confidence: value.getEffectiveConfidence(),
+});
 export const presentValue = value => pick(value, ['id', 'name', 'rank', 'description', 'justified_by', 'conflicts_with', 'alignment', 'drift_history']);
 // Rules gain their derived effectiveness for display (QualitiesView); it is never stored.
 export const presentQuality = value => ({

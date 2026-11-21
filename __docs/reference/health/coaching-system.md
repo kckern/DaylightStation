@@ -161,6 +161,11 @@ receipt history. The deterministic guarantee covers automated coach/nutrition
 assessment prose; arbitrary curated fitness rationale and conversational chat
 are outside that guarantee. Invalid dashboard schemas still fail validation.
 
+Admin dashboard history reads and writes the shared UTC date key. Generate and
+Regenerate apply only to the current UTC key, matching the assignment writer and
+the date-free dashboard reader. `DailyDashboard` gathers a local-day budget, and
+deleting a historical dashboard does not schedule a backfill.
+
 ## Triggers, delivery and failure limits
 
 The current composition selects one coached user (head of household) and one

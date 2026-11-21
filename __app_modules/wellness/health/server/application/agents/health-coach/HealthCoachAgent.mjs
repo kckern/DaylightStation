@@ -24,6 +24,7 @@ import { loadAgentConfig } from "../../../../../../../__capabilities/agent-runti
 import { userWorkingMemoryTemplate as healthCoachWorkingMemoryTemplate } from "#apps/agents/framework/userWorkingMemoryTemplate.mjs";
 import { FoodLogService } from "../../nutrition/FoodLogService.mjs";
 import { isHealthCoachWorkspaceRepository } from "./ports/IHealthCoachWorkspaceRepository.mjs";
+import { utcDateISO } from "../../../../portable/contracts/health/isoDate.mjs";
 
 export class HealthCoachAgent extends BaseAgent {
   static id = 'health-coach';
@@ -354,7 +355,7 @@ export class HealthCoachAgent extends BaseAgent {
       const writeTool = this.getTools().find(t => t.name === 'write_dashboard');
       if (writeTool) {
         const userId = opts.userId ?? opts.context?.userId ?? null;
-        const today = new Date().toISOString().split('T')[0];
+        const today = utcDateISO();
         await writeTool.execute({ userId, date: today, dashboard: result });
       }
     }

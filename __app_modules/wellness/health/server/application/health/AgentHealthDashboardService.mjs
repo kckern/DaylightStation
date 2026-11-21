@@ -1,4 +1,5 @@
 import { HealthDashboardRepositoryErrorCode } from "./ports/IHealthDashboardRepository.mjs";
+import { utcDateISO } from "../../../portable/contracts/health/isoDate.mjs";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -40,7 +41,7 @@ export class AgentHealthDashboardService {
   }
 
   getToday({ userId }) {
-    const date = this.#clock.now().toISOString().split('T')[0];
+    const date = utcDateISO(this.#clock.now());
     return this.#find({
       userId,
       date,

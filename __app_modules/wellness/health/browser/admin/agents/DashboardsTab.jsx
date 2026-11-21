@@ -12,10 +12,12 @@ import {
 import { useAgentDashboard } from "./useAgentDashboard.js";
 import { ConfirmModal } from "../../../../../../frontend/src/lib/ui/ConfirmModal.jsx";
 import { useSheetSubmission } from '../../../../../../frontend/src/lib/ui/useSheetSubmission.js';
+import { utcDateISO } from '../../../portable/contracts/health/isoDate.mjs';
 
 function DashboardsTab({ agentId, userId }) {
-  const today = new Date().toISOString().split('T')[0];
+  const today = utcDateISO();
   const [date, setDate] = useState(today);
+  const canGenerateForDate = date === today;
   const [rawOpen, setRawOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const { run: submitDelete, saving: deleting } = useSheetSubmission(() => setDeleteOpen(false));
@@ -26,6 +28,7 @@ function DashboardsTab({ agentId, userId }) {
   } = useAgentDashboard(userId, date);
 
   const handleRegenerate = useCallback(async () => {
+    if (date !== utcDateISO()) return;
     await regenerate(agentId, userId);
     // Refresh after regeneration
     fetchDashboard();
@@ -71,13 +74,17 @@ function DashboardsTab({ agentId, userId }) {
       {!loading && !dashboard && (
         <Paper p="xl" ta="center">
           <Text c="dimmed" mb="md">No dashboard generated for {date}</Text>
-          <Button
-            leftSection={<IconRefresh size={16} />}
-            loading={regenerating}
-            onClick={handleRegenerate}
-          >
-            Generate Now
-          </Button>
+          {canGenerateForDate ? (
+            <Button
+              leftSection={<IconRefresh size={16} />}
+              loading={regenerating}
+              onClick={handleRegenerate}
+            >
+              Generate Now
+            </Button>
+          ) : (
+            <Text c="dimmed" size="sm">Only today’s dashboard can be generated from this screen.</Text>
+          )}
         </Paper>
       )}
 
@@ -212,13 +219,15 @@ function DashboardsTab({ agentId, userId }) {
             >
               Delete
             </Button>
-            <Button
-              leftSection={<IconRefresh size={16} />}
-              loading={regenerating}
-              onClick={handleRegenerate}
-            >
-              Regenerate
-            </Button>
+            {canGenerateForDate && (
+              <Button
+                leftSection={<IconRefresh size={16} />}
+                loading={regenerating}
+                onClick={handleRegenerate}
+              >
+                Regenerate
+              </Button>
+            )}
           </Group>
         </>
       )}
@@ -228,7 +237,7 @@ function DashboardsTab({ agentId, userId }) {
         onClose={() => setDeleteOpen(false)}
         onConfirm={handleDelete}
         title="Delete Dashboard"
-        message={`Delete the dashboard for ${userId} on ${date}? The agent will regenerate it on its next scheduled run.`}
+        message={`Delete the dashboard for ${userId} on ${date}? This removes the saved dashboard for this date.`}
         confirmLabel="Delete"
         loading={deleting}
       />

@@ -110,21 +110,21 @@ function GoalsForm({ draft: goals, setDraft, dirty, saving, save }) {
         />
         <NumberInput
           label="Daily protein target (g)"
-          value={goals?.nutrition?.daily_protein || ''}
+          value={goals?.nutrition?.daily_protein ?? ''}
           onChange={(v) => updateGoals('nutrition.daily_protein', v)}
           min={0}
           max={500}
         />
         <NumberInput
           label="Daily carbs target (g)"
-          value={goals?.nutrition?.daily_carbs || ''}
+          value={goals?.nutrition?.daily_carbs ?? ''}
           onChange={(v) => updateGoals('nutrition.daily_carbs', v)}
           min={0}
           max={1000}
         />
         <NumberInput
           label="Daily fat target (g)"
-          value={goals?.nutrition?.daily_fat || ''}
+          value={goals?.nutrition?.daily_fat ?? ''}
           onChange={(v) => updateGoals('nutrition.daily_fat', v)}
           min={0}
           max={500}
