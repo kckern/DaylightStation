@@ -21,6 +21,10 @@ export function HomeTile({
   editions = null, onEdition = null, continueLabel = null, kind: kindOverride = null,
 }) {
   const title = titleOverride ?? item?.title ?? 'Untitled';
+  const pictureName = pictureLabel ?? title;
+  const spokenPictureName = Number.isFinite(progress) && progress > 0
+    ? `${pictureName}, ${Math.round(progress)}% played`
+    : pictureName;
   const [portrait, setPortrait] = useState(false);
   let kind = kindOverride ?? tileKind(item);
   if (kind === 'square' && portrait) kind = 'poster';
@@ -30,7 +34,7 @@ export function HomeTile({
         <UnstyledButton
           className="home-tile-picture"
           data-testid={`${testId}-picture`}
-          aria-label={pictureLabel ?? title}
+          aria-label={spokenPictureName}
           onClick={onPicture}
         >
           {item?.thumbnail

@@ -72,6 +72,7 @@ export default function FeedDataControls({ onImported }) {
     event.target.value = '';
     const scope = scopeRef.current;
     if (!file || !isCurrent(scope)) return;
+    setRefreshFailed(false);
     if (file.size > 50 * 1024 * 1024) {
       setStatus('Import files must be smaller than 50 MB.');
       return;

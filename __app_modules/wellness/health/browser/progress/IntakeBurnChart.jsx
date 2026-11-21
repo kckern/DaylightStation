@@ -16,6 +16,7 @@ import { buildIntakeBurn } from "./intakeBurn.js";
  * and burned nothing".
  */
 export function IntakeBurnChart({ days = [], loading = false, title = 'Intake vs burn' }) {
+  const waitingForFirstRead = loading && days.length === 0;
   const { bars, foodAreaPct, exerciseAreaPct } = buildIntakeBurn(days);
   const known = bars.filter((b) => b.kind === 'day');
   const logged = known.filter(bar => days.find(day => day.date === bar.date)?.loggingStatus !== 'unlogged');
@@ -29,7 +30,8 @@ export function IntakeBurnChart({ days = [], loading = false, title = 'Intake vs
           names the block (the Progress page's SectionCard). */}
       {title === null ? null : <h3 className="health-intakeburn__title">{title}</h3>}
       <p className="health-intakeburn__legend"><span>↑ Exercise</span><span>↓ Food</span><span>kcal · same scale</span></p>
-      <div className="health-intakeburn__plot" role="img"
+      {waitingForFirstRead && <p className="health-intakeburn__caption" role="status">Loading intake and burn history…</p>}
+      {!waitingForFirstRead && <div className="health-intakeburn__plot" role="img"
         aria-label={known.length
           ? `${known.length} days: ${avgFood == null ? 'no food intake logged' : `average intake ${avgFood} kcal`}, average burn ${avgBurn} kcal${gaps ? `, ${gaps} days without data` : ''}`
           : 'No intake or burn data yet'}>
@@ -59,16 +61,16 @@ export function IntakeBurnChart({ days = [], loading = false, title = 'Intake vs
             </span>
           ))}
         </div>
-      </div>
-      {known.length ? <p className="health-intakeburn__legend">
+      </div>}
+      {!waitingForFirstRead && known.length ? <p className="health-intakeburn__legend">
         <span>Peak exercise {Math.round(Math.max(...known.map(bar => bar.exercise)))} kcal</span>
         <span>Peak food {Math.round(Math.max(...known.map(bar => bar.food)))} kcal</span>
         <span>{days[0]?.date} – {days.at(-1)?.date}</span>
       </p> : null}
-      <p className="health-intakeburn__caption">
+      {!waitingForFirstRead && <p className="health-intakeburn__caption">
         {known.length ? `avg ${avgFood ?? '—'} kcal logged · ${avgBurn} kcal exercise · ${logged.length}/${days.length} days logged` : 'No data yet'}
         {gaps ? ` · ${gaps} without data` : ''}
-      </p>
+      </p>}
     </section>
   );
 }
