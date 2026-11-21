@@ -288,6 +288,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Push notifications (text standard, school push copy, HA relay contract) | `__docs/reference/notifications/push-standard.md` |
 | Harvester health (failed harvests, failing/stale pushes, token rotation, Withings reconnect) | `__docs/reference/harvesters/health-and-reconnect.md` |
 | NewsReporter framework (scheduled reports) | `__docs/reference/newsreporter/newsreporter-framework.md` |
+| Provenance bumper (streaming-service logo handoff before a film: Watchmode lookup on play, tiers free/subscribed/other, `media/provenance.yml`, logos in `content/providers/`, 2,500-credit allowance) | `__docs/reference/media/provenance.md` |
 | Content filter Admin workshop (library, Make filter runs + filter worker, review list, nudges, review marks, parent sign-off) | `__docs/reference/core/content-filter.md` (Admin workshop) |
 | Webapp design system (tokens, primitives, packs) | `__docs/reference/frontend/design-system.md` |
 | DaylightStation Android (one codebase, per-device APKs: device YAML, capabilities, shell + payload, control API and error codes, every setting, helper capabilities, lifeline, fleet CLI `cli/daylight-device.cli.mjs`) | `__docs/reference/android/README.md` |

@@ -31,7 +31,12 @@ export function partFromSrc(src) {
 let _logger;
 const logger = () => (_logger ||= getChildLogger({ component: 'content-filter' }));
 
-export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
+/**
+ * @param {object} args
+ * @param {boolean} [args.bumperHeld] - hold the opening bumper back (the provenance
+ *   handoff is still covering the opening); it shows once released, if still near the start
+ */
+export function useMediaVideoPresentation({ media, isPlex, getMediaEl, bumperHeld = false }) {
   // --- Content filter: on by default for certified titles; ?filter=0 off, ?filter=1 forced on ---
   const search = typeof window !== 'undefined' ? window.location.search : '';
   const forcedOff = filterMode({ search, certification: null, status: 'idle' }).reason === 'forced-off';
@@ -79,7 +84,7 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
     [filterCues, filterData],
   );
   const bumperWindowSec = useMemo(() => bumperStartWindowSec(filterCues), [filterCues]);
-  const bumperShown = useBumper({ getMediaEl, enabled: filterEnabled && hasEdl, startWindowSec: bumperWindowSec });
+  const bumperShown = useBumper({ getMediaEl, enabled: filterEnabled && hasEdl && !bumperHeld, startWindowSec: bumperWindowSec });
   const badgeState = filterStatus === 'failed' ? 'failed' : (provisional ? 'provisional' : 'certified');
   const showChrome = !!filterContentId && ((filterEnabled && hasEdl) || filterStatus === 'failed');
 
