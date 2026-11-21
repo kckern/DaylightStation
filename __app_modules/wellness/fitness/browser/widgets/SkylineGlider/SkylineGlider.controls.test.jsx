@@ -135,6 +135,38 @@ describe('complete bike lifecycle',()=>{
   expect(document.querySelector('[data-control-phase="menu"]')).not.toBeNull();
   mockVolume.source='global';mockVolume.volume=0.4;
  });
+ it('a touch on more mid-flight opens sound over the flight; Done returns with no countdown',async()=>{
+  mockVolume.volume=0.1;mockVolume.source='exact';mockVolume.setVolume.mockClear();
+  await mount();await launch();mockLog.info.mockClear();
+  fireEvent.click(screen.getByTestId('skyline-glider-more'));await flush();
+  expect(screen.getByTestId('skyline-glider-flight')).toHaveAttribute('data-control-phase','flight');
+  expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.settings.opened',expect.objectContaining({phase:'flight',overlay:true}));
+  const overlay=screen.getByTestId('skyline-sound-overlay');
+  const before=Number(screen.getByTestId('skyline-glider-flight').dataset.courseTime);
+  // The mock store keeps what is written, so the next render reads level 100.
+  mockVolume.setVolume.mockImplementationOnce(v=>{mockVolume.volume=v});
+  fireEvent.click(overlay.querySelectorAll('.touch-volume-button')[10]);await flush();
+  expect(mockVolume.setVolume).toHaveBeenLastCalledWith(1);
+  await advance(500);
+  expect(Number(screen.getByTestId('skyline-glider-flight').dataset.courseTime)).toBeGreaterThan(before);
+  expect(mockLog.info).not.toHaveBeenCalledWith('skyline_glider.control.action',expect.objectContaining({action:'pause'}));
+  fireEvent.click(screen.getByTestId('skyline-sound-done'));await flush();
+  expect(screen.queryByTestId('skyline-sound-overlay')).toBeNull();
+  expect(screen.getByTestId('skyline-glider-flight')).toHaveAttribute('data-control-phase','flight');
+  expect(screen.queryByTestId('skyline-glider-countdown')).toBeNull();
+  expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.settings.closed',expect.objectContaining({source:'touch',phase:'flight',level:100}));
+  mockVolume.source='global';mockVolume.volume=0.4;
+ });
+ it('the sound overlay closes itself after 8 s without a change, and a second tap on more closes it',async()=>{
+  await mount();await launch();
+  fireEvent.click(screen.getByTestId('skyline-glider-more'));await flush();
+  await advance(7900);expect(screen.getByTestId('skyline-sound-overlay')).toBeInTheDocument();
+  await advance(200);expect(screen.queryByTestId('skyline-sound-overlay')).toBeNull();
+  expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.settings.closed',expect.objectContaining({source:'timeout'}));
+  fireEvent.click(screen.getByTestId('skyline-glider-more'));await flush();
+  fireEvent.click(screen.getByTestId('skyline-glider-more'));await flush();
+  expect(screen.queryByTestId('skyline-sound-overlay')).toBeNull();
+ });
  it('preserves the exact pending terminal record when a selector is replaced',async()=>{
   const view=await mount();await launch();await press(4,'long');
   apiFetch.mockResolvedValue({ok:false,status:503});await press(3);await flush();
