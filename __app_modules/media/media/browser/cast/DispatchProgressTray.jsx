@@ -397,7 +397,7 @@ function TrayRow({ d, retry, removeDispatch, sendElsewhere, recordLocal, stopAtt
     >
       <StatusIcon phase={phase} quiet={quiet} />
       <div className="cast-tray-text">
-        <span className="cast-tray-primary">{primary}</span>
+        <span className="cast-tray-primary" id={`dispatch-primary-${attemptId}`}>{primary}</span>
         {secondary && <span className="cast-tray-secondary">{secondary}</span>}
       </div>
       <div className="cast-tray-actions">
@@ -432,6 +432,7 @@ function TrayRow({ d, retry, removeDispatch, sendElsewhere, recordLocal, stopAtt
           <UnstyledButton
             data-testid={`dispatch-dismiss-${attemptId}`}
             aria-label="Dismiss"
+            aria-describedby={`dispatch-primary-${attemptId}`}
             onClick={() => removeDispatch(attemptId)}
             className="cast-tray-dismiss"
           >

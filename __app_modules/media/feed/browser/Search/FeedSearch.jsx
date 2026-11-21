@@ -35,6 +35,7 @@ function reconcileRows(items, current, before, pending) {
 export default function FeedSearch() {
   const [params, setParams] = useSearchParams();
   const requestKey = params.toString();
+  const activeState = params.get('state') || 'all';
   const [query, setQuery] = useState(params.get('q') || '');
   const [source, setSource] = useState(params.get('source') || '');
   const [resultPage, setResultPage] = useState(null);
@@ -250,9 +251,11 @@ export default function FeedSearch() {
         <input ref={inputRef} value={query} onChange={event => setQuery(event.target.value)} placeholder="Search headlines, sources, summaries…" aria-label="Search feed history" />
         <button type="submit">Search</button>
       </form>
-      <div className="feed-filter-tabs" aria-label="Search filters">
+      <div className="feed-filter-tabs" role="group" aria-label="Search filters">
         {['all', 'unread', 'saved', 'archived'].map(state => (
-          <button key={state} className={(params.get('state') || 'all') === state ? 'active' : ''} onClick={() => setFilter('state', state === 'all' ? '' : state)}>{state}</button>
+          <button key={state} className={activeState === state ? 'active' : ''}
+            aria-pressed={activeState === state}
+            onClick={() => setFilter('state', state === 'all' ? '' : state)}>{state}</button>
         ))}
       </div>
       <form className="feed-search__advanced" aria-label="Search scope" onSubmit={submit}>

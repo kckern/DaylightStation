@@ -55,7 +55,7 @@ function CustomFoodForm({ upc, onClose, onCreated, bucketId, date }) {
     <Sheet open onClose={() => { if (!pending.current) onClose(); }} title="New food">
       <Stack gap="xs">
         <Text size="sm" c="dimmed">Barcode {upc} isn't in any database — describe it once and it's yours forever.</Text>
-        {error ? <Text size="sm" c="red">{error.message}</Text> : null}
+        {error ? <Text size="sm" c="red" role="alert">{error.message}</Text> : null}
         <TextInput label="Name" value={form.name} onChange={set('name')} autoFocus data-autofocus />
         <NumberInput label="Weight in grams" suffix=" g" value={form.grams} onChange={set('grams')} min={0.01} />
         <NumberInput label="Calories at this weight" value={form.calories} onChange={set('calories')} min={0} />
