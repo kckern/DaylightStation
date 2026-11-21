@@ -136,9 +136,16 @@ export function hasInputDevice(inputDevicesText, mac, name = null) {
   return false;
 }
 
+/**
+ * Read synchronously: `fs/promises.readFile` on this procfs file stops after the
+ * first short read (measured on garage 2026-11-20: 3911 of 6942 bytes), and
+ * Bluetooth devices are appended at the END of the table — so every newly
+ * paired remote or keyboard read as `input:false` ("Connecting…" forever).
+ * `readFileSync` reads until EOF.
+ */
 async function defaultReadInputDevices() {
-  const { readFile } = await import('fs/promises');
-  return readFile('/proc/bus/input/devices', 'utf8');
+  const { readFileSync } = await import('fs');
+  return readFileSync('/proc/bus/input/devices', 'utf8');
 }
 
 /**
