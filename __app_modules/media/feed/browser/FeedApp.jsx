@@ -95,7 +95,7 @@ function ReadingAppearance({ pathname }) {
         <label>Reading width<Select density="compact" value={readingPreferences.measure} onChange={event => setReadingPreference('measure', Number(event.target.value))}><option value="56">Narrow</option><option value="72">Standard</option><option value="88">Wide</option></Select></label>
         <label>Scroll session<Select density="compact" value={readingPreferences.sessionBudget} onChange={event => setReadingPreference('sessionBudget', Number(event.target.value))}><option value="0">Until caught up</option><option value="30">30 items</option><option value="60">60 items</option><option value="100">100 items</option></Select></label>
         <FeedDataControls onImported={() => Promise.all([refreshWorkspace(), refreshSummary()])} />
-        {!!Object.keys(sourcePreferences).length && <div className="feed-source-preferences"><span>Adjusted sources</span>{Object.entries(sourcePreferences).map(([source, level]) => <div key={source}><span>{source} · {level}</span><button type="button" onClick={() => setSourcePreference(source, 'normal').catch(() => {})}>Reset</button></div>)}</div>}
+        {!!Object.keys(sourcePreferences).length && <div className="feed-source-preferences"><span>Adjusted sources</span>{Object.entries(sourcePreferences).map(([source, level]) => <div key={source}><span>{source} · {level}</span><button type="button" aria-label={`Reset ${source} to normal`} onClick={() => setSourcePreference(source, 'normal').catch(() => {})}>Reset</button></div>)}</div>}
       </div>
     </details>
   );
