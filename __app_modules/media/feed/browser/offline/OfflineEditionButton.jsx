@@ -6,25 +6,43 @@ import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 const log = getLogger().child({ app: 'feed', module: 'offline-edition' });
 
 export default function OfflineEditionButton({ item, detail = null }) {
-  const [downloaded, setDownloaded] = useState(false);
+  const [edition, setEdition] = useState({ itemId: null, status: 'loading', downloaded: false });
+  const [lookupAttempt, setLookupAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
+  const isCurrent = edition.itemId === item.id;
+  const checking = !isCurrent || edition.status === 'loading';
+  const lookupFailed = isCurrent && edition.status === 'error';
+  const downloaded = isCurrent && edition.status === 'ready' && edition.downloaded;
 
   useEffect(() => {
     let active = true;
-    getOfflineEdition(item.id).then(value => { if (active) setDownloaded(!!value); }).catch(() => {});
+    setEdition({ itemId: item.id, status: 'loading', downloaded: false });
+    getOfflineEdition(item.id)
+      .then(value => { if (active) setEdition({ itemId: item.id, status: 'ready', downloaded: !!value }); })
+      .catch(() => { if (active) setEdition({ itemId: item.id, status: 'error', downloaded: false }); });
     return () => { active = false; };
-  }, [item.id]);
+  }, [item.id, lookupAttempt]);
 
   const toggle = async () => {
+    if (busy || checking) return;
+    if (lookupFailed) {
+      setEdition({ itemId: item.id, status: 'loading', downloaded: false });
+      setLookupAttempt(attempt => attempt + 1);
+      return;
+    }
     setBusy(true);
     try {
       if (downloaded) {
         await removeOfflineEdition(item.id);
-        setDownloaded(false);
+        setEdition(current => current.itemId === item.id
+          ? { itemId: item.id, status: 'ready', downloaded: false }
+          : current);
         notifications.show({ title: 'Download removed', message: 'The article remains available while online.' });
       } else {
         await saveOfflineEdition(item, detail);
-        setDownloaded(true);
+        setEdition(current => current.itemId === item.id
+          ? { itemId: item.id, status: 'ready', downloaded: true }
+          : current);
         notifications.show({ title: 'Available offline', message: 'The article and its current readable content were downloaded to this device.' });
       }
     } catch (error) {
@@ -39,5 +57,7 @@ export default function OfflineEditionButton({ item, detail = null }) {
     }
   };
 
-  return <button type="button" aria-pressed={downloaded} disabled={busy} onClick={toggle}>{busy ? 'Working…' : downloaded ? 'Downloaded' : 'Download'}</button>;
+  return <button type="button" aria-pressed={downloaded} aria-busy={busy || checking} disabled={busy || checking} onClick={toggle}>
+    {busy ? 'Working…' : checking ? 'Checking…' : lookupFailed ? 'Retry check' : downloaded ? 'Downloaded' : 'Download'}
+  </button>;
 }
