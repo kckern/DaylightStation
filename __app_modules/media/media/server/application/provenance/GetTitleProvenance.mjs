@@ -25,7 +25,7 @@ export class GetTitleProvenance {
    * @param {import('./ports/IStreamingAvailabilityGateway.mjs').IStreamingAvailabilityGateway|null} deps.availability - null when no API key
    * @param {import('./ports/IProvenanceStore.mjs').IProvenanceStore} deps.store
    * @param {import('./ports/IProviderLogoCatalog.mjs').IProviderLogoCatalog} deps.logos
-   * @param {() => {tiers:{free:string[],subscribed:string[]}, refreshDays:number, quotaReserve:number, enabled:boolean}} deps.policy
+   * @param {() => {tiers:{free:string[],subscribed:string[]}, refreshDays:number, quotaReserve:number, enabled:boolean, kinds?:string[]}} deps.policy
    * @param {() => Date} [deps.clock]
    */
   constructor({ identityReader, availability, store, logos, policy, clock = () => new Date(), logger = console }) {
@@ -64,6 +64,9 @@ export class GetTitleProvenance {
       }
     }
     if (!record) return null;
+    // Movies by default: other players (fitness, school, piano) also play Plex shows.
+    const kinds = Array.isArray(policy.kinds) && policy.kinds.length ? policy.kinds : ['movie'];
+    if (!kinds.includes(record.kind)) return null;
 
     const choice = chooseProvider(record.offers, policy.tiers, (p) => this.#logos.has(p));
     if (!choice) return null;

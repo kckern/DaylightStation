@@ -6,7 +6,10 @@ with dots pulsing between them, then, when the film starts, the lines meet, the 
 clears and the logo shrinks into the top-right corner and fades. There are no words
 on screen.
 
-It appears only for **confirmed** availability. A title found on no known service,
+It appears only for **confirmed** availability, and by default only before
+**movies** (`kinds: [movie]`; add `show` for TV). The player hook is installed for
+every player that loads the Media entry, Fitness, Piano and School included, so
+shows are opt-in to keep a workout or lesson episode from getting a service intro. A title found on no known service,
 one whose lookup has not finished by the first frame, or a resume shows nothing.
 
 Later this is meant to front real handoffs to those services; today the film still
@@ -56,6 +59,7 @@ services are recorded but never shown.
 ```yaml
 # data/household/media/provenance.yml
 enabled: true
+kinds: [movie]        # add `show` for TV shows
 lookup:
   region: US
   refresh_days: 30

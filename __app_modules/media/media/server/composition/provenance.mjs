@@ -28,6 +28,7 @@ export function provenancePolicy(raw) {
     refreshDays: Number.isFinite(lookup.refresh_days) ? lookup.refresh_days : 30,
     quotaReserve: Number.isFinite(lookup.quota_reserve) ? lookup.quota_reserve : 100,
     tiers: { free: list(providers.free), subscribed: list(providers.subscribed) },
+    kinds: list(cfg.kinds).filter((k) => k === 'movie' || k === 'show'),
   };
 }
 

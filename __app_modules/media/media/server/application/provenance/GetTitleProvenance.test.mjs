@@ -21,7 +21,7 @@ function build({ store = fakeStore(), identity, sources = [], quotaUsed = 10, po
   const uc = new GetTitleProvenance({
     identityReader, availability, store,
     logos: { has: logos },
-    policy: () => ({ enabled: true, tiers: { free: ['tubi', 'hoopla'], subscribed: ['peacock'] }, refreshDays: 30, quotaReserve: 100, ...policy }),
+    policy: () => ({ enabled: true, kinds: ['movie', 'show'], tiers: { free: ['tubi', 'hoopla'], subscribed: ['peacock'] }, refreshDays: 30, quotaReserve: 100, ...policy }),
     clock: () => NOW, logger: silent,
   });
   return { uc, identityReader, availability, store };
@@ -43,7 +43,7 @@ describe('GetTitleProvenance', () => {
   });
 
   it('serves a fresh record without a lookup', async () => {
-    const store = fakeStore({ 100: { key: '100', checkedAt: '2026-11-10T00:00:00Z', offers: [{ provider: 'peacock', type: 'sub' }] } });
+    const store = fakeStore({ 100: { key: '100', kind: 'movie', checkedAt: '2026-11-10T00:00:00Z', offers: [{ provider: 'peacock', type: 'sub' }] } });
     const { uc, availability, identityReader } = build({ store, identity: MOVIE });
     expect((await uc.execute({ ratingKey: '100' })).provider).toBe('peacock');
     expect(availability.sources).not.toHaveBeenCalled();
@@ -51,7 +51,7 @@ describe('GetTitleProvenance', () => {
   });
 
   it('refreshes a stale record', async () => {
-    const store = fakeStore({ 100: { key: '100', checkedAt: '2026-09-01T00:00:00Z', offers: [{ provider: 'peacock', type: 'sub' }] } });
+    const store = fakeStore({ 100: { key: '100', kind: 'movie', checkedAt: '2026-09-01T00:00:00Z', offers: [{ provider: 'peacock', type: 'sub' }] } });
     const { uc, availability } = build({ store, identity: MOVIE, sources: [{ name: 'Tubi TV', type: 'free' }] });
     expect((await uc.execute({ ratingKey: '100' })).provider).toBe('tubi');
     expect(availability.sources).toHaveBeenCalledTimes(1);
@@ -93,7 +93,7 @@ describe('GetTitleProvenance', () => {
   });
 
   it('falls back to the stale record when the lookup fails', async () => {
-    const store = fakeStore({ 100: { key: '100', checkedAt: '2026-01-01T00:00:00Z', offers: [{ provider: 'peacock', type: 'sub' }] } });
+    const store = fakeStore({ 100: { key: '100', kind: 'movie', checkedAt: '2026-01-01T00:00:00Z', offers: [{ provider: 'peacock', type: 'sub' }] } });
     const { uc, availability } = build({ store, identity: MOVIE });
     availability.sources.mockRejectedValueOnce(new Error('boom'));
     expect((await uc.execute({ ratingKey: '100' })).provider).toBe('peacock');
@@ -103,6 +103,14 @@ describe('GetTitleProvenance', () => {
     const { uc, availability } = build({ identity: MOVIE, sources: [{ name: 'Hoopla', type: 'free' }] });
     await Promise.all([uc.execute({ ratingKey: '100' }), uc.execute({ ratingKey: '100' })]);
     expect(availability.sources).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows only the configured kinds (movies by default)', async () => {
+    const show = { key: '200', kind: 'show', title: 'Show', tmdb: '1396' };
+    const a = build({ identity: show, sources: [{ name: 'Peacock', type: 'sub' }], policy: { kinds: undefined } });
+    expect(await a.uc.execute({ ratingKey: '201' })).toBeNull();
+    const b = build({ identity: MOVIE, sources: [{ name: 'Peacock', type: 'sub' }], policy: { kinds: undefined } });
+    expect((await b.uc.execute({ ratingKey: '100' })).provider).toBe('peacock');
   });
 
   it('does nothing when disabled or given a bad key', async () => {
