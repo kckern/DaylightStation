@@ -11,6 +11,9 @@
  *   Remaining: RR-intervals (optional, ignored)
  */
 export class BleHeartRateDecoder {
+  // Standard Bluetooth SIG Heart Rate Measurement characteristic.
+  static CHARACTERISTIC = '00002a37-0000-1000-8000-00805f9b34fb';
+
   constructor() {
     this.lastHR = 0;
     this.sensorContact = false;

@@ -15,8 +15,13 @@ import { dirname, join } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Configuration
-const RENPHO_DEVICE_ADDRESS = "2B929968-AD91-44F5-ABCC-EB52B324CAF3";
+// Configuration — the rope's address is household data: pass it in
+// (the same value as the device's entry in the fitness config `ble_devices`).
+const RENPHO_DEVICE_ADDRESS = process.argv[2] || process.env.BLE_ADDRESS;
+if (!RENPHO_DEVICE_ADDRESS) {
+  console.error('Usage: node test/renpho-jumprope.mjs <ble-address>   (or BLE_ADDRESS=...)');
+  process.exit(2);
+}
 const RENPHO_DEVICE_NAME = "R-Q008";
 const CHARACTERISTIC_UUID = "00005303-0000-0041-4c50-574953450000";
 

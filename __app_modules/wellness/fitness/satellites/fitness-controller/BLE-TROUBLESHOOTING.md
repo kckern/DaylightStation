@@ -55,8 +55,8 @@ HeartCast broadcasts standard BLE HR service (`0x180D`) from the iPhone as a bri
 
 ## Renpho R-Q008 Jumprope
 
-- BLE address: configured in `config/ble-devices.json`
-- Custom characteristic UUID: `00005303-0000-0041-4c50-574953450000`
+- BLE address: household config, never code. The controller monitors every fitness-config `equipment` entry that has a `ble:` address and a `type` with a decoder (`jumprope`), read from `GET /api/v1/fitness` at startup. The GATT characteristic is the decoder's (`ble_characteristic:` on the entry overrides it). With no such entry, or the app unreachable at boot, it falls back to an optional host-local `config/ble-devices.json` (`{ <key>: { name, address, type, characteristic? } }`) mounted read-only into the container.
+- Custom characteristic UUID: `00005303-0000-0041-4c50-574953450000` (`RenphoJumpropeDecoder.CHARACTERISTIC`)
 - Only advertises when powered on (bluetooth icon flashing on LCD)
 - GATT services only discoverable on first connection after power-on if BlueZ cache is stale (see cache fix above)
 - Data comes as two alternating packet types (0xAD = jump data, 0xAF = status)

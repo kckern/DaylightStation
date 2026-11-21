@@ -515,8 +515,9 @@ app.get('/tv/off', async (req, res) => {
 
 // BLE control endpoints
 app.get('/ble/start/:device?', async (req, res) => {
-  const device = req.params.device || 'RENPHO_JUMPROPE';
-  console.log(`📱 Starting BLE monitoring for ${device}`);
+  const device = req.params.device;
+  console.log(`📱 Starting BLE monitoring for ${device || 'all configured devices'}`);
+  if (!device) return res.json({ success: true, devices: await bleManager.startAllMonitoring() });
   const result = await bleManager.startMonitoring(device);
   res.json({ success: result, device });
 });
@@ -677,37 +678,40 @@ async function startServer() {
     // Continue without ANT+ - server can still handle other functions
   }
   
+  // Fetch the DaylightStation fitness config: BLE devices to monitor and BLE HR users
+  let fitnessConfig = null;
+  try {
+    const protocol = DAYLIGHT_PORT == 443 ? 'https' : 'http';
+    const configUrl = `${protocol}://${DAYLIGHT_HOST}:${DAYLIGHT_PORT}/api/v1/fitness`;
+    const res = await fetch(configUrl, { signal: AbortSignal.timeout(10_000) });
+    fitnessConfig = await res.json();
+  } catch (error) {
+    console.log('⚠️  Could not fetch fitness config for BLE devices/HR users:', error.message);
+  }
+  bleManager.configureDevices(fitnessConfig?.equipment);
+
   // Initialize BLE
   try {
     const bleSuccess = await bleManager.initialize();
     if (bleSuccess) {
       console.log('✅ BLE manager initialized');
-      // Auto-start monitoring for known devices
-      await bleManager.startMonitoring('RENPHO_JUMPROPE');
+      // Auto-start monitoring for every configured device
+      await bleManager.startAllMonitoring();
     }
   } catch (error) {
     console.error('❌ BLE initialization failed:', error.message);
     // Continue without BLE
   }
 
-  // Fetch BLE HR users from DaylightStation fitness config
-  try {
-    const protocol = DAYLIGHT_PORT == 443 ? 'https' : 'http';
-    const configUrl = `${protocol}://${DAYLIGHT_HOST}:${DAYLIGHT_PORT}/api/v1/fitness`;
-    const res = await fetch(configUrl);
-    const fitnessConfig = await res.json();
-    const users = fitnessConfig.ble_users || [];
-    if (users.length > 0) {
-      bleManager.configureBleUsers(users);
-      try {
-        await bleManager.startHRScan();
-        console.log('✅ BLE HR scan auto-started');
-      } catch (error) {
-        console.error('❌ BLE HR auto-start failed:', error.message);
-      }
+  const users = fitnessConfig?.ble_users || [];
+  if (users.length > 0) {
+    bleManager.configureBleUsers(users);
+    try {
+      await bleManager.startHRScan();
+      console.log('✅ BLE HR scan auto-started');
+    } catch (error) {
+      console.error('❌ BLE HR auto-start failed:', error.message);
     }
-  } catch (error) {
-    console.log('⚠️  Could not fetch fitness config for BLE HR users:', error.message);
   }
 
   // Connect to DaylightStation WebSocket
