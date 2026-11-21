@@ -1,6 +1,6 @@
 // frontend/src/modules/Admin/Agents/AgentDetail.jsx
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useId } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { Tabs, Group, Select, Text, Stack, Loader, Button } from '@mantine/core';
 import { IconSettings, IconLayoutDashboard, IconAdjustments } from '@tabler/icons-react';
@@ -16,6 +16,7 @@ function AgentDetail({ agentId: explicitAgentId, ConfigView, DashboardView }) {
   const navigate = useNavigate();
 
   const requestedTab = location.hash.slice(1);
+  const memberSelectId = useId();
   const hasConfigView = Boolean(ConfigView);
   const hasDashboardView = Boolean(DashboardView);
   const requestedTabUnsupported = (requestedTab === 'config' && !hasConfigView)
@@ -54,10 +55,11 @@ function AgentDetail({ agentId: explicitAgentId, ConfigView, DashboardView }) {
       <Group justify="space-between">
         <Text size="xl" fw={600} ff="var(--ds-font-mono)">{agentId}</Text>
         <Group gap="sm">
-          <Text size="sm" c="dimmed">User:</Text>
+          <Text component="label" htmlFor={memberSelectId} size="sm" c="dimmed">User:</Text>
           <Group gap="xs" {...regionProps}>
             {users.length > 0 ? (
               <Select
+                id={memberSelectId}
                 size="xs"
                 w={180}
                 value={userId}

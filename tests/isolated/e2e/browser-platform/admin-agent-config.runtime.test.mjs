@@ -31,7 +31,7 @@ test('Health Coach config saves only to the selected member after the previous r
   });
   await page.goto('/admin/agents/health-coach#config');
   await expect.poll(() => Boolean(pendingGoals)).toBe(true);
-  await page.getByPlaceholder('Select user').click();
+  await page.getByLabel('User:').click();
   await page.getByRole('option', { name: 'beta' }).click();
   const weight = page.getByLabel('Weight target (lbs)');
   await expect(weight).toHaveValue('175');

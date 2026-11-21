@@ -161,7 +161,7 @@ for (const change of ['member', 'date']) {
     await page.goto('/admin/agents/health-coach#dashboards');
     await started.promise;
     if (change === 'member') {
-      await page.getByPlaceholder('Select user').click();
+      await page.getByLabel('User:').click();
       await page.getByRole('option', { name: 'Bob' }).click();
     } else {
       await page.getByLabel('Dashboard date').fill('2026-10-01');
