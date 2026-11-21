@@ -71,6 +71,7 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
   };
 
   const primaryTag = article.tags?.[0];
+  const contentClassName = `article-content${fullHeight ? ' full' : ''}${overflows && !fullHeight ? ' capped' : ''}`;
 
   // Strip emojis from preview text
   const cleanPreview = (article.preview || '').replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '').replace(/\s+/g, ' ').trim();
@@ -141,9 +142,9 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
             <>
               {article.content ? <div
                   ref={contentRef}
-                  className={`article-content ${fullHeight ? 'full' : ''} ${overflows && !fullHeight ? 'capped' : ''}`}
+                  className={contentClassName}
                   dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(article.content) }}
-                /> : <p ref={contentRef} className="article-content">{article.preview || 'This saved item has no cached article body. Open the original to continue reading.'}</p>}
+                /> : <p ref={contentRef} className={contentClassName}>{article.preview || 'This saved item has no cached article body. Open the original to continue reading.'}</p>}
               {overflows && !fullHeight && (
                 <button className="article-readmore" onClick={(e) => { e.stopPropagation(); setFullHeight(true); }}>
                   Read more
