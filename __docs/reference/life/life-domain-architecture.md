@@ -270,6 +270,10 @@ A small shared design system underpins every view, added alongside the "beautifu
 | `views/now/` | **Dashboard** (not "Briefing" — see below), PriorityList |
 | `views/coach/` | CoachChat — chat UI for the lifeplan-guide agent, gated on a resolved `lifeUser` so agent memory keys to the right person |
 | `views/log/` | LogBrowser, LogTimeline, LogDayDetail, LogWeekView, LogMonthView, LogSeasonView, LogYearView, LogDecadeView, LogCategoryView, and `views/log/shared/` (ActivityHeatmap, CategoryFilter, ScopeSelector, SourceIcon) |
+
+The Day Log's initial date uses the browser's local calendar day. A date saved
+in the current router visit remains authoritative while switching scopes, so
+Back/Forward navigation does not reset the selected day.
 | `views/ceremony/` | CeremonyFlow, UnitIntention, UnitCapture, CycleRetro, PhaseReview |
 
 **`views/now/` is `Dashboard.jsx` + `PriorityList.jsx`, not `Briefing.jsx`.** `Briefing.jsx` and its companion hook `useLifeStage.js` were deleted as orphans in the beautiful-and-usable merge — do not reference them; `Dashboard.jsx` now owns both the stage-driven setup checklist (reading `dashboard.stage`/`dashboard.completeness` from `useAlignment`) and the priority feed. `PriorityList.jsx` renders `AlignmentService`'s priorities per-user/per-day, is dismissable, tap-through to the relevant view, and is aware of the two newer priority types (`plan_gap`, `ceremony_due`) as well as the original three.

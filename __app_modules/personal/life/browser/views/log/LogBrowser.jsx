@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Stack, Paper } from '@mantine/core';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { localDateKey } from '@/lib/calendarDay.js';
 import { useLifeUsername } from '../../hooks/useLifeUser.js';
 import { ScopeSelector } from "./shared/ScopeSelector.jsx";
 import { CategoryFilter } from "./shared/CategoryFilter.jsx";
@@ -35,7 +36,7 @@ export function LogBrowser({ username }) {
   const currentMember = useLifeUsername();
   const owner = username ?? currentMember;
   const { visitKey, scope, categories, date } = readLogVisit(location, owner);
-  const [initialDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [initialDate] = useState(localDateKey);
   const selectedDate = date ?? initialDate;
 
   const updateView = (nextScope, nextCategories) => {
