@@ -23,11 +23,11 @@ export function useMediaPlaybackPresentation({ media, isPlex, getMediaEl }) {
   const contentId = isPlex ? (media?.assetId || media?.key || media?.plex || null) : null;
   const eligible = !!contentId && !provenanceOptedOut(search);
   const { data, status } = useProvenance(contentId, { enabled: eligible });
-  const { phase, afterHandoff } = useProvenanceHandoff({ getMediaEl, contentId, eligible, status, provenance: data });
+  const { phase, afterHandoff, linkMs } = useProvenanceHandoff({ getMediaEl, contentId, eligible, status, provenance: data });
   const filter = useMediaVideoPresentation({ media, isPlex, getMediaEl, bumperHeld: !afterHandoff });
 
   const scene = data && SCENE_PHASES.includes(phase)
-    ? <ProvenanceHandoff phase={phase} provenance={data} />
+    ? <ProvenanceHandoff phase={phase} provenance={data} linkMs={linkMs} />
     : null;
   if (!scene) return filter;
   return { ...filter, overlay: <>{filter.overlay || null}{scene}</> };

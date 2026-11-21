@@ -25,13 +25,13 @@ export const PROVIDER_ACCENTS = Object.freeze({
   'apple-tv': '#ffffff',
 });
 
-export function ProvenanceHandoff({ phase, provenance }) {
+export function ProvenanceHandoff({ phase, provenance, linkMs = null }) {
   if (!provenance?.logoUrl) return null;
   const accent = PROVIDER_ACCENTS[provenance.provider] || '#ffffff';
   return (
     <div
       className={`provenance-handoff provenance-handoff--${phase}`}
-      style={{ '--ph-accent': accent }}
+      style={{ '--ph-accent': accent, ...(linkMs ? { '--ph-link-ms': `${linkMs}ms` } : {}) }}
       data-provider={provenance.provider}
       aria-hidden="true"
     >
@@ -42,12 +42,16 @@ export function ProvenanceHandoff({ phase, provenance }) {
         <span className="provenance-handoff__line provenance-handoff__line--right" />
         <span className="provenance-handoff__spark" />
       </div>
-      <img className="provenance-handoff__logo" src={provenance.logoUrl} alt="" draggable={false} />
+      <div className={`provenance-handoff__badge${provenance.plate ? ' provenance-handoff__badge--plate' : ''}`}>
+        <img className="provenance-handoff__logo" src={provenance.logoUrl} alt="" draggable={false} />
+      </div>
     </div>
   );
 }
 
 ProvenanceHandoff.propTypes = {
   phase: PropTypes.oneOf(['linking', 'linked', 'docked', 'leaving']).isRequired,
-  provenance: PropTypes.shape({ provider: PropTypes.string, logoUrl: PropTypes.string }),
+  provenance: PropTypes.shape({ provider: PropTypes.string, logoUrl: PropTypes.string, plate: PropTypes.bool }),
+  /** How long the video is held (5-10 s, random per play): the lines take that long to reach in. */
+  linkMs: PropTypes.number,
 };

@@ -4,13 +4,15 @@
  * handoff only starts once there is something to draw.
  *
  * status: idle | loading | ready | none | failed
- *   ready -> { provider, name, tier, logo, logoUrl } with the logo loaded
+ *   ready -> { provider, name, tier, logo, logoUrl, plate } with the logo loaded;
+ *            plate = the logo is too dark for the field and gets a light plate
  *   none  -> nothing confirmed (or the logo would not load): no handoff
  *
  * Reference: __docs/reference/media/provenance.md
  */
 import { useEffect, useState } from 'react';
 import { getChildLogger } from '../../../../../frontend/src/lib/logging/singleton.js';
+import { imageNeedsPlate } from './logoContrast.js';
 
 let _logger;
 const logger = () => (_logger ||= getChildLogger({ component: 'provenance' }));
@@ -20,9 +22,9 @@ export const logoUrlFor = (data) => (data?.logo ? `${data.logo}?variant=white` :
 
 function preload(src) {
   return new Promise((resolve, reject) => {
-    if (typeof Image === 'undefined') { resolve(); return; }
+    if (typeof Image === 'undefined') { resolve(null); return; }
     const img = new Image();
-    img.onload = () => resolve();
+    img.onload = () => resolve(img);
     img.onerror = () => reject(new Error('logo failed to load'));
     img.src = src;
   });
@@ -48,16 +50,19 @@ export function useProvenance(contentId, { enabled = true } = {}) {
           return;
         }
         const logoUrl = logoUrlFor(p);
+        let img = null;
         try {
-          await preload(logoUrl);
+          img = await preload(logoUrl);
         } catch (error) {
           logger().warn('provenance.logo.failed', { ratingKey: rk, provider: p.provider });
           if (!cancelled) setState({ data: null, status: 'none' });
           return;
         }
         if (cancelled) return;
-        setState({ data: { ...p, logoUrl }, status: 'ready' });
-        logger().info('provenance.ready', { ratingKey: rk, provider: p.provider, tier: p.tier, elapsedMs: Date.now() - startedAt });
+        // A logo too dark for the field (Disney+ navy) is drawn on a light plate.
+        const plate = img ? imageNeedsPlate(img) : false;
+        setState({ data: { ...p, logoUrl, plate }, status: 'ready' });
+        logger().info('provenance.ready', { ratingKey: rk, provider: p.provider, tier: p.tier, plate, elapsedMs: Date.now() - startedAt });
       })
       .catch((error) => {
         if (cancelled || error?.name === 'AbortError') return;

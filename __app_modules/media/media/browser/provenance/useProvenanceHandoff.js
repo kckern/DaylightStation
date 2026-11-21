@@ -27,7 +27,8 @@ const logger = () => (_logger ||= getChildLogger({ component: 'provenance' }));
 
 export const HANDOFF_START_WINDOW_SEC = 5;
 export const HANDOFF_TIMING = Object.freeze({
-  linkMs: 2200,        // lines reach in, dots pulse; video held
+  linkMinMs: 5000,     // lines reach in, dots pulse; video held for a random
+  linkMaxMs: 10000,    //   time in this range, so it feels like a real connection
   playTimeoutMs: 2500, // resume did not report `playing`: link anyway
   linkedMs: 700,       // lines meet; the scene starts to clear
   dockMs: 4000,        // logo in the corner
@@ -37,16 +38,23 @@ export const HANDOFF_TIMING = Object.freeze({
 const AFTER = new Set(['skipped', 'docked', 'leaving', 'done']);
 export const SCENE_PHASES = Object.freeze(['linking', 'linked', 'docked', 'leaving']);
 
-export function useProvenanceHandoff({ getMediaEl, contentId, eligible, status, provenance, timing = HANDOFF_TIMING }) {
+/** A hold length in [min, max] ms. `random` is injectable for tests. */
+export function pickLinkMs(timing = HANDOFF_TIMING, random = Math.random) {
+  const min = timing.linkMinMs, max = Math.max(min, timing.linkMaxMs);
+  return Math.round(min + random() * (max - min));
+}
+
+export function useProvenanceHandoff({ getMediaEl, contentId, eligible, status, provenance, timing = HANDOFF_TIMING, random = Math.random }) {
   const [phase, setPhase] = useState('pending');
+  const [linkMs, setLinkMs] = useState(null);
   const decidedRef = useRef(false);
   const timersRef = useRef([]);
   const boundRef = useRef({ el: null, off: null });
   const runOffRef = useRef(null);
   const getMediaElRef = useRef(getMediaEl);
   getMediaElRef.current = getMediaEl;
-  const liveRef = useRef({ status, provenance, timing, contentId });
-  liveRef.current = { status, provenance, timing, contentId };
+  const liveRef = useRef({ status, provenance, timing, contentId, random });
+  liveRef.current = { status, provenance, timing, contentId, random };
 
   const clearTimers = () => { timersRef.current.forEach(clearTimeout); timersRef.current = []; };
   const after = (ms, fn) => { timersRef.current.push(setTimeout(fn, ms)); };
@@ -83,10 +91,12 @@ export function useProvenanceHandoff({ getMediaEl, contentId, eligible, status, 
     if (!el) return;
 
     const run = (videoEl) => {
-      const { provenance: p, timing: tm } = liveRef.current;
-      const log = { contentId: liveRef.current.contentId, provider: p.provider, tier: p.tier };
+      const { provenance: p, timing: tm, random: rnd } = liveRef.current;
+      const holdMs = pickLinkMs(tm, rnd);
+      const log = { contentId: liveRef.current.contentId, provider: p.provider, tier: p.tier, holdMs };
       try { videoEl.pause(); } catch (_) { /* ignore */ }
       setProvenanceHolding(true);
+      setLinkMs(holdMs);
       setPhase('linking');
       logger().info('provenance.handoff.shown', log);
 
@@ -110,7 +120,7 @@ export function useProvenanceHandoff({ getMediaEl, contentId, eligible, status, 
       const onPlaying = () => link('playing');
       videoEl.addEventListener('playing', onPlaying);
       runOffRef.current = () => videoEl.removeEventListener('playing', onPlaying);
-      after(tm.linkMs, () => {
+      after(holdMs, () => {
         if (linked) return;
         try {
           const r = videoEl.play();
@@ -147,5 +157,5 @@ export function useProvenanceHandoff({ getMediaEl, contentId, eligible, status, 
     boundRef.current = { el, off: () => el.removeEventListener('playing', check) };
   });
 
-  return { phase, afterHandoff: AFTER.has(phase) };
+  return { phase, afterHandoff: AFTER.has(phase), linkMs };
 }

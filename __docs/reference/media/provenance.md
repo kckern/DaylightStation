@@ -19,14 +19,21 @@ plays from Plex and the bumper signals provenance only.
 
 | Phase | Video | Scene |
 |---|---|---|
-| `linking` (~2.2 s) | held paused at the start | field covers the video at once; logo fades in; lines grow from both edges toward the centre; three dots pulse in the gap |
+| `linking` (random 5–10 s per play) | held paused at the start | field covers the video at once; logo fades in; lines creep in from both edges in uneven bursts and stalls over the whole hold; three dots pulse in the gap |
 | `linked` (~0.7 s) | resumed; begins on the video's `playing` | gap closes, a spark where the lines meet |
 | `docked` (~4 s) | playing | field and lines dissolve; logo moves to the top-right corner at 80% opacity |
 | `leaving` (~0.9 s) | playing | corner logo fades |
 
 Lines and dots take the service's brand colour (`PROVIDER_ACCENTS` in
 `ProvenanceHandoff.jsx`; white otherwise). Timings are `HANDOFF_TIMING` in
-`useProvenanceHandoff.js`. If resuming does not report `playing` within 2.5 s the
+`useProvenanceHandoff.js`; the hold is drawn uniformly from `linkMinMs`–`linkMaxMs`
+and passed to the scene as `--ph-link-ms`, so the lines take exactly that long.
+
+**Contrast.** When the logo preloads, the player measures it (`logoContrast.js`): the
+mean relative luminance of its opaque pixels against the field, as a WCAG ratio. Under
+3:1 (the large-graphics threshold) the logo rides on a light rounded plate, in the centre
+and docked. Disney+'s navy wordmark (about 2.5:1) gets one; Netflix and Kanopy red do
+not. A newly added dark logo gets a plate without any change. If resuming does not report `playing` within 2.5 s the
 lines meet anyway; a remote press that resumes early links at once.
 
 It runs once per title, on the first `playing` within 5 s of the start. The
