@@ -46,6 +46,9 @@ function RingClip({ camera, clip, ringMs, eager, label }) {
   const [failed, setFailed] = useState(false);
   const [started, setStarted] = useState(false);
   const video = useRef(null);
+  useEffect(() => {
+    if (started) video.current?.focus({ preventScroll: true });
+  }, [started]);
   if (!shown) {
     return <Button size="xs" variant="light" aria-label={`Show clip of the ${label} ring`} onClick={() => setShown(true)}>Show clip</Button>;
   }
@@ -83,6 +86,7 @@ function RingClip({ camera, clip, ringMs, eager, label }) {
         className="home-rings__video"
         preload="metadata"
         controls={started}
+        tabIndex={started ? 0 : -1}
         playsInline
         aria-label={`Recording from the ${label} ring`}
         src={clipFileUrl(camera, clip.name)}
