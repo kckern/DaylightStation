@@ -21,6 +21,8 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
   const [fullHeight, setFullHeight] = useState(false);
   const contentRef = useRef(null);
   const [overflows, setOverflows] = useState(false);
+  const publishedDate = article.published ? new Date(article.published) : null;
+  const hasPublishedDate = Number.isFinite(publishedDate?.getTime());
 
   useEffect(() => {
     const content = contentRef.current;
@@ -52,9 +54,9 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
     }
   };
 
-  const formatTime = (published) => {
-    if (!published) return '';
-    const d = new Date(published);
+  const formatTime = () => {
+    if (!hasPublishedDate) return '';
+    const d = publishedDate;
     const now = new Date();
     const diffMs = now - d;
     const diffMins = Math.floor(diffMs / 60000);
@@ -94,7 +96,7 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
         {!expanded && (
           <span className="article-preview">{cleanPreview}</span>
         )}
-        <span className="article-time">{formatTime(article.published)}</span>
+        {hasPublishedDate && <span className="article-time">{formatTime()}</span>}
         {primaryTag && (
           <span
             className="article-tag"
@@ -110,8 +112,8 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
           <div className="article-meta">
             {article.feedTitle && <span>{article.feedTitle}</span>}
             {article.author && <span> &middot; {article.author}</span>}
-            {article.published && (
-              <span> &middot; {new Date(article.published).toLocaleString()}</span>
+            {hasPublishedDate && (
+              <span> &middot; {publishedDate.toLocaleString()}</span>
             )}
           </div>
           <div className="article-state-actions">

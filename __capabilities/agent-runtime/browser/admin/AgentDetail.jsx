@@ -54,7 +54,7 @@ function AgentDetail({ agentId: explicitAgentId, ConfigView, DashboardView }) {
     <Stack p="md" gap="md" className="agent-detail">
       {/* Header */}
       <Group justify="space-between">
-        <Text size="xl" fw={600} ff="var(--ds-font-mono)">{agentId}</Text>
+        <Text component="h1" size="xl" fw={600} ff="var(--ds-font-mono)">{agentId}</Text>
         <Group gap="sm">
           <Text component="label" htmlFor={memberSelectId} size="sm" c="dimmed">User:</Text>
           <Group gap="xs" {...regionProps}>
