@@ -36,8 +36,8 @@ export function UnitCapture({ step, content, responses, setResponse }) {
   if (step === 1) {
     return (
       <Stack gap="md">
-        <Text size="sm" fw={500}>Observations</Text>
         <Textarea
+          label="Observations"
           placeholder="What went well? What was difficult?"
           value={responses.observations || ''}
           onChange={(e) => setResponse('observations', e.currentTarget.value)}

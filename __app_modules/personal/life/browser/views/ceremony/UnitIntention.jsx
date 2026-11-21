@@ -35,8 +35,8 @@ export function UnitIntention({ step, content, responses, setResponse }) {
     // Intentions: capture what to focus on
     return (
       <Stack gap="md">
-        <Text size="sm" fw={500}>What are your intentions for this unit?</Text>
         <Textarea
+          label="What are your intentions for this unit?"
           placeholder="I will focus on..."
           value={responses.intentions || ''}
           onChange={(e) => setResponse('intentions', e.currentTarget.value)}
