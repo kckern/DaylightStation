@@ -122,29 +122,31 @@ export function ProgressView() {
         {weightError ? <ErrorState error={weightError} onRetry={retryWeight} label="Weight history" />
           : weightRes.loading && weightRes.data == null ? <LoadingState label="weight history" rows={5} /> : (
             <SectionCard title="Weight">
-              {chartOptions ? <HighchartsReact highcharts={Highcharts} options={chartOptions} /> : null}
-              {latest ? (
-                <div className="health-progress__stats">
-                  <StatCard label={`Weight · as of ${latest.date}`}
-                    value={fmtLbs(latest.avg ?? latest.lbs)} unit="lbs" emphasis />
-                  <StatCard label="Composition"
-                    value={latest.fatPct != null ? Math.round(latest.fatPct * 10) / 10 : '—'} unit="%" />
-                  <StatCard label={`Trend · ${weightTrend.trendDays ?? 7} days`}
-                    value={weightTrend.deltaLbs == null ? 'no trend yet' : (
-                      <span className={`health-progress__trend health-progress__trend--${weightTrend.direction}`}>
-                        <span aria-hidden="true">{TREND_ARROWS[weightTrend.direction]}</span> {fmtDelta(weightTrend.deltaLbs)}
-                      </span>
-                    )} unit={weightTrend.deltaLbs == null ? '' : 'lb'} />
-                  {/* Zero is BALANCED, not a missing figure — and an absent
-                      calorie_balance is the missing one. */}
-                  <StatCard label="Daily calories"
-                    value={latest.calorieBalance == null ? '—' : (latest.calorieBalance === 0 ? 'Balanced' : `${latest.calorieBalance > 0 ? '+' : '−'}${Math.abs(latest.calorieBalance)}`)}
-                    unit={latest.calorieBalance ? 'kcal' : ''} />
-                  <StatCard label={`Days to ${targetBodyFatPct}%`}
-                    value={projection.days == null ? PROJECTION_BLOCKED[projection.reason] : (projection.days === 0 ? 'reached' : projection.days)}
-                    unit={projection.days ? goalDate(latest.date, projection.days) || '' : ''} />
-                </div>
-              ) : null}
+              {!latest ? <Text size="sm" c="dimmed">No weigh-ins recorded yet.</Text> : (
+                <>
+                  {chartOptions ? <HighchartsReact highcharts={Highcharts} options={chartOptions} /> : null}
+                  <div className="health-progress__stats">
+                    <StatCard label={`Weight · as of ${latest.date}`}
+                      value={fmtLbs(latest.avg ?? latest.lbs)} unit="lbs" emphasis />
+                    <StatCard label="Composition"
+                      value={latest.fatPct != null ? Math.round(latest.fatPct * 10) / 10 : '—'} unit="%" />
+                    <StatCard label={`Trend · ${weightTrend.trendDays ?? 7} days`}
+                      value={weightTrend.deltaLbs == null ? 'no trend yet' : (
+                        <span className={`health-progress__trend health-progress__trend--${weightTrend.direction}`}>
+                          <span aria-hidden="true">{TREND_ARROWS[weightTrend.direction]}</span> {fmtDelta(weightTrend.deltaLbs)}
+                        </span>
+                      )} unit={weightTrend.deltaLbs == null ? '' : 'lb'} />
+                    {/* Zero is BALANCED, not a missing figure — and an absent
+                        calorie_balance is the missing one. */}
+                    <StatCard label="Daily calories"
+                      value={latest.calorieBalance == null ? '—' : (latest.calorieBalance === 0 ? 'Balanced' : `${latest.calorieBalance > 0 ? '+' : '−'}${Math.abs(latest.calorieBalance)}`)}
+                      unit={latest.calorieBalance ? 'kcal' : ''} />
+                    <StatCard label={`Days to ${targetBodyFatPct}%`}
+                      value={projection.days == null ? PROJECTION_BLOCKED[projection.reason] : (projection.days === 0 ? 'reached' : projection.days)}
+                      unit={projection.days ? goalDate(latest.date, projection.days) || '' : ''} />
+                  </div>
+                </>
+              )}
             </SectionCard>
           )}
       </section>

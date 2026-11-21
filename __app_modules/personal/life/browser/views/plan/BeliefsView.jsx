@@ -159,6 +159,7 @@ export function BeliefsView({ username }) {
                     value={effectiveConf * 100}
                     color={beliefConfidenceColor(effectiveConf)}
                     size="sm"
+                    aria-label={`Confidence for belief: If ${b.if}`}
                   />
                 </Stack>
               </Group>

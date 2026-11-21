@@ -56,9 +56,10 @@ export default function ReaderSidebar({ feeds, loaded, activeFeeds, onToggleFeed
     onToggleCategory(feedIds, true);
   };
 
-  // Check if all feeds in a category are active
-  const isCategoryActive = (catFeeds) => {
-    return catFeeds.length > 0 && catFeeds.every(f => activeFeeds.has(f.id));
+  const categoryPressState = (catFeeds) => {
+    const activeCount = catFeeds.filter(feed => activeFeeds.has(feed.id)).length;
+    if (activeCount === 0) return false;
+    return activeCount === catFeeds.length ? true : 'mixed';
   };
 
   return (
@@ -67,35 +68,38 @@ export default function ReaderSidebar({ feeds, loaded, activeFeeds, onToggleFeed
       {activeFeeds.size > 0 && (
         <button className="reader-view-all" onClick={onClearFilters}>View All</button>
       )}
-      {grouped.map(([category, catFeeds]) => (
-        <div key={category} className="reader-category">
-          <div className={`reader-category-header ${isCategoryActive(catFeeds) ? 'active' : ''}`}>
-            <button
-              type="button"
-              className={`reader-category-arrow ${collapsed[category] ? 'collapsed' : ''}`}
-              onClick={() => toggleCollapse(category)}
-              aria-expanded={!collapsed[category]}
-              aria-label={`${collapsed[category] ? 'Expand' : 'Collapse'} ${category}`}
-            >&#9662;</button>
-            <button
-              type="button"
-              className="reader-category-label"
-              onClick={() => handleCategoryClick(catFeeds)}
-              aria-pressed={isCategoryActive(catFeeds)}
-            >{category}</button>
+      {grouped.map(([category, catFeeds]) => {
+        const pressed = categoryPressState(catFeeds);
+        return (
+          <div key={category} className="reader-category">
+            <div className={`reader-category-header ${pressed === true ? 'active' : ''}`}>
+              <button
+                type="button"
+                className={`reader-category-arrow ${collapsed[category] ? 'collapsed' : ''}`}
+                onClick={() => toggleCollapse(category)}
+                aria-expanded={!collapsed[category]}
+                aria-label={`${collapsed[category] ? 'Expand' : 'Collapse'} ${category}`}
+              >&#9662;</button>
+              <button
+                type="button"
+                className="reader-category-label"
+                onClick={() => handleCategoryClick(catFeeds)}
+                aria-pressed={pressed}
+              >{category}</button>
+            </div>
+            {!collapsed[category] && catFeeds.map(feed => (
+              <button
+                key={feed.id}
+                className={`reader-feed-item ${activeFeeds.has(feed.id) ? 'active' : ''}`}
+                onClick={() => handleFeedClick(feed.id)}
+                aria-pressed={activeFeeds.has(feed.id)}
+              >
+                <span aria-hidden="true">{activeFeeds.has(feed.id) ? '✓' : '○'}</span> {feed.title}
+              </button>
+            ))}
           </div>
-          {!collapsed[category] && catFeeds.map(feed => (
-            <button
-              key={feed.id}
-              className={`reader-feed-item ${activeFeeds.has(feed.id) ? 'active' : ''}`}
-              onClick={() => handleFeedClick(feed.id)}
-              aria-pressed={activeFeeds.has(feed.id)}
-            >
-              <span aria-hidden="true">{activeFeeds.has(feed.id) ? '✓' : '○'}</span> {feed.title}
-            </button>
-          ))}
-        </div>
-      ))}
+        );
+      })}
       {loaded && feeds.length === 0 && (
         <div className="reader-empty">No feeds found</div>
       )}
