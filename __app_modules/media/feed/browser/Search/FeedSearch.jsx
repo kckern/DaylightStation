@@ -15,6 +15,21 @@ const resultKey = item => item.stateKey || item.id;
 const NO_RESULTS = { items: [], nextCursor: null, total: 0, coverage: null };
 const searchTimeoutMs = 10_000;
 
+function localDateBoundary(value, endOfDay) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
+  if (!match) return value;
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const start = new Date(year, month - 1, day);
+  if (start.getFullYear() !== year || start.getMonth() !== month - 1 || start.getDate() !== day) return value;
+  if (!endOfDay) return start.toISOString();
+  const end = new Date(year, month - 1, day + 1);
+  end.setMilliseconds(end.getMilliseconds() - 1);
+  return end.toISOString();
+}
+
 function reconcileRows(items, current, before, pending) {
   const recent = new Map(current.filter(item => {
     const key = resultKey(item);
@@ -81,6 +96,10 @@ export default function FeedSearch() {
 
   const readPage = useCallback((cursor, signal) => {
     const api = new URLSearchParams(requestKey);
+    for (const [key, endOfDay] of [['from', false], ['to', true]]) {
+      const value = api.get(key);
+      if (value) api.set(key, localDateBoundary(value, endOfDay));
+    }
     api.set('limit', '30');
     if (cursor) api.set('cursor', cursor); else api.delete('cursor');
     return DaylightAPI(`/api/v1/feed/search?${api}`, {}, 'GET', { signal });
@@ -260,8 +279,8 @@ export default function FeedSearch() {
       <form className="feed-search__advanced" aria-label="Search scope" onSubmit={submit}>
         <label>Mode<Select density="compact" value={params.get('mode') || ''} onChange={event => setFilter('mode', event.target.value)}><option value="">Any</option><option value="reader">Reader</option><option value="headlines">Headlines</option><option value="scroll">Scroll</option></Select></label>
         <label>Source<input value={source} onChange={event => setSource(event.target.value)} placeholder="Name or type" /></label>
-        <label>From<input type="date" value={params.get('from') || ''} onChange={event => setFilter('from', event.target.value)} /></label>
-        <label>To<input type="date" value={(params.get('to') || '').slice(0, 10)} onChange={event => setFilter('to', event.target.value ? `${event.target.value}T23:59:59.999Z` : '')} /></label>
+        <label>From<input type="date" value={(params.get('from') || '').slice(0, 10)} onChange={event => setFilter('from', event.target.value)} /></label>
+        <label>To<input type="date" value={(params.get('to') || '').slice(0, 10)} onChange={event => setFilter('to', event.target.value)} /></label>
         <button type="submit">Apply</button>
       </form>
       {coverage && <p className="feed-search__coverage" role="status">{total} result{total === 1 ? '' : 's'} · {coverage.retentionMonths}-month history{coverage.status === 'running' ? ` · indexing (${coverage.indexed || 0})` : coverage.status === 'failed' ? ' · backfill paused' : ''}</p>}
