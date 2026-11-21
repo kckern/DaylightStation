@@ -1,6 +1,8 @@
 package net.kckern.daylight.cap.quickinput.shell;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
@@ -16,50 +18,186 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import java.io.File;
-import java.security.SecureRandom;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-/**
- * The one screen of a typed quick input: a field, Send and Cancel. Nothing leaves the
- * screen until Send, which writes the text to a file of this app and hands it to the
- * upload queue like a recording; from there it survives the process being killed and
- * is sent when the backend can be reached.
- *
- * Not exported. It is opened by the payload when a keyed input link arrives, which only
- * this app's own surfaces can build. It is not shown over the lock screen. What is typed
- * is not logged, not put in a notice and not kept anywhere but the field until Send.
- *
- * Rule for editing this file: perform, do not decide. What may be typed and what is
- * sent is TextDraft's; what the file is called and where it goes is CaptureFiles'.
- */
+/** Edits a destination's private text draft until Send or confirmed Discard. */
 public class TextInputActivity extends Activity {
+    private static final ExecutorService DISK = Executors.newSingleThreadExecutor(task -> {
+        Thread thread = new Thread(task, "Daylight-text-drafts");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    private final CaptureScopeWait bindingWait = new CaptureScopeWait();
+    private final DraftDiscard confirmation = new DraftDiscard();
+    private AlertDialog discardDialog;
+    private CaptureDraftStore store;
+    private TextDraftWriter writer;
+    private Bundle deferredState;
+    private boolean completed;
+    private boolean loading;
+    private boolean busy;
+    private boolean finishingDraft;
+    private String owner;
     private String dest;
     private String label;
     private EditText field;
     private TextView counter;
+    private Button cancel;
+    private Button send;
 
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        dest = MemoFiles.dest(getIntent() == null ? null : getIntent().getStringExtra(MemoFiles.EXTRA_DEST));
-        label = MemoFiles.label(getIntent() == null ? null : getIntent().getStringExtra(MemoFiles.EXTRA_LABEL));
-        if (dest == null) {
-            // Started with nothing to send to: only this app can start it, so this is a mistake of its own.
-            finish();
-            return;
-        }
-        if (label == null) label = "Quick input";
-        setTitle(label);
-        // A touch beside the window does not close it: a draft is not lost to a stray tap.
         setFinishOnTouchOutside(false);
-        // The task is kept out of the recents list (the manifest), and from Android 13 the
-        // system takes no picture of this window for it either. Screenshots are not blocked.
         if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
                 | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        owner = getIntent().getStringExtra(CaptureScope.EXTRA);
+        if (savedInstanceState != null && CaptureScope.valid(owner) && CaptureScope.current() == null) {
+            deferredState = savedInstanceState;
+            TextView checking = new TextView(this);
+            checking.setText(CaptureScopeWait.CHECKING);
+            setContentView(checking);
+        } else {
+            open(getIntent(), savedInstanceState);
+        }
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (isFinishing()) return;
+        if (deferredState != null) {
+            bindingWait.await(this, owner, () -> {
+                Bundle selected = deferredState;
+                deferredState = null;
+                open(getIntent(), selected);
+            }, this::bindingUnavailable);
+        } else if (!CaptureScope.currentIs(owner)) {
+            bindingUnavailable();
+        }
+    }
+
+    @Override protected void onPause() {
+        bindingWait.cancel();
+        super.onPause();
+    }
+
+    private void bindingUnavailable() {
+        say(CaptureScopeWait.UNAVAILABLE);
+        finish();
+    }
+
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        if (completed || isFinishing() || finishingDraft || deferredState != null) return;
+        String nextOwner = intent.getStringExtra(CaptureScope.EXTRA);
+        if (!CaptureScope.currentIs(nextOwner)) return;
+        String nextDest = MemoFiles.dest(intent.getStringExtra(MemoFiles.EXTRA_DEST));
+        if (nextDest == null || nextOwner.equals(owner) && nextDest.equals(dest)) return;
+        invalidateDiscard();
+        if (writer == null || !nextOwner.equals(owner)) {
+            if (writer != null && !busy) writer.complete(() -> { }, error -> {
+                if (error != null) reportWriteFailure(error);
+            });
+            setIntent(intent);
+            open(intent, null);
+            return;
+        }
+        if (busy) return;
+        TextDraftWriter selected = writer;
+        setBusy(true);
+        selected.complete(() -> { }, error -> runOnUiThread(() -> {
+            if (isDestroyed() || isFinishing() || writer != selected) return;
+            if (error != null) {
+                setBusy(false);
+                say("Could not save the draft");
+                return;
+            }
+            setIntent(intent);
+            open(intent, null);
+        }));
+    }
+
+    @Override protected void onSaveInstanceState(Bundle state) {
+        super.onSaveInstanceState(state);
+        if (deferredState != null) {
+            state.putString("draft", deferredState.getString("draft"));
+            state.putString("text", deferredState.getString("text"));
+            state.putLong("revision", deferredState.getLong("revision"));
+            return;
+        }
+        if (writer == null) return;
+        state.putString("draft", writer.id);
+        if (!finishingDraft && CaptureScope.currentIs(owner)) {
+            state.putString("text", field.getText().toString());
+            state.putLong("revision", writer.revision());
+        }
+    }
+
+    private void open(Intent intent, Bundle state) {
+        String selectedOwner = intent.getStringExtra(CaptureScope.EXTRA);
+        String selectedDest = MemoFiles.dest(intent.getStringExtra(MemoFiles.EXTRA_DEST));
+        if (selectedDest == null || !CaptureScope.currentIs(selectedOwner)) {
+            bindingUnavailable();
+            return;
+        }
+        owner = selectedOwner;
+        dest = selectedDest;
+        String selectedLabel = MemoFiles.label(intent.getStringExtra(MemoFiles.EXTRA_LABEL));
+        label = selectedLabel == null ? "Quick input" : selectedLabel;
+        CaptureDraftStore selectedStore = new CaptureDraftStore(getFilesDir(), owner);
+        store = selectedStore;
+        writer = null;
+        setTitle(label);
         build();
+        setBusy(true);
         getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        CaptureFiles.sweep(new File(getFilesDir(), CaptureFiles.INBOX), System.currentTimeMillis());
+        String restoredId = state == null ? null : state.getString("draft");
+        String restoredBody = state == null ? null : state.getString("text");
+        TextDraft.Snapshot saved = restoredBody == null ? null
+                : new TextDraft.Snapshot(restoredBody, state.getLong("revision"));
+        DISK.execute(() -> {
+            try {
+                CaptureDraftStore.Draft stored = restoredId == null
+                        ? selectedStore.latest(selectedDest, CaptureDraftStore.Kind.TEXT) : selectedStore.get(restoredId);
+                if (restoredId != null && (stored == null || stored.kind != CaptureDraftStore.Kind.TEXT
+                        || !selectedDest.equals(stored.dest))) {
+                    // An earlier Android state can outlive a completed Send or Discard.
+                    runOnUiThread(() -> {
+                        if (store == selectedStore && !isDestroyed()) finish();
+                    });
+                    return;
+                }
+                CaptureDraftStore.Draft draft = stored != null ? stored
+                        : selectedStore.create(selectedDest, selectedLabel == null ? "Quick input" : selectedLabel,
+                                CaptureDraftStore.Kind.TEXT);
+                TextDraft.Snapshot selected = selectedStore.restoreText(draft.id, saved);
+                runOnUiThread(() -> {
+                    if (isDestroyed() || isFinishing() || store != selectedStore) return;
+                    if (!CaptureScope.currentIs(selectedOwner) || selected == null) {
+                        finish();
+                        return;
+                    }
+                    label = draft.label;
+                    setTitle(label);
+                    writer = new TextDraftWriter(selectedStore, DISK, draft.id, selected.revision, this::reportWriteFailure);
+                    loading = true;
+                    field.setText(selected.body);
+                    field.setSelection(field.length());
+                    loading = false;
+                    setBusy(false);
+                });
+            } catch (IOException error) {
+                runOnUiThread(() -> {
+                    if (store != selectedStore || isDestroyed() || isFinishing()) return;
+                    say("Could not open the draft");
+                    finish();
+                });
+            }
+        });
     }
 
     private void build() {
@@ -69,8 +207,8 @@ public class TextInputActivity extends Activity {
         layout.setPadding(pad, pad, pad, pad / 2);
 
         field = new EditText(this);
-        // An id, so Android keeps the draft when it builds the screen again (a rotation).
         field.setId(R.id.quick_input_text);
+        field.setSaveEnabled(false);
         field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         field.setMinLines(3);
         field.setMaxLines(10);
@@ -85,7 +223,10 @@ public class TextInputActivity extends Activity {
         field.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) { }
-            @Override public void afterTextChanged(Editable s) { counter.setText(TextDraft.counter(TextDraft.utf8Length(s, 0, s.length()))); }
+            @Override public void afterTextChanged(Editable s) {
+                counter.setText(TextDraft.counter(TextDraft.utf8Length(s, 0, s.length())));
+                if (!loading && !busy && writer != null && CaptureScope.currentIs(owner)) writer.edit(s.toString());
+            }
         });
         layout.addView(field, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -96,11 +237,11 @@ public class TextInputActivity extends Activity {
         LinearLayout buttons = new LinearLayout(this);
         buttons.setOrientation(LinearLayout.HORIZONTAL);
         buttons.setGravity(Gravity.END);
-        Button cancel = new Button(this);
+        cancel = new Button(this);
         cancel.setText("Cancel");
-        cancel.setOnClickListener(v -> close());
+        cancel.setOnClickListener(v -> confirmDiscard());
         buttons.addView(cancel);
-        Button send = new Button(this);
+        send = new Button(this);
         send.setText("Send");
         send.setOnClickListener(v -> send());
         buttons.addView(send);
@@ -109,27 +250,102 @@ public class TextInputActivity extends Activity {
         field.requestFocus();
     }
 
-    private void send() {
-        byte[] body = TextDraft.body(field.getText().toString());
-        if (body == null) {
-            Toast.makeText(getApplicationContext(), "Nothing to send", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        String id = MemoFiles.newId(System.currentTimeMillis(), new SecureRandom().nextLong());
-        File written = CaptureFiles.write(new File(getFilesDir(), CaptureFiles.INBOX), id, dest, CaptureFiles.TEXT, body);
-        if (written == null) {
-            // The draft stays in the field: nothing was queued and nothing is lost.
-            Toast.makeText(getApplicationContext(), "Could not save it. Nothing was sent.", Toast.LENGTH_LONG).show();
-            return;
-        }
-        CaptureFiles.tellPayload();
-        Toast.makeText(getApplicationContext(), "Sending to " + label, Toast.LENGTH_SHORT).show();
-        close();
+    private void reportWriteFailure(IOException error) {
+        runOnUiThread(() -> {
+            if (!isDestroyed() && !isFinishing()) counter.setText("Could not save the draft. Try again.");
+        });
     }
 
-    /** The field is emptied before the window goes, so no picture of the screen taken on the way out holds the draft. */
-    private void close() {
-        if (field != null) field.setText("");
-        finish();
+    private void setBusy(boolean value) {
+        busy = value;
+        field.setEnabled(!value);
+        cancel.setEnabled(!value);
+        send.setEnabled(!value);
+    }
+
+    private void send() {
+        if (completed || busy || writer == null || !CaptureScope.currentIs(owner)) return;
+        byte[] body = TextDraft.body(field.getText().toString());
+        if (body == null) {
+            say("Nothing to send");
+            return;
+        }
+        TextDraftWriter selected = writer;
+        CaptureDraftStore selectedStore = store;
+        String selectedOwner = owner;
+        finishDraft(selected, () -> {
+            if (!CaptureScope.currentIs(selectedOwner)) throw new IOException("The draft belongs to another account");
+            selectedStore.writeText(selected.id, new String(body, StandardCharsets.UTF_8));
+            if (!selectedStore.sendForCurrentOwner(selected.id)) throw new IOException("Draft cannot be sent");
+            CaptureFiles.tellPayload();
+        }, () -> CaptureStatusActivity.open(this, selectedOwner, selected.id), "Could not queue the draft. Check it and try again.");
+    }
+
+    private void confirmDiscard() {
+        if (completed || busy || writer == null || !CaptureScope.currentIs(owner)) return;
+        if (field.length() == 0) {
+            discard(writer, false);
+            return;
+        }
+        invalidateDiscard();
+        TextDraftWriter selected = writer;
+        DraftDiscard.Request requested = confirmation.ask(selected.id);
+        discardDialog = new AlertDialog.Builder(this)
+                .setTitle("Discard this text draft?")
+                .setNegativeButton("Keep draft", null)
+                .setPositiveButton("Discard draft", (dialog, which) -> {
+                    if (writer == selected && CaptureScope.currentIs(owner) && confirmation.confirm(requested, writer.id)) {
+                        discard(selected, true);
+                    }
+                }).show();
+    }
+
+    private void invalidateDiscard() {
+        confirmation.invalidate();
+        if (discardDialog != null) {
+            discardDialog.dismiss();
+            discardDialog = null;
+        }
+    }
+
+    private void discard(TextDraftWriter selected, boolean confirmed) {
+        CaptureDraftStore selectedStore = store;
+        String selectedOwner = owner;
+        finishDraft(selected, () -> {
+            if (!CaptureScope.currentIs(selectedOwner)) throw new IOException("The draft belongs to another account");
+            if (selectedStore.get(selected.id) != null && !selectedStore.discard(selected.id, confirmed)) {
+                throw new IOException("Discard needs confirmation");
+            }
+        }, null, "Could not discard the draft");
+    }
+
+    private void finishDraft(TextDraftWriter selected, TextDraftWriter.Action action, Runnable onComplete, String errorMessage) {
+        invalidateDiscard();
+        finishingDraft = true;
+        setBusy(true);
+        selected.complete(action, error -> runOnUiThread(() -> {
+            if (isDestroyed() || isFinishing() || writer != selected) return;
+            if (error != null) {
+                finishingDraft = false;
+                setBusy(false);
+                say(errorMessage);
+                return;
+            }
+            completed = true;
+            if (onComplete != null) onComplete.run();
+            finish();
+        }));
+    }
+
+    @Override public void onBackPressed() { confirmDiscard(); }
+
+    @Override protected void onDestroy() {
+        bindingWait.cancel();
+        invalidateDiscard();
+        super.onDestroy();
+    }
+
+    private void say(String message) {
+        Toast.makeText(getApplicationContext(), message, Toast.LENGTH_SHORT).show();
     }
 }

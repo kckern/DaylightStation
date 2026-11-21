@@ -16,7 +16,12 @@ interface MediaApi {
     JSONObject rootList() throws Exception;
     JSONObject list(String contentId, int take, int skip) throws Exception;
     JSONObject recent(int limit) throws Exception;
+    JSONObject audioSources() throws Exception;
+    JSONObject audioLists(String source, int cursor) throws Exception;
     JSONObject queue(String contentId) throws Exception;
+    default JSONObject queue(String contentId, boolean shuffle) throws Exception {
+        return queue(contentId);
+    }
     JSONObject play(String contentId, boolean resume) throws Exception;
     /** GET /api/v1/content/query/search?text=&take=. text is already cut and cleaned (BrowseTree.searchText). */
     JSONObject search(String text, int take) throws Exception;

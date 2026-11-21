@@ -8,6 +8,7 @@ import android.net.NetworkCapabilities;
 
 import net.kckern.daylight.api.PayloadPort;
 import net.kckern.daylight.api.PayloadState;
+import net.kckern.daylight.cap.quickinput.shell.CaptureScope;
 import net.kckern.daylight.core.Capability;
 import net.kckern.daylight.core.CoreContext;
 import net.kckern.daylight.core.LinkEffect;
@@ -28,6 +29,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.LongSupplier;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 /**
  * Quick inputs: a recording, typed text or a photo, captured on the phone and sent to
@@ -74,6 +77,13 @@ public final class QuickInputCapability implements Capability {
         void record(String dest, String label);
         void text(String dest, String label);
         void photo(String dest, String label);
+        default void launch(Destinations.Kind kind, String dest, String label, String owner) {
+            switch (kind) {
+                case TEXT: text(dest, label); break;
+                case PHOTO: photo(dest, label); break;
+                default: record(dest, label); break;
+            }
+        }
     }
 
     /**
@@ -90,6 +100,7 @@ public final class QuickInputCapability implements Capability {
 
     private CoreContext core;
     private Backend backend;
+    private final Supplier<String> captureOwner = () -> InputUploader.currentScope(backend);
     private Http http;
     private File stateDir;
     private File inbox;
@@ -108,19 +119,48 @@ public final class QuickInputCapability implements Capability {
     /** Where the text and photo screens leave what they captured. */
     File inputsInbox;
     private String lastAnnounced = "";
+    private final java.util.Set<String> canceledCaptures = new java.util.HashSet<>();
     private int cutOffAnnounced;
     private File cutOffDir;
     Recovery recovery;
     private long discardArmedAtMs;
+    private String discardArmedOwner;
     private Object networkCallback;
 
+    private static final String STATUS_ACTIVITY = "net.kckern.daylight.cap.quickinput.shell.CaptureStatusActivity";
     private final PayloadPort port = PayloadPort.named(PORT);
     private final PayloadPort.Handler onCall = request -> {
-        String op;
-        try { op = new JSONObject(request).optString("op", ""); }
-        catch (Exception notJson) { op = ""; }
-        if (!"recorded".equals(op)) return Replies.err("bad_request").toString();
-        return Replies.ok().put("waiting", recorded()).toString();
+        JSONObject body;
+        try { body = new JSONObject(request); }
+        catch (org.json.JSONException invalid) { return Replies.err("bad_request").toString(); }
+        String op = body.optString("op");
+        if ("recorded".equals(op)) return Replies.ok().put("waiting", recorded()).toString();
+        String owner = captureOwner.get();
+        if (!"status".equals(op) && !"retry".equals(op) && !"replace".equals(op)
+                && !"view".equals(op) && !"health".equals(op)) return Replies.err("bad_request").toString();
+        if (owner == null || !owner.equals(body.optString("owner"))) return Replies.err("account_unavailable").toString();
+        InputQueue q = requireQueue();
+        switch (op) {
+            case "status":
+                return captureStatus(q, owner).toString();
+            case "retry":
+                return retryCapture(q, owner, body.optString("id")).toString();
+            case "replace":
+                return replaceCapture(q, owner, body.optString("id")).toString();
+            case "view": {
+                JSONObject row = captureRow(q, owner, body.optString("id"));
+                String date = row == null ? "" : row.optString("entryDate");
+                String logId = row == null ? "" : row.optString("entryId");
+                if (!date.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}") || !logId.matches("[0-9a-f-]{36}")) {
+                    return Replies.err("capture_unavailable").toString();
+                }
+                return openHealth("/health?date=" + date + "&mealLog=" + logId).toString();
+            }
+            case "health":
+                return openHealth("/health?capture=status").toString();
+            default:
+                return Replies.err("bad_request").toString();
+        }
     };
 
     public QuickInputCapability() { }
@@ -152,6 +192,18 @@ public final class QuickInputCapability implements Capability {
         // daylight://input/<voice|text|photo>?to=<destination id>, input/queue, input/discard.
         core.services().provide(LinkHandler.class, new KeyedOnly("input") {
             @Override public JSONObject handle(String arg, Map<String, String> query) throws Exception {
+                if ("status".equals(arg)) {
+                    String owner = captureOwner.get();
+                    String stated = query == null ? null : query.get("owner");
+                    String id = query == null ? null : query.get("id");
+                    String action = query == null ? null : query.get("do");
+                    if (stated != null && !stated.equals(owner)) return LinkEffect.toast("This capture belongs to another account");
+                    if (action != null && stated != null && id != null) {
+                        if ("retry".equals(action)) retryCapture(requireQueue(), owner, id);
+                        if ("replace".equals(action)) return replaceCapture(requireQueue(), owner, id);
+                    }
+                    return openCaptureStatus(id, owner);
+                }
                 if ("queue".equals(arg)) return tryAgain();
                 if ("discard".equals(arg)) return discard();
                 Destinations.Kind kind = Destinations.Kind.of(arg);
@@ -176,7 +228,7 @@ public final class QuickInputCapability implements Capability {
             InputQueue q = queueOrNull();
             JSONObject body = q == null
                     ? Replies.ok().put("waiting", 0).put("parked", 0).put("uploaded", 0).put("lost", 0).put("inputs", new JSONArray())
-                    : q.describe();
+                    : q.describe(captureOwner.get(), false);
             JSONArray refused;
             synchronized (notAllowed) { refused = new JSONArray(notAllowed); }
             return Router.Response.json(200, body.put("blocked", blocked).put("notAllowed", refused)
@@ -184,7 +236,21 @@ public final class QuickInputCapability implements Capability {
                     .put("destinations", describeDestinations())
                     .put("problems", new JSONArray(problems())));
         });
+        core.router().route("GET", "/input/status", req -> {
+            InputQueue q = queueOrNull();
+            String owner = captureOwner.get();
+            JSONObject view = q == null || owner == null ? Replies.ok().put("inputs", new JSONArray())
+                    : captureStatus(q, owner);
+            return Router.Response.json(200, view);
+        });
         core.router().route("POST", "/input/recorded", req -> Router.Response.json(200, Replies.ok().put("waiting", recorded())));
+        core.router().route("POST", "/input/status/retry", req -> {
+            String owner = captureOwner.get();
+            String id = req.query.get("id");
+            JSONObject result = owner != null && id != null && InputInbox.ID.matcher(id).matches()
+                    ? retryCapture(requireQueue(), owner, id) : Replies.err("capture_unavailable");
+            return Router.Response.json(result.optBoolean("ok") ? 200 : 409, result);
+        });
         core.router().route("POST", "/input/retry", req -> {
             InputQueue q = requireQueue();
             q.retryAll(clock.getAsLong());
@@ -207,6 +273,7 @@ public final class QuickInputCapability implements Capability {
         t.start();
         watchNetwork();
         port.attach(onCall);
+        try { CaptureScope.attach(captureOwner); } catch (LinkageError olderShell) { }
     }
 
     /**
@@ -214,6 +281,7 @@ public final class QuickInputCapability implements Capability {
      * minutes. It finishes by itself and then touches nothing (UploadPump.stop).
      */
     @Override public void stop() {
+        try { CaptureScope.detach(captureOwner); } catch (LinkageError olderShell) { }
         port.detach(onCall);
         UploadPump p = pump;
         if (p != null) p.stop();
@@ -254,7 +322,7 @@ public final class QuickInputCapability implements Capability {
         // The queue of the build before destinations: the same entries, read as voice memos for the journal.
         if (!state.exists() && before.isFile() && !before.renameTo(state)) state = before;
         InputQueue q = new InputQueue(state);
-        pump = new UploadPump(q, new InputUploader(backend, http, () -> destinations(null)), link);
+        pump = new UploadPump(q, new InputUploader(backend, http, () -> destinations(null)), link, this::canClaim);
         queue = q;
         return q;
     }
@@ -265,12 +333,21 @@ public final class QuickInputCapability implements Capability {
         return q;
     }
 
+    private boolean canClaim(InputQueue.Entry entry) {
+        return InputUploader.allowsFile(new File(entry.file), captureOwner.get());
+    }
+
     File inbox() { queueOrNull(); return inbox; }
 
     /** Both inboxes: the recorder's, and the one the text and photo screens write to. */
     private void scan(InputQueue q) {
         InputInbox.scan(inbox, q);
         InputInbox.scan(inputsInbox, q);
+        String owner = captureOwner.get();
+        if (owner != null) {
+            InputInbox.scan(CaptureScope.inbox(inbox, owner), q);
+            InputInbox.scan(CaptureScope.inbox(inputsInbox, owner), q);
+        }
     }
 
     /** A capture finished a file: queue it and send it now. */
@@ -297,12 +374,11 @@ public final class QuickInputCapability implements Capability {
             core.shell().note("INPUT", "the daily allowance for " + limit.getKey() + " is used up; nothing is sent to it for "
                     + ((limit.getValue() - now) / 60_000) + " min");
         }
-        for (int i = 0; i < pass.uploadedIds.size(); i++) {
-            core.shell().note("INPUT", "uploaded " + pass.uploadedIds.get(i) + " " + pass.sizes.get(i) + " bytes");
-        }
+        if (pass.uploaded > 0) core.shell().note("INPUT", pass.uploaded + " capture(s) accepted");
         if (pass.parked > 0) core.shell().note("INPUT", "parked " + pass.parked + ", " + q.parked() + " in all");
         if (pass.lost > 0) core.shell().note("INPUT", pass.lost + " input(s) were gone before they could be sent");
         announce(q);
+        announceCaptures(q);
     }
 
     /**
@@ -345,7 +421,7 @@ public final class QuickInputCapability implements Capability {
         InputQueue q = queue;
         // With no identity nothing can be sent however often it is tried.
         if (q == null || !blocked.isEmpty()) return -1;
-        return q.nextAttemptAtMs();
+        return q.nextAttemptAtMs(this::canClaim);
     }
 
     private void run() {
@@ -401,6 +477,58 @@ public final class QuickInputCapability implements Capability {
         }
     }
 
+    private synchronized void announceCaptures(InputQueue q) {
+        LocalNotices notices = core.services().find(LocalNotices.class);
+        if (notices == null) return;
+        String owner = captureOwner.get();
+        long now = clock.getAsLong();
+        try {
+            for (Map.Entry<String, JSONArray> entry : q.otherCaptureStatuses(owner, now).entrySet()) {
+                JSONArray rows = entry.getValue();
+                for (int i = 0; i < rows.length(); i++) {
+                    String id = QueueNotice.captureId(entry.getKey(), rows.getJSONObject(i).getString("id"));
+                    if (!canceledCaptures.contains(id)) {
+                        notices.cancel(id);
+                        canceledCaptures.add(id);
+                    }
+                }
+            }
+            if (owner == null) return;
+            JSONArray rows = captureStatus(q, owner).optJSONArray("inputs");
+            if (rows == null) return;
+            for (int i = 0; i < rows.length(); i++) {
+                if (!owner.equals(captureOwner.get())) return;
+                JSONObject row = rows.getJSONObject(i);
+                String inputId = row.getString("id");
+                String id = QueueNotice.captureId(owner, inputId);
+                String state = row.getString("state");
+                String previous = q.captureNoticeState(id);
+                if (state.equals(previous)) continue;
+                String action = row.getString("action");
+                String link = QueueNotice.captureLink(owner, inputId, "");
+                String actionLink = "";
+                if ("Retry".equals(action)) actionLink = QueueNotice.captureLink(owner, inputId, "&do=retry");
+                if ("Replace capture".equals(action)) actionLink = QueueNotice.captureLink(owner, inputId, "&do=replace");
+                // Record first so an interruption after post cannot replay a historical alert.
+                if (!q.rememberCaptureNotice(id, state)) return;
+                try {
+                    if (!owner.equals(captureOwner.get())) {
+                        q.rememberCaptureNotice(id, previous);
+                        return;
+                    }
+                    notices.post(id, LocalNotices.UPLOADS, row.getString("destination"), row.getString("message"), link,
+                            actionLink.isEmpty() ? "" : action, actionLink);
+                    canceledCaptures.remove(id);
+                } catch (RuntimeException unavailable) {
+                    q.rememberCaptureNotice(id, previous);
+                    throw unavailable;
+                }
+            }
+        } catch (Exception unavailable) {
+            core.shell().note("INPUT", "could not show a capture notice");
+        }
+    }
+
     /** Counts by destination id, as counts by the destination's label. */
     private static java.util.Map<String, Integer> labelled(java.util.Map<String, Integer> byDest, Destinations dests) {
         java.util.Map<String, Integer> out = new java.util.LinkedHashMap<>();
@@ -435,19 +563,21 @@ public final class QuickInputCapability implements Capability {
      * can name a route.
      */
     private JSONObject startInput(Destinations.Kind kind, String to) throws Exception {
+        return startInput(kind, to, captureOwner.get());
+    }
+
+    private JSONObject startInput(Destinations.Kind kind, String to, String owner) throws Exception {
+        if (!java.util.Objects.equals(owner, captureOwner.get())) return LinkEffect.toast("The capture belongs to another account");
         Destinations.Destination dest = Destinations.ID.matcher(to).matches() ? destinations(null).find(to) : null;
         if (dest == null || dest.kind != kind) throw new IllegalArgumentException("no destination of that name takes this kind");
         // An input that could never be sent is not captured in the first place.
         String why = InputUploader.blocked(backend);
         if (why != null) return LinkEffect.toast(NOT_SET_UP + why);
+        if (!backend.configured()) return LinkEffect.toast(NOT_SET_UP + InputUploader.SITE_NOT_SET);
         Screens s = screens();
         if (s == null) return LinkEffect.toast("Not available on this device");
         try {
-            switch (kind) {
-                case TEXT: s.text(dest.id, dest.label); break;
-                case PHOTO: s.photo(dest.id, dest.label); break;
-                default: s.record(dest.id, dest.label); break;
-            }
+            s.launch(kind, dest.id, dest.label, owner);
         } catch (RuntimeException noSuchScreen) {
             // An installed app from before this screen existed.
             core.shell().note("INPUT", kind.word + " screen could not be opened: " + noSuchScreen.getClass().getSimpleName());
@@ -457,10 +587,77 @@ public final class QuickInputCapability implements Capability {
         return LinkEffect.none();
     }
 
+    private JSONObject captureStatus(InputQueue q, String owner) throws Exception {
+        if (!owner.equals(captureOwner.get())) return Replies.err("account_unavailable");
+        scan(q);
+        JSONArray rows = q.captureStatus(owner, clock.getAsLong());
+        JSONArray display = new JSONArray();
+        Destinations configured = destinations(null);
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = new JSONObject(rows.getJSONObject(i).toString());
+            String state = row.getString("state");
+            row.put("destination", configured.label(row.getString("dest")));
+            row.put("message", QueueNotice.captureMessage(state));
+            row.put("action", "DELIVERED".equals(state) && row.has("entryDate")
+                    ? "View in Health" : QueueNotice.captureAction(state));
+            display.put(row);
+        }
+        if (!owner.equals(captureOwner.get())) return Replies.err("account_unavailable");
+        return Replies.ok().put("inputs", display);
+    }
+
+    private JSONObject captureRow(InputQueue q, String owner, String id) throws Exception {
+        if (!InputInbox.ID.matcher(id).matches()) return null;
+        JSONArray rows = captureStatus(q, owner).optJSONArray("inputs");
+        if (rows == null) return null;
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.getJSONObject(i);
+            if (id.equals(row.getString("id"))) return row;
+        }
+        return null;
+    }
+
+    private JSONObject replaceCapture(InputQueue q, String owner, String id) throws Exception {
+        JSONObject row = captureRow(q, owner, id);
+        if (row == null || !"Replace capture".equals(row.optString("action"))) {
+            return LinkEffect.toast("This capture is unavailable");
+        }
+        return startInput(Destinations.Kind.of(row.getString("kind")), row.getString("dest"), owner);
+    }
+
+    private JSONObject retryCapture(InputQueue q, String owner, String id) {
+        if (!owner.equals(captureOwner.get()) || !q.retryCapture(id, owner, clock.getAsLong())) {
+            return Replies.err("capture_unavailable");
+        }
+        wake();
+        return Replies.ok();
+    }
+
+    private JSONObject openCaptureStatus(String focus, String owner) throws Exception {
+        Object context = core.shell().context();
+        if (context == null) return LinkEffect.toast("Capture status is unavailable on this device");
+        Context c = (Context) context;
+        Intent intent = new Intent().setClassName(c, STATUS_ACTIVITY).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        if (focus != null && InputInbox.ID.matcher(focus).matches()) intent.putExtra("capture-id", focus);
+        if (owner != null) intent.putExtra(CaptureScope.EXTRA, owner);
+        c.startActivity(intent);
+        return LinkEffect.none();
+    }
+
+    private JSONObject openHealth(String path) throws Exception {
+        for (LinkHandler handler : core.services().all(LinkHandler.class)) {
+            if ("open".equals(handler.kind())) {
+                return handler.handle("", java.util.Collections.singletonMap("path", path), true);
+            }
+        }
+        return LinkEffect.toast("Health status is unavailable");
+    }
+
     private JSONObject tryAgain() throws Exception {
         InputQueue q = queueOrNull();
         if (q == null) return LinkEffect.toast("Not available on this device");
-        int kept = q.waiting() + q.parked();
+        int kept = q.waitingByDest().values().stream().mapToInt(Integer::intValue).sum()
+                + q.parkedByDest().values().stream().mapToInt(Integer::intValue).sum();
         if (kept == 0) return LinkEffect.toast("No inputs are waiting");
         String why = InputUploader.blocked(backend);
         if (why != null) return LinkEffect.toast(NOT_SET_UP + why);
@@ -487,18 +684,22 @@ public final class QuickInputCapability implements Capability {
     private synchronized JSONObject discard() throws Exception {
         InputQueue q = queueOrNull();
         if (q == null) return LinkEffect.toast("Not available on this device");
-        int parked = q.parked();
+        String owner = captureOwner.get();
+        Predicate<InputQueue.Entry> allowed = entry -> InputQueue.owner(entry) == null;
+        int parked = q.parked(allowed);
         if (parked == 0) {
             discardArmedAtMs = 0;
             return LinkEffect.toast("No inputs to discard");
         }
         long now = clock.getAsLong();
-        if (discardArmedAtMs == 0 || now - discardArmedAtMs > DISCARD_CONFIRM_MS || now < discardArmedAtMs) {
+        if (!java.util.Objects.equals(discardArmedOwner, owner) || discardArmedAtMs == 0
+                || now - discardArmedAtMs > DISCARD_CONFIRM_MS || now < discardArmedAtMs) {
             discardArmedAtMs = now;
+            discardArmedOwner = owner;
             return LinkEffect.toast("Tap Discard again to delete " + QueueNotice.inputs(parked) + " that could not be sent. This cannot be undone.");
         }
         discardArmedAtMs = 0;
-        List<String> files = q.discardParked();
+        List<String> files = q.discardParked(allowed);
         for (String path : files) new File(path).delete();
         core.shell().note("INPUT", "discarded " + files.size() + " parked input(s) at the owner's request");
         announce(q);
@@ -511,18 +712,22 @@ public final class QuickInputCapability implements Capability {
             if (context == null) return null;
             final Context c = (Context) context;
             screens = new Screens() {
-                @Override public void record(String dest, String label) { open(RECORD_ACTIVITY, dest, label); }
-                @Override public void text(String dest, String label) { open(TEXT_ACTIVITY, dest, label); }
-                @Override public void photo(String dest, String label) { open(PHOTO_ACTIVITY, dest, label); }
+                @Override public void record(String dest, String label) { launch(Destinations.Kind.VOICE, dest, label, captureOwner.get()); }
+                @Override public void text(String dest, String label) { launch(Destinations.Kind.TEXT, dest, label, captureOwner.get()); }
+                @Override public void photo(String dest, String label) { launch(Destinations.Kind.PHOTO, dest, label, captureOwner.get()); }
 
                 /**
                  * By name: a capture screen is installed code in this capability's shell half.
                  * None is exported, so only this app can start one. Started while the link
                  * activity is on screen, which is what lets a service context start one.
                  */
-                private void open(String activity, String dest, String label) {
-                    c.startActivity(new Intent().setClassName(c, activity).putExtra(EXTRA_DEST, dest).putExtra(EXTRA_LABEL, label)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                @Override public void launch(Destinations.Kind kind, String dest, String label, String owner) {
+                    String activity = kind == Destinations.Kind.TEXT ? TEXT_ACTIVITY
+                            : kind == Destinations.Kind.PHOTO ? PHOTO_ACTIVITY : RECORD_ACTIVITY;
+                    Intent request = new Intent().setClassName(c, activity).putExtra(EXTRA_DEST, dest)
+                            .putExtra(EXTRA_LABEL, label).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    if (owner != null) request.putExtra(CaptureScope.EXTRA, owner);
+                    c.startActivity(request);
                 }
             };
         }

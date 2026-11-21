@@ -45,6 +45,56 @@ describe('useCallController cancellation and budgets', () => {
     expect(result.current.state.value).toBe('probing');
   }
 
+  it('ends a late reservation without opening signaling after the caller cancels', async () => {
+    const reserve = deferred();
+    mocks.api.mockImplementation(path => path.endsWith('/end') ? Promise.resolve({ ok: true }) : reserve.promise);
+    const localPeer = peer();
+    const { result } = renderHook(() => useCallController({ peer: localPeer, mediaStatus: 'ready',
+      remoteVideoRef: { current: null } }));
+    await act(async () => result.current.start({ id: 'tv' }));
+    const resets = localPeer.reset.mock.calls.length;
+    act(() => result.current.end('user_cancelled'));
+    expect(localPeer.reset.mock.calls.length).toBeGreaterThan(resets);
+    await act(async () => reserve.resolve(reserveBody));
+    expect(mocks.api).toHaveBeenCalledWith('api/v1/homeline/calls/call-1/end',
+      { reason: 'user_cancelled' }, 'POST', expect.objectContaining({ keepalive: true }));
+    expect(result.current.state.value).toBe('ended');
+    expect(sessionStorage.getItem('homeline.activeCall')).toBeNull();
+  });
+
+  it('releases a failed negotiation once and lets the same TV take the next call', async () => {
+    const release = deferred();
+    let lease = null;
+    let reservations = 0;
+    mocks.api.mockImplementation(async path => {
+      if (path.endsWith('/end')) {
+        await release.promise;
+        lease = null;
+        return { ok: true };
+      }
+      if (lease) throw Object.assign(new Error('busy'), { status: 409 });
+      lease = `call-${++reservations}`;
+      return { ...reserveBody, callId: lease };
+    });
+    const localPeer = peer();
+    const { result } = renderHook(() => useCallController({ peer: localPeer, mediaStatus: 'ready',
+      remoteVideoRef: { current: null } }));
+    await startToProbe(result);
+    act(() => mocks.onSignalEvent({ type: 'tv-ready' }));
+    localPeer.reset.mockClear();
+    act(() => mocks.onSignalEvent({ type: 'error', error: new Error('offer failed') }));
+    expect(result.current.state).toMatchObject({ value: 'failed', error: 'offer failed' });
+    expect(localPeer.reset).toHaveBeenCalledOnce();
+    expect(sessionStorage.getItem('homeline.activeCall')).toBeNull();
+    act(() => result.current.end('left_call'));
+    act(() => result.current.dismiss());
+    await act(async () => result.current.start({ id: 'tv' }));
+    expect(result.current.state.value).toBe('reserving');
+    expect(mocks.api.mock.calls.filter(([path]) => path.endsWith('/end'))).toHaveLength(1);
+    await act(async () => release.resolve());
+    expect(result.current.state).toMatchObject({ value: 'probing', callId: 'call-2' });
+  });
+
   it('cancels during probe without starting a wake', async () => {
     mocks.api.mockImplementation(async path => path.endsWith('/end') ? { ok: true } : reserveBody);
     const localPeer = peer();
@@ -285,7 +335,7 @@ describe('useCallController cancellation and budgets', () => {
     act(() => mocks.onSignalEvent({ type: 'tv-ready' }));
     await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
     act(() => result.current.end('user_cancelled')); await flush();
-    expect(mocks.api).toHaveBeenCalledWith('api/v1/homeline/calls/call-1/end', { reason: 'user_cancelled' }, 'POST');
+    expect(mocks.api).toHaveBeenCalledWith('api/v1/homeline/calls/call-1/end', { reason: 'user_cancelled' }, 'POST', expect.objectContaining({ keepalive: true }));
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
     expect(result.current.state.value).toBe('ended');
     expect(mocks.api.mock.calls.some(([path]) => path.endsWith('/recover'))).toBe(false);

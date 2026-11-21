@@ -27,4 +27,10 @@ public class CameraAskTest {
         assertFalse(CameraAsk.granted(null, null));
         assertFalse("a dialog that was dismissed answers with nothing", CameraAsk.granted(new String[0], new int[0]));
     }
+    @Test public void aColdPermissionReplyClearsWaitingAndRequiresAnAuthorizedRetry() {
+        assertEquals(CameraAsk.Reply.RETRY, CameraAsk.afterReply(true, true, false));
+        assertEquals(CameraAsk.Reply.OPEN, CameraAsk.afterReply(true, true, true));
+        assertEquals(CameraAsk.Reply.DENIED, CameraAsk.afterReply(true, false, false));
+        assertEquals(CameraAsk.Reply.IGNORE, CameraAsk.afterReply(false, true, true));
+    }
 }

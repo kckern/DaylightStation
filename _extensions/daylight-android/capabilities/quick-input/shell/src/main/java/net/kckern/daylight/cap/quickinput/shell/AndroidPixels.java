@@ -7,14 +7,15 @@ import android.media.ExifInterface;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
 
 /**
  * The pixel work of a photo: decode, turn upright, scale, write as JPEG. Every decision
  * (the size, the turn, the quality) is PhotoPlan's. Not covered by JVM tests: it needs
  * Android's decoder.
  *
- * Bitmap.compress writes the picture and no EXIF, so the written file holds nothing of
- * where or when the photo was taken. PhotoPlan checks that afterwards.
+ * Some Android encoders add EXIF or XMP while compressing. Remove those generated
+ * headers before handing the result to PhotoPlan's independent privacy check.
  */
 final class AndroidPixels implements PhotoPlan.Pixels {
     @Override public boolean encode(File raw, File out, PhotoPlan.Step step) throws Exception {
@@ -23,7 +24,8 @@ final class AndroidPixels implements PhotoPlan.Pixels {
         BitmapFactory.decodeFile(raw.getPath(), bounds);
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return false;
         // Read before the camera's file is gone: the orientation is the one thing of its EXIF that is used.
-        int orientation = new ExifInterface(raw.getPath()).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+        int orientation = PhotoPlan.readOrientation(() -> new ExifInterface(raw.getPath())
+                .getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL));
         PhotoPlan.Turn turn = PhotoPlan.turn(orientation);
 
         BitmapFactory.Options options = new BitmapFactory.Options();
@@ -45,9 +47,18 @@ final class AndroidPixels implements PhotoPlan.Pixels {
             if (turn.degrees != 0) m.postRotate(turn.degrees);
             if (turn.mirror) m.postScale(-1, 1);
             upright = Bitmap.createBitmap(decoded, 0, 0, decoded.getWidth(), decoded.getHeight(), m, true);
-            try (FileOutputStream stream = new FileOutputStream(out)) {
-                if (!upright.compress(Bitmap.CompressFormat.JPEG, step.quality, stream)) return false;
-                stream.getFD().sync();
+            File encoded = File.createTempFile("encoder-", ".tmp", out.getParentFile());
+            try {
+                try (FileOutputStream stream = new FileOutputStream(encoded)) {
+                    if (!upright.compress(Bitmap.CompressFormat.JPEG, step.quality, stream)) {
+                        throw new PhotoPlan.WriteFailure();
+                    }
+                }
+                JpegCheck.stripPrivateHeaders(encoded, out);
+            } catch (IOException failed) {
+                throw new PhotoPlan.WriteFailure();
+            } finally {
+                encoded.delete();
             }
             return true;
         } finally {

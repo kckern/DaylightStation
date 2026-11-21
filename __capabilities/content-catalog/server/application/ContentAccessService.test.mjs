@@ -31,6 +31,26 @@ describe('ContentAccessService', () => {
     expect(queueService.resolveQueue).toHaveBeenCalledWith({ items: ['raw'], audio: { mode: 'stereo' } }, 'query', { shuffle: true });
   });
 
+  it('projects mixed lists to native audio and declared audio renditions', async () => {
+    const audio = { id: 'files:a', mediaType: 'audio', mediaUrl: '/audio' };
+    const video = { id: 'files:v', mediaType: 'video', mediaUrl: '/video',
+      metadata: { audioRendition: { mediaUrl: '/video?stream=audio', format: 'mp3' } } };
+    const image = { id: 'files:p', mediaType: 'image', mediaUrl: '/image' };
+    const silent = { id: 'files:s', mediaType: 'video', mediaUrl: '/silent' };
+    const service = new ContentAccessService({
+      contentIdResolver: { resolve: () => ({ source: 'list', localId: 'menu:mixed' }) },
+      contentCatalog: { getItem: vi.fn(), resolvePlayables: async () => [audio, video, image, silent] },
+      queueService: { resolveQueue: async items => items },
+    });
+    const args = { compoundId: 'menu:mixed' };
+    const projected = await service.queue({ ...args, profile: 'audio-only' });
+    expect(projected.items).toEqual([audio, {
+      ...video, mediaType: 'audio', mediaUrl: '/video?stream=audio', resumable: false, resumePosition: null,
+      metadata: { ...video.metadata, contentFormat: 'mp3' },
+    }]);
+    expect((await service.queue(args)).items).toEqual([audio, video, image, silent]);
+  });
+
   describe('station sequences', () => {
     const track = (id) => ({ id, source: 'plex' });
     const ids = (items) => items.map((it) => it.id);

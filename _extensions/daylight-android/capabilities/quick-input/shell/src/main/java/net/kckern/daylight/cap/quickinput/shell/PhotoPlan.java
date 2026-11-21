@@ -1,6 +1,7 @@
 package net.kckern.daylight.cap.quickinput.shell;
 
 import java.io.File;
+import java.io.IOException;
 
 /**
  * What becomes of a photo the camera took. Pure: the pixel work stands behind Pixels.
@@ -9,8 +10,8 @@ import java.io.File;
  * so its long edge is at most 2048 pixels and written again as a JPEG at quality 85.
  * Writing it again is what removes its EXIF: where it was taken, the phone that took it
  * and when. A photo's position must never leave the phone, so the written file is
- * checked for metadata (JpegCheck) and refused if any is found, and the camera's own
- * file is deleted whatever happens.
+ * checked for metadata (JpegCheck) and refused if any is found. The camera output
+ * remains private until the draft store has committed a clean JPEG.
  *
  * The intake takes 15,728,640 bytes. A file over that is written again smaller, down a
  * short ladder; the last step fits whatever the picture is.
@@ -50,6 +51,24 @@ final class PhotoPlan {
         boolean encode(File raw, File out, Step step) throws Exception;
     }
 
+    enum Preparation {
+        READY(""),
+        UNREADABLE("The camera output could not be decoded. Retake the photo."),
+        OUTPUT_WRITE("Could not write the prepared photo. Try again."),
+        TOO_LARGE("The photo is still too large after resizing. Retake it."),
+        PRIVACY_CHECK("The JPEG did not pass the format and privacy check. Retake the photo."),
+        NOT_ENOUGH_MEMORY("There was not enough memory to prepare the photo. Try again."),
+        PROCESSING_FAILED("Photo processing failed. Try again or retake it."),
+        DRAFT_STORAGE("Could not save the prepared photo in the draft. Try again.");
+
+        final String message;
+        Preparation(String message) { this.message = message; }
+    }
+
+    interface OrientationReader { int read() throws IOException; }
+
+    static final class WriteFailure extends IOException { }
+
     private PhotoPlan() { }
 
     /** Whether the camera left a photo: it said so, and wrote something. A cancelled capture is nothing, whatever was written. */
@@ -86,31 +105,38 @@ final class PhotoPlan {
         }
     }
 
-    /**
-     * Turns the camera's file into the file that is queued. The camera's file is
-     * deleted whatever happens; on failure nothing is left of the output either.
-     *
-     * @param raw what the camera wrote
-     * @param out where the photo to send is written (a .part file; the caller renames it)
-     * @return true when out is a JPEG within the intake's limit with no metadata in it
-     */
-    static boolean process(File raw, File out, Pixels pixels) {
-        boolean ok = false;
+    /** Orientation is optional. A broken tag does not make the image pixels unreadable. */
+    static int readOrientation(OrientationReader reader) {
+        try {
+            return reader.read();
+        } catch (IOException | RuntimeException unreadableTag) {
+            return 1;
+        }
+    }
+
+    /** Prepare a privacy-checked JPEG. The confirmed source stays private on failure. */
+    static Preparation prepare(File raw, File out, Pixels pixels) {
+        Preparation result = prepareOutput(raw, out, pixels);
+        if (result != Preparation.READY) out.delete();
+        return result;
+    }
+
+    private static Preparation prepareOutput(File raw, File out, Pixels pixels) {
         try {
             for (Step step : STEPS) {
-                if (!pixels.encode(raw, out, step)) break;          // not a picture: no size will change that
+                if (!pixels.encode(raw, out, step)) return Preparation.UNREADABLE;
                 long bytes = out.length();
-                if (bytes <= 0) break;
-                if (bytes > MAX_BYTES) continue;                    // too large: the next step is smaller
-                ok = JpegCheck.clean(out);
-                break;
+                if (bytes <= 0) return Preparation.OUTPUT_WRITE;
+                if (bytes > MAX_BYTES) continue;
+                return JpegCheck.clean(out) ? Preparation.READY : Preparation.PRIVACY_CHECK;
             }
-        } catch (Exception | OutOfMemoryError failed) {
-            ok = false;
-        } finally {
-            raw.delete();
-            if (!ok) out.delete();
+            return Preparation.TOO_LARGE;
+        } catch (WriteFailure failed) {
+            return Preparation.OUTPUT_WRITE;
+        } catch (OutOfMemoryError failed) {
+            return Preparation.NOT_ENOUGH_MEMORY;
+        } catch (Exception failed) {
+            return Preparation.PROCESSING_FAILED;
         }
-        return ok;
     }
 }

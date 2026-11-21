@@ -51,6 +51,7 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice, option
     let localStream = null;
     let fpsTimer = null;
     let cancelled = false;
+    let pendingIndependent = [];
 
     // Find the starting tier that matches the configured resolution (or default 720p)
     const startTierIdx = videoResolution?.width
@@ -78,6 +79,7 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice, option
           logger().info('stream-attempt', { tier: tier.label, w: tier.w, h: tier.h });
 
           const s = await navigator.mediaDevices.getUserMedia(constraints);
+          if (cancelled) { s.getTracks().forEach(track => track.stop()); return null; }
           tierIdxRef.current = i;
 
           const videoTrack = s.getVideoTracks()[0];
@@ -113,6 +115,7 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice, option
         }
       }
 
+      if (cancelled) return null;
       // All tiers exhausted — bare minimum fallback (no resolution constraint)
       logger().warn('stream-fallback-bare');
       try {
@@ -121,6 +124,7 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice, option
           audio,
         });
         const fbTracks = s.getTracks();
+        if (cancelled) { fbTracks.forEach(track => track.stop()); return null; }
         logger().info('stream-acquired-fallback', {
           tracks: fbTracks.map(t => ({ kind: t.kind, label: t.label, enabled: t.enabled,
             muted: t.muted, readyState: t.readyState })),
@@ -134,7 +138,8 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice, option
       // A failed microphone must not discard a usable camera (and vice versa).
       // This is intentionally the final fallback so the preferred combined
       // capture path and its resolution tiers remain unchanged.
-      const independentTracks = [];
+      if (cancelled) return null;
+      const independentTracks = pendingIndependent;
       if (audio !== false) {
         try {
           const audioOnly = await navigator.mediaDevices.getUserMedia({ audio, video: false });
@@ -143,6 +148,7 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice, option
           logger().warn('stream-audio-independent-failed', { error: audioErr.name || audioErr.message });
         }
       }
+      if (cancelled) { independentTracks.forEach(track => track.stop()); return null; }
       try {
         const videoOnly = await navigator.mediaDevices.getUserMedia({
           audio: false,
@@ -152,6 +158,8 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice, option
       } catch (videoErr) {
         logger().warn('stream-video-independent-failed', { error: videoErr.name || videoErr.message });
       }
+      if (cancelled) { independentTracks.forEach(track => track.stop()); return null; }
+      pendingIndependent = [];
       if (independentTracks.length) {
         logger().info('stream-acquired-independent', {
           audio: independentTracks.filter(track => track.kind === 'audio').length,
@@ -216,7 +224,8 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice, option
           clearInterval(fpsTimer);
           // Re-acquire at lower tier
           acquireStream(nextIdx).then(newStream => {
-            if (cancelled || !newStream) return;
+            if (!newStream) return;
+            if (cancelled) { newStream.getTracks().forEach(track => track.stop()); return; }
             localStream = newStream;
             streamRef.current = newStream;
             setStream(newStream);
@@ -231,8 +240,12 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice, option
 
     const init = async () => {
       localStream = await acquireStream(tierIdxRef.current);
-      if (cancelled || !localStream) {
-        if (!cancelled) setError(new Error('No camera available'));
+      if (cancelled) {
+        localStream?.getTracks().forEach(track => track.stop());
+        return;
+      }
+      if (!localStream) {
+        setError(new Error('No camera available'));
         return;
       }
 
@@ -257,6 +270,7 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice, option
     return () => {
       cancelled = true;
       if (fpsTimer) clearInterval(fpsTimer);
+      pendingIndependent.splice(0).forEach(track => track.stop());
       if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
       }

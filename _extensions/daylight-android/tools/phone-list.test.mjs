@@ -28,12 +28,15 @@ test('the phone is a personal build that lists quick-input and car-actions', () 
     'media-service', 'android-auto', 'quick-input', 'car-actions']);
 });
 
-test('the phone asks for exactly these twelve permissions', () => {
+test('the phone asks for exactly these fifteen permissions', () => {
   const names = new Set([...BASE.map((p) => `android.permission.${p}`), ...permissionsFor(phone, capabilities).map((p) => p.name),
     ...(phone.permissions || [])]);
   assert.deepEqual([...names].sort(), [
     'android.permission.ACCESS_NETWORK_STATE',
     'android.permission.ACCESS_WIFI_STATE',
+    'android.permission.BLUETOOTH',
+    'android.permission.BLUETOOTH_CONNECT',
+    'android.permission.CAMERA',
     'android.permission.FOREGROUND_SERVICE',
     'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
     'android.permission.FOREGROUND_SERVICE_MICROPHONE',
@@ -47,9 +50,9 @@ test('the phone asks for exactly these twelve permissions', () => {
   ]);
 });
 
-test('a photo is taken by the system camera app, so the phone asks for no camera, storage or location permission', () => {
+test('a photo is taken by the system camera app, so the phone asks for no storage or location permission', () => {
   const names = permissionsFor(phone, capabilities).map((p) => p.name);
-  for (const p of ['CAMERA', 'READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE', 'READ_MEDIA_IMAGES', 'ACCESS_MEDIA_LOCATION',
+  for (const p of ['READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE', 'READ_MEDIA_IMAGES', 'ACCESS_MEDIA_LOCATION',
     'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION']) {
     assert.equal(names.includes(`android.permission.${p}`), false, p);
   }
@@ -57,7 +60,7 @@ test('a photo is taken by the system camera app, so the phone asks for no camera
     'android.permission.FOREGROUND_SERVICE_MICROPHONE', 'android.permission.ACCESS_NETWORK_STATE']);
 });
 
-test('another app can reach exactly these ten components of the phone build', () => {
+test('another app can reach exactly these eleven components of the phone build', () => {
   const exported = ['net.kckern.daylight.shell.BootReceiver', ...phone.capabilities.flatMap((name) => capabilities[name]?.exported || [])];
   assert.deepEqual(exported.sort(), [
     'net.kckern.daylight.cap.caractions.shell.CarHostGateService',
@@ -69,17 +72,22 @@ test('another app can reach exactly these ten components of the phone build', ()
     'net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile4',
     'net.kckern.daylight.cap.webviewhost.shell.KioskActivity',
     'net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity',
+    'net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity',
     'net.kckern.daylight.shell.BootReceiver',
   ]);
 });
 
-test('the one-action button added one exported component, its chooser, and no permission', () => {
-  assert.deepEqual(capabilities.widgets.exported, ['net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity']);
-  assert.deepEqual(capabilities.widgets.permissions, []);
+test('the widget chooser is exported and Freematics setup is private', () => {
+  assert.deepEqual(capabilities.widgets.exported, ['net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity', 'net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity']);
+  assert.deepEqual(capabilities.widgets.permissions, [
+    { name: 'android.permission.BLUETOOTH', maxSdkVersion: 30 },
+    'android.permission.BLUETOOTH_CONNECT',
+  ]);
   const own = Object.entries(EXPECTED_COMPONENTS).filter(([key]) => key.includes('.cap.widgets.'));
   assert.deepEqual(own.map(([key, row]) => `${key} exported=${row.exported} permission=${row.permission}`).sort(), [
     'activity net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity exported=true permission=null',
-    'receiver net.kckern.daylight.cap.widgets.shell.ActionWidgetProvider exported=false permission=null',
+    'activity net.kckern.daylight.cap.widgets.shell.FreematicsActivity exported=false permission=null',
+    'activity net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity exported=true permission=null',
     'receiver net.kckern.daylight.cap.widgets.shell.ButtonWidgetProvider exported=false permission=null',
   ]);
 });
@@ -88,6 +96,7 @@ test('nothing of quick-input is exported: a capture starts inside the app or not
   assert.equal(capabilities['quick-input'].exported, undefined);
   const own = Object.entries(EXPECTED_COMPONENTS).filter(([key]) => key.includes('.cap.quickinput.'));
   assert.deepEqual(own.map(([key]) => key).sort(), [
+    'activity net.kckern.daylight.cap.quickinput.shell.CaptureStatusActivity',
     'activity net.kckern.daylight.cap.quickinput.shell.PhotoCaptureActivity',
     'activity net.kckern.daylight.cap.quickinput.shell.RecordActivity',
     'activity net.kckern.daylight.cap.quickinput.shell.TextInputActivity',
@@ -100,7 +109,8 @@ test('nothing of quick-input is exported: a capture starts inside the app or not
   }
 });
 
-test('no page of the phone build is given the microphone or the camera', () => {
+test('the phone enables Call prompts and keeps general web capture off', () => {
+  assert.equal(phone.defaults['webview.callPermissions'], true);
   assert.equal(phone.defaults['webview.allowMic'], false);
   assert.equal(phone.defaults['webview.allowCamera'], false);
   assert.equal(phone.defaults['webview.showWhenLocked'], false);
@@ -113,8 +123,12 @@ test('Feed is gone from the phone: no bookmark, action, shortcut, tile or widget
   }
 });
 
-test('the memo button is called Journal and is a voice input for the journal', () => {
-  assert.equal(phone.defaults['actions.1'], 'journal|Journal|mic|input:voice:journal');
+test('phone input labels distinguish destination and input method', () => {
+  assert.equal(phone.defaults['actions.1'], 'journal|Journal voice|mic|input:voice:journal');
+  assert.equal(phone.defaults['actions.2'], 'meal|Meal voice|mic|input:voice:meal');
+  assert.equal(phone.defaults['actions.3'], 'meal-photo|Meal photo|camera|input:photo:meal-photo');
+  assert.equal(phone.defaults['actions.4'], 'journal-note|Journal text|note|input:text:journal-note');
+  assert.equal(phone.defaults['actions.5'], 'meal-note|Meal text|note|input:text:meal-note');
   assert.equal(Object.values(phone.defaults).some((v) => /New memo/.test(String(v))), false);
 });
 
@@ -167,4 +181,41 @@ test('playing with no window adds one service of media-service, not exported, an
   ]);
   assert.deepEqual(EXPECTED_COMPONENTS['service net.kckern.daylight.cap.mediaservice.shell.PlayActionService'].foregroundServiceType,
     ['mediaPlayback']);
+});
+
+test('the setup screen has direct destinations for Home and Lifelog', () => {
+  const entries = Object.entries(phone.defaults);
+  const byPrefix = (prefix) => entries.filter(([key]) => key.startsWith(prefix)).map(([, value]) => value);
+  const bookmarks = Object.fromEntries(byPrefix('bookmarks.').map(row => {
+    const [id, , , path] = row.split('|');
+    return [id, path];
+  }));
+  assert.deepEqual(bookmarks, {media: '/media', call: '/call', health: '/health', home: '/home', lifelog: '/life/log'});
+  const actions = Object.fromEntries(byPrefix('actions.').filter(row => row.includes('|')).map(row => {
+    const [id, , , target] = row.split('|');
+    return [id, target];
+  }));
+  for (const id of Object.keys(bookmarks)) assert.equal(actions[id], 'bookmark:' + id);
+  for (const [id, target] of Object.entries({
+    journal: 'input:voice:journal', 'journal-note': 'input:text:journal-note',
+    meal: 'input:voice:meal', 'meal-note': 'input:text:meal-note', 'meal-photo': 'input:photo:meal-photo',
+    'capture-status': 'input:status',
+  })) assert.equal(actions[id], target);
+});
+
+test('launcher setup reports callback confirmation and keeps installed shortcut IDs', () => {
+  const read = (...path) => readFileSync(join(root, 'capabilities', ...path), 'utf8');
+  const home = read('widgets/shell/src/main/java/net/kckern/daylight/cap/widgets/shell/PhoneHomeActivity.java');
+  const provider = read('widgets/shell/src/main/java/net/kckern/daylight/cap/widgets/shell/ButtonWidgetProvider.java');
+  const actions = read('one-tap-actions/payload/src/main/java/net/kckern/daylight/cap/onetap/AndroidSurfaces.java');
+  const plan = read('one-tap-actions/payload/src/main/java/net/kckern/daylight/cap/onetap/SurfacePlan.java');
+  assert.match(home, /"bookmark-" \+ id/);
+  assert.match(plan, /PIN_PREFIX = "pin-"/);
+  assert.match(actions, /info\(action, uri, SurfacePlan\.pinId\(action\)\), confirm/);
+  assert.match(home, /requestPinShortcut\(shortcut,.*getIntentSender\(\)/s);
+  assert.match(provider, /SHORTCUT_PIN_ACTION\.equals\(intent\.getAction\(\)\)/);
+  assert.match(home, /LauncherCaptureShortcut\.issue\(this, action\.optString\("id"\)\)/);
+  assert.match(home, /daylight:\/\/bookmark\//);
+  assert.match(home, /Confirm in Android/);
+  assert.match(home, /Placement unconfirmed/);
 });

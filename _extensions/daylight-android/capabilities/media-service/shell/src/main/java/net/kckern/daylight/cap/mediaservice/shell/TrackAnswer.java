@@ -23,8 +23,9 @@ final class TrackAnswer {
         /** An https URL, or null. */
         final String artUrl;
         final String listId;
+        final long durationMs;
 
-        Track(String id, String url, String title, String artist, String album, String artUrl, String listId) {
+        Track(String id, String url, String title, String artist, String album, String artUrl, String listId, long durationMs) {
             this.id = id;
             this.url = url;
             this.title = title;
@@ -32,6 +33,7 @@ final class TrackAnswer {
             this.album = album;
             this.artUrl = artUrl;
             this.listId = listId;
+            this.durationMs = durationMs;
         }
     }
 
@@ -61,7 +63,8 @@ final class TrackAnswer {
             if (id.isEmpty() || !(url.startsWith("https://") || url.startsWith("http://"))) continue;
             if (i == start) keptStart = out.size();
             out.add(new Track(id, url, t.optString("title", ""), t.optString("artist", ""), t.optString("album", ""),
-                    BrowseAnswer.https(t.optString("artUrl", "")), t.optString("listId", "")));
+                    BrowseAnswer.https(t.optString("artUrl", "")), t.optString("listId", ""),
+                    Math.max(0, t.optLong("durationMs", 0))));
         }
         if (out.isEmpty()) throw new BrowseAnswer.Failed("nothing to play");
         return new TrackAnswer(out, Math.max(0, keptStart), Math.max(0, o.optLong("startPositionMs", 0)),

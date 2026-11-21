@@ -3,8 +3,11 @@
 # one-tap-actions when the device lists it; without it the four-button widget has one
 # button that opens the app and a 1x1 button has nothing to choose.
 entry: net.kckern.daylight.cap.widgets.WidgetsCapability
-permissions: []
+permissions:
+  - { name: android.permission.BLUETOOTH, maxSdkVersion: 30 }
+  - android.permission.BLUETOOTH_CONNECT
 exported:
+  - net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity
   # The 1x1 button's chooser. The launcher starts it when a button is placed, and no
   # permission exists that only a launcher holds. It reads the widget id, lists the
   # actions and stores the choice; it runs nothing.

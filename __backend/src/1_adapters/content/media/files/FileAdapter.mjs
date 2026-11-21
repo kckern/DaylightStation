@@ -2,6 +2,7 @@
 import path from 'path';
 import crypto from 'crypto';
 import { parseFile } from 'music-metadata';
+import { resolveFileAudioSource } from './FileAudioRendition.mjs';
 import { ListableItem } from "../../../../../../__capabilities/content-catalog/server/items.mjs";
 import { PlayableItem } from "../../../../../../__capabilities/content-catalog/server/items.mjs";
 import { ItemSelectionService } from "../../../../../../__capabilities/content-catalog/server/domain/services/ItemSelectionService.mjs";
@@ -185,6 +186,16 @@ export class FileAdapter extends IContentSource {
       // File doesn't have ID3 tags or can't be parsed
       return {};
     }
+  }
+
+  async audioSource(item) {
+    if (item?.mediaType !== 'video') return null;
+    return resolveFileAudioSource(this.mediaBasePath, item.metadata?.filePath);
+  }
+
+  async audioRendition(item) {
+    if (!await this.audioSource(item)) return null;
+    return { mediaUrl: `${item.mediaUrl}?stream=audio`, format: 'mp3' };
   }
 
   /**

@@ -33,7 +33,7 @@ const inFlight = new Map();
  * The capture use cases report a refusal as a result with a code and do not
  * throw; a code this does not know is treated as a failure that may be retried.
  */
-function outcomeOf(routed) {
+function outcomeOf(routed, finalReceipt) {
   const result = routed?.result ?? routed ?? {};
   const code = result.code ?? routed?.code ?? null;
   if (code === 'AI_UNAVAILABLE' || code === 'VOICE_UNAVAILABLE') return { unavailable: true };
@@ -44,8 +44,8 @@ function outcomeOf(routed) {
     throw new Error(`Nutribot did not take the input: ${code || 'refused'}`);
   }
   const receiptDelivery = routed?.receiptDelivery;
-  if (receiptDelivery) {
-    return { acknowledgement: { receiptDelivery } };
+  if (receiptDelivery || finalReceipt) {
+    return { acknowledgement: { ...(receiptDelivery && { receiptDelivery }), ...(finalReceipt && { finalReceipt }) } };
   }
   return {};
 }
@@ -97,19 +97,27 @@ export function createNutribotQuickInputs({
     payload: { ...payload, ...captured(input) },
   });
 
+  // Chat receipt delivery does not prove the meal rows were persisted.
+  const finalReceiptOf = log => inputRouter.quickCaptureReceipt?.(log);
+  const process = (kind, send) => async input => {
+    const routed = await send(input);
+    const log = routed?.committed && inputRouter.findQuickCapture
+      ? await inputRouter.findQuickCapture(identity(input, kind)) : null;
+    return outcomeOf(routed, await finalReceiptOf(log));
+  };
   const handlers = {
     voice: {
-      process: async (input) => outcomeOf(await inputRouter.handleVoice(
+      process: process('voice', input => inputRouter.handleVoice(
         event(input, 'voice', { fileId: { buffer: input.body, mimeType: input.mimeType } }), null,
       )),
     },
     text: {
-      process: async (input) => outcomeOf(await inputRouter.handleText(
+      process: process('text', input => inputRouter.handleText(
         event(input, 'text', { text: input.body.toString('utf8').trim() }), null,
       )),
     },
     photo: {
-      process: async (input) => outcomeOf(await inputRouter.handleImage(
+      process: process('photo', input => inputRouter.handleImage(
         event(input, 'image', { fileId: null, imageBuffer: input.body }), null,
       )),
     },
@@ -122,15 +130,22 @@ export function createNutribotQuickInputs({
         const log = await inputRouter.findQuickCapture(identity(input, kind));
         const capture = log?.metadata.quickInput;
         if (!capture) return null;
+        const finalReceipt = await finalReceiptOf(log);
         return {
           complete: capture.finished === true, state: log,
-          acknowledgement: capture.receiptDelivery
-            ? { receiptDelivery: capture.receiptDelivery } : {},
+          acknowledgement: {
+            ...(capture.receiptDelivery && { receiptDelivery: capture.receiptDelivery }),
+            ...(finalReceipt && { finalReceipt }),
+          },
         };
       };
       handler.finishCapture = async log => {
         const receiptDelivery = await inputRouter.finishQuickCapture(log);
-        return receiptDelivery ? { receiptDelivery } : {};
+        const current = await inputRouter.findQuickCapture({
+          ...log.metadata.quickInput, logId: log.id,
+        });
+        const finalReceipt = await finalReceiptOf(current);
+        return { ...(receiptDelivery && { receiptDelivery }), ...(finalReceipt && { finalReceipt }) };
       };
     }
     endpoints[kind] = new QuickInputEndpoint({

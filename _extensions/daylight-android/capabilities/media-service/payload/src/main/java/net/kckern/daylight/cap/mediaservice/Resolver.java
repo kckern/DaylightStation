@@ -38,6 +38,11 @@ final class Resolver {
 
     static Resolved resolve(List<String> mediaIds, int requestedIndex, boolean explicitPosition,
                             MediaApi api, Backend backend, String session) throws Exception {
+        return resolve(mediaIds, requestedIndex, explicitPosition, api, backend, session, false);
+    }
+
+    static Resolved resolve(List<String> mediaIds, int requestedIndex, boolean explicitPosition,
+                            MediaApi api, Backend backend, String session, boolean shuffle) throws Exception {
         if (mediaIds == null || mediaIds.isEmpty()) throw new IllegalArgumentException("unknown media id");
         if (mediaIds.size() > MAX_IDS) throw new IllegalArgumentException("too many media ids");
         List<MediaId> ids = new ArrayList<>();
@@ -56,7 +61,7 @@ final class Resolver {
             offsets[i] = tracks.size();
             MediaId id = ids.get(i);
             if (id.kind == MediaId.Kind.CONTAINER) {
-                tracks.addAll(QueueMapper.fromQueue(api.queue(id.contentId), backend, session));
+                tracks.addAll(QueueMapper.fromQueue(api.queue(id.contentId, shuffle), backend, session));
                 continue;
             }
             // A leaf asked for by itself, with a known container: queue the container and
@@ -83,7 +88,7 @@ final class Resolver {
             // the answer is then not the one asked for, and the whole container is queued.
             String answered = QueueMapper.id(play);
             if (!answered.isEmpty() && !answered.equals(id.contentId)) {
-                tracks.addAll(QueueMapper.fromQueue(api.queue(id.contentId), backend, session));
+                tracks.addAll(QueueMapper.fromQueue(api.queue(id.contentId, shuffle), backend, session));
                 continue;
             }
             Track t = QueueMapper.fromItem(play, backend, session);

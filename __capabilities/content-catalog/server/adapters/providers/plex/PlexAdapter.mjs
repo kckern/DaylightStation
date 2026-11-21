@@ -652,6 +652,53 @@ export class PlexAdapter {
    * @param {{ skip: number, take: number }} page
    * @returns {Promise<{ items: ListableItem[], total: number }|null>}
    */
+  #audioPart(item) {
+    for (const media of item?.Media ?? []) {
+      const part = media.Part?.[0];
+      if (!part || !/^\/library\/parts\/\d+\/[^?#]+$/.test(part.key)) continue;
+      const streams = part.Stream ?? [];
+      if (streams.some(stream => Number(stream.streamType) === 2) || (streams.length === 0 && media.audioCodec)) {
+        return part.key;
+      }
+    }
+    return null;
+  }
+
+  async openAudioSource(localId, signal) {
+    if (!/^\d+$/.test(localId)) return null;
+    const data = await this.client.getMetadata(localId, { signal, deadline: 5000 });
+    const part = this.#audioPart(data?.MediaContainer?.Metadata?.[0]);
+    if (!part) return null;
+    const url = new URL(part, this.host);
+    if (url.origin !== new URL(this.host).origin) return null;
+    return ({ method, range, signal: bodySignal }) => fetch(url, {
+      method,
+      signal: bodySignal,
+      redirect: 'error',
+      headers: {
+        'X-Plex-Token': this.token,
+        ...(range && { Range: range }),
+      },
+    });
+  }
+
+  audioListSources() {
+    return [{ id: `${this.source}:playlists`, title: 'Plex' }];
+  }
+
+  async audioListPage({ skip, take }) {
+    const result = await this.getList(`${this.source}:playlists`);
+    const entries = Array.isArray(result) ? result : result?.items ?? result?.children ?? [];
+    const items = entries.filter(item => item.metadata?.type === 'playlist');
+    return {
+      items: items.slice(skip, skip + take).map(item => ({
+        id: item.id, title: item.title, thumbnail: item.thumbnail,
+        checkAudio: item.metadata?.playlistType !== 'audio',
+      })),
+      total: items.length,
+    };
+  }
+
   async getListPage(input, { skip, take }) {
     const localId = typeof input === 'string' ? input.replace(/^plex:/, '') : '';
     const isPathContainer = localId.includes('/') && !/^\d+$/.test(localId) && !localId.startsWith('playlists');
@@ -884,6 +931,8 @@ export class PlexAdapter {
       addedAt: plexAddedAt(item)
     };
 
+    if (item.type === 'playlist' && item.playlistType) metadata.playlistType = item.playlistType;
+
     // Add parent info based on type
     if (item.type === 'season') {
       metadata.parentTitle = item.parentTitle;
@@ -1099,6 +1148,12 @@ export class PlexAdapter {
     // A qualified original MP4 goes straight to native video; an HLS
     // descriptor must never receive a raw-file redirect after loading.
     const partKey = item.Media?.[0]?.Part?.[0]?.key;
+    if (isVideo && this.#audioPart(item)) {
+      metadata.audioRendition = {
+        mediaUrl: `/api/v1/proxy/audio/${this.source}/${item.ratingKey}?stream=audio`,
+        format: 'mp3',
+      };
+    }
     const directPart = isVideo && canDirectPlayH264(item)
       && typeof partKey === 'string' && partKey.startsWith('/') && !partKey.startsWith('//')
       ? partKey : null;

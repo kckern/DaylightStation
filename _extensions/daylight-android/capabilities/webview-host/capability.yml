@@ -7,10 +7,7 @@ permissions:
   # Page microphone and camera, given to the page only for the configured origin.
   - android.permission.RECORD_AUDIO
   - android.permission.MODIFY_AUDIO_SETTINGS
-  # kioskOnly: declared in a kiosk's APK and taken out of any other device's (the
-  # phone's) by its generated manifest. The phone gives no page the camera
-  # (webview.allowCamera is false there), so its APK does not ask for it.
-  - { name: android.permission.CAMERA, kioskOnly: true }
+  - android.permission.CAMERA
   # POST /kiosk/overlay draws above a launched app. A phone has no control API to be
   # told to, and must not be able to draw over other apps.
   - { name: android.permission.SYSTEM_ALERT_WINDOW, kioskOnly: true }

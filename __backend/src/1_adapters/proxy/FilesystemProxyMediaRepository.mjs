@@ -36,8 +36,10 @@ export class FilesystemProxyMediaRepository extends IProxyMediaRepository {
   #registry;
   #mediaBasePath;
   #logger;
+  #providerAccess;
+  #audioStreams;
 
-  constructor({ registry, mediaBasePath = null, logger = console } = {}) {
+  constructor({ registry, mediaBasePath = null, logger = console, providerAccess = () => {}, audioStreams = null } = {}) {
     super();
     if (!registry || typeof registry.get !== 'function') {
       throw new Error('FilesystemProxyMediaRepository requires registry');
@@ -45,14 +47,21 @@ export class FilesystemProxyMediaRepository extends IProxyMediaRepository {
     this.#registry = registry;
     this.#mediaBasePath = mediaBasePath;
     this.#logger = logger;
+    this.#providerAccess = providerAccess;
+    this.#audioStreams = audioStreams;
   }
 
-  async findContentMedia(mediaRef) {
+  async findContentMedia(mediaRef, { stream } = {}) {
     const adapter = this.#registry.get('files') || this.#registry.get('media');
     if (!adapter) return { kind: 'unconfigured' };
     const item = await adapter.getItem(mediaRef);
     const filePath = item?.metadata?.filePath;
     if (!filePath) return { kind: 'not_found' };
+    if (stream === 'audio') {
+      const source = await adapter.audioSource?.(item);
+      if (!source || !this.#audioStreams) return { kind: 'unsupported_audio' };
+      return { kind: 'audio_stream', open: signal => this.#audioStreams.file(source, signal) };
+    }
 
     if (/\.mxl$/i.test(filePath)) {
       try {
@@ -69,6 +78,15 @@ export class FilesystemProxyMediaRepository extends IProxyMediaRepository {
       kind: 'found',
       resource: resource(filePath, item.metadata.mimeType || 'application/octet-stream'),
     };
+  }
+
+  async findProviderAudio(source, mediaRef, signal) {
+    const adapter = this.#registry.get(source);
+    if (!adapter?.openAudioSource || !this.#audioStreams) return { kind: 'unsupported_audio' };
+    await this.#providerAccess(source);
+    const input = await adapter.openAudioSource(mediaRef, signal);
+    if (!input) return { kind: 'unsupported_audio' };
+    return { kind: 'audio_stream', open: signal => this.#audioStreams.provider(input, signal) };
   }
 
   async findLocalContentMedia(type, mediaRef) {

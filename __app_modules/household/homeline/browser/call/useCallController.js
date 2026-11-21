@@ -12,11 +12,15 @@ const randomId = prefix => `${prefix}-${crypto.randomUUID()}`;
 const WAIT_TIMEOUT_MS = 45_000;
 const COLD_WAIT_TIMEOUT_MS = 75_000;
 const NEGOTIATE_TIMEOUT_MS = 20_000;
+const FINISH_TIMEOUT_MS = 5_000;
 
 export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVideoRef }) {
   const [state, dispatch] = useReducer(callReducer, initialCallState);
   const stateRef = useRef(state); stateRef.current = state;
   const abortRef = useRef(null);
+  const reservationRef = useRef(null);
+  const endedAttemptRef = useRef(null);
+  const pendingReleaseRef = useRef(null);
   const timersRef = useRef(new Set());
   const loggerRef = useRef(getLogger().child({ component: 'CallController' }));
   const iceRungRef = useRef(0);
@@ -69,18 +73,35 @@ export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVi
     dispatch({ type: 'RESUME', attemptId: randomId('attempt'), target, callId });
   }, [clearWork]);
 
+  const releaseLease = useCallback((callId, reason) => {
+    const pending = DaylightAPI(`api/v1/homeline/calls/${callId}/end`, { reason }, 'POST', {
+      keepalive: true, signal: AbortSignal.timeout(FINISH_TIMEOUT_MS),
+    })
+      .catch(error => loggerRef.current.warn('call.end.failed', { callId, reason: error.message }))
+      .finally(() => { if (pendingReleaseRef.current === pending) pendingReleaseRef.current = null; });
+    pendingReleaseRef.current = pending;
+  }, []);
+
   useEffect(() => {
     if (state.value !== 'reserving' || !state.attemptId) return undefined;
     const attemptId = state.attemptId;
-    const controller = new AbortController(); abortRef.current = controller;
+    // Keep reading a reservation after cancel so a server-created lease can be ended.
+    const reservation = { attemptId, cancelled: null };
+    reservationRef.current = reservation;
     const run = async () => {
       try {
+        // A quick second tap may target the same TV before its prior lease is released.
+        if (pendingReleaseRef.current) await pendingReleaseRef.current;
+        if (reservation.cancelled) return;
         let response;
-        if (state.callId) response = await DaylightAPI(`api/v1/homeline/calls/${state.callId}/resume`, {}, 'POST', { signal: controller.signal });
+        if (state.callId) response = await DaylightAPI(`api/v1/homeline/calls/${state.callId}/resume`, {}, 'POST');
         else response = await DaylightAPI('api/v1/homeline/calls', {
           deviceId: state.target.id, attemptId, phonePeerId: randomId('phone'),
-        }, 'POST', { signal: controller.signal });
-        if (!isAttemptActive(stateRef.current, attemptId)) return;
+        }, 'POST');
+        if (reservation.cancelled || !isAttemptActive(stateRef.current, attemptId)) {
+          if (response.callId && !state.callId) void releaseLease(response.callId, reservation.cancelled || 'left_call');
+          return;
+        }
         const session = { ...response, peerId: response.phonePeerId || stateRef.current.session?.peerId,
           credential: response.phoneCredential, peerRevision: 0 };
         if (!session.peerId) session.peerId = state.callId ? stateRef.current.session?.peerId : null;
@@ -89,18 +110,20 @@ export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVi
         sessionStorage.setItem('homeline.activeCall', JSON.stringify({ callId: response.callId, deviceId: state.target.id }));
         dispatch({ type: 'RESERVED', attemptId, session });
       } catch (error) {
-        if (controller.signal.aborted || !isAttemptActive(stateRef.current, attemptId)) return;
+        if (reservation.cancelled || !isAttemptActive(stateRef.current, attemptId)) return;
         if (error.status === 409) dispatch({ type: 'BUSY', attemptId });
         // Home Line asks nobody to sign in. The only refusal left is reaching
         // it from off the house network, so the copy names that, not an account.
         else if (error.status === 401) dispatch({ type: 'FAIL', attemptId, reason: 'off_network', error: 'Home Line only works on the home network or over the VPN.' });
         else if (error.status === 403) dispatch({ type: 'FAIL', attemptId, reason: 'call_forbidden', error: 'This device is not allowed to place a Home Line call.' });
         else dispatch({ type: 'FAIL', attemptId, error: error.message, reason: 'reservation_failed' });
+      } finally {
+        if (reservationRef.current === reservation) reservationRef.current = null;
       }
     };
     void run();
-    return () => controller.abort();
-  }, [state.attemptId, state.callId, state.target, state.value]);
+    return () => { reservation.cancelled ||= 'left_call'; };
+  }, [releaseLease, state.attemptId, state.callId, state.target, state.value]);
 
   const onSignalEvent = useCallback(event => {
     const attemptId = stateRef.current.attemptId;
@@ -111,7 +134,9 @@ export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVi
     else if (event.type === 'control-status') dispatch({ type: 'CONTROL_STATUS', attemptId, connected: event.connected });
     else if (event.type === 'error') dispatch({ type: 'FAIL', attemptId, error: event.error.message, reason: 'signaling_failed' });
   }, []);
-  const signaling = useCallSignaling({ role: 'phone', session: state.session, peer, onEvent: onSignalEvent });
+  const signaling = useCallSignaling({
+    role: 'phone', session: state.value === 'failed' ? null : state.session, peer, onEvent: onSignalEvent,
+  });
 
   useEffect(() => {
     if (state.value !== 'probing') return undefined;
@@ -219,16 +244,36 @@ export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVi
     return () => { clearTimeout(grace); timers.delete(grace); };
   }, [later, peer.connectionState, peerConnectionRef, signaling, state.attemptId, state.value]);
 
-  const end = useCallback(reason => {
+  const teardown = useCallback(reason => {
+    const { attemptId, callId } = stateRef.current;
+    if (!attemptId || endedAttemptRef.current === attemptId) return;
+    endedAttemptRef.current = attemptId;
+    if (reservationRef.current?.attemptId === attemptId) reservationRef.current.cancelled = reason;
     signaling.send('hangup', { reason });
-    dispatch({ type: 'CANCEL', attemptId: stateRef.current.attemptId, reason });
-  }, [signaling]);
+    clearWork();
+    sessionStorage.removeItem('homeline.activeCall');
+    if (callId) releaseLease(callId, reason);
+  }, [clearWork, releaseLease, signaling]);
+  const end = useCallback(reason => {
+    const { value, attemptId, callId } = stateRef.current;
+    if (value === 'failed' && callId) teardown(reason);
+    else if (attemptId && isAttemptActive(stateRef.current, attemptId)) {
+      teardown(reason);
+      dispatch({ type: 'CANCEL', attemptId, reason });
+    }
+  }, [teardown]);
+  const dismiss = useCallback(() => {
+    const { value, callId, reason } = stateRef.current;
+    if (value === 'failed' && callId) teardown(reason);
+    dispatch({ type: 'DISMISS' });
+  }, [teardown]);
   const retryMedia = useCallback(async () => {
     if (retryMediaRef.current) return retryMediaRef.current;
     const attemptId = stateRef.current.attemptId;
     const run = (async () => {
       dispatch({ type: 'RETRY_MEDIA', attemptId });
       await retryLocalMedia?.();
+      if (!isAttemptActive(stateRef.current, attemptId) || endedAttemptRef.current === attemptId) return;
       const peerRevision = await signaling.rebuild();
       dispatch({ type: 'PEER_REBUILT', attemptId, peerRevision });
       later(() => {
@@ -239,16 +284,15 @@ export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVi
     try { await run; } finally { retryMediaRef.current = null; }
   }, [later, retryLocalMedia, signaling]);
   useEffect(() => {
-    if (state.value !== 'ending') return;
-    const { callId, attemptId, reason } = state;
-    clearWork(); sessionStorage.removeItem('homeline.activeCall');
-    void (callId ? DaylightAPI(`api/v1/homeline/calls/${callId}/end`, { reason }, 'POST').catch(error =>
-      loggerRef.current.warn('call.end.failed', { callId, reason: error.message })) : Promise.resolve())
-      .finally(() => dispatch({ type: 'ENDED', attemptId }));
-  }, [clearWork, state]);
+    if (state.value === 'failed' && state.callId) teardown(state.reason);
+    if (state.value === 'ending') {
+      teardown(state.reason);
+      dispatch({ type: 'ENDED', attemptId: state.attemptId });
+    }
+  }, [state, teardown]);
   // Unmount only. `clearWork` is identity-stable, so this never re-fires.
   useEffect(() => () => clearWork(), [clearWork]);
 
-  return useMemo(() => ({ state, start, resume, end, retryMedia, dispatch, sendMuteState: payload => signaling.send('mute-state', payload) }),
-    [end, resume, retryMedia, signaling, start, state]);
+  return useMemo(() => ({ state, start, resume, end, dismiss, retryMedia, dispatch, sendMuteState: payload => signaling.send('mute-state', payload) }),
+    [dismiss, end, resume, retryMedia, signaling, start, state]);
 }

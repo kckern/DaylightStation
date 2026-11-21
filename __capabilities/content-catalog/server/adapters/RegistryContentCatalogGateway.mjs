@@ -223,6 +223,24 @@ export class RegistryContentCatalogGateway extends IContentCatalogGateway {
     return source.resolvePlayables(contentRef ?? resolution.localId);
   }
 
+  audioListSources() {
+    return this.sourceNames().flatMap(name => this.registry.get(name)?.audioListSources?.() ?? []);
+  }
+
+  async findAudioListItem(resolution, contentRef, firstMatch) {
+    return this.#source(resolution)?.findAudioListItem?.(contentRef, firstMatch);
+  }
+
+  async audioListPage(resolution, page) {
+    return this.#source(resolution)?.audioListPage?.(page) ?? null;
+  }
+
+  async audioRendition(item) {
+    const resolution = this.resolve(item.id);
+    const source = resolution && this.#source(resolution);
+    return source?.audioRendition?.(item) ?? null;
+  }
+
   async resolveLaunchables(resolution, contentRef = null) {
     const source = this.#source(resolution);
     if (typeof source?.resolveLaunchables !== 'function') return null;

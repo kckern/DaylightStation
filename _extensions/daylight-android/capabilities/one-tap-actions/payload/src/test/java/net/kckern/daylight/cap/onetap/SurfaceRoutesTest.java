@@ -411,4 +411,23 @@ public class SurfaceRoutesTest {
         assertFalse(r.toString().contains("daylight://"));
         assertFalse(r.toString().contains("media-"));
     }
+    @Test public void theLauncherCanPinAndRunCaptureStatusAsAReadOnlyInputAction() throws Exception {
+        core.settings().set("actions.13", "capture-status|Capture status|note|input:status");
+        List<String> requests = new ArrayList<>();
+        core.services().provide(net.kckern.daylight.core.spi.LinkHandler.class, new net.kckern.daylight.core.spi.LinkHandler() {
+            @Override public String kind() { return "input"; }
+            @Override public JSONObject handle(String arg, java.util.Map<String, String> query) throws Exception {
+                requests.add(arg);
+                assertTrue(query.isEmpty());
+                return net.kckern.daylight.core.LinkEffect.none();
+            }
+        });
+        cap.start();
+        assertEquals(200, post("/actions/pin", "{\"id\":\"capture-status\"}").getInt("_status"));
+        assertEquals("capture-status daylight://action/capture-status#k=" + KEY, sink.pinned);
+        String result = net.kckern.daylight.api.PayloadPort.named("launcher-capture").call("capture-status", 0);
+        assertEquals("none", new JSONObject(result).getString("effect"));
+        assertEquals(java.util.Collections.singletonList("status"), requests);
+    }
+
 }

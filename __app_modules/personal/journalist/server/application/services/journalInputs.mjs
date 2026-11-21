@@ -36,6 +36,7 @@ const dated = (input) => (input.capturedAt ? { timestamp: input.capturedAt } : {
 export function journalVoiceHandler({ processVoiceEntry, processTextEntry, journalEntryRepository }) {
   const entry = (input) => entryOf(input, memoMessageId(input.inputId));
   return {
+    storedReceipt: input => ({ entryId: memoMessageId(input.inputId) }),
     lookup: async (input) => stored(await journalEntryRepository.findById(memoMessageId(input.inputId), input.conversationId)),
 
     process: async (input) => {
@@ -70,6 +71,7 @@ export function journalVoiceHandler({ processVoiceEntry, processTextEntry, journ
 export function journalTextHandler({ processTextEntry, journalEntryRepository }) {
   const entry = (input) => entryOf(input, noteMessageId(input.inputId));
   return {
+    storedReceipt: input => ({ entryId: noteMessageId(input.inputId) }),
     lookup: async (input) => stored(await journalEntryRepository.findById(noteMessageId(input.inputId), input.conversationId)),
 
     process: async (input) => {

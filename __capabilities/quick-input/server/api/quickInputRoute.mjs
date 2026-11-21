@@ -281,27 +281,30 @@ export function quickInputRoute(endpoint, options = {}) {
     const bytes = body.length;
     log('info', 'received', input, { deviceId, mimeType, bytes, recordedAt });
 
+    const wantsFinalReceipt = req.get?.('X-Daylight-Capture-Receipt') === '1';
     let result;
     try {
-      result = await endpoint.submit({ conversationId, username, inputId, body, mimeType, recordedAt });
-    } catch (error) {
+      result = await endpoint.submit({ conversationId, username, inputId, body, mimeType, recordedAt,
+        ...(wantsFinalReceipt && { wantsFinalReceipt }) });
+    } catch {
       log('error', 'failed', input, {
-        bytes, durationMs: Date.now() - startedAt, error: error?.message, code: error?.code ?? null,
+        bytes, durationMs: Date.now() - startedAt, reason: 'processing_failed',
       });
       return sendInternalError(res, { ok: false, error: 'processing_failed', ...ids(inputId) });
     }
 
     const durationMs = Date.now() - startedAt;
-    const { kind: outcome, inputId: _same, ...details } = result || {};
+    const { kind: outcome, inputId: _same, finalReceipt, ...details } = result || {};
+    const receipt = wantsFinalReceipt && finalReceipt ? { finalReceipt } : {};
 
     if (outcome === 'accepted') {
       log('info', 'accepted', input, { bytes, ...details, durationMs });
-      return res.status(200).json({ ok: true, ...ids(inputId), duplicate: false, ...details });
+      return res.status(200).json({ ok: true, ...ids(inputId), duplicate: false, ...details, ...receipt });
     }
     if (outcome === 'duplicate' || outcome === 'resumed') {
       // A resumed request finished outstanding processing for a previously stored input.
       log('info', 'duplicate', input, { bytes, durationMs, resumed: outcome === 'resumed' });
-      return res.status(200).json({ ok: true, ...ids(inputId), duplicate: true, ...details });
+      return res.status(200).json({ ok: true, ...ids(inputId), duplicate: true, ...details, ...receipt });
     }
     if (outcome === 'daily_limit') return refuseForToday(req, res, result);
     if (outcome === 'unavailable') return refuse(req, res, 503, 'unavailable');

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWebcamStream } from './useWebcamStream.js';
 
@@ -13,6 +13,17 @@ const capture = kind => new FakeMediaStream([{ kind, stop: vi.fn(), getSettings:
 
 describe('useWebcamStream independent TV fallback', () => {
   beforeEach(() => { globalThis.MediaStream = FakeMediaStream; });
+
+  it('releases a TV capture that arrives after the call view has left', async () => {
+    let resolve;
+    const stream = capture('video');
+    navigator.mediaDevices = { getUserMedia: vi.fn(() => new Promise(yes => { resolve = yes; })) };
+    const { unmount } = renderHook(() => useWebcamStream('camera-id', 'microphone-id'));
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+    unmount();
+    await act(async () => resolve(stream));
+    expect(stream.getVideoTracks()[0].stop).toHaveBeenCalledOnce();
+  });
 
   it('retains both independently usable kinds after combined capture fails', async () => {
     navigator.mediaDevices = { getUserMedia: vi.fn(async constraints => {

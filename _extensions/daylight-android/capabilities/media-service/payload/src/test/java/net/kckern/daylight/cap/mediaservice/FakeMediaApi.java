@@ -27,6 +27,10 @@ final class FakeMediaApi implements MediaApi {
     @Override public JSONObject rootList() throws Exception { return answer("list", "rootList"); }
     @Override public JSONObject list(String contentId, int take, int skip) throws Exception { return answer("list", "list " + contentId + " " + take + " " + skip); }
     @Override public JSONObject recent(int limit) throws Exception { return answer("recent", "recent " + limit); }
+    @Override public JSONObject audioSources() throws Exception { return answer("audio list sources", "audioSources"); }
+    @Override public JSONObject audioLists(String source, int cursor) throws Exception {
+        return answer("audio list catalog", "audioLists " + source + " " + cursor);
+    }
     @Override public JSONObject queue(String contentId) throws Exception { return answer("queue", "queue " + contentId); }
     @Override public JSONObject play(String contentId, boolean resume) throws Exception {
         return answer("play", "play " + contentId + (resume ? "" : "?resume=false"));

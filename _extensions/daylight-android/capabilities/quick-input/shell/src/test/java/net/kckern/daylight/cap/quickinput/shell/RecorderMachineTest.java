@@ -71,10 +71,38 @@ public class RecorderMachineTest {
     }
 
     /** The memo action on a tile or the widget starts a memo, and tapped again stops it. */
-    @Test public void aTapStartsOrStopsAndADoubleTapDoesNotStopWhatItJustStarted() {
+    @Test public void phoneShortcutTapsNeverSendAnActiveRecording() {
+        assertEquals(RecorderMachine.Tap.SHOW, RecorderMachine.tap(5_000, 10_000, false));
+    }
+
+    @Test public void phoneRecorderPreservesInterruptionsWithoutSending() {
+        for (Event event : new Event[] { Event.STOP, Event.CANCEL, Event.CAP_REACHED, Event.FOCUS_LOST,
+                Event.RECORDER_ERROR, Event.SERVICE_DESTROYED }) {
+            RecorderMachine phone = new RecorderMachine(true);
+            phone.on(Event.START, 1);
+            phone.began(2);
+            assertEquals(event.toString(), event == Event.STOP ? Action.FINISH
+                    : event == Event.CANCEL ? Action.DISCARD_AND_STOP : Action.SAVE_DRAFT,
+                    phone.on(event, 3));
+        }
+    }
+
+    @Test public void aForegroundInterstitialPausesCaptureWhenTheWindowLosesFocus() {
+        assertTrue(RecorderMachine.shouldPauseForWindowFocus(false, true));
+        assertFalse(RecorderMachine.shouldPauseForWindowFocus(true, true));
+        assertFalse(RecorderMachine.shouldPauseForWindowFocus(false, false));
+    }
+
+    @Test public void aLateMicrophonePermissionCannotRestartCancelledCapture() {
+        assertFalse(RecorderMachine.canBeginAfterPermission(false, true));
+        assertFalse(RecorderMachine.canBeginAfterPermission(true, false));
+        assertTrue(RecorderMachine.canBeginAfterPermission(true, true));
+    }
+
+    @Test public void aTapStartsOrShowsAnActiveRecording() {
         assertEquals(RecorderMachine.Tap.START, RecorderMachine.tap(0, 10_000, false));
         assertEquals(RecorderMachine.Tap.SHOW, RecorderMachine.tap(9_000, 10_000, false));
-        assertEquals(RecorderMachine.Tap.STOP, RecorderMachine.tap(5_000, 10_000, false));
+        assertEquals(RecorderMachine.Tap.SHOW, RecorderMachine.tap(5_000, 10_000, false));
         assertEquals("opened from the recording's notification, the screen is shown", RecorderMachine.Tap.SHOW,
                 RecorderMachine.tap(5_000, 10_000, true));
         assertEquals("with nothing recording, the notification's screen has nothing to show and starts nothing",
@@ -86,7 +114,7 @@ public class RecorderMachineTest {
     @Test public void aRebuiltScreenNeverStopsTheRecordingItsIntentStarted() {
         long started = 1_000_000;
         // A rotation three seconds in: read as a tap, the same intent would stop and save the memo.
-        assertEquals(RecorderMachine.Tap.STOP, RecorderMachine.open(false, started, started + 3000, false, false));
+        assertEquals(RecorderMachine.Tap.SHOW, RecorderMachine.open(false, started, started + 3000, false, false));
         assertEquals(RecorderMachine.Tap.SHOW, RecorderMachine.open(true, started, started + 3000, false, false));
         assertEquals(RecorderMachine.Tap.SHOW, RecorderMachine.open(true, started, started + 600_000, true, false));
     }

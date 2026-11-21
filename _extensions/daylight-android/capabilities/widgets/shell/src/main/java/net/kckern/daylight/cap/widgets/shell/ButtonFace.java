@@ -96,6 +96,12 @@ final class ButtonFace {
      *
      * @param providerPackage the package of the widget's provider as Android reports it; null when it knows no such widget
      */
+    static int coverSide(int width, int height) {
+        if (width <= 0 || height <= 0) return 50;
+        // The badge adds 18 dp below the square after a 6 dp overlap.
+        return Math.max(1, Math.min(width - 2, height - 18));
+    }
+
     static boolean ours(int widgetId, String providerPackage, String providerClass, String myPackage, String myProviderClass) {
         return widgetId != 0 && providerPackage != null && providerPackage.equals(myPackage)
                 && providerClass != null && providerClass.equals(myProviderClass);

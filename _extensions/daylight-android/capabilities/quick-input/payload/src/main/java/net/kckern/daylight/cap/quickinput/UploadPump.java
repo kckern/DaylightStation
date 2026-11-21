@@ -44,12 +44,19 @@ final class UploadPump {
     private final InputQueue queue;
     private final Sender sender;
     private final Link link;
+    private final java.util.function.Predicate<InputQueue.Entry> allowed;
     private volatile boolean stopped;
 
     UploadPump(InputQueue queue, Sender sender, Link link) {
+        this(queue, sender, link, entry -> true);
+    }
+
+    UploadPump(InputQueue queue, Sender sender, Link link,
+               java.util.function.Predicate<InputQueue.Entry> allowed) {
         this.queue = queue;
         this.sender = sender;
         this.link = link;
+        this.allowed = allowed;
     }
 
     /**
@@ -73,7 +80,7 @@ final class UploadPump {
         // Destinations that answered, in this pass, in a way every other input for them would
         // be answered too (not allowed yet). The rest of the queue goes on without them.
         java.util.Set<String> skip = new java.util.HashSet<>();
-        while (!stopped && (memo = queue.claim(nowMs, skip)) != null) {
+        while (!stopped && (memo = queue.claim(nowMs, skip, allowed)) != null) {
             File file = new File(memo.file);
             long bytes = file.length();
             Result result;
@@ -84,51 +91,60 @@ final class UploadPump {
                 result = new Result(Outcome.RETRY, "failed: " + broke.getClass().getSimpleName());
             }
             if (stopped) return pass;
-            switch (result.outcome) {
-                case UPLOADED:
-                    queue.uploaded(memo.id);
-                    file.delete();
-                    pass.uploaded++;
-                    pass.uploadedBytes += bytes;
-                    pass.uploadedDests.add(memo.dest);
-                    pass.uploadedIds.add(memo.id + " " + memo.kind.word + " " + memo.dest);
-                    pass.sizes.add(bytes);
-                    break;
-                case REJECTED:
-                    queue.park(memo.id, result.detail);
-                    pass.parked++;
-                    break;
-                case LOST:
-                    queue.lost(memo.id);
-                    pass.lost++;
-                    break;
-                case BLOCKED:
-                    queue.release(memo.id);
-                    pass.blocked = result.detail;
-                    return pass;
-                case WAIT: {
-                    // The backend said when, for this destination: every input for it would get the
-                    // same answer, so it is held. A limit on one bot does not hold the other.
-                    long until = nowMs + result.waitMs;
-                    pass.limits.put(memo.dest, until);
-                    pass.limitUntilMs = Math.max(pass.limitUntilMs, until);
-                    queue.holdUntil(memo.id, result.detail, until);
-                    break;
+            try {
+                switch (result.outcome) {
+                    case UPLOADED:
+                        if (!queue.finish(memo.id, result.receiptState, result.entryId, result.entryDate)) return pass;
+                        file.delete();
+                        pass.uploaded++;
+                        pass.uploadedBytes += bytes;
+                        if (InputQueue.owner(memo) == null) pass.uploadedDests.add(memo.dest);
+                        pass.uploadedIds.add(memo.id + " " + memo.kind.word + " " + memo.dest);
+                        pass.sizes.add(bytes);
+                        break;
+                    case REJECTED:
+                        queue.park(memo.id, result.detail);
+                        pass.parked++;
+                        break;
+                    case LOST:
+                        queue.lost(memo.id);
+                        pass.lost++;
+                        break;
+                    case BLOCKED:
+                        queue.release(memo.id);
+                        pass.blocked = result.detail;
+                        return pass;
+                    case WAIT: {
+                        // The backend said when, for this destination: every input for it would get the
+                        // same answer, so it is held. A limit on one bot does not hold the other.
+                        long until = nowMs + result.waitMs;
+                        if (InputQueue.owner(memo) == null) pass.limits.put(memo.dest, until);
+                        pass.limitUntilMs = Math.max(pass.limitUntilMs, until);
+                        queue.holdUntil(memo.id, result.detail, until);
+                        break;
+                    }
+                    case OTHER_OWNER:
+                        // Re-pairing must neither send the capture nor stall unrelated work.
+                        queue.retryLater(memo.id, result.detail, false, nowMs);
+                        break;
+                    case NOT_ALLOWED:
+                        // This phone is not bound to the user for this destination's bot yet. It
+                        // waits, uncounted; another destination may well be allowed.
+                        pass.notAllowed = true;
+                        if (InputQueue.owner(memo) == null) pass.notAllowedDests.add(memo.dest);
+                        skip.add(InputQueue.holdKey(memo));
+                        queue.retryLater(memo.id, result.detail, false, nowMs);
+                        break;
+                    default:
+                        // Only what the intake itself answered, or may have received, counts toward parking.
+                        if (queue.retryLater(memo.id, result.detail, result.outcome == Outcome.RETRY, nowMs)) pass.parked++;
+                        // The link is down or the backend is unwell: the next memo would fail the
+                        // same way. Stop, and let the wait decide when to look again.
+                        return pass;
                 }
-                case NOT_ALLOWED:
-                    // This phone is not bound to the user for this destination's bot yet. It
-                    // waits, uncounted; another destination may well be allowed.
-                    pass.notAllowed = true;
-                    pass.notAllowedDests.add(memo.dest);
-                    skip.add(memo.dest);
-                    queue.retryLater(memo.id, result.detail, false, nowMs);
-                    break;
-                default:
-                    // Only what the intake itself answered, or may have received, counts toward parking.
-                    if (queue.retryLater(memo.id, result.detail, result.outcome == Outcome.RETRY, nowMs)) pass.parked++;
-                    // The link is down or the backend is unwell: the next memo would fail the
-                    // same way. Stop, and let the wait decide when to look again.
-                    return pass;
+            } catch (IllegalStateException persistenceFailed) {
+                queue.releaseInterruptedClaim(memo.id, nowMs);
+                throw persistenceFailed;
             }
         }
         return pass;

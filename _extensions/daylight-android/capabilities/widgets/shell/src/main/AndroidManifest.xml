@@ -1,16 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-feature android:name="android.software.companion_device_setup" android:required="false" />
+    <queries>
+        <package android:name="com.anddoes.launcher" />
+    </queries>
     <application>
-        <!-- Not exported: only the system (the launcher's widget host) and this app send it
-             updates. It takes nothing from the broadcast but the widget ids. -->
-        <receiver android:name="net.kckern.daylight.cap.widgets.shell.ActionWidgetProvider"
-            android:exported="false" android:label="@string/daylight_widget_actions">
+        <activity android:name="net.kckern.daylight.cap.widgets.shell.FreematicsActivity"
+            android:exported="false" android:label="Freematics"
+            android:theme="@android:style/Theme.Material.Light" />
+        <activity android:name="net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity"
+            android:exported="true" android:theme="@android:style/Theme.Material.Light.NoActionBar">
             <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.CREATE_SHORTCUT" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
-            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_actions_info" />
-        </receiver>
-
+        </activity>
         <!-- The one-action button. Not exported, for the same reason. -->
         <receiver android:name="net.kckern.daylight.cap.widgets.shell.ButtonWidgetProvider"
             android:exported="false" android:label="@string/daylight_widget_button">
@@ -23,7 +29,7 @@
         <!-- The button's chooser. Exported: the launcher starts it when a button is placed,
              and no permission exists that only a launcher holds. It reads the widget id
              and nothing else, uses it only for a widget Android says is this app's, lists
-             the configured actions and stores the choice. It runs nothing. Not shown over
+             the selected playlist and stores the choice. It runs nothing. Not shown over
              the lock screen. taskAffinity "" and excludeFromRecents: it is one step of
              placing a widget and never part of the app's own task. -->
         <activity android:name="net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity"

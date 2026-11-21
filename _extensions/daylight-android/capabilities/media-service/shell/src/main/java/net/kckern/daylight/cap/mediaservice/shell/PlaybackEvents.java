@@ -83,7 +83,8 @@ final class PlaybackEvents implements Player.Listener {
 
     /** Called on the main thread; the call to the payload runs on the io executor. */
     private void send(final String state) {
-        send(player.getCurrentMediaItem(), player.getCurrentPosition(), player.getDuration(), state);
+        MediaItem current = player.getCurrentMediaItem();
+        send(current, player.getCurrentPosition(), NodeItems.durationMs(current, player.getDuration()), state);
     }
 
     private void send(MediaItem current, long position, long duration, String state) {

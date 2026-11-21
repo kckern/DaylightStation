@@ -1,5 +1,6 @@
 package net.kckern.daylight.cap.quickinput;
 
+import net.kckern.daylight.cap.quickinput.shell.CaptureScope;
 import net.kckern.daylight.core.backend.Backend;
 import net.kckern.daylight.core.backend.Http;
 
@@ -68,6 +69,7 @@ final class InputUploader implements UploadPump.Sender {
     static final long DEFAULT_WAIT_MS = 15 * 60_000L;
 
     enum Outcome {
+        OTHER_OWNER,
         UPLOADED,
         /** Try again later; the attempt counts. */
         RETRY,
@@ -90,13 +92,23 @@ final class InputUploader implements UploadPump.Sender {
     static final class Result {
         final Outcome outcome;
         final String detail;
+        final String receiptState;
+        final String entryId;
+        final String entryDate;
         /** For WAIT: how long before anything is sent again. */
         final long waitMs;
 
         Result(Outcome outcome, String detail) { this(outcome, detail, 0); }
 
         Result(Outcome outcome, String detail, long waitMs) {
+            this(outcome, detail, waitMs, null, null);
+        }
+
+        Result(Outcome outcome, String detail, long waitMs, String entryId, String entryDate) {
             this.outcome = outcome;
+            this.receiptState = outcome == Outcome.UPLOADED ? (entryId == null ? "ACCEPTED" : "DELIVERED") : null;
+            this.entryId = entryId;
+            this.entryDate = entryDate;
             this.detail = detail;
             this.waitMs = waitMs;
         }
@@ -132,25 +144,55 @@ final class InputUploader implements UploadPump.Sender {
     /** The intake takes audio/ogg and audio/mp4; a recording says which it is by its name. */
     static String contentType(String fileName) { return Destinations.Kind.VOICE.contentType(fileName); }
 
+    static String currentScope(Backend backend) {
+        try {
+            Backend.SiteUser pair = backend.siteUser();
+            return CaptureScope.key(pair.origin, pair.user);
+        } catch (IllegalStateException | LinkageError unavailable) {
+            // A payload can also run on an installed shell from before scoped capture.
+            return null;
+        }
+    }
+
+    static boolean allowsFile(File file, String owner) {
+        try {
+            return CaptureScope.allowsFile(file, owner);
+        } catch (LinkageError olderShell) {
+            File directory = file.getParentFile();
+            return directory == null || !directory.getName().startsWith(CaptureScope.DIRECTORY_PREFIX);
+        }
+    }
+
     @Override public Result upload(InputQueue.Entry memo) {
         String why = blocked(backend);
         if (why != null) return new Result(Outcome.BLOCKED, why);
-        // Where it goes is looked up now, by the id the entry remembers: no address is ever
-        // kept in the queue, and a destination that is gone receives nothing.
+        Backend.SiteUser pair;
+        try {
+            pair = backend.siteUser();
+        } catch (IllegalStateException notConfigured) {
+            return new Result(Outcome.BLOCKED, SITE_NOT_SET);
+        }
+        File file = new File(memo.file);
+        String owner = null;
+        try { owner = CaptureScope.key(pair.origin, pair.user); } catch (LinkageError olderShell) { }
+        if (!allowsFile(file, owner)) {
+            return new Result(Outcome.OTHER_OWNER, "waiting for the capture's household and user");
+        }
+        // Destination and URL are resolved only for the binding that passed the check.
         Destinations.Destination dest = routes.now().find(memo.dest);
         if (dest == null) return new Result(Outcome.REJECTED, "unknown destination");
         if (dest.kind != memo.kind) return new Result(Outcome.REJECTED, "destination does not take " + memo.kind.word);
         String url;
         try {
-            url = backend.url(dest.route + "?user=" + URLEncoder.encode(backend.user(), "UTF-8").replace("+", "%20"));
-        } catch (IllegalStateException | IllegalArgumentException | java.io.UnsupportedEncodingException notConfigured) {
+            url = pair.origin + Backend.checkedPath(dest.route + "?user=" + URLEncoder.encode(pair.user, "UTF-8").replace("+", "%20"));
+        } catch (IllegalArgumentException | java.io.UnsupportedEncodingException notConfigured) {
             return new Result(Outcome.BLOCKED, SITE_NOT_SET);
         }
-        File file = new File(memo.file);
         if (!file.isFile()) return new Result(Outcome.LOST, "the recording is gone");
         if (file.length() > memo.kind.maxBytes) return new Result(Outcome.REJECTED, "too large to send");
         Map<String, String> headers = new HashMap<>();
         headers.put("X-Daylight-Input-Id", memo.id);
+        if (InputQueue.owner(memo) != null) headers.put("X-Daylight-Capture-Receipt", "1");
         // When the recording started, as kept in the queue entry: the backend files the
         // journal entry under it, however much later the upload is.
         headers.put("X-Daylight-Recorded-At", String.valueOf(memo.recordedAtMs));
@@ -167,9 +209,7 @@ final class InputUploader implements UploadPump.Sender {
         int s = reply.status;
         if (s == 200) {
             // Only a receipt for this capture permits the pump to delete its file.
-            return accepted(reply.body, memo.id, LEGACY_MEMO_ROUTE.equals(dest.route))
-                    ? new Result(Outcome.UPLOADED, "")
-                    : new Result(Outcome.RETRY_UNCOUNTED, "unexpected answer");
+            return receipt(reply.body, memo, dest.route);
         }
         String code = intakeError(s, reply.body);
         String detail = "HTTP " + s + (code == null ? "" : " " + code);
@@ -205,17 +245,29 @@ final class InputUploader implements UploadPump.Sender {
         return Math.max(MIN_WAIT_MS, Math.min(seconds * 1000L, MAX_WAIT_MS));
     }
 
-    private static boolean accepted(String body, String expectedId, boolean legacyMemoRoute) {
+    private static Result receipt(String body, InputQueue.Entry entry, String route) {
         try {
             JSONObject receipt = IntakeJson.parse(body);
             Object id = receipt.opt("inputId");
-            if (legacyMemoRoute && !receipt.has("inputId")) id = receipt.opt("memoId");
-            return Boolean.TRUE.equals(receipt.opt("ok"))
-                    && receipt.opt("duplicate") instanceof Boolean
-                    && expectedId.equals(id);
+            if (LEGACY_MEMO_ROUTE.equals(route) && !receipt.has("inputId")) id = receipt.opt("memoId");
+            if (Boolean.TRUE.equals(receipt.opt("ok")) && receipt.opt("duplicate") instanceof Boolean && entry.id.equals(id)) {
+                JSONObject saved = receipt.optJSONObject("finalReceipt");
+                if (saved == null) return new Result(Outcome.UPLOADED, "");
+                String entryId = saved.optString("entryId", "");
+                String date = saved.optString("date", "");
+                boolean meal = (route.equals("/api/v1/nutribot/voice") || route.equals("/api/v1/nutribot/text")
+                        || route.equals("/api/v1/nutribot/photo"))
+                        && entryId.matches("[0-9a-f-]{36}") && date.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}");
+                boolean journal = ((route.equals("/api/v1/journalist/voice") || LEGACY_MEMO_ROUTE.equals(route))
+                        && entryId.equals("memo:" + entry.id))
+                        || (route.equals("/api/v1/journalist/text") && entryId.equals("note:" + entry.id));
+                return meal || journal ? new Result(Outcome.UPLOADED, "", 0, entryId, meal ? date : null)
+                        : new Result(Outcome.UPLOADED, "");
+            }
         } catch (JSONException notJson) {
-            return false;
+            // Leave the original capture available under its existing input ID.
         }
+        return new Result(Outcome.RETRY_UNCOUNTED, "unexpected answer");
     }
 
     /** The intake's own refusal, identified by the documented status and error code. */

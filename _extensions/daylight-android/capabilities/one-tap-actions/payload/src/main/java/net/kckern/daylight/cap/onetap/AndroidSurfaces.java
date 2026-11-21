@@ -7,6 +7,9 @@ import android.content.IntentSender;
 import android.content.SharedPreferences;
 import android.content.pm.ShortcutInfo;
 import android.content.pm.ShortcutManager;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
 import android.net.Uri;
 
@@ -59,8 +62,6 @@ final class AndroidSurfaces implements SurfaceSink {
     static final String EXTRA_TOKEN = "token";
 
     @Override public void pin(Action action, String uri, String confirmToken) {
-        ShortcutManager m = manager();
-        if (m == null || !m.isRequestPinShortcutSupported()) throw new UnsupportedException("this launcher does not pin shortcuts");
         IntentSender confirm = null;
         if (confirmToken != null) {
             // Sent by the system once the owner has pinned the shortcut. Immutable: nothing
@@ -68,6 +69,24 @@ final class AndroidSurfaces implements SurfaceSink {
             Intent result = new Intent().setClassName(context, PIN_RESULT_RECEIVER).putExtra(EXTRA_TOKEN, confirmToken);
             confirm = PendingIntent.getBroadcast(context, confirmToken.hashCode(), result,
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_ONE_SHOT).getIntentSender();
+        }
+        pinWithCallback(action, uri, confirm);
+    }
+
+    @Override public void pinFromSetup(Action action, String uri, String requestId) {
+        // The phone setup's private receiver lives in the widgets shell.
+        Intent result = new Intent("net.kckern.daylight.SETUP_SHORTCUT_PIN_CONFIRMED")
+                .setClassName(context, "net.kckern.daylight.cap.widgets.shell.ButtonWidgetProvider")
+                .setData(Uri.parse("daylight-widget://shortcut/" + requestId));
+        IntentSender confirm = PendingIntent.getBroadcast(context, 0, result,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_ONE_SHOT).getIntentSender();
+        pinWithCallback(action, uri, confirm);
+    }
+
+    private void pinWithCallback(Action action, String uri, IntentSender confirm) {
+        ShortcutManager m = manager();
+        if (m == null || !m.isRequestPinShortcutSupported()) {
+            throw new UnsupportedException("this launcher does not pin shortcuts");
         }
         if (!m.requestPinShortcut(info(action, uri, SurfacePlan.pinId(action)), confirm)) {
             throw new UnsupportedException("the launcher refused the pin request");
@@ -112,9 +131,23 @@ final class AndroidSurfaces implements SurfaceSink {
         return new ShortcutInfo.Builder(context, shortcutId)
                 .setShortLabel(a.label)
                 .setLongLabel(a.label)
-                .setIcon(Icon.createWithResource(context, iconResource(a.icon)))
+                .setIcon(shortcutIcon(a))
                 .setIntent(intent)
                 .build();
+    }
+
+    private Icon shortcutIcon(Action action) {
+        // Leave room for launcher masks. Tiles use the original monochrome drawable.
+        int size = Math.max(108, manager().getIconMaxWidth());
+        Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        boolean meal = action.id.equals("meal") || action.id.startsWith("meal-");
+        canvas.drawColor(meal ? 0xff8b421e : 0xff17465a);
+        Drawable glyph = context.getDrawable(iconResource(action.icon));
+        int inset = size / 4;
+        glyph.setBounds(inset, inset, size - inset, size - inset);
+        glyph.draw(canvas);
+        return Icon.createWithAdaptiveBitmap(bitmap);
     }
 
     /** Drawables ship in this capability's shell half as ic_action_<name>. */

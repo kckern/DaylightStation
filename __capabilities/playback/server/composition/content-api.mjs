@@ -94,7 +94,7 @@ export function createPlaybackReadOperations({ contentCatalog, contentIdResolver
   return { playbackReadService };
 }
 
-export function createPlaybackQueueRouter({ contentIdResolver, contentCatalog, mediaProgressMemory, surroundStore, surroundEnforceOrder, sequenceStore = null, dataPath, logger }) {
+export function createPlaybackQueueRouter({ contentIdResolver, contentCatalog, mediaProgressMemory, surroundStore, surroundEnforceOrder, sequenceStore = null, dataPath, configService, logger }) {
   const sequenceLogger = logger?.child?.({ app: 'surround', module: 'station-sequence' }) ?? logger;
   const resolvedSequenceStore = sequenceStore ?? createStationSequenceStore(
     path.join(dataPath, 'content/surround'), sequenceLogger);
@@ -103,6 +103,7 @@ export function createPlaybackQueueRouter({ contentIdResolver, contentCatalog, m
         contentAccessService: new ContentAccessService({
           contentIdResolver,
           contentCatalog,
+          audioListConfig: () => configService?.getHouseholdAppConfig?.(null, 'media')?.play_on_demand,
           queueService: new QueueService({ mediaProgressMemory, random: Math.random }),
           sequenceStore: resolvedSequenceStore,
           random: Math.random,

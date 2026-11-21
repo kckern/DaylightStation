@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  api: vi.fn(), start: vi.fn(), resume: vi.fn(), end: vi.fn(), dispatch: vi.fn(), retryMedia: vi.fn(), loggerConfigure: vi.fn(),
+  api: vi.fn(), start: vi.fn(), resume: vi.fn(), end: vi.fn(), dismiss: vi.fn(), dispatch: vi.fn(), retryMedia: vi.fn(), loggerConfigure: vi.fn(),
   state: { value: 'idle', media: { audio: false, video: false }, controlConnected: true },
   media: { status: 'ready', stream: null, errors: {}, retry: vi.fn() },
 }));
@@ -17,7 +17,7 @@ vi.mock("../../../../frontend/src/lib/logging/Logger.js", () => ({
 vi.mock("../../../../frontend/src/modules/Input/hooks/useIndependentMedia.js", () => ({ useIndependentMedia: () => mocks.media }));
 vi.mock("../../../../frontend/src/modules/Input/hooks/useWebRTCPeer.js", () => ({ useWebRTCPeer: () => ({ remoteStream: null }) }));
 vi.mock("./call/useCallController.js", () => ({ useCallController: () => ({
-  state: mocks.state, start: mocks.start, resume: mocks.resume, end: mocks.end,
+  state: mocks.state, start: mocks.start, resume: mocks.resume, end: mocks.end, dismiss: mocks.dismiss,
   dispatch: mocks.dispatch, retryMedia: mocks.retryMedia, sendMuteState: vi.fn(),
 }) }));
 
@@ -35,9 +35,10 @@ if (typeof window.matchMedia !== 'function') {
 
 describe('CallApp presentation', () => {
   beforeEach(() => {
-    mocks.api.mockReset(); mocks.start.mockReset(); mocks.end.mockReset(); mocks.dispatch.mockReset(); mocks.retryMedia.mockReset(); mocks.loggerConfigure.mockReset();
+    mocks.api.mockReset(); mocks.start.mockReset(); mocks.end.mockReset(); mocks.dismiss.mockReset(); mocks.dispatch.mockReset(); mocks.retryMedia.mockReset(); mocks.loggerConfigure.mockReset();
     mocks.state = { value: 'idle', media: { audio: false, video: false }, controlConnected: true };
     mocks.media = { status: 'ready', stream: null, errors: {}, retry: vi.fn() };
+    mocks.media.stop = vi.fn();
     sessionStorage.clear();
   });
   afterEach(() => vi.useRealTimers());
@@ -58,6 +59,7 @@ describe('CallApp presentation', () => {
       render(<CallApp />);
       fireEvent.click(await screen.findByRole('button', { name: 'Exit' }));
       expect(mocks.end).toHaveBeenCalledWith('left_call');
+      expect(mocks.media.stop).toHaveBeenCalled();
       expect(postMessage).toHaveBeenCalledWith('call-exit');
     } finally {
       vi.unstubAllGlobals();
@@ -123,6 +125,35 @@ describe('CallApp presentation', () => {
     expect(screen.queryByText('yellow-room-tablet')).toBeNull();
   });
 
+  it('releases the preview when the caller cancels during setup', async () => {
+    mocks.state.value = 'reserving';
+    mocks.api.mockResolvedValue({ devices: [] });
+    render(<CallApp />);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(mocks.media.stop).toHaveBeenCalledOnce();
+  });
+
+  it('restarts the initial preview from the same Call view after Android hides it', async () => {
+    mocks.state.value = 'booting';
+    mocks.media.status = 'loading';
+    mocks.media.stop.mockImplementation(() => { mocks.media.status = 'idle'; });
+    mocks.api.mockResolvedValue({ devices: [] });
+    const { rerender } = render(<CallApp />);
+    fireEvent(window, new Event('daylight:hidden'));
+    expect(mocks.media.stop).toHaveBeenCalledOnce();
+    rerender(<CallApp />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start preview' }));
+    expect(mocks.media.retry).toHaveBeenCalledOnce();
+  });
+
+  it('offers a retry for denied microphone even when the camera is ready', async () => {
+    mocks.media.errors = { audio: 'permission_denied' };
+    mocks.api.mockResolvedValue({ devices: [] });
+    render(<CallApp />);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry media' }));
+    expect(mocks.media.retry).toHaveBeenCalledOnce();
+  });
+
   it('distinguishes device fetch failure and provides a retry', async () => {
     mocks.api.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ devices: [] });
     render(<CallApp />);
@@ -141,7 +172,8 @@ describe('CallApp presentation', () => {
     render(<CallApp />);
     expect(screen.getByRole('alert')).toHaveTextContent('home network');
     expect(screen.queryByRole('button', { name: /sign in/i })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(mocks.dismiss).toHaveBeenCalledOnce();
   });
 
   it('presents Busy as an alert with a focused safe exit', async () => {

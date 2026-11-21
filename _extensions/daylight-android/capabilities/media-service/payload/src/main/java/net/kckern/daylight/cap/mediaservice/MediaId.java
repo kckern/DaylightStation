@@ -15,7 +15,7 @@ package net.kckern.daylight.cap.mediaservice;
  * URL: what plays is whatever the backend answers for a content id.
  */
 final class MediaId {
-    enum Kind { ROOT, RECENT, CATALOG, CONTAINER, LEAF }
+    enum Kind { ROOT, RECENT, CATALOG, CONTAINER, AUDIO_SOURCE, AUDIO_LIST, LEAF }
 
     static final String ROOT = "root";
     static final String RECENT = "recent";
@@ -40,6 +40,10 @@ final class MediaId {
 
     static String container(String contentId) { return "c:" + contentId; }
 
+    static String audioSource(String contentId, int skip) { return "s:" + skip + "|" + contentId; }
+
+    static String audioList(String contentId, int skip) { return "a:" + skip + "|" + contentId; }
+
     static String more(String contentId, int skip) { return "m:" + skip + "|" + contentId; }
 
     static String leaf(String contentId, String parent) { return "p:" + contentId + (parent == null ? "" : "|" + parent); }
@@ -56,6 +60,8 @@ final class MediaId {
             case 'c':
                 if (!ContentId.valid(rest)) throw unknown();
                 return new MediaId(Kind.CONTAINER, rest, null, 0);
+            case 'a':
+            case 's':
             case 'm': {
                 if (bar <= 0) throw unknown();
                 String digits = rest.substring(0, bar);
@@ -64,7 +70,9 @@ final class MediaId {
                 int skip;
                 try { skip = Integer.parseInt(digits); } catch (NumberFormatException e) { throw unknown(); }
                 if (skip < 0 || skip > MAX_SKIP || !digits.equals(String.valueOf(skip))) throw unknown();
-                return new MediaId(Kind.CONTAINER, contentId, null, skip);
+                Kind kind = raw.charAt(0) == 'a' ? Kind.AUDIO_LIST
+                        : raw.charAt(0) == 's' ? Kind.AUDIO_SOURCE : Kind.CONTAINER;
+                return new MediaId(kind, contentId, null, skip);
             }
             case 'p': {
                 String contentId = bar < 0 ? rest : rest.substring(0, bar);

@@ -22,11 +22,11 @@ with the checklist for [Portal](../../__docs/runbooks/android/portal-cutover.md)
 The [phone reference](../../__docs/reference/android/phone.md) and
 [kiosk reference](../../__docs/reference/android/kiosk.md) describe each runtime.
 
-## Phone candidate experience
+## Phone, widgets, and Android Auto
 
-The [build 77 phone experience guide](PHONE-EXPERIENCE.md) documents the tested
-Home and Apex setup, playlist widgets, Drive staples and radio rules, media
-configuration, and verification coverage.
+See the [phone experience guide](PHONE-EXPERIENCE.md) for Home and Apex setup,
+playlist widgets, Drive staples and radio rules, media configuration, and
+verification coverage.
 
 ## Layout
 

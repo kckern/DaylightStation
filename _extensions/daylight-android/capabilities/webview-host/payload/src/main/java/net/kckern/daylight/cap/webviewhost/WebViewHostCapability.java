@@ -70,6 +70,7 @@ public final class WebViewHostCapability implements Capability {
         core.settings().declare("webview.interceptKeys", Type.STRING, "");
         core.settings().declare("webview.loadTimeoutSec", Type.INTEGER, 20, SettingsRegistry.range(1, 600));
         // Off unless the device file says otherwise, so a new device gives no page capture.
+        core.settings().declare("webview.callPermissions", Type.BOOLEAN, false);
         core.settings().declare("webview.allowMic", Type.BOOLEAN, false);
         core.settings().declare("webview.allowCamera", Type.BOOLEAN, false);
         // Whether the window shows over the lock screen. A kiosk's device file says true;

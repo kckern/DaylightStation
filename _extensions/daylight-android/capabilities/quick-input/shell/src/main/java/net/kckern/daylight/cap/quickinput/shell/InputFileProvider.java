@@ -29,16 +29,14 @@ public class InputFileProvider extends ContentProvider {
     private File fileFor(Uri uri) {
         String name = uri == null ? null : CaptureFiles.served(uri.getPathSegments());
         if (name == null || getContext() == null) return null;
-        return new File(new File(getContext().getFilesDir(), CaptureFiles.INBOX), name);
+        return new File(new File(getContext().getFilesDir(), CaptureDraftStore.CAMERA_DIR), name);
     }
 
     @Override
     public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
         File file = fileFor(uri);
-        if (file == null || !CaptureFiles.modeAllowed(mode)) throw new FileNotFoundException("not served");
-        File dir = file.getParentFile();
-        if (dir != null && !dir.isDirectory() && !dir.mkdirs()) throw new FileNotFoundException("not served");
-        return ParcelFileDescriptor.open(file, ParcelFileDescriptor.parseMode(mode) | ParcelFileDescriptor.MODE_CREATE);
+        if (file == null || !file.isFile() || !CaptureFiles.modeAllowed(mode)) throw new FileNotFoundException("not served");
+        return ParcelFileDescriptor.open(file, ParcelFileDescriptor.parseMode(mode) & ~ParcelFileDescriptor.MODE_CREATE);
     }
 
     @Override public String getType(Uri uri) { return fileFor(uri) == null ? null : "image/jpeg"; }

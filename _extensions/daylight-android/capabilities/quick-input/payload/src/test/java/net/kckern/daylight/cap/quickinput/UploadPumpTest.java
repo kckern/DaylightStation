@@ -242,4 +242,57 @@ public class UploadPumpTest {
         pump(q, new Result(Outcome.NO_CONNECTION, "no connection")).drain(1000);
         assertEquals("with no connection the journal would fail the same way", 1, sent.size());
     }
+    @Test public void anOfflineCaptureAndUncertainUploadSurviveReopeningUnderTheOriginalId() throws Exception {
+        String owner = net.kckern.daylight.cap.quickinput.shell.CaptureScope.key("https://home.example", "alice");
+        File directory = new File(tmp.getRoot(), "owner-" + owner);
+        assertTrue(directory.mkdir());
+        File file = new File(directory, "capture.journal.ogg");
+        File state = new File(tmp.getRoot(), "state.json");
+        Files.write(file.toPath(), new byte[] { 42 });
+        InputQueue queue = new InputQueue(state);
+        queue.add("capture", file.getPath(), 1000);
+        linkUp = false;
+        assertTrue(pump(queue).drain(1000).offline);
+        assertEquals("QUEUED", queue.captureStatus(owner, 1000).getJSONObject(0).getString("state"));
+        linkUp = true;
+        pump(queue, new Result(Outcome.RETRY, "timeout")).drain(1000);
+        assertTrue(file.exists());
+
+        InputQueue restarted = new InputQueue(state);
+        assertEquals("UNCERTAIN", restarted.captureStatus(owner, 1001).getJSONObject(0).getString("state"));
+        assertFalse(restarted.retryCapture("capture", "another-owner", 1001));
+        assertTrue(restarted.retryCapture("capture", owner, 1001));
+        pump(restarted, new Result(Outcome.UPLOADED, "", 0, "memo:capture", null)).drain(1001);
+        assertEquals(Arrays.asList("capture", "capture"), sent);
+        assertFalse(file.exists());
+        InputQueue finished = new InputQueue(state);
+        assertEquals("memo:capture", finished.captureStatus(owner, 1002).getJSONObject(0).getString("entryId"));
+        assertEquals("DELIVERED", finished.captureStatus(owner, 1002).getJSONObject(0).getString("state"));
+        assertFalse(finished.retryCapture("capture", owner, 1002));
+    }
+
+    @Test public void captureFileSurvivesAnUnwritableReceiptAndThePumpCanRecover() throws Exception {
+        File state = new File(tmp.getRoot(), "state.json");
+        boolean[] receiptWriteFails = { false };
+        InputQueue queue = new InputQueue(state, bytes -> {
+            if (receiptWriteFails[0]) throw new java.io.IOException("Disk full");
+            Files.write(state.toPath(), bytes);
+        });
+        String id = "capture";
+        File file = audio(id);
+        Files.write(file.toPath(), new byte[] { 42 });
+        queue.add(id, file.getPath(), 1000);
+        UploadPump pump = new UploadPump(queue, memo -> {
+            sent.add(memo.id);
+            receiptWriteFails[0] = sent.size() == 1;
+            return ok();
+        }, () -> true);
+        assertThrows(IllegalStateException.class, () -> pump.drain(1000));
+        assertTrue(file.exists());
+        receiptWriteFails[0] = false;
+        assertEquals(1, pump.drain(1000 + InputQueue.BASE_DELAY_MS).uploaded);
+        assertEquals(Arrays.asList(id, id), sent);
+        assertFalse(file.exists());
+    }
+
 }

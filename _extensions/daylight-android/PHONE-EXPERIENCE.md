@@ -1,9 +1,7 @@
 # Daylight on Android and Android Auto
 
-This guide describes the build 77 phone candidate tested on the USB phone and
-its handoffs to Android Home, Apex, the native media session, and Android Auto.
-The candidate requires the matching Android source and backend audio catalog
-changes. Check the build number before following the instructions. See the [phone acceptance runbook](../../__docs/runbooks/android/phone-acceptance.md)
+This guide describes the phone build and its handoffs to Android Home, Apex, the
+native media session, and Android Auto. See the [phone acceptance runbook](../../__docs/runbooks/android/phone-acceptance.md)
 for first install, permissions, cold starts, and device qualification.
 
 ## Set up on the phone, use from Home
@@ -102,7 +100,7 @@ are saved together when a widget is confirmed. Older assignments have no
 timestamps, so widget ID order approximates their recency until the user
 places a widget again. The owning code is in [widgets](capabilities/widgets),
 [media-service](capabilities/media-service), and
-`DrivingRadioSettings` in [shell-kit](shell-kit) on the candidate branch.
+[DrivingRadioSettings](shell-kit/src/main/java/net/kckern/daylight/shellkit/DrivingRadioSettings.java).
 
 ## Verification and remaining checks
 

@@ -94,7 +94,7 @@ public final class DeviceManifestSource {
             if (personal) {
                 // Every address a personal device is built with is https (PersonalBuild.urlFailures),
                 // and it joins networks outside the house: no plain-http request leaves it.
-                s.append("    <application android:usesCleartextTraffic=\"false\" tools:replace=\"android:usesCleartextTraffic\">\n");
+                s.append("    <application android:icon=\"@mipmap/ic_daylight_launcher\" android:roundIcon=\"@mipmap/ic_daylight_launcher\" android:usesCleartextTraffic=\"false\" tools:replace=\"android:usesCleartextTraffic\">\n");
             } else {
                 s.append("    <application>\n");
             }
@@ -123,8 +123,16 @@ public final class DeviceManifestSource {
                 // The window is a phone app's, not a kiosk's: no lock task, and no entry in
                 // a TV launcher. Its filters are replaced by the one a phone launcher reads.
                 s.append("        <activity android:name=\"").append(KIOSK_ACTIVITY).append("\"\n");
-                s.append("            android:exported=\"true\" tools:node=\"merge\" tools:remove=\"android:lockTaskMode\">\n");
+                s.append("            android:exported=\"true\" tools:node=\"merge\" tools:remove=\"android:lockTaskMode\"");
+                if (d.capabilities.contains("widgets")) {
+                    s.append(" android:taskAffinity=\"").append(d.packageName).append(".service\"");
+                }
+                s.append(">\n");
                 s.append("            <intent-filter tools:node=\"removeAll\" />\n");
+                if (d.capabilities.contains("widgets")) {
+                    s.append("        </activity>\n");
+                    s.append("        <activity android:name=\"net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity\">\n");
+                }
                 s.append("            <intent-filter>\n");
                 s.append("                <action android:name=\"android.intent.action.MAIN\" />\n");
                 s.append("                <category android:name=\"android.intent.category.LAUNCHER\" />\n");
