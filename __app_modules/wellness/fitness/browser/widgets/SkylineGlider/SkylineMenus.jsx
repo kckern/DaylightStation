@@ -65,7 +65,17 @@ export default function SkylineMenus({state,riders,acts,onEvent,crashNote,summar
   <h1>Sound</h1>
   <GameSoundSheet level={sound?.level??0} muted={!!sound?.muted} onLevel={l=>sound?.onLevel?.(l)} onToggleMute={()=>sound?.onToggleMute?.()} controlId="skyline-volume"/>
  </section>;
- if(state.phase==='ready'||state.phase==='countdown')return <section className="skyline-menus" data-phase={state.phase}><p className="skyline-menus__kicker">{selected?.name}</p><h1>{state.phase==='ready'?'Pedal to take off':'Keep pedaling'}</h1><strong className="skyline-menus__count">{state.phase==='countdown'?Math.ceil(state.countdown):Math.round(state.cadence?.rpm||0)+' RPM'}</strong><p>Your flight waits until you’re pedaling steadily.</p></section>;
+ if(state.phase==='ready'||state.phase==='countdown'){
+  // 2026-11-20: a resume showed "Pedal to take off" like a new launch and read as a restart.
+  const resuming=['live','checkpoint'].includes(state.resumeIntent),t=state.flight?.courseTime;
+  const where=state.resumeIntent==='live'&&Number.isFinite(t)?` · paused at ${Math.floor(t/60)}:${String(Math.floor(t%60)).padStart(2,'0')}`:state.resumeIntent==='checkpoint'?' · from the last windsock':'';
+  return <section className="skyline-menus" data-phase={state.phase} data-resuming={resuming||undefined}>
+   <p className="skyline-menus__kicker">{selected?.name}{where}</p>
+   <h1>{state.phase==='ready'?(resuming?'Pedal to continue':'Pedal to take off'):'Keep pedaling'}</h1>
+   <strong className="skyline-menus__count">{state.phase==='countdown'?Math.ceil(state.countdown):Math.round(state.cadence?.rpm||0)+' RPM'}</strong>
+   <p>{resuming?'Your flight picks up where it stopped once you’re pedaling steadily.':'Your flight waits until you’re pedaling steadily.'}</p>
+  </section>;
+ }
  const titles={menu:'Flight controls',crash:'Let’s try again',result:'Back at base',saving:'Saving your flight…',denied:'Flight locked','save-details':'Your flight is waiting to save',stall:'Stalled!'};
  return <section className="skyline-menus" data-phase={state.phase}>
   <h1>{titles[state.phase]||'Charting the course…'}</h1>

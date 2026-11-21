@@ -28,9 +28,13 @@ import useSkylineWeapons from "./useSkylineWeapons.js";
 import SkylineFlightHud, { CollectibleIcon, MoreButton } from "./SkylineFlightHud.jsx";
 import RpmGauge from "./SkylineRpmGauge.jsx";
 import SkylineFlightOverlays from "./SkylineFlightOverlays.jsx";
+import SkylineSoundOverlay from "./SkylineSoundOverlay.jsx";
 import { MomentBanner } from "../../../../../../__capabilities/gaming/browser/platform/ui/hud/index.js";
 import { createFrameDriver, createEffectDispatcher } from "../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
 import "./SkylineGlider.scss";
+
+// The sound sheet over a live flight closes itself once nobody has touched it for this long.
+const SOUND_OVERLAY_IDLE_MS = 8000;
 
 const SKYLINE_LOG_NAMES = {
   event: (e) => `skyline_glider.flight.${e.type}`,
@@ -723,7 +727,19 @@ export default function SkylineGlider() {
     if(c.label==='Start'&&saved.status==='compatible')return {...c,label:'Resume',hint:'Continue this flight'};
     return c;
   });
-  const openSoundSheet=()=>{log.info('skyline_glider.settings.opened',{phase:controller.state.phase,source:'touch'});controller.dispatch({type:'OPEN_SETTINGS',source:'touch'})};
+  const soundOverlay=!!controller.state.soundOverlay;
+  const closeSoundSheet=source=>{log.info('skyline_glider.settings.closed',{phase:controller.state.phase,source,level:gameVolume.level,muted:gameVolume.muted,overlay:true});controller.dispatch({type:'CLOSE_SETTINGS',source})};
+  const closeSoundRef=useRef(closeSoundSheet);closeSoundRef.current=closeSoundSheet;
+  useEffect(()=>{
+    if(!soundOverlay)return undefined;
+    const timer=setTimeout(()=>closeSoundRef.current('timeout'),SOUND_OVERLAY_IDLE_MS);
+    return ()=>clearTimeout(timer);
+  },[soundOverlay,gameVolume.level,gameVolume.muted]);
+  const openSoundSheet=()=>{
+    if(soundOverlay){closeSoundSheet('touch');return}
+    log.info('skyline_glider.settings.opened',{phase:controller.state.phase,source:'touch',overlay:controller.state.phase==='flight'});
+    controller.dispatch({type:'OPEN_SETTINGS',source:'touch'});
+  };
   const soundSheet={level:gameVolume.level,muted:gameVolume.muted,
     onLevel:level=>{gameVolume.setLevel(level);log.info('skyline_glider.audio.level_set',{level,control:'touch'})},
     onToggleMute:()=>{gameVolume.toggleMute();log.info('skyline_glider.audio.mute_toggled',{muted:!gameVolume.muted,source:'touch'})}};
@@ -762,5 +778,6 @@ export default function SkylineGlider() {
       power={weaponPower(fitnessSessionInstance?.zoneProfileStore?.getProfile?.(riderId))}/>
     <SkylineFlightOverlays flight={flight}/>
     <MomentBanner text={bannerText} momentKey={bannerText} className="skyline-glider__checkpoint-banner"/>
+    {soundOverlay&&<SkylineSoundOverlay sound={soundSheet} onClose={()=>closeSoundSheet('touch')}/>}
   </main>;
 }

@@ -93,10 +93,20 @@ describe('sound settings sheet',()=>{
   expect(reduceSkylineControl(s,{type:'PRESS',position:4}).effects).toContainEqual(expect.objectContaining({type:'toggle-sound'}));
   expect(press(s,3).phase).toBe('menu');
  });
- it('a touch on the more button mid-flight pauses into the sheet and Back lands on the flight menu',()=>{
+ it('a touch on the more button mid-flight opens the sheet over the flight, which keeps flying',()=>{
   const r=reduceSkylineControl(flying(),{type:'OPEN_SETTINGS'});
-  expect(r.state.phase).toBe('settings');expect(r.effects.map(e=>e.type)).toContain('pause');
-  expect(press(r.state,3).phase).toBe('menu');
+  expect(r.state).toMatchObject({phase:'flight',soundOverlay:true});
+  expect(r.effects.map(e=>e.type)).not.toContain('pause');
+  expect(describeSkylineControls(r.state).map(c=>c.label)).toEqual(describeSkylineControls(flying()).map(c=>c.label));
+  expect(event(r.state,{type:'CLOSE_SETTINGS'})).toMatchObject({phase:'flight',soundOverlay:false});
+ });
+ it('the bike buttons keep their flight meaning under the sheet, and leaving flight closes it',()=>{
+  const open=event(flying(),{type:'OPEN_SETTINGS'});
+  expect(reduceSkylineControl(open,{type:'PRESS',position:1,gesture:'single'}).effects).toContainEqual(expect.objectContaining({type:'combat',action:'laser'}));
+  expect(press(open,4,'long')).toMatchObject({phase:'menu',soundOverlay:false});
+ });
+ it('starts with the overlay closed',()=>{
+  expect(start().soundOverlay).toBe(false);
  });
  it('from a lobby screen the sheet returns to that screen; a countdown returns to ready',()=>{
   const flights=press(start(),1);
