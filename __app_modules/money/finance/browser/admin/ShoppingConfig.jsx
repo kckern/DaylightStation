@@ -22,6 +22,12 @@ function updateRetailer(retailers, index, field, value) {
   return retailers.map((r, i) => i === index ? { ...r, [field]: value } : r);
 }
 
+function isShoppingDataSupported(data) {
+  if (!Object.prototype.hasOwnProperty.call(data, 'shopping')) return true;
+  const shopping = data.shopping;
+  return shopping !== null && typeof shopping === 'object' && !Array.isArray(shopping);
+}
+
 function ShoppingConfigContent({ data, setData }) {
   const [deleteIndex, setDeleteIndex] = useState(null);
 
@@ -176,6 +182,7 @@ function ShoppingConfig() {
     <ConfigFormWrapper
       filePath={configPath('harvest')}
       title="Shopping Configuration"
+      isDataSupported={isShoppingDataSupported}
     >
       {({ data, setData }) => (
         <ShoppingConfigContent data={data} setData={setData} />

@@ -39,6 +39,7 @@ Wraps a config form with standard load/save/revert chrome. Internally uses `useA
 | `title` | `string` | Yes | Page title displayed in the header |
 | `children` | `function` | Yes | Render function: `({ data, setData }) => JSX` |
 | `validate` | `function` | No | `(data) => string|null` -- return error message or null |
+| `isDataSupported` | `function` | No | `(data) => boolean` -- return whether this form can safely edit the loaded structured value; unsupported shapes use the raw YAML recovery link |
 
 **Behavior:**
 - Shows a loading spinner until config is fetched

@@ -71,6 +71,28 @@ describe('ConfigFormWrapper', () => {
     expect(screen.queryByText('structured form')).toBeNull();
   });
 
+  it('offers the raw editor when the caller does not support a nested data shape', () => {
+    mockConfig.data = { shopping: 17 };
+    mockConfig.raw = 'shopping: 17\n';
+    r(
+      <MemoryRouter>
+        <ConfigFormWrapper
+          filePath="household/harvest/config.yml"
+          title="Shopping"
+          isDataSupported={data => typeof data.shopping === 'object' && data.shopping !== null && !Array.isArray(data.shopping)}
+        >
+          {() => <div>structured form</div>}
+        </ConfigFormWrapper>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText(/This file can't be displayed as a form/i)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open YAML editor' })).toHaveAttribute(
+      'href', '/admin/system/config/household/harvest/config.yml',
+    );
+    expect(screen.queryByText('structured form')).toBeNull();
+  });
+
   it.each([
     ['false', false],
     ['a string', 'value'],

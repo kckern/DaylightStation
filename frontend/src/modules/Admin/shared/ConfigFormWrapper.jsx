@@ -8,6 +8,8 @@ import { useUnsavedGuard } from './useUnsavedGuard.js';
 import GuardedLink from './GuardedLink.jsx';
 import SaveBar from './SaveBar.jsx';
 
+const defaultDataSupport = () => true;
+
 /**
  * Wraps a config form with standard load/save/revert/dirty-state chrome.
  *
@@ -19,18 +21,20 @@ import SaveBar from './SaveBar.jsx';
  *                 The setter accepts a new object or an updater function: setData(prev => ({...prev, ...}))
  *                 In rawMode, edit via raw/setRaw instead.
  *   validate    - Optional (data) => string|null - return error message or null (parsed mode only)
+ *   isDataSupported - Optional (data) => boolean - whether this form can safely edit its structured value
  *   rawMode     - Edit/save the raw YAML string instead of the parsed object
  *   headerExtra - Optional node rendered in the action bar, before Revert/Save
  */
-function ConfigFormWrapper({ filePath, title, children, validate, rawMode = false, headerExtra }) {
+function ConfigFormWrapper({ filePath, title, children, validate, isDataSupported = defaultDataSupport, rawMode = false, headerExtra }) {
   const {
     data, raw, loading, saving, error, readError, draftReady, dirty,
     save, revert, setData, setRaw, clearError, retryRead, discardDraft
   } = useAdminConfig(filePath, rawMode ? 'raw' : 'parsed');
   const hasStructuredData = data !== null && typeof data === 'object' && !Array.isArray(data);
-  const hasEditor = rawMode ? draftReady : hasStructuredData;
+  const hasSupportedData = hasStructuredData && isDataSupported(data);
+  const hasEditor = rawMode ? draftReady : hasSupportedData;
   const { regionProps, retry } = useRetryRegion(retryRead, loading);
-  const structuredFormUnavailable = !rawMode && draftReady && !loading && !readError && !hasStructuredData;
+  const structuredFormUnavailable = !rawMode && draftReady && !loading && !readError && !hasSupportedData;
 
   // Unsaved-changes guard: beforeunload + guarded Admin navigation (audit C1)
   useUnsavedGuard(dirty, { label: filePath, onDiscard: discardDraft });
