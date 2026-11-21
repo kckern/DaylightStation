@@ -15,6 +15,34 @@ import { extractContentId, extractActionName, normalizeListItem } from "../../do
 // Valid list types
 const LIST_TYPES = ['menus', 'watchlists', 'programs'];
 
+const ITEM_FIELDS = Object.freeze({
+  required: Object.freeze({
+    label: ['label'],
+    input: ['input'],
+  }),
+  optional: Object.freeze({
+    action: ['action'],
+    active: ['active'],
+    image: ['image'],
+    shuffle: ['shuffle'],
+    continuous: ['continuous'],
+    days: ['days'],
+    hold: ['hold'],
+    priority: ['priority'],
+    skip_after: ['skipAfter', 'skip_after'],
+    wait_until: ['waitUntil', 'wait_until'],
+    group: ['group'],
+  }),
+});
+const EDITABLE_ITEM_FIELDS = Object.freeze({ ...ITEM_FIELDS.required, ...ITEM_FIELDS.optional });
+
+function applyItemFields(target, source, fields) {
+  for (const [field, aliases] of Object.entries(fields)) {
+    const alias = aliases.find(key => source[key] !== undefined);
+    if (alias) target[field] = source[alias];
+  }
+}
+
 // Validation pattern for list names (lowercase, alphanumeric, hyphens)
 const LIST_NAME_PATTERN = /^[a-z0-9-]+$/;
 
@@ -53,6 +81,10 @@ function denormalizeForAdmin(item) {
   if (!result.label) result.label = result.title || '';
   if (!result.input) result.input = extractContentId(result);
   if (!result.action) result.action = extractActionName(result);
+  if (result.skipAfter === undefined && result.skip_after !== undefined) result.skipAfter = result.skip_after;
+  if (result.waitUntil === undefined && result.wait_until !== undefined) result.waitUntil = result.wait_until;
+  delete result.skip_after;
+  delete result.wait_until;
   return result;
 }
 
@@ -321,22 +353,13 @@ export class ListManagementService {
       throw new NotFoundError('List', `${type}/${listName}`);
     }
 
-    // Build new item - preserve all provided fields
+    // Build the required shape, then copy all supported optional fields from
+    // the same mapping used by updates so add and undo preserve list settings.
     const newItem = {
       label: itemData.label.trim(),
       input: itemData.input.trim()
     };
-
-    // Copy optional fields if provided
-    if (itemData.action !== undefined) newItem.action = itemData.action;
-    if (itemData.active !== undefined) newItem.active = itemData.active;
-    if (itemData.image !== undefined) newItem.image = itemData.image;
-    if (itemData.shuffle !== undefined) newItem.shuffle = itemData.shuffle;
-    if (itemData.continuous !== undefined) newItem.continuous = itemData.continuous;
-    if (itemData.days !== undefined) newItem.days = itemData.days;
-    if (itemData.hold !== undefined) newItem.hold = itemData.hold;
-    if (itemData.priority !== undefined) newItem.priority = itemData.priority;
-    if (itemData.group !== undefined) newItem.group = itemData.group;
+    applyItemFields(newItem, itemData, ITEM_FIELDS.optional);
 
     const section = list.sections[sectionIndex] || (list.sections[sectionIndex] = { items: [] });
     section.items.push(newItem);
@@ -386,12 +409,7 @@ export class ListManagementService {
     const updatedItem = { ...existingItem };
 
     // Apply updates for any provided field
-    const allowedFields = ['label', 'input', 'action', 'active', 'image', 'shuffle', 'continuous', 'days', 'hold', 'priority', 'skipAfter', 'waitUntil', 'group'];
-    for (const field of allowedFields) {
-      if (updates[field] !== undefined) {
-        updatedItem[field] = updates[field];
-      }
-    }
+    applyItemFields(updatedItem, updates, EDITABLE_ITEM_FIELDS);
 
     section.items[index] = updatedItem;
     this.listStore.saveList(type, listName, householdId, list);

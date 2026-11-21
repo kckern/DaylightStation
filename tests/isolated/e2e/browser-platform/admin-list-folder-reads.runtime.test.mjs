@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import express from 'express';
 import request from 'supertest';
 import { createAdminContentRouter } from '../../../../__capabilities/content-catalog/server/api/admin/content.mjs';
+import { ListConfigCodec } from '../../../../__capabilities/content-catalog/server/adapters/providers/list/ListConfigCodec.mjs';
 import { ListManagementService } from '../../../../__capabilities/content-catalog/server/application/services/ListManagementService.mjs';
 
 test.use({ serviceWorkers: 'block', viewport: { width: 1440, height: 850 } });
@@ -113,6 +114,49 @@ test('Admin list commands use confirmed positions through search, split, reorder
   expect(stored.sections.map(section => section.items.map(item => item.label))).toEqual([
     ['After match', 'Needle match revised'], ['Before match', 'Needle match revised'],
   ]);
+});
+
+test('Admin list deletion Undo restores schedule fields through the list service', async ({ page }) => {
+  const path = `/api/v1${menuRoute}`;
+  const schedule = { waitUntil: '2030-07-02', skipAfter: '2030-07-10' };
+  let stored = { sections: [{ title: 'Scheduled', items: [{
+    uid: 'scheduled-item', label: 'Scheduled item', src: 'plex', media_key: 'scheduled',
+    wait_until: schedule.waitUntil, skip_after: schedule.skipAfter,
+  }] }] };
+  const service = new ListManagementService({
+    logger: {},
+    listStore: {
+      getList: () => ListConfigCodec.normalizeListConfig(structuredClone(stored), 'fixture-menu'),
+      saveList: (_type, _name, _household, value) => { stored = ListConfigCodec.serializeListConfig(value); },
+    },
+  });
+  const api = express().use(express.json()).use('/api/v1/admin/content', createAdminContentRouter({
+    listManagementService: service, householdContext: { resolve: () => 'fixture' }, logger: {},
+  }));
+  await page.route('**/api/**', async route => {
+    const incoming = route.request();
+    const { pathname, search } = new URL(incoming.url());
+    if (pathname !== path && !pathname.startsWith(`${path}/`)) {
+      return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+    }
+    const method = incoming.method();
+    const body = method === 'GET' ? null : incoming.postDataJSON();
+    const target = pathname + search;
+    const command = request(api)[method.toLowerCase()](target);
+    const response = body == null ? await command : await command.send(body);
+    return route.fulfill({ status: response.status, json: response.body });
+  });
+
+  await page.goto(menuRoute);
+  const region = page.getByRole('region', { name: 'List contents' });
+  const actions = region.getByRole('button', { name: 'Actions for Scheduled item', exact: true });
+  await actions.press('Enter');
+  await page.getByRole('menuitem', { name: 'Delete', exact: true }).press('Enter');
+  await expect(region.getByText('Scheduled item', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(region.getByText('Scheduled item', { exact: true })).toBeVisible();
+
+  expect(service.getList('menus', 'fixture-menu', 'fixture').sections[0].items[0]).toMatchObject(schedule);
 });
 
 test('Admin list editor retries a moved item by UID after its field update fails', async ({ page }) => {

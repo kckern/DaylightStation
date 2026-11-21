@@ -11,6 +11,14 @@ function preserveAuthoredTitle(result, source) {
   return result;
 }
 
+function copyScheduleFields(target, source) {
+  for (const [field, alias] of [['skip_after', 'skipAfter'], ['wait_until', 'waitUntil']]) {
+    const value = source[field] ?? source[alias];
+    if (value != null) target[field] = value;
+    delete target[alias];
+  }
+}
+
 /**
  * Normalize YAML list item input field.
  * Handles the space-after-colon YAML quirk and semicolon composites.
@@ -44,7 +52,9 @@ export function normalizeListItem(item) {
 
   // Canonical actions without a legacy input retain independent labels as well.
   if (!item.input && (!item.label || !Object.hasOwn(item, 'input')) && (item.play || item.open || item.display || item.list || item.queue || item.launch)) {
-    return preserveAuthoredTitle({ ...item }, item);
+    const result = { ...item };
+    copyScheduleFields(result, item);
+    return preserveAuthoredTitle(result, item);
   }
 
   const result = {};
@@ -63,8 +73,6 @@ export function normalizeListItem(item) {
     // Watchlist-specific fields
     if (item.program != null) result.program = item.program;
     if (item.priority != null) result.priority = item.priority;
-    if (item.wait_until != null) result.wait_until = item.wait_until;
-    if (item.skip_after != null) result.skip_after = item.skip_after;
     if (item.watched != null) result.watched = item.watched;
     if (item.progress != null) result.progress = item.progress;
     if (item.summary != null) result.summary = item.summary;
@@ -129,6 +137,8 @@ export function normalizeListItem(item) {
   if (item.days != null) result.days = item.days;
   if (item.applySchedule != null) result.applySchedule = item.applySchedule;
   if (item.strategy != null) result.strategy = item.strategy;
+
+  copyScheduleFields(result, item);
 
   return preserveAuthoredTitle(result, item);
 }

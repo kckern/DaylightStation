@@ -54,6 +54,21 @@ describe('UID edits and codec provenance', () => {
     const result = applyListEdit(list, { type: 'update-item', itemUid: 'a', changes: { image: '/art' } }, { ids });
     expect(JSON.parse(JSON.stringify(serializeListConfig(result.list)))).toEqual({ sections: [{ uid: 's1', title: 'Group', items: [{ uid: 'a', title: 'Authored', input: 'files:a', image: '/art' }] }] });
   });
+  it.each([
+    { skip_after: '2030-07-10', wait_until: '2030-07-02' },
+    { skipAfter: '2030-07-10', waitUntil: '2030-07-02' },
+  ])('round-trips schedule fields across list normalization and serialization', async schedule => {
+    const { normalizeListConfig, serializeListConfig } = await import('../server/list-codec.mjs');
+    const normalized = normalizeListConfig({ sections: [{ items: [{
+      uid: 'scheduled', label: 'Scheduled', input: 'plex:scheduled', ...schedule,
+    }] }] });
+    const stored = serializeListConfig(normalized);
+    const reloaded = normalizeListConfig(stored);
+    expect(reloaded.sections[0].items[0]).toMatchObject({
+      skip_after: '2030-07-10',
+      wait_until: '2030-07-02',
+    });
+  });
 });
 
 it('allocates child IDs for a new section and rejects malformed or duplicate identities', () => {
