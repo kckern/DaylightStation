@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { subscribeSkipCard, isSkipCardPaused } from './skipCardState.js';
+import { subscribeMediaLoadingSuppression, getMediaLoadingSuppression } from '../provenance/playbackPresentation.jsx';
 
 // Exercise the real Media data/effect hooks; only external HTTP and media IO are synthetic.
 afterEach(() => { vi.unstubAllGlobals(); window.history.replaceState({}, '', '/'); });
@@ -22,8 +22,8 @@ describe('installed Media playback presentation', () => {
     expect(installed.PlayerOverlayLoading).toBe(raw.PlayerOverlayLoading);
     const contract = await import('../../../../../__capabilities/playback/browser/presentation.mjs');
     const store = contract.getLoadingPresentation();
-    expect(store.subscribeLoadingSuppression).toBe(subscribeSkipCard);
-    expect(store.getLoadingSuppression).toBe(isSkipCardPaused);
+    expect(store.subscribeLoadingSuppression).toBe(subscribeMediaLoadingSuppression);
+    expect(store.getLoadingSuppression).toBe(getMediaLoadingSuppression);
     const el = document.createElement('video');
     el.pause = vi.fn();
     el.play = vi.fn(() => Promise.resolve());
@@ -76,7 +76,9 @@ describe('installed Media playback presentation', () => {
 
   async function renderFor(search, fetchImpl, id = 'plex:50') {
     window.history.replaceState({}, '', `/${search}`);
-    vi.stubGlobal('fetch', vi.fn(fetchImpl));
+    // The provenance handoff asks too; answer "nothing confirmed" and count only filter requests.
+    const provenanceNone = async () => ({ ok: true, status: 200, json: async () => ({ provenance: null }) });
+    vi.stubGlobal('fetch', vi.fn((url, opts) => (String(url).startsWith('/api/v1/provenance/') ? provenanceNone() : fetchImpl(url, opts))));
     const contract = await import('../../../../../__capabilities/playback/browser/presentation.mjs');
     const el = document.createElement('video');
     return renderHook(() => contract.useVideoPresentation({ media: { assetId: id }, isPlex: true, getMediaEl: () => el }));

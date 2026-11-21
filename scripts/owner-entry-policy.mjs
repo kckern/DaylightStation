@@ -179,6 +179,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/media/media/server/composition/hubFleetBridge.mjs': 'composition',
   '__app_modules/media/media/server/composition/plexHubSessions.mjs': 'composition',
   '__app_modules/media/media/server/composition/content-filter.mjs': 'composition',
+  '__app_modules/media/media/server/composition/provenance.mjs': 'composition',
   '__capabilities/state-gates/server/composition.mjs': 'composition',
   '__app_modules/money/economy/server/composition/earnings.mjs': 'composition',
   '__app_modules/household/donow/server/action-validation.mjs': 'application',

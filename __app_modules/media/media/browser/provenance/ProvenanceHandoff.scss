@@ -1,0 +1,168 @@
+// Provenance handoff scene. Phases (class modifiers) come from useProvenanceHandoff:
+// linking -> linked -> docked -> leaving. Timings match HANDOFF_TIMING.
+// Reference: __docs/reference/media/provenance.md
+
+$ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+.provenance-handoff {
+  --ph-accent: #fff;
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  overflow: hidden;
+  container-type: size;
+
+  &__field {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse at 50% 46%, rgba(255, 255, 255, 0.07) 0%, rgba(0, 0, 0, 0) 55%),
+      #05060a;
+    opacity: 1;
+    // Covers the video at once: the film's first frame must not flash before the scene.
+    transition: opacity 900ms ease;
+  }
+
+  // ---- the link: two lines reaching toward the centre, dots in the gap ----
+  &__link {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 64%;
+    height: 0;
+    transition: opacity 500ms ease;
+  }
+
+  &__line {
+    position: absolute;
+    top: 0;
+    height: max(3px, 0.5cqh);
+    border-radius: 999px;
+    box-shadow: 0 0 1cqh color-mix(in srgb, var(--ph-accent) 45%, transparent);
+    transform: translateY(-50%);
+    width: 0;
+    animation: ph-reach 1100ms $ph-ease 150ms forwards;
+    transition: width 420ms $ph-ease;
+    &--left {
+      left: 0;
+      background: linear-gradient(to right, transparent, var(--ph-accent));
+    }
+    &--right {
+      right: 0;
+      background: linear-gradient(to left, transparent, var(--ph-accent));
+    }
+  }
+
+  &__dots {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    transform: translate(-50%, -50%);
+    display: flex;
+    gap: 1.4cqw;
+    transition: opacity 200ms ease;
+    i {
+      display: block;
+      width: max(7px, 0.9cqw);
+      height: max(7px, 0.9cqw);
+      border-radius: 50%;
+      background: var(--ph-accent);
+      opacity: 0.25;
+      animation: ph-dot 900ms ease-in-out infinite;
+      &:nth-child(2) { animation-delay: 150ms; }
+      &:nth-child(3) { animation-delay: 300ms; }
+    }
+  }
+
+  // A flash where the lines meet.
+  &__spark {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    width: 1cqw;
+    height: 1cqw;
+    border-radius: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    background: var(--ph-accent);
+    box-shadow: 0 0 2cqw 0.8cqw var(--ph-accent);
+    opacity: 0;
+  }
+
+  // ---- the logo: centred, then docked in the top-right corner ----
+  &__logo {
+    position: absolute;
+    left: 50%;
+    top: 45%;
+    width: 34cqw;
+    height: 20cqh;
+    object-fit: contain;
+    transform: translate(-50%, -50%);
+    animation: ph-logo-in 700ms $ph-ease both;
+    transition:
+      left 900ms $ph-ease,
+      top 900ms $ph-ease,
+      width 900ms $ph-ease,
+      height 900ms $ph-ease,
+      opacity 800ms ease;
+  }
+
+  // Lines meet: the gap closes, dots give way to the spark.
+  &--linked,
+  &--docked,
+  &--leaving {
+    .provenance-handoff__line {
+      animation: none;
+      width: 50%;
+    }
+    .provenance-handoff__dots { opacity: 0; }
+    .provenance-handoff__spark { animation: ph-spark 700ms ease-out forwards; }
+  }
+
+  &--docked,
+  &--leaving {
+    // Animations with fill-mode hold their last frame over plain declarations: drop them.
+    .provenance-handoff__field { opacity: 0; }
+    .provenance-handoff__link { opacity: 0; }
+    .provenance-handoff__logo {
+      animation: none;
+      left: 91%;
+      top: 8%;
+      width: 11cqw;
+      height: 6.5cqh;
+      opacity: 0.8;
+      filter: drop-shadow(0 0 0.6cqw rgba(0, 0, 0, 0.85));
+    }
+  }
+
+  &--leaving .provenance-handoff__logo { opacity: 0; }
+}
+
+@keyframes ph-reach {
+  from { width: 0; }
+  to { width: 44%; }
+}
+
+@keyframes ph-dot {
+  0%, 100% { opacity: 0.2; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+@keyframes ph-logo-in {
+  from { opacity: 0; transform: translate(-50%, -46%) scale(0.94); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes ph-spark {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0); }
+  30% { opacity: 1; transform: translate(-50%, -50%) scale(1.6); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(3); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .provenance-handoff,
+  .provenance-handoff * {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}

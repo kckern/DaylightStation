@@ -12,6 +12,7 @@ source-of-truth: sufficient to rebuild the app from scratch.
 | [`search-scopes.md`](./search-scopes.md) | **Feature reference** | Config-driven search scope system: YAML structure, params, app behavior. |
 | [`dash-video-resilience.md`](./dash-video-resilience.md) | **Troubleshooting** | DASH/Plex transcode stall & seek failure modes and debugging checklist (player-layer, shared with other apps). |
 | [`integration.md`](./integration.md) | **Integrations** | Provider-specific media boundaries, including Libby audiobook fulfillment and authentication/expiry behavior. |
+| [`provenance.md`](./provenance.md) | **Feature reference** | Provenance bumper: the streaming-service logo handoff before a film, Watchmode lookups on play, household tiers, logos, cache and monthly allowance. |
 
 Related: the content paradigm (`__docs/reference/content/`) defines content IDs,
 formats, the Playable Contract, and the Play/Queue/Info/Display/List APIs the

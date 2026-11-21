@@ -78,6 +78,8 @@ export const HOUSEHOLD_APP_CONFIGS = Object.freeze({
   media:            'media/config',
   'media-app':      'media/app',
   libby:            'media/libby',
+  // Provenance bumper: streaming-service tiers and lookup policy.
+  provenance:       'media/provenance',
   newsreporter:     'newsreporter/config',
   notifications:    'notifications/config',
   'omr-readers':    'hardware/omr/readers',

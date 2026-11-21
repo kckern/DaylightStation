@@ -164,6 +164,7 @@ export function createApiRouter(config) {
     '/school': 'school',
     '/donow': 'donow',
     '/content-filter': 'content-filter',
+    '/provenance': 'provenance',
     '/wikipedia': 'wikipedia',
     '/shutdown': 'shutdown',
     '/supervision': 'supervision',

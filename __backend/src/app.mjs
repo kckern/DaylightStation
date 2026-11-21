@@ -465,6 +465,7 @@ import { ROLE_SEVERITY } from "../../__app_modules/learning/school/server/domain
 
 
 import { createContentFilterRuntime } from "../../__app_modules/media/media/server/composition/content-filter.mjs";
+import { createProvenanceRuntime } from "../../__app_modules/media/media/server/composition/provenance.mjs";
 import { FeedbackService } from "./3_applications/common/feedback/FeedbackService.mjs";
 import { NotificationConfigService } from "./3_applications/notification/NotificationConfigService.mjs";
 import { YamlNotificationConfigRepository } from '#adapters/notification/YamlNotificationConfigRepository.mjs';
@@ -1907,6 +1908,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService, rootLogger, contentRegistry,
     aiGateway: scopedGateway(sharedAiGateway, { app: 'media', feature: 'content-filter-cards' }),
   });
+
+  // Provenance bumper: which streaming service a title is "from" (Watchmode,
+  // looked up when a title plays). Policy in household/media/provenance.yml.
+  v1Routers.provenance = createProvenanceRuntime({ configService, rootLogger, contentRegistry });
 
   v1Routers.emulator = createEmulatorRuntime({
     configService, rootLogger, eventBus,

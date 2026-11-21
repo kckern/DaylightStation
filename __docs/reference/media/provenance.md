@@ -1,0 +1,126 @@
+# Provenance bumper
+
+Before a movie or show starts, the player can name the streaming service it is
+"from": the service's logo on a dark field, two lines reaching in from either side
+with dots pulsing between them, then, when the film starts, the lines meet, the field
+clears and the logo shrinks into the top-right corner and fades. There are no words
+on screen.
+
+It appears only for **confirmed** availability. A title found on no known service,
+one whose lookup has not finished by the first frame, or a resume shows nothing.
+
+Later this is meant to front real handoffs to those services; today the film still
+plays from Plex and the bumper signals provenance only.
+
+## What the viewer sees
+
+| Phase | Video | Scene |
+|---|---|---|
+| `linking` (~2.2 s) | held paused at the start | field covers the video at once; logo fades in; lines grow from both edges toward the centre; three dots pulse in the gap |
+| `linked` (~0.7 s) | resumed; begins on the video's `playing` | gap closes, a spark where the lines meet |
+| `docked` (~4 s) | playing | field and lines dissolve; logo moves to the top-right corner at 80% opacity |
+| `leaving` (~0.9 s) | playing | corner logo fades |
+
+Lines and dots take the service's brand colour (`PROVIDER_ACCENTS` in
+`ProvenanceHandoff.jsx`; white otherwise). Timings are `HANDOFF_TIMING` in
+`useProvenanceHandoff.js`. If resuming does not report `playing` within 2.5 s the
+lines meet anyway; a remote press that resumes early links at once.
+
+It runs once per title, on the first `playing` within 5 s of the start. The
+content-filter bumper ("Edited for content") waits until the handoff has docked, so
+on a filtered title it follows the handoff instead of covering it.
+
+`?provenance=0` on the page URL turns it off for that load.
+
+## Choosing the service
+
+A title's streaming offers are subscription (`sub`) and free (`free`) listings only;
+rent and buy listings never count. The household's tiers decide which one wins:
+
+1. **free** services, in configured order (Hoopla, Tubi, ...)
+2. **subscribed** services, in configured order (Prime Video, Peacock)
+3. any **other** known service, in the order found (Netflix, Disney+, ...)
+
+A service qualifies only if it has a logo in `data/content/providers/`. Unknown
+services are recorded but never shown.
+
+## Files
+
+| What | Where |
+|---|---|
+| Household policy (tiers, refresh, reserve) | `data/household/media/provenance.yml` (registry key `provenance`) |
+| Availability cache (machine-written) | `media/content-providers/availability.yml` |
+| Logos | `data/content/providers/<id>.svg` or `.png`; `<id>.white.svg` for a black logo on the dark field; `sources.yml` records where each came from |
+| API key | system auth `watchmode.yml` → `api_key` |
+
+```yaml
+# data/household/media/provenance.yml
+enabled: true
+lookup:
+  region: US
+  refresh_days: 30
+  quota_reserve: 100
+providers:
+  free: [hoopla, tubi, pluto-tv, kanopy, roku-channel]
+  subscribed: [prime-video, peacock]
+```
+
+Provider ids: `netflix`, `prime-video`, `hulu`, `disney-plus`, `peacock`, `hbo-max`,
+`paramount-plus`, `apple-tv`, `tubi`, `pluto-tv`, `hoopla`, `kanopy`, `roku-channel`.
+Watchmode's spellings map to them in `providerIdFor` (domain). Adding a service: add
+its alias there and drop its logo in the providers folder. A logo dropped in is seen
+within a minute, no restart. Policy edits need a restart (household config is cached).
+
+## Lookups and the monthly allowance
+
+Watchmode allows 2,500 credits a month, and a title lookup costs 2. There is no
+library sweep. A title is looked up when it is about to play (the player asks on
+mount), and the answer is cached:
+
+- A movie or show is recorded under its own rating key; an episode or season under
+  its show.
+- Plex `Guid` entries give the id: IMDb when present, else a typed TMDB id
+  (`movie-603`, `tv-1396`). No external id: recorded with `note: no external id`,
+  no lookup spent.
+- A record is reused for `refresh_days`, including "found nowhere" (`offers: []`).
+- Watchmode's `X-Account-Quota-Used` header is stored as `usage`; lookups stop at
+  `quota - quota_reserve` for the rest of the month (a stale record is still served).
+- A failed lookup serves the stale record if there is one, else nothing.
+- Concurrent plays of one title share one lookup.
+
+An uncached lookup took 160 to 460 ms in testing; a cached answer a few
+milliseconds. The bumper never waits for one: the first play of a title whose
+answer is not in yet plays plain, and the next play has it.
+
+## API
+
+`/api/v1/provenance`:
+
+- `GET /:ratingKey` (bare or `plex:`-prefixed) → `{ provenance: { ratingKey, provider, name, tier, offerType, checkedAt, logo } | null }`
+- `GET /logo/:provider[?variant=white]` → the logo (white variant preferred when
+  asked, else the base logo); cached for a day
+
+## Code
+
+| Layer | Path (under `__app_modules/media/media/`) |
+|---|---|
+| Domain rules | `server/domain/provenance/provenance.mjs` |
+| Use case | `server/application/provenance/GetTitleProvenance.mjs`, ports in `ports/` |
+| Adapters | `server/adapters/provenance/` (Watchmode, Plex identity, YAML store, logo catalog) |
+| Route + wiring | `server/api/provenance.mjs`, `server/composition/provenance.mjs` |
+| Player | `browser/provenance/` (`useProvenance`, `useProvenanceHandoff`, `ProvenanceHandoff`, `playbackPresentation.jsx`); installed by `browser/playback.mjs` |
+
+The handoff's deliberate pause sets a loading-suppression flag
+(`provenanceHold.js`) so the player's buffering spinner does not read it as a stall,
+the same way the content filter's skip card does.
+
+## Logs
+
+Backend (`context.module: provenance`): `provenance.lookup.done` (providers found,
+`quotaUsed`), `provenance.lookup.failed`, `provenance.lookup.quota-reserved`,
+`provenance.lookup.no-external-id`, `provenance.disabled` (no key or no Plex at boot).
+
+Frontend (`component: provenance`): `provenance.ready`, `provenance.none`,
+`provenance.handoff.shown`, `provenance.handoff.skipped` (`reason: resume | not-ready`),
+`provenance.handoff.linked` / `.done` (debug), `provenance.handoff.resume-refused`,
+`provenance.fetch.failed`, `provenance.logo.failed`.
