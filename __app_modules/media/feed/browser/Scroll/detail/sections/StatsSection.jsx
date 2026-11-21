@@ -8,13 +8,13 @@ export default function StatsSection({ data }) {
     }}>
       {data.items.map(s => (
         <div key={s.label} style={{
-          background: '#1a1b1e',
+          background: 'var(--feed-surface-1)',
           borderRadius: '8px',
           padding: '0.5rem',
           textAlign: 'center',
         }}>
-          <div style={{ fontSize: '0.6rem', color: '#5c636a', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{s.label}</div>
-          <div style={{ fontSize: '0.95rem', color: '#fff', fontWeight: 600, marginTop: '0.15rem' }}>{s.value}</div>
+          <div style={{ fontSize: '0.6rem', color: 'var(--feed-text-2)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{s.label}</div>
+          <div style={{ fontSize: '0.95rem', color: 'var(--feed-text-1)', fontWeight: 600, marginTop: '0.15rem' }}>{s.value}</div>
         </div>
       ))}
     </div>

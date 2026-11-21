@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { DaylightAPI } from "../../../../frontend/src/lib/api.mjs";
+import { localDateKey } from "../../../../frontend/src/lib/calendarDay.js";
 import getLogger from "../../../../frontend/src/lib/logging/Logger.js";
 import { feedQueueOwner } from "./offline/feedOfflineStore.js";
 
@@ -53,7 +54,7 @@ export default function FeedDataControls({ onImported }) {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `daylight-feed-${new Date().toISOString().slice(0, 10)}.json`;
+      link.download = `daylight-feed-${localDateKey()}.json`;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
       setStatus('Export downloaded.');

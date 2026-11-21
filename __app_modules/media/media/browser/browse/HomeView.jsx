@@ -287,6 +287,7 @@ export function HomeView() {
   const tileFor = (rowId, raw, group = null) => {
     const item = toItem(raw);
     if (!item) return null;
+    const title = presentTitle(raw) ?? item.title ?? 'Untitled';
     const entry = carryById.get(item.id) ?? null;
     const collection = isCollection(item);
     const favourite = favourites.has(item.id);
@@ -299,7 +300,7 @@ export function HomeView() {
       <HomeTile
         key={item.id}
         item={item}
-        title={presentTitle(raw)}
+        title={title}
         kind={null}
         size={big ? 'large' : 'normal'}
         testId={testId}
@@ -307,7 +308,7 @@ export function HomeView() {
         progress={percent}
         // FIND.12b: a favourite's picture opens it; elsewhere the tap rule.
         onPicture={() => run(big ? 'open' : 'tap', item, { entry })}
-        pictureLabel={big || collection ? `Open ${item.title ?? ''}`.trim() : `Play ${item.title ?? ''}`.trim()}
+        pictureLabel={big || collection ? `Open ${title}` : `Play ${title}`}
         onVerb={kind => (kind === 'continue' && cont ? run('playNow', cont) : run(kind, item, { entry }))}
         favourite={favourite}
         watched={entry ? entry.finished === true : null}
@@ -354,6 +355,7 @@ export function HomeView() {
         {collapseEditions(recentItems, { idOf: entry => entry?.contentId ?? entry?.id }).map(({ entry, editions }) => {
           const item = toItem(entry);
           if (!item) return null;
+          const title = presentTitle(entry) ?? item.title ?? 'Untitled';
           const screens = nowOnIds.get(item.id);
           const where = screens?.length ? `Now on ${nameFor(screens[0])}` : whereLine(entry, nameFor);
           const collection = isCollection(item);
@@ -365,12 +367,12 @@ export function HomeView() {
             <HomeTile
               key={item.id}
               item={item}
-              title={presentTitle(entry)}
+              title={title}
               testId={tileTestId('recent', item.id)}
               meta={meta || null}
               progress={progressPercent(entry.percent ?? null, entry.finished === true)}
               onPicture={() => run('tap', item, { entry })}
-              pictureLabel={collection ? `Open ${item.title ?? ''}`.trim() : `Play ${item.title ?? ''}`.trim()}
+              pictureLabel={collection ? `Open ${title}` : `Play ${title}`}
               onVerb={kind => run(kind, item, { entry })}
               favourite={favourites.has(item.id)}
               watched={entry.finished === true}
