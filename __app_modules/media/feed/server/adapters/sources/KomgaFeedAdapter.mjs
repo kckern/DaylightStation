@@ -204,11 +204,15 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
     // Convert back to vendor pages for image URLs
     const vendorStartPage = printedPage + offset;
     const vendorEndPage = printedEndPage + offset;
+    const articlePageCount = Math.max(0, vendorEndPage - vendorStartPage + 1);
 
     // All article page images (vertically stacked in detail view)
     const images = [];
     for (let p = vendorStartPage; p <= vendorEndPage; p++) {
-      images.push({ url: this.#pageImageUrl(bookId, p) });
+      images.push({
+        url: this.#pageImageUrl(bookId, p),
+        alt: `Scanned article page ${images.length + 1} of ${articlePageCount}`,
+      });
     }
 
     sections.push({
