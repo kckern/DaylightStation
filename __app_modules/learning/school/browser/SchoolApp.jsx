@@ -1504,8 +1504,12 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
 
             NOR ON THE SHELF. It is a workspace, not a section (design §2),
             and carries its own always-visible Done; a second one, drawn
-            bottom-right over its `history ›` link, would be a duplicate. */}
-        {lock.locked && section && !launchPreviewLink && !active && !courseId && section !== 'book-shelf' && section !== 'bank' && (
+            bottom-right over its `history ›` link, would be a duplicate.
+
+            NOR ON THE DEBRIEF (2026-11-20). Its rail carries "Stop for now" on
+            every unfinished screen and its summary carries Done; this one was
+            a second Done in the corner of the summary. */}
+        {lock.locked && section && !launchPreviewLink && !active && !courseId && section !== 'book-shelf' && section !== 'bank' && section !== 'school-debrief' && (
           <SchoolButton variant="plain"
             type="button"
             className="school-selfservice-card__action school-selfservice-card__action--exit school-app__locked-exit"

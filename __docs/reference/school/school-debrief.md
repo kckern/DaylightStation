@@ -250,10 +250,14 @@ never scored (`questioner: 'fallback'`) earns neither `substantive` nor
 `quiz-passed` is still a valid criterion but the shipped rules do not use it.
 
 **Visible reasons.** The summary tells the child why, from the same facts the
-economy reads: their `levelReason` as the quote, "You told me a real moment"
-when the day is `substantive`, "You explained it so someone could try it" when
-it is `teachable`, and On time / Late. No score or level number is shown to the
-child.
+economy reads: their **own words** under "What you told me" (the first non-empty
+entry of `moment`, `teach`, `learned`, `hard`, `notable`, clamped to three
+lines), "You told me a real moment" when the day is `substantive`, "You
+explained it so someone could try it" when it is `teachable` (both as badges),
+and an On time / Late pill. The grader's `levelReason` is **not** shown to the
+child (owner, 2026-11-20: it read as the model describing the child back to
+them); it stays on the teacher panel. No score, quiz tally or level number is
+shown to the child.
 
 **Coins are preview only.** The rules sit in `earn-rules.yml` and mint when
 weekly payout ships. Until the economy is live, kid surfaces show
@@ -266,9 +270,36 @@ unrelated work can change the same weekly projection.
 ## Screens and keys
 
 `browser/Programs/SchoolDebrief/`. Readable at 1280x800 (the Portal). Esc is
-never bound (FKB captures it). The header shows the child's avatar and name
-(`learnerName` from SchoolApp's claimed learner), which is why a re-entered
-Debrief code opens without asking "Is this you?". One key map per screen:
+never bound (FKB captures it).
+
+**Layout (2026-11-20).** Two panes. The **rail** on the left (`SchoolDebriefRail.jsx`)
+is always on screen: the child's avatar and name (`learnerName` from SchoolApp's
+claimed learner, which is why a re-entered Debrief code opens without asking
+"Is this you?"), a Late badge, and the steps: one per server prompt (short names
+by prompt id: Classes, A moment, Teach it, What was hard; an unknown id reads as
+"Part N") and a last **Questions** step (probes and the quiz, with `answered/total`
+once the server has questions). Done steps carry a check, the current one is
+lit. At the rail's foot, **Stop for now** leaves on every unfinished screen
+(logs `school.debrief.ui.stop`); finished parts are already saved. The **panel**
+on the right holds the step: a small "Part 2 of 4" / "One more thing" /
+"Question 1 of 3" line, the prompt, its input, and the controls pinned to the
+panel's foot so Next is in one place on every step. Finished screens (summary,
+"talk to a grown-up") carry their own single Done, so SchoolApp's locked-mode
+corner Done is not drawn over the debrief section. The idle voice band is hidden
+until a take is running.
+
+**Typed lines.** What the debrief "says" (prompts, probes, questions, the
+right/wrong line, the summary title, "Reading your answer…") types itself out
+behind a glowing block cursor (`Programs/shared/TypedText.jsx`): about 24 ms a
+character, at most 2.2 s a line; the untyped rest already holds its place, so
+nothing reflows; any key or tap finishes the line at once and still does its
+job; the cursor is solid while typing, blinks after, and leaves after 1.6 s
+(it stays on a waiting line). Screen readers get the whole line at once.
+Reduced motion, or no `matchMedia` (jsdom), shows plain text.
+`ReflectionResponse` types its prompt only when passed `typed` (Gratitude does
+not).
+
+One key map per screen:
 
 | Screen | Keys |
 |---|---|
@@ -284,7 +315,8 @@ Debrief code opens without asking "Is this you?". One key map per screen:
 - Each probe is its own prompt screen: a reply never carries into the next probe.
 - Each prompt is saved when submitted; walking away loses at most the field the
   learner was in.
-- After 45 seconds idle a "Still there?" nudge appears; 5 minutes after the last
+- After 45 seconds idle a "Still there?" nudge appears (not on a finished
+  screen, where there is nothing left to do); 5 minutes after the last
   input the program closes to the keypad (on every screen, the start card
   included) and the start card offers to resume.
 - A rejected day shows "A grown-up wants to talk with you about this one." with
@@ -328,7 +360,7 @@ POST. A malformed day or range is a 400.
   `.legacy-prompt-id` (an old-bundle `learned`/`notable` entry was renamed), `.excused` / `.rejected` / `.rescored` / `.discussed`
   (learnerId, day, by), `.launch-failed` (warn), plus `school.direct-launch.issued` for the code-free door. Browser events come
   from the `schoolDebriefLog` facade as `school.debrief.ui.*` (`mounted`,
-  `take.start`, `take.kept`, `take.refused`, `submit`, `chips`, `stall`, `resume`, `probe.recovered`,
+  `take.start`, `take.kept`, `take.refused`, `submit`, `chips`, `stall`, `resume`, `stop`, `probe.recovered`,
   API failures). AI spend is under `school/debrief` in the usage ledger.
 - **Parent hook push:** when a day completes with a hook, each teacher in
   `school.yml -> teachers` gets one low-priority push (see
@@ -349,9 +381,16 @@ POST. A malformed day or range is a 400.
   A missed day with no file is listed and can be excused.
 - **Open one without a code (admin/testing):** `/school/go/{learnerId}/school-debrief`.
 - **Frontend test:** `tests/live/flow/school/school-debrief.runtime.test.mjs`
-  mocks every backend call in the browser (`page.route`), so it writes nothing
-  and runs against any frontend-only server via `SCHOOL_DEBRIEF_BASE`. It
-  screenshots each step at 1280x800 to `test-results/school-debrief/`.
+  mocks every backend call in the browser (`page.route`, supervision bootstrap
+  answered `enabled: false`), so it writes nothing and runs against any
+  frontend-only server via `SCHOOL_DEBRIEF_BASE`. It screenshots each step at
+  1280x800 to `test-results/school-debrief/`. Check which checkout the server
+  on that port was started from: another session's Vite serves its own tree.
+- **Layout test:** `SchoolDebrief.layout.test.jsx` (vitest, Chromium via
+  Playwright, no server) renders the program inside the real activity frame with
+  the school tokens, checks that nothing spills out of the rail or the panel and
+  that the panel never scrolls, checks the typed line never reflows, and saves a
+  screenshot per step to `DEBRIEF_SHOTS` (else the OS temp folder).
 
 ## Is it working
 

@@ -185,6 +185,13 @@
   to { transform: scale(1); opacity: 1; }
 }
 
+// A text cursor's blink (School's typed lines, Programs/shared/TypedText):
+// on a little longer than off, hard steps, no fade.
+@keyframes ds-cursor-blink {
+  0%, 55% { opacity: 1; }
+  56%, 100% { opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ds-sheet__panel, .ds-sheet--side .ds-sheet__panel { animation: none; }
 }
