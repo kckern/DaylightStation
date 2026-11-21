@@ -117,11 +117,10 @@ export function GoalDetail({ goalId, username }) {
 
       {transitions.length > 0 && (
         <Paper p="sm" withBorder>
-          <Text size="sm" fw={500} mb="xs">Transition</Text>
           <Group>
             <Select
+              label="New state"
               disabled={submitting}
-              placeholder="New state"
               data={transitions.map(s => ({ value: s, label: s }))}
               value={selectedTransition}
               onChange={setTransitionState}
