@@ -1,4 +1,5 @@
 import { useId, useState } from 'react';
+import { localDateKey } from '@/lib/calendarDay.js';
 import { Stack, Paper, Text, Group, Badge, Progress, Button, TextInput, Select } from '@mantine/core';
 import { IconFlask } from '@tabler/icons-react';
 import { Button as FormButton, Sheet, StateMessage, SubmitButton, createAppLogger, useSheetSubmission } from '@/lib/ui';
@@ -16,7 +17,7 @@ function BeliefEvidenceSheet({ beliefId, onClose, addEvidence }) {
   const { submit, saving, failure } = useSheetSubmission(onClose, error => {
     logger.warn('submit.failed', { beliefId, error: error?.message });
   });
-  const save = () => addEvidence(beliefId, { type, note, date: new Date().toISOString().slice(0, 10) });
+  const save = () => addEvidence(beliefId, { type, note, date: localDateKey() });
 
   return (
     <Sheet open onClose={onClose} title="Add Evidence">

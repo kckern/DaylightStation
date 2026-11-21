@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test.use({ serviceWorkers: 'block', viewport: { width: 390, height: 850 } });
+test.use({ serviceWorkers: 'block', viewport: { width: 390, height: 850 }, timezoneId: 'America/Los_Angeles' });
 
 const member = { username: 'amy', displayName: 'Amy' };
 const beliefsPath = '/api/v1/life/plan/beliefs';
@@ -31,7 +31,7 @@ async function loadBeliefs(page, baseURL, write, read = (route, beliefs) => rout
     }
     return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
   });
-  await page.clock.setFixedTime(new Date(today + 'T16:00:00Z'));
+  await page.clock.setFixedTime(new Date('2026-11-20T04:00:00Z'));
   await page.goto('/life/plan/beliefs');
   const openers = page.getByRole('button', { name: 'Add Evidence', exact: true });
   const dialog = page.getByRole('dialog', { name: 'Add Evidence', exact: true });
