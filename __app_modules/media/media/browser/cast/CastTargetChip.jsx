@@ -21,6 +21,7 @@ import "./Cast.scss";
 
 export function CastTargetChip({ controlRef }) {
   const modeLabelId = `cast-mode-label-${useId()}`;
+  const targetLabelId = `cast-target-label-${useId()}`;
   const [open, setOpen] = useState(false);
   const trigger = useRef(null);
   const setTriggerRef = useMergedRef(trigger, controlRef);
@@ -95,19 +96,21 @@ export function CastTargetChip({ controlRef }) {
           </div>
         </div>
         <div className="cast-popover-section">
-          <Text size="sm" c="dimmed" fw={600} mb={4}>Play on</Text>
-          {devices.length === 0 && <Text size="sm" c="dimmed">No devices</Text>}
-          {devices.map((d) => (
-            <label key={d.id} className="cast-popover-row">
-              <input
-                type="checkbox"
-                checked={targetIds.includes(d.id)}
-                onChange={() => toggleTarget(d.id)}
-                data-testid={`cast-target-checkbox-${d.id}`}
-              />
-              <span>{deviceName(d)}</span>
-            </label>
-          ))}
+          <Text size="sm" c="dimmed" fw={600} mb={4} id={targetLabelId}>Play on</Text>
+          <div role="group" aria-labelledby={targetLabelId}>
+            {devices.length === 0 && <Text size="sm" c="dimmed">No devices</Text>}
+            {devices.map((d) => (
+              <label key={d.id} className="cast-popover-row">
+                <input
+                  type="checkbox"
+                  checked={targetIds.includes(d.id)}
+                  onChange={() => toggleTarget(d.id)}
+                  data-testid={`cast-target-checkbox-${d.id}`}
+                />
+                <span>{deviceName(d)}</span>
+              </label>
+            ))}
+          </div>
         </div>
       </Popover.Dropdown>
     </Popover>

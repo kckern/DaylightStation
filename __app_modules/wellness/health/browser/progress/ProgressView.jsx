@@ -175,7 +175,7 @@ export function ProgressView() {
 
       <Sheet open={editingGoals} onClose={() => { if (!saving) { setEditingGoals(false); setForm(goalsRes.data?.goals || null); } }} title="Edit goals">
         {form && (
-          <Stack gap="sm">
+          <Stack component="form" gap="sm" onSubmit={event => { event.preventDefault(); if (!saving) saveGoals(); }}>
             {saveError ? <Text role="alert" size="sm" c="red">{goalSaveMessage(saveError)}</Text> : null}
             <SegmentedControl aria-label="Sex for budget calculation" value={form.sex || 'male'} onChange={(v) => setForm({ ...form, sex: v })}
               data={[{ label: 'Male', value: 'male' }, { label: 'Female', value: 'female' }]} />
@@ -231,7 +231,7 @@ export function ProgressView() {
               );
             })}
 
-            <Button onClick={saveGoals} loading={saving}>Save goals</Button>
+            <Button type="submit" loading={saving}>Save goals</Button>
           </Stack>
         )}
       </Sheet>

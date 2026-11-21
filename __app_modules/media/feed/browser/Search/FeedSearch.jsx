@@ -273,8 +273,14 @@ export default function FeedSearch() {
         {items.map(item => {
           const key = resultKey(item);
           const isFocusTarget = appendFocus?.key === key;
+          const publicationDate = item.publishedAt ? new Date(item.publishedAt) : null;
+          const metadata = [
+            item.sourceInfo?.label || item.source,
+            publicationDate && Number.isFinite(publicationDate.getTime()) ? publicationDate.toLocaleDateString() : null,
+            item.state?.syncStatus === 'pending' ? 'sync pending' : null,
+          ].filter(Boolean).join(' · ');
           return <article className="feed-result" key={key}>
-            <div className="feed-result__meta">{item.sourceInfo?.label || item.source} · {item.publishedAt ? new Date(item.publishedAt).toLocaleDateString() : ''}{item.state?.syncStatus === 'pending' ? ' · sync pending' : ''}</div>
+            <div className="feed-result__meta">{metadata}</div>
             <h2 ref={isFocusTarget ? appendedHeadingRef : null} tabIndex={isFocusTarget ? -1 : undefined}>
               {webLink(item.url) ? <a href={webLink(item.url)} target="_blank" rel="noreferrer">{item.title}</a> : item.title}
             </h2>
