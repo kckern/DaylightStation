@@ -264,7 +264,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
         </div>
 
         {/* Speed selector */}
-        <div className="sheet-speed-row">
+        <div className="sheet-speed-row" role="group" aria-label="Playback speed">
           {SPEED_STEPS.map((s) => (
             <button
               key={s}

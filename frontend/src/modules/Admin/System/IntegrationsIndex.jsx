@@ -82,7 +82,7 @@ function IntegrationsIndex() {
 
       {ready && groupedIntegrations.map(group => (
         <Stack key={group.category} gap="xs">
-          <Text size="sm" fw={600} c="dimmed" tt="uppercase">
+          <Text component="h2" size="sm" fw={600} c="dimmed" tt="uppercase">
             {group.label}
           </Text>
 
