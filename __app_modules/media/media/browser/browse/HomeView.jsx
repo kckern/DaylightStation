@@ -172,6 +172,7 @@ function NowOnRow({ entries, nameFor, run, favourites }) {
         const canRemote = Boolean(fleetEntry?.snapshot);
         const canMove = Boolean(fleetEntry?.snapshot?.meta?.playbackOwner);
         const testId = tileTestId('now-on', `${deviceId}-${entry.contentId}`);
+        const contextId = `now-on-${encodeURIComponent(deviceId)}-${encodeURIComponent(entry.contentId)}`;
         const item = toItem(entry);
         return (
           <div key={`${entry.deviceId}-${entry.contentId}`} className={`home-tile home-tile--now home-tile--${tileKind(entry)}`} data-testid={testId}>
@@ -182,8 +183,8 @@ function NowOnRow({ entries, nameFor, run, favourites }) {
             </div>
             <div className="home-tile-head">
               <div className="home-tile-body">
-                <span className="home-tile-title" title={entry.title ?? 'Something'}>{presentTitle(entry) ?? 'Something'}</span>
-                <span className="home-tile-line" data-testid={`${testId}-where`}>Now on {screen}</span>
+                <span id={`${contextId}-title`} className="home-tile-title" title={entry.title ?? 'Something'}>{presentTitle(entry) ?? 'Something'}</span>
+                <span id={`${contextId}-where`} className="home-tile-line" data-testid={`${testId}-where`}>Now on {screen}</span>
               </div>
               {item && (
                 <div className="home-tile-more">
@@ -195,11 +196,13 @@ function NowOnRow({ entries, nameFor, run, favourites }) {
             {(canRemote || canMove) && (
               <Group gap={6} className="home-tile-actions">
                 {canRemote && <Button size="sm" variant="default" data-testid={`${testId}-remote`}
+                  aria-describedby={`${contextId}-title ${contextId}-where`}
                   leftSection={<IconDeviceRemote size={14} aria-hidden />}
                   onClick={() => push('peek', { deviceId })}>
                   Remote
                 </Button>}
                 {canMove && <Button size="sm" variant="default" data-testid={`${testId}-move-here`}
+                  aria-describedby={`${contextId}-title ${contextId}-where`}
                   leftSection={<IconArrowBarToDown size={14} aria-hidden />}
                   onClick={() => moveHere(entry.deviceId, entry)}>
                   Move here

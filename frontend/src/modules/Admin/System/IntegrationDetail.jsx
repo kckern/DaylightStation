@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Stack, Group, Text, Badge, Button, Paper, Alert, Center, Loader, Anchor }  from '@mantine/core';
+import { Stack, Group, Text, Badge, Button, Paper, Alert, Anchor }  from '@mantine/core';
 import {
   IconArrowBack, IconPlugConnected, IconAlertCircle, IconCheck, IconX, IconRefresh
 } from '@tabler/icons-react';
 import { useAdminIntegrations } from '../../../hooks/admin/useAdminIntegrations.js';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { LoadingState } from '../../../lib/ui/index.js';
 import { useRetryRegion } from '../../../lib/ui/useRetryRegion.js';
 import { notifySuccess, notifyFailure } from '../shared/feedback.js';
 
@@ -110,11 +111,7 @@ function ProviderDetail({ provider }) {
 
   let body;
   if (loading && !integration) {
-    body = (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
+    body = <LoadingState label="integration details" />;
   } else if (loadError && !integration) {
     body = (
       <>
