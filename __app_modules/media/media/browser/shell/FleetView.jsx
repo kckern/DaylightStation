@@ -111,7 +111,7 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
             {duration > 0 && (
               <Group gap="xs" wrap="nowrap">
                 <Text size="xs" c="dimmed">{formatTime(snap.position)}</Text>
-                <Progress value={(100 * (snap.position ?? 0)) / duration} size="xs" style={{ flex: 1 }} />
+                <Progress aria-label={`Playback progress on ${name}`} value={(100 * (snap.position ?? 0)) / duration} size="xs" style={{ flex: 1 }} />
                 <Text size="xs" c="dimmed">{formatTime(duration)}</Text>
               </Group>
             )}
