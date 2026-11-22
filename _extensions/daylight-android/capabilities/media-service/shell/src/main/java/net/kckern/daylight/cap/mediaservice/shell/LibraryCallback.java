@@ -13,6 +13,7 @@ import androidx.media3.common.MediaItem;
 import androidx.media3.session.LibraryResult;
 import androidx.media3.session.CommandButton;
 import androidx.media3.session.SessionCommand;
+import androidx.media3.session.SessionCommands;
 import androidx.media3.session.SessionResult;
 import androidx.media3.session.MediaLibraryService.LibraryParams;
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession;
@@ -43,12 +44,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * again once a payload attaches. A play request then fails; nothing crashes.
  */
 final class LibraryCallback implements MediaLibrarySession.Callback {
-    private static final String STOP_ACTION = "net.kckern.daylight.media.STOP";
-
-    static CommandButton stopButton() {
-        return new CommandButton.Builder().setSessionCommand(new SessionCommand(STOP_ACTION, Bundle.EMPTY))
-                .setIconResId(android.R.drawable.ic_menu_close_clear_cancel).setDisplayName("Stop").build();
-    }
     private static final String TAG = "Daylight-Media";
     /** How long a browse waits for a payload after a cold start. Short: a car gives up on a slow answer. */
     private static final long BROWSE_WAIT_MS = 4000;
@@ -113,17 +108,21 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
             return MediaSession.ConnectionResult.reject();
         }
         return new MediaSession.ConnectionResult.AcceptedResultBuilder(session)
-                .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
-                        .buildUpon().add(new SessionCommand(STOP_ACTION, Bundle.EMPTY)).build())
+                .setAvailableSessionCommands(sessionCommands())
                 .build();
+    }
+
+    private static SessionCommands sessionCommands() {
+        SessionCommands.Builder commands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon();
+        for (String action : CarControls.ACTIONS) commands.add(new SessionCommand(action, Bundle.EMPTY));
+        return commands.build();
     }
 
     @Override
     public ListenableFuture<SessionResult> onCustomCommand(MediaSession session, MediaSession.ControllerInfo controller,
                                                             SessionCommand command, Bundle arguments) {
-        if (!STOP_ACTION.equals(command.customAction))
+        if (!CarControls.run(command.customAction, session.getPlayer(), stopPlayback))
             return MediaLibrarySession.Callback.super.onCustomCommand(session, controller, command, arguments);
-        stopPlayback.run();
         return Futures.immediateFuture(new SessionResult(SessionResult.RESULT_SUCCESS));
     }
 

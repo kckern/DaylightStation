@@ -68,8 +68,11 @@ final class NodeItems {
                     .setIsBrowsable(false)
                     .setIsPlayable(true)
                     .setExtras(extras);
-            if (!t.artist.isEmpty()) meta.setArtist(t.artist);
-            if (!t.album.isEmpty()) meta.setAlbumTitle(t.album);
+            // A car's now-playing card shows the display subtitle, not the artist field:
+            // set both, as the browse rows do. The album is the description line.
+            if (!t.artist.isEmpty()) meta.setArtist(t.artist).setSubtitle(t.artist);
+            else if (!t.album.isEmpty()) meta.setSubtitle(t.album);
+            if (!t.album.isEmpty()) meta.setAlbumTitle(t.album).setDescription(t.album);
             if (t.artUrl != null) meta.setArtworkUri(Uri.parse(t.artUrl));
             // The media id is the content id: it is what progress reports are keyed by.
             out.add(new MediaItem.Builder().setMediaId(t.id).setUri(t.url).setMediaMetadata(meta.build()).build());

@@ -450,6 +450,21 @@ else. The same three are routes (`GET /media/browse`, `POST /media/resolve`,
 `POST /media/event`) and `GET /media/status` gives `{lastReportAtMs, lastError,
 reports, problems}`; on the phone nothing serves them to anyone.
 
+### What a car's now-playing card shows
+
+- **Text.** Title; the artist as both `artist` and the display subtitle (a car
+  draws the subtitle, not the artist field), or the album when there is no artist;
+  the album as the description. Cover art from the item's thumbnail.
+- **Transport.** Back 10 seconds, play/pause, forward 10 seconds, as Plex
+  lays it out, with Next track and Stop in the overflow. Android Auto fills the
+  slots beside play/pause with skip-to-previous/next when a session offers them,
+  so the session player withholds the four track-skip commands and the buttons
+  are custom actions in slot order (`CarControls`). Seek back/forward player
+  commands alone are not drawn: on the legacy session a car reads they are
+  `ACTION_REWIND`/`ACTION_FAST_FORWARD`. The step is 10 s (`SEEK_STEP_MS`). The
+  phone's media notification shows the same layout. Track skips by a steering
+  wheel button are not offered either; Next track is in the overflow.
+
 Media3 is pinned to 1.1.1, the newest version whose libraries build with
 compileSdk 33 and Android Gradle Plugin 7.4.2. A newer one needs a newer compileSdk
 for every device.

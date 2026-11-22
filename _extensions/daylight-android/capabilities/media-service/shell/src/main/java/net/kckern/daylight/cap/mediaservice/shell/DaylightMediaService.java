@@ -11,7 +11,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 
-import java.util.Collections;
 import java.util.List;
 
 import androidx.media3.common.AudioAttributes;
@@ -99,6 +98,8 @@ public class DaylightMediaService extends MediaLibraryService {
                         .setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
                 .setHandleAudioBecomingNoisy(true)
                 .setWakeMode(C.WAKE_MODE_NETWORK)
+                .setSeekBackIncrementMs(CarControls.SEEK_STEP_MS)
+                .setSeekForwardIncrementMs(CarControls.SEEK_STEP_MS)
                 .build();
 
         player.addListener(new Player.Listener() {
@@ -152,12 +153,21 @@ public class DaylightMediaService extends MediaLibraryService {
             @Override public long getContentDuration() {
                 return NodeItems.durationMs(player.getCurrentMediaItem(), super.getContentDuration());
             }
+
+            // Track skips are not offered, so a car puts back/forward 10s beside play. See CarControls.
+            @Override public Player.Commands getAvailableCommands() {
+                return CarControls.withoutTrackSkips(super.getAvailableCommands());
+            }
+
+            @Override public boolean isCommandAvailable(int command) {
+                return !CarControls.isTrackSkip(command) && super.isCommandAvailable(command);
+            }
         };
         MediaLibrarySession.Builder builder = new MediaLibrarySession.Builder(this, sessionPlayer,
                 new LibraryCallback(media, io, getPackageName(), new AndroidPackageFacts(getPackageManager()),
                         () -> SurfaceCache.get(this, ControllerPins.KEY), DaylightMediaService::stopPlayback)
                         .withDrivingRadio(radio, this::cancelRadioHandoff));
-        builder.setCustomLayout(Collections.singletonList(LibraryCallback.stopButton()));
+        builder.setCustomLayout(CarControls.layout());
         // A tap on the media notification opens this app's own window. Nothing from a
         // controller is in the intent.
         Intent open = getPackageManager().getLaunchIntentForPackage(getPackageName());
