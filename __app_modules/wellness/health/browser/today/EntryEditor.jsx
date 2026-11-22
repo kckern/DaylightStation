@@ -144,8 +144,8 @@ function Editor({ row, onClose, onChanged, onRequestDelete, onCoach, observation
             blocked={observation.pairedEntryUuid && observation.pairedEntryUuid !== identity(row) ? 'Attached to another entry' : null}
             onPair={() => run(async () => {
               await DaylightAPI(`api/v1/health/nutrition/observations/${observation.id}/pair`, { entryUuid: identity(row) }, 'POST');
-              onPaired?.(); onClose();
-            })} />) : null}
+              onPaired?.();
+            }, { close: true })} />) : null}
         </Stack>
       </details>
       {unavailableError(catalog) ? <ErrorState error={catalog.error} onRetry={catalog.reload} label="Saved food" /> : null}

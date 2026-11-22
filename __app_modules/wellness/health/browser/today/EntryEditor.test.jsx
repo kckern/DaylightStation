@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { DismissStackProvider } from '@/lib/ui';
 import { EntryEditor } from "./EntryEditor.jsx";
@@ -123,5 +123,30 @@ describe('entry correction dialog', () => {
     expect(apiMock.mock.calls.find(([path]) => path.includes('observations/o1/pair'))).toEqual([
       'api/v1/health/nutrition/observations/o1/pair', { entryUuid: 'r1' }, 'POST',
     ]);
+  });
+
+  it('a late pairing completion cannot close a newly opened entry editor', async () => {
+    let finishPair;
+    apiMock.mockImplementation((path) => String(path ?? '').includes('observations/o1/pair')
+      ? new Promise(resolve => { finishPair = resolve; }) : Promise.resolve({ items: [] }));
+    const close = vi.fn();
+    const paired = vi.fn();
+    const view = mount({
+      observations: [{ id: 'o1', kind: 'weight', value: 82, unit: 'g', status: 'open', at: '2026-09-04 08:00:00' }],
+      onClose: close,
+      onPaired: paired,
+    });
+    fireEvent.click(screen.getByRole('button', { name: /pair/i }));
+    await waitFor(() => expect(finishPair).toBeTypeOf('function'));
+
+    view.rerender(wrap(<EntryEditor row={row} open={false} onClose={close} onChanged={() => {}} />));
+    view.rerender(wrap(<EntryEditor row={{ ...row, uuid: 'r2', name: 'Toast' }} open onClose={close} onChanged={() => {}} />));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Edited toast' } });
+
+    await act(async () => finishPair({ items: [] }));
+
+    expect(paired).toHaveBeenCalledOnce();
+    expect(close).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Name').value).toBe('Edited toast');
   });
 });
