@@ -31,13 +31,37 @@
 @media (max-width: 900px) { .cf-review { grid-template-columns: minmax(0, 1fr); } }
 .cf-review__side { position: sticky; top: var(--ds-space-2); min-width: 0; }
 .cf-review__player { aspect-ratio: 16 / 9; width: 100%; background: var(--ds-bg-base); border-radius: var(--ds-radius-md); overflow: hidden; position: relative; }
-.cf-review__list { max-height: calc(100vh - 220px); overflow-y: auto; min-width: 0; }
-.cf-review__row { padding: var(--ds-space-2); border-top: 1px solid var(--ds-border); }
-.cf-review__row.is-selected { background: var(--ds-accent-subtle); }
-.cf-review__row-main { min-width: 0; }
-.cf-review__pick { text-align: left; }
-.cf-review__time { font-variant-numeric: tabular-nums; }
+.cf-review__list { max-height: calc(100vh - 120px); min-width: 0; position: sticky; top: var(--ds-space-2); }
+.cf-review__list > * { flex-shrink: 0; }
+// The header and filters stay put; only the rows scroll.
+.cf-review__list > .cf-review__rows { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.cf-review__rows { display: flex; flex-direction: column; border-bottom: 1px solid var(--ds-border); }
+// One part per row: [check] [time · label / meta] [chips] [play]. Rows never grow past two lines.
+.cf-review__row {
+  display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; grid-template-areas: "check pick play" ". chips chips" ". card card";
+  column-gap: var(--ds-space-2); row-gap: 2px; align-items: center;
+  padding: 6px var(--ds-space-2); border-top: 1px solid var(--ds-border); border-left: 3px solid transparent;
+}
+.cf-review__row.is-selected { background: var(--ds-accent-subtle); border-left-color: var(--ds-accent); }
+.cf-review__row.is-plays .cf-review__label { color: var(--ds-text-secondary); }
+.cf-review__row-check { grid-area: check; }
+.cf-review__pick { grid-area: pick; display: grid; grid-template-columns: 64px minmax(0, 1fr); grid-template-areas: "time label" ". meta"; column-gap: var(--ds-space-2); text-align: left; min-width: 0; }
+.cf-review__time { grid-area: time; font-family: var(--ds-font-mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ds-text-secondary); }
+.cf-review__label { grid-area: label; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-review__meta { grid-area: meta; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-review__chips { grid-area: chips; display: flex; flex-wrap: wrap; gap: 4px; padding-left: calc(64px + var(--ds-space-2)); }
+.cf-review__play { grid-area: play; display: flex; gap: 2px; }
+.cf-review__card { grid-area: card; padding-left: calc(64px + var(--ds-space-2)); }
 .cf-review__tick { color: var(--ds-success); }
+
+// The part under review: where it sits in the view, prev/next.
+.cf-focus { display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-2); padding: var(--ds-space-2); background: var(--ds-bg-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); }
+.cf-focus__where { font-variant-numeric: tabular-nums; }
+
+// Film progress meters (FilmStatusCard): parts, timing, review.
+.cf-meters { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--ds-space-4); }
+.cf-meter { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cf-meter__value { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 // Review station: timeline lanes and the key bar.
 .cf-timeline { display: flex; flex-direction: column; gap: var(--ds-space-1); }
@@ -51,6 +75,7 @@
 .cf-timeline__mark.is-skip { background: var(--ds-danger); }
 .cf-timeline__mark.has-verdict { opacity: 0.35; }
 .cf-timeline__mark.is-redo { opacity: 1; outline: 1px solid var(--ds-danger); }
+.cf-timeline__mark.is-plays { background: var(--ds-text-muted); opacity: 0.3; }
 .cf-timeline__mark.is-cursor { opacity: 1; top: 0; bottom: 0; outline: 2px solid var(--ds-text-primary); z-index: 1; }
 .cf-keybar { display: flex; flex-direction: column; gap: var(--ds-space-1); position: relative; padding: var(--ds-space-2); background: var(--ds-bg-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); }
 .cf-keybar__tally { font-variant-numeric: tabular-nums; }

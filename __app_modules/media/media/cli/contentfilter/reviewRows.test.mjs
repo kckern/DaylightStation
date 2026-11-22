@@ -50,3 +50,31 @@ describe('reviewRows', () => {
     expect(reviewRows({ cues: [], refined, override, refineReview })).toEqual([]);
   });
 });
+
+describe('reviewRows: every part is a row (owner, 2026-11-21)', () => {
+  const source = [
+    { id: 'w1', category: 'language/profanity/damn', label: 'damn', in: 10, out: 11 },
+    { id: 'v9', category: 'violence_blood_gore/non_graphic', label: 'A punch inside the scene', in: 120, out: 125 },
+    { id: 'k1', category: 'kissing/kiss', label: 'A couple kisses.', in: 400, out: 404 },
+    { id: 'gone', category: 'violence_blood_gore/x', label: 'Cut from this copy', in: 9000, out: 9001 },
+  ];
+  const sync = { segments: [{ fromVa: 0, toVa: 1000, scale: 1, offsetSec: 0 }] };
+  const rows = reviewRows({ cues, source, refined, override: { ...override, sync }, refineReview });
+  const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+
+  it('a part the household lets play is a row that says so, after the parts the filter acts on', () => {
+    expect(byId['cue:k1']).toMatchObject({ acts: false, effect: 'off', timing: 'rough', members: ['k1'], in: 400, out: 404 });
+    expect(rows.at(-1).id).toBe('cue:k1');
+    expect(rows.filter((r) => r.acts).every((r) => r.effect !== 'off')).toBe(true);
+  });
+  it('a part a hidden scene covers is the scene row, not a part that plays', () => {
+    expect(byId['cue:v9']).toBeUndefined();
+  });
+  it('a part outside this copy\'s cut is left out', () => {
+    expect(byId['cue:gone']).toBeUndefined();
+  });
+  it('timing: refined for ms/frame, safe-window, rough otherwise', () => {
+    expect(byId['cue:w1'].timing).toBe('refined');
+    expect(byId['cue:w2'].timing).toBe('safe-window');
+  });
+});

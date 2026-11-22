@@ -9,7 +9,10 @@ function AdminHeader({ opened, toggle, opener }) {
   const pathParts = location.pathname.split('/').filter(Boolean);
   const breadcrumbs = pathParts.map((part, idx) => {
     const path = '/' + pathParts.slice(0, idx + 1).join('/');
-    const label = part.charAt(0).toUpperCase() + part.slice(1).replace(/-/g, ' ');
+    // A path segment is URL-encoded (a review permalink's `cue:va1` arrives as `cue%3Ava1`): show it decoded.
+    let text = part;
+    try { text = decodeURIComponent(part); } catch { /* a malformed escape stays as typed */ }
+    const label = text.charAt(0).toUpperCase() + text.slice(1).replace(/-/g, ' ');
     const isLast = idx === pathParts.length - 1;
 
     return (

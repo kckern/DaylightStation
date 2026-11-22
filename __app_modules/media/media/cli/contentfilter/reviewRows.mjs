@@ -5,15 +5,30 @@
  * `unitKey`), so Admin and the preview count the same things.
  *
  * Row = { id, peekId, kind: 'words'|'picture'|'scenes', group, label, category, modality, in, out,
- *         effect, card: { text, approved }|null, handFixed, unsure: string[], members: string[] }
+ *         effect, acts, timing, card: { text, approved }|null, handFixed, unsure: string[], members: string[] }
  * members: the cue ids a ruling or a send-back applies to (one for a cue, all for a subject, none for a scene).
+ * acts: false for a part the household's settings let play (effect 'off'). Every tag in the EDL is a
+ *   row, so the owner sees all of them, not only the ones the filter acts on (owner, 2026-11-21).
+ * timing: 'refined' (measured to the frame/ms), 'safe-window' (a mute window that covers the word),
+ *   or 'rough' (VidAngel's second-approx times, not refined yet).
  */
 import { buildMoments } from '../../browser/content-filter/preview/railItems.js';
 import { cueModality, isWordLabel } from '../../../../../shared/contracts/content-filter/cueModality.mjs';
 import { languageGroupOf } from '../../../../../shared/contracts/content-filter/languageGroups.mjs';
+import { REVIEW_ROWS_VERSION } from '../../server/domain/content-filter/reviewRowsVersion.mjs';
+import { mapSpan } from '../../../../../shared/contracts/content-filter/syncMap.mjs';
 
 const OVERLAY = new Set(['blur', 'full-blur', 'pixelate']);
 const ms = (t) => Math.round(t * 1000) / 1000;
+export { REVIEW_ROWS_VERSION };
+const baseId = (id) => String(id).split(/[#@]/)[0];
+
+/** The worst timing among a row's pieces: one rough piece makes the row rough. */
+export function timingOf(cues) {
+  const each = (cues || []).map((c) => (c?.precision === 'safe-window' ? 'safe-window' : (c?.precision === 'ms' || c?.precision === 'frame') ? 'refined' : 'rough'));
+  if (!each.length) return 'rough';
+  return each.includes('rough') ? 'rough' : each.includes('safe-window') ? 'safe-window' : 'refined';
+}
 
 function cardOf(m, override) {
   if (m.kind === 'scene') {
@@ -28,11 +43,12 @@ function cardOf(m, override) {
 }
 
 /**
- * @param {{ cues: object[], refined?: object, override?: object, refineReview?: { items?: object[], subjectsUnsure?: string[][] } }} p
- *   cues: `resolveEffectiveCues` output
+ * @param {{ cues: object[], source?: object[], refined?: object, override?: object, refineReview?: { items?: object[], subjectsUnsure?: string[][] } }} p
+ *   cues: `resolveEffectiveCues` output; source: every cue in the EDL (and addCues), so parts the
+ *   filter lets play are rows too (`acts: false`)
  * @returns {object[]} rows, unsure first, then by `in`
  */
-export function reviewRows({ cues, refined = null, override = null, refineReview = null }) {
+export function reviewRows({ cues, source = [], refined = null, override = null, refineReview = null }) {
   const refineStatus = new Map((refineReview?.items || []).map((i) => [String(i.id), i.status]));
   const subjectUnsure = new Set((refineReview?.subjectsUnsure || []).flat().map(String));
   const pieces = new Map();
@@ -63,11 +79,38 @@ export function reviewRows({ cues, refined = null, override = null, refineReview
       in: ms(m.in),
       out: ms(m.out),
       effect: m.effect,
+      acts: true,
+      timing: timingOf(all),
       card: cardOf(m, override),
       handFixed: all.some((c) => c.handFixed === true),
       unsure: [...new Set(unsure)],
       members,
     };
   });
-  return rows.sort((a, b) => (b.unsure.length > 0) - (a.unsure.length > 0) || a.in - b.in);
+  // Parts the household lets play: every source cue that resolved to nothing. On this file's clock
+  // (the sync the resolver uses); one a hidden scene covers is that scene's, as the resolver decides.
+  const acted = new Set((cues || []).map((c) => baseId(c.id)));
+  const sceneSpans = (cues || []).filter((c) => c.scene != null);
+  const sync = override?.sync || null;
+  const added = new Set((override?.addCues || []).map((c) => String(c.id))); // authored in local time
+  const seen = new Set();
+  for (const c of source || []) {
+    const id = baseId(c.id);
+    if (acted.has(id) || seen.has(id)) continue;
+    seen.add(id);
+    const a = Number(c.in) || 0; const b = Number(c.out ?? c.in) || a;
+    const spans = sync && !added.has(String(c.id)) ? mapSpan(a, Math.max(a, b), sync) : [{ in: a, out: Math.max(a, b) }];
+    if (!spans.length) continue; // not in this copy's cut
+    const local = { in: spans[0].in, out: spans[spans.length - 1].out };
+    if (sceneSpans.some((sp) => local.in >= sp.in - 0.5 && local.out <= sp.out + 0.5)) continue;
+    const modality = cueModality(c);
+    rows.push({
+      id: `cue:${id}`, peekId: id, kind: modality === 'shown' ? 'picture' : 'words',
+      group: languageGroupOf(c.category) ?? (String(c.category || '').split('/')[0] || null),
+      label: c.label, category: c.category, modality, in: ms(local.in), out: ms(local.out),
+      effect: 'off', acts: false, timing: timingOf([c]), card: null,
+      handFixed: false, unsure: [], members: [id],
+    });
+  }
+  return rows.sort((a, b) => (b.unsure.length > 0) - (a.unsure.length > 0) || (b.acts - a.acts) || a.in - b.in);
 }

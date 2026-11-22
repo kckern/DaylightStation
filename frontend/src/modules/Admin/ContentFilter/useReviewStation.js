@@ -4,7 +4,7 @@ import { getToken } from '../../../lib/auth.js';
 import { invalidateApiResources } from '../../../lib/hooks/useApiResource.js';
 import { createAppLogger } from '../../../lib/ui/index.js';
 import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
-import { DEFAULT_SCOPE, WIDEN_STEP, actionKeysFor, hasVerdict, nextKind, rowAction, scopeRows, stepFrom } from './reviewScope.js';
+import { DEFAULT_SCOPE, WIDEN_STEP, actionKeysFor, hasVerdict, nextKind, plays, rowAction, scopeRows, stepFrom } from './reviewScope.js';
 import { effectChoices } from './RowEditor.jsx';
 import { BLEEP_LEVEL_DEFAULT, clampBleepLevel } from '../../../../../shared/contracts/content-filter/filterSettings.mjs';
 
@@ -98,7 +98,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   const setScope = useCallback((next) => {
     setScopeState(next);
     setMessage(null);
-    logger.info('content_filter.review.scope', { rk, kind: next.kind, action: next.action, needs: next.needs, group: next.group, shown: scopeRows(latest.current.rows, next).length });
+    logger.info('content_filter.review.scope', { rk, show: next.show, kind: next.kind, action: next.action, needs: next.needs, group: next.group, shown: scopeRows(latest.current.rows, next).length });
   }, [rk]);
 
   const step = (dir) => {
@@ -305,10 +305,11 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
 
   const top = undoStack[undoStack.length - 1];
   const canUndo = Boolean(top && rows?.some((r) => r.id === top.rowId));
-  const tally = useMemo(() => ({
-    done: (rows || []).filter(hasVerdict).length, total: rows?.length || 0,
-    redo: (rows || []).filter((r) => r.verdict?.verdict === 'redo').length,
-  }), [rows]);
+  // The tally counts the parts that need a verdict: the filtered ones (parts that play need none).
+  const tally = useMemo(() => {
+    const filtered = (rows || []).filter((r) => !plays(r));
+    return { done: filtered.filter(hasVerdict).length, total: filtered.length, redo: (rows || []).filter((r) => r.verdict?.verdict === 'redo').length };
+  }, [rows]);
 
   const handlers = {
     next: () => step(1), prev: () => step(-1), replay, rework: reworkKey, helpOpen, verdict, undo, effect, widen,

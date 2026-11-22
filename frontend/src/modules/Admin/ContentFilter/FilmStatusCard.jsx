@@ -22,7 +22,7 @@ function outcomeText({ cue, kind, status, detail }) {
   return `${what}: couldn't pin the edges${detail ? ` (${detail})` : ''}`;
 }
 
-export function FilmStatusCard({ ratingKey, status, approval, job = null, approvedBy = null, auditError = null, worker = null, onChanged = () => {}, onReview = () => {} }) {
+export function FilmStatusCard({ ratingKey, status, approval, parts = null, review = null, job = null, approvedBy = null, auditError = null, worker = null, onChanged = () => {}, onReview = () => {} }) {
   const [pending, setPending] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
   const [notice, setNotice] = useState(null);
@@ -45,10 +45,14 @@ export function FilmStatusCard({ ratingKey, status, approval, job = null, approv
 
   return (
     <Stack component="section" {...regionProps} aria-label="Film status" gap={6} className="cf-status" data-next={next}>
-      <Text size="sm" fw={600}>{filters.present ? `Filters: Yes — ${filters.parts} parts` : 'Filters: None for this film yet'}</Text>
-      {filters.present ? (
-        <Text size="sm">{refined.present ? `Refined: Yes — ${refined.measured} of ${refined.of} measured to the millisecond` : 'Refined: No'}</Text>
-      ) : null}
+      {filters.present && parts?.total ? <PartMeters parts={parts} review={review} /> : (
+        <>
+          <Text size="sm" fw={600}>{filters.present ? `Filters: Yes — ${filters.parts} parts` : 'Filters: None for this film yet'}</Text>
+          {filters.present ? (
+            <Text size="sm">{refined.present ? `Refined: Yes — ${refined.measured} of ${refined.of} measured to the millisecond` : 'Refined: No'}</Text>
+          ) : null}
+        </>
+      )}
       {certified === 'parent' ? <Text size="sm" c="green">{approvedBy ? `Approved for family by ${approvedBy}` : 'Approved for family'}</Text>
         : certified === 'machine' ? <Text size="sm" c="green">Machine-certified</Text> : null}
 
@@ -73,7 +77,12 @@ export function FilmStatusCard({ ratingKey, status, approval, job = null, approv
         </Stack>
       ) : null}
 
-      {next === 'refine' ? <Group><Button size="xs" loading={pending} onClick={() => act('refine', `${base}/jobs`, { kind: 'make' })}>Refine</Button></Group> : null}
+      {next === 'refine' ? (
+        <Group gap="xs">
+          <Button size="xs" loading={pending} onClick={() => act('refine', `${base}/jobs`, { kind: 'make' })}>{job?.status === 'interrupted' || job?.status === 'failed' ? 'Refine again' : 'Refine'}</Button>
+          {job?.status === 'interrupted' ? <Text size="xs" c="dimmed">The last run stopped before it finished. Nothing from it was kept.</Text> : null}
+        </Group>
+      ) : null}
       {next === 'checking' ? <Group gap="xs"><Loader size="xs" /><Text size="sm">Checking the result…</Text></Group> : null}
       {next === 'check-failed' ? (
         <Group gap="xs">
@@ -86,6 +95,39 @@ export function FilmStatusCard({ ratingKey, status, approval, job = null, approv
       {notice ? <Text size="sm" role="status" c="red">{notice}</Text> : null}
       <ApprovalFeedback feedback={feedback} onRetry={retry} />
     </Stack>
+  );
+}
+
+/**
+ * Where the film stands, as three numbers: its parts (filtered vs playing), how many have refined
+ * timing, and how many filtered parts have a verdict.
+ */
+export function PartMeters({ parts, review = null }) {
+  const t = parts.timing || {};
+  const refinedN = (t.refined || 0) + (t['safe-window'] || 0);
+  const pct = (n, d) => (d ? (100 * n) / d : 0);
+  return (
+    <div className="cf-meters" aria-label="Film progress">
+      <div className="cf-meter">
+        <Text size="xs" c="dimmed">Parts</Text>
+        <span className="cf-meter__value">{parts.total}</span>
+        <Text size="xs" c="dimmed">{`${parts.acting} filtered · ${parts.plays} play as they are`}</Text>
+      </div>
+      <div className="cf-meter">
+        <Text size="xs" c="dimmed">Timing refined</Text>
+        <span className="cf-meter__value">{`${refinedN} of ${parts.total}`}</span>
+        <Progress value={pct(refinedN, parts.total)} size="sm" color="green" aria-label="Timing refined" />
+        <Text size="xs" c="dimmed">{t.rough ? `${t.rough} still on VidAngel's rough times` : t['safe-window'] ? `${t['safe-window']} in safe windows` : 'Every part measured'}</Text>
+      </div>
+      {review ? (
+        <div className="cf-meter">
+          <Text size="xs" c="dimmed">Reviewed</Text>
+          <span className="cf-meter__value">{`${review.reviewed} of ${review.total}`}</span>
+          <Progress value={pct(review.reviewed, review.total)} size="sm" aria-label="Reviewed" />
+          <Text size="xs" c="dimmed">Filtered parts with a verdict</Text>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

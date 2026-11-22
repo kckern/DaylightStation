@@ -1,5 +1,5 @@
 import { Text } from '@mantine/core';
-import { rowAction } from './reviewScope.js';
+import { plays, rowAction } from './reviewScope.js';
 import { timecode } from './ReviewList.jsx';
 
 /**
@@ -17,7 +17,7 @@ function Lane({ name, label, rows, from, span, selectedId, onSelect }) {
       <div className="cf-timeline__track">
         {rows.map((r) => {
           const out = Number.isFinite(r.out) ? r.out : r.in;
-          const cls = ['cf-timeline__mark', `is-${rowAction(r) || 'other'}`,
+          const cls = ['cf-timeline__mark', plays(r) ? 'is-plays' : `is-${rowAction(r) || 'other'}`,
             r.id === selectedId ? 'is-cursor' : '', r.verdict?.verdict === 'redo' ? 'is-redo' : '',
             r.verdict || r.reviewed ? 'has-verdict' : ''].filter(Boolean).join(' ');
           return (

@@ -1,11 +1,15 @@
 /**
- * Pure rules of the review station: what a row's action is, which rows a scope (kind x action x
+ * Pure rules of the review station: what a row's action is, which rows a scope (show x kind x action x
  * needs-review x group) keeps, which keys apply to a kind, and where the cursor steps next.
  * One scope drives the list, the timeline and cursor stepping.
  */
 export const KIND_SCOPES = [{ label: 'All', value: 'all' }, { label: 'Words', value: 'words' }, { label: 'Picture', value: 'picture' }, { label: 'Scenes', value: 'scenes' }];
 export const ACTION_SCOPES = [{ label: 'All actions', value: 'all' }, { label: 'Blur', value: 'blur' }, { label: 'Skip', value: 'skip' }, { label: 'Bleep', value: 'bleep' }, { label: 'Mute', value: 'mute' }];
-export const DEFAULT_SCOPE = Object.freeze({ kind: 'all', action: 'all', needs: false, group: null });
+/** Which parts: every part in the film (default), the ones the filter acts on, or the ones it lets play. */
+export const SHOW_SCOPES = [{ label: 'All parts', value: 'all' }, { label: 'Filtered', value: 'filtered' }, { label: 'Plays', value: 'plays' }];
+export const DEFAULT_SCOPE = Object.freeze({ show: 'all', kind: 'all', action: 'all', needs: false, group: null });
+/** A part the household's settings let play (audits before 2026-11-21 had none). */
+export const plays = (row) => row?.acts === false;
 
 const ACTION_OF = { mute: 'mute', bleep: 'bleep', blur: 'blur', 'full-blur': 'blur', blackout: 'blur', skip: 'skip', 'skip-card': 'skip' };
 /** blur | skip | bleep | mute, or null (off / use settings). */
@@ -15,7 +19,9 @@ export const rowAction = (row) => ACTION_OF[row?.effect] || null;
 export const hasVerdict = (row) => Boolean(row?.verdict || row?.reviewed);
 
 export function inScope(row, scope = DEFAULT_SCOPE) {
-  return (scope.kind === 'all' || row.kind === scope.kind)
+  const show = scope.show || 'all';
+  return (show === 'all' || (show === 'plays' ? plays(row) : !plays(row)))
+    && (scope.kind === 'all' || row.kind === scope.kind)
     && (scope.action === 'all' || rowAction(row) === scope.action)
     && (!scope.group || row.group === scope.group)
     && (!scope.needs || !hasVerdict(row));

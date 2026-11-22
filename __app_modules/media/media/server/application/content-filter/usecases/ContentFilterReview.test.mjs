@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { REVIEW_ROWS_VERSION } from '../../../domain/content-filter/reviewRowsVersion.mjs';
 import { ContentFilterReview, ReviewError } from './ContentFilterReview.mjs';
 import { resolveEffectiveCues } from '../../../../browser/content-filter/contentFilter.js';
 import { reviewRows } from '../../../../cli/contentfilter/reviewRows.mjs';
@@ -13,7 +14,7 @@ const base = () => ({
   override: { sync: { scale: 1, offsetSec: 10 } },
 });
 const rowsOf = () => [{ id: 'cue:va1', in: 110.2, out: 110.6 }, { id: 'cue:va2', in: 210, out: 212 }];
-const setup = ({ audit = { ok: true, digest: 'D', rows: rowsOf() }, digest = 'D', state = base(), auditing = false } = {}) => {
+const setup = ({ audit = { ok: true, digest: 'D', rowsVersion: REVIEW_ROWS_VERSION, rows: rowsOf() }, digest = 'D', state = base(), auditing = false } = {}) => {
   const repo = {
     getEdl: async () => state.raw, getRefinedEdl: async () => state.refined,
     saveRefinedEdl: async (_r, e) => { state.refined = e; },
@@ -78,7 +79,7 @@ describe('ContentFilterReview marks and sign-off', () => {
   it('a moved row stops counting and stays named as changed; a mark whose row is gone is pruned', async () => {
     const s = base(); s.override.review = { 'cue:va1': { by: 'p', at: 'x', span: [110.2, 110.6] }, 'cue:gone': { by: 'p', at: 'x', span: [1, 2] } };
     const moved = [{ id: 'cue:va1', in: 110.25, out: 110.6 }, { id: 'cue:va2', in: 210, out: 212 }];
-    const { review, state } = setup({ state: s, audit: { ok: true, digest: 'D', rows: moved } });
+    const { review, state } = setup({ state: s, audit: { ok: true, digest: 'D', rowsVersion: REVIEW_ROWS_VERSION, rows: moved } });
     const r = await review.get({ ratingKey: '9' });
     expect(r.reviewed).toBe(0);
     expect(r.signOff.missing).toEqual(['1 rows have no verdict', '1 parts changed since you reviewed them']);
@@ -88,9 +89,9 @@ describe('ContentFilterReview marks and sign-off', () => {
   });
   it('an uncovered nudge, a failed audit and a stale audit are named', async () => {
     const s = base(); s.override.cueOverrides = { va1: { startMs: 100300, endMs: 100700 } };
-    const r = await setup({ state: s, audit: { ok: false, digest: 'OLD', rows: [{ id: 'cue:va1', in: 110.2, out: 110.6, label: 'damn', members: ['va1'] }] }, digest: 'NEW' }).review.get({ ratingKey: '9' });
+    const r = await setup({ state: s, audit: { ok: false, digest: 'OLD', rowsVersion: REVIEW_ROWS_VERSION, rows: [{ id: 'cue:va1', in: 110.2, out: 110.6, label: 'damn', members: ['va1'] }] }, digest: 'NEW' }).review.get({ ratingKey: '9' });
     expect(r.audit.fresh).toBe(false);
-    expect(r.signOff.missing).toEqual(['Not machine-certified: 1 mutes do not cover their word (damn)', 'The audit has not passed', 'The audit is out of date. Run Stage again → Audit.', '1 rows have no verdict']);
+    expect(r.signOff.missing).toEqual(['Not machine-certified: 1 mutes do not cover their word (damn)', 'The audit has not passed', 'The check is out of date. It runs again when this page is open.', '1 rows have no verdict']);
   });
   it('sets and clears a word ruling for this film', async () => {
     const { review, state } = setup();
@@ -101,8 +102,8 @@ describe('ContentFilterReview marks and sign-off', () => {
     await expect(review.setTitleWord({ ratingKey: '9', word: 'damn', value: 'loud' })).rejects.toMatchObject({ status: 400 });
   });
   it('while an audit is queued or running, it says so', async () => {
-    const r = await setup({ audit: { ok: true, digest: 'OLD', rows: rowsOf() }, digest: 'NEW', auditing: true }).review.get({ ratingKey: '9' });
-    expect(r.signOff.missing).toContain('The audit is still running');
+    const r = await setup({ audit: { ok: true, digest: 'OLD', rowsVersion: REVIEW_ROWS_VERSION, rows: rowsOf() }, digest: 'NEW', auditing: true }).review.get({ ratingKey: '9' });
+    expect(r.signOff.missing).toContain('The check is still running');
     expect(r.audit.running).toBe(true);
   });
   it('returns this film\'s word rulings', async () => {
@@ -116,7 +117,7 @@ describe('ContentFilterReview verdicts', () => {
     { id: 'cue:va1', kind: 'words', category: 'language/x', modality: 'heard', in: 110.2, out: 110.6, effect: 'mute', handFixed: false, unsure: ['safe-window'], members: ['va1'] },
     { id: 'cue:va2', kind: 'picture', category: 'violence/x', modality: 'shown', in: 210, out: 212, effect: 'skip', handFixed: true, unsure: [], members: ['va2'] },
   ];
-  const run = () => setup({ audit: { ok: true, digest: 'D', rows: rows() } });
+  const run = () => setup({ audit: { ok: true, digest: 'D', rowsVersion: REVIEW_ROWS_VERSION, rows: rows() } });
   const span1 = [110.2, 110.6];
 
   it('stores each verdict, reads a plain mark as approve, and appends history with machine provenance', async () => {
@@ -151,7 +152,7 @@ describe('ContentFilterReview verdicts', () => {
   });
   it('undo leaves a cue that was already disabled disabled', async () => {
     const s = base(); s.override.cueOverrides = { va1: { disabled: true } };
-    const { review, state } = setup({ state: s, audit: { ok: true, digest: 'D', rows: rows() } });
+    const { review, state } = setup({ state: s, audit: { ok: true, digest: 'D', rowsVersion: REVIEW_ROWS_VERSION, rows: rows() } });
     await review.setVerdict('9', 'cue:va1', { verdict: 'remove', span: span1 });
     await review.clearVerdict({ ratingKey: '9', rowId: 'cue:va1' });
     expect(state.override.cueOverrides.va1.disabled).toBe(true);
@@ -167,7 +168,7 @@ describe('ContentFilterReview verdicts', () => {
   it('a verdict on a moved row is refused, and a stored one stops counting', async () => {
     const s = base(); s.override.review = { 'cue:va1': { by: 'p', at: 'x', span: [110.2, 110.6], verdict: 'approve' } };
     const moved = rows(); moved[0].in = 110.25;
-    const { review } = setup({ state: s, audit: { ok: true, digest: 'D', rows: moved } });
+    const { review } = setup({ state: s, audit: { ok: true, digest: 'D', rowsVersion: REVIEW_ROWS_VERSION, rows: moved } });
     const r = await review.get({ ratingKey: '9' });
     expect(r.rows[0].verdict).toBeNull();
     await expect(review.setVerdict('9', 'cue:va1', { verdict: 'approve', span: span1 })).rejects.toMatchObject({ status: 409 });
@@ -190,7 +191,7 @@ describe('ContentFilterReview verdicts: review round 1', () => {
     { id: 'scene:sc1', kind: 'scenes', category: null, modality: null, in: 310, out: 370, effect: 'skip', handFixed: false, unsure: [], members: [] },
     { id: 'cue:ghost', kind: 'words', category: 'language/x', modality: 'heard', in: 50, out: 51, effect: 'mute', handFixed: false, unsure: [], members: ['ghost'] },
   ];
-  const mkr = (extra = {}) => setup({ audit: { ok: true, digest: 'D', rows: rows() }, ...extra });
+  const mkr = (extra = {}) => setup({ audit: { ok: true, digest: 'D', rowsVersion: REVIEW_ROWS_VERSION, rows: rows() }, ...extra });
   const va1 = [110.2, 110.6]; const sc1 = [310, 370];
 
   it('a scene change undoes with scene semantics: effect only, disabled untouched', async () => {
@@ -252,7 +253,7 @@ describe('ContentFilterReview verdicts: review round 2', () => {
   ];
   const va1 = [110.2, 110.6];
   it.each([['effect then widen', 0], ['widen then effect', 1]])('%s: undo restores both the original effect and the original edges', async (_n, order) => {
-    const { review, state } = setup({ audit: { ok: true, digest: 'D', rows: rows() } });
+    const { review, state } = setup({ audit: { ok: true, digest: 'D', rowsVersion: REVIEW_ROWS_VERSION, rows: rows() } });
     state.override.cueOverrides = { va1: { effect: 'mute', startMs: 100100, endMs: 100700 } };
     const eff = { from: 'mute', to: 'bleep' };
     const edge = { from: { in: 110.1, out: 110.7 }, to: { in: 110, out: 110.8 } };
@@ -267,7 +268,7 @@ describe('ContentFilterReview verdicts: review round 2', () => {
     const s = base();
     const repo = { getEdl: async () => s.raw, getRefinedEdl: async () => s.refined, saveRefinedEdl: async () => {}, getOverride: async () => s.override,
       saveOverride: async (_k, o) => { s.override = o; }, appendReviewHistory: async () => {}, getProfile: async () => ({}) };
-    const jobs = { record: async () => ({ runs: [], audit: { ok: true, digest: 'D', rows: rows() } }), isAuditing: () => false };
+    const jobs = { record: async () => ({ runs: [], audit: { ok: true, digest: 'D', rowsVersion: REVIEW_ROWS_VERSION, rows: rows() } }), isAuditing: () => false };
     const review = new ContentFilterReview({ contentFilterRepository: repo, jobs, digestOf: async () => 'D', logger: { info() {}, warn }, clock: () => new Date('2026-11-08T00:00:00Z') });
     await review.setVerdict('9', 'cue:va1', { verdict: 'approve', change: { from: { in: 110.1 }, to: { in: 110, out: 110.8 } }, span: va1 });
     await review.clearVerdict({ ratingKey: '9', rowId: 'cue:va1' });
@@ -291,14 +292,14 @@ describe('ContentFilterReview verdicts: review round 2', () => {
     expect((await review.get({ ratingKey: '9' })).reviewed).toBe(0);
   });
   it('re-verdict over a remove reports that the cue was re-enabled', async () => {
-    const { review } = setup({ audit: { ok: true, digest: 'D', rows: rows() } });
+    const { review } = setup({ audit: { ok: true, digest: 'D', rowsVersion: REVIEW_ROWS_VERSION, rows: rows() } });
     await review.setVerdict('9', 'cue:va1', { verdict: 'remove', span: va1 });
     const m = await review.setVerdict('9', 'cue:va1', { verdict: 'approve', span: va1 });
     expect(m.reenabled).toBe(true);
   });
   it('a scene target on a refined EDL with no scenes array is a 404, not a TypeError', async () => {
     const s = base(); delete s.refined.scenes;
-    const { review } = setup({ state: s, audit: { ok: true, digest: 'D', rows: rows() } });
+    const { review } = setup({ state: s, audit: { ok: true, digest: 'D', rowsVersion: REVIEW_ROWS_VERSION, rows: rows() } });
     await expect(review.setVerdict('9', 'scene:sc1', { verdict: 'remove', span: [310, 370] })).rejects.toMatchObject({ status: 404 });
   });
 });

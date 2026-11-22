@@ -18,7 +18,7 @@ describe('ReviewList', () => {
     show();
     expect([...document.querySelectorAll('[data-row-id]')].map((n) => n.getAttribute('data-row-id'))).toEqual(['cue:w1', 'subject:subject-b1', 'scene:sc1']);
     expect(within(item('damn')).getByText('Safe window')).toBeTruthy();
-    expect(within(item('damn')).getByText('1:10.2–1:10.6')).toBeTruthy();
+    expect(within(item('damn')).getByText(/1:10.2–1:10.6/)).toBeTruthy();
     expect(within(item('Billboard')).getByText('hand-fixed')).toBeTruthy();
     expect(within(item('Billboard')).getByLabelText('Reviewed')).toBeTruthy();
     expect(within(item('Fight')).getByText(/They get away\./)).toBeTruthy();
@@ -86,5 +86,19 @@ describe('ReviewList', () => {
     expect(screen.getByText('Billboard')).toBeTruthy();
     fireEvent.click(screen.getByRole('radio', { name: 'Scenes' }));
     expect(onScope).toHaveBeenCalledWith({ kind: 'scenes', action: 'blur', needs: false, group: null });
+  });
+  it('shows every part: filtered first, then the ones that play, with a show switch and timing', () => {
+    const all = [...rows.map((r) => ({ ...r, acts: true, timing: 'refined' })),
+      { id: 'cue:k1', peekId: 'k1', kind: 'picture', group: 'kissing', label: 'A couple kisses.', modality: 'shown', in: 400, out: 404, effect: 'off', acts: false, timing: 'rough', card: null, handFixed: false, unsure: [], reviewed: null }];
+    render(<MantineProvider><ReviewList rows={all} reviewed={1} total={3} audit={{ ok: true, fresh: true }} /></MantineProvider>);
+    expect(screen.getByText('4 parts in this film: the filter acts on 3, 1 play as they are.')).toBeTruthy();
+    expect(within(item('A couple kisses.')).getByText('Plays')).toBeTruthy();
+    expect(within(item('A couple kisses.')).getByText('Rough timing')).toBeTruthy();
+    expect(within(item('damn')).getByText('Refined')).toBeTruthy();
+    fireEvent.click(screen.getByRole('radio', { name: 'Plays 1' }));
+    expect(screen.queryByText('damn')).toBeNull();
+    expect(screen.getByText('A couple kisses.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('radio', { name: 'Filtered 3' }));
+    expect(screen.queryByText('A couple kisses.')).toBeNull();
   });
 });

@@ -90,6 +90,12 @@ describe('ContentFilterJobs', () => {
     await jobs.idle();
     expect(cli.calls).toEqual([]);
   });
+  it('recover() leaves a run a remote worker holds: the worker outlives an app restart (2026-11-21)', async () => {
+    const store = memStore({ 3: { ratingKey: '3', runs: [{ id: 'w', kind: 'make', status: 'running', step: 'refine', steps: [], worker: 'host:1', heartbeatAt: '2026-11-21T00:00:00Z', remote: true }] } });
+    const jobs = make({ store, cli: fakeCli() });
+    await jobs.recover();
+    expect((await jobs.record('3')).runs[0]).toMatchObject({ status: 'running', worker: 'host:1' });
+  });
   it('send-back clears the cues\' nudges, refines only those cues, then audits', async () => {
     const cleared = []; const cli = fakeCli();
     const jobs = make({ cli, clearNudges: async (rk, ids) => { cleared.push([rk, ids]); } });

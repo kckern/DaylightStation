@@ -234,7 +234,7 @@ export class ContentFilterJobs {
     await this.#withRecord(rk, (rec) => {
       delete rec.auditError;
       rec.audit = { ok: report.ok === true, at: this.#now().toISOString(), digest, level: report.certification?.level ?? 'none',
-        ...(report.certification?.blocking ? { blocking: report.certification.blocking } : {}), rows: report.rows || [], failures };
+        ...(report.certification?.blocking ? { blocking: report.certification.blocking } : {}), rows: report.rows || [], rowsVersion: report.rowsVersion ?? null, failures };
     });
     this.#logger.info?.('content-filter.audit.stored', { ratingKey: rk, ok: report.ok === true, rows: (report.rows || []).length });
     for (const fn of this.#audited) { try { await fn(rk); } catch (e) { this.#logger.warn?.('content-filter.audit.listener', { ratingKey: rk, error: e.message }); } }
@@ -281,12 +281,18 @@ export class ContentFilterJobs {
     return run;
   }
 
-  /** On boot: runs that were in flight or waiting are interrupted; nothing restarts on its own. */
+  /**
+   * On boot: runs this process was running, or that were waiting, are interrupted; nothing restarts
+   * on its own. A run a remote worker holds is not this process's: the worker outlives an app
+   * restart (a deploy) and keeps heartbeating, so it is left to `reapStale`, which interrupts it
+   * only if its heartbeat stops (2026-11-21: a deploy 20 s into a Sonic refine marked the live run
+   * interrupted, and the worker's next report was refused).
+   */
   async recover() {
     for (const rec of await this.#store.list()) {
       const rk = String(rec.ratingKey);
       const hit = await this.#withRecord(rk, (r) => {
-        const open = r.runs.filter((x) => OPEN.has(x.status));
+        const open = r.runs.filter((x) => OPEN.has(x.status) && !(x.status === 'running' && x.worker));
         for (const x of open) Object.assign(x, { status: 'interrupted', endedAt: this.#now().toISOString() });
         return open.map((x) => ({ runId: x.id, step: x.step }));
       });

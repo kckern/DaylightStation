@@ -11,6 +11,7 @@ import { ReviewTimeline } from './ReviewTimeline.jsx';
 import { ReviewKeyBar } from './ReviewKeyBar.jsx';
 import { useReviewKeys } from './useReviewKeys.js';
 import { useReviewStation } from './useReviewStation.js';
+import { hasVerdict, plays } from './reviewScope.js';
 import { ReviewPlayer } from './ReviewPlayer.jsx';
 import { RowEditor } from './RowEditor.jsx';
 import { SignOffPanel } from './SignOffPanel.jsx';
@@ -20,8 +21,9 @@ import { runText } from './FilterLibrary.jsx';
 import './ContentFilterAdmin.scss';
 
 /**
- * Admin -> Content filter -> one film: check every part the filter acts on ("Check it" in
- * ops:docs/superpowers/specs/2026-11-07-content-filter-admin-workshop-design.md).
+ * Admin -> Content filter -> one film: every part in the film, one at a time ("Check it" in
+ * ops:docs/superpowers/specs/2026-11-07-content-filter-admin-workshop-design.md; all parts, not
+ * only the filtered ones, and progress meters: owner, 2026-11-21).
  */
 const logger = createAppLogger('admin').child('content-filter');
 const API = 'api/v1/content-filter';
@@ -135,7 +137,7 @@ function FilmReview({ ratingKey, rowId, owner }) {
           <Badge variant="light" color={data.certification.level === 'none' ? 'gray' : 'green'}>{LEVEL[data.certification.level] || data.certification.level}</Badge>
           {data.job && data.status?.next !== 'running' ? <Text size="sm" c={data.job.status === 'failed' ? 'red' : 'dimmed'}>{runText(data.job)}</Text> : null}
         </Group>
-        <FilmStatusCard ratingKey={ratingKey} status={data.status} job={data.job} approvedBy={data.signOff?.parent?.by || null} auditError={data.auditError || null} worker={data.worker || null} approval={approval}
+        <FilmStatusCard ratingKey={ratingKey} status={data.status} parts={data.parts || null} review={data.parts ? { reviewed: data.reviewed, total: data.total } : null} job={data.job} approvedBy={data.signOff?.parent?.by || null} auditError={data.auditError || null} worker={data.worker || null} approval={approval}
           onChanged={reload} onReview={() => { const first = station.scoped.find((r) => !r.verdict) || data.rows[0]; if (first) station.pick(first); }} />
         {notMatched ? (
           <Text size="sm" c="orange">{`Not matched to Plex: ${data.unmatched?.text || 'no Plex film'}. The review and override here are kept; runs are blocked.`}</Text>
@@ -147,9 +149,10 @@ function FilmReview({ ratingKey, rowId, owner }) {
         <div className="cf-review">
           <Stack gap="sm" className="cf-review__side">
             <ReviewPlayer ratingKey={ratingKey} />
+            {data.rows.length ? <FocusBar row={row} list={station.scoped} onPrev={station.handlers.prev} onNext={station.handlers.next} /> : null}
             {row ? <RowEditor key={row.id} ratingKey={ratingKey} row={row} onChanged={reload} busyText={busyText}
               auditFresh={!!data.audit?.fresh} wordRulings={data.wordRulings || {}} />
-              : <Text size="sm" c="dimmed">Pick a part in the list to change how it is handled.</Text>}
+              : null}
             {station.flagged ? (
               <Button size="xs" color="orange" variant="light" disabled={Boolean(runBlock)} onClick={station.rework}
                 title={busyText ? `${busyText}. Rework is available when it finishes.` : runBlock ? `${runBlock}: runs are blocked.` : 'Send the rows marked redo back through the pipeline (Shift+D)'}>
@@ -173,6 +176,31 @@ function FilmReview({ ratingKey, rowId, owner }) {
         </div>
       </Stack>
     </SectionCard>
+  );
+}
+
+/** The part in hand: where it sits in the current view, with Previous / Next (also ← / →). */
+function FocusBar({ row, list, onPrev, onNext }) {
+  if (!row) {
+    return (
+      <div className="cf-focus" role="group" aria-label="Part under review">
+        <Text size="sm">{list.length ? `${list.length} parts in this view. Go through them one at a time, or pick one in the list.` : 'Nothing in this view.'}</Text>
+        {list.length ? <Button size="compact-sm" onClick={onNext} aria-label="Start with the first part">Start: part 1 of {list.length} →</Button> : null}
+      </div>
+    );
+  }
+  const i = list.findIndex((r) => r.id === row.id);
+  const where = i >= 0 ? `Part ${i + 1} of ${list.length}` : 'Not in this view';
+  const left = list.filter((r) => !hasVerdict(r) && !plays(r)).length;
+  return (
+    <div className="cf-focus" role="group" aria-label="Part under review">
+      <Button size="compact-sm" variant="default" onClick={onPrev} disabled={i <= 0} aria-label="Previous part">← Prev</Button>
+      <Stack gap={0} align="center">
+        <Text size="sm" fw={600} className="cf-focus__where">{where}</Text>
+        <Text size="xs" c="dimmed">{left ? `${left} filtered still to review in this view` : 'Every filtered part in this view has a verdict'}</Text>
+      </Stack>
+      <Button size="compact-sm" variant="default" onClick={onNext} disabled={i < 0 || i >= list.length - 1} aria-label="Next part">Next →</Button>
+    </div>
   );
 }
 

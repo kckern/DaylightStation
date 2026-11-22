@@ -20,7 +20,7 @@ import { cueModality } from '../../../../../shared/contracts/content-filter/cueM
 import { LANGUAGE_GROUPS, languageGroupOf, groupOfTerm } from '../../../../../shared/contracts/content-filter/languageGroups.mjs';
 import { mergeProfilePatch } from '../../../../../shared/contracts/content-filter/filterSettings.mjs';
 import { refinedEdlName } from '../../server/domain/content-filter/refine/refinedEdl.mjs';
-import { reviewRows } from './reviewRows.mjs';
+import { reviewRows, REVIEW_ROWS_VERSION } from './reviewRows.mjs';
 import { certify } from '../../server/domain/content-filter/refine/certification.mjs';
 
 export const AUDIT_USAGE = 'Usage: contentfilter audit <ratingKey> [--profile <name>] [--part <id>] [--json]\n\n'
@@ -159,7 +159,8 @@ export function computeAudit({ edl, profile, override, part = null, refineReview
     certification: { level: cert.level || 'none', ...(cert.blocking?.length ? { blocking: cert.blocking } : {}) },
     language,
     // The Admin review list: one row per moment, as the household gets it (reviewRows.mjs).
-    rows: reviewRows({ cues, refined: edl, override, refineReview }),
+    rows: reviewRows({ cues, source: sourceCues, refined: edl, override, refineReview }),
+    rowsVersion: REVIEW_ROWS_VERSION,
   };
 }
 

@@ -9,6 +9,7 @@ import { filmStatus } from '../../../domain/content-filter/filmStatus.mjs';
 import { certify, signOff } from '../../../domain/content-filter/refine/certification.mjs';
 import { filmStage } from '../../../domain/content-filter/filmStage.mjs';
 import { createTitleQueue } from '../titleQueue.mjs';
+import { REVIEW_ROWS_VERSION } from '../../../domain/content-filter/reviewRowsVersion.mjs';
 
 export class ReviewError extends Error {
   constructor(message, status, extra = {}) { super(message); this.name = 'ReviewError'; this.status = status; Object.assign(this, extra); }
@@ -312,19 +313,26 @@ export class ContentFilterReview {
     const { raw, refined, override } = await this.#film(ratingKey, { allowRough: true });
     const record = await this.#jobs.record(ratingKey);
     const audit = record?.audit || null;
-    const fresh = !!audit && audit.digest === (await this.#digestOf(ratingKey));
+    // A list stored in an older row shape is out of date too: opening the film rebuilds it.
+    const fresh = !!audit && audit.digest === (await this.#digestOf(ratingKey)) && audit.rowsVersion === REVIEW_ROWS_VERSION;
     const cert = refined ? certify(refined, { at: refined.certification?.machine?.at ?? null, cueOverrides: override.cueOverrides || {} }) : { level: 'none', blocking: null };
     const marks = override.review || {};
     let reviewed = 0; let changed = 0; let redo = 0;
+    // Every part is a row; only the ones the filter acts on (`acts`, absent on older audits) need a
+    // verdict before sign-off. A part that plays can still be marked, and a redo on it still counts.
     const rows = (audit?.rows || []).map((r) => {
       const m = marks[r.id];
       const ok = !!m && markHolds(m, r);
-      if (ok) reviewed++; else if (m) changed++;
+      const acts = r.acts !== false;
+      if (acts) { if (ok) reviewed++; else if (m) changed++; }
       const verdict = ok ? { verdict: m.verdict || 'approve', ...(m.reason ? { reason: m.reason } : {}), ...(m.change ? { change: m.change } : {}), by: m.by, at: m.at } : null;
       if (verdict?.verdict === 'redo') redo++;
       return { ...r, reviewed: ok ? { by: m.by, at: m.at } : null, verdict };
     });
-    const total = rows.length;
+    const total = rows.filter((r) => r.acts !== false).length;
+    const timing = { refined: 0, 'safe-window': 0, rough: 0 };
+    for (const r of rows) if (r.timing in timing) timing[r.timing]++;
+    const parts = { total: rows.length, acting: total, plays: rows.length - total, timing };
     const auditing = typeof this.#jobs.isAuditing === 'function' && this.#jobs.isAuditing(ratingKey);
     const missing = [];
     if (refined && cert.level === 'none') {
@@ -334,7 +342,7 @@ export class ContentFilterReview {
       missing.push(`Not machine-certified: ${cert.blocking.length} mutes do not cover their word${shown.length ? ` (${shown.join(', ')}${cert.blocking.length > shown.length ? ', …' : ''})` : ''}`);
     }
     if (audit && audit.ok === false) missing.push('The audit has not passed');
-    if (!fresh) missing.push(auditing ? 'The audit is still running' : 'The audit is out of date. Run Stage again → Audit.');
+    if (!fresh) missing.push(auditing ? 'The check is still running' : 'The check is out of date. It runs again when this page is open.');
     if (total - reviewed - changed > 0) missing.push(`${total - reviewed - changed} rows have no verdict`);
     if (changed) missing.push(`${changed} parts changed since you reviewed them`);
     if (redo) missing.push(`${redo} rows wait for redo`);
@@ -353,7 +361,7 @@ export class ContentFilterReview {
       audit: audit ? { ok: audit.ok, at: audit.at, fresh, running: auditing, failures: audit.failures || [] } : null,
       wordRulings: override.profilePatch?.languageWords || {},
       bleepLevel: { film: override.profilePatch?.bleepLevel ?? null, profile: (await this.#repo.getProfile('family'))?.bleepLevel ?? null },
-      rows, reviewed, total, redo,
+      rows, reviewed, total, redo, parts,
       job: run ? { id: run.id, kind: run.kind, status: run.status, step: run.step, steps: run.steps, ...(run.cues ? { cues: run.cues } : {}) } : null,
       signOff: { ready: !!refined && missing.length === 0, missing, parent: refined?.certification?.parent || null },
     };

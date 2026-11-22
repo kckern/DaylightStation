@@ -937,7 +937,11 @@ status detail`) are folded (`refineProgress.mjs`) into `step.progress { phase, d
 recent }`, sent on each phase change, the first and last cue and at most every 2 s (the inline
 executor does the same); a running step keeps its start time, and finishes with `POST /:rk/jobs/:runId/complete { status, results | step + error }`.
 The app saves the results, drafts card text and audits, then settles the run. A run whose heartbeat
-is older than 60 s is marked interrupted; only the claiming worker can report on a run.
+is older than 60 s is marked interrupted; only the claiming worker can report on a run. An app
+restart (a deploy) interrupts only the runs the app itself held and the queued ones: a run a worker
+holds stays `running`, because the worker outlives the restart and keeps heartbeating; if it does
+not, the 60 s rule settles it (2026-11-21: a deploy 20 s into a refine had marked a live worker run
+interrupted, and the worker's next report was refused).
 `--data-dir` (read-only) lends the worker the app's Plex and Jev credentials; without it set
 `PLEX_HOST`/`PLEX_TOKEN` and the Jev key in its environment. With no worker running, queued runs
 wait and the library says "Waiting for a filter worker" (an idle worker asks for work every 5 s).
@@ -962,12 +966,18 @@ but had never been audited, so its list was empty), and reads a film with only V
 `none | refine | running | checking | check-failed | review | approve | done` (`approve` only when the
 sign-off would be accepted). A failed check is kept on the run record (`auditError`,
 `content-filter.audit.failed`) and the route stops asking until **Retry**; the payload also carries
-`auditRunning` and the filter `worker` status. It returns the latest audit's rows (`cli/contentfilter/reviewRows.mjs`): one row per
-moment as the household gets it (the preview rail's moments: a subject group is one row, a scene
-swallows its cues), with kind, group, modality, local span, effect, card, `handFixed`, `members`
-(the cue ids a ruling applies to) and the reasons the machine is unsure (`refine-<status>`,
+`auditRunning` and the filter `worker` status. It returns the latest audit's rows (`cli/contentfilter/reviewRows.mjs`): **every part in the
+film**. One row per moment as the household gets it (the preview rail's moments: a subject group is
+one row, a scene swallows its cues), with kind, group, modality, local span, effect, card, `handFixed`,
+`members` (the cue ids a ruling applies to) and the reasons the machine is unsure (`refine-<status>`,
 `safe-window`, `check-levels`, `exchange-by-length`, `untracked-visual`, `subject-unsure`), unsure
-first. The page plays the film in the Media Player with the filter forced on
+first; then one row per EDL cue the household's settings let play (`acts: false`, `effect: off`,
+mapped through the copy's sync; a cue a hidden scene covers belongs to the scene, a cue outside the
+copy's cut is left out). Every row carries `timing`: `refined` (ms/frame), `safe-window` or `rough`
+(VidAngel's second-approx times). The payload's `parts { total, acting, plays, timing }` counts them;
+`reviewed`/`total` and the sign-off count only the rows the filter acts on (a playing part can carry
+a verdict but needs none). The audit stores `rowsVersion` (`domain/content-filter/reviewRowsVersion.mjs`);
+a list stored with another version is out of date, so opening the film rebuilds it. The page plays the film in the Media Player with the filter forced on
 (`previewStore.forceFilter`), "Play with effect" (4 s lead) and "Play without" (peek).
 
 Per row: effect (only what fits the channel, R1), this film's ruling for a word
@@ -976,7 +986,7 @@ group (settings; per-word rulings survive it), the card (draft, edit, approve, w
 nudge, send back, and a verdict (only while the audit is current). Rows can be selected for one
 multi-row send-back; rows in a queued or running send-back read "Sent back: <step>". Play with and
 without the effect always works, even while a run writes the film. The sign-off names up to three words whose mute no longer covers them, and tells a
-running audit ("still running") from a stale one ("out of date. Run Stage again → Audit."). A PUT
+running check ("still running") from a stale one ("out of date. It runs again when this page is open."). A PUT
 with a nudge and an unknown effect is refused before anything is saved. The library re-reads its
 title index every 10 minutes.
 
@@ -1002,9 +1012,12 @@ title index every 10 minutes.
 
 #### Film status card
 
-The film page opens on `FilmStatusCard.jsx`: "Filters: Yes — N parts" (or "None for this film yet"),
-"Refined: Yes — m of n measured to the millisecond" (or "No"), the certification, and one button from
-`next`: **Refine** (a make run: the whole pipeline), "Checking the result…", **Review** (to the first
+The film page opens on `FilmStatusCard.jsx`: three meters (`PartMeters`) — **Parts** (N; "f filtered ·
+p play as they are"), **Timing refined** (refined + safe-window of N, with a bar; "r still on VidAngel's
+rough times") and **Reviewed** (filtered parts with a verdict, with a bar). (Before a list exists it
+falls back to "Filters: Yes — N parts" / "Refined: …".) Then the certification and one button from
+`next`: **Refine** (a make run: the whole pipeline; **Refine again** after an interrupted or failed
+run, which says nothing from it was kept), "Checking the result…", **Review** (to the first
 row without a verdict) or **Approve for family**. While a run works it shows its phases in words
 (Checking the machine, Syncing the film's clock, Measuring each part — n of N, Building scenes,
 Drafting cards, Checking the result; `runProgress.js`), a bar, an ETA from the pace since the first
@@ -1019,9 +1032,16 @@ video has focus; they never fire inside text inputs or an open dialog) and a key
 shows the keys that apply to the current row, the verdict tally (`done/total`, redo count) and the bleep
 level. `?` opens the whole keymap, Esc closes it.
 
+- **One part at a time.** Under the player a focus bar says where the cursor is ("Part 3 of 153" in
+  the current view, how many filtered parts in the view still need a verdict) with **← Prev** /
+  **Next →**; before any part is picked it offers **Start: part 1 of N →** (or `→`).
 - **Cursor and scope.** Moving the cursor (key, click, timeline, auto-advance) seeks to 4 s before the
-  row and plays. One scope drives the list, the timeline and cursor stepping: kind (All / Words /
-  Picture / Scenes) × action (All / Blur / Skip / Bleep / Mute) × "needs review". `F` cycles the kind.
+  row and plays. One scope drives the list, the timeline and cursor stepping: show (**All parts** /
+  **Filtered** / **Plays**, each with its count; default All) × kind (All / Words / Picture / Scenes) ×
+  action (All / Blur / Skip / Bleep / Mute) × "needs review". The list's header and filters stay put
+  while its rows scroll; a row is the start time, the label and one meta line (group · said/shown ·
+  span) with its chips (effect or **Plays**, verdict, timing when the film's timing is mixed, unsure
+  reasons). Playing parts are grey on the timeline. `F` cycles the kind.
   Stepping does not wrap: at the end it says "That is the last part in this view."
 - **Auto-advance.** A saved verdict moves to the next row without a verdict in the current scope
   (reading the scope as it is when the save lands, and leaving a cursor the reviewer moved meanwhile).
