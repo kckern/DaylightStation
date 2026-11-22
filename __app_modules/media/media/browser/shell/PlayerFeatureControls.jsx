@@ -25,6 +25,7 @@ import { SearchContext } from "../search/SearchProvider.jsx";
 import { FormDialog } from '@/lib/ui/FormDialog.jsx';
 import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
+import { commandFailureCopy } from "./stateCopy.js";
 import mediaLog from "../logging/mediaLog.js";
 import "./PlayerFeatureControls.scss";
 
@@ -34,10 +35,9 @@ const FAILURE_COPY = {
   NO_PLAYBACK: 'Nothing is playing',
   UNKNOWN_TRACK: 'That track is not available',
   NO_BRIEF: 'Nothing is being shown',
-  DEVICE_OFFLINE: 'Not sent — device is offline',
 };
 const failureCopy = (result) => FAILURE_COPY[result?.code]
-  ?? (/\bDEVICE_OFFLINE\b/.test(String(result?.message ?? '')) ? FAILURE_COPY.DEVICE_OFFLINE : 'Could not confirm change');
+  ?? commandFailureCopy(result);
 
 const NOOP_SUB = () => () => {};
 const NULL_STATE = () => null;

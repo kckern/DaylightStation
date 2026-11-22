@@ -7,7 +7,16 @@ import {
   queuePositionLabel,
   playbackRateLabel,
   handleStateLabel,
+  commandFailureCopy,
 } from "./stateCopy.js";
+
+describe('commandFailureCopy', () => {
+  it('distinguishes explicit offline rejection from ambiguous failures', () => {
+    expect(commandFailureCopy({ code: 'DEVICE_OFFLINE' })).toBe('Not sent — device is offline');
+    expect(commandFailureCopy(new Error('HTTP 409: Conflict - {"code":"DEVICE_OFFLINE"}'))).toBe('Not sent — device is offline');
+    expect(commandFailureCopy(new Error('ack timeout'))).toBe('Could not confirm change');
+  });
+});
 
 describe('playbackStateLabel', () => {
   it('humanizes engine states', () => {

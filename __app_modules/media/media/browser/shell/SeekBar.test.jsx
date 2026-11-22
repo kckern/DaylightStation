@@ -389,6 +389,21 @@ describe('SeekBar', () => {
     expect(screen.queryByTestId('np-seek-command-feedback')).toBeNull();
   });
 
+  it('labels an explicit offline seek rejection as not sent', async () => {
+    state.transport = {
+      ...transport,
+      seekAbs: vi.fn(() => Promise.reject(new Error('HTTP 409: Conflict - {"code":"DEVICE_OFFLINE"}'))),
+    };
+    render(<SeekBar target={{ deviceId: 'screen-a' }} />);
+    const track = screen.getByTestId('np-seek');
+    measureTrack(track);
+    firePointer(track, 'pointerdown', 100);
+    firePointer(track, 'pointerup', 100);
+
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByTestId('np-seek-command-feedback')).toHaveTextContent('Not sent — device is offline');
+  });
+
   it('shows a LIVE badge instead of a scrubber for live content', () => {
     state.snapshot = makeSnapshot({ isLive: true });
     state.capabilities = {
@@ -422,6 +437,17 @@ describe('SeekBar', () => {
     await act(async () => { fireEvent.click(screen.getByTestId('np-go-live')); });
     expect(onCommand).toHaveBeenCalledWith('goLive', expect.any(Function));
     expect(screen.getByTestId('np-seek-command-feedback')).toHaveTextContent('Could not confirm change');
+  });
+
+  it('labels an explicit offline Go to live rejection as not sent', async () => {
+    const goLive = vi.fn(() => Promise.reject(new Error('HTTP 409: Conflict - {"code":"DEVICE_OFFLINE"}')));
+    state.transport = { ...transport, goLive };
+    state.snapshot = makeSnapshot({ isLive: true });
+    state.capabilities = { seekable: false, live: true, reason: null, acked: false };
+    render(<SeekBar target={{ deviceId: 'screen-a' }} />);
+
+    await act(async () => { fireEvent.click(screen.getByTestId('np-go-live')); });
+    expect(screen.getByTestId('np-seek-command-feedback')).toHaveTextContent('Not sent — device is offline');
   });
 
   it('admits one Go to live command per playback context and allows retry after failure', async () => {

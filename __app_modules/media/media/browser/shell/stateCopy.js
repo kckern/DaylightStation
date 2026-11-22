@@ -102,10 +102,19 @@ export function playbackRateLabel(rate) {
   return `${parseFloat(r.toFixed(2))}×`;
 }
 
+/** Command rejection copy distinguishes an explicit offline refusal from an
+ * ambiguous failure such as an acknowledgement timeout. */
+export function commandFailureCopy(error) {
+  return error?.code === 'DEVICE_OFFLINE' || /\bDEVICE_OFFLINE\b/.test(String(error?.message ?? error))
+    ? 'Not sent — device is offline'
+    : 'Could not confirm change';
+}
+
 export default {
   playbackStateLabel,
   deviceStateLabel,
   remoteStatusLine,
   queuePositionLabel,
   playbackRateLabel,
+  commandFailureCopy,
 };

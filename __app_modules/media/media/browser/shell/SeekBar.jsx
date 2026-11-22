@@ -9,6 +9,7 @@ import { useSessionController } from "../controller/useSessionController.js";
 import { usePlaybackPosition } from "../controller/usePlaybackPosition.js";
 import { useKeyedSubmission } from '@/lib/ui/useKeyedSubmission.js';
 import { formatTime } from "./formatTime.js";
+import { commandFailureCopy } from "./stateCopy.js";
 import "./NowPlaying.scss";
 
 const KEYBOARD_STEP_S = 5;
@@ -64,9 +65,9 @@ export function SeekBar({ target, availability = null, onCommand = null, pending
       setCommandFeedback(null);
       const operation = () => transport.goLive();
       const commandContext = context;
-      const reportFailure = () => {
+      const reportFailure = (error) => {
         if (contextRef.current === commandContext) {
-          setCommandFeedback({ message: 'Could not confirm change', context: commandContext });
+          setCommandFeedback({ message: commandFailureCopy(error), context: commandContext });
         }
       };
       const command = () => onCommand ? onCommand('goLive', operation) : operation();
@@ -119,16 +120,16 @@ export function SeekBar({ target, availability = null, onCommand = null, pending
     setCommandFeedback(null);
     const operation = () => transport.seekAbs?.(seconds);
     const commandContext = context;
-    const reportFailure = () => {
+    const reportFailure = (error) => {
       if (contextRef.current === commandContext && latestSeekAttemptRef.current === seekAttempt) {
-        setCommandFeedback({ message: 'Could not confirm change', context: commandContext });
+        setCommandFeedback({ message: commandFailureCopy(error), context: commandContext });
       }
     };
     let result;
     try {
       result = onCommand ? onCommand('seekAbs', operation, seconds) : operation();
-    } catch {
-      reportFailure();
+    } catch (error) {
+      reportFailure(error);
       return;
     }
     Promise.resolve(result).catch(reportFailure);

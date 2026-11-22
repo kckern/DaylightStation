@@ -15,7 +15,7 @@ import {
 } from '@tabler/icons-react';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { useSessionController } from "../controller/useSessionController.js";
-import { playbackRateLabel } from "./stateCopy.js";
+import { commandFailureCopy, playbackRateLabel } from "./stateCopy.js";
 import { PlayerFeatureControls, useSlideshowStopGuard } from "./PlayerFeatureControls.jsx";
 import { FlingButton } from "./FlingButton.jsx";
 import "./NowPlaying.scss";
@@ -25,15 +25,6 @@ const SKIP_STEP_S = 10;
 const VOLUME_STEP = 10;
 // 1× → 1.25× → 1.5× → 2× → 0.75× → 1×
 const RATE_CYCLE = [1, 1.25, 1.5, 2, 0.75];
-
-// A transport timeout is ambiguous: the receiver may have acted after the
-// sender stopped waiting. Only the backend's explicit liveness rejection is
-// affirmative evidence that nothing was published for this command.
-function commandFailureCopy(error) {
-  return error?.code === 'DEVICE_OFFLINE' || /\bDEVICE_OFFLINE\b/.test(String(error?.message ?? error))
-    ? 'Not sent — device is offline'
-    : 'Could not confirm change';
-}
 
 function nextRate(rate) {
   const idx = RATE_CYCLE.indexOf(rate);
