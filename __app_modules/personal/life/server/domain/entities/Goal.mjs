@@ -1,4 +1,5 @@
 import { GoalState } from "../value-objects/GoalState.mjs";
+import { calculateGoalProgress } from "../services/ProgressCalculator.mjs";
 
 export class Goal {
   constructor(data = {}) {
@@ -49,14 +50,7 @@ export class Goal {
   }
 
   getProgress() {
-    if (!this.metrics || this.metrics.length === 0) return 0;
-
-    const sum = this.metrics.reduce((acc, m) => {
-      if (!m.target || m.target === 0) return acc;
-      return acc + Math.min(m.current / m.target, 1);
-    }, 0);
-
-    return Math.min(sum / this.metrics.length, 1);
+    return calculateGoalProgress(this) ?? 0;
   }
 
 }

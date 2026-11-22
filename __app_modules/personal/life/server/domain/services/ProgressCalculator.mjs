@@ -1,23 +1,38 @@
 /**
  * Calculates goal progress from metrics, milestones, and time.
  */
+function calculateMetricProgress(goal) {
+  const metrics = goal.metrics || [];
+  if (metrics.length === 0) return null;
+
+  const ratios = metrics.map(metric =>
+    metric.target > 0 ? Math.min(metric.current / metric.target, 1) : 0
+  );
+  return ratios.reduce((sum, ratio) => sum + ratio, 0) / ratios.length;
+}
+
+function calculateMilestoneProgress(goal) {
+  const milestones = goal.milestones || [];
+  if (milestones.length === 0) return null;
+
+  const completed = milestones.filter(milestone => milestone.completed).length;
+  return completed / milestones.length;
+}
+
+export function calculateGoalProgress(goal) {
+  const components = [calculateMetricProgress(goal), calculateMilestoneProgress(goal)]
+    .filter(progress => progress !== null);
+  if (components.length === 0) return null;
+  return components.reduce((sum, progress) => sum + progress, 0) / components.length;
+}
+
 export class ProgressCalculator {
   calculateMetricProgress(goal) {
-    const metrics = goal.metrics || [];
-    if (metrics.length === 0) return null;
-
-    const ratios = metrics.map(m =>
-      m.target > 0 ? Math.min(m.current / m.target, 1) : 0
-    );
-    return ratios.reduce((sum, r) => sum + r, 0) / ratios.length;
+    return calculateMetricProgress(goal);
   }
 
   calculateMilestoneProgress(goal) {
-    const milestones = goal.milestones || [];
-    if (milestones.length === 0) return null;
-
-    const completed = milestones.filter(m => m.completed).length;
-    return completed / milestones.length;
+    return calculateMilestoneProgress(goal);
   }
 
   calculateTimeProgress(goal, now) {
@@ -36,14 +51,11 @@ export class ProgressCalculator {
   }
 
   calculateComposite(goal, now) {
-    const metric = this.calculateMetricProgress(goal);
-    const milestone = this.calculateMilestoneProgress(goal);
     const time = this.calculateTimeProgress(goal, now);
+    const progress = calculateGoalProgress(goal);
 
-    const components = [metric, milestone].filter(c => c !== null);
-    if (components.length === 0) return { progress: 0, timeRatio: time, status: 'no_metrics' };
+    if (progress === null) return { progress: 0, timeRatio: time, status: 'no_metrics' };
 
-    const progress = components.reduce((sum, c) => sum + c, 0) / components.length;
     const timeRatio = time ?? 0;
 
     let status = 'on_track';
