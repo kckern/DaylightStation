@@ -1,13 +1,14 @@
 import React from 'react';
 import PhotoWall from "./PhotoWall.jsx";
 import { WMO_ICONS, cToF } from "./dayData.js";
+import LearnerAvatar from "./LearnerAvatar.jsx";
 import { subjectGlyph, verbLabel, kidStyle } from "./schoolWork.js";
 import getLogger from '@/lib/logging/Logger.js';
 
 let _l;
 const logger = () => (_l ||= getLogger().child({ component: 'weekly-review-grid' }));
 
-const MAX_CHIPS = 3;
+const MAX_CHIPS = 5;
 
 function SchoolChip({ item, color }) {
   const [failed, setFailed] = React.useState(false);
@@ -32,7 +33,7 @@ function SchoolChip({ item, color }) {
       ) : (
         <span className="school-chip-glyph" aria-hidden="true">{subjectGlyph(item.subject)}</span>
       )}
-      <span className="school-chip-initial" aria-hidden="true">{name.charAt(0)}</span>
+      <LearnerAvatar learnerId={item.learnerId} name={name} className="school-chip-avatar" size={64} />
     </div>
   );
 }
@@ -50,11 +51,10 @@ export default function DayColumn({ day, isFocused, onClick, learnerColors }) {
   ].filter(Boolean).join(' ');
 
   const weather = day.weather;
-  // When a day has a photo grid, photos should dominate the cell. Collapse the
-  // calendar/fitness chip stacks to a single horizontal row (fewer chips, the
-  // rest folded into a "+N more" overflow) so they don't eat vertical space.
-  const compact = day.photoCount > 0;
-  const chipMax = compact ? 2 : MAX_CHIPS;
+  const school = day.school || [];
+  // One row: past the cap, the last slot becomes "+N".
+  const shownSchool = school.length > MAX_CHIPS ? school.slice(0, MAX_CHIPS - 1) : school;
+  const schoolOverflow = school.length - shownSchool.length;
 
   return (
     <div
@@ -90,63 +90,33 @@ export default function DayColumn({ day, isFocused, onClick, learnerColors }) {
         )}
       </div>
 
-      {day.calendar.length > 0 && (
-        <div className={`day-calendar${compact ? ' day-calendar--compact' : ''}`}>
-          {day.calendar.slice(0, chipMax).map((event, i) => (
-            <div key={i} className="calendar-chip">
-              {event.time && <span className="chip-time">{event.time}</span>}
-              {event.summary}
-            </div>
-          ))}
-          {day.calendar.length > chipMax && (
-            <div className="calendar-chip calendar-chip--overflow">+{day.calendar.length - chipMax} more</div>
-          )}
-        </div>
-      )}
+      {/* Photos are the day: they take the cell. Calendar events and workouts
+          are not drawn here (truncated chips told nothing); they are in the
+          Down details panel, where there is room to read them. */}
+      <div className={`day-photos${day.photoCount > 0 ? '' : ' day-photos--none'}`}>
+        {day.photoCount > 0 ? (
+          <PhotoWall photos={day.photos} />
+        ) : !weather && (
+          <div className="day-empty-content">
+            <span className="day-empty-name">{dayName}</span>
+          </div>
+        )}
+      </div>
 
-      {day.fitness?.length > 0 && (
-        <div className={`day-fitness${compact ? ' day-fitness--compact' : ''}`}>
-          {day.fitness.slice(0, chipMax).map((session, i) => (
-            <div key={i} className="fitness-chip">
-              <span className="fitness-icon">🏋️</span>
-              {session.media?.primary?.showTitle || session.media?.primary?.title || 'Workout'}
-              {Object.keys(session.participants || {}).length > 1 && (
-                <span className="fitness-people"> · {Object.values(session.participants).map(p => p.displayName).join(', ')}</span>
-              )}
-            </div>
-          ))}
-          {day.fitness.length > chipMax && (
-            <div className="fitness-chip fitness-chip--overflow">+{day.fitness.length - chipMax} more</div>
-          )}
-        </div>
-      )}
-
+      {/* School work: one small row under the photos, each child's face on
+          their piece. Its full presence is in the day reel and the showcase. */}
       {day.school?.length > 0 && (
         <div className="day-school">
-          {day.school.map(item => (
+          {shownSchool.map(item => (
             <SchoolChip
               key={`${item.learnerId}:${item.groupKey}:${item.studyDay}`}
               item={item}
               color={learnerColors?.[item.learnerId]}
             />
           ))}
+          {schoolOverflow > 0 && <span className="school-chip school-chip--overflow">+{schoolOverflow}</span>}
         </div>
       )}
-
-      <div className="day-photos">
-        {day.photoCount > 0 ? (
-          <PhotoWall photos={day.photos} />
-        ) : weather ? (
-          <div className="day-empty-content day-empty-weather">
-            <span className="weather-big-icon">{WMO_ICONS[weather.code] || '🌡'}</span>
-            <span className="weather-big-temp">{cToF(weather.high)}° / {cToF(weather.low)}°</span>
-          </div>
-        ) : (
-          <div className="day-empty-content">
-            <span className="day-empty-name">{dayName}</span>
-          </div>
-        )}
-      </div>
     </div>
   );
 }

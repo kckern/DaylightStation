@@ -34,20 +34,24 @@ $school-font: "Roboto Condensed", sans-serif;
     z-index: 1;
   }
 
-  // Sized on the image itself: square and landscape art gets the same height
-  // as a portrait page, capped in width; contain letterboxes onto the paper.
+  // Sized on the image itself, in the stage's own units (the reel is a size
+  // container), never the viewport's: on the TV the stage sits inside the
+  // app frame, so vh/vw sizes ran the paper off the stage. The caller sets
+  // --print-h (the tallest the image may be) and --print-w (the widest);
+  // square and landscape art keep the height, capped in width, and contain
+  // letterboxes it onto the paper.
   .work-print-img {
     display: block;
-    height: 64vh;
+    height: var(--print-h, 64cqh);
     width: auto;
-    max-width: 42vw;
+    max-width: var(--print-w, 40cqw);
     object-fit: contain;
   }
 
   .work-print-card {
     box-sizing: border-box;
-    width: min(52vh, 42vw);
-    height: 56vh;
+    width: min(calc(var(--print-h, 56cqh) * .8), var(--print-w, 40cqw));
+    height: min(var(--print-h, 56cqh), 60cqh);
     padding: 40px 32px;
     display: flex;
     flex-direction: column;
@@ -59,13 +63,15 @@ $school-font: "Roboto Condensed", sans-serif;
     text-align: center;
   }
 
-  .work-print-glyph { font-size: 140px; line-height: 1; }
+  .work-print-glyph { font-size: clamp(64px, 13cqh, 140px); line-height: 1; }
 
   .work-print-title {
     font-family: $school-font;
-    font-size: 44px;
+    font-size: clamp(24px, 4cqh, 44px);
     font-weight: 700;
     color: $ink;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
     display: -webkit-box;
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
@@ -73,26 +79,70 @@ $school-font: "Roboto Condensed", sans-serif;
   }
 }
 
+// --- A child's face ---------------------------------------------------------
+
+// The real photo, ringed in the child's hue. The letter disc is only the
+// fallback for a photo that fails to load.
+.learner-avatar {
+  display: inline-block;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  border-radius: 50%;
+  object-fit: cover;
+  background: color-mix(in srgb, var(--kid, #{$muted}) 30%, #000);
+}
+
+.learner-avatar--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--kid, #{$muted});
+  color: $paper;
+  font-family: $school-font;
+  font-weight: 700;
+  line-height: 1;
+}
+
+// --- Stage frame shared by the work card and the showcase ------------------
+
+// Everything is sized to the stage (the reel is a size container), and the
+// bottom band is kept clear for the control legend and the "n / N" index,
+// which sit at the foot of the stage like a photo's caption. Nothing is drawn
+// under them.
+%wr-school-stage {
+  --pad-top: max(2.5rem, 7cqh);
+  --pad-bottom: max(5rem, 11cqh);
+  // Paper border (38px) plus the tape above the paper and the tilt.
+  --print-h: calc(100cqh - var(--pad-top) - var(--pad-bottom) - 64px);
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  padding: var(--pad-top) 5cqw var(--pad-bottom);
+  background: #000;
+  font-family: $school-font;
+}
+
 // --- Work card in the day reel --------------------------------------------
 
 // Print and text are centred as one group, not split into halves with dead
-// space between them.
+// space between them. The print takes at most 44% of the stage width, the
+// text column 38%.
 .weekly-review-work-card {
-  position: absolute;
-  inset: 0;
-  background: #000;
+  @extend %wr-school-stage;
+  --print-h: min(calc(100cqh - var(--pad-top) - var(--pad-bottom) - 64px), 74cqh);
+  --print-w: calc(44cqw - 36px);
   display: grid;
-  grid-template-columns: auto minmax(0, 40vw);
-  column-gap: 5vw;
+  grid-template-columns: auto minmax(0, 38cqw);
+  column-gap: 4cqw;
   justify-content: center;
   align-items: center;
-  font-family: $school-font;
   color: #f0f4f8;
 
   .work-card-stage {
     display: flex;
     align-items: center;
     justify-content: center;
+    min-width: 0;
   }
 
   .work-card-print {
@@ -108,43 +158,79 @@ $school-font: "Roboto Condensed", sans-serif;
     min-width: 0;
   }
 
+  // Who: the child's face with their name in their hue.
+  .work-card-who {
+    display: flex;
+    align-items: center;
+    gap: clamp(12px, 1.8cqh, 20px);
+    max-width: 100%;
+  }
+
+  .work-card-avatar {
+    width: clamp(48px, 10cqh, 112px);
+    height: clamp(48px, 10cqh, 112px);
+    border: clamp(3px, .4cqh, 5px) solid var(--kid, #{$muted});
+    font-size: clamp(22px, 4.6cqh, 52px);
+  }
+
   .work-card-name {
-    font-size: 44px;
+    font-size: clamp(24px, 4.6cqh, 52px);
     font-weight: 700;
-    font-style: italic;
     color: var(--kid, #f0f4f8);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .work-card-verb {
-    margin-top: 12px;
-    font-size: 40px;
+    margin-top: clamp(10px, 2cqh, 24px);
+    font-size: clamp(20px, 3.6cqh, 40px);
     font-weight: 300;
   }
 
+  // About two lines in the text column: the size steps down for long titles
+  // (--l, --xl allow a third line), and only the last line ends in an
+  // ellipsis. Hangul wraps at spaces, not mid-word.
   .work-card-title {
-    margin-top: 8px;
-    font-size: 76px;
+    margin-top: clamp(4px, .8cqh, 10px);
+    font-size: clamp(28px, min(6.6cqh, 4cqw), 76px);
     font-weight: 700;
-    line-height: 1.05;
+    line-height: 1.08;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
     max-width: 100%;
     text-wrap: balance;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+
+    &--l {
+      font-size: clamp(24px, min(5.2cqh, 3.1cqw), 60px);
+      -webkit-line-clamp: 3;
+    }
+
+    &--xl {
+      font-size: clamp(22px, min(4.2cqh, 2.5cqw), 48px);
+      -webkit-line-clamp: 3;
+    }
   }
 
   .work-card-subtitle {
-    margin-top: 16px;
-    font-size: 32px;
+    margin-top: clamp(8px, 1.6cqh, 18px);
+    font-size: clamp(18px, 3cqh, 32px);
     color: #c8d2dc;
     text-wrap: balance;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    max-width: 100%;
   }
 
   .work-card-when {
-    margin-top: 28px;
-    font-size: 24px;
+    margin-top: clamp(12px, 2.6cqh, 28px);
+    font-size: clamp(16px, 2.3cqh, 24px);
     color: $muted;
   }
 
@@ -172,26 +258,27 @@ $school-font: "Roboto Condensed", sans-serif;
 
 // --- Grid strip (DayColumn) ------------------------------------------------
 
-// One row only: chips that do not fit wrap onto a second line, which the
-// fixed height hides, so the row shows as many whole chips as fit.
+// One quiet row under the photos: small thumbnails, each with the child's face
+// in its corner. Past the cap the last slot reads "+N" (see DayColumn).
 .day-school {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  height: 64px;
-  padding: 0 6px 4px;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 5px 6px;
   flex-shrink: 0;
   overflow: hidden;
 }
 
 .school-chip {
   position: relative;
-  flex: 0 0 64px;
-  width: 64px;
-  height: 64px;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
   box-sizing: border-box;
-  border-radius: 4px;
-  border-bottom: 3px solid var(--kid, #{$muted});
+  border-radius: 3px;
+  border-bottom: 2px solid var(--kid, #{$muted});
   overflow: hidden;
   background: color-mix(in srgb, var(--kid, #{$muted}) 22%, #1a1a1a);
   display: flex;
@@ -204,22 +291,25 @@ $school-font: "Roboto Condensed", sans-serif;
     object-fit: cover;
   }
 
-  .school-chip-glyph { font-size: 34px; line-height: 1; }
+  .school-chip-glyph { font-size: 17px; line-height: 1; }
 
-  .school-chip-initial {
+  .school-chip-avatar {
     position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: var(--kid, #{$muted});
-    color: #fff;
+    top: 1px;
+    left: 1px;
+    width: 15px;
+    height: 15px;
+    border: 1.5px solid var(--kid, #{$muted});
+    font-size: 9px;
+  }
+
+  &--overflow {
+    border-bottom-color: transparent;
+    background: transparent;
+    color: $muted;
     font-family: $school-font;
     font-size: 14px;
-    font-weight: 700;
-    line-height: 22px;
-    text-align: center;
+    font-weight: 600;
   }
 }
 
@@ -249,36 +339,31 @@ $school-font: "Roboto Condensed", sans-serif;
 // together on the left, what the child did on the right.
 
 .weekly-review-showcase {
-  position: absolute;
-  inset: 0;
-  background: #000;
+  @extend %wr-school-stage;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 40vw);
-  column-gap: 4vw;
-  padding-inline: 5vw;
-  box-sizing: border-box;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 38cqw);
+  column-gap: 4cqw;
   align-items: center;
-  font-family: $school-font;
   color: #fff;
 
   &--no-images {
     grid-template-columns: minmax(0, 1fr);
-    .showcase-text { padding-left: 7vw; max-width: 60vw; }
+    .showcase-text { padding-left: 7cqw; max-width: 60cqw; }
   }
 
   // Wins but no school work: the title and the wins, centred on the stage,
   // a size up.
   &--wins-only {
     justify-items: center;
-    .showcase-text { padding-left: 0; max-width: 70vw; text-align: center; }
-    .showcase-title { margin-inline: auto; }
+    .showcase-text { padding-left: 0; max-width: 70cqw; text-align: center; }
+    .showcase-heading { justify-content: center; }
     .showcase-wins-week { justify-content: center; }
-    .showcase-win-icon { font-size: 64px; }
-    .showcase-win-figure { font-size: 72px; }
+    .showcase-win-icon { font-size: clamp(36px, 6cqh, 64px); }
+    .showcase-win-figure { font-size: clamp(40px, 6.6cqh, 72px); }
   }
 
   // --- Wins: this child's own, never balances, never compared ---
-  .showcase-wins { margin-top: 48px; }
+  .showcase-wins { margin-top: clamp(20px, 4.4cqh, 48px); }
 
   .showcase-wins-week {
     list-style: none;
@@ -287,7 +372,7 @@ $school-font: "Roboto Condensed", sans-serif;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 16px 40px;
+    gap: 1.5cqh 3.6cqh;
   }
 
   .showcase-win {
@@ -297,12 +382,12 @@ $school-font: "Roboto Condensed", sans-serif;
   }
 
   .showcase-win-icon {
-    font-size: 44px; // icons size to 1em
+    font-size: clamp(24px, 4cqh, 44px); // icons size to 1em
     flex-shrink: 0;
   }
 
   .showcase-win-figure {
-    font-size: 52px;
+    font-size: clamp(28px, 4.8cqh, 52px);
     font-weight: 700;
     line-height: 1;
     font-variant-numeric: tabular-nums;
@@ -312,14 +397,14 @@ $school-font: "Roboto Condensed", sans-serif;
   .showcase-win--silver .showcase-win-figure { color: var(--school-coin-silver, #c9d1d9); }
 
   .showcase-win-unit {
-    font-size: 28px;
+    font-size: clamp(16px, 2.6cqh, 28px);
     font-weight: 400;
     color: $muted;
   }
 
   .showcase-wins-all-time {
-    margin-top: 18px;
-    font-size: 24px;
+    margin-top: clamp(8px, 1.7cqh, 18px);
+    font-size: clamp(14px, 2.2cqh, 24px);
     color: $muted;
     font-variant-numeric: tabular-nums;
   }
@@ -338,12 +423,28 @@ $school-font: "Roboto Condensed", sans-serif;
     min-width: 0;
   }
 
+  // The child's face beside the title.
+  .showcase-heading {
+    display: flex;
+    align-items: center;
+    gap: clamp(14px, 2.2cqh, 28px);
+    margin: 0 0 clamp(18px, 3.7cqh, 40px);
+  }
+
+  .showcase-avatar {
+    width: clamp(56px, 12cqh, 132px);
+    height: clamp(56px, 12cqh, 132px);
+    border: clamp(3px, .45cqh, 6px) solid var(--kid, #{$muted});
+    font-size: clamp(26px, 5.6cqh, 60px);
+  }
+
   // Balanced so the name never strands "Week" on a line of its own.
   .showcase-title {
-    margin: 0 0 40px;
+    margin: 0;
+    min-width: 0;
     max-width: 36ch;
     text-wrap: balance;
-    font-size: 64px;
+    font-size: clamp(28px, min(5.6cqh, 3.4cqw), 64px);
     font-weight: 700;
     line-height: 1.05;
     color: #fff;
@@ -360,24 +461,24 @@ $school-font: "Roboto Condensed", sans-serif;
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 28px;
+    gap: clamp(10px, 2.4cqh, 28px);
   }
 
   .showcase-bullet {
     display: flex;
     align-items: flex-start;
-    gap: 22px;
-    font-size: 36px;
+    gap: .6em;
+    font-size: clamp(18px, 3.2cqh, 36px);
     font-weight: 400;
     line-height: 1.35;
     color: #f0f4f8;
   }
 
   .showcase-bullet-marker {
-    flex: 0 0 14px;
-    width: 14px;
-    height: 14px;
-    margin-top: calc((36px * 1.35 - 14px) / 2);
+    flex: 0 0 .4em;
+    width: .4em;
+    height: .4em;
+    margin-top: calc((1.35em - .4em) / 2);
     border-radius: 3px;
     background: var(--kid, #{$muted});
   }
@@ -391,8 +492,9 @@ $school-font: "Roboto Condensed", sans-serif;
 }
 
 // The collage: prints overlap a little, each at its own tilt, and settle one
-// after another. Centred in its column, sized per count so the whole collage
-// stays within 80vh and inside the column (about 46vw at 1080p), with no holes.
+// after another. Centred in its column, sized per count in stage units so the
+// whole collage stays above the legend band and inside the column, with no
+// holes.
 .showcase-collage {
   display: grid;
   justify-content: center;
@@ -409,12 +511,12 @@ $school-font: "Roboto Condensed", sans-serif;
   .work-print { transform: rotate(var(--tilt, -2deg)); }
 
   &.showcase-collage--one {
-    .work-print-img { height: 64vh; max-width: 40vw; }
+    .work-print-img { height: min(var(--print-h), 66cqh); max-width: 40cqw; }
   }
 
   &.showcase-collage--two {
     grid-template-columns: repeat(2, auto);
-    .work-print-img { height: 52vh; max-width: 19vw; }
+    .work-print-img { height: min(var(--print-h), 52cqh); max-width: 19cqw; }
   }
 
   // A large print on the left, two stacked on its right.
@@ -422,13 +524,13 @@ $school-font: "Roboto Condensed", sans-serif;
     grid-template-columns: repeat(2, auto);
     grid-template-rows: repeat(2, auto);
     .showcase-print:first-child { grid-row: 1 / span 2; }
-    .work-print-img { height: 29vh; max-width: 15vw; }
-    .showcase-print:first-child .work-print-img { height: 62vh; max-width: 25vw; }
+    .work-print-img { height: 29cqh; max-width: 15cqw; }
+    .showcase-print:first-child .work-print-img { height: min(var(--print-h), 62cqh); max-width: 25cqw; }
   }
 
   &.showcase-collage--four {
     grid-template-columns: repeat(2, auto);
-    .work-print-img { height: 33vh; max-width: 19vw; }
+    .work-print-img { height: 31cqh; max-width: 19cqw; }
   }
 
   // Rows of three; five leaves two centred under the three.
@@ -439,7 +541,7 @@ $school-font: "Roboto Condensed", sans-serif;
     justify-content: center;
     align-content: center;
     .showcase-print { flex: 0 0 auto; width: calc(100% / 3 - 1px); display: flex; justify-content: center; }
-    .work-print-img { height: 32vh; max-width: 12vw; }
+    .work-print-img { height: 30cqh; max-width: 12cqw; }
     .work-print-tape { width: 96px; margin-left: -48px; }
   }
 }

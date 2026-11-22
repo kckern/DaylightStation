@@ -4,6 +4,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
 import WorkImage from './WorkImage.jsx';
+import LearnerAvatar from './LearnerAvatar.jsx';
 import { kidStyle } from './schoolWork.js';
 import ShowcaseWins, { hasWins } from './ShowcaseWins.jsx';
 
@@ -114,7 +115,10 @@ export default function ShowcaseSlide({ item, index, total, color }) {
         </div>
       )}
       <div className="showcase-text">
-        <h2 className="showcase-title">{`${name}'s School Work This Week`}</h2>
+        <div className="showcase-heading">
+          <LearnerAvatar learnerId={item.learnerId} name={name} className="showcase-avatar" />
+          <h2 className="showcase-title">{`${name}'s School Work This Week`}</h2>
+        </div>
         {bullets.length > 0 && <BulletStack bullets={bullets} />}
         {withWins && <ShowcaseWins wins={item.wins} />}
       </div>

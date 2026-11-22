@@ -208,7 +208,9 @@
   grid-template-columns: repeat(4, 1fr);
   grid-template-rows: repeat(2, 1fr);
   gap: 8px;
-  padding: 16px 16px 8px;
+  // The bottom keeps the control legend (just above the recording bar) off
+  // the last row's school strip.
+  padding: 16px 16px 2.2rem;
   min-height: 0;
   overflow: hidden;
   transition: opacity 120ms ease-out;
@@ -289,103 +291,16 @@
   }
 }
 
-.day-calendar {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 6px;
-  flex-shrink: 0;
-}
-
-.calendar-chip {
-  font-size: 0.65rem;
-  background: #3a5a3a;
-  color: #aaffaa;
-  border-radius: 4px;
-  padding: 2px 6px;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-
-  .chip-time {
-    font-weight: 700;
-    opacity: 0.7;
-    margin-right: 4px;
-  }
-}
-
-.calendar-chip--overflow {
-  background: transparent;
-  border: 1px dashed #3a5a3a;
-  color: #6a9a6a;
-}
-
-.fitness-chip--overflow {
-  background: transparent;
-  border: 1px dashed #3a3a5a;
-  color: #7a7aaa;
-}
-
-.day-fitness {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 0 6px 4px;
-  flex-shrink: 0;
-}
-
-.fitness-chip {
-  font-size: 0.6rem;
-  background: #3a3a5a;
-  color: #bbbbff;
-  border-radius: 4px;
-  padding: 2px 6px;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-
-  .fitness-icon {
-    margin-right: 3px;
-  }
-
-  .fitness-people {
-    opacity: 0.6;
-  }
-}
-
-// Compact single-row treatment used when the day also has a photo grid, so the
-// photos stay the dominant visual element instead of a tall chip stack.
-.day-calendar--compact,
-.day-fitness--compact {
-  flex-direction: row;
-  flex-wrap: nowrap;
-  align-items: center;
-  overflow: hidden;
-
-  .calendar-chip,
-  .fitness-chip {
-    flex: 0 1 auto;
-    min-width: 0;
-  }
-
-  .calendar-chip--overflow,
-  .fitness-chip--overflow {
-    flex: 0 0 auto;
-  }
-}
-
 .day-photos {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  padding: 6px;
 }
 
+// One mosaic per day: hairline seams, no rounded tiles.
 .photo-wall {
   display: grid;
-  gap: 4px;
+  gap: 2px;
   height: 100%;
   min-height: 0;
 }
@@ -403,26 +318,9 @@
     color: #bbb;
     letter-spacing: 0.05em;
   }
-
-  &.day-empty-weather {
-    flex-direction: column;
-    gap: 4px;
-    opacity: 0.5;
-
-    .weather-big-icon {
-      font-size: 2.5rem;
-    }
-
-    .weather-big-temp {
-      font-size: 1rem;
-      color: #aaa;
-      font-weight: 500;
-    }
-  }
 }
 
 .photo-thumb {
-  border-radius: 4px;
   overflow: hidden;
   min-height: 0;
   min-width: 0;
@@ -444,18 +342,6 @@
     background: rgba(0, 0, 0, 0.6);
     font-size: 0.6rem;
     color: #ddd;
-  }
-
-  .photo-time-overlay {
-    position: absolute;
-    bottom: 2px;
-    left: 2px;
-    background: rgba(0, 0, 0, 0.7);
-    color: #ccc;
-    font-size: 0.5rem;
-    padding: 1px 4px;
-    border-radius: 3px;
-    font-weight: 600;
   }
 
   .photo-overflow-badge {
@@ -1281,6 +1167,14 @@
 .weekly-review-reel {
   position: absolute; inset: 0; background: #000;
   display: flex; align-items: center; justify-content: center;
+  // The reel covers the recording bar, which drops to the top of the column
+  // once the grid is gone. Its own stacking layer keeps the bar's pulsing dot
+  // (an opacity animation, so a layer of its own) from showing through as a
+  // stray red dot on the slide.
+  z-index: 1;
+  // The stage is the size reference for school cards and the showcase
+  // (cqw/cqh): on the TV it is smaller than the viewport.
+  container-type: size;
 
   // Fill the screen and letterbox inside the element: a small clip is not
   // shown postage-stamp size, and there is no 300x150 flash before metadata.
@@ -1323,6 +1217,7 @@
 
 .weekly-review-context-panel {
   position: absolute; left: 0; right: 0; bottom: 0;
+  z-index: 2; // over the reel
   max-height: 55%; overflow-y: auto;
   background: rgba(12, 14, 18, 0.96);
   border-top: 2px solid rgba(255,255,255,0.12);
@@ -1364,6 +1259,15 @@
     letter-spacing: 0.02em;
   }
   .legend-label { opacity: 0.85; }
+
+  // In a day's reel the recording bar is under the reel, so the legend sits
+  // at the foot of the stage, full width, on the same line as a photo's
+  // caption and the "n / N" index. School cards keep this band clear.
+  &--reel {
+    z-index: 3;
+    bottom: 0;
+    padding: 2.5rem 1rem 1.25rem;
+  }
 }
 
 .recording-bar .silence-message {

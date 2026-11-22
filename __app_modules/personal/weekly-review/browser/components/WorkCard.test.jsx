@@ -52,7 +52,7 @@ describe('WorkCard', () => {
 
   it('falls back to a title card when there is no image', () => {
     const { container } = render(<WorkCard item={base} index={0} total={1} />);
-    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('img.work-print-img')).toBeNull();
     expect(container.querySelector('.work-print-card .work-print-glyph').textContent).toBe('📕');
     expect(container.querySelector('.work-print-card .work-print-title').textContent).toBe('Wonder');
   });
@@ -60,7 +60,7 @@ describe('WorkCard', () => {
   it('falls back to the title card when the image fails to load', () => {
     const { container } = render(<WorkCard item={{ ...base, kind: 'activity', subject: 'activity', imageUrl: '/broken.jpg' }} index={0} total={1} />);
     fireEvent.error(container.querySelector('img.work-print-img'));
-    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('img.work-print-img')).toBeNull();
     expect(container.querySelector('.work-print-glyph').textContent).toBe('🧩');
   });
 
@@ -80,6 +80,34 @@ describe('WorkCard', () => {
     expect(container.querySelector('.work-card-verb')).toBeNull();
   });
 
+  it("shows the child's own photo beside the name, from the learner id", () => {
+    const { container } = render(<WorkCard item={base} index={0} total={1} color="#2f6fde" />);
+    const who = container.querySelector('.work-card-who');
+    const face = who.querySelector('img.learner-avatar');
+    expect(face.getAttribute('src')).toMatch(/\/api\/v1\/static\/img\/users\/kid-a\?w=192$/);
+    expect(who.querySelector('.work-card-name').textContent).toBe('Mara');
+    expect(who.querySelector('.learner-avatar--fallback')).toBeNull();
+  });
+
+  it('falls back to the first letter only when the photo fails to load', () => {
+    const { container } = render(<WorkCard item={base} index={0} total={1} />);
+    fireEvent.error(container.querySelector('img.learner-avatar'));
+    expect(container.querySelector('img.learner-avatar')).toBeNull();
+    expect(container.querySelector('.learner-avatar--fallback').textContent).toBe('M');
+  });
+
+  it('steps the title size down for long titles, counting Hangul as wide', () => {
+    const titleClass = (title) => {
+      const { container } = render(<WorkCard item={{ ...base, title }} index={0} total={1} />);
+      return container.querySelector('.work-card-title').className;
+    };
+    expect(titleClass('Veterans Day Coloring')).toMatch(/work-card-title--m\b/);
+    expect(titleClass('Wow in the World: The How and Wow of the Human Body')).toMatch(/--l\b/);
+    // 25 characters, but Hangul is wide: it sets a size down.
+    expect(titleClass('치카치카 이를 닦아요(무럭무럭 바른 생활 동화)')).toMatch(/--l\b/);
+    expect(titleClass('The Remarkable Journey of Coyote Sunrise and the Very Long Road Home')).toMatch(/--xl\b/);
+  });
+
   it('gives the pinned image an empty alt, since the title is written beside it', () => {
     const { container } = render(<WorkCard item={{ ...base, imageUrl: '/api/work.jpg' }} index={0} total={1} />);
     expect(container.querySelector('img.work-print-img').getAttribute('alt')).toBe('');
@@ -89,6 +117,6 @@ describe('WorkCard', () => {
 describe('WorkImage', () => {
   it('uses the work title as alt by default', () => {
     const { container } = render(<WorkImage item={{ ...base, imageUrl: '/api/work.jpg' }} />);
-    expect(container.querySelector('img').getAttribute('alt')).toBe('Wonder');
+    expect(container.querySelector('img.work-print-img').getAttribute('alt')).toBe('Wonder');
   });
 });

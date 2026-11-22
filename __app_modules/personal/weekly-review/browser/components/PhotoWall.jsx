@@ -1,19 +1,8 @@
 import React, { useMemo } from 'react';
 
-function parseLocalTime(isoStr) {
-  if (!isoStr) return null;
-  const match = isoStr.match(/T(\d{2}):(\d{2})/);
-  if (!match) return null;
-  let h = parseInt(match[1], 10);
-  const m = match[2];
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  if (h === 0) h = 12;
-  else if (h > 12) h -= 12;
-  return `${h}:${m} ${ampm}`;
-}
-
+// No clock time on the tiles: the grid is a mosaic of the day, and the time
+// is on the photo itself in the reel.
 function MediaThumb({ photo, style, overflow }) {
-  const timeLabel = parseLocalTime(photo.takenAt);
   return (
     <div
       className={`photo-thumb${photo.type === 'video' ? ' photo-thumb--video' : ''}`}
@@ -22,7 +11,6 @@ function MediaThumb({ photo, style, overflow }) {
       <img src={photo.thumbnail} alt="" loading="lazy" />
       {photo.type === 'video' && <span className="video-badge">▶</span>}
       {overflow > 0 && <span className="photo-overflow-badge">+{overflow}</span>}
-      {timeLabel && !overflow && <span className="photo-time-overlay">{timeLabel}</span>}
     </div>
   );
 }
