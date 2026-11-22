@@ -9,11 +9,26 @@
  * truth for configured screens, and name/room overrides live here.
  */
 import path from 'path';
-import { loadYamlSafe, saveYaml, ensureDir } from '#system/utils/FileIO.mjs';
+import { readHouseholdYamlFile, writeHouseholdYamlFile } from './HouseholdYamlFile.mjs';
 import { IScreenRegistryDatastore } from "../../application/ports/IScreenRegistryDatastore.mjs";
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
-const isMap = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const isMap = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+};
+
+function validRegistry(data) {
+  if (!isMap(data) || !isMap(data.screens) || !isMap(data.aliases)) return false;
+  if (!Object.values(data.screens).every(isMap) || !Object.values(data.aliases).every(isMap)) return false;
+  if (Object.hasOwn(data, 'adjacency')) {
+    if (!isMap(data.adjacency)) return false;
+    if (!Object.values(data.adjacency).every((rooms) => Array.isArray(rooms)
+      && rooms.every((room) => typeof room === 'string'))) return false;
+  }
+  return true;
+}
 
 export class YamlScreenRegistryDatastore extends IScreenRegistryDatastore {
   /** @param {{configService: Object}} config - resolves household paths */
@@ -33,22 +48,32 @@ export class YamlScreenRegistryDatastore extends IScreenRegistryDatastore {
   }
 
   async load(householdId) {
-    const data = loadYamlSafe(this._path(householdId));
+    const { found, value: data } = readHouseholdYamlFile(this._path(householdId));
+    if (!found) return { screens: {}, aliases: {} };
+    if (!validRegistry(data)) {
+      throw new InfrastructureError('Invalid household media screen registry', {
+        code: 'INVALID_SCREEN_REGISTRY', householdId,
+      });
+    }
     return {
-      screens: isMap(data?.screens) ? { ...data.screens } : {},
-      aliases: isMap(data?.aliases) ? { ...data.aliases } : {},
-      ...(isMap(data?.adjacency) ? { adjacency: { ...data.adjacency } } : {}),
+      screens: { ...data.screens },
+      aliases: { ...data.aliases },
+      ...(Object.hasOwn(data, 'adjacency') ? { adjacency: { ...data.adjacency } } : {}),
     };
   }
 
   async save(state, householdId) {
-    const file = this._path(householdId);
-    ensureDir(path.dirname(file));
-    saveYaml(file, {
-      screens: state?.screens ?? {},
-      aliases: state?.aliases ?? {},
-      ...(state?.adjacency && Object.keys(state.adjacency).length ? { adjacency: state.adjacency } : {}),
-    });
+    if (!validRegistry(state)) {
+      throw new InfrastructureError('Invalid household media screen registry', {
+        code: 'INVALID_SCREEN_REGISTRY', householdId,
+      });
+    }
+    const data = {
+      screens: state.screens,
+      aliases: state.aliases,
+      ...(state.adjacency && Object.keys(state.adjacency).length ? { adjacency: state.adjacency } : {}),
+    };
+    writeHouseholdYamlFile(this._path(householdId), data);
   }
 }
 

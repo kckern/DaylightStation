@@ -6,7 +6,7 @@
  *   household[-{id}]/media/removed.yml      { items: { <contentId>: { removedAt } } }
  */
 import path from 'path';
-import { getFileStats, readYamlFromPath, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
+import { readHouseholdYamlFile, writeHouseholdYamlFile } from './HouseholdYamlFile.mjs';
 import { timestampEpoch } from '../../../../../../__capabilities/playback/server/spot-history.mjs';
 import { IHouseholdMediaListsDatastore } from "../../application/ports/IHouseholdMediaListsDatastore.mjs";
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
@@ -31,20 +31,9 @@ export class YamlHouseholdMediaListsDatastore extends IHouseholdMediaListsDatast
     return path.join(this.configService.getHouseholdPath('media', householdId), name);
   }
 
-  _existingPath(name, householdId) {
-    const base = this._path(name, householdId);
-    for (const extension of ['.yml', '.yaml']) {
-      const file = `${base}${extension}`;
-      try { getFileStats(file); return file; }
-      catch (error) { if (error.code !== 'ENOENT') throw error; }
-    }
-    return null;
-  }
-
   _loadItems(name, householdId, isValidItems, emptyItems) {
-    const file = this._existingPath(name, householdId);
-    if (!file) return emptyItems;
-    const data = readYamlFromPath(file);
+    const { found, value: data } = readHouseholdYamlFile(this._path(name, householdId));
+    if (!found) return emptyItems;
     if (!isPlainMapping(data) || !isValidItems(data.items)) {
       throw new InfrastructureError(`Invalid household media ${name} list`, {
         code: 'INVALID_HOUSEHOLD_MEDIA_LIST', name, householdId,
@@ -54,8 +43,7 @@ export class YamlHouseholdMediaListsDatastore extends IHouseholdMediaListsDatast
   }
 
   _save(name, householdId, data) {
-    const file = this._existingPath(name, householdId) || `${this._path(name, householdId)}.yml`;
-    saveYamlToPathAtomic(file, data, { preserveMode: true });
+    writeHouseholdYamlFile(this._path(name, householdId), data);
   }
 
   async loadFavourites(householdId) {
