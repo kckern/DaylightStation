@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Avatar, Button, Group, Stack, Text, TextInput } from '@mantine/core';
+import { Alert, Avatar, Button, CloseButton, Group, Stack, Text, TextInput } from '@mantine/core';
+import { IconPlus } from '@tabler/icons-react';
 import { DaylightMediaPath } from '../../../frontend/src/lib/api.mjs';
 
 /** Controlled roster editor. allocateEntryId is supplied by the owning draft. */
@@ -41,21 +42,26 @@ export default function ParticipantPicker({ value = [], people = [], onChange, o
     finally { if (mounted.current && scope.current.generation === requestedGeneration) setCreating(false); }
   };
   let anonymousIndex = 0;
-  return <Stack gap="sm">
-    <Stack gap="xs">{value.map(entry => {
+  const chip = {display:'inline-flex',alignItems:'center',gap:6,padding:'2px 4px 2px 2px',borderRadius:999,background:'var(--mantine-color-dark-6)',border:'1px solid var(--mantine-color-dark-4)'};
+  const avatarSrc = avatar => avatar?.kind === 'user-avatar' ? DaylightMediaPath(`/static/img/users/${encodeURIComponent(avatar.userId)}`) : null;
+  return <Stack gap={8}>
+    <Group gap={6}>{value.map(entry => {
       const anonymousLabel = entry.anonymous ? `Guest ${++anonymousIndex}` : null;
       const label = entry.display?.name || anonymousLabel || entry.person?.id || 'Person';
-      const avatar = entry.display?.avatar;
-      return <Group key={entry.id}>
-        <Avatar src={avatar?.kind === 'user-avatar' ? DaylightMediaPath(`/static/img/users/${encodeURIComponent(avatar.userId)}`) : null} name={label} />
-        {entry.anonymous && !readOnly ? <TextInput aria-label={`${anonymousLabel} name`} value={entry.display?.name || ''} onChange={event => onChange(value.map(p => p.id === entry.id ? {...p, display:{...p.display,name:event.currentTarget.value}} : p))}/> : <Text>{label}</Text>}
-        {!readOnly && <Button size="xs" variant="subtle" aria-label={`Remove ${anonymousLabel || label}`} onClick={() => onChange(value.filter(p => p.id !== entry.id))}>Remove</Button>}
-      </Group>;
-    })}</Stack>
+      return <span key={entry.id} style={chip}>
+        <Avatar size={24} src={avatarSrc(entry.display?.avatar)} name={label} />
+        {entry.anonymous && !readOnly ? <TextInput size="xs" variant="unstyled" w={90} aria-label={`${anonymousLabel} name`} value={entry.display?.name || ''} onChange={event => onChange(value.map(p => p.id === entry.id ? {...p, display:{...p.display,name:event.currentTarget.value}} : p))}/> : <Text size="sm">{label}</Text>}
+        {!readOnly && <CloseButton size="xs" aria-label={`Remove ${anonymousLabel || label}`} onClick={() => onChange(value.filter(p => p.id !== entry.id))}/>}
+      </span>;
+    })}{!value.length && <Text size="sm" c="dimmed">No one yet.</Text>}</Group>
     {!readOnly && <>
-      {['user','guest'].map(kind => <div key={kind}><Text fw={600}>{kind === 'user' ? 'Household' : 'Named visitors'}</Text><Group>{people.filter(entry => entry.person?.kind === kind && entry.active !== false).map(entry => <Button key={`${kind}:${entry.person.id}`} size="xs" variant="light" disabled={selected(entry.person)} onClick={() => add({person:entry.person,display:entry.display})}>Add {entry.display.name}</Button>)}</Group></div>)}
-      <Group><Button variant="light" onClick={() => { let number = 1; while (value.some(p => p.anonymous && p.display?.name === `Guest ${number}`)) number++; add({anonymous:true,display:{name:`Guest ${number}`,avatar:null}}); }}>Add anonymous guest</Button></Group>
-      {onCreateGuest && <><Group align="end"><TextInput label="Named guest name" value={name} disabled={creating} onChange={e=>{guestId.current = null; setError(''); setName(e.currentTarget.value);}}/><Button loading={creating} disabled={!name.trim()} onClick={create}>Add named guest</Button></Group>{error && <Alert color="red" role="alert">{error}</Alert>}</>}
+      <Group gap={6} align="center">
+        <Text size="xs" c="dimmed">Add</Text>
+        {['user','guest'].flatMap(kind => people.filter(entry => entry.person?.kind === kind && entry.active !== false && !selected(entry.person)).map(entry => <Button key={`${kind}:${entry.person.id}`} size="compact-xs" radius="xl" variant={kind === 'user' ? 'light' : 'default'} leftSection={<IconPlus size={12}/>} aria-label={`Add ${entry.display.name}`} onClick={() => add({person:entry.person,display:entry.display})}>{entry.display.name}</Button>))}
+        <Button size="compact-xs" radius="xl" variant="subtle" leftSection={<IconPlus size={12}/>} aria-label="Add anonymous guest" onClick={() => { let number = 1; while (value.some(p => p.anonymous && p.display?.name === `Guest ${number}`)) number++; add({anonymous:true,display:{name:`Guest ${number}`,avatar:null}}); }}>Guest</Button>
+        {onCreateGuest && <Group gap={4} wrap="nowrap"><TextInput size="xs" w={150} aria-label="Named guest name" placeholder="New visitor name" value={name} disabled={creating} onChange={e=>{guestId.current = null; setError(''); setName(e.currentTarget.value);}} onKeyDown={e=>e.key==='Enter' && create()}/><Button size="compact-xs" loading={creating} disabled={!name.trim()} onClick={create}>Add named guest</Button></Group>}
+      </Group>
+      {error && <Alert color="red" role="alert" p="xs">{error}</Alert>}
     </>}
   </Stack>;
 }

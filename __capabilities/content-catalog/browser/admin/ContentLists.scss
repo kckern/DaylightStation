@@ -544,3 +544,31 @@
     box-shadow: 0 0 0 2px var(--ds-success);
   }
 }
+
+// Keyboard fallbacks for the draft editor's drag and ⋮ actions: off screen
+// until keyboard focus enters them, then shown as one compact row in place.
+.draft-kbd-actions {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+
+  &:focus-within {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+    padding: 4px 8px;
+    margin: 2px 0 4px;
+    border-radius: 6px;
+    background: var(--mantine-color-dark-6);
+    outline: 1px solid var(--mantine-color-blue-7);
+  }
+}

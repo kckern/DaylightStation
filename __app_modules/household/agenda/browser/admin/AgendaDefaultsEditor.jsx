@@ -132,7 +132,7 @@ export default function AgendaDefaultsEditor({series,client,editors,onClose,onSa
   </Group>}
   <ParticipantPicker value={draft.defaults.participants} people={directory.people} onChange={rosterChange} allocateEntryId={ids.rosterEntry} allocateGuestId={()=>alloc('guest')} onCreateGuest={directory.etag ? createGuest : undefined} scopeKey={`defaults:${draft.series_id}`}/>
   {directory.etag && <GuestDirectory client={client} directory={directory} onChange={setDirectory}/>}
-  <ListDraftEditor list={draft.defaults.list} onEdit={edit} readOnly={artworkBusy} renderItemSettings={({item})=><ActivitySettings item={item} document={draft.defaults} descriptor={descriptors[item.uid]} editors={editors} onChange={change}/>}/>
+  <ListDraftEditor list={draft.defaults.list} onEdit={edit} readOnly={artworkBusy} renderItemSettings={({item,readOnly})=><ActivitySettings item={item} readOnly={readOnly} document={draft.defaults} descriptor={descriptors[item.uid]} editors={editors} onChange={change}/>}/>
   <Group>
    <Button disabled={conflict || operationBusy || artworkBusy || discovery.loading || !!discovery.error || staleBindings.length>0} onClick={saveDefaults}>Save defaults</Button>
    <Button variant="subtle" onClick={cancel}>Cancel</Button>

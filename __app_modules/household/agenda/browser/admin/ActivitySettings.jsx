@@ -1,5 +1,6 @@
 import React,{useEffect,useState} from 'react';
-import {Checkbox,Stack,Text} from '@mantine/core';
+import {Checkbox,Collapse,Group,Radio,Stack,Text,UnstyledButton} from '@mantine/core';
+import {IconChevronDown,IconChevronRight,IconUsers} from '@tabler/icons-react';
 import {itemAction} from '../../portable/planEdits.mjs';
 
 /** Authored payload stays opaque to Agenda; the composed resolver owns canonicalization. */
@@ -23,6 +24,7 @@ export function materializeBindings(document,descriptors,editors) {
 }
 export default function ActivitySettings({item,document,descriptor,editors,onChange,readOnly=false}) {
  const [remapError,setRemapError]=useState(null);
+ const [open,setOpen]=useState(false);
  useEffect(()=>setRemapError(null),[item.uid,document.activity_settings[item.uid]?.settings]);
  const editor=descriptor && editors[descriptor.editorKey];
  if(!editor || !descriptor.consumer || editor.consumer.id!==descriptor.consumer.id || editor.consumer.version!==descriptor.consumer.version)return null;
@@ -45,5 +47,21 @@ export default function ActivitySettings({item,document,descriptor,editors,onCha
  const byId=new Map(document.participants.map(p=>[p.id,p]));
  const selected=(setup.participants.mode==='plan'?document.participants:setup.participants.ids.map(id=>byId.get(id)).filter(Boolean)).map(p=>({...p,display:p.display || {name:p.person?.id || 'Guest',avatar:null}}));
  const Panel=editor.Panel;
- return <Stack><Text fw={600}>Participants</Text>{remapError && <Text c="red" role="alert">{remapError.field}: {remapError.message}</Text>}{Number.isInteger(descriptor.minParticipants) && Number.isInteger(descriptor.maxParticipants) && <Text size="sm">Allowed participants: {descriptor.minParticipants}–{descriptor.maxParticipants}</Text>}<label><input type="radio" name={`selection-${item.uid}`} checked={setup.participants.mode==='plan'} disabled={readOnly || (descriptor.selectorSupport && !descriptor.selectorSupport.includes('all'))} onChange={()=>changeSelection({mode:'plan'})}/> Everyone in this plan</label><label><input type="radio" name={`selection-${item.uid}`} checked={setup.participants.mode==='explicit'} disabled={readOnly || (descriptor.selectorSupport && !descriptor.selectorSupport.includes('explicit'))} onChange={()=>changeSelection({mode:'explicit',ids:[]})}/> Choose participants</label>{setup.participants.mode==='explicit'&&<Text size="sm">Removing someone clears their individual activity settings.</Text>}{setup.participants.mode==='explicit'&&document.participants.map(p=><Checkbox key={p.id} label={p.display?.name || p.person?.id || 'Guest'} checked={setup.participants.ids.includes(p.id)} disabled={readOnly} onChange={e=>changeSelection({mode:'explicit',ids:e.currentTarget.checked?[...setup.participants.ids,p.id]:setup.participants.ids.filter(id=>id!==p.id)})}/>)}<Panel settings={setup.settings} participants={selected} readOnly={readOnly} onChange={settings=>update({settings})}/></Stack>;
+ const everyone=setup.participants.mode==='plan';
+ const who=everyone ? `Everyone (${document.participants.length})` : `${selected.length} of ${document.participants.length} people`;
+ const tooFew=Number.isInteger(descriptor.minParticipants) && selected.length<descriptor.minParticipants;
+ const expanded=open || tooFew || Boolean(remapError) || Boolean(Panel.isIncomplete?.(setup.settings));
+ return <div className="agenda-activity-settings" style={{margin:'0 0 6px 72px',borderLeft:'2px solid var(--mantine-color-dark-4)',paddingLeft:10}}>
+  <UnstyledButton aria-expanded={expanded} aria-label={`${item.title || item.label || 'Activity'} setup`} onClick={()=>setOpen(v=>!v)}><Group gap={6} wrap="nowrap">{expanded ? <IconChevronDown size={14} aria-hidden="true"/> : <IconChevronRight size={14} aria-hidden="true"/>}<IconUsers size={14} aria-hidden="true"/><Text size="xs" fw={600}>Participants</Text><Text size="xs" c={tooFew ? 'yellow' : 'dimmed'}>{who}{tooFew ? ` · needs at least ${descriptor.minParticipants}` : ''}</Text></Group></UnstyledButton>
+  <Collapse in={expanded}><Stack gap={6} pt={6} pb={4}>
+   {remapError && <Text size="xs" c="red" role="alert">{remapError.field}: {remapError.message}</Text>}
+   <Group gap="md" align="center">
+    <Radio size="xs" label="Everyone in this plan" name={`selection-${item.uid}`} checked={everyone} disabled={readOnly || (descriptor.selectorSupport && !descriptor.selectorSupport.includes('all'))} onChange={()=>changeSelection({mode:'plan'})}/>
+    <Radio size="xs" label="Choose participants" name={`selection-${item.uid}`} checked={!everyone} disabled={readOnly || (descriptor.selectorSupport && !descriptor.selectorSupport.includes('explicit'))} onChange={()=>changeSelection({mode:'explicit',ids:[]})}/>
+    {Number.isInteger(descriptor.minParticipants) && Number.isInteger(descriptor.maxParticipants) && <Text size="xs" c="dimmed">Allowed: {descriptor.minParticipants}–{descriptor.maxParticipants}</Text>}
+   </Group>
+   {!everyone && <Group gap="sm">{document.participants.map(p=><Checkbox size="xs" key={p.id} label={p.display?.name || p.person?.id || 'Guest'} checked={setup.participants.ids.includes(p.id)} disabled={readOnly} onChange={e=>changeSelection({mode:'explicit',ids:e.currentTarget.checked?[...setup.participants.ids,p.id]:setup.participants.ids.filter(id=>id!==p.id)})}/>)}<Text size="xs" c="dimmed">Removing someone clears their individual settings.</Text></Group>}
+   <Panel settings={setup.settings} participants={selected} readOnly={readOnly} onChange={settings=>update({settings})}/>
+  </Stack></Collapse>
+ </div>;
 }

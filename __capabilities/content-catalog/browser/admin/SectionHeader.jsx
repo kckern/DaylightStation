@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Group, Text, ActionIcon, Badge, TextInput, Menu }  from '@mantine/core';
-import { IconChevronDown, IconChevronRight, IconSettings, IconTrash, IconDotsVertical, IconGripVertical, IconArrowUp, IconArrowDown }  from '@tabler/icons-react';
+import { IconChevronDown, IconChevronRight, IconSettings, IconTrash, IconDotsVertical, IconGripVertical, IconArrowUp, IconArrowDown, IconCopy }  from '@tabler/icons-react';
 import { ActionMenu } from '../../../../frontend/src/lib/ui/ActionMenu.jsx';
 
 function SectionHeader({
@@ -12,6 +12,8 @@ function SectionHeader({
   onDelete,
   onMoveUp,
   onMoveDown,
+  onDuplicate,
+  showSettings = true,
   isFirst,
   isLast,
   itemCount,
@@ -82,9 +84,9 @@ function SectionHeader({
           <IconDotsVertical size={14} aria-hidden="true" />
         </ActionIcon>
       }>
-        <Menu.Item leftSection={<IconSettings size={14} />} onClick={() => onUpdate(sectionIndex, null)}>
+        {showSettings && <Menu.Item leftSection={<IconSettings size={14} />} onClick={() => onUpdate(sectionIndex, null)}>
           Section Settings
-        </Menu.Item>
+        </Menu.Item>}
         {!isFirst && (
           <Menu.Item leftSection={<IconArrowUp size={14} />} onClick={() => onMoveUp(sectionIndex)}>
             Move Up
@@ -93,6 +95,11 @@ function SectionHeader({
         {!isLast && (
           <Menu.Item leftSection={<IconArrowDown size={14} />} onClick={() => onMoveDown(sectionIndex)}>
             Move Down
+          </Menu.Item>
+        )}
+        {onDuplicate && (
+          <Menu.Item leftSection={<IconCopy size={14} />} onClick={() => onDuplicate(sectionIndex)}>
+            Duplicate
           </Menu.Item>
         )}
         <Menu.Divider />
