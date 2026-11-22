@@ -27,4 +27,39 @@ describe('DayContextPanel', () => {
     const { container } = render(<DayContextPanel day={day} open={false} />);
     expect(container.firstChild).toBeNull();
   });
+
+  const schoolAll = [
+    { learnerId: 'kid-a', learnerName: 'Mara', kind: 'book', verb: 'finished', title: 'Wonder', subtitle: 'R. J. Palacio',
+      at: '2026-04-21T15:00:00Z', studyDay: '2026-04-21', imageUrl: null, groupKey: 'book:wonder', subject: 'reading' },
+    { learnerId: 'kid-b', learnerName: 'Theo', kind: 'course', verb: 'worked', title: 'Math 2', subtitle: null,
+      at: '2026-04-21T16:00:00Z', studyDay: '2026-04-21', imageUrl: null, groupKey: 'course:math', subject: 'math' },
+    { learnerId: 'kid-a', learnerName: 'Mara', kind: 'activity', verb: 'completed', title: 'Maze', subtitle: null,
+      at: '2026-04-21T17:00:00Z', studyDay: '2026-04-21', imageUrl: null, groupKey: 'activity:maze', subject: 'activity' },
+  ];
+
+  it('lists the day\'s school work grouped by child', () => {
+    const { container } = render(<DayContextPanel day={{ ...day, schoolAll }} open={true} learnerColors={{ 'kid-a': '#2f6fde' }} />);
+    const section = container.querySelector('section.context-school');
+    expect(section).not.toBeNull();
+    expect(section.querySelector('h3').textContent).toBe('School');
+    const groups = section.querySelectorAll('.context-school-learner');
+    expect(groups).toHaveLength(2);
+    expect(groups[0].querySelector('.context-school-name').textContent).toBe('Mara');
+    expect(groups[0].style.getPropertyValue('--kid')).toBe('#2f6fde');
+    expect([...groups[0].querySelectorAll('.context-school-line')].map(l => l.textContent))
+      .toEqual(['Finished Wonder — R. J. Palacio', 'Completed Maze']);
+    expect(groups[1].textContent).toContain('Worked on Math 2');
+  });
+
+  it('has no School section when the day has no school work', () => {
+    const { container } = render(<DayContextPanel day={{ ...day, schoolAll: [] }} open={true} />);
+    expect(container.querySelector('.context-school')).toBeNull();
+  });
+
+  it('does not call a school-only day quiet', () => {
+    const bare = { date: '2026-04-21', weather: null, calendar: [], fitness: [], photos: [], photoCount: 0, schoolAll };
+    render(<DayContextPanel day={bare} open={true} />);
+    expect(screen.queryByText(/Quiet day/i)).toBeNull();
+    expect(screen.getByText('3 school items')).toBeInTheDocument();
+  });
 });

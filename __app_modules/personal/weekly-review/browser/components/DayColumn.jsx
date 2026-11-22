@@ -1,15 +1,48 @@
 import React from 'react';
 import PhotoWall from "./PhotoWall.jsx";
 import { WMO_ICONS, cToF } from "./dayData.js";
+import { subjectGlyph, verbLabel, kidStyle } from "./schoolWork.js";
+import getLogger from '@/lib/logging/Logger.js';
+
+let _l;
+const logger = () => (_l ||= getLogger().child({ component: 'weekly-review-grid' }));
 
 const MAX_CHIPS = 3;
 
-export default function DayColumn({ day, isFocused, onClick }) {
+function SchoolChip({ item, color }) {
+  const [failed, setFailed] = React.useState(false);
+  const showImage = !!item.imageUrl && !failed;
+  const name = item.learnerName || '';
+  return (
+    <div
+      className="school-chip"
+      style={kidStyle(color)}
+      title={`${name}: ${[verbLabel(item), item.title].filter(Boolean).join(' ')}`}
+    >
+      {showImage ? (
+        <img
+          className="school-chip-img"
+          src={item.imageUrl}
+          alt=""
+          onError={() => {
+            logger().warn('grid.school-chip-image-error', { imageUrl: item.imageUrl });
+            setFailed(true);
+          }}
+        />
+      ) : (
+        <span className="school-chip-glyph" aria-hidden="true">{subjectGlyph(item.subject)}</span>
+      )}
+      <span className="school-chip-initial" aria-hidden="true">{name.charAt(0)}</span>
+    </div>
+  );
+}
+
+export default function DayColumn({ day, isFocused, onClick, learnerColors }) {
   const dt = new Date(`${day.date}T12:00:00Z`);
   const dateNum = dt.getDate();
   const monthAbbr = dt.toLocaleDateString('en-US', { month: 'short' });
   const dayName = dt.toLocaleDateString('en-US', { weekday: 'long' });
-  const hasContent = day.photoCount > 0 || day.fitness?.length > 0 || day.calendar?.length > 0;
+  const hasContent = day.photoCount > 0 || day.fitness?.length > 0 || day.calendar?.length > 0 || day.school?.length > 0;
   const columnClass = [
     'day-column',
     isFocused && 'day-column--focused',
@@ -34,6 +67,7 @@ export default function DayColumn({ day, isFocused, onClick }) {
         day.photoCount > 0 ? `${day.photoCount} photos` : null,
         day.calendar?.length ? `${day.calendar.length} event${day.calendar.length === 1 ? '' : 's'}` : null,
         day.fitness?.length ? `${day.fitness.length} workout${day.fitness.length === 1 ? '' : 's'}` : null,
+        day.school?.length ? `${day.school.length} school item${day.school.length === 1 ? '' : 's'}` : null,
         weather ? `${cToF(weather.high)} degrees` : null,
       ].filter(Boolean).join(', ')}
       onClick={onClick}
@@ -84,6 +118,18 @@ export default function DayColumn({ day, isFocused, onClick }) {
           {day.fitness.length > chipMax && (
             <div className="fitness-chip fitness-chip--overflow">+{day.fitness.length - chipMax} more</div>
           )}
+        </div>
+      )}
+
+      {day.school?.length > 0 && (
+        <div className="day-school">
+          {day.school.map(item => (
+            <SchoolChip
+              key={`${item.learnerId}:${item.groupKey}:${item.studyDay}`}
+              item={item}
+              color={learnerColors?.[item.learnerId]}
+            />
+          ))}
         </div>
       )}
 

@@ -1,0 +1,461 @@
+// School work in the weekly review: the fridge door. A child's work is pinned
+// up as a print; everything around it stays quiet on the dark reel.
+// Sizes are for a 1080p TV at couch distance.
+
+$paper: #ffffff;
+$ink: #1d2430;
+$tape: rgba(255, 236, 170, .88);
+$muted: #9aa3ad;
+$school-font: "Roboto Condensed", sans-serif;
+
+// --- The pinned print (shared with the end-of-window showcase) -------------
+
+.work-print {
+  position: relative;
+  display: inline-block;
+  background: $paper;
+  border: 18px solid $paper;
+  border-bottom-width: 20px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .55);
+  transform: rotate(-2deg);
+  line-height: 0;
+
+  // Straddles the print's top edge so it reads as tape holding it up.
+  .work-print-tape {
+    position: absolute;
+    top: -34px; // -16px from the paper's outer edge (inside the 18px border)
+    left: 50%;
+    width: 140px;
+    height: 36px;
+    margin-left: -70px;
+    background: $tape;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .18);
+    transform: rotate(3deg);
+    z-index: 1;
+  }
+
+  // Sized on the image itself: square and landscape art gets the same height
+  // as a portrait page, capped in width; contain letterboxes onto the paper.
+  .work-print-img {
+    display: block;
+    height: 64vh;
+    width: auto;
+    max-width: 42vw;
+    object-fit: contain;
+  }
+
+  .work-print-card {
+    box-sizing: border-box;
+    width: min(52vh, 42vw);
+    height: 56vh;
+    padding: 40px 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 28px;
+    background: color-mix(in srgb, var(--kid, #{$muted}) 14%, white);
+    line-height: 1.05;
+    text-align: center;
+  }
+
+  .work-print-glyph { font-size: 140px; line-height: 1; }
+
+  .work-print-title {
+    font-family: $school-font;
+    font-size: 44px;
+    font-weight: 700;
+    color: $ink;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+// --- Work card in the day reel --------------------------------------------
+
+// Print and text are centred as one group, not split into halves with dead
+// space between them.
+.weekly-review-work-card {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  display: grid;
+  grid-template-columns: auto minmax(0, 40vw);
+  column-gap: 5vw;
+  justify-content: center;
+  align-items: center;
+  font-family: $school-font;
+  color: #f0f4f8;
+
+  .work-card-stage {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .work-card-print {
+    animation: wr-work-settle 420ms ease-out both;
+  }
+
+  .work-card-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    text-align: left;
+    min-width: 0;
+  }
+
+  .work-card-name {
+    font-size: 44px;
+    font-weight: 700;
+    font-style: italic;
+    color: var(--kid, #f0f4f8);
+  }
+
+  .work-card-verb {
+    margin-top: 12px;
+    font-size: 40px;
+    font-weight: 300;
+  }
+
+  .work-card-title {
+    margin-top: 8px;
+    font-size: 76px;
+    font-weight: 700;
+    line-height: 1.05;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    text-wrap: balance;
+  }
+
+  .work-card-subtitle {
+    margin-top: 16px;
+    font-size: 32px;
+    color: #c8d2dc;
+    text-wrap: balance;
+  }
+
+  .work-card-when {
+    margin-top: 28px;
+    font-size: 24px;
+    color: $muted;
+  }
+
+}
+
+// Same place and type as a photo's position in the reel caption; shared by
+// the work card and the showcase slide.
+.weekly-review-work-card .work-card-index,
+.weekly-review-showcase .work-card-index {
+  position: absolute;
+  right: 1.5rem;
+  bottom: 1.25rem;
+  font-size: 0.95rem;
+  color: #c0c8d0;
+}
+
+@keyframes wr-work-settle {
+  from { opacity: 0; transform: rotate(-6deg) translateY(24px); }
+  to { opacity: 1; transform: rotate(-2deg) translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .weekly-review-work-card .work-card-print { animation: none; }
+}
+
+// --- Grid strip (DayColumn) ------------------------------------------------
+
+// One row only: chips that do not fit wrap onto a second line, which the
+// fixed height hides, so the row shows as many whole chips as fit.
+.day-school {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  height: 64px;
+  padding: 0 6px 4px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.school-chip {
+  position: relative;
+  flex: 0 0 64px;
+  width: 64px;
+  height: 64px;
+  box-sizing: border-box;
+  border-radius: 4px;
+  border-bottom: 3px solid var(--kid, #{$muted});
+  overflow: hidden;
+  background: color-mix(in srgb, var(--kid, #{$muted}) 22%, #1a1a1a);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  .school-chip-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .school-chip-glyph { font-size: 34px; line-height: 1; }
+
+  .school-chip-initial {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--kid, #{$muted});
+    color: #fff;
+    font-family: $school-font;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 22px;
+    text-align: center;
+  }
+}
+
+// --- Context panel section -------------------------------------------------
+
+// Children sit side by side so the section grows sideways, not down into the
+// control legend; with many children they wrap into a second row. The panel
+// also keeps the legend's height clear at its bottom (see .context-panel-inner).
+.weekly-review-context-panel .context-school {
+  .context-school-groups {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 2rem;
+  }
+  .context-school-learner { max-width: 24rem; }
+  .context-school-name {
+    font-weight: 700;
+    font-style: italic;
+    color: var(--kid, inherit);
+    margin-bottom: 0.2rem;
+  }
+  .context-school-line { font-size: 0.9rem; color: #ccc; line-height: 1.4; }
+}
+
+// --- Weekly showcase slide -------------------------------------------------
+// One per child, closing the window's last day: the week's prints pinned up
+// together on the left, what the child did on the right.
+
+.weekly-review-showcase {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 40vw);
+  column-gap: 4vw;
+  padding-inline: 5vw;
+  box-sizing: border-box;
+  align-items: center;
+  font-family: $school-font;
+  color: #fff;
+
+  &--no-images {
+    grid-template-columns: minmax(0, 1fr);
+    .showcase-text { padding-left: 7vw; max-width: 60vw; }
+  }
+
+  // Wins but no school work: the title and the wins, centred on the stage,
+  // a size up.
+  &--wins-only {
+    justify-items: center;
+    .showcase-text { padding-left: 0; max-width: 70vw; text-align: center; }
+    .showcase-title { margin-inline: auto; }
+    .showcase-wins-week { justify-content: center; }
+    .showcase-win-icon { font-size: 64px; }
+    .showcase-win-figure { font-size: 72px; }
+  }
+
+  // --- Wins: this child's own, never balances, never compared ---
+  .showcase-wins { margin-top: 48px; }
+
+  .showcase-wins-week {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px 40px;
+  }
+
+  .showcase-win {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .showcase-win-icon {
+    font-size: 44px; // icons size to 1em
+    flex-shrink: 0;
+  }
+
+  .showcase-win-figure {
+    font-size: 52px;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: #fff;
+  }
+
+  .showcase-win--silver .showcase-win-figure { color: var(--school-coin-silver, #c9d1d9); }
+
+  .showcase-win-unit {
+    font-size: 28px;
+    font-weight: 400;
+    color: $muted;
+  }
+
+  .showcase-wins-all-time {
+    margin-top: 18px;
+    font-size: 24px;
+    color: $muted;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .showcase-band {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 10px;
+    background: var(--kid, #{$muted});
+  }
+
+  .showcase-text {
+    box-sizing: border-box;
+    min-width: 0;
+  }
+
+  // Balanced so the name never strands "Week" on a line of its own.
+  .showcase-title {
+    margin: 0 0 40px;
+    max-width: 36ch;
+    text-wrap: balance;
+    font-size: 64px;
+    font-weight: 700;
+    line-height: 1.05;
+    color: #fff;
+  }
+
+  .showcase-bullet-stack { display: grid; }
+  .showcase-bullet-layer { grid-area: 1 / 1; }
+  .showcase-bullet-layer--in { animation: wr-showcase-fade-in 200ms ease-out both; }
+  .showcase-bullet-layer--out { animation: wr-showcase-fade-out 200ms ease-out both; }
+
+  .showcase-bullets {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  .showcase-bullet {
+    display: flex;
+    align-items: flex-start;
+    gap: 22px;
+    font-size: 36px;
+    font-weight: 400;
+    line-height: 1.35;
+    color: #f0f4f8;
+  }
+
+  .showcase-bullet-marker {
+    flex: 0 0 14px;
+    width: 14px;
+    height: 14px;
+    margin-top: calc((36px * 1.35 - 14px) / 2);
+    border-radius: 3px;
+    background: var(--kid, #{$muted});
+  }
+
+  .showcase-bullet-text {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+// The collage: prints overlap a little, each at its own tilt, and settle one
+// after another. Centred in its column, sized per count so the whole collage
+// stays within 80vh and inside the column (about 46vw at 1080p), with no holes.
+.showcase-collage {
+  display: grid;
+  justify-content: center;
+  align-content: center;
+  justify-items: center;
+  align-items: center;
+  min-width: 0;
+
+  .showcase-print {
+    margin: -2%;
+    animation: wr-showcase-settle 420ms ease-out both;
+  }
+
+  .work-print { transform: rotate(var(--tilt, -2deg)); }
+
+  &.showcase-collage--one {
+    .work-print-img { height: 64vh; max-width: 40vw; }
+  }
+
+  &.showcase-collage--two {
+    grid-template-columns: repeat(2, auto);
+    .work-print-img { height: 52vh; max-width: 19vw; }
+  }
+
+  // A large print on the left, two stacked on its right.
+  &.showcase-collage--three {
+    grid-template-columns: repeat(2, auto);
+    grid-template-rows: repeat(2, auto);
+    .showcase-print:first-child { grid-row: 1 / span 2; }
+    .work-print-img { height: 29vh; max-width: 15vw; }
+    .showcase-print:first-child .work-print-img { height: 62vh; max-width: 25vw; }
+  }
+
+  &.showcase-collage--four {
+    grid-template-columns: repeat(2, auto);
+    .work-print-img { height: 33vh; max-width: 19vw; }
+  }
+
+  // Rows of three; five leaves two centred under the three.
+  &.showcase-collage--five,
+  &.showcase-collage--six {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-content: center;
+    .showcase-print { flex: 0 0 auto; width: calc(100% / 3 - 1px); display: flex; justify-content: center; }
+    .work-print-img { height: 32vh; max-width: 12vw; }
+    .work-print-tape { width: 96px; margin-left: -48px; }
+  }
+}
+
+// Offset from the print's resting tilt, so each print ends at its own angle.
+@keyframes wr-showcase-settle {
+  from { opacity: 0; transform: rotate(-4deg) translateY(24px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes wr-showcase-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes wr-showcase-fade-out { from { opacity: 1; } to { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .showcase-collage .showcase-print,
+  .weekly-review-showcase .showcase-bullet-layer--in,
+  .weekly-review-showcase .showcase-bullet-layer--out { animation: none; }
+  .weekly-review-showcase .showcase-bullet-layer--out { display: none; }
+}

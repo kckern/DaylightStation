@@ -4,10 +4,13 @@ import { FilesystemWeeklyReviewStore } from "./adapters/persistence/FilesystemWe
 import { NodeCommandRunner } from "#adapters/process/NodeCommandRunner.mjs";
 import { WeeklyReviewImmichAdapter } from "./adapters/WeeklyReviewImmichAdapter.mjs";
 import { WeeklyReviewCalendarAdapter } from "./adapters/WeeklyReviewCalendarAdapter.mjs";
+import { WeeklyReviewSchoolAdapter } from "./adapters/WeeklyReviewSchoolAdapter.mjs";
 import { WeeklyReviewService } from "./application/WeeklyReviewService.mjs";
+import { SchoolShowcaseService } from "./application/SchoolShowcaseService.mjs";
+import { LearnerWinsService } from "./application/LearnerWinsService.mjs";
 import { createWeeklyReviewRouter } from "./api/weekly-review.mjs";
 
-export async function installWeeklyReview({ configService, dataService, immichConfig, sharedAiGateway, rootLogger, householdId, userDataService, dataBasePath, mediaBasePath, fitnessServices, v1Routers }) {
+export async function installWeeklyReview({ configService, dataService, immichConfig, sharedAiGateway, rootLogger, householdId, userDataService, dataBasePath, mediaBasePath, fitnessServices, v1Routers, schoolLearnerWork = null, economyService = null, fitnessRings = null, learners = null }) {
 
     const { ImmichClient } = await import("../../../../__capabilities/content-catalog/server/adapters/providers/gallery/immich/ImmichClient.mjs");
     const wrImmichClient = new ImmichClient(immichConfig, { httpClient: axios });
@@ -36,6 +39,31 @@ export async function installWeeklyReview({ configService, dataService, immichCo
 
     const weeklyReviewHouseholdDir = configService.getHouseholdPath('', householdId);
     const weeklyReviewCommandRunner = new NodeCommandRunner();
+    const weeklyReviewStore = new FilesystemWeeklyReviewStore({
+      householdDir: weeklyReviewHouseholdDir,
+      mediaPath: mediaBasePath,
+      logger: rootLogger.child({ module: 'weekly-review-store' }),
+    });
+    const weeklyReviewShowcase = new SchoolShowcaseService({
+      ai: weeklyReviewAi ? scopedGateway(weeklyReviewAi, { feature: 'school-showcase' }) : null,
+      store: {
+        load: (week) => weeklyReviewStore.loadSchoolShowcase(week),
+        save: (week, data) => weeklyReviewStore.saveSchoolShowcase(week, data),
+      },
+      logger: rootLogger.child({ module: 'weekly-review-showcase' }),
+    });
+    // Each child's wins on their own showcase slide. Economy and fitness are
+    // other owners: they come in as plain functions, never as imports.
+    const weeklyReviewWins = (economyService || fitnessRings) ? new LearnerWinsService({
+      ledger: economyService && typeof economyService.getHistory === 'function'
+        ? async (learnerId) => (economyService.hasUser?.(learnerId) === false ? null : economyService.getHistory(learnerId))
+        : null,
+      // One session listing for the whole roster (`standings`), not one per child.
+      ringStandings: fitnessRings && typeof fitnessRings.standings === 'function'
+        ? ({ learnerIds, fromMs, toMs }) => fitnessRings.standings({ learnerIds, fromMs, toMs })
+        : null,
+      logger: rootLogger.child({ module: 'weekly-review-wins' }),
+    }) : null;
     const weeklyReviewService = new WeeklyReviewService(
       {
         dataPath: dataBasePath,
@@ -49,6 +77,12 @@ export async function installWeeklyReview({ configService, dataService, immichCo
         calendarData: weeklyReviewCalendarAdapter,
         sessionService: fitnessServices?.sessionService || null,
         weatherStore: wrWeatherStore,
+        schoolWork: schoolLearnerWork
+          ? new WeeklyReviewSchoolAdapter({
+              schoolLearnerWork,
+              logger: rootLogger.child({ module: 'weekly-review-school' }),
+            })
+          : null,
         transcriptionService: weeklyReviewAi ? {
           transcribe: async (buffer, opts) => {
             const raw = await weeklyReviewAi.transcribe(buffer, {
@@ -66,11 +100,10 @@ export async function installWeeklyReview({ configService, dataService, immichCo
             return { transcriptRaw: raw, transcriptClean: clean };
           },
         } : null,
-        reviewStore: new FilesystemWeeklyReviewStore({
-          householdDir: weeklyReviewHouseholdDir,
-          mediaPath: mediaBasePath,
-          logger: rootLogger.child({ module: 'weekly-review-store' }),
-        }),
+        reviewStore: weeklyReviewStore,
+        schoolShowcase: weeklyReviewShowcase,
+        learnerWins: weeklyReviewWins,
+        learners: typeof learners === 'function' ? learners : null,
         runCommand: weeklyReviewCommandRunner.run,
         logger: rootLogger.child({ module: 'weekly-review' }),
       }

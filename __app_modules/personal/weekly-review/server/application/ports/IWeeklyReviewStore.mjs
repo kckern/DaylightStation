@@ -9,6 +9,8 @@ export class IWeeklyReviewStore {
   completeFinalization(_token) { throw new Error('completeFinalization not implemented'); }
   sweepStaleDrafts(_cutoff) { throw new Error('sweepStaleDrafts not implemented'); }
   discardDraft(_sessionId, _week) { throw new Error('discardDraft not implemented'); }
+  loadSchoolShowcase(_week) { throw new Error('loadSchoolShowcase not implemented'); }
+  saveSchoolShowcase(_week, _data) { throw new Error('saveSchoolShowcase not implemented'); }
   getRecordingStatus(_week) { throw new Error('getRecordingStatus not implemented'); }
 }
 

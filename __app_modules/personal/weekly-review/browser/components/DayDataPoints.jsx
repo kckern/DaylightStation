@@ -14,7 +14,10 @@ export default function DayDataPoints({ day }) {
   const weather = day.weather;
   const videoCount = day.photos?.filter(p => p.type === 'video').length || 0;
   const imageCount = (day.photoCount || 0) - videoCount;
-  const hasAny = !!weather || timeline.length > 0 || allPeople.length > 0 || (day.photoCount || 0) > 0;
+  const schoolCount = day.schoolAll?.length || 0;
+  // School work counts as something recorded: the context panel lists it in
+  // its own section, so a school-only day must not read as quiet.
+  const hasAny = !!weather || timeline.length > 0 || allPeople.length > 0 || (day.photoCount || 0) > 0 || schoolCount > 0;
 
   if (!hasAny) {
     return <div className="context-section day-data-quiet">Quiet day — nothing recorded.</div>;
@@ -62,6 +65,7 @@ export default function DayDataPoints({ day }) {
           {videoCount > 0 && <span className="stat">{plural(videoCount, 'video')}</span>}
           {(day.calendar?.length || 0) > 0 && <span className="stat">{plural(day.calendar.length, 'event')}</span>}
           {(day.fitness?.length || 0) > 0 && <span className="stat">{plural(day.fitness.length, 'workout')}</span>}
+          {schoolCount > 0 && <span className="stat">{plural(schoolCount, 'school item')}</span>}
         </div>
       </div>
     </>

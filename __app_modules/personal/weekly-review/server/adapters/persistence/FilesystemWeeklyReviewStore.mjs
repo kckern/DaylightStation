@@ -1,4 +1,5 @@
 import path from 'node:path';
+import yaml from 'js-yaml';
 import { IWeeklyReviewStore } from "../../application/ports/IWeeklyReviewStore.mjs";
 import {
   appendTextFile,
@@ -7,6 +8,7 @@ import {
   fileExists,
   getStats,
   listEntries,
+  loadYaml,
   readBinaryFromPath,
   readTextFromPath,
   renameFile,
@@ -148,6 +150,18 @@ export class FilesystemWeeklyReviewStore extends IWeeklyReviewStore {
     let existed = false;
     for (const target of targets) if (fileExists(target)) { deleteFile(target); existed = true; }
     return existed;
+  }
+
+  /** Cached AI showcase bullets for the week, `{ [learnerId]: { itemsHash, bullets, at } }`, or null. */
+  loadSchoolShowcase(week) {
+    return loadYaml(path.join(this.#reviewDir(week), 'school-showcase')) ?? null;
+  }
+
+  /** Written to a staging file and renamed, so a crash never leaves a torn cache. */
+  saveSchoolShowcase(week, data) {
+    const directory = this.#reviewDir(week);
+    ensureDir(directory);
+    writeFileAtomic(path.join(directory, 'school-showcase.yml'), yaml.dump(data, { lineWidth: -1 }));
   }
 
   getRecordingStatus(week) {

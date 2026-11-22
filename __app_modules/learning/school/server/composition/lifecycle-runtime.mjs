@@ -80,9 +80,12 @@ export async function createSchoolLifecycleRuntime(dependencies) {
   const { SetMilestones: SetMilestones } = await import("../application/usecases/SetMilestones.mjs");
   const { GetMilestoneStatuses: GetMilestoneStatuses } = await import("../application/usecases/GetMilestoneStatuses.mjs");
   const { RecordEnrichment: RecordEnrichment } = await import("../application/usecases/RecordEnrichment.mjs");
+  // Returned too: learner work renders a printed activity's solved page from
+  // the same platform adapters the program prints from.
+  let worksheetPlatforms = new Map();
 try {
     const { createSchoolLifecycle } = await import("./schoolLifecycle.mjs");
-    const worksheetPlatforms = await buildWorksheetPlatforms({ configService, rootLogger, logger: schoolLifecycleLogger });
+    worksheetPlatforms = await buildWorksheetPlatforms({ configService, rootLogger, logger: schoolLifecycleLogger });
     dependencies.schoolLifecycle = await createSchoolLifecycle({
       authorizeKioskAction: dependencies.authorizeKioskAction ?? null,
       mountReceiptKey: dependencies.mountReceiptKey ?? null,
@@ -1096,5 +1099,5 @@ try {
   if (dependencies.schoolLifecycle.selfServiceRouter) {
     v1Routers.school.use('/self-service', dependencies.schoolLifecycle.selfServiceRouter);
   }
-  return { schoolStateGatesProducer, bookScans, schoolPrintService, schoolTeacherNotes, presenceHook };
+  return { schoolStateGatesProducer, bookScans, schoolPrintService, schoolTeacherNotes, presenceHook, worksheetPlatforms };
 }

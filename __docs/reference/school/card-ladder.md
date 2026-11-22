@@ -63,6 +63,12 @@ drill, speaking, on-screen keypad, practice menu)** actually ship; see
 Everything per learner is keyed by the lexicon's `package`: status, day files
 and the judgement cache. Word ids need only be unique **within** a package.
 
+Other surfaces name a package with `createCardLadderTitleFor`
+(`application/cardLadderTitles.mjs`), which reads the lexicon's
+`program.title`, and show its poster from `programs/card-ladder/<package>/poster.jpg`;
+the [Weekly Review](../life/weekly-review.md#school-work) work cards and
+showcase use both.
+
 ## The lexicon (`school.word-lexicon/v2` or `school.card-lexicon/v3`)
 
 ```yaml

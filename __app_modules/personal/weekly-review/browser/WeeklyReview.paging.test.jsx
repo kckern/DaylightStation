@@ -41,8 +41,9 @@ vi.mock("./hooks/chunkDb.js", () => ({
 
 const WeeklyReview = (await import("./WeeklyReview.jsx")).default;
 
-// Eight days starting at `start`, each carrying one photo so nothing renders as
-// an empty window by accident.
+// Eight days starting at `start`, each carrying one morning photo (so nothing
+// renders as an empty window by accident) and one evening piece of school work,
+// which the reel plays after the photo.
 const windowPayload = (start) => {
   const days = [];
   const d = new Date(`${start}T12:00:00Z`);
@@ -50,13 +51,26 @@ const windowPayload = (start) => {
     const date = new Date(d);
     date.setUTCDate(d.getUTCDate() + i);
     const iso = date.toISOString().slice(0, 10);
+    // Photo takenAt is Immich's format: wall-clock time with a misleading Z.
+    // Work at 23:00Z lands after a 09:00 wall-clock photo in every real zone.
+    const work = {
+      learnerId: 'kid-a', learnerName: 'Mara', kind: 'book', verb: 'finished',
+      title: `Book ${iso}`, subtitle: null, at: `${iso}T23:00:00Z`, studyDay: iso,
+      imageUrl: null, groupKey: `book:${iso}`, weight: 1, subject: 'reading',
+    };
     days.push({
       date: iso, label: 'Day', photoCount: 1,
-      photos: [{ id: `${iso}-a`, type: 'image', url: '/x.jpg' }],
+      photos: [{ id: `${iso}-a`, type: 'image', url: '/x.jpg', takenAt: `${iso}T09:00:00.000Z` }],
+      school: [work], schoolAll: [work],
       calendar: [], fitness: [], weather: null, columnWeight: 1,
     });
   }
-  return { week: start, days, recording: { exists: false } };
+  // Bootstrap carries plain showcase bullets; the showcase endpoint may later
+  // replace them with drafted ones.
+  const schoolShowcase = [{
+    learnerId: 'kid-a', learnerName: 'Robin', bullets: [`Plain ${start}`], images: [], source: 'plain',
+  }];
+  return { week: start, days, schoolShowcase, recording: { exists: false } };
 };
 
 const NEWEST = '2026-08-08';
@@ -216,5 +230,96 @@ describe('WeeklyReview — multi-week paging', () => {
     await waitFor(() => expect(screen.getByText(/Couldn't load Jul 31 – Aug 7/)).toBeInTheDocument());
     // The window the user was narrating is still on screen.
     expect(viewedWindow()).toBe('Aug 8 – Aug 15');
+  });
+
+  it('Right in a day reel steps from the photo onto the work card', async () => {
+    const { container } = await mount();
+    press('Enter'); // open the focused (last) day
+    await waitFor(() => expect(container.querySelector('.weekly-review-reel--photo')).not.toBeNull());
+    expect(container.querySelector('.fullscreen-image-index').textContent).toBe('1 / 3');
+    press('ArrowRight');
+    await waitFor(() => expect(container.querySelector('.weekly-review-work-card')).not.toBeNull());
+    expect(container.querySelector('.work-card-title').textContent).toBe('Book 2026-08-15');
+    expect(container.querySelector('.work-card-index').textContent).toBe('2 / 3');
+  });
+
+  it('crossing back a day lands on that day\'s last reel item, the work card', async () => {
+    const { container } = await mount();
+    press('Enter');
+    await waitFor(() => expect(container.querySelector('.weekly-review-reel--photo')).not.toBeNull());
+    press('ArrowLeft'); // arm at the first item
+    press('ArrowLeft'); // cross to the previous day
+    await waitFor(() => expect(container.querySelector('.weekly-review-work-card')).not.toBeNull());
+    expect(container.querySelector('.work-card-title').textContent).toBe('Book 2026-08-14');
+  });
+
+  it('draws the school strip on the grid', async () => {
+    const { container } = await mount();
+    expect(container.querySelectorAll('.day-school .school-chip')).toHaveLength(8);
+    expect(container.querySelector('.school-chip').style.getPropertyValue('--kid')).toBe('#2f6fde');
+  });
+
+  // Routes every call like the default mock, with the showcase endpoint
+  // answered by `showcase(week)`.
+  const routeShowcase = (showcase) => api.call.mockImplementation(async (url) => {
+    if (url.startsWith('/api/v1/weekly-review/school/showcase')) return showcase(url.match(/week=([\d-]+)/)[1]);
+    if (url.startsWith('/api/v1/weekly-review/bootstrap')) {
+      const m = url.match(/week=([\d-]+)/);
+      return windowPayload(m ? m[1] : NEWEST);
+    }
+    if (url.startsWith('/api/v1/weekly-review/extent')) return { ok: true, oldestContentDate: '2026-07-02', hasOlder: true };
+    if (url.includes('/recording/drafts')) return { ok: true, drafts: [] };
+    return { ok: true };
+  });
+  const drafted = (week, text) => ({
+    showcases: [{ learnerId: 'kid-a', learnerName: 'Robin', bullets: [text], images: [], source: 'ai' }],
+  });
+  const showcaseTitle = () => document.querySelector('.showcase-title')?.textContent;
+
+  it('closes the last day with each child\'s showcase slide', async () => {
+    routeShowcase(() => new Promise(() => {})); // drafting never finishes
+    await mount();
+    press('Enter');
+    press('ArrowRight'); // photo → work card
+    press('ArrowRight'); // work card → showcase
+    await waitFor(() => expect(showcaseTitle()).toBe("Robin's School Work This Week"));
+    expect(screen.getByText(`Plain ${NEWEST}`)).toBeInTheDocument();
+    expect(document.querySelector('.work-card-index').textContent).toBe('3 / 3');
+  });
+
+  it('replaces the plain bullets with drafted ones when they arrive', async () => {
+    routeShowcase((week) => drafted(week, `Drafted ${week}`));
+    await mount();
+    expect(api.call).toHaveBeenCalledWith(expect.stringContaining(`/school/showcase?week=${NEWEST}`));
+    press('Enter');
+    press('ArrowRight');
+    press('ArrowRight');
+    await waitFor(() => expect(screen.getByText(`Drafted ${NEWEST}`)).toBeInTheDocument());
+  });
+
+  it('ignores a drafted answer that arrives after paging away from its window', async () => {
+    const pending = {};
+    routeShowcase((week) => new Promise((resolve) => { pending[week] = resolve; }));
+    await mount();
+    await waitFor(() => expect(pending[NEWEST]).toBeTypeOf('function'));
+
+    press('ArrowUp'); press('ArrowUp'); press('ArrowUp'); // page back to PREV
+    await expectWindow('Jul 31 – Aug 7');
+    await act(async () => { pending[NEWEST](drafted(NEWEST, 'Stale bullet')); });
+
+    press('Enter'); // focus lands on PREV's last day
+    press('ArrowRight');
+    press('ArrowRight');
+    await waitFor(() => expect(showcaseTitle()).toBe("Robin's School Work This Week"));
+    expect(screen.getByText(`Plain ${PREV}`)).toBeInTheDocument();
+    expect(screen.queryByText('Stale bullet')).toBeNull();
+
+    // The late answer was dropped, not filed: coming back asks again.
+    const asksFor = (week) => api.call.mock.calls.filter(c => String(c[0]).includes(`/school/showcase?week=${week}`)).length;
+    expect(asksFor(NEWEST)).toBe(1);
+    press('ArrowUp'); // back to the grid
+    press('ArrowDown'); press('ArrowDown'); // page forward to the newest window
+    await expectWindow('Aug 8 – Aug 15');
+    await waitFor(() => expect(asksFor(NEWEST)).toBe(2));
   });
 });

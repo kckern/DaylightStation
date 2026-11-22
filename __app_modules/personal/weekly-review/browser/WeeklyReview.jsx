@@ -16,6 +16,8 @@ import { withTimeout, TIMEOUT } from "./hooks/withTimeout.js";
 import { modalReducer, initialModalState } from "./state/modalReducer.js";
 import { viewReducer, initialViewState } from "./state/viewReducer.js";
 import { resolveKey } from "./state/keymap.js";
+import { reelItemsForDay, showcaseExtrasByDay } from "./state/reelItems.js";
+import { learnerIdsForDays, colorForLearner } from "./state/learnerColor.js";
 import {
   previousWindowStart, nextWindowStart, windowStartForDate, windowEnd, windowsBackLabel,
 } from "./state/windowMath.js";
@@ -93,26 +95,64 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
   // Monotonic window-request id; only the newest response is allowed to paint.
   const windowReqRef = useRef(0);
 
+  // ---- Weekly school showcase ----------------------------------------------
+  // One slide per child closes the window's last day. The bootstrap carries
+  // plain bullets; the showcase endpoint drafts better ones (it can take
+  // seconds), and its answer replaces the plain ones for that window only.
+  // Keyed by window start; a window without an entry shows its bootstrap's.
+  const [showcasesByWeek, setShowcasesByWeek] = useState({});
+  const showcaseInFlightRef = useRef(new Set());
+  const showcases = useMemo(() => {
+    const week = data?.week;
+    if (week && showcasesByWeek[week]) return showcasesByWeek[week];
+    return Array.isArray(data?.schoolShowcase) ? data.schoolShowcase : [];
+  }, [data, showcasesByWeek]);
+
+  // Items appended after a day's own reel, by day index: the showcases on the
+  // last day. reelFor stays the only place a reel is assembled.
+  const reelExtrasByDay = useMemo(() => showcaseExtrasByDay(data?.days, showcases), [data, showcases]);
+
+  // The ONE source of a day's reel (photos, videos, school work, extras). The
+  // keymap context and the reel render both read it, so an index computed by
+  // one always points at the item the other draws.
+  const reelFor = useMemo(() => {
+    const days = data?.days || [];
+    const built = new Map();
+    return (dayIndex) => {
+      if (!built.has(dayIndex)) built.set(dayIndex, reelItemsForDay(days[dayIndex], reelExtrasByDay[dayIndex]));
+      return built.get(dayIndex);
+    };
+  }, [data, reelExtrasByDay]);
+
   // Derive everything the keymap needs about the focused media item.
   const mediaCtx = useMemo(() => {
     const days = data?.days || [];
-    const day = days[view.dayIndex];
-    const items = day?.photos || [];
+    const items = reelFor(view.dayIndex);
     const itemCount = items.length;
-    const cur = items[view.itemIndex];
+    // Clamped exactly as the render clamps it.
+    const idx = Math.min(view.itemIndex, Math.max(0, itemCount - 1));
+    const cur = items[idx];
+    // A school work card behaves like a still photo for the keymap.
     const currentType = !cur ? 'none' : (cur.type === 'video' ? 'video' : 'photo');
     const prevDayIndex = view.dayIndex - 1;
     const nextDayIndex = view.dayIndex + 1;
     const hasPrevDay = prevDayIndex >= 0;
     const hasNextDay = nextDayIndex < days.length;
-    const prevDayLastIndex = hasPrevDay ? Math.max(0, (days[prevDayIndex]?.photos?.length || 1) - 1) : 0;
+    const prevDayLastIndex = hasPrevDay ? Math.max(0, reelFor(prevDayIndex).length - 1) : 0;
     return {
       itemCount, currentType,
-      atFirst: view.itemIndex <= 0,
-      atLast: view.itemIndex >= itemCount - 1,
+      atFirst: idx <= 0,
+      atLast: idx >= itemCount - 1,
       hasPrevDay, hasNextDay, prevDayIndex, nextDayIndex, prevDayLastIndex,
     };
-  }, [data, view.dayIndex, view.itemIndex]);
+  }, [data, reelFor, view.dayIndex, view.itemIndex]);
+
+  // One crayon hue per child for the whole window, keyed by learnerId, so a
+  // child keeps the same colour on every day, the strip, and the reel.
+  const learnerColors = useMemo(() => {
+    const ids = learnerIdsForDays(data?.days, showcases);
+    return Object.fromEntries(ids.map(id => [id, colorForLearner(id, ids)]));
+  }, [data, showcases]);
 
   const autoStartRef = useRef(false);
   // Proactive Shield AudioBridge heal must complete (or time out) before the
@@ -331,6 +371,41 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       if (windowReqRef.current === req) setWindowLoading(false);
     }
   }, [logger]);
+
+  // After a window lands (first load, a page, or a cached revisit), ask for
+  // its drafted showcase. Only an answer for the window still on screen is
+  // kept; a late answer for a window the user has paged away from is dropped,
+  // and that window asks again if it comes back.
+  const shownWeek = data?.week;
+  useEffect(() => {
+    const week = shownWeek;
+    if (!week || showcasesByWeek[week] || showcaseInFlightRef.current.has(week)) return;
+    showcaseInFlightRef.current.add(week);
+    (async () => {
+      try {
+        const res = await withTimeout(
+          DaylightAPI(`/api/v1/weekly-review/school/showcase?week=${encodeURIComponent(week)}`),
+          25000,
+        );
+        if (res === TIMEOUT) throw new Error('timeout');
+        if (!Array.isArray(res?.showcases)) throw new Error('no showcases in response');
+        if (windowStartRef.current !== week) {
+          logger.debug('showcase.superseded', { week });
+          return;
+        }
+        setShowcasesByWeek(prev => ({ ...prev, [week]: res.showcases }));
+        logger.info('showcase.loaded', {
+          week,
+          count: res.showcases.length,
+          source: [...new Set(res.showcases.map(sc => sc.source))].join(',') || null,
+        });
+      } catch (err) {
+        logger.warn('showcase.load-failed', { week, error: err.message });
+      } finally {
+        showcaseInFlightRef.current.delete(week);
+      }
+    })();
+  }, [shownWeek, showcasesByWeek, logger]);
 
   // Landing focus: coming back we land on the last cell so Up re-arms straight
   // away for a further jump; going forward we land on the first.
@@ -716,7 +791,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       {/* Two-level surface: reel over grid */}
       {view.level === 'reel' && data?.days?.[view.dayIndex] ? (() => {
         const day = data.days[view.dayIndex];
-        const items = day.photos || [];
+        const items = reelFor(view.dayIndex);
         const safeIdx = Math.min(view.itemIndex, Math.max(0, items.length - 1));
         const dt = new Date(`${day.date}T12:00:00Z`);
         const dayLabel = dt.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
@@ -732,8 +807,9 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
               muted={view.muted}
               paused={view.contextOpen}
               onEnded={() => dispatchView({ type: 'STOP_VIDEO' })}
+              learnerColors={learnerColors}
             />
-            <DayContextPanel day={day} open={view.contextOpen} />
+            <DayContextPanel day={day} open={view.contextOpen} learnerColors={learnerColors} />
           </>
         );
       })() : (
@@ -753,6 +829,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
                 key={day.date}
                 day={day}
                 isFocused={realIndex === view.dayIndex}
+                learnerColors={learnerColors}
                 onClick={() => {
                   dispatchView({ type: 'SELECT_DAY', dayIndex: realIndex });
                   dispatchView({ type: 'OPEN_DAY' });

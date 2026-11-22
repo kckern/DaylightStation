@@ -3,7 +3,7 @@
 const MIN_COLUMN_WEIGHT = 0.5;
 
 export class WeeklyReviewAggregator {
-  static aggregate(photoDays, calendarDays, fitnessByDate = {}, weatherByDate = {}) {
+  static aggregate(photoDays, calendarDays, fitnessByDate = {}, weatherByDate = {}, schoolByDate = {}) {
     const calendarByDate = new Map();
     for (const day of calendarDays) {
       calendarByDate.set(day.date, day.events || []);
@@ -13,7 +13,9 @@ export class WeeklyReviewAggregator {
 
     const days = photoDays.map(photoDay => {
       const date = new Date(`${photoDay.date}T12:00:00Z`);
-      const contentScore = photoDay.photoCount + (calendarByDate.get(photoDay.date)?.length || 0);
+      const school = schoolByDate?.[photoDay.date]?.school || [];
+      const schoolAll = schoolByDate?.[photoDay.date]?.schoolAll || [];
+      const contentScore = photoDay.photoCount + (calendarByDate.get(photoDay.date)?.length || 0) + school.length;
       const columnWeight = Math.max(MIN_COLUMN_WEIGHT, contentScore / maxPhotoCount);
 
       return {
@@ -26,6 +28,8 @@ export class WeeklyReviewAggregator {
         sessions: photoDay.sessions,
         fitness: fitnessByDate[photoDay.date] || [],
         weather: weatherByDate[photoDay.date] || null,
+        school,
+        schoolAll,
         columnWeight,
       };
     });

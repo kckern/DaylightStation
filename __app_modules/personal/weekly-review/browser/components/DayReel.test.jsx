@@ -51,4 +51,30 @@ describe('DayReel', () => {
     render(<DayReel item={null} day={day} index={0} total={0} dayLabel={dayLabel} playing={false} muted paused={false} />);
     expect(screen.getByText(/Quiet day/i)).toBeInTheDocument();
   });
+
+  it('routes school work to a work card', () => {
+    const work = {
+      type: 'school', id: 'school:kid-a:book:wonder:2026-04-21', learnerId: 'kid-a', learnerName: 'Mara',
+      kind: 'book', verb: 'finished', title: 'Wonder', subtitle: null, at: '2026-04-21T22:00:00Z',
+      takenAt: '2026-04-21T22:00:00Z', studyDay: '2026-04-21', imageUrl: null, groupKey: 'book:wonder', subject: 'reading',
+    };
+    const { container } = render(<DayReel item={work} index={2} total={3} dayLabel={dayLabel} playing={false} muted paused={false} learnerColors={{ 'kid-a': '#f28c28' }} />);
+    const card = container.querySelector('.weekly-review-work-card');
+    expect(card).not.toBeNull();
+    expect(card.style.getPropertyValue('--kid')).toBe('#f28c28');
+    expect(container.querySelector('.weekly-review-fullscreen-image')).toBeNull();
+    expect(screen.getByText('Finished')).toBeInTheDocument();
+    expect(screen.getByText('3 / 3')).toBeInTheDocument();
+  });
+
+  it('routes a showcase to the showcase slide', () => {
+    const item = {
+      type: 'showcase', id: 'showcase:kid-a', learnerId: 'kid-a', learnerName: 'Robin',
+      bullets: ['Finished two books'], images: [], source: 'plain',
+    };
+    const { container } = render(<DayReel item={item} index={4} total={5} dayLabel={dayLabel} playing={false} muted paused={false} learnerColors={{ 'kid-a': '#3fa34d' }} />);
+    expect(container.querySelector('.weekly-review-showcase')).not.toBeNull();
+    expect(container.querySelector('.weekly-review-showcase').style.getPropertyValue('--kid')).toBe('#3fa34d');
+    expect(screen.getByText("Robin's School Work This Week")).toBeInTheDocument();
+  });
 });

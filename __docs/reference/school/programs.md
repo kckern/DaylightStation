@@ -800,6 +800,21 @@ answers "Worksheets are unavailable". The platform sits behind
 `scan-refused`, `scan-orphaned`, `scan-failed`, `lookup-partial`,
 `store-corrupt`.
 
+**In the weekly review.** A counted page appears in the
+[Weekly Review](../life/weekly-review.md#school-work) as an `activity` work
+item, pictured by its own page. `GetLearnerWorkImage` (ref `activity:<issuanceId>`)
+renders page 1 of the platform's **solution** PDF to a PNG (800 px wide), or
+of the **printable** PDF when the page has nothing to solve (tracing,
+coloring), and caches it on the media mount at
+`school/beeloo-pages/<platform>-<externalId>.png`, so each page renders once.
+The solution is the answer key, so only a completed, non-voided issuance is
+served: an open sheet, a voided reservation, an unwired platform or a failed
+render answers nothing (404) and the card shows a title card instead. Platform
+and page ids that are not plain `[A-Za-z0-9_-]` names are refused before they
+reach a file path. Events: `school.printed-activity.page-render` (`cached`,
+`source`), `page-not-finished`, `page-unsafe-key`, `page-no-printable`,
+`page-render-failed`, `page-cache-read-failed`, `page-cache-write-failed`.
+
 **Known limit.** If a double scan's winner then fails to print and voids its
 reservation, the loser (told "That sheet just printed") has no sheet coming.
 Scan the ticket again for a fresh one. With the cooldown set to 0 the loser
