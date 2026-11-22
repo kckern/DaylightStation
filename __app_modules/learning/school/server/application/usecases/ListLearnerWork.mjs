@@ -1,6 +1,6 @@
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import {
-  booksToWork, sessionsToWork, activitiesToWork, cardLadderToWork, pianoLessonsToWork, sentenceLadderToWork, inWindow,
+  booksToWork, sessionsToWork, activitiesToWork, cardLadderToWork, pianoLessonsToWork, pianoCourseKey, sentenceLadderToWork, inWindow,
 } from '../../domain/learnerWork.mjs';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -202,10 +202,13 @@ export class ListLearnerWork {
   }
 
   async #pianoLessons(ctx, courseTitleFor) {
-    // Evidence is filed by UTC instant; a day either side covers any household
-    // offset and the 4am boundary, and the projection trims by study day.
+    // Evidence is filed by UTC instant. The window's study days are from ..
+    // to-1, and study day D runs from 04:00 local on D to 04:00 local on D+1:
+    // at the extremes (UTC+14 .. UTC-12) that is D-1 14:00Z .. D+1 16:00Z. So
+    // [from-1 00:00Z, to+2 00:00Z) holds every instant of every study day in
+    // the window, with margin; the projection then trims by study day.
     const rows = list(await this.#learningEvidence.listEvidence({
-      learnerIds: [ctx.learnerId], from: isoDayStart(ctx.from, -1), to: isoDayStart(ctx.to, 1),
+      learnerIds: [ctx.learnerId], from: isoDayStart(ctx.from, -1), to: isoDayStart(ctx.to, 2),
     })).filter((r) => r?.activity?.kind === 'piano_lesson');
     if (!rows.length) return [];
     const lessonTitles = new Map();
@@ -220,7 +223,7 @@ export class ListLearnerWork {
       }
     }
     const courseTitles = courseTitleFor
-      ? await lookupAll(rows.map((r) => r.learning?.courseId), courseTitleFor, { source: 'piano', logger: this.#logger })
+      ? await lookupAll(rows.map((r) => pianoCourseKey(r.learning?.courseId)), courseTitleFor, { source: 'piano', logger: this.#logger })
       : new Map();
     return pianoLessonsToWork(rows, {
       ...ctx,
@@ -234,7 +237,12 @@ export class ListLearnerWork {
     const store = this.#languageStudy;
     const corpusIds = list(await memo.corpusIds());
     // Log shards are named by the UTC date of each event, not the study day.
-    const shards = datesThrough(isoDayStart(ctx.from, -1).slice(0, 10), ctx.to);
+    // The window's study days are from .. to-1 (half-open `to`); their
+    // instants fall between from-1 14:00Z and to 16:00Z at the extreme
+    // offsets, so shards from-1 .. to+1 inclusive cover them with a day of
+    // margin on the late side (evening work on the last study day lands in
+    // shard `to`). The projection assigns each event by `dayOf`.
+    const shards = datesThrough(isoDayStart(ctx.from, -1).slice(0, 10), isoDayStart(ctx.to, 1).slice(0, 10));
     const perCorpus = await Promise.all(corpusIds.map(async (corpusId) => {
       const events = (await Promise.all(shards.map(async (day) => list(await store.readEventDay(ctx.learnerId, corpusId, day))))).flat();
       if (!events.length) return [];

@@ -7,6 +7,7 @@ import {
   activityKindLabel,
   cardLadderToWork,
   pianoLessonsToWork,
+  pianoCourseKey,
   sentenceLadderToWork,
   WORK_ITEM_KEYS,
   tidyTitle,
@@ -490,6 +491,21 @@ describe('pianoLessonsToWork', () => {
     expect(item).toMatchObject({ title: 'Piano', subtitle: null, groupKey: 'course:plex:694771' });
     const [bare] = pianoLessonsToWork([evidence()], { ...BASE, dayOf: laDayOf });
     expect(bare).toMatchObject({ title: 'Piano', subtitle: null });
+  });
+
+  it('normalises a legacy doubled plex: prefix on the course id', () => {
+    const seen = [];
+    const [item] = pianoLessonsToWork([evidence({ learning: { courseId: 'plex:plex:694771', lessonId: 'plex:694833' } })], {
+      ...deps, courseTitleFor: (id) => { seen.push(id); return deps.courseTitleFor(id); },
+    });
+    expect(item).toMatchObject({
+      groupKey: 'course:plex:694771', imageUrl: '/api/v1/display/plex/694771', title: 'Piano Adventures Primer',
+    });
+    expect(seen).toEqual(['plex:694771']);
+    expect(pianoCourseKey('plex:plex:plex:12')).toBe('plex:12');
+    expect(pianoCourseKey('plex:12')).toBe('plex:12');
+    expect(pianoCourseKey('other:5')).toBe('other:5');
+    expect(pianoCourseKey(null)).toBeNull();
   });
 
   it('has no image and a generic group without a Plex course id', () => {

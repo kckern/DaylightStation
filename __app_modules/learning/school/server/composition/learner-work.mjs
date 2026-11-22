@@ -9,7 +9,9 @@
  *
  * Piano lessons and the sentence ladder are optional sources: pass
  * `learningEvidence` (School's evidence repository) with `lessonSittingLog`
- * and `pianoCourseTitleFor(courseId)` for lesson and course names, and
+ * for lesson names, and `getPlexClient()` for course names (a cached,
+ * time-bounded lookup, see pianoCourseTitles.mjs; or pass your own
+ * `pianoCourseTitleFor(courseId)`), and
  * `languageStudyStore` (or a `configService` to build a read-only use of the
  * YAML store) with `languageStudyService` for corpus labels. Study days use
  * the household timezone from `configService` and the 4am boundary.
@@ -20,13 +22,14 @@ import { renderPdfFirstPagePng as defaultRenderPdfFirstPagePng } from '../render
 import { FilesystemWorkImageCache } from '../adapters/persistence/FilesystemWorkImageCache.mjs';
 import { YamlLanguageStudyDatastore } from '../adapters/persistence/YamlLanguageStudyDatastore.mjs';
 import { studyDayForInstant } from '../domain/studyDay.mjs';
+import { createPianoCourseTitleLookup } from './pianoCourseTitles.mjs';
 
 const errorText = (err) => (err instanceof Error ? err.message : String(err));
 
 export function createSchoolLearnerWork({
   schoolLifecycle, schoolLearnerDirectory, books = null, worksheetPlatforms = null,
   cardLadderStore = null, cardLadderTitleFor = null,
-  learningEvidence = null, lessonSittingLog = null, pianoCourseTitleFor = null,
+  learningEvidence = null, lessonSittingLog = null, pianoCourseTitleFor = null, getPlexClient = null,
   languageStudyStore = null, languageStudyService = null, configService = null,
   renderPdfFirstPagePng = defaultRenderPdfFirstPagePng, mediaBasePath, rootLogger,
 } = {}) {
@@ -51,6 +54,9 @@ export function createSchoolLearnerWork({
     const sentenceLadderTitleFor = typeof languageStudyService?.listCourses === 'function'
       ? (corpusId) => languageStudyService.listCourses().find((c) => c?.id === corpusId)?.label ?? null
       : null;
+    // Built once at boot, so its title cache lives for the process.
+    const courseTitleFor = pianoCourseTitleFor
+      ?? (typeof getPlexClient === 'function' ? createPianoCourseTitleLookup({ getPlexClient, logger }) : null);
     const dayOf = (iso) => studyDayForInstant(Date.parse(iso), { timezone: configService?.getTimezone?.() || null });
 
     const listUseCase = new ListLearnerWork({
@@ -65,7 +71,7 @@ export function createSchoolLearnerWork({
       cardLadderTitleFor,
       learningEvidence,
       lessonSittingLog,
-      pianoCourseTitleFor,
+      pianoCourseTitleFor: courseTitleFor,
       languageStudy,
       sentenceLadderTitleFor,
       dayOf,

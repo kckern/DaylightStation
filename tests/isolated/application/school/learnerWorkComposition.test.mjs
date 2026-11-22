@@ -129,6 +129,27 @@ describe('createSchoolLearnerWork', () => {
     expect(wired.data.sources).toEqual(expect.arrayContaining(['pianoLessons', 'sentenceLadder']));
   });
 
+  it('names piano courses through Plex when given a client, caching across list() calls', async () => {
+    const calls = [];
+    const getPlexClient = () => ({
+      getContainer: async (p) => { calls.push(p); return { MediaContainer: { Metadata: [{ type: 'season', title: 'Piano', parentTitle: 'My Music Workshop' }] } }; },
+    });
+    const learningEvidence = {
+      listEvidence: () => [{
+        evidenceId: 'e1', learnerId: 'kid-a', occurredAt: '2026-11-18T20:00:00Z',
+        activity: { kind: 'piano_lesson' }, learning: { courseId: 'plex:plex:700', lessonId: 'plex:1' },
+      }],
+    };
+    const work = createSchoolLearnerWork({
+      schoolLifecycle: fakeLifecycle(), schoolLearnerDirectory, learningEvidence, getPlexClient,
+      configService: { getTimezone: () => 'America/Los_Angeles' }, mediaBasePath: '/unused', rootLogger: recordingLogger(),
+    });
+    const first = await work.list({ from: '2026-11-16', to: '2026-11-23' });
+    await work.list({ from: '2026-11-16', to: '2026-11-23' });
+    expect(first.items.find((i) => i.groupKey === 'course:plex:700')?.title).toBe('My Music Workshop');
+    expect(calls).toEqual(['/library/metadata/700']);
+  });
+
   it('tolerates the piano and sentence ladder deps being absent', async () => {
     const logger = recordingLogger();
     const work = createSchoolLearnerWork({ schoolLifecycle: fakeLifecycle(), schoolLearnerDirectory, mediaBasePath: '/unused', rootLogger: logger });

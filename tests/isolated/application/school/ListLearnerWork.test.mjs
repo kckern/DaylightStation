@@ -282,12 +282,54 @@ describe('ListLearnerWork — piano lessons and the sentence ladder', () => {
     }]);
     expect(of(items, 'kid-b', 'course')).toMatchObject([{ title: 'Piano Adventures', subtitle: null, studyDay: '2026-11-21' }]);
     // The UTC query is a day wider either side; the projection trims by study day.
-    expect(evidenceCalls[0]).toEqual({ learnerIds: ['kid-a'], from: '2026-11-15T00:00:00.000Z', to: '2026-11-24T00:00:00.000Z' });
+    expect(evidenceCalls[0]).toEqual({ learnerIds: ['kid-a'], from: '2026-11-15T00:00:00.000Z', to: '2026-11-25T00:00:00.000Z' });
     expect(sittingCalls.find((c) => c.userId === 'kid-a').sinceIso).toBe('2026-11-14T00:00:00.000Z');
     const text = JSON.stringify(items);
     expect(text).not.toContain('87.654');
     expect(text).not.toContain('already-counted');
     for (const item of items) expect(Object.keys(item).sort()).toEqual([...WORK_ITEM_KEYS].sort());
+  });
+
+  it('keeps evening work on the last study day of the window (to - 1)', async () => {
+    // The last study day is 2026-11-22. In Los Angeles it runs until 04:00 on
+    // the 23rd local, 12:00Z; in UTC-12 until 16:00Z on the 23rd.
+    const rows = [
+      pianoRow('kid-a', 'plex:1', '2026-11-23T07:30:00Z'), // 23:30 on the 22nd in LA → in
+      pianoRow('kid-a', 'plex:2', '2026-11-23T11:59:00Z'), // 03:59 on the 23rd in LA → still the 22nd
+      pianoRow('kid-a', 'plex:3', '2026-11-23T12:01:00Z'), // 04:01 on the 23rd → out
+    ];
+    const repo = { listEvidence: ({ from, to }) => rows.filter((r) => r.occurredAt >= from && r.occurredAt < to) };
+    const { items } = await new ListLearnerWork(deps({ learningEvidence: repo, learners: () => [{ id: 'kid-a', name: 'Kid A' }] }))
+      .execute({ from: FROM, to: TO });
+    expect(items.filter((i) => i.kind === 'course').map((i) => i.at)).toEqual(['2026-11-23T07:30:00Z', '2026-11-23T11:59:00Z']);
+
+    const far = [pianoRow('kid-a', 'plex:4', '2026-11-23T15:59:00Z')]; // 03:59 on the 23rd in UTC-12
+    const farRepo = { listEvidence: ({ from, to }) => far.filter((r) => r.occurredAt >= from && r.occurredAt < to) };
+    const farDayOf = (iso) => studyDayForInstant(Date.parse(iso), { timezone: 'Etc/GMT+12' });
+    const farWork = await new ListLearnerWork(deps({ learningEvidence: farRepo, dayOf: farDayOf, learners: () => [{ id: 'kid-a' }] }))
+      .execute({ from: FROM, to: TO });
+    expect(farWork.items.filter((i) => i.kind === 'course').map((i) => i.studyDay)).toEqual(['2026-11-22']);
+  });
+
+  it('reads sentence ladder shards from the day before from through the day after to', async () => {
+    // Evening of the last study day (the 22nd) lands in UTC shard 2026-11-23;
+    // a far-west zone's first study day starts in shard 2026-11-16 and a
+    // far-east zone's in 2026-11-15.
+    const days = {
+      '2026-11-23': [{ at: '2026-11-23T07:30:00Z', seq: 1 }, { at: '2026-11-23T11:59:00Z', seq: 2 }, { at: '2026-11-23T12:01:00Z', seq: 3 }],
+    };
+    const reads = [];
+    const store = {
+      listCorpusIds: () => ['glossika-korean'],
+      readCorpus: () => ({ label: 'Glossika Korean' }),
+      readEventDay: (u, c, day) => { reads.push(day); return days[day] ?? []; },
+    };
+    const { items } = await new ListLearnerWork(deps({ languageStudy: store, learningEvidence: null, learners: () => [{ id: 'kid-a' }] }))
+      .execute({ from: FROM, to: TO });
+    expect(items).toMatchObject([{ studyDay: '2026-11-22', subtitle: '2 sentences', at: '2026-11-23T11:59:00Z' }]);
+    expect(reads[0]).toBe('2026-11-15');
+    expect(reads.at(-1)).toBe('2026-11-24');
+    expect(reads).toHaveLength(10);
   });
 
   it('looks each piano course title up once per call', async () => {
@@ -328,8 +370,8 @@ describe('ListLearnerWork — piano lessons and the sentence ladder', () => {
     expect(of(items, 'kid-b', 'program')).toMatchObject([{ studyDay: '2026-11-21', subtitle: '1 sentence' }]);
     const aDays = reads.filter((r) => r.startsWith('kid-a/glossika-korean/')).map((r) => r.split('/')[2]);
     expect(aDays[0]).toBe('2026-11-15');
-    expect(aDays.at(-1)).toBe('2026-11-23');
-    expect(aDays).toHaveLength(9);
+    expect(aDays.at(-1)).toBe('2026-11-24');
+    expect(aDays).toHaveLength(10);
     // Labels are read once per call, and only for corpora someone worked.
     expect(corpusReads).toEqual(['glossika-korean']);
     expect(JSON.stringify(items)).not.toContain('0.87654');

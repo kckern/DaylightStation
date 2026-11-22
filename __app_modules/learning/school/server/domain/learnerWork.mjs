@@ -239,7 +239,15 @@ const studyDayOf = (dayOf, iso) => {
   if (typeof iso !== 'string' || !iso) return null;
   return (typeof dayOf === 'function' ? dayOf(iso) : utcDate(iso)) ?? null;
 };
-const PLEX_ID = /^plex:(\d+)$/;
+// Older evidence rows carry a doubled prefix ('plex:plex:694771').
+const PLEX_ID = /^(?:plex:)+(\d+)$/;
+
+/** A piano course id in one form: 'plex:plex:12' → 'plex:12'; anything else as given. */
+export function pianoCourseKey(courseId) {
+  if (typeof courseId !== 'string' || !courseId) return null;
+  const ratingKey = PLEX_ID.exec(courseId)?.[1];
+  return ratingKey ? `plex:${ratingKey}` : courseId;
+}
 
 /** 'Lesson 50 | Jingle Bells' → 'Lesson 50 · Jingle Bells'. */
 function lessonSubtitle(title) {
@@ -268,7 +276,7 @@ export function pianoLessonsToWork(evidence, {
     const key = row.evidenceId ?? `${row.learning?.lessonId}|${row.occurredAt}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    const courseId = typeof row.learning?.courseId === 'string' ? row.learning.courseId : null;
+    const courseId = pianoCourseKey(row.learning?.courseId);
     const lessonId = row.learning?.lessonId ?? row.activity?.itemId ?? null;
     const ratingKey = courseId ? PLEX_ID.exec(courseId)?.[1] ?? null : null;
     const courseTitle = courseId && courseTitleFor ? courseTitleFor(courseId) : null;

@@ -90,9 +90,18 @@ costs that learner that source only (`school.learner-work.source-failed`).
 
 Piano lessons and the sentence ladder are assigned to the household study
 day (household timezone, 4am boundary) of their instant, not the UTC date.
-Evidence is queried a UTC day wider on each side of the window, and the
+The window `[from, to)` holds study days `from` .. `to - 1`, and study day D
+runs from 04:00 local on D to 04:00 local on D+1, so evening work on the last
+study day has a UTC instant on `to` (16:00Z at most, in UTC-12). Evidence is
+therefore queried over `[from - 1 day 00:00Z, to + 2 days 00:00Z)`, and the
 sentence ladder's log shards, which are named by the UTC date of each event,
-are read from the day before `from` through `to`. From the sitting log only
+are read for `from - 1` through `to + 1`, both inclusive; each read has a day
+of margin, and the projection keeps only events whose study day is in the
+window. Course ids are normalised (`plex:plex:<id>`, from older evidence,
+reads as `plex:<id>`). Course titles come from Plex (a season is named by
+its show), cached for the process for 6 hours (at most 200 courses) and
+bounded at 2.5 s per request; a timeout or failure reads "Piano" and is
+retried on the next load. From the sitting log only
 `title` is read; its score, percent and outcome never reach an item. The
 sentence ladder counts sentences only; accuracy, what was heard and what was
 typed are never read. Corpus labels come from the language-study service's
