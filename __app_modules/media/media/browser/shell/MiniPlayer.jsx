@@ -110,7 +110,9 @@ export function MiniPlayer() {
   }
 
   const isPlaying = PLAYING_STATES.has(snapshot.state);
-  const toggleLabel = isPlaying ? 'Pause' : item ? 'Resume' : 'Play';
+  const queuePos = snapshot.queue?.currentIndex ?? -1;
+  const endedItemCanReplay = snapshot.state === 'ended' && !!item && !!queueItems[queuePos];
+  const toggleLabel = isPlaying ? 'Pause' : endedItemCanReplay ? 'Play again' : item ? 'Resume' : 'Play';
   // The handle names what is there: the item, and in words what it is doing —
   // "Ready to play", "Paused", "Playing on <this browser>". Never a bare count.
   const shownTitle = presentTitle(displayItem) ?? displayItem.contentId;
@@ -118,7 +120,6 @@ export function MiniPlayer() {
     hasItem: !!item,
     where: displayDeviceName(identity?.displayName ?? identity?.name ?? null, { fallback: 'this device' }),
   });
-  const queuePos = snapshot.queue?.currentIndex ?? -1;
   const repeat = snapshot.config?.repeat ?? 'off';
   const hasNext = queuePos >= 0
     && (queuePos < queueCount - 1 || (repeat === 'all' && queueCount > 1));

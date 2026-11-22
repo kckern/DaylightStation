@@ -8,6 +8,7 @@ export function playbackStateLabel(state) {
   switch (state) {
     case 'playing': return 'Playing';
     case 'paused': return 'Paused';
+    case 'ended': return 'Finished';
     case 'loading': return 'Starting…';
     case 'buffering': return 'Buffering…';
     case 'stalled': return 'Having trouble streaming — hang on';
@@ -29,6 +30,7 @@ export function handleStateLabel(state, { hasItem = false, where = 'this device'
     case 'playing':
     case 'buffering': return `Playing on ${where}`;
     case 'paused': return 'Paused';
+    case 'ended': return 'Finished';
     case 'loading': return 'Starting…';
     case 'stalled': return 'Having trouble streaming';
     case 'error': return 'Something went wrong';
@@ -50,6 +52,7 @@ export function deviceStateLabel(state, { offline = false } = {}) {
     case 'uncertain': return 'Uncertain';
     case 'playing': return 'Playing';
     case 'paused': return 'Paused';
+    case 'ended': return 'Finished';
     case 'loading': return 'Starting…';
     case 'buffering': return 'Buffering…';
     case 'stalled': return 'Having trouble streaming';
@@ -68,6 +71,7 @@ export function remoteStatusLine(state, title) {
   switch (state) {
     case 'playing': return `Playing ${name}`;
     case 'paused': return `Paused — ${name}`;
+    case 'ended': return `Finished — ${name}`;
     case 'loading': return `Starting ${name}…`;
     case 'buffering': return `Buffering ${name}…`;
     case 'stalled': return `Having trouble streaming ${name}`;
