@@ -180,7 +180,7 @@ export function PeekPanel({ deviceId }) {
         availability={availability}
       />
 
-      <ActiveQualityButton target={{ deviceId }} targetLabel={deviceName(device, deviceId)} />
+      {availability.available && <ActiveQualityButton target={{ deviceId }} targetLabel={deviceName(device, deviceId)} />}
       <SessionControlsPanel target={{ deviceId }} targetName={deviceName(device, deviceId)} />
       {availability.available && <LineUpOffer target={{ deviceId }} targetName={deviceName(device, deviceId)} />}
 
