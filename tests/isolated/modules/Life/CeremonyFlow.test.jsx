@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { act, render, screen, waitFor, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { MantineProvider } from '@mantine/core';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
@@ -131,6 +131,35 @@ describe('CeremonyFlow submit errors', () => {
     });
     expect(screen.queryByText(/Couldn't save your responses/)).toBeNull();
   });
+
+  it('locks answers and step navigation while Complete is pending, then restores the draft on refusal', async () => {
+    fetch.mockResolvedValueOnce(jsonResponse(200, {
+      type: 'phase_review', periodId: '2026-P1', plan: { purpose: { statement: 'Build a good life' } },
+    }));
+    renderFlow({ type: 'phase_review' });
+    await waitFor(() => expect(screen.getByText('Phase Overview')).toBeInTheDocument());
+    advanceToLastStep();
+
+    const adjustments = screen.getByRole('textbox', { name: 'Phase Adjustments' });
+    fireEvent.change(adjustments, { target: { value: 'Run on Monday' } });
+    let refuse;
+    fetch.mockReturnValueOnce(new Promise(resolve => { refuse = resolve; }));
+    fireEvent.click(screen.getByRole('button', { name: /Complete/ }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+
+    expect(adjustments).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
+    const submitted = fetch.mock.calls.find(([url, init]) => url.includes('/complete') && init.method === 'POST');
+    expect(JSON.parse(submitted[1].body)).toEqual({ adjustments: 'Run on Monday' });
+
+    await act(async () => refuse(jsonResponse(500, { error: 'disk full' })));
+    await waitFor(() => expect(screen.getByText(/Couldn't save your responses/)).toBeInTheDocument());
+    expect(adjustments).not.toBeDisabled();
+    expect(adjustments).toHaveValue('Run on Monday');
+    fireEvent.change(adjustments, { target: { value: 'Run on Tuesday' } });
+    expect(adjustments).toHaveValue('Run on Tuesday');
+    expect(screen.getByRole('button', { name: 'Back' })).not.toBeDisabled();
+  });
 });
 
 describe('UnitCapture morning-intention echo', () => {
@@ -201,8 +230,8 @@ describe('CeremonyFlow unimplemented types', () => {
     await waitFor(() => {
       expect(screen.getByText(/This ceremony is coming soon/)).toBeInTheDocument();
     });
-    advanceToLastStep();
 
+    expect(screen.queryByRole('button', { name: /Next/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Complete/ })).toBeNull();
     expect(screen.getByText(/completing it is disabled so it stays on your schedule/)).toBeInTheDocument();
   });

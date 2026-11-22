@@ -116,18 +116,20 @@ export function CeremonyFlow({ type, username, onComplete }) {
       )}
 
       <Paper p="md" withBorder>
-        {CeremonyComponent ? (
-          <CeremonyComponent
-            step={step}
-            content={content}
-            responses={ceremony.responses}
-            setResponse={ceremony.setResponse}
-          />
-        ) : (
-          <Text c="dimmed">
-            This ceremony is coming soon — completing it is disabled so it stays on your schedule.
-          </Text>
-        )}
+        <fieldset disabled={submitting} style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}>
+          {CeremonyComponent ? (
+            <CeremonyComponent
+              step={step}
+              content={content}
+              responses={ceremony.responses}
+              setResponse={ceremony.setResponse}
+            />
+          ) : (
+            <Text c="dimmed">
+              This ceremony is coming soon — completing it is disabled so it stays on your schedule.
+            </Text>
+          )}
+        </fieldset>
       </Paper>
 
       {/* Submit failures stay inline so the form (and the user's typed
@@ -144,7 +146,7 @@ export function CeremonyFlow({ type, username, onComplete }) {
             variant="subtle"
             leftSection={<IconArrowLeft size={16} />}
             onClick={prevStep}
-            disabled={step === 0}
+            disabled={step === 0 || submitting}
           >
             Back
           </Button>
@@ -161,6 +163,7 @@ export function CeremonyFlow({ type, username, onComplete }) {
             <Button
               rightSection={<IconArrowRight size={16} />}
               onClick={nextStep}
+              disabled={submitting}
             >
               Next
             </Button>
