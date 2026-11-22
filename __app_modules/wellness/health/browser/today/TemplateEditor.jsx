@@ -3,6 +3,7 @@ import { Button, Group, NumberInput, Stack, Text, TextInput, SegmentedControl } 
 import { SubmitButton, useSheetSubmission } from '@/lib/ui';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { scaleFoodPortion, NUTRIENT_KEYS } from "../../portable/contracts/health/foodQuantity.mjs";
+import { isValidTemplateComponent } from "../../portable/contracts/health/mealTemplate.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 
 const logger = createAppLogger('health').child('template-editor');
@@ -12,7 +13,7 @@ export function TemplateEditor({ template, onCommitted, onClose, onCancel }) {
   const { run, saving: busy, failure: error } = useSheetSubmission(onClose, error => {
     logger.warn('template.save_failed', { id: template.id, error: error.message });
   });
-  const valid = Boolean(draft.name.trim() && draft.components.length);
+  const valid = Boolean(draft.name.trim() && draft.components.length && draft.components.every(isValidTemplateComponent));
   const update = (index, changes) => setDraft(previous => ({ ...previous,
     components: previous.components.map((component, i) => i === index ? { ...component, ...changes } : component) }));
   const save = () => run(async () => {

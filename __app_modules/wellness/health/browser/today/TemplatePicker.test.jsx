@@ -49,6 +49,28 @@ describe('TemplatePicker', () => {
     expect(screen.getByText('3 items · 260 kcal')).toBeTruthy();
   });
 
+  it('requires names for every edited component but still allows unknown grams', async () => {
+    r(<TemplatePicker open onClose={() => {}} onLogged={() => {}} bucketId="morning" />);
+    await waitFor(() => expect(screen.getByText('Protein breakfast')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Protein breakfast' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add component' }));
+
+    const save = screen.getByRole('button', { name: 'Save meal' });
+    const name = screen.getByRole('textbox', { name: 'Component 3 name' });
+    expect(save.disabled).toBe(true);
+    fireEvent.change(name, { target: { value: '  ' } });
+    expect(save.disabled).toBe(true);
+    expect(apiMock.mock.calls.filter(([, , method]) => method === 'PUT')).toHaveLength(0);
+
+    fireEvent.change(name, { target: { value: 'Milk' } });
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
+    await waitFor(() => expect(apiMock.mock.calls.some(([, , method]) => method === 'PUT')).toBe(true));
+    const update = apiMock.mock.calls.find(([, , method]) => method === 'PUT');
+    expect(update[0]).toBe('api/v1/health/nutrition/templates/t2');
+    expect(update[1].components.at(-1)).toMatchObject({ name: 'Milk', grams: '' });
+  });
+
   it('asks for proposals in the same request, and shows them above the templates', async () => {
     respondWith([PROPOSAL, SMOOTHIE]);
     r(<TemplatePicker open onClose={() => {}} onLogged={() => {}} bucketId="morning" />);

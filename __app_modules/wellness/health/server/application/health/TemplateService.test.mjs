@@ -64,6 +64,21 @@ describe('TemplateService.create', () => {
   });
 });
 
+describe('TemplateService.update', () => {
+  it('shares component name and optional-weight validation with the editor', async () => {
+    const template = await svc.create({ name: 'Breakfast', components: [{ name: 'Oats', grams: 50 }] }, 'u');
+    const unnamed = [{ name: '  ', grams: '' }];
+
+    await expect(svc.update(template.id, 'u', { name: 'Breakfast', components: unnamed }))
+      .rejects.toMatchObject({ code: 'TEMPLATE_INVALID' });
+
+    const updated = await svc.update(template.id, 'u', {
+      name: 'Breakfast', components: [{ name: 'Milk', grams: '' }],
+    });
+    expect(updated.components[0]).toMatchObject({ name: 'Milk', grams: null });
+  });
+});
+
 describe('TemplateService.instantiate', () => {
   it('writes ONE group row plus the core children, and the group row carries ZERO nutrition', async () => {
     const t = await svc.create(SMOOTHIE, 'u');

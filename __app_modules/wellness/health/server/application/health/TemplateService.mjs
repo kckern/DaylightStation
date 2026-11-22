@@ -21,6 +21,7 @@
 
 import { formatLocalTimestamp } from '#system/utils/time.mjs';
 import { defaultBucketForDate, localDateISO } from '../../../portable/contracts/health/isoDate.mjs';
+import { isValidTemplateComponent } from '../../../portable/contracts/health/mealTemplate.mjs';
 import { foodGrams, MICRO_KEYS, NUTRIENT_KEYS } from '../../../portable/contracts/health/foodQuantity.mjs';
 import { bucketForHour } from '../../../portable/contracts/health/mealBuckets.mjs';
 import { hasMicroData, pickMicros } from "../../domain/nutrition/services/micros.mjs";
@@ -226,7 +227,7 @@ export class TemplateService {
     const existing = await this.#templateStore.getById(id, userId);
     if (!existing) throw coded('Template not found', 'TEMPLATE_NOT_FOUND');
     if (typeof name !== 'string' || !name.trim() || !Array.isArray(components) || !components.length) throw coded('Name and components required', 'TEMPLATE_INVALID');
-    if (components.some(component => !component.name?.trim() || (component.grams != null && component.grams !== '' && !(Number(component.grams) > 0)))) throw coded('Each component needs a name and a positive or unknown gram weight', 'TEMPLATE_INVALID');
+    if (!components.every(isValidTemplateComponent)) throw coded('Each component needs a name and a positive or unknown gram weight', 'TEMPLATE_INVALID');
     if (components.some(component => NUTRIENT_KEYS.some(key => component[key] != null &&
       (typeof component[key] !== 'number' || !Number.isFinite(component[key]) || component[key] < 0)))) {
       throw coded('Nutrition values must be non-negative numbers or unknown', 'TEMPLATE_INVALID');
