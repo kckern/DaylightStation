@@ -18,7 +18,7 @@ export function LogDayDetail({ date, username, categories }) {
   return (
     <LogReadRegion read={read}>
       <LifePage title={formatDate(date)}>
-        <LogTimeline summaries={read.summaries} />
+        <LogTimeline summaries={read.summaries} sources={read.sources} />
       </LifePage>
     </LogReadRegion>
   );
