@@ -1017,7 +1017,9 @@ title index every 10 minutes.
 - **Verdicts** — `PUT /:rk/review/:rowId` takes `verdict` (`approve` default, `remove`, `ignore`, `redo` + optional
   `reason` edges|category|action|timing|other), `change: {from, to}` (an in-place action change the client already
   applied) and `dwellMs`/`replays`. `remove` disables the cue/scene; `DELETE` is undo and reverts what the verdict
-  applied (re-enable, restore `from`). Every verdict and undo appends to `household/content-filter/review-history/<rk>.yml`
+  applied (re-enable, restore `from`). The review station keeps an undo target available when `DELETE` fails, and
+  consumes it only after a successful delete or after re-audit confirms that row is already gone. Every verdict and
+  undo appends to `household/content-filter/review-history/<rk>.yml`
   (append-only, via the repository) and logs `content_filter.review.verdict.recorded`. A moved span drops the verdict.
 
 #### The review page (2026-11-21, design "cf-journey")

@@ -174,6 +174,27 @@ describe('review station keys', () => {
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0].method).toBe('DELETE');
   });
+  it('a failed undo keeps the same row at the top so retry does not undo the previous verdict', async () => {
+    show();
+    press('a');
+    await waitFor(() => expect(selected()).toBe('cue:w2'));
+    press('a');
+    await waitFor(() => expect(verdictLogs()).toHaveLength(2));
+
+    failNext = (path, method) => path.includes('/review/') && method === 'DELETE';
+    press('u');
+    await waitFor(() => expect(log.warn).toHaveBeenCalledWith('content_filter.review.action_failed', expect.objectContaining({ rk: '77', key: 'undo', error: 'nope' })));
+    const failedUndo = reviewCalls().at(-1);
+    expect(failedUndo).toEqual({ path: 'api/v1/content-filter/77/review/cue%3Aw2', body: {}, method: 'DELETE' });
+
+    failNext = null;
+    press('u');
+    await waitFor(() => expect(reviewCalls()).toHaveLength(4));
+    expect(reviewCalls().at(-1)).toEqual(failedUndo);
+    press('u');
+    await waitFor(() => expect(reviewCalls()).toHaveLength(5));
+    expect(reviewCalls().at(-1)).toEqual({ path: 'api/v1/content-filter/77/review/cue%3Aw1', body: {}, method: 'DELETE' });
+  });
   it('undo is withdrawn once a removed row is gone after the re-audit', async () => {
     show(); press('x');
     await waitFor(() => expect(selected()).toBe('cue:w2'));

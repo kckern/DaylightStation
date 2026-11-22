@@ -186,13 +186,14 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     if (latest.current.running) { setMessage('Undo waits until the refine finishes.'); return; }
     const last = undoStack[undoStack.length - 1];
     if (!last) { setMessage('Nothing to undo.'); return; }
-    setUndoStack((s) => s.slice(0, -1));
     const target = latest.current.rows?.find((r) => r.id === last.rowId);
     // A remove is terminal once the re-audit lands: the row is gone and so is its verdict.
-    if (!target) { setMessage('That part is already gone; it cannot be undone.'); return; }
+    // Keep a live target on the stack until its DELETE succeeds so an offline/transient failure can retry it.
+    if (!target) { setUndoStack((s) => s.slice(0, -1)); setMessage('That part is already gone; it cannot be undone.'); return; }
     await DaylightAPI(`${API}/${encodeURIComponent(rk)}/review/${encodeURIComponent(last.rowId)}`, {}, 'DELETE');
     logger.info('content_filter.review.undo', { rk, rowId: last.rowId, undid: last.verdict });
     if (!activeView.current) return;
+    setUndoStack((s) => s.slice(0, -1));
     reload();
     go(target, 'key');
   });
