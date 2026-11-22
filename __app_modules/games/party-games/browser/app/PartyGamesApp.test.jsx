@@ -493,7 +493,7 @@ it('seats list item participants and sends their clue modes as a Charades presen
  const Logger=await import('@/lib/logging/Logger.js');
  const real=Logger.default();
  vi.spyOn(Logger,'default').mockReturnValue({...real,child:()=>({...real.child({}),info})});
- render(<React.StrictMode><AppContainer open={{app:'party-games/charades:family',params:{autostart:true,participants:['b','a'],clue_modes:{a:'reader',ghost:'image'}}}} clear={()=>{}}/></React.StrictMode>);
+ render(<React.StrictMode><AppContainer open={{app:'party-games/charades:family',params:{autostart:true,participants:['b','a'],clue_modes:{a:'reader',ghost:'image',b:'video'}}}} clear={()=>{}}/></React.StrictMode>);
  await screen.findByRole('button',{name:'Complete session-one'});
  expect(screen.queryByTestId('team-setup')).toBeNull();
  expect(createSession).toHaveBeenCalledTimes(1);
@@ -515,6 +515,23 @@ it('resumes a saved session seated from item participants that differ from the c
  const catalog=[{...sets[0],launch:{autostart:true,participants:['a']}}];
  fetchBoot.mockResolvedValueOnce({config,sets:catalog,attachedSession:{header:{session_id:'saved',experience:{id:'charades'},participants:[{id:'b'},{id:'a'}],seats:[{id:'b',members:[config.household_members[1]]},{id:'a',members:[config.household_members[0]]}]},state:{competition:false}}}).mockResolvedValue({config,sets:catalog});
  render(<PartyGamesApp definitionId="charades:family" params={{autostart:true,participants:['b','a']}}/>);
+ await screen.findByRole('button',{name:'Complete saved'});
+ expect(createSession).not.toHaveBeenCalled();expect(fetchBoot).toHaveBeenCalledTimes(1);
+});
+it('logs the effective launch when the URL query overrides item params',async()=>{
+ const info=vi.fn();
+ const Logger=await import('@/lib/logging/Logger.js');
+ const real=Logger.default();
+ vi.spyOn(Logger,'default').mockReturnValue({...real,child:()=>({...real.child({}),info})});
+ render(<PartyGamesApp definitionId="charades:family?autostart=false" params={{autostart:true,participants:['a','b']}}/>);
+ await screen.findByTestId('team-setup');
+ expect(info).toHaveBeenCalledWith('party-games.item-params-applied',{definitionId:'charades:family',autostart:false,participantCount:2,clueModeCount:0});
+});
+it('resumes a saved session whose roster differs from the catalog when the URL turns autostart off',async()=>{
+ window.localStorage.setItem('party-games:charades:family:active-session','saved');
+ const catalog=[{...sets[0],launch:{autostart:true,participants:['a']}}];
+ fetchBoot.mockResolvedValueOnce({config,sets:catalog,attachedSession:{header:{session_id:'saved',experience:{id:'charades'},participants:[{id:'b'}],seats:[{id:'b',members:[config.household_members[1]]}]},state:{competition:false}}}).mockResolvedValue({config,sets:catalog});
+ render(<PartyGamesApp definitionId="charades:family?autostart=false"/>);
  await screen.findByRole('button',{name:'Complete saved'});
  expect(createSession).not.toHaveBeenCalled();expect(fetchBoot).toHaveBeenCalledTimes(1);
 });

@@ -13,7 +13,7 @@ import { useBuzzers } from "../interaction/useBuzzers.js";
 import TitleCard from "../../../../../__capabilities/gaming/browser/platform/ui/TitleCard.jsx";
 import PartyGamesResults from "../ui/PartyGamesResults.jsx";
 import { EXPERIENCE_REGISTRY } from "./experienceRegistry.js";
-import { launchFromParams, presentationFor, seatedParticipantIds } from "./itemParams.js";
+import { launchFromParams, presentationFor, seatedParticipantIds, validClueModes } from "./itemParams.js";
 import "./PartyGamesApp.scss";
 import { useScopedRemoteControls } from "../../../../../__capabilities/screen-host/browser/input.mjs";
 import getLogger from '@/lib/logging/Logger.js';
@@ -153,14 +153,14 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     const applied = itemParams.current;
     if (!applied || paramsLogged.current) return;
     paramsLogged.current = true;
-    const item = launchFromParams(applied);
+    // Effective launch values: the URL query may have overridden the item.
     logger.info('party-games.item-params-applied', {
       definitionId: launch.definition,
-      autostart: item.autostart ?? null,
-      participantCount: item.participants?.length ?? 0,
-      clueModeCount: applied.clue_modes && typeof applied.clue_modes === 'object' && !Array.isArray(applied.clue_modes) ? Object.keys(applied.clue_modes).length : 0,
+      autostart: launch.autostart ?? null,
+      participantCount: launch.participants?.length ?? 0,
+      clueModeCount: Object.keys(validClueModes(applied)).length,
     });
-  }, [launch.definition, logger]);
+  }, [launch, logger]);
   const backActionRef = useRef(null);
   const forwardActionRef = useRef(null);
   const registerBackAction = useCallback((handler) => {
@@ -334,8 +334,9 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   // cancel their attachment even if the HTTP response arrives later.
   useEffect(() => {
     if (participantLaunch || sourceAttachment || flow.phase !== 'playing' || flow.sessionId) return;
-    // Item clue modes become a presentation covering exactly the seated ids;
-    // the server rejects one that misses a seat or names an extra id.
+    // Item clue modes become a presentation covering exactly the seated ids
+    // (the server rejects a missed seat or an extra id), or null when no seat
+    // has a mode, so team seats keep the rules.yml presentation.
     const presentation = flow.game === 'charades' ? presentationFor(itemParams.current, seatedParticipantIds(flow.seats)) : null;
     const key = JSON.stringify([flow.definitionId, flow.seats, flow.hostMode, flow.setupProfile, launch.historyPolicy, presentation]);
     if (!creation.current || creation.current.key !== key) {

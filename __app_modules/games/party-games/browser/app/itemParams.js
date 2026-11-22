@@ -22,13 +22,22 @@ export function seatedParticipantIds(seats = []) {
   return seats.map(seat => String(seat.id));
 }
 
-// A `charades-presentation/v1` setup override covering exactly `seatedIds`,
-// or null when the item names no clue modes (rules.yml presentation applies).
-export function presentationFor(params, seatedIds) {
+// Clue modes keyed by id, keeping only the recognised modes.
+export function validClueModes(params) {
   const modes = params?.clue_modes;
-  if (!modes || typeof modes !== 'object' || Array.isArray(modes) || !Object.keys(modes).length) return null;
+  if (!modes || typeof modes !== 'object' || Array.isArray(modes)) return {};
+  return Object.fromEntries(Object.entries(modes).filter(([, mode]) => MODES.includes(mode)));
+}
+
+// A `charades-presentation/v1` setup override covering exactly `seatedIds`,
+// or null so the rules.yml presentation applies. That happens when the item
+// names no valid clue mode for anyone seated, e.g. TeamSetup's team_N seats:
+// an all-text override would replace the authored image/reader presentation.
+export function presentationFor(params, seatedIds) {
+  const modes = validClueModes(params);
+  if (!seatedIds.some(id => Object.hasOwn(modes, id))) return null;
   return {
     schema: 'charades-presentation/v1',
-    by_participant: Object.fromEntries(seatedIds.map(id => [id, MODES.includes(modes[id]) ? modes[id] : 'text'])),
+    by_participant: Object.fromEntries(seatedIds.map(id => [id, modes[id] || 'text'])),
   };
 }
