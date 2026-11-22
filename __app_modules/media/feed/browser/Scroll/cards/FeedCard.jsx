@@ -129,6 +129,7 @@ function HeroImage({ src: rawSrc, thumbnail: rawThumbnail, feedItemId, title }) 
       {/* SVG shimmer placeholder — visible until real image loads */}
       {!loaded && (
         <img
+          draggable={false}
           src={PLACEHOLDER_SVG}
           alt=""
           style={{
@@ -140,6 +141,7 @@ function HeroImage({ src: rawSrc, thumbnail: rawThumbnail, feedItemId, title }) 
       )}
       <img
         ref={imageRef}
+        draggable={false}
         src={imgSrc}
         alt=""
         className="feed-card-image"
@@ -173,6 +175,7 @@ function HeroImage({ src: rawSrc, thumbnail: rawThumbnail, feedItemId, title }) 
 function GalleryHero({ images, feedItemId, title }) {
   const [index, setIndex] = useState(0);
   const dragStartRef = useRef(null);
+  const mouseDraggedRef = useRef(false);
   const galleryRef = useRef(null);
   const refocusGallery = useRef(false);
   const count = images.length;
@@ -213,13 +216,23 @@ function GalleryHero({ images, feedItemId, title }) {
   };
 
   // Mouse drag (desktop)
-  const handleMouseDown = (e) => { dragStartRef.current = e.clientX; };
+  const handleMouseDown = (e) => {
+    mouseDraggedRef.current = false;
+    dragStartRef.current = e.clientX;
+  };
   const handleMouseUp = (e) => {
     if (dragStartRef.current === null) return;
     const dx = e.clientX - dragStartRef.current;
     dragStartRef.current = null;
+    if (Math.abs(dx) > 40) mouseDraggedRef.current = true;
     if (dx < -40) goNext();
     else if (dx > 40) goPrev();
+  };
+  const handleClickCapture = (e) => {
+    if (!mouseDraggedRef.current) return;
+    mouseDraggedRef.current = false;
+    e.preventDefault();
+    e.stopPropagation();
   };
 
   // Keyboard navigation when focused
@@ -252,6 +265,7 @@ function GalleryHero({ images, feedItemId, title }) {
       onTouchEnd={handleTouchEnd}
       onMouseDown={handleMouseDown}
       onMouseUp={handleMouseUp}
+      onClickCapture={handleClickCapture}
       onKeyDown={handleKeyDown}
       tabIndex={0}
       role="region"
