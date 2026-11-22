@@ -115,7 +115,7 @@ export default function FeedDataControls({ onImported }) {
       <div>
         <button type="button" disabled={busy} onClick={exportData}>Export</button>
         <button type="button" disabled={busy} onClick={() => inputRef.current?.click()}>Import</button>
-        <input ref={inputRef} type="file" accept="application/json,.json" onChange={importData} className="feed-visually-hidden" tabIndex={-1} />
+        <input ref={inputRef} type="file" accept="application/json,.json" onChange={importData} hidden />
       </div>
       {status && (
         <div className="feed-data-controls__status" role="status" {...regionProps}>
