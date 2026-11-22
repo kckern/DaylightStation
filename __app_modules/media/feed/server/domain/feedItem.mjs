@@ -114,6 +114,13 @@ export function defaultFeedItemState() {
   };
 }
 
+/** A local state override wins; otherwise retain the read flag stored with history. */
+export function effectiveFeedItemState(item, override = null) {
+  return override
+    ? { ...defaultFeedItemState(), ...override }
+    : { ...defaultFeedItemState(), isRead: item?.isRead === true };
+}
+
 export function applyFeedStateAction(previous, action, now) {
   if (!now) throw new Error('now is required to apply a feed state action');
   const next = { ...defaultFeedItemState(), ...(previous || {}) };

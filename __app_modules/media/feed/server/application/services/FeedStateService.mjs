@@ -1,4 +1,4 @@
-import { applyFeedStateAction, defaultFeedItemState, normalizeFeedItem } from "../../domain/feedItem.mjs";
+import { applyFeedStateAction, defaultFeedItemState, effectiveFeedItemState, normalizeFeedItem } from "../../domain/feedItem.mjs";
 
 const ACTIONS = new Set(['read', 'unread', 'save', 'unsave', 'archive', 'unarchive']);
 const MODES = new Set(['reader', 'headlines', 'scroll', 'search']);
@@ -303,7 +303,7 @@ export class FeedStateService {
       items: result.items.map(item => normalizeFeedItem(item, {
         origin: item.origins?.[0] || 'search',
         nowMs: this.#nowMs(),
-        state: states.get(item.stateKey) || defaultFeedItemState(),
+        state: effectiveFeedItemState(item, states.get(item.stateKey)),
       })),
     };
   }
@@ -312,7 +312,7 @@ export class FeedStateService {
     const item = this.#history.findById(username, id);
     if (!item) return null;
     const state = this.#store.getMany(username, [item.stateKey]).get(item.stateKey);
-    return normalizeFeedItem(item, { origin: item.origins?.[0] || 'history', state: state || defaultFeedItemState(), nowMs: this.#nowMs() });
+    return normalizeFeedItem(item, { origin: item.origins?.[0] || 'history', state: effectiveFeedItemState(item, state), nowMs: this.#nowMs() });
   }
 
   summary(username) {

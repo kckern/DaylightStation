@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { appendTextFile, deleteFile, readDirectory, readTextFromPath } from '#system/utils/FileIO.mjs';
+import { effectiveFeedItemState } from '../../domain/feedItem.mjs';
 import { isPlainMapping } from './isPlainMapping.mjs';
 
 const RETENTION_MONTHS = 12;
@@ -114,7 +115,7 @@ export class JsonlFeedHistoryStore {
     const summary = { unread: 0, readerUnread: 0, saved: 0, archived: 0 };
     for (const stateKey of this.#indexes.get(username)?.documents || []) {
       const doc = this.#docs.get(`${username}:${stateKey}`);
-      const state = states.get(stateKey) || { isRead: !!doc?.isRead, isSaved: false, isArchived: false };
+      const state = effectiveFeedItemState(doc, states.get(stateKey));
       if (!state.isRead && !state.isArchived) {
         summary.unread += 1;
         if (doc?.origins?.includes('reader')) summary.readerUnread += 1;
@@ -139,7 +140,7 @@ export class JsonlFeedHistoryStore {
     for (const stateKey of candidateKeys) {
       const doc = this.#docs.get(`${username}:${stateKey}`);
       if (!doc) continue;
-      const itemState = states.get(doc.stateKey) || {};
+      const itemState = effectiveFeedItemState(doc, states.get(doc.stateKey));
       if (state === 'read' && !itemState.isRead) continue;
       if (state === 'unread' && itemState.isRead) continue;
       if (state === 'saved' && !itemState.isSaved) continue;
