@@ -50,7 +50,9 @@ export class MedicalReadingsService {
       byMetric.get(r.metric).push(r);
     }
     const metrics = [...byMetric.entries()].map(([metric, readings]) => {
-      const sorted = [...readings].sort((a, b) => b.date.localeCompare(a.date));
+      // Same-day entries have no measurement time; the most recently stored
+      // reading is the latest one, so reverse a copy before the stable date sort.
+      const sorted = [...readings].reverse().sort((a, b) => b.date.localeCompare(a.date));
       return { metric, unit: sorted[0].unit, latest: sorted[0], readings: sorted };
     }).sort((a, b) => a.metric.localeCompare(b.metric));
     return { metrics };
