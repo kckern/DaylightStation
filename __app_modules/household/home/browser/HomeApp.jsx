@@ -104,7 +104,10 @@ function HomeView({ view, house }) {
     getFallbackFocusTarget={getFallbackFocusTarget} />;
   else if (view === 'mosaic') body = <MosaicView {...shared} mosaic={mosaic} summary={summary} getFallbackFocusTarget={getFallbackFocusTarget} />;
   else body = <TodayView {...shared} summary={summary} />;
-  return <section aria-label="Home Assistant" {...regionProps}>{body}</section>;
+  return <section aria-label="Home Assistant" {...regionProps}>
+    {hasData && error ? <ErrorState error={error} onRetry={retry} label="Home Assistant" title="Home Assistant could not refresh" /> : null}
+    {body}
+  </section>;
 }
 
 function HomeApp() {
