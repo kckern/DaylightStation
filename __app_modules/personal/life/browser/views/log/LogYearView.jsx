@@ -3,6 +3,7 @@ import { useLogActivity } from './shared/useLogActivity.js';
 import { ActivityHeatmap } from "./shared/ActivityHeatmap.jsx";
 import { LifePage } from "../../components/index.js";
 import { LogReadRegion } from './shared/LogReadRegion.jsx';
+import { summarizeActivityDays } from './shared/summarizeActivityDays.js';
 
 /**
  * Year view with full-year heatmap and quarterly summary cards.
@@ -21,12 +22,8 @@ export function LogYearView({ username, at, categories }) {
     const q = Math.ceil(month / 3);
     const year = date.slice(0, 4);
     const qKey = `${year} Q${q}`;
-    if (!quarters[qKey]) quarters[qKey] = { days: 0, sources: new Set(), activeDays: 0 };
-    const qr = quarters[qKey];
-    qr.days++;
-    const sourceCount = Object.keys(days[date].sources || {}).length;
-    if (sourceCount > 0) qr.activeDays++;
-    Object.keys(days[date].sources || {}).forEach(s => qr.sources.add(s));
+    if (!quarters[qKey]) quarters[qKey] = {};
+    quarters[qKey][date] = days[date];
   }
 
   const qKeys = Object.keys(quarters).sort().reverse();
@@ -37,15 +34,14 @@ export function LogYearView({ username, at, categories }) {
 
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
         {qKeys.map(qKey => {
-          const q = quarters[qKey];
-          const activeRate = q.days > 0 ? Math.round((q.activeDays / q.days) * 100) : 0;
+          const summary = summarizeActivityDays(quarters[qKey]);
           return (
             <Paper key={qKey} p="sm" withBorder>
               <Title order={6} mb="xs">{qKey}</Title>
               <Group gap="xs">
-                <Badge size="sm" variant="light">{q.activeDays}/{q.days} active days</Badge>
-                <Badge size="sm" variant="light" color="green">{activeRate}%</Badge>
-                <Badge size="sm" variant="light" color="blue">{q.sources.size} sources</Badge>
+                <Badge size="sm" variant="light">{summary.activeDayCount}/{summary.dayCount} active days</Badge>
+                <Badge size="sm" variant="light" color="green">{summary.coveragePercent}%</Badge>
+                <Badge size="sm" variant="light" color="blue">{summary.distinctSourceCount} sources</Badge>
               </Group>
             </Paper>
           );
