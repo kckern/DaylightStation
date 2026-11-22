@@ -44,6 +44,10 @@ function decodeFeedItemId(slug) {
   } catch { return null; }
 }
 
+function isLeftwardHorizontalSwipe(dx, dy) {
+  return dx < -10 && Math.abs(dx) > Math.abs(dy);
+}
+
 function ScrollCard({ item, isNew, colors, onDismiss, onPlay, onClick, onFilter, onSourcePreference, sourcePreference, style, itemRef, viewportObserver }) {
   const wrapperRef = useRef(null);
   const touchRef = useRef(null);
@@ -72,7 +76,7 @@ function ScrollCard({ item, isNew, colors, onDismiss, onPlay, onClick, onFilter,
     const dy = touch.clientY - touchRef.current.y;
 
     // Only track leftward horizontal swipes
-    if (dx < -10 && Math.abs(dx) > Math.abs(dy)) {
+    if (isLeftwardHorizontalSwipe(dx, dy)) {
       if (wrapperRef.current) {
         wrapperRef.current.style.transform = `translateX(${dx}px)`;
         wrapperRef.current.style.opacity = Math.max(0, 1 + dx / 300);
@@ -84,10 +88,11 @@ function ScrollCard({ item, isNew, colors, onDismiss, onPlay, onClick, onFilter,
     if (!touchRef.current) return;
     const touch = e.changedTouches[0];
     const dx = touch.clientX - touchRef.current.x;
+    const dy = touch.clientY - touchRef.current.y;
     const elapsed = Date.now() - touchRef.current.time;
     touchRef.current = null;
 
-    if (dx < -100 && elapsed < 600 && onDismiss) {
+    if (isLeftwardHorizontalSwipe(dx, dy) && dx < -100 && elapsed < 600 && onDismiss) {
       // Threshold met — dismiss (only when this card supports dismissal)
       feedLog.dismiss('swipe dismiss', { id: item.id, dx, elapsed });
       onDismiss(item, wrapperRef.current);
