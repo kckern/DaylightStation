@@ -16,6 +16,16 @@ const CONTRACT = [
 const expectContract = (items) => {
   for (const item of items) expect(Object.keys(item).sort()).toEqual(CONTRACT);
 };
+const SENTINEL = { gradedPercent: 87.654, gradedCorrectCount: 7654 };
+const expectNoGraded = (items) => {
+  expect(items.length).toBeGreaterThan(0);
+  for (const item of items) {
+    const values = Object.values(item);
+    expect(values).not.toContain(87.654);
+    expect(values).not.toContain(7654);
+    for (const k of Object.keys(item)) expect(k).not.toMatch(/graded|percent|score|correct|coin|streak|answer/i);
+  }
+};
 
 describe('inWindow', () => {
   it('is from-inclusive and to-exclusive', () => {
@@ -120,6 +130,19 @@ describe('booksToWork', () => {
   it('every item carries exactly the contract keys', () => {
     expectContract(booksToWork([reading({ openedOn: '2026-11-16', finishedOn: '2026-11-20' })], deps));
   });
+
+  it('never copies graded fields from the reading', () => {
+    expectNoGraded(booksToWork([reading({ ...SENTINEL, openedOn: '2026-11-16', finishedOn: '2026-11-20' })], deps));
+  });
+
+  it('falls back to the ISBN for groupKey when the reading has no id', () => {
+    const items = booksToWork([reading({ id: undefined, openedOn: '2026-11-16', finishedOn: '2026-11-20' })], deps);
+    expect(items.map((i) => i.groupKey)).toEqual(['book:111:started', 'book:111:finished']);
+  });
+
+  it('skips a reading with neither id nor ISBN', () => {
+    expect(booksToWork([reading({ id: undefined, book: {}, openedOn: '2026-11-16' })], deps)).toEqual([]);
+  });
 });
 
 describe('sessionsToWork', () => {
@@ -130,8 +153,8 @@ describe('sessionsToWork', () => {
   const deps = { ...BASE, unitSummary: (unitId) => summaries[unitId] ?? null };
   const session = (over) => ({
     sessionId: 's1', learnerId: 'kid-a', unitId: 'u1', state: 'graded', terminal: true,
-    outcome: { result: 'passed', at: '2026-11-17T19:00:00Z' }, gradedPercent: 40,
-    gradedCorrectCount: 2, studyDay: '2026-11-17', updatedAt: '2026-11-17T19:05:00Z',
+    outcome: { result: 'passed', at: '2026-11-17T19:00:00Z' }, ...SENTINEL,
+    studyDay: '2026-11-17', updatedAt: '2026-11-17T19:05:00Z',
     ...over,
   });
 
@@ -182,9 +205,7 @@ describe('sessionsToWork', () => {
     const items = sessionsToWork([session(), session({ unitId: 'u2' }), session({ unitId: 'gone' })], deps);
     expect(items).toHaveLength(3);
     expectContract(items);
-    for (const item of items) {
-      expect(JSON.stringify(item)).not.toMatch(/40|gradedPercent|gradedCorrectCount/);
-    }
+    expectNoGraded(items);
   });
 });
 
@@ -234,6 +255,19 @@ describe('activitiesToWork', () => {
   it('every item carries exactly the contract keys', () => {
     expectContract(activitiesToWork([issuance()], BASE));
   });
+
+  it('never copies graded fields from the issuance', () => {
+    expectNoGraded(activitiesToWork([issuance(SENTINEL)], BASE));
+  });
+
+  it('never leaves the title blank', () => {
+    const [fromKind, bare] = activitiesToWork([
+      issuance({ issuanceId: 'a', title: '', kind: 'maze', level: 3 }),
+      issuance({ issuanceId: 'b', title: null, kind: null, level: null }),
+    ], BASE);
+    expect(fromKind.title).toBe('Maze · level 3');
+    expect(bare.title).toBe('A printed page');
+  });
 });
 
 describe('cardLadderToWork', () => {
@@ -261,9 +295,11 @@ describe('cardLadderToWork', () => {
     expect(item).toMatchObject({ subtitle: '1 word', weight: 1, at: '2026-11-18T12:00:00Z' });
   });
 
-  it('falls back to packageId when there is no title', () => {
+  it('falls back to packageId, then a generic title', () => {
     const [item] = cardLadderToWork([day()], { ...deps, packageTitle: undefined });
     expect(item.title).toBe('korean');
+    const [bare] = cardLadderToWork([day()], { ...deps, packageTitle: undefined, packageId: undefined });
+    expect(bare.title).toBe('Language practice');
   });
 
   it('skips empty days and respects window edges', () => {
@@ -278,5 +314,26 @@ describe('cardLadderToWork', () => {
 
   it('every item carries exactly the contract keys', () => {
     expectContract(cardLadderToWork([day()], deps));
+  });
+});
+
+describe('JSON round trip', () => {
+  it('every projection keeps the full contract key set after JSON', () => {
+    const W = { ...BASE };
+    const items = [
+      ...booksToWork([{ id: 'r', book: {}, status: 'reading', openedOn: '2026-11-16', finishedOn: '2026-11-17' }], { ...W }),
+      ...sessionsToWork([{ sessionId: 's', unitId: 'u', terminal: true, studyDay: '2026-11-17' }], { ...W }),
+      ...activitiesToWork([{ issuanceId: 'i', completedStudyDay: '2026-11-17' }], W),
+      ...cardLadderToWork([{ day: '2026-11-17', items: { a: {} } }], { ...W }),
+      ...booksToWork([{ id: 'r2', book: {}, status: 'reading', openedOn: '2026-11-18' }], { learnerId: undefined, from: BASE.from, to: BASE.to }),
+    ];
+    expect(items).toHaveLength(6);
+    for (const item of items) {
+      const copy = JSON.parse(JSON.stringify(item));
+      expect(Object.keys(copy).sort()).toEqual([...WORK_ITEM_KEYS].sort());
+      expect(typeof copy.title).toBe('string');
+      expect(copy.title.length).toBeGreaterThan(0);
+      expect(Number.isFinite(copy.weight)).toBe(true);
+    }
   });
 });

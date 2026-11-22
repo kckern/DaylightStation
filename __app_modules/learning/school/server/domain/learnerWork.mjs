@@ -28,17 +28,17 @@ export function inWindow(day, from, to) {
 
 function workItem({ learnerId, learnerName }, fields) {
   return {
-    learnerId,
+    learnerId: learnerId ?? null,
     learnerName: learnerName ?? null,
-    kind: fields.kind,
-    verb: fields.verb,
-    title: fields.title,
+    kind: fields.kind ?? null,
+    verb: fields.verb ?? null,
+    title: fields.title ?? null,
     subtitle: fields.subtitle ?? null,
-    at: fields.at,
-    studyDay: fields.studyDay,
+    at: fields.at ?? null,
+    studyDay: fields.studyDay ?? null,
     imageUrl: fields.imageUrl ?? null,
-    groupKey: fields.groupKey,
-    weight: fields.weight,
+    groupKey: fields.groupKey ?? null,
+    weight: Number.isFinite(fields.weight) ? fields.weight : 0,
     subject: fields.subject ?? null,
   };
 }
@@ -67,6 +67,8 @@ export function booksToWork(readings, { learnerId, learnerName, from, to, bookFo
   for (const reading of list(readings)) {
     if (!reading || reading.status === 'unread') continue;
     const isbn = reading.book?.isbn ?? null;
+    const key = reading.id ?? isbn;
+    if (!key) continue;
     const book = isbn && bookFor ? bookFor(isbn) : null;
     const base = {
       kind: 'book',
@@ -82,7 +84,7 @@ export function booksToWork(readings, { learnerId, learnerName, from, to, bookFo
         verb: 'started',
         at: reading.openedRecordedAt ?? noonUtc(reading.openedOn),
         studyDay: reading.openedOn,
-        groupKey: `book:${reading.id}:started`,
+        groupKey: `book:${key}:started`,
       }));
     }
     const finish = finishInWindow(reading, from, to);
@@ -92,7 +94,7 @@ export function booksToWork(readings, { learnerId, learnerName, from, to, bookFo
         verb: 'finished',
         at: finish.at,
         studyDay: finish.studyDay,
-        groupKey: `book:${reading.id}:finished`,
+        groupKey: `book:${key}:finished`,
       }));
     }
   }
@@ -135,7 +137,7 @@ export function activitiesToWork(issuances, { learnerId, learnerName, from, to }
     .map((i) => workItem(who, {
       kind: 'activity',
       verb: 'completed',
-      title: i.title,
+      title: i.title || activitySubtitle(i) || 'A printed page',
       subtitle: activitySubtitle(i),
       at: i.completedAt,
       studyDay: i.completedStudyDay,
@@ -156,7 +158,7 @@ export function cardLadderToWork(days, { learnerId, learnerName, from, to, packa
     items.push(workItem(who, {
       kind: 'program',
       verb: 'worked',
-      title: packageTitle ?? packageId,
+      title: packageTitle ?? packageId ?? 'Language practice',
       subtitle: n === 1 ? '1 word' : `${n} words`,
       at: file.doneAt ?? noonUtc(file.day),
       studyDay: file.day,
