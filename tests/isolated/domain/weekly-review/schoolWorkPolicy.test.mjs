@@ -137,6 +137,20 @@ describe('curateSchoolWork', () => {
     expect(school.map(i => i.learnerId)).toEqual(['kid-b', 'kid-a']);
   });
 
+  it('never merges a shared groupKey across children', () => {
+    const result = curateSchoolWork([
+      item({ learnerId: 'kid-a', groupKey: 'course:shared', studyDay: '2026-03-23', weight: 1 }),
+      item({ learnerId: 'kid-a', groupKey: 'course:shared', studyDay: '2026-03-24', weight: 2 }),
+      item({ learnerId: 'kid-b', groupKey: 'course:shared', studyDay: '2026-03-25', weight: 2 }),
+      item({ learnerId: 'kid-b', groupKey: 'course:shared', studyDay: '2026-03-26', weight: 1 }),
+    ], DATES);
+    const school = Object.values(result).flatMap(day => day.school);
+    expect(school.map(i => [i.learnerId, i.studyDay, i.weight, i.subtitle])).toEqual([
+      ['kid-a', '2026-03-24', 3, '2 sessions this week'],
+      ['kid-b', '2026-03-25', 3, '2 sessions this week'],
+    ]);
+  });
+
   it('does not mutate its inputs', () => {
     const items = deepFreeze([
       item({ studyDay: '2026-03-23', weight: 1 }),

@@ -3,7 +3,7 @@
  *
  * School hands over a flat list of WorkItems for the review window; this pure
  * policy places them on days. `schoolAll` keeps every item; `school` is the
- * curated reel: one item per groupKey for the week (on its heaviest day), and
+ * curated reel: one item per learner and groupKey for the week (on its heaviest day), and
  * at most one item per child per day.
  *
  * Kids watch the review, so items never carry scores and nothing here adds any.
@@ -50,19 +50,21 @@ function weightOf(item) {
 }
 
 /**
- * Collapse items sharing a groupKey into one. The kept item comes from the
+ * Collapse items sharing a learner and groupKey into one. Siblings can share
+ * a groupKey (a family course), so groups never span learners. The kept item comes from the
  * day with the highest summed weight (tie: latest day), and within that day
  * the heaviest item (tie: latest `at`). Its weight becomes the group total;
  * course and program groups of more than one item get a count suffix.
  *
  * @param {WorkItem[]} items
- * @returns {WorkItem[]} new objects, one per groupKey
+ * @returns {WorkItem[]} new objects, one per learner and groupKey
  */
 export function dedupeWorkItems(items) {
   const groups = new Map();
   for (const item of items) {
-    if (!groups.has(item.groupKey)) groups.set(item.groupKey, []);
-    groups.get(item.groupKey).push(item);
+    const key = `${item.learnerId}\u0000${item.groupKey}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
   }
 
   return [...groups.values()].map(group => {
