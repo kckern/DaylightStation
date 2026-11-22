@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Stack, Text, ScrollArea } from '@mantine/core';
+import { startOfCalendarWeek } from '@/lib/calendarDay.js';
 import { getHeatColor } from "./heatColor.js";
 
 const CELL_SIZE = 12;
@@ -14,8 +15,9 @@ const DAYS_IN_WEEK = 7;
  * @param {Function} [props.countFn] - custom count per day, defaults to source count
  * @param {string} [props.startDate] - inclusive range start, when days are filtered
  * @param {string} [props.endDate] - inclusive range end, when days are filtered
+ * @param {number} [props.weekStartsOn=0] - calendar week start, Sunday (0) through Saturday (6)
  */
-export function ActivityHeatmap({ days = {}, countFn, startDate, endDate }) {
+export function ActivityHeatmap({ days = {}, countFn, startDate, endDate, weekStartsOn = 0 }) {
   const { cells, maxCount, weeks } = useMemo(() => {
     const dates = Object.keys(days).sort();
     const rangeStart = startDate || dates[0];
@@ -33,9 +35,7 @@ export function ActivityHeatmap({ days = {}, countFn, startDate, endDate }) {
     const start = new Date(rangeStart);
     const end = new Date(rangeEnd);
 
-    // Align to start of week (Sunday)
-    const alignedStart = new Date(start);
-    alignedStart.setUTCDate(alignedStart.getUTCDate() - alignedStart.getUTCDay());
+    const alignedStart = new Date(startOfCalendarWeek(rangeStart, weekStartsOn));
 
     const result = [];
     let current = new Date(alignedStart);
@@ -50,7 +50,7 @@ export function ActivityHeatmap({ days = {}, countFn, startDate, endDate }) {
     }
 
     return { cells: result, maxCount: max, weeks: Math.ceil(result.length / 7) };
-  }, [days, countFn, startDate, endDate]);
+  }, [days, countFn, startDate, endDate, weekStartsOn]);
 
   if (cells.length === 0) {
     return <Text size="sm" c="dimmed">No activity data</Text>;

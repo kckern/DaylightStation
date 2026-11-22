@@ -6,7 +6,7 @@ import { LogReadRegion } from './shared/LogReadRegion.jsx';
 import { formatLogRangeTitle } from './shared/formatLogRangeTitle.js';
 import { summarizeActivityDays } from './shared/summarizeActivityDays.js';
 import { formatDate } from "../../lib/format.js";
-import { addCalendarDays } from '@/lib/calendarDay.js';
+import { startOfCalendarWeek } from '@/lib/calendarDay.js';
 
 /**
  * Month view with heatmap and weekly summary rows.
@@ -21,9 +21,7 @@ export function LogMonthView({ username, at, categories }) {
   // Group by week (ISO week)
   const weeks = {};
   for (const date of dates) {
-    const dayOfWeek = new Date(`${date}T00:00:00Z`).getUTCDay();
-    const weekStartOffset = (dayOfWeek + 6) % 7;
-    const weekKey = addCalendarDays(date, -weekStartOffset);
+    const weekKey = startOfCalendarWeek(date, 1);
     if (!weeks[weekKey]) weeks[weekKey] = {};
     weeks[weekKey][date] = days[date];
   }
@@ -32,7 +30,7 @@ export function LogMonthView({ username, at, categories }) {
 
   const content = (
     <LifePage title={formatLogRangeTitle('Month', read)}>
-      <ActivityHeatmap days={days} />
+      <ActivityHeatmap days={days} weekStartsOn={1} />
 
       <Stack gap="sm">
         {weekKeys.map(weekKey => {
