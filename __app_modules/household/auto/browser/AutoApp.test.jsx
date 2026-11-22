@@ -82,6 +82,41 @@ it.each([
   expect(screen.queryAllByRole('button', { name: 'Log the fill-up' })).toHaveLength(prompts);
 });
 
+it.each([
+  { description: 'prompts for the next stop after an earlier fill-up', logs: [{ date: '2026-10-08', place: 'station-a' }], prompt: true },
+  { description: 'does not prompt when each stop is logged', logs: [
+    { date: '2026-10-08', place: 'station-a' }, { date: '2026-10-08', place: 'station-b' },
+  ], prompt: false },
+])('checks every fuel stop and $description', async ({ logs, prompt }) => {
+  window.localStorage.clear();
+  const vehicles = 'api/v1/automotive/vehicles';
+  DaylightAPI.mockImplementation(path => {
+    if (path === vehicles) return Promise.resolve({ vehicles: [{ id: 'wagon', label: 'Wagon' }] });
+    if (path === `${vehicles}/wagon`) return Promise.resolve({
+      odometer: { km: 320 }, fuel: { needsMoreData: true }, trip_count: 0, reminders: [],
+    });
+    if (path === `${vehicles}/wagon/fuel`) return Promise.resolve({ logs });
+    if (path === `${vehicles}/wagon/journeys`) return Promise.resolve({ journeys: [{
+      id: 'two-stations', title: 'Drive past two stations', has_fuel_stop: true, stop_count: 2,
+      stops: [
+        { is_fuel_stop: true, place_id: 'station-a', label: 'Station A', arrived_at: '2026-10-08T12:00:00Z' },
+        { is_fuel_stop: true, place_id: 'station-b', label: 'Station B', arrived_at: '2026-10-08T13:00:00Z' },
+      ],
+    }] });
+    return Promise.resolve({});
+  });
+  render(<AutoApp />);
+  await screen.findByRole('heading', { name: 'Wagon' });
+  await selectButton('Drives');
+  expect(await screen.findByText('Drive past two stations')).toBeVisible();
+  const action = screen.queryByRole('button', { name: 'Log the fill-up' });
+  expect(Boolean(action)).toBe(prompt);
+  if (!prompt) return;
+
+  fireEvent.click(action);
+  expect(await screen.findByText('At Station B')).toBeVisible();
+});
+
 const vehiclesPath = 'api/v1/automotive/vehicles';
 
 function mockGarage({ failingResource, holdWrite, writeError } = {}) {

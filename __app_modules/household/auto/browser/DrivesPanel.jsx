@@ -130,24 +130,23 @@ function caveats(journey) {
  */
 function pendingFuelStop(journey, fuelLogs) {
   if (!journey.has_fuel_stop || !Array.isArray(fuelLogs)) return null;
-  const stop = [journey.origin, ...journey.stops, journey.destination]
-    .find((point) => point?.is_fuel_stop);
-  if (!stop) return null;
+  const stops = [journey.origin, ...journey.stops, journey.destination]
+    .filter((point) => point?.is_fuel_stop);
+  for (const stop of stops) {
+    const when = stop.arrived_at || journey.started_at || journey.ended_at;
+    if (!when) continue;
+    const instant = new Date(when);
+    if (Number.isNaN(instant.getTime())) continue;
+    const day = localDateKey(instant);
+    const matchingDays = [addCalendarDays(day, -1), day, addCalendarDays(day, 1)];
 
-  const when = stop.arrived_at || journey.started_at || journey.ended_at;
-  if (!when) return null;
-  const instant = new Date(when);
-  if (Number.isNaN(instant.getTime())) return null;
-  const day = localDateKey(instant);
-  const matchingDays = [addCalendarDays(day, -1), day, addCalendarDays(day, 1)];
-
-  const alreadyLogged = fuelLogs.some((log) => {
-    if (log.place && stop.place_id && log.place !== stop.place_id) return false;
-    return matchingDays.includes(log.date);
-  });
-  if (alreadyLogged) return null;
-
-  return { date: day, placeId: stop.place_id, placeLabel: stop.label };
+    const alreadyLogged = fuelLogs.some((log) => {
+      if (log.place && stop.place_id && log.place !== stop.place_id) return false;
+      return matchingDays.includes(log.date);
+    });
+    if (!alreadyLogged) return { date: day, placeId: stop.place_id, placeLabel: stop.label };
+  }
+  return null;
 }
 
 function JourneyRow({ journey, onName, onLogFuel, fuelPrompt }) {
