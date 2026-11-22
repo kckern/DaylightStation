@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useId } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useId } from 'react';
 import { formatAge, proxyIcon, proxyImage, isImageUrl, safeImage } from "./utils.js";
 import { getBodyModule } from "./bodies/index.js";
 import { getContentPlugin } from "../../contentPlugins/index.js";
@@ -173,11 +173,31 @@ function HeroImage({ src: rawSrc, thumbnail: rawThumbnail, feedItemId, title }) 
 function GalleryHero({ images, feedItemId, title }) {
   const [index, setIndex] = useState(0);
   const dragStartRef = useRef(null);
+  const galleryRef = useRef(null);
+  const refocusGallery = useRef(false);
   const count = images.length;
   const current = images[index] || images[0];
 
-  const goPrev = useCallback((e) => { e?.stopPropagation(); setIndex(i => Math.max(i - 1, 0)); }, []);
-  const goNext = useCallback((e) => { e?.stopPropagation(); setIndex(i => Math.min(i + 1, count - 1)); }, [count]);
+  useLayoutEffect(() => {
+    if (!refocusGallery.current) return;
+    refocusGallery.current = false;
+    galleryRef.current?.focus({ preventScroll: true });
+  }, [index]);
+
+  const goPrev = useCallback((e) => {
+    e?.stopPropagation();
+    if (index === 1 && e?.currentTarget?.tagName === 'BUTTON' && e.currentTarget.ownerDocument.activeElement === e.currentTarget) {
+      refocusGallery.current = true;
+    }
+    setIndex(i => Math.max(i - 1, 0));
+  }, [index]);
+  const goNext = useCallback((e) => {
+    e?.stopPropagation();
+    if (index === count - 2 && e?.currentTarget?.tagName === 'BUTTON' && e.currentTarget.ownerDocument.activeElement === e.currentTarget) {
+      refocusGallery.current = true;
+    }
+    setIndex(i => Math.min(i + 1, count - 1));
+  }, [count, index]);
 
   // Touch swipe (mobile)
   const handleTouchStart = (e) => {
@@ -226,6 +246,7 @@ function GalleryHero({ images, feedItemId, title }) {
 
   return (
     <div
+      ref={galleryRef}
       style={{ position: 'relative', width: '100%', height: '100%', userSelect: 'none' }}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
