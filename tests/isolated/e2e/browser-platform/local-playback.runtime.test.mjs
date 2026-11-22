@@ -160,7 +160,7 @@ test('Media keeps its audio and saves fresh progress after a refused background 
 async function openFixtureSheet(page) {
   await page.routeWebSocket('**/ws', () => {});
   await page.goto('/feed/scroll');
-  await page.getByRole('button', { name: 'Play', exact: true }).first().click();
+  await page.getByRole('button', { name: /^Play(?: Playback fixture)?$/ }).first().click();
   const clock = await originalClock(page);
   const opener = page.getByRole('button', { name: /Open player/ });
   await opener.click();
@@ -391,6 +391,16 @@ for (const width of [390, 1440]) {
       await page.setViewportSize({ width: 390, height: 850 });
       await expect(volume).toBeHidden();
       await expect(close).toBeFocused();
+
+      const mute = dialog.getByRole('button', { name: 'Mute' });
+      await page.setViewportSize({ width: 1440, height: 850 });
+      await expect(mute).toBeVisible();
+      await mute.focus();
+      await page.setViewportSize({ width: 390, height: 850 });
+      await expect(mute).toBeHidden();
+      await expect(close).toBeFocused();
+      await page.keyboard.press('Shift+Tab');
+      await expect(dialog.getByRole('button', { name: '2x', exact: true })).toBeFocused();
     }
 
     await page.keyboard.press('Escape');

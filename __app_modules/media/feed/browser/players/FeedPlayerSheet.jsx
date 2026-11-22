@@ -39,7 +39,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
     const previous = volumeRef.current;
     volumeRef.current = node;
     // Capture focus before the responsive volume control leaves the DOM.
-    if (!node && previous && document.activeElement === previous) {
+    if (!node && previous && previous.contains(document.activeElement)) {
       closeRef.current?.focus({ preventScroll: true });
     }
   }, []);
@@ -291,7 +291,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
         </div>
 
         {/* Volume (desktop only) */}
-        {showVolume && <div className="sheet-volume-row">
+        {showVolume && <div className="sheet-volume-row" ref={bindVolume}>
           <button type="button" className="sheet-volume-icon" onClick={toggleMute} aria-label={muted ? 'Unmute' : 'Mute'}>
             <SpeakerIcon volume={volume} muted={muted} size={20} />
           </button>
@@ -303,7 +303,6 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
             step="0.05"
             value={muted ? 0 : volume}
             onChange={(e) => setVolume(parseFloat(e.target.value))}
-            ref={bindVolume}
             aria-label="Volume"
             aria-valuetext={formatFeedVolume(muted ? 0 : volume)}
           />
