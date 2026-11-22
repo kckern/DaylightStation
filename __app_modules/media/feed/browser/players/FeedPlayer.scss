@@ -1,0 +1,17 @@
+.feed-player-controls {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+
+  &[data-visible='true'],
+  &:focus-within {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.feed-player-progress:has(.feed-player-progress-input:focus-visible) {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+  border-radius: 2px;
+}

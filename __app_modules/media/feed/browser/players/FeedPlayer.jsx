@@ -6,6 +6,7 @@ import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { formatFeedPlaybackTime } from './formatTime.js';
 import { formatFeedVolume } from './formatVolume.js';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
+import "./FeedPlayer.scss";
 
 // Recreate child each call to pick up sessionLog context set by FeedApp
 function log() { return getLogger().child({ module: 'feed-player' }); }
@@ -252,23 +253,22 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
       {/* Control bar overlay */}
       <div
         className="feed-player-controls"
+        data-visible={controlsVisible}
         style={{
           position: 'absolute', bottom: 0, left: 0, right: 0,
           background: 'linear-gradient(transparent, rgba(0,0,0,0.7))',
           padding: '24px 8px 6px',
           display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px',
-          opacity: controlsVisible ? 1 : 0,
-          transition: 'opacity 0.3s',
-          pointerEvents: controlsVisible ? 'auto' : 'none',
         }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Progress bar */}
-        <div style={{ position: 'relative', width: '100%', height: '20px', cursor: 'pointer', marginBottom: '2px' }}>
+        <div className="feed-player-progress" style={{ position: 'relative', width: '100%', height: '20px', cursor: 'pointer', marginBottom: '2px' }}>
           <div style={{ position: 'absolute', left: 0, right: 0, top: '8px', height: '4px', background: 'rgba(255,255,255,0.3)', borderRadius: '2px' }}>
             <div ref={progressRef} style={{ height: '100%', background: '#fff', borderRadius: '2px', width: '0%' }} />
           </div>
           <input
+            className="feed-player-progress-input"
             type="range"
             min="0"
             max={duration || 0}
