@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { DaylightAPI } from "../../../../frontend/src/lib/api.mjs";
 import { localDateKey } from "../../../../frontend/src/lib/calendarDay.js";
 import getLogger from "../../../../frontend/src/lib/logging/Logger.js";
+import { useRetryRegion } from "../../../../frontend/src/lib/ui/useRetryRegion.js";
 import { feedQueueOwner } from "./offline/feedOfflineStore.js";
 
 const log = getLogger().child({ app: 'feed', module: 'data-controls' });
@@ -40,6 +41,7 @@ export default function FeedDataControls({ onImported }) {
     await refreshImportedView(scope);
     if (isCurrent(scope)) setBusy(false);
   };
+  const { regionProps, retry } = useRetryRegion(retryImportedViewRefresh, busy);
 
   const exportData = async () => {
     const scope = scopeRef.current;
@@ -116,12 +118,12 @@ export default function FeedDataControls({ onImported }) {
         <input ref={inputRef} type="file" accept="application/json,.json" onChange={importData} className="feed-visually-hidden" tabIndex={-1} />
       </div>
       {status && (
-        <div className="feed-data-controls__status" role="status">
+        <div className="feed-data-controls__status" role="status" {...regionProps}>
           <small>{status}</small>
           {refreshFailed && (
             <>
               <small>The import succeeded, but the current view could not refresh.</small>
-              <button type="button" disabled={busy} onClick={retryImportedViewRefresh}>Refresh view</button>
+              <button type="button" disabled={busy} onClick={retry}>Refresh view</button>
             </>
           )}
         </div>
