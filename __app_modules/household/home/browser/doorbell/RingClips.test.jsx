@@ -151,6 +151,54 @@ describe('RingClips', () => {
     expect(screen.queryByText('Recording could not be loaded')).toBeNull();
     expect(within(row).getByRole('button', { name: /play the clip/i })).toHaveFocus();
   });
+
+  it('moves focus from a failed Play button to that ring’s Retry button', async () => {
+    apiMock.mockResolvedValue({ clips: [clipAt(rings[0], 0)] });
+    wrap(<RingClips camera="porch-cam" marks={[rings[0]]} timeZone="UTC" />);
+    await waitFor(() => expect(document.querySelectorAll('video')).toHaveLength(1));
+    const video = document.querySelector('video');
+    const row = video.closest('li');
+    const play = within(row).getByRole('button', { name: /play the clip/i });
+    play.focus();
+
+    fireEvent.error(video);
+
+    const retry = within(row).getByRole('button', { name: /retry recording from/i });
+    expect(retry).toHaveFocus();
+  });
+
+  it('moves focus from failed native video controls to that ring’s Retry button', async () => {
+    apiMock.mockResolvedValue({ clips: [clipAt(rings[0], 0)] });
+    wrap(<RingClips camera="porch-cam" marks={[rings[0]]} timeZone="UTC" />);
+    await waitFor(() => expect(document.querySelectorAll('video')).toHaveLength(1));
+    const video = document.querySelector('video');
+    const row = video.closest('li');
+    fireEvent.click(within(row).getByRole('button', { name: /play the clip/i }));
+    expect(video).toHaveAttribute('controls');
+    video.focus();
+    expect(video).toHaveFocus();
+
+    fireEvent.error(video);
+
+    const retry = within(row).getByRole('button', { name: /retry recording from/i });
+    expect(retry).toHaveFocus();
+  });
+
+  it('keeps focus on another ring when an unfocused clip fails', async () => {
+    apiMock.mockResolvedValue({ clips: [clipAt(rings[0], 0), clipAt(rings[1], 1)] });
+    wrap(<RingClips camera="porch-cam" marks={rings.slice(0, 2)} timeZone="UTC" />);
+    await waitFor(() => expect(document.querySelectorAll('video')).toHaveLength(2));
+    const videos = document.querySelectorAll('video');
+    const focusedRow = videos[0].closest('li');
+    const failingRow = videos[1].closest('li');
+    const focusedPlay = within(focusedRow).getByRole('button', { name: /play the clip/i });
+    focusedPlay.focus();
+
+    fireEvent.error(videos[1]);
+
+    expect(within(failingRow).getByRole('button', { name: /retry recording from/i })).toBeInTheDocument();
+    expect(focusedPlay).toHaveFocus();
+  });
 });
 
 it('distinguishes a failed camera day from no recording and retries only that day', async () => {
