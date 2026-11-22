@@ -352,6 +352,7 @@ function heroAspectRatio(item) {
 export default function FeedCard({ item, onDismiss, onPlay }) {
   const tier = item.tier || 'wire';
   const archiveLabel = item.title?.trim() ? `Archive ${item.title.trim()}` : 'Archive item';
+  const playLabel = item.title?.trim() ? `Play ${item.title.trim()}` : 'Play item';
   const hasArtwork = Boolean(item.image && isImageUrl(item.image));
   const sourceName = item.meta?.sourceName || item.meta?.feedTitle || item.source || '';
   const age = formatAge(item.timestamp);
@@ -444,7 +445,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
                     cursor: 'pointer',
                     padding: 0,
                   }}
-                  aria-label="Play"
+                  aria-label={playLabel}
                 >
                   <UiIcon name="play" size={20} style={{ color: '#fff' }} />
                 </button>
@@ -609,7 +610,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
                 padding: '0.45rem 0.55rem',
                 borderRadius: '4px',
               }}
-              aria-label={`Play ${item.title || 'item'}`}
+              aria-label={playLabel}
             >
               <UiIcon name="play" size={14} /> <span>Play</span>
             </button>}
