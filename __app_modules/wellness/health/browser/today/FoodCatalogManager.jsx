@@ -23,6 +23,8 @@ function Manager({ active = true, onClose, onChanged }) {
   const wasEditing = useRef(editing);
   const visibleFoods = (foods.data?.items || []).filter(food => food.type !== 'template');
   const foodsUnavailable = unavailableError(foods);
+  const calories = draft?.nutrients?.calories;
+  const caloriesValid = typeof calories === 'number' && Number.isFinite(calories) && calories >= 0;
   useLayoutEffect(() => {
     // The sheet owns initial focus. Its list and editor can change in place.
     if (wasEditing.current === editing) return;
@@ -45,14 +47,16 @@ function Manager({ active = true, onClose, onChanged }) {
       {draft ? <>
         <TextInput ref={primaryInput} label="Food name" value={draft.name} onChange={event => setDraft(previous => ({ ...previous, name: event.target.value }))} disabled={busy} data-autofocus />
         <NumberInput label="Nutrition basis in grams" suffix=" g" min={0.01} value={draft.grams ?? ''} onChange={grams => setDraft(previous => ({ ...previous, grams }))} disabled={busy} />
-        {NUTRIENT_KEYS.map(key => <NumberInput key={key} label={key} min={0} disabled={busy} value={draft.nutrients?.[key] ?? ''}
+        {NUTRIENT_KEYS.map(key => <NumberInput key={key} label={key} min={0} disabled={busy}
+          error={key === 'calories' && !caloriesValid ? 'Enter calories for this portion' : undefined}
+          value={draft.nutrients?.[key] ?? ''}
           onChange={value => setDraft(previous => ({ ...previous, nutrients: { ...previous.nutrients, [key]: value === '' ? null : value } }))} />)}
         <Group justify="space-between">
           <Button size="sm" color="red" variant="subtle" disabled={busy} onClick={() => {
             if (window.confirm(`Remove ${draft.name} from saved foods? Logged entries stay unchanged.`)) run(() => DaylightAPI(`api/v1/health/nutrition/catalog/${draft.id}`, {}, 'DELETE'));
           }}>Remove food</Button>
           <Button size="sm" variant="subtle" disabled={busy} onClick={() => setDraft(null)}>Back</Button>
-          <Button size="sm" loading={busy} disabled={!draft.name.trim() || !(draft.grams > 0)} onClick={() => run(() => DaylightAPI(`api/v1/health/nutrition/catalog/${draft.id}`,
+          <Button size="sm" loading={busy} disabled={!draft.name.trim() || !(draft.grams > 0) || !caloriesValid} onClick={() => run(() => DaylightAPI(`api/v1/health/nutrition/catalog/${draft.id}`,
             { name: draft.name, grams: draft.grams, nutrients: draft.nutrients }, 'PUT'))}>Save definition</Button>
         </Group>
       </> : <>
