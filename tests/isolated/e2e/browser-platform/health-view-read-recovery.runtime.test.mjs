@@ -264,3 +264,58 @@ test('Retry after a refused reading deletion only rereads Medical readings', asy
   await expect(region.getByRole('button', { name: `Delete Resting Heart Rate on ${date}, 73 bpm`, exact: true })).toBeVisible();
   expect(calls).toEqual(['GET', 'DELETE', 'GET']);
 });
+
+test('confirmed Medical reading deletion focuses the region without stealing later focus', async ({ page }) => {
+  const calls = [];
+  let medicalReads = 0;
+  let pendingDelete;
+  const reading = { id: 'fixture', date, value: 73, unit: 'bpm' };
+  const medicalResult = { metrics: [{ metric: 'resting_hr', latest: reading, unit: 'bpm', readings: [reading] }] };
+  let dialogs = 0;
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.routeWebSocket('**/*', () => {});
+  page.on('dialog', dialog => {
+    dialogs += 1;
+    return dialogs === 1 ? dialog.dismiss() : dialog.accept();
+  });
+  await page.route('**/api/**', route => {
+    const request = route.request();
+    const { pathname } = new URL(request.url());
+    if (pathname === medical + '/fixture' && request.method() === 'DELETE') {
+      calls.push('DELETE');
+      pendingDelete = route;
+      return;
+    }
+    if (pathname === medical) {
+      calls.push(request.method());
+      if (request.method() === 'GET') {
+        medicalReads += 1;
+        return route.fulfill({ json: medicalReads === 1 ? medicalResult : { metrics: [] } });
+      }
+    }
+    return route.fulfill({ json: responses[pathname] ?? { enabled: false } });
+  });
+
+  await page.goto('/health/medical');
+  const deleteButton = page.getByRole('button', { name: `Delete Resting Heart Rate on ${date}, 73 bpm`, exact: true });
+  await expect(deleteButton).toBeVisible();
+  await deleteButton.press('Enter');
+  await expect.poll(() => dialogs).toBe(1);
+  await expect(deleteButton).toBeEnabled();
+  await expect(deleteButton).toBeFocused();
+  expect(calls).toEqual(['GET']);
+
+  await deleteButton.press('Enter');
+  await expect.poll(() => Boolean(pendingDelete)).toBe(true);
+
+  const region = page.getByRole('region', { name: 'Medical readings', exact: true });
+  await expect(region).toBeFocused();
+  const todayTab = page.getByRole('link', { name: 'Today', exact: true });
+  await todayTab.focus();
+  await pendingDelete.fulfill({ json: { deleted: true } });
+
+  await expect.poll(() => medicalReads).toBe(2);
+  await expect(page.getByRole('button', { name: `Delete Resting Heart Rate on ${date}, 73 bpm`, exact: true })).toHaveCount(0);
+  await expect(todayTab).toBeFocused();
+  expect(calls).toEqual(['GET', 'DELETE', 'GET']);
+});

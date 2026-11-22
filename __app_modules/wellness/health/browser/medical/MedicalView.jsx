@@ -33,25 +33,28 @@ const emptyForm = () => ({ metric: '', value: '', value2: '', unit: '', date: lo
 /** Grouped medical readings (BP, labs, vitals) — manual entry, no interpretation. */
 export function MedicalView() {
   const med = useApiResource(medicalPath, { label: 'medical', logger });
-  const { regionProps, retry } = useRetryRegion(med.reload, med.loading);
+  const { regionProps, focus, retry } = useRetryRegion(med.reload, med.loading);
   const [open, setOpen] = useState(false);
   const [removeError, setRemoveError] = useState(null);
   const { pending: removing, run: runRemoval } = useKeyedSubmission();
 
   const openAdd = () => { setRemoveError(null); setOpen(true); };
 
-  const remove = (id, metric, description) => runRemoval(id, async () => {
-    if (!window.confirm(`Delete ${description}?`)) return;
+  const remove = (id, metric, description) => {
+    if (removing.has(id) || !window.confirm(`Delete ${description}?`)) return;
+    focus();
     setRemoveError(null);
-    try {
-      await DaylightAPI(`${medicalPath}/${id}`, {}, 'DELETE');
-      logger.info('reading.removed', { id, metric });
-      invalidateApiResources(path => path === medicalPath);
-    } catch (err) {
-      logger.error('reading.remove.failed', { id, error: err?.message });
-      setRemoveError(err);
-    }
-  });
+    return runRemoval(id, async () => {
+      try {
+        await DaylightAPI(`${medicalPath}/${id}`, {}, 'DELETE');
+        logger.info('reading.removed', { id, metric });
+        invalidateApiResources(path => path === medicalPath);
+      } catch (err) {
+        logger.error('reading.remove.failed', { id, error: err?.message });
+        setRemoveError(err);
+      }
+    });
+  };
 
   const metrics = med.data?.metrics || [];
 
