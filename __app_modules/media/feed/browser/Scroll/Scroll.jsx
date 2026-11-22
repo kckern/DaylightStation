@@ -93,13 +93,16 @@ function ScrollCard({ item, isNew, colors, onDismiss, onPlay, onClick, onFilter,
   const springBack = () => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
+    const transform = wrapper.style.transform || 'translateX(0)';
+    const opacity = wrapper.style.opacity || '1';
+    resetDismissPreview();
     wrapper.animate(
       [
-        { transform: wrapper.style.transform || 'translateX(0)', opacity: wrapper.style.opacity || '1' },
+        { transform, opacity },
         { transform: 'translateX(0)', opacity: '1' },
       ],
-      { duration: 150, easing: 'ease-out', fill: 'forwards' }
-    ).onfinish = resetDismissPreview;
+      { duration: 150, easing: 'ease-out' }
+    );
   };
 
   const handleTouchCancel = () => {
