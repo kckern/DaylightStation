@@ -35,7 +35,11 @@ export default function ItemParamsModal({ opened, onClose, paramsType, item, ite
     }
     setSaving(false);
     if (result && result.ok === false) {
-      const message = result.error?.message || 'Could not save parameters';
+      // ok:false with no error means the folder refused the write because
+      // another change was still in flight (ListsFolder mutate guard).
+      const message = result.error
+        ? (result.error.message || 'Could not save parameters')
+        : 'Another change is still saving — try again';
       log?.warn(`lists.item.params.${kind}.failed`, { ...context, message });
       setError(message);
       return;

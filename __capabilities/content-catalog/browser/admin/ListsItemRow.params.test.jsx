@@ -138,6 +138,33 @@ describe('rows with a parameter type', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
+  it('keeps the modal open and shows the error when onUpdate throws', async () => {
+    const onUpdate = vi.fn(async () => { throw new Error('network down'); });
+    renderRow({ input: 'app:stub-game' }, { onUpdate });
+    fireEvent.click(gear());
+    const dialog = await screen.findByRole('dialog');
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: 'Save' })); });
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('network down');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('says another change is saving when the folder refuses the write', async () => {
+    const onUpdate = vi.fn(async () => ({ ok: false }));
+    renderRow({ input: 'app:stub-game' }, { onUpdate });
+    fireEvent.click(gear());
+    const dialog = await screen.findByRole('dialog');
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: 'Save' })); });
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Another change is still saving — try again');
+  });
+
+  it('Save with an empty draft sends an empty object, not null', async () => {
+    const { onUpdate } = renderRow({ input: 'app:stub-game' });
+    fireEvent.click(gear());
+    const dialog = await screen.findByRole('dialog');
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: 'Save' })); });
+    expect(onUpdate).toHaveBeenCalledWith({ params: {} });
+  });
+
   it('offers Parameters… in the row menu between More Info and Duplicate', async () => {
     renderRow({ input: 'app:stub-game' });
     await openMenu();

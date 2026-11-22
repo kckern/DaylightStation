@@ -7,6 +7,7 @@ import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrate
 import ListsItemRow from './ListsItemRow.jsx';
 import ListsItemEditor from './ListsItemEditor.jsx';
 import { ListsContext } from './ListsContext.js';
+import { paramsTypeFor } from './itemParams/registry.js';
 import './ContentLists.scss';
 
 const actions = ['play','queue','list','display','launch','open'];
@@ -70,7 +71,7 @@ export default function ListDraftEditor({list, onEdit, renderItemSettings, readO
     if (a.type === 'content') emit({type:'swap-items',firstUid:first.uid,secondUid:second.uid});
     else emit({type:'move-item',itemUid:first.uid,...(a.section !== b.section ? {toSectionUid:sections[b.section].uid}:{}),beforeUid:a.section === b.section && a.index < b.index ? sections[b.section].items[b.index+1]?.uid ?? null : second.uid});
   };
-  return <ListsContext.Provider value={context}><Stack className="lists-view" gap="xs">{flatItems.length > 0 && <div className="table-header">
+  return <ListsContext.Provider value={context}><Stack className={flatItems.some(row => paramsTypeFor(row)) ? 'lists-view lists-view--has-params' : 'lists-view'} gap="xs">{flatItems.length > 0 && <div className="table-header">
       <div className="col-active"></div><div className="col-drag"></div>
       <div className="col-index"><Text size="xs" fw={600} c="dimmed">#</Text></div><div className="col-icon"></div>
       <div className="col-label"><Text size="xs" fw={600} c="dimmed">Label</Text></div><div className="col-divider"></div><div className="col-content-drag"></div>
