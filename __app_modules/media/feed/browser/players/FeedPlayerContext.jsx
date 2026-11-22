@@ -77,14 +77,23 @@ function feedPlayerReducer(state, action) {
     case 'PLAY': {
       const { item, contentId, currentPosition } = action.payload;
       log().info('player.play', { title: item?.title, contentId, hadActive: !!state.activeMedia });
+      const resumesParkedMedia = !state.activeMedia && Boolean(contentId) && state.pausedMedia?.contentId === contentId;
       // Pause current active → pausedMedia (capture position from caller)
-      const pausedMedia = state.activeMedia
-        ? parkMedia(state.activeMedia, currentPosition)
-        : state.pausedMedia;
+      let activeMedia = null;
+      let pausedMedia = state.pausedMedia;
+      if (state.activeMedia) pausedMedia = parkMedia(state.activeMedia, currentPosition);
+      if (contentId) {
+        if (resumesParkedMedia) {
+          activeMedia = state.pausedMedia;
+          pausedMedia = null;
+        } else {
+          activeMedia = { item, contentId };
+        }
+      }
       return {
         ...state,
         // Reader inline playback parks the previous source without claiming the persistent renderer.
-        activeMedia: contentId ? { item, contentId } : null,
+        activeMedia,
         pausedMedia,
       };
     }
