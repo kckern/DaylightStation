@@ -17,7 +17,8 @@
  *
  * Without a known start it never covers early (a resume would flash a logo).
  * The first final stage the gate reports (`off` or `playing`) is kept for the
- * title, so a later remount of VideoPlayer cannot bring the scene back.
+ * title, so a later remount of VideoPlayer cannot bring the scene back. A
+ * restart the gate replays (`onReplay`) clears it.
  *
  * While the intro is still deciding, the spinner is held back for
  * INTRO_WAIT_COVER_MS from the request, as the gate does after mount.
@@ -49,11 +50,18 @@ export function useIntroHost({ intro, knownStartSec = null, recovery = false, re
     });
   }, [resetKey]);
 
+  // A restart replays the intro: forget the decision kept for the title.
+  const onReplay = useCallback(() => {
+    coverStartedAtRef.current = { key: resetKey, at: null };
+    setReported({ key: resetKey, stage: null, final: null });
+  }, [resetKey]);
+
   const current = reported.key === resetKey ? reported : { stage: null, final: null };
   const status = intro ? intro.status : null;
   const start = Number(knownStartSec);
+  // A long absence (intro.resumeOk) lets a resume open with the scene too.
   const early = !recovery && status === 'ready'
-    && knownStartSec != null && Number.isFinite(start) && start <= INTRO_START_WINDOW_SEC;
+    && knownStartSec != null && Number.isFinite(start) && (start <= INTRO_START_WINDOW_SEC || intro?.resumeOk === true);
 
   let stage;
   if (current.final) stage = current.final;
@@ -83,8 +91,8 @@ export function useIntroHost({ intro, knownStartSec = null, recovery = false, re
   useEffect(() => () => setIntroCovering(false, COVER_OWNER), []);
 
   const introHost = useMemo(
-    () => (intro ? { intro, coverStartedAt, onStage } : null),
-    [intro, coverStartedAt, onStage],
+    () => (intro ? { intro, coverStartedAt, onStage, onReplay } : null),
+    [intro, coverStartedAt, onStage, onReplay],
   );
   return { stage, introHost };
 }

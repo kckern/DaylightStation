@@ -45,8 +45,10 @@ export function useProvenanceIntro({ media, isPlex }) {
   // startSec lets the Player start the scene before play info arrives
   // (useIntroHost), only when the title is known to start from the top.
   const startSec = data?.startSec ?? null;
+  // A resume after a long absence (server: scene.resume_after_hours) still opens with the scene.
+  const resumeOk = data?.resumeShowsScene === true;
   return useMemo(
-    () => (eligible ? { status: introStatus, minHoldMs, render, startSec } : null),
-    [eligible, introStatus, minHoldMs, render, startSec],
+    () => (eligible ? { status: introStatus, minHoldMs, render, startSec, resumeOk } : null),
+    [eligible, introStatus, minHoldMs, render, startSec, resumeOk],
   );
 }

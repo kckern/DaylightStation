@@ -24,7 +24,7 @@ export function useVideoPresentation(args) {
   renderingStarted = true;
   return (installed || neutral).useVideoPresentation(args);
 }
-/** The installed app's intro for this title (`{ status, minHoldMs, render, startSec? }`), or null. */
+/** The installed app's intro for this title (`{ status, minHoldMs, render, startSec?, resumeOk? }`), or null. */
 export function useVideoIntro(args) {
   renderingStarted = true;
   return (installed || neutral).useVideoIntro(args);

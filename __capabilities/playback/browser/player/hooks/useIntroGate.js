@@ -23,6 +23,13 @@
  * Covering never outlasts `minHoldMs + INTRO_COVER_CEILING_MS`: a stream that
  * never produces a frame must not sit behind the scene.
  *
+ * `intro.resumeOk`: the app allows this title's resume to open with the intro
+ * (Media: a long absence). The scene then covers the resume point.
+ *
+ * A restart (once done, a seek from RESTART_FROM_SEC or later back to within
+ * RESTART_TO_SEC of the top) replays the intro as a fresh start; `onReplay`
+ * tells SinglePlayer's host first.
+ *
  * `coverStartedAt`: when SinglePlayer's intro host (useIntroHost) already put
  * the scene up during the play-info fetch, the hold counts from that moment,
  * so the early cover does not lengthen it.
@@ -49,13 +56,35 @@ export const INTRO_WAIT_COVER_MS = 1500;
  * hold was due steps aside, so a broken stream is not hidden behind the scene.
  */
 export const INTRO_COVER_CEILING_MS = 20000;
+/**
+ * A restart: once the gate is done, a seek from at least RESTART_FROM_SEC back
+ * to within RESTART_TO_SEC of the top replays the intro, as a fresh start.
+ */
+export const RESTART_FROM_SEC = 60;
+export const RESTART_TO_SEC = 2;
 /** Pause/play source tag for the gate's own hold (see lib/playbackToggleSource.js). */
 const HOLD_SOURCE = 'intro-hold';
 
 const FINAL = new Set(['off', 'playing']);
 const COVERING = new Set(['covering', 'holding']);
 
-export function useIntroGate({ intro, getMediaEl, startSec = 0, resetKey, playTimeoutMs = 2500, coverStartedAt = null }) {
+export function useIntroGate({ intro, getMediaEl, startSec = 0, resetKey, playTimeoutMs = 2500, coverStartedAt = null, onReplay = null }) {
+  // A restart replays the intro: the run key moves on, as for a new title.
+  const [replay, setReplay] = useState({ key: resetKey, gen: 0 });
+  const gen = replay.key === resetKey ? replay.gen : 0;
+  const runKey = `${resetKey ?? ''}#${gen}`;
+  // A replay starts from the top, whatever the request asked for.
+  const effectiveStart = gen > 0 ? 0 : startSec;
+  // An intro may allow a resume (a long absence): the scene then covers the
+  // resume point, and "too far in" is measured from there.
+  const resumeOk = !!intro?.resumeOk && gen === 0;
+  const expectedStart = resumeOk && Number.isFinite(Number(effectiveStart)) && Number(effectiveStart) > INTRO_START_WINDOW_SEC
+    ? Number(effectiveStart) : 0;
+  const expectedStartRef = useRef(expectedStart);
+  expectedStartRef.current = expectedStart;
+  const offReasonRef = useRef(null);
+  const onReplayRef = useRef(onReplay);
+  onReplayRef.current = onReplay;
   const [stage, setStage] = useState('waiting');
   const stageRef = useRef('waiting');
   const runRef = useRef(null);
@@ -68,7 +97,7 @@ export function useIntroGate({ intro, getMediaEl, startSec = 0, resetKey, playTi
   // When the scene went up before this gate mounted (SinglePlayer's intro host
   // covered the play-info fetch), the hold counts from then.
   const coverStartedAtRef = useRef(coverStartedAt);
-  coverStartedAtRef.current = coverStartedAt;
+  coverStartedAtRef.current = gen > 0 ? null : coverStartedAt;
 
   const go = (next) => { stageRef.current = next; setStage(next); };
   const clearTimers = () => { timersRef.current.forEach(clearTimeout); timersRef.current = []; };
@@ -99,6 +128,7 @@ export function useIntroGate({ intro, getMediaEl, startSec = 0, resetKey, playTi
 
   const toOff = (reason, data = {}, level = 'debug') => {
     release();
+    offReasonRef.current = reason;
     go('off');
     logger()[level]('intro.off', { reason, ...data });
   };
@@ -141,12 +171,13 @@ export function useIntroGate({ intro, getMediaEl, startSec = 0, resetKey, playTi
     heldOnResetRef.current = null;
     resumeHeld(held);
     stageRef.current = 'waiting';
+    offReasonRef.current = null;
     setStage('waiting');
     return () => {
       heldOnResetRef.current = release({ resume: false });
       setIntroCovering(false);
     };
-  }, [resetKey]);
+  }, [runKey]);
 
   // Decide from the intro's status.
   const status = intro ? intro.status : null;
@@ -156,10 +187,12 @@ export function useIntroGate({ intro, getMediaEl, startSec = 0, resetKey, playTi
     if (FINAL.has(current)) return;
     if (!status || status === 'none') { toOff('none'); return; }
     if (COVERING.has(current)) return;
-    if (Number(startSec) > INTRO_START_WINDOW_SEC) { toOff('resume', { startSec }); return; }
+    const start = Number(effectiveStart);
+    if (!Number.isFinite(start)) { toOff('recovery', { startSec: effectiveStart }); return; }
+    if (start > INTRO_START_WINDOW_SEC && !resumeOk) { toOff('resume', { startSec: effectiveStart }); return; }
     if (status !== 'ready') { if (current !== 'waiting') go('waiting'); return; }
     const el = getMediaElRef.current?.() || null;
-    if (el && el.paused === false && Number(el.currentTime) > INTRO_LATE_SEC) {
+    if (el && el.paused === false && Number(el.currentTime) > expectedStart + INTRO_LATE_SEC) {
       toOff('late', { at: +Number(el.currentTime).toFixed(2) });
       return;
     }
@@ -169,14 +202,14 @@ export function useIntroGate({ intro, getMediaEl, startSec = 0, resetKey, playTi
     go('covering');
     const since = Number(coverStartedAtRef.current);
     const earlyMs = Number.isFinite(since) && since > 0 ? Math.max(0, Date.now() - since) : 0;
-    logger().info('intro.covering', { minHoldMs, startSec, earlyMs });
+    logger().info('intro.covering', { minHoldMs, startSec: effectiveStart, earlyMs, resume: expectedStart > 0, replay: gen });
     const holdMs = Math.max(0, (Number(minHoldMs) || 0) - earlyMs);
     after(holdMs, onHoldDone);
     after(holdMs + INTRO_COVER_CEILING_MS, () => {
       if (stageRef.current !== 'covering') return;
       toOff('cover-timeout', { waitedMs: holdMs + INTRO_COVER_CEILING_MS }, 'warn');
     });
-  }, [status, minHoldMs, startSec, resetKey]);
+  }, [status, minHoldMs, effectiveStart, resumeOk, runKey]);
 
   // Publish the cover flag for the loading overlay. A pending intro holds the
   // spinner back briefly too, so a scene that is about to appear is not
@@ -190,7 +223,7 @@ export function useIntroGate({ intro, getMediaEl, startSec = 0, resetKey, playTi
     return () => clearTimeout(t);
     // resetKey: a reset's cleanup drops the flag; a covering -> covering reset
     // leaves `stage` unchanged, so the flag must be published again.
-  }, [stage, pending, resetKey]);
+  }, [stage, pending, runKey]);
 
   // Watch the (current) video element: for its first frame while covering, and
   // for the film rolling past INTRO_LATE_SEC while still waiting.
@@ -203,7 +236,7 @@ export function useIntroGate({ intro, getMediaEl, startSec = 0, resetKey, playTi
       const onRolling = () => {
         if (stageRef.current !== 'waiting') return;
         const t = Number(el.currentTime);
-        if (el.paused === false && t > INTRO_LATE_SEC) toOff('late', { at: +t.toFixed(2) });
+        if (el.paused === false && t > expectedStartRef.current + INTRO_LATE_SEC) toOff('late', { at: +t.toFixed(2) });
       };
       el.addEventListener('playing', onRolling);
       el.addEventListener('timeupdate', onRolling);
@@ -224,7 +257,7 @@ export function useIntroGate({ intro, getMediaEl, startSec = 0, resetKey, playTi
       const r = runRef.current;
       if (!r || r.done) return;
       if (r.resuming) { toPlaying('playing'); return; }
-      if (Number(el.currentTime) > INTRO_START_WINDOW_SEC) {
+      if (Number(el.currentTime) > expectedStartRef.current + INTRO_START_WINDOW_SEC) {
         toOff('resumed-elsewhere', { at: +Number(el.currentTime).toFixed(2) });
         return;
       }
@@ -244,7 +277,35 @@ export function useIntroGate({ intro, getMediaEl, startSec = 0, resetKey, playTi
     boundRef.current = { el, off };
     if (el.paused === false && el.readyState > 2) onPlaying();
     return () => { if (boundRef.current.off === off) unbind(); else off(); };
-  }, [stage, resetKey, mediaEl]);
+  }, [stage, runKey, mediaEl]);
+
+  // Once done, a restart (a seek from well into the title back to the top)
+  // replays the intro. Not after a recovery remount (no finite start), nor
+  // after a stream that never produced a frame (cover-timeout).
+  const finalEl = (FINAL.has(stage) ? getMediaElRef.current?.() : null) || null;
+  const canReplay = FINAL.has(stage) && status === 'ready' && Number.isFinite(Number(startSec))
+    && offReasonRef.current !== 'cover-timeout' && offReasonRef.current !== 'recovery';
+  useEffect(() => {
+    if (!canReplay || !finalEl) return undefined;
+    const el = finalEl;
+    let last = Number(el.currentTime) || 0;
+    const onTime = () => { if (!el.seeking) last = Number(el.currentTime) || 0; };
+    const onSeeked = () => {
+      const t = Number(el.currentTime) || 0;
+      if (last >= RESTART_FROM_SEC && t <= RESTART_TO_SEC) {
+        logger().info('intro.replay', { from: +last.toFixed(1), to: +t.toFixed(1), replay: gen + 1 });
+        onReplayRef.current?.(gen + 1);
+        setReplay({ key: resetKey, gen: gen + 1 });
+      }
+      last = t;
+    };
+    el.addEventListener('timeupdate', onTime);
+    el.addEventListener('seeked', onSeeked);
+    return () => {
+      el.removeEventListener('timeupdate', onTime);
+      el.removeEventListener('seeked', onSeeked);
+    };
+  }, [canReplay, finalEl, runKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return stage;
 }

@@ -24,7 +24,7 @@ vi.mock('../../presentation.mjs', async (importOriginal) => ({
   useVideoIntro: (args) => {
     introState.calls.push(args);
     if (!args?.media) return null;
-    return { status: introState.status, minHoldMs: 6000, startSec: introState.startSec, render: (stage) => <Scene stage={stage} /> };
+    return { status: introState.status, minHoldMs: 6000, startSec: introState.startSec, resumeOk: introState.resumeOk, render: (stage) => <Scene stage={stage} /> };
   },
 }));
 
@@ -52,7 +52,7 @@ describe('SinglePlayer intro from the play request', () => {
   let info;
   beforeEach(() => {
     vi.clearAllMocks();
-    Object.assign(introState, { status: 'ready', startSec: 0, calls: [] });
+    Object.assign(introState, { status: 'ready', startSec: 0, resumeOk: false, calls: [] });
     sceneMounts.count = 0;
     video.host = null;
     info = deferred();
@@ -75,6 +75,22 @@ describe('SinglePlayer intro from the play request', () => {
     introState.startSec = null;
     play();
     expect(screen.queryByTestId('scene')).toBeNull();
+  });
+
+  it('covers early over a resume after a long absence', () => {
+    Object.assign(introState, { startSec: 5520, resumeOk: true });
+    play();
+    expect(screen.getByTestId('scene')).toHaveAttribute('data-stage', 'covering');
+  });
+
+  it('a replayed restart brings the scene back after the gate had said off', async () => {
+    play();
+    await act(async () => { info.resolve(PLAY_INFO); });
+    act(() => video.host.onStage('off'));
+    expect(screen.queryByTestId('scene')).toBeNull();
+    act(() => video.host.onReplay(1));
+    act(() => video.host.onStage('covering'));
+    expect(screen.getByTestId('scene')).toHaveAttribute('data-stage', 'covering');
   });
 
   it('takes an explicit start on the request over the intro read', () => {

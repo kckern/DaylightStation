@@ -241,6 +241,7 @@ export function VideoPlayer({
     startSec: introStartSec,
     resetKey: media?.assetId || media?.key || media?.mediaUrl || null,
     coverStartedAt: introHost?.coverStartedAt ?? null,
+    onReplay: introHost?.onReplay ?? null,
   });
   const reportIntroStage = introHost?.onStage;
   useEffect(() => { reportIntroStage?.(introStage); }, [introStage, reportIntroStage]);
@@ -1103,7 +1104,7 @@ VideoPlayer.propTypes = {
   onController: PropTypes.func,
   upscaleEffects: PropTypes.oneOf(['auto', 'blur-only', 'crt-only', 'aggressive', 'none']),
   // SinglePlayer's intro host: { intro, coverStartedAt, onStage } (hooks/useIntroHost.js).
-  introHost: PropTypes.shape({ intro: PropTypes.object, coverStartedAt: PropTypes.number, onStage: PropTypes.func }),
+  introHost: PropTypes.shape({ intro: PropTypes.object, coverStartedAt: PropTypes.number, onStage: PropTypes.func, onReplay: PropTypes.func }),
   resilienceBridge: PropTypes.shape({
     onPlaybackMetrics: PropTypes.func,
     onRegisterMediaAccess: PropTypes.func,

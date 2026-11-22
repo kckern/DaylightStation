@@ -88,7 +88,9 @@ export function useProvenance(contentId, { enabled = true } = {}) {
         const plate = img ? imageNeedsPlate(img) : false;
         // Where a play of the title would start (0 = the top), or null when unknown.
         const startSec = Number.isFinite(body?.startSec) ? body.startSec : null;
-        if (settle({ data: { ...p, logoUrl, plate, startSec }, status: 'ready' })) {
+        // A resume after a long absence still opens with the scene.
+        const resumeShowsScene = body?.resumeShowsScene === true;
+        if (settle({ data: { ...p, logoUrl, plate, startSec, resumeShowsScene }, status: 'ready' })) {
           logger().info('provenance.ready', { ratingKey: rk, provider: p.provider, tier: p.tier, plate, startSec, elapsedMs: Date.now() - startedAt });
         }
       })

@@ -324,3 +324,61 @@ function fakeVideoForWait() {
   Object.assign(el, { currentTime: 0, paused: true, readyState: 0, pause: vi.fn(), play: vi.fn(() => Promise.resolve()) });
   return el;
 }
+
+describe('useIntroGate: resume after a long absence, and restart', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { setIntroCovering(false); vi.useRealTimers(); });
+  const seek = (el, t) => { el.seeking = true; el.currentTime = t; el.fire('seeking'); el.seeking = false; el.fire('seeked'); };
+  const watchTo = (el, t) => { el.currentTime = t; el.fire('timeupdate'); };
+
+  it('covers a resume the intro allows, and holds the frame at the resume point', () => {
+    const el = fakeVideo();
+    const { result } = setup({ el, intro: { ...READY, resumeOk: true }, startSec: 5520 });
+    expect(result.current).toBe('covering');
+    el.currentTime = 5520;
+    act(() => { el.start(); });
+    expect(result.current).toBe('holding');
+    expect(el.pause).toHaveBeenCalled();
+  });
+
+  it('stays off for a resume the intro does not allow, and on a recovery remount', () => {
+    expect(setup({ intro: READY, startSec: 5520 }).result.current).toBe('off');
+    expect(setup({ intro: { ...READY, resumeOk: true }, startSec: Infinity }).result.current).toBe('off');
+  });
+
+  it('replays the intro when a title it stayed off for is sent back to the top', () => {
+    const el = fakeVideo();
+    el.seeking = false;
+    const onReplay = vi.fn();
+    const { result } = setup({ el, intro: READY, startSec: 5520, onReplay });
+    expect(result.current).toBe('off');
+    act(() => { el.paused = false; el.readyState = 4; watchTo(el, 5600); });
+    act(() => { seek(el, 0); });
+    expect(onReplay).toHaveBeenCalledWith(1);
+    expect(result.current).toBe('holding'); // the playing element is held at the top
+    expect(el.pause).toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(HOLD); });
+    expect(el.play).toHaveBeenCalled();
+  });
+
+  it('does not replay for a short scrub back, or a seek to the top from early on', () => {
+    const el = fakeVideo();
+    el.seeking = false;
+    const onReplay = vi.fn();
+    setup({ el, intro: READY, startSec: 5520, onReplay });
+    act(() => { watchTo(el, 30); seek(el, 0); });
+    act(() => { watchTo(el, 200); seek(el, 150); });
+    expect(onReplay).not.toHaveBeenCalled();
+  });
+
+  it('does not replay after a stream that never produced a frame', () => {
+    const el = fakeVideo();
+    el.seeking = false;
+    const onReplay = vi.fn();
+    const { result } = setup({ el, intro: READY, onReplay });
+    act(() => { vi.advanceTimersByTime(HOLD + 20000); });
+    expect(result.current).toBe('off');
+    act(() => { watchTo(el, 600); seek(el, 0); });
+    expect(onReplay).not.toHaveBeenCalled();
+  });
+});
