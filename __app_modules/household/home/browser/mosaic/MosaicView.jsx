@@ -137,6 +137,7 @@ export function MosaicView({ entities, mosaic, summary, haUrl, toggle, getFallba
   const [mode, setMode] = useState(modePreference.read);
   const [tip, setTip] = useState(null);
   const boxRef = useRef(null);
+  const tipAnchorRef = useRef(null);
   const tipIdRef = useRef(null);
   const touchRef = useRef({ at: 0, entityId: null, tipBefore: null });
   const readings = entities ?? EMPTY_ENTITIES;
@@ -161,17 +162,26 @@ export function MosaicView({ entities, mosaic, summary, haUrl, toggle, getFallba
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const hideTip = useCallback(() => {
+    tipIdRef.current = null;
+    tipAnchorRef.current = null;
+    setTip(null);
+  }, []);
+
   const changeMode = (next) => {
     logger.info('home.mosaic.mode', { from: mode, to: next });
     setMode(next);
     modePreference.write(next);
-    setTip(null);
-    tipIdRef.current = null;
+    hideTip();
   };
 
-  const hideTip = useCallback(() => { tipIdRef.current = null; setTip(null); }, []);
-  useEffect(() => {
-    if (tipId && !toneById.has(tipId)) hideTip();
+  useLayoutEffect(() => {
+    if (!tipId) return;
+    const board = boxRef.current;
+    const anchor = tipAnchorRef.current;
+    const currentAnchor = [...(board?.querySelectorAll('.home-square[data-entity-id]') || [])]
+      .find((el) => el.dataset.entityId === tipId);
+    if (!toneById.has(tipId) || !anchor || currentAnchor !== anchor) hideTip();
   }, [tipId, toneById, hideTip]);
   // An open tooltip is a layer on the app's one Escape handler, so Escape hides
   // it wherever focus is; with no tooltip open, Escape reaches the drawer.
@@ -189,13 +199,14 @@ export function MosaicView({ entities, mosaic, summary, haUrl, toggle, getFallba
     const entity = byId.get(el.dataset.entityId);
     const box = boxRef.current;
     if (!entity || !box) return;
-    if (tipIdRef.current === entity.id) return;
+    if (tipIdRef.current === entity.id && tipAnchorRef.current === el) return;
     const r = el.getBoundingClientRect();
     const b = box.getBoundingClientRect();
     tipIdRef.current = entity.id;
     // The chrome's scroll region starts under the app header: that edge is the
     // ceiling. Outside AppChrome nothing covers the page, so the viewport top is.
     const ceiling = mainRef?.current?.getBoundingClientRect().top ?? 0;
+    tipAnchorRef.current = el;
     setTip({
       id: entity.id, x: r.left - b.left + r.width / 2,
       top: r.top - b.top, bottom: r.bottom - b.top, viewTop: r.top, ceiling,

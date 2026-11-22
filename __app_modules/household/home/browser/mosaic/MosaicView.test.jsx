@@ -57,6 +57,14 @@ const renderMosaic = (props = {}) => render(
 );
 const squares = () => [...document.querySelectorAll('.home-square')];
 const square = (label) => screen.getByRole('button', { name: new RegExp(`^${label}:`) });
+const touchTap = el => {
+  const event = new MouseEvent('pointerdown', { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'pointerType', { value: 'touch' });
+  fireEvent(el, event);
+  fireEvent.mouseOver(el);
+  fireEvent.focus(el);
+  fireEvent.click(el, { detail: 1 });
+};
 
 describe('MosaicView', () => {
   beforeEach(() => {
@@ -147,21 +155,14 @@ describe('MosaicView', () => {
 
   it('on a touch screen the first tap shows the tooltip and a second tap opens the drawer', async () => {
     renderMosaic();
-    const lamp = square('Desk lamp');
-    // jsdom has no PointerEvent, so the tap's pointerType is set by hand.
-    const touchDown = (el) => {
-      const ev = new MouseEvent('pointerdown', { bubbles: true, cancelable: true });
-      Object.defineProperty(ev, 'pointerType', { value: 'touch' });
-      fireEvent(el, ev);
-    };
-    const tap = (el) => { touchDown(el); fireEvent.mouseOver(el); fireEvent.focus(el); fireEvent.click(el, { detail: 1 }); };
-    tap(lamp);
+    // jsdom has no PointerEvent, so touchTap supplies the pointer type by hand.
+    touchTap(square('Desk lamp'));
     expect(plain(screen.getByRole('tooltip').textContent)).toBe('Desk lamp: Off');
     expect(screen.queryByRole('dialog')).toBeNull();
-    tap(square('Kitchen light'));
+    touchTap(square('Kitchen light'));
     expect(plain(screen.getByRole('tooltip').textContent)).toMatch(/^Kitchen light:/);
     expect(screen.queryByRole('dialog')).toBeNull();
-    tap(square('Kitchen light'));
+    touchTap(square('Kitchen light'));
     expect(await screen.findByRole('dialog', { name: 'Kitchen light' })).toBeTruthy();
   });
 
@@ -173,26 +174,49 @@ describe('MosaicView', () => {
         <MosaicView entities={nextEntities} mosaic={mosaic} summary={summary} haUrl="https://ha.example" toggle={toggle} />
       </DismissStackProvider></MantineProvider>,
     );
-    const tap = el => {
-      const event = new MouseEvent('pointerdown', { bubbles: true, cancelable: true });
-      Object.defineProperty(event, 'pointerType', { value: 'touch' });
-      fireEvent(el, event);
-      fireEvent.mouseOver(el);
-      fireEvent.focus(el);
-      fireEvent.click(el, { detail: 1 });
-    };
-
-    tap(square('Desk lamp'));
+    touchTap(square('Desk lamp'));
     expect(screen.getByRole('tooltip')).toBeTruthy();
     renderWithEntities(entities.filter(item => item.id !== 'light.office_desk'));
     await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
     renderWithEntities(entities);
     const restoredLamp = square('Desk lamp');
     expect(screen.queryByRole('tooltip')).toBeNull();
-    tap(restoredLamp);
+    touchTap(restoredLamp);
     expect(screen.getByRole('tooltip')).toBeTruthy();
     expect(restoredLamp.getAttribute('aria-describedby')).toBe(screen.getByRole('tooltip').id);
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('closes a tooltip when its device moves to a different room group', async () => {
+    const toggle = vi.fn();
+    const view = renderMosaic({ toggle });
+    const renderWithMosaic = nextMosaic => view.rerender(
+      <MantineProvider><DismissStackProvider>
+        <MosaicView entities={entities} mosaic={nextMosaic} summary={summary} haUrl="https://ha.example" toggle={toggle} />
+      </DismissStackProvider></MantineProvider>,
+    );
+    const formerLamp = square('Desk lamp');
+    touchTap(formerLamp);
+    expect(screen.getByRole('tooltip')).toBeTruthy();
+    const movedMosaic = {
+      ...mosaic,
+      byRoom: [
+        { id: 'kitchen', label: 'Kitchen', entityIds: ['light.kitchen', 'light.kitchen_table', 'light.office_desk'] },
+        { ...mosaic.byRoom[1], entityIds: mosaic.byRoom[1].entityIds.filter(id => id !== 'light.office_desk') },
+      ],
+    };
+
+    renderWithMosaic(movedMosaic);
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+    const movedLamp = square('Desk lamp');
+    expect(movedLamp).not.toBe(formerLamp);
+    expect(movedLamp.hasAttribute('aria-describedby')).toBe(false);
+    touchTap(movedLamp);
+    expect(screen.getByRole('tooltip')).toBeTruthy();
+    expect(movedLamp.getAttribute('aria-describedby')).toBe(screen.getByRole('tooltip').id);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    touchTap(movedLamp);
+    expect(await screen.findByRole('dialog', { name: 'Desk lamp' })).toBeTruthy();
   });
 
   it('switches to By type, showing the type groups, and remembers it', () => {
