@@ -68,7 +68,7 @@ export class CeremonyService {
             progress: g.progress ?? g.metrics?.reduce((sum, m) => sum + (m.target > 0 ? m.current / m.target : 0), 0) / (g.metrics?.length || 1) ?? 0,
           })),
           beliefEvidence: (plan.beliefs || []).map(b => ({
-            id: b.id, confidence: b.confidence, state: b.state,
+            id: b.id, if: b.if, then: b.then, confidence: b.confidence, state: b.state,
             recentEvidence: (b.evidence_history || []).slice(-3),
           })),
           valueDrift: (plan.values || []).map(v => ({

@@ -58,7 +58,9 @@ export function CycleRetro({ step, content, responses, setResponse }) {
         {(content?.beliefEvidence || []).map(b => (
           <Group key={b.id} gap="xs">
             <Badge size="xs">{b.state}</Badge>
-            <Text size="xs">{b.id}: {Math.round((b.confidence || 0) * 100)}%</Text>
+            <Text size="xs">
+              {b.if ? `If ${b.if}${b.then ? `; then ${b.then}` : ''}` : b.id}: {Math.round((b.confidence || 0) * 100)}%
+            </Text>
           </Group>
         ))}
       </Stack>
