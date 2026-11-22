@@ -288,6 +288,7 @@ test('Feed detail action feedback stays with the article visit that submitted it
 for (const cold of [false, true]) {
   test(`Feed keeps the ${cold ? 'cold history' : 'in-batch'} detail GET across a layout switch`, async ({ page }) => {
     const id = cold ? 'reddit:outside-batch' : article.id;
+    const linkedArticle = { ...article, link: 'https://publisher.example/fixture-publisher' };
     const path = cold ? historyPath(id) : detailPath(id);
     const requests = [];
     const failures = [];
@@ -305,9 +306,12 @@ for (const cold of [false, true]) {
     await page.route(url => url.pathname === path, async route => {
       requests.push(route.request().method());
       await held;
-      await route.fulfill({ json: cold ? { item: { ...article, id }, sections } : { sections } });
+      await route.fulfill({ json: cold ? { item: { ...linkedArticle, id }, sections } : { sections } });
     });
     try {
+      await page.route('**/scroll/sessions', route => route.fulfill({
+        json: { items: [linkedArticle], sessionId: 'detail-link-fixture', hasMore: false },
+      }));
       if (cold) {
         await page.setViewportSize({ width: 1440, height: 850 });
         await page.goto(scrollPath(id));
@@ -322,7 +326,7 @@ for (const cold of [false, true]) {
       release();
 
       await expect(page.getByText(articleBody, { exact: true })).toBeVisible();
-      await expect(page.getByRole('link', { name: 'Open in browser' })).toHaveAttribute('href', article.link);
+      await expect(page.getByRole('link', { name: 'Open in browser' })).toHaveAttribute('href', linkedArticle.link);
       expect(new URL(page.url()).pathname).toBe(scrollPath(id));
       expect(requests).toEqual(['GET']);
       expect(failures).toEqual([]);
@@ -339,13 +343,13 @@ test('Feed retries the current detail after changing items and keeps its origina
     ...article,
     id: 'reddit:current-detail',
     title: 'Current Feed item',
-    link: '/other-publisher',
-    meta: { paywall: true, paywallProxy: '/fixture-archive?url=' },
+    link: 'https://publisher.example/other-publisher',
+    meta: { paywall: true, paywallProxy: 'https://archive.example/?url=' },
   };
   await page.route('**/scroll/sessions', route => route.fulfill({
     json: { items: [article, second], sessionId: 'two-articles', hasMore: false },
   }));
-  await page.route('**/fixture-archive?**', route => route.fulfill({ body: 'Archived publisher article' }));
+  await page.route('https://archive.example/**', route => route.fulfill({ body: 'Archived publisher article' }));
   let release;
   const departed = new Promise(resolve => { release = resolve; });
   let started = false;
@@ -529,8 +533,12 @@ test('Feed desktop detail contains Tab and returns focus to the opening card aft
   await expect(page).toHaveURL(scrollPath(article.id));
   await expect(dialog.getByRole('button', { name: 'Previous item' })).toBeFocused();
 
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+  const savedNotification = page.locator('[role="alert"]').filter({ has: page.getByText('Saved', { exact: true }) });
+  await expect(savedNotification.locator('.feed-toast-undo')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Download', exact: true }).click();
-  await expect(page.getByRole('alert').filter({ hasText: 'Available offline' })).toBeVisible();
+  await expect(dialog.locator('.detail-state-actions').getByRole('status')).toHaveText('Available offline');
 
   await page.keyboard.press('Escape');
   await expect(page).toHaveURL('/feed/scroll');
@@ -542,6 +550,19 @@ test('Feed desktop detail contains Tab and returns focus to the opening card aft
   await page.mouse.click(10, 10);
   await expect(page).toHaveURL('/feed/scroll');
   await expect(opener).toBeFocused();
+});
+
+test('Feed compact detail uses the global offline notice without duplicating it', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.route('**/feed/detail/*', route => route.fulfill({ json: { sections } }));
+  await page.goto('/feed/scroll');
+  await page.getByRole('button', { name: `Open: ${article.title}` }).click();
+  const detail = page.locator('.detail-view');
+  const download = detail.getByRole('button', { name: 'Download', exact: true });
+  await expect(download).toBeEnabled();
+  await download.click();
+  await expect(page.getByRole('alert').filter({ hasText: 'Available offline' })).toBeVisible();
+  await expect(detail.locator('.detail-state-actions').getByRole('status')).toHaveCount(0);
 });
 
 const scrollArticle = (header, amount) => header.evaluate((element, y) => {
@@ -559,7 +580,7 @@ test.describe('Feed card Archive on a coarse pointer', () => {
 
   for (const variant of ['image', 'text']) {
     test(`Feed Scroll archives the ${variant} card from its full touch target`, async ({ page }) => {
-      const item = variant === 'image' ? { ...article, image: '/fixture-feed-card.svg' } : article;
+      const item = variant === 'image' ? { ...article, image: '/api/v1/static/fixture-feed-card.svg' } : article;
       const writes = [];
       await page.route('**/fixture-feed-card.svg', route => route.fulfill({
         contentType: 'image/svg+xml',
@@ -574,7 +595,7 @@ test.describe('Feed card Archive on a coarse pointer', () => {
       });
 
       await page.goto('/feed/scroll');
-      const archive = page.getByRole('button', { name: 'Archive', exact: true });
+      const archive = page.getByRole('button', { name: `Archive ${item.title}`, exact: true });
       await expect(archive).toBeVisible();
       await archive.scrollIntoViewIfNeeded();
       expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);

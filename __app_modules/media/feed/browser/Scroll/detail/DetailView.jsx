@@ -308,7 +308,7 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
             <button type="button" aria-pressed={!!item.state?.isSaved} onClick={() => onStateAction?.(item.state?.isSaved ? 'unsave' : 'save')}>{item.state?.isSaved ? 'Saved' : 'Save'}</button>
             <button type="button" onClick={() => onStateAction?.(item.state?.isArchived ? 'unarchive' : 'archive')}>{item.state?.isArchived ? 'Restore' : 'Archive'}</button>
             <button type="button" onClick={() => onStateAction?.((item.state?.isRead ?? item.isRead) ? 'unread' : 'read')}>{(item.state?.isRead ?? item.isRead) ? 'Mark unread' : 'Mark read'}</button>
-            <OfflineEditionButton item={item} detail={{ sections, ogImage, ogDescription }} />
+            <OfflineEditionButton item={item} detail={{ sections, ogImage, ogDescription }} announce={inModal} />
           </div>
           {item.link && !openUrl && <span className="detail-link-text">{item.link}</span>}
           {openUrl && (
