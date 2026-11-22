@@ -13,6 +13,10 @@ import OfflineEditionButton from "../../offline/OfflineEditionButton.jsx";
 import { webLink, frameableLink } from "../../../shared/webLink.mjs";
 import "./DetailView.scss";
 
+function isEditableTarget(target) {
+  return target?.isContentEditable || target?.closest?.('input, textarea, select, [role="textbox"], [role="slider"]');
+}
+
 export default function DetailView({ renderDialog, focusOnEntry = false, item, sections, detailActions, ogImage, ogDescription, loading, error, onRetry, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem, onStateAction }) {
   const inModal = Boolean(renderDialog);
   const usesDismissStack = useDismissLayer(!inModal, onBack);
@@ -196,8 +200,7 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
     const { key, target, currentTarget } = event;
     if (event.defaultPrevented || event.nativeEvent.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
     if (key !== 'ArrowLeft' && key !== 'ArrowRight') return;
-    if (!currentTarget.contains(target) || target.isContentEditable ||
-      target.closest?.('input, textarea, select, [role="textbox"], [role="slider"]')) return;
+    if (!currentTarget.contains(target) || isEditableTarget(target)) return;
     const changeArticle = key === 'ArrowLeft' ? onPrev : onNext;
     if (!changeArticle) return;
     event.preventDefault();
@@ -207,6 +210,10 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
   const touchRef = useRef(null);
 
   const handleTouchStart = useCallback((e) => {
+    if (isEditableTarget(e.target)) {
+      touchRef.current = null;
+      return;
+    }
     const t = e.touches[0];
     touchRef.current = { x: t.clientX, y: t.clientY, time: Date.now() };
   }, []);
