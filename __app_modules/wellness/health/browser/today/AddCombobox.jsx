@@ -10,6 +10,7 @@ import { operationRequest } from "../capture/operationRequest.js";
 import { FoodIcon } from "./FoodIcon.jsx";
 import { nutritionPhotoUrl } from "./photoUrl.js";
 import { reportArtworkFailure } from "./artworkLog.js";
+import { formatFoodPortion } from '../../portable/contracts/health/foodQuantity.mjs';
 
 /**
  * A suggestion's picture: the product photo a barcode scan left on the food
@@ -29,9 +30,12 @@ function SuggestArt({ entry }) {
 
 /** "325 ml · " for a label serving, "30 g · " for grams, nothing when unknown. */
 function portionLabel(entry) {
-  if (entry.grams > 0) return `${Math.round(entry.grams)} g · `;
-  const serving = entry.serving;
-  return serving?.amount > 0 && serving.unit ? `${Math.round(serving.amount)} ${serving.unit} · ` : '';
+  const portion = formatFoodPortion({
+    grams: entry.grams,
+    amount: entry.serving?.amount,
+    unit: entry.serving?.unit,
+  });
+  return portion === '—' ? '' : `${portion} · `;
 }
 import { shortlistPath, showCommittedFoodRows, provisionalFoodRow, settleProvisionalRow } from "../healthResources.js";
 import { localTodayISO, currentMealBucketId } from "./mealBuckets.js";
