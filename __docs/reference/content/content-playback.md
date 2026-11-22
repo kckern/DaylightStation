@@ -360,6 +360,17 @@ Composite playback layers a visual track and an audio track into a coordinated p
 ?play=plex:12345&overlay=plex:99      # video + audio overlay
 ```
 
+### Which saved spots resume
+
+A play resumes from the saved spot only when it is a real place someone stopped,
+not a peek at the opening: the spot and the time actually watched must both reach
+3 minutes (or a tenth of the item's length, when that is shorter, so a song or
+short clip still resumes). Otherwise the play starts from the top. Watch time is
+checked only when the record has it. The rule is
+`__capabilities/playback/server/domain/services/isResumeWorthy.mjs`, applied by
+`PlayResponseService` (direct plays, and the provenance scene's `startSec`) and
+`QueueService` (queue items).
+
 ### Start position URL params (`goto` / `start`)
 
 ```

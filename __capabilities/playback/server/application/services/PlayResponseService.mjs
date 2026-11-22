@@ -2,6 +2,7 @@
 
 import { MediaProgress } from "../../../../content-catalog/server/progress.mjs";
 import { normalizePlaybackQuality } from '#shared/contracts/media/playbackQuality.mjs';
+import { isResumeWorthy } from '../../domain/services/isResumeWorthy.mjs';
 
 /**
  * PlayResponseService
@@ -213,7 +214,8 @@ export class PlayResponseService {
   #resumeProgress(resumable, watchState, resume) {
     if (resume === false || !resumable || !(watchState?.playhead > 0) || !(watchState?.duration > 0)) return null;
     const progress = new MediaProgress({ ...watchState, now: this.#now() });
-    return progress.isInProgress() ? progress : null;
+    // A peek at the opening (a few seconds, then back out) starts from the top.
+    return progress.isInProgress() && isResumeWorthy(progress) ? progress : null;
   }
 
   /**

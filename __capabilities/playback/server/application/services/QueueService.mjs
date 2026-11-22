@@ -1,5 +1,6 @@
 import { PlayableItem } from "../../../../content-catalog/server/items.mjs";
 import { DefaultMediaProgressClassifier } from "../../domain/services/DefaultMediaProgressClassifier.mjs";
+import { isResumeWorthy } from "../../domain/services/isResumeWorthy.mjs";
 import { QueueService as QueuePolicy } from "../../../../content-catalog/server/queue-policy.mjs";
 import { orderWatchedByRecency } from "../../../../content-catalog/server/queue-policy.mjs";
 
@@ -41,7 +42,7 @@ export class QueueService extends QueuePolicy {
       }
       return playables.map(item => {
         const progress = progressMap.get(item.id);
-        return progress && item.resumable && progress.playhead
+        return progress && item.resumable && progress.playhead && isResumeWorthy({ ...progress, duration: progress.duration || item.duration })
           ? this._withResumePosition(item, progress)
           : item;
       });
@@ -71,7 +72,7 @@ export class QueueService extends QueuePolicy {
 
     const enriched = playables.map(item => {
       const progress = progressMap.get(item.id);
-      return progress && item.resumable && progress.playhead
+      return progress && item.resumable && progress.playhead && isResumeWorthy({ ...progress, duration: progress.duration || item.duration })
         ? this._withResumePosition(item, progress)
         : item;
     });

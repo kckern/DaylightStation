@@ -361,12 +361,22 @@ describe('useIntroGate: resume after a long absence, and restart', () => {
     expect(el.play).toHaveBeenCalled();
   });
 
+  it('replays when a peek a few seconds in is restarted (the restart key from 18 s)', () => {
+    const el = fakeVideo();
+    el.seeking = false;
+    const onReplay = vi.fn();
+    setup({ el, intro: READY, startSec: 16, onReplay });
+    act(() => { el.paused = false; el.readyState = 4; watchTo(el, 18.8); });
+    act(() => { seek(el, 0); });
+    expect(onReplay).toHaveBeenCalledWith(1);
+  });
+
   it('does not replay for a short scrub back, or a seek to the top from early on', () => {
     const el = fakeVideo();
     el.seeking = false;
     const onReplay = vi.fn();
     setup({ el, intro: READY, startSec: 5520, onReplay });
-    act(() => { watchTo(el, 30); seek(el, 0); });
+    act(() => { watchTo(el, 6); seek(el, 0); });
     act(() => { watchTo(el, 200); seek(el, 150); });
     expect(onReplay).not.toHaveBeenCalled();
   });

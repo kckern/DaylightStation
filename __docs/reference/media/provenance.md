@@ -84,7 +84,7 @@ contract and the intro slot" in `__docs/reference/content/content-playback.md`):
   `scene.resume_after_hours`, default 6, ago) becomes the intro's `resumeOk`, and the
   scene covers the resume point instead.
 - **A restart replays it.** Once the scene is done (or was off for a resume), a seek
-  from 60 s or later back to within 2 s of the top replays the scene as a fresh
+  from 10 s or later back to within 2 s of the top replays the scene as a fresh
   start: the video is held at the top for a new hold (`intro.replay`).
 - The scene is drawn in the Player's intro layer, below its loading layer: the
   source-healing wait, its Skip and the exhausted/held recovery UI always paint over

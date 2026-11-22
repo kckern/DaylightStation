@@ -60,7 +60,7 @@ export const INTRO_COVER_CEILING_MS = 20000;
  * A restart: once the gate is done, a seek from at least RESTART_FROM_SEC back
  * to within RESTART_TO_SEC of the top replays the intro, as a fresh start.
  */
-export const RESTART_FROM_SEC = 60;
+export const RESTART_FROM_SEC = 10;
 export const RESTART_TO_SEC = 2;
 /** Pause/play source tag for the gate's own hold (see lib/playbackToggleSource.js). */
 const HOLD_SOURCE = 'intro-hold';
