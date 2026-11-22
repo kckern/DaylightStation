@@ -28,7 +28,7 @@ export function ConfirmModal({
       onClose={onClose}
       closeOnEscape={!usesDismissStack && closeOnEscape && !loading}
       closeOnClickOutside={!loading}
-      closeButtonProps={{ disabled: loading }}
+      closeButtonProps={{ 'aria-label': 'Close dialog', disabled: loading }}
       title={title}
       centered
       size="sm"
