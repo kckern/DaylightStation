@@ -112,4 +112,27 @@ describe('ListAdapter — list item params on queued app playables', () => {
     expect(item.params).toEqual({ autostart: true });
     expect('params' in original).toBe(false);
   });
+
+  it('does not stamp a nested list item\'s params onto the inner list\'s apps', async () => {
+    const appAdapter = { source: 'app', resolvePlayables: vi.fn(async (id) => [appPlayable(id.replace(/^app:/, ''))]) };
+    const registry = { resolve: vi.fn((input) => {
+      const [source, ...rest] = input.split(':');
+      if (source === 'app') return { localId: rest.join(':'), adapter: appAdapter };
+      return { localId: input, adapter: outer };
+    }) };
+    const outer = new ListAdapter({ dataPath: '/fake/data', registry, mediaProgressMemory: null,
+      logger: { info: vi.fn(), warn: vi.fn(), debug: vi.fn() } });
+    outer._listCache.set('menus:outer', { mtime: 1, data: normalizeListConfig({ items: [
+      { label: 'Games', input: 'menu:inner', action: 'Queue', params: { outer: true } },
+    ] }, 'outer') });
+    outer._listCache.set('menus:inner', { mtime: 1, data: normalizeListConfig({ items: [
+      { label: 'Charades', input: 'app:party-games/charades:fhe', action: 'Queue', params: { autostart: true } },
+      { label: 'Wrap-up', input: 'app:wrapup', action: 'Queue' },
+    ] }, 'inner') });
+
+    const items = await outer.resolvePlayables('menu:outer');
+    expect(items.map(i => i.id)).toEqual(['app:party-games/charades:fhe', 'app:wrapup']);
+    expect(items[0].params).toEqual({ autostart: true });
+    expect('params' in items[1]).toBe(false);
+  });
 });

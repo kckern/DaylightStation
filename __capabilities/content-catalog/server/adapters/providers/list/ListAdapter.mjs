@@ -50,6 +50,11 @@ function withAppParams(playables, params) {
   return playables.map(p => (p && p.format === 'app' ? { ...p, params: { ...p.params, ...params } } : p));
 }
 
+/** Wrap a resolution task so the app playables it yields carry `params`. */
+function withAppParamsTask(task, params) {
+  return async () => withAppParams(await task(), params);
+}
+
 /**
  * Format a kebab-case or camelCase name to human-readable title
  * @param {string} name - Raw name like "comefollowme2025" or "morning-program"
@@ -998,7 +1003,8 @@ export class ListAdapter {
         const hasQueueAction = child.actions?.queue && Object.keys(child.actions.queue).length > 0;
         const hasOpenAction = child.actions?.open && Object.keys(child.actions.open).length > 0;
 
-        // Skip open/list actions - they're not playable
+        // Skip open/list actions - they're not playable.
+        // App item params are intentionally not carried on this watchlist path.
         if (hasOpenAction && !hasPlayAction && !hasQueueAction) {
           continue;
         }
@@ -1096,8 +1102,8 @@ export class ListAdapter {
       if (this.registry) {
         const resolved = this.registry.resolve(input);
         if (!resolved?.adapter) continue;
-        const tasksBefore = tasks.length;
 
+        let task = null;
         if (listType === 'programs' && !item.queue) {
           // Programs with play action: pick ONE "next up" item per slot
           const colonIdx = input.indexOf(':');
@@ -1111,16 +1117,16 @@ export class ListAdapter {
             // default in-progress / first-unwatched cascade and let
             // ItemSelectionService apply the named strategy. allowFallback
             // recycles the pool when fully watched so the slot never goes empty.
-            tasks.push(() => this._pickViaStrategy(strategy, resolved, child));
+            task = () => this._pickViaStrategy(strategy, resolved, child);
           } else {
-            tasks.push(() => this._getNextPlayableFromChild(child, resolved).then(item => item ? [item] : []));
+            task = () => this._getNextPlayableFromChild(child, resolved).then(item => item ? [item] : []);
           }
         } else {
           // Queue action (programs) or menus: return ALL playables
           if (resolved.adapter.resolvePlayables) {
             const canonicalId = `${resolved.adapter.source}:${resolved.localId}`;
             const shouldShuffle = !!item.shuffle;
-            tasks.push(async () => {
+            task = async () => {
               const resolved_items = await resolved.adapter.resolvePlayables(canonicalId);
               const sequenced = await this._applySequence(canonicalId, resolved_items, shouldShuffle);
               if (sequenced) return sequenced;
@@ -1131,15 +1137,14 @@ export class ListAdapter {
                 }
               }
               return resolved_items;
-            });
+            };
           }
         }
 
-        // This item's task (if one was queued) hands its params to the app playables it yields.
-        if (item.params && tasks.length > tasksBefore) {
-          const run = tasks[tasks.length - 1];
-          tasks[tasks.length - 1] = async () => withAppParams(await run(), item.params);
-        }
+        // Params belong to this item's own type, so they go only to an item that is itself
+        // an app; an item pointing at a nested list never stamps them onto that list's apps.
+        const isApp = resolved.adapter.source === 'app';
+        if (task) tasks.push(item.params && isApp ? withAppParamsTask(task, item.params) : task);
       }
     }
 

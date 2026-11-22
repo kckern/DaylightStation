@@ -13,6 +13,12 @@ describe('toQueueItem params', () => {
     expect('params' in toQueueItem(appItem())).toBe(false);
   });
 
+  it('drops params that are not a plain object', () => {
+    for (const params of ['autostart', true, ['a'], new Date(0)]) {
+      expect('params' in toQueueItem(appItem({ params }))).toBe(false);
+    }
+  });
+
   it('does not copy params onto a non-app queue item', () => {
     const qi = toQueueItem({ id: 'plex:1', title: 'One', source: 'plex', mediaUrl: '/m/1', mediaType: 'video', metadata: {}, params: { x: 1 } });
     expect('params' in qi).toBe(false);
