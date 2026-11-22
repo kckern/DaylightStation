@@ -53,8 +53,9 @@ as per-play `@keyframes` for each line; the stops are timers for the dots
 **Contrast.** When the logo preloads, the player measures it (`logoContrast.js`): the
 mean relative luminance of its opaque pixels against the field, as a WCAG ratio. Under
 3:1 (the large-graphics threshold) the logo rides on a light rounded plate, in the centre
-and docked. Disney+'s navy wordmark (about 2.5:1) gets one; Netflix and Kanopy red do
-not. A newly added dark logo gets a plate without any change.
+and docked. Netflix and Kanopy red do not need one. A newly added dark logo gets a
+plate without any change; to avoid the plate, add a `<id>.white.svg` variant (Disney+'s
+navy wordmark, about 2.5:1, has one: white wordmark, azure arc).
 
 **The Player gates it.** The scene is the Media app's *intro* in the shared Player's
 intro slot (`useVideoIntro` in the playback presentation contract): `useProvenanceIntro`
