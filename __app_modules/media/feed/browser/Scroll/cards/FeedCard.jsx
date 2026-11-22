@@ -366,6 +366,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
 
   const canPlayInline = item.contentType === 'youtube' && item.meta?.videoId;
   const detailPath = inlineOwnerId === ownerId && canPlayInline && inlineYouTubeDetailPath(item.id, item.meta.videoId);
+  const hasMediaArea = hasArtwork || Boolean(detailPath);
 
   const handlePlay = (e) => {
     e.stopPropagation();
@@ -391,7 +392,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
       }}
     >
       {/* Hero image / inline player */}
-      {hasArtwork && (
+      {hasMediaArea && (
         <div style={{
             overflow: 'hidden',
             position: 'relative',
@@ -534,7 +535,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
       {/* Body below image */}
       <div style={{ padding: '0.75rem 1rem', lineHeight: 1 }}>
         {/* Source bar for text-only cards (no thumbnail to overlay) */}
-        {!hasArtwork && (
+        {!hasMediaArea && (
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -582,7 +583,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
           </span>
         )}
         {/* Playback and archive actions for text-only cards. */}
-        {!hasArtwork && (item.meta?.playable || onDismiss) && (
+        {!hasMediaArea && (item.meta?.playable || onDismiss) && (
           <div style={{
             display: 'flex',
             alignItems: 'center',
