@@ -19,6 +19,9 @@ export function PhaseReview({ step, content, responses, setResponse }) {
     return (
       <Stack gap="md">
         <Text size="sm" fw={500}>Deep Review</Text>
+        {content?.plan?.purpose?.statement && (
+          <Text size="sm" c="dimmed">Your purpose: {content.plan.purpose.statement}</Text>
+        )}
 
         <Textarea
           label="Are your goals still aligned with your purpose?"
