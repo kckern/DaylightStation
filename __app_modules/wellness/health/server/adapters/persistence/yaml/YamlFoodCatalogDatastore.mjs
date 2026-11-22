@@ -78,6 +78,22 @@ export class YamlFoodCatalogDatastore extends IFoodCatalogDatastore {
     const raw = readHealthYaml(this.#dataService, YamlFoodCatalogDatastore.CATALOG_PATH, userId);
     if (raw == null) return [];
     if (!Array.isArray(raw)) throw new Error('Saved foods could not be read: invalid catalog format.');
+
+    // Older catalog rows may predate stable IDs. Persist IDs before returning
+    // them so later edit/remove requests can address the same entry, while
+    // keeping every stored field (including fields this adapter doesn't know).
+    if (raw.some(item => !item.id)) {
+      const withIds = raw.map(item => item.id ? item : { ...item, id: randomUUID() });
+      writeHealthYaml(
+        this.#dataService,
+        YamlFoodCatalogDatastore.CATALOG_PATH,
+        userId,
+        withIds,
+        'CATALOG_WRITE_FAILED',
+      );
+      return withIds.map(item => this.#hydrate(item));
+    }
+
     return raw.map(item => this.#hydrate(item));
   }
 
