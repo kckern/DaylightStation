@@ -701,13 +701,8 @@ export default function Reader() {
                 const unreadCount = group.articles.filter(a => !(a.state?.isRead ?? a.isRead)).length;
                 return (
                   <div key={row.id} ref={virtualRows.measureRef(row.id)} className="reader-day-header">
-                    <button
-                      className={`reader-group-arrow ${isGroupCollapsed ? 'collapsed' : ''}`}
-                      onClick={() => toggleGroupCollapse(group.key)}
-                      aria-label={`${isGroupCollapsed ? 'Expand' : 'Collapse'} ${group.label}`}
-                      aria-expanded={!isGroupCollapsed}
-                    >&#9662;</button>
                     <button className="reader-group-label" onClick={() => toggleGroupCollapse(group.key)} aria-expanded={!isGroupCollapsed}>
+                      <span aria-hidden="true" className={`reader-group-arrow ${isGroupCollapsed ? 'collapsed' : ''}`}>&#9662;</span>
                       {group.label}
                       <span className="reader-group-count">{group.articles.length}</span>
                     </button>

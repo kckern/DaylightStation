@@ -219,17 +219,21 @@
 }
 
 .reader-group-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   flex: 1;
   border: 0;
   background: transparent;
   color: inherit;
+  padding: 0;
+  font: inherit;
   text-align: left;
   cursor: pointer;
   &:hover { color: var(--feed-accent-strong); }
 }
 
 .reader-group-count {
-  margin-left: 0.35rem;
   font-weight: 400;
   color: var(--feed-text-3);
   font-size: 0.65rem;
