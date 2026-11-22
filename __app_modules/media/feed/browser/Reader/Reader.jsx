@@ -157,16 +157,34 @@ function sortWithinGroups(groups) {
  * Unfiltered always uses day grouping.
  */
 function smartGroup(articles, isFiltered) {
-  if (!isFiltered || articles.length === 0) return sortWithinGroups(groupByDay(articles));
-
-  const groupers = [groupByDay, groupByWeek, groupByMonth, groupBySeason, groupByYear];
-  for (const fn of groupers) {
-    const groups = fn(articles);
-    const avg = articles.length / groups.length;
-    if (avg >= 3) return sortWithinGroups(groups);
+  const datedArticles = [];
+  const undatedArticles = [];
+  for (const article of articles) {
+    const hasDate = article.published != null && article.published !== '';
+    if (hasDate && Number.isFinite(new Date(article.published).getTime())) datedArticles.push(article);
+    else undatedArticles.push(article);
   }
-  // Fallback: year (coarsest)
-  return sortWithinGroups(groupByYear(articles));
+
+  let groups = [];
+  if (datedArticles.length > 0) {
+    if (!isFiltered) groups = groupByDay(datedArticles);
+    else {
+      const groupers = [groupByDay, groupByWeek, groupByMonth, groupBySeason, groupByYear];
+      for (const fn of groupers) {
+        const candidate = fn(datedArticles);
+        if (datedArticles.length / candidate.length >= 3) {
+          groups = candidate;
+          break;
+        }
+      }
+      // Fallback: year (coarsest)
+      if (groups.length === 0) groups = groupByYear(datedArticles);
+    }
+  }
+  if (undatedArticles.length > 0) {
+    groups.push({ key: 'publication-date-unknown', label: 'Publication date unknown', articles: undatedArticles });
+  }
+  return sortWithinGroups(groups);
 }
 
 export default function Reader() {
