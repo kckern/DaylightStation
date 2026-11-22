@@ -47,8 +47,15 @@ function RingClip({ camera, clip, ringMs, eager, label }) {
   const [started, setStarted] = useState(false);
   const video = useRef(null);
   const playButton = useRef(null);
+  const retryButton = useRef(null);
   const focusPlayAfterReveal = useRef(false);
+  const focusRetryAfterFailure = useRef(false);
   useLayoutEffect(() => {
+    if (focusRetryAfterFailure.current && failed) {
+      focusRetryAfterFailure.current = false;
+      retryButton.current?.focus({ preventScroll: true });
+      return;
+    }
     if (!focusPlayAfterReveal.current || !shown || failed || started) return;
     focusPlayAfterReveal.current = false;
     playButton.current?.focus({ preventScroll: true });
@@ -67,6 +74,7 @@ function RingClip({ camera, clip, ringMs, eager, label }) {
       <p className="home-rings__failed" role="alert">
         <span>Recording could not be loaded</span>
         <Button
+          ref={retryButton}
           size="compact-xs"
           variant="subtle"
           aria-label={`Retry recording from the ${label} ring`}
@@ -104,6 +112,8 @@ function RingClip({ camera, clip, ringMs, eager, label }) {
         onPlay={() => logger.info('home.ring.play', { camera, ringMs, clip: clip.name })}
         onError={(e) => {
           logger.warn('home.ring.clip.failed', { camera, ringMs, clip: clip.name, attempt, code: e.currentTarget?.error?.code ?? null });
+          const activeElement = e.currentTarget.ownerDocument.activeElement;
+          focusRetryAfterFailure.current = activeElement === playButton.current || activeElement === e.currentTarget;
           setFailed(true);
         }}
       />
