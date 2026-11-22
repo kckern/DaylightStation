@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeAll, describe, expect, test, vi } from 'vitest';
 import DetailView from "./DetailView.jsx";
 
@@ -13,6 +13,17 @@ const article = {
   link: 'https://news.example/story',
   state: {},
 };
+
+function touch(identifier, x, y) {
+  return { identifier, clientX: x, clientY: y };
+}
+
+function dispatchTouch(target, type, touches, changedTouches) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'touches', { value: touches });
+  Object.defineProperty(event, 'changedTouches', { value: changedTouches });
+  act(() => target.dispatchEvent(event));
+}
 
 describe('DetailView recovery and navigation', () => {
   beforeAll(() => {
@@ -58,6 +69,36 @@ describe('DetailView recovery and navigation', () => {
     expect(onRetry).toHaveBeenCalledOnce();
     expect(screen.getByRole('button', { name: 'Previous' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
+  });
+
+  test('only advances for a complete single-finger swipe', () => {
+    const matchMedia = vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: true });
+    const onNext = vi.fn();
+    const { container } = render(<DetailView item={article} sections={[]} loading={false} onBack={vi.fn()} onNext={onNext} />);
+    const header = container.querySelector('.detail-source-bar');
+    const firstFinger = touch(1, 300, 100);
+    const secondFinger = touch(2, 170, 100);
+
+    try {
+      dispatchTouch(header, 'touchstart', [firstFinger], [firstFinger]);
+      dispatchTouch(header, 'touchstart', [firstFinger, secondFinger], [secondFinger]);
+      dispatchTouch(header, 'touchend', [firstFinger], [secondFinger]);
+      dispatchTouch(header, 'touchend', [], [firstFinger]);
+      expect(onNext).not.toHaveBeenCalled();
+
+      const canceledFinger = touch(3, 300, 100);
+      dispatchTouch(header, 'touchstart', [canceledFinger], [canceledFinger]);
+      dispatchTouch(header, 'touchcancel', [], [canceledFinger]);
+      dispatchTouch(header, 'touchend', [], [touch(3, 100, 100)]);
+      expect(onNext).not.toHaveBeenCalled();
+
+      const swipeFinger = touch(4, 300, 100);
+      dispatchTouch(header, 'touchstart', [swipeFinger], [swipeFinger]);
+      dispatchTouch(header, 'touchend', [], [touch(4, 100, 100)]);
+      expect(onNext).toHaveBeenCalledOnce();
+    } finally {
+      matchMedia.mockRestore();
+    }
   });
 
   test('falls back to a YouTube embed when loading finishes without sections', () => {

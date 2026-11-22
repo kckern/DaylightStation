@@ -214,17 +214,23 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
       touchRef.current = null;
       return;
     }
+    if (e.touches.length !== 1) {
+      touchRef.current = null;
+      return;
+    }
     const t = e.touches[0];
-    touchRef.current = { x: t.clientX, y: t.clientY, time: Date.now() };
+    touchRef.current = { identifier: t.identifier, x: t.clientX, y: t.clientY, time: Date.now() };
   }, []);
 
   const handleTouchEnd = useCallback((e) => {
-    if (!touchRef.current) return;
-    const t = e.changedTouches[0];
-    const dx = t.clientX - touchRef.current.x;
-    const dy = t.clientY - touchRef.current.y;
-    const dt = Date.now() - touchRef.current.time;
+    const start = touchRef.current;
     touchRef.current = null;
+    if (!start || e.touches.length !== 0) return;
+    const t = Array.from(e.changedTouches).find(({ identifier }) => identifier === start.identifier);
+    if (!t) return;
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    const dt = Date.now() - start.time;
 
     if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx) * 0.7 || dt > 400) return;
 
@@ -232,8 +238,10 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
     if (dx > 0 && onPrev) { feedLog.nav('detail swipe prev', { dx }); navigateWithAnimation(-1, onPrev); }
   }, [onNext, onPrev, navigateWithAnimation]);
 
+  const handleTouchCancel = useCallback(() => { touchRef.current = null; }, []);
+
   const article = (
-    <div className="detail-view" onKeyDown={inModal ? undefined : handleArticleArrows} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+    <div className="detail-view" onKeyDown={inModal ? undefined : handleArticleArrows} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd} onTouchCancel={handleTouchCancel}>
       <button type="button" ref={backRef} className="detail-close ds-touch-target" onClick={onBack} aria-label="Back to feed"
         aria-hidden={stickyVisible || undefined} data-autofocus={inModal && !stickyVisible || undefined}>
         <UiIcon name="back" size={20} />
