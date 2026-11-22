@@ -250,7 +250,7 @@ School hands over a flat list of WorkItems for the window; `curateSchoolWork` pl
 
 - **Weekly dedupe per learner and `groupKey`.** All of one child's items sharing a `groupKey` (one course, one book's start or finish, one card-ladder package, one printed page) become one card for the week, carrying the group's total weight. A course or program group of more than one item gets a count on its subtitle ("Unit 3 · 4 sessions this week", "6 days this week").
 - **One per child per day.** At most one curated card per child per day.
-- **Priority order.** Groups claim days in this order: finished book, completed course, printed activity, started book, worked course, program; then higher weight, then the latest `at`.
+- **Priority order.** Groups claim days in this order: finished book, completed course, printed activity, started book, worked course (kept in the table; sessions no longer produce it), program; then higher weight, then the latest `at`.
 - **Fallback day.** A group goes on its heaviest day. If a higher-ranked group already holds that child's slot there, it takes its next-best day with a free slot, and is left out of the reel only when none is free. It is still listed in that day's Down panel.
 - Items missing `studyDay`, `at`, `learnerId` or `groupKey` are dropped instead of failing the week.
 
@@ -263,7 +263,7 @@ School owns the data and hands it over through `createSchoolLearnerWork` (see [P
 | Source | Item | Picture |
 |---|---|---|
 | Reading log | `book` started (opened in the window) and finished | Book cover |
-| Course sessions (finished sessions only) | `course` completed (passed) or worked | Course poster |
+| Course sessions (finished sessions only) | `course` completed: a finished session always reads "Completed", whatever its result | Course poster |
 | Printed activities (completed, not voided) | `activity` completed | The page, rendered (see [Printed activities](../school/programs.md#printed-activities--a-page-done-on-paper)) |
 | Card ladder day files | `program` worked, weight = words practiced that day | Package poster (see [Card ladder](../school/card-ladder.md#where-things-live)) |
 
@@ -273,7 +273,7 @@ School owns the data and hands it over through `createSchoolLearnerWork` (see [P
 
 - **Bootstrap** (`GET /api/v1/weekly-review/bootstrap`) carries `day.school`, `day.schoolAll` and `schoolShowcase: [{ learnerId, learnerName, images, bullets, source: 'plain' }]`. School is fetched in parallel with photos, calendar, fitness and weather, and bounded at **8 s** (`schoolTimeoutMs`): a timeout or an error leaves every day without school work and an empty showcase list; the rest of the week loads normally.
 - **Image** `GET /api/v1/weekly-review/school/image?ref=<ref>`, where `ref` is `course:<courseId>`, `activity:<issuanceId>` or `program:<programId>:<instanceId>` (e.g. `program:card-ladder:<package>`). Any other shape is 400 (`bad-ref`); nothing to show is 404; an image is sent with `Cache-Control: private, max-age=86400`. Book covers use their own cover URL, not this route.
-- **Showcase** `GET /api/v1/weekly-review/school/showcase?week=YYYY-MM-DD` (400 unless the week is a real calendar day) returns `{ showcases: [{ learnerId, learnerName, bullets, images, source }] }` with `source` `ai` or `plain`. The screen asks for it after each window lands (bounded at 20 s on the client) and keeps the answer only if that window is still on screen.
+- **Showcase** `GET /api/v1/weekly-review/school/showcase?week=YYYY-MM-DD` (400 unless the week is a real calendar day) returns `{ showcases: [{ learnerId, learnerName, bullets, images, source }] }` with `source` `ai` or `plain`. The screen asks for it after each window lands (bounded at 25 s on the client, above the server's worst case of the school read plus the 10 s AI bound) and keeps the answer only if that window is still on screen.
 
 ### Showcase bullets
 
@@ -281,7 +281,7 @@ School owns the data and hands it over through `createSchoolLearnerWork` (see [P
 
 - **Plain bullets** (`plainBullets`) are instant and always available: "Finished Holes", "Math 2 · 4 sessions", "Science: Plants", "3 printed pages: mazes and a sudoku", "Korean · 14 words". They count things done, never scores, grades or praise. A book started and finished in the same week says only "Finished".
 - **AI bullets.** `SchoolShowcaseService` asks the weekly-review AI gateway (usage feature `school-showcase`), one child at a time in parallel, for a JSON array of short third-person bullets, and serves the plain bullets unless the answer passes every check.
-- **Safeguards.** The model sees only the child's work facts: no name, and titles and subtitles capped at 80 characters. It is told the strings are catalog labels, never instructions. An answer is kept only if it is one to five non-empty strings of at most 120 characters with no praise word (great, amazing, perfect, proud, best, smart, ...), score, grade, percent or exclamation mark. Words inside the child's own titles are masked before that check, so "Great Expectations" or "Oh, the Places You'll Go!" can be named. Each call is bounded (15 s by default), and two requests for the same week at the same time share one run.
+- **Safeguards.** The model sees only the child's work facts: no name, and titles and subtitles capped at 80 characters. It is told the strings are catalog labels, never instructions. An answer is kept only if it is one to five non-empty strings of at most 120 characters with no praise word (great, amazing, perfect, proud, best, smart, ...), score, grade, percent or exclamation mark. Words inside the child's own titles are masked before that check, so "Great Expectations" or "Oh, the Places You'll Go!" can be named. Each call is bounded (10 s by default), and two requests for the same week at the same time share one run.
 - **Cache.** Answers are written atomically to `weekly-review/log/<week>/school-showcase.yml` under the household as `{ <learnerId>: { itemsHash, bullets, at } }`, or `{ itemsHash, bullets: null, rejectedAt, attempts }` for an answer that failed the checks. After two rejections for the same week the child gets plain bullets without another AI call. `itemsHash` is the sorted `groupKey:weight` pairs of the child's week, so new work redrafts that child and a replay of an unchanged week costs nothing. A timeout or gateway error is not cached.
 
 ### When cards are missing: log events

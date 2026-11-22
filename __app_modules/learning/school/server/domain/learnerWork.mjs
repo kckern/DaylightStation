@@ -1,6 +1,6 @@
 /**
  * Learner work — a child's school week as plain, celebratory work items:
- * books started and finished, course sessions worked, printed pages done,
+ * books started and finished, course sessions completed, printed pages done,
  * card-ladder days. Weekly review curates these into TV cards.
  *
  * A work item never carries a score, percent, correctness, answer, coin or
@@ -127,16 +127,25 @@ export function booksToWork(readings, { learnerId, learnerName, from, to, bookFo
   return items;
 }
 
+/** 'math/saxon-5' → 'saxon-5'. Course ids can carry a subject path; refs and posters take the last segment. */
+function courseIdSegment(id) {
+  if (typeof id !== 'string') return null;
+  const last = id.split('/').filter(Boolean).pop();
+  return last || null;
+}
+
 export function sessionsToWork(sessions, { learnerId, learnerName, from, to, unitSummary }) {
   const who = { learnerId, learnerName };
   const items = [];
   for (const session of list(sessions)) {
     if (session?.terminal !== true || !inWindow(session.studyDay, from, to)) continue;
     const summary = unitSummary ? unitSummary(session.unitId) : null;
-    const courseId = summary?.courseId ?? null;
+    const courseId = courseIdSegment(summary?.courseId);
     items.push(workItem(who, {
       kind: 'course',
-      verb: session.outcome?.result === 'passed' ? 'completed' : 'worked',
+      // Kids watch the review: a finished session always reads 'completed',
+      // whatever its result, so the TV and the AI facts never reveal pass/fail.
+      verb: 'completed',
       title: summary?.courseTitle ?? summary?.title ?? 'Schoolwork',
       subtitle: summary?.courseTitle ? summary.title ?? null : null,
       at: session.outcome?.at ?? session.updatedAt,
@@ -201,7 +210,7 @@ export function activitiesToWork(issuances, { learnerId, learnerName, from, to }
 export function cardLadderToWork(days, { learnerId, learnerName, from, to, packageId, packageTitle }) {
   const who = { learnerId, learnerName };
   const imageUrl = typeof packageId === 'string' && packageId
-    ? '/api/v1/weekly-review/school/image?ref=' + encodeURIComponent('program:card-ladder:' + packageId)
+    ? schoolImageUrl(`program:card-ladder:${packageId}`)
     : null;
   const items = [];
   for (const file of list(days)) {

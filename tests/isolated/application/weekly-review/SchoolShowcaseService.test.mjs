@@ -87,7 +87,7 @@ describe('SchoolShowcaseService', () => {
     const payload = JSON.parse(messages[1].content);
     expect(payload).toEqual({ work: [{ kind: 'book', verb: 'finished', title: 'T'.repeat(80), subtitle: 'S'.repeat(80), weight: 1 }] });
     expect(messages[1].content).not.toContain('Robin');
-    expect(opts).toEqual({ temperature: 0.3, maxTokens: 400, timeout: 15000 });
+    expect(opts).toEqual({ temperature: 0.3, maxTokens: 400, timeout: 10000 });
 
     expect(store.save).toHaveBeenCalledTimes(1);
     expect(store.save).toHaveBeenCalledWith(WEEK, {

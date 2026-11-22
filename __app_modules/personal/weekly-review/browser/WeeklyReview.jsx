@@ -385,7 +385,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       try {
         const res = await withTimeout(
           DaylightAPI(`/api/v1/weekly-review/school/showcase?week=${encodeURIComponent(week)}`),
-          20000,
+          25000,
         );
         if (res === TIMEOUT) throw new Error('timeout');
         if (!Array.isArray(res?.showcases)) throw new Error('no showcases in response');

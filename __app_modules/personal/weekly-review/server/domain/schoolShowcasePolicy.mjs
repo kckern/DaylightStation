@@ -9,18 +9,13 @@
  *
  * Pure: no I/O, no clock, no crypto.
  */
-import { dedupeWorkItems, isWellFormed, workItemPriority } from './schoolWorkPolicy.mjs';
+import { dedupeWorkItems, isWellFormed, weightOf, workItemPriority } from './schoolWorkPolicy.mjs';
 
 export const MAX_SHOWCASE_IMAGES = 6;
 export const MAX_PLAIN_BULLETS = 5;
 
 /** What a page is called on the slide; the platform's name is not on a WorkItem. */
 const ACTIVITY_NOUN = 'printed page';
-
-function weightOf(item) {
-  const weight = Number(item.weight);
-  return Number.isFinite(weight) ? weight : 0;
-}
 
 function text(value) {
   return typeof value === 'string' ? value.trim() : '';

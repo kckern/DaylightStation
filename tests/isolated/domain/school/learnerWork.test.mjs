@@ -173,11 +173,25 @@ describe('sessionsToWork', () => {
     }]);
   });
 
-  it('non-passed outcome is "worked" and at falls back to updatedAt', () => {
+  it('any terminal session reads "completed", and at falls back to updatedAt', () => {
     const [item] = sessionsToWork([session({ outcome: null })], deps);
-    expect(item).toMatchObject({ verb: 'worked', at: '2026-11-17T19:05:00Z' });
+    expect(item).toMatchObject({ verb: 'completed', at: '2026-11-17T19:05:00Z' });
+  });
+
+  it('a failed session reads exactly like a passed one: nothing about the result leaks', () => {
+    const [passed] = sessionsToWork([session({ outcome: { result: 'passed', at: '2026-11-17T19:01:00Z' } })], deps);
     const [failed] = sessionsToWork([session({ outcome: { result: 'failed', at: '2026-11-17T19:01:00Z' } })], deps);
-    expect(failed).toMatchObject({ verb: 'worked', at: '2026-11-17T19:01:00Z' });
+    expect(failed).toMatchObject({ verb: 'completed', at: '2026-11-17T19:01:00Z' });
+    expect(failed).toEqual(passed);
+    expect(Object.keys(failed).sort()).toEqual([...WORK_ITEM_KEYS].sort());
+    expect(JSON.stringify(failed)).not.toMatch(/fail|pass|result/i);
+  });
+
+  it('uses the last path segment of a subject/course id for groupKey and image', () => {
+    const nested = { u3: { unitId: 'u3', title: 'Long division', subject: 'math', courseId: 'math/saxon-5', courseTitle: 'Saxon 5' } };
+    const [item] = sessionsToWork([session({ unitId: 'u3' })], { ...BASE, unitSummary: (id) => nested[id] ?? null });
+    expect(item.groupKey).toBe('course:saxon-5');
+    expect(item.imageUrl).toBe('/api/v1/weekly-review/school/image?ref=' + encodeURIComponent('course:saxon-5'));
   });
 
   it('skips non-terminal sessions', () => {

@@ -79,7 +79,7 @@ correctness, answer, coin or streak on a store row cannot leak through.
 | Source | `kind` / `verb` |
 |---|---|
 | Reading log | `book` started / finished |
-| Finished course sessions | `course` completed (passed) / worked |
+| Finished course sessions | `course` completed (a finished session always reads "Completed"; pass/fail never reaches the review) |
 | Printed activities (completed, not voided) | `activity` completed |
 | Card ladder day files | `program` worked (`weight` = words that day) |
 

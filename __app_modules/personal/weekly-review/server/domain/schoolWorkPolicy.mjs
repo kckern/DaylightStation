@@ -61,7 +61,8 @@ function byAt(a, b) {
   return a.at.localeCompare(b.at);
 }
 
-function weightOf(item) {
+/** A work item's weight as a finite number (0 when missing or not numeric). */
+export function weightOf(item) {
   const weight = Number(item.weight);
   return Number.isFinite(weight) ? weight : 0;
 }

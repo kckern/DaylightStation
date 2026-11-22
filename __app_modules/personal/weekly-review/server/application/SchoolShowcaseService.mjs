@@ -27,7 +27,7 @@ const MAX_BULLETS = 5;
 const MAX_BULLET_CHARS = 120;
 const MAX_FACT_CHARS = 80;
 const MAX_REJECTED_ATTEMPTS = 2;
-const DEFAULT_AI_TIMEOUT_MS = 15000;
+const DEFAULT_AI_TIMEOUT_MS = 10000;
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
