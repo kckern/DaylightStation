@@ -157,6 +157,7 @@ function OwnedAgentChatSurface(props) {
 
 function AgentChatView({ conversation, variant = 'light', style, mentions, starterPrompts = [] }) {
   const { pendingMentionsRef } = conversation;
+  const inputRef = useRef(null);
 
   return (
     <div
@@ -169,6 +170,7 @@ function AgentChatView({ conversation, variant = 'light', style, mentions, start
             <p>Ask about your food log, portions, or progress.</p>
             {starterPrompts.map(prompt => <button type="button" key={prompt} onClick={() => {
               conversation.runtime.thread.composer.setText(prompt);
+              inputRef.current?.focus();
             }}>{prompt}</button>)}
             <small>Choose a prompt to draft it; Send starts the conversation.</small>
           </div></ThreadPrimitive.Empty> : null}
@@ -184,18 +186,19 @@ function AgentChatView({ conversation, variant = 'light', style, mentions, start
       {/* The overlay owns Escape; do not consume it to cancel/clear the
           shared composer. Mention popovers still get first refusal. */}
       {mentions
-        ? <ComposerWithMentions mentions={mentions} pendingMentionsRef={pendingMentionsRef} cancelOnEscape={variant !== 'overlay'} />
-        : <ComposerPlain cancelOnEscape={variant !== 'overlay'} />}
+        ? <ComposerWithMentions mentions={mentions} pendingMentionsRef={pendingMentionsRef} cancelOnEscape={variant !== 'overlay'} inputRef={inputRef} />
+        : <ComposerPlain cancelOnEscape={variant !== 'overlay'} inputRef={inputRef} />}
     </div>
   );
 }
 
 // ── Plain composer (no mention popover) ──────────────────────────────────────
 
-function ComposerPlain({ cancelOnEscape }) {
+function ComposerPlain({ cancelOnEscape, inputRef }) {
   return (
     <ComposerPrimitive.Root className="coach-chat__composer">
       <ComposerPrimitive.Input
+        ref={inputRef}
         className="coach-chat__input"
         placeholder="Ask…"
         cancelOnEscape={cancelOnEscape}
@@ -207,7 +210,7 @@ function ComposerPlain({ cancelOnEscape }) {
 
 // ── Composer with @-mention trigger popover ───────────────────────────────────
 
-function ComposerWithMentions({ mentions, pendingMentionsRef, cancelOnEscape }) {
+function ComposerWithMentions({ mentions, pendingMentionsRef, cancelOnEscape, inputRef }) {
   const { fetchUrl, categories, buildAttachment } = mentions;
   const { data } = useApiResource(fetchUrl, { label: 'Coach mention suggestions', retryTransient: false });
   const mentionCategories = useMemo(() => {
@@ -299,6 +302,7 @@ function ComposerWithMentions({ mentions, pendingMentionsRef, cancelOnEscape }) 
 
       <ComposerPrimitive.Root className="coach-chat__composer">
         <ComposerPrimitive.Input
+          ref={inputRef}
           className="coach-chat__input"
           placeholder="Ask… (type @ to mention)"
           cancelOnEscape={cancelOnEscape}
