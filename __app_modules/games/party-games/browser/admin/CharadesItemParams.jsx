@@ -20,12 +20,12 @@ function emit(value, patch) {
   return next;
 }
 
-function PersonPill({ name, id, known, onRemove }) {
-  return <Group gap={4} wrap="nowrap" style={{ border: '1px solid var(--mantine-color-default-border)', borderRadius: 999, padding: '1px 2px 1px 2px' }}>
+function PersonPill({ name, id, known, removeLabel, onRemove }) {
+  return <Group role="listitem" gap={4} wrap="nowrap" style={{ border: '1px solid var(--mantine-color-default-border)', borderRadius: 999, padding: '1px 2px 1px 2px' }}>
     {/* The photo is always derived from the id; initials only show if the image fails to load. */}
     <Avatar size={20} radius="xl" src={pictureFor(id)} alt="">{known ? initialsOf(name) : '?'}</Avatar>
     <Text size="xs" style={{ whiteSpace: 'nowrap' }}>{name}</Text>
-    <CloseButton size="xs" aria-label={`Remove ${name}`} onClick={onRemove} />
+    <CloseButton size="xs" aria-label={removeLabel} onClick={onRemove} />
   </Group>;
 }
 
@@ -124,12 +124,23 @@ export default function CharadesItemParams({ value, onChange }) {
   };
 
   const nameOf = ({ entry }) => entry?.display?.name || UNKNOWN;
+  // Unknown people share a name, so number them to keep each Remove button distinct.
+  let unknownCount = 0;
+  const removeLabels = resolved.map(p => {
+    if (loading) return `Remove person ${resolved.indexOf(p) + 1}`;
+    if (p.entry) return `Remove ${nameOf(p)}`;
+    unknownCount += 1;
+    return unknownCount === 1 ? 'Remove unknown person' : `Remove unknown person ${unknownCount}`;
+  });
 
   return <Stack gap="sm">
     <Stack gap={4}>
       <Text size="xs" c="dimmed">People</Text>
       <Group gap={6} wrap="wrap" align="center">
-        {resolved.map((p, index) => <PersonPill key={`${index}:${p.id}`} name={loading ? '…' : nameOf(p)} id={p.id} known={!!p.entry} onRemove={() => remove(index)} />)}
+        <Group role="list" aria-label="Selected people" gap={6} wrap="wrap" align="center">
+          {resolved.map((p, index) => <PersonPill key={`${index}:${p.id}`} name={loading ? '…' : nameOf(p)} id={p.id} known={!!p.entry}
+            removeLabel={removeLabels[index]} onRemove={() => remove(index)} />)}
+        </Group>
         <Select size="xs" w={160} searchable placeholder="Add person…" aria-label="Add person" data={options}
           value={null} searchValue={search} onSearchChange={setSearch} onChange={pick}
           nothingFoundMessage="No one else to add" disabled={loading} comboboxProps={{ withinPortal: true }} />

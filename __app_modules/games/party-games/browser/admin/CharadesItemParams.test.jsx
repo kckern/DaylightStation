@@ -5,6 +5,8 @@ import { MantineProvider } from '@mantine/core';
 
 const directory = { people: [], loading: false, error: null, createGuest: vi.fn() };
 vi.mock('./usePeopleDirectory.js', () => ({ default: () => directory }));
+const log = vi.hoisted(() => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
+vi.mock('../../../../../frontend/src/lib/logging/Logger.js', () => ({ default: () => ({ child: () => log }) }));
 
 const { default: CharadesItemParams } = await import('./CharadesItemParams.jsx');
 
@@ -20,6 +22,9 @@ beforeEach(() => {
     guest('guest_old', 'Visitor Gone', { active: false }),
   ];
   directory.createGuest = vi.fn();
+  directory.loading = false;
+  directory.error = null;
+  for (const fn of Object.values(log)) fn.mockClear();
 });
 afterEach(cleanup);
 
@@ -81,7 +86,7 @@ it('shows an unknown id as "Unknown person" and never renders ids', () => {
   expect(screen.getAllByText('Unknown person').length).toBeGreaterThan(0);
   for (const id of ['learner-a', 'guest_1111', 'ghost-9f3c']) expect(container.textContent).not.toContain(id);
   for (const el of container.querySelectorAll('[aria-label]')) expect(el.getAttribute('aria-label')).not.toMatch(/learner-a|guest_1111|ghost-9f3c/);
-  fireEvent.click(screen.getByLabelText('Remove Unknown person'));
+  fireEvent.click(screen.getByLabelText('Remove unknown person'));
   expect(onChange).toHaveBeenLastCalledWith({ participants: ['learner-a', 'guest_1111'] });
 });
 
@@ -106,4 +111,32 @@ it('toggles autostart', () => {
   const { onChange } = renderEditor(undefined);
   fireEvent.click(screen.getByLabelText('Start automatically'));
   expect(onChange).toHaveBeenLastCalledWith({ autostart: true });
+});
+
+it('warns once per unknown id across renders', () => {
+  const value = { participants: ['learner-a', 'ghost-9f3c'] };
+  const { rerender, onChange } = renderEditor(value);
+  rerender(<MantineProvider><CharadesItemParams value={{ ...value, autostart: true }} onChange={onChange} /></MantineProvider>);
+  const warns = log.warn.mock.calls.filter(([event]) => event === 'charades.params.unknown-participant');
+  expect(warns).toHaveLength(1);
+  expect(warns[0][1]).toEqual({ participantId: 'ghost-9f3c' });
+});
+
+it('gives each unknown pill its own accessible name inside a labelled list', () => {
+  renderEditor({ participants: ['ghost-1', 'learner-a', 'ghost-2'] });
+  const list = screen.getByRole('list', { name: 'Selected people' });
+  expect(within(list).getAllByRole('listitem')).toHaveLength(3);
+  expect(screen.getByRole('button', { name: 'Remove unknown person' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Remove unknown person 2' })).toBeTruthy();
+});
+
+it('keeps the New guest modal open with the error when creating fails, and emits nothing', async () => {
+  directory.createGuest = vi.fn(async () => { throw new Error('Directory is busy'); });
+  const { onChange } = renderEditor({ participants: ['learner-a'] });
+  fireEvent.click(within(openAdd()).getByRole('option', { name: 'New guest…' }));
+  fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'Cousin Visitor' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+  expect(await screen.findByText('Directory is busy')).toBeTruthy();
+  expect(screen.getByLabelText('Name')).toBeTruthy();
+  expect(onChange).not.toHaveBeenCalled();
 });

@@ -36,6 +36,7 @@ export default function usePeopleDirectory() {
     const { document, etag: next } = await request(`${PEOPLE}?includeArchived=true`, { signal });
     etag.current = next;
     setPeople(Array.isArray(document.people) ? document.people : []);
+    setError(null);
     return document.people;
   }, []);
 
@@ -43,7 +44,7 @@ export default function usePeopleDirectory() {
     const controller = new AbortController();
     setLoading(true);
     load(controller.signal)
-      .then(list => { logger().debug('people.loaded', { count: list?.length ?? 0 }); setError(null); })
+      .then(list => { logger().debug('people.loaded', { count: list?.length ?? 0 }); })
       .catch(err => {
         if (controller.signal.aborted) return;
         logger().warn('people.load.failed', { message: err.message, status: err.status });
@@ -56,18 +57,23 @@ export default function usePeopleDirectory() {
   const createGuest = useCallback(async name => {
     const id = newGuestId();
     const send = () => request(`${PEOPLE}/guests`, { method: 'POST', body: { id, name }, etag: etag.current });
+    const failed = (err, attempt) => {
+      logger().warn('people.guest.create.failed', { message: err.message, status: err.status, code: err.code, attempt });
+      return err;
+    };
     let result;
     try {
       if (!etag.current) await load();
       result = await send();
     } catch (err) {
-      if (err.code !== 'revision_conflict' && err.status !== 428) {
-        logger().warn('people.guest.create.failed', { message: err.message, status: err.status });
-        throw err;
+      if (err.code !== 'revision_conflict' && err.status !== 428) throw failed(err, 1);
+      // The directory moved on since it was read: refresh the revision once and retry with the same id.
+      try {
+        await load();
+        result = await send();
+      } catch (retryErr) {
+        throw failed(retryErr, 2);
       }
-      // The directory moved on since it was read: refresh the revision once and retry.
-      await load();
-      result = await send();
     }
     etag.current = result.etag || etag.current;
     const entry = result.document;
