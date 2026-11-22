@@ -107,9 +107,7 @@ const YAML_PARSE_CACHE_MAX = 64;
  * @param {string} basePath - Path without extension
  * @returns {any|null} Parsed YAML content (a clone), or null if the file doesn't exist
  */
-export function loadYamlCached(basePath) {
-  const resolvedPath = resolveYamlPath(basePath);
-  if (!resolvedPath) return null;
+function loadYamlCachedResolved(resolvedPath) {
   const signature = fileSignature(resolvedPath);
   const cached = yamlParseCache.get(resolvedPath);
   if (signature && cached?.signature === signature) {
@@ -124,6 +122,18 @@ export function loadYamlCached(basePath) {
     if (yamlParseCache.size > YAML_PARSE_CACHE_MAX) yamlParseCache.delete(yamlParseCache.keys().next().value);
   }
   return value;
+}
+
+export function loadYamlCached(basePath) {
+  const resolvedPath = resolveYamlPath(basePath);
+  return resolvedPath ? loadYamlCachedResolved(resolvedPath) : null;
+}
+
+/** Cached strict YAML read with absence distinguished from read/parse failure. */
+export function loadYamlCachedEntry(basePath) {
+  const resolvedPath = resolveYamlPathStrict(basePath);
+  if (!resolvedPath) return { found: false, file: null, value: null };
+  return { found: true, file: resolvedPath, value: loadYamlCachedResolved(resolvedPath) };
 }
 
 /**

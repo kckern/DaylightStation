@@ -18,9 +18,8 @@ import {
   ensureDir,
   dirExists,
   listYamlFiles,
-  loadYaml,
-  loadYamlCached,
-  resolveYamlPath,
+  loadYamlCachedEntry,
+  resolveYamlPathStrict,
   saveYamlToPathAtomic
 } from '#system/utils/FileIO.mjs';
 import { foodGrams, scaleFoodPortion } from '../../../../portable/contracts/health/foodQuantity.mjs';
@@ -33,6 +32,12 @@ import { nowTs24 } from '#system/utils/time.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const ARCHIVE_RETENTION_DAYS = 30;
+
+function isPlainMapping(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
 const NOOM_EMOJI = { green: '🟢', yellow: '🟡', orange: '🟠' };
 const operationContext = new AsyncLocalStorage();
 /**
@@ -165,23 +170,23 @@ export class YamlNutriListDatastore extends INutriListDatastore {
 
   async getCleanupAudit(userId, id) {
     this.#recover(userId);
-    return (loadYaml(this.#cleanupAuditPath(userId)) || {})[id] || null;
+    return this.#readMapping(this.#cleanupAuditPath(userId))[id] || null;
   }
 
   async listCleanupAudit(userId, { offset = 0, limit = 50 } = {}) {
     this.#recover(userId);
-    const records = Object.values(loadYaml(this.#cleanupAuditPath(userId)) || {}).reverse();
+    const records = Object.values(this.#readMapping(this.#cleanupAuditPath(userId))).reverse();
     return { records: records.slice(offset, offset + Math.min(limit, 100)), total: records.length };
   }
 
   getRevision(userId) {
     this.#recover(userId);
-    return loadYaml(this.#revisionPath(userId))?.revision || 0;
+    return this.#readMapping(this.#revisionPath(userId)).revision || 0;
   }
 
   readDaySnapshot(userId, date) {
     const items = this.#itemsInDayWindow(userId, date, date).map(row => this.#normalizeItem(row));
-    return { date, items, revision: loadYaml(this.#revisionPath(userId))?.revision || 0 };
+    return { date, items, revision: this.#readMapping(this.#revisionPath(userId)).revision || 0 };
   }
 
   /** Read a durable committed reply before retrying interpretation of changed context. */
@@ -190,7 +195,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
       throw Object.assign(new Error('Invalid operation ID'), { status: 400 });
     }
     this.#recover(userId);
-    const operation = (loadYaml(this.#operationsPath(userId)) || {})[operationId];
+    const operation = this.#readMapping(this.#operationsPath(userId))[operationId];
     return operation?.result || operation?.mutationResult || recoveredCapture(operation);
   }
 
@@ -206,7 +211,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     }
     this.#recover(userId);
     if (inFlightOperations.has(`${this.#operationsPath(userId)}:${operationId}`)) return false;
-    const operations = loadYaml(this.#operationsPath(userId)) || {};
+    const operations = this.#readMapping(this.#operationsPath(userId));
     const operation = operations[operationId];
     if (!operation?.pending || operation.result || operation.mutationResult || operation.items?.length) return false;
     delete operations[operationId];
@@ -220,7 +225,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     this.#recover(userId);
     const key = `${this.#operationsPath(userId)}:${id}`;
     const fingerprint = createHash('sha256').update(JSON.stringify(payload)).digest('hex');
-    const operations = loadYaml(this.#operationsPath(userId)) || {};
+    const operations = this.#readMapping(this.#operationsPath(userId));
     const prior = operations[id];
     if (prior && prior.fingerprint !== fingerprint) throw Object.assign(new Error('Operation ID was already used for another request'), { code: 'IDEMPOTENCY_CONFLICT', status: 409 });
     if (inFlightOperations.has(key)) return inFlightOperations.get(key);
@@ -232,7 +237,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     this.#writeFile(this.#operationsPath(userId), operations);
     const promise = operationContext.run({ userId, id, fingerprint, operation: payload.operation }, async () => {
       const result = await action();
-      const latest = loadYaml(this.#operationsPath(userId)) || {};
+      const latest = this.#readMapping(this.#operationsPath(userId));
       latest[id] = { ...latest[id], fingerprint, pending: false, result };
       this.#writeFile(this.#operationsPath(userId), latest);
       return result;
@@ -242,7 +247,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
   }
 
   #recover(userId) {
-    const journal = loadYaml(this.#journalPath(userId));
+    const journal = this.#readMapping(this.#journalPath(userId));
     if (!journal?.pending) return;
     const root = path.dirname(this.#getPath(userId)) + path.sep;
     for (const [target, data] of journal.writes) {
@@ -269,7 +274,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     // No await between reading, validation, journaling and replacement: within
     // the application process a second request cannot observe half a command.
     // A restart completes a prepared transaction before subsequent reads.
-    writes.set(this.#revisionPath(userId), { revision: (loadYaml(this.#revisionPath(userId))?.revision || 0) + 1 });
+    writes.set(this.#revisionPath(userId), { revision: (this.#readMapping(this.#revisionPath(userId)).revision || 0) + 1 });
     this.#writeFile(this.#journalPath(userId), { pending: true, writes: [...writes] });
     for (const [target, data] of writes) this.#writeFile(target, data);
     this.#writeFile(this.#journalPath(userId), { pending: false });
@@ -292,7 +297,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     for (const [file, data] of extraWrites) writes.set(file, data);
     const operation = operationContext.getStore();
     if (operation?.userId === userId) {
-      const operations = loadYaml(this.#operationsPath(userId)) || {};
+      const operations = this.#readMapping(this.#operationsPath(userId));
       const previousIds = new Set([...documents.values()].flat().map(row => row.uuid || row.id));
       const created = rows.filter(row => !previousIds.has(row.uuid || row.id));
       operations[operation.id] = { ...operations[operation.id], fingerprint: operation.fingerprint,
@@ -306,14 +311,14 @@ export class YamlNutriListDatastore extends INutriListDatastore {
   async mutateEntries(userId, { updates = [], deleteIds = [], creates = [], audit = null, validate = null, dryRun = false, restoreAudit = null, allowFoodCreates = false, resultMeta = null, auditCreated = false } = {}) {
     const documents = this.#documents(userId);
     const all = [...documents.values()].flat();
-    const auditRecords = audit ? (loadYaml(this.#cleanupAuditPath(userId)) || {}) : null;
+    const auditRecords = audit ? this.#readMapping(this.#cleanupAuditPath(userId)) : null;
     if (audit && auditRecords[audit.id]) {
       if (auditRecords[audit.id].fingerprint !== audit.fingerprint) throw Object.assign(new Error('Repair operation was reused'), { status: 409 });
       return auditRecords[audit.id].result;
     }
     const replacements = new Map();
     if (restoreAudit) {
-      const record = (loadYaml(this.#cleanupAuditPath(userId)) || {})[restoreAudit];
+      const record = this.#readMapping(this.#cleanupAuditPath(userId))[restoreAudit];
       if (!record || record.type !== 'meal-command') throw Object.assign(new Error('Undo not found'), { status: 404 });
       const key = row => row.uuid || row.id;
       const previous = new Map(record.before.map(row => [key(row), row]));
@@ -401,7 +406,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     }
     writes.set(this.#getNutridayPath(userId), summaries);
     if (removed.size) {
-      const deleted = loadYaml(this.#tombstonePath(userId)) || {};
+      const deleted = this.#readMapping(this.#tombstonePath(userId));
       for (const key of removed) deleted[key] = all.find(row => (row.uuid || row.id) === key);
       writes.set(this.#tombstonePath(userId), deleted);
     }
@@ -410,14 +415,14 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     if (resultMeta) result.entryIds = result.affectedIds;
     const operation = operationContext.getStore();
     if (operation?.userId === userId && resultMeta) {
-      const operations = loadYaml(this.#operationsPath(userId)) || {};
+      const operations = this.#readMapping(this.#operationsPath(userId));
       operations[operation.id] = { ...operations[operation.id], fingerprint: operation.fingerprint, mutationResult: result };
       writes.set(this.#operationsPath(userId), operations);
     }
     if (operation?.userId === userId && operation.operation === 'entry-update' && updates.length) {
       const root = all.find(row => matches(row, updates[0].id));
       const rootId = root.uuid || root.id;
-      const operations = loadYaml(this.#operationsPath(userId)) || {};
+      const operations = this.#readMapping(this.#operationsPath(userId));
       operations[operation.id] = { ...operations[operation.id], fingerprint: operation.fingerprint,
         mutationResult: { item: result.items.find(row => (row.uuid || row.id) === rootId) || this.#normalizeItem(root),
           versions: Object.fromEntries(updates.map(({ id }) => {
@@ -447,7 +452,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     }
     const documents = this.#documents(userId);
     const undoToken = `meal-${uuidv5(`${userId}:${operationId}:capture`, uuidv5.URL)}`;
-    const audits = loadYaml(this.#cleanupAuditPath(userId)) || {};
+    const audits = this.#readMapping(this.#cleanupAuditPath(userId));
     const fingerprint = createHash('sha256').update(JSON.stringify(entryIds)).digest('hex');
     if (audits[undoToken]) {
       if (audits[undoToken].fingerprint !== fingerprint) throw Object.assign(new Error('Capture Undo operation was reused'), { status: 409 });
@@ -471,7 +476,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
    * @returns {Promise<{committed: boolean, items: Object[], affectedIds: string[], affectedDates: string[]}>}
    */
   async restoreByLogId(userId, logId) {
-    const deleted = loadYaml(this.#tombstonePath(userId)) || {};
+    const deleted = this.#readMapping(this.#tombstonePath(userId));
     const ids = Object.entries(deleted)
       // Group headers made by web grouping carry only `logUuid`.
       .filter(([, row]) => row && (row.logId === logId || row.log_uuid === logId || row.logUuid === logId))
@@ -486,7 +491,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     }
     const documents = this.#documents(userId);
     const existing = new Set([...documents.values()].flat().map(row => row.uuid || row.id));
-    const deleted = loadYaml(this.#tombstonePath(userId)) || {};
+    const deleted = this.#readMapping(this.#tombstonePath(userId));
     const restored = [];
     for (const id of new Set(entryIds)) {
       if (existing.has(id)) continue; // a repeated Undo is harmless
@@ -505,13 +510,12 @@ export class YamlNutriListDatastore extends INutriListDatastore {
 
   #readFile(basePath) {
     try {
-      // Cached parse (clone per call): the cleanup tick and every Health view
-      // re-read the same unchanged month archive.
-      const data = loadYamlCached(basePath);
+      // Cached parse (clone per call), with absence distinct from a failed lookup.
+      const { found, value: data } = loadYamlCachedEntry(basePath);
+      if (!found) return [];
       // Handle both array and legacy object format
       if (Array.isArray(data)) return data;
-      if (data && typeof data === 'object') return Object.values(data);
-      if (data == null) return [];
+      if (isPlainMapping(data)) return Object.values(data);
       throw new Error('Expected a nutrition list');
     } catch (e) {
       this.#logger.warn?.('YamlNutriListDatastore.readFile.error', { basePath, error: e.message });
@@ -519,14 +523,25 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     }
   }
 
+  #readMapping(basePath) {
+    const { found, value } = loadYamlCachedEntry(basePath);
+    if (!found) return {};
+    if (!isPlainMapping(value)) {
+      throw new InfrastructureError(`Invalid nutrition mapping: ${basePath}`, {
+        code: 'INVALID_NUTRITION_MAPPING', basePath,
+      });
+    }
+    return value;
+  }
+
   #writeFile(basePath, data) {
     ensureDir(path.dirname(basePath));
-    saveYamlToPathAtomic(resolveYamlPath(basePath) || `${basePath}.yml`, data, { durable: true });
+    saveYamlToPathAtomic(resolveYamlPathStrict(basePath) || `${basePath}.yml`, data, { durable: true, preserveMode: true });
   }
 
   #readNutriday(userId) {
     const basePath = this.#getNutridayPath(userId);
-    return loadYamlCached(basePath) || {};
+    return this.#readMapping(basePath);
   }
 
   #loadArchive(userId, yearMonth) {
@@ -569,7 +584,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     // consumed ledger. Explicit user revisions use a separate merge mode.
     const existing = this.#itemsInDayWindow(nutriLog.userId, '0001-01-01', '9999-12-31');
     const existingIds = new Set(existing.map(item => item.uuid || item.id));
-    const deleted = loadYaml(this.#tombstonePath(nutriLog.userId)) || {};
+    const deleted = this.#readMapping(this.#tombstonePath(nutriLog.userId));
 
     // Add new items if log is accepted
     if (nutriLog.isAccepted) {
@@ -709,7 +724,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     });
 
     const existingIds = new Set(this.#itemsInDayWindow(userId, '0001-01-01', '9999-12-31').map(item => item.uuid || item.id));
-    const deleted = loadYaml(this.#tombstonePath(userId)) || {};
+    const deleted = this.#readMapping(this.#tombstonePath(userId));
     items.push(...transformedItems.filter(item => !existingIds.has(item.uuid) && !deleted[item.uuid]));
 
     // Sort by date descending
