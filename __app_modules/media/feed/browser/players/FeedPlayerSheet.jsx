@@ -213,9 +213,10 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
           aria-valuetext={`${formatFeedPlaybackTime(displayTime)} of ${formatFeedPlaybackTime(duration)}`}
           onKeyDown={(e) => {
             if (!seekMax) return;
-            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+            if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
             e.preventDefault();
-            const next = e.key === 'Home' ? 0 : e.key === 'End' ? seekMax : Math.max(0, Math.min(seekMax, (currentTime || 0) + (e.key === 'ArrowLeft' ? -5 : 5)));
+            const delta = ['ArrowLeft', 'ArrowDown'].includes(e.key) ? -5 : 5;
+            const next = e.key === 'Home' ? 0 : e.key === 'End' ? seekMax : Math.max(0, Math.min(seekMax, (currentTime || 0) + delta));
             seek?.(next);
           }}
         >
