@@ -107,6 +107,9 @@ export function composeSentence({ watts, lightsOn, othersOn = 0, othersWord = 'd
 
 const isTempSensor = (e) => e.domain === 'sensor' && e.deviceClass === 'temperature' && e.stateClass === 'reading';
 const isHumiditySensor = (e) => e.domain === 'sensor' && e.deviceClass === 'humidity' && e.stateClass === 'reading';
+const hasFiniteNumericState = (e) => e.state != null
+  && !(typeof e.state === 'string' && e.state.trim() === '')
+  && Number.isFinite(Number(e.state));
 // A bulb's die temperature or a switch's internals are not the room.
 const isDeviceInternal = (e) => /device_temperature|internal|_outdoor_/.test(e.id);
 
@@ -115,7 +118,8 @@ export function roomTemperature(roomEntities) {
   const thermostat = roomEntities.find((e) => e.domain === 'climate' && e.stateClass !== 'unavailable'
     && Number.isFinite(e.detail?.currentTemperature));
   if (thermostat) return { value: thermostat.detail.currentTemperature, entityId: thermostat.id, thermostat };
-  const sensor = roomEntities.filter(isTempSensor).sort((a, b) => Number(isDeviceInternal(a)) - Number(isDeviceInternal(b)))[0];
+  const sensor = roomEntities.filter((e) => isTempSensor(e) && hasFiniteNumericState(e))
+    .sort((a, b) => Number(isDeviceInternal(a)) - Number(isDeviceInternal(b)))[0];
   if (!sensor || isDeviceInternal(sensor)) return null;
   return { value: Number(sensor.state), entityId: sensor.id, thermostat: null };
 }
@@ -129,7 +133,7 @@ export function hvacWord(thermostat) {
 }
 
 export function roomHumidity(roomEntities) {
-  const sensor = roomEntities.find(isHumiditySensor);
+  const sensor = roomEntities.find((e) => isHumiditySensor(e) && hasFiniteNumericState(e));
   return sensor ? Number(sensor.state) : null;
 }
 
