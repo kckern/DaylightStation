@@ -58,13 +58,23 @@ export function waterValue(entry) {
   return entry.avg != null && entry.waterWeight != null ? entry.avg - entry.waterWeight : null;
 }
 
-/** One vertical rule per calendar month start inside the window, labelled.
- *  Distinct from the weekly gridlines in width and colour, or it says nothing. */
+/** One vertical rule per calendar month start within the displayed date range.
+ *  Markers follow the range, not weigh-in dates, so sparse readings still label months. */
 export function monthBoundaries(entries, color) {
-  return entries
-    .filter((entry) => entry.date.slice(-2) === '01')
-    .map((entry) => ({
-      value: at(entry.date),
+  if (!entries.length) return [];
+  const firstDate = entries[0].date;
+  const lastDate = entries.at(-1).date;
+  const [year, month] = firstDate.split('-').map(Number);
+  let cursor = new Date(Date.UTC(year, month - 1, 1, 12));
+  if (cursor.toISOString().slice(0, 10) < firstDate) {
+    cursor = new Date(Date.UTC(year, month, 1, 12));
+  }
+
+  const boundaries = [];
+  while (cursor.toISOString().slice(0, 10) <= lastDate) {
+    const date = cursor.toISOString().slice(0, 10);
+    boundaries.push({
+      value: at(date),
       color,
       width: 2,
       zIndex: 1, // above the grid, below the series
@@ -72,7 +82,7 @@ export function monthBoundaries(entries, color) {
       // rotation 90, which stands the month on its end against the top
       // gridline — legible only if you tilt your head.
       label: {
-        text: MONTHS[Number(entry.date.slice(5, 7)) - 1],
+        text: MONTHS[cursor.getUTCMonth()],
         rotation: 0,
         align: 'left',
         verticalAlign: 'top',
@@ -80,7 +90,10 @@ export function monthBoundaries(entries, color) {
         x: 4,
         y: 12,
       },
-    }));
+    });
+    cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1, 12));
+  }
+  return boundaries;
 }
 
 /**
