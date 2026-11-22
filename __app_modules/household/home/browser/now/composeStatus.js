@@ -27,6 +27,11 @@ function plural(n, one, many = `${one}s`) {
   return `${n}${NBSP}${n === 1 ? one : many}`;
 }
 
+function openingNoun(entity) {
+  const word = openingWord(entity);
+  return word === 'blinds' ? 'blind' : word;
+}
+
 /** Group entities by room, in the house's room order, roomless last. */
 export function groupByRoom(entities, rooms) {
   const order = [...rooms.map((r) => ({ id: r.id, name: r.name })), ROOMLESS];
@@ -55,10 +60,15 @@ export function composeSentence({ watts, lightsOn, othersOn = 0, othersWord = 'd
   }
   if (open.length === 1) {
     const [o] = open;
-    parts.push(o.room ? `a ${openingWord(o)} open in ${inSentence(o.room.name)}` : `a ${openingWord(o)} open`);
+    const noun = openingNoun(o);
+    parts.push(o.room ? `a ${noun} open in ${inSentence(o.room.name)}` : `a ${noun} open`);
   } else if (open.length > 1) {
-    const words = new Set(open.map(openingWord));
-    parts.push(words.size === 1 ? `${plural(open.length, [...words][0])} open` : `${open.length} doors or windows open`);
+    const counts = new Map();
+    for (const entity of open) {
+      const noun = openingNoun(entity);
+      counts.set(noun, (counts.get(noun) || 0) + 1);
+    }
+    parts.push(`${listWords([...counts].map(([noun, count]) => plural(count, noun)))} open`);
   }
   const lockStates = new Map();
   for (const lock of locks) {
