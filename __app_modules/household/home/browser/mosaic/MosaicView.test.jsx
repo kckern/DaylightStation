@@ -71,7 +71,7 @@ describe('MosaicView', () => {
     expect(squares()).toHaveLength(9);
     const grid = document.querySelector('.home-mosaic__groups');
     const heads = [...grid.querySelectorAll('.home-mosaic__head')].map((h) => plain(h.textContent));
-    expect(heads).toEqual(['Kitchen2 on', 'Office2 on']);
+    expect(heads).toEqual(['Kitchen2 active', 'Office2 active']);
     // Strip the headers: what is left on the grid says nothing in words.
     const clone = grid.cloneNode(true);
     clone.querySelectorAll('.home-mosaic__head').forEach((h) => h.remove());

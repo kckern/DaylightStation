@@ -71,7 +71,7 @@ export function squareTone(entity, flags) {
 
 const LIVELY = new Set(['on', 'motion', 'open']);
 
-/** Whether a square counts toward its group's "N on". */
+/** Whether a square counts toward its group's active total. */
 export function isLively(tone) {
   return LIVELY.has(tone.fill);
 }

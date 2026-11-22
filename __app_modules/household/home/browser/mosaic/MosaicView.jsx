@@ -81,7 +81,7 @@ const MosaicGroups = memo(function MosaicGroups({ groups }) {
         <section key={g.id} className="home-mosaic__group" aria-label={g.label}>
           <h3 className="home-mosaic__head">
             <span className="home-mosaic__label">{g.label}</span>
-            {g.lively > 0 ? <span className="home-mosaic__count">{g.lively} on</span> : null}
+            {g.lively > 0 ? <span className="home-mosaic__count">{g.lively} active</span> : null}
           </h3>
           <div className="home-mosaic__squares">
             {g.items.map(({ entity, tone }) => <Square key={entity.id} entity={entity} tone={tone} />)}
