@@ -250,6 +250,12 @@ describe('FullyKioskConsole', () => {
   });
 
   it('shows all settings, masks credentials, filters rows, and saves boolean, number, and URL drafts', async () => {
+    let currentSettings = settingsFixture.settings.map(setting => ({ ...setting }));
+    api.settings.mockImplementation(async () => ({ settings: currentSettings }));
+    api.updateSetting.mockImplementation(async (_deviceId, key, value) => {
+      currentSettings = currentSettings.map(setting => setting.key === key ? { ...setting, value } : setting);
+      return { ok: true };
+    });
     renderConsole();
     await ready();
     const search = await openSettings();
@@ -272,13 +278,15 @@ describe('FullyKioskConsole', () => {
 
     const numberRow = screen.getByText('screenBrightness').closest('tr');
     fireEvent.change(within(numberRow).getByRole('textbox'), { target: { value: '144' } });
+    const urlRow = screen.getByText('startURL').closest('tr');
+    fireEvent.change(within(urlRow).getByRole('textbox'), { target: { value: 'https://example.test/new' } });
     fireEvent.click(within(numberRow).getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(api.updateSetting).toHaveBeenCalledWith('tablet', 'screenBrightness', 144));
     await waitFor(() => expect(api.settings).toHaveBeenCalledTimes(3));
+    expect(within(screen.getByText('startURL').closest('tr')).getByRole('textbox')).toHaveValue('https://example.test/new');
+    expect(within(screen.getByText('startURL').closest('tr')).getByRole('button', { name: 'Save' })).toBeEnabled();
 
-    const urlRow = screen.getByText('startURL').closest('tr');
-    fireEvent.change(within(urlRow).getByRole('textbox'), { target: { value: 'https://example.test/new' } });
-    fireEvent.click(within(urlRow).getByRole('button', { name: 'Save' }));
+    fireEvent.click(within(screen.getByText('startURL').closest('tr')).getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(api.updateSetting).toHaveBeenCalledWith(
       'tablet',
       'startURL',

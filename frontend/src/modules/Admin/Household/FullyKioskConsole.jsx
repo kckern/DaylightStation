@@ -219,8 +219,8 @@ function DeviceConsole({ deviceId }) {
       const result = await fullyKioskAdminApi.settings(deviceId, { signal });
       if (!isCurrent()) return;
       setSettings(result.settings || []);
-      setDraftSettings(Object.fromEntries((result.settings || []).map(setting => [setting.key, setting.value])));
       setSettingsError('');
+      return result;
     } catch (error) {
       if (isCurrent()) setSettingsError(error.message || 'Unable to read settings');
     } finally {
@@ -299,11 +299,22 @@ function DeviceConsole({ deviceId }) {
   }, [executeAction, wording]);
 
   const saveSetting = useCallback(async (setting) => {
+    const submittedValue = draftSettings[setting.key];
     setSettingSaving(setting.key);
     try {
-      await fullyKioskAdminApi.updateSetting(deviceId, setting.key, draftSettings[setting.key]);
+      await fullyKioskAdminApi.updateSetting(deviceId, setting.key, submittedValue);
       notifySuccess({ title: 'Setting applied', message: humanize(setting.key) });
-      await Promise.all([refreshSettings(), refreshStatus({ quiet: true })]);
+      const [freshSettings] = await Promise.all([refreshSettings(), refreshStatus({ quiet: true })]);
+      const savedSetting = freshSettings?.settings?.find(current => current.key === setting.key);
+      if (savedSetting && Object.is(savedSetting.value, submittedValue)) {
+        setDraftSettings(current => {
+          if (!Object.prototype.hasOwnProperty.call(current, setting.key)
+            || !Object.is(current[setting.key], submittedValue)) return current;
+          const next = { ...current };
+          delete next[setting.key];
+          return next;
+        });
+      }
     } catch (error) {
       notifyFailure({ title: 'Setting failed', message: error.message });
     } finally {
@@ -562,8 +573,9 @@ function DeviceConsole({ deviceId }) {
                         <Table.Thead><Table.Tr><Table.Th>Setting</Table.Th><Table.Th>Value</Table.Th><Table.Th>Access</Table.Th><Table.Th /></Table.Tr></Table.Thead>
                         <Table.Tbody>
                           {filteredSettings.map(setting => {
-                            const draft = draftSettings[setting.key];
-                            const dirty = draft !== setting.value;
+                            const hasDraft = Object.prototype.hasOwnProperty.call(draftSettings, setting.key);
+                            const draft = hasDraft ? draftSettings[setting.key] : setting.value;
+                            const dirty = hasDraft && !Object.is(draft, setting.value);
                             return (
                               <Table.Tr key={setting.key}>
                                 <Table.Td><Code>{setting.key}</Code></Table.Td>
