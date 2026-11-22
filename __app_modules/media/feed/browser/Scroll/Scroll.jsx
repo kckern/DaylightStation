@@ -17,6 +17,7 @@ import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { feedLog } from "./feedLog.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { useFeedWorkspace } from "../FeedWorkspaceContext.jsx";
+import FeedLoadingIndicator from "../FeedLoadingIndicator.jsx";
 import { getOfflineEdition } from "../offline/feedOfflineStore.js";
 import "./Scroll.scss";
 
@@ -893,9 +894,7 @@ export default function Scroll() {
           <div ref={sentinelRef} className="scroll-sentinel">
             {loadingMore && (
               <div className="scroll-loading">
-                <div className="scroll-loading-dots">
-                  <span /><span /><span />
-                </div>
+                <FeedLoadingIndicator label="Loading more feed items…" />
               </div>
             )}
           </div>

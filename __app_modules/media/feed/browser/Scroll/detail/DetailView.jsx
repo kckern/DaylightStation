@@ -7,6 +7,7 @@ import { formatAge, proxyIcon, proxyImage, colorFromLabel, safeImage } from "../
 import { renderSection } from "./sections/index.jsx";
 import { feedLog } from "../feedLog.js";
 import FeedPlayer from "../../players/FeedPlayer.jsx";
+import FeedLoadingIndicator from "../../FeedLoadingIndicator.jsx";
 import AnnotationPanel from "../../Annotations/AnnotationPanel.jsx";
 import OfflineEditionButton from "../../offline/OfflineEditionButton.jsx";
 import { webLink, frameableLink } from "../../../shared/webLink.mjs";
@@ -436,7 +437,7 @@ function YouTubeHero({ item, heroImage, sections, loading, onPlay: _onPlay }) {
       <div className="detail-hero" style={{ aspectRatio }}>
         {heroImage && <img src={heroImage} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.4 }} />}
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="scroll-loading-dots"><span /><span /><span /></div>
+          <FeedLoadingIndicator label="Loading video…" />
         </div>
       </div>
     );

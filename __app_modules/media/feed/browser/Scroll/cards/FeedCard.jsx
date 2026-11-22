@@ -6,6 +6,7 @@ import { feedLog } from "../feedLog.js";
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 import FeedPlayer from "../../players/FeedPlayer.jsx";
+import FeedLoadingIndicator from "../../FeedLoadingIndicator.jsx";
 import { INLINE_YOUTUBE_QUALITY, inlineYouTubeDetailPath, useInlineYouTubeDetail } from "../../players/useInlineYouTubeDetail.js";
 
 // Info-level logger for image lifecycle (visible in backend session logs)
@@ -615,7 +616,7 @@ function CardYouTubePlayer({ item, detailPath }) {
   if (loading) {
     return (
       <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000' }}>
-        <div className="scroll-loading-dots"><span /><span /><span /></div>
+        <FeedLoadingIndicator label="Loading video…" />
       </div>
     );
   }

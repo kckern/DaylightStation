@@ -6,6 +6,7 @@ import { useFeedPlayer } from "../players/FeedPlayerContext.jsx";
 import { inlineYouTubeDetailPath, useInlineYouTubeDetail } from "../players/useInlineYouTubeDetail.js";
 import AnnotationPanel from "../Annotations/AnnotationPanel.jsx";
 import OfflineEditionButton from "../offline/OfflineEditionButton.jsx";
+import FeedLoadingIndicator from "../FeedLoadingIndicator.jsx";
 import { webLink } from "../../shared/webLink.mjs";
 
 /**
@@ -218,7 +219,7 @@ function ReaderYouTubePlayer({ article, detailPath }) {
       <div style={isPortrait ? { maxWidth: '360px' } : undefined}>
         <div className="youtube-embed-wrapper" style={wrapperStyle}>
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000' }}>
-            <div className="scroll-loading-dots"><span /><span /><span /></div>
+            <FeedLoadingIndicator label="Loading video…" />
           </div>
         </div>
       </div>
