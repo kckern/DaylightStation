@@ -8,8 +8,11 @@ const KEYMAP = [
   ['→ / ←', 'Next / previous part'], ['A', 'Approve (fine as it is)'], ['X', 'Let it play (take the filter off)'],
   ['D', 'Redo, then 1 edges, 2 category, 3 action, 4 timing, Enter no reason'], ['U', 'Undo the last verdict'],
   ['R', 'Refine this part (measure its timing)'], ['Shift+R', 'Refine every filtered part still on rough timing; confirms if any has hand-fixed timing'],
-  ['M / P', 'Words: mute / bleep'], ['B / K', 'Picture: blur / skip. Scenes: hide picture / skip'], ['O', 'Effect off'],
-  ['[ / ]', 'Bleep quieter / louder'], ['Shift+D', 'Rework every part marked redo'], ['?', 'This list'], ['Esc', 'Close'],
+  ['M / P', 'Words: mute / bleep'], ['B / H / K', 'Picture: blur / hide picture / skip. Scenes: B hides the picture, K skips'], ['O', 'Effect off'],
+  ['', 'An effect key applies the effect and replays the part; A approves it'],
+  ['[ / ]', 'Bleep quieter / louder'], ['Shift+D', 'Re-refine every part marked Redo'],
+  ['Tab', 'To a timing handle; then ← → move it 0.1 s (Shift 0.5 s), Home / End set it at the playhead'],
+  ['Esc', 'Drop an unsaved timing change; leave a handle; close'], ['?', 'This list'],
 ];
 
 const Key = ({ k, children }) => (
@@ -20,14 +23,18 @@ const Key = ({ k, children }) => (
  * Under the part card: the redo prompt while D waits for a reason, the station's last message, the
  * preview retry, and the full keymap sheet (?). The everyday keys sit on the card's own buttons.
  */
-export function ReviewKeyBar({ redoOpen = false, helpOpen = false, onCloseHelp, message = null, previewRecovery = null }) {
+export function ReviewKeyBar({ redoOpen = false, helpOpen = false, onCloseHelp, message = null, previewRecovery = null, onRedo = null }) {
   return (
     <div className="cf-keybar" aria-live="polite">
       {redoOpen ? (
         <Group gap="sm" wrap="wrap" align="center" role="toolbar" aria-label="Redo reason">
           <Text size="sm">Redo because:</Text>
-          {REDO_REASONS.map(([k, label]) => <Key key={k} k={k}>{label}</Key>)}
-          <Key k="Enter">no reason</Key><Key k="Esc">cancel</Key>
+          {/* The same prompt for D and for the Redo button: each reason is a key and a click. */}
+          {REDO_REASONS.map(([k, label]) => (onRedo
+            ? <button key={k} type="button" className="cf-keybar__pick" onMouseDown={(e) => e.preventDefault()} onClick={() => onRedo(label)}><Key k={k}>{label}</Key></button>
+            : <Key key={k} k={k}>{label}</Key>))}
+          {onRedo ? <button type="button" className="cf-keybar__pick" onMouseDown={(e) => e.preventDefault()} onClick={() => onRedo(undefined)}><Key k="Enter">no reason</Key></button> : <Key k="Enter">no reason</Key>}
+          {onRedo ? <button type="button" className="cf-keybar__pick" onMouseDown={(e) => e.preventDefault()} onClick={() => onRedo(null)}><Key k="Esc">cancel</Key></button> : <Key k="Esc">cancel</Key>}
         </Group>
       ) : null}
       {message ? <Text size="sm" role="status" className="cf-keybar__message">{message}</Text> : null}
@@ -41,7 +48,7 @@ export function ReviewKeyBar({ redoOpen = false, helpOpen = false, onCloseHelp, 
       <Sheet open={helpOpen} onClose={onCloseHelp} title="Review keys">
         <Stack gap="xs">
           {KEYMAP.map(([k, what], i) => (
-            <div key={`${k}${i}`} className="cf-keybar__help-row"><kbd className="cf-keybar__key">{k}</kbd><span>{what}</span></div>
+            <div key={`${k}${i}`} className="cf-keybar__help-row">{k ? <kbd className="cf-keybar__key">{k}</kbd> : <span className="cf-keybar__key is-blank" />}<span>{what}</span></div>
           ))}
         </Stack>
       </Sheet>

@@ -22,10 +22,12 @@ export function railStages({ data, tally = { done: 0, total: 0 }, roughRefine = 
 
   let refine;
   if (running) refine = run?.stuck ? { stuck: true, text: run.brief || run.text, title: run.text } : { text: run?.text || 'Working…' };
-  else if (roughRefine) refine = notMatched ? { blocked: true, text: `${roughRefine} to refine · not matched to Plex` } : { text: `${roughRefine} to refine` };
+  else if (roughRefine) refine = notMatched ? { blocked: true, text: `${roughRefine} to refine · not matched to Plex` } : { text: `${roughRefine} to refine${roughLeft ? ` · ${roughLeft} to check` : ''}` };
   else if (!rows && next === 'refine') refine = notMatched ? { blocked: true, text: 'Not matched to Plex' } : { text: 'Not refined yet' };
   else if (!rows && next === 'none') refine = { blocked: true, text: 'No filters yet' };
-  else refine = { done: true, text: roughLeft ? `Done · ${roughLeft} rough after refine (check by eye)` : 'Done' };
+  // Refine has run, but a part it could not vouch for is not "Done" until someone has looked at it.
+  else refine = roughLeft ? { done: true, check: roughLeft, text: `${roughLeft} to check by ear or eye`, title: `Refine could not pin ${roughLeft} part${roughLeft === 1 ? '' : 's'}: check ${roughLeft === 1 ? 'it' : 'them'} by ear or eye, and drag the handles to fit` }
+    : { done: true, text: 'Done' };
 
   let review;
   if (!tally.total) review = rows ? { done: true, text: 'Nothing is filtered' } : { blocked: true, text: NO_PARTS[next] || 'No parts yet' };
@@ -50,8 +52,27 @@ export function railStages({ data, tally = { done: 0, total: 0 }, roughRefine = 
     else if (s.ready || (!s.blocked && !found)) { state = 'current'; found = true; }
     else state = 'waiting';
     const text = state === 'waiting' && s.waitText ? s.waitText : s.text;
-    return { key, label, state, text, title: s.title || text };
+    return { key, label, state, text, title: s.title || text, ...(s.check ? { check: s.check } : {}) };
   });
+}
+
+/**
+ * The same next-step words for a library card (FilterLibrary.jsx), from the library's own facts
+ * (ContentFilterLibrary.mjs): `{ text, tone }`. One vocabulary on both pages, so a card never says
+ * "Auto-checked" over a film whose page says "15 to refine" (review 2026-11-22).
+ */
+export function cardStep(film, { runText = null } = {}) {
+  const f = film || {};
+  const rail = f.rail || {};
+  const reviewed = f.reviewed || null;
+  if (f.stage === 'parent') return { text: 'Approved', tone: 'done' };
+  if (f.job && (f.job.status === 'queued' || f.job.status === 'running')) return { text: runText || 'Refining…', tone: 'busy' };
+  if (rail.toRefine) return { text: `${rail.toRefine} to refine`, tone: 'todo' };
+  if (!reviewed) return { text: f.stage === 'rough' ? 'Not refined yet' : 'Not checked yet', tone: 'quiet' };
+  if (reviewed.n < reviewed.m) return { text: `${reviewed.n} of ${reviewed.m} reviewed`, tone: 'todo', ...(rail.toCheck ? { note: `${rail.toCheck} to check` } : {}) };
+  if (rail.redo) return { text: `${rail.redo} marked Redo`, tone: 'check' };
+  if (f.stage === 'machine') return { text: 'Ready', tone: 'ready' };
+  return { text: f.stage === 'rough' ? 'Not refined yet' : 'Not ready yet', tone: 'check' };
 }
 
 /** The tab a film opens on: its first stage still to do; a finished film opens on Approve. */

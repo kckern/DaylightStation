@@ -11,6 +11,21 @@ const press = (key, init = {}, target = document.body) => fireEvent.keyDown(targ
 afterEach(() => { document.body.innerHTML = ''; });
 
 describe('useReviewKeys', () => {
+  it('with the part keys off (the Approve tab) only Space, ? and Esc work', () => {
+    const h = handlers();
+    const Quiet = () => { useReviewKeys(h, { partKeys: false }); return null; };
+    render(<Quiet />);
+    press('a'); press('ArrowRight'); press('Enter'); press('d'); press('m'); press('r');
+    expect(h.verdict).not.toHaveBeenCalled(); expect(h.next).not.toHaveBeenCalled(); expect(h.replay).not.toHaveBeenCalled();
+    expect(h.effect).not.toHaveBeenCalled(); expect(h.refine).not.toHaveBeenCalled();
+    press(' '); expect(h.togglePlay).toHaveBeenCalledTimes(1);
+    press('?'); expect(h.help).toHaveBeenCalledTimes(1);
+    press('Escape'); expect(h.escape).toHaveBeenCalledTimes(1);
+  });
+  it('H is an effect key (hide picture)', () => {
+    const h = handlers(); render(<Host h={h} />);
+    press('h'); expect(h.effect).toHaveBeenCalledWith('h');
+  });
   it('maps the keymap to handlers (design cf-journey, 2026-11-21)', () => {
     const h = handlers(); render(<Host h={h} />);
     press('ArrowRight'); expect(h.next).toHaveBeenCalledTimes(1);

@@ -13,12 +13,14 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
  * Keymap (owner, 2026-11-21; ops design cf-journey): Space play/pause (always, even on a focused
  * button), Enter play the part with its effect, W without it, ← → step, A approve, X let it play,
  * D redo (then 1-4 / Enter), U undo, R refine this part, Shift+R refine every rough filtered part,
- * M P B K O effect, [ ] bleep level, Shift+D rework flagged, ? keys. Bulk refine confirms first
+ * M P B H K O effect, [ ] bleep level, Shift+D rework flagged, ? keys. Bulk refine confirms first
  * when any target has hand-fixed timing.
+ *
+ * `partKeys: false` (the Approve tab, where no part card is on screen) keeps only Space, ? and Esc.
  */
 const NON_TEXT_INPUT = new Set(['radio', 'checkbox', 'button', 'range', 'submit', 'reset', 'image', 'file', 'color']);
 const REASONS = { 1: 'edges', 2: 'category', 3: 'action', 4: 'timing' };
-const EFFECT_KEYS = new Set(['m', 'p', 'b', 'k', 'o']);
+const EFFECT_KEYS = new Set(['m', 'p', 'b', 'h', 'k', 'o']);
 const REPEATABLE = new Set(['ArrowLeft', 'ArrowRight']);
 /** Hook point for the per-film bleep level (Task 6): `[` lowers, `]` raises by this much. */
 export const BLEEP_LEVEL_STEP = 0.05;
@@ -34,10 +36,12 @@ function isTypingTarget(el) {
   return true;
 }
 
-export function useReviewKeys(handlers, { enabled = true, redoOwner = null } = {}) {
+export function useReviewKeys(handlers, { enabled = true, partKeys = true, redoOwner = null } = {}) {
   const ref = useRef(handlers);
   ref.current = handlers;
-  const activeRedoOwner = enabled ? redoOwner : null;
+  const partKeysRef = useRef(partKeys);
+  partKeysRef.current = partKeys;
+  const activeRedoOwner = enabled && partKeys ? redoOwner : null;
   const redoRef = useRef(false);
   const redoOwnerRef = useRef(activeRedoOwner);
   const [redoOpen, setRedoOpen] = useState(false);
@@ -93,11 +97,12 @@ export function useReviewKeys(handlers, { enabled = true, redoOwner = null } = {
         return take(() => openRedo(false));
       }
       if (key === 'Escape') { if (h.escape?.()) take(); return; }
+      if (key === '?') return take(h.help);
+      if (!partKeysRef.current) return;
       if (key === 'Enter' && h.retryPreview) return take(h.retryPreview);
       if (key === 'ArrowRight') return take(h.next);
       if (key === 'ArrowLeft') return take(h.prev);
       if (key === 'Enter') return take(h.replay);
-      if (key === '?') return take(h.help);
       if (key === '[') return take(() => h.bleepLevel?.(-BLEEP_LEVEL_STEP));
       if (key === ']') return take(() => h.bleepLevel?.(BLEEP_LEVEL_STEP));
       if (lower === 'a') return take(() => h.verdict?.('approve', undefined));
@@ -114,7 +119,7 @@ export function useReviewKeys(handlers, { enabled = true, redoOwner = null } = {
     return () => document.removeEventListener('keydown', onKey, true);
   }, [enabled]);
 
-  return { redoOpen, closeRedo: () => openRedo(false) };
+  return { redoOpen, openRedo: () => openRedo(true), closeRedo: () => openRedo(false) };
 }
 
 export default useReviewKeys;

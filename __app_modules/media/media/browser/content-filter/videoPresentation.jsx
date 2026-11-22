@@ -31,6 +31,10 @@ export function partFromSrc(src) {
 
 let _logger;
 const logger = () => (_logger ||= getChildLogger({ component: 'content-filter' }));
+// A hold (previewStore `hold`) guards the paused position while the Player starts up: for this long
+// after the media element is ready, and never longer than the window in all.
+const HOLD_SETTLE_MS = 12000;
+const HOLD_WINDOW_MS = 40000;
 
 /**
  * @param {object} args
@@ -159,6 +163,57 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl, bumperHel
     logger().info('content-filter.surround.opened', { ratingKey: ratingKeyRef.current });
   }, [surroundOpen, closeSurround]);
 
+  // hold(at): keep the film paused at `at` seconds until the viewer plays it (the Admin review
+  // arrives with a part in hand). The element may not exist yet, a seek made before its metadata
+  // loads is lost, and the Player starts the film itself once it can (more than once: measured
+  // 2026-11-22, a start 4 s after the first), so for a short start-up window the hold re-applies
+  // the position and the pause. Any play the viewer asks for ends it: the store's play / togglePlay,
+  // or a press on the player itself. It outlives a re-bind.
+  const holdRef = useRef(null);
+  const getElRef = useRef(getMediaEl);
+  getElRef.current = getMediaEl;
+  const release = useCallback(() => {
+    const h = holdRef.current;
+    if (!h) return;
+    holdRef.current = null;
+    clearInterval(h.timer);
+    h.el?.removeEventListener?.('play', h.enforce);
+    h.el?.removeEventListener?.('pointerdown', h.end);
+  }, []);
+  const hold = useCallback((at) => {
+    release();
+    const h = { timer: null, el: null, readyAt: null, at: Number.isFinite(at) ? at : null, started: Date.now() };
+    holdRef.current = h;
+    h.end = () => { if (holdRef.current === h) release(); };
+    h.enforce = () => {
+      const el = h.el;
+      if (!el || holdRef.current !== h) return;
+      try {
+        if (h.at != null && el.readyState >= 1 && Math.abs((el.currentTime || 0) - h.at) > 1) el.currentTime = h.at;
+        if (!el.paused) { el.pause?.(); logger().debug('content-filter.hold.paused', { at: h.at }); }
+      } catch (_) { /* ignore */ }
+    };
+    const tick = () => {
+      if (holdRef.current !== h) return;
+      const el = getElRef.current?.() || null;
+      if (el !== h.el) {
+        h.el?.removeEventListener?.('play', h.enforce);
+        h.el?.removeEventListener?.('pointerdown', h.end);
+        h.el = el; h.readyAt = null;
+        el?.addEventListener?.('play', h.enforce);
+        el?.addEventListener?.('pointerdown', h.end);
+      }
+      h.enforce();
+      if (el && el.readyState >= 1 && h.readyAt == null) h.readyAt = Date.now();
+      // Over once the element has been ready for the settle time, or never became ready.
+      if ((h.readyAt != null && Date.now() - h.readyAt > HOLD_SETTLE_MS) || Date.now() - h.started > HOLD_WINDOW_MS) release();
+    };
+    h.timer = setInterval(tick, 150);
+    logger().debug('content-filter.hold', { at: h.at });
+    tick();
+  }, [release]);
+  useEffect(() => release, [release]);
+
   const unbindRef = useRef(null);
   useEffect(() => {
     const seek = (s) => {
@@ -166,6 +221,7 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl, bumperHel
       filterTransport.seek(s);
     };
     const play = () => {
+      release();
       const el = getMediaEl?.();
       const refused = (e) => logger().debug('content-filter.seek.play-refused', { error: e?.message });
       try { el?.play?.()?.catch?.(refused); } catch (e) { refused(e); }
@@ -174,9 +230,11 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl, bumperHel
       position: () => { const t = getMediaEl?.()?.currentTime; return Number.isFinite(t) ? t : null; },
       seek,
       play,
+      hold,
       togglePlay: () => {
         const el = getMediaEl?.();
         if (!el) return null;
+        release();
         if (el.paused) { play(); logger().debug('content-filter.toggle-play', { to: 'playing' }); return 'playing'; }
         el.pause?.(); logger().debug('content-filter.toggle-play', { to: 'paused' });
         return 'paused';
@@ -194,7 +252,7 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl, bumperHel
     });
     unbindRef.current = unbind;
     return unbind;
-  }, [filterTransport, getMediaEl, reloadFilterData, closeSurround]);
+  }, [filterTransport, getMediaEl, reloadFilterData, closeSurround, hold, release]);
 
   // The host closed the surround on its own (e.g. it was replaced): follow it.
   const hostOpenRef = useRef(surround.isOpen);

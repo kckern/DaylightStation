@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { REVIEW_ROWS_VERSION } from '../../../domain/content-filter/reviewRowsVersion.mjs';
-import { ContentFilterReview, ReviewError } from './ContentFilterReview.mjs';
+import { ContentFilterReview, ReviewError, railCounts } from './ContentFilterReview.mjs';
 import { resolveEffectiveCues } from '../../../../browser/content-filter/contentFilter.js';
 import { reviewRows } from '../../../../cli/contentfilter/reviewRows.mjs';
 
@@ -64,7 +64,7 @@ describe('ContentFilterReview marks and sign-off', () => {
   it('approve is refused with the exact missing lines, then accepted when all hold; withdraw removes parent', async () => {
     const { review, state } = setup();
     let r = await review.get({ ratingKey: '9' });
-    expect(r.signOff).toMatchObject({ ready: false, missing: ['2 rows have no verdict'] });
+    expect(r.signOff).toMatchObject({ ready: false, missing: ['2 parts have no verdict'] });
     await expect(review.approve({ ratingKey: '9', by: 'p' })).rejects.toBeInstanceOf(ReviewError);
     await review.markReviewed({ ratingKey: '9', rowId: 'cue:va1', span: [110.2, 110.6], by: 'p' });
     await review.markReviewed({ ratingKey: '9', rowId: 'cue:va2', span: [210, 212], by: 'p' });
@@ -82,7 +82,7 @@ describe('ContentFilterReview marks and sign-off', () => {
     const { review, state } = setup({ state: s, audit: { ok: true, digest: 'D', rowsVersion: REVIEW_ROWS_VERSION, rows: moved } });
     const r = await review.get({ ratingKey: '9' });
     expect(r.reviewed).toBe(0);
-    expect(r.signOff.missing).toEqual(['1 rows have no verdict', '1 parts changed since you reviewed them']);
+    expect(r.signOff.missing).toEqual(['1 part has no verdict', '1 parts changed since you reviewed them']);
     await review.pruneMarks('9');
     expect(Object.keys(state.override.review)).toEqual(['cue:va1']);
     expect((await review.get({ ratingKey: '9' })).signOff.missing).toContain('1 parts changed since you reviewed them');
@@ -91,7 +91,7 @@ describe('ContentFilterReview marks and sign-off', () => {
     const s = base(); s.override.cueOverrides = { va1: { startMs: 100300, endMs: 100700 } };
     const r = await setup({ state: s, audit: { ok: false, digest: 'OLD', rowsVersion: REVIEW_ROWS_VERSION, rows: [{ id: 'cue:va1', in: 110.2, out: 110.6, label: 'damn', members: ['va1'] }] }, digest: 'NEW' }).review.get({ ratingKey: '9' });
     expect(r.audit.fresh).toBe(false);
-    expect(r.signOff.missing).toEqual(['Not machine-certified: 1 mutes do not cover their word (damn)', 'The final check found a problem', 'The check is out of date. It runs again when this page is open.', '1 rows have no verdict']);
+    expect(r.signOff.missing).toEqual(['Not machine-certified: 1 mutes do not cover their word (damn)', 'The final check found a problem', 'The check is out of date. It runs again when this page is open.', '1 part has no verdict']);
   });
   it('sets and clears a word ruling for this film', async () => {
     const { review, state } = setup();
@@ -177,7 +177,7 @@ describe('ContentFilterReview verdicts', () => {
     const { review } = run();
     await review.setVerdict('9', 'cue:va1', { verdict: 'redo', span: span1, by: 'p' });
     let r = await review.get({ ratingKey: '9' });
-    expect(r.signOff.missing).toEqual(['1 rows have no verdict', '1 rows wait for redo']);
+    expect(r.signOff.missing).toEqual(['1 part has no verdict', '1 part waits for redo']);
     await review.setVerdict('9', 'cue:va1', { verdict: 'ignore', span: span1, by: 'p' });
     await review.setVerdict('9', 'cue:va2', { verdict: 'approve', span: [210, 212], by: 'p' });
     r = await review.get({ ratingKey: '9' });
@@ -416,3 +416,22 @@ describe('ContentFilterReview.get status', () => {
   });
 });
 
+describe('railCounts (the library card says the film page rail\'s next step)', () => {
+  const r = (id, o = {}) => ({ id, in: 1, out: 2, kind: 'words', members: [id.slice(4)], unsure: [], timing: 'refined', ...o });
+  it('counts rough parts refine has not tried, parts refine left unsure without a look, and redo marks', () => {
+    const rows = [
+      r('cue:a', { timing: 'rough' }),
+      r('cue:b', { timing: 'rough', unsure: ['refine-coarse-edges'] }),
+      r('cue:c', { timing: 'safe-window', unsure: ['refine-giveup', 'safe-window'] }),
+      r('cue:d', { timing: 'safe-window', unsure: ['refine-giveup'] }),
+      r('cue:e', { timing: 'rough', unsure: ['refine-giveup'], handFixed: true }),
+      r('cue:f', { timing: 'rough', acts: false }),
+      { id: 'scene:s', in: 1, out: 2, kind: 'scenes', members: [], unsure: [], timing: 'rough' },
+      r('cue:g'),
+    ];
+    const marks = { 'cue:d': { span: [1, 2], verdict: 'approve' }, 'cue:g': { span: [1, 2], verdict: 'redo' }, 'cue:c': { span: [9, 9], verdict: 'approve' } };
+    // a: to refine. b, c (its mark no longer holds): to check. d: looked at. e: hand-fixed. f plays. The scene is rebuilt, not refined.
+    expect(railCounts(rows, marks)).toEqual({ toRefine: 1, toCheck: 2, redo: 1 });
+    expect(railCounts()).toEqual({ toRefine: 0, toCheck: 0, redo: 0 });
+  });
+});

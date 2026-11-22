@@ -162,7 +162,8 @@ describe('refine from the review page', () => {
     payload = base([tried], { status: { next: 'approve' }, signOff: { ready: true, missing: [], parent: null } });
     render(ui());
     expect(screen.queryByRole('button', { name: /^Refine all/ })).toBeNull();
-    expect(screen.getByRole('tab', { name: /^Refine/ }).textContent).toMatch(/Done · 1 rough after refine \(check by eye\)/);
+    expect(screen.getByRole('tab', { name: /^Refine/ }).textContent).toMatch(/1 to check by ear or eye/);
+    expect(screen.getByRole('tab', { name: /^Refine/ }).getAttribute('data-check')).toBe('1');
     expect(screen.getByRole('tab', { name: /^Approve/ }).getAttribute('data-state')).toBe('current');
     fireEvent.click(screen.getByRole('tab', { name: /^Approve/ }));
     expect(screen.getByRole('button', { name: 'Approve for family' })).toBeTruthy();

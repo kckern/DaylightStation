@@ -112,6 +112,8 @@ describe('ContentFilterScenes workshop', () => {
     expect(repo.state.override.cueOverrides).toEqual({});
     expect(await uc.ruleCue({ ratingKey: '5', cueId: 'nope', effect: 'mute' })).toBeNull();
     await expect(uc.ruleCue({ ratingKey: '5', cueId: 'va1', effect: 'explode' })).rejects.toThrow('unknown cue effect');
+    // Hide picture (the Admin offers it where the channel is the picture).
+    expect(await uc.ruleCue({ ratingKey: '5', cueId: 'va1', effect: 'blackout' })).toEqual({ effect: 'blackout' });
   });
 
   it('draftCard asks once with the usage tags and stores the draft on that scene only', async () => {

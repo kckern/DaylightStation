@@ -6,6 +6,7 @@ import { useVisibleRefresh } from '../../../lib/hooks/useVisibleRefresh.js';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { LoadingState, ErrorState, EmptyState, SectionCard, createAppLogger, useRetryRegion } from '../../../lib/ui/index.js';
 import { STAGE_LABELS } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
+import { cardStep } from './railStages.js';
 import './ContentFilterAdmin.scss';
 
 /**
@@ -37,8 +38,6 @@ export const SECTIONS = [
   { id: 'started', label: 'Started', stages: ['rough'], when: (f) => Boolean(f.reviewed || f.job), open: true },
   { id: 'rough', label: 'Not started', stages: ['rough'], open: false },
 ];
-/** The internal step, in words, for a film in To review. */
-export const REVIEW_DETAIL = { machine: 'Auto-checked', audited: 'Check found a problem', scenes: 'Not checked yet', refined: 'Not checked yet' };
 /** Films the library cannot match to Plex (no key, stale key, another year, several Plex films). */
 export const UNMATCHED_SECTION = { id: 'unmatched', label: 'Not matched to Plex' };
 const isUnmatched = (f) => f.match === 'unmatched';
@@ -92,7 +91,7 @@ export function FilterLibrary() {
       && !all.slice(0, i).some((prev) => prev.when && prev.stages.includes(f.stage) && prev.when(f))) }))
     .filter((sec) => sec.films.length), [matched]);
 
-  const card = (f, chip) => <FilmCard key={f.ratingKey} film={f} worker={data?.worker} chip={chip} />;
+  const card = (f) => <FilmCard key={f.ratingKey} film={f} worker={data?.worker} />;
   const meta = data?.meta;
 
   return (
@@ -120,7 +119,7 @@ export function FilterLibrary() {
         {!matched.length && unmatched.length ? <Text size="sm" c="dimmed">No film matched to Plex fits. See below.</Text> : null}
         {matched.length && needle ? (
           <SimpleGrid className="cf-grid" cols={{ base: 2, sm: 4, md: 6, lg: 8 }} spacing="sm">
-            {matched.map((f) => card(f, STAGE_LABELS[f.stage] ?? f.stage))}
+            {matched.map((f) => card(f))}
           </SimpleGrid>
         ) : null}
         {(groups.length && !needle) || unmatched.length ? (
@@ -132,7 +131,7 @@ export function FilterLibrary() {
                 </Accordion.Control>
                 <Accordion.Panel>
                   <SimpleGrid className="cf-grid" cols={{ base: 2, sm: 4, md: 6, lg: 8 }} spacing="sm">
-                    {sec.films.map((f) => card(f, sec.id === 'review' ? REVIEW_DETAIL[f.stage] || null : null))}
+                    {sec.films.map((f) => card(f))}
                   </SimpleGrid>
                 </Accordion.Panel>
               </Accordion.Item>
@@ -176,9 +175,18 @@ function Poster({ film }) {
   );
 }
 
-function FilmCard({ film: f, worker, chip }) {
+/**
+ * One film. Its status is the film page's rail in two short lines (railStages.js `cardStep`): the next
+ * step ("15 to refine", "Ready", "Approved"), then the reviewed count, so the card and the page can
+ * never disagree (a card said "Auto-checked" over a page with 15 parts to refine: review 2026-11-22).
+ */
+function FilmCard({ film: f, worker }) {
   const text = runText(f.job, worker);
   const unlinked = f.linked === false;
+  const running = active(f.job);
+  const step = cardStep(f, { runText: text });
+  const count = f.reviewed ? `${f.reviewed.n} of ${f.reviewed.m} reviewed` : null;
+  const second = count && count !== step.text ? count : step.note || null;
   return (
     <div className={`cf-card${unlinked ? ' is-unlinked' : ''}`}>
       <Link className="cf-card__link" to={`/admin/content/filter/${f.ratingKey}`}>
@@ -192,14 +200,15 @@ function FilmCard({ film: f, worker, chip }) {
         </span>
       ) : null}
       <div className="cf-card__meta">
-        {chip ? <Badge size="xs" variant="light" color={STAGE_TONE[f.stage]}>{chip}</Badge> : null}
-        {f.reviewed ? <span>{`${f.reviewed.n} of ${f.reviewed.m} reviewed`}</span> : null}
+        <span className={`cf-card__step is-${step.tone}`} data-step={step.tone}>{step.text}</span>
+        <span className="cf-card__count">{second}</span>
       </div>
-      <div className={`cf-card__run${f.job?.status === 'failed' ? ' is-failed' : ''}`} title={text || undefined}>{text}</div>
+      {/* A run in hand is the step line already; this line is for a run that failed or stopped. */}
+      <div className={`cf-card__run${f.job?.status === 'failed' ? ' is-failed' : ''}`} title={text || undefined}>{running ? null : text}</div>
       {/* Refining happens on the film's page, filtered parts only (owner, 2026-11-21); the card opens it. */}
       <Button className="cf-card__run-action" size="compact-xs" fullWidth component={Link} to={`/admin/content/filter/${f.ratingKey}`}
         variant={f.stage === 'machine' || f.reviewed ? 'filled' : 'light'} disabled={unlinked}>
-        {f.stage === 'parent' ? 'Open' : f.stage === 'machine' || f.reviewed || f.job ? 'Review' : 'Start'}
+        {f.stage === 'parent' ? 'Open' : step.tone === 'ready' ? 'Approve' : f.rail?.toRefine ? 'Refine' : f.stage === 'machine' || f.reviewed || f.job ? 'Review' : 'Start'}
       </Button>
     </div>
   );

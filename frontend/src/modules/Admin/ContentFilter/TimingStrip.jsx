@@ -4,26 +4,30 @@ import { previewStore } from '../../../../../__app_modules/media/media/browser/c
 /**
  * A part's timing as a mini timeline (owner, 2026-11-22: "a mini timeline with handlebars i can
  * drag"): a window around the part with a tick every second, the part's span as a band with a
- * handle at each end, and the film's playhead. Drag a handle, or focus it and use ← → (0.1 s; with
- * Shift 0.5 s) and Home / End (put it at the playhead). A click on the strip seeks the film there.
- * It only edits `span`; RowEditor saves it.
+ * handle at each end, and the film's playhead. Drag a handle, or focus it with Tab and use ← →
+ * (0.1 s; with Shift 0.5 s) and Home / End (put it at the playhead). A handle dragged with the
+ * pointer does not keep the keyboard: ← → go on stepping through the parts (review 2026-11-22).
+ * A click on the strip seeks the film there. It only edits `span`; RowEditor saves it.
  */
 const MIN_GAP = 0.05;
 const MIN_WINDOW = 12;
 const PLAYHEAD_MS = 100;
 const LABEL_STEPS = [5, 10, 15, 30, 60, 120, 300, 600];
+// Labels sit right of their tick; past this share of the track there is no room for one.
+const LABEL_UNTIL = 0.86;
 const round2 = (v) => Math.round(v * 100) / 100;
 const round3 = (v) => Math.round(v * 1000) / 1000;
 
-/** m:ss.ss (hundredths: a hand-set edge is finer than the list's tenths). */
+const hm = (m) => (m >= 60 ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}` : `${m}`);
+/** m:ss.ss, or h:mm:ss.ss from an hour on (hundredths: a hand-set edge is finer than the list's tenths). */
 export function fineTimecode(t) {
   if (!Number.isFinite(t)) return '';
   const hundredths = Math.round(t * 100);
   const m = Math.floor(hundredths / 6000);
   const s = (hundredths % 6000) / 100;
-  return `${m}:${s < 10 ? '0' : ''}${s.toFixed(2)}`;
+  return `${hm(m)}:${s < 10 ? '0' : ''}${s.toFixed(2)}`;
 }
-const clock = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+const clock = (t) => `${hm(Math.floor(t / 60))}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 /** "44:24.30–44:25.10, 0.8 s" */
 export const spanText = ([a, b]) => `${fineTimecode(a)}–${fineTimecode(b)}, ${Number((b - a).toFixed(2))} s`;
 
@@ -70,8 +74,9 @@ export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice 
   const onDown = (edge) => (e) => {
     if (disabled) return;
     e.stopPropagation();
+    // No focus for a pointer drag (and none taken by the browser): the arrow keys stay with the parts.
+    e.preventDefault?.();
     e.currentTarget.setPointerCapture?.(e.pointerId);
-    e.currentTarget.focus?.();
     drag.current = edge;
   };
   const onMove = (edge) => (e) => {
@@ -84,6 +89,7 @@ export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice 
     if (drag.current !== edge) return;
     drag.current = null;
     e.currentTarget.releasePointerCapture?.(e.pointerId);
+    e.currentTarget.blur?.();
     if (span[edge] <= win[0] && win[0] > 0) setWin([Math.max(0, win[0] - 3), win[1]]);
     else if (span[edge] >= win[1]) setWin([win[0], win[1] + 3]);
   };
@@ -113,17 +119,18 @@ export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice 
     <span role="slider" tabIndex={disabled ? -1 : 0} aria-label={name} aria-orientation="horizontal" aria-disabled={disabled || undefined}
       aria-valuemin={edge === 0 ? win[0] : round3(span[0] + MIN_GAP)} aria-valuemax={edge === 0 ? round3(span[1] - MIN_GAP) : win[1]}
       aria-valuenow={span[edge]} aria-valuetext={fineTimecode(span[edge])}
-      title={`${name}: drag, or ← → (Shift for 0.5 s); ${edge === 0 ? 'Home' : 'End'} sets it at the playhead`}
+      title={`${name}: drag. With the keyboard: Tab to it, then ← → (Shift for 0.5 s); Home or End sets it at the playhead`}
       className={`cf-strip__handle is-${edge === 0 ? 'start' : 'end'}`} style={{ left: pct(span[edge]) }}
-      onPointerDown={onDown(edge)} onPointerMove={onMove(edge)} onPointerUp={onUp(edge)} onPointerCancel={onUp(edge)} onKeyDown={onKey(edge)} />
+      onMouseDown={(e) => e.preventDefault()} onPointerDown={onDown(edge)} onPointerMove={onMove(edge)} onPointerUp={onUp(edge)} onPointerCancel={onUp(edge)} onKeyDown={onKey(edge)} />
   );
   const changed = span[0] !== saved[0] || span[1] !== saved[1];
   return (
     <div className={`cf-strip${disabled ? ' is-disabled' : ''}`} aria-label="Timing">
       <div className="cf-strip__track" ref={track} onClick={seek} title="Click to play the film from here">
         {ticks.map((t) => (
+          // A tick near the right edge carries no label: it ran out of the track, over the readout.
           <span key={t} className={`cf-strip__tick${t % labelStep === 0 ? ' is-major' : ''}`} style={{ left: pct(t) }}>
-            {t % labelStep === 0 ? <span className="cf-strip__label">{clock(t)}</span> : null}
+            {t % labelStep === 0 && (t - win[0]) / width <= LABEL_UNTIL ? <span className="cf-strip__label">{clock(t)}</span> : null}
           </span>
         ))}
         {changed ? <span className="cf-strip__saved" style={{ left: pct(Math.max(saved[0], win[0])), right: `${100 - parseFloat(pct(Math.min(saved[1], win[1])))}%` }} /> : null}

@@ -20,6 +20,35 @@ const btn = (name) => screen.getByRole('button', { name: new RegExp(`^${name}`) 
 
 describe('RowEditor (the part card)', () => {
   beforeEach(() => { calls.length = 0; fail = null; vi.restoreAllMocks(); });
+  it('a word refine did not find is never a green "Safe window": amber, in words, with a quiet Refine again', () => {
+    show({ ...word, timing: 'safe-window', unsure: ['refine-giveup', 'safe-window'] });
+    expect(screen.queryByText('Safe window')).toBeNull();
+    const chip = screen.getByText('Word not found').closest('[data-timing]');
+    expect(chip.getAttribute('data-timing')).toBe('unsure');
+    expect(screen.getByText(/Refine could not find this word/)).toBeTruthy();
+    expect(btn('Refine again').getAttribute('data-variant')).toBe('light');
+  });
+  it('a rough part refine already tried offers a quiet "Refine again", not a filled "Refine this part"', () => {
+    show({ ...shown, timing: 'rough', unsure: ['refine-coarse-edges'] });
+    expect(screen.getByText(/Refine couldn't pin this; drag the handles to fit it by eye/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Refine this part/ })).toBeNull();
+    expect(btn('Refine again').getAttribute('data-variant')).toBe('light');
+  });
+  it('a rough part not refined yet keeps the filled "Refine this part"', () => {
+    show({ ...shown, timing: 'rough', unsure: [] });
+    expect(btn('Refine this part').getAttribute('data-variant')).toBe('filled');
+  });
+  it('shows the span once: on the timing row when the strip is there', () => {
+    show(word, { position: { index: 0, total: 3 } });
+    expect(screen.getByText('Part 1 of 3')).toBeTruthy();
+    expect(screen.getAllByText(/1:10\.20–1:10\.60/)).toHaveLength(1);
+    expect(screen.queryByText(/1:10\.2–1:10\.6/)).toBeNull();
+  });
+  it('on the Refine tab the card has no verdict buttons', () => {
+    show(word, { stage: 'refine' });
+    expect(screen.queryByRole('button', { name: /^Approve/ })).toBeNull();
+    expect(screen.getByText(/Verdicts are given on the Review tab/)).toBeTruthy();
+  });
   it('a shown row offers no Mute or Bleep', () => {
     show(shown);
     expect(screen.queryByRole('button', { name: /^Mute/ })).toBeNull();

@@ -15,11 +15,12 @@ vi.mock('../../../../../__app_modules/media/media/browser/playback.mjs', () => (
 const { railStages, defaultStage } = await import('./railStages.js');
 const { ReviewRail } = await import('./ReviewRail.jsx');
 const { ContentFilterReview } = await import('./ContentFilterAdmin.jsx');
+const { previewStore } = await import('../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs');
 
 const row = (id, label, o = {}) => ({ id, peekId: id.split(':')[1], members: [id.split(':')[1]], kind: 'words', group: 'profanity', label, modality: 'said', in: 10, out: 11, effect: 'mute', card: null, handFixed: false, unsure: [], reviewed: null, verdict: null, timing: 'refined', ...o });
 const done = { verdict: { verdict: 'approve' }, reviewed: { by: 'p' } };
 const film = (rows, extra = {}) => ({ title: 'F', certification: { level: 'machine' }, audit: { ok: true, fresh: true }, wordRulings: {}, rows, reviewed: 0, total: rows.length,
-  job: null, status: { next: 'review' }, signOff: { ready: false, missing: ['2 rows have no verdict', 'The check has not passed'], parent: null }, ...extra });
+  job: null, status: { next: 'review' }, signOff: { ready: false, missing: ['2 parts have no verdict', 'The check has not passed'], parent: null }, ...extra });
 const stagesOf = (o) => railStages({ data: film([row('cue:a', 'a')]), tally: { done: 0, total: 16 }, ...o }).map((s) => [s.key, s.state, s.text]);
 const ui = (path = '/admin/content/filter/77') => <MantineProvider><MemoryRouter initialEntries={[path]}><Routes>
   <Route path="/admin/content/filter/:ratingKey/:rowId?" element={<ContentFilterReview />} /></Routes></MemoryRouter></MantineProvider>;
@@ -34,8 +35,11 @@ describe('railStages: each stage says only what the data says', () => {
     expect(stagesOf({ roughRefine: 16 })).toEqual([
       ['refine', 'current', '16 to refine'],
       ['review', 'waiting', '0 of 16 reviewed · refine first'],
-      ['approve', 'waiting', 'Not yet: 2 rows have no verdict'],
+      ['approve', 'waiting', 'Not yet: 2 parts have no verdict'],
     ]);
+  });
+  it('parts to refine and parts refine could not pin are both counted', () => {
+    expect(stagesOf({ roughRefine: 15, roughLeft: 1 })[0]).toEqual(['refine', 'current', '15 to refine · 1 to check']);
   });
   it('a refine in progress shows the run\'s own words', () => {
     const job = { status: 'running', step: 'refine', steps: [{ name: 'refine', progress: { phase: 'measure', done: 10, total: 18 } }] };
@@ -54,11 +58,14 @@ describe('railStages: each stage says only what the data says', () => {
     const queued = railStages({ data: film([row('cue:a', 'a')], { job: { status: 'queued' }, worker: { alive: false } }), tally: { done: 0, total: 18 }, now });
     expect(queued[0]).toMatchObject({ state: 'stuck', text: 'Filter worker not running' });
   });
-  it('refine done: it carries a check and the parts left rough; Review is in hand', () => {
+  it('refine done with parts it could not pin: not "Done" but how many to check; Review is in hand', () => {
     expect(stagesOf({ roughLeft: 3 }).slice(0, 2)).toEqual([
-      ['refine', 'complete', 'Done · 3 rough after refine (check by eye)'],
+      ['refine', 'complete', '3 to check by ear or eye'],
       ['review', 'current', '0 of 16 reviewed'],
     ]);
+    const [refine] = railStages({ data: film([row('cue:a', 'a')]), tally: { done: 0, total: 16 }, roughLeft: 3 });
+    expect(refine.check).toBe(3);
+    expect(railStages({ data: film([row('cue:a', 'a')]), tally: { done: 0, total: 16 } })[0].check).toBeUndefined();
     expect(stagesOf({})[0]).toEqual(['refine', 'complete', 'Done']);
   });
   it('every part reviewed and the sign-off accepted: Approve is Ready; approved, it names who', () => {
@@ -95,7 +102,10 @@ describe('ReviewRail: the stages are tabs', () => {
     expect(screen.getByRole('tablist', { name: 'Stages' })).toBeTruthy();
     expect(screen.getAllByRole('tab').map((t) => [t.getAttribute('data-stage'), t.getAttribute('aria-selected'), t.getAttribute('data-state')])).toEqual([
       ['refine', 'false', 'complete'], ['review', 'true', 'current'], ['approve', 'false', 'waiting'], ['plays', 'false', null]]);
-    expect(within(tab('Refine')).getByText('✓')).toBeTruthy();
+    // Parts refine could not pin: an amber "!" and a count, never a plain green check.
+    expect(within(tab('Refine')).getByText('!')).toBeTruthy();
+    expect(tab('Refine').className).toContain('has-check');
+    expect(tab('Refine').textContent).toMatch(/3 to check by ear or eye/);
     expect(tab('Review').textContent).toMatch(/4 of 16 reviewed/);
     expect(tab('Plays').textContent).toBe('Plays 135');
     // Only the open tab is in the Tab order (roving focus).
@@ -180,7 +190,7 @@ describe('the rail on the review page', () => {
     render(ui());
     fireEvent.click(tab('Approve'));
     expect(screen.getByText('Not ready to approve yet')).toBeTruthy();
-    expect(screen.getByText('2 rows have no verdict')).toBeTruthy();
+    expect(screen.getByText('2 parts have no verdict')).toBeTruthy();
     expect(screen.getByText('The check has not passed')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Approve for family' })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Approve/ })).toBeNull();
@@ -190,6 +200,30 @@ describe('the rail on the review page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'heck' }));
     expect(open()).toBe('review');
     expect(screen.getByRole('button', { name: /^Approve/ })).toBeTruthy();
+  });
+  it('Approve is not a dead end: Space still plays the film, and one button goes back to the parts without a verdict', () => {
+    payload = film(rows());
+    const toggle = vi.spyOn(previewStore, 'togglePlay').mockReturnValue('paused');
+    render(ui());
+    fireEvent.click(tab('Approve'));
+    fireEvent.keyDown(document.body, { key: ' ' });
+    expect(toggle).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' });
+    expect(open()).toBe('approve');
+    fireEvent.click(screen.getByRole('button', { name: /^Review the \d+ parts? without a verdict$/ }));
+    expect(open()).toBe('review');
+    expect(log.info).toHaveBeenCalledWith('content_filter.review.stage_tab', expect.objectContaining({ stage: 'review', from: 'approve', via: 'approve-panel' }));
+    toggle.mockRestore();
+  });
+  it('the Refine tab shows no verdict buttons, and A there says where verdicts are given', async () => {
+    payload = film(rows());
+    render(ui());
+    expect(open()).toBe('refine');
+    expect(screen.queryByRole('button', { name: /^Approve/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Redo/ })).toBeNull();
+    fireEvent.keyDown(document.body, { key: 'a' });
+    expect(await screen.findByText('Verdicts are given on the Review tab.')).toBeTruthy();
+    expect(calls).toHaveLength(0);
   });
   it('an approved film names who approved it and offers Withdraw', () => {
     payload = film([row('cue:a', 'damn', done)], { status: { next: 'done' }, signOff: { ready: true, missing: [], parent: { by: 'kc' } } });

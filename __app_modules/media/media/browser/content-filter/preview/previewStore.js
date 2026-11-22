@@ -31,6 +31,7 @@ const NOOP_BINDING = Object.freeze({
   position: () => null,
   seek() {},
   play() {},
+  hold() {},
   togglePlay: () => null,
   peek() {},
   refresh: async () => false,
@@ -52,11 +53,13 @@ function notify() {
   listeners.forEach((fn) => { try { fn(); } catch (_) { /* a broken subscriber must not stop the rest */ } });
 }
 
-function jumpTo(cue) {
+/** `play: false` leaves the film paused at the cue's lead-in (a host arriving with a part in hand). */
+function jumpTo(cue, { play = true } = {}) {
   if (!cue || !Number.isFinite(cue.in)) return;
-  if (binding === NOOP_BINDING) { pendingJump = cue; return; }
-  binding.seek(Math.max(0, cue.in - PREVIEW_LEAD_SEC));
-  binding.play();
+  if (binding === NOOP_BINDING) { pendingJump = { cue, play }; return; }
+  const at = Math.max(0, cue.in - PREVIEW_LEAD_SEC);
+  binding.seek(at);
+  if (play) binding.play(); else binding.hold(at);
 }
 
 export const previewStore = {
@@ -71,14 +74,15 @@ export const previewStore = {
     notify();
   },
   /**
-   * Bind the player: `{ position(), seek(s), play(), peek(id), refresh(), close() }` (any subset).
+   * Bind the player: `{ position(), seek(s), play(), hold(), peek(id), refresh(), close() }` (any subset).
+   * `hold(at)` keeps the film paused at `at` seconds until the viewer plays it, even if it has not started yet.
    * Returns an unbind that only clears this binding (a newer player keeps its own).
    */
   bind(handlers) {
     const mine = { ...NOOP_BINDING, ...handlers };
     binding = mine;
     owner = mine;
-    if (pendingJump) { const cue = pendingJump; pendingJump = null; jumpTo(cue); }
+    if (pendingJump) { const { cue, play } = pendingJump; pendingJump = null; jumpTo(cue, { play }); }
     const unbind = () => { if (binding === mine) binding = NOOP_BINDING; };
     // Empty the store, but only while this binding is still the latest one bound.
     unbind.reset = () => { if (owner === mine) previewStore.reset(); };
@@ -94,7 +98,7 @@ export const previewStore = {
   },
 
   seekTo(seconds) { if (Number.isFinite(seconds)) binding.seek(Math.max(0, seconds)); },
-  jumpToCue(cue) { jumpTo(cue); },
+  jumpToCue(cue, options) { jumpTo(cue, options); },
   /** Drop a jump parked before any player bound (host leaving the film). */
   clearPending() { pendingJump = null; },
   replayLast() { jumpTo(snapshot.lastFired); },

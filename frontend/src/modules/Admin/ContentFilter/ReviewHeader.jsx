@@ -8,9 +8,10 @@ import { ApprovalFeedback, useApprovalRegion } from './FilmApprovalControls.jsx'
 
 /**
  * The film's one line (ops design "cf-journey", owner 2026-11-21: the three-meter banner wasted the
- * screen): back to the films, the title, its certification, a failed or stuck run, and Stop or the
- * Refine tab's Refine all. How far the film is lives in the rail under it (ReviewRail.jsx);
- * everything else sits in the ⋯ menu.
+ * screen): back to the films, the title, a failed or stuck run, and Stop or the Refine tab's Refine
+ * all. How far the film is lives in the rail under it (ReviewRail.jsx) and nowhere else: the header
+ * carries no status badge of its own (an "Auto-checked" badge sat over "15 to refine": review
+ * 2026-11-22). Everything else sits in the ⋯ menu.
  */
 const logger = createAppLogger('admin').child('content-filter');
 const API = 'api/v1/content-filter';
@@ -90,7 +91,6 @@ export function ReviewHeader({ ratingKey, data, stage = 'review', roughFiltered,
       setError(err.message || `${action === 'stop' ? 'Stop' : 'That'} did not work.`);
     } finally { setPending(false); setConfirmStop(false); setConfirmWhole(false); }
   };
-  const level = data.signOff?.parent ? `Approved by ${data.signOff.parent.by}` : data.certification?.level === 'machine' ? 'Auto-checked' : null;
   const failed = job && (job.status === 'failed' || job.status === 'interrupted');
   // The rail (ReviewRail.jsx) says how far the run is; a run that may be stuck is spelled out here.
   const run = runState(job, data.worker);
@@ -99,7 +99,6 @@ export function ReviewHeader({ ratingKey, data, stage = 'review', roughFiltered,
     <div className="cf-head" role="banner" aria-label="Film">
       <Anchor component={Link} to="/admin/content/filter" size="sm" className="cf-head__back">‹ Films</Anchor>
       <Text fw={700} className="cf-head__title" title={data.title || ''}>{data.title || `Film ${ratingKey}`}</Text>
-      {level ? <Badge size="sm" variant="light" color={data.signOff?.parent ? 'green' : 'gray'}>{level}</Badge> : null}
       {failed ? (
         <Tooltip label={job.error || 'Nothing from it was kept.'} withArrow multiline w={360}>
           <Badge size="sm" color="red" variant="light">{job.status === 'interrupted' ? 'Last refine stopped early; nothing was kept'
@@ -131,7 +130,7 @@ export function ReviewHeader({ ratingKey, data, stage = 'review', roughFiltered,
             onClick={() => (confirmWhole ? post('make', `${base}/jobs`, { kind: 'make' }) : setConfirmWhole(true))}>
             {confirmWhole ? 'Click again: refine all parts, including the ones that play (slow)' : 'Refine the whole film (every part, slow)'}
           </Menu.Item>
-          <Menu.Item disabled={!flagged || running || blocked} onClick={() => handlers.rework?.()}>{`Rework ${flagged} marked redo`}</Menu.Item>
+          {flagged ? <Menu.Item disabled={running || blocked} onClick={() => handlers.rework?.()}>{`Re-refine ${flagged} part${flagged === 1 ? '' : 's'} marked Redo`}</Menu.Item> : null}
           <Menu.Divider />
           <Menu.Item onClick={() => handlers.bleepLevel?.(-0.05)}>Bleep quieter  [</Menu.Item>
           <Menu.Item onClick={() => handlers.bleepLevel?.(0.05)}>Bleep louder  ]</Menu.Item>

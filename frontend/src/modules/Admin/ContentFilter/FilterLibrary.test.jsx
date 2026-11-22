@@ -31,6 +31,7 @@ vi.mock('../../../lib/api.mjs', () => ({
 }));
 
 const { FilterLibrary, SECTIONS } = await import('./FilterLibrary.jsx');
+const { cardStep } = await import('./railStages.js');
 const show = (all = true) => {
   try { if (all) localStorage.setItem('cf-library-open', JSON.stringify(['ready', 'review', 'audited', 'scenes', 'refined', 'running', 'rough'])); } catch { /* none */ }
   return render(<MantineProvider><MemoryRouter><FilterLibrary /></MemoryRouter></MantineProvider>);
@@ -113,11 +114,27 @@ describe('FilterLibrary', () => {
     expect(screen.getByRole('button', { name: /^Not matched to Plex\s*1/ })).toBeTruthy();
     expect(screen.queryByRole('link', { name: /Cinderella/ })).toBeNull();
   });
-  it('a search flattens to one grid with stage chips', () => {
+  it('a search flattens to one grid; each card keeps its next step', () => {
     show(false);
     fireEvent.change(screen.getByRole('textbox', { name: 'Search titles' }), { target: { value: 'annie' } });
     expect(screen.queryByRole('button', { name: /^Not started/ })).toBeNull();
-    expect(within(row('Annie')).getByText('Rough')).toBeTruthy();
+    expect(within(row('Annie')).getByText('Not refined yet')).toBeTruthy();
+  });
+  it('a card says the film page rail\'s next step, never a pipeline badge', () => {
+    const f = (o) => ({ stage: 'machine', job: null, reviewed: { n: 0, m: 18 }, rail: { toRefine: 0, toCheck: 0, redo: 0 }, ...o });
+    expect(cardStep(f({ rail: { toRefine: 15, toCheck: 0, redo: 0 } })).text).toBe('15 to refine');
+    expect(cardStep(f({})).text).toBe('0 of 18 reviewed');
+    expect(cardStep(f({ reviewed: { n: 4, m: 18 }, rail: { toRefine: 0, toCheck: 7, redo: 0 } }))).toMatchObject({ text: '4 of 18 reviewed', note: '7 to check' });
+    expect(cardStep(f({ reviewed: { n: 18, m: 18 } }))).toMatchObject({ text: 'Ready', tone: 'ready' });
+    expect(cardStep(f({ reviewed: { n: 18, m: 18 }, rail: { toRefine: 0, toCheck: 0, redo: 2 } })).text).toBe('2 marked Redo');
+    expect(cardStep(f({ reviewed: { n: 18, m: 18 }, stage: 'audited' })).text).toBe('Not ready yet');
+    expect(cardStep(f({ stage: 'parent' })).text).toBe('Approved');
+    expect(cardStep(f({ stage: 'running', job: { status: 'running' } })).text).toBe('Refining…');
+    show();
+    expect(screen.queryByText('Auto-checked')).toBeNull();
+    const matilda = row('Matilda');
+    expect(matilda.querySelector('.cf-card__step').textContent).toBe('3 of 40 reviewed');
+    expect(row('Ready One').querySelector('.cf-card__step').textContent).toBe('Approved');
   });
 
   it('shows each film with its stage, run and reviewed count', () => {

@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Text, VisuallyHidden } from '@mantine/core';
+import { Button, Text, VisuallyHidden } from '@mantine/core';
 import { ApproveButton } from './ReviewHeader.jsx';
 import { SignOffPanel } from './SignOffPanel.jsx';
 
@@ -37,12 +37,13 @@ export function ReviewRail({ stages = [], plays = 0, value, onChange = () => {} 
   return (
     <div className="cf-rail" role="tablist" aria-label="Stages" onKeyDown={onKeyDown}>
       {stages.map((s, i) => (
-        <button key={s.key} {...tab(s.key, value === s.key)} data-state={s.state} title={s.title}
-          className={`cf-rail__stage is-${s.state}`}>
+        // `check`: the stage has run, but parts of it wait for a look (amber, never a plain green check).
+        <button key={s.key} {...tab(s.key, value === s.key)} data-state={s.state} data-check={s.check || undefined} title={s.title}
+          className={`cf-rail__stage is-${s.state}${s.check ? ' has-check' : ''}`}>
           <span className="cf-rail__in">
-            <span className="cf-rail__mark" aria-hidden="true">{MARK[s.state] || i + 1}</span>
+            <span className="cf-rail__mark" aria-hidden="true">{s.check ? '!' : MARK[s.state] || i + 1}</span>
             <span className="cf-rail__name">{s.label}</span>
-            <VisuallyHidden>{`, ${STATE_WORD[s.state]}: `}</VisuallyHidden>
+            <VisuallyHidden>{`, ${s.check ? 'to check' : STATE_WORD[s.state]}: `}</VisuallyHidden>
             <span className="cf-rail__text">{s.text}</span>
           </span>
         </button>
@@ -56,9 +57,10 @@ export function ReviewRail({ stages = [], plays = 0, value, onChange = () => {} 
 }
 
 /** The Approve tab's panel, in place of the part card: what is missing, or the sign-off itself. */
-export function ApprovePanel({ data, approval, tally, running = false }) {
+export function ApprovePanel({ data, approval, tally, running = false, onReview = null }) {
   const signOff = data.signOff || null;
   const ready = !signOff?.parent && data.status?.next === 'approve';
+  const open = Math.max(0, (tally?.total || 0) - (tally?.done || 0));
   return (
     <div className="cf-card-part cf-approve" data-state={signOff?.parent ? 'approved' : ready ? 'ready' : 'not-ready'}>
       <Text fw={700}>{signOff?.parent ? 'Approved for family' : ready ? 'Ready to approve for family' : 'Not ready to approve yet'}</Text>
@@ -71,6 +73,10 @@ export function ApprovePanel({ data, approval, tally, running = false }) {
         <>
           {!signOff?.parent ? <Text size="sm" c="dimmed">{signOff?.missing?.length ? 'Still missing:' : 'The film cannot be approved in its current state.'}</Text> : null}
           <SignOffPanel signOff={signOff} approval={approval} busyText={running ? 'A run is open' : null} />
+          {/* Not a dead end: the way back to the parts that still need a verdict. */}
+          {!signOff?.parent && open && onReview ? (
+            <Button size="compact-sm" onMouseDown={(e) => e.preventDefault()} onClick={onReview}>{`Review the ${open} part${open === 1 ? '' : 's'} without a verdict`}</Button>
+          ) : null}
         </>
       )}
     </div>

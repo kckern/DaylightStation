@@ -18,6 +18,9 @@ export const DEFAULT_SCOPE = Object.freeze({ stage: 'review', show: 'filtered', 
 export const plays = (row) => row?.acts === false;
 
 const ACTION_OF = { mute: 'mute', bleep: 'bleep', blur: 'blur', 'full-blur': 'blur', blackout: 'blur', skip: 'skip', 'skip-card': 'skip' };
+/** The effect button a part's effect lights: full blur is Blur, a skip behind a card is Skip. */
+const BUTTON_OF = { 'full-blur': 'blur', pixelate: 'blur', 'censor-bar': 'blur', 'skip-card': 'skip' };
+export const effectButton = (effect) => BUTTON_OF[effect] || effect || null;
 /** blur | skip | bleep | mute, or null (off / use settings). */
 export const rowAction = (row) => ACTION_OF[row?.effect] || null;
 
@@ -29,10 +32,18 @@ export const hasVerdict = (row) => Boolean(row?.verdict || row?.reviewed);
  */
 export const isOpen = (row, scope = DEFAULT_SCOPE) => !hasVerdict(row) && (!plays(row) || scope?.show === 'plays');
 
+/** Refine already tried this part and left a reason (not found, coarse edges, …): refining again will not pin it. */
+export const triedRefine = (row) => (row?.unsure || []).some((u) => String(u).startsWith('refine-'));
+/**
+ * A filtered part whose timing refine could not vouch for, that nobody has looked at yet: it is
+ * checked by ear or eye. A verdict or a hand fix is that look (owner, 2026-11-22: "Done" hid these).
+ */
+export const needsCheck = (row) => !plays(row) && triedRefine(row) && !row.handFixed && !hasVerdict(row);
+
 /** The scope a rail tab stands for: the same filters, on that tab's parts. */
 export const stageScope = (scope, stage) => ({ ...(scope || DEFAULT_SCOPE), stage, show: stage === 'plays' ? 'plays' : 'filtered' });
-/** A part the Refine tab lists: on rough timing (tried or not; a true scene is rebuilt, not refined), or in a refine right now. */
-const inRefine = (row, refining) => Boolean(refining?.[row.id]) || (row.timing === 'rough' && !isSceneRow(row));
+/** A part the Refine tab lists: on rough timing (tried or not; a true scene is rebuilt, not refined), one refine left unsure, or in a refine right now. */
+const inRefine = (row, refining) => Boolean(refining?.[row.id]) || ((row.timing === 'rough' || triedRefine(row)) && !isSceneRow(row));
 
 export function inScope(row, scope = DEFAULT_SCOPE, { refining = null } = {}) {
   const show = scope.show || 'all';
@@ -59,7 +70,7 @@ export function nextKind(kind) {
 /** Contextual action keys for a kind: [key, label, effect value to apply]. Widen applies to every kind. */
 const ACTION_KEYS = {
   words: [['M', 'Mute', 'mute'], ['P', 'Bleep', 'bleep'], ['K', 'Skip', 'skip'], ['O', 'Off', 'off']],
-  picture: [['B', 'Blur', 'blur'], ['K', 'Skip', 'skip'], ['O', 'Off', 'off']],
+  picture: [['B', 'Blur', 'blur'], ['H', 'Hide picture', 'blackout'], ['K', 'Skip', 'skip'], ['O', 'Off', 'off']],
   scenes: [['K', 'Skip', 'skip'], ['B', 'Hide picture', 'blackout'], ['O', 'Off', 'off']],
 };
 export const actionKeysFor = (kind) => ACTION_KEYS[kind] || [];

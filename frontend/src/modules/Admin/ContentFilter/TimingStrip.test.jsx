@@ -45,13 +45,32 @@ describe('timing strip helpers', () => {
 });
 
 describe('TimingStrip', () => {
+  it('a handle dragged with the pointer does not keep the keyboard', () => {
+    show();
+    start().focus();
+    fireEvent.pointerDown(start(), { clientX: 250, pointerId: 1 });
+    fireEvent.pointerMove(start(), { clientX: 225, pointerId: 1 });
+    fireEvent.pointerUp(start(), { clientX: 225, pointerId: 1 });
+    expect(document.activeElement).not.toBe(start());
+    // The mouse press itself takes no focus either.
+    expect(fireEvent.mouseDown(end())).toBe(false);
+  });
+  it('a tick at the right edge carries no label (it ran over the readout)', () => {
+    show();
+    // Window 94–110: the 1:50 tick sits on the right edge.
+    expect([...document.querySelectorAll('.cf-strip__label')].map((n) => n.textContent)).toEqual(['1:35', '1:40', '1:45']);
+    expect(document.querySelectorAll('.cf-strip__tick.is-major').length).toBe(4);
+  });
+  it('times from an hour on read h:mm:ss', () => {
+    expect(fineTimecode(3797.04)).toBe('1:03:17.04');
+  });
   it('two handles are sliders with their time; ticks every second, a label every 5 s', () => {
     show();
     expect(start().getAttribute('aria-valuenow')).toBe('100');
     expect(end().getAttribute('aria-valuenow')).toBe('104');
     expect(end().getAttribute('aria-valuetext')).toBe('1:44.00');
     expect(document.querySelectorAll('.cf-strip__tick').length).toBe(17);
-    expect([...document.querySelectorAll('.cf-strip__label')].map((n) => n.textContent)).toEqual(['1:35', '1:40', '1:45', '1:50']);
+    expect([...document.querySelectorAll('.cf-strip__label')].map((n) => n.textContent)).toEqual(['1:35', '1:40', '1:45']);
   });
   it('dragging a handle moves that edge to the pointer', () => {
     show();

@@ -1,7 +1,8 @@
 /**
  * The Admin library (spec "Build it"): every matched movie with VidAngel tags, plus every title
  * with a household override, that HAS an EDL (rough VidAngel export or refined; a mapped film with
- * none yet is not listed), each with its stage. Per-film facts are cached in memory and
+ * none yet is not listed), each with its stage, its reviewed count and the rail's counts
+ * (`rail: { toRefine, toCheck, redo }`). Per-film facts are cached in memory and
  * invalidated when a run settles, an audit lands or the film is written. Plex is asked only which
  * movie keys are live (movie sections, never shows), once per INDEX_TTL_MS: the match index is a
  * snapshot, and a media reorg re-keys titles, so a film can be in the index and gone from Plex
@@ -15,7 +16,7 @@
  */
 import { filmStage } from '../../../domain/content-filter/filmStage.mjs';
 import { filmMatch } from '../../../domain/content-filter/plexMatch.mjs';
-import { countReviewed } from './ContentFilterReview.mjs';
+import { countReviewed, railCounts } from './ContentFilterReview.mjs';
 
 export const INDEX_TTL_MS = 10 * 60 * 1000;
 // A Plex failure is remembered briefly: a blip must not hide linkage for a whole TTL.
@@ -108,6 +109,8 @@ export class ContentFilterLibrary {
     const failedStep = run && (run.status === 'failed' || run.status === 'interrupted') ? run.steps?.find((s) => s.name === run.step) : null;
     const override = refined && audit ? await this.#repo.getOverride(rk) : null;
     const counts = audit ? countReviewed(audit.rows || [], override?.review || {}) : null;
+    // What the film page's rail counts, so a card can say the same next step ("15 to refine").
+    const rail = audit ? railCounts(audit.rows || [], override?.review || {}) : null;
     const facts = {
       ratingKey: rk,
       title: indexTitle ?? raw?.title ?? refined?.title ?? null,
@@ -119,6 +122,7 @@ export class ContentFilterLibrary {
       }),
       job: run ? { status: run.status, step: run.step ?? null, error: failedStep?.error ?? null } : null,
       reviewed: counts ? { n: counts.reviewed, m: counts.total } : null,
+      rail,
       // The exported EDL's VidAngel facts, for the Plex match (not shown as such).
       hasEdl: !!raw || !!refined,
       edl: raw ? { year: Number.isFinite(raw.year) ? raw.year : null, runtimeSec: Number.isFinite(raw.runtimeUnalteredSec) ? raw.runtimeUnalteredSec : null, workId: raw.sourceRef?.workId ?? null } : null,

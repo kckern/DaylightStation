@@ -14,7 +14,7 @@ import { createTitleQueue } from '../titleQueue.mjs';
 
 export const CARD_MAX_CHARS = 90;
 const EFFECTS = new Set(['off', 'blackout', 'skip']);
-const CUE_EFFECTS = new Set(['mute', 'bleep', 'blur', 'full-blur', 'skip']);
+const CUE_EFFECTS = new Set(['mute', 'bleep', 'blur', 'full-blur', 'blackout', 'skip']);
 
 export const CARD_SYSTEM = `You write the one-line title card a family movie filter shows a child in place of a part of the film it skipped or hid.
 The child must be able to keep following the story, so say what HAPPENS in the story during the skipped part: who does what, and how it turns out (use your knowledge of this film and the dialogue around the gap).

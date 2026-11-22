@@ -15,11 +15,12 @@ const { previewStore } = await import('../../../../../__app_modules/media/media/
 const { ContentFilterReview } = await import('./ContentFilterAdmin.jsx');
 
 describe('Content filter review page', () => {
-  it('shows the film, its certification, the run state, the player and the rows', async () => {
+  it('shows the film, the run state, the player and the rows', async () => {
     render(<MantineProvider><MemoryRouter initialEntries={['/admin/content/filter/77']}><Routes>
       <Route path="/admin/content/filter/:ratingKey" element={<ContentFilterReview />} /></Routes></MemoryRouter></MantineProvider>);
     expect(screen.getByText('Back to the Future')).toBeTruthy();
-    expect(screen.getByText('Auto-checked')).toBeTruthy();
+    // The rail says where the film stands; the header carries no status badge of its own.
+    expect(screen.queryByText('Auto-checked')).toBeNull();
     expect(screen.getByText('Last run failed; nothing was kept (hover for why)')).toBeTruthy();
     expect(screen.getAllByText(/0 of 1 reviewed/).length).toBeGreaterThan(0);
     // Arriving without a permalink: the first part to review is in hand (its card), the URL is unchanged.

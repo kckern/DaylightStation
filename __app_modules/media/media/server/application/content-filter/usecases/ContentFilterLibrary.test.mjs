@@ -28,6 +28,9 @@ describe('ContentFilterLibrary', () => {
     const { films } = await lib.list({});
     expect(films.map((f) => [f.ratingKey, f.stage])).toEqual([['2', 'rough'], ['1', 'machine'], ['9', 'refined']]);
     expect(films[1]).toMatchObject({ title: 'Back to the Future', year: 1985, job: { status: 'failed', step: 'refine', error: 'boom' }, reviewed: { n: 1, m: 2 } });
+    // The rail's counts ride along, so a card says the film page's next step.
+    expect(films[1].rail).toEqual({ toRefine: 0, toCheck: 0, redo: 0 });
+    expect(films[0].rail).toBeNull();
   });
   it('filters by stage and by a case-insensitive title query', async () => {
     const { lib } = setup();

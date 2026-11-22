@@ -4,7 +4,7 @@ import { getToken } from '../../../lib/auth.js';
 import { invalidateApiResources } from '../../../lib/hooks/useApiResource.js';
 import { createAppLogger } from '../../../lib/ui/index.js';
 import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
-import { DEFAULT_SCOPE, WIDEN_STEP, actionKeysFor, hasVerdict, isOpen, isSceneRow, keysKindOf, nextKind, plays, rowAction, scopeRows, stageScope, stepFrom } from './reviewScope.js';
+import { DEFAULT_SCOPE, WIDEN_STEP, actionKeysFor, effectButton, hasVerdict, isOpen, isSceneRow, keysKindOf, needsCheck, nextKind, plays, scopeRows, stageScope, stepFrom, triedRefine } from './reviewScope.js';
 import { defaultStage, railStages } from './railStages.js';
 import { effectChoices } from './RowEditor.jsx';
 import { BLEEP_LEVEL_DEFAULT, clampBleepLevel } from '../../../../../shared/contracts/content-filter/filterSettings.mjs';
@@ -18,6 +18,7 @@ const logger = createAppLogger('admin').child('content-filter');
 const API = 'api/v1/content-filter';
 const round3 = (v) => Math.round(v * 1000) / 1000;
 const SCENE_EFFECTS = new Set(['skip', 'blackout', 'off']);
+const UNSAVED_TIMING = 'Unsaved timing: Save or press Esc to drop it';
 // A held [ or ] changes the level many times a second; the film's setting is written once it settles.
 const LEVEL_DEBOUNCE_MS = 400;
 const REWORK_ARM_MS = 4000;
@@ -65,9 +66,11 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   // Rough parts refine has already tried (it left a refine-* reason: not found, coarse edges, …) stay
   // rough when refined again; they are checked by eye, and never hold back Refine all or approval
   // (review 2026-11-22: Sonic's picture parts kept coarse edges, so "Refine all 5" looped).
-  const triedBefore = (r) => (r.unsure || []).some((u) => String(u).startsWith('refine-'));
+  const triedBefore = triedRefine;
   const roughRefineTargets = useMemo(() => refineTargets.filter((r) => r.timing === 'rough' && !triedBefore(r)), [refineTargets]);
-  const roughLeftCount = useMemo(() => refineTargets.filter((r) => r.timing === 'rough' && triedBefore(r)).length, [refineTargets]);
+  // Every part refine left a reason on (not found, coarse edges, …), whatever its timing now says,
+  // that nobody has looked at yet: the rail counts these "to check" (it said "Done": review 2026-11-22).
+  const roughLeftCount = useMemo(() => refineTargets.filter(needsCheck).length, [refineTargets]);
   const cuesOf = (r) => (isSceneRow(r) ? [] : (r.members ?? (String(r.id).startsWith('cue:') ? [r.peekId] : [])));
   // Which rows a refine holds right now: the open send-back's parts, then the ones queued here.
   const refining = useMemo(() => {
@@ -134,6 +137,17 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     session.current = null;
   }, [rk]);
 
+  // A span dragged on the timing strip and not saved yet (RowEditor reports it): moving the cursor
+  // would drop it without a word, so stepping, picking and verdicts wait for Save or Esc.
+  const dirtyTiming = useRef(null);
+  const timingDirty = useCallback((drop) => { dirtyTiming.current = drop || null; }, []);
+  const heldByTiming = (what) => {
+    if (!dirtyTiming.current) return false;
+    logger.info('content_filter.review.unsaved_timing_blocked', { rk, rowId: latest.current.selectedId, what });
+    setMessage(UNSAVED_TIMING);
+    return true;
+  };
+
   const go = useCallback((r, how) => {
     if (!r) return;
     via.current = how;
@@ -143,9 +157,10 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   }, [select]);
   // Every cursor move seeks to in - PREVIEW_LEAD_SEC (jumpToCue): click, timeline, keys, auto-advance.
   const pick = useCallback((r, { seek = true } = {}) => {
+    if (r?.id !== latest.current.selectedId && heldByTiming('pick')) return;
     via.current = 'click'; setMessage(null); select(r);
     if (seek) previewStore.jumpToCue({ in: r.in });
-  }, [select]);
+  }, [select]); // eslint-disable-line react-hooks/exhaustive-deps
   const setScope = useCallback((next) => {
     setScopeState(next);
     setMessage(null);
@@ -156,6 +171,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   const setStage = useCallback((stage, how = 'click', { keepCursor = false } = {}) => {
     const from = latest.current.scope.stage;
     if (stage === from) return;
+    if (heldByTiming('tab')) return;
     const next = stageScope(latest.current.scope, stage);
     const list = scopeRows(latest.current.rows, next, { refining: latest.current.refining });
     setScopeState(next);
@@ -164,9 +180,10 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     if (keepCursor || stage === 'approve' || list.some((r) => r.id === latest.current.selectedId)) return;
     const first = list.find((r) => isOpen(r, next)) || list[0];
     if (first) pick(first);
-  }, [rk, pick]);
+  }, [rk, pick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const step = (dir) => {
+    if (heldByTiming('step')) return;
     const next = stepFrom(scoped, selected?.id, dir);
     if (next) go(next, 'key'); else setMessage(dir > 0 ? 'That is the last part in this view.' : 'That is the first part in this view.');
   };
@@ -209,9 +226,12 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
 
   const verdict = (v, reason) => {
     if (!row) return;
+    if (heldByTiming('verdict')) return;
     // A refine moves the part, which drops a verdict on it: wait for the new timing (review 2026-11-21).
     if (plays(row)) { setMessage('This part plays under your settings and needs no verdict. Press an effect key to filter it.'); return; }
     if (latest.current.refining?.[row.id]) { setMessage('This part is being refined. Give it a verdict when the new timing lands.'); return; }
+    // The Refine tab shows no verdict buttons (a verdict resets when its part is refined).
+    if (latest.current.scope?.stage === 'refine') { setMessage('Verdicts are given on the Review tab.'); return; }
     if (v === 'remove' && latest.current.running) { setMessage('Let it play waits until the refine finishes.'); return; }
     guarded('verdict', () => record(row, v, { reason }));
   };
@@ -232,9 +252,19 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     guarded('effect', async () => {
       const allowed = isSceneRow(row) ? SCENE_EFFECTS.has(to) : effectChoices(row.modality).some((o) => o.value === to);
       if (!allowed) { setMessage(`${label} does not fit this part.`); return; }
-      if (rowAction(row) === rowAction({ effect: to })) { setMessage(`Already ${label.toLowerCase()}.`); return; }
+      if (plays(row) ? to === 'off' : effectButton(row.effect) === to) { setMessage(`Already ${label.toLowerCase()}.`); return; }
       for (const [path, body, method] of callsFor(row, { effect: to })) await DaylightAPI(path, body, method);
-      await record(row, 'approve', { change: { from: row.effect, to } });
+      // An effect change is not a verdict (it used to approve and move on, unseen: review 2026-11-22):
+      // the part replays with its new effect and waits for A.
+      logger.info('content_filter.review.effect', { rk, rowId: row.id, kind: row.kind, from: row.effect, to });
+      if (!activeView.current) return;
+      setMessage(to === 'off' ? 'Off: this part now plays. Press → for the next part.' : `${label} applied. Watch it, then press A to approve.`);
+      reload();
+      // The player reads its filter once: refresh it, then play the part again with the new effect.
+      const accepted = await previewStore.refresh().catch(() => false);
+      if (!activeView.current || latest.current.selectedId !== row.id) return;
+      if (accepted) previewStore.jumpToCue({ in: row.in });
+      else { logger.warn('content_filter.review.effect_preview_stale', { rk, rowId: row.id }); setMessage(`${label} applied, but the preview could not refresh. Press Enter to play the part, then A to approve.`); }
     });
   };
 
@@ -250,6 +280,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   };
 
   const undo = () => guarded('undo', async () => {
+    if (heldByTiming('undo')) return;
     if (latest.current.running) { setMessage('Undo waits until the refine finishes.'); return; }
     const last = undoStack[undoStack.length - 1];
     if (!last) { setMessage('Nothing to undo.'); return; }
@@ -341,6 +372,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   const handFixArmed = useRef(null);
   const refine = () => {
     if (!row) return;
+    if (heldByTiming('refine')) return;
     if (plays(row)) { setMessage('This part plays under your settings; refining is for the filtered parts.'); return; }
     // R on a part waiting in this page's queue takes it out again.
     const mine = cuesOf(row);
@@ -497,7 +529,17 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     bleepLevel: changeBleepLevel,
     retryPreview: previewRecovery ? retryPreview : null,
     help: () => setHelpOpen((v) => !v),
-    escape: () => { if (helpOpen) { setHelpOpen(false); return true; } return false; },
+    timingDirty,
+    escape: () => {
+      if (helpOpen) { setHelpOpen(false); return true; }
+      if (dirtyTiming.current) {
+        const drop = dirtyTiming.current; dirtyTiming.current = null; drop();
+        logger.info('content_filter.review.unsaved_timing_dropped', { rk, rowId: latest.current.selectedId });
+        setMessage('Timing change dropped.');
+        return true;
+      }
+      return false;
+    },
   };
   return {
     scope, setScope, setStage, stages, scoped, row, pick, handlers, message: saving ? 'Saving…' : message, helpOpen, canUndo, tally, pendingRefine, refining, running,

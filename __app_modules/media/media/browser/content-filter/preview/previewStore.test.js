@@ -65,6 +65,19 @@ describe('previewStore', () => {
     expect(seek).toHaveBeenLastCalledWith(0); // never before the start
   });
 
+  it('jumpToCue(cue, { play: false }) seeks and holds the film paused, bound now or later', () => {
+    const seek = vi.fn(); const play = vi.fn(); const hold = vi.fn();
+    previewStore.jumpToCue({ in: 50 }, { play: false }); // parked: no player yet
+    previewStore.bind({ seek, play, hold });
+    expect(seek).toHaveBeenCalledWith(46);
+    expect(hold).toHaveBeenCalledWith(46);
+    expect(play).not.toHaveBeenCalled();
+    previewStore.jumpToCue({ in: 100 }, { play: false });
+    expect(seek).toHaveBeenLastCalledWith(96);
+    expect(hold).toHaveBeenCalledTimes(2);
+    expect(play).not.toHaveBeenCalled();
+  });
+
   it('replayLast jumps to 4 s before the last fired cue', () => {
     const seek = vi.fn();
     previewStore.bind({ seek, play: vi.fn() });

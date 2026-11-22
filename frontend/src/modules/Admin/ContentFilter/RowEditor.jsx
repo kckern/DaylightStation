@@ -5,10 +5,10 @@ import { createAppLogger } from '../../../lib/ui/index.js';
 import { fitEffectToChannel } from '../../../../../shared/contracts/content-filter/cueModality.mjs';
 import { LANGUAGE_GROUPS } from '../../../../../shared/contracts/content-filter/languageGroups.mjs';
 import { groupLabel, timecode } from './ReviewList.jsx';
-import { actionKeysFor, isSceneRow, keysKindOf, plays } from './reviewScope.js';
+import { actionKeysFor, effectButton, isSceneRow, keysKindOf, plays } from './reviewScope.js';
 import { whyLine } from './whyLine.js';
 import { TimingStrip, spanText } from './TimingStrip.jsx';
-import { EffectTag } from './partVisuals.jsx';
+import { EffectTag, timingState } from './partVisuals.jsx';
 
 /**
  * The part in hand (ops design "cf-journey", owner 2026-11-21): where it sits in the queue, what it
@@ -17,7 +17,7 @@ import { EffectTag } from './partVisuals.jsx';
  */
 const logger = createAppLogger('admin').child('content-filter');
 const API = 'api/v1/content-filter';
-const CUE_EFFECTS = [['mute', 'Mute'], ['bleep', 'Bleep'], ['blur', 'Blur'], ['full-blur', 'Full blur'], ['skip', 'Skip']];
+const CUE_EFFECTS = [['mute', 'Mute'], ['bleep', 'Bleep'], ['blur', 'Blur'], ['full-blur', 'Full blur'], ['blackout', 'Hide picture'], ['skip', 'Skip']];
 const WORD_CHOICES = [{ label: 'Use settings', value: 'profile' }, { label: 'Play this word', value: 'off' }, { label: 'Mute this word', value: 'mute' }, { label: 'Bleep this word', value: 'bleep' }];
 const GROUP_CHOICES = [{ label: 'Play', value: 'off' }, { label: 'Mute', value: 'mute' }, { label: 'Bleep', value: 'bleep' }];
 const VERDICT_BADGE = { approve: ['Approved', 'green'], remove: ['Let it play', 'gray'], ignore: ['Ignored', 'gray'], redo: ['Redo', 'orange'] };
@@ -37,7 +37,7 @@ function KeyButton({ k, children, ...rest }) {
 }
 
 export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = null, wordRulings = {},
-  position = null, handlers = {}, refineState = null, canUndo = false, status = null }) {
+  position = null, handlers = {}, refineState = null, canUndo = false, status = null, stage = 'review' }) {
   const [notice, setNotice] = useState(null);
   const [pending, setPending] = useState(null);
   const [span, setSpan] = useState([row.in, row.out]);
@@ -74,6 +74,15 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
     : members.map((id) => [`${base}/cues/${encodeURIComponent(id)}`, body, 'PUT']));
   const nudge = (value) => act('nudge', rule({ nudge: value }), value ? 'Timing saved.' : 'Hand fix dropped.');
   const changed = span[0] !== row.in || span[1] !== row.out;
+  // The station holds the cursor while a dragged span is unsaved (it was silently dropped by a step:
+  // review 2026-11-22); Esc there drops it through this.
+  const dirtyPort = handlers.timingDirty;
+  useEffect(() => {
+    dirtyPort?.(changed ? () => { setSpan([row.in, row.out]); setNotice(null); } : null);
+  }, [changed, row.in, row.out]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => dirtyPort?.(null), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const timing = timingState(row);
+  const showStrip = single && !playing;
   const fits = isScene ? null : new Set(effectChoices(row.modality).map((o) => o.value));
   const effectKeys = actionKeysFor(keysKindOf(row)).filter(([, , v]) => isScene || fits.has(v));
   const refining = refineState?.state;
@@ -85,7 +94,7 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
       onMouseDown={(e) => { if (e.target.closest?.('button')) e.preventDefault(); }}>
       <Group justify="space-between" wrap="nowrap" gap="xs">
         <Text size="sm" c="dimmed" className="cf-focus__where">
-          {position ? `Part ${position.index + 1} of ${position.total}` : 'Not in this list'} · {timecode(row.in)}–{timecode(row.out)}
+          {position ? `Part ${position.index + 1} of ${position.total}` : 'Not in this list'}{showStrip ? '' : ` · ${timecode(row.in)}–${timecode(row.out)}`}
         </Text>
         <Group gap={4} wrap="nowrap">
           <Button size="compact-sm" variant="default" onClick={handlers.prev} disabled={!position || position.index <= 0} aria-label="Previous part">‹ Prev</Button>
@@ -97,7 +106,7 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
         <Text fw={600} size="md" className="cf-card-part__title">{row.label}</Text>
         <Group gap={4} wrap="wrap" justify="flex-end" className="cf-card-part__chips">
           {playing ? <Badge size="sm" variant="outline" color="gray">{row.why === 'removed' ? 'Plays (removed)' : 'Plays'}</Badge> : <EffectTag row={row} />}
-          {row.timing ? <Badge size="sm" variant="dot" color={row.timing === 'rough' ? 'orange' : 'green'}>{row.timing === 'rough' ? 'Rough timing' : row.timing === 'safe-window' ? 'Safe window' : 'Refined'}</Badge> : null}
+          {timing ? <Badge size="sm" variant="dot" data-timing={timing.key} color={timing.unsure || timing.key === 'rough' ? 'orange' : timing.key === 'safe-window' ? 'gray' : 'green'}>{timing.key === 'rough' ? 'Rough timing' : timing.word}</Badge> : null}
           {row.handFixed ? <Badge size="sm" variant="outline">Hand-fixed</Badge> : null}
           {verdict && VERDICT_BADGE[verdict] ? <Badge size="sm" variant="light" color={VERDICT_BADGE[verdict][1]}>{VERDICT_BADGE[verdict][0]}</Badge> : null}
         </Group>
@@ -108,8 +117,9 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
         <Text size="sm">{why.text}</Text>
         {!isScene && !playing ? (
           refining ? <Badge size="md" color="blue" variant="light">{refining}</Badge> : (
-            <KeyButton k="R" style={{ flexShrink: 0 }} variant={why.refine && row.timing === 'rough' ? 'filled' : 'light'} disabled={Boolean(pending)} onClick={handlers.refine}>
-              {row.timing === 'rough' ? 'Refine this part' : 'Refine again'}
+            // Filled only where refine is the next step; a part it already tried gets a quiet "Refine again".
+            <KeyButton k="R" style={{ flexShrink: 0 }} variant={why.refine && row.timing === 'rough' ? 'filled' : 'light'} color={why.tried ? 'gray' : undefined} disabled={Boolean(pending)} onClick={handlers.refine}>
+              {row.timing === 'rough' && !why.tried ? 'Refine this part' : 'Refine again'}
             </KeyButton>
           )
         ) : null}
@@ -121,7 +131,7 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
           title="What your household settings say for this kind of part"
           onClick={() => act('effect', rule({ effect: 'profile', disabled: false }))}>{playing && row.why !== 'removed' ? 'Your settings (plays)' : 'Your settings'}</Button>
         {effectKeys.map(([k, label, v]) => (
-          <KeyButton key={k} k={k} variant={!playing && (row.effect === v || (v === 'skip' && row.effect === 'skip-card')) ? 'filled' : 'default'} disabled={disabled}
+          <KeyButton key={k} k={k} variant={!playing && effectButton(row.effect) === v ? 'filled' : 'default'} aria-pressed={!playing && effectButton(row.effect) === v} disabled={disabled}
             onClick={() => handlers.effect?.(k.toLowerCase())}>{label}</KeyButton>
         ))}
       </Group>
@@ -140,12 +150,12 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
         </Group>
       ) : null}
 
-      {single && !playing ? (
+      {showStrip ? (
         <div className="cf-card-part__timing">
           <Text size="xs" c="dimmed" w={52}>Timing</Text>
           <TimingStrip span={span} saved={[row.in, row.out]} onChange={setSpan} onNotice={setNotice} disabled={disabled} />
           <Text size="xs" className="cf-review__time cf-card-part__span">{spanText(span)}</Text>
-          <Button size="compact-xs" disabled={disabled || !changed} onClick={() => nudge({ in: span[0], out: span[1] })}>Save timing</Button>
+          <Button size="compact-xs" variant={changed ? 'filled' : 'default'} disabled={disabled || !changed} onClick={() => nudge({ in: span[0], out: span[1] })}>Save timing</Button>
           {row.handFixed ? <Button size="compact-xs" variant="subtle" disabled={disabled} onClick={() => nudge(null)}>Drop hand fix</Button> : null}
         </div>
       ) : null}
@@ -166,12 +176,15 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
 
       {status}
       {notice ? <Text size="sm" role="status">{notice}</Text> : null}
-      {playing ? null : (
+      {playing ? null : stage === 'refine' ? (
+        // No verdicts beside "a verdict resets when refined": they are given on the Review tab.
+        <Text size="xs" c="dimmed" className="cf-card-part__verdicts">Verdicts are given on the Review tab: a verdict resets when its part is refined.</Text>
+      ) : (
         <Group gap={6} wrap="wrap" className="cf-card-part__verdicts">
           <KeyButton k="A" color="green" variant={verdict === 'approve' ? 'filled' : 'light'} disabled={verdictLocked} onClick={() => handlers.verdict?.('approve')}>Approve</KeyButton>
           <KeyButton k="X" color="gray" variant={verdict === 'remove' ? 'filled' : 'light'} disabled={verdictLocked || Boolean(busyText)}
             title={busyText ? 'Let it play waits until the refine finishes' : undefined} onClick={() => handlers.verdict?.('remove')}>Let it play</KeyButton>
-          <KeyButton k="D" color="orange" variant={verdict === 'redo' ? 'filled' : 'light'} disabled={verdictLocked} onClick={() => handlers.verdict?.('redo')}>Redo</KeyButton>
+          <KeyButton k="D" color="orange" variant={verdict === 'redo' ? 'filled' : 'light'} disabled={verdictLocked} onClick={() => (handlers.redo ? handlers.redo() : handlers.verdict?.('redo'))}>Redo</KeyButton>
           {canUndo ? <KeyButton k="U" variant="subtle" disabled={Boolean(busyText)} onClick={handlers.undo}>Undo</KeyButton> : null}
           {refineState?.state ? <Text size="xs" c="dimmed">Verdict when the new timing lands.</Text> : null}
         </Group>

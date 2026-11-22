@@ -87,9 +87,10 @@ function FilmReview({ ratingKey, rowId, owner }) {
   const notMatched = data?.match === 'unmatched';
   const station = useReviewStation({ ratingKey, data, reload, refreshReview: refresh, selected, select, activeView, runBusy: running || notMatched, openRowId: rowId });
   const stage = station.scope.stage;
-  // On Approve the part card is not on screen, so the keys that act on a part are off.
-  const { redoOpen } = useReviewKeys(station.handlers, {
-    enabled: Boolean(data?.rows) && stage !== 'approve', redoOwner: `${ratingKey}\u001f${selected?.id ?? ''}`,
+  // On Approve the part card is not on screen, so the keys that act on a part are off; Space still
+  // plays and pauses the film, and ? still lists the keys.
+  const { redoOpen, openRedo, closeRedo } = useReviewKeys(station.handlers, {
+    enabled: Boolean(data?.rows), partKeys: stage !== 'approve', redoOwner: `${ratingKey}\u001f${selected?.id ?? ''}`,
   });
   useVisibleRefresh({ active: Boolean(waiting), intervalMs: POLL_MS, reload, poll });
 
@@ -102,6 +103,8 @@ function FilmReview({ ratingKey, rowId, owner }) {
     opened.current = first.id;
     logger.info('content_filter.review.arrived', { rk: ratingKey, rowId: first.id, rows: data.rows.length });
     setSelected(first);
+    // The film waits at the part in hand, paused: it used to play from 0:00 under part 1's card.
+    previewStore.jumpToCue({ in: first.in }, { play: false });
   }, [rowId, selected, data, ratingKey, station.scoped, station.scope]);
 
   if (loading && !data) return <LoadingState label="review" rows={6} />;
@@ -114,8 +117,11 @@ function FilmReview({ ratingKey, rowId, owner }) {
   // Picking a part from the list or the timeline while on Approve goes back to the parts.
   const pickPart = (r) => { if (stage === 'approve') station.setStage(plays(r) ? 'plays' : 'review', 'part', { keepCursor: true }); station.pick(r); };
   // The redo prompt, the last message and the preview retry sit inside the card, above its verdicts.
+  const onRedo = (reason) => { closeRedo(); if (reason !== null) station.handlers.verdict('redo', reason); };
   const keyBar = <ReviewKeyBar redoOpen={redoOpen} helpOpen={station.helpOpen} onCloseHelp={station.handlers.escape}
-    message={station.message} previewRecovery={station.previewRecovery} />;
+    message={station.message} previewRecovery={station.previewRecovery} onRedo={onRedo} />;
+  // The Redo button asks for a reason like D does.
+  const cardHandlers = { ...station.handlers, redo: openRedo };
   return (
     <div className="cf-review-page">
       <ReviewHeader ratingKey={ratingKey} data={data} stage={stage} roughFiltered={roughFiltered} handlers={{ ...station.handlers, rework: station.rework }} blocked={notMatched}
@@ -129,12 +135,12 @@ function FilmReview({ ratingKey, rowId, owner }) {
           {data.rows.length ? <ReviewTimeline rows={station.scoped} selectedId={row?.id ?? null} onSelect={pickPart} /> : null}
           {stage === 'approve' ? (
             <>
-              <ApprovePanel data={data} approval={approval} tally={station.tally} running={running} />
+              <ApprovePanel data={data} approval={approval} tally={station.tally} running={running} onReview={() => station.setStage('review', 'approve-panel')} />
               {keyBar}
             </>
           ) : row ? (
             <RowEditor key={row.id} ratingKey={ratingKey} row={row} onChanged={reload} busyText={busyText}
-              wordRulings={data.wordRulings || {}} handlers={station.handlers} canUndo={station.canUndo}
+              wordRulings={data.wordRulings || {}} handlers={cardHandlers} canUndo={station.canUndo} stage={stage}
               position={index >= 0 ? { index, total: station.scoped.length } : null}
               refineState={refining[row.id] ? { state: refining[row.id] } : null}
               status={keyBar} />

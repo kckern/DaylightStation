@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ActionIcon, Badge, Checkbox, Group, Popover, Select, Stack, Text, UnstyledButton, VisuallyHidden } from '@mantine/core';
 import { IconHelp } from '@tabler/icons-react';
 import { effectWord } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
-import { DEFAULT_SCOPE, ORDER_SCOPES, plays, scopeRows } from './reviewScope.js';
+import { DEFAULT_SCOPE, ORDER_SCOPES, needsCheck, plays, scopeRows } from './reviewScope.js';
 import { ChannelIcon, EffectIcon, LEGEND, RefiningIcon, StatusIcon, TimingIcon, timingState } from './partVisuals.jsx';
 
 /**
@@ -27,13 +27,14 @@ const GROUP_LABELS = {
 /** A group key in words: the known ones by name, the rest with spaces. */
 export const groupLabel = (g) => GROUP_LABELS[g] || String(g || '').replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 
-/** m:ss.s, tenths floored (a time code, not a rounded duration). */
+/** m:ss.s, or h:mm:ss.s from an hour on; tenths floored (a time code, not a rounded duration). */
 export function timecode(t) {
   if (!Number.isFinite(t)) return '';
   const tenths = Math.floor(t * 10 + 1e-6);
   const m = Math.floor(tenths / 600);
   const s = (tenths % 600) / 10;
-  return `${m}:${s < 10 ? '0' : ''}${s.toFixed(1)}`;
+  const sec = `${s < 10 ? '0' : ''}${s.toFixed(1)}`;
+  return m >= 60 ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
 }
 
 
@@ -49,6 +50,8 @@ export function rowStatus(r) {
   if (v === 'ignore') return { glyph: '–', word: 'Ignored', tone: 'done' };
   if (v === 'redo') return { glyph: '↻', word: 'Redo', tone: 'redo' };
   if (plays(r)) return { glyph: '', word: 'Plays', tone: 'quiet' };
+  // Refine was not sure of this part's timing and nobody has looked yet: amber, by ear or eye.
+  if (needsCheck(r)) return { glyph: '!', word: 'Check', tone: 'check' };
   return { glyph: '·', word: 'To do', tone: 'open' };
 }
 
@@ -65,7 +68,9 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
   return (
     <Stack gap="xs" className="cf-review__list">
       <Group gap="xs" wrap="wrap" justify="space-between">
-        {stage === 'refine' ? <Text size="xs" fw={600}>On rough timing</Text>
+        {stage === 'refine' ? <Text size="xs" fw={600}>Rough or unsure timing</Text>
+          // Nothing on Plays is "to do": the box would do nothing there.
+          : stage === 'plays' ? <Text size="xs" fw={600}>Play as they are</Text>
           : <Checkbox size="xs" label="To do only" checked={scope.needs} onChange={(e) => setScope({ needs: e.currentTarget.checked })} />}
         {check}
         <Group gap={4} wrap="nowrap">
@@ -84,7 +89,7 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
         </Group>
       </Group>
       {stage === 'plays' ? <Text size="xs" c="dimmed">These play as they are under your settings. Nothing here needs a verdict.</Text> : null}
-      {stage === 'refine' ? <Text size="xs" c="dimmed">Refine measures where each of these parts really starts and ends. A verdict on a part resets when it is refined.</Text> : null}
+      {stage === 'refine' ? <Text size="xs" c="dimmed">Refine measures where each of these parts really starts and ends. The ones marked Check it could not pin: fit those by hand. Verdicts are given on the Review tab.</Text> : null}
       {!shown.length ? <Text size="sm" c="dimmed">{!rows.length && emptyText ? emptyText : stage === 'refine' ? 'Nothing is left to refine.' : 'Nothing here.'}</Text> : (
         <div className="cf-review__rows" role="list">
           {shown.map((r) => {
@@ -92,8 +97,6 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
             const timing = plays(r) ? null : timingState(r);
             const state = refining[r.id];
             const status = rowStatus(r);
-            // A verdict's word stays in view; "To do" and "Plays" are read from the icon (and by a screen reader).
-            const wordShown = selected || status.tone === 'done' || status.tone === 'redo';
             const facts = [`${timecode(r.in)}–${timecode(r.out)}`, r.group && groupLabel(r.group), MODALITY[r.modality],
               plays(r) ? (r.why === 'removed' ? 'plays (removed)' : 'plays') : effectWord(r.effect), r.handFixed ? 'hand-fixed' : null].filter(Boolean).join(' · ');
             return (
@@ -106,7 +109,8 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
                   <span className="cf-review__fx"><EffectIcon row={r} /><ChannelIcon row={r} /></span>
                   <span className="cf-review__label">{r.label}</span>
                   <span className="cf-review__marks">
-                    {wordShown ? <span className={`cf-review__status is-${status.tone}`}>{status.word}</span> : <VisuallyHidden>{status.word}</VisuallyHidden>}
+                    {/* Every row keeps its word beside the icon (owner, 2026-11-22: "should have a word too"). */}
+                    <span className={`cf-review__status is-${status.tone}`}>{status.word}</span>
                     {state ? <span className="cf-review__refining" title={state}><RefiningIcon state={state} />{selected ? null : <VisuallyHidden>{state}</VisuallyHidden>}</span>
                       : timing ? <TimingIcon row={r} /> : null}
                   </span>
@@ -114,8 +118,8 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
                     <span className="cf-review__more">
                       <Text size="xs" c="dimmed" span>{facts}</Text>
                       {state ? <Badge size="xs" color="blue" variant="light">{state}</Badge>
-                        : timing ? <span className={`cf-review__timing is-${timing.key}`}>{timing.word}</span> : null}
-                      {r.unsure.filter((u) => !(u === 'safe-window' && r.timing === 'safe-window')).map((u) => <Badge key={u} size="xs" color="orange" variant="light">{UNSURE_LABELS[u] || u}</Badge>)}
+                        : timing ? <span className={`cf-review__timing is-${timing.key}${timing.unsure ? ' is-unsure' : ''}`}>{timing.word}</span> : null}
+                      {r.unsure.filter((u) => !(u === 'safe-window' && r.timing === 'safe-window') && !(u === 'refine-giveup' && timing?.word === 'Word not found')).map((u) => <Badge key={u} size="xs" color="orange" variant="light">{UNSURE_LABELS[u] || u}</Badge>)}
                       {r.card ? <Text size="xs" c="dimmed" span>{r.card.approved ? 'Card: ' : 'Draft card: '}{r.card.text}</Text> : null}
                     </span>
                   ) : null}

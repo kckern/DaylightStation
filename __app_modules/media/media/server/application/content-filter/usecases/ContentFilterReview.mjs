@@ -61,6 +61,28 @@ export function countReviewed(rows = [], marks = {}) {
   return { reviewed, changed, total };
 }
 
+/**
+ * The counts the film page's rail shows, for the library card (one next step on both pages):
+ * `toRefine` filtered parts on rough timing that refine has not tried, `toCheck` filtered parts refine
+ * left a reason on (refine-*) that have no verdict and no hand fix, `redo` parts marked redo.
+ * Mirrors the Admin's reviewScope.js (triedRefine, needsCheck, isSceneRow).
+ */
+export function railCounts(rows = [], marks = {}) {
+  let toRefine = 0; let toCheck = 0; let redo = 0;
+  for (const r of rows) {
+    const m = marks[r.id];
+    const held = !!m && markHolds(m, r);
+    if (held && m.verdict === 'redo') redo++;
+    if (r.acts === false) continue;
+    const scene = r.kind === 'scenes' && !(r.members || []).length && !String(r.id || '').startsWith('cue:');
+    if (scene) continue;
+    const tried = (r.unsure || []).some((u) => String(u).startsWith('refine-'));
+    if (r.timing === 'rough' && !tried) toRefine++;
+    if (tried && !r.handFixed && !held) toCheck++;
+  }
+  return { toRefine, toCheck, redo };
+}
+
 export class ContentFilterReview {
   #repo; #jobs; #digestOf; #logger; #clock; #queue;
 
@@ -353,9 +375,10 @@ export class ContentFilterReview {
     if (!refined) missing.push('Refine the filtered parts first: approval needs their measured timing');
     if (audit && audit.ok === false) missing.push('The final check found a problem');
     if (!fresh) missing.push(auditing ? 'The check is still running' : 'The check is out of date. It runs again when this page is open.');
-    if (total - reviewed - changed > 0) missing.push(`${total - reviewed - changed} rows have no verdict`);
+    const open = total - reviewed - changed;
+    if (open > 0) missing.push(`${open} part${open === 1 ? ' has' : 's have'} no verdict`);
     if (changed) missing.push(`${changed} parts changed since you reviewed them`);
-    if (redo) missing.push(`${redo} rows wait for redo`);
+    if (redo) missing.push(`${redo} part${redo === 1 ? ' waits' : 's wait'} for redo`);
     const run = (record?.runs || []).at(-1) || null;
     const auditError = record?.auditError || null;
     const status = filmStatus({ rawCueCount: (raw?.cues || []).length, refined, audit: audit ? { fresh } : null, auditRunning: auditing, auditFailed: !!auditError,

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { ReviewList, rowStatus } from './ReviewList.jsx';
+import { ReviewList, rowStatus, timecode } from './ReviewList.jsx';
 
 const rows = [
   { id: 'cue:w1', peekId: 'w1', kind: 'words', group: 'profanity', label: 'damn', modality: 'said', in: 70.25, out: 70.6, effect: 'mute', card: null, handFixed: false, unsure: ['safe-window'], timing: 'safe-window', reviewed: null },
@@ -67,13 +67,34 @@ describe('ReviewList', () => {
     expect(item('Billboard').querySelector('.cf-ico--fx').className).toContain('is-picture');
     expect(item('Fight').querySelector('.cf-ico--fx').className).toContain('is-skip');
     fireEvent.click(screen.getByRole('button', { name: 'Icon key' }));
-    expect(await screen.findByText('Rough after refine: check by eye')).toBeTruthy();
+    expect(await screen.findByText('Unsure after refine: check it')).toBeTruthy();
+    expect(screen.getByText('Heard (a sound)')).toBeTruthy();
+    expect(screen.getByText('Check: refine was unsure')).toBeTruthy();
     expect(screen.getByText('Bleeped (sound)')).toBeTruthy();
   });
   it('a rough part refine already tried is marked apart from one not refined yet', () => {
-    show({ rows: [{ ...rows[0], timing: 'rough', unsure: [] }, { ...rows[1], timing: 'rough', unsure: ['refine-coarse-edges'], verdict: null, reviewed: null }] });
+    show({ rows: [{ ...rows[0], timing: 'rough', unsure: [] }, { ...rows[1], timing: 'rough', unsure: ['refine-coarse-edges'], handFixed: false, verdict: null, reviewed: null }] });
     expect(within(item('damn')).getByRole('img', { name: 'Rough' })).toBeTruthy();
     expect(within(item('Billboard')).getByRole('img', { name: 'Rough after refine' })).toBeTruthy();
+  });
+  it('every row keeps a word beside its icon; a part refine could not pin reads Check in amber', () => {
+    show({ rows: [{ ...rows[0], timing: 'safe-window', unsure: ['refine-giveup', 'safe-window'], verdict: null, reviewed: null }, rows[1], { ...rows[2], verdict: null, reviewed: null }] });
+    const word = (label) => item(label).querySelector('.cf-review__status');
+    expect(word('damn').textContent).toBe('Check');
+    expect(word('damn').className).toContain('is-check');
+    expect(word('Billboard').textContent).toBe('Approved');
+    expect(['To do', 'Check', 'Approved', 'Let play', 'Redo', 'Plays']).toContain(word('Fight').textContent);
+    // A word refine did not find is never shown as a plain safe window.
+    expect(within(item('damn')).getByRole('img', { name: 'Word not found' }).className).toContain('is-unsure');
+    expect(within(item('damn')).queryByRole('img', { name: 'Safe window' })).toBeNull();
+  });
+  it('times from an hour on read h:mm:ss.s', () => {
+    expect(timecode(3797.04)).toBe('1:03:17.0');
+    expect(timecode(70.26)).toBe('1:10.2');
+  });
+  it('"To do only" is not offered on Plays, where nothing is to do', () => {
+    show({ scope: { stage: 'plays', show: 'plays', kind: 'all', action: 'all', needs: false, group: null, order: 'film' }, onScope: () => {} });
+    expect(screen.queryByRole('checkbox', { name: 'To do only' })).toBeNull();
   });
   it('"To do only" hides parts with a verdict', () => {
     show();
@@ -103,7 +124,8 @@ describe('ReviewList', () => {
     show({ rows: rough, refining: { 'scene:sc1': 'Refining…' }, scope: { stage: 'refine', show: 'filtered', kind: 'all', action: 'all', needs: true, group: null, order: 'film' }, onScope: () => {} });
     // Rough (tried or not) and the part in a refine; never a part that plays, never a true scene.
     expect(order()).toEqual(['subject:subject-b1', 'cue:w1', 'scene:sc1']);
-    expect(screen.getByText(/A verdict on a part resets when it is refined/)).toBeTruthy();
+    expect(screen.getByText(/Verdicts are given on the Review tab/)).toBeTruthy();
+    expect(screen.getByText('Rough or unsure timing')).toBeTruthy();
     expect(screen.queryByRole('checkbox', { name: 'To do only' })).toBeNull();
   });
   it('the Refine tab with nothing rough says so', () => {

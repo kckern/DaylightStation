@@ -184,6 +184,35 @@ it('keeps the preview cues and artwork scoped to the playing title during a swit
   }
 });
 
+it('a held jump keeps the film paused at its place through the Player\'s own starts, until the viewer plays', async () => {
+  const { useMediaVideoPresentation } = await import('./videoPresentation.jsx');
+  const { previewStore } = await import('./preview/previewStore.js');
+  window.history.replaceState({}, '', '/?filter=1');
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ edl: { cues: [] }, profile: { categories: {} }, override: {} })));
+  const el = document.createElement('video');
+  let paused = true;
+  Object.defineProperty(el, 'paused', { get: () => paused });
+  Object.defineProperty(el, 'readyState', { get: () => 4 });
+  el.pause = vi.fn(() => { paused = true; });
+  el.play = vi.fn(() => { paused = false; el.dispatchEvent(new Event('play')); return Promise.resolve(); });
+  const { unmount } = renderHook(() => useMediaVideoPresentation({ media: { assetId: 'plex:70' }, isPlex: true, getMediaEl: () => el }));
+  try {
+    act(() => { previewStore.jumpToCue({ in: 630 }, { play: false }); });
+    expect(el.currentTime).toBe(626);
+    // The Player starts the film itself (twice): each start is paused again, back at the part.
+    el.currentTime = 0; el.play();
+    expect(paused).toBe(true);
+    expect(el.currentTime).toBe(626);
+    el.play();
+    expect(paused).toBe(true);
+    // The viewer's own play ends the hold.
+    act(() => { previewStore.togglePlay(); });
+    expect(paused).toBe(false);
+    el.pause(); el.play();
+    expect(paused).toBe(false);
+  } finally { unmount(); previewStore.reset(); }
+});
+
 describe('bumper timing around the provenance intro', () => {
   afterEach(() => { vi.useRealTimers(); });
 

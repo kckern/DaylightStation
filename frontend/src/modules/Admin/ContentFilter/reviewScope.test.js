@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rowAction, scopeRows, stepFrom, actionKeysFor, nextKind, DEFAULT_SCOPE, isOpen, isSceneRow, keysKindOf } from './reviewScope.js';
+import { rowAction, scopeRows, stepFrom, actionKeysFor, nextKind, DEFAULT_SCOPE, isOpen, isSceneRow, keysKindOf, triedRefine, needsCheck, effectButton, stageScope } from './reviewScope.js';
 
 const rows = [
   { id: 'a', kind: 'words', effect: 'mute', group: 'profanity', verdict: null, reviewed: null },
@@ -31,8 +31,22 @@ describe('reviewScope', () => {
   });
   it('action keys follow the kind; O turns the effect off everywhere', () => {
     expect(actionKeysFor('words').map((k) => k[0])).toEqual(['M', 'P', 'K', 'O']);
-    expect(actionKeysFor('picture').map((k) => k[0])).toEqual(['B', 'K', 'O']);
+    expect(actionKeysFor('picture').map((k) => k[0])).toEqual(['B', 'H', 'K', 'O']);
     expect(actionKeysFor('scenes').map((k) => k[0])).toEqual(['K', 'B', 'O']);
+  });
+  it('a part refine left a reason on waits for a look until it has a verdict or a hand fix', () => {
+    const giveUp = { id: 'cue:g', timing: 'safe-window', unsure: ['refine-giveup', 'safe-window'] };
+    expect(triedRefine(giveUp)).toBe(true);
+    expect(needsCheck(giveUp)).toBe(true);
+    expect(needsCheck({ ...giveUp, verdict: { verdict: 'approve' } })).toBe(false);
+    expect(needsCheck({ ...giveUp, handFixed: true })).toBe(false);
+    expect(needsCheck({ ...giveUp, acts: false })).toBe(false);
+    expect(needsCheck({ id: 'cue:s', timing: 'safe-window', unsure: ['safe-window'] })).toBe(false);
+    // The Refine tab lists it beside the rough ones.
+    expect(scopeRows([giveUp, { id: 'cue:r', timing: 'refined', unsure: [] }], stageScope(DEFAULT_SCOPE, 'refine')).map((r) => r.id)).toEqual(['cue:g']);
+  });
+  it('the effect button a part lights: full blur is Blur, a skip behind a card is Skip, a hidden picture its own', () => {
+    expect(['full-blur', 'blur', 'skip-card', 'blackout', 'mute'].map(effectButton)).toEqual(['blur', 'blur', 'skip', 'blackout', 'mute']);
   });
   it('a word skipped as an exchange is listed with scenes but keys and refines as a word', () => {
     const skippedWord = { id: 'cue:va1', kind: 'scenes', modality: 'said', members: ['va1'] };

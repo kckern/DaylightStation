@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { clearToken, setToken } from '../../../lib/auth.js';
@@ -125,12 +125,75 @@ describe('review station keys', () => {
     press('Enter'); expect(jump).toHaveBeenLastCalledWith({ in: 10 });
     press('w'); expect(peek).toHaveBeenCalledWith('w1');
   });
-  it('an action key changes the effect in place, THEN approves with the change', async () => {
-    show(); press('m');
-    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
-    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(['PUT api/v1/content-filter/77/cues/w1', 'PUT api/v1/content-filter/77/review/cue%3Aw1']);
+  it('an effect key applies the effect, replays the part with it, and records no verdict: the part waits for A', async () => {
+    const refresh = vi.spyOn(previewStore, 'refresh').mockResolvedValue(true);
+    const jump = vi.spyOn(previewStore, 'jumpToCue');
+    show(); jump.mockClear(); press('m');
+    await waitFor(() => expect(jump).toHaveBeenCalledWith({ in: 10 }));
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(['PUT api/v1/content-filter/77/cues/w1']);
     expect(calls[0].body).toEqual({ effect: 'mute' });
-    expect(calls[1].body).toEqual(expect.objectContaining({ verdict: 'approve', change: { from: 'bleep', to: 'mute' } }));
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(reload).toHaveBeenCalled();
+    // No verdict, no advance: the same part is in hand, and the card says what to do next.
+    expect(reviewCalls()).toHaveLength(0);
+    expect(selected()).toBe('cue:w1');
+    expect(screen.getByText('Mute applied. Watch it, then press A to approve.')).toBeTruthy();
+    expect(log.info).toHaveBeenCalledWith('content_filter.review.effect', expect.objectContaining({ rk: '77', rowId: 'cue:w1', from: 'bleep', to: 'mute' }));
+    press('a');
+    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    expect(reviewCalls()[0].body).toEqual(expect.objectContaining({ verdict: 'approve' }));
+    refresh.mockRestore();
+  });
+  it('an effect change whose preview cannot refresh says so instead of replaying the old effect', async () => {
+    const jump = vi.spyOn(previewStore, 'jumpToCue');
+    show(); jump.mockClear(); press('m');
+    expect(await screen.findByText(/Mute applied, but the preview could not refresh/)).toBeTruthy();
+    expect(jump).not.toHaveBeenCalled();
+    expect(reviewCalls()).toHaveLength(0);
+  });
+  it('a full-blur part lights Blur; a shown part can have its picture hidden (H)', async () => {
+    payload = base([row('subject:p1', 'poster', { kind: 'picture', modality: 'shown', effect: 'full-blur', in: 30, out: 34, members: ['p1'] })]);
+    show();
+    expect(screen.getByRole('button', { name: /^Blur/ }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: /^Hide picture/ }).getAttribute('aria-pressed')).toBe('false');
+    press('b');
+    expect(await screen.findByText('Already blur.')).toBeTruthy();
+    expect(calls).toHaveLength(0);
+    press('h');
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toEqual(expect.objectContaining({ path: 'api/v1/content-filter/77/cues/p1', body: { effect: 'blackout' } }));
+  });
+  it('an unsaved timing change holds the cursor and the verdict until it is saved or dropped with Esc', async () => {
+    show();
+    const start = screen.getByRole('slider', { name: 'Start' });
+    start.focus(); fireEvent.keyDown(start, { key: 'ArrowLeft' }); start.blur();
+    press('ArrowRight');
+    expect(selected()).toBe('cue:w1');
+    expect(screen.getByText('Unsaved timing: Save or press Esc to drop it')).toBeTruthy();
+    press('a');
+    fireEvent.click(screen.getByRole('button', { name: 'bravo' }));
+    expect(selected()).toBe('cue:w1');
+    expect(calls).toHaveLength(0);
+    expect(log.info).toHaveBeenCalledWith('content_filter.review.unsaved_timing_blocked', expect.objectContaining({ rk: '77', rowId: 'cue:w1', what: 'step' }));
+    press('Escape');
+    expect(await screen.findByText('Timing change dropped.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Save timing' })).toBeDisabled();
+    press('ArrowRight');
+    expect(selected()).toBe('cue:w2');
+  });
+  it('arriving puts the film at the part in hand, paused', () => {
+    const jump = vi.spyOn(previewStore, 'jumpToCue');
+    show();
+    expect(jump).toHaveBeenCalledTimes(1);
+    expect(jump).toHaveBeenCalledWith({ in: 10 }, { play: false });
+  });
+  it('the Redo button opens the same reason prompt as D; a reason is a click or a key', async () => {
+    show();
+    fireEvent.click(screen.getByRole('button', { name: /^Redo/ }));
+    expect(calls).toHaveLength(0);
+    fireEvent.click(within(screen.getByRole('toolbar', { name: 'Redo reason' })).getByRole('button', { name: /timing/ }));
+    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    expect(reviewCalls()[0].body).toEqual(expect.objectContaining({ verdict: 'redo', reason: 'timing' }));
   });
   it('action keys follow the channel: a said part takes no B; a shown part no M or P, and takes K', async () => {
     show(); press('b');
@@ -140,7 +203,7 @@ describe('review station keys', () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(calls).toHaveLength(0);
     press('k');
-    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual(expect.objectContaining({ path: 'api/v1/content-filter/77/cues/p1', body: { effect: 'skip' } }));
   });
   it('keeps the new film open when a prior verdict finishes', async () => {
@@ -188,8 +251,11 @@ describe('review station keys', () => {
     await waitFor(() => expect(selected()).toBe('cue:w1'));
     expect(log.info).toHaveBeenCalledWith('content_filter.review.undo', expect.objectContaining({ rk: '77', rowId: 'cue:w1', undid: 'approve' }));
   });
-  it('undo after an in-place change is one DELETE; the server restores the earlier effect (Review Focus 4)', async () => {
+  it('undo after an in-place change and its approval is one DELETE; the server restores the earlier effect (Review Focus 4)', async () => {
     show(); press('m');
+    await waitFor(() => expect(calls).toHaveLength(1));
+    await waitFor(() => expect(screen.getByText(/Mute applied/)).toBeTruthy());
+    press('a');
     await waitFor(() => expect(selected()).toBe('cue:w2'));
     calls.length = 0; press('u');
     await waitFor(() => expect(calls).toHaveLength(1));
@@ -247,13 +313,13 @@ describe('review station keys', () => {
   });
   it('a timeline click moves the cursor AND seeks (once)', () => {
     const jump = vi.spyOn(previewStore, 'jumpToCue');
-    show(); fireEvent.click(document.querySelector('[data-lane="film"] [data-mark="cue:w2"]'));
+    show(); jump.mockClear(); fireEvent.click(document.querySelector('[data-lane="film"] [data-mark="cue:w2"]'));
     expect(selected()).toBe('cue:w2');
     expect(jump).toHaveBeenCalledTimes(1); expect(jump).toHaveBeenCalledWith({ in: 20 });
   });
   it('a list click seeks exactly once', () => {
     const jump = vi.spyOn(previewStore, 'jumpToCue');
-    show(); fireEvent.click(screen.getByRole('button', { name: 'bravo' }));
+    show(); jump.mockClear(); fireEvent.click(screen.getByRole('button', { name: 'bravo' }));
     expect(jump).toHaveBeenCalledTimes(1);
   });
   it('does not drag the cursor back when the user moved while a verdict was saving', async () => {

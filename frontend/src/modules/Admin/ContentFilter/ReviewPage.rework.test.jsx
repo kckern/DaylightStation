@@ -27,7 +27,7 @@ describe('rework flagged', () => {
   it('sends the redo rows member cues with their reasons', async () => {
     payload = base([row('cue:a', 'words', ['a'], redo('edges')), row('subject:s', 'pictures', ['b', 'c'], redo()), row('cue:z', 'words', ['z'], { verdict: 'approve' })]);
     show();
-    fireEvent.click(await reworkItem('Rework 2 marked redo'));
+    fireEvent.click(await reworkItem('Re-refine 2 parts marked Redo'));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual({ path: 'api/v1/content-filter/77/jobs', body: { kind: 'send-back', cues: ['a', 'b', 'c'], reasons: { 'cue:a': 'edges' } }, method: 'POST' });
   });
@@ -44,7 +44,7 @@ describe('rework flagged', () => {
   it('scene-only redo rows enqueue the scenes stage', async () => {
     payload = base([row('scene:x', 'scenes', [], redo('category'))]);
     show();
-    fireEvent.click(await reworkItem('Rework 1 marked redo'));
+    fireEvent.click(await reworkItem('Re-refine 1 part marked Redo'));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0].body).toEqual({ kind: 'stage', stage: 'scenes', reasons: { 'scene:x': 'category' } });
   });
@@ -52,17 +52,19 @@ describe('rework flagged', () => {
     payload = base([row('cue:a', 'words', ['a'], redo())]);
     failWith = 'A run is already open for this film';
     show();
-    fireEvent.click(await reworkItem('Rework 1 marked redo'));
+    fireEvent.click(await reworkItem('Re-refine 1 part marked Redo'));
     expect(await screen.findByText('A run is already open for this film')).toBeTruthy();
   });
   it('is disabled while a run is running', () => {
     payload = base([row('cue:a', 'words', ['a'], redo())], { job: { kind: 'make', status: 'running', step: 'refine' } });
     show();
-    return reworkItem('Rework 1 marked redo').then((item) => expect(item).toBeDisabled());
+    return reworkItem('Re-refine 1 part marked Redo').then((item) => expect(item).toBeDisabled());
   });
-  it('is disabled when nothing is flagged', async () => {
+  it('is not offered when nothing is marked Redo', async () => {
     payload = base([row('cue:a', 'words', ['a'])]);
     show();
-    expect(await reworkItem('Rework 0 marked redo')).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    expect(await screen.findByRole('menuitem', { name: /All keys/ })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: /marked Redo/i })).toBeNull();
   });
 });
