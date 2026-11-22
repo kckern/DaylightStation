@@ -6,7 +6,7 @@ import { parseSecondary, parseJudge } from '../../domain/provenance/rules.mjs';
 
 // The household's service map, as config spells it (only what these tests use).
 const SERVICES = parseServices([
-  { provider: 'tubi', label: 'Tubi', names: ['Tubi TV', 'Tubi'] },
+  { provider: 'tubi', label: 'Tubi', names: ['Tubi TV', 'Tubi'], accent: '#ffff13' },
   { provider: 'hoopla', label: 'Hoopla', names: ['Hoopla'] },
   { provider: 'vidangel', label: 'VidAngel', names: ['VidAngel'] },
   { provider: 'peacock', label: 'Peacock', names: ['Peacock'], paid: true },
@@ -48,7 +48,7 @@ describe('GetTitleProvenance', () => {
       sources: [{ name: 'Netflix', type: 'sub' }, { name: 'Hoopla', type: 'free' }, { name: 'Amazon', type: 'rent' }],
     });
     const out = await uc.execute({ ratingKey: '100' });
-    expect(out).toMatchObject({ ratingKey: '100', provider: 'hoopla', tier: 'free', name: 'Hoopla' });
+    expect(out).toMatchObject({ ratingKey: '100', provider: 'hoopla', tier: 'free', name: 'Hoopla', accent: null });
     expect(availability.sources).toHaveBeenCalledWith('tt0065126');
     expect(store.data['100'].offers.map((o) => o.provider)).toEqual(['netflix', 'hoopla']);
     expect(store.put.mock.calls[0][2]).toEqual({ month: '2026-11', quota: 2500, quotaUsed: 10 });

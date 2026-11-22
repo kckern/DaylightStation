@@ -7,7 +7,8 @@
  * status: idle | loading | ready | none | failed
  *   idle  -> disabled, or not a numeric Plex rating key (never fetched)
  *   failed -> the request failed or did not answer in PROVENANCE_FETCH_TIMEOUT_MS
- *   ready -> { provider, name, tier, logo, logoUrl, plate, startSec, secondaryUrls } with the logo loaded;
+ *   ready -> { provider, name, tier, accent, logo, logoUrl, plate, startSec, secondaryUrls } with the logo loaded;
+ *            accent = the service's line colour from config, null = default;
  *            secondaryUrls = smaller logos for under the service's (config
  *            `secondary_logos`), in order; any that would not load are left out;
  *            plate = the logo is too dark for the field and gets a light plate;
@@ -99,7 +100,7 @@ export function useProvenance(contentId, { enabled = true, live = false } = {}) 
           }
           return;
         }
-        // A logo too dark for the field (Disney+ navy) is drawn on a light plate.
+        // A logo too dark for the field (a navy wordmark) is drawn on a light plate.
         const plate = img ? imageNeedsPlate(img) : false;
         // Secondary logos are extra: one that will not load is left out, the scene still plays.
         const wanted = (Array.isArray(p.secondary) ? p.secondary : []).filter((s) => s?.logo);

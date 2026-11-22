@@ -42,8 +42,9 @@ smaller in a row in the bottom third, below the lines, arriving just after the m
 logo; they fade out when the field clears and never dock. One that will not load is
 left out (warn `provenance.secondary-logo.failed`) and the scene plays without it.
 
-Lines and dots take the service's brand colour (`PROVIDER_ACCENTS` in
-`ProvenanceHandoff.jsx`; white otherwise). Timings are `SCENE_TIMING` in
+Lines and dots take the service's `accent` from the config's `services` list (sent
+with the answer; white when it names none). No service name, id, label or colour
+is in the code: all of it is config. Timings are `SCENE_TIMING` in
 `useSceneTimeline.js`; the hold is drawn uniformly from `linkMinMs`–`linkMaxMs` once
 per title, handed to the Player as the intro's `minHoldMs`, and passed to the scene as
 `--ph-link-ms`, so the lines take exactly that long. The Player holds longer if the
@@ -265,7 +266,7 @@ The availability service spells services many ways ("Tubi TV", "Peacock Premium"
 "Paramount+ (Via Amazon Prime)"). The config's `services` list maps them; the code
 holds no service names. Each entry has a `provider` (the logo file name; `none`
 drops the name), an optional `label` (alt text, logs), `paid: true` for a paid
-subscription (used by `secondary_logos`), and `names` (exact, ignoring
+subscription (used by `secondary_logos`), `accent` for the scene's line colour, and `names` (exact, ignoring
 case, spaces and punctuation, `+` as "plus") and/or `match` (a case-insensitive
 regular expression for a family of names). The first entry that fits wins, so put
 specific names above patterns ("Amazon Freevee" above the Amazon pattern). A
@@ -312,7 +313,7 @@ to 1.5 s and the scene still appears if the answer is in before the film has rol
 
 `/api/v1/provenance`:
 
-- `GET /:ratingKey` (bare or `plex:`-prefixed) → `{ provenance: { ratingKey, provider, name, tier, source, rule, offerType, checkedAt, logo, secondary: [{ logo, name }] } | null, startSec: number | null, resumeShowsScene: boolean }`.
+- `GET /:ratingKey` (bare or `plex:`-prefixed) → `{ provenance: { ratingKey, provider, name, accent, tier, source, rule, offerType, checkedAt, logo, secondary: [{ logo, name }] } | null, startSec: number | null, resumeShowsScene: boolean }`.
   `startSec` and `resumeShowsScene` (`DescribePlayStart`) are read only when a
   provider was found; unknown when the read failed (warn `provenance.start.read-failed`).
 - `GET /<source>:<channel>` (a live channel; the source must be in `live.sources`) →

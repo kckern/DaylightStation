@@ -34,7 +34,7 @@ import { choice } from '#apps/common/ports/IDecisionGateway.mjs';
 
 const monthOf = (d) => d.toISOString().slice(0, 7);
 
-/** A rule's `when`, as a short label for logs ("collection=living scriptures"). */
+/** A rule's `when`, as a short label for logs ("collection=<name>"). */
 function describeWhen(when = {}) {
   if (when.always) return 'always';
   return Object.entries(when).map(([k, v]) => `${k}=${Array.isArray(v) ? v.join('|') : v}`).join(',') || 'always';
@@ -166,6 +166,8 @@ export class GetTitleProvenance {
       ratingKey: rk,
       provider,
       name: providerLabel(provider, services, name),
+      // The scene's line colour (config `services[].accent`), null = default.
+      accent: services?.accents?.[provider] ?? null,
       secondary: secondary.map((s) => ({ logo: s.logo, name: s.label })),
       tier: tier || source,
       source,

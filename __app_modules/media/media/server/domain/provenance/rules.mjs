@@ -4,22 +4,22 @@
  *
  * Three stages, each read top to bottom, first match wins:
  *
- *   overrides  - beat whatever the availability service says (VidAngel when the
- *                content filter is on, Living Scriptures by collection, a
- *                studio's own service). A match spends no lookup.
+ *   overrides  - beat whatever the availability service says (by content
+ *                filter, collection, label, studio). A match spends no lookup.
  *   priority   - groups of providers, in order, applied to the availability
  *                service's offers. `providers: any` takes any offer with a logo.
  *   fallbacks  - nothing usable from the offers: rules by year, length,
- *                library; the last one usually `when: always`.
+ *                library, studio, genre; a `judge: true` rule asks the decision
+ *                model; the last one usually `when: always`.
  *
  * A `when` is a set of facts, all of which must hold; a list value matches if
  * any item does (case-insensitive; `studio` matches whole words inside the
- * name, so `MGM` matches "Metro-Goldwyn-Mayer (MGM)" but `AMC` does not match
- * "DreamCrew"). `always` (or no `when`) matches anything.
+ * name, so `ABC` matches "Studio (ABC)" but not "ABCD Films"). `always` (or no
+ * `when`) matches anything.
  *
- *   kind: [movie, show]          library: [Movies]          studio: [CuriosityStream]
- *   collection: [LDS]            label: [Missionary]        content_filter: active
- *   genre: [Anime]
+ *   kind: [movie, show]          library: [<name>]          studio: [<name>]
+ *   collection: [<name>]         label: [<name>]            content_filter: active
+ *   genre: [<name>]
  *   year_before: 1950            shorter_than_min: 40       longer_than_min: 200
  *
  * A rule's `provider` may be a list: one of them is picked per title (stable,
@@ -112,8 +112,8 @@ export function matchesWhen(when, facts = {}) {
   };
   for (const [key, value] of Object.entries(when)) {
     if (key === 'studio') {
-      // Studios are spelled many ways ("Metro-Goldwyn-Mayer (MGM)", "20th Century Fox"):
-      // match whole words inside the name, so "AMC" is not found in "DreamCrew".
+      // Studios are spelled many ways ("Some Studio Pictures (SSP)", "SSP Inc."):
+      // match whole words inside the name, so "ABC" is not found in "ABCD Films".
       const studio = String(facts.studio ?? '').toLowerCase();
       if (!studio || !value.some((v) => containsWords(studio, v))) return false;
     } else if (key === 'kind' || key === 'library' || key === 'collection' || key === 'label' || key === 'genre') {

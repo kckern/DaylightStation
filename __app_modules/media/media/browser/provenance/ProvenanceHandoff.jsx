@@ -43,19 +43,8 @@ export function useLinkStalls(stalls, active) {
   return active ? mood : null;
 }
 
-/** Brand accent for the lines and dots. Unlisted providers use white. */
-export const PROVIDER_ACCENTS = Object.freeze({
-  netflix: '#e50914',
-  'prime-video': '#1399ff',
-  hulu: '#1ce783',
-  'disney-plus': '#1f80e0',
-  'hbo-max': '#5a2ff5',
-  'paramount-plus': '#0064ff',
-  tubi: '#ffff13',
-  'pluto-tv': '#fff200',
-  peacock: '#ffffff',
-  'apple-tv': '#ffffff',
-});
+/** Line and dot colour when the answer names none (config `services[].accent`). */
+export const DEFAULT_ACCENT = '#ffffff';
 
 export function ProvenanceHandoff({ phase, provenance, linkMs = null, random = Math.random }) {
   // A fresh motion for every play: bursts, shared stops, a hang on one side.
@@ -70,7 +59,7 @@ export function ProvenanceHandoff({ phase, provenance, linkMs = null, random = M
   const linking = phase === 'linking';
   const mood = useLinkStalls(plan.stalls, linking);
   if (!provenance?.logoUrl) return null;
-  const accent = PROVIDER_ACCENTS[provenance.provider] || '#ffffff';
+  const accent = /^#[0-9a-f]{3,8}$/i.test(provenance.accent || '') ? provenance.accent : DEFAULT_ACCENT;
   // The per-play animation applies only while linking; from `linked` on the
   // SCSS drops the animation and the lines close the gap.
   const reach = (name) => (linking ? { animationName: name } : undefined);
@@ -106,7 +95,7 @@ export function ProvenanceHandoff({ phase, provenance, linkMs = null, random = M
 ProvenanceHandoff.propTypes = {
   phase: PropTypes.oneOf(['linking', 'linked', 'docked', 'leaving']).isRequired,
   provenance: PropTypes.shape({
-    provider: PropTypes.string, logoUrl: PropTypes.string, plate: PropTypes.bool, secondaryUrls: PropTypes.arrayOf(PropTypes.string),
+    provider: PropTypes.string, accent: PropTypes.string, logoUrl: PropTypes.string, plate: PropTypes.bool, secondaryUrls: PropTypes.arrayOf(PropTypes.string),
   }),
   /** How long the video is held (5-10 s, random per play): the lines take that long to reach in. */
   linkMs: PropTypes.number,

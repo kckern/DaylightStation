@@ -49,3 +49,13 @@ describe('ProvenanceHandoff secondary logo', () => {
     expect(srcs).toEqual(['/logo/isp', '/logo/pass-a']);
   });
 });
+
+describe('ProvenanceHandoff accent', () => {
+  it('colours the lines from the answer, white when it names none or a bad value', () => {
+    const style = (p) => render(<ProvenanceHandoff phase="linking" provenance={p} linkMs={6000} random={seeded(1)} />)
+      .container.querySelector('.provenance-handoff').style.getPropertyValue('--ph-accent');
+    expect(style({ ...P, accent: '#e50914' })).toBe('#e50914');
+    expect(style(P)).toBe('#ffffff');
+    expect(style({ ...P, accent: 'red;x' })).toBe('#ffffff');
+  });
+});

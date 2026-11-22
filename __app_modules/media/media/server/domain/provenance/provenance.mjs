@@ -1,8 +1,9 @@
 /**
  * Provenance: which streaming service a household title is "from".
  *
- * A title in Plex may also stream on Netflix, Tubi, Hoopla and so on. The
- * provenance bumper names one of them before the film starts. These are the
+ * A title in the media library may also stream on one or more services. The
+ * provenance scene names one of them before the film starts. Every service
+ * name, id, label and colour comes from the household config (`services`). These are the
  * pure rules behind that choice: which availability counts, what a provider
  * is called, and which one wins. No I/O and no clock (callers pass `now`).
  *
@@ -16,12 +17,12 @@ export function normalizeServiceName(name) {
   return String(name ?? '').toLowerCase().replace(/\+/g, 'plus').replace(/[^a-z0-9]/g, '');
 }
 
-/** Slug for a service name: "AMC+" -> "amc-plus", "DirecTV On Demand" -> "directv-on-demand". */
+/** Slug for a service name: "Some TV+" -> "some-tv-plus", "Some Service On Demand" -> "some-service-on-demand". */
 export function serviceSlug(name) {
   return String(name ?? '').toLowerCase().replace(/\+/g, ' plus').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
-/** The `provider` value that drops a name (e.g. Apple's rent/buy store). */
+/** The `provider` value that drops a name (e.g. a rent/buy store's listing). */
 export const NO_PROVIDER = 'none';
 
 const asList = (v) => (Array.isArray(v) ? v : v == null ? [] : [v]).map((x) => String(x).trim()).filter(Boolean);
@@ -32,13 +33,14 @@ const asList = (v) => (Array.isArray(v) ? v : v == null ? [] : [v]).map((x) => S
  * file names in `data/content/providers/`) and what each id is called. Read
  * top to bottom; the first entry that matches a name wins.
  *
- *   - provider: prime-video        # id; `none` drops the name
- *     label: Prime Video           # display name (alt text, logs)
- *     names: [Prime Video, Amazon Prime]   # exact, ignoring case/spaces/punctuation, + = plus
- *     match: '\bamazon\b'          # or a regular expression (case-insensitive)
+ *   - provider: <id>               # logo file name; `none` drops the name
+ *     label: <name>                # display name (alt text, logs)
+ *     names: [<spelling>, ...]     # exact, ignoring case/spaces/punctuation, + = plus
+ *     match: '<regex>'             # or a regular expression (case-insensitive)
  *     paid: true                   # a paid subscription (for `secondary` rules)
+ *     accent: '#1399ff'            # colour of the scene's lines and dots (default white)
  *
- * Returns `{ entries, labels, paid, invalid }`; `paid` is the set of paid
+ * Returns `{ entries, labels, paid, accents, invalid }`; `paid` is the set of paid
  * provider ids; `invalid` lists `match` patterns that did not compile (that
  * entry matches by `names` only).
  */
@@ -47,6 +49,7 @@ export function parseServices(raw) {
   const entries = [];
   const labels = {};
   const paid = new Set();
+  const accents = {};
   for (const item of Array.isArray(raw) ? raw : []) {
     if (!item || typeof item !== 'object') continue;
     const provider = String(item.provider ?? '').trim();
@@ -59,8 +62,10 @@ export function parseServices(raw) {
     entries.push(Object.freeze({ provider, names, patterns }));
     if (item.label && provider !== NO_PROVIDER && !labels[provider]) labels[provider] = String(item.label);
     if (item.paid === true && provider !== NO_PROVIDER) paid.add(provider);
+    const accent = String(item.accent ?? '').trim();
+    if (/^#[0-9a-f]{3,8}$/i.test(accent) && provider !== NO_PROVIDER && !accents[provider]) accents[provider] = accent;
   }
-  return Object.freeze({ entries: Object.freeze(entries), labels: Object.freeze(labels), paid, invalid });
+  return Object.freeze({ entries: Object.freeze(entries), labels: Object.freeze(labels), paid, accents: Object.freeze(accents), invalid });
 }
 
 /**

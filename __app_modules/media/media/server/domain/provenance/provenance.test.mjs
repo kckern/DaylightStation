@@ -31,6 +31,10 @@ describe('parseServices', () => {
   it('is empty for no config', () => {
     expect(parseServices(undefined).entries).toEqual([]);
   });
+  it('reads accents, ignoring ones that are not colours', () => {
+    const map = parseServices([{ provider: 'a', accent: '#e50914' }, { provider: 'b', accent: 'red' }]);
+    expect(map.accents).toEqual({ a: '#e50914' });
+  });
 });
 
 describe('providerIdFor', () => {

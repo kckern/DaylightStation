@@ -1,7 +1,7 @@
 /**
  * Availability records as one YAML file on the media mount:
  * `media/content-providers/availability.yml` (machine-fetched, like
- * `media/content-filter/plex-vidangel-map.yml`).
+ * the content filter's machine-fetched maps).
  *
  *   usage: { month: 2026-11, quota: 2500, quotaUsed: 42 }
  *   titles:

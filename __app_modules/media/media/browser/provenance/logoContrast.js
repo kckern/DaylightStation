@@ -2,15 +2,15 @@
  * Whether a provider logo is readable on the handoff's dark field, measured from
  * its pixels: the mean relative luminance of its opaque pixels against the field,
  * as a WCAG contrast ratio. A logo under MIN_CONTRAST is drawn on a light plate
- * (Disney+'s navy wordmark measured about 2.5 before it had a white variant).
+ * (a navy wordmark measures about 2.5).
  *
  * Reference: __docs/reference/media/provenance.md
  */
 
 /** The field colour (#05060a) as relative luminance. */
 export const FIELD_LUMINANCE = 0.0019;
-// WCAG 1.4.11 / large text: 3:1. Logos are large graphics; Netflix red (4.2) and
-// Kanopy red pass, Disney+ navy (2.5) does not.
+// WCAG 1.4.11 / large text: 3:1. Logos are large graphics: a bright red (about 4.2)
+// passes, a navy (about 2.5) does not.
 export const MIN_CONTRAST = 3;
 
 const lin = (c) => { const s = c / 255; return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; };
