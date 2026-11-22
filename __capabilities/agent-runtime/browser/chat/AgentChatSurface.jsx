@@ -169,6 +169,7 @@ function AgentChatView({ conversation, variant = 'light', style, mentions, start
           {starterPrompts.length ? <ThreadPrimitive.Empty><div className="coach-chat__starters">
             <p>Ask about your food log, portions, or progress.</p>
             {starterPrompts.map(prompt => <button type="button" key={prompt} onClick={() => {
+              pendingMentionsRef.current = [];
               conversation.runtime.thread.composer.setText(prompt);
               inputRef.current?.focus();
             }}>{prompt}</button>)}
