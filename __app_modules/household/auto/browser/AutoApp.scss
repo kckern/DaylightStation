@@ -240,6 +240,13 @@
 
 .auto-field-row { display: flex; gap: 0.75rem; }
 
+.auto-sheet__fields {
+  border: 0;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
 // Action row inside a DS Sheet's form body (Cancel/Save, side by side).
 .auto-sheet__actions { display: flex; gap: 0.75rem; margin-top: 0.35rem; > * { flex: 1; } }
 

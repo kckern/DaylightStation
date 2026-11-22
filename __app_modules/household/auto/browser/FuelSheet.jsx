@@ -69,57 +69,59 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose }) {
   return (
     <Sheet open onClose={onClose} title="Log a fill-up">
       <form onSubmit={event => submit(event, save, valid)} aria-label="Log a fill-up">
-        {initial.placeLabel && (
-          <p className="auto-field__note">At {initial.placeLabel}</p>
-        )}
-        {initial.volumeGal && (
-          <p className="auto-field__note">
-            Gallons estimated from the gauge — correct it from your receipt.
-          </p>
-        )}
+        <fieldset className="auto-sheet__fields" disabled={saving}>
+          {initial.placeLabel && (
+            <p className="auto-field__note">At {initial.placeLabel}</p>
+          )}
+          {initial.volumeGal && (
+            <p className="auto-field__note">
+              Gallons estimated from the gauge — correct it from your receipt.
+            </p>
+          )}
 
-        <label className="auto-field">
-          <span>Date</span>
-          <input className="ds-input" type="date" value={form.date} onChange={set('date')} />
-        </label>
-
-        <label className="auto-field">
-          <span>Odometer (mi)</span>
-          {/* inputMode numeric so phones show the number pad, not a full keyboard */}
-          <input
-            className="ds-input" type="number" inputMode="decimal" step="1"
-            value={form.odometerMi} onChange={set('odometerMi')} placeholder="from the dash"
-          />
-          <span className="auto-field__note">Optional, but it’s what makes mileage and mpg work.</span>
-        </label>
-
-        <div className="auto-field-row">
           <label className="auto-field">
-            <span>Gallons</span>
-            <input
-              className="ds-input" type="number" inputMode="decimal" step="0.001"
-              value={form.volumeGal} onChange={set('volumeGal')} required
-            />
+            <span>Date</span>
+            <input className="ds-input" type="date" value={form.date} onChange={set('date')} />
           </label>
-          <label className="auto-field">
-            <span>Total ($)</span>
-            <input
-              className="ds-input" type="number" inputMode="decimal" step="0.01"
-              value={form.priceTotal} onChange={set('priceTotal')}
-            />
-          </label>
-        </div>
 
-        <label className="auto-field auto-field--check ds-touch-target">
-          <input type="checkbox" checked={form.partial} onChange={set('partial')} />
-          <span>Partial fill (didn’t fill the tank)</span>
-        </label>
-        {form.partial && (
-          <p className="auto-field__note">
-            Partial fills still count toward spend, but can’t close an mpg interval —
-            economy needs a full tank at both ends.
-          </p>
-        )}
+          <label className="auto-field">
+            <span>Odometer (mi)</span>
+            {/* inputMode numeric so phones show the number pad, not a full keyboard */}
+            <input
+              className="ds-input" type="number" inputMode="decimal" step="1"
+              value={form.odometerMi} onChange={set('odometerMi')} placeholder="from the dash"
+            />
+            <span className="auto-field__note">Optional, but it’s what makes mileage and mpg work.</span>
+          </label>
+
+          <div className="auto-field-row">
+            <label className="auto-field">
+              <span>Gallons</span>
+              <input
+                className="ds-input" type="number" inputMode="decimal" step="0.001"
+                value={form.volumeGal} onChange={set('volumeGal')} required
+              />
+            </label>
+            <label className="auto-field">
+              <span>Total ($)</span>
+              <input
+                className="ds-input" type="number" inputMode="decimal" step="0.01"
+                value={form.priceTotal} onChange={set('priceTotal')}
+              />
+            </label>
+          </div>
+
+          <label className="auto-field auto-field--check ds-touch-target">
+            <input type="checkbox" checked={form.partial} onChange={set('partial')} />
+            <span>Partial fill (didn’t fill the tank)</span>
+          </label>
+          {form.partial && (
+            <p className="auto-field__note">
+              Partial fills still count toward spend, but can’t close an mpg interval —
+              economy needs a full tank at both ends.
+            </p>
+          )}
+        </fieldset>
 
         <AutoSheetActions failure={failure} onCancel={onClose} saving={saving} valid={valid} />
       </form>

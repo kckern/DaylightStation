@@ -234,27 +234,29 @@ function NamePlaceSheet({ point, onClose }) {
   return (
     <Sheet open onClose={onClose} title="Name this place">
       <form onSubmit={event => submit(event, save, valid)} aria-label="Name this place">
-        <label className="auto-field">
-          <span>What is it?</span>
-          <input
-            className="ds-input"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="Costco Gas"
-            data-autofocus
-          />
-        </label>
-        <label className="auto-field">
-          <span>Kind</span>
-          <Select density="compact" className="ds-input" value={kind} onChange={(e) => setKind(e.target.value)}>
-            {PLACE_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
-          </Select>
-        </label>
-        {kind === 'fuel' && (
-          <p className="auto-field__note">
-            Marking this a fuel stop lets the app spot fill-ups on the timeline.
-          </p>
-        )}
+        <fieldset className="auto-sheet__fields" disabled={saving}>
+          <label className="auto-field">
+            <span>What is it?</span>
+            <input
+              className="ds-input"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="Costco Gas"
+              data-autofocus
+            />
+          </label>
+          <label className="auto-field">
+            <span>Kind</span>
+            <Select density="compact" className="ds-input" value={kind} onChange={(e) => setKind(e.target.value)}>
+              {PLACE_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+            </Select>
+          </label>
+          {kind === 'fuel' && (
+            <p className="auto-field__note">
+              Marking this a fuel stop lets the app spot fill-ups on the timeline.
+            </p>
+          )}
+        </fieldset>
         <AutoSheetActions failure={failure} onCancel={onClose} saving={saving} valid={valid} />
       </form>
     </Sheet>

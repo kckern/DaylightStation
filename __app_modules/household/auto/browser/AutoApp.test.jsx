@@ -237,3 +237,27 @@ it.each([
   expect(screen.queryByRole('dialog', { name: open })).toBeNull();
   expect(writes).toHaveLength(2);
 });
+
+it.each([
+  ['Fuel', 'Log a fill-up', 'Gallons', '5'],
+  ['Service', 'Log service', 'Who did it', 'City Tire'],
+  ['Drives', 'Name this place', 'What is it?', 'Market'],
+])('locks %s fields during save and restores them after refusal', async (tab, open, field, value) => {
+  let rejectWrite;
+  const holdWrite = new Promise((_, reject) => { rejectWrite = reject; });
+  mockGarage({ holdWrite });
+  render(<AutoApp />);
+  await selectButton('Wagon');
+  await selectButton(tab);
+  await selectButton(open);
+  const dialog = () => within(screen.getByRole('dialog', { name: open }));
+  fireEvent.change(dialog().getByLabelText(field), { target: { value } });
+  fireEvent.submit(dialog().getByRole('form'));
+
+  expect(dialog().getByLabelText(field)).toBeDisabled();
+  expect(dialog().getByRole('button', { name: 'Cancel' })).toBeEnabled();
+  await act(async () => rejectWrite(new Error('Save refused')));
+  expect(await dialog().findByRole('alert')).toHaveTextContent('Save refused');
+  expect(dialog().getByLabelText(field)).toBeEnabled();
+  expect(dialog().getByLabelText(field)).toHaveDisplayValue(value);
+});

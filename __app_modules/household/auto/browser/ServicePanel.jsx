@@ -167,53 +167,55 @@ function ServiceForm({ vehicleId, availableTypes, onClose }) {
 
   return (
     <form onSubmit={event => submit(event, save)} aria-label="Log service">
-      <label className="auto-field">
-        <span>What was done</span>
-        <Select density="compact" className="ds-input" value={form.type} onChange={setType}>
-          {types.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-        </Select>
-      </label>
-
-      <div className="auto-field-row">
+      <fieldset className="auto-sheet__fields" disabled={saving}>
         <label className="auto-field">
-          <span>Date</span>
-          <input className="ds-input" type="date" value={form.date} onChange={set('date')} />
+          <span>What was done</span>
+          <Select density="compact" className="ds-input" value={form.type} onChange={setType}>
+            {types.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </Select>
         </label>
-        <label className="auto-field">
-          <span>Cost ($)</span>
-          <input
-            className="ds-input" type="number" inputMode="decimal" step="0.01"
-            value={form.cost} onChange={set('cost')}
-          />
-        </label>
-      </div>
 
-      <div className="auto-field-row">
-        <label className="auto-field">
-          <span>Odometer (mi)</span>
-          <input
-            className="ds-input" type="number" inputMode="decimal"
-            value={form.odometerMi} onChange={set('odometerMi')} placeholder="optional"
-          />
-        </label>
-        <label className="auto-field">
-          <span>Repeat (months)</span>
-          <input
-            className="ds-input" type="number" inputMode="numeric"
-            value={form.intervalMonths} onChange={set('intervalMonths')} placeholder="none"
-          />
-        </label>
-      </div>
+        <div className="auto-field-row">
+          <label className="auto-field">
+            <span>Date</span>
+            <input className="ds-input" type="date" value={form.date} onChange={set('date')} />
+          </label>
+          <label className="auto-field">
+            <span>Cost ($)</span>
+            <input
+              className="ds-input" type="number" inputMode="decimal" step="0.01"
+              value={form.cost} onChange={set('cost')}
+            />
+          </label>
+        </div>
 
-      <label className="auto-field">
-        <span>Who did it</span>
-        <input className="ds-input" value={form.vendor} onChange={set('vendor')} placeholder="optional" />
-      </label>
+        <div className="auto-field-row">
+          <label className="auto-field">
+            <span>Odometer (mi)</span>
+            <input
+              className="ds-input" type="number" inputMode="decimal"
+              value={form.odometerMi} onChange={set('odometerMi')} placeholder="optional"
+            />
+          </label>
+          <label className="auto-field">
+            <span>Repeat (months)</span>
+            <input
+              className="ds-input" type="number" inputMode="numeric"
+              value={form.intervalMonths} onChange={set('intervalMonths')} placeholder="none"
+            />
+          </label>
+        </div>
 
-      <label className="auto-field">
-        <span>Notes</span>
-        <textarea className="ds-input" rows={2} value={form.notes} onChange={set('notes')} />
-      </label>
+        <label className="auto-field">
+          <span>Who did it</span>
+          <input className="ds-input" value={form.vendor} onChange={set('vendor')} placeholder="optional" />
+        </label>
+
+        <label className="auto-field">
+          <span>Notes</span>
+          <textarea className="ds-input" rows={2} value={form.notes} onChange={set('notes')} />
+        </label>
+      </fieldset>
 
       <AutoSheetActions failure={failure} onCancel={onClose} saving={saving} />
     </form>
