@@ -1,5 +1,5 @@
 import path from 'path';
-import { fileExists, listDirs, loadYamlSafe, saveYaml } from '#system/utils/FileIO.mjs';
+import { fileExists, listDirs, readYamlFromPath, saveYaml } from '#system/utils/FileIO.mjs';
 import { LifePlan } from "../../domain/entities/LifePlan.mjs";
 
 const pick = (value, fields) => Object.fromEntries(fields.map(field => [field, value[field]]));
@@ -49,8 +49,22 @@ export class YamlLifePlanStore extends ILifePlanRepository {
 
   load(username) {
     const filePath = this.#filePath(username);
-    const data = loadYamlSafe(filePath);
-    if (!data) return null;
+    let data;
+    try {
+      data = readYamlFromPath(filePath);
+    } catch (error) {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    }
+
+    const prototype = data && typeof data === 'object' ? Object.getPrototypeOf(data) : null;
+    const isPlainMapping = data && typeof data === 'object'
+      && !Array.isArray(data)
+      && (prototype === Object.prototype || prototype === null);
+    if (!isPlainMapping || Object.keys(data).length === 0) {
+      throw new Error('Invalid LifePlan YAML: expected a non-empty mapping');
+    }
+
     return new LifePlan(data);
   }
 
