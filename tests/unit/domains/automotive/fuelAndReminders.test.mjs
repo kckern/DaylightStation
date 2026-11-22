@@ -192,10 +192,28 @@ describe('buildReminders', () => {
 
   it('reads a same-day due date as 0 days rather than overdue', () => {
     const reminders = buildReminders({
-      documents: [new Document({ id: 'today', kind: 'registration', label: 'Today', expires: new Date(2026, 7, 12) })],
+      documents: [new Document({ id: 'today', kind: 'registration', label: 'Today', expires: '2026-08-12' })],
       asOf: new Date(2026, 7, 12, 23, 59),
     });
     expect(reminders[0].daysUntilDue).toBe(0);
     expect(reminders[0].status).toBe('due-soon');
+  });
+
+  it('keeps a persisted expiry due today through the local day, then overdue tomorrow', () => {
+    const previousTimezone = process.env.TZ;
+    process.env.TZ = 'America/Los_Angeles';
+    try {
+      const document = new Document({ id: 'today', kind: 'registration', label: 'Today', expires: '2026-11-22' });
+      const lateToday = buildReminders({ documents: [document], asOf: new Date(2026, 10, 22, 23, 59) });
+      const tomorrow = buildReminders({ documents: [document], asOf: new Date(2026, 10, 23) });
+
+      expect(lateToday[0].daysUntilDue).toBe(0);
+      expect(lateToday[0].status).toBe('due-soon');
+      expect(tomorrow[0].daysUntilDue).toBe(-1);
+      expect(tomorrow[0].status).toBe('overdue');
+    } finally {
+      if (previousTimezone === undefined) delete process.env.TZ;
+      else process.env.TZ = previousTimezone;
+    }
   });
 });

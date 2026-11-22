@@ -98,10 +98,11 @@ export function buildReminders({
 }
 
 function toReminder({ id, kind, label, type, dueDate, sourceId, asOf, dueSoonDays }) {
-  // Whole days, floored from calendar midnight rather than from the current
-  // instant: a renewal due "today" should read as 0 days all day, not tick over
-  // to -1 at one minute past midnight and look overdue while it still isn't.
-  const daysUntilDue = Math.floor((startOfDay(dueDate) - startOfDay(asOf)) / MS_PER_DAY);
+  // Compare calendar days rather than elapsed milliseconds so DST transitions
+  // cannot shift a reminder by an hour or a day. Document dates are persisted
+  // as ISO calendar dates (UTC midnight); asOf and service dates use local days.
+  const dueDay = kind === 'document' ? utcCalendarDay(dueDate) : localCalendarDay(dueDate);
+  const daysUntilDue = dueDay - localCalendarDay(asOf);
   let status = 'ok';
   if (daysUntilDue < 0) status = 'overdue';
   else if (daysUntilDue <= dueSoonDays) status = 'due-soon';
@@ -109,7 +110,9 @@ function toReminder({ id, kind, label, type, dueDate, sourceId, asOf, dueSoonDay
   return { id, kind, label, type, dueDate, daysUntilDue, status, sourceId };
 }
 
-const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+const calendarDay = (year, month, day) => Math.floor(Date.UTC(year, month, day) / MS_PER_DAY);
+const localCalendarDay = (date) => calendarDay(date.getFullYear(), date.getMonth(), date.getDate());
+const utcCalendarDay = (date) => calendarDay(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
 
 /** `oil-change` → `Oil change`. Presentation-adjacent, but the vocabulary is the domain's. */
 function humanize(type) {
