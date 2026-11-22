@@ -165,7 +165,11 @@ function ServiceForm({ vehicleId, availableTypes, onClose }) {
     });
     autoLog.info('service.logged', { type: form.type, recurring: form.intervalMonths !== '' });
   };
-  const valid = Boolean(form.date) && isValidOptionalOdometerInput(form.odometerMi);
+  const validIntervalMonths = form.intervalMonths === ''
+    || (Number.isInteger(Number(form.intervalMonths)) && Number(form.intervalMonths) > 0);
+  const valid = Boolean(form.date)
+    && isValidOptionalOdometerInput(form.odometerMi)
+    && validIntervalMonths;
 
   return (
     <form onSubmit={event => submit(event, save, valid)} aria-label="Log service">
@@ -203,7 +207,7 @@ function ServiceForm({ vehicleId, availableTypes, onClose }) {
             <span>Repeat (months)</span>
             <input
               className="ds-input" type="number" inputMode="numeric"
-              value={form.intervalMonths} onChange={set('intervalMonths')} placeholder="none"
+              value={form.intervalMonths} onChange={set('intervalMonths')} placeholder="none" min="1" step="1"
             />
           </label>
         </div>

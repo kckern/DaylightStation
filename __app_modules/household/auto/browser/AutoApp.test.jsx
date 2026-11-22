@@ -229,6 +229,52 @@ it('rejects a negative service odometer while allowing blank and zero', async ()
   expect(writes).toEqual([vehiclesPath + '/wagon%20%232/service']);
 });
 
+it('requires a positive whole-month service interval when one is entered', async () => {
+  const { writes } = mockGarage();
+  render(<AutoApp />);
+  await selectButton('Wagon');
+  await selectButton('Service');
+  await selectButton('Log service');
+  const form = screen.getByRole('form');
+  const interval = screen.getByLabelText('Repeat (months)');
+  const save = screen.getByRole('button', { name: 'Save' });
+
+  expect(interval).toHaveAttribute('min', '1');
+  expect(interval).toHaveAttribute('step', '1');
+  for (const value of ['-1', '0', '1.5']) {
+    fireEvent.change(interval, { target: { value } });
+    expect(save).toBeDisabled();
+    await act(async () => fireEvent.submit(form));
+    expect(writes).toEqual([]);
+  }
+
+  fireEvent.change(interval, { target: { value: '6' } });
+  expect(save).toBeEnabled();
+  await act(async () => fireEvent.submit(form));
+  await screen.findByText('No service records');
+  expect(writes).toEqual([vehiclesPath + '/wagon%20%232/service']);
+  const post = DaylightAPI.mock.calls.filter(([path, , method]) => method === 'POST' && path.endsWith('/service')).at(-1);
+  expect(post[1]).toMatchObject({ intervalMonths: 6 });
+});
+
+it('allows a blank monthly interval as a one-off service record', async () => {
+  mockGarage();
+  render(<AutoApp />);
+  await selectButton('Wagon');
+  await selectButton('Service');
+  await selectButton('Log service');
+  const interval = screen.getByLabelText('Repeat (months)');
+  const save = screen.getByRole('button', { name: 'Save' });
+
+  fireEvent.change(interval, { target: { value: '' } });
+  expect(save).toBeEnabled();
+  await act(async () => fireEvent.submit(screen.getByRole('form')));
+  await screen.findByText('No service records');
+
+  const post = DaylightAPI.mock.calls.filter(([path, , method]) => method === 'POST' && path.endsWith('/service')).at(-1);
+  expect(post[1]).toMatchObject({ intervalMonths: null });
+});
+
 it('rejects a negative fill-up odometer while allowing blank and zero', async () => {
   const { writes } = mockGarage();
   render(<AutoApp />);
