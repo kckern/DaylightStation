@@ -162,13 +162,15 @@ describe('refine from the review page', () => {
     payload = base([tried], { status: { next: 'approve' }, signOff: { ready: true, missing: [], parent: null } });
     render(ui());
     expect(screen.queryByRole('button', { name: /^Refine all/ })).toBeNull();
+    expect(screen.getByRole('tab', { name: /^Refine/ }).textContent).toMatch(/Done · 1 rough after refine \(check by eye\)/);
+    expect(screen.getByRole('tab', { name: /^Approve/ }).getAttribute('data-state')).toBe('current');
+    fireEvent.click(screen.getByRole('tab', { name: /^Approve/ }));
     expect(screen.getByRole('button', { name: 'Approve for family' })).toBeTruthy();
-    expect(screen.getByText(/1 rough after refine \(check by eye\)/)).toBeTruthy();
   });
   it('keys on a part that plays send nothing', async () => {
     payload = base(rows, { rows: rows });
     render(ui());
-    fireEvent.click(screen.getByRole('radio', { name: /^Plays/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^Plays/ }));
     fireEvent.click(screen.getByRole('button', { name: 'stinky' }));
     key('a'); key('R');
     expect(await screen.findByText(/refining is for the filtered parts/)).toBeTruthy();

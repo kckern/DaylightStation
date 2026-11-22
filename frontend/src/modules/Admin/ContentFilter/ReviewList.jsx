@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Badge, Checkbox, Group, SegmentedControl, Select, Stack, Text, UnstyledButton } from '@mantine/core';
+import { Badge, Checkbox, Group, Select, Stack, Text, UnstyledButton } from '@mantine/core';
 import { effectChip } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
-import { DEFAULT_SCOPE, ORDER_SCOPES, SHOW_SCOPES, plays, scopeRows } from './reviewScope.js';
+import { DEFAULT_SCOPE, ORDER_SCOPES, plays, scopeRows } from './reviewScope.js';
 
 /**
- * The film's parts beside the player: the Filtered tab (the review; default) or Plays (browse
- * only). Rows wrap to show their whole label; the part in hand opens to its span, reasons and card.
+ * The film's parts beside the player, for the rail tab in hand (ReviewRail.jsx sets the scope's
+ * `stage`): the parts refine still has to pin, the filtered parts (the review), or the ones that
+ * play (browse only). Rows wrap to show their whole label; the part in hand opens to its span, reasons and card.
  * Each row says where it stands as an icon and a word under its time (rowStatus): ▶ marks the part
  * in hand; ✓ Approved, × Let play, ↻ Redo, · To do, Plays.
  */
@@ -55,24 +56,21 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
   const [own, setOwn] = useState(DEFAULT_SCOPE);
   const scope = scopeProp || own;
   const setScope = (patch) => (onScope ? onScope({ ...scope, ...patch }) : setOwn({ ...scope, ...patch }));
-  const playing = rows.filter(plays).length;
-  const counts = { filtered: rows.length - playing, plays: playing };
-  const shown = scopeRows(rows, scope);
+  const shown = scopeRows(rows, scope, { refining });
+  const stage = scope.stage || (scope.show === 'plays' ? 'plays' : 'review');
+  const check = audit && !audit.fresh ? <Text size="xs" c="dimmed">{audit.running ? 'Checking…' : 'Check out of date'}</Text>
+    : audit && !audit.ok ? <Text size="xs" c="red">The check has not passed</Text> : null;
   return (
     <Stack gap="xs" className="cf-review__list">
-      <Group justify="space-between" wrap="wrap" gap="xs">
-        <SegmentedControl size="xs" aria-label="Show"
-          data={SHOW_SCOPES.map((o) => ({ value: o.value, label: `${o.label} ${counts[o.value]}` }))}
-          value={scope.show === 'plays' ? 'plays' : 'filtered'} onChange={(show) => setScope({ show })} />
-        {audit && !audit.fresh ? <Text size="xs" c="dimmed">{audit.running ? 'Checking…' : 'Check out of date'}</Text>
-          : audit && !audit.ok ? <Text size="xs" c="red">The check has not passed</Text> : null}
-      </Group>
       <Group gap="xs" wrap="wrap" justify="space-between">
-        <Checkbox size="xs" label="To do only" checked={scope.needs} onChange={(e) => setScope({ needs: e.currentTarget.checked })} />
+        {stage === 'refine' ? <Text size="xs" fw={600}>On rough timing</Text>
+          : <Checkbox size="xs" label="To do only" checked={scope.needs} onChange={(e) => setScope({ needs: e.currentTarget.checked })} />}
+        {check}
         <Select size="xs" w={170} aria-label="Order" allowDeselect={false} data={ORDER_SCOPES} value={scope.order || 'film'} onChange={(order) => setScope({ order: order || 'film' })} />
       </Group>
-      {scope.show === 'plays' ? <Text size="xs" c="dimmed">These play as they are under your settings. Nothing here needs a verdict.</Text> : null}
-      {!shown.length ? <Text size="sm" c="dimmed">{!rows.length && emptyText ? emptyText : 'Nothing here.'}</Text> : (
+      {stage === 'plays' ? <Text size="xs" c="dimmed">These play as they are under your settings. Nothing here needs a verdict.</Text> : null}
+      {stage === 'refine' ? <Text size="xs" c="dimmed">Refine measures where each of these parts really starts and ends. A verdict on a part resets when it is refined.</Text> : null}
+      {!shown.length ? <Text size="sm" c="dimmed">{!rows.length && emptyText ? emptyText : stage === 'refine' ? 'Nothing is left to refine.' : 'Nothing here.'}</Text> : (
         <div className="cf-review__rows" role="list">
           {shown.map((r) => {
             const selected = r.id === selectedId;

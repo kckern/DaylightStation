@@ -15,10 +15,10 @@ const order = () => [...document.querySelectorAll('[data-row-id]')].map((n) => n
 
 describe('ReviewList', () => {
   beforeEach(() => { vi.restoreAllMocks(); });
-  it('opens on the Filtered tab, in film order (the count lives in the header)', () => {
+  it('lists the filtered parts in film order (the tabs and the count live in the rail)', () => {
     show();
     expect(order()).toEqual(['subject:subject-b1', 'cue:w1', 'scene:sc1']);
-    expect(screen.getByRole('radio', { name: 'Filtered 3' }).checked).toBe(true);
+    expect(screen.queryByRole('radio')).toBeNull();
     expect(screen.queryByText('1 of 3 reviewed')).toBeNull();
   });
   it('"Needs a look first" keeps the audit\'s ranking', () => {
@@ -27,8 +27,7 @@ describe('ReviewList', () => {
     expect(order()).toEqual(['cue:w1', 'subject:subject-b1', 'scene:sc1']);
   });
   it('the Plays tab lists the parts that play and says they need no verdict', () => {
-    show();
-    fireEvent.click(screen.getByRole('radio', { name: 'Plays 1' }));
+    show({ scope: { stage: 'plays', show: 'plays', kind: 'all', action: 'all', needs: false, group: null, order: 'film' }, onScope: () => {} });
     expect(order()).toEqual(['cue:k1']);
     expect(screen.getByText(/Nothing here needs a verdict/)).toBeTruthy();
     expect(within(item(rows[3].label)).getByText(/plays/)).toBeTruthy();
@@ -71,11 +70,24 @@ describe('ReviewList', () => {
     show({ audit: { ok: true, fresh: false, running: true } });
     expect(screen.getByText('Checking…')).toBeTruthy();
   });
-  it('follows a scope given by the page and reports tab changes', () => {
+  it('follows a scope given by the page and reports its own changes', () => {
     const onScope = vi.fn();
-    render(<MantineProvider><ReviewList rows={rows} scope={{ show: 'filtered', kind: 'all', action: 'all', needs: false, group: null, order: 'film' }} onScope={onScope} audit={{ ok: true, fresh: true }} /></MantineProvider>);
-    fireEvent.click(screen.getByRole('radio', { name: 'Plays 1' }));
-    expect(onScope).toHaveBeenCalledWith(expect.objectContaining({ show: 'plays' }));
+    render(<MantineProvider><ReviewList rows={rows} scope={{ stage: 'review', show: 'filtered', kind: 'all', action: 'all', needs: false, group: null, order: 'film' }} onScope={onScope} audit={{ ok: true, fresh: true }} /></MantineProvider>);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'To do only' }));
+    expect(onScope).toHaveBeenCalledWith(expect.objectContaining({ stage: 'review', needs: true }));
+  });
+  it('the Refine tab lists the filtered parts on rough timing and the ones in a refine, and says what refine does', () => {
+    const rough = [{ ...rows[0], timing: 'rough', unsure: [] }, { ...rows[1], timing: 'rough', unsure: ['refine-coarse-edges'] }, rows[2], rows[3],
+      { ...rows[2], id: 'scene:sc2', label: 'Chase', timing: 'rough', members: [] }];
+    show({ rows: rough, refining: { 'scene:sc1': 'Refining…' }, scope: { stage: 'refine', show: 'filtered', kind: 'all', action: 'all', needs: true, group: null, order: 'film' }, onScope: () => {} });
+    // Rough (tried or not) and the part in a refine; never a part that plays, never a true scene.
+    expect(order()).toEqual(['subject:subject-b1', 'cue:w1', 'scene:sc1']);
+    expect(screen.getByText(/A verdict on a part resets when it is refined/)).toBeTruthy();
+    expect(screen.queryByRole('checkbox', { name: 'To do only' })).toBeNull();
+  });
+  it('the Refine tab with nothing rough says so', () => {
+    show({ scope: { stage: 'refine', show: 'filtered', kind: 'all', action: 'all', needs: false, group: null, order: 'film' }, onScope: () => {} });
+    expect(screen.getByText('Nothing is left to refine.')).toBeTruthy();
   });
 });
 

@@ -1025,19 +1025,45 @@ title index every 10 minutes.
 #### The review page (2026-11-21, design "cf-journey")
 
 The page is a queue of the film's **filtered** parts with one part in hand. `ReviewHeader.jsx` is its
-one line: ‹ Films, the title, "n of N reviewed · r rough", the certification ("Machine-checked" /
-"Approved by …"), a run chip (`runLine`: "Refining 5 of 17", "Preparing the film (one time)…" while
-refine transcribes or syncs, "Waiting for the worker", "Checking the result…"), a red chip for a
-failed or interrupted last run, and one primary action: **Stop** while a run is open, else
-**Refine all r** (Shift+R) while filtered parts are rough, else **Approve for family**. The ⋯ menu
-holds Refine all filtered parts again, Refine the whole film (every part, slow), Rework the parts
-marked redo, bleep quieter/louder and All keys. A film not matched to Plex offers no runs.
+one line: ‹ Films, the title, the certification ("Auto-checked" / "Approved by …"), a red chip for a
+failed or interrupted last run, an orange alert for a run that may be stuck, and one action: **Stop**
+while a run is open, else **Refine all r** (Shift+R) on the Refine tab while filtered parts are
+rough. The ⋯ menu holds Refine all filtered parts again, Refine the whole film (every part, slow),
+Rework the parts marked redo, bleep quieter/louder and All keys. A film not matched to Plex offers
+no runs.
 
-Below it, the film (16:9, at most 44vh tall), the timeline and the part card share a sticky column
+**Stage rail** (`ReviewRail.jsx`, `railStages.js`; owner 2026-11-22: "a process chevron interlocking
+rail that also serves as tabs"). Directly under the header, one 36 px row: three interlocking
+chevrons, **Refine › Review › Approve**, then a plain tab **Plays n**. The chevrons are both the
+film's progress and the page's navigation (`role="tablist"` / `tab`, `aria-selected`, roving focus;
+← → Home End move between tabs while one has focus; a click does not keep focus, so ← → go on
+stepping through parts). It replaced the "Refine first" line under the header and the list's
+Filtered / Plays control.
+
+| Stage | What it says (`railStages`) | Selecting it shows |
+|-------|-----------------------------|--------------------|
+| Refine | "16 to refine"; the run's own words while one is open (`runState`: "Refining 10 of 18 · about 4 min left"); "Stuck: no progress for 45 min" / "Filter worker not running"; "Done" or "Done · 3 rough after refine (check by eye)"; "Not refined yet"; "… not matched to Plex" | The filtered parts on rough timing (tried or not; never a true scene) plus any part in a refine or queued for one. The header's Refine all sits here |
+| Review | "0 of 16 reviewed" (with "· refine first" while refine has parts left); "Nothing is filtered"; with no parts yet, why ("Checking the result…", "Nothing until the film is refined") | The filtered parts: To do only, order |
+| Approve | "Not yet: " + the first `signOff.missing` line; "Ready"; "Approved by …" | The sign-off panel in place of the part card (`ApprovePanel`): what is missing, **Approve for family** when the sign-off would be accepted, or Withdraw approval |
+| Plays n | the count | The parts that play (browse only) |
+
+Each stage has one state, from the data alone: **complete** (green check), **current** (filled: the
+first stage still to do, or Approve when it is ready), **waiting** (muted, with the reason in its
+text) or **stuck** (orange, from `runState().stuck`; the full sentence is its tooltip and the
+header's alert). The open tab carries a bar along its bottom edge, so "where the film is" and "what I
+am looking at" are separate marks. The film opens on its first stage still to do (`defaultStage`;
+a finished film on Approve; a permalink on the tab its part is on); after that the tab is the
+reviewer's choice and a stage finishing never moves it. The tab is the review scope's `stage`
+(`reviewScope.js` `stageScope`), so the list, the timeline and stepping follow from one value; when
+the part in hand is not among the new tab's parts, the first open one is taken in hand. On Approve
+the part card is not on screen, so the part keys are off; picking a part from the list or the
+timeline goes back to Review (or Plays). Every change logs `content_filter.review.stage_tab`
+(`stage`, `from`, `via`: default / click / key / part, `shown`).
+
+Below it, the film (16:9, at most 40vh tall), the timeline and the part card share a sticky column
 that does not scroll at 1440x900; the list beside it scrolls alone. Arriving without a permalink
-selects the first filtered part still to review (no URL change, no seek). When every filtered part
-has a verdict the sign-off card appears above the part card. `FilmStatusCard` (three meters) is no
-longer on the page.
+selects the first part still to do on the opening tab (no URL change, no seek). `FilmStatusCard`
+(three meters) is no longer on the page.
 
 **Part card** (`RowEditor.jsx`): "Part 6 of 17 · span" with ‹ Prev / Next ›; title (whole label);
 chips (effect or Plays, timing, hand-fixed, verdict); group · modality · category; the **why line**
@@ -1054,8 +1080,8 @@ line (Space, Enter, W, ← →, ?). A word skipped as an exchange is listed with
 `isSceneRow` (no members, not `cue:`) decides scene handling, `keysKindOf` the effect keys.
 
 **Refine** (`useReviewStation.js`): R sends a send-back of the part's member cues (on a hand-fixed
-part, the first R warns that refining drops the hand fix and the second sends); Shift+R, the header
-Refine all button and the overflow Refine all again send one send-back of their filtered, non-scene
+part, the first R warns that refining drops the hand fix and the second sends); Shift+R (on any tab),
+the Refine tab's Refine all button and the overflow Refine all again send one send-back of their filtered, non-scene
 targets (rough timing for Shift+R, every filtered part for Refine all again), never the parts that
 play. The overflow count and disabled state use that same eligible target set, so scene-only films
 do not offer an empty refinement. If any bulk target contains hand-fixed timing, the first action warns and the same action a
@@ -1064,13 +1090,13 @@ film: presses while a run is open collect on the page ("Queued") and go out as o
 when the run finishes
 `done`; after a stopped or failed run they stay queued and the page says so (the next R sends them).
 A refine moves a part, which drops its verdict, so a part being refined takes no verdict ("Give it a
-verdict when the new timing lands") and auto-advance skips it. While filtered parts are rough, a
-line under the header says to refine first; the sign-off lists "Refine the filtered parts first:
+verdict when the new timing lands") and auto-advance skips it. While filtered parts are rough, the
+rail's Review stage reads "· refine first" and the Refine tab's list says a verdict resets when its
+part is refined; the sign-off lists "Refine the filtered parts first:
 approval needs their measured timing" for an unrefined film. A rough part refine already tried (it carries a
-`refine-*` reason: not found, coarse edges) is not refined again by Refine all: the header counts it
-as "N rough after refine (check by eye)", and it never hides Approve, which takes the header's
-action slot whenever the film can be approved (review 2026-11-22: Sonic's picture parts keep coarse
-edges, so "Refine all 5" looped). Keys on a part that plays send nothing (it needs no verdict and is
+`refine-*` reason: not found, coarse edges) is not refined again by Refine all: the Refine stage
+counts it as "Done · N rough after refine (check by eye)", and it never holds back the Approve stage
+(review 2026-11-22: Sonic's picture parts keep coarse edges, so "Refine all 5" looped). Keys on a part that plays send nothing (it needs no verdict and is
 not refined); R on a part waiting in the page's queue takes it out again. A send-back
 on an already synced film takes about 10 s per part (measured: preflight 2 s, refine 5 s, audit
 1 s); a film's first refine transcribes it once. The transcript's decode is judged against the audio stream's own
@@ -1082,10 +1108,11 @@ the UI should never lie"). The 480p film copy's lock holds its builder's pid: a 
 gone is taken at once (a worker restart had left one that a refine waited on for hours; the age rule,
 3 h, stays as a backstop). Refine announces "Waiting for the film copy" / "Making the film copy" on
 stderr (also after the transcript, if the copy is not ready), and these are progress phases
-(`copy-wait`, `copy`). The header's run chip (`runState`) names the real step (Waiting for the film
+(`copy-wait`, `copy`). The Refine stage's text (`runState`) names the real step (Waiting for the film
 copy, Making a small copy of the film, Transcribing the film, Lining up the film's clock, Refining n
 of N), how long it has been in it, and past the longest that step takes (copy-wait 30 min, copy 45,
-transcribe 150, sync 10, a part 10, other 20) it turns into an orange alert: "…: no progress for
+transcribe 150, sync 10, a part 10, other 20) the stage turns orange ("Stuck: no progress for …") and
+the header shows an orange alert: "…: no progress for
 2 h 29 min. It may be stuck; Stop it and refine again." A queued run with no live worker is flagged too.
 
 While a remote worker holds the film, a plain verdict (approve/redo/ignore, no change) may still be
@@ -1096,8 +1123,9 @@ worker's override is saved with the current file's review marks kept (`applyResu
 same per-film write queue as verdicts (`titleQueue`), so a verdict cannot land between its read and
 its write.
 
-**List** (`ReviewList.jsx`): **Filtered n** (default) and **Plays n** tabs (Plays is browse only:
-"Nothing here needs a verdict"); "To do only"; Film order (default) or Needs a look first. A row is a
+**List** (`ReviewList.jsx`): the parts of the rail tab in hand (on Plays: "Nothing here needs a
+verdict"; on Refine: what refine does, and "Nothing is left to refine." when empty); "To do only"
+(not on Refine); Film order (default) or Needs a look first. A row is a
 glyph (▶ in hand, ✓ approved, × let it play, ↻ redo, · to do) with its word under the time
 (`rowStatus`: To do, Approved, Let play, Redo, Ignored, Plays; owner 2026-11-21), the whole label (two lines;
 the part in hand unclamped) and a meta line (group · effect, a Rough / Safe window chip, its run
@@ -1118,7 +1146,7 @@ last message, the preview retry and the `?` keymap sheet.
   key applies the effect through `PUT /:rk/cues/:id` / `/scenes/:id` and records an `approve`
   carrying `change: { from, to }`. While the `?` sheet is open only `?` and `Esc` act.
 - **Cursor and scope.** Moving the cursor seeks 4 s before the part and plays. One scope drives the
-  list, the timeline and stepping: Filtered / Plays × To do only × order. A part that plays is never
+  list, the timeline and stepping: the rail tab (`stage`) × To do only × order. A part that plays is never
   "open" except on the Plays tab. Stepping does not wrap ("That is the last part in this view.").
 - **Auto-advance.** A saved verdict moves to the next open part in the scope; at the end: "All N in
   this view reviewed", or "End of this view. N still open above."

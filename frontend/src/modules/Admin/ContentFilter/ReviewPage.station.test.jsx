@@ -227,7 +227,7 @@ describe('review station keys', () => {
   });
   it('the header counts the filtered parts with a verdict; the card shows the keys for the part\'s channel', () => {
     payload = base([row('cue:w1', 'alpha', { verdict: { verdict: 'redo' }, reviewed: { by: 'x' } }), row('cue:w2', 'bravo'), row('subject:p1', 'poster', { kind: 'picture', modality: 'shown', effect: 'blur' })]);
-    show(); expect(screen.getByText('1 of 3 reviewed', { exact: false, selector: '.cf-head__count' })).toBeTruthy();
+    show(); expect(screen.getByText('1 of 3 reviewed', { selector: '.cf-rail__text' })).toBeTruthy();
     const cardKeys = () => [...document.querySelectorAll('.cf-card-part button kbd')].map((n) => n.textContent);
     expect(selected()).toBe('cue:w2');
     expect(cardKeys()).toEqual(expect.arrayContaining(['M', 'P'])); expect(cardKeys()).not.toContain('B');

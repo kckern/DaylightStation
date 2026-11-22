@@ -5,14 +5,15 @@
  */
 export const KIND_SCOPES = [{ label: 'All', value: 'all' }, { label: 'Words', value: 'words' }, { label: 'Picture', value: 'picture' }, { label: 'Scenes', value: 'scenes' }];
 export const ACTION_SCOPES = [{ label: 'All actions', value: 'all' }, { label: 'Blur', value: 'blur' }, { label: 'Skip', value: 'skip' }, { label: 'Bleep', value: 'bleep' }, { label: 'Mute', value: 'mute' }];
-/** Which parts: every part in the film (default), the ones the filter acts on, or the ones it lets play. */
-export const SHOW_SCOPES = [{ label: 'Filtered', value: 'filtered' }, { label: 'Plays', value: 'plays' }];
 /** Timing: every part, the ones still on VidAngel's rough times, or the measured ones (incl. safe windows). */
 export const TIMING_SCOPES = [{ label: 'Any timing', value: 'all' }, { label: 'Rough timing', value: 'rough' }, { label: 'Refined timing', value: 'refined' }];
 /** Order: through the film from the start (default), or the parts that need a look first. */
 export const ORDER_SCOPES = [{ label: 'Film order', value: 'film' }, { label: 'Needs a look first', value: 'attention' }];
 // The filtered parts are the review (owner, 2026-11-21); the ones that play are browsed on their own tab.
-export const DEFAULT_SCOPE = Object.freeze({ show: 'filtered', kind: 'all', action: 'all', needs: false, group: null, timing: 'all', order: 'film' });
+// `stage` is the rail tab in hand (ReviewRail.jsx): refine | review | approve | plays. It sets `show`,
+// and Refine narrows the filtered parts to the ones refine still has to pin (or is working on).
+export const STAGE_TABS = ['refine', 'review', 'approve', 'plays'];
+export const DEFAULT_SCOPE = Object.freeze({ stage: 'review', show: 'filtered', kind: 'all', action: 'all', needs: false, group: null, timing: 'all', order: 'film' });
 /** A part the household's settings let play (audits before 2026-11-21 had none). */
 export const plays = (row) => row?.acts === false;
 
@@ -28,18 +29,24 @@ export const hasVerdict = (row) => Boolean(row?.verdict || row?.reviewed);
  */
 export const isOpen = (row, scope = DEFAULT_SCOPE) => !hasVerdict(row) && (!plays(row) || scope?.show === 'plays');
 
-export function inScope(row, scope = DEFAULT_SCOPE) {
+/** The scope a rail tab stands for: the same filters, on that tab's parts. */
+export const stageScope = (scope, stage) => ({ ...(scope || DEFAULT_SCOPE), stage, show: stage === 'plays' ? 'plays' : 'filtered' });
+/** A part the Refine tab lists: on rough timing (tried or not; a true scene is rebuilt, not refined), or in a refine right now. */
+const inRefine = (row, refining) => Boolean(refining?.[row.id]) || (row.timing === 'rough' && !isSceneRow(row));
+
+export function inScope(row, scope = DEFAULT_SCOPE, { refining = null } = {}) {
   const show = scope.show || 'all';
   return (show === 'all' || (show === 'plays' ? plays(row) : !plays(row)))
     && (scope.kind === 'all' || row.kind === scope.kind)
     && (scope.action === 'all' || rowAction(row) === scope.action)
     && (!scope.group || row.group === scope.group)
     && (!scope.timing || scope.timing === 'all' || (scope.timing === 'rough' ? row.timing === 'rough' : row.timing === 'refined' || row.timing === 'safe-window'))
-    && (!scope.needs || isOpen(row, scope));
+    && (scope.stage !== 'refine' || inRefine(row, refining))
+    && (!scope.needs || scope.stage === 'refine' || isOpen(row, scope));
 }
 /** The rows a scope keeps, in its order: film order (default) or as the audit ranks them (unsure first). */
-export function scopeRows(rows, scope) {
-  const kept = (rows || []).filter((r) => inScope(r, scope));
+export function scopeRows(rows, scope, opts) {
+  const kept = (rows || []).filter((r) => inScope(r, scope, opts));
   return (scope?.order || 'film') === 'film' ? [...kept].sort((a, b) => a.in - b.in || a.out - b.out) : kept;
 }
 

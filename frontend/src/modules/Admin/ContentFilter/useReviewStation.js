@@ -4,7 +4,8 @@ import { getToken } from '../../../lib/auth.js';
 import { invalidateApiResources } from '../../../lib/hooks/useApiResource.js';
 import { createAppLogger } from '../../../lib/ui/index.js';
 import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
-import { DEFAULT_SCOPE, WIDEN_STEP, actionKeysFor, hasVerdict, isOpen, isSceneRow, keysKindOf, nextKind, plays, rowAction, scopeRows, stepFrom } from './reviewScope.js';
+import { DEFAULT_SCOPE, WIDEN_STEP, actionKeysFor, hasVerdict, isOpen, isSceneRow, keysKindOf, nextKind, plays, rowAction, scopeRows, stageScope, stepFrom } from './reviewScope.js';
+import { defaultStage, railStages } from './railStages.js';
 import { effectChoices } from './RowEditor.jsx';
 import { BLEEP_LEVEL_DEFAULT, clampBleepLevel } from '../../../../../shared/contracts/content-filter/filterSettings.mjs';
 
@@ -41,10 +42,10 @@ function enqueueLevelWrite(path, owner, value) {
   return pending;
 }
 
-export function useReviewStation({ ratingKey, data, reload, refreshReview, selected, select, activeView, runBusy = false }) {
+export function useReviewStation({ ratingKey, data, reload, refreshReview, selected, select, activeView, runBusy = false, openRowId = null }) {
   const rk = String(ratingKey);
   const rows = data?.rows;
-  const [scope, setScopeState] = useState(DEFAULT_SCOPE);
+  const [chosenScope, setScopeState] = useState(null);
   const [message, setMessage] = useState(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [undoStack, setUndoStack] = useState([]);
@@ -53,9 +54,59 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   const arrived = useRef({ id: null, at: Date.now(), replays: 0 });
   const via = useRef('click');
   const latest = useRef({});
-  latest.current = { rows, selectedId: selected?.id ?? null, scoped: null, scope };
+  latest.current = { rows, selectedId: selected?.id ?? null, scoped: null, scope: null };
 
-  const scoped = useMemo(() => scopeRows(rows, scope), [rows, scope]);
+  // Which parts a refine holds or still has to pin (the Refine tab lists these).
+  const [pendingRefine, setPendingRefine] = useState(() => new Set());
+  const notMatched = data?.match === 'unmatched';
+  const job = data?.job || null;
+  const running = Boolean(job && (job.status === 'queued' || job.status === 'running'));
+  const refineTargets = useMemo(() => (rows || []).filter((r) => !plays(r) && !isSceneRow(r)), [rows]);
+  // Rough parts refine has already tried (it left a refine-* reason: not found, coarse edges, …) stay
+  // rough when refined again; they are checked by eye, and never hold back Refine all or approval
+  // (review 2026-11-22: Sonic's picture parts kept coarse edges, so "Refine all 5" looped).
+  const triedBefore = (r) => (r.unsure || []).some((u) => String(u).startsWith('refine-'));
+  const roughRefineTargets = useMemo(() => refineTargets.filter((r) => r.timing === 'rough' && !triedBefore(r)), [refineTargets]);
+  const roughLeftCount = useMemo(() => refineTargets.filter((r) => r.timing === 'rough' && triedBefore(r)).length, [refineTargets]);
+  const cuesOf = (r) => (isSceneRow(r) ? [] : (r.members ?? (String(r.id).startsWith('cue:') ? [r.peekId] : [])));
+  // Which rows a refine holds right now: the open send-back's parts, then the ones queued here.
+  const refining = useMemo(() => {
+    const out = {};
+    if (job && job.kind === 'send-back' && running) {
+      const cues = new Set(job.cues || []);
+      for (const r of rows || []) if ((r.members || []).some((id) => cues.has(id))) out[r.id] = job.status === 'queued' ? 'Waiting' : 'Refining…';
+    }
+    for (const r of rows || []) if (!out[r.id] && (r.members || []).some((id) => pendingRefine.has(id))) out[r.id] = 'Queued';
+    return out;
+  }, [rows, job, running, pendingRefine]);
+  latest.current.refining = refining;
+  latest.current.running = running;
+  // The tally counts the parts that need a verdict: the filtered ones (parts that play need none).
+  const tally = useMemo(() => {
+    const filtered = (rows || []).filter((r) => !plays(r));
+    return { done: filtered.filter(hasVerdict).length, total: filtered.length, redo: (rows || []).filter((r) => r.verdict?.verdict === 'redo').length };
+  }, [rows]);
+
+  // The rail's stages, and the tab the film opens on: its first stage still to do, fixed when the
+  // film's parts first arrive (a permalink opens the tab its part is on). After that the tab is the
+  // reviewer's choice; a stage finishing never moves them.
+  const stages = useMemo(() => railStages({ data, tally, roughRefine: roughRefineTargets.length, roughLeft: roughLeftCount }),
+    [data, tally, roughRefineTargets, roughLeftCount]);
+  const arrival = useRef(null);
+  if (!arrival.current && rows) {
+    let stage = defaultStage(stages);
+    const linked = openRowId ? rows.find((r) => r.id === openRowId) : null;
+    if (linked) stage = plays(linked) ? 'plays' : stage === 'refine' && scopeRows([linked], stageScope(DEFAULT_SCOPE, 'refine'), { refining }).length ? 'refine' : 'review';
+    arrival.current = stageScope(DEFAULT_SCOPE, stage);
+  }
+  const scope = chosenScope ?? arrival.current ?? DEFAULT_SCOPE;
+  latest.current.scope = scope;
+  const arrived0 = Boolean(rows);
+  useEffect(() => {
+    if (arrived0) logger.info('content_filter.review.stage_tab', { rk, stage: arrival.current.stage, from: null, via: 'default' });
+  }, [arrived0, rk]);
+
+  const scoped = useMemo(() => scopeRows(rows, scope, { refining }), [rows, scope, refining]);
   latest.current.scoped = scoped;
   const row = rows?.find((r) => r.id === selected?.id) || null;
 
@@ -98,8 +149,22 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   const setScope = useCallback((next) => {
     setScopeState(next);
     setMessage(null);
-    logger.info('content_filter.review.scope', { rk, show: next.show, order: next.order, timing: next.timing, kind: next.kind, action: next.action, needs: next.needs, group: next.group, shown: scopeRows(latest.current.rows, next).length });
+    logger.info('content_filter.review.scope', { rk, stage: next.stage, show: next.show, order: next.order, timing: next.timing, kind: next.kind, action: next.action, needs: next.needs, group: next.group, shown: scopeRows(latest.current.rows, next, { refining: latest.current.refining }).length });
   }, [rk]);
+  // A rail tab: the scope moves to that stage's parts, and the cursor follows when the part in hand
+  // is not among them (Approve shows its own panel and leaves the cursor alone).
+  const setStage = useCallback((stage, how = 'click', { keepCursor = false } = {}) => {
+    const from = latest.current.scope.stage;
+    if (stage === from) return;
+    const next = stageScope(latest.current.scope, stage);
+    const list = scopeRows(latest.current.rows, next, { refining: latest.current.refining });
+    setScopeState(next);
+    setMessage(null);
+    logger.info('content_filter.review.stage_tab', { rk, stage, from, via: how, shown: list.length });
+    if (keepCursor || stage === 'approve' || list.some((r) => r.id === latest.current.selectedId)) return;
+    const first = list.find((r) => isOpen(r, next)) || list[0];
+    if (first) pick(first);
+  }, [rk, pick]);
 
   const step = (dir) => {
     const next = stepFrom(scoped, selected?.id, dir);
@@ -244,35 +309,11 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     previewStore.peek(row.peekId);
   };
 
+  const handFixedRefineArm = useRef(null);
   // Refine: one part (R) or every filtered part still on rough timing (Shift+R), as one send-back
   // of their member cues (owner, 2026-11-21: refine the flagged ones, never the 136 that play).
   // One run per film: presses while a run is open collect here and go out once it finishes well;
   // they stay queued (and say so) if it stopped or failed, and leave the queue only once sent.
-  const [pendingRefine, setPendingRefine] = useState(() => new Set());
-  const handFixedRefineArm = useRef(null);
-  const notMatched = data?.match === 'unmatched';
-  const job = data?.job || null;
-  const running = Boolean(job && (job.status === 'queued' || job.status === 'running'));
-  const refineTargets = useMemo(() => (rows || []).filter((r) => !plays(r) && !isSceneRow(r)), [rows]);
-  // Rough parts refine has already tried (it left a refine-* reason: not found, coarse edges, …) stay
-  // rough when refined again; they are checked by eye, and never hold back Refine all or approval
-  // (review 2026-11-22: Sonic's picture parts kept coarse edges, so "Refine all 5" looped).
-  const triedBefore = (r) => (r.unsure || []).some((u) => String(u).startsWith('refine-'));
-  const roughRefineTargets = useMemo(() => refineTargets.filter((r) => r.timing === 'rough' && !triedBefore(r)), [refineTargets]);
-  const roughLeftCount = useMemo(() => refineTargets.filter((r) => r.timing === 'rough' && triedBefore(r)).length, [refineTargets]);
-  const cuesOf = (r) => (isSceneRow(r) ? [] : (r.members ?? (String(r.id).startsWith('cue:') ? [r.peekId] : [])));
-  // Which rows a refine holds right now: the open send-back's parts, then the ones queued here.
-  const refining = useMemo(() => {
-    const out = {};
-    if (job && job.kind === 'send-back' && running) {
-      const cues = new Set(job.cues || []);
-      for (const r of rows || []) if ((r.members || []).some((id) => cues.has(id))) out[r.id] = job.status === 'queued' ? 'Waiting' : 'Refining…';
-    }
-    for (const r of rows || []) if (!out[r.id] && (r.members || []).some((id) => pendingRefine.has(id))) out[r.id] = 'Queued';
-    return out;
-  }, [rows, job, running, pendingRefine]);
-  latest.current.refining = refining;
-  latest.current.running = running;
   const sendRefine = async (cues, what) => {
     await DaylightAPI(`${API}/${encodeURIComponent(rk)}/jobs`, { kind: 'send-back', cues }, 'POST');
     logger.info('content_filter.review.refine', { rk, cues: cues.length, what });
@@ -449,11 +490,6 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
 
   const top = undoStack[undoStack.length - 1];
   const canUndo = Boolean(top && rows?.some((r) => r.id === top.rowId));
-  // The tally counts the parts that need a verdict: the filtered ones (parts that play need none).
-  const tally = useMemo(() => {
-    const filtered = (rows || []).filter((r) => !plays(r));
-    return { done: filtered.filter(hasVerdict).length, total: filtered.length, redo: (rows || []).filter((r) => r.verdict?.verdict === 'redo').length };
-  }, [rows]);
 
   const handlers = {
     next: () => step(1), prev: () => step(-1), replay, togglePlay, playWithout, refine, refineAll, rework: reworkKey, helpOpen, verdict, undo, effect, widen,
@@ -464,7 +500,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     escape: () => { if (helpOpen) { setHelpOpen(false); return true; } return false; },
   };
   return {
-    scope, setScope, scoped, row, pick, handlers, message: saving ? 'Saving…' : message, helpOpen, canUndo, tally, pendingRefine, refining, running,
+    scope, setScope, setStage, stages, scoped, row, pick, handlers, message: saving ? 'Saving…' : message, helpOpen, canUndo, tally, pendingRefine, refining, running,
     roughRefineCount: roughRefineTargets.length, roughLeftCount, refineAllCount: refineTargets.length,
     bleepLevel, flagged: flagged.length, rework,
     previewRecovery: previewRecovery ? {

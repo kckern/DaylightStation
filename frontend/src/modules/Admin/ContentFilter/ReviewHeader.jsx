@@ -8,8 +8,9 @@ import { ApprovalFeedback, useApprovalRegion } from './FilmApprovalControls.jsx'
 
 /**
  * The film's one line (ops design "cf-journey", owner 2026-11-21: the three-meter banner wasted the
- * screen): back to the films, the title, how far the review is, what a run is doing, and the one
- * thing to do next. Everything else sits in the ⋯ menu.
+ * screen): back to the films, the title, its certification, a failed or stuck run, and Stop or the
+ * Refine tab's Refine all. How far the film is lives in the rail under it (ReviewRail.jsx);
+ * everything else sits in the ⋯ menu.
  */
 const logger = createAppLogger('admin').child('content-filter');
 const API = 'api/v1/content-filter';
@@ -27,12 +28,16 @@ const mins = (ms) => Math.max(0, Math.floor(ms / 60000));
 const span = (m) => (m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`);
 
 /**
- * What the film's run is doing, in a few words, and for how long: { text, stuck }. `stuck` when the
- * run has sat in one step longer than that step ever takes (its last progress line is that old).
+ * What the film's run is doing, in a few words, and for how long: { text, stuck, brief? }. `stuck` when
+ * the run has sat in one step longer than that step ever takes (its last progress line is that old);
+ * `brief` is then the short form the rail's Refine stage shows.
  */
 export function runState(job, worker = null, now = Date.now()) {
   if (!job) return null;
-  if (job.status === 'queued') return { text: worker && !worker.alive ? 'Waiting for the filter worker (not running)' : 'Waiting for the worker', stuck: Boolean(worker && !worker.alive) };
+  if (job.status === 'queued') {
+    return worker && !worker.alive ? { text: 'Waiting for the filter worker (not running)', stuck: true, brief: 'Filter worker not running' }
+      : { text: 'Waiting for the worker', stuck: false };
+  }
   if (job.status !== 'running') return null;
   const step = job.steps?.find((s) => s.name === job.step);
   const prog = job.steps?.find((s) => s.name === 'refine')?.progress;
@@ -50,7 +55,7 @@ export function runState(job, worker = null, now = Date.now()) {
     const phase = runPhases(job).find((p) => p.state === 'running');
     text = phase ? phase.label : 'Working';
   }
-  if (stuck) return { text: `${text}: no progress for ${span(m)}. It may be stuck; Stop it and refine again.`, stuck: true };
+  if (stuck) return { text: `${text}: no progress for ${span(m)}. It may be stuck; Stop it and refine again.`, stuck: true, brief: `Stuck: no progress for ${span(m)}` };
   const counting = /\d+ of \d+/.test(text);
   return { text: m != null && m >= 2 && !counting ? `${text} · ${span(m)}` : counting ? text : `${text}…`, stuck: false };
 }
@@ -58,7 +63,7 @@ export function runState(job, worker = null, now = Date.now()) {
 /** The run's state as one line (kept for callers that only show text). */
 export function runLine(job, worker = null, now = Date.now()) { return runState(job, worker, now)?.text ?? null; }
 
-function ApproveButton({ approval }) {
+export function ApproveButton({ approval }) {
   const { regionProps, feedback, start, retry } = useApprovalRegion(approval, 'approve');
   return (
     <span {...regionProps}>
@@ -68,7 +73,7 @@ function ApproveButton({ approval }) {
   );
 }
 
-export function ReviewHeader({ ratingKey, data, tally, roughFiltered, roughLeft = 0, refineAllCount = 0, handlers, approval, onChanged = () => {}, flagged = 0, blocked = false }) {
+export function ReviewHeader({ ratingKey, data, stage = 'review', roughFiltered, refineAllCount = 0, handlers, onChanged = () => {}, flagged = 0, blocked = false }) {
   const [confirmStop, setConfirmStop] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
@@ -87,15 +92,13 @@ export function ReviewHeader({ ratingKey, data, tally, roughFiltered, roughLeft 
   };
   const level = data.signOff?.parent ? `Approved by ${data.signOff.parent.by}` : data.certification?.level === 'machine' ? 'Auto-checked' : null;
   const failed = job && (job.status === 'failed' || job.status === 'interrupted');
-  // A run's own words, else the check that runs after one (the list waits for it).
+  // The rail (ReviewRail.jsx) says how far the run is; a run that may be stuck is spelled out here.
   const run = runState(job, data.worker);
-  const progress = run?.text || (data.status?.next === 'checking' ? 'Checking the result…' : null);
 
   return (
     <div className="cf-head" role="banner" aria-label="Film">
       <Anchor component={Link} to="/admin/content/filter" size="sm" className="cf-head__back">‹ Films</Anchor>
       <Text fw={700} className="cf-head__title" title={data.title || ''}>{data.title || `Film ${ratingKey}`}</Text>
-      <Text size="sm" className="cf-head__count">{`${tally.done} of ${tally.total} reviewed`}{roughFiltered ? ` · ${roughFiltered} to refine` : ''}{roughLeft ? ` · ${roughLeft} rough after refine (check by eye)` : ''}</Text>
       {level ? <Badge size="sm" variant="light" color={data.signOff?.parent ? 'green' : 'gray'}>{level}</Badge> : null}
       {failed ? (
         <Tooltip label={job.error || 'Nothing from it was kept.'} withArrow multiline w={360}>
@@ -103,9 +106,7 @@ export function ReviewHeader({ ratingKey, data, tally, roughFiltered, roughLeft 
             : `Last ${job.step === 'refine' || job.kind === 'send-back' ? 'refine' : 'run'} failed; nothing was kept (hover for why)`}</Badge>
         </Tooltip>
       ) : null}
-      {progress ? (run?.stuck
-        ? <Text size="sm" c="orange" role="alert" className="cf-head__stuck">{progress}</Text>
-        : <Badge size="sm" color="blue" variant="light">{progress}</Badge>) : null}
+      {run?.stuck ? <Text size="sm" c="orange" role="alert" className="cf-head__stuck">{run.text}</Text> : null}
       <span className="cf-head__spacer" />
       {running ? (confirmStop ? (
         <Group gap={4}>
@@ -114,9 +115,8 @@ export function ReviewHeader({ ratingKey, data, tally, roughFiltered, roughLeft 
           <Button size="compact-xs" variant="subtle" onClick={() => setConfirmStop(false)}>Keep going</Button>
         </Group>
       ) : <Button size="compact-sm" variant="light" color="red" onClick={() => setConfirmStop(true)}>Stop</Button>)
-        // Approval first whenever the film can be approved: parts refine cannot pin never block it.
-        : data.status?.next === 'approve' ? <ApproveButton approval={approval} />
-        : roughFiltered && !blocked ? (
+        // Each stage's action sits with its tab: Refine all here on Refine, approval in the Approve panel.
+        : stage === 'refine' && roughFiltered && !blocked ? (
           <Button size="compact-sm" onClick={() => handlers.refineAll?.()}>
             <span className="cf-card__btn">{`Refine all ${roughFiltered}`} <kbd className="cf-keybar__key">⇧R</kbd></span>
           </Button>

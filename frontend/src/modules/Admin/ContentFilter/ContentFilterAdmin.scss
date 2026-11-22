@@ -31,16 +31,53 @@
 .cf-review-page { display: flex; flex-direction: column; gap: var(--ds-space-2); min-width: 0; }
 .cf-head { display: flex; align-items: center; gap: var(--ds-space-2); flex-wrap: wrap; min-height: 40px; padding: 4px 0; border-bottom: 1px solid var(--ds-border); }
 .cf-head__title { max-width: 32ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cf-head__count { font-variant-numeric: tabular-nums; color: var(--ds-text-secondary); }
 .cf-head__spacer { flex: 1; }
-.cf-head__note { color: var(--ds-text-secondary); }
+
+// Stage rail (ReviewRail.jsx): Refine > Review > Approve as interlocking chevrons that are the page's
+// tabs, then Plays as a plain tab. One row, 36px. Solid fills only: a stage's fill says where it
+// stands (current filled, stuck orange, the rest quiet), the bar under it says which tab is open.
+.cf-rail { --cf-rail-h: 36px; --cf-rail-tip: 14px; display: flex; align-items: stretch; height: var(--cf-rail-h); min-width: 0; }
+.cf-rail__stage, .cf-rail__plays { appearance: none; border: 0; font: inherit; background: none; cursor: pointer; text-align: left; }
+.cf-rail__stage { position: relative; flex: 1 1 0; min-width: 0; margin-left: calc(3px - var(--cf-rail-tip)); padding: 0 calc(var(--cf-rail-tip) + 6px) 0 calc(var(--cf-rail-tip) + 10px);
+  background: var(--ds-bg-overlay); color: var(--ds-text-secondary);
+  clip-path: polygon(0 0, calc(100% - var(--cf-rail-tip)) 0, 100% 50%, calc(100% - var(--cf-rail-tip)) 100%, 0 100%, var(--cf-rail-tip) 50%); }
+.cf-rail__stage:first-child { margin-left: 0; padding-left: 12px; border-radius: var(--ds-radius-sm) 0 0 var(--ds-radius-sm);
+  clip-path: polygon(0 0, calc(100% - var(--cf-rail-tip)) 0, 100% 50%, calc(100% - var(--cf-rail-tip)) 100%, 0 100%); }
+.cf-rail__in { display: flex; align-items: center; gap: 8px; height: 100%; min-width: 0; font-size: 13px; line-height: 1; white-space: nowrap; }
+.cf-rail__mark { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+  background: var(--ds-bg-base); color: var(--ds-text-secondary); }
+.cf-rail__name { flex: none; font-weight: 700; color: var(--ds-text-primary); }
+.cf-rail__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.cf-rail__stage.is-complete .cf-rail__mark { background: var(--ds-success); color: var(--ds-bg-base); }
+.cf-rail__stage.is-waiting .cf-rail__name { color: var(--ds-text-secondary); }
+.cf-rail__stage.is-waiting .cf-rail__mark { color: var(--ds-text-muted); }
+.cf-rail__stage.is-current { background: var(--ds-accent); color: #fff; }
+.cf-rail__stage.is-current .cf-rail__name { color: #fff; }
+.cf-rail__stage.is-current .cf-rail__mark { background: #fff; color: var(--ds-accent); }
+.cf-rail__stage.is-stuck { background: var(--ds-warning); color: var(--ds-bg-base); }
+.cf-rail__stage.is-stuck .cf-rail__name { color: var(--ds-bg-base); }
+.cf-rail__stage.is-stuck .cf-rail__mark { background: var(--ds-bg-base); color: var(--ds-warning); }
+// The open tab: a bar along the bottom edge, cut to the chevron by the same clip.
+.cf-rail__stage[aria-selected="true"]::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--ds-text-primary); }
+.cf-rail__stage:not([aria-selected="true"]):not(.is-current):not(.is-stuck):hover .cf-rail__name { color: var(--ds-text-primary); text-decoration: underline; }
+.cf-rail__plays { flex: none; margin-left: var(--ds-space-2); padding: 0 var(--ds-space-2); color: var(--ds-text-secondary); border-bottom: 3px solid transparent; border-top: 3px solid transparent; }
+.cf-rail__plays:hover { color: var(--ds-text-primary); }
+.cf-rail__plays[aria-selected="true"] { color: var(--ds-text-primary); border-bottom-color: var(--ds-text-primary); }
+.cf-rail__plays[aria-selected="true"] .cf-rail__in { font-weight: 700; }
+.cf-rail__count { font-variant-numeric: tabular-nums; color: var(--ds-text-muted); }
+// Keyboard focus: a ring inside the shape (an outline on the button itself would be clipped away).
+.cf-rail button:focus { outline: none; }
+.cf-rail__stage .cf-rail__in { margin: 0 -8px; padding: 0 8px; }
+.cf-rail button:focus-visible .cf-rail__in { outline: 2px solid var(--ds-text-primary); outline-offset: -5px; border-radius: var(--ds-radius-sm); }
+.cf-rail button.cf-rail__plays:focus-visible .cf-rail__in { outline-offset: 3px; }
+.cf-approve { display: flex; flex-direction: column; align-items: flex-start; gap: var(--ds-space-2); }
+.cf-approve[data-state='approved'], .cf-approve[data-state='ready'] { border-color: var(--ds-success); }
 .cf-review { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); gap: var(--ds-space-4); align-items: start; }
 @media (max-width: 1000px) { .cf-review { grid-template-columns: minmax(0, 1fr); } }
-.cf-review__side { position: sticky; top: var(--ds-space-2); display: flex; flex-direction: column; gap: var(--ds-space-2); min-width: 0; max-height: calc(100vh - 130px); overflow-y: auto; }
+.cf-review__side { position: sticky; top: var(--ds-space-2); display: flex; flex-direction: column; gap: var(--ds-space-2); min-width: 0; max-height: calc(100vh - 174px); overflow-y: auto; }
 // The film keeps a height that leaves room for the card below it at 900 px.
 .cf-review__player { aspect-ratio: 16 / 9; width: min(100%, calc(40vh * 16 / 9)); margin: 0 auto; background: var(--ds-bg-base); border-radius: var(--ds-radius-md); overflow: hidden; position: relative; }
-.cf-review.has-note .cf-review__side, .cf-review.has-note .cf-review__list { max-height: calc(100vh - 160px); }
-.cf-review__list { max-height: calc(100vh - 130px); min-width: 0; position: sticky; top: var(--ds-space-2); }
+.cf-review__list { max-height: calc(100vh - 174px); min-width: 0; position: sticky; top: var(--ds-space-2); }
 .cf-review__list > * { flex-shrink: 0; }
 .cf-review__list > .cf-review__rows { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .cf-review__rows { display: flex; flex-direction: column; border-bottom: 1px solid var(--ds-border); }
@@ -75,7 +112,6 @@
 .cf-card__btn { display: inline-flex; align-items: center; gap: 6px; }
 .cf-card__btn .cf-keybar__key { opacity: 0.8; }
 .cf-focus__where { font-variant-numeric: tabular-nums; }
-.cf-signoff-card { display: flex; flex-direction: column; gap: 6px; padding: var(--ds-space-2); border: 1px solid var(--ds-success); border-radius: var(--ds-radius-md); }
 
 // Review station: timeline lanes and the key bar.
 .cf-timeline { display: flex; flex-direction: column; gap: var(--ds-space-1); }

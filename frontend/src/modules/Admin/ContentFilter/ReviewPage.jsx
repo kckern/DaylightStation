@@ -10,18 +10,19 @@ import { ReviewTimeline } from './ReviewTimeline.jsx';
 import { ReviewKeyBar } from './ReviewKeyBar.jsx';
 import { useReviewKeys } from './useReviewKeys.js';
 import { useReviewStation } from './useReviewStation.js';
-import { isOpen } from './reviewScope.js';
+import { isOpen, plays } from './reviewScope.js';
 import { ReviewHeader } from './ReviewHeader.jsx';
 import { ReviewPlayer } from './ReviewPlayer.jsx';
 import { RowEditor } from './RowEditor.jsx';
-import { SignOffPanel } from './SignOffPanel.jsx';
+import { ApprovePanel, PANEL_ID, ReviewRail, tabId } from './ReviewRail.jsx';
 import { useFilmApproval, useFilmReviewOwner } from './useFilmApproval.js';
 import './ContentFilterAdmin.scss';
 
 /**
  * Admin -> Content filter -> one film, as a queue of its filtered parts with one part in hand
- * (owner, 2026-11-21; design ops "cf-journey"): one header line, the film, the timeline and the
- * part's card in a column that never scrolls, the list beside it. Plays sit on their own tab.
+ * (owner, 2026-11-21; design ops "cf-journey"): one header line, the stage rail (Refine › Review ›
+ * Approve, and Plays; its tabs set what the page shows), then the film, the timeline and the part's
+ * card in a column that never scrolls, the list beside it.
  */
 const logger = createAppLogger('admin').child('content-filter');
 const API = 'api/v1/content-filter';
@@ -84,9 +85,11 @@ function FilmReview({ ratingKey, rowId, owner }) {
   // The keyboard station: the cursor is `selected`; scope, verdicts and stepping live in the hook.
   // Not matched to Plex: a key that still holds household work shows its review; runs are refused.
   const notMatched = data?.match === 'unmatched';
-  const station = useReviewStation({ ratingKey, data, reload, refreshReview: refresh, selected, select, activeView, runBusy: running || notMatched });
+  const station = useReviewStation({ ratingKey, data, reload, refreshReview: refresh, selected, select, activeView, runBusy: running || notMatched, openRowId: rowId });
+  const stage = station.scope.stage;
+  // On Approve the part card is not on screen, so the keys that act on a part are off.
   const { redoOpen } = useReviewKeys(station.handlers, {
-    enabled: Boolean(data?.rows), redoOwner: `${ratingKey}\u001f${selected?.id ?? ''}`,
+    enabled: Boolean(data?.rows) && stage !== 'approve', redoOwner: `${ratingKey}\u001f${selected?.id ?? ''}`,
   });
   useVisibleRefresh({ active: Boolean(waiting), intervalMs: POLL_MS, reload, poll });
 
@@ -108,32 +111,28 @@ function FilmReview({ ratingKey, rowId, owner }) {
   const busyText = running ? 'A refine is running: effects, timing and the card text can change when it finishes.' : null;
   const roughFiltered = station.roughRefineCount;
   const index = row ? station.scoped.findIndex((r) => r.id === row.id) : -1;
-  const allDone = station.tally.total > 0 && station.tally.done === station.tally.total;
+  // Picking a part from the list or the timeline while on Approve goes back to the parts.
+  const pickPart = (r) => { if (stage === 'approve') station.setStage(plays(r) ? 'plays' : 'review', 'part', { keepCursor: true }); station.pick(r); };
   // The redo prompt, the last message and the preview retry sit inside the card, above its verdicts.
   const keyBar = <ReviewKeyBar redoOpen={redoOpen} helpOpen={station.helpOpen} onCloseHelp={station.handlers.escape}
     message={station.message} previewRecovery={station.previewRecovery} />;
   return (
     <div className="cf-review-page">
-      <ReviewHeader ratingKey={ratingKey} data={data} tally={station.tally} roughFiltered={roughFiltered} handlers={{ ...station.handlers, rework: station.rework }} blocked={notMatched}
-        approval={approval} onChanged={reload} flagged={station.flagged} refineAllCount={station.refineAllCount} roughLeft={station.roughLeftCount} />
+      <ReviewHeader ratingKey={ratingKey} data={data} stage={stage} roughFiltered={roughFiltered} handlers={{ ...station.handlers, rework: station.rework }} blocked={notMatched}
+        onChanged={reload} flagged={station.flagged} refineAllCount={station.refineAllCount} />
+      <ReviewRail stages={station.stages} plays={data.rows.filter(plays).length} value={stage} onChange={station.setStage} />
       {notMatched ? <Text size="sm" c="orange">{`Not matched to Plex: ${data.unmatched?.text || 'no Plex film'}. The review and override here are kept; runs are blocked.`}</Text> : null}
       {notice ? <Text size="sm" role="status">{notice}</Text> : null}
-      {roughFiltered && !running && !notMatched ? (
-        // Review on rough timing is allowed, but a refine moves a part and drops its verdict (review 2026-11-21).
-        <Text size="sm" className="cf-head__note">{`Refine first: ${roughFiltered} filtered part${roughFiltered === 1 ? ' is' : 's are'} still on rough timing, and a verdict on a part resets when it is refined. Approval needs refined timing.`}</Text>
-      ) : null}
-      <div className={`cf-review${roughFiltered && !running && !notMatched ? ' has-note' : ''}`}>
+      <div className="cf-review" id={PANEL_ID} role="tabpanel" aria-labelledby={tabId(stage)}>
         <div className="cf-review__side">
           <ReviewPlayer ratingKey={ratingKey} />
-          {data.rows.length ? <ReviewTimeline rows={station.scoped} selectedId={row?.id ?? null} onSelect={(r) => station.pick(r)} /> : null}
-          {allDone ? (
-            <div className="cf-signoff-card">
-              <Text fw={600} size="sm">{data.signOff?.parent ? 'Approved for family.' : data.status?.next === 'approve'
-                ? 'Every filtered part has a verdict. Approve for family at the top.' : 'Every filtered part has a verdict. Before approval:'}</Text>
-              <SignOffPanel signOff={data.signOff} approval={approval} busyText={running ? 'A run is open' : null} />
-            </div>
-          ) : null}
-          {row ? (
+          {data.rows.length ? <ReviewTimeline rows={station.scoped} selectedId={row?.id ?? null} onSelect={pickPart} /> : null}
+          {stage === 'approve' ? (
+            <>
+              <ApprovePanel data={data} approval={approval} tally={station.tally} running={running} />
+              {keyBar}
+            </>
+          ) : row ? (
             <RowEditor key={row.id} ratingKey={ratingKey} row={row} onChanged={reload} busyText={busyText}
               wordRulings={data.wordRulings || {}} handlers={station.handlers} canUndo={station.canUndo}
               position={index >= 0 ? { index, total: station.scoped.length } : null}
@@ -142,7 +141,7 @@ function FilmReview({ ratingKey, rowId, owner }) {
           ) : keyBar}
         </div>
         <ReviewList rows={data.rows} reviewed={data.reviewed} total={data.total} audit={data.audit}
-          selectedId={row?.id ?? null} onSelect={station.pick} scope={station.scope} onScope={station.setScope} refining={refining}
+          selectedId={row?.id ?? null} onSelect={pickPart} scope={station.scope} onScope={station.setScope} refining={refining}
           emptyText={EMPTY[data.status?.next] || null} />
       </div>
     </div>
