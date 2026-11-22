@@ -327,7 +327,7 @@ export function HomeView() {
   if (suggestions.loading && !suggestions.data) suggestionBody = <RowSkeleton />;
   else if (suggestions.error && !suggestions.data) {
     suggestionBody = <LoadErrorLine kind="suggestions" testId="home-suggestions-error" onRetry={retrySuggestions} />;
-  } else if (suggestions.data?.empty === true || rows.length === 0) {
+  } else if (!suggestions.error && (suggestions.data?.empty === true || rows.length === 0)) {
     suggestionBody = (
       <div data-testid="home-suggestions-empty">
         <EmptyState
@@ -338,54 +338,62 @@ export function HomeView() {
       </div>
     );
   } else {
-    suggestionBody = rows.map(row => (
-      <TileRow key={row.id} rowId={row.id} title={row.title}>
-        {collapseEditions(row.items, { idOf: raw => raw?.contentId ?? raw?.id, collapse: row.id !== 'carry-on' })
-          .map(group => tileFor(row.id, group.entry, group))}
-      </TileRow>
-    ));
+    suggestionBody = (
+      <>
+        {suggestions.error ? <LoadErrorLine kind="suggestions" testId="home-suggestions-error" onRetry={retrySuggestions} /> : null}
+        {rows.map(row => (
+          <TileRow key={row.id} rowId={row.id} title={row.title}>
+            {collapseEditions(row.items, { idOf: raw => raw?.contentId ?? raw?.id, collapse: row.id !== 'carry-on' })
+              .map(group => tileFor(row.id, group.entry, group))}
+          </TileRow>
+        ))}
+      </>
+    );
   }
 
   let recentBody;
   if (recent.loading && !recent.data) recentBody = <RowSkeleton />;
   else if (recent.error && !recent.data) {
     recentBody = <LoadErrorLine kind="recent" testId="home-recent-error" onRetry={retryRecent} />;
-  } else if (recentItems.length === 0) {
+  } else if (!recent.error && recentItems.length === 0) {
     recentBody = <p className="home-recents-empty" data-testid="home-recents-empty">Things played on any screen will show up here.</p>;
   } else {
     recentBody = (
-      <TileRow rowId="recent" title="Recent">
-        {collapseEditions(recentItems, { idOf: entry => entry?.contentId ?? entry?.id }).map(({ entry, editions }) => {
-          const item = toItem(entry);
-          if (!item) return null;
-          const title = presentTitle(entry) ?? item.title ?? 'Untitled';
-          const screens = nowOnIds.get(item.id);
-          const where = screens?.length ? `Now on ${nameFor(screens[0])}` : whereLine(entry, nameFor);
-          const collection = isCollection(item);
-          const editionItems = editions.length > 1 ? editions.map(toItem).filter(Boolean) : null;
-          const base = [playedAtLabel(entry.plays?.[0]?.startedAt ?? entry.lastPlayed), where].filter(Boolean).join(' · ');
-          const label = editionsLabel(editions.length);
-          const meta = label ? [base, label].filter(Boolean).join(' · ') : base;
-          return (
-            <HomeTile
-              key={item.id}
-              item={item}
-              title={title}
-              testId={tileTestId('recent', item.id)}
-              meta={meta || null}
-              progress={progressPercent(entry.percent ?? null, entry.finished === true)}
-              onPicture={() => run('tap', item, { entry })}
-              pictureLabel={collection ? `Open ${title}` : `Play ${title}`}
-              onVerb={kind => run(kind, item, { entry })}
-              favourite={favourites.has(item.id)}
-              watched={entry.finished === true}
-              removable
-              editions={editionItems}
-              onEdition={(edition) => { mediaLog.tileEditionOpened({ contentId: edition.id, editions: editions.length }); run('open', edition); }}
-            />
-          );
-        })}
-      </TileRow>
+      <>
+        {recent.error ? <LoadErrorLine kind="recent" testId="home-recent-error" onRetry={retryRecent} /> : null}
+        <TileRow rowId="recent" title="Recent">
+          {collapseEditions(recentItems, { idOf: entry => entry?.contentId ?? entry?.id }).map(({ entry, editions }) => {
+            const item = toItem(entry);
+            if (!item) return null;
+            const title = presentTitle(entry) ?? item.title ?? 'Untitled';
+            const screens = nowOnIds.get(item.id);
+            const where = screens?.length ? `Now on ${nameFor(screens[0])}` : whereLine(entry, nameFor);
+            const collection = isCollection(item);
+            const editionItems = editions.length > 1 ? editions.map(toItem).filter(Boolean) : null;
+            const base = [playedAtLabel(entry.plays?.[0]?.startedAt ?? entry.lastPlayed), where].filter(Boolean).join(' · ');
+            const label = editionsLabel(editions.length);
+            const meta = label ? [base, label].filter(Boolean).join(' · ') : base;
+            return (
+              <HomeTile
+                key={item.id}
+                item={item}
+                title={title}
+                testId={tileTestId('recent', item.id)}
+                meta={meta || null}
+                progress={progressPercent(entry.percent ?? null, entry.finished === true)}
+                onPicture={() => run('tap', item, { entry })}
+                pictureLabel={collection ? `Open ${title}` : `Play ${title}`}
+                onVerb={kind => run(kind, item, { entry })}
+                favourite={favourites.has(item.id)}
+                watched={entry.finished === true}
+                removable
+                editions={editionItems}
+                onEdition={(edition) => { mediaLog.tileEditionOpened({ contentId: edition.id, editions: editions.length }); run('open', edition); }}
+              />
+            );
+          })}
+        </TileRow>
+      </>
     );
   }
 
