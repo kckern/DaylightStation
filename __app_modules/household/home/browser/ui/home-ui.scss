@@ -8,6 +8,19 @@
   color: var(--ds-text-mid);
 }
 
+.home-entity-switch {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+  max-width: 16rem;
+
+  &__error {
+    color: var(--ds-danger);
+    text-align: right;
+  }
+}
+
 .home-row {
   display: flex;
   align-items: center;
