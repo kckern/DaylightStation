@@ -39,7 +39,8 @@ export function useMoveHere() {
 
   const move = useCallback(async (screenId, entry = {}) => {
     const deviceId = bareScreenId(screenId);
-    const snapshot = fleet?.store?.getEntry?.(deviceId)?.snapshot ?? null;
+    const fleetEntry = fleet?.store?.getEntry?.(deviceId) ?? null;
+    const snapshot = fleetEntry?.snapshot ?? null;
     const contentId = snapshot?.currentItem?.contentId ?? entry.contentId ?? null;
     const title = snapshot?.currentItem?.title ?? entry.title ?? null;
     const operationId = newOperationId();
@@ -55,6 +56,7 @@ export function useMoveHere() {
     };
 
     if (!local?.lifecycle?.adoptSnapshot) return fail('This device cannot play here right now.', 'NO_LOCAL_SESSION');
+    if (fleetEntry?.offline) return fail('That screen is offline.', 'SOURCE_OFFLINE');
     if (!snapshot?.currentItem || (contentId && entry.contentId && contentId !== entry.contentId)) {
       return fail('That screen is no longer playing it.', 'SOURCE_CHANGED');
     }

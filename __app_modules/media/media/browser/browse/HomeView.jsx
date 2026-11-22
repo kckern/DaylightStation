@@ -170,7 +170,7 @@ function NowOnRow({ entries, nameFor, run, favourites }) {
         // checks, which browser snapshots do not carry.
         const fleetEntry = store?.getEntry?.(deviceId) ?? null;
         const canRemote = Boolean(fleetEntry?.snapshot);
-        const canMove = Boolean(fleetEntry?.snapshot?.meta?.playbackOwner);
+        const canMove = Boolean(!fleetEntry?.offline && fleetEntry?.snapshot?.meta?.playbackOwner);
         const testId = tileTestId('now-on', `${deviceId}-${entry.contentId}`);
         const contextId = `now-on-${encodeURIComponent(deviceId)}-${encodeURIComponent(entry.contentId)}`;
         const item = toItem(entry);
