@@ -182,6 +182,7 @@ export default function SheetMusicScore() {
   const [serverErrors, setServerErrors] = useState(null);
   const [busy, setBusy] = useState(null);
   const [dialog, setDialog] = useState(null);
+  const [approvalRevision, setApprovalRevision] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   // The unsaved proposal behind the editor's segments: { proposal, key } where key is
   // the segmentsKey it produced, so Save draft can tell an edited proposal apart.
@@ -543,9 +544,16 @@ export default function SheetMusicScore() {
   // (a draft written elsewhere, or the XML changed under the same bar count), are
   // saved first so the server's strip and Polish agree with the kiosk.
   const onApprove = async () => {
-    if (hasDraft && !dirty && !partsDrift(learn.draft.segments, parts?.segments)) { setDialog('approve'); return; }
+    if (hasDraft && !dirty && !partsDrift(learn.draft.segments, parts?.segments)) {
+      setApprovalRevision(learn.draftRevision ?? null);
+      setDialog('approve');
+      return;
+    }
     const revision = await saveDraft();
-    if (revision) setDialog('approve');
+    if (revision) {
+      setApprovalRevision(revision);
+      setDialog('approve');
+    }
   };
 
   const posterKind = posterSaved || learn?.poster || 'none';
@@ -813,6 +821,7 @@ export default function SheetMusicScore() {
         opened={dialog != null}
         mode={dialog || 'approve'}
         scoreId={id}
+        expectedDraftRevision={approvalRevision}
         measures={measures}
         measureCount={measureCount}
         generated={generated || []}

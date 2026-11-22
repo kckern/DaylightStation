@@ -61,7 +61,7 @@ function LearnerImpact({ row, measures }) {
  * reloads through `onDraftChanged`.
  */
 export default function ApproveDialog({
-  opened, mode = 'approve', scoreId, measures = [], measureCount, generated = [],
+  opened, mode = 'approve', scoreId, expectedDraftRevision, measures = [], measureCount, generated = [],
   onClose, onDone, onDraftChanged, logger,
 }) {
   const [loading, setLoading] = useState(false);
@@ -81,6 +81,10 @@ export default function ApproveDialog({
           ? await DaylightAPI(`${ADMIN_PATH}/learn/draft-impact${q}`)
           : await DaylightAPI(`${ADMIN_PATH}/impact${q}`, { segments: generated.map(({ id, start, end }) => ({ id, start, end })) }, 'POST');
         if (cancelled) return;
+        if (mode === 'approve' && expectedDraftRevision !== undefined && res?.draftRevision !== expectedDraftRevision) {
+          onDraftChanged?.();
+          return;
+        }
         setImpact(Array.isArray(res?.impact) ? res.impact : []);
         setRevision(res?.draftRevision ?? null);
       } catch (err) {
@@ -96,7 +100,7 @@ export default function ApproveDialog({
     return () => { cancelled = true; };
     // generated is read once per opening; a new list would mean a new dialog.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opened, mode, scoreId]);
+  }, [opened, mode, scoreId, expectedDraftRevision]);
 
   const confirm = async () => {
     setBusy(true);

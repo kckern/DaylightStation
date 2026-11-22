@@ -545,6 +545,49 @@ describe('SheetMusicScore', () => {
     await waitFor(() => expect(learnReads()).toBeGreaterThan(readsBefore));
   });
 
+  it('reloads a newer draft before approval when it changed before the impact check', async () => {
+    learn = learnFile({ draft: { segments: [{ id: 'a', start: 0, end: 7, parts: ['rh', 'lh'] }] }, draftRevision: 'rev-seen' });
+    const changed = learnFile({
+      draft: { segments: [{ id: 'a', start: 0, end: 3, parts: ['rh'] }, { id: 'b', start: 4, end: 7, parts: ['rh', 'lh'] }] },
+      draftRevision: 'rev-other',
+    });
+    const approved = [];
+    let impactReads = 0;
+    api.mockImplementation((path, data, method) => {
+      if (path === `api/v1/admin/sheet-music/learn/draft-impact${q()}`) {
+        impactReads += 1;
+        if (impactReads === 1) {
+          learn = changed;
+          return Promise.resolve({ draftRevision: changed.draftRevision, impact: [] });
+        }
+        return Promise.resolve({ draftRevision: learn.draftRevision, impact: [] });
+      }
+      if (path === learnUrl() && method === 'PUT' && data.action === 'approve') {
+        approved.push(data);
+        return Promise.resolve({ file: learn, impact: [] });
+      }
+      return route(path, data, method);
+    });
+    renderPage();
+    await engravedReady();
+    await screen.findByRole('button', { name: 'Approve' });
+    expect(screen.getByRole('button', { name: 'Segment 1, Bars 1-8' })).toBeTruthy();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+    expect(await screen.findByText(/The draft changed in another tab/)).toBeTruthy();
+    expect(approved).toEqual([]);
+    expect(await screen.findByRole('button', { name: 'Segment 1, Bars 1-4' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Segment 2, Bars 5-8' })).toBeTruthy();
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() => expect(within(dialog).getByText('No learner has progress on this score.')).toBeTruthy());
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(approved).toHaveLength(1));
+    expect(approved[0]).toMatchObject({ action: 'approve', expectedDraftRevision: 'rev-other' });
+  });
+
   it('maps layout positions to engraved bars through measures[i].index', async () => {
     // Source bar 2 is all rests (no onsets, so no layout position) and bar 1 repeats:
     // layout positions 0..3 are source bars 0, 1, 3, 1.
