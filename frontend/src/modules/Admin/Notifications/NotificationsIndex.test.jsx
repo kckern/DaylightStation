@@ -88,6 +88,32 @@ describe('NotificationsIndex', () => {
     ));
   });
 
+  it('blocks invalid quiet-hour times, preserves Revert, then saves a correction', async () => {
+    wrap(<NotificationsIndex />);
+    const start = await screen.findByLabelText('Start');
+    fireEvent.change(start, { target: { value: '25:00' } });
+
+    const save = screen.getByRole('button', { name: 'Save', exact: true });
+    expect(save).toBeDisabled();
+    const revert = screen.getByRole('button', { name: 'Revert', exact: true });
+    expect(revert).toBeEnabled();
+    start.blur();
+    fireEvent.keyDown(document.body, { key: 's', ctrlKey: true });
+    expect(api.mock.calls.filter(([, , method]) => method === 'PUT')).toHaveLength(0);
+    fireEvent.click(revert);
+    expect(start).toHaveValue('21:00');
+    expect(api.mock.calls.filter(([, , method]) => method === 'PUT')).toHaveLength(0);
+
+    fireEvent.change(start, { target: { value: '20:00' } });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+    await waitFor(() => expect(api.mock.calls.filter(([, , method]) => method === 'PUT')).toHaveLength(1));
+    expect(api).toHaveBeenLastCalledWith('/api/v1/admin/notifications', {
+      quiet_hours: { enabled: true, start: '20:00', end: '07:00' },
+      cooldowns: { ceremony: 1200, default: 60 },
+    }, 'PUT');
+  });
+
   it('keeps refused edits dirty and reverts to the confirmed configuration without writing', async () => {
     wrap(<NotificationsIndex />);
     const start = await screen.findByLabelText('Start');

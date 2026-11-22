@@ -1,4 +1,5 @@
-const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+import { is24HourClockTime } from '#shared/contracts/notificationConfig.mjs';
+
 const DEFAULTS = { quiet_hours: { enabled: false, start: '21:00', end: '07:00' }, cooldowns: { default: 60 } };
 
 function validationError(message) {
@@ -29,7 +30,7 @@ export class NotificationConfigService {
 
   updateConfig(data = {}) {
     const qh = data.quiet_hours || {};
-    if (!TIME_RE.test(qh.start ?? '') || !TIME_RE.test(qh.end ?? '')) {
+    if (!is24HourClockTime(qh.start) || !is24HourClockTime(qh.end)) {
       throw validationError('quiet_hours start/end must be "HH:MM" 24-hour times');
     }
     const cooldowns = data.cooldowns || {};

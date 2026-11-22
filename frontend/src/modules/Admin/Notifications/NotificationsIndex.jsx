@@ -13,6 +13,7 @@ import {
   useAdminDraftState,
 } from '../shared/useAdminDraftState.js';
 import { useAdminSessionKey } from '../shared/useAdminSessionKey.js';
+import { is24HourClockTime } from '../../../../../shared/contracts/notificationConfig.mjs';
 
 const settingsPath = '/api/v1/admin/notifications';
 const editableConfig = ({ quiet_hours, cooldowns }) => ({ quiet_hours, cooldowns });
@@ -57,11 +58,13 @@ function NotificationSettings({ initial }) {
   const [error, setError] = useState(null);
   const pendingSave = useRef(false);
   const dirty = JSON.stringify(config) !== JSON.stringify(original);
+  const qh = config.quiet_hours;
+  const validQuietHours = is24HourClockTime(qh.start) && is24HourClockTime(qh.end);
   const clearDraft = useCallback(() => clearAdminDraft(ownerKey), [ownerKey]);
   useUnsavedGuard(dirty || saving, { label: 'notification settings', onDiscard: clearDraft });
 
   const save = async () => {
-    if (!dirty || pendingSave.current) return;
+    if (!dirty || !validQuietHours || pendingSave.current) return;
     pendingSave.current = true;
     setSaving(true);
     setError(null);
@@ -90,21 +93,20 @@ function NotificationSettings({ initial }) {
     setError(null);
   };
 
-  const qh = config.quiet_hours;
   const setQh = (patch) => setConfig((c) => ({ ...c, quiet_hours: { ...c.quiet_hours, ...patch } }));
   const setCooldown = (k, v) => setConfig((c) => ({ ...c, cooldowns: { ...c.cooldowns, [k]: v } }));
 
   return (
     <>
-      <SaveBar title="Notification settings" dirty={dirty} saving={saving} onSave={save} onRevert={revert} />
+      <SaveBar title="Notification settings" dirty={dirty} saving={saving} saveDisabled={!validQuietHours} onSave={save} onRevert={revert} />
       {error && <Text c="red" role="alert">{error}</Text>}
 
       <Paper p="md" withBorder>
         <Group justify="space-between" mb="sm"><Title order={5}>Quiet hours</Title>
           <Switch checked={qh.enabled} onChange={(e) => setQh({ enabled: e.currentTarget.checked })} label="Enabled" /></Group>
         <Group>
-          <TextInput label="Start" value={qh.start} onChange={(e) => setQh({ start: e.currentTarget.value })} w={120} />
-          <TextInput label="End" value={qh.end} onChange={(e) => setQh({ end: e.currentTarget.value })} w={120} />
+          <TextInput label="Start" type="time" value={qh.start} onChange={(e) => setQh({ start: e.currentTarget.value })} w={120} />
+          <TextInput label="End" type="time" value={qh.end} onChange={(e) => setQh({ end: e.currentTarget.value })} w={120} />
         </Group>
         <Text size="xs" c="dimmed" mt="xs">Non-critical notifications are suppressed during this window (household-local).</Text>
       </Paper>

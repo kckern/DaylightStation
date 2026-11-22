@@ -13,18 +13,20 @@ import { useHotkey } from '../../../lib/hooks/useHotkey.js';
  *   title       - Page title; strings get the standard mono style, nodes render as-is
  *   dirty       - Unsaved changes present
  *   saving      - Save in flight
+ *   saveDisabled - Disable Save while leaving Revert available
  *   onSave      - Save handler
  *   onRevert    - Revert handler
  *   headerExtra - Optional node rendered in the bar, before Revert/Save
  */
-function SaveBar({ title, dirty, saving, disabled = false, onSave, onRevert, headerExtra }) {
+function SaveBar({ title, dirty, saving, disabled = false, saveDisabled = false, onSave, onRevert, headerExtra }) {
   const canUseActions = dirty && !saving && !disabled;
-  const runShortcut = (event, action) => {
+  const canSave = canUseActions && !saveDisabled;
+  const runShortcut = (event, action, enabled) => {
     if (event.shiftKey) return false;
-    if (canUseActions) action();
+    if (enabled) action();
   };
-  useHotkey('mod+s', event => runShortcut(event, onSave), { code: 'KeyS' });
-  useHotkey('mod+z', event => runShortcut(event, onRevert), { code: 'KeyZ' });
+  useHotkey('mod+s', event => runShortcut(event, onSave, canSave), { code: 'KeyS' });
+  useHotkey('mod+z', event => runShortcut(event, onRevert, canUseActions), { code: 'KeyZ' });
 
   return (
     <Group
@@ -56,7 +58,7 @@ function SaveBar({ title, dirty, saving, disabled = false, onSave, onRevert, hea
           leftSection={<IconDeviceFloppy size={16} />}
           onClick={onSave}
           loading={saving}
-          disabled={!canUseActions}
+          disabled={!canSave}
           size="sm"
           data-testid="config-save-button"
         >
