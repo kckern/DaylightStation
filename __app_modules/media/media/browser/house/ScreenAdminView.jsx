@@ -141,6 +141,7 @@ export function ScreenAdminView() {
   const retireScreen = retiring?.screen;
   const mergeScreen = merging?.screen;
   const mergeTarget = merging?.into;
+  const canRetire = Array.isArray(retiring?.routines);
   const readRetireRoutines = useCallback(async (isCurrent, signal) => {
     if (!retireScreen) return;
     const result = await routinesFor(retireScreen, { signal });
@@ -151,6 +152,11 @@ export function ScreenAdminView() {
   }, [retireScreen, routinesFor]);
   const { reload: loadRetireRoutines } = useRefreshableRead(readRetireRoutines);
   useEffect(() => { if (retireScreen) loadRetireRoutines(); }, [retireScreen, loadRetireRoutines]);
+  const retryRetireRoutines = () => {
+    if (!retiring || retiring.loading || retiring.submitting) return;
+    setRetiring(current => current && { ...current, loading: true, error: null });
+    loadRetireRoutines();
+  };
 
   const readMergeRoutines = useCallback(async (isCurrent, signal) => {
     if (!mergeScreen || !mergeTarget) return;
@@ -169,7 +175,7 @@ export function ScreenAdminView() {
   const openRetire = screen => setRetiring({ screen, routines: null, loading: true, submitting: false, error: null });
   const confirmRetire = async () => {
     const active = retiring;
-    if (!active || active.loading || active.submitting) return;
+    if (!active || !Array.isArray(active.routines) || active.loading || active.submitting) return;
     setRetiring(current => current?.screen.id === active.screen.id ? { ...current, submitting: true, error: null } : current);
     const result = await admin.retire(active.screen);
     if (result.ok) setRetiring(current => current?.screen.id === active.screen.id ? null : current);
@@ -294,7 +300,8 @@ export function ScreenAdminView() {
         message="It leaves the screen list and its name becomes free. You can restore it later."
         confirmLabel={retiring?.loading ? 'Checking routines…' : 'Retire'}
         loading={Boolean(retiring?.submitting)}
-        onConfirm={() => { if (!retiring?.loading && !retiring?.submitting) confirmRetire(); }}
+        confirmDisabled={!canRetire || retiring?.loading || retiring?.submitting}
+        onConfirm={() => { if (canRetire && !retiring?.loading && !retiring?.submitting) confirmRetire(); }}
         onClose={() => setRetiring(null)}
       >
         {retiring && !retiring.loading && retiring.routines && (
@@ -307,7 +314,14 @@ export function ScreenAdminView() {
             ) : <Text size="sm">No routines point at it.</Text>}
           </div>
         )}
-        {retiring?.error && <Text size="sm" className="house-tone--failed" role="alert" mb="sm">{retiring.error}</Text>}
+        {retiring?.error && (
+          <Group gap="xs" mb="sm">
+            <Text size="sm" className="house-tone--failed" role="alert">{retiring.error}</Text>
+            <Button size="xs" variant="light" loading={retiring.loading} disabled={retiring.loading || retiring.submitting} onClick={retryRetireRoutines}>
+              Retry routines
+            </Button>
+          </Group>
+        )}
       </ConfirmModal>
 
       <ConfirmModal

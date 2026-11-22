@@ -120,6 +120,29 @@ describe('ScreenAdminView', () => {
     await waitFor(() => expect(api.retireScreen).toHaveBeenCalledWith('fleet:livingroom-tv', { confirm: true }));
   });
 
+  it('blocks retirement after a routine lookup failure until retry shows the affected routines', async () => {
+    api.screenRoutines.mockRejectedValueOnce(new Error('Routine lookup unavailable'));
+    wrap();
+    fireEvent.click(screen.getByTestId('screen-admin-retire-fleet:livingroom-tv'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Routine lookup unavailable');
+    expect(screen.getByRole('button', { name: 'Retire', exact: true })).toBeDisabled();
+    expect(api.retireScreen).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry routines' }));
+    expect(await screen.findByTestId('screen-admin-retire-routines')).toHaveTextContent('Kitchen Button 1');
+    fireEvent.click(screen.getByRole('button', { name: 'Retire', exact: true }));
+    await waitFor(() => expect(api.retireScreen).toHaveBeenCalledTimes(1));
+  });
+
+  it('allows retirement after a successful routine lookup finds none', async () => {
+    api.screenRoutines.mockResolvedValueOnce({ items: [] });
+    wrap();
+    fireEvent.click(screen.getByTestId('screen-admin-retire-fleet:livingroom-tv'));
+    expect(await screen.findByText('No routines point at it.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retire', exact: true }));
+    await waitFor(() => expect(api.retireScreen).toHaveBeenCalledTimes(1));
+  });
+
   it('merges a duplicate into its earlier self after confirmation, with Undo on the outcome', async () => {
     wrap();
     fireEvent.click(screen.getByTestId('screen-admin-merge-browser:new'));
