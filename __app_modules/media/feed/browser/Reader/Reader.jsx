@@ -2,7 +2,7 @@ import { useFeedListShortcuts } from '../useFeedListShortcuts.js';
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import { COMPACT_VIEWPORT_QUERY, useCompactViewport } from '@/lib/ui/useCompactViewport.js';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
-import { useRetryRegion } from '@/lib/ui/useRetryRegion.js';
+import { useFocusAfterRemoval, useRetryRegion } from '@/lib/ui/useRetryRegion.js';
 import { keepTabInPanel } from '@/lib/ui/dismiss/useDialogFocus.js';
 import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import { useSearchParams } from 'react-router-dom';
@@ -234,7 +234,8 @@ export default function Reader() {
   const [expandedUnreadIds, setExpandedUnreadIds] = useState(new Set());
   const compact = useCompactViewport();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const drawerActive = compact && drawerOpen;
+  const supportsSubscriptionFilters = activeView === 'all';
+  const drawerActive = compact && drawerOpen && supportsSubscriptionFilters;
   const wasDrawerActive = useRef(false);
   const drawerOpenerRef = useRef(null);
   const sentinelRef = useRef(null);
@@ -260,16 +261,21 @@ export default function Reader() {
     if (drawerActive) {
       sidebarRef.current?.focus({ preventScroll: true });
     } else if (wasDrawerActive.current) {
-      const target = compact ? drawerOpenerRef.current : sidebarRef.current;
-      target?.focus({ preventScroll: true });
-    } else if (compact && sidebarRef.current?.contains(document.activeElement)) {
+      if (supportsSubscriptionFilters) {
+        const target = compact ? drawerOpenerRef.current : sidebarRef.current;
+        target?.focus({ preventScroll: true });
+      } else {
+        inboxRef.current?.focus({ preventScroll: true });
+      }
+    } else if (compact && supportsSubscriptionFilters && sidebarRef.current?.contains(document.activeElement)) {
       drawerOpenerRef.current?.focus({ preventScroll: true });
     }
     // Dock an open drawer. An open request may arrive before the media-query
     // listener has reported that the compact control is visible again.
     if (!compact && wasDrawerActive.current) setDrawerOpen(false);
+    if (!supportsSubscriptionFilters && drawerOpen) setDrawerOpen(false);
     wasDrawerActive.current = drawerActive;
-  }, [compact, drawerActive]);
+  }, [compact, drawerActive, drawerOpen, supportsSubscriptionFilters]);
 
   const openDrawer = () => {
     if (window.matchMedia(COMPACT_VIEWPORT_QUERY).matches) setDrawerOpen(true);
@@ -381,6 +387,8 @@ export default function Reader() {
     retryArticles, activeView === 'offline' ? offlineLoading : loading || loadingMore,
   );
   const inboxRef = inboxRegion.ref;
+  const sidebarFocusRecovery = useFocusAfterRemoval(focusInbox);
+  const openerFocusRecovery = useFocusAfterRemoval(focusInbox);
   const handleOfflineRemoved = (itemId, rowHadFocus) => {
     if (activeView !== 'offline') return;
     setOfflineItems(current => current.filter(item => item.id !== itemId));
@@ -566,7 +574,7 @@ export default function Reader() {
     });
   };
 
-  const isFiltered = activeFeeds.size > 0 || HISTORY_VIEWS.has(activeView);
+  const isFiltered = (supportsSubscriptionFilters && activeFeeds.size > 0) || HISTORY_VIEWS.has(activeView);
   const visibleArticles = (activeView === 'offline' ? offlineItems : articles)
     .filter(article => isArticleVisibleInReaderView(article, activeView, expandedUnreadIds));
   const dayGroups = smartGroup(visibleArticles, isFiltered);
@@ -625,9 +633,9 @@ export default function Reader() {
   const errorMessage = activeView === 'offline' ? offlineError : streamError?.message;
 
   return (
-    <div className="reader-view">
+    <div className={`reader-view ${supportsSubscriptionFilters ? '' : 'reader-view--without-subscriptions'}`}>
       {drawerActive && <div className="reader-drawer-backdrop" onClick={closeDrawer} aria-hidden="true" />}
-      <aside
+      {supportsSubscriptionFilters && <aside
         ref={sidebarRef}
         tabIndex={-1}
         id="reader-subscriptions"
@@ -637,6 +645,7 @@ export default function Reader() {
         inert={compact && !drawerActive ? '' : undefined}
         onKeyDown={drawerActive ? handleDrawerKeyDown : undefined}
         className={`reader-sidebar-wrapper ${drawerActive ? 'open' : ''}`}
+        {...sidebarFocusRecovery}
       >
         <button type="button" className="reader-drawer-close" onClick={closeDrawer} aria-label="Close subscriptions">
           <UiIcon name="close" size={22} />
@@ -652,15 +661,15 @@ export default function Reader() {
             onClearFilters={handleMobileClearFilters}
           />
         </section>
-      </aside>
+      </aside>}
       <span className="feed-visually-hidden" role="status" aria-live="polite" aria-atomic="true">
         {loadingMore ? 'Loading more articles' : ''}
       </span>
       <section className="reader-inbox" aria-label="Reader articles" {...inboxRegion} inert={drawerActive ? '' : undefined}>
         <div className="reader-mobile-toolbar">
-          <button ref={drawerOpenerRef} className="reader-hamburger" onClick={openDrawer} aria-label="Open subscriptions" aria-expanded={drawerActive} aria-controls="reader-subscriptions">
+          {supportsSubscriptionFilters && <button ref={drawerOpenerRef} className="reader-hamburger" onClick={openDrawer} aria-label="Open subscriptions" aria-expanded={drawerActive} aria-controls="reader-subscriptions" {...openerFocusRecovery}>
             <span /><span /><span />
-          </button>
+          </button>}
           <span className="reader-mobile-title">
             {activeView === 'offline' ? 'Offline articles' : HISTORY_VIEWS.has(activeView) ? `${activeView[0].toUpperCase()}${activeView.slice(1)} articles` : activeFeeds.size > 0 ? `${activeFeeds.size} feed${activeFeeds.size > 1 ? 's' : ''} selected` : 'All Articles'}
           </span>

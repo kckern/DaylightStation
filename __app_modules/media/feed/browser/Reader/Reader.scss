@@ -20,6 +20,10 @@
   background: var(--feed-canvas);
 }
 
+.reader-view--without-subscriptions {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 // ---- Mobile toolbar + hamburger (hidden on desktop) ----
 
 .reader-mobile-toolbar {
