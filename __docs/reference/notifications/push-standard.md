@@ -157,6 +157,53 @@ sends both, composed in `composition/parentDigest.mjs`.
   `school.zero-days.sent`, and warnings `school.parent-digest.name-failed`,
   `learner-failed`, `economy-failed`, `ledger-failed`, `verdict-failed`.
 
+## How a push travels
+
+Every household push is one `NotificationService.send(intent)`; no app calls
+Home Assistant `notify` itself. The exceptions are the owner-configured trigger
+actuation (`TriggerActuationGateway`), the school grading HA script (below) and
+the supervision approval notifier, which keeps its own nonce callback path.
+
+**The rich model** (domain, transport-neutral):
+
+- `presentation` (`NotificationPresentation`): `tag` (replace the card),
+  `group`, `alertOnce`, `ttlSeconds`, `importance` (`low|default|high`),
+  `channel`, `imageUrl` and `deepLink` (backend paths starting with `/`), `icon`
+  (a key).
+- `actions` (`NotificationAction[]`): `id` (the producer's string, unchanged on
+  every transport), `kind` (`button|reply|open`), `label`, `requiresUnlock`,
+  `destructive`, `replyPlaceholder`, `deepLink` (open only). An action without an
+  `id` is an older in-app action (`{label, action, data}`) and push transports
+  skip it.
+- `recipient: {username}`; `household_alert` and `system` with no username go to
+  the head of household. A producer whose own config names an HA target keeps it
+  as `metadata.haNotifyService`, and its recipient is the user whose profile names
+  that target, else the head of household.
+- Legacy `metadata.pushData` (the `pushData()` block) still works: it maps into
+  `presentation`, and its other keys pass through to Home Assistant unchanged.
+
+**The `push` channel** (`CompositePushChannel`) uses the DaylightStation Android
+app when the recipient's phone said `push.hello` on the WebSocket bus in the last
+90 s and acks within 4 s; otherwise the HA companion app. A late phone is sent
+`push.cancel`, so only one transport shows a notification. Events:
+`notification.push.route {transport, fellBack}`, `notification.android.connected
+| delivered | ack-timeout`.
+
+**Answerable pushes stay on Home Assistant.** A push with a `button` or `reply`
+action always goes through HA, and the Android wire carries `open` actions only.
+Device auth is a placeholder (`IPushDeviceAuth` / `NetworkTrustPushDeviceAuth`,
+allow-all): anything on the household network, kiosks included, could claim to be
+the phone or press for it. `POST /api/v1/notifications/actions {notificationId,
+actionId, reply?, username?}` exists (200 / 400 / 401 `DEVICE_UNAUTHORIZED` / 404
+`ACTION_UNKNOWN` / 409 / 502), but no app registers an action handler with it
+until presses carry device auth. DoNow's `DoNowActionHandler` is built and not
+registered.
+
+**Producers bypass governance on purpose.** The migrated senders already decide
+when to push, so each send carries its own dedupe key (`createPushSender`) and
+approvals are `critical`; the default 60-minute cooldown and quiet hours never
+swallow one.
+
 ## The `notification` script variable
 
 `SchoolGradingHookAdapter` sends a `notification` variable with every call. The
