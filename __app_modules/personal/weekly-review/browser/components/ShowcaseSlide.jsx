@@ -1,7 +1,7 @@
 // The weekly showcase: one slide per child closing the window's last day.
 // A collage of the week's pinned prints on the left, and on the right what the
 // child did this week, as a few short bullets.
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
 import WorkImage from './WorkImage.jsx';
 import { kidStyle } from './schoolWork.js';
@@ -15,11 +15,11 @@ const CROSSFADE_MS = 200;
 const MAX_IMAGES = 6;
 const MAX_BULLETS = 5;
 
+// One layout per count, none with a hole: 3 is a large print with two stacked
+// beside it, 5 is three over two centred.
+const COLLAGE_CLASS = ['', 'one', 'two', 'three', 'four', 'five', 'six'];
 function collageClass(count) {
-  if (count <= 1) return 'showcase-collage--one';
-  if (count === 2) return 'showcase-collage--two';
-  if (count <= 4) return 'showcase-collage--four';
-  return 'showcase-collage--six';
+  return `showcase-collage--${COLLAGE_CLASS[Math.min(Math.max(count, 1), MAX_IMAGES)]}`;
 }
 
 function Bullets({ bullets }) {
@@ -63,7 +63,17 @@ function BulletStack({ bullets }) {
 }
 
 export default function ShowcaseSlide({ item, index, total, color }) {
-  const images = (item?.images || []).filter(Boolean).slice(0, MAX_IMAGES);
+  // A print whose image fails leaves the collage, which reflows to the new
+  // count; if every image fails the slide takes the no-images layout.
+  const [failedUrls, setFailedUrls] = useState(() => new Set());
+  const onFail = useCallback((url) => {
+    setFailedUrls(prev => (prev.has(url) ? prev : new Set(prev).add(url)));
+  }, []);
+  // Keys come from the original position, so a reflow keeps the survivors
+  // mounted (no replayed entrance).
+  const images = (item?.images || []).filter(Boolean).slice(0, MAX_IMAGES)
+    .map((url, i) => ({ url, key: `${i}:${url}` }))
+    .filter(({ url }) => !failedUrls.has(url));
   const bullets = (item?.bullets || []).filter(Boolean).slice(0, MAX_BULLETS);
 
   useEffect(() => {
@@ -83,13 +93,13 @@ export default function ShowcaseSlide({ item, index, total, color }) {
       <span className="showcase-band" aria-hidden="true" />
       {images.length > 0 && (
         <div className={`showcase-collage ${collageClass(images.length)}`}>
-          {images.map((url, i) => (
+          {images.map(({ url, key }, i) => (
             <div
-              key={`${i}:${url}`}
+              key={key}
               className="showcase-print"
               style={{ '--tilt': `${TILTS[i % TILTS.length]}deg`, animationDelay: `${i * STAGGER_MS}ms` }}
             >
-              <WorkImage item={{ imageUrl: url, title: '', subject: null }} alt="" />
+              <WorkImage item={{ imageUrl: url, title: '', subject: null }} alt="" onFail={onFail} />
             </div>
           ))}
         </div>

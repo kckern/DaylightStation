@@ -251,14 +251,17 @@ $school-font: "Roboto Condensed", sans-serif;
   inset: 0;
   background: #000;
   display: grid;
-  grid-template-columns: minmax(0, 58fr) minmax(0, 42fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 40vw);
+  column-gap: 4vw;
+  padding-inline: 5vw;
+  box-sizing: border-box;
   align-items: center;
   font-family: $school-font;
   color: #fff;
 
   &--no-images {
     grid-template-columns: minmax(0, 1fr);
-    .showcase-text { padding-left: 12vw; max-width: 60vw; }
+    .showcase-text { padding-left: 7vw; max-width: 60vw; }
   }
 
   .showcase-band {
@@ -272,12 +275,14 @@ $school-font: "Roboto Condensed", sans-serif;
 
   .showcase-text {
     box-sizing: border-box;
-    padding: 0 5vw 0 2vw;
     min-width: 0;
   }
 
+  // Balanced so the name never strands "Week" on a line of its own.
   .showcase-title {
     margin: 0 0 40px;
+    max-width: 36ch;
+    text-wrap: balance;
     font-size: 64px;
     font-weight: 700;
     line-height: 1.05;
@@ -326,14 +331,15 @@ $school-font: "Roboto Condensed", sans-serif;
 }
 
 // The collage: prints overlap a little, each at its own tilt, and settle one
-// after another. Sized per count so the whole collage stays within 80vh.
+// after another. Centred in its column, sized per count so the whole collage
+// stays within 80vh and inside the column (about 46vw at 1080p), with no holes.
 .showcase-collage {
   display: grid;
   justify-content: center;
   align-content: center;
   justify-items: center;
   align-items: center;
-  padding: 0 2vw 0 4vw;
+  min-width: 0;
 
   .showcase-print {
     margin: -2%;
@@ -341,30 +347,39 @@ $school-font: "Roboto Condensed", sans-serif;
   }
 
   .work-print { transform: rotate(var(--tilt, -2deg)); }
-  .work-print-glyph { font-size: 72px; }
 
   &.showcase-collage--one {
-    .work-print-img { height: 64vh; max-width: 48vw; }
-    .work-print-card { width: 46vh; height: 56vh; }
-    .work-print-glyph { font-size: 140px; }
+    .work-print-img { height: 64vh; max-width: 40vw; }
   }
 
   &.showcase-collage--two {
     grid-template-columns: repeat(2, auto);
-    .work-print-img { height: 52vh; max-width: 24vw; }
-    .work-print-card { width: 22vw; height: 46vh; }
+    .work-print-img { height: 52vh; max-width: 19vw; }
+  }
+
+  // A large print on the left, two stacked on its right.
+  &.showcase-collage--three {
+    grid-template-columns: repeat(2, auto);
+    grid-template-rows: repeat(2, auto);
+    .showcase-print:first-child { grid-row: 1 / span 2; }
+    .work-print-img { height: 29vh; max-width: 15vw; }
+    .showcase-print:first-child .work-print-img { height: 62vh; max-width: 25vw; }
   }
 
   &.showcase-collage--four {
     grid-template-columns: repeat(2, auto);
-    .work-print-img { height: 33vh; max-width: 24vw; }
-    .work-print-card { width: 26vh; height: 30vh; }
+    .work-print-img { height: 33vh; max-width: 19vw; }
   }
 
+  // Rows of three; five leaves two centred under the three.
+  &.showcase-collage--five,
   &.showcase-collage--six {
-    grid-template-columns: repeat(3, auto);
-    .work-print-img { height: 32vh; max-width: 16vw; }
-    .work-print-card { width: 14vw; height: 28vh; }
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-content: center;
+    .showcase-print { flex: 0 0 auto; width: calc(100% / 3 - 1px); display: flex; justify-content: center; }
+    .work-print-img { height: 32vh; max-width: 12vw; }
     .work-print-tape { width: 96px; margin-left: -48px; }
   }
 }

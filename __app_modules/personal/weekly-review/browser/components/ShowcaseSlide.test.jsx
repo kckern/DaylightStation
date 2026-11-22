@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, fireEvent } from '@testing-library/react';
 import React from 'react';
 import ShowcaseSlide from './ShowcaseSlide.jsx';
 
@@ -45,9 +45,9 @@ describe('ShowcaseSlide', () => {
   it.each([
     [1, 'showcase-collage--one'],
     [2, 'showcase-collage--two'],
-    [3, 'showcase-collage--four'],
+    [3, 'showcase-collage--three'],
     [4, 'showcase-collage--four'],
-    [5, 'showcase-collage--six'],
+    [5, 'showcase-collage--five'],
     [6, 'showcase-collage--six'],
   ])('lays out %i image(s) as %s', (n, cls) => {
     const { container } = render(<ShowcaseSlide item={showcase({ images: imagesOf(n) })} index={0} total={1} />);
@@ -75,5 +75,23 @@ describe('ShowcaseSlide', () => {
     expect(container.querySelector('.showcase-bullet-layer--out')).toBeNull();
     expect(container.textContent).not.toContain('Finished two books');
     expect(container.textContent).toContain('Read every night');
+  });
+
+  it('drops a print whose image fails and reflows to the new count', () => {
+    const { container } = render(<ShowcaseSlide item={showcase()} index={0} total={1} />);
+    fireEvent.error(container.querySelector('img[src="/img/2.jpg"]'));
+    expect([...container.querySelectorAll('img.work-print-img')].map(i => i.getAttribute('src')))
+      .toEqual(['/img/1.jpg', '/img/3.jpg']);
+    expect(container.querySelector('.work-print-card')).toBeNull(); // no blank glyph print
+    expect(container.querySelector('.showcase-collage').classList.contains('showcase-collage--two')).toBe(true);
+  });
+
+  it('takes the no-images layout when every image fails', () => {
+    const { container } = render(<ShowcaseSlide item={showcase({ images: ['/img/a.jpg', '/img/b.jpg'] })} index={0} total={1} />);
+    fireEvent.error(container.querySelector('img[src="/img/a.jpg"]'));
+    fireEvent.error(container.querySelector('img[src="/img/b.jpg"]'));
+    expect(container.querySelector('.showcase-collage')).toBeNull();
+    expect(container.querySelector('.weekly-review-showcase--no-images')).not.toBeNull();
+    expect(screen.getByRole('heading').textContent).toBe("Robin's School Work This Week");
   });
 });

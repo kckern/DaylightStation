@@ -1,7 +1,8 @@
 // A piece of school work as a pinned print: the work's own image when there is
 // one, otherwise a title card on the same paper (subject glyph over the title,
 // on a light tint of the child's hue). Falls back on a missing image or a load
-// error. Reused by the end-of-window showcase.
+// error, unless the caller passes `onFail`: then a failed image is reported to
+// it instead (the showcase collage drops the print rather than show a blank).
 import React, { useState } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
 import { subjectGlyph } from './schoolWork.js';
@@ -9,7 +10,7 @@ import { subjectGlyph } from './schoolWork.js';
 let _l;
 const logger = () => (_l ||= getLogger().child({ component: 'weekly-review-work-image' }));
 
-function Print({ item, alt, className }) {
+function Print({ item, alt, className, onFail }) {
   const [failed, setFailed] = useState(false);
   const showImage = !!item.imageUrl && !failed;
   return (
@@ -22,7 +23,8 @@ function Print({ item, alt, className }) {
           alt={alt ?? (item.title || '')}
           onError={() => {
             logger().warn('reel.school-image-error', { kind: item.kind, imageUrl: item.imageUrl });
-            setFailed(true);
+            if (onFail) onFail(item.imageUrl);
+            else setFailed(true);
           }}
         />
       ) : (
@@ -37,8 +39,8 @@ function Print({ item, alt, className }) {
 
 // `alt` defaults to the work's title; pass "" where the title is already
 // written next to the print.
-export default function WorkImage({ item, alt, className }) {
+export default function WorkImage({ item, alt, className, onFail }) {
   if (!item) return null;
   // Keyed on the image so a new item gets a fresh try at loading.
-  return <Print key={item.imageUrl || 'none'} item={item} alt={alt} className={className} />;
+  return <Print key={item.imageUrl || 'none'} item={item} alt={alt} className={className} onFail={onFail} />;
 }
