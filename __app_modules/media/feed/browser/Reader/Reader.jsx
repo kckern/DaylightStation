@@ -56,7 +56,7 @@ function groupByDay(articles) {
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
 
-  const dayKey = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  const dayKey = (d) => `day:${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
   const todayKey = dayKey(today);
   const yesterdayKey = dayKey(yesterday);
 
@@ -87,7 +87,7 @@ function groupByWeek(articles) {
     // Monday of this week
     const mon = new Date(d);
     mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-    const key = `${mon.getFullYear()}-${mon.getMonth()}-${mon.getDate()}`;
+    const key = `week:${mon.getFullYear()}-${mon.getMonth()}-${mon.getDate()}`;
     const label = `Week of ${mon.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
     if (!map.has(key)) {
       const group = { key, label, articles: [] };
@@ -105,7 +105,7 @@ function groupByMonth(articles) {
   const map = new Map();
   for (const article of articles) {
     const d = new Date(article.published);
-    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    const key = `month:${d.getFullYear()}-${d.getMonth()}`;
     const label = d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
     if (!map.has(key)) {
       const group = { key, label, articles: [] };
@@ -129,7 +129,7 @@ function groupBySeason(articles) {
     // Dec(11)=Winter of next year, Jan(0)-Feb(1)=Winter of this year
     const seasonIdx = m === 11 ? 0 : Math.floor((m + 1) / 3); // 0=Winter,1=Spring,2=Summer,3=Fall
     const yr = m === 11 ? d.getFullYear() + 1 : d.getFullYear();
-    const key = `${yr}-${seasonIdx}`;
+    const key = `season:${yr}-${seasonIdx}`;
     const label = `${SEASON_NAMES[seasonIdx]} ${yr}`;
     if (!map.has(key)) {
       const group = { key, label, articles: [] };
@@ -147,7 +147,7 @@ function groupByYear(articles) {
   const map = new Map();
   for (const article of articles) {
     const d = new Date(article.published);
-    const key = `${d.getFullYear()}`;
+    const key = `year:${d.getFullYear()}`;
     const label = key;
     if (!map.has(key)) {
       const group = { key, label, articles: [] };
@@ -198,7 +198,7 @@ function smartGroup(articles, isFiltered) {
     }
   }
   if (undatedArticles.length > 0) {
-    groups.push({ key: 'publication-date-unknown', label: 'Publication date unknown', articles: undatedArticles });
+    groups.push({ key: 'unknown:publication-date', label: 'Publication date unknown', articles: undatedArticles });
   }
   return sortWithinGroups(groups);
 }
