@@ -52,6 +52,54 @@ describe('refine from the review page', () => {
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0].body).toEqual({ kind: 'send-back', cues: ['a', 'l'] });
   });
+  it('Shift+R confirms before refining a rough group that contains hand-fixed cues', async () => {
+    const mixed = row('subject:billboard', 'Billboard', ['a', 'b'], { kind: 'picture', modality: 'shown', handFixed: true });
+    payload = base([mixed]);
+    render(ui());
+    key('R', { shiftKey: true });
+    expect(await screen.findByText(/remove saved hand-fixed timing/i)).toBeTruthy();
+    expect(calls).toHaveLength(0);
+    key('R', { shiftKey: true });
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0].body).toEqual({ kind: 'send-back', cues: ['a', 'b'] });
+  });
+  it('the Refine all button also confirms the exact bulk target before sending hand-fixed cues', async () => {
+    const mixed = row('subject:billboard', 'Billboard', ['a', 'b'], { kind: 'picture', modality: 'shown', handFixed: true });
+    payload = base([mixed]);
+    render(ui());
+    const button = screen.getByRole('button', { name: /^Refine all 1/ });
+    fireEvent.click(button);
+    expect(await screen.findByText(/remove saved hand-fixed timing/i)).toBeTruthy();
+    expect(calls).toHaveLength(0);
+    fireEvent.click(button);
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0].body).toEqual({ kind: 'send-back', cues: ['a', 'b'] });
+  });
+  it('the overflow refine-all-again action uses the same hand-fixed confirmation', async () => {
+    const mixed = row('subject:billboard', 'Billboard', ['a', 'b'], { kind: 'picture', modality: 'shown', handFixed: true });
+    payload = base([mixed]);
+    render(ui());
+    fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    const item = await screen.findByRole('menuitem', { name: /Refine all 1 filtered parts again/ });
+    fireEvent.click(item);
+    expect(await screen.findByText(/remove saved hand-fixed timing/i)).toBeTruthy();
+    expect(calls).toHaveLength(0);
+    fireEvent.click(item);
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0].body).toEqual({ kind: 'send-back', cues: ['a', 'b'] });
+  });
+  it('a bulk hand-fixed confirmation happens before queueing during an open run', async () => {
+    const mixed = row('subject:billboard', 'Billboard', ['a', 'b'], { kind: 'picture', modality: 'shown', handFixed: true });
+    payload = base([mixed], { job: { id: 'r1', kind: 'send-back', status: 'running', step: 'refine', cues: ['x'] } });
+    render(ui());
+    key('R', { shiftKey: true });
+    expect(await screen.findByText(/remove saved hand-fixed timing/i)).toBeTruthy();
+    expect(calls).toHaveLength(0);
+    expect(screen.queryByText(/Queued:/)).toBeNull();
+    key('R', { shiftKey: true });
+    expect(await screen.findByText(/Queued: 1 filtered part refines/)).toBeTruthy();
+    expect(calls).toHaveLength(0);
+  });
   it('the header offers Refine all N for the rough filtered parts', async () => {
     payload = base(rows);
     render(ui());

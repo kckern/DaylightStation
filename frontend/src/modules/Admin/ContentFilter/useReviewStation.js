@@ -246,6 +246,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   // One run per film: presses while a run is open collect here and go out once it finishes well;
   // they stay queued (and say so) if it stopped or failed, and leave the queue only once sent.
   const [pendingRefine, setPendingRefine] = useState(() => new Set());
+  const handFixedRefineArm = useRef(null);
   const notMatched = data?.match === 'unmatched';
   const job = data?.job || null;
   const running = Boolean(job && (job.status === 'queued' || job.status === 'running'));
@@ -298,8 +299,26 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   const refineAll = ({ again = false } = {}) => {
     const targets = (rows || []).filter((r) => !plays(r) && !isSceneRow(r) && (again || r.timing === 'rough'));
     const cues = [...new Set(targets.flatMap(cuesOf))];
+    const handFixed = targets.filter((r) => r.handFixed);
+    if (handFixed.length) {
+      const signature = [...cues].sort().join('\0');
+      if (handFixedRefineArm.current?.signature !== signature) {
+        clearTimeout(handFixedRefineArm.current?.timer);
+        const timer = setTimeout(() => { handFixedRefineArm.current = null; }, REWORK_ARM_MS);
+        handFixedRefineArm.current = { signature, timer };
+        const count = handFixed.length;
+        setMessage(`Refining will remove saved hand-fixed timing on ${count} filtered part${count === 1 ? '' : 's'}. Press Shift+R or click Refine all again to continue.`);
+        return;
+      }
+      clearTimeout(handFixedRefineArm.current.timer);
+      handFixedRefineArm.current = null;
+    } else {
+      clearTimeout(handFixedRefineArm.current?.timer);
+      handFixedRefineArm.current = null;
+    }
     queueRefine(cues, `${targets.length} filtered part${targets.length === 1 ? '' : 's'}`);
   };
+  useEffect(() => () => clearTimeout(handFixedRefineArm.current?.timer), []);
   // When the film's run closes: a finished run sends the queue; a stopped or failed one keeps it.
   const wasRunning = useRef(running);
   useEffect(() => {

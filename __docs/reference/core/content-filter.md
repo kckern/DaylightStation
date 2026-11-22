@@ -1052,10 +1052,13 @@ line (Space, Enter, W, ← →, ?). A word skipped as an exchange is listed with
 `isSceneRow` (no members, not `cue:`) decides scene handling, `keysKindOf` the effect keys.
 
 **Refine** (`useReviewStation.js`): R sends a send-back of the part's member cues (on a hand-fixed
-part, the first R warns that refining drops the hand fix and the second sends); Shift+R and Refine
-all send one send-back of every filtered, non-scene part on rough timing (Refine all again: every
-filtered part), never the parts that play (owner, 2026-11-21). One run per film: presses while a run
-is open collect on the page ("Queued") and go out as one send-back only when the run finishes
+part, the first R warns that refining drops the hand fix and the second sends); Shift+R, the header
+Refine all button and the overflow Refine all again send one send-back of their filtered, non-scene
+targets (rough timing for Shift+R, every filtered part for Refine all again), never the parts that
+play. If any bulk target contains hand-fixed timing, the first action warns and the same action a
+second time within four seconds confirms the exact target before sending or queueing it. One run per
+film: presses while a run is open collect on the page ("Queued") and go out as one send-back only
+when the run finishes
 `done`; after a stopped or failed run they stay queued and the page says so (the next R sends them).
 A refine moves a part, which drops its verdict, so a part being refined takes no verdict ("Give it a
 verdict when the new timing lands") and auto-advance skips it. While filtered parts are rough, a

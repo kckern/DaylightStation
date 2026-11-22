@@ -7,7 +7,7 @@ const KEYMAP = [
   ['Space', 'Play / pause the film'], ['Enter', 'Play this part with its effect (from 4 s before)'], ['W', 'Play this part without the effect'],
   ['→ / ←', 'Next / previous part'], ['A', 'Approve (fine as it is)'], ['X', 'Let it play (take the filter off)'],
   ['D', 'Redo, then 1 edges, 2 category, 3 action, 4 timing, Enter no reason'], ['U', 'Undo the last verdict'],
-  ['R', 'Refine this part (measure its timing)'], ['Shift+R', 'Refine every filtered part still on rough timing'],
+  ['R', 'Refine this part (measure its timing)'], ['Shift+R', 'Refine every filtered part still on rough timing; confirms if any has hand-fixed timing'],
   ['M / P', 'Words: mute / bleep'], ['B / K', 'Picture: blur / skip. Scenes: hide picture / skip'], ['O', 'Effect off'],
   ['[ / ]', 'Bleep quieter / louder'], ['Shift+D', 'Rework every part marked redo'], ['?', 'This list'], ['Esc', 'Close'],
 ];

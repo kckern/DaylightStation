@@ -13,7 +13,8 @@ import { useEffect, useRef, useState } from 'react';
  * Keymap (owner, 2026-11-21; ops design cf-journey): Space play/pause (always, even on a focused
  * button), Enter play the part with its effect, W without it, ← → step, A approve, X let it play,
  * D redo (then 1-4 / Enter), U undo, R refine this part, Shift+R refine every rough filtered part,
- * M P B K O effect, [ ] bleep level, Shift+D rework flagged, ? keys.
+ * M P B K O effect, [ ] bleep level, Shift+D rework flagged, ? keys. Bulk refine confirms first
+ * when any target has hand-fixed timing.
  */
 const NON_TEXT_INPUT = new Set(['radio', 'checkbox', 'button', 'range', 'submit', 'reset', 'image', 'file', 'color']);
 const REASONS = { 1: 'edges', 2: 'category', 3: 'action', 4: 'timing' };
