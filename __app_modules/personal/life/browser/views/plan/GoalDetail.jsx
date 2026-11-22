@@ -124,7 +124,7 @@ export function GoalDetail({ goalId, username }) {
         <Paper p="sm" withBorder>
           <Text size="sm" fw={500} mb="xs">State History</Text>
           <Timeline bulletSize={20}>
-            {goal.state_history.slice(-5).reverse().map((h, i) => (
+            {goal.state_history.slice().reverse().map((h, i) => (
               <Timeline.Item
                 key={i}
                 bullet={<IconHistory size={12} />}
