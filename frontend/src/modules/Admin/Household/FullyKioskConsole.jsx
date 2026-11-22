@@ -593,7 +593,13 @@ function DeviceConsole({ deviceId }) {
                                 <Table.Td><Badge color={setting.sensitive ? 'red' : setting.editable ? 'blue' : 'gray'}>{setting.sensitive ? 'Masked' : setting.editable ? 'Editable' : 'Read only'}</Badge></Table.Td>
                                 <Table.Td>
                                   {setting.editable && (
-                                    <Button size="compact-xs" disabled={!dirty || settingSaving.has(setting.key)} loading={settingSaving.has(setting.key)} onClick={() => saveSetting(setting)}>Save</Button>
+                                    <Button
+                                      aria-label={`Save ${setting.key}`}
+                                      size="compact-xs"
+                                      disabled={!dirty || settingSaving.has(setting.key)}
+                                      loading={settingSaving.has(setting.key)}
+                                      onClick={() => saveSetting(setting)}
+                                    >Save</Button>
                                   )}
                                 </Table.Td>
                               </Table.Tr>

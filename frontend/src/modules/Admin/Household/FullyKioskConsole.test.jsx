@@ -272,7 +272,7 @@ describe('FullyKioskConsole', () => {
 
     const booleanRow = screen.getByText('keepScreenOn').closest('tr');
     fireEvent.click(within(booleanRow).getByRole('switch'));
-    fireEvent.click(within(booleanRow).getByRole('button', { name: 'Save' }));
+    fireEvent.click(within(booleanRow).getByRole('button', { name: 'Save keepScreenOn' }));
     await waitFor(() => expect(api.updateSetting).toHaveBeenCalledWith('tablet', 'keepScreenOn', false));
     await waitFor(() => expect(api.settings).toHaveBeenCalledTimes(2));
 
@@ -280,13 +280,13 @@ describe('FullyKioskConsole', () => {
     fireEvent.change(within(numberRow).getByRole('textbox'), { target: { value: '144' } });
     const urlRow = screen.getByText('startURL').closest('tr');
     fireEvent.change(within(urlRow).getByRole('textbox'), { target: { value: 'https://example.test/new' } });
-    fireEvent.click(within(numberRow).getByRole('button', { name: 'Save' }));
+    fireEvent.click(within(numberRow).getByRole('button', { name: 'Save screenBrightness' }));
     await waitFor(() => expect(api.updateSetting).toHaveBeenCalledWith('tablet', 'screenBrightness', 144));
     await waitFor(() => expect(api.settings).toHaveBeenCalledTimes(3));
     expect(within(screen.getByText('startURL').closest('tr')).getByRole('textbox')).toHaveValue('https://example.test/new');
-    expect(within(screen.getByText('startURL').closest('tr')).getByRole('button', { name: 'Save' })).toBeEnabled();
+    expect(within(screen.getByText('startURL').closest('tr')).getByRole('button', { name: 'Save startURL' })).toBeEnabled();
 
-    fireEvent.click(within(screen.getByText('startURL').closest('tr')).getByRole('button', { name: 'Save' }));
+    fireEvent.click(within(screen.getByText('startURL').closest('tr')).getByRole('button', { name: 'Save startURL' }));
     await waitFor(() => expect(api.updateSetting).toHaveBeenCalledWith(
       'tablet',
       'startURL',
