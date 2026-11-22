@@ -131,6 +131,16 @@ ArtMode's ambient-music feature.
 
 ---
 
+## Shaders
+
+A play's `shader` (request, queue, or cycled by the viewer) is one of `default`,
+`focused` (alias `minimal`), `night`, `blackout`. `default` is the plain look: a
+video shows no progress bar (the teal strip across the top was a testing aid, and
+was dropped from the default on 2026-11-21); audio keeps its bar and timing text.
+`focused` also hides the player's text (`p`, `h2`, `h3`), which on audio is the
+title and timing, so it is not the default. `night` tints the picture and keeps a
+red progress bar.
+
 ## Resilience layers
 
 Playback resilience is defense-in-depth: several independent watchdogs, each

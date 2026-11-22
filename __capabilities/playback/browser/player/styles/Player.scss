@@ -244,14 +244,16 @@
 
 
 
-// Shader modes: ['default', 'focused', 'night', 'blackout']
+// Shader modes: ['default', 'focused', 'night', 'blackout'] ('default' = plain: no video progress bar)
 
 .player{
     background-color: #151515;
     width: 100%;
     height: 100%;
 
-    // .default: no special styles, progress bar visible by default
+    // .default: the plain look. A video shows no progress bar (the teal strip
+    // across the top was a testing aid); audio keeps its bar with its timing.
+    .video-player.default .progress-bar { display: none; }
 
     .focused {
         background-color: #000000;
