@@ -9,6 +9,7 @@ import { feedLog } from "../Scroll/feedLog.js";
 import { useFeedPlayer, SPEED_STEPS } from "./FeedPlayerContext.jsx";
 import { formatFeedPlaybackTime } from './formatTime.js';
 import { formatFeedVolume } from './formatVolume.js';
+import { getSeekMax } from './seekRange.js';
 import SpeakerIcon from './SpeakerIcon.jsx';
 import "./FeedPlayerSheet.scss";
 
@@ -19,6 +20,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
   } = useFeedPlayer();
 
   const { playing, currentTime, duration, toggle, seek } = playback || {};
+  const seekMax = getSeekMax(duration);
 
   // --- Swipe-to-dismiss gesture ---
   const sheetRef = useRef(null);
@@ -96,15 +98,15 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
   const calcScrubTime = useCallback((clientX) => {
     const rect = scrubberRef.current.getBoundingClientRect();
     const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    return pct * duration;
-  }, [duration]);
+    return pct * seekMax;
+  }, [seekMax]);
 
   const startScrub = useCallback((event) => {
-    if (!open || !duration || event.button !== 0 || scrubDragRef.current || dragRef.current) return;
+    if (!open || !seekMax || event.button !== 0 || scrubDragRef.current || dragRef.current) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     scrubDragRef.current = { node: event.currentTarget, id: event.pointerId };
     setScrubTime(calcScrubTime(event.clientX));
-  }, [calcScrubTime, duration, open]);
+  }, [calcScrubTime, open, seekMax]);
 
   const cancelScrub = useCallback(() => {
     const drag = scrubDragRef.current;
@@ -125,17 +127,17 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
   }, [cancelScrub]);
 
   const moveScrub = useCallback((event) => {
-    if (scrubDragRef.current?.id !== event.pointerId) return;
+    if (!seekMax || scrubDragRef.current?.id !== event.pointerId) return;
     setScrubTime(calcScrubTime(event.clientX));
-  }, [calcScrubTime]);
+  }, [calcScrubTime, seekMax]);
 
   const endScrub = useCallback((event) => {
-    if (scrubDragRef.current?.id !== event.pointerId) return;
+    if (!seekMax || scrubDragRef.current?.id !== event.pointerId) return;
     const time = calcScrubTime(event.clientX);
     cancelScrub();
     feedLog.player('sheet seek', { to: time.toFixed(1) });
     seek?.(time);
-  }, [calcScrubTime, cancelScrub, seek]);
+  }, [calcScrubTime, cancelScrub, seek, seekMax]);
 
   // --- Cover art ---
   // The app's own image endpoints load directly; external images go through the proxy.
@@ -144,7 +146,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
   if (!item) return null;
 
   const displayTime = scrubbing ? scrubTime : currentTime;
-  const remaining = duration > 0 ? duration - displayTime : 0;
+  const remaining = seekMax > 0 ? seekMax - (displayTime || 0) : 0;
 
   return (
     <>
@@ -201,16 +203,18 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
           onPointerCancel={cancelScrubPointer}
           onLostPointerCapture={cancelScrubPointer}
           role="slider"
-          tabIndex={0}
+          tabIndex={seekMax ? 0 : -1}
+          aria-disabled={!seekMax}
           aria-label="Playback position"
           aria-valuemin={0}
-          aria-valuemax={Math.round(duration || 0)}
+          aria-valuemax={Math.round(seekMax)}
           aria-valuenow={Math.round(displayTime || 0)}
           aria-valuetext={`${formatFeedPlaybackTime(displayTime)} of ${formatFeedPlaybackTime(duration)}`}
           onKeyDown={(e) => {
+            if (!seekMax) return;
             if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
             e.preventDefault();
-            const next = e.key === 'Home' ? 0 : e.key === 'End' ? duration : Math.max(0, Math.min(duration || 0, (currentTime || 0) + (e.key === 'ArrowLeft' ? -5 : 5)));
+            const next = e.key === 'Home' ? 0 : e.key === 'End' ? seekMax : Math.max(0, Math.min(seekMax, (currentTime || 0) + (e.key === 'ArrowLeft' ? -5 : 5)));
             seek?.(next);
           }}
         >
@@ -218,7 +222,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
             <div
               ref={open && !scrubbing ? playback?.sheetProgressElRef : null}
               className="sheet-scrubber-fill"
-              style={scrubbing && duration > 0 ? { width: `${scrubTime / duration * 100}%` } : undefined}
+              style={scrubbing && seekMax > 0 ? { width: `${scrubTime / seekMax * 100}%` } : undefined}
             >
               <div className="sheet-scrubber-thumb" />
             </div>
@@ -233,7 +237,12 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
         <div className="sheet-transport">
           <button
             className="sheet-skip-btn"
-            onClick={() => { feedLog.player('sheet skip', { dir: -15 }); seek?.(Math.max(0, (currentTime || 0) - 15)); }}
+            disabled={!seekMax}
+            onClick={() => {
+              if (!seekMax) return;
+              feedLog.player('sheet skip', { dir: -15 });
+              seek?.(Math.max(0, (currentTime || 0) - 15));
+            }}
             aria-label="Skip back 15 seconds"
           >
             <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
@@ -250,7 +259,12 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
           </button>
           <button
             className="sheet-skip-btn"
-            onClick={() => { feedLog.player('sheet skip', { dir: 15 }); seek?.(Math.min(duration || 0, (currentTime || 0) + 15)); }}
+            disabled={!seekMax}
+            onClick={() => {
+              if (!seekMax) return;
+              feedLog.player('sheet skip', { dir: 15 });
+              seek?.(Math.min(seekMax, (currentTime || 0) + 15));
+            }}
             aria-label="Skip forward 15 seconds"
           >
             <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
