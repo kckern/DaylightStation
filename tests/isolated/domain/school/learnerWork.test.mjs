@@ -6,9 +6,12 @@ import {
   activitiesToWork,
   activityKindLabel,
   cardLadderToWork,
+  pianoLessonsToWork,
+  sentenceLadderToWork,
   WORK_ITEM_KEYS,
   tidyTitle,
 } from "../../../../__app_modules/learning/school/server/domain/learnerWork.mjs";
+import { studyDayForInstant } from "../../../../__app_modules/learning/school/server/domain/studyDay.mjs";
 
 const BASE = { learnerId: 'kid-a', learnerName: 'Kid A', from: '2026-11-16', to: '2026-11-23' };
 const CONTRACT = [
@@ -417,5 +420,160 @@ describe('tidyTitle', () => {
     });
     expect(item.title).toBe('Psalms of Praise');
     expect(item.subtitle).toBe('JOHN DOE');
+  });
+});
+
+// Household study day: Los Angeles, 4am boundary (the composition's dayOf).
+const laDayOf = (iso) => studyDayForInstant(Date.parse(iso), { timezone: 'America/Los_Angeles' });
+
+describe('pianoLessonsToWork', () => {
+  const evidence = (over = {}) => ({
+    schema: 'school.learning-evidence/v1',
+    evidenceId: `piano-lesson:kid-a:${over.lessonId ?? 'plex:694833'}:${over.occurredAt ?? ''}`,
+    learnerId: 'kid-a',
+    occurredAt: '2026-11-20T01:20:23.354Z',
+    verification: 'verified',
+    activity: { id: 'plex:694833', kind: 'piano_lesson', graded: false, itemId: 'plex:694833', action: 'complete' },
+    learning: { subjectId: 'arts', courseId: 'plex:694771', unitId: '694771', lessonId: over.lessonId ?? 'plex:694833' },
+    measures: { engagements: 1, responses: 0, correct: 0, completions: 1, durationMs: 0, ...SENTINEL },
+    ...over,
+  });
+  const titles = { 'plex:694833': 'Lesson 50 | Jingle Bells: Simple Version (Right Hand)' };
+  const deps = {
+    ...BASE,
+    dayOf: laDayOf,
+    lessonTitleFor: (id) => titles[id] ?? null,
+    courseTitleFor: (id) => (id === 'plex:694771' ? 'PIANO ADVENTURES PRIMER' : null),
+  };
+
+  it('tolerates null input', () => {
+    expect(pianoLessonsToWork(null, deps)).toEqual([]);
+  });
+
+  it('projects a finished lesson as a completed course session', () => {
+    // 01:20Z on the 20th is the evening of the 19th in Los Angeles.
+    expect(pianoLessonsToWork([evidence()], deps)).toEqual([{
+      learnerId: 'kid-a', learnerName: 'Kid A', kind: 'course', verb: 'completed',
+      title: 'Piano Adventures Primer', subtitle: 'Lesson 50 · Jingle Bells: Simple Version (Right Hand)',
+      at: '2026-11-20T01:20:23.354Z', studyDay: '2026-11-19',
+      imageUrl: '/api/v1/display/plex/694771',
+      groupKey: 'course:plex:694771', weight: 1, subject: 'music',
+    }]);
+  });
+
+  it('assigns study days by household time, not the UTC date, at both window edges', () => {
+    const items = pianoLessonsToWork([
+      evidence({ lessonId: 'a', occurredAt: '2026-11-16T06:00:00Z' }), // 22:00 on the 15th in LA → out
+      evidence({ lessonId: 'b', occurredAt: '2026-11-16T13:00:00Z' }), // 05:00 on the 16th → in
+      evidence({ lessonId: 'c', occurredAt: '2026-11-23T07:00:00Z' }), // 23:00 on the 22nd → in
+      evidence({ lessonId: 'd', occurredAt: '2026-11-23T11:30:00Z' }), // 03:30 on the 23rd → still the 22nd
+      evidence({ lessonId: 'e', occurredAt: '2026-11-23T12:30:00Z' }), // 04:30 on the 23rd → out
+    ], deps);
+    expect(items.map((i) => i.studyDay)).toEqual(['2026-11-16', '2026-11-22', '2026-11-22']);
+  });
+
+  it('ignores other evidence kinds and other learners', () => {
+    const items = pianoLessonsToWork([
+      evidence({ activity: { kind: 'video_lesson' } }),
+      evidence({ learnerId: 'kid-b' }),
+      evidence(),
+    ], deps);
+    expect(items).toHaveLength(1);
+  });
+
+  it('emits the same evidence row only once', () => {
+    expect(pianoLessonsToWork([evidence(), evidence()], deps)).toHaveLength(1);
+  });
+
+  it('falls back to "Piano" with no subtitle when neither title is known', () => {
+    const [item] = pianoLessonsToWork([evidence({ lessonId: 'plex:1' })], { ...deps, courseTitleFor: () => null });
+    expect(item).toMatchObject({ title: 'Piano', subtitle: null, groupKey: 'course:plex:694771' });
+    const [bare] = pianoLessonsToWork([evidence()], { ...BASE, dayOf: laDayOf });
+    expect(bare).toMatchObject({ title: 'Piano', subtitle: null });
+  });
+
+  it('has no image and a generic group without a Plex course id', () => {
+    const [item] = pianoLessonsToWork([evidence({ learning: { lessonId: 'plex:694833' } })], deps);
+    expect(item).toMatchObject({ imageUrl: null, groupKey: 'course:piano' });
+  });
+
+  it('falls back to the UTC date without a dayOf', () => {
+    const [item] = pianoLessonsToWork([evidence({ occurredAt: '2026-11-18T20:00:00Z' })], { ...BASE });
+    expect(item.studyDay).toBe('2026-11-18');
+  });
+
+  it('never carries a score from the evidence or the sitting', () => {
+    const items = pianoLessonsToWork([evidence()], {
+      ...deps,
+      lessonTitleFor: () => ({ title: 'x', score: 87.654, percent: 7654 }).title,
+    });
+    expectNoGraded(items);
+    expectContract(items);
+  });
+});
+
+describe('sentenceLadderToWork', () => {
+  const ev = (at, seq, over = {}) => ({
+    at, day: 35, seq, rung: 'dictation', attributedTo: 'kid-a',
+    expected: '몇 살이에요?', given: '몇 살', heard: '몇', accuracy: 0.87654, method: 'typed', ...over,
+  });
+  const deps = { ...BASE, corpusId: 'glossika-korean', corpusTitle: 'Glossika Korean', dayOf: laDayOf };
+
+  it('tolerates null input', () => {
+    expect(sentenceLadderToWork(null, deps)).toEqual([]);
+  });
+
+  it('counts distinct sentences per study day', () => {
+    expect(sentenceLadderToWork([
+      ev('2026-11-18T20:00:00Z', 1, { rung: 'repetition' }),
+      ev('2026-11-18T20:01:00Z', 2),
+      ev('2026-11-18T20:02:00Z', 1),
+    ], deps)).toEqual([{
+      learnerId: 'kid-a', learnerName: 'Kid A', kind: 'program', verb: 'worked',
+      title: 'Glossika Korean', subtitle: '2 sentences', at: '2026-11-18T20:02:00Z', studyDay: '2026-11-18',
+      imageUrl: '/api/v1/weekly-review/school/image?ref=' + encodeURIComponent('program:sentence-ladder:glossika-korean'),
+      groupKey: 'program:sentence-ladder:glossika-korean', weight: 2, subject: 'language',
+    }]);
+  });
+
+  it('assigns events across UTC midnight to the household study day', () => {
+    // 03:41Z on the 21st is the evening of the 20th in Los Angeles; the two
+    // events share a study day though their UTC dates (and log shards) differ.
+    const items = sentenceLadderToWork([
+      ev('2026-11-20T23:00:00Z', 5),
+      ev('2026-11-21T03:41:09Z', 6),
+    ], deps);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ studyDay: '2026-11-20', subtitle: '2 sentences', at: '2026-11-21T03:41:09Z' });
+  });
+
+  it('respects window edges by study day and uses "1 sentence"', () => {
+    const items = sentenceLadderToWork([
+      ev('2026-11-16T06:00:00Z', 1), // 15th in LA → out
+      ev('2026-11-16T13:00:00Z', 2), // 16th → in
+      ev('2026-11-23T11:30:00Z', 3), // 03:30 on the 23rd → the 22nd
+      ev('2026-11-23T12:30:00Z', 4), // 23rd → out
+    ], deps);
+    expect(items.map((i) => [i.studyDay, i.subtitle])).toEqual([['2026-11-16', '1 sentence'], ['2026-11-22', '1 sentence']]);
+  });
+
+  it('skips events without a sentence number or a timestamp', () => {
+    expect(sentenceLadderToWork([ev('2026-11-18T20:00:00Z', null), ev(null, 4), { seq: 5 }], deps)).toEqual([]);
+  });
+
+  it('falls back to the corpus id when there is no title', () => {
+    const [item] = sentenceLadderToWork([ev('2026-11-18T20:00:00Z', 1)], { ...deps, corpusTitle: undefined });
+    expect(item.title).toBe('glossika-korean');
+  });
+
+  it('never carries accuracy or what was heard', () => {
+    const items = sentenceLadderToWork([ev('2026-11-18T20:00:00Z', 1)], deps);
+    expectContract(items);
+    for (const item of items) {
+      const values = Object.values(item);
+      expect(values).not.toContain(0.87654);
+      expect(values).not.toContain('몇');
+      expect(values).not.toContain('몇 살');
+    }
   });
 });

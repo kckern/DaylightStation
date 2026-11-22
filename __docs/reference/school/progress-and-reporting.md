@@ -82,11 +82,21 @@ correctness, answer, coin or streak on a store row cannot leak through.
 | Finished course sessions | `course` completed (a finished session always reads "Completed"; pass/fail never reaches the review) |
 | Printed activities (completed, not voided) | `activity` completed |
 | Card ladder day files | `program` worked (`weight` = words that day) |
+| Piano-lesson learning evidence (`activity.kind: piano_lesson`) | `course` completed: title = the Plex course's own title (else "Piano"), subtitle = the lesson title from the piano sitting log with ` \| ` shown as ` · `, picture `/api/v1/display/plex/<courseRatingKey>`, `groupKey` `course:plex:<ratingKey>` |
+| Sentence ladder (Glossika) attempt logs | `program` worked, subtitle "<n> sentences", `weight` = distinct sentences (`seq`) that day, picture `program:sentence-ladder:<corpusId>` |
 
 Each source is optional and read in parallel per learner; one that throws
 costs that learner that source only (`school.learner-work.source-failed`).
-Piano-lesson evidence and Glossika are not sources yet: the first has no
-title or picture to show, the second no per-day counts.
+
+Piano lessons and the sentence ladder are assigned to the household study
+day (household timezone, 4am boundary) of their instant, not the UTC date.
+Evidence is queried a UTC day wider on each side of the window, and the
+sentence ladder's log shards, which are named by the UTC date of each event,
+are read from the day before `from` through `to`. From the sitting log only
+`title` is read; its score, percent and outcome never reach an item. The
+sentence ladder counts sentences only; accuracy, what was heard and what was
+typed are never read. Corpus labels come from the language-study service's
+cached corpora, so a weekly review load does not re-parse the corpus file.
 
 The public entry is `server/composition/learner-work.mjs`:
 `createSchoolLearnerWork(...)` returns `{ list({ from, to }), image(ref) }`,

@@ -96,6 +96,49 @@ describe('createSchoolLearnerWork', () => {
     expect(logger.events.some((e) => e.event === 'school.learner-work.wiring-failed')).toBe(false);
   });
 
+  it('wires piano lessons and the sentence ladder with household study days', async () => {
+    const logger = recordingLogger();
+    const learningEvidence = {
+      listEvidence: () => [{
+        evidenceId: 'e1', learnerId: 'kid-a', occurredAt: '2026-11-20T01:20:00Z',
+        activity: { kind: 'piano_lesson' }, learning: { courseId: 'plex:694771', lessonId: 'plex:694833' },
+      }],
+    };
+    const lessonSittingLog = { list: () => [{ plexId: 'plex:694833', title: 'Lesson 50 | Jingle Bells', score: 87.654 }] };
+    const languageStudyStore = {
+      listCorpusIds: () => ['glossika-korean'],
+      readCorpus: () => { throw new Error('must use the service label'); },
+      readEventDay: (u, c, day) => (day === '2026-11-21' ? [{ at: '2026-11-21T03:41:09Z', seq: 176 }] : []),
+    };
+    const languageStudyService = { listCourses: () => [{ id: 'glossika-korean', label: 'Glossika Korean' }] };
+    const configService = { getTimezone: () => 'America/Los_Angeles' };
+    const work = createSchoolLearnerWork({
+      schoolLifecycle: fakeLifecycle(), schoolLearnerDirectory, learningEvidence, lessonSittingLog,
+      pianoCourseTitleFor: async () => 'Piano Adventures', languageStudyStore, languageStudyService, configService,
+      mediaBasePath: '/unused', rootLogger: logger,
+    });
+    const { items } = await work.list({ from: '2026-11-16', to: '2026-11-23' });
+    expect(items.find((i) => i.groupKey === 'course:plex:694771')).toMatchObject({
+      title: 'Piano Adventures', subtitle: 'Lesson 50 · Jingle Bells', studyDay: '2026-11-19',
+    });
+    expect(items.find((i) => i.groupKey === 'program:sentence-ladder:glossika-korean')).toMatchObject({
+      title: 'Glossika Korean', subtitle: '1 sentence', studyDay: '2026-11-20',
+    });
+    expect(JSON.stringify(items)).not.toContain('87.654');
+    const wired = logger.events.find((e) => e.event === 'school.learner-work.wired');
+    expect(wired.data.sources).toEqual(expect.arrayContaining(['pianoLessons', 'sentenceLadder']));
+  });
+
+  it('tolerates the piano and sentence ladder deps being absent', async () => {
+    const logger = recordingLogger();
+    const work = createSchoolLearnerWork({ schoolLifecycle: fakeLifecycle(), schoolLearnerDirectory, mediaBasePath: '/unused', rootLogger: logger });
+    const { items } = await work.list({ from: '2026-11-16', to: '2026-11-23' });
+    expect(items.every((i) => i.kind === 'book')).toBe(true);
+    const wired = logger.events.find((e) => e.event === 'school.learner-work.wired');
+    expect(wired.data.sources).not.toContain('pianoLessons');
+    expect(wired.data.sources).not.toContain('sentenceLadder');
+  });
+
   it('is null when School is not wired', () => {
     const logger = recordingLogger();
     expect(createSchoolLearnerWork({ schoolLifecycle: null, schoolLearnerDirectory, rootLogger: logger })).toBeNull();

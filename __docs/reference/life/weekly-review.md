@@ -266,8 +266,12 @@ School owns the data and hands it over through `createSchoolLearnerWork` (see [P
 | Course sessions (finished sessions only) | `course` completed: a finished session always reads "Completed", whatever its result | Course poster |
 | Printed activities (completed, not voided) | `activity` completed | The page, rendered (see [Printed activities](../school/programs.md#printed-activities--a-page-done-on-paper)) |
 | Card ladder day files | `program` worked, weight = words practiced that day | Package poster (see [Card ladder](../school/card-ladder.md#where-things-live)) |
+| Piano lessons (School learning evidence) | `course` completed, titled by the Plex course, subtitled by the lesson ("Lesson 50 · Jingle Bells") | The Plex course's art through `/api/v1/display/plex/<id>` |
+| Sentence ladder (Glossika) | `program` worked, "<n> sentences", weight = distinct sentences that day | Corpus poster, `program:sentence-ladder:<corpusId>` |
 
-**Left out:** piano lessons and Glossika. Piano-lesson evidence carries only Plex ids, with no title or picture to show. Glossika keeps no per-day counts. Both can be added once School can name and count them.
+Piano lessons and sentence-ladder days fall on the household study day (4am boundary), not the UTC date. A sitting's score and a dictation's accuracy are never read.
+
+The piano picture is served by the shared display route, which `auth.yml` maps to the `office` app. A screen on the household network passes (the network trust resolver grants it the household roles); a browser outside it without a token gets 401 for that picture only, and the card falls back as for any missing picture.
 
 ### Routes
 
@@ -308,7 +312,7 @@ Query the log store by event name (`context.app:weekly-review` for the screen's 
 |---|---|
 | `school.learner-work.unwired` | School is not wired at boot; weekly review gets no school source and shows no work at all. |
 | `school.learner-work.wiring-failed` | Building the learner-work entry threw; same effect as unwired. |
-| `school.learner-work.wired` | Startup: which sources (`bookLog`, `sessions`, `printedActivities`, `cardLadder`) and worksheet platforms are connected. A missing source here explains a missing kind of card. |
+| `school.learner-work.wired` | Startup: which sources (`bookLog`, `sessions`, `printedActivities`, `cardLadder`, `pianoLessons`, `sentenceLadder`) and worksheet platforms are connected. A missing source here explains a missing kind of card. |
 | `school.learner-work.no-image-cache` | No media mount: activity pages render on every request instead of once. |
 | `school.learner-work.listed` | School answered: learners, items, ms. Zero items means nothing in the window, not a failure. |
 | `school.learner-work.source-failed` | One source threw for one learner (`learnerId`, `source`); that child loses that kind of card only. |

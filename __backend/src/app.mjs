@@ -2822,10 +2822,22 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   const { schoolStateGatesProducer, bookScans, schoolPrintService, schoolTeacherNotes, presenceHook: schoolPresenceHook, worksheetPlatforms: schoolWorksheetPlatforms } = await createSchoolLifecycleRuntime({ mountReceiptKey: jwtSecret, authorizeKioskAction:authorizeSupervisedAction, nfcLocationsForReachability, gratitudeServices, broadcastGratitude:broadcastEvent, schoolGratitudeGrants, get schoolDebriefGrants() { return schoolDebriefGrants; }, get notificationService() { return notificationStack?.notificationService ?? null; }, scopedGateway, get sharedAiGateway() { return sharedAiGateway; }, get decisionGateway() { return decisionGateway; }, contentTagsForStoryTime, configService, householdId, schoolService, schoolAcademicPeriods, schoolDatastore, economyApi, userService, eventBus, printerRegistry, wakeScreenForBroadcast, get startReadingSession() { return startReadingSession; }, languageStudyService, get schoolStudyGrants() { return schoolStudyGrants; }, languageReelService, get schoolReelGrants() { return schoolReelGrants; }, get schoolLaunchPreviewTokens() { return schoolLaunchPreviewTokens; }, pianoContainer, pianoDayActivity, schoolPianoChallengeCompletionService, fitnessPlayableService, v1Routers, schoolLearningEvidence, get pianoLessonHook() { return pianoLessonHook; }, flashcardStudy, cardLadderStudy, rubiksCubeService, get schoolCubeGrants() { return schoolCubeGrants; }, get schoolBookGrants() { return schoolBookGrants; }, books, get donowModule() { return donowModule; }, get schoolCalc() { return schoolCalc; }, kioskFrictionTracker, schoolLifecycleLogger, getSchoolScreenConfig, get schoolLifecycle() { return schoolLifecycle; }, set schoolLifecycle(value) { schoolLifecycle = value; }, schoolLearnerDirectory, get schoolBookPanelGrants() { return schoolBookPanelGrants; }, stateGatesModule, schoolStateGatesPrincipal, stateGatesProducerScheduler, rootLogger, schoolTeacherGate, schoolSessionResultArtifacts, homeAutomationAdapters, learnerDisplayName, omrReadersConfig, NodeAsyncScheduler, dataDir, get getMaterialProgressSummary() { return getMaterialProgressSummary; }, getLearningProgress, fitnessServices, schoolFullConfig, LaserPrinterAdapter, schoolSurfaces, schoolEnrichmentLog, schoolMilestoneStore, cardLadderTest, get cardLadderTuning() { return cardLadderTuning; }, cardLadderConfig, flashcardAssets, get getMaterialCatalog() { return getMaterialCatalog; }, get getMaterialUnits() { return getMaterialUnits; }, schoolMaterialProgressStore, getInstructionalInsights, schoolCatalog, get issueContinuationCode() { return issueContinuationCode; }, openCatalogLearningSession, recordLearningReflection, schoolLearningLoop, offerCatalogQuizRemediation, mediaBasePath, languageTranscription, createBooksApiRouter });
   // A week of each learner's school work (books, lessons, printed pages, card
-  // ladder) for weekly review's TV cards. Null when School is not wired.
+  // ladder, piano lessons, sentence ladder) for weekly review's TV cards. Null
+  // when School is not wired.
   const schoolLearnerWork = createSchoolLearnerWork({
     schoolLifecycle, schoolLearnerDirectory, books, worksheetPlatforms: schoolWorksheetPlatforms,
     cardLadderStore, cardLadderTitleFor, mediaBasePath, rootLogger,
+    learningEvidence: schoolLearningEvidence,
+    lessonSittingLog: contentServices?.lessonSittingLog ?? null,
+    // A piano course is a Plex show; its own metadata carries the title.
+    pianoCourseTitleFor: async (courseId) => {
+      const ratingKey = /^plex:(\d+)$/.exec(courseId ?? '')?.[1];
+      const client = contentRegistry?.get?.('plex')?.client;
+      if (!ratingKey || typeof client?.getContainer !== 'function') return null;
+      const data = await client.getContainer(`/library/metadata/${ratingKey}`);
+      return data?.MediaContainer?.Metadata?.[0]?.title ?? null;
+    },
+    languageStudyService, configService,
   });
 
   // Shared dispatch-level idempotency cache for multi-step HTTP dispatches

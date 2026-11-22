@@ -6,17 +6,28 @@
  * built over the lifecycle's own stores, or null when School is not wired
  * (or wiring throws, logged as `school.learner-work.wiring-failed`), so a
  * consumer treats "no School" and "School failed" the same way: no cards.
+ *
+ * Piano lessons and the sentence ladder are optional sources: pass
+ * `learningEvidence` (School's evidence repository) with `lessonSittingLog`
+ * and `pianoCourseTitleFor(courseId)` for lesson and course names, and
+ * `languageStudyStore` (or a `configService` to build a read-only use of the
+ * YAML store) with `languageStudyService` for corpus labels. Study days use
+ * the household timezone from `configService` and the 4am boundary.
  */
 import { ListLearnerWork } from '../application/usecases/ListLearnerWork.mjs';
 import { GetLearnerWorkImage } from '../application/usecases/GetLearnerWorkImage.mjs';
 import { renderPdfFirstPagePng as defaultRenderPdfFirstPagePng } from '../rendering/documents/ArtifactPostviewRenderer.mjs';
 import { FilesystemWorkImageCache } from '../adapters/persistence/FilesystemWorkImageCache.mjs';
+import { YamlLanguageStudyDatastore } from '../adapters/persistence/YamlLanguageStudyDatastore.mjs';
+import { studyDayForInstant } from '../domain/studyDay.mjs';
 
 const errorText = (err) => (err instanceof Error ? err.message : String(err));
 
 export function createSchoolLearnerWork({
   schoolLifecycle, schoolLearnerDirectory, books = null, worksheetPlatforms = null,
   cardLadderStore = null, cardLadderTitleFor = null,
+  learningEvidence = null, lessonSittingLog = null, pianoCourseTitleFor = null,
+  languageStudyStore = null, languageStudyService = null, configService = null,
   renderPdfFirstPagePng = defaultRenderPdfFirstPagePng, mediaBasePath, rootLogger,
 } = {}) {
   const logger = rootLogger?.child?.({ module: 'school-learner-work' }) ?? rootLogger ?? {};
@@ -32,6 +43,15 @@ export function createSchoolLearnerWork({
     // pre-rename package directory as a side effect of a TV page load.
     const cardLadder = cardLadderStore?.readOnlyView?.() ?? cardLadderStore ?? null;
     const platforms = worksheetPlatforms instanceof Map ? worksheetPlatforms : new Map();
+    // Only the read methods (listCorpusIds, readCorpus, readEventDay) are used.
+    const languageStudy = languageStudyStore
+      ?? (typeof configService?.getUserDir === 'function' ? new YamlLanguageStudyDatastore({ configService }) : null);
+    // The service caches parsed corpora; reading the corpus file for its label
+    // would parse the whole (large) YAML on every weekly review load.
+    const sentenceLadderTitleFor = typeof languageStudyService?.listCourses === 'function'
+      ? (corpusId) => languageStudyService.listCourses().find((c) => c?.id === corpusId)?.label ?? null
+      : null;
+    const dayOf = (iso) => studyDayForInstant(Date.parse(iso), { timezone: configService?.getTimezone?.() || null });
 
     const listUseCase = new ListLearnerWork({
       learners,
@@ -43,6 +63,12 @@ export function createSchoolLearnerWork({
       printedActivities: stores.printedActivities ?? null,
       cardLadder,
       cardLadderTitleFor,
+      learningEvidence,
+      lessonSittingLog,
+      pianoCourseTitleFor,
+      languageStudy,
+      sentenceLadderTitleFor,
+      dayOf,
       logger,
     });
     // No media mount: pages render on every request instead of once, and the
@@ -60,7 +86,10 @@ export function createSchoolLearnerWork({
       logger,
     });
     logger.info?.('school.learner-work.wired', {
-      sources: ['bookLog', 'sessions', 'printedActivities'].filter((k) => stores[k]).concat(cardLadder ? ['cardLadder'] : []),
+      sources: ['bookLog', 'sessions', 'printedActivities'].filter((k) => stores[k])
+        .concat(cardLadder ? ['cardLadder'] : [])
+        .concat(learningEvidence ? ['pianoLessons'] : [])
+        .concat(languageStudy ? ['sentenceLadder'] : []),
       platforms: [...platforms.keys()],
     });
     return {

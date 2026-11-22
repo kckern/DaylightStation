@@ -6,6 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { ListLearnerWork } from '../../../../__app_modules/learning/school/server/application/usecases/ListLearnerWork.mjs';
 import { WORK_ITEM_KEYS } from '../../../../__app_modules/learning/school/server/domain/learnerWork.mjs';
+import { studyDayForInstant } from '../../../../__app_modules/learning/school/server/domain/studyDay.mjs';
 
 const FROM = '2026-11-16';
 const TO = '2026-11-23';
@@ -210,5 +211,167 @@ describe('ListLearnerWork', () => {
 
   it('requires a roster', () => {
     expect(() => new ListLearnerWork({})).toThrow(/learners/);
+  });
+});
+
+describe('ListLearnerWork — piano lessons and the sentence ladder', () => {
+  const laDayOf = (iso) => studyDayForInstant(Date.parse(iso), { timezone: 'America/Los_Angeles' });
+  const pianoRow = (learnerId, lessonId, occurredAt) => ({
+    evidenceId: `piano-lesson:${learnerId}:${lessonId}:${occurredAt}`,
+    learnerId, occurredAt,
+    activity: { kind: 'piano_lesson', itemId: lessonId },
+    learning: { courseId: 'plex:694771', lessonId },
+    measures: { correct: 0, completions: 1 },
+  });
+  const evidenceRows = [
+    pianoRow('kid-a', 'plex:694833', '2026-11-20T01:20:23.354Z'), // LA study day 2026-11-19
+    pianoRow('kid-a', 'plex:694834', '2026-11-16T06:00:00Z'), // LA 2026-11-15 → out
+    pianoRow('kid-b', 'plex:694836', '2026-11-21T18:00:00Z'),
+    { evidenceId: 'other', learnerId: 'kid-a', occurredAt: '2026-11-18T18:00:00Z', activity: { kind: 'video_lesson' } },
+  ];
+  function evidenceRepo(calls = []) {
+    return {
+      listEvidence: ({ learnerIds, from, to }) => {
+        calls.push({ learnerIds, from, to });
+        return evidenceRows.filter((r) => learnerIds.includes(r.learnerId) && r.occurredAt >= from && r.occurredAt < to);
+      },
+    };
+  }
+  const sittings = {
+    'kid-a': [{ plexId: 'plex:694833', title: 'Lesson 50 | Jingle Bells', score: 87.654, percent: 77, outcome: 'already-counted', startedAt: '2026-11-20T01:10:00Z' }],
+    'kid-b': [],
+  };
+  function sittingLog(calls = []) {
+    return { list: (userId, opts) => { calls.push({ userId, ...opts }); return sittings[userId] ?? null; } };
+  }
+  const glossikaDays = {
+    'kid-a': {
+      'glossika-korean': {
+        '2026-11-15': [{ at: '2026-11-15T20:00:00Z', seq: 1 }], // LA 15th → out
+        '2026-11-18': [{ at: '2026-11-18T20:00:00Z', seq: 2, accuracy: 0.87654, heard: 'x' }, { at: '2026-11-18T21:00:00Z', seq: 3 }],
+        '2026-11-19': [{ at: '2026-11-19T03:00:00Z', seq: 4 }], // LA evening of the 18th
+      },
+    },
+    'kid-b': { 'glossika-korean': { '2026-11-21': [{ at: '2026-11-21T18:00:00Z', seq: 9 }] } },
+  };
+  function languageStudy({ reads = [], corpusReads = [] } = {}) {
+    return {
+      listCorpusIds: () => ['glossika-korean', 'unused-corpus'],
+      readCorpus: (id) => { corpusReads.push(id); return { id, label: id === 'glossika-korean' ? 'Glossika Korean' : 'Unused' }; },
+      readEventDay: (userId, corpusId, day) => { reads.push(`${userId}/${corpusId}/${day}`); return glossikaDays[userId]?.[corpusId]?.[day] ?? []; },
+    };
+  }
+  const deps = (over = {}) => ({
+    learners, learningEvidence: evidenceRepo(), lessonSittingLog: sittingLog(),
+    pianoCourseTitleFor: async (id) => (id === 'plex:694771' ? 'Piano Adventures' : null),
+    languageStudy: languageStudy(), dayOf: laDayOf, logger: recordingLogger(), ...over,
+  });
+
+  it('lists piano lessons by household study day with sitting titles, never scores', async () => {
+    const evidenceCalls = [];
+    const sittingCalls = [];
+    const { items } = await new ListLearnerWork(deps({
+      learningEvidence: evidenceRepo(evidenceCalls), lessonSittingLog: sittingLog(sittingCalls),
+    })).execute({ from: FROM, to: TO });
+    const aPiano = of(items, 'kid-a', 'course');
+    expect(aPiano).toEqual([{
+      learnerId: 'kid-a', learnerName: 'Kid A', kind: 'course', verb: 'completed',
+      title: 'Piano Adventures', subtitle: 'Lesson 50 · Jingle Bells',
+      at: '2026-11-20T01:20:23.354Z', studyDay: '2026-11-19',
+      imageUrl: '/api/v1/display/plex/694771', groupKey: 'course:plex:694771', weight: 1, subject: 'music',
+    }]);
+    expect(of(items, 'kid-b', 'course')).toMatchObject([{ title: 'Piano Adventures', subtitle: null, studyDay: '2026-11-21' }]);
+    // The UTC query is a day wider either side; the projection trims by study day.
+    expect(evidenceCalls[0]).toEqual({ learnerIds: ['kid-a'], from: '2026-11-15T00:00:00.000Z', to: '2026-11-24T00:00:00.000Z' });
+    expect(sittingCalls.find((c) => c.userId === 'kid-a').sinceIso).toBe('2026-11-14T00:00:00.000Z');
+    const text = JSON.stringify(items);
+    expect(text).not.toContain('87.654');
+    expect(text).not.toContain('already-counted');
+    for (const item of items) expect(Object.keys(item).sort()).toEqual([...WORK_ITEM_KEYS].sort());
+  });
+
+  it('looks each piano course title up once per call', async () => {
+    let calls = 0;
+    const pianoCourseTitleFor = async () => { calls += 1; return 'Piano Adventures'; };
+    const useCase = new ListLearnerWork(deps({ pianoCourseTitleFor }));
+    await useCase.execute({ from: FROM, to: TO });
+    expect(calls).toBe(1);
+    await useCase.execute({ from: FROM, to: TO });
+    expect(calls).toBe(2);
+  });
+
+  it('falls back to "Piano" when the course title lookup throws', async () => {
+    const logger = recordingLogger();
+    const { items } = await new ListLearnerWork(deps({
+      pianoCourseTitleFor: async () => { throw new Error('plex down'); }, logger,
+    })).execute({ from: FROM, to: TO });
+    expect(of(items, 'kid-a', 'course')[0].title).toBe('Piano');
+    expect(logger.events.some((e) => e.event === 'school.learner-work.lookup-failed' && e.data.source === 'piano')).toBe(true);
+  });
+
+  it('still lists piano lessons without a sitting log or course titles', async () => {
+    const { items } = await new ListLearnerWork(deps({ lessonSittingLog: null, pianoCourseTitleFor: null })).execute({ from: FROM, to: TO });
+    expect(of(items, 'kid-a', 'course')).toMatchObject([{ title: 'Piano', subtitle: null }]);
+  });
+
+  it('counts sentence ladder sentences per study day, reading a shard either side', async () => {
+    const reads = [];
+    const corpusReads = [];
+    const { items } = await new ListLearnerWork(deps({ languageStudy: languageStudy({ reads, corpusReads }) })).execute({ from: FROM, to: TO });
+    const aProgram = of(items, 'kid-a', 'program');
+    expect(aProgram).toEqual([{
+      learnerId: 'kid-a', learnerName: 'Kid A', kind: 'program', verb: 'worked',
+      title: 'Glossika Korean', subtitle: '3 sentences', at: '2026-11-19T03:00:00Z', studyDay: '2026-11-18',
+      imageUrl: '/api/v1/weekly-review/school/image?ref=' + encodeURIComponent('program:sentence-ladder:glossika-korean'),
+      groupKey: 'program:sentence-ladder:glossika-korean', weight: 3, subject: 'language',
+    }]);
+    expect(of(items, 'kid-b', 'program')).toMatchObject([{ studyDay: '2026-11-21', subtitle: '1 sentence' }]);
+    const aDays = reads.filter((r) => r.startsWith('kid-a/glossika-korean/')).map((r) => r.split('/')[2]);
+    expect(aDays[0]).toBe('2026-11-15');
+    expect(aDays.at(-1)).toBe('2026-11-23');
+    expect(aDays).toHaveLength(9);
+    // Labels are read once per call, and only for corpora someone worked.
+    expect(corpusReads).toEqual(['glossika-korean']);
+    expect(JSON.stringify(items)).not.toContain('0.87654');
+  });
+
+  it('prefers an injected corpus title over reading the corpus file', async () => {
+    const corpusReads = [];
+    const titleCalls = [];
+    const { items } = await new ListLearnerWork(deps({
+      languageStudy: languageStudy({ corpusReads }),
+      sentenceLadderTitleFor: async (id) => { titleCalls.push(id); return 'Korean sentences'; },
+    })).execute({ from: FROM, to: TO });
+    expect(items.filter((i) => i.kind === 'program').map((i) => i.title)).toEqual(['Korean sentences', 'Korean sentences']);
+    expect(titleCalls).toEqual(['glossika-korean']);
+    expect(corpusReads).toEqual([]);
+  });
+
+  it('isolates a failing piano or sentence ladder source to that learner', async () => {
+    const logger = recordingLogger();
+    const brokenEvidence = {
+      listEvidence: (q) => { if (q.learnerIds.includes('kid-a')) throw new Error('evidence corrupt'); return evidenceRepo().listEvidence(q); },
+    };
+    const brokenLanguage = {
+      ...languageStudy(),
+    };
+    brokenLanguage.readEventDay = (userId, corpusId, day) => {
+      if (userId === 'kid-b') throw new Error('bad shard');
+      return glossikaDays[userId]?.[corpusId]?.[day] ?? [];
+    };
+    const { items } = await new ListLearnerWork(deps({ learningEvidence: brokenEvidence, languageStudy: brokenLanguage, logger }))
+      .execute({ from: FROM, to: TO });
+    expect(of(items, 'kid-a', 'course')).toEqual([]);
+    expect(of(items, 'kid-a', 'program')).toHaveLength(1);
+    expect(of(items, 'kid-b', 'course')).toHaveLength(1);
+    expect(of(items, 'kid-b', 'program')).toEqual([]);
+    const failed = logger.events.filter((e) => e.event === 'school.learner-work.source-failed').map((e) => e.data);
+    expect(failed).toContainEqual({ learnerId: 'kid-a', source: 'pianoLessons', error: 'evidence corrupt' });
+    expect(failed).toContainEqual({ learnerId: 'kid-b', source: 'sentenceLadder', error: 'bad shard' });
+  });
+
+  it('skips both sources when their stores are absent', async () => {
+    const { items } = await new ListLearnerWork({ learners }).execute({ from: FROM, to: TO });
+    expect(items).toEqual([]);
   });
 });

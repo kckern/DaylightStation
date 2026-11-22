@@ -1,12 +1,30 @@
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import {
-  booksToWork, sessionsToWork, activitiesToWork, cardLadderToWork, inWindow,
+  booksToWork, sessionsToWork, activitiesToWork, cardLadderToWork, pianoLessonsToWork, sentenceLadderToWork, inWindow,
 } from '../../domain/learnerWork.mjs';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const NOOP_LOGGER = Object.freeze({});
 const list = (value) => (Array.isArray(value) ? value : []);
 const errorText = (err) => (err instanceof Error ? err.message : String(err));
+const DAY_MS = 86_400_000;
+const dayMs = (day) => Date.parse(`${day}T00:00:00Z`);
+const isoDayStart = (day, offsetDays = 0) => new Date(dayMs(day) + offsetDays * DAY_MS).toISOString();
+/** Every YYYY-MM-DD from `first` through `last`, inclusive. */
+function datesThrough(first, last) {
+  const out = [];
+  for (let ms = dayMs(first); ms <= dayMs(last); ms += DAY_MS) out.push(new Date(ms).toISOString().slice(0, 10));
+  return out;
+}
+/** Per-call memo of an optional, possibly async lookup; null when absent. */
+function memoize(fn) {
+  if (typeof fn !== 'function') return null;
+  const seen = new Map();
+  return (key) => {
+    if (!seen.has(key)) seen.set(key, Promise.resolve().then(() => fn(key)));
+    return seen.get(key);
+  };
+}
 
 /** Resolve `fn(key)` for each distinct key; a throw or rejection becomes null (and a warn). */
 async function lookupAll(keys, fn, { source, logger }) {
@@ -45,6 +63,12 @@ export class ListLearnerWork {
   #printedActivities;
   #cardLadder;
   #cardLadderTitleFor;
+  #learningEvidence;
+  #lessonSittingLog;
+  #pianoCourseTitleFor;
+  #languageStudy;
+  #sentenceLadderTitleFor;
+  #dayOf;
   #logger;
 
   /**
@@ -52,10 +76,22 @@ export class ListLearnerWork {
    * ladder package for a person; the store only knows package slugs, and the
    * human title lives in the package lexicon (`program.title`). Without it the
    * card falls back to the slug.
+   *
+   * Piano lessons come from School's learning evidence (`learningEvidence`,
+   * rows with `activity.kind: piano_lesson`), named by the piano sitting log
+   * (`lessonSittingLog.list`, titles only) and `pianoCourseTitleFor(courseId)`
+   * (optional, sync or async). The sentence ladder reads
+   * `languageStudy` (`listCorpusIds`, `readEventDay`) and names a corpus with
+   * `sentenceLadderTitleFor(corpusId)` (optional, sync or async), else the
+   * corpus file's `label` via `languageStudy.readCorpus`. `dayOf`
+   * maps an ISO instant to the household study day; without it both sources
+   * fall back to the UTC date.
    */
   constructor({
     learners, bookLog = null, bookRepository = null, coverUrlFor = null, sessions = null,
     curriculum = null, printedActivities = null, cardLadder = null, cardLadderTitleFor = null,
+    learningEvidence = null, lessonSittingLog = null, pianoCourseTitleFor = null,
+    languageStudy = null, sentenceLadderTitleFor = null, dayOf = null,
     logger = NOOP_LOGGER,
   } = {}) {
     if (typeof learners !== 'function') throw new Error('ListLearnerWork requires learners');
@@ -68,6 +104,12 @@ export class ListLearnerWork {
     this.#printedActivities = printedActivities;
     this.#cardLadder = cardLadder;
     this.#cardLadderTitleFor = typeof cardLadderTitleFor === 'function' ? cardLadderTitleFor : null;
+    this.#learningEvidence = typeof learningEvidence?.listEvidence === 'function' ? learningEvidence : null;
+    this.#lessonSittingLog = typeof lessonSittingLog?.list === 'function' ? lessonSittingLog : null;
+    this.#pianoCourseTitleFor = typeof pianoCourseTitleFor === 'function' ? pianoCourseTitleFor : null;
+    this.#languageStudy = typeof languageStudy?.readEventDay === 'function' ? languageStudy : null;
+    this.#sentenceLadderTitleFor = typeof sentenceLadderTitleFor === 'function' ? sentenceLadderTitleFor : null;
+    this.#dayOf = typeof dayOf === 'function' ? dayOf : null;
     this.#logger = logger ?? NOOP_LOGGER;
   }
 
@@ -78,8 +120,14 @@ export class ListLearnerWork {
     const roster = list(await this.#learners()).filter((l) => l && typeof l.id === 'string' && l.id);
     // One title lookup per package for the whole call, however many learners
     // study it.
-    const titleFor = this.#memoizedTitleFor();
-    const perLearner = await Promise.all(roster.map((learner) => this.#workFor(learner, from, to, titleFor)));
+    const memo = {
+      cardLadderTitle: memoize(this.#cardLadderTitleFor),
+      pianoCourseTitle: memoize(this.#pianoCourseTitleFor),
+      corpusTitle: memoize(this.#sentenceLadderTitleFor
+        ?? ((corpusId) => this.#languageStudy?.readCorpus?.(corpusId)?.label ?? null)),
+      corpusIds: this.#languageStudy ? memoize(() => this.#languageStudy.listCorpusIds?.() ?? []) : null,
+    };
+    const perLearner = await Promise.all(roster.map((learner) => this.#workFor(learner, from, to, memo)));
     const items = perLearner.flat();
     this.#logger.info?.('school.learner-work.listed', {
       from, to, learners: roster.length, items: items.length, ms: Date.now() - started,
@@ -87,23 +135,15 @@ export class ListLearnerWork {
     return { items };
   }
 
-  #memoizedTitleFor() {
-    const titleFor = this.#cardLadderTitleFor;
-    if (!titleFor) return null;
-    const seen = new Map();
-    return (packageId) => {
-      if (!seen.has(packageId)) seen.set(packageId, Promise.resolve().then(() => titleFor(packageId)));
-      return seen.get(packageId);
-    };
-  }
-
-  async #workFor({ id: learnerId, name }, from, to, titleFor) {
+  async #workFor({ id: learnerId, name }, from, to, memo) {
     const ctx = { learnerId, learnerName: name ?? null, from, to };
     const sources = [
       ['books', this.#bookLog && (() => this.#books(ctx))],
       ['sessions', this.#sessions && (() => this.#courseSessions(ctx))],
       ['activities', this.#printedActivities && (() => this.#activities(ctx))],
-      ['cardLadder', this.#cardLadder && (() => this.#ladder(ctx, titleFor))],
+      ['cardLadder', this.#cardLadder && (() => this.#ladder(ctx, memo.cardLadderTitle))],
+      ['pianoLessons', this.#learningEvidence && (() => this.#pianoLessons(ctx, memo.pianoCourseTitle))],
+      ['sentenceLadder', this.#languageStudy && (() => this.#sentenceLadder(ctx, memo))],
     ].filter(([, read]) => read);
     const results = await Promise.all(sources.map(async ([source, read]) => {
       try {
@@ -159,6 +199,51 @@ export class ListLearnerWork {
       return cardLadderToWork(files, { ...ctx, packageId, packageTitle: titles.get(packageId) ?? undefined });
     }));
     return perPackage.flat();
+  }
+
+  async #pianoLessons(ctx, courseTitleFor) {
+    // Evidence is filed by UTC instant; a day either side covers any household
+    // offset and the 4am boundary, and the projection trims by study day.
+    const rows = list(await this.#learningEvidence.listEvidence({
+      learnerIds: [ctx.learnerId], from: isoDayStart(ctx.from, -1), to: isoDayStart(ctx.to, 1),
+    })).filter((r) => r?.activity?.kind === 'piano_lesson');
+    if (!rows.length) return [];
+    const lessonTitles = new Map();
+    if (this.#lessonSittingLog) {
+      // Titles only: a sitting row also carries score, percent and outcome,
+      // and none of that may reach the review.
+      const sittings = list(await this.#lessonSittingLog.list(ctx.learnerId, { sinceIso: isoDayStart(ctx.from, -2) }));
+      for (const s of sittings) {
+        if (typeof s?.plexId === 'string' && typeof s.title === 'string' && !lessonTitles.has(s.plexId)) {
+          lessonTitles.set(s.plexId, s.title);
+        }
+      }
+    }
+    const courseTitles = courseTitleFor
+      ? await lookupAll(rows.map((r) => r.learning?.courseId), courseTitleFor, { source: 'piano', logger: this.#logger })
+      : new Map();
+    return pianoLessonsToWork(rows, {
+      ...ctx,
+      dayOf: this.#dayOf,
+      lessonTitleFor: (id) => lessonTitles.get(id) ?? null,
+      courseTitleFor: (id) => courseTitles.get(id) ?? null,
+    });
+  }
+
+  async #sentenceLadder(ctx, memo) {
+    const store = this.#languageStudy;
+    const corpusIds = list(await memo.corpusIds());
+    // Log shards are named by the UTC date of each event, not the study day.
+    const shards = datesThrough(isoDayStart(ctx.from, -1).slice(0, 10), ctx.to);
+    const perCorpus = await Promise.all(corpusIds.map(async (corpusId) => {
+      const events = (await Promise.all(shards.map(async (day) => list(await store.readEventDay(ctx.learnerId, corpusId, day))))).flat();
+      if (!events.length) return [];
+      const titles = await lookupAll([corpusId], memo.corpusTitle, { source: 'sentenceLadder', logger: this.#logger });
+      return sentenceLadderToWork(events, {
+        ...ctx, dayOf: this.#dayOf, corpusId, corpusTitle: titles.get(corpusId) ?? undefined,
+      });
+    }));
+    return perCorpus.flat();
   }
 }
 

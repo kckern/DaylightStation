@@ -1,7 +1,8 @@
 /**
  * Learner work — a child's school week as plain, celebratory work items:
  * books started and finished, course sessions completed, printed pages done,
- * card-ladder days. Weekly review curates these into TV cards.
+ * card-ladder days, piano lessons, sentence-ladder days. Weekly review curates
+ * these into TV cards.
  *
  * A work item never carries a score, percent, correctness, answer, coin or
  * streak. Each projection builds its item through `workItem`, which emits
@@ -231,4 +232,97 @@ export function cardLadderToWork(days, { learnerId, learnerName, from, to, packa
     }));
   }
   return items;
+}
+
+const utcDate = (iso) => (typeof iso === 'string' && /^\d{4}-\d{2}-\d{2}/.test(iso) ? iso.slice(0, 10) : null);
+const studyDayOf = (dayOf, iso) => {
+  if (typeof iso !== 'string' || !iso) return null;
+  return (typeof dayOf === 'function' ? dayOf(iso) : utcDate(iso)) ?? null;
+};
+const PLEX_ID = /^plex:(\d+)$/;
+
+/** 'Lesson 50 | Jingle Bells' → 'Lesson 50 · Jingle Bells'. */
+function lessonSubtitle(title) {
+  if (typeof title !== 'string' || !title.trim()) return null;
+  return title.replace(/\s+\|\s+/g, ' · ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Piano lessons finished on the kiosk, from School's learning evidence
+ * (`activity.kind: piano_lesson`). One item per evidence row whose household
+ * study day (`dayOf(occurredAt)`) is in the window. The course is the Plex
+ * show; the lesson title comes from the piano sitting log. A sitting's score,
+ * percent and outcome are never read here: the use case passes titles only.
+ */
+export function pianoLessonsToWork(evidence, {
+  learnerId, learnerName, from, to, lessonTitleFor, courseTitleFor, dayOf,
+}) {
+  const who = { learnerId, learnerName };
+  const seen = new Set();
+  const items = [];
+  for (const row of list(evidence)) {
+    if (row?.activity?.kind !== 'piano_lesson') continue;
+    if (row.learnerId != null && row.learnerId !== learnerId) continue;
+    const studyDay = studyDayOf(dayOf, row.occurredAt);
+    if (!inWindow(studyDay, from, to)) continue;
+    const key = row.evidenceId ?? `${row.learning?.lessonId}|${row.occurredAt}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const courseId = typeof row.learning?.courseId === 'string' ? row.learning.courseId : null;
+    const lessonId = row.learning?.lessonId ?? row.activity?.itemId ?? null;
+    const ratingKey = courseId ? PLEX_ID.exec(courseId)?.[1] ?? null : null;
+    const courseTitle = courseId && courseTitleFor ? courseTitleFor(courseId) : null;
+    items.push(workItem(who, {
+      kind: 'course',
+      verb: 'completed',
+      title: tidyTitle(courseTitle) || 'Piano',
+      subtitle: lessonId && lessonTitleFor ? lessonSubtitle(lessonTitleFor(lessonId)) : null,
+      at: row.occurredAt,
+      studyDay,
+      imageUrl: ratingKey ? `/api/v1/display/plex/${ratingKey}` : null,
+      groupKey: courseId ? `course:${courseId}` : 'course:piano',
+      weight: 1,
+      subject: 'music',
+    }));
+  }
+  return items;
+}
+
+/**
+ * Sentence ladder (e.g. Glossika) days: one item per household study day with
+ * at least one sentence worked, counting distinct `seq`. Log shards are filed
+ * by the UTC date of `at`, so the caller reads a day either side and this
+ * assigns each event by `dayOf(at)`. Accuracy, what was heard and what was
+ * typed are never read.
+ */
+export function sentenceLadderToWork(events, {
+  learnerId, learnerName, from, to, corpusId, corpusTitle, dayOf,
+}) {
+  const who = { learnerId, learnerName };
+  const days = new Map();
+  for (const event of list(events)) {
+    if (!event || event.seq == null || event.seq === '') continue;
+    const studyDay = studyDayOf(dayOf, event.at);
+    if (!inWindow(studyDay, from, to)) continue;
+    const entry = days.get(studyDay) ?? { seqs: new Set(), at: null };
+    entry.seqs.add(String(event.seq));
+    if (!entry.at || String(event.at) > entry.at) entry.at = String(event.at);
+    days.set(studyDay, entry);
+  }
+  const ref = `program:sentence-ladder:${corpusId}`;
+  return [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([studyDay, { seqs, at }]) => {
+    const n = seqs.size;
+    return workItem(who, {
+      kind: 'program',
+      verb: 'worked',
+      title: corpusTitle || corpusId || 'Language practice',
+      subtitle: n === 1 ? '1 sentence' : `${n} sentences`,
+      at,
+      studyDay,
+      imageUrl: typeof corpusId === 'string' && corpusId ? schoolImageUrl(ref) : null,
+      groupKey: ref,
+      weight: n,
+      subject: 'language',
+    });
+  });
 }

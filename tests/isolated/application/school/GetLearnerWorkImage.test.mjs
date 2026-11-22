@@ -254,3 +254,30 @@ describe('GetLearnerWorkImage', () => {
     expect(await uc.execute('course:c-math')).toBeNull();
   });
 });
+
+describe('GetLearnerWorkImage — the sentence ladder poster', () => {
+  it('serves the ref a sentence ladder item points at from the corpus poster on the media mount', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const { YamlCurriculumDatastore } = await import('../../../../__app_modules/learning/school/server/adapters/persistence/YamlCurriculumDatastore.mjs');
+    const { sentenceLadderToWork } = await import('../../../../__app_modules/learning/school/server/domain/learnerWork.mjs');
+    const media = fs.mkdtempSync(path.join(os.tmpdir(), 'sentence-ladder-poster-'));
+    try {
+      const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x01, 0x02]);
+      const dir = path.join(media, 'school', 'programs', 'sentence-ladder', 'glossika-korean');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'poster.jpg'), jpeg);
+      const curriculum = new YamlCurriculumDatastore({ configService: { getMediaDir: () => media, getDataDir: () => media } });
+      const [item] = sentenceLadderToWork([{ at: '2026-11-18T20:00:00Z', seq: 1 }], {
+        learnerId: 'kid-a', from: '2026-11-16', to: '2026-11-23', corpusId: 'glossika-korean',
+      });
+      const ref = decodeURIComponent(new URL(item.imageUrl, 'http://x').searchParams.get('ref'));
+      expect(ref).toBe('program:sentence-ladder:glossika-korean');
+      const uc = new GetLearnerWorkImage({ learners, curriculum, logger: recordingLogger() });
+      expect(await uc.execute(ref)).toEqual({ bytes: jpeg, contentType: 'image/jpeg' });
+    } finally {
+      fs.rmSync(media, { recursive: true, force: true });
+    }
+  });
+});
