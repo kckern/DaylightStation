@@ -4,14 +4,15 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/index.js';
 import { fitEffectToChannel } from '../../../../../shared/contracts/content-filter/cueModality.mjs';
 import { LANGUAGE_GROUPS } from '../../../../../shared/contracts/content-filter/languageGroups.mjs';
-import { previewStore, effectChip } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 import { groupLabel, timecode } from './ReviewList.jsx';
 import { actionKeysFor, isSceneRow, keysKindOf, plays } from './reviewScope.js';
 import { whyLine } from './whyLine.js';
+import { TimingStrip, spanText } from './TimingStrip.jsx';
+import { EffectTag } from './partVisuals.jsx';
 
 /**
  * The part in hand (ops design "cf-journey", owner 2026-11-21): where it sits in the queue, what it
- * is and why it gets its effect, Refine (R), the effect keys, a timing nudge, and the verdict keys.
+ * is and why it gets its effect, Refine (R), the effect keys, the timing strip, and the verdict keys.
  * Every button carries its key; the hint strip at the bottom is the rest of the keymap.
  */
 const logger = createAppLogger('admin').child('content-filter');
@@ -19,7 +20,6 @@ const API = 'api/v1/content-filter';
 const CUE_EFFECTS = [['mute', 'Mute'], ['bleep', 'Bleep'], ['blur', 'Blur'], ['full-blur', 'Full blur'], ['skip', 'Skip']];
 const WORD_CHOICES = [{ label: 'Use settings', value: 'profile' }, { label: 'Play this word', value: 'off' }, { label: 'Mute this word', value: 'mute' }, { label: 'Bleep this word', value: 'bleep' }];
 const GROUP_CHOICES = [{ label: 'Play', value: 'off' }, { label: 'Mute', value: 'mute' }, { label: 'Bleep', value: 'bleep' }];
-const STEPS = [-0.5, -0.1, 0.1, 0.5];
 const VERDICT_BADGE = { approve: ['Approved', 'green'], remove: ['Let it play', 'gray'], ignore: ['Ignored', 'gray'], redo: ['Redo', 'orange'] };
 
 /** R1: the cue effects that fit this channel as they are (tracked or not). */
@@ -73,12 +73,6 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
     ? [[`${base}/scenes/${encodeURIComponent(row.peekId)}`, body, 'PUT']]
     : members.map((id) => [`${base}/cues/${encodeURIComponent(id)}`, body, 'PUT']));
   const nudge = (value) => act('nudge', rule({ nudge: value }), value ? 'Timing saved.' : 'Hand fix dropped.');
-  const at = (edge) => {
-    const t = previewStore.currentTime();
-    if (t == null) { setNotice('Play the film first.'); return; }
-    setSpan((s) => (edge === 0 ? [t, s[1]] : [s[0], t]));
-  };
-  const step = (edge, d) => setSpan((s) => s.map((v, i) => (i === edge ? Math.round((v + d) * 1000) / 1000 : v)));
   const changed = span[0] !== row.in || span[1] !== row.out;
   const fits = isScene ? null : new Set(effectChoices(row.modality).map((o) => o.value));
   const effectKeys = actionKeysFor(keysKindOf(row)).filter(([, , v]) => isScene || fits.has(v));
@@ -102,7 +96,7 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
       <Group justify="space-between" wrap="nowrap" align="flex-start" gap="xs">
         <Text fw={600} size="md" className="cf-card-part__title">{row.label}</Text>
         <Group gap={4} wrap="wrap" justify="flex-end" className="cf-card-part__chips">
-          {playing ? <Badge size="sm" variant="outline" color="gray">{row.why === 'removed' ? 'Plays (removed)' : 'Plays'}</Badge> : <Badge size="sm" variant="light">{effectChip(row.effect)}</Badge>}
+          {playing ? <Badge size="sm" variant="outline" color="gray">{row.why === 'removed' ? 'Plays (removed)' : 'Plays'}</Badge> : <EffectTag row={row} />}
           {row.timing ? <Badge size="sm" variant="dot" color={row.timing === 'rough' ? 'orange' : 'green'}>{row.timing === 'rough' ? 'Rough timing' : row.timing === 'safe-window' ? 'Safe window' : 'Refined'}</Badge> : null}
           {row.handFixed ? <Badge size="sm" variant="outline">Hand-fixed</Badge> : null}
           {verdict && VERDICT_BADGE[verdict] ? <Badge size="sm" variant="light" color={VERDICT_BADGE[verdict][1]}>{VERDICT_BADGE[verdict][0]}</Badge> : null}
@@ -147,17 +141,13 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
       ) : null}
 
       {single && !playing ? (
-        <Group gap={4} wrap="wrap" align="center" className="cf-card-part__timing">
+        <div className="cf-card-part__timing">
           <Text size="xs" c="dimmed" w={52}>Timing</Text>
-          <Text size="xs" className="cf-review__time">{timecode(span[0])}–{timecode(span[1])}</Text>
-          <Button size="compact-xs" variant="light" disabled={disabled} onClick={() => at(0)}>Start here</Button>
-          {STEPS.map((d) => <Button key={`s${d}`} size="compact-xs" variant="subtle" disabled={disabled} aria-label={`Start ${d > 0 ? '+' : ''}${d} s`} onClick={() => step(0, d)}>{d > 0 ? '+' : ''}{d}</Button>)}
-          <Text size="xs" c="dimmed">·</Text>
-          <Button size="compact-xs" variant="light" disabled={disabled} onClick={() => at(1)}>End here</Button>
-          {STEPS.map((d) => <Button key={`e${d}`} size="compact-xs" variant="subtle" disabled={disabled} aria-label={`End ${d > 0 ? '+' : ''}${d} s`} onClick={() => step(1, d)}>{d > 0 ? '+' : ''}{d}</Button>)}
+          <TimingStrip span={span} saved={[row.in, row.out]} onChange={setSpan} onNotice={setNotice} disabled={disabled} />
+          <Text size="xs" className="cf-review__time cf-card-part__span">{spanText(span)}</Text>
           <Button size="compact-xs" disabled={disabled || !changed} onClick={() => nudge({ in: span[0], out: span[1] })}>Save timing</Button>
           {row.handFixed ? <Button size="compact-xs" variant="subtle" disabled={disabled} onClick={() => nudge(null)}>Drop hand fix</Button> : null}
-        </Group>
+        </div>
       ) : null}
 
       {isWord ? (

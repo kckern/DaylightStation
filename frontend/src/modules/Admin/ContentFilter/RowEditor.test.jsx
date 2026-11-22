@@ -58,11 +58,15 @@ describe('RowEditor (the part card)', () => {
     expect(screen.getByText('Refining…')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Refine this part/ })).toBeNull();
   });
-  it('Start here / End here take the player time and Save posts the nudge', async () => {
-    vi.spyOn(previewStore, 'currentTime').mockReturnValueOnce(70.1).mockReturnValueOnce(70.8);
+  it('Home on the start handle and End on the end handle take the player time, and Save posts the nudge', async () => {
+    vi.spyOn(previewStore, 'currentTime').mockReturnValue(null);
     const onChanged = show(word);
-    fireEvent.click(screen.getByRole('button', { name: 'Start here' }));
-    fireEvent.click(screen.getByRole('button', { name: 'End here' }));
+    expect(screen.getByRole('button', { name: 'Save timing' }).disabled).toBe(true);
+    previewStore.currentTime.mockReturnValue(70.1);
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Start' }), { key: 'Home' });
+    previewStore.currentTime.mockReturnValue(70.8);
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'End' }), { key: 'End' });
+    expect(screen.getByText('1:10.10–1:10.80, 0.7 s')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Save timing' }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual({ path: 'api/v1/content-filter/77/cues/w1', body: { nudge: { in: 70.1, out: 70.8 } }, method: 'PUT' });

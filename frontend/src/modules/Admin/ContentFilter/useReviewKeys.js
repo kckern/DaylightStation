@@ -72,8 +72,8 @@ export function useReviewKeys(handlers, { enabled = true, redoOwner = null } = {
       if (key !== 'Escape' && document.querySelector?.('[role="menu"]')) return;
       // A modal owns the keyboard; a focused button keeps Space/Enter to press itself.
       if (key !== 'Escape' && (active?.closest?.('[role=dialog]') || e.target?.closest?.('[role=dialog]'))) return;
-      // A focused rail tab (ReviewRail.jsx) keeps the keys that move between tabs.
-      if (active?.getAttribute?.('role') === 'tab' && (key === 'ArrowLeft' || key === 'ArrowRight' || key === 'Home' || key === 'End')) return;
+      // A focused rail tab (ReviewRail.jsx) or timing handle (TimingStrip.jsx) keeps the keys that move it.
+      if ((active?.getAttribute?.('role') === 'tab' || active?.getAttribute?.('role') === 'slider') && (key === 'ArrowLeft' || key === 'ArrowRight' || key === 'Home' || key === 'End')) return;
       const take = (fn) => { e.preventDefault(); e.stopPropagation(); fn?.(); };
       // Space is the film's play/pause wherever focus is: a clicked button must not take it (it
       // outlined the page instead of pausing, owner 2026-11-21). The button loses focus too.

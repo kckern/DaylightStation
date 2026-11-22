@@ -1073,8 +1073,8 @@ skipped for now. Refine pins the word so it becomes a short bleep.") — with **
 beside it (primary when refining is the fix; "Refine again" once refined; its run state in place of
 the button: Waiting / Refining… / Queued); effect buttons with their keys (by channel: said parts
 `M` mute, `P` bleep, `K` skip, `O` off; shown `B` blur, `K` skip, `O` off; true scenes `K` skip, `B`
-hide picture, `O` off; plus Settings); the card text for a skip; the timing row (Start here / End
-here, ±0.1 / ±0.5, Save timing, Drop hand fix); "More for this word" (this word in this film, all
+hide picture, `O` off; plus Settings); the card text for a skip; the **timing strip** with the edited
+span ("44:24.30–44:25.10, 0.8 s"), Save timing (enabled once the span changed) and Drop hand fix; "More for this word" (this word in this film, all
 words of its group); the verdicts **Approve (A) / Let it play (X) / Redo (D) / Undo (U)**; and a hint
 line (Space, Enter, W, ← →, ?). A word skipped as an exchange is listed with scenes but is a cue:
 `isSceneRow` (no members, not `cue:`) decides scene handling, `keysKindOf` the effect keys.
@@ -1123,13 +1123,43 @@ worker's override is saved with the current file's review marks kept (`applyResu
 same per-film write queue as verdicts (`titleQueue`), so a verdict cannot land between its read and
 its write.
 
-**List** (`ReviewList.jsx`): the parts of the rail tab in hand (on Plays: "Nothing here needs a
-verdict"; on Refine: what refine does, and "Nothing is left to refine." when empty); "To do only"
-(not on Refine); Film order (default) or Needs a look first. A row is a
-glyph (▶ in hand, ✓ approved, × let it play, ↻ redo, · to do) with its word under the time
-(`rowStatus`: To do, Approved, Let play, Redo, Ignored, Plays; owner 2026-11-21), the whole label (two lines;
-the part in hand unclamped) and a meta line (group · effect, a Rough / Safe window chip, its run
-state, its verdict); the part in hand also shows its span, modality, unsure reasons and card.
+**Timing strip** (`TimingStrip.jsx`; owner 2026-11-22: "a mini timeline with handlebars i can
+drag"). A window around the part (the part ± 6 s, or ± half its length for a long one, at least 12 s
+wide) with a tick every second and a label every 5 s (coarser on long windows), the span as a band
+with a handle at each end, the film's playhead (read every 100 ms) and, once the span is edited, a
+thin line under the band where the saved span is. Drag a handle (pointer events with pointer capture;
+the window holds still during a drag and widens by 3 s when a handle is let go at its edge), or focus
+it (`role="slider"`, "Start" / "End"): `←` `→` move it 0.1 s, with Shift 0.5 s, `Home` / `End` put
+it at the playhead ("set start / end here"), `Esc` lets go of it. The start stays at least 0.05 s
+before the end. A click on the strip seeks the film there. While a handle has focus the station's
+`←` `→` do not step parts (`useReviewKeys` leaves them to a focused slider or rail tab). The strip
+only edits the span; Save timing posts `nudge: { in, out }` to `PUT /:rk/cues/:id` or `/scenes/:id`
+as before, and a run locks the strip with the rest of the timing.
+
+**List** (`ReviewList.jsx`, `partVisuals.jsx`): the parts of the rail tab in hand (on Plays: "Nothing
+here needs a verdict"; on Refine: what refine does, and "Nothing is left to refine." when empty); "To
+do only" (not on Refine); Film order (default) or Needs a look first; and **?**, the icon key. A part
+is one line (owner 2026-11-22: "more compact, better icon usage, better visual language"): a status
+icon, its time, its effect and channel icons, its label on one line, a verdict's word (Approved, Let
+play, Redo, Ignored: `rowStatus`; "To do" and "Plays" are read from the icon and by a screen reader),
+and its timing mark, or a spinner / clock while it is in a refine. The part in hand opens to its
+whole label and the same facts in words (span · group · said/shown · effect, its timing, unsure
+reasons, card). Icons are Tabler SVGs, each with its word as tooltip and accessible name.
+
+| Meaning | Icon | Colour |
+|---------|------|--------|
+| To do / Approved / Let play / Redo / Plays | circle / circle-check / play / refresh / play | white / green / green / orange / grey |
+| Muted, Bleeped | volume-off, wave | audio (`--cf-fx-audio`) |
+| Blurred, Picture hidden | blur, eye-off | picture (`--cf-fx-picture`) |
+| Skipped | skip-forward | skip (`--cf-fx-skip`) |
+| Said / Shown | message / eye | grey |
+| Refined / Safe window | target / brackets | grey |
+| Rough / Rough after refine | dashed circle / alert triangle | orange |
+| Refining / Waiting, Queued | spinner / clock | blue |
+
+One colour language across the page: an effect family has one colour in the list's icons, the part
+card's effect tag and the timeline's marks; green is done, orange needs a look (redo, rough timing, a
+stuck run), grey plays or has nothing to say; the accent blue is the stage in hand and the selection.
 
 #### Review station
 

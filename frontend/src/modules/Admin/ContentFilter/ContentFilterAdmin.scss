@@ -82,31 +82,81 @@
 .cf-review__list > .cf-review__rows { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .cf-review__rows { display: flex; flex-direction: column; border-bottom: 1px solid var(--ds-border); }
 .cf-review__row { border-top: 1px solid var(--ds-border); border-left: 3px solid transparent; }
-.cf-review__row.is-selected { background: var(--ds-accent-subtle); border-left-color: var(--ds-accent); }
+.cf-review__row:hover { background: var(--ds-bg-surface); }
+.cf-review__row.is-selected { background: var(--ds-bg-overlay); border-left-color: var(--ds-accent); }
 .cf-review__row.is-plays .cf-review__label { color: var(--ds-text-secondary); }
-// [glyph] [time] [label, two lines] / meta; the part in hand also shows its span, reasons and card.
-.cf-review__pick { display: grid; width: 100%; grid-template-columns: 14px 60px minmax(0, 1fr); grid-template-areas: "glyph time label" ". status meta" ". . more";
-  column-gap: 6px; row-gap: 2px; padding: 6px var(--ds-space-2); text-align: left; min-width: 0; }
-.cf-review__glyph { grid-area: glyph; font-size: 12px; color: var(--ds-text-secondary); }
-.cf-review__row.is-selected .cf-review__glyph { color: var(--ds-accent); }
-.cf-review__time { grid-area: time; font-family: var(--ds-font-mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ds-text-secondary); }
-.cf-review__label { grid-area: label; min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.cf-review__row.is-selected .cf-review__label { display: block; -webkit-line-clamp: unset; }
-.cf-review__meta { grid-area: meta; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-width: 0; }
-.cf-review__more { grid-area: more; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+// One line per part: [status] [time] [effect, channel] [label] [verdict word, timing]. The part in
+// hand also opens to its whole label and the same facts in words.
+.cf-review__pick { display: grid; width: 100%; grid-template-columns: 16px 54px 36px minmax(0, 1fr) auto; grid-template-areas: "glyph time fx label marks" ". more more more more";
+  align-items: center; column-gap: 6px; row-gap: 2px; min-height: 32px; padding: 5px var(--ds-space-2) 5px 5px; text-align: left; min-width: 0; }
+.cf-review__glyph { grid-area: glyph; display: inline-flex; }
+.cf-review__time { grid-area: time; font-family: var(--ds-font-mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ds-text-secondary); text-align: right; }
+.cf-review__fx { grid-area: fx; display: inline-flex; align-items: center; gap: 4px; }
+.cf-review__label { grid-area: label; min-width: 0; font-size: 13px; font-weight: 500; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-review__row.is-selected .cf-review__label { white-space: normal; overflow-wrap: anywhere; font-weight: 600; }
+.cf-review__marks { grid-area: marks; display: inline-flex; align-items: center; gap: 6px; }
+.cf-review__refining { display: inline-flex; }
+.cf-review__more { grid-area: more; display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: center; padding-bottom: 2px; }
 .cf-review__tick { color: var(--ds-success); }
-// The status word under the time: open work reads strongest, finished work recedes.
-.cf-review__status { grid-area: status; font-size: 11px; line-height: 18px; white-space: nowrap; }
+// A verdict's word: finished work in green, a redo in orange.
+.cf-review__status { font-size: 11px; line-height: 16px; white-space: nowrap; }
 .cf-review__status.is-open { color: var(--ds-text-primary); font-weight: 600; }
 .cf-review__status.is-done { color: var(--ds-success); }
 .cf-review__status.is-redo { color: var(--ds-warning); font-weight: 600; }
 .cf-review__status.is-quiet { color: var(--ds-text-secondary); }
+.cf-review__timing { font-size: 11px; color: var(--ds-text-secondary); }
+.cf-review__timing.is-rough, .cf-review__timing.is-rough-left { color: var(--ds-warning); }
+
+// The part icons (partVisuals.jsx). One colour per effect family; green = done, orange = needs a
+// look, grey = plays or nothing to say.
+.cf-review-page, .cf-review__list { --cf-fx-audio: #2dd4bf; --cf-fx-picture: #a78bfa; --cf-fx-skip: #f472b6; }
+.cf-ico { display: inline-flex; align-items: center; justify-content: center; flex: none; line-height: 0; color: var(--ds-text-muted); }
+.cf-ico--fx.is-audio { color: var(--cf-fx-audio); }
+.cf-ico--fx.is-picture { color: var(--cf-fx-picture); }
+.cf-ico--fx.is-skip { color: var(--cf-fx-skip); }
+.cf-ico--status.is-open { color: var(--ds-text-primary); }
+.cf-ico--status.is-done { color: var(--ds-success); }
+.cf-ico--status.is-redo { color: var(--ds-warning); }
+.cf-ico--status.is-quiet { color: var(--ds-text-muted); }
+.cf-ico--timing.is-safe-window { color: var(--ds-text-secondary); }
+.cf-ico--timing.is-rough, .cf-ico--timing.is-rough-left { color: var(--ds-warning); }
+.cf-ico--refining { color: var(--ds-info); }
+.cf-ico.is-spinning svg { animation: cf-spin 1.2s linear infinite; }
+@keyframes cf-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .cf-ico.is-spinning svg { animation: none; } }
+.cf-fx-tag { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border: 1px solid currentColor; border-radius: 999px; font-size: 11px; font-weight: 700; line-height: 16px; white-space: nowrap; color: var(--ds-text-secondary); }
+.cf-fx-tag.is-audio { color: var(--cf-fx-audio); }
+.cf-fx-tag.is-picture { color: var(--cf-fx-picture); }
+.cf-fx-tag.is-skip { color: var(--cf-fx-skip); }
+.cf-legend { display: flex; flex-direction: column; gap: var(--ds-space-2); background: var(--ds-bg-overlay); border-color: var(--ds-border); }
+.cf-legend__group { display: flex; flex-direction: column; gap: 3px; }
+.cf-legend__item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ds-text-primary); }
 
 // The part in hand.
 .cf-card-part { padding: var(--ds-space-2); background: var(--ds-bg-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); }
 .cf-card-part__title { min-width: 0; overflow-wrap: anywhere; }
 .cf-card-part__chips { flex-shrink: 0; }
 .cf-card-part__why { padding: 6px var(--ds-space-2); background: var(--ds-bg-elevated); border-radius: var(--ds-radius-sm); }
+// Timing: the strip takes the room; the span and Save sit at its end.
+.cf-card-part__timing { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cf-card-part__span { flex: none; white-space: nowrap; color: var(--ds-text-primary); }
+// Timing strip (TimingStrip.jsx): ticks along the top, the span as a band, a handle at each end.
+.cf-strip { flex: 1 1 160px; min-width: 120px; padding: 0 6px; }
+.cf-strip__track { position: relative; height: 34px; background: var(--ds-bg-base); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-sm); cursor: pointer; touch-action: none; user-select: none; }
+.cf-strip__tick { position: absolute; top: 0; width: 1px; height: 4px; background: var(--ds-text-muted); pointer-events: none; }
+.cf-strip__tick.is-major { height: 8px; background: var(--ds-text-secondary); }
+.cf-strip__label { position: absolute; top: 9px; left: 3px; font-family: var(--ds-font-mono); font-size: 9px; line-height: 1; color: var(--ds-text-secondary); white-space: nowrap; }
+.cf-strip__band { position: absolute; top: 19px; bottom: 3px; background: var(--ds-accent); border-radius: 2px; pointer-events: none; }
+.cf-strip__saved { position: absolute; bottom: 0; height: 2px; background: var(--ds-text-secondary); pointer-events: none; }
+.cf-strip__playhead { position: absolute; top: 0; bottom: 0; width: 1px; margin-left: -0.5px; background: var(--ds-warning); pointer-events: none; }
+.cf-strip__handle { position: absolute; top: 14px; bottom: 0; width: 14px; margin-left: -7px; cursor: ew-resize; touch-action: none; z-index: 1; }
+.cf-strip__handle::before { content: ''; position: absolute; top: 0; bottom: 0; left: 5px; width: 4px; border-radius: 2px; background: var(--ds-text-primary); }
+.cf-strip__handle:focus { outline: none; }
+.cf-strip__handle:focus-visible::before, .cf-strip__handle:active::before { outline: 2px solid var(--ds-accent-hover); outline-offset: 1px; }
+.cf-strip.is-disabled .cf-strip__track { cursor: default; }
+.cf-strip.is-disabled .cf-strip__band { background: var(--ds-text-muted); }
+.cf-strip.is-disabled .cf-strip__handle { cursor: default; }
+.cf-strip.is-disabled .cf-strip__handle::before { background: var(--ds-text-muted); }
 .cf-card-part__verdicts { padding-top: 4px; border-top: 1px solid var(--ds-border); }
 .cf-card-part__hints .cf-keybar__key { margin: 0 2px; }
 .cf-card__btn { display: inline-flex; align-items: center; gap: 6px; }
@@ -119,12 +169,12 @@
 .cf-timeline__label { flex: 0 0 96px; font-size: 11px; color: var(--ds-text-secondary); font-variant-numeric: tabular-nums; }
 .cf-timeline__track { position: relative; flex: 1; height: 22px; background: var(--ds-bg-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-sm); overflow: hidden; }
 .cf-timeline__mark { position: absolute; top: 3px; bottom: 3px; padding: 0; border: 0; border-radius: 2px; cursor: pointer; background: var(--ds-text-muted); opacity: 0.75; }
-.cf-timeline__mark.is-mute { background: var(--ds-info); }
-.cf-timeline__mark.is-bleep { background: var(--ds-warning); }
-.cf-timeline__mark.is-blur { background: var(--ds-accent); }
-.cf-timeline__mark.is-skip { background: var(--ds-danger); }
+// Marks take their effect family's colour, like the list's icons.
+.cf-timeline__mark.is-mute, .cf-timeline__mark.is-bleep { background: var(--cf-fx-audio); }
+.cf-timeline__mark.is-blur { background: var(--cf-fx-picture); }
+.cf-timeline__mark.is-skip { background: var(--cf-fx-skip); }
 .cf-timeline__mark.has-verdict { opacity: 0.35; }
-.cf-timeline__mark.is-redo { opacity: 1; outline: 1px solid var(--ds-danger); }
+.cf-timeline__mark.is-redo { opacity: 1; outline: 1px solid var(--ds-warning); }
 .cf-timeline__mark.is-plays { background: var(--ds-text-muted); opacity: 0.3; }
 .cf-timeline__mark.is-cursor { opacity: 1; top: 0; bottom: 0; outline: 2px solid var(--ds-text-primary); z-index: 1; }
 .cf-keybar { display: flex; flex-direction: column; gap: var(--ds-space-1); position: relative; }

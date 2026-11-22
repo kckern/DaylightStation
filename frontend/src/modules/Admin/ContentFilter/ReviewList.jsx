@@ -1,14 +1,18 @@
 import { useState } from 'react';
-import { Badge, Checkbox, Group, Select, Stack, Text, UnstyledButton } from '@mantine/core';
-import { effectChip } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
+import { ActionIcon, Badge, Checkbox, Group, Popover, Select, Stack, Text, UnstyledButton, VisuallyHidden } from '@mantine/core';
+import { IconHelp } from '@tabler/icons-react';
+import { effectWord } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 import { DEFAULT_SCOPE, ORDER_SCOPES, plays, scopeRows } from './reviewScope.js';
+import { ChannelIcon, EffectIcon, LEGEND, RefiningIcon, StatusIcon, TimingIcon, timingState } from './partVisuals.jsx';
 
 /**
  * The film's parts beside the player, for the rail tab in hand (ReviewRail.jsx sets the scope's
  * `stage`): the parts refine still has to pin, the filtered parts (the review), or the ones that
- * play (browse only). Rows wrap to show their whole label; the part in hand opens to its span, reasons and card.
- * Each row says where it stands as an icon and a word under its time (rowStatus): ▶ marks the part
- * in hand; ✓ Approved, × Let play, ↻ Redo, · To do, Plays.
+ * play (browse only). A part is one line (owner, 2026-11-22: "more compact, better icon usage"):
+ * where it stands, its time, its effect and channel as icons (partVisuals.jsx), its label on one
+ * line, and its timing as a small mark. A verdict keeps its word in view (Approved, Let play, Redo);
+ * every icon carries its word as a tooltip, and the "?" in the header opens the icon key. The part in
+ * hand opens to its whole label and the same facts in words, with its reasons and card.
  */
 export const UNSURE_LABELS = {
   'refine-unknown': 'Timing unknown', 'refine-giveup': 'Timing not found', 'refine-coarse-edges': 'Rough edges',
@@ -22,7 +26,6 @@ const GROUP_LABELS = {
 };
 /** A group key in words: the known ones by name, the rest with spaces. */
 export const groupLabel = (g) => GROUP_LABELS[g] || String(g || '').replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
-const VERDICT_BADGE = { approve: ['Approved', 'green'], remove: ['Let it play', 'gray'], ignore: ['Ignored', 'gray'], redo: ['Redo', 'orange'] };
 
 /** m:ss.s, tenths floored (a time code, not a rounded duration). */
 export function timecode(t) {
@@ -34,10 +37,9 @@ export function timecode(t) {
 }
 
 
-const TIMING = { refined: ['Refined', 'green'], 'safe-window': ['Safe window', 'yellow'], rough: ['Rough', 'orange'] };
 /**
- * Where a part stands, as an icon and a word (owner, 2026-11-21: the icons alone said too little).
- * `tone` picks the word's colour class. A part that plays needs no verdict; one let play by a
+ * Where a part stands, as a word (owner, 2026-11-21: the icons alone said too little); `glyph` is
+ * its plain-text mark and `tone` its colour class (the list draws the icon: partVisuals StatusIcon). A part that plays needs no verdict; one let play by a
  * verdict reads "Let play".
  */
 export function rowStatus(r) {
@@ -66,7 +68,20 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
         {stage === 'refine' ? <Text size="xs" fw={600}>On rough timing</Text>
           : <Checkbox size="xs" label="To do only" checked={scope.needs} onChange={(e) => setScope({ needs: e.currentTarget.checked })} />}
         {check}
-        <Select size="xs" w={170} aria-label="Order" allowDeselect={false} data={ORDER_SCOPES} value={scope.order || 'film'} onChange={(order) => setScope({ order: order || 'film' })} />
+        <Group gap={4} wrap="nowrap">
+          <Select size="xs" w={160} aria-label="Order" allowDeselect={false} data={ORDER_SCOPES} value={scope.order || 'film'} onChange={(order) => setScope({ order: order || 'film' })} />
+          <Popover position="bottom-end" withinPortal={false} shadow="md" width={250}>
+            <Popover.Target><ActionIcon variant="subtle" color="gray" size="md" aria-label="Icon key"><IconHelp size={16} stroke={1.8} /></ActionIcon></Popover.Target>
+            <Popover.Dropdown className="cf-legend">
+              {LEGEND.map(([title, items]) => (
+                <div key={title} className="cf-legend__group">
+                  <Text size="xs" c="dimmed">{title}</Text>
+                  {items.map(([icon, words]) => <div key={words} className="cf-legend__item">{icon}<span>{words}</span></div>)}
+                </div>
+              ))}
+            </Popover.Dropdown>
+          </Popover>
+        </Group>
       </Group>
       {stage === 'plays' ? <Text size="xs" c="dimmed">These play as they are under your settings. Nothing here needs a verdict.</Text> : null}
       {stage === 'refine' ? <Text size="xs" c="dimmed">Refine measures where each of these parts really starts and ends. A verdict on a part resets when it is refined.</Text> : null}
@@ -74,29 +89,32 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
         <div className="cf-review__rows" role="list">
           {shown.map((r) => {
             const selected = r.id === selectedId;
-            const timing = TIMING[r.timing];
+            const timing = plays(r) ? null : timingState(r);
             const state = refining[r.id];
             const status = rowStatus(r);
-            const glyph = selected ? '▶' : status.glyph;
+            // A verdict's word stays in view; "To do" and "Plays" are read from the icon (and by a screen reader).
+            const wordShown = selected || status.tone === 'done' || status.tone === 'redo';
+            const facts = [`${timecode(r.in)}–${timecode(r.out)}`, r.group && groupLabel(r.group), MODALITY[r.modality],
+              plays(r) ? (r.why === 'removed' ? 'plays (removed)' : 'plays') : effectWord(r.effect), r.handFixed ? 'hand-fixed' : null].filter(Boolean).join(' · ');
             return (
               <div key={r.id} role="listitem" data-row-id={r.id}
                 className={`cf-review__row${selected ? ' is-selected' : ''}${plays(r) ? ' is-plays' : ''}`}>
                 <UnstyledButton onClick={() => onSelect(r)} onMouseDown={(e) => e.preventDefault()} aria-pressed={selected} aria-label={r.label}
                   className="cf-review__pick" title={selected ? undefined : r.label}>
-                  <span className="cf-review__glyph" aria-hidden="true">{glyph}</span>
-                  <span className={`cf-review__status is-${status.tone}`}>{status.word}</span>
+                  <span className="cf-review__glyph" data-status={status.word}><StatusIcon status={status} /></span>
                   <span className="cf-review__time">{timecode(r.in)}</span>
-                  <span className="cf-review__label">
-                    <Text fw={500} size="sm" span>{r.label}</Text>
-                  </span>
-                  <span className="cf-review__meta">
-                    <Text size="xs" c="dimmed" span>{[r.group && groupLabel(r.group), plays(r) ? (r.why === 'removed' ? 'plays (removed)' : 'plays') : effectChip(r.effect).toLowerCase()].filter(Boolean).join(' · ')}</Text>
-                    {state ? <Badge size="xs" color="blue" variant="light">{state}</Badge>
-                      : timing && r.timing !== 'refined' && !plays(r) ? <Badge size="xs" variant="light" color={timing[1]}>{timing[0]}</Badge> : null}
+                  <span className="cf-review__fx"><EffectIcon row={r} /><ChannelIcon row={r} /></span>
+                  <span className="cf-review__label">{r.label}</span>
+                  <span className="cf-review__marks">
+                    {wordShown ? <span className={`cf-review__status is-${status.tone}`}>{status.word}</span> : <VisuallyHidden>{status.word}</VisuallyHidden>}
+                    {state ? <span className="cf-review__refining" title={state}><RefiningIcon state={state} />{selected ? null : <VisuallyHidden>{state}</VisuallyHidden>}</span>
+                      : timing ? <TimingIcon row={r} /> : null}
                   </span>
                   {selected ? (
                     <span className="cf-review__more">
-                      <Text size="xs" c="dimmed" span>{`${timecode(r.in)}–${timecode(r.out)}${MODALITY[r.modality] ? ` · ${MODALITY[r.modality]}` : ''}${r.handFixed ? ' · hand-fixed' : ''}`}</Text>
+                      <Text size="xs" c="dimmed" span>{facts}</Text>
+                      {state ? <Badge size="xs" color="blue" variant="light">{state}</Badge>
+                        : timing ? <span className={`cf-review__timing is-${timing.key}`}>{timing.word}</span> : null}
                       {r.unsure.filter((u) => !(u === 'safe-window' && r.timing === 'safe-window')).map((u) => <Badge key={u} size="xs" color="orange" variant="light">{UNSURE_LABELS[u] || u}</Badge>)}
                       {r.card ? <Text size="xs" c="dimmed" span>{r.card.approved ? 'Card: ' : 'Draft card: '}{r.card.text}</Text> : null}
                     </span>

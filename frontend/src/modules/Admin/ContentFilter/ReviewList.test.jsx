@@ -30,13 +30,16 @@ describe('ReviewList', () => {
     show({ scope: { stage: 'plays', show: 'plays', kind: 'all', action: 'all', needs: false, group: null, order: 'film' }, onScope: () => {} });
     expect(order()).toEqual(['cue:k1']);
     expect(screen.getByText(/Nothing here needs a verdict/)).toBeTruthy();
-    expect(within(item(rows[3].label)).getByText(/plays/)).toBeTruthy();
+    expect(within(item(rows[3].label)).getByText('Plays')).toBeTruthy();
   });
   it('rows keep their whole label (no cut-off), with a glyph for where each stands', () => {
     show({ scope: { show: 'plays', kind: 'all', action: 'all', needs: false, group: null, order: 'film' }, onScope: () => {} });
     expect(screen.getByText(rows[3].label)).toBeTruthy();
-    const glyphs = () => [...document.querySelectorAll('.cf-review__glyph')].map((n) => n.textContent);
-    expect(glyphs()).toEqual(['']);
+    const glyphs = () => [...document.querySelectorAll('.cf-review__glyph')].map((n) => n.getAttribute('data-status'));
+    expect(glyphs()).toEqual(['Plays']);
+    // Icons are SVG, never text glyphs.
+    expect(document.querySelector('.cf-review__glyph svg')).toBeTruthy();
+    expect(document.querySelector('.cf-review__glyph').textContent).toBe('');
   });
   it('the part in hand opens to its span, reasons and card; others show a short line', () => {
     show({ selectedId: 'cue:w1' });
@@ -45,14 +48,32 @@ describe('ReviewList', () => {
     expect(within(sel).getAllByText('Safe window').length).toBeGreaterThan(0);
     expect(within(item('Billboard')).queryByText(/0:50.0–0:58.0/)).toBeNull();
     expect(within(item('Billboard')).getByText('Approved')).toBeTruthy();
-    expect(sel.querySelector('.cf-review__glyph').textContent).toBe('▶');
-    expect(item('Billboard').querySelector('.cf-review__glyph').textContent).toBe('✓');
+    expect(sel.querySelector('.cf-review__glyph').getAttribute('data-status')).toBe('To do');
+    expect(within(sel).getByText('To do')).toBeTruthy();
+    expect(item('Billboard').querySelector('.cf-review__glyph').getAttribute('data-status')).toBe('Approved');
   });
   it('clicking a row selects it (the page seeks)', () => {
     const onSelect = vi.fn();
     show({ onSelect });
     fireEvent.click(screen.getByRole('button', { name: 'damn' }));
     expect(onSelect).toHaveBeenCalledWith(rows[0]);
+  });
+  it('a row carries its effect, channel and timing as icons with their words; the icon key explains them', async () => {
+    show();
+    const names = (label) => [...item(label).querySelectorAll('[role="img"]')].map((n) => n.getAttribute('aria-label'));
+    expect(names('damn')).toEqual(['Muted', 'Said', 'Safe window']);
+    expect(names('Billboard')).toEqual(['Blurred', 'Shown', 'Refined']);
+    expect(item('damn').querySelector('.cf-ico--fx').className).toContain('is-audio');
+    expect(item('Billboard').querySelector('.cf-ico--fx').className).toContain('is-picture');
+    expect(item('Fight').querySelector('.cf-ico--fx').className).toContain('is-skip');
+    fireEvent.click(screen.getByRole('button', { name: 'Icon key' }));
+    expect(await screen.findByText('Rough after refine: check by eye')).toBeTruthy();
+    expect(screen.getByText('Bleeped (sound)')).toBeTruthy();
+  });
+  it('a rough part refine already tried is marked apart from one not refined yet', () => {
+    show({ rows: [{ ...rows[0], timing: 'rough', unsure: [] }, { ...rows[1], timing: 'rough', unsure: ['refine-coarse-edges'], verdict: null, reviewed: null }] });
+    expect(within(item('damn')).getByRole('img', { name: 'Rough' })).toBeTruthy();
+    expect(within(item('Billboard')).getByRole('img', { name: 'Rough after refine' })).toBeTruthy();
   });
   it('"To do only" hides parts with a verdict', () => {
     show();
