@@ -773,6 +773,95 @@ test('Feed returns focus to the list when the opening card is archived in detail
   await expect(page.getByRole('main', { name: 'Feed' })).toBeFocused();
 });
 
+async function holdDetailArchive(page, items) {
+  const started = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const writes = [];
+  await page.route('**/scroll/sessions', route => route.fulfill({ json: { items, sessionId: 'archive-visit', hasMore: false } }));
+  await page.route('**/feed/detail/*', route => {
+    const id = decodeURIComponent(new URL(route.request().url()).pathname.split('/').at(-1));
+    return route.fulfill({ json: { sections: [{ type: 'article', data: { html: `<p>Article body for ${id}.</p>` } }] } });
+  });
+  await page.route(url => url.pathname.endsWith('/feed/items/state'), async route => {
+    const body = route.request().postDataJSON();
+    writes.push(body);
+    if (body.action !== 'archive') return route.fulfill({ json: { items: [{ id: body.itemIds[0], state: { isRead: true } }] } });
+    started.resolve();
+    await release.promise;
+    return route.fulfill({ json: { items: [{ id: body.itemIds[0], state: { isArchived: true } }] } });
+  });
+  return { started, release, writes };
+}
+
+for (const width of [390, 1440]) test(`Feed archive completion does not leave a newer detail visit at ${width}px`, async ({ page }) => {
+  const first = { ...article, id: 'reddit:archive-first', title: 'Archive first article' };
+  const second = { ...article, id: 'reddit:archive-second', title: 'Keep second article open' };
+  const firstBody = `Article body for ${first.id}.`;
+  const secondBody = `Article body for ${second.id}.`;
+  const { started, release, writes } = await holdDetailArchive(page, [first, second]);
+  await page.setViewportSize({ width, height: 850 });
+  await page.goto('/feed/scroll');
+  await page.getByRole('button', { name: `Open: ${first.title}`, exact: true }).click();
+  await expect(page.getByText(firstBody)).toBeVisible();
+  await page.getByRole('button', { name: 'Archive', exact: true }).click();
+  try {
+    await started.promise;
+    await page.getByRole('button', { name: 'Back to feed', exact: true }).click();
+    await page.getByRole('button', { name: `Open: ${second.title}`, exact: true }).click();
+    await expect(page.getByText(secondBody)).toBeVisible();
+  } finally {
+    release.resolve();
+  }
+  await expect(page.getByText('Archived', { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(scrollPath(second.id));
+  await expect(page.getByText(secondBody)).toBeVisible();
+  expect(writes.filter(write => write.action === 'archive')).toEqual([{ action: 'archive', itemIds: [first.id] }]);
+});
+
+test('Feed archive completion does not replay navigation after Back then Forward', async ({ page }) => {
+  const first = { ...article, id: 'reddit:archive-reopened', title: 'Reopened archived article' };
+  const body = `Article body for ${first.id}.`;
+  const { started, release } = await holdDetailArchive(page, [first]);
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.goto('/feed/scroll');
+  await page.getByRole('button', { name: `Open: ${first.title}`, exact: true }).click();
+  await expect(page.getByText(body)).toBeVisible();
+  await page.getByRole('button', { name: 'Archive', exact: true }).click();
+  try {
+    await started.promise;
+    await page.getByRole('button', { name: 'Back to feed', exact: true }).click();
+    await expect(page).toHaveURL('/feed/scroll');
+    await page.goForward();
+    await expect(page).toHaveURL(scrollPath(first.id));
+    await expect(page.getByText(body)).toBeVisible();
+  } finally {
+    release.resolve();
+  }
+  await expect(page.getByText('Archived', { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(scrollPath(first.id));
+  await expect(page.getByText(body)).toBeVisible();
+});
+
+test('Feed archive completion does not navigate after leaving Scroll', async ({ page }) => {
+  const first = { ...article, id: 'reddit:archive-search', title: 'Archived before Search' };
+  const { started, release } = await holdDetailArchive(page, [first]);
+  await page.goto('/feed/scroll');
+  await page.getByRole('button', { name: `Open: ${first.title}`, exact: true }).click();
+  await expect(page.getByText(`Article body for ${first.id}.`)).toBeVisible();
+  await page.getByRole('button', { name: 'Archive', exact: true }).click();
+  try {
+    await started.promise;
+    await page.keyboard.press('/');
+    await expect(page).toHaveURL('/feed/search');
+    await expect(page.getByRole('heading', { name: 'Search your feed' })).toBeVisible();
+  } finally {
+    release.resolve();
+  }
+  await expect(page.getByText('Archived', { exact: true })).toBeVisible();
+  await expect(page).toHaveURL('/feed/search');
+  await expect(page.getByRole('heading', { name: 'Search your feed' })).toBeVisible();
+});
+
 test('Feed desktop gallery activation returns focus to the card Open control', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 850 });
   const image = '/fixture-gallery.jpg';

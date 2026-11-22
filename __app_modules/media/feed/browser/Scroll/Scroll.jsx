@@ -179,6 +179,15 @@ export default function Scroll() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const location = useLocation();
+  const activeVisit = useRef(null);
+  useLayoutEffect(() => {
+    // A fresh token distinguishes POP revisits that reuse the same history key.
+    const visit = {};
+    activeVisit.current = visit;
+    return () => {
+      if (activeVisit.current === visit) activeVisit.current = null;
+    };
+  }, [location.key]);
   const { getSnapshot, setSnapshot, getLastVisit, markVisited, mutateItems, readingPreferences, applyPendingMutations, checkpoints, sourcePreferences, setSourcePreference, pendingItemOperations, itemSyncRevision } = useFeedWorkspace();
   // Checkpoints and the in-memory snapshot belong to the unfiltered Scroll
   // visit. Session IDs are already scoped by both query dimensions below.
@@ -729,6 +738,15 @@ export default function Scroll() {
     else navigate(`/feed/scroll${location.search}`, { replace: true });
   }, [location.search, location.state, navigate]);
 
+  const handleDetailStateAction = useCallback((action, item) => {
+    const visit = activeVisit.current;
+    mutateItems([item], action, {
+      onApply: updated => setItems(current => current.map(value => updated.find(next => next.id === value.id) || value)),
+    }).then(() => {
+      if (action === 'archive' && visit && activeVisit.current === visit) handleBack();
+    }).catch(() => {});
+  }, [handleBack, mutateItems]);
+
   // Apply assembly debug filter (tier/source toggles)
   const visibleItems = (() => {
     const activeItems = items.filter(item => !item.state?.isArchived && sourcePreferences[item.source] !== 'mute');
@@ -1004,7 +1022,7 @@ export default function Scroll() {
           activeMedia={activeMedia}
           playback={playback}
           onNavigateToItem={handleGalleryNav}
-          onStateAction={(action) => mutateItems([selectedItem], action, { onApply: updated => setItems(current => current.map(value => updated.find(next => next.id === value.id) || value)) }).then(() => { if (action === 'archive') handleBack(); }).catch(() => {})}
+          onStateAction={(action) => handleDetailStateAction(action, selectedItem)}
         />
       )}
       {selectedItem && !isDesktop && (
@@ -1025,7 +1043,7 @@ export default function Scroll() {
           activeMedia={activeMedia}
           playback={playback}
           onNavigateToItem={handleGalleryNav}
-          onStateAction={(action) => mutateItems([selectedItem], action, { onApply: updated => setItems(current => current.map(value => updated.find(next => next.id === value.id) || value)) }).then(() => { if (action === 'archive') handleBack(); }).catch(() => {})}
+          onStateAction={(action) => handleDetailStateAction(action, selectedItem)}
         />
       )}
       {searchParams.get('debug') === '1' && (
