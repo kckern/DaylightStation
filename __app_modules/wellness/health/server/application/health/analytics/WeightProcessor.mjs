@@ -257,52 +257,63 @@ export class WeightProcessor {
   #rollingAverage(items, key, windowSize) {
     const dates = Object.keys(items).sort((a, b) => moment(a).valueOf() - moment(b).valueOf());
 
-    // Stage 1: Rolling average of raw values
+    // Stage 1: Rolling average of observed values. Missing calendar days stay
+    // in the window but contribute neither a value nor a denominator count.
     let sum = 0;
+    let count = 0;
     const queue = [];
     for (let i = 0; i < dates.length; i++) {
       const date = dates[i];
-      const val = items[date][key] || 0;
-      sum += val;
+      const raw = items[date][key];
+      const val = Number.isFinite(raw) ? raw : null;
+      if (val !== null) { sum += val; count += 1; }
       queue.push(val);
 
       if (queue.length > windowSize) {
-        sum -= queue.shift();
+        const removed = queue.shift();
+        if (removed !== null) { sum -= removed; count -= 1; }
       }
 
-      const avg = queue.length ? sum / queue.length : 0;
-      items[date][`${key}_average`] = Math.round(avg * 100) / 100;
+      const avg = count ? sum / count : null;
+      items[date][`${key}_average`] = avg === null ? null : Math.round(avg * 100) / 100;
     }
 
     // Stage 2: Compute diff from rolling average
     for (let i = 0; i < dates.length; i++) {
       const date = dates[i];
-      const actual = items[date][key] || 0;
-      const avg = items[date][`${key}_average`] || 0;
-      items[date][`${key}_diff`] = Math.round((actual - avg) * 100) / 100;
+      const actual = items[date][key];
+      const avg = items[date][`${key}_average`];
+      items[date][`${key}_diff`] = Number.isFinite(actual) && Number.isFinite(avg)
+        ? Math.round((actual - avg) * 100) / 100
+        : null;
     }
 
     // Stage 3: Rolling average of diff
     sum = 0;
+    count = 0;
     queue.length = 0;
     for (let i = 0; i < dates.length; i++) {
       const date = dates[i];
-      const val = items[date][`${key}_diff`] || 0;
-      sum += val;
+      const raw = items[date][`${key}_diff`];
+      const val = Number.isFinite(raw) ? raw : null;
+      if (val !== null) { sum += val; count += 1; }
       queue.push(val);
 
       if (queue.length > windowSize) {
-        sum -= queue.shift();
+        const removed = queue.shift();
+        if (removed !== null) { sum -= removed; count -= 1; }
       }
 
-      const avgDiff = queue.length ? sum / queue.length : 0;
-      items[date][`${key}_diff_average`] = Math.round(avgDiff * 100) / 100;
+      const avgDiff = count ? sum / count : null;
+      items[date][`${key}_diff_average`] = avgDiff === null ? null : Math.round(avgDiff * 100) / 100;
 
       // Stage 4: Adjusted average = average - avgDiff
       // If measurements are consistently above rolling avg (positive avgDiff),
       // we adjust the average UP by subtracting negative bias
-      items[date][`${key}_adjusted_average`] =
-        Math.round((items[date][`${key}_average`] - avgDiff) * 100) / 100;
+      const average = items[date][`${key}_average`];
+      items[date][`${key}_adjusted_average`] = Number.isFinite(average) && avgDiff !== null
+        ? Math.round((average - avgDiff) * 100) / 100
+        : null;
     }
 
     return items;
@@ -351,6 +362,7 @@ export class WeightProcessor {
 
     for (const key of keysToExtrapolate) {
       const lastValue = values[mostRecentRecord][key];
+      if (!Number.isFinite(lastValue)) continue;
       const dailyChange = values[mostRecentRecord][`${key}_1day_trend`] || 0;
 
       for (let i = 1; i <= daysSinceLastRecord; i++) {
