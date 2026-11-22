@@ -1,5 +1,5 @@
 import path from 'path';
-import { loadYamlSafe, saveYaml } from '#system/utils/FileIO.mjs';
+import { readYamlFromPath, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
 import { ICeremonyRecordRepository } from "../../application/ports/ICeremonyRecordRepository.mjs";
 
 export class YamlCeremonyRecordStore extends ICeremonyRecordRepository {
@@ -20,7 +20,7 @@ export class YamlCeremonyRecordStore extends ICeremonyRecordRepository {
     const records = this.#loadRecords(username);
     records.push(record);
     const filePath = this.#filePath(username);
-    saveYaml(filePath, records);
+    saveYamlToPathAtomic(filePath, records, { preserveMode: true });
   }
 
   getRecords(username, type) {
@@ -36,8 +36,18 @@ export class YamlCeremonyRecordStore extends ICeremonyRecordRepository {
 
   #loadRecords(username) {
     const filePath = this.#filePath(username);
-    const data = loadYamlSafe(filePath);
-    return Array.isArray(data) ? data : [];
+    let data;
+    try {
+      data = readYamlFromPath(filePath);
+    } catch (error) {
+      if (error.code === 'ENOENT') return [];
+      throw error;
+    }
+
+    if (!Array.isArray(data)) {
+      throw new Error('Invalid ceremony record YAML: expected a list');
+    }
+    return data;
   }
 
   #filePath(username) {
