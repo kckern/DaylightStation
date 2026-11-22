@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { whileDocumentVisible } from '@/lib/hooks/useVisibleRefresh.js';
 import { RemuxPlayer } from "../../../../../__capabilities/playback/browser/remux.mjs";
 import { useFeedPlayer } from "./FeedPlayerContext.jsx";
+import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { formatFeedPlaybackTime } from './formatTime.js';
 import { formatFeedVolume } from './formatVolume.js';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
@@ -286,11 +287,7 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
           aria-label={playing ? 'Pause' : 'Play'}
           style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: '2px', display: 'flex' }}
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-            {playing
-              ? <><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></>
-              : <path d="M8 5v14l11-7z" />}
-          </svg>
+          <UiIcon name={playing ? 'pause' : 'play'} size={20} />
         </button>
 
         {/* Time */}

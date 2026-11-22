@@ -3,6 +3,7 @@ import { formatAge, proxyIcon, proxyImage, isImageUrl, safeImage } from "./utils
 import { getBodyModule } from "./bodies/index.js";
 import { getContentPlugin } from "../../contentPlugins/index.js";
 import { feedLog } from "../feedLog.js";
+import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 import FeedPlayer from "../../players/FeedPlayer.jsx";
 import { INLINE_YOUTUBE_QUALITY, inlineYouTubeDetailPath, useInlineYouTubeDetail } from "../../players/useInlineYouTubeDetail.js";
@@ -398,9 +399,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
                   }}
                   aria-label="Play"
                 >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
+                  <UiIcon name="play" size={20} style={{ color: '#fff' }} />
                 </button>
               )}
             </>

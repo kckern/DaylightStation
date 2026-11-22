@@ -424,7 +424,7 @@ function YouTubeHero({ item, heroImage, sections, loading, onPlay: _onPlay }) {
           }}
           aria-label="Play video"
         >
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z" /></svg>
+          <UiIcon name="play" size={28} style={{ color: '#fff' }} />
         </button>
       </div>
     );

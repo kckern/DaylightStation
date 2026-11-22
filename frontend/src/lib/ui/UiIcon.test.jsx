@@ -5,7 +5,7 @@ import { UiIcon } from './UiIcon.jsx';
 it('provides the shared navigation and action icon names as decorative SVGs', () => {
   const names = [
     'back', 'brain', 'calendar', 'car', 'chart', 'close', 'coach', 'dashboard',
-    'diamond', 'expand', 'folder', 'fuel', 'heart', 'home', 'mosaic', 'pin', 'plus', 'search',
+    'diamond', 'expand', 'folder', 'fuel', 'heart', 'home', 'mosaic', 'pause', 'pin', 'play', 'plus', 'search',
     'service', 'settings', 'shield', 'target', 'timeline', 'television', 'video',
   ];
   const { container } = render(<div>{names.map(name => <UiIcon key={name} name={name} />)}</div>);

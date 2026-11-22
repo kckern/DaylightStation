@@ -6,8 +6,6 @@
 // lets Peek retain its pending-state policy without creating a second surface.
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  IconPlayerPlayFilled,
-  IconPlayerPauseFilled,
   IconPlayerStopFilled,
   IconPlayerSkipBackFilled,
   IconPlayerSkipForwardFilled,
@@ -15,6 +13,7 @@ import {
   IconRewindForward10,
   IconVolume,
 } from '@tabler/icons-react';
+import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { useSessionController } from "../controller/useSessionController.js";
 import { playbackRateLabel } from "./stateCopy.js";
 import { PlayerFeatureControls, useSlideshowStopGuard } from "./PlayerFeatureControls.jsx";
@@ -156,7 +155,7 @@ export function TransportBar({ target, snapshot: snapshotOverride = null, onComm
           disabled={!controlsAvailable || !hasPlayableItem || typeof (isPlaying ? transport.pause : transport.play) !== 'function' || isPending(isPlaying ? 'pause' : 'play')}
           onClick={() => runCommand(isPlaying ? 'pause' : 'play', () => (isPlaying ? transport.pause?.() : transport.play?.()))}
         >
-          {isPlaying ? <IconPlayerPauseFilled size={30} /> : <IconPlayerPlayFilled size={30} />}
+          <UiIcon name={isPlaying ? 'pause' : 'play'} size={30} />
         </button>
         {showSeek && (
           <button

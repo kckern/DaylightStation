@@ -1,4 +1,5 @@
 import getLogger from "../../../../../../../frontend/src/lib/logging/Logger.js";
+import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { formatFeedPlaybackTime } from '../../../players/formatTime.js';
 
 function log() { return getLogger().child({ module: 'feed-player-section' }); }
@@ -31,9 +32,7 @@ export default function PlayerSection({ data, onPlay, activeMedia, item, playbac
           gap: '0.5rem',
         }}
       >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff">
-          <path d="M8 5v14l11-7z" />
-        </svg>
+        <UiIcon name="play" size={20} style={{ color: '#fff' }} />
         Play
       </button>
     );
@@ -64,12 +63,7 @@ export default function PlayerSection({ data, onPlay, activeMedia, item, playbac
           }}
           aria-label={playing ? 'Pause' : 'Play'}
         >
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="#fff">
-            {playing
-              ? <><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></>
-              : <path d="M8 5v14l11-7z" />
-            }
-          </svg>
+          <UiIcon name={playing ? 'pause' : 'play'} size={28} style={{ color: '#fff' }} />
         </button>
         <span style={{ fontSize: '0.75rem', color: '#868e96', fontVariantNumeric: 'tabular-nums' }}>
           {formatFeedPlaybackTime(currentTime)} / {formatFeedPlaybackTime(duration)}
