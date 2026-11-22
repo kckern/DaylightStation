@@ -71,6 +71,67 @@ describe('TemplatePicker', () => {
     expect(update[1].components.at(-1)).toMatchObject({ name: 'Milk', grams: '' });
   });
 
+  it.each([
+    { label: 'known', startingGrams: 100, calories: 400, protein: 20 },
+    { label: 'unknown', startingGrams: undefined, calories: 200, protein: 10 },
+  ])('uses one edit baseline when replacing a $label weight digit by digit', async ({ startingGrams, calories, protein }) => {
+    const eggs = { ...component('Eggs', 200), grams: startingGrams, protein: 10 };
+    respondWith([{ ...FLAT, components: [eggs] }]);
+    r(<TemplatePicker open onClose={() => {}} onLogged={() => {}} bucketId="morning" />);
+    await waitFor(() => expect(screen.getByText('Protein breakfast')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Protein breakfast' }));
+
+    const grams = screen.getByRole('textbox', { name: 'Eggs grams' });
+    act(() => grams.focus());
+    for (const value of ['', '2', '20', '200']) {
+      fireEvent.change(grams, { target: { value } });
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Save meal' }));
+
+    await waitFor(() => expect(apiMock.mock.calls.some(([, , method]) => method === 'PUT')).toBe(true));
+    const update = apiMock.mock.calls.find(([, , method]) => method === 'PUT');
+    expect(update[1].components[0]).toMatchObject({ grams: 200, calories, protein });
+  });
+
+  it('restores saved nutrients when a partial weight edit is cleared', async () => {
+    const eggs = { ...component('Eggs', 200), grams: 100, amount: 100, unit: 'g', protein: 10 };
+    respondWith([{ ...FLAT, components: [eggs] }]);
+    r(<TemplatePicker open onClose={() => {}} onLogged={() => {}} bucketId="morning" />);
+    await waitFor(() => expect(screen.getByText('Protein breakfast')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Protein breakfast' }));
+
+    const grams = screen.getByRole('textbox', { name: 'Eggs grams' });
+    act(() => grams.focus());
+    for (const value of ['', '2', '']) {
+      fireEvent.change(grams, { target: { value } });
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Save meal' }));
+
+    await waitFor(() => expect(apiMock.mock.calls.some(([, , method]) => method === 'PUT')).toBe(true));
+    const update = apiMock.mock.calls.find(([, , method]) => method === 'PUT');
+    expect(update[1].components[0]).toMatchObject({ grams: '', amount: 100, unit: 'g', calories: 200, protein: 10 });
+  });
+
+  it('scales a blur-clamped weight from the original component snapshot', async () => {
+    const eggs = { ...component('Eggs', 200), grams: 100, protein: 10 };
+    const toast = { ...component('Toast', 100), grams: 50, protein: 5 };
+    respondWith([{ ...FLAT, components: [eggs, toast] }]);
+    r(<TemplatePicker open onClose={() => {}} onLogged={() => {}} bucketId="morning" />);
+    await waitFor(() => expect(screen.getByText('Protein breakfast')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Protein breakfast' }));
+
+    const grams = screen.getByRole('textbox', { name: 'Eggs grams' });
+    act(() => grams.focus());
+    fireEvent.change(grams, { target: { value: '0.001' } });
+    act(() => screen.getByRole('textbox', { name: 'Toast grams' }).focus());
+    fireEvent.click(screen.getByRole('button', { name: 'Save meal' }));
+
+    await waitFor(() => expect(apiMock.mock.calls.some(([, , method]) => method === 'PUT')).toBe(true));
+    const update = apiMock.mock.calls.find(([, , method]) => method === 'PUT');
+    expect(update[1].components[0]).toMatchObject({ grams: 0.01, calories: 0.02 });
+    expect(update[1].components[1]).toMatchObject({ grams: 50, calories: 100, protein: 5 });
+  });
+
   it('asks for proposals in the same request, and shows them above the templates', async () => {
     respondWith([PROPOSAL, SMOOTHIE]);
     r(<TemplatePicker open onClose={() => {}} onLogged={() => {}} bucketId="morning" />);

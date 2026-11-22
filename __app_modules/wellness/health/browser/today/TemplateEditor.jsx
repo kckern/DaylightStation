@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button, Group, NumberInput, Stack, Text, TextInput, SegmentedControl } from '@mantine/core';
 import { SubmitButton, useSheetSubmission } from '@/lib/ui';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
@@ -10,12 +10,21 @@ const logger = createAppLogger('health').child('template-editor');
 
 export function TemplateEditor({ template, onCommitted, onClose, onCancel }) {
   const [draft, setDraft] = useState(() => structuredClone(template));
+  const weightEdit = useRef(null);
   const { run, saving: busy, failure: error } = useSheetSubmission(onClose, error => {
     logger.warn('template.save_failed', { id: template.id, error: error.message });
   });
   const valid = Boolean(draft.name.trim() && draft.components.length && draft.components.every(isValidTemplateComponent));
   const update = (index, changes) => setDraft(previous => ({ ...previous,
     components: previous.components.map((component, i) => i === index ? { ...component, ...changes } : component) }));
+  const changeWeight = (index, component, grams) => {
+    if (weightEdit.current?.index !== index) weightEdit.current = { index, component };
+    const baseline = weightEdit.current.component;
+    const changes = baseline.grams > 0 && grams > 0
+      ? scaleFoodPortion(baseline, Number(grams) / baseline.grams)
+      : { ...Object.fromEntries(NUTRIENT_KEYS.map(key => [key, baseline[key]])), amount: baseline.amount, unit: baseline.unit };
+    update(index, { ...changes, grams });
+  };
   const save = () => run(async () => {
     await DaylightAPI(`api/v1/health/nutrition/templates/${template.id}`, { name: draft.name, components: draft.components }, 'PUT');
     logger.info('template.saved', { id: template.id });
@@ -28,7 +37,8 @@ export function TemplateEditor({ template, onCommitted, onClose, onCancel }) {
       <Group gap="xs" wrap="nowrap">
         <TextInput aria-label={`Component ${index + 1} name`} value={component.name} onChange={event => update(index, { name: event.target.value })} disabled={busy} />
         <NumberInput aria-label={`${component.name || 'Component'} grams`} suffix=" g" min={0.01} value={component.grams || ''} disabled={busy}
-          onChange={grams => update(index, { ...(component.grams > 0 && grams > 0 ? scaleFoodPortion(component, grams / component.grams) : {}), grams })} />
+          onFocusCapture={() => { weightEdit.current = { index, component }; }}
+          onChange={grams => changeWeight(index, component, grams)} />
         <Button size="compact-xs" variant="subtle" color="red" disabled={busy} onClick={() => setDraft(previous => ({ ...previous, components: previous.components.filter((_, i) => i !== index) }))}>Remove</Button>
       </Group>
       <SegmentedControl aria-label={`${component.name || `Component ${index + 1}`} meal inclusion`}
