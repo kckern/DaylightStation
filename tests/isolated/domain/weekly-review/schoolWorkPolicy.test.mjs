@@ -1,6 +1,6 @@
 // tests/isolated/domain/weekly-review/schoolWorkPolicy.test.mjs
 import { describe, it, expect } from 'vitest';
-import { curateSchoolWork, dedupeWorkItems } from "../../../../__app_modules/personal/weekly-review/server/domain/schoolWorkPolicy.mjs";
+import { curateSchoolWork, dedupeWorkItems } from '../../../../__app_modules/personal/weekly-review/server/domain/schoolWorkPolicy.mjs';
 
 const DATES = ['2026-03-23', '2026-03-24', '2026-03-25', '2026-03-26', '2026-03-27', '2026-03-28', '2026-03-29'];
 
@@ -149,6 +149,79 @@ describe('curateSchoolWork', () => {
       ['kid-a', '2026-03-24', 3, '2 sessions this week'],
       ['kid-b', '2026-03-25', 3, '2 sessions this week'],
     ]);
+  });
+
+  it('moves a group that loses its heaviest day to its next-best free day', () => {
+    const result = curateSchoolWork([
+      item({ studyDay: '2026-03-23', weight: 1, subtitle: 'Unit 1' }),
+      item({ studyDay: '2026-03-24', weight: 3, subtitle: 'Unit 2' }),
+      item({ kind: 'book', verb: 'finished', groupKey: 'book:r1:finished', title: 'The Book', studyDay: '2026-03-24' }),
+    ], DATES);
+    expect(result['2026-03-24'].school.map(i => i.title)).toEqual(['The Book']);
+    expect(result['2026-03-23'].school).toHaveLength(1);
+    const [course] = result['2026-03-23'].school;
+    expect(course.subtitle).toBe('Unit 1 · 2 sessions this week');
+    expect(course.weight).toBe(4);
+    expect(course.at).toBe('2026-03-23T10:00:00.000Z');
+  });
+
+  it('drops a group from school when it has no free day, keeping it in schoolAll', () => {
+    const result = curateSchoolWork([
+      item({ studyDay: '2026-03-23', weight: 1 }),
+      item({ studyDay: '2026-03-24', weight: 3 }),
+      item({ kind: 'book', verb: 'finished', groupKey: 'book:r1:finished', title: 'Book 1', studyDay: '2026-03-23' }),
+      item({ kind: 'book', verb: 'finished', groupKey: 'book:r2:finished', title: 'Book 2', studyDay: '2026-03-24' }),
+    ], DATES);
+    const school = Object.values(result).flatMap(day => day.school);
+    expect(school.map(i => i.title)).toEqual(['Book 1', 'Book 2']);
+    expect(result['2026-03-23'].schoolAll.some(i => i.groupKey === 'course:c1')).toBe(true);
+    expect(result['2026-03-24'].schoolAll.some(i => i.groupKey === 'course:c1')).toBe(true);
+  });
+
+  it('breaks a priority and weight tie by latest at, then groupKey', () => {
+    const byAt = curateSchoolWork([
+      item({ groupKey: 'course:early', title: 'early', at: '2026-03-23T08:00:00.000Z' }),
+      item({ groupKey: 'course:late', title: 'late', at: '2026-03-23T18:00:00.000Z' }),
+    ], DATES);
+    expect(byAt['2026-03-23'].school.map(i => i.title)).toEqual(['late']);
+
+    const byKey = curateSchoolWork([
+      item({ groupKey: 'course:b', title: 'b' }),
+      item({ groupKey: 'course:a', title: 'a' }),
+    ], DATES);
+    expect(byKey['2026-03-23'].school.map(i => i.title)).toEqual(['a']);
+  });
+
+  it('picks the latest item within the winning day when weights tie', () => {
+    const result = curateSchoolWork([
+      item({ studyDay: '2026-03-24', weight: 2, subtitle: 'morning', at: '2026-03-24T08:00:00.000Z' }),
+      item({ studyDay: '2026-03-24', weight: 2, subtitle: 'evening', at: '2026-03-24T19:00:00.000Z' }),
+    ], DATES);
+    expect(result['2026-03-24'].school[0].subtitle).toBe('evening · 2 sessions this week');
+  });
+
+  it('joins a program suffix to an existing subtitle', () => {
+    const result = curateSchoolWork([
+      item({ kind: 'program', verb: 'worked', groupKey: 'program:cards', studyDay: '2026-03-23', subtitle: 'Card ladder' }),
+      item({ kind: 'program', verb: 'worked', groupKey: 'program:cards', studyDay: '2026-03-25', subtitle: 'Card ladder' }),
+      item({ kind: 'program', verb: 'worked', groupKey: 'program:cards', studyDay: '2026-03-27', subtitle: 'Card ladder' }),
+    ], DATES);
+    expect(result['2026-03-27'].school[0].subtitle).toBe('Card ladder · 3 days this week');
+  });
+
+  it('treats a non-numeric weight as 0', () => {
+    const result = curateSchoolWork([
+      item({ studyDay: '2026-03-23', weight: 'lots' }),
+      item({ studyDay: '2026-03-24', weight: undefined }),
+      item({ studyDay: '2026-03-25', weight: 2 }),
+    ], DATES);
+    expect(result['2026-03-25'].school).toHaveLength(1);
+    expect(result['2026-03-25'].school[0].weight).toBe(2);
+  });
+
+  it('treats null dates and null items as empty', () => {
+    expect(curateSchoolWork(null, null)).toEqual({});
+    expect(curateSchoolWork([item({})], null)).toEqual({});
   });
 
   it('does not mutate its inputs', () => {

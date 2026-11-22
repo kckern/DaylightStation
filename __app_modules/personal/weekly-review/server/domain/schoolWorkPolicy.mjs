@@ -1,10 +1,12 @@
 /**
  * School work curation for the weekly review.
  *
- * School hands over a flat list of WorkItems for the review window; this pure
- * policy places them on days. `schoolAll` keeps every item; `school` is the
- * curated reel: one item per learner and groupKey for the week (on its heaviest day), and
- * at most one item per child per day.
+ * School hands over a flat list of WorkItems for the review window, and this
+ * pure policy places them on days. `schoolAll` keeps every item. `school` is
+ * the curated reel: one item per learner and groupKey for the week, at most
+ * one item per child per day. A group goes on its heaviest day; when a better
+ * item already holds that child's slot there, it falls back to the group's
+ * next-best day with a free slot, and is left out of `school` when none is free.
  *
  * Kids watch the review, so items never carry scores and nothing here adds any.
  *
@@ -30,7 +32,7 @@ const PRIORITY = {
   'course:worked': 4,
   'program': 5,
 };
-const LOWEST_PRIORITY = 6;
+const UNRANKED_PRIORITY = 6;
 
 const GROUP_SUFFIX = {
   course: n => `${n} sessions this week`,
@@ -38,7 +40,7 @@ const GROUP_SUFFIX = {
 };
 
 function priorityOf(item) {
-  return PRIORITY[`${item.kind}:${item.verb}`] ?? PRIORITY[item.kind] ?? LOWEST_PRIORITY;
+  return PRIORITY[`${item.kind}:${item.verb}`] ?? PRIORITY[item.kind] ?? UNRANKED_PRIORITY;
 }
 
 function byAt(a, b) {
@@ -46,20 +48,17 @@ function byAt(a, b) {
 }
 
 function weightOf(item) {
-  return Number(item.weight) || 0;
+  const weight = Number(item.weight);
+  return Number.isFinite(weight) ? weight : 0;
 }
 
 /**
- * Collapse items sharing a learner and groupKey into one. Siblings can share
- * a groupKey (a family course), so groups never span learners. The kept item comes from the
- * day with the highest summed weight (tie: latest day), and within that day
- * the heaviest item (tie: latest `at`). Its weight becomes the group total;
- * course and program groups of more than one item get a count suffix.
- *
- * @param {WorkItem[]} items
- * @returns {WorkItem[]} new objects, one per learner and groupKey
+ * Group items by learner and groupKey (siblings can share a groupKey, such as
+ * a family course). Each group lists its days best first (summed weight desc,
+ * tie: latest day) with a representative item per day (heaviest, tie: latest
+ * `at`), already carrying the group-total weight and the count suffix.
  */
-export function dedupeWorkItems(items) {
+function buildGroups(items) {
   const groups = new Map();
   for (const item of items) {
     const key = `${item.learnerId}\u0000${item.groupKey}`;
@@ -67,32 +66,45 @@ export function dedupeWorkItems(items) {
     groups.get(key).push(item);
   }
 
-  return [...groups.values()].map(group => {
-    const dayTotals = new Map();
-    for (const item of group) dayTotals.set(item.studyDay, (dayTotals.get(item.studyDay) || 0) + weightOf(item));
-    const [bestDay] = [...dayTotals.entries()]
-      .sort(([dayA, totalA], [dayB, totalB]) => totalB - totalA || dayB.localeCompare(dayA))[0];
-    const kept = group
-      .filter(item => item.studyDay === bestDay)
-      .sort((a, b) => weightOf(b) - weightOf(a) || b.at.localeCompare(a.at))[0];
+  return [...groups.values()].map(members => {
+    const total = members.reduce((sum, item) => sum + weightOf(item), 0);
+    const suffix = members.length > 1 ? GROUP_SUFFIX[members[0].kind]?.(members.length) : null;
 
-    const total = group.reduce((sum, item) => sum + weightOf(item), 0);
-    const suffix = group.length > 1 ? GROUP_SUFFIX[kept.kind]?.(group.length) : null;
-    const subtitle = suffix ? (kept.subtitle ? `${kept.subtitle} · ${suffix}` : suffix) : kept.subtitle;
-    return { ...kept, weight: total, subtitle };
+    const byDay = new Map();
+    for (const item of members) {
+      if (!byDay.has(item.studyDay)) byDay.set(item.studyDay, []);
+      byDay.get(item.studyDay).push(item);
+    }
+    const candidates = [...byDay.entries()]
+      .map(([day, dayItems]) => ({ day, dayWeight: dayItems.reduce((sum, item) => sum + weightOf(item), 0), dayItems }))
+      .sort((a, b) => b.dayWeight - a.dayWeight || b.day.localeCompare(a.day))
+      .map(({ dayItems }) => {
+        const rep = [...dayItems].sort((a, b) => weightOf(b) - weightOf(a) || b.at.localeCompare(a.at))[0];
+        const subtitle = suffix ? (rep.subtitle ? `${rep.subtitle} · ${suffix}` : suffix) : rep.subtitle;
+        return { ...rep, weight: total, subtitle };
+      });
+    return candidates;
   });
 }
 
-function onePerLearner(items) {
-  const best = new Map();
-  for (const item of items) {
-    const current = best.get(item.learnerId);
-    const better = !current
-      || priorityOf(item) < priorityOf(current)
-      || (priorityOf(item) === priorityOf(current) && weightOf(item) > weightOf(current));
-    if (better) best.set(item.learnerId, item);
-  }
-  return [...best.values()];
+/** Per-child ranking: priority, then weight desc, then latest `at`, then groupKey. */
+function compareForSlot(a, b) {
+  return priorityOf(a) - priorityOf(b)
+    || weightOf(b) - weightOf(a)
+    || b.at.localeCompare(a.at)
+    || a.groupKey.localeCompare(b.groupKey);
+}
+
+/**
+ * Collapse items sharing a learner and groupKey into one, taken from the
+ * group's heaviest day, with the group-total weight. Course and program groups
+ * of more than one item get a count suffix on the subtitle.
+ *
+ * @param {WorkItem[]} items
+ * @returns {WorkItem[]} new objects, one per learner and groupKey
+ */
+export function dedupeWorkItems(items) {
+  return buildGroups(items || []).map(candidates => candidates[0]);
 }
 
 /**
@@ -101,15 +113,27 @@ function onePerLearner(items) {
  * @returns {Record<string, { school: WorkItem[], schoolAll: WorkItem[] }>}
  */
 export function curateSchoolWork(items, dates) {
-  const inWindow = new Set(dates);
+  const days = dates || [];
+  const inWindow = new Set(days);
   const kept = (items || []).filter(item => inWindow.has(item.studyDay));
-  const curated = dedupeWorkItems(kept);
+
+  // Higher-ranked groups claim slots first; each takes its best day with a free slot.
+  const groups = buildGroups(kept).sort((a, b) => compareForSlot(a[0], b[0]));
+  const taken = new Set();
+  const placed = [];
+  for (const candidates of groups) {
+    const choice = candidates.find(c => !taken.has(`${c.learnerId}\u0000${c.studyDay}`));
+    if (!choice) continue;
+    taken.add(`${choice.learnerId}\u0000${choice.studyDay}`);
+    placed.push(choice);
+  }
 
   const result = {};
-  for (const date of dates) {
-    const dayAll = kept.filter(item => item.studyDay === date).map(item => ({ ...item })).sort(byAt);
-    const dayCurated = onePerLearner(curated.filter(item => item.studyDay === date)).sort(byAt);
-    result[date] = { school: dayCurated, schoolAll: dayAll };
+  for (const date of days) {
+    result[date] = {
+      school: placed.filter(item => item.studyDay === date).sort(byAt),
+      schoolAll: kept.filter(item => item.studyDay === date).map(item => ({ ...item })).sort(byAt),
+    };
   }
   return result;
 }
