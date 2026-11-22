@@ -34,11 +34,12 @@ function BeliefEvidenceSheet({ beliefId, onClose, addEvidence }) {
           ]}
           value={type}
           onChange={setType}
+          disabled={saving}
           allowDeselect={false}
           comboboxProps={{ withinPortal: false }}
           data-autofocus
         />
-        <TextInput label="Note" value={note} onChange={event => setNote(event.currentTarget.value)} />
+        <TextInput label="Note" value={note} onChange={event => setNote(event.currentTarget.value)} disabled={saving} />
         <Group justify="flex-end">
           <FormButton density="compact" variant="secondary" onClick={onClose}>Cancel</FormButton>
           <SubmitButton density="compact" pending={saving}>
