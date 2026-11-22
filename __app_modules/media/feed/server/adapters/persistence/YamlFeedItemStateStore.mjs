@@ -14,7 +14,16 @@ export class YamlFeedItemStateStore {
   }
 
   load(username) {
-    return this.#dataService.user.read(STATE_PATH, username) || { version: 1, items: {}, aliases: {} };
+    const entry = this.#dataService.user.readStrictEntry(STATE_PATH, username);
+    if (!entry.found) return { version: 1, items: {}, aliases: {} };
+    const prototype = entry.value && typeof entry.value === 'object'
+      ? Object.getPrototypeOf(entry.value)
+      : null;
+    if (!entry.value || typeof entry.value !== 'object' || Array.isArray(entry.value)
+      || (prototype !== Object.prototype && prototype !== null)) {
+      throw new Error(`Invalid feed item state for ${username}`);
+    }
+    return entry.value;
   }
 
   getMany(username, stateKeys) {
