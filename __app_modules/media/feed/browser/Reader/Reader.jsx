@@ -660,10 +660,10 @@ export default function Reader() {
                 {loadingMore && <span>Loading more...</span>}
               </div>
             )}
-            {activeView === 'offline' && offlineItems.length === 0 && (
+            {activeView === 'offline' && offlineItems.length === 0 && !errorMessage && (
               <div className="reader-empty">No downloaded articles. Open an article and choose Download to build an offline edition.</div>
             )}
-            {activeView !== 'offline' && !continuation && visibleArticles.length === 0 && (
+            {activeView !== 'offline' && !continuation && visibleArticles.length === 0 && !errorMessage && (
               <div className="reader-empty">{activeView === 'all' ? 'No articles' : `No ${activeView} articles in your Reader history.`}</div>
             )}
             {activeView !== 'offline' && !continuation && exhausted && articles.length > 0 && (
