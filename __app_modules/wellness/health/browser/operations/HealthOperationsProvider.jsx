@@ -13,6 +13,11 @@ const EMPTY = { operations: new Map(), revision: 0 };
 const subscribeEmpty = () => () => {};
 const getEmpty = () => EMPTY;
 const alwaysActive = () => true;
+const makeUndoScope = (operation, relatedIds = []) => ({
+  ids: [...new Set([...(operation.targetIds || []), ...relatedIds].filter(id => id != null).map(String))],
+  date: operation.date,
+  bucket: operation.bucket,
+});
 
 export function HealthOperationsProvider({ userId, children, send = DaylightAPI }) {
   // The keyed owner also disposes requests when the confirmed user changes.
@@ -29,7 +34,22 @@ function Session({ userId, children, send }) {
   const reconciliation = useMemo(createHealthReconciliation, [userId]);
   const lease = useRef(null);
   const knownRows = useRef(new Map());
-  const undoScopes = useRef(new Map());
+  const undoScopes = useMemo(() => {
+    const scopes = new Map();
+    for (const operation of store.getSnapshot().operations.values()) {
+      if (operation.kind !== 'barcode-commit' || operation.reversed) continue;
+      const response = operation.response || {};
+      const undoToken = operation.receipt?.undoToken || response.undoToken;
+      if (!undoToken) continue;
+      const relatedIds = [
+        operation.receipt?.entryId,
+        ...(response.entryIds || []),
+        ...(response.affectedIds || []),
+      ];
+      scopes.set(undoToken, makeUndoScope(operation, relatedIds));
+    }
+    return scopes;
+  }, [store]);
   const logger = useMemo(() => createAppLogger("health").child("food-operations"), []);
   useEffect(() => {
     const token = { active: true }; lease.current = token;
@@ -43,7 +63,7 @@ function Session({ userId, children, send }) {
     const accept = async (response, op, owner) => {
       if (!op.date || !op.request.path.startsWith('api/v1/health/')) return;
       let result = normalizeFoodOperationResult(op, response);
-      if (response.undoToken) undoScopes.current.set(response.undoToken, { ids: [...new Set([...(op.targetIds || []), ...result.resultIds, ...(response.affectedIds || [])].map(String))], date: op.date, bucket: op.bucket });
+      if (response.undoToken) undoScopes.set(response.undoToken, makeUndoScope(op, [...result.resultIds, ...(response.affectedIds || [])]));
       if (result.outcome !== 'committed') return;
       reconciliation.acknowledge(op, result);
       if (result.readRequired) {
@@ -126,7 +146,7 @@ function Session({ userId, children, send }) {
       execute(id, onResult).catch(() => {});
       return id;
     };
-    return { store, reconciliation, knownRows: knownRows.current, undoScopes: undoScopes.current, execute, submitSentence, retry: execute, isActive: () => Boolean(lease.current?.active) && !store.disposed };
+    return { store, reconciliation, knownRows: knownRows.current, undoScopes, execute, submitSentence, retry: execute, isActive: () => Boolean(lease.current?.active) && !store.disposed };
   }, [store, send, reconciliation, logger]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

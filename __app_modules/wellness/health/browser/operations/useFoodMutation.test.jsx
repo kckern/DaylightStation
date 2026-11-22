@@ -78,3 +78,74 @@ it('reserves only the rows a food move carries',async()=>{
  await act(async()=>{finish({committed:true,items:['loose','gone-link','g','c'].map(uuid=>({uuid,date:'2026-10-25',version:2}))});await request;});
  expect(send).toHaveBeenCalledTimes(1);
 });
+
+it('restores barcode Undo scope so the original food stays locked during Undo', async () => {
+ const date = '2026-10-25';
+ const receiptKey = 'daylight.health.barcode-receipts:u:barcode-receipt';
+ const reversedReceiptKey = 'daylight.health.barcode-receipts:u:reversed-receipt';
+ const receipt = {
+  id: 'barcode-receipt', userId: 'u', kind: 'barcode-commit', date, bucket: 'evening', startedAt: 1,
+  receipt: { entryId: 'egg', undoToken: 'undo-token' },
+ };
+ localStorage.setItem(receiptKey, JSON.stringify(receipt));
+ localStorage.setItem(reversedReceiptKey, JSON.stringify({
+  id: 'reversed-receipt', userId: 'u', kind: 'barcode-commit', date, bucket: 'morning', startedAt: 2,
+  reversed: true, receipt: { entryId: 'other', undoToken: 'already-undone' },
+ }));
+ const rows = [
+  { uuid: 'egg', date, mealTime: 'evening', version: 1 },
+  { uuid: 'other', date, mealTime: 'evening', version: 1 },
+ ];
+ let finishEdit;
+ let finishUndo;
+ let editFinished = false;
+ const send = vi.fn((path) => {
+  if (path.endsWith('/meal-undo')) {
+   if (editFinished) return new Promise(resolve => { finishUndo = resolve; });
+   return Promise.resolve({ committed: true, removedIds: ['egg'] });
+  }
+  return new Promise(resolve => { finishEdit = resolve; });
+ });
+ const { result } = renderHook(() => ({ api: useFoodMutation(rows), session: useHealthOperations() }), {
+  wrapper: session(send),
+ });
+
+ try {
+  expect(result.current.session.undoScopes.has('already-undone')).toBe(false);
+  let edit;
+  act(() => { edit = result.current.api('api/v1/health/nutrilist/egg', { date, operationId: 'edit-egg' }, 'PUT'); });
+  expect(send).toHaveBeenCalledTimes(1);
+  await act(async () => {
+   await expect(result.current.api('api/v1/health/nutrition/meal-undo', {
+    undoToken: 'undo-token', operationId: 'undo-egg',
+   }, 'POST')).rejects.toThrow(/already saving/);
+  });
+  expect(send).toHaveBeenCalledTimes(1);
+
+  editFinished = true;
+  await act(async () => {
+   finishEdit({ committed: true, items: [{ ...rows[0], version: 2 }] });
+   await edit;
+  });
+
+  let undo;
+  act(() => { undo = result.current.api('api/v1/health/nutrition/meal-undo', {
+   undoToken: 'undo-token', operationId: 'undo-egg',
+  }, 'POST'); });
+  expect(result.current.session.snapshot.operations.get('undo-egg')).toMatchObject({
+   date, bucket: 'evening', targetIds: ['egg'],
+   request: { path: 'api/v1/health/nutrition/meal-undo', body: { undoToken: 'undo-token', operationId: 'undo-egg' }, method: 'POST' },
+  });
+  expect(result.current.session.store.isReserved(['egg'])).toBe(true);
+  expect(result.current.session.store.isReserved(['other'])).toBe(false);
+  expect(send.mock.calls).toHaveLength(2);
+
+  await act(async () => {
+   finishUndo({ committed: true, removedIds: ['egg'], date });
+   await undo;
+  });
+ } finally {
+  localStorage.removeItem(receiptKey);
+  localStorage.removeItem(reversedReceiptKey);
+ }
+});
