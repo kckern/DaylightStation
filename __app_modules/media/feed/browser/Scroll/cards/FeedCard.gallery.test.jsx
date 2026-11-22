@@ -134,3 +134,69 @@ it('does not steal focus from another gallery when a swipe removes its arrow', (
   expect(screen.getByRole('region', { name: 'Image gallery, 2 of 2' })).toBe(galleryB);
   expect(document.activeElement).toBe(focusedArrow);
 });
+
+it.each([['middle', 1], ['right', 2]])('ignores a %s-button gallery drag without consuming keyboard activation', (_, button) => {
+  const item = {
+    id: `gallery-secondary-drag-${button}`,
+    title: 'Three photographs',
+    source: 'test',
+    image: 'https://example.test/first.jpg',
+    meta: {
+      galleryImages: [
+        { url: 'https://example.test/first.jpg' },
+        { url: 'https://example.test/second.jpg' },
+        { url: 'https://example.test/third.jpg' },
+      ],
+    },
+  };
+  render(
+    <FeedPlayerProvider>
+      <FeedCard item={item} />
+    </FeedPlayerProvider>,
+  );
+
+  const gallery = screen.getByRole('region', { name: 'Image gallery, 1 of 3' });
+  fireEvent.mouseDown(gallery, { button, clientX: 200 });
+  fireEvent.mouseUp(gallery, { button, clientX: 100 });
+
+  expect(screen.getByRole('region', { name: 'Image gallery, 1 of 3' })).toBeInTheDocument();
+
+  const next = screen.getByRole('button', { name: 'Next image' });
+  next.focus();
+  fireEvent.click(next, { detail: 0 });
+  expect(screen.getByRole('region', { name: 'Image gallery, 2 of 3' })).toBeInTheDocument();
+});
+
+it('preserves primary-button drag navigation and consumes its follow-up click', () => {
+  const parentClick = vi.fn();
+  render(
+    <div onClick={parentClick}>
+      <FeedPlayerProvider>
+        <FeedCard
+          item={{
+            id: 'gallery-primary-drag',
+            title: 'Three photographs',
+            source: 'test',
+            image: 'https://example.test/first.jpg',
+            meta: {
+              galleryImages: [
+                { url: 'https://example.test/first.jpg' },
+                { url: 'https://example.test/second.jpg' },
+                { url: 'https://example.test/third.jpg' },
+              ],
+            },
+          }}
+        />
+      </FeedPlayerProvider>
+    </div>,
+  );
+
+  const gallery = screen.getByRole('region', { name: 'Image gallery, 1 of 3' });
+  fireEvent.mouseDown(gallery, { button: 0, clientX: 200 });
+  fireEvent.mouseUp(gallery, { button: 0, clientX: 100 });
+
+  expect(screen.getByRole('region', { name: 'Image gallery, 2 of 3' })).toBeInTheDocument();
+  fireEvent.click(gallery);
+  expect(parentClick).not.toHaveBeenCalled();
+  expect(screen.getByRole('region', { name: 'Image gallery, 2 of 3' })).toBeInTheDocument();
+});

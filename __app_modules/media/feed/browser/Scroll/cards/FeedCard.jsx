@@ -209,10 +209,12 @@ function GalleryHero({ images, feedItemId, title }) {
 
   // Mouse drag (desktop)
   const handleMouseDown = (e) => {
+    if (e.button !== 0) return;
     mouseDraggedRef.current = false;
     dragStartRef.current = e.clientX;
   };
   const handleMouseUp = (e) => {
+    if (e.button !== 0) return;
     if (dragStartRef.current === null) return;
     const dx = e.clientX - dragStartRef.current;
     dragStartRef.current = null;
