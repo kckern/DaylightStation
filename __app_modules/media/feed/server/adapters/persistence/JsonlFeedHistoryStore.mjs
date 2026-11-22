@@ -129,9 +129,10 @@ export class JsonlFeedHistoryStore {
   search(username, { query = '', state = null, mode = null, source = null, from = null, to = null, limit = 30, offset = 0, states = new Map() } = {}) {
     this.#load(username);
     const tokens = this.#tokens(query);
+    const hasQuery = String(query || '').trim().length > 0;
     const results = [];
     const index = this.#indexes.get(username);
-    const candidateKeys = tokens.length ? new Set() : new Set(index?.documents || []);
+    const candidateKeys = hasQuery ? new Set() : new Set(index?.documents || []);
     for (const token of tokens) {
       for (const [word, keys] of index?.all || []) {
         if (word === token || word.startsWith(token)) for (const key of keys) candidateKeys.add(key);
@@ -175,7 +176,7 @@ export class JsonlFeedHistoryStore {
   }
 
   #tokens(value) {
-    return String(value || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().match(/[a-z0-9]{2,}/g) || [];
+    return String(value || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().match(/[\p{L}\p{N}]{2,}/gu) || [];
   }
 
   #indexDocument(username, doc) {
