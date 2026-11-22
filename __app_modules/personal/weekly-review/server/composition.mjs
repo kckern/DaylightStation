@@ -7,7 +7,7 @@ import { WeeklyReviewCalendarAdapter } from "./adapters/WeeklyReviewCalendarAdap
 import { WeeklyReviewService } from "./application/WeeklyReviewService.mjs";
 import { createWeeklyReviewRouter } from "./api/weekly-review.mjs";
 
-export async function installWeeklyReview({ configService, dataService, immichConfig, sharedAiGateway, rootLogger, householdId, userDataService, dataBasePath, mediaBasePath, fitnessServices, v1Routers }) {
+export async function installWeeklyReview({ configService, dataService, immichConfig, sharedAiGateway, rootLogger, householdId, userDataService, dataBasePath, mediaBasePath, fitnessServices, v1Routers, schoolLearnerWork = null }) {
 
     const { ImmichClient } = await import("../../../../__capabilities/content-catalog/server/adapters/providers/gallery/immich/ImmichClient.mjs");
     const wrImmichClient = new ImmichClient(immichConfig, { httpClient: axios });
