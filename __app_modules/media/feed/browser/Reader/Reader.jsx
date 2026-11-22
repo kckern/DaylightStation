@@ -40,6 +40,14 @@ function offlineEditionToArticle(edition) {
   return article.content || !savedArticleHtml ? article : { ...article, content: savedArticleHtml };
 }
 
+function isArticleVisibleInReaderView(article, view, expandedUnreadIds) {
+  if (view === 'unread') return !(article.state?.isRead ?? article.isRead) || expandedUnreadIds.has(article.id);
+  if (view === 'saved') return article.state?.isSaved;
+  if (view === 'archived') return article.state?.isArchived;
+  if (view === 'offline') return true;
+  return !article.state?.isArchived;
+}
+
 /** Group articles by day label */
 function groupByDay(articles) {
   const groups = [];
@@ -501,6 +509,18 @@ export default function Reader() {
     setOfflineItems(apply);
   }, []);
 
+  const applyReaderStateAction = useCallback(updated => {
+    const activeElement = document.activeElement;
+    const focusedRow = activeElement?.closest?.('[data-feed-item-id]');
+    const focusedArticle = focusedRow && listRef.current?.contains(focusedRow)
+      ? updated.find(article => article.id === focusedRow.dataset.feedItemId)
+      : null;
+    if (focusedArticle && !isArticleVisibleInReaderView(focusedArticle, activeView, expandedUnreadIds)) {
+      focusInbox();
+    }
+    applyUpdatedItems(updated);
+  }, [activeView, applyUpdatedItems, expandedUnreadIds, focusInbox]);
+
   const handleMarkRead = async (article) => {
     if (!article) return;
     if (activeView === 'unread') {
@@ -537,13 +557,8 @@ export default function Reader() {
   };
 
   const isFiltered = activeFeeds.size > 0 || HISTORY_VIEWS.has(activeView);
-  const visibleArticles = (activeView === 'offline' ? offlineItems : articles).filter(article => {
-    if (activeView === 'unread') return !(article.state?.isRead ?? article.isRead) || expandedUnreadIds.has(article.id);
-    if (activeView === 'saved') return article.state?.isSaved;
-    if (activeView === 'archived') return article.state?.isArchived;
-    if (activeView === 'offline') return true;
-    return !article.state?.isArchived;
-  });
+  const visibleArticles = (activeView === 'offline' ? offlineItems : articles)
+    .filter(article => isArticleVisibleInReaderView(article, activeView, expandedUnreadIds));
   const dayGroups = smartGroup(visibleArticles, isFiltered);
   const readerRows = dayGroups.flatMap(group => {
     const header = { id: `group:${group.key}`, type: 'group', group };
@@ -666,7 +681,7 @@ export default function Reader() {
                       initiallyExpanded={activeView === 'unread' && expandedUnreadIds.has(row.article.id)}
                       onMarkRead={handleMarkRead}
                       onCollapse={handleCollapseUnreadArticle}
-                      onStateAction={(item, action) => mutateItems([item], action, { onApply: applyUpdatedItems }).catch(() => {})}
+                      onStateAction={(item, action) => mutateItems([item], action, { onApply: applyReaderStateAction }).catch(() => {})}
                       onOfflineRemoved={handleOfflineRemoved}
                     />
                   </div>
