@@ -63,18 +63,27 @@ function stateColor(state) {
 function EvidenceTimeline({ history = [] }) {
   if (history.length === 0) return <Text size="xs" c="dimmed">No evidence yet</Text>;
 
+  const older = history.slice(0, -5).reverse();
   const recent = history.slice(-5).reverse();
+  const renderEntries = (entries, offset) => entries.map((e, i) => (
+    <Group key={offset + i} gap="xs">
+      <Badge size="xs" color={e.type === 'confirmation' ? 'green' : e.type === 'disconfirmation' ? 'red' : 'yellow'}>
+        {e.type}
+      </Badge>
+      <Text size="xs" c="dimmed">{formatDate(e.date) || 'undated'}</Text>
+      {e.note && <Text size="xs">{e.note}</Text>}
+    </Group>
+  ));
+
   return (
     <Stack gap={4}>
-      {recent.map((e, i) => (
-        <Group key={i} gap="xs">
-          <Badge size="xs" color={e.type === 'confirmation' ? 'green' : e.type === 'disconfirmation' ? 'red' : 'yellow'}>
-            {e.type}
-          </Badge>
-          <Text size="xs" c="dimmed">{formatDate(e.date) || 'undated'}</Text>
-          {e.note && <Text size="xs">{e.note}</Text>}
-        </Group>
-      ))}
+      {renderEntries(recent, older.length)}
+      {older.length > 0 ? (
+        <details>
+          <summary>Show {older.length} older {older.length === 1 ? 'entry' : 'entries'}</summary>
+          <Stack gap={4}>{renderEntries(older, 0)}</Stack>
+        </details>
+      ) : null}
     </Stack>
   );
 }
