@@ -12,11 +12,15 @@ const DAYS_IN_WEEK = 7;
  * @param {Object} props
  * @param {Object} props.days - { 'YYYY-MM-DD': { sources: {}, ... } }
  * @param {Function} [props.countFn] - custom count per day, defaults to source count
+ * @param {string} [props.startDate] - inclusive range start, when days are filtered
+ * @param {string} [props.endDate] - inclusive range end, when days are filtered
  */
-export function ActivityHeatmap({ days = {}, countFn }) {
+export function ActivityHeatmap({ days = {}, countFn, startDate, endDate }) {
   const { cells, maxCount, weeks } = useMemo(() => {
     const dates = Object.keys(days).sort();
-    if (dates.length === 0) return { cells: [], maxCount: 0, weeks: 0 };
+    const rangeStart = startDate || dates[0];
+    const rangeEnd = endDate || dates[dates.length - 1];
+    if (!rangeStart || !rangeEnd) return { cells: [], maxCount: 0, weeks: 0 };
 
     const counts = {};
     let max = 0;
@@ -26,27 +30,27 @@ export function ActivityHeatmap({ days = {}, countFn }) {
       if (c > max) max = c;
     }
 
-    const startDate = new Date(dates[0]);
-    const endDate = new Date(dates[dates.length - 1]);
+    const start = new Date(rangeStart);
+    const end = new Date(rangeEnd);
 
     // Align to start of week (Sunday)
-    const alignedStart = new Date(startDate);
+    const alignedStart = new Date(start);
     alignedStart.setUTCDate(alignedStart.getUTCDate() - alignedStart.getUTCDay());
 
     const result = [];
     let current = new Date(alignedStart);
-    while (current <= endDate) {
+    while (current <= end) {
       const dateStr = current.toISOString().slice(0, 10);
       result.push({
         date: dateStr,
         count: counts[dateStr] || 0,
-        inRange: current >= startDate && current <= endDate,
+        inRange: current >= start && current <= end,
       });
       current.setUTCDate(current.getUTCDate() + 1);
     }
 
     return { cells: result, maxCount: max, weeks: Math.ceil(result.length / 7) };
-  }, [days, countFn]);
+  }, [days, countFn, startDate, endDate]);
 
   if (cells.length === 0) {
     return <Text size="sm" c="dimmed">No activity data</Text>;

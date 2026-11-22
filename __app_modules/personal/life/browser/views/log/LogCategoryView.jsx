@@ -27,7 +27,7 @@ export function LogCategoryView({ category, scope = 'month', username }) {
       title={humanize(category)}
       actions={<Badge size="sm" variant="light">{activeDays.length} active days</Badge>}
     >
-      <ActivityHeatmap days={days} />
+      <ActivityHeatmap days={days} startDate={read.data?.startDate} endDate={read.data?.endDate} />
 
       <Stack gap="sm">
         {activeDays.map(date => {
