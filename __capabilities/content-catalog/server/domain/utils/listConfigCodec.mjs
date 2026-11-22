@@ -12,10 +12,14 @@ function preserveAuthoredTitle(result, source) {
 }
 
 /** Type-owned item parameters: a plain, non-empty object or nothing. */
-export function isParamsObject(value) {
+export function isPlainObject(value) {
   if (value === null || typeof value !== 'object') return false;
   const proto = Object.getPrototypeOf(value);
-  return (proto === Object.prototype || proto === null) && Object.keys(value).length > 0;
+  return proto === Object.prototype || proto === null;
+}
+
+export function isParamsObject(value) {
+  return isPlainObject(value) && Object.keys(value).length > 0;
 }
 
 function copyScheduleFields(target, source) {

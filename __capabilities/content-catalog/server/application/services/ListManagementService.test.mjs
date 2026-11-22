@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ListConfigCodec } from '../../adapters/providers/list/ListConfigCodec.mjs';
 import { ListManagementService } from './ListManagementService.mjs';
+import { ValidationError } from '#apps/common/errors/SemanticErrors.mjs';
 
 describe('ListManagementService schedule field persistence', () => {
   it('round-trips schedule and supported playback fields through adds, updates, and the list codec', () => {
@@ -83,11 +84,29 @@ describe('ListManagementService item params', () => {
   it('rejects non-object params with a validation error', () => {
     const { service } = fixture();
     for (const bad of ['x', [], 5]) {
-      expect(() => service.updateItem('menus', 'fhe', 'h', 0, { params: bad }))
-        .toThrow('params must be an object or null');
-      expect(() => service.addItem('menus', 'fhe', 'h', { label: 'B', input: 'app:x', params: bad }))
-        .toThrow('params must be an object or null');
+      const update = () => service.updateItem('menus', 'fhe', 'h', 0, { params: bad });
+      const add = () => service.addItem('menus', 'fhe', 'h', { label: 'B', input: 'app:x', params: bad });
+      for (const call of [update, add]) {
+        expect(call).toThrow(ValidationError);
+        expect(call).toThrow('params must be an object or null');
+      }
     }
+  });
+
+  it('rejects params holding non-cloneable values with a validation error', () => {
+    const { service, items } = fixture();
+    const call = () => service.updateItem('menus', 'fhe', 'h', 0, { params: { nested: { fn: () => {} } } });
+    expect(call).toThrow(ValidationError);
+    expect(call).toThrow('params must contain only plain data');
+    expect(items()[0]).not.toHaveProperty('params');
+  });
+
+  it('keeps existing params when an update omits them', () => {
+    const { service, items } = fixture();
+    service.updateItem('menus', 'fhe', 'h', 0, { params: { autostart: true } });
+    service.updateItem('menus', 'fhe', 'h', 0, { label: 'Renamed' });
+    expect(items()[0].label ?? items()[0].title).toBe('Renamed');
+    expect(items()[0].params).toEqual({ autostart: true });
   });
 
   it('treats empty {} like null (removes params)', () => {

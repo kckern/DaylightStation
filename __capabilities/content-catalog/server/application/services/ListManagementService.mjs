@@ -11,7 +11,7 @@ import {
   ConflictError
 } from '#apps/common/errors/SemanticErrors.mjs';
 import { extractContentId, extractActionName, normalizeListItem } from "../../domain/utils/listItemInput.mjs";
-import { isParamsObject } from "../../domain/utils/listConfigCodec.mjs";
+import { isParamsObject, isPlainObject } from "../../domain/utils/listConfigCodec.mjs";
 
 // Valid list types
 const LIST_TYPES = ['menus', 'watchlists', 'programs'];
@@ -48,12 +48,6 @@ function applyItemFields(target, source, fields) {
   }
 }
 
-function isEmptyPlainObject(value) {
-  if (value === null || typeof value !== 'object') return false;
-  const proto = Object.getPrototypeOf(value);
-  return (proto === Object.prototype || proto === null) && Object.keys(value).length === 0;
-}
-
 /**
  * Normalize `params` after applyItemFields copied it onto the target.
  * null or {} removes the key; any other non-plain-object is rejected; a valid
@@ -62,14 +56,18 @@ function isEmptyPlainObject(value) {
 function normalizeItemParams(target) {
   if (!Object.hasOwn(target, 'params')) return;
   const { params } = target;
-  if (params === null || isEmptyPlainObject(params)) {
+  if (params === null || (isPlainObject(params) && Object.keys(params).length === 0)) {
     delete target.params;
     return;
   }
   if (!isParamsObject(params)) {
     throw new ValidationError('params must be an object or null', { field: 'params' });
   }
-  target.params = structuredClone(params);
+  try {
+    target.params = structuredClone(params);
+  } catch {
+    throw new ValidationError('params must contain only plain data', { field: 'params' });
+  }
 }
 
 // Validation pattern for list names (lowercase, alphanumeric, hyphens)
