@@ -83,6 +83,45 @@ test('Feed detail actions keep independent pending commands across a responsive 
   await expect(page.getByRole('alert').filter({ hasText: 'Could not bookmark article.' })).toHaveCount(0);
 });
 
+test('Feed image loading placeholder stays still with reduced motion until the image loads', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const imageUrl = 'https://images.example.test/held-feed-image.svg';
+  const imageArticle = { ...article, id: 'reddit:held-image', title: 'Held image fixture', image: imageUrl };
+  const started = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  await page.route('**/scroll/sessions', route => route.fulfill({ json: {
+    items: [imageArticle], sessionId: 'held-image', hasMore: false,
+  } }));
+  await page.route(imageUrl, async route => {
+    started.resolve();
+    await release.promise;
+    return route.fulfill({
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1" fill="#000"/></svg>',
+    });
+  });
+
+  await page.goto('/feed/scroll');
+  await started.promise;
+  const card = page.locator('.feed-card').filter({ hasText: imageArticle.title });
+  const placeholder = card.locator('.feed-card-image-placeholder');
+  try {
+    await expect(placeholder).toBeVisible();
+    const firstFrame = await placeholder.screenshot();
+    await page.waitForTimeout(750);
+    const secondFrame = await placeholder.screenshot();
+    expect(secondFrame).toEqual(firstFrame);
+  } finally {
+    release.resolve();
+  }
+
+  const loadedImage = card.locator('.feed-card-image');
+  await expect(loadedImage).toHaveJSProperty('naturalWidth', 1);
+  await expect(loadedImage).toHaveJSProperty('naturalHeight', 1);
+  await loadedImage.evaluate(image => image.decode());
+  await expect(card.locator('.feed-card-image-placeholder')).toHaveCount(0);
+});
+
 for (const width of [390, 1440]) test(`Feed detail honors reduced motion at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 850 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
