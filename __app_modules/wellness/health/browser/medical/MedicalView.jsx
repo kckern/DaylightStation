@@ -33,6 +33,7 @@ export function MedicalView() {
 
   const remove = async (id, metric, description) => {
     if (!window.confirm(`Delete ${description}?`)) return;
+    setRemoveError(null);
     try {
       await DaylightAPI(`${medicalPath}/${id}`, {}, 'DELETE');
       logger.info('reading.removed', { id, metric });
