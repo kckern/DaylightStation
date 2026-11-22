@@ -72,7 +72,7 @@ export class CeremonyService {
             recentEvidence: (b.evidence_history || []).slice(-3),
           })),
           valueDrift: (plan.values || []).map(v => ({
-            id: v.id, name: v.name, alignment_state: v.alignment_state,
+            id: v.id, name: v.name, alignment_state: v.alignment,
           })),
           ruleEffectiveness: this.#getAllRules(plan).map(r => ({
             trigger: r.trigger, action: r.action, effectiveness: Rule.effectivenessOf(r),
