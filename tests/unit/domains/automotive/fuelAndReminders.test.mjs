@@ -171,6 +171,40 @@ describe('buildReminders', () => {
     expect(reminders).toEqual([]);
   });
 
+  it.each([
+    ['older recurring entry first', ['older', 'newer']],
+    ['newer one-off entry first', ['newer', 'older']],
+  ])('lets the latest one-off service entry clear an older reminder, with %s', (_description, order) => {
+    const records = {
+      older: service({ id: 'older', date: at('2026-09-01'), type: 'other', intervalMonths: 1 }),
+      newer: service({ id: 'newer', date: at('2026-10-15'), type: 'other' }),
+    };
+    const reminders = buildReminders({
+      serviceRecords: order.map(id => records[id]),
+      asOf: new Date(2026, 9, 16),
+    });
+
+    expect(reminders).toEqual([]);
+  });
+
+  it.each([
+    ['a one-off followed by a recurring entry', ['one-off', 'recurring'], true],
+    ['a recurring entry followed by a one-off', ['recurring', 'one-off'], false],
+  ])('uses the last same-day service entry: %s', (_description, order, expectReminder) => {
+    const date = at('2026-10-15');
+    const records = {
+      'one-off': service({ id: 'one-off', date, type: 'other' }),
+      recurring: service({ id: 'recurring', date, type: 'other', intervalMonths: 1 }),
+    };
+    const reminders = buildReminders({
+      serviceRecords: order.map(id => records[id]),
+      asOf: new Date(2026, 9, 16),
+    });
+
+    expect(reminders).toHaveLength(expectReminder ? 1 : 0);
+    if (expectReminder) expect(reminders[0].sourceId).toBe('recurring');
+  });
+
   it('ignores a km-only interval until mileage lands', () => {
     const reminders = buildReminders({
       serviceRecords: [service({ id: 'x', date: at('2026-06-01'), type: 'tires', intervalKm: 10000, odometerKm: 41000 })],

@@ -60,12 +60,13 @@ export function buildReminders({
   // One reminder per service TYPE, from that type's most recent record.
   const latestByType = new Map();
   for (const record of serviceRecords) {
-    if (!record?.isRecurring) continue;
+    if (!record) continue;
     const existing = latestByType.get(record.type);
-    if (!existing || record.date > existing.date) latestByType.set(record.type, record);
+    if (!existing || record.date >= existing.date) latestByType.set(record.type, record);
   }
 
   for (const record of latestByType.values()) {
+    if (!record.isRecurring) continue;
     const dueDate = record.nextDueDate;
     if (!dueDate) continue; // km-only interval; inert until mileage lands
     reminders.push(toReminder({
