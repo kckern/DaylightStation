@@ -25,9 +25,10 @@ export function HomeTile({
   const spokenPictureName = Number.isFinite(progress) && progress > 0
     ? `${pictureName}, ${Math.round(progress)}% played`
     : pictureName;
-  const [portrait, setPortrait] = useState(false);
+  const [portraitThumbnail, setPortraitThumbnail] = useState(null);
+  const hasPortraitArtwork = Boolean(item?.thumbnail) && portraitThumbnail === item.thumbnail;
   let kind = kindOverride ?? tileKind(item);
-  if (kind === 'square' && portrait) kind = 'poster';
+  if (kind === 'square' && hasPortraitArtwork) kind = 'poster';
   return (
     <div className={`home-tile home-tile--${size} home-tile--${kind}`} data-testid={testId} data-kind={kind}>
       <div className="home-tile-art">
@@ -45,7 +46,7 @@ export function HomeTile({
                 loading="lazy"
                 onLoad={(event) => {
                   const { naturalWidth: w, naturalHeight: h } = event.currentTarget;
-                  if (w > 0 && h / w > PORTRAIT_RATIO) setPortrait(true);
+                  setPortraitThumbnail(w > 0 && h / w > PORTRAIT_RATIO ? item.thumbnail : null);
                 }}
               />
             )
