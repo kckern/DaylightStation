@@ -529,11 +529,17 @@ export default function Reader() {
     await mutateItems([article], 'read', { onApply: applyUpdatedItems }).catch(() => {});
   };
 
-  const handleCollapseUnreadArticle = (articleId) => {
+  const handleCollapseUnreadArticle = (article, triggerButton) => {
+    const nextExpandedIds = new Set(expandedUnreadIds);
+    nextExpandedIds.delete(article.id);
+    if (triggerButton?.ownerDocument.activeElement === triggerButton &&
+      !isArticleVisibleInReaderView(article, activeView, nextExpandedIds)) {
+      focusInbox();
+    }
     setExpandedUnreadIds(current => {
-      if (!current.has(articleId)) return current;
+      if (!current.has(article.id)) return current;
       const next = new Set(current);
-      next.delete(articleId);
+      next.delete(article.id);
       return next;
     });
   };

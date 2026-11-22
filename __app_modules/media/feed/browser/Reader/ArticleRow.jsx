@@ -52,7 +52,7 @@ export default function ArticleRow({ article, isNew = false, initiallyExpanded =
     contentRef.current?.focus({ preventScroll: true });
   }, [fullHeight]);
 
-  const handleExpand = () => {
+  const handleExpand = (event) => {
     if (!expanded) {
       setExpanded(true);
       if (!isRead) {
@@ -61,7 +61,7 @@ export default function ArticleRow({ article, isNew = false, initiallyExpanded =
     } else {
       setExpanded(false);
       setFullHeight(false);
-      onCollapse?.(article.id);
+      onCollapse?.(article, event.currentTarget);
     }
   };
 
