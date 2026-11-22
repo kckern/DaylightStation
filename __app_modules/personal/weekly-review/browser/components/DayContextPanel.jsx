@@ -21,16 +21,18 @@ function SchoolSection({ items, learnerColors }) {
   return (
     <section className="context-section context-school">
       <h3 className="context-section-title">School</h3>
-      {groups.map(g => (
-        <div key={g.learnerId} className="context-school-learner" style={kidStyle(learnerColors?.[g.learnerId])}>
-          <div className="context-school-name">{g.learnerName}</div>
-          {g.items.map((w, i) => (
-            <div key={`${w.groupKey}:${i}`} className="context-school-line">
-              {verbLabel(w)} {w.title}{w.subtitle ? ` — ${w.subtitle}` : ''}
-            </div>
-          ))}
-        </div>
-      ))}
+      <div className="context-school-groups">
+        {groups.map(g => (
+          <div key={g.learnerId} className="context-school-learner" style={kidStyle(learnerColors?.[g.learnerId])}>
+            <div className="context-school-name">{g.learnerName}</div>
+            {g.items.map((w, i) => (
+              <div key={`${w.groupKey}:${i}`} className="context-school-line">
+                {verbLabel(w)} {w.title}{w.subtitle ? ` — ${w.subtitle}` : ''}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
     </section>
   );
 }

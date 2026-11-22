@@ -37,9 +37,10 @@ describe('WorkCard', () => {
     expect(verbOf({ ...base, kind: 'program', verb: 'worked' })).toBe('Practiced');
   });
 
-  it('shows the day and time the work happened', () => {
-    const { container } = render(<WorkCard item={base} index={0} total={1} />);
-    expect(container.querySelector('.work-card-when').textContent).toMatch(/^\w+day · \d{1,2}:\d{2} [AP]M$/);
+  it('names the weekday of the study day and no clock time', () => {
+    const { container } = render(<WorkCard item={{ ...base, studyDay: '2026-11-21', at: '2026-11-21T12:00:00Z' }} index={0} total={1} />);
+    expect(container.querySelector('.work-card-when').textContent).toBe('Saturday');
+    expect(container.textContent).not.toMatch(/\d:\d\d/);
   });
 
   it('pins the work image when there is one', () => {

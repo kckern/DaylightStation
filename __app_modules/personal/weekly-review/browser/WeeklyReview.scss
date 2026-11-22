@@ -1329,7 +1329,9 @@
   animation: wr-context-rise 160ms ease-out;
   color: #e8e8e8;
 
-  .context-panel-inner { display: flex; flex-wrap: wrap; gap: 2rem; padding: 1.5rem 2rem; }
+  // Bottom padding keeps the last line clear of the control legend, which
+  // floats over the panel's lower edge (.weekly-review-legend, ~2.2rem tall).
+  .context-panel-inner { display: flex; flex-wrap: wrap; gap: 2rem; padding: 1.5rem 2rem calc(1.5rem + 2.4rem); }
   .context-section-title { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.6; margin: 0 0 0.5rem; }
   .context-timeline { display: flex; flex-direction: column; gap: 0.35rem; }
   .timeline-time { opacity: 0.7; margin-right: 0.6em; }

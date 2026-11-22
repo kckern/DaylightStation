@@ -22,14 +22,12 @@ export function verbLabel(item) {
   }
 }
 
-// "Thursday · 7:12 PM" from the item's ISO time, in local time.
-export function workWhen(at) {
-  if (!at) return '';
-  const d = new Date(at);
-  if (Number.isNaN(d.getTime())) return '';
-  const day = d.toLocaleDateString('en-US', { weekday: 'long' });
-  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  return `${day} · ${time}`;
+// The weekday the work counts for ("Saturday"), from its study day. No clock
+// time: kids don't need it, and items without a real time carry a noon-UTC
+// placeholder that would read as early morning.
+export function workDay(studyDay) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(studyDay || '')) return '';
+  return new Date(`${studyDay}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
 }
 
 export function kidStyle(color) {

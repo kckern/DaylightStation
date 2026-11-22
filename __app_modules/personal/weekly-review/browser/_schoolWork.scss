@@ -4,7 +4,7 @@
 
 $paper: #ffffff;
 $ink: #1d2430;
-$tape: rgba(255, 244, 200, .55);
+$tape: rgba(255, 236, 170, .88);
 $muted: #9aa3ad;
 $school-font: "Roboto Condensed", sans-serif;
 
@@ -20,30 +20,34 @@ $school-font: "Roboto Condensed", sans-serif;
   transform: rotate(-2deg);
   line-height: 0;
 
+  // Straddles the print's top edge so it reads as tape holding it up.
   .work-print-tape {
     position: absolute;
-    top: -22px;
+    top: -34px; // -16px from the paper's outer edge (inside the 18px border)
     left: 50%;
-    width: 120px;
-    height: 34px;
-    margin-left: -60px;
+    width: 140px;
+    height: 36px;
+    margin-left: -70px;
     background: $tape;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .18);
     transform: rotate(3deg);
     z-index: 1;
   }
 
+  // Sized on the image itself: square and landscape art gets the same height
+  // as a portrait page, capped in width; contain letterboxes onto the paper.
   .work-print-img {
     display: block;
-    max-height: calc(62vh - 38px);
-    max-width: 100%;
+    height: 64vh;
+    width: auto;
+    max-width: 42vw;
     object-fit: contain;
   }
 
   .work-print-card {
     box-sizing: border-box;
-    width: min(46vh, 100%);
-    aspect-ratio: 4 / 5;
-    max-height: calc(62vh - 38px);
+    width: min(52vh, 42vw);
+    height: 56vh;
     padding: 40px 32px;
     display: flex;
     flex-direction: column;
@@ -71,34 +75,31 @@ $school-font: "Roboto Condensed", sans-serif;
 
 // --- Work card in the day reel --------------------------------------------
 
+// Print and text are centred as one group, not split into halves with dead
+// space between them.
 .weekly-review-work-card {
   position: absolute;
   inset: 0;
   background: #000;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 40vw);
+  column-gap: 5vw;
+  justify-content: center;
   align-items: center;
   font-family: $school-font;
   color: #f0f4f8;
 
   .work-card-stage {
-    flex: 0 0 55%;
-    height: 100%;
-    box-sizing: border-box;
-    padding: 48px;
     display: flex;
     align-items: center;
     justify-content: center;
   }
 
   .work-card-print {
-    max-width: 100%;
     animation: wr-work-settle 420ms ease-out both;
   }
 
   .work-card-text {
-    flex: 0 0 45%;
-    box-sizing: border-box;
-    padding-right: 80px;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -166,10 +167,13 @@ $school-font: "Roboto Condensed", sans-serif;
 
 // --- Grid strip (DayColumn) ------------------------------------------------
 
+// One row only: chips that do not fit wrap onto a second line, which the
+// fixed height hides, so the row shows as many whole chips as fit.
 .day-school {
   display: flex;
-  flex-wrap: nowrap;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 8px;
+  height: 64px;
   padding: 0 6px 4px;
   flex-shrink: 0;
   overflow: hidden;
@@ -177,9 +181,9 @@ $school-font: "Roboto Condensed", sans-serif;
 
 .school-chip {
   position: relative;
-  flex: 0 0 44px;
-  width: 44px;
-  height: 44px;
+  flex: 0 0 64px;
+  width: 64px;
+  height: 64px;
   box-sizing: border-box;
   border-radius: 4px;
   border-bottom: 3px solid var(--kid, #{$muted});
@@ -195,29 +199,37 @@ $school-font: "Roboto Condensed", sans-serif;
     object-fit: cover;
   }
 
-  .school-chip-glyph { font-size: 24px; line-height: 1; }
+  .school-chip-glyph { font-size: 34px; line-height: 1; }
 
   .school-chip-initial {
     position: absolute;
     top: 2px;
     left: 2px;
-    width: 18px;
-    height: 18px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
     background: var(--kid, #{$muted});
     color: #fff;
     font-family: $school-font;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 700;
-    line-height: 18px;
+    line-height: 22px;
     text-align: center;
   }
 }
 
 // --- Context panel section -------------------------------------------------
 
+// Children sit side by side so the section grows sideways, not down into the
+// control legend; with many children they wrap into a second row. The panel
+// also keeps the legend's height clear at its bottom (see .context-panel-inner).
 .weekly-review-context-panel .context-school {
-  .context-school-learner + .context-school-learner { margin-top: 0.6rem; }
+  .context-school-groups {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 2rem;
+  }
+  .context-school-learner { max-width: 24rem; }
   .context-school-name {
     font-weight: 700;
     font-style: italic;

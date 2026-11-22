@@ -3,7 +3,7 @@
 import React, { useEffect } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
 import WorkImage from './WorkImage.jsx';
-import { verbLabel, workWhen, kidStyle } from './schoolWork.js';
+import { verbLabel, workDay, kidStyle } from './schoolWork.js';
 
 let _l;
 const logger = () => (_l ||= getLogger().child({ component: 'weekly-review-work-card' }));
@@ -14,7 +14,7 @@ export default function WorkCard({ item, index, total, color }) {
   }, [item?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!item) return null;
-  const when = workWhen(item.at);
+  const when = workDay(item.studyDay);
   return (
     <div className="weekly-review-work-card" style={kidStyle(color)}>
       <div className="work-card-stage">
