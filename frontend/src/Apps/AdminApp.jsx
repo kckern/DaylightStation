@@ -28,6 +28,8 @@ import { AgentsIndex, AgentDetail } from "../../../__capabilities/agent-runtime/
 import { AgentDashboard, HealthCoachConfigTab } from "../../../__app_modules/wellness/health/browser/admin.mjs";
 import { AgendasIndex, AgendaSeriesPage, AgendaPlanEditor, AgendaWeekRedirect } from "../../../__app_modules/household/agenda/browser/admin.mjs";
 import { CharadesParticipantSettings, defaultParticipantSettings, remapParticipantKeys } from "../../../__app_modules/games/party-games/browser/participant-settings.mjs";
+import { CharadesItemParams } from "../../../__app_modules/games/party-games/browser/item-params.mjs";
+import { registerItemParams } from "../../../__capabilities/content-catalog/browser/admin.mjs";
 import GamesIndex from "../../../__app_modules/games/party-games/browser/admin-games.mjs";
 import ConsoleDetail from "../../../__app_modules/games/party-games/browser/admin-console.mjs";
 import { ContentFilterLibrary, ContentFilterReview } from "../modules/Admin/ContentFilter/ContentFilterAdmin.jsx";
@@ -45,6 +47,13 @@ import '@mantine/notifications/styles.css';
 const participantEditors = {
   'party-games': { consumer:{id:'party-games',version:1}, Panel:CharadesParticipantSettings, defaultSettings:defaultParticipantSettings, remapParticipantKeys },
 };
+
+registerItemParams({
+  id: 'charades', label: 'Charades',
+  matches: input => /^app:party-games\/charades:/.test(input),
+  summary: p => [p.autostart ? 'auto-start' : null, Array.isArray(p.participants) ? `${p.participants.length} people` : null].filter(Boolean).join(' · ') || 'not set',
+  Editor: CharadesItemParams,
+});
 
 function AdminApp() {
   useDocumentTitle('Admin');
