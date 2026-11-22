@@ -66,6 +66,24 @@ export function serviceSlug(name) {
 }
 
 /**
+ * A service sold as a channel inside another app ("Paramount+ (Via Amazon
+ * Prime)", "AMC+ Amazon Channel", "Max Roku Channel", "HBO (Via Hulu)", "AMC
+ * Plus Apple TV Channel") is watched in that app, so it counts as that app.
+ */
+const CHANNEL_HOSTS = Object.freeze([
+  [/\(via amazon( prime)?\)|\bamazon channel\b/i, 'prime-video'],
+  [/\(via hulu\)/i, 'hulu'],
+  [/\broku (premium )?channel\b/i, 'roku-channel'],
+  [/\bapple tv channel\b/i, 'apple-tv'],
+]);
+
+function channelHost(name) {
+  const text = String(name ?? '');
+  for (const [pattern, host] of CHANNEL_HOSTS) if (pattern.test(text)) return host;
+  return null;
+}
+
+/**
  * Provider id for a service name: a known alias, else the name's slug, so any
  * service shows once a logo named by its slug is dropped into the providers
  * folder (no code change). Null for an empty name, and for "AppleTV" alone,
@@ -75,6 +93,8 @@ export function providerIdFor(name) {
   const key = normalizeServiceName(name);
   if (!key) return null;
   if (key === 'appletv') return null;
+  const host = channelHost(name);
+  if (host) return host;
   return PROVIDER_ALIASES[key] ?? (serviceSlug(name) || null);
 }
 

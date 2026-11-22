@@ -103,8 +103,10 @@ export class GetTitleProvenance {
     if (!record || !isFresh(record, now, policy.refreshDays)) {
       record = await this.#refresh(key, record, identity.imdb !== undefined ? identity : null, { ...policy, kinds }, now);
     }
-    // Records stored before a service had an id carry `provider: null`: derive it from the name.
-    const offers = (record?.offers || []).map((o) => (o && !o.provider && o.name ? { ...o, provider: providerIdFor(o.name) } : o));
+    // The id comes from the name each time, so a stored record ranks by today's
+    // mapping (a channel counts as the app it is watched in; older records carry
+    // `provider: null`).
+    const offers = (record?.offers || []).map((o) => (o?.name ? { ...o, provider: providerIdFor(o.name) ?? o.provider ?? null } : o));
     const ranked = rankOffers(offers, rules.priority, canShow);
     if (ranked) {
       return this.#answer(rk, {

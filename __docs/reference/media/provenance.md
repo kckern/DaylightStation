@@ -111,6 +111,10 @@ stages, each read top to bottom, first match wins:
    (`sub`) and free (`free`) listings count; rent and buy never do. Household:
    subscribed (Prime Video, Peacock, YouTube TV) > library (Hoopla, Kanopy) > free
    (Tubi, Pluto TV, Roku Channel, Crackle, YouTube) > any other service with a logo.
+   A service sold as a channel inside another app counts as that app: "Paramount+
+   (Via Amazon Prime)" and "AMC+ Amazon Channel" are Prime Video, "HBO (Via Hulu)"
+   is Hulu, "Max Roku Channel" is the Roku Channel, "AMC Plus Apple TV Channel" is
+   Apple TV (`providerIdFor`, applied to stored records too).
 3. **fallbacks** when no offer qualifies. Household: movies before 1950 → Internet
    Archive; movies under 40 minutes → YouTube; the documentary libraries →
    CuriosityStream; then by studio or network (Universal/NBC → Peacock, Paramount/CBS

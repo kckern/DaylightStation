@@ -14,13 +14,21 @@ describe('providerIdFor', () => {
     expect(providerIdFor('The Roku Channel')).toBe('roku-channel');
     expect(providerIdFor('Apple TV+')).toBe('apple-tv');
   });
+  it('counts a channel as the app it is watched in', () => {
+    expect(providerIdFor('Paramount+ (Via Amazon Prime)')).toBe('prime-video');
+    expect(providerIdFor('AMC+ Amazon Channel')).toBe('prime-video');
+    expect(providerIdFor('MAX (Via Amazon Prime)')).toBe('prime-video');
+    expect(providerIdFor('HBO (Via Hulu)')).toBe('hulu');
+    expect(providerIdFor('Paramount+ Roku Channel')).toBe('roku-channel');
+    expect(providerIdFor('AMC+ Roku Premium Channel')).toBe('roku-channel');
+    expect(providerIdFor('AMC Plus Apple TV Channel')).toBe('apple-tv');
+  });
   it('does not treat Apple\'s store as the Apple TV service', () => {
     expect(providerIdFor('AppleTV')).toBeNull();
   });
   it('falls back to the name slug for services without an alias', () => {
     expect(providerIdFor('Fawesome')).toBe('fawesome');
     expect(providerIdFor('AMC+')).toBe('amc-plus');
-    expect(providerIdFor('AMC+ Amazon Channel')).toBe('amc-plus-amazon-channel');
     expect(providerIdFor('DirecTV On Demand')).toBe('directv');
     expect(providerIdFor('Philo')).toBe('philo');
     expect(providerIdFor('')).toBeNull();
