@@ -77,9 +77,11 @@ export function ProgressView() {
   // futures for the same day.
   // Number() rather than ?? — a cleared NumberInput is '', which is not nullish
   // and would otherwise be handed to the projection as a target of "".
-  const targetBodyFatPct = Number(displayedGoals?.targetBodyFatPct)
-    || DEFAULT_TARGET_BODY_FAT_PCT;
-  const projection = useMemo(() => daysToGoal({
+  const goalsKnown = editingGoals || goalsRes.data != null;
+  const targetBodyFatPct = goalsKnown
+    ? Number(displayedGoals?.targetBodyFatPct) || DEFAULT_TARGET_BODY_FAT_PCT
+    : null;
+  const projection = useMemo(() => targetBodyFatPct == null ? null : daysToGoal({
     lbs: latest?.avg ?? latest?.lbs ?? null,
     fatPct: latest?.fatPct ?? null,
     targetPct: targetBodyFatPct,
@@ -142,9 +144,9 @@ export function ProgressView() {
                     <StatCard label="Estimated daily calorie balance"
                       value={latest.calorieBalance == null ? '—' : (latest.calorieBalance === 0 ? 'Balanced' : `${latest.calorieBalance > 0 ? '+' : '−'}${Math.abs(latest.calorieBalance)}`)}
                       unit={latest.calorieBalance ? 'kcal' : ''} />
-                    <StatCard label={`Days to ${targetBodyFatPct}%`}
+                    {projection ? <StatCard label={`Days to ${targetBodyFatPct}%`}
                       value={projection.days == null ? PROJECTION_BLOCKED[projection.reason] : (projection.days === 0 ? 'reached' : projection.days)}
-                      unit={projection.days ? goalDate(latest.date, projection.days) || '' : ''} />
+                      unit={projection.days ? goalDate(latest.date, projection.days) || '' : ''} /> : null}
                   </div>
                 </>
               )}
