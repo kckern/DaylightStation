@@ -2,6 +2,7 @@
 import React, { useEffect, useRef } from 'react';
 import FullscreenImage, { MediaCaption } from "./FullscreenImage.jsx";
 import DayDataPoints from "./DayDataPoints.jsx";
+import WorkCard from "./WorkCard.jsx";
 import getLogger from '@/lib/logging/Logger.js';
 
 // Lazy so the child snapshots context AFTER WeeklyReview sets app + sessionLog on
@@ -50,7 +51,7 @@ function ReelVideo({ item, muted, paused, onEnded }) {
   );
 }
 
-export default function DayReel({ item, day, index, total, dayLabel, playing, muted, paused, onEnded }) {
+export default function DayReel({ item, day, index, total, dayLabel, playing, muted, paused, onEnded, learnerColors }) {
   if (!item) {
     return (
       <div className="weekly-review-reel weekly-review-reel--empty">
@@ -58,6 +59,14 @@ export default function DayReel({ item, day, index, total, dayLabel, playing, mu
         <div className="reel-empty-data">
           <DayDataPoints day={day} />
         </div>
+      </div>
+    );
+  }
+
+  if (item.type === 'school') {
+    return (
+      <div className="weekly-review-reel weekly-review-reel--school">
+        <WorkCard key={item.id} item={item} index={index} total={total} color={learnerColors?.[item.learnerId]} />
       </div>
     );
   }

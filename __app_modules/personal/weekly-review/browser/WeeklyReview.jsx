@@ -16,6 +16,8 @@ import { withTimeout, TIMEOUT } from "./hooks/withTimeout.js";
 import { modalReducer, initialModalState } from "./state/modalReducer.js";
 import { viewReducer, initialViewState } from "./state/viewReducer.js";
 import { resolveKey } from "./state/keymap.js";
+import { reelItemsForDay } from "./state/reelItems.js";
+import { learnerIdsForDays, colorForLearner } from "./state/learnerColor.js";
 import {
   previousWindowStart, nextWindowStart, windowStartForDate, windowEnd, windowsBackLabel,
 } from "./state/windowMath.js";
@@ -97,15 +99,18 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
   const mediaCtx = useMemo(() => {
     const days = data?.days || [];
     const day = days[view.dayIndex];
-    const items = day?.photos || [];
+    // Photos, videos and school work cards share one reel; render reads the
+    // same memoized list so indexes always agree.
+    const items = reelItemsForDay(day);
     const itemCount = items.length;
     const cur = items[view.itemIndex];
+    // A school work card behaves like a still photo for the keymap.
     const currentType = !cur ? 'none' : (cur.type === 'video' ? 'video' : 'photo');
     const prevDayIndex = view.dayIndex - 1;
     const nextDayIndex = view.dayIndex + 1;
     const hasPrevDay = prevDayIndex >= 0;
     const hasNextDay = nextDayIndex < days.length;
-    const prevDayLastIndex = hasPrevDay ? Math.max(0, (days[prevDayIndex]?.photos?.length || 1) - 1) : 0;
+    const prevDayLastIndex = hasPrevDay ? Math.max(0, (reelItemsForDay(days[prevDayIndex]).length || 1) - 1) : 0;
     return {
       itemCount, currentType,
       atFirst: view.itemIndex <= 0,
@@ -113,6 +118,13 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       hasPrevDay, hasNextDay, prevDayIndex, nextDayIndex, prevDayLastIndex,
     };
   }, [data, view.dayIndex, view.itemIndex]);
+
+  // One crayon hue per child for the whole window, keyed by learnerId, so a
+  // child keeps the same colour on every day, the strip, and the reel.
+  const learnerColors = useMemo(() => {
+    const ids = learnerIdsForDays(data?.days);
+    return Object.fromEntries(ids.map(id => [id, colorForLearner(id, ids)]));
+  }, [data]);
 
   const autoStartRef = useRef(false);
   // Proactive Shield AudioBridge heal must complete (or time out) before the
@@ -716,7 +728,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       {/* Two-level surface: reel over grid */}
       {view.level === 'reel' && data?.days?.[view.dayIndex] ? (() => {
         const day = data.days[view.dayIndex];
-        const items = day.photos || [];
+        const items = reelItemsForDay(day);
         const safeIdx = Math.min(view.itemIndex, Math.max(0, items.length - 1));
         const dt = new Date(`${day.date}T12:00:00Z`);
         const dayLabel = dt.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
@@ -732,8 +744,9 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
               muted={view.muted}
               paused={view.contextOpen}
               onEnded={() => dispatchView({ type: 'STOP_VIDEO' })}
+              learnerColors={learnerColors}
             />
-            <DayContextPanel day={day} open={view.contextOpen} />
+            <DayContextPanel day={day} open={view.contextOpen} learnerColors={learnerColors} />
           </>
         );
       })() : (
@@ -753,6 +766,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
                 key={day.date}
                 day={day}
                 isFocused={realIndex === view.dayIndex}
+                learnerColors={learnerColors}
                 onClick={() => {
                   dispatchView({ type: 'SELECT_DAY', dayIndex: realIndex });
                   dispatchView({ type: 'OPEN_DAY' });

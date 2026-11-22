@@ -41,8 +41,9 @@ vi.mock("./hooks/chunkDb.js", () => ({
 
 const WeeklyReview = (await import("./WeeklyReview.jsx")).default;
 
-// Eight days starting at `start`, each carrying one photo so nothing renders as
-// an empty window by accident.
+// Eight days starting at `start`, each carrying one morning photo (so nothing
+// renders as an empty window by accident) and one evening piece of school work,
+// which the reel plays after the photo.
 const windowPayload = (start) => {
   const days = [];
   const d = new Date(`${start}T12:00:00Z`);
@@ -50,9 +51,16 @@ const windowPayload = (start) => {
     const date = new Date(d);
     date.setUTCDate(d.getUTCDate() + i);
     const iso = date.toISOString().slice(0, 10);
+    // 23:00Z is later than a 09:00 local photo in every real timezone.
+    const work = {
+      learnerId: 'kid-a', learnerName: 'Mara', kind: 'book', verb: 'finished',
+      title: `Book ${iso}`, subtitle: null, at: `${iso}T23:00:00Z`, studyDay: iso,
+      imageUrl: null, groupKey: `book:${iso}`, weight: 1, subject: 'reading',
+    };
     days.push({
       date: iso, label: 'Day', photoCount: 1,
-      photos: [{ id: `${iso}-a`, type: 'image', url: '/x.jpg' }],
+      photos: [{ id: `${iso}-a`, type: 'image', url: '/x.jpg', takenAt: `${iso}T09:00:00` }],
+      school: [work], schoolAll: [work],
       calendar: [], fitness: [], weather: null, columnWeight: 1,
     });
   }
@@ -216,5 +224,32 @@ describe('WeeklyReview — multi-week paging', () => {
     await waitFor(() => expect(screen.getByText(/Couldn't load Jul 31 – Aug 7/)).toBeInTheDocument());
     // The window the user was narrating is still on screen.
     expect(viewedWindow()).toBe('Aug 8 – Aug 15');
+  });
+
+  it('Right in a day reel steps from the photo onto the work card', async () => {
+    const { container } = await mount();
+    press('Enter'); // open the focused (last) day
+    await waitFor(() => expect(container.querySelector('.weekly-review-reel--photo')).not.toBeNull());
+    expect(container.querySelector('.fullscreen-image-index').textContent).toBe('1 / 2');
+    press('ArrowRight');
+    await waitFor(() => expect(container.querySelector('.weekly-review-work-card')).not.toBeNull());
+    expect(container.querySelector('.work-card-title').textContent).toBe('Book 2026-08-15');
+    expect(container.querySelector('.work-card-index').textContent).toBe('2 / 2');
+  });
+
+  it('crossing back a day lands on that day\'s last reel item, the work card', async () => {
+    const { container } = await mount();
+    press('Enter');
+    await waitFor(() => expect(container.querySelector('.weekly-review-reel--photo')).not.toBeNull());
+    press('ArrowLeft'); // arm at the first item
+    press('ArrowLeft'); // cross to the previous day
+    await waitFor(() => expect(container.querySelector('.weekly-review-work-card')).not.toBeNull());
+    expect(container.querySelector('.work-card-title').textContent).toBe('Book 2026-08-14');
+  });
+
+  it('draws the school strip on the grid', async () => {
+    const { container } = await mount();
+    expect(container.querySelectorAll('.day-school .school-chip')).toHaveLength(8);
+    expect(container.querySelector('.school-chip').style.getPropertyValue('--kid')).toBe('#2f6fde');
   });
 });
