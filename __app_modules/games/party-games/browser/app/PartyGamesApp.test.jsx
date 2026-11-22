@@ -487,3 +487,34 @@ it('exits a standalone saved source session to its stored dated target and UID, 
  fireEvent.keyDown(window,{key:'Escape'});fireEvent.click(await screen.findByRole('button',{name:'Leave game'}));
  expect(replace).toHaveBeenCalledWith('/tv?list=agenda%3As%2Fplans%2Fp&focus_uid=saved');
 });
+
+it('seats list item participants and sends their clue modes as a Charades presentation',async()=>{
+ const info=vi.fn();
+ const Logger=await import('@/lib/logging/Logger.js');
+ const real=Logger.default();
+ vi.spyOn(Logger,'default').mockReturnValue({...real,child:()=>({...real.child({}),info})});
+ render(<React.StrictMode><AppContainer open={{app:'party-games/charades:family',params:{autostart:true,participants:['b','a'],clue_modes:{a:'reader',ghost:'image'}}}} clear={()=>{}}/></React.StrictMode>);
+ await screen.findByRole('button',{name:'Complete session-one'});
+ expect(screen.queryByTestId('team-setup')).toBeNull();
+ expect(createSession).toHaveBeenCalledTimes(1);
+ expect(createSession.mock.calls[0][0]).toMatchObject({definitionId:'charades:family',seats:[{id:'b'},{id:'a'}],presentation:{schema:'charades-presentation/v1',by_participant:{b:'text',a:'reader'}}});
+ const applied=info.mock.calls.filter(([event])=>event==='party-games.item-params-applied');
+ expect(applied).toEqual([['party-games.item-params-applied',{definitionId:'charades:family',autostart:true,participantCount:2,clueModeCount:2}]]);
+});
+it('lets an explicit URL query override list item params',async()=>{
+ render(<PartyGamesApp definitionId="charades:family?autostart=false" params={{autostart:true,participants:['a','b']}}/>);
+ await screen.findByTestId('team-setup');expect(createSession).not.toHaveBeenCalled();
+});
+it('creates no presentation override when the item names no clue modes',async()=>{
+ render(<PartyGamesApp definitionId="charades:family" params={{autostart:true,participants:['a']}}/>);
+ await screen.findByRole('button',{name:'Complete session-one'});
+ expect(createSession.mock.calls[0][0].presentation).toBeNull();
+});
+it('resumes a saved session seated from item participants that differ from the catalog launch',async()=>{
+ window.localStorage.setItem('party-games:charades:family:active-session','saved');
+ const catalog=[{...sets[0],launch:{autostart:true,participants:['a']}}];
+ fetchBoot.mockResolvedValueOnce({config,sets:catalog,attachedSession:{header:{session_id:'saved',experience:{id:'charades'},participants:[{id:'b'},{id:'a'}],seats:[{id:'b',members:[config.household_members[1]]},{id:'a',members:[config.household_members[0]]}]},state:{competition:false}}}).mockResolvedValue({config,sets:catalog});
+ render(<PartyGamesApp definitionId="charades:family" params={{autostart:true,participants:['b','a']}}/>);
+ await screen.findByRole('button',{name:'Complete saved'});
+ expect(createSession).not.toHaveBeenCalled();expect(fetchBoot).toHaveBeenCalledTimes(1);
+});

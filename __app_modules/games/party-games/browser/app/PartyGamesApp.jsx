@@ -13,6 +13,7 @@ import { useBuzzers } from "../interaction/useBuzzers.js";
 import TitleCard from "../../../../../__capabilities/gaming/browser/platform/ui/TitleCard.jsx";
 import PartyGamesResults from "../ui/PartyGamesResults.jsx";
 import { EXPERIENCE_REGISTRY } from "./experienceRegistry.js";
+import { launchFromParams, presentationFor, seatedParticipantIds } from "./itemParams.js";
 import "./PartyGamesApp.scss";
 import { useScopedRemoteControls } from "../../../../../__capabilities/screen-host/browser/input.mjs";
 import getLogger from '@/lib/logging/Logger.js';
@@ -64,7 +65,7 @@ function BuzzerBind({ seats, onDone, onBack }) {
   );
 }
 
-export default function PartyGamesApp({ dismiss, clear, definitionId, param, appPath, participantLaunch }) {
+export default function PartyGamesApp({ dismiss, clear, definitionId, param, appPath, participantLaunch, params }) {
   // Mounted as a screen widget (gets `dismiss`) or via /app/:appId (gets `clear`).
   const shellExit = dismiss || clear;
   const rootRef = useRef(null);
@@ -73,12 +74,17 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   const completedSession = useRef(null);
   const currentSession = useRef(null);
   const [sourceAttachment, setSourceAttachment] = useState(null);
+  // List item params (see itemParams.js). The agenda path launches from its
+  // own participant output, so item params never apply to it.
+  const itemParams = useRef(participantLaunch ? null : params || null);
   const [launch] = useState(() => {
     const raw = participantLaunch?.output?.data?.definition_id || definitionId || param || appPath || '';
     const queryIndex = raw.indexOf('?');
     const query = new URLSearchParams(participantLaunch ? '' : (queryIndex < 0 ? window.location.search : raw.slice(queryIndex + 1)));
     return {
       definition: queryIndex < 0 ? raw : raw.slice(0, queryIndex),
+      // Item params first, so an explicit URL query still wins.
+      ...launchFromParams(itemParams.current),
       ...(query.has('autostart') ? { autostart: query.get('autostart') === 'true' } : {}),
       ...(query.has('participants') ? { participants: query.get('participants').split(',').map(id => id.trim()).filter(Boolean) } : {}),
       ...(query.get('history') === 'disabled' ? { historyPolicy: 'disabled' } : {}),
@@ -142,6 +148,19 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   const [confirmReset, setConfirmReset] = useState(false);
   const [reconciledSession, setReconciledSession] = useState(null);
   const logger = useMemo(() => getLogger().child({ component: 'party-games' }), []);
+  const paramsLogged = useRef(false);
+  useEffect(() => {
+    const applied = itemParams.current;
+    if (!applied || paramsLogged.current) return;
+    paramsLogged.current = true;
+    const item = launchFromParams(applied);
+    logger.info('party-games.item-params-applied', {
+      definitionId: launch.definition,
+      autostart: item.autostart ?? null,
+      participantCount: item.participants?.length ?? 0,
+      clueModeCount: applied.clue_modes && typeof applied.clue_modes === 'object' && !Array.isArray(applied.clue_modes) ? Object.keys(applied.clue_modes).length : 0,
+    });
+  }, [launch.definition, logger]);
   const backActionRef = useRef(null);
   const forwardActionRef = useRef(null);
   const registerBackAction = useCallback((handler) => {
@@ -252,7 +271,10 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
             return;
           }
           const configuredSet = sets.find(set => set.definitionId === requestedDefinition);
-          if (attachedSession && attachment.savedSession && !attachment.diagnosticSessionId && configuredSet?.launch?.autostart && !canResumeSavedSession(attachedSession, configuredSet)) {
+          // Judge a saved roster against the roster this mount would seat:
+          // the catalog launch with item params and the URL query over it.
+          const configuredAutostart = { ...configuredSet?.launch, ...launch }.autostart;
+          if (attachedSession && attachment.savedSession && !attachment.diagnosticSessionId && configuredSet && configuredAutostart && !canResumeSavedSession(attachedSession, configuredSet, launch)) {
             logger.info('party-games.configured-roster-changed', {sessionId: attachedSession.header?.session_id, definitionId: requestedDefinition});
             try { window.localStorage.removeItem(activeSessionKey(requestedDefinition)); } catch { /* URL recovery remains available. */ }
             const url = new URL(window.location.href); url.searchParams.delete('session');
@@ -260,7 +282,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
             setAttachment(value => ({...value, sessionId: null, savedSession: false}));
             return;
           }
-          if (attachedSession && attachment.savedSession && !canResumeSavedSession(attachedSession, sets.find(set => set.definitionId === requestedDefinition))) {
+          if (attachedSession && attachment.savedSession && !canResumeSavedSession(attachedSession, configuredSet, launch)) {
             throw new Error('Saved session uses an older team setup');
           }
           if (attachedSession && !participantLaunch && !attachedSession.header?.launch?.participant_launch) {
@@ -312,9 +334,12 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   // cancel their attachment even if the HTTP response arrives later.
   useEffect(() => {
     if (participantLaunch || sourceAttachment || flow.phase !== 'playing' || flow.sessionId) return;
-    const key = JSON.stringify([flow.definitionId, flow.seats, flow.hostMode, flow.setupProfile, launch.historyPolicy]);
+    // Item clue modes become a presentation covering exactly the seated ids;
+    // the server rejects one that misses a seat or names an extra id.
+    const presentation = flow.game === 'charades' ? presentationFor(itemParams.current, seatedParticipantIds(flow.seats)) : null;
+    const key = JSON.stringify([flow.definitionId, flow.seats, flow.hostMode, flow.setupProfile, launch.historyPolicy, presentation]);
     if (!creation.current || creation.current.key !== key) {
-      creation.current = { key, promise: createSession({ definitionId: flow.definitionId, seats: flow.seats, hostMode: flow.hostMode, setupProfile: flow.setupProfile, historyPolicy: launch.historyPolicy }) };
+      creation.current = { key, promise: createSession({ definitionId: flow.definitionId, seats: flow.seats, hostMode: flow.hostMode, setupProfile: flow.setupProfile, historyPolicy: launch.historyPolicy, presentation }) };
     }
     let cancelled = false;
     creation.current.promise.then(session => {

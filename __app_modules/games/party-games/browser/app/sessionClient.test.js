@@ -91,3 +91,25 @@ it('keeps a legacy explicit session catalog failure as an error',async()=>{
  DaylightAPI.mockImplementation(path=>path.endsWith('/profile')?Promise.resolve({defaults:{}}):path.endsWith('/catalog')?Promise.reject(Error('catalog unavailable')):Promise.resolve({header:{session_id:'game:legacy'}}));
  await expect(fetchBoot({sessionId:'game:legacy'})).rejects.toThrow('catalog unavailable');
 });
+
+it('sends a Charades presentation override in the captured setup', async () => {
+  DaylightAPI.mockReset();
+  DaylightAPI.mockResolvedValueOnce({ header: { session_id: 'game:fhe' } });
+  const seats = [{ id: 'learner-a', members: [{ id: 'learner-a' }] }];
+  const presentation = { schema: 'charades-presentation/v1', by_participant: { 'learner-a': 'reader' } };
+  await createSession({ definitionId: 'charades:fhe', seats, setupProfile: { kind: 'individuals' }, presentation });
+  expect(DaylightAPI.mock.calls[0][1].setup).toEqual({ seats, charades_presentation: presentation });
+  DaylightAPI.mockResolvedValueOnce({ header: { session_id: 'game:plain' } });
+  await createSession({ definitionId: 'charades:fhe', seats, setupProfile: { kind: 'individuals' } });
+  expect(DaylightAPI.mock.calls[1][1].setup).not.toHaveProperty('charades_presentation');
+});
+
+it('judges a saved roster against launch overrides merged over the catalog launch', () => {
+  const set = { launch: { autostart: true, participants: ['learner-a'] } };
+  const saved = { header: { participants: [{ id: 'learner-a' }, { id: 'learner-b' }] } };
+  expect(canResumeSavedSession(saved, set)).toBe(false);
+  expect(canResumeSavedSession(saved, set, { autostart: true, participants: ['learner-a', 'learner-b'] })).toBe(true);
+  expect(canResumeSavedSession(saved, set, { autostart: true, participants: ['learner-b', 'learner-a'] })).toBe(false);
+  expect(canResumeSavedSession(saved, { launch: {} }, { autostart: true, participants: ['learner-a'] })).toBe(false);
+  expect(canResumeSavedSession(saved, set, { autostart: false })).toBe(true);
+});
