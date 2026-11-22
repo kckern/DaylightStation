@@ -160,10 +160,17 @@ it('runs authenticated CLI dry-run, apply retry and selected backout through the
       },
       gaming: {
         gamingApplication: {
+          // The real GamingApplication declares the participant consumer for an
+          // eligible casual Charades definition (participantEligibility.mjs); the
+          // registry resolves the consumer only when the target carries it.
           getLaunchDescriptor: async () => ({
             definition_id: 'charades:family',
             surface: {
               id: 'party-games'
+            },
+            participantConsumer: {
+              id: 'party-games',
+              version: 1
             }
           })
         },
@@ -303,6 +310,16 @@ it('runs authenticated CLI dry-run, apply retry and selected backout through the
       id: 'family'
     })).toBeNull();
     expect(existsSync(path.join(root, 'content/lists/menus/family.yml'))).toBe(true);
+    // Persisted ownership reaches backed-out, a retry is idempotent, and the
+    // legacy list is a normal list again with its game and navigation items.
+    expect(ownership.read().phase).toBe('backed-out');
+    expect((await runAgendaCli(['migration', 'backout', ...args, '--plan-id', review.documents.plan.plan_id, '--backout-review', backoutFile, '--backout-digest', preview.digest], deps)).phase).toBe('backed-out');
+    const restored = yaml.load(readFileSync(path.join(root, 'content/lists/menus/family.yml'), 'utf8'));
+    expect(restored.title).toBe('Together');
+    expect(restored.sections.flatMap(section => section.items).map(({uid, input, action}) => ({uid, input, action}))).toEqual([
+      {uid: 'game', input: 'app:party-games/charades:family', action: 'Open'},
+      {uid: 'nav', input: 'menu:songs', action: 'List'}
+    ]);
     writeFileSync(ownership.configuration.manifestPath, '{}');
     expect(() => ownership.aliases.resolve({
       kind: 'menu',
