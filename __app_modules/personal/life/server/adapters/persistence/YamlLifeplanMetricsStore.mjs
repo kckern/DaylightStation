@@ -1,5 +1,5 @@
 import path from 'path';
-import { loadYamlSafe, saveYaml, ensureDir } from '#system/utils/FileIO.mjs';
+import { readYamlFromPath, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
 
 export class YamlLifeplanMetricsStore {
   #basePath;
@@ -17,13 +17,23 @@ export class YamlLifeplanMetricsStore {
     const history = this.getHistory(username);
     history.push({ ...snapshot, timestamp: snapshot.timestamp || new Date().toISOString() });
     const filePath = this.#filePath(username);
-    saveYaml(filePath, history);
+    saveYamlToPathAtomic(filePath, history, { preserveMode: true });
   }
 
   getHistory(username) {
     const filePath = this.#filePath(username);
-    const data = loadYamlSafe(filePath);
-    return Array.isArray(data) ? data : [];
+    let data;
+    try {
+      data = readYamlFromPath(filePath);
+    } catch (error) {
+      if (error.code === 'ENOENT') return [];
+      throw error;
+    }
+
+    if (!Array.isArray(data)) {
+      throw new Error('Invalid Life plan metrics YAML: expected a list');
+    }
+    return data;
   }
 
   #filePath(username) {
