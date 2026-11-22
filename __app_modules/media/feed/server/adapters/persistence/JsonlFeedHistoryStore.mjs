@@ -150,7 +150,10 @@ export class JsonlFeedHistoryStore {
       const sourceQuery = String(source || '').toLowerCase();
       const sourceHaystack = `${doc.sourceInfo?.type || ''} ${doc.sourceInfo?.id || ''} ${doc.sourceInfo?.label || ''} ${doc.source || ''}`.toLowerCase();
       if (sourceQuery && !sourceHaystack.includes(sourceQuery)) continue;
-      const publishedAt = new Date(doc.publishedAt || doc.published || 0).getTime();
+      const publishedValue = doc.publishedAt ?? doc.published ?? doc.timestamp;
+      const publishedAt = typeof publishedValue === 'number' || (typeof publishedValue === 'string' && publishedValue !== '')
+        ? new Date(publishedValue).getTime() : NaN;
+      if ((from || to) && !Number.isFinite(publishedAt)) continue;
       if (from && publishedAt < new Date(from).getTime()) continue;
       if (to && publishedAt > new Date(to).getTime()) continue;
       const fields = {
