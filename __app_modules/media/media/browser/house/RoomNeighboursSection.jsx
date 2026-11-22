@@ -37,7 +37,9 @@ function NeighboursForm({ room, rooms, current, onClose, onSave, savePending }) 
   // Other rooms' saves can confirm mutual links while this form is open.
   const isChosen = other => edits.get(key(other)) ?? confirmed.has(key(other));
   const { submit, saving, failure } = useSheetSubmission(onClose);
-  const others = rooms.filter(other => key(other) !== key(room));
+  const choices = new Map(current.map(other => [key(other), other]));
+  for (const other of rooms) if (!choices.has(key(other))) choices.set(key(other), other);
+  const others = [...choices.values()].filter(other => key(other) !== key(room)).sort((a, b) => a.localeCompare(b));
   const save = async () => {
     const result = await onSave(room, others.filter(isChosen));
     if (!result?.ok) throw new Error(result?.error ?? 'Something went wrong');

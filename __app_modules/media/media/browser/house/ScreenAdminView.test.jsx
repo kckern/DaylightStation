@@ -62,6 +62,17 @@ describe('ScreenAdminView room neighbours (PLACE.4a/AC6)', () => {
     await waitFor(() => expect(api.setRoomNeighbours).toHaveBeenCalledWith('Den', []));
   });
 
+  it('preserves a linked room with no current screen when adding another neighbour', async () => {
+    ctx.registry.roomAdjacency = { Den: ['Hall'] };
+    wrap();
+    fireEvent.click(screen.getByTestId('screen-admin-room-edit-den'));
+    const dialog = within(await screen.findByTestId('room-neighbours-dialog'));
+    expect(dialog.getByRole('checkbox', { name: 'Hall' })).toBeChecked();
+    fireEvent.click(dialog.getByRole('checkbox', { name: 'Kitchen' }));
+    fireEvent.click(screen.getByTestId('room-neighbours-save'));
+    await waitFor(() => expect(api.setRoomNeighbours).toHaveBeenCalledWith('Den', ['Hall', 'Kitchen']));
+  });
+
   it('is hidden while the household has fewer than two rooms', () => {
     ctx.registry.screens = ctx.registry.screens.map((s) => ({ ...s, room: 'Den' }));
     wrap();
