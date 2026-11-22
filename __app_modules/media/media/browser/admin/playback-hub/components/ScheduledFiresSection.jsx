@@ -22,6 +22,28 @@ import { ConfirmModal } from "../../../../../../../frontend/src/lib/ui/ConfirmMo
 import { ScheduledFireSummary } from "./ScheduledFireSummary.jsx";
 
 const DAY_PRESETS = ['all', 'weekdays', 'weekends'];
+const DAY_ORDER = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+
+function normalizeDays(days) {
+  if (!Array.isArray(days)) return days || 'weekdays';
+  return [...days].sort((left, right) => DAY_ORDER.indexOf(left) - DAY_ORDER.indexOf(right));
+}
+
+function sameDays(left, right) {
+  const normalizedLeft = normalizeDays(left);
+  const normalizedRight = normalizeDays(right);
+  if (Array.isArray(normalizedLeft) || Array.isArray(normalizedRight)) {
+    return Array.isArray(normalizedLeft)
+      && Array.isArray(normalizedRight)
+      && normalizedLeft.length === normalizedRight.length
+      && normalizedLeft.every((day, index) => day === normalizedRight[index]);
+  }
+  return normalizedLeft === normalizedRight;
+}
+
+function dayLabel(days) {
+  return Array.isArray(days) ? `Specific days: ${days.join(', ')}` : 'Days:';
+}
 
 /**
  * Generate a stable id for a new fire. crypto.randomUUID() if available,
@@ -41,7 +63,9 @@ function fromWire(fire) {
   return {
     id: fire.id,
     time: fire.time || '',
-    days: typeof fire.days === 'string' ? fire.days : (Array.isArray(fire.days) ? 'all' : 'weekdays'),
+    days: Array.isArray(fire.days)
+      ? [...fire.days]
+      : (typeof fire.days === 'string' ? fire.days : 'weekdays'),
     target: fire.target,
     queue: fire.queue || '',
     indefinite: fire.duration_min === undefined || fire.duration_min === null,
@@ -58,12 +82,37 @@ function fromWire(fire) {
 function baselineFromRow(row) {
   return {
     time: row.time || '',
-    days: row.days || 'weekdays',
+    days: normalizeDays(row.days),
     queue: row.queue || '',
     indefinite: !!row.indefinite,
     durationMin: row.durationMin ?? null,
     volumeOverride: row.volumeOverride ?? null,
   };
+}
+
+function fireValues(fires) {
+  return (fires ?? []).map((fire) => {
+    const row = fromWire(fire);
+    return {
+      id: row.id,
+      target: row.target,
+      ...baselineFromRow(row),
+    };
+  });
+}
+
+function sameFires(left, right) {
+  return left.length === right.length && left.every((fire, index) => {
+    const next = right[index];
+    return fire.id === next.id
+      && fire.target === next.target
+      && fire.time === next.time
+      && sameDays(fire.days, next.days)
+      && fire.queue === next.queue
+      && fire.indefinite === next.indefinite
+      && fire.durationMin === next.durationMin
+      && fire.volumeOverride === next.volumeOverride;
+  });
 }
 
 /**
@@ -117,15 +166,14 @@ export function ScheduledFiresSection({ target, fires, slotMaxVolume, mutations 
   const [savingId, setSavingId] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState(() => new Set());
-  const initialFiresRef = useRef(fires);
+  const acceptedFiresRef = useRef(fireValues(fires));
 
-  // Re-sync local state when fires prop changes (e.g. after revalidate).
-  // Skip the first run since the lazy initializer already handled it.
+  // Re-sync only when server fire values change. Parent status ticks create a
+  // fresh filtered array, but must not replace an unsaved local row draft.
   useEffect(() => {
-    if (initialFiresRef.current === fires) {
-      initialFiresRef.current = null; // mark first run as consumed
-      return;
-    }
+    const nextValues = fireValues(fires);
+    if (sameFires(acceptedFiresRef.current, nextValues)) return;
+    acceptedFiresRef.current = nextValues;
     const next = (fires ?? []).map(fromWire);
     baselineByKey.current = new Map(
       next.map((r) => [keyOf(r), baselineFromRow(r)])
@@ -230,7 +278,7 @@ export function ScheduledFiresSection({ target, fires, slotMaxVolume, mutations 
     const cur = baselineFromRow(row);
     return (
       b.time !== cur.time ||
-      b.days !== cur.days ||
+      !sameDays(b.days, cur.days) ||
       b.queue !== cur.queue ||
       b.indefinite !== cur.indefinite ||
       b.durationMin !== cur.durationMin ||
@@ -293,10 +341,10 @@ export function ScheduledFiresSection({ target, fires, slotMaxVolume, mutations 
                   </div>
                 </Group>
                 <Group gap="sm">
-                  <Text size="xs">Days:</Text>
+                  <Text size="xs">{dayLabel(r.days)}</Text>
                   <Chip.Group
                     multiple={false}
-                    value={r.days}
+                    value={DAY_PRESETS.includes(r.days) ? r.days : ''}
                     onChange={(v) => updateRow(idx, { days: v })}
                   >
                     <Group gap="xs">

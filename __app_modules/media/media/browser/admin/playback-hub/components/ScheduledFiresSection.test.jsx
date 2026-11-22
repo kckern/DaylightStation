@@ -353,6 +353,79 @@ describe('ScheduledFiresSection', () => {
     expect(screen.queryByLabelText(/duration/i)).toBeNull();
   });
 
+  it('accepts genuinely changed server fire values after revalidation', () => {
+    const fires = [{
+      id: 'fire-1', time: '07:00', days: 'weekdays', target: 'red',
+      queue: 'plex:670208', duration_min: 30, volume_override: 50,
+    }];
+    const view = renderSection({ target: 'red', fires, slotMaxVolume: 75, mutations });
+
+    view.rerender(
+      <MantineProvider>
+        <ScheduledFiresSection
+          target="red"
+          fires={fires.map((fire) => ({ ...fire, time: '08:00' }))}
+          slotMaxVolume={75}
+          mutations={mutations}
+        />
+      </MantineProvider>,
+    );
+
+    expandFire(1);
+    expect(screen.getByLabelText(/time/i)).toHaveValue('08:00');
+  });
+
+  it('accepts a changed explicit day list and preserves it when saving', async () => {
+    const fire = {
+      id: 'fire-1', time: '07:00', days: 'all', target: 'red',
+      queue: 'plex:670208', duration_min: 30,
+    };
+    const view = renderSection({ target: 'red', fires: [fire], slotMaxVolume: 75, mutations });
+
+    view.rerender(
+      <MantineProvider>
+        <ScheduledFiresSection
+          target="red"
+          fires={[{ ...fire, days: ['mon'] }]}
+          slotMaxVolume={75}
+          mutations={mutations}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText('mon')).toBeInTheDocument();
+    expandFire(1);
+    expect(screen.getByText('Specific days: mon')).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^save fire$/i }));
+    });
+
+    expect(mutations.saveFire).toHaveBeenCalledWith(expect.objectContaining({ days: ['mon'] }));
+  });
+
+  it('preserves an edited draft when the server sends an equivalent fresh day array', () => {
+    const fire = {
+      id: 'fire-1', time: '07:00', days: ['mon'], target: 'red',
+      queue: 'plex:670208', duration_min: 30,
+    };
+    const view = renderSection({ target: 'red', fires: [fire], slotMaxVolume: 75, mutations });
+    expandFire(1);
+    fireEvent.change(screen.getByLabelText(/time/i), { target: { value: '08:00' } });
+
+    view.rerender(
+      <MantineProvider>
+        <ScheduledFiresSection
+          target="red"
+          fires={[{ ...fire, days: [...fire.days] }]}
+          slotMaxVolume={75}
+          mutations={mutations}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByLabelText(/time/i)).toHaveValue('08:00');
+  });
+
   it('clicking expand chevron reveals the fire form', () => {
     renderSection({
       target: 'red',

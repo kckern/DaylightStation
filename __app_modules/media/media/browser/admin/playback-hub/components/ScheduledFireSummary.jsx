@@ -5,11 +5,12 @@ import { useContentTitle } from "../../../../../../../__capabilities/content-cat
 export function ScheduledFireSummary({ row }) {
   const title = useContentTitle(row?.queue || '');
   const display = title || row?.queue || '(no queue)';
+  const days = Array.isArray(row?.days) ? row.days.join(', ') : row?.days || 'all';
   return (
     <Group gap="xs" wrap="nowrap">
       <Text size="sm" ff="monospace">{row?.time || '—'}</Text>
       <Text size="sm" c="dimmed">·</Text>
-      <Badge size="xs" variant="light">{row?.days || 'all'}</Badge>
+      <Badge size="xs" variant="light">{days}</Badge>
       <Text size="sm" c="dimmed">·</Text>
       <Text size="sm" truncate>{display}</Text>
     </Group>
