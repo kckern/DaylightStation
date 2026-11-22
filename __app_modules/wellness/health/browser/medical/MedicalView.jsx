@@ -47,7 +47,11 @@ export function MedicalView() {
 
       {med.loading ? <LoadingState label="medical readings" rows={4} /> : null}
       {unavailableError(med) ? <ErrorState error={med.error} onRetry={retry} label="Medical readings" /> : null}
-      {!open && removeError ? <ErrorState error={removeError} onRetry={() => { setRemoveError(null); retry(); }} label="Reading could not be deleted" /> : null}
+      {!open && removeError ? (
+        <StateMessage state="error" role="alert" title="Reading could not be deleted" detail={removeError.message || 'Unknown error'}>
+          <Button density="compact" variant="secondary" onClick={() => { setRemoveError(null); retry(); }}>Refresh readings</Button>
+        </StateMessage>
+      ) : null}
       {!med.loading && !unavailableError(med) && !metrics.length ? (
         <EmptyState title="No medical readings yet"
           hint="Add a blood pressure, glucose, or lab reading to start tracking."

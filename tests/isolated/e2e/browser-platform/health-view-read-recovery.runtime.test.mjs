@@ -251,7 +251,7 @@ test('Retry after a refused reading deletion only rereads Medical readings', asy
   await page.goto('/health/medical');
   await page.getByRole('button', { name: 'Delete', exact: true }).press('Enter');
   const warning = page.getByRole('alert').filter({ hasText: 'Reading could not be deleted' });
-  await warning.getByRole('button', { name: 'Retry', exact: true }).press('Enter');
+  await warning.getByRole('button', { name: 'Refresh readings', exact: true }).press('Enter');
   await expect.poll(() => Boolean(pending)).toBe(true);
   const region = page.getByRole('region', { name: 'Medical readings', exact: true });
   await expect(region).toBeFocused();
