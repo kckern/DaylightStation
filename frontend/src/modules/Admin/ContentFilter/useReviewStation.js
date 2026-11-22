@@ -4,7 +4,7 @@ import { getToken } from '../../../lib/auth.js';
 import { invalidateApiResources } from '../../../lib/hooks/useApiResource.js';
 import { createAppLogger } from '../../../lib/ui/index.js';
 import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
-import { DEFAULT_SCOPE, WIDEN_STEP, actionKeysFor, hasVerdict, nextKind, plays, rowAction, scopeRows, stepFrom } from './reviewScope.js';
+import { DEFAULT_SCOPE, WIDEN_STEP, actionKeysFor, hasVerdict, isOpen, nextKind, plays, rowAction, scopeRows, stepFrom } from './reviewScope.js';
 import { effectChoices } from './RowEditor.jsx';
 import { BLEEP_LEVEL_DEFAULT, clampBleepLevel } from '../../../../../shared/contracts/content-filter/filterSettings.mjs';
 
@@ -53,7 +53,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   const arrived = useRef({ id: null, at: Date.now(), replays: 0 });
   const via = useRef('click');
   const latest = useRef({});
-  latest.current = { rows, selectedId: selected?.id ?? null, scoped: null };
+  latest.current = { rows, selectedId: selected?.id ?? null, scoped: null, scope };
 
   const scoped = useMemo(() => scopeRows(rows, scope), [rows, scope]);
   latest.current.scoped = scoped;
@@ -98,7 +98,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   const setScope = useCallback((next) => {
     setScopeState(next);
     setMessage(null);
-    logger.info('content_filter.review.scope', { rk, show: next.show, kind: next.kind, action: next.action, needs: next.needs, group: next.group, shown: scopeRows(latest.current.rows, next).length });
+    logger.info('content_filter.review.scope', { rk, show: next.show, order: next.order, timing: next.timing, kind: next.kind, action: next.action, needs: next.needs, group: next.group, shown: scopeRows(latest.current.rows, next).length });
   }, [rk]);
 
   const step = (dir) => {
@@ -110,9 +110,10 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   const advance = (from) => {
     if (latest.current.selectedId !== from.id) return;
     const list = latest.current.scoped || [];
-    const next = stepFrom(list, from.id, 1, { onlyOpen: true });
+    const sc = latest.current.scope || DEFAULT_SCOPE;
+    const next = stepFrom(list, from.id, 1, { onlyOpen: true, scope: sc });
     if (next) { go(next, 'auto'); return; }
-    const open = list.filter((r) => r.id !== from.id && !hasVerdict(r)).length;
+    const open = list.filter((r) => r.id !== from.id && isOpen(r, sc)).length;
     setMessage(open ? `End of this view. ${open} still open above.` : `All ${list.length} in this view reviewed.`);
   };
 

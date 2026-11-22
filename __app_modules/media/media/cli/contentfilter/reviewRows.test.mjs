@@ -78,3 +78,32 @@ describe('reviewRows: every part is a row (owner, 2026-11-21)', () => {
     expect(byId['cue:w2'].timing).toBe('safe-window');
   });
 });
+
+describe('reviewRows: what the resolver stands for is filtered, not playing (review 2026-11-21)', () => {
+  const resolved = [
+    // a subject piece: its id is the subject, its members in `cues`
+    { id: 'sub-a', subject: 'sub-a', cues: ['s1', 's2'], category: 'sex_nudity_immodesty/x', label: 'Billboard', effect: 'blur', in: 50, out: 58, precision: 'ms' },
+    // two bleeps merged into one tone keep the first id; mergedFrom names both
+    { id: 'w2', category: 'language/profanity/damn', label: 'damn', effect: 'bleep', in: 80, out: 81, merged: true, mergedFrom: ['w2', 'w3'], precision: 'ms' },
+    { id: 'v1', category: 'violence/gore', label: 'Gore', effect: 'full-blur', in: 70, out: 75, precision: 'ms' },
+  ];
+  const source = [
+    { id: 's1', category: 'sex_nudity_immodesty/x', label: 'Billboard', in: 50, out: 55 },
+    { id: 's2', category: 'sex_nudity_immodesty/x', label: 'Poster', in: 52, out: 58 },
+    { id: 'w2', category: 'language/profanity/damn', label: 'damn', in: 80, out: 80.4 },
+    { id: 'w3', category: 'language/profanity/damn', label: 'damn', in: 80.6, out: 81 },
+    { id: 'v2', kind: 'visual', category: 'violence/mild', label: 'A shove under the gore blur', in: 71, out: 73 },
+    { id: 'gone', category: 'language/profanity/hell', label: 'hell', in: 90, out: 90.5 },
+    { id: 'k1', category: 'kissing/kiss', label: 'A kiss.', in: 95, out: 97 },
+  ];
+  const rows = reviewRows({ cues: resolved, source, override: { cueOverrides: { gone: { disabled: true } } } });
+  const ids = rows.map((r) => r.id);
+  it('subject members, merged tones and a covered picture cue are not "Plays" rows', () => {
+    for (const id of ['cue:s1', 'cue:s2', 'cue:w3', 'cue:v2']) expect(ids).not.toContain(id);
+    expect(rows.find((r) => r.id === 'subject:sub-a').members).toEqual(['s1', 's2']);
+  });
+  it('a playing part says why: removed by a verdict, or the settings', () => {
+    expect(rows.find((r) => r.id === 'cue:gone')).toMatchObject({ acts: false, why: 'removed' });
+    expect(rows.find((r) => r.id === 'cue:k1')).toMatchObject({ acts: false, why: 'settings' });
+  });
+});

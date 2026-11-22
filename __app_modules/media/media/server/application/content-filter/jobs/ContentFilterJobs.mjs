@@ -50,7 +50,7 @@ export class ContentFilterJobs {
     /** Remote worker: what a claimed run gets (inputsOf) and how its results are saved (applyResults). */
     this.#inputsOf = inputsOf; this.#applyResults = applyResults;
     this.#store = store; this.#cli = cli; this.#film = film; this.#digestOf = digestOf; this.#draftCards = draftCards;
-    this.#clearNudges = clearNudges; this.#logPath = logPath; this.#logger = logger; this.#now = now;
+    this.#clearNudges = clearNudges; this.#logPath = logPath; this.#logger = logger; this.#now = now; this.#bootAt = now().getTime();
     this.#executor = executor; this.#debounceMs = auditDebounceMs;
   }
 
@@ -281,18 +281,12 @@ export class ContentFilterJobs {
     return run;
   }
 
-  /**
-   * On boot: runs this process was running, or that were waiting, are interrupted; nothing restarts
-   * on its own. A run a remote worker holds is not this process's: the worker outlives an app
-   * restart (a deploy) and keeps heartbeating, so it is left to `reapStale`, which interrupts it
-   * only if its heartbeat stops (2026-11-21: a deploy 20 s into a Sonic refine marked the live run
-   * interrupted, and the worker's next report was refused).
-   */
+  /** On boot (inline executor only): runs that were in flight or waiting are interrupted; nothing restarts on its own. */
   async recover() {
     for (const rec of await this.#store.list()) {
       const rk = String(rec.ratingKey);
       const hit = await this.#withRecord(rk, (r) => {
-        const open = r.runs.filter((x) => OPEN.has(x.status) && !(x.status === 'running' && x.worker));
+        const open = r.runs.filter((x) => OPEN.has(x.status));
         for (const x of open) Object.assign(x, { status: 'interrupted', endedAt: this.#now().toISOString() });
         return open.map((x) => ({ runId: x.id, step: x.step }));
       });
@@ -409,12 +403,18 @@ export class ContentFilterJobs {
     return null;
   }
 
-  /** Worker runs whose heartbeat stopped (the worker died) become interrupted. Returns how many. */
+  /**
+   * Worker runs whose heartbeat stopped (the worker died) become interrupted. Returns how many.
+   * The clock starts no earlier than this process: while the app was down (a deploy) the worker's
+   * heartbeats had nowhere to go, so a run must miss beats against the running app before it counts
+   * as dead (2026-11-21: the first tick after a deploy reaped a live Sonic refine 20 s in).
+   */
   async reapStale({ maxAgeMs = STALE_MS } = {}) {
     const now = this.#now().getTime(); let n = 0;
+    const since = (r) => Math.max(r.heartbeatAt ? Date.parse(r.heartbeatAt) : 0, this.#bootAt);
     for (const rec of await this.#store.list()) {
       const rk = String(rec.ratingKey);
-      const stale = (r) => r.status === 'running' && r.worker && (!r.heartbeatAt || now - Date.parse(r.heartbeatAt) > maxAgeMs);
+      const stale = (r) => r.status === 'running' && r.worker && now - since(r) > maxAgeMs;
       if (!(rec.runs || []).some(stale)) continue;
       n += await this.#withRecord(rk, (r) => {
         const hit = r.runs.filter(stale);
@@ -428,6 +428,7 @@ export class ContentFilterJobs {
     return n;
   }
 
+  #bootAt = null; // ms: when this process started watching (reapStale counts from here at the earliest)
   #seen = null; // runId -> status, and rk -> audit.at, from the last watch tick
 
   /**

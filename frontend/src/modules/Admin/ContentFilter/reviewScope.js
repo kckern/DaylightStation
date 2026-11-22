@@ -7,7 +7,11 @@ export const KIND_SCOPES = [{ label: 'All', value: 'all' }, { label: 'Words', va
 export const ACTION_SCOPES = [{ label: 'All actions', value: 'all' }, { label: 'Blur', value: 'blur' }, { label: 'Skip', value: 'skip' }, { label: 'Bleep', value: 'bleep' }, { label: 'Mute', value: 'mute' }];
 /** Which parts: every part in the film (default), the ones the filter acts on, or the ones it lets play. */
 export const SHOW_SCOPES = [{ label: 'All parts', value: 'all' }, { label: 'Filtered', value: 'filtered' }, { label: 'Plays', value: 'plays' }];
-export const DEFAULT_SCOPE = Object.freeze({ show: 'all', kind: 'all', action: 'all', needs: false, group: null });
+/** Timing: every part, the ones still on VidAngel's rough times, or the measured ones (incl. safe windows). */
+export const TIMING_SCOPES = [{ label: 'Any timing', value: 'all' }, { label: 'Rough timing', value: 'rough' }, { label: 'Refined timing', value: 'refined' }];
+/** Order: through the film from the start (default), or the parts that need a look first. */
+export const ORDER_SCOPES = [{ label: 'Film order', value: 'film' }, { label: 'Needs a look first', value: 'attention' }];
+export const DEFAULT_SCOPE = Object.freeze({ show: 'all', kind: 'all', action: 'all', needs: false, group: null, timing: 'all', order: 'film' });
 /** A part the household's settings let play (audits before 2026-11-21 had none). */
 export const plays = (row) => row?.acts === false;
 
@@ -17,6 +21,11 @@ export const rowAction = (row) => ACTION_OF[row?.effect] || null;
 
 /** A row has a verdict when the server says so (a moved span already cleared it there). */
 export const hasVerdict = (row) => Boolean(row?.verdict || row?.reviewed);
+/**
+ * Still waiting for a verdict: a filtered part without one. A part that plays needs none, unless the
+ * view is the playing parts (then stepping through them is the point).
+ */
+export const isOpen = (row, scope = DEFAULT_SCOPE) => !hasVerdict(row) && (!plays(row) || scope?.show === 'plays');
 
 export function inScope(row, scope = DEFAULT_SCOPE) {
   const show = scope.show || 'all';
@@ -24,9 +33,14 @@ export function inScope(row, scope = DEFAULT_SCOPE) {
     && (scope.kind === 'all' || row.kind === scope.kind)
     && (scope.action === 'all' || rowAction(row) === scope.action)
     && (!scope.group || row.group === scope.group)
-    && (!scope.needs || !hasVerdict(row));
+    && (!scope.timing || scope.timing === 'all' || (scope.timing === 'rough' ? row.timing === 'rough' : row.timing === 'refined' || row.timing === 'safe-window'))
+    && (!scope.needs || isOpen(row, scope));
 }
-export const scopeRows = (rows, scope) => (rows || []).filter((r) => inScope(r, scope));
+/** The rows a scope keeps, in its order: film order (default) or as the audit ranks them (unsure first). */
+export function scopeRows(rows, scope) {
+  const kept = (rows || []).filter((r) => inScope(r, scope));
+  return (scope?.order || 'film') === 'film' ? [...kept].sort((a, b) => a.in - b.in || a.out - b.out) : kept;
+}
 
 /** F cycles the kind scope. */
 export function nextKind(kind) {
@@ -44,9 +58,9 @@ export const actionKeysFor = (kind) => ACTION_KEYS[kind] || [];
 export const WIDEN_STEP = 0.5;
 
 /** Next row after `cursorId` in list order (no wrap); null at the end. `onlyOpen` skips rows with a verdict. */
-export function stepFrom(list, cursorId, dir, { onlyOpen = false } = {}) {
+export function stepFrom(list, cursorId, dir, { onlyOpen = false, scope = DEFAULT_SCOPE } = {}) {
   const i = list.findIndex((r) => r.id === cursorId);
-  const ok = (r) => r.id !== cursorId && (!onlyOpen || !hasVerdict(r));
+  const ok = (r) => r.id !== cursorId && (!onlyOpen || isOpen(r, scope));
   if (dir > 0) { for (let j = i + 1; j < list.length; j++) if (ok(list[j])) return list[j]; return null; }
   if (i < 0) return list.length ? list[list.length - 1] : null;
   for (let j = i - 1; j >= 0; j--) if (ok(list[j])) return list[j];

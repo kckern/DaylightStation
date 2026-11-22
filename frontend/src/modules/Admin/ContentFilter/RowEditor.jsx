@@ -64,8 +64,11 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
   };
   const step = (edge, d) => setSpan((s) => s.map((v, i) => (i === edge ? Math.round((v + d) * 1000) / 1000 : v)));
   const changed = span[0] !== row.in || span[1] !== row.out;
-  const effects = isScene ? SCENE_EFFECTS : effectChoices(row.modality);
-  const current = effects.some((o) => o.value === row.effect) ? row.effect : 'profile';
+  // A part the settings let play is on "Use settings" (it plays because of them), not a household "Off".
+  const playsBySettings = row.acts === false && row.why !== 'removed';
+  const effects = (isScene ? SCENE_EFFECTS : effectChoices(row.modality))
+    .map((o) => (playsBySettings && o.value === 'profile' ? { ...o, label: 'Use settings (plays)' } : o));
+  const current = playsBySettings ? 'profile' : effects.some((o) => o.value === row.effect) ? row.effect : 'profile';
 
   return (
     <Stack gap="xs" className="cf-editor">

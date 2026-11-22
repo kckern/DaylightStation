@@ -199,7 +199,7 @@ function FocusBar({ row, list, onPrev, onNext }) {
         <Text size="sm" fw={600} className="cf-focus__where">{where}</Text>
         <Text size="xs" c="dimmed">{left ? `${left} filtered still to review in this view` : 'Every filtered part in this view has a verdict'}</Text>
       </Stack>
-      <Button size="compact-sm" variant="default" onClick={onNext} disabled={i < 0 || i >= list.length - 1} aria-label="Next part">Next →</Button>
+      <Button size="compact-sm" variant="default" onClick={onNext} disabled={i >= list.length - 1} aria-label="Next part">Next →</Button>
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Badge, Button, Checkbox, Group, SegmentedControl, Select, Stack, Text, UnstyledButton } from '@mantine/core';
 import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 import { effectChip } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
-import { ACTION_SCOPES, DEFAULT_SCOPE, KIND_SCOPES, SHOW_SCOPES, plays, scopeRows } from './reviewScope.js';
+import { ACTION_SCOPES, DEFAULT_SCOPE, KIND_SCOPES, ORDER_SCOPES, SHOW_SCOPES, TIMING_SCOPES, plays, scopeRows } from './reviewScope.js';
 
 /**
  * Every part in one film (the latest audit's rows): the ones the filter acts on, as the household
@@ -51,8 +51,8 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
     <Stack gap="xs" className="cf-review__list">
       <Group justify="space-between" wrap="wrap" gap="xs">
         <Text fw={600}>{reviewed} of {total} reviewed</Text>
-        {audit && !audit.fresh ? <Text size="sm" c="dimmed">{audit.running ? 'Audit running…' : 'Audit out of date'}</Text>
-          : audit && !audit.ok ? <Text size="sm" c="red">The audit has not passed</Text> : null}
+        {audit && !audit.fresh ? <Text size="sm" c="dimmed">{audit.running ? 'Checking…' : 'Check out of date'}</Text>
+          : audit && !audit.ok ? <Text size="sm" c="red">The check has not passed</Text> : null}
       </Group>
       {playing ? <Text size="xs" c="dimmed">{`${rows.length} parts in this film: the filter acts on ${counts.filtered}, ${playing} play as they are.`}</Text> : null}
       <SegmentedControl size="xs" fullWidth aria-label="Show"
@@ -62,6 +62,8 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
         <SegmentedControl size="xs" data={KIND_SCOPES} value={scope.kind} onChange={(kind) => setScope({ kind })} aria-label="Kind" />
         <Select size="xs" aria-label="Action" allowDeselect={false} data={ACTION_SCOPES} value={scope.action} onChange={(action) => setScope({ action: action || 'all' })} />
         <Select size="xs" aria-label="Group" placeholder="All groups" clearable data={groups.map((g) => ({ value: g, label: groupLabel(g) }))} value={scope.group} onChange={(group) => setScope({ group })} />
+        <Select size="xs" aria-label="Timing" allowDeselect={false} data={TIMING_SCOPES} value={scope.timing || 'all'} onChange={(timing) => setScope({ timing: timing || 'all' })} />
+        <Select size="xs" aria-label="Order" allowDeselect={false} data={ORDER_SCOPES} value={scope.order || 'film'} onChange={(order) => setScope({ order: order || 'film' })} />
         <Checkbox size="xs" label="Needs review" checked={scope.needs} onChange={(e) => setScope({ needs: e.currentTarget.checked })} />
       </Group>
       {!shown.length ? <Text size="sm" c="dimmed">{!rows.length && emptyText ? emptyText : 'Nothing here. Change the filters above.'}</Text> : (
@@ -88,7 +90,7 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
                   </span>
                 </UnstyledButton>
                 <div className="cf-review__chips">
-                  {plays(r) ? <Badge size="xs" variant="outline" color="gray">Plays</Badge> : <Badge size="xs" variant="light">{effectChip(r.effect)}</Badge>}
+                  {plays(r) ? <Badge size="xs" variant="outline" color="gray">{r.why === 'removed' ? 'Plays (removed)' : 'Plays'}</Badge> : <Badge size="xs" variant="light">{effectChip(r.effect)}</Badge>}
                   {r.verdict && VERDICT_BADGE[r.verdict.verdict] ? <Badge size="xs" variant="light" color={VERDICT_BADGE[r.verdict.verdict][1]}>{VERDICT_BADGE[r.verdict.verdict][0]}</Badge> : null}
                   {timing ? <Badge size="xs" variant="dot" color={timing[1]}>{timing[0]}</Badge> : null}
                   {r.handFixed ? <Badge size="xs" variant="outline">hand-fixed</Badge> : null}

@@ -28,7 +28,10 @@ describe('ContentFilterJobs with a filter worker', () => {
   });
   it('a worker run records its owner and heartbeat; a stale heartbeat becomes interrupted', async () => {
     const store = memStore({ 1: { ratingKey: '1', runs: [{ id: 'a', kind: 'make', status: 'running', step: 'refine', steps: [], worker: 'w1', heartbeatAt: '2026-11-08T00:00:00.000Z' }] } });
-    const jobs = make({ store, executor: 'inline', now: () => new Date('2026-11-08T00:02:00Z') });
+    let t = new Date('2026-11-08T00:00:30Z'); // the app started 30 s after the last beat
+    const jobs = make({ store, executor: 'inline', now: () => t });
+    expect(await jobs.reapStale({ maxAgeMs: 60000 })).toBe(0);
+    t = new Date('2026-11-08T00:02:00Z'); // and has heard nothing for 90 s since
     expect(await jobs.reapStale({ maxAgeMs: 60000 })).toBe(1);
     expect((await jobs.record('1')).runs[0]).toMatchObject({ status: 'interrupted', step: 'refine' });
   });
@@ -53,9 +56,24 @@ describe('ContentFilterJobs with a filter worker', () => {
   });
   it('the app watcher also reaps a dead worker\'s run, so a stopped worker cannot pin the gate', async () => {
     const store = memStore({ 1: { ratingKey: '1', runs: [{ id: 'a', kind: 'make', status: 'running', step: 'refine', steps: [], worker: 'w1', heartbeatAt: '2026-11-08T00:00:00.000Z' }] } });
-    const app = make({ store, now: () => new Date('2026-11-08T00:05:00Z') });
+    let t = new Date('2026-11-08T00:05:00Z');
+    const app = make({ store, now: () => t });
+    await app.watchOnce();
+    expect((await app.record('1')).runs[0].status).toBe('running'); // just booted: the worker gets a minute
+    t = new Date('2026-11-08T00:06:30Z');
     await app.watchOnce();
     expect((await app.record('1')).runs[0].status).toBe('interrupted');
+  });
+  it('a deploy does not reap a live worker run: its first tick after boot leaves it, a beat keeps it (2026-11-21)', async () => {
+    const store = memStore({ 1: { ratingKey: '1', runs: [{ id: 'a', kind: 'make', status: 'running', step: 'refine', steps: [], worker: 'w1', heartbeatAt: '2026-11-21T04:53:51.000Z' }] } });
+    let t = new Date('2026-11-21T04:55:05Z'); // container back 74 s after the last beat
+    const app = make({ store, now: () => t });
+    await app.watchOnce();
+    expect((await app.record('1')).runs[0].status).toBe('running');
+    store.m.get('1').runs[0].heartbeatAt = '2026-11-21T04:55:20.000Z'; // the worker reports again
+    t = new Date('2026-11-21T04:56:10Z');
+    await app.watchOnce();
+    expect((await app.record('1')).runs[0].status).toBe('running');
   });
   it('audit and card-draft stages run in the app at once, even in worker mode', async () => {
     const c = cli(); const store = memStore();

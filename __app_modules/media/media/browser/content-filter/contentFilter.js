@@ -634,7 +634,9 @@ function sizeTones(out) {
     const t = cap(c, Math.min(Math.max(centre, c.in), c.out));
     const prev = sized[sized.length - 1];
     if (prev && t.in - prev.out < TONE_MERGE_GAP_SEC) {
-      const merged = { ...prev, id: prev.id, in: Math.min(prev.in, t.in), out: Math.max(prev.out, t.out), words: prev.words + t.words, merged: true };
+      // mergedFrom: the tones it stands for (the Admin review counts each as filtered, not playing).
+      const merged = { ...prev, id: prev.id, in: Math.min(prev.in, t.in), out: Math.max(prev.out, t.out), words: prev.words + t.words, merged: true,
+        mergedFrom: [...(prev.mergedFrom || [prev.id]), ...(t.mergedFrom || [t.id])] };
       delete merged.tagTime;
       // The merged tone supersedes both tones' remainders (unique ids, no overlap
       // with the tone); the window takes in their extent so nothing they muted

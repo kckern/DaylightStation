@@ -14,9 +14,14 @@ const item = (label) => screen.getByText(label).closest('[data-row-id]');
 
 describe('ReviewList', () => {
   beforeEach(() => { vi.restoreAllMocks(); });
-  it('renders rows as given (unsure first) with reason, hand-fixed, card and reviewed marks', () => {
+  it('renders rows in film order by default (the audit\'s ranking on request) with reason, hand-fixed, card and reviewed marks', () => {
+    const order = () => [...document.querySelectorAll('[data-row-id]')].map((n) => n.getAttribute('data-row-id'));
+    const { unmount } = render(<MantineProvider><ReviewList rows={rows} reviewed={1} total={3} audit={{ ok: true, fresh: true }}
+      scope={{ show: 'all', kind: 'all', action: 'all', needs: false, group: null, order: 'attention' }} onScope={() => {}} /></MantineProvider>);
+    expect(order()).toEqual(['cue:w1', 'subject:subject-b1', 'scene:sc1']);
+    unmount();
     show();
-    expect([...document.querySelectorAll('[data-row-id]')].map((n) => n.getAttribute('data-row-id'))).toEqual(['cue:w1', 'subject:subject-b1', 'scene:sc1']);
+    expect(order()).toEqual(['subject:subject-b1', 'cue:w1', 'scene:sc1']);
     expect(within(item('damn')).getByText('Safe window')).toBeTruthy();
     expect(within(item('damn')).getByText(/1:10.2–1:10.6/)).toBeTruthy();
     expect(within(item('Billboard')).getByText('hand-fixed')).toBeTruthy();
@@ -52,7 +57,7 @@ describe('ReviewList', () => {
   });
   it('says the audit is running while it is not fresh', () => {
     show({ audit: { ok: true, fresh: false, running: true } });
-    expect(screen.getByText('Audit running…')).toBeTruthy();
+    expect(screen.getByText('Checking…')).toBeTruthy();
   });
   it('a reviewed unsure row is not "needs review"', () => {
     const reviewedUnsure = rows.map((r) => (r.id === 'cue:w1' ? { ...r, reviewed: { by: 'p' } } : r));
@@ -74,7 +79,7 @@ describe('ReviewList', () => {
   it('shows "Sent back" on rows in a send-back run, and an out-of-date audit as such', () => {
     show({ sentBack: { 'cue:w1': 'refine' }, audit: { ok: true, fresh: false, running: false } });
     expect(within(item('damn')).getByText('Sent back: refine')).toBeTruthy();
-    expect(screen.getByText('Audit out of date')).toBeTruthy();
+    expect(screen.getByText('Check out of date')).toBeTruthy();
   });
   it('shows a verdict badge per row and follows a scope given by the page', () => {
     const withVerdict = rows.map((r) => (r.id === 'cue:w1' ? { ...r, reviewed: { by: 'p' }, verdict: { verdict: 'redo' } } : r));

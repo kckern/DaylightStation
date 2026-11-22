@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rowAction, scopeRows, stepFrom, actionKeysFor, nextKind, DEFAULT_SCOPE } from './reviewScope.js';
+import { rowAction, scopeRows, stepFrom, actionKeysFor, nextKind, DEFAULT_SCOPE, isOpen } from './reviewScope.js';
 
 const rows = [
   { id: 'a', kind: 'words', effect: 'mute', group: 'profanity', verdict: null, reviewed: null },
@@ -36,5 +36,20 @@ describe('reviewScope', () => {
   });
   it('F cycles all > words > picture > scenes > all', () => {
     expect(['all', 'words', 'picture', 'scenes'].map(nextKind)).toEqual(['words', 'picture', 'scenes', 'all']);
+  });
+});
+
+describe('all parts: playing parts, timing and order (2026-11-21)', () => {
+  const r = (id, o) => ({ id, kind: 'words', effect: 'mute', in: 0, out: 1, ...o });
+  const list = [r('b', { in: 50, timing: 'rough' }), r('p', { in: 10, acts: false, effect: 'off', timing: 'rough' }), r('a', { in: 20, timing: 'refined' })];
+  it('a playing part is never "open" except in the Plays view', () => {
+    expect(isOpen(list[1])).toBe(false);
+    expect(isOpen(list[1], { show: 'plays' })).toBe(true);
+    expect(stepFrom(scopeRows(list, DEFAULT_SCOPE), 'p', 1, { onlyOpen: true })?.id).toBe('a');
+  });
+  it('film order by default; timing narrows', () => {
+    expect(scopeRows(list, DEFAULT_SCOPE).map((x) => x.id)).toEqual(['p', 'a', 'b']);
+    expect(scopeRows(list, { ...DEFAULT_SCOPE, timing: 'rough' }).map((x) => x.id)).toEqual(['p', 'b']);
+    expect(scopeRows(list, { ...DEFAULT_SCOPE, order: 'attention', show: 'filtered' }).map((x) => x.id)).toEqual(['b', 'a']);
   });
 });

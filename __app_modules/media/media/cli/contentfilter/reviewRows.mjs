@@ -7,7 +7,7 @@
  * Row = { id, peekId, kind: 'words'|'picture'|'scenes', group, label, category, modality, in, out,
  *         effect, acts, timing, card: { text, approved }|null, handFixed, unsure: string[], members: string[] }
  * members: the cue ids a ruling or a send-back applies to (one for a cue, all for a subject, none for a scene).
- * acts: false for a part the household's settings let play (effect 'off'). Every tag in the EDL is a
+ * acts: false for a part that plays (effect 'off'; why: 'settings', or 'removed' by a verdict). Every tag in the EDL is a
  *   row, so the owner sees all of them, not only the ones the filter acts on (owner, 2026-11-21).
  * timing: 'refined' (measured to the frame/ms), 'safe-window' (a mute window that covers the word),
  *   or 'rough' (VidAngel's second-approx times, not refined yet).
@@ -22,6 +22,14 @@ const OVERLAY = new Set(['blur', 'full-blur', 'pixelate']);
 const ms = (t) => Math.round(t * 1000) / 1000;
 export { REVIEW_ROWS_VERSION };
 const baseId = (id) => String(id).split(/[#@]/)[0];
+/** The source cue ids a resolved piece stands for: a subject's members, a merged tone's tones, else its own. */
+const sourceIds = (c) => [...new Set([baseId(c.id), ...(c.cues || []), ...(c.mergedFrom || [])].map(baseId))]
+  .filter((id) => !(c.subject != null && id === String(c.subject) && (c.cues || []).length));
+const AUDIO_FX = new Set(['mute', 'bleep', 'duck']);
+const PICTURE_FX = new Set(['blur', 'full-blur', 'pixelate', 'censor-bar', 'blackout']);
+/** Does a resolved piece hide this channel? A skip hides both. */
+const hides = (effect, modality) => (effect === 'skip' || effect === 'skip-card')
+  || (modality === 'shown' ? PICTURE_FX.has(effect) : AUDIO_FX.has(effect));
 
 /** The worst timing among a row's pieces: one rough piece makes the row rough. */
 export function timingOf(cues) {
@@ -58,7 +66,7 @@ export function reviewRows({ cues, source = [], refined = null, override = null,
   }
   const rows = buildMoments(cues, refined?.scenes).map((m) => {
     const all = pieces.get(m.key) || [m.cue];
-    const members = m.kind === 'scene' ? [] : [...new Set(all.map((c) => String(c.id).split(/[#@]/)[0]))];
+    const members = m.kind === 'scene' ? [] : [...new Set(all.flatMap(sourceIds))];
     const isScene = m.kind === 'scene';
     const modality = isScene ? null : cueModality(m.cue);
     const unsure = [];
@@ -88,9 +96,14 @@ export function reviewRows({ cues, source = [], refined = null, override = null,
     };
   });
   // Parts the household lets play: every source cue that resolved to nothing. On this file's clock
-  // (the sync the resolver uses); one a hidden scene covers is that scene's, as the resolver decides.
-  const acted = new Set((cues || []).map((c) => baseId(c.id)));
-  const sceneSpans = (cues || []).filter((c) => c.scene != null);
+  // (the sync the resolver uses). A cue another piece stands for (a subject's member, a merged
+  // tone) is that piece's; so is one a scene lists or one a piece on its channel already covers (a
+  // stacked picture effect trimmed away, a scene that swallowed it).
+  const acted = new Set((cues || []).flatMap(sourceIds));
+  for (const sc of refined?.scenes || []) {
+    if ((cues || []).some((c) => c.scene != null && String(c.scene) === String(sc.id))) for (const id of sc.cues || []) acted.add(baseId(id));
+  }
+  const disabled = new Set(Object.entries(override?.cueOverrides || {}).filter(([, ov]) => ov?.disabled).map(([id]) => baseId(id)));
   const sync = override?.sync || null;
   const added = new Set((override?.addCues || []).map((c) => String(c.id))); // authored in local time
   const seen = new Set();
@@ -102,13 +115,13 @@ export function reviewRows({ cues, source = [], refined = null, override = null,
     const spans = sync && !added.has(String(c.id)) ? mapSpan(a, Math.max(a, b), sync) : [{ in: a, out: Math.max(a, b) }];
     if (!spans.length) continue; // not in this copy's cut
     const local = { in: spans[0].in, out: spans[spans.length - 1].out };
-    if (sceneSpans.some((sp) => local.in >= sp.in - 0.5 && local.out <= sp.out + 0.5)) continue;
     const modality = cueModality(c);
+    if ((cues || []).some((p) => hides(p.effect, modality) && local.in >= p.in - 0.5 && local.out <= p.out + 0.5)) continue;
     rows.push({
       id: `cue:${id}`, peekId: id, kind: modality === 'shown' ? 'picture' : 'words',
       group: languageGroupOf(c.category) ?? (String(c.category || '').split('/')[0] || null),
       label: c.label, category: c.category, modality, in: ms(local.in), out: ms(local.out),
-      effect: 'off', acts: false, timing: timingOf([c]), card: null,
+      effect: 'off', acts: false, why: disabled.has(id) ? 'removed' : 'settings', timing: timingOf([c]), card: null,
       handFixed: false, unsure: [], members: [id],
     });
   }

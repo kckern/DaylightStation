@@ -33,6 +33,8 @@ const sameSpan = (a, b) => Array.isArray(a) && Array.isArray(b) && Math.abs(a[0]
 const EDGE_TOL = 0.5;
 const EFFECT_TOL = 2;
 function markHolds(m, r) {
+  // A part removed by its verdict plays now: its row moves to the raw span, and the mark still holds.
+  if ((m.verdict || 'approve') === 'remove' && r.acts === false && r.why === 'removed') return true;
   const span = [r.in, r.out];
   if (sameSpan(m.span, span)) return true;
   const to = m.change?.to;
@@ -299,7 +301,8 @@ export class ContentFilterReview {
       if (!override?.review) return 0;
       const review = {}; let pruned = 0;
       for (const [id, m] of Object.entries(override.review)) {
-        if (rows.has(id)) review[id] = m; else pruned++;
+        // A remove keeps its mark when its row is gone (a removed subject or scene): undo needs what it applied.
+        if (rows.has(id) || m?.verdict === 'remove') review[id] = m; else pruned++;
       }
       if (pruned) {
         await this.#repo.saveOverride(ratingKey, { ...override, review });
@@ -332,7 +335,8 @@ export class ContentFilterReview {
     const total = rows.filter((r) => r.acts !== false).length;
     const timing = { refined: 0, 'safe-window': 0, rough: 0 };
     for (const r of rows) if (r.timing in timing) timing[r.timing]++;
-    const parts = { total: rows.length, acting: total, plays: rows.length - total, timing };
+    // An older list (no `acts`/`timing`) can't count parts: no meters until it is rebuilt.
+    const parts = audit?.rowsVersion === REVIEW_ROWS_VERSION ? { total: rows.length, acting: total, plays: rows.length - total, timing } : null;
     const auditing = typeof this.#jobs.isAuditing === 'function' && this.#jobs.isAuditing(ratingKey);
     const missing = [];
     if (refined && cert.level === 'none') {
@@ -362,7 +366,7 @@ export class ContentFilterReview {
       wordRulings: override.profilePatch?.languageWords || {},
       bleepLevel: { film: override.profilePatch?.bleepLevel ?? null, profile: (await this.#repo.getProfile('family'))?.bleepLevel ?? null },
       rows, reviewed, total, redo, parts,
-      job: run ? { id: run.id, kind: run.kind, status: run.status, step: run.step, steps: run.steps, ...(run.cues ? { cues: run.cues } : {}) } : null,
+      job: run ? { id: run.id, kind: run.kind, status: run.status, step: run.step, steps: run.steps, ...(run.cues ? { cues: run.cues } : {}), ...(run.worker ? { remote: true } : {}) } : null,
       signOff: { ready: !!refined && missing.length === 0, missing, parent: refined?.certification?.parent || null },
     };
   }

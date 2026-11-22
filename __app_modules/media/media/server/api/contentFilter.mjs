@@ -292,7 +292,9 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
         const review = await contentFilterReview.get({ ratingKey: key(req) });
         // The list is the latest audit's rows: a film with none (never run here) or a stale one,
         // and nothing queued or running, gets its audit now. jobs.audit debounces per film.
-        const open = review.job && (review.job.status === 'queued' || review.job.status === 'running');
+        // A run a remote worker holds stages the film elsewhere (nothing is written until it completes),
+        // so the list can be rebuilt while it runs: a refine takes hours (review 2026-11-21).
+        const open = review.job && (review.job.status === 'queued' || review.job.status === 'running') && !review.job.remote;
         const reason = !review.audit ? 'missing' : (!review.audit.fresh && !review.audit.running ? 'stale' : null);
         // Never while one runs or after one failed: the card offers Retry (review 2026-11-12).
         if (jobs?.audit && reason && !open && !review.auditRunning && !review.auditError) {
