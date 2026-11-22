@@ -10,10 +10,12 @@
 import path from 'path';
 import { createProvenanceRouter } from '../api/provenance.mjs';
 import { GetTitleProvenance } from '../application/provenance/GetTitleProvenance.mjs';
+import { DescribePlayStart } from '../application/provenance/DescribePlayStart.mjs';
 import { WatchmodeAvailabilityGateway } from '../adapters/provenance/WatchmodeAvailabilityGateway.mjs';
 import { PlexTitleIdentityReader } from '../adapters/provenance/PlexTitleIdentityReader.mjs';
 import { YamlProvenanceStore } from '../adapters/provenance/YamlProvenanceStore.mjs';
 import { FilesystemProviderLogoCatalog } from '../adapters/provenance/FilesystemProviderLogoCatalog.mjs';
+import { parseRules } from '../domain/provenance/rules.mjs';
 
 const list = (v) => (Array.isArray(v) ? v.map(String) : []);
 
@@ -22,6 +24,7 @@ export function provenancePolicy(raw) {
   const cfg = raw && typeof raw === 'object' ? raw : {};
   const lookup = cfg.lookup && typeof cfg.lookup === 'object' ? cfg.lookup : {};
   const providers = cfg.providers && typeof cfg.providers === 'object' ? cfg.providers : {};
+  const scene = cfg.scene && typeof cfg.scene === 'object' ? cfg.scene : {};
   return {
     enabled: cfg.enabled !== false,
     region: typeof lookup.region === 'string' ? lookup.region : 'US',
@@ -29,10 +32,20 @@ export function provenancePolicy(raw) {
     quotaReserve: Number.isFinite(lookup.quota_reserve) ? lookup.quota_reserve : 100,
     tiers: { free: list(providers.free), subscribed: list(providers.subscribed) },
     kinds: list(cfg.kinds).filter((k) => k === 'movie' || k === 'show'),
+    // Plex libraries in scope (by name); empty = any library.
+    libraries: list(cfg.libraries),
+    // overrides > priority > fallbacks (domain/provenance/rules.mjs).
+    rules: parseRules(cfg),
+    // A resume after this long away still opens with the scene.
+    resumeAfterHours: Number.isFinite(scene.resume_after_hours) ? scene.resume_after_hours : 6,
   };
 }
 
-export function createProvenanceRuntime({ configService, rootLogger, contentRegistry = null, peekPlaybackStart = null }) {
+/**
+ * @param {object} deps
+ * @param {{ isActive(ratingKey:string): Promise<boolean> }|null} [deps.contentFilter] - the content filter's status (for `content_filter` rules)
+ */
+export function createProvenanceRuntime({ configService, rootLogger, contentRegistry = null, peekPlaybackStart = null, contentFilter = null }) {
   const logger = rootLogger.child({ module: 'provenance' });
   const policy = () => provenancePolicy(configService.getHouseholdAppConfig(null, 'provenance'));
   const apiKey = configService.getSystemAuth?.('watchmode', 'api_key') || null;
@@ -51,7 +64,11 @@ export function createProvenanceRuntime({ configService, rootLogger, contentRegi
     logos,
     policy,
     logger,
+    contentFilter,
   });
   // peekPlaybackStart: the playback capability's read-only start position.
-  return createProvenanceRouter({ getTitleProvenance, logos, peekPlaybackStart, logger });
+  const describePlayStart = new DescribePlayStart({
+    peekPlaybackStart, logger, resumeAfterHours: () => policy().resumeAfterHours,
+  });
+  return createProvenanceRouter({ getTitleProvenance, logos, describePlayStart, logger });
 }

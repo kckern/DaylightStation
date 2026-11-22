@@ -37,6 +37,12 @@ const PROVIDER_ALIASES = Object.freeze({
   amcplus: 'amc-plus',
   philo: 'philo',
   directv: 'directv', directvondemand: 'directv', directvstream: 'directv',
+  youtube: 'youtube', youtubefree: 'youtube', youtubetv: 'youtube-tv',
+  curiositystream: 'curiosity-stream', magellantv: 'magellan-tv',
+  crackle: 'crackle', vimeo: 'vimeo', dailymotion: 'dailymotion',
+  byutv: 'byutv', vidangel: 'vidangel', angelstudios: 'vidangel',
+  livingscriptures: 'living-scriptures', livingscripturesstreaming: 'living-scriptures',
+  internetarchive: 'archive-org', archiveorg: 'archive-org',
 });
 
 /** Display names for the provider ids above (alt text, logs). */
@@ -45,6 +51,9 @@ export const PROVIDER_NAMES = Object.freeze({
   peacock: 'Peacock', 'hbo-max': 'HBO Max', 'paramount-plus': 'Paramount+', 'apple-tv': 'Apple TV',
   tubi: 'Tubi', 'pluto-tv': 'Pluto TV', hoopla: 'Hoopla', kanopy: 'Kanopy', 'roku-channel': 'The Roku Channel',
   'amc-plus': 'AMC+', philo: 'Philo', directv: 'DirecTV',
+  youtube: 'YouTube', 'youtube-tv': 'YouTube TV', 'curiosity-stream': 'CuriosityStream', 'magellan-tv': 'MagellanTV',
+  crackle: 'Crackle', vimeo: 'Vimeo', dailymotion: 'Dailymotion', byutv: 'BYUtv', vidangel: 'VidAngel',
+  'living-scriptures': 'Living Scriptures', 'archive-org': 'Internet Archive',
 });
 
 export function normalizeServiceName(name) {
@@ -174,4 +183,15 @@ export function hasQuotaRoom(usage, { month, reserve = 100 } = {}) {
   const quota = Number(usage.quota), used = Number(usage.quotaUsed);
   if (!Number.isFinite(quota) || !Number.isFinite(used)) return true;
   return used < quota - reserve;
+}
+
+/**
+ * Whether a resume comes after a long absence: last played more than `hours`
+ * ago (by `now`). An unknown or unreadable time is not a long absence.
+ */
+export function isLongAbsence(lastPlayedAt, now, hours) {
+  if (!lastPlayedAt || !(Number(hours) > 0)) return false;
+  const at = Date.parse(String(lastPlayedAt));
+  if (!Number.isFinite(at)) return false;
+  return now.getTime() - at > Number(hours) * 3600000;
 }

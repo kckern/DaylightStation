@@ -1,7 +1,9 @@
 /**
- * A Plex item's identity in external ids (IMDb/TMDB), for availability lookups.
- * Movies and shows answer for themselves; an episode or season answers as its
- * show, since services carry shows, not single episodes.
+ * A Plex item's identity in external ids (IMDb/TMDB), for availability lookups,
+ * and the facts the household's provenance rules read (studio, length,
+ * collections, labels, library). Movies and shows answer for themselves; an
+ * episode or season answers as its show, since services carry shows, not single
+ * episodes.
  *
  * Reference: __docs/reference/media/provenance.md
  */
@@ -36,12 +38,18 @@ export class PlexTitleIdentityReader extends ITitleIdentityReader {
     }
     if (md.type !== 'movie' && md.type !== 'show') return null;
     const { imdb, tmdb } = externalIdsFromGuids(md.Guid);
+    const tags = (list) => (Array.isArray(list) ? list.map((t) => t?.tag).filter(Boolean).map(String) : []);
     return {
       key: String(md.ratingKey ?? rk),
       kind: md.type,
       title: md.title ?? null,
       year: Number.isFinite(md.year) ? md.year : null,
       imdb, tmdb,
+      studio: md.studio ? String(md.studio) : null,
+      durationMs: Number.isFinite(md.duration) ? md.duration : null,
+      collections: tags(md.Collection),
+      labels: tags(md.Label),
+      library: md.librarySectionTitle ? String(md.librarySectionTitle) : null,
     };
   }
 }

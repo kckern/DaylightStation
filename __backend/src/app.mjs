@@ -1904,16 +1904,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Content-filter cascade (EDL + profile + override) for the Player's
   // useContentFilter hook. Curated policy from data/household/content-filter/,
   // machine-fetched EDLs from media/content-filter/.
-  v1Routers['content-filter'] = await createContentFilterRuntime({
+  const contentFilterRuntime = await createContentFilterRuntime({
     configService, rootLogger, contentRegistry,
     aiGateway: scopedGateway(sharedAiGateway, { app: 'media', feature: 'content-filter-cards' }),
   });
+  v1Routers['content-filter'] = contentFilterRuntime.router;
 
   // Provenance bumper: which streaming service a title is "from" (Watchmode,
   // looked up when a title plays). Policy in household/media/provenance.yml.
   v1Routers.provenance = createProvenanceRuntime({
     configService, rootLogger, contentRegistry,
     peekPlaybackStart: contentServices?.peekPlaybackStart ?? null,
+    contentFilter: contentFilterRuntime.filterStatus,
   });
 
   v1Routers.emulator = createEmulatorRuntime({

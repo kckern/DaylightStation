@@ -3,14 +3,18 @@ import express from 'express';
 import request from 'supertest';
 import { Readable } from 'stream';
 import { createProvenanceRouter } from './provenance.mjs';
+import { DescribePlayStart } from '../application/provenance/DescribePlayStart.mjs';
 
-function app({ found = null, logo = true, peekPlaybackStart } = {}) {
+function app({ found = null, logo = true, peekPlaybackStart, clock } = {}) {
   const getTitleProvenance = { execute: vi.fn(async () => found) };
   const logos = {
     open: vi.fn((provider, opts) => (logo ? { stream: Readable.from([`<svg data-p="${provider}" data-w="${!!opts.white}"/>`]), contentType: 'image/svg+xml' } : null)),
   };
   const a = express();
-  a.use('/api/v1/provenance', createProvenanceRouter({ getTitleProvenance, logos, peekPlaybackStart, logger: { warn: () => {} } }));
+  a.use('/api/v1/provenance', createProvenanceRouter({
+    getTitleProvenance, logos, logger: { warn: () => {} },
+    describePlayStart: new DescribePlayStart({ peekPlaybackStart, clock, resumeAfterHours: () => 6, logger: { warn: () => {} } }),
+  }));
   return { a, getTitleProvenance, logos };
 }
 
@@ -24,7 +28,7 @@ describe('provenance router', () => {
   });
   it('returns null when nothing is confirmed, 400 for a bad key', async () => {
     const { a } = app();
-    expect((await request(a).get('/api/v1/provenance/1')).body).toEqual({ provenance: null, startSec: null });
+    expect((await request(a).get('/api/v1/provenance/1')).body).toEqual({ provenance: null, startSec: null, resumeShowsScene: false });
     expect((await request(a).get('/api/v1/provenance/..%2Fx')).status).toBe(400);
   });
   it('serves logos, preferring the white variant on request', async () => {
@@ -45,6 +49,13 @@ describe('provenance router', () => {
       const res = await request(app({ found, peekPlaybackStart }).a).get('/api/v1/provenance/7');
       expect(res.body.startSec).toBe(4321);
       expect(peekPlaybackStart).toHaveBeenCalledWith('plex:7');
+    });
+    it('says a resume after a long absence still opens with the scene', async () => {
+      const clock = () => new Date('2026-11-21T20:00:00Z');
+      const recent = vi.fn(async () => ({ startSec: 900, lastPlayedAt: '2026-11-21T18:00:00Z' }));
+      expect((await request(app({ found, peekPlaybackStart: recent, clock }).a).get('/api/v1/provenance/7')).body.resumeShowsScene).toBe(false);
+      const longAgo = vi.fn(async () => ({ startSec: 900, lastPlayedAt: '2026-11-20T09:00:00Z' }));
+      expect((await request(app({ found, peekPlaybackStart: longAgo, clock }).a).get('/api/v1/provenance/7')).body.resumeShowsScene).toBe(true);
     });
     it('is null when the read fails, is not wired, or nothing is confirmed', async () => {
       const failing = vi.fn(async () => { throw new Error('plex down'); });

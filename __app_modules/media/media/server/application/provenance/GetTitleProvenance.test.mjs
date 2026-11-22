@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { GetTitleProvenance } from './GetTitleProvenance.mjs';
+import { parseRules } from '../../domain/provenance/rules.mjs';
 
 const NOW = new Date('2026-11-20T12:00:00Z');
 const silent = { info: () => {}, warn: () => {} };
@@ -15,14 +16,14 @@ function fakeStore(records = {}, usage = null) {
   };
 }
 
-function build({ store = fakeStore(), identity, sources = [], quotaUsed = 10, policy = {}, logos = () => true } = {}) {
+function build({ store = fakeStore(), identity, sources = [], quotaUsed = 10, policy = {}, logos = () => true, contentFilter = null } = {}) {
   const identityReader = { identify: vi.fn(async (rk) => (typeof identity === 'function' ? identity(rk) : identity)) };
   const availability = { sources: vi.fn(async () => ({ sources, quota: 2500, quotaUsed })) };
   const uc = new GetTitleProvenance({
     identityReader, availability, store,
     logos: { has: logos },
     policy: () => ({ enabled: true, kinds: ['movie', 'show'], tiers: { free: ['tubi', 'hoopla'], subscribed: ['peacock'] }, refreshDays: 30, quotaReserve: 100, ...policy }),
-    clock: () => NOW, logger: silent,
+    clock: () => NOW, logger: silent, contentFilter,
   });
   return { uc, identityReader, availability, store };
 }
@@ -42,12 +43,18 @@ describe('GetTitleProvenance', () => {
     expect(store.put.mock.calls[0][2]).toEqual({ month: '2026-11', quota: 2500, quotaUsed: 10 });
   });
 
-  it('serves a fresh record without a lookup', async () => {
+  it('serves a fresh record without a lookup (the title\'s facts are still read, for the rules)', async () => {
     const store = fakeStore({ 100: { key: '100', kind: 'movie', checkedAt: '2026-11-10T00:00:00Z', offers: [{ provider: 'peacock', type: 'sub' }] } });
     const { uc, availability, identityReader } = build({ store, identity: MOVIE });
     expect((await uc.execute({ ratingKey: '100' })).provider).toBe('peacock');
     expect(availability.sources).not.toHaveBeenCalled();
-    expect(identityReader.identify).not.toHaveBeenCalled();
+    expect(identityReader.identify).toHaveBeenCalledTimes(1);
+  });
+
+  it('still answers from a cached record when the title cannot be read', async () => {
+    const store = fakeStore({ 100: { key: '100', kind: 'movie', checkedAt: '2026-11-10T00:00:00Z', offers: [{ provider: 'peacock', type: 'sub' }] } });
+    const { uc } = build({ store, identity: null });
+    expect((await uc.execute({ ratingKey: '100' })).provider).toBe('peacock');
   });
 
   it('refreshes a stale record', async () => {
@@ -130,5 +137,65 @@ describe('GetTitleProvenance', () => {
     expect(await uc.execute({ ratingKey: '100' })).toBeNull();
     expect(await uc.execute({ ratingKey: '../x' })).toBeNull();
     expect(identityReader.identify).not.toHaveBeenCalled();
+  });
+
+  describe('rules', () => {
+    const rules = parseRules({
+      overrides: [
+        { provider: 'vidangel', when: { content_filter: 'active' } },
+        { provider: 'living-scriptures', when: { collection: ['Living Scriptures'] } },
+      ],
+      priority: [
+        { name: 'subscribed', providers: ['prime-video', 'peacock'] },
+        { name: 'library', providers: ['hoopla', 'kanopy'] },
+        { name: 'free', providers: ['tubi'] },
+        { name: 'other', providers: 'any' },
+      ],
+      fallbacks: [
+        { provider: 'archive-org', when: { kind: ['movie'], year_before: 1950 } },
+        { provider: 'curiosity-stream', when: { library: ['Documentaries'] } },
+        { provider: ['peacock', 'prime-video'], when: 'always' },
+      ],
+    });
+    const FILM = { ...MOVIE, year: 1984, library: 'Movies', collections: [], studio: 'Orion' };
+
+    it('a paid service beats a library one, which beats a free one', async () => {
+      const { uc } = build({ identity: FILM, policy: { rules }, sources: [{ name: 'Tubi', type: 'free' }, { name: 'Hoopla', type: 'free' }, { name: 'Peacock', type: 'sub' }] });
+      expect(await uc.execute({ ratingKey: '100' })).toMatchObject({ provider: 'peacock', source: 'availability', tier: 'subscribed' });
+    });
+
+    it('an override wins over the offers and spends no lookup', async () => {
+      const contentFilter = { isActive: vi.fn(async () => true) };
+      const { uc, availability } = build({ identity: FILM, policy: { rules }, sources: [{ name: 'Paramount+', type: 'sub' }], contentFilter });
+      expect(await uc.execute({ ratingKey: '100' })).toMatchObject({ provider: 'vidangel', name: 'VidAngel', source: 'override', rule: 'content_filter=true' });
+      expect(contentFilter.isActive).toHaveBeenCalledWith('100');
+      expect(availability.sources).not.toHaveBeenCalled();
+    });
+
+    it('a collection override (Living Scriptures)', async () => {
+      const { uc } = build({ identity: { ...FILM, collections: ['Living Scriptures', 'LDS'] }, policy: { rules } });
+      expect((await uc.execute({ ratingKey: '100' })).provider).toBe('living-scriptures');
+    });
+
+    it('falls back by year, then library, then a stable pick of Peacock or Prime', async () => {
+      const old = build({ identity: { ...FILM, year: 1931 }, policy: { rules } });
+      expect(await old.uc.execute({ ratingKey: '100' })).toMatchObject({ provider: 'archive-org', source: 'fallback' });
+      const doc = build({ identity: { ...FILM, library: 'Documentaries' }, policy: { rules } });
+      expect((await doc.uc.execute({ ratingKey: '100' })).provider).toBe('curiosity-stream');
+      const any = build({ identity: FILM, policy: { rules } });
+      const first = (await any.uc.execute({ ratingKey: '100' })).provider;
+      expect(['peacock', 'prime-video']).toContain(first);
+      expect((await any.uc.execute({ ratingKey: '100' })).provider).toBe(first);
+    });
+
+    it('stays out of libraries it is not given', async () => {
+      const { uc } = build({ identity: { ...FILM, library: 'Home Video Archive' }, policy: { rules, libraries: ['Movies', 'Documentaries'] } });
+      expect(await uc.execute({ ratingKey: '100' })).toBeNull();
+    });
+
+    it('skips a provider with no logo and takes the next rule', async () => {
+      const { uc } = build({ identity: { ...FILM, year: 1931 }, policy: { rules }, logos: (p) => p !== 'archive-org' });
+      expect(['peacock', 'prime-video']).toContain((await uc.execute({ ratingKey: '100' })).provider);
+    });
   });
 });

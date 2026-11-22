@@ -1,7 +1,13 @@
 import { createContentFilterRouter } from '../api/contentFilter.mjs';
 import { createFilterJobs } from './content-filter-jobs.mjs';
 
-/** @param {{ configService, rootLogger, aiGateway?: object }} deps - aiGateway: scoped view for title-card drafts */
+/** The profile the player asks for when none is named (api/contentFilter.mjs). */
+const DEFAULT_PROFILE = 'family';
+
+/**
+ * @param {{ configService, rootLogger, aiGateway?: object }} deps - aiGateway: scoped view for title-card drafts
+ * @returns {Promise<{ router, filterStatus: { isActive(ratingKey:string): Promise<boolean> } }>}
+ */
 export async function createContentFilterRuntime({ configService, rootLogger, aiGateway = null, contentRegistry = null }) {
   const { GetContentFilter } = await import("../application/content-filter/usecases/GetContentFilter.mjs");
   const { ContentFilterScenes } = await import("../application/content-filter/usecases/ContentFilterScenes.mjs");
@@ -31,13 +37,20 @@ export async function createContentFilterRuntime({ configService, rootLogger, ai
   // Inline runs die with this process. A worker's runs outlive an app restart: the worker marks a
   // run interrupted when its heartbeat stops, and the app watches the store to see runs settle.
   if (inline) await jobs.recover(); else jobs.watch();
-  return createContentFilterRouter({
+  const getContentFilter = new GetContentFilter({ contentFilterRepository });
+  // Whether the filter switches on for a title by default (the player's own
+  // test: certified for the household profile). Read by provenance rules.
+  const filterStatus = {
+    isActive: async (ratingKey) => (await getContentFilter.execute({ ratingKey: String(ratingKey), profileName: DEFAULT_PROFILE }))?.certification?.ready === true,
+  };
+  const router = createContentFilterRouter({
     contentFilterArt: plexClient ? new ContentFilterArt({ plex: plexClient, logger }) : null,
-    getContentFilter: new GetContentFilter({ contentFilterRepository }),
+    getContentFilter,
     contentFilterScenes,
     contentFilterReview,
     contentFilterLibrary,
     jobs,
     logger,
   });
+  return { router, filterStatus };
 }

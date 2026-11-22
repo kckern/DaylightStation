@@ -151,11 +151,14 @@ export class ProgressSyncService {
       remote,
     );
     if (resolution?.source === 'remote') {
+      // reconcileOnPlay stamps "now" here (it is starting a play); a peek reports
+      // when the remote last saw it.
+      const remoteAt = Number(remote?.lastUpdate);
       return new MediaProgress({
         contentId,
         playhead: resolution.playhead,
         duration: resolution.duration,
-        lastPlayed: this.#clock.now().toISOString(),
+        lastPlayed: Number.isFinite(remoteAt) && remoteAt > 0 ? new Date(remoteAt * 1000).toISOString() : null,
         watchTime: local?.watchTime ?? 0,
         now: this.#clock.epoch(),
       });

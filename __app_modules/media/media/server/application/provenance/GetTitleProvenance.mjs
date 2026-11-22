@@ -1,22 +1,37 @@
 /**
- * GetTitleProvenance — the streaming service a household title is shown as
- * coming from, for the provenance bumper. Looks the title up on demand (when it
- * is about to play), never in a library sweep: the availability service allows a
- * limited number of calls a month.
+ * GetTitleProvenance — the service a household title is shown as coming from,
+ * for the provenance scene, decided by the household's rules
+ * (domain/provenance/rules.mjs, configured in the household's provenance.yml):
  *
- * Returns null whenever nothing is confirmed (no external id, found nowhere,
- * lookup failed, allowance used up); the player then shows no bumper.
+ *   1. overrides  (the title's facts: content filter on, collection, studio...)
+ *   2. priority   (the availability service's offers, by provider group)
+ *   3. fallbacks  (year, length, library, studio, then usually "always")
+ *
+ * The title's facts come from the media server on every play. Availability is
+ * looked up on demand (when a title is about to play), never in a library
+ * sweep: the service allows a limited number of calls a month. An override
+ * that matches spends no lookup.
+ *
+ * Returns null when no rule names a service with a logo, or the title is out
+ * of scope (kind, library); the player then shows no scene.
  *
  * Reference: __docs/reference/media/provenance.md
  */
 import {
-  chooseProvider, isFresh, lookupIdFor, streamingOffers, hasQuotaRoom,
+  isFresh, lookupIdFor, streamingOffers, hasQuotaRoom, providerIdFor, PROVIDER_NAMES,
 } from '../../domain/provenance/provenance.mjs';
+import { firstRule, rankOffers, needsContentFilter, parseRules } from '../../domain/provenance/rules.mjs';
 
 const monthOf = (d) => d.toISOString().slice(0, 7);
 
+/** A rule's `when`, as a short label for logs ("collection=living scriptures"). */
+function describeWhen(when = {}) {
+  if (when.always) return 'always';
+  return Object.entries(when).map(([k, v]) => `${k}=${Array.isArray(v) ? v.join('|') : v}`).join(',') || 'always';
+}
+
 export class GetTitleProvenance {
-  #identityReader; #availability; #store; #logos; #policy; #clock; #logger;
+  #identityReader; #availability; #store; #logos; #policy; #clock; #logger; #contentFilter;
   #inflight = new Map();
 
   /**
@@ -27,8 +42,9 @@ export class GetTitleProvenance {
    * @param {import('./ports/IProviderLogoCatalog.mjs').IProviderLogoCatalog} deps.logos
    * @param {() => {tiers:{free:string[],subscribed:string[]}, refreshDays:number, quotaReserve:number, enabled:boolean, kinds?:string[]}} deps.policy
    * @param {() => Date} [deps.clock]
+   * @param {{ isActive(ratingKey:string): Promise<boolean> }|null} [deps.contentFilter] - asked only when a rule uses `content_filter`
    */
-  constructor({ identityReader, availability, store, logos, policy, clock = () => new Date(), logger = console }) {
+  constructor({ identityReader, availability, store, logos, policy, clock = () => new Date(), logger = console, contentFilter = null }) {
     if (!identityReader) throw new Error('GetTitleProvenance requires identityReader');
     if (!store) throw new Error('GetTitleProvenance requires store');
     if (!logos) throw new Error('GetTitleProvenance requires logos');
@@ -40,11 +56,14 @@ export class GetTitleProvenance {
     this.#policy = policy;
     this.#clock = clock;
     this.#logger = logger;
+    this.#contentFilter = contentFilter;
   }
 
   /**
    * @param {{ ratingKey: string }} input
-   * @returns {Promise<{ ratingKey:string, provider:string, name:string, tier:string, offerType:string, checkedAt:string }|null>}
+   * @returns {Promise<{ ratingKey:string, provider:string, name:string, tier:string, source:string, rule:string|null, offerType:string|null, checkedAt:string|null }|null>}
+   *   `source`: override | availability | fallback; `tier`: the priority group for
+   *   an availability answer, else the source.
    */
   async execute({ ratingKey }) {
     const rk = String(ratingKey ?? '');
@@ -52,26 +71,74 @@ export class GetTitleProvenance {
     const policy = this.#policy();
     if (policy.enabled === false) return null;
     const now = this.#clock();
-
     // Movies by default: other players (fitness, school, piano) also play Plex shows.
     const kinds = Array.isArray(policy.kinds) && policy.kinds.length ? policy.kinds : ['movie'];
+    const rules = policy.rules || parseRules({ providers: policy.tiers });
+    const canShow = (p) => this.#logos.has(p);
 
-    let record = await this.#store.get(rk);
-    if (!record || !isFresh(record, now, policy.refreshDays)) {
-      // An episode or season is recorded under its show.
-      const identity = record?.key ? null : await this.#identify(rk);
-      const key = record?.key || identity?.key || rk;
-      if (key !== rk) record = await this.#store.get(key);
-      if (!record || !isFresh(record, now, policy.refreshDays)) {
-        record = await this.#refresh(key, record, identity, { ...policy, kinds }, now);
-      }
+    // The title's facts, every play (rules read collections, studio, library...).
+    // An episode or season answers as its show.
+    let identity = await this.#identify(rk);
+    let record = null;
+    if (!identity) {
+      // Media server unreachable: a cached record still answers from the offers.
+      record = await this.#store.get(rk);
+      if (!record) return null;
+      identity = { key: record.key || rk, kind: record.kind, title: record.title ?? null, year: record.year ?? null };
     }
-    if (!record) return null;
-    if (!kinds.includes(record.kind)) return null;
+    if (!kinds.includes(identity.kind)) return null;
+    const libraries = (policy.libraries || []).map((l) => String(l).toLowerCase());
+    if (libraries.length && identity.library && !libraries.includes(String(identity.library).toLowerCase())) return null;
 
-    const choice = chooseProvider(record.offers, policy.tiers, (p) => this.#logos.has(p));
-    if (!choice) return null;
-    return { ratingKey: rk, provider: choice.provider, name: choice.name, tier: choice.tier, offerType: choice.offerType, checkedAt: record.checkedAt };
+    const facts = {
+      ...identity,
+      contentFilterActive: needsContentFilter(rules) ? await this.#filterActive(rk) : false,
+    };
+
+    const override = firstRule(rules.overrides, facts, canShow);
+    if (override) return this.#answer(rk, { provider: override.provider, source: 'override', rule: override.rule });
+
+    const key = identity.key || rk;
+    record ||= await this.#store.get(key);
+    if (!record || !isFresh(record, now, policy.refreshDays)) {
+      record = await this.#refresh(key, record, identity.imdb !== undefined ? identity : null, { ...policy, kinds }, now);
+    }
+    // Records stored before a service had an id carry `provider: null`: derive it from the name.
+    const offers = (record?.offers || []).map((o) => (o && !o.provider && o.name ? { ...o, provider: providerIdFor(o.name) } : o));
+    const ranked = rankOffers(offers, rules.priority, canShow);
+    if (ranked) {
+      return this.#answer(rk, {
+        provider: ranked.offer.provider, source: 'availability', tier: ranked.group.name,
+        name: ranked.offer.name, offerType: ranked.offer.type, checkedAt: record.checkedAt,
+      });
+    }
+
+    const fallback = firstRule(rules.fallbacks, facts, canShow);
+    if (fallback) return this.#answer(rk, { provider: fallback.provider, source: 'fallback', rule: fallback.rule, checkedAt: record?.checkedAt ?? null });
+    return null;
+  }
+
+  #answer(rk, { provider, source, tier = null, rule = null, name = null, offerType = null, checkedAt = null }) {
+    return {
+      ratingKey: rk,
+      provider,
+      name: PROVIDER_NAMES[provider] || name || provider,
+      tier: tier || source,
+      source,
+      rule: rule ? (rule.name || describeWhen(rule.when)) : null,
+      offerType,
+      checkedAt,
+    };
+  }
+
+  async #filterActive(rk) {
+    if (!this.#contentFilter) return false;
+    try {
+      return (await this.#contentFilter.isActive(rk)) === true;
+    } catch (error) {
+      this.#logger.warn?.('provenance.content-filter.read-failed', { ratingKey: rk, error: error?.message });
+      return false;
+    }
   }
 
   async #identify(rk) {
