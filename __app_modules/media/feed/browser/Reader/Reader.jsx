@@ -32,6 +32,14 @@ function historyItemToArticle(item) {
   };
 }
 
+function offlineEditionToArticle(edition) {
+  const article = historyItemToArticle(edition.item);
+  const savedArticleHtml = Array.isArray(edition.detail?.sections)
+    ? edition.detail.sections.find(section => section?.type === 'article')?.data?.html
+    : null;
+  return article.content || !savedArticleHtml ? article : { ...article, content: savedArticleHtml };
+}
+
 /** Group articles by day label */
 function groupByDay(articles) {
   const groups = [];
@@ -396,7 +404,7 @@ export default function Reader() {
     setOfflineLoading(true);
     setOfflineError(null);
     listOfflineEditions()
-      .then(rows => { if (active) setOfflineItems(applyPendingMutations(rows.map(row => row.item))); })
+      .then(rows => { if (active) setOfflineItems(applyPendingMutations(rows.map(offlineEditionToArticle))); })
       .catch(error => {
         if (!active) return;
         setOfflineError('Downloaded articles could not be opened on this device.');
