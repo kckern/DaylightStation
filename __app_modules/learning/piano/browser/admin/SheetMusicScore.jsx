@@ -757,7 +757,7 @@ export default function SheetMusicScore() {
               <MeasureStrip
                 measures={measures}
                 segments={editor.segments}
-                editable
+                editable={busy !== 'save'}
                 dispatch={dispatch}
                 variant="draft"
                 title="Draft"

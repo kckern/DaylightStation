@@ -192,6 +192,34 @@ describe('SheetMusicScore', () => {
     ]);
   });
 
+  it('locks segment editing until the saved draft has reloaded', async () => {
+    let finishSave;
+    learn = learnFile({ draft: { segments: [{ id: 'a', start: 0, end: 7 }] }, draftRevision: 'rev-old' });
+    api.mockImplementation((path, data, method) => {
+      if (path === learnUrl() && method === 'PUT' && data.action === 'draft') {
+        return new Promise((resolve) => {
+          finishSave = () => {
+            learn = learnFile({ ...learn, draft: { segments: data.segments, proposal: data.proposal }, draftRevision: 'rev-new' });
+            resolve({ ...learn });
+          };
+        });
+      }
+      return route(path, data, method);
+    });
+    renderPage();
+    await engravedReady();
+    fireEvent.click(await screen.findByRole('button', { name: 'Split after bar 4' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => expect(putCalls()).toHaveLength(1));
+
+    expect(screen.queryByRole('button', { name: 'Split after bar 2' })).toBeNull();
+    finishSave();
+    await screen.findByText(/Draft saved/);
+
+    expect(await screen.findByRole('button', { name: 'Split after bar 2' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Move boundary after bar 4' })).toBeTruthy();
+  });
+
   it('re-ids generated segments a, b, c when editing starts from them', async () => {
     renderPage();
     await engravedReady();
