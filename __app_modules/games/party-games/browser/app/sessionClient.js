@@ -27,7 +27,7 @@ export async function fetchBoot({ diagnosticSessionId = null, sessionId = null, 
   return { config, sets, catalogUnavailable:Boolean(profile.error || catalog?.error || invalidCatalog), attachedSession, diagnosticSession: diagnosticSessionId ? attachedSession : null };
 }
 
-export function createSession({ definitionId, seats = [], teams = null, hostMode = 'human', setupProfile = {}, historyPolicy = null }) {
+export function createSession({ definitionId, seats = [], teams = null, hostMode = 'human', setupProfile = {}, historyPolicy = null, presentation = null }) {
   const resolvedSeats = teams || seats;
   const participants = resolvedSeats.flatMap((seat) => seat.members || []);
   const setup = {
@@ -38,6 +38,7 @@ export function createSession({ definitionId, seats = [], teams = null, hostMode
       ? { verifier_id: resolvedSeats[1]?.members?.[0]?.id || resolvedSeats[1]?.members?.[0]?.user_id || null }
       : {}),
     ...(historyPolicy === 'disabled' ? { charades_history_policy: 'disabled' } : {}),
+    ...(presentation ? { charades_presentation: presentation } : {}),
   };
   return DaylightAPI('api/v1/gaming/sessions', {
     definition_id: definitionId,
@@ -50,8 +51,11 @@ export function printHostPacket(id) { return DaylightAPI(`api/v1/gaming/sessions
 
 // Explicit session links remain attachable; automatic local recovery follows the
 // currently authored setup revision so an old roster cannot replace new defaults.
-export function canResumeSavedSession(session, set) {
-  const configured = set?.launch?.autostart && set.launch.participants;
+// `launch` holds this mount's overrides (list item params, URL query) and is
+// merged over the catalog launch the same way flowReducer seats them.
+export function canResumeSavedSession(session, set, launch = {}) {
+  const effective = { ...set?.launch, ...launch };
+  const configured = effective.autostart && effective.participants;
   if (Array.isArray(configured)) {
     const actual = (session?.header?.participants || []).map(person => person.id);
     if (actual.length !== configured.length || configured.some((id, index) => actual[index] !== id)) return false;

@@ -5,6 +5,14 @@ import { parseActionRouteId } from "#api/v1/utils/actionRouteParser.mjs";
 import { splatPath } from "#api/utils/wildcard.mjs";
 import { presentPublicResources } from "#api/v1/presenters/publicResourceRefs.mjs";
 
+// Same rule as content-catalog's listConfigCodec isPlainObject; kept local so the
+// playback API does not import another capability's domain.
+function isPlainObject(value) {
+  if (value === null || typeof value !== 'object') return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
 export function toQueueItem(item) {
   const qi = {
     // Identity
@@ -62,6 +70,9 @@ export function toQueueItem(item) {
   if (item.segment) qi.segment = item.segment;
   if (item.surround) qi.surround = item.surround;
   if (item.surroundPart !== undefined) qi.surroundPart = item.surroundPart;
+
+  // App items queued from a list carry that list item's params to the opened app.
+  if (qi.format === 'app' && isPlainObject(item.params)) qi.params = item.params;
 
   // Explicit public display metadata; provider transport details stay internal.
   if (item.metadata) {

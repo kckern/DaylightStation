@@ -44,6 +44,8 @@ export const KNOWN_ITEM_FIELDS = [
   'shader', 'composite', 'playable',
   // Progress (usually read-only)
   'progress', 'watched',
+  // Per-type parameters, edited by the type's own editor (itemParams/registry.js)
+  'params',
   // Derived action keys (stripped at write time, rebuilt at read time)
   'play', 'open', 'display', 'list', 'queue', 'title'
 ];
@@ -56,6 +58,8 @@ export const CONTENT_PAYLOAD_FIELDS = [
   'days', 'snooze', 'waitUntil',
   'shader', 'composite', 'playable',
   'progress', 'watched',
+  // Per-type parameters belong to the content's type, so they move with it
+  'params',
 ];
 
 // Fields that stay with the row position (identity)

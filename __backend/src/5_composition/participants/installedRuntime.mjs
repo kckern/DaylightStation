@@ -11,7 +11,7 @@ import {createContentTargetResolver,createParticipantTargetResolver} from './tar
 
 export function installParticipantRuntime({enabled,configService,peopleDirectory,contentRegistry,contentServices,gaming,logger,clock,ownership,resourceAliases = ownership?.aliases ?? new AgendaResourceAliases()}) {
  const householdId=configService.getDefaultHouseholdId();
- if (enabled !== true) return {participantRouter:createParticipantLaunchesRouter({householdId,service:null,logger}),peopleRouter:createPeopleRouter({householdId,directory:null,logger}),agenda:{adminRouter:createAdminAgendasRouter({householdId,planning:null,logger})}};
+ if (enabled !== true) return {participantRouter:createParticipantLaunchesRouter({householdId,service:null,logger}),peopleRouter:createPeopleRouter({householdId,directory:peopleDirectory ?? null,logger}),agenda:{adminRouter:createAdminAgendasRouter({householdId,planning:null,logger})}};
  const registry=new ParticipantConsumerRegistry();
  registry.register({consumer:createPartyGamesParticipantConsumer({definitions:gaming.definitions,manifestStore:gaming.manifestStore,clueHistory:gaming.clueHistory,gamingApplication:gaming.gamingApplication})});
  const isHouseholdViewer=viewer=>Boolean(viewer?.participant_id && viewer.householdId===householdId);

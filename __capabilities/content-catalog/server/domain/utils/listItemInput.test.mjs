@@ -18,3 +18,23 @@ it('normalizes an authored space after a hyphenated source name', async () => {
   expect(parts.localId).toBe('nfl-channel');
   expect(parts.playAction).toMatchObject({ 'plex-live': 'nfl-channel' });
 });
+it('keeps object params on a legacy item', () => {
+  const params = { autostart: false };
+  expect(normalizeListItem({ label: 'L', input: 'app:party-games/charades:fhe', params }).params).toEqual(params);
+});
+const legacyItem = params => ({ label: 'L', input: 'app:party-games/charades:fhe', params });
+const canonicalItem = params => ({ title: 'C', open: 'party-games/charades', params });
+class ParamsHolder { constructor() { this.autostart = true; } }
+const rejectedParams = [
+  ['null', null], ['an array', ['x']], ['an empty object', {}], ['a string', 'nope'],
+  ['a Date', new Date(0)], ['a Map', new Map([['autostart', true]])], ['a class instance', new ParamsHolder()],
+];
+it.each(rejectedParams)('drops %s params on a legacy item', (_name, params) => {
+  expect(Object.hasOwn(normalizeListItem(legacyItem(params)), 'params')).toBe(false);
+});
+it.each(rejectedParams)('drops %s params on a canonical item', (_name, params) => {
+  expect(Object.hasOwn(normalizeListItem(canonicalItem(params)), 'params')).toBe(false);
+});
+it('keeps plain-object params on a canonical item', () => {
+  expect(normalizeListItem(canonicalItem({ autostart: true })).params).toEqual({ autostart: true });
+});

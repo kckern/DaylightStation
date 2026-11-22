@@ -257,8 +257,10 @@ function FolderEditor({ type, listName }) {
       const { updatesForA, updatesForB } = swapContentPayloads(srcItem, dstItem);
       setSections(prev => {
         const next = prev.map(s => ({ ...s, items: [...s.items] }));
-        next[dstSi].items[dstIdx] = { ...next[dstSi].items[dstIdx], ...updatesForA };
-        next[srcSi].items[srcIdx] = { ...next[srcSi].items[srcIdx], ...updatesForB };
+        // updatesForA carries the destination's content into the source row (A),
+        // updatesForB carries the source's content into the destination (B).
+        next[srcSi].items[srcIdx] = { ...next[srcSi].items[srcIdx], ...updatesForA };
+        next[dstSi].items[dstIdx] = { ...next[dstSi].items[dstIdx], ...updatesForB };
         return next;
       });
 
@@ -443,8 +445,10 @@ function FolderEditor({ type, listName }) {
 
   const listTitle = listName.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   const typeLabel = TYPE_LABELS[type] || type;
-  const handleInlineUpdate = async (sectionIndex, itemIndex, updates) => {
-    await mutate('lists.update', 'Could not save change', () => updateItem(sectionIndex, itemIndex, updates), { fieldEdit: true });
+  // Resolves to the mutation result ({ok, error}) so callers such as the
+  // parameters modal can show a failed save inline.
+  const handleInlineUpdate = (sectionIndex, itemIndex, updates) => {
+    return mutate('lists.update', 'Could not save change', () => updateItem(sectionIndex, itemIndex, updates), { fieldEdit: true });
   };
 
   const handleDuplicateItem = async (sectionIndex, item) => {

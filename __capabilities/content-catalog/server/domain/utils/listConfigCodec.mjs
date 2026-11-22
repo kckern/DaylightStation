@@ -11,6 +11,17 @@ function preserveAuthoredTitle(result, source) {
   return result;
 }
 
+/** Type-owned item parameters: a plain, non-empty object or nothing. */
+export function isPlainObject(value) {
+  if (value === null || typeof value !== 'object') return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+export function isParamsObject(value) {
+  return isPlainObject(value) && Object.keys(value).length > 0;
+}
+
 function copyScheduleFields(target, source) {
   for (const [field, alias] of [['skip_after', 'skipAfter'], ['wait_until', 'waitUntil']]) {
     const value = source[field] ?? source[alias];
@@ -53,6 +64,7 @@ export function normalizeListItem(item) {
   // Canonical actions without a legacy input retain independent labels as well.
   if (!item.input && (!item.label || !Object.hasOwn(item, 'input')) && (item.play || item.open || item.display || item.list || item.queue || item.launch)) {
     const result = { ...item };
+    if (!isParamsObject(result.params)) delete result.params;
     copyScheduleFields(result, item);
     return preserveAuthoredTitle(result, item);
   }
@@ -136,6 +148,8 @@ export function normalizeListItem(item) {
   if (item.days != null) result.days = item.days;
   if (item.applySchedule != null) result.applySchedule = item.applySchedule;
   if (item.strategy != null) result.strategy = item.strategy;
+  // Shared by reference like the other fields: callers that edit params must clone it first.
+  if (isParamsObject(item.params)) result.params = item.params;
 
   copyScheduleFields(result, item);
 
