@@ -539,11 +539,15 @@ export default function Reader() {
   };
 
   // Mark all articles in a group as read
-  const handleMarkGroupRead = async (groupArticles) => {
+  const handleMarkGroupRead = async (groupArticles, triggerButton) => {
     const unreadIds = groupArticles.filter(a => !(a.state?.isRead ?? a.isRead)).map(a => a.id);
     if (unreadIds.length === 0) return;
     const selected = groupArticles.filter(article => unreadIds.includes(article.id));
-    await mutateItems(selected, 'read', { onApply: applyUpdatedItems }).catch(() => {});
+    const onApply = updated => {
+      if (triggerButton?.ownerDocument.activeElement === triggerButton) focusInbox();
+      applyUpdatedItems(updated);
+    };
+    await mutateItems(selected, 'read', { onApply }).catch(() => {});
   };
 
   // Toggle group collapse
@@ -705,7 +709,7 @@ export default function Reader() {
                       <button
                         className="reader-mark-group-read"
                         aria-label={`Mark all read in ${group.label}`}
-                        onClick={() => handleMarkGroupRead(group.articles)}
+                        onClick={event => handleMarkGroupRead(group.articles, event.currentTarget)}
                       >
                         Mark all read
                       </button>
