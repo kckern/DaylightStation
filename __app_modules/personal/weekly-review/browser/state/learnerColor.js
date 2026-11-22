@@ -3,8 +3,11 @@
 
 export const LEARNER_HUES = ['#2f6fde', '#f28c28', '#3fa34d', '#c2367a', '#f2c230', '#1f9e9a'];
 
-export function learnerIdsForDays(days) {
+// `extra` adds learners known from elsewhere (the window's showcases), so a
+// child who appears only there still gets a hue.
+export function learnerIdsForDays(days, extra = []) {
   const ids = new Set();
+  for (const e of extra || []) if (e?.learnerId) ids.add(e.learnerId);
   for (const day of days || []) {
     for (const w of day?.schoolAll || []) if (w?.learnerId) ids.add(w.learnerId);
   }

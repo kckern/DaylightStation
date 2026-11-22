@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { reelItemsForDay, sortKeyOf } from './reelItems.js';
+import { reelItemsForDay, sortKeyOf, showcaseExtrasByDay } from './reelItems.js';
 
 const work = (over = {}) => ({
   learnerId: 'kid-a', learnerName: 'Mara', kind: 'book', verb: 'finished',
@@ -91,5 +91,28 @@ describe('reel order on the household clock', () => {
       school: [work({ at: '2026-11-21T12:00:00.000Z', studyDay: '2026-11-21' })],
     };
     expect(reelItemsForDay(day).map(i => i.id)).toEqual(['p11', 'school:kid-a:book:wonder:2026-11-21', 'p13']);
+  });
+});
+
+describe('showcaseExtrasByDay', () => {
+  const days = [{ date: 'a' }, { date: 'b' }, { date: 'c' }];
+  const sc = { learnerId: 'kid-a', learnerName: 'Robin', bullets: ['x'], images: [], source: 'plain' };
+
+  it('puts the showcases only on the last day, as showcase items', () => {
+    const extras = showcaseExtrasByDay(days, [sc]);
+    expect(Object.keys(extras)).toEqual(['2']);
+    expect(extras[2][0]).toMatchObject({ type: 'showcase', id: 'showcase:kid-a', learnerName: 'Robin' });
+  });
+
+  it('adds nothing when no child has work', () => {
+    expect(showcaseExtrasByDay(days, [])).toEqual({});
+    expect(showcaseExtrasByDay(days, undefined)).toEqual({});
+    expect(showcaseExtrasByDay([], [sc])).toEqual({});
+  });
+
+  it('closes the last day\'s reel after its photos and work', () => {
+    const day = { photos: [{ id: 'p1', type: 'image', takenAt: '2026-04-21T08:00:00.000Z' }], school: [] };
+    const extras = showcaseExtrasByDay([day], [sc]);
+    expect(reelItemsForDay(day, extras[0]).map(i => i.id)).toEqual(['p1', 'showcase:kid-a']);
   });
 });

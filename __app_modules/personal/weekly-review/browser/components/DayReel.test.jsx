@@ -66,4 +66,15 @@ describe('DayReel', () => {
     expect(screen.getByText('Finished')).toBeInTheDocument();
     expect(screen.getByText('3 / 3')).toBeInTheDocument();
   });
+
+  it('routes a showcase to the showcase slide', () => {
+    const item = {
+      type: 'showcase', id: 'showcase:kid-a', learnerId: 'kid-a', learnerName: 'Robin',
+      bullets: ['Finished two books'], images: [], source: 'plain',
+    };
+    const { container } = render(<DayReel item={item} index={4} total={5} dayLabel={dayLabel} playing={false} muted paused={false} learnerColors={{ 'kid-a': '#3fa34d' }} />);
+    expect(container.querySelector('.weekly-review-showcase')).not.toBeNull();
+    expect(container.querySelector('.weekly-review-showcase').style.getPropertyValue('--kid')).toBe('#3fa34d');
+    expect(screen.getByText("Robin's School Work This Week")).toBeInTheDocument();
+  });
 });

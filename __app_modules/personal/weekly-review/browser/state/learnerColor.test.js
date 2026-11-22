@@ -28,4 +28,8 @@ describe('learnerIdsForDays', () => {
     expect(learnerIdsForDays(days)).toEqual(['kid-a', 'kid-b', 'kid-c']);
     expect(learnerIdsForDays(undefined)).toEqual([]);
   });
+
+  it('gives a child known only from a showcase a hue too', () => {
+    expect(learnerIdsForDays([{ schoolAll: [{ learnerId: 'kid-b' }] }], [{ learnerId: 'kid-a' }])).toEqual(['kid-a', 'kid-b']);
+  });
 });

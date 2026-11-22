@@ -6,8 +6,8 @@
 // at the item the other draws. Bootstrap payloads are replaced wholesale on a
 // window load, never mutated, so a WeakMap on the day object is safe.
 //
-// Extension seam: `extras` are appended after the time-ordered items and are
-// not sorted into them (Task 7's end-of-window showcase uses this). Calls with
+// `extras` are appended after the time-ordered items and are not sorted into
+// them (the end-of-window showcase, see showcaseExtrasByDay). Calls with
 // extras are not memoized, so callers that pass them must memoize themselves.
 
 const cache = new WeakMap();
@@ -78,4 +78,18 @@ export function reelItemsForDay(day, extras) {
     cache.set(day, base);
   }
   return extras?.length ? [...base, ...extras] : base;
+}
+
+// The per-child weekly showcase slides as reel items.
+export function showcaseReelItem(showcase) {
+  return { ...showcase, type: 'showcase', id: `showcase:${showcase.learnerId}` };
+}
+
+// Extras for reelItemsForDay, by day index: the window's showcases close the
+// reel of its LAST day, after that day's own photos and work. No children with
+// work, no showcase items.
+export function showcaseExtrasByDay(days, showcases) {
+  const list = (Array.isArray(showcases) ? showcases : []).filter(s => s?.learnerId);
+  if (!days?.length || !list.length) return {};
+  return { [days.length - 1]: list.map(showcaseReelItem) };
 }

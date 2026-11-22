@@ -3,6 +3,7 @@ import React, { useEffect, useRef } from 'react';
 import FullscreenImage, { MediaCaption } from "./FullscreenImage.jsx";
 import DayDataPoints from "./DayDataPoints.jsx";
 import WorkCard from "./WorkCard.jsx";
+import ShowcaseSlide from "./ShowcaseSlide.jsx";
 import getLogger from '@/lib/logging/Logger.js';
 
 // Lazy so the child snapshots context AFTER WeeklyReview sets app + sessionLog on
@@ -67,6 +68,14 @@ export default function DayReel({ item, day, index, total, dayLabel, playing, mu
     return (
       <div className="weekly-review-reel weekly-review-reel--school">
         <WorkCard key={item.id} item={item} index={index} total={total} color={learnerColors?.[item.learnerId]} />
+      </div>
+    );
+  }
+
+  if (item.type === 'showcase') {
+    return (
+      <div className="weekly-review-reel weekly-review-reel--showcase">
+        <ShowcaseSlide key={item.id} item={item} index={index} total={total} color={learnerColors?.[item.learnerId]} />
       </div>
     );
   }

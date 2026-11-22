@@ -146,14 +146,17 @@ $school-font: "Roboto Condensed", sans-serif;
     color: $muted;
   }
 
-  // Same place and type as a photo's position in the reel caption.
-  .work-card-index {
-    position: absolute;
-    right: 1.5rem;
-    bottom: 1.25rem;
-    font-size: 0.95rem;
-    color: #c0c8d0;
-  }
+}
+
+// Same place and type as a photo's position in the reel caption; shared by
+// the work card and the showcase slide.
+.weekly-review-work-card .work-card-index,
+.weekly-review-showcase .work-card-index {
+  position: absolute;
+  right: 1.5rem;
+  bottom: 1.25rem;
+  font-size: 0.95rem;
+  color: #c0c8d0;
 }
 
 @keyframes wr-work-settle {
@@ -237,4 +240,147 @@ $school-font: "Roboto Condensed", sans-serif;
     margin-bottom: 0.2rem;
   }
   .context-school-line { font-size: 0.9rem; color: #ccc; line-height: 1.4; }
+}
+
+// --- Weekly showcase slide -------------------------------------------------
+// One per child, closing the window's last day: the week's prints pinned up
+// together on the left, what the child did on the right.
+
+.weekly-review-showcase {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  display: grid;
+  grid-template-columns: minmax(0, 58fr) minmax(0, 42fr);
+  align-items: center;
+  font-family: $school-font;
+  color: #fff;
+
+  &--no-images {
+    grid-template-columns: minmax(0, 1fr);
+    .showcase-text { padding-left: 12vw; max-width: 60vw; }
+  }
+
+  .showcase-band {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 10px;
+    background: var(--kid, #{$muted});
+  }
+
+  .showcase-text {
+    box-sizing: border-box;
+    padding: 0 5vw 0 2vw;
+    min-width: 0;
+  }
+
+  .showcase-title {
+    margin: 0 0 40px;
+    font-size: 64px;
+    font-weight: 700;
+    line-height: 1.05;
+    color: #fff;
+  }
+
+  .showcase-bullet-stack { display: grid; }
+  .showcase-bullet-layer { grid-area: 1 / 1; }
+  .showcase-bullet-layer--in { animation: wr-showcase-fade-in 200ms ease-out both; }
+  .showcase-bullet-layer--out { animation: wr-showcase-fade-out 200ms ease-out both; }
+
+  .showcase-bullets {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  .showcase-bullet {
+    display: flex;
+    align-items: flex-start;
+    gap: 22px;
+    font-size: 36px;
+    font-weight: 400;
+    line-height: 1.35;
+    color: #f0f4f8;
+  }
+
+  .showcase-bullet-marker {
+    flex: 0 0 14px;
+    width: 14px;
+    height: 14px;
+    margin-top: calc((36px * 1.35 - 14px) / 2);
+    border-radius: 3px;
+    background: var(--kid, #{$muted});
+  }
+
+  .showcase-bullet-text {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+// The collage: prints overlap a little, each at its own tilt, and settle one
+// after another. Sized per count so the whole collage stays within 80vh.
+.showcase-collage {
+  display: grid;
+  justify-content: center;
+  align-content: center;
+  justify-items: center;
+  align-items: center;
+  padding: 0 2vw 0 4vw;
+
+  .showcase-print {
+    margin: -2%;
+    animation: wr-showcase-settle 420ms ease-out both;
+  }
+
+  .work-print { transform: rotate(var(--tilt, -2deg)); }
+  .work-print-glyph { font-size: 72px; }
+
+  &.showcase-collage--one {
+    .work-print-img { height: 64vh; max-width: 48vw; }
+    .work-print-card { width: 46vh; height: 56vh; }
+    .work-print-glyph { font-size: 140px; }
+  }
+
+  &.showcase-collage--two {
+    grid-template-columns: repeat(2, auto);
+    .work-print-img { height: 52vh; max-width: 24vw; }
+    .work-print-card { width: 22vw; height: 46vh; }
+  }
+
+  &.showcase-collage--four {
+    grid-template-columns: repeat(2, auto);
+    .work-print-img { height: 33vh; max-width: 24vw; }
+    .work-print-card { width: 26vh; height: 30vh; }
+  }
+
+  &.showcase-collage--six {
+    grid-template-columns: repeat(3, auto);
+    .work-print-img { height: 32vh; max-width: 16vw; }
+    .work-print-card { width: 14vw; height: 28vh; }
+    .work-print-tape { width: 96px; margin-left: -48px; }
+  }
+}
+
+// Offset from the print's resting tilt, so each print ends at its own angle.
+@keyframes wr-showcase-settle {
+  from { opacity: 0; transform: rotate(-4deg) translateY(24px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes wr-showcase-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes wr-showcase-fade-out { from { opacity: 1; } to { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .showcase-collage .showcase-print,
+  .weekly-review-showcase .showcase-bullet-layer--in,
+  .weekly-review-showcase .showcase-bullet-layer--out { animation: none; }
+  .weekly-review-showcase .showcase-bullet-layer--out { display: none; }
 }
