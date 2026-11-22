@@ -1,6 +1,7 @@
 import getLogger from "../../../../../../../frontend/src/lib/logging/Logger.js";
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { formatFeedPlaybackTime } from '../../../players/formatTime.js';
+import { getSeekMax } from '../../../players/seekRange.js';
 
 function log() { return getLogger().child({ module: 'feed-player-section' }); }
 
@@ -39,7 +40,7 @@ export default function PlayerSection({ data, onPlay, activeMedia, item, playbac
   }
 
   const { playing, currentTime, duration, toggle, seek } = playback || {};
-  const seekMax = Number.isFinite(duration) && duration > 0 ? duration : 0;
+  const seekMax = getSeekMax(duration);
   const seekValue = Math.min(Math.max(Number(currentTime) || 0, 0), seekMax);
 
   return (

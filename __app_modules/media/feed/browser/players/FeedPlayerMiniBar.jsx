@@ -4,6 +4,7 @@ import { feedLog } from "../Scroll/feedLog.js";
 import { useFeedPlayer } from "./FeedPlayerContext.jsx";
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { formatFeedPlaybackTime } from './formatTime.js';
+import { getSeekMax } from './seekRange.js';
 import "./FeedPlayerMiniBar.scss";
 
 export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose, openerRef }) {
@@ -14,6 +15,7 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose, ope
   if (!item) return null;
 
   const { playing, currentTime, duration, toggle, seek, progressElRef } = playback || {};
+  const seekMax = getSeekMax(duration);
   const resumeLabel = pausedMedia?.item?.title ? `Resume: ${pausedMedia.item.title}` : 'Resume previous';
 
   // Use image directly if already an API path; otherwise proxy external URLs
@@ -29,10 +31,10 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose, ope
   };
 
   const handleProgressChange = (event) => {
-    if (!duration || !seek) return;
+    if (!seekMax || !seek) return;
     const seekTo = Number(event.target.value);
-    const pct = seekTo / duration;
-    feedLog.player('minibar seek', { pct: (pct * 100).toFixed(1) + '%', seekTo: seekTo.toFixed(1), duration: duration.toFixed(1) });
+    const pct = seekTo / seekMax;
+    feedLog.player('minibar seek', { pct: (pct * 100).toFixed(1) + '%', seekTo: seekTo.toFixed(1), duration: seekMax.toFixed(1) });
     seek(seekTo);
   };
 
@@ -96,7 +98,7 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose, ope
       )}
       <div className="feed-mini-bar-progress">
         <div className="feed-mini-bar-progress-fill" ref={progressElRef} />
-        <input className="feed-mini-bar-progress-input" type="range" min="0" max={duration || 0} step="1" value={Math.min(currentTime || 0, duration || 0)} onChange={handleProgressChange} aria-label="Playback position"
+        <input className="feed-mini-bar-progress-input" type="range" min="0" max={seekMax} step="1" value={Math.min(currentTime || 0, seekMax)} disabled={seekMax === 0} onChange={handleProgressChange} aria-label="Playback position"
           aria-valuetext={`${formatFeedPlaybackTime(currentTime)} of ${formatFeedPlaybackTime(duration)}`} />
       </div>
     </div>

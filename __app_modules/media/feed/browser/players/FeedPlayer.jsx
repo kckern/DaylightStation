@@ -4,6 +4,7 @@ import { RemuxPlayer } from "../../../../../__capabilities/playback/browser/remu
 import { useFeedPlayer } from "./FeedPlayerContext.jsx";
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { formatFeedPlaybackTime } from './formatTime.js';
+import { getSeekMax } from './seekRange.js';
 import { formatFeedVolume } from './formatVolume.js';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import "./FeedPlayer.scss";
@@ -54,6 +55,7 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const seekMax = getSeekMax(duration);
   const [controlsVisible, setControlsVisible] = useState(true);
   const hideTimerRef = useRef(null);
   const mountTimeRef = useRef(performance.now());
@@ -281,9 +283,10 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
             className="feed-player-progress-input"
             type="range"
             min="0"
-            max={duration || 0}
+            max={seekMax}
             step="1"
-            value={Math.min(currentTime || 0, duration || 0)}
+            value={Math.min(currentTime || 0, seekMax)}
+            disabled={seekMax === 0}
             onChange={event => seek(Number(event.target.value))}
             aria-label="Playback position"
             aria-valuetext={`${formatFeedPlaybackTime(currentTime)} of ${formatFeedPlaybackTime(duration)}`}
