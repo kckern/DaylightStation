@@ -4,6 +4,7 @@ import { getBodyModule } from "./bodies/index.js";
 import { getContentPlugin } from "../../contentPlugins/index.js";
 import { feedLog } from "../feedLog.js";
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
+import { Skeleton } from '@/lib/ui';
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 import FeedPlayer from "../../players/FeedPlayer.jsx";
 import FeedLoadingIndicator from "../../FeedLoadingIndicator.jsx";
@@ -27,23 +28,6 @@ const STATUS_COLORS = {
   yellow: '#fab005',
   green: '#51cf66',
 };
-
-/** Inline SVG data-URI shimmer placeholder (no network request). */
-const PLACEHOLDER_SVG = `data:image/svg+xml,${encodeURIComponent(
-  `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300">
-    <defs>
-      <linearGradient id="g" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0%" stop-color="#2c2e33"/>
-        <stop offset="50%" stop-color="#3a3c42"/>
-        <stop offset="100%" stop-color="#2c2e33"/>
-      </linearGradient>
-    </defs>
-    <rect width="400" height="300" fill="#1a1b1e"/>
-    <rect width="400" height="300" fill="url(#g)">
-      <animate attributeName="x" from="-400" to="400" dur="1.5s" repeatCount="indefinite"/>
-    </rect>
-  </svg>`
-)}`;
 
 function HeroImage({ src: rawSrc, thumbnail: rawThumbnail, feedItemId, title }) {
   const src = safeImage(rawSrc);
@@ -126,17 +110,11 @@ function HeroImage({ src: rawSrc, thumbnail: rawThumbnail, feedItemId, title }) 
 
   return (
     <>
-      {/* SVG shimmer placeholder — visible until real image loads */}
+      {/* Shared loading placeholder — visible until real image loads */}
       {!loaded && (
-        <img
-          draggable={false}
-          src={PLACEHOLDER_SVG}
-          alt=""
-          style={{
-            position: 'absolute', inset: 0,
-            width: '100%', height: '100%',
-            display: 'block', objectFit: 'cover',
-          }}
+        <Skeleton
+          className="feed-card-image-placeholder"
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
         />
       )}
       <img
