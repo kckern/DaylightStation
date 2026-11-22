@@ -18,6 +18,8 @@ describe('GET /api/v1/weekly-review/school/showcase', () => {
     ['a malformed week', '?week=2026-3-23'],
     ['a path', '?week=..%2F..%2Fetc'],
     ['a repeated week', '?week=2026-03-23&week=2026-03-24'],
+    ['an impossible date', '?week=2026-99-99'],
+    ['a day past the month', '?week=2026-02-30'],
   ])('rejects %s with 400', async (_label, query) => {
     const { app, weeklyReviewService } = mountApp(async () => []);
     const res = await request(app).get(`/api/v1/weekly-review/school/showcase${query}`);

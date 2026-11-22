@@ -1,4 +1,5 @@
 import path from 'node:path';
+import yaml from 'js-yaml';
 import { IWeeklyReviewStore } from "../../application/ports/IWeeklyReviewStore.mjs";
 import {
   appendTextFile,
@@ -11,7 +12,6 @@ import {
   readBinaryFromPath,
   readTextFromPath,
   renameFile,
-  saveYaml,
   writeBinary,
   writeFileAtomic,
   writeFile,
@@ -157,10 +157,11 @@ export class FilesystemWeeklyReviewStore extends IWeeklyReviewStore {
     return loadYaml(path.join(this.#reviewDir(week), 'school-showcase')) ?? null;
   }
 
+  /** Written to a staging file and renamed, so a crash never leaves a torn cache. */
   saveSchoolShowcase(week, data) {
     const directory = this.#reviewDir(week);
     ensureDir(directory);
-    saveYaml(path.join(directory, 'school-showcase'), data);
+    writeFileAtomic(path.join(directory, 'school-showcase.yml'), yaml.dump(data, { lineWidth: -1 }));
   }
 
   getRecordingStatus(week) {

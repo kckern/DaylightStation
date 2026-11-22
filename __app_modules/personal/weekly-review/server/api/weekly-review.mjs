@@ -1,6 +1,13 @@
 import { sendInternalError } from '#api/utils/internalError.mjs';
 import express from 'express';
 
+/** YYYY-MM-DD that names a real day (2026-02-30 and 2026-99-99 do not). */
+function isCalendarDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
 const SCHOOL_IMAGE_REF = /^(course|activity|program):[\w.:@\/-]{1,200}$/;
 
 export function createWeeklyReviewRouter(config) {
@@ -69,7 +76,7 @@ export function createWeeklyReviewRouter(config) {
   router.get('/school/showcase', async (req, res) => {
     const startMs = Date.now();
     const week = typeof req.query.week === 'string' ? req.query.week : '';
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) {
+    if (!isCalendarDate(week)) {
       logger.warn?.('weekly-review.api.school-showcase.bad-week', { week: week.slice(0, 40) });
       return res.status(400).json({ ok: false, error: 'week must be YYYY-MM-DD' });
     }

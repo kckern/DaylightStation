@@ -28,4 +28,13 @@ describe('FilesystemWeeklyReviewStore school showcase cache', () => {
     expect(fs.readFileSync(file, 'utf8')).toMatch(/^kid-a:\n {2}itemsHash:/);
     expect(store.loadSchoolShowcase('2026-03-23')).toEqual(data);
   });
+
+  it('replaces the cache whole, leaving no staging file behind', () => {
+    store.saveSchoolShowcase('2026-03-23', { 'kid-a': { itemsHash: 'a', bullets: ['One'], at: 'x' } });
+    const rejected = { 'kid-a': { itemsHash: 'b', bullets: null, rejectedAt: 'y', attempts: 1 } };
+    store.saveSchoolShowcase('2026-03-23', rejected);
+    expect(store.loadSchoolShowcase('2026-03-23')).toEqual(rejected);
+    const dir = path.join(root, 'household', 'weekly-review', 'log', '2026-03-23');
+    expect(fs.readdirSync(dir)).toEqual(['school-showcase.yml']);
+  });
 });
