@@ -112,7 +112,10 @@ export function TodayView({ entities, rooms, summary, haUrl, toggle }) {
       <div className="home-today__range">
         <SegmentedControl size="sm" data={RANGES} value={range} onChange={changeRange} aria-label="Timeline range" />
       </div>
-      <section aria-label="Timeline" {...regionProps}>{body}</section>
+      <section aria-label="Timeline" {...regionProps}>
+        {timeline && error ? <ErrorState error={error} onRetry={retry} label="Timeline" title="Timeline could not refresh" /> : null}
+        {body}
+      </section>
       <LaneDetailSheet
         lane={shownLane}
         entities={entities}
