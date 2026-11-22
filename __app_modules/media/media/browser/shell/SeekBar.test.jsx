@@ -255,6 +255,27 @@ describe('SeekBar', () => {
     expect(screen.getByTestId('np-seek-elapsed')).toHaveTextContent('1:00');
   });
 
+  it('does not revive a remote seek after disconnect and reconnect', () => {
+    const target = { deviceId: 'tv-1' };
+    const { rerender } = render(<SeekBar target={target} availability={{ available: true }} />);
+    const track = screen.getByTestId('np-seek');
+    measureTrack(track, { left: 0, width: 200 });
+    firePointer(track, 'pointerdown', 150, 0, 10);
+    expect(screen.getByTestId('np-seek-elapsed')).toHaveTextContent('3:00');
+
+    rerender(<SeekBar target={target} availability={{ available: false, reason: 'This device is offline' }} />);
+    expect(screen.getByTestId('np-seek-elapsed')).toHaveTextContent('1:00');
+    rerender(<SeekBar target={target} availability={{ available: true }} />);
+    firePointer(track, 'pointerup', 150, 0, 10);
+
+    expect(transport.seekAbs).not.toHaveBeenCalled();
+    expect(screen.getByTestId('np-seek-elapsed')).toHaveTextContent('1:00');
+
+    firePointer(track, 'pointerdown', 150, 0, 20);
+    firePointer(track, 'pointerup', 150, 0, 20);
+    expect(transport.seekAbs).toHaveBeenCalledExactlyOnceWith(180);
+  });
+
   it.each(['target', 'content', 'queue visit', 'controller', 'target ABA'])('cancels a drag across a changed %s', change => {
     state.snapshot.queue = { items: [{ queueItemId: 'visit-a', contentId: 'plex:100' }], currentIndex: 0 };
     const { rerender } = render(<SeekBar target={{ deviceId: 'screen-a' }} />);

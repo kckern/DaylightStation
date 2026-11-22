@@ -25,6 +25,8 @@ export function SeekBar({ target, availability = null, onCommand = null, pending
   const item = snapshot?.currentItem;
   const hasItem = Boolean(item);
   const liveItem = capabilities.live === true || item?.isLive === true;
+  const duration = Number.isFinite(item?.duration) && item.duration > 0 ? item.duration : 0;
+  const canSeek = hasItem && !liveItem && availability?.available !== false && capabilities.seekable && duration > 0 && !pendingAction;
   const owner = snapshot?.meta?.playbackOwner;
   const contextKey = JSON.stringify([
     target === 'local' ? 'local' : target?.deviceId,
@@ -41,12 +43,12 @@ export function SeekBar({ target, availability = null, onCommand = null, pending
   const [commandFeedback, setCommandFeedback] = useState(null);
 
   useLayoutEffect(() => {
-    if (hasItem && !liveItem) return;
+    if (canSeek) return;
     draggingRef.current = false;
     dragRectRef.current = null;
     dragBindingRef.current = null;
     setScrub(null);
-  }, [hasItem, liveItem]);
+  }, [canSeek]);
 
   if (!item) return null;
 
@@ -94,8 +96,6 @@ export function SeekBar({ target, availability = null, onCommand = null, pending
     );
   }
 
-  const duration = Number.isFinite(item.duration) && item.duration > 0 ? item.duration : 0;
-  const canSeek = availability?.available !== false && capabilities.seekable && duration > 0 && !pendingAction;
   const position = (scrub?.context === context ? scrub.seconds : null) ?? live.seconds ?? snapshot.position ?? 0;
   const clamped = Math.min(Math.max(0, position), duration || 0);
   const fraction = duration > 0 ? clamped / duration : 0;
