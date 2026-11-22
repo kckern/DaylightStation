@@ -352,6 +352,7 @@ function heroAspectRatio(item) {
 export default function FeedCard({ item, onDismiss, onPlay }) {
   const tier = item.tier || 'wire';
   const archiveLabel = item.title?.trim() ? `Archive ${item.title.trim()}` : 'Archive item';
+  const hasArtwork = Boolean(item.image && isImageUrl(item.image));
   const sourceName = item.meta?.sourceName || item.meta?.feedTitle || item.source || '';
   const age = formatAge(item.timestamp);
   const iconUrl = proxyIcon(item.meta?.sourceIcon);
@@ -390,7 +391,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
       }}
     >
       {/* Hero image / inline player */}
-      {item.image && isImageUrl(item.image) && (
+      {hasArtwork && (
         <div style={{
             overflow: 'hidden',
             position: 'relative',
@@ -533,7 +534,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
       {/* Body below image */}
       <div style={{ padding: '0.75rem 1rem', lineHeight: 1 }}>
         {/* Source bar for text-only cards (no thumbnail to overlay) */}
-        {!(item.image && isImageUrl(item.image)) && (
+        {!hasArtwork && (
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -580,17 +581,39 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
             Overdue
           </span>
         )}
-        {/* Archive footer for text-only cards. */}
-        {onDismiss && !(item.image && isImageUrl(item.image)) && (
+        {/* Playback and archive actions for text-only cards. */}
+        {!hasArtwork && (item.meta?.playable || onDismiss) && (
           <div style={{
             display: 'flex',
-            justifyContent: 'flex-end',
+            alignItems: 'center',
+            justifyContent: item.meta?.playable ? (onDismiss ? 'space-between' : 'flex-start') : 'flex-end',
             minHeight: '40px',
             marginTop: '0.4rem',
             paddingTop: '0.3rem',
             borderTop: '1px solid rgba(255,255,255,0.05)',
           }}>
-            <button
+            {item.meta?.playable && <button
+              type="button"
+              className="ds-touch-target"
+              onClick={handlePlay}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#adb5bd',
+                fontSize: '0.78rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.25rem',
+                padding: '0.45rem 0.55rem',
+                borderRadius: '4px',
+              }}
+              aria-label={`Play ${item.title || 'item'}`}
+            >
+              <UiIcon name="play" size={14} /> <span>Play</span>
+            </button>}
+            {onDismiss && <button
+              type="button"
               className="ds-touch-target"
               onClick={(e) => { e.stopPropagation(); onDismiss(item); }}
               style={{
@@ -608,7 +631,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
               aria-label={archiveLabel}
             >
               ✕ <span>Archive</span>
-            </button>
+            </button>}
           </div>
         )}
       </div>
