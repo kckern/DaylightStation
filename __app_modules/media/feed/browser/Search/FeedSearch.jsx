@@ -14,6 +14,7 @@ import { webLink } from "../../shared/webLink.mjs";
 const resultKey = item => item.stateKey || item.id;
 const NO_RESULTS = { items: [], nextCursor: null, total: 0, coverage: null };
 const searchTimeoutMs = 10_000;
+const SEARCH_FILTER_STATES = ['all', 'unread', 'read', 'saved', 'archived'];
 
 function localDateBoundary(value, endOfDay) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
@@ -52,7 +53,8 @@ export default function FeedSearch() {
   const requestKey = params.toString();
   const committedQuery = params.get('q') || '';
   const committedSource = params.get('source') || '';
-  const activeState = params.get('state') || 'all';
+  const requestedState = params.get('state') || 'all';
+  const activeState = SEARCH_FILTER_STATES.includes(requestedState) ? requestedState : 'all';
   const fromDay = (params.get('from') || '').slice(0, 10);
   const toDay = (params.get('to') || '').slice(0, 10);
   const dateRangeInvalid = /^\d{4}-\d{2}-\d{2}$/.test(fromDay)
@@ -280,7 +282,7 @@ export default function FeedSearch() {
         <button type="submit">Search</button>
       </form>
       <div className="feed-filter-tabs" role="group" aria-label="Search filters">
-        {['all', 'unread', 'read', 'saved', 'archived'].map(state => (
+        {SEARCH_FILTER_STATES.map(state => (
           <button key={state} className={activeState === state ? 'active' : ''}
             aria-pressed={activeState === state}
             onClick={() => setFilter('state', state === 'all' ? '' : state)}>{state}</button>
