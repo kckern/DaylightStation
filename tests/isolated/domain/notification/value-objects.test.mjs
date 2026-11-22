@@ -57,6 +57,6 @@ describe('NotificationCategory', () => {
   it('returns all categories', () => {
     // 'school' added in 703d64c52 for school pushes (teacher backlog nudge,
     // card-ladder tuning); without it isValid() rejected their category.
-    expect(NotificationCategory.values()).toEqual(['ceremony', 'drift_alert', 'goal_update', 'school', 'system']);
+    expect(NotificationCategory.values()).toEqual(['ceremony', 'drift_alert', 'goal_update', 'school', 'system', 'approval', 'household_alert']);
   });
 });
