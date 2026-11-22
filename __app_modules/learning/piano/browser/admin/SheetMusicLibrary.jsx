@@ -213,6 +213,8 @@ function UploadModal({ opened, onClose, folders, logger, onUploaded }) {
             accept=".musicxml,.mxl"
             value={file}
             onChange={setFile}
+            disabled={busy}
+            clearButtonProps={{ 'aria-label': 'Clear selected file', disabled: busy }}
             required
             clearable
           />
@@ -223,6 +225,7 @@ function UploadModal({ opened, onClose, folders, logger, onUploaded }) {
               data={folders}
               value={folder}
               onChange={setFolder}
+              disabled={busy}
               required
               comboboxProps={{ withinPortal: false }}
             />
@@ -237,13 +240,14 @@ function UploadModal({ opened, onClose, folders, logger, onUploaded }) {
             placeholder="suggested from the score title"
             value={filename}
             onChange={(e) => setFilename(e.currentTarget.value.toLowerCase())}
+            disabled={busy}
           />
           {visibleMessage ? (
             <Alert color="red" icon={<IconAlertTriangle size={16} />} variant="light">{visibleMessage}</Alert>
           ) : null}
           <Group justify="flex-end">
             <Button variant="default" onClick={onClose} disabled={busy}>Cancel</Button>
-            <Button type="submit" loading={busy} disabled={!file || !folder}>Upload</Button>
+            <Button type="submit" loading={busy} disabled={busy || !file || !folder}>Upload</Button>
           </Group>
         </Stack>
       </form>

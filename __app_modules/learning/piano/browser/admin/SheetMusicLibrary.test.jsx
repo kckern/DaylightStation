@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within, cleanup } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within, cleanup } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { MemoryRouter, Routes, Route, useParams, useNavigate } from 'react-router-dom';
 
@@ -220,6 +220,34 @@ describe('SheetMusicLibrary', () => {
     expect(screen.getByRole('dialog')).toBeTruthy();
     expect(screen.queryByTestId('echo')).toBeNull();
     expect(logged.some((l) => l.event === 'admin.sheetmusic.upload-failed' && l.data.code === 'basename-exists')).toBe(true);
+  });
+
+  it('locks upload fields in flight and restores the same draft after a conflict', async () => {
+    let finishUpload;
+    global.fetch.mockReturnValue(new Promise(resolve => { finishUpload = resolve; }));
+    const { dialog, file } = await openUpload();
+    const fileControl = dialog.getByText(file.name).closest('button');
+    const clearFile = dialog.getByRole('button', { name: 'Clear selected file' });
+    const folderInput = dialog.getByPlaceholderText('Choose a folder');
+    const filenameInput = dialog.getByLabelText(/file name/i);
+
+    fireEvent.click(dialog.getByRole('button', { name: /^upload$/i }));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+
+    expect(fileControl).toBeDisabled();
+    expect(folderInput).toBeDisabled();
+    expect(filenameInput).toBeDisabled();
+    expect(clearFile).toBeDisabled();
+
+    await act(async () => finishUpload(jsonResponse(409, { error: 'basename-exists' })));
+    expect(await dialog.findByText(/already has a score with that file name/i)).toBeVisible();
+    expect(fileControl).toBeEnabled();
+    expect(folderInput).toBeEnabled();
+    expect(filenameInput).toBeEnabled();
+    expect(clearFile).toBeEnabled();
+    expect(folderInput).toHaveValue('hymns');
+    expect(filenameInput).toHaveValue('my-piece');
+    expect(dialog.getByText(file.name)).toBeVisible();
   });
 
   it('GET failure shows retry and retry refetches', async () => {
