@@ -51,15 +51,20 @@
 .cf-rail__stage.is-complete .cf-rail__mark { background: var(--ds-success); color: var(--ds-bg-base); }
 .cf-rail__stage.is-waiting .cf-rail__name { color: var(--ds-text-secondary); }
 .cf-rail__stage.is-waiting .cf-rail__mark { color: var(--ds-text-muted); }
-.cf-rail__stage.is-current { background: var(--ds-accent); color: #fff; }
-.cf-rail__stage.is-current .cf-rail__name { color: #fff; }
-.cf-rail__stage.is-current .cf-rail__mark { background: #fff; color: var(--ds-accent); }
+/* The tab you are on is the filled chevron; the film's current stage, when you are elsewhere, keeps an
+   accent number and name (live review 2026-11-22: a filled Refine beside an open Approve tab misled). */
+.cf-rail__stage.is-current .cf-rail__name { color: var(--ds-accent); }
+.cf-rail__stage.is-current .cf-rail__mark { box-shadow: inset 0 0 0 2px var(--ds-accent); color: var(--ds-accent); }
+.cf-rail__stage[aria-selected="true"]:not(.is-stuck) { background: var(--ds-accent); color: #fff; }
+.cf-rail__stage[aria-selected="true"]:not(.is-stuck) .cf-rail__name { color: #fff; }
+.cf-rail__stage[aria-selected="true"]:not(.is-stuck) .cf-rail__mark { background: #fff; color: var(--ds-accent); box-shadow: none; }
+.cf-rail__stage[aria-selected="true"].is-complete:not(.is-stuck) .cf-rail__mark { background: #fff; color: var(--ds-success); }
 .cf-rail__stage.is-stuck { background: var(--ds-warning); color: var(--ds-bg-base); }
 .cf-rail__stage.is-stuck .cf-rail__name { color: var(--ds-bg-base); }
 .cf-rail__stage.is-stuck .cf-rail__mark { background: var(--ds-bg-base); color: var(--ds-warning); }
 // The open tab: a bar along the bottom edge, cut to the chevron by the same clip.
-.cf-rail__stage[aria-selected="true"]::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--ds-text-primary); }
-.cf-rail__stage:not([aria-selected="true"]):not(.is-current):not(.is-stuck):hover .cf-rail__name { color: var(--ds-text-primary); text-decoration: underline; }
+.cf-rail__stage.is-stuck[aria-selected="true"]::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--ds-bg-base); }
+.cf-rail__stage:not([aria-selected="true"]):not(.is-stuck):hover .cf-rail__name { color: var(--ds-text-primary); text-decoration: underline; }
 .cf-rail__plays { flex: none; margin-left: var(--ds-space-2); padding: 0 var(--ds-space-2); color: var(--ds-text-secondary); border-bottom: 3px solid transparent; border-top: 3px solid transparent; }
 .cf-rail__plays:hover { color: var(--ds-text-primary); }
 .cf-rail__plays[aria-selected="true"] { color: var(--ds-text-primary); border-bottom-color: var(--ds-text-primary); }
