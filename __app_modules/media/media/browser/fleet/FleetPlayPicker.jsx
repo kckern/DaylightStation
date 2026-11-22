@@ -32,7 +32,8 @@ function thumbnailSrc(row) {
   if (!id) return null;
   const [source, ...rest] = String(id).split(':');
   if (!source || rest.length === 0) return null;
-  return `/api/v1/display/${encodeURIComponent(source)}/${rest.join(':')}`;
+  const encodedPath = rest.join(':').split('/').map(encodeURIComponent).join('/');
+  return `/api/v1/display/${encodeURIComponent(source)}/${encodedPath}`;
 }
 
 // "playing Bluey" → "Playing Bluey" (describeBusy phrases start a sentence here).
