@@ -99,6 +99,7 @@ function EntityDetailBody({ entity, haUrl, onToggle, extra }) {
   const link = haEntityLink(haUrl, entity.id);
   const since = formatSince(entity.lastChanged);
   const below = extra ?? defaultExtra(history);
+  const roomIsInferred = entity.room?.source === 'inferred';
   return (
     <div className={`home-detail${lit ? ' home-detail--lit' : ''}${silent ? ' home-detail--silent' : ''}`} data-entity-id={entity.id}>
       <div className="home-detail__state">
@@ -112,9 +113,9 @@ function EntityDetailBody({ entity, haUrl, onToggle, extra }) {
         <dl className="home-detail__facts">
           {entity.room ? (
             <>
-              <dt>Room</dt>
+              <dt>{roomIsInferred ? 'Inferred room' : 'Room'}</dt>
               {/* A room guessed from the id reads in italic, as it does in every list. */}
-              <dd className={entity.room.source === 'inferred' ? 'home-inferred' : undefined}>{entity.room.name}</dd>
+              <dd className={roomIsInferred ? 'home-inferred' : undefined}>{entity.room.name}</dd>
             </>
           ) : null}
           {since ? <><dt>Changed</dt><dd>{since}</dd></> : null}

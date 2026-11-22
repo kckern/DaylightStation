@@ -165,10 +165,10 @@ describe('EntityDetailSheet facts', () => {
     expect(screen.getAllByText('Off')).toHaveLength(1);
   });
 
-  it('no Kind row; an inferred room is italic without a "guessed" note; the id sits under the link', () => {
+  it('no Kind row; an inferred room is labeled and italic; the id sits under the link', () => {
     wrap(<EntityDetailSheet entity={entity('light.den', { room: { id: 'den', name: 'Den', source: 'inferred' } })} haUrl="https://ha.example" onClose={() => {}} />);
     const facts = document.querySelector('.home-detail__facts');
-    expect([...facts.querySelectorAll('dt')].map((d) => d.textContent)).toEqual(['Room']);
+    expect([...facts.querySelectorAll('dt')].map((d) => d.textContent)).toEqual(['Inferred room']);
     const room = facts.querySelector('dd');
     expect(room.textContent).toBe('Den');
     expect(room.classList.contains('home-inferred')).toBe(true);
