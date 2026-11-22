@@ -96,6 +96,28 @@ describe('TriageSessionView', () => {
     expect(triage.answer).toHaveBeenCalledWith('r1', { choice: 'send', draft: { body: 'Hi Mark, the 30th works. Cedar please.' } });
   });
 
+  it('editing a reply invalidates the retry for its previous send body', async () => {
+    triage = makeTriage({ session: { steps: [{ id: 'reply', count: 1 }], cards: [reply], total: 1, done: 0 } });
+    triage.answer
+      .mockRejectedValueOnce(Object.assign(new Error('pass_running'), { code: 'pass_running', status: 409 }))
+      .mockResolvedValueOnce({ outcome: 'applied', card: null });
+    wrap();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    const draft = screen.getByLabelText('Reply draft');
+    fireEvent.change(draft, { target: { value: 'Yes, Tuesday.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await screen.findByText('Triage is updating — try again in a moment.');
+    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+
+    fireEvent.change(draft, { target: { value: 'No, Friday.' } });
+    expect(screen.queryByRole('button', { name: /try again/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    await waitFor(() => expect(screen.getByText(/All done/)).toBeInTheDocument());
+    expect(triage.answer).toHaveBeenNthCalledWith(1, 'r1', { choice: 'send', draft: { body: 'Yes, Tuesday.' } });
+    expect(triage.answer).toHaveBeenNthCalledWith(2, 'r1', { choice: 'send', draft: { body: 'No, Friday.' } });
+  });
+
   it('holds the reply body read-only during a revision request and restores editing after failure', async () => {
     let rejectRevision;
     triage = makeTriage({ session: { steps: [{ id: 'reply', count: 1 }], cards: [reply], total: 1, done: 0 } });

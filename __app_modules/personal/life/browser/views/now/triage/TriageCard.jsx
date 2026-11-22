@@ -63,7 +63,7 @@ function Choices({ card, onChoice, busy, exclude = [] }) {
   );
 }
 
-function ReplyBody({ card, busy, highlightSend, onSend, onSkip, onChoice }) {
+function ReplyBody({ card, busy, highlightSend, onSend, onDraftChange, onSkip, onChoice }) {
   const [body, setBody] = useState(card.draftBody ?? '');
   const [editing, setEditing] = useState(!card.draftBody);
   // A new draft from the server (a voice/text revision) replaces what is shown.
@@ -77,7 +77,7 @@ function ReplyBody({ card, busy, highlightSend, onSend, onSkip, onChoice }) {
           aria-label="Reply draft"
           className="life-triage__draft-edit"
           value={body}
-          onChange={(e) => setBody(e.currentTarget.value)}
+          onChange={(e) => { setBody(e.currentTarget.value); onDraftChange?.(); }}
           readOnly={busy}
           autosize
           minRows={4}
@@ -160,7 +160,7 @@ function ApplyingBody({ card, busy, onResolve }) {
  */
 export function TriageCard({
   card, mode, busy = false, text, onTextChange, onSubmitText, prompt = null, focusKey = null,
-  highlightSend = false, onChoice, onSend, onSkip, onResolve, onUndo, onLoadLog = null, wouldHave = null,
+  highlightSend = false, onChoice, onSend, onDraftChange, onSkip, onResolve, onUndo, onLoadLog = null, wouldHave = null,
 }) {
   if (card.kind === 'recap') {
     return (
@@ -181,7 +181,7 @@ export function TriageCard({
       ) : (
         <>
           {reply
-            ? <ReplyBody card={card} busy={busy} highlightSend={highlightSend} onSend={onSend} onSkip={onSkip} onChoice={onChoice} />
+            ? <ReplyBody card={card} busy={busy} highlightSend={highlightSend} onSend={onSend} onDraftChange={onDraftChange} onSkip={onSkip} onChoice={onChoice} />
             : <Choices card={card} busy={busy} onChoice={onChoice} />}
           <AnswerInput
             value={text}

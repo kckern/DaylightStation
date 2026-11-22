@@ -33,7 +33,7 @@ export function TriageSessionView() {
   const [cards, setCards] = useState([]);
   const [idx, setIdx] = useState(0);
   const [tally, setTally] = useState({ answered: 0, skipped: 0 });
-  const [notice, setNotice] = useState(null); // { text, retry?, tone? }
+  const [notice, setNotice] = useState(null); // { text, retry?, retryChoice?, tone? }
   const [text, setText] = useState('');
   const [pending, setPending] = useState(null); // a choice waiting for the owner's text (shrink)
   const [focusKey, setFocusKey] = useState(null);
@@ -73,18 +73,18 @@ export function TriageSessionView() {
     setCards((list) => list.map((c) => (c.cardId === next.cardId ? { ...c, ...next } : c)));
   };
 
-  const handleError = (err, retry, current) => {
+  const handleError = (err, retry, current, choice) => {
     const code = err?.code ?? null;
     logger.warn('triage.card.error', { cardId: current?.cardId ?? null, code, status: err?.status ?? null });
     if (err?.signInReason) return; // the login screen takes the card's place
-    if (code === 'pass_running' || code === 'busy') { setNotice({ text: BUSY_LINE, retry }); return; }
+    if (code === 'pass_running' || code === 'busy') { setNotice({ text: BUSY_LINE, retry, retryChoice: choice }); return; }
     if (code === 'answer_in_doubt') { replaceCard({ ...current, status: 'applying', applying: true }); return; }
     if (code === 'card_not_open' || code === 'card_not_found') {
       advance(false);
       setNotice({ text: 'Already handled elsewhere — moved on.' });
       return;
     }
-    setNotice({ text: "That didn't go through — the card is still here.", retry, tone: 'error' });
+    setNotice({ text: "That didn't go through — the card is still here.", retry, retryChoice: choice, tone: 'error' });
   };
 
   const handleOutcome = (r, current, choice) => {
@@ -126,7 +126,7 @@ export function TriageSessionView() {
         const r = await fn();
         if (mounted.current) handleOutcome(r, current, choice);
       } catch (err) {
-        if (mounted.current) handleError(err, attempt, current);
+        if (mounted.current) handleError(err, attempt, current, choice);
       } finally {
         if (mounted.current) setBusy(false);
       }
@@ -178,6 +178,7 @@ export function TriageSessionView() {
 
   const onChoice = (choice) => perform(card, choice, () => t.answer(card.cardId, { choice }));
   const onSend = (body) => perform(card, 'send', () => t.answer(card.cardId, body ? { choice: 'send', draft: { body } } : { choice: 'send' }));
+  const onDraftChange = () => setNotice((current) => current?.retryChoice === 'send' ? null : current);
   const onSubmitText = (said) => {
     const body = pending ? { choice: pending, text: said } : { text: said };
     return perform(card, pending ?? null, () => t.answer(card.cardId, body));
@@ -212,6 +213,7 @@ export function TriageSessionView() {
           highlightSend={highlightSend}
           onChoice={onChoice}
           onSend={onSend}
+          onDraftChange={onDraftChange}
           onSkip={onSkip}
           onResolve={onResolve}
           onUndo={(entryId) => t.undo(entryId)}
