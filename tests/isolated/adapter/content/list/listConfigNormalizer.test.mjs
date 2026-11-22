@@ -892,3 +892,27 @@ describe('legacy section round trip', () => {
     expect(JSON.parse(JSON.stringify(serializeListConfig(normalizeListConfig(raw))))).toEqual(raw);
   });
 });
+
+describe('item params', () => {
+  const params = { autostart: true, participants: ['learner-a', 'learner-b'], clue_modes: { 'learner-a': 'reader' } };
+  it('keeps params on a legacy input item through normalize and serialize', () => {
+    const raw = { sections: [{ items: [{ label: 'Charades', input: 'app:party-games/charades:fhe', action: 'Open', params }] }] };
+    const normalized = normalizeListConfig(structuredClone(raw), 'fixture');
+    expect(normalized.sections[0].items[0].params).toEqual(params);
+    const written = serializeListConfig(normalized);
+    // A single anonymous section serializes in the compact { items } form.
+    expect(written.items[0].params).toEqual(params);
+  });
+  it('drops a non-object params value', () => {
+    const item = normalizeListItem({ label: 'X', input: 'app:x', params: 'nope' });
+    expect(item.params).toBeUndefined();
+  });
+});
+
+describe('item params on canonical items', () => {
+  it('keeps object params and drops non-object params', () => {
+    expect(normalizeListItem({ title: 'C', open: 'party-games/charades', params: { autostart: true } }).params).toEqual({ autostart: true });
+    expect(Object.hasOwn(normalizeListItem({ title: 'C', open: 'party-games/charades', params: ['x'] }), 'params')).toBe(false);
+    expect(Object.hasOwn(normalizeListItem({ title: 'C', open: 'party-games/charades', params: {} }), 'params')).toBe(false);
+  });
+});

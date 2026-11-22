@@ -18,3 +18,10 @@ it('normalizes an authored space after a hyphenated source name', async () => {
   expect(parts.localId).toBe('nfl-channel');
   expect(parts.playAction).toMatchObject({ 'plex-live': 'nfl-channel' });
 });
+it('keeps object params on a legacy item', () => {
+  const params = { autostart: false };
+  expect(normalizeListItem({ label: 'L', input: 'app:party-games/charades:fhe', params }).params).toEqual(params);
+});
+it('drops non-object params on a canonical item', () => {
+  expect(Object.hasOwn(normalizeListItem({ title: 'C', open: 'party-games/charades', params: 'nope' }), 'params')).toBe(false);
+});

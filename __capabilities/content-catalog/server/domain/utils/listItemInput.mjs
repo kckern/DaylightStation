@@ -1,4 +1,6 @@
 // Semantic mapping between supported list-item command shapes.
+import { isParamsObject } from './listConfigCodec.mjs';
+
 const AUTHORED_TITLE = Symbol.for('daylight.list-item-authored-title');
 
 function preserveAuthoredTitle(result, source) {
@@ -14,7 +16,9 @@ function normalizeInput(input) {
 export function normalizeListItem(item) {
   if (!item) return item;
   if (!item.input && (!item.label || !Object.hasOwn(item, 'input')) && (item.play || item.open || item.display || item.list || item.queue || item.launch)) {
-    return preserveAuthoredTitle({ ...item }, item);
+    const result = { ...item };
+    if (!isParamsObject(result.params)) delete result.params;
+    return preserveAuthoredTitle(result, item);
   }
   const result = {};
   result.title = item.title || item.label;
@@ -45,6 +49,7 @@ export function normalizeListItem(item) {
   for (const field of ['uid', 'image', 'fixed_order', 'active', 'continuous', 'shuffle', 'menuStyle', 'playbackrate', 'shader', 'days', 'applySchedule', 'strategy']) {
     if (item[field] != null) result[field] = item[field];
   }
+  if (isParamsObject(item.params)) result.params = item.params;
   return preserveAuthoredTitle(result, item);
 }
 
