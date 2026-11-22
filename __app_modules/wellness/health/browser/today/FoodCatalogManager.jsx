@@ -5,7 +5,7 @@ import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiReso
 import { unavailableError } from "../healthResources.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
-import { NUTRIENT_KEYS } from "../../portable/contracts/health/foodQuantity.mjs";
+import { formatFoodPortion, NUTRIENT_KEYS } from "../../portable/contracts/health/foodQuantity.mjs";
 import { FoodIcon } from "./FoodIcon.jsx";
 
 const logger = createAppLogger('health').child('food-manager');
@@ -68,7 +68,7 @@ function Manager({ active = true, onClose, onChanged }) {
             <EmptyState title={query.trim() ? 'No saved foods match your search' : 'No saved foods yet'} />
           ) : null}
           {visibleFoods.map(food => <UnstyledButton key={food.id} onClick={() => setDraft(structuredClone(food))}>
-            <Group wrap="nowrap" gap="xs"><FoodIcon icon={food.icon} /><Text size="sm">{food.name}</Text><Text size="xs" c="dimmed">{food.grams > 0 ? `${Math.round(food.grams)} g` : 'Weight unknown'}</Text></Group>
+            <Group wrap="nowrap" gap="xs"><FoodIcon icon={food.icon} /><Text size="sm">{food.name}</Text><Text size="xs" c="dimmed">{food.grams > 0 ? formatFoodPortion({ grams: food.grams }) : 'Weight unknown'}</Text></Group>
           </UnstyledButton>)}
         </Stack>
       </>}
