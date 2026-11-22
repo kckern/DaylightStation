@@ -22,7 +22,7 @@ export function LogTimeline({ summaries = [] }) {
           title={s.source}
         >
           <Text size="sm" c="dimmed">{s.category}</Text>
-          <Text size="sm" mt={4}>{s.text}</Text>
+          <Text size="sm" mt={4} style={{ whiteSpace: 'pre-line' }}>{s.text}</Text>
         </Timeline.Item>
       ))}
     </Timeline>
