@@ -44,6 +44,8 @@ export const KNOWN_ITEM_FIELDS = [
   'shader', 'composite', 'playable',
   // Progress (usually read-only)
   'progress', 'watched',
+  // Per-type parameters, edited by the type's own editor (itemParams/registry.js)
+  'params',
   // Derived action keys (stripped at write time, rebuilt at read time)
   'play', 'open', 'display', 'list', 'queue', 'title'
 ];
