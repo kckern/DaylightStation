@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { ReviewList } from './ReviewList.jsx';
+import { ReviewList, rowStatus } from './ReviewList.jsx';
 
 const rows = [
   { id: 'cue:w1', peekId: 'w1', kind: 'words', group: 'profanity', label: 'damn', modality: 'said', in: 70.25, out: 70.6, effect: 'mute', card: null, handFixed: false, unsure: ['safe-window'], timing: 'safe-window', reviewed: null },
@@ -15,11 +15,11 @@ const order = () => [...document.querySelectorAll('[data-row-id]')].map((n) => n
 
 describe('ReviewList', () => {
   beforeEach(() => { vi.restoreAllMocks(); });
-  it('opens on the Filtered tab, in film order, with the review count', () => {
+  it('opens on the Filtered tab, in film order (the count lives in the header)', () => {
     show();
     expect(order()).toEqual(['subject:subject-b1', 'cue:w1', 'scene:sc1']);
     expect(screen.getByRole('radio', { name: 'Filtered 3' }).checked).toBe(true);
-    expect(screen.getByText('1 of 3 reviewed')).toBeTruthy();
+    expect(screen.queryByText('1 of 3 reviewed')).toBeNull();
   });
   it('"Needs a look first" keeps the audit\'s ranking', () => {
     render(<MantineProvider><ReviewList rows={rows} reviewed={1} total={3} audit={{ ok: true, fresh: true }}
@@ -78,3 +78,20 @@ describe('ReviewList', () => {
     expect(onScope).toHaveBeenCalledWith(expect.objectContaining({ show: 'plays' }));
   });
 });
+
+describe('row status words (owner, 2026-11-21: the icons need a word)', () => {
+  it('says where each part stands', () => {
+    const r = (o) => ({ id: 'cue:a', kind: 'words', effect: 'mute', ...o });
+    expect(rowStatus(r({}))).toMatchObject({ glyph: '·', word: 'To do' });
+    expect(rowStatus(r({ verdict: { verdict: 'approve' } }))).toMatchObject({ glyph: '✓', word: 'Approved' });
+    expect(rowStatus(r({ reviewed: { by: 'p' } }))).toMatchObject({ word: 'Approved' });
+    expect(rowStatus(r({ verdict: { verdict: 'redo' } }))).toMatchObject({ glyph: '↻', word: 'Redo' });
+    expect(rowStatus(r({ acts: false, effect: 'off', why: 'removed' }))).toMatchObject({ glyph: '×', word: 'Let play' });
+    expect(rowStatus(r({ acts: false, effect: 'off', why: 'settings' }))).toMatchObject({ word: 'Plays' });
+  });
+  it('every row shows its word', () => {
+    render(<MantineProvider><ReviewList rows={[{ id: 'cue:w9', peekId: 'w9', kind: 'words', group: 'profanity', label: 'heck', modality: 'said', in: 5, out: 6, effect: 'mute', card: null, handFixed: false, unsure: [], reviewed: null }]} reviewed={0} total={1} /></MantineProvider>);
+    expect(screen.getByText('To do')).toBeTruthy();
+  });
+});
+

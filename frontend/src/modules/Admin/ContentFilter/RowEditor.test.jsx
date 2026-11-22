@@ -70,14 +70,14 @@ describe('RowEditor (the part card)', () => {
   });
   it('Settings puts the part back on the household settings', async () => {
     show(word);
-    fireEvent.click(btn('Settings'));
+    fireEvent.click(btn('Your settings'));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual({ path: 'api/v1/content-filter/77/cues/w1', body: { effect: 'profile', disabled: false }, method: 'PUT' });
   });
   it('a refused write shows its message and does not reload', async () => {
     fail = 'A filter run is writing this film. Effects and timing can change when it finishes.';
     const onChanged = show(word);
-    fireEvent.click(btn('Settings'));
+    fireEvent.click(btn('Your settings'));
     expect(await screen.findByText(/Effects and timing can change when it finishes/)).toBeTruthy();
     expect(onChanged).not.toHaveBeenCalled();
   });
@@ -94,10 +94,12 @@ describe('RowEditor (the part card)', () => {
     expect(btn('Mute').disabled).toBe(true);
     expect(screen.getByRole('button', { name: 'Save timing' }).disabled).toBe(true);
   });
-  it('a part that plays under the settings reads Settings (plays) and offers no Refine', () => {
+  it('a part that plays under the settings reads Your settings (plays), offers no Refine, no verdicts and no timing', () => {
     show({ ...word, acts: false, why: 'settings', effect: 'off' });
-    expect(btn('Settings \\(plays\\)')).toBeTruthy();
+    expect(btn('Your settings \\(plays\\)')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Refine/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Approve/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Save timing' })).toBeNull();
     expect(screen.getByText(/your settings let this kind of part play/)).toBeTruthy();
   });
 });

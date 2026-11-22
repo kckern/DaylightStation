@@ -125,5 +125,16 @@ export function reviewRows({ cues, source = [], refined = null, override = null,
       handFixed: false, unsure: [], members: [id],
     });
   }
-  return rows.sort((a, b) => (b.unsure.length > 0) - (a.unsure.length > 0) || (b.acts - a.acts) || a.in - b.in);
+  // VidAngel sometimes tags one moment twice (same label, same span): one row, both cues as members,
+  // so the parent reviews it once (review 2026-11-21: two identical "G*d 10:29" rows in Sonic).
+  const merged = [];
+  const byMoment = new Map();
+  for (const r of rows) {
+    const k = r.kind !== 'scenes' && r.id.startsWith('cue:') ? `${r.acts}|${r.label}|${r.in}|${r.out}|${r.effect}` : null;
+    const twin = k ? byMoment.get(k) : null;
+    if (twin) { twin.members = [...new Set([...twin.members, ...r.members])]; twin.unsure = [...new Set([...twin.unsure, ...r.unsure])]; continue; }
+    if (k) byMoment.set(k, r);
+    merged.push(r);
+  }
+  return merged.sort((a, b) => (b.unsure.length > 0) - (a.unsure.length > 0) || (b.acts - a.acts) || a.in - b.in);
 }

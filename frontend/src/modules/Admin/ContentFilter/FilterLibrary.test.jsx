@@ -105,7 +105,7 @@ describe('FilterLibrary', () => {
   it('a runtime that differs by more than 5 minutes is a small note on a verified card', () => {
     show();
     expect(within(row('Almost Famous')).getByText('Runtime 162 min (VidAngel 124)')).toBeTruthy();
-    expect(within(row('Almost Famous')).getByRole('button', { name: 'Make filter' }).disabled).toBe(false);
+    expect(within(row('Almost Famous')).getByRole('link', { name: 'Start' })).toBeTruthy();
   });
   it('a search counts both sections and keeps the not-matched films apart', () => {
     show(false);
@@ -128,22 +128,17 @@ describe('FilterLibrary', () => {
     expect(within(row('Matilda')).getByText('3 of 40 reviewed')).toBeTruthy();
     expect(row('Annie').querySelector('a').getAttribute('href')).toBe('/admin/content/filter/77');
   });
-  it('"Make filter" queues a make run for a rough film', async () => {
+  it('the card button opens the film: Start untouched, Review once started or machine-checked; no run from here', () => {
     show();
-    fireEvent.click(within(row('Annie')).getByRole('button', { name: 'Make filter' }));
-    await waitFor(() => expect(calls).toHaveLength(1));
-    expect(calls[0]).toEqual({ path: 'api/v1/content-filter/77/jobs', body: { kind: 'make' }, method: 'POST' });
+    expect(within(row('Annie')).getByRole('link', { name: 'Start' }).getAttribute('href')).toBe('/admin/content/filter/77');
+    expect(within(row('Matilda')).getByRole('link', { name: 'Review' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Make filter|Run again/ })).toBeNull();
   });
-  it('the button is disabled for a running film and reads "Run again" after a failure', () => {
-    show();
-    expect(within(row('Back to the Future')).getByRole('button', { name: 'Run again' }).disabled).toBe(true);
-    expect(within(row('Matilda')).getByRole('button', { name: 'Run again' }).disabled).toBe(false);
-  });
-  it('a refused run shows its message', async () => {
-    failNext = 'This film already has a run queued or running.';
-    show();
-    fireEvent.click(within(row('Annie')).getByRole('button', { name: 'Make filter' }));
-    expect(await screen.findByText('This film already has a run queued or running.')).toBeTruthy();
+  it('a rough film you have opened or run sits in Started, apart from the untouched ones', () => {
+    expect(SECTIONS.find((s) => s.id === 'started')).toMatchObject({ stages: ['rough'] });
+    const started = SECTIONS.find((s) => s.id === 'started');
+    expect(started.when({ stage: 'rough', reviewed: { n: 0, m: 17 } })).toBe(true);
+    expect(started.when({ stage: 'rough', reviewed: null, job: null })).toBe(false);
   });
   it('the title search narrows the rows', () => {
     show();

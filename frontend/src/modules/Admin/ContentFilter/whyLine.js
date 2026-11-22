@@ -28,13 +28,17 @@ export function whyLine(row) {
       : { text: `This line runs ${fmt(secs(row))}, too long to bleep, so it is skipped behind a card.`, refine: false };
   }
   if (unsure.has('refine-giveup')) return { text: 'Refine could not find this word in the audio, so the rough time is kept. Check it by ear and nudge the edges.', refine: false };
-  if (unsure.has('safe-window')) return { text: `Muted over a ${fmt(secs(row))} safe window that surely covers the word. Refine again or nudge the edges to narrow it.`, refine: true };
+  if (unsure.has('safe-window')) return { text: `Muted over a wider ${fmt(secs(row))} window that is sure to cover the word. Refine again or nudge the edges to narrow it.`, refine: true };
   if (unsure.has('untracked-visual')) return { text: 'The picture could not be tracked, so the effect covers the whole frame.', refine: rough };
   if (unsure.has('subject-unsure')) return { text: 'Not sure these tags are one thing on screen; check they all get the same effect.', refine: false };
   if (unsure.has('check-levels')) return { text: 'The scene\'s levels need a look: watch it and pick the effect.', refine: false };
+  // A spoken word whose tag is a picture tag gets a picture effect: say so, it looks wrong otherwise.
+  if (row.modality === 'shown' && ['blackout', 'blur', 'full-blur', 'pixelate', 'censor-bar'].includes(row.effect) && String(row.category || '').startsWith('language/')) {
+    return { text: `The tag for this word is a picture tag, so the picture is ${row.effect === 'blackout' ? 'hidden' : 'blurred'} for ${fmt(secs(row))}.${rough ? ' Refining checks what it really is.' : ''}`, refine: rough };
+  }
   const base = `${EFFECT_WORDS[row.effect] || 'Filtered'} for ${fmt(secs(row))}.`;
   return rough
-    ? { text: `${base} The timing is VidAngel's rough guess; refine to fit it to the film.`, refine: true }
+    ? { text: `${base} The timing is still rough; refining fits it to this film.`, refine: true }
     : { text: base, refine: false };
 }
 

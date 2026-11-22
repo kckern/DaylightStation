@@ -34,7 +34,10 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
         const plainVerdict = /^\/review\/[^/]+$/.test(req.path) && req.method === 'PUT'
           && !req.body?.change && req.body?.verdict !== 'remove' && typeof jobs.heldRemotely === 'function' && await jobs.heldRemotely(key);
         if (!plainVerdict) {
-          return res.status(409).json({ error: 'A filter run is writing this film. Effects and timing can change when it finishes.' });
+          const verdictPath = /^\/review\//.test(req.path);
+          return res.status(409).json({ error: verdictPath
+            ? 'A refine is running on this film. Approve and Redo work now; Let it play and Undo wait until it finishes.'
+            : 'A refine is running on this film. Effects, timing and cards can change when it finishes.' });
         }
       }
       // The bleep tone's loudness is a playback setting: it changes nothing the audit checked.

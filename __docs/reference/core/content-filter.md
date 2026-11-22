@@ -834,7 +834,10 @@ unmatched }`.
 The Admin library is compact 2:3 poster cards grouped by readiness in an accordion: Ready tonight
 (parent-certified only: a grown-up approved it), Needs your review (machine-certified, not yet
 approved; owner, 2026-11-21: "0 of x is not ready"), Audited, Scenes built, Refined, Running, Rough.
-A card's count is "n of m reviewed" over the parts the filter acts on. The stage groups hold verified
+A card's count is "n of m reviewed" over the parts the filter acts on. A rough film you have
+opened (it has a list) or run sits in **Started**, apart from the untouched Rough ones. A card's
+button opens the film (Start / Review / Open); refining happens on the film's page, filtered parts
+only (owner, 2026-11-21), so the library starts no runs. The stage groups hold verified
 films only. Below them, set apart (dashed, muted), one **Not matched to Plex** section lists every
 unmatched film as a plain row: title, year and the one-line reason, linking to the film's page.
 It starts collapsed; open state of all sections is kept in `localStorage`. Ready tonight, Needs your review, Audited
@@ -977,7 +980,8 @@ first; then one row per EDL cue that plays (`acts: false`, `effect: off`, `why: 
 mapped through the copy's sync). A cue a resolved piece stands for is not a playing part: a subject's
 members (`cues`), a merged bleep's tones (`mergedFrom`), a scene's listed cues, or a cue inside a piece
 that hides its channel (a stacked picture effect trimmed away). A cue outside the copy's cut is left out.
-Subject rows list their member cues as `members`. A `remove` verdict holds on its playing row
+Subject rows list their member cues as `members`. One moment VidAngel tagged twice (same label,
+span and effect) is one row with both cues as members (rows version 3). A `remove` verdict holds on its playing row
 (`why: removed`, shown "Plays (removed)") and is kept when a removed subject or scene row is gone. Every row carries `timing`: `refined` (ms/frame), `safe-window` or `rough`
 (VidAngel's second-approx times). The payload's `parts { total, acting, plays, timing }` counts them (null for a list stored in an
 older row shape, so no meters until it is rebuilt; a run a worker holds does not stop the rebuild);
@@ -1047,21 +1051,31 @@ words of its group); the verdicts **Approve (A) / Let it play (X) / Redo (D) / U
 line (Space, Enter, W, ← →, ?). A word skipped as an exchange is listed with scenes but is a cue:
 `isSceneRow` (no members, not `cue:`) decides scene handling, `keysKindOf` the effect keys.
 
-**Refine** (`useReviewStation.js`): R sends a send-back of the part's member cues; Shift+R and
-Refine all send one send-back of every filtered, non-scene part not yet refined (Refine all again:
-every filtered part), never the parts that play (owner, 2026-11-21). One run per film: presses while
-a run is open collect on the page ("Queued") and go out as one send-back when it closes. A send-back
+**Refine** (`useReviewStation.js`): R sends a send-back of the part's member cues (on a hand-fixed
+part, the first R warns that refining drops the hand fix and the second sends); Shift+R and Refine
+all send one send-back of every filtered, non-scene part on rough timing (Refine all again: every
+filtered part), never the parts that play (owner, 2026-11-21). One run per film: presses while a run
+is open collect on the page ("Queued") and go out as one send-back only when the run finishes
+`done`; after a stopped or failed run they stay queued and the page says so (the next R sends them).
+A refine moves a part, which drops its verdict, so a part being refined takes no verdict ("Give it a
+verdict when the new timing lands") and auto-advance skips it. While filtered parts are rough, a
+line under the header says to refine first; the sign-off lists "Refine the filtered parts first:
+approval needs their measured timing" for an unrefined film. A send-back
 on an already synced film takes about 10 s per part (measured: preflight 2 s, refine 5 s, audit
 1 s); a film's first refine transcribes it once.
 
 While a remote worker holds the film, a plain verdict (approve/redo/ignore, no change) may still be
-recorded (`jobs.heldRemotely`); effects, timing, cards and Let it play answer 409 "Effects and timing
-can change when it finishes." The worker's override is saved with the current file's review marks
-kept (`applyResults`).
+recorded (`jobs.heldRemotely`); Let it play and Undo answer 409 "A refine is running on this film.
+Approve and Redo work now; Let it play and Undo wait until it finishes.", effects, timing and cards
+"… can change when it finishes." On the card a run locks only effects, timing and card text. The
+worker's override is saved with the current file's review marks kept (`applyResults`), through the
+same per-film write queue as verdicts (`titleQueue`), so a verdict cannot land between its read and
+its write.
 
 **List** (`ReviewList.jsx`): **Filtered n** (default) and **Plays n** tabs (Plays is browse only:
 "Nothing here needs a verdict"); "To do only"; Film order (default) or Needs a look first. A row is a
-glyph (▶ in hand, ✓ approved, × let it play, ↻ redo, · to do), the time, the whole label (two lines;
+glyph (▶ in hand, ✓ approved, × let it play, ↻ redo, · to do) with its word under the time
+(`rowStatus`: To do, Approved, Let play, Redo, Ignored, Plays; owner 2026-11-21), the whole label (two lines;
 the part in hand unclamped) and a meta line (group · effect, a Rough / Safe window chip, its run
 state, its verdict); the part in hand also shows its span, modality, unsure reasons and card.
 

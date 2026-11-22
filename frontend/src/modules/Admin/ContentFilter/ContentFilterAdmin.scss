@@ -33,12 +33,13 @@
 .cf-head__title { max-width: 32ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cf-head__count { font-variant-numeric: tabular-nums; color: var(--ds-text-secondary); }
 .cf-head__spacer { flex: 1; }
+.cf-head__note { color: var(--ds-text-secondary); }
 .cf-review { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); gap: var(--ds-space-4); align-items: start; }
 @media (max-width: 1000px) { .cf-review { grid-template-columns: minmax(0, 1fr); } }
-.cf-review__side { position: sticky; top: var(--ds-space-2); display: flex; flex-direction: column; gap: var(--ds-space-2); min-width: 0; max-height: calc(100vh - 110px); overflow-y: auto; }
+.cf-review__side { position: sticky; top: var(--ds-space-2); display: flex; flex-direction: column; gap: var(--ds-space-2); min-width: 0; max-height: calc(100vh - 130px); overflow-y: auto; }
 // The film keeps a height that leaves room for the card below it at 900 px.
-.cf-review__player { aspect-ratio: 16 / 9; width: min(100%, calc(44vh * 16 / 9)); margin: 0 auto; background: var(--ds-bg-base); border-radius: var(--ds-radius-md); overflow: hidden; position: relative; }
-.cf-review__list { max-height: calc(100vh - 110px); min-width: 0; position: sticky; top: var(--ds-space-2); }
+.cf-review__player { aspect-ratio: 16 / 9; width: min(100%, calc(40vh * 16 / 9)); margin: 0 auto; background: var(--ds-bg-base); border-radius: var(--ds-radius-md); overflow: hidden; position: relative; }
+.cf-review__list { max-height: calc(100vh - 130px); min-width: 0; position: sticky; top: var(--ds-space-2); }
 .cf-review__list > * { flex-shrink: 0; }
 .cf-review__list > .cf-review__rows { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .cf-review__rows { display: flex; flex-direction: column; border-bottom: 1px solid var(--ds-border); }
@@ -46,7 +47,7 @@
 .cf-review__row.is-selected { background: var(--ds-accent-subtle); border-left-color: var(--ds-accent); }
 .cf-review__row.is-plays .cf-review__label { color: var(--ds-text-secondary); }
 // [glyph] [time] [label, two lines] / meta; the part in hand also shows its span, reasons and card.
-.cf-review__pick { display: grid; width: 100%; grid-template-columns: 14px 52px minmax(0, 1fr); grid-template-areas: "glyph time label" ". . meta" ". . more";
+.cf-review__pick { display: grid; width: 100%; grid-template-columns: 14px 60px minmax(0, 1fr); grid-template-areas: "glyph time label" ". status meta" ". . more";
   column-gap: 6px; row-gap: 2px; padding: 6px var(--ds-space-2); text-align: left; min-width: 0; }
 .cf-review__glyph { grid-area: glyph; font-size: 12px; color: var(--ds-text-secondary); }
 .cf-review__row.is-selected .cf-review__glyph { color: var(--ds-accent); }
@@ -56,6 +57,12 @@
 .cf-review__meta { grid-area: meta; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-width: 0; }
 .cf-review__more { grid-area: more; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .cf-review__tick { color: var(--ds-success); }
+// The status word under the time: open work reads strongest, finished work recedes.
+.cf-review__status { grid-area: status; font-size: 11px; line-height: 18px; white-space: nowrap; }
+.cf-review__status.is-open { color: var(--ds-text-primary); font-weight: 600; }
+.cf-review__status.is-done { color: var(--ds-success); }
+.cf-review__status.is-redo { color: var(--ds-warning); font-weight: 600; }
+.cf-review__status.is-quiet { color: var(--ds-text-secondary); }
 
 // The part in hand.
 .cf-card-part { padding: var(--ds-space-2); background: var(--ds-bg-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); }

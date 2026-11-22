@@ -3,8 +3,7 @@ import { Link } from 'react-router-dom';
 import { Accordion, Badge, Button, Group, Select, SimpleGrid, Stack, Text, TextInput } from '@mantine/core';
 import { browserPreference } from '../../../lib/browserPreference.js';
 import { useVisibleRefresh } from '../../../lib/hooks/useVisibleRefresh.js';
-import { DaylightAPI } from '../../../lib/api.mjs';
-import { invalidateApiResources, useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { LoadingState, ErrorState, EmptyState, SectionCard, createAppLogger, useRetryRegion } from '../../../lib/ui/index.js';
 import { STAGE_LABELS } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 import './ContentFilterAdmin.scss';
@@ -30,6 +29,8 @@ const STAGE_TONE = { rough: 'gray', running: 'blue', refined: 'gray', scenes: 'g
 export const SECTIONS = [
   { id: 'ready', label: 'Ready tonight', stages: ['parent'], open: true },
   { id: 'review', label: 'Needs your review', stages: ['machine'], open: true },
+  // A rough film you have opened (it has a list) or run: in hand, not lost among the untouched ones.
+  { id: 'started', label: 'Started', stages: ['rough'], when: (f) => Boolean(f.reviewed || f.job), open: true },
   { id: 'audited', label: STAGE_LABELS.audited, stages: ['audited'], open: true },
   { id: 'scenes', label: STAGE_LABELS.scenes, stages: ['scenes'], open: false },
   { id: 'refined', label: STAGE_LABELS.refined, stages: ['refined'], open: false },
@@ -59,14 +60,11 @@ export function FilterLibrary() {
   const { data, hasResult, loading, error, reload, poll, revalidating } = useApiResource(LIBRARY_PATH, { label: 'content filter library', logger });
   const [stage, setStage] = useState(null);
   const [q, setQ] = useState('');
-  const [busy, setBusy] = useState(null);
-  const [notice, setNotice] = useState(null);
   const readBusy = loading || revalidating;
   const { regionProps, retry } = useRetryRegion(reload, readBusy);
   const films = useMemo(() => Array.isArray(data?.films) ? data.films : [], [data]);
   const invalidResponse = hasResult && !Array.isArray(data?.films);
   const readError = error ?? (!readBusy && invalidResponse ? INVALID_LIBRARY_RESPONSE : null);
-  const readUnavailable = !hasResult || readBusy || Boolean(readError);
   const anyActive = films.some((f) => active(f.job));
 
   useEffect(() => {
@@ -74,18 +72,6 @@ export function FilterLibrary() {
   }, [data]);
 
   useVisibleRefresh({ intervalMs: anyActive ? POLL_MS : undefined, reload, poll });
-
-  const make = useCallback(async (film) => {
-    setBusy(film.ratingKey); setNotice(null);
-    try {
-      const r = await DaylightAPI(`${API}/${encodeURIComponent(film.ratingKey)}/jobs`, { kind: 'make' }, 'POST');
-      logger.info('job.queued', { ratingKey: film.ratingKey, runId: r?.run?.id ?? null });
-      invalidateApiResources(path => path === LIBRARY_PATH);
-    } catch (err) {
-      logger.warn('job.queue_failed', { ratingKey: film.ratingKey, error: err.message });
-      setNotice(err.message || 'That did not work.');
-    } finally { setBusy(null); }
-  }, []);
 
   const [openSections, setOpenSections] = useState(openSectionsPreference.read);
   const onToggle = useCallback((v) => { setOpenSections(v); openSectionsPreference.write(JSON.stringify(v)); }, []);
@@ -99,11 +85,12 @@ export function FilterLibrary() {
   const matched = useMemo(() => shown.filter((f) => !isUnmatched(f)), [shown]);
   const unmatched = useMemo(() => shown.filter(isUnmatched), [shown]);
   const groups = useMemo(() => SECTIONS
-    .map((sec) => ({ ...sec, films: matched.filter((f) => sec.stages.includes(f.stage)) }))
+    .map((sec, i, all) => ({ ...sec, films: matched.filter((f) => sec.stages.includes(f.stage) && (!sec.when || sec.when(f))
+      // A film an earlier section with a test already took stays there.
+      && !all.slice(0, i).some((prev) => prev.when && prev.stages.includes(f.stage) && prev.when(f))) }))
     .filter((sec) => sec.films.length), [matched]);
 
-  const card = (f, chip) => <FilmCard key={f.ratingKey} film={f} worker={data?.worker} chip={chip}
-    busy={busy} readUnavailable={readUnavailable} onMake={make} />;
+  const card = (f, chip) => <FilmCard key={f.ratingKey} film={f} worker={data?.worker} chip={chip} />;
   const meta = data?.meta;
 
   return (
@@ -123,7 +110,6 @@ export function FilterLibrary() {
             {`${meta.indexedAt ? `Index from ${String(meta.indexedAt).slice(0, 10)}` : 'Index date unknown'} · ${meta.total} titles · ${meta.verified ?? meta.total} matched to Plex · ${meta.unmatched ?? 0} not`}
           </Text>
         ) : null}
-        {notice ? <Text size="sm" role="alert">{notice}</Text> : null}
         {data?.worker && !data.worker.alive && films.some((f) => f.job?.status === 'queued') ? (
           <Text size="sm" c="dimmed">No filter worker is running. Queued runs wait until one starts
             (<code>contentfilter worker</code> on a machine with the pipeline's Python tools).</Text>
@@ -188,7 +174,7 @@ function Poster({ film }) {
   );
 }
 
-function FilmCard({ film: f, worker, chip, busy, readUnavailable, onMake }) {
+function FilmCard({ film: f, worker, chip }) {
   const text = runText(f.job, worker);
   const unlinked = f.linked === false;
   return (
@@ -208,14 +194,10 @@ function FilmCard({ film: f, worker, chip, busy, readUnavailable, onMake }) {
         {f.reviewed ? <span>{`${f.reviewed.n} of ${f.reviewed.m} reviewed`}</span> : null}
       </div>
       <div className={`cf-card__run${f.job?.status === 'failed' ? ' is-failed' : ''}`} title={text || undefined}>{text}</div>
-      <Button className="cf-card__run-action" size="compact-xs" fullWidth variant={f.stage === 'rough' ? 'filled' : 'light'} loading={busy === f.ratingKey}
-        disabled={unlinked || active(f.job) || Boolean(busy)}
-        aria-disabled={readUnavailable || undefined} data-read-unavailable={readUnavailable ? 'true' : undefined}
-        onClick={event => {
-          if (readUnavailable) { event.preventDefault(); return; }
-          onMake(f);
-        }}>
-        {f.stage === 'rough' && !f.job ? 'Make filter' : 'Run again'}
+      {/* Refining happens on the film's page, filtered parts only (owner, 2026-11-21); the card opens it. */}
+      <Button className="cf-card__run-action" size="compact-xs" fullWidth component={Link} to={`/admin/content/filter/${f.ratingKey}`}
+        variant={f.stage === 'machine' || f.reviewed ? 'filled' : 'light'} disabled={unlinked}>
+        {f.stage === 'parent' ? 'Open' : f.stage === 'machine' || f.reviewed || f.job ? 'Review' : 'Start'}
       </Button>
     </div>
   );

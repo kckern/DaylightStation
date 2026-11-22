@@ -107,3 +107,12 @@ describe('reviewRows: what the resolver stands for is filtered, not playing (rev
     expect(rows.find((r) => r.id === 'cue:k1')).toMatchObject({ acts: false, why: 'settings' });
   });
 });
+
+describe('reviewRows: one moment tagged twice is one row (review 2026-11-21)', () => {
+  it('merges same label, same span, same effect cue rows; members keep both', () => {
+    const twin = (id) => ({ id, category: 'language/blasphemy/god', label: 'G*d', type: 'mute', effect: 'mute', in: 629.35, out: 630.6, precision: 'second-approx' });
+    const rows = reviewRows({ cues: [twin('va1'), twin('va2')], source: [] });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].members.sort()).toEqual(['va1', 'va2']);
+  });
+});

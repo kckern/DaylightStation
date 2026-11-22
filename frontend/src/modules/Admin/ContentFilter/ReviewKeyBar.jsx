@@ -9,7 +9,7 @@ const KEYMAP = [
   ['D', 'Redo, then 1 edges, 2 category, 3 action, 4 timing, Enter no reason'], ['U', 'Undo the last verdict'],
   ['R', 'Refine this part (measure its timing)'], ['Shift+R', 'Refine every filtered part still on rough timing'],
   ['M / P', 'Words: mute / bleep'], ['B / K', 'Picture: blur / skip. Scenes: hide picture / skip'], ['O', 'Effect off'],
-  ['[ / ]', 'Bleep quieter / louder'], ['Shift+D', 'Rework every part marked redo'], ['Enter', 'Retry an unavailable preview'], ['?', 'This list'], ['Esc', 'Close'],
+  ['[ / ]', 'Bleep quieter / louder'], ['Shift+D', 'Rework every part marked redo'], ['?', 'This list'], ['Esc', 'Close'],
 ];
 
 const Key = ({ k, children }) => (

@@ -21,12 +21,14 @@ export async function createContentFilterRuntime({ configService, rootLogger, ai
   const inline = process.env.CONTENT_FILTER_EXECUTOR === 'inline';
   const schedule = (fn, ms) => setTimeout(fn, ms);
   let contentFilterScenes = null;
+  // One queue per film for every write to its files: review marks and a run's saved results take turns.
+  const titleQueue = createTitleQueue();
   const { jobs, contentFilterRepository, digestOf } = await createFilterJobs({
     householdDir: configService.getHouseholdPath(''), dataDir: configService.getDataDir(), mediaDir: configService.getMediaDir(),
     logger, executor: inline ? 'inline' : 'worker', schedule,
     draftCards: aiGateway ? (rk) => contentFilterScenes.draftCards({ ratingKey: rk }) : null,
+    titleQueue,
   });
-  const titleQueue = createTitleQueue();
   contentFilterScenes = new ContentFilterScenes({ contentFilterRepository, aiGateway, logger, titleQueue });
   const plexClient = contentRegistry?.get?.('plex')?.client || null;
   const contentFilterReview = new ContentFilterReview({ contentFilterRepository, jobs, digestOf, logger, titleQueue });

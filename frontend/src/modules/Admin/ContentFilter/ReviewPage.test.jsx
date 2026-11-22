@@ -19,8 +19,8 @@ describe('Content filter review page', () => {
     render(<MantineProvider><MemoryRouter initialEntries={['/admin/content/filter/77']}><Routes>
       <Route path="/admin/content/filter/:ratingKey" element={<ContentFilterReview />} /></Routes></MemoryRouter></MantineProvider>);
     expect(screen.getByText('Back to the Future')).toBeTruthy();
-    expect(screen.getByText('Machine-checked')).toBeTruthy();
-    expect(screen.getByText('Failed at scenes')).toBeTruthy();
+    expect(screen.getByText('Auto-checked')).toBeTruthy();
+    expect(screen.getByText('Last run failed: boom')).toBeTruthy();
     expect(screen.getAllByText(/0 of 1 reviewed/).length).toBeGreaterThan(0);
     // Arriving without a permalink: the first part to review is in hand (its card), the URL is unchanged.
     expect(screen.getByLabelText('Part under review')).toBeTruthy();

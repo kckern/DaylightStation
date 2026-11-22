@@ -37,14 +37,18 @@ function KeyButton({ k, children, ...rest }) {
 }
 
 export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = null, wordRulings = {},
-  position = null, handlers = {}, refineState = null, canUndo = false }) {
+  position = null, handlers = {}, refineState = null, canUndo = false, status = null }) {
   const [notice, setNotice] = useState(null);
   const [pending, setPending] = useState(null);
   const [span, setSpan] = useState([row.in, row.out]);
   const [cardText, setCardText] = useState(row.card?.text || '');
   const [more, setMore] = useState(false);
+  const [cardOpen, setCardOpen] = useState(false);
   useEffect(() => { setSpan([row.in, row.out]); setCardText(row.card?.text || ''); setNotice(null); }, [row.id, row.in, row.out, row.card?.text]);
+  // A run locks what it rewrites (effects, timing, card); Approve and Redo stay open, except on a
+  // part being refined (its verdict waits for the new timing).
   const disabled = Boolean(busyText) || Boolean(pending);
+  const verdictLocked = Boolean(pending) || Boolean(refineState?.state);
   const base = `${API}/${encodeURIComponent(ratingKey)}`;
   const isScene = isSceneRow(row);
   const members = row.members ?? (String(row.id).startsWith('cue:') ? [row.peekId] : []);
@@ -82,7 +86,9 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
   const verdict = row.verdict?.verdict;
 
   return (
-    <Stack gap={8} className="cf-card-part" aria-label="Part under review">
+    // A click must not leave a button focused: Enter would press it again (Enter plays the part).
+    <Stack gap={8} className="cf-card-part" aria-label="Part under review"
+      onMouseDown={(e) => { if (e.target.closest?.('button')) e.preventDefault(); }}>
       <Group justify="space-between" wrap="nowrap" gap="xs">
         <Text size="sm" c="dimmed" className="cf-focus__where">
           {position ? `Part ${position.index + 1} of ${position.total}` : 'Not in this list'} · {timecode(row.in)}–{timecode(row.out)}
@@ -102,13 +108,13 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
           {verdict && VERDICT_BADGE[verdict] ? <Badge size="sm" variant="light" color={VERDICT_BADGE[verdict][1]}>{VERDICT_BADGE[verdict][0]}</Badge> : null}
         </Group>
       </Group>
-      <Text size="xs" c="dimmed">{[row.group && groupLabel(row.group), row.modality, row.category].filter(Boolean).join(' · ')}</Text>
+      <Text size="xs" c="dimmed">{[row.group && groupLabel(row.group), row.modality].filter(Boolean).join(' · ')}</Text>
 
       <Group justify="space-between" wrap="nowrap" align="center" gap="sm" className="cf-card-part__why">
         <Text size="sm">{why.text}</Text>
         {!isScene && !playing ? (
           refining ? <Badge size="md" color="blue" variant="light">{refining}</Badge> : (
-            <KeyButton k="R" style={{ flexShrink: 0 }} variant={why.refine && row.timing === 'rough' ? 'filled' : 'light'} disabled={disabled} onClick={handlers.refine}>
+            <KeyButton k="R" style={{ flexShrink: 0 }} variant={why.refine && row.timing === 'rough' ? 'filled' : 'light'} disabled={Boolean(pending)} onClick={handlers.refine}>
               {row.timing === 'rough' ? 'Refine this part' : 'Refine again'}
             </KeyButton>
           )
@@ -118,14 +124,18 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
       <Group gap={6} wrap="wrap" align="center">
         <Text size="xs" c="dimmed" w={52}>Effect</Text>
         <Button size="compact-sm" variant={playing && row.why !== 'removed' ? 'filled' : 'default'} disabled={disabled}
-          onClick={() => act('effect', rule({ effect: 'profile', disabled: false }))}>{playing && row.why !== 'removed' ? 'Settings (plays)' : 'Settings'}</Button>
+          title="What your household settings say for this kind of part"
+          onClick={() => act('effect', rule({ effect: 'profile', disabled: false }))}>{playing && row.why !== 'removed' ? 'Your settings (plays)' : 'Your settings'}</Button>
         {effectKeys.map(([k, label, v]) => (
           <KeyButton key={k} k={k} variant={!playing && (row.effect === v || (v === 'skip' && row.effect === 'skip-card')) ? 'filled' : 'default'} disabled={disabled}
             onClick={() => handlers.effect?.(k.toLowerCase())}>{label}</KeyButton>
         ))}
       </Group>
 
-      {row.effect === 'skip-card' || (isScene && row.card) ? (
+      {(row.effect === 'skip-card' || (isScene && row.card)) && !row.card && !cardOpen ? (
+        <UnstyledButton onClick={() => setCardOpen(true)} aria-expanded={false}><Text size="xs" c="dimmed">▸ Add a card shown in place of the skip</Text></UnstyledButton>
+      ) : null}
+      {(row.effect === 'skip-card' || (isScene && row.card)) && (row.card || cardOpen) ? (
         <Group gap="xs" wrap="wrap" align="flex-end">
           <TextInput size="xs" className="cf-editor__card" label={row.card?.approved ? 'Card (approved)' : 'Card shown in place of the skip'} maxLength={90}
             value={cardText} onChange={(e) => setCardText(e.currentTarget.value)} disabled={disabled} />
@@ -136,7 +146,7 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
         </Group>
       ) : null}
 
-      {single ? (
+      {single && !playing ? (
         <Group gap={4} wrap="wrap" align="center" className="cf-card-part__timing">
           <Text size="xs" c="dimmed" w={52}>Timing</Text>
           <Text size="xs" className="cf-review__time">{timecode(span[0])}–{timecode(span[1])}</Text>
@@ -164,12 +174,17 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
         </div>
       ) : null}
 
-      <Group gap={6} wrap="wrap" className="cf-card-part__verdicts">
-        <KeyButton k="A" color="green" variant={verdict === 'approve' ? 'filled' : 'light'} disabled={disabled} onClick={() => handlers.verdict?.('approve')}>Approve</KeyButton>
-        <KeyButton k="X" color="gray" variant={verdict === 'remove' ? 'filled' : 'light'} disabled={disabled} onClick={() => handlers.verdict?.('remove')}>Let it play</KeyButton>
-        <KeyButton k="D" color="orange" variant={verdict === 'redo' ? 'filled' : 'light'} disabled={disabled} onClick={() => handlers.verdict?.('redo')}>Redo</KeyButton>
-        {canUndo ? <KeyButton k="U" variant="subtle" onClick={handlers.undo}>Undo</KeyButton> : null}
-      </Group>
+      {status}
+      {playing ? null : (
+        <Group gap={6} wrap="wrap" className="cf-card-part__verdicts">
+          <KeyButton k="A" color="green" variant={verdict === 'approve' ? 'filled' : 'light'} disabled={verdictLocked} onClick={() => handlers.verdict?.('approve')}>Approve</KeyButton>
+          <KeyButton k="X" color="gray" variant={verdict === 'remove' ? 'filled' : 'light'} disabled={verdictLocked || Boolean(busyText)}
+            title={busyText ? 'Let it play waits until the refine finishes' : undefined} onClick={() => handlers.verdict?.('remove')}>Let it play</KeyButton>
+          <KeyButton k="D" color="orange" variant={verdict === 'redo' ? 'filled' : 'light'} disabled={verdictLocked} onClick={() => handlers.verdict?.('redo')}>Redo</KeyButton>
+          {canUndo ? <KeyButton k="U" variant="subtle" disabled={Boolean(busyText)} onClick={handlers.undo}>Undo</KeyButton> : null}
+          {refineState?.state ? <Text size="xs" c="dimmed">Verdict when the new timing lands.</Text> : null}
+        </Group>
+      )}
       <Text size="xs" c="dimmed" className="cf-card-part__hints">
         <Key k="Space" /> play/pause · <Key k="Enter" /> play with effect · <Key k="W" /> without · <Key k="←" /><Key k="→" /> parts · <Key k="?" /> all keys
       </Text>

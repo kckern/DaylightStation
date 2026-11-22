@@ -72,4 +72,22 @@ describe('refine from the review page', () => {
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0].body).toEqual({ kind: 'send-back', cues: ['a'] });
   });
+  it('a run that was stopped keeps the queue and says so; nothing is sent unasked', async () => {
+    payload = base(rows, { job: { id: 'r1', kind: 'send-back', status: 'running', step: 'refine', cues: ['b'] } });
+    const { rerender } = render(ui());
+    key('R');
+    await screen.findByText(/Queued: "damn"/);
+    payload = base(rows, { job: { id: 'r1', kind: 'send-back', status: 'cancelled', step: 'refine', cues: ['b'] } });
+    rerender(ui());
+    expect(await screen.findByText(/was stopped; 1 queued part is still waiting/)).toBeTruthy();
+    expect(calls).toHaveLength(0);
+  });
+  it('a part being refined takes no verdict: A says to wait for the new timing', async () => {
+    payload = base(rows, { job: { id: 'r1', kind: 'send-back', status: 'running', step: 'refine', cues: ['a'] } });
+    render(ui());
+    key('a');
+    expect(await screen.findByText(/This part is being refined/)).toBeTruthy();
+    expect(calls).toHaveLength(0);
+  });
 });
+

@@ -348,7 +348,10 @@ export class ContentFilterReview {
       const shown = [...new Set(names)].slice(0, 3);
       missing.push(`Not machine-certified: ${cert.blocking.length} mutes do not cover their word${shown.length ? ` (${shown.join(', ')}${cert.blocking.length > shown.length ? ', …' : ''})` : ''}`);
     }
-    if (audit && audit.ok === false) missing.push('The audit has not passed');
+    // Review on rough timing is allowed, but approval needs measured timing (review 2026-11-21: a
+    // parent who reviewed every part first met a sign-off card that named nothing).
+    if (!refined) missing.push('Refine the filtered parts first: approval needs their measured timing');
+    if (audit && audit.ok === false) missing.push('The final check found a problem');
     if (!fresh) missing.push(auditing ? 'The check is still running' : 'The check is out of date. It runs again when this page is open.');
     if (total - reviewed - changed > 0) missing.push(`${total - reviewed - changed} rows have no verdict`);
     if (changed) missing.push(`${changed} parts changed since you reviewed them`);

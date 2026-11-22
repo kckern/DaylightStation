@@ -91,7 +91,7 @@ describe('ContentFilterReview marks and sign-off', () => {
     const s = base(); s.override.cueOverrides = { va1: { startMs: 100300, endMs: 100700 } };
     const r = await setup({ state: s, audit: { ok: false, digest: 'OLD', rowsVersion: REVIEW_ROWS_VERSION, rows: [{ id: 'cue:va1', in: 110.2, out: 110.6, label: 'damn', members: ['va1'] }] }, digest: 'NEW' }).review.get({ ratingKey: '9' });
     expect(r.audit.fresh).toBe(false);
-    expect(r.signOff.missing).toEqual(['Not machine-certified: 1 mutes do not cover their word (damn)', 'The audit has not passed', 'The check is out of date. It runs again when this page is open.', '1 rows have no verdict']);
+    expect(r.signOff.missing).toEqual(['Not machine-certified: 1 mutes do not cover their word (damn)', 'The final check found a problem', 'The check is out of date. It runs again when this page is open.', '1 rows have no verdict']);
   });
   it('sets and clears a word ruling for this film', async () => {
     const { review, state } = setup();

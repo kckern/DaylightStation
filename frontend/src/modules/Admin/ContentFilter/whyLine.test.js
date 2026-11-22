@@ -16,14 +16,14 @@ describe('whyLine', () => {
   });
   it('a rough mute says its length and that refine fits it', () => {
     const w = whyLine(row({ timing: 'rough' }));
-    expect(w.text).toBe("Muted for 1.3 s. The timing is VidAngel's rough guess; refine to fit it to the film.");
+    expect(w.text).toBe('Muted for 1.3 s. The timing is still rough; refining fits it to this film.');
     expect(w.refine).toBe(true);
   });
   it('a refined mute is just its effect and length', () => {
     expect(whyLine(row({ effect: 'bleep', in: 5, out: 5.4 }))).toEqual({ text: 'Bleeped for 0.4 s.', refine: false });
   });
   it('safe windows, not-found words and untracked pictures say so', () => {
-    expect(whyLine(row({ unsure: ['safe-window'], timing: 'safe-window', in: 0, out: 3 })).text).toMatch(/3.0 s safe window/);
+    expect(whyLine(row({ unsure: ['safe-window'], timing: 'safe-window', in: 0, out: 3 })).text).toMatch(/wider 3.0 s window/);
     expect(whyLine(row({ unsure: ['refine-giveup'] })).text).toMatch(/could not find this word/);
     expect(whyLine(row({ effect: 'full-blur', unsure: ['untracked-visual'] })).text).toMatch(/could not be tracked/);
   });

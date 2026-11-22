@@ -6,7 +6,8 @@ import { DEFAULT_SCOPE, ORDER_SCOPES, SHOW_SCOPES, plays, scopeRows } from './re
 /**
  * The film's parts beside the player: the Filtered tab (the review; default) or Plays (browse
  * only). Rows wrap to show their whole label; the part in hand opens to its span, reasons and card.
- * A glyph says where each stands: ▶ in hand, ✓ approved, × let it play, ↻ redo, · to do.
+ * Each row says where it stands as an icon and a word under its time (rowStatus): ▶ marks the part
+ * in hand; ✓ Approved, × Let play, ↻ Redo, · To do, Plays.
  */
 export const UNSURE_LABELS = {
   'refine-unknown': 'Timing unknown', 'refine-giveup': 'Timing not found', 'refine-coarse-edges': 'Rough edges',
@@ -33,7 +34,20 @@ export function timecode(t) {
 
 
 const TIMING = { refined: ['Refined', 'green'], 'safe-window': ['Safe window', 'yellow'], rough: ['Rough', 'orange'] };
-const GLYPH = { approve: '✓', remove: '×', ignore: '–', redo: '↻' };
+/**
+ * Where a part stands, as an icon and a word (owner, 2026-11-21: the icons alone said too little).
+ * `tone` picks the word's colour class. A part that plays needs no verdict; one let play by a
+ * verdict reads "Let play".
+ */
+export function rowStatus(r) {
+  const v = r?.verdict?.verdict || (r?.reviewed ? 'approve' : null);
+  if (v === 'approve') return { glyph: '✓', word: 'Approved', tone: 'done' };
+  if (v === 'remove' || r?.why === 'removed') return { glyph: '×', word: 'Let play', tone: 'done' };
+  if (v === 'ignore') return { glyph: '–', word: 'Ignored', tone: 'done' };
+  if (v === 'redo') return { glyph: '↻', word: 'Redo', tone: 'redo' };
+  if (plays(r)) return { glyph: '', word: 'Plays', tone: 'quiet' };
+  return { glyph: '·', word: 'To do', tone: 'open' };
+}
 
 export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, selectedId = null, onSelect = () => {},
   refining = {}, scope: scopeProp = null, onScope = null, emptyText = null }) {
@@ -57,21 +71,22 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
         <Checkbox size="xs" label="To do only" checked={scope.needs} onChange={(e) => setScope({ needs: e.currentTarget.checked })} />
         <Select size="xs" w={170} aria-label="Order" allowDeselect={false} data={ORDER_SCOPES} value={scope.order || 'film'} onChange={(order) => setScope({ order: order || 'film' })} />
       </Group>
-      {scope.show === 'plays' ? <Text size="xs" c="dimmed">These play as they are under your settings. Nothing here needs a verdict.</Text>
-        : <Text size="xs" c="dimmed">{`${reviewed} of ${total} reviewed`}</Text>}
+      {scope.show === 'plays' ? <Text size="xs" c="dimmed">These play as they are under your settings. Nothing here needs a verdict.</Text> : null}
       {!shown.length ? <Text size="sm" c="dimmed">{!rows.length && emptyText ? emptyText : 'Nothing here.'}</Text> : (
         <div className="cf-review__rows" role="list">
           {shown.map((r) => {
             const selected = r.id === selectedId;
             const timing = TIMING[r.timing];
             const state = refining[r.id];
-            const glyph = selected ? '▶' : (r.verdict && GLYPH[r.verdict.verdict]) || (r.reviewed ? '✓' : plays(r) ? '' : '·');
+            const status = rowStatus(r);
+            const glyph = selected ? '▶' : status.glyph;
             return (
               <div key={r.id} role="listitem" data-row-id={r.id}
                 className={`cf-review__row${selected ? ' is-selected' : ''}${plays(r) ? ' is-plays' : ''}`}>
                 <UnstyledButton onClick={() => onSelect(r)} onMouseDown={(e) => e.preventDefault()} aria-pressed={selected} aria-label={r.label}
                   className="cf-review__pick" title={selected ? undefined : r.label}>
                   <span className="cf-review__glyph" aria-hidden="true">{glyph}</span>
+                  <span className={`cf-review__status is-${status.tone}`}>{status.word}</span>
                   <span className="cf-review__time">{timecode(r.in)}</span>
                   <span className="cf-review__label">
                     <Text fw={500} size="sm" span>{r.label}</Text>
@@ -80,7 +95,6 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
                     <Text size="xs" c="dimmed" span>{[r.group && groupLabel(r.group), plays(r) ? (r.why === 'removed' ? 'plays (removed)' : 'plays') : effectChip(r.effect).toLowerCase()].filter(Boolean).join(' · ')}</Text>
                     {state ? <Badge size="xs" color="blue" variant="light">{state}</Badge>
                       : timing && r.timing !== 'refined' && !plays(r) ? <Badge size="xs" variant="light" color={timing[1]}>{timing[0]}</Badge> : null}
-                    {r.verdict && VERDICT_BADGE[r.verdict.verdict] ? <Badge size="xs" variant="light" color={VERDICT_BADGE[r.verdict.verdict][1]}>{VERDICT_BADGE[r.verdict.verdict][0]}</Badge> : null}
                   </span>
                   {selected ? (
                     <span className="cf-review__more">

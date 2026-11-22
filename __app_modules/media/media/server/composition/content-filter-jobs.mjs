@@ -8,7 +8,7 @@ const CLI_PATH = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../
  * worker (`contentfilter worker --app <url>`) claims them over HTTP and hands back results, which
  * only the app writes. executor 'inline': the app runs everything itself. ops:docs/superpowers/specs/2026-11-07-content-filter-admin-workshop-design.md.
  */
-export async function createFilterJobs({ householdDir, dataDir, mediaDir, logger, executor, draftCards = null, schedule }) {
+export async function createFilterJobs({ householdDir, dataDir, mediaDir, logger, executor, draftCards = null, schedule, titleQueue = null }) {
   const { FilesystemContentFilterRepository } = await import('../adapters/persistence/FilesystemContentFilterRepository.mjs');
   const { YamlFilterJobStore } = await import('../adapters/persistence/YamlFilterJobStore.mjs');
   const { ChildProcessContentFilterCli } = await import('../adapters/content-filter/ChildProcessContentFilterCli.mjs');
@@ -21,6 +21,25 @@ export async function createFilterJobs({ householdDir, dataDir, mediaDir, logger
     return { edl, refined: ref?.workId != null && ref?.tagSetId != null ? await contentFilterRepository.getRefinedEdl(ref) : null };
   };
   const digestOf = async (rk) => filterDigest({ refined: (await refinedFor(rk)).refined, override: await contentFilterRepository.getOverride(rk) });
+  async function applyResults(rk, results) {
+    const { edl = null, refined = null, override = null, refineReview = null, transcripts = null } = results || {};
+    if (edl) await contentFilterRepository.saveEdl(rk, edl);
+    if (refined) {
+      const ref = (edl || await contentFilterRepository.getEdl(rk))?.sourceRef;
+      if (ref?.workId == null || ref?.tagSetId == null) throw new Error('No VidAngel tag set for this film; cannot save its refined EDL');
+      await contentFilterRepository.saveRefinedEdl(ref, refined);
+    }
+    // The worker's override is the one it was handed at claim time; review marks recorded while it
+    // ran (plain verdicts are allowed then) live only in the current file, so they are kept.
+    if (override) {
+      const current = await contentFilterRepository.getOverride(rk);
+      const { review: _stale, ...rest } = override;
+      await contentFilterRepository.saveOverride(rk, current?.review ? { ...rest, review: current.review } : rest);
+    }
+    if (refineReview) await contentFilterRepository.saveRefineReview(rk, refineReview);
+    for (const [part, words] of Object.entries(transcripts || {})) await contentFilterRepository.saveTranscriptFile(rk, part, words);
+    logger.info?.('content-filter.job.results', { ratingKey: rk, edl: !!edl, refined: !!refined, override: !!override, review: !!refineReview, transcripts: Object.keys(transcripts || {}).length });
+  }
   const jobs = new ContentFilterJobs({
     store: new YamlFilterJobStore({ householdDir }),
     cli: new ChildProcessContentFilterCli({ cliPath: CLI_PATH, env: { DAYLIGHT_DATA_DIR: dataDir, DAYLIGHT_MEDIA_DIR: mediaDir } }),
@@ -57,25 +76,8 @@ export async function createFilterJobs({ householdDir, dataDir, mediaDir, logger
         transcripts: await contentFilterRepository.listTranscriptFiles(rk),
       };
     },
-    applyResults: async (rk, results) => {
-      const { edl = null, refined = null, override = null, refineReview = null, transcripts = null } = results || {};
-      if (edl) await contentFilterRepository.saveEdl(rk, edl);
-      if (refined) {
-        const ref = (edl || await contentFilterRepository.getEdl(rk))?.sourceRef;
-        if (ref?.workId == null || ref?.tagSetId == null) throw new Error('No VidAngel tag set for this film; cannot save its refined EDL');
-        await contentFilterRepository.saveRefinedEdl(ref, refined);
-      }
-      // The worker's override is the one it was handed at claim time; review marks recorded while it
-      // ran (plain verdicts are allowed then) live only in the current file, so they are kept.
-      if (override) {
-        const current = await contentFilterRepository.getOverride(rk);
-        const { review: _stale, ...rest } = override;
-        await contentFilterRepository.saveOverride(rk, current?.review ? { ...rest, review: current.review } : rest);
-      }
-      if (refineReview) await contentFilterRepository.saveRefineReview(rk, refineReview);
-      for (const [part, words] of Object.entries(transcripts || {})) await contentFilterRepository.saveTranscriptFile(rk, part, words);
-      logger.info?.('content-filter.job.results', { ratingKey: rk, edl: !!edl, refined: !!refined, override: !!override, review: !!refineReview, transcripts: Object.keys(transcripts || {}).length });
-    },
+    // Through the film's write queue, so a verdict cannot land between reading and saving the override.
+    applyResults: (rk, results) => (titleQueue ? titleQueue.run(String(rk), () => applyResults(rk, results)) : applyResults(rk, results)),
     logPath: (rk, runId) => path.join(mediaDir, 'content-filter', 'refine', String(rk), 'jobs', `${runId}.log`),
     schedule,
     logger,

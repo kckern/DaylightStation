@@ -40,17 +40,21 @@ function ApproveButton({ approval }) {
 export function ReviewHeader({ ratingKey, data, tally, roughFiltered, handlers, approval, onChanged = () => {}, flagged = 0, blocked = false }) {
   const [confirmStop, setConfirmStop] = useState(false);
   const [pending, setPending] = useState(false);
+  const [error, setError] = useState(null);
+  const [confirmWhole, setConfirmWhole] = useState(false);
   const job = data.job;
   const running = open(job);
   const base = `${API}/${encodeURIComponent(ratingKey)}`;
   const post = async (action, path, body) => {
     setPending(true);
     logger.info('review.header.action', { ratingKey, action });
+    setError(null);
     try { await DaylightAPI(path, body, 'POST'); onChanged(); } catch (err) {
       logger.warn('review.header.action_failed', { ratingKey, action, error: err.message });
-    } finally { setPending(false); setConfirmStop(false); }
+      setError(err.message || `${action === 'stop' ? 'Stop' : 'That'} did not work.`);
+    } finally { setPending(false); setConfirmStop(false); setConfirmWhole(false); }
   };
-  const level = data.signOff?.parent ? `Approved by ${data.signOff.parent.by}` : data.certification?.level === 'machine' ? 'Machine-checked' : null;
+  const level = data.signOff?.parent ? `Approved by ${data.signOff.parent.by}` : data.certification?.level === 'machine' ? 'Auto-checked' : null;
   const failed = job && (job.status === 'failed' || job.status === 'interrupted');
   // A run's own words, else the check that runs after one (the list waits for it).
   const progress = runLine(job, data.worker) || (data.status?.next === 'checking' ? 'Checking the result…' : null);
@@ -62,8 +66,9 @@ export function ReviewHeader({ ratingKey, data, tally, roughFiltered, handlers, 
       <Text size="sm" className="cf-head__count">{`${tally.done} of ${tally.total} reviewed`}{roughFiltered ? ` · ${roughFiltered} rough` : ''}</Text>
       {level ? <Badge size="sm" variant="light" color={data.signOff?.parent ? 'green' : 'gray'}>{level}</Badge> : null}
       {failed ? (
-        <Tooltip label={job.error || `Stopped at ${job.step || 'a step'}; nothing from it was kept.`} withArrow>
-          <Badge size="sm" color="red" variant="light">{job.status === 'interrupted' ? 'Last run interrupted' : `Failed at ${job.step || 'a step'}`}</Badge>
+        <Tooltip label={job.error || 'Nothing from it was kept.'} withArrow multiline w={360}>
+          <Badge size="sm" color="red" variant="light">{job.status === 'interrupted' ? 'Last refine stopped early; nothing was kept'
+            : `Last ${job.step === 'refine' || job.kind === 'send-back' ? 'refine' : 'run'} failed${job.error ? `: ${String(job.error).split('\n').filter(Boolean).pop().slice(0, 60)}` : ''}`}</Badge>
         </Tooltip>
       ) : null}
       {progress ? <Badge size="sm" color="blue" variant="light">{progress}</Badge> : null}
@@ -80,11 +85,15 @@ export function ReviewHeader({ ratingKey, data, tally, roughFiltered, handlers, 
             <span className="cf-card__btn">{`Refine all ${roughFiltered}`} <kbd className="cf-keybar__key">⇧R</kbd></span>
           </Button>
         ) : data.status?.next === 'approve' ? <ApproveButton approval={approval} /> : null}
-      <Menu position="bottom-end" withinPortal>
+      {error ? <Text size="xs" c="red" role="alert">{error}</Text> : null}
+      <Menu position="bottom-end" withinPortal onClose={() => setConfirmWhole(false)}>
         <Menu.Target><Button size="compact-sm" variant="subtle" aria-label="More">⋯</Button></Menu.Target>
         <Menu.Dropdown>
           <Menu.Item disabled={!tally.total || blocked} onClick={() => handlers.refineAll?.({ again: true })}>{`Refine all ${tally.total} filtered parts again`}</Menu.Item>
-          <Menu.Item disabled={running || pending || blocked} onClick={() => post('make', `${base}/jobs`, { kind: 'make' })}>Refine the whole film (every part, slow)</Menu.Item>
+          <Menu.Item disabled={running || pending || blocked} closeMenuOnClick={confirmWhole}
+            onClick={() => (confirmWhole ? post('make', `${base}/jobs`, { kind: 'make' }) : setConfirmWhole(true))}>
+            {confirmWhole ? 'Click again: refine all parts, including the ones that play (slow)' : 'Refine the whole film (every part, slow)'}
+          </Menu.Item>
           <Menu.Item disabled={!flagged || running || blocked} onClick={() => handlers.rework?.()}>{`Rework ${flagged} marked redo`}</Menu.Item>
           <Menu.Divider />
           <Menu.Item onClick={() => handlers.bleepLevel?.(-0.05)}>Bleep quieter  [</Menu.Item>

@@ -58,6 +58,8 @@ export function useReviewKeys(handlers, { enabled = true } = {}) {
         }
         return;
       }
+      // An open menu (the header's ⋯) owns the keyboard: keys must not act behind it.
+      if (key !== 'Escape' && document.querySelector?.('[role="menu"]')) return;
       // A modal owns the keyboard; a focused button keeps Space/Enter to press itself.
       if (key !== 'Escape' && (active?.closest?.('[role=dialog]') || e.target?.closest?.('[role=dialog]'))) return;
       const take = (fn) => { e.preventDefault(); e.stopPropagation(); fn?.(); };

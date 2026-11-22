@@ -109,7 +109,8 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   // Runs when a save lands: read the CURRENT scope/rows, and leave a cursor the user moved meanwhile.
   const advance = (from) => {
     if (latest.current.selectedId !== from.id) return;
-    const list = latest.current.scoped || [];
+    // A part being refined is skipped: its verdict waits for the new timing.
+    const list = (latest.current.scoped || []).filter((r) => r.id === from.id || !latest.current.refining?.[r.id]);
     const sc = latest.current.scope || DEFAULT_SCOPE;
     const next = stepFrom(list, from.id, 1, { onlyOpen: true, scope: sc });
     if (next) { go(next, 'auto'); return; }
@@ -141,7 +142,13 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     advance(r);
   };
 
-  const verdict = (v, reason) => { if (row) guarded('verdict', () => record(row, v, { reason })); };
+  const verdict = (v, reason) => {
+    if (!row) return;
+    // A refine moves the part, which drops a verdict on it: wait for the new timing (review 2026-11-21).
+    if (latest.current.refining?.[row.id]) { setMessage('This part is being refined. Give it a verdict when the new timing lands.'); return; }
+    if (v === 'remove' && latest.current.running) { setMessage('Let it play waits until the refine finishes.'); return; }
+    guarded('verdict', () => record(row, v, { reason }));
+  };
 
   const callsFor = (r, body) => {
     const base = `${API}/${encodeURIComponent(rk)}`;
@@ -176,6 +183,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   };
 
   const undo = () => guarded('undo', async () => {
+    if (latest.current.running) { setMessage('Undo waits until the refine finishes.'); return; }
     const last = undoStack[undoStack.length - 1];
     if (!last) { setMessage('Nothing to undo.'); return; }
     setUndoStack((s) => s.slice(0, -1));
@@ -235,45 +243,86 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
 
   // Refine: one part (R) or every filtered part still on rough timing (Shift+R), as one send-back
   // of their member cues (owner, 2026-11-21: refine the flagged ones, never the 136 that play).
-  // One run per film: presses while a run is open collect here and go out when it closes.
+  // One run per film: presses while a run is open collect here and go out once it finishes well;
+  // they stay queued (and say so) if it stopped or failed, and leave the queue only once sent.
   const [pendingRefine, setPendingRefine] = useState(() => new Set());
+  const notMatched = data?.match === 'unmatched';
+  const job = data?.job || null;
+  const running = Boolean(job && (job.status === 'queued' || job.status === 'running'));
   const cuesOf = (r) => (isSceneRow(r) ? [] : (r.members ?? (String(r.id).startsWith('cue:') ? [r.peekId] : [])));
+  // Which rows a refine holds right now: the open send-back's parts, then the ones queued here.
+  const refining = useMemo(() => {
+    const out = {};
+    if (job && job.kind === 'send-back' && running) {
+      const cues = new Set(job.cues || []);
+      for (const r of rows || []) if ((r.members || []).some((id) => cues.has(id))) out[r.id] = job.status === 'queued' ? 'Waiting' : 'Refining…';
+    }
+    for (const r of rows || []) if (!out[r.id] && (r.members || []).some((id) => pendingRefine.has(id))) out[r.id] = 'Queued';
+    return out;
+  }, [rows, job, running, pendingRefine]);
+  latest.current.refining = refining;
+  latest.current.running = running;
   const sendRefine = async (cues, what) => {
     await DaylightAPI(`${API}/${encodeURIComponent(rk)}/jobs`, { kind: 'send-back', cues }, 'POST');
     logger.info('content_filter.review.refine', { rk, cues: cues.length, what });
     if (!activeView.current) return;
-    setMessage(`Refining ${what}. You can keep reviewing.`);
+    setMessage(`Refining ${what}. Review the other parts meanwhile.`);
     reload();
   };
   const queueRefine = (cues, what) => {
+    if (notMatched) { setMessage('This film is not matched to Plex, so it cannot be refined.'); return; }
     if (!cues.length) { setMessage('Nothing to refine there.'); return; }
-    if (runBusy) {
+    if (running) {
       setPendingRefine((s) => new Set([...s, ...cues]));
       logger.info('content_filter.review.refine_queued', { rk, cues: cues.length, what });
       setMessage(`Queued: ${what} refines when the current run finishes.`);
       return;
     }
-    guarded('refine', () => sendRefine(cues, what));
+    // Anything still queued from a run that stopped goes out with this press.
+    const all = [...new Set([...pendingRefine, ...cues])];
+    guarded('refine', async () => { await sendRefine(all, what); setPendingRefine(new Set()); });
   };
+  // A hand fix is dropped by a refine: the first R on a hand-fixed part asks, the second sends.
+  const handFixArmed = useRef(null);
   const refine = () => {
     if (!row) return;
     if (isSceneRow(row)) { setMessage('A scene is rebuilt with its parts; refine the parts in it.'); return; }
+    if (row.handFixed && handFixArmed.current !== row.id) {
+      handFixArmed.current = row.id;
+      setMessage('Refining drops your hand-fixed timing on this part. Press R again to refine it.');
+      return;
+    }
+    handFixArmed.current = null;
     queueRefine(cuesOf(row), `"${row.label}"`);
   };
   const refineAll = ({ again = false } = {}) => {
-    const targets = (rows || []).filter((r) => !plays(r) && !isSceneRow(r) && (again || r.timing !== 'refined'));
+    const targets = (rows || []).filter((r) => !plays(r) && !isSceneRow(r) && (again || r.timing === 'rough'));
     const cues = [...new Set(targets.flatMap(cuesOf))];
     queueRefine(cues, `${targets.length} filtered part${targets.length === 1 ? '' : 's'}`);
   };
-  // Flush the queued refines once the film's run closes.
-  const wasBusy = useRef(runBusy);
+  // When the film's run closes: a finished run sends the queue; a stopped or failed one keeps it.
+  const wasRunning = useRef(running);
   useEffect(() => {
-    const was = wasBusy.current; wasBusy.current = runBusy;
-    if (!was || runBusy || !pendingRefine.size) return;
+    const was = wasRunning.current; wasRunning.current = running;
+    if (!was || running || !pendingRefine.size) return;
     const cues = [...pendingRefine];
-    setPendingRefine(new Set());
-    guarded('refine', () => sendRefine(cues, `${cues.length} queued part${cues.length === 1 ? '' : 's'}`));
-  }, [runBusy]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (job?.status !== 'done') {
+      setMessage(`The run ${job?.status === 'cancelled' ? 'was stopped' : 'did not finish'}; ${cues.length} queued part${cues.length === 1 ? ' is' : 's are'} still waiting. Press R or Shift+R to send them.`);
+      return;
+    }
+    DaylightAPI(`${API}/${encodeURIComponent(rk)}/jobs`, { kind: 'send-back', cues }, 'POST')
+      .then(() => {
+        logger.info('content_filter.review.refine', { rk, cues: cues.length, what: 'queued' });
+        if (!activeView.current) return;
+        setPendingRefine((s) => new Set([...s].filter((id) => !cues.includes(id))));
+        setMessage(`Refining ${cues.length} queued part${cues.length === 1 ? '' : 's'}.`);
+        reload();
+      })
+      .catch((err) => {
+        logger.warn('content_filter.review.refine_failed', { rk, cues: cues.length, error: err.message });
+        if (activeView.current) setMessage(`${err.message || 'The queued refine did not start.'} ${cues.length} still queued.`);
+      });
+  }, [running]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Bleep level for this film: film ?? household ?? 0.25. The key moves a pending value at once
   // (shown in the key bar); one debounced write saves it, then the player re-reads its profile and
@@ -372,7 +421,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     escape: () => { if (helpOpen) { setHelpOpen(false); return true; } return false; },
   };
   return {
-    scope, setScope, scoped, row, pick, handlers, message: saving ? 'Saving…' : message, helpOpen, canUndo, tally, pendingRefine,
+    scope, setScope, scoped, row, pick, handlers, message: saving ? 'Saving…' : message, helpOpen, canUndo, tally, pendingRefine, refining, running,
     bleepLevel, flagged: flagged.length, rework,
     previewRecovery: previewRecovery ? {
       message: previewRecovery.saved ? 'Bleep level saved. The preview could not refresh.' : 'The preview could not refresh.',

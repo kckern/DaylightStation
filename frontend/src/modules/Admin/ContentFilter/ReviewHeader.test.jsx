@@ -45,7 +45,7 @@ describe('ReviewHeader', () => {
   });
   it('an interrupted run is a red chip, not a banner', () => {
     show({ data: data({ job: { id: 'r1', status: 'interrupted', step: 'refine' } }) });
-    expect(screen.getByText('Last run interrupted')).toBeTruthy();
+    expect(screen.getByText('Last refine stopped early; nothing was kept')).toBeTruthy();
   });
   it('once nothing is rough and the sign-off would be accepted, Approve for family is the action', () => {
     show({ roughFiltered: 0, data: data({ status: { next: 'approve' } }), approval: { blocked: false } });
