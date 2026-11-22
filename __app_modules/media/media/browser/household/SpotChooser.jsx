@@ -16,7 +16,9 @@ export function SpotChooser({ choice, nameFor, onChoose, onClose }) {
   const title = choice?.item?.title ?? 'this';
   return (
     <Modal opened={open} onClose={onClose} closeOnEscape={!usesDismissStack}
-      title={`Continue ${title} from…`} data-testid="spot-chooser" centered>
+      title={`Continue ${title} from…`}
+      closeButtonProps={{ 'aria-label': 'Close resume position chooser' }}
+      data-testid="spot-chooser" centered>
       {choice && <Stack gap="sm">
         {choice.spots.map((spot, index) => {
           return (
