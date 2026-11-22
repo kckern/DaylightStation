@@ -1,5 +1,6 @@
 import { createContext, useCallback, useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
+import { daylightApiResponse } from '../../lib/api.mjs';
 import { useRefreshableRead } from '../../lib/hooks/useRefreshableRead.js';
 
 export const PublicAuthContext = createContext(null);
@@ -27,7 +28,7 @@ export function SetupCheck({ children }) {
 
     try {
       // This public read uses same-origin cookies before a login mode is known.
-      const response = await fetch('/api/v1/auth/context', { signal });
+      const response = await daylightApiResponse('/api/v1/auth/context', { signal });
       if (!response.ok) throw new Error('The public context request failed.');
       const { needsSetup, setupAdmin, householdName } = await response.json();
       if (typeof needsSetup !== 'boolean' || (setupAdmin != null && typeof setupAdmin !== 'string')) {
