@@ -7,9 +7,11 @@ import {
   fileExists,
   getStats,
   listEntries,
+  loadYaml,
   readBinaryFromPath,
   readTextFromPath,
   renameFile,
+  saveYaml,
   writeBinary,
   writeFileAtomic,
   writeFile,
@@ -148,6 +150,17 @@ export class FilesystemWeeklyReviewStore extends IWeeklyReviewStore {
     let existed = false;
     for (const target of targets) if (fileExists(target)) { deleteFile(target); existed = true; }
     return existed;
+  }
+
+  /** Cached AI showcase bullets for the week, `{ [learnerId]: { itemsHash, bullets, at } }`, or null. */
+  loadSchoolShowcase(week) {
+    return loadYaml(path.join(this.#reviewDir(week), 'school-showcase')) ?? null;
+  }
+
+  saveSchoolShowcase(week, data) {
+    const directory = this.#reviewDir(week);
+    ensureDir(directory);
+    saveYaml(path.join(directory, 'school-showcase'), data);
   }
 
   getRecordingStatus(week) {

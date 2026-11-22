@@ -6,6 +6,7 @@ import { WeeklyReviewImmichAdapter } from "./adapters/WeeklyReviewImmichAdapter.
 import { WeeklyReviewCalendarAdapter } from "./adapters/WeeklyReviewCalendarAdapter.mjs";
 import { WeeklyReviewSchoolAdapter } from "./adapters/WeeklyReviewSchoolAdapter.mjs";
 import { WeeklyReviewService } from "./application/WeeklyReviewService.mjs";
+import { SchoolShowcaseService } from "./application/SchoolShowcaseService.mjs";
 import { createWeeklyReviewRouter } from "./api/weekly-review.mjs";
 
 export async function installWeeklyReview({ configService, dataService, immichConfig, sharedAiGateway, rootLogger, householdId, userDataService, dataBasePath, mediaBasePath, fitnessServices, v1Routers, schoolLearnerWork = null }) {
@@ -37,6 +38,19 @@ export async function installWeeklyReview({ configService, dataService, immichCo
 
     const weeklyReviewHouseholdDir = configService.getHouseholdPath('', householdId);
     const weeklyReviewCommandRunner = new NodeCommandRunner();
+    const weeklyReviewStore = new FilesystemWeeklyReviewStore({
+      householdDir: weeklyReviewHouseholdDir,
+      mediaPath: mediaBasePath,
+      logger: rootLogger.child({ module: 'weekly-review-store' }),
+    });
+    const weeklyReviewShowcase = new SchoolShowcaseService({
+      ai: weeklyReviewAi ? scopedGateway(weeklyReviewAi, { feature: 'school-showcase' }) : null,
+      store: {
+        load: (week) => weeklyReviewStore.loadSchoolShowcase(week),
+        save: (week, data) => weeklyReviewStore.saveSchoolShowcase(week, data),
+      },
+      logger: rootLogger.child({ module: 'weekly-review-showcase' }),
+    });
     const weeklyReviewService = new WeeklyReviewService(
       {
         dataPath: dataBasePath,
@@ -73,11 +87,8 @@ export async function installWeeklyReview({ configService, dataService, immichCo
             return { transcriptRaw: raw, transcriptClean: clean };
           },
         } : null,
-        reviewStore: new FilesystemWeeklyReviewStore({
-          householdDir: weeklyReviewHouseholdDir,
-          mediaPath: mediaBasePath,
-          logger: rootLogger.child({ module: 'weekly-review-store' }),
-        }),
+        reviewStore: weeklyReviewStore,
+        schoolShowcase: weeklyReviewShowcase,
         runCommand: weeklyReviewCommandRunner.run,
         logger: rootLogger.child({ module: 'weekly-review' }),
       }

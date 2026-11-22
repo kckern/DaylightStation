@@ -171,6 +171,62 @@ describe('WeeklyReviewService', () => {
       }
     });
 
+    describe('school showcase', () => {
+      const weekItems = () => [
+        work({ subtitle: 'Maze · level 1', imageUrl: '/img/a1' }),
+        work({ groupKey: 'activity:2', subtitle: 'Sudoku', imageUrl: '/img/a2', at: '2026-03-25T10:00:00Z', studyDay: '2026-03-25' }),
+        work({ learnerId: 'kid0', learnerName: 'Ada', kind: 'book', verb: 'finished', title: 'Holes', groupKey: 'book:r1:finished' }),
+        work({ learnerId: 'kid9', learnerName: 'Late', groupKey: 'activity:9', studyDay: '2026-03-31', at: '2026-03-31T10:00:00Z' }),
+      ];
+
+      it('bootstrap carries a plain showcase per child, without items or hash', async () => {
+        const schoolWork = { getWorkForDateRange: vi.fn().mockResolvedValue(weekItems()), getImage: vi.fn() };
+        const result = await buildService(schoolWork).bootstrap('2026-03-23');
+        expect(schoolWork.getWorkForDateRange).toHaveBeenCalledTimes(1);
+        expect(result.schoolShowcase).toEqual([
+          { learnerId: 'kid0', learnerName: 'Ada', images: [], bullets: ['Finished Holes'], source: 'plain' },
+          { learnerId: 'kid1', learnerName: 'Kid', images: ['/img/a1', '/img/a2'], bullets: ['2 printed pages: a maze and a sudoku'], source: 'plain' },
+        ]);
+      });
+
+      it('bootstrap has an empty showcase when school fails or is absent', async () => {
+        const failing = { getWorkForDateRange: vi.fn().mockRejectedValue(new Error('boom')), getImage: vi.fn() };
+        expect((await buildService(failing).bootstrap('2026-03-23')).schoolShowcase).toEqual([]);
+        expect((await buildService(undefined).bootstrap('2026-03-23')).schoolShowcase).toEqual([]);
+      });
+
+      it('getSchoolShowcase runs the showcase service over the window and trims the result', async () => {
+        const schoolWork = { getWorkForDateRange: vi.fn().mockResolvedValue(weekItems()), getImage: vi.fn() };
+        const schoolShowcase = {
+          execute: vi.fn(async (_week, showcases) => showcases.map(s => ({ ...s, bullets: [`AI for ${s.learnerName}`], source: 'ai' }))),
+        };
+        const result = await buildService(schoolWork, { schoolShowcase }).getSchoolShowcase('2026-03-23');
+        expect(schoolWork.getWorkForDateRange).toHaveBeenCalledWith('2026-03-23', '2026-03-31');
+        const [week, showcases] = schoolShowcase.execute.mock.calls[0];
+        expect(week).toBe('2026-03-23');
+        expect(showcases.map(s => s.itemsHash)).toEqual(['book:r1:finished:1', 'activity:1:1|activity:2:1']);
+        expect(result).toEqual([
+          { learnerId: 'kid0', learnerName: 'Ada', bullets: ['AI for Ada'], images: [], source: 'ai' },
+          { learnerId: 'kid1', learnerName: 'Kid', bullets: ['AI for Kid'], images: ['/img/a1', '/img/a2'], source: 'ai' },
+        ]);
+      });
+
+      it('getSchoolShowcase is plain without a showcase service and empty on a school timeout', async () => {
+        const schoolWork = { getWorkForDateRange: vi.fn().mockResolvedValue(weekItems()), getImage: vi.fn() };
+        const plain = await buildService(schoolWork).getSchoolShowcase('2026-03-23');
+        expect(plain.map(s => s.source)).toEqual(['plain', 'plain']);
+
+        const schoolShowcase = { execute: vi.fn() };
+        const hanging = { getWorkForDateRange: vi.fn(() => new Promise(() => {})), getImage: vi.fn() };
+        expect(await buildService(hanging, { schoolTimeoutMs: 20, schoolShowcase }).getSchoolShowcase('2026-03-23')).toEqual([]);
+        expect(schoolShowcase.execute).not.toHaveBeenCalled();
+      });
+
+      it('getSchoolShowcase rejects a malformed week', async () => {
+        await expect(buildService(undefined).getSchoolShowcase('../etc')).rejects.toThrow(/invalid week/);
+      });
+    });
+
     it('getSchoolImage delegates to the adapter and is null without one', async () => {
       const img = { bytes: Buffer.from('x'), contentType: 'image/png' };
       const schoolWork = { getWorkForDateRange: vi.fn(), getImage: vi.fn().mockResolvedValue(img) };

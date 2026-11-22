@@ -229,6 +229,19 @@ The result is that closing the lid, a dropped connection, or a reboot degrades g
 
 ---
 
+## School Showcase (server)
+
+After the last photo of the window's last day, each child with school work in the window gets one slide: a collage of up to six pictures and two to five bullets.
+
+- **Building it.** `server/domain/schoolShowcasePolicy.mjs` (`buildShowcases`) keeps the window's well-formed WorkItems, dedupes each child's work per `groupKey` (`dedupeWorkItems`), orders it by priority (finished book, completed course, printed activity, started book, worked course, program) then weight, and takes the first six distinct pictures in that order.
+- **Plain bullets** (`plainBullets`) are instant and always available: "Finished Holes", "Math 2 · 4 sessions", "Science: Plants", "3 printed pages: mazes and a sudoku", "Korean · 14 words". They carry counts of things done, never scores, grades or praise. A book started and finished in the same week says only "Finished".
+- **Bootstrap** returns `schoolShowcase: [{ learnerId, learnerName, images, bullets, source: 'plain' }]` from the same bounded school fetch as the day cards (timeout or error: empty list).
+- **AI bullets.** `GET /api/v1/weekly-review/school/showcase?week=YYYY-MM-DD` returns `{ showcases: [{ learnerId, learnerName, bullets, images, source }] }`. `SchoolShowcaseService` asks the weekly-review AI gateway (usage feature `school-showcase`), one child at a time in parallel, for a JSON array of short third-person bullets. An answer that is not 1 to 5 strings of at most 120 characters, or that contains a praise word, score, grade, percent or exclamation mark, is discarded and the plain bullets are served (`source: 'plain'`).
+- **Cache.** Accepted AI bullets are written to `weekly-review/log/<week>/school-showcase.yml` under the household as `{ <learnerId>: { itemsHash, bullets, at } }`. `itemsHash` is the sorted `groupKey:weight` pairs of the child's week, so new work redrafts that child and a replay of an unchanged week costs nothing.
+- **Logs.** `weekly-review.showcase.generated` (`week, learnerId, items, ms, cached, source`), `weekly-review.showcase.ai-failed`, `weekly-review.showcase.ai-rejected`, `weekly-review.api.school-showcase.response`.
+
+---
+
 ## Design Principles
 
 - **Five buttons are enough.** Everything is reachable with Up, Down, Left, Right, Enter, and Back — and everything except a few prompts is reachable without Back at all.

@@ -64,6 +64,30 @@ export function createWeeklyReviewRouter(config) {
     }
   });
 
+  // One slide per child after the week's last photo: images plus bullets,
+  // AI-drafted where acceptable, plain otherwise.
+  router.get('/school/showcase', async (req, res) => {
+    const startMs = Date.now();
+    const week = typeof req.query.week === 'string' ? req.query.week : '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) {
+      logger.warn?.('weekly-review.api.school-showcase.bad-week', { week: week.slice(0, 40) });
+      return res.status(400).json({ ok: false, error: 'week must be YYYY-MM-DD' });
+    }
+    try {
+      const showcases = await weeklyReviewService.getSchoolShowcase(week);
+      logger.info?.('weekly-review.api.school-showcase.response', {
+        week,
+        children: showcases.length,
+        sources: showcases.map(s => s.source),
+        durationMs: Date.now() - startMs,
+      });
+      res.json({ showcases });
+    } catch (err) {
+      logger.error?.('weekly-review.api.school-showcase.error', { week, error: err.message, durationMs: Date.now() - startMs });
+      sendInternalError(res, { ok: false, error: err.message });
+    }
+  });
+
   router.post('/recording', async (req, res) => {
     const startMs = Date.now();
     try {

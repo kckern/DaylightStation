@@ -1,5 +1,6 @@
 import { WeeklyReviewAggregator } from "../domain/WeeklyReviewAggregator.mjs";
 import { curateSchoolWork } from "../domain/schoolWorkPolicy.mjs";
+import { buildShowcases } from "../domain/schoolShowcasePolicy.mjs";
 
 export class WeeklyReviewService {
   #immichAdapter;
@@ -7,6 +8,7 @@ export class WeeklyReviewService {
   #sessionService;
   #weatherStore;
   #schoolWork;
+  #schoolShowcase;
   #schoolTimeoutMs;
   #setTimer;
   #clearTimer;
@@ -24,6 +26,7 @@ export class WeeklyReviewService {
     this.#sessionService = deps.sessionService;
     this.#weatherStore = deps.weatherStore;
     this.#schoolWork = deps.schoolWork || null;
+    this.#schoolShowcase = deps.schoolShowcase && typeof deps.schoolShowcase.execute === 'function' ? deps.schoolShowcase : null;
     // Injected timers (apps-no-global-timers); the defaults are the real ones.
     this.#setTimer = deps.setTimer || setTimeout;
     this.#clearTimer = deps.clearTimer || clearTimeout;
@@ -54,19 +57,18 @@ export class WeeklyReviewService {
 
     this.#logger.info?.('weekly-review.bootstrap', { week: start });
 
-    // Build date list for the week (inclusive of `end` to match the adapter).
-    const dates = [];
-    for (let d = new Date(`${start}T00:00:00Z`); d.toISOString().slice(0, 10) <= end; d.setUTCDate(d.getUTCDate() + 1)) {
-      dates.push(d.toISOString().slice(0, 10));
-    }
+    const dates = this.#windowDates(start);
 
-    const [photoDays, calendarDays, fitnessByDate, weatherByDate, schoolByDate] = await Promise.all([
+    const [photoDays, calendarDays, fitnessByDate, weatherByDate, schoolItems] = await Promise.all([
       this.#immichAdapter.getPhotosForDateRange(start, end),
       this.#calendarData.getEventsForDateRange(start, end),
       this.#fetchFitnessSessions(dates),
       this.#fetchWeatherHistory(dates),
-      this.#fetchSchoolWork(start, dates),
+      this.#fetchSchoolItems(start, dates),
     ]);
+    const schoolByDate = this.#curateSchool(start, dates, schoolItems);
+    // The instant (plain) per-child showcase; AI bullets come from getSchoolShowcase.
+    const schoolShowcase = this.#plainShowcase(start, dates, schoolItems);
 
     const { days } = WeeklyReviewAggregator.aggregate(photoDays, calendarDays, fitnessByDate, weatherByDate, schoolByDate);
     const recording = this.#getRecordingStatus(start);
@@ -78,7 +80,7 @@ export class WeeklyReviewService {
       totalPhotos: photoDays.reduce((s, d) => s + (d.photoCount || 0), 0),
     });
 
-    return { week: start, days, recording };
+    return { week: start, days, recording, schoolShowcase };
   }
 
   /**
@@ -119,13 +121,30 @@ export class WeeklyReviewService {
   }
 
   /**
-   * School work for the window, curated onto days. School's range end is
-   * exclusive, so it is asked for up to the day after the last date shown.
-   * Never throws and never holds the review up past the timeout: a slow or
-   * failing school source leaves the school lists empty.
+   * The per-child school showcase for a window, with AI-drafted bullets where
+   * the gateway gives acceptable ones and plain bullets otherwise.
+   * @param {string} week YYYY-MM-DD window start
+   * @returns {Promise<{ learnerId: string, learnerName: string, bullets: string[], images: string[], source: 'ai'|'plain' }[]>}
    */
-  async #fetchSchoolWork(week, dates) {
-    if (!this.#schoolWork || dates.length === 0) return {};
+  async getSchoolShowcase(week) {
+    if (!this.#isValidWeek(week)) throw new Error(`invalid week: ${week}`);
+    const dates = this.#windowDates(week);
+    const items = await this.#fetchSchoolItems(week, dates);
+    const plain = buildShowcases(items || [], dates);
+    const settled = this.#schoolShowcase && plain.length > 0
+      ? await this.#schoolShowcase.execute(week, plain)
+      : plain;
+    return settled.map(({ learnerId, learnerName, bullets, images, source }) => ({ learnerId, learnerName, bullets, images, source }));
+  }
+
+  /**
+   * The window's raw school WorkItems, or null when there is no school source
+   * or it failed. School's range end is exclusive, so it is asked for up to
+   * the day after the last date shown. Never throws and never holds the
+   * review up past the timeout.
+   */
+  async #fetchSchoolItems(week, dates) {
+    if (!this.#schoolWork || dates.length === 0) return null;
     const from = dates[0];
     const to = this.#addDays(dates[dates.length - 1], 1);
     const ms = this.#schoolTimeoutMs;
@@ -138,31 +157,52 @@ export class WeeklyReviewService {
       ]);
       if (items === TIMED_OUT) {
         this.#logger.warn?.('weekly-review.school.timeout', { week, ms });
-        return {};
+        return null;
       }
-      const list = Array.isArray(items) ? items : [];
-      const byDate = curateSchoolWork(list, dates);
-      const inWindow = new Set(dates);
-      const kept = list.filter(i => i && inWindow.has(i.studyDay));
-      const byKind = {};
-      for (const item of list) {
-        if (!item) continue;
-        byKind[item.kind] = (byKind[item.kind] || 0) + 1;
-      }
-      this.#logger.info?.('weekly-review.school.loaded', {
-        week,
-        learners: new Set(kept.map(i => i.learnerId)).size,
-        items: list.length,
-        shown: Object.values(byDate).reduce((n, d) => n + d.school.length, 0),
-        byKind,
-      });
-      return byDate;
+      return Array.isArray(items) ? items : [];
     } catch (err) {
       this.#logger.warn?.('weekly-review.school.error', { error: err.message });
-      return {};
+      return null;
     } finally {
       this.#clearTimer(timer);
     }
+  }
+
+  /** Plain showcases for bootstrap, without the AI-only fields. A bad item never fails the review. */
+  #plainShowcase(week, dates, list) {
+    try {
+      return buildShowcases(list || [], dates).map(({ items: _items, itemsHash: _hash, ...rest }) => rest);
+    } catch (err) {
+      this.#logger.warn?.('weekly-review.showcase.plain-failed', { week, error: err.message });
+      return [];
+    }
+  }
+
+  /** School work curated onto days; empty when the school source was absent or failed. */
+  #curateSchool(week, dates, list) {
+    if (list === null) return {};
+    let byDate;
+    try {
+      byDate = curateSchoolWork(list, dates);
+    } catch (err) {
+      this.#logger.warn?.('weekly-review.school.error', { error: err.message });
+      return {};
+    }
+    const inWindow = new Set(dates);
+    const kept = list.filter(i => i && inWindow.has(i.studyDay));
+    const byKind = {};
+    for (const item of list) {
+      if (!item) continue;
+      byKind[item.kind] = (byKind[item.kind] || 0) + 1;
+    }
+    this.#logger.info?.('weekly-review.school.loaded', {
+      week,
+      learners: new Set(kept.map(i => i.learnerId)).size,
+      items: list.length,
+      shown: Object.values(byDate).reduce((n, d) => n + d.school.length, 0),
+      byKind,
+    });
+    return byDate;
   }
 
   async #fetchFitnessSessions(dates) {
@@ -419,6 +459,13 @@ export class WeeklyReviewService {
     // 8 days, not 9: the client pages and lays out the grid in 8-day windows.
     const today = new Date().toLocaleDateString('en-CA', { timeZone: this.#timezone });
     return this.#addDays(today, -7);
+  }
+
+  /** The window's days, `start` through `start + 7` inclusive (8 days, matching the adapter). */
+  #windowDates(start) {
+    const dates = [];
+    for (let i = 0; i <= 7; i++) dates.push(this.#addDays(start, i));
+    return dates;
   }
 
   #addDays(dateStr, days) {

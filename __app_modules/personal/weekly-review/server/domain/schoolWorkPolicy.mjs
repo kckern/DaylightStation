@@ -40,7 +40,7 @@ const GROUP_SUFFIX = {
 };
 
 /** The fields curation sorts and groups on. One item without them must not empty the week. */
-function isWellFormed(item) {
+export function isWellFormed(item) {
   return !!item
     && typeof item.studyDay === 'string'
     && typeof item.at === 'string'
@@ -48,9 +48,14 @@ function isWellFormed(item) {
     && typeof item.groupKey === 'string';
 }
 
-function priorityOf(item) {
+/**
+ * Rank of a work item for showing first: finished book 0, completed course 1,
+ * activity 2, started book 3, worked course 4, program 5, anything else 6.
+ */
+export function workItemPriority(item) {
   return PRIORITY[`${item.kind}:${item.verb}`] ?? PRIORITY[item.kind] ?? UNRANKED_PRIORITY;
 }
+const priorityOf = workItemPriority;
 
 function byAt(a, b) {
   return a.at.localeCompare(b.at);
