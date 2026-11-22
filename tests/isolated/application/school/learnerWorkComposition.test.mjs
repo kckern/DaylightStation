@@ -65,6 +65,37 @@ describe('createSchoolLearnerWork', () => {
     }
   });
 
+  it('reads the card ladder through its read-only view', async () => {
+    let viewed = 0;
+    const store = {
+      readOnlyView: () => { viewed += 1; return ladder; },
+      listPackages: () => { throw new Error('read the live store'); },
+      listDays: () => { throw new Error('read the live store'); },
+      readDay: () => { throw new Error('read the live store'); },
+    };
+    const work = createSchoolLearnerWork({
+      schoolLifecycle: fakeLifecycle(), schoolLearnerDirectory, cardLadderStore: store,
+      cardLadderTitleFor: () => 'Korean Words', mediaBasePath: '/unused', rootLogger: recordingLogger(),
+    });
+    expect(viewed).toBe(1);
+    const { items } = await work.list({ from: '2026-11-16', to: '2026-11-23' });
+    expect(items.some((i) => i.kind === 'program' && i.title === 'Korean Words')).toBe(true);
+  });
+
+  it.each([undefined, '', '   '])('keeps list() working without a media base path (%j)', async (mediaBasePath) => {
+    const logger = recordingLogger();
+    const work = createSchoolLearnerWork({
+      schoolLifecycle: fakeLifecycle(), schoolLearnerDirectory, cardLadderStore: ladder,
+      mediaBasePath, rootLogger: logger,
+    });
+    expect(work).not.toBeNull();
+    const { items } = await work.list({ from: '2026-11-16', to: '2026-11-23' });
+    expect(items.length).toBeGreaterThan(0);
+    expect(await work.image('activity:none')).toBeNull();
+    expect(logger.events.find((e) => e.event === 'school.learner-work.no-image-cache')?.level).toBe('warn');
+    expect(logger.events.some((e) => e.event === 'school.learner-work.wiring-failed')).toBe(false);
+  });
+
   it('is null when School is not wired', () => {
     const logger = recordingLogger();
     expect(createSchoolLearnerWork({ schoolLifecycle: null, schoolLearnerDirectory, rootLogger: logger })).toBeNull();

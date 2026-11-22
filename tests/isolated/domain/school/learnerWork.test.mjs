@@ -4,6 +4,7 @@ import {
   booksToWork,
   sessionsToWork,
   activitiesToWork,
+  activityKindLabel,
   cardLadderToWork,
   WORK_ITEM_KEYS,
 } from "../../../../__app_modules/learning/school/server/domain/learnerWork.mjs";
@@ -237,6 +238,11 @@ describe('activitiesToWork', () => {
     expect(item.subtitle).toBe('Sudoku');
   });
 
+  it('names Beeloo kinds as a person reads them', () => {
+    const [item] = activitiesToWork([issuance({ kind: 'colorbynumber', level: 3 })], BASE);
+    expect(item.subtitle).toBe('Color by number · level 3');
+  });
+
   it('skips voided and incomplete issuances', () => {
     expect(activitiesToWork([
       issuance({ voidedAt: '2026-11-17T00:00:00Z', voidReason: 'reprint' }),
@@ -335,5 +341,26 @@ describe('JSON round trip', () => {
       expect(copy.title.length).toBeGreaterThan(0);
       expect(Number.isFinite(copy.weight)).toBe(true);
     }
+  });
+});
+
+describe('activityKindLabel', () => {
+  it.each([
+    ['maze', 'Maze'], ['sudoku', 'Sudoku'], ['coloring', 'Coloring'], ['colorbynumber', 'Color by number'],
+    ['tracing', 'Tracing'], ['wordsearch', 'Word search'], ['dottodot', 'Dot to dot'], ['crossword', 'Crossword'],
+    ['ColorByNumber', 'Color by number'],
+  ])('known kind %j → %j', (kind, label) => {
+    expect(activityKindLabel(kind)).toBe(label);
+  });
+
+  it.each([
+    ['spotTheDifference', 'Spot the difference'], ['word_find', 'Word find'],
+    ['connect-the-dots', 'Connect the dots'], ['MATH_facts', 'Math facts'], ['puzzle', 'Puzzle'],
+  ])('unknown kind %j splits into sentence case %j', (kind, label) => {
+    expect(activityKindLabel(kind)).toBe(label);
+  });
+
+  it.each([null, undefined, '', '   ', '---', 42])('no label for %j', (kind) => {
+    expect(activityKindLabel(kind)).toBeNull();
   });
 });

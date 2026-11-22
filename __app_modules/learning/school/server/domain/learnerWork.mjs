@@ -124,8 +124,32 @@ export function sessionsToWork(sessions, { learnerId, learnerName, from, to, uni
   return items;
 }
 
+/** Worksheet platform kinds as a person reads them ("Color by number", not "Colorbynumber"). */
+const ACTIVITY_KIND_LABELS = Object.freeze({
+  maze: 'Maze', sudoku: 'Sudoku', coloring: 'Coloring', colorbynumber: 'Color by number',
+  tracing: 'Tracing', wordsearch: 'Word search', dottodot: 'Dot to dot', crossword: 'Crossword',
+});
+
+/**
+ * A kind's label: the known ones from the table; anything else split on
+ * camelCase, underscores and hyphens into words, in sentence case.
+ */
+export function activityKindLabel(kind) {
+  if (typeof kind !== 'string' || !kind.trim()) return null;
+  const known = ACTIVITY_KIND_LABELS[kind.trim().toLowerCase()];
+  if (known) return known;
+  const words = kind.trim()
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((w) => w.toLowerCase());
+  if (!words.length) return null;
+  const text = words.join(' ');
+  return text[0].toUpperCase() + text.slice(1);
+}
+
 function activitySubtitle({ kind, level }) {
-  const label = typeof kind === 'string' && kind ? kind[0].toUpperCase() + kind.slice(1) : null;
+  const label = activityKindLabel(kind);
   const levelPart = typeof level === 'number' && Number.isFinite(level) ? `level ${level}` : null;
   return [label, levelPart].filter(Boolean).join(' · ') || null;
 }

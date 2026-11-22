@@ -71,30 +71,20 @@ const schoolCatalog = createSchoolCatalog({
   const { FilesystemCardLadderRecordings } = await import("../adapters/cardLadder/FilesystemCardLadderRecordings.mjs");
   const { DiscardingRecordings } = await import("../adapters/cardLadder/DiscardingRecordings.mjs");
   const { YamlLexiconRepository } = await import("../adapters/catalog/YamlLexiconRepository.mjs");
-  const { resolveSettings, seedScenario, cardLadderConfigOf, wordPackageDir } = await import("../domain/cardLadder/index.mjs");
+  const { resolveSettings, seedScenario, cardLadderConfigOf } = await import("../domain/cardLadder/index.mjs");
+  const { createCardLadderTitleFor } = await import("../application/cardLadderTitles.mjs");
   const cardLadderLogger = rootLogger.child({ module: 'school-card-ladder' });
   // `card_ladder` in school.yml; the pre-rename `word_ladder` key is read when it is absent.
   const cardLadderConfig = cardLadderConfigOf(schoolFullConfig);
   const cardLadderSettings = () => resolveSettings(cardLadderConfig);
   const cardLadderStore = new YamlCardLadderStore({ configService, logger: cardLadderLogger });
   const cardLadderLexicons = new YamlLexiconRepository({ mediaRoot: schoolMediaRoot });
-  // A card ladder package's name for a person. The store keys learners by
-  // package slug; the title lives in the package lexicon (`program.title`),
-  // reached the way the sitting service does: deck → its lexicon ref → the
-  // lexicon, whose package is that ref's directory name. Null when no deck
-  // names the package or its lexicon will not load.
-  const cardLadderTitleFor = async (packageId) => {
-    try {
-      const decks = (await schoolCatalog.content?.listFlashcardDecks?.()) ?? [];
-      const deck = decks.find((d) => typeof d?.lexicon === 'string'
-        && path.posix.basename(wordPackageDir(d.lexicon) ?? '') === packageId);
-      if (!deck) return null;
-      return cardLadderLexicons.getLexicon(deck.lexicon)?.program?.title || null;
-    } catch (error) {
-      cardLadderLogger.debug?.('school.card-ladder.title-unresolved', { package: packageId, error: error?.message ?? String(error) });
-      return null;
-    }
-  };
+  // A card ladder package's name for a person (lexicon `program.title`).
+  const cardLadderTitleFor = createCardLadderTitleFor({
+    listDecks: () => schoolCatalog.content?.listFlashcardDecks?.() ?? [],
+    getLexicon: (ref) => cardLadderLexicons.getLexicon(ref),
+    logger: cardLadderLogger,
+  });
   const cardLadderJudgeFor = (cache) => new CardLadderTypedJudge({
     aiGateway: scopedGateway(dependencies.sharedAiGateway, { app: 'school', feature: 'card-ladder' }),
     decisionGateway: scopedGateway(dependencies.decisionGateway, { app: 'school', feature: 'card-ladder' }),

@@ -76,7 +76,10 @@ export class ListLearnerWork {
     if (typeof to !== 'string' || !DAY.test(to)) throw new ValidationError('to must be YYYY-MM-DD');
     const started = Date.now();
     const roster = list(await this.#learners()).filter((l) => l && typeof l.id === 'string' && l.id);
-    const perLearner = await Promise.all(roster.map((learner) => this.#workFor(learner, from, to)));
+    // One title lookup per package for the whole call, however many learners
+    // study it.
+    const titleFor = this.#memoizedTitleFor();
+    const perLearner = await Promise.all(roster.map((learner) => this.#workFor(learner, from, to, titleFor)));
     const items = perLearner.flat();
     this.#logger.info?.('school.learner-work.listed', {
       from, to, learners: roster.length, items: items.length, ms: Date.now() - started,
@@ -84,13 +87,23 @@ export class ListLearnerWork {
     return { items };
   }
 
-  async #workFor({ id: learnerId, name }, from, to) {
+  #memoizedTitleFor() {
+    const titleFor = this.#cardLadderTitleFor;
+    if (!titleFor) return null;
+    const seen = new Map();
+    return (packageId) => {
+      if (!seen.has(packageId)) seen.set(packageId, Promise.resolve().then(() => titleFor(packageId)));
+      return seen.get(packageId);
+    };
+  }
+
+  async #workFor({ id: learnerId, name }, from, to, titleFor) {
     const ctx = { learnerId, learnerName: name ?? null, from, to };
     const sources = [
       ['books', this.#bookLog && (() => this.#books(ctx))],
       ['sessions', this.#sessions && (() => this.#courseSessions(ctx))],
       ['activities', this.#printedActivities && (() => this.#activities(ctx))],
-      ['cardLadder', this.#cardLadder && (() => this.#ladder(ctx))],
+      ['cardLadder', this.#cardLadder && (() => this.#ladder(ctx, titleFor))],
     ].filter(([, read]) => read);
     const results = await Promise.all(sources.map(async ([source, read]) => {
       try {
@@ -133,10 +146,9 @@ export class ListLearnerWork {
     return activitiesToWork(issuances, ctx);
   }
 
-  async #ladder(ctx) {
+  async #ladder(ctx, titleFor) {
     const store = this.#cardLadder;
     const packages = list(await store.listPackages(ctx.learnerId));
-    const titleFor = this.#cardLadderTitleFor;
     const titles = titleFor ? await lookupAll(packages, titleFor, { source: 'cardLadder', logger: this.#logger }) : new Map();
     const perPackage = await Promise.all(packages.map(async (packageId) => {
       const days = list(await store.listDays(ctx.learnerId, packageId)).filter((d) => inWindow(d, ctx.from, ctx.to));

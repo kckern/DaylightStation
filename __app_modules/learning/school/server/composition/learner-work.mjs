@@ -45,13 +45,18 @@ export function createSchoolLearnerWork({
       cardLadderTitleFor,
       logger,
     });
+    // No media mount: pages render on every request instead of once, and the
+    // week's list is unaffected.
+    const hasMediaBase = typeof mediaBasePath === 'string' && mediaBasePath.trim() !== '';
+    if (!hasMediaBase) logger.warn?.('school.learner-work.no-image-cache', { reason: 'no mediaBasePath' });
+    const cache = hasMediaBase ? new FilesystemWorkImageCache({ mediaBasePath }) : null;
     const imageUseCase = new GetLearnerWorkImage({
       learners,
       curriculum: stores.curriculum ?? null,
       printedActivities: stores.printedActivities ?? null,
       platforms,
       renderPdfFirstPagePng,
-      cache: new FilesystemWorkImageCache({ mediaBasePath }),
+      cache,
       logger,
     });
     logger.info?.('school.learner-work.wired', {

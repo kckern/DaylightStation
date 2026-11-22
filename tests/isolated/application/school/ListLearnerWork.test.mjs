@@ -115,6 +115,22 @@ describe('ListLearnerWork', () => {
     expect(titles).toEqual(['Korean words', 'spanish-vocab']);
   });
 
+  it('looks each package title up once per call, however many learners study it', async () => {
+    const shared = {
+      listPackages: async () => ['korean-vocab'],
+      listDays: async () => ['2026-11-17'],
+      readDay: async () => ({ items: { a: 1 } }),
+    };
+    let calls = 0;
+    const cardLadderTitleFor = async () => { calls += 1; return 'Korean words'; };
+    const useCase = new ListLearnerWork(allDeps({ cardLadder: shared, cardLadderTitleFor }));
+    const { items } = await useCase.execute({ from: FROM, to: TO });
+    expect(items.filter((i) => i.kind === 'program').map((p) => p.title)).toEqual(['Korean words', 'Korean words']);
+    expect(calls).toBe(1);
+    await useCase.execute({ from: FROM, to: TO });
+    expect(calls).toBe(2); // not cached across calls: a renamed package shows next time
+  });
+
   it('isolates a failing source to that learner and that source', async () => {
     const logger = recordingLogger();
     const flakyBookLog = {
