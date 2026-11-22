@@ -45,8 +45,10 @@ function measureTrack(track, { left = 0, width = 200 } = {}) {
 /** happy-dom's PointerEvent constructor drops MouseEvent init fields
  *  (clientX arrives NaN), so dispatch a pointer-typed MouseEvent instead —
  *  React's native listener only cares about the event type. */
-function firePointer(el, type, clientX, button = 0) {
-  fireEvent(el, new window.MouseEvent(type, { bubbles: true, cancelable: true, clientX, button }));
+function firePointer(el, type, clientX, button = 0, pointerId = 1) {
+  const event = new window.MouseEvent(type, { bubbles: true, cancelable: true, clientX, button });
+  Object.defineProperty(event, 'pointerId', { value: pointerId });
+  fireEvent(el, event);
 }
 
 beforeEach(() => {
@@ -120,6 +122,39 @@ describe('SeekBar', () => {
     expect(transport.seekAbs).toHaveBeenCalledWith(120);
   });
 
+  it('keeps an active seek gesture owned by its initiating pointer', () => {
+    render(<SeekBar target="local" />);
+    const track = screen.getByTestId('np-seek');
+    measureTrack(track, { left: 0, width: 200 });
+
+    firePointer(track, 'pointerdown', 100, 0, 10);
+    expect(screen.getByTestId('np-seek-elapsed')).toHaveTextContent('2:00');
+
+    firePointer(track, 'pointerdown', 150, 0, 20);
+    firePointer(track, 'pointermove', 175, 0, 20);
+    firePointer(track, 'pointercancel', 175, 0, 20);
+    firePointer(track, 'pointerup', 150, 0, 20);
+    expect(screen.getByTestId('np-seek-elapsed')).toHaveTextContent('2:00');
+    expect(transport.seekAbs).not.toHaveBeenCalled();
+
+    firePointer(track, 'pointerup', 100, 0, 10);
+    expect(transport.seekAbs).toHaveBeenCalledTimes(1);
+    expect(transport.seekAbs).toHaveBeenCalledWith(120);
+  });
+
+  it('cancels the active seek when its pointer capture is lost', () => {
+    render(<SeekBar target="local" />);
+    const track = screen.getByTestId('np-seek');
+    measureTrack(track, { left: 0, width: 200 });
+
+    firePointer(track, 'pointerdown', 100, 0, 10);
+    firePointer(track, 'lostpointercapture', 100, 0, 10);
+    firePointer(track, 'pointerup', 100, 0, 10);
+
+    expect(transport.seekAbs).not.toHaveBeenCalled();
+    expect(screen.getByTestId('np-seek-elapsed')).toHaveTextContent('1:00');
+  });
+
   it('commits against the press geometry when its elapsed label reflows before pointer release', () => {
     render(<SeekBar target="local" />);
     const track = screen.getByTestId('np-seek');
@@ -150,6 +185,29 @@ describe('SeekBar', () => {
 
     expect(transport.seekAbs).not.toHaveBeenCalled();
     expect(screen.getByTestId('np-seek-elapsed')).toHaveTextContent('1:00');
+  });
+
+  it('accepts a fresh seek after its track is removed for live playback', () => {
+    const { rerender } = render(<SeekBar target="local" />);
+    const track = screen.getByTestId('np-seek');
+    measureTrack(track, { left: 0, width: 200 });
+    firePointer(track, 'pointerdown', 100, 0, 10);
+
+    state.snapshot = makeSnapshot({ isLive: true });
+    state.capabilities = { seekable: false, live: true, reason: null, acked: false };
+    rerender(<SeekBar target="local" />);
+    firePointer(document, 'lostpointercapture', 100, 0, 10);
+
+    state.snapshot = makeSnapshot();
+    state.capabilities = { seekable: true, live: false, reason: null, acked: false };
+    rerender(<SeekBar target="local" />);
+    const resumedTrack = screen.getByTestId('np-seek');
+    measureTrack(resumedTrack, { left: 0, width: 200 });
+    firePointer(resumedTrack, 'pointerdown', 150, 0, 20);
+    firePointer(resumedTrack, 'pointerup', 150, 0, 20);
+
+    expect(transport.seekAbs).toHaveBeenCalledTimes(1);
+    expect(transport.seekAbs).toHaveBeenCalledWith(180);
   });
 
   it('does not start a pointer seek from a zero-width track or non-finite coordinate', () => {
