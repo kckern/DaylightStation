@@ -178,11 +178,35 @@ describe('SheetMusicAdminService.getLearn', () => {
 });
 
 describe('SheetMusicAdminService.saveDraft', () => {
+  it('requires the editor revision, including null for a first draft', async () => {
+    const { service, saved } = fixture({ scores: { [ID_A]: { xml: xmlOf(), sha: 'sha-1' } } });
+    await expect(service.saveDraft(ID_A, { segments: [seg('a', 0, 7)], measureCount: 8 }))
+      .rejects.toMatchObject({ code: 'invalid-request' });
+    expect(saved).toHaveLength(0);
+  });
+
+  it('refuses to replace a draft saved after the editor loaded and writes nothing', async () => {
+    const savedDraft = [seg('bar-6', 0, 5), seg('after-6', 6, 7)];
+    const localDraft = [seg('bar-3', 0, 2), seg('after-3', 3, 7)];
+    const { service, saved, learnFiles } = fixture({
+      scores: { [ID_A]: { xml: xmlOf(), sha: 'sha-1' } },
+      learn: { [ID_A]: { scoreId: ID_A, draft: { segments: savedDraft } } },
+    });
+    const loadedRevision = draftRevision([seg('original', 0, 7)]);
+    const before = structuredClone(learnFiles.get(ID_A));
+
+    await expect(service.saveDraft(ID_A, {
+      segments: localDraft, measureCount: 8, expectedDraftRevision: loadedRevision,
+    })).rejects.toMatchObject({ code: 'draft-changed', draftRevision: draftRevision(savedDraft) });
+
+    expect(saved).toHaveLength(0);
+    expect(learnFiles.get(ID_A)).toEqual(before);
+  });
   it('writes only the draft and keeps the approved segments', async () => {
     const approved = { version: 1, scoreId: ID_A, contentSha256: 'sha-1', segments: [seg('a', 0, 3)], approved: { at: '2026-11-01T00:00:00Z' } };
     const { service, saved, logs } = fixture({ scores: { [ID_A]: { xml: xmlOf(), sha: 'sha-1' } }, learn: { [ID_A]: approved } });
     const segments = [seg('a', 0, 1, { parts: ['rh'] }), seg('b', 2, 5, { name: 'Bridge' })];
-    const file = await service.saveDraft(ID_A, { segments, proposal: { scorer: 'manual', at: 't' }, measureCount: 6 });
+    const file = await service.saveDraft(ID_A, { segments, proposal: { scorer: 'manual', at: 't' }, measureCount: 6, expectedDraftRevision: null });
     expect(saved).toHaveLength(1);
     expect(saved[0].data).toMatchObject({ contentSha256: 'sha-1', segments: [seg('a', 0, 3)], approved: approved.approved });
     expect(saved[0].data.draft).toEqual({ segments, proposal: { scorer: 'manual', at: 't' } });
@@ -193,7 +217,7 @@ describe('SheetMusicAdminService.saveDraft', () => {
 
   it('sets scoreId on a new file', async () => {
     const { service, saved } = fixture({ scores: { [ID_A]: { xml: xmlOf(), sha: '1' } } });
-    await service.saveDraft(ID_A, { segments: [seg('a', 0, 1)], measureCount: 2 });
+    await service.saveDraft(ID_A, { segments: [seg('a', 0, 1)], measureCount: 2, expectedDraftRevision: null });
     expect(saved[0].data).toMatchObject({ version: 1, scoreId: ID_A, draft: { segments: [seg('a', 0, 1)] } });
     expect(saved[0].data.segments).toBeUndefined();
   });
@@ -207,7 +231,7 @@ describe('SheetMusicAdminService.saveDraft', () => {
       features: [[0, 0.25], [1, 1], [2, null], [3, 0.5], [4, 0.1]],
       source: 'kiosk', html: '<b>',
     };
-    await service.saveDraft(ID_A, { segments: [seg('a', 0, 1), seg('b', 2, 3)], proposal, measureCount: 4 });
+    await service.saveDraft(ID_A, { segments: [seg('a', 0, 1), seg('b', 2, 3)], proposal, measureCount: 4, expectedDraftRevision: null });
     expect(saved[0].data.draft.proposal).toEqual({
       scorer: 'heuristic', model: null, at: 't', edited: true, beatsPerMeasure: 3, failedCalls: 0,
       boundaries: { 0: 0.2, 1: 0.9 },
@@ -348,7 +372,7 @@ describe('review fixes: draft pinning, empty drafts, non-library ids, robust row
     const { service } = withDraft();
     expect((await service.getLearn(ID_A)).draftRevision).toBe(draftRevision(draftSegments));
     const other = [seg('x', 0, 1)];
-    const saved = await service.saveDraft(ID_A, { segments: other, measureCount: 8 });
+    const saved = await service.saveDraft(ID_A, { segments: other, measureCount: 8, expectedDraftRevision: draftRevision(draftSegments) });
     expect(saved.draftRevision).toBe(draftRevision(other));
     expect(saved.draftRevision).not.toBe(draftRevision(draftSegments));
     const { service: bare } = fixture({ scores: { [ID_A]: { xml: xmlOf(), sha: '1' } } });
@@ -378,7 +402,7 @@ describe('review fixes: draft pinning, empty drafts, non-library ids, robust row
   it('approve refuses when the draft changed since it was reviewed', async () => {
     const { service, saved } = withDraft();
     const reviewed = (await service.draftImpact(ID_A)).draftRevision;
-    await service.saveDraft(ID_A, { segments: [seg('a', 0, 7)], measureCount: 8 });
+    await service.saveDraft(ID_A, { segments: [seg('a', 0, 7)], measureCount: 8, expectedDraftRevision: draftRevision(draftSegments) });
     saved.length = 0;
     await expect(service.approve(ID_A, { measureCount: 8, expectedDraftRevision: reviewed })).rejects.toMatchObject({ code: 'draft-changed' });
     expect(saved).toHaveLength(0);
@@ -452,7 +476,7 @@ describe('review fixes: draft pinning, empty drafts, non-library ids, robust row
 
     await expect(service.getLearn(collidingId)).rejects.toMatchObject({ code: 'learn-record-conflict' });
     await expect(service.draftImpact(collidingId)).rejects.toMatchObject({ code: 'learn-record-conflict' });
-    await expect(service.saveDraft(collidingId, { segments: [seg('new', 0, 7)], measureCount: 8 }))
+    await expect(service.saveDraft(collidingId, { segments: [seg('new', 0, 7)], measureCount: 8, expectedDraftRevision: null }))
       .rejects.toMatchObject({ code: 'learn-record-conflict' });
     await expect(service.approve(collidingId, { measureCount: 8, expectedDraftRevision: draftRevision(owned.draft.segments) }))
       .rejects.toMatchObject({ code: 'learn-record-conflict' });

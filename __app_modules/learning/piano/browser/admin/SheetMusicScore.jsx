@@ -496,6 +496,15 @@ export default function SheetMusicScore() {
       setServerErrors(Array.isArray(err.body?.errors) ? err.body.errors : []);
       return;
     }
+    if (code === 'draft-changed' && action === 'draft') {
+      setNotice({
+        color: 'yellow',
+        text: 'Another tab saved a newer draft. Your edits are still here. Load the saved version to compare.',
+        actionLabel: 'Load saved draft',
+        action: () => { setNotice(null); loadLearn(); },
+      });
+      return;
+    }
     if (code === 'draft-changed' || code === 'no-draft') {
       setNotice({ color: 'yellow', text: 'The draft changed in another tab. It has been reloaded; review it and try again.' });
       loadLearn();
@@ -522,6 +531,7 @@ export default function SheetMusicScore() {
     try {
       const res = await DaylightAPI(`${ADMIN_PATH}/learn${scoreQuery(id)}`, {
         action: 'draft', segments: parts.segments, proposal, measureCount,
+        expectedDraftRevision: learn?.draftRevision ?? null,
       }, 'PUT');
       logger.info('admin.sheetmusic.draft-saved', { id, segments: parts.segments.length, draftRevision: res?.draftRevision ?? null });
       await loadLearn();
@@ -658,7 +668,14 @@ export default function SheetMusicScore() {
       ) : null}
 
       {notice ? (
-        <Alert color={notice.color} variant="light" withCloseButton onClose={() => setNotice(null)}>{notice.text}</Alert>
+        <Alert color={notice.color} variant="light" withCloseButton onClose={() => setNotice(null)}>
+          {notice.action ? (
+            <Group gap="xs" wrap="wrap">
+              <Text size="sm">{notice.text}</Text>
+              <Button size="xs" variant="light" onClick={notice.action}>{notice.actionLabel}</Button>
+            </Group>
+          ) : notice.text}
+        </Alert>
       ) : null}
 
       {ready ? (

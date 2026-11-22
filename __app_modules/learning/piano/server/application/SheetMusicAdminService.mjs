@@ -11,11 +11,11 @@
  * "everything orphaned" and mislead. A UI that wants revert impact computes it
  * from the generated plan and calls `impact(id, segments)`.
  *
- * Approval is pinned to the draft the parent reviewed: `getLearn`, `saveDraft` and
- * `draftImpact` return a `draftRevision`, and `approve` requires it back as
- * `expectedDraftRevision`, refusing with `draft-changed` if the stored draft moved.
- * Between reading the Learn file and writing it, `approve` does not await, so the
- * datastore's Learn and practice reads must be synchronous (the YAML datastore is).
+ * Draft saves and approval are pinned to the draft the parent reviewed:
+ * `getLearn`, `saveDraft` and `draftImpact` return a `draftRevision`, and both
+ * write actions require it back as `expectedDraftRevision`, refusing with
+ * `draft-changed` if the stored draft moved. The Learn reads are synchronous
+ * (as in the YAML datastore) so each check happens immediately before its write.
  *
  * Errors carrying `code` are the router's contract: `invalid-request`,
  * `invalid-segments` (with `errors`: validateSegments codes plus `empty`),
@@ -444,13 +444,21 @@ export class SheetMusicAdminService {
     };
   }
 
-  async saveDraft(id, { segments, proposal, measureCount } = {}) {
+  async saveDraft(id, { segments, proposal, measureCount, expectedDraftRevision } = {}) {
     requireLibrary(id);
     const errors = segmentErrors(segments, measureCount);
     if (errors.length) throw codedError('invalid-segments', `Invalid segments for ${id}`, { errors });
     // The score must exist, or the draft would be an orphan Learn file.
     await this.#scoreInfo(id);
     const stored = this.#storedFile(id);
+    if (expectedDraftRevision !== null && (typeof expectedDraftRevision !== 'string' || !expectedDraftRevision)) {
+      throw codedError('invalid-request', 'saveDraft requires expectedDraftRevision (string or null)');
+    }
+    const current = normalizeLearnFile(stored).draft;
+    const currentRevision = current ? draftRevision(current.segments) : null;
+    if (currentRevision !== expectedDraftRevision) {
+      throw codedError('draft-changed', `The draft for ${id} changed since it was loaded`, { draftRevision: currentRevision });
+    }
     const clean = cleanProposal(proposal, measureCount);
     const { draft } = normalizeLearnFile({ draft: { segments, ...(clean ? { proposal: clean } : {}) } });
     const next = { ...stored, version: 1, scoreId: stored.scoreId ?? id, draft };

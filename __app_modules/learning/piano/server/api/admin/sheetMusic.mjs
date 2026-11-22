@@ -223,9 +223,9 @@ export function createAdminSheetMusicRouter({ service, logger = console } = {}) 
     const { action } = body;
     if (typeof action !== 'string' || !ACTIONS.has(action)) throw refusal('invalid-request');
     if (action === 'draft') {
-      const { segments, proposal, measureCount } = body;
+      const { segments, proposal, measureCount, expectedDraftRevision } = body;
       checkSegments(segments, { required: false });
-      return res.json(await service.saveDraft(id, { segments, proposal, measureCount }));
+      return res.json(await service.saveDraft(id, { segments, proposal, measureCount, expectedDraftRevision }));
     }
     if (action === 'approve') {
       const { measureCount, expectedDraftRevision } = body;

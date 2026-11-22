@@ -192,6 +192,39 @@ describe('SheetMusicScore', () => {
     ]);
   });
 
+  it('keeps local cuts and does not open approval when that save conflicts with a newer draft', async () => {
+    learn = learnFile({ draft: { segments: [{ id: 'a', start: 0, end: 7 }] }, draftRevision: 'rev-seen' });
+    api.mockImplementation((path, data, method) => {
+      if (path === learnUrl() && method === 'PUT' && data.action === 'draft') {
+        learn = learnFile({
+          draft: { segments: [{ id: 'a', start: 0, end: 5 }, { id: 'b', start: 6, end: 7 }] },
+          draftRevision: 'rev-other',
+        });
+        return Promise.reject(Object.assign(new Error('HTTP 409'), {
+          status: 409, body: { error: 'draft-changed', draftRevision: 'rev-other' },
+        }));
+      }
+      return route(path, data, method);
+    });
+    renderPage();
+    await engravedReady();
+    fireEvent.click(await screen.findByRole('button', { name: 'Split after bar 4' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+    expect(await screen.findByText(/another tab saved a newer draft/i)).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(await screen.findByRole('button', { name: 'Segment 1, Bars 1-4' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Segment 2, Bars 5-8' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Load saved draft' })).toBeTruthy();
+    expect(putCalls()[0][1]).toMatchObject({ action: 'draft', expectedDraftRevision: 'rev-seen' });
+    expect(api.mock.calls.filter(([path]) => path === `api/v1/admin/sheet-music/learn/draft-impact${q()}`)).toHaveLength(0);
+    expect(api.mock.calls.filter(([path, , method]) => path === learnUrl() && method === undefined)).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load saved draft' }));
+    expect(await screen.findByRole('button', { name: 'Segment 1, Bars 1-6' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Segment 2, Bars 7-8' })).toBeTruthy();
+  });
+
   it('locks segment editing until the saved draft has reloaded', async () => {
     let finishSave;
     learn = learnFile({ draft: { segments: [{ id: 'a', start: 0, end: 7 }] }, draftRevision: 'rev-old' });

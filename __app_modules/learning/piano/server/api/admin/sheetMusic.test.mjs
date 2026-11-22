@@ -87,10 +87,10 @@ describe('createAdminSheetMusicRouter: forwarding', () => {
     const { app, calls } = harness();
     const segments = [{ start: 1, end: 4 }];
     const res = await request(app).put(`/sheet-music/learn?${q}`)
-      .send({ action: 'draft', segments, proposal: { by: 'ai' }, measureCount: 32, ignored: true });
+      .send({ action: 'draft', segments, proposal: { by: 'ai' }, measureCount: 32, expectedDraftRevision: null, ignored: true });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ scoreId: ID, draftRevision: 'rev2' });
-    expect(calls.find((c) => c.name === 'saveDraft').args).toEqual([ID, { segments, proposal: { by: 'ai' }, measureCount: 32 }]);
+    expect(calls.find((c) => c.name === 'saveDraft').args).toEqual([ID, { segments, proposal: { by: 'ai' }, measureCount: 32, expectedDraftRevision: null }]);
   });
 
   it('PUT /learn approve forwards measureCount and expectedDraftRevision', async () => {
