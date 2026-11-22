@@ -23,9 +23,13 @@ const INVALID_LIBRARY_RESPONSE = Object.freeze(new Error('The library response d
 export { STAGE_LABELS };
 const STAGE_TONE = { rough: 'gray', running: 'blue', refined: 'gray', scenes: 'gray', audited: 'yellow', machine: 'teal', parent: 'green' };
 
-/** Readiness order, best first. Parent and machine certified films are "Ready tonight". */
+/**
+ * Readiness order, best first. Only a film a grown-up approved is "Ready tonight"; a machine-certified
+ * film still waits for its review (owner, 2026-11-21: "0 of x is not ready").
+ */
 export const SECTIONS = [
-  { id: 'ready', label: 'Ready tonight', stages: ['parent', 'machine'], open: true },
+  { id: 'ready', label: 'Ready tonight', stages: ['parent'], open: true },
+  { id: 'review', label: 'Needs your review', stages: ['machine'], open: true },
   { id: 'audited', label: STAGE_LABELS.audited, stages: ['audited'], open: true },
   { id: 'scenes', label: STAGE_LABELS.scenes, stages: ['scenes'], open: false },
   { id: 'refined', label: STAGE_LABELS.refined, stages: ['refined'], open: false },
@@ -201,7 +205,7 @@ function FilmCard({ film: f, worker, chip, busy, readUnavailable, onMake }) {
       ) : null}
       <div className="cf-card__meta">
         {chip ? <Badge size="xs" variant="light" color={STAGE_TONE[f.stage]}>{chip}</Badge> : null}
-        {f.reviewed ? <span>{`${f.reviewed.n} of ${f.reviewed.m}`}</span> : null}
+        {f.reviewed ? <span>{`${f.reviewed.n} of ${f.reviewed.m} reviewed`}</span> : null}
       </div>
       <div className={`cf-card__run${f.job?.status === 'failed' ? ' is-failed' : ''}`} title={text || undefined}>{text}</div>
       <Button className="cf-card__run-action" size="compact-xs" fullWidth variant={f.stage === 'rough' ? 'filled' : 'light'} loading={busy === f.ratingKey}

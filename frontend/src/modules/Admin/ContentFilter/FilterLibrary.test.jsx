@@ -30,9 +30,9 @@ vi.mock('../../../lib/api.mjs', () => ({
   },
 }));
 
-const { FilterLibrary } = await import('./FilterLibrary.jsx');
+const { FilterLibrary, SECTIONS } = await import('./FilterLibrary.jsx');
 const show = (all = true) => {
-  try { if (all) localStorage.setItem('cf-library-open', JSON.stringify(['ready', 'audited', 'scenes', 'refined', 'running', 'rough'])); } catch { /* none */ }
+  try { if (all) localStorage.setItem('cf-library-open', JSON.stringify(['ready', 'review', 'audited', 'scenes', 'refined', 'running', 'rough'])); } catch { /* none */ }
   return render(<MantineProvider><MemoryRouter><FilterLibrary /></MemoryRouter></MantineProvider>);
 };
 const row = (title) => screen.getByRole('link', { name: new RegExp(title) }).closest('.cf-card');
@@ -76,6 +76,12 @@ describe('FilterLibrary', () => {
     }
   });
 
+  it('a machine-certified film is not Ready tonight: it waits under Needs your review (owner, 2026-11-21)', () => {
+    const film = { ratingKey: '66', title: 'Machine Only', year: 2001, stage: 'machine', job: null, reviewed: { n: 0, m: 103 }, linked: true, thumb: '/t/66' };
+    expect(SECTIONS.find((s) => s.id === 'ready').stages).toEqual(['parent']);
+    expect(SECTIONS.find((s) => s.id === 'review').stages).toEqual(['machine']);
+    expect(film.stage).toBe('machine');
+  });
   it('groups films by readiness with Ready tonight first and rough collapsed', () => {
     show(false);
     const heads = screen.getAllByRole('button', { name: /^(Ready tonight|Running|Audited|Rough)/ }).map((b) => b.textContent);
@@ -119,7 +125,7 @@ describe('FilterLibrary', () => {
     show();
     expect(within(row('Back to the Future')).getByText('Running: refine')).toBeTruthy();
     expect(within(row('Matilda')).getByText('Failed at scenes: Jev timed out')).toBeTruthy();
-    expect(within(row('Matilda')).getByText('3 of 40')).toBeTruthy();
+    expect(within(row('Matilda')).getByText('3 of 40 reviewed')).toBeTruthy();
     expect(row('Annie').querySelector('a').getAttribute('href')).toBe('/admin/content/filter/77');
   });
   it('"Make filter" queues a make run for a rough film', async () => {

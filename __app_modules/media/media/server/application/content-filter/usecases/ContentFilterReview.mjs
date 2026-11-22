@@ -50,12 +50,15 @@ const ms3 = (t) => Math.round(t * 1000) / 1000;
 
 /** Marks that still count against the audit rows: { reviewed, changed } (a moved row's mark is `changed`). */
 export function countReviewed(rows = [], marks = {}) {
-  let reviewed = 0; let changed = 0;
+  // Only the parts the filter acts on need a verdict (a part that plays needs none).
+  let reviewed = 0; let changed = 0; let total = 0;
   for (const r of rows) {
+    if (r.acts === false) continue;
+    total++;
     const m = marks[r.id];
     if (m && markHolds(m, r)) reviewed++; else if (m) changed++;
   }
-  return { reviewed, changed };
+  return { reviewed, changed, total };
 }
 
 export class ContentFilterReview {

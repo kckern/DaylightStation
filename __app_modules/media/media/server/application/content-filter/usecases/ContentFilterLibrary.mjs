@@ -118,7 +118,7 @@ export class ContentFilterLibrary {
         certificationLevel: refined?.certification?.level ?? 'none', job: run,
       }),
       job: run ? { status: run.status, step: run.step ?? null, error: failedStep?.error ?? null } : null,
-      reviewed: counts ? { n: counts.reviewed, m: (audit.rows || []).length } : null,
+      reviewed: counts ? { n: counts.reviewed, m: counts.total } : null,
       // The exported EDL's VidAngel facts, for the Plex match (not shown as such).
       hasEdl: !!raw || !!refined,
       edl: raw ? { year: Number.isFinite(raw.year) ? raw.year : null, runtimeSec: Number.isFinite(raw.runtimeUnalteredSec) ? raw.runtimeUnalteredSec : null, workId: raw.sourceRef?.workId ?? null } : null,

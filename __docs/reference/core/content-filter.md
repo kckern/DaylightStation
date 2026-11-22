@@ -832,10 +832,12 @@ another year's film would show the wrong poster. `meta: { indexedAt, total, unli
 unmatched }`.
 
 The Admin library is compact 2:3 poster cards grouped by readiness in an accordion: Ready tonight
-(parent + machine), Audited, Scenes built, Refined, Running, Rough. The stage groups hold verified
+(parent-certified only: a grown-up approved it), Needs your review (machine-certified, not yet
+approved; owner, 2026-11-21: "0 of x is not ready"), Audited, Scenes built, Refined, Running, Rough.
+A card's count is "n of m reviewed" over the parts the filter acts on. The stage groups hold verified
 films only. Below them, set apart (dashed, muted), one **Not matched to Plex** section lists every
 unmatched film as a plain row: title, year and the one-line reason, linking to the film's page.
-It starts collapsed; open state of all sections is kept in `localStorage`. Ready tonight, Audited
+It starts collapsed; open state of all sections is kept in `localStorage`. Ready tonight, Needs your review, Audited
 and Running start open. A verified card with a runtime warning shows a small "Runtime 162 min (VidAngel 124)"
 note (Plex file / VidAngel). A title search flattens the verified films into one grid with stage
 chips and filters the Not matched section alike; the "N of M films" count covers both.
