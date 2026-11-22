@@ -155,7 +155,12 @@ export function ScreenAdminView() {
     if (!mergeScreen || !mergeTarget) return;
     const [a, b] = await Promise.all([routinesFor(mergeScreen, { signal }), routinesFor(mergeTarget, { signal })]);
     if (!isCurrent()) return;
-    setMerging(current => current && { ...current, routines: [...(a.routines ?? []), ...(b.routines ?? [])] });
+    const failedNames = [!a.ok && mergeScreen.name, !b.ok && mergeTarget.name].filter(Boolean);
+    setMerging(current => current && {
+      ...current,
+      routines: [...(a.ok ? a.routines : []), ...(b.ok ? b.routines : [])],
+      routineWarning: failedNames.length ? `Could not load routines for ${failedNames.join(' and ')}.` : null,
+    });
   }, [mergeScreen, mergeTarget, routinesFor]);
   const { reload: loadMergeRoutines } = useRefreshableRead(readMergeRoutines);
   useEffect(() => { if (mergeTarget) loadMergeRoutines(); }, [mergeTarget, loadMergeRoutines]);
@@ -172,11 +177,11 @@ export function ScreenAdminView() {
       : current);
   };
   const openMerge = async (screen) => {
-    setMerging({ screen, into: null, routines: [], submitting: false, error: null });
+    setMerging({ screen, into: null, routines: [], routineWarning: null, submitting: false, error: null });
   };
   const chooseMergeTarget = (intoId) => {
     const into = live.find((s) => s.id === intoId) ?? null;
-    setMerging(current => current && { ...current, into, routines: [] });
+    setMerging(current => current && { ...current, into, routines: [], routineWarning: null });
   };
   const confirmMerge = async () => {
     const active = merging;
@@ -324,6 +329,7 @@ export function ScreenAdminView() {
                 <List size="sm">{merging.routines.map((r) => <List.Item key={r.id}>{r.name}</List.Item>)}</List>
               </div>
             )}
+            {merging.routineWarning && <Text size="sm" className="house-tone--failed" role="alert">{merging.routineWarning}</Text>}
             {merging.error && <Text size="sm" className="house-tone--failed" role="alert">{merging.error}</Text>}
           </Stack>
         )}
