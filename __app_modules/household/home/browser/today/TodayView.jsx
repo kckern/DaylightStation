@@ -76,7 +76,7 @@ export function TodayView({ entities, rooms, summary, haUrl, toggle }) {
   const [range, setRange] = useState(rangePreference.read);
   const [openLaneId, setOpenLaneId] = useState(null);
   const { timeline, loading, revalidating, error, reload } = useTimeline(range);
-  const { regionProps, retry } = useRetryRegion(reload, loading || revalidating);
+  const { regionProps, retry, focus } = useRetryRegion(reload, loading || revalidating);
   const sentence = useMemo(() => composeNow({ entities, rooms, summary }).sentences[0] || null, [entities, rooms, summary]);
 
   useEffect(() => {
@@ -98,6 +98,10 @@ export function TodayView({ entities, rooms, summary, haUrl, toggle }) {
   const closeLane = useCallback(() => setOpenLaneId(null), []);
   // The drawer follows the shown range (and each poll), not the lane as tapped.
   const shownLane = openLaneId && timeline ? timeline.lanes.find((l) => l.id === openLaneId) || null : null;
+  useEffect(() => {
+    if (!openLaneId || !timeline) return;
+    if (!timeline.lanes?.some(lane => lane.id === openLaneId)) setOpenLaneId(null);
+  }, [openLaneId, timeline]);
 
   let body;
   if (!timeline && error) body = <ErrorState error={error} onRetry={retry} label="Timeline" />;
@@ -123,6 +127,7 @@ export function TodayView({ entities, rooms, summary, haUrl, toggle }) {
         haUrl={haUrl}
         toggle={toggle}
         onClose={closeLane}
+        getFallbackFocusTarget={focus}
         timeZone={timeline?.timeZone}
       />
     </div>

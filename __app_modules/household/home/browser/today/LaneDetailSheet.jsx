@@ -20,14 +20,14 @@ export function laneEntity(lane, entities) {
  * shown range with their clips. A screen or a room has nothing to add: its
  * history chart is the watt trace or the on bars.
  */
-export function LaneDetailSheet({ lane, entities, summary, haUrl, toggle, onClose, timeZone }) {
+export function LaneDetailSheet({ lane, entities, summary, haUrl, toggle, onClose, getFallbackFocusTarget, timeZone }) {
   const entity = useMemo(() => (lane ? laneEntity(lane, entities) : null), [lane, entities]);
   const marks = useMemo(() => (lane ? (lane.days || []).flatMap((d) => d.marks || []) : []), [lane]);
   if (!lane) return null;
   let extra = null;
   if (lane.kind === 'power') extra = <PowerBreakdown entities={entities} summary={summary} />;
   else if (lane.kind === 'events' && lane.camera) extra = <RingClips camera={lane.camera} marks={marks} timeZone={timeZone} />;
-  return <EntityDetailSheet entity={entity} haUrl={haUrl} onToggle={toggle} onClose={onClose} extra={extra} />;
+  return <EntityDetailSheet entity={entity} haUrl={haUrl} onToggle={toggle} onClose={onClose} getFallbackFocusTarget={getFallbackFocusTarget} extra={extra} />;
 }
 
 export default LaneDetailSheet;
