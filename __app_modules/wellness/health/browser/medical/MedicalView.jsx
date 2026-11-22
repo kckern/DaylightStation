@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Autocomplete, Button, Group, NumberInput, Stack, TextInput } from '@mantine/core';
 import { SubmitButton, SectionCard, StatCard, Sheet, LoadingState, ErrorState, EmptyState, StateMessage, useRetryRegion, useSheetSubmission } from '@/lib/ui';
+import { useKeyedSubmission } from '@/lib/ui/useKeyedSubmission.js';
 import { invalidateApiResources, useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { unavailableError } from "../healthResources.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
@@ -35,10 +36,11 @@ export function MedicalView() {
   const { regionProps, retry } = useRetryRegion(med.reload, med.loading);
   const [open, setOpen] = useState(false);
   const [removeError, setRemoveError] = useState(null);
+  const { pending: removing, run: runRemoval } = useKeyedSubmission();
 
   const openAdd = () => { setRemoveError(null); setOpen(true); };
 
-  const remove = async (id, metric, description) => {
+  const remove = (id, metric, description) => runRemoval(id, async () => {
     if (!window.confirm(`Delete ${description}?`)) return;
     setRemoveError(null);
     try {
@@ -49,7 +51,7 @@ export function MedicalView() {
       logger.error('reading.remove.failed', { id, error: err?.message });
       setRemoveError(err);
     }
-  };
+  });
 
   const metrics = med.data?.metrics || [];
 
@@ -87,6 +89,7 @@ export function MedicalView() {
                     variant="subtle"
                     color="red"
                     aria-label={`Delete ${description}`}
+                    disabled={removing.has(r.id)}
                     onClick={() => remove(r.id, group.metric, description)}
                   >Delete</Button>
                 </div>
