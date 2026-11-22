@@ -80,7 +80,7 @@ export function RoomsView({ entities, rooms, types, summary, haUrl, toggle, turn
               <span className="home-room__lights">
                 {room.lightsOn ? <><span className="home-room__dot" aria-hidden="true" />{room.lightsOn}<VisuallyHidden> {room.lightsOn === 1 ? 'light' : 'lights'}</VisuallyHidden> on</> : null}
               </span>
-              <span className="home-room__temp">{room.temperature ? formatDegrees(room.temperature.value) : null}</span>
+              <span className="home-room__temp">{room.temperature ? formatDegrees(room.temperature.value, room.temperature.unit) : null}</span>
               <span className="home-room__motion">
                 {!room.motion ? null : <><VisuallyHidden>Motion detected: </VisuallyHidden>{room.motion.now ? 'now' : formatAge(room.motion.at)}</>}
               </span>

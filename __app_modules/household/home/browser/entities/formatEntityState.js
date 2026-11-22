@@ -50,10 +50,12 @@ export function formatKwh(kwh) {
   return `${kwh.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits })} kWh`;
 }
 
-/** "69°" — a temperature as a glance reads it. */
-export function formatDegrees(raw) {
+/** A room temperature; keep the glance-readable degree-only fallback when scale is unknown. */
+export function formatDegrees(raw, unit = null) {
   const n = Number(raw);
-  return Number.isFinite(n) ? `${Math.round(n)}°` : null;
+  if (!Number.isFinite(n)) return null;
+  const scale = typeof unit === 'string' ? unit.trim() : '';
+  return scale ? `${Math.round(n)} ${scale}` : `${Math.round(n)}°`;
 }
 
 /**

@@ -117,11 +117,11 @@ const isDeviceInternal = (e) => /device_temperature|internal|_outdoor_/.test(e.i
 export function roomTemperature(roomEntities) {
   const thermostat = roomEntities.find((e) => e.domain === 'climate' && e.stateClass !== 'unavailable'
     && Number.isFinite(e.detail?.currentTemperature));
-  if (thermostat) return { value: thermostat.detail.currentTemperature, entityId: thermostat.id, thermostat };
+  if (thermostat) return { value: thermostat.detail.currentTemperature, unit: thermostat.unit || null, entityId: thermostat.id, thermostat };
   const sensor = roomEntities.filter((e) => isTempSensor(e) && hasFiniteNumericState(e))
     .sort((a, b) => Number(isDeviceInternal(a)) - Number(isDeviceInternal(b)))[0];
   if (!sensor || isDeviceInternal(sensor)) return null;
-  return { value: Number(sensor.state), entityId: sensor.id, thermostat: null };
+  return { value: Number(sensor.state), unit: sensor.unit || null, entityId: sensor.id, thermostat: null };
 }
 
 /** What a thermostat is doing, in a word a glance reads — nothing when it is merely idle. */
