@@ -178,6 +178,8 @@ function GalleryHero({ images, feedItemId, title }) {
   const touchStartRef = useRef(null);
   const mouseDraggedRef = useRef(false);
   const galleryRef = useRef(null);
+  const previousArrowRef = useRef(null);
+  const nextArrowRef = useRef(null);
   const refocusGallery = useRef(false);
   const count = images.length;
   const current = images[index] || images[0];
@@ -190,14 +192,14 @@ function GalleryHero({ images, feedItemId, title }) {
 
   const goPrev = useCallback((e) => {
     e?.stopPropagation();
-    if (index === 1 && e?.currentTarget?.tagName === 'BUTTON' && e.currentTarget.ownerDocument.activeElement === e.currentTarget) {
+    if (index === 1 && galleryRef.current?.ownerDocument.activeElement === previousArrowRef.current) {
       refocusGallery.current = true;
     }
     setIndex(i => Math.max(i - 1, 0));
   }, [index]);
   const goNext = useCallback((e) => {
     e?.stopPropagation();
-    if (index === count - 2 && e?.currentTarget?.tagName === 'BUTTON' && e.currentTarget.ownerDocument.activeElement === e.currentTarget) {
+    if (index === count - 2 && galleryRef.current?.ownerDocument.activeElement === nextArrowRef.current) {
       refocusGallery.current = true;
     }
     setIndex(i => Math.min(i + 1, count - 1));
@@ -288,12 +290,12 @@ function GalleryHero({ images, feedItemId, title }) {
 
       {/* Left arrow */}
       {index > 0 && (
-        <button className="ds-touch-target" onClick={goPrev} aria-label="Previous image"
+        <button ref={previousArrowRef} className="ds-touch-target" onClick={goPrev} aria-label="Previous image"
           style={{ ...arrowStyle, left: '6px' }}>‹</button>
       )}
       {/* Right arrow */}
       {index < count - 1 && (
-        <button className="ds-touch-target" onClick={goNext} aria-label="Next image"
+        <button ref={nextArrowRef} className="ds-touch-target" onClick={goNext} aria-label="Next image"
           style={{ ...arrowStyle, right: '6px' }}>›</button>
       )}
 
