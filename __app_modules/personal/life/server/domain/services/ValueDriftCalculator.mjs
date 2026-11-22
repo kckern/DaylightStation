@@ -67,39 +67,67 @@ export class ValueDriftCalculator {
 
   calculateDrift(allocation, values) {
     if (values.length === 0 || Object.keys(allocation).length === 0) {
-      return { correlation: null, status: 'insufficient_data', statedOrder: [], observedOrder: [], allocation };
+      return {
+        correlation: null,
+        status: 'insufficient_data',
+        statedOrder: [],
+        observedOrder: [],
+        statedRankById: {},
+        observedRankById: {},
+        statedTieCountById: {},
+        observedTieCountById: {},
+        allocation,
+      };
     }
 
+    const statedRanking = this.#rankValues(values.map(value => [value.id, value.rank ?? 999]));
     const statedOrder = [...values]
-      .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))
-      .map(v => v.id);
+      .sort((a, b) => statedRanking.rankById[a.id] - statedRanking.rankById[b.id] || a.id.localeCompare(b.id))
+      .map(value => value.id);
 
-    const observedOrder = Object.entries(allocation)
-      .sort((a, b) => b[1] - a[1])
+    const observedEntries = Object.entries(allocation);
+    const observedRanking = this.#rankValues(observedEntries, 'descending');
+    const observedOrder = observedEntries
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .map(([id]) => id);
 
     const common = statedOrder.filter((id) => observedOrder.includes(id));
+    const rankData = {
+      statedOrder,
+      observedOrder,
+      statedRankById: statedRanking.rankById,
+      observedRankById: observedRanking.rankById,
+      statedTieCountById: statedRanking.tieCountById,
+      observedTieCountById: observedRanking.tieCountById,
+      allocation,
+    };
     if (common.length < MIN_COMMON_VALUES) {
-      return { correlation: null, status: 'insufficient_data', statedOrder, observedOrder, allocation };
+      return { correlation: null, status: 'insufficient_data', ...rankData };
     }
 
     const commonIds = new Set(common);
-    const correlation = this.#spearmanCorrelation(
-      statedOrder.filter((id) => commonIds.has(id)),
-      observedOrder.filter((id) => commonIds.has(id))
+    const statedCommonRanking = this.#rankValues(
+      values.filter(value => commonIds.has(value.id)).map(value => [value.id, value.rank ?? 999])
     );
+    const observedCommonRanking = this.#rankValues(
+      observedEntries.filter(([id]) => commonIds.has(id)),
+      'descending'
+    );
+    const statedRanks = common.map(id => statedCommonRanking.rankById[id]);
+    const observedRanks = common.map(id => observedCommonRanking.rankById[id]);
+    const correlation = this.#spearmanCorrelation(statedRanks, observedRanks);
 
-    // Fewer than 2 shared ids between stated values and observed allocation:
-    // Spearman is undefined, so "we can't measure" — not a genuine bad correlation.
+    // A too-small overlap or a tied ranking with zero variance means there is no
+    // meaningful correlation to report — not a genuine bad correlation.
     if (correlation === null) {
-      return { correlation: null, status: 'insufficient_data', statedOrder, observedOrder, allocation };
+      return { correlation: null, status: 'insufficient_data', ...rankData };
     }
 
     const status = correlation > 0.8 ? 'aligned'
       : correlation > 0.5 ? 'drifting'
       : 'reconsidering';
 
-    return { correlation, status, statedOrder, observedOrder, allocation };
+    return { correlation, status, ...rankData };
   }
 
   #resolveValue(source, item, categoryDefaults, calendarRules, extractorOverrides) {
@@ -142,20 +170,48 @@ export class ValueDriftCalculator {
     return 15; // default fallback
   }
 
+  #rankValues(entries, direction = 'ascending') {
+    const sorted = entries
+      .map(([id, score]) => ({ id, score: Number(score) }))
+      .sort((a, b) => (direction === 'descending' ? b.score - a.score : a.score - b.score) || a.id.localeCompare(b.id));
+    const rankById = {};
+    const tieCountById = {};
+
+    for (let start = 0; start < sorted.length;) {
+      let end = start + 1;
+      while (end < sorted.length && sorted[end].score === sorted[start].score) end += 1;
+      const rank = ((start + 1) + end) / 2;
+      const tieCount = end - start;
+      for (let index = start; index < end; index += 1) {
+        rankById[sorted[index].id] = rank;
+        tieCountById[sorted[index].id] = tieCount;
+      }
+      start = end;
+    }
+
+    return { rankById, tieCountById };
+  }
+
   #spearmanCorrelation(stated, observed) {
-    // Both lists contain the same shared ids, so their ranks are comparable.
+    // Spearman is Pearson correlation over average ranks, including tied values.
     if (stated.length < 2) return null; // undefined over <2 pairs — caller maps to insufficient_data
 
     const n = stated.length;
-    let sumD2 = 0;
+    const meanStated = stated.reduce((sum, rank) => sum + rank, 0) / n;
+    const meanObserved = observed.reduce((sum, rank) => sum + rank, 0) / n;
+    let covariance = 0;
+    let statedVariance = 0;
+    let observedVariance = 0;
 
-    for (const id of stated) {
-      const statedRank = stated.indexOf(id) + 1;
-      const observedRank = observed.indexOf(id) + 1;
-      const d = statedRank - observedRank;
-      sumD2 += d * d;
+    for (let index = 0; index < n; index += 1) {
+      const statedDelta = stated[index] - meanStated;
+      const observedDelta = observed[index] - meanObserved;
+      covariance += statedDelta * observedDelta;
+      statedVariance += statedDelta * statedDelta;
+      observedVariance += observedDelta * observedDelta;
     }
 
-    return 1 - (6 * sumD2) / (n * (n * n - 1));
+    if (statedVariance === 0 || observedVariance === 0) return null;
+    return Math.max(-1, Math.min(1, covariance / Math.sqrt(statedVariance * observedVariance)));
   }
 }

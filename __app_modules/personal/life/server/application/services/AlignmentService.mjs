@@ -129,11 +129,17 @@ export class AlignmentService {
     // drift alert — treat them like a missing snapshot (audit A-3.2c).
     if (snapshot.status === 'drifting' || snapshot.status === 'reconsidering') {
       const v = this.#mostDriftedValue(plan, snapshot);
+      const statedPosition = v?.statedTieCount > 1
+        ? `tie it for #${v.statedTieStart}`
+        : `rank it #${v?.statedRank}`;
+      const observedPosition = v?.observedTieCount > 1
+        ? `tied for #${v.observedTieStart}`
+        : `#${v?.observedRank}`;
       items.push({
         type: 'drift_alert',
         title: v ? `${v.name} matters to you, but it's getting little of your time`
                  : `Your time and your values are pulling apart`,
-        reason: v ? `You rank it #${v.statedRank}, but it lands #${v.observedRank} in where your time actually goes`
+        reason: v ? `You ${statedPosition}, but it lands ${observedPosition} in where your time actually goes`
                   : `Recent activity doesn't match your stated priorities`,
         urgency: snapshot.status === 'reconsidering' ? 'high' : 'medium',
         related_value: v ? v.id : null,
@@ -171,13 +177,27 @@ export class AlignmentService {
     const observed = snapshot.observedOrder || [];
     let worst = null;
     for (const id of stated) {
-      const s = stated.indexOf(id);
-      const o = observed.indexOf(id);
-      if (o < 0) continue;
-      const drop = o - s;
+      const statedIndex = stated.indexOf(id);
+      const observedIndex = observed.indexOf(id);
+      if (observedIndex < 0) continue;
+      const statedRank = snapshot.statedRankById?.[id] ?? statedIndex + 1;
+      const observedRank = snapshot.observedRankById?.[id] ?? observedIndex + 1;
+      const statedTieCount = snapshot.statedTieCountById?.[id] ?? 1;
+      const observedTieCount = snapshot.observedTieCountById?.[id] ?? 1;
+      const drop = observedRank - statedRank;
       if (!worst || drop > worst.drop) {
         const value = (plan.values || []).find((v) => v.id === id);
-        worst = { id, name: value?.name || id, statedRank: s + 1, observedRank: o + 1, drop };
+        worst = {
+          id,
+          name: value?.name || id,
+          statedRank,
+          observedRank,
+          statedTieCount,
+          observedTieCount,
+          statedTieStart: statedRank - (statedTieCount - 1) / 2,
+          observedTieStart: observedRank - (observedTieCount - 1) / 2,
+          drop,
+        };
       }
     }
     return worst && worst.drop > 0 ? worst : null;
