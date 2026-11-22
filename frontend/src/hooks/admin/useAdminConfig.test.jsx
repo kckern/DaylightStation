@@ -131,6 +131,52 @@ describe('useAdminConfig resource ownership', () => {
     expect(result.current.data).toEqual({ file: 'server-2' });
   });
 
+  it('preserves a dirty conflict draft when the editor unmounts during its readback', async () => {
+    const filePath = 'conflict-race.yml';
+    const resourcePath = `/api/v1/admin/config/files/${filePath}`;
+    let reads = 0;
+    let resolveSuperseded;
+    let writes = 0;
+    apiState.respond = (path, body, method) => {
+      if (method === 'PUT') {
+        if (++writes === 1) {
+          const conflict = new Error('revision conflict');
+          conflict.status = 409;
+          return Promise.reject(conflict);
+        }
+        return Promise.resolve({ parsed: body.parsed, raw: 'file: edited again\n', revision: 3 });
+      }
+      if (++reads === 1) return Promise.resolve({ parsed: { file: 'opened' }, raw: 'file: opened\n', revision: 1 });
+      if (reads === 2) return new Promise(resolve => { resolveSuperseded = resolve; });
+      if (reads === 3) return Promise.resolve({ parsed: { file: 'server latest' }, raw: 'file: server latest\n', revision: 2 });
+      throw new Error(`Unexpected config read ${reads}`);
+    };
+
+    const ownerKey = JSON.stringify(['config', 'anonymous', filePath, 'parsed']);
+    const original = renderHook(() => useAdminConfig(filePath));
+    await waitFor(() => expect(original.result.current.data).toEqual({ file: 'opened' }));
+    act(() => original.result.current.setData({ file: 'first edit' }));
+
+    let saveConflict;
+    act(() => { saveConflict = original.result.current.save().catch(error => error); });
+    await waitFor(() => expect(reads).toBe(2));
+    original.unmount();
+    act(() => invalidateApiResources(path => path === resourcePath));
+    await waitFor(() => expect(reads).toBe(3));
+    expect(await saveConflict).toMatchObject({ status: 409, message: 'revision conflict' });
+
+    await act(async () => resolveSuperseded({ parsed: { file: 'stale' }, raw: 'file: stale\n', revision: 1 }));
+    apiState.respond = async () => ({ parsed: { file: 'server latest' }, raw: 'file: server latest\n', revision: 2 });
+    const reopened = renderHook(() => useAdminConfig(filePath));
+    await waitFor(() => expect(reopened.result.current.draftReady).toBe(true));
+    expect(reopened.result.current.data).toEqual({ file: 'first edit' });
+    expect(reopened.result.current.dirty).toBe(true);
+    act(() => reopened.result.current.revert());
+    expect(reopened.result.current.data).toEqual({ file: 'server latest' });
+    reopened.unmount();
+    clearAdminDraft(ownerKey);
+  });
+
   it('restores an unmounted raw draft only against the exact raw server baseline', async () => {
     const filePath = 'history-exact-baseline.yml';
     const ownerKey = JSON.stringify(['config', 'anonymous', filePath, 'raw']);
