@@ -761,7 +761,7 @@ paper is the authorization.
 | Scan of… | Slip | Credit |
 |---|---|---|
 | an open sheet | "<Name>'s maze counted" | yes |
-| a sheet already counted | "Already counted" (`scan-duplicate`) | no (idempotent) |
+| a sheet already counted | none: logged as `scan-duplicate` only | no (idempotent) |
 | a sheet whose reservation was voided | "Not counted" (`scan-voided`) | no |
 | a platform page School never issued | "Not a School sheet" | no |
 

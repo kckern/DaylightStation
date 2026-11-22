@@ -1513,6 +1513,35 @@ true, and read by the child as "done". Two invariants now hold:
   "everything on it was already marked". Logged as
   `school.print.scan-scored-sessionless`.
 
+#### Notice throttle (2026-11-21)
+
+Every notice slip (`notice-*` document id, from any scan, code or card path)
+goes through two guards in `ReceiptPrinting`. Agendas, result receipts,
+makeup sheets and worksheets are never held.
+
+- **Repeat.** The same slip, word for word, printed in the last
+  `repeatMinutes` is not printed again (`school.receipt.repeat-suppressed`).
+  It compares the words, not only the id, so "Off you go" for two different
+  children is still two slips.
+- **Hourly cap.** At most `noticesPerHour` notices come out in any rolling
+  hour across the house. Past the cap a slip is dropped and
+  `school.receipt.throttled` warns once per burst.
+
+Only a slip that actually came out counts toward either guard. A held slip
+answers `{printed: false, reason: 'repeat' | 'throttled'}`; the scan or code
+itself still runs. The state is kept in memory, so a restart resets it.
+
+```yaml
+# household school.yml
+lifecycle:
+  receiptGuard:
+    repeatMinutes: 10    # 0 turns the repeat guard off
+    noticesPerHour: 12   # 0 turns the cap off
+```
+
+A rescan of a printed activity that was already counted prints nothing at all
+(see `programs.md`, Printed activities).
+
 ## 8a. The companion gate row
 
 A lesson may attach a **companion**: a second piece of media (today a scripture

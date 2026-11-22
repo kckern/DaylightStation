@@ -128,9 +128,13 @@ sends both, composed in `composition/parentDigest.mjs`.
   An event is a child's when its `learnerId` names them or its `sessionId`
   is theirs; one naming neither is left out. A code nobody issued has no
   learner and is never attributed to anyone.
+- **Rescans.** `counted sheets rescanned N times`, after the failure, when
+  the day's ledger holds 3 or more `school.printed-activity.scan-duplicate`
+  events for the child's sheets (the sheet's owner; who held the scanner is
+  not recorded). A rescan prints no slip, so this line is where it shows.
 - **Length.** A line over 100 characters (counted in code points, so an
-  emoji is never split) drops its clauses from the end: failure, then
-  passes, then silver. A body over 600 characters keeps the first children,
+  emoji is never split) drops its clauses from the end: rescans, then
+  failure, then passes, then silver. A body over 600 characters keeps the first children,
   then the `Coins not live yet` footer if any, then `+N more in the teacher
   view`.
 - **`zero-days`.** Title `📭 {Child} — School`, body `Nothing done for the

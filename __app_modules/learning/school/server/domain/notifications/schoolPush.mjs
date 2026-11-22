@@ -70,7 +70,7 @@ function push(emoji, event, message, lane, { unknownChild = false } = {}) {
 }
 
 // The 6 pm parent digest. One line per child; a line longer than LINE_MAX
-// drops its tail clauses (failure, then passes, then silver) and a body past
+// drops its tail clauses (rescans, then failure, then passes, then silver) and a body past
 // DIGEST_MAX keeps the first children and counts the rest. No push standard
 // limit exists for length; these keep the card readable when expanded.
 const LINE_MAX = 100;
@@ -81,6 +81,8 @@ const FAILURE_TEXT = {
   old_code: 'an old code was typed',
   issue_failed: "a sheet couldn't be made",
 };
+// Below this a rescan is a grown-up double-checking; at it, it is play.
+export const REPEAT_SCANS_SHOWN = 3;
 const ORDINALS = { 2: 'second', 3: 'third', 4: 'fourth', 5: 'fifth' };
 
 const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`;
@@ -93,6 +95,8 @@ function digestLine(row, coins, who) {
     coins === 'live' && isCount(row.silverEarned) && row.silverEarned > 0 ? `${row.silverEarned} silver` : null,
     isCount(row.passesUsed) && row.passesUsed > 0 ? `${plural(row.passesUsed, 'pass', 'passes')} used` : null,
     FAILURE_TEXT[row.failure] ?? null,
+    isCount(row.repeatScans) && row.repeatScans >= REPEAT_SCANS_SHOWN
+      ? `counted sheets rescanned ${row.repeatScans} times` : null,
   ];
   let line;
   for (let keep = tail.length; keep >= 0; keep -= 1) {

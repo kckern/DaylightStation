@@ -132,6 +132,20 @@ describe('SchoolParentDigest — the digest', () => {
     expect(digests(sent)[0].body).toBe('Learner A: 0 of 1 done · a print failed');
   });
 
+  it('counts rescans of a child\'s counted sheets once they look like play', async () => {
+    const dup = (h, learnerId) => ({ ts: `2026-10-20T${String(h).padStart(2, '0')}:00:00.000-07:00`, event: 'school.printed-activity.scan-duplicate', data: { learnerId } });
+    const { digest, sent } = makeDigest({
+      learners: ['learner_a', 'learner_b'],
+      sections: { learner_a: [section('served')], learner_b: [section('served')] },
+      events: { '2026-10-20': [dup(8, 'learner_a'), dup(9, 'learner_a'), dup(10, 'learner_a'), dup(11, 'learner_b'), dup(12, 'learner_b')] },
+    });
+    await digest.run({ studyDay: '2026-10-20' });
+    expect(digests(sent)[0].body.split('\n')).toEqual([
+      'Learner A: 1 of 1 done · counted sheets rescanned 3 times',
+      'Learner B: 1 of 1 done',
+    ]);
+  });
+
   it('names an expired code for its learner, never a code nobody issued', async () => {
     const { digest, sent } = makeDigest({
       learners: ['learner_a', 'learner_b'],

@@ -12,22 +12,106 @@
  * configuration state, not an exception: on an install with no receipt printer
  * wired, the lifecycle still runs and every response reports that nothing
  * printed.
+ *
+ * NOTICE SLIPS ARE THROTTLED (2026-11-21). A notice (`notice-*` id: the
+ * explanation slips a scan or a code prints) is the cheapest paper in the house
+ * to summon, and the kitchen scanner made a toy of it: 54 slip jobs in one
+ * afternoon from children rescanning finished sheets and cards. Two guards,
+ * notices only. Agendas, result receipts and every other document always print:
+ *
+ *   repeat → the same slip, word for word, printed within `repeatWindowMs` is
+ *            not printed again. The paper from the first one is still there.
+ *            Same text, not same id: "Off you go" for two children is two
+ *            slips.
+ *   cap    → at most `noticesPerHour` notices in any rolling hour, house-wide.
+ *            Past it the slip is dropped and `school.receipt.throttled` warns
+ *            (once per burst; later drops log at debug).
+ *
+ * Only a print that came out counts toward either guard, so a dead printer
+ * never spends the allowance. Both answer `{ printed: false }` with
+ * `reason: 'repeat'` or `'throttled'`. State is in memory: a restart forgets it,
+ * which costs at most one more slip per kind. `noticesPerHour: 0` or
+ * `repeatWindowMs: 0` turns that guard off.
  */
 import { readPrintOutcome } from '#domains/core/utils/printOutcome.mjs';
 
+export const DEFAULT_RECEIPT_GUARD = Object.freeze({ repeatWindowMs: 10 * 60 * 1000, noticesPerHour: 12 });
+const HOUR_MS = 60 * 60 * 1000;
+
+const isNotice = (document) => typeof document?.id === 'string' && document.id.startsWith('notice-');
+
+/** The slip's words, so two slips with one id but different text are different slips. */
+function slipKey(document) {
+  try { return `${document.id}\u0000${JSON.stringify(document.blocks ?? null)}`; } catch { return document.id; }
+}
+
+/**
+ * `school.yml` `lifecycle.receiptGuard` → guard options. Minutes in config,
+ * milliseconds here; a missing or bad value keeps the default.
+ */
+export function receiptGuardFromConfig(cfg = null) {
+  const out = { ...DEFAULT_RECEIPT_GUARD };
+  const minutes = Number(cfg?.repeatMinutes);
+  if (cfg && cfg.repeatMinutes != null && Number.isFinite(minutes) && minutes >= 0) out.repeatWindowMs = minutes * 60 * 1000;
+  const cap = Number(cfg?.noticesPerHour);
+  if (cfg && cfg.noticesPerHour != null && Number.isInteger(cap) && cap >= 0) out.noticesPerHour = cap;
+  return out;
+}
+
 export class ReceiptPrinting {
-  #renderer; #printer; #logger;
+  #renderer; #printer; #logger; #guard; #clock;
+  #lastPrinted = new Map(); // slipKey -> ms
+  #noticeTimes = [];        // ms of notices that came out, oldest first
+  #throttleWarned = false;
+  #inFlight = new Set();    // slipKeys being printed right now
 
   /**
    * @param {object} deps
    * @param {import('../../../../__app_modules/learning/school/server/application/ports/IDocumentRenderer.mjs').IReceiptRenderer} [deps.renderer]
    * @param {{print: Function}} [deps.printer] - thermal printer adapter surface
    * @param {object} [deps.logger]
+   * @param {{repeatWindowMs?: number, noticesPerHour?: number}} [deps.guard] - notice throttle; defaults to DEFAULT_RECEIPT_GUARD
+   * @param {() => number} [deps.clock]
    */
-  constructor({ renderer = null, printer = null, logger = console } = {}) {
+  constructor({ renderer = null, printer = null, logger = console, guard = null, clock = () => Date.now() } = {}) {
     this.#renderer = renderer;
     this.#printer = printer;
     this.#logger = logger;
+    this.#guard = { ...DEFAULT_RECEIPT_GUARD, ...(guard ?? {}) };
+    this.#clock = clock;
+  }
+
+  /** @returns {{printed: false, reason: 'repeat'|'throttled'}|null} why a notice must not print, or null */
+  #held(document) {
+    if (!isNotice(document)) return null;
+    const now = this.#clock();
+    const { repeatWindowMs, noticesPerHour } = this.#guard;
+    const key = slipKey(document);
+    const last = this.#lastPrinted.get(key);
+    if (repeatWindowMs > 0 && (this.#inFlight.has(key) || (last != null && now - last < repeatWindowMs))) {
+      this.#logger.info?.('school.receipt.repeat-suppressed', { id: document.id, sinceMs: last != null ? now - last : 0 });
+      return { printed: false, reason: 'repeat' };
+    }
+    while (this.#noticeTimes.length && now - this.#noticeTimes[0] >= HOUR_MS) this.#noticeTimes.shift();
+    if (noticesPerHour > 0 && this.#noticeTimes.length >= noticesPerHour) {
+      const evidence = { id: document.id, noticesPerHour, oldestMs: now - this.#noticeTimes[0] };
+      if (this.#throttleWarned) this.#logger.debug?.('school.receipt.throttled', evidence);
+      else this.#logger.warn?.('school.receipt.throttled', evidence);
+      this.#throttleWarned = true;
+      return { printed: false, reason: 'throttled' };
+    }
+    this.#throttleWarned = false;
+    return null;
+  }
+
+  #came(document) {
+    if (!isNotice(document)) return;
+    const now = this.#clock();
+    this.#noticeTimes.push(now);
+    this.#lastPrinted.set(slipKey(document), now);
+    if (this.#lastPrinted.size > 200) {
+      for (const [key, at] of this.#lastPrinted) if (now - at >= this.#guard.repeatWindowMs) this.#lastPrinted.delete(key);
+    }
   }
 
   /** @returns {boolean} whether anything can actually be printed */
@@ -48,6 +132,10 @@ export class ReceiptPrinting {
       this.#logger.debug?.('school.receipt.not-wired', { id: document.id });
       return { printed: false, reason: 'not_wired' };
     }
+    const held = this.#held(document);
+    if (held) return held;
+    const key = isNotice(document) ? slipKey(document) : null;
+    if (key) this.#inFlight.add(key);
     try {
       const artifact = await this.#renderer.render(document, opts);
       // FOUR OUTCOMES, NOT TWO — AND SILENCE IS NOT ONE OF THE FAILURES.
@@ -101,8 +189,9 @@ export class ReceiptPrinting {
         statusAnswered: outcome?.printerState?.answered ?? null,
         statusError: outcome?.printerState?.error ?? null,
       };
-      if (claim.confirmed) return { printed: true, reason: null };
+      if (claim.confirmed) { this.#came(document); return { printed: true, reason: null }; }
       if (claim.printed) {
+        this.#came(document);
         this.#logger.warn?.('school.receipt.unverified', evidence);
         return { printed: true, reason: 'unverified' };
       }
@@ -115,6 +204,8 @@ export class ReceiptPrinting {
     } catch (err) {
       this.#logger.warn?.('school.receipt.failed', { id: document.id, error: err.message });
       return { printed: false, reason: 'printer_error' };
+    } finally {
+      if (key) this.#inFlight.delete(key);
     }
   }
 }

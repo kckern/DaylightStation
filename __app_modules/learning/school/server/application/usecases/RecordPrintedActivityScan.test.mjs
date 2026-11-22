@@ -117,14 +117,15 @@ describe('RecordPrintedActivityScan', () => {
     expect(store.calls.complete[0].studyDay).toBe('2026-11-13');
   });
 
-  it('a second scan of the same sheet says already counted and completes nothing', async () => {
+  it('a second scan of the same sheet says already counted, completes nothing and prints nothing', async () => {
     const store = fakeStore([issuance({ completedAt: '2026-11-12T20:00:00.000Z', completedStudyDay: '2026-11-12' })]);
     const { uc, receipts, logger } = build({ store });
     const out = await uc.execute({ ...KEY, device: 'kitchen-scanner' });
     expect(out).toMatchObject({ status: 'already', ok: true, message: 'Already counted', learnerId: 'learner_a' });
     expect(out.ok).toBe(true);
     expect(store.calls.complete).toHaveLength(0);
-    expect(docText(receipts.docs[0])).toContain("Learner A's Maze 12 was counted on 2026-11-12.");
+    expect(out.printed).toBe(false);
+    expect(receipts.docs).toHaveLength(0);
     expect(logged(logger.info, 'school.printed-activity.scan-duplicate')[0][1]).toEqual({
       learnerId: 'learner_a', issuanceId: 'iss-1', corpusId: 'mazes', platform: 'beeloo', externalId: 'page-123',
       device: 'kitchen-scanner', completedStudyDay: '2026-11-12',
@@ -140,7 +141,7 @@ describe('RecordPrintedActivityScan', () => {
     expect(out).toMatchObject({ status: 'already', ok: true, message: 'Already counted' });
     expect(logged(logger.info, 'school.printed-activity.scan-duplicate')).toHaveLength(1);
     expect(store.complete).toHaveBeenCalledTimes(1);
-    expect(docText(receipts.docs[0])).toContain('was counted on 2026-11-14.');
+    expect(receipts.docs).toHaveLength(0);
   });
 
   it('a page School never issued is not a School sheet, nothing written', async () => {

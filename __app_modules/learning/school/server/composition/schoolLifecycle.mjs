@@ -79,7 +79,7 @@ import { FitnessCourseCurriculumCatalog } from "../application/FitnessCourseCurr
 import { FitnessSchoolAssessmentBridge } from "../application/FitnessSchoolAssessmentBridge.mjs";
 import { EventBusSchoolRealtimeAdapter } from "../adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs";
 import { GrownUpGate } from "../application/GrownUpGate.mjs";
-import { ReceiptPrinting } from "../../../../../__capabilities/printing/server/receipt.mjs";
+import { ReceiptPrinting, receiptGuardFromConfig } from "../../../../../__capabilities/printing/server/receipt.mjs";
 import { SentenceLadderProgramLauncher } from "../application/SentenceLadderProgramLauncher.mjs";
 import { LanguageReelsProgramLauncher } from "../application/LanguageReelsProgramLauncher.mjs";
 import { FlashcardProgramLauncher } from "../application/FlashcardProgramLauncher.mjs";
@@ -898,7 +898,12 @@ export async function createSchoolLifecycle({
         .forEach((missing) => logger.warn?.('school.calendar.assignment-missing', missing));
     }).catch((error) => logger.warn?.('school.calendar.assignment-check-failed', { error: error?.message }));
   }
-  const receipts = new ReceiptPrinting({ renderer: receiptPrintRenderer, printer: receiptPrinter, logger });
+  // Notice slips are throttled (repeat + hourly cap); `lifecycle.receiptGuard`
+  // in school.yml tunes it. See ReceiptPrinting.
+  const receipts = new ReceiptPrinting({
+    renderer: receiptPrintRenderer, printer: receiptPrinter, logger,
+    guard: receiptGuardFromConfig(lifecycleCfg.receiptGuard),
+  });
   // Who may act for a child. Read through `userService` per call, never
   // snapshotted: a member added after boot is a member. With no user service at
   // all, nobody is a grown-up and every parent-only write is refused — the

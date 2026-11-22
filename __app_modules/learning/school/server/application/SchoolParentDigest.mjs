@@ -72,6 +72,24 @@ export function failureOf(entry) {
 
 const errorText = (error) => error?.message ?? String(error);
 
+/** Failure events, most actionable first, then oldest first. */
+function failuresIn(ledger) {
+  return ledger
+    .map(({ entry, ms }) => ({ entry, ms, code: failureOf(entry) }))
+    .filter(({ code }) => code)
+    .sort((a, b) => (FAILURE_RANK[a.code] - FAILURE_RANK[b.code]) || (a.ms - b.ms));
+}
+
+/**
+ * Rescans of this learner's already-counted printed activities (2026-11-21:
+ * one finished coloring page was scanned 38 times in an afternoon). The
+ * count is of the sheet's owner; who held the scanner is not known.
+ */
+export function repeatScansIn(ledger, learnerId) {
+  return ledger.filter(({ entry }) => entry?.event === 'school.printed-activity.scan-duplicate'
+    && entry?.data?.learnerId === learnerId).length;
+}
+
 export class SchoolParentDigest {
   #roster; #learnerName; #completion; #termVerdicts; #economyToday; #coinsMode; #zeroDaysAlert;
   #ledger; #learnerSessionIds; #notifications; #teachers; #today; #timezone; #boundaryHour; #logger;
@@ -120,12 +138,13 @@ export class SchoolParentDigest {
     }
 
     const coins = this.#readCoinsMode();
-    const failures = await this.#failuresOn(day);
+    const ledger = await this.#ledgerOn(day);
+    const failures = failuresIn(ledger);
     const rows = [];
     const zeroDays = [];
     for (const learnerId of learners) {
       // eslint-disable-next-line no-await-in-loop
-      const { row, verdict } = await this.#learnerRow(learnerId, day, today, failures);
+      const { row, verdict } = await this.#learnerRow(learnerId, day, today, failures, ledger);
       rows.push(row);
       // eslint-disable-next-line no-await-in-loop
       if (await this.#alertIfEmptyRun(learnerId, row.child, verdict, day, today, teachers)) zeroDays.push(learnerId);
@@ -180,7 +199,7 @@ export class SchoolParentDigest {
     }
   }
 
-  async #learnerRow(learnerId, day, today, failures) {
+  async #learnerRow(learnerId, day, today, failures, ledger = []) {
     let child = null;
     try { child = (await this.#learnerName(learnerId)) || null; } catch (error) {
       this.#logger.warn?.('school.parent-digest.name-failed', { learnerId, error: errorText(error) });
@@ -204,12 +223,13 @@ export class SchoolParentDigest {
       served: verdict?.served ?? 0, asked: verdict?.asked ?? 0,
       silverEarned: economy?.silverEarned ?? null, passesUsed: economy?.passesUsed ?? null,
       failure: await this.#firstFailureFor(learnerId, failures),
+      repeatScans: repeatScansIn(ledger, learnerId),
     };
     return { row, verdict };
   }
 
-  /** The study day's failure events, most actionable first, then oldest first. Files are named by process-local day, so read the neighbours too. */
-  async #failuresOn(day) {
+  /** The study day's school ledger events, each with its `ms`. Files are named by process-local day, so read the neighbours too. */
+  async #ledgerOn(day) {
     if (!this.#ledger?.readDay) return [];
     const window = studyDayWindowForDate(day, { timezone: this.#timezone, boundaryHour: this.#boundaryHour });
     if (!window) return [];
@@ -223,9 +243,8 @@ export class SchoolParentDigest {
       }
     }
     return events
-      .map((entry) => ({ entry, code: failureOf(entry), ms: Date.parse(entry?.ts ?? '') }))
-      .filter(({ code, ms }) => code && Number.isFinite(ms) && ms >= window.startAtMs && ms < window.endAtMs)
-      .sort((a, b) => (FAILURE_RANK[a.code] - FAILURE_RANK[b.code]) || (a.ms - b.ms));
+      .map((entry) => ({ entry, ms: Date.parse(entry?.ts ?? '') }))
+      .filter(({ ms }) => Number.isFinite(ms) && ms >= window.startAtMs && ms < window.endAtMs);
   }
 
   async #firstFailureFor(learnerId, failures) {

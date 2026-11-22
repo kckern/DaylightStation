@@ -24,9 +24,15 @@
  * whoever holds it now.
  *
  * NEVER THROWS. The answer becomes the scanner's Outcome (`status`, `ok`,
- * `message`), and every path but invalid input tries to print a slip saying
- * what happened. A printer that is missing or refuses costs the slip, never
- * the credit.
+ * `message`), and every path but invalid input and a repeat scan tries to
+ * print a slip saying what happened. A printer that is missing or refuses
+ * costs the slip, never the credit.
+ *
+ * A REPEAT SCAN PRINTS NOTHING (2026-11-21). It changes nothing, so a slip
+ * saying "already counted" told nobody anything they could act on — and the
+ * kitchen scanner turned it into a toy: one finished coloring page scanned 38
+ * times printed 36 slips in an afternoon. The repeat is answered and logged
+ * (`scan-duplicate`), never printed.
  */
 import { studyDayForInstant } from '../../domain/studyDay.mjs';
 import { noticeDocument } from '../../domain/documents/receipts.mjs';
@@ -153,18 +159,14 @@ export class RecordPrintedActivityScan {
     };
   }
 
-  /** A repeat scan: answered and logged, never counted twice. */
+  /** A repeat scan: answered and logged, never counted twice, never printed. */
   async #already(issuance, { platform, externalId, device }) {
     this.#log('info', 'school.printed-activity.scan-duplicate', {
       learnerId: issuance.learnerId ?? null, issuanceId: issuance.issuanceId ?? null, corpusId: issuance.corpusId ?? null,
       platform, externalId, device, completedStudyDay: issuance.completedStudyDay ?? null,
     });
-    const headline = 'Already counted';
-    const title = issuance.title ?? 'sheet';
-    const printed = await this.#slip(`already-${issuance.issuanceId ?? 'sheet'}`, headline,
-      [`${this.#name(issuance.learnerId)}'s ${title} was counted on ${issuance.completedStudyDay ?? 'an earlier day'}.`]);
     return {
-      status: 'already', ok: true, message: headline, printed,
+      status: 'already', ok: true, message: 'Already counted', printed: false,
       learnerId: issuance.learnerId, issuanceId: issuance.issuanceId,
     };
   }
