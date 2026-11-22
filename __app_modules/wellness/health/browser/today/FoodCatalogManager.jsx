@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { Button, Group, NumberInput, Stack, Text, TextInput, UnstyledButton } from '@mantine/core';
-import { Sheet, ErrorState, LoadingState, useRetryRegion } from '@/lib/ui';
+import { Sheet, ErrorState, EmptyState, LoadingState, useRetryRegion } from '@/lib/ui';
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { unavailableError } from "../healthResources.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
@@ -21,6 +21,8 @@ function Manager({ active = true, onClose, onChanged }) {
   const primaryInput = useRef(null);
   const editing = draft !== null;
   const wasEditing = useRef(editing);
+  const visibleFoods = (foods.data?.items || []).filter(food => food.type !== 'template');
+  const foodsUnavailable = unavailableError(foods);
   useLayoutEffect(() => {
     // The sheet owns initial focus. Its list and editor can change in place.
     if (wasEditing.current === editing) return;
@@ -57,8 +59,11 @@ function Manager({ active = true, onClose, onChanged }) {
         <TextInput ref={primaryInput} label="Find a saved food" value={query} onChange={event => setQuery(event.target.value)} data-autofocus />
         <Stack component="section" {...resultsRegion} gap="xs" aria-label="Saved food results">
           {foods.loading ? <LoadingState label="Saved foods" /> : null}
-          {unavailableError(foods) ? <ErrorState error={foods.error} onRetry={retryFoods} label="Saved foods" /> : null}
-          {(foods.data?.items || []).filter(food => food.type !== 'template').map(food => <UnstyledButton key={food.id} onClick={() => setDraft(structuredClone(food))}>
+          {foodsUnavailable ? <ErrorState error={foods.error} onRetry={retryFoods} label="Saved foods" /> : null}
+          {!foods.loading && foods.data && !foodsUnavailable && visibleFoods.length === 0 ? (
+            <EmptyState title={query.trim() ? 'No saved foods match your search' : 'No saved foods yet'} />
+          ) : null}
+          {visibleFoods.map(food => <UnstyledButton key={food.id} onClick={() => setDraft(structuredClone(food))}>
             <Group wrap="nowrap" gap="xs"><FoodIcon icon={food.icon} /><Text size="sm">{food.name}</Text><Text size="xs" c="dimmed">{food.grams > 0 ? `${Math.round(food.grams)} g` : 'Weight unknown'}</Text></Group>
           </UnstyledButton>)}
         </Stack>
