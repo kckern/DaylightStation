@@ -937,11 +937,11 @@ status detail`) are folded (`refineProgress.mjs`) into `step.progress { phase, d
 recent }`, sent on each phase change, the first and last cue and at most every 2 s (the inline
 executor does the same); a running step keeps its start time, and finishes with `POST /:rk/jobs/:runId/complete { status, results | step + error }`.
 The app saves the results, drafts card text and audits, then settles the run. A run whose heartbeat
-is older than 60 s is marked interrupted; only the claiming worker can report on a run. An app
-restart (a deploy) interrupts only the runs the app itself held and the queued ones: a run a worker
-holds stays `running`, because the worker outlives the restart and keeps heartbeating; if it does
-not, the 60 s rule settles it (2026-11-21: a deploy 20 s into a refine had marked a live worker run
-interrupted, and the worker's next report was refused).
+is older than 60 s is marked interrupted; only the claiming worker can report on a run. The 60 s
+count starts no earlier than the app's own start: while the app is down (a deploy) a worker's
+heartbeats have nowhere to go, so a run must miss beats against the running app before it is reaped
+(2026-11-21: the first watch tick after a deploy reaped a live refine 20 s in, and the worker's next
+report was refused). `recover()` (interrupt everything open on boot) runs only with the inline executor.
 `--data-dir` (read-only) lends the worker the app's Plex and Jev credentials; without it set
 `PLEX_HOST`/`PLEX_TOKEN` and the Jev key in its environment. With no worker running, queued runs
 wait and the library says "Waiting for a filter worker" (an idle worker asks for work every 5 s).
@@ -971,10 +971,14 @@ film**. One row per moment as the household gets it (the preview rail's moments:
 one row, a scene swallows its cues), with kind, group, modality, local span, effect, card, `handFixed`,
 `members` (the cue ids a ruling applies to) and the reasons the machine is unsure (`refine-<status>`,
 `safe-window`, `check-levels`, `exchange-by-length`, `untracked-visual`, `subject-unsure`), unsure
-first; then one row per EDL cue the household's settings let play (`acts: false`, `effect: off`,
-mapped through the copy's sync; a cue a hidden scene covers belongs to the scene, a cue outside the
-copy's cut is left out). Every row carries `timing`: `refined` (ms/frame), `safe-window` or `rough`
-(VidAngel's second-approx times). The payload's `parts { total, acting, plays, timing }` counts them;
+first; then one row per EDL cue that plays (`acts: false`, `effect: off`, `why: settings | removed`,
+mapped through the copy's sync). A cue a resolved piece stands for is not a playing part: a subject's
+members (`cues`), a merged bleep's tones (`mergedFrom`), a scene's listed cues, or a cue inside a piece
+that hides its channel (a stacked picture effect trimmed away). A cue outside the copy's cut is left out.
+Subject rows list their member cues as `members`. A `remove` verdict holds on its playing row
+(`why: removed`, shown "Plays (removed)") and is kept when a removed subject or scene row is gone. Every row carries `timing`: `refined` (ms/frame), `safe-window` or `rough`
+(VidAngel's second-approx times). The payload's `parts { total, acting, plays, timing }` counts them (null for a list stored in an
+older row shape, so no meters until it is rebuilt; a run a worker holds does not stop the rebuild);
 `reviewed`/`total` and the sign-off count only the rows the filter acts on (a playing part can carry
 a verdict but needs none). The audit stores `rowsVersion` (`domain/content-filter/reviewRowsVersion.mjs`);
 a list stored with another version is out of date, so opening the film rebuilds it. The page plays the film in the Media Player with the filter forced on
@@ -1038,7 +1042,10 @@ level. `?` opens the whole keymap, Esc closes it.
 - **Cursor and scope.** Moving the cursor (key, click, timeline, auto-advance) seeks to 4 s before the
   row and plays. One scope drives the list, the timeline and cursor stepping: show (**All parts** /
   **Filtered** / **Plays**, each with its count; default All) × kind (All / Words / Picture / Scenes) ×
-  action (All / Blur / Skip / Bleep / Mute) × "needs review". The list's header and filters stay put
+  action (All / Blur / Skip / Bleep / Mute) × group × timing (Any / Rough / Refined) × "needs review",
+  in **Film order** (default) or **Needs a look first** (the audit's ranking). A playing part is never
+  "open" (needs review, auto-advance, the open count) except in the Plays view. A playing part's
+  editor reads **Use settings (plays)**. The list's header and filters stay put
   while its rows scroll; a row is the start time, the label and one meta line (group · said/shown ·
   span) with its chips (effect or **Plays**, verdict, timing when the film's timing is mixed, unsure
   reasons). Playing parts are grey on the timeline. `F` cycles the kind.
