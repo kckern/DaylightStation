@@ -95,6 +95,10 @@ function JournalPage({ filters, offset, minCost, isLast, onMore, onOpen, onShown
   const firstPageEmpty = offset === 0 && minCost == null && page.data?.rows.length === 0;
   const canLoadMore = isLast && offset + PAGE_SIZE < page.data?.total;
   const hasResults = firstPageEmpty || rows.length > 0 || canLoadMore;
+  const hasJournalFilters = filters.changed || filters.trigger;
+  const firstPageEmptyState = hasJournalFilters
+    ? <EmptyState title="No runs match these filters" hint="Clear Changed something or Trigger to see all runs from the last seven days." />
+    : <EmptyState title="No runs in this range" hint="Runs from the last seven days appear here." />;
   // An explicitly retried page needs a visible destination even when all its
   // rows are filtered out. Ordinary empty pages keep the timeline's layout.
   if (page.data && !hasResults && !requestedRetry) return null;
@@ -102,7 +106,7 @@ function JournalPage({ filters, offset, minCost, isLast, onMore, onOpen, onShown
   return <Stack component="section" {...regionProps} gap="xs" aria-label={offset ? `Run timeline, page ${offset / PAGE_SIZE + 1}` : 'Run timeline'}
     onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setRequestedRetry(false); }}>
     {!page.data ? (page.error ? <ErrorState error={page.error} onRetry={retry} label="Run timeline" /> : <LoadingState label="Run timeline" />)
-      : firstPageEmpty ? <EmptyState title="No runs in this range" hint="Runs from the last seven days appear here." />
+      : firstPageEmpty ? firstPageEmptyState
       : <>
         {rows.map((row, i) => (row.runId
           ? <RunRow key={`${row.runId}:${row.at}`} row={row} onOpen={onOpen} />
