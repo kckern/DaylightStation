@@ -14,22 +14,7 @@ import { ADMIN_SCHEDULER_JOBS_PATH, schedulerJobPath, triggerSchedulerJob } from
 import { invalidateApiResources, useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { notifySuccess, notifyFailure } from '../shared/feedback.js';
 import { statusBadgeColor } from '../utils/constants.js';
-
-function cronToHuman(expr) {
-  if (!expr) return '';
-  const parts = expr.split(' ');
-  if (parts.length !== 5) return expr;
-  const [min, hour] = parts;
-  if (min.startsWith('*/')) return `Every ${min.slice(2)} min`;
-  if (min !== '*' && hour === '*') return `Hourly at :${min.padStart(2, '0')}`;
-  if (min !== '*' && hour !== '*') {
-    const h = parseInt(hour);
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-    return `Daily at ${h12}:${min.padStart(2, '0')} ${ampm}`;
-  }
-  return expr;
-}
+import { cronToHuman } from '../utils/formatters.js';
 
 function formatDate(dateStr) {
   if (!dateStr) return 'N/A';

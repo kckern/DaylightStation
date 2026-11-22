@@ -1,6 +1,7 @@
 /**
  * Shared formatting utilities for the admin interface.
  */
+import { getFrequencyBand } from './constants.js';
 
 /** Format bytes into human-readable size */
 export function formatSize(bytes) {
@@ -61,7 +62,8 @@ export function truncateUrl(url, maxLength = 40) {
 export function cronToHuman(expr) {
   if (!expr) return '';
   const parts = expr.trim().split(/\s+/);
-  if (parts.length < 5) return expr;
+  if (parts.length !== 5) return expr;
+  if (getFrequencyBand(expr) === 'Other') return expr;
   const [min, hour, dayOfMonth] = parts;
 
   if (min.startsWith('*/')) return `Every ${min.slice(2)} min`;

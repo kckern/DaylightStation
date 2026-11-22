@@ -10,20 +10,7 @@ import { useAdminRoster } from '../shared/useAdminRoster.js';
 import { ErrorState, LoadingState } from '../../../lib/ui/states.jsx';
 import { useFocusAfterRemoval, useRetryRegion } from '../../../lib/ui/useRetryRegion.js';
 import { cronToHuman, formatDuration } from '../utils/formatters.js';
-import { statusBadgeColor } from '../utils/constants.js';
-
-/**
- * Classify a cron schedule into a frequency band for grouping.
- */
-function getFrequencyBand(schedule) {
-  if (!schedule) return 'Other';
-  if (schedule.includes('*/')) return 'Frequent';
-  const parts = schedule.split(' ');
-  if (parts.length !== 5) return 'Other';
-  if (parts[1] === '*') return 'Hourly';
-  if (parts[2] === '*') return 'Daily';
-  return 'Other';
-}
+import { getFrequencyBand, statusBadgeColor } from '../utils/constants.js';
 
 /**
  * Format a timestamp as a relative or absolute time string.

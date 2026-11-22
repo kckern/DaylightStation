@@ -32,7 +32,7 @@ describe('cronToHuman', () => {
     ['*/5 * * * *', 'Every 5 min'],
     ['30 * * * *', 'Hourly at :30'],
     ['0 4 * * *', 'Daily at 4:00 AM'],
-    ['15 19 * * 0', 'Daily at 7:15 PM'],
+    ['15 19 * * 0', '15 19 * * 0'],
     ['not a cron', 'not a cron'],
   ])('cronToHuman(%s) → %s', (expr, expected) => {
     expect(cronToHuman(expr)).toBe(expected);

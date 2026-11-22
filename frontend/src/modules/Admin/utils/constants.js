@@ -77,8 +77,9 @@ export function statusBadgeColor(status) {
 export function getFrequencyBand(schedule) {
   if (!schedule) return 'Other';
   const parts = schedule.trim().split(/\s+/);
-  if (parts.length < 5) return 'Other';
-  const [min, hour] = parts;
+  if (parts.length !== 5) return 'Other';
+  const [min, hour, dayOfMonth, month, dayOfWeek] = parts;
+  if (dayOfMonth !== '*' || month !== '*' || dayOfWeek !== '*') return 'Other';
   if (min.startsWith('*/')) {
     const interval = parseInt(min.slice(2), 10);
     if (interval <= 15) return 'Frequent';
