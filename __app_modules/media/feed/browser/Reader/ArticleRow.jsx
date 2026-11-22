@@ -26,6 +26,7 @@ export default function ArticleRow({ article, isNew = false, initiallyExpanded =
   const [overflows, setOverflows] = useState(false);
   const publishedDate = article.published ? new Date(article.published) : null;
   const hasPublishedDate = Number.isFinite(publishedDate?.getTime());
+  const isRead = article.state?.isRead ?? article.isRead;
 
   useEffect(() => {
     const content = contentRef.current;
@@ -54,7 +55,7 @@ export default function ArticleRow({ article, isNew = false, initiallyExpanded =
   const handleExpand = () => {
     if (!expanded) {
       setExpanded(true);
-      if (!(article.state?.isRead ?? article.isRead)) {
+      if (!isRead) {
         onMarkRead(article);
       }
     } else {
@@ -94,12 +95,13 @@ export default function ArticleRow({ article, isNew = false, initiallyExpanded =
   const detailPath = videoId && inlineYouTubeDetailPath(`youtube:${videoId}`, videoId);
 
   return (
-    <div ref={rowRef} className={`article-row ${expanded ? 'expanded' : ''} ${(article.state?.isRead ?? article.isRead) ? 'read' : 'unread'}`}>
+    <div ref={rowRef} className={`article-row ${expanded ? 'expanded' : ''} ${isRead ? 'read' : 'unread'}`}>
       <button className="article-row-header" onClick={handleExpand} aria-expanded={expanded} aria-controls={`article-${encodeURIComponent(article.id)}`}>
         {faviconUrl && (
           <img className="article-favicon" src={faviconUrl} alt="" width="16" height="16" />
         )}
         <span className="article-title">{article.title}</span>
+        <span className="feed-visually-hidden">{isRead ? 'Read' : 'Unread'}</span>
         {isNew && <span className="article-new-marker">New</span>}
         {!expanded && article.feedTitle && (
           <span className="article-feed-name">&middot; {article.feedTitle} &middot;</span>
@@ -130,7 +132,7 @@ export default function ArticleRow({ article, isNew = false, initiallyExpanded =
           <div className="article-state-actions">
             <button type="button" aria-pressed={!!article.state?.isSaved} onClick={() => onStateAction?.(article, article.state?.isSaved ? 'unsave' : 'save')}>{article.state?.isSaved ? 'Saved' : 'Save'}</button>
             <button type="button" onClick={() => onStateAction?.(article, article.state?.isArchived ? 'unarchive' : 'archive')}>{article.state?.isArchived ? 'Restore' : 'Archive'}</button>
-            <button type="button" onClick={() => onStateAction?.(article, (article.state?.isRead ?? article.isRead) ? 'unread' : 'read')}>{(article.state?.isRead ?? article.isRead) ? 'Mark unread' : 'Mark read'}</button>
+            <button type="button" onClick={() => onStateAction?.(article, isRead ? 'unread' : 'read')}>{isRead ? 'Mark unread' : 'Mark read'}</button>
             <OfflineEditionButton item={article} onRemoved={() => {
               const row = rowRef.current;
               const activeElement = row?.ownerDocument?.activeElement;
