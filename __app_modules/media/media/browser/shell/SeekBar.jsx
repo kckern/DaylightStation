@@ -23,6 +23,7 @@ export function SeekBar({ target, availability = null, onCommand = null, pending
   const dragRectRef = useRef(null);
   const dragBindingRef = useRef(null);
   const contextRef = useRef(null);
+  const latestSeekAttemptRef = useRef(0);
 
   const item = snapshot?.currentItem;
   const hasItem = Boolean(item);
@@ -114,11 +115,12 @@ export function SeekBar({ target, availability = null, onCommand = null, pending
   };
 
   const commitSeek = (seconds) => {
+    const seekAttempt = ++latestSeekAttemptRef.current;
     setCommandFeedback(null);
     const operation = () => transport.seekAbs?.(seconds);
     const commandContext = context;
     const reportFailure = () => {
-      if (contextRef.current === commandContext) {
+      if (contextRef.current === commandContext && latestSeekAttemptRef.current === seekAttempt) {
         setCommandFeedback({ message: 'Could not confirm change', context: commandContext });
       }
     };

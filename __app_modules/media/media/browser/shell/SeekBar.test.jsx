@@ -351,6 +351,29 @@ describe('SeekBar', () => {
     expect(screen.queryByTestId('np-seek-command-feedback')).toBeNull();
   });
 
+  it('does not show an older seek failure after a newer same-track seek succeeds', async () => {
+    const older = Promise.withResolvers();
+    const newer = Promise.withResolvers();
+    const seekAbs = vi.fn().mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+    state.transport = { ...transport, seekAbs };
+    const { rerender } = render(<SeekBar target={{ deviceId: 'screen-a' }} />);
+    const track = screen.getByTestId('np-seek');
+    measureTrack(track, { left: 0, width: 200 });
+
+    firePointer(track, 'pointerdown', 100);
+    firePointer(track, 'pointerup', 100);
+    expect(seekAbs).toHaveBeenNthCalledWith(1, 120);
+    state.position = { seconds: 120, ts: 1 };
+    rerender(<SeekBar target={{ deviceId: 'screen-a' }} />);
+    firePointer(track, 'pointerdown', 150);
+    firePointer(track, 'pointerup', 150);
+    expect(seekAbs).toHaveBeenNthCalledWith(2, 180);
+
+    await act(async () => { newer.resolve(); await newer.promise; });
+    await act(async () => { older.reject(new Error('old seek ack timed out')); await older.promise.catch(() => {}); });
+    expect(screen.queryByTestId('np-seek-command-feedback')).toBeNull();
+  });
+
   it('clears an already-visible seek failure when playback context changes', async () => {
     state.transport = { seekAbs: vi.fn(() => Promise.reject(new Error('ack timeout'))) };
     const { rerender } = render(<SeekBar target={{ deviceId: 'screen-a' }} />);
