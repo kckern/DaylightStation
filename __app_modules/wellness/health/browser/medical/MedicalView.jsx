@@ -122,23 +122,23 @@ function MedicalReadingSheet({ onClose }) {
       <Stack component="form" gap="sm" onSubmit={event => submit(event, save, valid)} aria-label="Add reading">
         {failure && <StateMessage state="error" role="alert" title="Could not save reading" detail={failure.message} />}
         <Autocomplete label="Metric" placeholder="e.g. bp, glucose, resting_hr"
-          data={METRIC_SUGGESTIONS} value={form.metric}
+          data={METRIC_SUGGESTIONS} value={form.metric} disabled={saving}
           onChange={(v) => setForm(previous => ({
             ...previous,
             metric: v,
             unit: MEDICAL_METRICS[v]?.units[0] || (MEDICAL_METRICS[previous.metric] ? '' : previous.unit),
           }))} />
-        <NumberInput label={isBp ? 'Systolic' : 'Value'} value={form.value}
+        <NumberInput label={isBp ? 'Systolic' : 'Value'} value={form.value} disabled={saving}
           onChange={(v) => setForm({ ...form, value: v })} />
         {paired ? (
-          <NumberInput label={isBp ? 'Diastolic' : 'Second value'} withAsterisk value={form.value2}
+          <NumberInput label={isBp ? 'Diastolic' : 'Second value'} withAsterisk value={form.value2} disabled={saving}
             onChange={(v) => setForm({ ...form, value2: v })} />
         ) : null}
-        <TextInput label="Unit" placeholder="e.g. mmHg, mg/dL, bpm" value={form.unit}
+        <TextInput label="Unit" placeholder="e.g. mmHg, mg/dL, bpm" value={form.unit} disabled={saving}
           onChange={(e) => setForm({ ...form, unit: e.currentTarget.value })} />
-        <TextInput type="date" label="Date" value={form.date}
+        <TextInput type="date" label="Date" value={form.date} disabled={saving}
           onChange={(e) => setForm({ ...form, date: e.currentTarget.value })} />
-        <TextInput label="Note" placeholder="optional" value={form.note}
+        <TextInput label="Note" placeholder="optional" value={form.note} disabled={saving}
           onChange={(e) => setForm({ ...form, note: e.currentTarget.value })} />
         <SubmitButton density="compact" disabled={!valid} pending={saving} aria-label="Save reading">
           {saving ? 'Saving reading…' : 'Save reading'}
