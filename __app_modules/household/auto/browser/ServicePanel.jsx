@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { localDateKey } from '@/lib/calendarDay.js';
 import { LoadingState, ErrorState, EmptyState, Sheet, Select, useRetryRegion, useSheetSubmission } from '@/lib/ui';
 import { AutoSheetActions } from './AutoSheetActions.jsx';
+import { isValidOptionalOdometerInput } from './odometerInput.mjs';
 import VehicleReminderStatus from './VehicleReminderStatus.jsx';
 import { formatDay, formatMoney, formatDistance } from "./format.js";
 import { autoApi } from "./useAutoApi.js";
@@ -164,8 +165,7 @@ function ServiceForm({ vehicleId, availableTypes, onClose }) {
     });
     autoLog.info('service.logged', { type: form.type, recurring: form.intervalMonths !== '' });
   };
-  const valid = Boolean(form.date) && (form.odometerMi === ''
-    || (Number.isFinite(Number(form.odometerMi)) && Number(form.odometerMi) >= 0));
+  const valid = Boolean(form.date) && isValidOptionalOdometerInput(form.odometerMi);
 
   return (
     <form onSubmit={event => submit(event, save, valid)} aria-label="Log service">

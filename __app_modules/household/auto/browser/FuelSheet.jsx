@@ -17,6 +17,7 @@ import { useState } from 'react';
 import { localDateKey } from '@/lib/calendarDay.js';
 import { Sheet, useSheetSubmission } from '@/lib/ui';
 import { AutoSheetActions } from './AutoSheetActions.jsx';
+import { isValidOptionalOdometerInput } from './odometerInput.mjs';
 import { autoApi } from "./useAutoApi.js";
 import autoLog from "./autoLog.js";
 
@@ -64,7 +65,7 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose }) {
     });
   };
 
-  const valid = Boolean(form.date) && Number(form.volumeGal) > 0;
+  const valid = Boolean(form.date) && Number(form.volumeGal) > 0 && isValidOptionalOdometerInput(form.odometerMi);
 
   return (
     <Sheet open onClose={onClose} title="Log a fill-up">
@@ -88,7 +89,7 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose }) {
             <span>Odometer (mi)</span>
             {/* inputMode numeric so phones show the number pad, not a full keyboard */}
             <input
-              className="ds-input" type="number" inputMode="decimal" step="1"
+              className="ds-input" type="number" inputMode="decimal" step="1" min="0"
               value={form.odometerMi} onChange={set('odometerMi')} placeholder="from the dash"
             />
             <span className="auto-field__note">Optional, but it’s what makes mileage and mpg work.</span>

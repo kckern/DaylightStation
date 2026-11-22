@@ -229,6 +229,31 @@ it('rejects a negative service odometer while allowing blank and zero', async ()
   expect(writes).toEqual([vehiclesPath + '/wagon%20%232/service']);
 });
 
+it('rejects a negative fill-up odometer while allowing blank and zero', async () => {
+  const { writes } = mockGarage();
+  render(<AutoApp />);
+  await selectButton('Wagon');
+  await selectButton('Fuel');
+  await selectButton('Log a fill-up');
+  const form = screen.getByRole('form');
+  const odometer = screen.getByPlaceholderText('from the dash');
+  const gallons = screen.getByLabelText('Gallons');
+  const save = screen.getByRole('button', { name: 'Save' });
+
+  fireEvent.change(gallons, { target: { value: '5' } });
+  expect(save).toBeEnabled();
+  fireEvent.change(odometer, { target: { value: '-100' } });
+  expect(save).toBeDisabled();
+  await act(async () => fireEvent.submit(form));
+  expect(writes).toEqual([]);
+
+  fireEvent.change(odometer, { target: { value: '0' } });
+  expect(save).toBeEnabled();
+  await act(async () => fireEvent.submit(form));
+  await screen.findByText('No fill-ups logged');
+  expect(writes).toEqual([vehiclesPath + '/wagon%20%232/fuel']);
+});
+
 it('requires a date before saving a fill-up, including form submission', async () => {
   const { writes } = mockGarage();
   render(<AutoApp />);
