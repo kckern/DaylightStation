@@ -142,6 +142,43 @@ test('Home camera opens fullscreen from the edge of its full touch target', asyn
   await expect(page.getByRole('button', { name: 'Close camera', exact: true })).toBeVisible();
 });
 
+test('Feed gallery arrows have full touch targets and edge taps change the image', async ({ page }) => {
+  const item = {
+    id: 'reddit:gallery-touch-target',
+    title: 'Gallery touch target fixture',
+    source: 'reddit',
+    tier: 'wire',
+    contentType: 'article',
+    image: '/fixture-gallery.jpg',
+    meta: {
+      sourceName: 'Fixture',
+      galleryImages: [
+        { url: '/fixture-gallery.jpg' },
+        { url: '/fixture-gallery.jpg' },
+      ],
+    },
+    state: { isRead: false },
+  };
+  await page.route('**/api/v1/feed/workspace', route => route.fulfill({ json: { preferencesStored: true } }));
+  await page.route('**/api/v1/feed/scroll/sessions', route => route.fulfill({ json: {
+    items: [item], sessionId: 'gallery-touch-target', hasMore: false,
+  } }));
+  await page.goto('/feed/scroll');
+
+  const gallery = page.getByRole('region', { name: 'Image gallery, 1 of 2' });
+  const next = page.getByRole('button', { name: 'Next image', exact: true });
+  await expectFullTouchTarget(next);
+  await next.tap({ position: { x: 2, y: 22 } });
+  await expect(page.getByRole('region', { name: 'Image gallery, 2 of 2' })).toBeVisible();
+  await expect(page).toHaveURL(/\/feed\/scroll$/);
+
+  const previous = page.getByRole('button', { name: 'Previous image', exact: true });
+  await expectFullTouchTarget(previous);
+  await previous.tap({ position: { x: 43, y: 22 } });
+  await expect(gallery).toBeVisible();
+  await expect(page).toHaveURL(/\/feed\/scroll$/);
+});
+
 test('Life value rank actions have accessible names and full touch targets', async ({ page }) => {
   const member = { username: 'amy', displayName: 'Amy' };
   let values = [

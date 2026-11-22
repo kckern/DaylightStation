@@ -288,12 +288,12 @@ function GalleryHero({ images, feedItemId, title }) {
 
       {/* Left arrow */}
       {index > 0 && (
-        <button onClick={goPrev} aria-label="Previous image"
+        <button className="ds-touch-target" onClick={goPrev} aria-label="Previous image"
           style={{ ...arrowStyle, left: '6px' }}>‹</button>
       )}
       {/* Right arrow */}
       {index < count - 1 && (
-        <button onClick={goNext} aria-label="Next image"
+        <button className="ds-touch-target" onClick={goNext} aria-label="Next image"
           style={{ ...arrowStyle, right: '6px' }}>›</button>
       )}
 
