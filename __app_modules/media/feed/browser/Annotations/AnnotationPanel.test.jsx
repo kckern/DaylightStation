@@ -47,6 +47,36 @@ describe('AnnotationPanel', () => {
     expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/annotations/note-1', {}, 'DELETE');
   });
 
+  test('preserves edits made to the draft while its save is pending', async () => {
+    let finishSave;
+    render(<div className="article-expanded"><p>First quote, then another quote.</p><AnnotationPanel item={{ id: 'one' }} /></div>);
+    const draft = await screen.findByRole('textbox', { name: 'Add a note' });
+    apiMock.mockImplementationOnce(() => new Promise(resolve => { finishSave = resolve; }));
+    fireEvent.change(draft, { target: { value: 'First idea' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
+    expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/annotations', expect.objectContaining({ note: 'First idea' }), 'POST');
+
+    fireEvent.change(draft, { target: { value: 'Next idea' } });
+    const text = screen.getByText('First quote, then another quote.').firstChild;
+    const range = document.createRange();
+    range.setStart(text, 18);
+    range.setEnd(text, 32);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    fireEvent.click(screen.getByRole('button', { name: 'Use selected text' }));
+
+    await act(async () => finishSave({ annotation: { id: 'note-new', itemId: 'one', note: 'First idea' } }));
+    expect(draft).toHaveValue('Next idea');
+    expect(screen.getByText('another quote.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
+    await waitFor(() => expect(apiMock).toHaveBeenLastCalledWith('/api/v1/feed/annotations', expect.objectContaining({
+      note: 'Next idea', quote: 'another quote.',
+    }), 'POST'));
+    selection.removeAllRanges();
+  });
+
   test('opens an edit with the latest saved note and preserves an active draft during refresh', async () => {
     render(<AnnotationPanel item={{ id: 'one' }} />);
     await screen.findByText('Remember');

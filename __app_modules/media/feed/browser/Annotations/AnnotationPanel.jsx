@@ -125,8 +125,17 @@ function ItemNotes({ item, owner }) {
   const [queued, setQueued] = useState(() => queuedAnnotationMutations(owner));
   const pending = queued.length;
   const visible = useMemo(() => annotationsWithPending(itemId, annotations, queued), [itemId, annotations, queued]);
+  const draftRef = useRef({ note, quote, locator });
   const noteRef = useRef(null);
   const panelRef = useRef(null);
+
+  const updateDraft = changes => {
+    const next = { ...draftRef.current, ...changes };
+    draftRef.current = next;
+    setNote(next.note);
+    setQuote(next.quote);
+    setLocator(next.locator);
+  };
 
   const read = useCallback(async (isCurrent, signal) => {
     if (!itemId || annotationOwner() !== owner) return;
@@ -214,8 +223,7 @@ function ItemNotes({ item, owner }) {
       setError('Select text from this article first.');
       return;
     }
-    setQuote(selected);
-    setLocator(nextLocator);
+    updateDraft({ quote: selected, locator: nextLocator });
     setError(null);
     noteRef.current?.focus();
   };
@@ -250,15 +258,17 @@ function ItemNotes({ item, owner }) {
 
   const create = async event => {
     event.preventDefault();
-    if (annotationOwner() !== owner || (!note.trim() && !quote.trim())) return;
+    const submittedDraft = { ...draftRef.current };
+    if (annotationOwner() !== owner || (!submittedDraft.note.trim() && !submittedDraft.quote.trim())) return;
     setSaving(true);
     setError(null);
     const id = offlineAnnotationId();
     try {
-      if (await write('POST', id, { id, itemId, note, quote, color, locator })) {
-        setNote('');
-        setQuote('');
-        setLocator(null);
+      if (await write('POST', id, { id, itemId, ...submittedDraft, color })) {
+        const currentDraft = draftRef.current;
+        if (currentDraft.note === submittedDraft.note && currentDraft.quote === submittedDraft.quote && currentDraft.locator === submittedDraft.locator) {
+          updateDraft({ note: '', quote: '', locator: null });
+        }
       }
     } finally {
       setSaving(false);
@@ -285,10 +295,10 @@ function ItemNotes({ item, owner }) {
         <>
           {visible.map(annotation => <AnnotationRow key={annotation.id} annotation={annotation} onUpdate={update} onDelete={remove} onReveal={reveal} />)}
           <form onSubmit={create} className="feed-annotations__form">
-            {quote && <blockquote className={`feed-annotation-quote feed-annotation-quote--${color}`}>{quote}<button type="button" aria-label="Remove selected quote" onClick={() => { setQuote(''); setLocator(null); }}>×</button></blockquote>}
+            {quote && <blockquote className={`feed-annotation-quote feed-annotation-quote--${color}`}>{quote}<button type="button" aria-label="Remove selected quote" onClick={() => updateDraft({ quote: '', locator: null })}>×</button></blockquote>}
             <label>
               <span>Add a note</span>
-              <textarea ref={noteRef} value={note} maxLength={10000} rows={3} onChange={event => setNote(event.target.value)} placeholder="What do you want to remember?" />
+              <textarea ref={noteRef} value={note} maxLength={10000} rows={3} onChange={event => updateDraft({ note: event.target.value })} placeholder="What do you want to remember?" />
             </label>
             <div className="feed-annotations__form-actions">
               <label>Highlight <Select density="compact" value={color} onChange={event => setColor(event.target.value)}><option value="yellow">Yellow</option><option value="blue">Blue</option><option value="green">Green</option><option value="pink">Pink</option><option value="none">None</option></Select></label>
