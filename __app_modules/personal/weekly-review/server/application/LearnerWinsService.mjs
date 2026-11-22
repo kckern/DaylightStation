@@ -3,35 +3,103 @@
  * ledger) and fitness rings, this week and all time.
  *
  * Both sources belong to other apps and come in as plain functions:
- *   ledger(learnerId)              -> Promise<rows[]|null>  (null: no wallet, reads 0)
- *   rings({ learnerId, from, to }) -> Promise<number>       (study days, `to` inclusive)
- * A missing source reads null (the client hides it). A source that throws for
- * one learner reads null for that learner and that source only.
+ *   ledger(learnerId) -> Promise<rows[]|null>   (null: no wallet, reads 0)
+ *   ringStandings({ learnerIds, fromMs, toMs })
+ *     -> Promise<[{ learnerId, sessions: [{ startMs, rings }] }]>
+ *     the fitness rings provider's `standings`: one session listing for the
+ *     whole roster, sessions dated by the instant they STARTED.
+ * A missing source reads null (the client hides it). A ledger that throws for
+ * one learner reads null for that learner only; a ring listing that throws
+ * reads null for every learner in it (it is one listing).
  *
- * All-time rings walk every session summary since the start, so they are
- * remembered per learner and last date for `allTimeTtlMs` (10 minutes by
- * default). Silver and gems are summed from the ledger each time: the ledger
- * read is one local file walk per child.
+ * Rings are summed here from each session's start instant, inside the review
+ * window. The provider lists sessions by the day folder they were filed under
+ * and stops at the study day of `toMs - 1`, so a workout started between
+ * 00:00 and 04:00 the morning after the last date (study day = the last date)
+ * would sit in a folder it never reads. The listing is therefore asked for one
+ * day past the window, and anything that started at or after the window's end
+ * is dropped.
+ *
+ * Reads are shared, not repeated: bootstrap and the showcase route ask for the
+ * same window within seconds of each other. The ledger and the week's ring
+ * listing are kept for 60 s; the all-time ring listing (every session summary
+ * since the start) for 10 minutes. The in-flight promise is what is kept, so
+ * two requests at once share one read. A failed read is forgotten at once.
+ * Each cache holds at most 64 entries, least recently used evicted first.
  */
 import { sumEarned } from '../domain/learnerWinsPolicy.mjs';
 
-const ALL_TIME_FROM = '2000-01-01';
+const ALL_TIME_FROM_MS = Date.parse('2000-01-01T00:00:00Z');
+const DAY_MS = 86_400_000;
+const DEFAULT_SHORT_TTL_MS = 60_000;
 const DEFAULT_ALL_TIME_TTL_MS = 10 * 60_000;
+const MAX_ENTRIES = 64;
+
+/** A small LRU of promises with a per-cache TTL. */
+class PromiseCache {
+  #map = new Map(); // key -> { promise, at }
+  #ttlMs;
+  #clock;
+  #max;
+
+  constructor({ ttlMs, clock, max = MAX_ENTRIES }) {
+    this.#ttlMs = ttlMs;
+    this.#clock = clock;
+    this.#max = max;
+  }
+
+  get size() { return this.#map.size; }
+
+  get(key, load) {
+    const now = this.#clock().getTime();
+    const hit = this.#map.get(key);
+    if (hit && now - hit.at < this.#ttlMs) {
+      this.#map.delete(key);
+      this.#map.set(key, hit); // most recently used last
+      return hit.promise;
+    }
+    const promise = Promise.resolve().then(load);
+    const entry = { promise, at: now };
+    this.#map.delete(key);
+    this.#map.set(key, entry);
+    while (this.#map.size > this.#max) this.#map.delete(this.#map.keys().next().value);
+    promise.catch(() => { if (this.#map.get(key) === entry) this.#map.delete(key); });
+    return promise;
+  }
+}
+
+/** `{ learnerId: rings }` from a standings answer, counting sessions started in `[fromMs, toMs)`. */
+function sumRings(standings, learnerIds, fromMs, toMs) {
+  const totals = Object.fromEntries(learnerIds.map((id) => [id, 0]));
+  for (const row of Array.isArray(standings) ? standings : []) {
+    if (!row || !(row.learnerId in totals)) continue;
+    for (const s of Array.isArray(row.sessions) ? row.sessions : []) {
+      if (!Number.isFinite(s?.startMs) || !Number.isFinite(s?.rings)) continue;
+      if (s.startMs >= fromMs && s.startMs < toMs) totals[row.learnerId] += s.rings;
+    }
+  }
+  return totals;
+}
 
 export class LearnerWinsService {
   #ledger;
-  #rings;
+  #ringStandings;
   #logger;
   #clock;
-  #allTimeTtlMs;
-  #allTimeRings = new Map(); // `${learnerId}|${to}` -> { value, at }
+  #ledgerCache;
+  #weekRingsCache;
+  #allTimeRingsCache;
 
-  constructor({ ledger = null, rings = null, logger = null, clock = () => new Date(), allTimeTtlMs } = {}) {
+  constructor({ ledger = null, ringStandings = null, logger = null, clock = () => new Date(), shortTtlMs, allTimeTtlMs, maxEntries } = {}) {
     this.#ledger = typeof ledger === 'function' ? ledger : null;
-    this.#rings = typeof rings === 'function' ? rings : null;
+    this.#ringStandings = typeof ringStandings === 'function' ? ringStandings : null;
     this.#logger = logger;
     this.#clock = clock;
-    this.#allTimeTtlMs = Number.isFinite(allTimeTtlMs) && allTimeTtlMs >= 0 ? allTimeTtlMs : DEFAULT_ALL_TIME_TTL_MS;
+    const ttl = (v, d) => (Number.isFinite(v) && v >= 0 ? v : d);
+    const max = Number.isInteger(maxEntries) && maxEntries > 0 ? maxEntries : MAX_ENTRIES;
+    this.#ledgerCache = new PromiseCache({ ttlMs: ttl(shortTtlMs, DEFAULT_SHORT_TTL_MS), clock, max });
+    this.#weekRingsCache = new PromiseCache({ ttlMs: ttl(shortTtlMs, DEFAULT_SHORT_TTL_MS), clock, max });
+    this.#allTimeRingsCache = new PromiseCache({ ttlMs: ttl(allTimeTtlMs, DEFAULT_ALL_TIME_TTL_MS), clock, max });
   }
 
   /**
@@ -39,68 +107,62 @@ export class LearnerWinsService {
    * @returns {Promise<Record<string, { week: {silver, gems, rings}, allTime: {silver, gems, rings} }>>}
    */
   async execute({ learnerIds, dates, windowStartMs, windowEndMs }) {
-    const ids = [...new Set((learnerIds || []).filter((id) => typeof id === 'string' && id))];
+    const ids = [...new Set((learnerIds || []).filter((id) => typeof id === 'string' && id))].sort();
     if (ids.length === 0 || !Array.isArray(dates) || dates.length === 0) return {};
+    if (!Number.isFinite(windowStartMs) || !Number.isFinite(windowEndMs)) return {};
     const started = this.#clock().getTime();
-    const from = dates[0];
-    const to = dates[dates.length - 1];
+    const window = { startMs: windowStartMs, endMs: windowEndMs };
 
-    const entries = await Promise.all(ids.map(async (learnerId) => {
-      const [coins, rings] = await Promise.all([
-        this.#coins(learnerId, { startMs: windowStartMs, endMs: windowEndMs }),
-        this.#ringsFor(learnerId, from, to),
-      ]);
-      return [learnerId, {
-        week: { silver: coins.week.silver, gems: coins.week.gems, rings: rings.week },
-        allTime: { silver: coins.allTime.silver, gems: coins.allTime.gems, rings: rings.allTime },
-      }];
-    }));
+    const [coins, rings] = await Promise.all([
+      Promise.all(ids.map((id) => this.#coins(id, window))),
+      this.#rings(ids, window),
+    ]);
 
+    const out = {};
+    ids.forEach((learnerId, i) => {
+      out[learnerId] = {
+        week: { silver: coins[i].week.silver, gems: coins[i].week.gems, rings: rings.week?.[learnerId] ?? null },
+        allTime: { silver: coins[i].allTime.silver, gems: coins[i].allTime.gems, rings: rings.allTime?.[learnerId] ?? null },
+      };
+    });
     this.#logger?.info?.('weekly-review.wins.loaded', { learners: ids.length, ms: this.#clock().getTime() - started });
-    return Object.fromEntries(entries);
+    return out;
   }
 
   async #coins(learnerId, window) {
     const none = { week: { silver: null, gems: null }, allTime: { silver: null, gems: null } };
     if (!this.#ledger) return none;
     try {
-      return sumEarned(await this.#ledger(learnerId), window);
+      const rows = await this.#ledgerCache.get(learnerId, () => this.#ledger(learnerId));
+      return sumEarned(rows, window);
     } catch (err) {
-      this.#failed(learnerId, 'ledger', err);
+      this.#failed({ learnerId, source: 'ledger' }, err);
       return none;
     }
   }
 
-  async #ringsFor(learnerId, from, to) {
-    if (!this.#rings) return { week: null, allTime: null };
+  async #rings(ids, { startMs, endMs }) {
+    if (!this.#ringStandings) return { week: null, allTime: null };
+    const roster = ids.join(',');
     const [week, allTime] = await Promise.all([
-      this.#readRings(learnerId, from, to),
-      this.#readAllTimeRings(learnerId, to),
+      this.#ringListing(this.#weekRingsCache, `${roster}|${startMs}|${endMs}`, ids, startMs, endMs),
+      this.#ringListing(this.#allTimeRingsCache, `${roster}|${endMs}`, ids, ALL_TIME_FROM_MS, endMs),
     ]);
     return { week, allTime };
   }
 
-  async #readRings(learnerId, from, to) {
+  async #ringListing(cache, key, ids, fromMs, toMs) {
     try {
-      const value = await this.#rings({ learnerId, from, to });
-      return Number.isFinite(value) ? value : 0;
+      // One day past the window: see the header on day folders.
+      const standings = await cache.get(key, () => this.#ringStandings({ learnerIds: ids, fromMs, toMs: toMs + DAY_MS }));
+      return sumRings(standings, ids, fromMs, toMs);
     } catch (err) {
-      this.#failed(learnerId, 'rings', err);
+      this.#failed({ learnerIds: ids, source: 'rings' }, err);
       return null;
     }
   }
 
-  async #readAllTimeRings(learnerId, to) {
-    const key = `${learnerId}|${to}`;
-    const now = this.#clock().getTime();
-    const hit = this.#allTimeRings.get(key);
-    if (hit && now - hit.at < this.#allTimeTtlMs) return hit.value;
-    const value = await this.#readRings(learnerId, ALL_TIME_FROM, to);
-    if (value !== null) this.#allTimeRings.set(key, { value, at: now });
-    return value;
-  }
-
-  #failed(learnerId, source, err) {
-    this.#logger?.warn?.('weekly-review.wins.source-failed', { learnerId, source, error: err?.message ?? String(err) });
+  #failed(who, err) {
+    this.#logger?.warn?.('weekly-review.wins.source-failed', { ...who, error: err?.message ?? String(err) });
   }
 }

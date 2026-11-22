@@ -280,6 +280,30 @@ describe('WeeklyReviewService', () => {
           expect(mockLogger.warn).toHaveBeenCalledWith('weekly-review.wins.timeout', { week: '2026-03-23', ms: 20 });
         });
 
+        it('bounds a roster read that never answers with the same deadline', async () => {
+          const schoolWork = { getWorkForDateRange: vi.fn().mockResolvedValue(weekItems()), getImage: vi.fn() };
+          const learnerWins = winsService({ kid0: winsOf(1) });
+          const hangingRoster = () => new Promise(() => {});
+          const result = await buildService(schoolWork, { learnerWins, learners: hangingRoster, winsTimeoutMs: 20 }).bootstrap('2026-03-23');
+          for (const s of result.schoolShowcase) expect(s).not.toHaveProperty('wins');
+          expect(learnerWins.execute).not.toHaveBeenCalled();
+          expect(mockLogger.warn).toHaveBeenCalledWith('weekly-review.wins.timeout', { week: '2026-03-23', ms: 20 });
+        });
+
+        it('one deadline covers the second fetch: roster wins stay, the late child goes without', async () => {
+          const schoolWork = { getWorkForDateRange: vi.fn().mockResolvedValue(weekItems()), getImage: vi.fn() };
+          const learnerWins = {
+            execute: vi.fn(({ learnerIds }) => (learnerIds.includes('kid0')
+              ? new Promise(() => {})
+              : Promise.resolve(Object.fromEntries(learnerIds.map(id => [id, winsOf(1)]))))),
+          };
+          const result = await buildService(schoolWork, { learnerWins, learners: roster, winsTimeoutMs: 20 }).bootstrap('2026-03-23');
+          expect(result.schoolShowcase.map(s => [s.learnerId, s.wins?.week.silver ?? null])).toEqual([
+            ['kid0', null], ['kid5', 1], ['kid1', 1], ['kid6', 1],
+          ]);
+          expect(mockLogger.warn).toHaveBeenCalledWith('weekly-review.wins.timeout', { week: '2026-03-23', ms: 20 });
+        });
+
         it('omits wins when the wins service or the roster throws', async () => {
           const schoolWork = { getWorkForDateRange: vi.fn().mockResolvedValue(weekItems()), getImage: vi.fn() };
           const learnerWins = { execute: vi.fn().mockRejectedValue(new Error('boom')) };

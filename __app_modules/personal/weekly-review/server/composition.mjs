@@ -58,8 +58,9 @@ export async function installWeeklyReview({ configService, dataService, immichCo
       ledger: economyService && typeof economyService.getHistory === 'function'
         ? async (learnerId) => (economyService.hasUser?.(learnerId) === false ? null : economyService.getHistory(learnerId))
         : null,
-      rings: fitnessRings && typeof fitnessRings.total === 'function'
-        ? ({ learnerId, from, to }) => fitnessRings.total({ learnerId, from, to })
+      // One session listing for the whole roster (`standings`), not one per child.
+      ringStandings: fitnessRings && typeof fitnessRings.standings === 'function'
+        ? ({ learnerIds, fromMs, toMs }) => fitnessRings.standings({ learnerIds, fromMs, toMs })
         : null,
       logger: rootLogger.child({ module: 'weekly-review-wins' }),
     }) : null;

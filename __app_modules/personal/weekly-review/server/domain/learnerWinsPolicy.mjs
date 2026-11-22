@@ -6,9 +6,17 @@
  *
  * Earned = `earn` and `prize` rows with a positive delta, in silver or gems.
  * Spends, conversions (a convert pair is a move between currencies, not a win),
- * deposits, gold, passes and plain adjustments do not count. A grown-up's
- * reversal (`adjust` under `reverse:<ref>`, the economy's convention) takes
- * back what it reversed, from the bucket the reversed earn sits in.
+ * deposits, gold, passes and plain adjustments do not count.
+ *
+ * A pass refund is not earned either: it is spending handed back. The economy
+ * writes it as `kind: 'earn'` with `source: 'pass'`, `action: '<pass>-refund'`
+ * and `ref: '<passId>:refund'` (EconomyService.refundPass, passes.refundRef).
+ * Any one of those marks excludes the row, and so does a `refund:` ref prefix.
+ *
+ * A grown-up's reversal (`adjust` under `reverse:<ref>`, the economy's
+ * convention) takes back what it reversed, never below zero, from the bucket
+ * of the NEWEST earn under that ref: a corrected line pays again under the same
+ * ref, and the reversal is undoing the latest payment.
  */
 
 const COUNTED_KINDS = new Set(['earn', 'prize']);
@@ -16,6 +24,13 @@ const CURRENCIES = ['silver', 'gems'];
 // Mirrors the economy's REVERSE_PREFIX; weekly review may not import economy code.
 const REVERSE_PREFIX = 'reverse:';
 const BOUNDARY_HOUR = 4;
+
+/** A pass refund in any of the economy's shapes (see the header). */
+function isRefund(r) {
+  if (r.source === 'pass') return true;
+  if (typeof r.action === 'string' && r.action.endsWith('-refund')) return true;
+  return typeof r.ref === 'string' && (r.ref.endsWith(':refund') || r.ref.startsWith('refund:'));
+}
 
 /** Offset of `timezone` from UTC at `instantMs`, in ms (local = utc + offset). */
 function offsetMs(instantMs, timezone) {
@@ -63,25 +78,26 @@ const zero = () => ({ silver: 0, gems: 0 });
 export function sumEarned(rows, { startMs, endMs }) {
   const week = zero();
   const allTime = zero();
-  const earnedInWeek = new Map(); // `${currency}\u0000${ref}` -> in week?
+  const newestEarn = new Map(); // `${currency}\u0000${ref}` -> { ms, inWeek } of the newest earn
   const list = Array.isArray(rows) ? rows.filter((r) => r && typeof r === 'object') : [];
 
   const currencyOf = (r) => r.currency ?? 'silver';
-  const inWeek = (r) => {
-    const ms = Date.parse(r.at ?? '');
-    return Number.isFinite(ms) && ms >= startMs && ms < endMs;
-  };
+  const atMs = (r) => Date.parse(r.at ?? '');
+  const inWeek = (ms) => Number.isFinite(ms) && ms >= startMs && ms < endMs;
 
   for (const r of list) {
     const currency = currencyOf(r);
     if (!COUNTED_KINDS.has(r.kind) || !CURRENCIES.includes(currency)) continue;
-    if (!Number.isFinite(r.delta) || r.delta <= 0) continue;
-    const thisWeek = inWeek(r);
+    if (!Number.isFinite(r.delta) || r.delta <= 0 || isRefund(r)) continue;
+    const ms = atMs(r);
+    const thisWeek = inWeek(ms);
     allTime[currency] += r.delta;
     if (thisWeek) week[currency] += r.delta;
     if (typeof r.ref === 'string' && r.ref) {
       const key = `${currency}\u0000${r.ref}`;
-      if (!earnedInWeek.has(key)) earnedInWeek.set(key, thisWeek);
+      const seen = newestEarn.get(key);
+      const order = Number.isFinite(ms) ? ms : -Infinity;
+      if (!seen || order > seen.ms) newestEarn.set(key, { ms: order, inWeek: thisWeek });
     }
   }
 
@@ -91,9 +107,10 @@ export function sumEarned(rows, { startMs, endMs }) {
     if (typeof r.ref !== 'string' || !r.ref.startsWith(REVERSE_PREFIX)) continue;
     if (!Number.isFinite(r.delta) || r.delta >= 0) continue;
     const key = `${currency}\u0000${r.ref.slice(REVERSE_PREFIX.length)}`;
-    if (!earnedInWeek.has(key)) continue;
+    const reversed = newestEarn.get(key);
+    if (!reversed) continue;
     allTime[currency] = Math.max(0, allTime[currency] + r.delta);
-    if (earnedInWeek.get(key)) week[currency] = Math.max(0, week[currency] + r.delta);
+    if (reversed.inWeek) week[currency] = Math.max(0, week[currency] + r.delta);
   }
 
   return { week, allTime };

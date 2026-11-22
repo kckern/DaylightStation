@@ -82,6 +82,36 @@ describe('sumEarned', () => {
     });
   });
 
+  it('never counts a pass refund: spending handed back is not earned', async () => {
+    // Real shape, from EconomyService.refundPass.
+    const refund = {
+      id: 'txn_r', at: '2026-11-18T21:00:00.000Z', kind: 'earn', currency: 'silver', delta: 30,
+      action: 'arcade-refund', source: 'pass', ref: 'pass:kid1:2026-11-18:refund', evidenceRef: 'pass:kid1:2026-11-18',
+    };
+    const rows = [
+      row({ delta: 10 }),
+      refund,
+      { ...refund, id: 'a', source: 'api' },
+      { ...refund, id: 'b', source: 'api', action: 'x', ref: 'refund:pass:kid1:2026-11-18' },
+      { ...refund, id: 'c', source: 'api', action: 'x', ref: 'pass:kid1:2026-11-19:refund' },
+      { ...refund, id: 'd', action: 'x', ref: null },
+    ];
+    expect(sumEarned(rows, window)).toEqual({
+      week: { silver: 10, gems: 0 },
+      allTime: { silver: 10, gems: 0 },
+    });
+  });
+
+  it('takes a reversal from the bucket of the NEWEST earn under its ref', () => {
+    const rev = row({ kind: 'adjust', delta: -6, ref: 'reverse:line:1', action: 'reverse', at: '2026-11-20T20:00:00.000Z' });
+    // Same ref paid twice: an older payment before the week, a corrected one inside it.
+    const older = row({ delta: 4, ref: 'line:1', at: '2026-11-01T20:00:00.000Z' });
+    const newer = row({ delta: 9, ref: 'line:1', at: '2026-11-18T20:00:00.000Z' });
+    for (const rows of [[older, newer, rev], [rev, newer, older]]) {
+      expect(sumEarned(rows, window)).toEqual({ week: { silver: 3, gems: 0 }, allTime: { silver: 7, gems: 0 } });
+    }
+  });
+
   it('treats a row with no currency as silver and skips an unreadable time in the week', () => {
     const rows = [
       { kind: 'earn', delta: 4, at: '2026-11-18T20:00:00.000Z' },
