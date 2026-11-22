@@ -7,6 +7,7 @@ import {
   activityKindLabel,
   cardLadderToWork,
   WORK_ITEM_KEYS,
+  tidyTitle,
 } from "../../../../__app_modules/learning/school/server/domain/learnerWork.mjs";
 
 const BASE = { learnerId: 'kid-a', learnerName: 'Kid A', from: '2026-11-16', to: '2026-11-23' };
@@ -370,5 +371,37 @@ describe('activityKindLabel', () => {
 
   it.each([null, undefined, '', '   ', '---', 42])('no label for %j', (kind) => {
     expect(activityKindLabel(kind)).toBeNull();
+  });
+});
+
+describe('tidyTitle', () => {
+  it('title-cases all-caps catalog titles', () => {
+    expect(tidyTitle('PSALMS OF PRAISE')).toBe('Psalms of Praise');
+    expect(tidyTitle('THE CAT IN THE HAT')).toBe('The Cat in the Hat');
+    expect(tidyTitle('WAR: AND PEACE OF THE')).toBe('War: And Peace of The');
+  });
+  it('removes space before punctuation and collapses whitespace', () => {
+    expect(tidyTitle('Wow in the World : the How and Wow of the Human Body'))
+      .toBe('Wow in the World: the How and Wow of the Human Body');
+    expect(tidyTitle('  Hello ,   world !  ')).toBe('Hello, world!');
+  });
+  it('leaves mixed-case titles alone', () => {
+    expect(tidyTitle('iPhone')).toBe('iPhone');
+    expect(tidyTitle('Mrs. Granger Is in Danger!')).toBe('Mrs. Granger Is in Danger!');
+  });
+  it('cannot tell acronyms in all-caps titles (documented limitation)', () => {
+    expect(tidyTitle('THE BFG')).toBe('The Bfg');
+  });
+  it('leaves short all-caps strings and non-strings alone', () => {
+    expect(tidyTitle('ABC')).toBe('ABC');
+    expect(tidyTitle('1984')).toBe('1984');
+    expect(tidyTitle(null)).toBe(null);
+  });
+  it('booksToWork tidies titles but not authors', () => {
+    const [item] = booksToWork([{ id: 'r', book: { isbn: '5' }, status: 'reading', openedOn: '2026-11-17' }], {
+      ...BASE, bookFor: () => ({ title: 'PSALMS OF PRAISE', authors: ['JOHN DOE'] }), coverUrlFor: () => null,
+    });
+    expect(item.title).toBe('Psalms of Praise');
+    expect(item.subtitle).toBe('JOHN DOE');
   });
 });

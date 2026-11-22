@@ -43,6 +43,32 @@ function workItem({ learnerId, learnerName }, fields) {
   };
 }
 
+const SMALL_WORDS = new Set([
+  'a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'in', 'nor', 'of', 'on', 'or', 'the', 'to', 'up', 'via',
+]);
+
+/**
+ * Catalog titles arrive as 'PSALMS OF PRAISE' or 'Wow in the World : the How
+ * and Wow of the Human Body'. Collapse whitespace, drop the space before
+ * punctuation, and title-case a title that is entirely uppercase (4+ letters).
+ * Mixed-case titles keep their casing ('iPhone', 'Mrs. Granger Is in Danger!').
+ * Limitation: an all-caps title cannot tell acronyms from words, so 'THE BFG'
+ * becomes 'The Bfg'.
+ */
+export function tidyTitle(s) {
+  if (typeof s !== 'string') return s;
+  const spaced = s.replace(/\s+/g, ' ').trim().replace(/ +([:;,!?])/g, '$1');
+  const letters = spaced.replace(/[^\p{L}]/gu, '');
+  if (letters.length < 4 || letters !== letters.toUpperCase() || letters === letters.toLowerCase()) return spaced;
+  const words = spaced.toLowerCase().split(' ');
+  return words.map((word, i) => {
+    const afterColon = i > 0 && /:$/.test(words[i - 1]);
+    const bare = word.replace(/^[^\p{L}\d]+|[^\p{L}\d]+$/gu, '');
+    const keepSmall = SMALL_WORDS.has(bare) && i !== 0 && i !== words.length - 1 && !afterColon;
+    return keepSmall ? word : word.replace(/\p{L}/u, (c) => c.toUpperCase());
+  }).join(' ');
+}
+
 const finishedEntries = (reading) => list(reading?.entries).filter((e) => e?.kind === 'finished');
 const latestEntry = (entries) => entries.reduce((best, e) => {
   if (!best) return e;
@@ -72,7 +98,7 @@ export function booksToWork(readings, { learnerId, learnerName, from, to, bookFo
     const book = isbn && bookFor ? bookFor(isbn) : null;
     const base = {
       kind: 'book',
-      title: book?.title || 'A book',
+      title: tidyTitle(book?.title) || 'A book',
       subtitle: list(book?.authors)[0] || null,
       imageUrl: isbn && coverUrlFor ? coverUrlFor(isbn) ?? null : null,
       weight: 1,
