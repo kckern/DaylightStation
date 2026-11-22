@@ -25,6 +25,38 @@ describe('FollowUpTray', () => {
     expect(screen.getByRole('button', { name: 'No follow-ups' })).toBeTruthy();
   });
 
+  it('offers retry after a cold read failure instead of claiming all caught up', async () => {
+    let available = false;
+    api.mockImplementation(async () => {
+      if (!available) throw Object.assign(new Error('offline'), { status: 500 });
+      return { version: 1, questions: [question] };
+    });
+    mount({});
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Follow-up questions unavailable' }));
+    expect(await screen.findByText('Follow-up questions unavailable.')).toBeTruthy();
+    expect(screen.queryByText('Nothing waiting. All caught up.')).toBeNull();
+
+    available = true;
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Retry follow-up questions' }));
+    expect(await screen.findByRole('button', { name: '1 follow-up question' })).toBeTruthy();
+  });
+
+  it('keeps the cleanup read failure visible in an open sheet after its last reading disappears', async () => {
+    api.mockRejectedValue(Object.assign(new Error('offline'), { status: 500 }));
+    const view = mount({ observations: [{ id: 'o1', kind: 'weight', value: 82, unit: 'g', status: 'open' }] });
+
+    fireEvent.click(await screen.findByRole('button', { name: '1 scale reading · Follow-up questions unavailable' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: '1 scale reading to match' }));
+    expect(await screen.findByRole('dialog', { name: 'Follow-ups' })).toBeTruthy();
+
+    view.rerender(<MantineProvider><FollowUpTray observations={[]} /></MantineProvider>);
+
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+    expect(screen.queryByText('All caught up.')).toBeNull();
+  });
+
   it('renders into the header slot it is given, not into the page', async () => {
     const slot = document.createElement('span');
     document.body.appendChild(slot);
@@ -65,7 +97,7 @@ describe('FollowUpTray', () => {
     fireEvent.click(await screen.findByRole('menuitem', { name: /Which fish\?/ }));
     fireEvent.click(await screen.findByRole('button', { name: /Cod/ }));
     expect(await screen.findByText('The entry changed. Please review it manually.')).toBeTruthy();
-    expect(await screen.findByRole('button', { name: 'A follow-up needs a look' })).toBeTruthy();
+    await waitFor(() => expect(document.querySelector('.health-followups__button')?.getAttribute('aria-label')).toBe('A follow-up needs a look'));
   });
 
   it('has one persistent live region carrying the summary', async () => {

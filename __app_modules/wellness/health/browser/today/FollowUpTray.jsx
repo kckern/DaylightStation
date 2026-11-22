@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ActionIcon, Menu, VisuallyHidden } from '@mantine/core';
 import { IconBell, IconScale } from '@tabler/icons-react';
-import { ActionMenu, Sheet } from '@/lib/ui';
+import { ActionMenu, ErrorState, LoadingState, Sheet } from '@/lib/ui';
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { useCleanup } from "../cleanup/CleanupQuestions.jsx";
 import { QuestionDeck, subjectOf } from "../cleanup/QuestionDeck.jsx";
 import { ObservationsSection } from "./ObservationRow.jsx";
+import { unavailableError } from "../healthResources.js";
 
 const logger = createAppLogger('health').child('follow-ups');
 
@@ -33,11 +34,16 @@ export function FollowUpTray({ active = true, target = null, observations = [], 
   const [feedback, setFeedback] = useState(null);
   const questions = cleanup.data?.questions || [];
   const readings = observations.length;
+  const questionLoadError = unavailableError(cleanup);
+  const loadingQuestions = cleanup.data == null && cleanup.loading;
   const parts = [questions.length ? plural(questions.length, 'follow-up question', 'follow-up questions') : null,
     readings ? plural(readings, 'scale reading', 'scale readings') : null,
+    loadingQuestions ? 'Loading follow-up questions' : null,
+    questionLoadError ? 'Follow-up questions unavailable' : null,
     feedback && !questions.length ? 'A follow-up needs a look' : null].filter(Boolean);
-  const empty = parts.length === 0;
-  const summary = empty ? 'No follow-ups' : parts.join(' · ');
+  const empty = questions.length === 0 && readings === 0 && !feedback;
+  const confirmedEmpty = empty && !loadingQuestions && !questionLoadError;
+  const summary = parts.length ? parts.join(' · ') : 'No follow-ups';
   const count = questions.length + readings;
 
   const last = useRef({ questions: 0, readings: 0 });
@@ -74,7 +80,12 @@ export function FollowUpTray({ active = true, target = null, observations = [], 
           </ActionIcon>
         }
       >
-        {empty ? <Menu.Label>Nothing waiting. All caught up.</Menu.Label> : null}
+        {empty && loadingQuestions ? <Menu.Label>Loading follow-up questions…</Menu.Label> : null}
+        {questionLoadError ? <>
+          <Menu.Label>Follow-up questions unavailable.</Menu.Label>
+          <Menu.Item onClick={() => cleanup.reload()}>Retry follow-up questions</Menu.Item>
+        </> : null}
+        {confirmedEmpty ? <Menu.Label>Nothing waiting. All caught up.</Menu.Label> : null}
         {questions.slice(0, LISTED).map((question) => (
           <Menu.Item key={question.id} onClick={() => openSheet(question.id)}>
             <span className="health-followups__item-subject">{subjectOf(question)}</span>
@@ -108,7 +119,9 @@ export function FollowUpTray({ active = true, target = null, observations = [], 
             onFeedback={setFeedback} onChanged={() => { cleanup.reload(); onChanged?.(); }} />
         ) : null}
         {readings ? <ObservationsSection observations={observations} onChanged={onObservationsChanged} /> : null}
-        {!questions.length && !readings && !feedback ? <p className="health-qdeck__done">All caught up.</p> : null}
+        {loadingQuestions && empty ? <LoadingState label="follow-up questions" rows={1} /> : null}
+        {questionLoadError ? <ErrorState error={cleanup.error} onRetry={cleanup.reload} label="Follow-up questions" /> : null}
+        {confirmedEmpty ? <p className="health-qdeck__done">All caught up.</p> : null}
       </Sheet>
     </>
   );
