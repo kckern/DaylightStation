@@ -102,14 +102,14 @@ export async function createSchoolReadingRuntime({ schoolLifecycle, rootLogger, 
   return { readingSessions, readingSessionInterceptor };
 }
 
-export async function registerSchoolReadingAction({ readingSessions, deviceServices, homeAutomationAdapters, learnerDisplayName, screenContentTracker, wakeScreenForBroadcast, schoolLifecycle, eventBus, rootLogger, learnerActions, nfcLocationsForReachability }) {
+export async function registerSchoolReadingAction({ readingSessions, deviceServices, homeAutomationAdapters, sendPush = null, learnerDisplayName, screenContentTracker, wakeScreenForBroadcast, schoolLifecycle, eventBus, rootLogger, learnerActions, nfcLocationsForReachability }) {
   let startReadingSession = null;
 if (readingSessions) {
     const { makeReadingSessionHandler } = await import("./learnerCardActions.mjs");
     const { NotifyReadingSessionFailure } = await import("../application/workflows/NotifyReadingSessionFailure.mjs");
     const notifyReadingSessionFailure = new NotifyReadingSessionFailure({
       notificationTargetForDevice: (id) => deviceServices.deviceService.get(id)?.notifyService ?? null,
-      notifier: homeAutomationAdapters.haGateway?.callService ? homeAutomationAdapters.haGateway : null,
+      sendPush,
       studentName: learnerDisplayName,
       deviceLabel: (id) => deviceServices.deviceService.get(id)?.name ?? null,
     });

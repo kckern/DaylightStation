@@ -74,21 +74,13 @@ let providerWebhookAdapters = {};
       // (below, "fitness:strava-sync-health") pushes when one goes stale.
       const { StravaSyncHealth } = await import("../application/StravaSyncHealth.mjs");
       const { YamlSyncHealthStore } = await import("../adapters/YamlSyncHealthStore.mjs");
-      const stravaHealthHaGateway = dependencies.householdAdapters?.has?.('home_automation') ? dependencies.householdAdapters.get('home_automation') : null;
       const stravaHealthLogger = rootLogger.child({ module: 'strava-sync-health' });
       stravaSyncHealth = new StravaSyncHealth({
         store: new YamlSyncHealthStore({ path: configService.getHouseholdPath('fitness/sync-health') }),
-        sendPush: async ({ title, message, data }) => {
-          const recipient = configService.getHeadOfHousehold?.();
-          const notifyService = recipient
-            ? userService.getProfile(recipient)?.identities?.homeassistant?.notify_service
-            : null;
-          if (!stravaHealthHaGateway || !notifyService) {
-            stravaHealthLogger.warn?.('strava.sync_health.no_push_target', { recipient: recipient || null });
-            return;
-          }
-          await stravaHealthHaGateway.callService('notify', notifyService, { title, message, data });
-        },
+        // Head of household, through NotificationService (the Android app, else HA).
+        sendPush: dependencies.makePushSender
+          ? dependencies.makePushSender({ category: 'household_alert', urgency: 'high', source: 'strava-sync-health', recipient: () => configService.getHeadOfHousehold?.() || null })
+          : async () => { stravaHealthLogger.warn?.('strava.sync_health.no_push_target', { recipient: null }); },
         hasWebhookJob: (activityId) => !!jobStore.findById(activityId),
         timezone: stravaTimezone,
         logger: stravaHealthLogger,
@@ -251,6 +243,7 @@ let providerWebhookAdapters = {};
   // Fitness domain router
   // Note: contentRegistry passed for /show endpoint - playlist thumbnail enrichment is household-specific
   v1Routers.fitness = createFitnessApiRouter({
+    makePushSender: dependencies.makePushSender ?? null,
     createSchoolLearnerDirectory: dependencies.createSchoolLearnerDirectory,
     peopleDirectory: dependencies.peopleDirectory,
     fitnessServices,

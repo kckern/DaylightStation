@@ -117,6 +117,7 @@ export function createFitnessApiRouter(config) {
     identityRelay = null,
     parentalSupervision = null,
     garageHumanActivityGateway = null,
+    makePushSender = null,
     eventBus = null,
     // Workout persistence + its save-time slug guard, both built in app.mjs and passed
     // straight through — this module composes fitness services, and these are already
@@ -415,7 +416,7 @@ export function createFitnessApiRouter(config) {
   new FitnessCoinsRelay({ eventBus, logger }).start();
   const transportIncidentRetryWorker = createFitnessTransportIncidentReporter({
     store: fitnessServices.sessionStore, householdId, logger, configService,
-    userService, garageHumanActivityGateway,
+    makePushSender,
   });
   const fitnessSessionOperations = new FitnessSessionOperations({
     transportIncidents: transportIncidentRetryWorker,
@@ -467,17 +468,10 @@ export function createFitnessApiRouter(config) {
     garageSpeakerHealth: new GarageSpeakerHealthService({
       logger: garageSpeakerLogger,
       liveSessionAuthority,
-      // Same recipient rule as the Strava sync-health push: head of household's
-      // HA notify service, through the HA gateway the garage already uses.
-      sendPush: async ({ title, message, data }) => {
-        const recipient = configService?.getHeadOfHousehold?.();
-        const notifyService = recipient ? userService?.getProfile?.(recipient)?.identities?.homeassistant?.notify_service : null;
-        if (!garageHumanActivityGateway?.callService || !notifyService) {
-          garageSpeakerLogger?.warn?.('fitness.garage_speaker.no_push_target', { recipient: recipient || null });
-          return;
-        }
-        await garageHumanActivityGateway.callService('notify', notifyService, { title, message, data });
-      },
+      // Head of household, through NotificationService (the Android app, else HA).
+      sendPush: makePushSender
+        ? makePushSender({ category: 'household_alert', urgency: 'high', source: 'garage-speaker', recipient: () => configService?.getHeadOfHousehold?.() || null })
+        : async () => { garageSpeakerLogger?.warn?.('fitness.garage_speaker.no_push_target', { recipient: null }); },
     }),
     voiceMemoOperations,
     screenshotService,
@@ -587,19 +581,22 @@ export function createFitnessUserHydrator({profileReader,peopleDirectory,househo
 
 /** Production transport-report binding, shared with isolated composition tests. */
 export function createFitnessTransportIncidentReporter({
-  store, householdId, logger, configService, userService, garageHumanActivityGateway, now, wallNow,
+  store, householdId, logger, configService, makePushSender = null, now, wallNow,
 }) {
+  // Through NotificationService (the Android app, else HA): the head of household.
+  const push = makePushSender?.({
+    category: 'household_alert', urgency: 'high', source: 'fitness-transport',
+    recipient: () => configService?.getHeadOfHousehold?.(householdId) || null,
+  }) ?? null;
   return new FitnessTransportIncidentService({
     store,
     allowedHouseholdId: householdId,
     logger, now, wallNow,
-    sendPush: async (push, selectedHouseholdId) => {
-      if (selectedHouseholdId !== householdId) return { accepted: false };
-      const recipient = configService?.getHeadOfHousehold?.(selectedHouseholdId);
-      const notifyService = recipient ? userService?.getProfile?.(recipient)?.identities?.homeassistant?.notify_service : null;
-      if (!garageHumanActivityGateway?.callService || !notifyService) return { accepted: false };
-      const result = await garageHumanActivityGateway.callService('notify', notifyService, push);
-      return { accepted: result?.ok === true }; // Gateway acceptance cannot prove phone delivery.
+    sendPush: async (message, selectedHouseholdId) => {
+      if (selectedHouseholdId !== householdId || !push) return { accepted: false };
+      const results = await push(message);
+      // Acceptance (HA took it, or the phone acked) cannot prove the phone showed it.
+      return { accepted: (results || []).some(r => r.delivered === true || r.accepted === true) };
     },
   });
 }

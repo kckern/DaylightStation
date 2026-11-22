@@ -13,23 +13,24 @@ export class NotifyReadingSessionFailure {
   /**
    * @param {Object} deps
    * @param {(deviceId: string) => string|null} deps.notificationTargetForDevice - HA notify service for a device
-   * @param {{ callService: Function }|null} deps.notifier - HA gateway; absent, nothing is sent
+   * @param {Function|null} deps.sendPush - ({title, message, data, haNotifyService}) => Promise,
+   *   through NotificationService (the Android app, else HA); absent, nothing is sent
    * @param {(learnerId: string) => (string|null|Promise<string|null>)} [deps.studentName] - the child's display name
    * @param {(deviceId: string) => string|null} [deps.deviceLabel] - the screen's display name ("Living Room TV")
    */
-  constructor({ notificationTargetForDevice, notifier, studentName = null, deviceLabel = null } = {}) {
+  constructor({ notificationTargetForDevice, sendPush = null, studentName = null, deviceLabel = null } = {}) {
     if (typeof notificationTargetForDevice !== 'function') {
       throw new Error('NotifyReadingSessionFailure requires notificationTargetForDevice');
     }
     this.notificationTargetForDevice = notificationTargetForDevice;
-    this.notifier = notifier;
+    this.sendPush = typeof sendPush === 'function' ? sendPush : null;
     this.studentName = typeof studentName === 'function' ? studentName : null;
     this.deviceLabel = typeof deviceLabel === 'function' ? deviceLabel : null;
   }
 
   async execute({ target, location, learnerId }) {
     const notificationTarget = target ? this.notificationTargetForDevice(target) : null;
-    if (!notificationTarget || !this.notifier?.callService) return;
+    if (!notificationTarget || !this.sendPush) return;
     // A label lookup that fails, synchronously or not, must not cost the
     // adult the alert: each falls back to the plain copy.
     const child = learnerId
@@ -38,7 +39,8 @@ export class NotifyReadingSessionFailure {
     const screen = target
       ? await Promise.resolve().then(() => this.deviceLabel?.(target)).catch(() => null)
       : null;
-    await this.notifier.callService('notify', notificationTarget, {
+    await this.sendPush({
+      haNotifyService: notificationTarget,
       title: child ? `📖 ${child}'s story time didn't start` : "📖 Story time didn't start",
       message: `The ${screen || 'screen'} didn't respond`,
       data: pushData({ tag: `story-${target ?? location ?? 'screen'}`, alertOnce: true }),

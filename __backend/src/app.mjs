@@ -2438,7 +2438,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Strava webhook enrichment (provider-agnostic webhook, Strava adapter)
   let fitnessStateGatesProducer = null;
-  const { stravaEnrichmentService, stravaReconciliationService, stravaSyncHealth, adminIntervention } = await createFitnessApiRuntime({ peopleDirectory, parentalSupervision:parentalSupervision.enabled?{service:parentalSupervision.service,garageDeviceId:parentalSupervision.configuration.garage_device_id,scopeId:parentalSupervision.configuration.scope_id,verifyScan:parentalSupervision.verifyScan}:null, createSchoolLearnerDirectory, get fitnessStateGatesProducer() { return fitnessStateGatesProducer; }, configService, rootLogger, axios, NodeApplicationScheduler, get householdAdapters() { return householdAdapters; }, userService, harvesterServices, v1Routers, eventBus, loadFitnessConfig, householdId, exerciseLibrary, fitnessServices, userDataService, contentRegistry, contentServices, get createFitnessReceiptCanvas() { return createFitnessReceiptCanvas; }, hardwareAdapters, fingerprintProfileWriter, fitnessPlayableModule });
+  const { stravaEnrichmentService, stravaReconciliationService, stravaSyncHealth, adminIntervention } = await createFitnessApiRuntime({ makePushSender: (options) => createPushSender({ notificationService: notificationStack.notificationService, ...options }), peopleDirectory, parentalSupervision:parentalSupervision.enabled?{service:parentalSupervision.service,garageDeviceId:parentalSupervision.configuration.garage_device_id,scopeId:parentalSupervision.configuration.scope_id,verifyScan:parentalSupervision.verifyScan}:null, createSchoolLearnerDirectory, get fitnessStateGatesProducer() { return fitnessStateGatesProducer; }, configService, rootLogger, axios, NodeApplicationScheduler, get householdAdapters() { return householdAdapters; }, userService, harvesterServices, v1Routers, eventBus, loadFitnessConfig, householdId, exerciseLibrary, fitnessServices, userDataService, contentRegistry, contentServices, get createFitnessReceiptCanvas() { return createFitnessReceiptCanvas; }, hardwareAdapters, fingerprintProfileWriter, fitnessPlayableModule });
 
   supervisionIdentity=adminIntervention;
 
@@ -3005,7 +3005,9 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // that was the only learner action wired. It is registered now, and only
   // when the sessions store it needs actually exists: the refusal it replaces
   // is still the right answer for a household with no story-time launcher.
-  ({ startReadingSession } = await registerSchoolReadingAction({ readingSessions, deviceServices, homeAutomationAdapters, learnerDisplayName, screenContentTracker, wakeScreenForBroadcast, schoolLifecycle, eventBus, rootLogger, learnerActions, nfcLocationsForReachability }));
+  ({ startReadingSession } = await registerSchoolReadingAction({ readingSessions, deviceServices, homeAutomationAdapters,
+    sendPush: createPushSender({ notificationService: notificationStack.notificationService, category: 'school', urgency: 'high', source: 'story-time', recipient: (target) => recipientForNotifyService(target) }),
+    learnerDisplayName, screenContentTracker, wakeScreenForBroadcast, schoolLifecycle, eventBus, rootLogger, learnerActions, nfcLocationsForReachability }));
 
   // Trigger dispatch (NFC modality source: apps/nfc/config.yml; barcode modality
   // shares this same dispatch core — see the barcode-relay wiring just below).

@@ -6,7 +6,8 @@ const make = (overrides = {}) => {
   const notifier = { callService: vi.fn(async () => undefined) };
   const operation = new NotifyReadingSessionFailure({
     notificationTargetForDevice: () => 'mobile_app_parent',
-    notifier,
+    // The injected push, recorded as the HA call it becomes with no phone connected.
+    sendPush: ({ haNotifyService, ...push }) => notifier.callService('notify', haNotifyService, push),
     studentName: async (id) => (id === 'user_4' ? 'Learner4' : null),
     deviceLabel: (id) => (id === 'livingroom-tv' ? 'Living Room TV' : null),
     ...overrides,
