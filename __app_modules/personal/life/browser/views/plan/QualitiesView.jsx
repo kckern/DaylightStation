@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { Stack, Paper, Text, Group, Badge, Accordion, ThemeIcon } from '@mantine/core';
 import { IconShield, IconAlertTriangle } from '@tabler/icons-react';
 import { useLifePlan } from "../../hooks/useLifePlan.js";
+import { useRetryRegion } from '@/lib/ui';
 import { LifePage, LoadingState, ErrorState, EmptyState } from "../../components/index.js";
 import { humanize } from "../../lib/format.js";
 import { ruleEffectivenessColor } from "../../theme/semantics.js";
@@ -28,92 +29,93 @@ function RuleItem({ rule }) {
 
 export function QualitiesView({ username }) {
   const navigate = useNavigate();
-  const { plan, loading, error, refetch } = useLifePlan(username);
-
-  if (loading) return <LoadingState />;
-  if (error) return <LifePage title="Qualities" scrollReady={false}><ErrorState label="Qualities" error={error} onRetry={refetch} /></LifePage>;
-
+  const { plan, loading, revalidating, error, refetch } = useLifePlan(username);
+  const { regionProps, retry } = useRetryRegion(refetch, loading || revalidating);
   const qualities = plan?.qualities || [];
+  let content;
 
-  if (!qualities.length) {
-    return (
-      <LifePage title="Qualities">
-        <EmptyState
-          title="Qualities"
-          hint="Qualities are the character traits you want to embody. Your coach can help you name your first few."
-          action={{ label: 'Talk to your coach', onClick: () => navigate('/life/coach') }}
-        />
-      </LifePage>
-    );
-  }
+  if (loading && !plan) content = <LoadingState />;
+  else if (error) content = <ErrorState label="Qualities" error={error} onRetry={retry} />;
+  else if (!qualities.length) content = (
+    <EmptyState
+      title="Qualities"
+      hint="Qualities are the character traits you want to embody. Your coach can help you name your first few."
+      action={{ label: 'Talk to your coach', onClick: () => navigate('/life/coach') }}
+    />
+  );
+  else content = (
+    <Accordion variant="separated">
+      {qualities.map((q) => (
+        <Accordion.Item key={q.id} value={q.id}>
+          <Accordion.Control>
+            <Group gap="sm">
+              <ThemeIcon
+                color={q.shadow ? 'yellow' : 'blue'}
+                variant="light"
+                size="sm"
+              >
+                {q.shadow ? <IconAlertTriangle size={14} /> : <IconShield size={14} />}
+              </ThemeIcon>
+              <Text size="sm" fw={500}>{q.name}</Text>
+              {q.shadow && (
+                <Badge color="yellow" variant="light" size="xs">Has shadow</Badge>
+              )}
+            </Group>
+          </Accordion.Control>
+          <Accordion.Panel>
+            <Stack gap="sm">
+              {q.principles?.length > 0 && (
+                <div>
+                  <Text size="xs" fw={500} mb={4}>Principles</Text>
+                  {q.principles.map((p, i) => (
+                    <Text key={i} size="xs" c="dimmed">- {p}</Text>
+                  ))}
+                </div>
+              )}
+
+              {q.shadow && (
+                <Paper p="xs" withBorder bg="yellow.0">
+                  <Text size="xs" fw={500}>Shadow: {typeof q.shadow === 'string' ? q.shadow : q.shadow.name}</Text>
+                  {typeof q.shadow !== 'string' && q.shadow.description && (
+                    <Text size="xs" c="dimmed">{q.shadow.description}</Text>
+                  )}
+                </Paper>
+              )}
+
+              {q.rules?.length > 0 && (
+                <div>
+                  <Text size="xs" fw={500} mb={4}>Rules</Text>
+                  <Stack gap="xs">
+                    {q.rules.map((r, i) => (
+                      <RuleItem key={i} rule={r} />
+                    ))}
+                  </Stack>
+                </div>
+              )}
+
+              {(q.grounded_in?.beliefs?.length > 0 || q.grounded_in?.values?.length > 0) && (
+                <Group gap="xs">
+                  <Text size="xs" c="dimmed">Grounded in:</Text>
+                  {q.grounded_in.beliefs?.map((ref, i) => (
+                    <Badge key={`b-${i}`} variant="light" size="xs">{humanize(ref)}</Badge>
+                  ))}
+                  {q.grounded_in.values?.map((ref, i) => (
+                    <Badge key={`v-${i}`} variant="light" size="xs" color="green">{humanize(ref)}</Badge>
+                  ))}
+                </Group>
+              )}
+            </Stack>
+          </Accordion.Panel>
+        </Accordion.Item>
+      ))}
+    </Accordion>
+  );
 
   return (
-    <LifePage title="Qualities">
-      <Accordion variant="separated">
-        {qualities.map((q) => (
-          <Accordion.Item key={q.id} value={q.id}>
-            <Accordion.Control>
-              <Group gap="sm">
-                <ThemeIcon
-                  color={q.shadow ? 'yellow' : 'blue'}
-                  variant="light"
-                  size="sm"
-                >
-                  {q.shadow ? <IconAlertTriangle size={14} /> : <IconShield size={14} />}
-                </ThemeIcon>
-                <Text size="sm" fw={500}>{q.name}</Text>
-                {q.shadow && (
-                  <Badge color="yellow" variant="light" size="xs">Has shadow</Badge>
-                )}
-              </Group>
-            </Accordion.Control>
-            <Accordion.Panel>
-              <Stack gap="sm">
-                {q.principles?.length > 0 && (
-                  <div>
-                    <Text size="xs" fw={500} mb={4}>Principles</Text>
-                    {q.principles.map((p, i) => (
-                      <Text key={i} size="xs" c="dimmed">- {p}</Text>
-                    ))}
-                  </div>
-                )}
-
-                {q.shadow && (
-                  <Paper p="xs" withBorder bg="yellow.0">
-                    <Text size="xs" fw={500}>Shadow: {typeof q.shadow === 'string' ? q.shadow : q.shadow.name}</Text>
-                    {typeof q.shadow !== 'string' && q.shadow.description && (
-                      <Text size="xs" c="dimmed">{q.shadow.description}</Text>
-                    )}
-                  </Paper>
-                )}
-
-                {q.rules?.length > 0 && (
-                  <div>
-                    <Text size="xs" fw={500} mb={4}>Rules</Text>
-                    <Stack gap="xs">
-                      {q.rules.map((r, i) => (
-                        <RuleItem key={i} rule={r} />
-                      ))}
-                    </Stack>
-                  </div>
-                )}
-
-                {(q.grounded_in?.beliefs?.length > 0 || q.grounded_in?.values?.length > 0) && (
-                  <Group gap="xs">
-                    <Text size="xs" c="dimmed">Grounded in:</Text>
-                    {q.grounded_in.beliefs?.map((ref, i) => (
-                      <Badge key={`b-${i}`} variant="light" size="xs">{humanize(ref)}</Badge>
-                    ))}
-                    {q.grounded_in.values?.map((ref, i) => (
-                      <Badge key={`v-${i}`} variant="light" size="xs" color="green">{humanize(ref)}</Badge>
-                    ))}
-                  </Group>
-                )}
-              </Stack>
-            </Accordion.Panel>
-          </Accordion.Item>
-        ))}
-      </Accordion>
+    <LifePage title="Qualities" scrollReady={!loading && !error}>
+      <section {...regionProps} aria-label="Qualities results">
+        {content}
+      </section>
     </LifePage>
   );
 }
