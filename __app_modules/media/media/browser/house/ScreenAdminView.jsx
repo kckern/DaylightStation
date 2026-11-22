@@ -130,6 +130,7 @@ export function ScreenAdminView() {
   const [retiring, setRetiring] = useState(null); // { screen, routines, error, loading }
   const [aliasNames, setAliasNames] = useState({});
   const [restoreErrors, setRestoreErrors] = useState({});
+  const { pending: restoring, run: runRestore } = useKeyedSubmission();
   useEffect(() => { houseLog.viewOpened({ view: 'screens' }); }, []);
 
   const screens = registry?.screens ?? [];
@@ -205,7 +206,7 @@ export function ScreenAdminView() {
       ? { ...current, submitting: false, error: result.error }
       : current);
   };
-  const restoreScreen = async (screen) => {
+  const restoreScreen = (screen) => runRestore(screen.id, async () => {
     setRestoreErrors(current => {
       if (!Object.prototype.hasOwnProperty.call(current, screen.id)) return current;
       const next = { ...current };
@@ -214,7 +215,7 @@ export function ScreenAdminView() {
     });
     const result = await admin.restore(screen);
     if (!result.ok) setRestoreErrors(current => ({ ...current, [screen.id]: result.error }));
-  };
+  });
 
   if (registry && registry.loaded && !registry.available) {
     return (
@@ -269,7 +270,7 @@ export function ScreenAdminView() {
                 <Group justify="space-between" wrap="nowrap">
                   <Text>{screen.name}</Text>
                   <Button size="xs" variant="default" className="house-action" data-testid={`screen-admin-restore-${screen.id}`}
-                    onClick={() => restoreScreen(screen)}>
+                    disabled={restoring.has(screen.id)} onClick={() => restoreScreen(screen)}>
                     Restore
                   </Button>
                 </Group>

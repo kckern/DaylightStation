@@ -208,4 +208,26 @@ describe('ScreenAdminView', () => {
     fireEvent.click(screen.getByTestId('screen-admin-restore-screen:attic'));
     await waitFor(() => expect(api.restoreScreen).toHaveBeenCalledWith('screen:attic'));
   });
+
+  it('admits one Restore request per screen and allows an explicit retry after refusal', async () => {
+    const firstRequest = Promise.withResolvers();
+    ctx.registry.retired.push({ id: 'screen:basement', kind: 'added', name: 'Basement TV' });
+    api.restoreScreen.mockImplementationOnce(() => firstRequest.promise);
+    wrap();
+    const first = screen.getByTestId('screen-admin-restore-screen:attic');
+    const other = screen.getByTestId('screen-admin-restore-screen:basement');
+    fireEvent.click(first);
+    fireEvent.click(first);
+    expect(api.restoreScreen).toHaveBeenCalledTimes(1);
+    expect(api.restoreScreen).toHaveBeenCalledWith('screen:attic');
+    expect(first).toBeDisabled();
+    expect(other).toBeEnabled();
+
+    await act(async () => firstRequest.reject(new Error('restore refused')));
+    expect(await screen.findByRole('alert')).toHaveTextContent('restore refused');
+    expect(first).toBeEnabled();
+    fireEvent.click(first);
+    await waitFor(() => expect(api.restoreScreen).toHaveBeenCalledTimes(2));
+    expect(api.restoreScreen).toHaveBeenLastCalledWith('screen:attic');
+  });
 });
