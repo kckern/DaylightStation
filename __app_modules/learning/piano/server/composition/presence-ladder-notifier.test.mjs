@@ -8,8 +8,8 @@ function make({ enabled = true, svc = 'mobile_app_phone', gateway = { callServic
   const log = logger();
   const notify = createPresenceLadderNotifier({
     isEnabled: () => enabled,
-    getHaGateway: () => gateway,
-    getNotifyService: () => svc,
+    // The injected push, recorded as the HA call it becomes with no phone connected.
+    sendPush: svc && gateway ? (push) => gateway.callService('notify', svc, push) : undefined,
     getDisplayName: () => 'Kid One',
     timezone: 'America/Los_Angeles',
     logger: log,

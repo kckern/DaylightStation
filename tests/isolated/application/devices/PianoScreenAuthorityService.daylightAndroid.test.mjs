@@ -42,6 +42,7 @@ function makeService(device, power) {
   const gateway = { getState: vi.fn(async () => ({ state: power() })), callService: vi.fn(async () => ({ ok: true })) };
   const svc = new PianoScreenAuthorityService({
     haGateway: gateway,
+    sendPush: ({ haNotifyService, ...push }) => gateway.callService('notify', haNotifyService, push),
     deviceService: { get: vi.fn().mockReturnValue(device) },
     logger: noLog(),
     clock: { now: () => Date.now() },

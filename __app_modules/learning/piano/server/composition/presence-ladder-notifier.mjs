@@ -18,23 +18,21 @@ function householdDay(iso, timezone) {
  *
  * @returns {(call: { userId, title, minimalCheckIns, at, startedAt }) => Promise<void>}
  */
-export function createPresenceLadderNotifier({ isEnabled, getHaGateway, getNotifyService, getDisplayName, timezone = null, logger = console }) {
+export function createPresenceLadderNotifier({ isEnabled, sendPush, getDisplayName, timezone = null, logger = console }) {
   return async ({ userId, title = null, minimalCheckIns = 0, at = new Date().toISOString(), startedAt = null } = {}) => {
     try {
       if (!isEnabled?.()) {
         logger.info?.('piano.presence-ladder.notify-skipped', { userId, reason: 'disabled' });
         return;
       }
-      const gateway = getHaGateway?.();
-      const service = getNotifyService?.();
-      if (!gateway || !service) {
+      if (typeof sendPush !== 'function') {
         logger.info?.('piano.presence-ladder.notify-skipped', { userId, reason: 'no-target' });
         return;
       }
       const push = composePresenceLadderPush({
         child: getDisplayName?.(userId) ?? null, lesson: title, minimalCheckIns, startedAt, timezone, userId, day: householdDay(at, timezone),
       });
-      await gateway.callService('notify', service, push);
+      await sendPush(push);
       logger.info?.('piano.presence-ladder.notify-sent', { userId, minimalCheckIns, tag: push.data.tag });
     } catch (err) {
       logger.warn?.('piano.presence-ladder.notify-failed', { userId, error: err?.message });

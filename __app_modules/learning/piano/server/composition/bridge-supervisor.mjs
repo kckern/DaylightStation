@@ -102,7 +102,7 @@ let instance = null;
  * @returns {{ pianoBridgeSupervisor: PianoBridgeSupervisorService|null }}
  */
 export function createPianoBridgeSupervisor({
-  configService, remoteAdmin, haGateway = null, householdId = null, logger = console, eventBus = null,
+  configService, remoteAdmin, haGateway = null, sendPush = null, householdId = null, logger = console, eventBus = null,
   deviceService = null, getScreenOverrideService = null,
   speakerActionsFactory = (options) => new PianoBridgeSpeakerActionsAdapter(options),
   probeFactory = (options) => new PianoBridgeHealthProbeAdapter(options),
@@ -161,8 +161,9 @@ export function createPianoBridgeSupervisor({
     : null;
 
   const notifyService = cfg.notify_service || null;
-  const notify = notifyService && haGateway?.callService
-    ? (push) => haGateway.callService('notify', notifyService, push)
+  // Through NotificationService (the Android app, else HA at notify_service).
+  const notify = notifyService && sendPush
+    ? (push) => sendPush({ ...push, haNotifyService: notifyService })
     : null;
 
   const sink = configService?.get?.('logging.remoteSink');

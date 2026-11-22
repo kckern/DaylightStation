@@ -29,7 +29,7 @@ let instance = null;
  * @returns {{ pianoScreenAuthorityService: PianoScreenAuthorityService|null }}
  */
 export function createPianoScreenPowerSync({
-  haGateway, deviceService, configService, householdId = null, logger = console, clock, getScreenOverrideService,
+  haGateway, sendPush = null, deviceService, configService, householdId = null, logger = console, clock, getScreenOverrideService,
 } = {}) {
   if (instance) {
     logger.warn?.('piano-screen-authority.already_created');
@@ -76,6 +76,7 @@ export function createPianoScreenPowerSync({
   const service = new PianoScreenAuthorityService({
     prepareWake,
     haGateway,
+    sendPush,
     deviceService,
     logger,
     clock,

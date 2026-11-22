@@ -1222,11 +1222,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // videos.practice.presence_ladder.notify_top_rung is true (read per push).
     presenceLadderNotifier: createPresenceLadderNotifier({
       isEnabled: () => configService.getHouseholdAppConfig?.(null, 'piano')?.videos?.practice?.presence_ladder?.notify_top_rung === true,
-      getHaGateway: () => (householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null),
-      getNotifyService: () => {
-        const recipient = configService.getHeadOfHousehold?.();
-        return recipient ? userService.getProfile(recipient)?.identities?.homeassistant?.notify_service ?? null : null;
-      },
+      // Built before the notification stack: resolved at send time.
+      sendPush: createPushSender({
+        notificationService: { send: (intent) => notificationStack.notificationService.send(intent) },
+        category: 'household_alert', urgency: 'high', source: 'piano-presence-ladder',
+        recipient: () => configService.getHeadOfHousehold?.() || null,
+      }),
       getDisplayName: (userId) => personDisplayName(userService.getProfile(userId), userId),
       timezone: configService.getTimezone?.() || null,
       logger: rootLogger.child({ module: 'piano-presence-ladder' }),
@@ -2621,6 +2622,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   createPianoScreenPowerSync({
     getScreenOverrideService,
     haGateway: homeAutomationAdapters.haGateway,
+    sendPush: createPushSender({
+      notificationService: notificationStack.notificationService,
+      category: 'household_alert', urgency: 'high', source: 'piano-screen-authority',
+      recipient: (target) => recipientForNotifyService(target),
+    }),
     deviceService: deviceServices.deviceService,
     configService,
     householdId,
@@ -4374,6 +4380,11 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
       configService,
       remoteAdmin: deviceRemoteAdministrationService,
       haGateway: homeAutomationAdapters.haGateway,
+      sendPush: createPushSender({
+        notificationService: notificationStack.notificationService,
+        category: 'household_alert', urgency: 'high', source: 'piano-bridge-supervisor',
+        recipient: (target) => recipientForNotifyService(target),
+      }),
       householdId,
       eventBus,
       deviceService: deviceServices.deviceService,

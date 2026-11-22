@@ -35,7 +35,7 @@ const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_BACKOFF_BASE_MS = 250;
 
 export class PianoScreenAuthorityService {
-  #ha; #deviceService; #logger; #clock;
+  #ha; #sendPush; #deviceService; #logger; #clock;
   #deviceId; #pianoPowerEntity;
   #pollMs; #offDebounceMs; #reconcileMs; #maxRetries; #backoffBaseMs;
   #prepareWake;
@@ -67,7 +67,7 @@ export class PianoScreenAuthorityService {
    * @param {(ms:number)=>Promise<void>} [opts.sleep] - injectable for tests
    */
   constructor({
-    haGateway, deviceService, logger = console, clock = Date,
+    haGateway, sendPush = null, deviceService, logger = console, clock = Date,
     deviceId, pianoPowerEntity,
     pollIntervalMs = DEFAULT_POLL_MS,
     offDebounceMs = DEFAULT_OFF_DEBOUNCE_MS,
@@ -89,6 +89,8 @@ export class PianoScreenAuthorityService {
     if (!scheduler?.every || !scheduler?.wait) throw new Error('PianoScreenAuthorityService requires scheduler');
 
     this.#ha = haGateway;
+    // ({title, message, haNotifyService}) => Promise — through NotificationService.
+    this.#sendPush = sendPush;
     this.#deviceService = deviceService;
     this.#logger = logger;
     this.#clock = clock;
@@ -333,11 +335,12 @@ export class PianoScreenAuthorityService {
 
   /** @private */
   async #notify(desiredOn) {
-    if (!this.#notifyService || typeof this.#ha?.callService !== 'function') return;
+    if (!this.#notifyService || typeof this.#sendPush !== 'function') return;
     try {
-      await this.#ha.callService('notify', this.#notifyService, {
+      await this.#sendPush({
         title: 'Piano tablet screen out of sync',
         message: `Failed to set the piano tablet screen ${desiredOn ? 'ON' : 'OFF'} after ${this.#maxRetries} retries`,
+        haNotifyService: this.#notifyService,
       });
       this.#logger.info?.('piano-screen-authority.notify.sent', {
         deviceId: this.#deviceId, notifyService: this.#notifyService,

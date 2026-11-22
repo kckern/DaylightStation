@@ -48,6 +48,8 @@ function makeService({ gateway, device, overrides = {} } = {}) {
   const logger = makeLogger();
   const svc = new PianoScreenAuthorityService({
     haGateway: gateway,
+    // The injected push, recorded as the HA call it becomes with no phone connected.
+    sendPush: ({ haNotifyService, ...push }) => gateway.callService('notify', haNotifyService, push),
     deviceService: { get: vi.fn().mockReturnValue(device) },
     logger,
     clock: { now: () => Date.now() },

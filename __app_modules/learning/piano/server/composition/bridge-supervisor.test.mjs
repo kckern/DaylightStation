@@ -44,6 +44,7 @@ test('inherits device, url and power entity from sibling blocks; relaunch goes t
       getState: async () => ({ state: 'on' }),
       callService: async (...a) => { notifies.push(a); },
     },
+    sendPush: async ({ haNotifyService, ...push }) => { notifies.push(['notify', haNotifyService, push]); },
     probeFactory: () => ({ readHealth: async () => ({ reachable: false, error: 'down' }) }),
     logger: logger(), scheduler,
   });
