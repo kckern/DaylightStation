@@ -31,7 +31,7 @@ function normalizeInput(input) {
   // Normalize each semicolon-separated segment: trim and collapse space after first colon
   return input
     .split(';')
-    .map(seg => seg.trim().replace(/^(\w+):\s+/, '$1:'))
+    .map(seg => seg.trim().replace(/^([\w-]+):\s+/, '$1:'))
     .join(';');
 }
 

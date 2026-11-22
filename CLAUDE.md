@@ -289,6 +289,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Harvester health (failed harvests, failing/stale pushes, token rotation, Withings reconnect) | `__docs/reference/harvesters/health-and-reconnect.md` |
 | NewsReporter framework (scheduled reports) | `__docs/reference/newsreporter/newsreporter-framework.md` |
 | Provenance scene (streaming-service logo before a film or show: rules in `media/provenance.yml` (overrides by content filter/collection/studio, priority groups over Watchmode offers, fallbacks by year/length/library/studio), per-play connecting motion, long-absence resume, restart replay, logos in `content/providers/`, 2,500-credit allowance) | `__docs/reference/media/provenance.md` |
+| Plex live TV channels (`plex-live:<slug>`: the free watch.plex.tv/live-tv channels from plex.tv, playlist token rewrite in the `plex-live` proxy, path gate, lineup cache, menu entries, no progress for live) | `__docs/reference/media/plex-live-tv.md` |
 | Content filter Admin workshop (library, Make filter runs + filter worker, review list, nudges, review marks, parent sign-off) | `__docs/reference/core/content-filter.md` (Admin workshop) |
 | Webapp design system (tokens, primitives, packs) | `__docs/reference/frontend/design-system.md` |
 | DaylightStation Android (one codebase, per-device APKs: device YAML, capabilities, shell + payload, control API and error codes, every setting, helper capabilities, lifeline, fleet CLI `cli/daylight-device.cli.mjs`) | `__docs/reference/android/README.md` |

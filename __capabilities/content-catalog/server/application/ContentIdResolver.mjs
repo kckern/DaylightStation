@@ -41,7 +41,7 @@ export class ContentIdResolver {
     if (!compoundId) return null;
 
     // Normalize space-after-colon YAML quirk
-    const normalized = compoundId.replace(/^(\w+):\s+/, '$1:').trim();
+    const normalized = compoundId.replace(/^([\w-]+):\s+/, '$1:').trim();
 
     // Split on first colon
     const colonIdx = normalized.indexOf(':');

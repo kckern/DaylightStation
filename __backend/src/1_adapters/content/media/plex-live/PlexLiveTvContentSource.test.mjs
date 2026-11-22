@@ -100,6 +100,12 @@ describe('PlexLiveTvContentSource', () => {
     expect(await s.resolvePlayables('plex-live:nfl-channel')).toHaveLength(1);
   });
 
+  it('gives menus the vertical poster as tile art', async () => {
+    const s = source();
+    expect(await s.getThumbnailUrl('nfl-channel')).toBe(NFL.coverPoster);
+    expect(await s.getThumbnailUrl('no-such-channel')).toBeNull();
+  });
+
   it('lists every channel for the bare prefix', async () => {
     const list = await source().getList('plex-live:');
     expect(list.map((i) => i.id)).toEqual(['plex-live:nfl-channel']);

@@ -28,7 +28,7 @@ export function validateEmbeddedList(list) {
    // of one target. Any different action or target would be discarded.
    if (item.src != null && item.media_key != null) {
     const watchTarget=`${item.src}:${String(item.media_key)}`;
-    const input=item.input?.trim().replace(/^(\w+):\s+/, '$1:');
+    const input=item.input?.trim().replace(/^([\w-]+):\s+/, '$1:');
     if ((actions.length && (actions[0] !== 'play' || item.play?.contentId !== watchTarget)) ||
         (input && (input !== watchTarget || (item.action && item.action.toLowerCase() !== 'play')))) {
      throw Object.assign(Error('Ambiguous watchlist action'),{code:'invalid_document'});

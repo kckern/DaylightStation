@@ -10,3 +10,11 @@ it.each(['', undefined])('retains legacy handling when input is explicitly %s', 
   expect(result).toMatchObject({title:'Catalog',label:'Label'});
   expect(result.play).toBeUndefined();
 });
+it('normalizes an authored space after a hyphenated source name', async () => {
+  const { listItemParts } = await import('./listItemProjection.mjs');
+  const parts = listItemParts(normalizeListItem({ label: 'NFL Channel', input: 'plex-live: nfl-channel' }));
+  expect(parts.contentId).toBe('plex-live:nfl-channel');
+  expect(parts.source).toBe('plex-live');
+  expect(parts.localId).toBe('nfl-channel');
+  expect(parts.playAction).toMatchObject({ 'plex-live': 'nfl-channel' });
+});

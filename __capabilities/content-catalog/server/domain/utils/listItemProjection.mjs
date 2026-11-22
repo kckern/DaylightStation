@@ -9,7 +9,7 @@ export function listItemParts(item, listMetadata = {}) {
   let localId = contentId;
 
   // Handle various input formats (trim whitespace after colon for YAML compat)
-  const inputMatch = contentId.match(/^(\w+):\s*(.+?)(?:;.*)?$/);
+  const inputMatch = contentId.match(/^([\w-]+):\s*(.+?)(?:;.*)?$/);
   if (inputMatch) {
     source = inputMatch[1];
     localId = inputMatch[2].trim();

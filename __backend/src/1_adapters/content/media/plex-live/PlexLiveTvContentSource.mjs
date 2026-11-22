@@ -60,6 +60,17 @@ export class PlexLiveTvContentSource {
 
   async resolveSiblings() { return null; }
 
+  /**
+   * Menu tile art: the channel's vertical poster (it sits with Plex show
+   * posters), else its logo. Public provider-static URLs, no token.
+   */
+  async getThumbnailUrl(id) {
+    const slug = localId(id);
+    if (!slug) return null;
+    const channel = await this.#lineup.get(slug);
+    return channel ? (channel.poster || channel.thumb || null) : null;
+  }
+
   #toItem(channel) {
     return new PlayableItem({
       id: `plex-live:${channel.slug}`,

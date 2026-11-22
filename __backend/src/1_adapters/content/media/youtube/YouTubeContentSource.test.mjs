@@ -55,8 +55,12 @@ test('tier 1: Piped combined stream -> proxied video item, re-ided as youtube:<i
   assert.equal(item.metadata.contentFormat, 'video');
   assert.equal(item.title, 'Big Match');
   assert.equal(item.duration, 212);
-  assert.match(item.mediaUrl, /^\/api\/v1\/proxy\/stream\?/);
-  assert.match(item.mediaUrl, /src=https%3A%2F%2Frr3\.googlevideo\.com/);
+  // A stream-proxy descriptor; the proxied URL is minted later, not here.
+  assert.deepEqual(item.mediaUrl, {
+    kind: 'stream-proxy',
+    sourceUrl: 'https://rr3.googlevideo.com/videoplayback?id=abc',
+    profile: null,
+  });
   // logs which strategy won
   assert.ok(logger.events.some(e => e.event === 'stream.resolve.selected' && e.data?.strategy === 'piped'));
 });

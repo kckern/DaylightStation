@@ -8,7 +8,7 @@ function preserveAuthoredTitle(result, source) {
 
 function normalizeInput(input) {
   if (!input) return '';
-  return input.split(';').map(seg => seg.trim().replace(/^(\w+):\s+/, '$1:')).join(';');
+  return input.split(';').map(seg => seg.trim().replace(/^([\w-]+):\s+/, '$1:')).join(';');
 }
 
 export function normalizeListItem(item) {

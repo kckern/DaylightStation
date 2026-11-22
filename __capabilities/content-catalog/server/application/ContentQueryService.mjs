@@ -105,7 +105,7 @@ export class ContentQueryService extends IContentQueryPort {
       return { prefix: null, term: query || '' };
     }
 
-    const match = query.match(/^(\w+):(.+)$/);
+    const match = query.match(/^([\w-]+):(.+)$/);
     if (match) {
       return { prefix: match[1].toLowerCase(), term: match[2] };
     }
