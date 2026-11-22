@@ -29,7 +29,7 @@ const PROJECTION_BLOCKED = {
   diverging: 'not on track',
 };
 
-const emptyGoals = () => ({ sex: 'male', targetWeightLbs: '', weeklyRateLbs: 0,
+const emptyGoals = () => ({ sex: 'male', targetWeightLbs: '', weeklyRateLbs: '',
   activityBaseline: 1.2, budgetFloor: '', heightIn: '', birthYear: '', targetBodyFatPct: '' });
 
 /** Weight trend + goal editor + 14-day adherence bars — absorbs Weight.jsx's
