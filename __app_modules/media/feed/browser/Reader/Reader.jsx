@@ -683,6 +683,7 @@ export default function Reader() {
                     {unreadCount > 0 && (
                       <button
                         className="reader-mark-group-read"
+                        aria-label={`Mark all read in ${group.label}`}
                         onClick={() => handleMarkGroupRead(group.articles)}
                       >
                         Mark all read
