@@ -37,16 +37,16 @@ describe('YamlMedicalReadingsDatastore.save', () => {
 describe('YamlMedicalReadingsDatastore.load', () => {
   it('returns readings when data exists', async () => {
     const store = new YamlMedicalReadingsDatastore({
-      dataService: { user: { read: () => ({ readings: [READING] }) } },
+      dataService: { user: { readStrictEntry: () => ({ found: true, value: { readings: [READING] } }) } },
     });
     const doc = await store.load('kckern');
     expect(doc.readings).toHaveLength(1);
     expect(doc.readings[0].id).toBe('r1');
   });
 
-  it('returns empty readings when data is null or missing', async () => {
+  it('returns empty readings when the file is missing', async () => {
     const store = new YamlMedicalReadingsDatastore({
-      dataService: { user: { read: () => null } },
+      dataService: { user: { readStrictEntry: () => ({ found: false, value: null }) } },
     });
     const doc = await store.load('kckern');
     expect(doc.readings).toHaveLength(0);
