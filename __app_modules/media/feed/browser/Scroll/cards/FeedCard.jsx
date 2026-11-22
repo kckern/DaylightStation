@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useId } from 'react';
 import { formatAge, proxyIcon, proxyImage, isImageUrl, safeImage } from "./utils.js";
 import { getBodyModule } from "./bodies/index.js";
 import { getContentPlugin } from "../../contentPlugins/index.js";
@@ -8,6 +8,7 @@ import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 import FeedPlayer from "../../players/FeedPlayer.jsx";
 import FeedLoadingIndicator from "../../FeedLoadingIndicator.jsx";
 import { INLINE_YOUTUBE_QUALITY, inlineYouTubeDetailPath, useInlineYouTubeDetail } from "../../players/useInlineYouTubeDetail.js";
+import { useFeedPlayer } from "../../players/FeedPlayerContext.jsx";
 
 // Info-level logger for image lifecycle (visible in backend session logs)
 function imgLog() { return getLogger().child({ module: 'feed-card-image' }); }
@@ -315,20 +316,23 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
   const sourceName = item.meta?.sourceName || item.meta?.feedTitle || item.source || '';
   const age = formatAge(item.timestamp);
   const iconUrl = proxyIcon(item.meta?.sourceIcon);
-  const [playingInline, setPlayingInline] = useState(false);
+  const ownerId = `card:${useId()}:${item.id}`;
+  const { inlineOwnerId, claimInlinePlayback, releaseInlinePlayback } = useFeedPlayer();
+
+  useEffect(() => () => releaseInlinePlayback(ownerId), [ownerId, releaseInlinePlayback]);
 
   const contentPlugin = getContentPlugin(item);
   const BodyModule = contentPlugin?.ScrollBody || getBodyModule(item.source);
 
   const canPlayInline = item.contentType === 'youtube' && item.meta?.videoId;
-  const detailPath = playingInline && canPlayInline && inlineYouTubeDetailPath(item.id, item.meta.videoId);
+  const detailPath = inlineOwnerId === ownerId && canPlayInline && inlineYouTubeDetailPath(item.id, item.meta.videoId);
 
   const handlePlay = (e) => {
     e.stopPropagation();
     if (canPlayInline) {
       feedLog.interaction('inline-play', { id: item.id, title: item.title, contentType: item.contentType, videoId: item.meta?.videoId });
       onPlay?.(item);
-      setPlayingInline(true);
+      claimInlinePlayback(ownerId);
     } else {
       feedLog.interaction('remote-play', { id: item.id, title: item.title, contentType: item.contentType });
       onPlay?.(item, item.id);

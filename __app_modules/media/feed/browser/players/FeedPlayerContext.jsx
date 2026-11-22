@@ -39,6 +39,7 @@ function buildInitialState() {
   return {
     activeMedia: null,      // null | { item, contentId, position? }
     pausedMedia: null,       // null | { item, contentId, position }
+    inlineOwnerId: null,
     volume,                  // 0-1
     speed,                   // playback rate
     muted: volume === 0,
@@ -95,12 +96,13 @@ function feedPlayerReducer(state, action) {
         // Reader inline playback parks the previous source without claiming the persistent renderer.
         activeMedia,
         pausedMedia,
+        inlineOwnerId: null,
       };
     }
 
     case 'STOP':
       log().info('player.stop', { had: !!state.activeMedia });
-      return { ...state, activeMedia: null };
+      return { ...state, activeMedia: null, inlineOwnerId: null };
 
     case 'RESUME_PAUSED': {
       if (!state.pausedMedia) return state;
@@ -114,8 +116,17 @@ function feedPlayerReducer(state, action) {
         ...state,
         activeMedia: state.pausedMedia,
         pausedMedia: newPaused,
+        inlineOwnerId: null,
       };
     }
+
+    case 'CLAIM_INLINE':
+      return { ...state, inlineOwnerId: action.payload.ownerId };
+
+    case 'RELEASE_INLINE':
+      return state.inlineOwnerId === action.payload.ownerId
+        ? { ...state, inlineOwnerId: null }
+        : state;
 
     case 'SET_VOLUME': {
       const volume = Math.max(0, Math.min(1, action.payload));
@@ -185,6 +196,14 @@ export function FeedPlayerProvider({ children }) {
     dispatch({ type: 'RESUME_PAUSED', payload: { currentPosition } });
   }, []);
 
+  const claimInlinePlayback = useCallback(ownerId => {
+    if (ownerId) dispatch({ type: 'CLAIM_INLINE', payload: { ownerId } });
+  }, []);
+
+  const releaseInlinePlayback = useCallback(ownerId => {
+    if (ownerId) dispatch({ type: 'RELEASE_INLINE', payload: { ownerId } });
+  }, []);
+
   const setVolume = useCallback((v) => {
     dispatch({ type: 'SET_VOLUME', payload: v });
   }, []);
@@ -210,6 +229,8 @@ export function FeedPlayerProvider({ children }) {
     play,
     stop,
     resumePaused,
+    claimInlinePlayback,
+    releaseInlinePlayback,
     setVolume,
     toggleMute,
     setSpeed,
@@ -217,7 +238,7 @@ export function FeedPlayerProvider({ children }) {
     dispatch,
   }), [
     state,
-    play, stop, resumePaused, setVolume, toggleMute,
+    play, stop, resumePaused, claimInlinePlayback, releaseInlinePlayback, setVolume, toggleMute,
     setSpeed, cycleSpeed,
   ]);
 
