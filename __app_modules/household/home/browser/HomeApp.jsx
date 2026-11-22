@@ -33,12 +33,6 @@ const viewPreference = browserPreference(VIEW_KEY, 'today', saved => {
   return TABS.some(tab => tab.id === view) ? view : 'today';
 });
 
-const FullscreenIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-    <path d="M1 1h5V0H0v6h1V1zm14 0h-5V0h6v6h-1V1zM1 15h5v1H0v-6h1v5zm14 0h-5v1h6v-6h-1v5z" />
-  </svg>
-);
-
 // doorbell first, then alphabetical
 function sortCameras(cameras) {
   return cameras.slice().sort((a, b) => {
@@ -64,7 +58,7 @@ function CameraCard({ camId }) {
           size="sm"
           onClick={event => openViewportRef.current(event)}
         >
-          <FullscreenIcon />
+          <UiIcon name="expand" size={14} />
         </ActionIcon>
       )}
     >

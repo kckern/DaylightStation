@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   IconAdjustmentsHorizontal, IconBrain, IconCalendarEvent, IconCar, IconChartLine, IconChevronLeft, IconDiamond,
   IconDeviceTv, IconDoor, IconFolder, IconGasStation, IconHeart, IconLayoutGrid,
-  IconMapPin, IconMessageCircle, IconPlus, IconSearch, IconShield, IconTarget,
+  IconMapPin, IconMaximize, IconMessageCircle, IconPlus, IconSearch, IconShield, IconTarget,
   IconTimeline, IconTool, IconVideo, IconX, IconDashboard,
 } from '@tabler/icons-react';
 import { DaylightImagePath } from '../api.mjs';
@@ -16,6 +16,7 @@ const icons = {
   close: IconX,
   dashboard: IconDashboard,
   diamond: IconDiamond,
+  expand: IconMaximize,
   folder: IconFolder,
   fuel: IconGasStation,
   heart: IconHeart,

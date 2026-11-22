@@ -7,7 +7,7 @@ import { ActiveQualityButton } from "../quality/PlaybackQualityButtons.jsx";
 // transport. Playback-speed control gets the portaled media element found
 // inside the claimed host (the only rate pathway; see TransportBar).
 import React, { useEffect, useRef, useState } from 'react';
-import { IconArrowsMinimize, IconMaximize } from '@tabler/icons-react';
+import { IconArrowsMinimize } from '@tabler/icons-react';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { useCompactViewport } from '@/lib/ui/useCompactViewport.js';
 import { useSessionController } from "../controller/useSessionController.js";
@@ -107,7 +107,7 @@ export function NowPlayingView({ destinationControlRef }) {
               aria-label={expanded ? `Shrink ${expandableKind}` : `Expand ${expandableKind}`}
               onClick={() => setExpanded((value) => !value)}
             >
-              {expanded ? <IconArrowsMinimize size={20} /> : <IconMaximize size={20} />}
+              {expanded ? <IconArrowsMinimize size={20} /> : <UiIcon name="expand" size={20} />}
               <span>{expanded ? `Shrink ${expandableKind}` : `Expand ${expandableKind}`}</span>
             </button>
           )}
