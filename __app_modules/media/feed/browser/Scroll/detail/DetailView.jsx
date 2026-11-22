@@ -198,7 +198,7 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
 
   const handleArticleArrows = event => {
     const { key, target, currentTarget } = event;
-    if (event.defaultPrevented || event.nativeEvent.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.defaultPrevented || event.nativeEvent.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     if (key !== 'ArrowLeft' && key !== 'ArrowRight') return;
     if (!currentTarget.contains(target) || isEditableTarget(target)) return;
     const changeArticle = key === 'ArrowLeft' ? onPrev : onNext;
