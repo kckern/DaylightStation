@@ -816,7 +816,8 @@ export class ListAdapter {
         play: Object.keys(finalPlayAction).length > 0 ? finalPlayAction : undefined,
         queue: Object.keys(finalQueueAction).length > 0 ? finalQueueAction : undefined,
         list: Object.keys(listAction).length > 0 ? listAction : undefined,
-        open: Object.keys(openAction).length > 0 ? openAction : undefined,
+        // Item params belong to the item's type; for an app they ride on the open action.
+        open: Object.keys(openAction).length > 0 ? (item.params ? { ...openAction, params: item.params } : openAction) : undefined,
         display: Object.keys(displayAction).length > 0 ? displayAction : undefined
       };
 

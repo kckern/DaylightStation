@@ -17,14 +17,25 @@ export function participantPropsForApp(entry, result) {
   return {participantLaunch: result};
 }
 
+// Props an app receives from what opened it: the path param under the app's
+// registered name, and the list item's own `params` object as `params`.
+export function appPropsFromOpen(entry, open) {
+  const { param } = parseAppInput(open);
+  const props = {};
+  if (entry?.param?.name && param) props[entry.param.name] = param;
+  if (open && typeof open === 'object' && open.params && typeof open.params === 'object') props.params = open.params;
+  return props;
+}
+
 export default function AppContainer({ open, clear, participantLaunch }) {
   // Parse app string - may contain param after slash (e.g., "art/nativity")
   const {app, param} = parseAppInput(open);
+  const hasParams = Boolean(open?.params);
   const logger = useMemo(() => getChildLogger({ app: 'app-container' }), []);
 
   useEffect(() => {
-    logger.info('app-container-open', { app, param });
-  }, [app, param, logger]);
+    logger.info('app-container-open', { app, param, hasParams });
+  }, [app, param, hasParams, logger]);
 
   useEffect(() => {
     const handleKeyDown = event => {
@@ -49,10 +60,7 @@ export default function AppContainer({ open, clear, participantLaunch }) {
     );
   }
 
-  const appProps = { clear, ...participantPropsForApp(entry, participantLaunch) };
-  if (entry.param?.name && param) {
-    appProps[entry.param.name] = param;
-  }
+  const appProps = { clear, ...participantPropsForApp(entry, participantLaunch), ...appPropsFromOpen(entry, open) };
 
   return (
     <SupervisedActivity activityId={app==='school'?'school:workspace':`app:${app}`}><Suspense fallback={null}>
