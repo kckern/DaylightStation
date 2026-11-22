@@ -1,7 +1,7 @@
 import { Stack, Text, Paper, Group, Badge } from '@mantine/core';
 import { useLogActivity } from './shared/useLogActivity.js';
 import { ActivityHeatmap } from "./shared/ActivityHeatmap.jsx";
-import { SourceIcon, sourceLabel } from "./shared/SourceIcon.jsx";
+import { LabeledSource } from "./shared/SourceIcon.jsx";
 import { EmptyState, LifePage } from "../../components/index.js";
 import { LogReadRegion } from './shared/LogReadRegion.jsx';
 import { formatLogRangeTitle } from './shared/formatLogRangeTitle.js';
@@ -40,10 +40,7 @@ export function LogWeekView({ username, at, categories }) {
               </Group>
               <Group gap="xs">
                 {sources.map(s => (
-                  <Group key={s} gap={4} wrap="nowrap">
-                    <SourceIcon source={s} size="sm" decorative />
-                    <Text size="xs">{sourceLabel(s)}</Text>
-                  </Group>
+                  <LabeledSource key={s} source={s} size="sm" />
                 ))}
               </Group>
             </Paper>

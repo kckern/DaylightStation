@@ -1,6 +1,6 @@
 import { Stack, Text, Paper, Group, Badge } from '@mantine/core';
 import { useLifelog } from "../../hooks/useLifelog.js";
-import { SourceIcon } from "./shared/SourceIcon.jsx";
+import { LabeledSource } from "./shared/SourceIcon.jsx";
 import { ActivityHeatmap } from "./shared/ActivityHeatmap.jsx";
 import { LifePage } from "../../components/index.js";
 import { LogReadRegion } from './shared/LogReadRegion.jsx';
@@ -41,7 +41,7 @@ export function LogCategoryView({ category, scope = 'month', username }) {
                 <Text size="sm" fw={500}>{formatDate(date)}</Text>
                 <Group gap="xs">
                   {sources.map(s => (
-                    <SourceIcon key={s} source={s} size="sm" />
+                    <LabeledSource key={s} source={s} size="sm" />
                   ))}
                 </Group>
               </Group>

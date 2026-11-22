@@ -1,4 +1,4 @@
-import { ThemeIcon } from '@mantine/core';
+import { Group, Text, ThemeIcon } from '@mantine/core';
 import {
   IconRun, IconCalendar, IconScale, IconBrandGithub,
   IconMail, IconMusic, IconBrandReddit, IconShoppingCart,
@@ -35,5 +35,14 @@ export function SourceIcon({ source, size = 'md', decorative = false }) {
     <ThemeIcon color={config.color} variant="light" size={size} aria-hidden={decorative || undefined}>
       <Icon size={16} />
     </ThemeIcon>
+  );
+}
+
+export function LabeledSource({ source, size = 'md', textSize = 'xs' }) {
+  return (
+    <Group gap={4} wrap="nowrap">
+      <SourceIcon source={source} size={size} decorative />
+      <Text size={textSize}>{sourceLabel(source)}</Text>
+    </Group>
   );
 }
