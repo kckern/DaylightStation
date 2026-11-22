@@ -78,6 +78,7 @@ function ReplyBody({ card, busy, highlightSend, onSend, onSkip, onChoice }) {
           className="life-triage__draft-edit"
           value={body}
           onChange={(e) => setBody(e.currentTarget.value)}
+          readOnly={busy}
           autosize
           minRows={4}
           placeholder="Write the reply…"

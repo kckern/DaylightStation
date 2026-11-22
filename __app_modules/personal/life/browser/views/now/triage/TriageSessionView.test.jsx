@@ -96,6 +96,40 @@ describe('TriageSessionView', () => {
     expect(triage.answer).toHaveBeenCalledWith('r1', { choice: 'send', draft: { body: 'Hi Mark, the 30th works. Cedar please.' } });
   });
 
+  it('holds the reply body read-only during a revision request and restores editing after failure', async () => {
+    let rejectRevision;
+    triage = makeTriage({ session: { steps: [{ id: 'reply', count: 1 }], cards: [reply], total: 1, done: 0 } });
+    triage.answer.mockImplementation(() => new Promise((_, reject) => { rejectRevision = reject; }));
+    wrap();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    const body = screen.getByLabelText('Reply draft');
+    const instruction = screen.getByLabelText(/^Answer in your own words/);
+    fireEvent.change(instruction, { target: { value: 'Make it warmer' } });
+    fireEvent.submit(instruction.closest('form'));
+
+    expect(body).toHaveProperty('readOnly', true);
+    expect(triage.answer).toHaveBeenCalledWith('r1', { text: 'Make it warmer' });
+    await act(async () => rejectRevision(new Error('revision failed')));
+    expect(screen.getByLabelText('Reply draft')).toHaveProperty('readOnly', false);
+    expect(screen.getByLabelText('Reply draft')).toHaveValue(reply.draftBody);
+  });
+
+  it('shows a revised reply and waits for an explicit Send tap', async () => {
+    const revised = { ...reply, draftBody: 'Hi Mark, the 30th sounds great.' };
+    triage = makeTriage({ session: { steps: [{ id: 'reply', count: 1 }], cards: [reply], total: 1, done: 0 } });
+    triage.answer.mockResolvedValueOnce({ outcome: 'draft_updated', card: revised }).mockResolvedValueOnce({ outcome: 'applied', card: null });
+    wrap();
+    fireEvent.change(screen.getByLabelText(/^Answer in your own words/), { target: { value: 'Make it warmer' } });
+    fireEvent.submit(screen.getByLabelText(/^Answer in your own words/).closest('form'));
+    await screen.findByText('Draft updated — check it, then Send.');
+    expect(screen.getByLabelText('Reply draft')).toHaveTextContent(revised.draftBody);
+    expect(triage.answer).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(screen.getByText(/All done/)).toBeInTheDocument());
+    expect(triage.answer).toHaveBeenLastCalledWith('r1', { choice: 'send' });
+  });
+
   it('typed text is sent as { text }; an interpreted send asks for a tap on Send', async () => {
     triage = makeTriage({ session: { steps: [{ id: 'reply', count: 1 }], cards: [reply], total: 1, done: 0 } });
     triage.answer.mockResolvedValue({ outcome: 'skipped', interpreted: 'send', card: reply });
