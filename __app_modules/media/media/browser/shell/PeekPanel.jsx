@@ -182,7 +182,7 @@ export function PeekPanel({ deviceId }) {
 
       <ActiveQualityButton target={{ deviceId }} targetLabel={deviceName(device, deviceId)} />
       <SessionControlsPanel target={{ deviceId }} targetName={deviceName(device, deviceId)} />
-      <LineUpOffer target={{ deviceId }} targetName={deviceName(device, deviceId)} />
+      {availability.available && <LineUpOffer target={{ deviceId }} targetName={deviceName(device, deviceId)} />}
 
       {queueKeptCount != null && (
         <Group data-testid="peek-queue-kept" role="status" gap="xs">
