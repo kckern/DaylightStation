@@ -45,8 +45,8 @@ function measureTrack(track, { left = 0, width = 200 } = {}) {
 /** happy-dom's PointerEvent constructor drops MouseEvent init fields
  *  (clientX arrives NaN), so dispatch a pointer-typed MouseEvent instead —
  *  React's native listener only cares about the event type. */
-function firePointer(el, type, clientX) {
-  fireEvent(el, new window.MouseEvent(type, { bubbles: true, cancelable: true, clientX }));
+function firePointer(el, type, clientX, button = 0) {
+  fireEvent(el, new window.MouseEvent(type, { bubbles: true, cancelable: true, clientX, button }));
 }
 
 beforeEach(() => {
@@ -92,6 +92,19 @@ describe('SeekBar', () => {
     firePointer(track, 'pointerup', 150);
     expect(transport.seekAbs).toHaveBeenCalledTimes(1);
     expect(transport.seekAbs).toHaveBeenCalledWith(180);
+  });
+
+  it.each([1, 2])('ignores non-primary pointer button %i without previewing or seeking', button => {
+    render(<SeekBar target="local" />);
+    const track = screen.getByTestId('np-seek');
+    measureTrack(track, { left: 0, width: 200 });
+
+    firePointer(track, 'pointerdown', 150, button);
+    expect(screen.getByTestId('np-seek-elapsed')).toHaveTextContent('1:00');
+    firePointer(track, 'pointerup', 150, button);
+
+    expect(transport.seekAbs).not.toHaveBeenCalled();
+    expect(screen.getByTestId('np-seek-elapsed')).toHaveTextContent('1:00');
   });
 
   it('scrubs without seeking until release, then commits the release position', () => {
