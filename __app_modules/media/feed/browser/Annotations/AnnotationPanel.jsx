@@ -2,6 +2,7 @@ import { Select } from '@/lib/ui/Select.jsx';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
 import { getPreferredScrollBehavior } from '@/lib/ui/browserMotion.js';
+import { MAX_ANNOTATION_LOCATOR_LENGTH } from '../../shared/annotationLocator.mjs';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import {
@@ -54,27 +55,7 @@ function isNetworkFailure(error) {
   return navigator.onLine === false || error?.name === 'TypeError' || /failed to fetch|network/i.test(error?.message || '');
 }
 
-function selectionLocator(selection, scope) {
-  if (!selection?.rangeCount || !scope) return null;
-  const range = selection.getRangeAt(0);
-  if (!scope.contains(range.commonAncestorContainer)) return null;
-  const exact = selection.toString().trim().slice(0, 5000);
-  if (!exact) return null;
-  const scopeText = scope.textContent || '';
-  const offset = scopeText.indexOf(exact);
-  return JSON.stringify({
-    type: 'TextQuoteSelector',
-    exact,
-    prefix: offset >= 0 ? scopeText.slice(Math.max(0, offset - 32), offset) : '',
-    suffix: offset >= 0 ? scopeText.slice(offset + exact.length, offset + exact.length + 32) : '',
-  });
-}
-
-function revealLocator(locator, scope) {
-  if (!locator || !scope) return false;
-  let selector;
-  try { selector = JSON.parse(locator); } catch { return false; }
-  if (selector?.type !== 'TextQuoteSelector' || !selector.exact) return false;
+function indexedArticleText(scope) {
   const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT, {
     acceptNode: node => node.parentElement?.closest('.feed-annotations') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
   });
@@ -84,20 +65,99 @@ function revealLocator(locator, scope) {
     nodes.push({ node: walker.currentNode, start: text.length });
     text += walker.currentNode.nodeValue || '';
   }
-  let match = text.indexOf(selector.exact);
-  if (match < 0) return false;
-  if (selector.prefix) {
-    const contextual = `${selector.prefix}${selector.exact}${selector.suffix || ''}`;
-    const contextualMatch = text.indexOf(contextual);
-    if (contextualMatch >= 0) match = contextualMatch + selector.prefix.length;
+  return { nodes, text };
+}
+
+function indexedOffsetAt(scope, container, offset) {
+  const range = document.createRange();
+  range.setStart(scope, 0);
+  range.setEnd(container, offset);
+  return indexedArticleText(range.cloneContents()).text.length;
+}
+
+function serializeLocator(text, exact, offset, length) {
+  const serialize = (match, contextLength) => JSON.stringify({
+    type: 'TextQuoteSelector',
+    exact: match,
+    prefix: text.slice(Math.max(0, offset - contextLength), offset),
+    suffix: text.slice(offset + match.length, offset + match.length + contextLength),
+    offset,
+    length,
+  });
+  for (let contextLength = 32; contextLength >= 0; contextLength -= 1) {
+    const locator = serialize(exact, contextLength);
+    if (locator.length <= MAX_ANNOTATION_LOCATOR_LENGTH) return locator;
   }
-  const end = match + selector.exact.length;
+
+  let low = 1;
+  let high = exact.length;
+  let locator = serialize(exact.slice(0, low), 0);
+  while (low <= high) {
+    const length = Math.floor((low + high) / 2);
+    const candidate = serialize(exact.slice(0, length), 0);
+    if (candidate.length <= MAX_ANNOTATION_LOCATOR_LENGTH) {
+      locator = candidate;
+      low = length + 1;
+    } else high = length - 1;
+  }
+  return locator;
+}
+
+function selectionLocator(selection, scope) {
+  if (!selection?.rangeCount || !scope) return null;
+  const range = selection.getRangeAt(0);
+  if (!scope.contains(range.commonAncestorContainer)) return null;
+  const { text } = indexedArticleText(scope);
+  const start = indexedOffsetAt(scope, range.startContainer, range.startOffset);
+  const end = indexedOffsetAt(scope, range.endContainer, range.endOffset);
+  const selectedText = text.slice(start, end);
+  const exact = selectedText.trim().slice(0, 5000);
+  if (!exact) return null;
+  const leadingTrim = selectedText.length - selectedText.trimStart().length;
+  const offset = start + leadingTrim;
+  return serializeLocator(text, exact, offset, exact.length);
+}
+
+function revealLocator(locator, scope) {
+  if (!locator || !scope) return false;
+  let selector;
+  try { selector = JSON.parse(locator); } catch { return false; }
+  if (selector?.type !== 'TextQuoteSelector' || !selector.exact) return false;
+  const { nodes, text } = indexedArticleText(scope);
+  const preferredOffset = Number.isInteger(selector.offset) && selector.offset >= 0 ? selector.offset : null;
+  const occurrences = value => {
+    const found = [];
+    let index = text.indexOf(value);
+    while (index >= 0) {
+      found.push(index);
+      index = text.indexOf(value, index + 1);
+    }
+    return found;
+  };
+  const chooseMatch = matches => matches.length
+    ? matches.reduce((best, candidate) => (
+      preferredOffset !== null && Math.abs(candidate - preferredOffset) < Math.abs(best - preferredOffset)
+        ? candidate
+        : best
+    ), matches[0])
+    : -1;
+  let match = chooseMatch(occurrences(selector.exact));
+  if (match < 0) return false;
+  if (selector.prefix || selector.suffix) {
+    const contextual = `${selector.prefix}${selector.exact}${selector.suffix || ''}`;
+    const contextualMatches = occurrences(contextual).map(index => index + selector.prefix.length);
+    if (contextualMatches.length) match = chooseMatch(contextualMatches);
+  }
+  const selectedLength = Number.isInteger(selector.length) && selector.length >= selector.exact.length
+    ? selector.length
+    : selector.exact.length;
+  const selectedEnd = Math.min(text.length, match + selectedLength);
   const startEntry = [...nodes].reverse().find(entry => entry.start <= match);
-  const endEntry = [...nodes].reverse().find(entry => entry.start < end);
+  const endEntry = [...nodes].reverse().find(entry => entry.start < selectedEnd);
   if (!startEntry || !endEntry) return false;
   const range = document.createRange();
   range.setStart(startEntry.node, match - startEntry.start);
-  range.setEnd(endEntry.node, Math.min((endEntry.node.nodeValue || '').length, end - endEntry.start));
+  range.setEnd(endEntry.node, Math.min((endEntry.node.nodeValue || '').length, selectedEnd - endEntry.start));
   const selection = window.getSelection();
   selection.removeAllRanges();
   selection.addRange(range);

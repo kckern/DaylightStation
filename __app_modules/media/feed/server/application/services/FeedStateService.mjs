@@ -1,4 +1,5 @@
 import { applyFeedStateAction, defaultFeedItemState, effectiveFeedItemState, normalizeFeedItem } from "../../domain/feedItem.mjs";
+import { MAX_ANNOTATION_LOCATOR_LENGTH } from '../../../shared/annotationLocator.mjs';
 
 const ACTIONS = new Set(['read', 'unread', 'save', 'unsave', 'archive', 'unarchive']);
 const MODES = new Set(['reader', 'headlines', 'scroll', 'search']);
@@ -125,7 +126,7 @@ function normalizeAnnotation(value, prior = null, { nowIso, createId }) {
     quote,
     note,
     color: ANNOTATION_COLORS.has(value.color) ? value.color : (prior?.color || 'yellow'),
-    locator: cleanText(value.locator || prior?.locator, 1_000) || null,
+    locator: cleanText(value.locator || prior?.locator, MAX_ANNOTATION_LOCATOR_LENGTH) || null,
     createdAt: prior?.createdAt || nowIso,
     updatedAt: nowIso,
   };

@@ -1,0 +1,1 @@
+export const MAX_ANNOTATION_LOCATOR_LENGTH = 1_000;

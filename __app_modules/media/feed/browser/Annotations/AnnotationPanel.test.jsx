@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import AnnotationPanel from "./AnnotationPanel.jsx";
+import { MAX_ANNOTATION_LOCATOR_LENGTH } from '../../shared/annotationLocator.mjs';
 
 const { apiMock } = vi.hoisted(() => ({ apiMock: vi.fn() }));
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...args) => apiMock(...args) }));
@@ -161,6 +162,120 @@ describe('AnnotationPanel', () => {
       quote: 'selected passage',
       locator: expect.stringContaining('TextQuoteSelector'),
     }), 'POST'));
+  });
+
+  test('captures and reveals the selected occurrence of repeated text', async () => {
+    const lead = 'The council, after discussion, recorded that ';
+    const phrase = 'The vote passed';
+    const ending = ', and continued with the scheduled agenda.';
+    const article = `${lead}${phrase}${ending} ${lead}${phrase}${ending}`;
+    render(<div className="article-expanded"><p>{article}</p><AnnotationPanel item={{ id: 'one', title: 'Story' }} /></div>);
+    await screen.findByText('Remember');
+    const paragraph = screen.getByText(article);
+    const text = paragraph.firstChild;
+    const secondOffset = lead.length + phrase.length + ending.length + 1 + lead.length;
+    paragraph.scrollIntoView = vi.fn();
+    const range = document.createRange();
+    range.setStart(text, secondOffset);
+    range.setEnd(text, secondOffset + phrase.length);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use selected text' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Add a note' }), { target: { value: 'Second meeting' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/annotations', expect.objectContaining({
+      quote: phrase,
+      locator: expect.stringContaining('TextQuoteSelector'),
+    }), 'POST'));
+    const saved = apiMock.mock.calls.find(([path, , method]) => path === '/api/v1/feed/annotations' && method === 'POST')[1];
+    expect(JSON.parse(saved.locator).offset).toBe(secondOffset);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Find highlight' }));
+    expect(selection.toString()).toBe(phrase);
+    expect(selection.anchorNode).toBe(text);
+    expect(selection.anchorOffset).toBe(secondOffset);
+    expect(paragraph.scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ block: 'center' }));
+    selection.removeAllRanges();
+  });
+
+  test('captures and reveals a selection across paragraphs starting at an element boundary', async () => {
+    render(<div className="article-expanded">
+      <p><span>First paragraph.</span></p>
+      <p>Another paragraph.</p>
+      <AnnotationPanel item={{ id: 'one', title: 'Story' }} />
+    </div>);
+    await screen.findByText('Remember');
+    const first = screen.getByText('First paragraph.');
+    const second = screen.getByText('Another paragraph.');
+    first.scrollIntoView = vi.fn();
+    const range = document.createRange();
+    range.setStart(first.parentElement, 0);
+    range.setEnd(second.firstChild, 'Another'.length);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    const renderedSelection = vi.spyOn(selection, 'toString').mockReturnValue('First paragraph.\n\nAnother');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use selected text' }));
+    renderedSelection.mockRestore();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Add a note' }), { target: { value: 'Across paragraphs' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/annotations', expect.objectContaining({
+      quote: 'First paragraph.\n\nAnother',
+    }), 'POST'));
+    const saved = apiMock.mock.calls.find(([path, , method]) => path === '/api/v1/feed/annotations' && method === 'POST')[1];
+    expect(JSON.parse(saved.locator).exact).toBe('First paragraph.Another');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Find highlight' }));
+    expect(selection.anchorNode).toBe(first.firstChild);
+    expect(selection.focusNode).toBe(second.firstChild);
+    expect(first.scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ block: 'center' }));
+    selection.removeAllRanges();
+  });
+
+  test('keeps a long escaped locator valid after the server length cap', async () => {
+    const prefix = 'The article begins with context. ';
+    const quote = 'a"\\'.repeat(800);
+    const suffix = ' The article continues with context.';
+    const article = `${prefix}${quote}${suffix}`;
+    render(<div className="article-expanded"><p>{article}</p><AnnotationPanel item={{ id: 'one' }} /></div>);
+    await screen.findByText('Remember');
+    let saved;
+    apiMock.mockImplementation(async (_path, data, method) => {
+      if (method === 'POST') {
+        saved = { ...data, id: 'near-limit', locator: String(data.locator).slice(0, MAX_ANNOTATION_LOCATOR_LENGTH) };
+        return { annotation: saved };
+      }
+      return { annotations: saved ? [saved] : [] };
+    });
+
+    const paragraph = screen.getByText(article);
+    paragraph.scrollIntoView = vi.fn();
+    const text = paragraph.firstChild;
+    const range = document.createRange();
+    range.setStart(text, prefix.length);
+    range.setEnd(text, prefix.length + quote.length);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    fireEvent.click(screen.getByRole('button', { name: 'Use selected text' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Add a note' }), { target: { value: 'Near limit' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
+
+    await screen.findByText('Near limit');
+    expect(saved.locator.length).toBeLessThanOrEqual(MAX_ANNOTATION_LOCATOR_LENGTH);
+    const locator = JSON.parse(saved.locator);
+    expect(quote.startsWith(locator.exact)).toBe(true);
+    expect(locator.length).toBe(quote.length);
+    fireEvent.click(await screen.findByRole('button', { name: 'Find highlight' }));
+    expect(selection.anchorNode).toBe(text);
+    expect(selection.anchorOffset).toBe(prefix.length);
+    expect(selection.focusOffset).toBe(prefix.length + quote.length);
+    expect(selection.toString()).toBe(quote);
+    expect(paragraph.scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ block: 'center' }));
+    selection.removeAllRanges();
   });
 
   test('finds and centers the article highlight using the current motion preference', async () => {
