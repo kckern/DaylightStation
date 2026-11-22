@@ -106,3 +106,54 @@ it('keeps the running native provenance when recovery inspection describes diffe
   expect((await controller.exit()).status).toBe('ok');
   expect((await env.repository.read(env.key)).snapshot.toString()).toBe('state-verified-assets');
 });
+
+describe('autosave through a save-server blip (a redeploy 502s for about a minute)', () => {
+  // The gateway answers with an HTML 502 page while the app restarts.
+  function blipClient() {
+    const state = { down: false };
+    const fetchImpl = (url, options) => state.down
+      ? Promise.resolve(new Response('<html><body>502 Bad Gateway</body></html>', { status: 502, headers: { 'Content-Type': 'text/html' } }))
+      : env.fetchImpl(url, options);
+    return { state, client: createCheckpointClient({ fetchImpl }) };
+  }
+  it('keeps playing, shows it is behind, and uploads every queued capture when the server returns', async () => {
+    const blip = blipClient(); let clock = 1_000_000;
+    const { controller, native } = make({ client: blip.client, now: () => clock });
+    await start(controller, native);
+    native.advance('one'); expect((await controller.save()).status).toBe('ok');
+    const pausesBefore = native.pause.mock.calls.length;
+    blip.state.down = true;
+    native.advance('two'); clock += 15_000; expect((await controller.save()).status).toBe('deferred');
+    native.advance('three'); clock += 15_000; expect((await controller.save()).status).toBe('deferred');
+    const behind = controller.getState();
+    expect(behind.canPlay).toBe(true); expect(behind.canSave).toBe(true); expect(behind.error).toBeNull();
+    expect(behind.behindSince).not.toBeNull(); expect(native.pause.mock.calls.length).toBe(pausesBefore);
+    blip.state.down = false;
+    native.advance('four'); clock += 15_000; expect((await controller.save()).status).toBe('ok');
+    expect((await env.repository.read(env.key)).snapshot.toString()).toBe('state-four');
+    expect(await journal.list(env.key)).toHaveLength(0);
+    expect(controller.getState().behindSince).toBeNull(); expect(controller.getState().canPlay).toBe(true);
+  });
+  it('stops play for a review only after ten minutes without a confirmed save, and Retry resumes it', async () => {
+    const blip = blipClient(); let clock = 1_000_000;
+    const { controller, native } = make({ client: blip.client, now: () => clock });
+    await start(controller, native);
+    blip.state.down = true;
+    native.advance('a'); expect((await controller.save()).status).toBe('deferred');
+    clock += 9 * 60_000; native.advance('b'); expect((await controller.save()).status).toBe('deferred');
+    expect(controller.getState().canPlay).toBe(true);
+    clock += 60_000; native.advance('c');
+    const stale = await controller.save();
+    expect(stale.code).toBe('ECHECKPOINTSTALE'); expect(controller.getState().canPlay).toBe(false); expect(native.pause).toHaveBeenCalled();
+    blip.state.down = false; native.advance('d');
+    expect((await controller.retry()).status).toBe('ok');
+    expect(controller.getState().canPlay).toBe(true);
+    expect((await env.repository.read(env.key)).snapshot.toString()).toBe('state-d');
+  });
+  it('still stops on a real conflict', async () => {
+    const conflicted = { ...client, putCheckpoint: async () => ({ status: 'error', httpStatus: 409, code: 'ECHECKPOINTCONFLICT', error: 'Progress changed since this game was loaded' }) };
+    const { controller, native } = make({ client: conflicted });
+    await start(controller, native); native.advance('x');
+    expect((await controller.save()).status).toBe('error'); expect(controller.getState().canPlay).toBe(false);
+  });
+});

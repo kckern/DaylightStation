@@ -60,6 +60,24 @@ cartridge SRAM as scratch during play, so the captured bytes change between
 real saves and their hash says nothing about whether the player saved. The
 game's own checksummed save slots decide what Continue loads.
 
+### When the save server blips
+
+A save server that is briefly unreachable (an app restart's 502 page, a
+timeout, a 5xx) does not stop the game. The capture is already in the
+on-device journal, so the upload is deferred (`status: 'deferred'`) and the
+game keeps running. A small "Saving…" chip appears in the corner, and the
+next autosave uploads every queued capture in order (each names the one
+before it as its parent). The server accepts a repeated capture without
+creating a second checkpoint, so a save whose response was lost is safe to
+send again. Events: `emulator.progress.deferred` once when saves fall behind,
+`emulator.progress.caught-up` when they land again.
+
+Play stops for a review only when no save has been confirmed for 10 minutes
+(`SAVE_BEHIND_LIMIT_MS`, code `ECHECKPOINTSTALE`): the game pauses with
+**Retry saving**. Real faults still stop it at once: a conflict, a capture
+that could not be read, or a journal that cannot write. Exit still waits for
+its final save, so a blip at exit shows **Retry saving** as before.
+
 ## Restart vs Erase (the power switch)
 
 For a battery game with a player:

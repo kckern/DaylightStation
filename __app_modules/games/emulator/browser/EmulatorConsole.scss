@@ -623,6 +623,19 @@
   pointer-events: none;
 }
 
+// Autosaves are failing quietly (a server blip); play goes on. A margin chip, never over the game.
+.emulator-save-behind {
+  position: absolute;
+  left: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 2100;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: #2a2a2a;
+  color: #bbb;
+  font-size: 0.8rem;
+  pointer-events: none;
+}
 .emulator-progress-overlay {
   position: absolute;
   inset: 0;

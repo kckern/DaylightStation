@@ -11,6 +11,15 @@ function failure(reason) {
   return { status: 'error', code: reason?.code || 'ECHECKPOINTUNAVAILABLE',
     error: reason?.error || reason?.message || 'Could not read or save progress', httpStatus: reason?.httpStatus ?? null };
 }
+// The save server was briefly unreachable (a restart's 502 page, a timeout, a
+// 5xx). The capture stays in the journal and uploads on the next save; it is
+// not a fault, so play goes on. A 4xx (conflict, invalid) is a real fault.
+const TRANSIENT_CODES = new Set(['ECHECKPOINTUNAVAILABLE', 'ECHECKPOINTTIMEOUT']);
+export function isTransientSaveFailure(result) {
+  if (!result || result.status !== 'error') return false;
+  const http = result.httpStatus ?? null;
+  return TRANSIENT_CODES.has(result.code) && (http === null || http >= 500);
+}
 function track(gameKey, promise) {
   const pending = inPageWrites.get(gameKey) ?? new Set();
   pending.add(promise); inPageWrites.set(gameKey, pending);
@@ -38,6 +47,8 @@ export function createCheckpointSession({ key, saveMode, client, journal,
   const sessionId = makeId();
   let sequence = 0, phase = 'idle', head = null, description = null, fault = null;
   let restored = false, disposed = false, retrying = false, lastCaptureId = null;
+  // Set while uploads are failing transiently: when the first one failed.
+  let behindSince = null;
   let pendingRecovery = [], recoveryReason = null, recoveryInspection = null, selection = null, recoveryReset = null;
   let localTail = Promise.resolve(), uploadTail = Promise.resolve({ status: 'ok' });
   const entries = [];
@@ -45,7 +56,7 @@ export function createCheckpointSession({ key, saveMode, client, journal,
     const canSave = restored && !selection && !disposed && !fault && !retrying && ['ready', 'saving'].includes(phase);
     return { phase, canSave, canPlay: canSave, revision: head?.revision ?? null,
       savedAt: head?.createdAt ?? null, pendingCount: entries.length + pendingRecovery.length,
-      error: fault, recoveryReason };
+      error: fault, recoveryReason, behindSince };
   }
   const publish = () => { if (!disposed) onStateChange?.(getState()); };
   function markFailure(reason) {
@@ -176,8 +187,13 @@ export function createCheckpointSession({ key, saveMode, client, journal,
       return markFailure(issue('The pending capture belongs to a different progress branch', 'ECHECKPOINTCONFLICT'));
     }
     const result = await client.putCheckpoint(key, { ...entry.record, expectedRevision: head?.revision ?? null });
-    if (result.status !== 'ok') return markFailure(result);
-    head = result.data.head;
+    if (result.status !== 'ok') {
+      if (!isTransientSaveFailure(result)) return markFailure(result);
+      // Keep the entry queued (it is in the journal); the next save uploads it first.
+      if (behindSince === null) behindSince = now();
+      publish(); return { ...failure(result), status: 'deferred' };
+    }
+    head = result.data.head; behindSince = null;
     await journal.acknowledge(key, entry.record.captureId, entry.record.fingerprint);
     entries.splice(entries.indexOf(entry), 1);
     if (!fault && !retrying && !disposed) phase = entries.length ? 'saving' : 'ready';
@@ -189,7 +205,16 @@ export function createCheckpointSession({ key, saveMode, client, journal,
     try { entry = stage(captured); }
     catch (reason) { return Promise.resolve(markFailure(reason)); }
     phase = 'saving'; publish();
-    const next = uploadTail.then(() => upload(entry)).catch(markFailure);
+    // Upload every queued capture in order: after a blip, earlier ones are still
+    // waiting, and each names the one before it as its parent.
+    const next = uploadTail.then(async () => {
+      let result = { status: 'ok', data: { head } };
+      for (const pending of [...entries]) {
+        result = await upload(pending);
+        if (result.status !== 'ok') return result;
+      }
+      return result;
+    }).catch(markFailure);
     uploadTail = next;
     return track(gameKey, next);
   }

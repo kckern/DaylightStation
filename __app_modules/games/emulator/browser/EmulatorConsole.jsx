@@ -1424,6 +1424,9 @@ export function EmulatorConsole({
           </div>
         </div>
       )}
+      {checkpointKey && progress?.canPlay && progress.behindSince != null && (
+        <div className="emulator-save-behind" role="status" aria-label="Saving will catch up">Saving…</div>
+      )}
       {checkpointKey && progress && !progress.canPlay && !launchChoice && !recoveryCopies && !error && !resetOpen && (
         <div className="emulator-progress-overlay" role={progress.error ? 'alertdialog' : 'status'} aria-label="Saved progress">
           <div className="emulator-progress-card" ref={progressDialogRef}>

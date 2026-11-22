@@ -10,12 +10,17 @@ export function captureCheckpoint(engine, saveMode) {
 }
 
 /** UI lifecycle boundary; it can retain a recovery decision across an engine reboot. */
+/** How long autosaves may fail quietly before play stops for a review. */
+export const SAVE_BEHIND_LIMIT_MS = 10 * 60 * 1000;
+
 export function createCheckpointConsoleLifecycle({ engine: initialEngine, key, saveMode,
-  client, journal, makeId, logger, onStateChange, isHeld = () => false } = {}) {
+  client, journal, makeId, logger, onStateChange, isHeld = () => false,
+  now = () => Date.now(), behindLimitMs = SAVE_BEHIND_LIMIT_MS } = {}) {
   let engine = initialEngine, held = false, disposed = false, verified = false;
   let localFault = null, exitPromise = null, lastPhase = null, selectedVariant = 'wasm';
   const operations = new Set();
-  const session = createCheckpointSession({ key, saveMode, client, journal, makeId, onStateChange: publish });
+  const session = createCheckpointSession({ key, saveMode, client, journal, makeId, now, onStateChange: publish });
+  let behindLogged = false;
   function getState() {
     const state = session.getState();
     return { ...state, phase: localFault ? 'error' : state.phase, error: localFault || state.error,
@@ -58,7 +63,25 @@ export function createCheckpointConsoleLifecycle({ engine: initialEngine, key, s
       const captured = capture();
       const operation = retry && !session.getState().canSave ? session.retry(captured) : session.save(captured);
       return remember(Promise.resolve(operation).then(result => {
+        if (result.status === 'deferred') {
+          // A save-server blip during play: keep playing, the queue uploads on the next save.
+          const since = session.getState().behindSince ?? now();
+          if (close || retry || now() - since >= behindLimitMs) {
+            return fail(close || retry ? result : { code: 'ECHECKPOINTSTALE',
+              error: 'Progress has not saved for 10 minutes. Retry saving to keep playing.' });
+          }
+          if (!behindLogged) {
+            behindLogged = true;
+            logger?.warn?.('emulator.progress.deferred', { ...key, code: result.code, error: result.error,
+              pendingCount: session.getState().pendingCount });
+          }
+          publish(); return result;
+        }
         if (result.status === 'error') return fail(result);
+        if (behindLogged) {
+          behindLogged = false;
+          logger?.info?.('emulator.progress.caught-up', { ...key, revision: result.data?.head?.revision });
+        }
         if (result.status === 'skipped') return fail({ code: 'ECHECKPOINTRESTORE', error: 'Reload saved progress to continue.' });
         logger?.info?.('emulator.progress.saved', { ...key, revision: result.data?.head?.revision,
           snapshotHash: result.data?.head?.artifacts?.snapshot?.hash ?? null });
