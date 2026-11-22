@@ -628,6 +628,9 @@ export default function Reader() {
           />
         </section>
       </aside>
+      <span className="feed-visually-hidden" role="status" aria-live="polite" aria-atomic="true">
+        {loadingMore ? 'Loading more articles' : ''}
+      </span>
       <section className="reader-inbox" aria-label="Reader articles" {...inboxRegion} inert={drawerActive ? '' : undefined}>
         <div className="reader-mobile-toolbar">
           <button ref={drawerOpenerRef} className="reader-hamburger" onClick={openDrawer} aria-label="Open subscriptions" aria-expanded={drawerActive} aria-controls="reader-subscriptions">
