@@ -25,6 +25,10 @@ const TYPE_LABELS = {
   collection: 'Collection',
 };
 
+const PLURAL_TYPE_LABELS = new Map(
+  [...new Set(Object.values(TYPE_LABELS))].map(label => [`${label.toLowerCase()}s`, label]),
+);
+
 const CHILD_NOUNS = {
   show: 'episode',
   series: 'episode',
@@ -36,11 +40,11 @@ const CHILD_NOUNS = {
   collection: 'item',
 };
 
-// "TV Shows" → "TV Show", "Audiobooks" → "Audiobook"; "Music" stays.
+// Normalize only plural labels we already use for media types; custom library
+// names such as "News" and "Series" must remain exactly as Plex supplied them.
 function singularize(label) {
-  const s = String(label).trim();
-  if (!/[a-rt-z]s$/i.test(s)) return s; // keep "ss" endings and non-s endings
-  return s.slice(0, -1);
+  const raw = String(label);
+  return PLURAL_TYPE_LABELS.get(raw.trim().toLowerCase()) || raw;
 }
 
 function capitalize(word) {
