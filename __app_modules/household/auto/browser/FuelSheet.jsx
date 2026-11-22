@@ -64,7 +64,7 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose }) {
     });
   };
 
-  const valid = Number(form.volumeGal) > 0;
+  const valid = Boolean(form.date) && Number(form.volumeGal) > 0;
 
   return (
     <Sheet open onClose={onClose} title="Log a fill-up">
@@ -81,7 +81,7 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose }) {
 
           <label className="auto-field">
             <span>Date</span>
-            <input className="ds-input" type="date" value={form.date} onChange={set('date')} />
+            <input className="ds-input" type="date" value={form.date} onChange={set('date')} required />
           </label>
 
           <label className="auto-field">

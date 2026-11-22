@@ -206,6 +206,28 @@ it('requires a date before saving a service record, including form submission', 
   expect(writes).toEqual([vehiclesPath + '/wagon%20%232/service']);
 });
 
+it('requires a date before saving a fill-up, including form submission', async () => {
+  const { writes } = mockGarage();
+  render(<AutoApp />);
+  await selectButton('Wagon');
+  await selectButton('Fuel');
+  await selectButton('Log a fill-up');
+  const date = screen.getByLabelText('Date');
+  const form = screen.getByRole('form');
+
+  fireEvent.change(screen.getByLabelText('Gallons'), { target: { value: '5' } });
+  fireEvent.change(date, { target: { value: '' } });
+  expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  await act(async () => fireEvent.submit(form));
+  expect(writes).toEqual([]);
+
+  fireEvent.change(date, { target: { value: '2026-11-22' } });
+  expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+  await act(async () => fireEvent.submit(form));
+  await screen.findByText('No fill-ups logged');
+  expect(writes).toEqual([vehiclesPath + '/wagon%20%232/fuel']);
+});
+
 it.each([
   ['Fuel', 'Log a fill-up'],
   ['Service', 'Log service'],
