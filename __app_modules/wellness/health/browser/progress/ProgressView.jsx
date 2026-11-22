@@ -139,7 +139,7 @@ export function ProgressView() {
                       )} unit={weightTrend.deltaLbs == null ? '' : 'lb'} />
                     {/* Zero is BALANCED, not a missing figure — and an absent
                         calorie_balance is the missing one. */}
-                    <StatCard label="Daily calories"
+                    <StatCard label="Estimated daily calorie balance"
                       value={latest.calorieBalance == null ? '—' : (latest.calorieBalance === 0 ? 'Balanced' : `${latest.calorieBalance > 0 ? '+' : '−'}${Math.abs(latest.calorieBalance)}`)}
                       unit={latest.calorieBalance ? 'kcal' : ''} />
                     <StatCard label={`Days to ${targetBodyFatPct}%`}
