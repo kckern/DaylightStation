@@ -60,6 +60,11 @@ export function RoomsView({ entities, rooms, types, summary, haUrl, toggle, turn
       {summaries.map((room) => {
         const open = openId === room.id;
         const lit = room.lights.filter(canTurnOff);
+        const allLitControllable = lit.length === room.lightsOn;
+        const offLabel = allLitControllable ? turnOffLabel(lit.length) : `Turn off ${plural(lit.length, 'light')}`;
+        const offAriaLabel = allLitControllable
+          ? `Turn off all ${lit.length} lights in ${room.name}`
+          : `Turn off ${plural(lit.length, 'controllable light')} in ${room.name}; ${room.lightsOn} ${room.lightsOn === 1 ? 'is' : 'are'} on`;
         const command = roomCommands[room.id];
         const failed = command && !command.pending ? lit.filter(entity => command.ids.includes(entity.id)) : [];
         const targets = failed.length ? failed : lit;
@@ -95,9 +100,9 @@ export function RoomsView({ entities, rooms, types, summary, haUrl, toggle, turn
                         ref={bindAction}
                         className="home-textaction home-room__off"
                         onClick={submit}
-                        aria-label={failed.length ? `Retry turning off ${plural(failed.length, 'light')} in ${room.name}` : `Turn off all ${lit.length} lights in ${room.name}`}
+                        aria-label={failed.length ? `Retry turning off ${plural(failed.length, 'light')} in ${room.name}` : offAriaLabel}
                       >
-                        {failed.length ? 'Retry' : turnOffLabel(lit.length)}
+                        {failed.length ? 'Retry' : offLabel}
                       </UnstyledButton>
                     ) : null}
                   </div>
