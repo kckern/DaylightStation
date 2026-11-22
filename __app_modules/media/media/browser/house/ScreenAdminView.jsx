@@ -145,7 +145,7 @@ export function ScreenAdminView() {
     const result = await routinesFor(retireScreen, { signal });
     if (!isCurrent()) return;
     setRetiring(current => current && {
-      ...current, routines: result.ok ? result.routines : [], loading: false, error: result.ok ? null : result.error,
+      ...current, routines: result.ok ? (result.routines ?? []) : null, loading: false, error: result.ok ? null : result.error,
     });
   }, [retireScreen, routinesFor]);
   const { reload: loadRetireRoutines } = useRefreshableRead(readRetireRoutines);
@@ -160,7 +160,7 @@ export function ScreenAdminView() {
   const { reload: loadMergeRoutines } = useRefreshableRead(readMergeRoutines);
   useEffect(() => { if (mergeTarget) loadMergeRoutines(); }, [mergeTarget, loadMergeRoutines]);
 
-  const openRetire = screen => setRetiring({ screen, routines: [], loading: true, error: null });
+  const openRetire = screen => setRetiring({ screen, routines: null, loading: true, error: null });
   const confirmRetire = async () => {
     const result = await admin.retire(retiring.screen);
     if (result.ok) setRetiring(null);
@@ -269,7 +269,7 @@ export function ScreenAdminView() {
         onConfirm={() => { if (!retiring?.loading) confirmRetire(); }}
         onClose={() => setRetiring(null)}
       >
-        {retiring && !retiring.loading && (
+        {retiring && !retiring.loading && retiring.routines && (
           <div data-testid="screen-admin-retire-routines" className="house-section">
             {retiring.routines.length ? (
               <>
