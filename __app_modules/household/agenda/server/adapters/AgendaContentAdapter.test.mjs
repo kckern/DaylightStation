@@ -23,3 +23,9 @@ it('distinguishes unpublished, cancelled, empty, preview and archived states', a
  seriesStatus='archived'; expect((await adapter.getList('s/plans/p')).notice).toMatch(/archived/);
  expect((await adapter.getList('s/current')).adminUrl).toBe('/admin/content/agendas/s');
 });
+
+it('lists only the plan activities on a published week, with no browse tile', async () => {
+ const plan={plan_id:'p',week_of:'2026-11-09',state:'published'};
+ const adapter=new AgendaContentAdapter({repository:{readSeries:async()=>({document:{title:'Gather',status:'active',calendar:{timezone:'UTC'}}}),listPlans:async()=>[{document:plan}]},resolveHousehold:()=> 'h',clock:()=>new Date('2026-11-11T12:00:00Z'),projector:{project:async()=>({id:'agenda:s/plans/p',items:[{id:'a1'}]})}});
+ expect((await adapter.getList('s/current')).items.map(i=>i.id)).toEqual(['a1']);
+});

@@ -33,6 +33,6 @@ export class AgendaContentAdapter {
     }
     const preview = plan.week_of !== currentWeek;
     const menu = await this.projector.project({plan,viewer,preview,participantLaunchVersion});
-    return {...common,...menu,notice:menu.items.length ? (preview ? 'Preview only; activities cannot be started.' : menu.notice) : 'This published plan is empty.',items:[...menu.items,weeks]};
+    return {...common,...menu,notice:menu.items.length ? (preview ? 'Preview only; activities cannot be started.' : menu.notice) : 'This published plan is empty.',items:menu.items};
   }
 }

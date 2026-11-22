@@ -28,7 +28,7 @@ it('transports viewer, protocol, references, notices and privacy through real re
  expect(supported.status).toBe(200); expect(supported.body.revision).toBe(1); expect(supported.body.items[0].participantLaunches.open.schema).toBe('participant-launch-ref/v1');
  expect(supported.body.items[0].open).toEqual({app:'game'});
  expect(supported.body.notice).toBeUndefined();
- expect(supported.body.items[1].list).toBeDefined(); expect(supported.body.items[1].queue).toBeUndefined();
+ expect(supported.body.items).toHaveLength(1); // a published week lists only its activities
  expect(supported.headers['cache-control']).toBe('private, no-store'); expect(supported.headers.vary).toMatch(/X-Daylight-Participant-Launch-Version/i);
  const legacy=await request(app).get('/list/agenda/s/current');
  const unsupported=await request(app).get('/list/agenda/s/current').set('X-Daylight-Participant-Launch-Version','01');
