@@ -124,7 +124,9 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
     <div data-testid="dispatch-target-picker" className="cast-picker" data-intent={intent}>
       <div className="cast-picker-label">{isDestination ? 'Destination' : 'Cast to'}</div>
       {devices.length === 0 && (
-        <div data-testid="picker-no-devices" className="cast-picker-empty">No devices available.</div>
+        <div data-testid="picker-no-devices" className="cast-picker-empty">
+          {isDestination ? 'No other devices available.' : 'No devices available.'}
+        </div>
       )}
       <div className="cast-picker-devices">
         {isDestination && (
