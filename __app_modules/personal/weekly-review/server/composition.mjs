@@ -4,6 +4,7 @@ import { FilesystemWeeklyReviewStore } from "./adapters/persistence/FilesystemWe
 import { NodeCommandRunner } from "#adapters/process/NodeCommandRunner.mjs";
 import { WeeklyReviewImmichAdapter } from "./adapters/WeeklyReviewImmichAdapter.mjs";
 import { WeeklyReviewCalendarAdapter } from "./adapters/WeeklyReviewCalendarAdapter.mjs";
+import { WeeklyReviewSchoolAdapter } from "./adapters/WeeklyReviewSchoolAdapter.mjs";
 import { WeeklyReviewService } from "./application/WeeklyReviewService.mjs";
 import { createWeeklyReviewRouter } from "./api/weekly-review.mjs";
 
@@ -49,6 +50,12 @@ export async function installWeeklyReview({ configService, dataService, immichCo
         calendarData: weeklyReviewCalendarAdapter,
         sessionService: fitnessServices?.sessionService || null,
         weatherStore: wrWeatherStore,
+        schoolWork: schoolLearnerWork
+          ? new WeeklyReviewSchoolAdapter({
+              schoolLearnerWork,
+              logger: rootLogger.child({ module: 'weekly-review-school' }),
+            })
+          : null,
         transcriptionService: weeklyReviewAi ? {
           transcribe: async (buffer, opts) => {
             const raw = await weeklyReviewAi.transcribe(buffer, {

@@ -46,5 +46,29 @@ describe('WeeklyReviewAggregator', () => {
       const mar24 = result.days.find(d => d.date === '2026-03-24');
       expect(mar24.calendar).toEqual([]);
     });
+    it('defaults school fields to empty arrays', () => {
+      const result = WeeklyReviewAggregator.aggregate(PHOTO_DAYS, CALENDAR_EVENTS);
+      for (const day of result.days) {
+        expect(day.school).toEqual([]);
+        expect(day.schoolAll).toEqual([]);
+      }
+    });
+
+    it('places curated school work on its day and counts it in content weight', () => {
+      const item = { learnerId: 'a', title: 'Math', studyDay: '2026-03-25' };
+      const extra = { learnerId: 'a', title: 'Math 2', studyDay: '2026-03-25' };
+      const schoolByDate = { '2026-03-25': { school: [item], schoolAll: [item, extra] } };
+      const without = WeeklyReviewAggregator.aggregate(PHOTO_DAYS, CALENDAR_EVENTS, {}, {});
+      const withSchool = WeeklyReviewAggregator.aggregate(PHOTO_DAYS, CALENDAR_EVENTS, {}, {}, schoolByDate);
+      const day = withSchool.days.find(d => d.date === '2026-03-25');
+      expect(day.school).toEqual([item]);
+      expect(day.schoolAll).toEqual([item, extra]);
+      expect(withSchool.days.find(d => d.date === '2026-03-24').school).toEqual([]);
+      // Mar 26 holds the most photos (weight 1); shown school items push it past that.
+      const busy = { '2026-03-26': { school: [item, item, item, item, item, item, item], schoolAll: [] } };
+      const busyResult = WeeklyReviewAggregator.aggregate(PHOTO_DAYS, CALENDAR_EVENTS, {}, {}, busy);
+      expect(busyResult.days.find(d => d.date === '2026-03-26').columnWeight)
+        .toBeGreaterThan(without.days.find(d => d.date === '2026-03-26').columnWeight);
+    });
   });
 });

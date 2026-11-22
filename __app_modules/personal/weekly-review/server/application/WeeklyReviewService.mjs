@@ -1,10 +1,12 @@
 import { WeeklyReviewAggregator } from "../domain/WeeklyReviewAggregator.mjs";
+import { curateSchoolWork } from "../domain/schoolWorkPolicy.mjs";
 
 export class WeeklyReviewService {
   #immichAdapter;
   #calendarData;
   #sessionService;
   #weatherStore;
+  #schoolWork;
   #householdId;
   #transcriptionService;
   #logger;
@@ -18,6 +20,7 @@ export class WeeklyReviewService {
     this.#calendarData = deps.calendarData;
     this.#sessionService = deps.sessionService;
     this.#weatherStore = deps.weatherStore;
+    this.#schoolWork = deps.schoolWork || null;
     this.#transcriptionService = deps.transcriptionService;
     this.#logger = deps.logger || console;
     if (!deps.reviewStore) throw new Error('WeeklyReviewService requires a reviewStore dependency');
@@ -50,14 +53,15 @@ export class WeeklyReviewService {
       dates.push(d.toISOString().slice(0, 10));
     }
 
-    const [photoDays, calendarDays, fitnessByDate, weatherByDate] = await Promise.all([
+    const [photoDays, calendarDays, fitnessByDate, weatherByDate, schoolByDate] = await Promise.all([
       this.#immichAdapter.getPhotosForDateRange(start, end),
       this.#calendarData.getEventsForDateRange(start, end),
       this.#fetchFitnessSessions(dates),
       this.#fetchWeatherHistory(dates),
+      this.#fetchSchoolWork(start, dates),
     ]);
 
-    const { days } = WeeklyReviewAggregator.aggregate(photoDays, calendarDays, fitnessByDate, weatherByDate);
+    const { days } = WeeklyReviewAggregator.aggregate(photoDays, calendarDays, fitnessByDate, weatherByDate, schoolByDate);
     const recording = this.#getRecordingStatus(start);
 
     this.#logger.info?.('weekly-review.bootstrap.complete', {
@@ -93,6 +97,43 @@ export class WeeklyReviewService {
     } catch (err) {
       this.#logger.warn?.('weekly-review.extent.failed', { before, error: err.message });
       return { oldestContentDate: null, hasOlder: false };
+    }
+  }
+
+  /**
+   * A course or activity picture for a school work card, or null.
+   * @param {string} ref `course:<id>` or `activity:<issuanceId>`
+   */
+  async getSchoolImage(ref) {
+    if (!this.#schoolWork) return null;
+    return (await this.#schoolWork.getImage(ref)) ?? null;
+  }
+
+  /**
+   * School work for the window, curated onto days. School's range end is
+   * exclusive, so it is asked for up to the day after the last date shown.
+   * Never throws: a school outage leaves the school lists empty.
+   */
+  async #fetchSchoolWork(week, dates) {
+    if (!this.#schoolWork || dates.length === 0) return {};
+    try {
+      const from = dates[0];
+      const to = this.#addDays(dates[dates.length - 1], 1);
+      const items = await this.#schoolWork.getWorkForDateRange(from, to);
+      const byDate = curateSchoolWork(items, dates);
+      const byKind = {};
+      for (const item of items) byKind[item.kind] = (byKind[item.kind] || 0) + 1;
+      this.#logger.info?.('weekly-review.school.loaded', {
+        week,
+        learners: new Set(items.map(i => i.learnerId)).size,
+        items: items.length,
+        shown: Object.values(byDate).reduce((n, d) => n + d.school.length, 0),
+        byKind,
+      });
+      return byDate;
+    } catch (err) {
+      this.#logger.warn?.('weekly-review.school.error', { error: err.message });
+      return {};
     }
   }
 

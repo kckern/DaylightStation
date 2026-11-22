@@ -1,6 +1,8 @@
 import { sendInternalError } from '#api/utils/internalError.mjs';
 import express from 'express';
 
+const SCHOOL_IMAGE_REF = /^(course|activity):[\w.:@\/-]{1,200}$/;
+
 export function createWeeklyReviewRouter(config) {
   const { weeklyReviewService, logger = console } = config;
   const router = express.Router();
@@ -41,6 +43,24 @@ export function createWeeklyReviewRouter(config) {
       // Only validation reaches here — the service swallows probe failures.
       logger.warn?.('weekly-review.api.extent.error', { error: err.message });
       res.status(400).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Picture for a school work card (course art or a scanned activity page).
+  // The ref is an opaque School id; only these two shapes are passed through.
+  router.get('/school/image', async (req, res) => {
+    const ref = typeof req.query.ref === 'string' ? req.query.ref : '';
+    if (!SCHOOL_IMAGE_REF.test(ref)) {
+      logger.warn?.('weekly-review.api.school-image.bad-ref', { ref: ref.slice(0, 80) });
+      return res.status(400).json({ error: 'bad-ref' });
+    }
+    try {
+      const img = await weeklyReviewService.getSchoolImage(ref);
+      if (!img) return res.status(404).json({ error: 'not-found' });
+      res.set('Cache-Control', 'private, max-age=86400').type(img.contentType).send(img.bytes);
+    } catch (err) {
+      logger.error?.('weekly-review.api.school-image.error', { ref, error: err.message });
+      sendInternalError(res, { ok: false, error: err.message });
     }
   });
 
