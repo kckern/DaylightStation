@@ -10,7 +10,7 @@ import { ReviewTimeline } from './ReviewTimeline.jsx';
 import { ReviewKeyBar } from './ReviewKeyBar.jsx';
 import { useReviewKeys } from './useReviewKeys.js';
 import { useReviewStation } from './useReviewStation.js';
-import { isOpen, isSceneRow, plays } from './reviewScope.js';
+import { isOpen } from './reviewScope.js';
 import { ReviewHeader } from './ReviewHeader.jsx';
 import { ReviewPlayer } from './ReviewPlayer.jsx';
 import { RowEditor } from './RowEditor.jsx';
@@ -104,7 +104,7 @@ function FilmReview({ ratingKey, rowId, owner }) {
   if (notMatched && !Array.isArray(data.rows)) return <UnmatchedFilm ratingKey={ratingKey} data={data} />;
   const row = data.rows.find((r) => r.id === selected?.id) || null;
   const busyText = running ? 'A refine is running: effects, timing and the card text can change when it finishes.' : null;
-  const roughFiltered = data.rows.filter((r) => !plays(r) && !isSceneRow(r) && r.timing === 'rough').length;
+  const roughFiltered = station.roughRefineCount;
   const index = row ? station.scoped.findIndex((r) => r.id === row.id) : -1;
   const allDone = station.tally.total > 0 && station.tally.done === station.tally.total;
   // The redo prompt, the last message and the preview retry sit inside the card, above its verdicts.
@@ -113,7 +113,7 @@ function FilmReview({ ratingKey, rowId, owner }) {
   return (
     <div className="cf-review-page">
       <ReviewHeader ratingKey={ratingKey} data={data} tally={station.tally} roughFiltered={roughFiltered} handlers={{ ...station.handlers, rework: station.rework }} blocked={notMatched}
-        approval={approval} onChanged={reload} flagged={station.flagged} />
+        approval={approval} onChanged={reload} flagged={station.flagged} refineAllCount={station.refineAllCount} />
       {notMatched ? <Text size="sm" c="orange">{`Not matched to Plex: ${data.unmatched?.text || 'no Plex film'}. The review and override here are kept; runs are blocked.`}</Text> : null}
       {notice ? <Text size="sm" role="status">{notice}</Text> : null}
       {roughFiltered && !running && !notMatched ? (

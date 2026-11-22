@@ -80,13 +80,33 @@ describe('refine from the review page', () => {
     payload = base([mixed]);
     render(ui());
     fireEvent.click(screen.getByRole('button', { name: 'More' }));
-    const item = await screen.findByRole('menuitem', { name: /Refine all 1 filtered parts again/ });
+    const item = await screen.findByRole('menuitem', { name: /Refine all 1 filtered part again/ });
     fireEvent.click(item);
     expect(await screen.findByText(/remove saved hand-fixed timing/i)).toBeTruthy();
     expect(calls).toHaveLength(0);
     fireEvent.click(item);
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0].body).toEqual({ kind: 'send-back', cues: ['a', 'b'] });
+  });
+  it('the overflow refine-all-again count and availability include only refinable filtered parts', async () => {
+    payload = base([row('scene:x', 'Fight', [], { kind: 'scenes', effect: 'skip-card', timing: 'refined' })]);
+    const { rerender } = render(ui());
+    fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    const noTargets = await screen.findByRole('menuitem', { name: 'Refine all 0 filtered parts again' });
+    expect(noTargets.disabled).toBe(true);
+    expect(calls).toHaveLength(0);
+
+    payload = base([
+      row('cue:a', 'damn', ['a']),
+      row('scene:x', 'Fight', [], { kind: 'scenes', effect: 'skip-card', timing: 'refined' }),
+    ]);
+    rerender(ui());
+    const oneTarget = await screen.findByRole('menuitem', { name: 'Refine all 1 filtered part again' });
+    expect(oneTarget.disabled).toBe(false);
+    fireEvent.click(oneTarget);
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0].body).toEqual({ kind: 'send-back', cues: ['a'] });
+    expect(await screen.findByText('Refining 1 filtered part. Review the other parts meanwhile.')).toBeTruthy();
   });
   it('a bulk hand-fixed confirmation happens before queueing during an open run', async () => {
     const mixed = row('subject:billboard', 'Billboard', ['a', 'b'], { kind: 'picture', modality: 'shown', handFixed: true });

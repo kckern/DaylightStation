@@ -1057,7 +1057,8 @@ line (Space, Enter, W, ← →, ?). A word skipped as an exchange is listed with
 part, the first R warns that refining drops the hand fix and the second sends); Shift+R, the header
 Refine all button and the overflow Refine all again send one send-back of their filtered, non-scene
 targets (rough timing for Shift+R, every filtered part for Refine all again), never the parts that
-play. If any bulk target contains hand-fixed timing, the first action warns and the same action a
+play. The overflow count and disabled state use that same eligible target set, so scene-only films
+do not offer an empty refinement. If any bulk target contains hand-fixed timing, the first action warns and the same action a
 second time within four seconds confirms the exact target before sending or queueing it. One run per
 film: presses while a run is open collect on the page ("Queued") and go out as one send-back only
 when the run finishes

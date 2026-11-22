@@ -251,6 +251,8 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   const notMatched = data?.match === 'unmatched';
   const job = data?.job || null;
   const running = Boolean(job && (job.status === 'queued' || job.status === 'running'));
+  const refineTargets = useMemo(() => (rows || []).filter((r) => !plays(r) && !isSceneRow(r)), [rows]);
+  const roughRefineTargets = useMemo(() => refineTargets.filter((r) => r.timing === 'rough'), [refineTargets]);
   const cuesOf = (r) => (isSceneRow(r) ? [] : (r.members ?? (String(r.id).startsWith('cue:') ? [r.peekId] : [])));
   // Which rows a refine holds right now: the open send-back's parts, then the ones queued here.
   const refining = useMemo(() => {
@@ -298,7 +300,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     queueRefine(cuesOf(row), `"${row.label}"`);
   };
   const refineAll = ({ again = false } = {}) => {
-    const targets = (rows || []).filter((r) => !plays(r) && !isSceneRow(r) && (again || r.timing === 'rough'));
+    const targets = again ? refineTargets : roughRefineTargets;
     const cues = [...new Set(targets.flatMap(cuesOf))];
     const handFixed = targets.filter((r) => r.handFixed);
     if (handFixed.length) {
@@ -442,6 +444,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   };
   return {
     scope, setScope, scoped, row, pick, handlers, message: saving ? 'Saving…' : message, helpOpen, canUndo, tally, pendingRefine, refining, running,
+    roughRefineCount: roughRefineTargets.length, refineAllCount: refineTargets.length,
     bleepLevel, flagged: flagged.length, rework,
     previewRecovery: previewRecovery ? {
       message: previewRecovery.saved ? 'Bleep level saved. The preview could not refresh.' : 'The preview could not refresh.',

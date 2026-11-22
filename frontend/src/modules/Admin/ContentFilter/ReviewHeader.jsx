@@ -37,7 +37,7 @@ function ApproveButton({ approval }) {
   );
 }
 
-export function ReviewHeader({ ratingKey, data, tally, roughFiltered, handlers, approval, onChanged = () => {}, flagged = 0, blocked = false }) {
+export function ReviewHeader({ ratingKey, data, tally, roughFiltered, refineAllCount = 0, handlers, approval, onChanged = () => {}, flagged = 0, blocked = false }) {
   const [confirmStop, setConfirmStop] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
@@ -89,7 +89,7 @@ export function ReviewHeader({ ratingKey, data, tally, roughFiltered, handlers, 
       <Menu position="bottom-end" withinPortal onClose={() => setConfirmWhole(false)}>
         <Menu.Target><Button size="compact-sm" variant="subtle" aria-label="More">⋯</Button></Menu.Target>
         <Menu.Dropdown>
-          <Menu.Item disabled={!tally.total || blocked} onClick={() => handlers.refineAll?.({ again: true })}>{`Refine all ${tally.total} filtered parts again`}</Menu.Item>
+          <Menu.Item disabled={!refineAllCount || blocked} onClick={() => handlers.refineAll?.({ again: true })}>{`Refine all ${refineAllCount} filtered part${refineAllCount === 1 ? '' : 's'} again`}</Menu.Item>
           <Menu.Item disabled={running || pending || blocked} closeMenuOnClick={confirmWhole}
             onClick={() => (confirmWhole ? post('make', `${base}/jobs`, { kind: 'make' }) : setConfirmWhole(true))}>
             {confirmWhole ? 'Click again: refine all parts, including the ones that play (slow)' : 'Refine the whole film (every part, slow)'}
