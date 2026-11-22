@@ -91,3 +91,32 @@ describe('createNotifyServiceRecipientResolver', () => {
     expect(resolve(null)).toBeNull();
   });
 });
+
+import { createPushSender } from '#composition/modules/notifications.mjs';
+describe('createPushSender', () => {
+  it('turns a {title, message, data} push into one required push intent', async () => {
+    const send = vi.fn().mockResolvedValue([{ delivered: true }]);
+    const push = createPushSender({ notificationService: { send }, category: 'household_alert', urgency: 'high', source: 'harvester-health', recipient: () => 'head', haNotifyService: () => 'mobile_app_x' });
+    await push({ title: 'T', message: 'M', data: { tag: 'h-1' } });
+    const [intent] = send.mock.calls[0];
+    expect(intent).toMatchObject({ title: 'T', body: 'M', category: 'household_alert', urgency: 'high', recipient: { username: 'head' },
+      metadata: { username: 'head', deliveryRequired: 'push', pushData: { tag: 'h-1' }, haNotifyService: 'mobile_app_x', source: 'harvester-health' } });
+    expect(intent.dedupeKey).toMatch(/^harvester-health:/);
+  });
+  it('omits the HA target when none is configured', async () => {
+    const send = vi.fn().mockResolvedValue([]);
+    await createPushSender({ notificationService: { send }, category: 'household_alert', source: 's', recipient: () => 'head' })({ title: 'T', message: 'M' });
+    expect(send.mock.calls[0][0].metadata).not.toHaveProperty('haNotifyService');
+  });
+  it('is a no-op that says so when there is no notification service', async () => {
+    expect(await createPushSender({ notificationService: null, category: 'household_alert', source: 's' })({ title: 'T', message: 'M' })).toEqual([]);
+  });
+});
+
+describe('createPushSender per-call target', () => {
+  it('a per-call haNotifyService wins over the configured one', async () => {
+    const send = vi.fn().mockResolvedValue([]);
+    await createPushSender({ notificationService: { send }, category: 'household_alert', source: 's', recipient: () => 'head', haNotifyService: () => 'a' })({ title: 'T', message: 'M', haNotifyService: 'notify.mobile_app_tv_owner' });
+    expect(send.mock.calls[0][0].metadata.haNotifyService).toBe('mobile_app_tv_owner');
+  });
+});

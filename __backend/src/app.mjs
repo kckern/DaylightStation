@@ -108,7 +108,7 @@ import { loadLoggingConfig, resolveLoggerLevel } from "./0_system/logging/config
 import { initializeIntegrations, loadHouseholdIntegrations, loadSystemBots, getMessagingAdapter, createContentRegistry, createMediaProgressMemory, createFeedServices, createFinanceServices, createEntropyServices, createHomeAutomationAdapters, createPlaybackHubServices, createDeviceServices, createWakeAndLoadService, createDispatchIdempotencyService, createTranscodePrewarmService, createHardwareAdapters, createProxyService, createMessagingServices, createJournalistServices, createHomebotServices, createLifelogServices, createEventBus, createDeviceLivenessService, broadcastEvent, createHarvesterServices, createNewsReporterServices, createAgentsServices, createConciergeServices, createCostServices, createMediaServices } from "#composition/bootstrap.mjs";
 
 import { bootstrapLifeplan } from "../../__app_modules/personal/life/server/composition.mjs";
-import { createNotifyServiceRecipientResolver, bootstrapNotifications } from '#composition/modules/notifications.mjs';
+import { createPushSender, createNotifyServiceRecipientResolver, bootstrapNotifications } from '#composition/modules/notifications.mjs';
 import { createPlaybackStallDetector } from '#composition/modules/playbackStall.mjs';
 import { createHubFleetBridge } from "../../__app_modules/media/media/server/composition/hubFleetBridge.mjs";
 import { createPlexHubSessions } from "../../__app_modules/media/media/server/composition/plexHubSessions.mjs";
@@ -1736,19 +1736,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const harvesterHealthLogger = rootLogger.child({ module: 'harvester-health' });
   const harvesterHealth = new HarvesterHealthMonitor({
     store: new YamlHarvesterHealthStore({ path: configService.getHouseholdPath('harvester-health') }),
-    sendPush: async ({ title, message, data }) => {
-      // Resolved per push so a later household reload is picked up.
-      const haGateway = householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null;
-      const recipient = configService.getHeadOfHousehold?.();
-      const notifyService = recipient
-        ? userService.getProfile(recipient)?.identities?.homeassistant?.notify_service
-        : null;
-      if (!haGateway || !notifyService) {
-        harvesterHealthLogger.warn?.('harvester.health.no_push_target', { recipient: recipient || null });
-        return;
-      }
-      await haGateway.callService('notify', notifyService, { title, message, data });
-    },
+    // Through NotificationService (the Android app, else HA). Resolved per push
+    // so a later household reload is picked up.
+    sendPush: createPushSender({
+      notificationService: notificationStack.notificationService,
+      category: 'household_alert', urgency: 'high', source: 'harvester-health',
+      recipient: () => configService.getHeadOfHousehold?.() || null,
+    }),
     // Same zone the harvesters themselves use (bootstrap harvesterTimezone).
     timezone: configService.getTimezone?.() || null,
     failureThreshold: 3, // keep ≤ the harvesters' circuit-breaker maxFailures
@@ -2704,6 +2698,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     sessionControlService,
     commandHandlerLivenessService,
     deviceLivenessService,
+    // "TV didn't turn on" — to the device's own HA target, through NotificationService.
+    sendPush: createPushSender({
+      notificationService: notificationStack.notificationService,
+      category: 'household_alert', urgency: 'high', source: 'wake-and-load',
+      recipient: (target) => recipientForNotifyService(target),
+    }),
     logger: rootLogger.child({ module: 'wake-and-load' })
   });
 

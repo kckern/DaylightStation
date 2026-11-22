@@ -58,7 +58,7 @@ export class WakeAndLoadService {
   #eventBus;
   #prewarmService;
   #sessionControlService;
-  #haGateway;
+  #sendPush;
   #commandHandlerLivenessService;
   #deviceLivenessService;
   #logger;
@@ -97,7 +97,9 @@ export class WakeAndLoadService {
     this.#eventBus = deps.eventBus || null;
     this.#prewarmService = deps.prewarmService || null;
     this.#sessionControlService = deps.sessionControlService || null;
-    this.#haGateway = deps.haGateway || null;
+    // ({title, message, data, haNotifyService}) => Promise — a push through
+    // NotificationService (the Android app, else HA), wired at composition.
+    this.#sendPush = deps.sendPush || null;
     this.#commandHandlerLivenessService = deps.commandHandlerLivenessService || null;
     this.#deviceLivenessService = deps.deviceLivenessService || null;
     this.#logger = deps.logger || console;
@@ -954,21 +956,22 @@ export class WakeAndLoadService {
   }
 
   /**
-   * Send HA push notification that a device failed to power on.
+   * Push that a device failed to power on (to the device's configured target).
    * @private
    */
   async #notifyPowerFailure(deviceId) {
     const device = this.#deviceService.get(deviceId);
     const notifyService = device?.notifyService;
-    if (!notifyService || !this.#haGateway) return;
+    if (!notifyService || !this.#sendPush) return;
     try {
       // Name the device as the household does; the id stays only in the tag,
       // so a second failure for the same TV replaces the card without ringing.
       const name = device?.name ?? titleCaseId(deviceId);
-      await this.#haGateway.callService('notify', notifyService, {
+      await this.#sendPush({
         title: `📺 ${name} didn't turn on`,
         message: "It didn't respond after a retry",
         data: pushData({ tag: `tv-${deviceId}`, alertOnce: true }),
+        haNotifyService: notifyService,
       });
       this.#logger.info?.('wake-and-load.notify.sent', { deviceId, notifyService });
     } catch (err) {

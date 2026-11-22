@@ -127,3 +127,29 @@ export function createNotifyServiceRecipientResolver({ listUsernames, profileNot
     return headOfHousehold?.() || null;
   };
 }
+
+/**
+ * A `({title, message, data}) => Promise` push for producers that used to call
+ * HA `notify` directly. It sends one required push through NotificationService
+ * (the Android app, else HA): the companion-app `data` block rides as legacy
+ * `pushData` so the HA payload is unchanged, a producer's own HA target (from
+ * its config) is kept, and every send has its own dedupe key — these producers
+ * already decide when to push, so governance must not swallow a repeat.
+ */
+export function createPushSender({ notificationService, category, urgency = 'high', source, recipient, haNotifyService, makeId = () => globalThis.crypto.randomUUID() }) {
+  return async ({ title, message, data, haNotifyService: callTarget = null } = {}) => {
+    if (!notificationService?.send) return [];
+    const target = callTarget || haNotifyService?.() || null;
+    const username = recipient?.(target) || null;
+    return notificationService.send({
+      title, body: message, category, urgency,
+      ...(username ? { recipient: { username } } : {}),
+      dedupeKey: `${source}:${makeId()}`,
+      metadata: {
+        ...(username ? { username } : {}), deliveryRequired: 'push', source,
+        ...(data && typeof data === 'object' ? { pushData: data } : {}),
+        ...(target ? { haNotifyService: String(target).replace(/^notify\./, '') } : {}),
+      },
+    });
+  };
+}

@@ -36,7 +36,10 @@ function makeSvc({ device, readinessPolicy, haGateway } = {}) {
     readinessPolicy,
     broadcast: () => {},
     screenGateway: { publishProgress: vi.fn(), screenSubscriberCount: () => 0 },
-    haGateway,
+    // The injected push, recorded as the HA call it becomes with no phone connected.
+    sendPush: haGateway
+      ? ({ title, message, data, haNotifyService }) => haGateway.callService('notify', haNotifyService, { title, message, data })
+      : null,
     logger: makeLogger(),
   });
 }

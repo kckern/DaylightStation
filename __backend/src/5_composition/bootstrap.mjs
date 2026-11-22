@@ -1100,7 +1100,7 @@ export function createWakeAndLoadService(config) {
     eventBus,
     prewarmService,
     sessionControlService,
-    haGateway: haGateway ?? null,
+    sendPush: config.sendPush ?? null,
     commandHandlerLivenessService,
     deviceLivenessService,
     clock: { now: () => Date.now() },
