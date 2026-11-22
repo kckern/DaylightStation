@@ -4,7 +4,7 @@
 // value while dragging, commits transport.seekAbs on release. Fully
 // keyboard-operable (role="slider", arrow keys / Home / End). Live content
 // gets a LIVE badge instead of a scrubber.
-import React, { useRef, useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { useSessionController } from "../controller/useSessionController.js";
 import { usePlaybackPosition } from "../controller/usePlaybackPosition.js";
 import { formatTime } from "./formatTime.js";
@@ -23,6 +23,8 @@ export function SeekBar({ target, availability = null, onCommand = null, pending
   const contextRef = useRef(null);
 
   const item = snapshot?.currentItem;
+  const hasItem = Boolean(item);
+  const liveItem = capabilities.live === true || item?.isLive === true;
   const owner = snapshot?.meta?.playbackOwner;
   const contextKey = JSON.stringify([
     target === 'local' ? 'local' : target?.deviceId,
@@ -37,9 +39,18 @@ export function SeekBar({ target, availability = null, onCommand = null, pending
   }
   const context = contextRef.current;
   const [commandFeedback, setCommandFeedback] = useState(null);
+
+  useLayoutEffect(() => {
+    if (hasItem && !liveItem) return;
+    draggingRef.current = false;
+    dragRectRef.current = null;
+    dragBindingRef.current = null;
+    setScrub(null);
+  }, [hasItem, liveItem]);
+
   if (!item) return null;
 
-  if (capabilities.live === true || item.isLive) {
+  if (liveItem) {
     const canGoLive = availability?.available !== false && typeof transport.goLive === 'function' && !pendingAction;
     const goLive = () => {
       setCommandFeedback(null);
@@ -92,6 +103,7 @@ export function SeekBar({ target, availability = null, onCommand = null, pending
   const ownsGesture = () => dragBindingRef.current?.context === contextRef.current
     && dragBindingRef.current?.duration === duration
     && dragBindingRef.current?.node === (controller?.getMediaElement?.() ?? null);
+  const ownsPointer = (event) => draggingRef.current && dragBindingRef.current?.pointerId === event.pointerId;
 
   // Pointer x → seconds. Bails (null) when the track has no measurable width
   // (e.g. display:none) so a degenerate layout can never commit a bogus seek.
@@ -122,12 +134,12 @@ export function SeekBar({ target, availability = null, onCommand = null, pending
   };
 
   const onPointerDown = (e) => {
-    if (!canSeek || e.button !== 0) return;
+    if (!canSeek || e.button !== 0 || draggingRef.current) return;
     const rect = trackRef.current?.getBoundingClientRect?.();
     const secs = secondsFromPointer(e, rect);
     if (secs == null) return;
     draggingRef.current = true;
-    dragBindingRef.current = { context, duration, node: controller?.getMediaElement?.() ?? null };
+    dragBindingRef.current = { context, duration, node: controller?.getMediaElement?.() ?? null, pointerId: e.pointerId };
     // Preview time can widen its label and reflow this flex track. A pointer
     // gesture represents coordinates in the geometry where it began, so keep
     // that rect through pointerup rather than remapping the same x afterward.
@@ -137,13 +149,13 @@ export function SeekBar({ target, availability = null, onCommand = null, pending
   };
 
   const onPointerMove = (e) => {
-    if (!draggingRef.current || !canSeek || !ownsGesture()) return;
+    if (!ownsPointer(e) || !canSeek || !ownsGesture()) return;
     const secs = secondsFromPointer(e, dragRectRef.current);
     if (secs != null) setScrub({ seconds: secs, context });
   };
 
   const onPointerUp = (e) => {
-    if (!draggingRef.current) return;
+    if (!ownsPointer(e)) return;
     // Fleet availability can change during a captured pointer gesture. Do not
     // commit a remote seek that was valid when pressed but unsafe at release.
     if (!canSeek || !ownsGesture()) {
@@ -164,7 +176,8 @@ export function SeekBar({ target, availability = null, onCommand = null, pending
     if (secs != null) commitSeek(secs);
   };
 
-  const onPointerCancel = () => {
+  const onPointerCancel = (e) => {
+    if (!ownsPointer(e)) return;
     draggingRef.current = false;
     dragRectRef.current = null;
     dragBindingRef.current = null;
@@ -202,6 +215,7 @@ export function SeekBar({ target, availability = null, onCommand = null, pending
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
+        onLostPointerCapture={onPointerCancel}
         onKeyDown={onKeyDown}
       >
         <div className="np-seek-rail" />
