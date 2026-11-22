@@ -13,7 +13,9 @@ const actions = ['play','queue','list','display','launch','open'];
 function presentation(item, index) {
   const action = actions.find(key => item[key]);
   const payload = item[action];
-  return {...item, index, label:item.label || item.title || '', action:action ? action[0].toUpperCase()+action.slice(1) : 'Play', input:action === 'open' ? `app:${payload}` : (typeof payload === 'string' ? payload : payload?.contentId) || item.input || ''};
+  const legacy = typeof item.action === 'string' && item.action ? item.action.toLowerCase() : null;
+  const shown = action || legacy || 'play';
+  return {...item, index, label:item.label || item.title || '', action:shown[0].toUpperCase()+shown.slice(1), input:action === 'open' ? `app:${payload}` : (typeof payload === 'string' ? payload : payload?.contentId) || item.input || ''};
 }
 function changesFor(item, changes) {
   const result = {...changes};
@@ -23,7 +25,11 @@ function changesFor(item, changes) {
     const original = presentation(item, 0);
     const view = {...original, ...changes};
     if (view.action !== original.action || view.input !== original.input) {
+      // update-item merges, so the legacy input/action encoding must be cleared
+      // explicitly or the item carries two targets and the server rejects it.
       for (const action of actions) result[action] = undefined;
+      result.input = undefined;
+      result.action = undefined;
       const selected = view.action.toLowerCase();
       const action = actions.includes(selected) ? selected : 'play';
       const prior = item[action];

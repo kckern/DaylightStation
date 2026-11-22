@@ -92,3 +92,16 @@ it('exposes the raw content choice inside the modal and commits it with the keyb
  const option=await screen.findByTestId('freeform-commit-option');expect(option.closest('[aria-hidden="true"]')).toBeNull();
  await waitFor(()=>expect(screen.getByRole('option',{name:/Use .* as raw value/})).toBeVisible());fireEvent.keyDown(input,{key:'Enter',code:'Enter'});fireEvent.change(screen.getByTestId('item-label-input'),{target:{value:'Example'}});fireEvent.click(screen.getByTestId('save-item-button'));await waitFor(()=>expect(edit).toHaveBeenCalled());expect(edit.mock.calls[0][0].item.play).toEqual({contentId:'app:example'});
 });
+
+it('replaces a legacy input/action encoding instead of adding a second target',async()=>{
+  const {validateEmbeddedList}=await import('../../server/embedded-list-validation.mjs');
+  const source={sections:[{uid:'s1',items:[{uid:'h1',title:'Hymn',input:'singalong:hymn/1023'},{uid:'h2',title:'Dedicate',input:'plex:776869',action:'Queue'}]}]};
+  const onEdit=setup({list:source});
+  expect(within(screen.getByTestId('item-row-0-1')).getByText('Queue')).toBeTruthy();
+  fireEvent.click(within(screen.getByTestId('item-row-0-0')).getByText('Play')); fireEvent.click(screen.getByRole('option',{name:'Queue'}));
+  await waitFor(()=>expect(onEdit).toHaveBeenCalled());
+  const next=applyListEdit(source,onEdit.mock.calls[0][0]).list;
+  const item=JSON.parse(JSON.stringify(next.sections[0].items[0]));
+  expect(item).toEqual({uid:'h1',title:'Hymn',queue:{contentId:'singalong:hymn/1023'}});
+  expect(()=>validateEmbeddedList(JSON.parse(JSON.stringify(next)))).not.toThrow();
+});
