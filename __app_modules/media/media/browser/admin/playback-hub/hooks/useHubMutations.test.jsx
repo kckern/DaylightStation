@@ -297,6 +297,10 @@ describe('useHubMutations', () => {
       const [url, opts] = global.fetch.mock.calls[0];
       expect(url).toBe(`${location.origin}/api/v1/playback-hub/scheduled/foo`);
       expect(opts.method).toBe('PUT');
+      expect(showMock).toHaveBeenCalledWith(expect.objectContaining({
+        title: 'Schedule saved',
+        message: 'red @ 08:00',
+      }));
       expect(revalidate).toHaveBeenCalledTimes(1);
     });
 

@@ -134,7 +134,7 @@ export function useHubMutations({ revalidate } = {}) {
       eventName: isUpdate
         ? 'playback-hub.fire.update'
         : 'playback-hub.fire.create',
-      successTitle: isUpdate ? 'Schedule updated' : 'Schedule created',
+      successTitle: isUpdate ? 'Schedule saved' : 'Schedule created',
       successMessage: (r) =>
         `${r.fire?.target ?? fire?.target ?? '?'} @ ${r.fire?.time ?? fire?.time ?? '?'}`,
       failureTitle: 'Could not save schedule',
