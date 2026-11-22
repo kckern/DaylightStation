@@ -316,21 +316,30 @@ function AnnotationRow({ annotation, onUpdate, onDelete, onReveal }) {
   const [editing, setEditing] = useState(false);
   const [note, setNote] = useState(annotation.note || '');
   const [saving, setSaving] = useState(false);
+  const draftVersionRef = useRef(0);
+
+  const updateNote = value => {
+    draftVersionRef.current += 1;
+    setNote(value);
+  };
 
   const save = async () => {
+    const submittedVersion = draftVersionRef.current;
+    const submittedNote = note;
     setSaving(true);
-    if (await onUpdate(annotation, { note, quote: annotation.quote, color: annotation.color, locator: annotation.locator })) setEditing(false);
+    if (await onUpdate(annotation, { note: submittedNote, quote: annotation.quote, color: annotation.color, locator: annotation.locator })
+      && draftVersionRef.current === submittedVersion) setEditing(false);
     setSaving(false);
   };
 
   return (
     <article className="feed-annotation">
       {annotation.quote && <blockquote className={`feed-annotation-quote feed-annotation-quote--${annotation.color}`}>{annotation.quote}</blockquote>}
-      {editing ? <textarea aria-label="Edit note" value={note} maxLength={10000} rows={3} onChange={event => setNote(event.target.value)} /> : annotation.note && <p>{annotation.note}</p>}
+      {editing ? <textarea aria-label="Edit note" value={note} maxLength={10000} rows={3} onChange={event => updateNote(event.target.value)} /> : annotation.note && <p>{annotation.note}</p>}
       <div className="feed-annotation__meta">
         <time dateTime={annotation.updatedAt}>{new Date(annotation.updatedAt).toLocaleString()}</time>
         {annotation.locator && <button type="button" onClick={() => onReveal(annotation)}>Find highlight</button>}
-        {editing ? <><button type="button" onClick={save} disabled={saving || (!note.trim() && !annotation.quote)}>{saving ? 'Saving…' : 'Save'}</button><button type="button" onClick={() => { setNote(annotation.note || ''); setEditing(false); }}>Cancel</button></> : <button type="button" onClick={() => { setNote(annotation.note || ''); setEditing(true); }}>Edit</button>}
+        {editing ? <><button type="button" onClick={save} disabled={saving || (!note.trim() && !annotation.quote)}>{saving ? 'Saving…' : 'Save'}</button><button type="button" onClick={() => { updateNote(annotation.note || ''); setEditing(false); }}>Cancel</button></> : <button type="button" onClick={() => { updateNote(annotation.note || ''); setEditing(true); }}>Edit</button>}
         <button type="button" onClick={() => onDelete(annotation)}>Delete</button>
       </div>
     </article>

@@ -77,6 +77,45 @@ describe('AnnotationPanel', () => {
     selection.removeAllRanges();
   });
 
+  test('keeps a newer existing-note draft open until that draft is saved', async () => {
+    let finishSave;
+    render(<AnnotationPanel item={{ id: 'one' }} />);
+    await screen.findByText('Remember');
+    apiMock.mockImplementationOnce(() => new Promise(resolve => { finishSave = resolve; }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    const editor = screen.getByRole('textbox', { name: 'Edit note' });
+    fireEvent.change(editor, { target: { value: 'First revision' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.change(editor, { target: { value: 'Second revision' } });
+
+    await act(async () => finishSave({ annotation: { id: 'note-1', itemId: 'one', note: 'First revision', updatedAt: '2026-08-24T13:00:00.000Z' } }));
+    expect(screen.getByRole('textbox', { name: 'Edit note' })).toHaveValue('Second revision');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Edit note' })).not.toBeInTheDocument());
+    expect(apiMock.mock.calls.filter(([, , method]) => method === 'PATCH').map(([, data]) => data.note)).toEqual(['First revision', 'Second revision']);
+    expect(screen.getByText('Second revision')).toBeInTheDocument();
+  });
+
+  test('does not close a reopened existing-note editor when its earlier save completes', async () => {
+    let finishSave;
+    render(<AnnotationPanel item={{ id: 'one' }} />);
+    await screen.findByText('Remember');
+    apiMock.mockImplementationOnce(() => new Promise(resolve => { finishSave = resolve; }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Edit note' }), { target: { value: 'Submitted revision' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    const reopenedEditor = screen.getByRole('textbox', { name: 'Edit note' });
+    expect(reopenedEditor).toHaveValue('Remember');
+
+    await act(async () => finishSave({ annotation: { id: 'note-1', itemId: 'one', note: 'Submitted revision', updatedAt: '2026-08-24T13:00:00.000Z' } }));
+    expect(screen.getByRole('textbox', { name: 'Edit note' })).toHaveValue('Remember');
+  });
+
   test('opens an edit with the latest saved note and preserves an active draft during refresh', async () => {
     render(<AnnotationPanel item={{ id: 'one' }} />);
     await screen.findByText('Remember');
