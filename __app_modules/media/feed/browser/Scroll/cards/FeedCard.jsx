@@ -175,6 +175,7 @@ function HeroImage({ src: rawSrc, thumbnail: rawThumbnail, feedItemId, title }) 
 function GalleryHero({ images, feedItemId, title }) {
   const [index, setIndex] = useState(0);
   const dragStartRef = useRef(null);
+  const touchStartRef = useRef(null);
   const mouseDraggedRef = useRef(false);
   const galleryRef = useRef(null);
   const refocusGallery = useRef(false);
@@ -205,15 +206,26 @@ function GalleryHero({ images, feedItemId, title }) {
   // Touch swipe (mobile)
   const handleTouchStart = (e) => {
     e.stopPropagation();
-    dragStartRef.current = e.touches[0].clientX;
+    if (e.touches.length !== 1) {
+      touchStartRef.current = null;
+      return;
+    }
+    const touch = e.touches[0];
+    touchStartRef.current = { identifier: touch.identifier, x: touch.clientX, y: touch.clientY };
   };
   const handleTouchEnd = (e) => {
-    if (dragStartRef.current === null) return;
-    const dx = e.changedTouches[0].clientX - dragStartRef.current;
-    dragStartRef.current = null;
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!start || e.touches.length !== 0) return;
+    const touch = Array.from(e.changedTouches).find(({ identifier }) => identifier === start.identifier);
+    if (!touch) return;
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    if (Math.abs(dx) <= Math.abs(dy)) return;
     if (dx < -40) goNext();
     else if (dx > 40) goPrev();
   };
+  const handleTouchCancel = () => { touchStartRef.current = null; };
 
   // Mouse drag (desktop)
   const handleMouseDown = (e) => {
@@ -263,6 +275,7 @@ function GalleryHero({ images, feedItemId, title }) {
       style={{ position: 'relative', width: '100%', height: '100%', userSelect: 'none' }}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchCancel}
       onMouseDown={handleMouseDown}
       onMouseUp={handleMouseUp}
       onClickCapture={handleClickCapture}
