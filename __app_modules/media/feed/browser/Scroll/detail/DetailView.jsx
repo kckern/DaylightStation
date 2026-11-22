@@ -236,13 +236,13 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
           aria-label="Back to feed" tabIndex={stickyVisible ? undefined : -1} data-autofocus={inModal && stickyVisible || undefined}>
           <UiIcon name="back" size={18} />
         </button>
-        {iconUrl && <img src={iconUrl} alt="" className="detail-sticky-icon" onError={(e) => { e.target.style.display = 'none'; }} />}
+        {iconUrl && <img key={iconUrl} src={iconUrl} alt="" className="detail-sticky-icon" onError={(e) => { e.target.style.display = 'none'; }} />}
         <span className="detail-sticky-title">{item.title}</span>
       </div>
       <div className="detail-content-clip">
       <div ref={contentRef} className="detail-content">
         <div className="detail-source-bar" style={{ borderTop: `2px solid ${borderColor}` }}>
-          {iconUrl && <img src={iconUrl} alt="" className="detail-source-icon" onError={(e) => { e.target.style.display = 'none'; }} />}
+          {iconUrl && <img key={iconUrl} src={iconUrl} alt="" className="detail-source-icon" onError={(e) => { e.target.style.display = 'none'; }} />}
           <span className="detail-source-label">{sourceName}</span>
           {age && <span className="detail-source-age">{age}</span>}
         </div>
