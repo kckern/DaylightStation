@@ -53,6 +53,11 @@ export default function FeedSearch() {
   const committedQuery = params.get('q') || '';
   const committedSource = params.get('source') || '';
   const activeState = params.get('state') || 'all';
+  const fromDay = (params.get('from') || '').slice(0, 10);
+  const toDay = (params.get('to') || '').slice(0, 10);
+  const dateRangeInvalid = /^\d{4}-\d{2}-\d{2}$/.test(fromDay)
+    && /^\d{4}-\d{2}-\d{2}$/.test(toDay)
+    && fromDay > toDay;
   const [query, setQuery] = useState(committedQuery);
   const [source, setSource] = useState(committedSource);
   const [resultPage, setResultPage] = useState(null);
@@ -78,7 +83,7 @@ export default function FeedSearch() {
   const syncing = syncStatus?.requestKey === requestKey && syncStatus.pending;
   const syncError = syncStatus?.requestKey === requestKey && syncStatus.error;
   const loadingMore = foreground === 'append';
-  const searching = foreground === 'initial' || (!currentPage && !failure);
+  const searching = !dateRangeInvalid && (foreground === 'initial' || (!currentPage && !failure));
   const appendFocus = currentPage?.appendFocus;
 
   useLayoutEffect(() => {
@@ -213,8 +218,13 @@ export default function FeedSearch() {
 
   useLayoutEffect(() => {
     setSyncStatus(null);
+    if (dateRangeInvalid) {
+      setRequestError(null);
+      setForeground(null);
+      return;
+    }
     reload();
-  }, [reload]);
+  }, [dateRangeInvalid, reload]);
 
   useEffect(() => {
     if (!pendingItemOperations?.length) return;
@@ -279,14 +289,15 @@ export default function FeedSearch() {
       <form className="feed-search__advanced" aria-label="Search scope" onSubmit={submit}>
         <label>Mode<Select density="compact" value={params.get('mode') || ''} onChange={event => setFilter('mode', event.target.value)}><option value="">Any</option><option value="reader">Reader</option><option value="headlines">Headlines</option><option value="scroll">Scroll</option></Select></label>
         <label>Source<input value={source} onChange={event => setSource(event.target.value)} placeholder="Name or type" /></label>
-        <label>From<input type="date" value={(params.get('from') || '').slice(0, 10)} onChange={event => setFilter('from', event.target.value)} /></label>
-        <label>To<input type="date" value={(params.get('to') || '').slice(0, 10)} onChange={event => setFilter('to', event.target.value)} /></label>
+        <label>From<input type="date" value={fromDay} onChange={event => setFilter('from', event.target.value)} /></label>
+        <label>To<input type="date" value={toDay} onChange={event => setFilter('to', event.target.value)} /></label>
+        {dateRangeInvalid ? <span className="feed-search__range-error" role="alert">From must be on or before To</span> : null}
         <button type="submit">Apply</button>
       </form>
       {coverage && <p className="feed-search__coverage" role="status">{total} result{total === 1 ? '' : 's'} · {coverage.retentionMonths}-month history{coverage.status === 'running' ? ` · indexing (${coverage.indexed || 0})` : coverage.status === 'failed' ? ' · backfill paused' : ''}</p>}
       {searching && <StateMessage state="loading" role="status" title="Searching…" />}
       {failure && !appendFailure && <ErrorState title={null} error={failure.error} onRetry={retry} />}
-      {!searching && !failure && items.length === 0 && <EmptyState title="No matching items in indexed history." />}
+      {!dateRangeInvalid && !searching && !failure && items.length === 0 && <EmptyState title="No matching items in indexed history." />}
       <div className="feed-search__results" ref={resultsRef}>
         {items.map(item => {
           const key = resultKey(item);
