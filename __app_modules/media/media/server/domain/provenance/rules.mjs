@@ -19,6 +19,7 @@
  *
  *   kind: [movie, show]          library: [Movies]          studio: [CuriosityStream]
  *   collection: [LDS]            label: [Missionary]        content_filter: active
+ *   genre: [Anime]
  *   year_before: 1950            shorter_than_min: 40       longer_than_min: 200
  *
  * A rule's `provider` may be a list: one of them is picked per title (stable,
@@ -34,7 +35,7 @@ const lower = (v) => list(v).map((x) => x.toLowerCase());
 
 /** The `when` keys a rule may use. */
 export const WHEN_KEYS = Object.freeze([
-  'kind', 'library', 'studio', 'collection', 'label', 'content_filter',
+  'kind', 'library', 'studio', 'collection', 'label', 'genre', 'content_filter',
   'year_before', 'shorter_than_min', 'longer_than_min',
 ]);
 
@@ -112,8 +113,8 @@ export function matchesWhen(when, facts = {}) {
       // match whole words inside the name, so "AMC" is not found in "DreamCrew".
       const studio = String(facts.studio ?? '').toLowerCase();
       if (!studio || !value.some((v) => containsWords(studio, v))) return false;
-    } else if (key === 'kind' || key === 'library' || key === 'collection' || key === 'label') {
-      const factKey = { kind: 'kind', library: 'library', collection: 'collections', label: 'labels' }[key];
+    } else if (key === 'kind' || key === 'library' || key === 'collection' || key === 'label' || key === 'genre') {
+      const factKey = { kind: 'kind', library: 'library', collection: 'collections', label: 'labels', genre: 'genres' }[key];
       if (!has(factKey, value)) return false;
     } else if (key === 'content_filter') {
       if (!!facts.contentFilterActive !== value) return false;

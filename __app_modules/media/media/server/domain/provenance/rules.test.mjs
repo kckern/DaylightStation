@@ -105,3 +105,12 @@ describe('secondary logos', () => {
     expect(secondaryLogosFor('netflix', twice, services)).toHaveLength(1);
   });
 });
+
+describe('genre rules', () => {
+  it('matches any listed genre, ignoring case, with other facts', () => {
+    const [rule] = parseRules({ fallbacks: [{ provider: 'x', when: { kind: ['show'], genre: ['Animation'], year_before: 2000 } }] }).fallbacks;
+    expect(matchesWhen(rule.when, { kind: 'show', genres: ['Comedy', 'animation'], year: 1994 })).toBe(true);
+    expect(matchesWhen(rule.when, { kind: 'show', genres: ['Animation'], year: 2013 })).toBe(false);
+    expect(matchesWhen(rule.when, { kind: 'show', genres: [], year: 1994 })).toBe(false);
+  });
+});

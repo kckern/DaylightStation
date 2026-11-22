@@ -125,10 +125,13 @@ provider ids (below). Then three stages, each read top to bottom, first match wi
    with a logo.
 3. **fallbacks** when no offer qualifies. Household: movies before 1950 → Internet
    Archive; movies under 40 minutes → YouTube; the documentary libraries →
-   CuriosityStream; then by studio or network (Universal/NBC → Peacock, Paramount/CBS
+   CuriosityStream; anime (genre Anime) and Saturday-morning cartoons (shows with genre
+   Animation from before 2000) → Crunchyroll; then by studio or network (Universal/NBC → Peacock, Paramount/CBS
    → Paramount+, Warner/HBO → Max, Disney/Fox/Marvel → Disney+, MGM/Amazon → Prime
    Video, Columbia/Sony → Netflix, Angel Studios → Living Scriptures, ...); then
-   anything else → Peacock or Prime Video.
+   anything else → Prime Video, Peacock or YouTube (one per title, always the same).
+   A show BYUtv airs from another studio carries a `BYUtv` label in Plex (The
+   Chosen) and an override reads it.
 
 A rule's `when` holds when all of its keys do; a list matches any item, case
 insensitive:
@@ -139,6 +142,7 @@ insensitive:
 | `library` | the library's name |
 | `studio` | whole words in the studio (or network) name: `MGM` matches "Metro-Goldwyn-Mayer (MGM)", `AMC` does not match "DreamCrew" |
 | `collection`, `label` | one of the title's collections or labels |
+| `genre` | one of the title's genres (from the media server; Anime, Animation) |
 | `content_filter: active` | the content filter turns on for it by default |
 | `year_before`, `shorter_than_min`, `longer_than_min` | year, running time in minutes (unknown never matches) |
 

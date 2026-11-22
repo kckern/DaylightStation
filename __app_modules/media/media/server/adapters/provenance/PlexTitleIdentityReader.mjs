@@ -49,6 +49,7 @@ export class PlexTitleIdentityReader extends ITitleIdentityReader {
       durationMs: Number.isFinite(md.duration) ? md.duration : null,
       collections: tags(md.Collection),
       labels: tags(md.Label),
+      genres: tags(md.Genre),
       library: md.librarySectionTitle ? String(md.librarySectionTitle) : null,
     };
   }
