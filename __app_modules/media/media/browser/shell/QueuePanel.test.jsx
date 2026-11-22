@@ -60,8 +60,8 @@ it('resets played-history local state when QueuePanel changes remote screen owne
 
 it('removes a queue entry, reports it through the outcome tray, and restores it through ordinary Undo', async () => {
   const controller = createLocalSessionController({ clientId: 'queue-test' });
-  controller.queue.playNow({ contentId: 'one', title: 'One', format: 'video' });
-  controller.queue.add({ contentId: 'two', title: 'Two', format: 'video' });
+  controller.queue.playNow({ contentId: 'two-first', title: 'Two', format: 'video' });
+  controller.queue.add({ contentId: 'two-second', title: 'Two', format: 'video' });
   const secondId = controller.getSnapshot().queue.items[1].queueItemId;
   render(
     <MantineProvider>
@@ -72,7 +72,7 @@ it('removes a queue entry, reports it through the outcome tray, and restores it 
       </LocalSessionContext.Provider>
     </MantineProvider>,
   );
-  fireEvent.click(screen.getByTestId(`queue-remove-${secondId}`));
+  fireEvent.click(screen.getByRole('button', { name: 'Remove item 2, Two from queue' }));
   expect(controller.getSnapshot().queue.items).toHaveLength(1);
   expect(await screen.findByTestId('dispatch-tray')).toHaveTextContent('Removed Two from the queue here');
   fireEvent.click(await screen.findByTestId('item-action-undo'));

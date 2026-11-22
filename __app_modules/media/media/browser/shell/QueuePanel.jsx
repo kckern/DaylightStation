@@ -142,6 +142,7 @@ export function QueuePanel({ target = 'local', availability = null }) {
       <ul className="queue-items">
         {q.items.map((it, idx) => {
           const isCurrent = idx === q.currentIndex;
+          const rowLabel = `item ${idx + 1}, ${it.title ?? it.contentId}`;
           const cls = [
             'queue-item',
             isCurrent ? 'queue-item--current' : '',
@@ -169,7 +170,7 @@ export function QueuePanel({ target = 'local', availability = null }) {
               {/* Reorder: discrete tap targets, not drag (touch-first) */}
               <ActionIcon
                 size="md"
-                aria-label="Move up"
+                aria-label={`Move ${rowLabel} up in queue`}
                 data-testid={`queue-moveup-${it.queueItemId}`}
                 disabled={!controlsAvailable || idx === 0}
                 onClick={() => dispatch(() => queue.reorder?.({ from: it.queueItemId, to: q.items[idx - 1].queueItemId }))}
@@ -178,7 +179,7 @@ export function QueuePanel({ target = 'local', availability = null }) {
               </ActionIcon>
               <ActionIcon
                 size="md"
-                aria-label="Move down"
+                aria-label={`Move ${rowLabel} down in queue`}
                 data-testid={`queue-movedown-${it.queueItemId}`}
                 disabled={!controlsAvailable || idx === q.items.length - 1}
                 onClick={() => dispatch(() => queue.reorder?.({ from: it.queueItemId, to: q.items[idx + 1].queueItemId }))}
@@ -187,7 +188,7 @@ export function QueuePanel({ target = 'local', availability = null }) {
               </ActionIcon>
               <ActionIcon
                 size="md"
-                aria-label="Remove from queue"
+                aria-label={`Remove ${rowLabel} from queue`}
                 data-testid={`queue-remove-${it.queueItemId}`}
                 disabled={!controlsAvailable}
                 onClick={() => edit('remove', it.queueItemId)}
