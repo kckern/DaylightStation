@@ -5,7 +5,9 @@ import './TodayView.scss';
 
 const MAX_MARK_R = 6;
 const WEEKDAY = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+const FULL_WEEKDAY = new Intl.DateTimeFormat(undefined, { weekday: 'long', timeZone: 'UTC' });
 const weekdayOf = (day) => WEEKDAY[new Date(`${day}T12:00:00Z`).getUTCDay()];
+const weekdayNameOf = (day) => FULL_WEEKDAY.format(new Date(`${day}T12:00:00Z`));
 
 /** A lane with no readings on any day: say so, and claim no total. */
 export function laneHasHistory(lane) {
@@ -21,7 +23,7 @@ export function laneMax(lane) {
 }
 
 /** One day's strip: the shapes in viewBox units, with 6-hour guides and the now line. */
-function DayStrip({ kind, day, window, height, maxV, ticks }) {
+function DayStrip({ kind, day, window, height, maxV, ticks, showNoData = false }) {
   const nowX = window.nowMs != null ? xOf(window.nowMs, window) : null;
   let shapes = null;
   let marks = null;
@@ -61,6 +63,7 @@ function DayStrip({ kind, day, window, height, maxV, ticks }) {
         {nowX != null ? <line className="home-lane__now" x1={nowX} x2={nowX} y1={0} y2={height} vectorEffect="non-scaling-stroke" /> : null}
       </svg>
       {marks}
+      {showNoData && <span className="home-lane__no-data" aria-hidden="true">No data</span>}
     </span>
   );
 }
@@ -79,7 +82,11 @@ export function TimelineLane({ lane, rows, ticksFor, onOpen }) {
   const total = hasHistory ? formatLaneTotal(lane.kind, lane.total) : '';
   const maxV = lane.kind === 'power' ? laneMax(lane) : 0;
   const byDay = new Map((lane.days || []).map((d) => [d.day, d]));
-  const label = `${lane.label}: ${total || 'No history'}, open details`;
+  const missingWeekdays = week
+    ? rows.filter((r) => !byDay.get(r.day)?.hasData).map((r) => weekdayNameOf(r.day))
+    : [];
+  const missingDescription = missingWeekdays.length ? `. No data on ${missingWeekdays.join(', ')}` : '';
+  const label = `${lane.label}: ${total || 'No history'}${missingDescription}, open details`;
 
   let strip;
   if (!hasHistory) {
@@ -90,7 +97,15 @@ export function TimelineLane({ lane, rows, ticksFor, onOpen }) {
         {rows.map((r) => (
           <span key={r.day} className="home-lane__week-row">
             <span className="home-lane__weekday">{weekdayOf(r.day)}</span>
-            <DayStrip kind={lane.kind} day={byDay.get(r.day)} window={r.window} height={height} maxV={maxV} ticks={ticksFor(r.window)} />
+            <DayStrip
+              kind={lane.kind}
+              day={byDay.get(r.day)}
+              window={r.window}
+              height={height}
+              maxV={maxV}
+              ticks={ticksFor(r.window)}
+              showNoData={!byDay.get(r.day)?.hasData}
+            />
           </span>
         ))}
       </span>
