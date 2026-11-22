@@ -21,6 +21,18 @@ describe('pending review editor', () => {
     await waitFor(() => expect(api).toHaveBeenCalledWith('api/v1/health/nutrition/pending/shake/review',
       expect.objectContaining({ portionFactor: 0.5, date: '2026-09-03', expectedVersion: 'v1', action: 'confirm', operationId: expect.any(String) }), 'POST'));
   });
+  it('discards the opened review without sending cleared draft fields', async () => {
+    api.mockResolvedValue({ success: true });
+    const onClose = vi.fn();
+    renderReview({ onClose });
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+    expect(api).toHaveBeenCalledWith('api/v1/health/nutrition/pending/shake/review',
+      { action: 'discard', expectedVersion: 'v1', operationId: expect.any(String) }, 'POST');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
   it('reuses the operation ID on retry and retains the draft on a background update', async () => {
     const gatewayError = Object.assign(new Error('HTTP 502: Bad Gateway - <html>upstream failed</html>'), { status: 502 });
     api.mockRejectedValue(gatewayError);

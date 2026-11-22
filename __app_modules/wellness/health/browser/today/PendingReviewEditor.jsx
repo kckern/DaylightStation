@@ -30,8 +30,9 @@ export function PendingReviewEditor({ entry, onClose, onChanged, onConfirmed }) 
   const submit = async action => {
     if (inFlight.current) return;
     inFlight.current = true; setBusy(true); setError(null);
-    const payload = { expectedVersion: entry.version, action, portionFactor: factor, date, mealTime,
-      nutritionReviewed, items: Object.entries(draft).map(([id, changes]) => ({ id, ...changes })) };
+    const payload = action === 'discard' ? { expectedVersion: entry.version, action }
+      : { expectedVersion: entry.version, action, portionFactor: factor, date, mealTime,
+        nutritionReviewed, items: Object.entries(draft).map(([id, changes]) => ({ id, ...changes })) };
     const signature = JSON.stringify(payload);
     if (operation.current?.signature !== signature) operation.current = { signature, id: crypto.randomUUID() };
     try {
