@@ -25,9 +25,10 @@ export class JsonlFeedHistoryStore {
 
   record(username, items) {
     this.#load(username);
-    const fresh = [];
+    const stagedByKey = new Map();
     for (const item of items) {
-      const prior = this.#docs.get(`${username}:${item.stateKey}`);
+      const key = `${username}:${item.stateKey}`;
+      const prior = stagedByKey.get(key) || this.#docs.get(key);
       const sourceLinks = [...(prior?.sourceLinks || []), ...(item.sourceLinks || []), {
         type: item.sourceInfo?.type || item.source,
         id: item.id,
@@ -40,10 +41,12 @@ export class JsonlFeedHistoryStore {
         sourceRefs: [...new Set([...(prior.sourceRefs || []), item.id])],
         sourceLinks: uniqueSourceLinks,
       } : { ...item, sourceRefs: [item.id], sourceLinks: uniqueSourceLinks };
-      if (!prior || JSON.stringify(prior) !== JSON.stringify(merged)) fresh.push(merged);
-      this.#docs.set(`${username}:${item.stateKey}`, merged);
-      this.#indexDocument(username, merged);
+      stagedByKey.set(key, merged);
     }
+
+    const fresh = [...stagedByKey.entries()]
+      .filter(([key, doc]) => JSON.stringify(this.#docs.get(key)) !== JSON.stringify(doc))
+      .map(([, doc]) => doc);
     const byMonth = new Map();
     for (const item of fresh) {
       const key = monthKey(item.publishedAt);
@@ -52,7 +55,13 @@ export class JsonlFeedHistoryStore {
     }
     for (const [key, docs] of byMonth) {
       const dir = this.#dataService.user.resolveDir('feed/history', username);
-      appendTextFile(path.join(dir, `${key}.jsonl`), `${docs.map(doc => JSON.stringify(doc)).join('\n')}\n`);
+      // Isolate any partial tail left by a previous failed append before adding
+      // valid records, so the loader can discard the fragment independently.
+      appendTextFile(path.join(dir, `${key}.jsonl`), `\n${docs.map(doc => JSON.stringify(doc)).join('\n')}\n`);
+      for (const doc of docs) {
+        this.#docs.set(`${username}:${doc.stateKey}`, doc);
+        this.#indexDocument(username, doc);
+      }
     }
     return fresh.length;
   }
