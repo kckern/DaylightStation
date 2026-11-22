@@ -520,7 +520,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
         </div>
       )}
 
-      <div className={paramsType ? 'col-config has-params' : 'col-config'}>
+      <div className="col-config">
         {paramsType && (
           <Tooltip label={paramsSummary} withArrow position="top">
             <ActionIcon

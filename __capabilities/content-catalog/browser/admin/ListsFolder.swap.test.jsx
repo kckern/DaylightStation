@@ -6,7 +6,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import ListsFolder from './ListsFolder.jsx';
 import { registerItemParams, __resetItemParams } from './itemParams/registry.js';
 
-const fixture = vi.hoisted(() => ({ api: vi.fn(), dragEnd: null, rowExtras: null }));
+const fixture = vi.hoisted(() => ({ api: vi.fn(), dragEnd: null, rowExtras: null, twoSections: false }));
 vi.mock('../../../../frontend/src/lib/api.mjs', async original => ({
   ...await original(), DaylightAPI: fixture.api,
 }));
@@ -19,6 +19,7 @@ vi.mock('@dnd-kit/core', async original => ({
 let finishSwap;
 beforeEach(() => {
   fixture.rowExtras = null;
+  fixture.twoSections = false;
   __resetItemParams();
   fixture.api.mockReset().mockImplementation(async (path, body, method) => {
     if (method === 'PUT' && path.endsWith('/items/swap')) {
@@ -26,10 +27,13 @@ beforeEach(() => {
     }
     if (path.includes('/lists/menus/')) {
       const name = path.split('/').pop();
-      return { sections: [{ title: 'Rows', items: [0, 1, 2].map(i => ({
+      const rows = (section, ids) => ({ title: section, items: ids.map(i => ({
         uid: String(i), label: name + ' row ' + i, title: name + ' row ' + i, action: 'Play',
         ...fixture.rowExtras?.[i],
-      })) }] };
+      })) });
+      return { sections: fixture.twoSections
+        ? [rows('Rows', [0, 1, 2]), rows('More', [3, 4])]
+        : [rows('Rows', [0, 1, 2])] };
     }
     return {};
   });
@@ -95,4 +99,46 @@ it('moves item params with the content and clears them on the row that gave them
   startSwap();
   await waitFor(() => expect(gearIn('item-row-0-1')).toHaveAccessibleName('Parameters for first row 1: 3 rounds'));
   expect(gearIn('item-row-0-0')).toHaveAttribute('data-params-set', 'false');
+});
+
+it('moves item params across sections', async () => {
+  registerItemParams({
+    id: 'stub-game', label: 'Stub Game', matches: input => input.startsWith('app:stub-game'),
+    summary: params => (params.rounds ? `${params.rounds} rounds` : 'Defaults'), Editor: () => null,
+  });
+  fixture.twoSections = true;
+  fixture.rowExtras = {
+    0: { input: 'app:stub-game', action: 'Open', params: { rounds: 4 } },
+    3: { input: 'app:stub-game/other', action: 'Open' },
+  };
+  await openFolder();
+  await screen.findByTestId('item-row-1-0');
+  const gearIn = row => within(screen.getByTestId(row)).getByRole('button', { name: /^Parameters for/ });
+  act(() => { fixture.dragEnd({ active: { id: 'content-0-0' }, over: { id: 'content-1-0' } }); });
+  await waitFor(() => expect(gearIn('item-row-1-0')).toHaveAccessibleName('Parameters for first row 3: 4 rounds'));
+  expect(gearIn('item-row-1-0')).toHaveAttribute('data-params-set', 'true');
+  expect(gearIn('item-row-0-0')).toHaveAttribute('data-params-set', 'false');
+  expect(fixture.api).toHaveBeenCalledWith('/api/v1/admin/content/lists/menus/first/items/swap',
+    { a: { section: 0, index: 0 }, b: { section: 1, index: 0 } }, 'PUT');
+});
+
+it('keeps the original Config width for a list with no parameterised rows', async () => {
+  registerItemParams({
+    id: 'stub-game', label: 'Stub Game', matches: input => input.startsWith('app:stub-game'),
+    summary: () => 'Defaults', Editor: () => null,
+  });
+  await openFolder();
+  const view = document.querySelector('.lists-view');
+  expect(view).not.toBeNull();
+  expect(view).not.toHaveClass('lists-view--has-params');
+});
+
+it('widens the Config column for the whole list when one row has a parameter type', async () => {
+  registerItemParams({
+    id: 'stub-game', label: 'Stub Game', matches: input => input.startsWith('app:stub-game'),
+    summary: () => 'Defaults', Editor: () => null,
+  });
+  fixture.rowExtras = { 2: { input: 'app:stub-game', action: 'Open' } };
+  await openFolder();
+  expect(document.querySelector('.lists-view')).toHaveClass('lists-view--has-params');
 });

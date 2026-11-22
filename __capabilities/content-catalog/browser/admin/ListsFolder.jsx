@@ -41,6 +41,7 @@ function mutationLog() {
 import SectionHeader from "./SectionHeader.jsx";
 import ListsItemEditor from "./ListsItemEditor.jsx";
 import { ListsContext } from "./ListsContext.js";
+import { paramsTypeFor } from "./itemParams/registry.js";
 import ListSettingsModal from "./ListSettingsModal.jsx";
 import SectionSettingsModal from "./SectionSettingsModal.jsx";
 import "./ContentLists.scss";
@@ -447,6 +448,10 @@ function FolderEditor({ type, listName }) {
   const typeLabel = TYPE_LABELS[type] || type;
   // Resolves to the mutation result ({ok, error}) so callers such as the
   // parameters modal can show a failed save inline.
+  // A list with a parameterised row widens its Config column (header and all
+  // rows together); other lists keep the original layout.
+  const hasParamsRows = flatItems.some(row => paramsTypeFor(row));
+
   const handleInlineUpdate = (sectionIndex, itemIndex, updates) => {
     return mutate('lists.update', 'Could not save change', () => updateItem(sectionIndex, itemIndex, updates), { fieldEdit: true });
   };
@@ -532,7 +537,7 @@ function FolderEditor({ type, listName }) {
 
   return (
     <ListsContext.Provider value={contextValue}>
-      <Stack gap="xs" className="lists-view">
+      <Stack gap="xs" className={hasParamsRows ? 'lists-view lists-view--has-params' : 'lists-view'}>
       <Group justify="space-between" className="ds-page-header" style={{ marginBottom: 0 }}>
         <Group>
           <ActionIcon className="ds-touch-target" variant="subtle" aria-label="Back" onClick={() => navigate(-1)}>
