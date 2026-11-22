@@ -98,7 +98,7 @@ function MedicalReadingSheet({ onClose }) {
   });
   const metric = form.metric.trim();
   const isBp = metric === 'bp';
-  const valid = Boolean(metric) && form.value !== '';
+  const valid = Boolean(metric) && form.value !== '' && Boolean(form.unit.trim());
 
   const save = async () => {
     const body = {
@@ -120,7 +120,11 @@ function MedicalReadingSheet({ onClose }) {
         {failure && <StateMessage state="error" role="alert" title="Could not save reading" detail={failure.message} />}
         <Autocomplete label="Metric" placeholder="e.g. bp, glucose, resting_hr"
           data={METRIC_SUGGESTIONS} value={form.metric}
-          onChange={(v) => setForm({ ...form, metric: v, unit: MEDICAL_METRICS[v]?.units[0] || form.unit })} />
+          onChange={(v) => setForm(previous => ({
+            ...previous,
+            metric: v,
+            unit: MEDICAL_METRICS[v]?.units[0] || (MEDICAL_METRICS[previous.metric] ? '' : previous.unit),
+          }))} />
         <NumberInput label={isBp ? 'Systolic' : 'Value'} value={form.value}
           onChange={(v) => setForm({ ...form, value: v })} />
         {isBp ? (
