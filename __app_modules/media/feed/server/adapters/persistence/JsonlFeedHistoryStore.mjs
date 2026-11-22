@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { appendTextFile, deleteFile, dirExists, listEntries, readTextFromPath } from '#system/utils/FileIO.mjs';
+import { appendTextFile, deleteFile, readDirectory, readTextFromPath } from '#system/utils/FileIO.mjs';
+import { isPlainMapping } from './isPlainMapping.mjs';
 
 const RETENTION_MONTHS = 12;
 const SAVED_PATH = 'feed/saved-items';
@@ -75,14 +76,17 @@ export class JsonlFeedHistoryStore {
   }
 
   setSaved(username, items, isSaved) {
-    const saved = this.#dataService.user.read(SAVED_PATH, username) || { version: 1, items: {} };
+    const saved = this.#readSaved(username);
     saved.version = 1;
-    saved.items ||= {};
     for (const item of items) {
+      if (!this.#isHistoryDocument(item)) throw new Error('Invalid Feed saved item');
+      this.#tokensFor(item);
       if (isSaved) saved.items[item.stateKey] = { ...item, savedAt: new Date().toISOString() };
       else delete saved.items[item.stateKey];
     }
-    this.#dataService.user.write(SAVED_PATH, saved, username);
+    if (this.#dataService.user.writeAtomic(SAVED_PATH, saved, username) !== true) {
+      throw new Error('Failed to persist Feed saved items');
+    }
     for (const item of Object.values(saved.items)) {
       if (item?.stateKey) {
         this.#docs.set(`${username}:${item.stateKey}`, item);
@@ -176,17 +180,16 @@ export class JsonlFeedHistoryStore {
   #indexDocument(username, doc) {
     if (!this.#indexes.has(username)) this.#indexes.set(username, { documents: new Set(), all: new Map(), tokensByDocument: new Map() });
     const index = this.#indexes.get(username);
+    this.#addToIndex(index, doc, this.#tokensFor(doc));
+  }
+
+  #addToIndex(index, doc, tokens) {
     const priorTokens = index.tokensByDocument.get(doc.stateKey) || [];
     for (const token of priorTokens) {
       const keys = index.all.get(token);
       keys?.delete(doc.stateKey);
       if (keys?.size === 0) index.all.delete(token);
     }
-    const tokens = [...new Set([
-      ...this.#tokens(doc.title),
-      ...this.#tokens(`${doc.sourceInfo?.label || doc.source || ''} ${doc.tags?.join(' ') || ''}`),
-      ...this.#tokens(doc.summary),
-    ])];
     for (const token of tokens) {
       if (!index.all.has(token)) index.all.set(token, new Set());
       index.all.get(token).add(doc.stateKey);
@@ -197,37 +200,91 @@ export class JsonlFeedHistoryStore {
 
   #load(username) {
     if (this.#loaded.has(username)) return;
-    this.#loaded.add(username);
     const dir = this.#dataService.user.resolveDir('feed/history', username);
-    const saved = this.#dataService.user.read(SAVED_PATH, username) || { items: {} };
+    const saved = this.#readSaved(username);
+    const documents = new Map();
+    const tokensByStateKey = new Map();
     for (const item of Object.values(saved.items || {})) {
-      if (item?.stateKey) {
-        this.#docs.set(`${username}:${item.stateKey}`, item);
-        this.#indexDocument(username, item);
-      }
+      documents.set(item.stateKey, item);
+      tokensByStateKey.set(item.stateKey, this.#tokensFor(item));
     }
-    if (!dirExists(dir)) return;
+    const expiredFiles = [];
     const cutoff = new Date();
     cutoff.setUTCMonth(cutoff.getUTCMonth() - RETENTION_MONTHS);
-    for (const filename of listEntries(dir).filter(name => /^\d{4}-\d{2}\.jsonl$/.test(name)).sort()) {
+    let filenames;
+    try { filenames = readDirectory(dir); }
+    catch (error) {
+      if (error.code === 'ENOENT') filenames = [];
+      else throw error;
+    }
+    for (const filename of filenames.filter(name => /^\d{4}-\d{2}\.jsonl$/.test(name)).sort()) {
       if (filename.slice(0, 7) < monthKey(cutoff)) {
-        try { deleteFile(path.join(dir, filename)); }
-        catch (error) { this.#logger.warn?.('feed.history.prune_failed', { username, filename, error: error.message }); }
+        expiredFiles.push(filename);
         continue;
       }
       const lines = readTextFromPath(path.join(dir, filename)).split('\n').filter(Boolean);
       for (const line of lines) {
         try {
           const doc = JSON.parse(line);
-          if (doc?.stateKey) {
-            this.#docs.set(`${username}:${doc.stateKey}`, doc);
-            this.#indexDocument(username, doc);
-          }
+          if (!this.#isHistoryDocument(doc)) throw new Error('Invalid history document');
+          const tokens = this.#tokensFor(doc);
+          documents.set(doc.stateKey, doc);
+          tokensByStateKey.set(doc.stateKey, tokens);
         } catch (error) {
           this.#logger.warn?.('feed.history.line.invalid', { username, filename, error: error.message });
         }
       }
     }
+    const index = { documents: new Set(), all: new Map(), tokensByDocument: new Map() };
+    for (const [stateKey, doc] of documents) {
+      this.#addToIndex(index, doc, tokensByStateKey.get(stateKey));
+    }
+    for (const filename of expiredFiles) {
+      try { deleteFile(path.join(dir, filename)); }
+      catch (error) { this.#logger.warn?.('feed.history.prune_failed', { username, filename, error: error.message }); }
+    }
+    for (const key of this.#docs.keys()) {
+      if (key.startsWith(`${username}:`)) this.#docs.delete(key);
+    }
+    for (const [stateKey, doc] of documents) {
+      this.#docs.set(`${username}:${stateKey}`, doc);
+    }
+    this.#indexes.set(username, index);
+    this.#loaded.add(username);
+  }
+
+  #readSaved(username) {
+    const entry = this.#dataService.user.readStrictEntry(SAVED_PATH, username);
+    if (!entry.found) return { version: 1, items: {} };
+    if (!isPlainMapping(entry.value) || !isPlainMapping(entry.value.items)) {
+      throw new Error(`Invalid Feed saved items for ${username}`);
+    }
+    for (const [stateKey, item] of Object.entries(entry.value.items)) {
+      if (!this.#isHistoryDocument(item) || item.stateKey !== stateKey) {
+        throw new Error(`Invalid Feed saved item for ${username}`);
+      }
+      try { this.#tokensFor(item); }
+      catch { throw new Error(`Invalid Feed saved item for ${username}`); }
+    }
+    return entry.value;
+  }
+
+  #isHistoryDocument(doc) {
+    return isPlainMapping(doc)
+      && typeof doc.stateKey === 'string' && doc.stateKey.length > 0
+      && (doc.sourceInfo == null || isPlainMapping(doc.sourceInfo))
+      && (doc.tags == null || Array.isArray(doc.tags))
+      && (doc.origins == null || Array.isArray(doc.origins))
+      && (doc.sourceRefs == null || Array.isArray(doc.sourceRefs))
+      && (doc.sourceLinks == null || Array.isArray(doc.sourceLinks));
+  }
+
+  #tokensFor(doc) {
+    return [...new Set([
+      ...this.#tokens(doc.title),
+      ...this.#tokens(`${doc.sourceInfo?.label || doc.source || ''} ${doc.tags?.join(' ') || ''}`),
+      ...this.#tokens(doc.summary),
+    ])];
   }
 }
 

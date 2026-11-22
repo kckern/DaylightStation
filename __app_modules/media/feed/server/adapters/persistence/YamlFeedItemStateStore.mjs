@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { ensureDir, fileExists, renameFile } from '#system/utils/FileIO.mjs';
+import { isPlainMapping } from './isPlainMapping.mjs';
 
 const STATE_PATH = 'feed/item-state';
 
@@ -16,11 +17,7 @@ export class YamlFeedItemStateStore {
   load(username) {
     const entry = this.#dataService.user.readStrictEntry(STATE_PATH, username);
     if (!entry.found) return { version: 1, items: {}, aliases: {} };
-    const prototype = entry.value && typeof entry.value === 'object'
-      ? Object.getPrototypeOf(entry.value)
-      : null;
-    if (!entry.value || typeof entry.value !== 'object' || Array.isArray(entry.value)
-      || (prototype !== Object.prototype && prototype !== null)) {
+    if (!isPlainMapping(entry.value)) {
       throw new Error(`Invalid feed item state for ${username}`);
     }
     return entry.value;
