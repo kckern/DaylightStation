@@ -264,6 +264,64 @@ $school-font: "Roboto Condensed", sans-serif;
     .showcase-text { padding-left: 7vw; max-width: 60vw; }
   }
 
+  // Wins but no school work: the title and the wins, centred on the stage,
+  // a size up.
+  &--wins-only {
+    justify-items: center;
+    .showcase-text { padding-left: 0; max-width: 70vw; text-align: center; }
+    .showcase-title { margin-inline: auto; }
+    .showcase-wins-week { justify-content: center; }
+    .showcase-win-icon { font-size: 64px; }
+    .showcase-win-figure { font-size: 72px; }
+  }
+
+  // --- Wins: this child's own, never balances, never compared ---
+  .showcase-wins { margin-top: 48px; }
+
+  .showcase-wins-week {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px 40px;
+  }
+
+  .showcase-win {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .showcase-win-icon {
+    font-size: 44px; // icons size to 1em
+    flex-shrink: 0;
+  }
+
+  .showcase-win-figure {
+    font-size: 52px;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: #fff;
+  }
+
+  .showcase-win--silver .showcase-win-figure { color: var(--school-coin-silver, #c9d1d9); }
+
+  .showcase-win-unit {
+    font-size: 28px;
+    font-weight: 400;
+    color: $muted;
+  }
+
+  .showcase-wins-all-time {
+    margin-top: 18px;
+    font-size: 24px;
+    color: $muted;
+    font-variant-numeric: tabular-nums;
+  }
+
   .showcase-band {
     position: absolute;
     top: 0;

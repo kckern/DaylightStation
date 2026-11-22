@@ -94,4 +94,71 @@ describe('ShowcaseSlide', () => {
     expect(container.querySelector('.weekly-review-showcase--no-images')).not.toBeNull();
     expect(screen.getByRole('heading').textContent).toBe("Robin's School Work This Week");
   });
+
+  describe('wins', () => {
+    const wins = {
+      week: { silver: 21, gems: 13, rings: 960 },
+      allTime: { silver: 243, gems: 43, rings: 12400 },
+    };
+    const EMOJI = /\p{Extended_Pictographic}/u;
+
+    it('shows this week\'s chips with house icons and an all-time line', () => {
+      const { container } = render(<ShowcaseSlide item={showcase({ wins })} index={0} total={1} />);
+      const chips = container.querySelectorAll('.showcase-win');
+      expect(chips).toHaveLength(3);
+      expect([...chips].map(c => c.textContent)).toEqual(['+21silver', '+13gems', '+960rings']);
+      expect(chips[0].getAttribute('aria-label')).toBe('21 silver coins earned this week');
+      expect(chips[1].getAttribute('aria-label')).toBe('13 gems earned this week');
+      expect(chips[2].getAttribute('aria-label')).toBe('960 rings earned this week');
+      expect(chips[0].querySelector('svg.coin-icon')).not.toBeNull();
+      expect(chips[1].querySelector('svg.gem-icon')).not.toBeNull();
+      expect(chips[2].querySelector('svg.ring-icon')).not.toBeNull();
+      expect(container.querySelector('.showcase-wins-all-time').textContent)
+        .toBe('All time: 243 silver · 43 gems · 12,400 rings');
+      expect(container.textContent).not.toMatch(EMOJI);
+    });
+
+    it('uses thousands separators on big figures', () => {
+      const { container } = render(<ShowcaseSlide item={showcase({ wins: { week: { rings: 12400 } } })} index={0} total={1} />);
+      expect(container.querySelector('.showcase-win-figure').textContent).toBe('+12,400');
+    });
+
+    it('hides zero and unknown values', () => {
+      const { container } = render(<ShowcaseSlide item={showcase({
+        wins: { week: { silver: 52, gems: 0, rings: null }, allTime: { silver: 445, gems: null, rings: 0 } },
+      })} index={0} total={1} />);
+      expect([...container.querySelectorAll('.showcase-win')].map(c => c.textContent)).toEqual(['+52silver']);
+      expect(container.querySelector('.showcase-wins-all-time').textContent).toBe('All time: 445 silver');
+      expect(container.textContent).not.toContain('+0');
+    });
+
+    it('keeps the all-time line when this week has nothing', () => {
+      const { container } = render(<ShowcaseSlide item={showcase({
+        wins: { week: { silver: 0, gems: 0, rings: 0 }, allTime: { silver: 34, gems: 1, rings: 0 } },
+      })} index={0} total={1} />);
+      expect(container.querySelector('.showcase-wins-week')).toBeNull();
+      expect(container.querySelector('.showcase-wins-all-time').textContent).toBe('All time: 34 silver · 1 gem');
+    });
+
+    it('draws no strip when every value is zero or unknown', () => {
+      const { container } = render(<ShowcaseSlide item={showcase({
+        wins: { week: { silver: 0, gems: null, rings: 0 }, allTime: { silver: null, gems: 0, rings: null } },
+      })} index={0} total={1} />);
+      expect(container.querySelector('.showcase-wins')).toBeNull();
+    });
+
+    it('centres a wins-only slide with no collage or bullets', () => {
+      const { container } = render(<ShowcaseSlide item={showcase({ bullets: [], images: [], wins })} index={0} total={1} />);
+      expect(container.querySelector('.weekly-review-showcase--wins-only')).not.toBeNull();
+      expect(container.querySelector('.showcase-collage')).toBeNull();
+      expect(container.querySelector('.showcase-bullets')).toBeNull();
+      expect(screen.getByRole('heading').textContent).toBe("Robin's School Work This Week");
+      expect(container.querySelectorAll('.showcase-win')).toHaveLength(3);
+    });
+
+    it('is not wins-only when there is school work', () => {
+      const { container } = render(<ShowcaseSlide item={showcase({ wins })} index={0} total={1} />);
+      expect(container.querySelector('.weekly-review-showcase--wins-only')).toBeNull();
+    });
+  });
 });

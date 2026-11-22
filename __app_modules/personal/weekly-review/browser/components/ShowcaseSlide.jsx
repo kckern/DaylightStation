@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
 import WorkImage from './WorkImage.jsx';
 import { kidStyle } from './schoolWork.js';
+import ShowcaseWins, { hasWins } from './ShowcaseWins.jsx';
 
 let _l;
 const logger = () => (_l ||= getLogger().child({ component: 'weekly-review-showcase' }));
@@ -75,11 +76,15 @@ export default function ShowcaseSlide({ item, index, total, color }) {
     .map((url, i) => ({ url, key: `${i}:${url}` }))
     .filter(({ url }) => !failedUrls.has(url));
   const bullets = (item?.bullets || []).filter(Boolean).slice(0, MAX_BULLETS);
+  const withWins = hasWins(item?.wins);
+  // A child with wins but no school work this week: no collage, no bullets,
+  // the title and the wins centred on the stage.
+  const winsOnly = withWins && !bullets.length && !(item?.images || []).some(Boolean);
 
   useEffect(() => {
     if (!item) return;
     logger().debug('reel.showcase', {
-      learnerId: item.learnerId, images: images.length, bullets: bullets.length, source: item.source,
+      learnerId: item.learnerId, images: images.length, bullets: bullets.length, source: item.source, wins: withWins,
     });
   }, [item?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -87,7 +92,11 @@ export default function ShowcaseSlide({ item, index, total, color }) {
   const name = item.learnerName || '';
   return (
     <div
-      className={`weekly-review-showcase${images.length ? '' : ' weekly-review-showcase--no-images'}`}
+      className={[
+        'weekly-review-showcase',
+        !images.length && 'weekly-review-showcase--no-images',
+        winsOnly && 'weekly-review-showcase--wins-only',
+      ].filter(Boolean).join(' ')}
       style={kidStyle(color)}
     >
       <span className="showcase-band" aria-hidden="true" />
@@ -107,6 +116,7 @@ export default function ShowcaseSlide({ item, index, total, color }) {
       <div className="showcase-text">
         <h2 className="showcase-title">{`${name}'s School Work This Week`}</h2>
         {bullets.length > 0 && <BulletStack bullets={bullets} />}
+        {withWins && <ShowcaseWins wins={item.wins} />}
       </div>
       {total > 0 && <div className="work-card-index fullscreen-image-index">{index + 1} / {total}</div>}
     </div>
