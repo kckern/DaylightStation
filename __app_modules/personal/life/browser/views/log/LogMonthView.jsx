@@ -4,6 +4,7 @@ import { ActivityHeatmap } from "./shared/ActivityHeatmap.jsx";
 import { LifePage } from "../../components/index.js";
 import { LogReadRegion } from './shared/LogReadRegion.jsx';
 import { formatLogRangeTitle } from './shared/formatLogRangeTitle.js';
+import { summarizeActivityDays } from './shared/summarizeActivityDays.js';
 import { formatDate } from "../../lib/format.js";
 import { addCalendarDays } from '@/lib/calendarDay.js';
 
@@ -23,8 +24,8 @@ export function LogMonthView({ username, at, categories }) {
     const dayOfWeek = new Date(`${date}T00:00:00Z`).getUTCDay();
     const weekStartOffset = (dayOfWeek + 6) % 7;
     const weekKey = addCalendarDays(date, -weekStartOffset);
-    if (!weeks[weekKey]) weeks[weekKey] = [];
-    weeks[weekKey].push({ date, ...days[date] });
+    if (!weeks[weekKey]) weeks[weekKey] = {};
+    weeks[weekKey][date] = days[date];
   }
 
   const weekKeys = Object.keys(weeks).sort().reverse();
@@ -35,16 +36,15 @@ export function LogMonthView({ username, at, categories }) {
 
       <Stack gap="sm">
         {weekKeys.map(weekKey => {
-          const weekDays = weeks[weekKey];
-          const totalSources = new Set(weekDays.flatMap(d => Object.keys(d.sources || {})));
+          const summary = summarizeActivityDays(weeks[weekKey]);
 
           return (
             <Paper key={weekKey} p="sm" withBorder>
               <Group justify="space-between">
                 <Text size="sm" fw={500}>Week of {formatDate(weekKey)}</Text>
                 <Group gap="xs">
-                  <Badge size="sm" variant="light">{weekDays.length} days</Badge>
-                  <Badge size="sm" variant="light" color="green">{totalSources.size} sources</Badge>
+                  <Badge size="sm" variant="light">{summary.activeDayCount} of {summary.dayCount} days active</Badge>
+                  <Badge size="sm" variant="light" color="green">{summary.distinctSourceCount} {summary.distinctSourceCount === 1 ? 'source' : 'sources'}</Badge>
                 </Group>
               </Group>
             </Paper>
