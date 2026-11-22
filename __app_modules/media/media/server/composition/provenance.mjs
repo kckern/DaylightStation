@@ -16,6 +16,7 @@ import { PlexTitleIdentityReader } from '../adapters/provenance/PlexTitleIdentit
 import { YamlProvenanceStore } from '../adapters/provenance/YamlProvenanceStore.mjs';
 import { FilesystemProviderLogoCatalog } from '../adapters/provenance/FilesystemProviderLogoCatalog.mjs';
 import { parseRules } from '../domain/provenance/rules.mjs';
+import { parseServices } from '../domain/provenance/provenance.mjs';
 
 const list = (v) => (Array.isArray(v) ? v.map(String) : []);
 
@@ -36,6 +37,8 @@ export function provenancePolicy(raw) {
     libraries: list(cfg.libraries),
     // overrides > priority > fallbacks (domain/provenance/rules.mjs).
     rules: parseRules(cfg),
+    // How the availability service's names become provider ids, and their labels.
+    services: parseServices(cfg.services),
     // A resume after this long away still opens with the scene.
     resumeAfterHours: Number.isFinite(scene.resume_after_hours) ? scene.resume_after_hours : 6,
   };
@@ -47,7 +50,15 @@ export function provenancePolicy(raw) {
  */
 export function createProvenanceRuntime({ configService, rootLogger, contentRegistry = null, peekPlaybackStart = null, contentFilter = null }) {
   const logger = rootLogger.child({ module: 'provenance' });
-  const policy = () => provenancePolicy(configService.getHouseholdAppConfig(null, 'provenance'));
+  const warned = new Set();
+  const policy = () => {
+    const p = provenancePolicy(configService.getHouseholdAppConfig(null, 'provenance'));
+    for (const bad of p.services.invalid) {
+      const id = `${bad.provider}:${bad.match}`;
+      if (!warned.has(id)) { warned.add(id); logger.warn('provenance.config.bad-match', bad); }
+    }
+    return p;
+  };
   const apiKey = configService.getSystemAuth?.('watchmode', 'api_key') || null;
   const plexClient = contentRegistry?.get?.('plex')?.client || null;
   const logos = new FilesystemProviderLogoCatalog({ dir: path.join(configService.getDataDir(), 'content', 'providers') });

@@ -18,7 +18,7 @@
  * Reference: __docs/reference/media/provenance.md
  */
 import {
-  isFresh, lookupIdFor, streamingOffers, hasQuotaRoom, providerIdFor, PROVIDER_NAMES,
+  isFresh, lookupIdFor, streamingOffers, hasQuotaRoom, providerIdFor, providerLabel,
 } from '../../domain/provenance/provenance.mjs';
 import { firstRule, rankOffers, needsContentFilter, parseRules } from '../../domain/provenance/rules.mjs';
 
@@ -40,7 +40,7 @@ export class GetTitleProvenance {
    * @param {import('./ports/IStreamingAvailabilityGateway.mjs').IStreamingAvailabilityGateway|null} deps.availability - null when no API key
    * @param {import('./ports/IProvenanceStore.mjs').IProvenanceStore} deps.store
    * @param {import('./ports/IProviderLogoCatalog.mjs').IProviderLogoCatalog} deps.logos
-   * @param {() => {tiers:{free:string[],subscribed:string[]}, refreshDays:number, quotaReserve:number, enabled:boolean, kinds?:string[]}} deps.policy
+   * @param {() => {tiers:{free:string[],subscribed:string[]}, services?:object, refreshDays:number, quotaReserve:number, enabled:boolean, kinds?:string[]}} deps.policy
    * @param {() => Date} [deps.clock]
    * @param {{ isActive(ratingKey:string): Promise<boolean> }|null} [deps.contentFilter] - asked only when a rule uses `content_filter`
    */
@@ -96,35 +96,35 @@ export class GetTitleProvenance {
     };
 
     const override = firstRule(rules.overrides, facts, canShow);
-    if (override) return this.#answer(rk, { provider: override.provider, source: 'override', rule: override.rule });
+    if (override) return this.#answer(rk, policy.services, { provider: override.provider, source: 'override', rule: override.rule });
 
     const key = identity.key || rk;
     record ||= await this.#store.get(key);
     if (!record || !isFresh(record, now, policy.refreshDays)) {
       record = await this.#refresh(key, record, identity.imdb !== undefined ? identity : null, { ...policy, kinds }, now);
     }
-    // The id comes from the name each time, so a stored record ranks by today's
-    // mapping (a channel counts as the app it is watched in; older records carry
-    // `provider: null`).
-    const offers = (record?.offers || []).map((o) => (o?.name ? { ...o, provider: providerIdFor(o.name) ?? o.provider ?? null } : o));
+    // The id comes from the name each time, by the config's service map, so a
+    // stored record ranks by today's map (older records carry `provider: null`).
+    const services = policy.services;
+    const offers = (record?.offers || []).map((o) => (o?.name ? { ...o, provider: providerIdFor(o.name, services) } : o));
     const ranked = rankOffers(offers, rules.priority, canShow);
     if (ranked) {
-      return this.#answer(rk, {
+      return this.#answer(rk, services, {
         provider: ranked.offer.provider, source: 'availability', tier: ranked.group.name,
         name: ranked.offer.name, offerType: ranked.offer.type, checkedAt: record.checkedAt,
       });
     }
 
     const fallback = firstRule(rules.fallbacks, facts, canShow);
-    if (fallback) return this.#answer(rk, { provider: fallback.provider, source: 'fallback', rule: fallback.rule, checkedAt: record?.checkedAt ?? null });
+    if (fallback) return this.#answer(rk, services, { provider: fallback.provider, source: 'fallback', rule: fallback.rule, checkedAt: record?.checkedAt ?? null });
     return null;
   }
 
-  #answer(rk, { provider, source, tier = null, rule = null, name = null, offerType = null, checkedAt = null }) {
+  #answer(rk, services, { provider, source, tier = null, rule = null, name = null, offerType = null, checkedAt = null }) {
     return {
       ratingKey: rk,
       provider,
-      name: PROVIDER_NAMES[provider] || name || provider,
+      name: providerLabel(provider, services, name),
       tier: tier || source,
       source,
       rule: rule ? (rule.name || describeWhen(rule.when)) : null,
@@ -183,7 +183,7 @@ export class GetTitleProvenance {
     const startedAt = Date.now();
     try {
       const { sources, quota, quotaUsed } = await this.#availability.sources(lookupId);
-      const offers = streamingOffers(sources);
+      const offers = streamingOffers(sources, policy.services);
       const record = { ...base, checkedAt: now.toISOString(), offers };
       await this.#store.put(key, record, { month, quota, quotaUsed });
       this.#logger.info?.('provenance.lookup.done', {

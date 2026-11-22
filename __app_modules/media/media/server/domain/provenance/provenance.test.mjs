@@ -1,40 +1,61 @@
 import { describe, it, expect } from 'vitest';
 import {
-  providerIdFor, streamingOffers, chooseProvider, isFresh, lookupIdFor,
-  externalIdsFromGuids, hasQuotaRoom, tierOf,
+  providerIdFor, providerLabel, parseServices, streamingOffers, isFresh, lookupIdFor,
+  externalIdsFromGuids, hasQuotaRoom,
 } from './provenance.mjs';
 
+// A service map as the household config spells it (the `services` section).
+const SERVICES = parseServices([
+  { provider: 'none', names: ['AppleTV'] },
+  { provider: 'freevee', label: 'Freevee', names: ['Amazon Freevee', 'Freevee'] },
+  { provider: 'prime-video', label: 'Prime Video', match: '\\bamazon\\b|\\bprime video\\b' },
+  { provider: 'hulu', label: 'Hulu', match: '\\bhulu\\b' },
+  { provider: 'roku-channel', label: 'The Roku Channel', match: '\\broku\\b' },
+  { provider: 'peacock', label: 'Peacock', names: ['Peacock', 'Peacock Premium'] },
+  { provider: 'tubi', label: 'Tubi', names: ['Tubi TV', 'Tubi'] },
+  { provider: 'hbo-max', label: 'HBO Max', names: ['Max', 'HBO Max'] },
+]);
+
+describe('parseServices', () => {
+  it('reads labels and skips entries without a provider', () => {
+    const map = parseServices([{ names: ['X'] }, null, { provider: 'tubi', label: 'Tubi' }]);
+    expect(map.entries).toHaveLength(1);
+    expect(map.labels).toEqual({ tubi: 'Tubi' });
+    expect(map.invalid).toEqual([]);
+  });
+  it('reports a match that does not compile, and keeps the entry for its names', () => {
+    const map = parseServices([{ provider: 'tubi', names: ['Tubi TV'], match: '(' }]);
+    expect(map.invalid).toEqual([{ provider: 'tubi', match: '(' }]);
+    expect(providerIdFor('Tubi TV', map)).toBe('tubi');
+  });
+  it('is empty for no config', () => {
+    expect(parseServices(undefined).entries).toEqual([]);
+  });
+});
+
 describe('providerIdFor', () => {
-  it('maps service spellings to provider ids', () => {
-    expect(providerIdFor('Prime Video')).toBe('prime-video');
-    expect(providerIdFor('Disney+')).toBe('disney-plus');
-    expect(providerIdFor('Paramount Plus')).toBe('paramount-plus');
-    expect(providerIdFor('Tubi TV')).toBe('tubi');
-    expect(providerIdFor('Max')).toBe('hbo-max');
-    expect(providerIdFor('The Roku Channel')).toBe('roku-channel');
-    expect(providerIdFor('Apple TV+')).toBe('apple-tv');
+  it('maps names by the service map, first entry wins', () => {
+    expect(providerIdFor('Tubi TV', SERVICES)).toBe('tubi');
+    expect(providerIdFor('Max', SERVICES)).toBe('hbo-max');
+    expect(providerIdFor('Peacock Premium', SERVICES)).toBe('peacock');
+    expect(providerIdFor('Amazon Freevee', SERVICES)).toBe('freevee'); // above the Amazon pattern
+    expect(providerIdFor('Paramount+ (Via Amazon Prime)', SERVICES)).toBe('prime-video');
+    expect(providerIdFor('Prime Video Free', SERVICES)).toBe('prime-video');
+    expect(providerIdFor('HBO (Via Hulu)', SERVICES)).toBe('hulu');
+    expect(providerIdFor('Paramount+ Roku Channel', SERVICES)).toBe('roku-channel');
   });
-  it('counts a channel as the app it is watched in', () => {
-    expect(providerIdFor('Paramount+ (Via Amazon Prime)')).toBe('prime-video');
-    expect(providerIdFor('AMC+ Amazon Channel')).toBe('prime-video');
-    expect(providerIdFor('MAX (Via Amazon Prime)')).toBe('prime-video');
-    expect(providerIdFor('Prime Video Free')).toBe('prime-video');
-    expect(providerIdFor('Amazon Freevee')).toBe('prime-video');
-    expect(providerIdFor('Shout! Factory TV Amazon Channel')).toBe('prime-video');
-    expect(providerIdFor('HBO (Via Hulu)')).toBe('hulu');
-    expect(providerIdFor('Paramount+ Roku Channel')).toBe('roku-channel');
-    expect(providerIdFor('AMC+ Roku Premium Channel')).toBe('roku-channel');
-    expect(providerIdFor('AMC Plus Apple TV Channel')).toBe('apple-tv');
+  it('drops a name mapped to none', () => {
+    expect(providerIdFor('AppleTV', SERVICES)).toBeNull();
   });
-  it('does not treat Apple\'s store as the Apple TV service', () => {
-    expect(providerIdFor('AppleTV')).toBeNull();
-  });
-  it('falls back to the name slug for services without an alias', () => {
-    expect(providerIdFor('Fawesome')).toBe('fawesome');
+  it('falls back to the name slug', () => {
+    expect(providerIdFor('Fawesome', SERVICES)).toBe('fawesome');
     expect(providerIdFor('AMC+')).toBe('amc-plus');
-    expect(providerIdFor('DirecTV On Demand')).toBe('directv');
-    expect(providerIdFor('Philo')).toBe('philo');
     expect(providerIdFor('')).toBeNull();
+  });
+  it('labels by the map, else the given name, else the id', () => {
+    expect(providerLabel('prime-video', SERVICES, 'Paramount+ (Via Amazon Prime)')).toBe('Prime Video');
+    expect(providerLabel('fawesome', SERVICES, 'Fawesome')).toBe('Fawesome');
+    expect(providerLabel('fawesome', SERVICES)).toBe('fawesome');
   });
 });
 
@@ -43,52 +64,21 @@ describe('streamingOffers', () => {
     { name: 'Fawesome', type: 'free' },
     { name: 'Hoopla', type: 'free', url: 'https://hoopla/x' },
     { name: 'Amazon', type: 'rent' },
-    { name: 'AppleTV', type: 'buy' },
+    { name: 'AppleTV', type: 'sub' },
     { name: 'Hoopla', type: 'free' },
     { name: 'Peacock Premium', type: 'sub' },
     { name: 'Peacock', type: 'free' },
   ];
   it('keeps streaming offers only, one per provider, free over sub', () => {
-    const offers = streamingOffers(sources);
+    const offers = streamingOffers(sources, SERVICES);
     expect(offers.map((o) => [o.provider, o.type])).toEqual([
-      ['fawesome', 'free'], ['hoopla', 'free'], ['peacock', 'free'],
+      ['fawesome', 'free'], ['hoopla', 'free'], [null, 'sub'], ['peacock', 'free'],
     ]);
     expect(offers[1].url).toBe('https://hoopla/x');
   });
   it('tolerates junk', () => {
-    expect(streamingOffers(null)).toEqual([]);
-    expect(streamingOffers([null, {}])).toEqual([]);
-  });
-});
-
-describe('chooseProvider', () => {
-  const tiers = { free: ['tubi', 'hoopla'], subscribed: ['prime-video', 'peacock'] };
-  const offer = (provider, type = 'sub') => ({ provider, type, name: provider });
-
-  it('prefers free services, then subscriptions, then others', () => {
-    expect(chooseProvider([offer('netflix'), offer('peacock'), offer('hoopla', 'free')], tiers).provider).toBe('hoopla');
-    expect(chooseProvider([offer('netflix'), offer('peacock')], tiers)).toMatchObject({ provider: 'peacock', tier: 'subscribed', name: 'Peacock' });
-    expect(chooseProvider([offer('netflix')], tiers)).toMatchObject({ provider: 'netflix', tier: 'other' });
-  });
-  it('honours configured order within a tier', () => {
-    expect(chooseProvider([offer('hoopla', 'free'), offer('tubi', 'free')], tiers).provider).toBe('tubi');
-    expect(chooseProvider([offer('peacock'), offer('prime-video')], tiers).provider).toBe('prime-video');
-  });
-  it('skips offers with no provider and ones that cannot be shown', () => {
-    expect(chooseProvider([{ provider: null, type: 'free' }], tiers)).toBeNull();
-    expect(chooseProvider([offer('netflix'), offer('hulu')], tiers, (p) => p !== 'netflix').provider).toBe('hulu');
-  });
-  it('derives the provider from the name for records stored without one', () => {
-    const stored = [{ provider: null, name: 'Philo', type: 'sub' }, { provider: null, name: 'AMC+', type: 'sub' }];
-    expect(chooseProvider(stored, tiers, (p) => p === 'amc-plus')).toMatchObject({ provider: 'amc-plus', name: 'AMC+', tier: 'other' });
-  });
-  it('returns null when nothing qualifies', () => {
-    expect(chooseProvider([], tiers)).toBeNull();
-    expect(chooseProvider(undefined, tiers)).toBeNull();
-  });
-  it('tierOf defaults to other', () => {
-    expect(tierOf('netflix', tiers)).toBe('other');
-    expect(tierOf('netflix')).toBe('other');
+    expect(streamingOffers(null, SERVICES)).toEqual([]);
+    expect(streamingOffers([null, {}], SERVICES)).toEqual([]);
   });
 });
 

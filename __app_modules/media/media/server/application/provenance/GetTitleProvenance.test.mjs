@@ -1,6 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import { GetTitleProvenance } from './GetTitleProvenance.mjs';
 import { parseRules } from '../../domain/provenance/rules.mjs';
+import { parseServices } from '../../domain/provenance/provenance.mjs';
+
+// The household's service map, as config spells it (only what these tests use).
+const SERVICES = parseServices([
+  { provider: 'tubi', label: 'Tubi', names: ['Tubi TV', 'Tubi'] },
+  { provider: 'hoopla', label: 'Hoopla', names: ['Hoopla'] },
+  { provider: 'vidangel', label: 'VidAngel', names: ['VidAngel'] },
+  { provider: 'peacock', label: 'Peacock', names: ['Peacock'] },
+]);
 
 const NOW = new Date('2026-11-20T12:00:00Z');
 const silent = { info: () => {}, warn: () => {} };
@@ -22,7 +31,7 @@ function build({ store = fakeStore(), identity, sources = [], quotaUsed = 10, po
   const uc = new GetTitleProvenance({
     identityReader, availability, store,
     logos: { has: logos },
-    policy: () => ({ enabled: true, kinds: ['movie', 'show'], tiers: { free: ['tubi', 'hoopla'], subscribed: ['peacock'] }, refreshDays: 30, quotaReserve: 100, ...policy }),
+    policy: () => ({ enabled: true, kinds: ['movie', 'show'], tiers: { free: ['tubi', 'hoopla'], subscribed: ['peacock'] }, refreshDays: 30, quotaReserve: 100, services: SERVICES, ...policy }),
     clock: () => NOW, logger: silent, contentFilter,
   });
   return { uc, identityReader, availability, store };

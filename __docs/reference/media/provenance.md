@@ -100,22 +100,19 @@ on a filtered title it follows the scene instead of covering it.
 
 ## Choosing the service
 
-The rules live in `provenance.yml` (`domain/provenance/rules.mjs` reads them). Three
-stages, each read top to bottom, first match wins:
+The rules live in `provenance.yml` (`domain/provenance/rules.mjs` reads them). Before
+any of them, the **services** map turns the availability service's names into
+provider ids (below). Then three stages, each read top to bottom, first match wins:
 
 1. **overrides** beat the availability service. A match spends no lookup.
    Household: content filter active (certified for the `family` profile, the
    player's own default-on test) → VidAngel; collection Living Scriptures → Living
-   Scriptures; studio MagellanTV, CuriosityStream, BYUtv → their own service.
+   Scriptures or LDS → Living Scriptures; studio MagellanTV, CuriosityStream, BYUtv → their own service.
 2. **priority** groups rank the availability service's offers. Only subscription
    (`sub`) and free (`free`) listings count; rent and buy never do. Household:
    subscribed (Prime Video, Peacock, YouTube TV) > library (Hoopla, Kanopy) > free
-   (Tubi, Pluto TV, Roku Channel, Crackle, YouTube) > any other service with a logo.
-   A service sold as a channel inside another app counts as that app: "Paramount+
-   (Via Amazon Prime)", "AMC+ Amazon Channel" and any other name tied to Amazon or
-   Prime Video ("Prime Video Free", "Amazon Freevee") are Prime Video, "HBO (Via Hulu)"
-   is Hulu, "Max Roku Channel" is the Roku Channel, "AMC Plus Apple TV Channel" is
-   Apple TV (`providerIdFor`, applied to stored records too).
+   (Tubi, Pluto TV, Freevee, Roku Channel, Crackle, YouTube) > any other service
+   with a logo.
 3. **fallbacks** when no offer qualifies. Household: movies before 1950 → Internet
    Archive; movies under 40 minutes → YouTube; the documentary libraries →
    CuriosityStream; then by studio or network (Universal/NBC → Peacock, Paramount/CBS
@@ -162,13 +159,18 @@ kinds: [movie, show]
 libraries: [Movies, Documentaries, TV Shows, Documentary Series]
 lookup: { region: US, refresh_days: 30, quota_reserve: 100 }
 scene: { resume_after_hours: 6 }
+services:
+  - { provider: none, names: [AppleTV] }   # Apple's rent/buy store
+  - { provider: freevee, label: Freevee, names: [Amazon Freevee, Freevee] }
+  - { provider: prime-video, label: Prime Video, match: '\bamazon\b|\bprime video\b' }
+  - { provider: tubi, label: Tubi, names: [Tubi, Tubi TV] }
 overrides:
   - { name: content filter, provider: vidangel, when: { content_filter: active } }
-  - { name: living scriptures, provider: living-scriptures, when: { collection: [Living Scriptures] } }
+  - { name: living scriptures, provider: living-scriptures, when: { collection: [Living Scriptures, LDS] } }
 priority:
   - { name: subscribed, providers: [prime-video, peacock, youtube-tv] }
   - { name: library, providers: [hoopla, kanopy] }
-  - { name: free, providers: [tubi, pluto-tv, roku-channel, crackle, youtube] }
+  - { name: free, providers: [tubi, pluto-tv, freevee, roku-channel, crackle, youtube] }
   - { name: other, providers: any }
 fallbacks:
   - { name: early film, provider: archive-org, when: { kind: [movie], year_before: 1950 } }
@@ -179,16 +181,27 @@ fallbacks:
 An older file with `providers: { free: [...], subscribed: [...] }` and no `priority`
 still works: it reads as free > subscribed > any.
 
-Provider ids: `netflix`, `prime-video`, `hulu`, `disney-plus`, `peacock`, `hbo-max`,
-`paramount-plus`, `apple-tv`, `tubi`, `pluto-tv`, `hoopla`, `kanopy`, `roku-channel`,
-`amc-plus`, `philo`, `directv`, `youtube`, `youtube-tv`, `vimeo`, `dailymotion`,
-`crackle`, `curiosity-stream`, `magellan-tv`, `archive-org`, `byutv`, `vidangel`,
-`living-scriptures`. A few spellings map to these in `providerIdFor`
-(domain); **any other service is identified by its name's slug** ("Sling TV" →
-`sling-tv`, "AMC+" → `amc-plus`), so adding a service is only a matter of dropping
-`<slug>.svg` into the providers folder. It is seen within a minute, and stored
-records pick it up too: the provider is derived from the service name when the choice
-is made. Policy edits need a restart (household config is cached).
+### Services: names to provider ids
+
+The availability service spells services many ways ("Tubi TV", "Peacock Premium",
+"Paramount+ (Via Amazon Prime)"). The config's `services` list maps them; the code
+holds no service names. Each entry has a `provider` (the logo file name; `none`
+drops the name), an optional `label` (alt text, logs), and `names` (exact, ignoring
+case, spaces and punctuation, `+` as "plus") and/or `match` (a case-insensitive
+regular expression for a family of names). The first entry that fits wins, so put
+specific names above patterns ("Amazon Freevee" above the Amazon pattern). A
+`match` that does not compile logs `provenance.config.bad-match` and that entry
+matches by `names` only.
+
+Household: channels count as the app they are watched in (anything naming Amazon or
+Prime Video → Prime Video, Hulu → Hulu, Roku → The Roku Channel, "Apple TV Channel"
+→ Apple TV), except Freevee, which is its own free service.
+
+**A name nothing fits is identified by its slug** ("Sling TV" → `sling-tv`, "AMC+" →
+`amc-plus`), so adding a service is only a matter of dropping `<slug>.svg` into the
+providers folder. It is seen within a minute. Stored records are re-read through
+the map when the choice is made, so a map edit applies to titles already looked up.
+Policy edits need a restart (household config is cached).
 
 ## Lookups and the monthly allowance
 
@@ -230,7 +243,7 @@ to 1.5 s and the scene still appears if the answer is in before the film has rol
 
 | Layer | Path (under `__app_modules/media/media/`) |
 |---|---|
-| Domain rules | `server/domain/provenance/provenance.mjs` (offers, ids, freshness), `rules.mjs` (the household's rules) |
+| Domain rules | `server/domain/provenance/provenance.mjs` (offers, the services map, freshness), `rules.mjs` (the household's rules) |
 | Use cases | `server/application/provenance/GetTitleProvenance.mjs`, `DescribePlayStart.mjs`, ports in `ports/` |
 | Adapters | `server/adapters/provenance/` (Watchmode, Plex identity, YAML store, logo catalog) |
 | Route + wiring | `server/api/provenance.mjs`, `server/composition/provenance.mjs` |
