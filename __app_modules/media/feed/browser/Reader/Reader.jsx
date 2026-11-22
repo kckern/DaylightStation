@@ -643,7 +643,10 @@ export default function Reader() {
             if (view === 'all') params.delete('view'); else params.set('view', view);
             setSearchParams(params);
           }}>{view}</button>)}
-          {activeView !== 'offline' && <button onClick={() => reloadStream()} disabled={loading}>Refresh</button>}
+          {activeView !== 'offline' && <button
+            onClick={() => reloadStream({ pages: Math.max(1, loadedPages.current) })}
+            disabled={loading}
+          >Refresh</button>}
         </div>
         {errorMessage && <div className="reader-inline-error" role="alert">{errorMessage}<button onClick={retry}>Retry</button></div>}
         {(activeView === 'offline' ? offlineLoading : loading && !articles.length) ? (
