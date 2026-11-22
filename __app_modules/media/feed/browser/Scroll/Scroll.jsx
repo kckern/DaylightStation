@@ -84,6 +84,29 @@ function ScrollCard({ item, isNew, colors, onDismiss, onPlay, onClick, onFilter,
     }
   };
 
+  const resetDismissPreview = () => {
+    if (!wrapperRef.current) return;
+    wrapperRef.current.style.transform = '';
+    wrapperRef.current.style.opacity = '';
+  };
+
+  const springBack = () => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    wrapper.animate(
+      [
+        { transform: wrapper.style.transform || 'translateX(0)', opacity: wrapper.style.opacity || '1' },
+        { transform: 'translateX(0)', opacity: '1' },
+      ],
+      { duration: 150, easing: 'ease-out', fill: 'forwards' }
+    ).onfinish = resetDismissPreview;
+  };
+
+  const handleTouchCancel = () => {
+    touchRef.current = null;
+    resetDismissPreview();
+  };
+
   const handleTouchEnd = (e) => {
     if (!touchRef.current) return;
     const touch = e.changedTouches[0];
@@ -96,20 +119,9 @@ function ScrollCard({ item, isNew, colors, onDismiss, onPlay, onClick, onFilter,
       // Threshold met — dismiss (only when this card supports dismissal)
       feedLog.dismiss('swipe dismiss', { id: item.id, dx, elapsed });
       onDismiss(item, wrapperRef.current);
-    } else if (wrapperRef.current) {
+    } else {
       // Spring back
-      wrapperRef.current.animate(
-        [
-          { transform: wrapperRef.current.style.transform || 'translateX(0)', opacity: wrapperRef.current.style.opacity || '1' },
-          { transform: 'translateX(0)', opacity: '1' },
-        ],
-        { duration: 150, easing: 'ease-out', fill: 'forwards' }
-      ).onfinish = () => {
-        if (wrapperRef.current) {
-          wrapperRef.current.style.transform = '';
-          wrapperRef.current.style.opacity = '';
-        }
-      };
+      springBack();
     }
   };
 
@@ -124,6 +136,7 @@ function ScrollCard({ item, isNew, colors, onDismiss, onPlay, onClick, onFilter,
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchCancel}
     >
       <div className="scroll-card-surface" onClick={onClick}>
         {renderFeedCard(item, colors, {
