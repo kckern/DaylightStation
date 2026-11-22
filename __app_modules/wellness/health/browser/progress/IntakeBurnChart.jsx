@@ -22,6 +22,7 @@ export function IntakeBurnChart({ days = [], loading = false, title = 'Intake vs
   const logged = known.filter(bar => days.find(day => day.date === bar.date)?.loggingStatus !== 'unlogged');
   const gaps = bars.length - known.length;
   const avgFood = logged.length ? Math.round(logged.reduce((s, b) => s + b.food, 0) / logged.length) : null;
+  const peakFood = logged.length ? Math.round(Math.max(...logged.map(bar => bar.food))) : null;
   const avgBurn = known.length ? Math.round(known.reduce((s, b) => s + b.exercise, 0) / known.length) : null;
 
   return (
@@ -64,7 +65,7 @@ export function IntakeBurnChart({ days = [], loading = false, title = 'Intake vs
       </div>}
       {!waitingForFirstRead && known.length ? <p className="health-intakeburn__legend">
         <span>Peak exercise {Math.round(Math.max(...known.map(bar => bar.exercise)))} kcal</span>
-        <span>Peak food {Math.round(Math.max(...known.map(bar => bar.food)))} kcal</span>
+        <span>{peakFood == null ? 'No food intake logged' : `Peak food ${peakFood} kcal`}</span>
         <span>{days[0]?.date} – {days.at(-1)?.date}</span>
       </p> : null}
       {!waitingForFirstRead && <p className="health-intakeburn__caption">
