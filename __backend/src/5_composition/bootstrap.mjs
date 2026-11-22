@@ -221,6 +221,7 @@ import { MQTTSelectorAdapter } from '#adapters/hardware/mqtt-selector/MQTTSelect
 // Proxy infrastructure imports
 import { ProxyService } from '#system/proxy/ProxyService.mjs';
 import { PlexProxyAdapter } from '#adapters/proxy/PlexProxyAdapter.mjs';
+import { PlexLiveTvProxyAdapter } from '#adapters/proxy/PlexLiveTvProxyAdapter.mjs';
 import { ImmichProxyAdapter } from '#adapters/proxy/ImmichProxyAdapter.mjs';
 import { AudiobookshelfProxyAdapter } from '#adapters/proxy/AudiobookshelfProxyAdapter.mjs';
 import { FreshRSSProxyAdapter } from '#adapters/proxy/FreshRSSProxyAdapter.mjs';
@@ -857,6 +858,12 @@ export function createProxyService(config) {
       { host: config.plex.host, token: config.plex.token },
       { logger }
     ));
+  }
+
+  // Plex free live TV (watch.plex.tv/live-tv) lives on plex.tv, not on our
+  // server; the same account token reaches it. See PlexLiveTvProxyAdapter.
+  if (config.plex?.token) {
+    proxyService.register(new PlexLiveTvProxyAdapter({ token: config.plex.token }));
   }
 
   // Register Immich adapter if configured

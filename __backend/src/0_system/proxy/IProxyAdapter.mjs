@@ -78,6 +78,20 @@ export function isProxyAdapter(obj) {
  *   JSON body instead of piping the upstream error through — for upstreams whose
  *   status misleads the client (Plex's 404 for a file it cannot READ becomes
  *   503 source-unreadable). Return null (the default) to pass the error through.
+ *
+ * allowsPath(path: string): boolean
+ *   When defined, a request whose (transformed) path it rejects answers 404
+ *   without reaching the upstream. For adapters whose credential reaches more
+ *   than the proxy should expose (a Plex account token on plex.tv).
+ *   Default: every path is forwarded.
+ *
+ * getBodyRewriter(path: string): ((text: string) => string) | null
+ *   For a path whose 2xx body must be changed before it reaches the client,
+ *   return a text → text function. ProxyService then asks the upstream for an
+ *   uncompressed body, buffers it, rewrites it and sends it with a recomputed
+ *   content-length (a rewriter that throws becomes a 502, never the original
+ *   bytes). For small text documents only, such as HLS playlists whose URLs
+ *   carry the upstream credential. Return null (the default) to stream as-is.
  */
 
 export const IProxyAdapter = {
@@ -94,7 +108,8 @@ export const IProxyAdapter = {
   shouldRetry(statusCode, attempt) { return statusCode >= 500 || statusCode === 429; },
   getTimeout() { return 30000; },
   getFallbackPath(path, statusCode) { return null; },
-  getErrorReplacement(path, statusCode) { return null; }
+  getErrorReplacement(path, statusCode) { return null; },
+  getBodyRewriter(path) { return null; }
 };
 
 export default { IProxyAdapter, isProxyAdapter };

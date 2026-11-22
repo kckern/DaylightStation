@@ -1,4 +1,4 @@
-import { registerFreshVideoProvider, registerOnlineVideoProviders } from "../../../__app_modules/media/media/server/composition/content-providers.mjs";
+import { registerFreshVideoProvider, registerOnlineVideoProviders, registerPlexLiveTvProvider } from "../../../__app_modules/media/media/server/composition/content-providers.mjs";
 import { registerArtCanvasSources } from '../../../__app_modules/media/art/server/composition/canvas-providers.mjs';
 import { pianoCurriculumEnrichment } from '../../../__app_modules/learning/piano/server/composition/plex-curriculum.mjs';
 // Installed content-source assembly; retains product registration and ordering.
@@ -34,6 +34,9 @@ export function createContentRegistry(config, deps = {}) {
 
   // Register StreamAdapter for `stream:` prefix — arbitrary online URLs.
   registerOnlineVideoProviders({ registry, deps });
+
+  // Register `plex-live:` — Plex's free live TV channels (needs the Plex token).
+  registerPlexLiveTvProvider({ registry, config, deps });
 
   registerRemoteCatalogSources(registry, config, httpClient);
 

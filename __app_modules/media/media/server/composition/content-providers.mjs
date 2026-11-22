@@ -3,6 +3,8 @@ import { FreshVideoAdapter } from "../adapters/providers/freshvideo/FreshVideoAd
 import { StreamAdapter } from "../../../../../__capabilities/playback/server/adapters/stream/StreamAdapter.mjs";
 import { YouTubeContentSource } from "#adapters/content/media/youtube/YouTubeContentSource.mjs";
 import { YouTubeAdapter } from "#adapters/content/media/youtube/YouTubeAdapter.mjs";
+import { PlexLiveTvLineup } from "#adapters/content/media/plex-live/PlexLiveTvLineup.mjs";
+import { PlexLiveTvContentSource } from "#adapters/content/media/plex-live/PlexLiveTvContentSource.mjs";
 import { IframeStreamResolver } from "../../../../../__capabilities/playback/server/adapters/stream/resolvers/IframeStreamResolver.mjs";
 import { ScrapeStreamResolver } from "../../../../../__capabilities/playback/server/adapters/stream/resolvers/ScrapeStreamResolver.mjs";
 import { YtDlpStreamResolver } from "../../../../../__capabilities/playback/server/adapters/stream/resolvers/YtDlpStreamResolver.mjs";
@@ -59,4 +61,24 @@ export function registerOnlineVideoProviders({ registry, deps }) {
       { category: 'media', provider: 'youtube' }
     );
   }
+}
+
+/**
+ * `plex-live:<slug>` — Plex's free live TV channels (watch.plex.tv/live-tv),
+ * read from plex.tv with the media library's account token and played through
+ * the `plex-live` proxy. Skipped when there is no Plex token.
+ */
+export function registerPlexLiveTvProvider({ registry, config, deps }) {
+  const token = config.plex?.token;
+  if (!token) return;
+  const logger = deps.logger || console;
+  const lineup = new PlexLiveTvLineup({
+    token,
+    httpClient: new HttpClient({ logger }),
+    logger: logger.child?.({ module: 'plex-live' }) || logger,
+  });
+  registry.register(
+    new PlexLiveTvContentSource({ lineup, logger: logger.child?.({ module: 'plex-live' }) || logger }),
+    { category: 'media', provider: 'plex-live' }
+  );
 }

@@ -104,6 +104,16 @@ export class ProxyService {
       return;
     }
 
+    // An adapter can confine its credential to the paths it exists to serve.
+    if (typeof adapter.allowsPath === 'function') {
+      const path = adapter.transformPath?.(req.url) || req.url;
+      if (!adapter.allowsPath(path)) {
+        this.#logger.warn?.('proxy.path-refused', { service: serviceName, path: String(path).split('?')[0] });
+        res.status(404).json({ error: 'Not found', service: serviceName });
+        return;
+      }
+    }
+
     const retryConfig = adapter.getRetryConfig?.() || { maxRetries: 3, delayMs: 500 };
     const timeout = adapter.getTimeout?.() || 30000;
 
@@ -184,6 +194,11 @@ export class ProxyService {
     // Build headers
     const headers = { ...req.headers };
     delete headers.host; // Don't forward host header
+
+    // A body the adapter rewrites must arrive as plain text: ask the upstream
+    // not to compress it rather than decoding every encoding here.
+    const rewritesBody = typeof adapter.getBodyRewriter === 'function' && adapter.getBodyRewriter(path) != null;
+    if (rewritesBody) delete headers['accept-encoding'];
 
     // Add auth headers if provided
     const authHeaders = adapter.getAuthHeaders?.();
@@ -328,6 +343,15 @@ export class ProxyService {
           return;
         }
 
+        // An adapter can rewrite a successful text body before it leaves (an
+        // HLS playlist whose URLs carry the upstream credential). Buffered, so
+        // only for small documents; the adapter decides which paths qualify.
+        const rewriter = statusCode >= 200 && statusCode < 300 ? adapter.getBodyRewriter?.(path) : null;
+        if (typeof rewriter === 'function' && !res.headersSent) {
+          this.#sendRewrittenBody(adapter, req, proxyRes, res, rewriter, statusCode, serviceName).then(resolve);
+          return;
+        }
+
         if (!res.headersSent) {
           const responseHeaders = { ...proxyRes.headers };
 
@@ -391,6 +415,46 @@ export class ProxyService {
       } else {
         proxyReq.end();
       }
+    });
+  }
+
+  /**
+   * Buffer an upstream body, pass it through the adapter's rewriter and send
+   * the result. A rewriter that throws turns into a 502: forwarding the
+   * original bytes would leak whatever the rewrite exists to remove.
+   * @private
+   */
+  #sendRewrittenBody(adapter, req, proxyRes, res, rewriter, statusCode, serviceName) {
+    return new Promise((resolve) => {
+      const chunks = [];
+      proxyRes.on('data', (chunk) => chunks.push(chunk));
+      proxyRes.on('error', (error) => {
+        this.#logger.error?.('proxy.rewrite.upstream-error', { service: serviceName, error: error.message });
+        if (!res.headersSent) res.status(502).json({ error: 'Proxy error', service: serviceName });
+        resolve();
+      });
+      proxyRes.on('end', () => {
+        if (res.destroyed || res.writableEnded) return resolve();
+        let body;
+        try {
+          body = Buffer.from(String(rewriter(Buffer.concat(chunks).toString('utf8'))), 'utf8');
+        } catch (error) {
+          this.#logger.error?.('proxy.rewrite.failed', { service: serviceName, error: error.message });
+          res.status(502).json({ error: 'Proxy rewrite failed', service: serviceName });
+          return resolve();
+        }
+        const responseHeaders = { ...proxyRes.headers };
+        delete responseHeaders['content-length'];
+        delete responseHeaders['content-encoding'];
+        delete responseHeaders['transfer-encoding'];
+        delete responseHeaders.etag;
+        const extra = adapter.getResponseHeaders?.(req.url, statusCode, responseHeaders);
+        if (extra) Object.assign(responseHeaders, extra);
+        responseHeaders['content-length'] = String(body.length);
+        res.writeHead(statusCode, responseHeaders);
+        res.end(body);
+        resolve();
+      });
     });
   }
 
