@@ -69,7 +69,10 @@ export function deviceStateLabel(state, { offline = false } = {}) {
 export function remoteStatusLine(state, title) {
   const name = typeof title === 'string' && title.trim() ? title.trim() : '';
   if (state === 'error') return name ? `Playback failed — ${name}` : 'Playback failed';
-  if (!name) return 'Nothing playing right now';
+  if (!name) {
+    const stateLabel = playbackStateLabel(state);
+    return stateLabel && stateLabel !== 'Nothing playing' ? stateLabel : 'Nothing playing right now';
+  }
   switch (state) {
     case 'playing': return `Playing ${name}`;
     case 'paused': return `Paused — ${name}`;
