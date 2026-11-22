@@ -177,60 +177,63 @@ export function ProgressView() {
         {form && (
           <Stack component="form" gap="sm" onSubmit={event => { event.preventDefault(); if (!saving) saveGoals(); }}>
             {saveError ? <Text role="alert" size="sm" c="red">{goalSaveMessage(saveError)}</Text> : null}
-            <SegmentedControl aria-label="Sex for budget calculation" value={form.sex || 'male'} onChange={(v) => setForm({ ...form, sex: v })}
-              data={[{ label: 'Male', value: 'male' }, { label: 'Female', value: 'female' }]} />
-            <NumberInput label="Target weight" suffix=" lbs" value={form.targetWeightLbs}
-              onChange={(v) => setForm({ ...form, targetWeightLbs: v })} />
-            <NumberInput label="Weekly rate" suffix=" lbs/wk" step={0.25} decimalScale={2} value={form.weeklyRateLbs}
-              onChange={(v) => setForm({ ...form, weeklyRateLbs: v })} />
-            {/* Drives the "days to N%" projection. Left blank it falls back to
-                DEFAULT_TARGET_BODY_FAT_PCT rather than hiding the cell. */}
-            <NumberInput label="Target body fat" suffix=" %" step={0.5} decimalScale={1}
-              placeholder={String(DEFAULT_TARGET_BODY_FAT_PCT)} value={form.targetBodyFatPct}
-              onChange={(v) => setForm({ ...form, targetBodyFatPct: v })} />
-            <NumberInput label="Activity baseline" step={0.05} decimalScale={2} value={form.activityBaseline}
-              disabled={usingFixedBreakEven}
-              description={usingFixedBreakEven ? 'Clear Break even to use Activity baseline.' : undefined}
-              onChange={(v) => setForm({ ...form, activityBaseline: v })} />
-            {/* A fixed break-even replaces BMR x activity baseline; blank uses the formula. */}
-            <NumberInput label="Break even" suffix=" kcal" placeholder="From formula" value={form.maintenanceKcal ?? ''}
-              onChange={(v) => setForm({ ...form, maintenanceKcal: v })} />
-            <NumberInput label="Budget floor" suffix=" kcal" value={form.budgetFloor}
-              onChange={(v) => setForm({ ...form, budgetFloor: v })} />
-            <NumberInput label="Height" suffix=" in" value={form.heightIn}
-              onChange={(v) => setForm({ ...form, heightIn: v })} />
-            <NumberInput label="Birth year" hideControls={false} value={form.birthYear}
-              onChange={(v) => setForm({ ...form, birthYear: v })} />
+            <fieldset disabled={saving} style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}>
+              <Stack gap="sm">
+                <SegmentedControl aria-label="Sex for budget calculation" value={form.sex || 'male'} onChange={(v) => setForm({ ...form, sex: v })}
+                  data={[{ label: 'Male', value: 'male' }, { label: 'Female', value: 'female' }]} />
+                <NumberInput label="Target weight" suffix=" lbs" value={form.targetWeightLbs}
+                  onChange={(v) => setForm({ ...form, targetWeightLbs: v })} />
+                <NumberInput label="Weekly rate" suffix=" lbs/wk" step={0.25} decimalScale={2} value={form.weeklyRateLbs}
+                  onChange={(v) => setForm({ ...form, weeklyRateLbs: v })} />
+                {/* Drives the "days to N%" projection. Left blank it falls back to
+                    DEFAULT_TARGET_BODY_FAT_PCT rather than hiding the cell. */}
+                <NumberInput label="Target body fat" suffix=" %" step={0.5} decimalScale={1}
+                  placeholder={String(DEFAULT_TARGET_BODY_FAT_PCT)} value={form.targetBodyFatPct}
+                  onChange={(v) => setForm({ ...form, targetBodyFatPct: v })} />
+                <NumberInput label="Activity baseline" step={0.05} decimalScale={2} value={form.activityBaseline}
+                  disabled={usingFixedBreakEven}
+                  description={usingFixedBreakEven ? 'Clear Break even to use Activity baseline.' : undefined}
+                  onChange={(v) => setForm({ ...form, activityBaseline: v })} />
+                {/* A fixed break-even replaces BMR x activity baseline; blank uses the formula. */}
+                <NumberInput label="Break even" suffix=" kcal" placeholder="From formula" value={form.maintenanceKcal ?? ''}
+                  onChange={(v) => setForm({ ...form, maintenanceKcal: v })} />
+                <NumberInput label="Budget floor" suffix=" kcal" value={form.budgetFloor}
+                  onChange={(v) => setForm({ ...form, budgetFloor: v })} />
+                <NumberInput label="Height" suffix=" in" value={form.heightIn}
+                  onChange={(v) => setForm({ ...form, heightIn: v })} />
+                <NumberInput label="Birth year" hideControls={false} value={form.birthYear}
+                  onChange={(v) => setForm({ ...form, birthYear: v })} />
 
-            {/* Macro targets (Task 6.1). Leave one blank and it is CLEARED, not
-                zero — the bar row draws nothing for a macro with no target
-                rather than drawing a bar against a goal of 0. */}
-            <Text size="xs" c="dimmed">Macro goals — blank means no target</Text>
-            {MACRO_GOAL_FIELDS.map((f) => (
-              <NumberInput key={f.key} label={f.label} suffix=" g" min={0}
-                value={form.macroGoals?.[f.key] ?? ''}
-                onChange={(v) => setForm(setMacroGoal(form, f.key, v))} />
-            ))}
+                {/* Macro targets (Task 6.1). Leave one blank and it is CLEARED, not
+                    zero — the bar row draws nothing for a macro with no target
+                    rather than drawing a bar against a goal of 0. */}
+                <Text size="xs" c="dimmed">Macro goals — blank means no target</Text>
+                {MACRO_GOAL_FIELDS.map((f) => (
+                  <NumberInput key={f.key} label={f.label} suffix=" g" min={0}
+                    value={form.macroGoals?.[f.key] ?? ''}
+                    onChange={(v) => setForm(setMacroGoal(form, f.key, v))} />
+                ))}
 
-            {/* Watch micros. Clearing a limit stops watching that micro
-                outright — there is no "watched with no limit" state. */}
-            <Text size="xs" c="dimmed">Watch micros — blank means not watched</Text>
-            {WATCH_MICRO_FIELDS.map((f) => {
-              const watch = watchFor(form, f.key);
-              return (
-                <div key={f.key} className="health-goals__watch">
-                  <NumberInput label={`${f.label} limit`} suffix={` ${f.unit}`} min={0}
-                    value={watch?.limit ?? ''}
-                    onChange={(v) => setForm(setWatchMicro(form, f.key, { limit: v }))} />
-                  {watch ? (
-                    <SegmentedControl aria-label={`${f.label} direction`} size="xs" value={watch.direction}
-                      onChange={(v) => setForm(setWatchMicro(form, f.key, { direction: v }))}
-                      data={[{ label: 'Stay under', value: 'ceiling' }, { label: 'Reach', value: 'floor' }]} />
-                  ) : null}
-                </div>
-              );
-            })}
-
+                {/* Watch micros. Clearing a limit stops watching that micro
+                    outright — there is no "watched with no limit" state. */}
+                <Text size="xs" c="dimmed">Watch micros — blank means not watched</Text>
+                {WATCH_MICRO_FIELDS.map((f) => {
+                  const watch = watchFor(form, f.key);
+                  return (
+                    <div key={f.key} className="health-goals__watch">
+                      <NumberInput label={`${f.label} limit`} suffix={` ${f.unit}`} min={0}
+                        value={watch?.limit ?? ''}
+                        onChange={(v) => setForm(setWatchMicro(form, f.key, { limit: v }))} />
+                      {watch ? (
+                        <SegmentedControl aria-label={`${f.label} direction`} size="xs" value={watch.direction}
+                          onChange={(v) => setForm(setWatchMicro(form, f.key, { direction: v }))}
+                          data={[{ label: 'Stay under', value: 'ceiling' }, { label: 'Reach', value: 'floor' }]} />
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </Stack>
+            </fieldset>
             <Button type="submit" loading={saving}>Save goals</Button>
           </Stack>
         )}
