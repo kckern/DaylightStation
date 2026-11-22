@@ -46,7 +46,7 @@ function squareDescription(entity, tone) {
   return `${displayName(entity)}: ${[stateWords(entity), attentionWords(tone)].filter(Boolean).join(' · ')}`;
 }
 
-/** "Kitchen light · On · changed 8:29 pm" — what a square is, in words. */
+/** "Kitchen light: On · changed 8:29 pm" — what a square is, in words. */
 function tipText(entity, tone) {
   const since = formatSince(entity.lastChanged);
   return [squareDescription(entity, tone), since ? `changed ${since}` : null].filter(Boolean).join(' · ');
@@ -152,6 +152,7 @@ export function MosaicView({ entities, mosaic, summary, haUrl, toggle, getFallba
   const toneById = useMemo(() => new Map(
     groups.flatMap(group => group.items.map(({ entity, tone }) => [entity.id, tone])),
   ), [groups]);
+  const tipId = tip?.id ?? null;
 
   useEffect(() => {
     logger.info('home.mosaic.mount', { mode, grouped: Boolean(mosaic) });
@@ -169,11 +170,13 @@ export function MosaicView({ entities, mosaic, summary, haUrl, toggle, getFallba
   };
 
   const hideTip = useCallback(() => { tipIdRef.current = null; setTip(null); }, []);
+  useEffect(() => {
+    if (tipId && !toneById.has(tipId)) hideTip();
+  }, [tipId, toneById, hideTip]);
   // An open tooltip is a layer on the app's one Escape handler, so Escape hides
   // it wherever focus is; with no tooltip open, Escape reaches the drawer.
   useDismissLayer(Boolean(tip), hideTip);
   // The square the tooltip describes names it (squares are memoised, so set it here).
-  const tipId = tip?.id ?? null;
   useLayoutEffect(() => {
     const box = boxRef.current;
     if (!box || !tipId) return undefined;
@@ -269,7 +272,6 @@ export function MosaicView({ entities, mosaic, summary, haUrl, toggle, getFallba
       </div>
       {groups.length ? (
         // Squares are buttons; the container only delegates their pointer and focus events.
-        // eslint-disable-next-line jsx-a11y/no-static-element-interactions
         <div
           className="home-mosaic__board"
           ref={boxRef}

@@ -9,7 +9,7 @@ vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: (...a) 
 import { MosaicView } from './MosaicView.jsx';
 import { resetApiResourceCache } from '../../../../../frontend/src/lib/hooks/useApiResource.js';
 
-const plain = (s) => s.replace(/[  ]/g, ' ');
+const plain = (s) => s.replace(/[\u00a0\u202f]/g, ' ');
 const kitchen = { id: 'kitchen', name: 'Kitchen', source: 'provider' };
 const office = { id: 'office', name: 'Office', source: 'inferred' };
 const entity = (id, over = {}) => ({
@@ -89,10 +89,10 @@ describe('MosaicView', () => {
     renderMosaic();
     fireEvent.mouseOver(square('Kitchen light'));
     const tip = screen.getByRole('tooltip');
-    expect(plain(tip.textContent)).toMatch(/^Kitchen light · On · changed .+/);
+    expect(plain(tip.textContent)).toMatch(/^Kitchen light: On · changed .+/);
     expect(screen.getAllByRole('tooltip')).toHaveLength(1);
     fireEvent.mouseOver(square('Desk lamp'));
-    expect(plain(screen.getByRole('tooltip').textContent)).toBe('Desk lamp · Off');
+    expect(plain(screen.getByRole('tooltip').textContent)).toBe('Desk lamp: Off');
     fireEvent.keyDown(square('Desk lamp'), { key: 'Escape' });
     expect(screen.queryByRole('tooltip')).toBeNull();
     fireEvent.click(square('Kitchen light'));
@@ -156,13 +156,43 @@ describe('MosaicView', () => {
     };
     const tap = (el) => { touchDown(el); fireEvent.mouseOver(el); fireEvent.focus(el); fireEvent.click(el, { detail: 1 }); };
     tap(lamp);
-    expect(plain(screen.getByRole('tooltip').textContent)).toBe('Desk lamp · Off');
+    expect(plain(screen.getByRole('tooltip').textContent)).toBe('Desk lamp: Off');
     expect(screen.queryByRole('dialog')).toBeNull();
     tap(square('Kitchen light'));
-    expect(plain(screen.getByRole('tooltip').textContent)).toMatch(/^Kitchen light/);
+    expect(plain(screen.getByRole('tooltip').textContent)).toMatch(/^Kitchen light:/);
     expect(screen.queryByRole('dialog')).toBeNull();
     tap(square('Kitchen light'));
     expect(await screen.findByRole('dialog', { name: 'Kitchen light' })).toBeTruthy();
+  });
+
+  it('keeps a restored device tooltip closed until the next first tap', async () => {
+    const toggle = vi.fn();
+    const view = renderMosaic({ toggle });
+    const renderWithEntities = nextEntities => view.rerender(
+      <MantineProvider><DismissStackProvider>
+        <MosaicView entities={nextEntities} mosaic={mosaic} summary={summary} haUrl="https://ha.example" toggle={toggle} />
+      </DismissStackProvider></MantineProvider>,
+    );
+    const tap = el => {
+      const event = new MouseEvent('pointerdown', { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'pointerType', { value: 'touch' });
+      fireEvent(el, event);
+      fireEvent.mouseOver(el);
+      fireEvent.focus(el);
+      fireEvent.click(el, { detail: 1 });
+    };
+
+    tap(square('Desk lamp'));
+    expect(screen.getByRole('tooltip')).toBeTruthy();
+    renderWithEntities(entities.filter(item => item.id !== 'light.office_desk'));
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+    renderWithEntities(entities);
+    const restoredLamp = square('Desk lamp');
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    tap(restoredLamp);
+    expect(screen.getByRole('tooltip')).toBeTruthy();
+    expect(restoredLamp.getAttribute('aria-describedby')).toBe(screen.getByRole('tooltip').id);
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('switches to By type, showing the type groups, and remembers it', () => {
@@ -193,7 +223,7 @@ describe('MosaicView', () => {
     renderMosaic();
     expect(square('Hall motion').getAttribute('aria-label')).toBe('Hall motion: not answering');
     fireEvent.mouseOver(square('Hall motion'));
-    expect(plain(screen.getByRole('tooltip').textContent)).toBe('Hall motion · not answering');
+    expect(plain(screen.getByRole('tooltip').textContent)).toBe('Hall motion: not answering');
     const legend = screen.getByRole('list', { name: 'What the colours mean' });
     expect(within(legend).getByText('Not answering')).toBeTruthy();
     expect(legend.querySelector('.home-mosaic__swatch--silent')).toBeTruthy();
