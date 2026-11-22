@@ -5,7 +5,8 @@
 // (FlingButton.jsx) while something plays here. A stopped session with
 // retained queue items keeps a ready handle; an actually empty session renders
 // nothing instead of wasting phone space on dead "Idle" chrome.
-import React, { useCallback, useContext, useRef, useSyncExternalStore } from 'react';
+import React, { useCallback, useContext, useId, useRef, useSyncExternalStore } from 'react';
+import { VisuallyHidden } from '@mantine/core';
 import {
   IconPlayerPlayFilled,
   IconPlayerPauseFilled,
@@ -73,6 +74,7 @@ function SleepTimeLeft({ sleep }) {
 }
 
 export function MiniPlayer() {
+  const queuePositionId = useId();
   const { controller, snapshot, transport } = useSessionController('local');
   const live = usePlaybackPosition(controller);
   const problem = useLocalProblem(controller);
@@ -173,6 +175,7 @@ export function MiniPlayer() {
         data-testid="mini-player-open-nowplaying"
         className="mini-player-title"
         aria-label={`${item ? `Open now playing, ${shownTitle}` : `Open queue, ${shownTitle}`}. ${stateLine}${sleepLeft ? `. ${sleepLeft.label}` : ''}`}
+        aria-describedby={queueCount > 1 ? queuePositionId : undefined}
         onClick={() => { if (view !== 'nowPlaying') push('nowPlaying', {}); }}
       >
         <span className="mini-player-title-stack">
@@ -181,9 +184,14 @@ export function MiniPlayer() {
         </span>
         {queueCount > 1 && (
           // Playing: "2/5". Ready (nothing started yet): "5 queued" — the count is never lost.
-          <span className="mini-queue-count" data-testid="mini-queue-count">
-            {queuePos >= 0 ? `${queuePos + 1}/${queueCount}` : `${queueCount} queued`}
-          </span>
+          <>
+            <span className="mini-queue-count" data-testid="mini-queue-count">
+              {queuePos >= 0 ? `${queuePos + 1}/${queueCount}` : `${queueCount} queued`}
+            </span>
+            <VisuallyHidden id={queuePositionId}>
+              {queuePos >= 0 ? `Item ${queuePos + 1} of ${queueCount}` : `${queueCount} items queued`}
+            </VisuallyHidden>
+          </>
         )}
         <SleepTimeLeft sleep={sleepLeft} />
       </button>
