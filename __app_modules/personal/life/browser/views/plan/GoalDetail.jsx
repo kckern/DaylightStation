@@ -1,6 +1,7 @@
-import { Stack, Paper, Text, Group, Badge, Progress, Timeline, Button, Select, Alert } from '@mantine/core';
-import { useState } from 'react';
+import { Stack, Paper, Text, Group, Badge, Progress, Timeline, Button as MantineButton, Select, Alert } from '@mantine/core';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { IconFlag, IconHistory } from '@tabler/icons-react';
+import { SubmitButton } from '@/lib/ui';
 import { useGoalDetail } from "../../hooks/useLifePlan.js";
 import { goalStateColor } from "../../theme/semantics.js";
 import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
@@ -17,9 +18,17 @@ function formatHistoryDate(value) {
 export function GoalDetail({ goalId, username }) {
   const { goal, loading, error, refetch, transitionGoal } = useGoalDetail(goalId, username);
   const [transitionState, setTransitionState] = useState(null);
-
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
+  const headingRef = useRef(null);
+  const transitionFocused = useRef(false);
+  const focusHeadingAfterTransition = useRef(false);
+
+  useLayoutEffect(() => {
+    if (!focusHeadingAfterTransition.current) return;
+    focusHeadingAfterTransition.current = false;
+    headingRef.current?.focus();
+  });
 
   if (loading && !goal) return <LoadingState />;
   if (error) return <ErrorState label="Goal" error={error} onRetry={refetch} />;
@@ -30,11 +39,15 @@ export function GoalDetail({ goalId, username }) {
   const canTransition = Boolean(selectedTransition) && !submitting;
   const handleTransition = async () => {
     if (!canTransition) return;
+    const wasFocused = transitionFocused.current;
     setSubmitting(true);
     setSubmitError(null);
     try {
-      await transitionGoal(goalId, selectedTransition, 'Manual transition');
+      const updatedGoal = await transitionGoal(goalId, selectedTransition, 'Manual transition');
       setTransitionState(null);
+      if (wasFocused && updatedGoal?.validTransitions?.length === 0) {
+        focusHeadingAfterTransition.current = true;
+      }
     } catch (err) {
       setSubmitError(err.message);
     } finally {
@@ -43,7 +56,7 @@ export function GoalDetail({ goalId, username }) {
   };
 
   return (
-    <LifePage title={goal.name} actions={<Badge color={goalStateColor(goal.state)} size="lg">{goal.state}</Badge>}>
+    <LifePage title={goal.name} titleRef={headingRef} actions={<Badge color={goalStateColor(goal.state)} size="lg">{goal.state}</Badge>}>
       {goal.why && (
         <Paper p="sm" withBorder>
           <Text size="sm" fw={500} mb={4}>Why</Text>
@@ -135,9 +148,11 @@ export function GoalDetail({ goalId, username }) {
               onChange={setTransitionState}
               size="xs"
             />
-            <Button size="xs" disabled={!canTransition} onClick={handleTransition}>
+            <SubmitButton as={MantineButton} type="button" size="xs" disabled={!canTransition} pending={submitting}
+              onFocus={() => { transitionFocused.current = true; }}
+              onBlur={() => { transitionFocused.current = false; }} onClick={handleTransition}>
               Transition
-            </Button>
+            </SubmitButton>
           </Group>
           {submitError && <Alert color="red" title="Transition failed">{submitError}</Alert>}
         </Paper>
