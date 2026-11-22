@@ -7,6 +7,7 @@ import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { localTodayISO } from "../today/mealBuckets.js";
 import { MEDICAL_METRICS } from "../../portable/contracts/health/medicalMetrics.mjs";
+import { isISODate } from "../../portable/contracts/health/isoDate.mjs";
 
 const logger = createAppLogger('health').child('medical');
 
@@ -101,7 +102,7 @@ function MedicalReadingSheet({ onClose }) {
   const paired = MEDICAL_METRICS[metric]?.paired === true;
   const isBp = metric === 'bp';
   const valid = Boolean(metric) && isFiniteNumber(form.value) && Boolean(form.unit.trim())
-    && (!paired || isFiniteNumber(form.value2));
+    && (!paired || isFiniteNumber(form.value2)) && isISODate(form.date);
 
   const save = async () => {
     const body = {
@@ -136,7 +137,7 @@ function MedicalReadingSheet({ onClose }) {
         ) : null}
         <TextInput label="Unit" placeholder="e.g. mmHg, mg/dL, bpm" value={form.unit} disabled={saving}
           onChange={(e) => setForm({ ...form, unit: e.currentTarget.value })} />
-        <TextInput type="date" label="Date" value={form.date} disabled={saving}
+        <TextInput type="date" label="Date" withAsterisk required value={form.date} disabled={saving}
           onChange={(e) => setForm({ ...form, date: e.currentTarget.value })} />
         <TextInput label="Note" placeholder="optional" value={form.note} disabled={saving}
           onChange={(e) => setForm({ ...form, note: e.currentTarget.value })} />
