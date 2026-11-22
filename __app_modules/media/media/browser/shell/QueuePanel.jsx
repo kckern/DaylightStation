@@ -149,7 +149,12 @@ export function QueuePanel({ target = 'local', availability = null }) {
             it.priority === 'upNext' ? 'queue-item--upnext' : '',
           ].filter(Boolean).join(' ');
           return (
-            <li key={it.queueItemId} data-testid={`queue-item-${it.queueItemId}`} className={cls}>
+            <li
+              key={it.queueItemId}
+              data-testid={`queue-item-${it.queueItemId}`}
+              className={cls}
+              aria-current={isCurrent ? 'true' : undefined}
+            >
               <button
                 className="queue-item-title"
                 data-testid={`queue-jump-${it.queueItemId}`}
