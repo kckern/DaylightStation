@@ -68,6 +68,7 @@ export function deviceStateLabel(state, { offline = false } = {}) {
  *  "Nothing playing right now"). Title-less states fall back gracefully. */
 export function remoteStatusLine(state, title) {
   const name = typeof title === 'string' && title.trim() ? title.trim() : '';
+  if (state === 'error') return name ? `Playback failed — ${name}` : 'Playback failed';
   if (!name) return 'Nothing playing right now';
   switch (state) {
     case 'playing': return `Playing ${name}`;
