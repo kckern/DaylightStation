@@ -66,6 +66,38 @@ Sentence Ladder reports each corpus instance separately. Its daily agenda
 status comes from the current derived queue; its longitudinal report comes from
 append-only study evidence.
 
+## Learner work (outward read)
+
+`ListLearnerWork` is how another app reads what the children did for school:
+every learner on the roster, every item inside `[from, to)` (YYYY-MM-DD,
+end exclusive), as plain learner-audience work items. Each item is built by
+`workItem()` in `server/domain/learnerWork.mjs`, which emits exactly
+`WORK_ITEM_KEYS` (`learnerId, learnerName, kind, verb, title, subtitle, at,
+studyDay, imageUrl, groupKey, weight, subject`), so a score, percent,
+correctness, answer, coin or streak on a store row cannot leak through.
+
+| Source | `kind` / `verb` |
+|---|---|
+| Reading log | `book` started / finished |
+| Finished course sessions | `course` completed (passed) / worked |
+| Printed activities (completed, not voided) | `activity` completed |
+| Card ladder day files | `program` worked (`weight` = words that day) |
+
+Each source is optional and read in parallel per learner; one that throws
+costs that learner that source only (`school.learner-work.source-failed`).
+Piano-lesson evidence and Glossika are not sources yet: the first has no
+title or picture to show, the second no per-day counts.
+
+The public entry is `server/composition/learner-work.mjs`:
+`createSchoolLearnerWork(...)` returns `{ list({ from, to }), image(ref) }`,
+or null when School is not wired (`school.learner-work.unwired`,
+`school.learner-work.wiring-failed`). `image(ref)` is
+`GetLearnerWorkImage`: a course poster, a program poster, or a printed
+activity's rendered page (see
+[Printed activities](./programs.md#printed-activities--a-page-done-on-paper)).
+The consumer is the [Weekly Review](../life/weekly-review.md#school-work),
+which curates the items into TV cards and a per-child showcase.
+
 ## Milestones, enrichment, and certificates
 
 Milestones compare expected progress with passed or attested work. Enrichment

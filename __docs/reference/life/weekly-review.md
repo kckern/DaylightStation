@@ -1,12 +1,12 @@
 # Weekly Review
 
-**Last Updated:** 2026-06-18
+**Last Updated:** 2026-11-22
 
 ---
 
 ## Purpose
 
-Weekly Review is a living-room ritual for reflecting on the week that just passed. It assembles everything the household captured over seven days — photos and videos, calendar events, fitness sessions, and daily weather — into a single browsable surface, and it records the person's spoken reflection while they look back through it.
+Weekly Review is a living-room ritual for reflecting on the week that just passed. It assembles everything the household captured over seven days — photos and videos, calendar events, fitness sessions, daily weather, and the children's school work — into a single browsable surface, and it records the person's spoken reflection while they look back through it.
 
 The experience is built for a couch and a remote, not a keyboard and mouse. A person sits down in front of the TV, the week appears, the microphone starts listening, and they narrate their week aloud while paging through the days. When they're done, they save and the recording is preserved for transcription and later review.
 
@@ -156,7 +156,7 @@ A persistent legend sits at the edge of the screen and always shows the handful 
 
 #### On the day context panel
 
-Read-only — timeline, weather, people, calendar events, workouts.
+Read-only — timeline, weather, people, calendar events, workouts, school work.
 
 | Button | Action |
 |--------|--------|
@@ -229,17 +229,94 @@ The result is that closing the lid, a dropped connection, or a reboot degrades g
 
 ---
 
-## School Showcase (server)
+## School work
 
-After the last photo of the window's last day, each child with school work in the window gets one slide: a collage of up to six pictures and one to five bullets.
+The children's school week appears alongside the photos: books started and finished, course sessions, printed activity pages, and card-ladder practice. The children often watch, so the review shows **work done** and nothing else: never a score, grade, percent, correctness, coin, streak, verdict square or completion state.
 
-- **Building it.** `server/domain/schoolShowcasePolicy.mjs` (`buildShowcases`) keeps the window's well-formed WorkItems, dedupes each child's work per `groupKey` (`dedupeWorkItems`), orders it by priority (finished book, completed course, printed activity, started book, worked course, program) then weight, and takes the first six distinct pictures in that order.
-- **Plain bullets** (`plainBullets`) are instant and always available: "Finished Holes", "Math 2 · 4 sessions", "Science: Plants", "3 printed pages: mazes and a sudoku", "Korean · 14 words". They carry counts of things done, never scores, grades or praise. A book started and finished in the same week says only "Finished".
-- **Bootstrap** returns `schoolShowcase: [{ learnerId, learnerName, images, bullets, source: 'plain' }]` from the same bounded school fetch as the day cards (timeout or error: empty list).
-- **AI bullets.** `GET /api/v1/weekly-review/school/showcase?week=YYYY-MM-DD` (400 unless the week is a real calendar day) returns `{ showcases: [{ learnerId, learnerName, bullets, images, source }] }`. `SchoolShowcaseService` asks the weekly-review AI gateway (usage feature `school-showcase`), one child at a time in parallel, for a JSON array of short third-person bullets, and serves the plain bullets (`source: 'plain'`) unless the answer passes every check.
-- **Safeguards.** The model sees only the child's work facts (no name; titles and subtitles capped at 80 characters) and is told the strings are catalog labels, never instructions. An answer is kept only if it is one to five non-empty strings of at most 120 characters with no praise word (great, amazing, perfect, proud, best, smart, ...), score, grade, percent or exclamation mark; words inside the child's own titles are masked first, so "Great Expectations" or "Oh, the Places You'll Go!" can be named. Each call is bounded by a timeout (15 s by default), and two requests for the same week at the same time share one run.
+### What the viewer sees
+
+- **Grid strip.** A day cell carries a small strip of chips, one per curated work item for that day (`day.school`): the work's picture (or a subject glyph when there is none or it fails to load) with the child's initial, in that child's colour. The chip count also feeds the cell's summary line ("2 school items"), and a day with school work counts as a day with content.
+- **Work card in the reel.** Each curated item is a reel item, sorted into the day's photos and videos by time. The card shows the work pinned up like a print on the fridge (course poster, book cover, rendered activity page, or program poster; a title card with a subject glyph when there is no picture) and, beside it, the child's name, a verb (Finished, Started, Completed, Worked on, Practiced), the title, a subtitle and the weekday. It takes no clock time. For navigation it behaves like a still photo.
+- **School section in the Down panel.** The day context panel lists **everything** each child did that day (`day.schoolAll`, not only the curated pick), grouped by child, one line per item ("Finished Holes — Louis Sachar").
+- **The weekly showcase.** After the last item of the window's last day, each child with work in the window gets one slide titled "<Name>'s School Work This Week": a collage of up to six of the week's pictures and up to five short bullets. A picture that fails to load leaves the collage, which reflows; with no pictures the slide takes the text-only layout. The bootstrap carries plain bullets, so the slide is never empty; when the drafted bullets arrive they replace the plain ones with a short cross-fade.
+
+Each child keeps one crayon hue for the whole window (strip, card, panel, showcase), set by their position among the window's sorted learner ids (`browser/state/learnerColor.js`).
+
+Reel order (`browser/state/reelItems.js`) uses the household wall clock. A photo's `takenAt` is Immich local time written with a misleading `Z`, so its text is used as-is; a work item's `at` is a real UTC instant, converted to the TV's local time. Exactly noon UTC on the study day is School's "time unknown" placeholder and sorts at local noon.
+
+### Curation (`server/domain/schoolWorkPolicy.mjs`)
+
+School hands over a flat list of WorkItems for the window; `curateSchoolWork` places them on days.
+
+- **Weekly dedupe per learner and `groupKey`.** All of one child's items sharing a `groupKey` (one course, one book's start or finish, one card-ladder package, one printed page) become one card for the week, carrying the group's total weight. A course or program group of more than one item gets a count on its subtitle ("Unit 3 · 4 sessions this week", "6 days this week").
+- **One per child per day.** At most one curated card per child per day.
+- **Priority order.** Groups claim days in this order: finished book, completed course, printed activity, started book, worked course, program; then higher weight, then the latest `at`.
+- **Fallback day.** A group goes on its heaviest day. If a higher-ranked group already holds that child's slot there, it takes its next-best day with a free slot, and is left out of the reel only when none is free. It is still listed in that day's Down panel.
+- Items missing `studyDay`, `at`, `learnerId` or `groupKey` are dropped instead of failing the week.
+
+`day.school` is the curated reel; `day.schoolAll` is every in-window item for the panel.
+
+### Sources
+
+School owns the data and hands it over through `createSchoolLearnerWork` (see [Progress and reporting: Learner work](../school/progress-and-reporting.md#learner-work-outward-read)). Weekly review reads it through `WeeklyReviewSchoolAdapter` and only curates.
+
+| Source | Item | Picture |
+|---|---|---|
+| Reading log | `book` started (opened in the window) and finished | Book cover |
+| Course sessions (finished sessions only) | `course` completed (passed) or worked | Course poster |
+| Printed activities (completed, not voided) | `activity` completed | The page, rendered (see [Printed activities](../school/programs.md#printed-activities--a-page-done-on-paper)) |
+| Card ladder day files | `program` worked, weight = words practiced that day | Package poster (see [Card ladder](../school/card-ladder.md#where-things-live)) |
+
+**Left out:** piano lessons and Glossika. Piano-lesson evidence carries only Plex ids, with no title or picture to show. Glossika keeps no per-day counts. Both can be added once School can name and count them.
+
+### Routes
+
+- **Bootstrap** (`GET /api/v1/weekly-review/bootstrap`) carries `day.school`, `day.schoolAll` and `schoolShowcase: [{ learnerId, learnerName, images, bullets, source: 'plain' }]`. School is fetched in parallel with photos, calendar, fitness and weather, and bounded at **8 s** (`schoolTimeoutMs`): a timeout or an error leaves every day without school work and an empty showcase list; the rest of the week loads normally.
+- **Image** `GET /api/v1/weekly-review/school/image?ref=<ref>`, where `ref` is `course:<courseId>`, `activity:<issuanceId>` or `program:<programId>:<instanceId>` (e.g. `program:card-ladder:<package>`). Any other shape is 400 (`bad-ref`); nothing to show is 404; an image is sent with `Cache-Control: private, max-age=86400`. Book covers use their own cover URL, not this route.
+- **Showcase** `GET /api/v1/weekly-review/school/showcase?week=YYYY-MM-DD` (400 unless the week is a real calendar day) returns `{ showcases: [{ learnerId, learnerName, bullets, images, source }] }` with `source` `ai` or `plain`. The screen asks for it after each window lands (bounded at 20 s on the client) and keeps the answer only if that window is still on screen.
+
+### Showcase bullets
+
+`server/domain/schoolShowcasePolicy.mjs` (`buildShowcases`) dedupes each child's week per `groupKey`, orders it by the same priority then weight, and takes the first six distinct pictures in that order.
+
+- **Plain bullets** (`plainBullets`) are instant and always available: "Finished Holes", "Math 2 · 4 sessions", "Science: Plants", "3 printed pages: mazes and a sudoku", "Korean · 14 words". They count things done, never scores, grades or praise. A book started and finished in the same week says only "Finished".
+- **AI bullets.** `SchoolShowcaseService` asks the weekly-review AI gateway (usage feature `school-showcase`), one child at a time in parallel, for a JSON array of short third-person bullets, and serves the plain bullets unless the answer passes every check.
+- **Safeguards.** The model sees only the child's work facts: no name, and titles and subtitles capped at 80 characters. It is told the strings are catalog labels, never instructions. An answer is kept only if it is one to five non-empty strings of at most 120 characters with no praise word (great, amazing, perfect, proud, best, smart, ...), score, grade, percent or exclamation mark. Words inside the child's own titles are masked before that check, so "Great Expectations" or "Oh, the Places You'll Go!" can be named. Each call is bounded (15 s by default), and two requests for the same week at the same time share one run.
 - **Cache.** Answers are written atomically to `weekly-review/log/<week>/school-showcase.yml` under the household as `{ <learnerId>: { itemsHash, bullets, at } }`, or `{ itemsHash, bullets: null, rejectedAt, attempts }` for an answer that failed the checks. After two rejections for the same week the child gets plain bullets without another AI call. `itemsHash` is the sorted `groupKey:weight` pairs of the child's week, so new work redrafts that child and a replay of an unchanged week costs nothing. A timeout or gateway error is not cached.
-- **Logs.** `weekly-review.showcase.generated` (`week, learnerId, items, ms, cached, source`), `weekly-review.showcase.ai-failed` (`week, learnerId, error`), `weekly-review.showcase.ai-rejected` (`week, learnerId, reason`: parse, count, length or banned), `weekly-review.api.school-showcase.response`.
+
+### When cards are missing: log events
+
+Query the log store by event name (`context.app:weekly-review` for the screen's events).
+
+| Event | Meaning |
+|---|---|
+| `school.learner-work.unwired` | School is not wired at boot; weekly review gets no school source and shows no work at all. |
+| `school.learner-work.wiring-failed` | Building the learner-work entry threw; same effect as unwired. |
+| `school.learner-work.wired` | Startup: which sources (`bookLog`, `sessions`, `printedActivities`, `cardLadder`) and worksheet platforms are connected. A missing source here explains a missing kind of card. |
+| `school.learner-work.no-image-cache` | No media mount: activity pages render on every request instead of once. |
+| `school.learner-work.listed` | School answered: learners, items, ms. Zero items means nothing in the window, not a failure. |
+| `school.learner-work.source-failed` | One source threw for one learner (`learnerId`, `source`); that child loses that kind of card only. |
+| `school.learner-work.lookup-failed` | A book or unit-summary lookup failed; the card falls back to a generic title. |
+| `weekly-review.school.fetched` | (debug) The adapter's item count for the range. |
+| `weekly-review.school.timeout` | School took longer than 8 s; the window shows no school work. |
+| `weekly-review.school.error` | The fetch or curation threw; the window shows no school work. |
+| `weekly-review.school.loaded` | Per window: learners, items received, `shown` (curated cards), counts `byKind`. `items` > 0 with `shown` 0 points at `studyDay` outside the window or malformed items. |
+| `weekly-review.showcase.plain-failed` | Building plain showcases threw; bootstrap carries none. |
+| `weekly-review.school.image` | (debug) An image lookup: `ref`, `hit`, ms. |
+| `weekly-review.api.school-image.bad-ref` | A ref of the wrong shape was refused (400). |
+| `weekly-review.api.school-image.error` | The image lookup threw (500). |
+| `school.printed-activity.page-render` | An activity page was served, `cached` true or false, `source` solution or printable. |
+| `school.printed-activity.page-not-finished` | (debug) Page asked for before it was counted, or voided; 404 by design. |
+| `school.printed-activity.page-render-failed` | Rendering the page failed; the card shows its title card. |
+| `school.course-poster.read-failed`, `school.program-poster.read-failed` | Poster read threw; the card shows its title card. |
+| `weekly-review.showcase.generated` | A child's bullets were settled: `week, learnerId, items, ms, cached, source`. |
+| `weekly-review.showcase.ai-failed` | Gateway error or timeout for one child; plain bullets served, not cached. |
+| `weekly-review.showcase.ai-rejected` | The answer failed a check (`reason`: parse, count, length or banned); plain bullets served. |
+| `weekly-review.showcase.cache-load-failed`, `weekly-review.showcase.cache-save-failed` | The showcase cache file could not be read or written. |
+| `weekly-review.api.school-showcase.response` | Showcase route answered: children, sources, duration. |
+| `showcase.loaded`, `showcase.load-failed`, `showcase.superseded` | (screen) The drafted showcase arrived, failed (plain bullets stay), or arrived for a window no longer on screen. |
+| `reel.school-card`, `reel.showcase` | (screen, debug) A work card or showcase slide was shown. |
+| `reel.school-image-error`, `grid.school-chip-image-error` | (screen) A work picture failed to load in the reel or the grid strip. |
 
 ---
 
@@ -259,6 +336,6 @@ After the last photo of the window's last day, each child with school work in th
 
 ## See Also
 
-- Module implementation: `frontend/src/modules/WeeklyReview/`
+- Module implementation: `__app_modules/personal/weekly-review/` (`server/`, `browser/`)
 - Life planning domain this feeds into: [life-domain-architecture.md](./life-domain-architecture.md)
 - Shield remote input constraints: see the FullyKiosk / Shield TV notes in `CLAUDE.md`
