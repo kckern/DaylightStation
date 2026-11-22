@@ -176,6 +176,7 @@ export function createApiRouter(config) {
     '/books': 'books',  // Book metadata resolution (OpenLibrary/Google Books) — the School shelf is under /school/books
     '/arcade-game-sessions': 'arcade-game-sessions',  // Metered arcade time: observations, sessions, grants, eligibility
     '/arcade-bluetooth': 'arcade-bluetooth',  // Controller manager: the device's audio-bridge Bluetooth API (status, find, pair, connect, forget)
+    '/notifications': 'notifications',  // Notification action presses (Android app, HA relay)
   };
 
   // Mount each router at its path

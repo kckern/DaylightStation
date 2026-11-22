@@ -55,3 +55,20 @@ describe('bootstrapNotifications Android push wiring', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
+
+describe('bootstrapNotifications action presses', () => {
+  it('exposes a registry that apps register action handlers into', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'notif-'));
+    try {
+      const cfg = { quiet_hours: { enabled: false }, cooldowns: {} };
+      const { notificationActions } = bootstrapNotifications({
+        eventBus: fakeBus(), configService: { getHouseholdAppConfig: () => cfg, reloadHouseholdAppConfig: () => cfg },
+        dataPath: dir, logger: { debug() {}, warn() {}, info() {}, child: () => ({ debug() {}, warn() {}, info() {} }) },
+      });
+      const press = { notificationId: 'n1', actionId: 'DONOW_APPROVE_7', reply: null, username: 'u' };
+      expect(await notificationActions.execute(press)).toEqual({ ok: false, code: 'ACTION_UNKNOWN' });
+      notificationActions.register({ matches: id => id.startsWith('DONOW_'), handle: async () => ({ ok: true }) });
+      expect(await notificationActions.execute(press)).toEqual({ ok: true });
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});

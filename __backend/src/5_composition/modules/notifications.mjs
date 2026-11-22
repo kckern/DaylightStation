@@ -15,6 +15,7 @@ import { AndroidAppPushAdapter } from '#adapters/notification/AndroidAppPushAdap
 import { InMemoryPushDeviceRegistry } from '#adapters/notification/InMemoryPushDeviceRegistry.mjs';
 import { attachAndroidPushBusListener } from '#adapters/notification/AndroidPushBusListener.mjs';
 import { CompositePushChannel } from '#apps/notification/CompositePushChannel.mjs';
+import { RespondToNotificationAction } from '#apps/notification/usecases/RespondToNotificationAction.mjs';
 import { NotificationPolicy } from '#domains/notification/services/NotificationPolicy.mjs';
 import { YamlNotificationLedgerStore } from '#adapters/persistence/yaml/YamlNotificationLedgerStore.mjs';
 import { NotificationGovernanceConfigSource } from '#adapters/notification/NotificationGovernanceConfigSource.mjs';
@@ -101,5 +102,8 @@ export function bootstrapNotifications(deps = {}) {
     channels: adapters.map(a => a.channel),
   });
 
-  return { container, notificationService, ledgerStore, pushDevices };
+  // Action presses; apps that own actions register a handler (notificationActions.register).
+  const notificationActions = new RespondToNotificationAction({ logger });
+
+  return { container, notificationService, ledgerStore, pushDevices, notificationActions };
 }

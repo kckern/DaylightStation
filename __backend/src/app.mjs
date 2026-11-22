@@ -257,6 +257,7 @@ import { createPressureMatRelay } from '#apps/hardware/pressureMatRelay.mjs';
 import { PressureMatOperations } from '#apps/hardware/PressureMatOperations.mjs';
 import { PressureMatAdapter } from '#adapters/hardware/pressure-mat/index.mjs';
 import { createPressureMatRouter } from '#api/v1/routers/pressureMat.mjs';
+import { createNotificationsRouter } from '#api/v1/routers/notifications.mjs';
 import { createAutomotiveApi } from "../../__app_modules/household/auto/server/composition/automotiveApi.mjs";
 
 
@@ -1581,6 +1582,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const permit = await parentalSupervision.guard.authorize(context);
     return { ...permit, deviceId: context.deviceId };
   }:null;
+  v1Routers.notifications = createNotificationsRouter({
+    respondToNotificationAction: notificationStack.notificationActions,
+    logger: rootLogger.child({ module: 'notification-actions-api' }),
+  });
   v1Routers.supervision=parentalSupervision.router;
   server?.once?.('close',()=>parentalSupervision.dispose());
   v1Routers.stateGates = stateGatesModule.stateGatesRouter;
