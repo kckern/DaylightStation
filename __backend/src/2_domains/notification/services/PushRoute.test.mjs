@@ -16,3 +16,9 @@ describe('choosePushTransport', () => {
     expect(choosePushTransport({ phone: { connectionId: null, lastSeenMs: nowMs }, nowMs })).toBe('ha');
   });
 });
+
+describe('choosePushTransport with actions', () => {
+  it('uses Home Assistant for a push that carries answerable actions, even with a fresh phone', () => {
+    expect(choosePushTransport({ phone: { connectionId: 'c1', lastSeenMs: nowMs }, nowMs, answerable: true })).toBe('ha');
+  });
+});

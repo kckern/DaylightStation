@@ -39,3 +39,23 @@ describe('CompositePushChannel', () => {
     expect(await c.send(intent)).toMatchObject({ accepted: true, delivered: null, transport: 'ha' });
   });
 });
+
+describe('CompositePushChannel approvals', () => {
+  it('sends a push with Approve/Deny through Home Assistant only, even with a fresh phone', async () => {
+    const { NotificationIntent } = await import('#domains/notification/entities/NotificationIntent.mjs');
+    const withButtons = new NotificationIntent({ id: 'n2', title: 'T', body: 'B', category: 'approval', urgency: 'critical', recipient: { username: 'u' },
+      actions: [{ id: 'DONOW_APPROVE_1', label: 'Approve' }] });
+    const android = channel({ delivered: true }), ha = channel({ delivered: true });
+    const c = new CompositePushChannel({ android, ha, registry: registry({ connectionId: 'c1', lastSeenMs: 99_000 }), clock });
+    expect((await c.send(withButtons)).transport).toBe('ha');
+    expect(android.send).not.toHaveBeenCalled();
+  });
+  it('an open-page action alone does not keep a push off the app', async () => {
+    const { NotificationIntent } = await import('#domains/notification/entities/NotificationIntent.mjs');
+    const openOnly = new NotificationIntent({ id: 'n3', title: 'T', body: 'B', category: 'school', urgency: 'normal', recipient: { username: 'u' },
+      actions: [{ id: 'OPEN', label: 'Open', kind: 'open', deepLink: '/school' }] });
+    const android = channel({ delivered: true }), ha = channel({ delivered: true });
+    const c = new CompositePushChannel({ android, ha, registry: registry({ connectionId: 'c1', lastSeenMs: 99_000 }), clock });
+    expect((await c.send(openOnly)).transport).toBe('android');
+  });
+});

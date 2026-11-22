@@ -17,7 +17,9 @@ export function toAndroidWire(intent) {
       importance: p.importance || 'default', channel: p.channel ?? null, imageUrl: p.imageUrl ?? null,
       icon: p.icon ?? null, deepLink: p.deepLink ?? null,
     },
-    actions: (intent.actions || []).filter(a => a instanceof NotificationAction).map(a => ({
+    // Open-page actions only: button and reply presses stay on Home Assistant
+    // until the app's presses carry device auth (see PushRoute).
+    actions: (intent.actions || []).filter(a => a instanceof NotificationAction && a.kind === 'open').map(a => ({
       id: a.id, kind: a.kind, label: a.label, requiresUnlock: a.requiresUnlock, destructive: a.destructive,
       replyPlaceholder: a.replyPlaceholder, deepLink: a.deepLink,
     })),

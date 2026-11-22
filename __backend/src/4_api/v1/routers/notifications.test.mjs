@@ -51,3 +51,10 @@ describe('POST /actions', () => {
     expect(res.body.code).toBe('ACTION_FAILED');
   });
 });
+
+describe('POST /actions unauthorized device', () => {
+  it('401 DEVICE_UNAUTHORIZED', async () => {
+    const res = await request(app({ ok: false, code: 'DEVICE_UNAUTHORIZED' }).a).post('/actions').send(body);
+    expect(res.status).toBe(401);
+  });
+});

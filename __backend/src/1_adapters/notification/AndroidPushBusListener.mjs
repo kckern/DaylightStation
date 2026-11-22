@@ -3,7 +3,7 @@
  * `{type:'push.hello', username, deviceId}` on connect and every 30 s; a closed
  * connection is forgotten.
  */
-export function attachAndroidPushBusListener({ eventBus, registry, clock, logger } = {}) {
+export function attachAndroidPushBusListener({ eventBus, registry, clock, deviceAuth = null, logger } = {}) {
   const known = new Set();
   let live = true;
   eventBus.onClientMessage((connectionId, message) => {
@@ -11,6 +11,10 @@ export function attachAndroidPushBusListener({ eventBus, registry, clock, logger
     const username = typeof message.username === 'string' ? message.username : '';
     const deviceId = typeof message.deviceId === 'string' ? message.deviceId : '';
     if (!username || !deviceId) return;
+    if (deviceAuth && !deviceAuth.allowHello(connectionId, message)) {
+      logger?.warn?.('notification.android.hello-refused', { username, connectionId });
+      return;
+    }
     registry.recordHello({ username, deviceId, connectionId, atMs: clock.now().getTime() });
     if (!known.has(connectionId)) {
       known.add(connectionId);

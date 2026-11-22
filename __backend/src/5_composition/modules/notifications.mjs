@@ -14,6 +14,7 @@ import { PushNotificationAdapter } from '#adapters/notification/PushNotification
 import { AndroidAppPushAdapter } from '#adapters/notification/AndroidAppPushAdapter.mjs';
 import { InMemoryPushDeviceRegistry } from '#adapters/notification/InMemoryPushDeviceRegistry.mjs';
 import { attachAndroidPushBusListener } from '#adapters/notification/AndroidPushBusListener.mjs';
+import { NetworkTrustPushDeviceAuth } from '#adapters/notification/NetworkTrustPushDeviceAuth.mjs';
 import { CompositePushChannel } from '#apps/notification/CompositePushChannel.mjs';
 import { RespondToNotificationAction } from '#apps/notification/usecases/RespondToNotificationAction.mjs';
 import { NotificationPolicy } from '#domains/notification/services/NotificationPolicy.mjs';
@@ -65,8 +66,10 @@ export function bootstrapNotifications(deps = {}) {
   const publicUrl = base ? (path) => `${base}${path}` : null;
   const pushClock = clock || { now: () => new Date() };
   const pushDevices = new InMemoryPushDeviceRegistry();
+  // PLACEHOLDER device auth (trusts the network) until the phone is paired.
+  const pushDeviceAuth = new NetworkTrustPushDeviceAuth();
   if (eventBus?.onClientMessage && eventBus?.onClientDisconnection) {
-    attachAndroidPushBusListener({ eventBus, registry: pushDevices, clock: pushClock, logger });
+    attachAndroidPushBusListener({ eventBus, registry: pushDevices, clock: pushClock, deviceAuth: pushDeviceAuth, logger });
   }
   const haPush = new PushNotificationAdapter({ haGateway, resolveNotifyService, publicUrl, logger });
   const androidPush = eventBus?.sendToClient ? new AndroidAppPushAdapter({ eventBus, registry: pushDevices, logger }) : null;
@@ -103,7 +106,7 @@ export function bootstrapNotifications(deps = {}) {
   });
 
   // Action presses; apps that own actions register a handler (notificationActions.register).
-  const notificationActions = new RespondToNotificationAction({ logger });
+  const notificationActions = new RespondToNotificationAction({ deviceAuth: pushDeviceAuth, logger });
 
   return { container, notificationService, ledgerStore, pushDevices, notificationActions };
 }

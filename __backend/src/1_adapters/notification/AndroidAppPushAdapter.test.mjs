@@ -53,7 +53,7 @@ describe('AndroidAppPushAdapter', () => {
     expect(wire.connectionId).toBe('c1');
     expect(wire.message.type).toBe('push.notification');
     expect(wire.message.notification.presentation.imageUrl).toBe('/api/v1/img/x.png');
-    expect(wire.message.notification.actions).toEqual([expect.objectContaining({ id: 'DONOW_APPROVE_1', requiresUnlock: true, kind: 'button' })]);
+    expect(wire.message.notification.actions).toEqual([]);
   });
   it('does not accept an ack from another connection, and cancels on timeout', async () => {
     const { eventBus, adapter } = setup({ ackFrom: 'c9' });
@@ -71,5 +71,14 @@ describe('AndroidAppPushAdapter', () => {
     const eventBus = { onClientMessage: () => {}, sendToClient: () => false };
     const adapter = new AndroidAppPushAdapter({ eventBus, registry, ackTimeoutMs: 30 });
     expect(await adapter.send(intent())).toEqual({ delivered: false, error: 'phone connection closed' });
+  });
+});
+
+describe('toAndroidWire', () => {
+  it('never carries a button or reply action to the app (approvals stay on HA until device auth)', async () => {
+    const { toAndroidWire } = await import('./AndroidAppPushAdapter.mjs');
+    const i = new NotificationIntent({ id: 'n', title: 'T', body: 'B', category: 'school', urgency: 'normal',
+      actions: [{ id: 'A', label: 'Approve' }, { id: 'R', label: 'Reply', kind: 'reply' }, { id: 'O', label: 'Open', kind: 'open', deepLink: '/school' }] });
+    expect(toAndroidWire(i).actions.map(a => a.id)).toEqual(['O']);
   });
 });

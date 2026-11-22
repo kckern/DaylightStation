@@ -4,7 +4,7 @@
  * POST /api/v1/notifications/actions
  *   { notificationId, actionId, reply?, username? } — a press on a notification
  *   action from the DaylightStation Android app or relayed by Home Assistant.
- *   200 {ok:true}; 400 BAD_REQUEST; 404 ACTION_UNKNOWN; 409 <handler code>;
+ *   200 {ok:true}; 400 BAD_REQUEST; 401 DEVICE_UNAUTHORIZED; 404 ACTION_UNKNOWN; 409 <handler code>;
  *   502 ACTION_FAILED when the owning app threw.
  */
 import { Router } from 'express';
@@ -28,7 +28,8 @@ export function createNotificationsRouter({ respondToNotificationAction, logger 
     try {
       const result = await respondToNotificationAction.execute({ notificationId, actionId, reply, username });
       if (result.ok) return res.json({ ok: true });
-      return res.status(result.code === 'ACTION_UNKNOWN' ? 404 : 409).json({ ok: false, code: result.code });
+      const status = result.code === 'ACTION_UNKNOWN' ? 404 : result.code === 'DEVICE_UNAUTHORIZED' ? 401 : 409;
+      return res.status(status).json({ ok: false, code: result.code });
     } catch (error) {
       logger?.error?.('notification.action.failed', { notificationId, actionId, error: error.message });
       return res.status(502).json({ ok: false, code: 'ACTION_FAILED' });

@@ -35,3 +35,12 @@ describe('RespondToNotificationAction.register', () => {
     expect(() => new RespondToNotificationAction().register({ handle() {} })).toThrow(/action handler/);
   });
 });
+
+describe('RespondToNotificationAction device auth seam', () => {
+  it('refuses a press the device auth refuses, before any handler runs', async () => {
+    const h = handler('DONOW_');
+    const uc = new RespondToNotificationAction({ handlers: [h], deviceAuth: { allowPress: () => false } });
+    expect(await uc.execute(input)).toEqual({ ok: false, code: 'DEVICE_UNAUTHORIZED' });
+    expect(h.handle).not.toHaveBeenCalled();
+  });
+});

@@ -7,8 +7,10 @@ import { isNotificationActionHandler } from '../ports/INotificationActionHandler
 export class RespondToNotificationAction {
   #handlers;
   #logger;
+  #deviceAuth;
 
-  constructor({ handlers = [], logger } = {}) {
+  constructor({ handlers = [], deviceAuth = null, logger } = {}) {
+    this.#deviceAuth = deviceAuth;
     this.#handlers = [];
     this.#logger = logger;
     handlers.forEach(h => this.register(h));
@@ -22,6 +24,10 @@ export class RespondToNotificationAction {
 
   async execute({ notificationId, actionId, reply = null, username = null }) {
     const press = { notificationId, actionId, reply, username };
+    if (this.#deviceAuth && !this.#deviceAuth.allowPress(press)) {
+      this.#logger?.warn?.('notification.action.unauthorized', { notificationId, actionId, username });
+      return { ok: false, code: 'DEVICE_UNAUTHORIZED' };
+    }
     const handler = this.#handlers.find(h => h.matches(actionId));
     if (!handler) {
       this.#logger?.warn?.('notification.action.unknown', { notificationId, actionId, username });

@@ -1,5 +1,6 @@
 import { INotificationChannel } from './ports/INotificationChannel.mjs';
 import { choosePushTransport } from '#domains/notification/services/PushRoute.mjs';
+import { NotificationAction } from '#domains/notification/value-objects/NotificationAction.mjs';
 
 /**
  * The `push` channel: the DaylightStation Android app when the recipient's
@@ -29,7 +30,8 @@ export class CompositePushChannel extends INotificationChannel {
     const username = intent.recipient?.username || intent.metadata?.username || null;
     const phone = username && this.#registry ? this.#registry.currentFor(username) : null;
     const nowMs = (this.#clock?.now?.() || new Date()).getTime();
-    const route = this.#android ? choosePushTransport({ phone, nowMs }) : 'ha';
+    const answerable = (intent.actions || []).some(a => a instanceof NotificationAction && a.kind !== 'open');
+    const route = this.#android ? choosePushTransport({ phone, nowMs, answerable }) : 'ha';
 
     let fellBack = false;
     if (route === 'android') {

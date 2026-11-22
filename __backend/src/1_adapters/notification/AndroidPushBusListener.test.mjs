@@ -32,3 +32,12 @@ describe('attachAndroidPushBusListener', () => {
     expect(registry.currentFor('u')).toBeNull();
   });
 });
+
+describe('attachAndroidPushBusListener device auth seam', () => {
+  it('ignores a hello the device auth refuses', () => {
+    const bus = fakeBus(), registry = new InMemoryPushDeviceRegistry();
+    attachAndroidPushBusListener({ eventBus: bus, registry, clock: { now: () => new Date(1) }, deviceAuth: { allowHello: () => false } });
+    bus.message('c1', { type: 'push.hello', username: 'u', deviceId: 'phone' });
+    expect(registry.currentFor('u')).toBeNull();
+  });
+});
