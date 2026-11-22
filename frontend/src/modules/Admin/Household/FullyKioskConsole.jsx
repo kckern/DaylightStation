@@ -42,6 +42,7 @@ import {
   IconVolume,
 } from '@tabler/icons-react';
 import { ConfirmModal } from '@/lib/ui/ConfirmModal.jsx';
+import { useKeyedSubmission } from '@/lib/ui/useKeyedSubmission.js';
 import { notifyFailure, notifySuccess } from '../shared/feedback.js';
 import fullyKioskAdminApi from './fullyKioskAdminApi.js';
 import './FullyKioskConsole.scss';
@@ -173,7 +174,7 @@ function DeviceConsole({ deviceId }) {
   const [settingsFilter, setSettingsFilter] = useState('');
   const [detailFilter, setDetailFilter] = useState('');
   const [draftSettings, setDraftSettings] = useState({});
-  const [settingSaving, setSettingSaving] = useState('');
+  const { pending: settingSaving, run: submitSetting } = useKeyedSubmission();
   const [screenshotUrl, setScreenshotUrl] = useState('');
   const [screenshotCapturedAt, setScreenshotCapturedAt] = useState('');
   const [screenshotLoading, setScreenshotLoading] = useState(false);
@@ -300,27 +301,26 @@ function DeviceConsole({ deviceId }) {
 
   const saveSetting = useCallback(async (setting) => {
     const submittedValue = draftSettings[setting.key];
-    setSettingSaving(setting.key);
-    try {
-      await fullyKioskAdminApi.updateSetting(deviceId, setting.key, submittedValue);
-      notifySuccess({ title: 'Setting applied', message: humanize(setting.key) });
-      const [freshSettings] = await Promise.all([refreshSettings(), refreshStatus({ quiet: true })]);
-      const savedSetting = freshSettings?.settings?.find(current => current.key === setting.key);
-      if (savedSetting && Object.is(savedSetting.value, submittedValue)) {
-        setDraftSettings(current => {
-          if (!Object.prototype.hasOwnProperty.call(current, setting.key)
-            || !Object.is(current[setting.key], submittedValue)) return current;
-          const next = { ...current };
-          delete next[setting.key];
-          return next;
-        });
+    return submitSetting(setting.key, async () => {
+      try {
+        await fullyKioskAdminApi.updateSetting(deviceId, setting.key, submittedValue);
+        notifySuccess({ title: 'Setting applied', message: humanize(setting.key) });
+        const [freshSettings] = await Promise.all([refreshSettings(), refreshStatus({ quiet: true })]);
+        const savedSetting = freshSettings?.settings?.find(current => current.key === setting.key);
+        if (savedSetting && Object.is(savedSetting.value, submittedValue)) {
+          setDraftSettings(current => {
+            if (!Object.prototype.hasOwnProperty.call(current, setting.key)
+              || !Object.is(current[setting.key], submittedValue)) return current;
+            const next = { ...current };
+            delete next[setting.key];
+            return next;
+          });
+        }
+      } catch (error) {
+        notifyFailure({ title: 'Setting failed', message: error.message });
       }
-    } catch (error) {
-      notifyFailure({ title: 'Setting failed', message: error.message });
-    } finally {
-      setSettingSaving('');
-    }
-  }, [deviceId, draftSettings, refreshSettings, refreshStatus]);
+    });
+  }, [deviceId, draftSettings, refreshSettings, refreshStatus, submitSetting]);
 
   const details = useMemo(() => Object.entries(status?.details || {})
     .filter(([key, value]) => `${key} ${reported(value)}`.toLowerCase().includes(detailFilter.toLowerCase()))
@@ -593,7 +593,7 @@ function DeviceConsole({ deviceId }) {
                                 <Table.Td><Badge color={setting.sensitive ? 'red' : setting.editable ? 'blue' : 'gray'}>{setting.sensitive ? 'Masked' : setting.editable ? 'Editable' : 'Read only'}</Badge></Table.Td>
                                 <Table.Td>
                                   {setting.editable && (
-                                    <Button size="compact-xs" disabled={!dirty} loading={settingSaving === setting.key} onClick={() => saveSetting(setting)}>Save</Button>
+                                    <Button size="compact-xs" disabled={!dirty || settingSaving.has(setting.key)} loading={settingSaving.has(setting.key)} onClick={() => saveSetting(setting)}>Save</Button>
                                   )}
                                 </Table.Td>
                               </Table.Tr>
