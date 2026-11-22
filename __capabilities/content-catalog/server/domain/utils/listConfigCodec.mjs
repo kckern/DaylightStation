@@ -13,7 +13,9 @@ function preserveAuthoredTitle(result, source) {
 
 /** Type-owned item parameters: a plain, non-empty object or nothing. */
 export function isParamsObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0;
+  if (value === null || typeof value !== 'object') return false;
+  const proto = Object.getPrototypeOf(value);
+  return (proto === Object.prototype || proto === null) && Object.keys(value).length > 0;
 }
 
 function copyScheduleFields(target, source) {
@@ -142,6 +144,7 @@ export function normalizeListItem(item) {
   if (item.days != null) result.days = item.days;
   if (item.applySchedule != null) result.applySchedule = item.applySchedule;
   if (item.strategy != null) result.strategy = item.strategy;
+  // Shared by reference like the other fields: callers that edit params must clone it first.
   if (isParamsObject(item.params)) result.params = item.params;
 
   copyScheduleFields(result, item);

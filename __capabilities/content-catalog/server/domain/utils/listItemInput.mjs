@@ -49,6 +49,7 @@ export function normalizeListItem(item) {
   for (const field of ['uid', 'image', 'fixed_order', 'active', 'continuous', 'shuffle', 'menuStyle', 'playbackrate', 'shader', 'days', 'applySchedule', 'strategy']) {
     if (item[field] != null) result[field] = item[field];
   }
+  // Shared by reference like the other fields: callers that edit params must clone it first.
   if (isParamsObject(item.params)) result.params = item.params;
   return preserveAuthoredTitle(result, item);
 }

@@ -903,16 +903,24 @@ describe('item params', () => {
     // A single anonymous section serializes in the compact { items } form.
     expect(written.items[0].params).toEqual(params);
   });
-  it('drops a non-object params value', () => {
-    const item = normalizeListItem({ label: 'X', input: 'app:x', params: 'nope' });
-    expect(item.params).toBeUndefined();
-  });
 });
 
-describe('item params on canonical items', () => {
-  it('keeps object params and drops non-object params', () => {
-    expect(normalizeListItem({ title: 'C', open: 'party-games/charades', params: { autostart: true } }).params).toEqual({ autostart: true });
-    expect(Object.hasOwn(normalizeListItem({ title: 'C', open: 'party-games/charades', params: ['x'] }), 'params')).toBe(false);
-    expect(Object.hasOwn(normalizeListItem({ title: 'C', open: 'party-games/charades', params: {} }), 'params')).toBe(false);
+describe('item params edge cases', () => {
+  const legacyItem = params => ({ label: 'L', input: 'app:party-games/charades:fhe', params });
+  const canonicalItem = params => ({ title: 'C', open: 'party-games/charades', params });
+  class ParamsHolder { constructor() { this.autostart = true; } }
+  const rejectedParams = [
+    ['null', null], ['an array', ['x']], ['an empty object', {}], ['a string', 'nope'],
+    ['a Date', new Date(0)], ['a Map', new Map([['autostart', true]])], ['a class instance', new ParamsHolder()],
+  ];
+  it.each(rejectedParams)('drops %s params on a legacy item', (_name, params) => {
+    expect(Object.hasOwn(normalizeListItem(legacyItem(params)), 'params')).toBe(false);
+  });
+  it.each(rejectedParams)('drops %s params on a canonical item', (_name, params) => {
+    expect(Object.hasOwn(normalizeListItem(canonicalItem(params)), 'params')).toBe(false);
+  });
+  it.each([['a legacy', legacyItem], ['a canonical', canonicalItem]])('keeps plain-object params on %s item', (_name, make) => {
+    expect(normalizeListItem(make({ autostart: true })).params).toEqual({ autostart: true });
+    expect(normalizeListItem(make(Object.assign(Object.create(null), { autostart: true }))).params).toEqual({ autostart: true });
   });
 });
