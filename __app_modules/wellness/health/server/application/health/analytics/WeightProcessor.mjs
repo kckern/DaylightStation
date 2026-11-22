@@ -373,11 +373,12 @@ export class WeightProcessor {
 
     for (const date of dates) {
       const dayBefore = moment(date).subtract(1, 'days').format('YYYY-MM-DD');
-      const change =
-        dayBefore && values[dayBefore]
-          ? values[date]['lbs_adjusted_average'] - values[dayBefore]['lbs_adjusted_average']
-          : 0;
-      values[date]['calorie_balance'] = Math.round(change * caloriesPerPound);
+      const currentAverage = values[date]?.lbs_adjusted_average;
+      const previousAverage = values[dayBefore]?.lbs_adjusted_average;
+      const hasConsecutiveAverages = Number.isFinite(currentAverage) && Number.isFinite(previousAverage);
+      values[date].calorie_balance = hasConsecutiveAverages
+        ? Math.round((currentAverage - previousAverage) * caloriesPerPound)
+        : null;
     }
 
     return values;
