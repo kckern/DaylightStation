@@ -2,7 +2,8 @@ import { lazy, Suspense, useMemo } from 'react';
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { unavailableError } from "../healthResources.js";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
-import { buildWeightSeries, normalizeWeightEntries, fmtLbs, fmtDelta, TREND_ARROWS } from "./weightSeries.js";
+import { buildWeightSeries, fmtLbs, fmtDelta, TREND_ARROWS } from "./weightSeries.js";
+import { WINDOW_DAYS } from '../progress/weightChart.js';
 import { ErrorState, LoadingState, StatCard, Skeleton, useRetryRegion } from '@/lib/ui';
 
 const logger = createAppLogger('health').child('weight-chip');
@@ -25,11 +26,11 @@ export function WeightChip({ asOf }) {
   const busy = res.loading || res.revalidating;
   const hasResult = Boolean(res.hasResult);
   const { regionProps, retry } = useRetryRegion(res.reload, busy);
-  const series = useMemo(() => buildWeightSeries(res.data, { asOf }), [res.data, asOf]);
+  const series = useMemo(() => buildWeightSeries(res.data, { asOf, days: WINDOW_DAYS }), [res.data, asOf]);
   const { latestLbs, deltaLbs, direction, entries, latest, trendDays } = series;
   const hasReadings = entries.length > 0;
-  // The chart plots the full normalized history (it windows itself to 12 weeks, up to asOf).
-  const chartEntries = useMemo(() => normalizeWeightEntries(res.data).filter(e => !asOf || e.date <= asOf), [res.data, asOf]);
+  // The same 12-week series decides whether the chart is useful and feeds it.
+  const chartEntries = entries;
   // A settled empty history is valid, but it is not useful stale content: if
   // its refresh fails, offer Retry instead of presenting that empty snapshot
   // as current. Populated history remains readable if a refresh fails.
