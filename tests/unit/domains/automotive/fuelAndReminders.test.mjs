@@ -115,38 +115,57 @@ describe('summarizeFuel', () => {
 describe('addMonths', () => {
   it('clamps the day instead of rolling into the next month', () => {
     // Naive setMonth would turn 31 January into 3 March.
-    expect(addMonths(new Date(2026, 0, 31), 1).getMonth()).toBe(1);
-    expect(addMonths(new Date(2026, 0, 31), 1).getDate()).toBe(28);
+    expect(addMonths(at('2026-01-31'), 1).getUTCMonth()).toBe(1);
+    expect(addMonths(at('2026-01-31'), 1).getUTCDate()).toBe(28);
   });
 
   it('handles a normal interval', () => {
-    const due = addMonths(new Date(2026, 2, 14), 6);
-    expect(due.getFullYear()).toBe(2026);
-    expect(due.getMonth()).toBe(8);
-    expect(due.getDate()).toBe(14);
+    const due = addMonths(at('2026-03-14'), 6);
+    expect(due.getUTCFullYear()).toBe(2026);
+    expect(due.getUTCMonth()).toBe(8);
+    expect(due.getUTCDate()).toBe(14);
   });
 });
 
 describe('buildReminders', () => {
   const service = (props) => new ServiceRecord({ vendor: null, ...props });
 
+  it('adds recurring service months from the persisted calendar date across DST', () => {
+    const previousTimezone = process.env.TZ;
+    process.env.TZ = 'America/Los_Angeles';
+    try {
+      const record = service({
+        id: 'oil', date: new Date('2026-03-01'), type: 'oil-change', intervalMonths: 1,
+      });
+      const beforeDue = buildReminders({ serviceRecords: [record], asOf: new Date(2026, 2, 29, 12) });
+      const dueToday = buildReminders({ serviceRecords: [record], asOf: new Date(2026, 3, 1, 12) });
+
+      expect(beforeDue[0].dueDate.toISOString().slice(0, 10)).toBe('2026-04-01');
+      expect(beforeDue[0].daysUntilDue).toBe(3);
+      expect(dueToday[0].daysUntilDue).toBe(0);
+    } finally {
+      if (previousTimezone === undefined) delete process.env.TZ;
+      else process.env.TZ = previousTimezone;
+    }
+  });
+
   it('derives the next due date from the most recent record of each type', () => {
     const reminders = buildReminders({
       serviceRecords: [
-        service({ id: 'old', date: new Date(2025, 0, 1), type: 'oil-change', intervalMonths: 6 }),
-        service({ id: 'new', date: new Date(2026, 5, 1), type: 'oil-change', intervalMonths: 6 }),
+        service({ id: 'old', date: at('2025-01-01'), type: 'oil-change', intervalMonths: 6 }),
+        service({ id: 'new', date: at('2026-06-01'), type: 'oil-change', intervalMonths: 6 }),
       ],
       asOf: new Date(2026, 7, 12),
     });
     // One oil-change reminder, not two — and dated from the newer record.
     expect(reminders).toHaveLength(1);
     expect(reminders[0].sourceId).toBe('new');
-    expect(reminders[0].dueDate.getMonth()).toBe(11); // June + 6 months
+    expect(reminders[0].dueDate.getUTCMonth()).toBe(11); // June + 6 months
   });
 
   it('ignores one-off records with no interval', () => {
     const reminders = buildReminders({
-      serviceRecords: [service({ id: 'x', date: new Date(2026, 5, 1), type: 'windshield' })],
+      serviceRecords: [service({ id: 'x', date: at('2026-06-01'), type: 'windshield' })],
       asOf: new Date(2026, 7, 12),
     });
     expect(reminders).toEqual([]);
@@ -154,7 +173,7 @@ describe('buildReminders', () => {
 
   it('ignores a km-only interval until mileage lands', () => {
     const reminders = buildReminders({
-      serviceRecords: [service({ id: 'x', date: new Date(2026, 5, 1), type: 'tires', intervalKm: 10000, odometerKm: 41000 })],
+      serviceRecords: [service({ id: 'x', date: at('2026-06-01'), type: 'tires', intervalKm: 10000, odometerKm: 41000 })],
       asOf: new Date(2026, 7, 12),
     });
     expect(reminders).toEqual([]);
@@ -162,8 +181,8 @@ describe('buildReminders', () => {
 
   it('merges document expiries into the same list as service intervals', () => {
     const reminders = buildReminders({
-      serviceRecords: [service({ id: 's', date: new Date(2026, 5, 1), type: 'oil-change', intervalMonths: 6 })],
-      documents: [new Document({ id: 'reg', kind: 'registration', label: 'Registration', expires: new Date(2026, 8, 30) })],
+      serviceRecords: [service({ id: 's', date: at('2026-06-01'), type: 'oil-change', intervalMonths: 6 })],
+      documents: [new Document({ id: 'reg', kind: 'registration', label: 'Registration', expires: '2026-09-30' })],
       asOf: new Date(2026, 7, 12),
     });
     expect(reminders).toHaveLength(2);
@@ -176,9 +195,9 @@ describe('buildReminders', () => {
     const asOf = new Date(2026, 7, 12);
     const reminders = buildReminders({
       documents: [
-        new Document({ id: 'past', kind: 'registration', label: 'Expired', expires: new Date(2026, 6, 1) }),
-        new Document({ id: 'soon', kind: 'insurance', label: 'Soon', expires: new Date(2026, 7, 20) }),
-        new Document({ id: 'later', kind: 'inspection', label: 'Later', expires: new Date(2027, 0, 1) }),
+        new Document({ id: 'past', kind: 'registration', label: 'Expired', expires: '2026-07-01' }),
+        new Document({ id: 'soon', kind: 'insurance', label: 'Soon', expires: '2026-08-20' }),
+        new Document({ id: 'later', kind: 'inspection', label: 'Later', expires: '2027-01-01' }),
       ],
       asOf,
       dueSoonDays: 30,

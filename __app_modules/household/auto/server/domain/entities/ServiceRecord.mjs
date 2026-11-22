@@ -77,22 +77,23 @@ export class ServiceRecord {
 }
 
 /**
- * Add whole months, clamping the day rather than rolling into the next month.
+ * Add whole calendar months to a persisted date-only value, clamping the day
+ * rather than rolling into the next month.
  *
  * The naive `setMonth(m + n)` overflows: 31 January plus one month becomes 3
  * March, because February has no 31st. For a maintenance due date that is a
- * silent two-day error every time it happens, so the day is clamped to the last
- * valid day of the target month instead.
+ * silent error every time it happens, so the day is clamped to the last valid
+ * day of the target month instead. Persisted dates are ISO calendar dates at
+ * UTC midnight; using UTC fields keeps their day stable in every local zone.
  *
  * @param {Date} date
  * @param {number} months
  * @returns {Date}
  */
 export function addMonths(date, months) {
-  const year = date.getFullYear();
-  const month = date.getMonth();
-  const day = date.getDate();
-  const targetMonthLastDay = new Date(year, month + months + 1, 0).getDate();
-  return new Date(year, month + months, Math.min(day, targetMonthLastDay),
-    date.getHours(), date.getMinutes(), date.getSeconds());
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth();
+  const day = date.getUTCDate();
+  const targetMonthLastDay = new Date(Date.UTC(year, month + months + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(year, month + months, Math.min(day, targetMonthLastDay)));
 }

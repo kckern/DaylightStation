@@ -98,11 +98,10 @@ export function buildReminders({
 }
 
 function toReminder({ id, kind, label, type, dueDate, sourceId, asOf, dueSoonDays }) {
-  // Compare calendar days rather than elapsed milliseconds so DST transitions
-  // cannot shift a reminder by an hour or a day. Document dates are persisted
-  // as ISO calendar dates (UTC midnight); asOf and service dates use local days.
-  const dueDay = kind === 'document' ? utcCalendarDay(dueDate) : localCalendarDay(dueDate);
-  const daysUntilDue = dueDay - localCalendarDay(asOf);
+  // Due dates are date-only values persisted as ISO calendar dates (UTC
+  // midnight); compare their UTC day with today's local day. Day ordinals avoid
+  // elapsed-millisecond errors around DST transitions.
+  const daysUntilDue = utcCalendarDay(dueDate) - localCalendarDay(asOf);
   let status = 'ok';
   if (daysUntilDue < 0) status = 'overdue';
   else if (daysUntilDue <= dueSoonDays) status = 'due-soon';
