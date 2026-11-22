@@ -110,6 +110,7 @@ export function MiniPlayer() {
   }
 
   const isPlaying = PLAYING_STATES.has(snapshot.state);
+  const toggleLabel = isPlaying ? 'Pause' : item ? 'Resume' : 'Play';
   // The handle names what is there: the item, and in words what it is doing —
   // "Ready to play", "Paused", "Playing on <this browser>". Never a bare count.
   const shownTitle = presentTitle(displayItem) ?? displayItem.contentId;
@@ -200,12 +201,12 @@ export function MiniPlayer() {
           type="button"
           data-testid="mini-toggle"
           className={`np-icon-btn np-icon-btn--primary${isPlaying ? '' : ' mini-resume'}`}
-          aria-label={isPlaying ? 'Pause' : 'Resume'}
+          aria-label={toggleLabel}
           onClick={() => (isPlaying ? transport.pause() : transport.play())}
         >
           {isPlaying
             ? <IconPlayerPauseFilled size={20} />
-            : <><IconPlayerPlayFilled size={18} /><span className="mini-resume-label">Resume</span></>}
+            : <><IconPlayerPlayFilled size={18} /><span className="mini-resume-label">{toggleLabel}</span></>}
         </button>
         <button
           type="button"

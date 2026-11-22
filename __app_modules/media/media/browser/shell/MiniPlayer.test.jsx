@@ -134,7 +134,7 @@ describe('MiniPlayer', () => {
     fireEvent.click(openQueue);
     expect(push).toHaveBeenCalledWith('nowPlaying', {});
 
-    fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
     expect(playerHandle.play).toHaveBeenCalledTimes(1);
     expect(controller.getSnapshot()).toEqual(expect.objectContaining({
       state: 'loading',
