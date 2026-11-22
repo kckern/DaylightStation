@@ -11,6 +11,7 @@ import imageSize from 'image-size';
 import { IFeedSourceAdapter, CONTENT_TYPES } from "../../application/ports/IFeedSourceAdapter.mjs";
 import { HttpClient } from '#system/services/HttpClient.mjs';
 import { formatGoodreadsReadAt } from '../../../shared/goodreadsDate.mjs';
+import { formatGoodreadsRating } from '../../../shared/goodreadsRating.mjs';
 
 /**
  * Deterministic FNV-1a 32-bit hash of a string, base36-encoded.
@@ -111,10 +112,8 @@ export class GoodreadsFeedAdapter extends IFeedSourceAdapter {
     // Book metadata line (author, rating, read date)
     const parts = [];
     if (meta?.author) parts.push(meta.author);
-    if (meta?.rating) {
-      const stars = Array.from({ length: 5 }, (_, i) => i < meta.rating ? '\u2605' : '\u2606').join('');
-      parts.push(stars);
-    }
+    const rating = formatGoodreadsRating(meta?.rating);
+    if (rating) parts.push(rating.label);
     if (meta?.readAt) {
       const readDate = formatGoodreadsReadAt(meta.readAt);
       if (readDate) parts.push(`Read ${readDate}`);

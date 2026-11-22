@@ -1,13 +1,10 @@
 import { formatGoodreadsReadAt } from '../../../../shared/goodreadsDate.mjs';
+import { formatGoodreadsRating } from '../../../../shared/goodreadsRating.mjs';
 
 export default function GoodreadsBody({ item }) {
   const author = item.meta?.author || item.body || '';
-  const rating = item.meta?.rating;
+  const rating = formatGoodreadsRating(item.meta?.rating);
   const readAt = item.meta?.readAt;
-
-  const stars = rating
-    ? Array.from({ length: 5 }, (_, i) => i < rating ? '\u2605' : '\u2606').join('')
-    : null;
 
   const readDate = formatGoodreadsReadAt(readAt) || null;
 
@@ -29,9 +26,9 @@ export default function GoodreadsBody({ item }) {
         gap: '0.5rem',
         marginTop: '0.3rem',
       }}>
-        {stars && (
-          <span style={{ fontSize: '0.85rem', color: '#f5c518', letterSpacing: '1px' }}>
-            {stars}
+        {rating && (
+          <span role="img" aria-label={rating.label} style={{ fontSize: '0.85rem', color: '#f5c518', letterSpacing: '1px' }}>
+            {rating.stars}
           </span>
         )}
         {readDate && (
