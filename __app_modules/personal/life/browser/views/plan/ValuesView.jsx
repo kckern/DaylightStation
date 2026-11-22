@@ -31,7 +31,7 @@ function ValueCreateSheet({ onClose, createValue, getFallbackFocusTarget }) {
 export function ValuesView({ username }) {
   const headingRef = useRef(null);
   const contextUsername = useLifeUsername();
-  const { plan, loading, error, readError, refetch, updateSection, createValue } = useLifePlan(username);
+  const { plan, loading, error, readError, refetch, reorderValue, createValue } = useLifePlan(username);
   const { pending, run } = useLifePlanSubmission();
   const submissionKey = `${username || contextUsername || ''}:values`;
   const valuesPending = pending.has(submissionKey);
@@ -43,23 +43,19 @@ export function ValuesView({ username }) {
   const saveValue = useCallback(value => run(submissionKey, () => createValue(value)), [createValue, run, submissionKey]);
 
   const moveValue = useCallback(async (index, direction) => {
-    const newValues = [...values];
     const targetIndex = index + direction;
-    if (targetIndex < 0 || targetIndex >= newValues.length) return;
+    if (targetIndex < 0 || targetIndex >= values.length) return;
 
-    // Swap ranks
-    const temp = newValues[index];
-    newValues[index] = newValues[targetIndex];
-    newValues[targetIndex] = temp;
-
-    // Update rank numbers
-    const updated = newValues.map((v, i) => ({ ...v, rank: i + 1 }));
     try {
-      await updateSection('values', updated, { waitForReadback: true });
+      await reorderValue({
+        valueId: values[index].id,
+        neighborId: values[targetIndex].id,
+        direction: direction < 0 ? 'up' : 'down',
+      });
     } catch {
-      // The plan hook exposes the section update error to this view.
+      // The plan hook exposes the reorder error to this view.
     }
-  }, [values, updateSection]);
+  }, [values, reorderValue]);
 
   const actions = (!loading && !readError) || opened
     ? <Button disabled={valuesPending} onClick={() => setOpened(true)}>Add value</Button> : undefined;

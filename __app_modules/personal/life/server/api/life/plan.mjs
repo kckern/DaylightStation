@@ -55,6 +55,19 @@ export default function createPlanRouter(config) {
     } catch (error) { next(error); }
   });
 
+  // POST /values/reorder — move one value relative to its expected neighbor.
+  router.post('/values/reorder', (req, res, next) => {
+    try {
+      const { valueId, neighborId, direction } = req.body || {};
+      const result = lifePlanOperations.reorderValue(getUsername(req), { valueId, neighborId, direction });
+      if (result.kind === 'missing-plan') return res.status(404).json({ error: 'Plan not found' });
+      if (result.kind === 'conflict') return res.status(409).json({ error: 'Values changed elsewhere. Refresh and retry the move.' });
+      if (result.kind === 'invalid-request') return res.status(400).json({ error: 'valueId, neighborId, and a valid direction are required' });
+      logger.info('life.value.reordered', { username: getUsername(req), valueId, neighborId, direction, result: result.kind });
+      res.json({ ok: true });
+    } catch (error) { next(error); }
+  });
+
   // POST /purpose — set or replace the purpose statement (creates the plan if missing)
   router.post('/purpose', (req, res, next) => {
     try {

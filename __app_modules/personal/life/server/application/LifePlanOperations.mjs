@@ -62,6 +62,32 @@ export class LifePlanOperations {
     return { kind: 'updated' };
   }
 
+  reorderValue(username, { valueId, neighborId, direction } = {}) {
+    if (!valueId || !neighborId || !['up', 'down'].includes(direction)) {
+      return { kind: 'invalid-request' };
+    }
+
+    const plan = this.plans.load(username);
+    if (!plan) return { kind: 'missing-plan' };
+    const values = plan.values || [];
+    const valueIndex = values.findIndex(value => value.id === valueId);
+    const neighborIndex = values.findIndex(value => value.id === neighborId);
+    if (valueIndex < 0 || neighborIndex < 0) return { kind: 'conflict' };
+
+    const expectedNeighborIndex = valueIndex + (direction === 'up' ? -1 : 1);
+    if (neighborIndex !== expectedNeighborIndex) {
+      const alreadyMoved = neighborIndex === valueIndex + (direction === 'up' ? 1 : -1);
+      return alreadyMoved ? { kind: 'unchanged' } : { kind: 'conflict' };
+    }
+
+    const reordered = [...values];
+    [reordered[valueIndex], reordered[neighborIndex]] = [reordered[neighborIndex], reordered[valueIndex]];
+    reordered.forEach((value, index) => { value.rank = index + 1; });
+    plan.values = reordered;
+    this.plans.save(username, plan);
+    return { kind: 'updated' };
+  }
+
   listGoals(username, state) {
     const plan = this.plans.load(username);
     if (!plan) return [];

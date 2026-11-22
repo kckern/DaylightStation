@@ -113,9 +113,26 @@ export function useLifePlan(username) {
     return value;
   }, [qs, afterWrite]);
 
+  const reorderValue = useCallback(async command => {
+    try {
+      await DaylightAPI(`${API_BASE}/values/reorder${qs}`, command, 'POST');
+      await afterWrite({ waitForReadback: true });
+      logger().info('value-reordered', { valueId: command.valueId, direction: command.direction });
+    } catch (err) {
+      if (err.status === 409) {
+        await refreshPlan([], { waitForReadback: true });
+        setSectionError('Values changed elsewhere. The list was refreshed; retry the move.');
+      } else {
+        setSectionError(err.message);
+      }
+      logger().error('value-reorder-error', { valueId: command.valueId, error: err.message });
+      throw err;
+    }
+  }, [qs, afterWrite, refreshPlan, setSectionError]);
+
   return {
     plan, isEmpty: planIsEmpty(plan), loading, revalidating, readError, error: readError ?? section.error,
-    refetch, updateSection, setPurpose, createValue,
+    refetch, updateSection, setPurpose, createValue, reorderValue,
   };
 }
 
