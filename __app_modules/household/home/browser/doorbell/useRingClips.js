@@ -31,7 +31,7 @@ export function useRingClips(camera, days) {
       return {
         camera,
         dayList,
-        clips: retained?.clips || [],
+        clipsByDay: retained?.clipsByDay || {},
         failedDays: retained?.failedDays || [],
         loading: true,
         error: null,
@@ -49,9 +49,13 @@ export function useRingClips(camera, days) {
     setState(current => {
       const retained = current?.camera === camera && current.dayList === dayList ? current : null;
       const failedDaySet = new Set(retained?.failedDays || []);
+      const clipsByDay = { ...(retained?.clipsByDay || {}) };
       list.forEach((day, index) => {
         if (results[index].status === 'rejected') failedDaySet.add(day);
-        else failedDaySet.delete(day);
+        else {
+          failedDaySet.delete(day);
+          clipsByDay[day] = results[index].value?.clips || [];
+        }
       });
       const failedDays = allDays.filter(day => failedDaySet.has(day));
       const error = failedDays.length === allDays.length
@@ -60,7 +64,7 @@ export function useRingClips(camera, days) {
       return {
         camera,
         dayList,
-        clips: [...(retained?.clips || []), ...fetchedClips],
+        clipsByDay,
         failedDays,
         loading: false,
         error,
@@ -73,7 +77,8 @@ export function useRingClips(camera, days) {
   if (!state || state.camera !== camera || state.dayList !== dayList) {
     return { clips: [], failedDays: [], loading: Boolean(camera && dayList), error: null, reload };
   }
-  return { clips: state.clips, failedDays: state.failedDays || [], loading: state.loading, error: state.error, reload };
+  const clips = dayList.split(',').flatMap(day => state.clipsByDay?.[day] || []);
+  return { clips, failedDays: state.failedDays || [], loading: state.loading, error: state.error, reload };
 }
 
 export default useRingClips;

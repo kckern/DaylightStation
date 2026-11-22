@@ -1,7 +1,7 @@
 import { Button } from '@/lib/ui/Button.jsx';
 import { Select } from '@/lib/ui/Select.jsx';
 import { EmptyState, ErrorState, StateMessage } from '@/lib/ui/states.jsx';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
@@ -48,6 +48,21 @@ function reconcileRows(items, current, before, pending) {
   return rows;
 }
 
+function matchesSearchState(item, state) {
+  if (state === 'saved') return Boolean(item.state?.isSaved);
+  if (state === 'archived') return Boolean(item.state?.isArchived);
+  if (state === 'read') return Boolean(item.state?.isRead ?? item.isRead);
+  if (state === 'unread') return !(item.state?.isRead ?? item.isRead);
+  return true;
+}
+
+function changesSearchMembership(state, action) {
+  return (state === 'saved' && ['save', 'unsave'].includes(action))
+    || (state === 'archived' && ['archive', 'unarchive'].includes(action))
+    || (state === 'read' && ['read', 'unread'].includes(action))
+    || (state === 'unread' && ['read', 'unread'].includes(action));
+}
+
 export default function FeedSearch() {
   const [params, setParams] = useSearchParams();
   const requestKey = params.toString();
@@ -55,6 +70,8 @@ export default function FeedSearch() {
   const committedSource = params.get('source') || '';
   const requestedState = params.get('state') || 'all';
   const activeState = SEARCH_FILTER_STATES.includes(requestedState) ? requestedState : 'all';
+  const currentSearch = useRef(null);
+  currentSearch.current = { requestKey, activeState };
   const fromDay = (params.get('from') || '').slice(0, 10);
   const toDay = (params.get('to') || '').slice(0, 10);
   const dateRangeInvalid = /^\d{4}-\d{2}-\d{2}$/.test(fromDay)
@@ -66,13 +83,18 @@ export default function FeedSearch() {
   const [foreground, setForeground] = useState('initial');
   const [requestError, setRequestError] = useState(null);
   const [syncStatus, setSyncStatus] = useState(null);
+  const [membershipRevision, setMembershipRevision] = useState(0);
+  const [settledWriteRevision, setSettledWriteRevision] = useState(0);
   const { mutateItems, applyPendingMutations, pendingItemOperations, itemSyncRevision } = useFeedWorkspace();
   const inputRef = useRef(null);
   const resultsRef = useRef(null);
+  const focusAfterRemoval = useRef(null);
   const paginationRef = useRef(null);
   const syncRetryRef = useRef(null);
   const appendedHeadingRef = useRef(null);
   const handledAppendFocus = useRef(null);
+  const handledMembershipRevision = useRef(0);
+  const pendingMembershipRequest = useRef(null);
   const latestSync = useRef(itemSyncRevision);
   latestSync.current = itemSyncRevision;
   const requestedSync = useRef(itemSyncRevision);
@@ -80,7 +102,9 @@ export default function FeedSearch() {
   const currentPage = resultPage?.requestKey === requestKey ? resultPage : null;
   const displayedPage = useRef(null);
   displayedPage.current = currentPage;
-  const { items, nextCursor, total, coverage } = currentPage ?? NO_RESULTS;
+  const { items: loadedItems, nextCursor, total, coverage } = currentPage ?? NO_RESULTS;
+  const items = useMemo(() => loadedItems.filter(item => matchesSearchState(item, activeState)), [activeState, loadedItems]);
+  const visibleTotal = Math.max(0, total - (loadedItems.length - items.length));
   const failure = requestError?.requestKey === requestKey ? requestError : null;
   const syncing = syncStatus?.requestKey === requestKey && syncStatus.pending;
   const syncError = syncStatus?.requestKey === requestKey && syncStatus.error;
@@ -217,6 +241,17 @@ export default function FeedSearch() {
   const { reload, poll } = useRefreshableRead(readSearch, {
     timeoutMs: searchTimeoutMs, onTimeout,
   });
+  const { regionProps, retry } = useRetryRegion(reload, searching);
+  const searchRegionRef = regionProps.ref;
+
+  useLayoutEffect(() => {
+    const previousFocus = focusAfterRemoval.current;
+    if (!previousFocus) return;
+    focusAfterRemoval.current = null;
+    if (!previousFocus.isConnected && document.activeElement === document.body) {
+      searchRegionRef.current?.focus({ preventScroll: true });
+    }
+  }, [items, searchRegionRef]);
 
   useLayoutEffect(() => {
     setSyncStatus(null);
@@ -235,10 +270,22 @@ export default function FeedSearch() {
   }, [applyPendingMutations, pendingItemOperations, requestKey]);
 
   useLayoutEffect(() => {
-    if (!currentPage || foreground || requestedSync.current === itemSyncRevision) return;
+    if (!currentPage || foreground || writes.current.pending.size || requestedSync.current === itemSyncRevision) return;
     requestedSync.current = itemSyncRevision;
     reload('reconcile');
-  }, [currentPage, itemSyncRevision, foreground, reload]);
+  }, [currentPage, itemSyncRevision, foreground, settledWriteRevision, reload]);
+
+  useLayoutEffect(() => {
+    if (!currentPage || foreground || writes.current.pending.size || handledMembershipRevision.current === membershipRevision) return;
+    if (pendingMembershipRequest.current !== requestKey) {
+      pendingMembershipRequest.current = null;
+      handledMembershipRevision.current = membershipRevision;
+      return;
+    }
+    pendingMembershipRequest.current = null;
+    handledMembershipRevision.current = membershipRevision;
+    reload('reconcile');
+  }, [currentPage, foreground, membershipRevision, requestKey, settledWriteRevision, reload]);
 
   const refreshCoverage = useCallback(() => poll('coverage'), [poll]);
   useVisibleRefresh({ active: coverage?.status === 'running' && !failure && !syncError, intervalMs: 2000, reload: refreshCoverage });
@@ -254,14 +301,24 @@ export default function FeedSearch() {
     if (current?.requestKey !== requestKey) return current;
     return { ...current, items: current.items.map(item => updated.find(value => value.id === item.id) || item) };
   });
+  const handleMutationSettled = ({ action, queued }) => {
+    const current = currentSearch.current;
+    if (queued || !changesSearchMembership(current.activeState, action)) return;
+    pendingMembershipRequest.current = current.requestKey;
+    setMembershipRevision(revision => revision + 1);
+  };
+
   const actOnItem = async (item, action) => {
+    const active = document.activeElement;
+    if (resultsRef.current?.contains(active)) focusAfterRemoval.current = active;
     const edit = { requestKey, key: resultKey(item) };
     writes.current.pending.add(edit);
     try {
-      await mutateItems([item], action, { onApply: replace }).catch(() => {});
+      await mutateItems([item], action, { onApply: replace, onSettled: handleMutationSettled }).catch(() => {});
     } finally {
       writes.current.pending.delete(edit);
       writes.current.generation++;
+      setSettledWriteRevision(revision => revision + 1);
     }
   };
   const setFilter = (key, value) => {
@@ -272,8 +329,6 @@ export default function FeedSearch() {
   const appendFailure = failure?.append ? failure : null;
   const reading = searching || loadingMore || syncing;
   const paginationDisabled = reading || syncError;
-  const { regionProps, retry } = useRetryRegion(reload, searching);
-
   return (
     <section className="feed-search" aria-labelledby="feed-search-title" {...regionProps}>
       <h1 id="feed-search-title">Search your feed</h1>
@@ -296,10 +351,10 @@ export default function FeedSearch() {
         {dateRangeInvalid ? <span className="feed-search__range-error" role="alert">From must be on or before To</span> : null}
         <button type="submit">Apply</button>
       </form>
-      {coverage && <p className="feed-search__coverage" role="status">{total} result{total === 1 ? '' : 's'} · {coverage.retentionMonths}-month history{coverage.status === 'running' ? ` · indexing (${coverage.indexed || 0})` : coverage.status === 'failed' ? ' · backfill paused' : ''}</p>}
+      {coverage && <p className="feed-search__coverage" role="status">{visibleTotal} result{visibleTotal === 1 ? '' : 's'} · {coverage.retentionMonths}-month history{coverage.status === 'running' ? ` · indexing (${coverage.indexed || 0})` : coverage.status === 'failed' ? ' · backfill paused' : ''}</p>}
       {searching && <StateMessage state="loading" role="status" title="Searching…" />}
       {failure && !appendFailure && <ErrorState title={null} error={failure.error} onRetry={retry} />}
-      {!dateRangeInvalid && !searching && !failure && items.length === 0 && <EmptyState title="No matching items in indexed history." />}
+      {!dateRangeInvalid && !searching && !failure && items.length === 0 && !nextCursor && <EmptyState title="No matching items in indexed history." />}
       <div className="feed-search__results" ref={resultsRef}>
         {items.map(item => {
           const key = resultKey(item);
@@ -341,7 +396,7 @@ export default function FeedSearch() {
             if (paginationDisabled) return;
             reload('append', appendFailure?.cursor ?? nextCursor);
           }}>
-          {loadingMore ? 'Loading…' : appendFailure ? 'Retry' : `Load more (${items.length} of ${total})`}
+          {loadingMore ? 'Loading…' : appendFailure ? 'Retry' : `Load more (${items.length} of ${visibleTotal})`}
         </Button>
       )}
     </section>

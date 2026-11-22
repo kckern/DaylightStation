@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 /**
  * The review station's keymap. One capture-phase listener on the document, so a key reaches the
@@ -34,12 +34,21 @@ function isTypingTarget(el) {
   return true;
 }
 
-export function useReviewKeys(handlers, { enabled = true } = {}) {
+export function useReviewKeys(handlers, { enabled = true, redoOwner = null } = {}) {
   const ref = useRef(handlers);
   ref.current = handlers;
+  const activeRedoOwner = enabled ? redoOwner : null;
   const redoRef = useRef(false);
+  const redoOwnerRef = useRef(activeRedoOwner);
   const [redoOpen, setRedoOpen] = useState(false);
   const openRedo = (on) => { redoRef.current = on; setRedoOpen(on); };
+
+  useLayoutEffect(() => {
+    if (redoOwnerRef.current === activeRedoOwner) return;
+    redoOwnerRef.current = activeRedoOwner;
+    redoRef.current = false;
+    setRedoOpen(false);
+  }, [activeRedoOwner]);
 
   useEffect(() => {
     if (!enabled) return undefined;

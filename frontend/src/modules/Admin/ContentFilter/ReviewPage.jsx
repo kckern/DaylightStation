@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Anchor, Stack, Text } from '@mantine/core';
 import { useVisibleRefresh } from '../../../lib/hooks/useVisibleRefresh.js';
@@ -85,7 +85,9 @@ function FilmReview({ ratingKey, rowId, owner }) {
   // Not matched to Plex: a key that still holds household work shows its review; runs are refused.
   const notMatched = data?.match === 'unmatched';
   const station = useReviewStation({ ratingKey, data, reload, refreshReview: refresh, selected, select, activeView, runBusy: running || notMatched });
-  const { redoOpen } = useReviewKeys(station.handlers, { enabled: Boolean(data?.rows) });
+  const { redoOpen } = useReviewKeys(station.handlers, {
+    enabled: Boolean(data?.rows), redoOwner: `${ratingKey}\u001f${selected?.id ?? ''}`,
+  });
   useVisibleRefresh({ active: Boolean(waiting), intervalMs: POLL_MS, reload, poll });
 
   const refining = station.refining;
@@ -156,7 +158,7 @@ function UnmatchedFilm({ ratingKey, data }) {
       actions={<Anchor component={Link} to="/admin/content/filter" size="sm">All films</Anchor>}>
       <Stack gap="xs">
         <Text size="sm">{`Not matched to Plex: ${data.unmatched?.text || 'no Plex film'}.`}</Text>
-        <Text size="sm" c="dimmed">This film can't be reviewed against a file, and it can't be run, until Plex has this film
+        <Text size="sm" c="dimmed">This film can&apos;t be reviewed against a file, and it can&apos;t be run, until Plex has this film
           under the same title and year. Then run <code>contentfilter map</code> to match it.</Text>
       </Stack>
     </SectionCard>

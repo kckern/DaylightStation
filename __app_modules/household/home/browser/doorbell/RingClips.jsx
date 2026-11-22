@@ -115,10 +115,26 @@ export function RingClips({ camera, marks, timeZone = Intl.DateTimeFormat().reso
   const days = useMemo(() => ringDays(rings, timeZone), [rings, timeZone]);
   const { clips, failedDays, loading, error, reload } = useRingClips(camera, days);
   const withDay = useMemo(() => new Set(rings.map((t) => dayFormat(timeZone).format(new Date(t)))).size > 1, [rings, timeZone]);
+  const previousRingScope = useRef(null);
 
   useEffect(() => {
     logger.debug('home.ring.list', { camera, rings: rings.length, days: days.length });
   }, [camera, rings.length, days.length]);
+
+  useEffect(() => {
+    const previous = previousRingScope.current;
+    const dayList = days.join(',');
+    previousRingScope.current = { camera, timeZone, dayList, rings };
+    if (!previous || previous.camera !== camera || previous.timeZone !== timeZone) return;
+    // useRingClips already starts a read when its day list changes.
+    if (previous.dayList !== dayList) return;
+    const knownRings = new Set(previous.rings);
+    if (!rings.some((ring) => !knownRings.has(ring))) return;
+    logger.info('home.ring.clips.refresh-new-rings', { camera, added: rings.filter((ring) => !knownRings.has(ring)).length });
+    // A reload supersedes the hook's in-flight batch, so refresh every day in
+    // this visit to avoid dropping another day's still-pending lookup.
+    reload();
+  }, [camera, rings, timeZone, reload]);
 
   let body;
   if (!rings.length) body = <p className="home-rings__empty">No rings in this range</p>;

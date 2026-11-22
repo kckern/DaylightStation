@@ -58,6 +58,17 @@ describe('Life Log API Router', () => {
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/date/i);
     });
+
+    it('rejects an impossible calendar day while accepting a leap day', async () => {
+      const invalid = await request(app).get('/log/testuser/2026-02-29');
+      expect(invalid.status).toBe(400);
+      expect(invalid.body.error).toMatch(/date/i);
+      expect(mockAggregator.aggregate).not.toHaveBeenCalled();
+
+      const valid = await request(app).get('/log/testuser/2024-02-29');
+      expect(valid.status).toBe(200);
+      expect(mockAggregator.aggregate).toHaveBeenCalledWith('testuser', '2024-02-29');
+    });
   });
 
   describe('GET /log/:username/range', () => {

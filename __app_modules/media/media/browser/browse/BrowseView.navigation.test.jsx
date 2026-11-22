@@ -33,6 +33,7 @@ function NavigationSurface() {
 }
 
 beforeEach(() => {
+  DaylightAPI.mockClear();
   vi.stubGlobal('matchMedia', query => Object.assign(new EventTarget(), {
     matches: false, media: query, addListener() {}, removeListener() {},
   }));
@@ -125,6 +126,47 @@ describe('Browse Detail browser history', () => {
     expect(window.history.state.mediaNavStack.at(-2).params).toMatchObject({
       path: 'plex/movies', focusedId: 'plex:m100', loadedCount: 120,
     });
+  });
+
+  it('Back restores the Browse region when a refreshed complete list no longer has the saved row', async () => {
+    render(<MantineProvider><CastTargetProvider><NavProvider>
+      <NavigationSurface />
+    </NavProvider></CastTargetProvider></MantineProvider>);
+    await screen.findByTestId('browse-detail-plex:e2');
+    const host = screen.getByTestId('scroll-host');
+    host.scrollTop = 137;
+    fireEvent.click(screen.getByTestId('browse-detail-plex:e2'));
+    await screen.findByTestId('detail-route');
+
+    let finishRead;
+    DaylightAPI.mockImplementationOnce(() => new Promise(resolve => { finishRead = resolve; }));
+    act(() => window.history.back());
+    await waitFor(() => expect(DaylightAPI).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByTestId('browse-row-plex:e2')).toBeNull());
+    await act(async () => finishRead({ items: [{ id: 'plex:e1', title: 'Episode 1', itemType: 'item' }], total: 1 }));
+
+    await waitFor(() => expect(screen.getByTestId('browse-view')).toHaveFocus());
+    expect(host.scrollTop).toBe(137);
+  });
+
+  it('keeps deliberate focus on a breadcrumb while waiting to restore a removed row', async () => {
+    render(<MantineProvider><CastTargetProvider><NavProvider>
+      <NavigationSurface />
+    </NavProvider></CastTargetProvider></MantineProvider>);
+    await screen.findByTestId('browse-detail-plex:e2');
+    fireEvent.click(screen.getByTestId('browse-detail-plex:e2'));
+    await screen.findByTestId('detail-route');
+
+    let finishRead;
+    DaylightAPI.mockImplementationOnce(() => new Promise(resolve => { finishRead = resolve; }));
+    act(() => window.history.back());
+    await waitFor(() => expect(DaylightAPI).toHaveBeenCalledTimes(2));
+    const home = await screen.findByTestId('browse-crumb-home');
+    home.focus();
+    await act(async () => finishRead({ items: [{ id: 'plex:e1', title: 'Episode 1', itemType: 'item' }], total: 1 }));
+
+    await waitFor(() => expect(screen.getByTestId('browse-row-plex:e1')).toBeTruthy());
+    expect(home).toHaveFocus();
   });
 
   // Omitting currentPatch from either Detail entrypoint must lose the live

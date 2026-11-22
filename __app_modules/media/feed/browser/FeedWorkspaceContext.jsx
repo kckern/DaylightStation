@@ -359,7 +359,7 @@ export function FeedWorkspaceProvider({ children, owner = feedQueueOwner() }) {
     )), items || []);
   }, []);
 
-  const mutateItems = useCallback(async (items, action, { onApply } = {}) => {
+  const mutateItems = useCallback(async (items, action, { onApply, onSettled } = {}) => {
     const owner = mountedOwner.current;
     const view = preferenceView.current;
     const isCurrent = () => view && view === preferenceView.current && owner === feedQueueOwner();
@@ -465,13 +465,14 @@ export function FeedWorkspaceProvider({ children, owner = feedQueueOwner() }) {
       const byId = new Map((result.items || []).map(item => [item.id, item.state]));
       const settled = settleTransaction(transaction, { successStates: byId, accepted: true });
       if (!isCurrent()) return result;
+      onSettled?.({ action, items: settled, queued: false });
       const inverse = { read: 'unread', unread: 'read', save: 'unsave', unsave: 'save', archive: 'unarchive', unarchive: 'archive' }[action];
       notifications.show({
         title: action === 'archive' ? 'Archived' : action === 'save' ? 'Saved' : 'Updated',
         message: (
           <span>
             {result.items?.some(item => item.state?.syncStatus === 'pending') ? 'Saved locally; source sync will retry. ' : 'Change saved. '}
-            {inverse && <button type="button" className="feed-toast-undo" onClick={() => mutateItems(settled, inverse, { onApply }).catch(() => {})}>Undo</button>}
+            {inverse && <button type="button" className="feed-toast-undo" onClick={() => mutateItems(settled, inverse, { onApply, onSettled }).catch(() => {})}>Undo</button>}
           </span>
         ),
         autoClose: 5000,

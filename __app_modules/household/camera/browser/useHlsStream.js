@@ -1,25 +1,8 @@
 // frontend/src/modules/CameraFeed/useHlsStream.js
 import { useState, useEffect } from 'react';
 import Hls from 'hls.js';
-import { daylightApiResponse } from '../../../../frontend/src/lib/api.mjs';
 
-// The server stop endpoint stops the camera's encoder, shared by the Home card and viewport.
-const viewers = new Map();
 const EMPTY_SIZE = { w: 0, h: 0 };
-function retainStream(path) {
-  viewers.set(path, (viewers.get(path) || 0) + 1);
-  return () => {
-    const remaining = viewers.get(path) - 1;
-    viewers.set(path, remaining);
-    if (remaining > 0) return;
-    // A replacement view can attach in the same React commit.
-    queueMicrotask(() => {
-      if (viewers.get(path) !== 0) return;
-      viewers.delete(path);
-      daylightApiResponse(path, { method: 'DELETE' }).catch(() => {});
-    });
-  };
-}
 
 /**
  * Attach an HLS live stream to a video element.
@@ -57,7 +40,6 @@ export default function useHlsStream(cameraId, videoRef, logger) {
     // Native HLS (Safari)
     if (!Hls.isSupported()) {
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        const release = retainStream(streamPath);
         video.src = playlistUrl;
         video.play().catch(() => {});
         video.addEventListener('playing', onPlaying, { once: true });
@@ -67,7 +49,6 @@ export default function useHlsStream(cameraId, videoRef, logger) {
           video.removeEventListener('loadedmetadata', onMeta);
           video.removeAttribute('src');
           video.load();
-          release();
         };
       }
       logger?.error?.('hls.unsupported');
@@ -81,7 +62,6 @@ export default function useHlsStream(cameraId, videoRef, logger) {
       liveMaxLatencyDurationCount: 3,
     });
 
-    const release = retainStream(streamPath);
     hls.loadSource(playlistUrl);
     hls.attachMedia(video);
     hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
@@ -96,7 +76,6 @@ export default function useHlsStream(cameraId, videoRef, logger) {
       video.removeEventListener('playing', onPlaying);
       video.removeEventListener('loadedmetadata', onMeta);
       hls.destroy();
-      release();
       logger?.info?.('hls.stop');
     };
   }, [cameraId, videoRef, logger]);

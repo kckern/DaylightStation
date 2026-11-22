@@ -19,7 +19,7 @@ describe('FeedSearch', () => {
     mocks.mutate.mockReset();
     mocks.revision = 0;
     mocks.api.mockImplementation(url => Promise.resolve(url.includes('cursor=')
-      ? { items: [{ id: 'two', stateKey: 'two', title: 'Second result', state: {} }], total: 2, nextCursor: null, coverage: { retentionMonths: 12, status: 'complete' } }
+      ? { items: [{ id: 'two', stateKey: 'two', title: 'Second result', state: { isSaved: true } }], total: 2, nextCursor: null, coverage: { retentionMonths: 12, status: 'complete' } }
       : { items: [{ id: 'one', stateKey: 'one', title: 'Saved result', state: { isSaved: true } }], total: 2, nextCursor: 'MQ', coverage: { retentionMonths: 12, status: 'complete' } }));
   });
 
@@ -173,7 +173,7 @@ describe('FeedSearch', () => {
 
   test('replay waits for a stalled append to expire and supplies the next accepted cursor', async () => {
     vi.useFakeTimers();
-    const snapshot = (title, nextCursor = null) => ({ items: [{ id: title, title }], total: 2, nextCursor });
+    const snapshot = (title, nextCursor = null) => ({ items: [{ id: title, title, state: { isSaved: true } }], total: 2, nextCursor });
     const append = Promise.withResolvers();
     mocks.api.mockResolvedValueOnce(snapshot('Original bird', 'original-cursor'))
       .mockReturnValueOnce(append.promise)
@@ -207,6 +207,167 @@ describe('FeedSearch', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Load more (1 of 2)' }));
     expect(await screen.findByRole('heading', { name: 'Second result' })).toBeInTheDocument();
     await waitFor(() => expect(mocks.api).toHaveBeenLastCalledWith(expect.stringContaining('cursor=MQ'), {}, 'GET', expect.any(Object)));
+  });
+
+  test('removes an item from the Saved filter on optimistic unsave and restores it on rollback', async () => {
+    let rollback;
+    mocks.api.mockResolvedValue({ items: [{ id: 'one', stateKey: 'one', title: 'Saved result', state: { isSaved: true } }],
+      total: 1, nextCursor: null, coverage: { retentionMonths: 12, status: 'complete' } });
+    mocks.mutate.mockImplementation(([item], _action, { onApply }) => {
+      onApply([{ ...item, state: { ...item.state, isSaved: false } }]);
+      return new Promise((_resolve, reject) => {
+        rollback = () => {
+          onApply([item]);
+          reject(new Error('write failed'));
+        };
+      });
+    });
+    render(<MemoryRouter initialEntries={['/feed/search?state=saved']}><FeedSearch /></MemoryRouter>);
+    await screen.findByRole('heading', { name: 'Saved result' });
+    const saved = screen.getByRole('button', { name: 'Saved' });
+    saved.focus();
+    fireEvent.click(saved);
+
+    expect(await screen.findByText('No matching items in indexed history.')).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Saved result' })).toBeNull();
+    expect(screen.getByText('0 results · 12-month history')).toBeVisible();
+    const results = screen.getByRole('region', { name: 'Search your feed' });
+    await waitFor(() => expect(results).toHaveFocus());
+
+    await act(async () => rollback());
+    expect(await screen.findByRole('heading', { name: 'Saved result' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Saved' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('1 result · 12-month history')).toBeVisible();
+  });
+
+  test('refills an offset-paginated Saved result window after an online unsave', async () => {
+    const item = id => ({ id: `item-${id}`, stateKey: `item-${id}`, title: `Result ${id}`, state: { isSaved: true } });
+    const firstPage = Array.from({ length: 30 }, (_, index) => item(index + 1));
+    const refreshedPage = Array.from({ length: 30 }, (_, index) => item(index + 2));
+    mocks.api.mockResolvedValueOnce({ items: firstPage, total: 31, nextCursor: '30', coverage: { retentionMonths: 12, status: 'complete' } })
+      .mockResolvedValueOnce({ items: refreshedPage, total: 30, nextCursor: null, coverage: { retentionMonths: 12, status: 'complete' } });
+    mocks.mutate.mockImplementation(async ([row], action, { onApply, onSettled }) => {
+      onApply([{ ...row, state: { ...row.state, isSaved: false } }]);
+      onSettled({ action, queued: false });
+      return { items: [{ id: row.id, state: { isSaved: false } }] };
+    });
+
+    render(<MemoryRouter initialEntries={['/feed/search?state=saved']}><FeedSearch /></MemoryRouter>);
+    expect(await screen.findByRole('heading', { name: 'Result 1' })).toBeVisible();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Saved' })[0]);
+
+    expect(await screen.findByRole('heading', { name: 'Result 31' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Result 1' })).toBeNull();
+    expect(screen.getByText('30 results · 12-month history')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Load more/ })).toBeNull();
+    expect(mocks.api).toHaveBeenCalledTimes(2);
+    expect(mocks.api.mock.lastCall[0]).not.toContain('cursor=');
+  });
+
+  test('waits for Load more to settle before reconciling a Saved membership change', async () => {
+    const item = id => ({ id: `item-${id}`, stateKey: `item-${id}`, title: `Result ${id}`, state: { isSaved: true } });
+    const page = (start, count, total, nextCursor) => ({
+      items: Array.from({ length: count }, (_, index) => item(start + index)), total, nextCursor,
+      coverage: { retentionMonths: 12, status: 'complete' },
+    });
+    let finishAppend;
+    let cursorReads = 0;
+    let noCursorReads = 0;
+    mocks.api.mockImplementation(url => {
+      const cursor = new URL(url, 'http://local').searchParams.get('cursor');
+      if (cursor === '30' && cursorReads++ === 0) return new Promise(resolve => { finishAppend = resolve; });
+      if (cursor === '30') return Promise.resolve(page(32, 30, 60, null));
+      return Promise.resolve(noCursorReads++ === 0 ? page(1, 30, 61, '30') : page(2, 30, 60, '30'));
+    });
+    mocks.mutate.mockImplementation(async ([row], action, { onApply, onSettled }) => {
+      onApply([{ ...row, state: { ...row.state, isSaved: false } }]);
+      onSettled({ action, queued: false });
+      return { items: [{ id: row.id, state: { isSaved: false } }] };
+    });
+
+    render(<MemoryRouter initialEntries={['/feed/search?state=saved']}><FeedSearch /></MemoryRouter>);
+    expect(await screen.findByRole('heading', { name: 'Result 1' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Load more (30 of 61)' }));
+    await waitFor(() => expect(finishAppend).toBeTypeOf('function'));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Saved' })[0]);
+
+    await act(async () => finishAppend(page(31, 30, 61, '60')));
+    expect(await screen.findByRole('heading', { name: 'Result 61' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Result 1' })).toBeNull();
+    expect(screen.getByText('60 results · 12-month history')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Loading…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Load more/ })).toBeNull();
+  });
+
+  test('restores a sole Saved result through Undo after reconciliation emptied the list', async () => {
+    const savedItem = { id: 'one', stateKey: 'one', title: 'Saved result', state: { isSaved: true } };
+    let undo;
+    mocks.api.mockResolvedValueOnce({ items: [savedItem], total: 1, nextCursor: null, coverage: { retentionMonths: 12, status: 'complete' } })
+      .mockResolvedValueOnce({ items: [], total: 0, nextCursor: null, coverage: { retentionMonths: 12, status: 'complete' } })
+      .mockResolvedValueOnce({ items: [savedItem], total: 1, nextCursor: null, coverage: { retentionMonths: 12, status: 'complete' } });
+    mocks.mutate.mockImplementation(async ([row], action, { onApply, onSettled }) => {
+      if (action === 'unsave') {
+        onApply([{ ...row, state: { ...row.state, isSaved: false } }]);
+        onSettled({ action, queued: false });
+        undo = () => {
+          onApply([savedItem]);
+          onSettled({ action: 'save', queued: false });
+        };
+      }
+      return { items: [{ id: row.id, state: { isSaved: action === 'save' } }] };
+    });
+
+    render(<MemoryRouter initialEntries={['/feed/search?state=saved']}><FeedSearch /></MemoryRouter>);
+    expect(await screen.findByRole('heading', { name: 'Saved result' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Saved' }));
+    expect(await screen.findByText('No matching items in indexed history.')).toBeVisible();
+    expect(screen.getByText('0 results · 12-month history')).toBeVisible();
+
+    await act(async () => undo());
+
+    expect(await screen.findByRole('heading', { name: 'Saved result' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Saved' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('1 result · 12-month history')).toBeVisible();
+    expect(mocks.api).toHaveBeenCalledTimes(3);
+  });
+
+  test('reconciles Undo against the current query after navigation from the originating search', async () => {
+    const savedItem = { id: 'one', stateKey: 'one', title: 'Birds', state: { isSaved: true } };
+    let undo;
+    let birdSearches = 0;
+    mocks.api.mockImplementation(url => {
+      const params = new URL(url, 'http://local').searchParams;
+      if (params.get('q') === 'birds' && birdSearches++ > 0) return Promise.resolve({ items: [savedItem], total: 1, nextCursor: null, coverage: { retentionMonths: 12, status: 'complete' } });
+      if (params.get('q') === 'birds') return Promise.resolve({ items: [], total: 0, nextCursor: null, coverage: { retentionMonths: 12, status: 'complete' } });
+      return Promise.resolve({ items: [savedItem], total: 1, nextCursor: null, coverage: { retentionMonths: 12, status: 'complete' } });
+    });
+    mocks.mutate.mockImplementation(async ([row], action, { onApply, onSettled }) => {
+      if (action === 'unsave') {
+        onApply([{ ...row, state: { ...row.state, isSaved: false } }]);
+        onSettled({ action, queued: false });
+        undo = () => {
+          onApply([savedItem]);
+          onSettled({ action: 'save', queued: false });
+        };
+      }
+      return { items: [{ id: row.id, state: { isSaved: action === 'save' } }] };
+    });
+
+    render(<MemoryRouter initialEntries={['/feed/search?state=saved']}><FeedSearch /></MemoryRouter>);
+    expect(await screen.findByRole('heading', { name: 'Birds' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Saved' }));
+    expect(await screen.findByText('No matching items in indexed history.')).toBeVisible();
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search feed history' }), { target: { value: 'birds' } });
+    fireEvent.submit(screen.getByRole('search'));
+    expect(await screen.findByText('No matching items in indexed history.')).toBeVisible();
+
+    await act(async () => undo());
+
+    expect(await screen.findByRole('heading', { name: 'Birds' })).toBeVisible();
+    expect(screen.getByText('1 result · 12-month history')).toBeVisible();
+    expect(mocks.api).toHaveBeenCalledTimes(4);
+    expect(mocks.api.mock.lastCall[0]).toContain('q=birds');
   });
 
   test('hides the previous query and its continuation while a new query loads or retries', async () => {

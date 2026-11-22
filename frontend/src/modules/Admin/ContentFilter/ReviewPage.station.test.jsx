@@ -84,6 +84,27 @@ describe('review station keys', () => {
     await waitFor(() => expect(reviewCalls()).toHaveLength(2));
     expect(reviewCalls()[1].body).toEqual(expect.objectContaining({ verdict: 'redo', reason: 'action' }));
   });
+  it('discards a redo reason when selection changes and accepts a fresh reason on the new row', async () => {
+    let finish;
+    pendingWrite = new Promise(resolve => { finish = resolve; });
+    show();
+    press('a');
+    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    press('d');
+    expect(document.querySelector('[data-key="1"]')).toBeTruthy();
+
+    await act(async () => { finish({}); });
+    await waitFor(() => expect(selected()).toBe('cue:w2'));
+    press('3');
+    expect(reviewCalls()).toHaveLength(1);
+
+    press('d'); press('3');
+    await waitFor(() => expect(reviewCalls()).toHaveLength(2));
+    expect(reviewCalls()[1]).toEqual(expect.objectContaining({
+      path: 'api/v1/content-filter/77/review/cue%3Aw2',
+      body: expect.objectContaining({ verdict: 'redo', reason: 'action' }),
+    }));
+  });
   it('I and Tab are not review keys any more', async () => {
     show(); press('i'); press('Tab');
     await new Promise((r) => setTimeout(r, 20));

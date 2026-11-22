@@ -35,7 +35,7 @@ function SourceProbe() {
   </>;
 }
 
-function MutationProbe() {
+function MutationProbe({ onSettled }) {
   const { mutateItems, pendingMutations } = useFeedWorkspace();
   const [error, setError] = useState('');
   const [item, setItem] = useState({ id: 'one', state: { isRead: false, isSaved: false, isArchived: false } });
@@ -45,7 +45,7 @@ function MutationProbe() {
       <output aria-label="read">{String(item.state.isRead)}</output>
       <output aria-label="failure">{error}</output>
       <output aria-label="pending">{pendingMutations}</output>
-      <button onClick={() => mutateItems([item], 'save', { onApply: updated => setItem(updated[0]) }).catch(err => setError(err.message))}>Save item</button>
+      <button onClick={() => mutateItems([item], 'save', { onApply: updated => setItem(updated[0]), onSettled }).catch(err => setError(err.message))}>Save item</button>
       <button onClick={() => mutateItems([item], 'read', { onApply: updated => setItem(updated[0]) }).catch(err => setError(err.message))}>Mark item read</button>
     </>
   );
@@ -650,6 +650,21 @@ describe('FeedWorkspaceProvider reading preferences', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
     await act(async () => {});
     expect(apiMock.mock.calls.filter(([path]) => path.endsWith('/items/state'))).toHaveLength(1);
+  });
+
+  test('passes successful Undo settlement to the original view refresh callback', async () => {
+    const onSettled = vi.fn();
+    const view = render(<FeedWorkspaceProvider><MutationProbe onSettled={onSettled} /></FeedWorkspaceProvider>);
+    fireEvent.click(screen.getByText('Save item'));
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ title: 'Saved' })));
+    const toast = notifications.show.mock.calls.at(-1)[0];
+    expect(onSettled).toHaveBeenCalledWith(expect.objectContaining({ action: 'save', queued: false }));
+
+    view.rerender(<FeedWorkspaceProvider><MutationProbe onSettled={onSettled} />{toast.message}</FeedWorkspaceProvider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+
+    await waitFor(() => expect(apiMock.mock.calls.filter(([path]) => path.endsWith('/items/state'))).toHaveLength(2));
+    expect(onSettled).toHaveBeenNthCalledWith(2, expect.objectContaining({ action: 'unsave', queued: false }));
   });
 
   for (const result of ['success', 'refusal', 'network failure', 'same account network failure']) {

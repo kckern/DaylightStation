@@ -54,6 +54,66 @@ describe('RingClips', () => {
     await waitFor(() => expect(apiMock.mock.calls.map(([url]) => url)).toEqual(['api/v1/camera/porch-cam/clips?day=2026-10-29']));
   });
 
+  it('refreshes clips when a new ring arrives on a day already being viewed', async () => {
+    const addedRing = base + 30 * 60_000;
+    apiMock
+      .mockResolvedValueOnce({ clips: [clipAt(base, 0)] })
+      .mockResolvedValueOnce({ clips: [clipAt(base, 0), clipAt(addedRing, 1)] });
+    const view = marks => <MantineProvider><RingClips camera="porch-cam" marks={marks} timeZone="UTC" /></MantineProvider>;
+    const tree = render(view([base]));
+    await waitFor(() => expect(document.querySelectorAll('video')).toHaveLength(1));
+
+    tree.rerender(view([base, addedRing]));
+
+    await waitFor(() => expect(document.querySelectorAll('video')).toHaveLength(2));
+    expect(apiMock.mock.calls.map(([path]) => path)).toEqual([
+      'api/v1/camera/porch-cam/clips?day=2026-10-28',
+      'api/v1/camera/porch-cam/clips?day=2026-10-28',
+    ]);
+  });
+
+  it('does not duplicate the hook refresh when a new ring adds a camera day', async () => {
+    const nextDayRing = Date.parse('2026-10-29T12:00:00Z');
+    apiMock.mockResolvedValue({ clips: [clipAt(base, 0), clipAt(nextDayRing, 1)] });
+    const view = marks => <MantineProvider><RingClips camera="porch-cam" marks={marks} timeZone="UTC" /></MantineProvider>;
+    const tree = render(view([base]));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledTimes(1));
+
+    tree.rerender(view([base, nextDayRing]));
+
+    await waitFor(() => expect(document.querySelectorAll('video')).toHaveLength(2));
+    expect(apiMock.mock.calls.map(([path]) => path)).toEqual([
+      'api/v1/camera/porch-cam/clips?day=2026-10-28',
+      'api/v1/camera/porch-cam/clips?day=2026-10-28',
+      'api/v1/camera/porch-cam/clips?day=2026-10-29',
+    ]);
+  });
+
+  it('refreshes a new ring without publishing a superseded lookup batch', async () => {
+    const nearMidnight = Date.parse('2026-10-28T00:01:00Z');
+    const addedRing = nearMidnight + 30 * 60_000;
+    const reads = new Map();
+    const staleResults = [];
+    apiMock.mockImplementation(path => {
+      const day = path.split('day=')[1];
+      const count = (reads.get(day) || 0) + 1;
+      reads.set(day, count);
+      if (count === 1) return new Promise(resolve => staleResults.push(() => resolve({ clips: [] })));
+      return Promise.resolve({ clips: day === '2026-10-28' ? [clipAt(nearMidnight, 0), clipAt(addedRing, 1)] : [] });
+    });
+    const view = marks => <MantineProvider><RingClips camera="porch-cam" marks={marks} timeZone="UTC" /></MantineProvider>;
+    const tree = render(view([nearMidnight]));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledTimes(2));
+
+    tree.rerender(view([nearMidnight, addedRing]));
+
+    await waitFor(() => expect(apiMock).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(document.querySelectorAll('video')).toHaveLength(2));
+    staleResults.forEach(resolve => resolve());
+    await waitFor(() => expect(document.querySelectorAll('video')).toHaveLength(2));
+    expect([...reads.entries()]).toEqual([['2026-10-27', 2], ['2026-10-28', 2]]);
+  });
+
   it('a clip shows its first frame with one play button, and gets native controls only once tapped', async () => {
     apiMock.mockResolvedValue({ clips: [clipAt(rings[0], 0)] });
     wrap(<RingClips camera="porch-cam" marks={[rings[0]]} timeZone="UTC" />);

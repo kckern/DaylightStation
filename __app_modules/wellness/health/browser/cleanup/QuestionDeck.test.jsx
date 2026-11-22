@@ -78,6 +78,55 @@ describe('QuestionDeck', () => {
       expect.objectContaining({ dismiss: true }), 'POST'));
   });
 
+  it('keeps the selected question and advances to its next sibling when an earlier question disappears', async () => {
+    const first = [q('A'), q('B'), q('C'), q('D')];
+    const deck = questions => <MantineProvider><QuestionDeck questions={questions} startId="B" onChanged={() => {}} /></MantineProvider>;
+    const tree = render(deck(first));
+    fireEvent.click(screen.getByRole('button', { name: /Other answer/ }));
+    fireEvent.change(screen.getByLabelText('Your answer'), { target: { value: 'My answer for dish B' } });
+
+    tree.rerender(deck([q('B'), q('C'), q('D')]));
+
+    expect(screen.getByText('Which icon fits B?')).toBeTruthy();
+    expect(screen.getByText('1 of 3')).toBeTruthy();
+    expect(screen.getByLabelText('Your answer').value).toBe('My answer for dish B');
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(api).toHaveBeenCalledWith('api/v1/health/nutrition/cleanup/questions/B/answer',
+      expect.objectContaining({ text: 'My answer for dish B', expectedVersion: 1 }), 'POST'));
+    expect(await screen.findByText('Which icon fits C?')).toBeTruthy();
+  });
+
+  it('keeps the current draft when an older answer finishes after the user moves on', async () => {
+    let finishAnswer;
+    api.mockReturnValueOnce(new Promise(resolve => { finishAnswer = resolve; }));
+    mount();
+    fireEvent.click(screen.getByRole('button', { name: /Rice bowl/ }));
+    await waitFor(() => expect(finishAnswer).toBeTypeOf('function'));
+    fireEvent.click(screen.getByRole('button', { name: /Skip/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Skip/ }));
+    expect(screen.getByText('Which icon fits C?')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Other answer/ }));
+    fireEvent.change(screen.getByLabelText('Your answer'), { target: { value: 'Draft for dish C' } });
+
+    await act(async () => finishAnswer({ status: 'resolved' }));
+
+    expect(screen.getByText('Which icon fits C?')).toBeTruthy();
+    expect(screen.getByLabelText('Your answer').value).toBe('Draft for dish C');
+  });
+
+  it('commits the fallback question identity across consecutive list refreshes', () => {
+    const deck = questions => <MantineProvider><QuestionDeck questions={questions} startId="B" onChanged={() => {}} /></MantineProvider>;
+    const tree = render(deck([q('A'), q('B'), q('C')]));
+    expect(screen.getByText('Which icon fits B?')).toBeTruthy();
+
+    tree.rerender(deck([q('A'), q('C')]));
+    expect(screen.getByText('Which icon fits C?')).toBeTruthy();
+    tree.rerender(deck([q('X'), q('A'), q('C')]));
+
+    expect(screen.getByText('Which icon fits C?')).toBeTruthy();
+    expect(screen.getByText('3 of 3')).toBeTruthy();
+  });
+
   it('names each food once, though entryNames keys it by both id and uuid', () => {
     render(<MantineProvider><QuestionDeck questions={[q('A', { entryNames: { 'row-1': 'White Rice', 'uuid-1': 'White Rice' } })]} onChanged={() => {}} /></MantineProvider>);
     expect(screen.getByText('White Rice')).toBeTruthy();

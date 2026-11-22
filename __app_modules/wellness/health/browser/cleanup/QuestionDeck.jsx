@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button, Textarea, UnstyledButton } from '@mantine/core';
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { useQuestionAnswer } from "./CleanupQuestions.jsx";
@@ -83,14 +83,27 @@ export function QuestionDeck({ questions = [], startId = null, onChanged = () =>
   const logger = useMemo(() => createAppLogger('health').child('question-deck'), []);
   const [answered, setAnswered] = useState(() => new Set());
   // Opens on the question picked from the notifications list, if any.
-  const [index, setIndex] = useState(() => Math.max(0, questions.findIndex((question) => question.id === startId)));
+  const [selection, setSelection] = useState(() => {
+    const index = Math.max(0, questions.findIndex((question) => question.id === startId));
+    return { id: questions[index]?.id ?? null, index };
+  });
   const visible = questions.filter((question) => !answered.has(question.id));
-  const at = Math.min(index, Math.max(0, visible.length - 1));
+  const selectedIndex = visible.findIndex((question) => question.id === selection.id);
+  const at = selectedIndex >= 0 ? selectedIndex : Math.min(selection.index, Math.max(0, visible.length - 1));
+  const selected = visible[at];
+
+  useLayoutEffect(() => {
+    if (!selected || (selection.id === selected.id && selection.index === at)) return;
+    setSelection({ id: selected.id, index: at });
+  }, [at, selected?.id, selection.id, selection.index]);
 
   if (!visible.length) {
     return <p className="health-qdeck__done" role="status">All caught up — no questions waiting.</p>;
   }
-  const move = (delta) => setIndex(Math.max(0, Math.min(visible.length - 1, at + delta)));
+  const move = (delta) => {
+    const index = Math.max(0, Math.min(visible.length - 1, at + delta));
+    setSelection({ id: visible[index]?.id ?? null, index });
+  };
   return (
     <div className="health-qdeck">
       <QuestionCard key={visible[at].id} question={visible[at]} index={at} total={visible.length}

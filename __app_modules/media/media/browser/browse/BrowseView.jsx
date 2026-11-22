@@ -129,14 +129,16 @@ export function BrowseView({
       : null;
     // NavProvider can change the path one render before useListBrowse clears
     // the preceding path's rows. Do not spend this history entry's one-shot
-    // restoration against that stale DOM; the real row arrival below will
-    // change items.length and retry the layout restoration.
-    if (focusedId && !focusTarget) return;
+    // restoration against that stale DOM or before an incomplete page finishes.
+    if (focusedId && !focusTarget && (error || rawItems.length < total)) return;
     restoredEntryRef.current = entryKey;
     const host = findScrollHost(rootRef.current);
     if (host) host.scrollTop = scrollTop || 0;
     focusTarget?.focus({ preventScroll: true });
-  }, [focusedId, items, loading, path, scrollTop]);
+    if (focusedId && !focusTarget && document.activeElement === document.body) {
+      rootRef.current.focus({ preventScroll: true });
+    }
+  }, [error, focusedId, items, loading, path, rawItems.length, rootRef, scrollTop, total]);
 
   useLayoutEffect(() => {
     const target = appendFocusRef.current;
@@ -145,7 +147,7 @@ export function BrowseView({
     const rows = [...(rootRef.current?.querySelectorAll('[data-browse-focus-id]') ?? [])];
     const row = rows.find(node => node.dataset.browseFocusId === String(target.id));
     (row ?? rows.at(-1) ?? rootRef.current)?.focus();
-  }, [rawItems, path]);
+  }, [rawItems, path, rootRef]);
 
   React.useEffect(() => {
     const node = sentinelRef.current;
@@ -159,7 +161,7 @@ export function BrowseView({
       active = false;
       observer.disconnect();
     };
-  }, [appendError, rawItems.length, loadMore, loading, loadingMore, total]);
+  }, [appendError, rawItems.length, loadMore, loading, loadingMore, rootRef, total]);
 
   const pushFromBrowse = (view, params, focusedId) => {
     const host = findScrollHost(rootRef.current);

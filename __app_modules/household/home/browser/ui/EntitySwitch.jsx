@@ -1,11 +1,21 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Switch, Text } from '@mantine/core';
 
 export function EntitySwitch({ entity, onToggle, size }) {
   const checked = entity.stateClass === 'on';
   const pending = Boolean(entity.pending);
   const [failure, setFailure] = useState(null);
-  const failureMessage = failure?.entityId === entity.id ? failure.message : null;
+  const confirmedFailure = failure?.entityId === entity.id && !pending && entity.stateClass === failure.target;
+  const failureMessage = failure?.entityId === entity.id && !confirmedFailure ? failure.message : null;
+
+  useEffect(() => {
+    if (failure && (
+      failure.entityId !== entity.id
+      || (!pending && entity.stateClass === failure.target)
+    )) {
+      setFailure(null);
+    }
+  }, [entity.id, entity.stateClass, failure, pending]);
 
   return (
     <div className="home-entity-switch">
@@ -22,10 +32,11 @@ export function EntitySwitch({ entity, onToggle, size }) {
         onChange={async () => {
           if (pending) return;
           setFailure(null);
-          const action = checked ? 'turn off' : 'turn on';
+          const target = checked ? 'off' : 'on';
+          const action = `turn ${target}`;
           const succeeded = await onToggle?.(entity);
           if (succeeded === false) {
-            setFailure({ entityId: entity.id, message: `Couldn't ${action} ${entity.name}. Try again.` });
+            setFailure({ entityId: entity.id, target, message: `Couldn't ${action} ${entity.name}. Try again.` });
           }
         }}
       />

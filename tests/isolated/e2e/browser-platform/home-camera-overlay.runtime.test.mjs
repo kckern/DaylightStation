@@ -2,6 +2,88 @@ import { expect, test } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block', hasTouch: true });
 
+test('Home camera departure does not stop a stream still used by another tab', async ({ browser }) => {
+  const first = await browser.newPage();
+  const second = await browser.newPage();
+  const playlistStarted = Promise.withResolvers();
+  const releasePlaylist = Promise.withResolvers();
+  const firstSegmentStarted = Promise.withResolvers();
+  const releaseFirstSegment = Promise.withResolvers();
+  const secondSegmentSettled = Promise.withResolvers();
+  const playlist = '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:20\n#EXTINF:2,\nseg20.ts\n#EXTINF:2,\nseg21.ts\n#EXTINF:2,\nseg22.ts\n';
+  let active = false;
+  let stops = 0;
+  let firstPlaylistHeld = false;
+  let firstSegmentHeld = false;
+
+  const installCameraFixture = async page => {
+    await page.addInitScript(() => localStorage.setItem('home.view', 'cameras'));
+    await page.routeWebSocket('**/*', () => {});
+    await page.route('**/api/**', async route => {
+      const { pathname } = new URL(route.request().url());
+      if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+      if (pathname === '/api/v1/camera') return route.fulfill({ json: { cameras: [{ id: 'porch' }] } });
+      if (pathname === '/api/v1/camera/porch/live/stream.m3u8') {
+        active = true;
+        if (page === second && !firstPlaylistHeld) {
+          firstPlaylistHeld = true;
+          playlistStarted.resolve();
+          await releasePlaylist.promise;
+        }
+        return route.fulfill({ contentType: 'application/vnd.apple.mpegurl', body: playlist });
+      }
+      if (pathname.startsWith('/api/v1/camera/porch/live/') && pathname.endsWith('.ts')) {
+        if (page === first && !firstSegmentHeld) {
+          firstSegmentHeld = true;
+          firstSegmentStarted.resolve();
+          await releaseFirstSegment.promise;
+          return route.fulfill({ status: 200, contentType: 'video/mp2t', body: Buffer.alloc(188) });
+        }
+        if (page === second) {
+          const status = active ? 200 : 404;
+          secondSegmentSettled.resolve(status);
+          return route.fulfill({
+            status,
+            contentType: status === 200 ? 'video/mp2t' : 'application/json',
+            body: status === 200 ? Buffer.alloc(188) : JSON.stringify({ error: 'Stream not active' }),
+          });
+        }
+      }
+      if (pathname === '/api/v1/camera/porch/live' && route.request().method() === 'DELETE') {
+        stops += 1;
+        active = false;
+        return route.fulfill({ json: { stopped: true } });
+      }
+      return route.fulfill({ json: {} });
+    });
+  };
+
+  try {
+    await installCameraFixture(first);
+    await first.goto('/home');
+    await expect(first.getByRole('button', { name: 'Fullscreen porch', exact: true })).toBeVisible();
+    await firstSegmentStarted.promise;
+
+    await installCameraFixture(second);
+    await second.goto('/home');
+    await expect(second.getByRole('button', { name: 'Fullscreen porch', exact: true })).toBeVisible();
+    await playlistStarted.promise;
+
+    await first.getByRole('button', { name: 'Rooms', exact: true }).click();
+    await expect(first.getByText('No rooms yet', { exact: true })).toBeVisible();
+    releasePlaylist.resolve();
+
+    expect(await secondSegmentSettled.promise).toBe(200);
+    await expect(second.getByRole('button', { name: 'Fullscreen porch', exact: true })).toBeVisible();
+    expect(stops).toBe(0);
+  } finally {
+    releasePlaylist.resolve();
+    releaseFirstSegment.resolve();
+    await first.close();
+    await second.close();
+  }
+});
+
 test('Home camera controls offer keyboard-accessible retry after the inventory request fails', async ({ page, baseURL }) => {
   const origin = new URL(baseURL).origin;
   const reads = [];

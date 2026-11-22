@@ -37,7 +37,7 @@ it('aborts a superseded snapshot and releases only its own blob URL', async () =
   expect(revoke.mock.calls).toEqual([['blob:second']]);
 });
 
-it('keeps a shared camera live until both the native card and viewport release it', async () => {
+it('releases native camera media without stopping the shared encoder', async () => {
   const fetch = vi.fn().mockResolvedValue(new Response());
   vi.stubGlobal('fetch', fetch);
   function mount() {
@@ -46,7 +46,7 @@ it('keeps a shared camera live until both the native card and viewport release i
     video.load = vi.fn();
     video.play = vi.fn().mockResolvedValue();
     const ref = { current: video };
-    return renderHook(() => useHlsStream('front/door', ref));
+    return { ...renderHook(() => useHlsStream('front/door', ref)), video };
   }
   const card = mount();
   const viewport = mount();
@@ -55,11 +55,12 @@ it('keeps a shared camera live until both the native card and viewport release i
   expect(fetch).not.toHaveBeenCalled();
   card.unmount();
   await Promise.resolve();
-  expect(fetch).toHaveBeenCalledOnce();
-  expect(fetch).toHaveBeenCalledWith(location.origin + '/api/v1/camera/front%2Fdoor/live', expect.objectContaining({ method: 'DELETE', headers: expect.objectContaining({ 'X-Daylight-Device': expect.any(String) }) }));
+  expect(fetch).not.toHaveBeenCalled();
+  expect(card.video.hasAttribute('src')).toBe(false);
+  expect(card.video.load).toHaveBeenCalledOnce();
 });
 
-it('delegates the playlist to hls.js and releases the encoder when the player is destroyed', async () => {
+it('delegates the playlist to hls.js and destroys only its local player on unmount', async () => {
   hls.supported = true;
   try {
     const fetch = vi.fn().mockResolvedValue(new Response());
@@ -71,8 +72,7 @@ it('delegates the playlist to hls.js and releases the encoder when the player is
     unmount();
     await Promise.resolve();
     expect(hls.destroy).toHaveBeenCalledOnce();
-    expect(fetch).toHaveBeenCalledOnce();
-    expect(fetch.mock.calls[0][1].method).toBe('DELETE');
+    expect(fetch).not.toHaveBeenCalled();
   } finally {
     hls.supported = false;
   }

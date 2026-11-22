@@ -4,7 +4,7 @@ const VALID_SCOPES = ['week', 'month', 'season', 'year', 'decade'];
 const SCOPE_DAYS = { week: 7, month: 30, season: 90, year: 365, decade: 3650 };
 
 function validDate(value) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value));
+  return typeof value === 'string' && moment.utc(value, 'YYYY-MM-DD', true).isValid();
 }
 
 function scopeRange(scope, at) {
