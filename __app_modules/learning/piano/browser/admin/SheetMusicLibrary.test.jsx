@@ -65,10 +65,17 @@ function Echo() {
   return <div data-testid="echo">{params['*']}</div>;
 }
 
-const renderLib = () => render(
+function BackControl() {
+  const navigate = useNavigate();
+  return <button type="button" data-testid="router-back" onClick={() => navigate(-1)}>Test back</button>;
+}
+
+const renderLib = (initialEntries = ['/admin/content/sheet-music']) => render(
   <MantineProvider>
-    <MemoryRouter initialEntries={['/admin/content/sheet-music']}>
+    <MemoryRouter initialEntries={initialEntries}>
+      <BackControl />
       <Routes>
+        <Route path="/admin/previous" element={<div>previous page</div>} />
         <Route path="/admin/content/sheet-music" element={<SheetMusicLibrary />} />
         <Route path="/admin/content/sheet-music/view/*" element={<Echo />} />
       </Routes>
@@ -149,8 +156,8 @@ describe('SheetMusicLibrary', () => {
       .toBe('files:docs/sheet-music/classical/fur-elise.musicxml'));
   });
 
-  const openUpload = async () => {
-    renderLib();
+  const openUpload = async (initialEntries) => {
+    renderLib(initialEntries);
     await waitFor(() => expect(screen.getByText('Fur Elise')).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: /upload/i }));
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
@@ -185,6 +192,24 @@ describe('SheetMusicLibrary', () => {
       .toBe('files:docs/sheet-music/hymns/my-piece.musicxml'));
     expect(notify).toHaveBeenCalled();
     expect(logged.some((l) => l.event === 'admin.sheetmusic.upload-done')).toBe(true);
+  });
+
+  it('does not navigate back to the score when upload finishes after leaving the library', async () => {
+    let finishUpload;
+    global.fetch.mockReturnValue(new Promise((resolve) => { finishUpload = resolve; }));
+    const { dialog } = await openUpload(['/admin/previous', '/admin/content/sheet-music']);
+    fireEvent.click(dialog.getByRole('button', { name: /^upload$/i }));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByTestId('router-back'));
+    await waitFor(() => expect(screen.getByText('previous page')).toBeTruthy());
+    finishUpload(jsonResponse(201, {
+      id: 'files:docs/sheet-music/hymns/my-piece.musicxml', title: 'My Piece', composer: null, filename: 'my-piece.musicxml',
+    }));
+
+    await waitFor(() => expect(screen.getByText('previous page')).toBeTruthy());
+    expect(screen.queryByTestId('echo')).toBeNull();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('upload 409 basename-exists shows its message and keeps the modal open', async () => {

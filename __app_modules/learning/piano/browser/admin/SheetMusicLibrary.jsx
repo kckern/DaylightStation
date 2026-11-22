@@ -7,6 +7,7 @@ import {
 import { notifications } from '@mantine/notifications';
 import { IconAlertTriangle, IconPhoto, IconPlayerStop, IconRefresh, IconUpload } from '@tabler/icons-react';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
+import { useSheetSubmission } from "../../../../../frontend/src/lib/ui/useSheetSubmission.js";
 import { useSheetMusicLibrary, uploadScore } from "./useSheetMusicLibrary.js";
 import { scoreViewPath } from "../PianoKiosk/modes/SheetMusic/sheetMusicModel.js";
 import { DaylightAPIText } from "../../../../../frontend/src/lib/api.mjs";
@@ -161,32 +162,38 @@ function UploadModal({ opened, onClose, folders, logger, onUploaded }) {
   const [file, setFile] = useState(null);
   const [folder, setFolder] = useState(null);
   const [filename, setFilename] = useState('');
-  const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(null);
+  const { run, saving: busy, failure, clearFailure } = useSheetSubmission(onClose, (error) => {
+    logger.warn('admin.sheetmusic.upload-failed', { code: error?.code || 'unknown', status: error?.status ?? null });
+  });
 
   useEffect(() => {
     if (!opened) {
-      setFile(null); setFolder(null); setFilename(''); setBusy(false); setMessage(null);
+      setFile(null); setFolder(null); setFilename(''); setMessage(null);
+      if (failure) clearFailure();
     }
-  }, [opened]);
+  }, [opened, failure, clearFailure]);
 
-  const submit = async (event) => {
+  const submit = (event) => {
     event?.preventDefault?.();
     if (!file || !folder || busy) return;
     const name = withExtension(filename, file);
-    setBusy(true);
     setMessage(null);
     logger.info('admin.sheetmusic.upload-start', { folder, bytes: file.size ?? null, named: Boolean(name) });
-    const outcome = await uploadScore({ file, folder, filename: name });
-    setBusy(false);
-    if (outcome.ok) {
-      logger.info('admin.sheetmusic.upload-done', { id: outcome.result.id });
-      onUploaded(outcome.result);
-      return;
-    }
-    logger.warn('admin.sheetmusic.upload-failed', { code: outcome.code, status: outcome.status });
-    setMessage(UPLOAD_ERROR_MESSAGES[outcome.code] || GENERIC_UPLOAD_ERROR);
+    run(() => uploadScore({ file, folder, filename: name }), {
+      valid: Boolean(file && folder),
+      onSuccess: (outcome) => {
+        if (outcome.ok) {
+          logger.info('admin.sheetmusic.upload-done', { id: outcome.result.id });
+          onUploaded(outcome.result);
+          return;
+        }
+        logger.warn('admin.sheetmusic.upload-failed', { code: outcome.code, status: outcome.status });
+        setMessage(UPLOAD_ERROR_MESSAGES[outcome.code] || GENERIC_UPLOAD_ERROR);
+      },
+    });
   };
+  const visibleMessage = message || (failure ? UPLOAD_ERROR_MESSAGES[failure.code] || GENERIC_UPLOAD_ERROR : null);
 
   return (
     <Modal
@@ -231,8 +238,8 @@ function UploadModal({ opened, onClose, folders, logger, onUploaded }) {
             value={filename}
             onChange={(e) => setFilename(e.currentTarget.value.toLowerCase())}
           />
-          {message ? (
-            <Alert color="red" icon={<IconAlertTriangle size={16} />} variant="light">{message}</Alert>
+          {visibleMessage ? (
+            <Alert color="red" icon={<IconAlertTriangle size={16} />} variant="light">{visibleMessage}</Alert>
           ) : null}
           <Group justify="flex-end">
             <Button variant="default" onClick={onClose} disabled={busy}>Cancel</Button>
