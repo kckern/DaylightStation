@@ -5,7 +5,10 @@
  *
  *   1. overrides  (the title's facts: content filter on, collection, studio...)
  *   2. priority   (the availability service's offers, by provider group)
- *   3. fallbacks  (year, length, library, studio, then usually "always")
+ *   3. fallbacks  (year, length, library, studio, then usually "always"); a
+ *                 fallback with `judge: true` asks the decision model (Jev) to
+ *                 pick from the config's `judge.choices` at that point, and the
+ *                 pick is stored with the title so it is asked once
  *
  * The title's facts come from the media server on every play. Availability is
  * looked up on demand (when a title is about to play), never in a library
@@ -24,7 +27,10 @@
 import {
   isFresh, lookupIdFor, streamingOffers, hasQuotaRoom, providerIdFor, providerLabel,
 } from '../../domain/provenance/provenance.mjs';
-import { firstRule, rankOffers, needsContentFilter, parseRules, secondaryLogosFor } from '../../domain/provenance/rules.mjs';
+import {
+  firstRule, rankOffers, needsContentFilter, parseRules, secondaryLogosFor, matchesWhen, pickProvider, judgeState,
+} from '../../domain/provenance/rules.mjs';
+import { choice } from '#apps/common/ports/IDecisionGateway.mjs';
 
 const monthOf = (d) => d.toISOString().slice(0, 7);
 
@@ -35,7 +41,7 @@ function describeWhen(when = {}) {
 }
 
 export class GetTitleProvenance {
-  #identityReader; #availability; #store; #logos; #policy; #clock; #logger; #contentFilter;
+  #identityReader; #availability; #store; #logos; #policy; #clock; #logger; #contentFilter; #decisions;
   #inflight = new Map();
 
   /**
@@ -48,7 +54,7 @@ export class GetTitleProvenance {
    * @param {() => Date} [deps.clock]
    * @param {{ isActive(ratingKey:string): Promise<boolean> }|null} [deps.contentFilter] - asked only when a rule uses `content_filter`
    */
-  constructor({ identityReader, availability, store, logos, policy, clock = () => new Date(), logger = console, contentFilter = null }) {
+  constructor({ identityReader, availability, store, logos, policy, clock = () => new Date(), logger = console, contentFilter = null, decisions = null }) {
     if (!identityReader) throw new Error('GetTitleProvenance requires identityReader');
     if (!store) throw new Error('GetTitleProvenance requires store');
     if (!logos) throw new Error('GetTitleProvenance requires logos');
@@ -61,13 +67,15 @@ export class GetTitleProvenance {
     this.#clock = clock;
     this.#logger = logger;
     this.#contentFilter = contentFilter;
+    // IDecisionGateway (Jev), for `judge` fallbacks; none = those rules are skipped.
+    this.#decisions = decisions?.isConfigured?.() ? decisions : null;
   }
 
   /**
    * @param {{ ratingKey?: string, contentId?: string }} input - a media-server
    *   rating key, or a live channel's `<source>:<channel>` content id
    * @returns {Promise<{ ratingKey:string, provider:string, name:string, tier:string, source:string, rule:string|null, offerType:string|null, checkedAt:string|null }|null>}
-   *   `source`: override | availability | fallback; `tier`: the priority group for
+   *   `source`: override | availability | judge | fallback; `tier`: the priority group for
    *   an availability answer, else the source.
    */
   async execute({ ratingKey, contentId }) {
@@ -121,8 +129,17 @@ export class GetTitleProvenance {
       });
     }
 
-    const fallback = firstRule(rules.fallbacks, facts, canShow);
-    if (fallback) return this.#answer(rk, policy, { provider: fallback.provider, source: 'fallback', rule: fallback.rule, checkedAt: record?.checkedAt ?? null });
+    // Fallbacks in order; a judge rule asks the decision model at its place.
+    for (const rule of rules.fallbacks || []) {
+      if (!matchesWhen(rule.when, facts)) continue;
+      if (rule.judge) {
+        const picked = await this.#judge(rk, key, record, facts, policy, canShow);
+        if (picked) return this.#answer(rk, policy, { provider: picked, source: 'judge', rule, checkedAt: record?.checkedAt ?? null });
+        continue;
+      }
+      const provider = pickProvider(rule, facts.key, canShow);
+      if (provider) return this.#answer(rk, policy, { provider, source: 'fallback', rule, checkedAt: record?.checkedAt ?? null });
+    }
     return null;
   }
 
@@ -156,6 +173,53 @@ export class GetTitleProvenance {
       offerType,
       checkedAt,
     };
+  }
+
+  /**
+   * The decision model's pick for a title, or null (none configured, under
+   * `min_confidence`, failed, or not one of the showable choices). A pick is
+   * stored on the title's record with the brief's signature and reused until
+   * the brief changes; an unsure answer is stored too, so it is not re-asked.
+   */
+  async #judge(rk, key, record, facts, policy, canShow) {
+    const brief = policy.judge;
+    if (!brief || !this.#decisions) return null;
+    const options = brief.choices.filter((c) => canShow(c.provider));
+    if (options.length < 2) return null;
+    const usable = (p) => !!p && options.some((c) => c.provider === p);
+    const stored = record?.judged;
+    if (stored && stored.signature === brief.signature) {
+      return usable(stored.provider) ? stored.provider : null;
+    }
+    const startedAt = Date.now();
+    let answer;
+    let model = null;
+    try {
+      const result = await this.#decisions.evaluate(
+        judgeState(facts),
+        { service: choice(brief.instructions, Object.fromEntries(options.map((c) => [c.provider, c.description]))) },
+        { timeout: brief.timeoutMs },
+      );
+      answer = result?.answers?.service;
+      model = result?.model ?? null;
+    } catch (error) {
+      this.#logger.warn?.('provenance.judge.failed', { ratingKey: rk, title: facts.title, error: error?.message, elapsedMs: Date.now() - startedAt });
+      return null;
+    }
+    const confidence = Number.isFinite(answer?.confidence) ? +answer.confidence.toFixed(3) : 0;
+    const sure = usable(answer?.choice) && confidence >= brief.minConfidence;
+    this.#logger.info?.('provenance.judge.decided', {
+      ratingKey: rk, title: facts.title, choice: answer?.choice ?? null, confidence, used: sure, model, elapsedMs: Date.now() - startedAt,
+    });
+    if (record) {
+      const judged = { provider: sure ? answer.choice : null, choice: answer?.choice ?? null, confidence, model, signature: brief.signature, at: this.#clock().toISOString() };
+      try {
+        await this.#store.put(key, { ...record, judged });
+      } catch (error) {
+        this.#logger.warn?.('provenance.judge.store-failed', { ratingKey: rk, error: error?.message });
+      }
+    }
+    return sure ? answer.choice : null;
   }
 
   async #filterActive(rk) {
@@ -195,7 +259,7 @@ export class GetTitleProvenance {
     const lookupId = lookupIdFor(id);
     const base = { key, kind: id.kind, title: id.title ?? null, year: id.year ?? null, lookupId };
     if (!lookupId) {
-      const record = { ...base, checkedAt: now.toISOString(), offers: [], note: 'no external id' };
+      const record = { ...base, checkedAt: now.toISOString(), offers: [], note: 'no external id', ...(stale?.judged ? { judged: stale.judged } : {}) };
       await this.#store.put(key, record);
       this.#logger.info?.('provenance.lookup.no-external-id', { ratingKey: key, title: base.title });
       return record;
@@ -209,7 +273,7 @@ export class GetTitleProvenance {
     try {
       const { sources, quota, quotaUsed } = await this.#availability.sources(lookupId);
       const offers = streamingOffers(sources, policy.services);
-      const record = { ...base, checkedAt: now.toISOString(), offers };
+      const record = { ...base, checkedAt: now.toISOString(), offers, ...(stale?.judged ? { judged: stale.judged } : {}) };
       await this.#store.put(key, record, { month, quota, quotaUsed });
       this.#logger.info?.('provenance.lookup.done', {
         ratingKey: key, lookupId, title: base.title, offers: offers.length,

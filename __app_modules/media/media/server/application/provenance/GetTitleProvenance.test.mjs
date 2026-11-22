@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { GetTitleProvenance } from './GetTitleProvenance.mjs';
 import { parseRules } from '../../domain/provenance/rules.mjs';
 import { parseServices } from '../../domain/provenance/provenance.mjs';
-import { parseSecondary } from '../../domain/provenance/rules.mjs';
+import { parseSecondary, parseJudge } from '../../domain/provenance/rules.mjs';
 
 // The household's service map, as config spells it (only what these tests use).
 const SERVICES = parseServices([
@@ -27,14 +27,14 @@ function fakeStore(records = {}, usage = null) {
   };
 }
 
-function build({ store = fakeStore(), identity, sources = [], quotaUsed = 10, policy = {}, logos = () => true, contentFilter = null } = {}) {
+function build({ store = fakeStore(), identity, sources = [], quotaUsed = 10, policy = {}, logos = () => true, contentFilter = null, decisions = null } = {}) {
   const identityReader = { identify: vi.fn(async (rk) => (typeof identity === 'function' ? identity(rk) : identity)) };
   const availability = { sources: vi.fn(async () => ({ sources, quota: 2500, quotaUsed })) };
   const uc = new GetTitleProvenance({
     identityReader, availability, store,
     logos: { has: logos },
     policy: () => ({ enabled: true, kinds: ['movie', 'show'], tiers: { free: ['tubi', 'hoopla'], subscribed: ['peacock'] }, refreshDays: 30, quotaReserve: 100, services: SERVICES, ...policy }),
-    clock: () => NOW, logger: silent, contentFilter,
+    clock: () => NOW, logger: silent, contentFilter, decisions,
   });
   return { uc, identityReader, availability, store };
 }
@@ -237,5 +237,63 @@ describe('GetTitleProvenance', () => {
       expect(await build({ policy: { live }, logos: (id) => id !== 'plex-live-tv' }).uc.execute({ contentId: 'plex-live:nfl-channel' })).toBeNull();
       expect(await build({ policy: { live, enabled: false } }).uc.execute({ contentId: 'plex-live:nfl-channel' })).toBeNull();
     });
+  });
+});
+
+describe('GetTitleProvenance judge', () => {
+  const judge = parseJudge({ instructions: 'Which service?', min_confidence: 0.5, choices: { crunchyroll: 'anime', 'tf1-plus': 'French', youtube: 'other' } });
+  const rules = parseRules({ fallbacks: [
+    { name: 'early film', provider: 'archive-org', when: { year_before: 1950 } },
+    { name: 'ask', judge: true, when: 'always' },
+    { name: 'anything else', provider: 'peacock', when: 'always' },
+  ] });
+  const SHOW = { key: '300', kind: 'show', title: 'Goldorak', year: 1975, imdb: null, tmdb: null, genres: ['Anime'], countries: ['Japan'] };
+  const gateway = (answer) => ({ isConfigured: () => true, evaluate: vi.fn(async () => (answer instanceof Error ? Promise.reject(answer) : { model: 'jev-1', answers: { service: answer } })) });
+
+  it('asks once, stores the pick, and reuses it', async () => {
+    const decisions = gateway({ type: 'choice', choice: 'crunchyroll', confidence: 0.9 });
+    const store = fakeStore();
+    const { uc } = build({ store, identity: SHOW, decisions, policy: { rules, judge } });
+    expect(await uc.execute({ ratingKey: '300' })).toMatchObject({ provider: 'crunchyroll', source: 'judge', rule: 'ask' });
+    expect(store.data['300'].judged).toMatchObject({ provider: 'crunchyroll', confidence: 0.9, model: 'jev-1', signature: judge.signature });
+    const [state, questions] = decisions.evaluate.mock.calls[0];
+    expect(state).toMatchObject({ title: 'Goldorak', genres: 'Anime', countries: 'Japan' });
+    expect(Object.keys(questions.service.options)).toEqual(['crunchyroll', 'tf1-plus', 'youtube']);
+    await uc.execute({ ratingKey: '300' });
+    expect(decisions.evaluate).toHaveBeenCalledTimes(1);
+  });
+  it('asks again when the brief changes', async () => {
+    const decisions = gateway({ type: 'choice', choice: 'tf1-plus', confidence: 0.8 });
+    const store = fakeStore({ 300: { key: '300', kind: 'show', checkedAt: '2026-11-19T00:00:00Z', offers: [], judged: { provider: 'crunchyroll', signature: 'old' } } });
+    const { uc } = build({ store, identity: SHOW, decisions, policy: { rules, judge } });
+    expect((await uc.execute({ ratingKey: '300' })).provider).toBe('tf1-plus');
+    expect(decisions.evaluate).toHaveBeenCalledTimes(1);
+  });
+  it('falls through when unsure (and remembers that), or when the model fails', async () => {
+    const unsure = gateway({ type: 'choice', choice: 'crunchyroll', confidence: 0.2 });
+    const store = fakeStore();
+    const a = build({ store, identity: SHOW, decisions: unsure, policy: { rules, judge } });
+    expect(await a.uc.execute({ ratingKey: '300' })).toMatchObject({ provider: 'peacock', source: 'fallback' });
+    expect(store.data['300'].judged).toMatchObject({ provider: null, choice: 'crunchyroll' });
+    await a.uc.execute({ ratingKey: '300' });
+    expect(unsure.evaluate).toHaveBeenCalledTimes(1);
+
+    const failing = gateway(new Error('timeout'));
+    const b = build({ identity: SHOW, decisions: failing, policy: { rules, judge } });
+    expect((await b.uc.execute({ ratingKey: '300' })).provider).toBe('peacock');
+  });
+  it('keeps rules above the judge, and skips it with no gateway', async () => {
+    const decisions = gateway({ type: 'choice', choice: 'crunchyroll', confidence: 0.9 });
+    const old = build({ identity: { ...SHOW, year: 1930 }, decisions, policy: { rules, judge } });
+    expect((await old.uc.execute({ ratingKey: '300' })).provider).toBe('archive-org');
+    expect(decisions.evaluate).not.toHaveBeenCalled();
+    const none = build({ identity: SHOW, policy: { rules, judge } });
+    expect((await none.uc.execute({ ratingKey: '300' })).provider).toBe('peacock');
+  });
+  it('only offers choices that have a logo', async () => {
+    const decisions = gateway({ type: 'choice', choice: 'youtube', confidence: 0.9 });
+    const { uc } = build({ identity: SHOW, decisions, policy: { rules, judge }, logos: (p) => p !== 'tf1-plus' });
+    await uc.execute({ ratingKey: '300' });
+    expect(Object.keys(decisions.evaluate.mock.calls[0][1].service.options)).toEqual(['crunchyroll', 'youtube']);
   });
 });

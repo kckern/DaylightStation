@@ -35,7 +35,7 @@ describe('WatchmodeAvailabilityGateway', () => {
 describe('PlexTitleIdentityReader', () => {
   const meta = {
     100: { ratingKey: '100', type: 'movie', title: 'True Grit', year: 1969, Guid: [{ id: 'imdb://tt0065126' }, { id: 'tmdb://17529' }],
-      studio: 'Wallis-Hazen Inc.', duration: 7684704, librarySectionTitle: 'Movies', Collection: [{ tag: 'Western' }], Label: [{ tag: 'Family' }], Genre: [{ tag: 'Western' }, { tag: 'Drama' }] },
+      studio: 'Wallis-Hazen Inc.', duration: 7684704, librarySectionTitle: 'Movies', Collection: [{ tag: 'Western' }], Label: [{ tag: 'Family' }], Genre: [{ tag: 'Western' }, { tag: 'Drama' }], Country: [{ tag: 'United States of America' }], originalTitle: 'True Grit', summary: 'A drunken marshal...' },
     200: { ratingKey: '200', type: 'show', title: 'Show', Guid: [{ id: 'tmdb://1396' }] },
     201: { ratingKey: '201', type: 'episode', grandparentRatingKey: '200' },
     300: { ratingKey: '300', type: 'track' },
@@ -47,6 +47,7 @@ describe('PlexTitleIdentityReader', () => {
     expect(await reader.identify('100')).toEqual({
       key: '100', kind: 'movie', title: 'True Grit', year: 1969, imdb: 'tt0065126', tmdb: '17529',
       studio: 'Wallis-Hazen Inc.', durationMs: 7684704, collections: ['Western'], labels: ['Family'], genres: ['Western', 'Drama'], library: 'Movies',
+      originalTitle: 'True Grit', countries: ['United States of America'], summary: 'A drunken marshal...',
     });
     expect(plexClient.request).toHaveBeenCalledWith('/library/metadata/100?includeGuids=1');
   });

@@ -60,9 +60,12 @@ function parseWhen(raw) {
 
 function parseRule(raw, stage) {
   if (!raw || typeof raw !== 'object') return null;
-  const providers = list(raw.provider);
-  if (!providers.length) return null;
-  return Object.freeze({ stage, providers, when: Object.freeze(parseWhen(raw.when)), name: raw.name ? String(raw.name) : null });
+  // A fallback with `judge: true` hands the choice to the decision model at its
+  // place in the list (see parseJudge); it names no provider of its own.
+  const judge = stage === 'fallback' && raw.judge === true;
+  const providers = judge ? [] : list(raw.provider);
+  if (!judge && !providers.length) return null;
+  return Object.freeze({ stage, providers, judge, when: Object.freeze(parseWhen(raw.when)), name: raw.name ? String(raw.name) : null });
 }
 
 /**
@@ -143,16 +146,16 @@ export function stableIndex(key, n) {
 }
 
 /** The first of a rule's providers that can be shown, picked stably per title when there are several. */
-function pickProvider(rule, key, canShow) {
+export function pickProvider(rule, key, canShow) {
   const usable = rule.providers.filter((p) => canShow(p));
   if (!usable.length) return null;
   return usable[stableIndex(key, usable.length)];
 }
 
-/** The first rule in a stage that matches and has a showable provider. */
+/** The first rule in a stage that matches and has a showable provider (judge rules are the caller's). */
 export function firstRule(rules, facts, canShow = () => true) {
   for (const rule of rules || []) {
-    if (!matchesWhen(rule.when, facts)) continue;
+    if (rule.judge || !matchesWhen(rule.when, facts)) continue;
     const provider = pickProvider(rule, facts.key, canShow);
     if (provider) return { rule, provider };
   }
@@ -217,4 +220,55 @@ export function secondaryLogosFor(provider, secondary, services, canShow = () =>
     if (fits && canShow(rule.logo)) out.push({ logo: rule.logo, label: rule.label });
   }
   return out;
+}
+
+/**
+ * The decision model's brief (config `judge`): which services it may pick for
+ * a title the rules above it leave unclear, with what each one stands for.
+ *
+ *   judge:
+ *     instructions: Which service would this title most plausibly stream on?
+ *     min_confidence: 0.4         # below this the pick is not used
+ *     timeout_ms: 3000
+ *     choices:
+ *       <provider>: <when to pick it>
+ *
+ * `signature` changes whenever the brief does, so a stored pick made under an
+ * older brief is asked again.
+ */
+export function parseJudge(raw) {
+  if (!raw || typeof raw !== 'object' || raw.enabled === false) return null;
+  const instructions = String(raw.instructions ?? '').trim();
+  const choices = Object.entries(raw.choices && typeof raw.choices === 'object' ? raw.choices : {})
+    .map(([provider, description]) => ({ provider: String(provider).trim(), description: description == null ? null : String(description).trim() }))
+    .filter((c) => c.provider);
+  if (!instructions || choices.length < 2) return null;
+  const n = (v, d) => (Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : d);
+  const signature = stableIndex(JSON.stringify([instructions, choices]), 0x7fffffff).toString(36);
+  return Object.freeze({
+    instructions,
+    choices: Object.freeze(choices),
+    minConfidence: Math.min(1, n(raw.min_confidence, 0.4)),
+    timeoutMs: n(raw.timeout_ms, 3000),
+    signature,
+  });
+}
+
+/** What the decision model is shown about a title: its facts, plainly. */
+export function judgeState(facts = {}) {
+  const words = (v) => (Array.isArray(v) && v.length ? v.join(', ') : null);
+  const out = {
+    title: facts.title ?? null,
+    originalTitle: facts.originalTitle && facts.originalTitle !== facts.title ? facts.originalTitle : null,
+    kind: facts.kind ?? null,
+    year: Number.isFinite(facts.year) ? facts.year : null,
+    library: facts.library ?? null,
+    studio: facts.studio ?? null,
+    genres: words(facts.genres),
+    countries: words(facts.countries),
+    collections: words(facts.collections),
+    runtimeMinutes: Number.isFinite(facts.durationMs) && facts.durationMs > 0 ? Math.round(facts.durationMs / 60000) : null,
+    summary: facts.summary ? String(facts.summary).slice(0, 600) : null,
+  };
+  return Object.fromEntries(Object.entries(out).filter(([, v]) => v != null && v !== ''));
 }

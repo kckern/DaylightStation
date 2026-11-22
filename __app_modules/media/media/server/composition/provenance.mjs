@@ -15,7 +15,7 @@ import { WatchmodeAvailabilityGateway } from '../adapters/provenance/WatchmodeAv
 import { PlexTitleIdentityReader } from '../adapters/provenance/PlexTitleIdentityReader.mjs';
 import { YamlProvenanceStore } from '../adapters/provenance/YamlProvenanceStore.mjs';
 import { FilesystemProviderLogoCatalog } from '../adapters/provenance/FilesystemProviderLogoCatalog.mjs';
-import { parseRules, parseSecondary } from '../domain/provenance/rules.mjs';
+import { parseRules, parseSecondary, parseJudge } from '../domain/provenance/rules.mjs';
 import { parseServices } from '../domain/provenance/provenance.mjs';
 
 const list = (v) => (Array.isArray(v) ? v.map(String) : []);
@@ -41,6 +41,8 @@ export function provenancePolicy(raw) {
     services: parseServices(cfg.services),
     // A second, smaller logo under the service's (config `secondary_logos`).
     secondary: parseSecondary(cfg.secondary_logos),
+    // The decision model's brief for `judge: true` fallbacks (null = none).
+    judge: parseJudge(cfg.judge),
     // A resume after this long away still opens with the scene.
     resumeAfterHours: Number.isFinite(scene.resume_after_hours) ? scene.resume_after_hours : 6,
     // Live channels: which content sources are live, and the one service they show.
@@ -63,8 +65,9 @@ export function parseLive(raw) {
 /**
  * @param {object} deps
  * @param {{ isActive(ratingKey:string): Promise<boolean> }|null} [deps.contentFilter] - the content filter's status (for `content_filter` rules)
+ * @param {import('#apps/common/ports/IDecisionGateway.mjs').IDecisionGateway|null} [deps.decisionGateway] - for `judge` fallbacks
  */
-export function createProvenanceRuntime({ configService, rootLogger, contentRegistry = null, peekPlaybackStart = null, contentFilter = null }) {
+export function createProvenanceRuntime({ configService, rootLogger, contentRegistry = null, peekPlaybackStart = null, contentFilter = null, decisionGateway = null }) {
   const logger = rootLogger.child({ module: 'provenance' });
   const warned = new Set();
   const policy = () => {
@@ -92,6 +95,7 @@ export function createProvenanceRuntime({ configService, rootLogger, contentRegi
     policy,
     logger,
     contentFilter,
+    decisions: decisionGateway,
   });
   // peekPlaybackStart: the playback capability's read-only start position.
   const describePlayStart = new DescribePlayStart({

@@ -131,7 +131,10 @@ provider ids (below). Then three stages, each read top to bottom, first match wi
    subscribed (Prime Video, Peacock, YouTube TV) > library (Hoopla, Kanopy) > free
    (Tubi, Pluto TV, Freevee, Roku Channel, Crackle, YouTube) > any other service
    with a logo.
-3. **fallbacks** when no offer qualifies. Household: movies before 1950 → Internet
+3. **fallbacks** when no offer qualifies. A fallback with `judge: true` hands the
+   call to the decision model (Jev) at its place in the list (below). Household: Jev
+   first; the rules after it are the backstop for when Jev is unavailable or unsure:
+   movies before 1950 → Internet
    Archive; movies under 40 minutes → YouTube; the documentary libraries →
    CuriosityStream; anime (genre Anime) and Saturday-morning cartoons (shows with genre
    Animation from before 2000) → Crunchyroll; then by studio or network (Universal/NBC → Peacock, Paramount/CBS
@@ -162,7 +165,7 @@ next rule is tried. The facts (studio, collections, labels, library, year, lengt
 come from the media-server adapter on every play; nothing in the rules names the
 media server.
 
-The answer's `source` is `override`, `availability` or `fallback`; `tier` is the
+The answer's `source` is `override`, `availability`, `judge` or `fallback`; `tier` is the
 priority group for an availability answer; `rule` names the rule that matched.
 
 ## Files
@@ -202,6 +205,39 @@ fallbacks:
 
 An older file with `providers: { free: [...], subscribed: [...] }` and no `priority`
 still works: it reads as free > subscribed > any.
+
+### The judge (Jev)
+
+```yaml
+fallbacks:
+  - name: jev
+    judge: true          # ask Jev here; no provider of its own
+    when: always
+judge:
+  instructions: Which streaming service would this title most plausibly be watched on? ...
+  min_confidence: 0.35   # below this the pick is not used
+  timeout_ms: 3000
+  choices:               # provider id: when to pick it (the household's guidelines)
+    living-scriptures: Latter-day Saint themed - church history, Joseph Smith, pioneers, ...
+    crunchyroll: Anime, and Saturday-morning cartoons from the 1960s to 1990s
+    tf1-plus: French-language titles - French productions, dubs, summary or title
+    archive-org: Films from before about 1950 - silent films, early talkies, ...
+```
+
+Jev (`IDecisionGateway`, one `choice` question) sees the title's facts
+(`judgeState`: title, original title, kind, year, library, studio, genres, countries,
+collections, running time, the first 600 characters of the summary) and picks one
+of the choices that has a logo. The pick is stored on the title's availability
+record (`judged: { provider, choice, confidence, model, signature, at }`) and reused
+on every later play, so Jev is asked once per title; a Watchmode refresh keeps it.
+An answer under `min_confidence` is stored as `provider: null` (not asked again) and
+the next fallback decides. `signature` is a hash of the brief: editing the
+instructions or choices asks every title again on its next play. A failed or timed
+out call is not stored, and the next fallback decides. No decision gateway
+configured: judge rules are skipped. Usage is attributed to `media`/`provenance-judge`.
+
+Logs: `provenance.judge.decided` (`choice`, `confidence`, `used`, `model`,
+`elapsedMs`), `provenance.judge.failed`, `provenance.judge.store-failed`.
 
 ### Secondary logos
 

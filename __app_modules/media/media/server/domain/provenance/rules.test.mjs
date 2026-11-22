@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseRules, matchesWhen, firstRule, rankOffers, stableIndex, needsContentFilter, parseSecondary, secondaryLogosFor } from './rules.mjs';
+import { parseRules, matchesWhen, firstRule, rankOffers, stableIndex, needsContentFilter, parseSecondary, secondaryLogosFor, parseJudge, judgeState } from './rules.mjs';
 import { isLongAbsence, parseServices } from './provenance.mjs';
 
 describe('matchesWhen', () => {
@@ -112,5 +112,35 @@ describe('genre rules', () => {
     expect(matchesWhen(rule.when, { kind: 'show', genres: ['Comedy', 'animation'], year: 1994 })).toBe(true);
     expect(matchesWhen(rule.when, { kind: 'show', genres: ['Animation'], year: 2013 })).toBe(false);
     expect(matchesWhen(rule.when, { kind: 'show', genres: [], year: 1994 })).toBe(false);
+  });
+});
+
+describe('judge', () => {
+  const raw = { instructions: 'Which service?', choices: { crunchyroll: 'anime', 'tf1-plus': 'French titles', youtube: null } };
+  it('reads the brief and its defaults', () => {
+    const j = parseJudge(raw);
+    expect(j.choices.map((c) => c.provider)).toEqual(['crunchyroll', 'tf1-plus', 'youtube']);
+    expect(j.choices[2].description).toBeNull();
+    expect(j.minConfidence).toBe(0.4);
+    expect(j.timeoutMs).toBe(3000);
+  });
+  it('is off without instructions, with under two choices, or when disabled', () => {
+    expect(parseJudge(undefined)).toBeNull();
+    expect(parseJudge({ ...raw, instructions: '' })).toBeNull();
+    expect(parseJudge({ ...raw, choices: { youtube: null } })).toBeNull();
+    expect(parseJudge({ ...raw, enabled: false })).toBeNull();
+  });
+  it('changes its signature when the brief changes', () => {
+    expect(parseJudge(raw).signature).toBe(parseJudge({ ...raw }).signature);
+    expect(parseJudge({ ...raw, choices: { ...raw.choices, pbs: 'public TV' } }).signature).not.toBe(parseJudge(raw).signature);
+  });
+  it('makes judge fallbacks that firstRule passes over', () => {
+    const rules = parseRules({ fallbacks: [{ name: 'ask', judge: true, when: 'always' }, { provider: 'youtube', when: 'always' }] });
+    expect(rules.fallbacks[0]).toMatchObject({ judge: true, providers: [] });
+    expect(firstRule(rules.fallbacks, {}).provider).toBe('youtube');
+  });
+  it('shows the model the title plainly, leaving out what is unknown', () => {
+    expect(judgeState({ title: 'Goldorak', originalTitle: 'UFO Robo', year: 1975, kind: 'show', genres: ['Animation', 'Anime'], countries: ['Japan'], summary: 'x'.repeat(900), imdb: 'tt1', durationMs: 1320000 }))
+      .toEqual({ title: 'Goldorak', originalTitle: 'UFO Robo', kind: 'show', year: 1975, genres: 'Animation, Anime', countries: 'Japan', runtimeMinutes: 22, summary: 'x'.repeat(600) });
   });
 });

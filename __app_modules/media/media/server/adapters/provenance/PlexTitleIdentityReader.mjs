@@ -43,6 +43,7 @@ export class PlexTitleIdentityReader extends ITitleIdentityReader {
       key: String(md.ratingKey ?? rk),
       kind: md.type,
       title: md.title ?? null,
+      originalTitle: md.originalTitle ? String(md.originalTitle) : null,
       year: Number.isFinite(md.year) ? md.year : null,
       imdb, tmdb,
       studio: md.studio ? String(md.studio) : null,
@@ -50,6 +51,8 @@ export class PlexTitleIdentityReader extends ITitleIdentityReader {
       collections: tags(md.Collection),
       labels: tags(md.Label),
       genres: tags(md.Genre),
+      countries: tags(md.Country),
+      summary: md.summary ? String(md.summary) : null,
       library: md.librarySectionTitle ? String(md.librarySectionTitle) : null,
     };
   }

@@ -1924,6 +1924,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService, rootLogger, contentRegistry,
     peekPlaybackStart: contentServices?.peekPlaybackStart ?? null,
     contentFilter: contentFilterRuntime.filterStatus,
+    decisionGateway: scopedGateway(decisionGateway, { app: 'media', feature: 'provenance-judge' }),
   });
 
   v1Routers.emulator = createEmulatorRuntime({
