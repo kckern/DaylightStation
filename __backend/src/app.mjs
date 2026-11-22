@@ -1225,7 +1225,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // Built before the notification stack: resolved at send time.
       sendPush: createPushSender({
         notificationService: { send: (intent) => notificationStack.notificationService.send(intent) },
-        category: 'household_alert', urgency: 'high', source: 'piano-presence-ladder',
+        category: 'household_alert', source: 'piano-presence-ladder',
         recipient: () => configService.getHeadOfHousehold?.() || null,
       }),
       getDisplayName: (userId) => personDisplayName(userService.getProfile(userId), userId),
@@ -1741,7 +1741,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // so a later household reload is picked up.
     sendPush: createPushSender({
       notificationService: notificationStack.notificationService,
-      category: 'household_alert', urgency: 'high', source: 'harvester-health',
+      category: 'household_alert', source: 'harvester-health',
       recipient: () => configService.getHeadOfHousehold?.() || null,
     }),
     // Same zone the harvesters themselves use (bootstrap harvesterTimezone).
@@ -2570,7 +2570,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // REST call per device per interval — ADB is only consulted once the emulator
   // is actually in front, so an idle house is nearly free.
   const arcadeGameSessionTracking = createArcadeGameSessionTracking({
-    sendPush: createPushSender({ notificationService: notificationStack.notificationService, category: 'household_alert', urgency: 'high', source: 'arcade', recipient: (target) => recipientForNotifyService(target) }),
+    sendPush: createPushSender({ notificationService: notificationStack.notificationService, category: 'household_alert', source: 'arcade', recipient: (target) => recipientForNotifyService(target) }),
     devicesConfig: devicesConfig.devices || {},
     gamesConfig: configService.getHouseholdAppConfig(householdId, 'games'),
     gamesCatalog: dataService.household.read('gaming/retroarch/catalog'),
@@ -2625,7 +2625,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     haGateway: homeAutomationAdapters.haGateway,
     sendPush: createPushSender({
       notificationService: notificationStack.notificationService,
-      category: 'household_alert', urgency: 'high', source: 'piano-screen-authority',
+      category: 'household_alert', source: 'piano-screen-authority',
       recipient: (target) => recipientForNotifyService(target),
     }),
     deviceService: deviceServices.deviceService,
@@ -2708,7 +2708,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // "TV didn't turn on" — to the device's own HA target, through NotificationService.
     sendPush: createPushSender({
       notificationService: notificationStack.notificationService,
-      category: 'household_alert', urgency: 'high', source: 'wake-and-load',
+      category: 'household_alert', source: 'wake-and-load',
       recipient: (target) => recipientForNotifyService(target),
     }),
     logger: rootLogger.child({ module: 'wake-and-load' })
@@ -3007,7 +3007,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // when the sessions store it needs actually exists: the refusal it replaces
   // is still the right answer for a household with no story-time launcher.
   ({ startReadingSession } = await registerSchoolReadingAction({ readingSessions, deviceServices, homeAutomationAdapters,
-    sendPush: createPushSender({ notificationService: notificationStack.notificationService, category: 'school', urgency: 'high', source: 'story-time', recipient: (target) => recipientForNotifyService(target) }),
+    sendPush: createPushSender({ notificationService: notificationStack.notificationService, category: 'school', source: 'story-time', recipient: (target) => recipientForNotifyService(target) }),
     learnerDisplayName, screenContentTracker, wakeScreenForBroadcast, schoolLifecycle, eventBus, rootLogger, learnerActions, nfcLocationsForReachability }));
 
   // Trigger dispatch (NFC modality source: apps/nfc/config.yml; barcode modality
@@ -4385,7 +4385,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
       haGateway: homeAutomationAdapters.haGateway,
       sendPush: createPushSender({
         notificationService: notificationStack.notificationService,
-        category: 'household_alert', urgency: 'high', source: 'piano-bridge-supervisor',
+        category: 'household_alert', source: 'piano-bridge-supervisor',
         recipient: (target) => recipientForNotifyService(target),
       }),
       householdId,

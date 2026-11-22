@@ -133,15 +133,16 @@ export function createNotifyServiceRecipientResolver({ listUsernames, profileNot
  * HA `notify` directly. It sends one required push through NotificationService
  * (the Android app, else HA): the companion-app `data` block rides as legacy
  * `pushData` so the HA payload is unchanged, a producer's own HA target (from
- * its config) is kept, and every send has its own dedupe key — these producers
- * already decide when to push, so governance must not swallow a repeat.
+ * its config) is kept, and every send has its own dedupe key and is `critical` —
+ * these producers already decide when to push, so neither the cooldown nor quiet
+ * hours may swallow one. Resolves `{ok, results}`.
  */
-export function createPushSender({ notificationService, category, urgency = 'high', source, recipient, haNotifyService, makeId = () => globalThis.crypto.randomUUID() }) {
+export function createPushSender({ notificationService, category, urgency = 'critical', source, recipient, haNotifyService, makeId = () => globalThis.crypto.randomUUID() }) {
   return async ({ title, message, data, haNotifyService: callTarget = null } = {}) => {
-    if (!notificationService?.send) return [];
+    if (!notificationService?.send) return { ok: false, results: [] };
     const target = callTarget || haNotifyService?.() || null;
     const username = recipient?.(target) || null;
-    return notificationService.send({
+    const results = await notificationService.send({
       title, body: message, category, urgency,
       ...(username ? { recipient: { username } } : {}),
       dedupeKey: `${source}:${makeId()}`,
@@ -151,5 +152,8 @@ export function createPushSender({ notificationService, category, urgency = 'hig
         ...(target ? { haNotifyService: String(target).replace(/^notify\./, '') } : {}),
       },
     });
+    // ok: a transport took it (the phone acked, or HA accepted). A producer that
+    // retries reads this; a suppressed or undeliverable push is ok:false.
+    return { ok: (results || []).some(r => r.delivered === true || r.accepted === true), results: results || [] };
   };
 }

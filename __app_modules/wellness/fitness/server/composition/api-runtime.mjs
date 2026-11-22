@@ -79,7 +79,7 @@ let providerWebhookAdapters = {};
         store: new YamlSyncHealthStore({ path: configService.getHouseholdPath('fitness/sync-health') }),
         // Head of household, through NotificationService (the Android app, else HA).
         sendPush: dependencies.makePushSender
-          ? dependencies.makePushSender({ category: 'household_alert', urgency: 'high', source: 'strava-sync-health', recipient: () => configService.getHeadOfHousehold?.() || null })
+          ? dependencies.makePushSender({ category: 'household_alert', source: 'strava-sync-health', recipient: () => configService.getHeadOfHousehold?.() || null })
           : async () => { stravaHealthLogger.warn?.('strava.sync_health.no_push_target', { recipient: null }); },
         hasWebhookJob: (activityId) => !!jobStore.findById(activityId),
         timezone: stravaTimezone,

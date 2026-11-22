@@ -109,7 +109,7 @@ describe('createPushSender', () => {
     expect(send.mock.calls[0][0].metadata).not.toHaveProperty('haNotifyService');
   });
   it('is a no-op that says so when there is no notification service', async () => {
-    expect(await createPushSender({ notificationService: null, category: 'household_alert', source: 's' })({ title: 'T', message: 'M' })).toEqual([]);
+    expect(await createPushSender({ notificationService: null, category: 'household_alert', source: 's' })({ title: 'T', message: 'M' })).toEqual({ ok: false, results: [] });
   });
 });
 
@@ -118,5 +118,29 @@ describe('createPushSender per-call target', () => {
     const send = vi.fn().mockResolvedValue([]);
     await createPushSender({ notificationService: { send }, category: 'household_alert', source: 's', recipient: () => 'head', haNotifyService: () => 'a' })({ title: 'T', message: 'M', haNotifyService: 'notify.mobile_app_tv_owner' });
     expect(send.mock.calls[0][0].metadata.haNotifyService).toBe('mobile_app_tv_owner');
+  });
+});
+
+describe('review fixes: governed sends', () => {
+  it('a createPushSender alert is delivered inside quiet hours and reports ok', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'notif-'));
+    try {
+      const callService = vi.fn().mockResolvedValue({});
+      const cfg = { quiet_hours: { enabled: true, start: '00:00', end: '23:59' }, cooldowns: {} };
+      const { notificationService } = bootstrapNotifications({
+        eventBus: fakeBus(), haGateway: { callService }, resolveNotifyService: () => null,
+        configService: { getHouseholdAppConfig: () => cfg, reloadHouseholdAppConfig: () => cfg, getHouseholdTimezone: () => 'UTC' },
+        dataPath: dir, clock: { now: () => new Date('2026-11-21T12:00:00Z') },
+        logger: { debug() {}, warn() {}, info() {}, child: () => ({ debug() {}, warn() {}, info() {} }) },
+      });
+      const push = createPushSender({ notificationService, category: 'household_alert', source: 'tv', recipient: () => 'head' });
+      const res = await push({ title: "📺 TV didn't turn on", message: 'm', haNotifyService: 'mobile_app_x' });
+      expect(res.ok).toBe(true);
+      expect(callService).toHaveBeenCalledTimes(1);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('reports ok:false when nothing delivered', async () => {
+    const push = createPushSender({ notificationService: { send: async () => [{ delivered: false, channel: 'push' }] }, category: 'household_alert', source: 's', recipient: () => 'h' });
+    expect(await push({ title: 'T', message: 'M' })).toMatchObject({ ok: false });
   });
 });

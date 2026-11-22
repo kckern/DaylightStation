@@ -77,6 +77,12 @@ export class AndroidAppPushAdapter extends INotificationChannel {
     this.#pending.delete(intent.id);
     if (!ok) {
       this.#eventBus.sendToClient(phone.connectionId, { type: 'push.cancel', id: intent.id });
+      // The phone may have reconnected while we waited (its ack lost with the old
+      // socket): cancel on its newest connection too, so HA is the only one shown.
+      const now = this.#registry?.currentFor(username);
+      if (now?.connectionId && now.connectionId !== phone.connectionId) {
+        this.#eventBus.sendToClient(now.connectionId, { type: 'push.cancel', id: intent.id });
+      }
       this.#logger?.warn?.('notification.android.ack-timeout', { username, id: intent.id, timeoutMs: this.#ackTimeoutMs });
       return { delivered: false, error: 'ack timeout' };
     }

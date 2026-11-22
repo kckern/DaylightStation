@@ -38,3 +38,11 @@ describe('NotificationService default recipient for house alerts', () => {
     expect(seen[0].id).toBe('id-1');
   });
 });
+
+describe('NotificationService pending list', () => {
+  it('keeps at most 100 undelivered notifications', async () => {
+    const svc = new NotificationService({ adapters: [{ channel: 'push', send: async () => ({ delivered: false }) }] });
+    for (let i = 0; i < 105; i++) await svc.send({ ...plain, dedupeKey: `k${i}` });
+    expect(svc.getPending()).toHaveLength(100);
+  });
+});

@@ -29,8 +29,8 @@ export class ArcadeGameAlert extends IArcadeGameSupervisorAlert {
       return false;
     }
     try {
-      const results = await this.#sendPush({ title: 'Arcade', message, haNotifyService: service });
-      const delivered = (results || []).some(r => r.delivered === true || r.accepted === true);
+      const sent = await this.#sendPush({ title: 'Arcade', message, haNotifyService: service });
+      const delivered = sent?.ok === true;
       this.#logger.info?.('arcade.alert.sent', { deviceId, condition, delivered });
       return delivered;
     } catch (error) {

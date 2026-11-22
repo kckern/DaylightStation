@@ -2,6 +2,7 @@ import { NotificationIntent } from '#domains/notification/entities/NotificationI
 
 /** Categories about the house rather than a person: addressed to the default recipient. */
 const HOUSE_CATEGORIES = new Set(['system', 'household_alert']);
+const PENDING_LIMIT = 100;
 
 function toNotificationRecord(intent) {
   return {
@@ -202,6 +203,8 @@ export class NotificationService {
     if(requiredChannel && intent.dedupeKey)this.#pending=this.#pending.filter(item=>item.intent.dedupeKey!==intent.dedupeKey || item.intent.metadata?.username!==intent.metadata?.username);
     if (!anyDelivered) {
       this.#pending.push({ intent: toNotificationRecord(intent), results, timestamp: new Date().toISOString() });
+      // Bounded: undeliverable producer alerts must not grow it without limit.
+      if (this.#pending.length > PENDING_LIMIT) this.#pending.splice(0, this.#pending.length - PENDING_LIMIT);
     }
 
     if (governed && gv && (!requiredChannel || anyDelivered)) {

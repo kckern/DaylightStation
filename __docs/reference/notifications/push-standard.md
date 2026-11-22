@@ -200,9 +200,12 @@ until presses carry device auth. DoNow's `DoNowActionHandler` is built and not
 registered.
 
 **Producers bypass governance on purpose.** The migrated senders already decide
-when to push, so each send carries its own dedupe key (`createPushSender`) and
-approvals are `critical`; the default 60-minute cooldown and quiet hours never
-swallow one.
+when to push, so `createPushSender` sends each one `critical` (quiet hours never
+apply) with its own dedupe key (the cooldown never applies), and resolves
+`{ok, results}`: `ok` is false when nothing took it (suppressed, no target, no
+transport), so a producer that retries (the piano bridge supervisor) retries.
+A producer's own `pushData` block reaches Home Assistant verbatim; only push
+actions are translated on top. The pending list keeps the last 100 undelivered.
 
 ## The `notification` script variable
 

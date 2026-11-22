@@ -470,7 +470,7 @@ export function createFitnessApiRouter(config) {
       liveSessionAuthority,
       // Head of household, through NotificationService (the Android app, else HA).
       sendPush: makePushSender
-        ? makePushSender({ category: 'household_alert', urgency: 'high', source: 'garage-speaker', recipient: () => configService?.getHeadOfHousehold?.() || null })
+        ? makePushSender({ category: 'household_alert', source: 'garage-speaker', recipient: () => configService?.getHeadOfHousehold?.() || null })
         : async () => { garageSpeakerLogger?.warn?.('fitness.garage_speaker.no_push_target', { recipient: null }); },
     }),
     voiceMemoOperations,
@@ -585,7 +585,7 @@ export function createFitnessTransportIncidentReporter({
 }) {
   // Through NotificationService (the Android app, else HA): the head of household.
   const push = makePushSender?.({
-    category: 'household_alert', urgency: 'high', source: 'fitness-transport',
+    category: 'household_alert', source: 'fitness-transport',
     recipient: () => configService?.getHeadOfHousehold?.(householdId) || null,
   }) ?? null;
   return new FitnessTransportIncidentService({
@@ -594,9 +594,9 @@ export function createFitnessTransportIncidentReporter({
     logger, now, wallNow,
     sendPush: async (message, selectedHouseholdId) => {
       if (selectedHouseholdId !== householdId || !push) return { accepted: false };
-      const results = await push(message);
+      const sent = await push(message);
       // Acceptance (HA took it, or the phone acked) cannot prove the phone showed it.
-      return { accepted: (results || []).some(r => r.delivered === true || r.accepted === true) };
+      return { accepted: sent?.ok === true };
     },
   });
 }

@@ -65,3 +65,10 @@ describe('PushNotificationAdapter HA target', () => {
     expect(callService).toHaveBeenCalledWith('notify', 'mobile_app_test_phone', { title: 'T', message: 'B' });
   });
 });
+
+describe('toHaNotifyData legacy passthrough', () => {
+  it('sends a legacy pushData block byte-identical: no added priority, no rewritten clickAction', () => {
+    const legacy = { tag: 'h-1', importance: 'high', channel: 'Household', clickAction: '/admin/harvest' };
+    expect(toHaNotifyData({ title: 'T', body: 'B', metadata: { pushData: legacy } }, { publicUrl })).toEqual({ title: 'T', message: 'B', data: legacy });
+  });
+});

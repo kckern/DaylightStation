@@ -32,8 +32,11 @@ export function toHaNotifyData(intent, { publicUrl } = {}) {
     return out;
   }).filter(Boolean);
   if (actions.length) t.actions = actions;
-  const legacy = intent.metadata?.pushData && typeof intent.metadata.pushData === 'object' ? intent.metadata.pushData : {};
-  const data = { ...legacy, ...t };
+  const legacy = intent.metadata?.pushData && typeof intent.metadata.pushData === 'object' ? intent.metadata.pushData : null;
+  // A producer that composed the companion-app block itself gets it verbatim:
+  // the presentation derived from it adds nothing (no priority, no rewritten
+  // clickAction). Only push actions are translated on top.
+  const data = legacy ? { ...legacy, ...(t.actions ? { actions: t.actions } : {}) } : t;
   return { title: intent.title, message: intent.body, ...(Object.keys(data).length ? { data } : {}) };
 }
 

@@ -82,3 +82,15 @@ describe('toAndroidWire', () => {
     expect(toAndroidWire(i).actions.map(a => a.id)).toEqual(['O']);
   });
 });
+
+describe('AndroidAppPushAdapter reconnect during the ack wait', () => {
+  it('also cancels on the phone\'s newest connection when the old one went away', async () => {
+    const registry = new InMemoryPushDeviceRegistry();
+    registry.recordHello({ username: 'u', deviceId: 'phone', connectionId: 'c1', atMs: 1 });
+    const sent = [];
+    const eventBus = { onClientMessage: () => {}, sendToClient: (id, m) => { sent.push({ id, m }); if (m.type === 'push.notification') registry.recordHello({ username: 'u', deviceId: 'phone', connectionId: 'c2', atMs: 2 }); return true; } };
+    const adapter = new AndroidAppPushAdapter({ eventBus, registry, ackTimeoutMs: 20 });
+    await adapter.send(intent());
+    expect(sent.filter(s => s.m.type === 'push.cancel').map(s => s.id)).toEqual(['c1', 'c2']);
+  });
+});
