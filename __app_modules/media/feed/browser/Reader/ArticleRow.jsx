@@ -13,7 +13,7 @@ import { webLink } from "../../shared/webLink.mjs";
  * Single article row with collapsed/expanded accordion states.
  * @param {Object} props
  * @param {Object} props.article - article object from /reader/stream
- * @param {Function} props.onMarkRead - (articleId) => void
+ * @param {Function} props.onMarkRead - (article) => void
  */
 export default function ArticleRow({ article, isNew = false, onMarkRead, onStateAction }) {
   // Feed links are other people's data: only an absolute http(s) URL is linked.
@@ -54,7 +54,7 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
     if (!expanded) {
       setExpanded(true);
       if (!(article.state?.isRead ?? article.isRead)) {
-        onMarkRead(article.id);
+        onMarkRead(article);
       }
     } else {
       setExpanded(false);

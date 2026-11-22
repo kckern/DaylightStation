@@ -480,8 +480,7 @@ export default function Reader() {
     setOfflineItems(apply);
   }, []);
 
-  const handleMarkRead = async (articleId) => {
-    const article = articles.find(value => value.id === articleId);
+  const handleMarkRead = async (article) => {
     if (!article) return;
     await mutateItems([article], 'read', { onApply: applyUpdatedItems }).catch(() => {});
   };
