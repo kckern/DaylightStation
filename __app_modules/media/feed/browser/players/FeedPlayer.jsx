@@ -250,6 +250,16 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
         </>
       )}
 
+      {/* Click-to-toggle play/pause on the uncovered video area */}
+      {!isSplit && (
+        <div
+          style={{ position: 'absolute', inset: 0 }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) toggle();
+          }}
+        />
+      )}
+
       {/* Control bar overlay */}
       <div
         className="feed-player-controls"
@@ -328,16 +338,6 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
           {speed}x
         </button>
       </div>
-
-      {/* Click-to-toggle play/pause on video area */}
-      {!isSplit && (
-        <div
-          style={{ position: 'absolute', inset: 0 }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) toggle();
-          }}
-        />
-      )}
     </div>
   );
 }
