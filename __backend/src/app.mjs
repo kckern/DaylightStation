@@ -4613,7 +4613,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   });
 
   // === Weekly Review ===
-  if (immichConfig) {  await installWeeklyReview({ configService, dataService, immichConfig, sharedAiGateway, rootLogger, householdId, userDataService, dataBasePath, mediaBasePath, fitnessServices, v1Routers, schoolLearnerWork });
+  if (immichConfig) {  await installWeeklyReview({ configService, dataService, immichConfig, sharedAiGateway, rootLogger, householdId, userDataService, dataBasePath, mediaBasePath, fitnessServices, v1Routers, schoolLearnerWork, economyService: economyApi?.economyService ?? null, fitnessRings: fitnessRings ?? null, learners: () => schoolLearnerDirectory.listLearners() });
 }
 
   // ==========================================================================

@@ -1,6 +1,7 @@
 import { WeeklyReviewAggregator } from "../domain/WeeklyReviewAggregator.mjs";
 import { curateSchoolWork } from "../domain/schoolWorkPolicy.mjs";
 import { buildShowcases } from "../domain/schoolShowcasePolicy.mjs";
+import { studyWindowInstants, hasWeekWins } from "../domain/learnerWinsPolicy.mjs";
 
 export class WeeklyReviewService {
   #immichAdapter;
@@ -10,6 +11,9 @@ export class WeeklyReviewService {
   #schoolWork;
   #schoolShowcase;
   #schoolTimeoutMs;
+  #learnerWins;
+  #learners;
+  #winsTimeoutMs;
   #setTimer;
   #clearTimer;
   #householdId;
@@ -31,6 +35,10 @@ export class WeeklyReviewService {
     this.#setTimer = deps.setTimer || setTimeout;
     this.#clearTimer = deps.clearTimer || clearTimeout;
     this.#schoolTimeoutMs = Number.isFinite(deps.schoolTimeoutMs) && deps.schoolTimeoutMs > 0 ? deps.schoolTimeoutMs : 8000;
+    // Each child's wins (silver, gems, rings) on their own showcase slide.
+    this.#learnerWins = deps.learnerWins && typeof deps.learnerWins.execute === 'function' ? deps.learnerWins : null;
+    this.#learners = typeof deps.learners === 'function' ? deps.learners : null;
+    this.#winsTimeoutMs = Number.isFinite(deps.winsTimeoutMs) && deps.winsTimeoutMs > 0 ? deps.winsTimeoutMs : 6000;
     this.#transcriptionService = deps.transcriptionService;
     this.#logger = deps.logger || console;
     if (!deps.reviewStore) throw new Error('WeeklyReviewService requires a reviewStore dependency');
@@ -58,6 +66,7 @@ export class WeeklyReviewService {
     this.#logger.info?.('weekly-review.bootstrap', { week: start });
 
     const dates = this.#windowDates(start);
+    const winsRun = this.#startWins(start, dates);
 
     const [photoDays, calendarDays, fitnessByDate, weatherByDate, schoolItems] = await Promise.all([
       this.#immichAdapter.getPhotosForDateRange(start, end),
@@ -68,7 +77,7 @@ export class WeeklyReviewService {
     ]);
     const schoolByDate = this.#curateSchool(start, dates, schoolItems);
     // The instant (plain) per-child showcase; AI bullets come from getSchoolShowcase.
-    const schoolShowcase = this.#plainShowcase(start, dates, schoolItems);
+    const schoolShowcase = await this.#withWins(start, dates, this.#plainShowcase(start, dates, schoolItems), winsRun);
 
     const { days } = WeeklyReviewAggregator.aggregate(photoDays, calendarDays, fitnessByDate, weatherByDate, schoolByDate);
     const recording = this.#getRecordingStatus(start);
@@ -129,12 +138,95 @@ export class WeeklyReviewService {
   async getSchoolShowcase(week) {
     if (!this.#isValidWeek(week)) throw new Error(`invalid week: ${week}`);
     const dates = this.#windowDates(week);
+    const winsRun = this.#startWins(week, dates);
     const items = await this.#fetchSchoolItems(week, dates);
     const plain = buildShowcases(items || [], dates);
     const settled = this.#schoolShowcase && plain.length > 0
       ? await this.#schoolShowcase.execute(week, plain)
       : plain;
-    return settled.map(({ learnerId, learnerName, bullets, images, source }) => ({ learnerId, learnerName, bullets, images, source }));
+    const trimmed = settled.map(({ learnerId, learnerName, bullets, images, source }) => ({ learnerId, learnerName, bullets, images, source }));
+    return this.#withWins(week, dates, trimmed, winsRun);
+  }
+
+  /**
+   * Start the roster's wins while the rest of the window loads. Resolves
+   * `{ roster, wins }`; `wins` is null when there is no wins source or it
+   * failed or timed out. Never throws.
+   */
+  async #startWins(week, dates) {
+    if (!this.#learnerWins) return { roster: [], wins: null };
+    const roster = await this.#roster();
+    const ids = roster.map(l => l.id);
+    const wins = ids.length > 0 ? await this.#fetchWins(week, dates, ids) : {};
+    return { roster, wins };
+  }
+
+  /** `[{id, name}]` from the injected roster; empty (with a warning) when it fails. */
+  async #roster() {
+    if (!this.#learners) return [];
+    try {
+      const list = await this.#learners();
+      return (Array.isArray(list) ? list : [])
+        .filter(l => l && typeof l.id === 'string' && l.id)
+        .map(l => ({ id: l.id, name: typeof l.name === 'string' && l.name.trim() ? l.name.trim() : l.id }));
+    } catch (err) {
+      this.#logger.warn?.('weekly-review.wins.roster-failed', { error: err.message });
+      return [];
+    }
+  }
+
+  /** Wins for these learners, bounded by the wins timeout; null on failure or timeout. */
+  async #fetchWins(week, dates, learnerIds) {
+    const window = studyWindowInstants(dates, this.#timezone);
+    if (!window) return {};
+    const ms = this.#winsTimeoutMs;
+    const TIMED_OUT = Symbol('timeout');
+    let timer;
+    try {
+      const wins = await Promise.race([
+        this.#learnerWins.execute({ learnerIds, dates, windowStartMs: window.startMs, windowEndMs: window.endMs }),
+        new Promise(resolve => { timer = this.#setTimer(() => resolve(TIMED_OUT), ms); }),
+      ]);
+      if (wins === TIMED_OUT) {
+        this.#logger.warn?.('weekly-review.wins.timeout', { week, ms });
+        return null;
+      }
+      return wins && typeof wins === 'object' ? wins : {};
+    } catch (err) {
+      this.#logger.warn?.('weekly-review.wins.error', { week, error: err.message });
+      return null;
+    } finally {
+      this.#clearTimer(timer);
+    }
+  }
+
+  /**
+   * Put each child's own wins on their own showcase, and add a wins-only
+   * showcase for a child with something earned this week but no school work.
+   * Without wins (no source, failure, timeout) the showcases come back as
+   * they were. Never throws.
+   */
+  async #withWins(week, dates, showcases, winsRun) {
+    if (!this.#learnerWins) return showcases;
+    try {
+      const { roster, wins: rosterWins } = await winsRun;
+      if (rosterWins === null) return showcases;
+      const wins = { ...rosterWins };
+      const missing = showcases.map(s => s.learnerId).filter(id => !(id in wins));
+      if (missing.length > 0) Object.assign(wins, (await this.#fetchWins(week, dates, missing)) || {});
+
+      const names = new Map(roster.map(l => [l.id, l.name]));
+      const shown = new Set(showcases.map(s => s.learnerId));
+      const out = showcases.map(s => (wins[s.learnerId] ? { ...s, wins: wins[s.learnerId] } : s));
+      for (const [learnerId, learnerWins] of Object.entries(wins)) {
+        if (shown.has(learnerId) || !hasWeekWins(learnerWins)) continue;
+        out.push({ learnerId, learnerName: names.get(learnerId) || learnerId, bullets: [], images: [], source: 'plain', wins: learnerWins });
+      }
+      return out.sort((a, b) => a.learnerName.localeCompare(b.learnerName) || a.learnerId.localeCompare(b.learnerId));
+    } catch (err) {
+      this.#logger.warn?.('weekly-review.wins.error', { week, error: err.message });
+      return showcases;
+    }
   }
 
   /**

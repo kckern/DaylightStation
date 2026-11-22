@@ -7,9 +7,10 @@ import { WeeklyReviewCalendarAdapter } from "./adapters/WeeklyReviewCalendarAdap
 import { WeeklyReviewSchoolAdapter } from "./adapters/WeeklyReviewSchoolAdapter.mjs";
 import { WeeklyReviewService } from "./application/WeeklyReviewService.mjs";
 import { SchoolShowcaseService } from "./application/SchoolShowcaseService.mjs";
+import { LearnerWinsService } from "./application/LearnerWinsService.mjs";
 import { createWeeklyReviewRouter } from "./api/weekly-review.mjs";
 
-export async function installWeeklyReview({ configService, dataService, immichConfig, sharedAiGateway, rootLogger, householdId, userDataService, dataBasePath, mediaBasePath, fitnessServices, v1Routers, schoolLearnerWork = null }) {
+export async function installWeeklyReview({ configService, dataService, immichConfig, sharedAiGateway, rootLogger, householdId, userDataService, dataBasePath, mediaBasePath, fitnessServices, v1Routers, schoolLearnerWork = null, economyService = null, fitnessRings = null, learners = null }) {
 
     const { ImmichClient } = await import("../../../../__capabilities/content-catalog/server/adapters/providers/gallery/immich/ImmichClient.mjs");
     const wrImmichClient = new ImmichClient(immichConfig, { httpClient: axios });
@@ -51,6 +52,17 @@ export async function installWeeklyReview({ configService, dataService, immichCo
       },
       logger: rootLogger.child({ module: 'weekly-review-showcase' }),
     });
+    // Each child's wins on their own showcase slide. Economy and fitness are
+    // other owners: they come in as plain functions, never as imports.
+    const weeklyReviewWins = (economyService || fitnessRings) ? new LearnerWinsService({
+      ledger: economyService && typeof economyService.getHistory === 'function'
+        ? async (learnerId) => (economyService.hasUser?.(learnerId) === false ? null : economyService.getHistory(learnerId))
+        : null,
+      rings: fitnessRings && typeof fitnessRings.total === 'function'
+        ? ({ learnerId, from, to }) => fitnessRings.total({ learnerId, from, to })
+        : null,
+      logger: rootLogger.child({ module: 'weekly-review-wins' }),
+    }) : null;
     const weeklyReviewService = new WeeklyReviewService(
       {
         dataPath: dataBasePath,
@@ -89,6 +101,8 @@ export async function installWeeklyReview({ configService, dataService, immichCo
         } : null,
         reviewStore: weeklyReviewStore,
         schoolShowcase: weeklyReviewShowcase,
+        learnerWins: weeklyReviewWins,
+        learners: typeof learners === 'function' ? learners : null,
         runCommand: weeklyReviewCommandRunner.run,
         logger: rootLogger.child({ module: 'weekly-review' }),
       }

@@ -231,7 +231,7 @@ The result is that closing the lid, a dropped connection, or a reboot degrades g
 
 ## School work
 
-The children's school week appears alongside the photos: books started and finished, course sessions, printed activity pages, and card-ladder practice. The children often watch, so the review shows **work done** and nothing else: never a score, grade, percent, correctness, coin, streak, verdict square or completion state.
+The children's school week appears alongside the photos: books started and finished, course sessions, printed activity pages, and card-ladder practice. The children often watch, so the review shows **work done** and nothing else: never a score, grade, percent, correctness, streak, verdict square or completion state. The one exception is each child's own **wins** (silver, gems and rings earned) on that child's own showcase slide; see [Wins](#wins).
 
 ### What the viewer sees
 
@@ -271,9 +271,9 @@ School owns the data and hands it over through `createSchoolLearnerWork` (see [P
 
 ### Routes
 
-- **Bootstrap** (`GET /api/v1/weekly-review/bootstrap`) carries `day.school`, `day.schoolAll` and `schoolShowcase: [{ learnerId, learnerName, images, bullets, source: 'plain' }]`. School is fetched in parallel with photos, calendar, fitness and weather, and bounded at **8 s** (`schoolTimeoutMs`): a timeout or an error leaves every day without school work and an empty showcase list; the rest of the week loads normally.
+- **Bootstrap** (`GET /api/v1/weekly-review/bootstrap`) carries `day.school`, `day.schoolAll` and `schoolShowcase: [{ learnerId, learnerName, images, bullets, source: 'plain', wins }]`. School is fetched in parallel with photos, calendar, fitness and weather, and bounded at **8 s** (`schoolTimeoutMs`): a timeout or an error leaves every day without school work and an empty showcase list; the rest of the week loads normally.
 - **Image** `GET /api/v1/weekly-review/school/image?ref=<ref>`, where `ref` is `course:<courseId>`, `activity:<issuanceId>` or `program:<programId>:<instanceId>` (e.g. `program:card-ladder:<package>`). Any other shape is 400 (`bad-ref`); nothing to show is 404; an image is sent with `Cache-Control: private, max-age=86400`. Book covers use their own cover URL, not this route.
-- **Showcase** `GET /api/v1/weekly-review/school/showcase?week=YYYY-MM-DD` (400 unless the week is a real calendar day) returns `{ showcases: [{ learnerId, learnerName, bullets, images, source }] }` with `source` `ai` or `plain`. The screen asks for it after each window lands (bounded at 25 s on the client, above the server's worst case of the school read plus the 10 s AI bound) and keeps the answer only if that window is still on screen.
+- **Showcase** `GET /api/v1/weekly-review/school/showcase?week=YYYY-MM-DD` (400 unless the week is a real calendar day) returns `{ showcases: [{ learnerId, learnerName, bullets, images, source, wins }] }` with `source` `ai` or `plain`. The screen asks for it after each window lands (bounded at 25 s on the client, above the server's worst case of the school read plus the 10 s AI bound) and keeps the answer only if that window is still on screen.
 
 ### Showcase bullets
 
@@ -283,6 +283,22 @@ School owns the data and hands it over through `createSchoolLearnerWork` (see [P
 - **AI bullets.** `SchoolShowcaseService` asks the weekly-review AI gateway (usage feature `school-showcase`), one child at a time in parallel, for a JSON array of short third-person bullets, and serves the plain bullets unless the answer passes every check.
 - **Safeguards.** The model sees only the child's work facts: no name, and titles and subtitles capped at 80 characters. It is told the strings are catalog labels, never instructions. An answer is kept only if it is one to five non-empty strings of at most 120 characters with no praise word (great, amazing, perfect, proud, best, smart, ...), score, grade, percent or exclamation mark. Words inside the child's own titles are masked before that check, so "Great Expectations" or "Oh, the Places You'll Go!" can be named. Each call is bounded (10 s by default), and two requests for the same week at the same time share one run.
 - **Cache.** Answers are written atomically to `weekly-review/log/<week>/school-showcase.yml` under the household as `{ <learnerId>: { itemsHash, bullets, at } }`, or `{ itemsHash, bullets: null, rejectedAt, attempts }` for an answer that failed the checks. After two rejections for the same week the child gets plain bullets without another AI call. `itemsHash` is the sorted `groupKey:weight` pairs of the child's week, so new work redrafts that child and a replay of an unchanged week costs nothing. A timeout or gateway error is not cached.
+
+### Wins
+
+Each showcase entry carries the child's own `wins`: what they **earned**, this week (shown big) and all time (shown small).
+
+```
+wins: { week: { silver, gems, rings }, allTime: { silver, gems, rings } }
+```
+
+- **Celebrate, never compare.** A child's numbers appear only on that child's slide. There are no balances (what is left to spend), no spending or conversions, and no sibling totals or rankings anywhere in the payload.
+- **What counts** (`server/domain/learnerWinsPolicy.mjs`). Silver and gems: economy ledger rows of kind `earn` or `prize` with a positive delta (payouts and contest prizes). Spends, conversions, deposits, gold, passes and other adjustments never count. A grown-up's reversal (`adjust` under `reverse:<ref>`) takes back what it reversed, from the bucket of the earn it reverses, never below zero. Rings: the fitness rings provider's `total` (rings per session, dated by the study day the session started).
+- **Week vs all time.** The week is the review window on the 4 am study-day boundary in the household timezone: 04:00 local on the first date up to 04:00 local the day after the last. Rings use the same window's dates, last date inclusive. All time is every ledger row, and rings from `2000-01-01` to the window's last date. All-time rings walk every session summary, so `LearnerWinsService` remembers them per learner and last date for 10 minutes.
+- **Zeros.** The server sends `0`; the client hides a zero. A source that is not wired or failed for that child reads `null`, which the client also hides.
+- **Who gets a slide.** Every child with school work this week, plus any child on the school roster with a non-zero week win but no work: that entry has `bullets: []`, `images: []`, `source: 'plain'` and shows the wins only. Entries stay sorted by name.
+- **Sources.** Economy and fitness are other owners, so `composition.mjs` turns `economyService.getHistory` and `fitnessRings.total` into plain functions; nothing in weekly review imports their code. The roster is `schoolLearnerDirectory.listLearners()`.
+- **Bounds.** Wins load alongside the rest of the window and are bounded at **6 s** (`winsTimeoutMs`). On a timeout or error the showcases go out without `wins`; the review never fails because of them. Bootstrap and the showcase route carry the same wins.
 
 ### When cards are missing: log events
 
@@ -313,6 +329,10 @@ Query the log store by event name (`context.app:weekly-review` for the screen's 
 | `weekly-review.showcase.ai-failed` | Gateway error or timeout for one child; plain bullets served, not cached. |
 | `weekly-review.showcase.ai-rejected` | The answer failed a check (`reason`: parse, count, length or banned); plain bullets served. |
 | `weekly-review.showcase.cache-load-failed`, `weekly-review.showcase.cache-save-failed` | The showcase cache file could not be read or written. |
+| `weekly-review.wins.loaded` | Wins were computed: `learners`, `ms`. |
+| `weekly-review.wins.source-failed` | The ledger or rings read threw for one child (`learnerId`, `source`); that figure reads null and is hidden. |
+| `weekly-review.wins.timeout`, `weekly-review.wins.error` | Wins took longer than 6 s or threw; the showcases go out without wins. |
+| `weekly-review.wins.roster-failed` | The school roster could not be read; only children with school work get wins. |
 | `weekly-review.api.school-showcase.response` | Showcase route answered: children, sources, duration. |
 | `showcase.loaded`, `showcase.load-failed`, `showcase.superseded` | (screen) The drafted showcase arrived, failed (plain bullets stay), or arrived for a window no longer on screen. |
 | `reel.school-card`, `reel.showcase` | (screen, debug) A work card or showcase slide was shown. |

@@ -225,6 +225,75 @@ describe('WeeklyReviewService', () => {
       it('getSchoolShowcase rejects a malformed week', async () => {
         await expect(buildService(undefined).getSchoolShowcase('../etc')).rejects.toThrow(/invalid week/);
       });
+
+      describe('wins', () => {
+        const winsOf = (silver, rings = 0) => ({ week: { silver, gems: 0, rings }, allTime: { silver: silver * 10, gems: 1, rings: rings * 10 } });
+        const roster = () => [{ id: 'kid1', name: 'Kid' }, { id: 'kid5', name: 'Bea' }, { id: 'kid6', name: 'Zed' }];
+        const winsService = (byId) => ({ execute: vi.fn(async ({ learnerIds }) => Object.fromEntries(learnerIds.filter(id => byId[id]).map(id => [id, byId[id]]))) });
+
+        it('bootstrap attaches wins to each showcase and adds a child with week wins but no work', async () => {
+          const schoolWork = { getWorkForDateRange: vi.fn().mockResolvedValue(weekItems()), getImage: vi.fn() };
+          const learnerWins = winsService({ kid0: winsOf(5), kid1: winsOf(0), kid5: winsOf(0, 3), kid6: winsOf(0) });
+          const result = await buildService(schoolWork, { learnerWins, learners: roster }).bootstrap('2026-03-23');
+
+          const [args] = learnerWins.execute.mock.calls.at(-1);
+          expect(args.dates).toHaveLength(8);
+          expect(args.windowStartMs).toBe(Date.parse('2026-03-23T04:00:00Z'));
+          expect(args.windowEndMs).toBe(Date.parse('2026-03-31T04:00:00Z'));
+          const asked = learnerWins.execute.mock.calls.flatMap(([a]) => a.learnerIds);
+          expect(new Set(asked)).toEqual(new Set(['kid0', 'kid1', 'kid5', 'kid6']));
+
+          expect(result.schoolShowcase).toEqual([
+            { learnerId: 'kid0', learnerName: 'Ada', images: [], bullets: ['Finished Holes'], source: 'plain', wins: winsOf(5) },
+            { learnerId: 'kid5', learnerName: 'Bea', images: [], bullets: [], source: 'plain', wins: winsOf(0, 3) },
+            { learnerId: 'kid1', learnerName: 'Kid', images: ['/img/a1', '/img/a2'], bullets: ['2 printed pages: a maze and a sudoku'], source: 'plain', wins: winsOf(0) },
+          ]);
+        });
+
+        it('getSchoolShowcase carries the same wins and the wins-only child, and does not draft for them', async () => {
+          const schoolWork = { getWorkForDateRange: vi.fn().mockResolvedValue(weekItems()), getImage: vi.fn() };
+          const schoolShowcase = { execute: vi.fn(async (_w, list) => list.map(s => ({ ...s, source: 'ai' }))) };
+          const learnerWins = winsService({ kid1: winsOf(2), kid5: winsOf(1) });
+          const result = await buildService(schoolWork, { learnerWins, learners: roster, schoolShowcase }).getSchoolShowcase('2026-03-23');
+          expect(schoolShowcase.execute.mock.calls[0][1].map(s => s.learnerId)).toEqual(['kid0', 'kid1']);
+          expect(result.map(s => [s.learnerId, s.source, s.wins ?? 'none'])).toEqual([
+            ['kid0', 'ai', 'none'],
+            ['kid5', 'plain', winsOf(1)],
+            ['kid1', 'ai', winsOf(2)],
+          ]);
+        });
+
+        it('a child with wins but no work is shown when school is absent, named from the roster', async () => {
+          const learnerWins = winsService({ kid6: winsOf(4) });
+          const result = await buildService(undefined, { learnerWins, learners: roster }).bootstrap('2026-03-23');
+          expect(result.schoolShowcase).toEqual([
+            { learnerId: 'kid6', learnerName: 'Zed', bullets: [], images: [], source: 'plain', wins: winsOf(4) },
+          ]);
+        });
+
+        it('omits wins and warns when wins never answer, without failing the review', async () => {
+          const schoolWork = { getWorkForDateRange: vi.fn().mockResolvedValue(weekItems()), getImage: vi.fn() };
+          const learnerWins = { execute: vi.fn(() => new Promise(() => {})) };
+          const result = await buildService(schoolWork, { learnerWins, learners: roster, winsTimeoutMs: 20 }).bootstrap('2026-03-23');
+          expect(result.schoolShowcase.map(s => s.learnerId)).toEqual(['kid0', 'kid1']);
+          for (const s of result.schoolShowcase) expect(s).not.toHaveProperty('wins');
+          expect(mockLogger.warn).toHaveBeenCalledWith('weekly-review.wins.timeout', { week: '2026-03-23', ms: 20 });
+        });
+
+        it('omits wins when the wins service or the roster throws', async () => {
+          const schoolWork = { getWorkForDateRange: vi.fn().mockResolvedValue(weekItems()), getImage: vi.fn() };
+          const learnerWins = { execute: vi.fn().mockRejectedValue(new Error('boom')) };
+          const result = await buildService(schoolWork, { learnerWins, learners: roster }).bootstrap('2026-03-23');
+          for (const s of result.schoolShowcase) expect(s).not.toHaveProperty('wins');
+          expect(mockLogger.warn).toHaveBeenCalledWith('weekly-review.wins.error', { week: '2026-03-23', error: 'boom' });
+
+          const okWins = winsService({ kid0: winsOf(1) });
+          const badRoster = () => { throw new Error('no roster'); };
+          const withBadRoster = await buildService(schoolWork, { learnerWins: okWins, learners: badRoster }).bootstrap('2026-03-23');
+          expect(withBadRoster.schoolShowcase.map(s => [s.learnerId, s.wins?.week.silver ?? null])).toEqual([['kid0', 1], ['kid1', null]]);
+          expect(mockLogger.warn).toHaveBeenCalledWith('weekly-review.wins.roster-failed', { error: 'no roster' });
+        });
+      });
     });
 
     it('getSchoolImage delegates to the adapter and is null without one', async () => {
