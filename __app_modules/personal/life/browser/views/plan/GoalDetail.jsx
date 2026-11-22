@@ -76,10 +76,11 @@ export function GoalDetail({ goalId, username }) {
       {goal.milestones?.length > 0 && (
         <Paper p="sm" withBorder>
           <Text size="sm" fw={500} mb="xs">Milestones</Text>
-          <Timeline active={goal.milestones.filter(m => m.completed).length - 1} bulletSize={20}>
+          <Timeline bulletSize={20}>
             {goal.milestones.map((m, i) => (
               <Timeline.Item
                 key={i}
+                active={Boolean(m.completed)}
                 bullet={<IconFlag size={12} />}
                 title={m.name}
                 color={m.completed ? 'green' : 'gray'}
