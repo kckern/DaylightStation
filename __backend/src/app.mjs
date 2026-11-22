@@ -2829,13 +2829,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     cardLadderStore, cardLadderTitleFor, mediaBasePath, rootLogger,
     learningEvidence: schoolLearningEvidence,
     lessonSittingLog: contentServices?.lessonSittingLog ?? null,
-    // A piano course is a Plex show; its own metadata carries the title.
+    // A piano course id is a Plex show or a season of one. A season's own title
+    // is generic ("Piano"), so a season is named by its show ("My Music Workshop").
     pianoCourseTitleFor: async (courseId) => {
       const ratingKey = /^plex:(\d+)$/.exec(courseId ?? '')?.[1];
       const client = contentRegistry?.get?.('plex')?.client;
       if (!ratingKey || typeof client?.getContainer !== 'function') return null;
       const data = await client.getContainer(`/library/metadata/${ratingKey}`);
-      return data?.MediaContainer?.Metadata?.[0]?.title ?? null;
+      const meta = data?.MediaContainer?.Metadata?.[0];
+      if (!meta) return null;
+      return (meta.type === 'season' ? meta.parentTitle : null) ?? meta.title ?? null;
     },
     languageStudyService, configService,
   });

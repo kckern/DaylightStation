@@ -6,6 +6,7 @@ const SUBJECT_GLYPHS = {
   activity: '🧩',
   scripture: '✝️',
   language: '🔤',
+  music: '🎹',
 };
 
 export function subjectGlyph(subject) {

@@ -132,12 +132,14 @@ $school-font: "Roboto Condensed", sans-serif;
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 100%;
+    text-wrap: balance;
   }
 
   .work-card-subtitle {
     margin-top: 16px;
     font-size: 32px;
     color: #c8d2dc;
+    text-wrap: balance;
   }
 
   .work-card-when {
