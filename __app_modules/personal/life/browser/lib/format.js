@@ -26,11 +26,12 @@ export function formatDateRange(startIso, endIso) {
   return sameYear ? `${left} – ${right}` : `${formatDate(startIso)} – ${formatDate(endIso)}`;
 }
 
-export function formatPeriodLabel({ alias, level, periodId } = {}) {
+export function formatPeriodLabel({ alias, level, periodId, startDate } = {}) {
   const name = alias || (level ? level.charAt(0).toUpperCase() + level.slice(1) : '');
-  const when = /^\d{4}-\d{2}-\d{2}/.test(periodId || '')
-    ? formatDate(periodId, { month: 'short', day: 'numeric' })
-    : (periodId || '');
+  const when = formatDate(startDate, { month: 'short', day: 'numeric' })
+    || (/^\d{4}-\d{2}-\d{2}/.test(periodId || '')
+      ? formatDate(periodId, { month: 'short', day: 'numeric' })
+      : (periodId || ''));
   return when ? `${name} · ${when}` : name;
 }
 

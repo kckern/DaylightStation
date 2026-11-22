@@ -59,7 +59,7 @@ export function CeremonyConfig({ username }) {
               {Object.entries(current).map(([level, pos]) => (
                 pos && (
                   <Badge key={level} variant="outline" size="sm" color="blue">
-                    {formatPeriodLabel({ alias: pos.alias, level, periodId: pos.periodId })}
+                    {formatPeriodLabel({ ...pos, level })}
                   </Badge>
                 )
               ))}
