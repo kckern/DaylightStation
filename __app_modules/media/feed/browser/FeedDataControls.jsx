@@ -59,7 +59,7 @@ export default function FeedDataControls({ onImported }) {
       link.download = `daylight-feed-${localDateKey()}.json`;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
-      setStatus('Export downloaded.');
+      setStatus('Export prepared for download.');
     } catch (error) {
       if (!isCurrent(scope)) return;
       log.warn('feed.export.failed', { error: error.message });
