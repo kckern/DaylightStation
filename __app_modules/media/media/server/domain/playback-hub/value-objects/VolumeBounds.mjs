@@ -12,9 +12,10 @@
 
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { DomainInvariantError } from '#domains/core/errors/index.mjs';
+import { DEFAULT_VOLUME_BOUNDS, isValidVolumeBounds, isValidVolumeLimit } from '../../../../../../../shared/contracts/media/volumeBounds.mjs';
 
 const KEYS = Object.freeze(['default', 'min', 'max']);
-const DEFAULTS = Object.freeze({ default: 60, min: 0, max: 100 });
+const DEFAULTS = DEFAULT_VOLUME_BOUNDS;
 
 /**
  * VolumeBounds value object.
@@ -45,7 +46,7 @@ export class VolumeBounds {
     for (const k of KEYS) {
       const raw = partial[k];
       const v = raw === undefined || raw === null ? DEFAULTS[k] : raw;
-      if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 100) {
+      if (!isValidVolumeLimit(v)) {
         throw new ValidationError(`VolumeBounds.${k} must be a number 0-100`, {
           code: 'INVALID_VOLUME_BOUNDS',
           field: k,
@@ -54,7 +55,7 @@ export class VolumeBounds {
       }
       resolved[k] = v;
     }
-    if (!(resolved.min <= resolved.default && resolved.default <= resolved.max)) {
+    if (!isValidVolumeBounds(resolved)) {
       throw new DomainInvariantError(
         `VolumeBounds invariant violated: min(${resolved.min}) <= default(${resolved.default}) <= max(${resolved.max})`,
         { code: 'VOLUME_BOUNDS_INVARIANT', details: resolved }

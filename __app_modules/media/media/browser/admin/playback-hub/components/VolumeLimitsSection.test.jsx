@@ -49,14 +49,21 @@ describe('VolumeLimitsSection', () => {
     expect(save).toBeDisabled();
   });
 
-  it('enabling Save after editing, then clicking, calls updateDevice with the patch', async () => {
+  it('blocks invalid bounds until corrected, then saves the valid patch', async () => {
     renderSection({ slot: mkSlot(), mutations });
 
     const maxInput = screen.getByLabelText(/^max$/i);
     fireEvent.change(maxInput, { target: { value: '30' } });
 
     const save = screen.getByRole('button', { name: /save/i });
+    expect(save).toBeDisabled();
+    expect(screen.getByRole('alert')).toHaveTextContent('Min ≤ Default ≤ Max');
+    fireEvent.click(save);
+    expect(mutations.updateDevice).not.toHaveBeenCalled();
+
+    fireEvent.change(maxInput, { target: { value: '60' } });
     expect(save).not.toBeDisabled();
+    expect(screen.queryByRole('alert')).toBeNull();
 
     await act(async () => {
       fireEvent.click(save);
@@ -64,7 +71,7 @@ describe('VolumeLimitsSection', () => {
 
     expect(mutations.updateDevice).toHaveBeenCalledTimes(1);
     expect(mutations.updateDevice).toHaveBeenCalledWith('red', {
-      volume: { default: 50, min: 0, max: 30 },
+      volume: { default: 50, min: 0, max: 60 },
     });
   });
 
@@ -72,21 +79,39 @@ describe('VolumeLimitsSection', () => {
     renderSection({ slot: mkSlot(), mutations });
 
     const maxInput = screen.getByLabelText(/^max$/i);
-    fireEvent.change(maxInput, { target: { value: '30' } });
+    fireEvent.change(maxInput, { target: { value: '60' } });
 
     const save = screen.getByRole('button', { name: /save/i });
     await act(async () => {
       fireEvent.click(save);
     });
 
+    expect(mutations.updateDevice).toHaveBeenCalledTimes(1);
+    expect(mutations.updateDevice).toHaveBeenCalledWith('red', { volume: { default: 50, min: 0, max: 60 } });
     // After save resolves, the form's baseline is the new value, so dirty=false
     expect(save).toBeDisabled();
   });
 
-  it('handles slot.volume missing entirely (defaults to 0)', () => {
+  it('uses the shared default bounds when slot.volume is missing', () => {
     renderSection({ slot: mkSlot({ volume: undefined }), mutations });
-    const defaultInput = screen.getByLabelText(/default/i);
-    expect(defaultInput).toHaveValue('0');
+    expect(screen.getByLabelText(/default/i)).toHaveValue('60');
+    expect(screen.getByLabelText(/^min$/i)).toHaveValue('0');
+    expect(screen.getByLabelText(/^max$/i)).toHaveValue('100');
+  });
+
+  it('resolves sparse server bounds using the same defaults and allows a valid edit', async () => {
+    renderSection({ slot: mkSlot({ volume: { min: 10, max: 75 } }), mutations });
+    expect(screen.getByLabelText(/default/i)).toHaveValue('60');
+    expect(screen.getByLabelText(/^min$/i)).toHaveValue('10');
+    expect(screen.getByLabelText(/^max$/i)).toHaveValue('75');
+
+    fireEvent.change(screen.getByLabelText(/^max$/i), { target: { value: '80' } });
+    const save = screen.getByRole('button', { name: /save/i });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(save).not.toBeDisabled();
+    await act(async () => fireEvent.click(save));
+    expect(mutations.updateDevice).toHaveBeenCalledTimes(1);
+    expect(mutations.updateDevice).toHaveBeenCalledWith('red', { volume: { default: 60, min: 10, max: 80 } });
   });
 
   it('does NOT rebaseline when updateDevice returns { ok: false }', async () => {

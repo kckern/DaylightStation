@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Group, NumberInput, Button, Stack } from '@mantine/core';
+import { Group, NumberInput, Button, Stack, Text } from '@mantine/core';
+import { DEFAULT_VOLUME_BOUNDS, isValidVolumeBounds, VOLUME_LIMIT_MAX, VOLUME_LIMIT_MIN } from '@shared-contracts/media/volumeBounds.mjs';
 
 /**
  * VolumeLimitsSection — edit a device's volume bounds.
@@ -14,9 +15,9 @@ import { Group, NumberInput, Button, Stack } from '@mantine/core';
  *   mutations: object from useHubMutations
  */
 export function VolumeLimitsSection({ slot, mutations }) {
-  const initialDefault = slot?.volume?.default ?? 0;
-  const initialMin = slot?.volume?.min ?? 0;
-  const initialMax = slot?.volume?.max ?? 100;
+  const initialDefault = slot?.volume?.default ?? DEFAULT_VOLUME_BOUNDS.default;
+  const initialMin = slot?.volume?.min ?? DEFAULT_VOLUME_BOUNDS.min;
+  const initialMax = slot?.volume?.max ?? DEFAULT_VOLUME_BOUNDS.max;
 
   const [baseline, setBaseline] = useState({
     default: initialDefault,
@@ -29,9 +30,9 @@ export function VolumeLimitsSection({ slot, mutations }) {
   // If the slot prop changes externally (e.g. revalidate after save), re-baseline.
   useEffect(() => {
     const next = {
-      default: slot?.volume?.default ?? 0,
-      min: slot?.volume?.min ?? 0,
-      max: slot?.volume?.max ?? 100,
+      default: slot?.volume?.default ?? DEFAULT_VOLUME_BOUNDS.default,
+      min: slot?.volume?.min ?? DEFAULT_VOLUME_BOUNDS.min,
+      max: slot?.volume?.max ?? DEFAULT_VOLUME_BOUNDS.max,
     };
     setBaseline(next);
     setVals(next);
@@ -41,8 +42,10 @@ export function VolumeLimitsSection({ slot, mutations }) {
     vals.default !== baseline.default ||
     vals.min !== baseline.min ||
     vals.max !== baseline.max;
+  const hasValidBounds = isValidVolumeBounds(vals);
 
   const handleSave = async () => {
+    if (!hasValidBounds || saving) return;
     setSaving(true);
     try {
       const out = await mutations.updateDevice(slot.color, { volume: { ...vals } });
@@ -61,30 +64,31 @@ export function VolumeLimitsSection({ slot, mutations }) {
           label="Default"
           value={vals.default}
           onChange={(v) => setVals({ ...vals, default: Number(v) || 0 })}
-          min={0}
-          max={100}
+          min={VOLUME_LIMIT_MIN}
+          max={VOLUME_LIMIT_MAX}
           w={120}
         />
         <NumberInput
           label="Min"
           value={vals.min}
           onChange={(v) => setVals({ ...vals, min: Number(v) || 0 })}
-          min={0}
-          max={100}
+          min={VOLUME_LIMIT_MIN}
+          max={VOLUME_LIMIT_MAX}
           w={120}
         />
         <NumberInput
           label="Max"
           value={vals.max}
           onChange={(v) => setVals({ ...vals, max: Number(v) || 0 })}
-          min={0}
-          max={100}
+          min={VOLUME_LIMIT_MIN}
+          max={VOLUME_LIMIT_MAX}
           w={120}
         />
-        <Button onClick={handleSave} disabled={!isDirty || saving} loading={saving}>
+        <Button onClick={handleSave} disabled={!isDirty || !hasValidBounds || saving} loading={saving}>
           Save
         </Button>
       </Group>
+      {!hasValidBounds && <Text size="sm" c="red" role="alert">Volume limits must be from 0 to 100, with Min ≤ Default ≤ Max.</Text>}
     </Stack>
   );
 }
