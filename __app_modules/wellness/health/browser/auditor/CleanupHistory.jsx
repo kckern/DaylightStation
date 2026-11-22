@@ -54,8 +54,13 @@ export function CleanupHistory({ resource }) {
           {!history.data && history.loading ? <LoadingState label="Repair history" /> : null}
           {history.data?.records.map(record => (
             <Group key={record.id} justify="space-between">
-              <Text size="sm">{new Date(record.at).toLocaleString()} · {record.reason}</Text>
-              <Button size="xs" variant="subtle" onClick={() => { setError(null); setSelected(record); }}>Details</Button>
+              <Text id={`repair-history-${record.id}`} size="sm">{new Date(record.at).toLocaleString()} · {record.reason}</Text>
+              <Button
+                size="xs"
+                variant="subtle"
+                aria-describedby={`repair-history-${record.id}`}
+                onClick={() => { setError(null); setSelected(record); }}
+              >Details</Button>
             </Group>
           ))}
           {history.data?.total === 0 ? <Text size="sm" c="dimmed">No repairs have been made.</Text> : null}
