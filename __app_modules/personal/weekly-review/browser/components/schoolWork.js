@@ -35,3 +35,16 @@ export function workDay(studyDay) {
 export function kidStyle(color) {
   return color ? { '--kid': color } : undefined;
 }
+
+// How big to set a work title so it fits about two lines of the text column:
+// 'm' for most, 'l' and 'xl' step down for long ones (and allow a third line).
+// Wide glyphs (Hangul, CJK, full-width) count double: they take about twice
+// the width of a Latin letter in the condensed face.
+const WIDE = /[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uff60]/;
+export function titleSize(title) {
+  let width = 0;
+  for (const ch of String(title || '')) width += WIDE.test(ch) ? 2 : 1;
+  if (width <= 36) return 'm';
+  if (width <= 64) return 'l';
+  return 'xl';
+}

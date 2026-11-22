@@ -20,4 +20,10 @@ describe('ControlLegend', () => {
     const { container } = render(<ControlLegend level="grid" contextOpen={false} mediaType="none" playing={false} modalType="exitGate" />);
     expect(container.firstChild).toBeNull();
   });
+  it('pins itself to the foot of the stage in a reel, not in the grid', () => {
+    const { container, rerender } = render(<ControlLegend level="reel" contextOpen={false} mediaType="photo" playing={false} modalType={null} />);
+    expect(container.querySelector('.weekly-review-legend--reel')).not.toBeNull();
+    rerender(<ControlLegend level="grid" contextOpen={false} mediaType="none" playing={false} modalType={null} />);
+    expect(container.querySelector('.weekly-review-legend--reel')).toBeNull();
+  });
 });

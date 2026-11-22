@@ -24,6 +24,14 @@ describe('ShowcaseSlide', () => {
     expect(screen.getByText('4 / 5')).toBeInTheDocument();
   });
 
+  it("puts the child's photo beside the title", () => {
+    const { container } = render(<ShowcaseSlide item={showcase()} index={0} total={1} />);
+    const face = container.querySelector('.showcase-heading img.learner-avatar');
+    expect(face.getAttribute('src')).toMatch(/\/api\/v1\/static\/img\/users\/kid-a\?w=192$/);
+    fireEvent.error(face);
+    expect(container.querySelector('.showcase-heading .learner-avatar--fallback').textContent).toBe('R');
+  });
+
   it('carries the child hue for the band and markers', () => {
     const { container } = render(<ShowcaseSlide item={showcase()} index={0} total={1} color="#c2367a" />);
     expect(container.querySelector('.weekly-review-showcase').style.getPropertyValue('--kid')).toBe('#c2367a');

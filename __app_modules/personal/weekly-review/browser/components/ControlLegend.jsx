@@ -31,7 +31,7 @@ export default function ControlLegend({ level, contextOpen, mediaType, playing, 
   if (modalType) return null;
   const hints = hintsFor({ level, contextOpen, mediaType, playing, hasNewer });
   return (
-    <div className="weekly-review-legend" role="note" aria-label="Controls">
+    <div className={`weekly-review-legend${level === 'grid' ? '' : ' weekly-review-legend--reel'}`} role="note" aria-label="Controls">
       {hints.map(([key, label], i) => (
         <span className="legend-hint" key={i}>
           <span className="legend-key">{key}</span>

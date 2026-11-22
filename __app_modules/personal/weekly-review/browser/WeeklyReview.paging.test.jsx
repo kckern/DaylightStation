@@ -10,7 +10,10 @@ import React from 'react';
 const api = vi.hoisted(() => ({ call: vi.fn() }));
 const uploaderCalls = vi.hoisted(() => ({ weeks: [] }));
 
-vi.mock('@/lib/api.mjs', () => ({ DaylightAPI: (...args) => api.call(...args) }));
+vi.mock('@/lib/api.mjs', () => ({
+  DaylightAPI: (...args) => api.call(...args),
+  DaylightMediaPath: (p) => `/${String(p).replace(/^\/+/, '').replace(/^static\//, 'api/v1/static/')}`,
+}));
 
 vi.mock('@/lib/logging/Logger.js', () => {
   const child = () => ({ child, debug() {}, info() {}, warn() {}, error() {}, sampled() {} });

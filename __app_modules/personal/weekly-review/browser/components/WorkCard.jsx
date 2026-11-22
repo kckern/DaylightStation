@@ -3,7 +3,8 @@
 import React, { useEffect } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
 import WorkImage from './WorkImage.jsx';
-import { verbLabel, workDay, kidStyle } from './schoolWork.js';
+import LearnerAvatar from './LearnerAvatar.jsx';
+import { verbLabel, workDay, kidStyle, titleSize } from './schoolWork.js';
 
 let _l;
 const logger = () => (_l ||= getLogger().child({ component: 'weekly-review-work-card' }));
@@ -22,9 +23,12 @@ export default function WorkCard({ item, index, total, color }) {
         <WorkImage item={item} alt="" className="work-card-print" />
       </div>
       <div className="work-card-text">
-        <div className="work-card-name">{item.learnerName}</div>
+        <div className="work-card-who">
+          <LearnerAvatar learnerId={item.learnerId} name={item.learnerName} className="work-card-avatar" />
+          <span className="work-card-name">{item.learnerName}</span>
+        </div>
         {verb && <div className="work-card-verb">{verb}</div>}
-        <div className="work-card-title">{item.title}</div>
+        <div className={`work-card-title work-card-title--${titleSize(item.title)}`}>{item.title}</div>
         {item.subtitle && <div className="work-card-subtitle">{item.subtitle}</div>}
         {when && <div className="work-card-when">{when}</div>}
       </div>
