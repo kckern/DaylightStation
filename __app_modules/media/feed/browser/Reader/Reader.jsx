@@ -200,7 +200,7 @@ export default function Reader() {
   const {
     data: feedsData, hasResult: feedsLoaded, error: feedsReadError, loading: feedsLoading, revalidating: feedsRevalidating, reload: reloadFeeds,
   } = useApiResource('/api/v1/feed/reader/feeds', { label: 'Feed subscriptions', dedupe: false });
-  const { regionProps: feedsRegion, retry: retryFeeds } = useRetryRegion(reloadFeeds, feedsLoading || feedsRevalidating);
+  const { regionProps: feedsRegion, focus: focusFeeds, retry: retryFeeds } = useRetryRegion(reloadFeeds, feedsLoading || feedsRevalidating);
   const feeds = feedsData || [];
   const [articles, setArticles] = useState(() => applyPendingMutations(initialSnapshot.current?.articles || []));
   const [continuation, setContinuation] = useState(initialSnapshot.current?.continuation || null);
@@ -578,6 +578,7 @@ export default function Reader() {
     handleToggleCategory(feedIds, multi);
   };
   const handleMobileClearFilters = () => {
+    focusFeeds();
     const params = new URLSearchParams(searchParams);
     params.delete('feeds');
     setSearchParams(params);
