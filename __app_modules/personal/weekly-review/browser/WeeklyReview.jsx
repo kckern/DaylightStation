@@ -95,29 +95,45 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
   // Monotonic window-request id; only the newest response is allowed to paint.
   const windowReqRef = useRef(0);
 
+  // Items appended after a day's own reel, by day index. Nothing yet: the
+  // end-of-window showcase will supply them here so reelFor stays the only
+  // place a reel is assembled.
+  const reelExtrasByDay = useMemo(() => ({}), [data]);
+
+  // The ONE source of a day's reel (photos, videos, school work, extras). The
+  // keymap context and the reel render both read it, so an index computed by
+  // one always points at the item the other draws.
+  const reelFor = useMemo(() => {
+    const days = data?.days || [];
+    const built = new Map();
+    return (dayIndex) => {
+      if (!built.has(dayIndex)) built.set(dayIndex, reelItemsForDay(days[dayIndex], reelExtrasByDay[dayIndex]));
+      return built.get(dayIndex);
+    };
+  }, [data, reelExtrasByDay]);
+
   // Derive everything the keymap needs about the focused media item.
   const mediaCtx = useMemo(() => {
     const days = data?.days || [];
-    const day = days[view.dayIndex];
-    // Photos, videos and school work cards share one reel; render reads the
-    // same memoized list so indexes always agree.
-    const items = reelItemsForDay(day);
+    const items = reelFor(view.dayIndex);
     const itemCount = items.length;
-    const cur = items[view.itemIndex];
+    // Clamped exactly as the render clamps it.
+    const idx = Math.min(view.itemIndex, Math.max(0, itemCount - 1));
+    const cur = items[idx];
     // A school work card behaves like a still photo for the keymap.
     const currentType = !cur ? 'none' : (cur.type === 'video' ? 'video' : 'photo');
     const prevDayIndex = view.dayIndex - 1;
     const nextDayIndex = view.dayIndex + 1;
     const hasPrevDay = prevDayIndex >= 0;
     const hasNextDay = nextDayIndex < days.length;
-    const prevDayLastIndex = hasPrevDay ? Math.max(0, (reelItemsForDay(days[prevDayIndex]).length || 1) - 1) : 0;
+    const prevDayLastIndex = hasPrevDay ? Math.max(0, reelFor(prevDayIndex).length - 1) : 0;
     return {
       itemCount, currentType,
-      atFirst: view.itemIndex <= 0,
-      atLast: view.itemIndex >= itemCount - 1,
+      atFirst: idx <= 0,
+      atLast: idx >= itemCount - 1,
       hasPrevDay, hasNextDay, prevDayIndex, nextDayIndex, prevDayLastIndex,
     };
-  }, [data, view.dayIndex, view.itemIndex]);
+  }, [data, reelFor, view.dayIndex, view.itemIndex]);
 
   // One crayon hue per child for the whole window, keyed by learnerId, so a
   // child keeps the same colour on every day, the strip, and the reel.
@@ -728,7 +744,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       {/* Two-level surface: reel over grid */}
       {view.level === 'reel' && data?.days?.[view.dayIndex] ? (() => {
         const day = data.days[view.dayIndex];
-        const items = reelItemsForDay(day);
+        const items = reelFor(view.dayIndex);
         const safeIdx = Math.min(view.itemIndex, Math.max(0, items.length - 1));
         const dt = new Date(`${day.date}T12:00:00Z`);
         const dayLabel = dt.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });

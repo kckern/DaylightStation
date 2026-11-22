@@ -27,7 +27,7 @@ function SchoolSection({ items, learnerColors }) {
             <div className="context-school-name">{g.learnerName}</div>
             {g.items.map((w, i) => (
               <div key={`${w.groupKey}:${i}`} className="context-school-line">
-                {verbLabel(w)} {w.title}{w.subtitle ? ` — ${w.subtitle}` : ''}
+                {[verbLabel(w), w.title].filter(Boolean).join(' ')}{w.subtitle ? ` — ${w.subtitle}` : ''}
               </div>
             ))}
           </div>

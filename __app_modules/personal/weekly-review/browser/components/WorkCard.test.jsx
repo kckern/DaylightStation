@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 import WorkCard from './WorkCard.jsx';
+import WorkImage from './WorkImage.jsx';
 
 const base = {
   type: 'school', id: 'school:kid-a:book:wonder:2026-04-21',
@@ -72,5 +73,22 @@ describe('WorkCard', () => {
     const { container } = render(<WorkCard item={{ ...base, gradedPercent: 87, score: 87 }} index={0} total={1} />);
     expect(container.textContent).not.toMatch(/%/);
     expect(container.textContent).not.toMatch(/87/);
+  });
+
+  it('leaves the verb out for a verb it does not know', () => {
+    const { container } = render(<WorkCard item={{ ...base, verb: 'graded' }} index={0} total={1} />);
+    expect(container.querySelector('.work-card-verb')).toBeNull();
+  });
+
+  it('gives the pinned image an empty alt, since the title is written beside it', () => {
+    const { container } = render(<WorkCard item={{ ...base, imageUrl: '/api/work.jpg' }} index={0} total={1} />);
+    expect(container.querySelector('img.work-print-img').getAttribute('alt')).toBe('');
+  });
+});
+
+describe('WorkImage', () => {
+  it('uses the work title as alt by default', () => {
+    const { container } = render(<WorkImage item={{ ...base, imageUrl: '/api/work.jpg' }} />);
+    expect(container.querySelector('img').getAttribute('alt')).toBe('Wonder');
   });
 });

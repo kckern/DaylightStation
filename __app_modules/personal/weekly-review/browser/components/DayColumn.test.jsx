@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 import DayColumn from "./DayColumn.jsx";
 
@@ -51,5 +51,13 @@ describe('DayColumn', () => {
   it('has no strip when the day has no school work', () => {
     const { container } = render(<DayColumn day={{ ...baseDay, school: [] }} isFocused={false} onClick={() => {}} />);
     expect(container.querySelector('.day-school')).toBeNull();
+  });
+
+  it('falls back to the subject glyph when a chip image fails', () => {
+    const day = { ...baseDay, calendar: [], school: [school[0]] };
+    const { container } = render(<DayColumn day={day} isFocused={false} onClick={() => {}} />);
+    fireEvent.error(container.querySelector('.school-chip img'));
+    expect(container.querySelector('.school-chip img')).toBeNull();
+    expect(container.querySelector('.school-chip-glyph').textContent).toBe('📕');
   });
 });

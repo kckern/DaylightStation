@@ -12,13 +12,14 @@ export function subjectGlyph(subject) {
   return SUBJECT_GLYPHS[subject] || '✏️';
 }
 
+// Null for a verb this screen does not know; callers leave the label out.
 export function verbLabel(item) {
   switch (item?.verb) {
     case 'finished': return 'Finished';
     case 'started': return 'Started';
     case 'completed': return 'Completed';
     case 'worked': return item.kind === 'course' ? 'Worked on' : 'Practiced';
-    default: return '';
+    default: return null;
   }
 }
 

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { reelItemsForDay } from './reelItems.js';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { reelItemsForDay, sortKeyOf } from './reelItems.js';
 
 const work = (over = {}) => ({
   learnerId: 'kid-a', learnerName: 'Mara', kind: 'book', verb: 'finished',
@@ -58,5 +58,38 @@ describe('reelItemsForDay', () => {
     const extra = { id: 'x', type: 'showcase', takenAt: '2026-04-21T01:00:00Z' };
     expect(reelItemsForDay(day, [extra]).map(i => i.id)).toEqual(['p1', 'x']);
     expect(reelItemsForDay(day).map(i => i.id)).toEqual(['p1']);
+  });
+});
+
+describe('reel order on the household clock', () => {
+  // Pin the screen's zone: the TV runs in the household zone, and these cases
+  // only differ from instant ordering when the zone is not UTC.
+  let prevTz;
+  beforeAll(() => { prevTz = process.env.TZ; process.env.TZ = 'America/Los_Angeles'; });
+  afterAll(() => { if (prevTz === undefined) delete process.env.TZ; else process.env.TZ = prevTz; });
+
+  it('reads an Immich takenAt as wall-clock time despite its Z', () => {
+    expect(sortKeyOf({ type: 'image', takenAt: '2026-11-21T16:00:00.000Z' })).toBe('2026-11-21T16:00:00');
+    expect(sortKeyOf({ type: 'image', takenAt: '2026-06-22T14:25:13' })).toBe('2026-06-22T14:25:13');
+  });
+
+  it('puts work done at 3:30 PM before a 4 PM photo', () => {
+    const day = {
+      photos: [{ id: 'p4pm', type: 'image', takenAt: '2026-11-21T16:00:00.000Z' }],
+      school: [work({ at: '2026-11-21T23:30:00Z', studyDay: '2026-11-21' })], // 15:30 PST
+    };
+    expect(sortKeyOf(reelItemsForDay(day)[0])).toBe('2026-11-21T15:30:00');
+    expect(reelItemsForDay(day).map(i => i.type)).toEqual(['school', 'image']);
+  });
+
+  it('sorts the noon-UTC "time unknown" placeholder at local noon', () => {
+    const day = {
+      photos: [
+        { id: 'p11', type: 'image', takenAt: '2026-11-21T11:00:00.000Z' },
+        { id: 'p13', type: 'image', takenAt: '2026-11-21T13:00:00.000Z' },
+      ],
+      school: [work({ at: '2026-11-21T12:00:00.000Z', studyDay: '2026-11-21' })],
+    };
+    expect(reelItemsForDay(day).map(i => i.id)).toEqual(['p11', 'school:kid-a:book:wonder:2026-11-21', 'p13']);
   });
 });

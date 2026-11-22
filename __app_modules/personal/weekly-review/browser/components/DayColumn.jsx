@@ -2,6 +2,10 @@ import React from 'react';
 import PhotoWall from "./PhotoWall.jsx";
 import { WMO_ICONS, cToF } from "./dayData.js";
 import { subjectGlyph, verbLabel, kidStyle } from "./schoolWork.js";
+import getLogger from '@/lib/logging/Logger.js';
+
+let _l;
+const logger = () => (_l ||= getLogger().child({ component: 'weekly-review-grid' }));
 
 const MAX_CHIPS = 3;
 
@@ -13,10 +17,18 @@ function SchoolChip({ item, color }) {
     <div
       className="school-chip"
       style={kidStyle(color)}
-      title={`${name}: ${verbLabel(item)} ${item.title}`}
+      title={`${name}: ${[verbLabel(item), item.title].filter(Boolean).join(' ')}`}
     >
       {showImage ? (
-        <img className="school-chip-img" src={item.imageUrl} alt="" onError={() => setFailed(true)} />
+        <img
+          className="school-chip-img"
+          src={item.imageUrl}
+          alt=""
+          onError={() => {
+            logger().warn('grid.school-chip-image-error', { imageUrl: item.imageUrl });
+            setFailed(true);
+          }}
+        />
       ) : (
         <span className="school-chip-glyph" aria-hidden="true">{subjectGlyph(item.subject)}</span>
       )}

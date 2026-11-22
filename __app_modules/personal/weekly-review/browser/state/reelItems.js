@@ -21,20 +21,48 @@ export function schoolReelItem(work) {
   };
 }
 
-// Stable time sort: dated items by instant, undated items after them in their
-// original relative order. Compared as instants, not text: a photo's takenAt
-// is Immich's offset-less local wall clock ("2026-06-22T14:25:13", which Date
-// reads as local time) while school work carries UTC ISO ("...T22:12:00Z").
-function timeOf(item) {
-  const ms = item?.takenAt ? Date.parse(item.takenAt) : NaN;
-  return Number.isNaN(ms) ? null : ms;
+// Items are ordered on the household wall clock, as text keys
+// "YYYY-MM-DDTHH:mm:ss". The two sources stamp time differently:
+//  - a photo's takenAt is Immich's localDateTime: LOCAL wall-clock time written
+//    with a misleading "Z" ("2026-11-21T16:00:00.000Z" means 4 PM at home), so
+//    its key is the text with the zone suffix dropped. Parsing it as an instant
+//    would shift every photo by the UTC offset.
+//  - school work's `at` is a real UTC instant, so its key is that instant on
+//    this screen's clock (the TV runs in the household zone). Exactly noon UTC
+//    on the study day is the server's "time unknown" placeholder and sorts at
+//    local noon instead.
+const KEY_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(:\d{2})?/;
+
+function wallClockKey(text) {
+  const m = KEY_RE.exec(text || '');
+  return m ? `${m[1]}${m[2] || ':00'}` : null;
 }
 
+const pad = (n) => String(n).padStart(2, '0');
+
+export function localKeyOfInstant(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+export function sortKeyOf(item) {
+  if (item?.type === 'school') {
+    const { at, studyDay } = item;
+    if (!at) return null;
+    if (studyDay && at.replace(/\.0+Z$/, 'Z') === `${studyDay}T12:00:00Z`) return `${studyDay}T12:00:00`;
+    return localKeyOfInstant(at);
+  }
+  return wallClockKey(item?.takenAt);
+}
+
+// Stable: keyed items first in key order, then unkeyed items in their
+// original relative order.
 function byTime(items) {
   return items
-    .map((item, i) => ({ item, i, t: timeOf(item) }))
+    .map((item, i) => ({ item, i, t: sortKeyOf(item) }))
     .sort((a, b) => {
-      if (a.t !== null && b.t !== null) return a.t - b.t || a.i - b.i;
+      if (a.t !== null && b.t !== null) return (a.t < b.t ? -1 : a.t > b.t ? 1 : 0) || a.i - b.i;
       if (a.t !== null) return -1;
       if (b.t !== null) return 1;
       return a.i - b.i;

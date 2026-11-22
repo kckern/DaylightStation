@@ -7,9 +7,9 @@ import getLogger from '@/lib/logging/Logger.js';
 import { subjectGlyph } from './schoolWork.js';
 
 let _l;
-const logger = () => (_l ||= getLogger().child({ component: 'weekly-review-work-card' }));
+const logger = () => (_l ||= getLogger().child({ component: 'weekly-review-work-image' }));
 
-function Print({ item, className }) {
+function Print({ item, alt, className }) {
   const [failed, setFailed] = useState(false);
   const showImage = !!item.imageUrl && !failed;
   return (
@@ -19,7 +19,7 @@ function Print({ item, className }) {
         <img
           className="work-print-img"
           src={item.imageUrl}
-          alt={item.title || ''}
+          alt={alt ?? (item.title || '')}
           onError={() => {
             logger().warn('reel.school-image-error', { kind: item.kind, imageUrl: item.imageUrl });
             setFailed(true);
@@ -35,8 +35,10 @@ function Print({ item, className }) {
   );
 }
 
-export default function WorkImage({ item, className }) {
+// `alt` defaults to the work's title; pass "" where the title is already
+// written next to the print.
+export default function WorkImage({ item, alt, className }) {
   if (!item) return null;
   // Keyed on the image so a new item gets a fresh try at loading.
-  return <Print key={item.imageUrl || 'none'} item={item} className={className} />;
+  return <Print key={item.imageUrl || 'none'} item={item} alt={alt} className={className} />;
 }

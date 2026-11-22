@@ -15,14 +15,15 @@ export default function WorkCard({ item, index, total, color }) {
 
   if (!item) return null;
   const when = workDay(item.studyDay);
+  const verb = verbLabel(item);
   return (
     <div className="weekly-review-work-card" style={kidStyle(color)}>
       <div className="work-card-stage">
-        <WorkImage item={item} className="work-card-print" />
+        <WorkImage item={item} alt="" className="work-card-print" />
       </div>
       <div className="work-card-text">
         <div className="work-card-name">{item.learnerName}</div>
-        <div className="work-card-verb">{verbLabel(item)}</div>
+        {verb && <div className="work-card-verb">{verb}</div>}
         <div className="work-card-title">{item.title}</div>
         {item.subtitle && <div className="work-card-subtitle">{item.subtitle}</div>}
         {when && <div className="work-card-when">{when}</div>}

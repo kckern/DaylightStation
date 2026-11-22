@@ -51,7 +51,8 @@ const windowPayload = (start) => {
     const date = new Date(d);
     date.setUTCDate(d.getUTCDate() + i);
     const iso = date.toISOString().slice(0, 10);
-    // 23:00Z is later than a 09:00 local photo in every real timezone.
+    // Photo takenAt is Immich's format: wall-clock time with a misleading Z.
+    // Work at 23:00Z lands after a 09:00 wall-clock photo in every real zone.
     const work = {
       learnerId: 'kid-a', learnerName: 'Mara', kind: 'book', verb: 'finished',
       title: `Book ${iso}`, subtitle: null, at: `${iso}T23:00:00Z`, studyDay: iso,
@@ -59,7 +60,7 @@ const windowPayload = (start) => {
     };
     days.push({
       date: iso, label: 'Day', photoCount: 1,
-      photos: [{ id: `${iso}-a`, type: 'image', url: '/x.jpg', takenAt: `${iso}T09:00:00` }],
+      photos: [{ id: `${iso}-a`, type: 'image', url: '/x.jpg', takenAt: `${iso}T09:00:00.000Z` }],
       school: [work], schoolAll: [work],
       calendar: [], fitness: [], weather: null, columnWeight: 1,
     });
