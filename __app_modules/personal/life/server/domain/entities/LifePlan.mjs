@@ -31,6 +31,8 @@ export class LifePlan {
     // PATCH /cadence and ceremony scheduling paths lose their config on save.
     this.cadence = data.cadence || {};
     this.ceremonies = data.ceremonies || {};
+    // Activity-to-value mapping drives drift calculation and must survive plan edits.
+    this.value_mapping = data.value_mapping || {};
   }
 
   getGoalsByState(state) {

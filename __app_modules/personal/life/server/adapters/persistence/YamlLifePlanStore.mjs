@@ -33,6 +33,7 @@ function dehydrateLifePlan(plan) {
     feedback: plan.feedback.map(dehydrateFeedback),
     cadence: plan.cadence,
     ceremonies: plan.ceremonies,
+    value_mapping: plan.value_mapping,
   };
 }
 
