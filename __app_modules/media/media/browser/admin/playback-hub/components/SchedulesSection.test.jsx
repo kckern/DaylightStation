@@ -172,6 +172,44 @@ describe('SchedulesSection', () => {
     expect(screen.getByLabelText(/start/i)).toHaveValue('08:00');
   });
 
+  it('keeps an unsaved schedule draft through an unrelated config refresh', async () => {
+    const view = renderSection({ slot: mkSlot(), mutations });
+    expandWindow(1);
+    fireEvent.change(screen.getByLabelText(/start/i), { target: { value: '08:00' } });
+    const refreshedSlot = mkSlot({
+      volume: { default: 60, min: 5, max: 80 },
+      schedules: mkSlot().schedules.map((schedule) => ({ ...schedule })),
+    });
+
+    view.rerender(
+      <MantineProvider><SchedulesSection slot={refreshedSlot} mutations={mutations} /></MantineProvider>,
+    );
+
+    expect(screen.getByLabelText(/start/i)).toHaveValue('08:00');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /save schedules/i }));
+    });
+    expect(mutations.updateDevice).toHaveBeenCalledWith('red', {
+      schedules: [
+        { start: '08:00', end: '21:00', queue: 'plex:675465', shuffle: true },
+      ],
+    });
+  });
+
+  it('accepts a genuinely changed server schedule when the editor is clean', () => {
+    const view = renderSection({ slot: mkSlot(), mutations });
+    const refreshedSlot = mkSlot({
+      schedules: [{ ...mkSlot().schedules[0], start: '08:00' }],
+    });
+
+    view.rerender(
+      <MantineProvider><SchedulesSection slot={refreshedSlot} mutations={mutations} /></MantineProvider>,
+    );
+
+    expect(screen.getByText('08:00 – 21:00')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/start/i)).toBeNull();
+  });
+
   it('Shuffle switch toggles shuffle field in saved payload', async () => {
     renderSection({
       slot: mkSlot({

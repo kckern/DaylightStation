@@ -30,6 +30,29 @@ function newKey() {
   return `key-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function scheduleValue(schedule) {
+  return {
+    start: schedule.start || '',
+    end: schedule.end || '',
+    queue: schedule.queue || '',
+    shuffle: !!schedule.shuffle,
+  };
+}
+
+function scheduleValues(schedules) {
+  return (schedules ?? []).map(scheduleValue);
+}
+
+function sameSchedules(left, right) {
+  return left.length === right.length && left.every((schedule, index) => {
+    const next = right[index];
+    return schedule.start === next.start
+      && schedule.end === next.end
+      && schedule.queue === next.queue
+      && schedule.shuffle === next.shuffle;
+  });
+}
+
 /**
  * SchedulesSection — continuous time-window schedule CRUD for private devices.
  *
@@ -59,40 +82,24 @@ export function SchedulesSection({ slot, mutations }) {
   const [rows, setRows] = useState(() => {
     const next = (slot?.schedules ?? []).map((w) => ({ _key: newKey(), ...w }));
     baselineByKey.current = new Map(
-      next.map((w) => [
-        w._key,
-        {
-          start: w.start || '',
-          end: w.end || '',
-          queue: w.queue || '',
-          shuffle: !!w.shuffle,
-        },
-      ])
+      next.map((w) => [w._key, scheduleValue(w)])
     );
     return next;
   });
   const [saving, setSaving] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState(() => new Set());
-  const initialSchedulesRef = useRef(slot?.schedules);
+  const acceptedSchedulesRef = useRef(scheduleValues(slot?.schedules));
 
-  // Re-sync when slot prop changes (e.g. after revalidate / successful save).
-  // Skip the first run since the lazy initializer already handled it.
+  // Re-sync only when the server's schedule values change. Other device saves
+  // refresh the full config with fresh array identities but must not replace a
+  // local schedule draft or its expanded row state.
   useEffect(() => {
-    if (initialSchedulesRef.current === slot?.schedules) {
-      initialSchedulesRef.current = null; // mark first run as consumed
-      return;
-    }
+    const nextValues = scheduleValues(slot?.schedules);
+    if (sameSchedules(acceptedSchedulesRef.current, nextValues)) return;
+    acceptedSchedulesRef.current = nextValues;
     const next = (slot?.schedules ?? []).map((w) => ({ _key: newKey(), ...w }));
     baselineByKey.current = new Map(
-      next.map((w) => [
-        w._key,
-        {
-          start: w.start || '',
-          end: w.end || '',
-          queue: w.queue || '',
-          shuffle: !!w.shuffle,
-        },
-      ])
+      next.map((w) => [w._key, scheduleValue(w)])
     );
     setRows(next);
     setExpandedKeys(new Set());
@@ -154,16 +161,7 @@ export function SchedulesSection({ slot, mutations }) {
     setSaving(true);
     try {
       await mutations.updateDevice(slot.color, {
-        schedules: rows.map((r) => {
-          // Strip _key before sending to wire.
-          const { _key, ...wire } = r;
-          return {
-            start: wire.start || '',
-            end: wire.end || '',
-            queue: wire.queue || '',
-            shuffle: !!wire.shuffle,
-          };
-        }),
+        schedules: scheduleValues(rows),
       });
     } finally {
       setSaving(false);
