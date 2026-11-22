@@ -69,9 +69,11 @@ export function serviceSlug(name) {
  * A service sold as a channel inside another app ("Paramount+ (Via Amazon
  * Prime)", "AMC+ Amazon Channel", "Max Roku Channel", "HBO (Via Hulu)", "AMC
  * Plus Apple TV Channel") is watched in that app, so it counts as that app.
+ * Any name tied to Amazon or Prime Video ("Prime Video Free", "Amazon
+ * Freevee") counts as Prime Video.
  */
 const CHANNEL_HOSTS = Object.freeze([
-  [/\(via amazon( prime)?\)|\bamazon channel\b/i, 'prime-video'],
+  [/\bamazon\b|\bprime video\b/i, 'prime-video'],
   [/\(via hulu\)/i, 'hulu'],
   [/\broku (premium )?channel\b/i, 'roku-channel'],
   [/\bapple tv channel\b/i, 'apple-tv'],

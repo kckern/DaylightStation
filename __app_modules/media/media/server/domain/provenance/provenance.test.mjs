@@ -18,6 +18,9 @@ describe('providerIdFor', () => {
     expect(providerIdFor('Paramount+ (Via Amazon Prime)')).toBe('prime-video');
     expect(providerIdFor('AMC+ Amazon Channel')).toBe('prime-video');
     expect(providerIdFor('MAX (Via Amazon Prime)')).toBe('prime-video');
+    expect(providerIdFor('Prime Video Free')).toBe('prime-video');
+    expect(providerIdFor('Amazon Freevee')).toBe('prime-video');
+    expect(providerIdFor('Shout! Factory TV Amazon Channel')).toBe('prime-video');
     expect(providerIdFor('HBO (Via Hulu)')).toBe('hulu');
     expect(providerIdFor('Paramount+ Roku Channel')).toBe('roku-channel');
     expect(providerIdFor('AMC+ Roku Premium Channel')).toBe('roku-channel');
