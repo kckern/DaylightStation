@@ -2,11 +2,12 @@
 // What happens when the queue ends — stop, repeat, or keep similar things
 // playing — shown at the bottom of the queue with the current choice
 // (STEER.13a, RQ-STEER-19). The same for this device and another screen.
-import React, { useContext, useState } from 'react';
-import { Button, Text } from '@mantine/core';
+import React, { useContext, useId, useState } from 'react';
+import { Text } from '@mantine/core';
 import { useSessionControls } from "../controller/useSessionControls.js";
 import { DispatchContext } from "../cast/DispatchProvider.jsx";
 import mediaLog from "../logging/mediaLog.js";
+import { MediaRadioOption } from '../shared/MediaRadioOption.jsx';
 import "./SessionControls.scss";
 
 export const END_OF_QUEUE_CHOICES = [
@@ -30,6 +31,7 @@ export function EndOfQueueChoice({ target, targetName = null }) {
   const { kind, controls, actions, available, reason } = useSessionControls(target);
   const outcomes = useContext(DispatchContext);
   const [pending, setPending] = useState(null);
+  const radioName = `queue-end-${useId()}`;
   const current = controls?.endOfQueue ?? 'stop';
   const targetId = kind === 'local' ? 'local' : target?.deviceId ?? null;
   const disabled = !available || !actions;
@@ -57,19 +59,19 @@ export function EndOfQueueChoice({ target, targetName = null }) {
       <Text size="sm" fw={600} id={`queue-end-label-${targetId}`}>When the queue ends</Text>
       <div className="queue-end-options" role="radiogroup" aria-labelledby={`queue-end-label-${targetId}`}>
         {END_OF_QUEUE_CHOICES.map((choice) => (
-          <Button
+          <MediaRadioOption
             key={choice.value}
-            role="radio"
-            aria-checked={current === choice.value}
-            data-testid={`queue-end-${choice.value}`}
-            className="session-controls-btn"
-            size="sm"
-            variant={current === choice.value ? 'light' : 'default'}
+            name={radioName}
+            value={choice.value}
+            checked={current === choice.value}
+            testId={`queue-end-${choice.value}`}
+            className="queue-end-option"
+            contentClassName="queue-end-option__content"
             disabled={disabled || pending != null}
-            onClick={() => choose(choice.value)}
+            onChange={choose}
           >
             {choice.label}
-          </Button>
+          </MediaRadioOption>
         ))}
       </div>
       {status && <Text size="xs" className="queue-end-status" data-testid="queue-end-status" role="status">{status}</Text>}

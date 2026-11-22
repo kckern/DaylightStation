@@ -97,7 +97,7 @@ it('marks items "keep similar playing" added, and shows the end-of-queue choice 
   expect(screen.queryByTestId(`queue-auto-${first.queueItemId}`)).toBeNull();
   const choice = screen.getByTestId('queue-end-choice');
   expect(screen.getByTestId('queue-panel').lastElementChild).toBe(choice);
-  expect(screen.getByTestId('queue-end-stop')).toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByTestId('queue-end-stop').querySelector('input').checked).toBe(true);
 });
 
 it('shows no queue for a live channel (no Shuffle, Repeat or Clear), but keeps a live item that has a real queue behind it (STEER.7a/AC4)', () => {

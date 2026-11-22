@@ -12,7 +12,7 @@
 // The screen starts from the beginning. Past 10% of the item (cast/flingStart.js)
 // the panel also offers "Start where I am (m:ss)"; the beginning stays first
 // and selected.
-import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
 import { Popover, UnstyledButton } from '@mantine/core';
 import { IconCast } from '@tabler/icons-react';
 import { FleetContext } from "../fleet/FleetProvider.jsx";
@@ -27,6 +27,7 @@ import { DeviceIcon } from "../fleet/DeviceIcon.jsx";
 import { moveDestinations } from "./MoveToMenu.jsx";
 import { formatTime } from "./formatTime.js";
 import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
+import { MediaRadioOption } from '../shared/MediaRadioOption.jsx';
 import mediaLog from "../logging/mediaLog.js";
 import "./Fling.scss";
 
@@ -59,6 +60,7 @@ function FlingControl({ fleet, outcomes, position: placement = 'top-end', size =
   const handOff = useHandOff();
   const [open, setOpen] = useState(false);
   const [startMode, setStartMode] = useState('beginning');
+  const radioName = `fling-start-${useId()}`;
   const [pendingId, setPendingId] = useState(null);
   const [error, setError] = useState(null);
   const mounted = useRef(true);
@@ -177,28 +179,30 @@ function FlingControl({ fleet, outcomes, position: placement = 'top-end', size =
         <div className="fling-heading">Play on a screen</div>
         {offerChoice && (
           <div className="fling-start" role="radiogroup" aria-label="Where it starts" data-testid="fling-start-choice">
-            <button
-              type="button"
-              role="radio"
-              aria-checked={effectiveMode === 'beginning'}
-              data-testid="fling-start-beginning"
-              className={`fling-start-option${effectiveMode === 'beginning' ? ' fling-start-option--on' : ''}`}
-              aria-disabled={pendingId ? true : undefined}
-              onClick={() => { if (!pendingId) chooseMode('beginning'); }}
+            <MediaRadioOption
+              name={radioName}
+              value="beginning"
+              checked={effectiveMode === 'beginning'}
+              testId="fling-start-beginning"
+              className="fling-start-option"
+              contentClassName="fling-start-option__content"
+              ariaDisabled={Boolean(pendingId)}
+              onChange={(value) => { if (!pendingId) chooseMode(value); }}
             >
               Start from the beginning
-            </button>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={effectiveMode === 'current'}
-              data-testid="fling-start-current"
-              className={`fling-start-option${effectiveMode === 'current' ? ' fling-start-option--on' : ''}`}
-              aria-disabled={pendingId ? true : undefined}
-              onClick={() => { if (!pendingId) chooseMode('current'); }}
+            </MediaRadioOption>
+            <MediaRadioOption
+              name={radioName}
+              value="current"
+              checked={effectiveMode === 'current'}
+              testId="fling-start-current"
+              className="fling-start-option"
+              contentClassName="fling-start-option__content"
+              ariaDisabled={Boolean(pendingId)}
+              onChange={(value) => { if (!pendingId) chooseMode(value); }}
             >
               Start where I am ({formatTime(shownPosition)})
-            </button>
+            </MediaRadioOption>
           </div>
         )}
         <div className="fling-targets" role="group" aria-label="Screens">

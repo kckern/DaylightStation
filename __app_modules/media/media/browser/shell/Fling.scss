@@ -52,6 +52,10 @@
 }
 
 .fling-start-option {
+  display: block;
+}
+
+.fling-start-option__content {
   display: flex;
   align-items: center;
   gap: var(--mantine-spacing-xs);
@@ -64,9 +68,8 @@
   background: transparent;
   border: 1px solid var(--media-control-line, var(--mantine-color-dark-2));
   border-radius: var(--mantine-radius-md);
-  cursor: pointer;
+  cursor: inherit;
 
-  // A radio dot, drawn — never a glyph.
   &::before {
     content: '';
     flex-shrink: 0;
@@ -76,22 +79,17 @@
     border: 2px solid var(--media-control-line, var(--mantine-color-dark-2));
     box-sizing: border-box;
   }
+}
 
-  &--on {
+.fling-start-option[data-checked='true'] .fling-start-option__content {
+  border-color: var(--mantine-color-amber-5);
+  &::before {
     border-color: var(--mantine-color-amber-5);
-    &::before {
-      border-color: var(--mantine-color-amber-5);
-      background: radial-gradient(circle, var(--mantine-color-amber-5) 0 3.5px, transparent 4px);
-    }
-  }
-
-  &:hover:not([aria-disabled='true']) { background: var(--mantine-color-dark-5); }
-  &[aria-disabled='true'] { cursor: default; opacity: 0.6; }
-  &:focus-visible {
-    outline: 2px solid var(--mantine-color-amber-5);
-    outline-offset: 2px;
+    background: radial-gradient(circle, var(--mantine-color-amber-5) 0 3.5px, transparent 4px);
   }
 }
+
+.fling-start-option:hover:not([data-aria-disabled='true']) .fling-start-option__content { background: var(--mantine-color-dark-5); }
 
 .fling-targets {
   display: flex;

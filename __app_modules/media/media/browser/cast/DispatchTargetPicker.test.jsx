@@ -242,7 +242,7 @@ describe('DispatchTargetPicker / useDispatchTargetPicker', () => {
     it('is pre-set to the remembered choice and shows it before confirming', () => {
       castTargetState = { targetIds: [], mode: 'fork', setMode: vi.fn() };
       render(withLocalPlaybackActive(<DispatchTargetPicker source={{ play: 'plex:1' }} />));
-      expect(screen.getByTestId('picker-mode-fork')).toHaveAttribute('aria-checked', 'true');
+      expect(screen.getByTestId('picker-mode-fork').querySelector('input').checked).toBe(true);
       castTargetState = { targetIds: [], mode: 'transfer', setMode: vi.fn() };
     });
 

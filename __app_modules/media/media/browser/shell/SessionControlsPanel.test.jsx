@@ -277,11 +277,11 @@ describe('EndOfQueueChoice (STEER.13a)', () => {
       <div data-testid="there"><EndOfQueueChoice target={{ deviceId: 'tv' }} /></div>
     </Providers>);
     const here = screen.getByTestId('here');
-    expect(within(here).getByTestId('queue-end-stop').getAttribute('aria-checked')).toBe('true');
+    expect(within(here).getByTestId('queue-end-stop').querySelector('input').checked).toBe(true);
     await act(async () => { fireEvent.click(within(here).getByTestId('queue-end-similar')); });
-    await waitFor(() => expect(within(here).getByTestId('queue-end-similar').getAttribute('aria-checked')).toBe('true'));
+    await waitFor(() => expect(within(here).getByTestId('queue-end-similar').querySelector('input').checked).toBe(true));
     const there = screen.getByTestId('there');
-    expect(within(there).getByTestId('queue-end-repeat').getAttribute('aria-checked')).toBe('true');
+    expect(within(there).getByTestId('queue-end-repeat').querySelector('input').checked).toBe(true);
     expect(within(there).getByTestId('queue-end-status').textContent).toBe('Nothing similar left');
     await act(async () => { fireEvent.click(within(there).getByTestId('queue-end-similar')); });
     expect(http).toHaveBeenCalledWith('api/v1/device/tv/session/end-of-queue', expect.objectContaining({ mode: 'similar' }), 'PUT');

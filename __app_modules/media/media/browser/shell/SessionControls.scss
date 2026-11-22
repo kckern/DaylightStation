@@ -82,6 +82,35 @@
   gap: var(--mantine-spacing-xs);
 }
 
+.queue-end-option__content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 var(--mantine-spacing-sm);
+  border: 1px solid var(--mantine-color-dark-4);
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-dark-6);
+  color: var(--mantine-color-dark-0);
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.queue-end-option[data-checked='true'] .queue-end-option__content {
+  border-color: transparent;
+  background: var(--mantine-primary-color-light);
+  color: var(--mantine-primary-color-light-color);
+}
+
+.queue-end-option:hover:not([data-disabled='true']) .queue-end-option__content {
+  background: var(--mantine-color-dark-5);
+}
+
+.queue-end-option[data-checked='true']:hover .queue-end-option__content {
+  background: var(--mantine-primary-color-light-hover);
+}
+
 .queue-end-status {
   color: var(--mantine-color-dark-1);
 }

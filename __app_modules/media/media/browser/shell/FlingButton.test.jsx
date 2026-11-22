@@ -137,8 +137,8 @@ describe('FlingButton picker', () => {
     fireEvent.click(screen.getByTestId('fling-button'));
     const beginning = await screen.findByTestId('fling-start-beginning');
     const current = screen.getByTestId('fling-start-current');
-    expect(beginning).toHaveAttribute('aria-checked', 'true');
-    expect(current).toHaveAttribute('aria-checked', 'false');
+    expect(beginning.querySelector('input').checked).toBe(true);
+    expect(current.querySelector('input').checked).toBe(false);
     expect(current).toHaveTextContent('Start where I am (20:34)');
     // The beginning is first.
     expect(beginning.compareDocumentPosition(current) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -153,7 +153,7 @@ describe('FlingButton picker', () => {
     renderFling();
     fireEvent.click(screen.getByTestId('fling-button'));
     fireEvent.click(await screen.findByTestId('fling-start-current'));
-    expect(screen.getByTestId('fling-start-current')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('fling-start-current').querySelector('input').checked).toBe(true);
     expect(log.calls.flingStartModeChanged?.[0]?.[0]).toMatchObject({ startMode: 'current' });
     state.position = { seconds: 1240.5, ts: 1 }; // still playing while choosing
     await act(async () => { fireEvent.click(screen.getByTestId('fling-target-office-tv')); });

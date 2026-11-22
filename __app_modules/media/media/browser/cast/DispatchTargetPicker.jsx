@@ -18,7 +18,7 @@
 //     destination. The chrome must say that, not "Cast", or a button
 //     labeled Cast would do nothing when pressed (2026-08-21 review
 //     finding). Selection semantics (single/multi) are unchanged either way.
-import React from 'react';
+import React, { useId } from 'react';
 import { useDispatchTargetPicker } from "./useDispatchTargetPicker.js";
 import { useDevice } from "../fleet/useDevice.js";
 import { useFleetContext } from "../fleet/useFleetContext.js";
@@ -27,6 +27,7 @@ import { deviceStatusLine, describeBusy } from "./castCopy.js";
 import { aimName } from "./AimLabel.jsx";
 import { screenRoomsFromRegistry, sharedRoomGroups, neighbouringRoomGroups, driftWarningText } from "./screenRooms.js";
 import mediaLog from "../logging/mediaLog.js";
+import { MediaRadioOption } from '../shared/MediaRadioOption.jsx';
 import "./Cast.scss";
 
 function DeviceTile({ device, pressed, onSelect }) {
@@ -102,6 +103,7 @@ function DriftWarning({ targetIds, devices }) {
 }
 
 export function DispatchTargetPicker({ source, onComplete, autoFocus = true, verb = 'Cast', intent = 'dispatch' }) {
+  const radioName = `picker-mode-${useId()}`;
   const {
     devices, selected, multi, mode, asksKeepOrStop, canSubmit, localPlaying, hasPotentialContent, moveSupported, moveUnavailable, dispatchError,
     select, toggleMulti, setMode, submit,
@@ -168,32 +170,34 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
       {(hasMoveSnapshot || asksKeepOrStop) && devices.length > 0 && !isDestination && !source?.brief && (
         <div className="cast-picker-mode" role="radiogroup" aria-label="What happens to playback here">
           {/* Only a session can be moved; a plain play source has no choice to make, so no group at all. */}
-          <button
-            type="button"
-            role="radio"
-            aria-checked={mode === 'transfer'}
-            data-testid="picker-mode-transfer"
-            className={`cast-picker-mode-option ${mode === 'transfer' ? 'cast-picker-mode-option--on' : ''}`}
+          <MediaRadioOption
+            name={radioName}
+            value="transfer"
+            checked={mode === 'transfer'}
+            testId="picker-mode-transfer"
+            className="cast-picker-mode-option"
+            contentClassName="cast-picker-mode-option__content"
             disabled={!moveSupported && !asksKeepOrStop}
-            onClick={() => setMode('transfer')}
+            onChange={setMode}
           >
             {asksKeepOrStop ? `Move: stop playing here${targetLabel ? `, play on ${targetLabel}` : ''}` : `Move playback to ${targetLabel ?? 'device'}`}
-          </button>
+          </MediaRadioOption>
           {!moveSupported && !asksKeepOrStop && <div data-testid="picker-move-unavailable" className="cast-picker-warning" role="status">
             {selected.size > 1
               ? 'Move playback to one screen at a time.'
               : 'Move playback is not available yet for a single item. Keep playing here instead.'}
           </div>}
-          <button
-            type="button"
-            role="radio"
-            aria-checked={mode === 'fork'}
-            data-testid="picker-mode-fork"
-            className={`cast-picker-mode-option ${mode === 'fork' ? 'cast-picker-mode-option--on' : ''}`}
-            onClick={() => setMode('fork')}
+          <MediaRadioOption
+            name={radioName}
+            value="fork"
+            checked={mode === 'fork'}
+            testId="picker-mode-fork"
+            className="cast-picker-mode-option"
+            contentClassName="cast-picker-mode-option__content"
+            onChange={setMode}
           >
             {localPlaying ? 'Keep playing here too' : 'Play on device without moving playback'}
-          </button>
+          </MediaRadioOption>
         </div>
       )}
       {dispatchError && <div data-testid="picker-dispatch-failed" className="cast-picker-warning" role="status">{dispatchError}</div>}
