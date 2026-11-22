@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import { getReducedMotionQuery } from '@/lib/ui/browserMotion.js';
 import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
+import { StateMessage } from '@/lib/ui/states.jsx';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { formatAge, proxyIcon, proxyImage, colorFromLabel, safeImage } from "../cards/utils.js";
 import { renderSection } from "./sections/index.jsx";
@@ -328,7 +329,7 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
 
         {loading && (
           <div className="detail-loading">
-            <div className="scroll-loading-dots"><span /><span /><span /></div>
+            <StateMessage state="loading" role="status" title="Loading article details…" />
           </div>
         )}
 
