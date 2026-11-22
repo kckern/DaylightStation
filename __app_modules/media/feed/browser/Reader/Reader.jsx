@@ -361,10 +361,15 @@ export default function Reader() {
     else if (streamError.cursor === null) reloadStream(streamError);
     else loadMore(streamError);
   };
-  const { regionProps: inboxRegion, retry } = useRetryRegion(
+  const { regionProps: inboxRegion, focus: focusInbox, retry } = useRetryRegion(
     retryArticles, activeView === 'offline' ? offlineLoading : loading || loadingMore,
   );
   const inboxRef = inboxRegion.ref;
+  const handleOfflineRemoved = (itemId, rowHadFocus) => {
+    if (activeView !== 'offline') return;
+    setOfflineItems(current => current.filter(item => item.id !== itemId));
+    if (rowHadFocus) focusInbox();
+  };
 
   // Initial load + reload on filter change
   useLayoutEffect(() => {
@@ -648,6 +653,7 @@ export default function Reader() {
                       onMarkRead={handleMarkRead}
                       onCollapse={handleCollapseUnreadArticle}
                       onStateAction={(item, action) => mutateItems([item], action, { onApply: applyUpdatedItems }).catch(() => {})}
+                      onOfflineRemoved={handleOfflineRemoved}
                     />
                   </div>
                 );

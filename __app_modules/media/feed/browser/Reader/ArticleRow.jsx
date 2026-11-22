@@ -15,12 +15,13 @@ import { webLink } from "../../shared/webLink.mjs";
  * @param {Object} props.article - article object from /reader/stream
  * @param {Function} props.onMarkRead - (article) => void
  */
-export default function ArticleRow({ article, isNew = false, initiallyExpanded = false, onMarkRead, onCollapse, onStateAction }) {
+export default function ArticleRow({ article, isNew = false, initiallyExpanded = false, onMarkRead, onCollapse, onStateAction, onOfflineRemoved }) {
   // Feed links are other people's data: only an absolute http(s) URL is linked.
   const sourceLink = webLink(article.link);
   const [expanded, setExpanded] = useState(initiallyExpanded);
   const [fullHeight, setFullHeight] = useState(false);
   const contentRef = useRef(null);
+  const rowRef = useRef(null);
   const readMoreOwnsFocus = useRef(false);
   const [overflows, setOverflows] = useState(false);
   const publishedDate = article.published ? new Date(article.published) : null;
@@ -93,7 +94,7 @@ export default function ArticleRow({ article, isNew = false, initiallyExpanded =
   const detailPath = videoId && inlineYouTubeDetailPath(`youtube:${videoId}`, videoId);
 
   return (
-    <div className={`article-row ${expanded ? 'expanded' : ''} ${(article.state?.isRead ?? article.isRead) ? 'read' : 'unread'}`}>
+    <div ref={rowRef} className={`article-row ${expanded ? 'expanded' : ''} ${(article.state?.isRead ?? article.isRead) ? 'read' : 'unread'}`}>
       <button className="article-row-header" onClick={handleExpand} aria-expanded={expanded} aria-controls={`article-${encodeURIComponent(article.id)}`}>
         {faviconUrl && (
           <img className="article-favicon" src={faviconUrl} alt="" width="16" height="16" />
@@ -130,7 +131,11 @@ export default function ArticleRow({ article, isNew = false, initiallyExpanded =
             <button type="button" aria-pressed={!!article.state?.isSaved} onClick={() => onStateAction?.(article, article.state?.isSaved ? 'unsave' : 'save')}>{article.state?.isSaved ? 'Saved' : 'Save'}</button>
             <button type="button" onClick={() => onStateAction?.(article, article.state?.isArchived ? 'unarchive' : 'archive')}>{article.state?.isArchived ? 'Restore' : 'Archive'}</button>
             <button type="button" onClick={() => onStateAction?.(article, (article.state?.isRead ?? article.isRead) ? 'unread' : 'read')}>{(article.state?.isRead ?? article.isRead) ? 'Mark unread' : 'Mark read'}</button>
-            <OfflineEditionButton item={article} />
+            <OfflineEditionButton item={article} onRemoved={() => {
+              const row = rowRef.current;
+              const activeElement = row?.ownerDocument?.activeElement;
+              onOfflineRemoved?.(article.id, Boolean(row && activeElement && row.contains(activeElement)));
+            }} />
           </div>
           {detailPath ? (
             <>

@@ -5,7 +5,7 @@ import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 
 const log = getLogger().child({ app: 'feed', module: 'offline-edition' });
 
-export default function OfflineEditionButton({ item, detail = null }) {
+export default function OfflineEditionButton({ item, detail = null, onRemoved }) {
   const [edition, setEdition] = useState({ itemId: null, status: 'loading', downloaded: false });
   const [lookupAttempt, setLookupAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -37,6 +37,7 @@ export default function OfflineEditionButton({ item, detail = null }) {
         setEdition(current => current.itemId === item.id
           ? { itemId: item.id, status: 'ready', downloaded: false }
           : current);
+        onRemoved?.(item.id);
         notifications.show({ title: 'Download removed', message: 'The article remains available while online.' });
       } else {
         await saveOfflineEdition(item, detail);
