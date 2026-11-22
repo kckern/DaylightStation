@@ -164,9 +164,10 @@ function ServiceForm({ vehicleId, availableTypes, onClose }) {
     });
     autoLog.info('service.logged', { type: form.type, recurring: form.intervalMonths !== '' });
   };
+  const valid = Boolean(form.date);
 
   return (
-    <form onSubmit={event => submit(event, save)} aria-label="Log service">
+    <form onSubmit={event => submit(event, save, valid)} aria-label="Log service">
       <fieldset className="auto-sheet__fields" disabled={saving}>
         <label className="auto-field">
           <span>What was done</span>
@@ -178,7 +179,7 @@ function ServiceForm({ vehicleId, availableTypes, onClose }) {
         <div className="auto-field-row">
           <label className="auto-field">
             <span>Date</span>
-            <input className="ds-input" type="date" value={form.date} onChange={set('date')} />
+            <input className="ds-input" type="date" value={form.date} onChange={set('date')} required />
           </label>
           <label className="auto-field">
             <span>Cost ($)</span>
@@ -217,7 +218,7 @@ function ServiceForm({ vehicleId, availableTypes, onClose }) {
         </label>
       </fieldset>
 
-      <AutoSheetActions failure={failure} onCancel={onClose} saving={saving} />
+      <AutoSheetActions failure={failure} onCancel={onClose} saving={saving} valid={valid} />
     </form>
   );
 }
