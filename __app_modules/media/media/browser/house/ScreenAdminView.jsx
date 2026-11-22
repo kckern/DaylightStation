@@ -6,6 +6,7 @@
 // Screens silent for 30 days fold into "Not seen lately".
 import React, { useCallback, useEffect, useState } from 'react';
 import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
+import { useKeyedSubmission } from '@/lib/ui/useKeyedSubmission.js';
 import { Alert, Button, Group, List, Radio, Stack, Text, TextInput, Title } from '@mantine/core';
 import { IconAlertCircle, IconArchive, IconArrowBackUp, IconArrowMerge, IconEdit, IconPlus } from '@tabler/icons-react';
 import { useFleetContext } from "../fleet/useFleetContext.js";
@@ -28,13 +29,14 @@ function seenLine(screen) {
 function ScreenItem({ screen, admin, others, aliasNames, onRename, onMerge, onRetire }) {
   const names = { ...aliasNames, ...(screen.aliasNames || {}) };
   const [error, setError] = useState(null);
+  const { pending: unmerging, run: submitUnmerge } = useKeyedSubmission();
   const was = wasNameLabel(screen);
   const aliases = Array.isArray(screen.aliases) ? screen.aliases : [];
-  const unmerge = async (aliasId) => {
+  const unmerge = (aliasId) => submitUnmerge(aliasId, async () => {
     setError(null);
     const result = await admin.unmerge(aliasId);
     if (!result.ok) setError(result.code === 'NOT_MERGED' ? 'That duplicate is no longer merged.' : `Couldn't unmerge: ${result.error}`);
-  };
+  });
   return (
     <li className="house-item" data-testid={`screen-admin-item-${screen.id}`}>
       <div className="house-item-head">
@@ -49,7 +51,7 @@ function ScreenItem({ screen, admin, others, aliasNames, onRename, onMerge, onRe
             <Group key={aliasId} gap="xs" wrap="nowrap">
               <Text size="xs" style={{ flex: 1 }}>Includes {names[aliasId] ?? `merged duplicate ${i + 1}`}</Text>
               <Button size="xs" variant="default" className="house-action" leftSection={<IconArrowBackUp size={14} aria-hidden />}
-                data-testid={`screen-admin-unmerge-${aliasId}`} onClick={() => unmerge(aliasId)}>
+                data-testid={`screen-admin-unmerge-${aliasId}`} disabled={unmerging.has(aliasId)} onClick={() => unmerge(aliasId)}>
                 Unmerge
               </Button>
             </Group>

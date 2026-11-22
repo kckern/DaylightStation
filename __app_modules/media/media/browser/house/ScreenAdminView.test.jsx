@@ -3,7 +3,7 @@
 // routines are shown, "Not seen lately", restore.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { DispatchContext } from "../cast/DispatchProvider.jsx";
 
@@ -175,6 +175,32 @@ describe('ScreenAdminView', () => {
     expect(screen.getByTestId('screen-admin-aliases-browser:new')).toHaveTextContent('Includes Pantry tablet');
     expect(screen.getByTestId('screen-admin-unnamed')).toHaveTextContent('Unnamed browsers (1)');
     expect(screen.getByTestId('screen-admin-list')).not.toHaveTextContent('ghost123');
+  });
+
+  it('admits one Unmerge request per alias and allows an explicit retry after refusal', async () => {
+    const firstRequest = Promise.withResolvers();
+    ctx.registry.screens[1] = {
+      ...ctx.registry.screens[1],
+      aliases: ['browser:gone2', 'browser:gone3'],
+      aliasNames: { 'browser:gone2': 'Pantry tablet', 'browser:gone3': 'Old tablet' },
+    };
+    api.unmergeScreen.mockImplementationOnce(() => firstRequest.promise);
+    wrap();
+    const first = screen.getByTestId('screen-admin-unmerge-browser:gone2');
+    const other = screen.getByTestId('screen-admin-unmerge-browser:gone3');
+    fireEvent.click(first);
+    fireEvent.click(first);
+    expect(api.unmergeScreen).toHaveBeenCalledTimes(1);
+    expect(api.unmergeScreen).toHaveBeenCalledWith('browser:gone2');
+    expect(first).toBeDisabled();
+    expect(other).toBeEnabled();
+
+    await act(async () => firstRequest.reject(new Error('retry refused')));
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't unmerge: retry refused");
+    expect(first).toBeEnabled();
+    fireEvent.click(first);
+    await waitFor(() => expect(api.unmergeScreen).toHaveBeenCalledTimes(2));
+    expect(api.unmergeScreen).toHaveBeenLastCalledWith('browser:gone2');
   });
 
   it('restores a retired screen', async () => {
