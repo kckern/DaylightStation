@@ -175,9 +175,8 @@ export function composeNow({ entities, rooms, summary }, { now = Date.now() } = 
     })
     .filter(Boolean);
   const outdoor = entities.find((e) => isTempSensor(e) && /_outdoor_/.test(e.id)) || null;
-
-  return {
-    sentences: composeSentence({
+  const sentences = summary
+    ? composeSentence({
       watts: s.power.wholeHouse?.watts ?? null,
       lightsOn: lights.length,
       othersOn: others.length,
@@ -185,7 +184,11 @@ export function composeNow({ entities, rooms, summary }, { now = Date.now() } = 
       open,
       motionRooms,
       lastSeen,
-    }),
+    })
+    : [];
+
+  return {
+    sentences,
     on: { lights: groupByRoom(lights, rooms), others },
     open: open.map((e) => ({ ...e, label: displayName(e) })),
     motion: motionByRoom,

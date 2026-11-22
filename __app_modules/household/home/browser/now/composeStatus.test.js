@@ -142,9 +142,9 @@ describe('composeNow', () => {
     expect(hvacWord({ detail: {}, state: 'off' })).toBe('thermostat off');
   });
 
-  it('degrades to an empty report without a summary', () => {
+  it('omits a household status sentence without a summary but keeps entity-derived climate', () => {
     const bare = composeNow({ entities, rooms, summary: null });
-    expect(bare.sentences).toEqual(['All quiet. Nothing is on.']);
+    expect(bare.sentences).toEqual([]);
     expect(bare.counts.lightsOn).toBe(0);
     expect(bare.climate).toHaveLength(1);
   });
