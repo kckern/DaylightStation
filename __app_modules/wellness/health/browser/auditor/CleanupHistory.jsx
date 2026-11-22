@@ -52,7 +52,12 @@ export function CleanupHistory({ resource }) {
         <section {...regionProps} aria-label="Repair history">
           {unavailableError(history) ? <ErrorState error={history.error} onRetry={retry} /> : null}
           {!history.data && history.loading ? <LoadingState label="Repair history" /> : null}
-          {history.data?.records.map(record => <Group key={record.id} justify="space-between"><Text size="sm">{new Date(record.at).toLocaleString()} · {record.reason}</Text><Button size="xs" variant="subtle" onClick={() => setSelected(record)}>Details</Button></Group>)}
+          {history.data?.records.map(record => (
+            <Group key={record.id} justify="space-between">
+              <Text size="sm">{new Date(record.at).toLocaleString()} · {record.reason}</Text>
+              <Button size="xs" variant="subtle" onClick={() => { setError(null); setSelected(record); }}>Details</Button>
+            </Group>
+          ))}
           {history.data?.total === 0 ? <Text size="sm" c="dimmed">No repairs have been made.</Text> : null}
           <Group><Button variant="subtle" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 30))}>Previous</Button><Button variant="subtle" disabled={offset + 30 >= (history.data?.total || 0)} onClick={() => setOffset(offset + 30)}>Next</Button></Group>
         </section>
