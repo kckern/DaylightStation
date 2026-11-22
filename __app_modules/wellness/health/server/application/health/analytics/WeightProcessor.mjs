@@ -156,10 +156,13 @@ export class WeightProcessor {
     const sortedRecords = [];
     for (const [date, measurements] of Object.entries(measurementsByDate)) {
       const latest = measurements.reduce((a, b) => (a.time > b.time ? a : b));
+      const latestFatReading = measurements
+        .filter((measurement) => Number.isFinite(measurement.fat_percent))
+        .reduce((a, b) => (a && a.time > b.time ? a : b), null);
       sortedRecords.push({
         date: moment(date).format('YYYY-MM-DD'),
         lbs: latest.lbs,
-        fat_percent: latest.fat_percent,
+        fat_percent: latestFatReading?.fat_percent,
         time: latest.time,
       });
     }
