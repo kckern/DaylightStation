@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const apiMock = vi.fn();
@@ -28,12 +28,16 @@ describe('RingClips', () => {
     apiMock.mockResolvedValue({ clips: rings.map(clipAt) });
     wrap(<RingClips camera="porch-cam" marks={rings} timeZone="UTC" />);
     await waitFor(() => expect(document.querySelectorAll('video')).toHaveLength(4));
-    const buttons = screen.getAllByText('Show clip');
+    const buttons = screen.getAllByRole('button', { name: /show clip of/i });
     expect(buttons).toHaveLength(2);
     // newest first: the players belong to the four latest rings
     expect(document.querySelector('video').getAttribute('src')).toContain(encodeURIComponent('Rec/clip_5.mp4'));
+    const row = buttons[0].closest('li');
+    buttons[0].focus();
+    expect(buttons[0]).toHaveFocus();
     fireEvent.click(buttons[0]);
     expect(document.querySelectorAll('video')).toHaveLength(5);
+    expect(within(row).getByRole('button', { name: /play the clip/i })).toHaveFocus();
   });
 
   it('when no day of clips loads, every ring still shows its time, with a retry', async () => {
@@ -133,15 +137,19 @@ describe('RingClips', () => {
     wrap(<RingClips camera="porch-cam" marks={[rings[0]]} timeZone="UTC" />);
     await waitFor(() => expect(document.querySelectorAll('video')).toHaveLength(1));
     const first = document.querySelector('video');
+    const row = first.closest('li');
     fireEvent.error(first);
     expect(screen.getByText('Recording could not be loaded')).toBeTruthy();
     expect(document.querySelector('video')).toBeNull();
     expect(logged).toContainEqual(expect.objectContaining({ level: 'warn', event: 'home.ring.clip.failed', data: expect.objectContaining({ camera: 'porch-cam', clip: 'Rec/clip_0.mp4' }) }));
-    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+    const retry = screen.getByRole('button', { name: /retry recording from/i });
+    retry.focus();
+    fireEvent.click(retry);
     const again = document.querySelector('video');
     expect(again).toBeTruthy();
     expect(again).not.toBe(first);
     expect(screen.queryByText('Recording could not be loaded')).toBeNull();
+    expect(within(row).getByRole('button', { name: /play the clip/i })).toHaveFocus();
   });
 });
 

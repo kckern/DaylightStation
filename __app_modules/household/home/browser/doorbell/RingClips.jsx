@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button, UnstyledButton } from '@mantine/core';
 import { IconPlayerPlayFilled } from '@tabler/icons-react';
 import { Skeleton } from '@/lib/ui';
@@ -46,11 +46,21 @@ function RingClip({ camera, clip, ringMs, eager, label }) {
   const [failed, setFailed] = useState(false);
   const [started, setStarted] = useState(false);
   const video = useRef(null);
+  const playButton = useRef(null);
+  const focusPlayAfterReveal = useRef(false);
+  useLayoutEffect(() => {
+    if (!focusPlayAfterReveal.current || !shown || failed || started) return;
+    focusPlayAfterReveal.current = false;
+    playButton.current?.focus({ preventScroll: true });
+  }, [shown, failed, started, attempt]);
   useEffect(() => {
     if (started) video.current?.focus({ preventScroll: true });
   }, [started]);
   if (!shown) {
-    return <Button size="xs" variant="light" aria-label={`Show clip of the ${label} ring`} onClick={() => setShown(true)}>Show clip</Button>;
+    return <Button size="xs" variant="light" aria-label={`Show clip of the ${label} ring`} onClick={(event) => {
+      focusPlayAfterReveal.current = event.currentTarget.ownerDocument.activeElement === event.currentTarget;
+      setShown(true);
+    }}>Show clip</Button>;
   }
   if (failed) {
     return (
@@ -60,7 +70,8 @@ function RingClip({ camera, clip, ringMs, eager, label }) {
           size="compact-xs"
           variant="subtle"
           aria-label={`Retry recording from the ${label} ring`}
-          onClick={() => {
+          onClick={(event) => {
+            focusPlayAfterReveal.current = event.currentTarget.ownerDocument.activeElement === event.currentTarget;
             logger.info('home.ring.clip.retry', { camera, ringMs, clip: clip.name, attempt: attempt + 1 });
             setFailed(false);
             setStarted(false);
@@ -97,7 +108,7 @@ function RingClip({ camera, clip, ringMs, eager, label }) {
         }}
       />
       {started ? null : (
-        <UnstyledButton className="home-rings__play" onClick={play} aria-label={`Play the clip of the ${label} ring`}>
+        <UnstyledButton ref={playButton} className="home-rings__play" onClick={play} aria-label={`Play the clip of the ${label} ring`}>
           <IconPlayerPlayFilled className="home-rings__play-icon" aria-hidden="true" focusable="false" />
         </UnstyledButton>
       )}
