@@ -51,6 +51,7 @@ function NeighboursForm({ room, rooms, current, onClose, onSave, savePending }) 
           label={other}
           size="md"
           checked={isChosen(other)}
+          disabled={saving}
           onChange={event => {
             const on = event.currentTarget.checked;
             const id = key(other);
