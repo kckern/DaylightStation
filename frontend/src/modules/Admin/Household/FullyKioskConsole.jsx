@@ -569,11 +569,11 @@ function DeviceConsole({ deviceId }) {
                                 <Table.Td><Code>{setting.key}</Code></Table.Td>
                                 <Table.Td className="fkb-console__setting-value">
                                   {setting.sensitive ? <Text c="dimmed">••••••</Text> : setting.editable && setting.type === 'boolean' ? (
-                                    <Switch checked={Boolean(draft)} onChange={event => setDraftSettings(current => ({ ...current, [setting.key]: event.currentTarget.checked }))} />
+                                    <Switch aria-label={setting.key} checked={Boolean(draft)} onChange={event => setDraftSettings(current => ({ ...current, [setting.key]: event.currentTarget.checked }))} />
                                   ) : setting.editable && setting.type === 'number' ? (
-                                    <NumberInput value={draft ?? ''} {...numberBounds(setting, status?.provider)} onChange={value => setDraftSettings(current => ({ ...current, [setting.key]: value }))} />
+                                    <NumberInput aria-label={setting.key} value={draft ?? ''} {...numberBounds(setting, status?.provider)} onChange={value => setDraftSettings(current => ({ ...current, [setting.key]: value }))} />
                                   ) : setting.editable ? (
-                                    <TextInput value={draft ?? ''} onChange={event => setDraftSettings(current => ({ ...current, [setting.key]: event.currentTarget.value }))} />
+                                    <TextInput aria-label={setting.key} value={draft ?? ''} onChange={event => setDraftSettings(current => ({ ...current, [setting.key]: event.currentTarget.value }))} />
                                   ) : (
                                     <Text size="sm">{reported(setting.value)}</Text>
                                   )}
