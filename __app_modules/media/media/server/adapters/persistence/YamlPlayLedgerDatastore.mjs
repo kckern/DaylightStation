@@ -14,11 +14,11 @@
  */
 import path from 'path';
 import {
-  loadYamlFromPath,
+  readYamlFromPath,
   saveYamlToPathAtomic,
   listYamlFiles,
   dirExists,
-  getStats,
+  getFileStats,
   deleteFile,
 } from '#system/utils/FileIO.mjs';
 import { IPlayLedgerDatastore } from "../../application/ports/IPlayLedgerDatastore.mjs";
@@ -61,12 +61,18 @@ export class YamlPlayLedgerDatastore extends IPlayLedgerDatastore {
 
   #read(day) {
     const file = this.#file(day);
-    const stats = getStats(file);
-    if (!stats) { this.#cache.delete(day); return []; }
+    let stats;
+    try { stats = getFileStats(file); }
+    catch (error) {
+      if (error.code === 'ENOENT') { this.#cache.delete(day); return []; }
+      throw error;
+    }
     const cached = this.#cache.get(day);
     if (cached && cached.mtimeMs === stats.mtimeMs) return cached.rows;
-    const data = loadYamlFromPath(file);
-    const rows = Array.isArray(data) ? data : [];
+    this.#cache.delete(day);
+    const data = readYamlFromPath(file);
+    if (!Array.isArray(data)) throw new InfrastructureError(`Invalid play ledger for ${day}`, { code: 'INVALID_PLAY_LEDGER', day });
+    const rows = data;
     this.#cache.set(day, { mtimeMs: stats.mtimeMs, rows });
     return rows;
   }
