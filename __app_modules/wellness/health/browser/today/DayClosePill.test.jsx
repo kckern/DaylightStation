@@ -1,14 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
-const apiMock = vi.fn();
-vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...a) => apiMock(...a) }));
-const showDayStatus = vi.fn(() => true);
-vi.mock("../healthResources.js", () => ({ showDayStatus: (...a) => showDayStatus(...a) }));
-
 import { DayClosePill } from "./DayClosePill.jsx";
-import { HealthOperationsProvider } from '../operations/HealthOperationsProvider.jsx';
 
 const r = (ui) => render(<MantineProvider>{ui}</MantineProvider>);
 // Real row shape from GET /api/v1/health/day → data[] (counted rows carry calories)
@@ -16,14 +10,7 @@ const rows = (cal) => [{ uuid: 'a', kind: 'item', status: 'accepted', calories: 
 // Real dayStatus shape from GET /api/v1/health/day
 const open = (extra = {}) => ({ status: null, minCalories: 1200, today: '2026-09-24', ...extra });
 
-// DaylightAPI's real failure shape (lib/api.mjs): message embeds the body, status attached.
-const httpError = (status, body) => Object.assign(new Error(`HTTP ${status}: Bad Request - ${JSON.stringify(body)}`), { status });
-
 describe('DayClosePill', () => {
-  // Braces matter: a function RETURNED from beforeEach runs as teardown, and
-  // mockReset() returns the mock — it would be called once more after each test.
-  beforeEach(() => { apiMock.mockReset(); showDayStatus.mockClear(); });
-
   const choose = async (item) => {
     fireEvent.click(screen.getByTestId('dayclose-pill'));
     fireEvent.click(await screen.findByRole('menuitem', { name: item }));
@@ -65,35 +52,17 @@ describe('DayClosePill', () => {
     expect(pill.className).not.toMatch(/--flagged/);
   });
 
-  it('Done logging posts the closure and patches the cached day with the server answer', async () => {
-    const answer = { status: 'done', minCalories: 1200, today: '2026-09-24' };
-    apiMock.mockResolvedValue(answer);
-    const onChanged = vi.fn();
-    r(<DayClosePill date="2026-09-16" dayStatus={open()} items={rows(0)} onChanged={onChanged} />);
+  it('delegates Done logging to its owner', async () => {
+    const onSet = vi.fn();
+    r(<DayClosePill date="2026-09-16" dayStatus={open()} items={rows(0)} onSet={onSet} />);
     await choose(/Done logging/);
-    await waitFor(() => expect(onChanged).toHaveBeenCalled());
-    expect(apiMock).toHaveBeenCalledWith('api/v1/health/nutrition/day-status', { date: '2026-09-16', status: 'done' }, 'POST');
-    expect(showDayStatus).toHaveBeenCalledWith('2026-09-16', answer);
+    expect(onSet).toHaveBeenCalledWith('done');
   });
 
-  it.each(['bob', 'alice'])('ignores a departed session’s closure after Health opens as %s', async (nextOwner) => {
-    let complete;
-    apiMock.mockReturnValue(new Promise(resolve => { complete = resolve; }));
-    const onChanged = vi.fn();
-    const session = userId => (
-      <HealthOperationsProvider userId={userId}>
-        <DayClosePill date="2026-09-24" dayStatus={open()} onChanged={onChanged} />
-      </HealthOperationsProvider>
-    );
-    const view = r(session('alice'));
-    await choose('Done logging');
-    expect(apiMock).toHaveBeenCalledTimes(1);
-
-    view.rerender(<MantineProvider>{nextOwner === 'bob' ? session('bob') : null}</MantineProvider>);
-    if (nextOwner === 'alice') view.rerender(<MantineProvider>{session('alice')}</MantineProvider>);
-    await act(async () => { complete(open({ status: 'done' })); });
-    expect(showDayStatus).not.toHaveBeenCalled();
-    expect(onChanged).not.toHaveBeenCalled();
+  it('disables menu actions while the date submission is pending', async () => {
+    r(<DayClosePill date="2026-09-16" dayStatus={open()} items={rows(0)} busy />);
+    fireEvent.click(screen.getByTestId('dayclose-pill'));
+    expect(await screen.findByRole('menuitem', { name: /Done logging/ })).toBeDisabled();
   });
 
   it('renders whatever the server says — a /fast from Telegram wins over the page', () => {
@@ -103,24 +72,15 @@ describe('DayClosePill', () => {
     expect(screen.getByTestId('dayclose-pill').textContent).toMatch(/Fasted/);
   });
 
-  it('Reopen clears a closure', async () => {
-    apiMock.mockResolvedValue({ status: null, minCalories: 1200, today: '2026-09-24' });
-    r(<DayClosePill date="2026-09-16" dayStatus={open({ status: 'done' })} items={rows(900)} />);
+  it('delegates Reopen to its owner', async () => {
+    const onSet = vi.fn();
+    r(<DayClosePill date="2026-09-16" dayStatus={open({ status: 'done' })} items={rows(900)} onSet={onSet} />);
     await choose(/Reopen day/);
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/health/nutrition/day-status', { date: '2026-09-16', status: null }, 'POST'));
+    expect(onSet).toHaveBeenCalledWith(null);
   });
 
-  it("shows the server's refusal sentence, not the raw HTTP text", async () => {
-    apiMock.mockRejectedValue(httpError(400, { error: 'A future day cannot be closed' }));
-    r(<DayClosePill date="2026-09-16" dayStatus={open()} items={rows(500)} />);
-    await choose(/Done logging/);
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('A future day cannot be closed'));
-  });
-
-  it('asks for a retry on a network or server failure', async () => {
-    apiMock.mockRejectedValue(Object.assign(new Error('HTTP 502: Bad Gateway - <html>'), { status: 502 }));
-    r(<DayClosePill date="2026-09-16" dayStatus={open()} items={rows(500)} />);
-    await choose(/Done logging/);
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Could not save. Try again.'));
+  it('renders a supplied submission error', () => {
+    r(<DayClosePill date="2026-09-16" dayStatus={open()} items={rows(500)} error="Could not save. Try again." />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not save. Try again.');
   });
 });

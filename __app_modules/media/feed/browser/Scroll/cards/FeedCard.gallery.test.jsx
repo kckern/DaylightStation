@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import FeedCard from './FeedCard.jsx';
 import { FeedPlayerProvider } from '../../players/FeedPlayerContext.jsx';
@@ -65,4 +65,72 @@ it('advances only for a matching single-touch horizontal swipe', () => {
 
   expect(screen.getByRole('region', { name: 'Image gallery, 2 of 2' })).toBeInTheDocument();
   expect(parentTouchStart).not.toHaveBeenCalled();
+});
+
+it('restores gallery focus when arrow-key navigation removes the focused boundary arrow', () => {
+  render(
+    <FeedPlayerProvider>
+      <FeedCard
+        item={{
+          id: 'keyboard-gallery-item',
+          title: 'Two photographs',
+          source: 'test',
+          image: 'https://example.test/first.jpg',
+          meta: {
+            galleryImages: [
+              { url: 'https://example.test/first.jpg' },
+              { url: 'https://example.test/second.jpg' },
+            ],
+          },
+        }}
+      />
+    </FeedPlayerProvider>,
+  );
+
+  const firstGallery = screen.getByRole('region', { name: 'Image gallery, 1 of 2' });
+  const next = screen.getByRole('button', { name: 'Next image' });
+  next.focus();
+  fireEvent.keyDown(next, { key: 'ArrowRight' });
+
+  const lastGallery = screen.getByRole('region', { name: 'Image gallery, 2 of 2' });
+  expect(document.activeElement).toBe(lastGallery);
+
+  const previous = screen.getByRole('button', { name: 'Previous image' });
+  previous.focus();
+  fireEvent.keyDown(previous, { key: 'ArrowLeft' });
+
+  const returnedGallery = screen.getByRole('region', { name: 'Image gallery, 1 of 2' });
+  expect(returnedGallery).toBe(firstGallery);
+  expect(document.activeElement).toBe(returnedGallery);
+});
+
+it('does not steal focus from another gallery when a swipe removes its arrow', () => {
+  const item = id => ({
+    id,
+    title: 'Two photographs',
+    source: 'test',
+    image: 'https://example.test/first.jpg',
+    meta: {
+      galleryImages: [
+        { url: 'https://example.test/first.jpg' },
+        { url: 'https://example.test/second.jpg' },
+      ],
+    },
+  });
+  render(
+    <FeedPlayerProvider>
+      <><FeedCard item={item('gallery-a')} /><FeedCard item={item('gallery-b')} /></>
+    </FeedPlayerProvider>,
+  );
+
+  const galleryA = screen.getAllByRole('region', { name: 'Image gallery, 1 of 2' })[0];
+  const galleryB = screen.getAllByRole('region', { name: 'Image gallery, 1 of 2' })[1];
+  const focusedArrow = galleryA.querySelector('[aria-label="Next image"]');
+  focusedArrow.focus();
+  const finger = touch(1, 220, 100);
+  dispatchTouch(galleryB, 'touchstart', [finger], [finger]);
+  dispatchTouch(galleryB, 'touchend', [], [touch(1, 160, 100)]);
+
+  expect(screen.getByRole('region', { name: 'Image gallery, 2 of 2' })).toBe(galleryB);
+  expect(document.activeElement).toBe(focusedArrow);
 });

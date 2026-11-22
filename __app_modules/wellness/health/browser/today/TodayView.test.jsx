@@ -57,6 +57,7 @@ vi.mock("./mealBuckets.js", async (importOriginal) => {
 
 import { MemoryRouter } from 'react-router-dom';
 import { TodayView } from "./TodayView.jsx";
+import { HealthOperationsProvider } from '../operations/HealthOperationsProvider.jsx';
 import { localTodayISO } from "./mealBuckets.js";
 import { addDaysISO } from "./moveDays.js";
 import { resetApiResourceCache } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
@@ -77,6 +78,133 @@ const baseApi = (overrides = {}) => async (path) => {
   if (path.includes('nutrition/input')) return overrides.nutritionInput ?? {};
   return {};
 };
+
+it('keeps a date submission locked while its pill unmounts for another cold day', async () => {
+  const a = '2026-09-14';
+  const b = '2026-09-15';
+  const closeRequest = Promise.withResolvers();
+  const coldRead = Promise.withResolvers();
+  const posts = [];
+  let closureStatus = null;
+  const fallback = baseApi();
+  resetApiResourceCache();
+  apiMock.mockImplementation(async (path, body, method) => {
+    if (path.includes('health/day?')) {
+      const day = new URLSearchParams(path.split('?')[1]).get('date');
+      if (day === b) await coldRead.promise;
+      return {
+        date: day,
+        budget: BUDGET,
+        dayStatus: { status: closureStatus, today: '2026-09-24', minCalories: 1200 },
+        items: [{ uuid: day, name: `Food on ${day}`, date: day, kind: 'item', status: 'accepted', version: 1, calories: 100, mealTime: 'afternoon' }],
+      };
+    }
+    if (path.endsWith('nutrition/day-status') && method === 'POST') {
+      posts.push(body);
+      return closeRequest.promise;
+    }
+    return fallback(path);
+  });
+
+  render(<MemoryRouter initialEntries={[`/?date=${a}`]}><MantineProvider><TodayView /></MantineProvider></MemoryRouter>);
+  const chooseDone = async () => {
+    fireEvent.click(screen.getByTestId('dayclose-pill'));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Done logging' }));
+  };
+
+  await screen.findByText(`Food on ${a}`);
+  await chooseDone();
+  expect(posts).toEqual([{ date: a, status: 'done' }]);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Next day' }));
+  await waitFor(() => expect(screen.queryByTestId('dayclose-pill')).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: 'Previous day' }));
+  await screen.findByText(`Food on ${a}`);
+  expect(screen.getByTestId('dayclose-pill')).toHaveAttribute('aria-busy', 'true');
+  await chooseDone();
+
+  await act(async () => {
+    closureStatus = 'done';
+    closeRequest.resolve({ status: 'done', today: '2026-09-24', minCalories: 1200 });
+    coldRead.resolve();
+  });
+  expect(posts).toEqual([{ date: a, status: 'done' }]);
+  expect(await screen.findByText('Logging done')).toBeTruthy();
+});
+
+it('keeps a late day-close error scoped to the date that submitted it', async () => {
+  const a = '2026-09-14';
+  const b = '2026-09-15';
+  const closeRequest = Promise.withResolvers();
+  const fallback = baseApi();
+  resetApiResourceCache();
+  apiMock.mockImplementation(async (path, body, method) => {
+    if (path.includes('health/day?')) {
+      const day = new URLSearchParams(path.split('?')[1]).get('date');
+      return {
+        date: day,
+        budget: BUDGET,
+        dayStatus: { status: null, today: '2026-09-24', minCalories: 1200 },
+        items: [{ uuid: day, name: `Food on ${day}`, date: day, kind: 'item', status: 'accepted', version: 1, calories: 100, mealTime: 'afternoon' }],
+      };
+    }
+    if (path.endsWith('nutrition/day-status') && method === 'POST') {
+      return closeRequest.promise;
+    }
+    return fallback(path);
+  });
+
+  render(<MemoryRouter initialEntries={[`/?date=${a}`]}><MantineProvider><TodayView /></MantineProvider></MemoryRouter>);
+  await screen.findByText(`Food on ${a}`);
+  fireEvent.click(screen.getByTestId('dayclose-pill'));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Done logging' }));
+
+  fireEvent.click(screen.getByRole('button', { name: 'Next day' }));
+  await screen.findByText(`Food on ${b}`);
+  await act(async () => {
+    closeRequest.reject(Object.assign(new Error('HTTP 502: Bad Gateway'), { status: 502 }));
+  });
+  expect(screen.queryByRole('alert')).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Previous day' }));
+  await screen.findByText(`Food on ${a}`);
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not save. Try again.');
+});
+
+it('ignores a day-close response after its Health session departs', async () => {
+  const date = '2026-09-14';
+  const closeRequest = Promise.withResolvers();
+  let dayReads = 0;
+  const fallback = baseApi();
+  resetApiResourceCache();
+  apiMock.mockImplementation(async (path, body, method) => {
+    if (path.includes('health/day?')) {
+      dayReads += 1;
+      return {
+        date,
+        budget: BUDGET,
+        dayStatus: { status: null, today: '2026-09-24', minCalories: 1200 },
+        items: [{ uuid: date, name: `Food on ${date}`, date, kind: 'item', status: 'accepted', version: 1, calories: 100, mealTime: 'afternoon' }],
+      };
+    }
+    if (path.endsWith('nutrition/day-status') && method === 'POST') return closeRequest.promise;
+    return fallback(path);
+  });
+
+  const page = userId => <MemoryRouter initialEntries={[`/?date=${date}`]}><MantineProvider>
+    <HealthOperationsProvider userId={userId}><TodayView /></HealthOperationsProvider>
+  </MantineProvider></MemoryRouter>;
+  const view = render(page('alice'));
+  await screen.findByText(`Food on ${date}`);
+  fireEvent.click(screen.getByTestId('dayclose-pill'));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Done logging' }));
+
+  view.rerender(page('bob'));
+  const readsBeforeDepartedResponse = dayReads;
+  await act(async () => closeRequest.resolve({ status: 'done', today: '2026-09-24', minCalories: 1200 }));
+  expect(screen.getByTestId('dayclose-pill')).toHaveTextContent('Only 100 cal logged');
+  expect(dayReads).toBe(readsBeforeDepartedResponse);
+});
 
 it('waits for the day before reading the coach line and refreshes it after coaching', async () => {
   apiMock.mockReset();
@@ -779,7 +907,6 @@ describe('TodayView — a failed refresh never buries the day', () => {
   });
 });
 
-import { HealthOperationsProvider } from '../operations/HealthOperationsProvider.jsx';
 it('keeps multiple sentence operations in the live Today provider independent',async()=>{
  resetApiResourceCache();apiMock.mockReset();
  const tasks=[];
