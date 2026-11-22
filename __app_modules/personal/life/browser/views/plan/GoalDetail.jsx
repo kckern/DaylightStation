@@ -6,6 +6,14 @@ import { goalStateColor } from "../../theme/semantics.js";
 import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
 import { formatDate, humanize } from "../../lib/format.js";
 
+function formatHistoryDate(value) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value || '')) return formatDate(value);
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? ''
+    : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 export function GoalDetail({ goalId, username }) {
   const { goal, loading, error, refetch, transitionGoal } = useGoalDetail(goalId, username);
   const [transitionState, setTransitionState] = useState(null);
@@ -108,7 +116,7 @@ export function GoalDetail({ goalId, username }) {
                 bullet={<IconHistory size={12} />}
                 title={`${h.from} → ${h.to}`}
               >
-                <Text size="xs" c="dimmed">{h.reason} — {formatDate(h.timestamp)}</Text>
+                <Text size="xs" c="dimmed">{h.reason} — {formatHistoryDate(h.timestamp)}</Text>
               </Timeline.Item>
             ))}
           </Timeline>
