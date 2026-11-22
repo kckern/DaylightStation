@@ -24,7 +24,8 @@ function useRoutineSection(read, section) {
     try {
       const result = await read(signal);
       if (!isCurrent()) return;
-      const items = Array.isArray(result?.items) ? result.items : [];
+      if (!Array.isArray(result?.items)) throw new Error(`Invalid ${section} response: expected items array`);
+      const items = result.items;
       setState({ loading: false, items, error: null });
       houseLog.routinesLoaded({ section, [section === 'history' ? 'runs' : 'flags']: items.length });
     } catch (error) {
