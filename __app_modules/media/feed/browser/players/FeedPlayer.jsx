@@ -149,7 +149,10 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
       className="feed-player"
       style={{ position: 'relative', aspectRatio, background: '#000', overflow: 'hidden' }}
       onMouseMove={showControls}
-      onClick={showControls}
+      onClick={event => {
+        event.stopPropagation();
+        showControls();
+      }}
     >
       {isSplit ? (
         <RemuxPlayer
