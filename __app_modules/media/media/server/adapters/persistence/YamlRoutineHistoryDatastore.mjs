@@ -7,9 +7,29 @@
  * #domains/media/routineHistory.mjs.
  */
 import path from 'path';
-import { loadYamlSafe, saveYaml, ensureDir } from '#system/utils/FileIO.mjs';
+import { readHouseholdYamlFile, writeHouseholdYamlFile } from './HouseholdYamlFile.mjs';
 import { IRoutineHistoryDatastore } from "../../application/ports/IRoutineHistoryDatastore.mjs";
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+
+function isPlainMapping(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function isRoutineRun(run) {
+  const validAt = (run?.at instanceof Date && Number.isFinite(run.at.getTime()))
+    || (typeof run?.at === 'string' && Number.isFinite(Date.parse(run.at)));
+  return isPlainMapping(run)
+    && validAt
+    && isPlainMapping(run.routine)
+    && (run.routine.id == null || typeof run.routine.id === 'string')
+    && (run.routine.name == null || typeof run.routine.name === 'string')
+    && typeof run.deviceId === 'string' && !!run.deviceId.trim()
+    && ['failed', 'deduplicated', 'started'].includes(run.outcome)
+    && (run.what == null || isPlainMapping(run.what))
+    && (run.reason == null || typeof run.reason === 'string');
+}
 
 export class YamlRoutineHistoryDatastore extends IRoutineHistoryDatastore {
   /** @param {{configService: Object}} config */
@@ -26,14 +46,25 @@ export class YamlRoutineHistoryDatastore extends IRoutineHistoryDatastore {
   }
 
   async load(householdId) {
-    const data = loadYamlSafe(this._path(householdId));
-    return Array.isArray(data?.runs) ? data.runs.filter((r) => r && typeof r === 'object') : [];
+    const { found, value: data } = readHouseholdYamlFile(this._path(householdId));
+    if (!found) return [];
+    if (!isPlainMapping(data) || !Array.isArray(data.runs) || !data.runs.every(isRoutineRun)) {
+      throw new InfrastructureError('Invalid household routine history', {
+        code: 'INVALID_ROUTINE_HISTORY', householdId,
+      });
+    }
+    return data.runs.map((run) => run.at instanceof Date ? { ...run, at: run.at.toISOString() } : run);
   }
 
   async save(runs, householdId) {
-    const file = this._path(householdId);
-    ensureDir(path.dirname(file));
-    saveYaml(file, { runs: runs || [] });
+    if (!Array.isArray(runs) || !runs.every(isRoutineRun)) {
+      throw new InfrastructureError('Invalid household routine history', {
+        code: 'INVALID_ROUTINE_HISTORY', householdId,
+      });
+    }
+    writeHouseholdYamlFile(this._path(householdId), {
+      runs: runs.map((run) => run.at instanceof Date ? { ...run, at: run.at.toISOString() } : run),
+    });
   }
 }
 
