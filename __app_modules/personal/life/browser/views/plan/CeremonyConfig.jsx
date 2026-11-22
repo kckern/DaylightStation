@@ -3,6 +3,7 @@ import { Stack, Paper, Text, Group, Badge, Switch } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconCalendarEvent, IconFlame } from '@tabler/icons-react';
 import { useCeremonyConfig } from "../../hooks/useLifePlan.js";
+import { useRetryRegion } from '@/lib/ui';
 import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
 import { formatPeriodLabel } from "../../lib/format.js";
 
@@ -42,68 +43,72 @@ function CeremonySwitch({ type, enabled, readingBack, save }) {
 
 export function CeremonyConfig({ username }) {
   const { ceremonies, current, loading, readingBack, error, refetch, setCeremonyEnabled } = useCeremonyConfig(username);
+  const { regionProps, retry } = useRetryRegion(refetch, loading || readingBack);
 
-  if (loading) return <LoadingState />;
-  if (error) return (
-    <LifePage title="Ceremonies" scrollReady={false}>
-      <ErrorState label="Ceremonies" error={error} onRetry={refetch} />
-    </LifePage>
-  );
+  const content = loading ? <LoadingState /> : error
+    ? <ErrorState label="Ceremonies" error={error} onRetry={retry} />
+    : (
+      <>
+        {current && (
+          <Paper p="sm" withBorder>
+            <Group gap="sm" mb="xs">
+              <IconCalendarEvent size={18} />
+              <Text size="sm" fw={500}>Current Position</Text>
+            </Group>
+            <Group gap="xs">
+              {Object.entries(current).map(([level, pos]) => (
+                pos && (
+                  <Badge key={level} variant="outline" size="sm" color="blue">
+                    {formatPeriodLabel({ alias: pos.alias, level, periodId: pos.periodId })}
+                  </Badge>
+                )
+              ))}
+            </Group>
+          </Paper>
+        )}
+
+        <Stack gap="sm">
+          {CEREMONY_TYPES.map(type => {
+            const ceremonyConfig = ceremonies[type.id] || {};
+            const enabled = ceremonyConfig.enabled === true;
+
+            return (
+              <Paper key={type.id} p="sm" withBorder>
+                <Group justify="space-between" mb="xs">
+                  <Stack gap={2}>
+                    <Text size="sm" fw={500}>{type.label}</Text>
+                    <Text size="xs" c="dimmed">{type.description}</Text>
+                  </Stack>
+                  <CeremonySwitch type={type} enabled={enabled} readingBack={readingBack} save={setCeremonyEnabled} />
+                </Group>
+
+                {enabled && (
+                  <Group gap="md">
+                    {ceremonyConfig.streak > 0 && (
+                      <Group gap={4}>
+                        <IconFlame size={14} color="orange" />
+                        <Text size="xs" fw={500}>{ceremonyConfig.streak} streak</Text>
+                      </Group>
+                    )}
+                    {ceremonyConfig.adherence !== undefined && (
+                      <Badge variant="light" size="sm">
+                        {Math.round(ceremonyConfig.adherence * 100)}% adherence
+                      </Badge>
+                    )}
+                  </Group>
+                )}
+              </Paper>
+            );
+          })}
+        </Stack>
+      </>
+    );
 
   return (
-    <LifePage title="Ceremonies">
-      {current && (
-        <Paper p="sm" withBorder>
-          <Group gap="sm" mb="xs">
-            <IconCalendarEvent size={18} />
-            <Text size="sm" fw={500}>Current Position</Text>
-          </Group>
-          <Group gap="xs">
-            {Object.entries(current).map(([level, pos]) => (
-              pos && (
-                <Badge key={level} variant="outline" size="sm" color="blue">
-                  {formatPeriodLabel({ alias: pos.alias, level, periodId: pos.periodId })}
-                </Badge>
-              )
-            ))}
-          </Group>
-        </Paper>
-      )}
-
-      <Stack gap="sm">
-        {CEREMONY_TYPES.map(type => {
-          const ceremonyConfig = ceremonies[type.id] || {};
-          const enabled = ceremonyConfig.enabled === true;
-
-          return (
-            <Paper key={type.id} p="sm" withBorder>
-              <Group justify="space-between" mb="xs">
-                <Stack gap={2}>
-                  <Text size="sm" fw={500}>{type.label}</Text>
-                  <Text size="xs" c="dimmed">{type.description}</Text>
-                </Stack>
-                <CeremonySwitch type={type} enabled={enabled} readingBack={readingBack} save={setCeremonyEnabled} />
-              </Group>
-
-              {enabled && (
-                <Group gap="md">
-                  {ceremonyConfig.streak > 0 && (
-                    <Group gap={4}>
-                      <IconFlame size={14} color="orange" />
-                      <Text size="xs" fw={500}>{ceremonyConfig.streak} streak</Text>
-                    </Group>
-                  )}
-                  {ceremonyConfig.adherence !== undefined && (
-                    <Badge variant="light" size="sm">
-                      {Math.round(ceremonyConfig.adherence * 100)}% adherence
-                    </Badge>
-                  )}
-                </Group>
-              )}
-            </Paper>
-          );
-        })}
-      </Stack>
+    <LifePage title="Ceremonies" scrollReady={!loading && !error}>
+      <section {...regionProps} aria-label="Ceremonies results">
+        {content}
+      </section>
     </LifePage>
   );
 }
