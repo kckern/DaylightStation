@@ -49,6 +49,7 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose, ope
       <button ref={openerRef} type="button" className="feed-mini-bar-open ds-touch-target" onClick={onOpen} aria-label={`Open player: ${item.title}`}>
         {thumb && (
           <img
+            key={thumb}
             src={thumb}
             alt=""
             className="feed-mini-bar-thumb"

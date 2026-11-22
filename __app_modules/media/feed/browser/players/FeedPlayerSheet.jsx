@@ -172,6 +172,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
 
         {thumb ? (
           <img
+            key={thumb}
             src={thumb}
             alt=""
             className="sheet-cover"
