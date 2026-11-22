@@ -760,15 +760,33 @@ export function saveYamlToPath(filePath, content, options = {}) {
 /**
  * Atomically replace a YAML file by staging beside it and renaming. Readers
  * observe either the old complete document or the new complete document.
+ * @param {Object} options
+ * @param {boolean} options.preserveMode Preserve an existing target's POSIX mode bits.
  */
 export function saveYamlToPathAtomic(filePath, content, options = {}) {
-  const { durable = false, ...yamlOptions } = options;
+  const { durable = false, preserveMode = false, ...yamlOptions } = options;
   const dir = path.dirname(filePath);
   ensureDir(dir);
   const stagingPath = atomicStagingPath(filePath);
   try {
+    let existingMode;
+    if (preserveMode) {
+      try {
+        existingMode = fs.statSync(filePath).mode & 0o777;
+      } catch (err) {
+        if (err.code !== 'ENOENT') throw err;
+      }
+    }
+
     const yamlContent = yaml.dump(content, { lineWidth: -1, ...yamlOptions });
-    fs.writeFileSync(stagingPath, yamlContent, 'utf8');
+    fs.writeFileSync(
+      stagingPath,
+      yamlContent,
+      existingMode === undefined ? 'utf8' : { encoding: 'utf8', mode: existingMode }
+    );
+    if (existingMode !== undefined && (fs.statSync(stagingPath).mode & 0o777) !== existingMode) {
+      fs.chmodSync(stagingPath, existingMode);
+    }
     if (durable) {
       const fd = fs.openSync(stagingPath, 'r');
       try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }

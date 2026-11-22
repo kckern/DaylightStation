@@ -1,5 +1,5 @@
 import path from 'path';
-import { fileExists, listDirs, readYamlFromPath, saveYaml } from '#system/utils/FileIO.mjs';
+import { fileExists, listDirs, readYamlFromPath, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
 import { LifePlan } from "../../domain/entities/LifePlan.mjs";
 
 const pick = (value, fields) => Object.fromEntries(fields.map(field => [field, value[field]]));
@@ -71,7 +71,7 @@ export class YamlLifePlanStore extends ILifePlanRepository {
   save(username, lifePlan) {
     const filePath = this.#filePath(username);
     const data = lifePlan instanceof LifePlan ? dehydrateLifePlan(lifePlan) : lifePlan;
-    saveYaml(filePath, data);
+    saveYamlToPathAtomic(filePath, data, { preserveMode: true });
   }
 
   /**
