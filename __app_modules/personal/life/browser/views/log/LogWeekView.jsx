@@ -2,7 +2,7 @@ import { Stack, Text, Paper, Group, Badge } from '@mantine/core';
 import { useLogActivity } from './shared/useLogActivity.js';
 import { ActivityHeatmap } from "./shared/ActivityHeatmap.jsx";
 import { SourceIcon } from "./shared/SourceIcon.jsx";
-import { LifePage } from "../../components/index.js";
+import { EmptyState, LifePage } from "../../components/index.js";
 import { LogReadRegion } from './shared/LogReadRegion.jsx';
 import { formatLogRangeTitle } from './shared/formatLogRangeTitle.js';
 import { formatDate } from "../../lib/format.js";
@@ -16,16 +16,21 @@ export function LogWeekView({ username, at, categories }) {
   const { days } = read;
 
   const sortedDates = Object.keys(days).sort().reverse();
+  const activeDays = sortedDates.map(date => ({ date, sources: Object.keys(days[date].sources || {}) }))
+    .filter(day => day.sources.length > 0);
 
   const content = (
     <LifePage title={formatLogRangeTitle('Week', read)}>
       <ActivityHeatmap days={days} />
 
       <Stack gap="sm">
-        {sortedDates.map(date => {
+        {activeDays.length === 0 ? (
+          <EmptyState title={categories?.length
+            ? 'No activity matches the selected categories this week.'
+            : 'No activity recorded this week.'}
+          />
+        ) : activeDays.map(({ date, sources }) => {
           const day = days[date];
-          const sources = Object.keys(day.sources || {});
-          if (sources.length === 0) return null;
 
           return (
             <Paper key={date} p="sm" withBorder>
