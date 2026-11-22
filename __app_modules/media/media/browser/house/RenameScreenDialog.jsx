@@ -32,6 +32,7 @@ export function RenameScreenDialog({
   }, [open, initialName, initialRoom]);
 
   const submit = async (extra = {}) => {
+    if (busy) return;
     const draft = draftRef.current;
     const requestedName = (extra.name ?? name).trim();
     const changes = { ...extra };
@@ -84,7 +85,15 @@ export function RenameScreenDialog({
               “{answer.name}” is already the name of {answer.heldBy ? nameOf(answer.heldBy) : 'another screen'}.
             </Text>
             {answer.suggestion && (
-              <Button type="button" mt="xs" variant="light" className="house-action" data-testid={`${testid}-use-suggestion`} onClick={() => submit({ name: answer.suggestion })}>
+              <Button
+                type="button"
+                mt="xs"
+                variant="light"
+                className="house-action"
+                data-testid={`${testid}-use-suggestion`}
+                disabled={busy}
+                onClick={() => submit({ name: answer.suggestion })}
+              >
                 Use “{answer.suggestion}”
               </Button>
             )}
