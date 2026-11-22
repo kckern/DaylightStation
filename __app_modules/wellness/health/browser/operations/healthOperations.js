@@ -24,7 +24,12 @@ export function createHealthOperations({ userId, durableStorage }) {
       if (operation?.userId !== userId || operation.kind !== 'barcode-commit' || key !== storagePrefix + operation.id ||
         operation.request?.path !== 'api/v1/health/nutrition/barcode-commit' ||
         operation.request?.method !== 'POST' || operation.request.body?.operationId !== operation.id) continue;
-      restored.set(operation.id, { ...operation, phase: 'error', error: 'Could not confirm this barcode log. Retry to check its result.' });
+      restored.set(operation.id, {
+        ...operation,
+        targetIds: idsOf(Array.isArray(operation.targetIds) ? operation.targetIds : []),
+        phase: 'error',
+        error: 'Could not confirm this barcode log. Retry to check its result.',
+      });
     }
     for (const operation of restored.values()) {
       if (operation.phase === 'succeeded') durableStorage?.removeItem(storagePrefix + operation.id);

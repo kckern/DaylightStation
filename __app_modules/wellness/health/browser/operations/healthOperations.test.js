@@ -77,3 +77,30 @@ it('restores valid barcode commands on both sides of malformed storage', () => {
     for (const id of ['first', 'broken', 'last']) localStorage.removeItem(prefix + id);
   }
 });
+
+it('normalizes missing reservation IDs on restored barcode commands and preserves their retry request', () => {
+  const userId = 'barcode-missing-targets';
+  const prefix = `daylight.health.barcode-operations:${userId}:`;
+  const operation = {
+    id: 'recoverable',
+    userId,
+    kind: 'barcode-commit',
+    phase: 'pending',
+    request: {
+      path: 'api/v1/health/nutrition/barcode-commit',
+      method: 'POST',
+      body: { operationId: 'recoverable', upc: '012345678905' },
+    },
+  };
+  localStorage.setItem(prefix + operation.id, JSON.stringify(operation));
+
+  try {
+    const store = createHealthOperations({ userId, durableStorage: localStorage });
+    const restored = store.getSnapshot().operations.get(operation.id);
+    expect(store.isReserved(['food-row'])).toBe(false);
+    expect(restored).toMatchObject({ phase: 'error', targetIds: [], request: operation.request });
+    expect(store.begin(intent('disjoint-edit', ['food-row'])).ok).toBe(true);
+  } finally {
+    localStorage.removeItem(prefix + operation.id);
+  }
+});
