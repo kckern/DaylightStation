@@ -12,7 +12,14 @@ import { isISODate } from "../../portable/contracts/health/isoDate.mjs";
 const logger = createAppLogger('health').child('medical');
 
 const medicalPath = 'api/v1/health/medical';
-const METRIC_SUGGESTIONS = Object.keys(MEDICAL_METRICS);
+const METRIC_SUGGESTIONS = Object.entries(MEDICAL_METRICS)
+  .flatMap(([key, metric]) => [key, metric.label]);
+const METRIC_KEYS_BY_INPUT = new Map(Object.entries(MEDICAL_METRICS)
+  .flatMap(([key, metric]) => [[key.toLowerCase(), key], [metric.label.toLowerCase(), key]]));
+const canonicalMetric = (value) => {
+  const input = value.trim();
+  return METRIC_KEYS_BY_INPUT.get(input.toLowerCase()) || input;
+};
 const labelFor = (metric) => MEDICAL_METRICS[metric]?.label || metric;
 const isFiniteNumber = value => typeof value === 'number' && Number.isFinite(value);
 const formatValue = (r) => (r?.value2 != null ? `${r.value}/${r.value2}` : r?.value ?? '—');
@@ -99,7 +106,7 @@ function MedicalReadingSheet({ onClose }) {
   const { submit, saving, failure } = useSheetSubmission(onClose, error => {
     logger.error('reading.add.failed', { error: error?.message });
   });
-  const metric = form.metric.trim();
+  const metric = canonicalMetric(form.metric);
   const paired = MEDICAL_METRICS[metric]?.paired === true;
   const isBp = metric === 'bp';
   const valid = Boolean(metric) && isFiniteNumber(form.value) && Boolean(form.unit.trim())
@@ -128,7 +135,8 @@ function MedicalReadingSheet({ onClose }) {
           onChange={(v) => setForm(previous => ({
             ...previous,
             metric: v,
-            unit: MEDICAL_METRICS[v]?.units[0] || (MEDICAL_METRICS[previous.metric] ? '' : previous.unit),
+            unit: MEDICAL_METRICS[canonicalMetric(v)]?.units[0]
+              || (MEDICAL_METRICS[canonicalMetric(previous.metric)] ? '' : previous.unit),
           }))} />
         <NumberInput label={isBp ? 'Systolic' : 'Value'} value={form.value} disabled={saving}
           onChange={(v) => setForm({ ...form, value: v })} />
