@@ -11,6 +11,7 @@ function log() { return getLogger().child({ module: 'feed-player' }); }
 // ---------------------------------------------------------------------------
 
 export const SPEED_STEPS = [1, 1.25, 1.5, 1.75, 2];
+const DEFAULT_VOLUME = 1;
 
 function decodeNumber(raw) {
   if (!raw.trim()) return null;
@@ -18,7 +19,7 @@ function decodeNumber(raw) {
   return Number.isFinite(value) ? value : null;
 }
 
-const volumePreference = browserPreference('feedPlayer:volume', 1, raw => {
+const volumePreference = browserPreference('feedPlayer:volume', DEFAULT_VOLUME, raw => {
   const value = decodeNumber(raw);
   return value !== null && value >= 0 && value <= 1 ? value : null;
 });
@@ -34,13 +35,14 @@ const speedPreference = browserPreference('feedPlayer:speed', 1, raw => {
 function buildInitialState() {
   const volume = volumePreference.read();
   const speed = speedPreference.read();
+  const preMuteVolume = volume > 0 ? volume : DEFAULT_VOLUME;
   return {
     activeMedia: null,      // null | { item, contentId, position? }
     pausedMedia: null,       // null | { item, contentId, position }
     volume,                  // 0-1
     speed,                   // playback rate
-    muted: false,
-    preMuteVolume: volume,
+    muted: volume === 0,
+    preMuteVolume,
   };
 }
 
@@ -109,12 +111,19 @@ function feedPlayerReducer(state, action) {
     case 'SET_VOLUME': {
       const volume = Math.max(0, Math.min(1, action.payload));
       volumePreference.write(volume);
-      return { ...state, volume, muted: false };
+      return {
+        ...state,
+        volume,
+        muted: volume === 0,
+        preMuteVolume: volume > 0 ? volume : state.preMuteVolume,
+      };
     }
 
     case 'TOGGLE_MUTE': {
-      if (state.muted) {
-        return { ...state, muted: false, volume: state.preMuteVolume };
+      if (state.muted || state.volume === 0) {
+        const volume = state.preMuteVolume > 0 ? state.preMuteVolume : DEFAULT_VOLUME;
+        volumePreference.write(volume);
+        return { ...state, muted: false, volume, preMuteVolume: volume };
       }
       return { ...state, muted: true, preMuteVolume: state.volume, volume: 0 };
     }
