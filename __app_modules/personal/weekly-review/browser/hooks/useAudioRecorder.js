@@ -118,7 +118,10 @@ export function useAudioRecorder({ onChunk }) {
     analyserRef.current = null;
     mediaRecorderRef.current = null;
     peakLevelRef.current = 0;
-    seqRef.current = 0;
+    // seqRef is NOT reset here. MediaRecorder delivers its last dataavailable
+    // after stop, i.e. after this cleanup runs on unmount; resetting here sent
+    // that final chunk as seq 0 and the server refused it (409 out-of-order).
+    // startRecording resets it for a new session.
   }, []);
 
   useEffect(() => cleanup, [cleanup]);

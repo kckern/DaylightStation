@@ -134,6 +134,33 @@ describe('useAudioRecorder', () => {
     expect(result.current.disconnected).toBe(true);
   });
 
+  it('numbers the final chunk after unmount in sequence, not as 0', async () => {
+    // MediaRecorder delivers its last dataavailable after stop, which happens
+    // as the review closes. A seq reset in cleanup sent that chunk as 0 and the
+    // server refused it (409 out-of-order), losing the end of the narration.
+    const onChunk = vi.fn();
+    const hook = renderHook(() => useAudioRecorder({ onChunk }));
+    await act(async () => { await hook.result.current.startRecording(); });
+    const recorder = FakeMediaRecorder.instances[0];
+    const blob = { size: 10 };
+    recorder.ondataavailable({ data: blob });
+    recorder.ondataavailable({ data: blob });
+    hook.unmount();
+    recorder.ondataavailable({ data: blob });
+    expect(onChunk.mock.calls.map(([c]) => c.seq)).toEqual([0, 1, 2]);
+  });
+
+  it('starts a new recording at seq 0', async () => {
+    const onChunk = vi.fn();
+    const { result } = renderHook(() => useAudioRecorder({ onChunk }));
+    await act(async () => { await result.current.startRecording(); });
+    FakeMediaRecorder.instances[0].ondataavailable({ data: { size: 10 } });
+    await act(async () => { result.current.stopRecording(); });
+    await act(async () => { await result.current.startRecording(); });
+    FakeMediaRecorder.instances[1].ondataavailable({ data: { size: 10 } });
+    expect(onChunk.mock.calls.map(([c]) => c.seq)).toEqual([0, 0]);
+  });
+
   it('reconnect resolves to true on success and clears disconnected', async () => {
     const trackHandlers = {};
     global.navigator.mediaDevices.getUserMedia = vi.fn(async () => {
