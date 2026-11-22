@@ -17,20 +17,25 @@ export function participantPropsForApp(entry, result) {
   return {participantLaunch: result};
 }
 
+// True when `value` can be handed to an app as its `params` prop.
+export function isAppParams(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
 // Props an app receives from what opened it: the path param under the app's
 // registered name, and the list item's own `params` object as `params`.
 export function appPropsFromOpen(entry, open) {
   const { param } = parseAppInput(open);
   const props = {};
   if (entry?.param?.name && param) props[entry.param.name] = param;
-  if (open && typeof open === 'object' && open.params && typeof open.params === 'object') props.params = open.params;
+  if (isAppParams(open) && isAppParams(open.params)) props.params = open.params;
   return props;
 }
 
 export default function AppContainer({ open, clear, participantLaunch }) {
   // Parse app string - may contain param after slash (e.g., "art/nativity")
   const {app, param} = parseAppInput(open);
-  const hasParams = Boolean(open?.params);
+  const hasParams = isAppParams(open) && isAppParams(open.params);
   const logger = useMemo(() => getChildLogger({ app: 'app-container' }), []);
 
   useEffect(() => {

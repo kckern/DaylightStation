@@ -63,6 +63,9 @@ export function toQueueItem(item) {
   if (item.surround) qi.surround = item.surround;
   if (item.surroundPart !== undefined) qi.surroundPart = item.surroundPart;
 
+  // App items queued from a list carry that list item's params to the opened app.
+  if (qi.format === 'app' && item.params) qi.params = item.params;
+
   // Explicit public display metadata; provider transport details stay internal.
   if (item.metadata) {
     qi.metadata = {

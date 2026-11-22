@@ -26,6 +26,31 @@ import {
 } from "../../../domain/services/ListPlaybackPolicy.mjs";
 
 /**
+ * Put a list item's params on its open action.
+ * Item-level params win over any params already on the open action.
+ * @param {Object} openAction
+ * @param {Object|undefined} params - normalized item params (plain object or absent)
+ * @returns {Object}
+ */
+export function withParams(openAction, params) {
+  if (!params) return openAction;
+  return { ...openAction, params: { ...openAction.params, ...params } };
+}
+
+/**
+ * Give app playables resolved from a list item that item's params, so a queued
+ * or program app opens with the same params a menu selection would. Copies;
+ * the resolving adapter's objects are left untouched.
+ * @param {Array} playables
+ * @param {Object|undefined} params
+ * @returns {Array}
+ */
+function withAppParams(playables, params) {
+  if (!params || !Array.isArray(playables)) return playables;
+  return playables.map(p => (p && p.format === 'app' ? { ...p, params: { ...p.params, ...params } } : p));
+}
+
+/**
  * Format a kebab-case or camelCase name to human-readable title
  * @param {string} name - Raw name like "comefollowme2025" or "morning-program"
  * @returns {string} Formatted title
@@ -817,7 +842,7 @@ export class ListAdapter {
         queue: Object.keys(finalQueueAction).length > 0 ? finalQueueAction : undefined,
         list: Object.keys(listAction).length > 0 ? listAction : undefined,
         // Item params belong to the item's type; for an app they ride on the open action.
-        open: Object.keys(openAction).length > 0 ? (item.params ? { ...openAction, params: item.params } : openAction) : undefined,
+        open: Object.keys(openAction).length > 0 ? withParams(openAction, item.params) : undefined,
         display: Object.keys(displayAction).length > 0 ? displayAction : undefined
       };
 
@@ -1071,6 +1096,7 @@ export class ListAdapter {
       if (this.registry) {
         const resolved = this.registry.resolve(input);
         if (!resolved?.adapter) continue;
+        const tasksBefore = tasks.length;
 
         if (listType === 'programs' && !item.queue) {
           // Programs with play action: pick ONE "next up" item per slot
@@ -1107,6 +1133,12 @@ export class ListAdapter {
               return resolved_items;
             });
           }
+        }
+
+        // This item's task (if one was queued) hands its params to the app playables it yields.
+        if (item.params && tasks.length > tasksBefore) {
+          const run = tasks[tasks.length - 1];
+          tasks[tasks.length - 1] = async () => withAppParams(await run(), item.params);
         }
       }
     }
