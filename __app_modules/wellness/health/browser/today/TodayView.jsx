@@ -8,11 +8,12 @@ import { useSearchParams } from 'react-router-dom';
 import { isISODate } from "../../portable/contracts/health/isoDate.mjs";
 import { ActionIcon, Button, Menu } from '@mantine/core';
 import { ErrorState, LoadingState, useDismissLayer, useFocusAfterRemoval, useRetryRegion } from '@/lib/ui';
+import { useKeyedSubmission } from '@/lib/ui/useKeyedSubmission.js';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { useHealthDay } from "./useHealthDay.js";
-import { HEALTH_DASHBOARD_PATH, pendingReviewPath, observationsPath, healthDayPath, unavailableError } from "../healthResources.js";
+import { HEALTH_DASHBOARD_PATH, pendingReviewPath, observationsPath, healthDayPath, unavailableError, showDayStatus } from "../healthResources.js";
 import { useHealthDayPrefetch } from "./useHealthDayPrefetch.js";
 import { useAddedRowHighlight } from "./addFlow.js";
 import { EquationStrip } from "./EquationStrip.jsx";
@@ -43,11 +44,20 @@ import { localTodayISO as todayISO, currentMealBucketId, bucketLabel, BUCKETS } 
 import { useNutritionInput } from "../capture/useNutritionInput.js";
 import { BarcodeCapture } from "../capture/BarcodeCapture.jsx";
 import { BarcodeOperationStatus } from '../operations/BarcodeOperationStatus.jsx';
-import { useHealthOperations } from '../operations/HealthOperationsProvider.jsx';
+import { useHealthOperations, useHealthSessionGuard } from '../operations/HealthOperationsProvider.jsx';
 import { CustomFoodSheet } from "../capture/CustomFoodSheet.jsx";
 
 const logger = createAppLogger('health').child('today');
+const dayCloseLogger = createAppLogger('health').child('day-close');
 const IntakeBurnChart = lazy(() => import("../progress/IntakeBurnChart.jsx").then(module => ({ default: module.IntakeBurnChart })));
+
+function dayCloseErrorSentence(err) {
+  if (err?.status >= 400 && err.status < 500) {
+    const body = String(err.message || '').split(' - ').slice(1).join(' - ');
+    try { const parsed = JSON.parse(body); if (parsed?.error) return parsed.error; } catch { /* not JSON */ }
+  }
+  return 'Could not save. Try again.';
+}
 
 /**
  * What a capture added, as it stands on a day now. A log ID shared with earlier
@@ -156,9 +166,31 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   const dateParam = searchParams.get('date');
   const date = isISODate(dateParam) && dateParam <= todayISO() ? dateParam : todayISO();
   const setDate = (value) => setSearchParams(previous => { const next = new URLSearchParams(previous); next.set('date', value); next.set('week', weekEnd(value)); return next; });
+  const isHealthSessionActive = useHealthSessionGuard();
+  const dayStatusSubmission = useKeyedSubmission();
+  const [dayStatusErrors, setDayStatusErrors] = useState(() => new Map());
   const weekParam = searchParams.get('week');
   const viewportEnd = isISODate(weekParam) && weekParam <= weekEnd(todayISO()) ? weekEnd(weekParam) : weekEnd(date);
   const day = useHealthDay(date, { enabled: active });
+  const setDayStatus = (submittedDate, status, reloadDay) => dayStatusSubmission.run(submittedDate, async () => {
+    setDayStatusErrors(previous => {
+      const updated = new Map(previous);
+      updated.delete(submittedDate);
+      return updated;
+    });
+    dayCloseLogger.info('day-status.set.start', { date: submittedDate, status });
+    try {
+      const result = await DaylightAPI('api/v1/health/nutrition/day-status', { date: submittedDate, status }, 'POST');
+      if (!isHealthSessionActive()) return;
+      showDayStatus(submittedDate, result);
+      dayCloseLogger.info('day-status.set.success', { date: submittedDate, status: result?.status ?? null });
+      reloadDay?.();
+    } catch (err) {
+      if (!isHealthSessionActive()) return;
+      dayCloseLogger.warn('day-status.set.failed', { date: submittedDate, status, httpStatus: err?.status ?? null, error: err?.message });
+      setDayStatusErrors(previous => new Map(previous).set(submittedDate, dayCloseErrorSentence(err)));
+    }
+  });
   const { regionProps: foodLogRegion, focus: focusFoodLog, retry: retryDay } = useRetryRegion(day.reload, day.loading || day.revalidating);
   const foodLogFocus = useFocusAfterRemoval(focusFoodLog);
   const foodAPI = useFoodMutation(day.items);
@@ -775,7 +807,9 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
       <EquationStrip budget={preview.budget} baseline={day.budget} budgetError={day.budgetError} goals={preview.budget?.goals}
         macroCoverage={nutrientSummary(preview.items)} date={date} today={todayISO()}
         onDateChange={setDate} onSetupGoals={onSetupGoals}
-        dayClose={!coldLoading ? <DayClosePill date={date} dayStatus={day.dayStatus} items={day.items} onChanged={day.reload} /> : null} />
+        dayClose={!coldLoading ? <DayClosePill date={date} dayStatus={day.dayStatus} items={day.items}
+          busy={dayStatusSubmission.pending.has(date)} error={dayStatusErrors.get(date) ?? null}
+          onSet={status => setDayStatus(date, status, day.reload)} /> : null} />
       {/* Watch-micro bars sit directly under the summary (F4.1); the macros
           moved into the summary itself. They read the SAME day sums the budget
           does — BudgetService computes both over one fold — so the bars and the
