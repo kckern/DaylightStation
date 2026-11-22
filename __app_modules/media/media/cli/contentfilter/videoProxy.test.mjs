@@ -97,3 +97,27 @@ describe('pruneProxies (review 2026-11-12: the copies grew without bound)', () =
   });
 });
 
+
+describe('ensureVideoProxy: a dead build\'s lock (2026-11-22)', () => {
+  it('a lock whose holder is gone is taken at once, not after hours', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'proxy-dead-'));
+    const out = path.join(dir, proxyFileName({ partId: 'p1' }));
+    writeFileSync(`${out}.lock`, '999999');
+    const said = [];
+    const run = vi.fn(async (args) => { writeFileSync(args[args.length - 1], 'x'); });
+    const p = await ensureVideoProxy({ src: 's', dir, partId: 'p1', run, pollMs: 1, alive: () => false, say: (l) => said.push(l) });
+    expect(p).toBe(out);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(said).toEqual(['Making the film copy']);
+  });
+  it('a live holder is waited on, and the wait is announced once', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'proxy-live-'));
+    const out = path.join(dir, proxyFileName({ partId: 'p2' }));
+    writeFileSync(`${out}.lock`, String(process.pid));
+    const said = [];
+    setTimeout(() => writeFileSync(out, 'done'), 30);
+    const p = await ensureVideoProxy({ src: 's', dir, partId: 'p2', run: vi.fn(), pollMs: 5, alive: () => true, say: (l) => said.push(l) });
+    expect(p).toBe(out);
+    expect(said).toEqual(['Waiting for the film copy (another run is making it)']);
+  });
+});

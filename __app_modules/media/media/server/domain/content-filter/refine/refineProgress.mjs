@@ -6,9 +6,11 @@
 const CUE = /^\s*\[(\d+)\/(\d+)\]\s+(\S+)\s+(\S+)\s+(\S+)\s*(.*)$/;
 const RECENT = 8;
 
-/** @returns {null | { phase: 'transcribe'|'sync'|'measure', done?, total?, cue?, kind?, status?, detail? }} */
+/** @returns {null | { phase: 'copy-wait'|'copy'|'transcribe'|'sync'|'measure', done?, total?, cue?, kind?, status?, detail? }} */
 export function parseRefineLine(line) {
   const s = String(line ?? '');
+  if (/^Waiting for the film copy\b/.test(s)) return { phase: 'copy-wait' };
+  if (/^Making the film copy\b/.test(s)) return { phase: 'copy' };
   if (/^Transcribing\b/.test(s)) return { phase: 'transcribe' };
   if (/^Sync:/.test(s)) return { phase: 'sync' };
   const m = CUE.exec(s);

@@ -15,20 +15,48 @@ const logger = createAppLogger('admin').child('content-filter');
 const API = 'api/v1/content-filter';
 const open = (job) => job && (job.status === 'queued' || job.status === 'running');
 
-/** What the film's run is doing, in a few words ("Refining 5 of 17", "Waiting for the worker"). */
-export function runLine(job, worker = null) {
+// How long each step of a refine normally takes at most; past it, the chip says it may be stuck
+// (owner, 2026-11-22: "if stuck you need guardrails, the UI should never lie"). Transcribing a
+// two-hour film took 71 min on the server; a film copy about 10 min; one part a few seconds.
+const STALL_MIN = { 'copy-wait': 30, copy: 45, transcribe: 150, sync: 10, measure: 10, other: 20 };
+const PHASE_WORDS = {
+  'copy-wait': 'Waiting for the film copy', copy: 'Making a small copy of the film (one time)',
+  transcribe: 'Transcribing the film (one time)', sync: 'Lining up the film\'s clock',
+};
+const mins = (ms) => Math.max(0, Math.floor(ms / 60000));
+const span = (m) => (m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`);
+
+/**
+ * What the film's run is doing, in a few words, and for how long: { text, stuck }. `stuck` when the
+ * run has sat in one step longer than that step ever takes (its last progress line is that old).
+ */
+export function runState(job, worker = null, now = Date.now()) {
   if (!job) return null;
-  if (job.status === 'queued') return worker && !worker.alive ? 'Waiting for the filter worker (not running)' : 'Waiting for the worker';
+  if (job.status === 'queued') return { text: worker && !worker.alive ? 'Waiting for the filter worker (not running)' : 'Waiting for the worker', stuck: Boolean(worker && !worker.alive) };
   if (job.status !== 'running') return null;
+  const step = job.steps?.find((s) => s.name === job.step);
   const prog = job.steps?.find((s) => s.name === 'refine')?.progress;
+  const since = Date.parse((job.step === 'refine' && prog?.at) || step?.startedAt || '') || null;
+  const m = since ? mins(now - since) : null;
+  const key = job.step === 'refine' ? (prog?.phase || 'other') : 'other';
+  const stuck = m != null && m >= (STALL_MIN[key] ?? STALL_MIN.other);
+  let text;
   if (job.step === 'refine' && prog?.phase === 'measure' && prog.total) {
-    const eta = formatEta(measureEta({ progress: prog, now: Date.now() }));
-    return `Refining ${prog.done} of ${prog.total}${eta ? ` · ${eta} left` : ''}`;
+    const eta = formatEta(measureEta({ progress: prog, now }));
+    text = `Refining ${prog.done} of ${prog.total}${eta && !stuck ? ` · ${eta} left` : ''}`;
+  } else if (job.step === 'refine') {
+    text = PHASE_WORDS[prog?.phase] || 'Starting the refine';
+  } else {
+    const phase = runPhases(job).find((p) => p.state === 'running');
+    text = phase ? phase.label : 'Working';
   }
-  if (job.step === 'refine') return prog?.phase === 'transcribe' || prog?.phase === 'sync' ? 'Preparing the film (one time)…' : 'Refining…';
-  const phase = runPhases(job).find((p) => p.state === 'running');
-  return phase ? `${phase.label}…` : 'Working…';
+  if (stuck) return { text: `${text}: no progress for ${span(m)}. It may be stuck; Stop it and refine again.`, stuck: true };
+  const counting = /\d+ of \d+/.test(text);
+  return { text: m != null && m >= 2 && !counting ? `${text} · ${span(m)}` : counting ? text : `${text}…`, stuck: false };
 }
+
+/** The run's state as one line (kept for callers that only show text). */
+export function runLine(job, worker = null, now = Date.now()) { return runState(job, worker, now)?.text ?? null; }
 
 function ApproveButton({ approval }) {
   const { regionProps, feedback, start, retry } = useApprovalRegion(approval, 'approve');
@@ -60,7 +88,8 @@ export function ReviewHeader({ ratingKey, data, tally, roughFiltered, roughLeft 
   const level = data.signOff?.parent ? `Approved by ${data.signOff.parent.by}` : data.certification?.level === 'machine' ? 'Auto-checked' : null;
   const failed = job && (job.status === 'failed' || job.status === 'interrupted');
   // A run's own words, else the check that runs after one (the list waits for it).
-  const progress = runLine(job, data.worker) || (data.status?.next === 'checking' ? 'Checking the result…' : null);
+  const run = runState(job, data.worker);
+  const progress = run?.text || (data.status?.next === 'checking' ? 'Checking the result…' : null);
 
   return (
     <div className="cf-head" role="banner" aria-label="Film">
@@ -74,7 +103,9 @@ export function ReviewHeader({ ratingKey, data, tally, roughFiltered, roughLeft 
             : `Last ${job.step === 'refine' || job.kind === 'send-back' ? 'refine' : 'run'} failed; nothing was kept (hover for why)`}</Badge>
         </Tooltip>
       ) : null}
-      {progress ? <Badge size="sm" color="blue" variant="light">{progress}</Badge> : null}
+      {progress ? (run?.stuck
+        ? <Text size="sm" c="orange" role="alert" className="cf-head__stuck">{progress}</Text>
+        : <Badge size="sm" color="blue" variant="light">{progress}</Badge>) : null}
       <span className="cf-head__spacer" />
       {running ? (confirmStop ? (
         <Group gap={4}>

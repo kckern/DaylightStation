@@ -1077,6 +1077,17 @@ on an already synced film takes about 10 s per part (measured: preflight 2 s, re
 end (its last packet), not the container's duration: a film whose picture or subtitle track runs on
 past its sound (Sonic: audio ends 12 s before the picture) used to fail "audio decode stayed short".
 
+**A run never claims progress it does not have** (owner, 2026-11-22: "if stuck you need guardrails,
+the UI should never lie"). The 480p film copy's lock holds its builder's pid: a lock whose holder is
+gone is taken at once (a worker restart had left one that a refine waited on for hours; the age rule,
+3 h, stays as a backstop). Refine announces "Waiting for the film copy" / "Making the film copy" on
+stderr (also after the transcript, if the copy is not ready), and these are progress phases
+(`copy-wait`, `copy`). The header's run chip (`runState`) names the real step (Waiting for the film
+copy, Making a small copy of the film, Transcribing the film, Lining up the film's clock, Refining n
+of N), how long it has been in it, and past the longest that step takes (copy-wait 30 min, copy 45,
+transcribe 150, sync 10, a part 10, other 20) it turns into an orange alert: "…: no progress for
+2 h 29 min. It may be stuck; Stop it and refine again." A queued run with no live worker is flagged too.
+
 While a remote worker holds the film, a plain verdict (approve/redo/ignore, no change) may still be
 recorded (`jobs.heldRemotely`); Let it play and Undo answer 409 "A refine is running on this film.
 Approve and Redo work now; Let it play and Undo wait until it finishes.", effects, timing and cards

@@ -4,7 +4,7 @@ import { MantineProvider } from '@mantine/core';
 import { MemoryRouter } from 'react-router-dom';
 
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: vi.fn(async () => ({})) }));
-const { ReviewHeader, runLine } = await import('./ReviewHeader.jsx');
+const { ReviewHeader, runLine, runState } = await import('./ReviewHeader.jsx');
 
 const data = (o = {}) => ({ title: 'Sonic the Hedgehog', certification: { level: 'none' }, job: null, status: { next: 'review' }, signOff: { parent: null }, ...o });
 const show = (props = {}) => render(<MantineProvider><MemoryRouter>
@@ -17,8 +17,8 @@ describe('runLine', () => {
     expect(runLine(refine({ phase: 'measure', done: 5, total: 17 }))).toBe('Refining 5 of 17');
   });
   it('the first refine of a film prepares it (transcript and clock) once', () => {
-    expect(runLine(refine({ phase: 'transcribe' }))).toBe('Preparing the film (one time)…');
-    expect(runLine(refine({ phase: 'sync' }))).toBe('Preparing the film (one time)…');
+    expect(runLine(refine({ phase: 'transcribe' }))).toBe('Transcribing the film (one time)…');
+    expect(runLine(refine({ phase: 'sync' }))).toBe('Lining up the film\'s clock…');
   });
   it('a queued run waits for the worker, and says when no worker runs', () => {
     expect(runLine({ status: 'queued' })).toBe('Waiting for the worker');
@@ -54,5 +54,23 @@ describe('ReviewHeader', () => {
   it('a film not matched to Plex offers no run', () => {
     show({ blocked: true });
     expect(screen.queryByRole('button', { name: /^Refine all/ })).toBeNull();
+  });
+});
+
+describe('runState never lies (owner, 2026-11-22)', () => {
+  const at = (min) => new Date(Date.parse('2026-11-22T12:00:00Z') + min * 60000).toISOString();
+  const now = Date.parse('2026-11-22T12:00:00Z') + 149 * 60000;
+  const job = (progress) => ({ status: 'running', step: 'refine', steps: [{ name: 'refine', status: 'running', startedAt: at(0), progress }] });
+  it('names the real step and how long it has been in it', () => {
+    expect(runState(job({ phase: 'transcribe', at: at(100) }), null, now).text).toBe('Transcribing the film (one time) · 49 min');
+    expect(runState(job({ phase: 'copy-wait', at: at(140) }), null, now).text).toBe('Waiting for the film copy · 9 min');
+  });
+  it('says it may be stuck once a step runs past what it ever takes', () => {
+    const r = runState(job({ phase: 'copy-wait', at: at(0) }), null, now);
+    expect(r.stuck).toBe(true);
+    expect(r.text).toBe('Waiting for the film copy: no progress for 2 h 29 min. It may be stuck; Stop it and refine again.');
+  });
+  it('a queued run with no worker is flagged, not "waiting" forever', () => {
+    expect(runState({ status: 'queued' }, { alive: false }, now)).toEqual({ text: 'Waiting for the filter worker (not running)', stuck: true });
   });
 });

@@ -94,7 +94,16 @@ export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir
     });
   };
   const { meta, partId, src, workDir, media: original, probe, transcript } = await prepareCopy({ rk, flags, mediaFilterDir, loadPlexConfig, getJson, verb: 'Refining', skipTranscript: visualOnly, onSource });
-  const built = proxyBuild ? await proxyBuild : null;
+  // Still waiting on the film copy after the transcript: say so, so the run's progress is not stuck on
+  // "transcribe" while it waits (2026-11-22: it waited hours on a dead build's lock, silently).
+  let built = null;
+  if (proxyBuild) {
+    let settled = false;
+    proxyBuild.finally(() => { settled = true; }).catch(() => {});
+    await Promise.resolve();
+    if (!settled) console.error('Waiting for the film copy');
+    built = await proxyBuild;
+  }
   // The copy starts at 0; use it only when it matches the original, shifted by the original's start.
   let proxy = null;
   if (built) {

@@ -6,7 +6,7 @@
  * the same frame at every time checked. Built once per part and file size into a cache folder that
  * outlives the worker's per-run stage (CONTENT_FILTER_PROXY_DIR).
  */
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, renameSync, rmSync, statSync, utimesSync } from 'fs';
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, renameSync, rmSync, statSync, utimesSync, readFileSync, writeSync } from 'fs';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
@@ -34,27 +34,35 @@ const defaultRun = (args) => execFileP('nice', ['-n', '10', 'ffmpeg', ...args], 
  * The cached copy's path, building it first when missing. Rejects when the build fails (the
  * caller reads the original instead); a failed build leaves no file behind. One builder per copy:
  * an exclusive lock file; anyone else waits for the copy (review 2026-11-12: two writers of one
- * partial file published a corrupt copy). A lock older than `staleMs` is a crashed build's.
+ * partial file published a corrupt copy). A lock older than `staleMs` is a crashed build's, and so
+ * is one whose holder (its pid, on this host) is gone: a worker restart left a lock no one held and a
+ * refine waited on it for hours (2026-11-22). Waiting and building are announced on stderr so the
+ * run's progress can say so ("Waiting for the film copy", "Making the film copy").
  * @param {{ src: string, dir: string, partId: string, size?: number|null, height?: number,
  *   run?: (args: string[]) => Promise<unknown>, pollMs?: number, staleMs?: number }} p
  */
-export async function ensureVideoProxy({ src, dir, partId, size = null, height = PROXY_HEIGHT, run = defaultRun, pollMs = 5000, staleMs = 3 * 3600e3 }) {
+export async function ensureVideoProxy({ src, dir, partId, size = null, height = PROXY_HEIGHT, run = defaultRun, pollMs = 5000, staleMs = 3 * 3600e3,
+  alive = pidAlive, say = (line) => console.error(line) }) {
   const out = path.join(dir, proxyFileName({ partId, size, height }));
   const lock = `${out}.lock`;
   mkdirSync(dir, { recursive: true });
+  let waiting = false;
   for (;;) {
     if (existsSync(out)) { touch(out); return out; }
     let fd = null;
     try { fd = openSync(lock, 'wx'); } catch (e) { if (e.code !== 'EEXIST') throw e; }
     if (fd == null) {
-      // Someone is building it: wait, unless their lock is a crashed build's.
-      let age = 0;
-      try { age = Date.now() - statSync(lock).mtimeMs; } catch { continue; }
-      if (age >= staleMs) { rmSync(lock, { force: true }); continue; }
+      // Someone is building it: wait, unless their lock is a crashed build's (too old, or its holder is gone).
+      let age = 0; let holder = null;
+      try { age = Date.now() - statSync(lock).mtimeMs; holder = Number(readFileSync(lock, 'utf8').trim()) || null; } catch { continue; }
+      if (age >= staleMs || (holder && !alive(holder))) { rmSync(lock, { force: true }); continue; }
+      if (!waiting) { say('Waiting for the film copy (another run is making it)'); waiting = true; }
       await new Promise((r) => setTimeout(r, pollMs));
       continue;
     }
+    writeSync(fd, String(process.pid));
     closeSync(fd);
+    say('Making the film copy');
     const partial = `${out}.${process.pid}.partial`;
     try {
       await run(proxyArgs(src, partial, { height }));
@@ -67,6 +75,11 @@ export async function ensureVideoProxy({ src, dir, partId, size = null, height =
       rmSync(lock, { force: true });
     }
   }
+}
+
+/** Is this pid a live process on this host? (EPERM: alive, someone else's.) */
+function pidAlive(pid) {
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
 }
 
 function touch(file) { try { const t = new Date(); utimesSync(file, t, t); } catch { /* read-only cache: fine */ } }

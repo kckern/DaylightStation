@@ -31,3 +31,11 @@ describe('foldProgress', () => {
     expect(foldProgress(p, null, 'b')).toBe(p);
   });
 });
+
+describe('refine progress: the film copy steps (2026-11-22)', () => {
+  it('waiting for and making the film copy are phases of their own', () => {
+    expect(parseRefineLine('Waiting for the film copy (another run is making it)')).toEqual({ phase: 'copy-wait' });
+    expect(parseRefineLine('Waiting for the film copy')).toEqual({ phase: 'copy-wait' });
+    expect(parseRefineLine('Making the film copy')).toEqual({ phase: 'copy' });
+  });
+});
