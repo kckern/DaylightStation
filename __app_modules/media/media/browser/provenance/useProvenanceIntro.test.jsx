@@ -5,6 +5,7 @@ import { render, renderHook } from '@testing-library/react';
 const state = { data: null, status: 'idle', calls: [] };
 vi.mock('./useProvenance.js', async (importOriginal) => ({
   provenanceRatingKey: (await importOriginal()).provenanceRatingKey,
+  provenanceLookupKey: (await importOriginal()).provenanceLookupKey,
   useProvenance: (contentId, opts) => { state.calls.push({ contentId, ...opts }); return { data: state.data, status: state.status }; },
 }));
 
@@ -26,6 +27,18 @@ describe('provenanceOptedOut', () => {
 });
 
 describe('useProvenanceIntro', () => {
+  it('looks a live channel up by its whole content id', () => {
+    state.status = 'loading';
+    const { result } = renderHook(() => useProvenanceIntro({ media: { assetId: 'plex-live:nfl-channel', metadata: { live: true } }, isPlex: false }));
+    expect(result.current?.status).toBe('pending');
+    expect(state.calls.at(-1)).toMatchObject({ contentId: 'plex-live:nfl-channel', enabled: true, live: true });
+  });
+
+  it('has no intro for a non-live, non-Plex title even with a content id', () => {
+    const { result } = renderHook(() => useProvenanceIntro({ media: { assetId: 'youtube:abc' }, isPlex: false }));
+    expect(result.current).toBeNull();
+  });
+
   it('has no intro for a non-Plex title', () => {
     const { result } = renderHook(() => useProvenanceIntro({ media: { assetId: 'x' }, isPlex: false }));
     expect(result.current).toBeNull();

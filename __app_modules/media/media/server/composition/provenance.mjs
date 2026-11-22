@@ -43,7 +43,21 @@ export function provenancePolicy(raw) {
     secondary: parseSecondary(cfg.secondary_logos),
     // A resume after this long away still opens with the scene.
     resumeAfterHours: Number.isFinite(scene.resume_after_hours) ? scene.resume_after_hours : 6,
+    // Live channels: which content sources are live, and the one service they show.
+    live: parseLive(cfg.live),
   };
+}
+
+/**
+ * `live: { sources: [plex-live], provider: plex-live-tv, label: Plex Live TV }`
+ * -> the same, or null when the block is missing or names no source/provider.
+ */
+export function parseLive(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const sources = list(raw.sources).map((s) => s.toLowerCase()).filter((s) => /^[a-z0-9-]+$/.test(s));
+  const provider = typeof raw.provider === 'string' && /^[a-z0-9-]{1,40}$/.test(raw.provider) ? raw.provider : null;
+  if (!sources.length || !provider) return null;
+  return { sources, provider, label: typeof raw.label === 'string' ? raw.label : null };
 }
 
 /**

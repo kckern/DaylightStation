@@ -16,6 +16,9 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
  *                           arrives, without flashing a logo over a resume.
  *                           resumeShowsScene: a resume after a long absence
  *                           (`scene.resume_after_hours`) still opens with the scene.
+ *   GET /<source>:<channel> -> the same shape for a live channel (policy `live`):
+ *                           its one provider; startSec 0 (a live channel always
+ *                           starts at the live edge), resumeShowsScene false.
  *   GET /logo/:provider  -> the provider's logo; `?variant=white` prefers the
  *                           white logo for dark screens (falls back to the base logo)
  *
@@ -45,13 +48,18 @@ export function createProvenanceRouter({ getTitleProvenance, logos, describePlay
   });
 
   router.get('/:ratingKey', asyncHandler(async (req, res) => {
-    const ratingKey = String(req.params.ratingKey).replace(/^plex:/, '');
-    if (!/^\d+$/.test(ratingKey)) return res.status(400).json({ error: 'bad ratingKey' });
-    const found = await getTitleProvenance.execute({ ratingKey });
-    // Only a title with a scene needs its start (the read asks the media server for progress).
-    const { startSec, resumeShowsScene } = found && describePlayStart
-      ? await describePlayStart.execute({ ratingKey })
-      : unknownStart;
+    const raw = String(req.params.ratingKey);
+    const ratingKey = raw.replace(/^plex:/, '');
+    const liveId = /^\d+$/.test(ratingKey) ? null : (/^[a-z0-9-]+:[a-z0-9-]+$/.test(raw) ? raw : null);
+    if (!liveId && !/^\d+$/.test(ratingKey)) return res.status(400).json({ error: 'bad ratingKey' });
+    const found = liveId
+      ? await getTitleProvenance.execute({ contentId: liveId })
+      : await getTitleProvenance.execute({ ratingKey });
+    // Only a title with a scene needs its start (the read asks the media server
+    // for progress). A live channel has no start to read: it plays from the top.
+    let { startSec, resumeShowsScene } = unknownStart;
+    if (found && liveId) startSec = 0;
+    else if (found && describePlayStart) ({ startSec, resumeShowsScene } = await describePlayStart.execute({ ratingKey }));
     res.set('Cache-Control', 'no-store');
     res.json({
       provenance: found

@@ -15,6 +15,10 @@
  * Returns null when no rule names a service with a logo, or the title is out
  * of scope (kind, library); the player then shows no scene.
  *
+ * A live channel (`contentId` whose source is listed in the policy's `live`
+ * block, e.g. `plex-live:nfl-channel`) skips all of that: it answers with the
+ * block's one provider, no facts read and no lookup spent.
+ *
  * Reference: __docs/reference/media/provenance.md
  */
 import {
@@ -60,12 +64,14 @@ export class GetTitleProvenance {
   }
 
   /**
-   * @param {{ ratingKey: string }} input
+   * @param {{ ratingKey?: string, contentId?: string }} input - a media-server
+   *   rating key, or a live channel's `<source>:<channel>` content id
    * @returns {Promise<{ ratingKey:string, provider:string, name:string, tier:string, source:string, rule:string|null, offerType:string|null, checkedAt:string|null }|null>}
    *   `source`: override | availability | fallback; `tier`: the priority group for
    *   an availability answer, else the source.
    */
-  async execute({ ratingKey }) {
+  async execute({ ratingKey, contentId }) {
+    if (contentId != null) return this.#live(String(contentId));
     const rk = String(ratingKey ?? '');
     if (!/^\d+$/.test(rk)) return null;
     const policy = this.#policy();
@@ -118,6 +124,21 @@ export class GetTitleProvenance {
     const fallback = firstRule(rules.fallbacks, facts, canShow);
     if (fallback) return this.#answer(rk, policy, { provider: fallback.provider, source: 'fallback', rule: fallback.rule, checkedAt: record?.checkedAt ?? null });
     return null;
+  }
+
+  /** A live channel: the policy's `live` provider, when the source is listed and its logo exists. */
+  #live(contentId) {
+    const match = /^([a-z0-9-]+):([a-z0-9-]+)$/.exec(contentId);
+    if (!match) return null;
+    const policy = this.#policy();
+    if (policy.enabled === false) return null;
+    const live = policy.live;
+    if (!live || !live.sources.includes(match[1])) return null;
+    if (!this.#logos.has(live.provider)) {
+      this.#logger.warn?.('provenance.live.no-logo', { contentId, provider: live.provider });
+      return null;
+    }
+    return this.#answer(contentId, policy, { provider: live.provider, source: 'live', name: live.label });
   }
 
   #answer(rk, policy, { provider, source, tier = null, rule = null, name = null, offerType = null, checkedAt = null }) {

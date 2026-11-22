@@ -73,4 +73,24 @@ describe('provenance router', () => {
       expect((await request(app({ peekPlaybackStart: zero }).a).get('/api/v1/provenance/7')).body.startSec).toBeNull();
     });
   });
+
+  describe('live channels', () => {
+    it('answers a <source>:<channel> id from the use case, starting from the top', async () => {
+      const found = { provider: 'plex-live-tv', name: 'Plex Live TV', secondary: [] };
+      const peekPlaybackStart = vi.fn(async () => ({ startSec: 99 }));
+      const { a, getTitleProvenance } = app({ found, peekPlaybackStart });
+      const res = await request(a).get('/api/v1/provenance/plex-live:nfl-channel');
+      expect(res.status).toBe(200);
+      expect(getTitleProvenance.execute).toHaveBeenCalledWith({ contentId: 'plex-live:nfl-channel' });
+      expect(res.body).toMatchObject({ provenance: { provider: 'plex-live-tv', logo: '/api/v1/provenance/logo/plex-live-tv' }, startSec: 0, resumeShowsScene: false });
+      // no media-server progress read for a live channel
+      expect(peekPlaybackStart).not.toHaveBeenCalled();
+    });
+
+    it('still refuses anything that is neither a rating key nor a plain content id', async () => {
+      const { a } = app();
+      expect((await request(a).get('/api/v1/provenance/plex-live:NFL%20Channel')).status).toBe(400);
+      expect((await request(a).get('/api/v1/provenance/a:b:c')).status).toBe(400);
+    });
+  });
 });

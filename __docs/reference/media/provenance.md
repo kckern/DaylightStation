@@ -20,6 +20,14 @@ resume (unless after a long absence), or a recovery remount mid-film shows nothi
 Later this is meant to front real handoffs to those services; today the film still
 plays from Plex and the bumper signals provenance only.
 
+**Live channels** get the scene too. A content source listed in the config's `live`
+block (household: `plex-live`, Plex's free channels, see
+`__docs/reference/media/plex-live-tv.md`) answers with that block's one provider
+(Plex Live TV: the Plex wordmark with "Live TV" under it), with no rules, no facts read
+and no availability lookup. The Player asks for any item whose metadata says
+`live: true`, by its whole `<source>:<channel>` id; the answer's `startSec` is 0, so
+the scene covers the play request from the start.
+
 ## What the viewer sees
 
 | Phase | Video | Scene |
@@ -62,8 +70,8 @@ intro slot (`useVideoIntro` in the playback presentation contract): `useProvenan
 reports `pending` while the provider is looked up, `ready` once the logo has loaded,
 `none` otherwise (including a lookup that failed or did not answer within 8 s,
 `PROVENANCE_FETCH_TIMEOUT_MS`), plus `minHoldMs` and a `render(stage)` callback. A
-title whose id is not a numeric Plex rating key gets no intro at all (the lookup
-could never ask). The Player's `useIntroGate` owns all timing (see "Presentation
+title whose id is neither a numeric Plex rating key nor a live channel's id
+(`provenanceLookupKey`) gets no intro at all (the lookup could never ask). The Player's `useIntroGate` owns all timing (see "Presentation
 contract and the intro slot" in `__docs/reference/content/content-playback.md`):
 
 - The scene starts from the play request, before the Player has fetched the
@@ -161,7 +169,7 @@ priority group for an availability answer; `rule` names the rule that matched.
 
 | What | Where |
 |---|---|
-| Household policy (scope, rules, refresh, reserve, scene) | `data/household/media/provenance.yml` (registry key `provenance`) |
+| Household policy (scope, rules, refresh, reserve, scene, live) | `data/household/media/provenance.yml` (registry key `provenance`) |
 | Availability cache (machine-written) | `media/content-providers/availability.yml` |
 | Logos | `data/content/providers/<id>.svg` or `.png`; `<id>.white.svg` for a black logo on the dark field; `sources.yml` records where each came from |
 | API key | system auth `watchmode.yml` → `api_key` |
@@ -271,6 +279,8 @@ to 1.5 s and the scene still appears if the answer is in before the film has rol
 - `GET /:ratingKey` (bare or `plex:`-prefixed) → `{ provenance: { ratingKey, provider, name, tier, source, rule, offerType, checkedAt, logo, secondary: [{ logo, name }] } | null, startSec: number | null, resumeShowsScene: boolean }`.
   `startSec` and `resumeShowsScene` (`DescribePlayStart`) are read only when a
   provider was found; unknown when the read failed (warn `provenance.start.read-failed`).
+- `GET /<source>:<channel>` (a live channel; the source must be in `live.sources`) →
+  the same shape, `source: 'live'`, `startSec: 0`, `resumeShowsScene: false`.
 - `GET /logo/:provider[?variant=white]` → the logo (white variant preferred when
   asked, else the base logo); cached for a day
 

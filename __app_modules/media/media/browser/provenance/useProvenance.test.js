@@ -7,7 +7,7 @@ vi.mock('../../../../../frontend/src/lib/logging/singleton.js', () => {
 });
 vi.mock('./logoContrast.js', () => ({ imageNeedsPlate: () => false }));
 
-const { useProvenance, PROVENANCE_FETCH_TIMEOUT_MS } = await import('./useProvenance.js');
+const { useProvenance, PROVENANCE_FETCH_TIMEOUT_MS, provenanceLookupKey } = await import('./useProvenance.js');
 
 const BODY = { provenance: { provider: 'hoopla', tier: 'free', logo: '/logo/hoopla' }, startSec: 0 };
 
@@ -80,5 +80,16 @@ describe('useProvenance', () => {
     expect(result.current.status).toBe('loading');
     await act(async () => { vi.advanceTimersByTime(PROVENANCE_FETCH_TIMEOUT_MS); });
     expect(result.current.status).toBe('failed');
+  });
+});
+
+describe('provenanceLookupKey', () => {
+  it('asks with a rating key, or a live channel id only when the item is live', () => {
+    expect(provenanceLookupKey('plex:42')).toBe('42');
+    expect(provenanceLookupKey('42')).toBe('42');
+    expect(provenanceLookupKey('plex-live:nfl-channel', { live: true })).toBe('plex-live:nfl-channel');
+    expect(provenanceLookupKey('plex-live:nfl-channel')).toBeNull();
+    expect(provenanceLookupKey('plex-live:NFL Channel', { live: true })).toBeNull();
+    expect(provenanceLookupKey(null, { live: true })).toBeNull();
   });
 });

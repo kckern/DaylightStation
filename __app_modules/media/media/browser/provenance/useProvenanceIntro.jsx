@@ -10,7 +10,7 @@
  * Reference: __docs/reference/media/provenance.md
  */
 import React, { useCallback, useMemo } from 'react';
-import { useProvenance, provenanceRatingKey } from './useProvenance.js';
+import { useProvenance, provenanceLookupKey } from './useProvenance.js';
 import { ProvenanceHandoff } from './ProvenanceHandoff.jsx';
 import { useSceneTimeline, pickLinkMs, SCENE_TIMING } from './useSceneTimeline.js';
 
@@ -29,11 +29,17 @@ export function ProvenanceScene({ stage, provenance, linkMs }) {
 
 export function useProvenanceIntro({ media, isPlex }) {
   const search = typeof window !== 'undefined' ? window.location.search : '';
-  const contentId = isPlex ? (media?.assetId || media?.key || media?.plex || null) : null;
-  // Only a numeric Plex rating key can be looked up; anything else would sit
-  // `pending` forever (the lookup never starts), so it gets no intro at all.
-  const eligible = !!provenanceRatingKey(contentId) && !provenanceOptedOut(search);
-  const { data, status } = useProvenance(contentId, { enabled: eligible });
+  // A live channel (item metadata `live: true`, e.g. plex-live:nfl-channel)
+  // opens with its service's scene too; the server answers from its `live` policy.
+  const live = media?.metadata?.live === true;
+  const contentId = isPlex
+    ? (media?.assetId || media?.key || media?.plex || null)
+    : (live ? (media?.assetId || media?.contentId || null) : null);
+  // Only a numeric Plex rating key or a live channel id can be looked up;
+  // anything else would sit `pending` forever (the lookup never starts), so it
+  // gets no intro at all.
+  const eligible = !!provenanceLookupKey(contentId, { live }) && !provenanceOptedOut(search);
+  const { data, status } = useProvenance(contentId, { enabled: eligible, live });
   const minHoldMs = useMemo(() => pickLinkMs(SCENE_TIMING), [contentId]);
 
   const render = useCallback(

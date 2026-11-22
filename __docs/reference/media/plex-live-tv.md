@@ -24,6 +24,11 @@ fine; source names may contain hyphens):
   label: NFL Channel
 ```
 
+A channel opens with the provenance scene for **Plex Live TV** (config `live:` in
+`household/media/provenance.yml`, logo `content/providers/plex-live-tv.svg` and its
+`.white.svg`: the Plex 2022 wordmark with "Live TV" in Roboto Condensed SemiBold,
+Plex gold, under it). See `__docs/reference/media/provenance.md`.
+
 The tile art is the channel's vertical poster (`getThumbnailUrl`), else its
 logo. The lineup follows the server's region; for Seattle it carries Local Now
 Seattle (`local-now-seattle`) but none of the broadcast stations.

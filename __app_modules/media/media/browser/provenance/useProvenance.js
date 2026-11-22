@@ -1,7 +1,8 @@
 /**
  * useProvenance — the streaming service a Plex title is shown as coming from,
  * from GET /api/v1/provenance/:ratingKey. Also preloads the logo, so the
- * handoff only starts once there is something to draw.
+ * handoff only starts once there is something to draw. A live channel
+ * (`{ live: true }`) is looked up by its whole `<source>:<channel>` id.
  *
  * status: idle | loading | ready | none | failed
  *   idle  -> disabled, or not a numeric Plex rating key (never fetched)
@@ -45,11 +46,22 @@ export function provenanceRatingKey(contentId) {
   return /^\d+$/.test(rk) ? rk : null;
 }
 
+/**
+ * The key the lookup asks with: a Plex title's numeric rating key, or a live
+ * channel's whole `<source>:<channel>` id. null when it can never ask.
+ */
+export function provenanceLookupKey(contentId, { live = false } = {}) {
+  const rk = provenanceRatingKey(contentId);
+  if (rk) return rk;
+  const id = String(contentId ?? '');
+  return live && /^[a-z0-9-]+:[a-z0-9-]+$/.test(id) ? id : null;
+}
+
 const IDLE = Object.freeze({ data: null, status: 'idle' });
 const LOADING = Object.freeze({ data: null, status: 'loading' });
 
-export function useProvenance(contentId, { enabled = true } = {}) {
-  const rk = enabled ? provenanceRatingKey(contentId) : null;
+export function useProvenance(contentId, { enabled = true, live = false } = {}) {
+  const rk = enabled ? provenanceLookupKey(contentId, { live }) : null;
   // State is keyed by rating key: a new title never sees the last one's answer,
   // not even on the first render before the effect runs.
   const [state, setState] = useState({ key: null, data: null, status: 'idle' });

@@ -219,4 +219,23 @@ describe('GetTitleProvenance', () => {
       expect(['peacock', 'prime-video']).toContain((await uc.execute({ ratingKey: '100' })).provider);
     });
   });
+
+  describe('live channels', () => {
+    const live = { sources: ['plex-live'], provider: 'plex-live-tv', label: 'Plex Live TV' };
+
+    it('answers a listed live source with its one provider, reading no facts and spending no lookup', async () => {
+      const { uc, identityReader, availability } = build({ identity: MOVIE, policy: { live } });
+      const out = await uc.execute({ contentId: 'plex-live:nfl-channel' });
+      expect(out).toMatchObject({ ratingKey: 'plex-live:nfl-channel', provider: 'plex-live-tv', name: 'Plex Live TV', source: 'live', tier: 'live' });
+      expect(identityReader.identify).not.toHaveBeenCalled();
+      expect(availability.sources).not.toHaveBeenCalled();
+    });
+
+    it('answers nothing for an unlisted source, no live block, a missing logo, or the scene turned off', async () => {
+      expect(await build({ policy: { live } }).uc.execute({ contentId: 'youtube:abc' })).toBeNull();
+      expect(await build({ policy: { live: null } }).uc.execute({ contentId: 'plex-live:nfl-channel' })).toBeNull();
+      expect(await build({ policy: { live }, logos: (id) => id !== 'plex-live-tv' }).uc.execute({ contentId: 'plex-live:nfl-channel' })).toBeNull();
+      expect(await build({ policy: { live, enabled: false } }).uc.execute({ contentId: 'plex-live:nfl-channel' })).toBeNull();
+    });
+  });
 });
