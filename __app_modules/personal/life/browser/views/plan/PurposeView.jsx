@@ -12,6 +12,7 @@ export function PurposeView({ username }) {
   const { plan, loading, error, refetch, setPurpose } = useLifePlan(username);
   const [editVisit, setEditVisit] = useState(null);
   const [draft, setDraft] = useState('');
+  const validDraft = Boolean(draft.trim());
   const [submittedVisit, setSubmittedVisit] = useState(null);
   const { run: submit, saving, failure } = useSheetSubmission(null);
   const pendingHere = saving && submittedVisit === editVisit;
@@ -47,9 +48,9 @@ export function PurposeView({ username }) {
     const submittedEditor = editor.current;
     return submit(() => {
       setSubmittedVisit(editVisit);
-      return setPurpose(draft);
+      return setPurpose(draft.trim());
     }, {
-      valid: Boolean(submittedEditor),
+      valid: Boolean(submittedEditor) && validDraft,
       onSuccess: () => {
         if (editor.current === submittedEditor) {
           returnFocus.current = submittedEditor.contains(submittedEditor.ownerDocument.activeElement);
@@ -87,6 +88,7 @@ export function PurposeView({ username }) {
             )}
             <Textarea
               aria-label="Purpose statement"
+              required
               autoFocus
               readOnly={pendingHere}
               value={draft}
@@ -101,6 +103,7 @@ export function PurposeView({ username }) {
                 className="ds-touch-target"
                 size="xs"
                 leftSection={<IconCheck size={14} />}
+                disabled={!validDraft}
                 pending={pendingHere}
                 blocked={saving && !pendingHere}
                 onClick={saveEdit}
