@@ -16,6 +16,7 @@ export function CustomFoodSheet({ upc, open, onClose, onCreated, bucketId = null
 function CustomFoodForm({ upc, onClose, onCreated, bucketId, date }) {
   const isSessionActive = useHealthSessionGuard();
   const [form, setForm] = useState({ name: '', grams: '', calories: 0, protein: 0, carbs: 0, fat: 0 });
+  const [createdIntent, setCreatedIntent] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const pending = useRef(false);
@@ -27,17 +28,22 @@ function CustomFoodForm({ upc, onClose, onCreated, bucketId, date }) {
     pending.current = true;
     setBusy(true); setError(null);
     try {
-      const { entry } = await DaylightAPI('api/v1/health/nutrition/catalog',
-        operationRequest(createRequest, { ...form, barcodeUpc: upc }), 'POST');
-      // The scan that reached this sheet was launched from a specific meal on
-      // a specific day; both were previously dropped on this branch, so a
-      // custom food always landed in the clock's meal on the server's today.
+      let intent = createdIntent;
+      if (!intent) {
+        const { entry } = await DaylightAPI('api/v1/health/nutrition/catalog',
+          operationRequest(createRequest, { ...form, barcodeUpc: upc }), 'POST');
+        // The scan that reached this sheet was launched from a specific meal on
+        // a specific day; both were previously dropped on this branch, so a
+        // custom food always landed in the clock's meal on the server's today.
+        intent = {
+          catalogEntryId: entry.id,
+          ...(bucketId ? { mealTime: bucketId } : {}),
+          ...(date ? { date } : {}),
+        };
+        setCreatedIntent(intent);
+      }
       if (!isSessionActive()) return;
-      const logged = await DaylightAPI('api/v1/health/nutrition/catalog/quickadd', operationRequest(logRequest, {
-        catalogEntryId: entry.id,
-        ...(bucketId ? { mealTime: bucketId } : {}),
-        ...(date ? { date } : {}),
-      }), 'POST');
+      const logged = await DaylightAPI('api/v1/health/nutrition/catalog/quickadd', operationRequest(logRequest, intent), 'POST');
       if (!isSessionActive()) return;
       logger.info('custom.created', { name: form.name, upc, bucket: bucketId || undefined, date: date || undefined });
       onCreated(logged);
@@ -54,15 +60,17 @@ function CustomFoodForm({ upc, onClose, onCreated, bucketId, date }) {
   return (
     <Sheet open onClose={() => { if (!pending.current) onClose(); }} title="New food">
       <Stack gap="xs">
-        <Text size="sm" c="dimmed">Barcode {upc} isn't in any database — describe it once and it's yours forever.</Text>
+        <Text size="sm" c="dimmed">Barcode {upc} isn&apos;t in any database — describe it once and it&apos;s yours forever.</Text>
         {error ? <Text size="sm" c="red" role="alert">{error.message}</Text> : null}
-        <TextInput label="Name" value={form.name} onChange={set('name')} autoFocus data-autofocus />
-        <NumberInput label="Weight in grams" suffix=" g" value={form.grams} onChange={set('grams')} min={0.01} />
-        <NumberInput label="Calories at this weight" value={form.calories} onChange={set('calories')} min={0} />
-        <NumberInput label="Protein g" value={form.protein} onChange={set('protein')} min={0} />
-        <NumberInput label="Carbs g" value={form.carbs} onChange={set('carbs')} min={0} />
-        <NumberInput label="Fat g" value={form.fat} onChange={set('fat')} min={0} />
-        <Button loading={busy} disabled={!form.name.trim() || !(Number(form.grams) > 0)} onClick={save}>Create & log</Button>
+        <TextInput label="Name" value={form.name} onChange={set('name')} autoFocus data-autofocus disabled={busy || Boolean(createdIntent)} />
+        <NumberInput label="Weight in grams" suffix=" g" value={form.grams} onChange={set('grams')} min={0.01} disabled={busy || Boolean(createdIntent)} />
+        <NumberInput label="Calories at this weight" value={form.calories} onChange={set('calories')} min={0} disabled={busy || Boolean(createdIntent)} />
+        <NumberInput label="Protein g" value={form.protein} onChange={set('protein')} min={0} disabled={busy || Boolean(createdIntent)} />
+        <NumberInput label="Carbs g" value={form.carbs} onChange={set('carbs')} min={0} disabled={busy || Boolean(createdIntent)} />
+        <NumberInput label="Fat g" value={form.fat} onChange={set('fat')} min={0} disabled={busy || Boolean(createdIntent)} />
+        <Button loading={busy} disabled={busy || (!createdIntent && (!form.name.trim() || !(Number(form.grams) > 0)))} onClick={save}>
+          {createdIntent ? 'Retry log' : 'Create & log'}
+        </Button>
       </Stack>
     </Sheet>
   );

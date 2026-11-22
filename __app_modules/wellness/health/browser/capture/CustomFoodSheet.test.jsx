@@ -52,4 +52,34 @@ describe('CustomFoodSheet', () => {
     await save({});
     expect(quickaddBody()).toEqual({ catalogEntryId: 'e9', operationId: expect.any(String) });
   });
+
+  it('retries only the original quick-add after a lost log response', async () => {
+    const createBodies = [];
+    const quickAddBodies = [];
+    const onCreated = vi.fn();
+    apiMock.mockImplementation(async (path, data) => {
+      if (path.endsWith('/quickadd')) {
+        quickAddBodies.push(data);
+        if (quickAddBodies.length === 1) throw new TypeError('Failed to fetch');
+        return { committed: true, item: { uuid: 'row-1' } };
+      }
+      createBodies.push(data);
+      return { entry: { id: `e${createBodies.length}` } };
+    });
+    r(<CustomFoodSheet upc="012345678905" open onClose={() => {}} onCreated={onCreated} />);
+    const name = screen.getByLabelText(/name/i);
+    fireEvent.change(name, { target: { value: 'Trail mix' } });
+    fireEvent.change(screen.getByLabelText(/Weight in grams/i), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: /create & log/i }));
+    await screen.findByRole('alert');
+
+    expect(name).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Retry log' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry log' }));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith({ committed: true, item: { uuid: 'row-1' } }));
+
+    expect(createBodies).toHaveLength(1);
+    expect(quickAddBodies).toHaveLength(2);
+    expect(quickAddBodies[1]).toEqual(quickAddBodies[0]);
+  });
 });
