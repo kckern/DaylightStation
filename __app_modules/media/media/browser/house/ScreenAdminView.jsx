@@ -160,26 +160,36 @@ export function ScreenAdminView() {
   const { reload: loadMergeRoutines } = useRefreshableRead(readMergeRoutines);
   useEffect(() => { if (mergeTarget) loadMergeRoutines(); }, [mergeTarget, loadMergeRoutines]);
 
-  const openRetire = screen => setRetiring({ screen, routines: null, loading: true, error: null });
+  const openRetire = screen => setRetiring({ screen, routines: null, loading: true, submitting: false, error: null });
   const confirmRetire = async () => {
-    const result = await admin.retire(retiring.screen);
-    if (result.ok) setRetiring(null);
-    else setRetiring((r) => ({ ...r, error: result.error }));
+    const active = retiring;
+    if (!active || active.loading || active.submitting) return;
+    setRetiring(current => current?.screen.id === active.screen.id ? { ...current, submitting: true, error: null } : current);
+    const result = await admin.retire(active.screen);
+    if (result.ok) setRetiring(current => current?.screen.id === active.screen.id ? null : current);
+    else setRetiring(current => current?.screen.id === active.screen.id
+      ? { ...current, submitting: false, error: result.error }
+      : current);
   };
   const openMerge = async (screen) => {
-    setMerging({ screen, into: null, routines: [], error: null });
+    setMerging({ screen, into: null, routines: [], submitting: false, error: null });
   };
   const chooseMergeTarget = (intoId) => {
     const into = live.find((s) => s.id === intoId) ?? null;
     setMerging(current => current && { ...current, into, routines: [] });
   };
   const confirmMerge = async () => {
-    const { screen, into } = merging;
+    const active = merging;
+    if (!active?.into || active.submitting) return;
+    const { screen, into } = active;
+    setMerging(current => current?.screen.id === screen.id ? { ...current, submitting: true, error: null } : current);
     const result = await admin.merge(screen, into);
     if (result.ok) {
       setAliasNames((names) => ({ ...names, [screen.id]: screen.name }));
-      setMerging(null);
-    } else setMerging((m) => ({ ...m, error: result.error }));
+      setMerging(current => current?.screen.id === screen.id ? null : current);
+    } else setMerging(current => current?.screen.id === screen.id
+      ? { ...current, submitting: false, error: result.error }
+      : current);
   };
 
   if (registry && registry.loaded && !registry.available) {
@@ -266,7 +276,8 @@ export function ScreenAdminView() {
         title={retiring ? `Retire ${retiring.screen.name}?` : ''}
         message="It leaves the screen list and its name becomes free. You can restore it later."
         confirmLabel={retiring?.loading ? 'Checking routines…' : 'Retire'}
-        onConfirm={() => { if (!retiring?.loading) confirmRetire(); }}
+        loading={Boolean(retiring?.submitting)}
+        onConfirm={() => { if (!retiring?.loading && !retiring?.submitting) confirmRetire(); }}
         onClose={() => setRetiring(null)}
       >
         {retiring && !retiring.loading && retiring.routines && (
@@ -287,8 +298,9 @@ export function ScreenAdminView() {
         title={merging ? `Merge ${merging.screen.name}` : ''}
         message="Merge a duplicate into its earlier self: its plays, spots and routines follow, and you can unmerge it afterwards."
         confirmLabel="Merge"
-        confirmDisabled={!merging?.into}
-        onConfirm={() => { if (merging?.into) confirmMerge(); }}
+        confirmDisabled={!merging?.into || merging?.submitting}
+        loading={Boolean(merging?.submitting)}
+        onConfirm={() => { if (merging?.into && !merging?.submitting) confirmMerge(); }}
         onClose={() => setMerging(null)}
       >
         {merging && (
@@ -302,7 +314,7 @@ export function ScreenAdminView() {
               <Stack gap={4} mt={4} className="house-merge-targets">
                 {live.filter((s) => s.id !== merging.screen.id).map((s) => (
                   <Radio key={s.id} value={s.id} label={s.room ? `${s.name} · ${s.room}` : s.name}
-                    data-testid={`screen-admin-merge-target-${s.id}`} className="house-merge-target" />
+                    data-testid={`screen-admin-merge-target-${s.id}`} className="house-merge-target" disabled={merging.submitting} />
                 ))}
               </Stack>
             </Radio.Group>
