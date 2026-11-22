@@ -180,7 +180,10 @@ function GalleryHero({ images, feedItemId, title }) {
   const goNext = useCallback((e) => { e?.stopPropagation(); setIndex(i => Math.min(i + 1, count - 1)); }, [count]);
 
   // Touch swipe (mobile)
-  const handleTouchStart = (e) => { dragStartRef.current = e.touches[0].clientX; };
+  const handleTouchStart = (e) => {
+    e.stopPropagation();
+    dragStartRef.current = e.touches[0].clientX;
+  };
   const handleTouchEnd = (e) => {
     if (dragStartRef.current === null) return;
     const dx = e.changedTouches[0].clientX - dragStartRef.current;
