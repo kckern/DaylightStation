@@ -3,19 +3,29 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { feedLog } from "../feedLog.js";
 
 // All Feed controls display the persistent player's clock, even as routes change.
-export function usePlaybackObserver(playerRef, active) {
-  const [state, setState] = useState({ playing: false, currentTime: 0, duration: 0 });
+const idlePlayback = { playing: false, currentTime: 0, duration: 0 };
+
+export function usePlaybackObserver(playerRef, active, selectedContentId = null) {
+  const [state, setState] = useState(idlePlayback);
   const progressElRef = useRef(null);
   const detailProgressElRef = useRef(null);
   const sheetProgressElRef = useRef(null);
   const lastPlaying = useRef(null);
   const missingPlayerLogged = useRef(false);
+  const getSelectedPlayer = useCallback(() => {
+    const player = playerRef.current;
+    if (!player || (selectedContentId && player.getMountedContentId?.() !== selectedContentId)) return null;
+    return player;
+  }, [playerRef, selectedContentId]);
 
   const sample = useCallback(() => {
-    const player = playerRef.current;
+    const player = getSelectedPlayer();
     if (!player) {
       if (!missingPlayerLogged.current) feedLog.player('poll: playerRef.current is null');
       missingPlayerLogged.current = true;
+      lastPlaying.current = null;
+      setState(previous => previous.contentId === selectedContentId && !previous.playing && !previous.currentTime && !previous.duration
+        ? previous : { ...idlePlayback, contentId: selectedContentId });
       return;
     }
     missingPlayerLogged.current = false;
@@ -27,9 +37,9 @@ export function usePlaybackObserver(playerRef, active) {
       feedLog.player('state change', { playing, currentTime: currentTime.toFixed(1), duration: duration.toFixed(1) });
       lastPlaying.current = playing;
     }
-    setState(previous => previous.playing === playing && previous.currentTime === currentTime && previous.duration === duration
-      ? previous : { playing, currentTime, duration });
-  }, [playerRef]);
+    setState(previous => previous.contentId === selectedContentId && previous.playing === playing && previous.currentTime === currentTime && previous.duration === duration
+      ? previous : { contentId: selectedContentId, playing, currentTime, duration });
+  }, [getSelectedPlayer, selectedContentId]);
   useVisibleRefresh({ active, intervalMs: 500, reload: sample });
 
   useEffect(() => {
@@ -37,14 +47,15 @@ export function usePlaybackObserver(playerRef, active) {
     missingPlayerLogged.current = false;
     if (!active) {
       feedLog.player('observer inactive — resetting state');
-      setState({ playing: false, currentTime: 0, duration: 0 });
+      setState(idlePlayback);
       return;
     }
+    setState({ ...idlePlayback, contentId: selectedContentId });
     feedLog.player('observer active — starting 500ms poll');
     return whileDocumentVisible(() => {
       let frame;
       function paint() {
-        const player = playerRef.current;
+        const player = getSelectedPlayer();
         const mini = progressElRef.current;
         const detail = detailProgressElRef.current;
         const sheet = sheetProgressElRef.current;
@@ -61,17 +72,18 @@ export function usePlaybackObserver(playerRef, active) {
       frame = requestAnimationFrame(paint);
       return () => cancelAnimationFrame(frame);
     });
-  }, [active, playerRef]);
+  }, [active, getSelectedPlayer, playerRef, selectedContentId]);
 
   const toggle = useCallback(() => {
     feedLog.player('toggle');
-    playerRef.current?.toggle?.();
-  }, [playerRef]);
+    getSelectedPlayer()?.toggle?.();
+  }, [getSelectedPlayer]);
 
   const seek = useCallback((t) => {
     feedLog.player('seek', { to: t });
-    playerRef.current?.seek?.(t);
-  }, [playerRef]);
+    getSelectedPlayer()?.seek?.(t);
+  }, [getSelectedPlayer]);
 
-  return { ...state, toggle, seek, progressElRef, detailProgressElRef, sheetProgressElRef };
+  const visibleState = active && state.contentId === selectedContentId ? state : idlePlayback;
+  return { ...visibleState, toggle, seek, progressElRef, detailProgressElRef, sheetProgressElRef };
 }

@@ -143,7 +143,7 @@ function FeedLayout() {
   const { density, setDensity, readingPreferences, summary, retrySync, pendingMutations, workspaceReady } = useFeedWorkspace();
 
   const { activeMedia, playerRef, stop, speed, volume } = useFeedPlayer();
-  const playback = usePlaybackObserver(playerRef, !!activeMedia);
+  const playback = usePlaybackObserver(playerRef, !!activeMedia, activeMedia?.contentId);
   const showMiniBar = Boolean(activeMedia);
   const [sheetOpen, setSheetOpen] = useState(false);
 
