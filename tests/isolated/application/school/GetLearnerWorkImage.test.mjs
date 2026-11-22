@@ -13,9 +13,18 @@ function recordingLogger() {
 }
 
 const learners = () => [{ id: 'kid-a', name: 'Kid A' }, { id: 'kid-b', name: 'Kid B' }];
+const done = { completedStudyDay: '2026-11-18' };
 const issuances = {
-  'kid-a': [{ issuanceId: 'iss-1', platform: 'beeloo', externalId: 'x1' }],
-  'kid-b': [{ issuanceId: 'iss-2', platform: 'elsewhere', externalId: 'x2' }, { issuanceId: 'iss-3', platform: 'beeloo', externalId: 'x3' }],
+  'kid-a': [
+    { issuanceId: 'iss-1', platform: 'beeloo', externalId: 'x1', ...done },
+    { issuanceId: 'iss-open', platform: 'beeloo', externalId: 'x4' },
+    { issuanceId: 'iss-void', platform: 'beeloo', externalId: 'x5', ...done, voidedAt: '2026-11-19T10:00:00Z' },
+    { issuanceId: 'iss-evil', platform: 'beeloo', externalId: '../../x', ...done },
+  ],
+  'kid-b': [
+    { issuanceId: 'iss-2', platform: 'elsewhere', externalId: 'x2', ...done },
+    { issuanceId: 'iss-3', platform: 'beeloo', externalId: 'x3', ...done },
+  ],
 };
 const printedActivities = { listForLearner: async (id) => issuances[id] ?? [] };
 const POSTER = Buffer.from('jpeg-bytes');
@@ -104,6 +113,52 @@ describe('GetLearnerWorkImage', () => {
     expect(cache.writes).toEqual([]);
     const warn = logger.events.find((e) => e.event === 'school.printed-activity.page-render-failed');
     expect(warn).toMatchObject({ level: 'warn', data: { issuanceId: 'iss-1', error: 'pdftoppm missing' } });
+  });
+
+  it('refuses ids unsafe as a cache file name before touching the cache', async () => {
+    const reads = [];
+    const cache = { read: (key) => { reads.push(key); return null; }, write: async () => {} };
+    const { uc, solutionCalls } = setup({ cache });
+    expect(await uc.execute('activity:iss-evil')).toBeNull();
+    expect(reads).toEqual([]);
+    expect(solutionCalls).toEqual([]);
+  });
+
+  it('serves no solution for a page that is still open', async () => {
+    const { uc, solutionCalls } = setup();
+    expect(await uc.execute('activity:iss-open')).toBeNull();
+    expect(solutionCalls).toEqual([]);
+  });
+
+  it('serves no solution for a voided page', async () => {
+    const { uc, solutionCalls } = setup();
+    expect(await uc.execute('activity:iss-void')).toBeNull();
+    expect(solutionCalls).toEqual([]);
+  });
+
+  it('still serves the page when the cache write fails', async () => {
+    const cache = { read: () => null, write: async () => { throw new Error('disk full'); } };
+    const { uc, logger } = setup({ cache });
+    expect(await uc.execute('activity:iss-1')).toEqual({ bytes: PNG, contentType: 'image/png' });
+    const warn = logger.events.find((e) => e.event === 'school.printed-activity.page-cache-write-failed');
+    expect(warn).toMatchObject({ level: 'warn', data: { issuanceId: 'iss-1', error: 'disk full' } });
+  });
+
+  it('treats a failing cache read as a miss', async () => {
+    const cache = { read: () => { throw new Error('EIO'); }, write: async () => {} };
+    const { uc, logger, solutionCalls } = setup({ cache });
+    expect(await uc.execute('activity:iss-1')).toEqual({ bytes: PNG, contentType: 'image/png' });
+    expect(solutionCalls).toEqual(['x1']);
+    expect(logger.events.some((e) => e.level === 'warn' && e.event === 'school.printed-activity.page-cache-read-failed')).toBe(true);
+  });
+
+  it('renders a page once for two concurrent misses', async () => {
+    const { uc, solutionCalls, renderCalls } = setup();
+    const [a, b] = await Promise.all([uc.execute('activity:iss-1'), uc.execute('activity:iss-1')]);
+    expect(a).toEqual({ bytes: PNG, contentType: 'image/png' });
+    expect(b).toEqual({ bytes: PNG, contentType: 'image/png' });
+    expect(solutionCalls).toEqual(['x1']);
+    expect(renderCalls).toHaveLength(1);
   });
 
   it('works with no cache', async () => {

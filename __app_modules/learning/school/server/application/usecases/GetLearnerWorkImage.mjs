@@ -1,5 +1,7 @@
 const NOOP_LOGGER = Object.freeze({});
 const REF = /^(course|activity):(.+)$/;
+/** Cache key parts become a file name: nothing that can climb out of the cache dir. */
+const SAFE = /^[A-Za-z0-9_-]{1,128}$/;
 const list = (value) => (Array.isArray(value) ? value : []);
 const errorText = (err) => (err instanceof Error ? err.message : String(err));
 const isBytes = (value) => Buffer.isBuffer(value) || value instanceof Uint8Array;
@@ -15,6 +17,7 @@ const isBytes = (value) => Buffer.isBuffer(value) || value instanceof Uint8Array
  *
  * Anything it cannot serve is null (the route answers 404): an unknown or
  * malformed ref, a course without a poster, an issuance no learner holds, a
+ * page not yet finished (or voided), an id unsafe as a file name, a
  * platform that is not wired or has no solution, or a render that fails.
  */
 export class GetLearnerWorkImage {
@@ -25,6 +28,8 @@ export class GetLearnerWorkImage {
   #renderPdfFirstPagePng;
   #cache;
   #logger;
+  /** cacheKey → in-flight render, so two requests for one page render it once. */
+  #inFlight = new Map();
 
   constructor({
     learners = null, curriculum = null, printedActivities = null, platforms = null,
@@ -60,39 +65,76 @@ export class GetLearnerWorkImage {
 
   async #findIssuance(issuanceId) {
     if (!this.#learners || !this.#printedActivities) return null;
-    for (const learner of list(await this.#learners())) {
-      if (!learner?.id) continue;
-      const found = list(await this.#printedActivities.listForLearner(learner.id))
-        .find((i) => i?.issuanceId === issuanceId);
-      if (found) return found;
+    const learners = list(await this.#learners()).filter((l) => l?.id);
+    const perLearner = await Promise.all(learners.map(async (learner) => list(
+      await this.#printedActivities.listForLearner(learner.id),
+    ).find((i) => i?.issuanceId === issuanceId) ?? null));
+    return perLearner.find(Boolean) ?? null;
+  }
+
+  async #readCache(key, issuanceId) {
+    if (!this.#cache) return null;
+    try {
+      const hit = await this.#cache.read(key);
+      return isBytes(hit) ? hit : null;
+    } catch (err) {
+      this.#logger.warn?.('school.printed-activity.page-cache-read-failed', { issuanceId, error: errorText(err) });
+      return null;
     }
-    return null;
   }
 
   async #activityPage(issuanceId) {
     const started = Date.now();
     try {
       const issuance = await this.#findIssuance(issuanceId);
-      if (!issuance?.externalId) return null;
-      const key = `${issuance.platform}-${issuance.externalId}.png`;
-      const hit = this.#cache ? await this.#cache.read(key) : null;
-      if (isBytes(hit)) {
+      if (!issuance) return null;
+      // The solution is the answer key: only a finished, kept page shows it.
+      if (!issuance.completedStudyDay || issuance.voidedAt) {
+        this.#logger.debug?.('school.printed-activity.page-not-finished', { issuanceId });
+        return null;
+      }
+      const { platform, externalId } = issuance;
+      if (!SAFE.test(String(platform ?? '')) || !SAFE.test(String(externalId ?? ''))) {
+        this.#logger.debug?.('school.printed-activity.page-unsafe-key', { issuanceId });
+        return null;
+      }
+      const key = `${platform}-${externalId}.png`;
+      const hit = await this.#readCache(key, issuanceId);
+      if (hit) {
         this.#logger.info?.('school.printed-activity.page-render', { issuanceId, cached: true, ms: Date.now() - started });
         return { bytes: hit, contentType: 'image/png' };
       }
-      const platform = this.#platforms.get(issuance.platform);
-      if (!platform?.getSolution || !this.#renderPdfFirstPagePng) return null;
-      const pdf = await platform.getSolution(issuance.externalId);
-      if (!pdf) return null;
-      const png = await this.#renderPdfFirstPagePng(pdf, { width: 800 });
-      if (!isBytes(png)) return null;
-      if (this.#cache) await this.#cache.write(key, png);
+      let render = this.#inFlight.get(key);
+      if (!render) {
+        render = this.#render(issuance, key, issuanceId).finally(() => this.#inFlight.delete(key));
+        this.#inFlight.set(key, render);
+      }
+      const png = await render;
+      if (!png) return null;
       this.#logger.info?.('school.printed-activity.page-render', { issuanceId, cached: false, ms: Date.now() - started });
       return { bytes: png, contentType: 'image/png' };
     } catch (err) {
       this.#logger.warn?.('school.printed-activity.page-render-failed', { issuanceId, error: errorText(err) });
       return null;
     }
+  }
+
+  /** Solution PDF → first-page PNG → cache. Resolves null when there is nothing to show. */
+  async #render(issuance, key, issuanceId) {
+    const platform = this.#platforms.get(issuance.platform);
+    if (!platform?.getSolution || !this.#renderPdfFirstPagePng) return null;
+    const pdf = await platform.getSolution(issuance.externalId);
+    if (!pdf) return null;
+    const png = await this.#renderPdfFirstPagePng(pdf, { width: 800 });
+    if (!isBytes(png)) return null;
+    if (this.#cache) {
+      try {
+        await this.#cache.write(key, png);
+      } catch (err) {
+        this.#logger.warn?.('school.printed-activity.page-cache-write-failed', { issuanceId, error: errorText(err) });
+      }
+    }
+    return png;
   }
 }
 

@@ -151,12 +151,18 @@ describe('ListLearnerWork', () => {
   });
 
   it('falls back to plain titles when book or unit lookups throw', async () => {
+    const logger = recordingLogger();
     const throwingRepo = { findByIsbn: async () => { throw new Error('cache down'); } };
     const throwingCurriculum = { getUnitSummary: async () => { throw new Error('catalog down'); } };
-    const { items } = await new ListLearnerWork(allDeps({ bookRepository: throwingRepo, curriculum: throwingCurriculum }))
+    const { items } = await new ListLearnerWork(allDeps({ bookRepository: throwingRepo, curriculum: throwingCurriculum, logger }))
       .execute({ from: FROM, to: TO });
     expect(of(items, 'kid-a', 'book')[0].title).toBe('A book');
     expect(of(items, 'kid-a', 'course')[0]).toMatchObject({ title: 'Schoolwork', imageUrl: null });
+    const lookups = logger.events.filter((e) => e.event === 'school.learner-work.lookup-failed');
+    expect(lookups.every((e) => e.level === 'warn')).toBe(true);
+    expect(lookups.map((e) => e.data)).toContainEqual({ source: 'books', key: '111', error: 'cache down' });
+    expect(lookups.map((e) => e.data)).toContainEqual({ source: 'sessions', key: 'u1', error: 'catalog down' });
+    expect(logger.events.some((e) => e.event === 'school.learner-work.source-failed')).toBe(false);
   });
 
   it('looks each distinct ISBN and unit up once, and only in-window units', async () => {

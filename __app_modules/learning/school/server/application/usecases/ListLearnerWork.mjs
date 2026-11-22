@@ -8,11 +8,16 @@ const NOOP_LOGGER = Object.freeze({});
 const list = (value) => (Array.isArray(value) ? value : []);
 const errorText = (err) => (err instanceof Error ? err.message : String(err));
 
-/** Resolve `fn(key)` for each distinct key; a throw or rejection becomes null. */
-async function lookupAll(keys, fn) {
+/** Resolve `fn(key)` for each distinct key; a throw or rejection becomes null (and a warn). */
+async function lookupAll(keys, fn, { source, logger }) {
   const distinct = [...new Set(keys.filter((k) => k != null && k !== ''))];
   const entries = await Promise.all(distinct.map(async (key) => {
-    try { return [key, (await fn(key)) ?? null]; } catch { return [key, null]; }
+    try {
+      return [key, (await fn(key)) ?? null];
+    } catch (err) {
+      logger.warn?.('school.learner-work.lookup-failed', { source, key, error: errorText(err) });
+      return [key, null];
+    }
   }));
   return new Map(entries);
 }
@@ -102,7 +107,7 @@ export class ListLearnerWork {
     const readings = list(await this.#bookLog.listForLearner(ctx.learnerId));
     const repo = this.#bookRepository;
     const books = repo
-      ? await lookupAll(readings.map((r) => r?.book?.isbn), (isbn) => repo.findByIsbn(isbn))
+      ? await lookupAll(readings.map((r) => r?.book?.isbn), (isbn) => repo.findByIsbn(isbn), { source: 'books', logger: this.#logger })
       : new Map();
     return booksToWork(readings, {
       ...ctx,
@@ -118,7 +123,7 @@ export class ListLearnerWork {
       .filter((s) => s?.terminal === true && inWindow(s.studyDay, ctx.from, ctx.to))
       .map((s) => s.unitId);
     const summaries = curriculum?.getUnitSummary
-      ? await lookupAll(unitIds, (unitId) => curriculum.getUnitSummary(unitId))
+      ? await lookupAll(unitIds, (unitId) => curriculum.getUnitSummary(unitId), { source: 'sessions', logger: this.#logger })
       : new Map();
     return sessionsToWork(rows, { ...ctx, unitSummary: (unitId) => summaries.get(unitId) ?? null });
   }
@@ -132,7 +137,7 @@ export class ListLearnerWork {
     const store = this.#cardLadder;
     const packages = list(await store.listPackages(ctx.learnerId));
     const titleFor = this.#cardLadderTitleFor;
-    const titles = titleFor ? await lookupAll(packages, titleFor) : new Map();
+    const titles = titleFor ? await lookupAll(packages, titleFor, { source: 'cardLadder', logger: this.#logger }) : new Map();
     const perPackage = await Promise.all(packages.map(async (packageId) => {
       const days = list(await store.listDays(ctx.learnerId, packageId)).filter((d) => inWindow(d, ctx.from, ctx.to));
       const files = await Promise.all(days.map(async (day) => {
