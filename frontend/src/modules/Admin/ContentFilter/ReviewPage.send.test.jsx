@@ -106,7 +106,7 @@ describe('refine from the review page', () => {
     fireEvent.click(oneTarget);
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0].body).toEqual({ kind: 'send-back', cues: ['a'] });
-    expect(await screen.findByText('Refining 1 filtered part. Review the other parts meanwhile.')).toBeTruthy();
+    expect(await screen.findByText('Refining 1 filtered part. Watch them meanwhile; verdicts open when it finishes.')).toBeTruthy();
   });
   it('a bulk hand-fixed confirmation happens before queueing during an open run', async () => {
     const mixed = row('subject:billboard', 'Billboard', ['a', 'b'], { kind: 'picture', modality: 'shown', handFixed: true });
@@ -155,6 +155,23 @@ describe('refine from the review page', () => {
     render(ui());
     key('a');
     expect(await screen.findByText(/This part is being refined/)).toBeTruthy();
+    expect(calls).toHaveLength(0);
+  });
+  it('a part refine already tried and left rough is not refined again, and never hides Approve', async () => {
+    const tried = row('cue:t', 'Shown thing', ['t'], { kind: 'picture', modality: 'shown', effect: 'blur', in: 70, out: 72, unsure: ['refine-coarse-edges'] });
+    payload = base([tried], { status: { next: 'approve' }, signOff: { ready: true, missing: [], parent: null } });
+    render(ui());
+    expect(screen.queryByRole('button', { name: /^Refine all/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Approve for family' })).toBeTruthy();
+    expect(screen.getByText(/1 rough after refine \(check by eye\)/)).toBeTruthy();
+  });
+  it('keys on a part that plays send nothing', async () => {
+    payload = base(rows, { rows: rows });
+    render(ui());
+    fireEvent.click(screen.getByRole('radio', { name: /^Plays/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'stinky' }));
+    key('a'); key('R');
+    expect(await screen.findByText(/refining is for the filtered parts/)).toBeTruthy();
     expect(calls).toHaveLength(0);
   });
 });

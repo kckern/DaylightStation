@@ -10,6 +10,25 @@ spec.loader.exec_module(transcribe)
 FAKE = types.ModuleType("fake")
 
 
+class ProbeDuration(unittest.TestCase):
+    """The decode is judged against the audio's own end, not the container's (Sonic, 2026-11-22)."""
+    def run_with(self, fmt, packets):
+        def fake(cmd, **kw):
+            out = fmt if "format=duration" in cmd else packets
+            return types.SimpleNamespace(stdout=out)
+        with mock.patch.object(transcribe.subprocess, "run", side_effect=fake):
+            return transcribe.probe_duration("film.mkv")
+
+    def test_audio_that_ends_before_the_picture(self):
+        self.assertAlmostEqual(self.run_with("5945.319\n", "5933.376000,0.032000\n5933.408000,0.032000\n"), 5933.44, places=2)
+
+    def test_falls_back_to_the_container_without_audio_packets(self):
+        self.assertEqual(self.run_with("100.5\n", ""), 100.5)
+
+    def test_ignores_an_audio_end_past_the_container(self):
+        self.assertEqual(self.run_with("100.0\n", "250.0,0.032\n"), 100.0)
+
+
 class PickBackend(unittest.TestCase):
     def test_mlx_wins_when_importable(self):
         with mock.patch.dict(sys.modules, {"mlx_whisper": FAKE, "faster_whisper": FAKE}):

@@ -145,6 +145,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   const verdict = (v, reason) => {
     if (!row) return;
     // A refine moves the part, which drops a verdict on it: wait for the new timing (review 2026-11-21).
+    if (plays(row)) { setMessage('This part plays under your settings and needs no verdict. Press an effect key to filter it.'); return; }
     if (latest.current.refining?.[row.id]) { setMessage('This part is being refined. Give it a verdict when the new timing lands.'); return; }
     if (v === 'remove' && latest.current.running) { setMessage('Let it play waits until the refine finishes.'); return; }
     guarded('verdict', () => record(row, v, { reason }));
@@ -162,6 +163,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     const entry = actionKeysFor(keysKindOf(row)).find(([k]) => k.toLowerCase() === letter);
     if (!entry) return;
     const [, label, to] = entry;
+    if (latest.current.refining?.[row.id]) { setMessage('This part is being refined. Change its effect when the new timing lands.'); return; }
     guarded('effect', async () => {
       const allowed = isSceneRow(row) ? SCENE_EFFECTS.has(to) : effectChoices(row.modality).some((o) => o.value === to);
       if (!allowed) { setMessage(`${label} does not fit this part.`); return; }
@@ -252,7 +254,12 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   const job = data?.job || null;
   const running = Boolean(job && (job.status === 'queued' || job.status === 'running'));
   const refineTargets = useMemo(() => (rows || []).filter((r) => !plays(r) && !isSceneRow(r)), [rows]);
-  const roughRefineTargets = useMemo(() => refineTargets.filter((r) => r.timing === 'rough'), [refineTargets]);
+  // Rough parts refine has already tried (it left a refine-* reason: not found, coarse edges, …) stay
+  // rough when refined again; they are checked by eye, and never hold back Refine all or approval
+  // (review 2026-11-22: Sonic's picture parts kept coarse edges, so "Refine all 5" looped).
+  const triedBefore = (r) => (r.unsure || []).some((u) => String(u).startsWith('refine-'));
+  const roughRefineTargets = useMemo(() => refineTargets.filter((r) => r.timing === 'rough' && !triedBefore(r)), [refineTargets]);
+  const roughLeftCount = useMemo(() => refineTargets.filter((r) => r.timing === 'rough' && triedBefore(r)).length, [refineTargets]);
   const cuesOf = (r) => (isSceneRow(r) ? [] : (r.members ?? (String(r.id).startsWith('cue:') ? [r.peekId] : [])));
   // Which rows a refine holds right now: the open send-back's parts, then the ones queued here.
   const refining = useMemo(() => {
@@ -270,12 +277,15 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     await DaylightAPI(`${API}/${encodeURIComponent(rk)}/jobs`, { kind: 'send-back', cues }, 'POST');
     logger.info('content_filter.review.refine', { rk, cues: cues.length, what });
     if (!activeView.current) return;
-    setMessage(`Refining ${what}. Review the other parts meanwhile.`);
+    setMessage(/filtered part/.test(what)
+      ? `Refining ${what}. Watch them meanwhile; verdicts open when it finishes.`
+      : `Refining ${what}. Review the other parts meanwhile.`);
     reload();
   };
   const queueRefine = (cues, what) => {
     if (notMatched) { setMessage('This film is not matched to Plex, so it cannot be refined.'); return; }
-    if (!cues.length) { setMessage('Nothing to refine there.'); return; }
+    // Anything still queued from a run that stopped counts too (review 2026-11-22).
+    if (!cues.length && !(pendingRefine.size && !running)) { setMessage('Nothing to refine there.'); return; }
     if (running) {
       setPendingRefine((s) => new Set([...s, ...cues]));
       logger.info('content_filter.review.refine_queued', { rk, cues: cues.length, what });
@@ -290,6 +300,14 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   const handFixArmed = useRef(null);
   const refine = () => {
     if (!row) return;
+    if (plays(row)) { setMessage('This part plays under your settings; refining is for the filtered parts.'); return; }
+    // R on a part waiting in this page's queue takes it out again.
+    const mine = cuesOf(row);
+    if (running && mine.length && mine.every((id) => pendingRefine.has(id))) {
+      setPendingRefine((s) => new Set([...s].filter((id) => !mine.includes(id))));
+      setMessage(`"${row.label}" is out of the queue.`);
+      return;
+    }
     if (isSceneRow(row)) { setMessage('A scene is rebuilt with its parts; refine the parts in it.'); return; }
     if (row.handFixed && handFixArmed.current !== row.id) {
       handFixArmed.current = row.id;
@@ -303,14 +321,17 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     const targets = again ? refineTargets : roughRefineTargets;
     const cues = [...new Set(targets.flatMap(cuesOf))];
     const handFixed = targets.filter((r) => r.handFixed);
-    if (handFixed.length) {
+    const judged = targets.filter((r) => r.verdict || r.reviewed);
+    if (handFixed.length || judged.length) {
       const signature = [...cues].sort().join('\0');
       if (handFixedRefineArm.current?.signature !== signature) {
         clearTimeout(handFixedRefineArm.current?.timer);
         const timer = setTimeout(() => { handFixedRefineArm.current = null; }, REWORK_ARM_MS);
         handFixedRefineArm.current = { signature, timer };
         const count = handFixed.length;
-        setMessage(`Refining will remove saved hand-fixed timing on ${count} filtered part${count === 1 ? '' : 's'}. Press Shift+R or click Refine all again to continue.`);
+        const lost = [count ? `saved hand-fixed timing on ${count} filtered part${count === 1 ? '' : 's'}` : null,
+          judged.length ? `the verdict on ${judged.length} part${judged.length === 1 ? '' : 's'} you reviewed` : null].filter(Boolean).join(' and ');
+        setMessage(`Refining will remove ${lost}. Press Shift+R or click Refine all again to continue.`);
         return;
       }
       clearTimeout(handFixedRefineArm.current.timer);
@@ -444,7 +465,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   };
   return {
     scope, setScope, scoped, row, pick, handlers, message: saving ? 'Saving…' : message, helpOpen, canUndo, tally, pendingRefine, refining, running,
-    roughRefineCount: roughRefineTargets.length, refineAllCount: refineTargets.length,
+    roughRefineCount: roughRefineTargets.length, roughLeftCount, refineAllCount: refineTargets.length,
     bleepLevel, flagged: flagged.length, rework,
     previewRecovery: previewRecovery ? {
       message: previewRecovery.saved ? 'Bleep level saved. The preview could not refresh.' : 'The preview could not refresh.',

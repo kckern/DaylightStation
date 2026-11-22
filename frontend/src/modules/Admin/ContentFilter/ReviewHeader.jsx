@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Anchor, Badge, Button, Group, Menu, Text, Tooltip } from '@mantine/core';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/index.js';
-import { runPhases } from './runProgress.js';
+import { formatEta, measureEta, runPhases } from './runProgress.js';
 import { ApprovalFeedback, useApprovalRegion } from './FilmApprovalControls.jsx';
 
 /**
@@ -21,7 +21,10 @@ export function runLine(job, worker = null) {
   if (job.status === 'queued') return worker && !worker.alive ? 'Waiting for the filter worker (not running)' : 'Waiting for the worker';
   if (job.status !== 'running') return null;
   const prog = job.steps?.find((s) => s.name === 'refine')?.progress;
-  if (job.step === 'refine' && prog?.phase === 'measure' && prog.total) return `Refining ${prog.done} of ${prog.total}`;
+  if (job.step === 'refine' && prog?.phase === 'measure' && prog.total) {
+    const eta = formatEta(measureEta({ progress: prog, now: Date.now() }));
+    return `Refining ${prog.done} of ${prog.total}${eta ? ` · ${eta} left` : ''}`;
+  }
   if (job.step === 'refine') return prog?.phase === 'transcribe' || prog?.phase === 'sync' ? 'Preparing the film (one time)…' : 'Refining…';
   const phase = runPhases(job).find((p) => p.state === 'running');
   return phase ? `${phase.label}…` : 'Working…';
@@ -37,7 +40,7 @@ function ApproveButton({ approval }) {
   );
 }
 
-export function ReviewHeader({ ratingKey, data, tally, roughFiltered, refineAllCount = 0, handlers, approval, onChanged = () => {}, flagged = 0, blocked = false }) {
+export function ReviewHeader({ ratingKey, data, tally, roughFiltered, roughLeft = 0, refineAllCount = 0, handlers, approval, onChanged = () => {}, flagged = 0, blocked = false }) {
   const [confirmStop, setConfirmStop] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
@@ -63,12 +66,12 @@ export function ReviewHeader({ ratingKey, data, tally, roughFiltered, refineAllC
     <div className="cf-head" role="banner" aria-label="Film">
       <Anchor component={Link} to="/admin/content/filter" size="sm" className="cf-head__back">‹ Films</Anchor>
       <Text fw={700} className="cf-head__title" title={data.title || ''}>{data.title || `Film ${ratingKey}`}</Text>
-      <Text size="sm" className="cf-head__count">{`${tally.done} of ${tally.total} reviewed`}{roughFiltered ? ` · ${roughFiltered} rough` : ''}</Text>
+      <Text size="sm" className="cf-head__count">{`${tally.done} of ${tally.total} reviewed`}{roughFiltered ? ` · ${roughFiltered} to refine` : ''}{roughLeft ? ` · ${roughLeft} rough after refine (check by eye)` : ''}</Text>
       {level ? <Badge size="sm" variant="light" color={data.signOff?.parent ? 'green' : 'gray'}>{level}</Badge> : null}
       {failed ? (
         <Tooltip label={job.error || 'Nothing from it was kept.'} withArrow multiline w={360}>
           <Badge size="sm" color="red" variant="light">{job.status === 'interrupted' ? 'Last refine stopped early; nothing was kept'
-            : `Last ${job.step === 'refine' || job.kind === 'send-back' ? 'refine' : 'run'} failed${job.error ? `: ${String(job.error).split('\n').filter(Boolean).pop().slice(0, 60)}` : ''}`}</Badge>
+            : `Last ${job.step === 'refine' || job.kind === 'send-back' ? 'refine' : 'run'} failed; nothing was kept (hover for why)`}</Badge>
         </Tooltip>
       ) : null}
       {progress ? <Badge size="sm" color="blue" variant="light">{progress}</Badge> : null}
@@ -80,13 +83,16 @@ export function ReviewHeader({ ratingKey, data, tally, roughFiltered, refineAllC
           <Button size="compact-xs" variant="subtle" onClick={() => setConfirmStop(false)}>Keep going</Button>
         </Group>
       ) : <Button size="compact-sm" variant="light" color="red" onClick={() => setConfirmStop(true)}>Stop</Button>)
+        // Approval first whenever the film can be approved: parts refine cannot pin never block it.
+        : data.status?.next === 'approve' ? <ApproveButton approval={approval} />
         : roughFiltered && !blocked ? (
           <Button size="compact-sm" onClick={() => handlers.refineAll?.()}>
             <span className="cf-card__btn">{`Refine all ${roughFiltered}`} <kbd className="cf-keybar__key">⇧R</kbd></span>
           </Button>
-        ) : data.status?.next === 'approve' ? <ApproveButton approval={approval} /> : null}
+        ) : null}
       {error ? <Text size="xs" c="red" role="alert">{error}</Text> : null}
-      <Menu position="bottom-end" withinPortal onClose={() => setConfirmWhole(false)}>
+      {/* No focus back on ⋯ when it closes: Enter must play the part, not reopen the menu. */}
+      <Menu position="bottom-end" withinPortal returnFocus={false} onClose={() => setConfirmWhole(false)}>
         <Menu.Target><Button size="compact-sm" variant="subtle" aria-label="More">⋯</Button></Menu.Target>
         <Menu.Dropdown>
           <Menu.Item disabled={!refineAllCount || blocked} onClick={() => handlers.refineAll?.({ again: true })}>{`Refine all ${refineAllCount} filtered part${refineAllCount === 1 ? '' : 's'} again`}</Menu.Item>

@@ -1066,9 +1066,16 @@ when the run finishes
 A refine moves a part, which drops its verdict, so a part being refined takes no verdict ("Give it a
 verdict when the new timing lands") and auto-advance skips it. While filtered parts are rough, a
 line under the header says to refine first; the sign-off lists "Refine the filtered parts first:
-approval needs their measured timing" for an unrefined film. A send-back
+approval needs their measured timing" for an unrefined film. A rough part refine already tried (it carries a
+`refine-*` reason: not found, coarse edges) is not refined again by Refine all: the header counts it
+as "N rough after refine (check by eye)", and it never hides Approve, which takes the header's
+action slot whenever the film can be approved (review 2026-11-22: Sonic's picture parts keep coarse
+edges, so "Refine all 5" looped). Keys on a part that plays send nothing (it needs no verdict and is
+not refined); R on a part waiting in the page's queue takes it out again. A send-back
 on an already synced film takes about 10 s per part (measured: preflight 2 s, refine 5 s, audit
-1 s); a film's first refine transcribes it once.
+1 s); a film's first refine transcribes it once. The transcript's decode is judged against the audio stream's own
+end (its last packet), not the container's duration: a film whose picture or subtitle track runs on
+past its sound (Sonic: audio ends 12 s before the picture) used to fail "audio decode stayed short".
 
 While a remote worker holds the film, a plain verdict (approve/redo/ignore, no change) may still be
 recorded (`jobs.heldRemotely`); Let it play and Undo answer 409 "A refine is running on this film.

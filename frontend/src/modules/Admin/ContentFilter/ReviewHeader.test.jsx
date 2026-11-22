@@ -33,7 +33,7 @@ describe('ReviewHeader', () => {
     show({ handlers: { refineAll } });
     expect(screen.getByText('‹ Films')).toBeTruthy();
     expect(screen.getByText('Sonic the Hedgehog')).toBeTruthy();
-    expect(screen.getByText('4 of 17 reviewed · 13 rough')).toBeTruthy();
+    expect(screen.getByText('4 of 17 reviewed · 13 to refine')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /^Refine all 13/ }));
     expect(refineAll).toHaveBeenCalled();
   });

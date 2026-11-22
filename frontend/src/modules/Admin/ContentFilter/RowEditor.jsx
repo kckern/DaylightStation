@@ -175,6 +175,7 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
       ) : null}
 
       {status}
+      {notice ? <Text size="sm" role="status">{notice}</Text> : null}
       {playing ? null : (
         <Group gap={6} wrap="wrap" className="cf-card-part__verdicts">
           <KeyButton k="A" color="green" variant={verdict === 'approve' ? 'filled' : 'light'} disabled={verdictLocked} onClick={() => handlers.verdict?.('approve')}>Approve</KeyButton>
@@ -189,7 +190,6 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
         <Key k="Space" /> play/pause · <Key k="Enter" /> play with effect · <Key k="W" /> without · <Key k="←" /><Key k="→" /> parts · <Key k="?" /> all keys
       </Text>
       {busyText ? <Text size="xs" c="dimmed">{busyText}</Text> : null}
-      {notice ? <Text size="sm" role="status">{notice}</Text> : null}
     </Stack>
   );
 }

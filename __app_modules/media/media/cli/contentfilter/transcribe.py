@@ -26,9 +26,28 @@ RECONNECT = ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_on_netwo
 
 
 def probe_duration(src):
+    """How long a full decode of the audio runs: the audio stream's own end (its last packet).
+    The container's duration can be longer - a picture or subtitle track that runs on past the
+    sound (Sonic the Hedgehog's audio ends 12 s before its picture, 2026-11-22) - and judging the
+    decode against that made every attempt look short. Falls back to the container's duration."""
     out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", src],
                          capture_output=True, text=True, check=True).stdout.strip()
-    return float(out)
+    container = float(out)
+    try:
+        tail = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a:0", "-read_intervals", f"{max(0.0, container - 120):.3f}%",
+                               "-show_entries", "packet=pts_time,duration_time", "-of", "csv=p=0", src],
+                              capture_output=True, text=True, check=True).stdout.split()
+        ends = []
+        for line in tail:
+            parts = [x for x in line.split(",") if x and x != "N/A"]
+            if parts:
+                ends.append(float(parts[0]) + (float(parts[1]) if len(parts) > 1 else 0.0))
+        audio_end = max(ends) if ends else None
+        if audio_end and 0 < audio_end <= container + 1:
+            return audio_end
+    except (subprocess.CalledProcessError, ValueError):
+        pass
+    return container
 
 
 def decode(src, wav, attempts=4):

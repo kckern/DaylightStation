@@ -113,14 +113,14 @@ function FilmReview({ ratingKey, rowId, owner }) {
   return (
     <div className="cf-review-page">
       <ReviewHeader ratingKey={ratingKey} data={data} tally={station.tally} roughFiltered={roughFiltered} handlers={{ ...station.handlers, rework: station.rework }} blocked={notMatched}
-        approval={approval} onChanged={reload} flagged={station.flagged} refineAllCount={station.refineAllCount} />
+        approval={approval} onChanged={reload} flagged={station.flagged} refineAllCount={station.refineAllCount} roughLeft={station.roughLeftCount} />
       {notMatched ? <Text size="sm" c="orange">{`Not matched to Plex: ${data.unmatched?.text || 'no Plex film'}. The review and override here are kept; runs are blocked.`}</Text> : null}
       {notice ? <Text size="sm" role="status">{notice}</Text> : null}
       {roughFiltered && !running && !notMatched ? (
         // Review on rough timing is allowed, but a refine moves a part and drops its verdict (review 2026-11-21).
         <Text size="sm" className="cf-head__note">{`Refine first: ${roughFiltered} filtered part${roughFiltered === 1 ? ' is' : 's are'} still on rough timing, and a verdict on a part resets when it is refined. Approval needs refined timing.`}</Text>
       ) : null}
-      <div className="cf-review">
+      <div className={`cf-review${roughFiltered && !running && !notMatched ? ' has-note' : ''}`}>
         <div className="cf-review__side">
           <ReviewPlayer ratingKey={ratingKey} />
           {data.rows.length ? <ReviewTimeline rows={station.scoped} selectedId={row?.id ?? null} onSelect={(r) => station.pick(r)} /> : null}

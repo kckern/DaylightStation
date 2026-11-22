@@ -39,6 +39,7 @@
 .cf-review__side { position: sticky; top: var(--ds-space-2); display: flex; flex-direction: column; gap: var(--ds-space-2); min-width: 0; max-height: calc(100vh - 130px); overflow-y: auto; }
 // The film keeps a height that leaves room for the card below it at 900 px.
 .cf-review__player { aspect-ratio: 16 / 9; width: min(100%, calc(40vh * 16 / 9)); margin: 0 auto; background: var(--ds-bg-base); border-radius: var(--ds-radius-md); overflow: hidden; position: relative; }
+.cf-review.has-note .cf-review__side, .cf-review.has-note .cf-review__list { max-height: calc(100vh - 160px); }
 .cf-review__list { max-height: calc(100vh - 130px); min-width: 0; position: sticky; top: var(--ds-space-2); }
 .cf-review__list > * { flex-shrink: 0; }
 .cf-review__list > .cf-review__rows { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
