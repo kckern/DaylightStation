@@ -94,9 +94,9 @@ function AddScreenForm({ admin }) {
     <section className="house-section" aria-labelledby="screen-admin-add-title" data-testid="screen-admin-add">
       <Title order={2} size="h4" id="screen-admin-add-title">Add a screen</Title>
       <Group component="form" align="flex-end" gap="xs" wrap="wrap" onSubmit={event => { event.preventDefault(); add(); }}>
-        <TextInput label="Name" value={name} onChange={(e) => { setName(e.currentTarget.value); setAnswer(null); }}
+        <TextInput label="Name" value={name} disabled={busy} onChange={(e) => { setName(e.currentTarget.value); setAnswer(null); }}
           data-testid="screen-admin-add-name" style={{ flex: '1 1 180px' }} />
-        <TextInput label="Room" value={room} onChange={(e) => setRoom(e.currentTarget.value)}
+        <TextInput label="Room" value={room} disabled={busy} onChange={(e) => setRoom(e.currentTarget.value)}
           data-testid="screen-admin-add-room" style={{ flex: '1 1 140px' }} />
         <Button type="submit" className="house-action" leftSection={<IconPlus size={16} aria-hidden />} disabled={!name.trim()} loading={busy}
           data-testid="screen-admin-add-save">
@@ -107,7 +107,7 @@ function AddScreenForm({ admin }) {
         <Group gap="xs" role="alert">
           <Text size="sm">“{name.trim()}” is already taken.</Text>
           {answer.suggestion && (
-            <Button type="button" size="xs" variant="light" className="house-action" data-testid="screen-admin-add-suggestion" onClick={() => { setName(answer.suggestion); add(answer.suggestion); }}>
+            <Button type="button" size="xs" variant="light" className="house-action" data-testid="screen-admin-add-suggestion" disabled={busy} onClick={() => { setName(answer.suggestion); add(answer.suggestion); }}>
               Use “{answer.suggestion}”
             </Button>
           )}
