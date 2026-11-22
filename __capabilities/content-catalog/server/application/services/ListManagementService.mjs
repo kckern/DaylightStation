@@ -11,6 +11,7 @@ import {
   ConflictError
 } from '#apps/common/errors/SemanticErrors.mjs';
 import { extractContentId, extractActionName, normalizeListItem } from "../../domain/utils/listItemInput.mjs";
+import { isParamsObject } from "../../domain/utils/listConfigCodec.mjs";
 
 // Valid list types
 const LIST_TYPES = ['menus', 'watchlists', 'programs'];
@@ -35,6 +36,7 @@ const ITEM_FIELDS = Object.freeze({
     skip_after: ['skipAfter', 'skip_after'],
     wait_until: ['waitUntil', 'wait_until'],
     group: ['group'],
+    params: ['params'],
   }),
 });
 const EDITABLE_ITEM_FIELDS = Object.freeze({ ...ITEM_FIELDS.required, ...ITEM_FIELDS.optional });
@@ -44,6 +46,30 @@ function applyItemFields(target, source, fields) {
     const alias = aliases.find(key => source[key] !== undefined);
     if (alias) target[field] = source[alias];
   }
+}
+
+function isEmptyPlainObject(value) {
+  if (value === null || typeof value !== 'object') return false;
+  const proto = Object.getPrototypeOf(value);
+  return (proto === Object.prototype || proto === null) && Object.keys(value).length === 0;
+}
+
+/**
+ * Normalize `params` after applyItemFields copied it onto the target.
+ * null or {} removes the key; any other non-plain-object is rejected; a valid
+ * object is stored as a clone so the caller's object is never shared.
+ */
+function normalizeItemParams(target) {
+  if (!Object.hasOwn(target, 'params')) return;
+  const { params } = target;
+  if (params === null || isEmptyPlainObject(params)) {
+    delete target.params;
+    return;
+  }
+  if (!isParamsObject(params)) {
+    throw new ValidationError('params must be an object or null', { field: 'params' });
+  }
+  target.params = structuredClone(params);
 }
 
 // Validation pattern for list names (lowercase, alphanumeric, hyphens)
@@ -367,6 +393,7 @@ export class ListManagementService {
       input: itemData.input.trim()
     };
     applyItemFields(newItem, itemData, ITEM_FIELDS.optional);
+    normalizeItemParams(newItem);
 
     const section = list.sections[sectionIndex] || (list.sections[sectionIndex] = { items: [] });
     section.items.push(newItem);
@@ -417,6 +444,7 @@ export class ListManagementService {
 
     // Apply updates for any provided field
     applyItemFields(updatedItem, updates, EDITABLE_ITEM_FIELDS);
+    if (updates.params !== undefined) normalizeItemParams(updatedItem);
 
     section.items[index] = updatedItem;
     this.listStore.saveList(type, listName, householdId, list);

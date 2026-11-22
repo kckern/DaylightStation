@@ -44,3 +44,72 @@ describe('ListManagementService schedule field persistence', () => {
     expect(items[1]).toMatchObject({ waitUntil: '2030-07-04', skipAfter: '2030-07-12', fixedOrder: true, playbackRate: 1.25, shader: 'minimal' });
   });
 });
+
+describe('ListManagementService item params', () => {
+  function fixture() {
+    let stored = { sections: [{ items: [{ uid: 'c', label: 'Charades', input: 'app:party-games/charades:fhe', action: 'Open' }] }] };
+    const listStore = {
+      getList: () => ListConfigCodec.normalizeListConfig(structuredClone(stored), 'fhe'),
+      saveList: (_t, _n, _h, value) => { stored = ListConfigCodec.serializeListConfig(value); },
+    };
+    const items = () => (Array.isArray(stored) ? stored : (stored.items ?? stored.sections?.[0]?.items));
+    return { service: new ListManagementService({ listStore, logger: {} }), items };
+  }
+
+  it('stores params on update and removes them with null', () => {
+    const { service, items } = fixture();
+    service.updateItem('menus', 'fhe', 'h', 0, { params: { autostart: true, participants: ['learner-a'] } });
+    expect(items()[0].params).toEqual({ autostart: true, participants: ['learner-a'] });
+
+    service.updateItem('menus', 'fhe', 'h', 0, { params: null });
+    expect(items()[0]).not.toHaveProperty('params');
+  });
+
+  it('stores params on add', () => {
+    const { service, items } = fixture();
+    service.addItem('menus', 'fhe', 'h', { label: 'Other', input: 'app:party-games/charades:other', params: { autostart: false } });
+    expect(items()[1].params).toEqual({ autostart: false });
+  });
+
+  it('swaps params with the content, not the row', () => {
+    const { service, items } = fixture();
+    service.addItem('menus', 'fhe', 'h', { label: 'Second', input: 'app:party-games/charades:two' });
+    service.updateItem('menus', 'fhe', 'h', 0, { params: { autostart: true } });
+    service.swapItems('menus', 'fhe', 'h', { section: 0, index: 0 }, { section: 0, index: 1 });
+    expect(items()[0]).not.toHaveProperty('params');
+    expect(items()[1].params).toEqual({ autostart: true });
+  });
+
+  it('rejects non-object params with a validation error', () => {
+    const { service } = fixture();
+    for (const bad of ['x', [], 5]) {
+      expect(() => service.updateItem('menus', 'fhe', 'h', 0, { params: bad }))
+        .toThrow('params must be an object or null');
+      expect(() => service.addItem('menus', 'fhe', 'h', { label: 'B', input: 'app:x', params: bad }))
+        .toThrow('params must be an object or null');
+    }
+  });
+
+  it('treats empty {} like null (removes params)', () => {
+    const { service, items } = fixture();
+    service.updateItem('menus', 'fhe', 'h', 0, { params: { autostart: true } });
+    service.updateItem('menus', 'fhe', 'h', 0, { params: {} });
+    expect(items()[0]).not.toHaveProperty('params');
+    service.addItem('menus', 'fhe', 'h', { label: 'E', input: 'app:x', params: {} });
+    expect(items()[1]).not.toHaveProperty('params');
+  });
+
+  it('stores a copy, not the caller object', () => {
+    let saved;
+    const listStore = {
+      getList: () => ({ sections: [{ items: [{ label: 'Charades', input: 'app:party-games/charades:fhe' }] }] }),
+      saveList: (_t, _n, _h, value) => { saved = value; },
+    };
+    const service = new ListManagementService({ listStore, logger: {} });
+    const params = { autostart: true, participants: ['learner-a'] };
+    service.updateItem('menus', 'fhe', 'h', 0, { params });
+    params.autostart = false;
+    params.participants.push('learner-b');
+    expect(saved.sections[0].items[0].params).toEqual({ autostart: true, participants: ['learner-a'] });
+  });
+});
