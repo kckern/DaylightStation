@@ -26,7 +26,9 @@ export function PlaybackQualityForm({ request, onApply }) {
     try {
       const quality = defaults ? {} : normalizePlaybackQuality({
         ...(resolution ? { maxResolution: resolution } : {}),
-        ...(bitrate !== '' ? { maxVideoBitrate: bitrate } : {}), transcode, adaptive,
+        ...(bitrate !== '' ? { maxVideoBitrate: bitrate } : {}),
+        ...(Object.hasOwn(request.initial, 'transcode') || transcode !== 'auto' ? { transcode } : {}),
+        ...(Object.hasOwn(request.initial, 'adaptive') || adaptive !== true ? { adaptive } : {}),
       });
       const result = await onApply(quality);
       if (result?.ok === false) setError(result.code === 'PLAYBACK_CHANGED'
