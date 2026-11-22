@@ -222,6 +222,7 @@ import { MQTTSelectorAdapter } from '#adapters/hardware/mqtt-selector/MQTTSelect
 import { ProxyService } from '#system/proxy/ProxyService.mjs';
 import { PlexProxyAdapter } from '#adapters/proxy/PlexProxyAdapter.mjs';
 import { PlexLiveTvProxyAdapter } from '#adapters/proxy/PlexLiveTvProxyAdapter.mjs';
+import { PlexLiveTvArtProxyAdapter } from '#adapters/proxy/PlexLiveTvArtProxyAdapter.mjs';
 import { ImmichProxyAdapter } from '#adapters/proxy/ImmichProxyAdapter.mjs';
 import { AudiobookshelfProxyAdapter } from '#adapters/proxy/AudiobookshelfProxyAdapter.mjs';
 import { FreshRSSProxyAdapter } from '#adapters/proxy/FreshRSSProxyAdapter.mjs';
@@ -864,6 +865,8 @@ export function createProxyService(config) {
   // server; the same account token reaches it. See PlexLiveTvProxyAdapter.
   if (config.plex?.token) {
     proxyService.register(new PlexLiveTvProxyAdapter({ token: config.plex.token }));
+    // Channel art lives on a second, public host (no token).
+    proxyService.register(new PlexLiveTvArtProxyAdapter());
   }
 
   // Register Immich adapter if configured

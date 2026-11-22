@@ -90,6 +90,9 @@ describe('PlexLiveTvContentSource', () => {
     expect(item.duration).toBeNull();
     expect(item.resumable).toBe(false);
     expect(item.metadata).toMatchObject({ contentFormat: 'hls_video', live: true, callSign: 'NFLDC1' });
+    // art goes through the art proxy, never as a raw provider-static URL
+    expect(item.thumbnail).toBe('/api/v1/proxy/plex-live-art/epg/cms/production/x/NFL_WHITE.png');
+    expect(item.imageUrl).toBe('/api/v1/proxy/plex-live-art/epg/cms/production/z/NFL_VERT.jpg');
   });
 
   it('accepts a bare slug and rejects unknown or malformed ones', async () => {
@@ -102,7 +105,7 @@ describe('PlexLiveTvContentSource', () => {
 
   it('gives menus the vertical poster as tile art', async () => {
     const s = source();
-    expect(await s.getThumbnailUrl('nfl-channel')).toBe(NFL.coverPoster);
+    expect(await s.getThumbnailUrl('nfl-channel')).toBe('/api/v1/proxy/plex-live-art/epg/cms/production/z/NFL_VERT.jpg');
     expect(await s.getThumbnailUrl('no-such-channel')).toBeNull();
   });
 

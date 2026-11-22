@@ -16,17 +16,20 @@ import { PlayableItem } from "../../../../../../__capabilities/content-catalog/s
 export class PlexLiveTvContentSource {
   #lineup;
   #proxyPrefix;
+  #artPrefix;
   #logger;
 
   /**
    * @param {Object} deps
    * @param {{ list: Function, get: Function }} deps.lineup - PlexLiveTvLineup
    * @param {string} [deps.proxyPrefix] - Public mount of the plex-live proxy
+   * @param {string} [deps.artPrefix] - Public mount of the plex-live-art proxy
    * @param {Object} [deps.logger]
    */
-  constructor({ lineup, proxyPrefix = '/api/v1/proxy/plex-live', logger = console }) {
+  constructor({ lineup, proxyPrefix = '/api/v1/proxy/plex-live', artPrefix = '/api/v1/proxy/plex-live-art', logger = console }) {
     this.#lineup = lineup;
     this.#proxyPrefix = proxyPrefix.replace(/\/$/, '');
+    this.#artPrefix = artPrefix.replace(/\/$/, '');
     this.#logger = logger;
   }
 
@@ -62,13 +65,29 @@ export class PlexLiveTvContentSource {
 
   /**
    * Menu tile art: the channel's vertical poster (it sits with Plex show
-   * posters), else its logo. Public provider-static URLs, no token.
+   * posters), else its logo.
    */
   async getThumbnailUrl(id) {
     const slug = localId(id);
     if (!slug) return null;
     const channel = await this.#lineup.get(slug);
-    return channel ? (channel.poster || channel.thumb || null) : null;
+    return channel ? this.#art(channel.poster || channel.thumb) : null;
+  }
+
+  /**
+   * Channel art lives on provider-static.plex.tv. It is handed out as a path
+   * through the plex-live-art proxy: menus and the display router expect art
+   * at an app path (the display router rewrites an absolute URL's host to the
+   * SOURCE's proxy, which for these is the playlist host — wrong for art).
+   */
+  #art(url) {
+    if (typeof url !== 'string') return null;
+    try {
+      const parsed = new URL(url);
+      return parsed.origin === ART_ORIGIN ? `${this.#artPrefix}${parsed.pathname}` : url;
+    } catch {
+      return null;
+    }
   }
 
   #toItem(channel) {
@@ -76,8 +95,8 @@ export class PlexLiveTvContentSource {
       id: `plex-live:${channel.slug}`,
       title: channel.title,
       type: 'live-channel',
-      thumbnail: channel.thumb,
-      imageUrl: channel.poster || channel.art || channel.thumb,
+      thumbnail: this.#art(channel.thumb),
+      imageUrl: this.#art(channel.poster || channel.art || channel.thumb),
       description: channel.summary,
       mediaType: 'hls_video',
       mediaUrl: `${this.#proxyPrefix}${channel.partKey}`,
@@ -87,12 +106,14 @@ export class PlexLiveTvContentSource {
         contentFormat: 'hls_video',
         live: true,
         callSign: channel.callSign,
-        art: channel.art,
+        art: this.#art(channel.art),
         sourceUrl: `https://watch.plex.tv/live-tv/channel/${channel.slug}`,
       },
     });
   }
 }
+
+const ART_ORIGIN = 'https://provider-static.plex.tv';
 
 function localId(id) {
   const slug = String(id ?? '').replace(/^plex-live:/, '').trim().toLowerCase();

@@ -36,6 +36,7 @@ export function createProxyPassthroughHandlers(proxyService) {
   return {
     plex: bind('plex'),
     plexLive: bind('plex-live'),
+    plexLiveArt: bind('plex-live-art'),
     immich: bind('immich'),
     reddit: bind('reddit'),
     komga: bind('komga'),
@@ -286,6 +287,7 @@ export function createProxyRouter(config = {}) {
     passthroughHandlers.plexLive,
     'Plex live TV proxy not configured (needs a Plex token)',
   ));
+  router.use('/plex-live-art', placeholderPassthrough(passthroughHandlers.plexLiveArt, 'plex-live-art'));
   router.use('/immich', requiredPassthrough(
     passthroughHandlers.immich,
     'Immich proxy not configured (ProxyService required)',

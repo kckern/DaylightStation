@@ -65,11 +65,12 @@ proxy exposes only channel media.
 | Piece | File |
 |-------|------|
 | Proxy adapter (`plex-live` service, playlist rewrite, path gate) | `__backend/src/1_adapters/proxy/PlexLiveTvProxyAdapter.mjs` |
+| Art proxy (`plex-live-art` → provider-static.plex.tv, public, `/epg/cms/*` images only, cached a year) | `__backend/src/1_adapters/proxy/PlexLiveTvArtProxyAdapter.mjs` |
 | Proxy hooks it uses (`getBodyRewriter`, `allowsPath`) | `__backend/src/0_system/proxy/ProxyService.mjs`, `IProxyAdapter.mjs` |
 | Lineup reader (`GET /lineups/plex/channels`, token in a header) | `__backend/src/1_adapters/content/media/plex-live/PlexLiveTvLineup.mjs` |
 | Content source (`plex-live:<slug>` → item) | `__backend/src/1_adapters/content/media/plex-live/PlexLiveTvContentSource.mjs` |
 | Registration | `registerPlexLiveTvProvider` in `__app_modules/media/media/server/composition/content-providers.mjs`; proxy in `5_composition/bootstrap.mjs` |
-| Route | `/api/v1/proxy/plex-live/*` in `4_api/v1/routers/proxy.mjs` |
+| Routes | `/api/v1/proxy/plex-live/*` and `/api/v1/proxy/plex-live-art/*` in `4_api/v1/routers/proxy.mjs` |
 
 The item is `mediaType: hls_video`, `duration: null`, `resumable: false`,
 `metadata.live: true`, so the Player plays it through hls.js. The Player still
@@ -77,8 +78,11 @@ reports progress against the live window (about 90 s); `RecordPlaybackProgress`
 sees `metadata.live` and stores no playhead, completion or media-server session
 for it. The play still appears in the screen's play ledger (`play.log.updated`
 carries `live: true`). Art: `thumbnail` is the channel logo,
-`imageUrl` the vertical poster, `metadata.art` the background (all public
-`provider-static.plex.tv` URLs).
+`imageUrl` the vertical poster, `metadata.art` the background. All three live on
+`provider-static.plex.tv` and are handed out as `/api/v1/proxy/plex-live-art/…`
+paths: the display router (`/api/v1/display/<id>`) rewrites an absolute art
+URL's host to the item SOURCE's proxy, which for these would be the playlist
+host.
 
 The lineup is cached for 6 hours. Only visible, non-DRM HLS channels are kept.
 If a refresh fails the stale lineup keeps serving and the next attempt waits a
