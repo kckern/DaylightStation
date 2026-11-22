@@ -98,6 +98,17 @@ it('reports disabled feature without registering a source or creating data', asy
  } finally {rmSync(dir,{recursive:true,force:true});}
 });
 
+it('serves the admin people directory when Agenda is disabled', async () => {
+ const people=[{person:{kind:'member',id:'person-a'},display:{name:'Person A',avatar:null},active:true},{person:{kind:'guest',id:'guest-b'},display:{name:'Guest B',avatar:null},active:true}];
+ const calls=[];const peopleDirectory={list:async args=>{calls.push(args);return people;},revision:async()=>7};
+ const runtime=installParticipantRuntime({enabled:false,configService:{getDefaultHouseholdId:()=> 'h'},peopleDirectory,contentRegistry:{register(){throw Error('no source when disabled');}},logger:{info(){},warn(){},error(){}}});
+ const app=express();app.use(express.json());app.use((req,_res,next)=>{req.user={sub:'host',roles:['parent']};next();});app.use('/people',runtime.peopleRouter);app.use('/agendas',runtime.agenda.adminRouter);
+ const response=await request(app).get('/people');
+ expect(response.status).toBe(200);expect(response.body).toEqual({people});expect(response.headers.etag).toBe('"7"');
+ expect(calls).toEqual([{householdId:'h',query:'',includeArchived:false}]);
+ expect((await request(app).get('/agendas')).status).toBe(503);
+});
+
 it('serves exact ownership lookup without requiring auth for unrelated lists', async () => {
  const {AgendaResourceAliases}=await import('../../../../__app_modules/household/agenda/server/composition.mjs');
  const {createListRouter}=await import('../../../../__capabilities/content-catalog/server/api/list.mjs');
