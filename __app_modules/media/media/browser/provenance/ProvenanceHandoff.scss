@@ -134,18 +134,29 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
     }
   }
 
-  // A second, smaller logo in the bottom third (config `secondary_logos`): it
-  // arrives after the main logo and fades out when the field clears.
+  // Smaller logos in a row in the bottom third (config `secondary_logos`): they
+  // arrive after the main logo and fade out when the field clears.
   &__secondary {
     position: absolute;
     left: 50%;
     top: 82%;
-    width: 16cqw;
-    height: 9cqh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3.5cqw;
+    height: 8cqh;
     transform: translate(-50%, -50%);
     opacity: 0;
     animation: ph-secondary-in 700ms $ph-ease 350ms forwards;
     transition: opacity 600ms ease;
+  }
+
+  &__secondary-logo {
+    display: block;
+    height: 100%;
+    width: auto;
+    max-width: 16cqw;
+    object-fit: contain;
   }
 
   &__logo {

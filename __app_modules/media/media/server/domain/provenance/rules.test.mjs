@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseRules, matchesWhen, firstRule, rankOffers, stableIndex, needsContentFilter, parseSecondary, secondaryLogoFor } from './rules.mjs';
+import { parseRules, matchesWhen, firstRule, rankOffers, stableIndex, needsContentFilter, parseSecondary, secondaryLogosFor } from './rules.mjs';
 import { isLongAbsence, parseServices } from './provenance.mjs';
 
 describe('matchesWhen', () => {
@@ -83,24 +83,25 @@ describe('secondary logos', () => {
     { provider: 'tubi', names: ['Tubi'] },
   ]);
   const secondary = parseSecondary([
+    { logo: 'isp', label: 'ISP', for: 'all' },
     { logo: 'pass-a', label: 'Pass A', for: 'paid', except: ['peacock'] },
     { logo: 'badge-b', for: ['tubi'] },
     { for: 'paid' },
   ]);
   it('reads rules, skipping ones without a logo', () => {
-    expect(secondary).toHaveLength(2);
-    expect(secondary[1].label).toBe('badge-b');
+    expect(secondary).toHaveLength(3);
+    expect(secondary[2].label).toBe('badge-b');
     expect(parseSecondary(undefined)).toEqual([]);
   });
-  it('gives paid services the logo, except the ones listed', () => {
-    expect(secondaryLogoFor('netflix', secondary, services)).toEqual({ logo: 'pass-a', label: 'Pass A' });
-    expect(secondaryLogoFor('peacock', secondary, services)).toBeNull();
+  it('applies every rule that fits, in config order', () => {
+    expect(secondaryLogosFor('netflix', secondary, services)).toEqual([{ logo: 'isp', label: 'ISP' }, { logo: 'pass-a', label: 'Pass A' }]);
+    expect(secondaryLogosFor('peacock', secondary, services)).toEqual([{ logo: 'isp', label: 'ISP' }]);
+    expect(secondaryLogosFor('tubi', secondary, services).map((s) => s.logo)).toEqual(['isp', 'badge-b']);
   });
-  it('matches a listed provider, and nothing for no provider', () => {
-    expect(secondaryLogoFor('tubi', secondary, services)).toEqual({ logo: 'badge-b', label: 'badge-b' });
-    expect(secondaryLogoFor(null, secondary, services)).toBeNull();
-  });
-  it('skips a logo that cannot be shown', () => {
-    expect(secondaryLogoFor('netflix', secondary, services, (id) => id !== 'pass-a')).toBeNull();
+  it('gives nothing for no provider, and skips logos that cannot be shown or repeat', () => {
+    expect(secondaryLogosFor(null, secondary, services)).toEqual([]);
+    expect(secondaryLogosFor('netflix', secondary, services, (id) => id !== 'isp').map((s) => s.logo)).toEqual(['pass-a']);
+    const twice = parseSecondary([{ logo: 'isp', for: 'all' }, { logo: 'isp', for: 'paid' }]);
+    expect(secondaryLogosFor('netflix', twice, services)).toHaveLength(1);
   });
 });

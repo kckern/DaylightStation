@@ -2,7 +2,7 @@
  * Whether a provider logo is readable on the handoff's dark field, measured from
  * its pixels: the mean relative luminance of its opaque pixels against the field,
  * as a WCAG contrast ratio. A logo under MIN_CONTRAST is drawn on a light plate
- * (Disney+'s navy wordmark measures about 2.5 against the field).
+ * (Disney+'s navy wordmark measured about 2.5 before it had a white variant).
  *
  * Reference: __docs/reference/media/provenance.md
  */

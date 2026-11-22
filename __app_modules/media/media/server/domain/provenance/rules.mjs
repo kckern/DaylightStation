@@ -178,13 +178,14 @@ export function rankOffers(offers, priority, canShow = () => true) {
 }
 
 /**
- * Secondary logos: a second, smaller logo shown under the service's, decided
- * by the config's `secondary_logos` list (first match wins):
+ * Secondary logos: smaller logos shown under the service's, decided by the
+ * config's `secondary_logos` list. Every entry that fits applies, in list
+ * order (a title can carry several):
  *
  *   secondary_logos:
  *     - logo: <id>                 # a logo file in the providers folder
  *       label: <name>              # its name (alt text, logs)
- *       for: paid                  # `paid` (services marked paid: true) or a list of provider ids
+ *       for: paid                  # `all`, `paid` (services marked paid: true), or a list of provider ids
  *       except: [<provider>, ...]  # providers that never get it
  */
 export function parseSecondary(raw) {
@@ -192,24 +193,27 @@ export function parseSecondary(raw) {
     if (!r || typeof r !== 'object') return null;
     const logo = String(r.logo ?? '').trim();
     if (!logo) return null;
-    const paid = r.for === 'paid';
+    const scope = r.for === 'all' || r.for === 'paid' ? r.for : 'list';
     return Object.freeze({
       logo,
       label: r.label ? String(r.label) : logo,
-      paid,
-      providers: paid ? [] : list(r.for),
+      scope,
+      providers: scope === 'list' ? list(r.for) : [],
       except: list(r.except),
     });
   }).filter(Boolean));
 }
 
-/** The secondary logo for a chosen provider, `{ logo, label }`, or null. */
-export function secondaryLogoFor(provider, secondary, services, canShow = () => true) {
-  if (!provider) return null;
+/** The secondary logos for a chosen provider, `[{ logo, label }]` in config order (each logo once). */
+export function secondaryLogosFor(provider, secondary, services, canShow = () => true) {
+  if (!provider) return [];
+  const out = [];
   for (const rule of secondary || []) {
-    if (rule.except.includes(provider)) continue;
-    const fits = rule.paid ? !!services?.paid?.has(provider) : rule.providers.includes(provider);
-    if (fits && canShow(rule.logo)) return { logo: rule.logo, label: rule.label };
+    if (rule.except.includes(provider) || out.some((s) => s.logo === rule.logo)) continue;
+    const fits = rule.scope === 'all' ? true
+      : rule.scope === 'paid' ? !!services?.paid?.has(provider)
+        : rule.providers.includes(provider);
+    if (fits && canShow(rule.logo)) out.push({ logo: rule.logo, label: rule.label });
   }
-  return null;
+  return out;
 }

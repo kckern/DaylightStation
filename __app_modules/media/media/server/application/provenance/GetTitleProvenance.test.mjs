@@ -55,13 +55,13 @@ describe('GetTitleProvenance', () => {
   });
 
   it('adds the secondary logo the config names for the chosen service', async () => {
-    const secondary = parseSecondary([{ logo: 'pass-a', label: 'Pass A', for: 'paid', except: ['peacock'] }]);
+    const secondary = parseSecondary([{ logo: 'isp', label: 'ISP', for: 'all' }, { logo: 'pass-a', label: 'Pass A', for: 'paid', except: ['peacock'] }]);
     const netflix = build({ identity: MOVIE, sources: [{ name: 'Netflix', type: 'sub' }], policy: { secondary } });
-    expect(await netflix.uc.execute({ ratingKey: '100' })).toMatchObject({ provider: 'netflix', secondary: { logo: 'pass-a', name: 'Pass A' } });
+    expect((await netflix.uc.execute({ ratingKey: '100' })).secondary).toEqual([{ logo: 'isp', name: 'ISP' }, { logo: 'pass-a', name: 'Pass A' }]);
     const peacock = build({ identity: MOVIE, sources: [{ name: 'Peacock', type: 'sub' }], policy: { secondary } });
-    expect((await peacock.uc.execute({ ratingKey: '100' })).secondary).toBeNull();
+    expect((await peacock.uc.execute({ ratingKey: '100' })).secondary).toEqual([{ logo: 'isp', name: 'ISP' }]);
     const noFile = build({ identity: MOVIE, sources: [{ name: 'Netflix', type: 'sub' }], policy: { secondary }, logos: (p) => p !== 'pass-a' });
-    expect((await noFile.uc.execute({ ratingKey: '100' })).secondary).toBeNull();
+    expect((await noFile.uc.execute({ ratingKey: '100' })).secondary).toEqual([{ logo: 'isp', name: 'ISP' }]);
   });
 
   it('serves a fresh record without a lookup (the title\'s facts are still read, for the rules)', async () => {

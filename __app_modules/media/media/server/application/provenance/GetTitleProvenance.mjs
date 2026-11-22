@@ -20,7 +20,7 @@
 import {
   isFresh, lookupIdFor, streamingOffers, hasQuotaRoom, providerIdFor, providerLabel,
 } from '../../domain/provenance/provenance.mjs';
-import { firstRule, rankOffers, needsContentFilter, parseRules, secondaryLogoFor } from '../../domain/provenance/rules.mjs';
+import { firstRule, rankOffers, needsContentFilter, parseRules, secondaryLogosFor } from '../../domain/provenance/rules.mjs';
 
 const monthOf = (d) => d.toISOString().slice(0, 7);
 
@@ -122,13 +122,13 @@ export class GetTitleProvenance {
 
   #answer(rk, policy, { provider, source, tier = null, rule = null, name = null, offerType = null, checkedAt = null }) {
     const services = policy.services;
-    // A second, smaller logo under the service's (config `secondary_logos`), when its file exists.
-    const secondary = secondaryLogoFor(provider, policy.secondary, services, (id) => this.#logos.has(id));
+    // Smaller logos under the service's (config `secondary_logos`), those whose file exists.
+    const secondary = secondaryLogosFor(provider, policy.secondary, services, (id) => this.#logos.has(id));
     return {
       ratingKey: rk,
       provider,
       name: providerLabel(provider, services, name),
-      secondary: secondary ? { logo: secondary.logo, name: secondary.label } : null,
+      secondary: secondary.map((s) => ({ logo: s.logo, name: s.label })),
       tier: tier || source,
       source,
       rule: rule ? (rule.name || describeWhen(rule.when)) : null,

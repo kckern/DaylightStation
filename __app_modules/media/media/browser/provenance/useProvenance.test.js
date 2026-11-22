@@ -51,17 +51,17 @@ describe('useProvenance', () => {
     expect(seen.some(([id, , provider]) => id === 'plex:2' && provider)).toBe(false);
   });
 
-  it('carries a secondary logo, and leaves out one that will not load', async () => {
-    const withSecondary = { ...BODY, provenance: { ...BODY.provenance, secondary: { logo: '/logo/pass-a', name: 'Pass A' } } };
+  it('carries the secondary logos, and leaves out one that will not load', async () => {
+    const withSecondary = { ...BODY, provenance: { ...BODY.provenance, secondary: [{ logo: '/logo/isp', name: 'ISP' }, { logo: '/logo/pass-a', name: 'Pass A' }] } };
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve(withSecondary) })));
     const { result } = renderHook(() => useProvenance('plex:7'));
     await vi.waitFor(() => expect(result.current.status).toBe('ready'));
-    expect(result.current.data.secondaryUrl).toBe('/logo/pass-a?variant=white');
+    expect(result.current.data.secondaryUrls).toEqual(['/logo/isp?variant=white', '/logo/pass-a?variant=white']);
 
     globalThis.Image = class { set src(v) { queueMicrotask(() => (v.includes('pass-a') ? this.onerror?.() : this.onload?.())); } };
     const { result: r2 } = renderHook(() => useProvenance('plex:8'));
     await vi.waitFor(() => expect(r2.current.status).toBe('ready'));
-    expect(r2.current.data.secondaryUrl).toBeNull();
+    expect(r2.current.data.secondaryUrls).toEqual(['/logo/isp?variant=white']);
     expect(r2.current.data.provider).toBe('hoopla');
   });
 

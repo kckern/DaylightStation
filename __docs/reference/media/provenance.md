@@ -29,10 +29,10 @@ plays from Plex and the bumper signals provenance only.
 | `docked` (~4 s) | playing | field and lines dissolve; logo moves to the top-right corner at 80% opacity |
 | `leaving` (~0.9 s) | playing | corner logo fades |
 
-**A secondary logo** (config `secondary_logos`), when the answer carries one, sits
-smaller in the bottom third, below the lines, arriving just after the main logo; it
-fades out when the field clears and never docks. One that will not load is left
-out (warn `provenance.secondary-logo.failed`) and the scene plays without it.
+**Secondary logos** (config `secondary_logos`), when the answer carries any, sit
+smaller in a row in the bottom third, below the lines, arriving just after the main
+logo; they fade out when the field clears and never dock. One that will not load is
+left out (warn `provenance.secondary-logo.failed`) and the scene plays without it.
 
 Lines and dots take the service's brand colour (`PROVIDER_ACCENTS` in
 `ProvenanceHandoff.jsx`; white otherwise). Timings are `SCENE_TIMING` in
@@ -191,16 +191,21 @@ still works: it reads as free > subscribed > any.
 
 ```yaml
 secondary_logos:
-  - logo: plex-pass          # a logo file in the providers folder
-    label: Plex Pass         # its name (alt text, logs)
-    for: paid                # services marked `paid: true` in `services`, or a list of provider ids
+  - logo: xfinity            # a logo file in the providers folder
+    label: Xfinity           # its name (alt text, logs)
+    for: all
+  - logo: plex-pass
+    label: Plex Pass
+    for: paid                # `all`, services marked `paid: true` in `services`, or a list of provider ids
     except: [vidangel, living-scriptures, peacock, byutv, prime-video]
 ```
 
-First match wins, after the service is chosen (any stage). The code knows only the
-rule; which logo, which services and the exceptions are all config. A rule whose
-logo file is missing is skipped. Household: Plex Pass under every paid service
-except VidAngel, Living Scriptures, Peacock, BYUtv and Prime Video.
+Every entry that fits applies, in list order (each logo once), after the service is
+chosen (any stage). The code knows only the rule; which logos, which services and
+the exceptions are all config. An entry whose logo file is missing is skipped.
+Household: Xfinity (the internet provider) under every service; Plex Pass after it
+under every paid service except VidAngel, Living Scriptures, Peacock, BYUtv and Prime
+Video.
 
 ### Services: names to provider ids
 
@@ -255,7 +260,7 @@ to 1.5 s and the scene still appears if the answer is in before the film has rol
 
 `/api/v1/provenance`:
 
-- `GET /:ratingKey` (bare or `plex:`-prefixed) → `{ provenance: { ratingKey, provider, name, tier, source, rule, offerType, checkedAt, logo, secondary: { logo, name } | null } | null, startSec: number | null, resumeShowsScene: boolean }`.
+- `GET /:ratingKey` (bare or `plex:`-prefixed) → `{ provenance: { ratingKey, provider, name, tier, source, rule, offerType, checkedAt, logo, secondary: [{ logo, name }] } | null, startSec: number | null, resumeShowsScene: boolean }`.
   `startSec` and `resumeShowsScene` (`DescribePlayStart`) are read only when a
   provider was found; unknown when the read failed (warn `provenance.start.read-failed`).
 - `GET /logo/:provider[?variant=white]` → the logo (white variant preferred when

@@ -7,7 +7,7 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
  * title is shown as coming from, for the Player's provenance bumper.
  *
  *   GET /:ratingKey      -> { provenance: { provider, name, tier, offerType, checkedAt, logo,
- *                                          secondary: { logo, name } | null } | null,
+ *                                          secondary: [{ logo, name }] } | null,
  *                             startSec: number | null, resumeShowsScene: boolean }
  *                           startSec: where a direct play of the title would
  *                           start (0 = from the top), read without side
@@ -58,7 +58,7 @@ export function createProvenanceRouter({ getTitleProvenance, logos, describePlay
         ? {
           ...found,
           logo: `/api/v1/provenance/logo/${found.provider}`,
-          secondary: found.secondary ? { ...found.secondary, logo: `/api/v1/provenance/logo/${found.secondary.logo}` } : null,
+          secondary: (found.secondary || []).map((s) => ({ ...s, logo: `/api/v1/provenance/logo/${s.logo}` })),
         }
         : null,
       startSec,
