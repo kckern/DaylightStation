@@ -30,7 +30,7 @@ export function LogCategoryView({ category, scope = 'month', username }) {
       <ActivityHeatmap days={days} />
 
       <Stack gap="sm">
-        {activeDays.slice(0, 20).map(date => {
+        {activeDays.map(date => {
           const day = days[date];
           const sources = Object.keys(day.sources || {});
           const summaries = day.summaries || [];
