@@ -12,6 +12,13 @@ export function formatAge(timestamp) {
   if (!timestamp) return '';
   const diff = Date.now() - new Date(timestamp).getTime();
   if (!Number.isFinite(diff)) return '';
+  if (diff < 0) {
+    const mins = Math.ceil(-diff / 60000);
+    if (mins < 60) return `in ${mins}m`;
+    const hrs = Math.ceil(mins / 60);
+    if (hrs < 24) return `in ${hrs}h`;
+    return `in ${Math.ceil(hrs / 24)}d`;
+  }
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return 'now';
   if (mins < 60) return `${mins}m`;

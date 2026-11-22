@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import DOMPurify from 'dompurify';
-import { colorFromLabel, safeImage } from "../Scroll/cards/utils.js";
+import { colorFromLabel, formatAge, safeImage } from "../Scroll/cards/utils.js";
 import FeedPlayer from "../players/FeedPlayer.jsx";
 import { useFeedPlayer } from "../players/FeedPlayerContext.jsx";
 import { inlineYouTubeDetailPath, useInlineYouTubeDetail } from "../players/useInlineYouTubeDetail.js";
@@ -68,6 +68,7 @@ export default function ArticleRow({ article, isNew = false, initiallyExpanded =
     const d = publishedDate;
     const now = new Date();
     const diffMs = now - d;
+    if (diffMs < 0) return formatAge(d);
     const diffMins = Math.floor(diffMs / 60000);
     if (diffMins < 1) return 'now';
     if (diffMins < 60) return `${diffMins}m ago`;
