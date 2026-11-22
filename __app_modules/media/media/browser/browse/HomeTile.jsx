@@ -26,7 +26,9 @@ export function HomeTile({
     ? `${pictureName}, ${Math.round(progress)}% played`
     : pictureName;
   const [portraitThumbnail, setPortraitThumbnail] = useState(null);
+  const [failedThumbnail, setFailedThumbnail] = useState(null);
   const hasPortraitArtwork = Boolean(item?.thumbnail) && portraitThumbnail === item.thumbnail;
+  const thumbnailFailed = Boolean(item?.thumbnail) && failedThumbnail === item.thumbnail;
   let kind = kindOverride ?? tileKind(item);
   if (kind === 'square' && hasPortraitArtwork) kind = 'poster';
   return (
@@ -38,7 +40,7 @@ export function HomeTile({
           aria-label={spokenPictureName}
           onClick={onPicture}
         >
-          {item?.thumbnail
+          {item?.thumbnail && !thumbnailFailed
             ? (
               <img
                 src={item.thumbnail}
@@ -47,6 +49,10 @@ export function HomeTile({
                 onLoad={(event) => {
                   const { naturalWidth: w, naturalHeight: h } = event.currentTarget;
                   setPortraitThumbnail(w > 0 && h / w > PORTRAIT_RATIO ? item.thumbnail : null);
+                }}
+                onError={() => {
+                  setFailedThumbnail(item.thumbnail);
+                  setPortraitThumbnail(current => current === item.thumbnail ? null : current);
                 }}
               />
             )
