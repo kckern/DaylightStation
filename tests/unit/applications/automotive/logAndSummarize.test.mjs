@@ -96,6 +96,23 @@ describe('LogFuel', () => {
   });
 });
 
+describe('LogServiceRecord', () => {
+  it('rejects a negative odometer before writing a service record', async () => {
+    await expect(logService.execute({
+      vehicleId: VEHICLE, date: '2026-08-01', type: 'oil-change', odometerMi: -100,
+    })).rejects.toThrow(/non-negative/i);
+    expect(await records.listServiceRecords(VEHICLE)).toEqual([]);
+  });
+
+  it('accepts a zero odometer and a blank odometer', async () => {
+    await logService.execute({ vehicleId: VEHICLE, id: 'zero', date: '2026-08-01', type: 'other', odometerMi: 0 });
+    await logService.execute({ vehicleId: VEHICLE, id: 'blank', date: '2026-08-01', type: 'other' });
+    const rows = await records.listServiceRecords(VEHICLE);
+    expect(rows.find(record => record.id === 'zero').odometerKm).toBe(0);
+    expect(rows.find(record => record.id === 'blank').odometerKm).toBeNull();
+  });
+});
+
 describe('GetVehicleOverview', () => {
   it('reports no odometer until a dash reading exists', async () => {
     await logFuel.execute({ vehicleId: VEHICLE, date: '2026-08-01', volumeGal: 10 });

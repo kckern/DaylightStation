@@ -164,7 +164,8 @@ function ServiceForm({ vehicleId, availableTypes, onClose }) {
     });
     autoLog.info('service.logged', { type: form.type, recurring: form.intervalMonths !== '' });
   };
-  const valid = Boolean(form.date);
+  const valid = Boolean(form.date) && (form.odometerMi === ''
+    || (Number.isFinite(Number(form.odometerMi)) && Number(form.odometerMi) >= 0));
 
   return (
     <form onSubmit={event => submit(event, save, valid)} aria-label="Log service">
@@ -195,7 +196,7 @@ function ServiceForm({ vehicleId, availableTypes, onClose }) {
             <span>Odometer (mi)</span>
             <input
               className="ds-input" type="number" inputMode="decimal"
-              value={form.odometerMi} onChange={set('odometerMi')} placeholder="optional"
+              value={form.odometerMi} onChange={set('odometerMi')} placeholder="optional" min="0"
             />
           </label>
           <label className="auto-field">

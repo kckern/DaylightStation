@@ -10,6 +10,7 @@
  */
 
 import { ServiceRecord } from "../../domain/entities/ServiceRecord.mjs";
+import { OdometerReading } from "../../domain/value-objects/OdometerReading.mjs";
 import { defaultIdGenerator } from "./LogFuel.mjs";
 
 export class LogServiceRecord {
@@ -48,6 +49,7 @@ export class LogServiceRecord {
     const when = date instanceof Date ? date : new Date(date);
     const km = Number.isFinite(odometerKm) ? odometerKm
       : (Number.isFinite(odometerMi) ? odometerMi * 1.609344 : null);
+    const reading = km === null ? null : new OdometerReading({ km, source: 'dash', observedAt: when });
 
     const record = new ServiceRecord({
       id: id || this.#idGenerator(when, slug(type)),
@@ -55,7 +57,7 @@ export class LogServiceRecord {
       type,
       vendor,
       cost,
-      odometerKm: km === null ? null : round(km, 1),
+      odometerKm: reading === null ? null : round(reading.km, 1),
       intervalMonths,
       intervalKm,
       notes,

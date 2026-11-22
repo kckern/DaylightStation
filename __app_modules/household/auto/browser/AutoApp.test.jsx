@@ -206,6 +206,29 @@ it('requires a date before saving a service record, including form submission', 
   expect(writes).toEqual([vehiclesPath + '/wagon%20%232/service']);
 });
 
+it('rejects a negative service odometer while allowing blank and zero', async () => {
+  const { writes } = mockGarage();
+  render(<AutoApp />);
+  await selectButton('Wagon');
+  await selectButton('Service');
+  await selectButton('Log service');
+  const form = screen.getByRole('form');
+  const odometer = screen.getByLabelText('Odometer (mi)');
+  const save = screen.getByRole('button', { name: 'Save' });
+
+  expect(save).toBeEnabled();
+  fireEvent.change(odometer, { target: { value: '-100' } });
+  expect(save).toBeDisabled();
+  await act(async () => fireEvent.submit(form));
+  expect(writes).toEqual([]);
+
+  fireEvent.change(odometer, { target: { value: '0' } });
+  expect(save).toBeEnabled();
+  await act(async () => fireEvent.submit(form));
+  await screen.findByText('No service records');
+  expect(writes).toEqual([vehiclesPath + '/wagon%20%232/service']);
+});
+
 it('requires a date before saving a fill-up, including form submission', async () => {
   const { writes } = mockGarage();
   render(<AutoApp />);
