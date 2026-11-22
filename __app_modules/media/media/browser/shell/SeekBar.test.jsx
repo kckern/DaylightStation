@@ -377,7 +377,7 @@ describe('SeekBar', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Live playback has no seekable position');
   });
 
-  it('offers Go to live on live content and sends goLive', () => {
+  it('offers Go to live on live content and sends goLive', async () => {
     const goLive = vi.fn();
     state.transport = { ...transport, goLive };
     state.snapshot = makeSnapshot({ isLive: true });
@@ -385,7 +385,7 @@ describe('SeekBar', () => {
     render(<SeekBar target="local" />);
     const button = screen.getByTestId('np-go-live');
     expect(button).toHaveAccessibleName('Go to live');
-    fireEvent.click(button);
+    await act(async () => { fireEvent.click(button); await Promise.resolve(); });
     expect(goLive).toHaveBeenCalledTimes(1);
   });
 
@@ -399,6 +399,34 @@ describe('SeekBar', () => {
     await act(async () => { fireEvent.click(screen.getByTestId('np-go-live')); });
     expect(onCommand).toHaveBeenCalledWith('goLive', expect.any(Function));
     expect(screen.getByTestId('np-seek-command-feedback')).toHaveTextContent('Could not confirm change');
+  });
+
+  it('admits one Go to live command per playback context and allows retry after failure', async () => {
+    const ack = Promise.withResolvers();
+    const goLive = vi.fn().mockReturnValueOnce(ack.promise).mockResolvedValueOnce(undefined);
+    state.transport = { ...transport, goLive };
+    state.snapshot = makeSnapshot({ isLive: true });
+    state.capabilities = { seekable: false, live: true, reason: null, acked: false };
+    render(<SeekBar target={{ deviceId: 'screen-a' }} />);
+    const button = screen.getByTestId('np-go-live');
+
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(goLive).toHaveBeenCalledTimes(1);
+    expect(button).toBeDisabled();
+
+    await act(async () => {
+      ack.reject(new Error('ack timed out'));
+      await ack.promise.catch(() => {});
+    });
+    expect(screen.getByTestId('np-seek-command-feedback')).toHaveTextContent('Could not confirm change');
+    expect(button).toBeEnabled();
+
+    await act(async () => {
+      fireEvent.click(button);
+      await Promise.resolve();
+    });
+    expect(goLive).toHaveBeenCalledTimes(2);
   });
 
   it('disables Go to live while the screen is unavailable and for non-live content has none', () => {
