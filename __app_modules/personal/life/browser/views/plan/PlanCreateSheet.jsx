@@ -15,7 +15,9 @@ export function PlanCreateSheet({ noun, onClose, save, valid, children, getFallb
         {failure && (
           <StateMessage state="error" role="alert" title={"Couldn't create the " + noun} detail={failure.message} />
         )}
-        {children}
+        <fieldset disabled={saving} style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}>
+          <Stack gap="sm">{children}</Stack>
+        </fieldset>
         <Group justify="flex-end">
           <Button density="compact" variant="secondary" onClick={onClose}>Cancel</Button>
           <SubmitButton density="compact" disabled={!valid} pending={saving}>
