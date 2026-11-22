@@ -15,10 +15,10 @@ import { webLink } from "../../shared/webLink.mjs";
  * @param {Object} props.article - article object from /reader/stream
  * @param {Function} props.onMarkRead - (article) => void
  */
-export default function ArticleRow({ article, isNew = false, onMarkRead, onStateAction }) {
+export default function ArticleRow({ article, isNew = false, initiallyExpanded = false, onMarkRead, onCollapse, onStateAction }) {
   // Feed links are other people's data: only an absolute http(s) URL is linked.
   const sourceLink = webLink(article.link);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initiallyExpanded);
   const [fullHeight, setFullHeight] = useState(false);
   const contentRef = useRef(null);
   const readMoreOwnsFocus = useRef(false);
@@ -59,6 +59,7 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
     } else {
       setExpanded(false);
       setFullHeight(false);
+      onCollapse?.(article.id);
     }
   };
 

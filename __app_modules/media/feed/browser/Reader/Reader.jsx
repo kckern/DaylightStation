@@ -214,6 +214,8 @@ export default function Reader() {
   const [offlineLoading, setOfflineLoading] = useState(false);
   const [offlineAttempt, setOfflineAttempt] = useState(0);
   const [collapsedGroups, setCollapsedGroups] = useState(new Set());
+  // Keep read-on-expand rows present until they are collapsed or the view changes.
+  const [expandedUnreadIds, setExpandedUnreadIds] = useState(new Set());
   const compact = useCompactViewport();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerActive = compact && drawerOpen;
@@ -258,6 +260,12 @@ export default function Reader() {
   };
   const closeDrawer = () => setDrawerOpen(false);
   const usesDismissStack = useDismissLayer(drawerActive, closeDrawer);
+
+  useEffect(() => {
+    if (activeView !== 'unread') {
+      setExpandedUnreadIds(current => current.size ? new Set() : current);
+    }
+  }, [activeView]);
   const handleDrawerKeyDown = event => {
     if (event.defaultPrevented) return;
     if (event.key === 'Escape' && !usesDismissStack) {
@@ -482,7 +490,19 @@ export default function Reader() {
 
   const handleMarkRead = async (article) => {
     if (!article) return;
+    if (activeView === 'unread') {
+      setExpandedUnreadIds(current => new Set(current).add(article.id));
+    }
     await mutateItems([article], 'read', { onApply: applyUpdatedItems }).catch(() => {});
+  };
+
+  const handleCollapseUnreadArticle = (articleId) => {
+    setExpandedUnreadIds(current => {
+      if (!current.has(articleId)) return current;
+      const next = new Set(current);
+      next.delete(articleId);
+      return next;
+    });
   };
 
   // Mark all articles in a group as read
@@ -505,7 +525,7 @@ export default function Reader() {
 
   const isFiltered = activeFeeds.size > 0 || HISTORY_VIEWS.has(activeView);
   const visibleArticles = (activeView === 'offline' ? offlineItems : articles).filter(article => {
-    if (activeView === 'unread') return !(article.state?.isRead ?? article.isRead);
+    if (activeView === 'unread') return !(article.state?.isRead ?? article.isRead) || expandedUnreadIds.has(article.id);
     if (activeView === 'saved') return article.state?.isSaved;
     if (activeView === 'archived') return article.state?.isArchived;
     if (activeView === 'offline') return true;
@@ -623,7 +643,9 @@ export default function Reader() {
                     <ArticleRow
                       article={row.article}
                       isNew={!!previousVisit.current && new Date(row.article.publishedAt || row.article.published || 0).getTime() > new Date(previousVisit.current).getTime()}
+                      initiallyExpanded={activeView === 'unread' && expandedUnreadIds.has(row.article.id)}
                       onMarkRead={handleMarkRead}
+                      onCollapse={handleCollapseUnreadArticle}
                       onStateAction={(item, action) => mutateItems([item], action, { onApply: applyUpdatedItems }).catch(() => {})}
                     />
                   </div>
