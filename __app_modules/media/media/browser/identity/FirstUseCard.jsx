@@ -38,11 +38,14 @@ export function FirstUseCard({ children = null }) {
     if (show) houseLog.firstUseShown({ deviceId: identity.deviceId, suggestion });
   }, [show, identity.deviceId, suggestion]);
 
-  const skip = useCallback(() => identity.completeFirstUse('skipped'), [identity]);
+  const skip = useCallback(() => {
+    if (!busy) identity.completeFirstUse('skipped');
+  }, [busy, identity]);
   // Escape answers it like "Not now" (the shell owns Escape, one layer at a time).
   useDismissLayer(show, skip);
 
   const save = async (override) => {
+    if (busy) return;
     const chosen = (override ?? name).trim();
     if (!chosen) return;
     setBusy(true);
@@ -82,6 +85,7 @@ export function FirstUseCard({ children = null }) {
             onChange={(e) => { setName(e.currentTarget.value); setAnswer(null); }}
             data-testid="first-use-name"
             mt="xs"
+            disabled={busy}
           />
           <Text size="sm" c="dimmed" mt="xs" data-testid="first-use-aim">
             Things you play go to the device shown here. Tap it to change.
@@ -91,6 +95,7 @@ export function FirstUseCard({ children = null }) {
               <Text size="sm">“{answer.name}” is already taken.</Text>
               {answer.suggestion && (
                 <Button type="button" size="xs" variant="light" className="house-action" onClick={() => { setName(answer.suggestion); save(answer.suggestion); }}
+                  disabled={busy}
                   data-testid="first-use-suggestion">
                   Use “{answer.suggestion}”
                 </Button>
@@ -98,13 +103,13 @@ export function FirstUseCard({ children = null }) {
             </Group>
           )}
           {answer && answer.code !== 'NAME_TAKEN' && (
-            <Text size="sm" className="house-tone--failed" role="alert" mt="xs">Couldn't save the name. You can skip and name it later in Settings.</Text>
+            <Text size="sm" className="house-tone--failed" role="alert" mt="xs">Couldn&apos;t save the name. You can skip and name it later in Settings.</Text>
           )}
           <Group gap="xs" mt="sm" justify="flex-end">
-            <Button type="button" variant="default" className="house-action" onClick={skip} data-testid="first-use-skip">
+            <Button type="button" variant="default" className="house-action" onClick={skip} disabled={busy} data-testid="first-use-skip">
               Not now
             </Button>
-            <Button type="submit" className="house-action" disabled={!name.trim()} loading={busy} data-testid="first-use-save">
+            <Button type="submit" className="house-action" disabled={busy || !name.trim()} loading={busy} data-testid="first-use-save">
               Save
             </Button>
           </Group>

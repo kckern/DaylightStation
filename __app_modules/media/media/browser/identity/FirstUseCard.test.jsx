@@ -3,7 +3,7 @@
 // sentence. It owns no page space.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const identity = vi.hoisted(() => ({ value: null }));
@@ -50,6 +50,41 @@ describe('FirstUseCard', () => {
     fireEvent.click(screen.getByTestId('first-use-save'));
     fireEvent.click(await screen.findByTestId('first-use-suggestion'));
     await waitFor(() => expect(identity.value.rename).toHaveBeenLastCalledWith({ name: 'iPhone (2)' }));
+  });
+
+  it('locks the name and actions while a rename or name suggestion is pending', async () => {
+    let resolveFirst;
+    let resolveSuggestion;
+    identity.value.rename = vi.fn()
+      .mockImplementationOnce(() => new Promise(resolve => { resolveFirst = resolve; }))
+      .mockImplementationOnce(() => new Promise(resolve => { resolveSuggestion = resolve; }));
+    wrap();
+    const name = screen.getByTestId('first-use-name');
+    const save = screen.getByTestId('first-use-save');
+    const skip = screen.getByTestId('first-use-skip');
+
+    fireEvent.click(save);
+    await waitFor(() => expect(identity.value.rename).toHaveBeenCalledTimes(1));
+    expect(name).toBeDisabled();
+    expect(save).toBeDisabled();
+    expect(skip).toBeDisabled();
+    fireEvent.submit(name.closest('form'));
+    expect(identity.value.rename).toHaveBeenCalledTimes(1);
+
+    const suggestedName = `${suggestDeviceName()} (2)`;
+    await act(async () => resolveFirst({ ok: false, code: 'NAME_TAKEN', suggestion: suggestedName }));
+    const suggestion = await screen.findByTestId('first-use-suggestion');
+    expect(name).toBeEnabled();
+    expect(name).toHaveValue(suggestDeviceName());
+    fireEvent.click(suggestion);
+    await waitFor(() => expect(identity.value.rename).toHaveBeenCalledTimes(2));
+    expect(name).toBeDisabled();
+    expect(suggestion).toBeDisabled();
+    fireEvent.click(suggestion);
+    expect(identity.value.rename).toHaveBeenCalledTimes(2);
+
+    await act(async () => resolveSuggestion({ ok: true }));
+    await waitFor(() => expect(identity.value.completeFirstUse).toHaveBeenCalledWith('named'));
   });
 
   it('is gone once answered, but the anchor stays', () => {
