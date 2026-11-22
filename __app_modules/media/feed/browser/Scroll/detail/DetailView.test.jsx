@@ -71,6 +71,27 @@ describe('DetailView recovery and navigation', () => {
     expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
   });
 
+  test('leaves shifted arrow keys to text selection but keeps plain arrow navigation', () => {
+    const matchMedia = vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: true });
+    const onNext = vi.fn();
+    const { container } = render(<DetailView item={article} sections={[]} loading={false} onBack={vi.fn()} onNext={onNext} />);
+    const detail = container.querySelector('.detail-view');
+    const shiftedArrow = new KeyboardEvent('keydown', { key: 'ArrowRight', shiftKey: true, bubbles: true, cancelable: true });
+
+    try {
+      act(() => detail.dispatchEvent(shiftedArrow));
+      expect(shiftedArrow.defaultPrevented).toBe(false);
+      expect(onNext).not.toHaveBeenCalled();
+
+      const plainArrow = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true });
+      act(() => detail.dispatchEvent(plainArrow));
+      expect(plainArrow.defaultPrevented).toBe(true);
+      expect(onNext).toHaveBeenCalledOnce();
+    } finally {
+      matchMedia.mockRestore();
+    }
+  });
+
   test('only advances for a complete single-finger swipe', () => {
     const matchMedia = vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: true });
     const onNext = vi.fn();

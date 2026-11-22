@@ -535,6 +535,31 @@ test('Feed opens a compact article ready for arrow navigation from its keyboard 
   await expect(page).toHaveURL(scrollPath(article.id));
 });
 
+test('Feed desktop detail keeps shifted arrow keys available for text selection', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 850 });
+  const next = { ...article, id: 'reddit:selection-next', title: 'Next Feed item' };
+  await page.route('**/api/v1/feed/scroll/sessions**', route => route.fulfill({
+    json: { items: [article, next], sessionId: 'text-selection', hasMore: false },
+  }));
+  await page.route('**/feed/detail/*', route => route.fulfill({ json: { sections } }));
+  await page.goto('/feed/scroll');
+
+  await page.getByRole('button', { name: `Open: ${article.title}` }).click();
+  const dialog = page.getByRole('dialog', { name: article.title });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('heading', { name: article.title }).dblclick();
+  const selectedBefore = await page.evaluate(() => window.getSelection().toString());
+  expect(selectedBefore).not.toBe('');
+
+  await page.keyboard.press('Shift+ArrowRight');
+  const selectedAfter = await page.evaluate(() => window.getSelection().toString());
+  expect(selectedAfter.length).toBeGreaterThan(selectedBefore.length);
+  await expect(page).toHaveURL(scrollPath(article.id));
+
+  await page.keyboard.press('ArrowRight');
+  await expect(page).toHaveURL(scrollPath(next.id));
+});
+
 test('Feed desktop detail contains Tab and returns focus to the opening card after navigation', async ({ page }) => {
   const first = { ...article, id: 'reddit:previous-detail', title: 'Previous Feed item' };
   const third = { ...article, id: 'reddit:next-detail', title: 'Next Feed item' };
