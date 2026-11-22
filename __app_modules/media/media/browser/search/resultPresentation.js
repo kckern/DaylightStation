@@ -77,9 +77,16 @@ export function displayTitle(row) {
   // A date-named file reads "<source> · Oct 5", never the bare date.
   if (parseDateTitle(raw)) {
     // Nothing above it names it: fall back to where it came from, never a bare "Oct 5".
-    const named = row?.parentTitle || row?.parent || row?.metadata?.parentTitle || row?.grandparentTitle || row?.metadata?.grandparentTitle;
+    const parentTitle = row?.parentTitle ?? row?.parent ?? row?.metadata?.parentTitle;
+    const grandparentTitle = row?.grandparentTitle ?? row?.metadata?.grandparentTitle;
+    const named = parentTitle || grandparentTitle;
     const origin = named ? null : sourceLabel(row?.source ?? String(row?.id ?? '').split(':')[0]);
-    return presentTitle({ ...row, title: raw, ...(origin ? { parentTitle: origin } : {}) });
+    return presentTitle({
+      ...row,
+      title: raw,
+      parentTitle: parentTitle || origin,
+      grandparentTitle,
+    });
   }
   if (!looksLikeMachineTitle(raw)) return raw;
   const cleaned = String(raw)
