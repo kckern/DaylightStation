@@ -7,6 +7,7 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { useSessionController } from "../controller/useSessionController.js";
 import { usePlaybackPosition } from "../controller/usePlaybackPosition.js";
+import { useKeyedSubmission } from '@/lib/ui/useKeyedSubmission.js';
 import { formatTime } from "./formatTime.js";
 import "./NowPlaying.scss";
 
@@ -15,6 +16,7 @@ const KEYBOARD_STEP_S = 5;
 export function SeekBar({ target, availability = null, onCommand = null, pendingAction = false }) {
   const { controller, snapshot, transport, capabilities } = useSessionController(target);
   const live = usePlaybackPosition(controller);
+  const { pending: pendingGoLive, run: runGoLive } = useKeyedSubmission();
   const [scrub, setScrub] = useState(null);
   const trackRef = useRef(null);
   const draggingRef = useRef(false);
@@ -53,7 +55,10 @@ export function SeekBar({ target, availability = null, onCommand = null, pending
   if (!item) return null;
 
   if (liveItem) {
-    const canGoLive = availability?.available !== false && typeof transport.goLive === 'function' && !pendingAction;
+    const canGoLive = availability?.available !== false
+      && typeof transport.goLive === 'function'
+      && !pendingAction
+      && !pendingGoLive.has(context);
     const goLive = () => {
       setCommandFeedback(null);
       const operation = () => transport.goLive();
@@ -63,14 +68,8 @@ export function SeekBar({ target, availability = null, onCommand = null, pending
           setCommandFeedback({ message: 'Could not confirm change', context: commandContext });
         }
       };
-      let result;
-      try {
-        result = onCommand ? onCommand('goLive', operation) : operation();
-      } catch {
-        reportFailure();
-        return;
-      }
-      Promise.resolve(result).catch(reportFailure);
+      const command = () => onCommand ? onCommand('goLive', operation) : operation();
+      Promise.resolve(runGoLive(context, command)).catch(reportFailure);
     };
     return (
       <div className="np-seekbar np-seekbar--live">
