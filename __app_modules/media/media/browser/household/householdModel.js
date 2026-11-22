@@ -47,8 +47,8 @@ export function createScreenNamer(screensResponse, { selfId = null } = {}) {
 export const EARLIER = 'earlier';
 
 /** "1 h 20 m on Living Room TV", or "12 m, saved earlier" for a spot with no screen. */
-export function spotLine(spot, nameFor) {
-  const at = formatDuration(spot?.playhead);
+export function spotLine(spot, nameFor, formatPosition = formatDuration) {
+  const at = formatPosition(spot?.playhead);
   const id = spot?.deviceId ?? null;
   const where = id && id !== 'legacy' && spot?.kind !== 'unknown' ? (nameFor?.(id) ?? null) : EARLIER;
   return !where || where === EARLIER ? `${at}, saved ${EARLIER}` : `${at} on ${where}`;

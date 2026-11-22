@@ -13,9 +13,9 @@ describe('SpotChooser', () => {
       { deviceId: 'legacy', kind: 'unknown', playhead: 720 },
       { deviceId: null, playhead: 300 },
     ] }} /></MantineProvider>);
-    expect(screen.getByTestId('spot-choice-0')).toHaveTextContent('1 h 20 m on Living Room TV');
-    expect(screen.getByTestId('spot-choice-1')).toHaveTextContent('12 m, saved earlier');
-    expect(screen.getByTestId('spot-choice-2')).toHaveTextContent('5 m, saved earlier');
+    expect(screen.getByTestId('spot-choice-0')).toHaveTextContent('1:20:00 on Living Room TV');
+    expect(screen.getByTestId('spot-choice-1')).toHaveTextContent('12:00, saved earlier');
+    expect(screen.getByTestId('spot-choice-2')).toHaveTextContent('5:00, saved earlier');
     expect(document.body.textContent).not.toMatch(/Legacy|another screen/);
   });
 });

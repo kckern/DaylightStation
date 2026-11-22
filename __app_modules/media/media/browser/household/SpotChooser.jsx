@@ -8,6 +8,7 @@ import { Button, Modal, Stack, Text } from '@mantine/core';
 import { IconPlayerPlayFilled, IconRotate } from '@tabler/icons-react';
 import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 import { spotLine } from "./householdModel.js";
+import { formatTime } from "../shell/formatTime.js";
 
 export function SpotChooser({ choice, nameFor, onChoose, onClose }) {
   const open = Boolean(choice);
@@ -29,7 +30,7 @@ export function SpotChooser({ choice, nameFor, onChoose, onClose }) {
               leftSection={<IconPlayerPlayFilled size={16} aria-hidden />}
               onClick={() => onChoose(spot.playhead, spot)}
             >
-              {spotLine(spot, nameFor)}
+              {spotLine(spot, nameFor, formatTime)}
             </Button>
           );
         })}
