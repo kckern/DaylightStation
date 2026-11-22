@@ -44,9 +44,10 @@ export class YamlLearningEvidenceRepository extends ILearningEvidenceRepository 
 
   listEvidence({ learnerIds, from = null, to = null } = {}) {
     if (!Array.isArray(learnerIds)) throw new Error('School learning evidence query requires learnerIds');
+    const names = dayNameBounds(from, to);
     return learnerIds.flatMap((learnerId) => {
       const directory = this.#directory(learnerId);
-      return directory ? this.#readAll(directory) : [];
+      return directory ? this.#readAll(directory, names) : [];
     }).filter((entry) => (from === null || entry.occurredAt >= from)
       && (to === null || entry.occurredAt < to))
       .map((entry) => structuredClone(entry));
@@ -57,10 +58,14 @@ export class YamlLearningEvidenceRepository extends ILearningEvidenceRepository 
     return path.join(this.#config.getUserDir(learnerId), 'apps', 'school', 'learning-evidence');
   }
 
-  #readAll(directory) {
+  #readAll(directory, { first = null, last = null } = {}) {
     if (!fileExists(directory)) return [];
     return readDirectory(directory)
       .filter((file) => DAY_FILE.test(file))
+      .filter((file) => {
+        const day = file.slice(0, 10);
+        return (first === null || day >= first) && (last === null || day <= last);
+      })
       .sort()
       .flatMap((file) => {
         const rows = loadYamlSafe(path.join(directory, file.replace(/\.yml$/, ''))) || [];
@@ -68,6 +73,23 @@ export class YamlLearningEvidenceRepository extends ILearningEvidenceRepository 
         return rows;
       });
   }
+}
+
+const DATE_PREFIX = /^\d{4}-\d{2}-\d{2}/;
+
+/**
+ * Which day files a window can touch. A file is named by the first ten
+ * characters of each row's `occurredAt` (canonical UTC ISO, see
+ * appendEvidence), and rows are kept by plain string comparison, so a row in
+ * a file named before `from.slice(0, 10)` sorts before `from`, and one in a
+ * file named after `to.slice(0, 10)` sorts after `to`: skipping those files
+ * cannot change the result. Both name bounds are inclusive because `to` is an
+ * exclusive instant and its own day file can hold earlier rows. A bound that
+ * does not start with a date reads every file on that side, as before.
+ */
+function dayNameBounds(from, to) {
+  const bound = (value) => (typeof value === 'string' && DATE_PREFIX.test(value) ? value.slice(0, 10) : null);
+  return { first: bound(from), last: bound(to) };
 }
 
 function stableValue(value) {
