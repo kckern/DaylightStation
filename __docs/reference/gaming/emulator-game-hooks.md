@@ -179,9 +179,9 @@ Per-game research (sources, every address, trigger ideas, gaps) is in `game-memo
 | Game | Sidecar | Live |
 |---|---|---|
 | Super Mario Land | `gb/roms/SuperMarioLand.yml`: 30 states; real HRAM underground flag `$FFF9` → `underground_lights` (music stand-in kept as `underground_music`) | music, HRAM world/level, coins, pause |
-| Pokémon Red | `gb/roms/PokemonRed.yml`: 36 states | no |
-| Pokémon Yellow | `gbc/roms/PokemonYellow.yml`: 38 states (Yellow's own symbols) | no |
-| Pokémon Crystal | `gbc/roms/PokemonCrystal.yml`: 43 states; WRAM banks 0-1 only | music, battle |
+| Pokémon Red | `gb/roms/PokemonRed.yml`: 37 states; `in_battle` → `battle_lights` (LED strips red) | wild battle flag + battle music `0xF0`, map, title/overworld music |
+| Pokémon Yellow | `gbc/roms/PokemonYellow.yml`: 39 states (Yellow's own symbols); `in_battle` → `battle_lights` | no (same layout as Red, one byte lower) |
+| Pokémon Crystal | `gbc/roms/PokemonCrystal.yml`: 44 states; WRAM banks 0-1 only; `in_battle` → `battle_lights` | music, battle |
 | Sonic (REV00) | `genesis/roms/SonicTheHedgehog.yml`: 40 states | mode, zone, lives |
 | Super Mario Land 2 (V1.2) | `gb/roms/SuperMarioLand2.yml`: 26 states in save RAM + HRAM game mode | lives |
 | Wario Land | `gb/roms/WarioLand.yml`: 25 states in save RAM | music, game mode, lives |
