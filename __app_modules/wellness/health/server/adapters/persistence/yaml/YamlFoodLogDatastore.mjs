@@ -18,10 +18,11 @@ import {
   ensureDir,
   dirExists,
   listYamlFiles,
-  loadYamlSafe,
+  readYamlFromPath,
+  resolveYamlPathStrict,
   saveYamlToPathAtomic
 } from '#system/utils/FileIO.mjs';
-import { getFileStats, resolveYamlPath } from '#system/utils/FileIO.mjs';
+import { getFileStats } from '#system/utils/FileIO.mjs';
 
 const ARCHIVE_RETENTION_DAYS = 30;
 
@@ -38,6 +39,12 @@ function dehydrateNutriLog(log) {
   };
   if (log.conversationId !== log.userId) record.conversationId = log.conversationId;
   return record;
+}
+
+function isPlainMapping(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 export class YamlFoodLogDatastore extends IFoodLogDatastore {
@@ -114,11 +121,17 @@ export class YamlFoodLogDatastore extends IFoodLogDatastore {
    * @returns {Object}
    */
   #readFile(basePath) {
+    const file = resolveYamlPathStrict(basePath);
+    if (!file) return {};
     try {
-      return loadYamlSafe(basePath) || {};
-    } catch (e) {
-      this.#logger.warn?.('YamlFoodLogDatastore.readFile.error', { basePath, error: e.message });
-      return {};
+      const data = readYamlFromPath(file);
+      if (!isPlainMapping(data)) {
+        throw new InfrastructureError(`Invalid food log document: ${file}`, { code: 'INVALID_FOOD_LOG', file });
+      }
+      return data;
+    } catch (error) {
+      this.#logger.warn?.('YamlFoodLogDatastore.readFile.error', { basePath, error: error.message });
+      throw error;
     }
   }
 
@@ -129,7 +142,8 @@ export class YamlFoodLogDatastore extends IFoodLogDatastore {
    */
   #writeFile(basePath, data) {
     ensureDir(path.dirname(basePath));
-    saveYamlToPathAtomic(`${basePath}.yml`, data, { durable: true });
+    const file = resolveYamlPathStrict(basePath) || `${basePath}.yml`;
+    saveYamlToPathAtomic(file, data, { durable: true, preserveMode: true });
   }
 
   /**
@@ -221,7 +235,7 @@ export class YamlFoodLogDatastore extends IFoodLogDatastore {
     const files = [this.#getPath(userId), ...(dirExists(archiveDir)
       ? listYamlFiles(archiveDir).map(name => path.join(archiveDir, name)) : [])];
     return files.sort().map(file => {
-      const resolved = resolveYamlPath(file);
+      const resolved = resolveYamlPathStrict(file);
       const stat = resolved ? getFileStats(resolved) : null;
       return [file, stat?.mtimeMs ?? null, stat?.size ?? null];
     });

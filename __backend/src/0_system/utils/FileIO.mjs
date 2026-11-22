@@ -53,6 +53,21 @@ export function resolveYamlPath(basePath) {
 }
 
 /**
+ * Resolve an existing YAML file without hiding filesystem failures.
+ * Returns null only when every supported extension is absent.
+ */
+export function resolveYamlPathStrict(basePath) {
+  const candidates = basePath.endsWith('.yml') || basePath.endsWith('.yaml')
+    ? [basePath]
+    : [`${basePath}.yml`, `${basePath}.yaml`];
+  for (const file of candidates) {
+    try { getFileStats(file); return file; }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
+  return null;
+}
+
+/**
  * Check if a YAML file exists (either .yml or .yaml extension)
  * @param {string} basePath - Path without extension
  * @returns {boolean}
