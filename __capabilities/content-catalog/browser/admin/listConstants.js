@@ -58,6 +58,8 @@ export const CONTENT_PAYLOAD_FIELDS = [
   'days', 'snooze', 'waitUntil',
   'shader', 'composite', 'playable',
   'progress', 'watched',
+  // Per-type parameters belong to the content's type, so they move with it
+  'params',
 ];
 
 // Fields that stay with the row position (identity)

@@ -309,6 +309,15 @@
         background: var(--ds-bg-overlay);
         border-radius: 4px;
       }
+
+      // Rows whose type takes parameters lead with a gear. The column grows
+      // only when the gear and config icons don't fit; rows without a
+      // parameter type keep the fixed width.
+      &.has-params {
+        width: auto;
+        min-width: 36px;
+        gap: 2px;
+      }
     }
 
     .col-menu {

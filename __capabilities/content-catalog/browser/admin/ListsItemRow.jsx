@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Text, Checkbox, ActionIcon, Menu, TextInput, Modal, UnstyledButton } from '@mantine/core';
+import { Text, Checkbox, ActionIcon, Menu, TextInput, Modal, UnstyledButton, Tooltip } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
   IconGripVertical, IconTrash, IconCopy, IconDotsVertical, IconPlus,
   IconPhoto, IconInfoCircle, IconPlayerPlay,
   IconArrowBarDown, IconLayoutList, IconAppWindow, IconBookmark,
-  IconArrowBarUp, IconSection,
+  IconArrowBarUp, IconSection, IconSettings,
 } from '@tabler/icons-react';
 import { useSortable } from '@dnd-kit/sortable';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
@@ -32,6 +32,8 @@ import ImagePickerModal from "./ImagePickerModal.jsx";
 import AdminPreviewPlayer from "../../../../frontend/src/modules/Admin/Preview/AdminPreviewPlayer.jsx";
 import Displayer from "../../../../frontend/src/modules/Displayer/Displayer.jsx";
 import AppContainer from "../../../../frontend/src/modules/AppContainer/AppContainer.jsx";
+import { paramsTypeFor } from "./itemParams/registry.js";
+import ItemParamsModal from "./itemParams/ItemParamsModal.jsx";
 import { getChildLogger } from "../../../../frontend/src/lib/logging/singleton.js";
 
 // Lazy admin logger with session logging enabled
@@ -79,6 +81,17 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [dragMenuOpen, setDragMenuOpen] = useState(false);
+  const [paramsOpen, setParamsOpen] = useState(false);
+
+  // Per-type parameters (itemParams/registry.js). Null for most items, and
+  // then the row renders exactly as it did before parameters existed.
+  const paramsType = paramsTypeFor(item);
+  const itemName = item.label || item.input || 'item';
+  const paramsSummary = paramsType ? paramsType.summary(item.params || {}) : '';
+  const openParams = (from) => {
+    log.info('lists.item.params.open', { index: item.index, type: paramsType.id, from });
+    setParamsOpen(true);
+  };
 
   // Resolve thumbnail for icon column: override image > UID image > input thumbnail
   const contentInfo = useCatalogContentInfo(item.input, contentInfoMap.get(item.input));
@@ -435,7 +448,9 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
           {previewOpen && item.action === 'Open' && (
             <div style={{ height: 600 }}>
               <AppContainer
-                open={item.input?.replace(/^app:\s*/, '')}
+                open={item.params
+                  ? { app: item.input?.replace(/^app:\s*/, ''), params: item.params }
+                  : item.input?.replace(/^app:\s*/, '')}
                 clear={() => setPreviewOpen(false)}
               />
             </div>
@@ -505,9 +520,35 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
         </div>
       )}
 
-      <div className="col-config">
+      <div className={paramsType ? 'col-config has-params' : 'col-config'}>
+        {paramsType && (
+          <Tooltip label={paramsSummary} withArrow position="top">
+            <ActionIcon
+              size="sm"
+              variant="subtle"
+              color={item.params ? undefined : 'gray'}
+              c={item.params ? undefined : 'dimmed'}
+              data-params-set={item.params ? 'true' : 'false'}
+              aria-label={`Parameters for ${itemName}: ${paramsSummary}`}
+              onClick={() => openParams('gear')}
+            >
+              <IconSettings size={14} />
+            </ActionIcon>
+          </Tooltip>
+        )}
         <ConfigIndicators item={item} onClick={onEdit ? () => onEdit() : undefined} />
       </div>
+      {paramsType && (
+        <ItemParamsModal
+          opened={paramsOpen}
+          onClose={() => setParamsOpen(false)}
+          paramsType={paramsType}
+          item={item}
+          itemLabel={itemName}
+          onUpdate={onUpdate}
+          log={log}
+        />
+      )}
 
       <div className="col-menu">
         <ActionMenu position="bottom-end" trigger={
@@ -518,6 +559,11 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
           <Menu.Item leftSection={<IconInfoCircle size={14} />} onClick={() => { log.info('menu.more_info', { index: item.index, input: item.input }); setDrawerOpen(true); }}>
             More Info
           </Menu.Item>
+          {paramsType && (
+            <Menu.Item leftSection={<IconSettings size={14} />} onClick={() => openParams('menu')}>
+              Parameters…
+            </Menu.Item>
+          )}
           <Menu.Item leftSection={<IconCopy size={14} />} onClick={() => { log.info('menu.duplicate', { index: item.index }); onDuplicate(); }}>
             Duplicate
           </Menu.Item>
