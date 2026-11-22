@@ -42,7 +42,7 @@ export function LogSeasonView({ username, at, categories }) {
               <Group gap="xs">
                 <Badge size="sm" variant="light">{m.days} days</Badge>
                 <Badge size="sm" variant="light" color="green">{m.sources.size} sources</Badge>
-                <Badge size="sm" variant="light" color="blue">{m.summaryCount} entries</Badge>
+                <Badge size="sm" variant="light" color="blue">{m.summaryCount} {m.summaryCount === 1 ? 'summary' : 'summaries'}</Badge>
               </Group>
             </Paper>
           );
