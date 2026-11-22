@@ -127,6 +127,7 @@ export function ScreenAdminView() {
   const [merging, setMerging] = useState(null); // { screen, into, routines, error }
   const [retiring, setRetiring] = useState(null); // { screen, routines, error, loading }
   const [aliasNames, setAliasNames] = useState({});
+  const [restoreErrors, setRestoreErrors] = useState({});
   useEffect(() => { houseLog.viewOpened({ view: 'screens' }); }, []);
 
   const screens = registry?.screens ?? [];
@@ -196,6 +197,16 @@ export function ScreenAdminView() {
       ? { ...current, submitting: false, error: result.error }
       : current);
   };
+  const restoreScreen = async (screen) => {
+    setRestoreErrors(current => {
+      if (!Object.prototype.hasOwnProperty.call(current, screen.id)) return current;
+      const next = { ...current };
+      delete next[screen.id];
+      return next;
+    });
+    const result = await admin.restore(screen);
+    if (!result.ok) setRestoreErrors(current => ({ ...current, [screen.id]: result.error }));
+  };
 
   if (registry && registry.loaded && !registry.available) {
     return (
@@ -250,10 +261,11 @@ export function ScreenAdminView() {
                 <Group justify="space-between" wrap="nowrap">
                   <Text>{screen.name}</Text>
                   <Button size="xs" variant="default" className="house-action" data-testid={`screen-admin-restore-${screen.id}`}
-                    onClick={() => admin.restore(screen)}>
+                    onClick={() => restoreScreen(screen)}>
                     Restore
                   </Button>
                 </Group>
+                {restoreErrors[screen.id] && <Text size="xs" className="house-tone--failed" role="alert">{restoreErrors[screen.id]}</Text>}
               </li>
             ))}
           </ul>
