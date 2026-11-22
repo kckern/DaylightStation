@@ -168,9 +168,16 @@ export class JsonlFeedHistoryStore {
         if (fields.summary.some(word => word === token || word.startsWith(token))) score += 1;
       }
       if (tokens.length && score === 0) continue;
-      results.push({ doc, score });
+      results.push({ doc, score, publishedAt });
     }
-    results.sort((a, b) => b.score - a.score || new Date(b.doc.publishedAt || 0) - new Date(a.doc.publishedAt || 0));
+    results.sort((a, b) => {
+      const relevance = b.score - a.score;
+      if (relevance) return relevance;
+      const aDated = Number.isFinite(a.publishedAt);
+      const bDated = Number.isFinite(b.publishedAt);
+      if (aDated !== bDated) return aDated ? -1 : 1;
+      return aDated ? b.publishedAt - a.publishedAt : 0;
+    });
     return {
       items: results.slice(offset, offset + limit).map(result => result.doc),
       total: results.length,
