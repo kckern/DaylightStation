@@ -83,7 +83,11 @@ export class ValueDriftCalculator {
       return { correlation: null, status: 'insufficient_data', statedOrder, observedOrder, allocation };
     }
 
-    const correlation = this.#spearmanCorrelation(statedOrder, observedOrder);
+    const commonIds = new Set(common);
+    const correlation = this.#spearmanCorrelation(
+      statedOrder.filter((id) => commonIds.has(id)),
+      observedOrder.filter((id) => commonIds.has(id))
+    );
 
     // Fewer than 2 shared ids between stated values and observed allocation:
     // Spearman is undefined, so "we can't measure" — not a genuine bad correlation.
@@ -139,14 +143,13 @@ export class ValueDriftCalculator {
   }
 
   #spearmanCorrelation(stated, observed) {
-    // Use only items present in both lists
-    const common = stated.filter(id => observed.includes(id));
-    if (common.length < 2) return null; // undefined over <2 pairs — caller maps to insufficient_data
+    // Both lists contain the same shared ids, so their ranks are comparable.
+    if (stated.length < 2) return null; // undefined over <2 pairs — caller maps to insufficient_data
 
-    const n = common.length;
+    const n = stated.length;
     let sumD2 = 0;
 
-    for (const id of common) {
+    for (const id of stated) {
       const statedRank = stated.indexOf(id) + 1;
       const observedRank = observed.indexOf(id) + 1;
       const d = statedRank - observedRank;
