@@ -108,7 +108,7 @@ import { loadLoggingConfig, resolveLoggerLevel } from "./0_system/logging/config
 import { initializeIntegrations, loadHouseholdIntegrations, loadSystemBots, getMessagingAdapter, createContentRegistry, createMediaProgressMemory, createFeedServices, createFinanceServices, createEntropyServices, createHomeAutomationAdapters, createPlaybackHubServices, createDeviceServices, createWakeAndLoadService, createDispatchIdempotencyService, createTranscodePrewarmService, createHardwareAdapters, createProxyService, createMessagingServices, createJournalistServices, createHomebotServices, createLifelogServices, createEventBus, createDeviceLivenessService, broadcastEvent, createHarvesterServices, createNewsReporterServices, createAgentsServices, createConciergeServices, createCostServices, createMediaServices } from "#composition/bootstrap.mjs";
 
 import { bootstrapLifeplan } from "../../__app_modules/personal/life/server/composition.mjs";
-import { bootstrapNotifications } from '#composition/modules/notifications.mjs';
+import { createNotifyServiceRecipientResolver, bootstrapNotifications } from '#composition/modules/notifications.mjs';
 import { createPlaybackStallDetector } from '#composition/modules/playbackStall.mjs';
 import { createHubFleetBridge } from "../../__app_modules/media/media/server/composition/hubFleetBridge.mjs";
 import { createPlexHubSessions } from "../../__app_modules/media/media/server/composition/plexHubSessions.mjs";
@@ -1341,6 +1341,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // "Begin" action). No dedicated ConfigService getter exists, so read it from the
   // system app config; an unset value ⇒ text-only nudges (no button).
   const notificationPublicBaseUrl = configService.getAppConfig('system')?.public_url ?? null;
+  // A producer whose config names an HA notify target: the user it belongs to
+  // (profiles), else the head of household — the recipient for the Android route.
+  const recipientForNotifyService = createNotifyServiceRecipientResolver({
+    listUsernames: () => (configService.getHouseholdUsers(configService.getDefaultHouseholdId()) || [])
+      .map((u) => (typeof u === 'string' ? u : (u?.username || u?.userId || u?.name))).filter(Boolean),
+    profileNotifyService: (username) => userService.getProfile(username)?.identities?.homeassistant?.notify_service ?? null,
+    headOfHousehold: () => configService.getHeadOfHousehold(),
+  });
   const notificationStack = bootstrapNotifications({
     eventBus,
     telegramAdapter: () => notificationTelegram.adapter,
@@ -2730,9 +2738,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       wakeAndLoadService,
       playbackHubContainer,
       schoolService,
+      notificationService: notificationStack.notificationService,
+      resolveApprover: recipientForNotifyService,
       logger: donowLogger,
     });
     v1Routers.donow = donowModule.router;
+    // DoNow's action handler is NOT registered with the unauthenticated notification
+    // action route yet: a kiosk on the same network could self-approve. Registered
+    // once action presses carry device auth (rich-push plan, Task 7 ruling).
   } catch (err) {
     // Every surface DoNow wraps is independently optional-degrading; a throw
     // here means the composition module itself blew up (a coding error, not

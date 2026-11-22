@@ -63,6 +63,8 @@ import yaml from 'js-yaml';
 
 import { createSchoolLifecycle } from "../../../__app_modules/learning/school/server/composition/schoolLifecycle.mjs";
 import { createDonow } from "../../../__app_modules/household/donow/server/composition/donow.mjs";
+import { NotificationService } from "#apps/notification/NotificationService.mjs";
+import { PushNotificationAdapter } from "#adapters/notification/PushNotificationAdapter.mjs";
 import { YamlSchoolDatastore } from "../../../__app_modules/learning/school/server/adapters/persistence/YamlSchoolDatastore.mjs";
 import { YamlEconomyDatastore } from "../../../__app_modules/money/economy/server/adapters/persistence/YamlEconomyDatastore.mjs";
 import { EconomyConfigProjection } from '../../../__app_modules/money/economy/server/adapters/config/EconomyConfigProjection.mjs';
@@ -281,8 +283,8 @@ export async function createLifecycleHarness({
     },
   };
   // Only meaningful when a test opts in (`donowNotifyService`) — `createDonow`
-  // only builds a real `HaApprovalNotifier` when BOTH `notifyService` and a
-  // `haGateway` are present, mirroring app.mjs's own household config shape.
+  // only builds a real `ApprovalNotifier` when `notifyService`, a
+  // notification service and an approver are present, mirroring app.mjs's own household config shape.
   const donowConfig = donowNotifyService ? { notifyService: donowNotifyService } : {};
 
   // The fake HA transport `HaApprovalNotifier` sends through — every call
@@ -372,6 +374,12 @@ export async function createLifecycleHarness({
     // "no HA gateway" degrade every other household config path already takes
     // (see `donow.mjs`'s own `donow.notifier.no-ha-gateway` warn branch).
     homeAutomationAdapters: donowNotifyService ? { haGateway } : null,
+    // The approval push runs through the real NotificationService and HA push
+    // adapter, so haGatewayCalls still records the one companion-app call.
+    notificationService: donowNotifyService
+      ? new NotificationService({ adapters: [new PushNotificationAdapter({ haGateway })], makeId: () => 'harness-notification' })
+      : null,
+    resolveApprover: donowNotifyService ? () => 'harness-parent' : null,
     // THE SAME clock the school lifecycle reads (below) — without this,
     // DoNowService stamps its dispatch-log rows against the REAL wall clock
     // (its own default) while `SurfaceProgramLauncher.status()` computes

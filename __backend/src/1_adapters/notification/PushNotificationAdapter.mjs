@@ -71,7 +71,9 @@ export class PushNotificationAdapter {
     }
 
     const username = intent.recipient?.username || intent.metadata?.username;
-    const service = username ? this.#resolveNotifyService?.(username) : null;
+    // A producer that names its own HA target (from its config) keeps reaching
+    // exactly that phone; otherwise the recipient's profile names it.
+    const service = intent.metadata?.haNotifyService || (username ? this.#resolveNotifyService?.(username) : null);
     if (!service) {
       return { delivered: false, error: `no HA notify service for user "${username}"` };
     }

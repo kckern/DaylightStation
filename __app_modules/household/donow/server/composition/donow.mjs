@@ -36,8 +36,8 @@ import { YamlDoNowDatastore } from "../adapters/persistence/YamlDoNowDatastore.m
 import { DoNowService } from "../application/DoNowService.mjs";
 import { DoNowApprovals } from "../application/DoNowApprovals.mjs";
 import { authenticate } from "../../../../../__capabilities/device-dispatch/server/application/guards/authenticate.mjs";
-import { HaApprovalNotifier } from "../adapters/HaApprovalNotifier.mjs";
-import { CallHomeAssistantService } from "../../../../../__capabilities/home-control/server/application/CallHomeAssistantService.mjs";
+import { ApprovalNotifier } from "../adapters/ApprovalNotifier.mjs";
+import { DoNowActionHandler } from "../adapters/DoNowActionHandler.mjs";
 import { createDoNowRouter } from "../api/donow.mjs";
 import { MidiPresenceTracker } from "../application/presence/MidiPresenceTracker.mjs";
 import { FitnessPresenceTracker } from "../application/presence/FitnessPresenceTracker.mjs";
@@ -93,7 +93,8 @@ export async function createDonow({
   configService, householdId = null, eventBus = null,
   thermalPrinterRegistry = null, homeAutomationAdapters = null,
   wakeAndLoadService = null, playbackHubContainer = null,
-  schoolService = null, clock = () => new Date(), logger = console, dispatchAuthority = null, resolveAccessContext = null,canRequestLegacyApproval = null,
+  schoolService = null, clock = () => new Date(), logger = console,
+  notificationService = null, resolveApprover = null, dispatchAuthority = null, resolveAccessContext = null,canRequestLegacyApproval = null,
 } = {}) {
   const cfg = configService.getHouseholdAppConfig?.(householdId, 'donow') || {};
   const timezone = configService.getTimezone?.() || null;
@@ -186,12 +187,15 @@ export async function createDonow({
   // --- the service + approvals lifecycle + HA notifier -------------------------
   const datastore = new YamlDoNowDatastore({ configService, householdId, logger });
 
+  // The approval push goes through NotificationService (the Android app, else
+  // Home Assistant). `notifyService` in donow config still names the HA target;
+  // the approver is the user that target belongs to (resolveApprover).
   let notifier = null;
-  if (cfg.notifyService && homeAutomationAdapters?.haGateway) {
-    const callHomeAssistant = new CallHomeAssistantService({ haGateway: homeAutomationAdapters.haGateway, logger });
-    notifier = new HaApprovalNotifier({ callHomeAssistant, notifyService: cfg.notifyService, logger });
+  const approver = cfg.notifyService ? (resolveApprover?.(cfg.notifyService) ?? null) : null;
+  if (cfg.notifyService && notificationService && approver) {
+    notifier = new ApprovalNotifier({ notificationService, notifyService: cfg.notifyService, recipient: approver, logger });
   } else if (cfg.notifyService) {
-    logger.warn?.('donow.notifier.no-ha-gateway', { notifyService: cfg.notifyService });
+    logger.warn?.('donow.notifier.unavailable', { notifyService: cfg.notifyService, hasNotificationService: !!notificationService, approver });
   }
 
   const service = new DoNowService({
@@ -207,6 +211,8 @@ export async function createDonow({
     logger,
   });
   const approvals = new DoNowApprovals({ service, datastore, notifier, clock, logger });
+  // Approve / Deny pressed on the push (Android app) — registered with the notification action route.
+  const actionHandler = new DoNowActionHandler({ approvals, logger });
   // The approvals token is a SECRET, not app config: it is the only
   // authentication on `POST /approvals/:id/{approve,deny}`, so it lives in
   // `household/auth/donow.yml` alongside every other service credential
@@ -240,6 +246,7 @@ export async function createDonow({
     service,
     approvals,
     notifier,
+    actionHandler,
     router,
     surfaces,
     datastore,

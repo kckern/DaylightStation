@@ -107,3 +107,20 @@ export function bootstrapNotifications(deps = {}) {
 
   return { container, notificationService, ledgerStore, pushDevices, notificationActions };
 }
+
+/**
+ * For producers whose own config names an HA notify target (`notify.<x>` or
+ * `<x>`): the user that target belongs to, from profiles
+ * (`identities.homeassistant.notify_service`), else the head of household.
+ * Gives the push a recipient the Android route can address.
+ */
+export function createNotifyServiceRecipientResolver({ listUsernames, profileNotifyService, headOfHousehold }) {
+  return (notifyService) => {
+    if (!notifyService) return null;
+    const target = String(notifyService).replace(/^notify\./, '');
+    for (const username of listUsernames?.() || []) {
+      if (profileNotifyService?.(username) === target) return username;
+    }
+    return headOfHousehold?.() || null;
+  };
+}

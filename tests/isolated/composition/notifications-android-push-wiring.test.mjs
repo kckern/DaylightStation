@@ -72,3 +72,22 @@ describe('bootstrapNotifications action presses', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
+
+import { createNotifyServiceRecipientResolver } from '#composition/modules/notifications.mjs';
+describe('createNotifyServiceRecipientResolver', () => {
+  const resolve = createNotifyServiceRecipientResolver({
+    listUsernames: () => ['a', 'b'],
+    profileNotifyService: u => (u === 'b' ? 'mobile_app_b_phone' : null),
+    headOfHousehold: () => 'head',
+  });
+  it('finds the user whose profile names the target, with or without the notify. prefix', () => {
+    expect(resolve('notify.mobile_app_b_phone')).toBe('b');
+    expect(resolve('mobile_app_b_phone')).toBe('b');
+  });
+  it('falls back to the head of household', () => {
+    expect(resolve('mobile_app_other')).toBe('head');
+  });
+  it('is null for no target', () => {
+    expect(resolve(null)).toBeNull();
+  });
+});

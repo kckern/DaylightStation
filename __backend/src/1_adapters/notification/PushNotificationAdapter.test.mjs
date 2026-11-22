@@ -53,3 +53,15 @@ describe('toHaNotifyData', () => {
     expect(toHaNotifyData(intent, {})).toEqual({ title: 'T', message: 'B' });
   });
 });
+
+import { vi } from 'vitest';
+import { PushNotificationAdapter } from './PushNotificationAdapter.mjs';
+describe('PushNotificationAdapter HA target', () => {
+  it('uses a producer-configured HA notify service over the profile lookup', async () => {
+    const callService = vi.fn().mockResolvedValue({});
+    const adapter = new PushNotificationAdapter({ haGateway: { callService }, resolveNotifyService: () => null });
+    const r = await adapter.send({ title: 'T', body: 'B', recipient: { username: 'p' }, metadata: { haNotifyService: 'mobile_app_test_phone' } });
+    expect(r.delivered).toBe(true);
+    expect(callService).toHaveBeenCalledWith('notify', 'mobile_app_test_phone', { title: 'T', message: 'B' });
+  });
+});
