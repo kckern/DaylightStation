@@ -76,22 +76,21 @@ describe('FilterLibrary', () => {
     }
   });
 
-  it('a machine-certified film is not Ready tonight: it waits under Needs your review (owner, 2026-11-21)', () => {
-    const film = { ratingKey: '66', title: 'Machine Only', year: 2001, stage: 'machine', job: null, reviewed: { n: 0, m: 103 }, linked: true, thumb: '/t/66' };
+  it('sections follow the review rail: only an approved film is Ready tonight; every refined film is To review (owner, 2026-11-21/22)', () => {
+    expect(SECTIONS.map((s) => s.label)).toEqual(['Ready tonight', 'To review', 'Refining', 'Started', 'Not started']);
     expect(SECTIONS.find((s) => s.id === 'ready').stages).toEqual(['parent']);
-    expect(SECTIONS.find((s) => s.id === 'review').stages).toEqual(['machine']);
-    expect(film.stage).toBe('machine');
+    expect(SECTIONS.find((s) => s.id === 'review').stages).toEqual(['machine', 'audited', 'scenes', 'refined']);
   });
   it('groups films by readiness with Ready tonight first and rough collapsed', () => {
     show(false);
-    const heads = screen.getAllByRole('button', { name: /^(Ready tonight|Running|Audited|Rough)/ }).map((b) => b.textContent);
-    expect(heads.map((h) => h.split(/\d/)[0].trim())).toEqual(['Ready tonight', 'Audited', 'Running', 'Rough']);
+    const heads = screen.getAllByRole('button', { name: /^(Ready tonight|To review|Refining|Started|Not started)/ }).map((b) => b.textContent);
+    expect(heads.map((h) => h.split(/\d/)[0].trim())).toEqual(['Ready tonight', 'To review', 'Refining', 'Not started']);
     expect(screen.getByRole('link', { name: /Ready One/ })).toBeTruthy();
     expect(screen.queryByRole('link', { name: /Annie/ })).toBeNull();
   });
   it('films not matched to Plex sit in one collapsed section at the bottom, never in a stage group', async () => {
     show();
-    const heads = screen.getAllByRole('button', { name: /^(Ready tonight|Running|Audited|Rough|Not matched to Plex)/ }).map((b) => b.textContent);
+    const heads = screen.getAllByRole('button', { name: /^(Ready tonight|To review|Refining|Started|Not started|Not matched to Plex)/ }).map((b) => b.textContent);
     expect(heads.at(-1)).toMatch(/^Not matched to Plex\s*2/);
     expect(screen.queryByRole('link', { name: /Lost Film/ })).toBeNull();
     expect(screen.queryByRole('link', { name: /Cinderella/ })).toBeNull();
@@ -117,7 +116,7 @@ describe('FilterLibrary', () => {
   it('a search flattens to one grid with stage chips', () => {
     show(false);
     fireEvent.change(screen.getByRole('textbox', { name: 'Search titles' }), { target: { value: 'annie' } });
-    expect(screen.queryByRole('button', { name: /^Rough/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Not started/ })).toBeNull();
     expect(within(row('Annie')).getByText('Rough')).toBeTruthy();
   });
 

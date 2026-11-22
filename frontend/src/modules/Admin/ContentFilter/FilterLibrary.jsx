@@ -26,17 +26,19 @@ const STAGE_TONE = { rough: 'gray', running: 'blue', refined: 'gray', scenes: 'g
  * Readiness order, best first. Only a film a grown-up approved is "Ready tonight"; a machine-certified
  * film still waits for its review (owner, 2026-11-21: "0 of x is not ready").
  */
+// Sections follow the film page's rail (Refine, Review, Approve), not the pipeline's internal steps:
+// "Refined", "Scenes built" and "Audited" all meant "there is review work for you" (owner asked what
+// they meant, 2026-11-22). The internal step stays as a small chip on the card in To review.
 export const SECTIONS = [
   { id: 'ready', label: 'Ready tonight', stages: ['parent'], open: true },
-  { id: 'review', label: 'Needs your review', stages: ['machine'], open: true },
+  { id: 'review', label: 'To review', stages: ['machine', 'audited', 'scenes', 'refined'], open: true },
+  { id: 'running', label: 'Refining', stages: ['running'], open: true },
   // A rough film you have opened (it has a list) or run: in hand, not lost among the untouched ones.
   { id: 'started', label: 'Started', stages: ['rough'], when: (f) => Boolean(f.reviewed || f.job), open: true },
-  { id: 'audited', label: STAGE_LABELS.audited, stages: ['audited'], open: true },
-  { id: 'scenes', label: STAGE_LABELS.scenes, stages: ['scenes'], open: false },
-  { id: 'refined', label: STAGE_LABELS.refined, stages: ['refined'], open: false },
-  { id: 'running', label: STAGE_LABELS.running, stages: ['running'], open: true },
-  { id: 'rough', label: STAGE_LABELS.rough, stages: ['rough'], open: false },
+  { id: 'rough', label: 'Not started', stages: ['rough'], open: false },
 ];
+/** The internal step, in words, for a film in To review. */
+export const REVIEW_DETAIL = { machine: 'Auto-checked', audited: 'Check found a problem', scenes: 'Not checked yet', refined: 'Not checked yet' };
 /** Films the library cannot match to Plex (no key, stale key, another year, several Plex films). */
 export const UNMATCHED_SECTION = { id: 'unmatched', label: 'Not matched to Plex' };
 const isUnmatched = (f) => f.match === 'unmatched';
@@ -130,7 +132,7 @@ export function FilterLibrary() {
                 </Accordion.Control>
                 <Accordion.Panel>
                   <SimpleGrid className="cf-grid" cols={{ base: 2, sm: 4, md: 6, lg: 8 }} spacing="sm">
-                    {sec.films.map((f) => card(f, null))}
+                    {sec.films.map((f) => card(f, sec.id === 'review' ? REVIEW_DETAIL[f.stage] || null : null))}
                   </SimpleGrid>
                 </Accordion.Panel>
               </Accordion.Item>

@@ -831,10 +831,11 @@ it), a `year`/`title` filled from Plex when the EDL lacks them, and the match ve
 another year's film would show the wrong poster. `meta: { indexedAt, total, unlinked, verified,
 unmatched }`.
 
-The Admin library is compact 2:3 poster cards grouped by readiness in an accordion: Ready tonight
-(parent-certified only: a grown-up approved it), Needs your review (machine-certified, not yet
-approved; owner, 2026-11-21: "0 of x is not ready"), Audited, Scenes built, Refined, Running, Rough.
-A card's count is "n of m reviewed" over the parts the filter acts on. A rough film you have
+The Admin library is compact 2:3 poster cards grouped by readiness in an accordion that follows the film page's rail: **Ready tonight**
+(parent-certified only), **To review** (refined, scenes built, audited or machine-certified: all mean
+review work for you; the card's chip names the step in words: Auto-checked, Check found a problem, Not
+checked yet), **Refining** (a run is open), **Started** (a rough film you have opened or run) and **Not
+started** (owner, 2026-11-22: "what is scenes built?"). A card's count is "n of m reviewed" over the parts the filter acts on. A rough film you have
 opened (it has a list) or run sits in **Started**, apart from the untouched Rough ones. A card's
 button opens the film (Start / Review / Open); refining happens on the film's page, filtered parts
 only (owner, 2026-11-21), so the library starts no runs. The stage groups hold verified
