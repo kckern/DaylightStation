@@ -55,7 +55,7 @@ export function PlaybackQualityProvider({ children }) {
         return next;
       });
       mediaLog.qualityChanged({ scope: 'selected', contentId: request.contentId, quality: normalized });
-      close();
+      setRequest(current => current === request ? null : current);
       return { ok: true };
     }
     try {
@@ -65,13 +65,13 @@ export function PlaybackQualityProvider({ children }) {
         return { ...result, ok: false, code: result?.code ?? 'UNCONFIRMED' };
       }
       mediaLog.qualityChanged({ scope: 'playing', target: request.controller.id, contentId: request.item.contentId, quality: normalized });
-      close();
+      setRequest(current => current === request ? null : current);
       return { ok: true };
     } catch (error) {
       mediaLog.qualityChangeFailed({ target: request.controller.id, contentId: request.item.contentId, code: error.code, error: error.message });
       return { ok: false, code: error.code, error: error.message };
     }
-  }, [request, close]);
+  }, [request]);
   const value = useMemo(() => ({ request, getOverrides, openForItem, openForPlayback, apply, close }),
     [request, getOverrides, openForItem, openForPlayback, apply, close]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
