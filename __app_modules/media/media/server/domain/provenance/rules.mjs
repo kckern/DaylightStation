@@ -13,8 +13,9 @@
  *                library; the last one usually `when: always`.
  *
  * A `when` is a set of facts, all of which must hold; a list value matches if
- * any item does (case-insensitive; `studio` matches on contained text, so
- * `MGM` also matches "MGM Studios"). `always` (or no `when`) matches anything.
+ * any item does (case-insensitive; `studio` matches whole words inside the
+ * name, so `MGM` matches "Metro-Goldwyn-Mayer (MGM)" but `AMC` does not match
+ * "DreamCrew"). `always` (or no `when`) matches anything.
  *
  *   kind: [movie, show]          library: [Movies]          studio: [CuriosityStream]
  *   collection: [LDS]            label: [Missionary]        content_filter: active
@@ -91,6 +92,12 @@ export function parseRules(cfg = {}) {
   });
 }
 
+/** Whether `words` appears in `text` as whole words (both lower case). */
+function containsWords(text, words) {
+  const escaped = words.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`).test(text);
+}
+
 /** Whether a rule's `when` holds for a title's facts. */
 export function matchesWhen(when, facts = {}) {
   if (!when || when.never) return false;
@@ -101,9 +108,10 @@ export function matchesWhen(when, facts = {}) {
   };
   for (const [key, value] of Object.entries(when)) {
     if (key === 'studio') {
-      // Studios are spelled many ways ("Metro-Goldwyn-Mayer", "MGM", "20th Century Fox"): match on contained text.
+      // Studios are spelled many ways ("Metro-Goldwyn-Mayer (MGM)", "20th Century Fox"):
+      // match whole words inside the name, so "AMC" is not found in "DreamCrew".
       const studio = String(facts.studio ?? '').toLowerCase();
-      if (!studio || !value.some((v) => studio.includes(v))) return false;
+      if (!studio || !value.some((v) => containsWords(studio, v))) return false;
     } else if (key === 'kind' || key === 'library' || key === 'collection' || key === 'label') {
       const factKey = { kind: 'kind', library: 'library', collection: 'collections', label: 'labels' }[key];
       if (!has(factKey, value)) return false;

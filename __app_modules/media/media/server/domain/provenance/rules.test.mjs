@@ -13,9 +13,15 @@ describe('matchesWhen', () => {
     expect(matchesWhen(when({ label: ['family'] }), facts)).toBe(true);
     expect(matchesWhen(when({ library: ['Documentaries'] }), facts)).toBe(false);
   });
-  it('studio matches on contained text', () => {
+  it('studio matches whole words inside the name', () => {
     expect(matchesWhen(when({ studio: ['MGM'] }), facts)).toBe(true);
+    expect(matchesWhen(when({ studio: ['Metro-Goldwyn'] }), facts)).toBe(true);
     expect(matchesWhen(when({ studio: ['Fox'] }), facts)).toBe(false);
+    expect(matchesWhen(when({ studio: ['Fox'] }), { studio: '20th Century Fox' })).toBe(true);
+    expect(matchesWhen(when({ studio: ['AMC'] }), { studio: 'DreamCrew' })).toBe(false);
+    expect(matchesWhen(when({ studio: ['AMC'] }), { studio: 'Bandai Namco Games' })).toBe(false);
+    expect(matchesWhen(when({ studio: ['AMC'] }), { studio: 'AMC Studios' })).toBe(true);
+    expect(matchesWhen(when({ studio: ['Warner'] }), { studio: 'Warner Bros. Pictures' })).toBe(true);
   });
   it('length and year need the fact to be known', () => {
     expect(matchesWhen(when({ shorter_than_min: 40 }), facts)).toBe(true);
