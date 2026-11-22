@@ -39,6 +39,15 @@ const GROUP_SUFFIX = {
   program: n => `${n} days this week`,
 };
 
+/** The fields curation sorts and groups on. One item without them must not empty the week. */
+function isWellFormed(item) {
+  return !!item
+    && typeof item.studyDay === 'string'
+    && typeof item.at === 'string'
+    && typeof item.learnerId === 'string'
+    && typeof item.groupKey === 'string';
+}
+
 function priorityOf(item) {
   return PRIORITY[`${item.kind}:${item.verb}`] ?? PRIORITY[item.kind] ?? UNRANKED_PRIORITY;
 }
@@ -104,7 +113,7 @@ function compareForSlot(a, b) {
  * @returns {WorkItem[]} new objects, one per learner and groupKey
  */
 export function dedupeWorkItems(items) {
-  return buildGroups(items || []).map(candidates => candidates[0]);
+  return buildGroups((items || []).filter(isWellFormed)).map(candidates => candidates[0]);
 }
 
 /**
@@ -115,7 +124,7 @@ export function dedupeWorkItems(items) {
 export function curateSchoolWork(items, dates) {
   const days = dates || [];
   const inWindow = new Set(days);
-  const kept = (items || []).filter(item => inWindow.has(item.studyDay));
+  const kept = (items || []).filter(isWellFormed).filter(item => inWindow.has(item.studyDay));
 
   // Higher-ranked groups claim slots first; each takes its best day with a free slot.
   const groups = buildGroups(kept).sort((a, b) => compareForSlot(a[0], b[0]));

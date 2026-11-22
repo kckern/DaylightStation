@@ -7,6 +7,9 @@ export class WeeklyReviewService {
   #sessionService;
   #weatherStore;
   #schoolWork;
+  #schoolTimeoutMs;
+  #setTimer;
+  #clearTimer;
   #householdId;
   #transcriptionService;
   #logger;
@@ -21,6 +24,10 @@ export class WeeklyReviewService {
     this.#sessionService = deps.sessionService;
     this.#weatherStore = deps.weatherStore;
     this.#schoolWork = deps.schoolWork || null;
+    // Injected timers (apps-no-global-timers); the defaults are the real ones.
+    this.#setTimer = deps.setTimer || setTimeout;
+    this.#clearTimer = deps.clearTimer || clearTimeout;
+    this.#schoolTimeoutMs = Number.isFinite(deps.schoolTimeoutMs) && deps.schoolTimeoutMs > 0 ? deps.schoolTimeoutMs : 8000;
     this.#transcriptionService = deps.transcriptionService;
     this.#logger = deps.logger || console;
     if (!deps.reviewStore) throw new Error('WeeklyReviewService requires a reviewStore dependency');
@@ -106,27 +113,46 @@ export class WeeklyReviewService {
    */
   async getSchoolImage(ref) {
     if (!this.#schoolWork) return null;
-    return (await this.#schoolWork.getImage(ref)) ?? null;
+    const img = await this.#schoolWork.getImage(ref);
+    if (!img?.bytes || typeof img.contentType !== 'string' || !/^image\//.test(img.contentType)) return null;
+    return img;
   }
 
   /**
    * School work for the window, curated onto days. School's range end is
    * exclusive, so it is asked for up to the day after the last date shown.
-   * Never throws: a school outage leaves the school lists empty.
+   * Never throws and never holds the review up past the timeout: a slow or
+   * failing school source leaves the school lists empty.
    */
   async #fetchSchoolWork(week, dates) {
     if (!this.#schoolWork || dates.length === 0) return {};
+    const from = dates[0];
+    const to = this.#addDays(dates[dates.length - 1], 1);
+    const ms = this.#schoolTimeoutMs;
+    const TIMED_OUT = Symbol('timeout');
+    let timer;
     try {
-      const from = dates[0];
-      const to = this.#addDays(dates[dates.length - 1], 1);
-      const items = await this.#schoolWork.getWorkForDateRange(from, to);
-      const byDate = curateSchoolWork(items, dates);
+      const items = await Promise.race([
+        this.#schoolWork.getWorkForDateRange(from, to),
+        new Promise(resolve => { timer = this.#setTimer(() => resolve(TIMED_OUT), ms); }),
+      ]);
+      if (items === TIMED_OUT) {
+        this.#logger.warn?.('weekly-review.school.timeout', { week, ms });
+        return {};
+      }
+      const list = Array.isArray(items) ? items : [];
+      const byDate = curateSchoolWork(list, dates);
+      const inWindow = new Set(dates);
+      const kept = list.filter(i => i && inWindow.has(i.studyDay));
       const byKind = {};
-      for (const item of items) byKind[item.kind] = (byKind[item.kind] || 0) + 1;
+      for (const item of list) {
+        if (!item) continue;
+        byKind[item.kind] = (byKind[item.kind] || 0) + 1;
+      }
       this.#logger.info?.('weekly-review.school.loaded', {
         week,
-        learners: new Set(items.map(i => i.learnerId)).size,
-        items: items.length,
+        learners: new Set(kept.map(i => i.learnerId)).size,
+        items: list.length,
         shown: Object.values(byDate).reduce((n, d) => n + d.school.length, 0),
         byKind,
       });
@@ -134,6 +160,8 @@ export class WeeklyReviewService {
     } catch (err) {
       this.#logger.warn?.('weekly-review.school.error', { error: err.message });
       return {};
+    } finally {
+      this.#clearTimer(timer);
     }
   }
 

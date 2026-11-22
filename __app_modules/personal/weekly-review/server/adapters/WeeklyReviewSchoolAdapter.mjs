@@ -31,6 +31,9 @@ export class WeeklyReviewSchoolAdapter {
    * @returns {Promise<{ bytes: Buffer, contentType: string } | null>}
    */
   async getImage(ref) {
-    return (await this.#schoolLearnerWork.image(ref)) || null;
+    const started = Date.now();
+    const img = (await this.#schoolLearnerWork.image(ref)) || null;
+    this.#logger?.debug?.('weekly-review.school.image', { ref, hit: !!img, ms: Date.now() - started });
+    return img;
   }
 }

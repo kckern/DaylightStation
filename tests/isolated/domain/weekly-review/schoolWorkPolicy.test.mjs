@@ -257,3 +257,22 @@ describe('dedupeWorkItems', () => {
     expect(course.subtitle).toBe('2 sessions this week');
   });
 });
+
+describe('malformed items', () => {
+  it('drops items missing studyDay, at, learnerId or groupKey and still curates the rest', () => {
+    const good1 = item({ groupKey: 'course:c1', studyDay: '2026-03-23' });
+    const good2 = item({ learnerId: 'kid-b', groupKey: 'course:c2', studyDay: '2026-03-24' });
+    const bad = [
+      item({ groupKey: 'course:c3', studyDay: '2026-03-25', at: undefined }),
+      item({ groupKey: 'course:c4', studyDay: '2026-03-25', learnerId: null }),
+      item({ groupKey: undefined, studyDay: '2026-03-25' }),
+      { ...item({ groupKey: 'course:c5' }), studyDay: 42 },
+      null,
+    ];
+    const result = curateSchoolWork([good1, ...bad, good2], DATES);
+    expect(result['2026-03-23'].school.map(i => i.groupKey)).toEqual(['course:c1']);
+    expect(result['2026-03-24'].school.map(i => i.groupKey)).toEqual(['course:c2']);
+    expect(result['2026-03-25'].schoolAll).toEqual([]);
+    expect(dedupeWorkItems([good1, ...bad]).map(i => i.groupKey)).toEqual(['course:c1']);
+  });
+});

@@ -104,7 +104,7 @@ describe('WeeklyReviewService', () => {
       imageUrl: null, groupKey: 'activity:1', weight: 1, subject: null, ...over,
     });
 
-    function buildService(schoolWork) {
+    function buildService(schoolWork, extraDeps = {}) {
       return new WeeklyReviewService({ dataPath: path.join(os.tmpdir(), 'test-data') }, {
         reviewStore: new FilesystemWeeklyReviewStore({
           householdDir: path.join(os.tmpdir(), 'test-data', 'household'),
@@ -116,6 +116,7 @@ describe('WeeklyReviewService', () => {
         calendarData: mockCalendarData,
         schoolWork,
         logger: mockLogger,
+        ...extraDeps,
       });
     }
 
@@ -125,6 +126,7 @@ describe('WeeklyReviewService', () => {
         work({ groupKey: 'activity:2', title: 'Sudoku', at: '2026-03-24T16:00:00Z' }),
         work({ learnerId: 'kid2', learnerName: 'Two', groupKey: 'activity:3', studyDay: '2026-03-30', at: '2026-03-30T10:00:00Z' }),
         work({ groupKey: 'activity:4', studyDay: '2026-03-31', at: '2026-03-31T10:00:00Z' }),
+        work({ learnerId: 'kid3', groupKey: 'activity:5', studyDay: '2026-03-31', at: '2026-03-31T11:00:00Z' }),
       ];
       const schoolWork = { getWorkForDateRange: vi.fn().mockResolvedValue(items), getImage: vi.fn() };
       const result = await buildService(schoolWork).bootstrap('2026-03-23');
@@ -138,7 +140,7 @@ describe('WeeklyReviewService', () => {
       expect(result.days.find(d => d.date === '2026-03-23').school).toEqual([]);
 
       expect(mockLogger.info).toHaveBeenCalledWith('weekly-review.school.loaded', {
-        week: '2026-03-23', learners: 2, items: 4, shown: 2, byKind: { activity: 4 },
+        week: '2026-03-23', learners: 2, items: 5, shown: 2, byKind: { activity: 5 },
       });
     });
 
@@ -151,6 +153,14 @@ describe('WeeklyReviewService', () => {
         expect(day.schoolAll).toEqual([]);
       }
       expect(mockLogger.warn).toHaveBeenCalledWith('weekly-review.school.error', { error: 'boom' });
+    });
+
+    it('gives up on a school source that never answers and warns with the timeout', async () => {
+      const schoolWork = { getWorkForDateRange: vi.fn(() => new Promise(() => {})), getImage: vi.fn() };
+      const result = await buildService(schoolWork, { schoolTimeoutMs: 20 }).bootstrap('2026-03-23');
+      expect(result.days).toHaveLength(8);
+      for (const day of result.days) expect(day.school).toEqual([]);
+      expect(mockLogger.warn).toHaveBeenCalledWith('weekly-review.school.timeout', { week: '2026-03-23', ms: 20 });
     });
 
     it('gives empty lists when no school adapter is wired', async () => {
@@ -167,6 +177,18 @@ describe('WeeklyReviewService', () => {
       expect(await buildService(schoolWork).getSchoolImage('course:1')).toBe(img);
       expect(schoolWork.getImage).toHaveBeenCalledWith('course:1');
       expect(await buildService(undefined).getSchoolImage('course:1')).toBeNull();
+    });
+
+    it('getSchoolImage refuses answers without bytes or with a non-image type', async () => {
+      for (const answer of [
+        null,
+        { contentType: 'image/png' },
+        { bytes: Buffer.from('x'), contentType: 'text/html' },
+        { bytes: Buffer.from('x') },
+      ]) {
+        const schoolWork = { getWorkForDateRange: vi.fn(), getImage: vi.fn().mockResolvedValue(answer) };
+        expect(await buildService(schoolWork).getSchoolImage('activity:1')).toBeNull();
+      }
     });
   });
 });
