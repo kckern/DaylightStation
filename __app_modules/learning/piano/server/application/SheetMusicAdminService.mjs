@@ -19,7 +19,8 @@
  *
  * Errors carrying `code` are the router's contract: `invalid-request`,
  * `invalid-segments` (with `errors`: validateSegments codes plus `empty`),
- * `no-draft`, `draft-changed`, and the score reader's codes (NOT_LIBRARY_SCORE,
+ * `no-draft`, `draft-changed`, `learn-record-conflict` (the shared Learn path is
+ * owned by a different score), and the score reader's codes (NOT_LIBRARY_SCORE,
  * SCORE_NOT_FOUND, SCORE_UNREADABLE, SCORE_TOO_LARGE).
  *
  * `upload` adds a MusicXML/MXL file to a configured library folder. Its refusals
@@ -39,7 +40,7 @@
  *
  * Layer: APPLICATION. Everything external is injected.
  */
-import { approvalImpact, normalizeLearnFile, validateSegments } from '../../portable/music/sheetMusicLearnFile.mjs';
+import { approvalImpact, hasLearnOwnerConflict, normalizeLearnFile, validateSegments } from '../../portable/music/sheetMusicLearnFile.mjs';
 import { libraryScoreLocalPath, practiceKeyOfScore } from '../../portable/music/practiceKey.mjs';
 import { contentHash } from '../../portable/practice/lessonExpectation.mjs';
 import {
@@ -538,6 +539,9 @@ export class SheetMusicAdminService {
   #storedFile(id) {
     const raw = this.#datastore.getSheetMusicLearn(id);
     if (isThenable(raw)) throw new Error('SheetMusicAdminService needs a synchronous getSheetMusicLearn');
+    if (hasLearnOwnerConflict(raw, id)) {
+      throw codedError('learn-record-conflict', `The Learn record for ${id} belongs to another score`);
+    }
     return isObject(raw) ? raw : {};
   }
 
@@ -601,10 +605,12 @@ export class SheetMusicAdminService {
       fail('COVER_UNREADABLE', error);
     }
     try {
-      row.learn = learnState(normalizeLearnFile(await this.#datastore.getSheetMusicLearn(id)), currentSha256);
+      const stored = await this.#datastore.getSheetMusicLearn(id);
+      if (hasLearnOwnerConflict(stored, id)) throw codedError('learn-record-conflict', `The Learn record for ${id} belongs to another score`);
+      row.learn = learnState(normalizeLearnFile(stored), currentSha256);
     } catch (error) {
       row.learn = null;
-      fail('LEARN_UNREADABLE', error);
+      fail(typeof error?.code === 'string' ? error.code : 'LEARN_UNREADABLE', error);
     }
     row.learners = [];
     const key = practiceKeyOfScore(id);

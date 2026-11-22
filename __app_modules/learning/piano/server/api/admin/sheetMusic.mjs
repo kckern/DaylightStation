@@ -70,6 +70,7 @@ const STATUS_BY_CODE = {
   SCORE_NOT_FOUND: 404,
   'no-draft': 409,
   'draft-changed': 409,
+  'learn-record-conflict': 409,
   'basename-exists': 409,
   'slug-collides': 409,
   'has-scan': 409,

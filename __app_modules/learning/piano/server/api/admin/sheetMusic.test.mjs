@@ -193,7 +193,7 @@ describe('createAdminSheetMusicRouter: service error mapping', () => {
   const cases = [
     ['invalid-request', 400], ['NOT_LIBRARY_SCORE', 400], ['bad-folder', 400], ['bad-filename', 400],
     ['SCORE_NOT_FOUND', 404],
-    ['no-draft', 409], ['basename-exists', 409], ['slug-collides', 409],
+    ['no-draft', 409], ['draft-changed', 409], ['learn-record-conflict', 409], ['basename-exists', 409], ['slug-collides', 409],
     ['SCORE_TOO_LARGE', 413],
     ['bad-extension', 415],
     ['bad-mxl', 422], ['not-xml', 422], ['timewise', 422], ['not-partwise', 422], ['no-notes', 422],

@@ -6,6 +6,11 @@
  */
 const isObject = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 
+/** A scoreId-bearing Learn file belongs only to that exact library score. */
+export function hasLearnOwnerConflict(file, scoreId) {
+  return isObject(file) && file.scoreId != null && file.scoreId !== scoreId;
+}
+
 function cleanSegment(raw) {
   if (!isObject(raw)) return null;
   const out = { id: typeof raw.id === 'string' ? raw.id.trim() : '', start: raw.start, end: raw.end };
@@ -74,7 +79,8 @@ export function normalizeLearnFile(raw) {
  * The segments the kiosk should play, or null. With `contentSha256` given, a file cut
  * against different XML is stale and yields null.
  */
-export function approvedSegments(file, contentSha256) {
+export function approvedSegments(file, contentSha256, expectedScoreId) {
+  if (expectedScoreId !== undefined && hasLearnOwnerConflict(file, expectedScoreId)) return null;
   const f = normalizeLearnFile(file);
   if (!f.segments.length) return null;
   if (contentSha256 !== undefined && f.contentSha256 !== contentSha256) return null;

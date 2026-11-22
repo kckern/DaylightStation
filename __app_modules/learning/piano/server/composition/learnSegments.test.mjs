@@ -48,6 +48,17 @@ test('a matching file whose segments do not validate answers null and warns once
   assert.deepEqual(warnings, [['piano.sheetmusic.learn-invalid', { scoreId: SCORE }]]);
 });
 
+test('a Learn file owned by another colliding score is never used', () => {
+  const warnings = [];
+  const read = reader(() => ({ ...file, scoreId: 'files:docs/sheet-music/other.mxl' }), warnings);
+  assert.equal(read(SCORE, 'c'), null);
+  assert.equal(read(SCORE, 'c'), null);
+  assert.deepEqual(warnings, [[
+    'piano.sheetmusic.learn-owner-conflict',
+    { scoreId: SCORE, ownerScoreId: 'files:docs/sheet-music/other.mxl' },
+  ]]);
+});
+
 test('each reader keeps its own latch', () => {
   const warnings = [];
   const fail = () => { throw new Error('x'); };

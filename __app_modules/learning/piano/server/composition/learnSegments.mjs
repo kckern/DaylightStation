@@ -1,4 +1,4 @@
-import { approvedSegments, normalizeLearnFile, validateSegments } from '../../portable/music/sheetMusicLearnFile.mjs';
+import { approvedSegments, hasLearnOwnerConflict, normalizeLearnFile, validateSegments } from '../../portable/music/sheetMusicLearnFile.mjs';
 
 const isObject = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 
@@ -78,7 +78,11 @@ export function createLearnSegmentsReader({ datastore, pianoConfig = () => null,
       warnOnce('piano.sheetmusic.learn-read-failed', scoreId, { error: error?.message ?? String(error) });
       return null;
     }
-    const segments = approvedSegments(file, contentSha256);
+    if (hasLearnOwnerConflict(file, scoreId)) {
+      warnOnce('piano.sheetmusic.learn-owner-conflict', scoreId, { ownerScoreId: file.scoreId });
+      return null;
+    }
+    const segments = approvedSegments(file, contentSha256, scoreId);
     if (!segments && file) {
       const normalized = normalizeLearnFile(file);
       if (normalized.contentSha256 === contentSha256 && normalized.segments.length) warnOnce('piano.sheetmusic.learn-invalid', scoreId);

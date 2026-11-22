@@ -5,7 +5,7 @@ import { musicXmlToNotes } from "../../../../../__capabilities/music-notation/po
 import { countInstances, expandSeed, instanceId, instanceIds, materializeById, searchBank } from "../../portable/music/exerciseBank.mjs";
 import { validateAssessment } from "../../portable/music/assessmentRecord.mjs";
 import { buildExerciseCatalog } from "../../portable/music/exerciseCatalog.mjs";
-import { approvedSegments, normalizeLearnFile } from "../../portable/music/sheetMusicLearnFile.mjs";
+import { approvedSegments, hasLearnOwnerConflict, normalizeLearnFile } from "../../portable/music/sheetMusicLearnFile.mjs";
 
 const ATTEMPT_WRITER_ROLES = new Set(['sysadmin', 'parent', 'kiosk', 'piano-instructor', 'gaming-host']);
 const GUEST_ATTEMPT_SURFACES = new Set(['piano-challenge']);
@@ -966,11 +966,14 @@ export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = nul
   router.get('/sheet-music/learn', asyncHandler((req, res) => {
     const scoreId = String(req.query.id || '');
     const file = ds.getSheetMusicLearn(scoreId);
-    const segments = approvedSegments(file);
+    const ownerConflict = hasLearnOwnerConflict(file, scoreId);
+    const segments = approvedSegments(file, undefined, scoreId);
     if (!segments) {
       // Stored segments that do not validate (overlap, bad ids, …) are a corrupt
       // file, not an absent one; make that visible.
-      if (Array.isArray(file?.segments) && file.segments.length) {
+      if (ownerConflict) {
+        logger.warn?.('piano.sheetmusic.learn-owner-conflict', { scoreId, ownerScoreId: file.scoreId });
+      } else if (Array.isArray(file?.segments) && file.segments.length) {
         logger.warn?.('piano.sheetmusic.learn-invalid', { scoreId });
       }
       return res.json({});

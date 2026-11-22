@@ -70,6 +70,21 @@ describe('GET /sheet-music/learn', () => {
     });
   });
 
+  it('does not serve approved segments from a colliding score\'s Learn file', async () => {
+    const colliding = SCORE.replace('Minuet in G', 'Minuet_in_G');
+    expect(learnKey(colliding)).toBe(learnKey(SCORE));
+    files[learnKey(SCORE)] = {
+      scoreId: SCORE, contentSha256: 'abc123', segments: [{ id: 'a', start: 0, end: 3 }],
+    };
+    const logger = { info() {}, warn: vi.fn(), error() {} };
+    const r = await request(app(logger)).get(url(colliding));
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({});
+    expect(logger.warn).toHaveBeenCalledWith('piano.sheetmusic.learn-owner-conflict', {
+      scoreId: colliding, ownerScoreId: SCORE,
+    });
+  });
+
   it('passes a segment\'s hands through to the kiosk', async () => {
     files[learnKey(SCORE)] = { contentSha256: 'abc', segments: [{ id: 'a', start: 0, end: 3, parts: ['rh'] }, { id: 'b', start: 4, end: 7 }] };
     const r = await request(app()).get(url(SCORE));

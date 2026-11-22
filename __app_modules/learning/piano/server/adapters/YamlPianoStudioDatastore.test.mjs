@@ -21,6 +21,7 @@ vi.mock('../../../../../__backend/src/0_system/utils/FileIO.mjs', () => ({
 
 import { YamlPianoStudioDatastore } from './YamlPianoStudioDatastore.mjs';
 import { saveYamlToPathAtomic } from '../../../../../__backend/src/0_system/utils/FileIO.mjs';
+import { practiceKeyOfScore } from '../../portable/music/practiceKey.mjs';
 
 const configService = {
   getUserDir: (id) => `/data/users/${id}`,
@@ -75,6 +76,19 @@ describe('sheet music Learn file', () => {
       expect.any(Object),
       { durable: true },
     );
+  });
+  it('does not overwrite a colliding Learn file owned by another score', () => {
+    const colliding = ID.replace('fur-elise', 'fur_elise');
+    expect(practiceKeyOfScore(colliding)).toBe(practiceKeyOfScore(ID));
+    const ds = new YamlPianoStudioDatastore({ configService });
+    const owned = { version: 1, scoreId: ID, segments: [{ id: 'a', start: 0, end: 3 }] };
+    ds.saveSheetMusicLearn(ID, owned);
+
+    let error;
+    try { ds.saveSheetMusicLearn(colliding, { version: 1, scoreId: colliding, segments: [] }); } catch (cause) { error = cause; }
+    expect(error).toMatchObject({ code: 'learn-record-conflict' });
+    expect(ds.getSheetMusicLearn(ID)).toEqual(owned);
+    expect(saveYamlToPathAtomic).toHaveBeenCalledTimes(1);
   });
   it('returns null when a library score has no Learn file yet', () => {
     const ds = new YamlPianoStudioDatastore({ configService });

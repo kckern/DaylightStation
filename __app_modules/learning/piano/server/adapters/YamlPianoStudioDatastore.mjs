@@ -37,6 +37,7 @@ import {
 } from "#system/utils/FileIO.mjs";
 import { encodeMidiFile } from './MidiFileCodec.mjs';
 import { libraryScoreLocalPath, practiceKeyOfScore } from '../../portable/music/practiceKey.mjs';
+import { hasLearnOwnerConflict } from '../../portable/music/sheetMusicLearnFile.mjs';
 import { ILoopManifestSource } from '../application/ports/ILoopManifestSource.mjs';
 
 export class YamlPianoStudioDatastore extends ILoopManifestSource {
@@ -259,6 +260,9 @@ export class YamlPianoStudioDatastore extends ILoopManifestSource {
   saveSheetMusicLearn(scoreId, data) {
     const file = this.#sheetMusicLearnPath(scoreId);
     if (!file) throw new Error(`Not a sheet music score: ${scoreId}`);
+    if (hasLearnOwnerConflict(loadYaml(file), scoreId)) {
+      throw Object.assign(new Error(`The Learn record for ${scoreId} belongs to another score`), { code: 'learn-record-conflict' });
+    }
     saveYamlToPathAtomic(`${file}.yml`, data, { durable: true });
     return true;
   }

@@ -52,6 +52,12 @@ describe('approvedSegments', () => {
   it('ignores the content check when no sha is given (server readers without the XML)', () => {
     assert.deepEqual(approvedSegments(file, undefined), [{ id: 'a', start: 0, end: 3 }]);
   });
+  it('does not serve a stored approval for a different score', () => {
+    const owned = { ...file, scoreId: 'score-a' };
+    assert.deepEqual(approvedSegments(owned, SHA, 'score-a'), [{ id: 'a', start: 0, end: 3 }]);
+    assert.equal(approvedSegments(owned, SHA, 'score-b'), null);
+    assert.deepEqual(approvedSegments(file, SHA, 'score-b'), [{ id: 'a', start: 0, end: 3 }]);
+  });
 });
 
 describe('approvalImpact', () => {

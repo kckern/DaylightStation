@@ -427,6 +427,42 @@ describe('review fixes: draft pinning, empty drafts, non-library ids, robust row
     expect(reads).toHaveLength(0);
   });
 
+  it('blocks a colliding score from reading or changing another score\'s Learn record', async () => {
+    const collidingId = ID_A.replace('fur-elise', 'fur_elise');
+    expect(practiceKeyOfScore(collidingId)).toBe(practiceKeyOfScore(ID_A));
+    const owned = {
+      version: 1,
+      scoreId: ID_A,
+      contentSha256: '1',
+      segments: [seg('approved', 0, 3)],
+      approved: { at: 'x' },
+      draft: { segments: [seg('draft', 0, 7)] },
+    };
+    const writes = [];
+    const { service } = fixture({
+      scores: {
+        [ID_A]: { xml: xmlOf(), sha: '1' },
+        [collidingId]: { xml: xmlOf(), sha: '2' },
+      },
+      datastoreOverrides: {
+        getSheetMusicLearn: () => structuredClone(owned),
+        saveSheetMusicLearn: (id, data) => { writes.push({ id, data }); },
+      },
+    });
+
+    await expect(service.getLearn(collidingId)).rejects.toMatchObject({ code: 'learn-record-conflict' });
+    await expect(service.draftImpact(collidingId)).rejects.toMatchObject({ code: 'learn-record-conflict' });
+    await expect(service.saveDraft(collidingId, { segments: [seg('new', 0, 7)], measureCount: 8 }))
+      .rejects.toMatchObject({ code: 'learn-record-conflict' });
+    await expect(service.approve(collidingId, { measureCount: 8, expectedDraftRevision: draftRevision(owned.draft.segments) }))
+      .rejects.toMatchObject({ code: 'learn-record-conflict' });
+    await expect(service.revert(collidingId)).rejects.toMatchObject({ code: 'learn-record-conflict' });
+    expect(writes).toEqual([]);
+    expect((await service.getLearn(ID_A)).segments).toEqual(owned.segments);
+    const rows = await service.library();
+    expect(rows.find((row) => row.id === collidingId)).toMatchObject({ error: 'learn-record-conflict', learn: null });
+  });
+
   it('saveDraft for a missing score fails with SCORE_NOT_FOUND and writes nothing', async () => {
     const missing = 'files:docs/sheet-music/folk/gone.musicxml';
     const { service, saved } = fixture({ scores: {} });
