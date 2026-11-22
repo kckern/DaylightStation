@@ -112,8 +112,12 @@ provider ids (below). Then three stages, each read top to bottom, first match wi
 
 1. **overrides** beat the availability service. A match spends no lookup.
    Household: content filter active (certified for the `family` profile, the
-   player's own default-on test) → VidAngel; collection Living Scriptures → Living
-   Scriptures or LDS → Living Scriptures; studio MagellanTV, CuriosityStream, BYUtv → their own service.
+   player's own default-on test) → VidAngel; a BYU studio (BYUtv, BYU Broadcasting,
+   KBYU, Brigham Young University) → BYUtv, ahead of the next rule because some BYU
+   titles are in the LDS collection; collection Living Scriptures or LDS → Living
+   Scriptures; studio MagellanTV, CuriosityStream → their own service. A show with no
+   studio in Plex gets one with `cli/plex.cli.mjs set <id> --studio "..." --lock`
+   (Relative Race → BYUtv), so rules stay on facts, not titles.
 2. **priority** groups rank the availability service's offers. Only subscription
    (`sub`) and free (`free`) listings count; rent and buy never do. Household:
    subscribed (Prime Video, Peacock, YouTube TV) > library (Hoopla, Kanopy) > free
