@@ -93,7 +93,7 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
           {location && <span className="fleet-card-location">{location}</span>}
         </span>
         <span className="fleet-card-state" data-testid={`fleet-state-${deviceId}`}>
-          {deviceStateLabel(devState, { offline })}
+          {deviceStateLabel(offline ? (snap?.state ?? devState) : devState, { offline })}
         </span>
         {entry?.isStale && <Badge size="xs" color="yellow" variant="light" className="fleet-card-stale">Out of date</Badge>}
       </div>

@@ -194,6 +194,6 @@ describe('FleetView Play… affordance', () => {
     fleet.devices = [{ id: 'livingroom-tv', name: 'Living Room TV', type: 'shield-tv', state: 'off' }];
     fleet.entries = { 'livingroom-tv': { offline: true, snapshot: { state: 'playing' } } };
     renderFleet();
-    expect(screen.getByTestId('fleet-state-livingroom-tv')).not.toHaveTextContent('Playing');
+    expect(screen.getByTestId('fleet-state-livingroom-tv')).toHaveTextContent('Off — last seen playing');
   });
 });
