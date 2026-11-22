@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
-import { useFocusRegion } from "../../../../../frontend/src/lib/ui/useRetryRegion.js";
+import { useFocusAfterRemoval, useFocusRegion } from "../../../../../frontend/src/lib/ui/useRetryRegion.js";
 import "./Headlines.scss";
 import { webLink } from "../../shared/webLink.mjs";
 import { safeImage } from "../Scroll/cards/utils.js";
@@ -23,6 +23,7 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, o
   const [refreshError, setRefreshError] = useState(false);
   const imgRef = useRef(null);
   const { regionProps, focus } = useFocusRegion(refreshing);
+  const focusHandlers = useFocusAfterRemoval(focus);
 
   if (!source) return <div className="source-cell source-cell--empty" />;
 
@@ -60,7 +61,7 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, o
   const handleFaviconError = () => setFaviconError(true);
 
   return (
-    <div {...regionProps} role="region" aria-label={`Headlines from ${source.label}`} className="source-cell">
+    <div {...regionProps} {...focusHandlers} role="region" aria-label={`Headlines from ${source.label}`} className="source-cell">
       <div className="source-cell-header" style={{ backgroundColor: headerColor }}>
         {!faviconError ? (
           <img
