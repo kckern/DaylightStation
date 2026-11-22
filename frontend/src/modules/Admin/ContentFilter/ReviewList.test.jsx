@@ -1,109 +1,80 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 import { ReviewList } from './ReviewList.jsx';
 
 const rows = [
-  { id: 'cue:w1', peekId: 'w1', kind: 'words', group: 'profanity', label: 'damn', modality: 'said', in: 70.25, out: 70.6, effect: 'mute', card: null, handFixed: false, unsure: ['safe-window'], reviewed: null },
-  { id: 'subject:subject-b1', peekId: 'subject-b1', kind: 'picture', group: 'sexual', label: 'Billboard', modality: 'shown', in: 50, out: 58, effect: 'blur', card: null, handFixed: true, unsure: [], reviewed: { by: 'p', at: 'x' } },
-  { id: 'scene:sc1', peekId: 'sc1', kind: 'scenes', group: 'violence_blood_gore', label: 'Fight', modality: null, in: 100, out: 160, effect: 'skip-card', card: { text: 'They get away.', approved: true }, handFixed: false, unsure: [], reviewed: null },
+  { id: 'cue:w1', peekId: 'w1', kind: 'words', group: 'profanity', label: 'damn', modality: 'said', in: 70.25, out: 70.6, effect: 'mute', card: null, handFixed: false, unsure: ['safe-window'], timing: 'safe-window', reviewed: null },
+  { id: 'subject:subject-b1', peekId: 'subject-b1', kind: 'picture', group: 'sexual', label: 'Billboard', modality: 'shown', in: 50, out: 58, effect: 'blur', card: null, handFixed: true, unsure: [], timing: 'refined', reviewed: { by: 'p', at: 'x' }, verdict: { verdict: 'approve' } },
+  { id: 'scene:sc1', peekId: 'sc1', kind: 'scenes', group: 'violence_blood_gore', label: 'Fight', modality: null, in: 100, out: 160, effect: 'skip-card', card: { text: 'They get away.', approved: true }, handFixed: false, unsure: [], timing: 'refined', reviewed: null },
+  { id: 'cue:k1', peekId: 'k1', kind: 'picture', group: 'kissing', label: 'A couple kisses on the porch for a long while as the music swells.', modality: 'shown', in: 400, out: 404, effect: 'off', acts: false, why: 'settings', timing: 'rough', card: null, handFixed: false, unsure: [], reviewed: null },
 ];
 const show = (props = {}) => render(<MantineProvider><ReviewList rows={rows} reviewed={1} total={3} audit={{ ok: true, fresh: true }} {...props} /></MantineProvider>);
 const item = (label) => screen.getByText(label).closest('[data-row-id]');
+const order = () => [...document.querySelectorAll('[data-row-id]')].map((n) => n.getAttribute('data-row-id'));
 
 describe('ReviewList', () => {
   beforeEach(() => { vi.restoreAllMocks(); });
-  it('renders rows in film order by default (the audit\'s ranking on request) with reason, hand-fixed, card and reviewed marks', () => {
-    const order = () => [...document.querySelectorAll('[data-row-id]')].map((n) => n.getAttribute('data-row-id'));
-    const { unmount } = render(<MantineProvider><ReviewList rows={rows} reviewed={1} total={3} audit={{ ok: true, fresh: true }}
-      scope={{ show: 'all', kind: 'all', action: 'all', needs: false, group: null, order: 'attention' }} onScope={() => {}} /></MantineProvider>);
-    expect(order()).toEqual(['cue:w1', 'subject:subject-b1', 'scene:sc1']);
-    unmount();
+  it('opens on the Filtered tab, in film order, with the review count', () => {
     show();
     expect(order()).toEqual(['subject:subject-b1', 'cue:w1', 'scene:sc1']);
-    expect(within(item('damn')).getByText('Safe window')).toBeTruthy();
-    expect(within(item('damn')).getByText(/1:10.2–1:10.6/)).toBeTruthy();
-    expect(within(item('Billboard')).getByText('hand-fixed')).toBeTruthy();
-    expect(within(item('Billboard')).getByLabelText('Reviewed')).toBeTruthy();
-    expect(within(item('Fight')).getByText(/They get away\./)).toBeTruthy();
+    expect(screen.getByRole('radio', { name: 'Filtered 3' }).checked).toBe(true);
     expect(screen.getByText('1 of 3 reviewed')).toBeTruthy();
   });
-  it('"Play with effect" jumps to the row; "Play without" peeks the subject', () => {
-    const peek = vi.spyOn(previewStore, 'peek'); const onSelect = vi.fn();
-    show({ onSelect });
-    fireEvent.click(within(item('damn')).getByRole('button', { name: 'Play with effect' }));
-    expect(onSelect).toHaveBeenCalledWith(rows[0]); // the page's cursor move does the seek
-    fireEvent.click(within(item('Billboard')).getByRole('button', { name: 'Play without' }));
-    expect(onSelect).toHaveBeenLastCalledWith(rows[1], { seek: false });
-    expect(peek).toHaveBeenCalledWith('subject-b1');
+  it('"Needs a look first" keeps the audit\'s ranking', () => {
+    render(<MantineProvider><ReviewList rows={rows} reviewed={1} total={3} audit={{ ok: true, fresh: true }}
+      scope={{ show: 'filtered', kind: 'all', action: 'all', needs: false, group: null, order: 'attention' }} onScope={() => {}} /></MantineProvider>);
+    expect(order()).toEqual(['cue:w1', 'subject:subject-b1', 'scene:sc1']);
   });
-  it('clicking a row title selects it (the page seeks)', () => {
+  it('the Plays tab lists the parts that play and says they need no verdict', () => {
+    show();
+    fireEvent.click(screen.getByRole('radio', { name: 'Plays 1' }));
+    expect(order()).toEqual(['cue:k1']);
+    expect(screen.getByText(/Nothing here needs a verdict/)).toBeTruthy();
+    expect(within(item(rows[3].label)).getByText(/plays/)).toBeTruthy();
+  });
+  it('rows keep their whole label (no cut-off), with a glyph for where each stands', () => {
+    show({ scope: { show: 'plays', kind: 'all', action: 'all', needs: false, group: null, order: 'film' }, onScope: () => {} });
+    expect(screen.getByText(rows[3].label)).toBeTruthy();
+    const glyphs = () => [...document.querySelectorAll('.cf-review__glyph')].map((n) => n.textContent);
+    expect(glyphs()).toEqual(['']);
+  });
+  it('the part in hand opens to its span, reasons and card; others show a short line', () => {
+    show({ selectedId: 'cue:w1' });
+    const sel = item('damn');
+    expect(within(sel).getByText(/1:10.2–1:10.6/)).toBeTruthy();
+    expect(within(sel).getAllByText('Safe window').length).toBeGreaterThan(0);
+    expect(within(item('Billboard')).queryByText(/0:50.0–0:58.0/)).toBeNull();
+    expect(within(item('Billboard')).getByText('Approved')).toBeTruthy();
+    expect(sel.querySelector('.cf-review__glyph').textContent).toBe('▶');
+    expect(item('Billboard').querySelector('.cf-review__glyph').textContent).toBe('✓');
+  });
+  it('clicking a row selects it (the page seeks)', () => {
     const onSelect = vi.fn();
     show({ onSelect });
-    fireEvent.click(within(item('damn')).getByText('damn'));
+    fireEvent.click(screen.getByRole('button', { name: 'damn' }));
     expect(onSelect).toHaveBeenCalledWith(rows[0]);
   });
-  it('kind and "needs review" filters narrow the rows', () => {
+  it('"To do only" hides parts with a verdict', () => {
     show();
-    fireEvent.click(screen.getByRole('radio', { name: 'Scenes' }));
-    expect(screen.queryByText('damn')).toBeNull();
-    expect(screen.getByText('Fight')).toBeTruthy();
-    fireEvent.click(screen.getByRole('radio', { name: 'All' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Needs review' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'To do only' }));
     expect(screen.queryByText('Billboard')).toBeNull();
     expect(screen.getByText('damn')).toBeTruthy();
     expect(screen.getByText('Fight')).toBeTruthy();
   });
-  it('says the audit is running while it is not fresh', () => {
+  it('rows being refined say so instead of their timing chip', () => {
+    show({ refining: { 'cue:w1': 'Refining…' }, audit: { ok: true, fresh: false, running: false } });
+    expect(within(item('damn')).getByText('Refining…')).toBeTruthy();
+    expect(screen.getByText('Check out of date')).toBeTruthy();
+  });
+  it('says the check is running while it is not fresh', () => {
     show({ audit: { ok: true, fresh: false, running: true } });
     expect(screen.getByText('Checking…')).toBeTruthy();
   });
-  it('a reviewed unsure row is not "needs review"', () => {
-    const reviewedUnsure = rows.map((r) => (r.id === 'cue:w1' ? { ...r, reviewed: { by: 'p' } } : r));
-    render(<MantineProvider><ReviewList rows={reviewedUnsure} reviewed={2} total={3} audit={{ ok: true, fresh: true }} /></MantineProvider>);
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Needs review' }));
-    expect(screen.queryByText('damn')).toBeNull();
-  });
-  it('Play stays available while a run writes the film', () => {
-    show({ busy: true });
-    expect(within(item('damn')).getByRole('button', { name: 'Play with effect' }).disabled).toBe(false);
-  });
-  it('rows can be selected for a multi-row send-back; scenes cannot', () => {
-    const onPick = vi.fn();
-    show({ picked: new Set(), onPick });
-    fireEvent.click(within(item('damn')).getByRole('checkbox', { name: 'Select damn' }));
-    expect(onPick).toHaveBeenCalledWith('cue:w1', true);
-    expect(within(item('Fight')).queryByRole('checkbox')).toBeNull();
-  });
-  it('shows "Sent back" on rows in a send-back run, and an out-of-date audit as such', () => {
-    show({ sentBack: { 'cue:w1': 'refine' }, audit: { ok: true, fresh: false, running: false } });
-    expect(within(item('damn')).getByText('Sent back: refine')).toBeTruthy();
-    expect(screen.getByText('Check out of date')).toBeTruthy();
-  });
-  it('shows a verdict badge per row and follows a scope given by the page', () => {
-    const withVerdict = rows.map((r) => (r.id === 'cue:w1' ? { ...r, reviewed: { by: 'p' }, verdict: { verdict: 'redo' } } : r));
-    const { rerender } = render(<MantineProvider><ReviewList rows={withVerdict} reviewed={2} total={3} audit={{ ok: true, fresh: true }} /></MantineProvider>);
-    expect(within(item('damn')).getByText('Redo')).toBeTruthy();
+  it('follows a scope given by the page and reports tab changes', () => {
     const onScope = vi.fn();
-    rerender(<MantineProvider><ReviewList rows={withVerdict} scope={{ kind: 'all', action: 'blur', needs: false, group: null }} onScope={onScope} audit={{ ok: true, fresh: true }} /></MantineProvider>);
-    expect(screen.queryByText('damn')).toBeNull();
-    expect(screen.getByText('Billboard')).toBeTruthy();
-    fireEvent.click(screen.getByRole('radio', { name: 'Scenes' }));
-    expect(onScope).toHaveBeenCalledWith({ kind: 'scenes', action: 'blur', needs: false, group: null });
-  });
-  it('shows every part: filtered first, then the ones that play, with a show switch and timing', () => {
-    const all = [...rows.map((r) => ({ ...r, acts: true, timing: 'refined' })),
-      { id: 'cue:k1', peekId: 'k1', kind: 'picture', group: 'kissing', label: 'A couple kisses.', modality: 'shown', in: 400, out: 404, effect: 'off', acts: false, timing: 'rough', card: null, handFixed: false, unsure: [], reviewed: null }];
-    render(<MantineProvider><ReviewList rows={all} reviewed={1} total={3} audit={{ ok: true, fresh: true }} /></MantineProvider>);
-    expect(screen.getByText('4 parts in this film: the filter acts on 3, 1 play as they are.')).toBeTruthy();
-    expect(within(item('A couple kisses.')).getByText('Plays')).toBeTruthy();
-    expect(within(item('A couple kisses.')).getByText('Rough timing')).toBeTruthy();
-    expect(within(item('damn')).getByText('Refined')).toBeTruthy();
+    render(<MantineProvider><ReviewList rows={rows} scope={{ show: 'filtered', kind: 'all', action: 'all', needs: false, group: null, order: 'film' }} onScope={onScope} audit={{ ok: true, fresh: true }} /></MantineProvider>);
     fireEvent.click(screen.getByRole('radio', { name: 'Plays 1' }));
-    expect(screen.queryByText('damn')).toBeNull();
-    expect(screen.getByText('A couple kisses.')).toBeTruthy();
-    fireEvent.click(screen.getByRole('radio', { name: 'Filtered 3' }));
-    expect(screen.queryByText('A couple kisses.')).toBeNull();
+    expect(onScope).toHaveBeenCalledWith(expect.objectContaining({ show: 'plays' }));
   });
 });

@@ -44,7 +44,8 @@ describe('review station keys', () => {
   it('arrow keys move the cursor, seek 4 s ahead of it, and log it', () => {
     const jump = vi.spyOn(previewStore, 'jumpToCue');
     show();
-    press('ArrowRight'); expect(selected()).toBe('cue:w1');
+    // Arriving, the first part still to review is already in hand.
+    expect(selected()).toBe('cue:w1');
     press('ArrowRight'); expect(selected()).toBe('cue:w2');
     expect(jump).toHaveBeenLastCalledWith({ in: 20 });
     press('ArrowLeft'); expect(selected()).toBe('cue:w1');
@@ -54,13 +55,13 @@ describe('review station keys', () => {
     show();
     const video = document.createElement('video'); video.tabIndex = 0; document.body.appendChild(video); video.focus();
     fireEvent.keyDown(video, { key: 'ArrowRight' });
-    expect(selected()).toBe('cue:w1');
+    expect(selected()).toBe('cue:w2');
     video.remove();
   });
   it('A approves the row with span, dwell and replays, then auto-advances to the next without a verdict', async () => {
     let now = 1000; vi.spyOn(Date, 'now').mockImplementation(() => now);
     show();
-    press('ArrowRight'); now = 4200; press(' '); press(' '); now = 6000;
+    now = 4200; press('Enter'); press('Enter'); now = 6000;
     press('a');
     await waitFor(() => expect(reviewCalls()).toHaveLength(1));
     expect(reviewCalls()[0]).toEqual({ path: 'api/v1/content-filter/77/review/cue%3Aw1', method: 'PUT',
@@ -71,48 +72,61 @@ describe('review station keys', () => {
   });
   it('auto-advance skips rows that already have a verdict (a verdict cleared by a moved span is open again)', async () => {
     payload = base([row('cue:w1', 'alpha'), row('cue:w2', 'bravo', { verdict: { verdict: 'approve' }, reviewed: { by: 'x' } }), row('cue:w3', 'charlie')]);
-    show(); press('ArrowRight'); press('a');
+    show(); press('a');
     await waitFor(() => expect(selected()).toBe('cue:w3'));
   });
-  it('R removes, I ignores, D then a number is a redo with its reason', async () => {
-    show(); press('ArrowRight'); press('r');
+  it('X lets the part play (remove), D then a number is a redo with its reason', async () => {
+    show(); press('x');
     await waitFor(() => expect(reviewCalls()).toHaveLength(1));
     expect(reviewCalls()[0].body.verdict).toBe('remove');
     await waitFor(() => expect(selected()).toBe('cue:w2'));
-    press('i'); await waitFor(() => expect(reviewCalls()).toHaveLength(2));
-    expect(reviewCalls()[1].body.verdict).toBe('ignore');
-    await waitFor(() => expect(selected()).toBe('subject:p1'));
     press('d'); expect(document.querySelector('[data-key="1"]')).toBeTruthy(); press('3');
-    await waitFor(() => expect(reviewCalls()).toHaveLength(3));
-    expect(reviewCalls()[2].body).toEqual(expect.objectContaining({ verdict: 'redo', reason: 'action' }));
+    await waitFor(() => expect(reviewCalls()).toHaveLength(2));
+    expect(reviewCalls()[1].body).toEqual(expect.objectContaining({ verdict: 'redo', reason: 'action' }));
+  });
+  it('I and Tab are not review keys any more', async () => {
+    show(); press('i'); press('Tab');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(reviewCalls()).toHaveLength(0); expect(selected()).toBe('cue:w1');
+  });
+  it('Space plays and pauses the film, even with a button focused; Enter replays the part; W plays it without', () => {
+    const toggle = vi.spyOn(previewStore, 'togglePlay');
+    const jump = vi.spyOn(previewStore, 'jumpToCue');
+    const peek = vi.spyOn(previewStore, 'peek');
+    show();
+    press(' ');
+    expect(toggle).toHaveBeenCalledTimes(1);
+    const btn = screen.getByRole('button', { name: 'Next part' }); btn.focus();
+    const notPrevented = fireEvent.keyDown(btn, { key: ' ' });
+    expect(notPrevented).toBe(false);
+    expect(toggle).toHaveBeenCalledTimes(2);
+    expect(selected()).toBe('cue:w1');
+    press('Enter'); expect(jump).toHaveBeenLastCalledWith({ in: 10 });
+    press('w'); expect(peek).toHaveBeenCalledWith('w1');
   });
   it('an action key changes the effect in place, THEN approves with the change', async () => {
-    show(); press('ArrowRight'); press('m');
+    show(); press('m');
     await waitFor(() => expect(reviewCalls()).toHaveLength(1));
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(['PUT api/v1/content-filter/77/cues/w1', 'PUT api/v1/content-filter/77/review/cue%3Aw1']);
     expect(calls[0].body).toEqual({ effect: 'mute' });
     expect(calls[1].body).toEqual(expect.objectContaining({ verdict: 'approve', change: { from: 'bleep', to: 'mute' } }));
   });
-  it('action keys not for this kind do nothing; picture rows take B and K', async () => {
-    show(); press('ArrowRight'); press('b'); press('k');
+  it('action keys follow the channel: a said part takes no B; a shown part no M or P, and takes K', async () => {
+    show(); press('b');
     await new Promise((r) => setTimeout(r, 20));
     expect(calls).toHaveLength(0);
-    press('ArrowRight'); press('ArrowRight'); press('k');
+    press('ArrowRight'); press('ArrowRight'); press('m'); press('p');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls).toHaveLength(0);
+    press('k');
     await waitFor(() => expect(reviewCalls()).toHaveLength(1));
     expect(calls[0]).toEqual(expect.objectContaining({ path: 'api/v1/content-filter/77/cues/p1', body: { effect: 'skip' } }));
-  });
-  it('W widens both edges by half a second through a nudge, then approves with the change', async () => {
-    show(); press('ArrowRight'); press('w');
-    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
-    expect(calls[0].body).toEqual({ nudge: { in: 9.5, out: 11 } });
-    expect(calls[1].body).toEqual(expect.objectContaining({ verdict: 'approve', change: { from: { in: 10, out: 10.5 }, to: { in: 9.5, out: 11 } } }));
   });
   it('keeps the new film open when a prior verdict finishes', async () => {
     let finish;
     pendingWrite = new Promise(resolve => { finish = resolve; });
     const jump = vi.spyOn(previewStore, 'jumpToCue');
     show();
-    press('ArrowRight');
     press('a');
     expect(reviewCalls()).toEqual([expect.objectContaining({
       path: 'api/v1/content-filter/77/review/cue%3Aw1', method: 'PUT',
@@ -127,40 +141,26 @@ describe('review station keys', () => {
   });
   it('a failed action does not record a verdict or advance', async () => {
     failNext = (p) => p.includes('/cues/');
-    show(); press('ArrowRight'); press('m');
+    show(); press('m');
     await waitFor(() => expect(log.warn).toHaveBeenCalled());
     expect(reviewCalls()).toHaveLength(0); expect(selected()).toBe('cue:w1');
   });
   it('at the end of scope it stops, no wrap, and says all are reviewed (Review Focus 3)', async () => {
     payload = base([row('cue:w1', 'alpha', { verdict: { verdict: 'approve' }, reviewed: { by: 'x' } }), row('cue:w2', 'bravo')]);
-    show(); press('ArrowRight'); press('ArrowRight'); expect(selected()).toBe('cue:w2');
+    show(); expect(selected()).toBe('cue:w2'); // the first part still open
     press('a');
     await waitFor(() => expect(reviewCalls()).toHaveLength(1));
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('All 2 in this view reviewed'));
     expect(selected()).toBe('cue:w2');
   });
   it('at the end with open rows above, says how many are still open instead', async () => {
-    show(); press('ArrowRight'); press('ArrowRight'); press('ArrowRight'); press('a');
+    show(); press('ArrowRight'); press('ArrowRight'); press('a');
     await waitFor(() => expect(reviewCalls()).toHaveLength(1));
     await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/2 .*still open/));
     expect(selected()).toBe('subject:p1');
   });
-  it('F narrows scope to a kind: list, timeline and stepping all follow', () => {
-    show();
-    press('f'); // words
-    expect([...document.querySelectorAll('.cf-review__list [data-row-id]')].map((n) => n.getAttribute('data-row-id'))).toEqual(['cue:w1', 'cue:w2']);
-    expect([...document.querySelectorAll('[data-lane="film"] [data-mark]')].map((n) => n.getAttribute('data-mark'))).toEqual(['cue:w1', 'cue:w2']);
-    press('ArrowRight'); press('ArrowRight'); press('ArrowRight');
-    expect(selected()).toBe('cue:w2');
-    expect(log.info).toHaveBeenCalledWith('content_filter.review.scope', expect.objectContaining({ rk: '77', kind: 'words' }));
-  });
-  it('the action filter narrows the same scope', () => {
-    show();
-    fireEvent.click(screen.getByRole('textbox', { name: 'Action' })); fireEvent.click(screen.getByRole('option', { name: 'Blur' }));
-    expect([...document.querySelectorAll('.cf-review__list [data-row-id]')].map((n) => n.getAttribute('data-row-id'))).toEqual(['subject:p1']);
-  });
   it('U undoes the last verdict with a DELETE and returns the cursor to that row', async () => {
-    show(); press('ArrowRight'); press('a');
+    show(); press('a');
     await waitFor(() => expect(selected()).toBe('cue:w2'));
     press('u');
     await waitFor(() => expect(calls.at(-1)).toEqual({ path: 'api/v1/content-filter/77/review/cue%3Aw1', body: {}, method: 'DELETE' }));
@@ -168,14 +168,14 @@ describe('review station keys', () => {
     expect(log.info).toHaveBeenCalledWith('content_filter.review.undo', expect.objectContaining({ rk: '77', rowId: 'cue:w1', undid: 'approve' }));
   });
   it('undo after an in-place change is one DELETE; the server restores the earlier effect (Review Focus 4)', async () => {
-    show(); press('ArrowRight'); press('m');
+    show(); press('m');
     await waitFor(() => expect(selected()).toBe('cue:w2'));
     calls.length = 0; press('u');
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0].method).toBe('DELETE');
   });
   it('undo is withdrawn once a removed row is gone after the re-audit', async () => {
-    show(); press('ArrowRight'); press('r');
+    show(); press('x');
     await waitFor(() => expect(selected()).toBe('cue:w2'));
     payload = base(payload.rows.filter((r) => r.id !== 'cue:w1'));
     press('ArrowRight'); // re-render with the new payload
@@ -183,11 +183,14 @@ describe('review station keys', () => {
     await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/already gone/));
     expect(calls).toHaveLength(0);
   });
-  it('shows the tally and only the current kind\'s keys in the key bar', () => {
-    payload = base([row('cue:w1', 'alpha', { verdict: { verdict: 'redo' }, reviewed: { by: 'x' } }), row('cue:w2', 'bravo'), row('subject:p1', 'poster', { kind: 'picture', effect: 'blur' })]);
-    show(); expect(screen.getByText('1/3 · 1 redo')).toBeTruthy();
-    press('ArrowRight'); press('ArrowRight');
-    expect(document.querySelector('[data-key="M"]')).toBeTruthy(); expect(document.querySelector('[data-key="K"]')).toBeNull();
+  it('the header counts the filtered parts with a verdict; the card shows the keys for the part\'s channel', () => {
+    payload = base([row('cue:w1', 'alpha', { verdict: { verdict: 'redo' }, reviewed: { by: 'x' } }), row('cue:w2', 'bravo'), row('subject:p1', 'poster', { kind: 'picture', modality: 'shown', effect: 'blur' })]);
+    show(); expect(screen.getByText('1 of 3 reviewed', { exact: false, selector: '.cf-head__count' })).toBeTruthy();
+    const cardKeys = () => [...document.querySelectorAll('.cf-card-part button kbd')].map((n) => n.textContent);
+    expect(selected()).toBe('cue:w2');
+    expect(cardKeys()).toEqual(expect.arrayContaining(['M', 'P'])); expect(cardKeys()).not.toContain('B');
+    press('ArrowRight');
+    expect(cardKeys()).toEqual(expect.arrayContaining(['B', 'K'])); expect(cardKeys()).not.toContain('M');
   });
   it('emits session start on load and end on leaving, with the reviewed count', () => {
     const { unmount } = show();
@@ -196,7 +199,7 @@ describe('review station keys', () => {
     expect(log.info).toHaveBeenCalledWith('content_filter.review.session.end', expect.objectContaining({ rk: '77', rows: 3, durationMs: expect.any(Number) }));
   });
   it('clicking a row is a cursor move too (via click)', () => {
-    show(); fireEvent.click(screen.getByText('bravo'));
+    show(); fireEvent.click(screen.getByRole('button', { name: 'bravo' }));
     expect(selected()).toBe('cue:w2');
     expect(log.debug).toHaveBeenCalledWith('content_filter.review.cursor', expect.objectContaining({ rowId: 'cue:w2', via: 'click' }));
   });
@@ -208,26 +211,26 @@ describe('review station keys', () => {
   });
   it('a list click seeks exactly once', () => {
     const jump = vi.spyOn(previewStore, 'jumpToCue');
-    show(); fireEvent.click(screen.getByText('bravo'));
+    show(); fireEvent.click(screen.getByRole('button', { name: 'bravo' }));
     expect(jump).toHaveBeenCalledTimes(1);
   });
   it('does not drag the cursor back when the user moved while a verdict was saving', async () => {
     let finish;
     pendingWrite = new Promise(resolve => { finish = resolve; });
-    show(); press('ArrowRight');
-    press('a'); fireEvent.click(screen.getByText('poster'));
+    show();
+    press('a'); fireEvent.click(screen.getByRole('button', { name: 'poster' }));
     await act(async () => { finish({}); });
     expect(reviewCalls()).toHaveLength(1);
     expect(selected()).toBe('subject:p1');
   });
-  it('keys are ignored inside a modal dialog, and a focused button keeps Space', () => {
+  it('keys are ignored inside a modal dialog, and a focused button keeps Enter', () => {
     show();
     const dlg = document.createElement('div'); dlg.setAttribute('role', 'dialog');
     const inner = document.createElement('div'); inner.tabIndex = 0; dlg.appendChild(inner); document.body.appendChild(dlg); inner.focus();
     fireEvent.keyDown(inner, { key: 'ArrowRight' });
-    expect(selected()).toBeNull(); dlg.remove();
+    expect(selected()).toBe('cue:w1'); dlg.remove();
     const btn = document.createElement('button'); document.body.appendChild(btn); btn.focus();
-    const notPrevented = fireEvent.keyDown(btn, { key: ' ' });
+    const notPrevented = fireEvent.keyDown(btn, { key: 'Enter' });
     expect(notPrevented).toBe(true); btn.remove();
   });
 });
@@ -239,7 +242,6 @@ describe('bleep level keys', () => {
     previewStore.bind({ refresh: async () => true });
     const jump = vi.spyOn(previewStore, 'jumpToCue');
     show();
-    press('ArrowRight');
     jump.mockClear();
     press(']'); press(']'); press('[');
     expect(settingsPuts()).toHaveLength(0);
@@ -254,7 +256,6 @@ describe('bleep level keys', () => {
     const jump = vi.spyOn(previewStore, 'jumpToCue');
     const refresh = vi.spyOn(previewStore, 'refresh');
     show();
-    press('ArrowRight');
     press(']');
     if (mode === 'debounced') await waitFor(() => expect(settingsPuts()).toHaveLength(1));
     fireEvent.click(screen.getByRole('link', { name: 'Next film' }));
@@ -273,7 +274,6 @@ describe('bleep level keys', () => {
     const refresh = vi.spyOn(previewStore, 'refresh').mockReturnValueOnce(pendingRefresh);
     const jump = vi.spyOn(previewStore, 'jumpToCue');
     show();
-    press('ArrowRight');
     press(']');
     await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('link', { name: 'Next film' }));
@@ -290,7 +290,6 @@ describe('bleep level keys', () => {
     previewStore.bind({ refresh });
     const jump = vi.spyOn(previewStore, 'jumpToCue');
     show();
-    press('ArrowRight');
     press(']');
     await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
     press('ArrowRight');
@@ -308,7 +307,6 @@ describe('bleep level keys', () => {
       const refresh = vi.fn(async () => true);
       previewStore.bind({ refresh });
       show();
-      press('ArrowRight');
       press(']');
       await act(async () => { await vi.advanceTimersByTimeAsync(400); });
       expect(settingsPuts().map(request => request.body.settings.bleepLevel)).toEqual([0.3]);
@@ -331,7 +329,6 @@ describe('bleep level keys', () => {
       reload.mockReturnValueOnce(held.promise);
       previewStore.bind({ refresh: async () => true });
       show();
-      press('ArrowRight');
       press(']');
       await act(async () => { await vi.advanceTimersByTimeAsync(400); });
       expect(reload).toHaveBeenCalledTimes(1);
@@ -352,7 +349,6 @@ describe('bleep level keys', () => {
       previewStore.bind({ refresh });
       const jump = vi.spyOn(previewStore, 'jumpToCue');
       show();
-      press('ArrowRight');
       jump.mockClear();
       press(']');
       await act(async () => { await vi.advanceTimersByTimeAsync(400); });

@@ -19,8 +19,9 @@ describe('Content filter review page, household key not matched to Plex', () => 
   it('shows the review and says runs are blocked', () => {
     render(<MantineProvider><MemoryRouter initialEntries={['/admin/content/filter/662170']}><Routes>
       <Route path="/admin/content/filter/:ratingKey" element={<ContentFilterReview />} /></Routes></MemoryRouter></MantineProvider>);
-    expect(screen.getByText('damn')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'damn' })).toBeTruthy();
     expect(screen.getByText(/Not matched to Plex: another entry has this film\. The review and override here are kept; runs are blocked\./)).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Rework 1 flagged/ }).disabled).toBe(true);
+    // No run is offered: no Refine all in the header.
+    expect(screen.queryByRole('button', { name: /Refine all/ })).toBeNull();
   });
 });

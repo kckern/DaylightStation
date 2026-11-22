@@ -31,6 +31,7 @@ const NOOP_BINDING = Object.freeze({
   position: () => null,
   seek() {},
   play() {},
+  togglePlay: () => null,
   peek() {},
   refresh: async () => false,
   close() {},
@@ -97,6 +98,8 @@ export const previewStore = {
   /** Drop a jump parked before any player bound (host leaving the film). */
   clearPending() { pendingJump = null; },
   replayLast() { jumpTo(snapshot.lastFired); },
+  /** Play if paused, pause if playing (Admin review: Space). Returns 'playing' | 'paused' | null (no player). */
+  togglePlay() { return binding.togglePlay ? binding.togglePlay() : null; },
   peek(id) { if (id != null) binding.peek(String(id)); },
   /** The bound player's position in seconds, or null. */
   currentTime() { const t = binding.position(); return Number.isFinite(t) ? t : null; },

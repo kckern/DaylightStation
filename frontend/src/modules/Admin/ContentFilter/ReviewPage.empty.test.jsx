@@ -23,7 +23,7 @@ describe('review page with no parts listed', () => {
     expect(screen.getByText(text)).toBeTruthy();
     expect(screen.queryByText(/Change the filters/)).toBeNull();
   });
-  it('checking shows its words beside the spinner', () => {
+  it('checking shows its words in the header', () => {
     payload = { ...base, status: { filters: { present: true, parts: 243 }, refined: { present: true, measured: 95, of: 243 }, certified: 'machine', next: 'checking' } };
     show();
     expect(screen.getByText('Checking the result…')).toBeTruthy();

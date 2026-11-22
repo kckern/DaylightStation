@@ -6,12 +6,13 @@
 export const KIND_SCOPES = [{ label: 'All', value: 'all' }, { label: 'Words', value: 'words' }, { label: 'Picture', value: 'picture' }, { label: 'Scenes', value: 'scenes' }];
 export const ACTION_SCOPES = [{ label: 'All actions', value: 'all' }, { label: 'Blur', value: 'blur' }, { label: 'Skip', value: 'skip' }, { label: 'Bleep', value: 'bleep' }, { label: 'Mute', value: 'mute' }];
 /** Which parts: every part in the film (default), the ones the filter acts on, or the ones it lets play. */
-export const SHOW_SCOPES = [{ label: 'All parts', value: 'all' }, { label: 'Filtered', value: 'filtered' }, { label: 'Plays', value: 'plays' }];
+export const SHOW_SCOPES = [{ label: 'Filtered', value: 'filtered' }, { label: 'Plays', value: 'plays' }];
 /** Timing: every part, the ones still on VidAngel's rough times, or the measured ones (incl. safe windows). */
 export const TIMING_SCOPES = [{ label: 'Any timing', value: 'all' }, { label: 'Rough timing', value: 'rough' }, { label: 'Refined timing', value: 'refined' }];
 /** Order: through the film from the start (default), or the parts that need a look first. */
 export const ORDER_SCOPES = [{ label: 'Film order', value: 'film' }, { label: 'Needs a look first', value: 'attention' }];
-export const DEFAULT_SCOPE = Object.freeze({ show: 'all', kind: 'all', action: 'all', needs: false, group: null, timing: 'all', order: 'film' });
+// The filtered parts are the review (owner, 2026-11-21); the ones that play are browsed on their own tab.
+export const DEFAULT_SCOPE = Object.freeze({ show: 'filtered', kind: 'all', action: 'all', needs: false, group: null, timing: 'all', order: 'film' });
 /** A part the household's settings let play (audits before 2026-11-21 had none). */
 export const plays = (row) => row?.acts === false;
 
@@ -50,11 +51,15 @@ export function nextKind(kind) {
 
 /** Contextual action keys for a kind: [key, label, effect value to apply]. Widen applies to every kind. */
 const ACTION_KEYS = {
-  words: [['M', 'Mute', 'mute'], ['P', 'Bleep', 'bleep']],
-  picture: [['B', 'Blur', 'blur'], ['K', 'Skip', 'skip']],
-  scenes: [['K', 'Skip', 'skip'], ['B', 'Blur', 'blackout']],
+  words: [['M', 'Mute', 'mute'], ['P', 'Bleep', 'bleep'], ['K', 'Skip', 'skip'], ['O', 'Off', 'off']],
+  picture: [['B', 'Blur', 'blur'], ['K', 'Skip', 'skip'], ['O', 'Off', 'off']],
+  scenes: [['K', 'Skip', 'skip'], ['B', 'Hide picture', 'blackout'], ['O', 'Off', 'off']],
 };
 export const actionKeysFor = (kind) => ACTION_KEYS[kind] || [];
+/** A true scene row (built from a refined EDL's scenes): no member cues of its own. A word skipped as an exchange is listed with scenes but is a cue. */
+export const isSceneRow = (row) => row?.kind === 'scenes' && !(row.members || []).length && !String(row.id || '').startsWith('cue:');
+/** Which effect keys a part takes: by its channel (said / shown), a true scene by its own. */
+export const keysKindOf = (row) => (isSceneRow(row) ? 'scenes' : row?.modality === 'said' || row?.modality === 'heard' ? 'words' : row?.modality === 'shown' ? 'picture' : row?.kind);
 export const WIDEN_STEP = 0.5;
 
 /** Next row after `cursorId` in list order (no wrap); null at the end. `onlyOpen` skips rows with a verdict. */

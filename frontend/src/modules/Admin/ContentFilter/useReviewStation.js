@@ -4,7 +4,7 @@ import { getToken } from '../../../lib/auth.js';
 import { invalidateApiResources } from '../../../lib/hooks/useApiResource.js';
 import { createAppLogger } from '../../../lib/ui/index.js';
 import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
-import { DEFAULT_SCOPE, WIDEN_STEP, actionKeysFor, hasVerdict, isOpen, nextKind, plays, rowAction, scopeRows, stepFrom } from './reviewScope.js';
+import { DEFAULT_SCOPE, WIDEN_STEP, actionKeysFor, hasVerdict, isOpen, isSceneRow, keysKindOf, nextKind, plays, rowAction, scopeRows, stepFrom } from './reviewScope.js';
 import { effectChoices } from './RowEditor.jsx';
 import { BLEEP_LEVEL_DEFAULT, clampBleepLevel } from '../../../../../shared/contracts/content-filter/filterSettings.mjs';
 
@@ -16,7 +16,7 @@ import { BLEEP_LEVEL_DEFAULT, clampBleepLevel } from '../../../../../shared/cont
 const logger = createAppLogger('admin').child('content-filter');
 const API = 'api/v1/content-filter';
 const round3 = (v) => Math.round(v * 1000) / 1000;
-const SCENE_EFFECTS = new Set(['skip', 'blackout']);
+const SCENE_EFFECTS = new Set(['skip', 'blackout', 'off']);
 // A held [ or ] changes the level many times a second; the film's setting is written once it settles.
 const LEVEL_DEBOUNCE_MS = 400;
 const REWORK_ARM_MS = 4000;
@@ -145,18 +145,18 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
 
   const callsFor = (r, body) => {
     const base = `${API}/${encodeURIComponent(rk)}`;
-    if (r.kind === 'scenes') return [[`${base}/scenes/${encodeURIComponent(r.peekId)}`, body, 'PUT']];
+    if (isSceneRow(r)) return [[`${base}/scenes/${encodeURIComponent(r.peekId)}`, body, 'PUT']];
     const members = r.members ?? (String(r.id).startsWith('cue:') ? [r.peekId] : []);
     return members.map((id) => [`${base}/cues/${encodeURIComponent(id)}`, body, 'PUT']);
   };
 
   const effect = (letter) => {
     if (!row) return;
-    const entry = actionKeysFor(row.kind).find(([k]) => k.toLowerCase() === letter);
+    const entry = actionKeysFor(keysKindOf(row)).find(([k]) => k.toLowerCase() === letter);
     if (!entry) return;
     const [, label, to] = entry;
     guarded('effect', async () => {
-      const allowed = row.kind === 'scenes' ? SCENE_EFFECTS.has(to) : effectChoices(row.modality).some((o) => o.value === to);
+      const allowed = isSceneRow(row) ? SCENE_EFFECTS.has(to) : effectChoices(row.modality).some((o) => o.value === to);
       if (!allowed) { setMessage(`${label} does not fit this part.`); return; }
       if (rowAction(row) === rowAction({ effect: to })) { setMessage(`Already ${label.toLowerCase()}.`); return; }
       for (const [path, body, method] of callsFor(row, { effect: to })) await DaylightAPI(path, body, method);
@@ -167,7 +167,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   const widen = () => {
     if (!row) return;
     guarded('widen', async () => {
-      const single = row.kind === 'scenes' || (row.members ?? [row.peekId]).length === 1;
+      const single = isSceneRow(row) || (row.members ?? [row.peekId]).length === 1;
       if (!single) { setMessage('Widen one part at a time.'); return; }
       const to = { in: round3(Math.max(0, row.in - WIDEN_STEP)), out: round3(row.out + WIDEN_STEP) };
       for (const [path, body, method] of callsFor(row, { nudge: to })) await DaylightAPI(path, body, method);
@@ -196,13 +196,13 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     if (!flagged.length) { setMessage('Nothing is flagged for redo.'); return; }
     if (runBusy) { setMessage('A run is already open for this film.'); return; }
     guarded('rework', async () => {
-      const cues = [...new Set(flagged.flatMap((r) => (r.kind === 'scenes' ? [] : (r.members ?? (String(r.id).startsWith('cue:') ? [r.peekId] : [])))))];
+      const cues = [...new Set(flagged.flatMap((r) => (isSceneRow(r) ? [] : (r.members ?? (String(r.id).startsWith('cue:') ? [r.peekId] : [])))))];
       const reasons = Object.fromEntries(flagged.filter((r) => r.verdict.reason).map((r) => [r.id, r.verdict.reason]));
       const body = cues.length ? { kind: 'send-back', cues, reasons } : { kind: 'stage', stage: 'scenes', reasons };
       await DaylightAPI(`${API}/${encodeURIComponent(rk)}/jobs`, body, 'POST');
       logger.info('content_filter.review.rework', { rk, rows: flagged.length, cues: cues.length, kind: body.kind, reasons: Object.keys(reasons).length });
       if (!activeView.current) return;
-      const sceneRows = flagged.filter((r) => r.kind === 'scenes').length;
+      const sceneRows = flagged.filter((r) => isSceneRow(r)).length;
       setMessage(cues.length && sceneRows ? `Sent ${flagged.length - sceneRows} back. ${sceneRows} scene part${sceneRows === 1 ? '' : 's'} stay flagged for the next run.` : `Sent ${flagged.length} back to the pipeline.`);
       reload();
     });
@@ -223,6 +223,57 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     arrived.current.replays += 1;
     previewStore.jumpToCue({ in: row.in });
   };
+  const togglePlay = () => {
+    const to = previewStore.togglePlay();
+    logger.debug('content_filter.review.toggle_play', { rk, to });
+  };
+  const playWithout = () => {
+    if (!row) return;
+    arrived.current.replays += 1;
+    previewStore.peek(row.peekId);
+  };
+
+  // Refine: one part (R) or every filtered part still on rough timing (Shift+R), as one send-back
+  // of their member cues (owner, 2026-11-21: refine the flagged ones, never the 136 that play).
+  // One run per film: presses while a run is open collect here and go out when it closes.
+  const [pendingRefine, setPendingRefine] = useState(() => new Set());
+  const cuesOf = (r) => (isSceneRow(r) ? [] : (r.members ?? (String(r.id).startsWith('cue:') ? [r.peekId] : [])));
+  const sendRefine = async (cues, what) => {
+    await DaylightAPI(`${API}/${encodeURIComponent(rk)}/jobs`, { kind: 'send-back', cues }, 'POST');
+    logger.info('content_filter.review.refine', { rk, cues: cues.length, what });
+    if (!activeView.current) return;
+    setMessage(`Refining ${what}. You can keep reviewing.`);
+    reload();
+  };
+  const queueRefine = (cues, what) => {
+    if (!cues.length) { setMessage('Nothing to refine there.'); return; }
+    if (runBusy) {
+      setPendingRefine((s) => new Set([...s, ...cues]));
+      logger.info('content_filter.review.refine_queued', { rk, cues: cues.length, what });
+      setMessage(`Queued: ${what} refines when the current run finishes.`);
+      return;
+    }
+    guarded('refine', () => sendRefine(cues, what));
+  };
+  const refine = () => {
+    if (!row) return;
+    if (isSceneRow(row)) { setMessage('A scene is rebuilt with its parts; refine the parts in it.'); return; }
+    queueRefine(cuesOf(row), `"${row.label}"`);
+  };
+  const refineAll = ({ again = false } = {}) => {
+    const targets = (rows || []).filter((r) => !plays(r) && !isSceneRow(r) && (again || r.timing !== 'refined'));
+    const cues = [...new Set(targets.flatMap(cuesOf))];
+    queueRefine(cues, `${targets.length} filtered part${targets.length === 1 ? '' : 's'}`);
+  };
+  // Flush the queued refines once the film's run closes.
+  const wasBusy = useRef(runBusy);
+  useEffect(() => {
+    const was = wasBusy.current; wasBusy.current = runBusy;
+    if (!was || runBusy || !pendingRefine.size) return;
+    const cues = [...pendingRefine];
+    setPendingRefine(new Set());
+    guarded('refine', () => sendRefine(cues, `${cues.length} queued part${cues.length === 1 ? '' : 's'}`));
+  }, [runBusy]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Bleep level for this film: film ?? household ?? 0.25. The key moves a pending value at once
   // (shown in the key bar); one debounced write saves it, then the player re-reads its profile and
@@ -313,7 +364,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   }, [rows]);
 
   const handlers = {
-    next: () => step(1), prev: () => step(-1), replay, rework: reworkKey, helpOpen, verdict, undo, effect, widen,
+    next: () => step(1), prev: () => step(-1), replay, togglePlay, playWithout, refine, refineAll, rework: reworkKey, helpOpen, verdict, undo, effect, widen,
     cycleKind: () => setScope({ ...scope, kind: nextKind(scope.kind) }),
     bleepLevel: changeBleepLevel,
     retryPreview: previewRecovery ? retryPreview : null,
@@ -321,7 +372,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     escape: () => { if (helpOpen) { setHelpOpen(false); return true; } return false; },
   };
   return {
-    scope, setScope, scoped, row, pick, handlers, message: saving ? 'Saving…' : message, helpOpen, canUndo, tally,
+    scope, setScope, scoped, row, pick, handlers, message: saving ? 'Saving…' : message, helpOpen, canUndo, tally, pendingRefine,
     bleepLevel, flagged: flagged.length, rework,
     previewRecovery: previewRecovery ? {
       message: previewRecovery.saved ? 'Bleep level saved. The preview could not refresh.' : 'The preview could not refresh.',

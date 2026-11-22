@@ -1016,55 +1016,74 @@ title index every 10 minutes.
   applied (re-enable, restore `from`). Every verdict and undo appends to `household/content-filter/review-history/<rk>.yml`
   (append-only, via the repository) and logs `content_filter.review.verdict.recorded`. A moved span drops the verdict.
 
-#### Film status card
+#### The review page (2026-11-21, design "cf-journey")
 
-The film page opens on `FilmStatusCard.jsx`: three meters (`PartMeters`) — **Parts** (N; "f filtered ·
-p play as they are"), **Timing refined** (refined + safe-window of N, with a bar; "r still on VidAngel's
-rough times") and **Reviewed** (filtered parts with a verdict, with a bar). (Before a list exists it
-falls back to "Filters: Yes — N parts" / "Refined: …".) Then the certification and one button from
-`next`: **Refine** (a make run: the whole pipeline; **Refine again** after an interrupted or failed
-run, which says nothing from it was kept), "Checking the result…", **Review** (to the first
-row without a verdict) or **Approve for family**. While a run works it shows its phases in words
-(Checking the machine, Syncing the film's clock, Measuring each part — n of N, Building scenes,
-Drafting cards, Checking the result; `runProgress.js`), a bar, an ETA from the pace since the first
-part (after 3), the five latest parts in words and **Stop** (confirmed: nothing from a stopped run is
-saved; refused once a run's results are saved). A queued run with no live worker says so. There is no stage dropdown; the sign-off panel lists what is missing and offers Withdraw. An
-empty list says why (not refined yet, still checking, run in progress).
+The page is a queue of the film's **filtered** parts with one part in hand. `ReviewHeader.jsx` is its
+one line: ‹ Films, the title, "n of N reviewed · r rough", the certification ("Machine-checked" /
+"Approved by …"), a run chip (`runLine`: "Refining 5 of 17", "Preparing the film (one time)…" while
+refine transcribes or syncs, "Waiting for the worker", "Checking the result…"), a red chip for a
+failed or interrupted last run, and one primary action: **Stop** while a run is open, else
+**Refine all r** (Shift+R) while filtered parts are rough, else **Approve for family**. The ⋯ menu
+holds Refine all filtered parts again, Refine the whole film (every part, slow), Rework the parts
+marked redo, bleep quieter/louder and All keys. A film not matched to Plex offers no runs.
+
+Below it, the film (16:9, at most 44vh tall), the timeline and the part card share a sticky column
+that does not scroll at 1440x900; the list beside it scrolls alone. Arriving without a permalink
+selects the first filtered part still to review (no URL change, no seek). When every filtered part
+has a verdict the sign-off card appears above the part card. `FilmStatusCard` (three meters) is no
+longer on the page.
+
+**Part card** (`RowEditor.jsx`): "Part 6 of 17 · span" with ‹ Prev / Next ›; title (whole label);
+chips (effect or Plays, timing, hand-fixed, verdict); group · modality · category; the **why line**
+(`whyLine.js`) — one sentence on why the part gets its effect and whether refining helps (a rough
+word skipped as an exchange: "Rough timing makes this a 6.0 s part, too long to bleep, so it is
+skipped for now. Refine pins the word so it becomes a short bleep.") — with **Refine this part (R)**
+beside it (primary when refining is the fix; "Refine again" once refined; its run state in place of
+the button: Waiting / Refining… / Queued); effect buttons with their keys (by channel: said parts
+`M` mute, `P` bleep, `K` skip, `O` off; shown `B` blur, `K` skip, `O` off; true scenes `K` skip, `B`
+hide picture, `O` off; plus Settings); the card text for a skip; the timing row (Start here / End
+here, ±0.1 / ±0.5, Save timing, Drop hand fix); "More for this word" (this word in this film, all
+words of its group); the verdicts **Approve (A) / Let it play (X) / Redo (D) / Undo (U)**; and a hint
+line (Space, Enter, W, ← →, ?). A word skipped as an exchange is listed with scenes but is a cue:
+`isSceneRow` (no members, not `cue:`) decides scene handling, `keysKindOf` the effect keys.
+
+**Refine** (`useReviewStation.js`): R sends a send-back of the part's member cues; Shift+R and
+Refine all send one send-back of every filtered, non-scene part not yet refined (Refine all again:
+every filtered part), never the parts that play (owner, 2026-11-21). One run per film: presses while
+a run is open collect on the page ("Queued") and go out as one send-back when it closes. A send-back
+on an already synced film takes about 10 s per part (measured: preflight 2 s, refine 5 s, audit
+1 s); a film's first refine transcribes it once.
+
+While a remote worker holds the film, a plain verdict (approve/redo/ignore, no change) may still be
+recorded (`jobs.heldRemotely`); effects, timing, cards and Let it play answer 409 "Effects and timing
+can change when it finishes." The worker's override is saved with the current file's review marks
+kept (`applyResults`).
+
+**List** (`ReviewList.jsx`): **Filtered n** (default) and **Plays n** tabs (Plays is browse only:
+"Nothing here needs a verdict"); "To do only"; Film order (default) or Needs a look first. A row is a
+glyph (▶ in hand, ✓ approved, × let it play, ↻ redo, · to do), the time, the whole label (two lines;
+the part in hand unclamped) and a meta line (group · effect, a Rough / Safe window chip, its run
+state, its verdict); the part in hand also shows its span, modality, unsure reasons and card.
 
 #### Review station
 
-The page is a keyboard station: it owns the keys (one capture-phase listener, so they work while the
-video has focus; they never fire inside text inputs or an open dialog) and a key bar under the player
-shows the keys that apply to the current row, the verdict tally (`done/total`, redo count) and the bleep
-level. `?` opens the whole keymap, Esc closes it.
+One capture-phase listener owns the keys (they work while the video has focus; never inside text
+inputs or an open dialog). `ReviewKeyBar.jsx` under the card is only the redo prompt, the station's
+last message, the preview retry and the `?` keymap sheet.
 
-- **One part at a time.** Under the player a focus bar says where the cursor is ("Part 3 of 153" in
-  the current view, how many filtered parts in the view still need a verdict) with **← Prev** /
-  **Next →**; before any part is picked it offers **Start: part 1 of N →** (or `→`).
-- **Cursor and scope.** Moving the cursor (key, click, timeline, auto-advance) seeks to 4 s before the
-  row and plays. One scope drives the list, the timeline and cursor stepping: show (**All parts** /
-  **Filtered** / **Plays**, each with its count; default All) × kind (All / Words / Picture / Scenes) ×
-  action (All / Blur / Skip / Bleep / Mute) × group × timing (Any / Rough / Refined) × "needs review",
-  in **Film order** (default) or **Needs a look first** (the audit's ranking). A playing part is never
-  "open" (needs review, auto-advance, the open count) except in the Plays view. A playing part's
-  editor reads **Use settings (plays)**. The list's header and filters stay put
-  while its rows scroll; a row is the start time, the label and one meta line (group · said/shown ·
-  span) with its chips (effect or **Plays**, verdict, timing when the film's timing is mixed, unsure
-  reasons). Playing parts are grey on the timeline. `F` cycles the kind.
-  Stepping does not wrap: at the end it says "That is the last part in this view."
-- **Auto-advance.** A saved verdict moves to the next row without a verdict in the current scope
-  (reading the scope as it is when the save lands, and leaving a cursor the reviewer moved meanwhile).
-  At the end it stops: "All N in this view reviewed", or "End of this view. N still open above."
-- **Keys.** `→` / `Tab` next; `←` / `Shift+Tab` previous; `Space` replay; `A` approve; `R` remove;
-  `I` ignore; `D` redo, then `1` edges, `2` category, `3` action, `4` timing or `Enter` for no reason;
-  `U` undo the last verdict; `F` cycle kind; `W` widen 0.5 s each edge; `[` / `]` bleep level
-  down / up 0.05; `Shift+D` rework every row flagged redo; `?` keymap; `Esc` close. Action keys by kind:
-  words `M` mute, `P` bleep; picture `B` blur, `K` skip; scenes `K` skip, `B` blackout. An action key
-  applies the effect through the existing `PUT /:rk/cues/:id` / `/scenes/:id` and records an `approve`
-  carrying `change: { from, to }`. `W` works on single-part rows (a scene, or a group of one cue); a
-  multi-cue group says "Widen one part at a time." The approve survives the re-audit that shifts the
-  row: a mark also holds when the row's span equals the mark's recorded `change.to` edges (an edge
-  nudge moves the re-audited row). While the `?` sheet is open only `?` and `Esc` act.
+- **Keys.** `Space` play/pause the film, always (a focused button is blurred, never pressed);
+  `Enter` play the part with its effect from 4 s before (a focused button or link keeps Enter);
+  `W` play it without the effect; `→` / `←` next / previous part; `A` approve; `X` let it play
+  (remove); `D` redo, then `1` edges, `2` category, `3` action, `4` timing or `Enter` for none;
+  `U` undo; `R` refine this part; `Shift+R` refine every rough filtered part; effect keys as above;
+  `[` / `]` bleep level; `Shift+D` rework the parts marked redo; `?` keymap; `Esc` close. An effect
+  key applies the effect through `PUT /:rk/cues/:id` / `/scenes/:id` and records an `approve`
+  carrying `change: { from, to }`. While the `?` sheet is open only `?` and `Esc` act.
+- **Cursor and scope.** Moving the cursor seeks 4 s before the part and plays. One scope drives the
+  list, the timeline and stepping: Filtered / Plays × To do only × order. A part that plays is never
+  "open" except on the Plays tab. Stepping does not wrap ("That is the last part in this view.").
+- **Auto-advance.** A saved verdict moves to the next open part in the scope; at the end: "All N in
+  this view reviewed", or "End of this view. N still open above."
 - **Verdict semantics.** `approve` = fine as it is; `ignore` = no opinion and counts as done; `remove`
   disables the cue or scene (a false positive; it is terminal once the re-audit lands, because the row
   leaves the audit); `redo` = rework, with an optional reason. Undo (`U`, or `DELETE`) drops the verdict
@@ -1074,9 +1093,9 @@ level. `?` opens the whole keymap, Esc closes it.
 - **Permalinks.** Every filter has one: `/admin/content/filter/<ratingKey>/<rowId>` selects and seeks
   that row (an unknown id says "That filter isn't in this film any more"); selecting a row updates the
   URL in place.
-- **Timeline.** Under the player, a review timeline shows the rows in the current scope (it follows the
-  kind and action filters) with the cursor; clicking a row seeks to it.
-- **Rework.** `Shift+D` (press once to arm, again within 4 s to send; the button is one step; at most 500 reasons) queues one run for only the rows flagged redo: a send-back of their cues, or the
+- **Timeline.** Under the player, a review timeline shows the parts in the current scope with the
+  cursor (playing parts grey); clicking one seeks to it.
+- **Rework.** `Shift+D` (press once to arm, again within 4 s to send; the ⋯ menu item is one step; at most 500 reasons) queues one run for only the rows flagged redo: a send-back of their cues, or the
   scenes stage when only scene rows are flagged (scene rows stay flagged when mixed with cues). Each
   row's redo reason is stored on the run.
 - **Bleep level.** The bleep tone volume, effective = film setting, else household profile `bleepLevel`,

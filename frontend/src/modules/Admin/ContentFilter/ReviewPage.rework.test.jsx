@@ -17,12 +17,17 @@ const base = (rows, extra = {}) => ({ title: 'F', certification: { level: 'machi
   rows, reviewed: 0, total: rows.length, job: null, signOff: { ready: false, missing: [], parent: null }, ...extra });
 
 beforeEach(() => { calls.length = 0; failWith = null; });
+// Rework lives in the header's ⋯ menu now (design cf-journey); Shift+D still arms it from the keyboard.
+const reworkItem = async (name) => {
+  fireEvent.click(screen.getByRole('button', { name: 'More' }));
+  return screen.findByRole('menuitem', { name });
+};
 
 describe('rework flagged', () => {
   it('sends the redo rows member cues with their reasons', async () => {
     payload = base([row('cue:a', 'words', ['a'], redo('edges')), row('subject:s', 'pictures', ['b', 'c'], redo()), row('cue:z', 'words', ['z'], { verdict: 'approve' })]);
     show();
-    fireEvent.click(screen.getByRole('button', { name: 'Rework 2 flagged' }));
+    fireEvent.click(await reworkItem('Rework 2 marked redo'));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual({ path: 'api/v1/content-filter/77/jobs', body: { kind: 'send-back', cues: ['a', 'b', 'c'], reasons: { 'cue:a': 'edges' } }, method: 'POST' });
   });
@@ -39,7 +44,7 @@ describe('rework flagged', () => {
   it('scene-only redo rows enqueue the scenes stage', async () => {
     payload = base([row('scene:x', 'scenes', [], redo('category'))]);
     show();
-    fireEvent.click(screen.getByRole('button', { name: 'Rework 1 flagged' }));
+    fireEvent.click(await reworkItem('Rework 1 marked redo'));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0].body).toEqual({ kind: 'stage', stage: 'scenes', reasons: { 'scene:x': 'category' } });
   });
@@ -47,17 +52,17 @@ describe('rework flagged', () => {
     payload = base([row('cue:a', 'words', ['a'], redo())]);
     failWith = 'A run is already open for this film';
     show();
-    fireEvent.click(screen.getByRole('button', { name: 'Rework 1 flagged' }));
+    fireEvent.click(await reworkItem('Rework 1 marked redo'));
     expect(await screen.findByText('A run is already open for this film')).toBeTruthy();
   });
   it('is disabled while a run is running', () => {
     payload = base([row('cue:a', 'words', ['a'], redo())], { job: { kind: 'make', status: 'running', step: 'refine' } });
     show();
-    expect(screen.getByRole('button', { name: 'Rework 1 flagged' }).disabled).toBe(true);
+    return reworkItem('Rework 1 marked redo').then((item) => expect(item).toBeDisabled());
   });
-  it('has no button when nothing is flagged', () => {
+  it('is disabled when nothing is flagged', async () => {
     payload = base([row('cue:a', 'words', ['a'])]);
     show();
-    expect(screen.queryByRole('button', { name: /Rework/ })).toBeNull();
+    expect(await reworkItem('Rework 0 marked redo')).toBeDisabled();
   });
 });

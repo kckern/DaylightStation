@@ -174,6 +174,13 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl, bumperHel
       position: () => { const t = getMediaEl?.()?.currentTime; return Number.isFinite(t) ? t : null; },
       seek,
       play,
+      togglePlay: () => {
+        const el = getMediaEl?.();
+        if (!el) return null;
+        if (el.paused) { play(); logger().debug('content-filter.toggle-play', { to: 'playing' }); return 'playing'; }
+        el.pause?.(); logger().debug('content-filter.toggle-play', { to: 'paused' });
+        return 'paused';
+      },
       peek: (id) => {
         const items = cuesRef.current.filter((c) => c.id === id || c.scene === id || c.subject === id || baseId(c.id) === id);
         if (!items.length) { logger().warn('content-filter.peek.unknown', { id }); return; }

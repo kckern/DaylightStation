@@ -19,9 +19,12 @@ describe('Content filter review page', () => {
     render(<MantineProvider><MemoryRouter initialEntries={['/admin/content/filter/77']}><Routes>
       <Route path="/admin/content/filter/:ratingKey" element={<ContentFilterReview />} /></Routes></MemoryRouter></MantineProvider>);
     expect(screen.getByText('Back to the Future')).toBeTruthy();
-    expect(screen.getByText('Machine-certified')).toBeTruthy();
-    expect(screen.getByText('Failed at scenes: boom')).toBeTruthy();
-    expect(screen.getByText('0 of 1 reviewed')).toBeTruthy();
+    expect(screen.getByText('Machine-checked')).toBeTruthy();
+    expect(screen.getByText('Failed at scenes')).toBeTruthy();
+    expect(screen.getAllByText(/0 of 1 reviewed/).length).toBeGreaterThan(0);
+    // Arriving without a permalink: the first part to review is in hand (its card), the URL is unchanged.
+    expect(screen.getByLabelText('Part under review')).toBeTruthy();
+    expect(document.querySelector('[data-row-id="cue:w1"]').className).toContain('is-selected');
     expect(await screen.findByTestId('player')).toBeTruthy();
   });
   const Loc = () => <div data-testid="loc">{useLocation().pathname}</div>;
@@ -32,7 +35,7 @@ describe('Content filter review page', () => {
     previewStore.reset();
     const jump = vi.spyOn(previewStore, 'jumpToCue');
     at('/admin/content/filter/77');
-    fireEvent.click(screen.getByText('damn'));
+    fireEvent.click(screen.getByRole('button', { name: 'damn' }));
     expect(jump).toHaveBeenCalledWith({ in: 70 });
     expect(screen.getByTestId('loc').textContent).toBe('/admin/content/filter/77/cue%3Aw1');
     expect(document.querySelector('[data-row-id="cue:w1"]').className).toContain('is-selected');

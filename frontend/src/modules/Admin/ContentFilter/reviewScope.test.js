@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rowAction, scopeRows, stepFrom, actionKeysFor, nextKind, DEFAULT_SCOPE, isOpen } from './reviewScope.js';
+import { rowAction, scopeRows, stepFrom, actionKeysFor, nextKind, DEFAULT_SCOPE, isOpen, isSceneRow, keysKindOf } from './reviewScope.js';
 
 const rows = [
   { id: 'a', kind: 'words', effect: 'mute', group: 'profanity', verdict: null, reviewed: null },
@@ -29,10 +29,19 @@ describe('reviewScope', () => {
     expect(stepFrom(rows, 'zz', 1).id).toBe('a');
     expect(stepFrom(rows, 'zz', -1).id).toBe('d');
   });
-  it('action keys follow the kind', () => {
-    expect(actionKeysFor('words').map((k) => k[0])).toEqual(['M', 'P']);
-    expect(actionKeysFor('picture').map((k) => k[0])).toEqual(['B', 'K']);
-    expect(actionKeysFor('scenes').map((k) => k[0])).toEqual(['K', 'B']);
+  it('action keys follow the kind; O turns the effect off everywhere', () => {
+    expect(actionKeysFor('words').map((k) => k[0])).toEqual(['M', 'P', 'K', 'O']);
+    expect(actionKeysFor('picture').map((k) => k[0])).toEqual(['B', 'K', 'O']);
+    expect(actionKeysFor('scenes').map((k) => k[0])).toEqual(['K', 'B', 'O']);
+  });
+  it('a word skipped as an exchange is listed with scenes but keys and refines as a word', () => {
+    const skippedWord = { id: 'cue:va1', kind: 'scenes', modality: 'said', members: ['va1'] };
+    const scene = { id: 'scene:sc1', kind: 'scenes', modality: null, members: [] };
+    expect(isSceneRow(skippedWord)).toBe(false);
+    expect(keysKindOf(skippedWord)).toBe('words');
+    expect(isSceneRow(scene)).toBe(true);
+    expect(keysKindOf(scene)).toBe('scenes');
+    expect(keysKindOf({ id: 'cue:v', kind: 'picture', modality: 'shown', members: ['v'] })).toBe('picture');
   });
   it('F cycles all > words > picture > scenes > all', () => {
     expect(['all', 'words', 'picture', 'scenes'].map(nextKind)).toEqual(['words', 'picture', 'scenes', 'all']);
@@ -47,9 +56,11 @@ describe('all parts: playing parts, timing and order (2026-11-21)', () => {
     expect(isOpen(list[1], { show: 'plays' })).toBe(true);
     expect(stepFrom(scopeRows(list, DEFAULT_SCOPE), 'p', 1, { onlyOpen: true })?.id).toBe('a');
   });
-  it('film order by default; timing narrows', () => {
-    expect(scopeRows(list, DEFAULT_SCOPE).map((x) => x.id)).toEqual(['p', 'a', 'b']);
-    expect(scopeRows(list, { ...DEFAULT_SCOPE, timing: 'rough' }).map((x) => x.id)).toEqual(['p', 'b']);
+  it('the Filtered tab in film order by default; Plays on its own; timing narrows', () => {
+    expect(DEFAULT_SCOPE.show).toBe('filtered');
+    expect(scopeRows(list, DEFAULT_SCOPE).map((x) => x.id)).toEqual(['a', 'b']);
+    expect(scopeRows(list, { ...DEFAULT_SCOPE, show: 'plays' }).map((x) => x.id)).toEqual(['p']);
+    expect(scopeRows(list, { ...DEFAULT_SCOPE, show: 'all', timing: 'rough' }).map((x) => x.id)).toEqual(['p', 'b']);
     expect(scopeRows(list, { ...DEFAULT_SCOPE, order: 'attention', show: 'filtered' }).map((x) => x.id)).toEqual(['b', 'a']);
   });
 });

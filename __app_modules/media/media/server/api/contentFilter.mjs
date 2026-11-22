@@ -29,7 +29,13 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
       if (contentFilterLibrary) res.on('finish', () => { if (res.statusCode < 300) contentFilterLibrary.invalidate(key); });
       if (/^\/jobs(\/|$)/.test(req.path)) return next();
       if (await jobs.busyWriting(key)) {
-        return res.status(409).json({ error: 'A filter run is writing this film. Try again when it finishes.' });
+        // A plain verdict (no remove, no change) is only a review mark: it may land while a worker
+        // refines the film, which keeps marks when its results are saved.
+        const plainVerdict = /^\/review\/[^/]+$/.test(req.path) && req.method === 'PUT'
+          && !req.body?.change && req.body?.verdict !== 'remove' && typeof jobs.heldRemotely === 'function' && await jobs.heldRemotely(key);
+        if (!plainVerdict) {
+          return res.status(409).json({ error: 'A filter run is writing this film. Effects and timing can change when it finishes.' });
+        }
       }
       // The bleep tone's loudness is a playback setting: it changes nothing the audit checked.
       const keys = Object.keys(req.body?.settings || {});

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Anchor, Badge, Button, Group, Stack, Text } from '@mantine/core';
-import { DaylightAPI } from '../../../lib/api.mjs';
+import { Anchor, Stack, Text } from '@mantine/core';
 import { useVisibleRefresh } from '../../../lib/hooks/useVisibleRefresh.js';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
@@ -11,24 +10,22 @@ import { ReviewTimeline } from './ReviewTimeline.jsx';
 import { ReviewKeyBar } from './ReviewKeyBar.jsx';
 import { useReviewKeys } from './useReviewKeys.js';
 import { useReviewStation } from './useReviewStation.js';
-import { hasVerdict, plays } from './reviewScope.js';
+import { isOpen, isSceneRow, plays } from './reviewScope.js';
+import { ReviewHeader } from './ReviewHeader.jsx';
 import { ReviewPlayer } from './ReviewPlayer.jsx';
 import { RowEditor } from './RowEditor.jsx';
 import { SignOffPanel } from './SignOffPanel.jsx';
-import { FilmStatusCard } from './FilmStatusCard.jsx';
 import { useFilmApproval, useFilmReviewOwner } from './useFilmApproval.js';
-import { runText } from './FilterLibrary.jsx';
 import './ContentFilterAdmin.scss';
 
 /**
- * Admin -> Content filter -> one film: every part in the film, one at a time ("Check it" in
- * ops:docs/superpowers/specs/2026-11-07-content-filter-admin-workshop-design.md; all parts, not
- * only the filtered ones, and progress meters: owner, 2026-11-21).
+ * Admin -> Content filter -> one film, as a queue of its filtered parts with one part in hand
+ * (owner, 2026-11-21; design ops "cf-journey"): one header line, the film, the timeline and the
+ * part's card in a column that never scrolls, the list beside it. Plays sit on their own tab.
  */
 const logger = createAppLogger('admin').child('content-filter');
 const API = 'api/v1/content-filter';
 const POLL_MS = 3000;
-const LEVEL = { none: 'Not certified', machine: 'Machine-certified', parent: 'Parent-certified' };
 // Why a film lists no parts yet (its status card says what to do about it).
 const EMPTY = {
   refine: 'No parts to review until the film is refined.',
@@ -52,9 +49,7 @@ function FilmReview({ ratingKey, rowId, owner }) {
   // A new signed-in visit needs its own HTTP read even at the same film URL.
   const { data, loading, error, reload, refresh, poll } = useApiResource(url, { label: 'review', logger, dedupe: false });
   const [selected, setSelected] = useState(null);
-  const [picked, setPicked] = useState(() => new Set());
   const [notice, setNotice] = useState(null);
-  const [sending, setSending] = useState(false);
   const activeView = useRef(true);
   const approval = useFilmApproval({ ratingKey, owner, data, error, reload, activeView });
   const running = data?.job && (data.job.status === 'queued' || data.job.status === 'running');
@@ -93,113 +88,65 @@ function FilmReview({ ratingKey, rowId, owner }) {
   const { redoOpen } = useReviewKeys(station.handlers, { enabled: Boolean(data?.rows) });
   useVisibleRefresh({ active: Boolean(waiting), intervalMs: POLL_MS, reload, poll });
 
-  // Rows in a queued/running send-back carry its step ("Sent back: refine").
-  const sentBack = useMemo(() => {
-    const job = data?.job;
-    if (!job || job.kind !== 'send-back' || !(job.status === 'queued' || job.status === 'running')) return {};
-    const cues = new Set(job.cues || []);
+  // Each row's refine state: in the film's open send-back ("Refining…" / "Waiting"), or queued on this page.
+  const refining = useMemo(() => {
     const out = {};
-    for (const r of data.rows || []) if ((r.members || []).some((id) => cues.has(id))) out[r.id] = job.status === 'queued' ? 'waiting' : (job.step || 'starting');
-    return out;
-  }, [data]);
-  const pick = (id, on) => setPicked((prev) => { const next = new Set(prev); if (on) next.add(id); else next.delete(id); return next; });
-  const sendBackPicked = async () => {
-    const cues = [...new Set((data?.rows || []).filter((r) => picked.has(r.id)).flatMap((r) => r.members || []))];
-    if (sending || !cues.length) return;
-    setSending(true);
-    setNotice(null);
-    try {
-      await DaylightAPI(`${API}/${encodeURIComponent(ratingKey)}/jobs`, { kind: 'send-back', cues }, 'POST');
-      logger.info('review.send-back', { ratingKey, rows: picked.size, cues: cues.length });
-      if (!activeView.current) return;
-      setPicked(current => new Set([...current].filter(id => !picked.has(id))));
-      setNotice(`Sent ${cues.length} back to the pipeline.`);
-      reload();
-    } catch (err) {
-      logger.warn('review.send-back_failed', { ratingKey, error: err.message });
-      if (activeView.current) setNotice(err.message || 'That did not work.');
-    } finally {
-      if (activeView.current) setSending(false);
+    const job = data?.job;
+    if (job && job.kind === 'send-back' && (job.status === 'queued' || job.status === 'running')) {
+      const cues = new Set(job.cues || []);
+      for (const r of data.rows || []) if ((r.members || []).some((id) => cues.has(id))) out[r.id] = job.status === 'queued' ? 'Waiting' : 'Refining…';
     }
-  };
+    for (const r of data?.rows || []) if (!out[r.id] && (r.members || []).some((id) => station.pendingRefine.has(id))) out[r.id] = 'Queued';
+    return out;
+  }, [data, station.pendingRefine]);
+  // Arriving without a permalink: the first filtered part still to review is in hand at once.
+  useEffect(() => {
+    if (rowId || selected || opened.current || !data?.rows?.length) return;
+    const first = station.scoped.find((r) => isOpen(r, station.scope)) || station.scoped[0];
+    if (!first) return;
+    opened.current = first.id;
+    logger.info('content_filter.review.arrived', { rk: ratingKey, rowId: first.id, rows: data.rows.length });
+    setSelected(first);
+  }, [rowId, selected, data, ratingKey, station.scoped, station.scope]);
 
   if (loading && !data) return <LoadingState label="review" rows={6} />;
   if (error && (!data || !approval.blocked)) return <ErrorState error={error} onRetry={reload} label="Review" />;
   if (notMatched && !Array.isArray(data.rows)) return <UnmatchedFilm ratingKey={ratingKey} data={data} />;
-  const row =data.rows.find((r) => r.id === selected?.id) || null;
-  const busyText = running ? `Running: ${data.job.step || 'starting'}` : null;
-  const runBlock = busyText || (notMatched ? 'Not matched to Plex' : null);
+  const row = data.rows.find((r) => r.id === selected?.id) || null;
+  const busyText = running ? 'A run holds this film: effects and timing can change when it finishes.' : null;
+  const roughFiltered = data.rows.filter((r) => !plays(r) && !isSceneRow(r) && r.timing === 'rough').length;
+  const index = row ? station.scoped.findIndex((r) => r.id === row.id) : -1;
+  const allDone = station.tally.total > 0 && station.tally.done === station.tally.total;
   return (
-    <SectionCard title={data.title || `Film ${ratingKey}`}
-      actions={<Anchor component={Link} to="/admin/content/filter" size="sm">All films</Anchor>}>
-      <Stack gap="sm">
-        <Group gap="xs" wrap="wrap">
-          <Badge variant="light" color={data.certification.level === 'none' ? 'gray' : 'green'}>{LEVEL[data.certification.level] || data.certification.level}</Badge>
-          {data.job && data.status?.next !== 'running' ? <Text size="sm" c={data.job.status === 'failed' ? 'red' : 'dimmed'}>{runText(data.job)}</Text> : null}
-        </Group>
-        <FilmStatusCard ratingKey={ratingKey} status={data.status} parts={data.parts || null} review={data.parts ? { reviewed: data.reviewed, total: data.total } : null} job={data.job} approvedBy={data.signOff?.parent?.by || null} auditError={data.auditError || null} worker={data.worker || null} approval={approval}
-          onChanged={reload} onReview={() => { const first = station.scoped.find((r) => !r.verdict) || data.rows[0]; if (first) station.pick(first); }} />
-        {notMatched ? (
-          <Text size="sm" c="orange">{`Not matched to Plex: ${data.unmatched?.text || 'no Plex film'}. The review and override here are kept; runs are blocked.`}</Text>
-        ) : null}
-        {data.rows.length ? <ReviewTimeline rows={station.scoped} selectedId={row?.id ?? null} onSelect={(r) => station.pick(r)} /> : null}
-        <ReviewKeyBar row={row} tally={station.tally} canUndo={station.canUndo} redoOpen={redoOpen}
-          helpOpen={station.helpOpen} onToggleHelp={station.handlers.help} onCloseHelp={station.handlers.escape}
-          message={station.message} bleepLevel={station.bleepLevel} previewRecovery={station.previewRecovery} />
-        <div className="cf-review">
-          <Stack gap="sm" className="cf-review__side">
-            <ReviewPlayer ratingKey={ratingKey} />
-            {data.rows.length ? <FocusBar row={row} list={station.scoped} onPrev={station.handlers.prev} onNext={station.handlers.next} /> : null}
-            {row ? <RowEditor key={row.id} ratingKey={ratingKey} row={row} onChanged={reload} busyText={busyText}
-              auditFresh={!!data.audit?.fresh} wordRulings={data.wordRulings || {}} />
-              : null}
-            {station.flagged ? (
-              <Button size="xs" color="orange" variant="light" disabled={Boolean(runBlock)} onClick={station.rework}
-                title={busyText ? `${busyText}. Rework is available when it finishes.` : runBlock ? `${runBlock}: runs are blocked.` : 'Send the rows marked redo back through the pipeline (Shift+D)'}>
-                Rework {station.flagged} flagged
-              </Button>
-            ) : null}
-            <SignOffPanel signOff={data.signOff} approval={approval} busyText={busyText} />
-          </Stack>
-          <Stack gap="xs">
-            {picked.size ? (
-              <Group gap="xs">
-                <Button size="compact-xs" loading={sending} disabled={sending || Boolean(runBlock)} onClick={sendBackPicked}>Send back {picked.size} selected</Button>
-                <Button size="compact-xs" variant="subtle" onClick={() => setPicked(new Set())}>Clear selection</Button>
-              </Group>
-            ) : null}
-            {notice ? <Text size="sm" role="status">{notice}</Text> : null}
-            <ReviewList rows={data.rows} reviewed={data.reviewed} total={data.total} audit={data.audit}
-              selectedId={row?.id ?? null} onSelect={station.pick} scope={station.scope} onScope={station.setScope} picked={picked} onPick={pick} sentBack={sentBack}
-              emptyText={EMPTY[data.status?.next] || null} />
-          </Stack>
+    <div className="cf-review-page">
+      <ReviewHeader ratingKey={ratingKey} data={data} tally={station.tally} roughFiltered={roughFiltered} handlers={{ ...station.handlers, rework: station.rework }} blocked={notMatched}
+        approval={approval} onChanged={reload} flagged={station.flagged} />
+      {notMatched ? <Text size="sm" c="orange">{`Not matched to Plex: ${data.unmatched?.text || 'no Plex film'}. The review and override here are kept; runs are blocked.`}</Text> : null}
+      {notice ? <Text size="sm" role="status">{notice}</Text> : null}
+      <div className="cf-review">
+        <div className="cf-review__side">
+          <ReviewPlayer ratingKey={ratingKey} />
+          {data.rows.length ? <ReviewTimeline rows={station.scoped} selectedId={row?.id ?? null} onSelect={(r) => station.pick(r)} /> : null}
+          {allDone ? (
+            <div className="cf-signoff-card">
+              <Text fw={600}>Every filtered part has a verdict.</Text>
+              <SignOffPanel signOff={data.signOff} approval={approval} busyText={running ? 'A run is open' : null} />
+              {data.status?.next === 'approve' ? <Text size="sm">Use <b>Approve for family</b> at the top.</Text> : null}
+            </div>
+          ) : null}
+          {row ? (
+            <RowEditor key={row.id} ratingKey={ratingKey} row={row} onChanged={reload} busyText={busyText}
+              wordRulings={data.wordRulings || {}} handlers={station.handlers} canUndo={station.canUndo}
+              position={index >= 0 ? { index, total: station.scoped.length } : null}
+              refineState={refining[row.id] ? { state: refining[row.id] } : null} />
+          ) : null}
+          <ReviewKeyBar redoOpen={redoOpen} helpOpen={station.helpOpen} onCloseHelp={station.handlers.escape}
+            message={station.message} previewRecovery={station.previewRecovery} />
         </div>
-      </Stack>
-    </SectionCard>
-  );
-}
-
-/** The part in hand: where it sits in the current view, with Previous / Next (also ← / →). */
-function FocusBar({ row, list, onPrev, onNext }) {
-  if (!row) {
-    return (
-      <div className="cf-focus" role="group" aria-label="Part under review">
-        <Text size="sm">{list.length ? `${list.length} parts in this view. Go through them one at a time, or pick one in the list.` : 'Nothing in this view.'}</Text>
-        {list.length ? <Button size="compact-sm" onClick={onNext} aria-label="Start with the first part">Start: part 1 of {list.length} →</Button> : null}
+        <ReviewList rows={data.rows} reviewed={data.reviewed} total={data.total} audit={data.audit}
+          selectedId={row?.id ?? null} onSelect={station.pick} scope={station.scope} onScope={station.setScope} refining={refining}
+          emptyText={EMPTY[data.status?.next] || null} />
       </div>
-    );
-  }
-  const i = list.findIndex((r) => r.id === row.id);
-  const where = i >= 0 ? `Part ${i + 1} of ${list.length}` : 'Not in this view';
-  const left = list.filter((r) => !hasVerdict(r) && !plays(r)).length;
-  return (
-    <div className="cf-focus" role="group" aria-label="Part under review">
-      <Button size="compact-sm" variant="default" onClick={onPrev} disabled={i <= 0} aria-label="Previous part">← Prev</Button>
-      <Stack gap={0} align="center">
-        <Text size="sm" fw={600} className="cf-focus__where">{where}</Text>
-        <Text size="xs" c="dimmed">{left ? `${left} filtered still to review in this view` : 'Every filtered part in this view has a verdict'}</Text>
-      </Stack>
-      <Button size="compact-sm" variant="default" onClick={onNext} disabled={i >= list.length - 1} aria-label="Next part">Next →</Button>
     </div>
   );
 }

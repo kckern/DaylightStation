@@ -65,7 +65,13 @@ export async function createFilterJobs({ householdDir, dataDir, mediaDir, logger
         if (ref?.workId == null || ref?.tagSetId == null) throw new Error('No VidAngel tag set for this film; cannot save its refined EDL');
         await contentFilterRepository.saveRefinedEdl(ref, refined);
       }
-      if (override) await contentFilterRepository.saveOverride(rk, override);
+      // The worker's override is the one it was handed at claim time; review marks recorded while it
+      // ran (plain verdicts are allowed then) live only in the current file, so they are kept.
+      if (override) {
+        const current = await contentFilterRepository.getOverride(rk);
+        const { review: _stale, ...rest } = override;
+        await contentFilterRepository.saveOverride(rk, current?.review ? { ...rest, review: current.review } : rest);
+      }
       if (refineReview) await contentFilterRepository.saveRefineReview(rk, refineReview);
       for (const [part, words] of Object.entries(transcripts || {})) await contentFilterRepository.saveTranscriptFile(rk, part, words);
       logger.info?.('content-filter.job.results', { ratingKey: rk, edl: !!edl, refined: !!refined, override: !!override, review: !!refineReview, transcripts: Object.keys(transcripts || {}).length });

@@ -67,3 +67,27 @@ describe('GET /:rk/review starts a missing audit', () => {
     }
   });
 });
+
+describe('content filter router: verdicts while a worker refines (2026-11-21)', () => {
+  const held = (setVerdict) => {
+    const jobs = { ...jobsStub(), busyWriting: async () => true, heldRemotely: async () => true };
+    const app = express(); app.use(express.json());
+    app.use('/cf', createContentFilterRouter({ getContentFilter: { execute: async () => null }, contentFilterReview: { get: async () => ({}), setVerdict }, jobs, logger: { info() {}, warn() {}, error() {}, debug() {} } }));
+    return app;
+  };
+  it('a plain approve is recorded while a worker holds the film', async () => {
+    const setVerdict = vi.fn(async () => ({ verdict: 'approve' }));
+    const res = await request(held(setVerdict)).put('/cf/775444/review/cue:va1').send({ verdict: 'approve', span: [1, 2] });
+    expect(res.status).toBe(200);
+    expect(setVerdict).toHaveBeenCalled();
+  });
+  it('a remove or an effect change waits for the run', async () => {
+    const setVerdict = vi.fn(async () => ({}));
+    const app = held(setVerdict);
+    expect((await request(app).put('/cf/775444/review/cue:va1').send({ verdict: 'remove', span: [1, 2] })).status).toBe(409);
+    expect((await request(app).put('/cf/775444/review/cue:va1').send({ verdict: 'approve', span: [1, 2], change: { from: 'mute', to: 'bleep' } })).status).toBe(409);
+    expect((await request(app).put('/cf/775444/cues/va1').send({ effect: 'mute' })).status).toBe(409);
+    expect(setVerdict).not.toHaveBeenCalled();
+  });
+});
+

@@ -504,6 +504,17 @@ export class ContentFilterJobs {
     return !!rec?.runs?.some((r) => r.status === 'running' && (WRITING.has(r.step) || r.remote));
   }
 
+  /**
+   * True while only a remote worker holds the film (no in-app step writing): its results arrive
+   * whole at the end, and the app keeps the review marks made meanwhile (applyResults), so a plain
+   * verdict can be recorded during the run (owner, 2026-11-21: keep reviewing while it refines).
+   */
+  async heldRemotely(ratingKey) {
+    const rec = await this.#store.load(String(ratingKey));
+    const open = (rec?.runs || []).filter((r) => r.status === 'running');
+    return open.length > 0 && open.every((r) => r.remote && !r.saving);
+  }
+
   record(ratingKey) { return this.#store.load(String(ratingKey)); }
 
   onSettled(fn) { this.#settled.add(fn); return () => this.#settled.delete(fn); }
