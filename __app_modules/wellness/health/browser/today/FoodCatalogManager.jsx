@@ -21,8 +21,6 @@ function Manager({ active = true, onClose, onChanged }) {
   const primaryInput = useRef(null);
   const editing = draft !== null;
   const wasEditing = useRef(editing);
-  const visibleFoods = (foods.data?.items || []).filter(food => food.type !== 'template');
-  const foodsUnavailable = unavailableError(foods);
   const calories = draft?.nutrients?.calories;
   const caloriesValid = typeof calories === 'number' && Number.isFinite(calories) && calories >= 0;
   useLayoutEffect(() => {
@@ -32,6 +30,8 @@ function Manager({ active = true, onClose, onChanged }) {
     primaryInput.current?.focus();
   }, [editing]);
   const foods = useApiResource(`api/v1/health/nutrition/catalog/suggest?q=${encodeURIComponent(query)}&limit=40`, { enabled: active, logger, swr: true });
+  const visibleFoods = (foods.data?.items || []).filter(food => food.type !== 'template');
+  const foodsUnavailable = unavailableError(foods);
   const { regionProps: resultsRegion, retry: retryFoods } = useRetryRegion(foods.reload, foods.loading || foods.revalidating);
   const run = async action => {
     if (pending.current) return;
