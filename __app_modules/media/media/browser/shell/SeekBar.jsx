@@ -122,7 +122,7 @@ export function SeekBar({ target, availability = null, onCommand = null, pending
   };
 
   const onPointerDown = (e) => {
-    if (!canSeek) return;
+    if (!canSeek || e.button !== 0) return;
     const rect = trackRef.current?.getBoundingClientRect?.();
     const secs = secondsFromPointer(e, rect);
     if (secs == null) return;
