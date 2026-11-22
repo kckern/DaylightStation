@@ -48,6 +48,7 @@ function Editor({ row, onClose, onChanged, onRequestDelete, onCoach, observation
   const [saving, setBusy] = useState(false);
   const foodState = usePortionControl(row);
   const busy = saving || Boolean(foodState?.locked || foodState?.draft);
+  const canSave = !busy && Boolean(name.trim()) && (grams === '' || Number(grams) > 0);
   const [error, setError] = useState(null);
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState('');
@@ -104,7 +105,7 @@ function Editor({ row, onClose, onChanged, onRequestDelete, onCoach, observation
       <NumberInput label={isGroup ? 'Whole dish portion' : 'Portion'} suffix={` ${originalGrams ? originalPortion.unit : 'g'}`} aria-label={`Portion in ${originalGrams ? originalPortion.unit : 'g'}`}
         data-autofocus min={wholeGrams ? 1 : 0.01} decimalScale={wholeGrams ? 0 : 2} value={wholeGrams && typeof grams === 'number' ? Math.round(grams) : grams} disabled={busy || (isGroup && !originalGrams)}
         placeholder="Weight unknown" onChange={setGrams} onFocus={event => event.target.select()}
-        onKeyDown={event => { if (event.key === 'Enter' && name.trim() && !busy) save(); }} />
+        onKeyDown={event => { if (event.key === 'Enter' && canSave) save(); }} />
       <Group gap="xs">
         {factors.map(value => <Button key={value} size="compact-xs" variant="light" disabled={busy || !originalGrams}
           onClick={() => setGrams(wholeGrams ? Math.max(1, Math.round((Number(grams) || originalGrams) * value)) : Math.round((Number(grams) || originalGrams) * value * 100) / 100)}>×{value}</Button>)}
@@ -166,7 +167,7 @@ function Editor({ row, onClose, onChanged, onRequestDelete, onCoach, observation
       </Group>
       <Group justify="flex-end" gap="xs">
         <Button size="sm" variant="subtle" disabled={busy} onClick={onClose}>Cancel</Button>
-        <Button size="sm" loading={busy} disabled={!name.trim() || (grams !== '' && !(Number(grams) > 0))} onClick={save}>Save</Button>
+        <Button size="sm" loading={busy} disabled={!canSave} onClick={save}>Save</Button>
       </Group>
     </Stack>
   </Sheet>;

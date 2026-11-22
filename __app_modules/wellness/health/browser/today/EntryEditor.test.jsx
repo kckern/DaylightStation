@@ -38,6 +38,24 @@ describe('entry correction dialog', () => {
     expect(writes()[0][1]).toMatchObject({ portion: { value: 75, unit: 'g' }, name: 'Scrambled eggs', date: '2020-01-01' });
   });
 
+  it('keeps Enter aligned with Save validation for zero portions', async () => {
+    const close = vi.fn();
+    mount({ onClose: close });
+    const portion = screen.getByLabelText('Portion in g');
+
+    fireEvent.change(portion, { target: { value: '0' } });
+    expect(screen.getByRole('button', { name: 'Save', exact: true }).disabled).toBe(true);
+    fireEvent.keyDown(portion, { key: 'Enter' });
+    expect(writes()).toHaveLength(0);
+    expect(close).not.toHaveBeenCalled();
+
+    fireEvent.change(portion, { target: { value: '75' } });
+    fireEvent.keyDown(portion, { key: 'Enter' });
+    await waitFor(() => expect(writes()).toHaveLength(1));
+    expect(writes()[0][1]).toMatchObject({ portion: { value: 75, unit: 'g' } });
+    expect(close).toHaveBeenCalledOnce();
+  });
+
   it('unknown mass never invents a density when a weight is supplied', async () => {
     mount({ row: { ...row, grams: null, amount: null, unit: 'g' } });
     expect(screen.getByRole('button', { name: '×2' }).disabled).toBe(true);
