@@ -327,6 +327,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
     e.stopPropagation();
     if (canPlayInline) {
       feedLog.interaction('inline-play', { id: item.id, title: item.title, contentType: item.contentType, videoId: item.meta?.videoId });
+      onPlay?.(item);
       setPlayingInline(true);
     } else {
       feedLog.interaction('remote-play', { id: item.id, title: item.title, contentType: item.contentType });

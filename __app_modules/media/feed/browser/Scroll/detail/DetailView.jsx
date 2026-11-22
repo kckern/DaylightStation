@@ -383,7 +383,7 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
   return renderDialog ? renderDialog(article, handleArticleArrows) : article;
 }
 
-function YouTubeHero({ item, heroImage, sections, loading, onPlay: _onPlay }) {
+function YouTubeHero({ item, heroImage, sections, loading, onPlay }) {
   const [ytPlaying, setYtPlaying] = useState(false);
   const [useEmbed, setUseEmbed] = useState(false);
 
@@ -421,6 +421,7 @@ function YouTubeHero({ item, heroImage, sections, loading, onPlay: _onPlay }) {
         <button
           onClick={() => {
             feedLog.interaction('youtube-play', { id: item.id, videoId: item.meta?.videoId });
+            onPlay?.(item);
             setYtPlaying(true);
           }}
           style={{
