@@ -25,7 +25,7 @@ import { stateColor } from "../theme/mediaTheme.js";
 import { deviceStateLabel } from "./stateCopy.js";
 import Skeleton from '@/lib/ui/Skeleton.jsx';
 import { Button as UiButton } from '@/lib/ui/Button.jsx';
-import { StateMessage } from '@/lib/ui/states.jsx';
+import { LoadingState, StateMessage } from '@/lib/ui/states.jsx';
 import { deviceKind } from "../cast/castCopy.js";
 import { canShowNotes, wasNameLabel } from "../house/houseCopy.js";
 import { useStartStatuses, useStartedByAll } from "../house/useHouseSignals.js";
@@ -194,9 +194,11 @@ export function FleetView() {
 
   if (loading) {
     return (
-      <Stack data-testid="fleet-loading" gap="sm">
-        {[0, 1, 2].map((i) => <Skeleton key={i} height={120} radius="md" />)}
-      </Stack>
+      <LoadingState data-testid="fleet-loading" role="status" label="devices">
+        <Stack gap="sm">
+          {[0, 1, 2].map((i) => <Skeleton key={i} height={120} radius="md" />)}
+        </Stack>
+      </LoadingState>
     );
   }
   if (error) {
