@@ -2570,6 +2570,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // REST call per device per interval — ADB is only consulted once the emulator
   // is actually in front, so an idle house is nearly free.
   const arcadeGameSessionTracking = createArcadeGameSessionTracking({
+    sendPush: createPushSender({ notificationService: notificationStack.notificationService, category: 'household_alert', urgency: 'high', source: 'arcade', recipient: (target) => recipientForNotifyService(target) }),
     devicesConfig: devicesConfig.devices || {},
     gamesConfig: configService.getHouseholdAppConfig(householdId, 'games'),
     gamesCatalog: dataService.household.read('gaming/retroarch/catalog'),

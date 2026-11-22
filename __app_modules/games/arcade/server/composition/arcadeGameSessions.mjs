@@ -38,7 +38,7 @@ import { GrantArcadeGameTime } from "../application/usecases/GrantArcadeGameTime
 import { CheckArcadeGameEligibility } from "../application/usecases/CheckArcadeGameEligibility.mjs";
 import { SummariseArcadeGameUsage } from "../application/usecases/SummariseArcadeGameUsage.mjs";
 import { AndroidControllerProbe } from '#adapters/devices/AndroidControllerProbe.mjs';
-import { HomeAssistantArcadeGameAlert } from "../adapters/devices/HomeAssistantArcadeGameAlert.mjs";
+import { ArcadeGameAlert } from "../adapters/devices/ArcadeGameAlert.mjs";
 import { EnforceArcadeGameBudget } from "../application/usecases/EnforceArcadeGameBudget.mjs";
 import { YamlArcadeGameSessionDatastore } from "../adapters/persistence/YamlArcadeGameSessionDatastore.mjs";
 import { YamlArcadeGameSessionIntentDatastore } from "../adapters/persistence/YamlArcadeGameSessionIntentDatastore.mjs";
@@ -132,7 +132,7 @@ export function createArcadeGameSessionTracking(config) {
   const {
     devicesConfig, gamesConfig, gamesCatalog = null, arcadeOverlayConfig = null, configService, eventBus, httpClient,
     daylightHost = null, overlayPath = '/arcade-film.html',
-    grants = null, haGateway = null, profileFor = null, assertionsFor = null,
+    grants = null, haGateway = null, sendPush = null, profileFor = null, assertionsFor = null,
     intervalMs = DEFAULT_INTERVAL_MS,
     scheduler = new NodeApplicationScheduler(),
     now = () => new Date().toISOString(),
@@ -380,8 +380,8 @@ export function createArcadeGameSessionTracking(config) {
     // Blindness is tolerable briefly and a person's problem after that. It never
     // stops a running game — only withholds NEW play until observation returns.
     escalateAfterMs: intervalMs * STALE_AFTER_FACTOR * 10,
-    alert: new HomeAssistantArcadeGameAlert({
-      haGateway,
+    alert: new ArcadeGameAlert({
+      sendPush,
       serviceByDevice: new Map(polledDevices
         .filter(([, d]) => d?.notify_service)
         .map(([id, d]) => [id, d.notify_service])),
