@@ -27,4 +27,13 @@ public class CarControlsTest {
         assertEquals(CarControls.STOP_ACTION, CarControls.ACTIONS.get(3));
         assertEquals(10_000, CarControls.SEEK_STEP_MS);
     }
+
+    @Test public void longFormIsAListItemOrTwentyMinutes() {
+        assertTrue(CarControls.longForm("talks", 72_000));          // a 72s prologue from Talks
+        assertTrue(CarControls.longForm("scripture", 231_000));     // a 4-minute chapter
+        assertTrue(CarControls.longForm("", 4_402_000));            // a lecture played on its own
+        assertFalse(CarControls.longForm("", 324_000));             // an album track
+        assertFalse(CarControls.longForm(null, 0));                 // unknown length, no list
+        assertTrue(CarControls.longForm(null, CarControls.LONG_FORM_MS));
+    }
 }

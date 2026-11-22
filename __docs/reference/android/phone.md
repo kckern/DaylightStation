@@ -455,15 +455,41 @@ reports, problems}`; on the phone nothing serves them to anyone.
 - **Text.** Title; the artist as both `artist` and the display subtitle (a car
   draws the subtitle, not the artist field), or the album when there is no artist;
   the album as the description. Cover art from the item's thumbnail.
-- **Transport.** Back 10 seconds, play/pause, forward 10 seconds, as Plex
-  lays it out, with Next track and Stop in the overflow. Android Auto fills the
-  slots beside play/pause with skip-to-previous/next when a session offers them,
-  so the session player withholds the four track-skip commands and the buttons
-  are custom actions in slot order (`CarControls`). Seek back/forward player
+- **Transport, by what is playing** (`CarControls`). *Long-form* is an item
+  from a household list (talks, scripture, courses: it has a `listId`) or one at
+  least 20 minutes long. Long-form shows back 10 seconds, play/pause, forward 10
+  seconds, as Plex lays it out, with Next track and Stop in the overflow. Music
+  shows previous, play/pause, next, with Stop in the overflow. The layout is set
+  again whenever the long-form/music answer changes.
+- **Why the session withholds skips for long-form.** Android Auto fills the slots
+  beside play/pause with skip-to-previous/next when a session offers them, and
+  only otherwise with the first two custom actions. Seek back/forward player
   commands alone are not drawn: on the legacy session a car reads they are
   `ACTION_REWIND`/`ACTION_FAST_FORWARD`. The step is 10 s (`SEEK_STEP_MS`). The
-  phone's media notification shows the same layout. Track skips by a steering
-  wheel button are not offered either; Next track is in the overflow.
+  phone's media notification follows the same layout.
+
+### Steering-wheel buttons
+
+The car decides what each wheel button does; no app can claim one. Source/mode,
+volume, phone and the dashboard menu buttons stay with the car, and a seek
+pressed while the car's own source is the radio seeks the tuner. What a car
+forwards to the playing app is next/previous (usually seek up/down), sometimes
+play/pause, and the voice button opens the Assistant (`play … on Daylight` reaches
+this app's search).
+
+A forwarded next/previous reaches the session player even while long-form
+withholds the skip commands: Media3 1.1.1's legacy session falls back to
+`seekToNextMediaItem`/`seekToPreviousMediaItem` and checks only the car's
+connection commands. For long-form it becomes forward/back 10 seconds; for music
+it skips the track. Each one is logged, so which wheel buttons arrive is read off
+a drive:
+
+```bash
+adb logcat -d -s Daylight-Media | grep transport
+# transport layout long-form
+# transport next-item -> forward-10      (a wheel next during a talk)
+# transport previous -> track            (a wheel previous during music)
+```
 
 Media3 is pinned to 1.1.1, the newest version whose libraries build with
 compileSdk 33 and Android Gradle Plugin 7.4.2. A newer one needs a newer compileSdk

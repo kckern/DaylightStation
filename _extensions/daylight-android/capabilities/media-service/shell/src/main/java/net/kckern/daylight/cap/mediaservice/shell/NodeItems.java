@@ -51,6 +51,12 @@ final class NodeItems {
     }
 
     /** A finite original can supply duration even if the encoded stream has no index. */
+    static String listId(MediaItem item) {
+        if (item == null || item.mediaMetadata.extras == null) return "";
+        String id = item.mediaMetadata.extras.getString(EXTRA_LIST_ID);
+        return id == null ? "" : id;
+    }
+
     static long durationMs(MediaItem item, long playerDurationMs) {
         if (playerDurationMs > 0 || item == null || item.mediaMetadata.extras == null) return playerDurationMs;
         long declared = item.mediaMetadata.extras.getLong(EXTRA_DURATION_MS, 0);

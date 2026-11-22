@@ -62,6 +62,8 @@ public class DaylightMediaService extends MediaLibraryService {
     private PlayStart.Attempt artworkOwner;
     private Uri artworkUri;
     private MediaLibrarySession session;
+    /** The layout the car was last given; null before the first. */
+    private Boolean carLongForm;
     private PlaybackEvents events;
     private ExecutorService io;
     private DrivingRadio radio;
@@ -105,6 +107,7 @@ public class DaylightMediaService extends MediaLibraryService {
         player.addListener(new Player.Listener() {
             @Override public void onEvents(Player player, Player.Events events) {
                 publishPlaylistState();
+                refreshCarLayout();
             }
 
             @Override public void onTimelineChanged(androidx.media3.common.Timeline timeline, int reason) {
@@ -154,20 +157,38 @@ public class DaylightMediaService extends MediaLibraryService {
                 return NodeItems.durationMs(player.getCurrentMediaItem(), super.getContentDuration());
             }
 
-            // Track skips are not offered, so a car puts back/forward 10s beside play. See CarControls.
+            // Long-form withholds track skips so a car puts back/forward 10s beside play,
+            // and a steering-wheel skip becomes a 10s jump. See CarControls.
             @Override public Player.Commands getAvailableCommands() {
-                return CarControls.withoutTrackSkips(super.getAvailableCommands());
+                Player.Commands all = super.getAvailableCommands();
+                return longForm() ? CarControls.withoutTrackSkips(all) : all;
             }
 
             @Override public boolean isCommandAvailable(int command) {
-                return !CarControls.isTrackSkip(command) && super.isCommandAvailable(command);
+                return !(longForm() && CarControls.isTrackSkip(command)) && super.isCommandAvailable(command);
+            }
+
+            @Override public void seekToNext() { if (!skip("next", true)) super.seekToNext(); }
+            @Override public void seekToNextMediaItem() { if (!skip("next-item", true)) super.seekToNextMediaItem(); }
+            @Override public void seekToPrevious() { if (!skip("previous", false)) super.seekToPrevious(); }
+            @Override public void seekToPreviousMediaItem() { if (!skip("previous-item", false)) super.seekToPreviousMediaItem(); }
+            @Override public void seekBack() { Log.i(TAG, "transport back-10"); super.seekBack(); }
+            @Override public void seekForward() { Log.i(TAG, "transport forward-10"); super.seekForward(); }
+
+            /** True when a skip was turned into a 10s jump. Every skip is logged: it is how a car's wheel buttons show up. */
+            private boolean skip(String kind, boolean forward) {
+                boolean jump = longForm();
+                Log.i(TAG, "transport " + kind + (jump ? (forward ? " -> forward-10" : " -> back-10") : " -> track"));
+                if (!jump) return false;
+                if (forward) player.seekForward(); else player.seekBack();
+                return true;
             }
         };
         MediaLibrarySession.Builder builder = new MediaLibrarySession.Builder(this, sessionPlayer,
                 new LibraryCallback(media, io, getPackageName(), new AndroidPackageFacts(getPackageManager()),
                         () -> SurfaceCache.get(this, ControllerPins.KEY), DaylightMediaService::stopPlayback)
                         .withDrivingRadio(radio, this::cancelRadioHandoff));
-        builder.setCustomLayout(CarControls.layout());
+        builder.setCustomLayout(CarControls.layout(false));
         // A tap on the media notification opens this app's own window. Nothing from a
         // controller is in the intent.
         Intent open = getPackageManager().getLaunchIntentForPackage(getPackageName());
@@ -273,6 +294,26 @@ public class DaylightMediaService extends MediaLibraryService {
         player.clearMediaItems();
         shortcutOwner = null;
         publishPlaylistState();
+    }
+
+    /** Whether what is playing is long-form audio (talks, scripture, courses). See CarControls. */
+    private boolean longForm() {
+        MediaItem item = player.getCurrentMediaItem();
+        return item != null && CarControls.longForm(NodeItems.listId(item), NodeItems.durationMs(item, player.getDuration()));
+    }
+
+    /**
+     * Sets the car's buttons for what is playing. A new custom layout also makes the
+     * legacy session the car reads recompute its actions, so the slots beside play
+     * follow the item.
+     */
+    private void refreshCarLayout() {
+        if (session == null) return;
+        boolean now = longForm();
+        if (carLongForm != null && carLongForm == now) return;
+        carLongForm = now;
+        session.setCustomLayout(CarControls.layout(now));
+        Log.i(TAG, "transport layout " + (now ? "long-form" : "music"));
     }
 
     private boolean ownsPlaylist(PlayStart.Attempt attempt) {
