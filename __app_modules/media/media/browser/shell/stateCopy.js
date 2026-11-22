@@ -52,6 +52,7 @@ export function deviceStateLabel(state, { offline = false } = {}) {
     case 'uncertain': return 'Uncertain';
     case 'playing': return 'Playing';
     case 'paused': return 'Paused';
+    case 'ready': return 'Ready to play';
     case 'ended': return 'Finished';
     case 'loading': return 'Starting…';
     case 'buffering': return 'Buffering…';
