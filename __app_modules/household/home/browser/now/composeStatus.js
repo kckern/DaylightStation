@@ -4,7 +4,7 @@
  * Pure: the server decided what counts (policy); this decides how to say it.
  */
 
-import { displayName, formatAge, formatWatts, openingWord } from '../entities/formatEntityState.js';
+import { displayName, formatAge, formatEntityState, formatWatts, openingWord } from '../entities/formatEntityState.js';
 
 // A figure stays on the same line as its noun ("4 lights", "1.6 kW").
 const NBSP = '\u00a0';
@@ -44,10 +44,10 @@ export function groupByRoom(entities, rooms) {
  *
  * @returns {string[]} sentences, each ending in a full stop
  */
-export function composeSentence({ watts, lightsOn, othersOn = 0, othersWord = 'devices', open, motionRooms, lastSeen = null }) {
+export function composeSentence({ watts, lightsOn, othersOn = 0, othersWord = 'devices', open, locks = [], motionRooms, lastSeen = null }) {
   const sentences = [];
   const parts = [];
-  if (lightsOn > 0 || open.length > 0 || (watts != null && othersOn === 0)) {
+  if (lightsOn > 0 || open.length > 0 || locks.length > 0 || (watts != null && othersOn === 0)) {
     parts.push(lightsOn > 0 ? `${plural(lightsOn, 'light')} on` : 'no lights on');
   }
   if (othersOn > 0) {
@@ -60,9 +60,17 @@ export function composeSentence({ watts, lightsOn, othersOn = 0, othersWord = 'd
     const words = new Set(open.map(openingWord));
     parts.push(words.size === 1 ? `${plural(open.length, [...words][0])} open` : `${open.length} doors or windows open`);
   }
+  const lockStates = new Map();
+  for (const lock of locks) {
+    const state = formatEntityState(lock).toLowerCase();
+    lockStates.set(state, (lockStates.get(state) || 0) + 1);
+  }
+  for (const [state, count] of lockStates) {
+    parts.push(`${plural(count, 'lock')} ${count === 1 ? 'is' : 'are'} ${state}`);
+  }
 
   if (watts != null) {
-    const quiet = lightsOn === 0 && othersOn === 0 && open.length === 0;
+    const quiet = lightsOn === 0 && othersOn === 0 && open.length === 0 && locks.length === 0;
     sentences.push(quiet
       ? `The house is quiet, drawing ${formatWatts(watts).replace(' ', NBSP)} with nothing on.`
       : `The house is drawing ${formatWatts(watts).replace(' ', NBSP)}, with ${listWords(parts)}.`);
@@ -150,7 +158,9 @@ export function composeNow({ entities, rooms, summary }, { now = Date.now() } = 
   const on = pick(s.on);
   const lights = on.filter((e) => e.type === 'light');
   const others = on.filter((e) => e.type !== 'light');
-  const open = pick(s.open);
+  const activeOpenings = pick(s.open);
+  const locks = activeOpenings.filter((e) => e.domain === 'lock' || e.deviceClass === 'lock');
+  const open = activeOpenings.filter((e) => e.domain !== 'lock' && e.deviceClass !== 'lock');
   const motion = pick(s.motion);
   // A roomless presence flag is a person ("KC home"), not a room with motion.
   const people = motion.filter((e) => !e.room && e.stateClass === 'on');
@@ -182,6 +192,7 @@ export function composeNow({ entities, rooms, summary }, { now = Date.now() } = 
       othersOn: others.length,
       othersWord: othersWord(others),
       open,
+      locks,
       motionRooms,
       lastSeen,
     })
