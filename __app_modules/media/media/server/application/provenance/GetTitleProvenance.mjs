@@ -20,7 +20,7 @@
 import {
   isFresh, lookupIdFor, streamingOffers, hasQuotaRoom, providerIdFor, providerLabel,
 } from '../../domain/provenance/provenance.mjs';
-import { firstRule, rankOffers, needsContentFilter, parseRules } from '../../domain/provenance/rules.mjs';
+import { firstRule, rankOffers, needsContentFilter, parseRules, secondaryLogoFor } from '../../domain/provenance/rules.mjs';
 
 const monthOf = (d) => d.toISOString().slice(0, 7);
 
@@ -96,7 +96,7 @@ export class GetTitleProvenance {
     };
 
     const override = firstRule(rules.overrides, facts, canShow);
-    if (override) return this.#answer(rk, policy.services, { provider: override.provider, source: 'override', rule: override.rule });
+    if (override) return this.#answer(rk, policy, { provider: override.provider, source: 'override', rule: override.rule });
 
     const key = identity.key || rk;
     record ||= await this.#store.get(key);
@@ -109,22 +109,26 @@ export class GetTitleProvenance {
     const offers = (record?.offers || []).map((o) => (o?.name ? { ...o, provider: providerIdFor(o.name, services) } : o));
     const ranked = rankOffers(offers, rules.priority, canShow);
     if (ranked) {
-      return this.#answer(rk, services, {
+      return this.#answer(rk, policy, {
         provider: ranked.offer.provider, source: 'availability', tier: ranked.group.name,
         name: ranked.offer.name, offerType: ranked.offer.type, checkedAt: record.checkedAt,
       });
     }
 
     const fallback = firstRule(rules.fallbacks, facts, canShow);
-    if (fallback) return this.#answer(rk, services, { provider: fallback.provider, source: 'fallback', rule: fallback.rule, checkedAt: record?.checkedAt ?? null });
+    if (fallback) return this.#answer(rk, policy, { provider: fallback.provider, source: 'fallback', rule: fallback.rule, checkedAt: record?.checkedAt ?? null });
     return null;
   }
 
-  #answer(rk, services, { provider, source, tier = null, rule = null, name = null, offerType = null, checkedAt = null }) {
+  #answer(rk, policy, { provider, source, tier = null, rule = null, name = null, offerType = null, checkedAt = null }) {
+    const services = policy.services;
+    // A second, smaller logo under the service's (config `secondary_logos`), when its file exists.
+    const secondary = secondaryLogoFor(provider, policy.secondary, services, (id) => this.#logos.has(id));
     return {
       ratingKey: rk,
       provider,
       name: providerLabel(provider, services, name),
+      secondary: secondary ? { logo: secondary.logo, name: secondary.label } : null,
       tier: tier || source,
       source,
       rule: rule ? (rule.name || describeWhen(rule.when)) : null,

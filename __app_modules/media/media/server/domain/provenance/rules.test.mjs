@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { parseRules, matchesWhen, firstRule, rankOffers, stableIndex, needsContentFilter } from './rules.mjs';
-import { isLongAbsence } from './provenance.mjs';
+import { parseRules, matchesWhen, firstRule, rankOffers, stableIndex, needsContentFilter, parseSecondary, secondaryLogoFor } from './rules.mjs';
+import { isLongAbsence, parseServices } from './provenance.mjs';
 
 describe('matchesWhen', () => {
   const facts = { key: '1', kind: 'movie', year: 1931, durationMs: 30 * 60000, studio: 'Metro-Goldwyn-Mayer (MGM)',
@@ -73,5 +73,34 @@ describe('isLongAbsence', () => {
     expect(isLongAbsence(null, now, 6)).toBe(false);
     expect(isLongAbsence('not a date', now, 6)).toBe(false);
     expect(isLongAbsence('2026-11-01T00:00:00Z', now, 0)).toBe(false);
+  });
+});
+
+describe('secondary logos', () => {
+  const services = parseServices([
+    { provider: 'netflix', names: ['Netflix'], paid: true },
+    { provider: 'peacock', names: ['Peacock'], paid: true },
+    { provider: 'tubi', names: ['Tubi'] },
+  ]);
+  const secondary = parseSecondary([
+    { logo: 'pass-a', label: 'Pass A', for: 'paid', except: ['peacock'] },
+    { logo: 'badge-b', for: ['tubi'] },
+    { for: 'paid' },
+  ]);
+  it('reads rules, skipping ones without a logo', () => {
+    expect(secondary).toHaveLength(2);
+    expect(secondary[1].label).toBe('badge-b');
+    expect(parseSecondary(undefined)).toEqual([]);
+  });
+  it('gives paid services the logo, except the ones listed', () => {
+    expect(secondaryLogoFor('netflix', secondary, services)).toEqual({ logo: 'pass-a', label: 'Pass A' });
+    expect(secondaryLogoFor('peacock', secondary, services)).toBeNull();
+  });
+  it('matches a listed provider, and nothing for no provider', () => {
+    expect(secondaryLogoFor('tubi', secondary, services)).toEqual({ logo: 'badge-b', label: 'badge-b' });
+    expect(secondaryLogoFor(null, secondary, services)).toBeNull();
+  });
+  it('skips a logo that cannot be shown', () => {
+    expect(secondaryLogoFor('netflix', secondary, services, (id) => id !== 'pass-a')).toBeNull();
   });
 });

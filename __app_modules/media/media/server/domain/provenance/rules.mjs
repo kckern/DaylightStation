@@ -176,3 +176,40 @@ export function rankOffers(offers, priority, canShow = () => true) {
   }
   return null;
 }
+
+/**
+ * Secondary logos: a second, smaller logo shown under the service's, decided
+ * by the config's `secondary_logos` list (first match wins):
+ *
+ *   secondary_logos:
+ *     - logo: <id>                 # a logo file in the providers folder
+ *       label: <name>              # its name (alt text, logs)
+ *       for: paid                  # `paid` (services marked paid: true) or a list of provider ids
+ *       except: [<provider>, ...]  # providers that never get it
+ */
+export function parseSecondary(raw) {
+  return Object.freeze((Array.isArray(raw) ? raw : []).map((r) => {
+    if (!r || typeof r !== 'object') return null;
+    const logo = String(r.logo ?? '').trim();
+    if (!logo) return null;
+    const paid = r.for === 'paid';
+    return Object.freeze({
+      logo,
+      label: r.label ? String(r.label) : logo,
+      paid,
+      providers: paid ? [] : list(r.for),
+      except: list(r.except),
+    });
+  }).filter(Boolean));
+}
+
+/** The secondary logo for a chosen provider, `{ logo, label }`, or null. */
+export function secondaryLogoFor(provider, secondary, services, canShow = () => true) {
+  if (!provider) return null;
+  for (const rule of secondary || []) {
+    if (rule.except.includes(provider)) continue;
+    const fits = rule.paid ? !!services?.paid?.has(provider) : rule.providers.includes(provider);
+    if (fits && canShow(rule.logo)) return { logo: rule.logo, label: rule.label };
+  }
+  return null;
+}

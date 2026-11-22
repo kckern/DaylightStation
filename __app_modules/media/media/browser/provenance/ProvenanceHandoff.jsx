@@ -8,6 +8,9 @@
  * the whole link waits (the dots slow and dim, then pick up), and the odd hang
  * on one side.
  *
+ * A secondary logo (config `secondary_logos`), when the answer carries one,
+ * sits smaller in the bottom third and fades out as the main logo docks.
+ *
  * No words: the logo and the joining lines say it. Phases come from
  * useSceneTimeline (driven by the Player's intro stage). Reference: __docs/reference/media/provenance.md
  */
@@ -89,13 +92,20 @@ export function ProvenanceHandoff({ phase, provenance, linkMs = null, random = M
       <div className={`provenance-handoff__badge${provenance.plate ? ' provenance-handoff__badge--plate' : ''}`}>
         <img className="provenance-handoff__logo" src={provenance.logoUrl} alt="" draggable={false} />
       </div>
+      {provenance.secondaryUrl ? (
+        <div className="provenance-handoff__secondary">
+          <img className="provenance-handoff__logo" src={provenance.secondaryUrl} alt="" draggable={false} />
+        </div>
+      ) : null}
     </div>
   );
 }
 
 ProvenanceHandoff.propTypes = {
   phase: PropTypes.oneOf(['linking', 'linked', 'docked', 'leaving']).isRequired,
-  provenance: PropTypes.shape({ provider: PropTypes.string, logoUrl: PropTypes.string, plate: PropTypes.bool }),
+  provenance: PropTypes.shape({
+    provider: PropTypes.string, logoUrl: PropTypes.string, plate: PropTypes.bool, secondaryUrl: PropTypes.string,
+  }),
   /** How long the video is held (5-10 s, random per play): the lines take that long to reach in. */
   linkMs: PropTypes.number,
   /** Random source for the per-play motion (injectable for tests). */

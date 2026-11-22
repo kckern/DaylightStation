@@ -26,6 +26,11 @@ describe('provenance router', () => {
     expect(res.body.provenance).toMatchObject({ provider: 'hoopla', logo: '/api/v1/provenance/logo/hoopla' });
     expect(getTitleProvenance.execute).toHaveBeenCalledWith({ ratingKey: '50896' });
   });
+  it('gives a secondary logo its URL', async () => {
+    const { a } = app({ found: { ratingKey: '1', provider: 'netflix', name: 'Netflix', secondary: { logo: 'pass-a', name: 'Pass A' } } });
+    const res = await request(a).get('/api/v1/provenance/1');
+    expect(res.body.provenance.secondary).toEqual({ logo: '/api/v1/provenance/logo/pass-a', name: 'Pass A' });
+  });
   it('returns null when nothing is confirmed, 400 for a bad key', async () => {
     const { a } = app();
     expect((await request(a).get('/api/v1/provenance/1')).body).toEqual({ provenance: null, startSec: null, resumeShowsScene: false });

@@ -39,3 +39,12 @@ describe('ProvenanceHandoff link motion', () => {
     expect(root.className).not.toMatch(/--resumed|--stalled/);
   });
 });
+
+describe('ProvenanceHandoff secondary logo', () => {
+  it('draws the secondary logo only when there is one', () => {
+    const { container, rerender } = render(<ProvenanceHandoff phase="linking" provenance={P} linkMs={6000} random={seeded(1)} />);
+    expect(container.querySelector('.provenance-handoff__secondary')).toBeNull();
+    rerender(<ProvenanceHandoff phase="linking" provenance={{ ...P, secondaryUrl: '/logo/pass-a?variant=white' }} linkMs={6000} random={seeded(1)} />);
+    expect(container.querySelector('.provenance-handoff__secondary img').getAttribute('src')).toBe('/logo/pass-a?variant=white');
+  });
+});

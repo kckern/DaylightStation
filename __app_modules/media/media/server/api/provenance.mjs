@@ -6,7 +6,8 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
  * Provenance API (mounted at /api/v1/provenance): which streaming service a
  * title is shown as coming from, for the Player's provenance bumper.
  *
- *   GET /:ratingKey      -> { provenance: { provider, name, tier, offerType, checkedAt, logo } | null,
+ *   GET /:ratingKey      -> { provenance: { provider, name, tier, offerType, checkedAt, logo,
+ *                                          secondary: { logo, name } | null } | null,
  *                             startSec: number | null, resumeShowsScene: boolean }
  *                           startSec: where a direct play of the title would
  *                           start (0 = from the top), read without side
@@ -53,7 +54,13 @@ export function createProvenanceRouter({ getTitleProvenance, logos, describePlay
       : unknownStart;
     res.set('Cache-Control', 'no-store');
     res.json({
-      provenance: found ? { ...found, logo: `/api/v1/provenance/logo/${found.provider}` } : null,
+      provenance: found
+        ? {
+          ...found,
+          logo: `/api/v1/provenance/logo/${found.provider}`,
+          secondary: found.secondary ? { ...found.secondary, logo: `/api/v1/provenance/logo/${found.secondary.logo}` } : null,
+        }
+        : null,
       startSec,
       resumeShowsScene,
     });

@@ -2,13 +2,15 @@ import { describe, it, expect, vi } from 'vitest';
 import { GetTitleProvenance } from './GetTitleProvenance.mjs';
 import { parseRules } from '../../domain/provenance/rules.mjs';
 import { parseServices } from '../../domain/provenance/provenance.mjs';
+import { parseSecondary } from '../../domain/provenance/rules.mjs';
 
 // The household's service map, as config spells it (only what these tests use).
 const SERVICES = parseServices([
   { provider: 'tubi', label: 'Tubi', names: ['Tubi TV', 'Tubi'] },
   { provider: 'hoopla', label: 'Hoopla', names: ['Hoopla'] },
   { provider: 'vidangel', label: 'VidAngel', names: ['VidAngel'] },
-  { provider: 'peacock', label: 'Peacock', names: ['Peacock'] },
+  { provider: 'peacock', label: 'Peacock', names: ['Peacock'], paid: true },
+  { provider: 'netflix', label: 'Netflix', names: ['Netflix'], paid: true },
 ]);
 
 const NOW = new Date('2026-11-20T12:00:00Z');
@@ -50,6 +52,16 @@ describe('GetTitleProvenance', () => {
     expect(availability.sources).toHaveBeenCalledWith('tt0065126');
     expect(store.data['100'].offers.map((o) => o.provider)).toEqual(['netflix', 'hoopla']);
     expect(store.put.mock.calls[0][2]).toEqual({ month: '2026-11', quota: 2500, quotaUsed: 10 });
+  });
+
+  it('adds the secondary logo the config names for the chosen service', async () => {
+    const secondary = parseSecondary([{ logo: 'pass-a', label: 'Pass A', for: 'paid', except: ['peacock'] }]);
+    const netflix = build({ identity: MOVIE, sources: [{ name: 'Netflix', type: 'sub' }], policy: { secondary } });
+    expect(await netflix.uc.execute({ ratingKey: '100' })).toMatchObject({ provider: 'netflix', secondary: { logo: 'pass-a', name: 'Pass A' } });
+    const peacock = build({ identity: MOVIE, sources: [{ name: 'Peacock', type: 'sub' }], policy: { secondary } });
+    expect((await peacock.uc.execute({ ratingKey: '100' })).secondary).toBeNull();
+    const noFile = build({ identity: MOVIE, sources: [{ name: 'Netflix', type: 'sub' }], policy: { secondary }, logos: (p) => p !== 'pass-a' });
+    expect((await noFile.uc.execute({ ratingKey: '100' })).secondary).toBeNull();
   });
 
   it('serves a fresh record without a lookup (the title\'s facts are still read, for the rules)', async () => {

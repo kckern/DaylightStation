@@ -29,6 +29,11 @@ plays from Plex and the bumper signals provenance only.
 | `docked` (~4 s) | playing | field and lines dissolve; logo moves to the top-right corner at 80% opacity |
 | `leaving` (~0.9 s) | playing | corner logo fades |
 
+**A secondary logo** (config `secondary_logos`), when the answer carries one, sits
+smaller in the bottom third, below the lines, arriving just after the main logo; it
+fades out when the field clears and never docks. One that will not load is left
+out (warn `provenance.secondary-logo.failed`) and the scene plays without it.
+
 Lines and dots take the service's brand colour (`PROVIDER_ACCENTS` in
 `ProvenanceHandoff.jsx`; white otherwise). Timings are `SCENE_TIMING` in
 `useSceneTimeline.js`; the hold is drawn uniformly from `linkMinMs`–`linkMaxMs` once
@@ -181,12 +186,28 @@ fallbacks:
 An older file with `providers: { free: [...], subscribed: [...] }` and no `priority`
 still works: it reads as free > subscribed > any.
 
+### Secondary logos
+
+```yaml
+secondary_logos:
+  - logo: plex-pass          # a logo file in the providers folder
+    label: Plex Pass         # its name (alt text, logs)
+    for: paid                # services marked `paid: true` in `services`, or a list of provider ids
+    except: [vidangel, living-scriptures, peacock, byutv, prime-video]
+```
+
+First match wins, after the service is chosen (any stage). The code knows only the
+rule; which logo, which services and the exceptions are all config. A rule whose
+logo file is missing is skipped. Household: Plex Pass under every paid service
+except VidAngel, Living Scriptures, Peacock, BYUtv and Prime Video.
+
 ### Services: names to provider ids
 
 The availability service spells services many ways ("Tubi TV", "Peacock Premium",
 "Paramount+ (Via Amazon Prime)"). The config's `services` list maps them; the code
 holds no service names. Each entry has a `provider` (the logo file name; `none`
-drops the name), an optional `label` (alt text, logs), and `names` (exact, ignoring
+drops the name), an optional `label` (alt text, logs), `paid: true` for a paid
+subscription (used by `secondary_logos`), and `names` (exact, ignoring
 case, spaces and punctuation, `+` as "plus") and/or `match` (a case-insensitive
 regular expression for a family of names). The first entry that fits wins, so put
 specific names above patterns ("Amazon Freevee" above the Amazon pattern). A
@@ -233,7 +254,7 @@ to 1.5 s and the scene still appears if the answer is in before the film has rol
 
 `/api/v1/provenance`:
 
-- `GET /:ratingKey` (bare or `plex:`-prefixed) → `{ provenance: { ratingKey, provider, name, tier, source, rule, offerType, checkedAt, logo } | null, startSec: number | null, resumeShowsScene: boolean }`.
+- `GET /:ratingKey` (bare or `plex:`-prefixed) → `{ provenance: { ratingKey, provider, name, tier, source, rule, offerType, checkedAt, logo, secondary: { logo, name } | null } | null, startSec: number | null, resumeShowsScene: boolean }`.
   `startSec` and `resumeShowsScene` (`DescribePlayStart`) are read only when a
   provider was found; unknown when the read failed (warn `provenance.start.read-failed`).
 - `GET /logo/:provider[?variant=white]` → the logo (white variant preferred when

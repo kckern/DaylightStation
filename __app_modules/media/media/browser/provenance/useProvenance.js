@@ -6,7 +6,9 @@
  * status: idle | loading | ready | none | failed
  *   idle  -> disabled, or not a numeric Plex rating key (never fetched)
  *   failed -> the request failed or did not answer in PROVENANCE_FETCH_TIMEOUT_MS
- *   ready -> { provider, name, tier, logo, logoUrl, plate, startSec } with the logo loaded;
+ *   ready -> { provider, name, tier, logo, logoUrl, plate, startSec, secondaryUrl } with the logo loaded;
+ *            secondaryUrl = a second, smaller logo for under the service's (config
+ *            `secondary_logos`), null when there is none or it would not load;
  *            plate = the logo is too dark for the field and gets a light plate;
  *            startSec = where a play would start (0 = the top), null if unknown
  *   none  -> nothing confirmed (or the logo would not load): no handoff
@@ -86,12 +88,25 @@ export function useProvenance(contentId, { enabled = true } = {}) {
         }
         // A logo too dark for the field (Disney+ navy) is drawn on a light plate.
         const plate = img ? imageNeedsPlate(img) : false;
+        // The secondary logo is extra: one that will not load is left out, the scene still plays.
+        let secondaryUrl = p.secondary?.logo ? logoUrlFor(p.secondary) : null;
+        if (secondaryUrl) {
+          try {
+            await preload(secondaryUrl);
+          } catch {
+            logger().warn('provenance.secondary-logo.failed', { ratingKey: rk, logo: p.secondary.logo });
+            secondaryUrl = null;
+          }
+        }
         // Where a play of the title would start (0 = the top), or null when unknown.
         const startSec = Number.isFinite(body?.startSec) ? body.startSec : null;
         // A resume after a long absence still opens with the scene.
         const resumeShowsScene = body?.resumeShowsScene === true;
-        if (settle({ data: { ...p, logoUrl, plate, startSec, resumeShowsScene }, status: 'ready' })) {
-          logger().info('provenance.ready', { ratingKey: rk, provider: p.provider, tier: p.tier, plate, startSec, elapsedMs: Date.now() - startedAt });
+        if (settle({ data: { ...p, logoUrl, plate, startSec, resumeShowsScene, secondaryUrl }, status: 'ready' })) {
+          logger().info('provenance.ready', {
+            ratingKey: rk, provider: p.provider, tier: p.tier, plate, startSec,
+            secondary: secondaryUrl ? p.secondary.logo : null, elapsedMs: Date.now() - startedAt,
+          });
         }
       })
       .catch((error) => {

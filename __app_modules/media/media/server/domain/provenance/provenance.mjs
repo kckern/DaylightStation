@@ -36,14 +36,17 @@ const asList = (v) => (Array.isArray(v) ? v : v == null ? [] : [v]).map((x) => S
  *     label: Prime Video           # display name (alt text, logs)
  *     names: [Prime Video, Amazon Prime]   # exact, ignoring case/spaces/punctuation, + = plus
  *     match: '\bamazon\b'          # or a regular expression (case-insensitive)
+ *     paid: true                   # a paid subscription (for `secondary` rules)
  *
- * Returns `{ entries, labels, invalid }`; `invalid` lists `match` patterns
- * that did not compile (that entry matches by `names` only).
+ * Returns `{ entries, labels, paid, invalid }`; `paid` is the set of paid
+ * provider ids; `invalid` lists `match` patterns that did not compile (that
+ * entry matches by `names` only).
  */
 export function parseServices(raw) {
   const invalid = [];
   const entries = [];
   const labels = {};
+  const paid = new Set();
   for (const item of Array.isArray(raw) ? raw : []) {
     if (!item || typeof item !== 'object') continue;
     const provider = String(item.provider ?? '').trim();
@@ -55,8 +58,9 @@ export function parseServices(raw) {
     const names = asList(item.names).map(normalizeServiceName).filter(Boolean);
     entries.push(Object.freeze({ provider, names, patterns }));
     if (item.label && provider !== NO_PROVIDER && !labels[provider]) labels[provider] = String(item.label);
+    if (item.paid === true && provider !== NO_PROVIDER) paid.add(provider);
   }
-  return Object.freeze({ entries: Object.freeze(entries), labels: Object.freeze(labels), invalid });
+  return Object.freeze({ entries: Object.freeze(entries), labels: Object.freeze(labels), paid, invalid });
 }
 
 /**

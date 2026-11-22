@@ -134,6 +134,20 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
     }
   }
 
+  // A second, smaller logo in the bottom third (config `secondary_logos`): it
+  // arrives after the main logo and fades out when the field clears.
+  &__secondary {
+    position: absolute;
+    left: 50%;
+    top: 82%;
+    width: 16cqw;
+    height: 9cqh;
+    transform: translate(-50%, -50%);
+    opacity: 0;
+    animation: ph-secondary-in 700ms $ph-ease 350ms forwards;
+    transition: opacity 600ms ease;
+  }
+
   &__logo {
     display: block;
     width: 100%;
@@ -158,6 +172,7 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
     // Animations with fill-mode hold their last frame over plain declarations: drop them.
     .provenance-handoff__field { opacity: 0; }
     .provenance-handoff__link { opacity: 0; }
+    .provenance-handoff__secondary { animation: none; opacity: 0; }
     .provenance-handoff__badge {
       animation: none;
       left: 91%;
@@ -205,6 +220,11 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
 @keyframes ph-logo-in {
   from { opacity: 0; transform: translate(-50%, -46%) scale(0.94); }
   to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes ph-secondary-in {
+  from { opacity: 0; transform: translate(-50%, -40%); }
+  to { opacity: 0.92; transform: translate(-50%, -50%); }
 }
 
 @keyframes ph-spark {
