@@ -20,6 +20,7 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
   const [expanded, setExpanded] = useState(false);
   const [fullHeight, setFullHeight] = useState(false);
   const contentRef = useRef(null);
+  const readMoreOwnsFocus = useRef(false);
   const [overflows, setOverflows] = useState(false);
   const publishedDate = article.published ? new Date(article.published) : null;
   const hasPublishedDate = Number.isFinite(publishedDate?.getTime());
@@ -41,6 +42,12 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
     observer.observe(content);
     return () => observer.disconnect();
   }, [article.content, article.preview, expanded]);
+
+  useEffect(() => {
+    if (!fullHeight || !readMoreOwnsFocus.current) return;
+    readMoreOwnsFocus.current = false;
+    contentRef.current?.focus({ preventScroll: true });
+  }, [fullHeight]);
 
   const handleExpand = () => {
     if (!expanded) {
@@ -144,11 +151,16 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
             <>
               {article.content ? <div
                   ref={contentRef}
+                  tabIndex={-1}
                   className={contentClassName}
                   dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(article.content) }}
-                /> : <p ref={contentRef} className={contentClassName}>{article.preview || 'No article text is available.'}</p>}
+                /> : <p ref={contentRef} tabIndex={-1} className={contentClassName}>{article.preview || 'No article text is available.'}</p>}
               {overflows && !fullHeight && (
-                <button className="article-readmore" onClick={(e) => { e.stopPropagation(); setFullHeight(true); }}>
+                <button className="article-readmore" onClick={(e) => {
+                  e.stopPropagation();
+                  readMoreOwnsFocus.current = document.activeElement === e.currentTarget;
+                  setFullHeight(true);
+                }}>
                   Read more
                 </button>
               )}
