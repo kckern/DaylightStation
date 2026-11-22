@@ -72,12 +72,13 @@ export function RenameScreenDialog({
           }}
           data-testid={`${testid}-name`}
           data-autofocus
+          disabled={busy}
         />
         {withRoom && (
           <TextInput label="Room" value={room} data-testid={`${testid}-room`} onChange={event => {
             draftRef.current.roomEdited = true;
             setRoom(event.currentTarget.value);
-          }} />
+          }} disabled={busy} />
         )}
         {answer?.code === 'NAME_TAKEN' && (
           <div data-testid={`${testid}-taken`} role="alert">
