@@ -38,7 +38,9 @@ export default function PlayerSection({ data, onPlay, activeMedia, item, playbac
     );
   }
 
-  const { playing, currentTime, duration, toggle, seek, progressElRef } = playback || {};
+  const { playing, currentTime, duration, toggle, seek } = playback || {};
+  const seekMax = Number.isFinite(duration) && duration > 0 ? duration : 0;
+  const seekValue = Math.min(Math.max(Number(currentTime) || 0, 0), seekMax);
 
   return (
     <div style={{
@@ -87,31 +89,19 @@ export default function PlayerSection({ data, onPlay, activeMedia, item, playbac
           Stop
         </button>
       </div>
-      <div
-        style={{
-          height: '4px',
-          background: '#25262b',
-          borderRadius: '2px',
-          cursor: 'pointer',
-          position: 'relative',
-        }}
-        onClick={(e) => {
-          if (!duration) return;
-          const rect = e.currentTarget.getBoundingClientRect();
-          const pct = (e.clientX - rect.left) / rect.width;
-          seek?.(pct * duration);
-        }}
-      >
-        <div
-          ref={progressElRef}
-          style={{
-            height: '100%',
-            background: '#228be6',
-            borderRadius: '2px',
-            width: '0%',
-          }}
-        />
-      </div>
+      <input
+        className="feed-detail-player-seek"
+        type="range"
+        min="0"
+        max={seekMax}
+        step="1"
+        value={seekValue}
+        disabled={seekMax === 0}
+        onChange={event => seek?.(Number(event.target.value))}
+        aria-label="Playback position"
+        aria-valuetext={`${formatFeedPlaybackTime(currentTime)} of ${formatFeedPlaybackTime(duration)}`}
+        style={{ width: '100%', accentColor: '#228be6', cursor: seekMax > 0 ? 'pointer' : 'not-allowed' }}
+      />
     </div>
   );
 }

@@ -206,6 +206,12 @@
   padding: 2rem;
 }
 
+.feed-detail-player-seek:focus-visible {
+  outline: 2px solid var(--feed-accent, #228be6);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
 .detail-section {
   padding: 0 1rem 0.75rem;
 }

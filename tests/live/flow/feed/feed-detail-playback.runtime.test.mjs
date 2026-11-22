@@ -36,7 +36,7 @@ test.describe('Feed Detail – Player section playback', () => {
     await expect(sections.first(), 'Detail sections should load').toBeVisible({ timeout: 10000 });
 
     // Find the Play button inside a player section
-    // PlayerSection renders a full-width <button> with SVG play icon + text "Play"
+    // PlayerSection renders a full-width button with the shared Play icon and text.
     const detailPlayBtn = sections.locator('button', { hasText: 'Play' }).first();
     await expect(
       detailPlayBtn,
