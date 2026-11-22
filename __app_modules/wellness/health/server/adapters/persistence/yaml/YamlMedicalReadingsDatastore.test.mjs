@@ -4,23 +4,23 @@ import { YamlMedicalReadingsDatastore } from "./YamlMedicalReadingsDatastore.mjs
 const READING = { id: 'r1', metric: 'bp', value: 120, value2: 80, unit: 'mmHg', date: '2026-09-02', note: '' };
 
 describe('YamlMedicalReadingsDatastore.save', () => {
-  it('resolves when dataService.user.write succeeds (returns true)', async () => {
+  it('resolves when dataService.user.writeAtomic confirms success', async () => {
     const store = new YamlMedicalReadingsDatastore({
-      dataService: { user: { read: () => ({ readings: [] }), write: () => true } },
+      dataService: { user: { read: () => ({ readings: [] }), writeAtomic: () => true } },
     });
     await expect(store.save({ readings: [READING] }, 'kckern')).resolves.toBeUndefined();
   });
 
-  it('resolves when dataService.user.write returns undefined (legacy/void success)', async () => {
+  it('rejects when dataService.user.writeAtomic does not confirm success', async () => {
     const store = new YamlMedicalReadingsDatastore({
-      dataService: { user: { read: () => ({ readings: [] }), write: () => undefined } },
+      dataService: { user: { read: () => ({ readings: [] }), writeAtomic: () => undefined } },
     });
-    await expect(store.save({ readings: [READING] }, 'kckern')).resolves.toBeUndefined();
+    await expect(store.save({ readings: [READING] }, 'kckern')).rejects.toThrow(/MEDICAL_WRITE_FAILED/);
   });
 
-  it('rejects with a coded MEDICAL_WRITE_FAILED error when write returns false', async () => {
+  it('rejects with a coded MEDICAL_WRITE_FAILED error when writeAtomic returns false', async () => {
     const store = new YamlMedicalReadingsDatastore({
-      dataService: { user: { read: () => ({ readings: [] }), write: () => false } },
+      dataService: { user: { read: () => ({ readings: [] }), writeAtomic: () => false } },
     });
     await expect(store.save({ readings: [READING] }, 'kckern')).rejects.toThrow(/MEDICAL_WRITE_FAILED/);
     try {

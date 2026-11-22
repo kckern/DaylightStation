@@ -191,10 +191,10 @@ export class DataService {
         return entry.found ? entry.value ?? null : null;
       },
 
-      /** Confirmed atomic replacement; the old document survives a failed write. */
+      /** Atomic replacement preserving mode; pre-rename failures leave the old document intact. */
       writeAtomic(relativePath, data, username = null) {
         try {
-          saveYamlToPathAtomic(this.resolvePath(relativePath, username), data, { durable: true, lineWidth: -1, quotingType: '"' });
+          saveYamlToPathAtomic(this.resolvePath(relativePath, username), data, { durable: true, preserveMode: true, lineWidth: -1, quotingType: '"' });
           return true;
         } catch { return false; }
       },
@@ -254,10 +254,10 @@ export class DataService {
         const fullPath = this.resolvePath(relativePath, householdId);
         return writeYamlFile(fullPath, data);
       },
-      /** Confirmed atomic replacement for recoverable cross-owner publication. */
+      /** Confirmed atomic replacement preserving the existing mode for cross-owner publication. */
       writeAtomic(relativePath, data, householdId = null) {
         try {
-          saveYamlToPathAtomic(this.resolvePath(relativePath, householdId), data, { durable: true, lineWidth: -1, quotingType: '"' });
+          saveYamlToPathAtomic(this.resolvePath(relativePath, householdId), data, { durable: true, preserveMode: true, lineWidth: -1, quotingType: '"' });
           return true;
         } catch { return false; }
       },

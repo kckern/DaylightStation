@@ -35,8 +35,8 @@ export class YamlMedicalReadingsDatastore extends IMedicalReadingsDatastore {
         code: 'INVALID_MEDICAL_READINGS', userId,
       });
     }
-    const result = this.#dataService.user.write?.(YamlMedicalReadingsDatastore.MEDICAL_PATH, doc, userId);
-    if (result === false) {
+    const result = this.#dataService.user.writeAtomic?.(YamlMedicalReadingsDatastore.MEDICAL_PATH, doc, userId);
+    if (result !== true) {
       const err = new Error(`MEDICAL_WRITE_FAILED: could not write medical readings to ${YamlMedicalReadingsDatastore.MEDICAL_PATH} for user ${userId}`);
       err.code = 'MEDICAL_WRITE_FAILED';
       throw err;
