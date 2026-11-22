@@ -280,7 +280,7 @@ export default function FeedSearch() {
         <button type="submit">Search</button>
       </form>
       <div className="feed-filter-tabs" role="group" aria-label="Search filters">
-        {['all', 'unread', 'saved', 'archived'].map(state => (
+        {['all', 'unread', 'read', 'saved', 'archived'].map(state => (
           <button key={state} className={activeState === state ? 'active' : ''}
             aria-pressed={activeState === state}
             onClick={() => setFilter('state', state === 'all' ? '' : state)}>{state}</button>
