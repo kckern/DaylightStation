@@ -1,4 +1,4 @@
-# Provenance bumper
+# Provenance scene
 
 Before a movie or show starts, the player can name the streaming service it is
 "from": the service's logo on a dark field, two lines reaching in from either side
@@ -6,13 +6,16 @@ with dots pulsing between them, then, when the film starts, the lines meet, the 
 clears and the logo shrinks into the top-right corner and fades. There are no words
 on screen.
 
-It appears only for **confirmed** availability, and by default only before
-**movies** (`kinds: [movie]`; add `show` for TV). The playback presentation contract
-is page-global: the intro is installed for every player on a page that loaded the
-Media entry, Fitness, Piano and School included, so the server-side `kinds` policy is
-the guard, and shows are opt-in to keep a workout or lesson episode from getting a
-service intro. A title found on no known service, one whose answer is not in before the
-film has rolled 1 s, a resume, or a recovery remount mid-film shows nothing.
+Which service is shown is decided by the household's **rules** (see "Choosing the
+service"): overrides, then the availability service's offers by priority group, then
+fallbacks, so every title in scope can be represented even when the availability
+service knows nothing about it. Scope is `kinds` (movies and shows; a show maps at the
+show level, so every episode of Ted Lasso gets Apple TV) and `libraries` (by name;
+Home Video Archive and Fitness stay out). The playback presentation contract is
+page-global: the intro is installed for every player on a page that loaded the Media
+entry, Fitness, Piano and School included, so the server-side scope is the guard. A
+title out of scope, one whose answer is not in before the film has rolled 1 s, a
+resume (unless after a long absence), or a recovery remount mid-film shows nothing.
 
 Later this is meant to front real handoffs to those services; today the film still
 plays from Plex and the bumper signals provenance only.
@@ -21,7 +24,7 @@ plays from Plex and the bumper signals provenance only.
 
 | Phase | Video | Scene |
 |---|---|---|
-| `linking` (random 5–10 s per play) | loading, or held on its first frame | field covers the video at once; logo fades in; lines creep in from both edges in uneven bursts and stalls over the whole hold; three dots pulse in the gap |
+| `linking` (random 5–10 s per play) | loading, or held on its first frame | field covers the video at once; logo fades in; lines creep in from both edges, with a new motion every play (below); three dots pulse in the gap |
 | `linked` (~0.7 s) | resumed; begins on the video's `playing` | gap closes, a spark where the lines meet |
 | `docked` (~4 s) | playing | field and lines dissolve; logo moves to the top-right corner at 80% opacity |
 | `leaving` (~0.9 s) | playing | corner logo fades |
@@ -32,6 +35,15 @@ Lines and dots take the service's brand colour (`PROVIDER_ACCENTS` in
 per title, handed to the Player as the intro's `minHoldMs`, and passed to the scene as
 `--ph-link-ms`, so the lines take exactly that long. The Player holds longer if the
 video is still loading.
+
+**The connecting motion** is new for every play (`linkCurve.js`, `makeLinkPlan`): one
+or two stops where the whole link waits (both lines freeze; the dots slow to a
+2.4 s pulse and dim, then pick up with a hop as it moves again), uneven bursts between
+them, and often a hang on one side only (the sides never freeze or move off on the
+same frame). Stops fall between 10% and 86% of the hold and take at most 42% of it;
+the lines always arrive at full reach exactly when the hold ends. The plan is injected
+as per-play `@keyframes` for each line; the stops are timers for the dots
+(`provenance-handoff--stalled`, `--resumed`).
 
 **Contrast.** When the logo preloads, the player measures it (`logoContrast.js`): the
 mean relative luminance of its opaque pixels against the field, as a WCAG ratio. Under
@@ -67,7 +79,13 @@ contract and the intro slot" in `__docs/reference/content/content-playback.md`):
   (`INTRO_COVER_CEILING_MS`) ends the intro, so a broken stream is never hidden
   behind the scene.
 - It shows nothing on a resume (start past 5 s, including the resume target a
-  remount carries) or on a recovery remount.
+  remount carries) or on a recovery remount, **except** a resume after a long
+  absence: the answer's `resumeShowsScene` (last played more than
+  `scene.resume_after_hours`, default 6, ago) becomes the intro's `resumeOk`, and the
+  scene covers the resume point instead.
+- **A restart replays it.** Once the scene is done (or was off for a resume), a seek
+  from 60 s or later back to within 2 s of the top replays the scene as a fresh
+  start: the video is held at the top for a new hold (`intro.replay`).
 - The scene is drawn in the Player's intro layer, below its loading layer: the
   source-healing wait, its Skip and the exhausted/held recovery UI always paint over
   the scene.
@@ -82,41 +100,85 @@ on a filtered title it follows the scene instead of covering it.
 
 ## Choosing the service
 
-A title's streaming offers are subscription (`sub`) and free (`free`) listings only;
-rent and buy listings never count. The household's tiers decide which one wins:
+The rules live in `provenance.yml` (`domain/provenance/rules.mjs` reads them). Three
+stages, each read top to bottom, first match wins:
 
-1. **free** services, in configured order (Hoopla, Tubi, ...)
-2. **subscribed** services, in configured order (Prime Video, Peacock)
-3. any **other** known service, in the order found (Netflix, Disney+, ...)
+1. **overrides** beat the availability service. A match spends no lookup.
+   Household: content filter active (certified for the `family` profile, the
+   player's own default-on test) → VidAngel; collection Living Scriptures → Living
+   Scriptures; studio MagellanTV, CuriosityStream, BYUtv → their own service.
+2. **priority** groups rank the availability service's offers. Only subscription
+   (`sub`) and free (`free`) listings count; rent and buy never do. Household:
+   subscribed (Prime Video, Peacock, YouTube TV) > library (Hoopla, Kanopy) > free
+   (Tubi, Pluto TV, Roku Channel, Crackle, YouTube) > any other service with a logo.
+3. **fallbacks** when no offer qualifies. Household: movies before 1950 → Internet
+   Archive; movies under 40 minutes → YouTube; the documentary libraries →
+   CuriosityStream; then by studio or network (Universal/NBC → Peacock, Paramount/CBS
+   → Paramount+, Warner/HBO → Max, Disney/Fox/Marvel → Disney+, MGM/Amazon → Prime
+   Video, Columbia/Sony → Netflix, Angel Studios → Living Scriptures, ...); then
+   anything else → Peacock or Prime Video.
 
-A service qualifies only if it has a logo in `data/content/providers/`. Services
-without a logo are recorded but not shown.
+A rule's `when` holds when all of its keys do; a list matches any item, case
+insensitive:
+
+| Key | Matches |
+|---|---|
+| `kind` | `movie`, `show` (an episode answers as its show) |
+| `library` | the library's name |
+| `studio` | whole words in the studio (or network) name: `MGM` matches "Metro-Goldwyn-Mayer (MGM)", `AMC` does not match "DreamCrew" |
+| `collection`, `label` | one of the title's collections or labels |
+| `content_filter: active` | the content filter turns on for it by default |
+| `year_before`, `shorter_than_min`, `longer_than_min` | year, running time in minutes (unknown never matches) |
+
+`when: always` (or no `when`) matches anything; an unknown key never matches, so a
+typo cannot catch every title. A rule's `provider` may be a list: one is picked per
+title, stably (a hash of the title's key), so a title always lands on the same one. A
+rule whose provider has no logo in `data/content/providers/` is skipped, and the
+next rule is tried. The facts (studio, collections, labels, library, year, length)
+come from the media-server adapter on every play; nothing in the rules names the
+media server.
+
+The answer's `source` is `override`, `availability` or `fallback`; `tier` is the
+priority group for an availability answer; `rule` names the rule that matched.
 
 ## Files
 
 | What | Where |
 |---|---|
-| Household policy (tiers, refresh, reserve) | `data/household/media/provenance.yml` (registry key `provenance`) |
+| Household policy (scope, rules, refresh, reserve, scene) | `data/household/media/provenance.yml` (registry key `provenance`) |
 | Availability cache (machine-written) | `media/content-providers/availability.yml` |
 | Logos | `data/content/providers/<id>.svg` or `.png`; `<id>.white.svg` for a black logo on the dark field; `sources.yml` records where each came from |
 | API key | system auth `watchmode.yml` → `api_key` |
 
 ```yaml
-# data/household/media/provenance.yml
+# data/household/media/provenance.yml (abridged)
 enabled: true
-kinds: [movie]        # add `show` for TV shows
-lookup:
-  region: US
-  refresh_days: 30
-  quota_reserve: 100
-providers:
-  free: [hoopla, tubi, pluto-tv, kanopy, roku-channel]
-  subscribed: [prime-video, peacock]
+kinds: [movie, show]
+libraries: [Movies, Documentaries, TV Shows, Documentary Series]
+lookup: { region: US, refresh_days: 30, quota_reserve: 100 }
+scene: { resume_after_hours: 6 }
+overrides:
+  - { name: content filter, provider: vidangel, when: { content_filter: active } }
+  - { name: living scriptures, provider: living-scriptures, when: { collection: [Living Scriptures] } }
+priority:
+  - { name: subscribed, providers: [prime-video, peacock, youtube-tv] }
+  - { name: library, providers: [hoopla, kanopy] }
+  - { name: free, providers: [tubi, pluto-tv, roku-channel, crackle, youtube] }
+  - { name: other, providers: any }
+fallbacks:
+  - { name: early film, provider: archive-org, when: { kind: [movie], year_before: 1950 } }
+  - { name: universal, provider: peacock, when: { studio: [Universal, NBC] } }
+  - { name: anything else, provider: [peacock, prime-video], when: always }
 ```
+
+An older file with `providers: { free: [...], subscribed: [...] }` and no `priority`
+still works: it reads as free > subscribed > any.
 
 Provider ids: `netflix`, `prime-video`, `hulu`, `disney-plus`, `peacock`, `hbo-max`,
 `paramount-plus`, `apple-tv`, `tubi`, `pluto-tv`, `hoopla`, `kanopy`, `roku-channel`,
-`amc-plus`, `philo`, `directv`. A few spellings map to these in `providerIdFor`
+`amc-plus`, `philo`, `directv`, `youtube`, `youtube-tv`, `vimeo`, `dailymotion`,
+`crackle`, `curiosity-stream`, `magellan-tv`, `archive-org`, `byutv`, `vidangel`,
+`living-scriptures`. A few spellings map to these in `providerIdFor`
 (domain); **any other service is identified by its name's slug** ("Sling TV" →
 `sling-tv`, "AMC+" → `amc-plus`), so adding a service is only a matter of dropping
 `<slug>.svg` into the providers folder. It is seen within a minute, and stored
@@ -131,6 +193,7 @@ mount), and the answer is cached:
 
 - A movie or show is recorded under its own rating key; an episode or season under
   its show.
+- An override that matches spends no lookup at all.
 - A kind outside `kinds` (a music track; a show when only movies are on) spends no
   lookup and records nothing. The Player asks for every Plex title it starts,
   music included, so this is what keeps the allowance for films.
@@ -152,9 +215,9 @@ to 1.5 s and the scene still appears if the answer is in before the film has rol
 
 `/api/v1/provenance`:
 
-- `GET /:ratingKey` (bare or `plex:`-prefixed) → `{ provenance: { ratingKey, provider, name, tier, offerType, checkedAt, logo } | null, startSec: number | null }`.
-  `startSec` is read only when a provider was found; `null` when unknown or the read
-  failed (warn `provenance.start.read-failed`).
+- `GET /:ratingKey` (bare or `plex:`-prefixed) → `{ provenance: { ratingKey, provider, name, tier, source, rule, offerType, checkedAt, logo } | null, startSec: number | null, resumeShowsScene: boolean }`.
+  `startSec` and `resumeShowsScene` (`DescribePlayStart`) are read only when a
+  provider was found; unknown when the read failed (warn `provenance.start.read-failed`).
 - `GET /logo/:provider[?variant=white]` → the logo (white variant preferred when
   asked, else the base logo); cached for a day
 
@@ -162,11 +225,12 @@ to 1.5 s and the scene still appears if the answer is in before the film has rol
 
 | Layer | Path (under `__app_modules/media/media/`) |
 |---|---|
-| Domain rules | `server/domain/provenance/provenance.mjs` |
-| Use case | `server/application/provenance/GetTitleProvenance.mjs`, ports in `ports/` |
+| Domain rules | `server/domain/provenance/provenance.mjs` (offers, ids, freshness), `rules.mjs` (the household's rules) |
+| Use cases | `server/application/provenance/GetTitleProvenance.mjs`, `DescribePlayStart.mjs`, ports in `ports/` |
 | Adapters | `server/adapters/provenance/` (Watchmode, Plex identity, YAML store, logo catalog) |
 | Route + wiring | `server/api/provenance.mjs`, `server/composition/provenance.mjs` |
-| Player | `browser/provenance/` (`useProvenance`, `useProvenanceIntro`, `useSceneTimeline`, `ProvenanceHandoff`, `playbackPresentation.jsx`); installed by `browser/playback.mjs` as the Player's `useVideoIntro` |
+| Player | `browser/provenance/` (`useProvenance`, `useProvenanceIntro`, `useSceneTimeline`, `ProvenanceHandoff`, `linkCurve.js`, `playbackPresentation.jsx`); installed by `browser/playback.mjs` as the Player's `useVideoIntro` |
+| Content filter status | `server/composition/content-filter.mjs` returns `filterStatus.isActive` alongside its router |
 
 The Player hides its own plain spinner while the intro covers (never a state with
 something to say), so Media's loading-suppression store is only the content filter's
@@ -176,10 +240,11 @@ skip card.
 
 Backend (`context.module: provenance`): `provenance.lookup.done` (providers found,
 `quotaUsed`), `provenance.lookup.failed`, `provenance.lookup.quota-reserved`,
-`provenance.lookup.no-external-id`, `provenance.disabled` (no key or no Plex at boot).
+`provenance.lookup.no-external-id`, `provenance.content-filter.read-failed`,
+`provenance.disabled` (no key or no Plex at boot).
 
 Frontend (`component: provenance`): `provenance.ready`, `provenance.none`,
 `provenance.fetch.failed` (`error: 'timeout'` after 8 s), `provenance.logo.failed`.
 The gate itself logs from the Player (`component: intro-gate`): `intro.covering`,
-`intro.holding` (debug), `intro.playing`, `intro.off` (debug; warn for
-`cover-timeout`), `intro.resume-refused`.
+`intro.holding` (debug), `intro.playing`, `intro.replay` (`from`, `to`),
+`intro.off` (debug; warn for `cover-timeout`), `intro.resume-refused`.
