@@ -13,6 +13,7 @@ const logger = createAppLogger('health').child('medical');
 const medicalPath = 'api/v1/health/medical';
 const METRIC_SUGGESTIONS = Object.keys(MEDICAL_METRICS);
 const labelFor = (metric) => MEDICAL_METRICS[metric]?.label || metric;
+const isFiniteNumber = value => typeof value === 'number' && Number.isFinite(value);
 const formatValue = (r) => (r?.value2 != null ? `${r.value}/${r.value2}` : r?.value ?? '—');
 const readingDescription = (metric, reading) => {
   const unit = reading.unit ? ` ${reading.unit}` : '';
@@ -97,14 +98,16 @@ function MedicalReadingSheet({ onClose }) {
     logger.error('reading.add.failed', { error: error?.message });
   });
   const metric = form.metric.trim();
+  const paired = MEDICAL_METRICS[metric]?.paired === true;
   const isBp = metric === 'bp';
-  const valid = Boolean(metric) && form.value !== '' && Boolean(form.unit.trim());
+  const valid = Boolean(metric) && isFiniteNumber(form.value) && Boolean(form.unit.trim())
+    && (!paired || isFiniteNumber(form.value2));
 
   const save = async () => {
     const body = {
       metric,
       value: Number(form.value),
-      value2: isBp && form.value2 !== '' ? Number(form.value2) : null,
+      value2: paired ? Number(form.value2) : null,
       unit: form.unit,
       date: form.date,
       note: form.note,
@@ -127,8 +130,8 @@ function MedicalReadingSheet({ onClose }) {
           }))} />
         <NumberInput label={isBp ? 'Systolic' : 'Value'} value={form.value}
           onChange={(v) => setForm({ ...form, value: v })} />
-        {isBp ? (
-          <NumberInput label="Diastolic" value={form.value2}
+        {paired ? (
+          <NumberInput label={isBp ? 'Diastolic' : 'Second value'} withAsterisk value={form.value2}
             onChange={(v) => setForm({ ...form, value2: v })} />
         ) : null}
         <TextInput label="Unit" placeholder="e.g. mmHg, mg/dL, bpm" value={form.unit}
