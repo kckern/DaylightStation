@@ -9,6 +9,17 @@ const apiText = vi.fn();
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({
   DaylightAPI: (...a) => api(...a),
   DaylightAPIText: (...a) => apiText(...a),
+  daylightApiResponse: (path, init) => fetch(path, {
+    method: init.method,
+    headers: {
+      'X-Test': 'headers',
+      withContentType: String(!(init.data instanceof FormData)),
+      ...(localStorage.getItem('ds_token') ? { Authorization: `Bearer ${localStorage.getItem('ds_token')}` } : {}),
+      ...(init.contentType ? { 'Content-Type': init.contentType } : {}),
+    },
+    ...(init.data !== undefined ? { body: init.data } : {}),
+    ...(init.body !== undefined ? { body: init.body } : {}),
+  }),
   buildHeaders: (token, withContentType) => ({
     'X-Test': 'headers',
     withContentType: String(withContentType),

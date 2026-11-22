@@ -108,8 +108,8 @@ beforeAll(async () => {
       name: 'stub-logger',
       setup(build) {
         build.onLoad({ filter: /lib\/logging\/Logger\.js$/ }, () => ({ contents: LOGGER_STUB, loader: 'js' }));
-        // The page has no API; jevCrops only needs buildHeaders for the request it is not making here.
-        build.onLoad({ filter: /frontend\/src\/lib\/api\.mjs$/ }, () => ({ contents: 'export const buildHeaders = () => ({});', loader: 'js' }));
+        // The page has no API; jevCrops does not make a request in this fixture.
+        build.onLoad({ filter: /frontend\/src\/lib\/api\.mjs$/ }, () => ({ contents: 'export const daylightApiResponse = () => {};', loader: 'js' }));
       },
     }],
   });

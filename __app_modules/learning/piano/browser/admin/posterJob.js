@@ -2,7 +2,7 @@
  * Making and uploading generated posters: one from the engraving already on the
  * score page, or a walk over every score without a poster in a hidden host.
  */
-import { buildHeaders } from "../../../../../frontend/src/lib/api.mjs";
+import { daylightApiResponse } from "../../../../../frontend/src/lib/api.mjs";
 import { extractPerStaffGeometry } from "../../../../../__capabilities/music-notation/browser/renderers/osmdRender.js";
 import { posterCrop, posterSvg, POSTER_SYSTEMS } from "./posterSvg.js";
 
@@ -34,10 +34,10 @@ export function posterFromEngraving({ svg, staffBoxes, systems = POSTER_SYSTEMS 
 export async function uploadPoster(id, text) {
   let response;
   try {
-    response = await fetch(`${POSTER_PATH}?id=${encodeURIComponent(id)}`, {
+    response = await daylightApiResponse(`${POSTER_PATH}?id=${encodeURIComponent(id)}`, {
       method: 'POST',
-      headers: { ...buildHeaders(localStorage.getItem('ds_token'), false), 'Content-Type': 'image/svg+xml' },
       body: text,
+      contentType: 'image/svg+xml',
     });
   } catch (err) {
     return { ok: false, code: 'network', status: 0, message: err?.message };

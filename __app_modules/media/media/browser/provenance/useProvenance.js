@@ -16,6 +16,7 @@
  * Reference: __docs/reference/media/provenance.md
  */
 import { useEffect, useState } from 'react';
+import { daylightApiResponse } from '../../../../../frontend/src/lib/api.mjs';
 import { getChildLogger } from '../../../../../frontend/src/lib/logging/singleton.js';
 import { imageNeedsPlate } from './logoContrast.js';
 
@@ -66,7 +67,7 @@ export function useProvenance(contentId, { enabled = true } = {}) {
         logger().warn('provenance.fetch.failed', { ratingKey: rk, error: 'timeout', timeoutMs: PROVENANCE_FETCH_TIMEOUT_MS });
       }
     }, PROVENANCE_FETCH_TIMEOUT_MS);
-    fetch(`/api/v1/provenance/${rk}`, { signal: ctrl?.signal })
+    daylightApiResponse(`/api/v1/provenance/${rk}`, { signal: ctrl?.signal })
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(async (body) => {
         const p = body?.provenance;

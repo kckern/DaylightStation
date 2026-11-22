@@ -12,7 +12,7 @@
  * and loads nothing external) and only the PNG leaves the page, so it never
  * needs to pass svgSafety, and the poster list drops things a crop wants to keep.
  */
-import { buildHeaders } from "../../../../../frontend/src/lib/api.mjs";
+import { daylightApiResponse } from "../../../../../frontend/src/lib/api.mjs";
 
 const PROPOSE_PATH = '/api/v1/admin/sheet-music/propose';
 export const CROP_MIN_SIDE = 280;
@@ -205,10 +205,9 @@ export async function requestJevProposal({ id, features, crops, measureCount, ta
   for (const [k, blob] of crops) body.append(`crop_${k}`, blob, `crop_${k}.png`);
   let response;
   try {
-    response = await fetch(`${PROPOSE_PATH}?id=${encodeURIComponent(id)}`, {
+    response = await daylightApiResponse(`${PROPOSE_PATH}?id=${encodeURIComponent(id)}`, {
       method: 'POST',
-      headers: buildHeaders(localStorage.getItem('ds_token'), false),
-      body,
+      data: body,
     });
   } catch (err) {
     return { ok: false, code: 'network', status: 0, message: err?.message };

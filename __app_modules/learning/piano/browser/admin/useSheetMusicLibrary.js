@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { DaylightAPI, buildHeaders } from "../../../../../frontend/src/lib/api.mjs";
+import { DaylightAPI, daylightApiResponse } from "../../../../../frontend/src/lib/api.mjs";
 
 export const LIBRARY_PATH = 'api/v1/admin/sheet-music';
 const UPLOAD_PATH = `/${LIBRARY_PATH}/upload`;
 
 /**
- * Posts one score as multipart. DaylightAPI only speaks JSON, so this is a
- * plain fetch that carries the same headers (device id, request context and
- * the session Bearer token) minus Content-Type, which the browser sets with
- * the multipart boundary. Same pattern as the agenda admin client.
+ * Posts one score as multipart. The response-level helper preserves the
+ * feature's status/body interpretation while sharing API request setup.
  *
  * Resolves `{ ok: true, result }` on 201, `{ ok: false, code, status }` on a
  * coded refusal or any other failure (`code` is null when the body had none).
@@ -20,10 +18,9 @@ export async function uploadScore({ file, folder, filename }) {
   if (filename) body.append('filename', filename);
   let response;
   try {
-    response = await fetch(UPLOAD_PATH, {
+    response = await daylightApiResponse(UPLOAD_PATH, {
       method: 'POST',
-      headers: buildHeaders(localStorage.getItem('ds_token'), false),
-      body,
+      data: body,
     });
   } catch (err) {
     return { ok: false, code: 'network', status: 0, message: err?.message };

@@ -36,23 +36,30 @@ function requestToken() {
     catch { return null; } // Same-origin requests can still authenticate with cookies.
 }
 
-function prepareApiRequest(path, { method = 'GET', data, signal, ifMatch, withContentType = true, keepalive = false } = {}) {
+function prepareApiRequest(path, { method = 'GET', data, body, contentType, signal, ifMatch, withContentType = true, keepalive = false } = {}) {
     const route = path.replace(/^\/|\/$/g, '');
     const url = `${getBaseUrl()}/${route}`;
-    const multipart = typeof FormData !== 'undefined' && data instanceof FormData;
+    const requestBody = body === undefined ? data : body;
+    const multipart = typeof FormData !== 'undefined' && requestBody instanceof FormData;
+    const serializedBody = body !== undefined
+        ? body
+        : data === undefined
+            ? undefined
+            : multipart ? data : JSON.stringify(data);
     const headers = buildHeaders(requestToken(), withContentType && !multipart);
     if (ifMatch != null) headers['If-Match'] = ifMatch;
+    if (contentType) headers['Content-Type'] = contentType;
     const options = {
         method,
         headers,
         signal,
         ...(keepalive ? { keepalive: true } : {}),
-        ...(data === undefined ? {} : { body: multipart ? data : JSON.stringify(data) }),
+        ...(serializedBody === undefined ? {} : { body: serializedBody }),
     };
     return { url, options };
 }
 
-/** Same-origin request with JSON or FormData for consumers that interpret status and body together. */
+/** Same-origin request with JSON, FormData or an explicit raw body for consumers that interpret status and body together. */
 export async function daylightApiResponse(path, init, fetcher = fetch) {
     const { url, options } = prepareApiRequest(path, init);
     return fetcher(url, options);

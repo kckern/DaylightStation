@@ -3,7 +3,11 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock("../../../../../__capabilities/music-notation/browser/renderers/osmdRender.js", () => ({
   extractPerStaffGeometry: () => [0, 1].map((system) => ({ system, staff: 0, top: system * 100, left: 0, right: 400, lineSpacing: 5 })),
 }));
-vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ buildHeaders: () => ({ 'X-Test': 'h' }) }));
+vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({
+  daylightApiResponse: (path, { method, body, contentType }) => fetch(path, {
+    method, body, headers: { 'X-Test': 'h', 'Content-Type': contentType },
+  }),
+}));
 
 import { generateMissingPosters, uploadPoster } from './posterJob.js';
 
