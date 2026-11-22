@@ -14,6 +14,10 @@ const medicalPath = 'api/v1/health/medical';
 const METRIC_SUGGESTIONS = Object.keys(MEDICAL_METRICS);
 const labelFor = (metric) => MEDICAL_METRICS[metric]?.label || metric;
 const formatValue = (r) => (r?.value2 != null ? `${r.value}/${r.value2}` : r?.value ?? '—');
+const readingDescription = (metric, reading) => {
+  const unit = reading.unit ? ` ${reading.unit}` : '';
+  return `${labelFor(metric)} on ${reading.date}, ${formatValue(reading)}${unit}`;
+};
 const emptyForm = () => ({ metric: '', value: '', value2: '', unit: '', date: localTodayISO(), note: '' });
 
 /** Grouped medical readings (BP, labs, vitals) — manual entry, no interpretation. */
@@ -25,8 +29,8 @@ export function MedicalView() {
 
   const openAdd = () => { setRemoveError(null); setOpen(true); };
 
-  const remove = async (id, metric) => {
-    if (!window.confirm('Delete this reading?')) return;
+  const remove = async (id, metric, description) => {
+    if (!window.confirm(`Delete ${description}?`)) return;
     try {
       await DaylightAPI(`${medicalPath}/${id}`, {}, 'DELETE');
       logger.info('reading.removed', { id, metric });
@@ -61,14 +65,23 @@ export function MedicalView() {
         <SectionCard key={group.metric} title={labelFor(group.metric)} className="health-medical__group">
           <StatCard label="Latest" value={formatValue(group.latest)} unit={group.unit} />
           <Stack gap={4} mt="sm">
-            {group.readings.map((r) => (
-              <div key={r.id} className="health-medical__row">
-                <span className="health-medical__date">{r.date}</span>
-                <span className="health-medical__value">{formatValue(r)}{r.unit ? ` ${r.unit}` : ''}</span>
-                {r.note ? <span className="health-medical__note">{r.note}</span> : null}
-                <Button size="compact-xs" variant="subtle" color="red" onClick={() => remove(r.id, group.metric)}>Delete</Button>
-              </div>
-            ))}
+            {group.readings.map((r) => {
+              const description = readingDescription(group.metric, r);
+              return (
+                <div key={r.id} className="health-medical__row">
+                  <span className="health-medical__date">{r.date}</span>
+                  <span className="health-medical__value">{formatValue(r)}{r.unit ? ` ${r.unit}` : ''}</span>
+                  {r.note ? <span className="health-medical__note">{r.note}</span> : null}
+                  <Button
+                    size="compact-xs"
+                    variant="subtle"
+                    color="red"
+                    aria-label={`Delete ${description}`}
+                    onClick={() => remove(r.id, group.metric, description)}
+                  >Delete</Button>
+                </div>
+              );
+            })}
           </Stack>
         </SectionCard>
       )) : null}

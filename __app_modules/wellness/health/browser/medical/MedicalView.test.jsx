@@ -18,7 +18,7 @@ it('removes a deleted reading from a replacement Medical view when its acknowled
   try {
     const mount = () => render(<MantineProvider><MedicalView /></MantineProvider>);
     const first = mount();
-    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete Resting Heart Rate on 2026-09-05, 60' }));
     expect(apiMock).toHaveBeenCalledWith('api/v1/health/medical/one', {}, 'DELETE');
     first.unmount();
     mount();
