@@ -40,9 +40,11 @@ export function setPianoConfigValue(raw, pianoId, keyPath, value) {
  */
 export async function writePianoConfigValue({ pianoId, keyPath, value, api = DaylightAPI }) {
   const current = await api(CONFIG_PATH);
-  if (typeof current?.raw !== 'string') throw new Error('could not read the current piano config');
+  if (typeof current?.raw !== 'string' || typeof current?.revision !== 'string') {
+    throw new Error('could not read the current piano config revision');
+  }
   const next = setPianoConfigValue(current.raw, pianoId, keyPath, value);
-  const result = await api(CONFIG_PATH, { raw: next.raw }, 'PUT');
+  const result = await api(CONFIG_PATH, { raw: next.raw, expectedRevision: current.revision }, 'PUT');
   if (result?.ok === false) throw new Error(result.error || 'write rejected');
   return { path: next.path, parsed: next.parsed };
 }

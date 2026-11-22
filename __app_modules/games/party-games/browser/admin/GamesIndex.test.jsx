@@ -48,10 +48,12 @@ it('refreshes after one sync, retains the schedule draft and retries a refused s
     if (pathname.includes('/admin/config/files/')) {
       if (method === 'GET') {
         configReads++;
-        return Response.json(configReads === 1 ? { parsed: null } : { parsed: { launch: { generation: configReads } } });
+        return Response.json(configReads === 1
+          ? { parsed: null, revision: `rev-${configReads}` }
+          : { parsed: { launch: { generation: configReads } }, revision: `rev-${configReads}` });
       }
       writes.push(JSON.parse(body).parsed);
-      return Response.json({ ok: writes.length > 1 });
+      return Response.json({ ok: writes.length > 1, revision: `saved-${writes.length}` });
     }
     if (pathname.endsWith('/sync/retroarch')) {
       expect(method).toBe('POST');

@@ -92,11 +92,15 @@ const GamesIndex = () => {
 
   const handleScheduleSave = async newSchedule => {
     const url = `/api/v1/admin/config/files/${configPath('games')}`;
-    const { parsed } = await DaylightAPI(url);
+    const { parsed, revision } = await DaylightAPI(url);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       throw new Error('Could not read the current games configuration.');
     }
-    const receipt = await DaylightAPI(url, { parsed: { ...parsed, schedule: newSchedule } }, 'PUT');
+    if (typeof revision !== 'string') throw new Error('Could not read the current games configuration revision.');
+    if (JSON.stringify(parsed.schedule ?? {}) !== JSON.stringify(schedule ?? {})) {
+      throw new Error('The game schedule changed elsewhere. Reload before saving.');
+    }
+    const receipt = await DaylightAPI(url, { parsed: { ...parsed, schedule: newSchedule }, expectedRevision: revision }, 'PUT');
     if (receipt?.ok !== true) throw new Error('The server did not confirm the schedule save.');
     setSchedule(newSchedule);
     logger.info('schedule.saved', { schedule: newSchedule });

@@ -2,6 +2,7 @@ import {
   ValidationError,
   NotFoundError,
   AuthorizationError,
+  ConflictError,
 } from '#apps/common/errors/SemanticErrors.mjs';
 
 export class YamlConfigFileService {
@@ -52,6 +53,12 @@ export class YamlConfigFileService {
   writeFile(rawPath, content = {}) {
     const result = this.configStore.writeEditableDocument(rawPath, content);
     this.#throwAddress(result, 'write');
+    if (result.kind === 'precondition_required') {
+      throw new ValidationError('An expected config revision is required', { code: 'PRECONDITION_REQUIRED' });
+    }
+    if (result.kind === 'conflict') {
+      throw new ConflictError('This config file changed since it was read. Refresh before saving.', { path: result.path });
+    }
     if (result.kind === 'empty') {
       throw new ValidationError('Request body must include either "raw" (YAML string) or "parsed" (object)', { code: 'EMPTY_BODY' });
     }

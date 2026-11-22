@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import yaml from 'js-yaml';
 import { IAdminConfigStore } from '#apps/admin/ports/IAdminConfigStore.mjs';
 import { HOUSEHOLD_APP_CONFIGS } from '#shared/contracts/householdConfig.mjs';
@@ -35,6 +36,9 @@ function isAllowed(relativePath) {
   return EDITABLE_DIRECTORIES.some(directory => relativePath === directory || relativePath.startsWith(`${directory}/`))
     || EDITABLE_CONFIG_FILES.includes(relativePath);
 }
+const revisionOf = raw => createHash('sha256').update(raw).digest('hex');
+const hasRevisionPrecondition = content => Object.hasOwn(content || {}, 'expectedRevision')
+  && (content.expectedRevision === null || typeof content.expectedRevision === 'string');
 
 /** Filesystem/YAML implementation of the semantic admin config boundary. */
 export class YamlAdminConfigStore extends IAdminConfigStore {
@@ -61,7 +65,8 @@ export class YamlAdminConfigStore extends IAdminConfigStore {
   #readTextRecord(configPath) {
     const absolutePath = this.#resolve(configPath);
     if (!absolutePath || !fileExists(absolutePath)) return null;
-    return { raw: readTextFromPath(absolutePath), ...this.#metadata(absolutePath) };
+    const raw = readTextFromPath(absolutePath);
+    return { raw, revision: revisionOf(raw), ...this.#metadata(absolutePath) };
   }
 
   #readYaml(configPath, fallback) {
@@ -69,12 +74,19 @@ export class YamlAdminConfigStore extends IAdminConfigStore {
     return record ? (yaml.load(record.raw) ?? fallback) : fallback;
   }
 
-  #writeText(configPath, raw) {
+  #writeText(configPath, raw, precondition = null) {
     const absolutePath = this.#resolve(configPath);
     if (!absolutePath) throw new Error('Config path escapes the data root');
     this.assertWritable(absolutePath);
+    if (precondition) {
+      const current = this.#readTextRecord(configPath);
+      if ((current?.revision ?? null) !== precondition.expectedRevision) return { kind: 'conflict' };
+    }
     writeFileAtomic(absolutePath, raw);
-    return this.#metadata(absolutePath);
+    return {
+      ...this.#metadata(absolutePath),
+      ...(precondition ? { revision: revisionOf(raw) } : {}),
+    };
   }
 
   #writeYaml(configPath, value) {
@@ -113,10 +125,16 @@ export class YamlAdminConfigStore extends IAdminConfigStore {
   writeManagedAppConfig(appId, content) {
     const configPath = APP_CONFIGS[appId];
     if (!configPath) return { kind: 'unknown_app' };
+    if (!hasRevisionPrecondition(content)) {
+      return { kind: 'precondition_required', appId, configPath };
+    }
     const encoded = this.#encode(content, { invalid: 'Invalid YAML', dump: 'Invalid YAML' });
     if (encoded.kind !== 'encoded') return { ...encoded, appId, configPath };
-    const metadata = this.#writeConfig(configPath, encoded.raw);
-    return metadata ? { kind: 'written', appId, configPath, ...metadata } : { kind: 'directory_missing', appId, configPath };
+    const metadata = this.#writeConfig(configPath, encoded.raw, { expectedRevision: content.expectedRevision });
+    if (metadata?.kind === 'conflict') return { kind: 'conflict', appId, configPath };
+    return metadata
+      ? { kind: 'written', appId, configPath, raw: encoded.raw, ...metadata }
+      : { kind: 'directory_missing', appId, configPath };
   }
 
   #editorAddress(documentId) {
@@ -151,9 +169,14 @@ export class YamlAdminConfigStore extends IAdminConfigStore {
   writeEditableDocument(documentId, content) {
     const address = this.#editorAddress(documentId);
     if (address.kind !== 'allowed') return address;
+    if (!hasRevisionPrecondition(content)) {
+      return { kind: 'precondition_required', path: address.path };
+    }
     const encoded = this.#encode(content, { invalid: 'Invalid YAML syntax', dump: 'Failed to serialize object to YAML' });
     if (encoded.kind !== 'encoded') return { ...encoded, path: address.path };
-    return { kind: 'written', path: address.path, ...this.#writeText(address.path, encoded.raw) };
+    const receipt = this.#writeText(address.path, encoded.raw, { expectedRevision: content.expectedRevision });
+    if (receipt.kind === 'conflict') return { kind: 'conflict', path: address.path };
+    return { kind: 'written', path: address.path, raw: encoded.raw, ...receipt };
   }
 
   #inspectConfig(configPath) {
@@ -161,12 +184,10 @@ export class YamlAdminConfigStore extends IAdminConfigStore {
     return absolutePath ? this.#metadata(absolutePath) : null;
   }
 
-  #writeConfig(configPath, raw) {
+  #writeConfig(configPath, raw, precondition = null) {
     const absolutePath = this.#resolve(configPath);
     if (!absolutePath || !fileExists(path.dirname(absolutePath))) return null;
-    this.assertWritable(absolutePath);
-    writeFileAtomic(absolutePath, raw);
-    return this.#metadata(absolutePath);
+    return this.#writeText(configPath, raw, precondition);
   }
 
   readHousehold() { return this.#readYaml('household/household.yml', {}); }

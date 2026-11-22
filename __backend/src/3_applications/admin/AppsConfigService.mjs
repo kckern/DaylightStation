@@ -1,4 +1,4 @@
-import { ValidationError, NotFoundError } from '#apps/common/errors/SemanticErrors.mjs';
+import { ValidationError, NotFoundError, ConflictError } from '#apps/common/errors/SemanticErrors.mjs';
 
 export class AppsConfigService {
   #configStore;
@@ -54,6 +54,12 @@ export class AppsConfigService {
     const result = this.#configStore.writeManagedAppConfig(appId, content);
     if (result.kind === 'unknown_app') {
       throw new ValidationError(`Unknown app "${appId}"`, { field: 'appId', code: 'UNKNOWN_APP' });
+    }
+    if (result.kind === 'precondition_required') {
+      throw new ValidationError('An expected config revision is required', { code: 'PRECONDITION_REQUIRED' });
+    }
+    if (result.kind === 'conflict') {
+      throw new ConflictError('This config file changed since it was read. Refresh before saving.', { appId });
     }
     if (result.kind === 'empty') {
       throw new ValidationError('Must provide either "raw" or "parsed"', { code: 'EMPTY_BODY' });

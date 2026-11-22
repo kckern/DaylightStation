@@ -55,10 +55,12 @@ describe('setPianoConfigValue', () => {
 
 describe('writePianoConfigValue', () => {
   it('GETs the raw file and PUTs the edited raw back', async () => {
-    const api = vi.fn(async (path, body, method) => (method === 'PUT' ? { ok: true } : { raw: MULTI, parsed: {} }));
+    const api = vi.fn(async (path, body, method) => (method === 'PUT' ? { ok: true } : { raw: MULTI, parsed: {}, revision: 'rev-1' }));
     const r = await writePianoConfigValue({ pianoId: 'garage', keyPath: ['timing', 'clickLeadMs'], value: 210, api });
     expect(r.path).toBe('pianos.garage.timing.clickLeadMs');
-    expect(api).toHaveBeenLastCalledWith('api/v1/admin/apps/piano/config', { raw: expect.stringContaining('clickLeadMs: 210') }, 'PUT');
+    expect(api).toHaveBeenLastCalledWith('api/v1/admin/apps/piano/config', {
+      raw: expect.stringContaining('clickLeadMs: 210'), expectedRevision: 'rev-1',
+    }, 'PUT');
   });
 
   it('never writes when the current file could not be read', async () => {

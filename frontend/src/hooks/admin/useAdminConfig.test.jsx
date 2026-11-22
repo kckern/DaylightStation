@@ -62,7 +62,7 @@ describe('useAdminConfig resource ownership', () => {
     await act(async () => { await result.current.save(); });
     expect(apiState.calls[1]).toEqual([
       '/api/v1/admin/config/files/one.yml',
-      { parsed: { file: 'edited' } },
+      { parsed: { file: 'edited' }, expectedRevision: null },
       'PUT',
     ]);
     expect(result.current.data).toEqual({ file: 'edited' });
@@ -90,7 +90,9 @@ describe('useAdminConfig resource ownership', () => {
     let saved;
     act(() => { saved = result.current.save({ useRaw }); });
     expect(apiState.calls[1].slice(1)).toEqual([
-      useRaw ? { raw: 'file: submitted\n' } : { parsed: { file: 'submitted' } },
+      useRaw
+        ? { raw: 'file: submitted\n', expectedRevision: null }
+        : { parsed: { file: 'submitted' }, expectedRevision: null },
       'PUT',
     ]);
     act(() => edit('latest draft'));

@@ -39,6 +39,14 @@ export function rememberAdminDraft(ownerKey, original, draft) {
   drafts.set(ownerKey, { original: clone(original), draft: clone(draft) });
 }
 
+/** Move an existing draft to a refreshed server baseline without replacing its edits. */
+export function rebaseAdminDraft(ownerKey, original) {
+  const cached = drafts.get(ownerKey);
+  if (!cached) return false;
+  rememberAdminDraft(ownerKey, original, cached.draft);
+  return true;
+}
+
 /** Acknowledge the submitted revision without erasing a newer cached edit. */
 export function acknowledgeAdminDraft(ownerKey, submittedOriginal, submittedDraft, savedOriginal) {
   const cached = drafts.get(ownerKey);
@@ -47,7 +55,10 @@ export function acknowledgeAdminDraft(ownerKey, submittedOriginal, submittedDraf
     drafts.delete(ownerKey);
     return;
   }
-  rememberAdminDraft(ownerKey, savedOriginal, cached.draft);
+  const newerDraft = Object.prototype.hasOwnProperty.call(cached.draft, 'expectedRevision')
+    ? { ...cached.draft, expectedRevision: savedOriginal.revision ?? null }
+    : cached.draft;
+  rememberAdminDraft(ownerKey, savedOriginal, newerDraft);
 }
 
 /** Keep an editor's unsaved draft while its route is temporarily unmounted. */
