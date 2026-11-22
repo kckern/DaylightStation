@@ -351,6 +351,7 @@ function heroAspectRatio(item) {
 
 export default function FeedCard({ item, onDismiss, onPlay }) {
   const tier = item.tier || 'wire';
+  const archiveLabel = item.title?.trim() ? `Archive ${item.title.trim()}` : 'Archive item';
   const sourceName = item.meta?.sourceName || item.meta?.feedTitle || item.source || '';
   const age = formatAge(item.timestamp);
   const iconUrl = proxyIcon(item.meta?.sourceIcon);
@@ -521,7 +522,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
                 lineHeight: 1,
                 zIndex: 2,
               }}
-              aria-label="Archive"
+              aria-label={archiveLabel}
             >
               ✕
             </button>
@@ -604,7 +605,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
                 padding: '0.45rem 0.55rem',
                 borderRadius: '4px',
               }}
-              aria-label="Archive"
+              aria-label={archiveLabel}
             >
               ✕ <span>Archive</span>
             </button>
