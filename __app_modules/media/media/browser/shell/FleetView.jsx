@@ -58,6 +58,7 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
   const item = snap?.currentItem;
   const duration = item?.duration ?? 0;
   const isActive = !offline && ACTIVE_STATES.has(devState);
+  const isPaused = devState === 'paused';
   const location = deviceLocation(device);
   const name = deviceName(device, deviceId);
   const was = wasNameLabel(device);
@@ -149,8 +150,16 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
         </Button>
         {isActive && (
           <>
-            <Button data-testid={`fleet-pause-${deviceId}`} size="compact-sm" variant="default" leftSection={<IconPlayerPauseFilled size={14} aria-hidden />} onClick={() => sendTransport('pause')}>
-              Pause
+            <Button
+              data-testid={`fleet-${isPaused ? 'resume' : 'pause'}-${deviceId}`}
+              size="compact-sm"
+              variant="default"
+              leftSection={isPaused
+                ? <IconPlayerPlay size={14} aria-hidden />
+                : <IconPlayerPauseFilled size={14} aria-hidden />}
+              onClick={() => sendTransport(isPaused ? 'play' : 'pause')}
+            >
+              {isPaused ? 'Resume' : 'Pause'}
             </Button>
             <ScreenStopControl device={device ?? { id: deviceId }} name={name} onStop={event => guardStop((opts) => sendTransport('stop', opts), event.currentTarget)} />
             {stopGuardDialog}
