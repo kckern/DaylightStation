@@ -1,5 +1,5 @@
 const NOOP_LOGGER = Object.freeze({});
-const REF = /^(course|activity):(.+)$/;
+const REF = /^(course|activity|program):(.+)$/;
 /** Cache key parts become a file name: nothing that can climb out of the cache dir. */
 const SAFE = /^[A-Za-z0-9_-]{1,128}$/;
 const list = (value) => (Array.isArray(value) ? value : []);
@@ -12,13 +12,18 @@ const isBytes = (value) => Buffer.isBuffer(value) || value instanceof Uint8Array
  *
  *   course:<courseId>      the course poster (JPEG)
  *   activity:<issuanceId>  the solved first page of a printed activity (PNG),
- *                          rendered once from the platform's solution PDF and
- *                          cached as `<platform>-<externalId>.png`
+ *                          rendered once from the platform's solution PDF (or,
+ *                          when the page has no solution, e.g. tracing, its
+ *                          printable PDF) and cached as `<platform>-<externalId>.png`
+ *   program:<programId>:<instanceId>
+ *                          a program instance's poster (JPEG), e.g. a
+ *                          card-ladder package
  *
  * Anything it cannot serve is null (the route answers 404): an unknown or
  * malformed ref, a course without a poster, an issuance no learner holds, a
  * page not yet finished (or voided), an id unsafe as a file name, a
- * platform that is not wired or has no solution, or a render that fails.
+ * platform that is not wired or has neither solution nor printable, a
+ * program poster that is missing, or a render that fails.
  */
 export class GetLearnerWorkImage {
   #learners;
@@ -49,6 +54,7 @@ export class GetLearnerWorkImage {
     if (!match) return null;
     const [, kind, id] = match;
     if (kind === 'course') return this.#coursePoster(id);
+    if (kind === 'program') return this.#programPoster(id);
     return this.#activityPage(id);
   }
 
@@ -59,6 +65,20 @@ export class GetLearnerWorkImage {
       return isBytes(bytes) ? { bytes, contentType: 'image/jpeg' } : null;
     } catch (err) {
       this.#logger.warn?.('school.course-poster.read-failed', { courseId, error: errorText(err) });
+      return null;
+    }
+  }
+
+  async #programPoster(id) {
+    const parts = id.split(':');
+    if (parts.length !== 2 || !parts.every((p) => SAFE.test(p))) return null;
+    const [programId, instanceId] = parts;
+    if (!this.#curriculum?.getProgramPoster) return null;
+    try {
+      const bytes = await this.#curriculum.getProgramPoster(programId, instanceId);
+      return isBytes(bytes) ? { bytes, contentType: 'image/jpeg' } : null;
+    } catch (err) {
+      this.#logger.warn?.('school.program-poster.read-failed', { programId, instanceId, error: errorText(err) });
       return null;
     }
   }
@@ -109,22 +129,43 @@ export class GetLearnerWorkImage {
         render = this.#render(issuance, key, issuanceId).finally(() => this.#inFlight.delete(key));
         this.#inFlight.set(key, render);
       }
-      const png = await render;
-      if (!png) return null;
-      this.#logger.info?.('school.printed-activity.page-render', { issuanceId, cached: false, ms: Date.now() - started });
-      return { bytes: png, contentType: 'image/png' };
+      const rendered = await render;
+      if (!rendered) return null;
+      this.#logger.info?.('school.printed-activity.page-render', {
+        issuanceId, cached: false, source: rendered.source, ms: Date.now() - started,
+      });
+      return { bytes: rendered.png, contentType: 'image/png' };
     } catch (err) {
       this.#logger.warn?.('school.printed-activity.page-render-failed', { issuanceId, error: errorText(err) });
       return null;
     }
   }
 
-  /** Solution PDF → first-page PNG → cache. Resolves null when there is nothing to show. */
+  /**
+   * The PDF to show: the solution, else the printable (pages with nothing to
+   * solve, such as tracing or coloring, have no solution PDF). A printable
+   * lookup that throws counts as absent.
+   */
+  async #pagePdf(platform, externalId, issuanceId) {
+    const solution = platform.getSolution ? await platform.getSolution(externalId) : null;
+    if (solution) return { pdf: solution, source: 'solution' };
+    if (!platform.getPrintable) return null;
+    try {
+      const printable = await platform.getPrintable(externalId);
+      return printable ? { pdf: printable, source: 'printable' } : null;
+    } catch (err) {
+      this.#logger.debug?.('school.printed-activity.page-no-printable', { issuanceId, error: errorText(err) });
+      return null;
+    }
+  }
+
+  /** Solution (or printable) PDF → first-page PNG → cache. Resolves null when there is nothing to show. */
   async #render(issuance, key, issuanceId) {
     const platform = this.#platforms.get(issuance.platform);
-    if (!platform?.getSolution || !this.#renderPdfFirstPagePng) return null;
-    const pdf = await platform.getSolution(issuance.externalId);
-    if (!pdf) return null;
+    if (!platform || !this.#renderPdfFirstPagePng) return null;
+    const found = await this.#pagePdf(platform, issuance.externalId, issuanceId);
+    if (!found) return null;
+    const { pdf, source } = found;
     const png = await this.#renderPdfFirstPagePng(pdf, { width: 800 });
     if (!isBytes(png)) return null;
     if (this.#cache) {
@@ -134,7 +175,7 @@ export class GetLearnerWorkImage {
         this.#logger.warn?.('school.printed-activity.page-cache-write-failed', { issuanceId, error: errorText(err) });
       }
     }
-    return png;
+    return { png, source };
   }
 }
 

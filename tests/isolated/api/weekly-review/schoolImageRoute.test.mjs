@@ -44,6 +44,17 @@ describe('GET /api/v1/weekly-review/school/image', () => {
     expect(Buffer.compare(res.body, bytes)).toBe(0);
   });
 
+  it('accepts a program ref and serves its poster', async () => {
+    const bytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
+    const { app, weeklyReviewService } = mountApp(async () => ({ bytes, contentType: 'image/jpeg' }));
+    const ref = encodeURIComponent('program:card-ladder:korean');
+    const res = await request(app).get(`/api/v1/weekly-review/school/image?ref=${ref}`);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/^image\/jpeg/);
+    expect(weeklyReviewService.getSchoolImage).toHaveBeenCalledWith('program:card-ladder:korean');
+    expect(Buffer.compare(res.body, bytes)).toBe(0);
+  });
+
   it('answers 500 and logs when the service throws', async () => {
     const { app, logger } = mountApp(async () => { throw new Error('disk gone'); });
     const res = await request(app).get('/api/v1/weekly-review/school/image?ref=course%3Aabc');

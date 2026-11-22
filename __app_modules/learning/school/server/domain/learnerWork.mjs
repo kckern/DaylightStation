@@ -174,6 +174,9 @@ export function activitiesToWork(issuances, { learnerId, learnerName, from, to }
 
 export function cardLadderToWork(days, { learnerId, learnerName, from, to, packageId, packageTitle }) {
   const who = { learnerId, learnerName };
+  const imageUrl = typeof packageId === 'string' && packageId
+    ? '/api/v1/weekly-review/school/image?ref=' + encodeURIComponent('program:card-ladder:' + packageId)
+    : null;
   const items = [];
   for (const file of list(days)) {
     if (!file || !inWindow(file.day, from, to)) continue;
@@ -186,7 +189,7 @@ export function cardLadderToWork(days, { learnerId, learnerName, from, to, packa
       subtitle: n === 1 ? '1 word' : `${n} words`,
       at: file.doneAt ?? noonUtc(file.day),
       studyDay: file.day,
-      imageUrl: null,
+      imageUrl,
       groupKey: `program:card-ladder:${packageId}`,
       weight: n,
       subject: 'language',

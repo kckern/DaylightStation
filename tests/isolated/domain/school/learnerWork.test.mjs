@@ -292,8 +292,16 @@ describe('cardLadderToWork', () => {
     expect(cardLadderToWork([day()], deps)).toEqual([{
       learnerId: 'kid-a', learnerName: 'Kid A', kind: 'program', verb: 'worked',
       title: 'Korean', subtitle: '3 words', at: '2026-11-18T23:00:00Z', studyDay: '2026-11-18',
-      imageUrl: null, groupKey: 'program:card-ladder:korean', weight: 3, subject: 'language',
+      imageUrl: '/api/v1/weekly-review/school/image?ref=' + encodeURIComponent('program:card-ladder:korean'),
+      groupKey: 'program:card-ladder:korean', weight: 3, subject: 'language',
     }]);
+  });
+
+  it('has no image without a package id', () => {
+    for (const packageId of [undefined, null, '', 42]) {
+      const [item] = cardLadderToWork([day()], { ...deps, packageId });
+      expect(item.imageUrl).toBeNull();
+    }
   });
 
   it('uses "1 word" for a single card and noon UTC without doneAt', () => {

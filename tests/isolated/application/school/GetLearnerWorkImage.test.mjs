@@ -24,12 +24,15 @@ const issuances = {
   'kid-b': [
     { issuanceId: 'iss-2', platform: 'elsewhere', externalId: 'x2', ...done },
     { issuanceId: 'iss-3', platform: 'beeloo', externalId: 'x3', ...done },
+    { issuanceId: 'iss-trace', platform: 'beeloo', externalId: 'x6', ...done },
   ],
 };
 const printedActivities = { listForLearner: async (id) => issuances[id] ?? [] };
 const POSTER = Buffer.from('jpeg-bytes');
 const PDF = Buffer.from('%PDF');
 const PNG = Buffer.from('png-bytes');
+const PRINTABLE = Buffer.from('%PDF-printable');
+const PROGRAM_POSTER = Buffer.from('program-jpeg');
 
 function memoryCache(seed = {}) {
   const store = new Map(Object.entries(seed));
@@ -45,11 +48,26 @@ function setup(overrides = {}) {
   const logger = recordingLogger();
   const solutionCalls = [];
   const renderCalls = [];
-  const beeloo = { getSolution: async (externalId) => { solutionCalls.push(externalId); return externalId === 'x3' ? null : PDF; } };
+  const posterCalls = [];
+  const printableCalls = [];
+  const beeloo = {
+    getSolution: async (externalId) => { solutionCalls.push(externalId); return ['x3', 'x6'].includes(externalId) ? null : PDF; },
+    getPrintable: async (externalId) => {
+      printableCalls.push(externalId);
+      if (externalId === 'x6') return PRINTABLE;
+      throw new Error(`no printable for ${externalId}`);
+    },
+  };
   const cache = memoryCache();
   const deps = {
     learners,
-    curriculum: { getCoursePoster: async (courseId) => (courseId === 'c-math' ? POSTER : null) },
+    curriculum: {
+      getCoursePoster: async (courseId) => (courseId === 'c-math' ? POSTER : null),
+      getProgramPoster: async (programId, instanceId) => {
+        posterCalls.push([programId, instanceId]);
+        return programId === 'card-ladder' && instanceId === 'korean' ? PROGRAM_POSTER : null;
+      },
+    },
     printedActivities,
     platforms: new Map([['beeloo', beeloo]]),
     renderPdfFirstPagePng: async (pdf, opts) => { renderCalls.push({ pdf, opts }); return PNG; },
@@ -57,7 +75,7 @@ function setup(overrides = {}) {
     logger,
     ...overrides,
   };
-  return { uc: new GetLearnerWorkImage(deps), logger, solutionCalls, renderCalls, cache: deps.cache };
+  return { uc: new GetLearnerWorkImage(deps), logger, solutionCalls, printableCalls, posterCalls, renderCalls, cache: deps.cache };
 }
 
 describe('GetLearnerWorkImage', () => {
@@ -86,14 +104,72 @@ describe('GetLearnerWorkImage', () => {
     expect(renderCalls).toEqual([{ pdf: PDF, opts: { width: 800 } }]);
     expect(cache.writes).toEqual(['beeloo-x1.png']);
     const ev = logger.events.find((e) => e.event === 'school.printed-activity.page-render');
-    expect(ev).toMatchObject({ level: 'info', data: { issuanceId: 'iss-1', cached: false } });
+    expect(ev).toMatchObject({ level: 'info', data: { issuanceId: 'iss-1', cached: false, source: 'solution' } });
     expect(typeof ev.data.ms).toBe('number');
   });
 
   it('finds an issuance on any learner', async () => {
     const { uc, solutionCalls } = setup();
-    expect(await uc.execute('activity:iss-3')).toBeNull(); // getSolution → null
+    expect(await uc.execute('activity:iss-3')).toBeNull(); // no solution, no printable
     expect(solutionCalls).toEqual(['x3']);
+  });
+
+  it('renders the printable when the page has no solution', async () => {
+    const { uc, cache, renderCalls, printableCalls, logger } = setup();
+    expect(await uc.execute('activity:iss-trace')).toEqual({ bytes: PNG, contentType: 'image/png' });
+    expect(printableCalls).toEqual(['x6']);
+    expect(renderCalls).toEqual([{ pdf: PRINTABLE, opts: { width: 800 } }]);
+    expect(cache.writes).toEqual(['beeloo-x6.png']);
+    const ev = logger.events.find((e) => e.event === 'school.printed-activity.page-render');
+    expect(ev.data).toMatchObject({ issuanceId: 'iss-trace', cached: false, source: 'printable' });
+  });
+
+  it('returns null when neither solution nor printable exists', async () => {
+    const { uc, cache, renderCalls, printableCalls, logger } = setup();
+    expect(await uc.execute('activity:iss-3')).toBeNull();
+    expect(printableCalls).toEqual(['x3']);
+    expect(renderCalls).toEqual([]);
+    expect(cache.writes).toEqual([]);
+    expect(logger.events.some((e) => e.level === 'warn')).toBe(false);
+  });
+
+  it('does not ask for the printable when the solution exists', async () => {
+    const { uc, printableCalls } = setup();
+    await uc.execute('activity:iss-1');
+    expect(printableCalls).toEqual([]);
+  });
+
+  it('serves a program instance poster as JPEG', async () => {
+    const { uc, posterCalls } = setup();
+    expect(await uc.execute('program:card-ladder:korean')).toEqual({ bytes: PROGRAM_POSTER, contentType: 'image/jpeg' });
+    expect(posterCalls).toEqual([['card-ladder', 'korean']]);
+  });
+
+  it('returns null for a program without a poster', async () => {
+    const { uc } = setup();
+    expect(await uc.execute('program:card-ladder:spanish')).toBeNull();
+  });
+
+  it('refuses malformed or unsafe program refs before asking curriculum', async () => {
+    const { uc, posterCalls } = setup();
+    for (const ref of ['program:card-ladder', 'program:card-ladder:', 'program::korean', 'program:card-ladder:ko:extra',
+      'program:card-ladder:../x', 'program:card.ladder:korean', `program:card-ladder:${'a'.repeat(129)}`]) {
+      expect(await uc.execute(ref)).toBeNull();
+    }
+    expect(posterCalls).toEqual([]);
+  });
+
+  it('returns null and warns when the program poster read throws', async () => {
+    const curriculum = { getProgramPoster: async () => { throw new Error('EACCES'); } };
+    const { uc, logger } = setup({ curriculum });
+    expect(await uc.execute('program:card-ladder:korean')).toBeNull();
+    const warn = logger.events.find((e) => e.event === 'school.program-poster.read-failed');
+    expect(warn).toMatchObject({ level: 'warn', data: { programId: 'card-ladder', instanceId: 'korean', error: 'EACCES' } });
+  });
+
+  it('returns null for a program ref when curriculum is absent', async () => {
+    const { uc } = setup({ curriculum: undefined });
+    expect(await uc.execute('program:card-ladder:korean')).toBeNull();
   });
 
   it('returns null for an unknown issuance', async () => {

@@ -1,7 +1,7 @@
 import { sendInternalError } from '#api/utils/internalError.mjs';
 import express from 'express';
 
-const SCHOOL_IMAGE_REF = /^(course|activity):[\w.:@\/-]{1,200}$/;
+const SCHOOL_IMAGE_REF = /^(course|activity|program):[\w.:@\/-]{1,200}$/;
 
 export function createWeeklyReviewRouter(config) {
   const { weeklyReviewService, logger = console } = config;
