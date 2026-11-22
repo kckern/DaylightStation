@@ -19,5 +19,12 @@ export function useLogActivity({ categories, ...query }) {
     return { days: visibleDays, summaries: visibleSummaries(summaries) };
   }, [data, categories]);
 
-  return { ...activity, loading, error, refetch };
+  return {
+    ...activity,
+    startDate: data?.startDate ?? null,
+    endDate: data?.endDate ?? null,
+    loading,
+    error,
+    refetch,
+  };
 }

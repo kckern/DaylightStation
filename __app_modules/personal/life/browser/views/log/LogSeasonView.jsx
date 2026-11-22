@@ -3,6 +3,7 @@ import { useLogActivity } from './shared/useLogActivity.js';
 import { ActivityHeatmap } from "./shared/ActivityHeatmap.jsx";
 import { LifePage } from "../../components/index.js";
 import { LogReadRegion } from './shared/LogReadRegion.jsx';
+import { formatLogRangeTitle } from './shared/formatLogRangeTitle.js';
 import { formatDate } from "../../lib/format.js";
 
 /**
@@ -29,7 +30,7 @@ export function LogSeasonView({ username, at, categories }) {
   const monthKeys = Object.keys(months).sort().reverse();
 
   const content = (
-    <LifePage title="This Season">
+    <LifePage title={formatLogRangeTitle('Season', read)}>
       <ActivityHeatmap days={days} />
 
       <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">

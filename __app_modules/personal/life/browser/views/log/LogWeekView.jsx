@@ -4,6 +4,7 @@ import { ActivityHeatmap } from "./shared/ActivityHeatmap.jsx";
 import { SourceIcon } from "./shared/SourceIcon.jsx";
 import { LifePage } from "../../components/index.js";
 import { LogReadRegion } from './shared/LogReadRegion.jsx';
+import { formatLogRangeTitle } from './shared/formatLogRangeTitle.js';
 import { formatDate } from "../../lib/format.js";
 
 /**
@@ -17,7 +18,7 @@ export function LogWeekView({ username, at, categories }) {
   const sortedDates = Object.keys(days).sort().reverse();
 
   const content = (
-    <LifePage title="This Week">
+    <LifePage title={formatLogRangeTitle('Week', read)}>
       <ActivityHeatmap days={days} />
 
       <Stack gap="sm">

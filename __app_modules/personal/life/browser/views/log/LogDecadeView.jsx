@@ -2,6 +2,7 @@ import { Title, Paper, Group, Badge, SimpleGrid } from '@mantine/core';
 import { useLogActivity } from './shared/useLogActivity.js';
 import { EmptyState, LifePage } from "../../components/index.js";
 import { LogReadRegion } from './shared/LogReadRegion.jsx';
+import { formatLogRangeTitle } from './shared/formatLogRangeTitle.js';
 import { summarizeActivityDays } from './shared/summarizeActivityDays.js';
 
 /**
@@ -25,7 +26,7 @@ export function LogDecadeView({ username, at, categories }) {
   const yearKeys = Object.keys(years).sort().reverse();
 
   const content = (
-    <LifePage title="Decade">
+    <LifePage title={formatLogRangeTitle('Decade', read)}>
       {yearKeys.length === 0 ? <EmptyState title="No activity recorded for this decade." /> : (
         <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
           {yearKeys.map(year => {

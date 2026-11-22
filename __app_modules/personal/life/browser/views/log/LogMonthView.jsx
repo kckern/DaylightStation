@@ -3,6 +3,7 @@ import { useLogActivity } from './shared/useLogActivity.js';
 import { ActivityHeatmap } from "./shared/ActivityHeatmap.jsx";
 import { LifePage } from "../../components/index.js";
 import { LogReadRegion } from './shared/LogReadRegion.jsx';
+import { formatLogRangeTitle } from './shared/formatLogRangeTitle.js';
 import { formatDate } from "../../lib/format.js";
 import { addCalendarDays } from '@/lib/calendarDay.js';
 
@@ -29,7 +30,7 @@ export function LogMonthView({ username, at, categories }) {
   const weekKeys = Object.keys(weeks).sort().reverse();
 
   const content = (
-    <LifePage title="This Month">
+    <LifePage title={formatLogRangeTitle('Month', read)}>
       <ActivityHeatmap days={days} />
 
       <Stack gap="sm">
