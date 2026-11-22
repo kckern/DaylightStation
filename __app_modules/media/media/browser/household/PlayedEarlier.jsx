@@ -34,7 +34,7 @@ export function PlayedEarlier({ screenId, currentContentId = null }) {
     swr: true, label: 'media-played-earlier', logger: householdResourceLogger,
   });
   const busy = loading || revalidating;
-  const { regionProps, retry } = useRetryRegion(reload, busy);
+  const { regionProps, retry, focus } = useRetryRegion(reload, busy);
   // When the screen moves on, what it played becomes "earlier" — refresh,
   // but not on every track of a music queue.
   const lastRefreshRef = useRef(Date.now());
@@ -111,7 +111,10 @@ export function PlayedEarlier({ screenId, currentContentId = null }) {
       )}
       {items.length >= limit && limit < MAX && (
         <Button variant="subtle" color="gray" size="sm" data-testid="played-earlier-more"
-          onClick={() => setLimit(value => Math.min(MAX, value + PAGE))}>
+          onClick={() => {
+            focus();
+            setLimit(value => Math.min(MAX, value + PAGE));
+          }}>
           Show more
         </Button>
       )}
