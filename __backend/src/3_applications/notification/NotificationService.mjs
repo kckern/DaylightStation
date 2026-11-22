@@ -1,12 +1,17 @@
 import { NotificationIntent } from '#domains/notification/entities/NotificationIntent.mjs';
 
+/** Categories about the house rather than a person: addressed to the default recipient. */
+const HOUSE_CATEGORIES = new Set(['system', 'household_alert']);
+
 function toNotificationRecord(intent) {
   return {
+    id: intent.id ?? null,
     title: intent.title,
     body: intent.body,
     category: intent.category,
     urgency: intent.urgency,
     actions: intent.actions,
+    presentation: intent.presentation,
     metadata: intent.metadata,
     dedupeKey: intent.dedupeKey,
     createdAt: intent.createdAt,
@@ -19,6 +24,7 @@ function toNotificationRecord(intent) {
  */
 export class NotificationService {
   #adapters;
+  #makeId;
   #adapterMap;
   #preferenceLoader;
   #logger;
@@ -41,7 +47,8 @@ export class NotificationService {
    * @param {Function} [deps.resolveDefaultRecipient] - () => username; the house-wide
    *   fallback addressee for SYSTEM-category intents (see #withResolvedRecipient)
    */
-  constructor({ adapters = [], preferenceLoader, logger, policy, ledgerStore, configLoader, clock, resolveDefaultRecipient } = {}) {
+  constructor({ adapters = [], preferenceLoader, logger, policy, ledgerStore, configLoader, clock, resolveDefaultRecipient, makeId = () => globalThis.crypto.randomUUID() } = {}) {
+    this.#makeId = makeId;
     this.#adapters = adapters;
     this.#adapterMap = new Map(adapters.map(a => [a.channel, a]));
     this.#preferenceLoader = preferenceLoader;
@@ -73,7 +80,7 @@ export class NotificationService {
    * @private
    */
   #withResolvedRecipient(intent) {
-    if (intent.category !== 'system' || intent.metadata?.username) return intent;
+    if (!HOUSE_CATEGORIES.has(intent.category) || intent.recipient?.username || intent.metadata?.username) return intent;
     if (typeof this.#resolveDefaultRecipient !== 'function') return intent;
 
     let username = null;
@@ -115,6 +122,9 @@ export class NotificationService {
         ...rawIntent, createdAt: rawIntent?.createdAt ?? this.#nowIso(),
       }),
     );
+    // Every notification has an id before a channel sees it: a phone acks it,
+    // and an action press names it.
+    if (!intent.id) intent.id = this.#makeId();
 
     // Governance (dedupe + quiet hours). Additive: only active when policy+ledger
     // are wired. Degrades open — a governance error never blocks delivery.

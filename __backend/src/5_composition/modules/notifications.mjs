@@ -11,6 +11,10 @@ import { NotificationPreference } from '#domains/notification/entities/Notificat
 import { AppNotificationAdapter } from '#adapters/notification/AppNotificationAdapter.mjs';
 import { TelegramNotificationAdapter } from '#adapters/notification/TelegramNotificationAdapter.mjs';
 import { PushNotificationAdapter } from '#adapters/notification/PushNotificationAdapter.mjs';
+import { AndroidAppPushAdapter } from '#adapters/notification/AndroidAppPushAdapter.mjs';
+import { InMemoryPushDeviceRegistry } from '#adapters/notification/InMemoryPushDeviceRegistry.mjs';
+import { attachAndroidPushBusListener } from '#adapters/notification/AndroidPushBusListener.mjs';
+import { CompositePushChannel } from '#apps/notification/CompositePushChannel.mjs';
 import { NotificationPolicy } from '#domains/notification/services/NotificationPolicy.mjs';
 import { YamlNotificationLedgerStore } from '#adapters/persistence/yaml/YamlNotificationLedgerStore.mjs';
 import { NotificationGovernanceConfigSource } from '#adapters/notification/NotificationGovernanceConfigSource.mjs';
@@ -54,10 +58,22 @@ export function bootstrapNotifications(deps = {}) {
     configService, dataPath, clock,
   } = deps;
 
+  // Push: the DaylightStation Android app when the recipient's phone is
+  // connected (push.hello on the bus) and acks, else the HA companion app.
+  const base = typeof publicBaseUrl === 'string' ? publicBaseUrl.replace(/\/+$/, '') : '';
+  const publicUrl = base ? (path) => `${base}${path}` : null;
+  const pushClock = clock || { now: () => new Date() };
+  const pushDevices = new InMemoryPushDeviceRegistry();
+  if (eventBus?.onClientMessage && eventBus?.onClientDisconnection) {
+    attachAndroidPushBusListener({ eventBus, registry: pushDevices, clock: pushClock, logger });
+  }
+  const haPush = new PushNotificationAdapter({ haGateway, resolveNotifyService, publicUrl, logger });
+  const androidPush = eventBus?.sendToClient ? new AndroidAppPushAdapter({ eventBus, registry: pushDevices, logger }) : null;
+
   const adapters = [
     new AppNotificationAdapter({ eventBus }),
     new TelegramNotificationAdapter({ telegramAdapter, resolveChatId, publicBaseUrl, logger }),
-    new PushNotificationAdapter({ haGateway, resolveNotifyService, logger }),
+    new CompositePushChannel({ android: androidPush, ha: haPush, registry: pushDevices, clock: pushClock, logger }),
   ];
 
   const preference = new NotificationPreference(preferences || DEFAULT_PREFERENCES);
@@ -85,5 +101,5 @@ export function bootstrapNotifications(deps = {}) {
     channels: adapters.map(a => a.channel),
   });
 
-  return { container, notificationService, ledgerStore };
+  return { container, notificationService, ledgerStore, pushDevices };
 }
