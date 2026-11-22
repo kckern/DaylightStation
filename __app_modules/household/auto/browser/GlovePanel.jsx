@@ -44,7 +44,7 @@ export default function GlovePanel({ documents, overview, reminders, loading, er
             <li key={doc.id} className="auto-doc">
               <a
                 className="auto-doc__link"
-                href={doc.file ? `/api/v1/automotive/files/${doc.file}` : undefined}
+                href={doc.fileUrl || undefined}
                 target="_blank"
                 rel="noreferrer"
               >

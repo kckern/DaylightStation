@@ -87,7 +87,8 @@ test.describe('Auto calendar dates', () => {
       { id: 'service', date: '2026-11-18', type: 'oil-change' },
     ] } }));
     await page.route('**/automotive/vehicles/wagon/documents', route => route.fulfill({ json: { documents: [
-      { id: 'insurance', file: 'insurance.pdf', label: 'Insurance', expires: '2026-12-03' },
+      { id: 'insurance', file: 'insurance.pdf', label: 'Insurance', expires: '2026-12-03',
+        fileUrl: '/api/v1/automotive/vehicles/wagon/documents/insurance/file' },
     ] } }));
 
     await page.goto('/auto');
@@ -133,6 +134,7 @@ test('Auto renders the selected vehicle’s records and cancels the previous veh
   const api = '/api/v1/automotive';
   const first = `${api}/vehicles/wagon`;
   const selected = `${api}/vehicles/hatchback`;
+  const cityRegistrationFile = `${selected}/documents/registration/file`;
   const document = { id: 'registration', kind: 'Registration' };
   const journey = { id: 'river', title: 'Drive to the river', stops: [] };
   const overview = { fuel: { needsMoreData: true, fillCount: 0 }, trip_count: 0, reminders: [] };
@@ -151,10 +153,13 @@ test('Auto renders the selected vehicle’s records and cancels the previous veh
     [`${selected}/journeys?shuffles=1`]: { journeys: [journey, { id: 'shuffle', title: 'Garage shuffle', stops: [] }] },
     [`${selected}/fuel`]: { logs: [{ id: 'fuel', date: '2026-10-08', price_total: 41.25, volume_l: 30 }] },
     [`${selected}/service`]: { records: [{ id: 'rotation', type: 'cross-rotate', date: '2026-10-09', vendor: 'City Tire Shop' }] },
-    [`${selected}/documents`]: { documents: [{ ...document, file: 'city-registration.pdf', label: 'City registration' }] },
+    [`${selected}/documents`]: { documents: [{
+      ...document, file: 'city-registration.pdf', fileUrl: cityRegistrationFile, label: 'City registration',
+    }] },
   };
+  const registrationPdf = Buffer.from('%PDF-1.4 city registration');
   let pendingWagonDocuments;
-  await page.route(`**${api}/**`, route => {
+  await page.context().route(`**${api}/**`, route => {
     const request = route.request();
     const { pathname, search } = new URL(request.url());
     const key = pathname + search;
@@ -162,6 +167,9 @@ test('Auto renders the selected vehicle’s records and cancels the previous veh
     if (key === `${first}/documents`) {
       pendingWagonDocuments = request;
       return;
+    }
+    if (key === cityRegistrationFile) {
+      return route.fulfill({ status: 200, contentType: 'application/pdf', body: registrationPdf });
     }
     const json = responses[key];
     return json ? route.fulfill({ json }) : route.fulfill({ status: 404 });
@@ -179,9 +187,13 @@ test('Auto renders the selected vehicle’s records and cancels the previous veh
   await page.getByRole('button', { name: 'City hatchback', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'City hatchback', exact: true })).toBeVisible();
   const cityRegistration = page.getByRole('link', { name: /City registration/ });
-  await expect(cityRegistration).toHaveAttribute('href', `${api}/files/city-registration.pdf`);
+  await expect(cityRegistration).toHaveAttribute('href', cityRegistrationFile);
   await expect(cityRegistration).toBeVisible();
   await expect(page.getByRole('link', { name: /Wagon registration/ })).toHaveCount(0);
+  const documentRequest = page.context().waitForEvent('request', request =>
+    new URL(request.url()).pathname === cityRegistrationFile);
+  await cityRegistration.click();
+  expect(new URL((await documentRequest).url()).pathname).toBe(cityRegistrationFile);
 
   await tab('Car').click();
   await expect(page.getByText('100 mi', { exact: true })).toBeVisible();

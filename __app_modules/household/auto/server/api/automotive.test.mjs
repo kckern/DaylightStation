@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import request from "../../../../../tests/_lib/memory-http/request.mjs";
+import { AutomotiveQueryService } from "../application/AutomotiveQueryService.mjs";
+import { YamlVehicleRecordDatastore } from "../adapters/persistence/YamlVehicleRecordDatastore.mjs";
+import { Document } from "../domain/entities/Document.mjs";
 import { createAutomotiveRouter } from "./automotive.mjs";
 
 const day = new Date('2026-08-20T00:00:00.000Z');
@@ -57,9 +63,68 @@ describe('Automotive semantic API boundary', () => {
     expect((await request(app).get('/automotive/vehicles/car/service')).body.records[0])
       .toMatchObject({ id: 'svc-1', date: '2026-08-20', odometer_km: 123 });
     expect((await request(app).get('/automotive/vehicles/car/documents')).body.documents[0])
-      .toMatchObject({ id: 'doc-1', issued: '2026-08-20', expires: null });
+      .toMatchObject({ id: 'doc-1', issued: '2026-08-20', expires: null,
+        fileUrl: '/api/v1/automotive/vehicles/car/documents/doc-1/file' });
     expect((await request(app).get('/automotive/places')).body.places[0])
       .toEqual({ id: 'home', label: 'Home', lat: 1, lon: 2, radius_m: 50, kind: 'home' });
+  });
+
+  it('serves the indexed document file for the selected vehicle', async () => {
+    const recordsRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'automotive-documents-'));
+    try {
+      const repository = new YamlVehicleRecordDatastore({ recordsRoot, logger: { warn() {} } });
+      const files = {
+        wagon: Buffer.from('%PDF wagon registration'),
+        hatchback: Buffer.from('%PDF hatchback registration'),
+      };
+      for (const [vehicleId, bytes] of Object.entries(files)) {
+        const vehicleFiles = path.join(recordsRoot, vehicleId, 'files');
+        fs.mkdirSync(vehicleFiles, { recursive: true });
+        fs.writeFileSync(path.join(vehicleFiles, 'registration.pdf'), bytes);
+        await repository.saveDocument(vehicleId, new Document({
+          id: 'registration', kind: 'registration', label: `${vehicleId} registration`, file: 'registration.pdf',
+        }));
+      }
+      const automotiveQuery = new AutomotiveQueryService({ container: { recordRepository: repository } });
+      const app = express();
+      app.use('/api/v1/automotive', createAutomotiveRouter({
+        automotiveQuery, automotiveCommands: {}, logger: { info() {} },
+      }));
+
+      for (const [vehicleId, bytes] of Object.entries(files)) {
+        const listed = await request(app).get(`/api/v1/automotive/vehicles/${vehicleId}/documents`);
+        const [listedDocument] = listed.body.documents;
+        expect(listedDocument.fileUrl).toBe(
+          `/api/v1/automotive/vehicles/${vehicleId}/documents/registration/file`,
+        );
+        const opened = await request(app).get(listedDocument.fileUrl);
+        expect(opened.status).toBe(200);
+        expect(opened.body).toEqual(bytes);
+        expect(opened.headers['content-type']).toMatch(/^application\/pdf/);
+        expect(opened.headers['content-disposition']).toContain('inline; filename="registration.pdf"');
+      }
+
+      const unicodeName = '登録証.pdf';
+      fs.writeFileSync(path.join(recordsRoot, 'wagon', 'files', unicodeName), Buffer.from('%PDF unicode name'));
+      await repository.saveDocument('wagon', new Document({
+        id: 'registration-jp', kind: 'registration', label: 'Japanese registration', file: unicodeName,
+      }));
+      const unicodeResponse = await request(app)
+        .get(`/api/v1/automotive/vehicles/wagon/documents/registration-jp/file`);
+      expect(unicodeResponse.status).toBe(200);
+      expect(unicodeResponse.headers['content-disposition']).toContain('filename="___.pdf"');
+      expect(unicodeResponse.headers['content-disposition']).toContain("filename*=UTF-8''%E7%99%BB%E9%8C%B2%E8%A8%BC.pdf");
+
+      fs.writeFileSync(path.join(recordsRoot, 'outside.pdf'), Buffer.from('%PDF outside vehicle files'));
+      await repository.saveDocument('wagon', new Document({
+        id: 'escape', kind: 'other', label: 'Invalid path', file: '../../outside.pdf',
+      }));
+      const wagonDocuments = await request(app).get('/api/v1/automotive/vehicles/wagon/documents');
+      const escaped = wagonDocuments.body.documents.find((item) => item.id === 'escape');
+      expect((await request(app).get(escaped.fileUrl)).status).toBe(404);
+    } finally {
+      fs.rmSync(recordsRoot, { recursive: true, force: true });
+    }
   });
 
   it('preserves command bodies and deletion envelopes', async () => {

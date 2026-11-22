@@ -67,6 +67,11 @@ export class IVehicleRecordRepository {
     throw new Error('IVehicleRecordRepository.listDocuments must be implemented');
   }
 
+  /** Read the indexed document bytes, constrained to this vehicle's files directory. */
+  async readDocumentFile(vehicleId, documentId) {
+    throw new Error('IVehicleRecordRepository.readDocumentFile must be implemented');
+  }
+
   /** @param {string} vehicleId @param {import('#domains/automotive/entities/Document.mjs').Document} document */
   async saveDocument(vehicleId, document) {
     throw new Error('IVehicleRecordRepository.saveDocument must be implemented');

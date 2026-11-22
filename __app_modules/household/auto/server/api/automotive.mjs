@@ -25,10 +25,11 @@ import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/in
  *   GET  /vehicles/:id/service              → { records }
  *   POST /vehicles/:id/service              → the created/updated service record
  *   GET  /vehicles/:id/documents            → { documents }
+ *   GET  /vehicles/:id/documents/:documentId/file → the indexed file bytes
  *   GET  /places                            → { places }
  *   POST /places                            → the created/updated place
  *
- * Domain errors (ValidationError → 400, EntityNotFoundError → 404) are shaped
+ * Domain errors (ValidationError → 400, not-found errors → 404) are shaped
  * by errorHandlerMiddleware({ shape: 'string' }).
  */
 export function createAutomotiveRouter({ automotiveQuery, automotiveCommands, logger = console }) {
@@ -70,7 +71,7 @@ export function createAutomotiveRouter({ automotiveQuery, automotiveCommands, lo
       to: parseDate(req.query.to),
       events: req.query.event ? String(req.query.event).split(',') : null,
     });
-    res.json({ events: events.map(({ at, ...rest }) => rest) });
+    res.json({ events: events.map(({ at: _at, ...rest }) => rest) });
   }));
 
   router.get('/vehicles/:id/fuel', asyncHandler(async (req, res) => {
@@ -110,9 +111,22 @@ export function createAutomotiveRouter({ automotiveQuery, automotiveCommands, lo
     res.json({ deleted: await automotiveCommands.deleteService(req.params.id, req.params.recordId) });
   }));
 
+  router.get('/vehicles/:id/documents/:documentId/file', asyncHandler(async (req, res) => {
+    const file = await automotiveQuery.documentFile(req.params.id, req.params.documentId);
+    if (!file) {
+      const error = new Error(`Document file not found: ${req.params.documentId}`);
+      error.name = 'NotFoundError';
+      throw error;
+    }
+    res.set('Content-Disposition', inlineContentDisposition(file.fileName));
+    res.set('Cache-Control', 'private, no-store');
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.type(file.contentType || 'application/octet-stream').send(file.bytes);
+  }));
+
   router.get('/vehicles/:id/documents', asyncHandler(async (req, res) => {
     const documents = await automotiveQuery.documents(req.params.id);
-    res.json({ documents: documents.map(presentDocument) });
+    res.json({ documents: documents.map((document) => presentDocument(document, req.params.id)) });
   }));
 
   // Places are household-scoped, not per-vehicle: home and school do not change
@@ -174,12 +188,13 @@ function presentServiceRecord(record) {
   };
 }
 
-function presentDocument(document) {
+function presentDocument(document, vehicleId) {
   return {
     id: document.id,
     kind: document.kind,
     label: document.label,
     file: document.file,
+    fileUrl: document.file ? `/api/v1/automotive/vehicles/${encodeURIComponent(vehicleId)}/documents/${encodeURIComponent(document.id)}/file` : null,
     issued: document.issued?.toISOString().slice(0, 10) ?? null,
     expires: document.expires?.toISOString().slice(0, 10) ?? null,
     notes: document.notes,
@@ -195,6 +210,16 @@ function presentPlace(place) {
     radius_m: place.radiusM,
     kind: place.kind,
   };
+}
+
+function inlineContentDisposition(value) {
+  const fileName = String(value || 'document').replace(/[\r\n]/g, '_');
+  const asciiFallback = fileName
+    .replace(/[^\x20-\x7e]/g, '_')
+    .replace(/["\\]/g, '_');
+  const encodedFileName = encodeURIComponent(fileName).replace(/['()*]/g, (character) =>
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
+  return `inline; filename="${asciiFallback}"; filename*=UTF-8''${encodedFileName}`;
 }
 
 export default createAutomotiveRouter;

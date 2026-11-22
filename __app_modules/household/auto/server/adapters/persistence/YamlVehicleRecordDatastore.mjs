@@ -23,7 +23,10 @@ import { IVehicleRecordRepository } from "../../application/ports/IVehicleRecord
 import { ServiceRecord } from "../../domain/entities/ServiceRecord.mjs";
 import { FuelLog } from "../../domain/entities/FuelLog.mjs";
 import { Document } from "../../domain/entities/Document.mjs";
-import { loadYamlSafe, saveYaml, ensureDir, dirExists, listDirs } from '#system/utils/FileIO.mjs';
+import {
+  loadYamlSafe, saveYaml, ensureDir, dirExists, listDirs, resolveRealPath,
+  buildContainedPath, getFileStatsAsync, readBinaryFromPathAsync,
+} from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const RESERVED_LOG_DIR = 'log';
@@ -124,6 +127,39 @@ export class YamlVehicleRecordDatastore extends IVehicleRecordRepository {
     }));
   }
 
+  async readDocumentFile(vehicleId, documentId) {
+    const document = (await this.listDocuments(vehicleId)).find((item) => item.id === documentId);
+    const relativeFile = document?.file;
+    if (typeof relativeFile !== 'string' || !relativeFile.trim() || path.isAbsolute(relativeFile)
+      || relativeFile.includes('\\') || relativeFile.split('/').includes('..')) return null;
+
+    const recordsRoot = resolveRealPath(this.#root);
+    if (!recordsRoot) return null;
+    const filesDir = path.join(recordsRoot, sanitize(vehicleId), 'files');
+    // Refuse a vehicle/files symlink that redirects the glove box outside its
+    // own directory. The indexed file may itself be a symlink only if it stays
+    // inside this same real files directory.
+    if (resolveRealPath(filesDir) !== filesDir) return null;
+    const candidate = buildContainedPath(filesDir, relativeFile);
+    if (!candidate || candidate === filesDir) return null;
+    const resolvedFile = resolveRealPath(candidate);
+    if (!resolvedFile || !isChildPath(filesDir, resolvedFile)) return null;
+
+    try {
+      const stats = await getFileStatsAsync(resolvedFile);
+      if (!stats.isFile()) return null;
+      const bytes = await readBinaryFromPathAsync(resolvedFile);
+      return {
+        bytes,
+        fileName: path.basename(resolvedFile),
+        contentType: inlineDocumentType(resolvedFile),
+      };
+    } catch (error) {
+      if (error?.code === 'ENOENT') return null;
+      throw error;
+    }
+  }
+
   async saveDocument(vehicleId, document) {
     return this.#upsert(vehicleId, 'documents', document, dehydrateDocument);
   }
@@ -196,6 +232,22 @@ function byDateDescending(a, b) {
 
 const numberOrNull = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
 const sanitize = (s) => String(s).replace(/[^a-zA-Z0-9_-]/g, '_');
+
+function isChildPath(directory, filePath) {
+  const relative = path.relative(directory, filePath);
+  return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+function inlineDocumentType(filePath) {
+  return ({
+    '.pdf': 'application/pdf',
+    '.gif': 'image/gif',
+    '.jpeg': 'image/jpeg',
+    '.jpg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+  })[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
+}
 
 function dehydrateServiceRecord(record) {
   return {

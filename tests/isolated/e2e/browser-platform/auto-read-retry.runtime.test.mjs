@@ -12,7 +12,8 @@ const cases = [
   { label: 'Service history', path: '/vehicles/sample/service', tab: 'Service', width: 1440,
     response: { records: [{ id: 'repair', date: '2026-11-01', type: 'other', vendor: 'Fixture garage' }] }, result: 'Fixture garage' },
   { label: 'Documents', path: '/vehicles/sample/documents', tab: 'Docs', width: 390,
-    response: { documents: [{ id: 'insurance', kind: 'Insurance', label: 'Proof of insurance', file: 'proof.pdf' }] },
+    response: { documents: [{ id: 'insurance', kind: 'Insurance', label: 'Proof of insurance', file: 'proof.pdf',
+      fileUrl: '/api/v1/automotive/vehicles/sample/documents/insurance/file' }] },
     result: 'Proof of insurance' },
 ];
 
@@ -135,7 +136,8 @@ test('Auto retires a departed Docs read and keeps accepted documents through the
   const carTab = page.getByRole('button', { name: 'Car', exact: true });
   const docs = page.getByRole('button', { name: 'Docs', exact: true });
   const region = page.getByRole('region', { name: 'Documents', exact: true });
-  const doc = (label, file) => ({ documents: [{ id: 'insurance', kind: 'Insurance', label, file }] });
+  const doc = (label, file) => ({ documents: [{ id: 'insurance', kind: 'Insurance', label, file,
+    fileUrl: '/api/v1/automotive/vehicles/sample/documents/insurance/file' }] });
   await docs.press('Enter');
   await expect(page.getByLabel('Loading documents')).toBeVisible();
   await expect.poll(() => documentReads().length).toBe(1);
@@ -148,7 +150,7 @@ test('Auto retires a departed Docs read and keeps accepted documents through the
   await expect.poll(() => documentReads().length).toBe(2);
   await documentReads()[1].route.fulfill({ json: doc('Current proof', 'current.pdf') });
   const current = region.getByRole('link', { name: /Current proof/ });
-  await expect(current).toHaveAttribute('href', '/api/v1/automotive/files/current.pdf');
+  await expect(current).toHaveAttribute('href', '/api/v1/automotive/vehicles/sample/documents/insurance/file');
   await departed.route.fulfill({ json: doc('Superseded proof', 'old.pdf') }).catch(error => {
     if (!departed.request.failure()) throw error;
   });
@@ -184,7 +186,8 @@ test('Auto treats a completed no-content Docs read as empty', async ({ page }) =
 
 for (const view of [
   { tab: 'Docs', primaryPath: '/vehicles/sample/documents', primary: { documents: [
-    { id: 'insurance', kind: 'Insurance', label: 'Proof of insurance', file: 'proof.pdf', expires: '2026-11-17' },
+    { id: 'insurance', kind: 'Insurance', label: 'Proof of insurance', file: 'proof.pdf',
+      fileUrl: '/api/v1/automotive/vehicles/sample/documents/insurance/file', expires: '2026-11-17' },
   ] } },
   { tab: 'Service', primaryPath: '/vehicles/sample/service', primary: {
     records: [{ id: 'repair', date: '2026-11-01', type: 'other', vendor: 'Fixture garage' }],
@@ -260,7 +263,7 @@ for (const view of [
     if (view.tab === 'Docs') {
       const doc = main.getByRole('link', { name: /Proof of insurance/ });
       await expect(doc).toContainText(/Expired/);
-      await expect(doc).toHaveAttribute('href', '/api/v1/automotive/files/proof.pdf');
+      await expect(doc).toHaveAttribute('href', '/api/v1/automotive/vehicles/sample/documents/insurance/file');
     } else {
       await expect(main.getByText('Fixture garage', { exact: true })).toBeVisible();
       await expect(main.getByText('Coming up', { exact: true })).toBeVisible();
@@ -295,7 +298,8 @@ test('Auto Docs offers retry for an empty overview response and accepts a valid 
     }
     if (pathname === `${root}/vehicles/sample/documents`) {
       return route.fulfill({ json: { documents: [
-        { id: 'insurance', kind: 'Insurance', label: 'Proof of insurance', file: 'proof.pdf', expires: '2026-11-17' },
+        { id: 'insurance', kind: 'Insurance', label: 'Proof of insurance', file: 'proof.pdf',
+          fileUrl: '/api/v1/automotive/vehicles/sample/documents/insurance/file', expires: '2026-11-17' },
       ] } });
     }
     return route.fulfill({ json: {} });

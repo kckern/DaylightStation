@@ -31,6 +31,9 @@ export class AutomotiveQueryService {
   serviceTypes() { return this.container.serviceTypes; }
   serviceRecords(vehicleId) { return this.container.recordRepository.listServiceRecords(vehicleId); }
   documents(vehicleId) { return this.container.recordRepository.listDocuments(vehicleId); }
+  documentFile(vehicleId, documentId) {
+    return this.container.recordRepository.readDocumentFile(vehicleId, documentId);
+  }
   places() { return this.container.placeRepository.listPlaces(); }
 }
 
