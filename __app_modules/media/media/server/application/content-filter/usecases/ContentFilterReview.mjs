@@ -355,7 +355,10 @@ export class ContentFilterReview {
       if (acts) { if (ok) reviewed++; else if (m) changed++; }
       const verdict = ok ? { verdict: m.verdict || 'approve', ...(m.reason ? { reason: m.reason } : {}), ...(m.change ? { change: m.change } : {}), by: m.by, at: m.at } : null;
       if (verdict?.verdict === 'redo') redo++;
-      return { ...r, reviewed: ok ? { by: m.by, at: m.at } : null, verdict };
+      // One cue's own bleep loudness (the part menu's "Bleep volume for this cue"); null follows the film.
+      const one = r.members?.length === 1 ? r.members[0] : (r.members?.length ? null : (/^cue:/.test(r.id) ? r.id.slice(4) : null));
+      const cueLevel = one != null ? override.cueOverrides?.[one]?.bleepLevel : undefined;
+      return { ...r, reviewed: ok ? { by: m.by, at: m.at } : null, verdict, bleepLevel: typeof cueLevel === 'number' ? cueLevel : null };
     });
     const total = rows.filter((r) => r.acts !== false).length;
     const timing = { refined: 0, 'safe-window': 0, rough: 0 };

@@ -106,6 +106,14 @@ describe('ContentFilterReview marks and sign-off', () => {
     expect(r.signOff.missing).toContain('The check is still running');
     expect(r.audit.running).toBe(true);
   });
+  it('a row carries its cue\'s own bleep level, or none', async () => {
+    const s = base(); s.override.cueOverrides = { va1: { effect: 'bleep', bleepLevel: 0.6 } };
+    const audit = { ok: true, digest: 'D', rowsVersion: REVIEW_ROWS_VERSION, rows: [
+      { id: 'cue:va1', in: 110.2, out: 110.6, members: ['va1'] }, { id: 'cue:va2', in: 210, out: 212, members: ['va2'] }] };
+    const r = await setup({ state: s, audit }).review.get({ ratingKey: '9' });
+    expect(r.rows[0].bleepLevel).toBe(0.6);
+    expect(r.rows[1].bleepLevel).toBeNull();
+  });
   it('returns this film\'s word rulings', async () => {
     const s = base(); s.override.profilePatch = { languageWords: { damn: 'bleep' } };
     expect((await setup({ state: s }).review.get({ ratingKey: '9' })).wordRulings).toEqual({ damn: 'bleep' });

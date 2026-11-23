@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ContentFilterScenes, cleanCard } from './ContentFilterScenes.mjs';
+import { filterDigest } from '../../../domain/content-filter/filterDigest.mjs';
 
 function memRepo() {
   const state = {
@@ -114,6 +115,34 @@ describe('ContentFilterScenes workshop', () => {
     await expect(uc.ruleCue({ ratingKey: '5', cueId: 'va1', effect: 'explode' })).rejects.toThrow('unknown cue effect');
     // Hide picture (the Admin offers it where the channel is the picture).
     expect(await uc.ruleCue({ ratingKey: '5', cueId: 'va1', effect: 'blackout' })).toEqual({ effect: 'blackout' });
+  });
+
+  it('a cue bleepLevel is stored, clamped, and null removes it', async () => {
+    const repo = memRepo();
+    const uc = new ContentFilterScenes({ contentFilterRepository: repo, logger: quiet, clock });
+    await uc.ruleCue({ ratingKey: '5', cueId: 'va1', effect: 'bleep' });
+    expect(await uc.ruleCue({ ratingKey: '5', cueId: 'va1', bleepLevel: 0.456 })).toEqual({ effect: 'bleep', bleepLevel: 0.46 });
+    expect(repo.state.override.cueOverrides.va1).toEqual({ effect: 'bleep', bleepLevel: 0.46 });
+    await uc.ruleCue({ ratingKey: '5', cueId: 'va1', bleepLevel: 7 });
+    expect(repo.state.override.cueOverrides.va1.bleepLevel).toBe(1);
+    await uc.ruleCue({ ratingKey: '5', cueId: 'va1', bleepLevel: null });
+    expect(repo.state.override.cueOverrides.va1).toEqual({ effect: 'bleep' });
+    await expect(uc.ruleCue({ ratingKey: '5', cueId: 'va1', bleepLevel: 'loud' })).rejects.toThrow('unknown bleepLevel');
+    // A level alone is a whole entry; clearing it leaves nothing behind.
+    await uc.ruleCue({ ratingKey: '5', cueId: 'va2', bleepLevel: 0.1 });
+    expect(repo.state.override.cueOverrides.va2).toEqual({ bleepLevel: 0.1 });
+    await uc.ruleCue({ ratingKey: '5', cueId: 'va2', bleepLevel: null });
+    expect(repo.state.override.cueOverrides.va2).toBeUndefined();
+  });
+  it('setting or clearing a cue level never makes the check stale', async () => {
+    const repo = memRepo();
+    const uc = new ContentFilterScenes({ contentFilterRepository: repo, logger: quiet, clock });
+    const digest = () => filterDigest({ refined: repo.state.refined, override: repo.state.override });
+    const before = digest();
+    await uc.ruleCue({ ratingKey: '5', cueId: 'va1', bleepLevel: 0.3 });
+    expect(digest()).toBe(before);
+    await uc.ruleCue({ ratingKey: '5', cueId: 'va1', bleepLevel: null });
+    expect(digest()).toBe(before);
   });
 
   it('draftCard asks once with the usage tags and stores the draft on that scene only', async () => {

@@ -66,6 +66,16 @@ registerEffectHandler('mute', {
   onExit({ el, mem }) { releaseMute(el, mem); },
 });
 
+/**
+ * The options a bleep sounds with: the set's volume, and the cue's own level when a grown-up
+ * gave it one (cue level ?? film ?? household; the player falls back to the film/household level).
+ */
+export function bleepOpts(el, cue) {
+  const opts = { volume: el?.volume };
+  if (typeof cue?.bleepLevel === 'number' && Number.isFinite(cue.bleepLevel)) opts.level = cue.bleepLevel;
+  return opts;
+}
+
 registerEffectHandler('bleep', {
   kind: EFFECT_KINDS.AUDIO,
   // The video is muted first, so if the tone cannot sound the word is still silenced.
@@ -73,7 +83,7 @@ registerEffectHandler('bleep', {
   onEnter({ el, cue, sfx, mem }) {
     holdMute(el, mem);
     holdSound(mem);
-    const opts = { volume: el.volume };
+    const opts = bleepOpts(el, cue);
     if (cue.sound) sfx?.play?.(cue.sound, opts);
     else sfx?.tone?.(opts);
   },

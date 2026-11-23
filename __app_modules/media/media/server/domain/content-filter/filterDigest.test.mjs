@@ -31,6 +31,15 @@ describe('filterDigest and bleep level', () => {
 });
 
 describe('filterDigest empty patch normalisation', () => {
+  it('a cue bleepLevel does not make the audit stale', () => {
+    const refined = { cues: [{ id: 'a' }] };
+    const none = filterDigest({ refined, override: { cueOverrides: { a: { effect: 'bleep' } } } });
+    expect(filterDigest({ refined, override: { cueOverrides: { a: { effect: 'bleep', bleepLevel: 0.4 } } } })).toBe(none);
+    expect(filterDigest({ refined, override: { cueOverrides: { b: { bleepLevel: 0.4 } } } })).toBe(filterDigest({ refined, override: {} }));
+    expect(filterDigest({ refined, override: { cueOverrides: { a: { effect: 'mute' } } } })).not.toBe(none);
+    expect(filterDigest({ refined, override: { cueOverrides: {} } })).toBe(filterDigest({ refined, override: {} }));
+  });
+
   it('no override === only a bleepLevel patch === after clearing it', () => {
     const refined = { cues: [{ id: 'a' }] };
     const none = filterDigest({ refined, override: {} });

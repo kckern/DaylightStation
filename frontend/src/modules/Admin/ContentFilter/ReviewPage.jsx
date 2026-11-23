@@ -129,6 +129,7 @@ function FilmReview({ ratingKey, rowId, owner }) {
     else if (action === 'refine') keyHandlers.refine?.();
     else if (action === 'in') keyHandlers.markIn();
     else if (action === 'out') keyHandlers.markOut();
+    else if (action === 'bleep-level') cardPorts.current.openBleepLevel?.();
   };
   // An action runs on the render it was queued for, and only on its own part: a cursor that moved
   // meanwhile (a verdict's save stepped on) drops it, so it never fires on a later visit (review 2026-11-22).
@@ -219,7 +220,7 @@ function FilmReview({ ratingKey, rowId, owner }) {
               position={index >= 0 ? { index, total: station.scoped.length } : null}
               refineState={refining[row.id] ? { state: refining[row.id] } : null}
               status={keyBar} neighbours={data.rows} ports={cardPorts} unfiltered={unfiltered}
-              onPartMenu={(r, at) => openPartMenu(r, at, 'strip')} />
+              onPartMenu={(r, at) => openPartMenu(r, at, 'strip')} filmLevel={station.bleep?.effective ?? null} />
           ) : keyBar}
         </div>
         <ReviewList rows={data.rows} reviewed={data.reviewed} total={data.total} audit={data.audit}

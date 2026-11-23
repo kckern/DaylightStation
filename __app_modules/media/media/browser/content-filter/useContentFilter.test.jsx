@@ -707,4 +707,38 @@ describe('bleep level at playback', () => {
     expect(gains.filter((g) => g > 0)).toEqual([0.4, 0.1]);
     vi.unstubAllGlobals();
   });
+
+  it('a cue with its own bleepLevel bleeps at it, others at the film level', async () => {
+    vi.resetModules();
+    const gains = [];
+    const param = () => ({ value: 0, setValueAtTime() {}, cancelScheduledValues() {}, linearRampToValueAtTime: (v) => gains.push(v) });
+    vi.stubGlobal('AudioContext', function Ctx() {
+      return { state: 'running', currentTime: 1, destination: {}, createGain: () => ({ gain: param(), connect() {}, disconnect() {} }),
+        createOscillator: () => ({ frequency: param(), connect() {}, disconnect() {}, start() {}, stop() {} }) };
+    });
+    const { useContentFilter: useCF } = await import('./useContentFilter.js');
+    const el = makeFakeEl();
+    const getMediaEl = () => el;
+    const transport = { seek: vi.fn() };
+    // The film level (0.4) is already merged into the profile; cue `own` carries its own 0.8.
+    const prof = { bleepLevel: 0.4, categories: { 'language/profanity': { effect: 'bleep' } } };
+    const e = { cues: [
+      { id: 'own', category: 'language/profanity/x', in: 10, out: 12 },
+      { id: 'film', category: 'language/profanity/x', in: 20, out: 22 },
+    ] };
+    const override = { cueOverrides: { own: { bleepLevel: 0.8 } } };
+    const hook = renderHook(() => useCF({ getMediaEl, transport, edl: e, profile: prof, override, enabled: true }));
+    expect(hook.result.current.effectiveCues.find((c) => c.id === 'own')).toMatchObject({ effect: 'bleep', bleepLevel: 0.8 });
+    act(() => { el.currentTime = 11; el.fire('timeupdate'); });
+    act(() => { el.currentTime = 15; el.fire('timeupdate'); });
+    act(() => { el.currentTime = 21; el.fire('timeupdate'); });
+    // A pause and resume inside a cue sounds the tone at that cue's level again.
+    act(() => { el.fire('pause'); el.fire('playing'); });
+    expect(gains.filter((g) => g > 0)).toEqual([0.8, 0.4, 0.4]);
+    act(() => { el.currentTime = 11; el.fire('seeked'); el.fire('timeupdate'); });
+    act(() => { el.fire('pause'); el.fire('playing'); });
+    expect(gains.filter((g) => g > 0).slice(-1)).toEqual([0.8]);
+    hook.unmount();
+    vi.unstubAllGlobals();
+  });
 });

@@ -1299,6 +1299,14 @@ last message, the preview retry and the `?` keymap sheet.
   is still selected. If the preview read fails, Review keeps the saved level visible and offers
   Retry preview. Press Enter from the review station or activate the button to reread the preview
   without saving the setting again. The level applies at playback.
+- **Bleep level for one cue.** A single bleeped cue can have its own level, over the film's and the
+  household's: effective = cue `cueOverrides.<id>.bleepLevel`, else film, else household, else 0.25.
+  The card's effect menu and the part menu offer "Bleep volume for this cue…" (− / + in 0.05 steps,
+  "Follow film" clears it); each step is `PUT /:rk/cues/:id { bleepLevel }` (0..1 clamped, null
+  removes), saved in order. The review read carries it as `row.bleepLevel` (null = follows the film).
+  Like the film level it is loudness only: it starts no audit and is left out of the filter digest,
+  so the check never goes stale over it. `resolveEffectiveCues` puts it on the effective cue and the
+  bleep handler passes it to the tone as `level`; a named sound plays at the set's volume as before.
 
 ### Review history and `review-stats`
 

@@ -91,3 +91,29 @@ describe('content filter router: verdicts while a worker refines (2026-11-21)', 
   });
 });
 
+
+describe('PUT /:rk/cues/:id { bleepLevel }: a bleep level for one cue', () => {
+  const app = (ruleCue, jobs = jobsStub()) => {
+    const a = express(); a.use(express.json());
+    a.use('/cf', createContentFilterRouter({ getContentFilter: { execute: async () => null }, contentFilterScenes: { ruleCue }, jobs, logger: { info() {}, warn() {}, error() {}, debug() {} } }));
+    return { a, jobs };
+  };
+  it('passes the level through and, being loudness only, asks for no new audit', async () => {
+    const ruleCue = vi.fn(async () => ({ effect: 'bleep', bleepLevel: 0.3 }));
+    const { a, jobs } = app(ruleCue);
+    const res = await request(a).put('/cf/775444/cues/va1').send({ bleepLevel: 0.3 });
+    expect(res.status).toBe(200);
+    expect(ruleCue).toHaveBeenCalledWith(expect.objectContaining({ ratingKey: '775444', cueId: 'va1', bleepLevel: 0.3 }));
+    expect(jobs.audit).not.toHaveBeenCalled();
+  });
+  it('null follows the film again; an effect change still asks for an audit', async () => {
+    const ruleCue = vi.fn(async () => ({}));
+    const { a, jobs } = app(ruleCue);
+    await request(a).put('/cf/5/cues/va1').send({ bleepLevel: null });
+    expect(ruleCue).toHaveBeenCalledWith(expect.objectContaining({ bleepLevel: null }));
+    expect(jobs.audit).not.toHaveBeenCalled();
+    await request(a).put('/cf/5/cues/va1').send({ effect: 'mute' });
+    expect(ruleCue.mock.calls[1][0].bleepLevel).toBeUndefined();
+    expect(jobs.audit).toHaveBeenCalledWith('5');
+  });
+});

@@ -316,6 +316,8 @@ export function resolveEffectiveCues({ edl, profile, override, part = null, stac
     }
     // Param precedence: override > cue > profile rule.
     mergeParams(eff, ov, cue, rule);
+    // A grown-up's bleep loudness for this one cue wins over the film and household level.
+    if (typeof ov.bleepLevel === 'number' && Number.isFinite(ov.bleepLevel)) eff.bleepLevel = ov.bleepLevel;
     if (cardByCue.has(cue.id)) eff.card = cardByCue.get(cue.id);
     else if (ov.card?.text) eff.card = ov.card.text;
 

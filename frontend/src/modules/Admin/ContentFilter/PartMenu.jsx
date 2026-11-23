@@ -14,7 +14,8 @@ import { timecode } from './ReviewList.jsx';
  * so every item acts on that part through the same handlers as the keys.
  *
  * `onAction(action, value)`: play | unfiltered | jump | effect (value = letter) | settings |
- * verdict (value = approve | remove | redo) | refine | in | out.
+ * verdict (value = approve | remove | redo) | refine | in | out | bleep-level (opens the card's
+ * cue bleep volume).
  */
 const membersOf = (r) => r?.members ?? (String(r?.id || '').startsWith('cue:') ? [r.peekId] : []);
 /** One cue: the only kind of part whose in and out points the card sets (I / O). */
@@ -29,7 +30,10 @@ export function partMenuItems(row) {
   const verdicts = playing ? [] : [['A', 'Approve', 'verdict', 'approve'], ['X', 'Let it play', 'verdict', 'remove'], ['D', 'Redo', 'verdict', 'redo']];
   const refine = playing || scene ? [] : [['R', 'Refine', 'refine']];
   const timing = playing || !singleCue(row) ? [] : [['I', 'Set in point here', 'in'], ['O', 'Set out point here', 'out']];
-  return { play, effects, judge: [...verdicts, ...refine], timing };
+  // One bleeped cue can have its own bleep loudness (over the film's and the household's).
+  const effectExtras = [[null, 'Use household settings', 'settings'],
+    ...(!playing && singleCue(row) && row.effect === 'bleep' ? [[null, 'Bleep volume for this cue…', 'bleep-level']] : [])];
+  return { play, effects, effectExtras, judge: [...verdicts, ...refine], timing };
 }
 
 export function PartMenu({ row, at = null, onClose = () => {}, onAction = () => {} }) {
@@ -87,7 +91,7 @@ export function PartMenu({ row, at = null, onClose = () => {}, onAction = () => 
         <Menu.Divider />
         <Menu.Label>Effect</Menu.Label>
         {items.effects.map(item)}
-        {item([null, 'Use household settings', 'settings'])}
+        {items.effectExtras.map(item)}
         {items.judge.length ? <><Menu.Divider />{items.judge.map(item)}</> : null}
         {items.timing.length ? <><Menu.Divider />{items.timing.map(item)}</> : null}
       </Menu.Dropdown>

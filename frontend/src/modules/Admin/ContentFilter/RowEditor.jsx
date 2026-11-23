@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActionIcon, Button, Menu, Popover, SegmentedControl, Select, Text, TextInput, UnstyledButton } from '@mantine/core';
 import { IconArrowBackUp, IconCheck, IconChevronDown, IconChevronLeft, IconChevronRight, IconEye, IconPlayerPlay, IconRestore } from '@tabler/icons-react';
 import { DaylightAPI } from '../../../lib/api.mjs';
@@ -12,6 +12,8 @@ import { whyLine } from './whyLine.js';
 import { TimingStrip } from './TimingStrip.jsx';
 import { ChannelIcon, EffectIcon, effectFamily, timingState } from './partVisuals.jsx';
 import { EffectMenu } from './EffectMenu.jsx';
+import { CueBleepLevel, playTestBleep } from './BleepLevelPanel.jsx';
+import { BLEEP_LEVEL_DEFAULT } from '../../../../../shared/contracts/content-filter/filterSettings.mjs';
 
 /**
  * The part in hand, as one fixed-height panel (Fable design 2026-11-22, owner: "consolidate, make
@@ -50,7 +52,7 @@ const same = (a, b) => a[0] === b[0] && a[1] === b[1];
 
 export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = null, wordRulings = {},
   position = null, handlers = {}, refineState = null, canUndo = false, status = null, stage = 'review',
-  neighbours = [], ports = null, unfiltered = false, onPartMenu = null }) {
+  neighbours = [], ports = null, unfiltered = false, onPartMenu = null, filmLevel = null }) {
   const [notice, setNotice] = useState(null);
   const [pending, setPending] = useState(null);
   const [span, setSpan] = useState([row.in, row.out]);
@@ -74,6 +76,14 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
   const refining = refineState?.state;
   const verdict = row.verdict?.verdict;
   const wantsCard = row.effect === 'skip-card' || (isScene && row.card);
+  // One bleeped cue can have its own bleep loudness, over the film's (and the household's).
+  const bleepCue = !isScene && single && !playing && row.effect === 'bleep';
+  const savedCueLevel = typeof row.bleepLevel === 'number' ? row.bleepLevel : null;
+  const [cueLevel, setCueLevel] = useState(savedCueLevel);
+  const cueLevelSaved = useRef(savedCueLevel);
+  const levelChain = useRef(Promise.resolve());
+  const levelWrites = useRef(0);
+  useEffect(() => { if (!levelWrites.current) { setCueLevel(savedCueLevel); cueLevelSaved.current = savedCueLevel; } }, [row.id, savedCueLevel]);
 
   const act = async (key, calls, done) => {
     setPending(key); setNotice(null);
@@ -91,6 +101,29 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
     ? [[`${base}/scenes/${encodeURIComponent(r.peekId)}`, body, 'PUT']]
     : membersOf(r).map((id) => [`${base}/cues/${encodeURIComponent(id)}`, body, 'PUT']));
   const rule = (body) => ruleFor(row, body);
+
+  // Every click is a save, in order (a chain, so a slow PUT never lands after a later one); the
+  // card shows the new level at once, and the film refreshes once the last save is in.
+  const saveCueLevel = (value) => {
+    if (!bleepCue) return;
+    setCueLevel(value);
+    const id = membersOf(row)[0];
+    levelWrites.current += 1;
+    levelChain.current = levelChain.current.then(async () => {
+      try {
+        await DaylightAPI(`${base}/cues/${encodeURIComponent(id)}`, { bleepLevel: value }, 'PUT');
+        cueLevelSaved.current = value;
+        logger.info('content_filter.review.cue_bleep_level', { rk: ratingKey, rowId: row.id, value });
+      } catch (err) {
+        logger.warn('content_filter.review.cue_bleep_level_failed', { rk: ratingKey, rowId: row.id, value, error: err.message });
+        setCueLevel(cueLevelSaved.current);
+        setNotice(err.message || 'The bleep level did not save.');
+      } finally {
+        levelWrites.current -= 1;
+        if (!levelWrites.current) { onChanged(); previewStore.refresh().catch(() => false); }
+      }
+    });
+  };
 
   // The parts the strip shows beside this one: filtered, one cue each (a hand fix is per cue).
   const near = neighbours.filter((r) => r.id !== row.id && !plays(r) && Number.isFinite(r.in) && Number.isFinite(r.out))
@@ -137,7 +170,8 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
   // E opens the effect menu and S saves the timing (ReviewPage wires the keys to these).
   useEffect(() => {
     if (!ports) return undefined;
-    ports.current = { openEffect: () => { if (!disabled) setMenuOpen(true); }, saveTiming, markIn: () => mark(0), markOut: () => mark(1) };
+    ports.current = { openEffect: () => { if (!disabled) setMenuOpen(true); }, saveTiming, markIn: () => mark(0), markOut: () => mark(1),
+      openBleepLevel: () => { if (!disabled && bleepCue) setPanel('bleep'); } };
     return () => { ports.current = {}; };
   });
 
@@ -151,7 +185,9 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
   const cardItem = wantsCard || row.effect === 'skip' ? (
     <Menu.Item onClick={() => setPanel('card')}>{row.card ? 'Card shown in place of the skip…' : 'Add a card in place of the skip…'}</Menu.Item>
   ) : null;
+  const levelItem = bleepCue ? <Menu.Item onClick={() => setPanel('bleep')}>Bleep volume for this cue…</Menu.Item> : null;
   const word = String(row.label).toLowerCase();
+  const filmShown = filmLevel ?? BLEEP_LEVEL_DEFAULT;
 
   return (
     // A click must not leave a button focused: Enter would press it again (Enter plays the part).
@@ -173,13 +209,18 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
                 )}>
                 <Menu.Divider />
                 {settingsItem}
+                {levelItem}
                 {wordItem}
                 {cardItem}
               </EffectMenu>
             </span>
           </Popover.Target>
           <Popover.Dropdown>
-            {panel === 'word' ? (
+            {panel === 'bleep' ? (
+              <div className="cf-card-part__panel">
+                <CueBleepLevel value={cueLevel} film={filmShown} onSet={saveCueLevel} onTest={(l) => playTestBleep(l)} />
+              </div>
+            ) : panel === 'word' ? (
               <div className="cf-card-part__panel">
                 <Text size="xs" c="dimmed">{`"${word}" in this film`}</Text>
                 <SegmentedControl size="xs" fullWidth data={WORD_CHOICES} value={wordRulings[word] || 'profile'} disabled={disabled} aria-label="This word in this film"

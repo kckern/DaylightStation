@@ -16,7 +16,7 @@ import { applyTimingDrafts } from './timingDrafts.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getChildLogger } from "../../../../../frontend/src/lib/logging/singleton.js";
 import { resolveEffectiveCues, cuesActiveAt } from "./contentFilter.js";
-import { getEffectHandler, EFFECT_KINDS, SKIP_EPSILON } from "./filterEffects.js";
+import { getEffectHandler, EFFECT_KINDS, SKIP_EPSILON, bleepOpts } from "./filterEffects.js";
 import { setSkipCardPaused } from "./skipCardState.js";
 import { createBleepTone } from "./bleepTone.js";
 import { resolveBleepLevel } from "../../../../../shared/contracts/content-filter/filterSettings.mjs";
@@ -400,7 +400,7 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
     const onResume = () => {
       const cue = enteredBleep();
       if (!cue) return;
-      const opts = { volume: el.volume };
+      const opts = bleepOpts(el, cue);
       if (cue.sound) sfxPlayer.play?.(cue.sound, opts);
       else sfxPlayer.tone?.(opts);
     };

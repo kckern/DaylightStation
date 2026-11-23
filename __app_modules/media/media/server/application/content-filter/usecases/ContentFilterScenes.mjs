@@ -284,10 +284,12 @@ export class ContentFilterScenes {
    * Rule one cue: effect off|mute|bleep|blur|full-blur|skip, 'profile' clears.
    * `card`: { approve: true, text? } approves (the cardDraft unless text is given); null withdraws
    * the card and keeps every other ruling.
+   * `bleepLevel`: this cue's own bleep loudness (0..1, clamped); null follows the film again.
    */
   async ruleCue(args) {
     return this.#serial(args.ratingKey, async () => {
-      const { ratingKey, cueId, effect, disabled, card, by = 'admin' } = args;
+      const { ratingKey, cueId, effect, disabled, card, bleepLevel, by = 'admin' } = args;
+      if (bleepLevel !== undefined && bleepLevel !== null && clampBleepLevel(bleepLevel) == null) throw new Error(`unknown bleepLevel: ${bleepLevel}`);
       const raw = await this.#repo.getEdl(ratingKey);
       const ref = raw?.sourceRef;
       const refined = ref ? await this.#repo.getRefinedEdl({ workId: ref.workId, tagSetId: ref.tagSetId }) : null;
@@ -310,6 +312,10 @@ export class ContentFilterScenes {
           next.card = { text, approvedBy: String(by), at: this.#clock().toISOString().slice(0, 10) };
           this.#logger.info?.('content-filter.cue-card.approved', { ratingKey, cue: cueId });
         }
+      }
+      if (bleepLevel !== undefined) {
+        if (bleepLevel === null) delete next.bleepLevel; else next.bleepLevel = clampBleepLevel(bleepLevel);
+        this.#logger.info?.('content-filter.cue.bleep-level', { ratingKey, cue: cueId, bleepLevel: next.bleepLevel ?? null });
       }
       if (Object.keys(next).length) all[cueId] = next; else delete all[cueId];
       await this.#repo.saveOverride(ratingKey, { ...override, cueOverrides: all });

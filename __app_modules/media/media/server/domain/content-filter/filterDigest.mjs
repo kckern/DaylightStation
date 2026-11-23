@@ -22,6 +22,15 @@ export function filterDigest({ refined, override }) {
     const { bleepLevel: _level, ...patch } = rest.profilePatch;
     if (Object.keys(patch).length) rest.profilePatch = patch; else delete rest.profilePatch; // {} is the same as absent
   }
+  // So is one cue's own level; an empty `cueOverrides` is the same as absent.
+  if (rest.cueOverrides && typeof rest.cueOverrides === 'object') {
+    const cues = {};
+    for (const [id, o] of Object.entries(rest.cueOverrides)) {
+      const { bleepLevel: _cueLevel, ...kept } = o || {};
+      if (Object.keys(kept).length) cues[id] = kept;
+    }
+    if (Object.keys(cues).length) rest.cueOverrides = cues; else delete rest.cueOverrides;
+  }
   const { certification: _cert, ...edl } = refined || {};
   return createHash('sha1').update(stable({ refined: refined ? edl : null, override: rest })).digest('hex');
 }

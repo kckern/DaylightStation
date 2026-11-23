@@ -307,3 +307,71 @@ describe('a dragged timing plays before it is saved (owner, 2026-11-22)', () => 
   });
 });
 
+
+describe('a bleep level for one cue (owner, 2026-11-22: "the global / movie / cue bleep volume")', () => {
+  const bleeped = { ...word, effect: 'bleep' };
+  beforeEach(() => { calls.length = 0; fail = null; vi.restoreAllMocks(); });
+  const openLevel = async () => { await openEffects(); fireEvent.click(screen.getByRole('menuitem', { name: /^Bleep volume for this cue/ })); return screen.findByRole('group', { name: 'Bleep volume for this cue' }); };
+  it('the cue level control writes PUT /cues/:id { bleepLevel }', async () => {
+    vi.spyOn(previewStore, 'refresh').mockResolvedValue(true);
+    const onChanged = show(bleeped, { filmLevel: 0.4 });
+    await openLevel();
+    // No level of its own: it follows the film, and a step starts from the film's level.
+    expect(screen.getByLabelText('This cue level').textContent).toBe('Follows film (40 %)');
+    expect(screen.getByRole('button', { name: 'Follow film' }).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'This cue louder' }));
+    expect(screen.getByLabelText('This cue level').textContent).toBe('45 %');
+    fireEvent.click(screen.getByRole('button', { name: 'This cue louder' }));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls).toEqual([
+      { path: 'api/v1/content-filter/77/cues/w1', body: { bleepLevel: 0.45 }, method: 'PUT' },
+      { path: 'api/v1/content-filter/77/cues/w1', body: { bleepLevel: 0.5 }, method: 'PUT' },
+    ]);
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+  it('Follow film writes null; a cue with its own level shows it', async () => {
+    vi.spyOn(previewStore, 'refresh').mockResolvedValue(true);
+    show({ ...bleeped, bleepLevel: 0.7 }, { filmLevel: 0.4 });
+    await openLevel();
+    expect(screen.getByLabelText('This cue level').textContent).toBe('70 %');
+    fireEvent.click(screen.getByRole('button', { name: 'This cue quieter' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Follow film' }));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls.map((c) => c.body)).toEqual([{ bleepLevel: 0.65 }, { bleepLevel: null }]);
+    expect(screen.getByLabelText('This cue level').textContent).toBe('Follows film (40 %)');
+  });
+  it('only a single bleeped cue offers it', async () => {
+    show(word, { filmLevel: 0.4 });
+    await openEffects();
+    expect(screen.queryByRole('menuitem', { name: /^Bleep volume for this cue/ })).toBeNull();
+    cleanup();
+    show({ ...bleeped, members: ['w1', 'w2'], id: 'subject:x' }, { filmLevel: 0.4 });
+    await openEffects();
+    expect(screen.queryByRole('menuitem', { name: /^Bleep volume for this cue/ })).toBeNull();
+  });
+  it('the port opens it (the part menu item)', async () => {
+    const ports = { current: {} };
+    show(bleeped, { ports, filmLevel: 0.4 });
+    act(() => ports.current.openBleepLevel());
+    expect(await screen.findByRole('group', { name: 'Bleep volume for this cue' })).toBeTruthy();
+  });
+  it('a failed save says so and shows the saved level again', async () => {
+    vi.spyOn(previewStore, 'refresh').mockResolvedValue(true);
+    show(bleeped, { filmLevel: 0.4 });
+    await openLevel();
+    fail = 'nope';
+    fireEvent.click(screen.getByRole('button', { name: 'This cue louder' }));
+    expect(await screen.findByText('nope')).toBeTruthy();
+    expect(screen.getByLabelText('This cue level').textContent).toBe('Follows film (40 %)');
+  });
+});
+
+describe('the part menu offers the cue bleep level on a single bleeped cue', async () => {
+  const { partMenuItems } = await import('./PartMenu.jsx');
+  it('a bleep cue has it, a mute or a group does not', () => {
+    const has = (r) => partMenuItems(r).effectExtras.some(([, , action]) => action === 'bleep-level');
+    expect(has({ ...word, effect: 'bleep' })).toBe(true);
+    expect(has(word)).toBe(false);
+    expect(has({ ...word, effect: 'bleep', members: ['a', 'b'], id: 'subject:x' })).toBe(false);
+  });
+});

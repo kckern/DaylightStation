@@ -24,12 +24,12 @@ export function playTestBleep(level) {
   } catch (err) { logger.debug('content_filter.review.bleep_test_silent', { level, error: err.message }); }
 }
 
-function Row({ label, value, follows, onStep, children }) {
+function Row({ label, value, follows, followsText = 'Follows household', onStep, children, valueWidth = 92 }) {
   return (
     <Group gap="xs" wrap="nowrap" className="cf-bleep__row">
       <Text size="sm" w={110}>{label}</Text>
       <Button size="compact-sm" variant="default" aria-label={`${label} quieter`} onClick={() => onStep(-BLEEP_LEVEL_STEP)}>−</Button>
-      <Text size="sm" fw={600} w={92} ta="center" aria-label={`${label} level`}>{follows ? 'Follows household' : pct(value)}</Text>
+      <Text size="sm" fw={600} w={valueWidth} ta="center" aria-label={`${label} level`}>{follows ? followsText : pct(value)}</Text>
       <Button size="compact-sm" variant="default" aria-label={`${label} louder`} onClick={() => onStep(BLEEP_LEVEL_STEP)}>+</Button>
       {children}
     </Group>
@@ -48,6 +48,29 @@ export function BleepLevelPanel({ household, film, onFilm, onHousehold, onTest }
         <Button size="compact-sm" variant="light" onClick={() => onTest?.()}>Test bleep</Button>
         <Text size="xs" c="dimmed">Keys: <kbd className="cf-keybar__key">[</kbd> quieter, <kbd className="cf-keybar__key">]</kbd> louder (this film)</Text>
       </Group>
+    </div>
+  );
+}
+
+/**
+ * One cue's own bleep level (the part card's and the part menu's "Bleep volume for this cue…"):
+ * `value` is the cue's level or null (it follows the film, whose level is `film`). A step starts
+ * from what the cue plays at now; "Follow film" drops the cue's own level.
+ */
+export function CueBleepLevel({ value, film, onSet, onTest }) {
+  const follows = value == null;
+  const shown = follows ? film : value;
+  return (
+    <div className="cf-bleep" role="group" aria-label="Bleep volume for this cue">
+      <Row label="This cue" value={shown} follows={follows} followsText={`Follows film (${pct(film)})`} valueWidth={140}
+        onStep={(d) => onSet(clamp(shown + d))}>
+        <Button size="compact-sm" variant="subtle" disabled={follows} onClick={() => onSet(null)}>Follow film</Button>
+      </Row>
+      {onTest ? (
+        <Group gap="xs" mt="xs">
+          <Button size="compact-sm" variant="light" onClick={() => onTest(shown)}>Test bleep</Button>
+        </Group>
+      ) : null}
     </div>
   );
 }

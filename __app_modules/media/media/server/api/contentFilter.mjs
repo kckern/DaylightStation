@@ -42,7 +42,9 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
       }
       // The bleep tone's loudness is a playback setting: it changes nothing the audit checked.
       const keys = Object.keys(req.body?.settings || {});
-      const levelOnly = req.path === '/settings' && req.method === 'PUT' && keys.length > 0 && keys.every((k) => k === 'bleepLevel');
+      const bodyKeys = Object.keys(req.body || {});
+      const levelOnly = req.method === 'PUT' && ((req.path === '/settings' && keys.length > 0 && keys.every((k) => k === 'bleepLevel'))
+        || (/^\/cues\/[^/]+$/.test(req.path) && bodyKeys.length > 0 && bodyKeys.every((k) => k === 'bleepLevel' || k === 'by')));
       if (!NO_REAUDIT.test(req.path) && !levelOnly) {
         res.on('finish', () => { if (res.statusCode < 300) jobs.audit(key).catch?.(() => {}); });
       }
@@ -174,7 +176,7 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
   //   GET  /:ratingKey/scenes?profile=family     -> { title, calibration, scenes }
   //   POST /:ratingKey/scenes/cards {all, force} -> { drafted, scenes }   (LLM drafts)
   //   POST /:ratingKey/scenes/:sceneId/card -> { card }   (redraft one)
-  //   PUT  /:ratingKey/cues/:cueId {effect, disabled, card, by} -> { ruling }
+  //   PUT  /:ratingKey/cues/:cueId {effect, disabled, card, by, nudge, bleepLevel} -> { ruling }
   //   POST /:ratingKey/cues/:cueId/card -> { cardDraft }   (LLM draft, stored unapproved)
   //   PUT  /:ratingKey/scenes/:sceneId {effect, disabled, card, by} -> { ruling }
   if (contentFilterScenes) {
@@ -257,11 +259,11 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
     router.put('/:ratingKey/cues/:cueId', asyncHandler(async (req, res) => {
       const cueId = cleanId(req.params.cueId);
       if (cueId === null) return res.status(400).json({ error: 'invalid id', id: req.params.cueId });
-      const { effect, disabled, card, by } = req.body || {};
+      const { effect, disabled, card, by, bleepLevel } = req.body || {};
       let ruling;
       try {
         if (contentFilterReview && 'nudge' in (req.body || {})) await contentFilterReview.nudgeCue({ ratingKey: rk(req), cueId, nudge: req.body.nudge });
-        ruling = await contentFilterScenes.ruleCue({ ratingKey: rk(req), cueId, effect, disabled, card, by });
+        ruling = await contentFilterScenes.ruleCue({ ratingKey: rk(req), cueId, effect, disabled, card, by, ...('bleepLevel' in (req.body || {}) ? { bleepLevel } : {}) });
       } catch (error) {
         return res.status(error.status || 400).json({ error: error.message });
       }
