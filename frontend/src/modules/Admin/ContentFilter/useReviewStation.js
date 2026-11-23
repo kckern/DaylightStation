@@ -470,9 +470,10 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   // (shown in the key bar); one debounced write saves it, then the player re-reads its profile and
   // the cue replays so the reviewer hears the change.
   const [pendingLevel, setPendingLevel] = useState(null);
+  const [pendingHousehold, setPendingHousehold] = useState(null);
   const [previewRecovery, setPreviewRecovery] = useState(null);
   const levelRef = useRef({ value: null, rowId: null, owner: null, timer: null, revision: 0, retrying: false });
-  const householdLevel = data?.bleepLevel?.profile ?? BLEEP_LEVEL_DEFAULT;
+  const householdLevel = pendingHousehold ?? data?.bleepLevel?.profile ?? BLEEP_LEVEL_DEFAULT;
   const savedLevel = data?.bleepLevel?.film ?? householdLevel;
   const bleepLevel = pendingLevel === FOLLOW ? householdLevel : (pendingLevel ?? savedLevel);
   const filmLevel = pendingLevel === FOLLOW ? null : (pendingLevel ?? data?.bleepLevel?.film ?? null);
@@ -549,17 +550,24 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   };
   // Absolute value for this film, or null to follow the household level again.
   const setBleepLevel = (value) => (value == null ? queueLevel(FOLLOW, householdLevel) : queueLevel(clampBleepLevel(value), clampBleepLevel(value)));
+  // The household level: shown at once, each click steps from what is shown, and the writes go through
+  // the same serialised queue as the film level so they land in click order.
+  const householdRef = useRef({ revision: 0 });
   const setHouseholdLevel = async (value) => {
     const next = clampBleepLevel(value);
+    const st = householdRef.current;
+    const revision = ++st.revision;
+    setPendingHousehold(next);
     try {
-      await DaylightAPI(`${API}/profiles/family/settings`, { settings: { bleepLevel: next } }, 'PUT');
+      await enqueueLevelWrite(`${API}/profiles/family/settings`, levelWriteOwner(), next);
       logger.info('content_filter.review.bleep_level', { rk, scope: 'household', value: next });
-      void refreshReview().catch(() => {});
-      void previewStore.refresh().catch(() => false);
     } catch (err) {
       logger.warn('content_filter.review.bleep_level_failed', { rk, scope: 'household', value: next, error: err.message });
-      setMessage(err.message || 'The household bleep level did not save.');
+      if (st.revision === revision) setMessage(err.message || 'The household bleep level did not save.');
     }
+    if (st.revision !== revision) return;
+    void refreshReview().catch(() => {}).finally(() => { if (st.revision === revision) setPendingHousehold(null); });
+    void previewStore.refresh().catch(() => false);
   };
   // Leaving the film must not drop the last keypress.
   useEffect(() => () => {

@@ -4,6 +4,7 @@ import { Anchor, Badge, Button, Group, Menu, Popover, Text, Tooltip } from '@man
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/index.js';
 import { BleepLevelPanel, playTestBleep } from './BleepLevelPanel.jsx';
+import { BLEEP_LEVEL_DEFAULT } from '../../../../../shared/contracts/content-filter/filterSettings.mjs';
 import { formatEta, measureEta, runPhases } from './runProgress.js';
 import { ApprovalFeedback, useApprovalRegion } from './FilmApprovalControls.jsx';
 
@@ -95,7 +96,7 @@ export function ReviewHeader({ ratingKey, data, stage = 'review', roughFiltered,
   const failed = job && (job.status === 'failed' || job.status === 'interrupted');
   // The rail (ReviewRail.jsx) says how far the run is; a run that may be stuck is spelled out here.
   const run = runState(job, data.worker);
-  const household = bleep?.household ?? data.bleepLevel?.profile ?? 0.25;
+  const household = bleep?.household ?? data.bleepLevel?.profile ?? BLEEP_LEVEL_DEFAULT;
   const film = bleep ? bleep.film : (data.bleepLevel?.film ?? null);
   const effective = bleep?.effective ?? film ?? household;
 

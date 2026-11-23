@@ -1,4 +1,5 @@
 import { Button, Group, Text } from '@mantine/core';
+import { createAppLogger } from '../../../lib/ui/index.js';
 import { createBleepTone } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 
 /**
@@ -6,6 +7,7 @@ import { createBleepTone } from '../../../../../__app_modules/media/media/browse
  * movie / cue bleep volume?"): the household level every film follows, and this film's own level
  * (or "Follows household"). Levels are 0..1, shown as whole percent, moved in 5 % steps; no sliders.
  */
+const logger = createAppLogger('admin').child('content-filter');
 export const BLEEP_LEVEL_STEP = 0.05;
 const pct = (v) => `${Math.round(v * 100)} %`;
 const clamp = (v) => Math.min(1, Math.max(0, Math.round(v * 100) / 100));
@@ -14,9 +16,12 @@ const clamp = (v) => Math.min(1, Math.max(0, Math.round(v * 100) / 100));
 export function playTestBleep(level) {
   try {
     const tone = createBleepTone({ level });
-    if (!tone.start()) { setTimeout(() => { if (tone.start()) setTimeout(() => tone.stop(), 450); }, 120); return; }
+    if (!tone.start()) { setTimeout(() => {
+      if (tone.start()) setTimeout(() => tone.stop(), 450);
+      else logger.debug('content_filter.review.bleep_test_silent', { level });
+    }, 120); return; }
     setTimeout(() => tone.stop(), 450);
-  } catch (_) { /* a bleep that cannot sound is only a missing preview */ }
+  } catch (err) { logger.debug('content_filter.review.bleep_test_silent', { level, error: err.message }); }
 }
 
 function Row({ label, value, follows, onStep, children }) {

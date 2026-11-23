@@ -21,6 +21,11 @@ vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: async (path, body, method)
   return pendingWrite ?? {};
 } }));
 vi.mock('../../../../../__app_modules/media/media/browser/playback.mjs', () => ({ default: () => <div /> }));
+let toneLevels = [];
+vi.mock('../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs', async (orig) => ({
+  ...(await orig()),
+  createBleepTone: ({ level }) => ({ start: () => { toneLevels.push(level); return true; }, stop: () => {} }),
+}));
 const { previewStore } = await import('../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs');
 const { ContentFilterReview } = await import('./ContentFilterAdmin.jsx');
 
@@ -38,7 +43,7 @@ const selected = () => document.querySelector('.is-selected')?.getAttribute('dat
 const reviewCalls = () => calls.filter((c) => c.path.includes('/review/'));
 const verdictLogs = () => log.info.mock.calls.filter((c) => c[0] === 'content_filter.review.verdict');
 
-beforeEach(() => { calls.length = 0; vi.clearAllMocks(); failNext = null; pendingWrite = null; previewStore.reset(); payload = three(); });
+beforeEach(() => { toneLevels = []; calls.length = 0; vi.clearAllMocks(); failNext = null; pendingWrite = null; previewStore.reset(); payload = three(); });
 
 describe('review station keys', () => {
   it('arrow keys move the cursor, seek 4 s ahead of it, and log it', () => {
@@ -639,5 +644,40 @@ describe('the part menu (owner, 2026-11-22: "right-click and I can change what i
     await new Promise((r) => setTimeout(r, 20));
     expect(screen.queryByRole('menu')).toBeNull();
     expect(selected()).toBe('cue:w1');
+  });
+});
+
+describe('bleep volume panel wiring', () => {
+  const openPanel = async (film, profile) => {
+    payload = { ...three(), bleepLevel: { film, profile } };
+    show();
+    return screen.findByRole('button', { name: /^Bleep \d+ %$/ }).then((b) => { fireEvent.click(b); return b; });
+  };
+  it.each([[0.5, 0.3, 'Bleep 50 %'], [null, 0.3, 'Bleep 30 %'], [null, undefined, 'Bleep 25 %']])('the header button shows the effective level (film %s, household %s)', async (film, profile, label) => {
+    payload = { ...three(), bleepLevel: { film, profile } };
+    show();
+    expect((await screen.findByRole('button', { name: /^Bleep \d+ %$/ })).textContent).toBe(label);
+  });
+  it('Follow household PUTs bleepLevel null to this film\'s settings', async () => {
+    await openPanel(0.5, 0.3);
+    fireEvent.click(await screen.findByRole('button', { name: 'Follow household' }));
+    await waitFor(() => expect(calls.filter((c) => c.path === 'api/v1/content-filter/77/settings')).toEqual([
+      { path: 'api/v1/content-filter/77/settings', method: 'PUT', body: { settings: { bleepLevel: null } } }]));
+  });
+  it('the household stepper PUTs to the household profile, and two quick + clicks end at 0.35 (shown at once)', async () => {
+    await openPanel(null, 0.25);
+    const plus = await screen.findByRole('button', { name: 'Household louder' });
+    fireEvent.click(plus); fireEvent.click(plus);
+    expect(screen.getByLabelText('Household level').textContent).toBe('35 %');
+    const puts = () => calls.filter((c) => c.path === 'api/v1/content-filter/profiles/family/settings');
+    await waitFor(() => expect(puts().length).toBe(2));
+    expect(puts().map((c) => c.method)).toEqual(['PUT', 'PUT']);
+    expect(puts()[1].body).toEqual({ settings: { bleepLevel: 0.35 } });
+    expect(log.info).toHaveBeenCalledWith('content_filter.review.bleep_level', expect.objectContaining({ scope: 'household', value: 0.35 }));
+  });
+  it('Test bleep sounds at the effective level', async () => {
+    await openPanel(0.5, 0.3);
+    fireEvent.click(await screen.findByRole('button', { name: 'Test bleep' }));
+    expect(toneLevels).toEqual([0.5]);
   });
 });

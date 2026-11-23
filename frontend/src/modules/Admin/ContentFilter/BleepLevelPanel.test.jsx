@@ -51,3 +51,18 @@ describe('BleepLevelPanel', () => {
     expect(p.onTest).toHaveBeenCalled();
   });
 });
+
+describe('playTestBleep', () => {
+  it('logs (debug) when the tone cannot sound, even on the retry', async () => {
+    vi.resetModules();
+    const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), child: () => log };
+    vi.doMock('../../../lib/ui/index.js', () => ({ createAppLogger: () => log }));
+    vi.doMock('../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs', () => ({ createBleepTone: () => ({ start: () => false, stop: () => {} }) }));
+    const { playTestBleep } = await import('./BleepLevelPanel.jsx');
+    vi.useFakeTimers();
+    playTestBleep(0.4);
+    vi.advanceTimersByTime(200);
+    vi.useRealTimers();
+    expect(log.debug).toHaveBeenCalledWith('content_filter.review.bleep_test_silent', { level: 0.4 });
+  });
+});
