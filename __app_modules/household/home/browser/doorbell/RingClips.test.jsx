@@ -76,6 +76,160 @@ describe('RingClips', () => {
     ]);
   });
 
+  it('clears a failed recording when a refresh finds a replacement for the same ring', async () => {
+    const addedRing = base + 30 * 60_000;
+    const secondAddedRing = base + 60 * 60_000;
+    const oldClip = {
+      start: new Date(base + 60_000).toISOString(),
+      end: new Date(base + 90_000).toISOString(),
+      name: 'Rec/old-clip.mp4',
+      labels: [],
+    };
+    const replacement = {
+      start: new Date(base).toISOString(),
+      end: new Date(base + 25_000).toISOString(),
+      name: 'Rec/replacement-clip.mp4',
+      labels: [],
+    };
+    apiMock
+      .mockResolvedValueOnce({ clips: [oldClip] })
+      .mockResolvedValueOnce({ clips: [replacement] })
+      .mockResolvedValueOnce({ clips: [oldClip] });
+    const view = marks => <MantineProvider>
+      <button type="button" aria-label="Other control">Other</button>
+      <RingClips camera="porch-cam" marks={marks} timeZone="UTC" />
+    </MantineProvider>;
+    const tree = render(view([base]));
+    await waitFor(() => expect(document.querySelector('video')?.getAttribute('src')).toContain(encodeURIComponent(oldClip.name)));
+    const row = document.querySelector('video').closest('li');
+    const firstPlayer = row.querySelector('video');
+    fireEvent.error(firstPlayer);
+    expect(within(row).getByText('Recording could not be loaded')).toBeVisible();
+    const retry = within(row).getByRole('button', { name: /retry recording from/i });
+    retry.focus();
+
+    tree.rerender(view([base, addedRing]));
+
+    await waitFor(() => expect(within(row).getByRole('button', { name: /play the clip/i })).toBeVisible());
+    expect(within(row).getByRole('button', { name: /play the clip/i })).toHaveFocus();
+    expect(row.querySelector('video')).toHaveAttribute('src', expect.stringContaining(encodeURIComponent(replacement.name)));
+    expect(within(row).queryByText('Recording could not be loaded')).toBeNull();
+
+    const other = screen.getByRole('button', { name: 'Other control' });
+    other.focus();
+    tree.rerender(view([base, addedRing, secondAddedRing]));
+
+    await waitFor(() => expect(row.querySelector('video')).toHaveAttribute('src', expect.stringContaining(encodeURIComponent(oldClip.name))));
+    expect(within(row).getByRole('button', { name: /play the clip/i })).toBeVisible();
+    expect(within(row).queryByText('Recording could not be loaded')).toBeNull();
+    fireEvent.error(firstPlayer);
+    expect(within(row).queryByText('Recording could not be loaded')).toBeNull();
+    expect(other).toHaveFocus();
+  });
+
+  it('resets playback controls when a ring cycles through different recording sources', async () => {
+    const addedRing = base + 30 * 60_000;
+    const secondAddedRing = base + 60 * 60_000;
+    const oldClip = clipAt(base, 0);
+    const replacement = {
+      start: new Date(base + 5_000).toISOString(),
+      end: new Date(base + 25_000).toISOString(),
+      name: 'Rec/replacement-clip.mp4',
+      labels: [],
+    };
+    apiMock
+      .mockResolvedValueOnce({ clips: [oldClip] })
+      .mockResolvedValueOnce({ clips: [replacement] })
+      .mockResolvedValueOnce({ clips: [oldClip] });
+    const view = marks => <MantineProvider>
+      <button type="button" aria-label="Other control">Other</button>
+      <RingClips camera="porch-cam" marks={marks} timeZone="UTC" />
+    </MantineProvider>;
+    const tree = render(view([base]));
+    await waitFor(() => expect(document.querySelector('video')?.getAttribute('src')).toContain(encodeURIComponent(oldClip.name)));
+    const row = document.querySelector('video').closest('li');
+    fireEvent.click(within(row).getByRole('button', { name: /play the clip/i }));
+    expect(row.querySelector('video')).toHaveAttribute('controls');
+    await waitFor(() => expect(row.querySelector('video')).toHaveFocus());
+
+    tree.rerender(view([base, addedRing]));
+    await waitFor(() => expect(row.querySelector('video')).toHaveAttribute('src', expect.stringContaining(encodeURIComponent(replacement.name))));
+    const replacementPlay = within(row).getByRole('button', { name: /play the clip/i });
+    expect(replacementPlay).toBeVisible();
+    expect(replacementPlay).toHaveFocus();
+
+    const other = screen.getByRole('button', { name: 'Other control' });
+    other.focus();
+    tree.rerender(view([base, addedRing, secondAddedRing]));
+
+    await waitFor(() => expect(row.querySelector('video')).toHaveAttribute('src', expect.stringContaining(encodeURIComponent(oldClip.name))));
+    expect(within(row).getByRole('button', { name: /play the clip/i })).toBeVisible();
+    expect(row.querySelector('video')).not.toHaveAttribute('controls');
+    expect(other).toHaveFocus();
+  });
+
+  it('consumes source-change focus handoffs before later background failures', async () => {
+    const addedRing = base + 30 * 60_000;
+    const secondAddedRing = base + 60 * 60_000;
+    const oldClip = clipAt(base, 0);
+    const replacement = {
+      start: new Date(base + 5_000).toISOString(),
+      end: new Date(base + 25_000).toISOString(),
+      name: 'Rec/replacement-clip.mp4',
+      labels: [],
+    };
+    apiMock
+      .mockResolvedValueOnce({ clips: [oldClip] })
+      .mockResolvedValueOnce({ clips: [replacement] })
+      .mockResolvedValueOnce({ clips: [oldClip] });
+    const view = marks => <MantineProvider>
+      <button type="button" aria-label="Other control">Other</button>
+      <RingClips camera="porch-cam" marks={marks} timeZone="UTC" />
+    </MantineProvider>;
+    const tree = render(view([base]));
+    await waitFor(() => expect(document.querySelector('video')?.getAttribute('src')).toContain(encodeURIComponent(oldClip.name)));
+    const row = document.querySelector('video').closest('li');
+    within(row).getByRole('button', { name: /play the clip/i }).focus();
+
+    tree.rerender(view([base, addedRing]));
+    await waitFor(() => expect(row.querySelector('video')).toHaveAttribute('src', expect.stringContaining(encodeURIComponent(replacement.name))));
+    const replacementPlay = within(row).getByRole('button', { name: /play the clip/i });
+    expect(replacementPlay).toHaveFocus();
+
+    const other = screen.getByRole('button', { name: 'Other control' });
+    other.focus();
+    fireEvent.error(row.querySelector('video'));
+    expect(within(row).getByRole('button', { name: /retry recording from/i })).toBeInTheDocument();
+    expect(other).toHaveFocus();
+
+    tree.rerender(view([base, addedRing, secondAddedRing]));
+    await waitFor(() => expect(row.querySelector('video')).toHaveAttribute('src', expect.stringContaining(encodeURIComponent(oldClip.name))));
+    expect(within(row).getByRole('button', { name: /play the clip/i })).toBeVisible();
+    expect(other).toHaveFocus();
+  });
+
+  it('keeps the error when a refresh returns the same failed recording', async () => {
+    const addedRing = base + 30 * 60_000;
+    const clip = clipAt(base, 0);
+    apiMock
+      .mockResolvedValueOnce({ clips: [clip] })
+      .mockResolvedValueOnce({ clips: [clip] });
+    const view = marks => <MantineProvider><RingClips camera="porch-cam" marks={marks} timeZone="UTC" /></MantineProvider>;
+    const tree = render(view([base]));
+    await waitFor(() => expect(document.querySelectorAll('video')).toHaveLength(1));
+    const row = document.querySelector('video').closest('li');
+    fireEvent.error(document.querySelector('video'));
+    const retry = within(row).getByRole('button', { name: /retry recording from/i });
+    retry.focus();
+
+    tree.rerender(view([base, addedRing]));
+
+    await waitFor(() => expect(apiMock).toHaveBeenCalledTimes(2));
+    expect(within(row).getByText('Recording could not be loaded')).toBeVisible();
+    expect(within(row).getByRole('button', { name: /retry recording from/i })).toHaveFocus();
+    expect(within(row).queryByRole('button', { name: /play the clip/i })).toBeNull();
+  });
+
   it('does not duplicate the hook refresh when a new ring adds a camera day', async () => {
     const nextDayRing = Date.parse('2026-10-29T12:00:00Z');
     apiMock.mockResolvedValue({ clips: [clipAt(base, 0), clipAt(nextDayRing, 1)] });
