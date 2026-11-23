@@ -189,7 +189,7 @@ export function RingClips({ camera, marks, timeZone = Intl.DateTimeFormat().reso
         ) : null}
         <ol className="home-rings__list">
           {rings.map((t) => {
-            const clip = error ? null : matchRingToClip(t, clips, { toleranceMs: TOLERANCE_MS });
+            const clip = matchRingToClip(t, clips, { toleranceMs: TOLERANCE_MS });
             const unavailableDays = !clip && !error
               ? ringDays([t], timeZone).filter(day => failedDays.includes(day))
               : [];

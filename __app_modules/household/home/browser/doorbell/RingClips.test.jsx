@@ -76,6 +76,29 @@ describe('RingClips', () => {
     ]);
   });
 
+  it('keeps an active clip mounted when a same-day refresh fails', async () => {
+    const addedRing = base + 30 * 60_000;
+    apiMock
+      .mockResolvedValueOnce({ clips: [clipAt(base, 0)] })
+      .mockRejectedValueOnce(new Error('camera refresh failed'));
+    const view = marks => <MantineProvider><RingClips camera="porch-cam" marks={marks} timeZone="UTC" /></MantineProvider>;
+    const tree = render(view([base]));
+    await waitFor(() => expect(document.querySelectorAll('video')).toHaveLength(1));
+    const video = document.querySelector('video');
+    const row = video.closest('li');
+    fireEvent.click(within(row).getByRole('button', { name: /play the clip/i }));
+    expect(video).toHaveAttribute('controls');
+    await waitFor(() => expect(video).toHaveFocus());
+
+    tree.rerender(view([base, addedRing]));
+
+    await screen.findByText('Clips could not be loaded.');
+    expect(row.querySelector('video')).toBe(video);
+    expect(video).toHaveAttribute('controls');
+    expect(video).toHaveFocus();
+    expect(apiMock).toHaveBeenCalledTimes(2);
+  });
+
   it('clears a failed recording when a refresh finds a replacement for the same ring', async () => {
     const addedRing = base + 30 * 60_000;
     const secondAddedRing = base + 60 * 60_000;
