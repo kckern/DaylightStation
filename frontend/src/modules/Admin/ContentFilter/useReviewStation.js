@@ -7,6 +7,7 @@ import { previewStore } from '../../../../../__app_modules/media/media/browser/c
 import { DEFAULT_SCOPE, WIDEN_STEP, actionKeysFor, effectButton, hasVerdict, isOpen, isSceneRow, keysKindOf, needsCheck, nextKind, plays, scopeRows, stageScope, stepFrom, triedRefine } from './reviewScope.js';
 import { defaultStage, railStages } from './railStages.js';
 import { effectChoices } from './RowEditor.jsx';
+import { queueWrite, writesWaiting } from './effectHolds.js';
 import { BLEEP_LEVEL_DEFAULT, clampBleepLevel } from '../../../../../shared/contracts/content-filter/filterSettings.mjs';
 
 /**
@@ -44,7 +45,7 @@ function enqueueLevelWrite(path, owner, value) {
   return pending;
 }
 
-export function useReviewStation({ ratingKey, data, reload, refreshReview, selected, select, activeView, runBusy = false, openRowId = null }) {
+export function useReviewStation({ ratingKey, data, effectHolds = null, reload, refreshReview, selected, select, activeView, runBusy = false, openRowId = null }) {
   const rk = String(ratingKey);
   const rows = data?.rows;
   const [chosenScope, setScopeState] = useState(null);
@@ -251,6 +252,9 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   };
 
   // `target` is a row other than the cursor (its effect icon in the list); it is taken in hand first.
+  // An effect change never waits on, or is dropped by, another save: the row shows the new effect at
+  // once (effectHolds.js) and the write queues behind any other write to this film (review
+  // 2026-11-23: clicks during a save were dropped without a word, and the label lagged the audit).
   const effect = (letter, target = row) => {
     const row = target;
     if (!row) return;
@@ -258,22 +262,37 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     if (!entry) return;
     const [, label, to] = entry;
     if (latest.current.refining?.[row.id]) { setMessage('This part is being refined. Change its effect when the new timing lands.'); return; }
-    guarded('effect', async () => {
-      const allowed = isSceneRow(row) ? SCENE_EFFECTS.has(to) : effectChoices(row.modality).some((o) => o.value === to);
-      if (!allowed) { setMessage(`${label} does not fit this part.`); return; }
-      if (plays(row) ? to === 'off' : effectButton(row.effect) === to) { setMessage(`Already ${label.toLowerCase()}.`); return; }
-      for (const [path, body, method] of callsFor(row, { effect: to })) await DaylightAPI(path, body, method);
-      // An effect change is not a verdict (it used to approve and move on, unseen: review 2026-11-22):
-      // the part replays with its new effect and waits for A.
-      logger.info('content_filter.review.effect', { rk, rowId: row.id, kind: row.kind, from: row.effect, to });
+    const allowed = isSceneRow(row) ? SCENE_EFFECTS.has(to) : effectChoices(row.modality).some((o) => o.value === to);
+    if (!allowed) { setMessage(`${label} does not fit this part.`); return; }
+    if (plays(row) ? to === 'off' : effectButton(row.effect) === to) { setMessage(`Already ${label.toLowerCase()}.`); return; }
+    const calls = callsFor(row, { effect: to });
+    const from = plays(row) ? 'off' : row.effect;
+    const waited = writesWaiting(rk);
+    const held = effectHolds?.hold(row.id, to, label) ?? null;
+    const current = () => held == null || effectHolds.isCurrent(row.id, held);
+    setMessage(to === 'off' ? 'Off: this part now plays. Press → for the next part.' : `${label} applied. Watch it, then press A to approve.`);
+    const queuedAt = Date.now();
+    queueWrite(rk, async () => {
+      // A later click on this part replaced this one before it went out: only the last is sent.
+      if (!current()) return false;
+      for (const [path, body, method] of calls) await DaylightAPI(path, body, method);
+      return true;
+    }).then(async (sent) => {
+      if (!sent) { logger.info('content_filter.review.effect_superseded', { rk, rowId: row.id, to }); return; }
+      if (held != null) effectHolds.saved(row.id, held);
+      logger.info('content_filter.review.effect', { rk, rowId: row.id, kind: row.kind, from, to, waited, saveMs: Date.now() - queuedAt });
       if (!activeView.current) return;
-      setMessage(to === 'off' ? 'Off: this part now plays. Press → for the next part.' : `${label} applied. Watch it, then press A to approve.`);
       reload();
+      if (!current()) return;
       // The player reads its filter once: refresh it, then play the part again with the new effect.
       const accepted = await previewStore.refresh().catch(() => false);
       if (!activeView.current || latest.current.selectedId !== row.id) return;
       if (accepted) previewStore.jumpToCue({ in: row.in });
       else { logger.warn('content_filter.review.effect_preview_stale', { rk, rowId: row.id }); setMessage(`${label} applied, but the preview could not refresh. Press Enter to play the part, then A to approve.`); }
+    }, (err) => {
+      if (held != null) effectHolds.release(row.id, held);
+      logger.warn('content_filter.review.action_failed', { rk, rowId: row.id, key: 'effect', to, error: err.message });
+      if (activeView.current) setMessage(err.message || `${label} did not save.`);
     });
   };
 
@@ -283,7 +302,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     if (!target) return;
     if (latest.current.refining?.[target.id]) { setMessage('This part is being refined. Change its effect when the new timing lands.'); return; }
     guarded('settings', async () => {
-      for (const [path, body, method] of callsFor(target, { effect: 'profile', disabled: false })) await DaylightAPI(path, body, method);
+      await queueWrite(rk, async () => { for (const [path, body, method] of callsFor(target, { effect: 'profile', disabled: false })) await DaylightAPI(path, body, method); });
       logger.info('content_filter.review.effect', { rk, rowId: target.id, kind: target.kind, from: target.effect, to: 'profile' });
       if (!activeView.current) return;
       setMessage('Back on the household settings.');
@@ -577,6 +596,11 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   useEffect(() => () => {
     saveLevel();
   }, [saveLevel]);
+
+  // A chosen effect the player plays as something else (blur with nothing to blur plays as
+  // blackout): the page says so once the re-audit lands, rather than the button flipping back.
+  const holdNote = effectHolds?.note;
+  useEffect(() => { if (holdNote && activeView.current) setMessage(holdNote.text); }, [holdNote]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const top = undoStack[undoStack.length - 1];
   const canUndo = Boolean(top && rows?.some((r) => r.id === top.rowId));

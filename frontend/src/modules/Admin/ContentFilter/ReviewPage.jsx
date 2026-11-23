@@ -10,6 +10,7 @@ import { ReviewTimeline } from './ReviewTimeline.jsx';
 import { ReviewKeyBar } from './ReviewKeyBar.jsx';
 import { useReviewKeys } from './useReviewKeys.js';
 import { useReviewStation } from './useReviewStation.js';
+import { useEffectHolds } from './effectHolds.js';
 import { isOpen, plays } from './reviewScope.js';
 import { ReviewHeader } from './ReviewHeader.jsx';
 import { ReviewPlayer } from './ReviewPlayer.jsx';
@@ -49,7 +50,10 @@ function FilmReview({ ratingKey, rowId, owner }) {
   const navigate = useNavigate();
   const url = `${API}/${encodeURIComponent(ratingKey)}/review`;
   // A new signed-in visit needs its own HTTP read even at the same film URL.
-  const { data, loading, error, reload, refresh, poll } = useApiResource(url, { label: 'review', logger, dedupe: false });
+  const { data: served, loading, error, reload, refresh, poll } = useApiResource(url, { label: 'review', logger, dedupe: false });
+  // An effect just chosen shows at once, until the re-audit settles it (effectHolds.js).
+  const effectHolds = useEffectHolds(served, { rk: String(ratingKey), logger });
+  const { data } = effectHolds;
   const [selected, setSelected] = useState(null);
   const [notice, setNotice] = useState(null);
   // Unfiltered is what the player reports (its peek set), never a guessed timer (review 2026-11-22).
@@ -90,7 +94,7 @@ function FilmReview({ ratingKey, rowId, owner }) {
   // The keyboard station: the cursor is `selected`; scope, verdicts and stepping live in the hook.
   // Not matched to Plex: a key that still holds household work shows its review; runs are refused.
   const notMatched = data?.match === 'unmatched';
-  const station = useReviewStation({ ratingKey, data, reload, refreshReview: refresh, selected, select, activeView, runBusy: running || notMatched, openRowId: rowId });
+  const station = useReviewStation({ ratingKey, data, effectHolds, reload, refreshReview: refresh, selected, select, activeView, runBusy: running || notMatched, openRowId: rowId });
   const stage = station.scope.stage;
   // On Approve the part card is not on screen, so the keys that act on a part are off; Space still
   // plays and pauses the film, and ? still lists the keys.

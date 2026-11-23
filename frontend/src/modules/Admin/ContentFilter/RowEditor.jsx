@@ -3,6 +3,7 @@ import { ActionIcon, Button, Menu, Popover, SegmentedControl, Select, Text, Text
 import { IconArrowBackUp, IconCheck, IconChevronDown, IconChevronLeft, IconChevronRight, IconEye, IconPlayerPlay, IconRestore } from '@tabler/icons-react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/index.js';
+import { queueWrite } from './effectHolds.js';
 import { effectChip, previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 import { fitEffectToChannel } from '../../../../../shared/contracts/content-filter/cueModality.mjs';
 import { LANGUAGE_GROUPS } from '../../../../../shared/contracts/content-filter/languageGroups.mjs';
@@ -64,6 +65,8 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
   // Undo steps per part: each autosave pushes what it replaced ({ row, prev, wasHandFixed }[]).
   const history = useRef({});
   const skipKey = useRef(null);
+  // The drafts the last autosave wrote: saved, though the audit has not caught up with them yet.
+  const [savedKey, setSavedKey] = useState(null);
   const [, bump] = useReducer((n) => n + 1, 0);
   const [cardText, setCardText] = useState(row.card?.text || '');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -73,6 +76,8 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
   // A run locks what it rewrites (effects, timing, card); Approve and Redo stay open, except on a
   // part being refined (its verdict waits for the new timing).
   const disabled = Boolean(busyText) || Boolean(pending);
+  // The effect stays changeable while a timing save is out: its write queues behind it (effectHolds.js).
+  const fxDisabled = Boolean(busyText);
   const verdictLocked = Boolean(pending) || Boolean(refineState?.state);
   const base = `${API}/${encodeURIComponent(ratingKey)}`;
   const isScene = isSceneRow(row);
@@ -97,7 +102,7 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
   const act = async (key, calls, done) => {
     setPending(key); setNotice(null);
     try {
-      for (const [path, body, method] of calls) await DaylightAPI(path, body, method);
+      await queueWrite(ratingKey, async () => { for (const [path, body, method] of calls) await DaylightAPI(path, body, method); });
       logger.info('review.action', { ratingKey, row: row.id, key });
       if (done) setNotice(done);
       onChanged();
@@ -155,6 +160,7 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
     const ok = await act('nudge', calls, null);
     if (ok) {
       (history.current[row.id] ||= []).push(entries);
+      setSavedKey(key);
       logger.info('content_filter.review.timing_autosaved', { rk: ratingKey, rowId: row.id, parts: entries.length });
       // The player reads its filter once: refresh it, so the saved timing plays once the drafts clear.
       previewStore.refresh().catch(() => false);
@@ -164,7 +170,7 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
   // the part had no hand fix before.
   const undoTiming = async () => {
     const stack = history.current[row.id];
-    if (!stack?.length || disabled || changedCount) return;
+    if (!stack?.length || disabled || unsaved) return;
     const entries = stack[stack.length - 1];
     const calls = entries.flatMap((e) => ruleFor(e.row, { nudge: e.wasHandFixed ? { in: e.prev[0], out: e.prev[1] } : null }));
     const ok = await act('nudge', calls, null);
@@ -199,14 +205,18 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
   // The station holds the cursor while a dragged span is unsaved (it was silently dropped by a step:
   // review 2026-11-22); Esc there drops every draft through this.
   const dirtyPort = handlers.timingDirty;
+  // A draft the autosave already wrote no longer holds the cursor: the list shows the old span until
+  // the re-audit lands (seconds), and holding the cursor that long refused every move (review
+  // 2026-11-23: 21 moves refused in a minute, then a page reload).
+  const unsaved = Boolean(changedCount) && autoKey !== savedKey;
   useEffect(() => {
-    dirtyPort?.(changedCount ? resetDrafts : null);
-  }, [changedCount, row.in, row.out]); // eslint-disable-line react-hooks/exhaustive-deps
+    dirtyPort?.(unsaved ? resetDrafts : null);
+  }, [unsaved, row.in, row.out]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => dirtyPort?.(null), []); // eslint-disable-line react-hooks/exhaustive-deps
   // E opens the effect menu and S saves the timing (ReviewPage wires the keys to these).
   useEffect(() => {
     if (!ports) return undefined;
-    ports.current = { openEffect: () => { if (!disabled) setMenuOpen(true); }, markIn: () => mark(0), markOut: () => mark(1),
+    ports.current = { openEffect: () => { if (!fxDisabled) setMenuOpen(true); }, markIn: () => mark(0), markOut: () => mark(1),
       openBleepLevel: () => { if (!disabled && bleepCue) setPanel('bleep'); } };
     return () => { ports.current = {}; };
   });
@@ -233,10 +243,10 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
         <Popover opened={Boolean(panel)} onChange={(o) => { if (!o) setPanel(null); }} position="bottom-start" withinPortal width={360} shadow="md" trapFocus>
           <Popover.Target>
             <span>
-              <EffectMenu row={row} opened={menuOpen} onChange={setMenuOpen} disabled={disabled}
+              <EffectMenu row={row} opened={menuOpen} onChange={setMenuOpen} disabled={fxDisabled}
                 onPick={(letter) => handlers.effect?.(letter)}
                 target={(
-                  <UnstyledButton className={`cf-card-part__fx is-${family || 'plays'}`} aria-label={`Effect: ${fx}. Change it (E)`} disabled={disabled}>
+                  <UnstyledButton className={`cf-card-part__fx is-${family || 'plays'}`} aria-label={`Effect: ${fx}. Change it (E)`} disabled={fxDisabled}>
                     <EffectIcon row={row} size={18} />
                     <span>{fx}</span>
                     <IconChevronDown size={14} aria-hidden="true" />
@@ -315,7 +325,7 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
           </Text>
         )}
         <div className="cf-card-part__save">
-          {changedCount || pending === 'nudge' ? (
+          {unsaved || pending === 'nudge' ? (
             <Text size="xs" c="dimmed" role="status" className="cf-card-part__autosave">{pending === 'nudge' ? 'Saving…' : 'Saving timing…'}</Text>
           ) : (
             <>

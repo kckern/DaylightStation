@@ -28,6 +28,7 @@ vi.mock('../../../../../__app_modules/media/media/browser/content-filter/adminWo
 }));
 const { previewStore } = await import('../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs');
 const { ContentFilterReview } = await import('./ContentFilterAdmin.jsx');
+const { resetWriteQueues } = await import('./effectHolds.js');
 
 const row = (id, label, over = {}) => ({ id, peekId: id.split(':')[1], members: [id.split(':')[1]], kind: 'words', group: 'profanity', label, modality: 'said', in: 10, out: 10.5, effect: 'bleep', card: null, handFixed: false, unsure: [], reviewed: null, verdict: null, ...over });
 const base = (rows) => ({ title: 'F', certification: { level: 'machine' }, audit: { ok: true, fresh: true }, wordRulings: {}, rows,
@@ -40,10 +41,11 @@ function FilmNavigation() {
 const show = (path = '/admin/content/filter/77') => render(<MantineProvider><MemoryRouter initialEntries={[path]}><FilmNavigation /><Routes><Route path="/admin/content/filter/:ratingKey/:rowId?" element={<ContentFilterReview />} /></Routes></MemoryRouter></MantineProvider>);
 const press = (key, init = {}, target = document.body) => fireEvent.keyDown(target, { key, ...init });
 const selected = () => document.querySelector('.is-selected')?.getAttribute('data-row-id') ?? null;
+const cardFx = (name) => within(document.querySelector('.cf-card-part')).getByRole('button', { name });
 const reviewCalls = () => calls.filter((c) => c.path.includes('/review/'));
 const verdictLogs = () => log.info.mock.calls.filter((c) => c[0] === 'content_filter.review.verdict');
 
-beforeEach(() => { toneLevels = []; calls.length = 0; vi.clearAllMocks(); failNext = null; pendingWrite = null; previewStore.reset(); payload = three(); });
+beforeEach(() => { resetWriteQueues(); toneLevels = []; calls.length = 0; vi.clearAllMocks(); failNext = null; pendingWrite = null; previewStore.reset(); payload = three(); });
 
 describe('review station keys', () => {
   it('arrow keys move the cursor, seek 4 s ahead of it, and log it', () => {
@@ -148,6 +150,28 @@ describe('review station keys', () => {
     await waitFor(() => expect(reviewCalls()).toHaveLength(1));
     expect(reviewCalls()[0].body).toEqual(expect.objectContaining({ verdict: 'approve' }));
     refresh.mockRestore();
+  });
+  it('an effect shows on the card at once, and a second click while the first save is out is queued, not dropped (review 2026-11-23)', async () => {
+    let finish;
+    pendingWrite = new Promise((resolve) => { finish = resolve; });
+    show();
+    press('m');
+    // Before the server answers, the card already says Mute.
+    await waitFor(() => expect(cardFx(/^Effect: Mute/)).toBeTruthy());
+    press('k');
+    await waitFor(() => expect(cardFx(/^Effect: Skip/)).toBeTruthy());
+    expect(calls).toHaveLength(1);
+    pendingWrite = null; finish({});
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls.map((c) => c.body)).toEqual([{ effect: 'mute' }, { effect: 'skip' }]);
+    expect(cardFx(/^Effect: Skip/)).toBeTruthy();
+    expect(log.info).toHaveBeenCalledWith('content_filter.review.effect', expect.objectContaining({ rowId: 'cue:w1', to: 'skip', waited: true }));
+  });
+  it('a failed effect save puts the card back on what the server has, and says so', async () => {
+    failNext = (path, method) => method === 'PUT' && path.includes('/cues/');
+    show(); press('m');
+    expect(await screen.findByText('nope')).toBeTruthy();
+    expect(cardFx(/^Effect: Bleep/)).toBeTruthy();
   });
   it('an effect change whose preview cannot refresh says so instead of replaying the old effect', async () => {
     const jump = vi.spyOn(previewStore, 'jumpToCue');

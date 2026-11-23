@@ -119,6 +119,20 @@ nothing else (it used to drop an unsaved timing change behind an open menu). A w
 scenes but is a cue: `isSceneRow` (no members, not `cue:`) decides scene handling, `keysKindOf` the
 effect keys.
 
+**An effect change shows at once and is never dropped** (`effectHolds.js`; review 2026-11-23). The
+list is the film's audit, and an effect change makes it stale: the new effect only reaches the rows
+when the re-audit lands, seconds later. Until then a **hold** shows the chosen effect on the row, the
+card and the list (`effectHeld: true`). A fresh audit that agrees lets go of it
+(`content_filter.review.effect_settled`, `settleMs`); one that plays the part differently (Blur on a
+part with nothing to blur plays as hide picture) lets go and says "Blur plays as … on this part."
+(`…effect_resolved_differently`, `asked`, `plays`); a fresh audit that disagrees is believed only
+after a stale one was seen, since a poll sent before the save can land after it. A hold nothing
+settles goes after 20 s (`…effect_unsettled`). Every write to one film (timing autosave, effect,
+card, household settings) goes through one queue (`queueWrite`), so the effect button stays live
+while timing saves: a click made while another write is out waits its turn (`content_filter.review.effect`
+carries `waited` and `saveMs`), a later click on the same part replaces one still waiting
+(`…effect_superseded`), and a failed save puts the row back on what the server has, with the error.
+
 The **part menu** (`PartMenu.jsx`; owner, 2026-11-22: "right-click and I can change what it is or
 how it's handled"): a right-click on a part anywhere it appears (a list row, a timeline mark, a
 band on the timing strip, the part in hand's or a neighbour's; the strip finds the band by time,
@@ -207,10 +221,13 @@ seeks the film there. While a handle has keyboard focus the station's `←` `→
 handle dragged with the pointer takes no focus. Every dragged span is a draft for 0.5 s, then the autosave writes each changed part (`nudge: { in, out }` to `PUT /:rk/cues/:id` or `/scenes/:id`), as
 one action; a run locks the strip with the rest of the timing.
 
-**Unsaved timing holds the cursor.** While any span in the strip differs from its saved one, stepping (keys,
+**Unsaved timing holds the cursor.** While any span in the strip differs from its saved one and the
+autosave has not written it, stepping (keys,
 ‹ ›), picking another part (list, timeline), changing tab, a verdict, Undo and Refine all
-stop with "Unsaved timing: Save or press Esc to drop it" (`content_filter.review.unsaved_timing_blocked`,
+stop with "Timing is saving: one moment, or press Esc to drop it" (`content_filter.review.unsaved_timing_blocked`,
 `what`); `Esc` drops the change (`…unsaved_timing_dropped`). Nothing is discarded without a word.
+A draft the autosave wrote no longer holds the cursor, though the strip shows it until the re-audit
+brings the saved span back (holding it that long refused 21 moves in a minute: review 2026-11-23).
 
 **List** (`ReviewList.jsx`, `partVisuals.jsx`): the parts of the rail tab in hand (on Plays: "Nothing
 here needs a verdict"; on Refine: what refine does, and "Nothing is left to refine." when empty); "To
