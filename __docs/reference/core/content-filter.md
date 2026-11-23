@@ -1125,9 +1125,9 @@ pick is refused, e.g. while unsaved timing holds the cursor).
    (their tooltips keep them) before anything is clipped.
 
 The **effect menu** (`EffectMenu.jsx`; a menu, not a cycle, so no effect is saved on the way): the
-effects that fit the part's channel with their keys (said `M` mute, `P` bleep, `K` skip, `O` off;
-shown `B` blur, `H` hide picture, `K` skip, `O` off; true scenes `K` skip, `B` hide picture, `O`
-off), the current one checked; then **Use household settings**; for a word, **More for this
+effects that fit the part's channel with their keys (said `M` mute, `P` bleep, `K` skip, `F` off;
+shown `B` blur, `H` hide picture, `K` skip, `F` off; true scenes `K` skip, `B` hide picture, `F`
+off; `O` is the out point), the current one checked; then **Use household settings**; for a word, **More for this
 word…** (a popover: this word in this film, Settings / Play / Mute / Bleep, and all of its group in
 this film); for a skip, the card shown in place of it (a popover with Approve card, Draft,
 Withdraw). The effect keys work with the menu closed and inside it (a letter picks and closes it).
@@ -1135,6 +1135,21 @@ While any menu is open the station keys stand aside entirely, Esc included: Esc 
 nothing else (it used to drop an unsaved timing change behind an open menu). A word skipped as an exchange is listed with
 scenes but is a cue: `isSceneRow` (no members, not `cue:`) decides scene handling, `keysKindOf` the
 effect keys.
+
+The **part menu** (`PartMenu.jsx`; owner, 2026-11-22: "right-click and I can change what it is or
+how it's handled"): a right-click on a part anywhere it appears (a list row, a timeline mark, a
+band on the timing strip, the part in hand's or a neighbour's; the strip finds the band by time,
+and empty track keeps the browser's menu), or the context-menu key / Shift+F10 on a focused list
+row, opens one menu for that part. It takes the part in hand first (`pickPart`; when the pick is
+refused, e.g. by unsaved timing, the menu stays shut). It names the part and its time, then
+**Play filtered (↵)**, **Play unfiltered (W)**, **Jump to it**; the effects that fit with their keys
+(current checked; off reads "No effect") and **Use household settings** (`station.handlers.settings`,
+the same `{ effect: 'profile', disabled: false }` PUT as the card's menu); **Approve (A)**, **Let it
+play (X)**, **Redo (D)** (the reason prompt, as the Redo button) unless the part plays; **Refine
+(R)** unless it plays or is a true scene; **Set in point here (I)** / **Set out point here (O)** for
+a single cue. The keys work inside the menu. An item runs once the cursor is that part, through the
+same handlers as the keys. Logs `content_filter.review.part_menu` (`rowId`, `from`:
+list | timeline | strip | key) and `content_filter.review.part_menu.action` (`action`, `value`).
 
 **Unfiltered (W)** plays the part from 4 s before with its effect off (`previewStore.peek`). The
 player reports the peek (its peek set publishes `peeking` to the preview store when it starts and

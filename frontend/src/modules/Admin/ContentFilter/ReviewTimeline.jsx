@@ -10,14 +10,14 @@ import { timecode } from './ReviewList.jsx';
  * click it, it should go there"): a mark, or a click within 6 px of one, takes that part (and the
  * film seeks to it); a click on empty track seeks the film there and keeps the part in hand.
  * Colour = action, a ring = the cursor, faded = a verdict is in, an orange edge = redo; the amber
- * line is the film's playhead.
+ * line is the film's playhead. A right-click on a mark opens that part's menu (PartMenu.jsx).
  */
 export const WINDOW_SEC = 90;
 const NEAR_PX = 6;
 const PLAYHEAD_MS = 250;
 const pct = (v) => `${Math.max(0, Math.min(100, v * 100))}%`;
 
-function Lane({ name, label, title, rows, from, span, selectedId, onSelect, now }) {
+function Lane({ name, label, title, rows, from, span, selectedId, onSelect, now, onPartMenu }) {
   const track = useRef(null);
   const pick = (e) => {
     if (e.target.closest?.('[data-mark]')) return;
@@ -49,7 +49,8 @@ function Lane({ name, label, title, rows, from, span, selectedId, onSelect, now 
             <button key={r.id} type="button" tabIndex={-1} data-mark={r.id} className={cls}
               aria-label={`${r.label}, ${timecode(r.in)}`} title={`${r.label} ${timecode(r.in)}–${timecode(out)}`}
               style={{ left: pct((r.in - from) / span), width: `max(4px, ${pct((out - r.in) / span)})` }}
-              onMouseDown={(e) => e.preventDefault()} onClick={() => onSelect(r)} />
+              onMouseDown={(e) => e.preventDefault()} onClick={() => onSelect(r)}
+              onContextMenu={onPartMenu ? (e) => { e.preventDefault(); onPartMenu(r, { x: e.clientX, y: e.clientY }); } : undefined} />
           );
         })}
         {now != null && now >= from && now <= from + span ? <span className="cf-timeline__playhead" style={{ left: pct((now - from) / span) }} /> : null}
@@ -58,7 +59,7 @@ function Lane({ name, label, title, rows, from, span, selectedId, onSelect, now 
   );
 }
 
-export function ReviewTimeline({ rows = [], selectedId = null, onSelect = () => {} }) {
+export function ReviewTimeline({ rows = [], selectedId = null, onSelect = () => {}, onPartMenu = null }) {
   const [now, setNow] = useState(() => previewStore.currentTime());
   const [length, setLength] = useState(() => previewStore.duration());
   useEffect(() => {
@@ -74,8 +75,8 @@ export function ReviewTimeline({ rows = [], selectedId = null, onSelect = () => 
   const near = rows.filter((r) => r.in >= from && r.in <= from + WINDOW_SEC);
   return (
     <div className="cf-timeline" aria-label="Timeline">
-      <Lane name="film" label="Film" title={`The whole film, 0:00–${timecode(end)}`} rows={rows} from={0} span={end} selectedId={selectedId} onSelect={onSelect} now={now} />
-      <Lane name="window" label="Near" title={`${timecode(from)}–${timecode(from + WINDOW_SEC)}`} rows={near} from={from} span={WINDOW_SEC} selectedId={selectedId} onSelect={onSelect} now={now} />
+      <Lane name="film" label="Film" title={`The whole film, 0:00–${timecode(end)}`} rows={rows} from={0} span={end} selectedId={selectedId} onSelect={onSelect} now={now} onPartMenu={onPartMenu} />
+      <Lane name="window" label="Near" title={`${timecode(from)}–${timecode(from + WINDOW_SEC)}`} rows={near} from={from} span={WINDOW_SEC} selectedId={selectedId} onSelect={onSelect} now={now} onPartMenu={onPartMenu} />
     </div>
   );
 }

@@ -545,3 +545,54 @@ describe('bleep level keys', () => {
     expect(settingsPuts()[0].body.settings.bleepLevel).toBe(1);
   });
 });
+
+describe('the part menu (owner, 2026-11-22: "right-click and I can change what it is or how it\'s handled")', () => {
+  const menuItem = (name) => screen.queryByRole('menuitem', { name: new RegExp(`^${name}( \\S+)?$`) });
+  const rightClick = (name) => fireEvent.contextMenu(screen.getByRole('button', { name }), { clientX: 400, clientY: 300 });
+  it('a part menu lists play, effects, verdicts, refine and in/out, and Approve there gives that part its verdict', async () => {
+    show();
+    rightClick('bravo');
+    await screen.findByRole('menu');
+    expect(selected()).toBe('cue:w2');
+    for (const name of ['Play filtered', 'Play unfiltered', 'Mute', 'Approve', 'Let it play', 'Redo', 'Refine', 'Set in point here', 'Set out point here']) {
+      expect(menuItem(name), name).toBeTruthy();
+    }
+    expect(log.info).toHaveBeenCalledWith('content_filter.review.part_menu', expect.objectContaining({ rowId: 'cue:w2', from: 'list' }));
+    fireEvent.click(menuItem('Approve'));
+    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    expect(reviewCalls()[0]).toEqual(expect.objectContaining({ path: 'api/v1/content-filter/77/review/cue%3Aw2', body: expect.objectContaining({ verdict: 'approve' }) }));
+    expect(log.info).toHaveBeenCalledWith('content_filter.review.part_menu.action', expect.objectContaining({ action: 'verdict', value: 'approve' }));
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+  });
+  it('an effect from the part menu goes to that part; Use household settings puts it back on the settings', async () => {
+    show();
+    rightClick('bravo');
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^Mute/ }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toEqual(expect.objectContaining({ path: 'api/v1/content-filter/77/cues/w2', body: { effect: 'mute' } }));
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    rightClick('alpha');
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^Use household settings/ }));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls[1]).toEqual(expect.objectContaining({ path: 'api/v1/content-filter/77/cues/w1', body: { effect: 'profile', disabled: false }, method: 'PUT' }));
+  });
+  it('a part that plays gets effects but no verdicts in its menu', async () => {
+    payload = base([row('cue:w1', 'alpha'), row('cue:k1', 'kiss', { acts: false, effect: 'off', why: 'settings', in: 40, out: 41 })]);
+    show();
+    fireEvent.click(document.querySelector('[data-stage="plays"]'));
+    rightClick('kiss');
+    await screen.findByRole('menu');
+    expect(menuItem('Mute')).toBeTruthy();
+    for (const name of ['Approve', 'Let it play', 'Redo', 'Refine', 'Set in point here']) expect(menuItem(name), name).toBeNull();
+  });
+  it('a part menu on another part is refused while timing is unsaved', async () => {
+    show();
+    const start = screen.getByRole('slider', { name: 'Start' });
+    start.focus(); fireEvent.keyDown(start, { key: 'ArrowLeft' }); start.blur();
+    rightClick('bravo');
+    expect(screen.getByText('Unsaved timing: Save or press Esc to drop it')).toBeTruthy();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(selected()).toBe('cue:w1');
+  });
+});

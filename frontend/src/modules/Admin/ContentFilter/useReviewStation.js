@@ -276,6 +276,21 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     });
   };
 
+  // "Use household settings" from the part menu: the part's own effect is dropped (as RowEditor's
+  // effect menu does), so the household's settings decide again.
+  const settings = (target = row) => {
+    if (!target) return;
+    if (latest.current.refining?.[target.id]) { setMessage('This part is being refined. Change its effect when the new timing lands.'); return; }
+    guarded('settings', async () => {
+      for (const [path, body, method] of callsFor(target, { effect: 'profile', disabled: false })) await DaylightAPI(path, body, method);
+      logger.info('content_filter.review.effect', { rk, rowId: target.id, kind: target.kind, from: target.effect, to: 'profile' });
+      if (!activeView.current) return;
+      setMessage('Back on the household settings.');
+      reload();
+      await previewStore.refresh().catch(() => false);
+    });
+  };
+
   const widen = () => {
     if (!row) return;
     guarded('widen', async () => {
@@ -534,7 +549,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   const canUndo = Boolean(top && rows?.some((r) => r.id === top.rowId));
 
   const handlers = {
-    next: () => step(1), prev: () => step(-1), replay, togglePlay, playWithout, refine, refineAll, rework: reworkKey, helpOpen, verdict, undo, effect, widen,
+    next: () => step(1), prev: () => step(-1), replay, togglePlay, playWithout, refine, refineAll, rework: reworkKey, helpOpen, verdict, undo, effect, settings, widen,
     cycleKind: () => setScope({ ...scope, kind: nextKind(scope.kind) }),
     bleepLevel: changeBleepLevel,
     retryPreview: previewRecovery ? retryPreview : null,

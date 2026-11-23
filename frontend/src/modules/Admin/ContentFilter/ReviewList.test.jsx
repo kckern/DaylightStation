@@ -163,3 +163,25 @@ describe('the effect icon on a row is a control (owner, 2026-11-22: "I want thos
   });
 });
 
+
+describe('the part menu (owner, 2026-11-22: "right-click and I can change what it is or how it\'s handled")', () => {
+  it('right-click a row opens the part menu at the pointer', () => {
+    const onPartMenu = vi.fn();
+    show({ onPartMenu });
+    const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 400, clientY: 300 });
+    item('Billboard').dispatchEvent(ev);
+    expect(onPartMenu).toHaveBeenCalledWith(rows[1], { x: 400, y: 300 });
+    expect(ev.defaultPrevented).toBe(true);
+  });
+  it('the context-menu key opens the part menu on the focused row', () => {
+    const onPartMenu = vi.fn();
+    show({ onPartMenu });
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ left: 600, top: 200, right: 900, bottom: 224, width: 300, height: 24, x: 600, y: 200 });
+    const btn = screen.getByRole('button', { name: 'damn' });
+    fireEvent.keyDown(btn, { key: 'ContextMenu' });
+    expect(onPartMenu).toHaveBeenLastCalledWith(rows[0], { x: 600, y: 224 }, 'key');
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Billboard' }), { key: 'F10', shiftKey: true });
+    expect(onPartMenu).toHaveBeenLastCalledWith(rows[1], { x: 600, y: 224 }, 'key');
+    expect(onPartMenu).toHaveBeenCalledTimes(2);
+  });
+});

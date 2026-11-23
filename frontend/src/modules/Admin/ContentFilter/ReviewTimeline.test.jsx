@@ -82,3 +82,15 @@ describe('ReviewTimeline', () => {
   });
 });
 
+
+describe('the part menu on the timeline', () => {
+  it('right-click a mark opens the part menu', () => {
+    const onPartMenu = vi.fn(); const onSelect = vi.fn();
+    show({ onPartMenu, onSelect });
+    const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 120, clientY: 40 });
+    mark('film', 'subject:c').dispatchEvent(ev);
+    expect(onPartMenu).toHaveBeenCalledWith(rows[2], { x: 120, y: 40 });
+    expect(ev.defaultPrevented).toBe(true);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+});

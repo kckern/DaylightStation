@@ -232,6 +232,7 @@
 .cf-card-part__status .cf-keybar__message { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cf-card-part__cardbtns { display: flex; gap: 6px; padding-top: 8px; }
 .cf-fx-menu__check { display: inline-flex; width: 14px; }
+.cf-part-menu__title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 // Timing strip (TimingStrip.jsx): ticks along the top, every part in the window as a band, the part
 // in hand solid with white handles. A handle's hit is 20px and the full track height, biased outward
 // (Start reaches left, End right) so two close handles never cover each other.

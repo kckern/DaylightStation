@@ -50,8 +50,11 @@ const GRAB_PX = 12;
  * adjustable): other parts that overlap the window, `{ id, span, saved, editable, family, label }`.
  * They draw in their effect family's colour; an editable one has handles and reports through
  * `onNeighbourChange(id, span)`. Every dragged span is a draft until the card saves it.
+ * `onPartMenu(row, { x, y })`: a right-click on a band opens that part's menu (PartMenu.jsx); the
+ * part in hand's band passes `row`, a neighbour's its own `row`.
  */
-export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice = () => {}, disabled = false, neighbours = [], onNeighbourChange = () => {} }) {
+export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice = () => {}, disabled = false, neighbours = [], onNeighbourChange = () => {},
+  row = null, onPartMenu = null }) {
   const [win, setWin] = useState(() => windowFor(saved));
   const [now, setNow] = useState(null);
   const [dragging, setDragging] = useState(null);
@@ -96,7 +99,8 @@ export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice 
   // The track decides which handle a press means: the nearest edge bar within GRAB_PX, so two close
   // parts' handles never steal each other (review 2026-11-22). A press farther away is a click (seek).
   const grab = (e) => {
-    if (disabled) return;
+    // Only the main button drags: a right-click is the part menu, never a nudge.
+    if (disabled || (e.button != null && e.button !== 0)) return;
     const box = track.current?.getBoundingClientRect();
     if (!box?.width) return;
     const x = e.clientX - box.left;
@@ -166,6 +170,20 @@ export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice 
     if (t != null) previewStore.seekTo(round2(t));
   };
 
+  // Right-click: the menu of the part under the pointer (the bands take no pointer events, so the
+  // track finds it by time). Empty track keeps the browser's own menu.
+  const partMenu = (e) => {
+    if (!onPartMenu) return;
+    const t = timeAt(e.clientX);
+    if (t == null) return;
+    const hit = parts.find((x) => x.focus && t >= x.span[0] && t <= x.span[1])
+      || parts.find((x) => !x.focus && x.row && t >= x.span[0] && t <= x.span[1]);
+    const target = hit?.focus ? row : hit?.row;
+    if (!target) return;
+    e.preventDefault();
+    onPartMenu(target, { x: e.clientX, y: e.clientY });
+  };
+
   const minor = width <= 60 ? 1 : width <= 300 ? 5 : 30;
   const labelStep = LABEL_STEPS.find((st) => width / st <= 8) || 600;
   const ticks = [];
@@ -190,7 +208,7 @@ export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice 
   return (
     <div className={`cf-strip${disabled ? ' is-disabled' : ''}`} aria-label="Timing">
       <div className="cf-strip__track" ref={track} onClick={seek} title="Click to move the film here"
-        onPointerDown={grab} onPointerMove={trackMove} onPointerUp={trackUp} onPointerCancel={trackUp}>
+        onPointerDown={grab} onPointerMove={trackMove} onPointerUp={trackUp} onPointerCancel={trackUp} onContextMenu={partMenu}>
         {ticks.map((t) => (
           <span key={t} className={`cf-strip__tick${t % labelStep === 0 ? ' is-major' : ''}`} style={{ left: pct(t) }}>
             {t % labelStep === 0 && (t - win[0]) / width <= LABEL_UNTIL ? <span className="cf-strip__label">{clock(t)}</span> : null}

@@ -253,3 +253,39 @@ describe('the strip in the part card', () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('the part menu on the strip', () => {
+  const own = { id: 'cue:own', label: 'darn' };
+  const other = { id: 'cue:n', label: 'heck' };
+  const strip = (onPartMenu) => render(<TimingStrip span={[100, 101]} saved={[100, 101]} row={own} onPartMenu={onPartMenu}
+    neighbours={[{ id: 'cue:n', span: [102, 103], saved: [102, 103], editable: true, family: 'audio', label: 'heck', row: other }]} />);
+  const rightClick = (clientX) => {
+    const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX, clientY: 20 });
+    document.querySelector('.cf-strip__track').dispatchEvent(ev);
+    return ev;
+  };
+  // Window 94–107 over 400 px from x = 100: 30.77 px per second.
+  it('right-click on a neighbour band opens its part menu', () => {
+    const onPartMenu = vi.fn(); strip(onPartMenu);
+    const ev = rightClick(362); // 102.5 s
+    expect(onPartMenu).toHaveBeenCalledWith(other, { x: 362, y: 20 });
+    expect(ev.defaultPrevented).toBe(true);
+    rightClick(285); // 100.5 s: the part in hand
+    expect(onPartMenu).toHaveBeenLastCalledWith(own, { x: 285, y: 20 });
+  });
+  it('right-click on empty strip track opens nothing', () => {
+    const onPartMenu = vi.fn(); strip(onPartMenu);
+    const ev = rightClick(423); // 104.5 s
+    expect(onPartMenu).not.toHaveBeenCalled();
+    expect(ev.defaultPrevented).toBe(false);
+  });
+});
+
+it('a right-button press on a handle does not start a drag (it is the part menu)', () => {
+  render(<Harness />);
+  const before = shown();
+  fireEvent.pointerDown(start(), { clientX: 250, button: 2, pointerId: 1 });
+  fireEvent.pointerMove(start(), { clientX: 200, button: 2, pointerId: 1 });
+  fireEvent.pointerUp(start(), { clientX: 200, button: 2, pointerId: 1 });
+  expect(shown()).toBe(before);
+});

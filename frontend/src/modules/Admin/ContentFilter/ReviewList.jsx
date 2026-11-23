@@ -55,8 +55,11 @@ export function rowStatus(r) {
   return { glyph: '·', word: 'Not reviewed', tone: 'open' };
 }
 
+/** Where the part menu opens for a row the keyboard asks about: under its left edge. */
+const boxPoint = (el) => { const b = el.getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.bottom) }; };
+
 export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, selectedId = null, onSelect = () => {}, onEffect = null,
-  refining = {}, scope: scopeProp = null, onScope = null, emptyText = null }) {
+  refining = {}, scope: scopeProp = null, onScope = null, emptyText = null, onPartMenu = null }) {
   // The page owns the scope so the timeline and stepping share it; used on its own the list keeps its own.
   const [own, setOwn] = useState(DEFAULT_SCOPE);
   const [menuFor, setMenuFor] = useState(null);
@@ -99,9 +102,22 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
             const fx = effectChip(r.effect);
             return (
               <div key={r.id} role="listitem" data-row-id={r.id} title={`${timecode(r.in)}–${timecode(r.out)}`}
-                className={`cf-review__row${selected ? ' is-selected' : ''}${plays(r) ? ' is-plays' : ''}`}>
+                className={`cf-review__row${selected ? ' is-selected' : ''}${plays(r) ? ' is-plays' : ''}`}
+                // Right-click: the part menu (PartMenu.jsx) at the pointer. A contextmenu the
+                // keyboard raised carries no pointer, so it opens under the row.
+                onContextMenu={onPartMenu ? (e) => {
+                  e.preventDefault();
+                  if (e.clientX || e.clientY) onPartMenu(r, { x: e.clientX, y: e.clientY });
+                  else onPartMenu(r, boxPoint(e.currentTarget), 'key');
+                } : undefined}>
                 <UnstyledButton onClick={() => onSelect(r)} onMouseDown={(e) => e.preventDefault()} aria-pressed={selected} aria-label={r.label}
-                  className="cf-review__pick">
+                  className="cf-review__pick" aria-haspopup={onPartMenu ? 'menu' : undefined}
+                  // The context-menu key (or Shift+F10) on a focused row opens the same menu.
+                  onKeyDown={onPartMenu ? (e) => {
+                    if (e.key !== 'ContextMenu' && !(e.key === 'F10' && e.shiftKey)) return;
+                    e.preventDefault(); e.stopPropagation();
+                    onPartMenu(r, boxPoint(e.currentTarget.closest('[data-row-id]') || e.currentTarget), 'key');
+                  } : undefined}>
                   <span className="cf-review__glyph" data-status={status.word}><StatusIcon status={status} /></span>
                   <span className="cf-review__time">{timecode(r.in)}</span>
                   <span className="cf-review__label" title={r.label}>{r.label}</span>

@@ -50,7 +50,7 @@ const same = (a, b) => a[0] === b[0] && a[1] === b[1];
 
 export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = null, wordRulings = {},
   position = null, handlers = {}, refineState = null, canUndo = false, status = null, stage = 'review',
-  neighbours = [], ports = null, unfiltered = false }) {
+  neighbours = [], ports = null, unfiltered = false, onPartMenu = null }) {
   const [notice, setNotice] = useState(null);
   const [pending, setPending] = useState(null);
   const [span, setSpan] = useState([row.in, row.out]);
@@ -230,7 +230,8 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
       <div className="cf-card-part__timing">
         {showStrip ? (
           <TimingStrip span={span} saved={[row.in, row.out]} onChange={setSpan} onNotice={setNotice} disabled={disabled}
-            neighbours={near} onNeighbourChange={(id, next) => setDrafts((d) => ({ ...d, [id]: next }))} />
+            neighbours={near} onNeighbourChange={(id, next) => setDrafts((d) => ({ ...d, [id]: next }))}
+            row={row} onPartMenu={onPartMenu} />
         ) : (
           <Text size="xs" c="dimmed" className="cf-card-part__nostrip">
             {playing ? 'This part plays as it is.' : `${timecode(row.in)}–${timecode(row.out)}: several parts together; open one to fit its timing.`}

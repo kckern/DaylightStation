@@ -14,6 +14,7 @@ import { isOpen, plays } from './reviewScope.js';
 import { ReviewHeader } from './ReviewHeader.jsx';
 import { ReviewPlayer } from './ReviewPlayer.jsx';
 import { RowEditor } from './RowEditor.jsx';
+import { PartMenu } from './PartMenu.jsx';
 import { ApprovePanel, PANEL_ID, ReviewRail, tabId } from './ReviewRail.jsx';
 import { useFilmApproval, useFilmReviewOwner } from './useFilmApproval.js';
 import './ContentFilterAdmin.scss';
@@ -109,6 +110,30 @@ function FilmReview({ ratingKey, rowId, owner }) {
   });
   useVisibleRefresh({ active: Boolean(waiting), intervalMs: POLL_MS, reload, poll });
 
+  // The part menu (PartMenu.jsx): a right-click on a part anywhere takes it in hand and opens there.
+  // An item runs once the cursor is that part, through the same handlers as the keys.
+  const [partMenu, setPartMenu] = useState(null);
+  const pendingAction = useRef(null);
+  const [, setActionTick] = useState(0);
+  const runPartAction = ({ row: r, action, value }) => {
+    if (action === 'play') keyHandlers.replay?.();
+    else if (action === 'unfiltered') keyHandlers.playWithout();
+    else if (action === 'jump') previewStore.jumpToCue({ in: r.in }, { play: false });
+    else if (action === 'effect') station.handlers.effect?.(value, r);
+    else if (action === 'settings') station.handlers.settings?.(r);
+    // Redo asks for its reason like the Redo button and D.
+    else if (action === 'verdict') { if (value === 'redo') openRedo(); else keyHandlers.verdict?.(value); }
+    else if (action === 'refine') keyHandlers.refine?.();
+    else if (action === 'in') keyHandlers.markIn();
+    else if (action === 'out') keyHandlers.markOut();
+  };
+  useEffect(() => {
+    const p = pendingAction.current;
+    if (!p || selected?.id !== p.row.id) return;
+    pendingAction.current = null;
+    runPartAction(p);
+  });
+
   const refining = station.refining;
   // Arriving without a permalink: the first filtered part still to review is in hand at once.
   useEffect(() => {
@@ -131,6 +156,22 @@ function FilmReview({ ratingKey, rowId, owner }) {
   const index = row ? station.scoped.findIndex((r) => r.id === row.id) : -1;
   // Picking a part from the list or the timeline while on Approve goes back to the parts.
   const pickPart = (r) => { if (stage === 'approve') station.setStage(plays(r) ? 'plays' : 'review', 'part', { keepCursor: true }); return station.pick(r); };
+  const openPartMenu = (r, at, from) => {
+    if (!r || !at) return;
+    // The menu acts on the part in hand: when the pick is refused (unsaved timing) it stays shut.
+    if ((r.id !== row?.id || stage === 'approve') && pickPart(r) === false) return;
+    setPartMenu({ id: r.id, row: r, at });
+    logger.info('content_filter.review.part_menu', { rk: ratingKey, rowId: r.id, from });
+  };
+  const partMenuRow = partMenu ? data.rows.find((r) => r.id === partMenu.id) || partMenu.row : null;
+  const onPartAction = (action, value) => {
+    if (!partMenuRow) return;
+    logger.info('content_filter.review.part_menu.action', { rk: ratingKey, rowId: partMenuRow.id, action, value: value ?? null });
+    pendingAction.current = { row: partMenuRow, action, value };
+    setActionTick((n) => n + 1);
+  };
+  // The list's keyboard path says so (the context-menu key or Shift+F10).
+  const fromList = (r, at, via) => openPartMenu(r, at, via === 'key' ? 'key' : 'list');
   // The redo prompt, the last message and the preview retry sit inside the card, above its verdicts.
   const onRedo = (reason) => { closeRedo(); if (reason !== null) station.handlers.verdict('redo', reason); };
   const keyBar = <ReviewKeyBar redoOpen={redoOpen} helpOpen={station.helpOpen} onCloseHelp={station.handlers.escape}
@@ -153,7 +194,8 @@ function FilmReview({ ratingKey, rowId, owner }) {
       <div className="cf-review" id={PANEL_ID} role="tabpanel" aria-labelledby={tabId(stage)}>
         <div className="cf-review__side">
           <ReviewPlayer ratingKey={ratingKey} unfiltered={unfiltered} />
-          {data.rows.length ? <ReviewTimeline rows={station.scoped} selectedId={row?.id ?? null} onSelect={pickPart} /> : null}
+          {data.rows.length ? <ReviewTimeline rows={station.scoped} selectedId={row?.id ?? null} onSelect={pickPart}
+            onPartMenu={(r, at) => openPartMenu(r, at, 'timeline')} /> : null}
           {stage === 'approve' ? (
             <>
               <ApprovePanel data={data} approval={approval} tally={station.tally} running={running} onReview={() => station.setStage('review', 'approve-panel')} />
@@ -164,14 +206,16 @@ function FilmReview({ ratingKey, rowId, owner }) {
               wordRulings={data.wordRulings || {}} handlers={cardHandlers} canUndo={station.canUndo} stage={stage}
               position={index >= 0 ? { index, total: station.scoped.length } : null}
               refineState={refining[row.id] ? { state: refining[row.id] } : null}
-              status={keyBar} neighbours={data.rows} ports={cardPorts} unfiltered={unfiltered} />
+              status={keyBar} neighbours={data.rows} ports={cardPorts} unfiltered={unfiltered}
+              onPartMenu={(r, at) => openPartMenu(r, at, 'strip')} />
           ) : keyBar}
         </div>
         <ReviewList rows={data.rows} reviewed={data.reviewed} total={data.total} audit={data.audit}
           selectedId={row?.id ?? null} onSelect={pickPart} scope={station.scope} onScope={station.setScope} refining={refining}
           onEffect={stage === 'approve' ? null : (r, letter) => station.handlers.effect?.(letter, r)}
-          emptyText={EMPTY[data.status?.next] || null} />
+          emptyText={EMPTY[data.status?.next] || null} onPartMenu={fromList} />
       </div>
+      <PartMenu row={partMenuRow} at={partMenu?.at ?? null} onClose={() => setPartMenu(null)} onAction={onPartAction} />
     </div>
   );
 }
