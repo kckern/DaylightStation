@@ -16,7 +16,8 @@ export class PeopleDirectory {
   list({ householdId, query = '', includeArchived = false }) {
     const users = (this.householdDirectory.userIds?.(householdId) || []).map(id => {
       const profile = this.householdDirectory.userProfile?.(id);
-      return { person: { kind: 'user', id }, display: { name: profile?.display_name || profile?.name || id, avatar: profile?.avatar ?? null }, active: true };
+      // Household-scoped label first ("Dad", "Mom"), as HouseholdUserProjection.resolveDisplayName.
+      return { person: { kind: 'user', id }, display: { name: profile?.group_label || profile?.display_name || profile?.name || id, avatar: profile?.avatar ?? null }, active: true };
     });
     const guests = this.guestStore.read(householdId).guests.filter(g => includeArchived || g.active).map(guestEntry);
     const needle = String(query).trim().toLowerCase();

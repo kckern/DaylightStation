@@ -177,3 +177,17 @@ it('scrolls a long Party Games preview with captured remote input and returns fo
  fireEvent.keyDown(document.activeElement,{key:'ArrowDown'});expect(screen.getByRole('button',{name:'Back'})).toHaveFocus();
  adapter._emit({action:'select',key:'Enter'});expect(close).toHaveBeenCalledTimes(1);
 });
+
+it('draws nothing of its own while an activity starts by itself', async () => {
+  let finish;
+  const inspect = vi.fn().mockResolvedValue({ schema: 'participant-launch-options/v1', ready: true, confirmation: 'none', setup_hash: 'h', choices: [] });
+  const begin = vi.fn(() => new Promise(resolve => { finish = resolve; }));
+  const ready = vi.fn();
+  const { container } = render(<ParticipantLaunchHost refValue={{ schema: 'participant-launch-ref/v1', provider: 'agenda', ref: 'x' }} action="open" client={{ inspect, begin }} onReady={ready} onClose={() => {}} />);
+  expect(container.textContent).toBe('');
+  await waitFor(() => expect(begin).toHaveBeenCalled());
+  expect(container.textContent).toBe('');
+  expect(screen.queryByRole('button')).toBeNull();
+  finish({ schema: 'participant-launch-result/v1', kind: 'ready', consumer: { id: 'fake', version: 1 }, output: { schema: 'fake/v1', data: {} } });
+  await waitFor(() => expect(ready).toHaveBeenCalledTimes(1));
+});

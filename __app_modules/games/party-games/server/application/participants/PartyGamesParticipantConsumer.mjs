@@ -45,15 +45,21 @@ function artifactRefs(loaded) {
 }
 function ready(snapshot,id) { return {schema:'participant-launch-result/v1',kind:'ready',launch_id:snapshot.launch_id,consumer:ref,snapshot_hash:snapshot.snapshot_hash,participant_context:clone(snapshot.participant_context),output:{schema:'party-games-launch-result/v1',data:{session_id:id,definition_id:snapshot.target.definitionId}},runtime_ref:{provider:'gaming',id}}; }
 /**
- * A game is worth resuming only when it is clearly under way: unfinished, and at least
- * one full round played (never fewer than three clues). A game opened and abandoned, or
- * one already finished, starts fresh instead.
+ * Tell an engaged game from browsing or a quick test. A game comes back only when it is
+ * unfinished, at least two clues have been played by two different performers, and it
+ * has exactly tonight's people. Anything less starts a new game.
  */
-export function isDeepInProgress(runtime) {
+export function isEngagedGame(runtime, participantIds = null) {
   if (!['active','suspended'].includes(runtime?.header?.status)) return false;
-  const played=Number(runtime.state?.challenge_index);
-  const people=(runtime.header.participants || []).length;
-  return Number.isFinite(played) && played >= Math.max(3, people);
+  const played = Number(runtime.state?.challenge_index);
+  if (!Number.isInteger(played) || played < 2) return false;
+  const performers = new Set((runtime.state?.turn_order || []).slice(0, played));
+  if (performers.size < 2) return false;
+  if (Array.isArray(participantIds)) {
+    const saved = new Set((runtime.header.participants || []).map(p => p.participant_id || p.id));
+    if (saved.size !== participantIds.length || participantIds.some(id => !saved.has(id))) return false;
+  }
+  return true;
 }
 
 export class PartyGamesParticipantConsumer {
@@ -89,14 +95,14 @@ export class PartyGamesParticipantConsumer {
   await this.executionPort.createReserved({sessionId,seed,pinnedArtifacts,participants,seats,setup,creationKey:executionKey,participantEvidence:{schema:'participant-execution-evidence/v1',snapshot:clone(snapshot),metadata:executionMetadata ? clone(executionMetadata) : null},viewer});
   return ready(snapshot,sessionId);
  }
- async findResumable({receipts,viewer}) {
+ async findResumable({receipts,viewer,participantIds=null}) {
   const result=[];
   for (const receipt of receipts) {
    if (receipt.runtime_ref?.provider !== 'gaming') continue;
    if (typeof this.executionPort.inspect !== 'function') fail('participant_discovery_unavailable','Read-only game discovery is unavailable');
    try {
     const runtime=await this.executionPort.inspect(receipt.runtime_ref.id,viewer);
-    if (runtime && isDeepInProgress(runtime)) {
+    if (runtime && isEngagedGame(runtime, participantIds)) {
      const verb='Resume game';
      const names=(runtime.header.participants || []).map(p=>p.name).filter(name=>typeof name==='string' && name.trim());
      const details=[runtime.header.launch?.participant_launch?.source_label, names.join(', ')].filter(Boolean);

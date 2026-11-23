@@ -61,7 +61,7 @@ class ParticipantLaunchService {
     const setup = await this.setupResolver.resolve({ resolvedSource: source, viewer: input.viewer });
     return { source, ...setup, returnTo };
   }
-  async findChoices(receipts, viewer) {
+  async findChoices(receipts, viewer, participantIds = null) {
     const groups = new Map();
     for (const receipt of receipts) {
       const key = JSON.stringify(receipt.consumer);
@@ -72,7 +72,7 @@ class ParticipantLaunchService {
     for (const group of groups.values()) {
       const consumer = this.registry.get(group[0].consumer);
       if (!consumer?.findResumable) continue;
-      const available = await consumer.findResumable({receipts: group, viewer});
+      const available = await consumer.findResumable({receipts: group, viewer, participantIds});
       const ids = new Set(group.map(receipt => receipt.launch_id));
       if (!Array.isArray(available) || available.some(choice => !ids.has(choice.launch_id))) {
         fail("invalid_launch_result", "Invalid resumable choices");
@@ -91,8 +91,7 @@ class ParticipantLaunchService {
     const build = async (receipts) => {
       const value = await this.prepare(input, access);
       if (!value.participantContext) return { schema: "participant-launch-options/v1", consumer: refOf(value.consumer), ready: true, confirmation: "none", passthrough: true, choices: [] };
-      // Only launches made with the current setup can be resumed; an older roster is a different game.
-      const choices = await this.findChoices(receipts.filter(r => !r.setup_hash || r.setup_hash === value.setupHash), input.viewer);
+      const choices = await this.findChoices(receipts, input.viewer, value.participantContext.participants.map(p => p.participant_id));
       return { schema: "participant-launch-options/v1", consumer: refOf(value.consumer), ready: true, setup_hash: value.setupHash, participant_summary: clone(value.participantContext.participants.map(({ key, display }) => ({ key, display }))), consumer_summary: clone(value.prepared.preview), confirmation: value.prepared.confirmation, choices };
     };
     return access.access ? access.access.store.inspect(access.access.scope_key, build) : build([]);
@@ -116,7 +115,7 @@ class ParticipantLaunchService {
       if (input.intent === "open") {
         const pending = receipts.find((r) => !r.result && r.setup_hash === value.setupHash && same(r.consumer, refOf(value.consumer)));
         if (pending) return { reuse_launch_id: pending.launch_id, setup_hash: value.setupHash };
-        const choices = await this.findChoices(receipts.filter(r => !r.setup_hash || r.setup_hash === value.setupHash), input.viewer);
+        const choices = await this.findChoices(receipts, input.viewer, value.participantContext.participants.map(p => p.participant_id));
         if (choices.length) return { schema: "participant-launch-result/v1", kind: "resume_available", consumer: refOf(value.consumer), current_setup_hash: value.setupHash, choices };
       }
       const providerProvenance = value.source.provenance ?? {};

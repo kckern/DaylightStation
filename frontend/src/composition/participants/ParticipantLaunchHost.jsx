@@ -74,11 +74,14 @@ export function ParticipantLaunchHost({ refValue, action, client = participantLa
     else begin('open');
   }, [state.phase, options, begin, execute, refValue, action, requireConfirmation, previewUnavailable]);
   const cancel=()=>{getLogger().info('participant-launch.cancel',{phase:state.phase});onClose?.();};
+  // Starting an activity shows nothing of its own: the activity's title card is the first thing on
+  // screen. A dialog appears only for an error, a conflict, or an activity that needs confirming.
+  const autoStarting = state.phase === 'options' && options?.confirmation === 'none' && !requireConfirmation && !previewUnavailable;
+  if (autoStarting || (state.phase === 'loading' && (!inspectedConsumer.current || autoStart.current))) return null;
   return <TVActionDialog label="Activity launch" focusKey={state.phase} onBack={cancel}>
-    {state.phase === 'loading' && <p>Loading activity…</p>}
     {state.phase === 'conflict' && <><p>{state.message}</p><button onClick={recover}>Refresh</button></>}
     {state.phase === 'error' && <><p>{state.message}</p><button onClick={() => execute(lastOperation.current.operation, lastOperation.current.input)}>Retry</button></>}
-    {state.phase === 'options' && !(options.confirmation === 'none' && !requireConfirmation && !previewUnavailable) && <>
+    {state.phase === 'options' && <>
       <p>Review activity</p>
       {Preview ? <Preview summary={options.consumer_summary}/> : previewUnavailable ? <p role="alert">Activity preview unavailable.</p> : options.participant_summary?.map(person => <p key={person.key}>{person.display?.name}</p>)}
       {options.choices?.map(choice => <button key={choice.launch_id} onClick={() => execute('resume', {ref:refValue,action,launchId:choice.launch_id})}>{/^(Resume|View)\b/.test(choice.label || '') ? choice.label : `Resume ${choice.label}`}</button>)}

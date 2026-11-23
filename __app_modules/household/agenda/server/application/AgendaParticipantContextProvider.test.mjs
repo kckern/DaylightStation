@@ -2,14 +2,14 @@ import {it,expect} from 'vitest';
 import {AgendaParticipantContextProvider} from './AgendaParticipantContextProvider.mjs';
 import {AgendaLaunchRefCodec} from '../adapters/AgendaLaunchRefCodec.mjs';
 import {hashValue} from '../../../../../__capabilities/content-catalog/server/participant-launch.mjs';
-it('authorizes retained access independently from live policy and preserves display snapshots',async()=>{
+it('authorizes retained access independently from live policy and names people from the directory',async()=>{
  const codec=new AgendaLaunchRefCodec(), target={kind:'content',source:'example',capabilities:{display:{participantConsumer:{id:'fake',version:1}}}};
  const plan={household_id:'home',series_id:'family',plan_id:'plan',revision:2,state:'published',week_of:'2026-11-16',calendar:{timezone:'UTC'},participants:[{id:'one',person:{kind:'user',id:'user'},display:{name:'Saved',avatar:null}}],list:{sections:[{items:[{uid:'item',display:'x'}]}]},activity_settings:{item:{action:'display',participants:{mode:'plan'},consumer:{id:'fake',version:1},settings:{}}}};
  const repository={readPlan:async()=>({document:plan}),readSeries:async()=>({document:{status:'active'}})}; const store={};
  const provider=new AgendaParticipantContextProvider({repository,store,codec,clock:()=>new Date('2026-11-17T00:00:00Z'),directory:{resolve:async()=>({display:{name:'Changed'}})},authorize:async()=>true,resolveTarget:async()=>target});
  const ref=codec.encode({householdId:'home',planId:'plan',itemUid:'item',revision:2,action:'display',targetDigest:hashValue(target)});
  expect((await provider.authorizeAccess(ref,{action:'display',viewer:{}})).store).toBe(store);
- const source=await provider.resolve(ref,{viewer:{}}); expect(source.roster[0].display.name).toBe('Saved');
+ const source=await provider.resolve(ref,{viewer:{}}); expect(source.roster[0].display.name).toBe('Changed');
  plan.state='cancelled'; plan.list.sections[0].items=[];
  expect((await provider.authorizeAccess(ref,{action:'display',viewer:{}})).store).toBe(store);
  await expect(provider.resolve(ref,{viewer:{}})).rejects.toThrow();

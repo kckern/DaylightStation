@@ -1,10 +1,11 @@
 import { it, expect } from 'vitest';
 import { resolveParticipants } from './resolveParticipants.mjs';
 const directory={resolve:async ({person})=>person.id==='visitor'?{person,display:{name:'Current',avatar:null},active:false}:null};
-it('preserves snapshots and distinct anonymous identities, including archived guests',async()=>{
+it('takes named people from the directory and keeps distinct anonymous identities, including archived guests',async()=>{
  const plan={plan_id:'week',household_id:'h',participants:[{id:'one',person:{kind:'guest',id:'visitor'},display:{name:'Old',avatar:null}},{id:'two',anonymous:true,display:{name:'Guest',avatar:null}},{id:'three',anonymous:true,display:{name:'Guest',avatar:null}}]};
  const result=await resolveParticipants({plan,directory});
- expect(result[0]).toMatchObject({runtimeId:'guest:visitor',person:{kind:'guest',id:'visitor'},display:{name:'Old',avatar:null}});
+ expect(result[0]).toMatchObject({runtimeId:'guest:visitor',person:{kind:'guest',id:'visitor'},display:{name:'Current',avatar:null}});
+ expect(result.slice(1).map(x=>x.display.name)).toEqual(['Guest','Guest']);
  expect(result.slice(1).map(x=>x.runtimeId)).toEqual(['anon:week:two','anon:week:three']);
 });
 it('rejects unknown identities, namespace collisions, and invalid runtime IDs',async()=>{
