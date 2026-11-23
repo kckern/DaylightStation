@@ -136,9 +136,13 @@ test('Life Triage transcribes captured bytes into the current answer draft for r
     await main.getByRole('button', { name: 'Stop recording' }).click();
     await transcriptionStarted.promise;
     const answer = main.getByRole('textbox', { name: 'Answer in your own words' });
+    await expect(answer).toBeFocused();
     await answer.fill('My draft');
+    const stopForNow = main.getByRole('link', { name: 'Stop for now' });
+    await stopForNow.focus();
     transcript.resolve();
     await expect(answer).toHaveValue('My draft Synthetic transcript');
+    await expect(stopForNow).toBeFocused();
     expect(commands).toEqual([['/api/v1/ai/transcribe', { audioBase64: Buffer.from(bytes).toString('base64') }]]);
     expect(await metrics()).toMatchObject({ starts: [[0, 'audio/webm;codecs=opus']], stopped: [0], closed: [0], clocks: 0 });
   } finally {

@@ -294,4 +294,37 @@ describe('TriageSessionView', () => {
     expect(triage.answer).not.toHaveBeenCalled();
     recorder.isRecording = false;
   });
+
+  it('focuses the answer when recording stops and does not reclaim focus after transcription', async () => {
+    recorder.isRecording = true;
+    let finishStop;
+    recorder.stop.mockImplementation(() => new Promise(resolve => { finishStop = resolve; }));
+    let resolveTranscription;
+    api.mockImplementation(() => new Promise(resolve => { resolveTranscription = resolve; }));
+    wrap();
+    const answer = screen.getByLabelText('Answer in your own words');
+    const stopForNow = screen.getByRole('link', { name: /Stop for now/ });
+    try {
+      fireEvent.click(screen.getByRole('button', { name: /Stop recording/ }));
+      await waitFor(() => expect(finishStop).toBeTypeOf('function'));
+      expect(answer).toHaveFocus();
+      stopForNow.focus();
+      await act(async () => {
+        finishStop({ blob: new Blob(['x'], { type: 'audio/webm' }), durationMs: 900, mimeType: 'audio/webm' });
+      });
+      await waitFor(() => expect(resolveTranscription).toBeTypeOf('function'));
+      expect(stopForNow).toHaveFocus();
+      await act(async () => { resolveTranscription({ text: 'make a todo' }); });
+      await waitFor(() => expect(answer).toHaveValue('make a todo'));
+      expect(stopForNow).toHaveFocus();
+      expect(triage.answer).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => {
+        finishStop?.({ blob: new Blob(['x'], { type: 'audio/webm' }), durationMs: 900, mimeType: 'audio/webm' });
+        await Promise.resolve();
+        resolveTranscription?.({ text: 'make a todo' });
+      });
+      recorder.isRecording = false;
+    }
+  });
 });

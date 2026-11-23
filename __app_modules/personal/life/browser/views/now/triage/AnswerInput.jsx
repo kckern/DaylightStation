@@ -53,7 +53,6 @@ export function AnswerInput({ value, onChange, onSubmit, placeholder = 'Or say w
       if (!text) { setVoiceError("Couldn't make that out — try again or type it."); return; }
       const draft = draftRef.current;
       draft.onChange(draft.value ? `${draft.value} ${text}` : text);
-      inputRef.current?.focus();
     } catch (err) {
       if (!isCurrent()) return;
       logger.warn('triage.voice.failed', { error: err?.message, status: err?.status ?? null });
@@ -67,6 +66,7 @@ export function AnswerInput({ value, onChange, onSubmit, placeholder = 'Or say w
   const toggleMic = async () => {
     setVoiceError(null);
     if (!isRecording) { await start(); return; }
+    inputRef.current?.focus();
     const take = await stop();
     if (!take?.blob?.size) { setVoiceError("Didn't hear anything — try again or type it."); return; }
     takeRef.current = take;
