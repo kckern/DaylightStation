@@ -121,7 +121,7 @@ describe('what comes next', () => {
     const first = view(plan, stuck.state, { legacy: stuck.legacy });
     expect(first.recommended).toMatchObject({ passageId: 'm0-4', skill: 'silver' });
     const after = view(plan, play(stuck.state, plan, first.recommended, good, DAY, stuck.legacy), { legacy: stuck.legacy });
-    expect(after.recommended).toMatchObject({ passageId: 'm5-8', skill: 'right' });
+    expect(after.recommended).toMatchObject({ passageId: 'm5-8', skill: 'silver' });
   });
   it('failed metronome takes never change recommended', () => {
     const plan = planOf(); const before = view(plan).recommended.key;
@@ -170,14 +170,16 @@ describe('what comes next', () => {
     for (const id of ['one', 'two', 'solo']) state = applyCoachEvent(state, { id, type: 'set-aside', task: task(plan, 'silver', id) }, { plan, now: 'x', dayKey: DAY });
     expect(view(plan, state).recommended.passageId).toBe('one');
   });
-  it('recommended is null only when every passage has Silver', () => {
+  it('recommended is null only when every passage and join has Silver', () => {
     const plan = planOf(); let state;
     for (const id of ['one', 'two']) state = play(state, plan, task(plan, 'silver', id));
+    expect(view(plan, state).recommended.passageId).toBe('join:one:two');
+    state = play(state, plan, task(plan, 'silver', 'join:one:two'));
     expect(view(plan, state).recommended.passageId).toBe('solo');
-    state = play(state, plan, task(plan, 'silver', 'solo'));
+    for (const id of ['solo', 'join:one:solo']) state = play(state, plan, task(plan, 'silver', id));
     const done = view(plan, state);
     expect(done.recommended).toBeNull();
-    expect(done.piece).toMatchObject({ total: 3, silver: 3, gold: 0, nextPassageId: null, nextGoldPassageId: 'one' });
+    expect(done.piece).toMatchObject({ total: 3, silver: 3, gold: 0, pieceSilver: true, nextPassageId: null, nextGoldPassageId: 'one' });
   });
   it('canSetAside is true after two straight misses of any Silver-track task or drill', () => {
     const plan = planOf(); const right = task(plan, 'right');

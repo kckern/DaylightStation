@@ -75,6 +75,41 @@ export function makeCoachTask(plan, spec) {
   return { ...task, key: coachTaskKey(task) };
 }
 
+
+/**
+ * The merge tree of joins over a piece's passages, in order: adjacent pairs, then
+ * pairs of pairs; an odd unit out carries up to the next level. Returned in
+ * post-order (a join comes after everything under it); the top join is `final`.
+ * A piece of one passage has none. Pure: reads only each passage's id and bars.
+ */
+export function buildJoinTree(passages = []) {
+  let level = passages.map((passage) => ({ id: passage.id, inMeasure: passage.inMeasure, outMeasure: passage.outMeasure,
+    playableParts: partsOf(passage.playableParts), printedMeasures: passage.printedMeasures, first: passage.id, last: passage.id, passages: [passage.id] }));
+  const joins = [];
+  while (level.length > 1) {
+    const next = [];
+    for (let at = 0; at < level.length; at += 2) {
+      const left = level[at]; const right = level[at + 1];
+      if (!right) { next.push(left); continue; }
+      const join = { id: `join:${left.first}:${right.last}`, kind: 'join', final: false,
+        inMeasure: left.inMeasure, outMeasure: right.outMeasure, playableParts: partsOf([...left.playableParts, ...right.playableParts]),
+        printedMeasures: [left.printedMeasures?.[0], right.printedMeasures?.[1]].every((value) => value != null) ? [left.printedMeasures[0], right.printedMeasures[1]] : undefined,
+        members: [left.id, right.id], memberPassages: [...left.passages, ...right.passages],
+        seam: { left: left.outMeasure, right: right.inMeasure }, first: left.first, last: right.last, passages: [...left.passages, ...right.passages] };
+      joins.push(join); next.push(join);
+    }
+    level = next;
+  }
+  if (joins.length) joins.at(-1).final = true;
+  return joins.map(({ first, last, passages: _passages, ...join }) => join);
+}
+
+/** Every unit under a join, in play order: its passages and joins, then the join itself. */
+function playOrder(id, byId) {
+  const unit = byId.get(id);
+  return unit?.kind === 'join' ? [...unit.members.flatMap((member) => playOrder(member, byId)), id] : [id];
+}
+
 export function createCoachPlan({ scoreId, fingerprint, segments = [], authoredLadder = false, tempoMap = [], criteria = {}, certification }) {
   const content = fingerprintOf(fingerprint);
   if (!scoreId || !content) throw new Error('Coaching requires a score and content fingerprint');
@@ -128,6 +163,26 @@ export function createCoachPlan({ scoreId, fingerprint, segments = [], authoredL
     plan.segments.push({ ...segment, authoredLadder: authored, tasks, demonstration });
     plan.tasks.push(...tasks, ...(tasks.includes(demonstration) ? [] : [demonstration]));
   }
+  const joins = authoredLadder ? [] : buildJoinTree(plan.segments.filter((segment) => !segment.authoredLadder));
+  if (joins.length === 0) return plan;
+  const joinSegments = joins.map((join) => {
+    const range = { start: join.inMeasure, end: join.outMeasure };
+    const parts = join.playableParts;
+    const specs = [
+      ...(parts.length > 1 ? parts.map((part) => ({ skill: part === 'rh' ? 'right' : part === 'lh' ? 'left' : `notes-${part}`,
+        label: part === 'rh' ? 'Find the right-hand notes' : part === 'lh' ? 'Find the left-hand notes' : 'Find these notes', parts: [part], mode: 'free', ...noteStep })) : []),
+      { skill: parts.length > 1 ? 'together' : 'notes', label: parts.length > 1 ? 'Join the hands' : 'Find the notes', parts, mode: 'free', ...noteStep },
+      { skill: 'silver', label: 'Play it on your own', parts, mode: 'free', track: 'silver', assist: 'none', required: policy.silver.checkPasses, stallSeconds: policy.silver.stallSeconds,
+        criteria: { completeness: 1, cleanliness: policy.silver.cleanliness } },
+    ];
+    const tasks = specs.map((spec) => makeCoachTask(plan, { ...spec, criteria: { ...criteria, ...spec.criteria }, passageId: join.id, range }));
+    plan.tasks.push(...tasks);
+    return { ...join, authoredLadder: false, tasks, demonstration: null };
+  });
+  const byId = new Map([...plan.segments, ...joinSegments].map((segment) => [segment.id, segment]));
+  const order = playOrder(joinSegments.at(-1).id, byId);
+  const placed = new Set(order);
+  plan.segments = [...order.map((id) => byId.get(id)), ...plan.segments.filter((segment) => !placed.has(segment.id))];
   return plan;
 }
 
@@ -346,25 +401,41 @@ export function projectCoach({ plan, state, legacy = {}, dayKey }) {
   const reviewTask = due[0]?.demonstration;
   const review = reviewTask ? { ...reviewTask, review: true } : null;
   const setAsideToday = (id) => Boolean(dayKey) && current.setAside?.[id] === dayKey;
-  const open = segments.filter((segment) => !segment.certification.silver);
+  const isJoin = (segment) => segment.kind === 'join';
+  const passages = segments.filter((segment) => !isJoin(segment));
+  const silverIds = new Set(passages.filter((segment) => segment.certification.silver).map((segment) => segment.id));
+  // A join is offered only once every passage under it has its first (Bronze) certificate.
+  const eligible = (segment) => !isJoin(segment) || segment.memberPassages.every((id) => silverIds.has(id));
+  const open = segments.filter((segment) => !segment.certification.silver && eligible(segment));
   const resume = liveResume(plan, segments, current.resume);
   const drill = resume && resume.depth > 0 && !isGoldWork(resume)
     && open.some((segment) => segment.id === resume.passageId) && !setAsideToday(resume.passageId) ? resume : null;
-  const nextStep = (segment) => segment.skills.find((task) => task.track === 'silver' && !task.ready);
+  // Test out first: a unit nobody has touched opens on its hints-off check; once a take, a count
+  // or any ready step exists (or the check was missed), it walks the hands first.
+  const touched = (segment) => segment.skills.some((task) => task.track === 'silver' && task.assist !== 'none' && task.ready)
+    || current.evidence.some((item) => item.task?.passageId === segment.id && !isGoldWork(item.task));
+  const nextStep = (segment) => {
+    const pending = segment.skills.filter((task) => task.track === 'silver' && !task.ready);
+    return (!touched(segment) && pending.find((task) => task.assist === 'none')) || pending[0];
+  };
   const inOrder = [...open.filter((segment) => !setAsideToday(segment.id)), ...open.filter((segment) => setAsideToday(segment.id))];
   const recommended = drill ?? inOrder.map(nextStep).find(Boolean) ?? null;
   const by = (value) => Object.fromEntries(segments.map((segment) => [segment.id, value(segment)]));
+  const byPassage = (value) => Object.fromEntries(passages.map((segment) => [segment.id, value(segment)]));
   return { segments, recommended, review, state: current,
     goldResume: ((task) => ((current.ladder ?? 1) < LADDER_REVISION && bypassesUntriedGoldStep(segments, current, task) ? null : task))(liveResume(plan, segments, current.goldResume)),
-    gold: by((segment) => (segment.certification.gold ? null : segment.skills.find((task) => task.track === 'gold' && !task.ready) ?? null)),
+    gold: byPassage((segment) => (segment.certification.gold ? null : segment.skills.find((task) => task.track === 'gold' && !task.ready) ?? null)),
     certifications: by((segment) => segment.certification),
-    afterSetAside: by((segment) => open.find((other) => other.id !== segment.id && !setAsideToday(other.id))?.id ?? null),
-    canSetAside: by((segment) => !segment.certification.silver && !setAsideToday(segment.id) && missedTwice(current, segment)),
-    piece: { total: segments.length,
-      silver: segments.filter((segment) => segment.certification.silver).length,
-      gold: segments.filter((segment) => segment.certification.gold).length,
-      nextPassageId: open[0]?.id ?? null,
-      nextGoldPassageId: segments.find((segment) => !segment.certification.gold && segment.skills.some((task) => task.track === 'gold'))?.id ?? null },
+    afterSetAside: byPassage((segment) => open.find((other) => other.id !== segment.id && !isJoin(other) && !setAsideToday(other.id))?.id ?? null),
+    canSetAside: byPassage((segment) => !segment.certification.silver && !setAsideToday(segment.id) && missedTwice(current, segment)),
+    piece: { total: passages.length,
+      silver: passages.filter((segment) => segment.certification.silver).length,
+      gold: passages.filter((segment) => segment.certification.gold).length,
+      // Piece Silver is the whole piece played: the final join, or the one passage of a one-passage piece.
+      joins: { total: segments.length - passages.length, silver: segments.filter((segment) => isJoin(segment) && segment.certification.silver).length },
+      pieceSilver: Boolean((segments.find((segment) => segment.final) ?? (passages.length === 1 ? passages[0] : null))?.certification.silver),
+      nextPassageId: open.find((segment) => !isJoin(segment))?.id ?? null,
+      nextGoldPassageId: passages.find((segment) => !segment.certification.gold && segment.skills.some((task) => task.track === 'gold'))?.id ?? null },
     retainedLegacy: { passages: legacy.learn?.passages ?? {}, compatible: compatibleLegacy === legacy } };
 }
 
@@ -374,7 +445,8 @@ const certificateStamp = (value) => (value ? value.at ?? 'legacy' : null);
 export function coachSummary(projection, { now, state = projection.state }) {
   return { total: projection.piece.total, silver: projection.piece.silver, gold: projection.piece.gold,
     nextPassageId: projection.piece.nextPassageId, setAside: { ...(state?.setAside ?? {}) },
-    passages: projection.segments.map((segment) => ({ id: segment.id, start: segment.inMeasure, end: segment.outMeasure, parts: segment.playableParts,
+    joins: projection.piece.joins, pieceSilver: projection.piece.pieceSilver,
+    passages: projection.segments.filter((segment) => segment.kind !== 'join').map((segment) => ({ id: segment.id, start: segment.inMeasure, end: segment.outMeasure, parts: segment.playableParts,
       silver: certificateStamp(segment.certification.silver), gold: certificateStamp(segment.certification.gold) })),
     updatedAt: now };
 }
@@ -391,6 +463,27 @@ export function entryShiftBeats(result) {
 }
 const SHIFT_WORDS = Object.freeze({ 1: 'one beat', 2: 'two beats' });
 
+const burdenOf = (diagnostics = {}) => ((diagnostics.missed_notes ?? 0) + (diagnostics.wrong_notes ?? 0)) / (diagnostics.expected_notes || 1);
+const HAND_GAP = 0.25;
+/**
+ * The smaller step after two misses on a whole join: the hand that broke across
+ * the join when one hand is clearly worse than the other; otherwise the seam (the
+ * last bar of the first unit and the first bar of the next) when the worst bar sits
+ * on it. Null leaves the generic bar-then-hand ladder to run.
+ */
+function joinRecovery(join, task, result) {
+  if (task.parts.length > 1) {
+    const burdens = task.parts.map((part) => ({ part, burden: burdenOf(result.parts?.[part]?.diagnostics) })).sort((a, b) => b.burden - a.burden);
+    if (burdens[0].burden - burdens[1].burden >= HAND_GAP) return { range: { ...task.range }, parts: [burdens[0].part], reason: 'one-hand' };
+  }
+  const worst = Object.entries(result.spans ?? {}).map(([id, span]) => ({ measure: Number(id.replace(/^measure:/, '')), burden: burdenOf(span.diagnostics), count: span.diagnostics?.expected_notes }))
+    .filter((span) => Number.isInteger(span.measure) && span.count > 0 && span.burden > 0).sort((a, b) => b.burden - a.burden || a.measure - b.measure)[0];
+  if (worst && (worst.measure === join.seam.left || worst.measure === join.seam.right)) {
+    return { range: { start: join.seam.left, end: join.seam.right }, parts: [...task.parts], reason: 'seam' };
+  }
+  return null;
+}
+
 /**
  * The smaller step after two misses. Timing-only misses slow down. Otherwise the
  * hardest bar (for an unfinished take, the first bar it did not reach) is
@@ -404,7 +497,12 @@ function recovery(plan, task, result) {
   let tempoPercent = task.tempoPercent;
   const timingOnly = task.mode === 'cued' && result.criteria?.completeness >= task.criteria.completeness
     && result.criteria?.cleanliness >= task.criteria.cleanliness;
-  if (timingOnly && tempoPercent > 40) {
+  const join = plan.segments.find((segment) => segment.id === task.passageId && segment.kind === 'join');
+  const joinDrill = join && !timingOnly && (task.depth ?? 0) === 0 && sameRange(range, { start: join.inMeasure, end: join.outMeasure })
+    ? joinRecovery(join, task, result) : null;
+  if (joinDrill) {
+    range = joinDrill.range; parts = joinDrill.parts;
+  } else if (timingOnly && tempoPercent > 40) {
     tempoPercent = SLOWER_TEMPOS.filter((value) => value < tempoPercent).at(-1) ?? 40;
   } else if (range.end > range.start) {
     // An unfinished take has every unreached bar fully missed, so the place it stopped is the first gap.
@@ -430,9 +528,9 @@ function recovery(plan, task, result) {
     });
     parts = parts.slice(0, 1);
   } else return null;
-  const reason = timingOnly && tempoPercent !== task.tempoPercent ? 'slower-beat' : sameRange(range, task.range) ? 'one-hand' : 'focus-bars';
+  const reason = joinDrill ? joinDrill.reason : timingOnly && tempoPercent !== task.tempoPercent ? 'slower-beat' : sameRange(range, task.range) ? 'one-hand' : 'focus-bars';
   return makeCoachTask(plan, { ...task, range, parts, tempoPercent, required: null, assist: null, stallSeconds: null, legacyRequired: null,
-    label: reason === 'slower-beat' ? 'Try a little slower' : reason === 'one-hand' ? 'Practice one hand' : 'Practice these bars',
+    label: reason === 'slower-beat' ? 'Try a little slower' : reason === 'one-hand' ? 'Practice one hand' : reason === 'seam' ? 'Practice the join' : 'Practice these bars',
     parent: task, depth: (task.depth ?? 0) + 1, reason, mastery: false, completes: false });
 }
 

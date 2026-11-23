@@ -15,7 +15,7 @@ const projection = (plan, state, extra = {}) => projectCoach({ plan, state, now:
 describe('guided musical progression', () => {
   it('offers a concrete first hand task and omits impossible hand stages for single-part music', () => {
     const plan = planOf();
-    expect(projection(plan).recommended).toMatchObject({ skill: 'right', mode: 'free', parts: ['rh'], range: { start: 0, end: 3 } });
+    expect(projection(plan).recommended).toMatchObject({ skill: 'silver', assist: 'none', mode: 'free', parts: ['rh', 'lh'], range: { start: 0, end: 3 } });
     expect(plan.tasks.filter((task) => task.passageId === 'answer').map((task) => task.skill)).toEqual(['notes', 'silver', 'pulse', 'timed-50', 'timed-60', 'timed-75', 'mastery']);
   });
 
@@ -62,7 +62,7 @@ describe('guided musical progression', () => {
   it.each(['aborted', 'error', 'prepared'])('does not change ability from a %s take', (status) => {
     const plan = planOf();const task = choose(plan, 'right');
     const state = outcome(outcome(undefined, plan, task, { ...bad, status }), plan, task, { ...bad, status });
-    expect(projection(plan, state).recommended).toMatchObject({ skill: 'right', range: { start: 0, end: 3 } });
+    expect(projection(plan, state).recommended).toMatchObject({ skill: 'silver', range: { start: 0, end: 3 } });
     expect(state.evidence).toHaveLength(0);
   });
 
@@ -184,9 +184,9 @@ describe('identity, authored requirements, review and legacy preservation', () =
   it('does not inherit another score fingerprint or manufacture partial legacy evidence', () => {
     const old = planOf();const task = choose(old, 'right');const state = outcome(outcome(undefined, old, task), old, task);
     const plan = planOf({ fingerprint: 'content-b' });
-    expect(projection(plan, state).recommended.skill).toBe('right');
+    expect(projection(plan, state).recommended.skill).toBe('silver');
     const legacy = { learn: { passages: { opening: { rungs: { right: { passCount: 1 } } } } } };
-    expect(projection(old, undefined, { legacy }).recommended.skill).toBe('right');
+    expect(projection(old, undefined, { legacy }).recommended.skill).toBe('silver');
   });
 
   it('keeps an explicitly selected review on the Gold path even though mastery is earned', () => {
