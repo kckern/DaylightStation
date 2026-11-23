@@ -24,6 +24,8 @@
   &__map { min-width: 0; display: grid; grid-template-rows: minmax(0, 1fr); grid-auto-rows: 1.3rem; row-gap: 0; align-content: stretch; }
   // Joins: a bridge over the tiles it joins, one strip per level, the whole piece last.
   &__bridges { list-style: none; margin: 0; padding: 0; min-width: 0; display: grid; grid-auto-rows: 1.3rem; li { min-width: 0; display: flex; } }
+  // A join not yet played through is an empty ring; played, it is the silver coin.
+  &__ring { flex: 0 0 auto; width: 0.8rem; height: 0.8rem; border-radius: 50%; border: 2px solid var(--piano-muted); box-sizing: border-box; }
   &__bridge {
     flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 0.3rem; padding: 0 4px; box-sizing: border-box;
     border: 2px solid var(--piano-border); border-top-width: 0; border-radius: 0 0 var(--r-sm, 6px) var(--r-sm, 6px);

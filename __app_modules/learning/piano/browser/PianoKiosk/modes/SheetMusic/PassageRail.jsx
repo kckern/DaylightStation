@@ -62,7 +62,7 @@ export default function PassageRail({ model, flips = {}, flipDelayMs = 0, wave =
           <button type="button" className="piano-passage-rail__bridge" data-state={bridge.state} data-final={bridge.final || undefined}
             aria-current={bridge.id === model.outlinedId ? 'step' : undefined} aria-pressed={bridge.id === model.selectedId}
             aria-label={bridge.label} onClick={() => onSelect?.(bridge.id)}>
-            <PassageCoin state={bridge.state === 'joined' ? 'joined' : 'todo'} size="1rem" />
+            {bridge.state === 'joined' ? <PassageCoin state="joined" size="1rem" /> : <i className="piano-passage-rail__ring" aria-hidden="true" />}
             <span>{bridge.final ? 'Whole piece' : 'Join'}</span>
           </button>
         </li>)}
