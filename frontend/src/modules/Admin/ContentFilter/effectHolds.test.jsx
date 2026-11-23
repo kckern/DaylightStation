@@ -126,6 +126,20 @@ describe('useEffectHolds: settling and timeouts', () => {
     expect(result.current.data.rows[1].effectHeld).toBe(true);
   });
 
+  it('a timer that fires early re-arms, and the hold still expires', () => {
+    vi.useFakeTimers();
+    let skew = 0;
+    const now = () => Date.now() - skew;
+    const served = film([row('a', { label: 'alpha' })]);
+    const { result } = renderHook(() => useEffectHolds(served, { rk: '7', logger, gen: () => 0, now }));
+    act(() => { result.current.hold('a', 'skip', 'Skip'); });
+    skew = 1; // the clock the hold reads runs 1 ms behind the timer
+    act(() => { vi.advanceTimersByTime(20000); });
+    expect(result.current.data.rows[0].effectHeld).toBe(true);
+    act(() => { vi.advanceTimersByTime(5); });
+    expect(result.current.data.rows[0].effectHeld).toBeUndefined();
+  });
+
   it('a hung write rejects at 15 s and the next queued write runs', async () => {
     vi.useFakeTimers();
     const first = queueWrite('hung', () => new Promise(() => {}));

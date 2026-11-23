@@ -26,6 +26,7 @@ const chains = new Map();
 export function queueWrite(rk, fn) {
   const key = String(rk);
   // A hung request must not stall every later write to the film: it rejects, and the chain moves on.
+  // The request itself is not cancelled and may still land late; the queue only stops waiting for it.
   const bounded = () => new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('The server did not answer this save in time. Check it, then try again.')), WRITE_TIMEOUT_MS);
     new Promise((r) => r(fn())).then((v) => { clearTimeout(timer); resolve(v); }, (e) => { clearTimeout(timer); reject(e); });
@@ -138,7 +139,8 @@ export function useEffectHolds(raw, { rk, logger, gen = () => 0, now = () => Dat
           drop(rowId); changed = true;
         }
       }
-      if (changed) bump();
+      // A timer that fires a hair early leaves holds behind: re-arm for them.
+      if (changed || Object.keys(holds.current).length) bump();
     }, Math.max(0, deadline - now()));
     return () => clearTimeout(timer);
   }, [version]); // eslint-disable-line react-hooks/exhaustive-deps

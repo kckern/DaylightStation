@@ -49,7 +49,10 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
   const rk = String(ratingKey);
   const rows = data?.rows;
   const [chosenScope, setScopeState] = useState(null);
-  const [message, setMessage] = useState(null);
+  const [message, setMessageRaw] = useState(null);
+  // The effect-failure flag lasts only until some other message replaces it.
+  const errorShown = useRef(false);
+  const setMessage = (m) => { errorShown.current = false; setMessageRaw(m); };
   const [helpOpen, setHelpOpen] = useState(false);
   const [undoStack, setUndoStack] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -57,9 +60,6 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
   const arrived = useRef({ id: null, at: Date.now(), replays: 0 });
   const via = useRef('click');
   const latest = useRef({});
-  // The newest effect write that succeeded, per part: an older failure no longer speaks for it.
-  const lastOk = useRef({});
-  const errorShown = useRef(false);
   latest.current = { rows, selectedId: selected?.id ?? null, scoped: null, scope: null };
 
   // Which parts a refine holds or still has to pin (the Refine tab lists these).
@@ -241,7 +241,7 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
     // A verdict on a part whose effect is still saving would judge the old effect (review 2026-11-23).
     if (row.effectHeld) {
       logger.info('content_filter.review.verdict_refused', { rk, rowId: row.id, reason: 'effect-saving' });
-      setMessage('Saving the effect: one moment, then approve.');
+      setMessage(v === 'approve' ? 'Saving the effect: one moment, then approve.' : 'Saving the effect: one moment, then try again.');
       return;
     }
     // A refine moves the part, which drops a verdict on it: wait for the new timing (review 2026-11-21).
@@ -289,7 +289,7 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
       return true;
     }).then(async (sent) => {
       if (!sent) { logger.info('content_filter.review.effect_superseded', { rk, rowId: row.id, to }); return; }
-      if (held != null) { effectHolds.saved(row.id, held); lastOk.current[row.id] = held; }
+      if (held != null) { effectHolds.saved(row.id, held) }
       logger.info('content_filter.review.effect', { rk, rowId: row.id, kind: row.kind, from, to, waited, saveMs: Date.now() - queuedAt });
       if (!activeView.current) return;
       // The last message wins: an earlier click's failure may have landed after this one was shown.
@@ -310,9 +310,8 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
       // A multi-member part may have saved some of its cues before one failed: show what the server has.
       if (sentCalls > 0) reload();
       // A later write to this part that succeeded has already replaced this error's news.
-      if (held != null && (lastOk.current[row.id] ?? 0) > held) return;
-      errorShown.current = true;
       setMessage(err.message || `${label} did not save.`);
+      errorShown.current = true;
     });
   };
 
@@ -333,6 +332,11 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
 
   const widen = () => {
     if (!row) return;
+    if (row.effectHeld) {
+      logger.info('content_filter.review.verdict_refused', { rk, rowId: row.id, reason: 'effect-saving' });
+      setMessage('Saving the effect: one moment, then try again.');
+      return;
+    }
     guarded('widen', async () => {
       const single = isSceneRow(row) || (row.members ?? [row.peekId]).length === 1;
       if (!single) { setMessage('Widen one part at a time.'); return; }
@@ -625,7 +629,7 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
   useEffect(() => {
     if (!holdNotes?.length || !activeView.current) return;
     const last = holdNotes[holdNotes.length - 1];
-    setMessage(last.text);
+    setMessage(holdNotes.map((n) => n.text).join(' '));
     effectHolds.ackNotes(last.at + 1);
   }, [holdNotes]); // eslint-disable-line react-hooks/exhaustive-deps
 

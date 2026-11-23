@@ -9,10 +9,12 @@ const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), samp
 // The mocked server: a reload re-serves `payload`, which effect writes have updated (as the audit
 // does once it catches up), so a held effect settles the way it does for real.
 let rerender = () => {};
-const reload = vi.fn(async () => { payload = { ...payload }; rerender(); });
+let deferRerender = false;
+const reload = vi.fn(async () => { if (deferRerender) return; payload = { ...payload }; rerender(); });
 let payload;
 let failNext = null;
 let pendingWrite;
+let ignoreEffects = false;
 vi.mock('../../../lib/logging/Logger.js', () => ({ default: () => log }));
 const React = await import('react');
 vi.mock('../../../lib/hooks/useApiResource.js', () => ({
@@ -27,7 +29,7 @@ vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: async (path, body, method)
   calls.push({ path, body, method });
   if (failNext && failNext(path, method)) throw new Error('nope');
   const cue = /\/cues\/([^/]+)$/.exec(path);
-  if (method === 'PUT' && cue && body?.effect && body.effect !== 'profile') {
+  if (!ignoreEffects && method === 'PUT' && cue && body?.effect && body.effect !== 'profile') {
     payload = { ...payload, rows: payload.rows.map((r) => (r.members?.includes(cue[1]) ? { ...r, effect: body.effect, acts: true } : r)) };
   }
   return pendingWrite ?? {};
@@ -57,7 +59,7 @@ const cardFx = (name) => within(document.querySelector('.cf-card-part')).getByRo
 const reviewCalls = () => calls.filter((c) => c.path.includes('/review/'));
 const verdictLogs = () => log.info.mock.calls.filter((c) => c[0] === 'content_filter.review.verdict');
 
-beforeEach(() => { resetWriteQueues(); toneLevels = []; calls.length = 0; vi.clearAllMocks(); failNext = null; pendingWrite = null; previewStore.reset(); payload = three(); });
+beforeEach(() => { resetWriteQueues(); toneLevels = []; calls.length = 0; vi.clearAllMocks(); failNext = null; pendingWrite = null; ignoreEffects = false; deferRerender = false; previewStore.reset(); payload = three(); });
 
 describe('review station keys', () => {
   it('arrow keys move the cursor, seek 4 s ahead of it, and log it', () => {
@@ -199,6 +201,54 @@ describe('review station keys', () => {
     expect(reviewCalls()).toHaveLength(0);
     expect(log.info).toHaveBeenCalledWith('content_filter.review.verdict_refused', expect.objectContaining({ rk: '77', rowId: 'cue:w1', reason: 'effect-saving' }));
     pendingWrite = null; finish({});
+  });
+  it('X and D wait with "try again" while an effect is held', async () => {
+    let finish;
+    pendingWrite = new Promise((resolve) => { finish = resolve; });
+    show();
+    press('m');
+    await waitFor(() => expect(cardFx(/^Effect: Mute/)).toBeTruthy());
+    press('x');
+    expect(await screen.findByText('Saving the effect: one moment, then try again.')).toBeTruthy();
+    press('d');
+    expect(reviewCalls()).toHaveLength(0);
+    expect(calls).toHaveLength(1);
+    pendingWrite = null; finish({});
+  });
+  it('an old effect failure does not let a later effect success overwrite a newer message', async () => {
+    const refresh = vi.spyOn(previewStore, 'refresh').mockResolvedValue(true);
+    let first = true;
+    failNext = (path, method) => { if (method === 'PUT' && first) { first = false; return true; } return false; };
+    let finish;
+    show();
+    press('m');
+    expect(await screen.findByText('nope')).toBeTruthy();
+    // Hold the next save, then a verdict refusal becomes the newest message.
+    pendingWrite = new Promise((resolve) => { finish = resolve; });
+    press('k');
+    await waitFor(() => expect(calls).toHaveLength(2));
+    press('a');
+    expect(await screen.findByText('Saving the effect: one moment, then approve.')).toBeTruthy();
+    pendingWrite = null; finish({});
+    await waitFor(() => expect(log.info).toHaveBeenCalledWith('content_filter.review.effect', expect.objectContaining({ to: 'skip' })));
+    expect(screen.getByText('Saving the effect: one moment, then approve.')).toBeTruthy();
+    refresh.mockRestore();
+  });
+  it('two notes pending at once both show', async () => {
+    const refresh = vi.spyOn(previewStore, 'refresh').mockResolvedValue(true);
+    ignoreEffects = true; deferRerender = true;
+    show();
+    press('m');
+    await waitFor(() => expect(calls).toHaveLength(1));
+    press('ArrowRight');
+    press('k');
+    await waitFor(() => expect(calls).toHaveLength(2));
+    // The audit answers both parts with something other than what was asked.
+    await waitFor(() => expect(log.info).toHaveBeenCalledWith('content_filter.review.effect', expect.objectContaining({ to: 'skip' })));
+    // Both answers land in one render.
+    await act(async () => { payload = { ...payload }; rerender(); });
+    expect(await screen.findByText(/Mute plays as bleeped on "alpha"\. Skip plays as bleeped on "bravo"\./)).toBeTruthy();
+    refresh.mockRestore();
   });
   it('an effect save still lands after the cursor moves on, and the part keeps the new effect', async () => {
     let finish;

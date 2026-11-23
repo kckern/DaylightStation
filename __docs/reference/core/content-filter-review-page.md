@@ -137,7 +137,7 @@ goes through one queue (`queueWrite`), so the effect button stays live while tim
 made while another write is out waits its turn (`content_filter.review.effect` carries `waited` and
 `saveMs`), a later click on the same part replaces one still waiting (`…effect_superseded`), and a
 write the server does not answer within 15 s rejects so one hung request cannot stall the film's
-chain. A failed save puts the row back on what the server has, with the error, unless a later write
+chain; the request itself is not cancelled and may still land late, the queue only stops waiting for it. A failed save puts the row back on what the server has, with the error, unless a later write
 to that part has since succeeded; a part with several cues reloads after a partial failure.
 **A, X and D wait while the part's effect is held**: the page says `Saving the effect: one moment,
 then approve.`, sends nothing and logs `content_filter.review.verdict_refused` (`reason:
