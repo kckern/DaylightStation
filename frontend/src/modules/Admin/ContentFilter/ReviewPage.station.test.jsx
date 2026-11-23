@@ -337,10 +337,42 @@ describe('review station keys', () => {
     show();
     // The run puts the cursor on the part being refined (w2); open its list icon.
     fireEvent.click(within(document.querySelector('[data-row-id="cue:w2"]')).getByRole('button', { name: /^Effect:/ }));
-    fireEvent.click(await screen.findByRole('menuitem', { name: /Mute/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^Mute/ }));
     await waitFor(() => expect(screen.getAllByText(RUN_BUSY_TEXT)).toHaveLength(2));
     expect(calls).toHaveLength(0);
     expect(log.info).toHaveBeenCalledWith('content_filter.review.effect_refused', expect.objectContaining({ rowId: 'cue:w2', to: 'mute', reason: 'run' }));
+  });
+  it('"Use household settings" from the part menu during a film run says why and sends nothing', async () => {
+    payload = { ...three(), job: { kind: 'send-back', status: 'running', cues: ['w2'] } };
+    show();
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'bravo' }), { clientX: 400, clientY: 300 });
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^Use household settings/ }));
+    await waitFor(() => expect(screen.getAllByText(RUN_BUSY_TEXT)).toHaveLength(2));
+    expect(calls).toHaveLength(0);
+    expect(log.info).toHaveBeenCalledWith('content_filter.review.effect_refused', { rk: '77', rowId: 'cue:w2', to: 'profile', reason: 'run' });
+  });
+  it('an effect on a part still queued for refine (no run) is refused with reason refining', async () => {
+    payload = { ...three(), job: { kind: 'send-back', status: 'running', cues: ['w2'] } };
+    show();
+    press('r');
+    await screen.findByText(/Queued: .* refines when the current run finishes/);
+    payload = { ...payload, job: { kind: 'send-back', status: 'cancelled', cues: ['w2'] } };
+    act(() => rerender());
+    await screen.findByText(/queued part is still waiting/);
+    calls.length = 0;
+    press('m');
+    expect(await screen.findByText('This part is being refined. Change its effect when the new timing lands.')).toBeTruthy();
+    expect(calls).toHaveLength(0);
+    expect(log.info).toHaveBeenCalledWith('content_filter.review.effect_refused', { rk: '77', rowId: 'cue:w2', to: 'mute', reason: 'refining' });
+  });
+  it('an effect that does not fit the part\'s channel is refused with reason channel', async () => {
+    // A heard (not said) cue takes the word keys but cannot be bleeped.
+    payload = base([row('cue:w1', 'alpha', { modality: 'heard', effect: 'mute' })]);
+    show();
+    press('p');
+    expect(await screen.findByText('Bleep does not fit this part.')).toBeTruthy();
+    expect(calls).toHaveLength(0);
+    expect(log.info).toHaveBeenCalledWith('content_filter.review.effect_refused', { rk: '77', rowId: 'cue:w1', to: 'bleep', reason: 'channel' });
   });
   it('a timing change not yet autosaved holds the cursor and the verdict until it lands or is dropped with Esc', async () => {
     show();
@@ -742,7 +774,7 @@ describe('the part menu (owner, 2026-11-22: "right-click and I can change what i
   it('an effect from the part menu goes to that part; Use household settings puts it back on the settings', async () => {
     show();
     rightClick('bravo');
-    fireEvent.click(await screen.findByRole('menuitem', { name: /Mute/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^Mute/ }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual(expect.objectContaining({ path: 'api/v1/content-filter/77/cues/w2', body: { effect: 'mute' } }));
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
