@@ -143,6 +143,8 @@ to that part has since succeeded; a part with several cues reloads after a parti
 then approve.`, sends nothing and logs `content_filter.review.verdict_refused` (`reason:
 'effect-saving'`), since a verdict would judge the old effect.
 
+While a film-wide refine runs, an effect change (key, effect menu or "use household settings") is refused up front: the page shows the run's sentence and sends nothing, instead of the server's 409, and logs `content_filter.review.effect_refused` (`rk`, `rowId`, `to`, `reason` `run` | `refining` | `channel`).
+
 The **part menu** (`PartMenu.jsx`; owner, 2026-11-22: "right-click and I can change what it is or
 how it's handled"): a right-click on a part anywhere it appears (a list row, a timeline mark, a
 band on the timing strip, the part in hand's or a neighbour's; the strip finds the band by time,

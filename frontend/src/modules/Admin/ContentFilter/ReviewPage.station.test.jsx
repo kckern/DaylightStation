@@ -43,6 +43,7 @@ vi.mock('../../../../../__app_modules/media/media/browser/content-filter/adminWo
 const { previewStore } = await import('../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs');
 const { ContentFilterReview } = await import('./ContentFilterAdmin.jsx');
 const { resetWriteQueues } = await import('./effectHolds.js');
+const { RUN_BUSY_TEXT } = await import('./useReviewStation.js');
 
 const row = (id, label, over = {}) => ({ id, peekId: id.split(':')[1], members: [id.split(':')[1]], kind: 'words', group: 'profanity', label, modality: 'said', in: 10, out: 10.5, effect: 'bleep', card: null, handFixed: false, unsure: [], reviewed: null, verdict: null, ...over });
 const base = (rows) => ({ title: 'F', certification: { level: 'machine' }, audit: { ok: true, fresh: true }, wordRulings: {}, rows,
@@ -321,6 +322,25 @@ describe('review station keys', () => {
     press('h');
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual(expect.objectContaining({ path: 'api/v1/content-filter/77/cues/p1', body: { effect: 'blackout' } }));
+  });
+  it('an effect key during a film run says why and sends nothing', async () => {
+    payload = { ...three(), job: { kind: 'send-back', status: 'running', cues: ['w2'] } };
+    show();
+    press('m');
+    // Once on the film card (busyText) and once as the station's message.
+    await waitFor(() => expect(screen.getAllByText(RUN_BUSY_TEXT)).toHaveLength(2));
+    expect(calls).toHaveLength(0);
+    expect(log.info).toHaveBeenCalledWith('content_filter.review.effect_refused', { rk: '77', rowId: 'cue:w2', to: 'mute', reason: 'run' });
+  });
+  it('an effect picked from the list icon menu during a film run says why and sends nothing', async () => {
+    payload = { ...three(), job: { kind: 'send-back', status: 'running', cues: ['w2'] } };
+    show();
+    // The run puts the cursor on the part being refined (w2); open its list icon.
+    fireEvent.click(within(document.querySelector('[data-row-id="cue:w2"]')).getByRole('button', { name: /^Effect:/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Mute/ }));
+    await waitFor(() => expect(screen.getAllByText(RUN_BUSY_TEXT)).toHaveLength(2));
+    expect(calls).toHaveLength(0);
+    expect(log.info).toHaveBeenCalledWith('content_filter.review.effect_refused', expect.objectContaining({ rowId: 'cue:w2', to: 'mute', reason: 'run' }));
   });
   it('a timing change not yet autosaved holds the cursor and the verdict until it lands or is dropped with Esc', async () => {
     show();
@@ -722,7 +742,7 @@ describe('the part menu (owner, 2026-11-22: "right-click and I can change what i
   it('an effect from the part menu goes to that part; Use household settings puts it back on the settings', async () => {
     show();
     rightClick('bravo');
-    fireEvent.click(await screen.findByRole('menuitem', { name: /^Mute/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Mute/ }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual(expect.objectContaining({ path: 'api/v1/content-filter/77/cues/w2', body: { effect: 'mute' } }));
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());

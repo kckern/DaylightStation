@@ -9,7 +9,7 @@ import { ReviewList } from './ReviewList.jsx';
 import { ReviewTimeline } from './ReviewTimeline.jsx';
 import { ReviewKeyBar } from './ReviewKeyBar.jsx';
 import { useReviewKeys } from './useReviewKeys.js';
-import { useReviewStation } from './useReviewStation.js';
+import { RUN_BUSY_TEXT, useReviewStation } from './useReviewStation.js';
 import { useEffectHolds } from './effectHolds.js';
 import { isOpen, plays } from './reviewScope.js';
 import { ReviewHeader } from './ReviewHeader.jsx';
@@ -169,7 +169,7 @@ function FilmReview({ ratingKey, rowId, owner }) {
   if (error && (!data || !approval.blocked)) return <ErrorState error={error} onRetry={reload} label="Review" />;
   if (notMatched && !Array.isArray(data.rows)) return <UnmatchedFilm ratingKey={ratingKey} data={data} />;
   const row = data.rows.find((r) => r.id === selected?.id) || null;
-  const busyText = running ? 'A refine is running: effects, timing and the card text can change when it finishes.' : null;
+  const busyText = running ? RUN_BUSY_TEXT : null;
   const roughFiltered = station.roughRefineCount;
   const index = row ? station.scoped.findIndex((r) => r.id === row.id) : -1;
   // Picking a part from the list or the timeline while on Approve goes back to the parts.

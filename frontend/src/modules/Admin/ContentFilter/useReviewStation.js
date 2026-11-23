@@ -45,6 +45,8 @@ function enqueueLevelWrite(path, owner, value) {
   return pending;
 }
 
+export const RUN_BUSY_TEXT = 'A refine is running: effects, timing and the card text can change when it finishes.';
+
 export function useReviewStation({ ratingKey, data, effectHolds = null, reload, refreshReview, selected, select, activeView, runBusy = false, openRowId = null }) {
   const rk = String(ratingKey);
   const rows = data?.rows;
@@ -270,9 +272,11 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
     const entry = actionKeysFor(keysKindOf(row)).find(([k]) => k.toLowerCase() === letter);
     if (!entry) return;
     const [, label, to] = entry;
-    if (latest.current.refining?.[row.id]) { setMessage('This part is being refined. Change its effect when the new timing lands.'); return; }
+    // A film-wide refine rewrites the cues: the server answers an effect write with a 409, so say why and send nothing.
+    if (latest.current.running) { setMessage(RUN_BUSY_TEXT); logger.info('content_filter.review.effect_refused', { rk, rowId: row.id, to, reason: 'run' }); return; }
+    if (latest.current.refining?.[row.id]) { setMessage('This part is being refined. Change its effect when the new timing lands.'); logger.info('content_filter.review.effect_refused', { rk, rowId: row.id, to, reason: 'refining' }); return; }
     const allowed = isSceneRow(row) ? SCENE_EFFECTS.has(to) : effectChoices(row.modality).some((o) => o.value === to);
-    if (!allowed) { setMessage(`${label} does not fit this part.`); return; }
+    if (!allowed) { setMessage(`${label} does not fit this part.`); logger.info('content_filter.review.effect_refused', { rk, rowId: row.id, to, reason: 'channel' }); return; }
     if (plays(row) ? to === 'off' : effectButton(row.effect) === to) { setMessage(`Already ${label.toLowerCase()}.`); return; }
     const calls = callsFor(row, { effect: to });
     const from = plays(row) ? 'off' : row.effect;
@@ -319,7 +323,8 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
   // effect menu does), so the household's settings decide again.
   const settings = (target = row) => {
     if (!target) return;
-    if (latest.current.refining?.[target.id]) { setMessage('This part is being refined. Change its effect when the new timing lands.'); return; }
+    if (latest.current.running) { setMessage(RUN_BUSY_TEXT); logger.info('content_filter.review.effect_refused', { rk, rowId: target.id, to: 'profile', reason: 'run' }); return; }
+    if (latest.current.refining?.[target.id]) { setMessage('This part is being refined. Change its effect when the new timing lands.'); logger.info('content_filter.review.effect_refused', { rk, rowId: target.id, to: 'profile', reason: 'refining' }); return; }
     guarded('settings', async () => {
       await queueWrite(rk, async () => { for (const [path, body, method] of callsFor(target, { effect: 'profile', disabled: false })) await DaylightAPI(path, body, method); });
       logger.info('content_filter.review.effect', { rk, rowId: target.id, kind: target.kind, from: target.effect, to: 'profile' });
