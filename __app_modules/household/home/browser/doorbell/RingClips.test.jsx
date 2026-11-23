@@ -404,17 +404,27 @@ it('distinguishes a failed camera day from no recording and retries only that da
     }
     return day === '2026-10-28' ? { clips: [clipAt(base, 0)] } : { clips: [] };
   });
-  wrap(<RingClips camera="porch-cam" marks={[base, tomorrow]} timeZone="UTC" />);
+  wrap(<>
+    <button type="button" aria-label="Other control">Other</button>
+    <RingClips camera="porch-cam" marks={[base, tomorrow]} timeZone="UTC" />
+  </>);
   await screen.findByText('Recording availability unknown');
   expect(document.querySelectorAll('.home-rings__time')).toHaveLength(2);
   expect(document.querySelectorAll('video')).toHaveLength(1);
   const retry = screen.getByRole('button', { name: 'Retry unavailable day lookups' });
+  retry.focus();
   fireEvent.click(retry);
   await waitFor(() => expect(finishRetry).toBeTypeOf('function'));
+  const region = screen.getByRole('region', { name: 'Rings' });
+  expect(region).toHaveAttribute('aria-busy', 'true');
+  expect(region).toHaveFocus();
   expect(document.querySelectorAll('video')).toHaveLength(1);
   expect(apiMock.mock.calls.slice(2).map(([path]) => path.split('day=')[1])).toEqual(['2026-10-29']);
+  const other = screen.getByRole('button', { name: 'Other control' });
+  other.focus();
   finishRetry();
   await waitFor(() => expect(document.querySelectorAll('video')).toHaveLength(2));
+  expect(other).toHaveFocus();
   expect(screen.queryByText('Recording availability unknown')).toBeNull();
   expect(screen.queryByText('No recording near this ring')).toBeNull();
 });

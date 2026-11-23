@@ -150,7 +150,11 @@ export function RingClips({ camera, marks, timeZone = Intl.DateTimeFormat().reso
   const rings = useMemo(() => [...new Set(marks || [])].sort((a, b) => b - a), [marks]);
   const days = useMemo(() => ringDays(rings, timeZone), [rings, timeZone]);
   const { clips, failedDays, loading, error, reload } = useRingClips(camera, days);
-  const { regionProps, retry } = useRetryRegion(reload, loading);
+  const { regionProps, retry, focus } = useRetryRegion(reload, loading);
+  const retryDays = (days) => {
+    focus();
+    return reload(days);
+  };
   const withDay = useMemo(() => new Set(rings.map((t) => dayFormat(timeZone).format(new Date(t)))).size > 1, [rings, timeZone]);
   const previousRingScope = useRef(null);
 
@@ -207,7 +211,7 @@ export function RingClips({ camera, marks, timeZone = Intl.DateTimeFormat().reso
                         size="compact-xs"
                         variant="subtle"
                         disabled={loading}
-                        onClick={() => { logger.info('home.ring.clips.retry', { camera, days: unavailableDays }); reload(unavailableDays); }}
+                        onClick={() => { logger.info('home.ring.clips.retry', { camera, days: unavailableDays }); retryDays(unavailableDays); }}
                       >
                         Retry unavailable day lookups
                       </Button>
