@@ -18,6 +18,7 @@ import { listOfflineEditions } from "../offline/feedOfflineStore.js";
 import "./Reader.scss";
 
 const log = getLogger().child({ app: 'feed', module: 'reader' });
+const READER_VIEWS = ['all', 'unread', 'saved', 'archived', 'offline'];
 const HISTORY_VIEWS = new Set(['unread', 'saved', 'archived']);
 const streamTimeoutMs = 10_000;
 
@@ -206,7 +207,8 @@ function smartGroup(articles, isFiltered) {
 export default function Reader() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { getSnapshot, setSnapshot, getLastVisit, markVisited, mutateItems, applyPendingMutations, pendingItemOperations, itemSyncRevision, checkpoints } = useFeedWorkspace();
-  const activeView = searchParams.get('view') || 'all';
+  const requestedView = searchParams.get('view') || 'all';
+  const activeView = READER_VIEWS.includes(requestedView) ? requestedView : 'all';
   const feedsParam = searchParams.get('feeds') || '';
   const cached = getSnapshot('reader');
   const initialSnapshot = useRef(cached?.view === activeView && cached.feeds === feedsParam ? cached : null);
@@ -675,7 +677,7 @@ export default function Reader() {
           </span>
         </div>
         <div className="reader-view-tabs" role="group" aria-label="Article state">
-          {['all', 'unread', 'saved', 'archived', 'offline'].map(view => <button key={view} type="button" aria-pressed={activeView === view} className={activeView === view ? 'active' : ''} onClick={() => {
+          {READER_VIEWS.map(view => <button key={view} type="button" aria-pressed={activeView === view} className={activeView === view ? 'active' : ''} onClick={() => {
             const params = new URLSearchParams(searchParams);
             if (view === 'all') params.delete('view'); else params.set('view', view);
             setSearchParams(params);

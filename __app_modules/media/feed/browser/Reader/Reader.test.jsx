@@ -94,6 +94,30 @@ describe('Reader history views', () => {
     expect(screen.queryByText('Subscriptions are unavailable. The inbox can still be used.')).toBeNull();
   });
 
+  test('unknown view values fall back to the visible All view and preserve feed filters', async () => {
+    apiMock.mockImplementation(path => {
+      if (path === '/api/v1/feed/reader/feeds') return Promise.resolve([
+        { id: 'world', title: 'World', categories: [{ id: 'news', label: 'News' }] },
+      ]);
+      if (path.startsWith('/api/v1/feed/reader/stream')) return Promise.resolve({ items: [], exhausted: true });
+      return Promise.resolve({ annotations: [] });
+    });
+
+    mountReader('?view=old&feeds=world');
+
+    const allView = await screen.findByRole('button', { name: 'all', exact: true });
+    expect(allView).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('Subscriptions')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Expand News' }));
+    expect(screen.getByRole('button', { name: 'World' })).toHaveAttribute('aria-pressed', 'true');
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/feed/reader/stream?count=50&feeds=world'),
+      {},
+      'GET',
+      expect.anything(),
+    ));
+  });
+
   test('loads Saved from canonical Reader history instead of the three-day stream', async () => {
     mountReader('?view=saved');
     expect(await screen.findByText('Saved from last month')).toBeInTheDocument();
