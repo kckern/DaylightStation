@@ -36,7 +36,7 @@ function requestToken() {
     catch { return null; } // Same-origin requests can still authenticate with cookies.
 }
 
-function prepareApiRequest(path, { method = 'GET', data, body, contentType, signal, ifMatch, withContentType = true, keepalive = false } = {}) {
+function prepareApiRequest(path, { method = 'GET', data, body, contentType, signal, ifMatch, withContentType = true, keepalive = false, extraHeaders = null } = {}) {
     const route = path.replace(/^\/|\/$/g, '');
     const url = `${getBaseUrl()}/${route}`;
     const requestBody = body === undefined ? data : body;
@@ -48,6 +48,7 @@ function prepareApiRequest(path, { method = 'GET', data, body, contentType, sign
             : multipart ? data : JSON.stringify(data);
     const headers = buildHeaders(requestToken(), withContentType && !multipart);
     if (ifMatch != null) headers['If-Match'] = ifMatch;
+    if (extraHeaders) Object.assign(headers, extraHeaders);
     if (contentType) headers['Content-Type'] = contentType;
     const options = {
         method,
@@ -80,6 +81,7 @@ export const DaylightAPI = async (path, data = {}, method = 'GET', requestOption
         data: method === 'GET' ? undefined : data,
         signal: requestOptions.signal,
         keepalive: requestOptions.keepalive,
+        extraHeaders: requestOptions.headers,
     });
     let response;
     try {

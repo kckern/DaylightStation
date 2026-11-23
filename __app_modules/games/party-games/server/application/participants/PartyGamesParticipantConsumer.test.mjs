@@ -95,11 +95,11 @@ it('discovers resumable games only through a read-only port and fails closed whe
  const receipts=[{launch_id:'launch',runtime_ref:{provider:'gaming',id:'game:one'}}];
  await expect(consumer.findResumable({receipts,viewer:{role:'host'}})).rejects.toMatchObject({code:'participant_discovery_unavailable'});
  expect(executionPort.resume).not.toHaveBeenCalled();
- executionPort.inspect=vi.fn(async()=>({header:{status:'active'}}));
+ executionPort.inspect=vi.fn(async()=>({header:{status:'active'},state:{challenge_index:3}}));
  expect(await consumer.findResumable({receipts,viewer:{role:'host'}})).toEqual([{launch_id:'launch',runtime_ref:{provider:'gaming',id:'game:one'},label:'Resume game'}]);
  expect(executionPort.inspect).toHaveBeenCalledOnce();expect(executionPort.resume).not.toHaveBeenCalled();
- executionPort.inspect.mockResolvedValue({header:{status:'complete'}});
- expect(await consumer.findResumable({receipts,viewer:{role:'host'}})).toEqual([{launch_id:'launch',runtime_ref:{provider:'gaming',id:'game:one'},label:'View result'}]);
+ executionPort.inspect.mockResolvedValue({header:{status:'complete'},state:{challenge_index:18}});
+ expect(await consumer.findResumable({receipts,viewer:{role:'host'}})).toEqual([]);
 });
 it('rejects incomplete settings at publication preparation',async()=>{
  const {consumer,context}=await fixture();
@@ -170,12 +170,12 @@ it('threads retained source through service, real consumer and Gaming journal on
  expect(saved.setup.charades_presentation.by_participant).toEqual({'anon:plan:slot':'image','guest:visitor':'reader'});
  expect((await journal.read(result.runtime_ref.id))).toHaveLength(1);
  source.sourceLabel='Week of 2026-11-23';
- const [savedChoice]=await consumer.findResumable({receipts:[{launch_id:result.launch_id,runtime_ref:result.runtime_ref}],viewer:{role:'host'}});
- expect(savedChoice.label).toBe('Resume game — Week of 2026-11-16 — Guest, Visitor');
+ // A game opened and left before anyone played is not offered back; the next start is a new game.
+ expect(await consumer.findResumable({receipts:[{launch_id:result.launch_id,runtime_ref:result.runtime_ref}],viewer:{role:'host'}})).toEqual([]);
  } finally {rmSync(dir,{recursive:true,force:true});}
 });
 it('labels a saved game with its saved roster',async()=>{
- const {consumer}=await fixture(); consumer.executionPort.inspect=async()=>({header:{status:'active',launch:{participant_launch:{source_label:'Week of 2026-11-16'}},participants:[{name:'Saved guest'},{name:'Saved player'}]}});
+ const {consumer}=await fixture(); consumer.executionPort.inspect=async()=>({header:{status:'active',launch:{participant_launch:{source_label:'Week of 2026-11-16'}},participants:[{name:'Saved guest'},{name:'Saved player'}]},state:{challenge_index:3}});
  const [choice]=await consumer.findResumable({receipts:[{launch_id:'l',runtime_ref:{provider:'gaming',id:'game:one'}}],viewer:{role:'host'}});
  expect(choice.label).toBe('Resume game — Week of 2026-11-16 — Saved guest, Saved player');
 });
@@ -197,4 +197,16 @@ it('resolves a Party Games app target from authorized owner metadata', async () 
  expect(gamingApplication.getLaunchDescriptor).toHaveBeenCalledWith('charades:test',{surfaceId:'party-games',authorityMode:'remote'});
  await expect(resolve({path:'charades:test',viewer:{role:'host',participant_id:'u',householdId:'other'}})).rejects.toMatchObject({code:'authorization_denied'});
  await expect(resolve({path:'charades:test?x=1',viewer:{role:'host',participant_id:'u',householdId:'home'}})).rejects.toMatchObject({code:'invalid_target'});
+});
+
+it('offers to resume only games clearly under way', async () => {
+  const { isDeepInProgress } = await import('./PartyGamesParticipantConsumer.mjs');
+  const six = Array.from({ length: 6 }, (_, i) => ({ id: `p${i}`, name: `P${i}` }));
+  const game = (status, index) => ({ header: { status, participants: six }, state: { challenge_index: index } });
+  expect(isDeepInProgress(game('active', 0))).toBe(false);
+  expect(isDeepInProgress(game('active', 5))).toBe(false);
+  expect(isDeepInProgress(game('active', 6))).toBe(true);
+  expect(isDeepInProgress(game('suspended', 9))).toBe(true);
+  expect(isDeepInProgress(game('complete', 18))).toBe(false);
+  expect(isDeepInProgress({ header: { status: 'active', participants: [{}] }, state: { challenge_index: 2 } })).toBe(false);
 });

@@ -44,6 +44,18 @@ function artifactRefs(loaded) {
  return [{role:'definition_bundle',id:loaded.artifacts.rules_definition?.id,hash:loaded.hash},...Object.entries(loaded.artifacts).map(([role,value])=>({role,...clone(value)}))];
 }
 function ready(snapshot,id) { return {schema:'participant-launch-result/v1',kind:'ready',launch_id:snapshot.launch_id,consumer:ref,snapshot_hash:snapshot.snapshot_hash,participant_context:clone(snapshot.participant_context),output:{schema:'party-games-launch-result/v1',data:{session_id:id,definition_id:snapshot.target.definitionId}},runtime_ref:{provider:'gaming',id}}; }
+/**
+ * A game is worth resuming only when it is clearly under way: unfinished, and at least
+ * one full round played (never fewer than three clues). A game opened and abandoned, or
+ * one already finished, starts fresh instead.
+ */
+export function isDeepInProgress(runtime) {
+  if (!['active','suspended'].includes(runtime?.header?.status)) return false;
+  const played=Number(runtime.state?.challenge_index);
+  const people=(runtime.header.participants || []).length;
+  return Number.isFinite(played) && played >= Math.max(3, people);
+}
+
 export class PartyGamesParticipantConsumer {
  id='party-games'; version=1; targets=[{action:'open',kind:'app',appId:'party-games'}];
  constructor({definitions,clueHistory,executionPort,manifestStore}) { if (!definitions || !executionPort || !manifestStore) throw new Error('Definition and execution ports are required'); Object.assign(this,{definitions,clueHistory,executionPort,manifestStore}); }
@@ -84,8 +96,8 @@ export class PartyGamesParticipantConsumer {
    if (typeof this.executionPort.inspect !== 'function') fail('participant_discovery_unavailable','Read-only game discovery is unavailable');
    try {
     const runtime=await this.executionPort.inspect(receipt.runtime_ref.id,viewer);
-    if (runtime && ['active','suspended','complete'].includes(runtime.header?.status)) {
-     const verb=runtime.header.status==='complete' ? 'View result' : 'Resume game';
+    if (runtime && isDeepInProgress(runtime)) {
+     const verb='Resume game';
      const names=(runtime.header.participants || []).map(p=>p.name).filter(name=>typeof name==='string' && name.trim());
      const details=[runtime.header.launch?.participant_launch?.source_label, names.join(', ')].filter(Boolean);
      const label=details.length ? `${verb} — ${details.join(' — ')}` : verb;
@@ -95,7 +107,7 @@ export class PartyGamesParticipantConsumer {
     if (error.code !== 'runtime_unavailable' && error.code !== 'session_not_found') throw error;
    }
   }
-  return result;
+  return result.reverse();
  }
  async resume({snapshot,receipt,viewer}) {
   host(viewer); const runtimeRef=receipt?.runtime_ref; if (runtimeRef?.provider!=='gaming' || !validId(runtimeRef.id)) fail('runtime_unavailable','Saved game is unavailable');

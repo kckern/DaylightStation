@@ -341,8 +341,11 @@ function useFetchMenuData(listInput, refreshToken = 0) {
           items: [],
         };
       }
+      // Agenda rows start participant launches; without this header the server greys them out.
+      const agenda = /^agenda\//.test(target);
       const data = await DaylightAPI(
-        `api/v1/list/${target}${config ? `/${config}` : ""}`
+        `api/v1/list/${target}${config ? `/${config}` : ""}`,
+        {}, 'GET', agenda ? { headers: { 'X-Daylight-Participant-Launch-Version': '1' } } : {}
       );
       if (canceled) return null;
       return {

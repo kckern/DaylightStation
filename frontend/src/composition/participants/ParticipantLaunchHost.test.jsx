@@ -26,8 +26,18 @@ it('does not reserve when the consumer adapter is unavailable',async()=>{
  expect(begin).not.toHaveBeenCalled();
 });
 
-it('offers Resume and New without reserving during inspection',async()=>{
+it('resumes the one game in progress without a review screen when no confirmation is needed',async()=>{
  const inspect=vi.fn().mockResolvedValue({schema:'participant-launch-options/v1',ready:true,confirmation:'none',setup_hash:'h',choices:[{launch_id:'old',label:'Earlier'}]});
+ const resume=vi.fn().mockResolvedValue({schema:'participant-launch-result/v1',kind:'ready',consumer:{id:'fake',version:1},output:{schema:'fake/v1',data:{}}});
+ const begin=vi.fn(); const ready=vi.fn();
+ render(<ParticipantLaunchHost refValue={{schema:'participant-launch-ref/v1',provider:'agenda',ref:'x'}} action="open" client={{inspect,resume,begin}} onReady={ready} onClose={()=>{}}/>);
+ await waitFor(()=>expect(ready).toHaveBeenCalledTimes(1));
+ expect(begin).not.toHaveBeenCalled();
+ expect(resume).toHaveBeenCalledWith(expect.objectContaining({launchId:'old',action:'open'}));
+});
+
+it('offers Resume and New without reserving during inspection',async()=>{
+ const inspect=vi.fn().mockResolvedValue({schema:'participant-launch-options/v1',ready:true,confirmation:'required',setup_hash:'h',choices:[{launch_id:'old',label:'Earlier'}]});
  const resume=vi.fn().mockResolvedValue({schema:'participant-launch-result/v1',kind:'ready',consumer:{id:'fake',version:1},output:{schema:'fake/v1',data:{}}});
  const begin=vi.fn(); const ready=vi.fn();
  render(<ParticipantLaunchHost refValue={{schema:'participant-launch-ref/v1',provider:'agenda',ref:'x'}} action="open" client={{inspect,resume,begin}} onReady={ready} onClose={()=>{}}/>);

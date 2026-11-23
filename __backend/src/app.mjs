@@ -5,7 +5,7 @@ import { GoogleGmailClientFactory } from '#adapters/google/GoogleGmailClientFact
 import {createWorkRuntime,resolveWorkHarvestScope} from '../../__app_modules/personal/work/server/runtime.mjs';
 import {createConfiguredMigrationOwnership} from '../../__app_modules/household/agenda/server/composition.mjs';
 import {installParticipantRuntime} from './5_composition/participants/installedRuntime.mjs';
-import {viewerFor} from './4_api/utils/participantHttp.mjs';
+import {householdViewerFor} from './4_api/utils/participantHttp.mjs';
 import {createPianoBoardGameDayRuntime} from '../../__app_modules/learning/piano/server/composition/board-game-day.mjs';
 import {createInstalledPrintableSheets} from '#composition/modules/printableSheets.mjs';
 import {createInstalledWeeklyMeasures} from '#composition/modules/weeklyMeasures.mjs';
@@ -1196,7 +1196,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { routers: contentRouters, services: contentServices } = createApiRouters({
     resourceAliases:agendaResourceAliases,
     registry: contentRegistry,
-    viewerForRequest: req => { try { return req.user?.sub ? viewerFor(req,householdId) : null; } catch { return null; } },
+    viewerForRequest: req => { try { return householdViewerFor(req,householdId); } catch { return null; } },
     sequenceStore,
     menuMemoryRepository: new YamlMenuMemoryRepository({
       filePath: configService.getHouseholdPath('history/menu_memory', householdId),

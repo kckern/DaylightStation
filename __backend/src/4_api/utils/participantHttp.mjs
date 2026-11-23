@@ -10,6 +10,20 @@ export function viewerFor(req, householdId, host = false) {
   if (host && viewer.role !== 'host') throw httpError('authorization_denied', 'Host authority required');
   return viewer;
 }
+/**
+ * Viewer for household view surfaces (an agenda shown on a screen, an activity started from it).
+ * Showing and starting needs no sign-in; a signed-in caller keeps their own identity.
+ * Without one, the household itself is the viewer, with the authority the network
+ * already grants it (a LAN screen is a host; an outside caller is only a participant).
+ * Editing routes keep using viewerFor and still require sign-in.
+ */
+export function householdViewerFor(req, householdId) {
+  if (req.user?.sub) return viewerFor(req, householdId);
+  if (typeof householdId !== 'string' || !householdId) throw httpError('feature_unavailable', 'Household scope unavailable');
+  if (req.householdId && req.householdId !== householdId) throw httpError('authorization_denied', 'Household scope mismatch');
+  const roles = (req.roles || []).map(String);
+  return {role: roles.some(role => HOST_ROLES.has(role)) ? 'host' : 'participant', participant_id: `household:${householdId}`, householdId};
+}
 export function bodyFields(body, allowed) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw httpError('invalid_request', 'Object required', [{field:'body',message:'Object required'}]);
   const errors=Object.keys(body).filter(key=>!allowed.includes(key)).map(field=>({field,message:'Unknown field'}));

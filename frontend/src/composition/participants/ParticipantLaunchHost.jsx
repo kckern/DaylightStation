@@ -18,6 +18,7 @@ export function ParticipantLaunchHost({ refValue, action, client = participantLa
   callbacks.current = {onReady,onPassthrough,canLaunch,onConflict};
   const lastOperation = useRef(null);
   const inspectedConsumer = useRef(null);
+  const autoStart = useRef(false);
   const execute = useCallback(async (operation, input) => {
     const requestGeneration = generation.current;
     if (busy.current === requestGeneration) return;
@@ -39,6 +40,7 @@ export function ParticipantLaunchHost({ refValue, action, client = participantLa
         if (!callbacks.current.onPassthrough) throw new Error('Launch unavailable');
         callbacks.current.onPassthrough(result, inspectedConsumer.current);
       } else if (result.schema === 'participant-launch-result/v1' && result.kind === 'resume_available') {
+        if (autoStart.current && result.choices?.length && operation !== 'resume') { busy.current = null; execute('resume', {ref:input.ref, action:input.action, launchId:result.choices[0].launch_id}); return; }
         setState(s => ({ phase: 'options', options: {...s.options, ready: true, confirmation: 'required', setup_hash: result.current_setup_hash, choices: result.choices} }));
       } else throw new Error('Invalid launch response');
     } catch (error) {
@@ -64,14 +66,19 @@ export function ParticipantLaunchHost({ refValue, action, client = participantLa
     execute('begin', { ref: refValue, action, requestId: id.current, intent, expectedSetupHash: options?.setup_hash });
   }, [action, execute, options, refValue, requestIdFactory]);
   useEffect(() => {
-    if (state.phase === 'options' && options.confirmation === 'none' && !options.choices?.length && !requireConfirmation && !previewUnavailable) begin('open');
-  }, [state.phase, options, begin, requireConfirmation, previewUnavailable]);
+    if (state.phase !== 'options' || options.confirmation !== 'none' || requireConfirmation || previewUnavailable) return;
+    autoStart.current = true;
+    // Starting an activity goes straight in: the newest game still under way resumes (the
+    // consumer only offers games clearly in progress), otherwise a new one opens.
+    if (options.choices?.length) execute('resume', {ref:refValue, action, launchId:options.choices[0].launch_id});
+    else begin('open');
+  }, [state.phase, options, begin, execute, refValue, action, requireConfirmation, previewUnavailable]);
   const cancel=()=>{getLogger().info('participant-launch.cancel',{phase:state.phase});onClose?.();};
   return <TVActionDialog label="Activity launch" focusKey={state.phase} onBack={cancel}>
     {state.phase === 'loading' && <p>Loading activity…</p>}
     {state.phase === 'conflict' && <><p>{state.message}</p><button onClick={recover}>Refresh</button></>}
     {state.phase === 'error' && <><p>{state.message}</p><button onClick={() => execute(lastOperation.current.operation, lastOperation.current.input)}>Retry</button></>}
-    {state.phase === 'options' && <>
+    {state.phase === 'options' && !(options.confirmation === 'none' && !requireConfirmation && !previewUnavailable) && <>
       <p>Review activity</p>
       {Preview ? <Preview summary={options.consumer_summary}/> : previewUnavailable ? <p role="alert">Activity preview unavailable.</p> : options.participant_summary?.map(person => <p key={person.key}>{person.display?.name}</p>)}
       {options.choices?.map(choice => <button key={choice.launch_id} onClick={() => execute('resume', {ref:refValue,action,launchId:choice.launch_id})}>{/^(Resume|View)\b/.test(choice.label || '') ? choice.label : `Resume ${choice.label}`}</button>)}
