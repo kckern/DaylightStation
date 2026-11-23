@@ -59,7 +59,7 @@ export function rowStatus(r) {
 const boxPoint = (el) => { const b = el.getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.bottom) }; };
 
 export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, selectedId = null, onSelect = () => {}, onEffect = null,
-  refining = {}, scope: scopeProp = null, onScope = null, emptyText = null, onPartMenu = null }) {
+  refining = {}, scope: scopeProp = null, onScope = null, emptyText = null, onPartMenu = null, maxHideSec = null }) {
   // The page owns the scope so the timeline and stepping share it; used on its own the list keeps its own.
   const [own, setOwn] = useState(DEFAULT_SCOPE);
   const [menuFor, setMenuFor] = useState(null);
@@ -131,7 +131,7 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
                 </UnstyledButton>
                 <span className="cf-review__fx">
                   {onEffect && !plays(r) ? (
-                    <EffectMenu row={r} opened={menuFor === r.id} position="bottom-end"
+                    <EffectMenu row={r} opened={menuFor === r.id} position="bottom-end" maxHideSec={maxHideSec}
                       // The menu opens on the row it acts on: when the pick is refused (unsaved timing
                       // in hand) it stays shut (review 2026-11-22).
                       onChange={(o) => { if (o && !selected && onSelect(r) === false) return; setMenuFor(o ? r.id : null); }}

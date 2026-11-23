@@ -27,6 +27,10 @@ describe('reviewRows', () => {
     expect(byId['cue:w1'].members).toEqual(['w1']);
     expect(byId['scene:sc-1'].members).toEqual([]);
   });
+  it('says whether a part is tracked (has regions)', () => {
+    expect(byId['subject:subject-b1'].tracked).toBe(true);
+    expect(byId['cue:v1'].tracked).toBe(false);
+  });
   it('carries kind, group, modality, effect, card and hand-fixed, with times rounded to ms', () => {
     expect(byId['cue:w1']).toMatchObject({ kind: 'words', group: 'profanity', modality: 'said', effect: 'mute', in: 10.123 });
     expect(byId['scene:sc-1']).toMatchObject({ kind: 'scenes', group: 'violence_blood_gore', card: { text: 'They fight.', approved: true } });

@@ -56,7 +56,7 @@ const same = (a, b) => a[0] === b[0] && a[1] === b[1];
 
 export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = null, wordRulings = {},
   position = null, handlers = {}, refineState = null, canUndo = false, status = null, stage = 'review',
-  neighbours = [], ports = null, unfiltered = false, onPartMenu = null, filmLevel = null }) {
+  neighbours = [], ports = null, unfiltered = false, onPartMenu = null, filmLevel = null, maxHideSec = null }) {
   const [notice, setNotice] = useState(null);
   const [pending, setPending] = useState(null);
   const [span, setSpan] = useState([row.in, row.out]);
@@ -243,7 +243,7 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
         <Popover opened={Boolean(panel)} onChange={(o) => { if (!o) setPanel(null); }} position="bottom-start" withinPortal width={360} shadow="md" trapFocus>
           <Popover.Target>
             <span>
-              <EffectMenu row={row} opened={menuOpen} onChange={setMenuOpen} disabled={fxDisabled}
+              <EffectMenu row={row} maxHideSec={maxHideSec} opened={menuOpen} onChange={setMenuOpen} disabled={fxDisabled}
                 onPick={(letter) => handlers.effect?.(letter)}
                 target={(
                   <UnstyledButton className={`cf-card-part__fx is-${family || 'plays'}`} aria-label={`Effect: ${fx}. Change it (E)`} disabled={fxDisabled}>

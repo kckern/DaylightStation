@@ -141,7 +141,7 @@ widths for approximate cues are the full-blur ones.
 A long whole-frame blur is not watchable, so it plays as the same card over the same sound
 (`convertLongHides`, `longHide.js`). Every maximal run of whole-frame blur pieces (`full-blur` or an
 overlay with no rect, gaps up to the resolver's 1 s bridge joined) lasting longer than
-`treatments['full-blur'].maxSec` (default 5; `null` or `0` turns it off) becomes one blackout over
+`treatments['full-blur'].maxSec` (default 5; read by `maxHideSec` in `shared/contracts/content-filter/blurPlaysAs.mjs`, which the review page's Blur caption also uses; `null` or `0` turns it off) becomes one blackout over
 the run's union, bridged gaps included. Shorter runs stay blurs; regional pieces do not count.
 A tracked cue in a category without `regional: true` resolves whole-frame, so it counts. An explicit
 household ruling is never second-guessed, except that a ruled whole-frame blur (`full-blur`, or

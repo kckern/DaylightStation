@@ -67,7 +67,7 @@ describe('useEffectHolds', () => {
     served = film([row('p', { effect: 'blackout', label: 'poster' })], false); rerender();
     served = film([row('p', { effect: 'blackout', label: 'poster' })]); rerender();
     expect(result.current.data.rows[0].effect).toBe('blackout');
-    expect(result.current.note.text).toBe('Blur plays as hidden on "poster".');
+    expect(result.current.note.text).toBe('Blur plays as hide picture on "poster".');
     expect(logger.info).toHaveBeenCalledWith('content_filter.review.effect_resolved_differently', expect.objectContaining({ asked: 'blur', plays: 'blackout' }));
   });
   it('a later click replaces an earlier one; a failed save lets the row show the server again', () => {
@@ -99,7 +99,7 @@ describe('useEffectHolds: settling and timeouts', () => {
     gen = 4; // the page issued a reload after the save
     served = film([row('a', { effect: 'blackout', label: 'poster' })]); rerender();
     expect(result.current.data.rows[0].effectHeld).toBeUndefined();
-    expect(result.current.note.text).toBe('Blur plays as hidden on "poster".');
+    expect(result.current.note.text).toBe('Blur plays as hide picture on "poster".');
   });
 
   it('a hold that is never saved expires at 20 s with a note', () => {

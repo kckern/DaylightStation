@@ -69,12 +69,13 @@ export function reviewRows({ cues, source = [], refined = null, override = null,
     const members = m.kind === 'scene' ? [] : [...new Set(all.flatMap(sourceIds))];
     const isScene = m.kind === 'scene';
     const modality = isScene ? null : cueModality(m.cue);
+    const tracked = all.some((c) => c.regions?.length);
     const unsure = [];
     for (const id of members) if (refineStatus.has(id)) unsure.push(`refine-${refineStatus.get(id)}`);
     if (!isScene && all.some((c) => c.precision === 'safe-window' && !c.handFixed)) unsure.push('safe-window');
     if (isScene && m.scene?.reviewNote) unsure.push('check-levels');
     if (!isScene && m.effect === 'skip-card' && isWordLabel(m.cue.label)) unsure.push('exchange-by-length');
-    if (modality === 'shown' && OVERLAY.has(m.effect) && !all.some((c) => c.regions?.length)) unsure.push('untracked-visual');
+    if (modality === 'shown' && OVERLAY.has(m.effect) && !tracked) unsure.push('untracked-visual');
     if (members.some((id) => subjectUnsure.has(id))) unsure.push('subject-unsure');
     return {
       id: m.key,
@@ -84,6 +85,7 @@ export function reviewRows({ cues, source = [], refined = null, override = null,
       label: m.label,
       category: m.category,
       modality,
+      tracked: !!tracked,
       in: ms(m.in),
       out: ms(m.out),
       effect: m.effect,

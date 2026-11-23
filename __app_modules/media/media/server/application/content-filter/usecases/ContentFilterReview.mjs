@@ -4,6 +4,7 @@
  * film, and the parent sign-off gate. Rows and their spans come from the latest audit
  * (ContentFilterJobs); a mark counts only while its row's span is unchanged.
  */
+import { maxHideSec } from '../../../../../../../shared/contracts/content-filter/blurPlaysAs.mjs';
 import { unmapTime } from '../../../../../../../shared/contracts/content-filter/syncMap.mjs';
 import { filmStatus } from '../../../domain/content-filter/filmStatus.mjs';
 import { certify, signOff } from '../../../domain/content-filter/refine/certification.mjs';
@@ -383,6 +384,7 @@ export class ContentFilterReview {
     if (changed) missing.push(`${changed} parts changed since you reviewed them`);
     if (redo) missing.push(`${redo} part${redo === 1 ? ' waits' : 's wait'} for redo`);
     const run = (record?.runs || []).at(-1) || null;
+    const profile = (await this.#repo.getProfile('family')) || {};
     const auditError = record?.auditError || null;
     const status = filmStatus({ rawCueCount: (raw?.cues || []).length, refined, audit: audit ? { fresh } : null, auditRunning: auditing, auditFailed: !!auditError,
       job: run, certificationLevel: refined ? cert.level : 'none', rowsOpen: total - reviewed + redo, signOffReady: !!refined && missing.length === 0 });   // unreviewed (incl. moved since review) + redo
@@ -396,7 +398,9 @@ export class ContentFilterReview {
       certification: { level: cert.level, ...(cert.blocking ? { blocking: cert.blocking } : {}) },
       audit: audit ? { ok: audit.ok, at: audit.at, fresh, running: auditing, failures: audit.failures || [] } : null,
       wordRulings: override.profilePatch?.languageWords || {},
-      bleepLevel: { film: override.profilePatch?.bleepLevel ?? null, profile: (await this.#repo.getProfile('family'))?.bleepLevel ?? null },
+      bleepLevel: { film: override.profilePatch?.bleepLevel ?? null, profile: profile.bleepLevel ?? null },
+      // The hide limit the player applies to an untracked whole-picture blur (the effect menu says so before it is picked).
+      maxHideSec: maxHideSec(profile.treatments),
       rows, reviewed, total, redo, parts,
       job: run ? { id: run.id, kind: run.kind, status: run.status, step: run.step, steps: run.steps, ...(run.cues ? { cues: run.cues } : {}), ...(run.worker ? { remote: true } : {}) } : null,
       signOff: { ready: !!refined && missing.length === 0, missing, parent: refined?.certification?.parent || null },

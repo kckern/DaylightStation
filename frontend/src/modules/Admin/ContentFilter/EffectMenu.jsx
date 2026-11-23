@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Menu } from '@mantine/core';
 import { IconCheck } from '@tabler/icons-react';
 import { fitEffectToChannel } from '../../../../../shared/contracts/content-filter/cueModality.mjs';
+import { blurPlaysAs } from '../../../../../shared/contracts/content-filter/blurPlaysAs.mjs';
 import { actionKeysFor, effectButton, isSceneRow, keysKindOf, plays } from './reviewScope.js';
 
 /**
@@ -20,10 +21,22 @@ export function effectOptions(row) {
   return all.filter(([, , v]) => fits(v));
 }
 
+/**
+ * What the Blur item adds to its label: on a shown part that is not tracked Blur plays as the whole
+ * picture, or as a hidden picture past the household's limit (the same rule the player applies).
+ */
+export function blurCaption(row, maxHideSec = null) {
+  if (!row || isSceneRow(row) || row.modality !== 'shown' || row.tracked !== false) return null;
+  const spanSec = Math.max(0, (row.out ?? 0) - (row.in ?? 0));
+  const as = blurPlaysAs({ tracked: false, spanSec }, maxHideSec);
+  if (as === 'blackout') return `plays as hide picture (not tracked, ${Math.round(spanSec)} s)`;
+  return 'whole picture (not tracked)';
+}
+
 /** Whether `value` is what the part does now. */
 export const isCurrentEffect = (row, value) => (plays(row) ? value === 'off' : effectButton(row?.effect) === value);
 
-export function EffectMenu({ row, target, onPick, opened, onChange, children = null, disabled = false, position = 'bottom-start' }) {
+export function EffectMenu({ row, target, onPick, opened, onChange, children = null, disabled = false, position = 'bottom-start', maxHideSec = null }) {
   const options = effectOptions(row);
   // The keys the items show work while the menu is open: the letter picks and closes it. A document
   // listener, because Mantine's Escape handling drops any key handler given to the dropdown.
@@ -52,7 +65,7 @@ export function EffectMenu({ row, target, onPick, opened, onChange, children = n
             <Menu.Item key={k} onClick={() => onPick?.(k.toLowerCase())} aria-checked={current} role="menuitem"
               leftSection={<span className="cf-fx-menu__check">{current ? <IconCheck size={14} /> : null}</span>}
               rightSection={<kbd className="cf-keybar__key">{k}</kbd>}>
-              {label === 'Off' ? 'Let it play (off)' : label}
+              {label === 'Off' ? 'Let it play (off)' : v === 'blur' && blurCaption(row, maxHideSec) ? `${label} · ${blurCaption(row, maxHideSec)}` : label}
             </Menu.Item>
           );
         })}

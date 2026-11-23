@@ -114,7 +114,7 @@ export function useEffectHolds(raw, { rk, logger, gen = () => 0, now = () => Dat
         logger?.info?.('content_filter.review.effect_settled', { rk, rowId, to: h.to, settleMs: now() - h.at });
         drop(rowId); changed = true;
       } else if (fresh && gen() >= h.afterGen) {
-        const playsAs = row ? (plays(row) ? 'unfiltered' : `as ${effectChip(row.effect).toLowerCase()}`) : null;
+        const playsAs = row ? (plays(row) ? 'unfiltered' : `as ${row.effect === 'blackout' ? 'hide picture' : effectChip(row.effect).toLowerCase()}`) : null;
         logger?.info?.('content_filter.review.effect_resolved_differently', { rk, rowId, asked: h.to, plays: row ? (plays(row) ? 'off' : row.effect) : null, settleMs: now() - h.at });
         const part = row?.label ?? h.rowLabel;
         addNote(rowId, playsAs ? `${h.label} plays ${playsAs}${part ? ` on "${part}"` : ' on this part'}.` : `${h.label} saved; the part left this list.`);

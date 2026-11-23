@@ -1,18 +1,10 @@
+import { DEFAULT_MAX_HIDE_SEC, maxHideSec } from '../../../../../shared/contracts/content-filter/blurPlaysAs.mjs';
 import { hidePiece, isWholeFrame, BRIDGE_SEC } from './contentFilter.js';
 
-/** Longest continuous whole-frame blur that stays a blur; past it the picture is hidden behind a card. */
-export const DEFAULT_MAX_HIDE_SEC = 5;
+export { DEFAULT_MAX_HIDE_SEC, maxHideSec };
 
 // The effects that blur the whole picture when they carry no rect. A blackout already hides it.
 const BLURS = new Set(['full-blur', 'blur', 'pixelate', 'censor-bar']);
-
-/** The conversion threshold in seconds, or null when conversion is off (`maxSec` null or 0). */
-export function maxHideSec(treatments) {
-  const v = treatments?.['full-blur']?.maxSec;
-  if (v === undefined) return DEFAULT_MAX_HIDE_SEC;
-  const n = Number(v);
-  return v === null || !Number.isFinite(n) || n <= 0 ? null : n;
-}
 
 /**
  * A long whole-frame blur is not watchable: every maximal run of whole-frame blur pieces (gaps up

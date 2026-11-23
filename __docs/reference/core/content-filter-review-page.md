@@ -114,6 +114,12 @@ off; `O` is the out point), the current one checked; then **Use household settin
 word…** (a popover: this word in this film, Settings / Play / Mute / Bleep, and all of its group in
 this film); for a skip, the card shown in place of it (a popover with Approve card, Draft,
 Withdraw). The effect keys work with the menu closed and inside it (a letter picks and closes it).
+On a shown part the filter does not track, the **Blur** item says what Blur will actually play, before
+it is picked: `Blur · whole picture (not tracked)`, or `Blur · plays as hide picture (not tracked,
+39 s)` when the span is past the household's hide limit; a tracked part reads plain `Blur`. The rule is
+`blurPlaysAs` (`shared/contracts/content-filter/blurPlaysAs.mjs`), the same one the player's long-hide
+conversion uses (`maxHideSec`, which lives there too); rows carry `tracked` and the review payload
+`maxHideSec` (null when conversion is off). The "plays as" note after a save uses the same words.
 While any menu is open the station keys stand aside entirely, Esc included: Esc closes the menu and
 nothing else (it used to drop an unsaved timing change behind an open menu). A word skipped as an exchange is listed with
 scenes but is a cue: `isSceneRow` (no members, not `cue:`) decides scene handling, `keysKindOf` the

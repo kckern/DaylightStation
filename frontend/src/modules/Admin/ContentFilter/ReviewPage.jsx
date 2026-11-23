@@ -224,7 +224,7 @@ function FilmReview({ ratingKey, rowId, owner }) {
             </>
           ) : row ? (
             <RowEditor key={row.id} ratingKey={ratingKey} row={row} onChanged={reload} busyText={busyText}
-              wordRulings={data.wordRulings || {}} handlers={cardHandlers} canUndo={station.canUndo} stage={stage}
+              maxHideSec={data.maxHideSec ?? null} wordRulings={data.wordRulings || {}} handlers={cardHandlers} canUndo={station.canUndo} stage={stage}
               position={index >= 0 ? { index, total: station.scoped.length } : null}
               refineState={refining[row.id] ? { state: refining[row.id] } : null}
               status={keyBar} neighbours={data.rows} ports={cardPorts} unfiltered={unfiltered}
@@ -234,7 +234,7 @@ function FilmReview({ ratingKey, rowId, owner }) {
         <ReviewList rows={data.rows} reviewed={data.reviewed} total={data.total} audit={data.audit}
           selectedId={row?.id ?? null} onSelect={pickPart} scope={station.scope} onScope={station.setScope} refining={refining}
           onEffect={stage === 'approve' ? null : (r, letter) => station.handlers.effect?.(letter, r)}
-          emptyText={EMPTY[data.status?.next] || null} onPartMenu={fromList} />
+          emptyText={EMPTY[data.status?.next] || null} onPartMenu={fromList} maxHideSec={data.maxHideSec ?? null} />
       </div>
       <PartMenu row={partMenuRow} at={partMenu?.at ?? null} onClose={() => { openMenuId.current = null; setPartMenu(null); }} onAction={onPartAction} />
     </div>

@@ -95,6 +95,20 @@ describe('RowEditor (the part card)', () => {
     expect(item('Mute').getAttribute('aria-checked')).toBe('true');
     expect(item('Bleep').getAttribute('aria-checked')).toBe('false');
   });
+  it('the Blur item says when it plays as the whole picture or hidden', async () => {
+    const long = { ...shown, tracked: false, in: 3801.6, out: 3840.2 };
+    const { unmount } = render(<MantineProvider><RowEditor ratingKey="77" row={long} maxHideSec={20} /></MantineProvider>);
+    await openEffects();
+    expect(item('Blur · plays as hide picture \\(not tracked, 39 s\\)')).toBeTruthy();
+    unmount(); cleanup();
+    render(<MantineProvider><RowEditor ratingKey="77" row={{ ...long, out: 3810 }} maxHideSec={20} /></MantineProvider>);
+    await openEffects();
+    expect(item('Blur · whole picture \\(not tracked\\)')).toBeTruthy();
+    cleanup();
+    render(<MantineProvider><RowEditor ratingKey="77" row={{ ...long, tracked: true }} maxHideSec={20} /></MantineProvider>);
+    await openEffects();
+    expect(item('Blur')).toBeTruthy();
+  });
   it('a word skipped for being long on rough timing says why, and Refine is the primary action', async () => {
     const handlers = { refine: vi.fn() };
     show(skippedWord, { handlers });

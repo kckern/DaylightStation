@@ -14,12 +14,12 @@ const base = () => ({
   override: { sync: { scale: 1, offsetSec: 10 } },
 });
 const rowsOf = () => [{ id: 'cue:va1', in: 110.2, out: 110.6 }, { id: 'cue:va2', in: 210, out: 212 }];
-const setup = ({ audit = { ok: true, digest: 'D', rowsVersion: REVIEW_ROWS_VERSION, rows: rowsOf() }, digest = 'D', state = base(), auditing = false } = {}) => {
+const setup = ({ audit = { ok: true, digest: 'D', rowsVersion: REVIEW_ROWS_VERSION, rows: rowsOf() }, digest = 'D', state = base(), auditing = false, profile = {} } = {}) => {
   const repo = {
     getEdl: async () => state.raw, getRefinedEdl: async () => state.refined,
     saveRefinedEdl: async (_r, e) => { state.refined = e; },
     getOverride: async () => state.override, saveOverride: async (_rk, o) => { state.override = o; },
-    getProfile: async () => ({}),
+    getProfile: async () => profile,
     appendReviewHistory: async (_rk, e) => { state.history = [...(state.history || []), e]; },
     readReviewHistory: async () => state.history || [],
   };
@@ -28,6 +28,17 @@ const setup = ({ audit = { ok: true, digest: 'D', rowsVersion: REVIEW_ROWS_VERSI
     logger: { info() {}, warn() {} }, clock: () => new Date('2026-11-08T00:00:00Z') });
   return { review, state };
 };
+
+describe('ContentFilterReview maxHideSec', () => {
+  it.each([
+    ['the profile\'s full-blur limit', { treatments: { 'full-blur': { maxSec: 20 } } }, 20],
+    ['the default when the profile sets none', {}, 5],
+    ['null when conversion is off', { treatments: { 'full-blur': { maxSec: null } } }, null],
+  ])('the review carries %s', async (_n, profile, want) => {
+    const { review } = setup({ profile });
+    expect((await review.get({ ratingKey: '9' })).maxHideSec).toBe(want);
+  });
+});
 
 describe('ContentFilterReview nudges', () => {
   it('stores a cue nudge as integer ms on the VidAngel clock', async () => {
