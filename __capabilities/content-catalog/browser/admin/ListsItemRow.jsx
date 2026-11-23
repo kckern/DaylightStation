@@ -60,7 +60,7 @@ function getNearbyItems(flatItems, sectionIndex, itemIndex) {
   return flatItems.slice(Math.max(0, index - SIBLING_PRELOAD_RADIUS), index + SIBLING_PRELOAD_RADIUS + 1);
 }
 
-function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, isWatchlist, onEdit, onSplit, sectionIndex, sectionCount, sections, itemCount, onMoveItem, activeContentDrag, swapFlashKey, dragId, allowSublistNavigation = true, allowNewSection = true }) {
+function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, isWatchlist, onEdit, onSplit, sectionIndex, sectionCount, sections, itemCount, onMoveItem, activeContentDrag, swapFlashKey, dragId, allowSublistNavigation = true, allowNewSection = true, allowParams = true }) {
   const log = useMemo(() => adminLog('ListsItemRow'), []);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: dragId ? `row:${dragId}` : `row-${sectionIndex}-${item.index}`
@@ -85,7 +85,8 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
 
   // Per-type parameters (itemParams/registry.js). Null for most items, and
   // then the row renders exactly as it did before parameters existed.
-  const paramsType = paramsTypeFor(item);
+  // Hosts whose launches ignore item params (agenda weeks) hide the editor.
+  const paramsType = allowParams ? paramsTypeFor(item) : null;
   const itemName = item.label || item.input || 'item';
   const paramsSummary = paramsType ? paramsType.summary(item.params || {}) : '';
   const openParams = (from) => {

@@ -105,3 +105,10 @@ it('replaces a legacy input/action encoding instead of adding a second target',a
   expect(item).toEqual({uid:'h1',title:'Hymn',queue:{contentId:'singalong:hymn/1023'}});
   expect(()=>validateEmbeddedList(JSON.parse(JSON.stringify(next)))).not.toThrow();
 });
+it('never offers item parameters inside an agenda draft, even for a registered type', async () => {
+  const { registerItemParams } = await import('./itemParams/registry.js');
+  registerItemParams({ id: 'draft-test-params', label: 'Draft test', matches: input => input === 'app:draft-test', summary: () => 'set', Editor: () => null });
+  setup({ list: { sections: [{ uid: 's1', items: [{ uid: 'p1', title: 'Charades', open: 'draft-test' }] }] } });
+  expect(screen.queryByRole('button', { name: /^Parameters for/ })).toBeNull();
+  expect(document.querySelector('.lists-view--has-params')).toBeNull();
+});
