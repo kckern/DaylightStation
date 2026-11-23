@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 
@@ -77,7 +77,7 @@ describe('RowEditor (the part card)', () => {
     expect(kbds).toEqual(expect.arrayContaining(['E', 'A', 'X', 'D', 'W', 'Space', 'S', 'R']));
     await openEffects();
     const menuKeys = [...document.querySelectorAll('[role="menu"] kbd')].map((n) => n.textContent);
-    expect(menuKeys).toEqual(expect.arrayContaining(['M', 'P', 'K', 'O']));
+    expect(menuKeys).toEqual(expect.arrayContaining(['M', 'P', 'K', 'F']));
     fireEvent.click(item('Bleep'));
     expect(handlers.effect).toHaveBeenCalledWith('p');
   });
@@ -198,7 +198,7 @@ describe('the effect menu stays short (review 2026-11-22)', () => {
     show(word);
     await openEffects();
     const items = [...document.querySelectorAll('[role="menuitem"]')].map((n) => n.textContent.trim());
-    expect(items).toEqual(['MuteM', 'BleepP', 'SkipK', 'Let it play (off)O', 'Use household settings', 'More for this word…']);
+    expect(items).toEqual(['MuteM', 'BleepP', 'SkipK', 'Let it play (off)F', 'Use household settings', 'More for this word…']);
   });
   it('a letter in the open menu picks that effect and closes it', async () => {
     const handlers = { effect: vi.fn() };
@@ -207,6 +207,50 @@ describe('the effect menu stays short (review 2026-11-22)', () => {
     fireEvent.keyDown(menu, { key: 'p' });
     expect(handlers.effect).toHaveBeenCalledWith('p');
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+  });
+});
+
+describe('I and O set the in and out points at the playhead (owner, 2026-11-22)', () => {
+  it('mark the start and end of the part in hand as a draft that Save writes', async () => {
+    vi.spyOn(previewStore, 'currentTime').mockReturnValue(70.0);
+    const ports = { current: {} };
+    show(word, { ports });
+    act(() => ports.current.markIn());
+    previewStore.currentTime.mockReturnValue(70.9);
+    act(() => ports.current.markOut());
+    expect(screen.getByRole('slider', { name: 'Start' }).getAttribute('aria-valuenow')).toBe('70');
+    expect(screen.getByRole('slider', { name: 'End' }).getAttribute('aria-valuenow')).toBe('70.9');
+    fireEvent.click(btn('Save timing'));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0].body).toEqual({ nudge: { in: 70, out: 70.9 } });
+  });
+  it('an in point past the out point (or an out before the in) is refused with a word, and nothing moves', () => {
+    vi.spyOn(previewStore, 'currentTime').mockReturnValue(75);
+    const ports = { current: {} };
+    show(word, { ports });
+    act(() => ports.current.markIn());
+    expect(screen.getByText(/after this part's end/)).toBeTruthy();
+    expect(screen.getByRole('slider', { name: 'Start' }).getAttribute('aria-valuenow')).toBe('70.2');
+  });
+  it('with no film playing it says so', () => {
+    vi.spyOn(previewStore, 'currentTime').mockReturnValue(null);
+    const ports = { current: {} };
+    show(word, { ports });
+    act(() => ports.current.markOut());
+    expect(screen.getByText('Play the film first.')).toBeTruthy();
+  });
+});
+
+describe('a dragged timing plays before it is saved (owner, 2026-11-22)', () => {
+  it('publishes every unsaved span to the preview as a draft, and clears them when the card goes', () => {
+    vi.spyOn(previewStore, 'currentTime').mockReturnValue(70.0);
+    const setDrafts = vi.spyOn(previewStore, 'setDrafts');
+    const ports = { current: {} };
+    const { unmount } = render(<MantineProvider><RowEditor ratingKey="77" row={word} ports={ports} /></MantineProvider>);
+    act(() => ports.current.markIn());
+    expect(setDrafts).toHaveBeenLastCalledWith({ w1: [70, 70.6] });
+    unmount();
+    expect(setDrafts).toHaveBeenLastCalledWith(null);
   });
 });
 

@@ -7,7 +7,7 @@ import { filterMode } from './filterMode.js';
 import { getChildLogger } from "../../../../../frontend/src/lib/logging/singleton.js";
 import { filterSummary, isProvisional, bumperStartWindowSec } from './filterSummary.js';
 import { useBumper } from './useBumper.js';
-import { previewStore } from './preview/previewStore.js';
+import { previewStore, useTimingDrafts } from './preview/previewStore.js';
 import { useSurroundOverride } from "../../../../../__capabilities/playback/browser/surround-override.mjs";
 
 /** A Set that reports every change (the unfiltered-peek ids). */
@@ -80,6 +80,8 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl, bumperHel
   const filterTransport = useMemo(() => ({
     seek: (s) => { const el = getMediaEl(); if (el && Number.isFinite(s)) { try { el.currentTime = s; } catch (_) { /* ignore */ } } },
   }), [getMediaEl]);
+  // Admin review's unsaved timing (null everywhere else): the preview plays the dragged edges.
+  const previewDrafts = useTimingDrafts();
   const { activeOverlays: filterOverlays, activeCard: filterCard, effectiveCues: filterCues, filterActive, lastFired } = useContentFilter({
     getMediaEl,
     transport: filterTransport,
@@ -89,6 +91,7 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl, bumperHel
     part: partFromSrc(media?.mediaUrl || media?.url || getMediaEl?.()?.currentSrc),
     enabled: filterEnabled && !!filterData?.edl,
     bypass: bypassRef.current,
+    drafts: previewDrafts,
   });
 
   // Viewer chrome (spec §2): the opening bumper and the filter-active badge. The

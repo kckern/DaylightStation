@@ -29,10 +29,10 @@ describe('reviewScope', () => {
     expect(stepFrom(rows, 'zz', 1).id).toBe('a');
     expect(stepFrom(rows, 'zz', -1).id).toBe('d');
   });
-  it('action keys follow the kind; O turns the effect off everywhere', () => {
-    expect(actionKeysFor('words').map((k) => k[0])).toEqual(['M', 'P', 'K', 'O']);
-    expect(actionKeysFor('picture').map((k) => k[0])).toEqual(['B', 'H', 'K', 'O']);
-    expect(actionKeysFor('scenes').map((k) => k[0])).toEqual(['K', 'B', 'O']);
+  it('action keys follow the kind; F turns the filter off everywhere (O is the out point)', () => {
+    expect(actionKeysFor('words').map((k) => k[0])).toEqual(['M', 'P', 'K', 'F']);
+    expect(actionKeysFor('picture').map((k) => k[0])).toEqual(['B', 'H', 'K', 'F']);
+    expect(actionKeysFor('scenes').map((k) => k[0])).toEqual(['K', 'B', 'F']);
   });
   it('a part refine left a reason on waits for a look until it has a verdict or a hand fix', () => {
     const giveUp = { id: 'cue:g', timing: 'safe-window', unsure: ['refine-giveup', 'safe-window'] };

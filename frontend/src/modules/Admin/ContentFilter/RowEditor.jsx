@@ -3,7 +3,7 @@ import { Button, Menu, Popover, SegmentedControl, Select, Text, TextInput, Unsty
 import { IconArrowBackUp, IconChevronDown, IconChevronLeft, IconChevronRight, IconEye, IconPlayerPlay } from '@tabler/icons-react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/index.js';
-import { effectChip } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
+import { effectChip, previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 import { fitEffectToChannel } from '../../../../../shared/contracts/content-filter/cueModality.mjs';
 import { LANGUAGE_GROUPS } from '../../../../../shared/contracts/content-filter/languageGroups.mjs';
 import { groupLabel, timecode } from './ReviewList.jsx';
@@ -102,9 +102,30 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
     if (!changedCount || disabled) return;
     const calls = [...(changedOwn ? rule({ nudge: { in: span[0], out: span[1] } }) : []),
       ...changedOthers.flatMap((n) => ruleFor(n.row, { nudge: { in: drafts[n.id][0], out: drafts[n.id][1] } }))];
-    act('nudge', calls, changedCount > 1 ? `${changedCount} timings saved.` : 'Timing saved.');
+    act('nudge', calls, changedCount > 1 ? `${changedCount} timings saved.` : 'Timing saved.')
+      // The player reads its filter once: refresh it, so the saved timing plays once the drafts clear.
+      .then(() => previewStore.refresh().catch(() => false));
+  };
+  // I / O: an edge of the part in hand at the playhead, as a draft (owner, 2026-11-22).
+  const mark = (edge) => {
+    if (disabled || !single || playing) return;
+    const t = previewStore.currentTime();
+    if (t == null) { setNotice('Play the film first.'); return; }
+    const v = Math.round(t * 1000) / 1000;
+    if (edge === 0 && v >= span[1] - 0.05) { setNotice("The playhead is after this part's end: set the out point first (O)."); return; }
+    if (edge === 1 && v <= span[0] + 0.05) { setNotice("The playhead is before this part's start: set the in point first (I)."); return; }
+    setNotice(null);
+    setSpan(edge === 0 ? [v, span[1]] : [span[0], v]);
   };
   const resetDrafts = () => { setSpan([row.in, row.out]); setDrafts({}); setNotice(null); };
+  // Drafts play before they are saved (owner, 2026-11-22: "drag, confirm, then save when I'm
+  // satisfied"): every unsaved span in the strip goes to the preview store, which the player applies.
+  const draftMap = {};
+  if (changedOwn && single && !isScene) draftMap[membersOf(row)[0]] = span;
+  for (const n of changedOthers) if (!isSceneRow(n.row)) draftMap[membersOf(n.row)[0]] = drafts[n.id];
+  const draftKey = JSON.stringify(draftMap);
+  useEffect(() => { previewStore.setDrafts(JSON.parse(draftKey)); }, [draftKey]);
+  useEffect(() => () => previewStore.setDrafts(null), []);
   // The station holds the cursor while a dragged span is unsaved (it was silently dropped by a step:
   // review 2026-11-22); Esc there drops every draft through this.
   const dirtyPort = handlers.timingDirty;
@@ -115,7 +136,7 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
   // E opens the effect menu and S saves the timing (ReviewPage wires the keys to these).
   useEffect(() => {
     if (!ports) return undefined;
-    ports.current = { openEffect: () => { if (!disabled) setMenuOpen(true); }, saveTiming };
+    ports.current = { openEffect: () => { if (!disabled) setMenuOpen(true); }, saveTiming, markIn: () => mark(0), markOut: () => mark(1) };
     return () => { ports.current = {}; };
   });
 

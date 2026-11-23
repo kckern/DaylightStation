@@ -20,7 +20,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
  */
 const NON_TEXT_INPUT = new Set(['radio', 'checkbox', 'button', 'range', 'submit', 'reset', 'image', 'file', 'color']);
 const REASONS = { 1: 'edges', 2: 'category', 3: 'action', 4: 'timing' };
-const EFFECT_KEYS = new Set(['m', 'p', 'b', 'h', 'k', 'o']);
+const EFFECT_KEYS = new Set(['m', 'p', 'b', 'h', 'k', 'f']);
 const REPEATABLE = new Set(['ArrowLeft', 'ArrowRight']);
 /** Hook point for the per-film bleep level (Task 6): `[` lowers, `]` raises by this much. */
 export const BLEEP_LEVEL_STEP = 0.05;
@@ -116,6 +116,9 @@ export function useReviewKeys(handlers, { enabled = true, partKeys = true, redoO
       if (lower === 'u') return take(h.undo);
       if (lower === 'w') return take(h.playWithout);
       if (lower === 'e') return take(h.openEffect);
+      // I and O: the part's in and out points at the playhead, as drafts (owner, 2026-11-22).
+      if (lower === 'i') return take(h.markIn);
+      if (lower === 'o') return take(h.markOut);
       if (lower === 's') return take(h.saveTiming);
       if (EFFECT_KEYS.has(lower)) return take(() => h.effect?.(lower));
     };

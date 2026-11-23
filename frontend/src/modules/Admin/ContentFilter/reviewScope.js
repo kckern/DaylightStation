@@ -69,9 +69,10 @@ export function nextKind(kind) {
 
 /** Contextual action keys for a kind: [key, label, effect value to apply]. Widen applies to every kind. */
 const ACTION_KEYS = {
-  words: [['M', 'Mute', 'mute'], ['P', 'Bleep', 'bleep'], ['K', 'Skip', 'skip'], ['O', 'Off', 'off']],
-  picture: [['B', 'Blur', 'blur'], ['H', 'Hide picture', 'blackout'], ['K', 'Skip', 'skip'], ['O', 'Off', 'off']],
-  scenes: [['K', 'Skip', 'skip'], ['B', 'Hide picture', 'blackout'], ['O', 'Off', 'off']],
+  // F = filter off; O is the out point (owner, 2026-11-22: I and O for in and out).
+  words: [['M', 'Mute', 'mute'], ['P', 'Bleep', 'bleep'], ['K', 'Skip', 'skip'], ['F', 'Off', 'off']],
+  picture: [['B', 'Blur', 'blur'], ['H', 'Hide picture', 'blackout'], ['K', 'Skip', 'skip'], ['F', 'Off', 'off']],
+  scenes: [['K', 'Skip', 'skip'], ['B', 'Hide picture', 'blackout'], ['F', 'Off', 'off']],
 };
 export const actionKeysFor = (kind) => ACTION_KEYS[kind] || [];
 /** A true scene row (built from a refined EDL's scenes): no member cues of its own. A word skipped as an exchange is listed with scenes but is a cue. */

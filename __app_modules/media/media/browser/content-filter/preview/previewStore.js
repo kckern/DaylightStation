@@ -25,6 +25,8 @@ const INITIAL = Object.freeze({
   lastFired: null,
   // The cue id playing unfiltered right now (W in Admin review), or null.
   peeking: null,
+  // Unsaved timing drafts from Admin review, { cueId: [in, out] }, or null.
+  drafts: null,
   filterActive: false,
   open: false,
 });
@@ -109,6 +111,12 @@ export const previewStore = {
   /** Play if paused, pause if playing (Admin review: Space). Returns 'playing' | 'paused' | null (no player). */
   togglePlay() { return binding.togglePlay ? binding.togglePlay() : null; },
   peek(id) { if (id != null) binding.peek(String(id)); },
+  /** Unsaved timing the preview plays (Admin review); null or {} clears. */
+  setDrafts(map) {
+    const next = map && Object.keys(map).length ? map : null;
+    if (JSON.stringify(next) === JSON.stringify(snapshot.drafts)) return;
+    previewStore.publish({ drafts: next });
+  },
   /** End an unfiltered peek now (the host moved on: replay, another part). */
   unpeek() { binding.unpeek(); },
   /** The bound player's position in seconds, or null. */
@@ -125,6 +133,12 @@ export const previewStore = {
   },
   close() { binding.close(); },
 };
+
+/** Only the timing drafts (a stable reference): the player re-renders when they change, not on every publish. */
+const getDrafts = () => snapshot.drafts;
+export function useTimingDrafts() {
+  return useSyncExternalStore(previewStore.subscribe, getDrafts, getDrafts);
+}
 
 /** The live preview snapshot, for surround modules. */
 export function useFilterPreview() {

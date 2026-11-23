@@ -12,6 +12,7 @@
  *
  * Pure resolution lives in contentFilter.js; this hook only wires it to the DOM.
  */
+import { applyTimingDrafts } from './timingDrafts.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getChildLogger } from "../../../../../frontend/src/lib/logging/singleton.js";
 import { resolveEffectiveCues, cuesActiveAt } from "./contentFilter.js";
@@ -87,10 +88,11 @@ export function createSfxPlayer(sounds, { level, tone = createBleepTone({ onDegr
  *   matches any more), so filtering returns on the next pass. Read live each tick.
  * @returns {{activeOverlays: Array<{effect:string,cue:object}>, activeCard: {text:string}|null, effectiveCues: Array, fireCount: number, filterActive: boolean, lastFired: object|null}}
  */
-export function useContentFilter({ getMediaEl, transport, edl, profile, override, part = null, sfx, enabled = true, bypass = null } = {}) {
+export function useContentFilter({ getMediaEl, transport, edl, profile, override, part = null, sfx, enabled = true, bypass = null, drafts = null } = {}) {
+  // `drafts`: unsaved timing from Admin review (timingDrafts.js), so the preview plays what was dragged.
   const effectiveCues = useMemo(
-    () => (edl && profile ? resolveEffectiveCues({ edl, profile, override, part }) : []),
-    [edl, profile, override, part]
+    () => (edl && profile ? applyTimingDrafts(resolveEffectiveCues({ edl, profile, override, part }), drafts) : []),
+    [edl, profile, override, part, drafts]
   );
   // The household/film bleep level is read live, so a change applies to the next bleep without
   // rebuilding the player (which would tear the filter down).

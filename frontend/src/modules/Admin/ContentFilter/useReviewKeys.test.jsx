@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, fireEvent, screen } from '@testing-library/react';
 import { useReviewKeys } from './useReviewKeys.js';
 
-const handlers = () => ({ next: vi.fn(), prev: vi.fn(), replay: vi.fn(), togglePlay: vi.fn(), playWithout: vi.fn(), refine: vi.fn(), refineAll: vi.fn(), rework: vi.fn(), bleepLevel: vi.fn(), verdict: vi.fn(), undo: vi.fn(), effect: vi.fn(), help: vi.fn(), escape: vi.fn(() => false) });
+const handlers = () => ({ markIn: vi.fn(), markOut: vi.fn(), next: vi.fn(), prev: vi.fn(), replay: vi.fn(), togglePlay: vi.fn(), playWithout: vi.fn(), refine: vi.fn(), refineAll: vi.fn(), rework: vi.fn(), bleepLevel: vi.fn(), verdict: vi.fn(), undo: vi.fn(), effect: vi.fn(), help: vi.fn(), escape: vi.fn(() => false) });
 function Host({ h }) {
   const { redoOpen } = useReviewKeys(h);
   return (<div><input data-testid="text" /><input type="radio" data-testid="radio" /><video data-testid="video" tabIndex={0} />{redoOpen ? <span>redo-open</span> : null}</div>);
@@ -22,6 +22,12 @@ describe('useReviewKeys', () => {
     press('?'); expect(h.help).toHaveBeenCalledTimes(1);
     press('Escape'); expect(h.escape).toHaveBeenCalledTimes(1);
   });
+  it('I and O mark the in and out points of the part in hand (owner, 2026-11-22)', () => {
+    const h = handlers(); render(<Host h={h} />);
+    press('i'); press('o');
+    expect(h.markIn).toHaveBeenCalledTimes(1); expect(h.markOut).toHaveBeenCalledTimes(1);
+    expect(h.effect).not.toHaveBeenCalled();
+  });
   it('H is an effect key (hide picture)', () => {
     const h = handlers(); render(<Host h={h} />);
     press('h'); expect(h.effect).toHaveBeenCalledWith('h');
@@ -37,12 +43,12 @@ describe('useReviewKeys', () => {
     press('w'); expect(h.playWithout).toHaveBeenCalledTimes(1);
     press('a'); press('x');
     expect(h.verdict.mock.calls.map((c) => c[0])).toEqual(['approve', 'remove']);
-    press('i'); press('f'); expect(h.verdict).toHaveBeenCalledTimes(2);
+    press('i'); expect(h.verdict).toHaveBeenCalledTimes(2); expect(h.markIn).toHaveBeenCalledTimes(1);
     press('r'); expect(h.refine).toHaveBeenCalledTimes(1);
     press('R', { shiftKey: true }); expect(h.refineAll).toHaveBeenCalledTimes(1); expect(h.refine).toHaveBeenCalledTimes(1);
     press('u'); expect(h.undo).toHaveBeenCalled();
-    press('m'); press('p'); press('b'); press('k'); press('o');
-    expect(h.effect.mock.calls.map((c) => c[0])).toEqual(['m', 'p', 'b', 'k', 'o']);
+    press('m'); press('p'); press('b'); press('k'); press('f');
+    expect(h.effect.mock.calls.map((c) => c[0])).toEqual(['m', 'p', 'b', 'k', 'f']);
     press('['); press(']'); expect(h.bleepLevel.mock.calls.map((c) => c[0])).toEqual([-0.05, 0.05]);
     press('D', { shiftKey: true }); expect(h.rework).toHaveBeenCalledTimes(1);
     press('?', { shiftKey: true }); expect(h.help).toHaveBeenCalled();
