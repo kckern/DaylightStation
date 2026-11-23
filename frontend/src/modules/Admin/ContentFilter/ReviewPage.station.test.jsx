@@ -15,7 +15,8 @@ let payload;
 let failNext = null;
 let pendingWrite;
 let ignoreEffects = false;
-vi.mock('../../../lib/logging/Logger.js', () => ({ default: () => log }));
+const flushLogs = vi.fn(async () => true);
+vi.mock('../../../lib/logging/Logger.js', () => ({ default: () => log, flushLogs: (...a) => flushLogs(...a) }));
 const React = await import('react');
 vi.mock('../../../lib/hooks/useApiResource.js', () => ({
   useApiResource: () => {
@@ -319,6 +320,8 @@ describe('review station keys', () => {
     press('b');
     expect(await screen.findByText('Already blur.')).toBeTruthy();
     expect(calls).toHaveLength(0);
+    // A repeat press is a refusal too: the stuck-clicks query counts these.
+    expect(log.info).toHaveBeenCalledWith('content_filter.review.effect_refused', { rk: '77', rowId: 'subject:p1', to: 'blur', reason: 'already' });
     press('h');
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual(expect.objectContaining({ path: 'api/v1/content-filter/77/cues/p1', body: { effect: 'blackout' } }));
@@ -538,8 +541,12 @@ describe('review station keys', () => {
     fireEvent(window, new Event('pagehide'));
     expect(endLogs()).toHaveLength(1);
     expect(endLogs()[0][1]).toEqual(expect.objectContaining({ rk: '77', rows: 3, how: 'pagehide' }));
+    // The transport batches on a 1 s timer: the end is pushed out before the page goes.
+    expect(flushLogs).toHaveBeenCalledWith({ timeoutMs: 400 });
+    expect(flushLogs.mock.invocationCallOrder[0]).toBeGreaterThan(log.info.mock.invocationCallOrder[log.info.mock.calls.indexOf(endLogs()[0])]);
     unmount();
     expect(endLogs()).toHaveLength(1);
+    expect(flushLogs).toHaveBeenCalledTimes(1);
   });
   it('a page restored from the back/forward cache starts a new session that ends once more', () => {
     const { unmount } = show();
@@ -564,6 +571,16 @@ describe('review station keys', () => {
     press('ArrowRight');
     unmount();
     expect(endLogs()[0][1]).toEqual(expect.objectContaining({ verdicts: 1, effects: 2, blocked: 1, refused: 0, how: 'leave' }));
+  });
+  it('an "Already" press counts as refused in the session', async () => {
+    const { unmount } = show();
+    press('m');
+    await waitFor(() => expect(cardFx(/^Effect: Mute/)).toBeTruthy());
+    press('m'); // the hold already shows Mute: a repeat press is the stuck click
+    await screen.findByText('Already mute.');
+    unmount();
+    expect(log.info).toHaveBeenCalledWith('content_filter.review.effect_refused', { rk: '77', rowId: 'cue:w1', to: 'mute', reason: 'already' });
+    expect(endLogs()[0][1].refused).toBe(1);
   });
   it('a timing block says what is unsaved', () => {
     show();

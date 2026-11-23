@@ -5,7 +5,7 @@ const piece = (o) => ({ precision: 'ms', ...o });
 const cues = [
   piece({ id: 'w1', category: 'language/profanity/damn', label: 'damn', type: 'mute', effect: 'mute', in: 10.1234, out: 10.5 }),
   piece({ id: 'w2', category: 'language/profanity/hell', label: 'hell', type: 'mute', effect: 'mute', in: 30, out: 36, precision: 'safe-window' }),
-  piece({ id: 'b1#0@1', subject: 'subject-b1', category: 'language/language_sexual/x', label: 'Billboard', type: 'skip', effect: 'blur', in: 50, out: 55, regions: [{ in: 50 }] }),
+  piece({ id: 'b1#0@1', subject: 'subject-b1', category: 'language/language_sexual/x', label: 'Billboard', type: 'skip', effect: 'blur', in: 50, out: 55, regions: [{ in: 50, cells: [3] }] }),
   piece({ id: 'b2#0@1', subject: 'subject-b1', category: 'language/language_sexual/x', label: 'Crude word', type: 'skip', effect: 'blur', in: 51, out: 58 }),
   piece({ id: 'v1', category: 'violence/gore', label: 'Gore', type: 'skip', effect: 'full-blur', in: 70, out: 72 }),
   piece({ id: 'sc-1', scene: 'sc-1', category: 'scene/violence_blood_gore', effect: 'skip-card', in: 100, out: 160 }),
@@ -30,11 +30,35 @@ describe('reviewRows', () => {
   it('says whether a part is tracked (has regions)', () => {
     expect(byId['subject:subject-b1'].tracked).toBe(true);
     expect(byId['cue:v1'].tracked).toBe(false);
-    const letPlay = reviewRows({ cues: [], source: [piece({ id: 'k9', category: 'violence/gore', label: 'x', type: 'skip', effect: 'blur', in: 5, out: 9, regions: [{ in: 5 }] }), piece({ id: 'k8', category: 'violence/gore', label: 'y', type: 'skip', effect: 'blur', in: 15, out: 19 })] });
+    const letPlay = reviewRows({ cues: [], source: [piece({ id: 'k9', category: 'violence/gore', label: 'x', type: 'skip', effect: 'blur', in: 5, out: 9, regions: [{ in: 5, cells: [3] }] }), piece({ id: 'k8', category: 'violence/gore', label: 'y', type: 'skip', effect: 'blur', in: 15, out: 19 })] });
     expect(letPlay.find((r) => r.id === 'cue:k9')).toMatchObject({ acts: false, tracked: true });
     expect(letPlay.find((r) => r.id === 'cue:k8')).toMatchObject({ acts: false, tracked: false });
-    const viaOverride = reviewRows({ cues: [], source: [piece({ id: 'k7', category: 'violence/gore', label: 'z', type: 'skip', effect: 'blur', in: 25, out: 29 })], override: { cueOverrides: { k7: { regions: [{ in: 25 }] } } } });
+    const viaOverride = reviewRows({ cues: [], source: [piece({ id: 'k7', category: 'violence/gore', label: 'z', type: 'skip', effect: 'blur', in: 25, out: 29 })], override: { cueOverrides: { k7: { regions: [{ in: 25, whole: true }] } } } });
     expect(viaOverride.find((r) => r.id === 'cue:k7')).toMatchObject({ acts: false, tracked: true }); // regions stored only in the override
+  });
+  // The source cue's track decides `tracked`, not the resolved pieces: a profile that withholds the
+  // track, or an effect that draws no regions (blackout, skip), drops them from the pieces, yet a
+  // Blur on that part would follow the track (review 2026-11-23: a 38 s refined cue under full-blur).
+  const shown = (o) => piece({ category: 'violence/gore', label: 'Gore', type: 'skip', in: 40, out: 78, ...o });
+  const track = [{ in: 40, cells: [], box: null }, { in: 41, cells: [5, 6] }];
+  it('a part with a track is tracked even when its effect draws no regions', () => {
+    const viaEdl = reviewRows({ cues: [shown({ id: 'r1', effect: 'blackout' })], source: [shown({ id: 'r1', regions: track })] });
+    expect(viaEdl.find((r) => r.id === 'cue:r1')).toMatchObject({ acts: true, effect: 'blackout', tracked: true });
+    const viaOverride = reviewRows({ cues: [shown({ id: 'r2', effect: 'skip' })], source: [shown({ id: 'r2' })], override: { cueOverrides: { r2: { regions: track } } } });
+    expect(viaOverride.find((r) => r.id === 'cue:r2')).toMatchObject({ tracked: true });
+    const subject = reviewRows({ cues: [shown({ id: 'r3#0@1', subject: 's3', cues: ['r3', 'r4'], effect: 'full-blur' })], source: [shown({ id: 'r3' }), shown({ id: 'r4', regions: track })] });
+    expect(subject.find((r) => r.id === 'subject:s3')).toMatchObject({ tracked: true });
+    // The flag for an overlay drawn without a track still reads the pieces: this one plays whole-frame.
+    expect(subject.find((r) => r.id === 'subject:s3').unsure).toContain('untracked-visual');
+  });
+  it('a part with no track, or only empty sightings, is not tracked', () => {
+    const empty = [{ in: 40, cells: [], box: null }, { in: 42, cells: [] }];
+    const none = reviewRows({ cues: [shown({ id: 'n1', effect: 'blackout' })], source: [shown({ id: 'n1' })] });
+    expect(none.find((r) => r.id === 'cue:n1').tracked).toBe(false);
+    const gaps = reviewRows({ cues: [shown({ id: 'n2', effect: 'full-blur', regions: empty })], source: [shown({ id: 'n2', regions: empty })], override: { cueOverrides: { n2: { regions: empty } } } });
+    expect(gaps.find((r) => r.id === 'cue:n2').tracked).toBe(false);
+    const letPlay = reviewRows({ cues: [], source: [shown({ id: 'n3', regions: empty })], override: { cueOverrides: { n3: { regions: empty } } } });
+    expect(letPlay.find((r) => r.id === 'cue:n3')).toMatchObject({ acts: false, tracked: false });
   });
   it('carries kind, group, modality, effect, card and hand-fixed, with times rounded to ms', () => {
     expect(byId['cue:w1']).toMatchObject({ kind: 'words', group: 'profanity', modality: 'said', effect: 'mute', in: 10.123 });

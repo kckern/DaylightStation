@@ -3,6 +3,7 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 import { getToken } from '../../../lib/auth.js';
 import { invalidateApiResources } from '../../../lib/hooks/useApiResource.js';
 import { createAppLogger } from '../../../lib/ui/index.js';
+import { flushLogs } from '../../../lib/logging/Logger.js';
 import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 import { DEFAULT_SCOPE, WIDEN_STEP, actionKeysFor, effectButton, hasVerdict, isOpen, isSceneRow, keysKindOf, needsCheck, nextKind, plays, scopeRows, stageScope, stepFrom, triedRefine } from './reviewScope.js';
 import { defaultStage, railStages } from './railStages.js';
@@ -150,7 +151,9 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
       logger.info('content_filter.review.session.end', { rk: s.rk, rows: list.length, reviewed: list.filter(hasVerdict).length, durationMs: Date.now() - s.at,
         verdicts: s.verdicts, effects: s.effects, blocked: s.blocked, refused: s.refused, how });
     };
-    const onHide = () => end('pagehide');
+    // The log transport batches on a 1 s timer, so an event logged at pagehide is lost with the page
+    // unless it is pushed out now.
+    const onHide = () => { const was = session.current?.sent; end('pagehide'); if (session.current && !was) flushLogs({ timeoutMs: 400 }); };
     const onShow = (e) => { if (e.persisted && session.current?.sent && latest.current.rows) startSession(latest.current.rows); };
     window.addEventListener('pagehide', onHide);
     window.addEventListener('pageshow', onShow);
@@ -302,7 +305,7 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
     if (latest.current.refining?.[row.id]) { setMessage('This part is being refined. Change its effect when the new timing lands.'); refuse('content_filter.review.effect_refused', { rk, rowId: row.id, to, reason: 'refining' }); return; }
     const allowed = isSceneRow(row) ? SCENE_EFFECTS.has(to) : effectChoices(row.modality).some((o) => o.value === to);
     if (!allowed) { setMessage(`${label} does not fit this part.`); refuse('content_filter.review.effect_refused', { rk, rowId: row.id, to, reason: 'channel' }); return; }
-    if (plays(row) ? to === 'off' : effectButton(row.effect) === to) { setMessage(`Already ${label.toLowerCase()}.`); return; }
+    if (plays(row) ? to === 'off' : effectButton(row.effect) === to) { setMessage(`Already ${label.toLowerCase()}.`); refuse('content_filter.review.effect_refused', { rk, rowId: row.id, to, reason: 'already' }); return; }
     const calls = callsFor(row, { effect: to });
     const from = plays(row) ? 'off' : row.effect;
     const waited = writesWaiting(rk);

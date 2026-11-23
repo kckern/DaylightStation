@@ -639,8 +639,13 @@ of one another, and a draft shorter than the hide limit still played as a blacko
 
 **Player logging.** The hook logs each of these once per change, not per re-resolve: a refresh or a
 dragged draft re-resolves the filter many times a second.
-- `content-filter.resolved` and `content-filter.session` (info) only when the payload differs from
-  the last one logged for the same media element.
+- `content-filter.resolved` (info) only when the payload differs from the last one logged for the
+  same media element, title (`edl.contentId`, else `edl.title`) and part: one element plays a whole
+  playlist, so the next episode logs its own line even when it resolves to the same shape. The
+  identity is in the dedupe key, not the payload.
+- `content-filter.session` (info) for every run that did something (an effect applied, or blur-with-audio
+  or blackout seconds). It is a per-run delta, so two runs that each skipped one intro are two lines;
+  a run that did nothing (a re-resolve before play, a dragged draft) logs nothing.
 - `content-filter.effect.adjusted` once per `(cue, from, to)` per page load (`resetEffectAdjustedLog()`
   clears it in tests).
 - `content-filter.blackout.shown` (info) when a blackout piece goes on screen. A seek inside it (a
@@ -999,7 +1004,8 @@ report was refused). `recover()` (interrupt everything open on boot) runs only w
 once a minute of wall clock, plus once at the end; faster-whisper only, mlx-whisper does not iterate
 segments); it is the `transcribe` phase of `step.progress` with `done`/`total` in seconds, sent as it
 arrives, and `content-filter.job.step` carries `phase`, `done`, `total`. The worker reads the short SHA of
-its own checkout once at start and sends it with the claim (`{ owner, build }`); it is stored on the run as
+its own checkout once at start and sends it with the claim (`{ owner, build }`); the claim route keeps it to
+`[0-9a-zA-Z._-]`, at most 40 characters (nothing left is `null`), and it is stored on the run as
 `build` and logged on `job.claimed`, `job.interrupted` (with `heartbeatAgeMs`) and `job.failed`, so a
 run's code version is known without asking the host.
 `--data-dir` (read-only) lends the worker the app's Plex and Jev credentials; without it set

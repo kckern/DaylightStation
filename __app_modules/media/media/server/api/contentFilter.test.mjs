@@ -117,3 +117,25 @@ describe('PUT /:rk/cues/:id { bleepLevel }: a bleep level for one cue', () => {
     expect(jobs.audit).toHaveBeenCalledWith('5');
   });
 });
+
+// The worker's build lands in the log store and the run state: it is kept to a version-like charset.
+describe('POST /jobs/claim keeps the worker build to a safe charset', () => {
+  const claim = async (build) => {
+    const jobs = { ...jobsStub(), claimRemote: vi.fn(async () => null) };
+    const { app } = appWith({ review: null, jobs });
+    const res = await request(app).post('/cf/jobs/claim').send({ owner: 'worker-1', build });
+    expect(res.status).toBe(204);
+    return jobs.claimRemote.mock.calls[0][0].build;
+  };
+  it('a commit-and-date build passes through', async () => {
+    expect(await claim('3e2a85d5.2026-11-23_10-00')).toBe('3e2a85d5.2026-11-23_10-00');
+  });
+  it('markup and control characters are removed, and the result is at most 40 characters', async () => {
+    expect(await claim('abc<script>\n"x" $(rm)')).toBe('abcscriptxrm');
+    expect(await claim('a'.repeat(60))).toHaveLength(40);
+  });
+  it('nothing usable, or no build, is null', async () => {
+    expect(await claim('<>!!')).toBeNull();
+    expect(await claim(undefined)).toBeNull();
+  });
+});

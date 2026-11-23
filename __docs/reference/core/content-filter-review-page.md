@@ -116,7 +116,13 @@ this film); for a skip, the card shown in place of it (a popover with Approve ca
 Withdraw). The effect keys work with the menu closed and inside it (a letter picks and closes it).
 On a shown part the filter does not track, the **Blur** item says what Blur will actually play, before
 it is picked: `Blur · whole picture (not tracked)`, or `Blur · plays as hide picture (not tracked,
-39 s)` when the span is past the household's hide limit; a tracked part reads plain `Blur`. The caption judges this part alone (the player also merges neighbouring whole-frame blurs within
+39 s)` when the span is past the household's hide limit; a tracked part reads plain `Blur`.
+"Tracked" is the part's own track, not what it plays now: a sighting (a keyframe with cells or
+`whole`; one with empty `cells` and `box: null` is a gap) in the refined cue's `regions` or in
+`cueOverrides[id].regions`, by `hasSighting` (`shared/contracts/content-filter/regionTrack.mjs`, the
+player's rule). A part playing hide picture or skip, or one whose profile withholds the track, has no
+regions in its resolved pieces, yet a Blur on it follows the track, so it still reads plain `Blur`.
+The `untracked-visual` unsure flag still reads the resolved pieces (an overlay drawn without a track). The caption judges this part alone (the player also merges neighbouring whole-frame blurs within
 `BRIDGE_SEC` and pads before comparing to the limit, so a long run of short parts can still hide). The rule is
 `blurPlaysAs` (`shared/contracts/content-filter/blurPlaysAs.mjs`), the same one the player's long-hide
 conversion uses (`maxHideSec`, which lives there too); rows carry `tracked` and the review payload
@@ -151,6 +157,8 @@ then approve.`, sends nothing and logs `content_filter.review.verdict_refused` (
 'effect-saving'`), since a verdict would judge the old effect.
 
 While a film-wide refine runs, an effect change (key, effect menu or "use household settings") is refused up front: the page shows the run's sentence and sends nothing, instead of the server's 409, and logs `content_filter.review.effect_refused` (`rk`, `rowId`, `to`, `reason` `run` | `refining` | `channel`).
+Asking for the effect a part already has (the page says `Already mute.`; a held change shows its
+new effect at once, so a repeat press lands here) logs `effect_refused` with `reason: 'already'`.
 
 The **part menu** (`PartMenu.jsx`; owner, 2026-11-22: "right-click and I can change what it is or
 how it's handled"): a right-click on a part anywhere it appears (a list row, a timeline mark, a
@@ -354,7 +362,7 @@ of the admin page) unless marked server. `rk` is the film's rating key. Fields:
 | Event | Fields |
 |-------|--------|
 | `session.start` | `rk, rows, reviewed` |
-| `session.end` | `rk, rows, reviewed, durationMs, verdicts, effects, blocked, refused, how` (`leave` = page unmounted, `pagehide` = tab closed / kiosk reload). Logged once per session. A page restored from the back/forward cache starts a new session |
+| `session.end` | `rk, rows, reviewed, durationMs, verdicts, effects, blocked, refused, how` (`leave` = page unmounted, `pagehide` = tab closed / kiosk reload). Logged once per session. A page restored from the back/forward cache starts a new session. On `pagehide` the page calls `flushLogs({ timeoutMs: 400 })` right after it, since the log transport batches on a 1 s timer and the event would otherwise go with the page (confirm with one real tab close after a deploy: a `how:pagehide` row in the store) |
 | `arrived`, `permalink.opened`, `unfiltered` | `rk, rowId` (+ `rows`, `found`) |
 | `stage_tab` | `rk, stage, from, via, shown` |
 | `scope` | `rk, stage, show, order, timing, kind, action, needs, group, shown` |
@@ -368,7 +376,7 @@ of the admin page) unless marked server. `rk` is the film's rating key. Fields:
 | `effect_resolved_differently` | `rk, rowId, asked, plays, settleMs` |
 | `effect_unsettled` (warn) | `rk, rowId, to, saved, waitedMs` |
 | `effect_superseded` | `rk, rowId, to` (a later click replaced it before it was sent) |
-| `effect_refused` | `rk, rowId, to, reason` (`run`, `refining`, `channel`) |
+| `effect_refused` | `rk, rowId, to, reason` (`run`, `refining`, `channel`, `already`: the part already has that effect) |
 | `effect_preview_stale` (warn) | `rk, rowId` |
 | `unsaved_timing_blocked` | `rk, rowId, what` (`step`, `pick`, `verdict`, `tab`, `undo`, `refine`) plus `own` (this part's span is a draft), `others` (row ids of other drafted parts), `draft` (`[in,out]` or null), `saved` (`[in,out]`) |
 | `unsaved_timing_dropped` | `rk, rowId` (Esc) |
@@ -387,14 +395,15 @@ of the admin page) unless marked server. `rk` is the film's rating key. Fields:
 
 Aggregation is `| stats by ("field") count()`; dotted names are quoted. Verified against the log store.
 
-- **Stuck clicks**: the same part asked for the same change three or more times within 5 s (a click
-  that seemed to do nothing). Each `effect` event is one successful write.
+- **Stuck clicks**: the same part asked again for the effect it already shows, twice or more within
+  5 s (a click that seemed to do nothing). The first press writes (`effect`) and the hold shows the
+  new effect at once, so every repeat is an `effect_refused` with `reason:already`.
 
   ```
-  "content_filter.review.effect" AND _time:7d | stats by (_time:5s, "data.rowId", "data.from", "data.to") count() as n | filter n:>=3 | sort by (n desc)
+  "content_filter.review.effect_refused" AND data.reason:already AND _time:7d | stats by (_time:5s, "data.rk", "data.rowId", "data.to") count() as n | filter n:>=2 | sort by (n desc)
   ```
 
-  Read the hits next to `effect_superseded` / `effect_unsettled` for the same `data.rowId`.
+  Read the hits next to `effect_superseded` / `effect_unsettled` / `effect_resolved_differently` for the same `data.rowId`.
 - **Blocks per session** (per minute, or per session via `session.end`):
 
   ```

@@ -138,7 +138,7 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
   const shownRef = useRef(new Set());
   // The last `resolved` / `session` payloads logged for one element: a refresh or draft that
   // re-resolves to the same filter logs nothing new (2026-11-23: ~100 pairs a second while dragging).
-  const lastLoggedRef = useRef({ el: null, resolved: null, session: null });
+  const lastLoggedRef = useRef({ el: null, resolved: null });
 
   // Clear a pending skip-card resume timer only on true unmount (not on every
   // effect re-run — see the main effect's cleanup note). Also release the paused
@@ -200,11 +200,12 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
       });
     };
 
-    // Info line only when its payload differs from the last one logged for this element.
+    // Info line only when its payload differs from the last one logged for this element and this
+    // title/part: one element plays a whole playlist, and two episodes can resolve to the same shape.
     const logChanged = (kind, event, payload) => {
       const last = lastLoggedRef.current;
-      if (last.el !== el) { last.el = el; last.resolved = null; last.session = null; }
-      const key = JSON.stringify(payload);
+      if (last.el !== el) { last.el = el; last.resolved = null; }
+      const key = JSON.stringify([edl?.contentId ?? edl?.title ?? null, part ?? null, payload]);
       if (last[kind] === key) return;
       last[kind] = key;
       logger().info?.(event, payload);
@@ -468,11 +469,14 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
       clearOverlayLife();
       // Session summary (info): what actually fired this segment + blur-with-audio
       // exposure (seconds where video was hidden but audio kept — leak surface).
-      logChanged('session', 'content-filter.session', {
-        applied: session.applied, blurAudioSec: +session.blurAudioSec.toFixed(1), blackoutSec: +session.blackoutSec.toFixed(1),
-      });
+      // A per-run delta, so every run that did something is logged (two runs with one intro skip
+      // each are two lines); a run that did nothing (a re-resolve before play) is not.
+      const blurAudioSec = +session.blurAudioSec.toFixed(1); const blackoutSec = +session.blackoutSec.toFixed(1);
+      if (Object.keys(session.applied).length || blurAudioSec || blackoutSec) {
+        logger().info?.('content-filter.session', { applied: session.applied, blurAudioSec, blackoutSec });
+      }
     };
-  // override?.sync?.offsetSec is read only for the 'content-filter.resolved' log
+  // override?.sync?.offsetSec, edl's identity and part are read only for the 'content-filter.resolved' log
   // payload above; the real dependency is effectiveCues, which already
   // incorporates override — adding override directly would re-run this
   // timer/listener-setup effect on unrelated override field changes.

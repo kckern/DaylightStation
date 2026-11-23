@@ -51,9 +51,9 @@ function setup(overrides = {}) {
   // Stable identity, as in production (useCommonMediaController's useCallback):
   // an inline arrow here would re-run the hook's effect on every re-render.
   const getMediaEl = () => el;
-  const hook = renderHook(() => useContentFilter({
-    getMediaEl, transport, sfx, edl, profile, enabled: true, ...overrides,
-  }));
+  const hook = renderHook((p) => useContentFilter({
+    getMediaEl, transport, sfx, edl, profile, enabled: true, ...overrides, ...p,
+  }), { initialProps: {} });
   return { el, transport, sfx, hook };
 }
 
@@ -83,6 +83,35 @@ describe('useContentFilter', () => {
     const call = mockLogger.info.mock.calls.find((c) => c[0] === 'content-filter.session');
     expect(call, 'content-filter.session emitted').toBeTruthy();
     expect(call[1].applied).toBeTruthy();
+  });
+
+  it('logs every run that did something, even when two runs look the same (one intro per episode)', () => {
+    const { el, hook } = setup();
+    const visit = () => { act(() => { el.currentTime = 21; el.fire('timeupdate'); }); act(() => { el.currentTime = 0; el.fire('timeupdate'); }); };
+    visit();
+    act(() => { hook.rerender({ override: { cueOverrides: {} } }); }); // a re-resolve ends the run
+    visit();
+    hook.unmount();
+    const sums = mockLogger.info.mock.calls.filter((c) => c[0] === 'content-filter.session');
+    expect(sums).toHaveLength(2);
+    expect(sums[0][1]).toEqual(sums[1][1]);
+  });
+
+  it('does not log a run that did nothing', () => {
+    const { hook } = setup();
+    hook.unmount();
+    expect(mockLogger.info.mock.calls.filter((c) => c[0] === 'content-filter.session')).toHaveLength(0);
+  });
+
+  it('logs resolved again for another title or part with the same filter shape', () => {
+    const { hook } = setup({ edl: { ...edl, contentId: 'plex:1' } });
+    act(() => { hook.rerender({ edl: { ...edl, contentId: 'plex:2' } }); });
+    act(() => { hook.rerender({ edl: { ...edl, contentId: 'plex:2' }, part: 'p2' }); });
+    act(() => { hook.rerender({ edl: { ...edl, contentId: 'plex:2' }, part: 'p2', override: { cueOverrides: {} } }); }); // same title, part, shape
+    const resolved = mockLogger.info.mock.calls.filter((c) => c[0] === 'content-filter.resolved');
+    expect(resolved).toHaveLength(3);
+    expect(resolved[0][1]).toEqual(resolved[1][1]); // the identity is in the dedupe key, not the payload
+    expect(resolved[0][1]).not.toHaveProperty('contentId');
   });
 
   it('seeks past a skip cue (past its widened end)', () => {

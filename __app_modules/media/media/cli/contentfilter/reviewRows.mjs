@@ -17,6 +17,7 @@ import { cueModality, isWordLabel } from '../../../../../shared/contracts/conten
 import { languageGroupOf } from '../../../../../shared/contracts/content-filter/languageGroups.mjs';
 import { REVIEW_ROWS_VERSION } from '../../server/domain/content-filter/reviewRowsVersion.mjs';
 import { mapSpan } from '../../../../../shared/contracts/content-filter/syncMap.mjs';
+import { hasSighting } from '../../../../../shared/contracts/content-filter/regionTrack.mjs';
 
 const OVERLAY = new Set(['blur', 'full-blur', 'pixelate']);
 const ms = (t) => Math.round(t * 1000) / 1000;
@@ -57,6 +58,12 @@ function cardOf(m, override) {
  * @returns {object[]} rows, unsure first, then by `in`
  */
 export function reviewRows({ cues, source = [], refined = null, override = null, refineReview = null }) {
+  // `tracked` is the SOURCE cue's track (the EDL's or one stored in the override), the same sighting
+  // rule the player uses. The resolved pieces drop regions when the profile withholds the track or
+  // the effect draws none (skip, blackout), yet a Blur on that part would follow the track.
+  const sourceById = new Map();
+  for (const c of [...(refined?.cues || []), ...(source || [])]) if (!sourceById.has(baseId(c.id))) sourceById.set(baseId(c.id), c);
+  const trackOf = (id) => hasSighting(sourceById.get(id)?.regions) || hasSighting(override?.cueOverrides?.[id]?.regions);
   const refineStatus = new Map((refineReview?.items || []).map((i) => [String(i.id), i.status]));
   const subjectUnsure = new Set((refineReview?.subjectsUnsure || []).flat().map(String));
   const pieces = new Map();
@@ -69,13 +76,14 @@ export function reviewRows({ cues, source = [], refined = null, override = null,
     const members = m.kind === 'scene' ? [] : [...new Set(all.flatMap(sourceIds))];
     const isScene = m.kind === 'scene';
     const modality = isScene ? null : cueModality(m.cue);
-    const tracked = all.some((c) => c.regions?.length);
+    const drawn = all.some((c) => c.regions?.length); // a track the pieces still carry
+    const tracked = all.some((c) => hasSighting(c.regions)) || members.some(trackOf);
     const unsure = [];
     for (const id of members) if (refineStatus.has(id)) unsure.push(`refine-${refineStatus.get(id)}`);
     if (!isScene && all.some((c) => c.precision === 'safe-window' && !c.handFixed)) unsure.push('safe-window');
     if (isScene && m.scene?.reviewNote) unsure.push('check-levels');
     if (!isScene && m.effect === 'skip-card' && isWordLabel(m.cue.label)) unsure.push('exchange-by-length');
-    if (modality === 'shown' && OVERLAY.has(m.effect) && !tracked) unsure.push('untracked-visual');
+    if (modality === 'shown' && OVERLAY.has(m.effect) && !drawn) unsure.push('untracked-visual');
     if (members.some((id) => subjectUnsure.has(id))) unsure.push('subject-unsure');
     return {
       id: m.key,
@@ -122,7 +130,7 @@ export function reviewRows({ cues, source = [], refined = null, override = null,
     rows.push({
       id: `cue:${id}`, peekId: id, kind: modality === 'shown' ? 'picture' : 'words',
       group: languageGroupOf(c.category) ?? (String(c.category || '').split('/')[0] || null),
-      label: c.label, category: c.category, modality, tracked: !!(c.regions?.length || override?.cueOverrides?.[id]?.regions?.length), in: ms(local.in), out: ms(local.out),
+      label: c.label, category: c.category, modality, tracked: hasSighting(c.regions) || trackOf(id), in: ms(local.in), out: ms(local.out),
       effect: 'off', acts: false, why: disabled.has(id) ? 'removed' : 'settings', timing: timingOf([c]), card: null,
       handFixed: false, unsure: [], members: [id],
     });

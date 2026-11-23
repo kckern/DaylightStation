@@ -17,6 +17,7 @@ import { mapSpan, mapTime, unmapTime, snapToFrames } from '../../../../../shared
 import { cueModality, fitEffectToChannel, isWordLabel } from '../../../../../shared/contracts/content-filter/cueModality.mjs';
 import { languageGroupOf, languageWordOf, groupOfTerm } from '../../../../../shared/contracts/content-filter/languageGroups.mjs';
 import { convertLongHides } from './longHide.js';
+import { hasSighting, isTrackGap } from '../../../../../shared/contracts/content-filter/regionTrack.mjs';
 import { getChildLogger } from '../../../../../frontend/src/lib/logging/singleton.js';
 import { HIDE_RANK, SCENE_AXES, trustedAxes, sceneEffect } from '../../../../../shared/contracts/content-filter/sceneEffect.mjs';
 
@@ -603,10 +604,6 @@ function resolveSubject(subject, members, treatments) {
   return pieces.map((p, i) => hidePiece(p, { in: p.in, out: p.out }, { text, firstPiece: i === 0 }, treatments));
 }
 
-/** A region track that saw its subject at least once (an all-gap track hides nothing regionally). */
-const hasSighting = (regions) => Array.isArray(regions) && regions.some((k) => !isTrackGap(k));
-
-const isTrackGap = (k) => !k.whole && !(k.cells && k.cells.length);
 // A miss this short between two sightings is a keyframe Jev did not see the subject in, not the
 // subject leaving: the box spanning both sightings is held over it.
 export const BRIDGE_SEC = 1;

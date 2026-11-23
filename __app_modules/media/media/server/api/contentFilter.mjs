@@ -86,7 +86,7 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
       }
     });
     router.post('/jobs/claim', remote(async (req, res) => {
-      const claimed = await jobs.claimRemote({ owner: owner(req), build: req.body?.build ? String(req.body.build).slice(0, 40) : null });
+      const claimed = await jobs.claimRemote({ owner: owner(req), build: req.body?.build ? (String(req.body.build).replace(/[^0-9a-zA-Z._-]/g, '').slice(0, 40) || null) : null });
       if (!claimed) return res.status(204).end();
       res.json(claimed);
     }));
