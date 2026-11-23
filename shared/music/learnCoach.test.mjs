@@ -395,4 +395,29 @@ describe('one hand at a time with the beat (2026-11-22)', () => {
     expect(skills.find((s) => s.skill === 'timed-50').ready).toBe(false);
     expect(projection(plan, state).gold.opening.skill).toBe('pulse');
   });
+  it('a resume saved on 50% before the one-hand rungs existed gives way to the right hand', () => {
+    const plan = planOf();
+    // A state saved by the old ladder carries no `ladder` revision.
+    let saved = outcome(undefined, plan, choose(plan, 'pulse'));
+    saved = outcome(saved, plan, choose(plan, 'pulse'));
+    const { ladder, ...state } = outcome(saved, plan, choose(plan, 'timed-50'), bad);
+    expect(ladder).toBe(2);
+    expect(state.goldResume).toBeTruthy();
+    const p = projection(plan, state);
+    expect(p.goldResume).toBeNull();
+    expect(p.gold.opening.skill).toBe('timed-50-rh');
+  });
+  it('a child who tried a one-hand rung and then chose 50% keeps that choice', () => {
+    const plan = planOf();
+    let state = outcome(undefined, plan, choose(plan, 'timed-50-rh'), bad);
+    state = outcome(state, plan, choose(plan, 'timed-50-lh'), bad);
+    state = outcome(state, plan, choose(plan, 'timed-50'), bad);
+    expect(projection(plan, state).goldResume).toBeTruthy();
+  });
+  it('a child who taps 50% on the new ladder keeps that choice', () => {
+    const plan = planOf();
+    const state = outcome(undefined, plan, choose(plan, 'timed-50'), bad);
+    expect(projection(plan, state).goldResume).toBeTruthy();
+  });
 });
+

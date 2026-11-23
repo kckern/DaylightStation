@@ -1218,7 +1218,11 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     // A Learn passage's armed start asks for a longer gap before the first
     // click (see ARM_RELEASE_MS); the pre-roll is still the floor.
     const prerollMs = Math.max(gapMs, Math.max(0, clickLead.leadMs) + CLICK_PREROLL_MS);
-    runtime.start({ time: Date.now() + prerollMs, leadInMs: countIn?.leadInMs ?? 0, clock: 'date-now' });
+    // An aligned count ends on the beat before the first note, so the grader's
+    // clock starts there too; any other count still covers the whole first bar.
+    const originQuarter = countIn?.entry === 'aligned'
+      ? Math.max(0, Number(runtime.getSnapshot()?.expectation?.events?.[0]?.onsetQuarter) || 0) : 0;
+    runtime.start({ time: Date.now() + prerollMs, leadInMs: countIn?.leadInMs ?? 0, ...(originQuarter ? { originQuarter } : {}), clock: 'date-now' });
     countdownHeldRef.current = new Set(activeNotesRef.current.keys());
     setClockNow(Date.now());
     traceEvent('piano.exercise-countdown-started', {

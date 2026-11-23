@@ -45,6 +45,8 @@ const h = vi.hoisted(() => ({
   engraveFails: false,
   /** The engraver's bar map for the shown bars; null = the renderer reported none. */
   measureMap: null,
+  /** Quarters added to every shown onset: a passage that opens on a rest. */
+  onsetShift: 0,
 }));
 
 const notehead = (midi) => {
@@ -98,7 +100,7 @@ vi.mock("../../../../../../../__capabilities/music-notation/browser/renderers/Mu
         const firstMeasure = shown[0]?.measure ?? 0;
         const localSteps = shown.map((step) => ({
           ...step,
-          onsetQuarter: step.onsetQuarter - firstOnset,
+          onsetQuarter: step.onsetQuarter - firstOnset + h.onsetShift,
           measure: step.measure - firstMeasure,
         }));
         onLayout?.({
@@ -191,6 +193,7 @@ beforeEach(() => {
   h.steps = fourBarSteps();
   h.engraveFails = false;
   h.measureMap = null;
+  h.onsetShift = 0;
   h.text.mockReset();
   h.text.mockResolvedValue(fourBars);
   h.record.mockReset();
@@ -401,4 +404,24 @@ describe('a cued Learn passage counts a pickup in on its own beat', () => {
     advance(firstClick + 3 * BEAT + 60 - Date.now());
     expect(band()).toBeNull();
   });
+
+  it('grades a passage that opens on a rest from the first note, where the count says play', async () => {
+    // A half-note rest (one click) opens the bar: one click before the note is too few,
+    // so a bar of two clicks comes first. "next click: play" is the third click, and
+    // the first note is due on the click after it — the grader must agree.
+    h.onsetShift = 2;
+    h.measureMap = [0, 1, 2].map((index) => ({ index, onsetQuarter: index * 4, durationQuarters: 4 }));
+    await mount();
+    const firstClick = armByTap();
+    expect(events('piano.exercise-countdown-started').at(-1)).toMatchObject({ entry: 'aligned', pulseCount: 3 });
+    PASSAGE.forEach((midi, index) => {
+      advance(firstClick + 3 * BEAT + index * BEAT - Date.now());
+      strike(midi);
+    });
+    finish();
+    advance(1000);
+    expect(current.onPassed).toHaveBeenCalledTimes(1);
+    expect(current.onFailed).not.toHaveBeenCalled();
+  });
 });
+

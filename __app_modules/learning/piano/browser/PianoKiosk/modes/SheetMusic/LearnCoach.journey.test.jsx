@@ -32,7 +32,7 @@ const stubs = [
 let browser, js, css;
 beforeAll(async () => {
  const sheets = new Set(); const esbuild = require('esbuild');
- const bundle = await esbuild.build({ stdin:{ contents:`import React from 'react';import{createRoot}from'react-dom/client';import{MemoryRouter}from'react-router-dom';import ScorePlayer from './ScorePlayer.jsx';window.__mount=()=>{window.__root?.unmount();window.__root=createRoot(document.getElementById('root'));window.__root.render(<MemoryRouter><ScorePlayer score={{id:${JSON.stringify(SCORE_ID)},title:'Coach journey',musicXml:window.__xml}}/></MemoryRouter>);};window.__mount();`, resolveDir: HERE, loader:'jsx' }, bundle:true,write:false,format:'iife',jsx:'automatic',loader:{'.js':'jsx','.jsx':'jsx'},define:{'process.env.NODE_ENV':'"production"','import.meta.env':'{"MODE":"production","DEV":false,"PROD":true}'},logLevel:'silent', plugins:[{name:'io-only',setup(build){
+ const bundle = await esbuild.build({ stdin:{ contents:`import React from 'react';import{createRoot}from'react-dom/client';import{MemoryRouter}from'react-router-dom';import ScorePlayer from './ScorePlayer.jsx';window.__mount=()=>{window.__root?.unmount();window.__root=createRoot(document.getElementById('root'));window.__root.render(<MemoryRouter><ScorePlayer score={{id:${JSON.stringify(SCORE_ID)},title:'Coach journey',musicXml:window.__xml}}/></MemoryRouter>);};window.__mount();`, resolveDir: HERE, loader:'jsx' }, bundle:true,write:false,format:'iife',nodePaths:[path.resolve(HERE,'../../../../../../../frontend/node_modules')],jsx:'automatic',loader:{'.js':'jsx','.jsx':'jsx'},define:{'process.env.NODE_ENV':'"production"','import.meta.env':'{"MODE":"production","DEV":false,"PROD":true}'},logLevel:'silent', plugins:[{name:'io-only',setup(build){
   build.onResolve({filter:/\.(scss|css)$/},args=>{ const file=args.path.startsWith('.')?path.resolve(args.resolveDir,args.path):require.resolve(args.path);sheets.add(file);return{path:file,namespace:'sheet'};});
   build.onLoad({filter:/.*/,namespace:'sheet'},()=>({contents:'',loader:'js'}));
   build.onLoad({filter:/\.(jsx|js|mjs)$/},args=>{for(const [pattern,contents] of stubs)if(pattern.test(args.path))return{contents,loader:'jsx'};
@@ -88,7 +88,7 @@ describe('real Learn journey',()=>{
    expect(await page.locator('.piano-learn-lab__task').innerText()).toBe('Find the right-hand notes');
    expect(await page.locator('.piano-learn-lab__identity').innerText()).toBe('Bars 1–2');
    expect(await page.getByRole('button',{name:'Start practice'}).count()).toBe(0);
-   expect(await page.locator('.drill-cluster').count()).toBe(9);
+   expect(await page.locator('.drill-cluster').count()).toBe(11);
    expect(await page.locator('.piano-passage-rail__tile').count()).toBe(1);
    const text=await page.locator('.piano-learn-coach').innerText();
    for(const banned of ['Segment','Practicing as','Progress saved','previously earned','Connect the piano'])expect(text).not.toContain(banned);
@@ -201,7 +201,7 @@ describe('real Learn journey',()=>{
    await page.locator('.piano-passage-rail__tile[data-state="gold"]').waitFor({timeout:15000});await expect.poll(()=>f.attempts.size).toBe(2);
    await page.locator('.piano-passage-rail__go').waitFor({timeout:15000});
    await page.evaluate(()=>window.__mount());await page.getByRole('button',{name:'Practice bars 1–2',exact:true}).waitFor();await openPassage(page);
-   expect(await page.locator('.drill-cluster[data-done]').count()).toBe(9);expect(errors).toEqual([]);
+   expect(await page.locator('.drill-cluster[data-done]').count()).toBe(11);expect(errors).toEqual([]);
   }catch(error){fs.writeFileSync(path.join(ARTIFACTS,'failure.json'),JSON.stringify({errors,attempts:[...f.attempts.values()],text:await page.locator('body').innerText(),logs:await page.evaluate(()=>window.__logs)},null,2));await page.screenshot({path:path.join(ARTIFACTS,'failure.png'),fullPage:true});throw error;}finally{await page.close();}
  },90000);
  // The field take of 2026-11-20 (Jingle Bells bar 3 at 56 bpm): steady, in order, every note one click late and then

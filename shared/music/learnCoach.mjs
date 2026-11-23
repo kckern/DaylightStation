@@ -14,6 +14,9 @@ const LEGACY_STEP_PASSES = 6;
 const GOLD_TEMPOS = Object.freeze([50, 60, 75]);
 /** Where a timing-only miss steps down to, one rung at a time. */
 const SLOWER_TEMPOS = Object.freeze([40, ...GOLD_TEMPOS, 100]);
+/** Ladder shape a saved state was written under: 2 = each hand with the beat at 50% (2026-11-22). */
+const LADDER_REVISION = 2;
+const ONE_HAND_BEAT = /^timed-\d+-(rh|lh)$/;
 const MAX_POLICY_PASSES = 20;
 /**
  * How far a missed step can shrink: the way into the hard bar, the hard bar
@@ -313,6 +316,26 @@ function liveResume(plan, segments, task) {
   return task.review || !canonical || !parent?.skills.find((item) => item.key === canonical.key)?.ready ? task : null;
 }
 
+/**
+ * A Gold resume SAVED BEFORE the ladder gained each hand with the beat at 50%
+ * (2026-11-22, `LADDER_REVISION` 2) that sits past one of those steps the child
+ * has never tried. Without this, a child saved partway through both hands at 50%
+ * resumes it and never meets the steps built for them. States written since carry
+ * `ladder: 2`, so a child who now taps a later set keeps that choice.
+ */
+function bypassesUntriedGoldStep(segments, state, task) {
+  if (!task || task.review || task.track !== 'gold') return false;
+  let root = task;
+  while (root.parent) root = root.parent;
+  const segment = segments.find((item) => item.id === root.passageId);
+  if (!segment || segment.authoredLadder) return false;
+  const at = segment.skills.findIndex((skill) => skill.key === root.key);
+  if (at < 0) return false;
+  const tried = (key) => state.counts?.[key] != null
+    || state.evidence.some((item) => item.task?.key === key || item.eligible?.includes(key));
+  return segment.skills.slice(0, at).some((skill) => ONE_HAND_BEAT.test(skill.skill) && !skill.ready && !tried(skill.key));
+}
+
 export function projectCoach({ plan, state, legacy = {}, dayKey }) {
   const current = stateFor(plan, state);
   const compatibleLegacy = !legacy.fingerprint?.contentSha256 || legacy.fingerprint.contentSha256 === plan.fingerprint ? legacy : {};
@@ -332,7 +355,7 @@ export function projectCoach({ plan, state, legacy = {}, dayKey }) {
   const recommended = drill ?? inOrder.map(nextStep).find(Boolean) ?? null;
   const by = (value) => Object.fromEntries(segments.map((segment) => [segment.id, value(segment)]));
   return { segments, recommended, review, state: current,
-    goldResume: liveResume(plan, segments, current.goldResume),
+    goldResume: ((task) => ((current.ladder ?? 1) < LADDER_REVISION && bypassesUntriedGoldStep(segments, current, task) ? null : task))(liveResume(plan, segments, current.goldResume)),
     gold: by((segment) => (segment.certification.gold ? null : segment.skills.find((task) => task.track === 'gold' && !task.ready) ?? null)),
     certifications: by((segment) => segment.certification),
     afterSetAside: by((segment) => open.find((other) => other.id !== segment.id && !setAsideToday(other.id))?.id ?? null),
@@ -429,7 +452,13 @@ function backChain(plan, task) {
   return makeCoachTask(plan, { ...task, range, reason: 'back-chain', label: 'Practice these bars' });
 }
 
-export function applyCoachEvent(state, event, { plan, now, dayKey, legacy = {} }) {
+export function applyCoachEvent(state, event, options) {
+  const before = stateFor(options.plan, state);
+  const next = applyCoachEventToState(state, event, options);
+  return next === before || next === state ? next : { ...next, ladder: LADDER_REVISION };
+}
+
+function applyCoachEventToState(state, event, { plan, now, dayKey, legacy = {} }) {
   const current = stateFor(plan, state);
   if (!event?.id || current.evidence.some((prior) => prior.id === event.id)) return current;
   if (!validTask(plan, event.task)) throw new Error('Invalid coaching task identity');
