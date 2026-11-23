@@ -62,12 +62,13 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
     next();
   });
 
-  // GET /library?stage=&q= -> { films: [{ ratingKey, title, year, stage, job, reviewed, match, unmatched, runtimeWarning }], meta } (Admin library)
+  // GET /library?stage=&q=&view=active -> { films: [{ ratingKey, title, year, stage, job, reviewed, match, unmatched, runtimeWarning }], meta } (Admin library)
   if (contentFilterLibrary) {
     router.get('/library', asyncHandler(async (req, res) => {
       const stage = req.query.stage ? String(req.query.stage) : null;
       const q = req.query.q ? String(req.query.q).slice(0, 100) : null;
-      res.json(await contentFilterLibrary.list({ stage, q }));
+      const view = req.query.view === 'active' ? 'active' : null;
+      res.json(await contentFilterLibrary.list({ stage, q, view }));
     }));
   }
 

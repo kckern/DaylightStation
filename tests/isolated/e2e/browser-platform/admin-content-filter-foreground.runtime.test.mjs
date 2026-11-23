@@ -47,62 +47,12 @@ test('Admin Content Filter keeps its recovery region through a failed first read
   expect(reads).toBe(2);
 });
 
-test('Admin Content Filter keeps a focused job action focused while its status refreshes', async ({ page, baseURL }) => {
-  const origin = new URL(baseURL).origin;
-  const library = '/api/v1/content-filter/library';
-  const reads = [];
-  const writes = [];
-  let heldRefresh;
-  await page.context().route('**/*', route => (
-    new URL(route.request().url()).origin === origin ? route.fallback() : route.abort()
-  ));
-  await page.addInitScript(() => {
-    window.filterVisibility = 'visible';
-    Object.defineProperty(document, 'visibilityState', { get: () => window.filterVisibility });
-  });
-  await page.routeWebSocket('**/*', () => {});
-  await page.route('**/api/**', route => {
-    const request = route.request();
-    const { pathname } = new URL(request.url());
-    if (pathname === library) {
-      reads.push(request.method());
-      if (reads.length === 1) return route.fulfill({ json: { films: [{ ratingKey: '77', title: 'Focused job', stage: 'parent', job: null }] } });
-      heldRefresh = route;
-      return;
-    }
-    if (pathname.startsWith('/api/v1/content-filter') && request.method() !== 'GET') writes.push(pathname);
-    return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
-  });
-  const showDocument = visibility => page.evaluate(visibility => {
-    window.filterVisibility = visibility;
-    document.dispatchEvent(new Event('visibilitychange'));
-  }, visibility);
-
-  await page.setViewportSize({ width: 390, height: 850 });
-  await page.goto('/admin/content/filter');
-  const run = page.getByRole('button', { name: 'Run again', exact: true });
-  await run.focus();
-  await expect(run).toBeFocused();
-  await showDocument('hidden');
-  await showDocument('visible');
-  await expect.poll(() => Boolean(heldRefresh)).toBe(true);
-
-  await expect(run).toHaveAttribute('aria-disabled', 'true');
-  await expect(run).toBeFocused();
-  await page.keyboard.press('Enter');
-  expect(writes).toEqual([]);
-  await heldRefresh.fulfill({ json: { films: [{ ratingKey: '77', title: 'Focused job', stage: 'parent', job: null }] } });
-
-  await expect(run).not.toHaveAttribute('aria-disabled', 'true');
-  await expect(run).toBeFocused();
-  expect(reads).toEqual(['GET', 'GET']);
-});
-
 test('Admin Content Filter retains search and focus through a failed foreground refresh', async ({ page, baseURL }) => {
   const origin = new URL(baseURL).origin;
   const library = '/api/v1/content-filter/library';
   const calls = [];
   let heldRetry;
+  const films = { films: [{ ratingKey: '77', title: 'Quiet fixture', stage: 'rough', job: null }] };
   await page.context().route('**/*', route => (
     new URL(route.request().url()).origin === origin ? route.fallback() : route.abort()
   ));
@@ -114,13 +64,15 @@ test('Admin Content Filter retains search and focus through a failed foreground 
   await page.routeWebSocket('**/*', () => {});
   await page.route('**/api/**', route => {
     const request = route.request();
-    const { pathname } = new URL(request.url());
+    const { pathname, search } = new URL(request.url());
     if (pathname === library) {
+      // The page opens on the active view; a search reads the whole list, which then refreshes.
+      if (search === '?view=active') return route.fulfill({ json: { films: [], meta: { total: 1, deferred: { rough: 1, unmatched: 0 } } } });
       calls.push(request.method());
-      if (calls.length === 1) return route.fulfill({ json: { films: [{ ratingKey: '77', title: 'Quiet fixture', stage: 'rough', job: null }] } });
+      if (calls.length === 1) return route.fulfill({ json: films });
       if (calls.length === 2) return route.fulfill({ status: 403, json: { error: 'Library unavailable' } });
       if (calls.length === 3) { heldRetry = route; return; }
-      return route.fulfill({ json: { films: [{ ratingKey: '77', title: 'Quiet fixture', stage: 'rough', job: null }] } });
+      return route.fulfill({ json: films });
     }
     return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
   });
@@ -133,7 +85,7 @@ test('Admin Content Filter retains search and focus through a failed foreground 
   await page.goto('/admin/content/filter');
   const search = page.getByRole('textbox', { name: 'Search titles' });
   await search.fill('Quiet');
-  await expect(page.getByRole('button', { name: 'Make filter' })).toBeEnabled();
+  await expect(page.getByRole('link', { name: /Quiet fixture/ }).first()).toBeVisible();
 
   await showDocument('hidden');
   await showDocument('visible');
@@ -144,7 +96,6 @@ test('Admin Content Filter retains search and focus through a failed foreground 
   await expect(search).toBeFocused();
   const error = page.getByRole('alert');
   await expect(error).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Make filter' })).toHaveAttribute('aria-disabled', 'true');
   const retry = error.getByRole('button', { name: 'Retry', exact: true });
   await retry.focus();
   await page.keyboard.press('Enter');
@@ -153,12 +104,11 @@ test('Admin Content Filter retains search and focus through a failed foreground 
   const region = page.getByRole('region', { name: 'Content filter library', exact: true });
   await expect(region).toBeFocused();
   await expect(search).toHaveValue('Quiet');
-  await expect(page.getByRole('button', { name: 'Make filter' })).toHaveAttribute('aria-disabled', 'true');
-  await heldRetry.fulfill({ json: { films: [{ ratingKey: '77', title: 'Quiet fixture', stage: 'rough', job: null }] } });
+  await heldRetry.fulfill({ json: films });
   await expect(search).toBeVisible();
   await expect(search).toHaveValue('Quiet');
   await expect(region).toBeFocused();
-  await expect(page.getByRole('button', { name: 'Make filter' })).toBeEnabled();
+  await expect(page.getByRole('link', { name: /Quiet fixture/ }).first()).toBeVisible();
   expect(calls).toEqual(['GET', 'GET', 'GET']);
 });
 
@@ -180,8 +130,10 @@ test('Admin Content Filter discovers a remotely queued job on foreground return 
     const request = route.request();
     const { pathname } = new URL(request.url());
     if (pathname.startsWith('/api/v1/content-filter')) calls.push([request.method(), pathname]);
+    // As the server reports it: an open run makes the film's stage `running` (filmStage.mjs).
+    const open = job && (job.status === 'queued' || job.status === 'running');
     if (pathname === library) return route.fulfill({ json: { films: [{
-      ratingKey: '77', title: 'Foreground fixture', stage: 'parent', job,
+      ratingKey: '77', title: 'Foreground fixture', stage: open ? 'running' : 'parent', job,
     }] } });
     return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
   });
@@ -191,7 +143,7 @@ test('Admin Content Filter discovers a remotely queued job on foreground return 
   }, visibility);
 
   await page.goto('/admin/content/filter');
-  await expect(page.getByRole('button', { name: 'Run again' })).toBeEnabled();
+  await expect(page.getByRole('link', { name: /Foreground fixture/ }).first()).toBeVisible();
   await page.clock.fastForward(6000);
   expect(calls).toEqual([['GET', library]]);
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Accordion, Badge, Button, Group, Select, SimpleGrid, Stack, Text, TextInput } from '@mantine/core';
 import { browserPreference } from '../../../lib/browserPreference.js';
@@ -17,6 +17,9 @@ import './ContentFilterAdmin.scss';
 const logger = createAppLogger('admin').child('content-filter');
 const API = 'api/v1/content-filter';
 const LIBRARY_PATH = `${API}/library`;
+// The page opens on the films in hand; the untouched and not-matched ones (most of the ~500) come
+// with their counts only, and the full list is read when a section, a search or a stage asks for it.
+const ACTIVE_PATH = `${LIBRARY_PATH}?view=active`;
 const POLL_MS = 5000;
 const INVALID_LIBRARY_RESPONSE = Object.freeze(new Error('The library response did not include a film list.'));
 
@@ -41,9 +44,17 @@ export const SECTIONS = [
 /** Films the library cannot match to Plex (no key, stale key, another year, several Plex films). */
 export const UNMATCHED_SECTION = { id: 'unmatched', label: 'Not matched to Plex' };
 const isUnmatched = (f) => f.match === 'unmatched';
+/** Sections the active view leaves out. They open collapsed on every visit (never remembered open). */
+export const LAZY_SECTIONS = Object.freeze(['rough', UNMATCHED_SECTION.id]);
+const withoutLazy = (ids) => ids.filter((id) => !LAZY_SECTIONS.includes(id));
+// For this page load only (not localStorage): Back from a film finds Not started as it was left, and
+// the whole list is not read again; a fresh visit starts collapsed.
+const session = { fullAsked: false, lazyOpen: [] };
+/** Tests: start a fresh page load. */
+export function resetLibrarySession() { session.fullAsked = false; session.lazyOpen = []; }
 const openSectionsPreference = browserPreference('cf-library-open', SECTIONS.filter(section => section.open).map(section => section.id), raw => {
   const value = JSON.parse(raw);
-  return Array.isArray(value) ? value : null;
+  return Array.isArray(value) ? withoutLazy(value) : null;
 });
 
 export function runText(job, worker = null) {
@@ -58,9 +69,24 @@ export function runText(job, worker = null) {
 const active = (job) => job?.status === 'queued' || job?.status === 'running';
 
 export function FilterLibrary() {
-  const { data, hasResult, loading, error, reload, poll, revalidating } = useApiResource(LIBRARY_PATH, { label: 'content filter library', logger });
   const [stage, setStage] = useState(null);
   const [q, setQ] = useState('');
+  const needle = q.trim().toLowerCase();
+  const [openSections, setOpenSections] = useState(() => [...openSectionsPreference.read(), ...session.lazyOpen]);
+  // Once the full list is asked for it stays: closing the section again must not drop it.
+  const [fullAsked, setFullAsked] = useState(session.fullAsked);
+  const wantFull = fullAsked || Boolean(needle) || Boolean(stage) || openSections.some((id) => LAZY_SECTIONS.includes(id));
+  useEffect(() => { if (wantFull && !fullAsked) { setFullAsked(true); session.fullAsked = true; logger.info('library.full-requested', { search: Boolean(needle), stage, open: openSections }); } }, [wantFull, fullAsked, needle, stage, openSections]);
+  const activeRead = useApiResource(ACTIVE_PATH, { label: 'content filter library', logger });
+  const fullRead = useApiResource(wantFull ? LIBRARY_PATH : null, { label: 'content filter library (all films)', logger });
+  // An active response says what it left out (meta.deferred); a response without it is the whole list.
+  const fullHas = fullRead.hasResult && Array.isArray(fullRead.data?.films);
+  const read = fullHas ? fullRead : activeRead;
+  const { data, hasResult, loading, error, reload, poll, revalidating } = read;
+  const deferred = data?.meta?.deferred || null;
+  // A search or stage over the active list would miss films: wait for the whole list instead.
+  const awaitingFull = Boolean(deferred && (needle || stage) && !fullRead.error);
+  const fullRetry = useRetryRegion(fullRead.reload, fullRead.loading || fullRead.revalidating);
   const readBusy = loading || revalidating;
   const { regionProps, retry } = useRetryRegion(reload, readBusy);
   const films = useMemo(() => Array.isArray(data?.films) ? data.films : [], [data]);
@@ -69,15 +95,26 @@ export function FilterLibrary() {
   const anyActive = films.some((f) => active(f.job));
 
   useEffect(() => {
-    if (data?.meta) logger.debug('library.loaded', { total: data.meta.total, verified: data.meta.verified ?? null, unmatched: data.meta.unmatched ?? null });
+    if (data?.meta) logger.debug('library.loaded', { total: data.meta.total, verified: data.meta.verified ?? null, unmatched: data.meta.unmatched ?? null, shown: Array.isArray(data.films) ? data.films.length : null, deferred: data.meta.deferred ?? null });
   }, [data]);
 
-  useVisibleRefresh({ intervalMs: anyActive ? POLL_MS : undefined, reload, poll });
+  // Coming back to the tab also retries a whole-list read that has not landed (it is not the one shown yet).
+  // Stable identity: useVisibleRefresh restarts its poll timer whenever `reload` changes.
+  const latest = useRef(null);
+  latest.current = { wantFull, fullHas, reloadFull: fullRead.reload, reload };
+  const refreshShown = useCallback(() => {
+    const now = latest.current;
+    if (now.wantFull && !now.fullHas) now.reloadFull();
+    return now.reload();
+  }, []);
+  useVisibleRefresh({ intervalMs: anyActive ? POLL_MS : undefined, reload: refreshShown, poll });
 
-  const [openSections, setOpenSections] = useState(openSectionsPreference.read);
-  const onToggle = useCallback((v) => { setOpenSections(v); openSectionsPreference.write(JSON.stringify(v)); }, []);
+  const onToggle = useCallback((v) => {
+    setOpenSections(v);
+    session.lazyOpen = v.filter((id) => LAZY_SECTIONS.includes(id));
+    openSectionsPreference.write(JSON.stringify(withoutLazy(v)));
+  }, []);
 
-  const needle = q.trim().toLowerCase();
   const shown = useMemo(
     () => films.filter((f) => (!stage || f.stage === stage) && (!needle || String(f.title || '').toLowerCase().includes(needle))),
     [films, stage, needle],
@@ -89,7 +126,12 @@ export function FilterLibrary() {
     .map((sec, i, all) => ({ ...sec, films: matched.filter((f) => sec.stages.includes(f.stage) && (!sec.when || sec.when(f))
       // A film an earlier section with a test already took stays there.
       && !all.slice(0, i).some((prev) => prev.when && prev.stages.includes(f.stage) && prev.when(f))) }))
-    .filter((sec) => sec.films.length), [matched]);
+    // A section the active view left out shows its count and fills when opened.
+    .map((sec) => (deferred && sec.id === 'rough' && deferred.rough ? { ...sec, pending: deferred.rough } : sec))
+    .filter((sec) => sec.films.length || sec.pending), [matched, deferred]);
+  // The active view still lists an unmatched film whose run is open; the rest are counted only.
+  const unmatchedCount = unmatched.length + (deferred?.unmatched ?? 0);
+  const pendingPanel = <LoadingState label="the rest of the library" rows={2} />;
 
   const card = (f) => <FilmCard key={f.ratingKey} film={f} worker={data?.worker} />;
   const meta = data?.meta;
@@ -101,7 +143,7 @@ export function FilterLibrary() {
           <TextInput size="xs" aria-label="Search titles" placeholder="Search titles" value={q} onChange={(e) => setQ(e.currentTarget.value)} className="cf-library__search" />
           <Select size="xs" aria-label="Stage" placeholder="All stages" clearable value={stage} onChange={setStage}
             data={Object.entries(STAGE_LABELS).map(([value, label]) => ({ value, label }))} />
-          {hasResult && Array.isArray(data?.films) ? <Text size="xs" c="dimmed">{shown.length} of {films.length} films</Text> : null}
+          {hasResult && Array.isArray(data?.films) && !deferred ? <Text size="xs" c="dimmed">{shown.length} of {films.length} films</Text> : null}
         </Group>
         {loading && !hasResult ? <LoadingState label="content filter library" rows={6} data-testid="content-filter-library-loading" /> : null}
         {readBusy && hasResult && !films.length ? <LoadingState label="content filter library" rows={2} /> : null}
@@ -115,34 +157,44 @@ export function FilterLibrary() {
           <Text size="sm" c="dimmed">No filter worker is running. Queued runs wait until one starts
             (<code>contentfilter worker</code> on a machine with the pipeline's Python tools).</Text>
         ) : null}
-        {!shown.length && hasResult && !readError && !readBusy ? <EmptyState title="No films" hint="Nothing matches. Clear the search or the stage." /> : null}
-        {!matched.length && unmatched.length ? <Text size="sm" c="dimmed">No film matched to Plex fits. See below.</Text> : null}
-        {matched.length && needle ? (
+        {awaitingFull ? <LoadingState label="the whole library" rows={2} /> : null}
+        {/* Stays mounted until the whole list lands, so Retry can hand focus to it. */}
+        {wantFull && !fullHas ? (
+          <div className="cf-library__rest" aria-label="The rest of the library" {...fullRetry.regionProps}>
+            {fullRead.error ? <ErrorState error={fullRead.error} onRetry={fullRetry.retry} label="The rest of the library" /> : null}
+          </div>
+        ) : null}
+        {!shown.length && !awaitingFull && !groups.length && !unmatchedCount && hasResult && !readError && !readBusy ? <EmptyState title="No films" hint="Nothing matches. Clear the search or the stage." /> : null}
+        {!matched.length && unmatched.length && !awaitingFull ? <Text size="sm" c="dimmed">No film matched to Plex fits. See below.</Text> : null}
+        {matched.length && needle && !awaitingFull ? (
           <SimpleGrid className="cf-grid" cols={{ base: 2, sm: 4, md: 6, lg: 8 }} spacing="sm">
             {matched.map((f) => card(f))}
           </SimpleGrid>
         ) : null}
-        {(groups.length && !needle) || unmatched.length ? (
+        {!awaitingFull && ((groups.length && !needle) || unmatchedCount) ? (
           <Accordion multiple variant="separated" value={openSections} onChange={onToggle}>
             {needle ? null : groups.map((sec) => (
               <Accordion.Item key={sec.id} value={sec.id}>
                 <Accordion.Control>
-                  <Group gap="xs"><Text fw={600} size="sm">{sec.label}</Text><Badge size="sm" variant="light" color={STAGE_TONE[sec.stages[0]]}>{sec.films.length}</Badge></Group>
+                  <Group gap="xs"><Text fw={600} size="sm">{sec.label}</Text><Badge size="sm" variant="light" color={STAGE_TONE[sec.stages[0]]}>{sec.pending ?? sec.films.length}</Badge></Group>
                 </Accordion.Control>
                 <Accordion.Panel>
-                  <SimpleGrid className="cf-grid" cols={{ base: 2, sm: 4, md: 6, lg: 8 }} spacing="sm">
-                    {sec.films.map((f) => card(f))}
-                  </SimpleGrid>
+                  {sec.pending ? (fullRead.error ? null : pendingPanel) : (
+                    <SimpleGrid className="cf-grid" cols={{ base: 2, sm: 4, md: 6, lg: 8 }} spacing="sm">
+                      {sec.films.map((f) => card(f))}
+                    </SimpleGrid>
+                  )}
                 </Accordion.Panel>
               </Accordion.Item>
             ))}
-            {unmatched.length ? (
+            {unmatchedCount ? (
               <Accordion.Item value={UNMATCHED_SECTION.id} className="cf-unmatched">
                 <Accordion.Control>
-                  <Group gap="xs"><Text fw={600} size="sm">{UNMATCHED_SECTION.label}</Text><Badge size="sm" variant="outline" color="gray">{unmatched.length}</Badge></Group>
+                  <Group gap="xs"><Text fw={600} size="sm">{UNMATCHED_SECTION.label}</Text><Badge size="sm" variant="outline" color="gray">{unmatchedCount}</Badge></Group>
                   <Text size="xs" c="dimmed">Not usable until Plex has the right film. Nothing here can be filtered.</Text>
                 </Accordion.Control>
                 <Accordion.Panel>
+                  {deferred ? (fullRead.error ? null : pendingPanel) : (
                   <ul className="cf-unmatched__list">
                     {unmatched.map((f) => (
                       <li key={f.ratingKey} className="cf-unmatched__row">
@@ -152,6 +204,7 @@ export function FilterLibrary() {
                       </li>
                     ))}
                   </ul>
+                  )}
                 </Accordion.Panel>
               </Accordion.Item>
             ) : null}

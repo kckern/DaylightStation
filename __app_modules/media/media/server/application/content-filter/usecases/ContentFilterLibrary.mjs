@@ -6,7 +6,13 @@
  * invalidated when a run settles, an audit lands or the film is written. Plex is asked only which
  * movie keys are live (movie sections, never shows), once per INDEX_TTL_MS: the match index is a
  * snapshot, and a media reorg re-keys titles, so a film can be in the index and gone from Plex
- * (`linked: false`). Plex unreachable means `linked: null`; the list never fails for it.
+ * (`linked: false`). Plex unreachable means `linked: null`; the list never fails for it. A
+ * snapshot past its TTL is served while the next sweep runs, up to STALE_MAX_MS old; `matchOf` always
+ * waits for a current one. A failed sweep keeps the last good snapshot and is retried after 30 s.
+ *
+ * `view: 'active'` leaves out the films nobody has touched (rough, no run, no reviewed count) and
+ * the films not matched to Plex, returning only their counts (`meta.deferred`): the Admin opens on
+ * the films that need work and fetches the rest when a section asking for them is opened.
  *
  * Each film is also `match: 'verified' | 'unmatched'` (domain/content-filter/plexMatch.mjs
  * filmMatch): verified = its key is a live Plex film whose year is within one of the EDL's. A
@@ -18,12 +24,17 @@ import { filmStage } from '../../../domain/content-filter/filmStage.mjs';
 import { filmMatch } from '../../../domain/content-filter/plexMatch.mjs';
 import { countReviewed, railCounts } from './ContentFilterReview.mjs';
 
+/** A rough film nobody has run or reviewed: the Admin's "Not started" (the "Started" test inverted). */
+export const isUntouched = (f) => f.stage === 'rough' && !f.reviewed && !f.job;
+
 export const INDEX_TTL_MS = 10 * 60 * 1000;
+/** Past this a snapshot is not served while it refreshes: the read waits for the sweep. */
+export const STALE_MAX_MS = 60 * 60 * 1000;
 // A Plex failure is remembered briefly: a blip must not hide linkage for a whole TTL.
 const FAILED_LIVE_TTL_MS = 30 * 1000;
 
 export class ContentFilterLibrary {
-  #repo; #jobs; #digestOf; #now; #plex; #live = null; #liveAt = null; #liveP = null; #gen = 0; #index = null; #workAt = new Map(); #indexAt = 0; #facts = new Map();
+  #repo; #jobs; #digestOf; #now; #plex; #live = null; #liveAt = null; #liveGoodAt = null; #liveP = null; #gen = 0; #index = null; #workAt = new Map(); #indexAt = 0; #facts = new Map();
 
   constructor({ contentFilterRepository, jobs, digestOf, now = () => Date.now(), plex = null }) {
     if (!contentFilterRepository || !jobs || !digestOf) throw new Error('ContentFilterLibrary requires contentFilterRepository, jobs and digestOf');
@@ -32,7 +43,7 @@ export class ContentFilterLibrary {
 
   /** Forget one film's facts (or everything, with no key: the index too). */
   invalidate(ratingKey) {
-    if (ratingKey == null) { this.#index = null; this.#live = null; this.#liveAt = null; this.#liveP = null; this.#gen++; this.#facts.clear(); return; }
+    if (ratingKey == null) { this.#index = null; this.#live = null; this.#liveAt = null; this.#liveGoodAt = null; this.#liveP = null; this.#gen++; this.#facts.clear(); return; }
     this.#facts.delete(String(ratingKey));
   }
 
@@ -61,7 +72,7 @@ export class ContentFilterLibrary {
   }
 
   /** Map of live Plex movie ratingKey -> { title, year, runtimeSec }, or null when Plex cannot be read. */
-  async #liveMovies() {
+  async #liveMovies({ fresh = false } = {}) {
     if (!this.#plex) return null;
     const ttl = this.#live ? INDEX_TTL_MS : FAILED_LIVE_TTL_MS;
     if (this.#liveAt !== null && this.#now() - this.#liveAt <= ttl) return this.#live;
@@ -69,7 +80,12 @@ export class ContentFilterLibrary {
       const p = this.#sweepLive().finally(() => { if (this.#liveP === p) this.#liveP = null; });
       this.#liveP = p;
     }
-    return this.#liveP;
+    // A good snapshot past its TTL answers now and the sweep lands for the next read: the sweep
+    // pulls every movie's metadata (~13 MB, ~2 s) and the library page must not wait on it. Not past
+    // STALE_MAX_MS (an idle day must not show the last visit's Plex), and never for a `fresh` read
+    // (the run guard and the film page decide on one film's match).
+    const servable = this.#live && !fresh && this.#liveGoodAt !== null && this.#now() - this.#liveGoodAt <= STALE_MAX_MS;
+    return servable ? this.#live : this.#liveP;
   }
 
   async #sweepLive() {
@@ -83,13 +99,14 @@ export class ContentFilterLibrary {
           live.set(String(it.ratingKey), { title: it.title ?? null, year: it.year ?? null, runtimeSec: Number.isFinite(it.duration) ? Math.round(it.duration / 1000) : null });
         }
       }
-      if (gen === this.#gen) this.#live = live;
+      if (gen === this.#gen) { this.#live = live; this.#liveAt = this.#now(); this.#liveGoodAt = this.#liveAt; }
     } catch {
       live = null;
-      if (gen === this.#gen) this.#live = null;
+      // A blip keeps the last good snapshot (a null one would call every film verified) and is
+      // retried after FAILED_LIVE_TTL_MS; with no snapshot yet, linkage is unknown (null).
+      if (gen === this.#gen) this.#liveAt = this.#now() - (this.#live ? INDEX_TTL_MS - FAILED_LIVE_TTL_MS : 0);
     }
     // A sweep that began before an invalidate() hands its answer to its caller but does not cache it.
-    if (gen === this.#gen) this.#liveAt = this.#now();
     return gen === this.#gen ? this.#live : live;
   }
 
@@ -131,8 +148,10 @@ export class ContentFilterLibrary {
     return facts;
   }
 
-  async list({ stage = null, q = null } = {}) {
+  async list({ stage = null, q = null, view = null } = {}) {
     const needle = q ? String(q).toLowerCase() : null;
+    const activeOnly = view === 'active';
+    const deferred = { rough: 0, unmatched: 0 };
     const live = await this.#liveMovies();
     const titles = await this.#titles();
     const films = [];
@@ -146,13 +165,16 @@ export class ContentFilterLibrary {
       if (f.match === 'verified') verified += 1;
       if (stage && f.stage !== stage) continue;
       if (needle && !String(f.title || '').toLowerCase().includes(needle)) continue;
+      // An unmatched film with a run open stays listed: the page polls on it and says when no worker runs.
+      if (activeOnly && f.match !== 'verified' && !(f.job && (f.job.status === 'queued' || f.job.status === 'running'))) { deferred.unmatched += 1; continue; }
+      if (activeOnly && isUntouched(f)) { deferred.rough += 1; continue; }
       films.push(f);
     }
     films.sort((a, b) => String(a.title ?? '').localeCompare(String(b.title ?? '')));
     const indexedAt = typeof this.#repo.getMatchIndexWrittenAt === 'function' ? await this.#repo.getMatchIndexWrittenAt() : null;
     return {
       films, worker: typeof this.#jobs.workerStatus === 'function' ? this.#jobs.workerStatus() : null,
-      meta: { indexedAt: indexedAt ?? null, total, unlinked, verified, unmatched: total - verified },
+      meta: { indexedAt: indexedAt ?? null, total, unlinked, verified, unmatched: total - verified, ...(activeOnly ? { deferred } : {}) },
     };
   }
 
@@ -170,7 +192,7 @@ export class ContentFilterLibrary {
   /** One film's match verdict, for the review page and the run guard. Unknown keys are "no Plex film". */
   async matchOf(ratingKey) {
     const rk = String(ratingKey);
-    const live = await this.#liveMovies();
+    const live = await this.#liveMovies({ fresh: true });
     const titles = await this.#titles();
     const f = await this.#entry(rk, titles.get(rk) || { kind: 'none', title: null }, live);
     return { ratingKey: rk, title: f.title, year: f.year, match: f.match, unmatched: f.unmatched, runtimeWarning: f.runtimeWarning };

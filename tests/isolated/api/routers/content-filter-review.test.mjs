@@ -19,7 +19,7 @@ describe('content-filter review routes', () => {
     for (const [m, url] of [['put', '/cf/9/cues/va1'], ['put', '/cf/9/scenes/sc1'], ['put', '/cf/9/words/damn'], ['put', '/cf/9/review/cue:va1'], ['post', '/cf/9/signoff'], ['put', '/cf/9/settings']]) {
       const res = await request(app)[m](url).send({});
       expect(res.status).toBe(409);
-      expect(res.body.error).toBe('A filter run is writing this film. Try again when it finishes.');
+      expect(res.body.error).toMatch(url.includes('/review/') ? /^A refine is running on this film\. Approve and Redo work now/ : /^A refine is running on this film\. Effects, timing and cards can change/);
     }
   });
   test('a nudge on a cue goes to the review use case and re-audits the film', async () => {
@@ -100,7 +100,7 @@ describe('GET /library', () => {
     app.use('/cf', createContentFilterRouter({ getContentFilter: { execute: async () => ({}) }, contentFilterScenes: { ruleCue: async () => ({}) },
       contentFilterLibrary: { list, invalidate }, jobs, logger: { info() {}, warn() {} } }));
     await request(app).get('/cf/library?stage=rough&q=annie');
-    expect(list).toHaveBeenCalledWith({ stage: 'rough', q: 'annie' });
+    expect(list).toHaveBeenCalledWith({ stage: 'rough', q: 'annie', view: null });
     await request(app).put('/cf/9/cues/va1').send({ effect: 'mute' });
     expect(invalidate).toHaveBeenCalledWith('9');
   });

@@ -39,6 +39,14 @@ export async function createContentFilterRuntime({ configService, rootLogger, ai
   // Inline runs die with this process. A worker's runs outlive an app restart: the worker marks a
   // run interrupted when its heartbeat stops, and the app watches the store to see runs settle.
   if (inline) await jobs.recover(); else jobs.watch();
+  // Warm the library's per-film facts and Plex snapshot after boot settles, so the first Admin
+  // visit after a deploy does not wait on ~500 file reads and a full Plex movie sweep.
+  const warm = schedule(async () => {
+    const t0 = Date.now();
+    try { const { meta } = await contentFilterLibrary.list({ view: 'active' }); logger.info('content-filter.library.warmed', { ms: Date.now() - t0, total: meta?.total ?? null }); }
+    catch (err) { logger.warn('content-filter.library.warm-failed', { error: err?.message }); }
+  }, 30_000);
+  warm?.unref?.();
   const getContentFilter = new GetContentFilter({ contentFilterRepository });
   // Whether the filter switches on for a title by default (the player's own
   // test: certified for the household profile). Read by provenance rules.

@@ -75,7 +75,7 @@ describe('ContentFilterLibrary', () => {
     const withPlex = (plex) => {
       const { repo, jobs, clock } = setup();
       repo.getMatchIndexWrittenAt = async () => '2026-06-30T00:00:00.000Z';
-      return { repo, clock, lib: new ContentFilterLibrary({ contentFilterRepository: repo, jobs, digestOf: async () => 'D', now: () => clock.t, plex }) };
+      return { repo, jobs, clock, lib: new ContentFilterLibrary({ contentFilterRepository: repo, jobs, digestOf: async () => 'D', now: () => clock.t, plex }) };
     };
     it('marks linked and unlinked films, adds a thumb and fills a missing year/title from Plex', async () => {
       const { lib } = withPlex(plexWith(['1', '9']));
@@ -102,6 +102,72 @@ describe('ContentFilterLibrary', () => {
       clock.t += 10 * 60 * 1000 + 1;
       await lib.list({});
       expect(plex.getLibrarySections).toHaveBeenCalledTimes(2);
+    });
+    it('past the TTL the old snapshot answers at once while the next sweep runs', async () => {
+      const plex = plexWith(['1']);
+      const { lib, clock } = withPlex(plex);
+      await lib.list({});
+      let release;
+      plex.getLibrarySections.mockImplementationOnce(() => new Promise((r) => { release = r; }));
+      clock.t += 10 * 60 * 1000 + 1;
+      const stale = await lib.list({});
+      expect(stale.films.find((f) => f.ratingKey === '1').linked).toBe(true);
+      expect(plex.getLibrarySections).toHaveBeenCalledTimes(2);
+      release({ MediaContainer: { Directory: [] } });
+      await new Promise((r) => setTimeout(r, 0));
+      expect((await lib.list({})).films.find((f) => f.ratingKey === '1').linked).toBe(false);
+    });
+    it('a failed refresh keeps the last good snapshot and retries after 30 s', async () => {
+      const plex = plexWith(['1']);
+      const { lib, clock } = withPlex(plex);
+      await lib.list({});
+      plex.getLibrarySections.mockRejectedValueOnce(new Error('blip'));
+      clock.t += 10 * 60 * 1000 + 1;
+      await lib.list({});
+      await new Promise((r) => setTimeout(r, 0));
+      expect((await lib.list({})).films.find((f) => f.ratingKey === '1').linked).toBe(true);
+      expect(plex.getLibrarySections).toHaveBeenCalledTimes(2);
+      clock.t += 31 * 1000;
+      await lib.list({});
+      expect(plex.getLibrarySections).toHaveBeenCalledTimes(3);
+    });
+    it('a snapshot more than an hour old is not served: the read waits for the sweep', async () => {
+      const plex = plexWith(['1']);
+      const { lib, clock } = withPlex(plex);
+      await lib.list({});
+      plex.getContainer.mockImplementation(async () => ({ MediaContainer: { Metadata: [] } }));
+      clock.t += 60 * 60 * 1000 + 1;
+      expect((await lib.list({})).films.find((f) => f.ratingKey === '1').linked).toBe(false);
+    });
+    it('matchOf never answers from an expired snapshot (the run guard and the film page)', async () => {
+      const plex = plexWith(['1']);
+      const { lib, clock } = withPlex(plex);
+      await lib.list({});
+      plex.getContainer.mockImplementation(async () => ({ MediaContainer: { Metadata: [] } }));
+      clock.t += 10 * 60 * 1000 + 1;
+      expect((await lib.matchOf('1')).match).toBe('unmatched');
+    });
+    it("view 'active' keeps an unmatched film whose run is open (the page polls on it)", async () => {
+      const { jobs, lib } = withPlex(plexWith(['1', '9']));
+      jobs.record.mockImplementation(async (rk) => (rk === '2' ? { runs: [{ status: 'running', step: 'refine' }] } : null));
+      const active = await lib.list({ view: 'active' });
+      expect(active.films.find((f) => f.ratingKey === '2')).toMatchObject({ match: 'unmatched', job: { status: 'running' } });
+      expect(active.meta.deferred.unmatched).toBe(0);
+    });
+    it("view 'active' leaves out untouched rough films and films not matched to Plex, counting them", async () => {
+      const plex = plexWith(['1', '9']);
+      const { repo, lib } = withPlex(plex);
+      repo.getEdl.mockImplementation(async (rk) => (rk === '1' || rk === '9' ? { title: rk === '9' ? 'Zed' : 'Back to the Future', year: 2001, sourceRef: { workId: Number(rk), tagSetId: 1 } }
+        : rk === '2' ? { title: 'Annie' } : null));
+      repo.getRefinedEdl.mockImplementation(async ({ workId }) => (workId === 1 ? { year: 1985, scenes: [], certification: { level: 'machine' } } : null));
+      const all = await lib.list({});
+      const active = await lib.list({ view: 'active' });
+      expect(all.films.map((f) => f.ratingKey).sort()).toEqual(['1', '2', '9']);
+      // 1 has a run (failed) so it is in hand; 9 is rough and untouched; 2 is not in Plex.
+      expect(active.films.map((f) => f.ratingKey)).toEqual(['1']);
+      expect(active.meta.deferred).toEqual({ rough: 1, unmatched: 1 });
+      expect(active.meta.total).toBe(all.meta.total);
+      expect(all.meta.deferred).toBeUndefined();
     });
     it('without a plex client linked is null', async () => {
       const { lib } = withPlex(null);

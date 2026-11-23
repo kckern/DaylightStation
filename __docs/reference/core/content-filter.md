@@ -794,7 +794,7 @@ preview store and effect words, `browser/playback.mjs` for the Player). Two jobs
 
 ### Library and stages
 
-`GET /api/v1/content-filter/library?stage=&q=` lists the films that have an EDL: every matched
+`GET /api/v1/content-filter/library?stage=&q=&view=` lists the films that have an EDL: every matched
 movie with VidAngel tags (`media/content-filter/plex-vidangel-map.yml`) plus every title with an
 override, kept only when a rough VidAngel EDL (`edl/<rk>.edl.yml`) or a refined one exists. Rough
 EDLs come from VidAngel and cannot be made here; the household only refines them, so a mapped
@@ -810,7 +810,13 @@ The index's `unmatched` entries (works the matcher could not place, see
 [Matching EDLs to Plex](#matching-edls-to-plex)) are listed too, so they stay visible.
 
 Plex is asked for one thing: the live movies (key, title, year, duration; movie library sections
-only, never shows), once per 10 minutes. The response carries per-film `linked` (`true`, `false`
+only, never shows), once per 10 minutes. The sweep reads every movie's full metadata (~13 MB, ~2 s
+on this library), so a snapshot past its 10 minutes is served while the next sweep runs, up to an
+hour old; an older one, or none yet (boot, `invalidate()`), makes the read wait. `matchOf` (the run
+guard and the film page) never answers from an expired snapshot. A failed sweep keeps the last good
+snapshot and is retried after 30 s; with none yet, linkage is unknown (`null`). The app warms the library (facts and Plex snapshot) 30 s
+after boot (`content-filter.library.warmed` with its `ms`), so the first Admin visit after a deploy
+does not wait on ~500 file reads either. The response carries per-film `linked` (`true`, `false`
 when the key is no longer in Plex, `null` when Plex could not be read; the list never fails for
 it), a `year`/`title` filled from Plex when the EDL lacks them, and the match verdict
 (`filmMatch` in `domain/content-filter/plexMatch.mjs`):
@@ -834,6 +840,12 @@ marked redo. `thumb` (the Plex poster through the proxy) is set only for a linke
 another year's film would show the wrong poster. `meta: { indexedAt, total, unlinked, verified,
 unmatched }`.
 
+`view=active` leaves out the films nobody has touched (rough, no run, no reviewed count: the Admin's
+**Not started**) and every film not matched to Plex except one with a run open (the page polls on
+it), and adds `meta.deferred: { rough, unmatched }`
+with their counts. The rest of `meta` still counts the whole library. Without `view` the list is
+whole (no `deferred`).
+
 The Admin library is compact 2:3 poster cards grouped by readiness in an accordion that follows the film page's rail: **Ready tonight**
 (parent-certified only), **To review** (refined, scenes built, audited or machine-certified: all mean
 review work for you), **Refining** (a run is open), **Started** (a rough film you have opened or run) and **Not
@@ -849,12 +861,19 @@ button opens the film (Start / Review / Open); refining happens on the film's pa
 only (owner, 2026-11-21), so the library starts no runs. The stage groups hold verified
 films only. Below them, set apart (dashed, muted), one **Not matched to Plex** section lists every
 unmatched film as a plain row: title, year and the one-line reason, linking to the film's page.
-It starts collapsed; open state of all sections is kept in `localStorage`. Ready tonight, Needs your review, Audited
-and Running start open. A verified card with a runtime warning shows a small "Runtime 162 min (VidAngel 124)"
+It starts collapsed; open state of the other sections is kept in `localStorage`. Ready tonight, To review,
+Refining and Started start open.
+
+The page opens on `view=active` (owner, 2026-11-23: the ~450 untouched films are not what the page
+is for). **Not started** and **Not matched to Plex** show their counts from `meta.deferred`, always
+start collapsed and are never remembered open. Opening either one, typing a search or picking a stage
+reads the whole list once (a skeleton fills the opened section meanwhile; a search waits for it
+rather than searching the partial list; a failed read shows Retry), and the page keeps the whole list,
+and those two sections' open state, for the page load: Back from a film finds them as they were left,
+a fresh visit starts collapsed again. A verified card with a runtime warning shows a small "Runtime 162 min (VidAngel 124)"
 note (Plex file / VidAngel). A title search flattens the verified films into one grid with stage
-chips and filters the Not matched section alike; the "N of M films" count covers both.
-When a build request is acknowledged, the shared library read refreshes any
-open library view, including one reopened while the request was pending.
+chips and filters the Not matched section alike; the "N of M films" count covers both (shown once
+the whole list is loaded).
 
 An unmatched film's page (`GET /:rk/review`) answers `200 { title, year, match: 'unmatched',
 unmatched }` when there is nothing to review, and the page says why the film can't be reviewed

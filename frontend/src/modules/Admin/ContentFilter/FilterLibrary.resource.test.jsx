@@ -12,7 +12,7 @@ vi.mock('../../../lib/api.mjs', async original => ({ ...await original(), Daylig
 it('the card button opens the film and queues nothing', async () => {
   const library = 'api/v1/content-filter/library';
   DaylightAPI.mockImplementation((path) => {
-    if (path === library) return Promise.resolve({ films: [{ ratingKey: '77', title: 'Annie', stage: 'machine', job: null, reviewed: { n: 0, m: 12 } }] });
+    if (path === library || path === `${library}?view=active`) return Promise.resolve({ films: [{ ratingKey: '77', title: 'Annie', stage: 'machine', job: null, reviewed: { n: 0, m: 12 } }] });
     throw Error('Unexpected path ' + path);
   });
   render(<MantineProvider env="test"><MemoryRouter initialEntries={['/admin/content/filter']}>

@@ -18,9 +18,24 @@ const films = [
   { ratingKey: '78', title: 'Back to the Future', year: 1985, stage: 'running', job: { status: 'running', step: 'refine', error: null }, reviewed: null },
   { ratingKey: '79', title: 'Matilda', year: 1996, stage: 'audited', job: { status: 'failed', step: 'scenes', error: 'Jev timed out' }, reviewed: { n: 3, m: 40 } },
 ];
+const meta = { indexedAt: '2026-06-30T00:00:00.000Z', total: 8, unlinked: 1, verified: 6, unmatched: 2 };
+// The server's active view: no untouched rough films, no films not matched to Plex, just their counts.
+const untouched = (f) => f.stage === 'rough' && !f.reviewed && !f.job;
+const activeFilms = () => films.filter((f) => f.match !== 'unmatched' && !untouched(f));
+const reads = [];
+let fullFails = null;
+let activeExtra = [];
 vi.mock('../../../lib/hooks/useApiResource.js', async original => ({
   ...await original(),
-  useApiResource: () => ({ data: { films, worker, meta: { indexedAt: '2026-06-30T00:00:00.000Z', total: 8, unlinked: 1, verified: 6, unmatched: 2 } }, hasResult: true, loading: false, error: null, reload, poll, revalidating: false }),
+  useApiResource: (path) => {
+    if (!path) return { data: null, hasResult: false, loading: false, error: null, reload, poll, revalidating: false };
+    reads.push(path);
+    if (fullFails && !path.endsWith('?view=active')) return { data: null, hasResult: false, loading: false, error: fullFails, reload, poll, revalidating: false };
+    const data = path.endsWith('?view=active')
+      ? { films: [...activeFilms(), ...activeExtra], worker, meta: { ...meta, deferred: { rough: 2, unmatched: 2 } } }
+      : { films, worker, meta };
+    return { data, hasResult: true, loading: false, error: null, reload, poll, revalidating: false };
+  },
 }));
 vi.mock('../../../lib/api.mjs', () => ({
   DaylightAPI: async (path, body, method) => {
@@ -30,16 +45,67 @@ vi.mock('../../../lib/api.mjs', () => ({
   },
 }));
 
-const { FilterLibrary, SECTIONS } = await import('./FilterLibrary.jsx');
+const { FilterLibrary, SECTIONS, resetLibrarySession } = await import('./FilterLibrary.jsx');
 const { cardStep } = await import('./railStages.js');
 const show = (all = true) => {
-  try { if (all) localStorage.setItem('cf-library-open', JSON.stringify(['ready', 'review', 'audited', 'scenes', 'refined', 'running', 'rough'])); } catch { /* none */ }
-  return render(<MantineProvider><MemoryRouter><FilterLibrary /></MemoryRouter></MantineProvider>);
+  const view = render(<MantineProvider env="test"><MemoryRouter><FilterLibrary /></MemoryRouter></MantineProvider>);
+  // Not started is never remembered open: open it the way the owner does.
+  if (all) fireEvent.click(screen.getByRole('button', { name: /^Not started/ }));
+  return view;
 };
+/** Not started's panel opens with a transition: wait for its cards. */
+const opened = () => screen.findByRole('link', { name: /Annie/ });
+const fullReads = () => reads.filter((p) => p === 'api/v1/content-filter/library').length;
 const row = (title) => screen.getByRole('link', { name: new RegExp(title) }).closest('.cf-card');
 
 describe('FilterLibrary', () => {
-  beforeEach(() => { calls.length = 0; failNext = null; try { localStorage.clear(); } catch { /* none */ } });
+  beforeEach(() => { calls.length = 0; reads.length = 0; failNext = null; fullFails = null; activeExtra = []; resetLibrarySession(); try { localStorage.clear(); } catch { /* none */ } });
+
+  it('opens on the active view: the untouched and not-matched films are counts only, read when opened', async () => {
+    show(false);
+    expect(reads.every((p) => p === 'api/v1/content-filter/library?view=active')).toBe(true);
+    expect(screen.getByRole('button', { name: /^Not started\s*2/ })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: /^Not matched to Plex\s*2/ })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Matilda/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /^Not started/ }));
+    expect(fullReads()).toBeGreaterThan(0);
+    expect(await opened()).toBeTruthy();
+  });
+  it('Back from a film finds Not started still open in the same page load', async () => {
+    const first = show();
+    await opened();
+    first.unmount();
+    show(false);
+    expect(screen.getByRole('button', { name: /^Not started/ })).toHaveAttribute('aria-expanded', 'true');
+    expect(await opened()).toBeTruthy();
+  });
+  it('a search whose whole-list read failed shows the error with Retry, not a skeleton forever', () => {
+    fullFails = new Error('Library unavailable');
+    show(false);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search titles' }), { target: { value: 'annie' } });
+    expect(screen.getByRole('button', { name: /Retry/ })).toBeTruthy();
+    expect(screen.queryByLabelText('Loading the whole library')).toBeNull();
+  });
+  it('an unmatched film the active view keeps (its run is open) adds to the Not matched count', () => {
+    activeExtra = [{ ratingKey: '69', title: 'Running Lost', year: 1990, stage: 'running', job: { status: 'running', step: 'refine' }, reviewed: null, match: 'unmatched', unmatched: { reason: 'not-in-plex', text: 'no Plex film' } }];
+    show(false);
+    expect(screen.getByRole('button', { name: /^Not matched to Plex\s*3/ })).toBeTruthy();
+  });
+  it('a search reads the whole library, not only the active view', () => {
+    show(false);
+    expect(fullReads()).toBe(0);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search titles' }), { target: { value: 'annie' } });
+    expect(fullReads()).toBeGreaterThan(0);
+    expect(screen.getByRole('link', { name: /Annie/ })).toBeTruthy();
+  });
+  it('Not started and Not matched are never remembered open (a stored older preference is ignored for them)', () => {
+    localStorage.setItem('cf-library-open', JSON.stringify(['ready', 'review', 'rough', 'unmatched']));
+    show(false);
+    expect(fullReads()).toBe(0);
+    expect(screen.getByRole('button', { name: /^Not started/ })).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(screen.getByRole('button', { name: /^Not started/ }));
+    expect(JSON.parse(localStorage.getItem('cf-library-open'))).not.toContain('rough');
+  });
 
   it('uses the default sections for a non-array preference and preserves an explicitly empty selection', () => {
     localStorage.setItem('cf-library-open', '{}');
@@ -102,8 +168,9 @@ describe('FilterLibrary', () => {
     expect(item.querySelector('a').getAttribute('href')).toBe('/admin/content/filter/67');
     expect(screen.getByText(/Index from .*8 titles · 6 matched to Plex · 2 not/)).toBeTruthy();
   });
-  it('a runtime that differs by more than 5 minutes is a small note on a verified card', () => {
+  it('a runtime that differs by more than 5 minutes is a small note on a verified card', async () => {
     show();
+    await opened();
     expect(within(row('Almost Famous')).getByText('Runtime 162 min (VidAngel 124)')).toBeTruthy();
     expect(within(row('Almost Famous')).getByRole('link', { name: 'Start' })).toBeTruthy();
   });
@@ -137,15 +204,17 @@ describe('FilterLibrary', () => {
     expect(row('Ready One').querySelector('.cf-card__step').textContent).toBe('Approved');
   });
 
-  it('shows each film with its stage, run and reviewed count', () => {
+  it('shows each film with its stage, run and reviewed count', async () => {
     show();
+    await opened();
     expect(within(row('Back to the Future')).getByText('Running: refine')).toBeTruthy();
     expect(within(row('Matilda')).getByText('Failed at scenes: Jev timed out')).toBeTruthy();
     expect(within(row('Matilda')).getByText('3 of 40 reviewed')).toBeTruthy();
     expect(row('Annie').querySelector('a').getAttribute('href')).toBe('/admin/content/filter/77');
   });
-  it('the card button opens the film: Start untouched, Review once started or machine-checked; no run from here', () => {
+  it('the card button opens the film: Start untouched, Review once started or machine-checked; no run from here', async () => {
     show();
+    await opened();
     expect(within(row('Annie')).getByRole('link', { name: 'Start' }).getAttribute('href')).toBe('/admin/content/filter/77');
     expect(within(row('Matilda')).getByRole('link', { name: 'Review' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Make filter|Run again/ })).toBeNull();
