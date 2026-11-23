@@ -191,3 +191,16 @@ it('draws nothing of its own while an activity starts by itself', async () => {
   finish({ schema: 'participant-launch-result/v1', kind: 'ready', consumer: { id: 'fake', version: 1 }, output: { schema: 'fake/v1', data: {} } });
   await waitFor(() => expect(ready).toHaveBeenCalledTimes(1));
 });
+
+it('starts a new game, once and with no dialog, when the game it tried to resume is gone', async () => {
+  const inspect = vi.fn().mockResolvedValue({ schema: 'participant-launch-options/v1', ready: true, confirmation: 'none', setup_hash: 'h', choices: [{ launch_id: 'lost', label: 'Resume game' }] });
+  const resume = vi.fn().mockRejectedValue(Object.assign(new Error('Saved game is unavailable'), { code: 'runtime_unavailable' }));
+  const begin = vi.fn().mockResolvedValue({ schema: 'participant-launch-result/v1', kind: 'ready', consumer: { id: 'fake', version: 1 }, output: { schema: 'fake/v1', data: {} } });
+  const ready = vi.fn();
+  const { container } = render(<ParticipantLaunchHost refValue={{ schema: 'participant-launch-ref/v1', provider: 'agenda', ref: 'x' }} action="open" client={{ inspect, resume, begin }} onReady={ready} onClose={() => {}} />);
+  await waitFor(() => expect(ready).toHaveBeenCalledTimes(1));
+  expect(resume).toHaveBeenCalledTimes(1);
+  expect(begin).toHaveBeenCalledTimes(1);
+  expect(begin).toHaveBeenCalledWith(expect.objectContaining({ intent: 'new' }));
+  expect(container.textContent).toBe('');
+});

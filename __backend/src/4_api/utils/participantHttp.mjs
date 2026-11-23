@@ -11,18 +11,19 @@ export function viewerFor(req, householdId, host = false) {
   return viewer;
 }
 /**
- * Viewer for household view surfaces (an agenda shown on a screen, an activity started from it).
- * Showing and starting needs no sign-in; a signed-in caller keeps their own identity.
- * Without one, the household itself is the viewer, with the authority the network
- * already grants it (a LAN screen is a host; an outside caller is only a participant).
- * Editing routes keep using viewerFor and still require sign-in.
+ * Viewer for the screen surface: showing an agenda and starting its activities.
+ * A signed-in person keeps their own identity. A declared screen (`req.screen`, set by
+ * screenIdentityResolver from devices.yml) is `screen:<name>`, with the authority the
+ * network grants it. Anyone else is refused: a screen identity is never a sign-in, and
+ * editing routes keep using viewerFor.
  */
-export function householdViewerFor(req, householdId) {
+export function screenOrUserViewerFor(req, householdId) {
   if (req.user?.sub) return viewerFor(req, householdId);
+  if (!req.screen?.id) throw httpError('authentication_required', 'Authentication required');
   if (typeof householdId !== 'string' || !householdId) throw httpError('feature_unavailable', 'Household scope unavailable');
   if (req.householdId && req.householdId !== householdId) throw httpError('authorization_denied', 'Household scope mismatch');
   const roles = (req.roles || []).map(String);
-  return {role: roles.some(role => HOST_ROLES.has(role)) ? 'host' : 'participant', participant_id: `household:${householdId}`, householdId};
+  return {role: roles.some(role => HOST_ROLES.has(role)) ? 'host' : 'participant', participant_id: `screen:${req.screen.id}`, householdId};
 }
 export function bodyFields(body, allowed) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw httpError('invalid_request', 'Object required', [{field:'body',message:'Object required'}]);

@@ -62,6 +62,13 @@ export function isEngagedGame(runtime, participantIds = null) {
   return true;
 }
 
+/** Label for a resumable game, from its own saved header (source label and saved roster). */
+export function resumeLabel(header) {
+  const names=(header?.participants || []).map(p=>p.name).filter(name=>typeof name==='string' && name.trim());
+  const details=[header?.launch?.participant_launch?.source_label, names.join(', ')].filter(Boolean);
+  return details.length ? `Resume game — ${details.join(' — ')}` : 'Resume game';
+}
+
 export class PartyGamesParticipantConsumer {
  id='party-games'; version=1; targets=[{action:'open',kind:'app',appId:'party-games'}];
  constructor({definitions,clueHistory,executionPort,manifestStore}) { if (!definitions || !executionPort || !manifestStore) throw new Error('Definition and execution ports are required'); Object.assign(this,{definitions,clueHistory,executionPort,manifestStore}); }
@@ -103,17 +110,13 @@ export class PartyGamesParticipantConsumer {
    try {
     const runtime=await this.executionPort.inspect(receipt.runtime_ref.id,viewer);
     if (runtime && isEngagedGame(runtime, participantIds)) {
-     const verb='Resume game';
-     const names=(runtime.header.participants || []).map(p=>p.name).filter(name=>typeof name==='string' && name.trim());
-     const details=[runtime.header.launch?.participant_launch?.source_label, names.join(', ')].filter(Boolean);
-     const label=details.length ? `${verb} — ${details.join(' — ')}` : verb;
-     result.push({launch_id:receipt.launch_id,runtime_ref:clone(receipt.runtime_ref),label});
+     result.push({launch_id:receipt.launch_id,runtime_ref:clone(receipt.runtime_ref),label:resumeLabel(runtime.header)});
     }
    } catch (error) {
     if (error.code !== 'runtime_unavailable' && error.code !== 'session_not_found') throw error;
    }
   }
-  return result.reverse();
+  return result;
  }
  async resume({snapshot,receipt,viewer}) {
   host(viewer); const runtimeRef=receipt?.runtime_ref; if (runtimeRef?.provider!=='gaming' || !validId(runtimeRef.id)) fail('runtime_unavailable','Saved game is unavailable');

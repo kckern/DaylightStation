@@ -132,3 +132,15 @@ it('rejects an unsafe fresh returnTo before aliasing an existing pending launch'
  await expect(service.begin({ref:{schema:'participant-launch-ref/v1',provider:'other',ref:'opaque'},action:'open',requestId:'new',intent:'open',viewer:{}})).rejects.toMatchObject({code:'invalid_return_target'});
  expect(writes).toBe(0);expect(retentions).toBe(0);
 });
+
+it('offers resumable choices newest first: the preferred launch, then the rest newest to oldest', async () => {
+  const { ParticipantLaunchService } = await import('./ParticipantLaunchService.mjs');
+  let seen;
+  const consumer = { id: 'x', version: 1, findResumable: async ({ receipts }) => { seen = receipts.map(r => r.launch_id); return receipts.map(r => ({ launch_id: r.launch_id, label: r.launch_id })); } };
+  const service = Object.create(ParticipantLaunchService.prototype);
+  service.registry = { get: () => consumer };
+  const ref = { id: 'x', version: 1 };
+  const choices = await service.findChoices([{ launch_id: 'newest', consumer: ref }, { launch_id: 'oldest', consumer: ref }, { launch_id: 'middle', consumer: ref }], {}, ['a']);
+  expect(seen).toEqual(['newest', 'middle', 'oldest']);
+  expect(choices.map(c => c.launch_id)).toEqual(['newest', 'middle', 'oldest']);
+});

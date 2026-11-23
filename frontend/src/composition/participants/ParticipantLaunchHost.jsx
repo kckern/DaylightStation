@@ -19,6 +19,7 @@ export function ParticipantLaunchHost({ refValue, action, client = participantLa
   const lastOperation = useRef(null);
   const inspectedConsumer = useRef(null);
   const autoStart = useRef(false);
+  const fellBack = useRef(false);
   const execute = useCallback(async (operation, input) => {
     const requestGeneration = generation.current;
     if (busy.current === requestGeneration) return;
@@ -40,11 +41,18 @@ export function ParticipantLaunchHost({ refValue, action, client = participantLa
         if (!callbacks.current.onPassthrough) throw new Error('Launch unavailable');
         callbacks.current.onPassthrough(result, inspectedConsumer.current);
       } else if (result.schema === 'participant-launch-result/v1' && result.kind === 'resume_available') {
-        if (autoStart.current && result.choices?.length && operation !== 'resume') { busy.current = null; execute('resume', {ref:input.ref, action:input.action, launchId:result.choices[0].launch_id}); return; }
+        if (autoStart.current && result.choices?.length && operation !== 'resume') { setState(s => ({...s, phase: 'auto', step: {op: 'resume', launchId: result.choices[0].launch_id}})); return; }
         setState(s => ({ phase: 'options', options: {...s.options, ready: true, confirmation: 'required', setup_hash: result.current_setup_hash, choices: result.choices} }));
       } else throw new Error('Invalid launch response');
     } catch (error) {
       if (generation.current !== requestGeneration) return;
+      // A game that cannot be resumed must never strand anyone: start a new one instead, once.
+      if (autoStart.current && operation === 'resume' && !fellBack.current) {
+        fellBack.current = true;
+        getLogger().warn('participant-launch.resume-fallback', {code: error.code || 'resume_failed'});
+        setState(s => ({...s, phase: 'auto', step: {op: 'new'}}));
+        return;
+      }
       const conflict=conflictCodes.includes(error.code);
       getLogger().warn('participant-launch.error',{operation,code:conflict ? error.code : 'launch_error'});
       setState({ phase: conflict ? 'conflict' : 'error', message: error.message });
@@ -73,11 +81,16 @@ export function ParticipantLaunchHost({ refValue, action, client = participantLa
     if (options.choices?.length) execute('resume', {ref:refValue, action, launchId:options.choices[0].launch_id});
     else begin('open');
   }, [state.phase, options, begin, execute, refValue, action, requireConfirmation, previewUnavailable]);
+  useEffect(() => {
+    if (state.phase !== 'auto') return;
+    if (state.step?.op === 'resume') execute('resume', {ref:refValue, action, launchId:state.step.launchId});
+    else begin('new');
+  }, [state.phase, state.step, execute, begin, refValue, action]);
   const cancel=()=>{getLogger().info('participant-launch.cancel',{phase:state.phase});onClose?.();};
   // Starting an activity shows nothing of its own: the activity's title card is the first thing on
   // screen. A dialog appears only for an error, a conflict, or an activity that needs confirming.
   const autoStarting = state.phase === 'options' && options?.confirmation === 'none' && !requireConfirmation && !previewUnavailable;
-  if (autoStarting || (state.phase === 'loading' && (!inspectedConsumer.current || autoStart.current))) return null;
+  if (autoStarting || state.phase === 'auto' || (state.phase === 'loading' && (!inspectedConsumer.current || autoStart.current))) return null;
   return <TVActionDialog label="Activity launch" focusKey={state.phase} onBack={cancel}>
     {state.phase === 'conflict' && <><p>{state.message}</p><button onClick={recover}>Refresh</button></>}
     {state.phase === 'error' && <><p>{state.message}</p><button onClick={() => execute(lastOperation.current.operation, lastOperation.current.input)}>Retry</button></>}

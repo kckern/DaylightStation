@@ -76,6 +76,17 @@ Within a household, people are represented as either **profiles** or **users**.
 
 ---
 
+## Screens
+
+Screens (TVs, kiosks) never sign in. A screen is identified by its declared device in
+`devices.yml` (`content_control` or `fleet: true`) through the `X-Daylight-Device:
+fleet:<name>` header on the house network, and acts as the participant id
+`screen:<name>`. That identity is not a sign-in: it can show an agenda and start its
+activities, never edit. See `__capabilities/content-catalog/docs/participant-launch.md`
+(Screens and sign-in).
+
+---
+
 ## Admin sign-in
 
 Claiming a profile sets its password on the server. If the browser cannot save the session after a successful claim or sign-in, Admin keeps the username and opens the sign-in form. Once site storage is available, the user can sign in with the password they already set.

@@ -5,7 +5,7 @@ import { GoogleGmailClientFactory } from '#adapters/google/GoogleGmailClientFact
 import {createWorkRuntime,resolveWorkHarvestScope} from '../../__app_modules/personal/work/server/runtime.mjs';
 import {createConfiguredMigrationOwnership} from '../../__app_modules/household/agenda/server/composition.mjs';
 import {installParticipantRuntime} from './5_composition/participants/installedRuntime.mjs';
-import {householdViewerFor} from './4_api/utils/participantHttp.mjs';
+import {screenOrUserViewerFor} from './4_api/utils/participantHttp.mjs';
 import {createPianoBoardGameDayRuntime} from '../../__app_modules/learning/piano/server/composition/board-game-day.mjs';
 import {createInstalledPrintableSheets} from '#composition/modules/printableSheets.mjs';
 import {createInstalledWeeklyMeasures} from '#composition/modules/weeklyMeasures.mjs';
@@ -330,6 +330,7 @@ import { DataServiceAuthAccountRepository } from '#adapters/auth/DataServiceAuth
 import { NodeAuthenticationPrimitives } from '#adapters/auth/NodeAuthenticationPrimitives.mjs';
 import { networkTrustResolver } from '#api/middleware/networkTrustResolver.mjs';
 import { tokenResolver } from '#api/middleware/tokenResolver.mjs';
+import { screenIdentityResolver } from '#api/middleware/screenIdentityResolver.mjs';
 import { permissionGate } from '#api/middleware/permissionGate.mjs';
 import { createAuthRouter } from '#api/v1/routers/auth.mjs';
 import { householdResolver } from '#api/middleware/householdResolver.mjs';
@@ -686,6 +687,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     dataService, logger: rootLogger.child({ module: 'auth-sessions' }),
   });
   app.use('/api/v1', tokenResolver({ jwtSecret, jwtConfig, sessionStore: authSessionStore }));
+
+  // 3b. screenIdentityResolver: screens never sign in. A declared screen (devices.yml,
+  //     the Fleet rule `content_control || fleet === true`) sending its fleet device id
+  //     over the house network gets req.screen — never req.user. Only routes that opt in
+  //     via screenOrUserViewerFor accept it. __capabilities/content-catalog/docs/participant-launch.md
+  app.use('/api/v1', screenIdentityResolver({
+    isDeclaredScreen: (id, hid) => {
+      const device = configService.getHouseholdDevices(hid ?? null)?.devices?.[id];
+      return Boolean(device && (device.content_control || device.fleet === true));
+    },
+    logger: rootLogger.child({ module: 'auth' }),
+  }));
 
   // 4. permissionGate enforces role-based access (auth endpoints are exempt — they're unrestricted in app_routes)
   app.use('/api/v1', permissionGate({
@@ -1196,7 +1209,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { routers: contentRouters, services: contentServices } = createApiRouters({
     resourceAliases:agendaResourceAliases,
     registry: contentRegistry,
-    viewerForRequest: req => { try { return householdViewerFor(req,householdId); } catch { return null; } },
+    viewerForRequest: req => { try { return screenOrUserViewerFor(req,householdId); } catch { return null; } },
     sequenceStore,
     menuMemoryRepository: new YamlMenuMemoryRepository({
       filePath: configService.getHouseholdPath('history/menu_memory', householdId),

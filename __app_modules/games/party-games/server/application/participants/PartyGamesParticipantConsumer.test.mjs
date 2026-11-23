@@ -99,6 +99,7 @@ it('discovers resumable games only through a read-only port and fails closed whe
  expect(await consumer.findResumable({receipts,viewer:{role:'host'}})).toEqual([{launch_id:'launch',runtime_ref:{provider:'gaming',id:'game:one'},label:'Resume game'}]);
  expect(executionPort.inspect).toHaveBeenCalledOnce();expect(executionPort.resume).not.toHaveBeenCalled();
  executionPort.inspect.mockResolvedValue({header:{status:'complete'},state:{challenge_index:18}});
+ // A finished game is never offered back (owner's rule): with auto-start it would open its result instead of a new game.
  expect(await consumer.findResumable({receipts,viewer:{role:'host'}})).toEqual([]);
 });
 it('rejects incomplete settings at publication preparation',async()=>{
@@ -172,6 +173,9 @@ it('threads retained source through service, real consumer and Gaming journal on
  source.sourceLabel='Week of 2026-11-23';
  // A game opened and left before anyone played is not offered back; the next start is a new game.
  expect(await consumer.findResumable({receipts:[{launch_id:result.launch_id,runtime_ref:result.runtime_ref}],viewer:{role:'host'}})).toEqual([]);
+ // Its label still comes from its own saved header, not the live source.
+ const {resumeLabel}=await import('./PartyGamesParticipantConsumer.mjs');
+ expect(resumeLabel(saved.header)).toBe('Resume game — Week of 2026-11-16 — Guest, Visitor');
  } finally {rmSync(dir,{recursive:true,force:true});}
 });
 it('labels a saved game with its saved roster',async()=>{

@@ -62,6 +62,9 @@ class ParticipantLaunchService {
     return { source, ...setup, returnTo };
   }
   async findChoices(receipts, viewer, participantIds = null) {
+    // Newest first, decided here rather than by array position downstream: a store lists its
+    // preferred (latest) launch first, then the rest oldest to newest.
+    receipts = receipts.length ? [receipts[0], ...receipts.slice(1).reverse()] : receipts;
     const groups = new Map();
     for (const receipt of receipts) {
       const key = JSON.stringify(receipt.consumer);

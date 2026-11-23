@@ -312,6 +312,19 @@ curl -X POST ".../access/apps/$APP_ID/policies" \
 
 ---
 
+### Screens on the house network (application layer)
+
+Because the reverse proxy connects from a private address, `networkTrustResolver`'s
+`sysadmin` grant is not by itself evidence that a caller is in the house. Routes that
+let a screen act without sign-in therefore also require a declared screen identity
+(`screenIdentityResolver`: a `fleet:<name>` device declared as a screen in
+`devices.yml`). A caller with neither a sign-in nor a declared screen id gets 401 from
+the agenda list and participant-launch routes. The device header is self-reported, so
+this identifies the screen surface; it is not an authentication factor and must never
+open an editing route.
+
+---
+
 ### Cross-site requests (application layer)
 
 The firewall and access policies decide who may reach the app. They do not stop
