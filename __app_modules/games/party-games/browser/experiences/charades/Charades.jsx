@@ -29,6 +29,17 @@ import "./Charades.scss";
 
 const TIMER_CIRCUMFERENCE = 2 * Math.PI * 52;
 
+const userPortrait = userId => DaylightMediaPath(`/static/img/users/${encodeURIComponent(userId)}`);
+
+/** A saved avatar wins; a household user with none saved still has their own portrait. */
+function memberPortrait(member) {
+  const avatar = member?.avatar;
+  if (avatar?.kind === 'user-avatar' && avatar.userId) return userPortrait(avatar.userId);
+  if (typeof avatar === 'string' && avatar) return avatar;
+  if (member?.identity?.kind === 'user' && member.identity.id) return userPortrait(member.identity.id);
+  return null;
+}
+
 function RoundProgress({ current, total }) {
   return (
     <span className="charades__rounds" role="img" aria-label={`Round ${current} of ${total}`}>
@@ -66,10 +77,7 @@ function CharadesCountdown({ deadline, durationMs, onComplete }) {
 export default function Charades({ seats = [], sessionId, onComplete, gamingServices, registerBackAction, registerForwardAction }) {
   const teams = seats;
   // The wheel selects seats, but portraits belong to the people inside them.
-  const wheelMembers = useMemo(() => seats.map(seat => ({
-    ...seat,
-    avatar: seat.members?.[0]?.avatar?.kind === 'user-avatar' ? DaylightMediaPath(`/static/img/users/${encodeURIComponent(seat.members[0].avatar.userId)}`) : (typeof seat.members?.[0]?.avatar === 'string' ? seat.members[0].avatar : null),
-  })), [seats]);
+  const wheelMembers = useMemo(() => seats.map(seat => ({ ...seat, avatar: memberPortrait(seat.members?.[0]) })), [seats]);
   const audio = gamingServices?.audio;
   const [state, setState] = useState(null);
   const [definition, setDefinition] = useState(null);

@@ -29,3 +29,8 @@ it('uses the saved identity portrait key while selecting a distinct guest runtim
  await waitFor(()=>expect(container.querySelector('.family-selector')).toHaveAttribute('data-selected-id','guest:visitor'));
  expect(container.querySelector('image.segment-avatar').getAttribute('href')).toContain('/static/img/users/portrait-key');
 });
+it('falls back to the household user portrait when the launch saved no avatar', async()=>{
+ const {container}=render(<Charades sessionId="avatars" seats={[{id:'guest:visitor',name:'Visitor',members:[{id:'guest:visitor',avatar:null,identity:{kind:'user',id:'kid'}}]},{id:'anon',name:'Anon',members:[{id:'anon',avatar:null,identity:{kind:'anonymous'}}]}]}/>);
+ await waitFor(()=>expect(container.querySelector('.family-selector')).toHaveAttribute('data-selected-id','guest:visitor'));
+ expect([...container.querySelectorAll('image.segment-avatar')].map(i=>i.getAttribute('href'))).toEqual([expect.stringContaining('/static/img/users/kid')]);
+});
