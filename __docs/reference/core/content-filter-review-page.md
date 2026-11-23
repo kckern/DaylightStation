@@ -123,15 +123,25 @@ effect keys.
 list is the film's audit, and an effect change makes it stale: the new effect only reaches the rows
 when the re-audit lands, seconds later. Until then a **hold** shows the chosen effect on the row, the
 card and the list (`effectHeld: true`). A fresh audit that agrees lets go of it
-(`content_filter.review.effect_settled`, `settleMs`); one that plays the part differently (Blur on a
-part with nothing to blur plays as hide picture) lets go and says "Blur plays as … on this part."
-(`…effect_resolved_differently`, `asked`, `plays`); a fresh audit that disagrees is believed only
-after a stale one was seen, since a poll sent before the save can land after it. A hold nothing
-settles goes after 20 s (`…effect_unsettled`). Every write to one film (timing autosave, effect,
-card, household settings) goes through one queue (`queueWrite`), so the effect button stays live
-while timing saves: a click made while another write is out waits its turn (`content_filter.review.effect`
-carries `waited` and `saveMs`), a later click on the same part replaces one still waiting
-(`…effect_superseded`), and a failed save puts the row back on what the server has, with the error.
+(`content_filter.review.effect_settled`, `settleMs`). One that plays the part differently (Blur on a
+part with nothing to blur plays as hidden) lets go and says so by name: `Blur plays as hidden on
+"<part>".`, or `Skip plays unfiltered on "<part>".` (`…effect_resolved_differently`, `asked`,
+`plays`). A fresh audit that disagrees is believed only when it answers a reload the page issued
+after the save (the page counts its reloads): the audit digest is content-based, so a save that
+changes nothing leaves the audit fresh and no stale answer ever comes. A hold the audit never
+settles ends 20 s after the click, saved or not, with the note `Blur is taking long to confirm;
+showing what the server has.` (`…effect_unsettled`). Notes queue and are shown by the station only
+while its view is live; each names its part, so it reads right wherever the cursor has moved.
+Every write to one film (timing autosave, effect, card, verdict, widen, undo, household settings)
+goes through one queue (`queueWrite`), so the effect button stays live while timing saves: a click
+made while another write is out waits its turn (`content_filter.review.effect` carries `waited` and
+`saveMs`), a later click on the same part replaces one still waiting (`…effect_superseded`), and a
+write the server does not answer within 15 s rejects so one hung request cannot stall the film's
+chain. A failed save puts the row back on what the server has, with the error, unless a later write
+to that part has since succeeded; a part with several cues reloads after a partial failure.
+**A, X and D wait while the part's effect is held**: the page says `Saving the effect: one moment,
+then approve.`, sends nothing and logs `content_filter.review.verdict_refused` (`reason:
+'effect-saving'`), since a verdict would judge the old effect.
 
 The **part menu** (`PartMenu.jsx`; owner, 2026-11-22: "right-click and I can change what it is or
 how it's handled"): a right-click on a part anywhere it appears (a list row, a timeline mark, a

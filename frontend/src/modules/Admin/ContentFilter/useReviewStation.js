@@ -57,6 +57,9 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
   const arrived = useRef({ id: null, at: Date.now(), replays: 0 });
   const via = useRef('click');
   const latest = useRef({});
+  // The newest effect write that succeeded, per part: an older failure no longer speaks for it.
+  const lastOk = useRef({});
+  const errorShown = useRef(false);
   latest.current = { rows, selectedId: selected?.id ?? null, scoped: null, scope: null };
 
   // Which parts a refine holds or still has to pin (the Refine tab lists these).
@@ -223,8 +226,8 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
   const record = async (r, verdict, { reason, change } = {}) => {
     const dwellMs = Date.now() - arrived.current.at;
     const replays = arrived.current.replays;
-    await DaylightAPI(`${API}/${encodeURIComponent(rk)}/review/${encodeURIComponent(r.id)}`,
-      { span: [r.in, r.out], verdict, ...(reason ? { reason } : {}), ...(change ? { change } : {}), dwellMs, replays }, 'PUT');
+    await queueWrite(rk, () => DaylightAPI(`${API}/${encodeURIComponent(rk)}/review/${encodeURIComponent(r.id)}`,
+      { span: [r.in, r.out], verdict, ...(reason ? { reason } : {}), ...(change ? { change } : {}), dwellMs, replays }, 'PUT'));
     logger.info('content_filter.review.verdict', { rk, rowId: r.id, kind: r.kind, category: r.group, effect: r.effect, verdict, ...(reason ? { reason } : {}), ...(change ? { change } : {}), dwellMs, replays });
     if (!activeView.current) return;
     setUndoStack((s) => [...s, { rowId: r.id, verdict, changed: Boolean(change) }]);
@@ -235,6 +238,12 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
   const verdict = (v, reason) => {
     if (!row) return;
     if (heldByTiming('verdict')) return;
+    // A verdict on a part whose effect is still saving would judge the old effect (review 2026-11-23).
+    if (row.effectHeld) {
+      logger.info('content_filter.review.verdict_refused', { rk, rowId: row.id, reason: 'effect-saving' });
+      setMessage('Saving the effect: one moment, then approve.');
+      return;
+    }
     // A refine moves the part, which drops a verdict on it: wait for the new timing (review 2026-11-21).
     if (plays(row)) { setMessage('This part plays under your settings and needs no verdict. Press an effect key to filter it.'); return; }
     if (latest.current.refining?.[row.id]) { setMessage('This part is being refined. Give it a verdict when the new timing lands.'); return; }
@@ -272,27 +281,38 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
     const current = () => held == null || effectHolds.isCurrent(row.id, held);
     setMessage(to === 'off' ? 'Off: this part now plays. Press → for the next part.' : `${label} applied. Watch it, then press A to approve.`);
     const queuedAt = Date.now();
+    let sentCalls = 0;
     queueWrite(rk, async () => {
       // A later click on this part replaced this one before it went out: only the last is sent.
       if (!current()) return false;
-      for (const [path, body, method] of calls) await DaylightAPI(path, body, method);
+      for (const [path, body, method] of calls) { await DaylightAPI(path, body, method); sentCalls += 1; }
       return true;
     }).then(async (sent) => {
       if (!sent) { logger.info('content_filter.review.effect_superseded', { rk, rowId: row.id, to }); return; }
-      if (held != null) effectHolds.saved(row.id, held);
+      if (held != null) { effectHolds.saved(row.id, held); lastOk.current[row.id] = held; }
       logger.info('content_filter.review.effect', { rk, rowId: row.id, kind: row.kind, from, to, waited, saveMs: Date.now() - queuedAt });
       if (!activeView.current) return;
+      // The last message wins: an earlier click's failure may have landed after this one was shown.
+      if (current() && errorShown.current) { errorShown.current = false; setMessage(to === 'off' ? 'Off: this part now plays. Press → for the next part.' : `${label} applied. Watch it, then press A to approve.`); }
       reload();
       if (!current()) return;
       // The player reads its filter once: refresh it, then play the part again with the new effect.
       const accepted = await previewStore.refresh().catch(() => false);
       if (!activeView.current || latest.current.selectedId !== row.id) return;
-      if (accepted) previewStore.jumpToCue({ in: row.in });
+      // The span as the film has it now, not as it was at click time (a timing save may have landed since).
+      const cur = latest.current.rows?.find((r) => r.id === row.id) ?? row;
+      if (accepted) previewStore.jumpToCue({ in: cur.in });
       else { logger.warn('content_filter.review.effect_preview_stale', { rk, rowId: row.id }); setMessage(`${label} applied, but the preview could not refresh. Press Enter to play the part, then A to approve.`); }
     }, (err) => {
       if (held != null) effectHolds.release(row.id, held);
       logger.warn('content_filter.review.action_failed', { rk, rowId: row.id, key: 'effect', to, error: err.message });
-      if (activeView.current) setMessage(err.message || `${label} did not save.`);
+      if (!activeView.current) return;
+      // A multi-member part may have saved some of its cues before one failed: show what the server has.
+      if (sentCalls > 0) reload();
+      // A later write to this part that succeeded has already replaced this error's news.
+      if (held != null && (lastOk.current[row.id] ?? 0) > held) return;
+      errorShown.current = true;
+      setMessage(err.message || `${label} did not save.`);
     });
   };
 
@@ -317,7 +337,7 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
       const single = isSceneRow(row) || (row.members ?? [row.peekId]).length === 1;
       if (!single) { setMessage('Widen one part at a time.'); return; }
       const to = { in: round3(Math.max(0, row.in - WIDEN_STEP)), out: round3(row.out + WIDEN_STEP) };
-      for (const [path, body, method] of callsFor(row, { nudge: to })) await DaylightAPI(path, body, method);
+      await queueWrite(rk, async () => { for (const [path, body, method] of callsFor(row, { nudge: to })) await DaylightAPI(path, body, method); });
       await record(row, 'approve', { change: { from: { in: row.in, out: row.out }, to } });
     });
   };
@@ -331,7 +351,7 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
     // A remove is terminal once the re-audit lands: the row is gone and so is its verdict.
     // Keep a live target on the stack until its DELETE succeeds so an offline/transient failure can retry it.
     if (!target) { setUndoStack((s) => s.slice(0, -1)); setMessage('That part is already gone; it cannot be undone.'); return; }
-    await DaylightAPI(`${API}/${encodeURIComponent(rk)}/review/${encodeURIComponent(last.rowId)}`, {}, 'DELETE');
+    await queueWrite(rk, () => DaylightAPI(`${API}/${encodeURIComponent(rk)}/review/${encodeURIComponent(last.rowId)}`, {}, 'DELETE'));
     logger.info('content_filter.review.undo', { rk, rowId: last.rowId, undid: last.verdict });
     if (!activeView.current) return;
     setUndoStack((s) => s.slice(0, -1));
@@ -599,8 +619,15 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
 
   // A chosen effect the player plays as something else (blur with nothing to blur plays as
   // blackout): the page says so once the re-audit lands, rather than the button flipping back.
-  const holdNote = effectHolds?.note;
-  useEffect(() => { if (holdNote && activeView.current) setMessage(holdNote.text); }, [holdNote]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A note names its part, so it reads right wherever the cursor is; it is shown only while this view
+  // is live and otherwise kept for the next one.
+  const holdNotes = effectHolds?.notes;
+  useEffect(() => {
+    if (!holdNotes?.length || !activeView.current) return;
+    const last = holdNotes[holdNotes.length - 1];
+    setMessage(last.text);
+    effectHolds.ackNotes(last.at + 1);
+  }, [holdNotes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const top = undoStack[undoStack.length - 1];
   const canUndo = Boolean(top && rows?.some((r) => r.id === top.rowId));

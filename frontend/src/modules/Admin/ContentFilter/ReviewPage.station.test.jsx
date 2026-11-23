@@ -6,18 +6,30 @@ import { clearToken, setToken } from '../../../lib/auth.js';
 
 const calls = [];
 const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn(), child: () => log };
-const reload = vi.fn(async () => {});
+// The mocked server: a reload re-serves `payload`, which effect writes have updated (as the audit
+// does once it catches up), so a held effect settles the way it does for real.
+let rerender = () => {};
+const reload = vi.fn(async () => { payload = { ...payload }; rerender(); });
 let payload;
 let failNext = null;
 let pendingWrite;
 vi.mock('../../../lib/logging/Logger.js', () => ({ default: () => log }));
+const React = await import('react');
 vi.mock('../../../lib/hooks/useApiResource.js', () => ({
-  useApiResource: () => ({ data: payload, loading: false, error: null, reload, refresh: reload }),
+  useApiResource: () => {
+    const [, setN] = React.useState(0);
+    rerender = () => setN((n) => n + 1);
+    return { data: payload, loading: false, error: null, reload, refresh: reload };
+  },
   invalidateApiResources: vi.fn(),
 }));
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: async (path, body, method) => {
   calls.push({ path, body, method });
   if (failNext && failNext(path, method)) throw new Error('nope');
+  const cue = /\/cues\/([^/]+)$/.exec(path);
+  if (method === 'PUT' && cue && body?.effect && body.effect !== 'profile') {
+    payload = { ...payload, rows: payload.rows.map((r) => (r.members?.includes(cue[1]) ? { ...r, effect: body.effect, acts: true } : r)) };
+  }
   return pendingWrite ?? {};
 } }));
 vi.mock('../../../../../__app_modules/media/media/browser/playback.mjs', () => ({ default: () => <div /> }));
@@ -146,6 +158,8 @@ describe('review station keys', () => {
     expect(selected()).toBe('cue:w1');
     expect(screen.getByText('Mute applied. Watch it, then press A to approve.')).toBeTruthy();
     expect(log.info).toHaveBeenCalledWith('content_filter.review.effect', expect.objectContaining({ rk: '77', rowId: 'cue:w1', from: 'bleep', to: 'mute' }));
+    // The verdict waits for the audit to confirm the effect.
+    await waitFor(() => expect(log.info).toHaveBeenCalledWith('content_filter.review.effect_settled', expect.objectContaining({ rowId: 'cue:w1', to: 'mute' })));
     press('a');
     await waitFor(() => expect(reviewCalls()).toHaveLength(1));
     expect(reviewCalls()[0].body).toEqual(expect.objectContaining({ verdict: 'approve' }));
@@ -172,6 +186,68 @@ describe('review station keys', () => {
     show(); press('m');
     expect(await screen.findByText('nope')).toBeTruthy();
     expect(cardFx(/^Effect: Bleep/)).toBeTruthy();
+  });
+  it('A during an effect hold waits for the effect (review 2026-11-23)', async () => {
+    let finish;
+    pendingWrite = new Promise((resolve) => { finish = resolve; });
+    show();
+    press('m');
+    await waitFor(() => expect(cardFx(/^Effect: Mute/)).toBeTruthy());
+    press('a');
+    expect(await screen.findByText('Saving the effect: one moment, then approve.')).toBeTruthy();
+    expect(calls).toHaveLength(1);
+    expect(reviewCalls()).toHaveLength(0);
+    expect(log.info).toHaveBeenCalledWith('content_filter.review.verdict_refused', expect.objectContaining({ rk: '77', rowId: 'cue:w1', reason: 'effect-saving' }));
+    pendingWrite = null; finish({});
+  });
+  it('an effect save still lands after the cursor moves on, and the part keeps the new effect', async () => {
+    let finish;
+    pendingWrite = new Promise((resolve) => { finish = resolve; });
+    show();
+    press('m');
+    await waitFor(() => expect(calls).toHaveLength(1));
+    press('ArrowRight');
+    expect(selected()).toBe('cue:w2');
+    pendingWrite = null; finish({});
+    await waitFor(() => expect(log.info).toHaveBeenCalledWith('content_filter.review.effect', expect.objectContaining({ rowId: 'cue:w1', to: 'mute' })));
+    expect(calls[0].body).toEqual({ effect: 'mute' });
+    press('ArrowLeft');
+    expect(selected()).toBe('cue:w1');
+    expect(cardFx(/^Effect: Mute/)).toBeTruthy();
+  });
+  it('a failed click followed by a successful one ends on the success message', async () => {
+    const refresh = vi.spyOn(previewStore, 'refresh').mockResolvedValue(true);
+    let first = true;
+    failNext = (path, method) => { if (method === 'PUT' && first) { first = false; return true; } return false; };
+    show();
+    press('m');
+    await waitFor(() => expect(calls).toHaveLength(1));
+    press('k');
+    await waitFor(() => expect(calls).toHaveLength(2));
+    await waitFor(() => expect(log.info).toHaveBeenCalledWith('content_filter.review.effect', expect.objectContaining({ to: 'skip' })));
+    expect(screen.queryByText('nope')).toBeNull();
+    expect(screen.getByText('Skip applied. Watch it, then press A to approve.')).toBeTruthy();
+    refresh.mockRestore();
+  });
+  it('a saved timing draft releases the cursor before the audit catches up', async () => {
+    show();
+    const start = screen.getByRole('slider', { name: 'Start' });
+    start.focus(); fireEvent.keyDown(start, { key: 'ArrowLeft' }); start.blur();
+    await waitFor(() => expect(log.info).toHaveBeenCalledWith('content_filter.review.timing_autosaved', expect.anything()), { timeout: 4000 });
+    // The static audit still shows the old span, so the draft differs from it: saved, not unsaved.
+    press('ArrowRight');
+    expect(selected()).toBe('cue:w2');
+    expect(log.info).not.toHaveBeenCalledWith('content_filter.review.unsaved_timing_blocked', expect.anything());
+  });
+  it('the effect button stays enabled while a timing autosave is out', async () => {
+    let finish;
+    pendingWrite = new Promise((resolve) => { finish = resolve; });
+    show();
+    const start = screen.getByRole('slider', { name: 'Start' });
+    start.focus(); fireEvent.keyDown(start, { key: 'ArrowLeft' }); start.blur();
+    await waitFor(() => expect(calls).toHaveLength(1), { timeout: 4000 });
+    expect(cardFx(/^Effect:/).hasAttribute('disabled')).toBe(false);
+    pendingWrite = null; finish({});
   });
   it('an effect change whose preview cannot refresh says so instead of replaying the old effect', async () => {
     const jump = vi.spyOn(previewStore, 'jumpToCue');

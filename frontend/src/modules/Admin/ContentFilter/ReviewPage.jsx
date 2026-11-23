@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Anchor, Stack, Text } from '@mantine/core';
 import { useVisibleRefresh } from '../../../lib/hooks/useVisibleRefresh.js';
@@ -50,9 +50,13 @@ function FilmReview({ ratingKey, rowId, owner }) {
   const navigate = useNavigate();
   const url = `${API}/${encodeURIComponent(ratingKey)}/review`;
   // A new signed-in visit needs its own HTTP read even at the same film URL.
-  const { data: served, loading, error, reload, refresh, poll } = useApiResource(url, { label: 'review', logger, dedupe: false });
+  const { data: served, loading, error, reload: reloadResource, refresh, poll } = useApiResource(url, { label: 'review', logger, dedupe: false });
+  // Every reload this page issues is counted, so a hold believes only an answer to a reload made after its save.
+  const reloadGen = useRef(0);
+  const reload = useCallback((...args) => { reloadGen.current += 1; return reloadResource(...args); }, [reloadResource]);
+  const readGen = useCallback(() => reloadGen.current, []);
   // An effect just chosen shows at once, until the re-audit settles it (effectHolds.js).
-  const effectHolds = useEffectHolds(served, { rk: String(ratingKey), logger });
+  const effectHolds = useEffectHolds(served, { rk: String(ratingKey), logger, gen: readGen });
   const { data } = effectHolds;
   const [selected, setSelected] = useState(null);
   const [notice, setNotice] = useState(null);
