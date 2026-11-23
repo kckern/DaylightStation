@@ -2734,6 +2734,8 @@
   }
   &__cue { min-width: 9rem; font-size: 1.1rem; font-weight: 750; color: var(--piano-fg); }
   &[data-armed] &__cue { color: var(--piano-muted); }
+  // The beat loop asks nothing of the child: its cue is a quiet invitation.
+  &[data-loop] &__cue { color: var(--piano-muted); font-weight: 650; }
 }
 @keyframes piano-score-countin-pop {
   from { transform: scale(1.35); opacity: 0.25; }

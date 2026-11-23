@@ -65,7 +65,7 @@ export class GetPianoDesk {
       scoreId, scoreKey, practicedAt: latestActivity(record) || null,
       cover: this.#datastore.sheetMusicCover?.(scoreId) ?? null,
       total: projection.piece.total, silver: projection.piece.silver, gold: projection.piece.gold,
-      pieceSilver: projection.piece.pieceSilver, joins: projection.piece.joins,
+      pieceSilver: projection.piece.pieceSilver, polishReady: projection.piece.polishReady, joins: projection.piece.joins,
       next: next ? { passageId: next.passageId, skill: next.skill, label: next.label, start: next.range.start, end: next.range.end } : null,
       nextGoldPassageId: projection.piece.nextGoldPassageId,
       passages,

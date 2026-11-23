@@ -39,7 +39,7 @@ describe('PianoHomeDesk progress strip', () => {
 
   it('gives each child one card, the piece when it is their latest, and tabs only to a child with both', async () => {
     mount();
-    expect(await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Kid: Lesson 12: Swing' })).toBeNull();
     expect(await screen.findByRole('button', { name: 'Sib: Lesson 12: Swing' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Idle/ })).toBeNull();
@@ -49,30 +49,30 @@ describe('PianoHomeDesk progress strip', () => {
     expect(sib.querySelectorAll('.piano-desk__tab')).toHaveLength(0);
     // The printed title, once on the card's title line (the poster stand-in repeats it).
     await screen.findAllByText('Jesu Joy');
-    expect(screen.getByRole('button', { name: 'Kid: 1 of 3 Silver' }).querySelector('.piano-desk__title').textContent).toBe('Jesu Joy');
+    expect(screen.getByRole('button', { name: 'Kid: 1 of 3 Bronze' }).querySelector('.piano-desk__title').textContent).toBe('Jesu Joy');
   });
 
   it('defaults to the course when it was played after the piece', async () => {
     h.recent.players[0].courses = [{ ...course, lastPlayedAt: '2026-11-19T10:00:00Z' }];
     mount();
     expect(await screen.findByRole('button', { name: 'Kid: Lesson 12: Swing' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Kid: 1 of 3 Silver' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Kid: 1 of 3 Bronze' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Kid: Video lesson' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('swaps the card on a tab press, and opens nothing', async () => {
     const { onOpenPassage, onOpenCourse } = mount();
-    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
-    expect(card.querySelector('.piano-desk__badge').textContent).toBe('Silver next');
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' });
+    expect(card.querySelector('.piano-desk__badge').textContent).toBe('Bronze next');
     fireEvent.click(screen.getByRole('button', { name: 'Kid: Video lesson' }));
     const shown = screen.getByRole('button', { name: 'Kid: Lesson 12: Swing' });
     expect(shown.querySelector('.piano-desk__badge')).toBeNull();
     expect(shown.querySelector('.piano-desk__title').textContent).toBe('Swing');
-    expect(screen.queryByRole('button', { name: 'Kid: 1 of 3 Silver' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Kid: 1 of 3 Bronze' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Kid: Video lesson' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Kid: Sheet music' })).toHaveAttribute('aria-pressed', 'false');
     fireEvent.click(screen.getByRole('button', { name: 'Kid: Sheet music' }));
-    expect(screen.getByRole('button', { name: 'Kid: 1 of 3 Silver' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Kid: 1 of 3 Bronze' })).toBeInTheDocument();
     expect(onOpenPassage).not.toHaveBeenCalled();
     expect(onOpenCourse).not.toHaveBeenCalled();
     // The shown card still opens its own activity.
@@ -90,7 +90,7 @@ describe('PianoHomeDesk progress strip', () => {
     expect(document.querySelector('.piano-desk').hasAttribute('data-tall')).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Kid: Sheet music' }));
     expect(document.querySelector('.piano-desk').hasAttribute('data-tall')).toBe(true);
-    const deck = screen.getByRole('button', { name: 'Kid: 1 of 20 Silver' }).closest('.piano-desk__deck');
+    const deck = screen.getByRole('button', { name: 'Kid: 1 of 20 Bronze' }).closest('.piano-desk__deck');
     const card = deck.querySelector('.piano-desk__card');
     fireEvent.pointerDown(card, { pointerId: 1, clientX: 100, clientY: 50, button: 0 });
     fireEvent.pointerMove(card, { pointerId: 1, clientX: 40, clientY: 50 });
@@ -101,7 +101,7 @@ describe('PianoHomeDesk progress strip', () => {
 
   it('keeps the strip short when no child has a piece needing two rows', async () => {
     mount();
-    await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+    await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' });
     expect(document.querySelector('.piano-desk').hasAttribute('data-tall')).toBe(false);
   });
 
@@ -120,7 +120,7 @@ describe('PianoHomeDesk progress strip', () => {
 
   it('heads each child once, above their cards, never a time', async () => {
     mount();
-    await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+    await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' });
     const panels = [...document.querySelectorAll('.piano-desk__child')];
     expect(panels.map((panel) => panel.querySelector('.piano-desk__name').textContent)).toEqual(['Kid', 'Sib']);
     expect(panels.map((panel) => panel.querySelectorAll('.piano-desk__card').length)).toEqual([1, 1]);
@@ -142,13 +142,13 @@ describe('PianoHomeDesk progress strip', () => {
   it('shows the score poster on a piece card', async () => {
     h.desk.players[0].piece = { ...piece, cover: '/api/cover.jpg' };
     mount();
-    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' });
     expect(card.querySelector('.piano-desk__poster img')).toHaveAttribute('src', '/api/cover.jpg?w=180&h=270');
   });
 
   it('stands in for a piece with no cover with its title', async () => {
     mount();
-    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' });
     expect(card.querySelector('.piano-desk__poster img')).toBeNull();
     await screen.findAllByText('Jesu Joy');
     expect(card.querySelector('.piano-desk__poster[data-stand-in]').textContent).toMatch(/Jesu Joy/);
@@ -157,7 +157,7 @@ describe('PianoHomeDesk progress strip', () => {
   it('swaps a cover that fails to load for the stand-in', async () => {
     h.desk.players[0].piece = { ...piece, cover: '/api/cover.jpg' };
     mount();
-    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' });
     fireEvent.error(card.querySelector('.piano-desk__poster img'));
     expect(card.querySelector('.piano-desk__poster img')).toBeNull();
     expect(card.querySelector('.piano-desk__poster[data-stand-in]')).not.toBeNull();
@@ -179,22 +179,22 @@ describe('PianoHomeDesk progress strip', () => {
       { id: 'c', start: 9, end: 12, state: 'todo', steps: { done: 0, total: 4 } },
     ] };
     mount();
-    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' });
     expect([...card.querySelectorAll('.piano-desk__map i')].map((mark) => mark.hasAttribute('data-faded'))).toEqual([false, true, false]);
   });
 
-  it('draws each passage as its icon: a silver coin, a flower, a tomato, with the next one ringed', async () => {
+  it('draws each passage as its icon: a bronze coin, a flower, a tomato, with the next one ringed', async () => {
     mount();
-    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' });
     const marks = [...card.querySelectorAll('.piano-desk__map i')];
-    expect(marks.map((mark) => mark.querySelector('svg').getAttribute('class') + (mark.querySelector('svg').dataset.metal ?? ''))).toEqual(['coin-iconsilver', 'flower-icon', 'tomato-icon']);
+    expect(marks.map((mark) => mark.querySelector('svg').getAttribute('class') + (mark.querySelector('svg').dataset.metal ?? ''))).toEqual(['coin-icon piano-passage-coin--bronzegold', 'flower-icon', 'tomato-icon']);
     expect(marks.map((mark) => mark.hasAttribute('data-current'))).toEqual([false, true, false]);
   });
 
-  it('badges a piece Silver next, names the bars, and counts Silver over the coins', async () => {
+  it('badges a piece Bronze next, names the bars, and counts Bronze over the coins', async () => {
     mount();
-    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
-    expect(card.querySelector('.piano-desk__badge').textContent).toBe('Silver next');
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' });
+    expect(card.querySelector('.piano-desk__badge').textContent).toBe('Bronze next');
     expect(card.querySelector('.piano-desk__step').textContent).toBe('Bars 6–9');
     const progress = card.querySelector('.piano-desk__progress');
     expect(progress.querySelector('.piano-desk__count [data-level="silver"]').textContent).toBe('1/3');
@@ -207,7 +207,7 @@ describe('PianoHomeDesk progress strip', () => {
   it('adds the coach\'s next skill as what to do in the bars, and leaves it out when there is none', async () => {
     h.desk.players[0].piece = { ...piece, next: { passageId: 'b', skill: 'pulse', label: 'Settle into a beat', start: 5, end: 8 } };
     mount();
-    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' });
     expect(card.querySelector('.piano-desk__skill').textContent).toBe('Settle into a beat');
     // The order down the right column: badge, title, bars, skill, progress.
     expect([...card.querySelector('.piano-desk__text').children].map((el) => el.className.replace('piano-desk__', '')))
@@ -216,14 +216,14 @@ describe('PianoHomeDesk progress strip', () => {
 
   it('draws no skill line when the coach names none', async () => {
     mount();
-    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' });
     expect(card.querySelector('.piano-desk__skill')).toBeNull();
   });
 
   it('keeps seven passages on one row of coins, under the count', async () => {
     h.desk.players[0].piece = { ...piece, total: 7, passages: Array.from({ length: 7 }, (_, index) => ({ id: `p${index}`, start: index * 4, end: index * 4 + 3, state: 'todo' })) };
     mount();
-    const card = await screen.findByRole('button', { name: 'Kid: 1 of 7 Silver' });
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 7 Bronze' });
     expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(7, minmax(0, 23px))');
     expect(card.querySelector('.piano-desk__progress').getAttribute('data-count')).toBe('above');
     expect(card.hasAttribute('data-rows')).toBe(false);
@@ -233,7 +233,7 @@ describe('PianoHomeDesk progress strip', () => {
   it('wraps a longer piece onto two rows and makes every card on the strip taller', async () => {
     h.desk.players[0].piece = { ...piece, total: 20, passages: Array.from({ length: 20 }, (_, index) => ({ id: `p${index}`, start: index * 4, end: index * 4 + 3, state: 'todo' })) };
     mount();
-    const card = await screen.findByRole('button', { name: 'Kid: 1 of 20 Silver' });
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 20 Bronze' });
     expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(10, minmax(0, 15px))');
     expect(card.getAttribute('data-rows')).toBe('2');
     expect(document.querySelector('.piano-desk').hasAttribute('data-tall')).toBe(true);
@@ -241,9 +241,9 @@ describe('PianoHomeDesk progress strip', () => {
 
   it('ends the coin row with the Polish gem, sized like a coin, and badges Diamond next', async () => {
     const coins = piece.passages.map((passage) => ({ ...passage, state: 'gold' }));
-    h.desk.players[0].piece = { ...piece, silver: 3, gold: 3, passages: coins, polish: { gem: true, diamond: false } };
+    h.desk.players[0].piece = { ...piece, silver: 3, gold: 3, pieceSilver: true, polishReady: true, passages: coins, polish: { gem: true, diamond: false } };
     mount();
-    const card = await screen.findByRole('button', { name: 'Kid: 3 of 3 Silver, Polish gem' });
+    const card = await screen.findByRole('button', { name: 'Kid: 3 of 3 Bronze, Polish gem' });
     const map = card.querySelector('.piano-desk__map');
     expect(map.style.gridTemplateColumns).toBe('repeat(3, minmax(0, 30px)) minmax(0, 30px)');
     const stone = map.lastElementChild;
@@ -256,18 +256,18 @@ describe('PianoHomeDesk progress strip', () => {
 
   it('shows the diamond in the gem\'s place, and badges an all-Gold piece Polish next before either', async () => {
     const coins = piece.passages.map((passage) => ({ ...passage, state: 'gold' }));
-    h.desk.players[0].piece = { ...piece, silver: 3, gold: 3, passages: coins, polish: { gem: true, diamond: true } };
+    h.desk.players[0].piece = { ...piece, silver: 3, gold: 3, pieceSilver: true, polishReady: true, passages: coins, polish: { gem: true, diamond: true } };
     mount();
-    const card = await screen.findByRole('button', { name: 'Kid: 3 of 3 Silver, Polish diamond' });
+    const card = await screen.findByRole('button', { name: 'Kid: 3 of 3 Bronze, Polish diamond' });
     expect([...card.querySelectorAll('[data-stone]')].map((stone) => stone.getAttribute('data-stone'))).toEqual(['diamond']);
     expect(card.querySelector('.piano-desk__badge').textContent).toBe('Diamond');
   });
 
   it('draws no stone before the gem, and keeps the row its usual width', async () => {
     const coins = piece.passages.map((passage) => ({ ...passage, state: 'gold' }));
-    h.desk.players[0].piece = { ...piece, silver: 3, gold: 3, passages: coins, polish: { gem: false, diamond: false } };
+    h.desk.players[0].piece = { ...piece, silver: 3, gold: 3, pieceSilver: true, polishReady: true, passages: coins, polish: { gem: false, diamond: false } };
     mount();
-    const card = await screen.findByRole('button', { name: 'Kid: 3 of 3 Silver' });
+    const card = await screen.findByRole('button', { name: 'Kid: 3 of 3 Bronze' });
     expect(card.querySelector('[data-stone]')).toBeNull();
     expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(3, minmax(0, 36px))');
     expect(card.querySelector('.piano-desk__progress').getAttribute('data-count')).toBe('beside');
@@ -276,9 +276,9 @@ describe('PianoHomeDesk progress strip', () => {
 
   it('sends an all-Gold piece to Polish: the whole piece, no passage ringed', async () => {
     const coins = piece.passages.map((passage) => ({ ...passage, state: 'gold' }));
-    h.desk.players[0].piece = { ...piece, silver: 3, gold: 3, passages: coins, polish: { gem: false, diamond: false } };
+    h.desk.players[0].piece = { ...piece, silver: 3, gold: 3, pieceSilver: true, polishReady: true, passages: coins, polish: { gem: false, diamond: false } };
     const { onOpenPassage } = mount();
-    const card = await screen.findByRole('button', { name: 'Kid: 3 of 3 Silver' });
+    const card = await screen.findByRole('button', { name: 'Kid: 3 of 3 Bronze' });
     expect(card.querySelector('.piano-desk__step').textContent).toBe('Whole piece');
     expect(card.querySelector('.piano-desk__map [data-current]')).toBeNull();
     fireEvent.click(card);
@@ -289,7 +289,7 @@ describe('PianoHomeDesk progress strip', () => {
     h.desk.players[0].piece = { ...piece, total: 20, polish: { gem: true, diamond: false },
       passages: Array.from({ length: 20 }, (_, index) => ({ id: `p${index}`, start: index * 4, end: index * 4 + 3, state: 'gold' })) };
     mount();
-    const card = await screen.findByRole('button', { name: 'Kid: 1 of 20 Silver, Polish gem' });
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 20 Bronze, Polish gem' });
     const stone = card.querySelector('[data-stone]');
     expect(stone.style.gridColumn).toBe('11');
     expect(stone.style.gridRow).toBe('1 / span 2');
@@ -304,7 +304,7 @@ describe('PianoHomeDesk progress strip', () => {
 
   it('opens the child next passage or course', async () => {
     const { onOpenPassage, onOpenCourse } = mount();
-    fireEvent.click(await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' }));
     expect(onOpenPassage).toHaveBeenCalledWith('kid', piece.scoreId, 'b');
     fireEvent.click(await screen.findByRole('button', { name: 'Sib: Lesson 12: Swing' }));
     expect(onOpenCourse).toHaveBeenCalledWith('sib', 'plex:9', 'plex:91');
@@ -312,21 +312,21 @@ describe('PianoHomeDesk progress strip', () => {
 
   it('rechecks progress every time the home screen opens', async () => {
     const first = render(<PianoHomeDesk />);
-    await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+    await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' });
     first.unmount();
     h.desk = { players: [{ userId: 'kid', name: 'Kid', piece: { ...piece, silver: 2 } }] };
     render(<PianoHomeDesk />);
-    expect(await screen.findByRole('button', { name: 'Kid: 2 of 3 Silver' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Kid: 2 of 3 Bronze' })).toBeInTheDocument();
   });
 
   it('disables every card and tab while closed', async () => {
     const { onOpenPassage } = mount({ disabled: true });
-    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' });
     expect(card).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Kid: Sheet music' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Kid: Video lesson' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Kid: Video lesson' }));
-    expect(screen.getByRole('button', { name: 'Kid: 1 of 3 Silver' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Kid: 1 of 3 Bronze' })).toBeInTheDocument();
     fireEvent.click(card);
     expect(onOpenPassage).not.toHaveBeenCalled();
   });
@@ -349,7 +349,7 @@ describe('PianoHomeDesk progress strip', () => {
     h.recent.players[1].courses = [{ ...course, next: { ...course.next, title: `Lesson 101 | ${long}` } }];
     mount();
     const sib = await screen.findByRole('button', { name: `Sib: Lesson 101 | ${long}` });
-    const shortCard = screen.getByRole('button', { name: 'Kid: 1 of 3 Silver' });
+    const shortCard = screen.getByRole('button', { name: 'Kid: 1 of 3 Bronze' });
     expect(sib.querySelector('.piano-desk__title').textContent).toBe(long);
     expect(sib.querySelector('.piano-desk__step').textContent).toBe('Lesson 101');
     for (const card of [sib, shortCard]) {
@@ -372,15 +372,15 @@ describe('PianoHomeDesk progress strip', () => {
 
     it('switches on a swipe left or right, wrapping, and opens nothing', async () => {
       const { onOpenPassage, onOpenCourse } = mount();
-      await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
-      drag(deckOf('Kid: 1 of 3 Silver'), -60);
+      await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' });
+      drag(deckOf('Kid: 1 of 3 Bronze'), -60);
       expect(screen.getByRole('button', { name: 'Kid: Lesson 12: Swing' })).toHaveAttribute('data-enter', 'left');
       expect(screen.getByRole('button', { name: 'Kid: Video lesson' })).toHaveAttribute('aria-pressed', 'true');
       expect(h.logs.filter((log) => log.event === 'piano.desk.swipe').at(-1).data).toEqual({ userId: 'kid', from: 'piece', to: 'course' });
       // Past the last card, a swipe left wraps to the first.
       drag(deckOf('Kid: Lesson 12: Swing'), -60);
-      expect(screen.getByRole('button', { name: 'Kid: 1 of 3 Silver' })).toBeInTheDocument();
-      drag(deckOf('Kid: 1 of 3 Silver'), 60);
+      expect(screen.getByRole('button', { name: 'Kid: 1 of 3 Bronze' })).toBeInTheDocument();
+      drag(deckOf('Kid: 1 of 3 Bronze'), 60);
       expect(screen.getByRole('button', { name: 'Kid: Lesson 12: Swing' })).toHaveAttribute('data-enter', 'right');
       expect(onOpenPassage).not.toHaveBeenCalled();
       expect(onOpenCourse).not.toHaveBeenCalled();
@@ -388,19 +388,19 @@ describe('PianoHomeDesk progress strip', () => {
 
     it('ignores a short or mostly vertical drag, which opens nothing either', async () => {
       const { onOpenPassage } = mount();
-      await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
-      drag(deckOf('Kid: 1 of 3 Silver'), -30);
-      expect(screen.getByRole('button', { name: 'Kid: 1 of 3 Silver' })).toBeInTheDocument();
-      drag(deckOf('Kid: 1 of 3 Silver'), -50, 80, { click: false });
-      expect(screen.getByRole('button', { name: 'Kid: 1 of 3 Silver' })).toBeInTheDocument();
+      await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' });
+      drag(deckOf('Kid: 1 of 3 Bronze'), -30);
+      expect(screen.getByRole('button', { name: 'Kid: 1 of 3 Bronze' })).toBeInTheDocument();
+      drag(deckOf('Kid: 1 of 3 Bronze'), -50, 80, { click: false });
+      expect(screen.getByRole('button', { name: 'Kid: 1 of 3 Bronze' })).toBeInTheDocument();
       // A short sideways drag is still a drag, so its click is swallowed.
       expect(onOpenPassage).not.toHaveBeenCalled();
     });
 
     it('still opens the card on a plain tap after a swipe', async () => {
       const { onOpenCourse } = mount();
-      await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
-      drag(deckOf('Kid: 1 of 3 Silver'), -60);
+      await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' });
+      drag(deckOf('Kid: 1 of 3 Bronze'), -60);
       const card = screen.getByRole('button', { name: 'Kid: Lesson 12: Swing' });
       fireEvent.pointerDown(card, { pointerId: 2, clientX: 10, clientY: 10, button: 0 });
       fireEvent.pointerUp(card, { pointerId: 2, clientX: 11, clientY: 10 });
@@ -410,9 +410,9 @@ describe('PianoHomeDesk progress strip', () => {
 
     it('does not swipe a child with one card, nor any card while closed', async () => {
       mount({ disabled: true });
-      await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
-      drag(deckOf('Kid: 1 of 3 Silver'), -60, 0, { click: false });
-      expect(screen.getByRole('button', { name: 'Kid: 1 of 3 Silver' })).toBeInTheDocument();
+      await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' });
+      drag(deckOf('Kid: 1 of 3 Bronze'), -60, 0, { click: false });
+      expect(screen.getByRole('button', { name: 'Kid: 1 of 3 Bronze' })).toBeInTheDocument();
       drag(deckOf('Sib: Lesson 12: Swing'), -60, 0, { click: false });
       expect(screen.getByRole('button', { name: 'Sib: Lesson 12: Swing' })).toBeInTheDocument();
       expect(deckOf('Sib: Lesson 12: Swing').hasAttribute('data-swipe')).toBe(false);
@@ -420,8 +420,8 @@ describe('PianoHomeDesk progress strip', () => {
 
     it('follows the finger a little while dragging, then lets go', async () => {
       mount();
-      await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
-      const deck = deckOf('Kid: 1 of 3 Silver');
+      await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' });
+      const deck = deckOf('Kid: 1 of 3 Bronze');
       const card = deck.querySelector('.piano-desk__card');
       fireEvent.pointerDown(card, { pointerId: 3, clientX: 100, clientY: 50, button: 0 });
       fireEvent.pointerMove(card, { pointerId: 3, clientX: 80, clientY: 50 });
@@ -435,9 +435,9 @@ describe('PianoHomeDesk progress strip', () => {
     });
     it('never eats the next tap: a drag with no click after it, then a tap at once, opens', async () => {
       const { onOpenCourse } = mount();
-      await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+      await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' });
       // The Android WebView sends no click after a drag.
-      drag(deckOf('Kid: 1 of 3 Silver'), -60, 0, { click: false });
+      drag(deckOf('Kid: 1 of 3 Bronze'), -60, 0, { click: false });
       const card = screen.getByRole('button', { name: 'Kid: Lesson 12: Swing' });
       fireEvent.pointerDown(card, { pointerId: 5, clientX: 50, clientY: 50, button: 0 });
       fireEvent.pointerUp(card, { pointerId: 5, clientX: 50, clientY: 50 });
@@ -447,7 +447,7 @@ describe('PianoHomeDesk progress strip', () => {
 
     it('opens on a jittery tap that wanders 10px', async () => {
       const { onOpenPassage } = mount();
-      const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+      const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' });
       fireEvent.pointerDown(card, { pointerId: 6, clientX: 100, clientY: 50, button: 0 });
       fireEvent.pointerMove(card, { pointerId: 6, clientX: 110, clientY: 52 });
       fireEvent.pointerUp(card, { pointerId: 6, clientX: 110, clientY: 52 });
@@ -457,7 +457,7 @@ describe('PianoHomeDesk progress strip', () => {
 
     it('also opens after a small sideways wobble short of half a swipe', async () => {
       const { onOpenPassage } = mount();
-      const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+      const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' });
       fireEvent.pointerDown(card, { pointerId: 7, clientX: 100, clientY: 50, button: 0 });
       fireEvent.pointerMove(card, { pointerId: 7, clientX: 115, clientY: 50 });
       fireEvent.pointerUp(card, { pointerId: 7, clientX: 115, clientY: 50 });
@@ -467,14 +467,14 @@ describe('PianoHomeDesk progress strip', () => {
 
     it('ignores a second finger, and a lost capture ends the drag', async () => {
       mount();
-      const deck = (await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' })).closest('.piano-desk__deck');
+      const deck = (await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' })).closest('.piano-desk__deck');
       const card = deck.querySelector('.piano-desk__card');
       fireEvent.pointerDown(card, { pointerId: 8, clientX: 100, clientY: 50, button: 0 });
       // A second finger lands and swipes; only the first finger counts.
       fireEvent.pointerDown(card, { pointerId: 9, clientX: 200, clientY: 50, button: 0 });
       fireEvent.pointerMove(card, { pointerId: 9, clientX: 100, clientY: 50 });
       fireEvent.pointerUp(card, { pointerId: 9, clientX: 100, clientY: 50 });
-      expect(screen.getByRole('button', { name: 'Kid: 1 of 3 Silver' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Kid: 1 of 3 Bronze' })).toBeInTheDocument();
       fireEvent.pointerMove(card, { pointerId: 8, clientX: 70, clientY: 50 });
       expect(deck.hasAttribute('data-dragging')).toBe(true);
       // The card losing touch's implicit capture to the deck does not end the drag...

@@ -474,3 +474,37 @@ describe('a missed cue goes back to the count', () => {
     expect(events('piano.exercise-cue-restart-capped')).toHaveLength(1);
   });
 });
+
+describe('"Settle into a beat" shows its beat loop', () => {
+  const pulseRequirement = { mode: 'metronome', rubric: { id: 'learn-passage-v1', version: '1', criteria: { completeness: 1, cleanliness: 0.8 } } };
+  async function mountPulse() {
+    current = props({ practiceMode: 'metronome', practiceRequirement: pulseRequirement });
+    view = render(<ExerciseRun {...current} />);
+    await screen.findByText(/Play the first note to begin/);
+    vi.useFakeTimers({ now: Date.now() });
+    // The loop's interval was started on real timers: a pause and resume gives it a fake one.
+    act(() => { current = { ...current, paused: true }; rerender(); });
+    act(() => { current = { ...current, paused: false }; rerender(); });
+  }
+  const loop = () => document.querySelector('.piano-learn-countin[data-loop]');
+
+  it('runs the beat marker before anything is played, and keeps nothing waiting', async () => {
+    await mountPulse();
+    advance(400); // the first click is booked a moment after the run is ready
+    expect(loop()).not.toBeNull();
+    expect(loop().querySelectorAll('.piano-learn-countin__pip')).toHaveLength(4);
+    expect(loop().querySelector('.piano-learn-countin__pip.is-accent').textContent).toBe('1');
+    expect(loop().querySelector('.piano-learn-countin__cue').textContent).toBe('Play when you feel the beat');
+    const lit = () => loop().querySelector('.piano-learn-countin__pip.is-lit')?.textContent;
+    const seen = new Set();
+    for (let step = 0; step < 24; step += 1) { advance(250); seen.add(lit()); }
+    expect([...seen].filter(Boolean).sort()).toEqual(['1', '2', '3', '4']);
+    expect(run()).toHaveAttribute('data-phase', 'ready');
+    expect(document.querySelector('.piano-exercise-run__result')).toBeNull();
+  });
+
+  it('is not on a timed (cued) take, which has its count-in', async () => {
+    await mount();
+    expect(loop()).toBeNull();
+  });
+});

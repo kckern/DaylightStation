@@ -28,7 +28,8 @@ export function relativeTime(iso, now = Date.now()) {
 
 /** The passage a piece card points at, and what its button would do. */
 /** An all-Gold piece's next step is a whole-piece Polish run, not a passage. */
-export const piecePolishing = (piece) => piece?.total > 0 && piece.gold >= piece.total;
+// Polish is the whole piece in time: open once every passage and every join below the top join is Gold.
+export const piecePolishing = (piece) => piece?.total > 0 && piece.polishReady === true;
 
 export function pieceFocus(piece) {
   const byId = (id) => piece.passages.find((passage) => passage.id === id) ?? null;
@@ -92,20 +93,22 @@ export const lessonTitle = (title) => {
 };
 
 /**
- * Why a piece card is on the strip, as its badge: Silver next, Gold next, then
- * the Polish goal once the piece is all Gold (Polish next, Diamond next after
- * the gem, Diamond after the diamond). Course cards have no badge: the next
+ * Why a piece card is on the strip, as its badge: Bronze next (the passages), Join next (played
+ * through), Gold next, then the Polish goal once Polish is open (Polish next, Diamond next after
+ * a gem a piece already holds, Diamond after the diamond). Course cards have no badge: the next
  * episode's still says which lesson is next.
  */
 export function cardBadge(card) {
-  const { silver, gold, total, polish } = card.piece;
-  if (total > 0 && gold >= total) {
+  const { silver, total, polish, pieceSilver } = card.piece;
+  if (piecePolishing(card.piece)) {
     if (polish?.diamond === true) return { level: 'diamond', label: 'Diamond' };
     if (polish?.gem === true) return { level: 'diamond', label: 'Diamond next' };
     return { level: 'gold', label: 'Polish next' };
   }
-  if (total > 0 && silver >= total) return { level: 'gold', label: 'Gold next' };
-  return { level: 'silver', label: 'Silver next' };
+  // Without the join fields (an older desk payload) every Bronze passage was the piece played through.
+  if (pieceSilver === true || (pieceSilver === undefined && total > 0 && silver >= total)) return { level: 'gold', label: 'Gold next' };
+  if (total > 0 && silver >= total) return { level: 'silver', label: 'Join next' };
+  return { level: 'silver', label: 'Bronze next' };
 }
 
 /**
@@ -203,7 +206,8 @@ export const mapColumns = (count, extra = 0) => coinLayout(count, extra).columns
 export const mapRows = (count, extra = 0) => coinLayout(count, extra).rows;
 export const coinSize = (count, extra = 0) => coinLayout(count, extra).size;
 
-export const pieceCount = (piece) => `${piece.silver} of ${piece.total} Silver`;
+// A passage's first certificate is Bronze; Silver is the piece played through (its joins).
+export const pieceCount = (piece) => `${piece.silver} of ${piece.total} Bronze`;
 
 /** A piece card's name for a screen reader: the Silver count, and the Polish stone when it holds one. */
 export const pieceLabel = (name, piece) => {

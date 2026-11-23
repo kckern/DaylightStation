@@ -48,6 +48,7 @@ import { resolveClickLead, logClickAnchored } from '../SheetMusic/clickLead.js';
 import { audioContext } from '../SheetMusic/click.js';
 import CountInOverlay from '../SheetMusic/CountInOverlay.jsx';
 import CountUpOverlay from '../SheetMusic/CountUpOverlay.jsx';
+import { beatLoopPosition, BEAT_LOOP_LEAD_MS } from './beatLoop.js';
 import { exerciseCountInPlan, countdownPresentation, countUpPresentation, askPace, countInSentence } from '../SheetMusic/countIn.js';
 import { detectEntryShift, lateEntryWaitUntil, entryShiftSentence, entryShiftReason, missedCue, missedCueDueAt } from '../../../performance/entryShift.js';
 import Icon from '../../../ui/icons/Icon.jsx';
@@ -493,6 +494,9 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   // than as a timestamp inside a ref nothing re-runs on.
   const [noteOnTick, setNoteOnTick] = useState(0);
   const [prePulseStopped, setPrePulseStopped] = useState(false);
+  // The beat loop's grid: the epoch ms of its first click, fixed once per run (see `learnPulse`).
+  const [pulseAnchor, setPulseAnchor] = useState(null);
+  const [pulseNow, setPulseNow] = useState(() => Date.now());
   const [afterStallHint, setAfterStallHint] = useState(false);
   const previousNotesRef = useRef([]);
   // The last held set actually handed to the engine. The held matcher grades the
@@ -730,6 +734,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     // time, not the remainder of the last one's patience.
     setNoteOnTick(0);
     setPrePulseStopped(false);
+    setPulseAnchor(null);
     setRuntime(next);
   }, [buildAttempt, traceEvent]);
 
@@ -1393,13 +1398,35 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     logClickAnchored(clickLead, { anchorMs: clickAnchorMs, assessmentId: assessmentIdRef.current ?? null });
   }, [clickAnchorMs, clickLead]);
 
+  /**
+   * THE BEAT LOOP ("Settle into a beat", a click-guided Learn passage). The click runs on its own and the
+   * band above the score steps a marker through the bars' beats, beat 1 accented, so the pulse can be SEEN
+   * before anything is asked of the child. Nothing waits for them: the first note starts the take whenever
+   * they like, and the loop keeps going under it. Both the click and the marker read one anchor, fixed
+   * the moment the run is ready, so what is lit is what is heard.
+   */
+  const learnPulse = surface === 'learn-lab' && Boolean(score) && snapshot.mode === 'metronome';
+  const pulseLive = learnPulse && !snapshot.paused && ((prePulse && !prePulseStopped) || snapshot.status === 'running');
+  useEffect(() => {
+    if (!learnPulse || !runtime || pulseAnchor != null || !(prePulse && !prePulseStopped)) return;
+    setPulseAnchor(Date.now() + BEAT_LOOP_LEAD_MS);
+  }, [learnPulse, runtime, pulseAnchor, prePulse, prePulseStopped]);
+  useEffect(() => {
+    if (!pulseLive) return undefined;
+    const timer = globalThis.setInterval(() => setPulseNow(Date.now()), 60);
+    return () => globalThis.clearInterval(timer);
+  }, [pulseLive]);
+  const pulsePeriodMs = countIn?.pulseBpm > 0 ? 60000 / countIn.pulseBpm : clickBpm > 0 ? 60000 / clickBpm : null;
+  const beatLoop = pulseLive && pulseAnchor != null ? beatLoopPosition({ anchorMs: pulseAnchor, nowMs: pulseNow, periodMs: pulsePeriodMs, beats: beatsPerMeasure }) : null;
+
   useMetronomeClick({
-    anchorMs: clickAnchorMs,
+    anchorMs: learnPulse ? pulseAnchor ?? undefined : clickAnchorMs,
+    beatsPerBar: learnPulse ? beatsPerMeasure : undefined,
     gain: clickGain,
     leadMs: clickLead.leadMs,
     // The click keeps going while a late entry's last note is awaited: the child
     // is still playing to it.
-    enabled: !snapshot.paused && (((snapshot.status === 'running' || awaitingTimeline || awaitingEntry) && ['metronome', 'cued'].includes(snapshot.mode))
+    enabled: !snapshot.paused && (!learnPulse || pulseAnchor != null) && (((snapshot.status === 'running' || awaitingTimeline || awaitingEntry) && ['metronome', 'cued'].includes(snapshot.mode))
       || (prePulse && !prePulseStopped)),
     // The tempo the attempt is GRADED at, which is not always `clickBpm`: a
     // cued rung carries no `gates.pace`, so a tempo-less single-event instance
@@ -2025,6 +2052,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
         {beatPulse != null && <span key={beatInMeasure == null ? beatPulse : `${timeline.measureIndex}:${beatInMeasure}`} className="piano-exercise-run__beat" aria-hidden="true">
           <span className="piano-exercise-run__beat-marker">{beatInMeasure ?? beatPulse}</span>
         </span>}
+        {learnPulse && <CountUpOverlay loop active={Boolean(beatLoop)} clicks={beatLoop?.beats} count={beatLoop?.beat} last={false} />}
         {learnCued
           ? <CountUpOverlay active={Boolean(countUp)} clicks={countUp?.clicks} count={countUp?.count} last={countUp?.last} />
           : <CountInOverlay active={(countingDown && countInBeat != null) || playHandoff}

@@ -39,7 +39,7 @@ describe('deskModel', () => {
     expect(pieceFocus(piece).id).toBe('b');
     expect(pieceFocus({ ...piece, next: null }).id).toBe('a');
     expect(passageBars(pieceFocus(piece))).toBe('Bars 6–9');
-    expect(pieceCount(piece)).toBe('1 of 2 Silver');
+    expect(pieceCount(piece)).toBe('1 of 2 Bronze');
   });
   it('writes coarse relative times', () => {
     expect(relativeTime('2026-11-18T10:00:00Z', Date.parse('2026-11-18T12:00:00Z'))).toBe('2h ago');
@@ -53,12 +53,13 @@ describe('deskModel', () => {
     expect(lessonTitle(null)).toBe('');
   });
   it('badges a card by why it is there', () => {
-    expect(cardBadge({ kind: 'piece', piece: { silver: 1, gold: 0, total: 3 } })).toEqual({ level: 'silver', label: 'Silver next' });
+    expect(cardBadge({ kind: 'piece', piece: { silver: 1, gold: 0, total: 3 } })).toEqual({ level: 'silver', label: 'Bronze next' });
+    expect(cardBadge({ kind: 'piece', piece: { silver: 3, gold: 0, total: 3, pieceSilver: false } })).toEqual({ level: 'silver', label: 'Join next' });
     expect(cardBadge({ kind: 'piece', piece: { silver: 3, gold: 1, total: 3 } })).toEqual({ level: 'gold', label: 'Gold next' });
-    expect(cardBadge({ kind: 'piece', piece: { silver: 3, gold: 3, total: 3 } })).toEqual({ level: 'gold', label: 'Polish next' });
+    expect(cardBadge({ kind: 'piece', piece: { silver: 3, gold: 3, total: 3, pieceSilver: true, polishReady: true } })).toEqual({ level: 'gold', label: 'Polish next' });
   });
   it('once a piece is all Gold, badges the Polish goal: Polish next, Diamond next, then Diamond', () => {
-    const allGold = { silver: 3, gold: 3, total: 3 };
+    const allGold = { silver: 3, gold: 3, total: 3, pieceSilver: true, polishReady: true };
     expect(cardBadge({ kind: 'piece', piece: { ...allGold, polish: { gem: false, diamond: false } } })).toEqual({ level: 'gold', label: 'Polish next' });
     expect(cardBadge({ kind: 'piece', piece: { ...allGold, polish: { gem: true, diamond: false } } })).toEqual({ level: 'diamond', label: 'Diamond next' });
     expect(cardBadge({ kind: 'piece', piece: { ...allGold, polish: { gem: true, diamond: true } } })).toEqual({ level: 'diamond', label: 'Diamond' });
@@ -76,11 +77,11 @@ describe('deskModel', () => {
   expect(nextStep({ kind: 'course', course: { completed: 4, next: { title: 'Lesson 3', position: 5 } } })).toBe('Lesson 3');
   });
   it('names the whole piece as the next step once every passage is Gold', () => {
-    const gold = { total: 3, silver: 3, gold: 3, passages: [] };
+    const gold = { total: 3, silver: 3, gold: 3, polishReady: true, passages: [] };
     expect(piecePolishing(gold)).toBe(true);
-    expect(piecePolishing({ ...gold, gold: 2 })).toBe(false);
+    expect(piecePolishing({ ...gold, polishReady: false })).toBe(false);
     expect(nextStep({ kind: 'piece', piece: gold, focus: { start: 0, end: 3 } })).toBe('Whole piece');
-    expect(nextStep({ kind: 'piece', piece: { ...gold, gold: 0 }, focus: { start: 0, end: 3 } })).toBe('Bars 1–4');
+    expect(nextStep({ kind: 'piece', piece: { ...gold, gold: 0, polishReady: false }, focus: { start: 0, end: 3 } })).toBe('Bars 1–4');
   });
   it('never gives a longer piece bigger coins, with or without a Polish stone', () => {
     for (const extra of [0, 1]) {
@@ -122,7 +123,7 @@ describe('deskModel', () => {
     expect(nextSkill({ kind: 'piece', piece })).toBe('Settle into a beat');
     expect(nextSkill({ kind: 'piece', piece: { ...piece, next: { passageId: 'a' } } })).toBe('');
     expect(nextSkill({ kind: 'piece', piece: { ...piece, next: null } })).toBe('');
-    expect(nextSkill({ kind: 'piece', piece: { ...piece, gold: 3 } })).toBe('');
+    expect(nextSkill({ kind: 'piece', piece: { ...piece, gold: 3, polishReady: true } })).toBe('');
     expect(nextSkill({ kind: 'course', course: {} })).toBe('');
   });
   it('numbers the next lesson on its own, for the course card', () => {
@@ -141,9 +142,9 @@ describe('deskModel', () => {
     expect(swipeTarget([{ kind: 'piece' }], 'piece', 'left')).toBeNull();
   });
   it('names a piece card with its Polish stone for a screen reader', () => {
-    expect(pieceLabel('Kid', { silver: 3, total: 3 })).toBe('Kid: 3 of 3 Silver');
-    expect(pieceLabel('Kid', { silver: 3, total: 3, polish: { gem: true, diamond: false } })).toBe('Kid: 3 of 3 Silver, Polish gem');
-    expect(pieceLabel('Kid', { silver: 3, total: 3, polish: { gem: true, diamond: true } })).toBe('Kid: 3 of 3 Silver, Polish diamond');
+    expect(pieceLabel('Kid', { silver: 3, total: 3 })).toBe('Kid: 3 of 3 Bronze');
+    expect(pieceLabel('Kid', { silver: 3, total: 3, polish: { gem: true, diamond: false } })).toBe('Kid: 3 of 3 Bronze, Polish gem');
+    expect(pieceLabel('Kid', { silver: 3, total: 3, polish: { gem: true, diamond: true } })).toBe('Kid: 3 of 3 Bronze, Polish diamond');
   });
   it('shows the chosen activity, else the most recent one', () => {
     const pieceCard = { kind: 'piece', at: '2026-11-18T10:00:00Z' };

@@ -188,6 +188,19 @@ describe('acknowledged piano coaching', () => {
       expect(notes).toHaveLength(1);
     });
 
+    it('logs the takes a passage cost to reach Bronze, and marks a join', async () => {
+      const { info, service, take } = setup();
+      await service.record('learner4', SCORE, take('bronze-a1', 'a', 'right'));
+      await service.record('learner4', SCORE, take('bronze-a2', 'a', 'silver'));
+      await service.record('learner4', SCORE, take('bronze-b', 'b', 'silver'));
+      await service.record('learner4', SCORE, take('join', 'join:a:b', 'silver'));
+      const certified = info.filter(([name]) => name === 'piano.learn.certified').map(([, data]) => data);
+      expect(certified.find((entry) => entry.passageId === 'a')).toMatchObject({ level: 'silver', takes: 2 });
+      expect(certified.find((entry) => entry.passageId === 'b')).toMatchObject({ level: 'silver', takes: 1 });
+      expect(certified.find((entry) => entry.passageId === 'join:a:b')).toMatchObject({ level: 'silver', join: true });
+      expect(certified.find((entry) => entry.passageId === 'join:a:b')).not.toHaveProperty('takes');
+    });
+
     it('notes Gold when a tempo take finishes every passage, and Silver only with the final join', async () => {
       const { notes, service, take } = setup();
       // Score tempo is earned on two passing takes out of three.

@@ -313,7 +313,7 @@ describe('ScorePlayer — approved Learn file (sidecar)', () => {
  const XML = '<score/>';
  const SEGMENTS = [{ id: 'a', start: 0, end: 0, name: 'Opening' }, { id: 'b', start: 1, end: 1 }];
  const setup = () => {
-  h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
+  h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: { certification: { testOutFirst: false } } } };
   h.layoutExtras = { measures: [{ number: 1, firstStep: 0, lastStep: 1 }, { number: 2, firstStep: 2, lastStep: 3 }],
     measureBounds: [{ left: 80, right: 190, top: 10, bottom: 210 }, { left: 190, right: 310, top: 10, bottom: 210 }] };
  };
@@ -356,13 +356,13 @@ describe('ScorePlayer — approved Learn file (sidecar)', () => {
 
 describe('ScorePlayer — guided Learn composition', () => {
  const setup = () => {
-  h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
+  h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: { certification: { testOutFirst: false } } } };
   h.layoutExtras = { measures: [{ number: 1, firstStep: 0, lastStep: 1 }, { number: 2, firstStep: 2, lastStep: 3 }],
     measureBounds: [{ left: 80, right: 190, top: 10, bottom: 210 }, { left: 190, right: 310, top: 10, bottom: 210 }] };
  };
  it('opens a deep link straight on the drill surface, at the current step', () => {
   setup(); renderPlayer('/?learnPassage=m0-1&learnRung=right');
-  expect(h.learnLabProps.coachingTask).toMatchObject({ passageId: 'm0-1', skill: 'silver' });
+  expect(h.learnLabProps.coachingTask).toMatchObject({ passageId: 'm0-1', skill: 'right' });
   expect(h.learnLabProps.segment.barLabel).toBe('Bars 1–2');
   expect(h.learnLabProps.drill.projection.steps).toHaveLength(11);
   expect(screen.getByRole('navigation', { name: 'Passages in this piece' })).toHaveAttribute('data-bare', 'true');
@@ -373,7 +373,7 @@ describe('ScorePlayer — guided Learn composition', () => {
   expect(screen.getByRole('navigation', { name: 'Passages in this piece' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /^0 of \d+ Bronze\. Open the passage board$/ })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Practice bars 1–2' }));
-  expect(h.learnLabProps.coachingTask.parts).toEqual(['rh', 'lh']);
+  expect(h.learnLabProps.coachingTask.parts).toEqual(['rh']);
   fireEvent.click(screen.getByRole('button', { name: 'Complete rung' }));
   // A pass is the drill's own rep card, with the next step already under it.
   await waitFor(() => expect(h.learnLabProps.card).toMatchObject({ setIndex: 1, setClear: true, next: { key: 'Left hand' } }));
@@ -406,7 +406,7 @@ describe('ScorePlayer — guided Learn composition', () => {
   expect(screen.getByRole('dialog', { name: 'Passage demonstration' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Stop listening' }));
   expect(screen.getByRole('button', { name: 'Listen' })).toBeInTheDocument();
-  expect(h.learnLabProps.coachingTask.skill).toBe('silver');
+  expect(h.learnLabProps.coachingTask.skill).toBe('right');
  });
  it('opens a score on its passages when the roadmap is on, unless the household names a mode', () => {
   const leftInListen = () => window.localStorage.setItem('daylight.piano.sm.files:mary.musicxml', JSON.stringify({ v: 1, mode: 'listen' }));
@@ -2026,7 +2026,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     await act(async () => { vi.advanceTimersByTime(50); }); // → onDone, and the reward answer
   };
 
-  it('a completed run is reported to the server for the Polish gem, and a new diamond is announced', async () => {
+  it('a completed run is reported to the server to the server, with whether every measure was green, and a new diamond is announced', async () => {
     h.layoutExtras = tierFixture(3, 1);
     h.practice = { polish: { both: { full: 100 } } }; // not a better best: still reported
     h.recordPolishRun.mockImplementation(async () => ({ gem: true, diamond: true, newGem: false, newDiamond: true, reason: 'qualified' }));
@@ -2039,7 +2039,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     expect(h.recordPolishRun).toHaveBeenCalledTimes(1);
     expect(h.recordPolishRun.mock.calls[0][0]).toEqual({
       scoreId: expect.any(String), tempoMult: 1, metronome: true, completed: true, mixed: false,
-      parts: [0], activeParts: [0], base: 100,
+      parts: [0], activeParts: [0], base: 100, allGreen: true,
     });
     expect(screen.getByRole('status')).toHaveTextContent('Diamond earned!');
     expect(screen.queryByText('Gem earned!')).toBeNull();

@@ -451,16 +451,53 @@ unpaced take), `piano.learn.coach.pick`, `piano.learn.coach.skip` (see
 `level`, `passages`, `sounded`; logged as the verdict lands), and `piano.learn.rail.select` with
 `source: learn-rail|learn-board`.
 
-### Silver and Gold
+### Bronze, Silver, Gold and Diamond (the learning program)
 
-Each passage has two separate certifications. **Silver** certifies the notes and
-moves the learner on. **Gold** certifies playing with the metronome at score tempo.
-Gold is optional and never changes the recommended next step. Passing Gold also
-grants Silver.
+A piece is learned in passages (the admin-approved Learn segments) and then played
+through as joins. Stored values keep their old names (`silver`, `gold`); what a
+child sees is:
 
-The recommendation is the first unfinished Silver step in the earliest passage
-without Silver. A Silver drill in progress comes first. Gold work and reviews keep
-their own resume slot. When every passage has Silver, the score offers Gold.
+| Unit | Own pace (notes) | With the click (timing) |
+|---|---|---|
+| Passage | **Bronze** (stored `silver`) | **Gold** |
+| Join | **Silver** | **Gold** |
+| Final join (the whole piece) | **Piece Silver** | **Diamond**, played in Polish |
+
+**Joins** are plan segments the coach derives itself (`kind: 'join'`, built by
+`buildJoinTree` in `shared/music/learnCoach.mjs`; nobody edits them): adjacent passages
+pair up (1–2, 3–4, 5–6), then pairs of pairs (1–4), and an odd unit out carries to the
+next level, until the top join spans the whole piece. They come in play order, so a
+six-passage piece runs P1 P2 J1–2 P3 P4 J3–4 J1–4 P5 P6 J5–6 J1–6. A one-passage piece
+has no joins; its Bronze is piece Silver. A join is offered only once every passage under
+it has Bronze. `piece.total/silver/gold` count passages only; `piece.joins`
+(`total/silver/gold`), `piece.pieceSilver` and `piece.polishReady` describe the rest.
+
+**Test out first.** A passage or join nobody has touched opens on its hints-off check
+(*Play it on your own*); passing it is the metal, with the steps behind it shown done. A
+miss (or any earlier take on it) opens the ladder at the right hand, left hand, together,
+then the check. `sheetmusic.learn.certification.testOutFirst: false` restores the old
+order. Two misses on a whole join drill the hand that broke (when one hand is clearly
+worse) across the whole join, or **the join** (the last bar of the first unit and the first
+bar of the next) when the worst bar sits on that seam, then the generic bar-then-hand ladder.
+
+**Piece Silver** is the final join's check: the large ceremony, the `piano-piece`
+`silver` entry in the piece log and the piece gem. A piece log `silver` entry written
+before joins existed (every passage Silver) stays and is never paid twice; that child
+meets the joins next. **Join Gold** unlocks when the join has Silver and both halves are
+Gold: it tests out at score tempo (both hands), then 50%, 75%, 100%. The final join has no
+Learn Gold: its timed play is Polish, which opens (`piece.polishReady`) when every passage
+and every join below the top is Gold. **Retention**: three days after piece Silver, the
+final join's check comes back once as a review (`reason: retention`, the "Review a
+passage" button), then every three days.
+
+Each passage keeps its two certifications: the first moves the learner on, **Gold**
+certifies playing with the metronome at score tempo. Gold is optional and never changes
+the recommended next step. Passing Gold also grants the first certificate.
+
+The recommendation is the first unfinished Silver-track step in the earliest unit
+without it (a join only once its passages have Bronze). A drill in progress comes first.
+Gold work and reviews keep their own resume slot. When every passage and join has its
+first certificate, the score offers Gold.
 
 **Play it on your own** is the Silver check: all playable parts, the learner's own
 pace, no metronome, no lit keys and no stuck-ladder note names. It can be attempted
@@ -503,8 +540,8 @@ with `id`, `start`, `end`, `silver` and `gold`. Certification values are timesta
 ### Skipping steps
 
 The generated ladder runs right hand, left hand, together, the Silver check, the
-beat (50%, metronome), right hand with the beat and left hand with the beat (cued
-50%, two-hand passages only: `timed-50-rh`, `timed-50-lh`), cued 50%, 60%, 75%, then score tempo (Gold). The current step
+beat (30%, metronome), right hand with the beat and left hand with the beat (cued
+30%, two-hand passages only: `timed-30-rh`, `timed-30-lh`), cued 30%, 50%, 75%, then score tempo (Gold). The current step
 is the first one not yet ready. `sheetmusic.learn.skipping` says which other steps a
 child may start:
 
@@ -798,6 +835,24 @@ records the test and the onsets as `[midi, ms from the first click, phase]`. Tim
 fresh MIDI attacks with original timestamps; held-set observations remain
 limited to the cursor/held contracts. Malformed timed input is an operational
 failure, never an extra wrong note.
+
+**A missed cue goes back to the count.** The take is not scored on from a start that was lost.
+When the first expected note's window (`timedWindowMs`) plus a 60 ms grace has closed with no
+onset of any pitch inside it (nothing played, or the first note a beat or more late), the run
+throws the take away (a new runtime, no credit and no failure), shows "You missed the cue — counting
+in again.", and starts the count again after 900 ms (`missedCue` in `performance/entryShift.js`;
+`MAX_CUE_RESTARTS` = 3 in a row, then the take plays on as before, and `entryShift` above still names a
+late entry in that case). It applies to cued Learn takes only. Logs: `piano.exercise-cue-missed`
+(`attempt`, `offsetMs`, `windowMs`, `beatMs`), `piano.exercise-cue-restart-capped`; the restart's count
+carries `reason: 'missed-cue'` on `piano.exercise-countdown-started`. The `maxCueRestarts` prop of
+`ExerciseRun` overrides the cap (tests pass 0).
+
+**The beat loop (*Settle into a beat*).** The click-guided step (`mode: 'metronome'`, pitch graded, timing
+not) starts its click and shows the count band above the score with one pip per beat of the bar and
+beat 1 accented; the lit pip steps round the bar for as long as the click runs and keeps going under the
+take. The click and the pips read one anchor fixed when the run is ready (`beatLoop.js`), so what is lit
+is what is heard. Nothing waits for the child: the first note starts the take whenever they like, and the
+cue reads "Play when you feel the beat".
 
 Notation, the assessment cursor and verdicts remain dominant in the lab. Wrong
 pitches reveal the still-owed keyboard notes until the cursor advances. **Pause**,
@@ -1161,16 +1216,22 @@ whole-piece run. Because a best only ever improves, an inflated one would be
 permanent, so the gate errs toward withholding — and every withheld bank names
 its reason in the log.
 
-### Polish rewards: the piece gem and the diamond
+### Polish rewards: marks and the diamond
 
-Once a piece is **all Gold** for a player, Polish pays for playing it well at speed:
+Polish is the whole piece played in time, the final join. It pays once the piece is
+**Polish-ready** for the player: every passage and every join below the top join is Gold
+(`piece.polishReady` in the coach projection). Before that, Polish plays and scores as always and
+earns nothing (`reason: polish-locked`).
 
-| Reward | A qualifying run at | Milestone activity |
+| Reward | A qualifying run at | Piece log level |
 |---|---|---|
-| Piece gem | 50% tempo or faster | `piano-polish-gem` |
-| Diamond | 90% tempo or faster | `piano-polish-diamond` |
+| Mark | 50% tempo or faster, every measure green | `polish-mark-50` |
+| Mark | 75% tempo or faster, every measure green | `polish-mark-75` |
+| Diamond | score tempo (100%), every measure green | `polish-diamond` (milestone `piano-polish-diamond`) |
 
-A run qualifies only when **all** of these hold:
+The old 50%-tempo piece gem (`piano-polish-gem`) is retired: none is awarded now, and a gem
+or a diamond a piece already holds stays held (a diamond earned under the old 90% / 95-point
+rule is still a diamond). A run qualifies only when **all** of these hold:
 
 - it is a completed whole-piece run (started at the top, one tempo, one pair of
   hands, not voided: the same rule that lets a run bank a tier best);
@@ -1178,15 +1239,13 @@ A run qualifies only when **all** of these hold:
   toggled while it played or sat paused (a resume cannot turn it back on);
 - every staff was active (a one-hand run never qualifies; a single-staff piece
   has one part, and playing it counts);
-- its **base** score is 95 or more (the plain run score, never the overclocked
-  display score);
+- **every graded measure was green** (`allGreen`: no yellow or red measure; "green" is the
+  measure wash threshold `scoring.thresholds.green`);
 - the player is a real learner, not a guest.
 
 Tempo is the tempo at run start, as a whole percent (`round(tempoMult × 100)`):
-49% earns nothing, 50% earns the gem, 89% the gem only, 90% the diamond. A
-diamond run also earns the gem when the piece does not have one yet. Each is
-paid once per piece, ever. Before the piece is all Gold, Polish plays and scores
-as always and earns nothing.
+49% earns nothing, 50% is marked, 75% is marked again, 100% is the diamond. Each is
+paid once per piece, ever.
 
 **How a run reaches the server.** Every completed whole-piece run that is not
 voided (banked or `not-better`) is reported with the practice record write,
@@ -1196,12 +1255,12 @@ voided (banked or `not-better`) is reported with the practice record write,
 { "fingerprint": { "...": "..." },
   "polishRun": { "scoreId": "files:…", "tempoMult": 0.9, "metronome": true,
                  "completed": true, "mixed": false, "parts": [0, 1],
-                 "activeParts": [0, 1], "base": 97 } }
+                 "activeParts": [0, 1], "base": 97, "allGreen": true } }
 ```
 
 **What protects the reward.** The server decides, from run facts the kiosk
 reports (base score, tempo at start, metronome, active hands, completed, mixed).
-The server's own checks are that the piece is all Gold, that each stone is paid
+The server's own checks are that Polish is open (`piece.polishReady`), that each reward is paid
 once per piece, and the economy's weekly `cap` on the milestone rule. The run
 facts themselves are self-reported by the kiosk: they are trusted because the kiosk
 is a household device, not a hostile client, and nothing on the server replays the
@@ -1211,21 +1270,17 @@ fact when the click is toggled while a run is in flight or paused; a resume neve
 turns it back on.
 
 `PianoPolishReward` judges the facts after the record is saved and answers `polishReward:
-{gem, diamond, newGem, newDiamond, reason}` in the response; neither field is
-stored in the practice record. "All Gold" is read from the piece log's dated
-`gold` entry (the one the `piano-piece` milestone pays from) or, for a piece
-finished before the log existed, the saved coach summary showing every passage
-Gold. When the score has admin-approved Learn segments for the XML the child
-practised, that second check projects the record onto them instead of trusting
-the saved summary (the same projection as the [home strip](home-desk.md#data)):
-a passage the admin cut differently must be earned again. A piece Gold already
-recorded in the piece log survives re-segmentation: earned credit is never taken
-back. What was earned is appended to the
-[piece log](#piece-log-and-the-piece-gems) as `polish-gem` / `polish-diamond`,
-which is how the economy's milestones date it.
+{gem, diamond, newGem, newDiamond, reason}` in the response (`gem` only reports a gem already
+held; `newGem` is always false now); neither field is stored in the practice record.
+"Polish-ready" is read from the coach projection of the saved record. When the score has
+admin-approved Learn segments for the XML the child practised, the record is projected onto them
+instead of the saved summary (the same projection as the [home strip](home-desk.md#data)): a
+passage the admin cut differently must be earned again, and so must its joins. What was earned
+is appended to the [piece log](#piece-log-and-the-piece-gems) as `polish-mark-50`,
+`polish-mark-75` or `polish-diamond`, which is how the economy's milestones date it.
 `reason` names the verdict: `qualified`, `guest`, `invalid-run`, `wrong-score`,
-`incomplete`, `metronome-off`, `one-hand`, `low-score`, `slow-tempo`,
-`not-all-gold` or `log-unavailable`. The check never fails the write it rides on.
+`incomplete`, `metronome-off`, `one-hand`, `not-all-green`, `slow-tempo`,
+`polish-locked` or `log-unavailable`. The check never fails the write it rides on.
 
 **What the player sees.** The run summary announces **Diamond earned!** and/or
 **Gem earned!**, each led by a `GemIcon`, only when the server says it is new.

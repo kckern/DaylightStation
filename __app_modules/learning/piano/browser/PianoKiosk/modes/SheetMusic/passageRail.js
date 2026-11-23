@@ -54,7 +54,7 @@ export function railModel({ segments = [], projection, selectedId = null }) {
   const joinTotals = piece.joins ?? { total: bridges.length, silver: bridges.filter((bridge) => bridge.state === 'joined').length };
   const allBronze = piece.total > 0 && piece.silver >= piece.total;
   const pieceSilver = piece.pieceSilver ?? (allBronze && joinTotals.total === 0);
-  const allGold = piece.total > 0 && piece.gold >= piece.total;
+  const allGold = piece.polishReady ?? (piece.total > 0 && piece.gold >= piece.total);
   const picked = byId(selectedId) ?? bridgeById(selectedId);
   const recommended = projection?.recommended?.passageId;
   const target = picked ? { item: picked, kind: 'selected' }

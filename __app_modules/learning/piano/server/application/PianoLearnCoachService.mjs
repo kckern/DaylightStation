@@ -53,10 +53,10 @@ export class PianoLearnCoachService {
     const total = after.piece.total;
     if (!(total > 0)) return;
     // Piece Silver is the whole piece played: the final join (or the one passage of a one-passage piece).
-    // Piece Gold is still every passage Gold. Credit an old all-Silver piece earned before joins existed
+    // Piece Gold is Polish open: every passage and join below the top Gold. Credit an old all-Silver piece earned before joins existed
     // is never paid again: the piece log keeps one entry per level.
     const reached = { silver: after.piece.pieceSilver && !before.piece.pieceSilver,
-      gold: after.piece.gold === total && before.piece.gold < before.piece.total };
+      gold: after.piece.polishReady === true && before.piece.polishReady !== true };
     for (const level of ['silver', 'gold']) {
       if (!reached[level]) continue;
       this.logger?.info?.('piano.learn.piece-certified', { userId, scoreId: plan.scoreId, level, passages: total });
@@ -146,7 +146,14 @@ export class PianoLearnCoachService {
       for (const level of ['silver', 'gold']) {
         const earned = segment.certification[level];
         if (earned && !before.certifications[segment.id]?.[level]) {
-          this.logger?.info?.('piano.learn.certified', { userId, scoreId: plan.scoreId, passageId: segment.id, level, provenance: earned.provenance });
+          // Reading progress: how many takes the first (Bronze) certificate of a passage cost, so a child's
+          // takes-to-Bronze can be read across pieces. One take is one evidence entry (a take that credits
+          // several steps is still one), over the retained window.
+          const takes = level === 'silver' && segment.kind !== 'join'
+            ? state.evidence.filter((item) => item.task?.passageId === segment.id && (item.task.mode === 'free' || item.task.track === 'silver')).length
+            : undefined;
+          this.logger?.info?.('piano.learn.certified', { userId, scoreId: plan.scoreId, passageId: segment.id, level, provenance: earned.provenance,
+            ...(segment.kind === 'join' ? { join: true } : {}), ...(takes !== undefined ? { takes } : {}) });
         }
       }
     }

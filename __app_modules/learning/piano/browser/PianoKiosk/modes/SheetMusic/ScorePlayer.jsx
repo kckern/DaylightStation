@@ -660,6 +660,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
             parts: parts.map((p) => p.staff),
             activeParts: parts.filter((p) => activeParts[p.staff]).map((p) => p.staff),
             base: run.base,
+            // Diamond needs every measure green: no yellow or red among the graded measures.
+            allGreen: (() => { const t = tallyAssessmentGrades(run.grades); return t.green > 0 && t.yellow === 0 && t.red === 0; })(),
           };
           Promise.resolve(recordPolishRun?.(polishRun))
             .then((reward) => {

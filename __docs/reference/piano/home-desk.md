@@ -57,15 +57,16 @@ or long-pressed out of the card.
 - **Piece:** top to bottom beside the score's `cover` (the same-name picture beside the
   score: a raster scan, else a generated `.svg` poster, see
   [Posters](sheet-music-player.md#posters)): the badge, the printed title, the next step (the next passage's bars, `Bars
-  6–9`, or **Whole piece** once every passage is Gold, `piecePolishing`), then what to do
+  6–9`, or **Whole piece** once Polish is open, `piecePolishing`), then what to do
   in them: the coach's next skill, `piece.next.label` ("Settle into a beat"; `nextSkill`),
-  left out when the desk gives none and while polishing. The badge is **Silver next** while
-  any passage lacks Silver, **Gold next** once every passage has it, then the Polish
-  goal once the piece is all Gold: **Polish next** (gold) until the piece's Polish gem,
-  **Diamond next** (pale diamond colour) after the gem, and **Diamond** once the diamond
-  is earned (`cardBadge`). Pinned at the bottom of the column: the passage map in score
-  order (a tomato, a flower, a silver coin or a gold coin; the next passage ringed) with
-  the Silver count (and the Gold count once there is one, `PieceCount`). The coins'
+  left out when the desk gives none and while polishing. The badge is **Bronze next** while
+  any passage lacks Bronze, **Join next** once every passage has it, **Gold next** once the
+  piece is played through (`pieceSilver`), then the Polish goal once Polish is open
+  (`polishReady`: every passage and every join below the top is Gold): **Polish next** (gold),
+  **Diamond next** only for a piece that already holds an old gem, and **Diamond** once the
+  diamond is earned (`cardBadge`). Pinned at the bottom of the column: the passage map in score
+  order (a tomato, a flower, a bronze coin or a gold coin; the next passage ringed) with
+  the Bronze count (and the Gold count once there is one, `PieceCount`). The coins'
   arrangement (`coinLayout`): one row with the count stacked beside it (at least 40px),
   filling the 128px left, up to 36px (1–5 passages: 2–3 get 36px, 4 get 30px); one row
   under the count line across the whole 176px column, up to 24px (6–8 passages); two

@@ -204,7 +204,7 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
   // one-passage piece) is the piece played through. Gold is still every passage.
   const isJoin = segment.kind === 'join';
   const coinOf = (level) => (level === 'silver' && isJoin ? 'joined' : level);
-  const pieceDone = celebrated === 'gold' ? piece.total > 0 && piece.gold >= piece.total
+  const pieceDone = celebrated === 'gold' ? piece.polishReady === true
     : celebrated === 'silver' && piece.pieceSilver === true && (isJoin ? segment.final === true : piece.total === 1);
   const leaveFor = celebrated === 'silver' ? (pieceDone ? null : nextPassage) : celebrated === 'gold' ? (pieceDone ? null : nextGold) : null;
   // A pass that does not certify moves straight on, the way a drill's next rep

@@ -29,9 +29,10 @@ describe('join tree', () => {
     const join = plan.segments.find((s) => s.id === 'join:p1:p2');
     expect(join).toMatchObject({ kind: 'join', inMeasure: 0, outMeasure: 7, playableParts: ['rh'], final: false, seam: { left: 3, right: 4 } });
     expect(plan.segments.at(-1)).toMatchObject({ id: 'join:p1:p6', final: true, inMeasure: 0, outMeasure: 23 });
-    expect(join.tasks.map((t) => t.skill)).toEqual(['notes', 'silver']);
-    expect(join.tasks.some((t) => t.track === 'gold')).toBe(false);
-    expect(join.demonstration).toBeNull();
+    expect(join.tasks.filter((t) => t.track === 'silver').map((t) => t.skill)).toEqual(['notes', 'silver']);
+    // The final join has no Gold ladder of its own: its timed play is Polish.
+    expect(plan.segments.at(-1).tasks.some((t) => t.track === 'gold')).toBe(false);
+    expect(plan.segments.at(-1).demonstration).toBeNull();
   });
   it('is exported pure', () => {
     expect(buildJoinTree(many(2)).map((j) => j.id)).toEqual(['join:p1:p2']);
@@ -118,5 +119,74 @@ describe('a plan handed back to createCoachPlan', () => {
     const again = createCoachPlan({ ...plan, segments: plan.segments });
     expect(again.segments.map((s) => s.id)).toEqual(plan.segments.map((s) => s.id));
     expect(again.tasks.map((t) => t.key)).toEqual(plan.tasks.map((t) => t.key));
+  });
+});
+
+describe('join Gold (stage 3)', () => {
+  const gold = (plan, id, skill) => plan.segments.find((s) => s.id === id).tasks.find((t) => t.skill === skill);
+  const goldAll = (state, plan, ids) => ids.reduce((acc, id) => { const t = gold(plan, id, 'mastery'); return play(play(acc, plan, t), plan, t); }, state);
+  it('gives a join a Gold ladder: 50, 75, score tempo', () => {
+    const plan = planOf(4);
+    const join = plan.segments.find((s) => s.id === 'join:p1:p2');
+    expect(join.tasks.filter((t) => t.track === 'gold').map((t) => [t.skill, t.tempoPercent, t.mode])).toEqual([['timed-50', 50, 'cued'], ['timed-75', 75, 'cued'], ['mastery', 100, 'cued']]);
+    expect(join.demonstration).toBe(join.tasks.find((t) => t.mastery));
+  });
+  it('unlocks join Gold only when the join has Silver and both halves are Gold', () => {
+    const plan = planOf(4);
+    let state = bronze(undefined, plan, ['p1', 'p2']);
+    expect(proj(plan, state).gold['join:p1:p2']).toBeNull();
+    state = play(state, plan, check(plan, 'join:p1:p2'));
+    expect(proj(plan, state).gold['join:p1:p2']).toBeNull();
+    state = goldAll(state, plan, ['p1']);
+    expect(proj(plan, state).gold['join:p1:p2']).toBeNull();
+    state = goldAll(state, plan, ['p2']);
+    expect(proj(plan, state).gold['join:p1:p2']).toMatchObject({ skill: 'mastery' }); // test out first
+  });
+  it('a failed test-out walks 50, 75, then score tempo', () => {
+    const plan = planOf(4);
+    let state = goldAll(play(bronze(undefined, plan, ['p1', 'p2']), plan, check(plan, 'join:p1:p2')), plan, ['p1', 'p2']);
+    const top = gold(plan, 'join:p1:p2', 'mastery');
+    state = play(play(state, plan, top, bad), plan, top, bad);
+    expect(proj(plan, state).gold['join:p1:p2']).toMatchObject({ skill: 'timed-50' });
+  });
+  it('Polish is ready when every passage and join below the top is Gold; the top join is Polish itself', () => {
+    const plan = planOf(4);
+    const ids = plan.segments.map((s) => s.id);
+    expect(ids.at(-1)).toBe('join:p1:p4');
+    let state = bronze(undefined, plan, ['p1', 'p2', 'p3', 'p4']);
+    state = ['join:p1:p2', 'join:p3:p4', 'join:p1:p4'].reduce((acc, id) => play(acc, plan, check(plan, id)), state);
+    state = goldAll(state, plan, ['p1', 'p2', 'p3', 'p4']);
+    expect(proj(plan, state).piece).toMatchObject({ pieceSilver: true, polishReady: false, joins: { total: 3, silver: 3, gold: 0 } });
+    state = goldAll(state, plan, ['join:p1:p2']);
+    expect(proj(plan, state).piece.polishReady).toBe(false);
+    state = goldAll(state, plan, ['join:p3:p4']);
+    expect(proj(plan, state).piece.polishReady).toBe(true);
+    expect(proj(plan, state).piece.joins.gold).toBe(2);
+  });
+  it('a one-passage piece is Polish-ready when its passage is Gold', () => {
+    const plan = planOf(1);
+    expect(proj(plan).piece.polishReady).toBe(false);
+    expect(proj(plan, goldAll(undefined, plan, ['p1'])).piece.polishReady).toBe(true);
+  });
+});
+
+describe('retention', () => {
+  const played = (plan) => play(bronze(undefined, plan, ['p1', 'p2']), plan, check(plan, 'join:p1:p2'));
+  it('offers the final join check as a review three days after the piece was played through', () => {
+    const plan = planOf(2); const state = played(plan);
+    expect(projectCoach({ plan, state, dayKey: '2026-11-25' }).review).toBeNull();
+    const later = projectCoach({ plan, state, dayKey: '2026-11-26' });
+    expect(later.review).toMatchObject({ passageId: 'join:p1:p2', assist: 'none', review: true, reason: 'retention' });
+  });
+  it('is answered by passing it, and comes round again three days later', () => {
+    const plan = planOf(2); let state = played(plan);
+    const review = projectCoach({ plan, state, dayKey: '2026-11-26' }).review;
+    state = applyCoachEvent(state, { id: 'r1', type: 'outcome', task: review, result: good }, { plan, now: '2026-11-26T18:00:00Z', dayKey: '2026-11-26' });
+    expect(projectCoach({ plan, state, dayKey: '2026-11-27' }).review).toBeNull();
+    expect(projectCoach({ plan, state, dayKey: '2026-11-29' }).review).toMatchObject({ reason: 'retention' });
+  });
+  it('waits for a piece that has not been played through', () => {
+    const plan = planOf(2);
+    expect(projectCoach({ plan, state: bronze(undefined, plan, ['p1', 'p2']), dayKey: '2026-12-30' }).review).toBeNull();
   });
 });

@@ -75,12 +75,12 @@ test('uses saved passage ranges and parts, so one-hand pieces match Learn', () =
   const r = record({ learn: { passages: { tune: { complete: true } } }, learnCoach: { version: 1, scoreId: SCORE, fingerprint: 'c', revision: 1, achievements: {}, counts: {}, evidence: [], reviews: {}, resume: null, summary } });
   const { piece } = deskFor({ a: [{ scoreKey: KEY, record: r }] }).execute().players[0];
   assert.deepEqual(piece.passages.map((p) => [p.id, p.start, p.end]), [['intro', 0, 3], ['tune', 4, 7]]);
-  assert.deepEqual(piece.next, { passageId: 'intro', skill: 'notes', label: 'Find the notes', start: 0, end: 3 });
+  assert.deepEqual(piece.next, { passageId: 'intro', skill: 'silver', label: 'Play it on your own', start: 0, end: 3 });
 });
 
 test('treats an older plan as two-handed, since its rungs cannot tell', () => {
   const r = record({ learn: { segments: { 'm0-3': {}, 'm4-7': {} }, passages: { 'm0-3': { rungs: { 'test-out': { passCount: 0 } } }, 'm4-7': { rungs: { right: { passCount: 6 } } } } } });
-  assert.equal(deskFor({ a: [{ scoreKey: KEY, record: r }] }).execute().players[0].piece.next.skill, 'right');
+  assert.equal(deskFor({ a: [{ scoreKey: KEY, record: r }] }).execute().players[0].piece.next.skill, 'silver');
 });
 
 test('one player failing does not take the desk down', () => {
@@ -188,7 +188,7 @@ test('a new range takes the hands every saved passage agrees on', () => {
   const piece = learnDesk(r, () => [{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 9 }]);
   // One hand: the first step is "Find the notes", not the right hand alone.
   assert.equal(piece.next.passageId, 'b');
-  assert.equal(piece.next.skill, 'notes');
+  assert.equal(piece.next.skill, 'silver');
 });
 
 test('a new range is two-handed when the saved passages disagree on hands', () => {
@@ -196,14 +196,14 @@ test('a new range is two-handed when the saved passages disagree on hands', () =
   r.learnCoach.summary.passages[1].parts = ['rh', 'lh'];
   const piece = learnDesk(r, () => [{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 8, end: 9 }]);
   assert.equal(piece.next.passageId, 'b');
-  assert.equal(piece.next.skill, 'right');
+  assert.equal(piece.next.skill, 'silver');
 });
 
 test('hands the admin set on a segment win over the saved passage', () => {
   // Gold was earned two-handed on 0-3; the admin now says 0-3 is right hand only.
   const piece = learnDesk(goldRecord([[0, 3], [4, 7]]), () => [{ id: 'a', start: 0, end: 3, parts: ['rh'] }, { id: 'b', start: 4, end: 7 }]);
   assert.deepEqual(shape(piece), [['a', 0, 3, 'todo'], ['b', 4, 7, 'gold']]);
-  assert.equal(piece.next.skill, 'notes');
+  assert.equal(piece.next.skill, 'silver');
 });
 
 test('a Learn file cut against other XML is ignored, end to end through the reader', () => {

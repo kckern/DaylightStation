@@ -12,6 +12,8 @@ export const CERTIFICATION_DEFAULTS = Object.freeze({
 });
 export const FLOWER_AFTER = Object.freeze(['both-hands', 'together', 'first-step']);
 const LEGACY_STEP_PASSES = 6;
+/** Days after a piece is played through before its retention run is offered (and again after each run). */
+export const RETENTION_DAYS = 3;
 /** The cued Gold steps below score tempo. The ladder was 60/80 until 2026-11; earned keys at other tempos carry over. */
 const GOLD_TEMPOS = Object.freeze([30, 50, 75]);
 /** Where a timing-only miss steps down to, one rung at a time. */
@@ -179,10 +181,16 @@ export function createCoachPlan({ scoreId, fingerprint, segments = [], authoredL
       { skill: parts.length > 1 ? 'together' : 'notes', label: parts.length > 1 ? 'Join the hands' : 'Find the notes', parts, mode: 'free', ...noteStep },
       { skill: 'silver', label: 'Play it on your own', parts, mode: 'free', track: 'silver', assist: 'none', required: policy.silver.checkPasses, stallSeconds: policy.silver.stallSeconds,
         criteria: { completeness: 1, cleanliness: policy.silver.cleanliness } },
+      // A join's Gold is the whole span played in time, both hands: 50, 75, then score tempo (never the pulse
+      // or one-hand rungs, which the passages under it already earned). Test out at score tempo first.
+      // The final join has none: its timed play is Polish.
+      ...(join.final ? [] : [...GOLD_TEMPOS.slice(1), 100]).map((tempoPercent) => ({ track: 'gold', skill: tempoPercent === 100 ? 'mastery' : `timed-${tempoPercent}`,
+        label: tempoPercent === 100 ? 'Play at score tempo' : 'Play with the beat', parts, mode: 'cued', tempoPercent,
+        mastery: tempoPercent === 100, completes: tempoPercent === 100 })),
     ];
     const tasks = specs.map((spec) => makeCoachTask(plan, { ...spec, criteria: { ...criteria, ...spec.criteria }, passageId: join.id, range }));
     plan.tasks.push(...tasks);
-    return { ...join, authoredLadder: false, tasks, demonstration: null };
+    return { ...join, authoredLadder: false, tasks, demonstration: tasks.find((task) => task.mastery) ?? null };
   });
   const byId = new Map([...plan.segments, ...joinSegments].map((segment) => [segment.id, segment]));
   const order = playOrder(joinSegments.at(-1).id, byId);
@@ -404,7 +412,16 @@ export function projectCoach({ plan, state, legacy = {}, dayKey }) {
     && (current.reviews[segment.id]?.dayKey ?? segment.masteredAt.slice(0, 10)) < dayKey)
     .sort((a, b) => (current.reviews[a.id]?.at ?? a.masteredAt).localeCompare(current.reviews[b.id]?.at ?? b.masteredAt));
   const reviewTask = due[0]?.demonstration;
-  const review = reviewTask ? { ...reviewTask, review: true } : null;
+  // RETENTION: a few days after the piece was played through, one whole-piece run of its check comes ahead of
+  // new work, so a piece that was learned can still be played. It is the final join's own check (or the one
+  // passage's) offered as a review; a mastery review that is due goes first.
+  const wholePiece = segments.find((segment) => segment.final) ?? (segments.filter((segment) => segment.kind !== 'join').length === 1 ? segments[0] : null);
+  const wholeAt = wholePiece?.certification.silver?.at ?? null;
+  const dayNumber = (day) => Date.parse(`${String(day).slice(0, 10)}T00:00:00Z`);
+  const retentionDue = Boolean(dayKey && wholeAt && Number.isFinite(dayNumber(wholeAt))
+    && dayNumber(dayKey) - dayNumber(current.reviews[wholePiece.id]?.dayKey ?? wholeAt) >= RETENTION_DAYS * 86400000);
+  const retentionTask = retentionDue ? wholePiece.tasks.find((task) => task.assist === 'none') : null;
+  const review = reviewTask ? { ...reviewTask, review: true } : retentionTask ? { ...retentionTask, review: true, reason: 'retention' } : null;
   const setAsideToday = (id) => Boolean(dayKey) && current.setAside?.[id] === dayKey;
   const isJoin = (segment) => segment.kind === 'join';
   const passages = segments.filter((segment) => !isJoin(segment));
@@ -427,9 +444,19 @@ export function projectCoach({ plan, state, legacy = {}, dayKey }) {
   const recommended = drill ?? inOrder.map(nextStep).find(Boolean) ?? null;
   const by = (value) => Object.fromEntries(segments.map((segment) => [segment.id, value(segment)]));
   const byPassage = (value) => Object.fromEntries(passages.map((segment) => [segment.id, value(segment)]));
+  const goldMap = by((segment) => {
+    if (segment.certification.gold) return null;
+    if (isJoin(segment)) {
+      // Join Gold opens once the join is played through and both halves are Gold; it tests out at score tempo first.
+      if (!segment.certification.silver || !segment.members.every((id) => segments.find((item) => item.id === id)?.certification.gold)) return null;
+      const timedBefore = current.evidence.some((item) => item.task?.passageId === segment.id && isGoldWork(item.task));
+      return (!timedBefore && segment.skills.find((task) => task.mastery && !task.ready)) || segment.skills.find((task) => task.track === 'gold' && !task.ready) || null;
+    }
+    return segment.skills.find((task) => task.track === 'gold' && !task.ready) ?? null;
+  });
   return { segments, recommended, review, state: current,
     goldResume: ((task) => ((current.ladder ?? 1) < LADDER_REVISION && bypassesUntriedGoldStep(segments, current, task) ? null : task))(liveResume(plan, segments, current.goldResume)),
-    gold: byPassage((segment) => (segment.certification.gold ? null : segment.skills.find((task) => task.track === 'gold' && !task.ready) ?? null)),
+    gold: goldMap,
     certifications: by((segment) => segment.certification),
     afterSetAside: byPassage((segment) => open.find((other) => other.id !== segment.id && !isJoin(other) && !setAsideToday(other.id))?.id ?? null),
     canSetAside: byPassage((segment) => !segment.certification.silver && !setAsideToday(segment.id) && missedTwice(current, segment)),
@@ -437,10 +464,14 @@ export function projectCoach({ plan, state, legacy = {}, dayKey }) {
       silver: passages.filter((segment) => segment.certification.silver).length,
       gold: passages.filter((segment) => segment.certification.gold).length,
       // Piece Silver is the whole piece played: the final join, or the one passage of a one-passage piece.
-      joins: { total: segments.length - passages.length, silver: segments.filter((segment) => isJoin(segment) && segment.certification.silver).length },
+      joins: { total: segments.length - passages.length, silver: segments.filter((segment) => isJoin(segment) && segment.certification.silver).length,
+        gold: segments.filter((segment) => isJoin(segment) && segment.certification.gold).length },
+      // Polish (the final join played in time) opens when every passage and every join below the top is Gold.
+      polishReady: passages.length > 0 && segments.filter((segment) => !segment.final).every((segment) => Boolean(segment.certification.gold)),
       pieceSilver: Boolean((segments.find((segment) => segment.final) ?? (passages.length === 1 ? passages[0] : null))?.certification.silver),
       nextPassageId: open.find((segment) => !isJoin(segment))?.id ?? null,
-      nextGoldPassageId: passages.find((segment) => !segment.certification.gold && segment.skills.some((task) => task.track === 'gold'))?.id ?? null },
+      nextGoldPassageId: (passages.find((segment) => !segment.certification.gold && segment.skills.some((task) => task.track === 'gold'))
+        ?? segments.find((segment) => isJoin(segment) && !segment.final && !segment.certification.gold && goldMap[segment.id]))?.id ?? null },
     retainedLegacy: { passages: legacy.learn?.passages ?? {}, compatible: compatibleLegacy === legacy } };
 }
 
@@ -601,7 +632,7 @@ function applyCoachEventToState(state, event, { plan, now, dayKey, legacy = {} }
       next.achievements[candidate.key] = { at: now, dayKey, provenance: 'demonstrated', evidenceIds: next.evidence.filter((item) => item.passedCredits.includes(candidate.key)).slice(-3).map((item) => item.id) };
     }
   }
-  if (task.mastery && passedCredits.includes(task.key)) next.reviews[task.passageId] = { at: now, dayKey };
+  if ((task.mastery || (task.review && task.assist === 'none')) && passedCredits.includes(task.key)) next.reviews[task.passageId] = { at: now, dayKey };
   const equivalent = next.evidence.filter((item) => item.task.key === task.key);
   const successful = equivalent.slice(-3).filter((item) => item.passedCredits.includes(task.key)).length >= 2;
   if (task.parent && successful) next[slot] = backChain(plan, task) ?? task.parent;

@@ -15,7 +15,7 @@
  * never cost a child the take they just saved. A lost append loses that gem;
  * it can never pay twice.
  */
-export const PIECE_LEVELS = Object.freeze(['silver', 'gold', 'polish-gem', 'polish-diamond']);
+export const PIECE_LEVELS = Object.freeze(['silver', 'gold', 'polish-gem', 'polish-mark-50', 'polish-mark-75', 'polish-diamond']);
 const ENTRY_KEYS = new Set(['at', 'scoreId', 'level', 'passages', 'fingerprint']);
 
 export class PianoPieceLog {

@@ -1,22 +1,20 @@
 /**
- * Polish rewards: a near-perfect whole-piece run earns the piece a gem (at 50%
- * tempo or faster) and a diamond (at 90% or faster), once per piece each.
+ * Polish rewards: Polish is the whole piece played in time, the final join. A completed run that is
+ * all green earns a MARK at each tempo it reaches (50%, 75%) and the piece's DIAMOND at score tempo
+ * (100%), once per piece each. The old 50%-tempo gem is retired: it is no longer awarded, and a gem or
+ * a diamond a piece already holds stays held (a diamond earned under the old 90% / 95-point rule is
+ * still a diamond).
  *
- * The client reports the facts of one completed Polish run with its practice
- * record write (`polishRun`, see the practice route); this service judges them
- * and dates what was earned in the piece log as `polish-gem` / `polish-diamond`.
- * The economy's `piano-polish-gem` and `piano-polish-diamond` milestones read
- * those entries (PianoAchievementProvider). A client never says "I earned a
- * gem": it reports the score, tempo, metronome, hands and completion, and the
- * thresholds live here.
+ * The client reports the facts of one completed Polish run with its practice record write
+ * (`polishRun`, see the practice route); this service judges them and dates what was earned in the
+ * piece log as `polish-mark-50` / `polish-mark-75` / `polish-diamond`. The economy's
+ * `piano-polish-diamond` milestone reads the diamond entries (PianoAchievementProvider). A client never
+ * says "I earned a diamond": it reports the tempo, metronome, hands, completion and whether every
+ * measure was green, and the thresholds live here.
  *
- * Nothing is earned until the piece is all Gold for this player: the piece
- * log's dated `gold` entry (the same entry the `piano-piece` milestone pays
- * from), or, for a piece finished before the log existed, the saved coach
- * summary showing every passage Gold. When the score has admin-approved Learn
- * segments for the XML the child practised, that summary is re-read against
- * them (the same projection the home strip uses), so a passage the admin cut
- * differently has to be earned again before the piece is all Gold.
+ * Nothing is earned until Polish is open for this player: every passage and every join below the top
+ * join is Gold (the coach projection's `piece.polishReady`, the same projection the home strip reads,
+ * against the score's admin-approved Learn segments when it has them).
  *
  * Best effort, like the piece log: `evaluate()` never throws, because a reward
  * check must never cost the child the practice write it rides on.
@@ -25,9 +23,9 @@
 import { practiceKeyOfScore as keyOfScore } from '../../portable/music/practiceKey.mjs';
 import { projectRecord, recordFingerprint, recordSegments } from './coachRecordProjection.mjs';
 
-export const POLISH_REWARD_MIN_SCORE = 95;
-export const POLISH_GEM_TEMPO_PERCENT = 50;
-export const POLISH_DIAMOND_TEMPO_PERCENT = 90;
+/** The tempos at which an all-green run is marked; the last is score tempo, which earns the diamond. */
+export const POLISH_MARK_TEMPO_PERCENTS = Object.freeze([50, 75]);
+export const POLISH_DIAMOND_TEMPO_PERCENT = 100;
 
 const isPart = (p) => (typeof p === 'number' && Number.isInteger(p)) || (typeof p === 'string' && p.length > 0 && p.length <= 64);
 
@@ -39,7 +37,7 @@ function tierOf(tempoMult) {
   return 'overclocked';
 }
 
-const none = (reason, { tempoPercent = null, score = null, tier = null } = {}) => ({ reason, gem: false, diamond: false, tempoPercent, score, tier });
+const none = (reason, { tempoPercent = null, score = null, tier = null } = {}) => ({ reason, gem: false, diamond: false, marks: [], tempoPercent, score, tier });
 
 /**
  * Judge one reported run on its own facts (not the piece's Gold state).
@@ -61,25 +59,22 @@ export function judgePolishRun(run) {
   if (run.metronome !== true) return none('metronome-off', facts);
   const active = new Set(activeParts.map(String));
   if (!parts.every((p) => active.has(String(p)))) return none('one-hand', facts);
-  if (score < POLISH_REWARD_MIN_SCORE) return none('low-score', facts);
-  if (tempoPercent < POLISH_GEM_TEMPO_PERCENT) return none('slow-tempo', facts);
-  return { reason: 'qualified', gem: true, diamond: tempoPercent >= POLISH_DIAMOND_TEMPO_PERCENT, ...facts };
+  if (run.allGreen !== true) return none('not-all-green', facts);
+  const marks = POLISH_MARK_TEMPO_PERCENTS.filter((mark) => tempoPercent >= mark);
+  if (!marks.length) return none('slow-tempo', facts);
+  return { reason: 'qualified', gem: false, diamond: tempoPercent >= POLISH_DIAMOND_TEMPO_PERCENT, marks, ...facts };
 }
 
 /**
- * Gold on every passage. With approved segments it projects the record onto
- * them; certification only shapes the Silver steps and dayKey only the review
- * and set-aside queues, so neither changes which passages are Gold.
+ * Whether Polish is open: every passage and every join below the top is Gold. With approved segments
+ * the record is projected onto them; certification only shapes the Silver steps and dayKey only the
+ * review and set-aside queues, so neither changes which units are Gold.
  */
-function coachAllGold(record, scoreId, authored = null, certification = undefined, dayKey = undefined) {
-  const coach = record?.learnCoach;
-  if (coach?.scoreId !== scoreId) return false;
-  if (authored?.length) {
-    const { piece } = projectRecord({ record, scoreId, segments: recordSegments(record, authored), certification, dayKey });
-    return piece.total > 0 && piece.gold === piece.total;
-  }
-  const summary = coach?.summary;
-  return Number.isInteger(summary?.total) && summary.total > 0 && summary.gold === summary.total;
+function polishOpen(record, scoreId, authored = null) {
+  if (record?.learnCoach?.scoreId !== scoreId) return false;
+  const segments = recordSegments(record, authored);
+  if (!segments.length) return false;
+  return projectRecord({ record, scoreId, segments }).piece.polishReady === true;
 }
 
 export class PianoPolishReward {
@@ -111,7 +106,7 @@ export class PianoPolishReward {
     const result = this.#judge({ userId, scoreKey, scoreId, run, record });
     this.#logger?.info?.('piano.polish.reward', {
       userId, scoreId, tier: result.tier, tempoPercent: result.tempoPercent, score: result.score, reason: result.reason,
-      gem: result.gem, diamond: result.diamond, newGem: result.newGem, newDiamond: result.newDiamond,
+      gem: result.gem, diamond: result.diamond, newGem: result.newGem, newDiamond: result.newDiamond, marks: result.marks,
     });
     return result;
   }
@@ -134,10 +129,10 @@ export class PianoPolishReward {
     }
   }
 
-  #allGold(record, scoreId) {
+  #polishOpen(record, scoreId) {
     const fingerprint = recordFingerprint(record);
     const authored = fingerprint && this.#learnSegments ? this.#learnSegments(scoreId, fingerprint) : null;
-    return coachAllGold(record, scoreId, authored);
+    return polishOpen(record, scoreId, authored);
   }
 
   #judge({ userId, scoreKey, scoreId, run, record }) {
@@ -149,18 +144,19 @@ export class PianoPolishReward {
     try {
       const entries = this.#pieceLog.list(userId);
       const holds = (level) => entries.some((e) => e?.scoreId === scoreId && e?.level === level);
-      if (!holds('gold') && !this.#allGold(record, scoreId)) return { ...none('not-all-gold', judged), ...quiet };
+      if (!this.#polishOpen(record, scoreId)) return { ...none('polish-locked', judged), ...quiet };
       const fingerprint = record?.fingerprint?.contentSha256 ?? null;
       const detail = { tempoPercent: judged.tempoPercent, score: judged.score };
       const earn = (level) => !holds(level)
         && this.#pieceLog.note({ userId, scoreId, level, fingerprint, detail }) !== null;
-      const newGem = earn('polish-gem');
+      for (const mark of judged.marks) earn(`polish-mark-${mark}`);
       const newDiamond = judged.diamond ? earn('polish-diamond') : false;
       return {
         ...judged,
-        gem: newGem || holds('polish-gem'),
+        // The gem is retired: a gem the piece already holds stays held, none is awarded now.
+        gem: holds('polish-gem'),
         diamond: newDiamond || holds('polish-diamond'),
-        newGem, newDiamond,
+        newGem: false, newDiamond,
       };
     } catch (error) {
       this.#logger?.warn?.('piano.polish.reward-failed', { userId, scoreId, error: error?.message ?? String(error) });
