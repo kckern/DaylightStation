@@ -136,7 +136,8 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
   const silverTask = projected?.skills.find((skill) => skill.assist === 'none') ?? null;
   const silverNext = recommended ?? projected?.skills.find((task) => task.track === 'silver' && !task.ready);
   const next = (lane === 'gold' ? goldDrill ?? goldNext : null) ?? silverNext ?? goldDrill ?? goldNext
-    ?? projected?.skills.find((task) => !task.ready) ?? segment.tasks?.at(-1) ?? null;
+    ?? projected?.skills.find((task) => !task.ready)
+    ?? (coach.projection.review?.passageId === segment.id ? coach.projection.review : null) ?? segment.tasks?.at(-1) ?? null;
   const task = run ?? selected ?? next;
   const taskRef = useRef(task); taskRef.current = task;
   const piece = coach.projection.piece;

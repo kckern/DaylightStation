@@ -2587,7 +2587,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           )}
           {roadmapLearn && layoutFresh && (
             <LearnPassageLayer
-              passages={roadmapLearn ? coachedPassages : learnPassages}
+              passages={roadmapLearn ? coachedPassages.filter((passage) => passage.kind !== 'join') : learnPassages}
               measures={layout.measures}
               stepBoxes={selectionStepBoxes}
               measureRects={measureRects}

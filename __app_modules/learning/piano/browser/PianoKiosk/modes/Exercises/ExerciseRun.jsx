@@ -93,6 +93,8 @@ export const START_GAP_MAX_MS = 600;
 export const MAX_CUE_RESTARTS = 3;
 /** The breath between the missed cue and the count starting again. */
 const CUE_RESTART_PAUSE_MS = 900;
+/** How long past the cue window the onset log is read, so a note at the window's edge is already in it. */
+const CUE_LOG_MARGIN_MS = 150;
 const DEFAULT_POLICY = Object.freeze({
   matchWindowMs: 220, missWindowMs: 420, timingToleranceMs: 80, timingWindowMs: 320,
   windowFraction: 0.4, windowMinMs: 80, windowMaxMs: 400,
@@ -1306,6 +1308,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
    * cue is not looped forever: the cap hands the take back to the ordinary result.
    */
   const cueRestartsRef = useRef(0);
+  // True from a missed cue until its count starts: a late child's next note must not arm a count under their playing.
+  const cueHoldRef = useRef(false);
   const [cueRestart, setCueRestart] = useState(null);
   useEffect(() => {
     if (!learnCued || !countIn || !runtime || snapshot.status !== 'running' || snapshot.paused) return undefined;
@@ -1323,10 +1327,12 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       cueRestartsRef.current += 1;
       logger.info('piano.exercise-cue-missed', { ...traceFieldsRef.current, attempt: cueRestartsRef.current,
         offsetMs: missed.firstOnsetOffsetMs, windowMs: Math.round(missed.windowMs), beatMs: Math.round(countIn.periodMs) });
+      cueHoldRef.current = true;
       setCueRestart({ n: cueRestartsRef.current });
       installRuntime();
     };
-    const timer = globalThis.setTimeout(check, Math.max(0, dueAt - Date.now()) + 20);
+    // A note struck at the very end of the window reaches the onset log a render later: read it after a margin.
+    const timer = globalThis.setTimeout(check, Math.max(0, dueAt - Date.now()) + CUE_LOG_MARGIN_MS);
     return () => globalThis.clearTimeout(timer);
   // The take's identity is its start; `snapshot` republishes on every note.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1335,7 +1341,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     if (!cueRestart || !runtime || snapshot.status !== 'prepared' || snapshot.paused) return undefined;
     const timer = globalThis.setTimeout(() => {
       // A child who armed the start themselves in the meantime has begun it.
-      if (armedRef.current || runtime.getSnapshot().status !== 'prepared') return;
+      cueHoldRef.current = false;
+      if (armedRef.current || runtime.getSnapshot().status !== 'prepared') { setCueRestart(null); return; }
       setCueRestart(null);
       startCountIn({ gapMs: Math.min(countIn?.periodMs ?? START_GAP_MAX_MS, START_GAP_MAX_MS), reason: 'missed-cue' });
     }, CUE_RESTART_PAUSE_MS);
@@ -1524,6 +1531,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
           traceEvent('piano.exercise-input-ignored', { displayedCursor: -1, ignored: onsets, reason: 'armed', held });
           return;
         }
+        if (cueHoldRef.current) return;
         armStart(onsets);
         return;
       }

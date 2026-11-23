@@ -431,7 +431,7 @@ describe('a missed cue goes back to the count', () => {
     await mount();
     const firstClick = armByTap();
     // The first target passes with nothing played: window 400 ms + grace.
-    advance(firstClick + LEAD_IN + 600 - Date.now());
+    advance(firstClick + LEAD_IN + 700 - Date.now());
     expect(events('piano.exercise-cue-missed')).toEqual([expect.objectContaining({ attempt: 1, windowMs: 400, offsetMs: null })]);
     expect(run()).toHaveAttribute('data-phase', 'ready');
     expect(screen.getByText(/missed the cue/i)).toBeInTheDocument();
@@ -463,13 +463,13 @@ describe('a missed cue goes back to the count', () => {
     await mount();
     let firstClick = armByTap();
     for (let n = 1; n <= MAX_CUE_RESTARTS; n += 1) {
-      advance(firstClick + LEAD_IN + 600 - Date.now());
+      advance(firstClick + LEAD_IN + 700 - Date.now());
       expect(events('piano.exercise-cue-missed')).toHaveLength(n);
       advance(1000);
       firstClick = Date.now() - 1000 + 1000 + GAP; // the auto count's first click
       firstClick = events('piano.exercise-countdown-started').at(-1) ? Date.now() + GAP - 0 : firstClick;
     }
-    advance(LEAD_IN + 600 + 2 * GAP);
+    advance(LEAD_IN + 700 + 2 * GAP);
     expect(events('piano.exercise-cue-missed')).toHaveLength(MAX_CUE_RESTARTS);
     expect(events('piano.exercise-cue-restart-capped')).toHaveLength(1);
   });

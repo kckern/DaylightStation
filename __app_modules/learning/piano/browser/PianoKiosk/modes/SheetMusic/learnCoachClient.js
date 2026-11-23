@@ -19,7 +19,8 @@ const persistent = (scope) => Boolean(scope.profileId && scope.profileId !== 'gu
 export function serializeCoachPlan(plan) {
   return { version: plan.version, scoreId: plan.scoreId, fingerprint: plan.fingerprint,
     authoredLadder: plan.authoredLadder, tempoMap: plan.tempoMap, criteria: plan.criteria, certification: plan.certification,
-    segments: plan.segments.map((segment) => ({ id: segment.id, inMeasure: segment.inMeasure, outMeasure: segment.outMeasure,
+    // Joins are derived by createCoachPlan on the server too; posting them would rebuild joins of joins.
+    segments: plan.segments.filter((segment) => segment.kind !== 'join').map((segment) => ({ id: segment.id, inMeasure: segment.inMeasure, outMeasure: segment.outMeasure,
       printedMeasures: segment.printedMeasures, playableParts: segment.playableParts, label: segment.label,
       name: segment.name, authoredLadder: segment.authoredLadder,
       ...((plan.authoredLadder || segment.authoredLadder) ? { ladder: segment.ladder } : {}) })),

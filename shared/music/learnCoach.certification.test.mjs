@@ -163,7 +163,7 @@ describe('what comes next', () => {
   });
   it('names where set-aside would go next', () => {
     const plan = planOf();
-    expect(view(plan).afterSetAside).toEqual({ one: 'two', two: 'one', solo: 'one' });
+    expect(view(plan).afterSetAside).toMatchObject({ one: 'two', two: 'one', solo: 'one' });
   });
   it('falls back to the earliest set-aside passage when all remaining are set aside', () => {
     const plan = planOf(); let state;

@@ -123,7 +123,7 @@ export function createCoachPlan({ scoreId, fingerprint, segments = [], authoredL
   const noteStep = { track: 'silver', required: policy.silver.stepPasses, legacyRequired: LEGACY_STEP_PASSES };
   // Joins are derived, never input: a plan handed back to this function (the kiosk posts its plan to the
   // server, which rebuilds it) must not turn its own joins into passages.
-  for (const segment of segments.filter((item) => item.kind !== 'join')) {
+  for (const segment of segments.filter((item) => item.kind !== 'join' && !String(item.id).startsWith('join:'))) {
     const parts = partsOf(segment.playableParts);
     if (!parts.length || !Number.isInteger(segment.inMeasure) || segment.outMeasure < segment.inMeasure) continue;
     const range = { start: segment.inMeasure, end: segment.outMeasure };
@@ -421,7 +421,8 @@ export function projectCoach({ plan, state, legacy = {}, dayKey }) {
   const retentionDue = Boolean(dayKey && wholeAt && Number.isFinite(dayNumber(wholeAt))
     && dayNumber(dayKey) - dayNumber(current.reviews[wholePiece.id]?.dayKey ?? wholeAt) >= RETENTION_DAYS * 86400000);
   const retentionTask = retentionDue ? wholePiece.tasks.find((task) => task.assist === 'none') : null;
-  const review = reviewTask ? { ...reviewTask, review: true } : retentionTask ? { ...retentionTask, review: true, reason: 'retention' } : null;
+  // Retention replaces the mastery review (the spec): a mastery review is due daily for every Gold unit and would starve it.
+  const review = retentionTask ? { ...retentionTask, review: true, reason: 'retention' } : reviewTask ? { ...reviewTask, review: true } : null;
   const setAsideToday = (id) => Boolean(dayKey) && current.setAside?.[id] === dayKey;
   const isJoin = (segment) => segment.kind === 'join';
   const passages = segments.filter((segment) => !isJoin(segment));
@@ -458,8 +459,8 @@ export function projectCoach({ plan, state, legacy = {}, dayKey }) {
     goldResume: ((task) => ((current.ladder ?? 1) < LADDER_REVISION && bypassesUntriedGoldStep(segments, current, task) ? null : task))(liveResume(plan, segments, current.goldResume)),
     gold: goldMap,
     certifications: by((segment) => segment.certification),
-    afterSetAside: byPassage((segment) => open.find((other) => other.id !== segment.id && !isJoin(other) && !setAsideToday(other.id))?.id ?? null),
-    canSetAside: byPassage((segment) => !segment.certification.silver && !setAsideToday(segment.id) && missedTwice(current, segment)),
+    afterSetAside: by((segment) => open.find((other) => other.id !== segment.id && !setAsideToday(other.id))?.id ?? null),
+    canSetAside: by((segment) => !segment.certification.silver && !setAsideToday(segment.id) && missedTwice(current, segment)),
     piece: { total: passages.length,
       silver: passages.filter((segment) => segment.certification.silver).length,
       gold: passages.filter((segment) => segment.certification.gold).length,

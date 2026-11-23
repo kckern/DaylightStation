@@ -190,3 +190,31 @@ describe('retention', () => {
     expect(projectCoach({ plan, state: bronze(undefined, plan, ['p1', 'p2']), dayKey: '2026-12-30' }).review).toBeNull();
   });
 });
+
+describe('review fixes', () => {
+  it('a plan serialized for the server and rebuilt there is the same plan', async () => {
+    const { serializeCoachPlan } = await import('../../__app_modules/learning/piano/browser/PianoKiosk/modes/SheetMusic/learnCoachClient.js');
+    const plan = planOf(4);
+    const again = createCoachPlan(serializeCoachPlan(plan));
+    expect(again.segments.map((s) => s.id)).toEqual(plan.segments.map((s) => s.id));
+    expect(proj(again).piece.total).toBe(4);
+  });
+  it('a join id handed in as input is never a passage', () => {
+    const again = createCoachPlan({ scoreId: 'files:t.musicxml', fingerprint: 'fp', segments: [...many(2), { id: 'join:x:y', inMeasure: 0, outMeasure: 7, playableParts: ['rh'] }] });
+    expect(again.segments.map((s) => s.id)).toEqual(['p1', 'p2', 'join:p1:p2']);
+  });
+  it('retention is offered ahead of a due mastery review', () => {
+    const plan = planOf(2);
+    let state = play(bronze(undefined, plan, ['p1', 'p2']), plan, check(plan, 'join:p1:p2'));
+    const top = plan.segments.find((s) => s.id === 'p1').tasks.find((t) => t.mastery);
+    state = play(play(state, plan, top), plan, top);
+    expect(projectCoach({ plan, state, dayKey: '2026-11-27' }).review).toMatchObject({ reason: 'retention', passageId: 'join:p1:p2' });
+  });
+  it('a join can be set aside and names where it goes next', () => {
+    const plan = planOf(4);
+    const state = bronze(undefined, plan, ['p1', 'p2']);
+    const p = proj(plan, state);
+    expect(p.recommended.passageId).toBe('join:p1:p2');
+    expect(p.afterSetAside['join:p1:p2']).toBe('p3');
+  });
+});
