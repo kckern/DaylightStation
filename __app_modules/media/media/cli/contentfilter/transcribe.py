@@ -87,6 +87,20 @@ def run_mlx(wav, model):
     return r, model
 
 
+def make_progress(total, every=60, clock=time.monotonic, out=None):
+    """tick(done, final=False): print "Transcribed <done>/<total> s" at most every `every` s, and once at the end.
+    The worker reads these lines from stderr (refineProgress.mjs). Silent when the total is unknown."""
+    last = [clock()]
+    def tick(done, final=False):
+        if not total:
+            return
+        now = clock()
+        if final or now - last[0] >= every:
+            last[0] = now
+            print(f"Transcribed {int(done)}/{int(total)} s", file=out or sys.stderr, flush=True)
+    return tick
+
+
 def run_faster(wav, model):
     """CPU, int8. Returns the same shape mlx-whisper does: {"segments": [{id,start,end,text,words}]}."""
     from faster_whisper import WhisperModel
@@ -94,11 +108,15 @@ def run_faster(wav, model):
     m = WhisperModel(model, device="cpu", compute_type="int8", cpu_threads=os.cpu_count() or 4)
     def collect(**extra):
         segs, _info = m.transcribe(wav, language="en", word_timestamps=True, condition_on_previous_text=False, **extra)
+        tick = make_progress(getattr(_info, "duration", None))
         out = []
         for i, s in enumerate(segs):
+            tick(s.end)
             out.append({"id": i, "start": s.start, "end": s.end, "text": s.text,
                         "words": [{"word": w.word, "start": w.start, "end": w.end, "probability": w.probability}
                                   for w in (s.words or [])]})
+        if out:
+            tick(out[-1]["end"], final=True)
         return out
     try:
         out = collect()

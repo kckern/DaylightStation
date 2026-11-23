@@ -77,5 +77,36 @@ class PickBackend(unittest.TestCase):
         self.assertEqual(r["segments"], [])
 
 
+class ProgressTicker(unittest.TestCase):
+    def test_prints_at_most_every_interval_and_once_at_the_end(self):
+        import io
+        t = [0.0]; out = io.StringIO()
+        tick = transcribe.make_progress(5945, every=60, clock=lambda: t[0], out=out)
+        tick(10)            # too soon
+        t[0] = 61; tick(100)  # due
+        t[0] = 90; tick(150)  # too soon
+        tick(5945, final=True)
+        self.assertEqual(out.getvalue().splitlines(), ["Transcribed 100/5945 s", "Transcribed 5945/5945 s"])
+
+    def test_unknown_total_prints_nothing(self):
+        import io
+        out = io.StringIO()
+        transcribe.make_progress(None, out=out)(10, final=True)
+        self.assertEqual(out.getvalue(), "")
+
+    def test_run_faster_reports_segment_ends(self):
+        import io
+        seg = lambda i, e: types.SimpleNamespace(start=e - 1, end=e, text="x", words=[])
+        class Model:
+            def __init__(self, *a, **k): pass
+            def transcribe(self, wav, **kw):
+                return iter([seg(0, 30.4), seg(1, 99.9)]), types.SimpleNamespace(duration=120.0)
+        mod = types.ModuleType("faster_whisper"); mod.WhisperModel = Model
+        err = io.StringIO()
+        with mock.patch.dict(sys.modules, {"faster_whisper": mod}), mock.patch.object(transcribe.sys, "stderr", err):
+            transcribe.run_faster("a.wav", None)
+        self.assertEqual(err.getvalue().splitlines()[-1], "Transcribed 99/120 s")
+
+
 if __name__ == "__main__":
     unittest.main()

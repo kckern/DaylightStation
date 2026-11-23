@@ -1073,8 +1073,11 @@ async function main() {
     const owner = `${os.hostname()}:${process.pid}`;
     const say = (event, data = {}) => console.error(JSON.stringify({ at: new Date().toISOString(), event, ...data }));
     const cliPath = new URL(import.meta.url).pathname;
+    // The build this worker runs: the short SHA of its own checkout, read once (null if git cannot say).
+    let build = null;
+    try { build = (await import('child_process')).execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: path.dirname(cliPath), encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null; } catch { build = null; }
     await runWorker({
-      api: httpWorkerApi(appUrl), owner, stageRoot, realDataDir, log: say,
+      build, api: httpWorkerApi(appUrl), owner, stageRoot, realDataDir, log: say,
       // Beside the 480p copies: transcripts survive a failed run (runWorker keeps and restores them).
       transcriptCacheDir: path.join(process.env.CONTENT_FILTER_PROXY_DIR || path.join(os.tmpdir(), 'daylight-cf-proxy'), 'transcripts'),
       runStep: (name, ctx) => new ChildProcessContentFilterCli({ cliPath, env: { DAYLIGHT_DATA_DIR: ctx.dataDir, DAYLIGHT_MEDIA_DIR: ctx.mediaDir } })

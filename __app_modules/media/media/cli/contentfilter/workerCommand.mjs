@@ -102,11 +102,11 @@ function clearStagedNudges(overridePath, ids) {
  *   log?: (event: string, data?: object) => void, ticks?: number }} p
  */
 export async function runWorker({ api, owner, runStep, stageRoot, realDataDir = null, pollMs = WORKER_POLL_MS,
-  sleep = (ms) => new Promise((r) => setTimeout(r, ms)), schedule = (fn, ms) => setTimeout(fn, ms), log = () => {}, ticks = Infinity, now = Date.now, transcriptCacheDir = null }) {
-  log('content-filter.worker.started', { owner });
+  sleep = (ms) => new Promise((r) => setTimeout(r, ms)), schedule = (fn, ms) => setTimeout(fn, ms), log = () => {}, ticks = Infinity, now = Date.now, transcriptCacheDir = null, build = null }) {
+  log('content-filter.worker.started', { owner, build });
   for (let i = 0; i < ticks; i++) {
     let claimed = null;
-    try { claimed = await api.claim(owner); } catch (e) { log('content-filter.worker.error', { owner, error: e.message }); }
+    try { claimed = await api.claim(owner, build); } catch (e) { log('content-filter.worker.error', { owner, error: e.message }); }
     if (!claimed) { await sleep(pollMs); continue; }
     const { ratingKey: rk, run } = claimed;
     log('content-filter.worker.claimed', { owner, ratingKey: rk, runId: run.id, kind: run.kind, steps: claimed.steps });
@@ -134,7 +134,8 @@ export async function runWorker({ api, owner, runStep, stageRoot, realDataDir = 
           if (!parsed) return;
           const phaseChanged = parsed.phase !== prog?.phase;
           prog = foldProgress(prog, parsed, new Date(now()).toISOString());
-          const edge = parsed.phase === 'measure' && (parsed.done === 1 || parsed.done === parsed.total);
+          // Transcribe lines come at most once a minute from the Python side: never held back by the throttle.
+          const edge = (parsed.phase === 'measure' && (parsed.done === 1 || parsed.done === parsed.total)) || (parsed.phase === 'transcribe' && parsed.total != null);
           if (!phaseChanged && !edge && now() - sentAt < PROGRESS_MIN_MS) return;
           sentAt = now();
           api.progress(rk, run.id, { owner, step: { name, status: 'running', progress: prog } }).catch(refused);
@@ -177,7 +178,7 @@ export function httpWorkerApi(appUrl, { fetchImpl = fetch } = {}) {
     return json;
   };
   return {
-    claim: (owner) => post(`${base}/jobs/claim`, { owner }),
+    claim: (owner, build = null) => post(`${base}/jobs/claim`, { owner, ...(build ? { build } : {}) }),
     progress: (rk, runId, body) => post(`${base}/${rk}/jobs/${encodeURIComponent(runId)}/progress`, body),
     complete: (rk, runId, body) => post(`${base}/${rk}/jobs/${encodeURIComponent(runId)}/complete`, body),
   };

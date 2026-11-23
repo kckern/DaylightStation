@@ -10,7 +10,7 @@ const memStore = (init = {}) => {
 const cli = () => { const calls = []; return { calls, run: async (cmd, args) => { calls.push([cmd, ...args]); return cmd === 'audit' ? { code: 0, stdout: '{"ok":true,"rows":[]}', stderrTail: '' } : { code: 0, stdout: '', stderrTail: '' }; } }; };
 const make = (o) => new ContentFilterJobs({ store: o.store, cli: o.cli || cli(), executor: o.executor || 'worker', auditDebounceMs: 0,
   schedule: (fn, ms) => setTimeout(fn, ms), now: o.now || (() => new Date()), film: async () => ({ hasEdl: true, hasScenes: true }),
-  digestOf: async () => 'd', draftCards: o.draftCards ?? null, logPath: () => null, logger: { info() {}, warn() {}, debug() {} } });
+  digestOf: async () => 'd', draftCards: o.draftCards ?? null, logPath: () => null, logger: o.logger || { info() {}, warn() {}, debug() {} } });
 
 describe('ContentFilterJobs with a filter worker', () => {
   it('the app in worker mode queues but never runs the CLI', async () => {
@@ -34,6 +34,22 @@ describe('ContentFilterJobs with a filter worker', () => {
     t = new Date('2026-11-08T00:02:00Z'); // and has heard nothing for 90 s since
     expect(await jobs.reapStale({ maxAgeMs: 60000 })).toBe(1);
     expect((await jobs.record('1')).runs[0]).toMatchObject({ status: 'interrupted', step: 'refine' });
+  });
+  it('logs transcribe progress, the worker build on claim, and build + heartbeat age on interrupt', async () => {
+    const store = memStore();
+    const logs = [];
+    let t = new Date('2026-11-08T00:00:00Z');
+    const jobs = make({ store, now: () => t, logger: { info: (e, d) => logs.push([e, d]), warn: (e, d) => logs.push([e, d]), debug() {} } });
+    await jobs.enqueue({ ratingKey: '1', kind: 'make' });
+    const { run } = await jobs.claimRemote({ owner: 'w1', build: 'abc1234' });
+    expect(logs.find(([e]) => e === 'content-filter.job.claimed')[1]).toMatchObject({ worker: 'w1', build: 'abc1234' });
+    expect((await jobs.record('1')).runs[0].build).toBe('abc1234');
+    await jobs.progress({ ratingKey: '1', runId: run.id, owner: 'w1', step: { name: 'refine', status: 'running', progress: { phase: 'transcribe', done: 60, total: 5945 } } });
+    expect(logs.find(([e]) => e === 'content-filter.job.step')[1]).toMatchObject({ phase: 'transcribe', done: 60, total: 5945 });
+    expect((await jobs.record('1')).runs[0].steps.find((x) => x.name === 'refine').progress).toMatchObject({ phase: 'transcribe', done: 60, total: 5945 });
+    t = new Date('2026-11-08T00:05:00Z');
+    await jobs.reapStale({ maxAgeMs: 60000 });
+    expect(logs.find(([e]) => e === 'content-filter.job.interrupted')[1]).toMatchObject({ build: 'abc1234', heartbeatAgeMs: 300000 });
   });
   it('the app watcher fires onSettled for a run the worker finished, and drafts its cards', async () => {
     const store = memStore({ 1: { ratingKey: '1', runs: [{ id: 'a', kind: 'make', status: 'running', step: 'refine', steps: [] }] } });

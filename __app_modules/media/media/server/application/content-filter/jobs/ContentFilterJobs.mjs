@@ -297,16 +297,16 @@ export class ContentFilterJobs {
   // ── Remote filter worker (talks to the app over HTTP; never touches the data folders) ──
 
   /** Claim the oldest queued run for `owner`: { ratingKey, run, steps, inputs } or null. */
-  async claimRemote({ owner }) {
+  async claimRemote({ owner, build = null }) {
     this.#workerSeen = { owner, at: this.#now().getTime() };
-    const rk = await this.claimNext(owner);
+    const rk = await this.claimNext(owner, build);
     if (!rk) return null;
     const film = await this.#film(rk);
     const run = await this.#withRecord(rk, (rec) => {
       const r = rec.runs.find((x) => x.status === 'queued');
       if (!r) return null;
       const at = this.#now().toISOString();
-      Object.assign(r, { status: 'running', startedAt: at, worker: owner, heartbeatAt: at, step: 'claimed', remote: true });
+      Object.assign(r, { status: 'running', startedAt: at, worker: owner, heartbeatAt: at, step: 'claimed', remote: true, ...(build ? { build: str(build, 40) } : {}) });
       if (r.kind === 'make' && film?.hasEdl) r.steps.push({ name: 'export', status: 'skipped', endedAt: at });
       if (r.kind === 'make' && film?.hasScenes) r.steps.push({ name: 'scenes', status: 'skipped', endedAt: at });
       return structuredClone(r);
@@ -351,7 +351,8 @@ export class ContentFilterJobs {
         ...(step.progress && typeof step.progress === 'object' ? { progress: cleanProgress(step.progress) } : {}) };
       if (i < 0) r.steps.push(entry); else r.steps[i] = { ...r.steps[i], ...entry };
     });
-    if (step?.name) this.#logger.info?.('content-filter.job.step', { ratingKey: rk, runId, step: step.name, status: step.status, remote: true });
+    if (step?.name) this.#logger.info?.('content-filter.job.step', { ratingKey: rk, runId, step: step.name, status: step.status, remote: true,
+      ...(step.progress && typeof step.progress === 'object' ? { phase: str(step.progress.phase, 20), done: int(step.progress.done), total: int(step.progress.total) } : {}) });
   }
 
   /** The worker is done: save its results, run cards and the audit here, settle the run. */
@@ -384,20 +385,20 @@ export class ContentFilterJobs {
         if (i < 0) r.steps.push(entry); else r.steps[i] = { ...r.steps[i], ...entry };
       }
     });
-    if (failed) this.#logger.warn?.('content-filter.job.failed', { ratingKey: rk, runId: run.id, ...failed, remote: true });
+    if (failed) this.#logger.warn?.('content-filter.job.failed', { ratingKey: rk, runId: run.id, ...failed, remote: true, build: run.build ?? null });
     else this.#logger.info?.('content-filter.job.done', { ratingKey: rk, runId: run.id, remote: true });
     for (const fn of this.#settled) { try { fn({ ratingKey: rk, runId: run.id, status: failed ? 'failed' : 'done' }); } catch { /* listener */ } }
     return { status: failed ? 'failed' : 'done' };
   }
 
   /** Worker: claim the oldest queued run (atomic across workers via store.claim). Returns its film or null. */
-  async claimNext(owner) {
+  async claimNext(owner, build = null) {
     const { running, queued } = await this.state();
     const busy = new Set(running.map((r) => r.ratingKey));
     for (const q of queued) {
       if (busy.has(q.ratingKey) || (q.kind === 'stage' && LIGHT_STAGES.has(q.stage))) continue; // the app runs those
       if (typeof this.#store.claim === 'function' && !(await this.#store.claim(q.ratingKey, q.runId, owner))) continue;
-      this.#logger.info?.('content-filter.job.claimed', { ratingKey: q.ratingKey, runId: q.runId, worker: owner });
+      this.#logger.info?.('content-filter.job.claimed', { ratingKey: q.ratingKey, runId: q.runId, worker: owner, build: build ? str(build, 40) : null });
       return q.ratingKey;
     }
     return null;
@@ -420,7 +421,8 @@ export class ContentFilterJobs {
         const hit = r.runs.filter(stale);
         for (const x of hit) {
           Object.assign(x, { status: 'interrupted', endedAt: this.#now().toISOString() });
-          this.#logger.warn?.('content-filter.job.interrupted', { ratingKey: rk, runId: x.id, step: x.step, worker: x.worker, reason: 'heartbeat' });
+          this.#logger.warn?.('content-filter.job.interrupted', { ratingKey: rk, runId: x.id, step: x.step, worker: x.worker, build: x.build ?? null, reason: 'heartbeat',
+            heartbeatAgeMs: x.heartbeatAt ? now - Date.parse(x.heartbeatAt) : null });
         }
         return hit.length;
       });

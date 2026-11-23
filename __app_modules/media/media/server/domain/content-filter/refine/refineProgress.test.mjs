@@ -39,3 +39,14 @@ describe('refine progress: the film copy steps (2026-11-22)', () => {
     expect(parseRefineLine('Making the film copy')).toEqual({ phase: 'copy' });
   });
 });
+
+describe('refine progress: transcription (2026-11-23)', () => {
+  it('reads "Transcribed done/total s" as the transcribe phase with counts', () => {
+    expect(parseRefineLine('Transcribed 1234/5945 s')).toEqual({ phase: 'transcribe', done: 1234, total: 5945 });
+  });
+  it('foldProgress keeps done/total for the transcribe phase', () => {
+    let p = foldProgress(null, parseRefineLine('Transcribing (word timestamps)… x'), 'a');
+    p = foldProgress(p, parseRefineLine('Transcribed 60/5945 s'), 'b');
+    expect(p).toMatchObject({ phase: 'transcribe', done: 60, total: 5945, at: 'b' });
+  });
+});

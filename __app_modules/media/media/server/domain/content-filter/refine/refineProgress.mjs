@@ -6,12 +6,14 @@
 const CUE = /^\s*\[(\d+)\/(\d+)\]\s+(\S+)\s+(\S+)\s+(\S+)\s*(.*)$/;
 const RECENT = 8;
 
-/** @returns {null | { phase: 'copy-wait'|'copy'|'transcribe'|'sync'|'measure', done?, total?, cue?, kind?, status?, detail? }} */
+/** @returns {null | { phase: 'copy-wait'|'copy'|'transcribe'|'sync'|'measure', done?, total? (transcribe: seconds), cue?, kind?, status?, detail? }} */
 export function parseRefineLine(line) {
   const s = String(line ?? '');
   if (/^Waiting for the film copy\b/.test(s)) return { phase: 'copy-wait' };
   if (/^Making the film copy\b/.test(s)) return { phase: 'copy' };
   if (/^Transcribing\b/.test(s)) return { phase: 'transcribe' };
+  const t = /^Transcribed (\d+)\/(\d+) s\b/.exec(s);
+  if (t) return { phase: 'transcribe', done: Number(t[1]), total: Number(t[2]) };
   if (/^Sync:/.test(s)) return { phase: 'sync' };
   const m = CUE.exec(s);
   if (!m) return null;
@@ -22,7 +24,10 @@ export function parseRefineLine(line) {
 export function foldProgress(prev, parsed, at) {
   if (!parsed) return prev;
   const p = prev || { phase: null, done: 0, total: null, firstAt: null, at: null, recent: [] };
-  if (parsed.phase !== 'measure') return { ...p, phase: parsed.phase, at };
+  if (parsed.phase !== 'measure') {
+    // Transcription reports seconds done of total; the other phases carry no counts.
+    return parsed.total != null ? { ...p, phase: parsed.phase, done: parsed.done, total: parsed.total, at } : { ...p, phase: parsed.phase, at };
+  }
   const outcome = { cue: parsed.cue, kind: parsed.kind, status: parsed.status, detail: parsed.detail };
   return {
     ...p, phase: 'measure', done: parsed.done, total: parsed.total, firstAt: p.firstAt || at, at,

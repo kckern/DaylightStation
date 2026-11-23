@@ -995,6 +995,13 @@ count starts no earlier than the app's own start: while the app is down (a deplo
 heartbeats have nowhere to go, so a run must miss beats against the running app before it is reaped
 (2026-11-21: the first watch tick after a deploy reaped a live refine 20 s in, and the worker's next
 report was refused). `recover()` (interrupt everything open on boot) runs only with the inline executor.
+**Seeing a run in the log store.** Transcription prints `Transcribed <done>/<total> s` to stderr (at most
+once a minute of wall clock, plus once at the end; faster-whisper only, mlx-whisper does not iterate
+segments); it is the `transcribe` phase of `step.progress` with `done`/`total` in seconds, sent as it
+arrives, and `content-filter.job.step` carries `phase`, `done`, `total`. The worker reads the short SHA of
+its own checkout once at start and sends it with the claim (`{ owner, build }`); it is stored on the run as
+`build` and logged on `job.claimed`, `job.interrupted` (with `heartbeatAgeMs`) and `job.failed`, so a
+run's code version is known without asking the host.
 `--data-dir` (read-only) lends the worker the app's Plex and Jev credentials; without it set
 `PLEX_HOST`/`PLEX_TOKEN` and the Jev key in its environment. With no worker running, queued runs
 wait and the library says "Waiting for a filter worker" (an idle worker asks for work every 5 s).

@@ -97,6 +97,22 @@ describe('runWorker (remote)', () => {
     expect(PROGRESS_MIN_MS).toBe(2000);
   });
 
+  it('sends its build with the claim, and sends transcribe progress each time it arrives', async () => {
+    const api = fakeApi([claimed()]); const bodies = []; let claimArgs = null;
+    const claim = api.claim; api.claim = async (...a) => { claimArgs = a; return claim(...a); };
+    const progress = api.progress; api.progress = async (rk, id, body) => { if (body.step?.progress) bodies.push(body.step.progress); return progress(rk, id, body); };
+    let t = 0;
+    await runWorker({ ...opts(api, async (name, ctx) => {
+      if (name !== 'refine') return { code: 0 };
+      ctx.onLine('Transcribing (word timestamps)… x');
+      t += 100; ctx.onLine('Transcribed 60/5945 s');
+      t += 100; ctx.onLine('Transcribed 120/5945 s');
+      return { code: 0 };
+    }), now: () => t, build: 'abc1234' });
+    expect(claimArgs).toEqual(['w1', 'abc1234']);
+    expect(bodies.map((b) => [b.phase, b.done])).toEqual([['transcribe', 0], ['transcribe', 60], ['transcribe', 120]]);
+  });
+
   it('a stopped run: the refused report aborts the step and nothing is completed', async () => {
     const api = fakeApi([claimed()]); let signal = null;
     // Stopped from Admin while refine runs: the next report (refine's progress) is refused.
