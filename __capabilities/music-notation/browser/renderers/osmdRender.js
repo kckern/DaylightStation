@@ -448,6 +448,10 @@ export function extractMeasureMap(osmd) {
     index,
     onsetQuarter: measure.AbsoluteTimestamp?.RealValue * 4,
     durationQuarters: measure.Duration?.RealValue * 4,
+    // A pickup (anacrusis): marked implicit in the MusicXML, or numbered 0. Only
+    // when the engraver says either way — unknown is not "a real bar".
+    ...(typeof measure.ImplicitMeasureFromXml === 'boolean' || Number.isFinite(measure.MeasureNumberXML)
+      ? { implicit: measure.ImplicitMeasureFromXml === true || measure.MeasureNumberXML === 0 } : {}),
   })).filter(({ onsetQuarter, durationQuarters }) => Number.isFinite(onsetQuarter) && onsetQuarter >= 0
     && Number.isFinite(durationQuarters) && durationQuarters > 0);
 }

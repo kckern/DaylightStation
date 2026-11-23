@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { countInPlan, exerciseCountInPlan, countdownPresentation, askPulseQuarters, askPace, countInSentence, entryOffsetQuarters, alignCountIn } from './countIn.js';
+import { countInPlan, exerciseCountInPlan, countdownPresentation, askPulseQuarters, askPace, countInSentence, entryOffsetQuarters, alignCountIn, polishCountIn } from './countIn.js';
 
 describe('exercise count-in projection', () => {
   it.each([
@@ -291,5 +291,38 @@ describe('pickup-aware count-in', () => {
   });
   it.each([undefined, [], [{ onsetQuarter: NaN, durationQuarters: 4 }]])('returns null for unusable measures %#', (measures) => {
     expect(entryOffsetQuarters({ measures, firstOnsetQuarter: 0 })).toBeNull();
+  });
+});
+
+describe('a short first bar that is not a pickup', () => {
+  it('counts a written 2/4 opening bar from its downbeat, not as a pickup', () => {
+    const measures = [{ onsetQuarter: 0, durationQuarters: 2, implicit: false },
+      { onsetQuarter: 2, durationQuarters: 4, implicit: false }, { onsetQuarter: 6, durationQuarters: 4, implicit: false }];
+    expect(entryOffsetQuarters({ measures, firstOnsetQuarter: 0 })).toBe(0);
+  });
+  it('still reads a bar marked implicit as a pickup', () => {
+    const measures = [{ onsetQuarter: 0, durationQuarters: 1, implicit: true }, { onsetQuarter: 1, durationQuarters: 4, implicit: false }];
+    expect(entryOffsetQuarters({ measures, firstOnsetQuarter: 0 })).toBe(3);
+  });
+});
+
+describe('the Polish count-in', () => {
+  const plan = { beats: 4, periodMs: 500, totalMs: 2000, subdivision: 1 };
+  const pickup = [{ onsetQuarter: 0, durationQuarters: 1 }, { onsetQuarter: 1, durationQuarters: 4 }, { onsetQuarter: 5, durationQuarters: 4 }];
+  const timeSig = { beats: 4, beatType: 4 };
+  it('counts the beats before a pickup from the top, keeping at least 1.5 s', () => {
+    // three clicks of 500 ms is exactly 1.5 s
+    expect(polishCountIn(plan, { fromTop: true, measures: pickup, firstOnsetQuarter: 0, timeSig }))
+      .toEqual({ ...plan, beats: 3, totalMs: 1500, entry: 'aligned' });
+    // at 400 ms a click, three is 1.2 s: a bar more
+    expect(polishCountIn({ ...plan, periodMs: 400, totalMs: 1600 }, { fromTop: true, measures: pickup, firstOnsetQuarter: 0, timeSig }))
+      .toMatchObject({ beats: 7, entry: 'aligned' });
+  });
+  it('keeps the plan for a run that does not start at the top', () => {
+    expect(polishCountIn(plan, { fromTop: false, measures: pickup, firstOnsetQuarter: 0, timeSig })).toEqual({ ...plan, entry: 'downbeat' });
+  });
+  it.each([0, -1, NaN, Infinity])('never loops on a click period of %s', (periodMs) => {
+    expect(polishCountIn({ ...plan, periodMs }, { fromTop: true, measures: pickup, firstOnsetQuarter: 0, timeSig }))
+      .toEqual({ ...plan, periodMs, entry: 'unaligned' });
   });
 });

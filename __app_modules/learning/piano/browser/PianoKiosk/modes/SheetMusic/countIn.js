@@ -136,7 +136,9 @@ export function entryOffsetQuarters({ measures, firstOnsetQuarter } = {}) {
   const fullBar = counts.size ? [...counts].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0] : measures[0].durationQuarters;
   const firstBar = measures.length > 1 ? measures[1].onsetQuarter - measures[0].onsetQuarter : measures[0].durationQuarters;
   const home = [...measures].reverse().find((m) => m.onsetQuarter <= firstOnsetQuarter + WHOLE) ?? measures[0];
-  if (home === measures[0] && firstBar > 0 && firstBar < fullBar - WHOLE) {
+  // A short first bar is a pickup unless the score says it is a real bar (a
+  // written 2/4 opening before 4/4): `implicit: false` from the engraver.
+  if (home === measures[0] && measures[0].implicit !== false && firstBar > 0 && firstBar < fullBar - WHOLE) {
     return fullBar - firstBar + (firstOnsetQuarter - measures[0].onsetQuarter);
   }
   return Math.max(0, firstOnsetQuarter - home.onsetQuarter);
@@ -158,6 +160,32 @@ export function alignCountIn({ clicks, pulseQuarters, barQuarters, entryQuarters
   if (!(pulseQuarters > 0) || !isWhole(before) || !isWhole(perBar)) return { clicks, entry: 'unaligned' };
   const whole = Math.round(before);
   return { clicks: whole >= 2 ? whole : whole + Math.round(perBar), entry: 'aligned' };
+}
+
+const MIN_POLISH_LEAD_MS = 1500;
+
+/**
+ * THE POLISH COUNT-IN. A run from the top of a piece that opens on a pickup
+ * counts the beats before the pickup, so it lands on its own beat (one-beat
+ * pickup in 4/4: 1, 2, 3, play on 4), and still lasts at least 1.5 s, adding
+ * whole bars. Any other start keeps `countInPlan`'s count. A plan without a
+ * usable click period is returned unchanged rather than counted against.
+ *
+ * @param {{beats:number, periodMs:number, totalMs:number, subdivision:number}} plan from `countInPlan`
+ * @param {{ fromTop:boolean, measures?:Array, firstOnsetQuarter?:number, timeSig?:{beats?:number, beatType?:number} }} p
+ */
+export function polishCountIn(plan, { fromTop, measures, firstOnsetQuarter, timeSig } = {}) {
+  if (!fromTop) return { ...plan, entry: 'downbeat' };
+  if (!Number.isFinite(plan?.periodMs) || plan.periodMs <= 0) return { ...plan, entry: 'unaligned' };
+  const entryQuarters = entryOffsetQuarters({ measures, firstOnsetQuarter: firstOnsetQuarter ?? 0 });
+  const beats = Number(timeSig?.beats) > 0 ? Number(timeSig.beats) : 4;
+  const beatType = Number(timeSig?.beatType) > 0 ? Number(timeSig.beatType) : 4;
+  const barQuarters = beats * 4 / beatType;
+  const aligned = alignCountIn({ clicks: plan.beats, pulseQuarters: plan.subdivision, barQuarters, entryQuarters });
+  let clicks = aligned.clicks;
+  const perBar = Math.max(1, Math.round(barQuarters / plan.subdivision));
+  if (aligned.entry === 'aligned') while (clicks * plan.periodMs < MIN_POLISH_LEAD_MS) clicks += perBar;
+  return { ...plan, beats: clicks, totalMs: clicks * plan.periodMs, entry: aligned.entry };
 }
 
 /** At most four countable pulses on the exercise's graded musical grid, ending on the beat before the first note. */
@@ -264,4 +292,4 @@ export function countInSentence(clicks, pace) {
   return `${lead}, then play at that speed.`;
 }
 
-export default { countInPlan, exerciseCountInPlan, entryOffsetQuarters, alignCountIn, countdownPresentation, countUpPresentation, askPulseQuarters, askPace, countInSentence };
+export default { countInPlan, exerciseCountInPlan, entryOffsetQuarters, alignCountIn, polishCountIn, countdownPresentation, countUpPresentation, askPulseQuarters, askPace, countInSentence };

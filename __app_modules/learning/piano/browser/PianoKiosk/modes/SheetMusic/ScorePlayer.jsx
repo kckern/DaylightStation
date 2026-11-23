@@ -18,7 +18,7 @@ import { rangeSteps, clampStepToRange, sectionToRange, homeStep } from './focusR
 import useLearnAssessmentProjection from './useLearnAssessmentProjection.js';
 import useMetronomeClick from './useMetronomeClick.js';
 import useCountIn from './useCountIn.js';
-import { countInPlan, entryOffsetQuarters, alignCountIn } from './countIn.js';
+import { countInPlan, polishCountIn } from './countIn.js';
 import useScoreTelemetry from './useScoreTelemetry.js';
 import useScoreEvaluator from './useScoreEvaluator.js';
 import usePracticeRecord, { compatibleLearnPassages } from './usePracticeRecord.js';
@@ -167,27 +167,6 @@ const attemptId = () => `attempt-${globalThis.crypto?.randomUUID?.() || `${Date.
  * over the cursor overlay; logs-only timing telemetry flows through
  * {@link useScoreTelemetry}.
  */
-/**
- * A Polish run from the top of a piece that opens on a pickup counts the beats
- * before the pickup, so the pickup lands on its own beat (one-beat pickup in
- * 4/4: 1, 2, 3, play on 4). The count still lasts at least as long as the
- * plan's own minimum lead, a bar at a time. Any other start keeps its plan.
- */
-const MIN_POLISH_LEAD_MS = 1500;
-function pickupCountIn(plan, { fromTop, layout, timeSig }) {
-  const entryQuarters = fromTop
-    ? entryOffsetQuarters({ measures: layout?.measureMap, firstOnsetQuarter: layout?.steps?.[0]?.onsetQuarter ?? 0 })
-    : null;
-  const beats = Number(timeSig?.beats) > 0 ? Number(timeSig.beats) : 4;
-  const beatType = Number(timeSig?.beatType) > 0 ? Number(timeSig.beatType) : 4;
-  const barQuarters = beats * 4 / beatType;
-  const aligned = alignCountIn({ clicks: plan.beats, pulseQuarters: plan.subdivision, barQuarters, entryQuarters });
-  let clicks = aligned.clicks;
-  const perBar = Math.max(1, Math.round(barQuarters / plan.subdivision));
-  if (aligned.entry === 'aligned') while (clicks * plan.periodMs < MIN_POLISH_LEAD_MS) clicks += perBar;
-  return { ...plan, beats: clicks, totalMs: clicks * plan.periodMs, entry: aligned.entry };
-}
-
 export default function ScorePlayer({ score: scoreMeta }) {
   const { subscribe, subscribeRaw, releaseNote, sendNoteAt, sendNoteOffAt, sendPanic } = usePianoMidi();
   const { setPlaying: setGlobalPlaying } = usePianoPlayback();
@@ -1988,8 +1967,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
         // reader how many clicks were heard or how long the wait was. `bpm` and
         // `tempoMult` come AFTER the spread — the plan has no such keys today, and
         // this keeps it that way if it ever grows them.
-        const plan = pickupCountIn(countInPlan({ beats: parsed?.timeSig?.beats, bpm: tempoMap[0]?.bpm, tempoMult }), {
-          fromTop: stepRef.current === 0, layout: layoutRef.current, timeSig: parsed?.timeSig,
+        // Polish never holds a loop (`range` is Learn-only), so the cursor IS the
+        // start step: a run at step 0 is a run from the top.
+        const plan = polishCountIn(countInPlan({ beats: parsed?.timeSig?.beats, bpm: tempoMap[0]?.bpm, tempoMult }), {
+          fromTop: stepRef.current === 0, measures: layoutRef.current?.measureMap,
+          firstOnsetQuarter: layoutRef.current?.steps?.[0]?.onsetQuarter ?? 0, timeSig: parsed?.timeSig,
         });
         countIn.start(plan);
         logger.info('score.countin.start', { mode, ...plan, bpm: tempoMap[0]?.bpm, tempoMult });
