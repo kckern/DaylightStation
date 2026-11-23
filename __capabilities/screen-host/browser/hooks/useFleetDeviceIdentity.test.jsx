@@ -33,3 +33,15 @@ describe('useFleetDeviceIdentity', () => {
     expect(getDeviceId()).toMatch(/^browser:/);
   });
 });
+
+it("is already set when a child's first effect sends a request (deep-linked menus at boot)", async () => {
+  const React = await import('react');
+  const { render } = await import('@testing-library/react');
+  const { getDeviceId } = await import('../../../../frontend/src/lib/deviceIdentity.js');
+  const seen = [];
+  function Child() { React.useEffect(() => { seen.push(getDeviceId()); }, []); return null; }
+  function Screen() { useFleetDeviceIdentity('livingroom-tv'); return <Child />; }
+  const { unmount } = render(<Screen />);
+  expect(seen).toEqual(['fleet:livingroom-tv']);
+  unmount();
+});
