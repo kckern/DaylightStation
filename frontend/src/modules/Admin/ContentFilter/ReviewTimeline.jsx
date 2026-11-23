@@ -60,12 +60,14 @@ function Lane({ name, label, title, rows, from, span, selectedId, onSelect, now 
 
 export function ReviewTimeline({ rows = [], selectedId = null, onSelect = () => {} }) {
   const [now, setNow] = useState(() => previewStore.currentTime());
+  const [length, setLength] = useState(() => previewStore.duration());
   useEffect(() => {
-    const timer = setInterval(() => setNow(previewStore.currentTime()), PLAYHEAD_MS);
+    const timer = setInterval(() => { setNow(previewStore.currentTime()); setLength(previewStore.duration()); }, PLAYHEAD_MS);
     return () => clearInterval(timer);
   }, []);
   if (!rows.length) return <Text size="sm" c="dimmed">Nothing in this view. Change the filters.</Text>;
-  const end = Math.max(1, ...rows.map((r) => (Number.isFinite(r.out) ? r.out : r.in)));
+  // The Film lane is the whole film, to its real end once the player knows it (it used to stop at the last part).
+  const end = Math.max(1, length || 0, ...rows.map((r) => (Number.isFinite(r.out) ? r.out : r.in)));
   const cursor = rows.find((r) => r.id === selectedId) || null;
   const centre = cursor ? cursor.in : Math.min(...rows.map((r) => r.in));
   const from = Math.max(0, Math.min(centre - WINDOW_SEC / 2, Math.max(0, end - WINDOW_SEC)));

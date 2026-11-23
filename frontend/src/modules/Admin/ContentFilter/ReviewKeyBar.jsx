@@ -27,8 +27,9 @@ export function ReviewKeyBar({ redoOpen = false, helpOpen = false, onCloseHelp, 
   return (
     <div className="cf-keybar" aria-live="polite">
       {redoOpen ? (
-        <Group gap="sm" wrap="wrap" align="center" role="toolbar" aria-label="Redo reason">
-          <Text size="sm">Redo because:</Text>
+        // One line: the status row under the card is one line tall (it was clipped at 1280, review 2026-11-22).
+        <Group gap={2} wrap="nowrap" align="center" role="toolbar" aria-label="Redo reason">
+          <Text size="sm" fw={600}>Redo:</Text>
           {/* The same prompt for D and for the Redo button: each reason is a key and a click. */}
           {REDO_REASONS.map(([k, label]) => (onRedo
             ? <button key={k} type="button" className="cf-keybar__pick" onMouseDown={(e) => e.preventDefault()} onClick={() => onRedo(label)}><Key k={k}>{label}</Key></button>

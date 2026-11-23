@@ -1099,11 +1099,14 @@ the part in hand; its range is the label's tooltip, so the label never changes w
 on a lane goes somewhere when clicked (owner: "anything on a timeline, you click it, it should go
 there"): a mark, or a click within 6 px of one, takes that part and seeks to it; a click on empty
 track seeks the film to that time and keeps the part in hand. Each mark has a 12 px hit pad; both
-lanes draw the film's playhead.
+lanes draw the film's playhead, and the Film lane runs to the film's real end
+(`previewStore.duration`), not to its last part.
 
 **List** (`ReviewList.jsx`): one 32 px line per part (status, time, effect and channel icons,
-label, status word, timing icon), the part in hand marked but never expanded (the card carries its
-details). The **effect icon is a control**: it takes that row in hand and opens the effect menu.
+label, status word, timing icon; "Not reviewed" is the hollow circle alone, its word for screen
+readers), the part in hand marked but never expanded (the card carries its details). The **effect
+icon is a control**: it takes that row in hand and opens the effect menu (it stays shut when the
+pick is refused, e.g. while unsaved timing holds the cursor).
 
 **Part card** (`RowEditor.jsx`), one 280 px panel of five lines, none of which grows:
 
@@ -1117,21 +1120,27 @@ details). The **effect icon is a control**: it takes that row in hand and opens 
    dragged too) with **Undo drag** while a draft is open or **Reset** (drop the hand fix).
 4. **Actions**: ▶ (Space), **Filtered (Enter)**, **Unfiltered (W)** | **Approve (A)**, **Let it play
    (X)**, **Redo (D)** (the reason prompt), ↶ (U). On the Refine tab there are no verdict buttons.
-5. **Status**: the station's last message, the redo reasons, notices and run notes, one line.
+5. **Status** (40 px): the station's last message, the redo reasons (one line), notices and run
+   notes. On a card narrower than 600 px (a 1280 window) the play buttons drop their key labels
+   (their tooltips keep them) before anything is clipped.
 
 The **effect menu** (`EffectMenu.jsx`; a menu, not a cycle, so no effect is saved on the way): the
 effects that fit the part's channel with their keys (said `M` mute, `P` bleep, `K` skip, `O` off;
 shown `B` blur, `H` hide picture, `K` skip, `O` off; true scenes `K` skip, `B` hide picture, `O`
-off), the current one checked; then **Use household settings**; for a word, this word in this film
-(Use settings / Play / Mute / Bleep this word) and all of its group in this film (Play / Mute /
-Bleep them all); for a skip, the card shown in place of it (a popover with Approve card, Draft,
-Withdraw). The effect keys work with the menu closed. A word skipped as an exchange is listed with
+off), the current one checked; then **Use household settings**; for a word, **More for this
+word…** (a popover: this word in this film, Settings / Play / Mute / Bleep, and all of its group in
+this film); for a skip, the card shown in place of it (a popover with Approve card, Draft,
+Withdraw). The effect keys work with the menu closed and inside it (a letter picks and closes it).
+While any menu is open the station keys stand aside entirely, Esc included: Esc closes the menu and
+nothing else (it used to drop an unsaved timing change behind an open menu). A word skipped as an exchange is listed with
 scenes but is a cue: `isSceneRow` (no members, not `cue:`) decides scene handling, `keysKindOf` the
 effect keys.
 
-**Unfiltered (W)** plays the part from 4 s before with its effect off (`previewStore.peek`); while
-it plays the player carries an amber **Unfiltered** badge and outline and the button is pressed
-(`content_filter.review.unfiltered`).
+**Unfiltered (W)** plays the part from 4 s before with its effect off (`previewStore.peek`). The
+player reports the peek (its peek set publishes `peeking` to the preview store when it starts and
+when the playhead passes the part), and while it is on the player carries an amber **Unfiltered**
+badge and outline and the button is pressed (`content_filter.review.unfiltered`). Filtered (Enter),
+stepping and picking a part end a peek at once (`previewStore.unpeek`).
 
 **Refine** (`useReviewStation.js`): R sends a send-back of the part's member cues (on a hand-fixed
 part, the first R warns that refining drops the hand fix and the second sends); Shift+R (on any tab),
@@ -1186,8 +1195,9 @@ hand as a solid band with white handles; **every other filtered part that overla
 its effect family's colour (owner: two bleeps close together must both show and be adjustable),
 one-cue neighbours with their own thinner handles, multi-cue ones hatched with none; the film's
 playhead (amber, read every 100 ms) and, once the span is edited, a thin line where the saved span
-is. A handle's hit is 20 px and the track's full height, biased outward (Start reaches left, End
-right) so two close handles never cover each other; a grab keeps its offset (the edge does not jump
+is. The track decides which handle a press means: the nearest edge within 12 px (a press farther
+away is a click, which seeks), so two close parts never steal each other's handles; a drag stops at
+the next part in the window, never crossing it; a grab keeps its offset (the edge does not jump
 to the pointer); while dragging, a bubble shows the edge's time and the paused film follows the
 handle (`previewStore.seekTo`, every 100 ms). The window holds still during a drag and widens by
 3 s when a handle is let go at its edge. Keyboard: Tab to a handle (`role="slider"`, "Start" / "End",

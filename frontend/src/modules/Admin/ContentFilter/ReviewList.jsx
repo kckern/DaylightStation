@@ -72,7 +72,7 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
         {stage === 'refine' ? <Text size="xs" fw={600}>Rough or unsure timing</Text>
           // Nothing on Plays is "to do": the box would do nothing there.
           : stage === 'plays' ? <Text size="xs" fw={600}>Play as they are</Text>
-          : <Checkbox size="xs" label="Not reviewed only" checked={scope.needs} onChange={(e) => setScope({ needs: e.currentTarget.checked })} />}
+          : <Checkbox size="xs" label="Not reviewed only" checked={scope.needs} onChange={(e) => { setScope({ needs: e.currentTarget.checked }); e.currentTarget.blur(); }} />}
         {check}
         <Group gap={4} wrap="nowrap">
           <Select size="xs" w={160} aria-label="Order" allowDeselect={false} data={ORDER_SCOPES} value={scope.order || 'film'} onChange={(order) => setScope({ order: order || 'film' })} />
@@ -106,18 +106,23 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
                   <span className="cf-review__time">{timecode(r.in)}</span>
                   <span className="cf-review__label" title={r.label}>{r.label}</span>
                   <span className="cf-review__marks">
-                    <span className={`cf-review__status is-${status.tone}`}>{status.word}</span>
+                    {/* "Not reviewed" on every open row was noise: the hollow circle says it; the word stays for screen readers. */}
+                    {status.tone === 'open' ? <VisuallyHidden className="cf-review__status is-open">{status.word}</VisuallyHidden>
+                      : <span className={`cf-review__status is-${status.tone}`}>{status.word}</span>}
                     {state ? <span className="cf-review__refining" title={state}><RefiningIcon state={state} /><VisuallyHidden>{state}</VisuallyHidden></span>
                       : timing ? <TimingIcon row={r} /> : null}
                   </span>
                 </UnstyledButton>
                 <span className="cf-review__fx">
                   {onEffect && !plays(r) ? (
-                    <EffectMenu row={r} opened={menuFor === r.id} onChange={(o) => setMenuFor(o ? r.id : null)} position="bottom-end"
+                    <EffectMenu row={r} opened={menuFor === r.id} position="bottom-end"
+                      // The menu opens on the row it acts on: when the pick is refused (unsaved timing
+                      // in hand) it stays shut (review 2026-11-22).
+                      onChange={(o) => { if (o && !selected && onSelect(r) === false) return; setMenuFor(o ? r.id : null); }}
                       onPick={(letter) => onEffect(r, letter)}
                       target={(
                         <UnstyledButton className="cf-review__fx-btn" aria-label={`Effect: ${fx}`} title={`${fx}: click to change`}
-                          onMouseDown={(e) => e.preventDefault()} onClick={() => { if (!selected) onSelect(r); }}>
+                          onMouseDown={(e) => e.preventDefault()}>
                           <EffectIcon row={r} />
                         </UnstyledButton>
                       )} />

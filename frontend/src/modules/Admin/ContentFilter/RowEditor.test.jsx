@@ -142,10 +142,11 @@ describe('RowEditor (the part card)', () => {
     expect(await screen.findByText(/Effects and timing can change when it finishes/)).toBeTruthy();
     expect(onChanged).not.toHaveBeenCalled();
   });
-  it('the word ruling, in the effect menu, writes this film\'s word setting', async () => {
+  it('the word ruling, under More for this word, writes this film\'s word setting', async () => {
     show(word);
     await openEffects();
-    fireEvent.click(item('Bleep this word'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'More for this word…' }));
+    fireEvent.click(await screen.findByRole('radio', { name: 'Bleep', hidden: true }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual({ path: 'api/v1/content-filter/77/words/damn', body: { value: 'bleep' }, method: 'PUT' });
   });
@@ -171,7 +172,8 @@ describe('RowEditor states', () => {
   it('the word control shows this film\'s ruling for the word', async () => {
     show(word, { wordRulings: { damn: 'bleep' } });
     await openEffects();
-    expect(item('Bleep this word').getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'More for this word…' }));
+    expect((await screen.findByRole('radio', { name: 'Bleep', hidden: true })).checked).toBe(true);
   });
 });
 
@@ -190,3 +192,21 @@ describe('SignOffPanel', () => {
     expect(submit).toHaveBeenCalledWith('withdraw');
   });
 });
+
+describe('the effect menu stays short (review 2026-11-22)', () => {
+  it('lists the effects, one settings item, and the word rulings behind one item', async () => {
+    show(word);
+    await openEffects();
+    const items = [...document.querySelectorAll('[role="menuitem"]')].map((n) => n.textContent.trim());
+    expect(items).toEqual(['MuteM', 'BleepP', 'SkipK', 'Let it play (off)O', 'Use household settings', 'More for this word…']);
+  });
+  it('a letter in the open menu picks that effect and closes it', async () => {
+    const handlers = { effect: vi.fn() };
+    show(word, { handlers });
+    const menu = await openEffects();
+    fireEvent.keyDown(menu, { key: 'p' });
+    expect(handlers.effect).toHaveBeenCalledWith('p');
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+  });
+});
+

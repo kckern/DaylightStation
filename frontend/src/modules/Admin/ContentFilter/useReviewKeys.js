@@ -73,7 +73,9 @@ export function useReviewKeys(handlers, { enabled = true, partKeys = true, redoO
         return;
       }
       // An open menu (the header's ⋯) owns the keyboard: keys must not act behind it.
-      if (key !== 'Escape' && document.querySelector?.('[role="menu"]')) return;
+      // Esc included: it closes the menu and nothing else (it used to drop unsaved timing behind an
+      // open menu, review 2026-11-22). The effect menu takes its own letters (EffectMenu.jsx).
+      if (document.querySelector?.('[role="menu"]')) return;
       // A modal owns the keyboard; a focused button keeps Space/Enter to press itself.
       if (key !== 'Escape' && (active?.closest?.('[role=dialog]') || e.target?.closest?.('[role=dialog]'))) return;
       // A focused rail tab (ReviewRail.jsx) or timing handle (TimingStrip.jsx) keeps the keys that move it.

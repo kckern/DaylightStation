@@ -185,6 +185,17 @@ describe('review station keys', () => {
     press('ArrowRight');
     expect(selected()).toBe('cue:w2');
   });
+  it('Esc with the effect menu open closes the menu and keeps an unsaved timing change (review 2026-11-22)', async () => {
+    show();
+    const start = screen.getByRole('slider', { name: 'Start' });
+    start.focus(); fireEvent.keyDown(start, { key: 'ArrowLeft' }); start.blur();
+    press('e');
+    await screen.findByRole('menu');
+    press('Escape');
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    expect(screen.queryByText('Timing change dropped.')).toBeNull();
+    expect(screen.getByRole('button', { name: /^Save timing/ })).not.toBeDisabled();
+  });
   it('arriving puts the film at the part in hand, paused', () => {
     const jump = vi.spyOn(previewStore, 'jumpToCue');
     show();

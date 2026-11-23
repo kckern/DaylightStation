@@ -140,7 +140,11 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   // A span dragged on the timing strip and not saved yet (RowEditor reports it): moving the cursor
   // would drop it without a word, so stepping, picking and verdicts wait for Save or Esc.
   const dirtyTiming = useRef(null);
-  const timingDirty = useCallback((drop) => { dirtyTiming.current = drop || null; }, []);
+  const timingDirty = useCallback((drop) => {
+    // A new draft makes "Timing change dropped." stale (review 2026-11-22).
+    if (drop && !dirtyTiming.current) setMessage((m) => (m === 'Timing change dropped.' ? null : m));
+    dirtyTiming.current = drop || null;
+  }, []);
   const heldByTiming = (what) => {
     if (!dirtyTiming.current) return false;
     logger.info('content_filter.review.unsaved_timing_blocked', { rk, rowId: latest.current.selectedId, what });
@@ -157,9 +161,11 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   }, [select]);
   // Every cursor move seeks to in - PREVIEW_LEAD_SEC (jumpToCue): click, timeline, keys, auto-advance.
   const pick = useCallback((r, { seek = true } = {}) => {
-    if (r?.id !== latest.current.selectedId && heldByTiming('pick')) return;
+    if (r?.id !== latest.current.selectedId && heldByTiming('pick')) return false;
     via.current = 'click'; setMessage(null); select(r);
+    previewStore.unpeek();
     if (seek) previewStore.jumpToCue({ in: r.in });
+    return true;
   }, [select]); // eslint-disable-line react-hooks/exhaustive-deps
   const setScope = useCallback((next) => {
     setScopeState(next);
@@ -330,6 +336,8 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   const replay = () => {
     if (!row) return;
     arrived.current.replays += 1;
+    // Filtered means filtered: an unfiltered peek still armed ends here.
+    previewStore.unpeek();
     previewStore.jumpToCue({ in: row.in });
   };
   const togglePlay = () => {

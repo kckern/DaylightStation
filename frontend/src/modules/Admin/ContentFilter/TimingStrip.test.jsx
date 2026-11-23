@@ -44,12 +44,43 @@ describe('the strip shows every part in its window (2026-11-22: two bleeps close
     render(<Two />);
     expect(document.querySelectorAll('.cf-strip__band.is-neighbour')).toHaveLength(1);
     const nStart = screen.getByRole('slider', { name: 'heck: Start' });
-    // Window 94–109 over 400 px: 26.67 px per second; 102 s is x = 313.3.
-    fireEvent.pointerDown(nStart, { clientX: 313, pointerId: 1 });
-    fireEvent.pointerMove(nStart, { clientX: 286, pointerId: 1 });
-    expect(document.querySelector('output').textContent).toMatch(/^1:4[01]\.\d\d–1:43\.00/);
-    fireEvent.pointerUp(nStart, { clientX: 286, pointerId: 1 });
+    // Window 94–107 over 400 px: 30.77 px per second; 102 s is x = 346.2.
+    fireEvent.pointerDown(nStart, { clientX: 346, pointerId: 1 });
+    fireEvent.pointerMove(nStart, { clientX: 331, pointerId: 1 });
+    expect(document.querySelector('output').textContent).toMatch(/^1:41\.\d\d–1:43\.00/);
+    fireEvent.pointerUp(nStart, { clientX: 331, pointerId: 1 });
     expect(screen.queryByRole('slider', { name: 'far: Start' })).toBeNull();
+  });
+});
+
+describe('close parts never steal each other\'s handles, nor cross (review 2026-11-22)', () => {
+  function Close() {
+    const [span, setSpan] = useState([100, 101]);
+    const [other, setOther] = useState([101.2, 102]);
+    return <><TimingStrip span={span} saved={[100, 101]} onChange={setSpan}
+      neighbours={[{ id: 'cue:n', span: other, saved: [101.2, 102], editable: true, family: 'audio', label: 'heck' }]}
+      onNeighbourChange={(id, next) => setOther(next)} /><output data-x="own">{spanText(span)}</output><output data-x="n">{spanText(other)}</output></>;
+  }
+  const out = (k) => document.querySelector(`output[data-x="${k}"]`).textContent;
+  it('a press takes the nearest edge, and a drag stops at the next part', () => {
+    render(<Close />);
+    // Window 94–107 over 400 px: 30.77 px per second. Own end 101 at x = 315.4; neighbour start 101.2 at x = 321.5.
+    const track = document.querySelector('.cf-strip__track');
+    fireEvent.pointerDown(track, { clientX: 321, pointerId: 1 });
+    fireEvent.pointerMove(track, { clientX: 336, pointerId: 1 });
+    fireEvent.pointerUp(track, { clientX: 336, pointerId: 1 });
+    expect(out('own')).toBe('1:40.00–1:41.00, 1 s');
+    expect(out('n')).toMatch(/^1:41\.[3-9]\d/);
+    // Own end dragged right stops at the neighbour's start.
+    fireEvent.pointerDown(track, { clientX: 315, pointerId: 1 });
+    fireEvent.pointerMove(track, { clientX: 390, pointerId: 1 });
+    fireEvent.pointerUp(track, { clientX: 390, pointerId: 1 });
+    const nStart = Number(screen.getByRole('slider', { name: 'heck: Start' }).getAttribute('aria-valuenow'));
+    expect(Number(end().getAttribute('aria-valuenow'))).toBeLessThanOrEqual(nStart);
+  });
+  it('Tab walks the handles in time order', () => {
+    render(<Close />);
+    expect([...document.querySelectorAll('[role="slider"]')].map((n) => n.getAttribute('aria-label'))).toEqual(['Start', 'End', 'heck: Start', 'heck: End']);
   });
 });
 

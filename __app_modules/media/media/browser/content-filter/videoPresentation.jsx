@@ -10,7 +10,16 @@ import { useBumper } from './useBumper.js';
 import { previewStore } from './preview/previewStore.js';
 import { useSurroundOverride } from "../../../../../__capabilities/playback/browser/surround-override.mjs";
 
+/** A Set that reports every change (the unfiltered-peek ids). */
+class PeekSet extends Set {
+  constructor(onChange) { super(); this.onChange = onChange; }
+  add(v) { const had = this.has(v); super.add(v); if (!had) this.onChange?.(this); return this; }
+  delete(v) { const r = super.delete(v); if (r) this.onChange?.(this); return r; }
+  clear() { const had = this.size; super.clear(); if (had) this.onChange?.(this); }
+}
+
 /** What the shield opens: the filter rail on the right, the filter timeline below. */
+
 export const FILTER_SURROUND = Object.freeze({
   id: 'content-filter',
   definition: {
@@ -54,7 +63,10 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl, bumperHel
   const filterEnabled = mode.enabled;
   // Unfiltered peek: ids the preview asked to play once unfiltered. useContentFilter
   // reads it each tick and removes an id once playback passes that item's out.
-  const bypassRef = useRef(new Set());
+  // The peek set tells the preview store when a peek starts and ends, so a host (Admin review) can
+  // show "Unfiltered" exactly while the part plays unfiltered, not on a guessed timer.
+  const bypassRef = useRef(null);
+  if (!bypassRef.current) bypassRef.current = new PeekSet((set) => previewStore.publish({ peeking: set.size ? [...set][0] : null }));
   // A peek belongs to the title it was asked on: a new title starts with none.
   useEffect(() => { bypassRef.current.clear(); }, [filterContentId]);
   const loggedRef = useRef(null);
@@ -228,6 +240,7 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl, bumperHel
     };
     const unbind = previewStore.bind({
       position: () => { const t = getMediaEl?.()?.currentTime; return Number.isFinite(t) ? t : null; },
+      duration: () => { const d = getMediaEl?.()?.duration; return Number.isFinite(d) && d > 0 ? d : null; },
       seek,
       play,
       hold,
@@ -247,6 +260,7 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl, bumperHel
         logger().info('content-filter.peek', { id, in: +start.toFixed(2) });
         previewStore.jumpToCue({ in: start });
       },
+      unpeek: () => { bypassRef.current.clear(); },
       refresh: () => reloadFilterData(),
       close: closeSurround,
     });

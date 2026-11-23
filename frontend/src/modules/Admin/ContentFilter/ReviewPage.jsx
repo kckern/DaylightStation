@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Anchor, Stack, Text } from '@mantine/core';
 import { useVisibleRefresh } from '../../../lib/hooks/useVisibleRefresh.js';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
-import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
+import { previewStore, useFilterPreview } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 import { LoadingState, ErrorState, SectionCard, createAppLogger } from '../../../lib/ui/index.js';
 import { ReviewList } from './ReviewList.jsx';
 import { ReviewTimeline } from './ReviewTimeline.jsx';
@@ -51,9 +51,8 @@ function FilmReview({ ratingKey, rowId, owner }) {
   const { data, loading, error, reload, refresh, poll } = useApiResource(url, { label: 'review', logger, dedupe: false });
   const [selected, setSelected] = useState(null);
   const [notice, setNotice] = useState(null);
-  const [unfiltered, setUnfiltered] = useState(false);
-  const unfilteredTimer = useRef(null);
-  useEffect(() => () => clearTimeout(unfilteredTimer.current), []);
+  // Unfiltered is what the player reports (its peek set), never a guessed timer (review 2026-11-22).
+  const unfiltered = useFilterPreview().peeking != null;
   // The part card's E (effect menu) and S (save timing), held while the card is mounted.
   const cardPorts = useRef({});
   const activeView = useRef(true);
@@ -96,14 +95,10 @@ function FilmReview({ ratingKey, rowId, owner }) {
   // plays and pauses the film, and ? still lists the keys.
   const row0 = data?.rows?.find((r) => r.id === selected?.id) || null;
   // Unfiltered (W): the part plays from 4 s before with its effect off; the button and the player
-  // say so until it has played through (Fable design 2026-11-22: "a way to watch it unfiltered").
+  // say so while the player has it unfiltered (Fable design 2026-11-22: "a way to watch it unfiltered").
   const playUnfiltered = () => {
     if (!row0) return;
     station.handlers.playWithout();
-    setUnfiltered(true);
-    clearTimeout(unfilteredTimer.current);
-    const ms = (Math.max(0, (row0.out ?? row0.in) - row0.in) + 4 + 1) * 1000;
-    unfilteredTimer.current = setTimeout(() => setUnfiltered(false), ms);
     logger.info('content_filter.review.unfiltered', { rk: ratingKey, rowId: row0.id });
   };
   const keyHandlers = { ...station.handlers, playWithout: playUnfiltered,
@@ -134,7 +129,7 @@ function FilmReview({ ratingKey, rowId, owner }) {
   const roughFiltered = station.roughRefineCount;
   const index = row ? station.scoped.findIndex((r) => r.id === row.id) : -1;
   // Picking a part from the list or the timeline while on Approve goes back to the parts.
-  const pickPart = (r) => { if (stage === 'approve') station.setStage(plays(r) ? 'plays' : 'review', 'part', { keepCursor: true }); station.pick(r); };
+  const pickPart = (r) => { if (stage === 'approve') station.setStage(plays(r) ? 'plays' : 'review', 'part', { keepCursor: true }); return station.pick(r); };
   // The redo prompt, the last message and the preview retry sit inside the card, above its verdicts.
   const onRedo = (reason) => { closeRedo(); if (reason !== null) station.handlers.verdict('redo', reason); };
   const keyBar = <ReviewKeyBar redoOpen={redoOpen} helpOpen={station.helpOpen} onCloseHelp={station.handlers.escape}

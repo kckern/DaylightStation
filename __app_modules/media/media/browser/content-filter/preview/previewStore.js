@@ -23,17 +23,21 @@ const INITIAL = Object.freeze({
   override: null,
   profile: null,
   lastFired: null,
+  // The cue id playing unfiltered right now (W in Admin review), or null.
+  peeking: null,
   filterActive: false,
   open: false,
 });
 
 const NOOP_BINDING = Object.freeze({
   position: () => null,
+  duration: () => null,
   seek() {},
   play() {},
   hold() {},
   togglePlay: () => null,
   peek() {},
+  unpeek() {},
   refresh: async () => false,
   close() {},
 });
@@ -105,8 +109,12 @@ export const previewStore = {
   /** Play if paused, pause if playing (Admin review: Space). Returns 'playing' | 'paused' | null (no player). */
   togglePlay() { return binding.togglePlay ? binding.togglePlay() : null; },
   peek(id) { if (id != null) binding.peek(String(id)); },
+  /** End an unfiltered peek now (the host moved on: replay, another part). */
+  unpeek() { binding.unpeek(); },
   /** The bound player's position in seconds, or null. */
   currentTime() { const t = binding.position(); return Number.isFinite(t) ? t : null; },
+  /** The bound film's length in seconds, or null (not loaded). */
+  duration() { const d = binding.duration(); return Number.isFinite(d) ? d : null; },
   /** Force the filter on for one title (rating key or content id); null clears. */
   forceFilter(id) { forced = id == null ? null : digits(id); },
   isForced(id) { return forced != null && forced !== '' && digits(id) === forced; },

@@ -180,7 +180,7 @@
 
 // The part in hand (Fable design 2026-11-22): one 280px panel of five fixed lines. Nothing in it
 // changes its height, so the page never scrolls and nothing below it moves.
-.cf-card-part { height: 280px; box-sizing: border-box; padding: 12px; display: grid; grid-template-rows: 44px 24px 88px 44px 24px; gap: 8px; min-width: 0;
+.cf-card-part { height: 280px; box-sizing: border-box; padding: 12px; display: grid; grid-template-rows: 44px 24px 72px 44px 40px; gap: 8px; min-width: 0; container-type: inline-size;
   background: var(--ds-bg-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); border-left: 3px solid var(--ds-border); }
 .cf-card-part[data-family="audio"] { border-left-color: var(--cf-fx-audio); }
 .cf-card-part[data-family="picture"] { border-left-color: var(--cf-fx-picture); }
@@ -214,8 +214,15 @@
 .cf-card-part__btn { height: 40px; padding: 0 9px; font-size: 13px; }
 .cf-card-part__btn .cf-keybar__key { min-width: 16px; font-size: 10px; }
 .cf-card-part__btn.is-icon { padding: 0 8px; }
-.cf-card-part__verdicts .is-approve { min-width: 112px; }
-.cf-card-part__status { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: flex; align-items: center; gap: 8px; }
+.cf-card-part__verdicts .is-approve { min-width: 96px; }
+// A narrow card (1280 wide windows) keeps every button whole: the play buttons drop their key
+// labels (their tooltips still name the key) before anything is clipped.
+@container (max-width: 600px) {
+  .cf-card-part__play .cf-keybar__key { display: none; }
+  .cf-card-part__btn { padding: 0 8px; }
+}
+.cf-card-part__panel { display: flex; flex-direction: column; gap: 8px; }
+.cf-card-part__status { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--ds-border); padding-top: 6px; }
 .cf-card-part__status .cf-keybar { flex-direction: row; align-items: center; min-width: 0; }
 .cf-card-part__status .cf-keybar__message { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cf-card-part__cardbtns { display: flex; gap: 6px; padding-top: 8px; }

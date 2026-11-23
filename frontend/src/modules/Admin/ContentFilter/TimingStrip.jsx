@@ -43,6 +43,7 @@ export function windowFor([a, b]) {
 
 const SCRUB_MS = 100;
 const FOCUS = '__focus';
+const GRAB_PX = 12;
 
 /**
  * `neighbours` (Fable design 2026-11-22, owner: two bleeps close together must both show and be
@@ -57,6 +58,7 @@ export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice 
   const track = useRef(null);
   const drag = useRef(null);
   const scrubAt = useRef(0);
+  const suppressClick = useRef(false);
   useEffect(() => { setWin(windowFor(saved)); }, [saved[0], saved[1]]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const read = () => setNow(previewStore.currentTime());
@@ -80,22 +82,47 @@ export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice 
   const move = (id, edge, t, { grow = true } = {}) => {
     const cur = spanOf(id);
     if (!cur) return;
-    let v = edge === 0 ? Math.min(Math.max(0, t), cur[1] - MIN_GAP) : Math.max(t, cur[0] + MIN_GAP);
+    // A part never crosses another one in the window (review 2026-11-22: neighbours overlapped).
+    const others = parts.filter((x) => x.id !== id);
+    const floor = Math.max(0, ...others.filter((x) => x.span[1] <= cur[0] + 1e-6).map((x) => x.span[1]));
+    const ceil = Math.min(Infinity, ...others.filter((x) => x.span[0] >= cur[1] - 1e-6).map((x) => x.span[0]));
+    let v = edge === 0 ? Math.min(Math.max(floor, t), cur[1] - MIN_GAP) : Math.min(Math.max(t, cur[0] + MIN_GAP), ceil);
     v = round3(v);
     if (grow && v <= win[0]) setWin([Math.max(0, Math.floor(v - 3)), win[1]]);
     else if (grow && v >= win[1]) setWin([win[0], Math.ceil(v + 3)]);
     if (v !== cur[edge]) report(id, edge === 0 ? [v, cur[1]] : [cur[0], v]);
   };
 
-  // The grab keeps its offset: a handle no longer jumps to the pointer on the first move.
-  const onDown = (id, edge) => (e) => {
+  // The track decides which handle a press means: the nearest edge bar within GRAB_PX, so two close
+  // parts' handles never steal each other (review 2026-11-22). A press farther away is a click (seek).
+  const grab = (e) => {
     if (disabled) return;
-    e.stopPropagation();
+    const box = track.current?.getBoundingClientRect();
+    if (!box?.width) return;
+    const x = e.clientX - box.left;
+    let best = null;
+    for (const part of parts.filter((q) => q.editable)) {
+      for (const edge of [0, 1]) {
+        const d = Math.abs(((part.span[edge] - win[0]) / width) * box.width - x);
+        if (d <= GRAB_PX && (!best || d < best.d)) best = { id: part.id, edge, d };
+      }
+    }
+    if (!best) return;
     e.preventDefault?.();
     e.currentTarget.setPointerCapture?.(e.pointerId);
     const t = timeAt(e.clientX);
-    drag.current = { id, edge, offset: t == null ? 0 : t - spanOf(id)[edge] };
-    setDragging({ id, edge });
+    drag.current = { id: best.id, edge: best.edge, offset: t == null ? 0 : t - spanOf(best.id)[best.edge], moved: false };
+    setDragging({ id: best.id, edge: best.edge });
+  };
+  const trackMove = (e) => { const d = drag.current; if (d) onMove(d.id, d.edge)(e); };
+  const trackUp = (e) => {
+    const d = drag.current;
+    if (!d) return;
+    onUp(d.id, d.edge)(e);
+    suppressClick.current = true;
+    // A pointer drag never keeps the keyboard: ← → go on stepping through the parts.
+    const focused = document.activeElement;
+    if (focused?.getAttribute?.('role') === 'slider' && track.current?.contains(focused)) focused.blur();
   };
   const onMove = (id, edge) => (e) => {
     const d = drag.current;
@@ -133,6 +160,7 @@ export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice 
     e.stopPropagation();
   };
   const seek = (e) => {
+    if (suppressClick.current) { suppressClick.current = false; return; }
     if (e.target.closest?.('[role="slider"]')) return;
     const t = timeAt(e.clientX);
     if (t != null) previewStore.seekTo(round2(t));
@@ -152,8 +180,7 @@ export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice 
         aria-valuenow={value} aria-valuetext={fineTimecode(value)}
         title={`${name} ${fineTimecode(value)}: drag, or Tab to it and use ← → (Shift 0.5 s); Home or End sets it at the playhead`}
         className={`cf-strip__handle is-${edge === 0 ? 'start' : 'end'}${part.focus ? '' : ' is-neighbour'}${live ? ' is-dragging' : ''}`} style={{ left: pct(value) }}
-        onMouseDown={(e) => e.preventDefault()} onPointerDown={onDown(part.id, edge)} onPointerMove={onMove(part.id, edge)}
-        onPointerUp={onUp(part.id, edge)} onPointerCancel={onUp(part.id, edge)} onKeyDown={onKey(part.id, edge)}>
+        onMouseDown={(e) => e.preventDefault()} onKeyDown={onKey(part.id, edge)}>
         {live ? <span className="cf-strip__bubble">{fineTimecode(value)}</span> : null}
       </span>
     );
@@ -162,7 +189,8 @@ export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice 
   const band = (a, b) => ({ left: pct(Math.max(a, win[0])), right: `${100 - parseFloat(pct(Math.min(b, win[1])))}%` });
   return (
     <div className={`cf-strip${disabled ? ' is-disabled' : ''}`} aria-label="Timing">
-      <div className="cf-strip__track" ref={track} onClick={seek} title="Click to move the film here">
+      <div className="cf-strip__track" ref={track} onClick={seek} title="Click to move the film here"
+        onPointerDown={grab} onPointerMove={trackMove} onPointerUp={trackUp} onPointerCancel={trackUp}>
         {ticks.map((t) => (
           <span key={t} className={`cf-strip__tick${t % labelStep === 0 ? ' is-major' : ''}`} style={{ left: pct(t) }}>
             {t % labelStep === 0 && (t - win[0]) / width <= LABEL_UNTIL ? <span className="cf-strip__label">{clock(t)}</span> : null}
@@ -174,9 +202,9 @@ export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice 
         ))}
         <span className="cf-strip__band" style={band(span[0], span[1])} />
         {now != null && now >= win[0] && now <= win[1] ? <span className="cf-strip__playhead" data-testid="playhead" style={{ left: pct(now) }} /> : null}
-        {parts.filter((x) => !x.focus && x.editable).flatMap((x) => [handle(x, 0), handle(x, 1)])}
-        {handle(parts[0], 0)}
-        {handle(parts[0], 1)}
+        {/* Handles in time order, so Tab walks the strip left to right. */}
+        {parts.filter((x) => x.editable).flatMap((x) => [[x, 0], [x, 1]])
+          .sort((a, b) => a[0].span[a[1]] - b[0].span[b[1]]).map(([x, edge]) => handle(x, edge))}
       </div>
     </div>
   );

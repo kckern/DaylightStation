@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Menu } from '@mantine/core';
 import { IconCheck } from '@tabler/icons-react';
 import { fitEffectToChannel } from '../../../../../shared/contracts/content-filter/cueModality.mjs';
@@ -24,6 +25,21 @@ export const isCurrentEffect = (row, value) => (plays(row) ? value === 'off' : e
 
 export function EffectMenu({ row, target, onPick, opened, onChange, children = null, disabled = false, position = 'bottom-start' }) {
   const options = effectOptions(row);
+  // The keys the items show work while the menu is open: the letter picks and closes it. A document
+  // listener, because Mantine's Escape handling drops any key handler given to the dropdown.
+  useEffect(() => {
+    if (!opened) return undefined;
+    const onKey = (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
+      const hit = options.find(([k]) => k.toLowerCase() === e.key.toLowerCase());
+      if (!hit) return;
+      e.preventDefault(); e.stopPropagation();
+      onPick?.(hit[0].toLowerCase());
+      onChange?.(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [opened, options, onPick, onChange]);
   return (
     <Menu opened={opened} onChange={onChange} position={position} withinPortal shadow="md" width={220} disabled={disabled}
       returnFocus={false} trapFocus closeOnItemClick>

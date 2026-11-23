@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Button, Menu, Popover, Text, TextInput, UnstyledButton } from '@mantine/core';
-import { IconArrowBackUp, IconCheck, IconChevronDown, IconChevronLeft, IconChevronRight, IconEye, IconPlayerPlay } from '@tabler/icons-react';
+import { Button, Menu, Popover, SegmentedControl, Select, Text, TextInput, UnstyledButton } from '@mantine/core';
+import { IconArrowBackUp, IconChevronDown, IconChevronLeft, IconChevronRight, IconEye, IconPlayerPlay } from '@tabler/icons-react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/index.js';
 import { effectChip } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
@@ -26,8 +26,8 @@ import { EffectMenu } from './EffectMenu.jsx';
 const logger = createAppLogger('admin').child('content-filter');
 const API = 'api/v1/content-filter';
 const CUE_EFFECTS = [['mute', 'Mute'], ['bleep', 'Bleep'], ['blur', 'Blur'], ['full-blur', 'Full blur'], ['blackout', 'Hide picture'], ['skip', 'Skip']];
-const WORD_CHOICES = [['profile', 'Use settings'], ['off', 'Play this word'], ['mute', 'Mute this word'], ['bleep', 'Bleep this word']];
-const GROUP_CHOICES = [['off', 'Play them all'], ['mute', 'Mute them all'], ['bleep', 'Bleep them all']];
+const WORD_CHOICES = [{ value: 'profile', label: 'Settings' }, { value: 'off', label: 'Play' }, { value: 'mute', label: 'Mute' }, { value: 'bleep', label: 'Bleep' }];
+const GROUP_CHOICES = [{ value: 'off', label: 'Play them' }, { value: 'mute', label: 'Mute them' }, { value: 'bleep', label: 'Bleep them' }];
 
 /** R1: the cue effects that fit this channel as they are (tracked or not). */
 export function effectChoices(modality) {
@@ -56,7 +56,8 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
   const [drafts, setDrafts] = useState({});
   const [cardText, setCardText] = useState(row.card?.text || '');
   const [menuOpen, setMenuOpen] = useState(false);
-  const [cardOpen, setCardOpen] = useState(false);
+  // The popover under the effect button: the skip's card, or this word's rulings.
+  const [panel, setPanel] = useState(null);
   useEffect(() => { setSpan([row.in, row.out]); setDrafts({}); setCardText(row.card?.text || ''); setNotice(null); }, [row.id, row.in, row.out, row.card?.text]);
   // A run locks what it rewrites (effects, timing, card); Approve and Redo stay open, except on a
   // part being refined (its verdict waits for the new timing).
@@ -124,31 +125,18 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
   const settingsItem = (
     <Menu.Item onClick={() => act('effect', rule({ effect: 'profile', disabled: false }))}>Use household settings</Menu.Item>
   );
-  const wordItems = isWord ? (
-    <>
-      <Menu.Divider />
-      <Menu.Label>{`"${String(row.label).toLowerCase()}" in this film`}</Menu.Label>
-      {WORD_CHOICES.map(([v, label]) => (
-        <Menu.Item key={v} aria-checked={(wordRulings[String(row.label).toLowerCase()] || 'profile') === v}
-          leftSection={<span className="cf-fx-menu__check">{(wordRulings[String(row.label).toLowerCase()] || 'profile') === v ? <IconCheck size={14} /> : null}</span>}
-          onClick={() => act('word', [[`${base}/words/${encodeURIComponent(String(row.label).toLowerCase())}`, { value: v === 'profile' ? null : v }, 'PUT']])}>{label}</Menu.Item>
-      ))}
-      <Menu.Label>{`All ${groupLabel(row.group).toLowerCase()} in this film`}</Menu.Label>
-      {GROUP_CHOICES.map(([v, label]) => (
-        <Menu.Item key={v} onClick={() => act('group', [[`${base}/settings`, { settings: { language: { [row.group]: v } } }, 'PUT']])}>{label}</Menu.Item>
-      ))}
-    </>
-  ) : null;
+  const wordItem = isWord ? <Menu.Item onClick={() => setPanel('word')}>More for this word…</Menu.Item> : null;
   const cardItem = wantsCard || row.effect === 'skip' ? (
-    <><Menu.Divider /><Menu.Item onClick={() => setCardOpen(true)}>{row.card ? 'Card shown in place of the skip…' : 'Add a card in place of the skip…'}</Menu.Item></>
+    <Menu.Item onClick={() => setPanel('card')}>{row.card ? 'Card shown in place of the skip…' : 'Add a card in place of the skip…'}</Menu.Item>
   ) : null;
+  const word = String(row.label).toLowerCase();
 
   return (
     // A click must not leave a button focused: Enter would press it again (Enter plays the part).
     <div className="cf-card-part" aria-label="Part under review" data-family={family || 'plays'}
       onMouseDown={(e) => { if (e.target.closest?.('button, [role="slider"]')) e.preventDefault(); }}>
       <div className="cf-card-part__identity">
-        <Popover opened={cardOpen} onChange={setCardOpen} position="bottom-start" withinPortal width={360} shadow="md" trapFocus>
+        <Popover opened={Boolean(panel)} onChange={(o) => { if (!o) setPanel(null); }} position="bottom-start" withinPortal width={360} shadow="md" trapFocus>
           <Popover.Target>
             <span>
               <EffectMenu row={row} opened={menuOpen} onChange={setMenuOpen} disabled={disabled}
@@ -163,20 +151,32 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
                 )}>
                 <Menu.Divider />
                 {settingsItem}
-                {wordItems}
+                {wordItem}
                 {cardItem}
               </EffectMenu>
             </span>
           </Popover.Target>
           <Popover.Dropdown>
-            <TextInput size="xs" data-autofocus label={row.card?.approved ? 'Card (approved)' : 'Card shown in place of the skip'} maxLength={90}
-              value={cardText} onChange={(e) => setCardText(e.currentTarget.value)} disabled={disabled} />
-            <div className="cf-card-part__cardbtns">
-              <Button size="compact-xs" disabled={disabled || !cardText.trim()} onClick={() => act('card', rule({ card: { approve: true, text: cardText.trim() } }), 'Card approved.')}>Approve card</Button>
-              <Button size="compact-xs" variant="subtle" disabled={disabled || !single}
-                onClick={() => act('draft', [[isScene ? `${base}/scenes/${encodeURIComponent(row.peekId)}/card` : `${base}/cues/${encodeURIComponent(membersOf(row)[0])}/card`, {}, 'POST']], 'Card drafted.')}>Draft</Button>
-              {row.card?.approved ? <Button size="compact-xs" variant="subtle" color="red" disabled={disabled} onClick={() => act('withdraw', rule({ card: null }))}>Withdraw</Button> : null}
-            </div>
+            {panel === 'word' ? (
+              <div className="cf-card-part__panel">
+                <Text size="xs" c="dimmed">{`"${word}" in this film`}</Text>
+                <SegmentedControl size="xs" fullWidth data={WORD_CHOICES} value={wordRulings[word] || 'profile'} disabled={disabled} aria-label="This word in this film"
+                  onChange={(v) => act('word', [[`${base}/words/${encodeURIComponent(word)}`, { value: v === 'profile' ? null : v }, 'PUT']])} />
+                <Select size="xs" label={`All ${groupLabel(row.group).toLowerCase()} in this film`} placeholder="Use settings" data={GROUP_CHOICES} disabled={disabled} comboboxProps={{ withinPortal: false }}
+                  onChange={(v) => v && act('group', [[`${base}/settings`, { settings: { language: { [row.group]: v } } }, 'PUT']])} />
+              </div>
+            ) : (
+              <div className="cf-card-part__panel">
+                <TextInput size="xs" data-autofocus label={row.card?.approved ? 'Card (approved)' : 'Card shown in place of the skip'} maxLength={90}
+                  value={cardText} onChange={(e) => setCardText(e.currentTarget.value)} disabled={disabled} />
+                <div className="cf-card-part__cardbtns">
+                  <Button size="compact-xs" disabled={disabled || !cardText.trim()} onClick={() => act('card', rule({ card: { approve: true, text: cardText.trim() } }), 'Card approved.')}>Approve card</Button>
+                  <Button size="compact-xs" variant="subtle" disabled={disabled || !single}
+                    onClick={() => act('draft', [[isScene ? `${base}/scenes/${encodeURIComponent(row.peekId)}/card` : `${base}/cues/${encodeURIComponent(membersOf(row)[0])}/card`, {}, 'POST']], 'Card drafted.')}>Draft</Button>
+                  {row.card?.approved ? <Button size="compact-xs" variant="subtle" color="red" disabled={disabled} onClick={() => act('withdraw', rule({ card: null }))}>Withdraw</Button> : null}
+                </div>
+              </div>
+            )}
           </Popover.Dropdown>
         </Popover>
         <Text className="cf-card-part__title" title={`${row.label} · ${timecode(row.in)}–${timecode(row.out)}`}>{row.label}</Text>
