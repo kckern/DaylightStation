@@ -19,7 +19,7 @@ import './LearnCoach.scss';
 const EMPTY = {};
 /** What a step is called under its pills: a set label, not a sentence. */
 const SET_NAMES = Object.freeze({ right: 'Right hand', left: 'Left hand', together: 'Together', notes: 'Notes', silver: 'On your own',
-  pulse: 'Beat', 'timed-50': '50%', 'timed-60': '60%', 'timed-75': '75%', mastery: '100%' });
+  pulse: 'Beat', 'timed-50-rh': 'Right 50%', 'timed-50-lh': 'Left 50%', 'timed-50': '50%', 'timed-60': '60%', 'timed-75': '75%', mastery: '100%' });
 const setName = (task) => SET_NAMES[task.skill] ?? task.label;
 /**
  * What stands over a set's pills. A picture where one says it, so the row reads
@@ -30,7 +30,9 @@ const SET_ICONS = Object.freeze({
   // Both hands are always drawn, in their places; the one that rests is unlit.
   right: <><Icon name="hand-left" className="is-resting" /><Icon name="hand-right" /></>, left: <><Icon name="hand-left" /><Icon name="hand-right" className="is-resting" /></>,
   together: <><Icon name="hand-left" /><Icon name="hand-right" /></>, notes: <Icon name="quarter-note" />,
-  silver: <PassageCoin state="silver" />, pulse: <Icon name="metronome" />, 'timed-50': <b>50%</b>, 'timed-60': <b>60%</b>, 'timed-75': <b>75%</b>, mastery: <PassageCoin state="gold" />,
+  silver: <PassageCoin state="silver" />, pulse: <Icon name="metronome" />,
+  'timed-50-rh': <><Icon name="hand-left" className="is-resting" /><Icon name="hand-right" /><b>50%</b></>,
+  'timed-50-lh': <><Icon name="hand-left" /><Icon name="hand-right" className="is-resting" /><b>50%</b></>, 'timed-50': <b>50%</b>, 'timed-60': <b>60%</b>, 'timed-75': <b>75%</b>, mastery: <PassageCoin state="gold" />,
 });
 /** A passage's coin holds the curtain for about two seconds; a finished piece, for more than three. */
 export const PASSAGE_CEREMONY_MS = 5000;

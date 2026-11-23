@@ -25,7 +25,7 @@ describe('guided musical progression', () => {
     expect(projection(plan, state).gold.opening.skill).toBe('pulse');
     state = outcome(state, plan, task, bad);
     state = outcome(state, plan, task);
-    expect(projection(plan, state).gold.opening.skill).toBe('timed-50');
+    expect(projection(plan, state).gold.opening.skill).toBe('timed-50-rh');
     state = outcome(state, plan, task, bad);
     expect(projection(plan, state).segments[0].skills.find((skill) => skill.skill === 'pulse').ready).toBe(true);
   });
@@ -269,6 +269,8 @@ describe('Gold tempo ladder: 50, 60, 75, then score tempo', () => {
     const plan = planOf();
     expect(gold(plan).map(({ skill, mode, tempoPercent, label }) => [skill, mode, tempoPercent, label])).toEqual([
       ['pulse', 'metronome', 50, 'Settle into a beat'],
+      ['timed-50-rh', 'cued', 50, 'Right hand with the beat'],
+      ['timed-50-lh', 'cued', 50, 'Left hand with the beat'],
       ['timed-50', 'cued', 50, 'Play with the beat'],
       ['timed-60', 'cued', 60, 'Play with the beat'],
       ['timed-75', 'cued', 75, 'Play with the beat'],
@@ -361,5 +363,36 @@ describe('Gold tempo ladder: 50, 60, 75, then score tempo', () => {
     const p = projection(plan, { ...stateWith(fast.key) });
     expect(skillOf(p, 'fast').ready).toBe(true);
     expect(skillOf(p, 'slow').ready).toBe(false);
+  });
+});
+
+describe('one hand at a time with the beat (2026-11-22)', () => {
+  it('puts one-hand beat rungs between the beat and 50%', () => {
+    const plan = planOf();
+    expect(plan.tasks.filter((task) => task.passageId === 'opening').map((task) => task.skill)).toEqual(
+      ['right', 'left', 'together', 'silver', 'pulse', 'timed-50-rh', 'timed-50-lh', 'timed-50', 'timed-60', 'timed-75', 'mastery']);
+    expect(choose(plan, 'timed-50-rh')).toMatchObject({ parts: ['rh'], mode: 'cued', tempoPercent: 50, track: 'gold', label: 'Right hand with the beat' });
+    expect(choose(plan, 'timed-50-lh')).toMatchObject({ parts: ['lh'], mode: 'cued', tempoPercent: 50, track: 'gold', label: 'Left hand with the beat' });
+  });
+  it('adds no one-hand rungs to a one-part passage', () => {
+    expect(planOf().tasks.filter((task) => task.passageId === 'answer').map((task) => task.skill))
+      .toEqual(['notes', 'silver', 'pulse', 'timed-50', 'timed-60', 'timed-75', 'mastery']);
+  });
+  it('a both-hands proof covers the one-hand rungs at or below its tempo', () => {
+    const plan = planOf();
+    let state = outcome(undefined, plan, choose(plan, 'timed-60'));
+    state = outcome(state, plan, choose(plan, 'timed-60'));
+    const skills = projection(plan, state).segments[0].skills;
+    expect(skills.find((s) => s.skill === 'timed-50-rh').ready).toBe(true);
+    expect(skills.find((s) => s.skill === 'timed-50-lh').ready).toBe(true);
+  });
+  it('a one-hand proof never covers both hands', () => {
+    const plan = planOf();
+    let state = outcome(undefined, plan, choose(plan, 'timed-50-rh'));
+    state = outcome(state, plan, choose(plan, 'timed-50-rh'));
+    const skills = projection(plan, state).segments[0].skills;
+    expect(skills.find((s) => s.skill === 'timed-50-rh').ready).toBe(true);
+    expect(skills.find((s) => s.skill === 'timed-50').ready).toBe(false);
+    expect(projection(plan, state).gold.opening.skill).toBe('pulse');
   });
 });

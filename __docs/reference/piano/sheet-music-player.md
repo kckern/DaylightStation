@@ -327,7 +327,8 @@ the drill. It draws no practice screen of its own.
 - **Sets and reps.** Every Silver and Gold step of the passage is one set in the
   drill's progress row, and the clean takes it needs are its reps. A set is named
   by a picture, not a word: the two hands with the resting one unlit (right hand,
-  left hand, together), the **silver coin** over the Silver check, a metronome,
+  left hand, together), the **silver coin** over the Silver check, a metronome, each
+  hand with `50%` (the hand that rests unlit),
   `50%`, `60%`, `75%`, and the **gold coin** over the step at score tempo. So the row
   reads as the way to each coin. A step with no picture (an authored ladder)
   keeps its words. The words stay as each set's accessible name. A Gold step
@@ -502,7 +503,8 @@ with `id`, `start`, `end`, `silver` and `gold`. Certification values are timesta
 ### Skipping steps
 
 The generated ladder runs right hand, left hand, together, the Silver check, the
-beat (50%, metronome), cued 50%, 60%, 75%, then score tempo (Gold). The current step
+beat (50%, metronome), right hand with the beat and left hand with the beat (cued
+50%, two-hand passages only: `timed-50-rh`, `timed-50-lh`), cued 50%, 60%, 75%, then score tempo (Gold). The current step
 is the first one not yet ready. `sheetmusic.learn.skipping` says which other steps a
 child may start:
 
@@ -540,6 +542,7 @@ achievement is rewritten.
 | Together | Right hand and left hand (`carrySilver`) |
 | Silver check | Every note step of the passage (Silver certifies them) |
 | A cued tempo (say 75%) | The slower cued steps and the beat (`carryGold`) |
+| Both hands at a cued tempo | Each hand alone at that tempo and below (`carryGold`); one hand never covers both |
 | Score tempo (mastery) | Every Gold step |
 
 Certificates do not change: Silver comes only from the Silver check (or Gold, or
@@ -877,6 +880,18 @@ last click it says **next click: play**, so the cue arrives before the first bea
 rather than on it. Nothing is shown on the first beat (no PLAY), and the music is
 not greyed (`data-count-style="up"`), because the child is about to read the first
 notes. The clicks are the plan's (`exerciseCountInPlan`, ≤ 4), whatever the meter.
+
+**A pickup is counted on the beats before it.** When the first note is not on a
+downbeat (a pickup bar, or a passage that opens on a rest), the count ends on the
+beat before that note: a one-beat pickup in 4/4 counts **1, 2, 3** and the pickup
+is played on 4. Fewer than two clicks before the note adds a bar first. The bar
+lengths come from the engraver's `measureMap`; a pickup bar is the first bar when
+it is shorter than the usual bar (`entryOffsetQuarters`, `alignCountIn`). An entry
+that is not a whole number of clicks (an eighth-note pickup, or clicks coarser than
+the pickup) keeps the full-bar count. `piano.exercise-countdown-started` carries
+`entry: downbeat | aligned | unaligned`. Polish does the same for a run from the
+top of the piece (`score.countin.start` carries `entry`), keeping at least 1.5 s of
+count by adding whole bars.
 Everything below about the countdown describes every other timed run.
 
 The timed run counts at most four pulses on the ask's selected musical grid,

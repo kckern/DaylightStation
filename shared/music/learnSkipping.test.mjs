@@ -44,11 +44,11 @@ describe('which steps may be started', () => {
   it('strict opens only the current step', () => {
     expect(currentStep(passage(null)).skill).toBe('right');
     expect(access(null, 'strict')).toEqual({ right: 'open', left: 'locked', together: 'locked', silver: 'locked',
-      pulse: 'locked', 'timed-50': 'locked', 'timed-60': 'locked', 'timed-75': 'locked', mastery: 'locked' });
+      pulse: 'locked', 'timed-50-rh': 'locked', 'timed-50-lh': 'locked', 'timed-50': 'locked', 'timed-60': 'locked', 'timed-75': 'locked', mastery: 'locked' });
   });
   it('open-to-silver opens every note step and the check, and Gold after Silver', () => {
     expect(access(null, 'open-to-silver')).toEqual({ right: 'open', left: 'open', together: 'open', silver: 'open',
-      pulse: 'locked', 'timed-50': 'locked', 'timed-60': 'locked', 'timed-75': 'locked', mastery: 'locked' });
+      pulse: 'locked', 'timed-50-rh': 'locked', 'timed-50-lh': 'locked', 'timed-50': 'locked', 'timed-60': 'locked', 'timed-75': 'locked', mastery: 'locked' });
     const silver = take(null, 'silver');
     expect(Object.values(access(silver, 'open-to-silver')).every((value) => value === 'open')).toBe(true);
   });

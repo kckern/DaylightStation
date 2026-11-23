@@ -107,6 +107,11 @@ export function createCoachPlan({ scoreId, fingerprint, segments = [], authoredL
       { skill: 'silver', label: 'Play it on your own', parts, mode: 'free', track: 'silver', assist: 'none', required: policy.silver.checkPasses, stallSeconds: policy.silver.stallSeconds,
         criteria: { completeness: 1, cleanliness: policy.silver.cleanliness } },
       { skill: 'pulse', label: 'Settle into a beat', parts, mode: 'metronome', tempoPercent: GOLD_TEMPOS[0], track: 'gold' },
+      // Each hand with the beat before both (2026-11-22): a child who could play the
+      // melody in time dropped the left hand the moment both were graded on the click.
+      ...(parts.length > 1 ? parts.filter((part) => part === 'rh' || part === 'lh').map((part) => ({
+        track: 'gold', skill: `timed-${GOLD_TEMPOS[0]}-${part}`, label: part === 'rh' ? 'Right hand with the beat' : 'Left hand with the beat',
+        parts: [part], mode: 'cued', tempoPercent: GOLD_TEMPOS[0] })) : []),
       ...[...GOLD_TEMPOS, 100].map((tempoPercent) => ({ track: 'gold', skill: tempoPercent === 100 ? 'mastery' : `timed-${tempoPercent}`,
         label: tempoPercent === 100 ? 'Play at score tempo' : 'Play with the beat', parts, mode: 'cued', tempoPercent,
         mastery: tempoPercent === 100, completes: tempoPercent === 100 })),
@@ -225,7 +230,7 @@ function carryGold(state, skills) {
     .filter((key) => Array.isArray(key) && key[0] !== 'silver-check')
     .map(([scoreId, fingerprint, start, end, parts, mode, tempoPercent]) => ({ scoreId, fingerprint, range: { start, end }, parts, mode, tempoPercent }));
   const covers = (proof, task) => proof.scoreId === task.scoreId && proof.fingerprint === task.fingerprint
-    && sameRange(proof.range, task.range) && sameParts(proof.parts, task.parts)
+    && sameRange(proof.range, task.range) && task.parts.every((part) => proof.parts.includes(part))
     && (proof.mode === 'cued' || (task.mode === 'metronome' && proof.mode === 'metronome'))
     && Number.isFinite(proof.tempoPercent) && proof.tempoPercent >= task.tempoPercent;
   let faster = null;
