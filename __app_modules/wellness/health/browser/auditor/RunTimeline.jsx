@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Badge, Button, Group, NumberInput, Select, Stack, Switch, Text, UnstyledButton } from '@mantine/core';
 import { SectionCard, LoadingState, ErrorState, EmptyState, useRetryRegion } from "../../../../../frontend/src/lib/ui/index.js";
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
@@ -78,14 +78,21 @@ function SkipRow({ row }) {
  * reports how many rows survive the min-cost filter, so the timeline can say
  * when none on any loaded page do.
  */
-function JournalPage({ filters, offset, minCost, isLast, onMore, onOpen, onShown, onSettled }) {
+function JournalPage({ filters, offset, minCost, isLast, onMore, onOpen, onShown, onSettled, focusOnMount, onFocusExit }) {
   const page = useApiResource(journalPath({ ...filters, offset }), { swr: true });
   const settled = !page.loading && !page.revalidating;
   const [requestedRetry, setRequestedRetry] = useState(false);
-  const { regionProps, retry } = useRetryRegion(() => {
+  const [retainFocusedRegion, setRetainFocusedRegion] = useState(focusOnMount);
+  const focusApplied = useRef(false);
+  const { regionProps, retry, focus } = useRetryRegion(() => {
     setRequestedRetry(true);
     page.reload();
   }, !page.data && page.loading);
+  useLayoutEffect(() => {
+    if (!focusOnMount || focusApplied.current) return;
+    focusApplied.current = true;
+    focus();
+  }, [focusOnMount, focus]);
   const rows = (page.data?.rows || []).filter(row => minCost == null || (row.runId && (row.costUsd ?? 0) >= minCost));
   const shown = page.data ? rows.length : null;
   useEffect(() => { onShown(offset, shown); }, [onShown, offset, shown]);
@@ -101,10 +108,16 @@ function JournalPage({ filters, offset, minCost, isLast, onMore, onOpen, onShown
     : <EmptyState title="No runs in this range" hint="Runs from the last seven days appear here." />;
   // An explicitly retried page needs a visible destination even when all its
   // rows are filtered out. Ordinary empty pages keep the timeline's layout.
-  if (page.data && !hasResults && !requestedRetry) return null;
+  if (page.data && !hasResults && !requestedRetry && !retainFocusedRegion) return null;
 
   return <Stack component="section" {...regionProps} gap="xs" aria-label={offset ? `Run timeline, page ${offset / PAGE_SIZE + 1}` : 'Run timeline'}
-    onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setRequestedRetry(false); }}>
+    onBlur={event => {
+      if (!event.currentTarget.contains(event.relatedTarget)) {
+        setRequestedRetry(false);
+        setRetainFocusedRegion(false);
+        onFocusExit?.(offset / PAGE_SIZE);
+      }
+    }}>
     {!page.data ? (page.error ? <ErrorState error={page.error} onRetry={retry} label="Run timeline" /> : <LoadingState label="Run timeline" />)
       : firstPageEmpty ? firstPageEmptyState
       : <>
@@ -124,8 +137,10 @@ export function RunTimeline({ onOpen, onFirstPageSettled }) {
   const [trigger, setTrigger] = useState(null);
   const [minCost, setMinCost] = useState('');
   const [pages, setPages] = useState(1);
+  const [focusedPage, setFocusedPage] = useState(null);
   const [shown, setShown] = useState({});
   const onShown = useCallback((offset, n) => setShown(current => (current[offset] === n ? current : { ...current, [offset]: n })), []);
+  const onPageFocusExit = useCallback(index => setFocusedPage(current => current === index ? null : current), []);
   const filters = useMemo(() => ({ changed, trigger }), [changed, trigger]);
   const cost = typeof minCost === 'number' && minCost > 0 ? minCost : null;
   const counts = Array.from({ length: pages }, (_, i) => shown[i * PAGE_SIZE]);
@@ -134,17 +149,23 @@ export function RunTimeline({ onOpen, onFirstPageSettled }) {
     <Stack gap="sm">
       <Group gap="sm" align="flex-end">
         <Switch label="Changed something" checked={changed} onChange={event => {
-          const next = event.currentTarget.checked; setChanged(next); setPages(1); logger.debug('health-auditor.filter', { changed: next });
+          const next = event.currentTarget.checked; setChanged(next); setPages(1); setFocusedPage(null); logger.debug('health-auditor.filter', { changed: next });
         }} />
         <Select label="Trigger" placeholder="All triggers" data={TRIGGER_OPTIONS} value={trigger} clearable size="xs"
-          onChange={value => { setTrigger(value); setPages(1); logger.debug('health-auditor.filter', { trigger: value }); }} />
+          onChange={value => { setTrigger(value); setPages(1); setFocusedPage(null); logger.debug('health-auditor.filter', { trigger: value }); }} />
         <NumberInput label="Min cost ($)" value={minCost} min={0} step={0.01} decimalScale={4} size="xs" w={110}
           onChange={value => { setMinCost(value); logger.debug('health-auditor.filter', { minCost: value }); }} />
       </Group>
       <Stack gap="xs">
         {filteredEmpty ? <EmptyState title={`No runs at or above ${formatUsd(cost)} on the loaded pages`} /> : null}
         {Array.from({ length: pages }, (_, i) => <JournalPage key={`${changed}:${trigger}:${i}`} filters={filters}
-          offset={i * PAGE_SIZE} minCost={cost} isLast={i === pages - 1} onMore={() => setPages(pages + 1)}
+          offset={i * PAGE_SIZE} minCost={cost} isLast={i === pages - 1}
+          onMore={event => {
+            const wasFocused = event.currentTarget.ownerDocument.activeElement === event.currentTarget;
+            setFocusedPage(wasFocused ? i + 1 : null);
+            setPages(current => current + 1);
+          }}
+          focusOnMount={focusedPage === i} onFocusExit={onPageFocusExit}
           onOpen={onOpen} onShown={onShown} onSettled={i === 0 ? onFirstPageSettled : undefined} />)}
       </Stack>
     </Stack>

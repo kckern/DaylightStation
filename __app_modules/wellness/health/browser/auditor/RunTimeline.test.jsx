@@ -112,6 +112,49 @@ describe('Auditor run timeline', () => {
     expect(screen.getByText('$0.2000')).toBeTruthy();
     expect(screen.queryByText(/Skipped:/)).toBeNull();
   });
+  it('moves focus to a loading page and preserves filter focus when it settles empty', async () => {
+    const loadPage = api.getMockImplementation();
+    let resolvePage;
+    api.mockImplementation((path, ...args) => path.includes('offset=50')
+      ? new Promise(resolve => { resolvePage = resolve; })
+      : loadPage(path, ...args));
+    mount(<RunTimeline onOpen={() => {}} />);
+    await screen.findByText('from transcript');
+    const minCost = screen.getByLabelText('Min cost ($)');
+    fireEvent.change(minCost, { target: { value: '5' } });
+    const loadMore = screen.getByRole('button', { name: 'Load more' });
+    loadMore.focus();
+    fireEvent.click(loadMore);
+
+    const pageTwo = await screen.findByRole('region', { name: 'Run timeline, page 2' });
+    await waitFor(() => expect(pageTwo).toHaveAttribute('aria-busy', 'true'));
+    expect(pageTwo).toHaveFocus();
+    minCost.focus();
+    await act(async () => resolvePage({ rows: [{ ...run, runId: 'run-z', costUsd: 0.0123 }], total: 51 }));
+
+    expect(await screen.findByText('No runs at or above $5.0000 on the loaded pages')).toBeTruthy();
+    expect(minCost).toHaveFocus();
+  });
+  it('keeps the focused page region mounted when the cost filter hides its rows', async () => {
+    const loadPage = api.getMockImplementation();
+    let resolvePage;
+    api.mockImplementation((path, ...args) => path.includes('offset=50')
+      ? new Promise(resolve => { resolvePage = resolve; })
+      : loadPage(path, ...args));
+    mount(<RunTimeline onOpen={() => {}} />);
+    await screen.findByText('from transcript');
+    fireEvent.change(screen.getByLabelText('Min cost ($)'), { target: { value: '5' } });
+    const loadMore = screen.getByRole('button', { name: 'Load more' });
+    loadMore.focus();
+    fireEvent.click(loadMore);
+    const pageTwo = await screen.findByRole('region', { name: 'Run timeline, page 2' });
+    expect(pageTwo).toHaveFocus();
+
+    await act(async () => resolvePage({ rows: [{ ...run, runId: 'run-z', costUsd: 0.0123 }], total: 51 }));
+    expect(await screen.findByText('No runs at or above $5.0000 on the loaded pages')).toBeTruthy();
+    expect(pageTwo).toBeInTheDocument();
+    expect(pageTwo).toHaveFocus();
+  });
   it('drops back to one page when a filter changes', async () => {
     mount(<RunTimeline onOpen={() => {}} />);
     await screen.findByText('from transcript');
