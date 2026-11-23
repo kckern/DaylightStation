@@ -122,7 +122,7 @@ export function reviewRows({ cues, source = [], refined = null, override = null,
     rows.push({
       id: `cue:${id}`, peekId: id, kind: modality === 'shown' ? 'picture' : 'words',
       group: languageGroupOf(c.category) ?? (String(c.category || '').split('/')[0] || null),
-      label: c.label, category: c.category, modality, tracked: !!c.regions?.length, in: ms(local.in), out: ms(local.out),
+      label: c.label, category: c.category, modality, tracked: !!(c.regions?.length || override?.cueOverrides?.[id]?.regions?.length), in: ms(local.in), out: ms(local.out),
       effect: 'off', acts: false, why: disabled.has(id) ? 'removed' : 'settings', timing: timingOf([c]), card: null,
       handFixed: false, unsure: [], members: [id],
     });

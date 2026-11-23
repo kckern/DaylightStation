@@ -33,6 +33,8 @@ describe('reviewRows', () => {
     const letPlay = reviewRows({ cues: [], source: [piece({ id: 'k9', category: 'violence/gore', label: 'x', type: 'skip', effect: 'blur', in: 5, out: 9, regions: [{ in: 5 }] }), piece({ id: 'k8', category: 'violence/gore', label: 'y', type: 'skip', effect: 'blur', in: 15, out: 19 })] });
     expect(letPlay.find((r) => r.id === 'cue:k9')).toMatchObject({ acts: false, tracked: true });
     expect(letPlay.find((r) => r.id === 'cue:k8')).toMatchObject({ acts: false, tracked: false });
+    const viaOverride = reviewRows({ cues: [], source: [piece({ id: 'k7', category: 'violence/gore', label: 'z', type: 'skip', effect: 'blur', in: 25, out: 29 })], override: { cueOverrides: { k7: { regions: [{ in: 25 }] } } } });
+    expect(viaOverride.find((r) => r.id === 'cue:k7')).toMatchObject({ acts: false, tracked: true }); // regions stored only in the override
   });
   it('carries kind, group, modality, effect, card and hand-fixed, with times rounded to ms', () => {
     expect(byId['cue:w1']).toMatchObject({ kind: 'words', group: 'profanity', modality: 'said', effect: 'mute', in: 10.123 });
