@@ -11,11 +11,11 @@ export const CERTIFICATION_DEFAULTS = Object.freeze({
 export const FLOWER_AFTER = Object.freeze(['both-hands', 'together', 'first-step']);
 const LEGACY_STEP_PASSES = 6;
 /** The cued Gold steps below score tempo. The ladder was 60/80 until 2026-11; earned keys at other tempos carry over. */
-const GOLD_TEMPOS = Object.freeze([50, 60, 75]);
+const GOLD_TEMPOS = Object.freeze([30, 50, 75]);
 /** Where a timing-only miss steps down to, one rung at a time. */
-const SLOWER_TEMPOS = Object.freeze([40, ...GOLD_TEMPOS, 100]);
+const SLOWER_TEMPOS = Object.freeze([30, 40, ...GOLD_TEMPOS.slice(1), 100]);
 /** Ladder shape a saved state was written under: 2 = each hand with the beat at 50% (2026-11-22). */
-const LADDER_REVISION = 2;
+const LADDER_REVISION = 3;
 const ONE_HAND_BEAT = /^timed-\d+-(rh|lh)$/;
 const MAX_POLICY_PASSES = 20;
 /**
@@ -240,7 +240,7 @@ function ready(state, task) {
 function legacyReady(legacy, segment, task) {
   const passage = legacy?.learn?.passages?.[segment.id];
   if (passage?.complete || passage?.testedOut) return true;
-  const id = task.legacySkill ?? (task.skill === 'timed-60' ? 'timed' : task.skill);
+  const id = task.legacySkill ?? (task.skill === 'timed-50' ? 'timed' : task.skill);
   const aliases = task.skill === 'notes' ? [task.parts[0] === 'lh' ? 'left' : 'right', 'together'] : [id];
   const oldRequired = task.legacyRequired ?? task.required ?? ({ timed: 3, mastery: 3, 'test-out': 3 }[id] ?? 6);
   return aliases.some((alias) => (passage?.rungs?.[alias]?.passCount ?? 0) >= oldRequired);
@@ -360,7 +360,7 @@ function missedTwice(state, segment) {
  */
 function offLadderGoldStep(segment, task) {
   if (task.review || task.parent || task.track !== 'gold' || !segment || segment.authoredLadder) return false;
-  return !segment.tasks.some((step) => step.track === 'gold' && step.mode === task.mode && step.tempoPercent === task.tempoPercent);
+  return !segment.tasks.some((step) => step.track === 'gold' && step.mode === task.mode && step.tempoPercent === task.tempoPercent && sameParts(step.parts, task.parts));
 }
 
 function liveResume(plan, segments, task) {
@@ -502,8 +502,8 @@ function recovery(plan, task, result) {
     ? joinRecovery(join, task, result) : null;
   if (joinDrill) {
     range = joinDrill.range; parts = joinDrill.parts;
-  } else if (timingOnly && tempoPercent > 40) {
-    tempoPercent = SLOWER_TEMPOS.filter((value) => value < tempoPercent).at(-1) ?? 40;
+  } else if (timingOnly && tempoPercent > SLOWER_TEMPOS[0]) {
+    tempoPercent = SLOWER_TEMPOS.filter((value) => value < tempoPercent).at(-1) ?? SLOWER_TEMPOS[0];
   } else if (range.end > range.start) {
     // An unfinished take has every unreached bar fully missed, so the place it stopped is the first gap.
     const unfinished = task.mode === 'free' && (result.criteria?.completeness ?? 1) < 1;
