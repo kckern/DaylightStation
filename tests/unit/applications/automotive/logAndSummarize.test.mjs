@@ -87,6 +87,13 @@ describe('LogFuel', () => {
     expect(fs.existsSync(path.join(root, VEHICLE, 'fuel.yml'))).toBe(false);
   });
 
+  it('rejects a negative total rather than writing it', async () => {
+    await expect(logFuel.execute({
+      vehicleId: VEHICLE, date: '2026-08-01', volumeGal: 5, priceTotal: -20,
+    })).rejects.toMatchObject({ code: 'FUEL_PRICE_INVALID' });
+    expect(fs.existsSync(path.join(root, VEHICLE, 'fuel.yml'))).toBe(false);
+  });
+
   it('edits in place when given an existing id', async () => {
     const first = await logFuel.execute({ vehicleId: VEHICLE, date: '2026-08-01', volumeGal: 10 });
     await logFuel.execute({ vehicleId: VEHICLE, id: first.id, date: '2026-08-01', volumeGal: 12 });

@@ -11,7 +11,7 @@ import { useState } from 'react';
 import { localDateKey } from '@/lib/calendarDay.js';
 import { LoadingState, ErrorState, EmptyState, Sheet, Select, useRetryRegion, useSheetSubmission } from '@/lib/ui';
 import { AutoSheetActions } from './AutoSheetActions.jsx';
-import { isValidOptionalOdometerInput } from './odometerInput.mjs';
+import { isValidOptionalNonnegativeNumberInput } from './numericInput.mjs';
 import VehicleReminderStatus from './VehicleReminderStatus.jsx';
 import { formatDay, formatMoney, formatDistance } from "./format.js";
 import { autoApi } from "./useAutoApi.js";
@@ -168,7 +168,7 @@ function ServiceForm({ vehicleId, availableTypes, onClose }) {
   const validIntervalMonths = form.intervalMonths === ''
     || (Number.isInteger(Number(form.intervalMonths)) && Number(form.intervalMonths) > 0);
   const valid = Boolean(form.date)
-    && isValidOptionalOdometerInput(form.odometerMi)
+    && isValidOptionalNonnegativeNumberInput(form.odometerMi)
     && validIntervalMonths;
 
   return (

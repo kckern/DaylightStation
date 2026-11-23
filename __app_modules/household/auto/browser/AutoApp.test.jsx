@@ -300,6 +300,40 @@ it('rejects a negative fill-up odometer while allowing blank and zero', async ()
   expect(writes).toEqual([vehiclesPath + '/wagon%20%232/fuel']);
 });
 
+it('rejects a negative fill-up total while allowing blank and zero', async () => {
+  const { writes } = mockGarage();
+  render(<AutoApp />);
+  await selectButton('Wagon');
+  await selectButton('Fuel');
+  await selectButton('Log a fill-up');
+  const form = screen.getByRole('form');
+  const gallons = screen.getByLabelText('Gallons');
+  const price = screen.getByLabelText('Total ($)');
+  const save = screen.getByRole('button', { name: 'Save' });
+
+  fireEvent.change(gallons, { target: { value: '5' } });
+  expect(save).toBeEnabled();
+  expect(price).toHaveAttribute('min', '0');
+  fireEvent.change(price, { target: { value: '-20' } });
+  expect(save).toBeDisabled();
+  await act(async () => fireEvent.submit(form));
+  expect(writes).toEqual([]);
+
+  fireEvent.change(price, { target: { value: '' } });
+  expect(save).toBeEnabled();
+  await act(async () => fireEvent.submit(form));
+  await screen.findByText('No fill-ups logged');
+  expect(writes).toHaveLength(1);
+
+  await selectButton('Log a fill-up');
+  fireEvent.change(screen.getByLabelText('Gallons'), { target: { value: '5' } });
+  fireEvent.change(screen.getByLabelText('Total ($)'), { target: { value: '0' } });
+  expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+  await act(async () => fireEvent.submit(screen.getByRole('form')));
+  await screen.findByText('No fill-ups logged');
+  expect(writes).toHaveLength(2);
+});
+
 it('requires a date before saving a fill-up, including form submission', async () => {
   const { writes } = mockGarage();
   render(<AutoApp />);

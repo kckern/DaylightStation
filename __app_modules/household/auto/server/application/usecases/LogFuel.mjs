@@ -10,6 +10,7 @@
  */
 
 import { FuelLog } from "../../domain/entities/FuelLog.mjs";
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 const LITRES_PER_GALLON = 3.785411784;
 
@@ -44,6 +45,11 @@ export class LogFuel {
     vehicleId, date, volumeL, volumeGal, odometerKm, odometerMi,
     priceTotal = null, placeId = null, partial = false, notes = '', id = null,
   }) {
+    if (priceTotal !== null && (!Number.isFinite(priceTotal) || priceTotal < 0)) {
+      throw new ValidationError('FuelLog price total must be a non-negative number or null', {
+        code: 'FUEL_PRICE_INVALID', field: 'priceTotal', value: priceTotal,
+      });
+    }
     const when = date instanceof Date ? date : new Date(date);
 
     // Units convert once, here at the application edge. Litres and kilometres

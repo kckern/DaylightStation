@@ -17,7 +17,7 @@ import { useState } from 'react';
 import { localDateKey } from '@/lib/calendarDay.js';
 import { Sheet, useSheetSubmission } from '@/lib/ui';
 import { AutoSheetActions } from './AutoSheetActions.jsx';
-import { isValidOptionalOdometerInput } from './odometerInput.mjs';
+import { isValidOptionalNonnegativeNumberInput } from './numericInput.mjs';
 import { autoApi } from "./useAutoApi.js";
 import autoLog from "./autoLog.js";
 
@@ -65,7 +65,10 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose }) {
     });
   };
 
-  const valid = Boolean(form.date) && Number(form.volumeGal) > 0 && isValidOptionalOdometerInput(form.odometerMi);
+  const valid = Boolean(form.date)
+    && Number(form.volumeGal) > 0
+    && isValidOptionalNonnegativeNumberInput(form.odometerMi)
+    && isValidOptionalNonnegativeNumberInput(form.priceTotal);
 
   return (
     <Sheet open onClose={onClose} title="Log a fill-up">
@@ -106,7 +109,7 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose }) {
             <label className="auto-field">
               <span>Total ($)</span>
               <input
-                className="ds-input" type="number" inputMode="decimal" step="0.01"
+                className="ds-input" type="number" inputMode="decimal" step="0.01" min="0"
                 value={form.priceTotal} onChange={set('priceTotal')}
               />
             </label>
