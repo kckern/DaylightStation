@@ -154,7 +154,7 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, o
   );
 }
 
-const TRACKING_PARAMS = /^(utm_\w+|fbclid|gclid|mc_[ce]id|msclkid|ref|source|ncid|ocid|_ga)$/i;
+const TRACKING_PARAMS = /^(utm_\w+|fbclid|gclid|mc_[ce]id|msclkid|ncid|ocid|_ga)$/i;
 
 function stripTracking(url) {
   try {

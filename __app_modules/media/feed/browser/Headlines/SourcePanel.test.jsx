@@ -24,6 +24,22 @@ describe('SourcePanel', () => {
     expect(screen.getByRole('button', { name: 'Refresh Daily News' }).closest('a')).toBeNull();
   });
 
+  test('preserves navigation parameters while stripping explicit tracking parameters', () => {
+    const sourceWithSearchLink = {
+      ...source,
+      items: [{
+        ...source.items[0],
+        link: 'https://daylight.example/feed/search?source=bbc&ref=featured&utm_medium=rss',
+      }],
+    };
+    render(<SourcePanel source={sourceWithSearchLink} col={0} totalCols={1} onRefresh={vi.fn()} />);
+
+    expect(screen.getByRole('link', { name: 'A useful headline' })).toHaveAttribute(
+      'href',
+      'https://daylight.example/feed/search?source=bbc&ref=featured',
+    );
+  });
+
   test('mounts preview content only while the story is focused', () => {
     const { container } = render(<SourcePanel source={source} col={0} totalCols={1} onRefresh={vi.fn()} />);
     expect(container.querySelector('.headline-tooltip')).toBeNull();
