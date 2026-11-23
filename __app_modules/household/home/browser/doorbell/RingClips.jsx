@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button, UnstyledButton } from '@mantine/core';
 import { IconPlayerPlayFilled } from '@tabler/icons-react';
-import { Skeleton } from '@/lib/ui';
+import { Skeleton, useRetryRegion } from '@/lib/ui';
 import { matchRingToClip } from './matchRingToClip.js';
 import { useRingClips } from './useRingClips.js';
 import homeLogger from '../homeLogger.js';
@@ -150,6 +150,7 @@ export function RingClips({ camera, marks, timeZone = Intl.DateTimeFormat().reso
   const rings = useMemo(() => [...new Set(marks || [])].sort((a, b) => b - a), [marks]);
   const days = useMemo(() => ringDays(rings, timeZone), [rings, timeZone]);
   const { clips, failedDays, loading, error, reload } = useRingClips(camera, days);
+  const { regionProps, retry } = useRetryRegion(reload, loading);
   const withDay = useMemo(() => new Set(rings.map((t) => dayFormat(timeZone).format(new Date(t)))).size > 1, [rings, timeZone]);
   const previousRingScope = useRef(null);
 
@@ -184,7 +185,7 @@ export function RingClips({ camera, marks, timeZone = Intl.DateTimeFormat().reso
         {error ? (
           <p className="home-rings__failed" role="alert">
             <span>Clips could not be loaded.</span>
-            <Button size="compact-xs" variant="subtle" onClick={() => { logger.info('home.ring.clips.retry', { camera }); reload(); }}>Retry</Button>
+            <Button size="compact-xs" variant="subtle" onClick={() => { logger.info('home.ring.clips.retry', { camera }); retry(); }}>Retry</Button>
           </p>
         ) : null}
         <ol className="home-rings__list">
@@ -220,7 +221,7 @@ export function RingClips({ camera, marks, timeZone = Intl.DateTimeFormat().reso
     );
   }
   return (
-    <section className="home-rings" aria-label="Rings">
+    <section className="home-rings" aria-label="Rings" {...regionProps}>
       <h4 className="home-rings__title">Rings</h4>
       {body}
     </section>

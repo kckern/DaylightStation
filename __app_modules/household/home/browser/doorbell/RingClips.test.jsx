@@ -41,14 +41,28 @@ describe('RingClips', () => {
   });
 
   it('when no day of clips loads, every ring still shows its time, with a retry', async () => {
-    apiMock.mockRejectedValue(new Error('camera down'));
-    wrap(<RingClips camera="porch-cam" marks={rings.slice(0, 2)} timeZone="UTC" />);
+    let resolveRetry;
+    apiMock
+      .mockRejectedValueOnce(new Error('camera down'))
+      .mockImplementationOnce(() => new Promise(resolve => { resolveRetry = resolve; }));
+    wrap(<>
+      <button type="button" aria-label="Other control">Other</button>
+      <RingClips camera="porch-cam" marks={rings.slice(0, 2)} timeZone="UTC" />
+    </>);
     await waitFor(() => expect(screen.getByText('Clips could not be loaded.')).toBeTruthy());
     expect(document.querySelectorAll('.home-rings__time')).toHaveLength(2);
     expect(screen.queryByText('No recording near this ring')).toBeNull();
-    apiMock.mockResolvedValue({ clips: rings.map(clipAt) });
-    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+    const retry = screen.getByRole('button', { name: /retry/i });
+    retry.focus();
+    fireEvent.click(retry);
+    const region = screen.getByRole('region', { name: 'Rings' });
+    await waitFor(() => expect(region).toHaveAttribute('aria-busy', 'true'));
+    expect(region).toHaveFocus();
+    const other = screen.getByRole('button', { name: 'Other control' });
+    other.focus();
+    resolveRetry({ clips: rings.map(clipAt) });
     await waitFor(() => expect(document.querySelectorAll('video')).toHaveLength(2));
+    expect(other).toHaveFocus();
   });
 
   it('files rings under the household day, not the browser day', async () => {
