@@ -41,15 +41,29 @@ function ringLabel(t, timeZone, withDay) {
  * mounts a fresh player rather than leaving a broken one on screen.
  */
 function RingClip({ camera, clip, ringMs, eager, label }) {
+  const sourceUrl = clipFileUrl(camera, clip.name);
   const [shown, setShown] = useState(eager);
   const [attempt, setAttempt] = useState(0);
-  const [failed, setFailed] = useState(false);
-  const [started, setStarted] = useState(false);
+  const [playerState, setPlayerState] = useState(() => ({ source: sourceUrl, failed: false, started: false }));
+  const failed = playerState.source === sourceUrl && playerState.failed;
+  const started = playerState.source === sourceUrl && playerState.started;
   const video = useRef(null);
   const playButton = useRef(null);
   const retryButton = useRef(null);
   const focusPlayAfterReveal = useRef(false);
   const focusRetryAfterFailure = useRef(false);
+  if (playerState.source !== sourceUrl) {
+    const ownerDocument = video.current?.ownerDocument
+      ?? retryButton.current?.ownerDocument
+      ?? playButton.current?.ownerDocument;
+    const activeElement = ownerDocument?.activeElement;
+    if (activeElement === retryButton.current
+      || activeElement === playButton.current
+      || activeElement === video.current) {
+      focusPlayAfterReveal.current = true;
+    }
+    setPlayerState({ source: sourceUrl, failed: false, started: false });
+  }
   useLayoutEffect(() => {
     if (focusRetryAfterFailure.current && failed) {
       focusRetryAfterFailure.current = false;
@@ -59,7 +73,7 @@ function RingClip({ camera, clip, ringMs, eager, label }) {
     if (!focusPlayAfterReveal.current || !shown || failed || started) return;
     focusPlayAfterReveal.current = false;
     playButton.current?.focus({ preventScroll: true });
-  }, [shown, failed, started, attempt]);
+  }, [shown, failed, started, attempt, sourceUrl]);
   useEffect(() => {
     if (started) video.current?.focus({ preventScroll: true });
   }, [started]);
@@ -81,8 +95,9 @@ function RingClip({ camera, clip, ringMs, eager, label }) {
           onClick={(event) => {
             focusPlayAfterReveal.current = event.currentTarget.ownerDocument.activeElement === event.currentTarget;
             logger.info('home.ring.clip.retry', { camera, ringMs, clip: clip.name, attempt: attempt + 1 });
-            setFailed(false);
-            setStarted(false);
+            setPlayerState(current => current.source === sourceUrl
+              ? { ...current, failed: false, started: false }
+              : current);
             setAttempt((n) => n + 1);
           }}
         >
@@ -92,7 +107,7 @@ function RingClip({ camera, clip, ringMs, eager, label }) {
     );
   }
   const play = () => {
-    setStarted(true);
+    setPlayerState(current => current.source === sourceUrl ? { ...current, started: true } : current);
     try {
       video.current?.play?.()?.catch?.(() => { /* the native controls are there now */ });
     } catch { /* no media support (tests): the controls still appear */ }
@@ -100,7 +115,7 @@ function RingClip({ camera, clip, ringMs, eager, label }) {
   return (
     <div className="home-rings__player">
       <video
-        key={attempt}
+        key={`${sourceUrl}:${attempt}`}
         ref={video}
         className="home-rings__video"
         preload="metadata"
@@ -108,13 +123,13 @@ function RingClip({ camera, clip, ringMs, eager, label }) {
         tabIndex={started ? 0 : -1}
         playsInline
         aria-label={`Recording from the ${label} ring`}
-        src={clipFileUrl(camera, clip.name)}
+        src={sourceUrl}
         onPlay={() => logger.info('home.ring.play', { camera, ringMs, clip: clip.name })}
         onError={(e) => {
           logger.warn('home.ring.clip.failed', { camera, ringMs, clip: clip.name, attempt, code: e.currentTarget?.error?.code ?? null });
           const activeElement = e.currentTarget.ownerDocument.activeElement;
           focusRetryAfterFailure.current = activeElement === playButton.current || activeElement === e.currentTarget;
-          setFailed(true);
+          setPlayerState(current => current.source === sourceUrl ? { ...current, failed: true } : current);
         }}
       />
       {started ? null : (
