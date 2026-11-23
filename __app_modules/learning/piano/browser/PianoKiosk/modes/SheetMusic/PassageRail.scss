@@ -1,5 +1,5 @@
 // The Learn passage rail and the passage board.
-// A passage's state is its icon: tomato, flower, silver coin, gold coin.
+// A passage's state is its icon: tomato, flower, bronze coin, gold coin; a join is a silver coin.
 // Opacity never shows state.
 .piano-passage-rail {
   --rail-h: 4rem;
@@ -21,6 +21,16 @@
     &:disabled { background: var(--piano-surface-2, #26262f); color: var(--piano-muted); cursor: default; }
   }
 
+  &__map { min-width: 0; display: grid; grid-template-rows: minmax(0, 1fr); grid-auto-rows: 1.3rem; row-gap: 0; align-content: stretch; }
+  // Joins: a bridge over the tiles it joins, one strip per level, the whole piece last.
+  &__bridges { list-style: none; margin: 0; padding: 0; min-width: 0; display: grid; grid-auto-rows: 1.3rem; li { min-width: 0; display: flex; } }
+  &__bridge {
+    flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 0.3rem; padding: 0 4px; box-sizing: border-box;
+    border: 2px solid var(--piano-border); border-top-width: 0; border-radius: 0 0 var(--r-sm, 6px) var(--r-sm, 6px);
+    background: var(--piano-bg); color: var(--piano-muted); font-size: 0.8rem; font-weight: 800; line-height: 1; overflow: hidden; white-space: nowrap;
+    &[data-state='joined'] { color: var(--piano-fg); border-color: var(--piano-silver); }
+    &[aria-current='step'] { outline: 3px solid var(--piano-accent); outline-offset: 1px; color: var(--piano-fg); background: var(--piano-surface-2, #26262f); }
+  }
   &__track { list-style: none; margin: 0; padding: 0; min-width: 0; display: grid; li { min-width: 0; display: flex; } }
 
   &__tile {
@@ -39,7 +49,7 @@
   &__track[data-compact] &__tile { border-width: 1px; border-radius: 2px; padding: 0; }
   &__track[data-compact] &__tile[data-state='todo'] { background: #b3261e; border-color: #b3261e; }
   &__track[data-compact] &__tile[data-state='learning'] { background: #ec5564; border-color: #ec5564; }
-  &__track[data-compact] &__tile[data-state='silver'] { background: var(--piano-silver); border-color: var(--piano-silver); }
+  &__track[data-compact] &__tile[data-state='silver'] { background: #cd7f32; border-color: #cd7f32; }
   &__track[data-compact] &__tile[data-state='gold'] { background: var(--piano-gold); border-color: var(--piano-gold); }
   &__track[data-compact] &__tile[aria-current='step'] { outline-width: 2px; }
 

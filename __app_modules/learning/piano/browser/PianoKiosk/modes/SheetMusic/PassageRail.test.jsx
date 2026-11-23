@@ -37,12 +37,12 @@ describe('PassageRail', () => {
     const tiles = within(rail).getAllByRole('listitem').map((item) => within(item).getByRole('button'));
     expect(tiles.map((tile) => [tile.textContent, tile.dataset.state])).toEqual([['1', 'gold'], ['5', 'silver'], ['9', 'learning'], ['13', 'todo']]);
     // A passage is its icon: a gold coin, a silver coin, a flower, a tomato.
-    expect(tiles.map((tile) => tile.querySelector('svg').getAttribute('class') + (tile.querySelector('svg').dataset.metal ?? ''))).toEqual(['coin-icongold', 'coin-iconsilver', 'flower-icon', 'tomato-icon']);
+    expect(tiles.map((tile) => tile.querySelector('svg').getAttribute('class') + (tile.querySelector('svg').dataset.metal ?? ''))).toEqual(['coin-icongold', 'coin-icon piano-passage-coin--bronzegold', 'flower-icon', 'tomato-icon']);
     expect(tiles[2]).toHaveAttribute('aria-current', 'step');
     expect(rail.textContent).not.toMatch(/Segment/);
     expect(screen.getByRole('button', { name: 'Practice bars 9–12' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '2 of 4 Silver. Open the passage board' })).toHaveTextContent('2/4');
-    expect(screen.getByRole('button', { name: '2 of 4 Silver. Open the passage board' }).querySelector('.coin-icon[data-metal="silver"]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: '2 of 4 Bronze. Open the passage board' })).toHaveTextContent('2/4');
+    expect(screen.getByRole('button', { name: '2 of 4 Bronze. Open the passage board' }).querySelector('.piano-passage-coin--bronze')).not.toBeNull();
   });
 
   it('is only the map and the count when the host has its own controls', () => {
@@ -67,7 +67,7 @@ describe('PassageRail', () => {
     expect(screen.getByRole('button', { name: 'Bars 13–16, Not started' })).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(screen.getByRole('button', { name: 'Practice bars 13–16' }));
     expect(onPractice).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button', { name: '2 of 4 Silver. Open the passage board' }));
+    fireEvent.click(screen.getByRole('button', { name: '2 of 4 Bronze. Open the passage board' }));
     expect(onOpenBoard).toHaveBeenCalledWith(null);
   });
 
@@ -96,20 +96,20 @@ describe('PassageRail', () => {
     widthOf(900);
     const done = [segment(0, 'silver'), segment(1, 'silver')];
     render(<PassageRail model={modelOf(done, null)} flips={{ p0: 'silver' }} flipDelayMs={1200} />);
-    const earned = screen.getByRole('button', { name: 'Bars 1–4, Silver' });
+    const earned = screen.getByRole('button', { name: 'Bars 1–4, Bronze' });
     expect(earned).toHaveAttribute('data-flip', 'silver');
     expect(earned.style.getPropertyValue('--turn-delay')).toBe('1200ms');
     // The earned tile's icon turns over: the flower leaves and the silver coin lands.
     const turn = earned.querySelector('.piano-passage-turn');
-    expect([...turn.children].map((icon) => icon.getAttribute('class') + (icon.dataset.metal ?? ''))).toEqual(['flower-icon', 'coin-iconsilver']);
-    expect(screen.getByRole('button', { name: 'Bars 5–8, Silver' }).querySelector('.piano-passage-turn')).toBeNull();
+    expect([...turn.children].map((icon) => icon.getAttribute('class') + (icon.dataset.metal ?? ''))).toEqual(['flower-icon', 'coin-icon piano-passage-coin--bronzegold']);
+    expect(screen.getByRole('button', { name: 'Bars 5–8, Bronze' }).querySelector('.piano-passage-turn')).toBeNull();
   });
 
   it('turns a finished piece as a wave, with no banner and no sentence', () => {
     widthOf(900);
     const done = [segment(0, 'silver'), segment(1, 'silver'), segment(2, 'silver')];
     render(<PassageRail model={modelOf(done, null)} flips={{ p0: 'silver', p1: 'silver', p2: 'silver' }} flipDelayMs={1000} wave onPractice={vi.fn()} />);
-    const delays = screen.getAllByRole('button', { name: /Bars .*, Silver/ }).map((tile) => parseInt(tile.style.getPropertyValue('--turn-delay'), 10));
+    const delays = screen.getAllByRole('button', { name: /Bars .*, Bronze/ }).map((tile) => parseInt(tile.style.getPropertyValue('--turn-delay'), 10));
     expect(delays).toEqual([1000, 1045, 1090]);
     expect(screen.queryByRole('status')).toBeNull();
     expect(screen.queryByText(/whole piece/i)).toBeNull();
@@ -138,7 +138,7 @@ describe('PassageBoard', () => {
     expect(within(board).getByRole('heading', { name: 'Minuet in G' })).toBeInTheDocument();
     const goals = within(board).getByRole('list', { name: 'Goals for this piece' });
     expect(goals).toHaveTextContent('2/4earn a gem1/4earn a gem');
-    expect(within(goals).getByRole('listitem', { name: 'All Silver: 2 of 4, earn a gem' })).toBeInTheDocument();
+    expect(within(goals).getByRole('listitem', { name: 'All Bronze: 2 of 4, earn a gem' })).toBeInTheDocument();
     expect(board.querySelector('p')).toBeNull();
     const partway = within(board).getByRole('button', { name: 'Bars 9–12, Partway, 2 of 4 steps' });
     expect(partway).toHaveTextContent('Bars 9–12');
@@ -163,7 +163,7 @@ describe('PassageBoard', () => {
     const silver = [segment(0, 'silver'), segment(1, 'silver')];
     const { rerender } = render(<PassageBoard title="T" model={modelOf(silver, null)} onClose={vi.fn()} />);
     expect(screen.getByRole('list', { name: 'Goals for this piece' })).toHaveTextContent('2/20/2');
-    expect(screen.getByRole('listitem', { name: 'All Silver: done' })).toHaveAttribute('data-reached', 'true');
+    expect(screen.getByRole('listitem', { name: 'All Bronze: done' })).toHaveAttribute('data-reached', 'true');
     expect(screen.queryByText(/gem/)).not.toBeInTheDocument();
     rerender(<PassageBoard title="T" model={modelOf(silver, null)} gemOffered onClose={vi.fn()} />);
     expect(screen.getByRole('list', { name: 'Goals for this piece' })).toHaveTextContent('2/20/2earn a gem');

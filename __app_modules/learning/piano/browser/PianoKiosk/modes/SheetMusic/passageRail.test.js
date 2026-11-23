@@ -23,9 +23,10 @@ describe('passage rail model', () => {
     const rail = model(plan, state);
     expect(rail.tiles.map((tile) => [tile.startLabel, tile.state, tile.barCount])).toEqual([['1', 'silver', 4], ['5', 'learning', 4], ['9', 'todo', 4]]);
     expect(rail.tiles[1]).toMatchObject({ underway: true, steps: { done: 2, total: 4 }, label: 'Bars 5–8, Partway, 2 of 4 steps' });
-    expect(rail.tiles[0].label).toBe('Bars 1–4, Silver');
-    expect(rail.count).toEqual({ level: 'silver', done: 1, total: 3, text: '1/3', label: '1 of 3 Silver' });
-    expect(rail.goals).toEqual([{ level: 'silver', label: 'All Silver', done: 1, total: 3, reached: false }, { level: 'gold', label: 'All Gold', done: 0, total: 3, reached: false }]);
+    expect(rail.tiles[0].label).toBe('Bars 1–4, Bronze');
+    expect(rail.count).toEqual({ level: 'silver', done: 1, total: 3, text: '1/3', label: '1 of 3 Bronze' });
+    expect(rail.goals).toEqual([{ level: 'silver', label: 'All Bronze', done: 1, total: 3, reached: false },
+      { level: 'joined', label: 'Piece Silver', done: 0, total: 2, reached: false }, { level: 'gold', label: 'All Gold', done: 0, total: 3, reached: false }]);
   });
 
   it('uses the printed number when the piece starts on a pickup bar', () => {
@@ -41,15 +42,39 @@ describe('passage rail model', () => {
     expect(model(plan, state, 'gone')).toMatchObject({ target: { passageId: 'm4-7', kind: 'next' }, selectedId: null });
   });
 
-  it('offers Gold once every passage is Silver, and counts the Gold lap', () => {
+  it('offers the join once every passage is Bronze, then Gold once the piece is played through', () => {
     const plan = planOf(2); let state = earn(plan, null, 'm0-3', 'silver', 'a'); state = earn(plan, state, 'm4-7', 'silver', 'b');
+    const bronze = model(plan, state);
+    expect(bronze).toMatchObject({ buttonLabel: 'Play bars 1–8 together', target: { passageId: 'join:m0-3:m4-7', kind: 'next' }, outlinedId: 'join:m0-3:m4-7',
+      count: { level: 'joined', text: '0/1', label: '0 of 1 joins' } });
+    expect(bronze.bridges).toEqual([{ id: 'join:m0-3:m4-7', depth: 1, from: 0, to: 1, state: 'todo', final: true, bars: 'Bars 1–8', label: 'Join bars 1–8, not played through yet' }]);
+    state = earn(plan, state, 'join:m0-3:m4-7', 'silver', 'j');
     const silver = model(plan, state);
     expect(silver).toMatchObject({ buttonLabel: 'Go for Gold: bars 1–4', target: { passageId: 'm0-3', kind: 'gold' }, count: { level: 'gold', text: '0/2', label: '0 of 2 Gold' } });
-    expect(silver.goals).toEqual([{ level: 'silver', label: 'All Silver', done: 2, total: 2, reached: true }, { level: 'gold', label: 'All Gold', done: 0, total: 2, reached: false }]);
+    expect(silver.bridges[0]).toMatchObject({ state: 'joined', label: 'Join bars 1–8, Silver' });
+    expect(silver.goals).toEqual([{ level: 'silver', label: 'All Bronze', done: 2, total: 2, reached: true }, { level: 'joined', label: 'Piece Silver', done: 1, total: 1, reached: true },
+      { level: 'gold', label: 'All Gold', done: 0, total: 2, reached: false }]);
     for (const [passage, ids] of [['m0-3', ['c', 'd']], ['m4-7', ['e', 'f']]]) for (const id of ids) state = earn(plan, state, passage, 'mastery', id);
     const gold = model(plan, state);
     expect(gold).toMatchObject({ buttonLabel: 'Practice bars 1–4', target: { kind: 'again' }, count: { text: '2/2' } });
     expect(gold.goals.every((goal) => goal.reached)).toBe(true);
+  });
+
+  it('stacks joins by depth over the tiles they cover, and a selected join is the target', () => {
+    const plan = planOf(4);
+    const rail = model(plan, null, 'join:m0-3:m12-15');
+    expect(rail.bridges.map((bridge) => [bridge.id, bridge.depth, bridge.from, bridge.to, bridge.final])).toEqual([
+      ['join:m0-3:m4-7', 1, 0, 1, false], ['join:m8-11:m12-15', 1, 2, 3, false], ['join:m0-3:m12-15', 2, 0, 3, true]]);
+    expect(rail.tiles).toHaveLength(4);
+    expect(rail).toMatchObject({ selectedId: 'join:m0-3:m12-15', target: { passageId: 'join:m0-3:m12-15', kind: 'selected' }, buttonLabel: 'Play bars 1–16 together' });
+  });
+
+  it('has no bridges for a one-passage piece, whose Bronze is the piece played through', () => {
+    const plan = planOf(1); const state = earn(plan, null, 'm0-3', 'silver', 'a');
+    const rail = model(plan, state);
+    expect(rail.bridges).toEqual([]);
+    expect(rail.goals.map((goal) => goal.level)).toEqual(['silver', 'gold']);
+    expect(rail.count.level).toBe('gold');
   });
 
   it('counts two Silver steps for a single-hand passage', () => {

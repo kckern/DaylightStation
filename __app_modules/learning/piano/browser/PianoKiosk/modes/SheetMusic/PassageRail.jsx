@@ -41,20 +41,33 @@ export default function PassageRail({ model, flips = {}, flipDelayMs = 0, wave =
   // A finished piece turns every tile in a wave that always lasts under a second.
   const stagger = wave ? Math.min(45, 900 / model.tiles.length) : 0;
   const before = (level) => (level === 'gold' ? 'silver' : 'learning');
-  return <nav className="piano-passage-rail" data-bare={onPractice ? undefined : true} aria-label="Passages in this piece">
+  const bridges = model.bridges ?? [];
+  return <nav className="piano-passage-rail" data-bare={onPractice ? undefined : true} aria-label="Passages in this piece" style={bridges.length ? { '--rail-h': `${model.railRem}rem` } : undefined}>
     {onPractice && <button type="button" className="piano-passage-rail__go" data-kind={model.target?.kind} disabled={!model.target} onClick={onPractice}>{model.buttonLabel}</button>}
-    <ol ref={track} className="piano-passage-rail__track" data-compact={!fits || undefined} style={{ gridTemplateColumns: columns, gap: fits ? TILE_GAP_PX : 2, maxWidth: `${model.tiles.length * 9}rem` }}>
-      {model.tiles.map((tile, index) => <li key={tile.id}>
-        <button type="button" className="piano-passage-rail__tile" data-state={tile.state} data-flip={flips[tile.id] || undefined}
-          style={flips[tile.id] && (flipDelayMs || wave) ? { '--turn-delay': `${Math.round(flipDelayMs + index * stagger)}ms` } : undefined}
-          aria-current={tile.id === model.outlinedId ? 'step' : undefined} aria-pressed={fits ? tile.id === model.selectedId : undefined}
-          aria-label={fits ? tile.label : `${tile.label}. Open the passage board`}
-          onClick={() => (fits ? onSelect?.(tile.id) : onOpenBoard?.(tile.id))}>
-          {fits && <span className="piano-passage-rail__icon">{flips[tile.id] ? <PassageTurn from={before(flips[tile.id])} to={tile.state} /> : <PassageCoin state={tile.state} />}</span>}
-          {fits && <span className="piano-passage-rail__bar">{tile.startLabel}</span>}
-        </button>
-      </li>)}
-    </ol>
+    <div className="piano-passage-rail__map">
+      <ol ref={track} className="piano-passage-rail__track" data-compact={!fits || undefined} style={{ gridTemplateColumns: columns, gap: fits ? TILE_GAP_PX : 2, maxWidth: `${model.tiles.length * 9}rem` }}>
+        {model.tiles.map((tile, index) => <li key={tile.id}>
+          <button type="button" className="piano-passage-rail__tile" data-state={tile.state} data-flip={flips[tile.id] || undefined}
+            style={flips[tile.id] && (flipDelayMs || wave) ? { '--turn-delay': `${Math.round(flipDelayMs + index * stagger)}ms` } : undefined}
+            aria-current={tile.id === model.outlinedId ? 'step' : undefined} aria-pressed={fits ? tile.id === model.selectedId : undefined}
+            aria-label={fits ? tile.label : `${tile.label}. Open the passage board`}
+            onClick={() => (fits ? onSelect?.(tile.id) : onOpenBoard?.(tile.id))}>
+            {fits && <span className="piano-passage-rail__icon">{flips[tile.id] ? <PassageTurn from={before(flips[tile.id])} to={tile.state} /> : <PassageCoin state={tile.state} />}</span>}
+            {fits && <span className="piano-passage-rail__bar">{tile.startLabel}</span>}
+          </button>
+        </li>)}
+      </ol>
+      {bridges.length > 0 && <ol className="piano-passage-rail__bridges" aria-label="Joins" style={{ gridTemplateColumns: columns, gap: `0 ${fits ? TILE_GAP_PX : 2}px`, maxWidth: `${model.tiles.length * 9}rem` }}>
+        {bridges.map((bridge) => <li key={bridge.id} style={{ gridColumn: `${bridge.from + 1} / ${bridge.to + 2}`, gridRow: bridge.depth }}>
+          <button type="button" className="piano-passage-rail__bridge" data-state={bridge.state} data-final={bridge.final || undefined}
+            aria-current={bridge.id === model.outlinedId ? 'step' : undefined} aria-pressed={bridge.id === model.selectedId}
+            aria-label={bridge.label} onClick={() => onSelect?.(bridge.id)}>
+            <PassageCoin state={bridge.state === 'joined' ? 'joined' : 'todo'} size="1rem" />
+            <span>{bridge.final ? 'Whole piece' : 'Join'}</span>
+          </button>
+        </li>)}
+      </ol>}
+    </div>
     <button type="button" className="piano-passage-rail__count" data-level={model.count.level} aria-expanded={boardOpen}
       aria-label={`${model.count.label}. ${boardOpen ? 'Close' : 'Open'} the passage board`} onClick={() => onOpenBoard?.(null)}>
       <PassageCoin state={model.count.level} /><span>{model.count.text}</span><Chevron />

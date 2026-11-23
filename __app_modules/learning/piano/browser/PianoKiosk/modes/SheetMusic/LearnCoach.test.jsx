@@ -12,7 +12,7 @@ vi.mock('../Exercises/ScorePassage.jsx', () => ({ default: (props) => { h.previe
 // The drill surface is the real one elsewhere; here it only shows what the coach hands it.
 vi.mock('./LearnLab.jsx', () => ({ default: (props) => { h.lab = props; h.labs += 1;
   return <div>Drill surface{props.notice}{props.extraControls}{props.resultLabel && <strong>{props.resultLabel}</strong>}{props.resultActions}</div>; } }));
-const plan = createCoachPlan({ scoreId: 'score', fingerprint: 'fp', segments: [{ id: 'a', label: 'Segment 1', barLabel: 'Bars 1–4', inMeasure: 0, outMeasure: 3, playableParts: ['rh', 'lh'] }] });
+const plan = createCoachPlan({ scoreId: 'score', fingerprint: 'fp', certification: { testOutFirst: false }, segments: [{ id: 'a', label: 'Segment 1', barLabel: 'Bars 1–4', inMeasure: 0, outMeasure: 3, playableParts: ['rh', 'lh'] }] });
 const props = { score: { id: 'score', musicXml: '<score />' }, plan, segment: plan.segments[0], onBack: vi.fn(), onListen: vi.fn() };
 const passed = { assessmentId: 'take', status: 'completed', score: 1, diagnostics: { expected_notes: 8, matched_notes: 8 }, criteria: { completeness: 1, cleanliness: 1, placement: 1 }, verdict: { passed: true } };
 const outcome = (result) => act(async () => { h.lab.onStarted(); h.lab.onOutcome(result); });
@@ -31,7 +31,7 @@ describe('LearnCoach', () => {
  it('hands the passage to the drill as sets and reps: one set per Silver and Gold step', () => {
   render(<LearnCoach {...props} />);
   const { projection, stepId } = h.lab.drill;
-  expect(projection.steps.map((step) => step.display.key)).toEqual(['Right hand', 'Left hand', 'Together', 'On your own', 'Beat', 'Right 50%', 'Left 50%', '50%', '60%', '75%', '100%']);
+  expect(projection.steps.map((step) => step.display.key)).toEqual(['Right hand', 'Left hand', 'Together', 'On your own', 'Beat', 'Right 30%', 'Left 30%', '30%', '50%', '75%', '100%']);
   expect(projection.steps[0]).toMatchObject({ id: stepId, state: 'current', requirement: { required_passes: 1 }, pass_count: 0, passed: false });
   expect(projection.steps[4].requirement.required_passes).toBe(2);
  });
@@ -115,7 +115,7 @@ describe('LearnCoach', () => {
  it('has no practice chooser: the sets are how a step is chosen', () => {
   render(<LearnCoach {...props} />);
   expect(h.lab.onChangePractice).toBeUndefined();
-  expect(h.lab.drill.projection.steps.map((step) => step.display.key)).toEqual(['Right hand', 'Left hand', 'Together', 'On your own', 'Beat', 'Right 50%', 'Left 50%', '50%', '60%', '75%', '100%']);
+  expect(h.lab.drill.projection.steps.map((step) => step.display.key)).toEqual(['Right hand', 'Left hand', 'Together', 'On your own', 'Beat', 'Right 30%', 'Left 30%', '30%', '50%', '75%', '100%']);
   // Each set is named by a picture; the words stay as its accessible name.
   expect(h.lab.drill.projection.steps.every((step) => step.display.icon && step.title)).toBe(true);
  });
@@ -216,7 +216,7 @@ describe('LearnCoach', () => {
    render(<LearnCoach {...props} />);
    expect(steps().map((step) => Boolean(step.locked))).toEqual([false, false, false, false, true, true, true, true, true, true, true]);
    expect(lockShown(named('Beat'))).toBe(true);
-   expect(lockShown(named('Right 50%'))).toBe(true);
+   expect(lockShown(named('Right 30%'))).toBe(true);
    expect(lockShown(named('Together'))).toBe(false);
   });
   it('does nothing when a locked step is tapped', () => {

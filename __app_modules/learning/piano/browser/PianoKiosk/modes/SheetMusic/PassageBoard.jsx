@@ -32,7 +32,7 @@ export default function PassageBoard({ title, model, focusId = null, gemOffered 
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
   const stone = polishStone(polish);
-  return <section className="piano-passage-board" role="dialog" aria-label="Passage board">
+  return <section className="piano-passage-board" role="dialog" aria-label="Passage board" style={model.railRem > 4 ? { bottom: `${model.railRem}rem` } : undefined}>
     <header className="piano-passage-board__head">
       <h2 className="piano-passage-board__title">{title}</h2>
       <ul className="piano-passage-board__goals" aria-label="Goals for this piece">

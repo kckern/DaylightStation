@@ -19,7 +19,7 @@ const unassisted = ({ assist: _assist, key: _key, ...rest }) => rest;
 
 describe('certification policy', () => {
   it('defaults and rejects invalid values', () => {
-    expect(normalizeCertification()).toEqual({ silver: { stepPasses: 1, checkPasses: 1, cleanliness: 0.8, stallSeconds: 30 }, flower: { after: 'both-hands' } });
+    expect(normalizeCertification()).toEqual({ silver: { stepPasses: 1, checkPasses: 1, cleanliness: 0.8, stallSeconds: 30 }, flower: { after: 'both-hands' }, testOutFirst: true });
     expect(normalizeCertification({ silver: { stepPasses: 0, checkPasses: 2.5, cleanliness: 4, stallSeconds: -1 } }).silver)
       .toEqual({ stepPasses: 1, checkPasses: 1, cleanliness: 0.8, stallSeconds: 30 });
   });

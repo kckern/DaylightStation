@@ -362,7 +362,7 @@ describe('ScorePlayer — guided Learn composition', () => {
  };
  it('opens a deep link straight on the drill surface, at the current step', () => {
   setup(); renderPlayer('/?learnPassage=m0-1&learnRung=right');
-  expect(h.learnLabProps.coachingTask).toMatchObject({ passageId: 'm0-1', skill: 'right' });
+  expect(h.learnLabProps.coachingTask).toMatchObject({ passageId: 'm0-1', skill: 'silver' });
   expect(h.learnLabProps.segment.barLabel).toBe('Bars 1–2');
   expect(h.learnLabProps.drill.projection.steps).toHaveLength(11);
   expect(screen.getByRole('navigation', { name: 'Passages in this piece' })).toHaveAttribute('data-bare', 'true');
@@ -371,9 +371,9 @@ describe('ScorePlayer — guided Learn composition', () => {
  it('provides one learning entry that lands on the drill, banks a pass, and returns to the score', async () => {
   setup(); renderPlayer(); pickMode('Learn');
   expect(screen.getByRole('navigation', { name: 'Passages in this piece' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: /^0 of \d+ Silver\. Open the passage board$/ })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /^0 of \d+ Bronze\. Open the passage board$/ })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Practice bars 1–2' }));
-  expect(h.learnLabProps.coachingTask.parts).toEqual(['rh']);
+  expect(h.learnLabProps.coachingTask.parts).toEqual(['rh', 'lh']);
   fireEvent.click(screen.getByRole('button', { name: 'Complete rung' }));
   // A pass is the drill's own rep card, with the next step already under it.
   await waitFor(() => expect(h.learnLabProps.card).toMatchObject({ setIndex: 1, setClear: true, next: { key: 'Left hand' } }));
@@ -406,7 +406,7 @@ describe('ScorePlayer — guided Learn composition', () => {
   expect(screen.getByRole('dialog', { name: 'Passage demonstration' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Stop listening' }));
   expect(screen.getByRole('button', { name: 'Listen' })).toBeInTheDocument();
-  expect(h.learnLabProps.coachingTask.skill).toBe('right');
+  expect(h.learnLabProps.coachingTask.skill).toBe('silver');
  });
  it('opens a score on its passages when the roadmap is on, unless the household names a mode', () => {
   const leftInListen = () => window.localStorage.setItem('daylight.piano.sm.files:mary.musicxml', JSON.stringify({ v: 1, mode: 'listen' }));

@@ -174,27 +174,30 @@ describe('acknowledged piano coaching', () => {
       return { f, plan, notes, info, service, take };
     };
 
-    it('notes Silver when one saved take finishes the last passage, and only once', async () => {
+    it('notes Silver when one saved take finishes the final join, and only once', async () => {
       const { notes, info, service, take } = setup();
       await service.record('learner4', SCORE, take('silver-a', 'a', 'silver'));
-      expect(notes).toEqual([]);
-      const last = take('silver-b', 'b', 'silver');
+      await service.record('learner4', SCORE, take('silver-b', 'b', 'silver'));
+      expect(notes).toEqual([]); // every passage Bronze is not the piece played through
+      const last = take('silver-join', 'join:a:b', 'silver');
       await service.record('learner4', SCORE, last);
       expect(notes).toEqual([{ userId: 'learner4', scoreId: 'files:test.musicxml', level: 'silver', passages: 2, fingerprint: 'content-a', at: '2026-10-26T18:00:00.000Z' }]);
       expect(info).toContainEqual(['piano.learn.piece-certified', { userId: 'learner4', scoreId: 'files:test.musicxml', level: 'silver', passages: 2 }]);
       await service.record('learner4', SCORE, structuredClone(last)); // replayed receipt
-      await service.record('learner4', SCORE, take('silver-b-again', 'b', 'silver')); // already all Silver
+      await service.record('learner4', SCORE, take('silver-join-again', 'join:a:b', 'silver')); // already piece Silver
       expect(notes).toHaveLength(1);
     });
 
-    it('notes Gold, and Silver with it, when a tempo take finishes both at once', async () => {
+    it('notes Gold when a tempo take finishes every passage, and Silver only with the final join', async () => {
       const { notes, service, take } = setup();
       // Score tempo is earned on two passing takes out of three.
       for (const id of ['gold-a1', 'gold-a2']) await service.record('learner4', SCORE, take(id, 'a', 'mastery'));
       await service.record('learner4', SCORE, take('gold-b1', 'b', 'mastery'));
       expect(notes).toEqual([]);
       await service.record('learner4', SCORE, take('gold-b2', 'b', 'mastery'));
-      expect(notes.map((note) => note.level)).toEqual(['silver', 'gold']);
+      expect(notes.map((note) => note.level)).toEqual(['gold']);
+      await service.record('learner4', SCORE, take('join-silver', 'join:a:b', 'silver'));
+      expect(notes.map((note) => note.level)).toEqual(['gold', 'silver']);
     });
 
     it('never notes a piece that legacy credit already finished, a failed take, or a selection', async () => {

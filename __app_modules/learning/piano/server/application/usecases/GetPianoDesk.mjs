@@ -57,7 +57,7 @@ export class GetPianoDesk {
     if (!segments.length) return null;
     const certification = this.#configProjection.raw?.()?.sheetmusic?.learn?.certification;
     const projection = projectRecord({ record, scoreId, segments, certification, dayKey });
-    const passages = projection.segments.map(passageProgress);
+    const passages = projection.segments.filter((segment) => segment.kind !== 'join').map(passageProgress);
     // A piece someone only opened or tried is not one they are learning.
     if (!passages.some((passage) => passage.steps.done > 0 || passage.state === 'silver' || passage.state === 'gold')) return null;
     const next = projection.recommended;
@@ -65,6 +65,7 @@ export class GetPianoDesk {
       scoreId, scoreKey, practicedAt: latestActivity(record) || null,
       cover: this.#datastore.sheetMusicCover?.(scoreId) ?? null,
       total: projection.piece.total, silver: projection.piece.silver, gold: projection.piece.gold,
+      pieceSilver: projection.piece.pieceSilver, joins: projection.piece.joins,
       next: next ? { passageId: next.passageId, skill: next.skill, label: next.label, start: next.range.start, end: next.range.end } : null,
       nextGoldPassageId: projection.piece.nextGoldPassageId,
       passages,

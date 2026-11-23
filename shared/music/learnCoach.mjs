@@ -7,6 +7,8 @@ export const CERTIFICATION_DEFAULTS = Object.freeze({
   // When an uncertified passage counts as partway: `both-hands` (each hand alone, or the
   // hands together), `together` (the hands together only) or `first-step` (any note step).
   flower: Object.freeze({ after: 'both-hands' }),
+  // An untouched passage or join opens on its hints-off check (test out first); false walks the hands first.
+  testOutFirst: true,
 });
 export const FLOWER_AFTER = Object.freeze(['both-hands', 'together', 'first-step']);
 const LEGACY_STEP_PASSES = 6;
@@ -35,7 +37,8 @@ export function normalizeCertification(raw) {
     checkPasses: wholeIn(silver.checkPasses, fallback.checkPasses),
     cleanliness: Number.isFinite(silver.cleanliness) && silver.cleanliness > 0 && silver.cleanliness <= 1 ? silver.cleanliness : fallback.cleanliness,
     stallSeconds: Number.isFinite(silver.stallSeconds) && silver.stallSeconds >= 5 && silver.stallSeconds <= 600 ? silver.stallSeconds : fallback.stallSeconds,
-  }, flower: { after: FLOWER_AFTER.includes(raw?.flower?.after) ? raw.flower.after : CERTIFICATION_DEFAULTS.flower.after } };
+  }, flower: { after: FLOWER_AFTER.includes(raw?.flower?.after) ? raw.flower.after : CERTIFICATION_DEFAULTS.flower.after },
+  testOutFirst: typeof raw?.testOutFirst === 'boolean' ? raw.testOutFirst : CERTIFICATION_DEFAULTS.testOutFirst };
 }
 
 const partsOf = (parts = []) => [...new Set(parts)].sort((a, b) => {
@@ -116,7 +119,9 @@ export function createCoachPlan({ scoreId, fingerprint, segments = [], authoredL
   const policy = normalizeCertification(certification);
   const plan = { version: COACH_VERSION, scoreId, fingerprint: content, authoredLadder, tempoMap, criteria: { ...criteria }, certification: policy, segments: [], tasks: [] };
   const noteStep = { track: 'silver', required: policy.silver.stepPasses, legacyRequired: LEGACY_STEP_PASSES };
-  for (const segment of segments) {
+  // Joins are derived, never input: a plan handed back to this function (the kiosk posts its plan to the
+  // server, which rebuilds it) must not turn its own joins into passages.
+  for (const segment of segments.filter((item) => item.kind !== 'join')) {
     const parts = partsOf(segment.playableParts);
     if (!parts.length || !Number.isInteger(segment.inMeasure) || segment.outMeasure < segment.inMeasure) continue;
     const range = { start: segment.inMeasure, end: segment.outMeasure };
@@ -416,7 +421,7 @@ export function projectCoach({ plan, state, legacy = {}, dayKey }) {
     || current.evidence.some((item) => item.task?.passageId === segment.id && !isGoldWork(item.task));
   const nextStep = (segment) => {
     const pending = segment.skills.filter((task) => task.track === 'silver' && !task.ready);
-    return (!touched(segment) && pending.find((task) => task.assist === 'none')) || pending[0];
+    return (plan.certification.testOutFirst !== false && !touched(segment) && pending.find((task) => task.assist === 'none')) || pending[0];
   };
   const inOrder = [...open.filter((segment) => !setAsideToday(segment.id)), ...open.filter((segment) => setAsideToday(segment.id))];
   const recommended = drill ?? inOrder.map(nextStep).find(Boolean) ?? null;

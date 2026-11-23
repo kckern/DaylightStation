@@ -5,7 +5,9 @@ import { passageProgress } from '../../../../../../../shared/music/learnCoach.mj
 export const TILE_MIN_PX = 44;
 export const TILE_GAP_PX = 4;
 
-export const STATE_WORDS = Object.freeze({ todo: 'Not started', learning: 'Partway', silver: 'Silver', gold: 'Gold' });
+// A passage's first certificate is stored as `silver` and shown as BRONZE; Silver is the join (the piece
+// played through, 2026-11-23). `joined` is a join's own state, drawn as the silver coin.
+export const STATE_WORDS = Object.freeze({ todo: 'Not started', learning: 'Partway', silver: 'Bronze', joined: 'Silver', gold: 'Gold' });
 
 const printedStart = (segment) => {
   const printed = segment.printedMeasures?.[0];
@@ -25,31 +27,56 @@ export function passageTile(segment) {
     state: progress.state, steps: progress.steps, underway, detail, label: `${bars}, ${detail}` };
 }
 
+/** One join as the rail draws it: a bridge over the tiles it joins (`from`..`to`, tile indexes). */
+function bridgeOf(join, tiles, joins) {
+  const first = tiles.findIndex((tile) => tile.id === join.memberPassages[0]);
+  const last = tiles.findIndex((tile) => tile.id === join.memberPassages.at(-1));
+  const depth = (item) => (item.kind === 'join' ? 1 + Math.max(...item.members.map((id) => { const member = joins.find((other) => other.id === id); return member ? depth(member) : 0; })) : 0);
+  const state = join.certification?.silver ? 'joined' : 'todo';
+  const bars = barsOf(join);
+  return { id: join.id, depth: depth(join), from: first, to: last, state, final: join.final === true, bars,
+    label: `Join ${lowerBars(bars)}, ${state === 'joined' ? 'Silver' : 'not played through yet'}` };
+}
+
 /**
- * What the rail shows: every passage, the one the button opens, and the count.
- * With nothing selected the button follows the coach's recommendation; when the
- * whole piece is Silver it offers Gold.
+ * What the rail shows: every passage, the joins over them as bridges, the one the button opens, and
+ * the count. With nothing selected the button follows the coach's recommendation (a passage or a
+ * join); when the whole piece is played through it offers Gold.
  */
 export function railModel({ segments = [], projection, selectedId = null }) {
-  const tiles = segments.map(passageTile);
+  const passages = segments.filter((segment) => segment.kind !== 'join');
+  const joins = segments.filter((segment) => segment.kind === 'join');
+  const tiles = passages.map(passageTile);
+  const bridges = joins.map((join) => bridgeOf(join, tiles, joins));
   const byId = (id) => tiles.find((tile) => tile.id === id) ?? null;
+  const bridgeById = (id) => bridges.find((bridge) => bridge.id === id) ?? null;
   const piece = projection?.piece ?? { total: tiles.length, silver: 0, gold: 0 };
-  const allSilver = piece.total > 0 && piece.silver >= piece.total;
+  const joinTotals = piece.joins ?? { total: bridges.length, silver: bridges.filter((bridge) => bridge.state === 'joined').length };
+  const allBronze = piece.total > 0 && piece.silver >= piece.total;
+  const pieceSilver = piece.pieceSilver ?? (allBronze && joinTotals.total === 0);
   const allGold = piece.total > 0 && piece.gold >= piece.total;
-  const selected = byId(selectedId);
-  const target = selected ? { tile: selected, kind: 'selected' }
-    : byId(projection?.recommended?.passageId) ? { tile: byId(projection.recommended.passageId), kind: 'next' }
-      : byId(piece.nextGoldPassageId) ? { tile: byId(piece.nextGoldPassageId), kind: 'gold' }
-        : tiles[0] ? { tile: tiles[0], kind: 'again' } : null;
-  const lap = allSilver ? 'gold' : 'silver';
-  const done = lap === 'gold' ? piece.gold : piece.silver;
+  const picked = byId(selectedId) ?? bridgeById(selectedId);
+  const recommended = projection?.recommended?.passageId;
+  const target = picked ? { item: picked, kind: 'selected' }
+    : (byId(recommended) ?? bridgeById(recommended)) ? { item: byId(recommended) ?? bridgeById(recommended), kind: 'next' }
+      : byId(piece.nextGoldPassageId) ? { item: byId(piece.nextGoldPassageId), kind: 'gold' }
+        : tiles[0] ? { item: tiles[0], kind: 'again' } : null;
+  const lap = !allBronze ? 'silver' : !pieceSilver ? 'joined' : 'gold';
+  const done = lap === 'gold' ? piece.gold : lap === 'joined' ? joinTotals.silver : piece.silver;
+  const total = lap === 'joined' ? joinTotals.total : piece.total;
+  const lapWord = lap === 'gold' ? 'Gold' : lap === 'joined' ? 'joins' : 'Bronze';
+  const buttonFor = (found) => (!found ? null : found.item.kind === undefined && bridgeById(found.item.id)
+    ? `Play ${lowerBars(found.item.bars)} together`
+    : found.kind === 'gold' ? `Go for Gold: ${lowerBars(found.item.bars)}` : `Practice ${lowerBars(found.item.bars)}`);
+  // Each level of joins is one more 1.3rem strip under the tiles; the rail and the board's bottom edge follow it.
+  const railRem = 4 + 1.3 * Math.max(0, ...bridges.map((bridge) => bridge.depth));
   return {
-    tiles, selectedId: selected?.id ?? null, outlinedId: target?.tile.id ?? null,
-    target: target ? { passageId: target.tile.id, kind: target.kind } : null,
-    buttonLabel: !target ? null : target.kind === 'gold' ? `Go for Gold: ${lowerBars(target.tile.bars)}` : `Practice ${lowerBars(target.tile.bars)}`,
-    count: { level: lap, done, total: piece.total, text: `${done}/${piece.total}`,
-      label: `${done} of ${piece.total} ${lap === 'gold' ? 'Gold' : 'Silver'}` },
-    goals: [{ level: 'silver', label: 'All Silver', done: piece.silver, total: piece.total, reached: allSilver },
+    tiles, bridges, railRem, selectedId: picked?.id ?? null, outlinedId: target?.item.id ?? null,
+    target: target ? { passageId: target.item.id, kind: target.kind } : null,
+    buttonLabel: buttonFor(target),
+    count: { level: lap, done, total, text: `${done}/${total}`, label: `${done} of ${total} ${lapWord}` },
+    goals: [{ level: 'silver', label: 'All Bronze', done: piece.silver, total: piece.total, reached: allBronze },
+      ...(joinTotals.total > 0 ? [{ level: 'joined', label: 'Piece Silver', done: joinTotals.silver, total: joinTotals.total, reached: pieceSilver }] : []),
       { level: 'gold', label: 'All Gold', done: piece.gold, total: piece.total, reached: allGold }],
   };
 }

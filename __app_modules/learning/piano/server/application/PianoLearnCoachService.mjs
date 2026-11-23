@@ -50,9 +50,15 @@ export class PianoLearnCoachService {
    */
   #notePiece({ userId, plan, event, before, after, now }) {
     if (event.type !== 'outcome') return;
+    const total = after.piece.total;
+    if (!(total > 0)) return;
+    // Piece Silver is the whole piece played: the final join (or the one passage of a one-passage piece).
+    // Piece Gold is still every passage Gold. Credit an old all-Silver piece earned before joins existed
+    // is never paid again: the piece log keeps one entry per level.
+    const reached = { silver: after.piece.pieceSilver && !before.piece.pieceSilver,
+      gold: after.piece.gold === total && before.piece.gold < before.piece.total };
     for (const level of ['silver', 'gold']) {
-      const total = after.piece.total;
-      if (!(total > 0) || after.piece[level] !== total || before.piece[level] >= before.piece.total) continue;
+      if (!reached[level]) continue;
       this.logger?.info?.('piano.learn.piece-certified', { userId, scoreId: plan.scoreId, level, passages: total });
       this.pieceLog?.note({ userId, scoreId: plan.scoreId, level, passages: total, fingerprint: plan.fingerprint, at: now });
     }

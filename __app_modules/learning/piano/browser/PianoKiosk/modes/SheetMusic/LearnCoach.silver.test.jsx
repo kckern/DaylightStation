@@ -14,7 +14,7 @@ vi.mock('../Exercises/ScorePassage.jsx', () => ({ default: () => <div>Passage mu
 vi.mock('./LearnLab.jsx', () => ({ default: (props) => { h.lab = props; return <div>Drill surface{props.ceremony}{props.extraControls}{props.resultLabel && <strong>{props.resultLabel}</strong>}{props.resultActions}</div>; } }));
 
 const seg = (id, a, b) => ({ id, label: `Passage ${id}`, barLabel: `Bars ${a + 1}–${b + 1}`, inMeasure: a, outMeasure: b, playableParts: ['rh', 'lh'] });
-const planOf = (segments) => createCoachPlan({ scoreId: 'score', fingerprint: 'fp', segments, tempoMap: [{ onsetQuarter: 0, bpm: 90 }] });
+const planOf = (segments) => createCoachPlan({ scoreId: 'score', fingerprint: 'fp', segments, tempoMap: [{ onsetQuarter: 0, bpm: 90 }], certification: { testOutFirst: false } });
 const clean = (id) => ({ assessmentId: id, status: 'completed', diagnostics: { expected_notes: 8, matched_notes: 8, wrong_notes: 0, missed_notes: 0 }, criteria: { completeness: 1, cleanliness: 1 } });
 const messy = (id) => ({ ...clean(id), diagnostics: { expected_notes: 8, matched_notes: 8, wrong_notes: 8, missed_notes: 0 }, criteria: { completeness: 1, cleanliness: 0.5 } });
 const button = (name) => screen.getByRole('button', { name });
@@ -47,15 +47,15 @@ describe('Silver in LearnCoach', () => {
     await finish(clean('one'));
     // It is the drill's ceremony, not a rep card.
     expect(h.lab.card).toBeNull();
-    expect(ceremony()).toHaveAttribute('aria-label', 'Bars 1–4. Silver! Next: bars 5–8.');
-    expect(ceremony().querySelector('.gate-ceremony__word').textContent).toBe('Silver!');
+    expect(ceremony()).toHaveAttribute('aria-label', 'Bars 1–4. Bronze! Next: bars 5–8.');
+    expect(ceremony().querySelector('.gate-ceremony__word').textContent).toBe('Bronze!');
     const turn = ceremony().querySelector('.gate-ceremony__mark .piano-passage-turn');
-    expect([...turn.children].map((icon) => icon.getAttribute('class') + (icon.dataset.metal ?? ''))).toEqual(['tomato-icon', 'coin-iconsilver']);
+    expect([...turn.children].map((icon) => icon.getAttribute('class') + (icon.dataset.metal ?? ''))).toEqual(['tomato-icon', 'coin-icon piano-passage-coin--bronzegold']);
     expect(ceremony().querySelector('.gate-ceremony__behind').textContent).toBe('NextBars 5–8');
     expect(ceremony().querySelector('.gate-ceremony__behind .tomato-icon')).not.toBeNull();
     // The finished take stays under the curtain; nothing new is mounted yet.
     expect(h.lab.coachingTask.skill).toBe('silver');
-    const tile = screen.getByRole('button', { name: 'Bars 1–4, Silver' });
+    const tile = screen.getByRole('button', { name: 'Bars 1–4, Bronze' });
     expect(tile).toHaveAttribute('data-flip', 'silver');
     // The tile turns and the chime sounds when the verdict lands, not before.
     expect(parseInt(tile.style.getPropertyValue('--turn-delay'), 10)).toBeGreaterThan(1000);
@@ -69,31 +69,46 @@ describe('Silver in LearnCoach', () => {
     expect(h.chime).toHaveBeenCalledTimes(1);
   });
 
-  it('puts every passage on the curtain when the whole piece turns Silver, then returns to the score', async () => {
+  it('puts every passage on the curtain when the whole piece is played through, then returns to the score', async () => {
     vi.useFakeTimers();
     const plan = planOf([seg('a', 0, 3), seg('b', 4, 7), seg('c', 8, 11)]);
-    let state = null; for (const id of ['b', 'c']) state = apply(state, plan, plan.tasks.find((t) => t.skill === 'silver' && t.passageId === id), clean(`s-${id}`));
+    // Every passage is Bronze and the first join is played; the take under test is the final join.
+    let state = null; for (const id of ['a', 'b', 'c', 'join:a:b']) state = apply(state, plan, plan.tasks.find((t) => t.skill === 'silver' && t.passageId === id), clean(`s-${id}`));
     const onBack = vi.fn(); const onPassageChange = vi.fn(); let coach = fakeCoach(plan, state, '2026-11-18');
     coach.record = vi.fn((task, result) => { state = apply(state, plan, task, result); });
-    const view = render(<LearnCoach score={{ id: 'score', musicXml: '<x />' }} title="Minuet" plan={plan} segment={plan.segments[0]} coach={coach} onBack={onBack} onPassageChange={onPassageChange} />);
+    const join = plan.segments.find((item) => item.id === 'join:a:c');
+    const view = render(<LearnCoach score={{ id: 'score', musicXml: '<x />' }} title="Minuet" plan={plan} segment={join} coach={coach} onBack={onBack} onPassageChange={onPassageChange} />);
     pickCheck();
     await finish(clean('last'));
     coach = { ...coach, state, projection: projectCoach({ plan, state, dayKey: '2026-11-18' }) };
-    view.rerender(<LearnCoach score={{ id: 'score', musicXml: '<x />' }} title="Minuet" plan={plan} segment={plan.segments[0]} coach={coach} onBack={onBack} onPassageChange={onPassageChange} />);
-    expect(ceremony()).toHaveAttribute('aria-label', 'Your whole piece is Silver!');
-    expect(ceremony().querySelector('.gate-ceremony__word').textContent).toBe('All Silver!');
+    view.rerender(<LearnCoach score={{ id: 'score', musicXml: '<x />' }} title="Minuet" plan={plan} segment={join} coach={coach} onBack={onBack} onPassageChange={onPassageChange} />);
+    expect(ceremony()).toHaveAttribute('aria-label', 'You played the whole piece!');
+    expect(ceremony().querySelector('.gate-ceremony__word').textContent).toBe('Piece Silver!');
     const coins = ceremony().querySelectorAll('.piano-learn-coach__piece-mark .piano-passage-turn');
     expect(coins).toHaveLength(3);
     const delays = [...coins].map((coin) => parseInt(coin.parentElement.style.getPropertyValue('--turn-delay'), 10));
     expect(delays[0]).toBeLessThan(delays[1]); expect(delays[1]).toBeLessThan(delays[2]);
     expect(ceremony().querySelector('.gate-ceremony__behind').textContent).toBe('NextGo for Gold');
-    // Every tile of the rail turns with it.
-    expect(document.querySelectorAll('.piano-passage-rail__tile[data-flip="silver"]')).toHaveLength(3);
     act(() => vi.advanceTimersByTime(PASSAGE_CEREMONY_MS + 200));
     expect(h.chime).toHaveBeenCalledWith({ level: 'silver', piece: true });
     expect(onBack).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(PIECE_CEREMONY_MS - PASSAGE_CEREMONY_MS));
     expect(onBack).toHaveBeenCalledTimes(1); expect(onPassageChange).not.toHaveBeenCalled();
+  });
+
+  it('does not call a join Bronze: its ceremony says Silver and points at what is next', async () => {
+    vi.useFakeTimers();
+    const plan = planOf([seg('a', 0, 3), seg('b', 4, 7), seg('c', 8, 11)]);
+    let state = null; for (const id of ['a', 'b', 'c']) state = apply(state, plan, plan.tasks.find((t) => t.skill === 'silver' && t.passageId === id), clean(`s-${id}`));
+    const coach = fakeCoach(plan, state, '2026-11-18');
+    coach.record = vi.fn((task, result) => { state = apply(state, plan, task, result); });
+    const join = plan.segments.find((item) => item.id === 'join:a:b');
+    const { rerender } = render(<LearnCoach score={{ id: 'score', musicXml: '<x />' }} title="Minuet" plan={plan} segment={join} coach={coach} onBack={vi.fn()} onPassageChange={vi.fn()} />);
+    pickCheck();
+    await finish(clean('join'));
+    rerender(<LearnCoach score={{ id: 'score', musicXml: '<x />' }} title="Minuet" plan={plan} segment={join} coach={{ ...coach, state, projection: projectCoach({ plan, state, dayKey: '2026-11-18' }) }} onBack={vi.fn()} onPassageChange={vi.fn()} />);
+    expect(ceremony().querySelector('.gate-ceremony__word').textContent).toBe('Silver!');
+    expect(ceremony().querySelector('.gate-ceremony__behind').textContent).toMatch(/^Next/);
   });
 
   it('opens a Silver passage on its next Gold step', () => {
@@ -157,7 +172,7 @@ describe('Silver in LearnCoach', () => {
     view.rerender(<LearnCoach score={{ id: 'score', musicXml: '<x />' }} plan={plan} segment={plan.segments[0]} coach={coach} onBack={vi.fn()} onPassageChange={onPassageChange} />);
     expect(ceremony().querySelector('.gate-ceremony__word').textContent).toBe('Gold!');
     const turn = ceremony().querySelector('.gate-ceremony__mark .piano-passage-turn');
-    expect([...turn.children].map((icon) => icon.dataset.metal)).toEqual(['silver', 'gold']);
+    expect([...turn.children].map((icon) => icon.getAttribute('class') + (icon.dataset.metal ?? ''))).toEqual(['coin-icon piano-passage-coin--bronzegold', 'coin-icongold']);
     expect(ceremony().querySelector('.gate-ceremony__behind').textContent).toBe('NextBars 5–8');
     act(() => vi.advanceTimersByTime(PASSAGE_CEREMONY_MS));
     expect(onPassageChange).toHaveBeenCalledWith('b');

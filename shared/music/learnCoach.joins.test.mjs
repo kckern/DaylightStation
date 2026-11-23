@@ -111,3 +111,12 @@ describe('join drills', () => {
     expect(proj(plan, missTwice(plan, 'join:p1:p2', result)).recommended).toMatchObject({ reason: 'focus-bars', range: { start: 0, end: 1 } });
   });
 });
+
+describe('a plan handed back to createCoachPlan', () => {
+  it('rebuilds the same plan; joins are derived, never input', () => {
+    const plan = planOf(6);
+    const again = createCoachPlan({ ...plan, segments: plan.segments });
+    expect(again.segments.map((s) => s.id)).toEqual(plan.segments.map((s) => s.id));
+    expect(again.tasks.map((t) => t.key)).toEqual(plan.tasks.map((t) => t.key));
+  });
+});

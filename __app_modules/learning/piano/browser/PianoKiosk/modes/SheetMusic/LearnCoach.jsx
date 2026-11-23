@@ -200,7 +200,12 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
   const nextPassage = followingId && followingId !== segment.id ? coach.projection.segments.find((item) => item.id === followingId) : null;
   const nextGoldId = piece.nextGoldPassageId;
   const nextGold = nextGoldId && nextGoldId !== segment.id ? coach.projection.segments.find((item) => item.id === nextGoldId) : null;
-  const pieceDone = celebrated && piece.total > 0 && piece[celebrated] >= piece.total;
+  // A passage's first certificate is Bronze; a join's is Silver, and the final join (or the one passage of a
+  // one-passage piece) is the piece played through. Gold is still every passage.
+  const isJoin = segment.kind === 'join';
+  const coinOf = (level) => (level === 'silver' && isJoin ? 'joined' : level);
+  const pieceDone = celebrated === 'gold' ? piece.total > 0 && piece.gold >= piece.total
+    : celebrated === 'silver' && piece.pieceSilver === true && (isJoin ? segment.final === true : piece.total === 1);
   const leaveFor = celebrated === 'silver' ? (pieceDone ? null : nextPassage) : celebrated === 'gold' ? (pieceDone ? null : nextGold) : null;
   // A pass that does not certify moves straight on, the way a drill's next rep
   // arrives under its card. A Silver or Gold stays on the finished take.
@@ -252,25 +257,26 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
   }, [celebrating]);
   const ceremony = (() => {
     if (!celebrating) return null;
-    const metal = celebrated === 'gold' ? 'Gold' : 'Silver';
+    const metal = celebrated === 'gold' ? 'Gold' : isJoin ? 'Silver' : 'Bronze';
     const turnDelay = { '--turn-delay': `${verdictAt(ceremonyMs)}ms` };
     if (pieceDone) {
       const passages = coach.projection.segments;
       const columns = Math.ceil(passages.length / Math.ceil(passages.length / 12));
       const stagger = Math.min(45, 900 / passages.length);
-      return <GateCeremony key={celebrating} durationMs={ceremonyMs} word={`All ${metal}!`} announce={`Your whole piece is ${metal}!`}
+      const word = celebrated === 'gold' ? 'All Gold!' : 'Piece Silver!';
+      return <GateCeremony key={celebrating} durationMs={ceremonyMs} word={word} announce={celebrated === 'gold' ? 'Your whole piece is Gold!' : 'You played the whole piece!'}
         mark={<span className="piano-learn-coach__piece-mark" style={{ gridTemplateColumns: `repeat(${columns}, auto)`, fontSize: pieceMarkSize(passages.length) }}>
-          {passages.map((item, index) => <span key={item.id} style={{ '--turn-delay': `${Math.round(verdictAt(ceremonyMs) + index * stagger)}ms` }}>
-            <PassageTurn from={celebrated === 'gold' ? 'silver' : 'learning'} to={celebrated} /></span>)}
+          {passages.filter((item) => item.kind !== 'join').map((item, index) => <span key={item.id} style={{ '--turn-delay': `${Math.round(verdictAt(ceremonyMs) + index * stagger)}ms` }}>
+            <PassageTurn from={celebrated === 'gold' ? 'silver' : 'silver'} to={celebrated === 'gold' ? 'gold' : 'joined'} /></span>)}
         </span>}
         behind={celebrated === 'silver' ? { mark: <PassageCoin state="gold" />, eyebrow: 'Next', label: 'Go for Gold' }
           : { mark: <PassageCoin state="gold" />, eyebrow: 'All Gold', label: title ?? barsOf(segment) }}
         onDone={momentDone} />;
     }
     return <GateCeremony key={celebrating} durationMs={ceremonyMs} word={`${metal}!`} announce={`${barsOf(segment)}. ${metal}!${leaveFor ? ` Next: ${lower(barsOf(leaveFor))}.` : ''}`}
-      mark={<span style={turnDelay}><PassageTurn from={celebrated === 'gold' ? 'silver' : moment.was.flower ? 'learning' : 'todo'} to={celebrated} /></span>}
-      behind={leaveFor ? { mark: <PassageCoin state={passageProgress(leaveFor).state} />, eyebrow: 'Next', label: barsOf(leaveFor) }
-        : { mark: <PassageCoin state={celebrated} />, eyebrow: barsOf(segment), label: metal }}
+      mark={<span style={turnDelay}><PassageTurn from={celebrated === 'gold' ? 'silver' : isJoin ? 'todo' : moment.was.flower ? 'learning' : 'todo'} to={coinOf(celebrated)} /></span>}
+      behind={leaveFor ? { mark: <PassageCoin state={leaveFor.kind === 'join' && passageProgress(leaveFor).state === 'silver' ? 'joined' : passageProgress(leaveFor).state} />, eyebrow: 'Next', label: leaveFor.kind === 'join' ? `Play ${lower(barsOf(leaveFor))} together` : barsOf(leaveFor) }
+        : { mark: <PassageCoin state={coinOf(celebrated)} />, eyebrow: barsOf(segment), label: metal }}
       onDone={momentDone} />;
   })();
 
@@ -343,7 +349,7 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
   };
   // The rail answers the curtain: this passage's tile turns as the verdict
   // lands, and a finished piece turns every tile in a wave.
-  const flips = useMemo(() => (!celebrated ? EMPTY : pieceDone ? Object.fromEntries(coach.projection.segments.map((item) => [item.id, celebrated])) : { [segment.id]: celebrated }),
+  const flips = useMemo(() => (!celebrated ? EMPTY : pieceDone && celebrated === 'gold' ? Object.fromEntries(coach.projection.segments.map((item) => [item.id, celebrated])) : { [segment.id]: celebrated }),
     [celebrated, pieceDone, coach.projection.segments, segment.id]);
   const map = <>
     {board && <PassageBoard title={title ?? barsOf(segment)} model={rail} focusId={board.focusId ?? segment.id} gemOffered={gemOffered} polish={polish}
