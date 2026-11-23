@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Group, NumberInput, Button, Stack, Text } from '@mantine/core';
 import { DEFAULT_VOLUME_BOUNDS, isValidVolumeBounds, VOLUME_LIMIT_MAX, VOLUME_LIMIT_MIN } from '@shared-contracts/media/volumeBounds.mjs';
 
@@ -24,8 +24,15 @@ export function VolumeLimitsSection({ slot, mutations }) {
     min: initialMin,
     max: initialMax,
   });
+  const baselineRef = useRef(baseline);
+  const pendingSaveRef = useRef(null);
   const [vals, setVals] = useState(baseline);
   const [saving, setSaving] = useState(false);
+
+  const setSavedBaseline = (next) => {
+    baselineRef.current = next;
+    setBaseline(next);
+  };
 
   // If the slot prop changes externally (e.g. revalidate after save), re-baseline.
   useEffect(() => {
@@ -34,7 +41,21 @@ export function VolumeLimitsSection({ slot, mutations }) {
       min: slot?.volume?.min ?? DEFAULT_VOLUME_BOUNDS.min,
       max: slot?.volume?.max ?? DEFAULT_VOLUME_BOUNDS.max,
     };
-    setBaseline(next);
+
+    const matches = (left, right) =>
+      left.default === right.default && left.min === right.min && left.max === right.max;
+
+    // A refresh can acknowledge the in-flight save while the user is already
+    // editing a newer draft. Advance the baseline without replacing that draft.
+    if (pendingSaveRef.current && matches(next, pendingSaveRef.current)) {
+      setSavedBaseline(next);
+      return;
+    }
+    if (matches(next, baselineRef.current)) return;
+
+    // A distinct server value supersedes this in-flight request's snapshot.
+    pendingSaveRef.current = null;
+    setSavedBaseline(next);
     setVals(next);
   }, [slot?.volume?.default, slot?.volume?.min, slot?.volume?.max]);
 
@@ -46,13 +67,16 @@ export function VolumeLimitsSection({ slot, mutations }) {
 
   const handleSave = async () => {
     if (!hasValidBounds || saving) return;
+    const submitted = { ...vals };
+    pendingSaveRef.current = submitted;
     setSaving(true);
     try {
-      const out = await mutations.updateDevice(slot.color, { volume: { ...vals } });
-      if (out?.ok) {
-        setBaseline({ ...vals });
+      const out = await mutations.updateDevice(slot.color, { volume: submitted });
+      if (out?.ok && pendingSaveRef.current === submitted) {
+        setSavedBaseline(submitted);
       }
     } finally {
+      if (pendingSaveRef.current === submitted) pendingSaveRef.current = null;
       setSaving(false);
     }
   };
