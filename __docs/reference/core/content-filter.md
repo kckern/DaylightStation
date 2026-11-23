@@ -1117,9 +1117,18 @@ pick is refused, e.g. while unsaved timing holds the cursor).
    refining is the fix, a quiet "Refine again" once refine has tried the part, its run state in
    place of the button (Waiting / Refining… / Queued).
 3. **Timing**: the strip, and **Save timing (S)** (it reads "Save 2 timings" when neighbours were
-   dragged too) with **Undo drag** while a draft is open or **Reset** (drop the hand fix).
+   dragged too; in the 132 px column the label may ellipsize but the key hint never does) with **Undo
+   drag** while a draft is open or **Reset** (drop the hand fix). Save only appears when there is
+   something to save.
 4. **Actions**: ▶ (Space), **Filtered (Enter)**, **Unfiltered (W)** | **Approve (A)**, **Let it play
    (X)**, **Redo (D)** (the reason prompt), ↶ (U). On the Refine tab there are no verdict buttons.
+
+**Button roles** (one decision per card). Exactly one button is **primary** (filled): **Approve**
+while the part has no verdict and no timing draft, **Save timing** while a draft exists (Approve
+steps back to outline, so the reviewer never approves over unsaved timing). The rest are
+**secondary** (outlined: the other verdicts, the play buttons) or **tool** (quiet: Undo drag, Reset,
+↶). A chosen verdict stays visible as a ring plus a check on its button (`aria-pressed`), not as a
+second filled button. Only gray buttons get a gray border.
 5. **Status** (40 px): the station's last message, the redo reasons (one line), notices and run
    notes. On a card narrower than 600 px (a 1280 window) the play buttons drop their key labels
    (their tooltips keep them) before anything is clipped.
@@ -1252,9 +1261,13 @@ reasons, card). Icons are Tabler SVGs, each with its word as tooltip and accessi
 | Rough / unsure after refine (Rough after refine, Word not found, Check timing) | dashed circle / alert triangle | orange |
 | Refining / Waiting, Queued | spinner / clock | blue |
 
-One colour language across the page: an effect family has one colour in the list's icons, the part
-card's effect tag and the timeline's marks; green is done, orange needs a look (redo, rough timing, a
-stuck run), grey plays or has nothing to say; the accent blue is the stage in hand and the selection.
+**Colour roles.** One colour language across the page. **Green is done** (approved, refined, a stage
+complete). **Orange is redo or needs a look** (Redo, rough or unsure timing, a stuck run). **Effect
+families** each own one colour in the list's icons, the part card's effect button and the
+timeline's and strip's marks: audio (mute, bleep), picture (blur, hide), skip. **Chips are neutral**
+(grey text on a neutral pill); only a chip's icon carries a colour (for timing, `.cf-ico--timing`
+with `is-unsure` for amber), so a row of chips never competes with the verdict colours. Grey plays
+or has nothing to say; the accent blue is the stage in hand and the selection.
 
 #### Review station
 
@@ -1266,8 +1279,10 @@ last message, the preview retry and the `?` keymap sheet.
   `Enter` play the part with its effect from 4 s before (a focused button or link keeps Enter);
   `W` play it without the effect; `→` / `←` next / previous part; `A` approve; `X` let it play
   (remove); `D` redo, then `1` edges, `2` category, `3` action, `4` timing or `Enter` for none;
-  `U` undo; `R` refine this part; `Shift+R` refine every rough filtered part; effect keys as above;
-  `[` / `]` bleep level; `Shift+D` re-refine the parts marked Redo; `?` keymap (it lists the timing
+  `U` undo; `R` refine this part; `I` / `O` set the single cue's in / out point at the playhead (as
+  drafts: nothing is written until `S` saves, and `F` is the filter-off effect key, not an out
+  point); `S` save the timing; `Shift+R` refine every rough filtered part; effect keys as above;
+  `[` / `]` the film's bleep level; `Shift+D` re-refine the parts marked Redo; `?` keymap (it lists the timing
   handles' keys too); `Esc` drops an unsaved timing change, else closes. An effect
   key or button applies the effect through `PUT /:rk/cues/:id` / `/scenes/:id`
   (`content_filter.review.effect`), refreshes the player's filter and replays the part with the new
@@ -1293,6 +1308,16 @@ last message, the preview retry and the `?` keymap sheet.
 - **Rework.** `Shift+D` (press once to arm, again within 4 s to send; the ⋯ menu item is one step; at most 500 reasons) queues one run for only the rows flagged redo: a send-back of their cues, or the
   scenes stage when only scene rows are flagged (scene rows stay flagged when mixed with cues). Each
   row's redo reason is stored on the run.
+- **Draft preview.** Every unsaved span in the strip (the part's and its neighbours') goes to the
+  preview store (`setDrafts`) and the player applies it, so Filtered plays what was dragged or
+  marked before it is saved; Save writes it and refreshes the player, Undo drag / Esc drops it.
+- **Bleep volume panel.** The header's **Bleep n %** button opens one panel for both levels:
+  **Household** (the `bleepLevel` every film follows, `PUT /profiles/family/settings`) and **This
+  film** (its own level, or "Follows household", with **Follow household** to drop it), each with
+  − / + in 5 % steps (no sliders), plus **Test bleep**, which sounds at the level in force. The
+  household stepper shows each click at once and writes in click order through the same serialised
+  queue as the film level; a write whose session changed is not sent and is not logged as saved.
+  Every button has a tooltip naming what it does.
 - **Bleep level.** The bleep tone volume, effective = film setting, else household profile `bleepLevel`,
   else 0.25 (clamped 0 to 1). `[` / `]` change the film's level by 0.05; a debounced write saves it to
   the film's settings. After the player accepts the refreshed profile, Review replays the cue if it
@@ -1302,11 +1327,13 @@ last message, the preview retry and the `?` keymap sheet.
 - **Bleep level for one cue.** A single bleeped cue can have its own level, over the film's and the
   household's: effective = cue `cueOverrides.<id>.bleepLevel`, else film, else household, else 0.25.
   The card's effect menu and the part menu offer "Bleep volume for this cue…" (− / + in 0.05 steps,
-  "Follow film" clears it); each step is `PUT /:rk/cues/:id { bleepLevel }` (0..1 clamped, null
+  "Follow film" clears it) for a single bleeped cue, and also for a single cue that still holds a
+  level after its effect changed, so the level can be cleared; each step is `PUT /:rk/cues/:id { bleepLevel }` (0..1 clamped, null
   removes), saved in order. The review read carries it as `row.bleepLevel` (null = follows the film).
   Like the film level it is loudness only: it starts no audit and is left out of the filter digest,
   so the check never goes stale over it. `resolveEffectiveCues` puts it on the effective cue and the
-  bleep handler passes it to the tone as `level`; a named sound plays at the set's volume as before.
+  bleep handler passes it to the tone as `level`; when two bleeps merge into one tone it sounds at the
+  louder of their levels; a named sound plays at the set's volume as before.
 
 ### Review history and `review-stats`
 

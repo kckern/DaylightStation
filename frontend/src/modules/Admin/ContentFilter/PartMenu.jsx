@@ -32,7 +32,7 @@ export function partMenuItems(row) {
   const timing = playing || !singleCue(row) ? [] : [['I', 'Set in point here', 'in'], ['O', 'Set out point here', 'out']];
   // One bleeped cue can have its own bleep loudness (over the film's and the household's).
   const effectExtras = [[null, 'Use household settings', 'settings'],
-    ...(!playing && singleCue(row) && row.effect === 'bleep' ? [[null, 'Bleep volume for this cue…', 'bleep-level']] : [])];
+    ...(!playing && singleCue(row) && (row.effect === 'bleep' || typeof row.bleepLevel === 'number') ? [[null, 'Bleep volume for this cue…', 'bleep-level']] : [])];
   return { play, effects, effectExtras, judge: [...verdicts, ...refine], timing };
 }
 

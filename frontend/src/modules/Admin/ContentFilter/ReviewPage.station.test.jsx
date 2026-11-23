@@ -675,6 +675,17 @@ describe('bleep volume panel wiring', () => {
     expect(puts()[1].body).toEqual({ settings: { bleepLevel: 0.35 } });
     expect(log.info).toHaveBeenCalledWith('content_filter.review.bleep_level', expect.objectContaining({ scope: 'household', value: 0.35 }));
   });
+  it('a household write whose session changed is not sent and not logged as saved', async () => {
+    setToken('first-fixture-session');
+    try {
+      await openPanel(null, 0.25);
+      fireEvent.click(await screen.findByRole('button', { name: 'Household louder' }));
+      setToken('second-fixture-session');
+      await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+      expect(calls.filter((c) => c.path === 'api/v1/content-filter/profiles/family/settings')).toEqual([]);
+      expect(log.info).not.toHaveBeenCalledWith('content_filter.review.bleep_level', expect.objectContaining({ scope: 'household' }));
+    } finally { clearToken(); }
+  });
   it('Test bleep sounds at the effective level', async () => {
     await openPanel(0.5, 0.3);
     fireEvent.click(await screen.findByRole('button', { name: 'Test bleep' }));

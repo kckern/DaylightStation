@@ -28,9 +28,9 @@ function Row({ label, value, follows, followsText = 'Follows household', onStep,
   return (
     <Group gap="xs" wrap="nowrap" className="cf-bleep__row">
       <Text size="sm" w={110}>{label}</Text>
-      <Button size="compact-sm" variant="default" aria-label={`${label} quieter`} onClick={() => onStep(-BLEEP_LEVEL_STEP)}>−</Button>
+      <Button size="compact-sm" variant="default" aria-label={`${label} quieter`} title={`Make the ${label.toLowerCase()} bleep 5 % quieter`} onClick={() => onStep(-BLEEP_LEVEL_STEP)}>−</Button>
       <Text size="sm" fw={600} w={valueWidth} ta="center" aria-label={`${label} level`}>{follows ? followsText : pct(value)}</Text>
-      <Button size="compact-sm" variant="default" aria-label={`${label} louder`} onClick={() => onStep(BLEEP_LEVEL_STEP)}>+</Button>
+      <Button size="compact-sm" variant="default" aria-label={`${label} louder`} title={`Make the ${label.toLowerCase()} bleep 5 % louder`} onClick={() => onStep(BLEEP_LEVEL_STEP)}>+</Button>
       {children}
     </Group>
   );
@@ -42,10 +42,10 @@ export function BleepLevelPanel({ household, film, onFilm, onHousehold, onTest }
     <div className="cf-bleep" role="group" aria-label="Bleep volume">
       <Row label="Household" value={household} onStep={(d) => onHousehold(clamp(household + d))} />
       <Row label="This film" value={shown} follows={film == null} onStep={(d) => onFilm(clamp(shown + d))}>
-        <Button size="compact-sm" variant="subtle" disabled={film == null} onClick={() => onFilm(null)}>Follow household</Button>
+        <Button size="compact-sm" variant="subtle" disabled={film == null} title="Drop this film's own level and follow the household level" onClick={() => onFilm(null)}>Follow household</Button>
       </Row>
       <Group gap="xs" mt="xs">
-        <Button size="compact-sm" variant="light" onClick={() => onTest?.()}>Test bleep</Button>
+        <Button size="compact-sm" variant="light" title="Play a short bleep at the level this film uses" onClick={() => onTest?.()}>Test bleep</Button>
         <Text size="xs" c="dimmed">Keys: <kbd className="cf-keybar__key">[</kbd> quieter, <kbd className="cf-keybar__key">]</kbd> louder (this film)</Text>
       </Group>
     </div>
@@ -64,11 +64,11 @@ export function CueBleepLevel({ value, film, onSet, onTest }) {
     <div className="cf-bleep" role="group" aria-label="Bleep volume for this cue">
       <Row label="This cue" value={shown} follows={follows} followsText={`Follows film (${pct(film)})`} valueWidth={140}
         onStep={(d) => onSet(clamp(shown + d))}>
-        <Button size="compact-sm" variant="subtle" disabled={follows} onClick={() => onSet(null)}>Follow film</Button>
+        <Button size="compact-sm" variant="subtle" disabled={follows} title="Drop this cue's own level and follow the film's level" onClick={() => onSet(null)}>Follow film</Button>
       </Row>
       {onTest ? (
         <Group gap="xs" mt="xs">
-          <Button size="compact-sm" variant="light" onClick={() => onTest(shown)}>Test bleep</Button>
+          <Button size="compact-sm" variant="light" title="Play a short bleep at this cue's level" onClick={() => onTest(shown)}>Test bleep</Button>
         </Group>
       ) : null}
     </div>

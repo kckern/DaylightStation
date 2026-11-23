@@ -43,7 +43,7 @@ const Key = ({ k }) => <kbd className="cf-keybar__key">{k}</kbd>;
 /** A button that shows its key. */
 const ROLE_VARIANT = { primary: 'filled', secondary: 'outline', tool: 'subtle' };
 function KeyButton({ k, role, variant, icon = false, className = '', children, ...rest }) {
-  return <Button size="sm" variant={variant ?? (role ? ROLE_VARIANT[role] : undefined)} className={`cf-card-part__btn ${role ? `is-${role}` : ''} ${rest.color === 'gray' ? 'is-gray' : ''} ${className}`} {...rest}><span className="cf-card__btn">{icon ? <IconCheck size={14} aria-hidden="true" /> : null}{children} <Key k={k} /></span></Button>;
+  return <Button size="sm" variant={variant ?? (role ? ROLE_VARIANT[role] : undefined)} className={`cf-card-part__btn ${role ? `is-${role}` : ''} ${rest.color === 'gray' ? 'is-gray' : ''} ${className}`} {...rest}><span className="cf-card__btn">{icon ? <IconCheck size={14} aria-hidden="true" /> : null}<span className="cf-card__btn-label">{children}</span> <Key k={k} /></span></Button>;
 }
 
 const membersOf = (r) => r.members ?? (String(r.id).startsWith('cue:') ? [r.peekId] : []);
@@ -77,8 +77,9 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
   const verdict = row.verdict?.verdict;
   const wantsCard = row.effect === 'skip-card' || (isScene && row.card);
   // One bleeped cue can have its own bleep loudness, over the film's (and the household's).
-  const bleepCue = !isScene && single && !playing && row.effect === 'bleep';
+  // A cue that holds a level stays adjustable (so it can be cleared) even if it is no longer a bleep.
   const savedCueLevel = typeof row.bleepLevel === 'number' ? row.bleepLevel : null;
+  const bleepCue = !isScene && single && !playing && (row.effect === 'bleep' || savedCueLevel != null);
   const [cueLevel, setCueLevel] = useState(savedCueLevel);
   const cueLevelSaved = useRef(savedCueLevel);
   const levelChain = useRef(Promise.resolve());

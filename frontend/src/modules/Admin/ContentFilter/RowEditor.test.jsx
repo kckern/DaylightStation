@@ -35,6 +35,7 @@ describe('RowEditor (the part card)', () => {
     expect(screen.queryByText('Safe window')).toBeNull();
     const chip = screen.getByText('Word not found').closest('[data-timing]');
     expect(chip.getAttribute('data-timing')).toBe('unsure');
+    expect(chip.querySelector('.cf-ico--timing.is-unsure')).toBeTruthy();
     expect(screen.getByText(/Refine could not find this word/)).toBeTruthy();
     expect(btn('Refine again').getAttribute('data-variant')).toBe('subtle');
   });
@@ -349,6 +350,11 @@ describe('a bleep level for one cue (owner, 2026-11-22: "the global / movie / cu
     await openEffects();
     expect(screen.queryByRole('menuitem', { name: /^Bleep volume for this cue/ })).toBeNull();
   });
+  it('a muted cue that still holds a level offers the control in its effect menu', async () => {
+    show({ ...word, effect: 'mute', bleepLevel: 0.7 }, { filmLevel: 0.4 });
+    await openEffects();
+    expect(screen.getByRole('menuitem', { name: /^Bleep volume for this cue/ })).toBeTruthy();
+  });
   it('the port opens it (the part menu item)', async () => {
     const ports = { current: {} };
     show(bleeped, { ports, filmLevel: 0.4 });
@@ -373,5 +379,10 @@ describe('the part menu offers the cue bleep level on a single bleeped cue', asy
     expect(has({ ...word, effect: 'bleep' })).toBe(true);
     expect(has(word)).toBe(false);
     expect(has({ ...word, effect: 'bleep', members: ['a', 'b'], id: 'subject:x' })).toBe(false);
+  });
+  it('a cue holding a level keeps the control after it stops being a bleep, so it can be cleared', () => {
+    const has = (r) => partMenuItems(r).effectExtras.some(([, , action]) => action === 'bleep-level');
+    expect(has({ ...word, effect: 'mute', bleepLevel: 0.6 })).toBe(true);
+    expect(has({ ...word, effect: 'mute', bleepLevel: null })).toBe(false);
   });
 });

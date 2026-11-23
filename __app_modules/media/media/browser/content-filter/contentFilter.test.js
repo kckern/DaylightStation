@@ -586,6 +586,17 @@ describe('word-sized tones and lines (R3, R4)', () => {
     expect(filterSummary(out)).toBe('2 words bleeped');
   });
 
+  it('merged tones with different bleep levels sound at the louder level, in either order', () => {
+    for (const [x, y] of [[0.2, 0.6], [0.6, 0.2]]) {
+      const out = run([word({ id: 'a', in: 10, out: 10.4, precision: 'ms', bleepLevel: x }), word({ id: 'b', in: 10.6, out: 11, precision: 'ms', bleepLevel: y })]);
+      const tones = out.filter((c) => c.effect === 'bleep');
+      expect(tones).toHaveLength(1);
+      expect(tones[0].bleepLevel).toBe(0.6);
+    }
+    const one = run([word({ id: 'a', in: 10, out: 10.4, precision: 'ms', bleepLevel: 0.3 }), word({ id: 'b', in: 10.6, out: 11, precision: 'ms' })]);
+    expect(one.find((c) => c.effect === 'bleep').bleepLevel).toBe(0.3);
+  });
+
   it('a merged tone over 1.5 s is capped on its midpoint, mute fills the rest', () => {
     const out = run([word({ id: 'a', in: 10, out: 11, precision: 'ms' }), word({ id: 'b', in: 11.1, out: 12.2, precision: 'ms' })]);
     const tone = out.find((c) => c.effect === 'bleep');

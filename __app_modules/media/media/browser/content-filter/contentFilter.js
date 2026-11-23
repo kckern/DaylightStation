@@ -640,6 +640,9 @@ function sizeTones(out) {
       const merged = { ...prev, id: prev.id, in: Math.min(prev.in, t.in), out: Math.max(prev.out, t.out), words: prev.words + t.words, merged: true,
         mergedFrom: [...(prev.mergedFrom || [prev.id]), ...(t.mergedFrom || [t.id])] };
       delete merged.tagTime;
+      // Two tones become one: it sounds at the louder of the two levels.
+      const levels = [prev.bleepLevel, t.bleepLevel].filter((v) => typeof v === 'number' && Number.isFinite(v));
+      if (levels.length) merged.bleepLevel = Math.max(...levels);
       // The merged tone supersedes both tones' remainders (unique ids, no overlap
       // with the tone); the window takes in their extent so nothing they muted
       // is left uncovered, and mute fills what the merged tone does not cover.

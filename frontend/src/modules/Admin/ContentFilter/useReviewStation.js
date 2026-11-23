@@ -559,7 +559,11 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     const revision = ++st.revision;
     setPendingHousehold(next);
     try {
-      await enqueueLevelWrite(`${API}/profiles/family/settings`, levelWriteOwner(), next);
+      if (!await enqueueLevelWrite(`${API}/profiles/family/settings`, levelWriteOwner(), next)) {
+        // The session changed: nothing was sent, so there is nothing saved to report.
+        if (st.revision === revision) setPendingHousehold(null);
+        return;
+      }
       logger.info('content_filter.review.bleep_level', { rk, scope: 'household', value: next });
     } catch (err) {
       logger.warn('content_filter.review.bleep_level_failed', { rk, scope: 'household', value: next, error: err.message });

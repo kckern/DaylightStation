@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { BleepLevelPanel } from './BleepLevelPanel.jsx';
+import { BleepLevelPanel, CueBleepLevel } from './BleepLevelPanel.jsx';
 
 const show = (props = {}) => {
   const p = { household: 0.35, film: 0.5, onFilm: vi.fn(), onHousehold: vi.fn(), onTest: vi.fn(), ...props };
@@ -64,5 +64,13 @@ describe('playTestBleep', () => {
     vi.advanceTimersByTime(200);
     vi.useRealTimers();
     expect(log.debug).toHaveBeenCalledWith('content_filter.review.bleep_test_silent', { level: 0.4 });
+  });
+  it('every button names what it does in a tooltip', () => {
+    show();
+    for (const b of screen.getAllByRole('button')) expect(b.getAttribute('title')).toBeTruthy();
+  });
+  it('the cue control\'s buttons carry tooltips too', () => {
+    render(<MantineProvider><CueBleepLevel value={0.6} film={0.4} onSet={vi.fn()} onTest={vi.fn()} /></MantineProvider>);
+    for (const b of screen.getAllByRole('button')) expect(b.getAttribute('title')).toBeTruthy();
   });
 });
