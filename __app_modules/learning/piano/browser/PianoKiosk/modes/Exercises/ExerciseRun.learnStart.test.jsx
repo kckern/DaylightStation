@@ -43,6 +43,8 @@ const h = vi.hoisted(() => ({
   steps: null,
   /** Reproduce the placeholder state: OSMD threw, no layout is ever published. */
   engraveFails: false,
+  /** The engraver's bar map for the shown bars; null = the renderer reported none. */
+  measureMap: null,
 }));
 
 const notehead = (midi) => {
@@ -102,6 +104,7 @@ vi.mock("../../../../../../../__capabilities/music-notation/browser/renderers/Mu
         onLayout?.({
           width: 800, height: 300, flow: 'wrapped', scale: 1, transpose: 0,
           tempoEntries: [], measures: shownNumbers.map((_, index) => index), events: [], notes: [], steps: localSteps,
+          ...(h.measureMap ? { measureMap: h.measureMap } : {}),
         });
         onReady?.();
         // `onFailed` is held in a ref by the real renderer, not a dep — mirrored.
@@ -187,6 +190,7 @@ beforeEach(() => {
   h.activeNotes = new Map();
   h.steps = fourBarSteps();
   h.engraveFails = false;
+  h.measureMap = null;
   h.text.mockReset();
   h.text.mockResolvedValue(fourBars);
   h.record.mockReset();
@@ -377,5 +381,24 @@ describe('a cued Learn passage names a whole-beat shifted entry (A3)', () => {
     finish();
     expect(screen.queryByText(/You started/)).toBeNull();
     expect(events('piano.exercise-onset-log').at(-1)).toMatchObject({ entryShiftBeats: 0 });
+  });
+});
+
+describe('a cued Learn passage counts a pickup in on its own beat', () => {
+  it('ends the count on the beat before a pickup that is one click long', async () => {
+    // The first shown bar is a half-note pickup (one click at this pulse) before a 4/4 bar:
+    // one click before it is too few, so a bar of two clicks comes first — three in all.
+    h.measureMap = [{ index: 0, onsetQuarter: 0, durationQuarters: 2 }, { index: 1, onsetQuarter: 2, durationQuarters: 4 }];
+    await mount();
+    const firstClick = armByTap();
+    expect(events('piano.exercise-countdown-started').at(-1)).toMatchObject({ entry: 'aligned' });
+    const seen = [];
+    for (const offset of [10, BEAT + 10, 2 * BEAT + 10]) {
+      advance(firstClick + offset - Date.now());
+      seen.push([band().dataset.count, band().querySelector('.piano-learn-countin__cue').textContent]);
+    }
+    expect(seen).toEqual([['1', ''], ['2', ''], ['3', 'next click: play']]);
+    advance(firstClick + 3 * BEAT + 60 - Date.now());
+    expect(band()).toBeNull();
   });
 });

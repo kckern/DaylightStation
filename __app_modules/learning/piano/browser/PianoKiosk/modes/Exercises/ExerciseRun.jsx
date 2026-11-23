@@ -769,6 +769,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       beatsPerMeasure,
       gradedBpm: bpm,
       onsetQuarters: (snapshot.expectation?.events ?? []).map((event) => event.onsetQuarter),
+      // The engraver's bars, so a pickup is counted on the beats before it.
+      measures: snapshot.expectation?.measureMap,
     });
     return plan ? { ...plan, gradedBpm: bpm } : null;
   }, [beatsPerMeasure, clickBpm, snapshot.expectation]);
@@ -1222,7 +1224,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     traceEvent('piano.exercise-countdown-started', {
       ...timedRunPresentation(runtime.getSnapshot(), Date.now()),
       pulseCount: countIn?.clicks ?? 0, pulseBpm: countIn?.pulseBpm ?? null,
-      leadInMs: countIn?.leadInMs ?? 0, prerollMs,
+      leadInMs: countIn?.leadInMs ?? 0, prerollMs, entry: countIn?.entry ?? null,
       armedAt, waitedMs: Number.isFinite(armedAt) ? Date.now() - armedAt : null,
       ignored: [...activeNotesRef.current.keys()], reason,
     });

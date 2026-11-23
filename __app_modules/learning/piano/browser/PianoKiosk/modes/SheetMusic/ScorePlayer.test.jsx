@@ -1838,6 +1838,23 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     expect(d.mode).toBe('polish');
   });
 
+  it('Polish counts a pickup piece in on the beats before the pickup', async () => {
+    // A one-beat pickup bar, then full 4/4 bars: clicks 1, 2, 3, the pickup on 4.
+    h.layoutExtras = { measureMap: [{ index: 0, onsetQuarter: 0, durationQuarters: 1 },
+      ...[0, 1, 2, 3].map((i) => ({ index: i + 1, onsetQuarter: 1 + 4 * i, durationQuarters: 4 }))] };
+    const emitted = captureLog();
+
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+
+    const d = emitted.filter(([ev]) => ev === 'score.countin.start')[0][1];
+    expect(d).toMatchObject({ beats: 3, entry: 'aligned', subdivision: 1 });
+    expect(d.totalMs).toBeCloseTo(3 * d.periodMs, 5);
+  });
+
 });
 
 // ── Polish tempo tiers (wave-3 H) ───────────────────────────────────────────────
