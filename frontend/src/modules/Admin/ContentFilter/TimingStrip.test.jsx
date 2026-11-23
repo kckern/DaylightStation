@@ -215,11 +215,11 @@ describe('TimingStrip', () => {
 describe('the strip in the part card', () => {
   const word = { id: 'cue:w1', peekId: 'w1', members: ['w1'], kind: 'words', group: 'profanity', label: 'damn', modality: 'said', in: 100, out: 104, effect: 'mute', card: null, handFixed: true, unsure: [], reviewed: null, timing: 'refined' };
   const card = (props = {}) => render(<MantineProvider><RowEditor ratingKey="77" row={word} {...props} /></MantineProvider>);
-  it('replaces the nudge buttons; Save timing is enabled only once the span changed, and posts the nudge', async () => {
+  it('replaces the nudge buttons; Save timing appears only once the span changed, and posts the nudge', async () => {
     card();
     expect(screen.queryByRole('button', { name: 'Start here' })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Start [+-]/ })).toBeNull();
-    expect(screen.getByRole('button', { name: /^Save timing/ }).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: /^Save timing/ })).toBeNull();
     fireEvent.pointerDown(end(), { clientX: 350, pointerId: 1 });
     fireEvent.pointerMove(end(), { clientX: 370, pointerId: 1 });
     fireEvent.pointerUp(end(), { clientX: 370, pointerId: 1 });
@@ -230,7 +230,7 @@ describe('the strip in the part card', () => {
   });
   it('Reset (the hand fix dropped) still posts a null nudge', async () => {
     card();
-    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Drop the hand fix' }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0].body).toEqual({ nudge: null });
   });
@@ -238,7 +238,7 @@ describe('the strip in the part card', () => {
     card({ busyText: 'A refine is running.' });
     fireEvent.keyDown(end(), { key: 'ArrowRight' });
     expect(end().getAttribute('aria-valuetext')).toBe('1:44.00');
-    expect(screen.getByRole('button', { name: /^Save timing/ }).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: /^Save timing/ })).toBeNull();
   });
   it('a focused handle keeps ← → from the station keys (they step parts everywhere else)', () => {
     const next = vi.fn();

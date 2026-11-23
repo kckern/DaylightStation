@@ -181,7 +181,7 @@ describe('review station keys', () => {
     expect(log.info).toHaveBeenCalledWith('content_filter.review.unsaved_timing_blocked', expect.objectContaining({ rk: '77', rowId: 'cue:w1', what: 'step' }));
     press('Escape');
     expect(await screen.findByText('Timing change dropped.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /^Save timing/ })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /^Save timing/ })).toBeNull();
     press('ArrowRight');
     expect(selected()).toBe('cue:w2');
   });
@@ -194,7 +194,7 @@ describe('review station keys', () => {
     press('Escape');
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
     expect(screen.queryByText('Timing change dropped.')).toBeNull();
-    expect(screen.getByRole('button', { name: /^Save timing/ })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Save timing/ })).toBeTruthy();
   });
   it('arriving puts the film at the part in hand, paused', () => {
     const jump = vi.spyOn(previewStore, 'jumpToCue');

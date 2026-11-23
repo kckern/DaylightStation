@@ -208,7 +208,9 @@
 .cf-card-part__whytext { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ds-text-secondary); }
 .cf-card-part__timing { display: grid; grid-template-columns: minmax(0, 1fr) 132px; gap: 10px; align-items: stretch; min-width: 0; }
 .cf-card-part__nostrip { align-self: center; }
-.cf-card-part__save { display: flex; flex-direction: column; justify-content: center; align-items: stretch; gap: 6px; }
+.cf-card-part__save { display: flex; flex-direction: row; justify-content: flex-end; align-items: center; gap: 6px; }
+.cf-card-part__btn .cf-keybar__key { opacity: 0.55; background: transparent; border-color: currentColor; }
+.cf-card-part__btn.is-secondary { border-color: var(--ds-border); }
 .cf-card-part__actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
 .cf-card-part__play, .cf-card-part__verdicts { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; min-width: 0; }
 .cf-card-part__btn { height: 40px; padding: 0 9px; font-size: 13px; }

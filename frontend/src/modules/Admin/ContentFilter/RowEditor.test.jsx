@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 
@@ -30,16 +30,16 @@ describe('RowEditor (the part card)', () => {
     const chip = screen.getByText('Word not found').closest('[data-timing]');
     expect(chip.getAttribute('data-timing')).toBe('unsure');
     expect(screen.getByText(/Refine could not find this word/)).toBeTruthy();
-    expect(btn('Refine again').getAttribute('data-variant')).toBe('light');
+    expect(btn('Refine again').getAttribute('data-variant')).toBe('subtle');
   });
   it('a rough part refine already tried offers a quiet "Refine again", not a filled Refine', () => {
     show({ ...shown, timing: 'rough', unsure: ['refine-coarse-edges'] });
     expect(screen.getByText(/Refine couldn't pin this; drag the handles to fit it by eye/)).toBeTruthy();
-    expect(btn('Refine again').getAttribute('data-variant')).toBe('light');
+    expect(btn('Refine again').getAttribute('data-variant')).toBe('subtle');
   });
-  it('a rough part not refined yet keeps a filled Refine', () => {
+  it('a rough part not refined yet gets the light Refine', () => {
     show({ ...shown, timing: 'rough', unsure: [] });
-    expect(btn('Refine R').getAttribute('data-variant')).toBe('filled');
+    expect(btn('Refine R').getAttribute('data-variant')).toBe('light');
   });
   it('the timing row carries no timecode readout (it changed width and shook the strip)', () => {
     show(word, { position: { index: 0, total: 3 } });
@@ -74,7 +74,7 @@ describe('RowEditor (the part card)', () => {
     fireEvent.click(btn('Play or pause')); fireEvent.click(btn('Filtered')); fireEvent.click(btn('Unfiltered'));
     expect(handlers.togglePlay).toHaveBeenCalled(); expect(handlers.replay).toHaveBeenCalled(); expect(handlers.playWithout).toHaveBeenCalled();
     const kbds = [...document.querySelectorAll('.cf-card-part button kbd')].map((n) => n.textContent);
-    expect(kbds).toEqual(expect.arrayContaining(['E', 'A', 'X', 'D', 'W', 'Space', 'S', 'R']));
+    expect(kbds).toEqual(expect.arrayContaining(['E', 'A', 'X', 'D', 'W', 'Space', 'R']));
     await openEffects();
     const menuKeys = [...document.querySelectorAll('[role="menu"] kbd')].map((n) => n.textContent);
     expect(menuKeys).toEqual(expect.arrayContaining(['M', 'P', 'K', 'F']));
@@ -105,7 +105,7 @@ describe('RowEditor (the part card)', () => {
   it('Home on the start handle and End on the end handle take the player time, and Save posts the nudge', async () => {
     vi.spyOn(previewStore, 'currentTime').mockReturnValue(null);
     const onChanged = show(word);
-    expect(btn('Save timing').disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: /^Save timing/ })).toBeNull();
     previewStore.currentTime.mockReturnValue(70.1);
     fireEvent.keyDown(screen.getByRole('slider', { name: 'Start' }), { key: 'Home' });
     previewStore.currentTime.mockReturnValue(70.8);
@@ -154,7 +154,7 @@ describe('RowEditor (the part card)', () => {
     show(word, { busyText: 'A run holds this film: effects and timing can change when it finishes.' });
     expect(screen.getByText(/A run holds this film/)).toBeTruthy();
     expect(screen.getByRole('button', { name: /^Effect:/ }).disabled).toBe(true);
-    expect(btn('Save timing').disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: /^Save timing/ })).toBeNull();
     expect(btn('Approve').disabled).toBe(false);
   });
   it('a part that plays under the settings reads Plays, offers no Refine, no verdicts and no timing', () => {
@@ -207,6 +207,45 @@ describe('the effect menu stays short (review 2026-11-22)', () => {
     fireEvent.keyDown(menu, { key: 'p' });
     expect(handlers.effect).toHaveBeenCalledWith('p');
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+  });
+});
+
+describe('button hierarchy on the part card (2026-11-22)', () => {
+  const variant = (n) => btn(n).getAttribute('data-variant');
+  it('only Approve is filled; Let it play and Redo are outlined', () => {
+    show(word);
+    expect(variant('Approve')).toBe('filled');
+    expect(variant('Let it play')).toBe('outline');
+    expect(variant('Redo')).toBe('outline');
+  });
+  it('Refine is a quiet tool, light only when refining is the fix', () => {
+    show(skippedWord);
+    expect(variant('Refine')).toBe('light');
+    cleanup();
+    show({ ...skippedWord, timing: 'refined' });
+    expect(variant('Refine again')).toBe('subtle');
+  });
+  it('Save timing exists only while a draft does, and then it is the one filled button', () => {
+    vi.spyOn(previewStore, 'currentTime').mockReturnValue(70.0);
+    const ports = { current: {} };
+    show(word, { ports });
+    expect(screen.queryByRole('button', { name: /^Save timing/ })).toBeNull();
+    act(() => ports.current.markIn());
+    expect(variant('Save timing')).toBe('filled');
+    expect(variant('Approve')).toBe('outline');
+  });
+  it('Reset is an icon button shown only on a hand-fixed part with no draft', () => {
+    show({ ...word, handFixed: true });
+    expect(screen.getByRole('button', { name: 'Drop the hand fix' })).toBeTruthy();
+    cleanup();
+    show(word);
+    expect(screen.queryByRole('button', { name: 'Drop the hand fix' })).toBeNull();
+  });
+  it('S with nothing changed does nothing', () => {
+    const ports = { current: {} };
+    show(word, { ports });
+    act(() => ports.current.saveTiming());
+    expect(calls).toHaveLength(0);
   });
 });
 
