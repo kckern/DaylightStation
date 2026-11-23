@@ -8,3 +8,5 @@ export { effectChip, effectWord } from './preview/effectKinds.js';
 // One stage vocabulary for server and Admin (order is ascending readiness).
 export { STAGES, STAGE_LABELS } from '../../server/domain/content-filter/filmStage.mjs';
 export { NEXT_ACTIONS } from '../../server/domain/content-filter/filmStatus.mjs';
+// The censor bleep tone, for the Admin bleep-volume panel's Test button.
+export { createBleepTone } from './bleepTone.js';

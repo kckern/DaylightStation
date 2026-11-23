@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Anchor, Badge, Button, Group, Menu, Text, Tooltip } from '@mantine/core';
+import { Anchor, Badge, Button, Group, Menu, Popover, Text, Tooltip } from '@mantine/core';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/index.js';
+import { BleepLevelPanel, playTestBleep } from './BleepLevelPanel.jsx';
 import { formatEta, measureEta, runPhases } from './runProgress.js';
 import { ApprovalFeedback, useApprovalRegion } from './FilmApprovalControls.jsx';
 
@@ -74,7 +75,7 @@ export function ApproveButton({ approval }) {
   );
 }
 
-export function ReviewHeader({ ratingKey, data, stage = 'review', roughFiltered, refineAllCount = 0, handlers, onChanged = () => {}, flagged = 0, blocked = false }) {
+export function ReviewHeader({ ratingKey, data, stage = 'review', roughFiltered, refineAllCount = 0, handlers, onChanged = () => {}, flagged = 0, blocked = false, bleep = null }) {
   const [confirmStop, setConfirmStop] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
@@ -94,6 +95,9 @@ export function ReviewHeader({ ratingKey, data, stage = 'review', roughFiltered,
   const failed = job && (job.status === 'failed' || job.status === 'interrupted');
   // The rail (ReviewRail.jsx) says how far the run is; a run that may be stuck is spelled out here.
   const run = runState(job, data.worker);
+  const household = bleep?.household ?? data.bleepLevel?.profile ?? 0.25;
+  const film = bleep ? bleep.film : (data.bleepLevel?.film ?? null);
+  const effective = bleep?.effective ?? film ?? household;
 
   return (
     <div className="cf-head" role="banner" aria-label="Film">
@@ -121,6 +125,19 @@ export function ReviewHeader({ ratingKey, data, stage = 'review', roughFiltered,
           </Button>
         ) : null}
       {error ? <Text size="xs" c="red" role="alert">{error}</Text> : null}
+      <Popover position="bottom-end" withinPortal shadow="md" trapFocus={false} returnFocus={false}>
+        <Popover.Target>
+          <Tooltip label="Bleep volume: [ quieter, ] louder" withArrow>
+            <Button size="compact-sm" variant="subtle">{`Bleep ${Math.round(effective * 100)} %`}</Button>
+          </Tooltip>
+        </Popover.Target>
+        <Popover.Dropdown>
+          <BleepLevelPanel household={household} film={film}
+            onFilm={(v) => handlers.setBleepLevel?.(v)}
+            onHousehold={(v) => handlers.setHouseholdLevel?.(v)}
+            onTest={() => playTestBleep(effective)} />
+        </Popover.Dropdown>
+      </Popover>
       {/* No focus back on ⋯ when it closes: Enter must play the part, not reopen the menu. */}
       <Menu position="bottom-end" withinPortal returnFocus={false} onClose={() => setConfirmWhole(false)}>
         <Menu.Target><Button size="compact-sm" variant="subtle" aria-label="More">⋯</Button></Menu.Target>
@@ -132,8 +149,6 @@ export function ReviewHeader({ ratingKey, data, stage = 'review', roughFiltered,
           </Menu.Item>
           {flagged ? <Menu.Item disabled={running || blocked} onClick={() => handlers.rework?.()}>{`Re-refine ${flagged} part${flagged === 1 ? '' : 's'} marked Redo`}</Menu.Item> : null}
           <Menu.Divider />
-          <Menu.Item onClick={() => handlers.bleepLevel?.(-0.05)}>Bleep quieter  [</Menu.Item>
-          <Menu.Item onClick={() => handlers.bleepLevel?.(0.05)}>Bleep louder  ]</Menu.Item>
           <Menu.Item onClick={() => handlers.help?.()}>All keys  ?</Menu.Item>
         </Menu.Dropdown>
       </Menu>

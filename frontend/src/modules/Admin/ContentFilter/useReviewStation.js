@@ -23,6 +23,7 @@ const UNSAVED_TIMING = 'Unsaved timing: Save or press Esc to drop it';
 const LEVEL_DEBOUNCE_MS = 400;
 const REWORK_ARM_MS = 4000;
 const levelWrites = new Map();
+const FOLLOW = 'follow';
 
 function levelWriteOwner() {
   try { return getToken(); } catch { return null; }
@@ -471,8 +472,10 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   const [pendingLevel, setPendingLevel] = useState(null);
   const [previewRecovery, setPreviewRecovery] = useState(null);
   const levelRef = useRef({ value: null, rowId: null, owner: null, timer: null, revision: 0, retrying: false });
-  const savedLevel = data?.bleepLevel?.film ?? data?.bleepLevel?.profile ?? BLEEP_LEVEL_DEFAULT;
-  const bleepLevel = pendingLevel ?? savedLevel;
+  const householdLevel = data?.bleepLevel?.profile ?? BLEEP_LEVEL_DEFAULT;
+  const savedLevel = data?.bleepLevel?.film ?? householdLevel;
+  const bleepLevel = pendingLevel === FOLLOW ? householdLevel : (pendingLevel ?? savedLevel);
+  const filmLevel = pendingLevel === FOLLOW ? null : (pendingLevel ?? data?.bleepLevel?.film ?? null);
   const refreshLevelPreview = useCallback(async (attempt) => {
     const st = levelRef.current;
     const accepted = await previewStore.refresh().catch(() => false);
@@ -492,8 +495,9 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     const st = levelRef.current;
     clearTimeout(st.timer);
     st.timer = null;
-    const { value, revision, rowId, owner } = st;
-    if (value == null) return;
+    const { value: queued, revision, rowId, owner } = st;
+    if (queued == null) return;
+    const value = queued === FOLLOW ? null : queued;
     st.value = null;
     const base = `${API}/${encodeURIComponent(rk)}`;
     const latestEdit = () => activeView.current && st.revision === revision;
@@ -507,7 +511,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
         if (latestEdit()) setPendingLevel(null);
         return;
       }
-      logger.info('content_filter.review.bleep_level', { rk, level: value });
+      logger.info('content_filter.review.bleep_level', { rk, level: value, scope: 'film', value });
       if (isCurrent()) readBack(rowId, true);
       else if (levelWriteOwner() === owner) invalidateApiResources(path => path === `${base}/review`);
     } catch (err) {
@@ -526,19 +530,36 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     setPreviewRecovery({ ...previewRecovery, retrying: true });
     void refreshLevelPreview(previewRecovery);
   };
-  const changeBleepLevel = (delta) => {
+  const queueLevel = (next, shown) => {
     const st = levelRef.current;
-    const from = st.value ?? bleepLevel;
-    const next = clampBleepLevel(from + delta);
     st.revision++;
     st.rowId = latest.current.selectedId;
     st.owner = levelWriteOwner();
     st.retrying = false;
     setPreviewRecovery(null);
     st.value = next; setPendingLevel(next);
-    setMessage(`Bleep level ${Math.round(next * 100)}%`);
+    setMessage(next === FOLLOW ? 'Bleep follows the household level' : `Bleep level ${Math.round(shown * 100)}%`);
     clearTimeout(st.timer);
     st.timer = setTimeout(saveLevel, LEVEL_DEBOUNCE_MS);
+  };
+  const changeBleepLevel = (delta) => {
+    const from = typeof levelRef.current.value === 'number' ? levelRef.current.value : bleepLevel;
+    const next = clampBleepLevel(from + delta);
+    queueLevel(next, next);
+  };
+  // Absolute value for this film, or null to follow the household level again.
+  const setBleepLevel = (value) => (value == null ? queueLevel(FOLLOW, householdLevel) : queueLevel(clampBleepLevel(value), clampBleepLevel(value)));
+  const setHouseholdLevel = async (value) => {
+    const next = clampBleepLevel(value);
+    try {
+      await DaylightAPI(`${API}/profiles/family/settings`, { settings: { bleepLevel: next } }, 'PUT');
+      logger.info('content_filter.review.bleep_level', { rk, scope: 'household', value: next });
+      void refreshReview().catch(() => {});
+      void previewStore.refresh().catch(() => false);
+    } catch (err) {
+      logger.warn('content_filter.review.bleep_level_failed', { rk, scope: 'household', value: next, error: err.message });
+      setMessage(err.message || 'The household bleep level did not save.');
+    }
   };
   // Leaving the film must not drop the last keypress.
   useEffect(() => () => {
@@ -551,7 +572,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   const handlers = {
     next: () => step(1), prev: () => step(-1), replay, togglePlay, playWithout, refine, refineAll, rework: reworkKey, helpOpen, verdict, undo, effect, settings, widen,
     cycleKind: () => setScope({ ...scope, kind: nextKind(scope.kind) }),
-    bleepLevel: changeBleepLevel,
+    bleepLevel: changeBleepLevel, setBleepLevel, setHouseholdLevel,
     retryPreview: previewRecovery ? retryPreview : null,
     help: () => setHelpOpen((v) => !v),
     timingDirty,
@@ -569,7 +590,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   return {
     scope, setScope, setStage, stages, scoped, row, pick, handlers, message: saving ? 'Saving…' : message, helpOpen, canUndo, tally, pendingRefine, refining, running,
     roughRefineCount: roughRefineTargets.length, roughLeftCount, refineAllCount: refineTargets.length,
-    bleepLevel, flagged: flagged.length, rework,
+    bleepLevel, bleep: { household: householdLevel, film: filmLevel, effective: bleepLevel }, flagged: flagged.length, rework,
     previewRecovery: previewRecovery ? {
       message: previewRecovery.saved ? 'Bleep level saved. The preview could not refresh.' : 'The preview could not refresh.',
       retry: retryPreview, retrying: Boolean(previewRecovery.retrying),

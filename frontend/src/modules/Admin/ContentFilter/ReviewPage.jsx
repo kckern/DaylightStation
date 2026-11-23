@@ -186,7 +186,7 @@ function FilmReview({ ratingKey, rowId, owner }) {
       if (t.closest?.('input, textarea, select, [role="menu"], [role="dialog"]')) return;
       if (t.closest?.('button, [role="slider"], [role="tab"], [data-mark], .cf-timeline__track, .cf-strip__track, .cf-review__player')) e.preventDefault();
     }}>
-      <ReviewHeader ratingKey={ratingKey} data={data} stage={stage} roughFiltered={roughFiltered} handlers={{ ...station.handlers, rework: station.rework }} blocked={notMatched}
+      <ReviewHeader ratingKey={ratingKey} data={data} stage={stage} roughFiltered={roughFiltered} handlers={{ ...station.handlers, rework: station.rework }} bleep={station.bleep} blocked={notMatched}
         onChanged={reload} flagged={station.flagged} refineAllCount={station.refineAllCount} />
       <ReviewRail stages={station.stages} plays={data.rows.filter(plays).length} value={stage} onChange={station.setStage} />
       {notMatched ? <Text size="sm" c="orange">{`Not matched to Plex: ${data.unmatched?.text || 'no Plex film'}. The review and override here are kept; runs are blocked.`}</Text> : null}
