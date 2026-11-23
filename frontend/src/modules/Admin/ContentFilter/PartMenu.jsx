@@ -80,6 +80,8 @@ export function PartMenu({ row, at = null, onClose = () => {}, onAction = () => 
   };
   return (
     <Menu opened={opened} onChange={(o) => { if (!o) onClose(); }} position="bottom-start" withinPortal shadow="md" width={240}
+      /* A tall menu near the window's edge flips, slides into view and scrolls (it ran off the bottom at 1280x800). */
+      middlewares={{ flip: true, shift: { padding: 8 }, size: true }}
       returnFocus={false} trapFocus closeOnItemClick={false}>
       <Menu.Target>
         <span className="cf-part-menu__anchor" aria-hidden="true"

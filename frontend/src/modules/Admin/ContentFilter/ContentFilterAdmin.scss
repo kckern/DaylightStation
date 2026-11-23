@@ -203,6 +203,8 @@
 .cf-card-part__step:hover:not(:disabled) { background: var(--ds-bg-elevated); }
 .cf-card-part__step:disabled { opacity: 0.35; cursor: default; }
 .cf-card-part__why { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cf-card-part__why > button { flex: none; } // Refine keeps its whole label and key; the sentence ellipsizes
+.cf-part-menu { max-height: calc(100vh - 16px); overflow-y: auto; }
 .cf-card-part__whytext { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ds-text-secondary); }
 .cf-card-part__timing { display: grid; grid-template-columns: minmax(0, 1fr) 132px; gap: 10px; align-items: stretch; min-width: 0; }
 .cf-card-part__nostrip { align-self: center; }
