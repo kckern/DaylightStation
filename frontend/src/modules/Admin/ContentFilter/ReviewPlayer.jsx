@@ -11,7 +11,7 @@ const Player = lazy(() => import('../../../../../__app_modules/media/media/brows
  * (jumpToCue, peek, currentTime). No resume and no progress logging: a review must not move
  * anyone's place.
  */
-export function ReviewPlayer({ ratingKey }) {
+export function ReviewPlayer({ ratingKey, unfiltered = false }) {
   // Before the Player's first render: its filter hook reads the force while it decides.
   useState(() => { previewStore.forceFilter(ratingKey); return null; });
   useEffect(() => {
@@ -20,7 +20,8 @@ export function ReviewPlayer({ ratingKey }) {
   }, [ratingKey]);
   const play = useMemo(() => ({ contentId: `plex:${ratingKey}`, resume: false }), [ratingKey]);
   return (
-    <div className="cf-review__player">
+    <div className="cf-review__player" data-unfiltered={unfiltered || undefined}>
+      {unfiltered ? <span className="cf-review__unfiltered" role="status">Unfiltered</span> : null}
       <Suspense fallback={<LoadingState label="player" rows={1} />}>
         {/* The auxiliary preview leaves viewing progress and queue commands alone.
             Review owns shortcuts and native controls keep their activation keys. */}

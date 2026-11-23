@@ -32,6 +32,49 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); });
 
+describe('the strip shows every part in its window (2026-11-22: two bleeps close together)', () => {
+  function Two() {
+    const [span, setSpan] = useState([100, 101]);
+    const [other, setOther] = useState([102, 103]);
+    return <><TimingStrip span={span} saved={[100, 101]} onChange={setSpan}
+      neighbours={[{ id: 'cue:n', span: other, saved: [102, 103], editable: true, family: 'audio', label: 'heck' }, { id: 'cue:far', span: [200, 201], saved: [200, 201], editable: true, label: 'far' }]}
+      onNeighbourChange={(id, next) => { if (id === 'cue:n') setOther(next); }} /><output>{spanText(other)}</output></>;
+  }
+  it('draws a neighbour in the window with its own handles, and drags it as a draft', () => {
+    render(<Two />);
+    expect(document.querySelectorAll('.cf-strip__band.is-neighbour')).toHaveLength(1);
+    const nStart = screen.getByRole('slider', { name: 'heck: Start' });
+    // Window 94–109 over 400 px: 26.67 px per second; 102 s is x = 313.3.
+    fireEvent.pointerDown(nStart, { clientX: 313, pointerId: 1 });
+    fireEvent.pointerMove(nStart, { clientX: 286, pointerId: 1 });
+    expect(document.querySelector('output').textContent).toMatch(/^1:4[01]\.\d\d–1:43\.00/);
+    fireEvent.pointerUp(nStart, { clientX: 286, pointerId: 1 });
+    expect(screen.queryByRole('slider', { name: 'far: Start' })).toBeNull();
+  });
+});
+
+describe('dragging feels exact (2026-11-22: "check the handlebars")', () => {
+  it('a grab off-centre keeps its offset: the edge does not jump to the pointer', () => {
+    show();
+    // Start is 100 s at x = 250; grab 6 px right of it and do not move: nothing changes.
+    fireEvent.pointerDown(start(), { clientX: 256, pointerId: 1 });
+    fireEvent.pointerMove(start(), { clientX: 256, pointerId: 1 });
+    expect(shown()).toBe('1:40.00–1:44.00, 4 s');
+    fireEvent.pointerMove(start(), { clientX: 231, pointerId: 1 });
+    expect(shown()).toBe('1:39.00–1:44.00, 5 s');
+  });
+  it('shows the time in a bubble while dragging, and the film follows the handle', () => {
+    const seek = vi.spyOn(previewStore, 'seekTo');
+    show();
+    fireEvent.pointerDown(start(), { clientX: 250, pointerId: 1 });
+    fireEvent.pointerMove(start(), { clientX: 225, pointerId: 1 });
+    expect(document.querySelector('.cf-strip__bubble').textContent).toBe('1:39.00');
+    expect(seek).toHaveBeenCalledWith(99);
+    fireEvent.pointerUp(start(), { clientX: 225, pointerId: 1 });
+    expect(document.querySelector('.cf-strip__bubble')).toBeNull();
+  });
+});
+
 describe('timing strip helpers', () => {
   it('shows hundredths, and the span with its length', () => {
     expect(fineTimecode(2664.3)).toBe('44:24.30');
@@ -145,26 +188,26 @@ describe('the strip in the part card', () => {
     card();
     expect(screen.queryByRole('button', { name: 'Start here' })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Start [+-]/ })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Save timing' }).disabled).toBe(true);
+    expect(screen.getByRole('button', { name: /^Save timing/ }).disabled).toBe(true);
     fireEvent.pointerDown(end(), { clientX: 350, pointerId: 1 });
     fireEvent.pointerMove(end(), { clientX: 370, pointerId: 1 });
     fireEvent.pointerUp(end(), { clientX: 370, pointerId: 1 });
-    expect(screen.getByText('1:40.00–1:44.80, 4.8 s')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Save timing' }));
+    expect(end().getAttribute('aria-valuetext')).toBe('1:44.80');
+    fireEvent.click(screen.getByRole('button', { name: /^Save timing/ }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual({ path: 'api/v1/content-filter/77/cues/w1', body: { nudge: { in: 100, out: 104.8 } }, method: 'PUT' });
   });
-  it('Drop hand fix still posts a null nudge', async () => {
+  it('Reset (the hand fix dropped) still posts a null nudge', async () => {
     card();
-    fireEvent.click(screen.getByRole('button', { name: 'Drop hand fix' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0].body).toEqual({ nudge: null });
   });
   it('while a run holds the film the strip and Save are locked', () => {
     card({ busyText: 'A refine is running.' });
     fireEvent.keyDown(end(), { key: 'ArrowRight' });
-    expect(screen.getByText('1:40.00–1:44.00, 4 s')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Save timing' }).disabled).toBe(true);
+    expect(end().getAttribute('aria-valuetext')).toBe('1:44.00');
+    expect(screen.getByRole('button', { name: /^Save timing/ }).disabled).toBe(true);
   });
   it('a focused handle keeps ← → from the station keys (they step parts everywhere else)', () => {
     const next = vi.fn();
@@ -173,7 +216,7 @@ describe('the strip in the part card', () => {
     end().focus();
     fireEvent.keyDown(end(), { key: 'ArrowRight' });
     expect(next).not.toHaveBeenCalled();
-    expect(screen.getByText('1:40.00–1:44.10, 4.1 s')).toBeTruthy();
+    expect(end().getAttribute('aria-valuetext')).toBe('1:44.10');
     end().blur();
     fireEvent.keyDown(document.body, { key: 'ArrowRight' });
     expect(next).toHaveBeenCalledTimes(1);

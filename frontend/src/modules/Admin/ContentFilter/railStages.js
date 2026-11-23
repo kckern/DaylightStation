@@ -22,11 +22,11 @@ export function railStages({ data, tally = { done: 0, total: 0 }, roughRefine = 
 
   let refine;
   if (running) refine = run?.stuck ? { stuck: true, text: run.brief || run.text, title: run.text } : { text: run?.text || 'Working…' };
-  else if (roughRefine) refine = notMatched ? { blocked: true, text: `${roughRefine} to refine · not matched to Plex` } : { text: `${roughRefine} to refine${roughLeft ? ` · ${roughLeft} to check` : ''}` };
+  else if (roughRefine) refine = notMatched ? { blocked: true, text: `${roughRefine} to refine · not matched to Plex` } : { text: `${roughRefine} to refine${roughLeft ? ` · ${roughLeft} timing unsure` : ''}` };
   else if (!rows && next === 'refine') refine = notMatched ? { blocked: true, text: 'Not matched to Plex' } : { text: 'Not refined yet' };
   else if (!rows && next === 'none') refine = { blocked: true, text: 'No filters yet' };
   // Refine has run, but a part it could not vouch for is not "Done" until someone has looked at it.
-  else refine = roughLeft ? { done: true, check: roughLeft, text: `${roughLeft} to check by ear or eye`, title: `Refine could not pin ${roughLeft} part${roughLeft === 1 ? '' : 's'}: check ${roughLeft === 1 ? 'it' : 'them'} by ear or eye, and drag the handles to fit` }
+  else refine = roughLeft ? { done: true, check: roughLeft, text: `${roughLeft} with unsure timing`, title: `Refine could not pin ${roughLeft} part${roughLeft === 1 ? '' : 's'}: listen before approving, and drag the handles to fit` }
     : { done: true, text: 'Done' };
 
   let review;
@@ -69,7 +69,7 @@ export function cardStep(film, { runText = null } = {}) {
   if (f.job && (f.job.status === 'queued' || f.job.status === 'running')) return { text: runText || 'Refining…', tone: 'busy' };
   if (rail.toRefine) return { text: `${rail.toRefine} to refine`, tone: 'todo' };
   if (!reviewed) return { text: f.stage === 'rough' ? 'Not refined yet' : 'Not checked yet', tone: 'quiet' };
-  if (reviewed.n < reviewed.m) return { text: `${reviewed.n} of ${reviewed.m} reviewed`, tone: 'todo', ...(rail.toCheck ? { note: `${rail.toCheck} to check` } : {}) };
+  if (reviewed.n < reviewed.m) return { text: `${reviewed.n} of ${reviewed.m} reviewed`, tone: 'todo', ...(rail.toCheck ? { note: `${rail.toCheck} timing unsure` } : {}) };
   if (rail.redo) return { text: `${rail.redo} marked Redo`, tone: 'check' };
   if (f.stage === 'machine') return { text: 'Ready', tone: 'ready' };
   return { text: f.stage === 'rough' ? 'Not refined yet' : 'Not ready yet', tone: 'check' };

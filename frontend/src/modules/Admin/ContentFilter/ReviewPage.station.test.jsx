@@ -154,8 +154,12 @@ describe('review station keys', () => {
   it('a full-blur part lights Blur; a shown part can have its picture hidden (H)', async () => {
     payload = base([row('subject:p1', 'poster', { kind: 'picture', modality: 'shown', effect: 'full-blur', in: 30, out: 34, members: ['p1'] })]);
     show();
-    expect(screen.getByRole('button', { name: /^Blur/ }).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByRole('button', { name: /^Hide picture/ }).getAttribute('aria-pressed')).toBe('false');
+    // The effects are a menu on the effect button (E); the current one is checked.
+    press('e');
+    expect((await screen.findByRole('menuitem', { name: /^Blur/ })).getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByRole('menuitem', { name: /^Hide picture/ }).getAttribute('aria-checked')).toBe('false');
+    press('Escape');
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
     press('b');
     expect(await screen.findByText('Already blur.')).toBeTruthy();
     expect(calls).toHaveLength(0);
@@ -177,7 +181,7 @@ describe('review station keys', () => {
     expect(log.info).toHaveBeenCalledWith('content_filter.review.unsaved_timing_blocked', expect.objectContaining({ rk: '77', rowId: 'cue:w1', what: 'step' }));
     press('Escape');
     expect(await screen.findByText('Timing change dropped.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Save timing' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Save timing/ })).toBeDisabled();
     press('ArrowRight');
     expect(selected()).toBe('cue:w2');
   });
@@ -291,14 +295,18 @@ describe('review station keys', () => {
     await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/already gone/));
     expect(calls).toHaveLength(0);
   });
-  it('the header counts the filtered parts with a verdict; the card shows the keys for the part\'s channel', () => {
+  it('the header counts the filtered parts with a verdict; the card shows the keys for the part\'s channel', async () => {
     payload = base([row('cue:w1', 'alpha', { verdict: { verdict: 'redo' }, reviewed: { by: 'x' } }), row('cue:w2', 'bravo'), row('subject:p1', 'poster', { kind: 'picture', modality: 'shown', effect: 'blur' })]);
     show(); expect(screen.getByText('1 of 3 reviewed', { selector: '.cf-rail__text' })).toBeTruthy();
-    const cardKeys = () => [...document.querySelectorAll('.cf-card-part button kbd')].map((n) => n.textContent);
+    // The effect keys live in the effect menu (E); the card's own buttons carry the rest.
+    const menuKeys = async () => { press('e'); await screen.findByRole('menu'); const k = [...document.querySelectorAll('[role="menu"] kbd')].map((n) => n.textContent); press('Escape'); await waitFor(() => expect(screen.queryByRole('menu')).toBeNull()); return k; };
     expect(selected()).toBe('cue:w2');
-    expect(cardKeys()).toEqual(expect.arrayContaining(['M', 'P'])); expect(cardKeys()).not.toContain('B');
+    expect([...document.querySelectorAll('.cf-card-part button kbd')].map((n) => n.textContent)).toEqual(expect.arrayContaining(['E', 'A', 'X', 'D', 'W']));
+    let keys = await menuKeys();
+    expect(keys).toEqual(expect.arrayContaining(['M', 'P'])); expect(keys).not.toContain('B');
     press('ArrowRight');
-    expect(cardKeys()).toEqual(expect.arrayContaining(['B', 'K'])); expect(cardKeys()).not.toContain('M');
+    keys = await menuKeys();
+    expect(keys).toEqual(expect.arrayContaining(['B', 'K'])); expect(keys).not.toContain('M');
   });
   it('emits session start on load and end on leaving, with the reviewed count', () => {
     const { unmount } = show();

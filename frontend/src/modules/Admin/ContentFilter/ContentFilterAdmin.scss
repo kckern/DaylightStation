@@ -36,7 +36,17 @@
 
 // Review page (design "cf-journey", 2026-11-21): one header line; the film, the timeline and the
 // part card in a column that never scrolls; the list beside it scrolls on its own.
-.cf-review-page { display: flex; flex-direction: column; gap: var(--ds-space-2); min-width: 0; }
+.cf-review-page { --cf-shell-top: 48px; display: flex; flex-direction: column; gap: var(--ds-space-2); min-width: 0;
+  // The whole page fits the window: nothing scrolls but the list's rows (owner, 2026-11-22: "no vertical
+  // scroll at all"). The Admin content padding is trimmed to 12px on this page.
+  height: calc(100dvh - var(--cf-shell-top) - 24px); overflow: hidden; }
+.admin-content:has(> .cf-review-page) { padding-top: 12px; padding-bottom: 12px; overflow: hidden; }
+// Focus (2026-11-22: Space outlined the panel): only controls take focus, a pointer never moves it,
+// and a ring shows only for the keyboard.
+.admin-content:has(> .cf-review-page):focus { outline: none; }
+.cf-review-page :focus:not(:focus-visible) { outline: none; }
+.cf-review-page :focus-visible { outline: 2px solid var(--ds-accent-hover, var(--ds-accent)); outline-offset: 2px; }
+.cf-review-page .cf-review:focus, .cf-review-page .cf-review__side:focus, .cf-review-page .cf-review__player:focus-within { outline: none; }
 // The film page uses the whole window: the Admin's 1200px page cap left a third of a 1920 screen
 // empty while the list truncated its labels (review 2026-11-22).
 .admin-content > .cf-review-page { max-width: none; }
@@ -93,17 +103,19 @@
 .cf-rail button.cf-rail__plays:focus-visible .cf-rail__in { outline-offset: 3px; }
 .cf-approve { display: flex; flex-direction: column; align-items: flex-start; gap: var(--ds-space-2); }
 .cf-approve[data-state='approved'], .cf-approve[data-state='ready'] { border-color: var(--ds-success); }
-.cf-review { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, clamp(420px, 32vw, 620px)); gap: var(--ds-space-4); align-items: start; }
+.cf-review { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(380px, 30vw, 520px); gap: var(--ds-space-4); align-items: stretch; }
 @media (max-width: 1000px) { .cf-review { grid-template-columns: minmax(0, 1fr); } }
-.cf-review__side { position: sticky; top: var(--ds-space-2); display: flex; flex-direction: column; gap: var(--ds-space-2); min-width: 0; max-height: calc(100vh - 174px); overflow-y: auto; }
+.cf-review__side { display: grid; grid-template-rows: minmax(0, 1fr) auto auto; gap: var(--ds-space-2); min-width: 0; min-height: 0; overflow: hidden; }
 // The film keeps a height that leaves room for the card below it at 900 px.
-.cf-review__player { aspect-ratio: 16 / 9; width: min(100%, calc(40vh * 16 / 9)); margin: 0 auto; background: var(--ds-bg-base); border-radius: var(--ds-radius-md); overflow: hidden; position: relative; }
+.cf-review__player { aspect-ratio: 16 / 9; height: 100%; max-width: 100%; min-height: 0; justify-self: center; background: var(--ds-bg-base); border-radius: var(--ds-radius-md); overflow: hidden; position: relative; }
+.cf-review__unfiltered { position: absolute; top: 10px; left: 10px; z-index: 5; padding: 3px 10px; border-radius: var(--ds-radius-sm); background: var(--ds-warning); color: #111; font-size: 12px; font-weight: 700; letter-spacing: 0.02em; pointer-events: none; }
+.cf-review__player[data-unfiltered] { box-shadow: inset 0 0 0 2px var(--ds-warning); }
 // The review player only: a paused film is the frame under review, so nothing dims it. The Player's
 // pause overlay becomes a small "paused" badge in the corner (other players keep their scrim).
 .cf-review__player .loading-overlay.paused { inset: auto auto 10px 10px; top: auto; left: 10px; width: auto; height: auto; padding: 0; background: none; }
 .cf-review__player .loading-overlay.paused .loading-overlay__inner, .cf-review__player .loading-overlay.paused .loading-timing { width: auto; height: auto; flex: none; }
 .cf-review__player .loading-overlay.paused .loading-spinner { width: 28px; height: 28px; padding: 5px; box-sizing: border-box; border-radius: 6px; background: #111; cursor: default; pointer-events: none; }
-.cf-review__list { max-height: calc(100vh - 174px); min-width: 0; position: sticky; top: var(--ds-space-2); }
+.cf-review__list { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .cf-review__list > * { flex-shrink: 0; }
 .cf-review__list > .cf-review__rows { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .cf-review__rows { display: flex; flex-direction: column; border-bottom: 1px solid var(--ds-border); }
@@ -113,16 +125,18 @@
 .cf-review__row.is-plays .cf-review__label { color: var(--ds-text-secondary); }
 // One line per part: [status] [time] [effect, channel] [label] [verdict word, timing]. The part in
 // hand also opens to its whole label and the same facts in words.
-.cf-review__pick { display: grid; width: 100%; grid-template-columns: 16px 66px 36px minmax(0, 1fr) auto; grid-template-areas: "glyph time fx label marks" ". more more more more";
-  align-items: center; column-gap: 6px; row-gap: 2px; min-height: 32px; padding: 5px var(--ds-space-2) 5px 5px; text-align: left; min-width: 0; }
+.cf-review__row { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; }
+.cf-review__pick { grid-column: 1; grid-row: 1; display: grid; width: 100%; grid-template-columns: 16px 66px 52px minmax(0, 1fr) auto; grid-template-areas: "glyph time gap label marks";
+  align-items: center; column-gap: 6px; height: 32px; padding: 0 var(--ds-space-2) 0 5px; text-align: left; min-width: 0; }
 .cf-review__glyph { grid-area: glyph; display: inline-flex; }
 .cf-review__time { grid-area: time; font-family: var(--ds-font-mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ds-text-secondary); text-align: right; }
-.cf-review__fx { grid-area: fx; display: inline-flex; align-items: center; gap: 4px; }
+.cf-review__fx { grid-column: 1; grid-row: 1; justify-self: start; margin-left: 99px; display: inline-flex; align-items: center; gap: 2px; position: relative; z-index: 1; }
+.cf-review__fx-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: var(--ds-radius-sm); }
+.cf-review__fx-btn:hover { background: var(--ds-bg-elevated); box-shadow: inset 0 0 0 1px var(--ds-border); }
 .cf-review__label { grid-area: label; min-width: 0; font-size: 13px; font-weight: 500; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cf-review__row.is-selected .cf-review__label { white-space: normal; overflow-wrap: anywhere; font-weight: 600; }
+.cf-review__row.is-selected .cf-review__label { font-weight: 600; }
 .cf-review__marks { grid-area: marks; display: inline-flex; align-items: center; gap: 6px; }
 .cf-review__refining { display: inline-flex; }
-.cf-review__more { grid-area: more; display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: center; padding-bottom: 2px; }
 .cf-review__tick { color: var(--ds-success); }
 // A verdict's word: finished work in green, a redo in orange.
 .cf-review__status { font-size: 11px; line-height: 16px; white-space: nowrap; }
@@ -164,37 +178,84 @@
 .cf-legend__group { display: flex; flex-direction: column; gap: 3px; }
 .cf-legend__item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ds-text-primary); }
 
-// The part in hand.
-.cf-card-part { padding: var(--ds-space-2); background: var(--ds-bg-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); }
-.cf-card-part__title { min-width: 0; overflow-wrap: anywhere; }
-.cf-card-part__chips { flex-shrink: 0; }
-.cf-card-part__why { padding: 6px var(--ds-space-2); background: var(--ds-bg-elevated); border-radius: var(--ds-radius-sm); }
-// Timing: the strip takes the room; the span and Save sit at its end.
-.cf-card-part__timing { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.cf-card-part__span { flex: none; white-space: nowrap; color: var(--ds-text-primary); }
-// Timing strip (TimingStrip.jsx): ticks along the top, the span as a band, a handle at each end.
-.cf-strip { flex: 1 1 160px; min-width: 120px; padding: 0 6px; }
-.cf-strip__track { position: relative; height: 34px; background: var(--ds-bg-base); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-sm); cursor: pointer; touch-action: none; user-select: none; }
-.cf-strip__tick { position: absolute; top: 0; width: 1px; height: 4px; background: var(--ds-text-muted); pointer-events: none; }
-.cf-strip__tick.is-major { height: 8px; background: var(--ds-text-secondary); }
-.cf-strip__label { position: absolute; top: 9px; left: 3px; font-family: var(--ds-font-mono); font-size: 9px; line-height: 1; color: var(--ds-text-secondary); white-space: nowrap; }
-.cf-strip__band { position: absolute; top: 19px; bottom: 3px; background: var(--ds-accent); border-radius: 2px; pointer-events: none; }
-.cf-strip__saved { position: absolute; bottom: 0; height: 2px; background: var(--ds-text-secondary); pointer-events: none; }
-.cf-strip__playhead { position: absolute; top: 0; bottom: 0; width: 1px; margin-left: -0.5px; background: var(--ds-warning); pointer-events: none; }
-.cf-strip__handle { position: absolute; top: 14px; bottom: 0; width: 14px; margin-left: -7px; cursor: ew-resize; touch-action: none; z-index: 1; }
-.cf-strip__handle::before { content: ''; position: absolute; top: 0; bottom: 0; left: 5px; width: 4px; border-radius: 2px; background: var(--ds-text-primary); }
+// The part in hand (Fable design 2026-11-22): one 280px panel of five fixed lines. Nothing in it
+// changes its height, so the page never scrolls and nothing below it moves.
+.cf-card-part { height: 280px; box-sizing: border-box; padding: 12px; display: grid; grid-template-rows: 44px 24px 88px 44px 24px; gap: 8px; min-width: 0;
+  background: var(--ds-bg-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); border-left: 3px solid var(--ds-border); }
+.cf-card-part[data-family="audio"] { border-left-color: var(--cf-fx-audio); }
+.cf-card-part[data-family="picture"] { border-left-color: var(--cf-fx-picture); }
+.cf-card-part[data-family="skip"] { border-left-color: var(--cf-fx-skip); }
+.cf-card-part__identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cf-card-part__fx { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: var(--ds-radius-sm);
+  border: 1px solid currentColor; font-size: 13px; font-weight: 700; color: var(--ds-text-secondary); background: var(--ds-bg-base); }
+.cf-card-part__fx.is-audio { color: var(--cf-fx-audio); }
+.cf-card-part__fx.is-picture { color: var(--cf-fx-picture); }
+.cf-card-part__fx.is-skip { color: var(--cf-fx-skip); }
+.cf-card-part__fx:hover:not(:disabled) { background: var(--ds-bg-elevated); }
+.cf-card-part__fx .cf-keybar__key { color: var(--ds-text-secondary); }
+.cf-card-part__title { flex: 1 1 auto; min-width: 0; font-size: 15px; font-weight: 600; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.cf-card-part__facts { flex: none; display: inline-flex; align-items: center; gap: 8px; }
+.cf-card-part__chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 18px; white-space: nowrap;
+  color: var(--ds-text-secondary); background: var(--ds-bg-elevated); }
+.cf-card-part__chip.is-refined { color: var(--ds-success); }
+.cf-card-part__chip.is-rough, .cf-card-part__chip.is-unsure, .cf-card-part__chip.is-rough-left { color: var(--ds-warning); }
+.cf-card-part__chip.is-refining { color: var(--ds-info); }
+.cf-card-part__where { flex: none; width: 56px; text-align: right; font-size: 12px; color: var(--ds-text-secondary); font-variant-numeric: tabular-nums; }
+.cf-card-part__step { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: var(--ds-radius-sm); border: 1px solid var(--ds-border); color: var(--ds-text-primary); }
+.cf-card-part__step:hover:not(:disabled) { background: var(--ds-bg-elevated); }
+.cf-card-part__step:disabled { opacity: 0.35; cursor: default; }
+.cf-card-part__why { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cf-card-part__whytext { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ds-text-secondary); }
+.cf-card-part__timing { display: grid; grid-template-columns: minmax(0, 1fr) 132px; gap: 10px; align-items: stretch; min-width: 0; }
+.cf-card-part__nostrip { align-self: center; }
+.cf-card-part__save { display: flex; flex-direction: column; justify-content: center; align-items: stretch; gap: 6px; }
+.cf-card-part__actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+.cf-card-part__play, .cf-card-part__verdicts { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; min-width: 0; }
+.cf-card-part__btn { height: 40px; padding: 0 9px; font-size: 13px; }
+.cf-card-part__btn .cf-keybar__key { min-width: 16px; font-size: 10px; }
+.cf-card-part__btn.is-icon { padding: 0 8px; }
+.cf-card-part__verdicts .is-approve { min-width: 112px; }
+.cf-card-part__status { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: flex; align-items: center; gap: 8px; }
+.cf-card-part__status .cf-keybar { flex-direction: row; align-items: center; min-width: 0; }
+.cf-card-part__status .cf-keybar__message { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cf-card-part__cardbtns { display: flex; gap: 6px; padding-top: 8px; }
+.cf-fx-menu__check { display: inline-flex; width: 14px; }
+// Timing strip (TimingStrip.jsx): ticks along the top, every part in the window as a band, the part
+// in hand solid with white handles. A handle's hit is 20px and the full track height, biased outward
+// (Start reaches left, End right) so two close handles never cover each other.
+.cf-strip { min-width: 0; height: 100%; }
+.cf-strip__track { position: relative; height: 100%; box-sizing: border-box; background: var(--ds-bg-base); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-sm); cursor: pointer; touch-action: none; user-select: none; }
+.cf-strip__tick { position: absolute; top: 0; width: 1px; height: 5px; background: var(--ds-text-muted); pointer-events: none; }
+.cf-strip__tick.is-major { height: 10px; background: var(--ds-text-secondary); }
+.cf-strip__label { position: absolute; top: 11px; left: 3px; font-family: var(--ds-font-mono); font-size: 10px; line-height: 1; color: var(--ds-text-secondary); white-space: nowrap; }
+.cf-strip__band { position: absolute; top: 30px; bottom: 8px; background: var(--ds-accent); border-radius: 3px; pointer-events: none; }
+.cf-strip__band.is-neighbour { opacity: 0.6; background: var(--ds-text-muted); }
+.cf-strip__band.is-neighbour.is-audio { background: var(--cf-fx-audio); }
+.cf-strip__band.is-neighbour.is-picture { background: var(--cf-fx-picture); }
+.cf-strip__band.is-neighbour.is-skip { background: var(--cf-fx-skip); }
+.cf-strip__band.is-locked { background-image: repeating-linear-gradient(45deg, transparent 0 4px, rgba(0, 0, 0, 0.35) 4px 8px); }
+.cf-strip__saved { position: absolute; bottom: 2px; height: 3px; background: var(--ds-text-secondary); pointer-events: none; }
+.cf-strip__playhead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--ds-warning); pointer-events: none; z-index: 1; }
+.cf-strip__handle { position: absolute; top: 0; bottom: 0; width: 20px; cursor: ew-resize; touch-action: none; z-index: 2; }
+.cf-strip__handle.is-start { margin-left: -16px; }
+.cf-strip__handle.is-end { margin-left: -4px; }
+.cf-strip__handle::before { content: ''; position: absolute; top: 24px; bottom: 4px; width: 4px; border-radius: 2px; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5); }
+.cf-strip__handle.is-start::before { left: 14px; }
+.cf-strip__handle.is-end::before { left: 2px; }
+.cf-strip__handle.is-neighbour::before { width: 2px; background: var(--ds-text-primary); opacity: 0.8; }
+.cf-strip__handle:hover::before, .cf-strip__handle.is-dragging::before { background: var(--ds-accent-hover, #fff); }
 .cf-strip__handle:focus { outline: none; }
-.cf-strip__handle:focus-visible::before, .cf-strip__handle:active::before { outline: 2px solid var(--ds-accent-hover); outline-offset: 1px; }
+.cf-strip__handle:focus-visible::before { outline: 2px solid var(--ds-accent-hover); outline-offset: 1px; }
+.cf-strip__bubble { position: absolute; top: 2px; left: 50%; transform: translateX(-50%); padding: 1px 5px; border-radius: 3px; background: var(--ds-bg-overlay); border: 1px solid var(--ds-border);
+  font-family: var(--ds-font-mono); font-size: 10px; line-height: 14px; color: var(--ds-text-primary); white-space: nowrap; pointer-events: none; }
 .cf-strip.is-disabled .cf-strip__track { cursor: default; }
 .cf-strip.is-disabled .cf-strip__band { background: var(--ds-text-muted); }
 .cf-strip.is-disabled .cf-strip__handle { cursor: default; }
 .cf-strip.is-disabled .cf-strip__handle::before { background: var(--ds-text-muted); }
-.cf-card-part__verdicts { padding-top: 4px; border-top: 1px solid var(--ds-border); }
 .cf-keybar__pick { appearance: none; border: 0; padding: 2px 4px; background: none; font: inherit; cursor: pointer; border-radius: var(--ds-radius-sm); }
 .cf-keybar__pick:hover { background: var(--ds-bg-elevated); }
 .cf-keybar__pick:hover .cf-keybar__item { color: var(--ds-text-primary); }
 .cf-keybar__key.is-blank { visibility: hidden; }
-.cf-card-part__hints .cf-keybar__key { margin: 0 2px; }
 .cf-card__btn { display: inline-flex; align-items: center; gap: 6px; }
 .cf-card__btn .cf-keybar__key { opacity: 0.8; }
 .cf-focus__where { font-variant-numeric: tabular-nums; }
@@ -202,9 +263,12 @@
 // Review station: timeline lanes and the key bar.
 .cf-timeline { display: flex; flex-direction: column; gap: var(--ds-space-1); }
 .cf-timeline__lane { display: flex; align-items: center; gap: var(--ds-space-2); }
-.cf-timeline__label { flex: 0 0 128px; white-space: nowrap; font-size: 11px; color: var(--ds-text-secondary); font-variant-numeric: tabular-nums; }
-.cf-timeline__track { position: relative; flex: 1; height: 22px; background: var(--ds-bg-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-sm); overflow: hidden; }
+.cf-timeline__label { flex: 0 0 40px; white-space: nowrap; font-size: 11px; color: var(--ds-text-secondary); }
+.cf-timeline__track { position: relative; flex: 1; height: 24px; box-sizing: border-box; background: var(--ds-bg-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-sm); overflow: hidden; cursor: pointer; }
+.cf-timeline__playhead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--ds-warning); pointer-events: none; z-index: 2; }
 .cf-timeline__mark { position: absolute; top: 3px; bottom: 3px; padding: 0; border: 0; border-radius: 2px; cursor: pointer; background: var(--ds-text-muted); opacity: 0.75; }
+// A transparent pad makes every mark at least 12px wide to the pointer, whatever it draws.
+.cf-timeline__mark::after { content: ''; position: absolute; top: -3px; bottom: -3px; left: 50%; width: max(100%, 12px); transform: translateX(-50%); }
 // Marks take their effect family's colour, like the list's icons.
 .cf-timeline__mark.is-mute, .cf-timeline__mark.is-bleep { background: var(--cf-fx-audio); }
 .cf-timeline__mark.is-blur { background: var(--cf-fx-picture); }

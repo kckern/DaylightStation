@@ -41,12 +41,22 @@ export function windowFor([a, b]) {
   return [Math.floor(from), Math.ceil(to)];
 }
 
-export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice = () => {}, disabled = false }) {
+const SCRUB_MS = 100;
+const FOCUS = '__focus';
+
+/**
+ * `neighbours` (Fable design 2026-11-22, owner: two bleeps close together must both show and be
+ * adjustable): other parts that overlap the window, `{ id, span, saved, editable, family, label }`.
+ * They draw in their effect family's colour; an editable one has handles and reports through
+ * `onNeighbourChange(id, span)`. Every dragged span is a draft until the card saves it.
+ */
+export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice = () => {}, disabled = false, neighbours = [], onNeighbourChange = () => {} }) {
   const [win, setWin] = useState(() => windowFor(saved));
   const [now, setNow] = useState(null);
+  const [dragging, setDragging] = useState(null);
   const track = useRef(null);
   const drag = useRef(null);
-  // A new part (or a saved change) opens its own window.
+  const scrubAt = useRef(0);
   useEffect(() => { setWin(windowFor(saved)); }, [saved[0], saved[1]]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const read = () => setNow(previewStore.currentTime());
@@ -55,6 +65,11 @@ export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice 
     return () => clearInterval(timer);
   }, []);
 
+  const parts = [{ id: FOCUS, span, saved, editable: true, focus: true },
+    ...neighbours.filter((n) => n.span[1] >= win[0] && n.span[0] <= win[1])];
+  const spanOf = (id) => parts.find((x) => x.id === id)?.span;
+  const report = (id, next) => (id === FOCUS ? onChange(next) : onNeighbourChange(id, next));
+
   const width = win[1] - win[0];
   const pct = (t) => `${((t - win[0]) / width) * 100}%`;
   const timeAt = (clientX) => {
@@ -62,45 +77,57 @@ export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice 
     if (!box?.width) return null;
     return win[0] + (Math.min(Math.max(clientX - box.left, 0), box.width) / box.width) * width;
   };
-  // Start stays under end; a handle pushed to the window's edge widens the window by a few seconds.
-  const move = (edge, t, { grow = true } = {}) => {
-    let v = edge === 0 ? Math.min(Math.max(0, t), span[1] - MIN_GAP) : Math.max(t, span[0] + MIN_GAP);
+  const move = (id, edge, t, { grow = true } = {}) => {
+    const cur = spanOf(id);
+    if (!cur) return;
+    let v = edge === 0 ? Math.min(Math.max(0, t), cur[1] - MIN_GAP) : Math.max(t, cur[0] + MIN_GAP);
     v = round3(v);
     if (grow && v <= win[0]) setWin([Math.max(0, Math.floor(v - 3)), win[1]]);
     else if (grow && v >= win[1]) setWin([win[0], Math.ceil(v + 3)]);
-    if (v !== span[edge]) onChange(edge === 0 ? [v, span[1]] : [span[0], v]);
+    if (v !== cur[edge]) report(id, edge === 0 ? [v, cur[1]] : [cur[0], v]);
   };
 
-  const onDown = (edge) => (e) => {
+  // The grab keeps its offset: a handle no longer jumps to the pointer on the first move.
+  const onDown = (id, edge) => (e) => {
     if (disabled) return;
     e.stopPropagation();
-    // No focus for a pointer drag (and none taken by the browser): the arrow keys stay with the parts.
     e.preventDefault?.();
     e.currentTarget.setPointerCapture?.(e.pointerId);
-    drag.current = edge;
-  };
-  const onMove = (edge) => (e) => {
-    if (drag.current !== edge || disabled) return;
     const t = timeAt(e.clientX);
-    // While the pointer is down the window holds still, so the handle stays under the pointer.
-    if (t != null) move(edge, Math.min(Math.max(round2(t), win[0]), win[1]), { grow: false });
+    drag.current = { id, edge, offset: t == null ? 0 : t - spanOf(id)[edge] };
+    setDragging({ id, edge });
   };
-  const onUp = (edge) => (e) => {
-    if (drag.current !== edge) return;
+  const onMove = (id, edge) => (e) => {
+    const d = drag.current;
+    if (!d || d.id !== id || d.edge !== edge || disabled) return;
+    const t = timeAt(e.clientX);
+    if (t == null) return;
+    const v = Math.min(Math.max(round2(t - d.offset), win[0]), win[1]);
+    move(id, edge, v, { grow: false });
+    // The paused film follows the handle, so the edge is judged by eye.
+    const at = Date.now();
+    if (at - scrubAt.current >= SCRUB_MS) { scrubAt.current = at; previewStore.seekTo(v); }
+  };
+  const onUp = (id, edge) => (e) => {
+    const d = drag.current;
+    if (!d || d.id !== id || d.edge !== edge) return;
     drag.current = null;
+    setDragging(null);
     e.currentTarget.releasePointerCapture?.(e.pointerId);
     e.currentTarget.blur?.();
-    if (span[edge] <= win[0] && win[0] > 0) setWin([Math.max(0, win[0] - 3), win[1]]);
-    else if (span[edge] >= win[1]) setWin([win[0], win[1] + 3]);
+    const v = spanOf(id)?.[edge];
+    if (v <= win[0] && win[0] > 0) setWin([Math.max(0, win[0] - 3), win[1]]);
+    else if (v >= win[1]) setWin([win[0], win[1] + 3]);
   };
-  const onKey = (edge) => (e) => {
+  const onKey = (id, edge) => (e) => {
     if (disabled || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === 'Escape') { e.currentTarget.blur(); return; }
     const by = e.shiftKey ? 0.5 : 0.1;
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') move(edge, span[edge] + (e.key === 'ArrowLeft' ? -by : by));
+    const cur = spanOf(id);
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') move(id, edge, cur[edge] + (e.key === 'ArrowLeft' ? -by : by));
     else if (e.key === 'Home' || e.key === 'End') {
       const t = previewStore.currentTime();
-      if (t == null) onNotice('Play the film first.'); else move(edge, t);
+      if (t == null) onNotice('Play the film first.'); else move(id, edge, t);
     } else return;
     e.preventDefault();
     e.stopPropagation();
@@ -112,32 +139,44 @@ export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice 
   };
 
   const minor = width <= 60 ? 1 : width <= 300 ? 5 : 30;
-  const labelStep = LABEL_STEPS.find((s) => width / s <= 8) || 600;
+  const labelStep = LABEL_STEPS.find((st) => width / st <= 8) || 600;
   const ticks = [];
   for (let t = Math.ceil(win[0] / minor) * minor; t <= win[1]; t += minor) ticks.push(t);
-  const handle = (edge, name) => (
-    <span role="slider" tabIndex={disabled ? -1 : 0} aria-label={name} aria-orientation="horizontal" aria-disabled={disabled || undefined}
-      aria-valuemin={edge === 0 ? win[0] : round3(span[0] + MIN_GAP)} aria-valuemax={edge === 0 ? round3(span[1] - MIN_GAP) : win[1]}
-      aria-valuenow={span[edge]} aria-valuetext={fineTimecode(span[edge])}
-      title={`${name}: drag. With the keyboard: Tab to it, then ← → (Shift for 0.5 s); Home or End sets it at the playhead`}
-      className={`cf-strip__handle is-${edge === 0 ? 'start' : 'end'}`} style={{ left: pct(span[edge]) }}
-      onMouseDown={(e) => e.preventDefault()} onPointerDown={onDown(edge)} onPointerMove={onMove(edge)} onPointerUp={onUp(edge)} onPointerCancel={onUp(edge)} onKeyDown={onKey(edge)} />
-  );
+  const handle = (part, edge) => {
+    const name = `${part.focus ? '' : `${part.label}: `}${edge === 0 ? 'Start' : 'End'}`;
+    const value = part.span[edge];
+    const live = dragging && dragging.id === part.id && dragging.edge === edge;
+    return (
+      <span key={`${part.id}:${edge}`} role="slider" tabIndex={disabled ? -1 : 0} aria-label={name} aria-orientation="horizontal" aria-disabled={disabled || undefined}
+        aria-valuemin={edge === 0 ? win[0] : round3(part.span[0] + MIN_GAP)} aria-valuemax={edge === 0 ? round3(part.span[1] - MIN_GAP) : win[1]}
+        aria-valuenow={value} aria-valuetext={fineTimecode(value)}
+        title={`${name} ${fineTimecode(value)}: drag, or Tab to it and use ← → (Shift 0.5 s); Home or End sets it at the playhead`}
+        className={`cf-strip__handle is-${edge === 0 ? 'start' : 'end'}${part.focus ? '' : ' is-neighbour'}${live ? ' is-dragging' : ''}`} style={{ left: pct(value) }}
+        onMouseDown={(e) => e.preventDefault()} onPointerDown={onDown(part.id, edge)} onPointerMove={onMove(part.id, edge)}
+        onPointerUp={onUp(part.id, edge)} onPointerCancel={onUp(part.id, edge)} onKeyDown={onKey(part.id, edge)}>
+        {live ? <span className="cf-strip__bubble">{fineTimecode(value)}</span> : null}
+      </span>
+    );
+  };
   const changed = span[0] !== saved[0] || span[1] !== saved[1];
+  const band = (a, b) => ({ left: pct(Math.max(a, win[0])), right: `${100 - parseFloat(pct(Math.min(b, win[1])))}%` });
   return (
     <div className={`cf-strip${disabled ? ' is-disabled' : ''}`} aria-label="Timing">
-      <div className="cf-strip__track" ref={track} onClick={seek} title="Click to play the film from here">
+      <div className="cf-strip__track" ref={track} onClick={seek} title="Click to move the film here">
         {ticks.map((t) => (
-          // A tick near the right edge carries no label: it ran out of the track, over the readout.
           <span key={t} className={`cf-strip__tick${t % labelStep === 0 ? ' is-major' : ''}`} style={{ left: pct(t) }}>
             {t % labelStep === 0 && (t - win[0]) / width <= LABEL_UNTIL ? <span className="cf-strip__label">{clock(t)}</span> : null}
           </span>
         ))}
-        {changed ? <span className="cf-strip__saved" style={{ left: pct(Math.max(saved[0], win[0])), right: `${100 - parseFloat(pct(Math.min(saved[1], win[1])))}%` }} /> : null}
-        <span className="cf-strip__band" style={{ left: pct(span[0]), right: `${100 - parseFloat(pct(span[1]))}%` }} />
+        {changed ? <span className="cf-strip__saved" style={band(saved[0], saved[1])} /> : null}
+        {parts.filter((x) => !x.focus).map((x) => (
+          <span key={x.id} className={`cf-strip__band is-neighbour is-${x.family || 'other'}${x.editable ? '' : ' is-locked'}`} style={band(x.span[0], x.span[1])} title={x.label} />
+        ))}
+        <span className="cf-strip__band" style={band(span[0], span[1])} />
         {now != null && now >= win[0] && now <= win[1] ? <span className="cf-strip__playhead" data-testid="playhead" style={{ left: pct(now) }} /> : null}
-        {handle(0, 'Start')}
-        {handle(1, 'End')}
+        {parts.filter((x) => !x.focus && x.editable).flatMap((x) => [handle(x, 0), handle(x, 1)])}
+        {handle(parts[0], 0)}
+        {handle(parts[0], 1)}
       </div>
     </div>
   );

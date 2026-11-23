@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { ActionIcon, Badge, Checkbox, Group, Popover, Select, Stack, Text, UnstyledButton, VisuallyHidden } from '@mantine/core';
+import { EffectMenu } from './EffectMenu.jsx';
+import { ActionIcon, Checkbox, Group, Popover, Select, Stack, Text, UnstyledButton, VisuallyHidden } from '@mantine/core';
 import { IconHelp } from '@tabler/icons-react';
-import { effectWord } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
-import { DEFAULT_SCOPE, ORDER_SCOPES, needsCheck, plays, scopeRows } from './reviewScope.js';
+import { effectChip } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
+import { DEFAULT_SCOPE, ORDER_SCOPES, plays, scopeRows } from './reviewScope.js';
 import { ChannelIcon, EffectIcon, LEGEND, RefiningIcon, StatusIcon, TimingIcon, timingState } from './partVisuals.jsx';
 
 /**
@@ -19,7 +20,6 @@ export const UNSURE_LABELS = {
   'refine-kept-manual': 'Kept manual timing', 'safe-window': 'Safe window', 'check-levels': 'Check levels',
   'exchange-by-length': 'Long line', 'untracked-visual': 'Not tracked', 'subject-unsure': 'Same subject?',
 };
-const MODALITY = { said: 'said', shown: 'shown', heard: 'heard' };
 const GROUP_LABELS = {
   profanity: 'Profanity', blasphemy: 'Blasphemy', sexual: 'Sexual words', slurs: 'Slurs', childish: 'Childish',
   violence_blood_gore: 'Violence', sex_nudity_immodesty: 'Nudity', sex_any: 'Sexual content',
@@ -50,15 +50,16 @@ export function rowStatus(r) {
   if (v === 'ignore') return { glyph: '–', word: 'Ignored', tone: 'done' };
   if (v === 'redo') return { glyph: '↻', word: 'Redo', tone: 'redo' };
   if (plays(r)) return { glyph: '', word: 'Plays', tone: 'quiet' };
-  // Refine was not sure of this part's timing and nobody has looked yet: amber, by ear or eye.
-  if (needsCheck(r)) return { glyph: '!', word: 'Check', tone: 'check' };
-  return { glyph: '·', word: 'To do', tone: 'open' };
+  // Reviewed or not, and nothing in between (owner, 2026-11-22: "verified or not"). A part refine
+  // could not vouch for keeps that doubt on its timing icon, not in its status.
+  return { glyph: '·', word: 'Not reviewed', tone: 'open' };
 }
 
-export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, selectedId = null, onSelect = () => {},
+export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, selectedId = null, onSelect = () => {}, onEffect = null,
   refining = {}, scope: scopeProp = null, onScope = null, emptyText = null }) {
   // The page owns the scope so the timeline and stepping share it; used on its own the list keeps its own.
   const [own, setOwn] = useState(DEFAULT_SCOPE);
+  const [menuFor, setMenuFor] = useState(null);
   const scope = scopeProp || own;
   const setScope = (patch) => (onScope ? onScope({ ...scope, ...patch }) : setOwn({ ...scope, ...patch }));
   const shown = scopeRows(rows, scope, { refining });
@@ -71,7 +72,7 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
         {stage === 'refine' ? <Text size="xs" fw={600}>Rough or unsure timing</Text>
           // Nothing on Plays is "to do": the box would do nothing there.
           : stage === 'plays' ? <Text size="xs" fw={600}>Play as they are</Text>
-          : <Checkbox size="xs" label="To do only" checked={scope.needs} onChange={(e) => setScope({ needs: e.currentTarget.checked })} />}
+          : <Checkbox size="xs" label="Not reviewed only" checked={scope.needs} onChange={(e) => setScope({ needs: e.currentTarget.checked })} />}
         {check}
         <Group gap={4} wrap="nowrap">
           <Select size="xs" w={160} aria-label="Order" allowDeselect={false} data={ORDER_SCOPES} value={scope.order || 'film'} onChange={(order) => setScope({ order: order || 'film' })} />
@@ -88,8 +89,6 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
           </Popover>
         </Group>
       </Group>
-      {stage === 'plays' ? <Text size="xs" c="dimmed">These play as they are under your settings. Nothing here needs a verdict.</Text> : null}
-      {stage === 'refine' ? <Text size="xs" c="dimmed">Refine measures where each of these parts really starts and ends. The ones marked Check it could not pin: fit those by hand. Verdicts are given on the Review tab.</Text> : null}
       {!shown.length ? <Text size="sm" c="dimmed">{!rows.length && emptyText ? emptyText : stage === 'refine' ? 'Nothing is left to refine.' : 'Nothing here.'}</Text> : (
         <div className="cf-review__rows" role="list">
           {shown.map((r) => {
@@ -97,33 +96,34 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
             const timing = plays(r) ? null : timingState(r);
             const state = refining[r.id];
             const status = rowStatus(r);
-            const facts = [`${timecode(r.in)}–${timecode(r.out)}`, r.group && groupLabel(r.group), MODALITY[r.modality],
-              plays(r) ? (r.why === 'removed' ? 'plays (removed)' : 'plays') : effectWord(r.effect), r.handFixed ? 'hand-fixed' : null].filter(Boolean).join(' · ');
+            const fx = effectChip(r.effect);
             return (
-              <div key={r.id} role="listitem" data-row-id={r.id}
+              <div key={r.id} role="listitem" data-row-id={r.id} title={`${timecode(r.in)}–${timecode(r.out)}`}
                 className={`cf-review__row${selected ? ' is-selected' : ''}${plays(r) ? ' is-plays' : ''}`}>
                 <UnstyledButton onClick={() => onSelect(r)} onMouseDown={(e) => e.preventDefault()} aria-pressed={selected} aria-label={r.label}
-                  className="cf-review__pick" title={selected ? undefined : r.label}>
+                  className="cf-review__pick">
                   <span className="cf-review__glyph" data-status={status.word}><StatusIcon status={status} /></span>
                   <span className="cf-review__time">{timecode(r.in)}</span>
-                  <span className="cf-review__fx"><EffectIcon row={r} /><ChannelIcon row={r} /></span>
-                  <span className="cf-review__label">{r.label}</span>
+                  <span className="cf-review__label" title={r.label}>{r.label}</span>
                   <span className="cf-review__marks">
-                    {/* Every row keeps its word beside the icon (owner, 2026-11-22: "should have a word too"). */}
                     <span className={`cf-review__status is-${status.tone}`}>{status.word}</span>
-                    {state ? <span className="cf-review__refining" title={state}><RefiningIcon state={state} />{selected ? null : <VisuallyHidden>{state}</VisuallyHidden>}</span>
+                    {state ? <span className="cf-review__refining" title={state}><RefiningIcon state={state} /><VisuallyHidden>{state}</VisuallyHidden></span>
                       : timing ? <TimingIcon row={r} /> : null}
                   </span>
-                  {selected ? (
-                    <span className="cf-review__more">
-                      <Text size="xs" c="dimmed" span>{facts}</Text>
-                      {state ? <Badge size="xs" color="blue" variant="light">{state}</Badge>
-                        : timing ? <span className={`cf-review__timing is-${timing.key}${timing.unsure ? ' is-unsure' : ''}`}>{timing.word}</span> : null}
-                      {r.unsure.filter((u) => !(u === 'safe-window' && r.timing === 'safe-window') && !(u === 'refine-giveup' && timing?.word === 'Word not found')).map((u) => <Badge key={u} size="xs" color="orange" variant="light">{UNSURE_LABELS[u] || u}</Badge>)}
-                      {r.card ? <Text size="xs" c="dimmed" span>{r.card.approved ? 'Card: ' : 'Draft card: '}{r.card.text}</Text> : null}
-                    </span>
-                  ) : null}
                 </UnstyledButton>
+                <span className="cf-review__fx">
+                  {onEffect && !plays(r) ? (
+                    <EffectMenu row={r} opened={menuFor === r.id} onChange={(o) => setMenuFor(o ? r.id : null)} position="bottom-end"
+                      onPick={(letter) => onEffect(r, letter)}
+                      target={(
+                        <UnstyledButton className="cf-review__fx-btn" aria-label={`Effect: ${fx}`} title={`${fx}: click to change`}
+                          onMouseDown={(e) => e.preventDefault()} onClick={() => { if (!selected) onSelect(r); }}>
+                          <EffectIcon row={r} />
+                        </UnstyledButton>
+                      )} />
+                  ) : <EffectIcon row={r} />}
+                  <ChannelIcon row={r} />
+                </span>
               </div>
             );
           })}

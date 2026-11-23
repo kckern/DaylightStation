@@ -4,7 +4,7 @@ import { Sheet } from '../../../lib/ui/Sheet.jsx';
 
 const REDO_REASONS = [['1', 'edges'], ['2', 'category'], ['3', 'action'], ['4', 'timing']];
 const KEYMAP = [
-  ['Space', 'Play / pause the film'], ['Enter', 'Play this part with its effect (from 4 s before)'], ['W', 'Play this part without the effect'],
+  ['Space', 'Play / pause the film'], ['Enter', 'Play this part with its effect (from 4 s before)'], ['W', 'Play this part unfiltered (the effect off)'], ['E', 'Open the effect menu'], ['S', 'Save timing (every dragged part)'],
   ['→ / ←', 'Next / previous part'], ['A', 'Approve (fine as it is)'], ['X', 'Let it play (take the filter off)'],
   ['D', 'Redo, then 1 edges, 2 category, 3 action, 4 timing, Enter no reason'], ['U', 'Undo the last verdict'],
   ['R', 'Refine this part (measure its timing)'], ['Shift+R', 'Refine every filtered part still on rough timing; confirms if any has hand-fixed timing'],

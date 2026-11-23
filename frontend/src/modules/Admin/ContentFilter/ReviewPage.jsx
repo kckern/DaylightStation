@@ -51,6 +51,11 @@ function FilmReview({ ratingKey, rowId, owner }) {
   const { data, loading, error, reload, refresh, poll } = useApiResource(url, { label: 'review', logger, dedupe: false });
   const [selected, setSelected] = useState(null);
   const [notice, setNotice] = useState(null);
+  const [unfiltered, setUnfiltered] = useState(false);
+  const unfilteredTimer = useRef(null);
+  useEffect(() => () => clearTimeout(unfilteredTimer.current), []);
+  // The part card's E (effect menu) and S (save timing), held while the card is mounted.
+  const cardPorts = useRef({});
   const activeView = useRef(true);
   const approval = useFilmApproval({ ratingKey, owner, data, error, reload, activeView });
   const running = data?.job && (data.job.status === 'queued' || data.job.status === 'running');
@@ -89,7 +94,21 @@ function FilmReview({ ratingKey, rowId, owner }) {
   const stage = station.scope.stage;
   // On Approve the part card is not on screen, so the keys that act on a part are off; Space still
   // plays and pauses the film, and ? still lists the keys.
-  const { redoOpen, openRedo, closeRedo } = useReviewKeys(station.handlers, {
+  const row0 = data?.rows?.find((r) => r.id === selected?.id) || null;
+  // Unfiltered (W): the part plays from 4 s before with its effect off; the button and the player
+  // say so until it has played through (Fable design 2026-11-22: "a way to watch it unfiltered").
+  const playUnfiltered = () => {
+    if (!row0) return;
+    station.handlers.playWithout();
+    setUnfiltered(true);
+    clearTimeout(unfilteredTimer.current);
+    const ms = (Math.max(0, (row0.out ?? row0.in) - row0.in) + 4 + 1) * 1000;
+    unfilteredTimer.current = setTimeout(() => setUnfiltered(false), ms);
+    logger.info('content_filter.review.unfiltered', { rk: ratingKey, rowId: row0.id });
+  };
+  const keyHandlers = { ...station.handlers, playWithout: playUnfiltered,
+    openEffect: () => cardPorts.current.openEffect?.(), saveTiming: () => cardPorts.current.saveTiming?.() };
+  const { redoOpen, openRedo, closeRedo } = useReviewKeys(keyHandlers, {
     enabled: Boolean(data?.rows), partKeys: stage !== 'approve', redoOwner: `${ratingKey}\u001f${selected?.id ?? ''}`,
   });
   useVisibleRefresh({ active: Boolean(waiting), intervalMs: POLL_MS, reload, poll });
@@ -121,9 +140,15 @@ function FilmReview({ ratingKey, rowId, owner }) {
   const keyBar = <ReviewKeyBar redoOpen={redoOpen} helpOpen={station.helpOpen} onCloseHelp={station.handlers.escape}
     message={station.message} previewRecovery={station.previewRecovery} onRedo={onRedo} />;
   // The Redo button asks for a reason like D does.
-  const cardHandlers = { ...station.handlers, redo: openRedo };
+  const cardHandlers = { ...keyHandlers, redo: openRedo };
   return (
-    <div className="cf-review-page">
+    // A pointer never moves focus on this page (Space then pauses the film and outlines nothing);
+    // text fields and menus keep theirs.
+    <div className="cf-review-page" onMouseDown={(e) => {
+      const t = e.target;
+      if (t.closest?.('input, textarea, select, [role="menu"], [role="dialog"]')) return;
+      if (t.closest?.('button, [role="slider"], [role="tab"], [data-mark], .cf-timeline__track, .cf-strip__track, .cf-review__player')) e.preventDefault();
+    }}>
       <ReviewHeader ratingKey={ratingKey} data={data} stage={stage} roughFiltered={roughFiltered} handlers={{ ...station.handlers, rework: station.rework }} blocked={notMatched}
         onChanged={reload} flagged={station.flagged} refineAllCount={station.refineAllCount} />
       <ReviewRail stages={station.stages} plays={data.rows.filter(plays).length} value={stage} onChange={station.setStage} />
@@ -131,7 +156,7 @@ function FilmReview({ ratingKey, rowId, owner }) {
       {notice ? <Text size="sm" role="status">{notice}</Text> : null}
       <div className="cf-review" id={PANEL_ID} role="tabpanel" aria-labelledby={tabId(stage)}>
         <div className="cf-review__side">
-          <ReviewPlayer ratingKey={ratingKey} />
+          <ReviewPlayer ratingKey={ratingKey} unfiltered={unfiltered} />
           {data.rows.length ? <ReviewTimeline rows={station.scoped} selectedId={row?.id ?? null} onSelect={pickPart} /> : null}
           {stage === 'approve' ? (
             <>
@@ -143,11 +168,12 @@ function FilmReview({ ratingKey, rowId, owner }) {
               wordRulings={data.wordRulings || {}} handlers={cardHandlers} canUndo={station.canUndo} stage={stage}
               position={index >= 0 ? { index, total: station.scoped.length } : null}
               refineState={refining[row.id] ? { state: refining[row.id] } : null}
-              status={keyBar} />
+              status={keyBar} neighbours={data.rows} ports={cardPorts} unfiltered={unfiltered} />
           ) : keyBar}
         </div>
         <ReviewList rows={data.rows} reviewed={data.reviewed} total={data.total} audit={data.audit}
           selectedId={row?.id ?? null} onSelect={pickPart} scope={station.scope} onScope={station.setScope} refining={refining}
+          onEffect={stage === 'approve' ? null : (r, letter) => station.handlers.effect?.(letter, r)}
           emptyText={EMPTY[data.status?.next] || null} />
       </div>
     </div>

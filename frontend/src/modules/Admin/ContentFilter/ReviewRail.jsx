@@ -43,7 +43,7 @@ export function ReviewRail({ stages = [], plays = 0, value, onChange = () => {} 
           <span className="cf-rail__in">
             <span className="cf-rail__mark" aria-hidden="true">{s.check ? '!' : MARK[s.state] || i + 1}</span>
             <span className="cf-rail__name">{s.label}</span>
-            <VisuallyHidden>{`, ${s.check ? 'to check' : STATE_WORD[s.state]}: `}</VisuallyHidden>
+            <VisuallyHidden>{`, ${s.check ? 'timing unsure' : STATE_WORD[s.state]}: `}</VisuallyHidden>
             <span className="cf-rail__text">{s.text}</span>
           </span>
         </button>

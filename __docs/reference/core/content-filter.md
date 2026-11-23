@@ -1041,7 +1041,7 @@ rough. It carries no status badge: where the film stands is said once, by the ra
 Refine all filtered parts again, Refine the whole film (every part, slow), "Re-refine N parts marked
 Redo" (only while some are), bleep quieter/louder and All keys. A film not matched to Plex offers
 no runs. The page uses the whole window (no 1200 px page cap); the list column grows with it
-(340 px to 620 px).
+(380 px to 520 px).
 
 **Stage rail** (`ReviewRail.jsx`, `railStages.js`; owner 2026-11-22: "a process chevron interlocking
 rail that also serves as tabs"). Directly under the header, one 36 px row: three interlocking
@@ -1053,8 +1053,8 @@ Filtered / Plays control.
 
 | Stage | What it says (`railStages`) | Selecting it shows |
 |-------|-----------------------------|--------------------|
-| Refine | "16 to refine"; the run's own words while one is open (`runState`: "Refining 10 of 18 · about 4 min left"); "Stuck: no progress for 45 min" / "Filter worker not running"; "Done", or "7 to check by ear or eye" with an amber "!" in place of the check while parts refine could not vouch for wait for a look ("15 to refine · 1 to check" while both remain); "Not refined yet"; "… not matched to Plex" | The filtered parts on rough timing or with a `refine-*` reason (never a true scene) plus any part in a refine or queued for one. The header's Refine all sits here; the card shows no verdict buttons |
-| Review | "0 of 16 reviewed" (with "· refine first" while refine has parts left); "Nothing is filtered"; with no parts yet, why ("Checking the result…", "Nothing until the film is refined") | The filtered parts: To do only, order |
+| Refine | "16 to refine"; the run's own words while one is open (`runState`: "Refining 10 of 18 · about 4 min left"); "Stuck: no progress for 45 min" / "Filter worker not running"; "Done", or "7 with unsure timing" with an amber "!" in place of the check while parts refine could not vouch for wait for a look ("15 to refine · 1 timing unsure" while both remain); "Not refined yet"; "… not matched to Plex" | The filtered parts on rough timing or with a `refine-*` reason (never a true scene) plus any part in a refine or queued for one. The header's Refine all sits here; the card shows no verdict buttons |
+| Review | "0 of 16 reviewed" (with "· refine first" while refine has parts left); "Nothing is filtered"; with no parts yet, why ("Checking the result…", "Nothing until the film is refined") | The filtered parts: Not reviewed only, order |
 | Approve | "Not yet: " + the first `signOff.missing` line; "Ready"; "Approved by …" | The sign-off panel in place of the part card (`ApprovePanel`): what is missing with a **Review the N parts without a verdict** button back to Review, **Approve for family** when the sign-off would be accepted, or Withdraw approval |
 | Plays n | the count | The parts that play (browse only) |
 
@@ -1071,40 +1071,67 @@ the part card is not on screen, so the part keys are off (`useReviewKeys` `partK
 still plays and pauses the film and `?` lists the keys. Picking a part from the list or the
 timeline goes back to Review (or Plays).
 
-**To check.** A filtered part refine left a `refine-*` reason on (word not found, coarse edges,
-unknown) is not "done" whatever its timing field says: until it has a verdict or a hand fix it is
-*to check* (`reviewScope.js` `needsCheck`). The rail counts these, the list marks them "Check" in
-amber, and the card's timing chip is amber and in words ("Word not found", "Rough after refine",
-"Check timing"), never a green "Safe window". Every change logs `content_filter.review.stage_tab`
-(`stage`, `from`, `via`: default / click / key / part, `shown`).
+**Reviewed or not** (owner, 2026-11-22: "verified or not"). A part's status is one of **Not
+reviewed**, **Approved**, **Let play** or **Redo** (and Plays for a part that plays); there is no
+"To do" / "Check" split. A filtered part refine left a `refine-*` reason on (word not found, coarse
+edges, unknown) keeps that doubt on its **timing**: the list's timing icon and the card's timing chip
+are amber, in words ("Word not found", "Rough after refine", "Timing unsure", tooltip "Timing
+unsure: listen before approving"), never a green "Safe window". The rail still counts these parts
+(`reviewScope.js` `needsCheck`) as "n with unsure timing". Every tab change logs
+`content_filter.review.stage_tab` (`stage`, `from`, `via`: default / click / key / part, `shown`).
 
-Below it, the film (16:9, at most 40vh tall), the timeline and the part card share a sticky column
-that does not scroll at 1440x900; the list beside it scrolls alone. Arriving without a permalink
-selects the first part still to do on the opening tab (no URL change) and puts the film 4 s before
-it, **paused** (`previewStore.jumpToCue(cue, { play: false })`): the film never plays from 0:00
-under another part's card. A paused film is the frame under review, so in the review player the
-Player's pause overlay is a small badge in the corner and nothing dims the picture (scoped CSS under
-`.cf-review__player`; every other player keeps its scrim). `FilmStatusCard`
-(three meters) is no longer on the page.
+**Layout** (Fable design 2026-11-22, owner: "no vertical scroll at all"). The page is exactly the
+window: `.cf-review-page` is `100dvh` less the Admin breadcrumb bar and 24 px of padding, and
+nothing scrolls but the list's rows. At 1440x900: header 40, rail 36, then a 736 px work area of the
+film (`minmax(0, 1fr)`, 16:9, about 668x388), the two timeline lanes (Film and Near, 24 px each),
+and the 280 px part card; the list is `clamp(380px, 30vw, 520px)` wide. Arriving without a
+permalink selects the first part still to do on the opening tab (no URL change) and puts the film
+4 s before it, **paused** (`previewStore.jumpToCue(cue, { play: false })`). A paused film is the
+frame under review, so the Player's pause overlay is a small corner badge and nothing dims the
+picture (scoped CSS under `.cf-review__player`).
 
-**Part card** (`RowEditor.jsx`): "Part 6 of 17" with ‹ Prev / Next › (the span is shown once, on the timing row); title (whole label);
-chips (effect or Plays, timing, hand-fixed, verdict); group · modality · category; the **why line**
-(`whyLine.js`) — one sentence on why the part gets its effect and whether refining helps (a rough
-word skipped as an exchange: "Rough timing makes this a 6.0 s part, too long to bleep, so it is
-skipped for now. Refine pins the word so it becomes a short bleep.") — with **Refine this part (R)**
-beside it (filled only when refining is the fix; a quiet "Refine again" once refined or once refine
-has tried the part and left it rough, where the line reads "Refine couldn't pin this; drag the
-handles to fit it by eye."; its run state in place of the button: Waiting / Refining… / Queued). A
-skip is "behind a card" only when the part has a card. Effect buttons with their keys (by channel: said parts
-`M` mute, `P` bleep, `K` skip, `O` off; shown `B` blur, `H` hide picture, `K` skip, `O` off; true scenes `K` skip, `B`
-hide picture, `O` off; plus Settings); the button of the part's effect is lit (`effectButton`: a
-full blur lights Blur, a skip behind a card Skip); the card text for a skip; the **timing strip** with the edited
-span ("44:24.30–44:25.10, 0.8 s"), Save timing (enabled once the span changed) and Drop hand fix; "More for this word" (this word in this film, all
-words of its group); the verdicts **Approve (A) / Let it play (X) / Redo (D) / Undo (U)** (Redo opens
-the same reason prompt as `D`, whose reasons are also buttons; on the Refine tab there are no verdict
-buttons and `A` / `X` / `D` say "Verdicts are given on the Review tab."); and a hint
-line (Space, Enter, W, ← →, ?). A word skipped as an exchange is listed with scenes but is a cue:
-`isSceneRow` (no members, not `cue:`) decides scene handling, `keysKindOf` the effect keys.
+**Focus.** Only controls take focus; a pointer press on a button, mark, handle, track or the player
+never moves focus (`.cf-review-page` mousedown), so Space always pauses and outlines nothing; a ring
+shows only for the keyboard (`:focus-visible`). Text fields and menus keep their own focus.
+
+**Timeline** (`ReviewTimeline.jsx`): two lanes, **Film** (the whole film) and **Near** (90 s around
+the part in hand; its range is the label's tooltip, so the label never changes width). Everything
+on a lane goes somewhere when clicked (owner: "anything on a timeline, you click it, it should go
+there"): a mark, or a click within 6 px of one, takes that part and seeks to it; a click on empty
+track seeks the film to that time and keeps the part in hand. Each mark has a 12 px hit pad; both
+lanes draw the film's playhead.
+
+**List** (`ReviewList.jsx`): one 32 px line per part (status, time, effect and channel icons,
+label, status word, timing icon), the part in hand marked but never expanded (the card carries its
+details). The **effect icon is a control**: it takes that row in hand and opens the effect menu.
+
+**Part card** (`RowEditor.jsx`), one 280 px panel of five lines, none of which grows:
+
+1. **Identity**: the **effect button** (icon, word, ▾, `E`) that opens the **effect menu**; the
+   label (two lines at most, the span in its tooltip); the channel icon (group and channel in its
+   tooltip); the timing chip; `5/17`; ‹ › (← →).
+2. **Why** (`whyLine.js`, one line, full text in its tooltip) and **Refine (R)**: filled only when
+   refining is the fix, a quiet "Refine again" once refine has tried the part, its run state in
+   place of the button (Waiting / Refining… / Queued).
+3. **Timing**: the strip, and **Save timing (S)** (it reads "Save 2 timings" when neighbours were
+   dragged too) with **Undo drag** while a draft is open or **Reset** (drop the hand fix).
+4. **Actions**: ▶ (Space), **Filtered (Enter)**, **Unfiltered (W)** | **Approve (A)**, **Let it play
+   (X)**, **Redo (D)** (the reason prompt), ↶ (U). On the Refine tab there are no verdict buttons.
+5. **Status**: the station's last message, the redo reasons, notices and run notes, one line.
+
+The **effect menu** (`EffectMenu.jsx`; a menu, not a cycle, so no effect is saved on the way): the
+effects that fit the part's channel with their keys (said `M` mute, `P` bleep, `K` skip, `O` off;
+shown `B` blur, `H` hide picture, `K` skip, `O` off; true scenes `K` skip, `B` hide picture, `O`
+off), the current one checked; then **Use household settings**; for a word, this word in this film
+(Use settings / Play / Mute / Bleep this word) and all of its group in this film (Play / Mute /
+Bleep them all); for a skip, the card shown in place of it (a popover with Approve card, Draft,
+Withdraw). The effect keys work with the menu closed. A word skipped as an exchange is listed with
+scenes but is a cue: `isSceneRow` (no members, not `cue:`) decides scene handling, `keysKindOf` the
+effect keys.
+
+**Unfiltered (W)** plays the part from 4 s before with its effect off (`previewStore.peek`); while
+it plays the player carries an amber **Unfiltered** badge and outline and the button is pressed
+(`content_filter.review.unfiltered`).
 
 **Refine** (`useReviewStation.js`): R sends a send-back of the part's member cues (on a hand-fixed
 part, the first R warns that refining drops the hand fix and the second sends); Shift+R (on any tab),
@@ -1151,23 +1178,28 @@ same per-film write queue as verdicts (`titleQueue`), so a verdict cannot land b
 its write.
 
 **Timing strip** (`TimingStrip.jsx`; owner 2026-11-22: "a mini timeline with handlebars i can
-drag"). A window around the part (the part ± 6 s, or ± half its length for a long one, at least 12 s
-wide) with a tick every second and a label every 5 s (coarser on long windows), the span as a band
-with a handle at each end, the film's playhead (read every 100 ms) and, once the span is edited, a
-thin line under the band where the saved span is. Drag a handle (pointer events with pointer capture;
-the window holds still during a drag and widens by 3 s when a handle is let go at its edge), or Tab
-to it (`role="slider"`, "Start" / "End"): `←` `→` move it 0.1 s, with Shift 0.5 s, `Home` / `End` put
-it at the playhead ("set start / end here"), `Esc` lets go of it. The start stays at least 0.05 s
-before the end. A click on the strip seeks the film there. While a handle has keyboard focus the station's
-`←` `→` do not step parts (`useReviewKeys` leaves them to a focused slider or rail tab); a handle
-dragged with the pointer takes no focus and loses any it had on release, so after a drag `←` `→`
-step parts again. A tick in the last seventh of the track carries no label (it would run over the
-readout). Times from an hour on read `h:mm:ss`. The strip
-only edits the span; Save timing posts `nudge: { in, out }` to `PUT /:rk/cues/:id` or `/scenes/:id`
-as before, and a run locks the strip with the rest of the timing.
+drag", and Fable design 2026-11-22). It fills its grid cell (the strip track is about 500 px for a
+12 s window at 1440x900) and carries **no timecode readout**: the readout changed width and shook
+the row. A window around the part (the part ± 6 s, or ± half its length for a long one, at least
+12 s wide) with a tick every second and a label every 5 s (coarser on long windows); the part in
+hand as a solid band with white handles; **every other filtered part that overlaps the window** in
+its effect family's colour (owner: two bleeps close together must both show and be adjustable),
+one-cue neighbours with their own thinner handles, multi-cue ones hatched with none; the film's
+playhead (amber, read every 100 ms) and, once the span is edited, a thin line where the saved span
+is. A handle's hit is 20 px and the track's full height, biased outward (Start reaches left, End
+right) so two close handles never cover each other; a grab keeps its offset (the edge does not jump
+to the pointer); while dragging, a bubble shows the edge's time and the paused film follows the
+handle (`previewStore.seekTo`, every 100 ms). The window holds still during a drag and widens by
+3 s when a handle is let go at its edge. Keyboard: Tab to a handle (`role="slider"`, "Start" / "End",
+a neighbour's "heck: Start"): `←` `→` move it 0.1 s, with Shift 0.5 s, `Home` / `End` put it at the
+playhead, `Esc` lets go of it. The start stays at least 0.05 s before the end. A click on the strip
+seeks the film there. While a handle has keyboard focus the station's `←` `→` do not step parts; a
+handle dragged with the pointer takes no focus. Every dragged span is a draft until **Save timing
+(S)** writes each changed part (`nudge: { in, out }` to `PUT /:rk/cues/:id` or `/scenes/:id`), as
+one action; a run locks the strip with the rest of the timing.
 
-**Unsaved timing holds the cursor.** While the span differs from the saved one, stepping (keys,
-Prev / Next), picking another part (list, timeline), changing tab, a verdict, Undo and Refine all
+**Unsaved timing holds the cursor.** While any span in the strip differs from its saved one, stepping (keys,
+‹ ›), picking another part (list, timeline), changing tab, a verdict, Undo and Refine all
 stop with "Unsaved timing: Save or press Esc to drop it" (`content_filter.review.unsaved_timing_blocked`,
 `what`); `Esc` drops the change (`…unsaved_timing_dropped`). Nothing is discarded without a word.
 

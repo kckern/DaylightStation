@@ -124,7 +124,7 @@ describe('FilterLibrary', () => {
     const f = (o) => ({ stage: 'machine', job: null, reviewed: { n: 0, m: 18 }, rail: { toRefine: 0, toCheck: 0, redo: 0 }, ...o });
     expect(cardStep(f({ rail: { toRefine: 15, toCheck: 0, redo: 0 } })).text).toBe('15 to refine');
     expect(cardStep(f({})).text).toBe('0 of 18 reviewed');
-    expect(cardStep(f({ reviewed: { n: 4, m: 18 }, rail: { toRefine: 0, toCheck: 7, redo: 0 } }))).toMatchObject({ text: '4 of 18 reviewed', note: '7 to check' });
+    expect(cardStep(f({ reviewed: { n: 4, m: 18 }, rail: { toRefine: 0, toCheck: 7, redo: 0 } }))).toMatchObject({ text: '4 of 18 reviewed', note: '7 timing unsure' });
     expect(cardStep(f({ reviewed: { n: 18, m: 18 } }))).toMatchObject({ text: 'Ready', tone: 'ready' });
     expect(cardStep(f({ reviewed: { n: 18, m: 18 }, rail: { toRefine: 0, toCheck: 0, redo: 2 } })).text).toBe('2 marked Redo');
     expect(cardStep(f({ reviewed: { n: 18, m: 18 }, stage: 'audited' })).text).toBe('Not ready yet');

@@ -1,6 +1,6 @@
 import {
   IconAlertTriangle, IconBlur, IconBracketsContain, IconCircle, IconCircleCheck, IconCircleDashed, IconClock, IconEar, IconEye, IconEyeOff,
-  IconFilterOff, IconLoader2, IconMessage, IconMinus, IconPlayerPlay, IconPlayerSkipForward, IconRefresh, IconTarget, IconVolumeOff, IconWaveSine,
+  IconLoader2, IconMessage, IconMinus, IconPlayerPlay, IconPlayerSkipForward, IconRefresh, IconTarget, IconVolumeOff, IconWaveSine,
 } from '@tabler/icons-react';
 import { effectChip } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 import { plays, triedRefine } from './reviewScope.js';
@@ -22,8 +22,7 @@ export const effectFamily = (row) => (plays(row) ? null : EFFECT[row?.effect]?.f
 
 const CHANNEL = { said: { Icon: IconMessage, word: 'Said' }, heard: { Icon: IconEar, word: 'Heard' }, shown: { Icon: IconEye, word: 'Shown' } };
 const STATUS = {
-  Approved: IconCircleCheck, 'Let play': IconFilterOff, Ignored: IconMinus, Redo: IconRefresh, Plays: IconPlayerPlay, 'To do': IconCircle,
-  Check: IconAlertTriangle,
+  Approved: IconCircleCheck, 'Let play': IconCircleCheck, Ignored: IconMinus, Redo: IconRefresh, Plays: IconPlayerPlay, 'Not reviewed': IconCircle,
 };
 const REFINING = { 'Refining…': IconLoader2, Waiting: IconClock, Queued: IconClock };
 
@@ -38,7 +37,7 @@ export function timingState(row) {
   if (triedRefine(row) && !row.handFixed) {
     if ((row.unsure || []).includes('refine-giveup')) return { key: 'unsure', word: 'Word not found', Icon: IconAlertTriangle, unsure: true };
     if (row.timing === 'rough') return { key: 'rough-left', word: 'Rough after refine', Icon: IconAlertTriangle, unsure: true };
-    return { key: 'unsure', word: 'Check timing', Icon: IconAlertTriangle, unsure: true };
+    return { key: 'unsure', word: 'Timing unsure: listen before approving', Icon: IconAlertTriangle, unsure: true };
   }
   if (row.timing === 'refined') return { key: 'refined', word: 'Refined', Icon: IconTarget };
   if (row.timing === 'safe-window') return { key: 'safe-window', word: 'Safe window', Icon: IconBracketsContain };
@@ -90,10 +89,8 @@ const sample = (Icon, className) => <span className={`cf-ico ${className}`} aria
 /** The icon key behind the list's "?": [title, [[icon, words], …]]. */
 export const LEGEND = [
   ['Where it stands', [
-    [sample(IconCircle, 'cf-ico--status is-open'), 'To do'],
-    [sample(IconAlertTriangle, 'cf-ico--status is-check'), 'Check: refine was unsure'],
-    [sample(IconCircleCheck, 'cf-ico--status is-done'), 'Approved'],
-    [sample(IconFilterOff, 'cf-ico--status is-done'), 'Let play (your verdict)'],
+    [sample(IconCircle, 'cf-ico--status is-open'), 'Not reviewed'],
+    [sample(IconCircleCheck, 'cf-ico--status is-done'), 'Approved, or Let play: reviewed'],
     [sample(IconRefresh, 'cf-ico--status is-redo'), 'Redo'],
     [sample(IconPlayerPlay, 'cf-ico--status is-quiet'), 'Plays under your settings'],
   ]],
@@ -113,7 +110,7 @@ export const LEGEND = [
     [sample(IconTarget, 'cf-ico--timing is-refined'), 'Refined'],
     [sample(IconBracketsContain, 'cf-ico--timing is-safe-window'), 'Safe window (a little wide on purpose)'],
     [sample(IconCircleDashed, 'cf-ico--timing is-rough'), 'Rough: not refined yet'],
-    [sample(IconAlertTriangle, 'cf-ico--timing is-rough-left'), 'Unsure after refine: check it'],
+    [sample(IconAlertTriangle, 'cf-ico--timing is-rough-left'), 'Timing unsure: listen before approving'],
     [sample(IconLoader2, 'cf-ico--refining'), 'Refining now'],
     [sample(IconClock, 'cf-ico--refining'), 'Waiting for a refine'],
   ]],

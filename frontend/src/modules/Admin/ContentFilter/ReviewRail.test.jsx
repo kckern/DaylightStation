@@ -39,7 +39,7 @@ describe('railStages: each stage says only what the data says', () => {
     ]);
   });
   it('parts to refine and parts refine could not pin are both counted', () => {
-    expect(stagesOf({ roughRefine: 15, roughLeft: 1 })[0]).toEqual(['refine', 'current', '15 to refine · 1 to check']);
+    expect(stagesOf({ roughRefine: 15, roughLeft: 1 })[0]).toEqual(['refine', 'current', '15 to refine · 1 timing unsure']);
   });
   it('a refine in progress shows the run\'s own words', () => {
     const job = { status: 'running', step: 'refine', steps: [{ name: 'refine', progress: { phase: 'measure', done: 10, total: 18 } }] };
@@ -60,7 +60,7 @@ describe('railStages: each stage says only what the data says', () => {
   });
   it('refine done with parts it could not pin: not "Done" but how many to check; Review is in hand', () => {
     expect(stagesOf({ roughLeft: 3 }).slice(0, 2)).toEqual([
-      ['refine', 'complete', '3 to check by ear or eye'],
+      ['refine', 'complete', '3 with unsure timing'],
       ['review', 'current', '0 of 16 reviewed'],
     ]);
     const [refine] = railStages({ data: film([row('cue:a', 'a')]), tally: { done: 0, total: 16 }, roughLeft: 3 });
@@ -105,7 +105,7 @@ describe('ReviewRail: the stages are tabs', () => {
     // Parts refine could not pin: an amber "!" and a count, never a plain green check.
     expect(within(tab('Refine')).getByText('!')).toBeTruthy();
     expect(tab('Refine').className).toContain('has-check');
-    expect(tab('Refine').textContent).toMatch(/3 to check by ear or eye/);
+    expect(tab('Refine').textContent).toMatch(/3 with unsure timing/);
     expect(tab('Review').textContent).toMatch(/4 of 16 reviewed/);
     expect(tab('Plays').textContent).toBe('Plays 135');
     // Only the open tab is in the Tab order (roving focus).

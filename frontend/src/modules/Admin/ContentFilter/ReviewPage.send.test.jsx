@@ -41,7 +41,7 @@ describe('refine from the review page', () => {
     payload = base(rows);
     render(ui());
     fireEvent.click(screen.getByRole('button', { name: 'L*rd' }));
-    fireEvent.click(screen.getByRole('button', { name: /^Refine this part/ }));
+    fireEvent.click(within(document.querySelector('.cf-card-part')).getByRole('button', { name: /^Refine/ }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0].body).toEqual({ kind: 'send-back', cues: ['l'] });
   });
@@ -162,7 +162,7 @@ describe('refine from the review page', () => {
     payload = base([tried], { status: { next: 'approve' }, signOff: { ready: true, missing: [], parent: null } });
     render(ui());
     expect(screen.queryByRole('button', { name: /^Refine all/ })).toBeNull();
-    expect(screen.getByRole('tab', { name: /^Refine/ }).textContent).toMatch(/1 to check by ear or eye/);
+    expect(screen.getByRole('tab', { name: /^Refine/ }).textContent).toMatch(/1 with unsure timing/);
     expect(screen.getByRole('tab', { name: /^Refine/ }).getAttribute('data-check')).toBe('1');
     expect(screen.getByRole('tab', { name: /^Approve/ }).getAttribute('data-state')).toBe('current');
     fireEvent.click(screen.getByRole('tab', { name: /^Approve/ }));

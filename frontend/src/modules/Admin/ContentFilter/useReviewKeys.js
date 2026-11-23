@@ -113,6 +113,8 @@ export function useReviewKeys(handlers, { enabled = true, partKeys = true, redoO
       if (lower === 'd') return take(() => openRedo(true));
       if (lower === 'u') return take(h.undo);
       if (lower === 'w') return take(h.playWithout);
+      if (lower === 'e') return take(h.openEffect);
+      if (lower === 's') return take(h.saveTiming);
       if (EFFECT_KEYS.has(lower)) return take(() => h.effect?.(lower));
     };
     document.addEventListener('keydown', onKey, true);

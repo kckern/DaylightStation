@@ -1,20 +1,45 @@
+import { useEffect, useRef, useState } from 'react';
 import { Text } from '@mantine/core';
+import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 import { plays, rowAction } from './reviewScope.js';
 import { timecode } from './ReviewList.jsx';
 
 /**
  * Two lanes for the rows in the current scope: the whole film, and a window around the cursor.
- * A mark is a button (click = move the cursor there); colour = action, a ring = the cursor, a dot
- * = a verdict is in, a danger edge = redo. Geometry only; the page owns the cursor.
+ * Everything on a lane goes somewhere when clicked (owner, 2026-11-22: "anything on a timeline, you
+ * click it, it should go there"): a mark, or a click within 6 px of one, takes that part (and the
+ * film seeks to it); a click on empty track seeks the film there and keeps the part in hand.
+ * Colour = action, a ring = the cursor, faded = a verdict is in, an orange edge = redo; the amber
+ * line is the film's playhead.
  */
 export const WINDOW_SEC = 90;
+const NEAR_PX = 6;
+const PLAYHEAD_MS = 250;
 const pct = (v) => `${Math.max(0, Math.min(100, v * 100))}%`;
 
-function Lane({ name, label, rows, from, span, selectedId, onSelect }) {
+function Lane({ name, label, title, rows, from, span, selectedId, onSelect, now }) {
+  const track = useRef(null);
+  const pick = (e) => {
+    if (e.target.closest?.('[data-mark]')) return;
+    const box = track.current?.getBoundingClientRect();
+    if (!box?.width) return;
+    const x = Math.min(Math.max(e.clientX - box.left, 0), box.width);
+    const t = from + (x / box.width) * span;
+    // The nearest mark within reach takes the click; otherwise the film goes to that time.
+    let best = null;
+    for (const r of rows) {
+      const a = ((r.in - from) / span) * box.width;
+      const b = (((Number.isFinite(r.out) ? r.out : r.in) - from) / span) * box.width;
+      const d = x < a ? a - x : x > b ? x - b : 0;
+      if (d <= NEAR_PX && (!best || d < best.d)) best = { r, d };
+    }
+    if (best) onSelect(best.r);
+    else previewStore.seekTo(Math.round(t * 10) / 10);
+  };
   return (
     <div className="cf-timeline__lane" data-lane={name}>
-      <span className="cf-timeline__label">{label}</span>
-      <div className="cf-timeline__track">
+      <span className="cf-timeline__label" title={title}>{label}</span>
+      <div className="cf-timeline__track" ref={track} onClick={pick} onMouseDown={(e) => e.preventDefault()} title={title}>
         {rows.map((r) => {
           const out = Number.isFinite(r.out) ? r.out : r.in;
           const cls = ['cf-timeline__mark', plays(r) ? 'is-plays' : `is-${rowAction(r) || 'other'}`,
@@ -27,12 +52,18 @@ function Lane({ name, label, rows, from, span, selectedId, onSelect }) {
               onMouseDown={(e) => e.preventDefault()} onClick={() => onSelect(r)} />
           );
         })}
+        {now != null && now >= from && now <= from + span ? <span className="cf-timeline__playhead" style={{ left: pct((now - from) / span) }} /> : null}
       </div>
     </div>
   );
 }
 
 export function ReviewTimeline({ rows = [], selectedId = null, onSelect = () => {} }) {
+  const [now, setNow] = useState(() => previewStore.currentTime());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(previewStore.currentTime()), PLAYHEAD_MS);
+    return () => clearInterval(timer);
+  }, []);
   if (!rows.length) return <Text size="sm" c="dimmed">Nothing in this view. Change the filters.</Text>;
   const end = Math.max(1, ...rows.map((r) => (Number.isFinite(r.out) ? r.out : r.in)));
   const cursor = rows.find((r) => r.id === selectedId) || null;
@@ -41,8 +72,8 @@ export function ReviewTimeline({ rows = [], selectedId = null, onSelect = () => 
   const near = rows.filter((r) => r.in >= from && r.in <= from + WINDOW_SEC);
   return (
     <div className="cf-timeline" aria-label="Timeline">
-      <Lane name="film" label="Film" rows={rows} from={0} span={end} selectedId={selectedId} onSelect={onSelect} />
-      <Lane name="window" label={`${timecode(from)}–${timecode(from + WINDOW_SEC)}`} rows={near} from={from} span={WINDOW_SEC} selectedId={selectedId} onSelect={onSelect} />
+      <Lane name="film" label="Film" title={`The whole film, 0:00–${timecode(end)}`} rows={rows} from={0} span={end} selectedId={selectedId} onSelect={onSelect} now={now} />
+      <Lane name="window" label="Near" title={`${timecode(from)}–${timecode(from + WINDOW_SEC)}`} rows={near} from={from} span={WINDOW_SEC} selectedId={selectedId} onSelect={onSelect} now={now} />
     </div>
   );
 }

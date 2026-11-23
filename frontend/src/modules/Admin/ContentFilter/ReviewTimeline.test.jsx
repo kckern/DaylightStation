@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { ReviewTimeline } from './ReviewTimeline.jsx';
+import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 
 const rows = [
   { id: 'cue:a', kind: 'words', label: 'damn', effect: 'mute', in: 10, out: 10.5, verdict: null, reviewed: null },
@@ -44,4 +45,40 @@ describe('ReviewTimeline', () => {
   it('says so when scope is empty', () => {
     show({ rows: [] }); expect(screen.getByText(/Nothing in this view/)).toBeTruthy();
   });
+
+  // Owner, 2026-11-22: "anything on a timeline, you click it, it should go there".
+  describe('a click anywhere on a lane goes there', () => {
+    const BOX = { left: 0, top: 0, width: 960, height: 24, right: 960, bottom: 24, x: 0, y: 0, toJSON: () => ({}) };
+    it('a click on empty track seeks the film to that time and keeps the part in hand', () => {
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(BOX);
+      const seek = vi.spyOn(previewStore, 'seekTo').mockImplementation(() => {});
+      const onSelect = vi.fn(); show({ onSelect });
+      // The film lane spans 0–960 s over 960 px: x = 300 is 300 s, far from every mark.
+      fireEvent.click(document.querySelector('[data-lane="film"] .cf-timeline__track'), { clientX: 300 });
+      expect(seek).toHaveBeenCalledWith(300);
+      expect(onSelect).not.toHaveBeenCalled();
+      vi.restoreAllMocks();
+    });
+    it('a click within 6 px of a mark takes that part', () => {
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(BOX);
+      vi.spyOn(previewStore, 'seekTo').mockImplementation(() => {});
+      const onSelect = vi.fn(); show({ onSelect });
+      fireEvent.click(document.querySelector('[data-lane="film"] .cf-timeline__track'), { clientX: 504 });
+      expect(onSelect).toHaveBeenCalledWith(rows[1]);
+      vi.restoreAllMocks();
+    });
+    it('the window lane is named Near, its range in a tooltip, so its label never changes width', () => {
+      show({ selectedId: 'cue:b' });
+      const label = document.querySelector('[data-lane="window"] .cf-timeline__label');
+      expect(label.textContent).toBe('Near');
+      expect(label.getAttribute('title')).toMatch(/–/);
+    });
+    it('both lanes draw the playhead', () => {
+      vi.spyOn(previewStore, 'currentTime').mockReturnValue(505);
+      show({ selectedId: 'cue:b' });
+      expect(document.querySelectorAll('.cf-timeline__playhead')).toHaveLength(2);
+      vi.restoreAllMocks();
+    });
+  });
 });
+

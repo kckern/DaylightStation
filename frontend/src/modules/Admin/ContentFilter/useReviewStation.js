@@ -243,7 +243,9 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
     return members.map((id) => [`${base}/cues/${encodeURIComponent(id)}`, body, 'PUT']);
   };
 
-  const effect = (letter) => {
+  // `target` is a row other than the cursor (its effect icon in the list); it is taken in hand first.
+  const effect = (letter, target = row) => {
+    const row = target;
     if (!row) return;
     const entry = actionKeysFor(keysKindOf(row)).find(([k]) => k.toLowerCase() === letter);
     if (!entry) return;
