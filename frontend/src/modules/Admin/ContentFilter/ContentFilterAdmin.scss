@@ -245,13 +245,18 @@
 .cf-strip__tick { position: absolute; top: 0; width: 1px; height: 5px; background: var(--ds-text-muted); pointer-events: none; }
 .cf-strip__tick.is-major { height: 10px; background: var(--ds-text-secondary); }
 .cf-strip__label { position: absolute; top: 11px; left: 3px; font-family: var(--ds-font-mono); font-size: 10px; line-height: 1; color: var(--ds-text-secondary); white-space: nowrap; }
-.cf-strip__band { position: absolute; top: 30px; bottom: 8px; background: var(--ds-accent); border-radius: 3px; pointer-events: none; }
+.cf-strip__band { position: absolute; top: 30px; bottom: 8px; background: var(--ds-accent); border-radius: 3px; overflow: hidden; display: flex; align-items: center; box-sizing: border-box; padding: 0 6px; }
+.cf-strip__bandlabel { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; font-size: 11px; font-weight: 600; line-height: 1; color: #fff; text-shadow: 0 0 2px rgba(0, 0, 0, 0.6); pointer-events: none; }
+.cf-card-part__autosave { text-align: center; }
 .cf-strip__band.is-neighbour { opacity: 0.6; background: var(--ds-text-muted); }
 .cf-strip__band.is-neighbour.is-audio { background: var(--cf-fx-audio); }
 .cf-strip__band.is-neighbour.is-picture { background: var(--cf-fx-picture); }
 .cf-strip__band.is-neighbour.is-skip { background: var(--cf-fx-skip); }
 .cf-strip__band.is-locked { background-image: repeating-linear-gradient(45deg, transparent 0 4px, rgba(0, 0, 0, 0.35) 4px 8px); }
 .cf-strip__saved { position: absolute; bottom: 2px; height: 3px; background: var(--ds-text-secondary); pointer-events: none; }
+.cf-strip__saved.is-pending { background: var(--ds-warning); animation: cf-strip-pending 0.9s ease-in-out infinite alternate; }
+@keyframes cf-strip-pending { from { opacity: 0.35; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .cf-strip__saved.is-pending { animation: none; } }
 .cf-strip__playhead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--ds-warning); pointer-events: none; z-index: 1; }
 .cf-strip__handle { position: absolute; top: 0; bottom: 0; width: 20px; cursor: ew-resize; touch-action: none; z-index: 2; }
 .cf-strip__handle.is-start { margin-left: -16px; }

@@ -172,13 +172,13 @@ describe('review station keys', () => {
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual(expect.objectContaining({ path: 'api/v1/content-filter/77/cues/p1', body: { effect: 'blackout' } }));
   });
-  it('an unsaved timing change holds the cursor and the verdict until it is saved or dropped with Esc', async () => {
+  it('a timing change not yet autosaved holds the cursor and the verdict until it lands or is dropped with Esc', async () => {
     show();
     const start = screen.getByRole('slider', { name: 'Start' });
     start.focus(); fireEvent.keyDown(start, { key: 'ArrowLeft' }); start.blur();
     press('ArrowRight');
     expect(selected()).toBe('cue:w1');
-    expect(screen.getByText('Unsaved timing: Save or press Esc to drop it')).toBeTruthy();
+    expect(screen.getByText('Timing is saving: one moment, or press Esc to drop it')).toBeTruthy();
     press('a');
     fireEvent.click(screen.getByRole('button', { name: 'bravo' }));
     expect(selected()).toBe('cue:w1');
@@ -190,7 +190,7 @@ describe('review station keys', () => {
     press('ArrowRight');
     expect(selected()).toBe('cue:w2');
   });
-  it('Esc with the effect menu open closes the menu and keeps an unsaved timing change (review 2026-11-22)', async () => {
+  it('Esc with the effect menu open closes the menu and keeps a timing change still waiting to autosave (review 2026-11-22)', async () => {
     show();
     const start = screen.getByRole('slider', { name: 'Start' });
     start.focus(); fireEvent.keyDown(start, { key: 'ArrowLeft' }); start.blur();
@@ -199,7 +199,7 @@ describe('review station keys', () => {
     press('Escape');
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
     expect(screen.queryByText('Timing change dropped.')).toBeNull();
-    expect(screen.getByRole('button', { name: /^Save timing/ })).toBeTruthy();
+    expect(screen.getByRole('status', { name: '' }).textContent).toMatch(/Saving/);
   });
   it('arriving puts the film at the part in hand, paused', () => {
     const jump = vi.spyOn(previewStore, 'jumpToCue');
@@ -635,12 +635,12 @@ describe('the part menu (owner, 2026-11-22: "right-click and I can change what i
     expect(menuItem('Mute')).toBeTruthy();
     for (const name of ['Approve', 'Let it play', 'Redo', 'Refine', 'Set in point here']) expect(menuItem(name), name).toBeNull();
   });
-  it('a part menu on another part is refused while timing is unsaved', async () => {
+  it('a part menu on another part is refused while a timing change is still saving', async () => {
     show();
     const start = screen.getByRole('slider', { name: 'Start' });
     start.focus(); fireEvent.keyDown(start, { key: 'ArrowLeft' }); start.blur();
     rightClick('bravo');
-    expect(screen.getByText('Unsaved timing: Save or press Esc to drop it')).toBeTruthy();
+    expect(screen.getByText('Timing is saving: one moment, or press Esc to drop it')).toBeTruthy();
     await new Promise((r) => setTimeout(r, 20));
     expect(screen.queryByRole('menu')).toBeNull();
     expect(selected()).toBe('cue:w1');

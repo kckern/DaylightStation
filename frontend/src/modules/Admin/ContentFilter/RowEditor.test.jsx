@@ -16,6 +16,7 @@ const shown = { id: 'cue:v1', peekId: 'v1', members: ['v1'], kind: 'picture', gr
 const show = (row, extra = {}) => { const onChanged = vi.fn(); render(<MantineProvider><RowEditor ratingKey="77" row={row} onChanged={onChanged} {...extra} /></MantineProvider>); return onChanged; };
 
 const skippedWord = { id: 'cue:l1', peekId: 'l1', members: ['l1'], kind: 'scenes', group: 'blasphemy', label: 'L*rd', modality: 'said', in: 2664, out: 2670, effect: 'skip-card', card: null, handFixed: false, unsure: ['exchange-by-length'], timing: 'rough', reviewed: null };
+beforeEach(() => { calls.length = 0; fail = null; });
 const btn = (name) => screen.getByRole('button', { name: new RegExp(`^${name}`) });
 // The effects live in a menu on the effect button (Fable design 2026-11-22).
 const openEffects = async () => { fireEvent.click(screen.getByRole('button', { name: /^Effect:/ })); return screen.findByRole('menu'); };
@@ -109,7 +110,7 @@ describe('RowEditor (the part card)', () => {
     expect(screen.getByText('Refining…')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Refine/ })).toBeNull();
   });
-  it('Home on the start handle and End on the end handle take the player time, and Save posts the nudge', async () => {
+  it('Home on the start handle and End on the end handle take the player time, and the nudge saves itself', async () => {
     vi.spyOn(previewStore, 'currentTime').mockReturnValue(null);
     const onChanged = show(word);
     expect(screen.queryByRole('button', { name: /^Save timing/ })).toBeNull();
@@ -118,19 +119,17 @@ describe('RowEditor (the part card)', () => {
     previewStore.currentTime.mockReturnValue(70.8);
     fireEvent.keyDown(screen.getByRole('slider', { name: 'End' }), { key: 'End' });
     expect(screen.getByRole('slider', { name: 'End' }).getAttribute('aria-valuetext')).toBe('1:10.80');
-    fireEvent.click(btn('Save timing'));
-    await waitFor(() => expect(calls).toHaveLength(1));
+    await waitFor(() => expect(calls).toHaveLength(1), { timeout: 3000 });
     expect(calls[0]).toEqual({ path: 'api/v1/content-filter/77/cues/w1', body: { nudge: { in: 70.1, out: 70.8 } }, method: 'PUT' });
     expect(onChanged).toHaveBeenCalled();
   });
-  it('dragging a neighbour too saves both timings with one Save', async () => {
+  it('dragging a neighbour too saves both timings together, with no Save press', async () => {
     vi.spyOn(previewStore, 'currentTime').mockReturnValue(71.4);
     const near = { ...word, id: 'cue:w2', peekId: 'w2', members: ['w2'], label: 'heck', in: 71.0, out: 71.5 };
     show(word, { neighbours: [word, near] });
     fireEvent.keyDown(screen.getByRole('slider', { name: 'heck: End' }), { key: 'End' });
     fireEvent.keyDown(screen.getByRole('slider', { name: 'End' }), { key: 'ArrowRight' });
-    fireEvent.click(btn('Save 2 timings'));
-    await waitFor(() => expect(calls).toHaveLength(2));
+    await waitFor(() => expect(calls).toHaveLength(2), { timeout: 3000 });
     expect(calls.map((c) => c.path).sort()).toEqual(['api/v1/content-filter/77/cues/w1', 'api/v1/content-filter/77/cues/w2']);
     expect(calls.find((c) => c.path.endsWith('w2')).body).toEqual({ nudge: { in: 71, out: 71.4 } });
   });
@@ -240,14 +239,44 @@ describe('button hierarchy on the part card (2026-11-22)', () => {
     show({ ...skippedWord, timing: 'refined' });
     expect(variant('Refine again')).toBe('subtle');
   });
-  it('Save timing exists only while a draft does, and then it is the one filled button', () => {
+  it('a draft shows Saving… and writes itself after a pause; there is no Save button', async () => {
     vi.spyOn(previewStore, 'currentTime').mockReturnValue(70.0);
     const ports = { current: {} };
     show(word, { ports });
-    expect(screen.queryByRole('button', { name: /^Save timing/ })).toBeNull();
     act(() => ports.current.markIn());
-    expect(variant('Save timing')).toBe('filled');
-    expect(variant('Approve')).toBe('outline');
+    expect(screen.getByRole('status', { name: '' }).textContent).toMatch(/Saving/);
+    expect(screen.queryByRole('button', { name: /^Save/ })).toBeNull();
+    expect(calls).toHaveLength(0);
+    await waitFor(() => expect(calls).toHaveLength(1), { timeout: 3000 });
+    expect(calls[0].body).toEqual({ nudge: { in: 70, out: 70.6 } });
+  });
+  it('waits for the pointer to let go before saving a drag', async () => {
+    vi.spyOn(previewStore, 'currentTime').mockReturnValue(70.1);
+    show(word);
+    const start = screen.getByRole('slider', { name: 'Start' });
+    fireEvent.keyDown(start, { key: 'Home' });
+    await waitFor(() => expect(calls).toHaveLength(1), { timeout: 3000 });
+    expect(calls).toHaveLength(1);
+  });
+  it('a refused autosave shows its message and does not retry the same draft', async () => {
+    fail = 'A filter run is writing this film.';
+    vi.spyOn(previewStore, 'currentTime').mockReturnValue(70.1);
+    show(word);
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Start' }), { key: 'Home' });
+    expect(await screen.findByText(/A filter run is writing this film/, {}, { timeout: 3000 })).toBeTruthy();
+    await new Promise((r) => setTimeout(r, 900));
+    expect(calls).toHaveLength(1);
+  });
+  it('Undo puts back what the last autosave replaced: the measured timing when there was no hand fix', async () => {
+    vi.spyOn(previewStore, 'currentTime').mockReturnValue(70.1);
+    const { rerender } = render(<MantineProvider><RowEditor ratingKey="77" row={word} onChanged={() => {}} /></MantineProvider>);
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Start' }), { key: 'Home' });
+    await waitFor(() => expect(calls).toHaveLength(1), { timeout: 3000 });
+    // the film refreshes the row to the saved timing
+    rerender(<MantineProvider><RowEditor ratingKey="77" row={{ ...word, in: 70.1, handFixed: true }} onChanged={() => {}} /></MantineProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo the last timing change' }));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls[1]).toEqual({ path: 'api/v1/content-filter/77/cues/w1', body: { nudge: null }, method: 'PUT' });
   });
   it('Reset is an icon button shown only on a hand-fixed part with no draft', () => {
     show({ ...word, handFixed: true });
@@ -256,16 +285,10 @@ describe('button hierarchy on the part card (2026-11-22)', () => {
     show(word);
     expect(screen.queryByRole('button', { name: 'Drop the hand fix' })).toBeNull();
   });
-  it('S with nothing changed does nothing', () => {
-    const ports = { current: {} };
-    show(word, { ports });
-    act(() => ports.current.saveTiming());
-    expect(calls).toHaveLength(0);
-  });
 });
 
 describe('I and O set the in and out points at the playhead (owner, 2026-11-22)', () => {
-  it('mark the start and end of the part in hand as a draft that Save writes', async () => {
+  it('mark the start and end of the part in hand as a draft that saves itself', async () => {
     vi.spyOn(previewStore, 'currentTime').mockReturnValue(70.0);
     const ports = { current: {} };
     show(word, { ports });
@@ -274,8 +297,7 @@ describe('I and O set the in and out points at the playhead (owner, 2026-11-22)'
     act(() => ports.current.markOut());
     expect(screen.getByRole('slider', { name: 'Start' }).getAttribute('aria-valuenow')).toBe('70');
     expect(screen.getByRole('slider', { name: 'End' }).getAttribute('aria-valuenow')).toBe('70.9');
-    fireEvent.click(btn('Save timing'));
-    await waitFor(() => expect(calls).toHaveLength(1));
+    await waitFor(() => expect(calls).toHaveLength(1), { timeout: 3000 });
     expect(calls[0].body).toEqual({ nudge: { in: 70, out: 70.9 } });
   });
   it('an in point past the out point (or an out before the in) is refused with a word, and nothing moves', () => {

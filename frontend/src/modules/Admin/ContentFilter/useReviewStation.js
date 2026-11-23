@@ -18,7 +18,7 @@ const logger = createAppLogger('admin').child('content-filter');
 const API = 'api/v1/content-filter';
 const round3 = (v) => Math.round(v * 1000) / 1000;
 const SCENE_EFFECTS = new Set(['skip', 'blackout', 'off']);
-const UNSAVED_TIMING = 'Unsaved timing: Save or press Esc to drop it';
+const UNSAVED_TIMING = 'Timing is saving: one moment, or press Esc to drop it';
 // A held [ or ] changes the level many times a second; the film's setting is written once it settles.
 const LEVEL_DEBOUNCE_MS = 400;
 const REWORK_ARM_MS = 4000;
@@ -139,7 +139,7 @@ export function useReviewStation({ ratingKey, data, reload, refreshReview, selec
   }, [rk]);
 
   // A span dragged on the timing strip and not saved yet (RowEditor reports it): moving the cursor
-  // would drop it without a word, so stepping, picking and verdicts wait for Save or Esc.
+  // would drop it without a word, so stepping, picking and verdicts wait for the autosave or Esc.
   const dirtyTiming = useRef(null);
   const timingDirty = useCallback((drop) => {
     // A new draft makes "Timing change dropped." stale (review 2026-11-22).

@@ -6,6 +6,14 @@ import { previewStore } from '../../../../../__app_modules/media/media/browser/c
 const Player = lazy(() => import('../../../../../__app_modules/media/media/browser/playback.mjs'));
 
 /**
+ * Review is for timing, not viewing (owner, 2026-11-23: "quality isn't a consideration"): the film
+ * is requested small so seeks and jumps land fast. Plex transcodes down to these caps (see
+ * __docs/reference/player/playback-quality.md). Raise `maxResolution` (480, 720) if a picture
+ * effect needs a closer look; `null` for each removes the cap.
+ */
+export const REVIEW_QUALITY = Object.freeze({ maxResolution: 360, maxVideoBitrate: 1000 });
+
+/**
  * The film in the Media Player with the filter forced on, whatever its certification, so a
  * grown-up sees each effect as the household will. Driven only through previewStore
  * (jumpToCue, peek, currentTime). No resume and no progress logging: a review must not move
@@ -25,7 +33,8 @@ export function ReviewPlayer({ ratingKey, unfiltered = false }) {
       <Suspense fallback={<LoadingState label="player" rows={1} />}>
         {/* The auxiliary preview leaves viewing progress and queue commands alone.
             Review owns shortcuts and native controls keep their activation keys. */}
-        <Player play={play} clear={() => {}} playerType="preview" auxiliary ignoreKeys />
+        <Player play={play} clear={() => {}} playerType="preview" auxiliary ignoreKeys
+          maxResolution={REVIEW_QUALITY.maxResolution} maxVideoBitrate={REVIEW_QUALITY.maxVideoBitrate} />
       </Suspense>
     </div>
   );

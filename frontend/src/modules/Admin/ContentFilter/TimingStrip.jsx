@@ -7,6 +7,11 @@ import { previewStore } from '../../../../../__app_modules/media/media/browser/c
  * handle at each end, and the film's playhead. Drag a handle, or focus it with Tab and use ← →
  * (0.1 s; with Shift 0.5 s) and Home / End (put it at the playhead). A handle dragged with the
  * pointer does not keep the keyboard: ← → go on stepping through the parts (review 2026-11-22).
+ * Each band carries its part's label (the word to listen for); a band too narrow for it shows an
+ * ellipsis, and hovering the band names it in full. Bands take pointer events only for that tooltip:
+ * presses, clicks and right-clicks still reach the track.
+ * `applying`: a save is in flight; the marker under the band jumps to the new span at once, in a
+ * pending colour, and returns to grey once the film's timing is refreshed.
  * A click on the strip seeks the film there. It only edits `span`; RowEditor saves it.
  */
 const MIN_GAP = 0.05;
@@ -54,7 +59,7 @@ const GRAB_PX = 12;
  * part in hand's band passes `row`, a neighbour's its own `row`.
  */
 export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice = () => {}, disabled = false, neighbours = [], onNeighbourChange = () => {},
-  row = null, onPartMenu = null }) {
+  row = null, onPartMenu = null, applying = false, onDragging = () => {} }) {
   const [win, setWin] = useState(() => windowFor(saved));
   const [now, setNow] = useState(null);
   const [dragging, setDragging] = useState(null);
@@ -117,6 +122,7 @@ export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice 
     const t = timeAt(e.clientX);
     drag.current = { id: best.id, edge: best.edge, offset: t == null ? 0 : t - spanOf(best.id)[best.edge], moved: false };
     setDragging({ id: best.id, edge: best.edge });
+    onDragging(true);
   };
   const trackMove = (e) => { const d = drag.current; if (d) onMove(d.id, d.edge)(e); };
   const trackUp = (e) => {
@@ -144,6 +150,7 @@ export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice 
     if (!d || d.id !== id || d.edge !== edge) return;
     drag.current = null;
     setDragging(null);
+    onDragging(false);
     e.currentTarget.releasePointerCapture?.(e.pointerId);
     e.currentTarget.blur?.();
     const v = spanOf(id)?.[edge];
@@ -214,11 +221,17 @@ export function TimingStrip({ span, saved = span, onChange = () => {}, onNotice 
             {t % labelStep === 0 && (t - win[0]) / width <= LABEL_UNTIL ? <span className="cf-strip__label">{clock(t)}</span> : null}
           </span>
         ))}
-        {changed ? <span className="cf-strip__saved" style={band(saved[0], saved[1])} /> : null}
+        {applying
+          ? <span className="cf-strip__saved is-pending" title="Saving: not applied yet" style={band(span[0], span[1])} />
+          : changed ? <span className="cf-strip__saved" style={band(saved[0], saved[1])} /> : null}
         {parts.filter((x) => !x.focus).map((x) => (
-          <span key={x.id} className={`cf-strip__band is-neighbour is-${x.family || 'other'}${x.editable ? '' : ' is-locked'}`} style={band(x.span[0], x.span[1])} title={x.label} />
+          <span key={x.id} className={`cf-strip__band is-neighbour is-${x.family || 'other'}${x.editable ? '' : ' is-locked'}`} style={band(x.span[0], x.span[1])} title={x.label}>
+            {x.label ? <span className="cf-strip__bandlabel">{x.label}</span> : null}
+          </span>
         ))}
-        <span className="cf-strip__band" style={band(span[0], span[1])} />
+        <span className="cf-strip__band" style={band(span[0], span[1])} title={row?.label}>
+          {row?.label ? <span className="cf-strip__bandlabel">{row.label}</span> : null}
+        </span>
         {now != null && now >= win[0] && now <= win[1] ? <span className="cf-strip__playhead" data-testid="playhead" style={{ left: pct(now) }} /> : null}
         {/* Handles in time order, so Tab walks the strip left to right. */}
         {parts.filter((x) => x.editable).flatMap((x) => [[x, 0], [x, 1]])

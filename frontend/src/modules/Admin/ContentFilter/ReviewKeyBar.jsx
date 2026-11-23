@@ -4,11 +4,11 @@ import { Sheet } from '../../../lib/ui/Sheet.jsx';
 
 const REDO_REASONS = [['1', 'edges'], ['2', 'category'], ['3', 'action'], ['4', 'timing']];
 const KEYMAP = [
-  ['Space', 'Play / pause the film'], ['Enter', 'Play this part with its effect (from 4 s before)'], ['W', 'Play this part unfiltered (the effect off)'], ['E', 'Open the effect menu'], ['S', 'Save timing (every dragged part)'],
+  ['Space', 'Play / pause the film'], ['Enter', 'Play this part with its effect (from 4 s before)'], ['W', 'Play this part unfiltered (the effect off)'], ['E', 'Open the effect menu'],
   ['→ / ←', 'Next / previous part'], ['A', 'Approve (fine as it is)'], ['X', 'Let it play (take the filter off)'],
   ['D', 'Redo, then 1 edges, 2 category, 3 action, 4 timing, Enter no reason'], ['U', 'Undo the last verdict'],
   ['R', 'Refine this part (measure its timing)'], ['Shift+R', 'Refine every filtered part still on rough timing; confirms if any has hand-fixed timing'],
-  ['M / P', 'Words: mute / bleep'], ['B / H / K', 'Picture: blur / hide picture / skip. Scenes: B hides the picture, K skips'], ['F', 'Filter off (the part plays)'], ['I / O', 'In / out point at the playhead (a draft until S saves it)'],
+  ['M / P', 'Words: mute / bleep'], ['B / H / K', 'Picture: blur / hide picture / skip. Scenes: B hides the picture, K skips'], ['F', 'Filter off (the part plays)'], ['I / O', 'In / out point at the playhead (saves itself)'],
   ['', 'An effect key applies the effect and replays the part; A approves it'],
   ['[ / ]', 'Bleep quieter / louder'], ['Shift+D', 'Re-refine every part marked Redo'],
   ['Tab', 'To a timing handle; then ← → move it 0.1 s (Shift 0.5 s), Home / End set it at the playhead'],

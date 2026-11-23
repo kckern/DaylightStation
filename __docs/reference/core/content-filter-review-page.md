@@ -89,17 +89,18 @@ pick is refused, e.g. while unsaved timing holds the cursor).
 2. **Why** (`whyLine.js`, one line, full text in its tooltip) and **Refine (R)**: filled only when
    refining is the fix, a quiet "Refine again" once refine has tried the part, its run state in
    place of the button (Waiting / Refining… / Queued).
-3. **Timing**: the strip, and **Save timing (S)** (it reads "Save 2 timings" when neighbours were
-   dragged too; in the 132 px column the label may ellipsize but the key hint never does) with **Undo
-   drag** while a draft is open or **Reset** (drop the hand fix). Save only appears when there is
-   something to save.
+3. **Timing**: the strip. There is no Save step: a drag, a ← → nudge or I / O saves itself 0.5 s after
+   the last move (never while the pointer is still down), shown as "Saving…" and an amber pulsing
+   marker under the band that settles to grey. Beside it: **Undo** (the last autosaves of this part,
+   back to what each replaced, or to the measured timing if the part had no hand fix) and **Reset**
+   (drop the hand fix). A refused save shows its message and is not retried on the same draft. Each band carries its part's label (the word to listen for;
+   an ellipsis when narrow, full name on hover).
 4. **Actions**: ▶ (Space), **Filtered (Enter)**, **Unfiltered (W)** | **Approve (A)**, **Let it play
    (X)**, **Redo (D)** (the reason prompt), ↶ (U). On the Refine tab there are no verdict buttons.
 
 **Button roles** (one decision per card). Exactly one button is **primary** (filled): **Approve**
-while the part has no verdict and no timing draft, **Save timing** while a draft exists (Approve
-steps back to outline, so the reviewer never approves over unsaved timing). The rest are
-**secondary** (outlined: the other verdicts, the play buttons) or **tool** (quiet: Undo drag, Reset,
+while the part has no verdict. The rest are
+**secondary** (outlined: the other verdicts, the play buttons) or **tool** (quiet: Undo, Reset,
 ↶). A chosen verdict stays visible as a ring plus a check on its button (`aria-pressed`), not as a
 second filled button. Only gray buttons get a gray border.
 5. **Status** (40 px): the station's last message, the redo reasons (one line), notices and run
@@ -203,8 +204,7 @@ handle (`previewStore.seekTo`, every 100 ms). The window holds still during a dr
 a neighbour's "heck: Start"): `←` `→` move it 0.1 s, with Shift 0.5 s, `Home` / `End` put it at the
 playhead, `Esc` lets go of it. The start stays at least 0.05 s before the end. A click on the strip
 seeks the film there. While a handle has keyboard focus the station's `←` `→` do not step parts; a
-handle dragged with the pointer takes no focus. Every dragged span is a draft until **Save timing
-(S)** writes each changed part (`nudge: { in, out }` to `PUT /:rk/cues/:id` or `/scenes/:id`), as
+handle dragged with the pointer takes no focus. Every dragged span is a draft for 0.5 s, then the autosave writes each changed part (`nudge: { in, out }` to `PUT /:rk/cues/:id` or `/scenes/:id`), as
 one action; a run locks the strip with the rest of the timing.
 
 **Unsaved timing holds the cursor.** While any span in the strip differs from its saved one, stepping (keys,
@@ -283,7 +283,7 @@ last message, the preview retry and the `?` keymap sheet.
   row's redo reason is stored on the run.
 - **Draft preview.** Every unsaved span in the strip (the part's and its neighbours') goes to the
   preview store (`setDrafts`) and the player applies it, so Filtered plays what was dragged or
-  marked before it is saved; Save writes it and refreshes the player, Undo drag / Esc drops it.
+  marked while it autosaves; the save refreshes the player, Esc drops a draft not yet saved.
 - **Bleep volume panel.** The header's **Bleep n %** button opens one panel for both levels:
   **Household** (the `bleepLevel` every film follows, `PUT /profiles/family/settings`) and **This
   film** (its own level, or "Follows household", with **Follow household** to drop it), each with
@@ -307,3 +307,5 @@ last message, the preview retry and the `?` keymap sheet.
   so the check never goes stale over it. `resolveEffectiveCues` puts it on the effective cue and the
   bleep handler passes it to the tone as `level`; when two bleeps merge into one tone it sounds at the
   louder of their levels; a named sound plays at the set's volume as before.
+
+**Review video quality.** The review player requests the film at 360p / 1000 kbps (`REVIEW_QUALITY` in `ReviewPlayer.jsx`; the standard `maxResolution` / `maxVideoBitrate` playback-quality caps, see `__docs/reference/player/playback-quality.md`), so seeks and jumps land fast. Raise it for a closer look at a picture effect.

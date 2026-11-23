@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import { ActionIcon, Button, Menu, Popover, SegmentedControl, Select, Text, TextInput, UnstyledButton } from '@mantine/core';
 import { IconArrowBackUp, IconCheck, IconChevronDown, IconChevronLeft, IconChevronRight, IconEye, IconPlayerPlay, IconRestore } from '@tabler/icons-react';
 import { DaylightAPI } from '../../../lib/api.mjs';
@@ -20,13 +20,16 @@ import { BLEEP_LEVEL_DEFAULT } from '../../../../../shared/contracts/content-fil
  * better use of the space, the buttons should be more prominent"). Five lines, none of which grows:
  *   1. identity: the effect (a menu, E), the label, its channel, its timing, n/total and ‹ ›
  *   2. why it gets its effect, and Refine (R)
- *   3. the timing strip with every part in its window, Save timing (S) and Reset
+ *   3. the timing strip with every part in its window; a drag, a nudge or I / O saves itself
+ *      (AUTOSAVE_MS after the last move), with Undo for the last saves and Reset to the measured timing
  *   4. play (Space), filtered (Enter), unfiltered (W) | Approve (A), Let it play (X), Redo (D), Undo (U)
  *   5. one status line for messages, the redo reasons and run notes
  * Every button carries its key. The full keymap is behind ? in the header.
  */
 const logger = createAppLogger('admin').child('content-filter');
 const API = 'api/v1/content-filter';
+/** A trimmed span saves itself this long after the last move (owner, 2026-11-23: no Save step). */
+export const AUTOSAVE_MS = 500;
 const CUE_EFFECTS = [['mute', 'Mute'], ['bleep', 'Bleep'], ['blur', 'Blur'], ['full-blur', 'Full blur'], ['blackout', 'Hide picture'], ['skip', 'Skip']];
 const WORD_CHOICES = [{ value: 'profile', label: 'Settings' }, { value: 'off', label: 'Play' }, { value: 'mute', label: 'Mute' }, { value: 'bleep', label: 'Bleep' }];
 const GROUP_CHOICES = [{ value: 'off', label: 'Play them' }, { value: 'mute', label: 'Mute them' }, { value: 'bleep', label: 'Bleep them' }];
@@ -57,6 +60,11 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
   const [pending, setPending] = useState(null);
   const [span, setSpan] = useState([row.in, row.out]);
   const [drafts, setDrafts] = useState({});
+  const [gripped, setGripped] = useState(false);
+  // Undo steps per part: each autosave pushes what it replaced ({ row, prev, wasHandFixed }[]).
+  const history = useRef({});
+  const skipKey = useRef(null);
+  const [, bump] = useReducer((n) => n + 1, 0);
   const [cardText, setCardText] = useState(row.card?.text || '');
   const [menuOpen, setMenuOpen] = useState(false);
   // The popover under the effect button: the skip's card, or this word's rulings.
@@ -93,9 +101,11 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
       logger.info('review.action', { ratingKey, row: row.id, key });
       if (done) setNotice(done);
       onChanged();
+      return true;
     } catch (err) {
       logger.warn('review.action_failed', { ratingKey, row: row.id, key, error: err.message });
       setNotice(err.message || 'That did not work.');
+      return false;
     } finally { setPending(null); }
   };
   const ruleFor = (r, body) => (isSceneRow(r)
@@ -133,14 +143,39 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
   const changedOwn = !same(span, [row.in, row.out]);
   const changedOthers = near.filter((n) => drafts[n.id] && !same(drafts[n.id], n.saved));
   const changedCount = (changedOwn ? 1 : 0) + changedOthers.length;
-  const saveTiming = () => {
+  const autoKey = JSON.stringify([changedOwn ? span : null, changedOthers.map((n) => [n.id, drafts[n.id]])]);
+  const saveTiming = async () => {
     if (!changedCount || disabled) return;
+    const key = autoKey;
+    const entries = [...(changedOwn ? [{ row, prev: [row.in, row.out], wasHandFixed: Boolean(row.handFixed) }] : []),
+      ...changedOthers.map((n) => ({ row: n.row, prev: n.saved, wasHandFixed: Boolean(n.row.handFixed) }))];
     const calls = [...(changedOwn ? rule({ nudge: { in: span[0], out: span[1] } }) : []),
       ...changedOthers.flatMap((n) => ruleFor(n.row, { nudge: { in: drafts[n.id][0], out: drafts[n.id][1] } }))];
-    act('nudge', calls, changedCount > 1 ? `${changedCount} timings saved.` : 'Timing saved.')
+    skipKey.current = key; // a refused or slow-to-refresh save never re-fires on the same draft
+    const ok = await act('nudge', calls, null);
+    if (ok) {
+      (history.current[row.id] ||= []).push(entries);
+      logger.info('content_filter.review.timing_autosaved', { rk: ratingKey, rowId: row.id, parts: entries.length });
       // The player reads its filter once: refresh it, so the saved timing plays once the drafts clear.
-      .then(() => previewStore.refresh().catch(() => false));
+      previewStore.refresh().catch(() => false);
+    }
   };
+  // Undo the last autosave of this part: back to what it replaced, or to the measured timing when
+  // the part had no hand fix before.
+  const undoTiming = async () => {
+    const stack = history.current[row.id];
+    if (!stack?.length || disabled || changedCount) return;
+    const entries = stack[stack.length - 1];
+    const calls = entries.flatMap((e) => ruleFor(e.row, { nudge: e.wasHandFixed ? { in: e.prev[0], out: e.prev[1] } : null }));
+    const ok = await act('nudge', calls, null);
+    if (ok) { stack.pop(); bump(); previewStore.refresh().catch(() => false); }
+  };
+  useEffect(() => { if (!changedCount) skipKey.current = null; }, [changedCount]);
+  useEffect(() => {
+    if (!changedCount || disabled || gripped || skipKey.current === autoKey) return undefined;
+    const timer = setTimeout(saveTiming, AUTOSAVE_MS);
+    return () => clearTimeout(timer);
+  }, [autoKey, changedCount, disabled, gripped]); // eslint-disable-line react-hooks/exhaustive-deps
   // I / O: an edge of the part in hand at the playhead, as a draft (owner, 2026-11-22).
   const mark = (edge) => {
     if (disabled || !single || playing) return;
@@ -171,7 +206,7 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
   // E opens the effect menu and S saves the timing (ReviewPage wires the keys to these).
   useEffect(() => {
     if (!ports) return undefined;
-    ports.current = { openEffect: () => { if (!disabled) setMenuOpen(true); }, saveTiming, markIn: () => mark(0), markOut: () => mark(1),
+    ports.current = { openEffect: () => { if (!disabled) setMenuOpen(true); }, markIn: () => mark(0), markOut: () => mark(1),
       openBleepLevel: () => { if (!disabled && bleepCue) setPanel('bleep'); } };
     return () => { ports.current = {}; };
   });
@@ -271,26 +306,29 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
 
       <div className="cf-card-part__timing">
         {showStrip ? (
-          <TimingStrip span={span} saved={[row.in, row.out]} onChange={setSpan} onNotice={setNotice} disabled={disabled}
+          <TimingStrip span={span} saved={[row.in, row.out]} onChange={setSpan} onNotice={setNotice} disabled={disabled} onDragging={setGripped}
             neighbours={near} onNeighbourChange={(id, next) => setDrafts((d) => ({ ...d, [id]: next }))}
-            row={row} onPartMenu={onPartMenu} />
+            row={row} onPartMenu={onPartMenu} applying={pending === 'nudge'} />
         ) : (
           <Text size="xs" c="dimmed" className="cf-card-part__nostrip">
             {playing ? 'This part plays as it is.' : `${timecode(row.in)}–${timecode(row.out)}: several parts together; open one to fit its timing.`}
           </Text>
         )}
         <div className="cf-card-part__save">
-          {changedCount ? (
+          {changedCount || pending === 'nudge' ? (
+            <Text size="xs" c="dimmed" role="status" className="cf-card-part__autosave">{pending === 'nudge' ? 'Saving…' : 'Saving timing…'}</Text>
+          ) : (
             <>
-              <KeyButton k="S" role="primary" size="compact-sm" disabled={disabled} onClick={saveTiming}>
-                {changedCount > 1 ? `Save ${changedCount} timings` : 'Save timing'}
-              </KeyButton>
-              <Button size="compact-xs" variant="subtle" color="gray" onClick={resetDrafts}>Undo drag</Button>
+              {history.current[row.id]?.length ? (
+                <ActionIcon variant="subtle" color="gray" size="md" disabled={disabled} aria-label="Undo the last timing change" title="Undo the last timing change"
+                  onClick={undoTiming}><IconArrowBackUp size={16} aria-hidden="true" /></ActionIcon>
+              ) : null}
+              {row.handFixed ? (
+                <ActionIcon variant="subtle" color="gray" size="md" disabled={disabled} aria-label="Drop the hand fix" title="Drop the hand fix (back to the measured timing)"
+                  onClick={() => act('nudge', rule({ nudge: null }), 'Hand fix dropped.')}><IconRestore size={16} aria-hidden="true" /></ActionIcon>
+              ) : null}
             </>
-          ) : row.handFixed ? (
-            <ActionIcon variant="subtle" color="gray" size="md" disabled={disabled} aria-label="Drop the hand fix" title="Drop the hand fix (back to the measured timing)"
-              onClick={() => act('nudge', rule({ nudge: null }), 'Hand fix dropped.')}><IconRestore size={16} aria-hidden="true" /></ActionIcon>
-          ) : null}
+          )}
         </div>
       </div>
 

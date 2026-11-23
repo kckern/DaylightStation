@@ -106,6 +106,16 @@ describe('dragging feels exact (2026-11-22: "check the handlebars")', () => {
   });
 });
 
+describe('band labels', () => {
+  it('the part in hand carries its label inside the band, with the full name as the tooltip', () => {
+    const word = { id: 'cue:w1', peekId: 'w1', members: ['w1'], kind: 'words', group: 'profanity', label: 'damn', modality: 'said', in: 100, out: 104, effect: 'mute', card: null, handFixed: false, unsure: [], reviewed: null };
+    render(<MantineProvider><RowEditor ratingKey="77" row={word} /></MantineProvider>);
+    const label = document.querySelector('.cf-strip__band:not(.is-neighbour) .cf-strip__bandlabel');
+    expect(label.textContent).toBe('damn');
+    expect(label.parentElement.getAttribute('title')).toBe('damn');
+  });
+});
+
 describe('timing strip helpers', () => {
   it('shows hundredths, and the span with its length', () => {
     expect(fineTimecode(2664.3)).toBe('44:24.30');
@@ -215,7 +225,7 @@ describe('TimingStrip', () => {
 describe('the strip in the part card', () => {
   const word = { id: 'cue:w1', peekId: 'w1', members: ['w1'], kind: 'words', group: 'profanity', label: 'damn', modality: 'said', in: 100, out: 104, effect: 'mute', card: null, handFixed: true, unsure: [], reviewed: null, timing: 'refined' };
   const card = (props = {}) => render(<MantineProvider><RowEditor ratingKey="77" row={word} {...props} /></MantineProvider>);
-  it('replaces the nudge buttons; Save timing appears only once the span changed, and posts the nudge', async () => {
+  it('replaces the nudge buttons; a dragged span saves itself, with no Save button', async () => {
     card();
     expect(screen.queryByRole('button', { name: 'Start here' })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Start [+-]/ })).toBeNull();
@@ -224,8 +234,7 @@ describe('the strip in the part card', () => {
     fireEvent.pointerMove(end(), { clientX: 370, pointerId: 1 });
     fireEvent.pointerUp(end(), { clientX: 370, pointerId: 1 });
     expect(end().getAttribute('aria-valuetext')).toBe('1:44.80');
-    fireEvent.click(screen.getByRole('button', { name: /^Save timing/ }));
-    await waitFor(() => expect(calls).toHaveLength(1));
+    await waitFor(() => expect(calls).toHaveLength(1), { timeout: 3000 });
     expect(calls[0]).toEqual({ path: 'api/v1/content-filter/77/cues/w1', body: { nudge: { in: 100, out: 104.8 } }, method: 'PUT' });
   });
   it('Reset (the hand fix dropped) still posts a null nudge', async () => {

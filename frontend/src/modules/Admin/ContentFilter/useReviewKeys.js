@@ -119,7 +119,6 @@ export function useReviewKeys(handlers, { enabled = true, partKeys = true, redoO
       // I and O: the part's in and out points at the playhead, as drafts (owner, 2026-11-22).
       if (lower === 'i') return take(h.markIn);
       if (lower === 'o') return take(h.markOut);
-      if (lower === 's') return take(h.saveTiming);
       if (EFFECT_KEYS.has(lower)) return take(() => h.effect?.(lower));
     };
     document.addEventListener('keydown', onKey, true);

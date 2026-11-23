@@ -103,7 +103,7 @@ function FilmReview({ ratingKey, rowId, owner }) {
     logger.info('content_filter.review.unfiltered', { rk: ratingKey, rowId: row0.id });
   };
   const keyHandlers = { ...station.handlers, playWithout: playUnfiltered,
-    openEffect: () => cardPorts.current.openEffect?.(), saveTiming: () => cardPorts.current.saveTiming?.(),
+    openEffect: () => cardPorts.current.openEffect?.(),
     markIn: () => cardPorts.current.markIn?.(), markOut: () => cardPorts.current.markOut?.() };
   const { redoOpen, openRedo, closeRedo } = useReviewKeys(keyHandlers, {
     enabled: Boolean(data?.rows), partKeys: stage !== 'approve', redoOwner: `${ratingKey}\u001f${selected?.id ?? ''}`,
