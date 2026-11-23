@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectEntryShift, entryShiftReason, entryShiftSentence, lateEntryWaitUntil } from './entryShift.js';
+import { detectEntryShift, entryShiftReason, entryShiftSentence, lateEntryWaitUntil, missedCue, missedCueDueAt, MISSED_CUE_GRACE_MS } from './entryShift.js';
 
 // Eight quarters at 60 bpm after a four-click lead-in: targets 4000, 5000 … 11000 ms,
 // each judged ±400 ms (0.4 × the 1000 ms gap).
@@ -149,5 +149,29 @@ describe('detectEntryShift on a chord opening', () => {
     const onsets = [60, 62, 64, 65].flatMap((midi, i) => (i === 0 ? [midi] : [midi - 12, midi])
       .map((m) => ({ midi: m, t: target(i) + BEAT + 60 })));
     expect(detectEntryShift(chords(), onsets, { beatMs: BEAT, from: 0, to: target(3) + BEAT + 400 })).toMatchObject({ beats: 1 });
+  });
+});
+
+describe('missedCue', () => {
+  const due = 4000 + 400 + MISSED_CUE_GRACE_MS;
+  it('is open until the first note\'s window has closed', () => {
+    expect(missedCueDueAt(attempt())).toBe(due);
+    expect(missedCue(attempt(), [], due - 1)).toBeNull();
+  });
+  it('is missed when nothing was played in the window', () => {
+    expect(missedCue(attempt(), [], due)).toMatchObject({ targetMs: 4000, windowMs: 400, firstOnsetOffsetMs: null });
+  });
+  it('names how far off a note near the cue was', () => {
+    expect(missedCue(attempt(), [{ midi: 64, t: 4000 + 520 }], due + 100)).toMatchObject({ firstOnsetOffsetMs: 520 });
+  });
+  it('is hit by any onset in the window, even a wrong note', () => {
+    expect(missedCue(attempt(), [{ midi: 50, t: 4000 - 300 }], due + 2000)).toBeNull();
+    expect(missedCue(attempt(), [{ midi: 64, t: 4000 + 390 }], due + 2000)).toBeNull();
+  });
+  it('treats a whole-beat-late entry as a missed cue, before it is even played', () => {
+    expect(missedCue(attempt(), [], due + 10)).not.toBeNull();
+  });
+  it('is null for an attempt with no timed first note', () => {
+    expect(missedCue({ ...attempt(), startedAt: NaN }, [], 99999)).toBeNull();
   });
 });

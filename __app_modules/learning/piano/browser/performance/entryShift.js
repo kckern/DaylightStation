@@ -159,6 +159,42 @@ export function lateEntryWaitUntil(attempt, onsets, { beatMs } = {}) {
   return Math.min(last.target + ENTRY_SHIFT_MAX_LATE * beatMs, last.target + shiftMs + last.windowMs);
 }
 
+
+/** How long past the window the cue is allowed to slip before the take goes back to the count. */
+export const MISSED_CUE_GRACE_MS = 60;
+
+/**
+ * Was the CUE missed? The first expected event has a target and a window. The cue is
+ * hit when any onset lands inside that window, whatever its pitch (a wrong first note
+ * is a note error, not a lost count). Once the window has closed with no onset in it,
+ * the child has not come in on the count, and carrying on only scores a take that was
+ * lost at the start: the run goes back to the count instead.
+ *
+ * @param {object} attempt the attempt snapshot (startedAt, leadInMs, expectation, policy)
+ * @param {{midi:number, t:number}[]} onsets raw onsets on the attempt's clock
+ * @param {number} now the attempt's clock
+ * @returns {{ targetMs:number, windowMs:number, dueAt:number, firstOnsetOffsetMs:number|null }|null}
+ *   null while the cue is still open or was hit.
+ */
+export function missedCue(attempt, onsets, now) {
+  const notes = expectedTimedNotes(attempt);
+  if (!notes.length || !Number.isFinite(now)) return null;
+  const { target, windowMs } = notes[0];
+  const dueAt = target + windowMs + MISSED_CUE_GRACE_MS;
+  if (now < dueAt) return null;
+  const log = Array.isArray(onsets) ? onsets : [];
+  if (log.some((onset) => Math.abs(onset.t - target) <= windowMs)) return null;
+  // The nearest onset from the start of the take, for the log: how far off the cue it came.
+  const played = log.filter((onset) => onset.t >= target - 4 * windowMs).sort((a, b) => a.t - b.t)[0];
+  return { targetMs: target, windowMs, dueAt, firstOnsetOffsetMs: played ? Math.round(played.t - target) : null };
+}
+
+/** When (attempt clock) the cue's window closes, or null when there is no timed first note. */
+export function missedCueDueAt(attempt) {
+  const notes = expectedTimedNotes(attempt);
+  return notes.length ? notes[0].target + notes[0].windowMs + MISSED_CUE_GRACE_MS : null;
+}
+
 const BEAT_WORDS = Object.freeze({ 1: 'one beat', 2: 'two beats' });
 
 /** The card's sentence for a named shift, in a child's terms; null for none. */
@@ -173,4 +209,4 @@ export function entryShiftSentence(beats) {
 /** The result reason a shift is reported under. */
 export const entryShiftReason = (beats) => (beats > 0 ? 'entry-late' : beats < 0 ? 'entry-early' : null);
 
-export default { detectEntryShift, lateEntryWaitUntil, entryShiftSentence, entryShiftReason, expectedTimedNotes, matchShifted };
+export default { missedCue, missedCueDueAt, detectEntryShift, lateEntryWaitUntil, entryShiftSentence, entryShiftReason, expectedTimedNotes, matchShifted };

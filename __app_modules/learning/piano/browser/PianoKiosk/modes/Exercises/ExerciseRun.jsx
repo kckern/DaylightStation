@@ -49,7 +49,7 @@ import { audioContext } from '../SheetMusic/click.js';
 import CountInOverlay from '../SheetMusic/CountInOverlay.jsx';
 import CountUpOverlay from '../SheetMusic/CountUpOverlay.jsx';
 import { exerciseCountInPlan, countdownPresentation, countUpPresentation, askPace, countInSentence } from '../SheetMusic/countIn.js';
-import { detectEntryShift, lateEntryWaitUntil, entryShiftSentence, entryShiftReason } from '../../../performance/entryShift.js';
+import { detectEntryShift, lateEntryWaitUntil, entryShiftSentence, entryShiftReason, missedCue, missedCueDueAt } from '../../../performance/entryShift.js';
 import Icon from '../../../ui/icons/Icon.jsx';
 import './Exercises.scss';
 
@@ -82,6 +82,16 @@ export const CLICK_PREROLL_MS = 150;
  */
 export const ARM_RELEASE_MS = 1000;
 export const START_GAP_MAX_MS = 600;
+
+/**
+ * A cued Learn take whose first note never came in on the cue goes back to the count
+ * on its own, up to this many times in a row, then plays on as it always did. A missed
+ * cue is not a take: scoring the rest of a take that was lost at the start only teaches
+ * the child to play behind the click.
+ */
+export const MAX_CUE_RESTARTS = 3;
+/** The breath between the missed cue and the count starting again. */
+const CUE_RESTART_PAUSE_MS = 900;
 const DEFAULT_POLICY = Object.freeze({
   matchWindowMs: 220, missWindowMs: 420, timingToleranceMs: 80, timingWindowMs: 320,
   windowFraction: 0.4, windowMinMs: 80, windowMaxMs: 400,
@@ -415,7 +425,7 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   `onFailed` consumer replaces the result screen or records it while the run
  *   retains its standard feedback and piano-driven retry.
  */
-export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', incompleteAfterMs = null, failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, resultLabel = null, resultActions = null, resultPresentation = 'inline', resultContinueLabel = null, onResultContinue = null, onPickStep = null, onStarted, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', incompleteAfterMs = null, failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, maxCueRestarts = MAX_CUE_RESTARTS, resultLabel = null, resultActions = null, resultPresentation = 'inline', resultContinueLabel = null, onResultContinue = null, onPickStep = null, onStarted, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
@@ -1284,6 +1294,49 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [armed, heldKey, snapshot.paused, snapshot.status, countIn, startCountIn]);
 
+  /**
+   * THE MISSED CUE. When the first note's window has closed with nothing played in it, the
+   * take is thrown back to the count (a new runtime, nothing recorded, no credit or failure)
+   * and the count starts again after a short pause. Capped, so a child who cannot find the
+   * cue is not looped forever: the cap hands the take back to the ordinary result.
+   */
+  const cueRestartsRef = useRef(0);
+  const [cueRestart, setCueRestart] = useState(null);
+  useEffect(() => {
+    if (!learnCued || !countIn || !runtime || snapshot.status !== 'running' || snapshot.paused) return undefined;
+    const dueAt = missedCueDueAt(snapshot);
+    if (dueAt == null) return undefined;
+    const check = () => {
+      const current = runtime.getSnapshot();
+      if (current.status !== 'running' || current.paused) return;
+      const missed = missedCue(current, onsetLogRef.current, Date.now());
+      if (!missed) { cueRestartsRef.current = 0; return; }
+      if (cueRestartsRef.current >= maxCueRestarts) {
+        logger.info('piano.exercise-cue-restart-capped', { ...traceFieldsRef.current, restarts: cueRestartsRef.current });
+        return;
+      }
+      cueRestartsRef.current += 1;
+      logger.info('piano.exercise-cue-missed', { ...traceFieldsRef.current, attempt: cueRestartsRef.current,
+        offsetMs: missed.firstOnsetOffsetMs, windowMs: Math.round(missed.windowMs), beatMs: Math.round(countIn.periodMs) });
+      setCueRestart({ n: cueRestartsRef.current });
+      installRuntime();
+    };
+    const timer = globalThis.setTimeout(check, Math.max(0, dueAt - Date.now()) + 20);
+    return () => globalThis.clearTimeout(timer);
+  // The take's identity is its start; `snapshot` republishes on every note.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [learnCued, countIn, runtime, snapshot.status, snapshot.paused, snapshot.startedAt, installRuntime, logger, maxCueRestarts]);
+  useEffect(() => {
+    if (!cueRestart || !runtime || snapshot.status !== 'prepared' || snapshot.paused) return undefined;
+    const timer = globalThis.setTimeout(() => {
+      // A child who armed the start themselves in the meantime has begun it.
+      if (armedRef.current || runtime.getSnapshot().status !== 'prepared') return;
+      setCueRestart(null);
+      startCountIn({ gapMs: Math.min(countIn?.periodMs ?? START_GAP_MAX_MS, START_GAP_MAX_MS), reason: 'missed-cue' });
+    }, CUE_RESTART_PAUSE_MS);
+    return () => globalThis.clearTimeout(timer);
+  }, [cueRestart, runtime, snapshot.status, snapshot.paused, countIn, startCountIn]);
+
   // Tell the host once per take that the child has begun it (the arming note
   // or key), so a host can tell a take that was opened from one that was played.
   const onStartedRef = useRef(onStarted);
@@ -1752,7 +1805,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   // where there are no pills, there is simply nothing under the music.
   const standingInstruction = bare ? null : (
     <>
-      {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{!runtime ? 'Getting the music ready…' : armed ? 'Listen for the clicks.' : snapshot.mode === 'cued' ? countInSentence(countIn?.clicks ?? beatsPerMeasure, cuedPace) : 'Play the first note to begin.'}</p>{!connected && <span>Waiting for the piano…</span>}</div>}
+      {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{!runtime ? 'Getting the music ready…' : cueRestart ? 'You missed the cue — counting in again.' : armed ? 'Listen for the clicks.' : snapshot.mode === 'cued' ? countInSentence(countIn?.clicks ?? beatsPerMeasure, cuedPace) : 'Play the first note to begin.'}</p>{!connected && <span>Waiting for the piano…</span>}</div>}
       {phase === 'paused' && <p className="piano-exercise-run__status" role="status">Paused. Your place is saved.</p>}
       {phase === 'resume-countdown' && <p className="piano-exercise-run__status" role="status">Get ready…</p>}
       {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : huntSentence ?? (isWrong ? 'That note was not expected — keep going.' : stage === 'recall' ? 'Play the named music from memory.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.')}{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}

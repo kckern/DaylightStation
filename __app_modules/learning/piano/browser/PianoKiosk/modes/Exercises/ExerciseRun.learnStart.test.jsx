@@ -1,6 +1,6 @@
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import ExerciseRun, { ARM_RELEASE_MS } from './ExerciseRun.jsx';
+import ExerciseRun, { ARM_RELEASE_MS, MAX_CUE_RESTARTS } from './ExerciseRun.jsx';
 import fourBars from './__fixtures__/fourBars.musicxml?raw';
 
 /**
@@ -291,7 +291,7 @@ describe('a cued Learn passage arms safely around its own notes and controls', (
   });
 
   it('drops an arming on pause, starts nothing while paused, and arms afresh on resume', async () => {
-    await mount();
+    await mount({ maxCueRestarts: 0 });
     hold([55]);
     expect(run()).toHaveAttribute('data-start-armed', 'true');
     act(() => { current = { ...current, paused: true }; rerender(); });
@@ -332,7 +332,7 @@ describe('a cued Learn passage arms safely around its own notes and controls', (
 describe('a cued Learn passage names a whole-beat shifted entry (A3)', () => {
 
   it('names a steady take one beat late (+1), waiting for its last note', async () => {
-    await mount();
+    await mount({ maxCueRestarts: 0 });
     const firstClick = armByTap();
     playAt(firstClick, BEAT + 120, PASSAGE.slice(0, 3));
     // The passage's own time is over (the last half note ends at target 3 + 1500)
@@ -364,7 +364,7 @@ describe('a cued Learn passage names a whole-beat shifted entry (A3)', () => {
   });
 
   it('names nothing for random wrong notes, or the right notes played sloppily', async () => {
-    await mount();
+    await mount({ maxCueRestarts: 0 });
     let firstClick = armByTap();
     playAt(firstClick, 700, [61, 70, 58, 73]);
     finish();
@@ -375,7 +375,7 @@ describe('a cued Learn passage names a whole-beat shifted entry (A3)', () => {
     view.unmount();
     vi.useRealTimers();
     for (const logger of Object.values(h.log)) logger.mockClear();
-    await mount();
+    await mount({ maxCueRestarts: 0 });
     firstClick = armByTap();
     [520, -560, 610, -480].forEach((jitter, index) => {
       advance(firstClick + LEAD_IN + index * BEAT + jitter - Date.now());
@@ -425,3 +425,52 @@ describe('a cued Learn passage counts a pickup in on its own beat', () => {
   });
 });
 
+
+describe('a missed cue goes back to the count', () => {
+  it('throws away a take whose first note never came in on the cue and counts in again', async () => {
+    await mount();
+    const firstClick = armByTap();
+    // The first target passes with nothing played: window 400 ms + grace.
+    advance(firstClick + LEAD_IN + 600 - Date.now());
+    expect(events('piano.exercise-cue-missed')).toEqual([expect.objectContaining({ attempt: 1, windowMs: 400, offsetMs: null })]);
+    expect(run()).toHaveAttribute('data-phase', 'ready');
+    expect(screen.getByText(/missed the cue/i)).toBeInTheDocument();
+    expect(document.querySelector('.piano-exercise-run__result')).toBeNull();
+    expect(current.onFailed).not.toHaveBeenCalled();
+    advance(1000);
+    expect(events('piano.exercise-countdown-started').at(-1)).toMatchObject({ reason: 'missed-cue' });
+    expect(run()).toHaveAttribute('data-phase', 'countdown');
+  });
+
+  it('treats a whole-beat-late first note as a missed cue before it is played', async () => {
+    await mount();
+    const firstClick = armByTap();
+    advance(firstClick + LEAD_IN + BEAT - 200 - Date.now());
+    expect(events('piano.exercise-cue-missed')).toHaveLength(1);
+  });
+
+  it('leaves a take that came in on the cue alone and resets the count of restarts', async () => {
+    await mount();
+    const firstClick = armByTap();
+    playAt(firstClick, 20);
+    finish();
+    expect(events('piano.exercise-cue-missed')).toHaveLength(0);
+    advance(1000);
+    expect(current.onPassed).toHaveBeenCalledTimes(1);
+  });
+
+  it(`stops looping after ${MAX_CUE_RESTARTS} restarts in a row and plays the take on`, async () => {
+    await mount();
+    let firstClick = armByTap();
+    for (let n = 1; n <= MAX_CUE_RESTARTS; n += 1) {
+      advance(firstClick + LEAD_IN + 600 - Date.now());
+      expect(events('piano.exercise-cue-missed')).toHaveLength(n);
+      advance(1000);
+      firstClick = Date.now() - 1000 + 1000 + GAP; // the auto count's first click
+      firstClick = events('piano.exercise-countdown-started').at(-1) ? Date.now() + GAP - 0 : firstClick;
+    }
+    advance(LEAD_IN + 600 + 2 * GAP);
+    expect(events('piano.exercise-cue-missed')).toHaveLength(MAX_CUE_RESTARTS);
+    expect(events('piano.exercise-cue-restart-capped')).toHaveLength(1);
+  });
+});
