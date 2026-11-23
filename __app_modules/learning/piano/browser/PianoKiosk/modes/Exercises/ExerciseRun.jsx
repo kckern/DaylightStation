@@ -49,6 +49,7 @@ import { audioContext } from '../SheetMusic/click.js';
 import CountInOverlay from '../SheetMusic/CountInOverlay.jsx';
 import CountUpOverlay from '../SheetMusic/CountUpOverlay.jsx';
 import { beatLoopPosition, BEAT_LOOP_LEAD_MS } from './beatLoop.js';
+import { rhythmNotes, toRhythmExpectation } from './rhythmOnly.js';
 import { exerciseCountInPlan, countdownPresentation, countUpPresentation, askPace, countInSentence } from '../SheetMusic/countIn.js';
 import { detectEntryShift, lateEntryWaitUntil, entryShiftSentence, entryShiftReason, missedCue, missedCueDueAt } from '../../../performance/entryShift.js';
 import Icon from '../../../ui/icons/Icon.jsx';
@@ -428,10 +429,12 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   `onFailed` consumer replaces the result screen or records it while the run
  *   retains its standard feedback and piano-driven retry.
  */
-export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', incompleteAfterMs = null, failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, maxCueRestarts = MAX_CUE_RESTARTS, resultLabel = null, resultActions = null, resultPresentation = 'inline', resultContinueLabel = null, onResultContinue = null, onPickStep = null, onStarted, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', incompleteAfterMs = null, failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, maxCueRestarts = MAX_CUE_RESTARTS, rhythmOnly = false, resultLabel = null, resultActions = null, resultPresentation = 'inline', resultContinueLabel = null, onResultContinue = null, onPickStep = null, onStarted, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
-  const { activeNotes } = usePianoMidiNotes();
+  const { activeNotes: pressedNotes } = usePianoMidiNotes();
+  // The rhythm rung reads any key as one pitch (see rhythmOnly.js); every other run sees the keys as played.
+  const activeNotes = useMemo(() => (rhythmOnly ? rhythmNotes(pressedNotes) : pressedNotes), [rhythmOnly, pressedNotes]);
   const { connected } = usePianoMidi();
   const kioskConfig = usePianoKioskConfigOptional()?.config;
   const keyboardConfig = kioskConfig?.keyboard;
@@ -577,8 +580,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
    * the life of this material; a NEW material clears it above.
    */
   const takeScoreExpectation = useCallback((expectation) => {
-    setScoreExpectation((held) => held ?? expectation);
-  }, []);
+    setScoreExpectation((held) => held ?? (rhythmOnly ? toRhythmExpectation(expectation) : expectation));
+  }, [rhythmOnly]);
 
   /**
    * The passage's OTHER terminal answer: there will be no expectation from this

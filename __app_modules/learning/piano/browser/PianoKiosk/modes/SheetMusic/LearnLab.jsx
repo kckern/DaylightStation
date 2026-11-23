@@ -6,6 +6,7 @@ import LearnTempoSheet from './LearnTempoSheet.jsx';
 import { TEMPO_STAGES, availableTempoStages, nearestTempoStage } from './tempoStages.js';
 import { CLICK_LEVELS, readClickLevel, writeClickLevel } from './clickLevel.js';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
+import { useRhythmVoice } from './useRhythmVoice.js';
 import { entryShiftBeats } from '../../../../../../../shared/music/learnCoach.mjs';
 
 const handCode = (parts) => parts.length > 1 ? 'RL' : parts[0] === 'lh' ? 'L' : parts[0] === 'rh' ? 'R' : null;
@@ -124,6 +125,9 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
   const ownProjection = useMemo(() => learnDrillProjection(segment, runRung), [segment, runRung]);
   const projection = drill?.projection ?? ownProjection;
   const requirement = useMemo(() => learnPracticeRequirement(rung, tempoPercent), [rung, tempoPercent]);
+  // The rhythm recovery rung: any key, a percussive voice while it lasts (restored on leaving).
+  const rhythm = coachingTask?.rhythm === true;
+  useRhythmVoice(rhythm);
   // Recorded with each take, so placement scores judged on the wider share can
   // be told from those judged on the strict curve. Null when not applied.
   const placementShare = requirement.policy?.placementFullCreditShare ?? null;
@@ -258,19 +262,19 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
         {extraControls}
       </div>
     </header>
-    <ExerciseRun
+    <ExerciseRun rhythmOnly={rhythm}
       key={`${segment.id}:${rung.id}:${take}`} instance={null} score={runScore} intent="practice"
       practiceMode={rung.mode} practiceRequirement={requirement} programId={projection.id}
       clickGain={clickLevel.gain}
       stepId={drill ? drill.stepId : projection.steps[stepIndex]?.id} drillProjection={projection}
       hideHeading scoreLayoutPolicy="whole-passage"
       framing={`${passageName} · ${rung.label}`}
-      ask={rung.mode === 'free' ? 'Play the passage accurately.' : 'Play the passage with the beat.'}
+      ask={rhythm ? 'Tap the rhythm on any key.' : rung.mode === 'free' ? 'Play the passage accurately.' : 'Play the passage with the beat.'}
       traceContext={{ runId: runIdRef.current, take, tempoPercent, tempoStage: stage.id, clickLevel: clickLevel.id, tempoSource: tempo.tempoSource ?? 'inferred', launchSource }} surface="learn-lab"
       paused={paused} resumeDelayMs={effectiveBpm ? Math.round(120000 / effectiveBpm) : 1000} controlKey={take}
       startOnReady={startOnReady}
       persistInterrupted={false} persistAssessment={!coachingTask}
-      scoreCursorPolicy="always" keyboardHintPolicy={coachingTask?.assist === 'none' ? 'never' : 'after-wrong'}
+      scoreCursorPolicy="always" keyboardHintPolicy={coachingTask?.assist === 'none' || rhythm ? 'never' : 'after-wrong'}
       incompleteAfterMs={coachingTask?.assist === 'none' && coachingTask.stallSeconds ? coachingTask.stallSeconds * 1000 : null}
       failurePresentation="local" resultPresentation="docked" resultLabel={resultLabel} resultActions={resultActions} resultContinueLabel={resultContinueLabel} onResultContinue={onResultContinue} onPickStep={onPickStep} onStarted={takeStarted} onExit={onClose} onPassed={settle}
       onFailed={failTake}

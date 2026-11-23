@@ -51,6 +51,7 @@ export function recoveryWording(recovery) {
       ? { button: `Try a little slower · ${percent}%`, sentence: `try a little slower (${percent}%)` }
       : { button: 'Try a little slower', sentence: 'try a little slower' };
   }
+  if (recovery.reason === 'rhythm') return { button: 'Tap the rhythm', sentence: 'tap the rhythm' };
   const button = recovery.reason === 'one-hand' ? `Practice the ${recovery.parts?.[0] === 'lh' ? 'left' : 'right'} hand`
     : recovery.range.start === recovery.range.end ? `Practice bar ${recovery.range.start + 1}`
       : `Practice bars ${recovery.range.start + 1}–${recovery.range.end + 1}`;

@@ -55,10 +55,12 @@ const canonical = (value) => Array.isArray(value) ? value.map(canonical) : value
 
 export function coachTaskKey(task) {
   // The Silver check is identified without its criteria, so a policy change keeps earned Silver.
+  // The rhythm rung has its own key: a pass with no pitch asked must never be credited to the real timed step.
+  const rhythmTag = task.rhythm ? [['rhythm']] : [];
   if (task.assist === 'none') return JSON.stringify(['silver-check', task.scoreId, task.fingerprint, task.range.start, task.range.end, partsOf(task.parts)]);
   return JSON.stringify([task.scoreId, task.fingerprint, task.range.start, task.range.end,
     partsOf(task.parts), task.mode, task.mode === 'free' ? null : task.tempoPercent, canonical(task.criteria),
-    ...(task.authoredStage != null ? [[task.authoredSeries, task.authoredStage]] : [])]);
+    ...(task.authoredStage != null ? [[task.authoredSeries, task.authoredStage]] : []), ...rhythmTag]);
 }
 
 export function makeCoachTask(plan, spec) {
@@ -75,7 +77,7 @@ export function makeCoachTask(plan, spec) {
     ...(spec.stallSeconds ? { stallSeconds: spec.stallSeconds } : {}),
     ...(spec.authoredStage == null && spec.legacyRequired != null ? { legacyRequired: spec.legacyRequired } : {}),
     ...(spec.review ? { review: true } : {}), ...(spec.source ? { source: spec.source } : {}),
-    ...(spec.reason ? { reason: spec.reason } : {}),
+    ...(spec.reason ? { reason: spec.reason } : {}), ...(spec.rhythm ? { rhythm: true } : {}),
   };
   return { ...task, key: coachTaskKey(task) };
 }
@@ -233,6 +235,8 @@ function passedFor(result, task) {
 }
 
 function canProve(actual, wanted) {
+  // A take with no pitch asked proves only its own rhythm step, and the real steps are proved only by real takes.
+  if (Boolean(actual.rhythm) !== Boolean(wanted.rhythm)) return false;
   if (!sameRange(actual.range, wanted.range) || !sameParts(actual.parts, wanted.parts)) return false;
   if (wanted.assist === 'none' && actual.assist !== 'none') return false;
   if (wanted.mode === 'free') return true;
@@ -537,6 +541,12 @@ function recovery(plan, task, result) {
   const join = plan.segments.find((segment) => segment.id === task.passageId && segment.kind === 'join');
   const joinDrill = join && !timingOnly && (task.depth ?? 0) === 0 && sameRange(range, { start: join.inMeasure, end: join.outMeasure })
     ? joinRecovery(join, task, result) : null;
+  // RHYTHM RECOVERY: timing is what keeps failing and there is no slower step left (or the child has already
+  // been slowed to it). Take the pitch away: any key, a percussive sound, just WHEN. Never inside itself.
+  if (timingOnly && !task.rhythm && tempoPercent <= SLOWER_TEMPOS[0] && !joinDrill) {
+    return makeCoachTask(plan, { ...task, rhythm: true, required: null, assist: null, stallSeconds: null, legacyRequired: null,
+      label: 'Tap the rhythm', parent: task, depth: (task.depth ?? 0) + 1, reason: 'rhythm', mastery: false, completes: false });
+  }
   if (joinDrill) {
     range = joinDrill.range; parts = joinDrill.parts;
   } else if (timingOnly && tempoPercent > SLOWER_TEMPOS[0]) {

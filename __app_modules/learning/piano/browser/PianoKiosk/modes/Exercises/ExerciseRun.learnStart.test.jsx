@@ -508,3 +508,26 @@ describe('"Settle into a beat" shows its beat loop', () => {
     expect(loop()).toBeNull();
   });
 });
+
+describe('the rhythm rung asks for no pitch', () => {
+  it('passes a take played on the wrong keys at the right times, and fails one off the beat', async () => {
+    await mount({ rhythmOnly: true });
+    const firstClick = armByTap();
+    playAt(firstClick, 20, [30, 90, 31, 100]); // none of them the passage's notes
+    finish();
+    advance(1000);
+    expect(current.onPassed).toHaveBeenCalledTimes(1);
+    expect(current.onFailed).not.toHaveBeenCalled();
+  });
+  it('reads two keys at once as one tap, as both hands on a beat are', async () => {
+    await mount({ rhythmOnly: true });
+    const firstClick = armByTap();
+    PASSAGE.forEach((_, index) => {
+      advance(firstClick + LEAD_IN + index * BEAT + 20 - Date.now());
+      hold([40, 72]); advance(80); hold([]);
+    });
+    finish();
+    advance(1000);
+    expect(current.onPassed).toHaveBeenCalledTimes(1);
+  });
+});

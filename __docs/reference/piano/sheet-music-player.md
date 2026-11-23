@@ -847,6 +847,20 @@ late entry in that case). It applies to cued Learn takes only. Logs: `piano.exer
 carries `reason: 'missed-cue'` on `piano.exercise-countdown-started`. The `maxCueRestarts` prop of
 `ExerciseRun` overrides the cap (tests pass 0).
 
+**Tap the rhythm (the rhythm recovery rung).** When a timed step keeps failing on timing alone and no slower
+step is left (the 30% floor), the coach offers one more smaller step before it shrinks the bars: the same
+passage and tempo with **no pitch asked** (`reason: rhythm`, `rhythm: true`, `Tap the rhythm`). Any key counts:
+`ExerciseRun` takes `rhythmOnly` and reads every key as one pitch (`Exercises/rhythmOnly.js`: the expectation is
+one note per event on middle C and the keys held are read as that one key, stamped at the first press, so both
+hands on a beat are one tap and the child lifts between taps), so the same timed judge, windows and count-in
+grade only WHEN they came in. The keyboard sounds a percussive voice (the device catalog's Woodblock) for as long
+as the rung lasts: `useRhythmVoice` sends it as a Patch-finder style audition, never changing the selected voice,
+and calls `resync()` on leaving to put the real voice back; a piano with no such voice or no output simply plays
+on in its own sound. The rung has its own task key (`coachTaskKey` adds `rhythm`) and `canProve` never mixes it
+with real takes: a pitchless pass is no credit for the timed step, and a pass returns the child to that step.
+It never nests (a rung failed twice falls to the ordinary smaller steps) and gates nothing. Log:
+`piano.learn.rhythm-voice` (`applied`, `voice`, `restored`).
+
 **The beat loop (*Settle into a beat*).** The click-guided step (`mode: 'metronome'`, pitch graded, timing
 not) starts its click and shows the count band above the score with one pip per beat of the bar and
 beat 1 accented; the lit pip steps round the bar for as long as the click runs and keeps going under the

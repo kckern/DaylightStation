@@ -126,8 +126,12 @@ describe('focused recovery and honest feedback', () => {
     expect(projection(plan, state).goldResume).toMatchObject({ tempoPercent: 30, range: { start: 0, end: 3 } });
     slower = projection(plan, state).goldResume;
     state = outcome(outcome(state, plan, slower, timing), plan, slower, timing);
-    expect(projection(plan, state).goldResume.tempoPercent).toBe(30);
-    expect(projection(plan, state).goldResume.range.end).toBeLessThan(3);
+    // Nothing slower is left: the pitch comes off (tap the rhythm), and only then do the bars shrink.
+    expect(projection(plan, state).goldResume).toMatchObject({ tempoPercent: 30, reason: 'rhythm', rhythm: true, range: { start: 0, end: 3 } });
+    const rhythm = projection(plan, state).goldResume;
+    state = outcome(outcome(state, plan, rhythm, timing), plan, rhythm, timing);
+    // That is the whole drill budget (MAX_DRILL_DEPTH): the rhythm step stays until it is played.
+    expect(projection(plan, state).goldResume).toMatchObject({ tempoPercent: 30, reason: 'rhythm', depth: 3 });
   });
 
   it('keeps the same task after a named shifted entry: the start was wrong, not the passage', () => {
