@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { hidePiece, resolveEffect, resolveEffectiveCues as resolveWithLongHides, cuesActiveAt, pictureOverlaps } from "./contentFilter.js";
 import { filterSummary } from './filterSummary.js';
+import * as fx from './__fixtures__/untrackedSegmentedBlur.js';
+import { unmapTime } from '../../../../../shared/contracts/content-filter/syncMap.mjs';
 
 // Most suites here exercise effect resolution and stacking over long cues. The long-hide
 // conversion (a whole-frame blur past maxSec becomes a carded blackout) has its own suite in
@@ -1253,5 +1255,75 @@ describe('hide picture as a per-filter treatment', () => {
   it('hidePiece drops regional fields', () => {
     const p = hidePiece({ id: 'x', effect: 'blur', rect: { x: 0, y: 0, w: 1, h: 1 }, regions: [], heavy: true }, { in: 1, out: 2 }, {});
     expect(p.rect).toBeUndefined(); expect(p.regions).toBeUndefined(); expect(p.heavy).toBeUndefined();
+  });
+});
+
+// 2026-11-23 review: an untracked Blur on a long two-segment part, with an unsaved timing draft,
+// played as two identical blackout pieces (#0 and #1) on top of one another.
+describe('an untracked segmented blur (live film shape) and its timing draft', () => {
+  const sameShape = (cues) => {
+    const seen = new Set();
+    for (const c of cues) {
+      const k = `${c.effect}|${c.in.toFixed(3)}|${c.out.toFixed(3)}`;
+      if (seen.has(k)) return k;
+      seen.add(k);
+    }
+    return null;
+  };
+  const ofCue = (cues) => cues.filter((c) => baseIdOf(c.id) === 'va3283906' || (c.cues || []).includes('va3283906'));
+  const baseIdOf = (id) => String(id).split(/[#@]/)[0];
+
+  it('resolves each segment once: the long one to ONE blackout, nothing stacked', () => {
+    const cues = resolveWithLongHides({ edl: fx.edl, profile: fx.profile(20), override: fx.override, part: fx.PART });
+    const blackouts = cues.filter((c) => c.effect === 'blackout');
+    expect(blackouts).toHaveLength(1);
+    expect(blackouts[0].in).toBeLessThan(3811.5);
+    expect(blackouts[0].out).toBeGreaterThan(3840.1);
+    expect(sameShape(cues)).toBeNull();
+    expect(pictureOverlaps(cues)).toEqual([]);
+  });
+
+  it('an untracked blur longer than the hide limit, drafted over its whole span, resolves to ONE blackout piece', () => {
+    const cues = resolveWithLongHides({ edl: fx.edl, profile: fx.profile(20), override: fx.override, part: fx.PART,
+      drafts: { va3283906: [3801.6, 3840.2] } });
+    const mine = ofCue(cues);
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).toMatchObject({ effect: 'blackout', firstPiece: true });
+    expect(mine[0].in).toBeLessThanOrEqual(3801.6);
+    expect(mine[0].out).toBeGreaterThanOrEqual(3840.2);
+    expect(sameShape(cues)).toBeNull();
+  });
+
+  it('a draft plays exactly what saving it would: one span, no segments, padded and converted the same', () => {
+    const [a, b] = fx.DRAFT.va3283906;
+    const saved = { ...fx.override, cueOverrides: { va3283906: { ...fx.override.cueOverrides.va3283906,
+      startMs: Math.round(unmapTime(a, fx.override.sync) * 1000), endMs: Math.round(unmapTime(b, fx.override.sync) * 1000) } } };
+    for (const max of [5, 20]) {
+      const drafted = resolveWithLongHides({ edl: fx.edl, profile: fx.profile(max), override: fx.override, part: fx.PART, drafts: fx.DRAFT });
+      const afterSave = resolveWithLongHides({ edl: fx.edl, profile: fx.profile(max), override: saved, part: fx.PART });
+      const shape = (cs) => cs.map((c) => [c.id, c.effect, +c.in.toFixed(3), +c.out.toFixed(3)]);
+      expect(shape(drafted)).toEqual(shape(afterSave));
+      expect(ofCue(drafted)).toHaveLength(1);
+      expect(sameShape(drafted)).toBeNull();
+      expect(pictureOverlaps(drafted)).toEqual([]);
+    }
+  });
+
+  it('a draft on a film without a refined EDL replaces its measured segments with the one span', () => {
+    const plain = { cues: [{ id: 'c1', type: 'skip', category: 'x', in: 100, out: 140, refine: { kind: 'visual' } }] };
+    const ov = { cueOverrides: { c1: { effect: 'full-blur', in: 100, out: 140, precision: 'frame', segments: [{ in: 100, out: 110 }, { in: 115, out: 140 }] } } };
+    const pf = { categories: {}, treatments: { 'full-blur': { maxSec: 0 } } };
+    const cues = resolveWithLongHides({ edl: plain, profile: pf, override: ov, drafts: { c1: [102, 108] } });
+    expect(cues.map((c) => c.id)).toEqual(['c1']);
+    expect(cues[0].in).toBeCloseTo(102 - 0.15, 3);
+    expect(cues[0].out).toBeCloseTo(108 + 0.25, 3);
+  });
+
+  it('ignores a draft that is not a forward span, and resolves the same without drafts', () => {
+    const base = resolveWithLongHides({ edl: fx.edl, profile: fx.profile(5), override: fx.override, part: fx.PART });
+    for (const drafts of [null, {}, { va3283906: [3805, 3801] }, { va3283906: [NaN, 3801] }]) {
+      const again = resolveWithLongHides({ edl: fx.edl, profile: fx.profile(5), override: fx.override, part: fx.PART, drafts });
+      expect(again.map((c) => [c.id, c.in, c.out])).toEqual(base.map((c) => [c.id, c.in, c.out]));
+    }
   });
 });

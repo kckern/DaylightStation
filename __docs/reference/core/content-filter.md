@@ -625,7 +625,27 @@ replaces it (`by: host`) or the player unmounts. It closes with the rail's ✕ (
 
 **Preview store** (`browser/content-filter/preview/previewStore.js`): the live state the
 rail and timeline read, and their actions. `seekTo(t)`; `jumpToCue(cue)` takes a cue object, seeks 4 s before it and plays; `jumpToCue(cue, { play: false })` seeks there and holds the film paused until the viewer plays it (the binding's `hold(at)` re-applies the position and the pause while the Player starts up, for 12 s after the media element is ready, and ends on the store's play / togglePlay or a press on the player); `replayLast()` replays the last fired cue; `peek(id)` plays a cue unfiltered once;
-`refresh()` re-fetches filter data after a ruling; `close()`.
+`refresh()` re-fetches filter data after a ruling; `setDrafts({ cueId: [in, out] })` plays the review's
+unsaved timing; `close()`.
+
+**Timing drafts.** The player passes the drafts to `resolveEffectiveCues({ …, drafts })`, which
+resolves a drafted cue exactly as the saved nudge will play it (`draftAsNudge` in `contentFilter.js`):
+on a refined EDL the draft becomes `startMs`/`endMs` on the VidAngel clock (unmapped through the
+copy's sync, the same as `ContentFilterReview`'s nudge), otherwise the cue's own `in`/`out`. Either
+way the cue is one span with no segments, padded, long-hide converted and stacked like any other cue.
+A draft outside the copy, or not a forward span, changes nothing. (Until 2026-11-23 the draft was
+laid over the resolved pieces by base id, so a two-segment cue played two identical pieces on top
+of one another, and a draft shorter than the hide limit still played as a blackout.)
+
+**Player logging.** The hook logs each of these once per change, not per re-resolve: a refresh or a
+dragged draft re-resolves the filter many times a second.
+- `content-filter.resolved` and `content-filter.session` (info) only when the payload differs from
+  the last one logged for the same media element.
+- `content-filter.effect.adjusted` once per `(cue, from, to)` per page load (`resetEffectAdjustedLog()`
+  clears it in tests).
+- `content-filter.blackout.shown` (info) when a blackout piece goes on screen. A seek inside it (a
+  scrub re-enters every cue) or a re-resolve does not log it again; it logs again only after a tick
+  finds the piece inactive (played past, sought away from, or peeked: the end of a peek logs it once).
 
 **Look.** `FILTER_SURROUND.definition.theme` is `content-filter`, so the frame wears
 `contentFilterTheme.scss` rather than the concert-hall `classical` theme (see

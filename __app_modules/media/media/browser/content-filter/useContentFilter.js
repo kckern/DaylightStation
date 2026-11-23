@@ -12,7 +12,6 @@
  *
  * Pure resolution lives in contentFilter.js; this hook only wires it to the DOM.
  */
-import { applyTimingDrafts } from './timingDrafts.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getChildLogger } from "../../../../../frontend/src/lib/logging/singleton.js";
 import { resolveEffectiveCues, cuesActiveAt } from "./contentFilter.js";
@@ -89,9 +88,10 @@ export function createSfxPlayer(sounds, { level, tone = createBleepTone({ onDegr
  * @returns {{activeOverlays: Array<{effect:string,cue:object}>, activeCard: {text:string}|null, effectiveCues: Array, fireCount: number, filterActive: boolean, lastFired: object|null}}
  */
 export function useContentFilter({ getMediaEl, transport, edl, profile, override, part = null, sfx, enabled = true, bypass = null, drafts = null } = {}) {
-  // `drafts`: unsaved timing from Admin review (timingDrafts.js), so the preview plays what was dragged.
+  // `drafts`: unsaved timing from Admin review ({ cueId: [in, out] }), so the preview plays what was
+  // dragged, resolved exactly as saving it would (contentFilter.js draftAsNudge).
   const effectiveCues = useMemo(
-    () => (edl && profile ? applyTimingDrafts(resolveEffectiveCues({ edl, profile, override, part }), drafts) : []),
+    () => (edl && profile ? resolveEffectiveCues({ edl, profile, override, part, drafts }) : []),
     [edl, profile, override, part, drafts]
   );
   // The household/film bleep level is read live, so a change applies to the next bleep without
@@ -131,6 +131,14 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
   // skip-card state: cues already fired (so we don't re-trigger) + the real-time
   // resume timer (rVFC is paused during the card, so resume can't be frame-driven).
   const skipCardRef = useRef({ doneIds: new Set(), timer: null });
+  // Whole-picture pieces (blackout, full-blur) on screen now, by id: `blackout.shown` is logged and
+  // the session's hidden seconds counted when one goes on screen, not again
+  // on a seek inside it (exitAll re-enters every cue) or a re-resolve (2026-11-23: a scrubbed
+  // drafted part logged #0 and #1 several times a second). An id leaves once a tick finds it inactive.
+  const shownRef = useRef(new Set());
+  // The last `resolved` / `session` payloads logged for one element: a refresh or draft that
+  // re-resolves to the same filter logs nothing new (2026-11-23: ~100 pairs a second while dragging).
+  const lastLoggedRef = useRef({ el: null, resolved: null, session: null });
 
   // Clear a pending skip-card resume timer only on true unmount (not on every
   // effect re-run — see the main effect's cleanup note). Also release the paused
@@ -192,7 +200,18 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
       });
     };
 
+    // Info line only when its payload differs from the last one logged for this element.
+    const logChanged = (kind, event, payload) => {
+      const last = lastLoggedRef.current;
+      if (last.el !== el) { last.el = el; last.resolved = null; last.session = null; }
+      const key = JSON.stringify(payload);
+      if (last[kind] === key) return;
+      last[kind] = key;
+      logger().info?.(event, payload);
+    };
+
     if (!enabled || !el) {
+      shownRef.current.clear();
       exitAll();
       clearOverlayLife();
       setActiveOverlays((p) => (p.length ? [] : p));
@@ -209,7 +228,7 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
       byEffect[c.effect] = (byEffect[c.effect] || 0) + 1;
       if (c.precision === 'ms') msCount += 1; else approxCount += 1;
     }
-    logger().info?.('content-filter.resolved', {
+    logChanged('resolved', 'content-filter.resolved', {
       effects: byEffect, ms: msCount, approx: approxCount,
       syncOffset: override?.sync?.offsetSec ?? 0,
     });
@@ -286,6 +305,7 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
       }
 
       const activeIds = new Set(active.map((c) => c.id));
+      for (const id of [...shownRef.current]) if (!activeIds.has(id)) shownRef.current.delete(id);
       const entered = enteredRef.current;
       const ctxFor = (cue) => ({ el, transport, cue, sfx: sfxPlayer, mem: memRef.current });
 
@@ -320,11 +340,15 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
           if (!NOT_A_FIRE.has(cue.effect) && cue.firstPiece !== false) setFireCount((n) => n + 1);
           if (cue.effect !== 'title-card') setLastFired(cue);
           if (cue.scene) logger().debug?.('content-filter.scene.enter', { scene: cue.scene, effect: cue.effect });
-          if (cue.effect === 'blackout' && cue.firstPiece) logger().info?.('content-filter.blackout.shown', { scene: cue.scene, cue: cue.id, cues: cue.cues, sec: +(cue.out - cue.in).toFixed(1) });
+          // Picture hidden while the sound plays: full-blur and blackout both leak audio. Counted
+          // (and a blackout logged) when the piece goes on screen, not on a re-entry inside it.
+          const hides = cue.effect === 'full-blur' || cue.effect === 'blackout';
+          const fresh = hides && !shownRef.current.has(cue.id);
+          if (fresh) shownRef.current.add(cue.id);
+          if (fresh && cue.effect === 'blackout' && cue.firstPiece) logger().info?.('content-filter.blackout.shown', { scene: cue.scene, cue: cue.id, cues: cue.cues, sec: +(cue.out - cue.in).toFixed(1) });
           session.applied[cue.effect] = (session.applied[cue.effect] || 0) + 1;
-          // Picture hidden while the sound plays: full-blur and blackout both leak audio.
-          if (cue.effect === 'full-blur' || cue.effect === 'blackout') session.blurAudioSec += Math.max(0, cue.out - cue.in);
-          if (cue.effect === 'blackout') session.blackoutSec += Math.max(0, cue.out - cue.in);
+          if (fresh) session.blurAudioSec += Math.max(0, cue.out - cue.in);
+          if (fresh && cue.effect === 'blackout') session.blackoutSec += Math.max(0, cue.out - cue.in);
           // Rate-limited so it's visible in prod without spamming per-cue (mute is
           // the leak-prone effect — this is how we confirm a mute actually fired).
           logger().sampled?.('content-filter.applied',
@@ -444,7 +468,7 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
       clearOverlayLife();
       // Session summary (info): what actually fired this segment + blur-with-audio
       // exposure (seconds where video was hidden but audio kept — leak surface).
-      logger().info?.('content-filter.session', {
+      logChanged('session', 'content-filter.session', {
         applied: session.applied, blurAudioSec: +session.blurAudioSec.toFixed(1), blackoutSec: +session.blackoutSec.toFixed(1),
       });
     };

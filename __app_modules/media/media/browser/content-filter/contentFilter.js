@@ -13,7 +13,7 @@
  */
 
 // Timing a refine pass measured on this file: no approximate widening.
-import { mapSpan, mapTime, snapToFrames } from '../../../../../shared/contracts/content-filter/syncMap.mjs';
+import { mapSpan, mapTime, unmapTime, snapToFrames } from '../../../../../shared/contracts/content-filter/syncMap.mjs';
 import { cueModality, fitEffectToChannel, isWordLabel } from '../../../../../shared/contracts/content-filter/cueModality.mjs';
 import { languageGroupOf, languageWordOf, groupOfTerm } from '../../../../../shared/contracts/content-filter/languageGroups.mjs';
 import { convertLongHides } from './longHide.js';
@@ -24,6 +24,19 @@ let _logger;
 const logger = () => (_logger ||= getChildLogger({ component: 'content-filter' }));
 
 export const PRECISE = new Set(['ms', 'frame']);
+
+// `content-filter.effect.adjusted` once per (cue, from, to) per page load: the player and the review
+// re-resolve on every refresh and draft, and the same fit is not news the second time (2026-11-23:
+// ~150 a minute for one cue).
+const adjustedLogged = new Set();
+function logEffectAdjusted(payload) {
+  const key = `${payload.id}|${payload.from}|${payload.to}`;
+  if (adjustedLogged.has(key)) return;
+  adjustedLogged.add(key);
+  logger().sampled('content-filter.effect.adjusted', payload, { maxPerMinute: 10, aggregate: true });
+}
+/** Forget which effect fits were logged (tests). */
+export function resetEffectAdjustedLog() { adjustedLogged.clear(); }
 
 // R3/R4: a tone is word-sized; tones closer than this merge; a said cue that is
 // not a single word is muted up to LINE_MAX_SEC and skipped with a card beyond it.
@@ -146,6 +159,29 @@ function widenCue(eff, treatments) {
   return eff;
 }
 
+/** A draft's [in, out] for one cue when it is a forward span of finite seconds, else null. */
+function draftSpan(drafts, id) {
+  const d = drafts?.[id];
+  return Array.isArray(d) && Number.isFinite(d[0]) && Number.isFinite(d[1]) && d[1] > d[0] ? d : null;
+}
+
+/**
+ * The override a saved timing draft would leave (ContentFilterReview's nudge): on a refined EDL a
+ * household nudge, `startMs`/`endMs` on the VidAngel clock (the draft unmapped through this copy's
+ * sync); otherwise the cue's own local `in`/`out`. Either way the cue becomes one span: the measured
+ * segments go, so its pieces are never each given the whole draft (2026-11-23: two identical
+ * blackout pieces, #0 and #1, on top of one another). A draft outside this copy changes nothing.
+ */
+function draftAsNudge(ov, [a, b], { synced, refinedEdl, sync }) {
+  if (synced && refinedEdl) {
+    const va = sync ? [unmapTime(a, sync), unmapTime(b, sync)] : [a, b];
+    if (va.some((t) => t == null)) return ov;
+    return { ...ov, startMs: Math.round(va[0] * 1000), endMs: Math.round(va[1] * 1000) };
+  }
+  const { segments: _s, startMs: _a, endMs: _b, ...rest } = ov;
+  return { ...rest, in: a, out: b, precision: 'ms' };
+}
+
 /**
  * A "hide picture" piece: black over the span with a title card for its first seconds. The same
  * shape the scene path builds, so the one renderer draws both. `cardSec` defaults to the profile's
@@ -182,8 +218,11 @@ function mergeParams(target, ...sources) {
  * @param {{edl: {cues: Array}, profile: Object, override?: Object, part?: string|number|null}} args
  *   part: the media part being played. Refined cue times (`cueOverrides[id].refine.part`)
  *   apply only to that part; on another part the cue falls back to the synced coarse time.
+ * drafts: unsaved timing from Admin review, `{ cueId: [in, out] }` in local seconds. A drafted cue
+ *   resolves exactly as it will once the draft is saved as a nudge (draftAsNudge): one span, no
+ *   segments, padded, converted and stacked like any other cue, never laid over its own pieces.
  */
-export function resolveEffectiveCues({ edl, profile, override, part = null, stackGuard = true } = {}) {
+export function resolveEffectiveCues({ edl, profile, override, part = null, stackGuard = true, drafts = null } = {}) {
   const overrides = override?.cueOverrides || {};
   const cardByCue = new Map((override?.cards || []).map((c) => [c.after, c.text]));
   // sync remaps imported (foreign-timed) cues onto this file: t_local = t*scale + offset.
@@ -211,6 +250,9 @@ export function resolveEffectiveCues({ edl, profile, override, part = null, stac
       const { in: _i, out: _o, precision: _p, frameIn: _fi, frameOut: _fo, segments: _s, regions: _r, refine: _rf, ...rest } = ov;
       ov = rest;
     }
+    // An unsaved timing draft (Admin review) plays as the nudge saving it would write.
+    const draft = draftSpan(drafts, cue.id);
+    if (draft) ov = draftAsNudge(ov, draft, { synced, refinedEdl, sync });
 
     // Effect precedence: override > cue (addCues) > profile rule > cue.type.
     // The cue.type fallback (VidAngel audio=mute/audiovisual=skip) applies ONLY when
@@ -302,7 +344,7 @@ export function resolveEffectiveCues({ edl, profile, override, part = null, stac
       : (modality === 'shown' && eff.effect === 'full-blur') ? 'full-blur'
         : fitEffectToChannel(eff.effect, modality, { hasRegions: regionalOk });
     if (fitted !== eff.effect) {
-      logger().sampled('content-filter.effect.adjusted', { id: cue.id, from: eff.effect, to: fitted, modality, source: explicit ? 'override' : 'profile' }, { maxPerMinute: 10, aggregate: true });
+      logEffectAdjusted({ id: cue.id, from: eff.effect, to: fitted, modality, source: explicit ? 'override' : 'profile' });
       if (eff.effect === 'full-blur' && fitted === 'blur') eff.heavy = true;
       eff.effect = fitted;
     }

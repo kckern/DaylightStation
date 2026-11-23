@@ -6,6 +6,8 @@ const mockLogger = vi.hoisted(() => ({ info: vi.fn(), debug: vi.fn(), warn: vi.f
 vi.mock("../../../../../frontend/src/lib/logging/singleton.js", () => ({ getChildLogger: () => mockLogger }));
 
 import { useContentFilter, createSfxPlayer } from "./useContentFilter.js";
+import { resetEffectAdjustedLog } from './contentFilter.js';
+import * as fx from './__fixtures__/untrackedSegmentedBlur.js';
 import { isSkipCardPaused } from "./skipCardState.js";
 
 function makeFakeEl() {
@@ -740,5 +742,68 @@ describe('bleep level at playback', () => {
     expect(gains.filter((g) => g > 0).slice(-1)).toEqual([0.8]);
     hook.unmount();
     vi.unstubAllGlobals();
+  });
+});
+
+// 2026-11-23 review: an untracked Blur on a long two-segment part. With an unsaved timing draft the
+// player showed two identical blackout pieces (#0 and #1) and logged both on every scrub.
+describe('useContentFilter — an untracked segmented blur (live film shape)', () => {
+  beforeEach(() => { vi.clearAllMocks(); resetEffectAdjustedLog(); });
+  const shownCalls = () => mockLogger.info.mock.calls.filter((c) => c[0] === 'content-filter.blackout.shown');
+  const PROFILE = fx.profile(5); // stable, as the player's is: a new profile each render re-resolves
+  const mount = (props = {}) => {
+    const el = makeFakeEl();
+    const getMediaEl = () => el;
+    const transport = { seek: vi.fn() };
+    const hook = renderHook((p) => useContentFilter({ getMediaEl, transport, edl: fx.edl, override: fx.override,
+      profile: PROFILE, part: fx.PART, enabled: true, ...p }), { initialProps: props });
+    return { el, hook };
+  };
+
+  it('a drafted span plays as ONE blackout piece, logged once while the grown-up scrubs and drags', () => {
+    const { el, hook } = mount({ drafts: { va3283906: [3801.48, 3830] } });
+    act(() => { el.currentTime = 3803; el.fire('timeupdate'); });
+    expect(hook.result.current.activeOverlays.filter((o) => o.visible)).toHaveLength(1);
+    expect(hook.result.current.activeOverlays[0].effect).toBe('blackout');
+    // Scrubbing inside the part (a dragged handle seeks the player) and the drag moving the draft.
+    for (const [t, out] of [[3804, 3829], [3803.5, 3828], [3805, 3827.5], [3804.2, 3827]]) {
+      act(() => { el.currentTime = t; el.fire('seeking'); el.fire('seeked'); });
+      act(() => { hook.rerender({ drafts: { va3283906: [3801.48, out] } }); });
+      act(() => { el.fire('timeupdate'); });
+    }
+    expect(hook.result.current.activeOverlays.filter((o) => o.visible)).toHaveLength(1);
+    expect(shownCalls()).toHaveLength(1);
+  });
+
+  it('a scrub inside a blackout does not count its seconds again in the session summary', () => {
+    const { el, hook } = mount({ drafts: { va3283906: [3801.48, 3830] } });
+    act(() => { el.currentTime = 3803; el.fire('timeupdate'); });
+    for (const t of [3804, 3806, 3805, 3807]) act(() => { el.currentTime = t; el.fire('seeking'); el.fire('seeked'); });
+    hook.unmount();
+    // Every session summary together (a re-resolve starts a new one) counts the piece's seconds once.
+    const sums = mockLogger.info.mock.calls.filter((c) => c[0] === 'content-filter.session');
+    const total = sums.reduce((n, c) => n + c[1].blackoutSec, 0);
+    expect(total).toBeCloseTo(shownCalls()[0][1].sec, 1);
+  });
+
+  it('blackout.shown is logged once per entry, also after a peek ends', () => {
+    const peek = new Set(['va3283906']);
+    const { el } = mount({ bypass: peek });
+    for (let f = 0; f <= 5 * 30; f++) {
+      const t = 3801 + f / 30;
+      if (t >= 3802 && peek.size) peek.clear();
+      act(() => { el.currentTime = t; el.fire('timeupdate'); });
+    }
+    expect(shownCalls()).toHaveLength(1);
+  });
+
+  it('three identical re-resolves log one resolved, one session and one effect.adjusted', () => {
+    const { el, hook } = mount();
+    for (let i = 0; i < 3; i++) act(() => { hook.rerender({ override: structuredClone(fx.override) }); });
+    act(() => { el.currentTime = 10; el.fire('timeupdate'); });
+    const named = (n) => [...mockLogger.info.mock.calls, ...mockLogger.sampled.mock.calls].filter((c) => c[0] === n);
+    expect(named('content-filter.resolved')).toHaveLength(1);
+    expect(named('content-filter.effect.adjusted')).toHaveLength(1);
+    expect(named('content-filter.session').length).toBeLessThanOrEqual(1);
   });
 });
