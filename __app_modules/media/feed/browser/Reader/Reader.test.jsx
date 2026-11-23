@@ -125,6 +125,25 @@ describe('Reader history views', () => {
     expect(apiMock.mock.calls.some(([path]) => path.startsWith('/api/v1/feed/reader/stream'))).toBe(false);
   });
 
+  test('shows a plain year in group headings and bulk-action names', async () => {
+    apiMock.mockImplementation(path => {
+      if (path === '/api/v1/feed/reader/feeds') return Promise.resolve([]);
+      if (path.startsWith('/api/v1/feed/search?')) return Promise.resolve({
+        items: [{ ...article('2025 article'), published: '2025-06-01T12:00:00Z', state: { isSaved: true, isRead: false } }],
+        nextCursor: null,
+      });
+      return Promise.resolve({ annotations: [] });
+    });
+
+    mountReader('?view=saved');
+
+    expect(await screen.findByText('2025 article')).toBeInTheDocument();
+    const yearHeading = document.querySelector('.reader-group-label');
+    expect(yearHeading).toHaveTextContent('2025');
+    expect(yearHeading).not.toHaveTextContent('year:');
+    expect(screen.getByRole('button', { name: 'Mark all read in 2025' })).toBeInTheDocument();
+  });
+
   test('retries every previously loaded page after item synchronization', async () => {
     const intersect = observeSentinel();
     let secondPageReads = 0;

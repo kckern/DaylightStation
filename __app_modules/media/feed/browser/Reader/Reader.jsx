@@ -148,8 +148,9 @@ function groupByYear(articles) {
   const map = new Map();
   for (const article of articles) {
     const d = new Date(article.published);
-    const key = `year:${d.getFullYear()}`;
-    const label = key;
+    const year = d.getFullYear();
+    const key = `year:${year}`;
+    const label = String(year);
     if (!map.has(key)) {
       const group = { key, label, articles: [] };
       map.set(key, group);
