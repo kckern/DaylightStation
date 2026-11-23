@@ -259,11 +259,34 @@ describe('SessionControlsPanel — another screen (same controls, same layout)',
   it('cancels and starts a remote countdown', async () => {
     const local = localSetup();
     const endsAt = new Date(Date.now() + 7000).toISOString();
-    const { ctl, http } = remoteSetup({ ...baseControls, countdown: { seconds: 10, endsAt, remainingSeconds: 7, next: { contentId: 'plex:2', title: 'Keepy Uppy', queueItemId: 'q2' }, current: { contentId: 'plex:1', title: 'Hospital' } } });
+    const { ctl, http, publish } = remoteSetup({ ...baseControls, countdown: { seconds: 10, endsAt, remainingSeconds: 7, next: { contentId: 'plex:2', title: 'Keepy Uppy', queueItemId: 'q2' }, current: { contentId: 'plex:1', title: 'Hospital' } } });
     render(<Providers local={local} remote={ctl} outcomes={outcomes}><SessionControlsPanel target={{ deviceId: 'tv' }} /></Providers>);
     expect(screen.getByTestId('countdown-banner').textContent).toMatch(/Next: Keepy Uppy in [67]s/);
-    await act(async () => { fireEvent.click(screen.getByTestId('countdown-cancel')); });
+    const cancel = screen.getByTestId('countdown-cancel');
+    cancel.focus();
+    await act(async () => { fireEvent.click(cancel); });
     expect(http).toHaveBeenCalledWith('api/v1/device/tv/session/countdown/cancel', expect.any(Object), 'POST');
+    const controlsRow = screen.getByTestId('sleep-timer-button').closest('.session-controls-row');
+    await act(async () => { publish(baseControls); });
+    await waitFor(() => expect(screen.queryByTestId('countdown-banner')).toBeNull());
+    expect(controlsRow).toHaveFocus();
+  });
+
+  it('keeps focus on Sleep timer when the countdown disappears after focus moves', async () => {
+    const local = localSetup();
+    const endsAt = new Date(Date.now() + 7000).toISOString();
+    const { ctl, publish } = remoteSetup({ ...baseControls, countdown: { seconds: 10, endsAt, remainingSeconds: 7, next: { contentId: 'plex:2', title: 'Keepy Uppy', queueItemId: 'q2' }, current: { contentId: 'plex:1', title: 'Hospital' } } });
+    render(<Providers local={local} remote={ctl} outcomes={outcomes}><SessionControlsPanel target={{ deviceId: 'tv' }} /></Providers>);
+    const cancel = screen.getByTestId('countdown-cancel');
+    cancel.focus();
+    const sleepTimer = screen.getByTestId('sleep-timer-button');
+    await act(async () => {
+      sleepTimer.focus();
+      await Promise.resolve();
+      publish(baseControls);
+    });
+    await waitFor(() => expect(screen.queryByTestId('countdown-banner')).toBeNull());
+    expect(sleepTimer).toHaveFocus();
   });
 });
 

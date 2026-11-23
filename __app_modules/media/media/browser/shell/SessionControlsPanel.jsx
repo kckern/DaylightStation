@@ -18,6 +18,7 @@ import {
 } from '@tabler/icons-react';
 import { useDisplayClock } from '@/lib/hooks/useDisplayClock.js';
 import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
+import { useFocusAfterRemoval, useFocusRegion } from '@/lib/ui';
 import { useSessionControls, secondsUntil, formatClock } from "../controller/useSessionControls.js";
 import { useSessionController } from "../controller/useSessionController.js";
 import { DispatchContext } from "../cast/DispatchProvider.jsx";
@@ -52,6 +53,8 @@ export function SessionControlsPanel({ target, targetName = null }) {
     || (controls?.notes ?? []).some((note) => note.putBack);
   const now = useDisplayClock(ticking);
   const [busy, setBusy] = useState(null);
+  const { regionProps, focus } = useFocusRegion(false);
+  const countdownFocusProps = useFocusAfterRemoval(focus);
 
   const hasItem = !!snapshot?.currentItem;
   const sleepTimer = controls?.sleepTimer ?? null;
@@ -100,7 +103,7 @@ export function SessionControlsPanel({ target, targetName = null }) {
   return (
     <div className="session-controls" data-testid="session-controls-panel">
       {countdown && (
-        <div className="session-controls-countdown" data-testid="countdown-banner" role="status">
+        <div className="session-controls-countdown" data-testid="countdown-banner" role="status" {...countdownFocusProps}>
           <Text size="sm" className="session-controls-countdown-text">
             Next: <strong>{countdown.next?.title ?? 'the next episode'}</strong>
             {/* Announced once when it starts (and when it is cancelled); the
@@ -153,7 +156,7 @@ export function SessionControlsPanel({ target, targetName = null }) {
         </div>
       )}
 
-      <Group gap="xs" className="session-controls-row" wrap="wrap">
+      <Group gap="xs" className="session-controls-row" wrap="wrap" role="group" aria-label="Session controls" {...regionProps}>
         <ActionMenu position="top-start" withinPortal shadow="md" disabled={controlsDisabled}
           dropdownProps={{ 'data-testid': 'sleep-timer-menu' }}
           trigger={
