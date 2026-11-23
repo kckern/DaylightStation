@@ -24,6 +24,12 @@ const item = (name) => screen.getByRole('menuitem', { name: new RegExp(`^${name}
 
 describe('RowEditor (the part card)', () => {
   beforeEach(() => { calls.length = 0; fail = null; vi.restoreAllMocks(); });
+  it('the timing chip is neutral text with a coloured icon', () => {
+    show({ ...word, timing: 'refined', unsure: [] });
+    const chip = screen.getByText('Refined').closest('.cf-card-part__chip');
+    expect(chip.querySelector('.cf-ico--timing.is-refined')).toBeTruthy();
+    expect(screen.getByText('Refined').className).toContain('cf-card-part__chiptext');
+  });
   it('a word refine did not find is never a green "Safe window": amber, in words, with a quiet Refine again', () => {
     show({ ...word, timing: 'safe-window', unsure: ['refine-giveup', 'safe-window'] });
     expect(screen.queryByText('Safe window')).toBeNull();

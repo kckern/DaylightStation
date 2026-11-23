@@ -207,7 +207,8 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
           {refining ? <span className="cf-card-part__chip is-refining">{refining}</span>
             : timing ? <span className={`cf-card-part__chip is-${timing.key}${timing.unsure ? ' is-unsure' : ''}`} data-timing={timing.key}
               title={timing.unsure ? 'Timing unsure: listen before approving' : timing.word}>
-              <timing.Icon size={13} stroke={1.8} aria-hidden="true" />{timing.word.startsWith('Timing unsure') ? 'Timing unsure' : timing.word}</span> : null}
+              <span className={`cf-ico cf-ico--timing is-${timing.unsure ? 'unsure' : timing.key}`} aria-hidden="true"><timing.Icon size={13} stroke={1.8} aria-hidden="true" /></span>
+              <span className="cf-card-part__chiptext">{timing.word.startsWith('Timing unsure') ? 'Timing unsure' : timing.word}</span></span> : null}
         </span>
         <span className="cf-card-part__where" aria-label={position ? `Part ${position.index + 1} of ${position.total}` : 'Not in this list'}>
           {position ? `${position.index + 1}/${position.total}` : '–'}
