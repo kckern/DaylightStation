@@ -218,6 +218,14 @@ describe('button hierarchy on the part card (2026-11-22)', () => {
     expect(variant('Let it play')).toBe('outline');
     expect(variant('Redo')).toBe('outline');
   });
+  it('a chosen verdict shows a check and a ring, and Approve is no longer filled', () => {
+    show({ ...word, verdict: { verdict: 'remove' } });
+    const chosen = btn('Let it play');
+    expect(chosen.className).toContain('is-chosen');
+    expect(chosen.querySelector('svg')).toBeTruthy();
+    expect(variant('Approve')).toBe('outline');
+    expect(btn('Redo').className).not.toContain('is-chosen');
+  });
   it('Refine is a quiet tool, light only when refining is the fix', () => {
     show(skippedWord);
     expect(variant('Refine')).toBe('light');

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ActionIcon, Button, Menu, Popover, SegmentedControl, Select, Text, TextInput, UnstyledButton } from '@mantine/core';
-import { IconArrowBackUp, IconChevronDown, IconChevronLeft, IconChevronRight, IconEye, IconPlayerPlay, IconRestore } from '@tabler/icons-react';
+import { IconArrowBackUp, IconCheck, IconChevronDown, IconChevronLeft, IconChevronRight, IconEye, IconPlayerPlay, IconRestore } from '@tabler/icons-react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/index.js';
 import { effectChip, previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
@@ -40,9 +40,8 @@ const Key = ({ k }) => <kbd className="cf-keybar__key">{k}</kbd>;
 
 /** A button that shows its key. */
 const ROLE_VARIANT = { primary: 'filled', secondary: 'outline', tool: 'subtle' };
-function KeyButton({ k, role, children, className = '', ...rest }) {
-  const roleProps = role ? { variant: ROLE_VARIANT[role] } : {};
-  return <Button size="sm" className={`cf-card-part__btn ${role ? `is-${role}` : ''} ${className}`} {...roleProps} {...rest}><span className="cf-card__btn">{children} <Key k={k} /></span></Button>;
+function KeyButton({ k, role, variant, icon = false, className = '', children, ...rest }) {
+  return <Button size="sm" variant={variant ?? (role ? ROLE_VARIANT[role] : undefined)} className={`cf-card-part__btn ${role ? `is-${role}` : ''} ${rest.color === 'gray' ? 'is-gray' : ''} ${className}`} {...rest}><span className="cf-card__btn">{icon ? <IconCheck size={14} aria-hidden="true" /> : null}{children} <Key k={k} /></span></Button>;
 }
 
 const membersOf = (r) => r.members ?? (String(r.id).startsWith('cue:') ? [r.peekId] : []);
@@ -221,7 +220,7 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
         <Text size="sm" className="cf-card-part__whytext" title={why.text}>{why.text}</Text>
         {!isScene && !playing && !refining ? (
           // Filled only where refine is the next step; a part it already tried gets a quiet "Refine again".
-          <KeyButton k="R" role="tool" size="compact-sm" variant={why.refine && row.timing === 'rough' && !why.tried ? 'light' : 'subtle'} color={why.tried ? 'gray' : undefined} disabled={Boolean(pending)} onClick={handlers.refine}>
+          <KeyButton k="R" role="tool" size="compact-sm" variant={why.refine && row.timing === 'rough' && !why.tried ? 'light' : undefined} color={why.tried ? 'gray' : undefined} disabled={Boolean(pending)} onClick={handlers.refine}>
             {row.timing === 'rough' && !why.tried ? 'Refine' : 'Refine again'}
           </KeyButton>
         ) : null}
@@ -239,10 +238,10 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
         <div className="cf-card-part__save">
           {changedCount ? (
             <>
-              <Button size="compact-xs" variant="subtle" color="gray" onClick={resetDrafts}>Undo drag</Button>
-              <KeyButton k="S" role="primary" size="compact-sm" disabled={disabled || !showStrip} onClick={saveTiming}>
+              <KeyButton k="S" role="primary" size="compact-sm" disabled={disabled} onClick={saveTiming}>
                 {changedCount > 1 ? `Save ${changedCount} timings` : 'Save timing'}
               </KeyButton>
+              <Button size="compact-xs" variant="subtle" color="gray" onClick={resetDrafts}>Undo drag</Button>
             </>
           ) : row.handFixed ? (
             <ActionIcon variant="subtle" color="gray" size="md" disabled={disabled} aria-label="Drop the hand fix" title="Drop the hand fix (back to the measured timing)"
@@ -260,10 +259,10 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
         </div>
         {playing ? null : stage === 'refine' ? null : (
           <div className="cf-card-part__verdicts">
-            <KeyButton k="A" role={changedCount ? 'secondary' : 'primary'} color="green" className="is-approve" aria-pressed={verdict === 'approve'} disabled={verdictLocked} onClick={() => handlers.verdict?.('approve')}>Approve</KeyButton>
-            <KeyButton k="X" role="secondary" color="gray" aria-pressed={verdict === 'remove'} disabled={verdictLocked || Boolean(busyText)}
+            <KeyButton k="A" role={changedCount || verdict ? 'secondary' : 'primary'} color="green" className={`is-approve${verdict === 'approve' ? ' is-chosen' : ''}`} icon={verdict === 'approve'} aria-pressed={verdict === 'approve'} disabled={verdictLocked} onClick={() => handlers.verdict?.('approve')}>Approve</KeyButton>
+            <KeyButton k="X" role="secondary" color="gray" className={verdict === 'remove' ? 'is-chosen' : ''} icon={verdict === 'remove'} aria-pressed={verdict === 'remove'} disabled={verdictLocked || Boolean(busyText)}
               title={busyText ? 'Let it play waits until the refine finishes' : undefined} onClick={() => handlers.verdict?.('remove')}>Let it play</KeyButton>
-            <KeyButton k="D" role="secondary" color="orange" aria-pressed={verdict === 'redo'} disabled={verdictLocked} onClick={() => (handlers.redo ? handlers.redo() : handlers.verdict?.('redo'))}>Redo</KeyButton>
+            <KeyButton k="D" role="secondary" color="orange" className={verdict === 'redo' ? 'is-chosen' : ''} icon={verdict === 'redo'} aria-pressed={verdict === 'redo'} disabled={verdictLocked} onClick={() => (handlers.redo ? handlers.redo() : handlers.verdict?.('redo'))}>Redo</KeyButton>
             {canUndo ? <KeyButton k="U" role="tool" className="is-icon" aria-label="Undo the last verdict" title="Undo the last verdict (U)" disabled={Boolean(busyText)} onClick={handlers.undo}><IconArrowBackUp size={16} aria-hidden="true" /></KeyButton> : null}
           </div>
         )}
