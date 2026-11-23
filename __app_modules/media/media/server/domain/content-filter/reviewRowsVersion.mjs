@@ -4,4 +4,4 @@
  * out of date, so opening the film rebuilds its list. 2: every EDL part is a row (`acts`) and each
  * row carries its `timing` (owner, 2026-11-21).
  */
-export const REVIEW_ROWS_VERSION = 3; // 3: identical duplicate parts are one row
+export const REVIEW_ROWS_VERSION = 4; // 3: identical duplicate parts are one row; 4: rows carry `tracked`

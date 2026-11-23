@@ -116,7 +116,8 @@ this film); for a skip, the card shown in place of it (a popover with Approve ca
 Withdraw). The effect keys work with the menu closed and inside it (a letter picks and closes it).
 On a shown part the filter does not track, the **Blur** item says what Blur will actually play, before
 it is picked: `Blur · whole picture (not tracked)`, or `Blur · plays as hide picture (not tracked,
-39 s)` when the span is past the household's hide limit; a tracked part reads plain `Blur`. The rule is
+39 s)` when the span is past the household's hide limit; a tracked part reads plain `Blur`. The caption judges this part alone (the player also merges neighbouring whole-frame blurs within
+`BRIDGE_SEC` and pads before comparing to the limit, so a long run of short parts can still hide). The rule is
 `blurPlaysAs` (`shared/contracts/content-filter/blurPlaysAs.mjs`), the same one the player's long-hide
 conversion uses (`maxHideSec`, which lives there too); rows carry `tracked` and the review payload
 `maxHideSec` (null when conversion is off). The "plays as" note after a save uses the same words.

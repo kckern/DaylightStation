@@ -29,6 +29,14 @@ const setup = ({ audit = { ok: true, digest: 'D', rowsVersion: REVIEW_ROWS_VERSI
   return { review, state };
 };
 
+describe('ContentFilterReview row version', () => {
+  it('an audit stored before rows carried `tracked` (version 3) is out of date', async () => {
+    const r = await setup({ audit: { ok: true, digest: 'D', rowsVersion: 3, rows: rowsOf() } }).review.get({ ratingKey: '9' });
+    expect(r.audit.fresh).toBe(false);
+    expect(REVIEW_ROWS_VERSION).toBe(4);
+  });
+});
+
 describe('ContentFilterReview maxHideSec', () => {
   it.each([
     ['the profile\'s full-blur limit', { treatments: { 'full-blur': { maxSec: 20 } } }, 20],

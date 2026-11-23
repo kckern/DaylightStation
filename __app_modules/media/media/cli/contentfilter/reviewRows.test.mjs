@@ -30,6 +30,9 @@ describe('reviewRows', () => {
   it('says whether a part is tracked (has regions)', () => {
     expect(byId['subject:subject-b1'].tracked).toBe(true);
     expect(byId['cue:v1'].tracked).toBe(false);
+    const letPlay = reviewRows({ cues: [], source: [piece({ id: 'k9', category: 'violence/gore', label: 'x', type: 'skip', effect: 'blur', in: 5, out: 9, regions: [{ in: 5 }] }), piece({ id: 'k8', category: 'violence/gore', label: 'y', type: 'skip', effect: 'blur', in: 15, out: 19 })] });
+    expect(letPlay.find((r) => r.id === 'cue:k9')).toMatchObject({ acts: false, tracked: true });
+    expect(letPlay.find((r) => r.id === 'cue:k8')).toMatchObject({ acts: false, tracked: false });
   });
   it('carries kind, group, modality, effect, card and hand-fixed, with times rounded to ms', () => {
     expect(byId['cue:w1']).toMatchObject({ kind: 'words', group: 'profanity', modality: 'said', effect: 'mute', in: 10.123 });

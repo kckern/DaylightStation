@@ -109,6 +109,11 @@ describe('RowEditor (the part card)', () => {
     await openEffects();
     expect(item('Blur')).toBeTruthy();
   });
+  it('a shown part the household lets play still says what Blur would play on it', async () => {
+    show({ ...shown, acts: false, effect: 'off', tracked: false, in: 3801.6, out: 3840.2 }, { maxHideSec: 20 });
+    await openEffects();
+    expect(item('Blur · plays as hide picture \\(not tracked, 39 s\\)')).toBeTruthy();
+  });
   it('a word skipped for being long on rough timing says why, and Refine is the primary action', async () => {
     const handlers = { refine: vi.fn() };
     show(skippedWord, { handlers });
