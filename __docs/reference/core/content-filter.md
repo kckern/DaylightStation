@@ -1147,8 +1147,10 @@ refused, e.g. by unsaved timing, the menu stays shut). It names the part and its
 the same `{ effect: 'profile', disabled: false }` PUT as the card's menu); **Approve (A)**, **Let it
 play (X)**, **Redo (D)** (the reason prompt, as the Redo button) unless the part plays; **Refine
 (R)** unless it plays or is a true scene; **Set in point here (I)** / **Set out point here (O)** for
-a single cue. The keys work inside the menu. An item runs once the cursor is that part, through the
-same handlers as the keys. Logs `content_filter.review.part_menu` (`rowId`, `from`:
+a single cue. The keys work inside the menu (Enter is Play filtered unless an item has focus). An
+item runs on the next render, through the same handlers as the keys, and only if that part is still
+in hand: a cursor that moved meanwhile (a verdict's save stepping on) drops it
+(`content_filter.review.part_menu.dropped`), so it never fires on a later visit. Logs `content_filter.review.part_menu` (`rowId`, `from`:
 list | timeline | strip | key) and `content_filter.review.part_menu.action` (`action`, `value`).
 
 **Unfiltered (W)** plays the part from 4 s before with its effect off (`previewStore.peek`). The

@@ -576,6 +576,51 @@ describe('the part menu (owner, 2026-11-22: "right-click and I can change what i
     await waitFor(() => expect(calls).toHaveLength(2));
     expect(calls[1]).toEqual(expect.objectContaining({ path: 'api/v1/content-filter/77/cues/w1', body: { effect: 'profile', disabled: false }, method: 'PUT' }));
   });
+  it('Let it play from the part menu lets that part play (verdict remove)', async () => {
+    show();
+    rightClick('bravo');
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^Let it play/ }));
+    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    expect(reviewCalls()[0]).toEqual(expect.objectContaining({ path: 'api/v1/content-filter/77/review/cue%3Aw2', body: expect.objectContaining({ verdict: 'remove' }) }));
+  });
+  it('an action whose part is no longer in hand is dropped, not run on a later visit (review 2026-11-22)', async () => {
+    let finish;
+    pendingWrite = new Promise((resolve) => { finish = resolve; });
+    show();
+    press('a');
+    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    // The menu opens on the part in hand while its verdict saves; the save then moves the cursor on.
+    rightClick('alpha');
+    await screen.findByRole('menu');
+    await act(async () => { finish({}); });
+    await waitFor(() => expect(selected()).toBe('cue:w2'));
+    pendingWrite = null;
+    fireEvent.click(screen.getByRole('menuitem', { name: /^Approve/ }));
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    press('ArrowLeft');
+    expect(selected()).toBe('cue:w1');
+    await new Promise((r) => setTimeout(r, 30));
+    expect(reviewCalls()).toHaveLength(1);
+    expect(log.info).toHaveBeenCalledWith('content_filter.review.part_menu.dropped', expect.objectContaining({ rowId: 'cue:w1', action: 'verdict', cursor: 'cue:w2' }));
+  });
+  it('the context-menu key that also raises contextmenu opens the menu once', async () => {
+    show();
+    const btn = screen.getByRole('button', { name: 'bravo' });
+    fireEvent.keyDown(btn, { key: 'ContextMenu' });
+    fireEvent.contextMenu(btn, { clientX: 0, clientY: 0 });
+    await screen.findByRole('menu');
+    expect(log.info.mock.calls.filter((c) => c[0] === 'content_filter.review.part_menu')).toHaveLength(1);
+  });
+  it('Enter in the open menu plays the part filtered', async () => {
+    const jump = vi.spyOn(previewStore, 'jumpToCue');
+    show();
+    rightClick('bravo');
+    await screen.findByRole('menu');
+    jump.mockClear();
+    press('Enter');
+    await waitFor(() => expect(jump).toHaveBeenCalledWith({ in: 20 }));
+    expect(log.info).toHaveBeenCalledWith('content_filter.review.part_menu.action', expect.objectContaining({ action: 'play' }));
+  });
   it('a part that plays gets effects but no verdicts in its menu', async () => {
     payload = base([row('cue:w1', 'alpha'), row('cue:k1', 'kiss', { acts: false, effect: 'off', why: 'settings', in: 40, out: 41 })]);
     show();

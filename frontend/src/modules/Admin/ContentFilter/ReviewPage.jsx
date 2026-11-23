@@ -114,7 +114,10 @@ function FilmReview({ ratingKey, rowId, owner }) {
   // An item runs once the cursor is that part, through the same handlers as the keys.
   const [partMenu, setPartMenu] = useState(null);
   const pendingAction = useRef(null);
-  const [, setActionTick] = useState(0);
+  const [actionTick, setActionTick] = useState(0);
+  // The open menu's row id, read by a second open in the same gesture (the ContextMenu key raises
+  // keydown and then contextmenu): one menu, one log.
+  const openMenuId = useRef(null);
   const runPartAction = ({ row: r, action, value }) => {
     if (action === 'play') keyHandlers.replay?.();
     else if (action === 'unfiltered') keyHandlers.playWithout();
@@ -127,10 +130,16 @@ function FilmReview({ ratingKey, rowId, owner }) {
     else if (action === 'in') keyHandlers.markIn();
     else if (action === 'out') keyHandlers.markOut();
   };
+  // An action runs on the render it was queued for, and only on its own part: a cursor that moved
+  // meanwhile (a verdict's save stepped on) drops it, so it never fires on a later visit (review 2026-11-22).
   useEffect(() => {
     const p = pendingAction.current;
-    if (!p || selected?.id !== p.row.id) return;
+    if (!p || actionTick < p.tick) return;
     pendingAction.current = null;
+    if (selected?.id !== p.row.id) {
+      logger.info('content_filter.review.part_menu.dropped', { rk: ratingKey, rowId: p.row.id, action: p.action, cursor: selected?.id ?? null });
+      return;
+    }
     runPartAction(p);
   });
 
@@ -159,7 +168,10 @@ function FilmReview({ ratingKey, rowId, owner }) {
   const openPartMenu = (r, at, from) => {
     if (!r || !at) return;
     // The menu acts on the part in hand: when the pick is refused (unsaved timing) it stays shut.
+    if (openMenuId.current === r.id) return;
     if ((r.id !== row?.id || stage === 'approve') && pickPart(r) === false) return;
+    pendingAction.current = null;
+    openMenuId.current = r.id;
     setPartMenu({ id: r.id, row: r, at });
     logger.info('content_filter.review.part_menu', { rk: ratingKey, rowId: r.id, from });
   };
@@ -167,8 +179,8 @@ function FilmReview({ ratingKey, rowId, owner }) {
   const onPartAction = (action, value) => {
     if (!partMenuRow) return;
     logger.info('content_filter.review.part_menu.action', { rk: ratingKey, rowId: partMenuRow.id, action, value: value ?? null });
-    pendingAction.current = { row: partMenuRow, action, value };
-    setActionTick((n) => n + 1);
+    pendingAction.current = { row: partMenuRow, action, value, tick: actionTick + 1 };
+    setActionTick(actionTick + 1);
   };
   // The list's keyboard path says so (the context-menu key or Shift+F10).
   const fromList = (r, at, via) => openPartMenu(r, at, via === 'key' ? 'key' : 'list');
@@ -215,7 +227,7 @@ function FilmReview({ ratingKey, rowId, owner }) {
           onEffect={stage === 'approve' ? null : (r, letter) => station.handlers.effect?.(letter, r)}
           emptyText={EMPTY[data.status?.next] || null} onPartMenu={fromList} />
       </div>
-      <PartMenu row={partMenuRow} at={partMenu?.at ?? null} onClose={() => setPartMenu(null)} onAction={onPartAction} />
+      <PartMenu row={partMenuRow} at={partMenu?.at ?? null} onClose={() => { openMenuId.current = null; setPartMenu(null); }} onAction={onPartAction} />
     </div>
   );
 }

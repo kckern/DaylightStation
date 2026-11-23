@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Menu } from '@mantine/core';
 import { IconCheck } from '@tabler/icons-react';
 import { effectOptions, isCurrentEffect } from './EffectMenu.jsx';
@@ -36,21 +36,32 @@ export function PartMenu({ row, at = null, onClose = () => {}, onAction = () => 
   const opened = Boolean(row && at);
   const items = row ? partMenuItems(row) : null;
   const run = (action, value) => { onClose(); onAction(action, value); };
+  const runRef = useRef(run);
+  runRef.current = run;
   // The keys the items show work while the menu is open (the station's keys stand aside for an
-  // open menu: useReviewKeys.js). A document listener, as in EffectMenu.jsx.
+  // open menu: useReviewKeys.js). A document listener, as in EffectMenu.jsx. Enter is Play filtered
+  // (↵) unless an item has focus: then Mantine's Enter presses that item.
   useEffect(() => {
-    if (!opened || !items) return undefined;
-    const all = [...items.play, ...items.effects, ...items.judge, ...items.timing].filter(([k]) => k && k.length === 1);
+    if (!opened || !row) return undefined;
+    const { play, effects, judge, timing } = partMenuItems(row);
+    const letters = [...play, ...effects, ...judge, ...timing].filter(([k]) => k && /^[A-Z]$/.test(k));
     const onKey = (e) => {
-      if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
-      const hit = all.find(([k]) => k.toLowerCase() === e.key.toLowerCase());
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === 'Enter') {
+        if (document.activeElement?.closest?.('[role="menuitem"]')) return;
+        e.preventDefault(); e.stopPropagation();
+        runRef.current('play');
+        return;
+      }
+      if (e.key.length !== 1) return;
+      const hit = letters.find(([k]) => k.toLowerCase() === e.key.toLowerCase());
       if (!hit) return;
       e.preventDefault(); e.stopPropagation();
-      run(hit[2], hit[3]);
+      runRef.current(hit[2], hit[3]);
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  });
+  }, [opened, row]);
   if (!row) return null;
   const item = ([k, label, action, value, effect]) => {
     const current = action === 'effect' && isCurrentEffect(row, effect);
