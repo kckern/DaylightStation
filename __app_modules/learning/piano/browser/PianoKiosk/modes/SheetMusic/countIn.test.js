@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { countInPlan, exerciseCountInPlan, countdownPresentation, askPulseQuarters, askPace, countInSentence } from './countIn.js';
+import { countInPlan, exerciseCountInPlan, countdownPresentation, askPulseQuarters, askPace, countInSentence, entryOffsetQuarters, alignCountIn } from './countIn.js';
 
 describe('exercise count-in projection', () => {
   it.each([
@@ -17,12 +17,12 @@ describe('exercise count-in projection', () => {
 
   it('keeps the selected countable pulse for fast music', () => {
     const plan = exerciseCountInPlan({ beatsPerMeasure: 4, gradedBpm: 120, onsetQuarters: [0, 0.5, 1, 1.5] });
-    expect(plan).toEqual({ clicks: 4, periodMs: 500, leadInMs: 2000, pulseBpm: 120 });
+    expect(plan).toEqual({ clicks: 4, periodMs: 500, leadInMs: 2000, pulseBpm: 120, entry: 'downbeat' });
   });
 
   it('uses quarter pulses when the ask has no steady spacing', () => {
     expect(exerciseCountInPlan({ beatsPerMeasure: 4, gradedBpm: 60, onsetQuarters: [0, 1, 1.5] }))
-      .toEqual({ clicks: 4, periodMs: 1000, leadInMs: 4000, pulseBpm: 60 });
+      .toEqual({ clicks: 4, periodMs: 1000, leadInMs: 4000, pulseBpm: 60, entry: 'downbeat' });
   });
 
   it.each([0, -10, NaN, Infinity, undefined])('does not invent a pulse for unusable graded tempo %s', (gradedBpm) => {
@@ -260,5 +260,36 @@ describe('countUpPresentation (Learn passages)', () => {
   it('follows the plan\'s clicks whatever the meter (three clicks in 3/4)', async () => {
     const { countUpPresentation } = await import('./countIn.js');
     expect(countUpPresentation({ clicks: 3, leadInMs: 1800, elapsedMs: 1300 })).toEqual({ count: 3, clicks: 3, last: true });
+  });
+});
+
+describe('pickup-aware count-in', () => {
+  const bars = (first, n = 4, bar = 4) => [{ onsetQuarter: 0, durationQuarters: first },
+    ...Array.from({ length: n }, (_, i) => ({ onsetQuarter: first + i * bar, durationQuarters: bar }))];
+
+  it('puts a one-beat pickup on beat 4 of a three-click count', () => {
+    expect(entryOffsetQuarters({ measures: bars(1), firstOnsetQuarter: 0 })).toBe(3);
+    expect(exerciseCountInPlan({ beatsPerMeasure: 4, gradedBpm: 60, onsetQuarters: [0, 1, 2, 3], measures: bars(1) }))
+      .toEqual({ clicks: 3, periodMs: 1000, leadInMs: 3000, pulseBpm: 60, entry: 'aligned' });
+  });
+  it('counts a full bar first when only one click would come before the pickup', () => {
+    expect(alignCountIn({ clicks: 3, pulseQuarters: 1, barQuarters: 3, entryQuarters: 1 })).toEqual({ clicks: 4, entry: 'aligned' });
+  });
+  it('counts the beats before a first note that follows a rest', () => {
+    expect(entryOffsetQuarters({ measures: bars(4), firstOnsetQuarter: 2 })).toBe(2);
+    expect(alignCountIn({ clicks: 4, pulseQuarters: 1, barQuarters: 4, entryQuarters: 2 })).toEqual({ clicks: 2, entry: 'aligned' });
+  });
+  it("leaves an eighth-note pickup on today's count-in and says so", () => {
+    expect(alignCountIn({ clicks: 4, pulseQuarters: 1, barQuarters: 4, entryQuarters: 3.5 })).toEqual({ clicks: 4, entry: 'unaligned' });
+  });
+  it('never clicks off the beat when the pulse is coarser than the pickup', () => {
+    expect(alignCountIn({ clicks: 2, pulseQuarters: 2, barQuarters: 4, entryQuarters: 3 })).toEqual({ clicks: 2, entry: 'unaligned' });
+  });
+  it('keeps a downbeat start exactly as today', () => {
+    expect(exerciseCountInPlan({ beatsPerMeasure: 4, gradedBpm: 60, onsetQuarters: [0, 1], measures: bars(4) }))
+      .toEqual({ clicks: 4, periodMs: 1000, leadInMs: 4000, pulseBpm: 60, entry: 'downbeat' });
+  });
+  it.each([undefined, [], [{ onsetQuarter: NaN, durationQuarters: 4 }]])('returns null for unusable measures %#', (measures) => {
+    expect(entryOffsetQuarters({ measures, firstOnsetQuarter: 0 })).toBeNull();
   });
 });

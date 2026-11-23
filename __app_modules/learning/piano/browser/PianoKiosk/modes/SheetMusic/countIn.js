@@ -111,17 +111,71 @@ export function askPulseQuarters(onsetQuarters = []) {
   return steps.every((step) => Math.abs(step - first) < 1e-6) ? first : null;
 }
 
-/** At most four countable pulses on the exercise's graded musical grid. */
-export function exerciseCountInPlan({ beatsPerMeasure, gradedBpm, onsetQuarters }) {
+const WHOLE = 1e-6;
+const isWhole = (value) => Math.abs(value - Math.round(value)) < WHOLE;
+
+/**
+ * WHERE THE FIRST NOTE SITS IN ITS BAR, in quarters from that bar's downbeat.
+ *
+ * A pickup bar is short and right-aligned: a one-beat pickup in 4/4 sits on
+ * beat 4. On 2026-11-22 a child counted 1-2-3-4 into a piece that opens on a
+ * one-beat pickup; the clicks treated the pickup as a downbeat, so bar 1 came a
+ * beat late and he had to count to five. The full bar is the most common bar
+ * length after the first; the first bar's real length is read from where the
+ * second bar starts (cumulative timestamps), because a pickup's written length
+ * may be reported as a whole bar.
+ *
+ * @param {{ measures?: Array<{onsetQuarter:number, durationQuarters:number}>, firstOnsetQuarter?: number }} p
+ * @returns {number|null}
+ */
+export function entryOffsetQuarters({ measures, firstOnsetQuarter } = {}) {
+  if (!Array.isArray(measures) || !measures.length || !Number.isFinite(firstOnsetQuarter)) return null;
+  if (!measures.every((m) => Number.isFinite(m?.onsetQuarter) && Number.isFinite(m?.durationQuarters) && m.durationQuarters > 0)) return null;
+  const counts = new Map();
+  for (const m of measures.slice(1)) counts.set(m.durationQuarters, (counts.get(m.durationQuarters) ?? 0) + 1);
+  const fullBar = counts.size ? [...counts].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0] : measures[0].durationQuarters;
+  const firstBar = measures.length > 1 ? measures[1].onsetQuarter - measures[0].onsetQuarter : measures[0].durationQuarters;
+  const home = [...measures].reverse().find((m) => m.onsetQuarter <= firstOnsetQuarter + WHOLE) ?? measures[0];
+  if (home === measures[0] && firstBar > 0 && firstBar < fullBar - WHOLE) {
+    return fullBar - firstBar + (firstOnsetQuarter - measures[0].onsetQuarter);
+  }
+  return Math.max(0, firstOnsetQuarter - home.onsetQuarter);
+}
+
+/**
+ * Reshape a count-in so its last click is the beat before the first note.
+ * A note on a downbeat keeps the count it had. Fewer than two clicks before the
+ * note adds a bar (one click conveys no tempo). An entry that is not a whole
+ * number of clicks (an eighth-note pickup, or a pulse coarser than the pickup)
+ * keeps today's count rather than click off the beat, and says so.
+ *
+ * @returns {{ clicks:number, entry:'downbeat'|'aligned'|'unaligned' }}
+ */
+export function alignCountIn({ clicks, pulseQuarters, barQuarters, entryQuarters }) {
+  if (!(entryQuarters > WHOLE)) return { clicks, entry: 'downbeat' };
+  const before = entryQuarters / pulseQuarters;
+  const perBar = barQuarters / pulseQuarters;
+  if (!(pulseQuarters > 0) || !isWhole(before) || !isWhole(perBar)) return { clicks, entry: 'unaligned' };
+  const whole = Math.round(before);
+  return { clicks: whole >= 2 ? whole : whole + Math.round(perBar), entry: 'aligned' };
+}
+
+/** At most four countable pulses on the exercise's graded musical grid, ending on the beat before the first note. */
+export function exerciseCountInPlan({ beatsPerMeasure, gradedBpm, onsetQuarters, measures }) {
   if (!Number.isFinite(gradedBpm) || gradedBpm <= 0) return null;
   const pulse = askPulseQuarters(onsetQuarters) ?? 1;
   const plan = countInPlan({ beats: beatsPerMeasure, bpm: gradedBpm / pulse });
-  const clicks = Math.min(4, plan.beats);
+  const pulseQuarters = plan.periodMs * gradedBpm / 60000;
+  const entryQuarters = entryOffsetQuarters({ measures, firstOnsetQuarter: onsetQuarters?.[0] });
+  const bars = Array.isArray(measures) ? measures.slice(1).map((m) => m.durationQuarters).filter((d) => d > 0) : [];
+  const barQuarters = bars.length ? Math.max(...bars) : (Number.isFinite(beatsPerMeasure) ? beatsPerMeasure : 4);
+  const { clicks, entry } = alignCountIn({ clicks: Math.min(4, plan.beats), pulseQuarters, barQuarters, entryQuarters });
   return {
     clicks,
     periodMs: plan.periodMs,
     leadInMs: clicks * plan.periodMs,
     pulseBpm: 60000 / plan.periodMs,
+    entry,
   };
 }
 
@@ -210,4 +264,4 @@ export function countInSentence(clicks, pace) {
   return `${lead}, then play at that speed.`;
 }
 
-export default { countInPlan, exerciseCountInPlan, countdownPresentation, countUpPresentation, askPulseQuarters, askPace, countInSentence };
+export default { countInPlan, exerciseCountInPlan, entryOffsetQuarters, alignCountIn, countdownPresentation, countUpPresentation, askPulseQuarters, askPace, countInSentence };
