@@ -130,31 +130,55 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
     via.current = 'click';
   }, [selected?.id, rk]);
 
-  // One session per film while the page is open.
+  // One session per film while the page is open. It ends on unmount (leaving the page) or on pagehide
+  // (tab close, kiosk reload: unmount never runs there), logged once. A page restored from the
+  // back/forward cache (pageshow, persisted) starts a new session rather than resuming the ended one.
   const session = useRef(null);
+  const startSession = (list) => {
+    session.current = { rk, at: Date.now(), verdicts: 0, effects: 0, blocked: 0, refused: 0, sent: false };
+    logger.info('content_filter.review.session.start', { rk, rows: list.length, reviewed: list.filter(hasVerdict).length });
+  };
   useEffect(() => {
     if (!rows || session.current?.rk === rk) return;
-    session.current = { rk, at: Date.now() };
-    logger.info('content_filter.review.session.start', { rk, rows: rows.length, reviewed: rows.filter(hasVerdict).length });
-  }, [rows, rk]);
-  useEffect(() => () => {
-    const s = session.current; if (!s) return;
-    const list = latest.current.rows || [];
-    logger.info('content_filter.review.session.end', { rk: s.rk, rows: list.length, reviewed: list.filter(hasVerdict).length, durationMs: Date.now() - s.at });
-    session.current = null;
-  }, [rk]);
+    startSession(rows);
+  }, [rows, rk]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const end = (how) => {
+      const s = session.current; if (!s || s.sent) return;
+      s.sent = true;
+      const list = latest.current.rows || [];
+      logger.info('content_filter.review.session.end', { rk: s.rk, rows: list.length, reviewed: list.filter(hasVerdict).length, durationMs: Date.now() - s.at,
+        verdicts: s.verdicts, effects: s.effects, blocked: s.blocked, refused: s.refused, how });
+    };
+    const onHide = () => end('pagehide');
+    const onShow = (e) => { if (e.persisted && session.current?.sent && latest.current.rows) startSession(latest.current.rows); };
+    window.addEventListener('pagehide', onHide);
+    window.addEventListener('pageshow', onShow);
+    return () => {
+      window.removeEventListener('pagehide', onHide);
+      window.removeEventListener('pageshow', onShow);
+      end('leave');
+      session.current = null;
+    };
+  }, [rk]); // eslint-disable-line react-hooks/exhaustive-deps
+  const count = (field) => { if (session.current) session.current[field] += 1; };
+  // A refusal is logged and counted in one place.
+  const refuse = (event, data) => { count('refused'); logger.info(event, data); };
 
   // A span dragged on the timing strip and not saved yet (RowEditor reports it): moving the cursor
   // would drop it without a word, so stepping, picking and verdicts wait for the autosave or Esc.
   const dirtyTiming = useRef(null);
-  const timingDirty = useCallback((drop) => {
+  const dirtyDetail = useRef(null);
+  const timingDirty = useCallback((drop, detail) => {
     // A new draft makes "Timing change dropped." stale (review 2026-11-22).
     if (drop && !dirtyTiming.current) setMessage((m) => (m === 'Timing change dropped.' ? null : m));
     dirtyTiming.current = drop || null;
+    dirtyDetail.current = drop ? (detail || null) : null;
   }, []);
   const heldByTiming = (what) => {
     if (!dirtyTiming.current) return false;
-    logger.info('content_filter.review.unsaved_timing_blocked', { rk, rowId: latest.current.selectedId, what });
+    count('blocked');
+    logger.info('content_filter.review.unsaved_timing_blocked', { rk, rowId: latest.current.selectedId, what, ...(dirtyDetail.current || {}) });
     setMessage(UNSAVED_TIMING);
     return true;
   };
@@ -230,6 +254,7 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
     const replays = arrived.current.replays;
     await queueWrite(rk, () => DaylightAPI(`${API}/${encodeURIComponent(rk)}/review/${encodeURIComponent(r.id)}`,
       { span: [r.in, r.out], verdict, ...(reason ? { reason } : {}), ...(change ? { change } : {}), dwellMs, replays }, 'PUT'));
+    count('verdicts');
     logger.info('content_filter.review.verdict', { rk, rowId: r.id, kind: r.kind, category: r.group, effect: r.effect, verdict, ...(reason ? { reason } : {}), ...(change ? { change } : {}), dwellMs, replays });
     if (!activeView.current) return;
     setUndoStack((s) => [...s, { rowId: r.id, verdict, changed: Boolean(change) }]);
@@ -242,7 +267,7 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
     if (heldByTiming('verdict')) return;
     // A verdict on a part whose effect is still saving would judge the old effect (review 2026-11-23).
     if (row.effectHeld) {
-      logger.info('content_filter.review.verdict_refused', { rk, rowId: row.id, reason: 'effect-saving' });
+      refuse('content_filter.review.verdict_refused', { rk, rowId: row.id, reason: 'effect-saving' });
       setMessage(v === 'approve' ? 'Saving the effect: one moment, then approve.' : 'Saving the effect: one moment, then try again.');
       return;
     }
@@ -273,10 +298,10 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
     if (!entry) return;
     const [, label, to] = entry;
     // A film-wide refine rewrites the cues: the server answers an effect write with a 409, so say why and send nothing.
-    if (latest.current.running) { setMessage(RUN_BUSY_TEXT); logger.info('content_filter.review.effect_refused', { rk, rowId: row.id, to, reason: 'run' }); return; }
-    if (latest.current.refining?.[row.id]) { setMessage('This part is being refined. Change its effect when the new timing lands.'); logger.info('content_filter.review.effect_refused', { rk, rowId: row.id, to, reason: 'refining' }); return; }
+    if (latest.current.running) { setMessage(RUN_BUSY_TEXT); refuse('content_filter.review.effect_refused', { rk, rowId: row.id, to, reason: 'run' }); return; }
+    if (latest.current.refining?.[row.id]) { setMessage('This part is being refined. Change its effect when the new timing lands.'); refuse('content_filter.review.effect_refused', { rk, rowId: row.id, to, reason: 'refining' }); return; }
     const allowed = isSceneRow(row) ? SCENE_EFFECTS.has(to) : effectChoices(row.modality).some((o) => o.value === to);
-    if (!allowed) { setMessage(`${label} does not fit this part.`); logger.info('content_filter.review.effect_refused', { rk, rowId: row.id, to, reason: 'channel' }); return; }
+    if (!allowed) { setMessage(`${label} does not fit this part.`); refuse('content_filter.review.effect_refused', { rk, rowId: row.id, to, reason: 'channel' }); return; }
     if (plays(row) ? to === 'off' : effectButton(row.effect) === to) { setMessage(`Already ${label.toLowerCase()}.`); return; }
     const calls = callsFor(row, { effect: to });
     const from = plays(row) ? 'off' : row.effect;
@@ -294,6 +319,7 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
     }).then(async (sent) => {
       if (!sent) { logger.info('content_filter.review.effect_superseded', { rk, rowId: row.id, to }); return; }
       if (held != null) { effectHolds.saved(row.id, held) }
+      count('effects');
       logger.info('content_filter.review.effect', { rk, rowId: row.id, kind: row.kind, from, to, waited, saveMs: Date.now() - queuedAt });
       if (!activeView.current) return;
       // The last message wins: an earlier click's failure may have landed after this one was shown.
@@ -323,10 +349,11 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
   // effect menu does), so the household's settings decide again.
   const settings = (target = row) => {
     if (!target) return;
-    if (latest.current.running) { setMessage(RUN_BUSY_TEXT); logger.info('content_filter.review.effect_refused', { rk, rowId: target.id, to: 'profile', reason: 'run' }); return; }
-    if (latest.current.refining?.[target.id]) { setMessage('This part is being refined. Change its effect when the new timing lands.'); logger.info('content_filter.review.effect_refused', { rk, rowId: target.id, to: 'profile', reason: 'refining' }); return; }
+    if (latest.current.running) { setMessage(RUN_BUSY_TEXT); refuse('content_filter.review.effect_refused', { rk, rowId: target.id, to: 'profile', reason: 'run' }); return; }
+    if (latest.current.refining?.[target.id]) { setMessage('This part is being refined. Change its effect when the new timing lands.'); refuse('content_filter.review.effect_refused', { rk, rowId: target.id, to: 'profile', reason: 'refining' }); return; }
     guarded('settings', async () => {
       await queueWrite(rk, async () => { for (const [path, body, method] of callsFor(target, { effect: 'profile', disabled: false })) await DaylightAPI(path, body, method); });
+      count('effects');
       logger.info('content_filter.review.effect', { rk, rowId: target.id, kind: target.kind, from: target.effect, to: 'profile' });
       if (!activeView.current) return;
       setMessage('Back on the household settings.');
@@ -338,7 +365,7 @@ export function useReviewStation({ ratingKey, data, effectHolds = null, reload, 
   const widen = () => {
     if (!row) return;
     if (row.effectHeld) {
-      logger.info('content_filter.review.verdict_refused', { rk, rowId: row.id, reason: 'effect-saving' });
+      refuse('content_filter.review.verdict_refused', { rk, rowId: row.id, reason: 'effect-saving' });
       setMessage('Saving the effect: one moment, then try again.');
       return;
     }

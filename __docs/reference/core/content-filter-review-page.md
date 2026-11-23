@@ -345,3 +345,64 @@ last message, the preview retry and the `?` keymap sheet.
   louder of their levels; a named sound plays at the set's volume as before.
 
 **Review video quality.** The review player requests the film at 360p / 1000 kbps (`REVIEW_QUALITY` in `ReviewPlayer.jsx`; the standard `maxResolution` / `maxVideoBitrate` playback-quality caps, see `__docs/reference/player/playback-quality.md`), so seeks and jumps land fast. Raise it for a closer look at a picture effect.
+
+## Observability
+
+Every event is `content_filter.review.<name>`, logged by the review station (frontend, `context.app`
+of the admin page) unless marked server. `rk` is the film's rating key. Fields:
+
+| Event | Fields |
+|-------|--------|
+| `session.start` | `rk, rows, reviewed` |
+| `session.end` | `rk, rows, reviewed, durationMs, verdicts, effects, blocked, refused, how` (`leave` = page unmounted, `pagehide` = tab closed / kiosk reload). Logged once per session. A page restored from the back/forward cache starts a new session |
+| `arrived`, `permalink.opened`, `unfiltered` | `rk, rowId` (+ `rows`, `found`) |
+| `stage_tab` | `rk, stage, from, via, shown` |
+| `scope` | `rk, stage, show, order, timing, kind, action, needs, group, shown` |
+| `cursor` (debug) | `rk, rowId, via` |
+| `verdict` | `rk, rowId, kind, category, effect, verdict, reason?, change?, dwellMs, replays` |
+| `verdict.recorded` (server) | `ratingKey, rowId, kind, category, verdict, reason, by` (undo: `verdict: 'undo', undid`) |
+| `verdict_refused` | `rk, rowId, reason` (`effect-saving`) |
+| `undo` | `rk, rowId, undid` |
+| `effect` | `rk, rowId, kind, from, to, waited, saveMs` (the write succeeded; "household settings" omits `waited`/`saveMs`) |
+| `effect_settled` | `rk, rowId, to, settleMs` (the audit shows the asked effect) |
+| `effect_resolved_differently` | `rk, rowId, asked, plays, settleMs` |
+| `effect_unsettled` (warn) | `rk, rowId, to, saved, waitedMs` |
+| `effect_superseded` | `rk, rowId, to` (a later click replaced it before it was sent) |
+| `effect_refused` | `rk, rowId, to, reason` (`run`, `refining`, `channel`) |
+| `effect_preview_stale` (warn) | `rk, rowId` |
+| `unsaved_timing_blocked` | `rk, rowId, what` (`step`, `pick`, `verdict`, `tab`, `undo`, `refine`) plus `own` (this part's span is a draft), `others` (row ids of other drafted parts), `draft` (`[in,out]` or null), `saved` (`[in,out]`) |
+| `unsaved_timing_dropped` | `rk, rowId` (Esc) |
+| `timing_autosaved` | `rk, rowId, parts` |
+| `part_menu`, `part_menu.action`, `part_menu.dropped` | `rk, rowId, from` / `action, value` / `action, cursor` |
+| `refine`, `refine_queued`, `refine_failed` (warn), `rework` | `rk, cues, what` (`rework`: `rows, cues, kind, reasons`; failed: `error`) |
+| `bleep_level`, `bleep_level_failed`, `cue_bleep_level`, `cue_bleep_level_failed` | `rk, level?, scope?, value, rowId?, error?` |
+| `toggle_play` (debug) | `rk, to` |
+| `action_failed` (warn) | `rk, rowId, key, to?, error` |
+| `audit_requested` (server) | `ratingKey, reason` |
+
+`refused` in `session.end` counts `effect_refused` plus `verdict_refused`; `blocked` counts
+`unsaved_timing_blocked`.
+
+### Queries
+
+Aggregation is `| stats by ("field") count()`; dotted names are quoted. Verified against the log store.
+
+- **Stuck clicks**: the same part asked for the same change three or more times within 5 s (a click
+  that seemed to do nothing). Each `effect` event is one successful write.
+
+  ```
+  "content_filter.review.effect" AND _time:7d | stats by (_time:5s, "data.rowId", "data.from", "data.to") count() as n | filter n:>=3 | sort by (n desc)
+  ```
+
+  Read the hits next to `effect_superseded` / `effect_unsettled` for the same `data.rowId`.
+- **Blocks per session** (per minute, or per session via `session.end`):
+
+  ```
+  "content_filter.review.unsaved_timing_blocked" AND _time:7d | stats by (_time:1m) count() as blocks | sort by (blocks desc)
+  "content_filter.review.session.end" AND _time:7d | stats by ("data.rk") sum("data.blocked") as blocks, count() as sessions
+  ```
+- **Effect settle time** (how long the list takes to show a saved effect):
+
+  ```
+  "content_filter.review.effect_settled" AND _time:7d | stats quantile(0.9, "data.settleMs") as p90, count() as n
+  ```

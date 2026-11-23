@@ -532,6 +532,47 @@ describe('review station keys', () => {
     unmount();
     expect(log.info).toHaveBeenCalledWith('content_filter.review.session.end', expect.objectContaining({ rk: '77', rows: 3, durationMs: expect.any(Number) }));
   });
+  const endLogs = () => log.info.mock.calls.filter((c) => c[0] === 'content_filter.review.session.end');
+  it('session.end is logged once when the page is hidden for good', () => {
+    const { unmount } = show();
+    fireEvent(window, new Event('pagehide'));
+    expect(endLogs()).toHaveLength(1);
+    expect(endLogs()[0][1]).toEqual(expect.objectContaining({ rk: '77', rows: 3, how: 'pagehide' }));
+    unmount();
+    expect(endLogs()).toHaveLength(1);
+  });
+  it('a page restored from the back/forward cache starts a new session that ends once more', () => {
+    const { unmount } = show();
+    fireEvent(window, new Event('pagehide'));
+    const restored = new Event('pageshow'); restored.persisted = true;
+    fireEvent(window, restored);
+    expect(log.info.mock.calls.filter((c) => c[0] === 'content_filter.review.session.start')).toHaveLength(2);
+    unmount();
+    expect(endLogs()).toHaveLength(2);
+    expect(endLogs()[1][1].how).toBe('leave');
+  });
+  it('session.end counts the session', async () => {
+    const { unmount } = show();
+    press('a');
+    await waitFor(() => expect(verdictLogs()).toHaveLength(1));
+    press('m');
+    await waitFor(() => expect(log.info).toHaveBeenCalledWith('content_filter.review.effect', expect.objectContaining({ to: 'mute' })));
+    press('p');
+    await waitFor(() => expect(log.info.mock.calls.filter((c) => c[0] === 'content_filter.review.effect')).toHaveLength(2));
+    const start = screen.getByRole('slider', { name: 'Start' });
+    start.focus(); fireEvent.keyDown(start, { key: 'ArrowLeft' }); start.blur();
+    press('ArrowRight');
+    unmount();
+    expect(endLogs()[0][1]).toEqual(expect.objectContaining({ verdicts: 1, effects: 2, blocked: 1, refused: 0, how: 'leave' }));
+  });
+  it('a timing block says what is unsaved', () => {
+    show();
+    const start = screen.getByRole('slider', { name: 'Start' });
+    start.focus(); fireEvent.keyDown(start, { key: 'ArrowLeft' }); start.blur();
+    press('ArrowRight');
+    const blocked = log.info.mock.calls.find((c) => c[0] === 'content_filter.review.unsaved_timing_blocked');
+    expect(blocked[1]).toEqual(expect.objectContaining({ own: true, others: [], draft: [expect.any(Number), expect.any(Number)], saved: [expect.any(Number), expect.any(Number)] }));
+  });
   it('clicking a row is a cursor move too (via click)', () => {
     show(); fireEvent.click(screen.getByRole('button', { name: 'bravo' }));
     expect(selected()).toBe('cue:w2');

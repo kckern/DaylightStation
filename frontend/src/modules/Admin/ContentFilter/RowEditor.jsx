@@ -210,8 +210,8 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
   // 2026-11-23: 21 moves refused in a minute, then a page reload).
   const unsaved = Boolean(changedCount) && autoKey !== savedKey;
   useEffect(() => {
-    dirtyPort?.(unsaved ? resetDrafts : null);
-  }, [unsaved, row.in, row.out]); // eslint-disable-line react-hooks/exhaustive-deps
+    dirtyPort?.(unsaved ? resetDrafts : null, unsaved ? { own: changedOwn, others: changedOthers.map((n) => n.id), draft: changedOwn ? span : null, saved: [row.in, row.out] } : undefined);
+  }, [unsaved, row.in, row.out, autoKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => dirtyPort?.(null), []); // eslint-disable-line react-hooks/exhaustive-deps
   // E opens the effect menu and S saves the timing (ReviewPage wires the keys to these).
   useEffect(() => {
