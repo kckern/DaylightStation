@@ -327,9 +327,9 @@ describe('ScorePlayer — approved Learn file (sidecar)', () => {
   const id = 'files:sidecar-applied.musicxml';
   renderWith(id, { segments: SEGMENTS, contentSha256: sha256(XML).toString() });
   pickMode('Learn');
-  expect(rail().getByRole('button', { name: /^Opening.*Not started$|^Bars 1–1, Not started$/ })).toBeInTheDocument();
-  expect(rail().getByRole('button', { name: 'Bars 2–2, Not started' })).toBeInTheDocument();
-  expect(rail().queryByRole('button', { name: 'Bars 1–2, Not started' })).not.toBeInTheDocument();
+  expect(rail().getByRole('button', { name: /^Learn A, (opening|bars 1–1)$/ })).toBeInTheDocument();
+  expect(rail().getByRole('button', { name: 'B, bars 2–2, Not started' })).toBeInTheDocument();
+  expect(rail().queryByRole('button', { name: /bars 1–2/ })).not.toBeInTheDocument();
   expect(events('score.learn.sidecar-applied', id)).toEqual([expect.objectContaining({ data: { scoreId: id, segments: 2 } })]);
   expect(events('score.learn.sidecar-stale', id)).toHaveLength(0);
  });
@@ -339,8 +339,8 @@ describe('ScorePlayer — approved Learn file (sidecar)', () => {
   const id = 'files:sidecar-stale.musicxml';
   renderWith(id, { segments: SEGMENTS, contentSha256: 'not-this-xml' });
   pickMode('Learn');
-  expect(rail().getByRole('button', { name: 'Bars 1–2, Not started' })).toBeInTheDocument();
-  expect(rail().queryByRole('button', { name: 'Bars 2–2, Not started' })).not.toBeInTheDocument();
+  expect(rail().getByRole('button', { name: 'Learn A, bars 1–2' })).toBeInTheDocument();
+  expect(rail().queryByRole('button', { name: 'B, bars 2–2, Not started' })).not.toBeInTheDocument();
   expect(events('score.learn.sidecar-stale', id)).toHaveLength(1);
   expect(events('score.learn.sidecar-applied', id)).toHaveLength(0);
  });
@@ -365,14 +365,14 @@ describe('ScorePlayer — guided Learn composition', () => {
   expect(h.learnLabProps.coachingTask).toMatchObject({ passageId: 'm0-1', skill: 'right' });
   expect(h.learnLabProps.segment.barLabel).toBe('Bars 1–2');
   expect(h.learnLabProps.drill.projection.steps).toHaveLength(12);
-  expect(screen.getByRole('navigation', { name: 'Passages in this piece' })).toHaveAttribute('data-bare', 'true');
+  expect(screen.getByRole('navigation', { name: 'Passages in this piece' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /Start practice/ })).not.toBeInTheDocument();
  });
  it('provides one learning entry that lands on the drill, banks a pass, and returns to the score', async () => {
   setup(); renderPlayer(); pickMode('Learn');
   expect(screen.getByRole('navigation', { name: 'Passages in this piece' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: /^0 of \d+ Bronze\. Open the passage board$/ })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Practice bars 1–2' }));
+  expect(screen.getByRole('button', { name: /^All passages, 0 of \d+ Bronze$/ })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Learn A, bars 1–2' }));
   expect(h.learnLabProps.coachingTask.parts).toEqual(['rh']);
   fireEvent.click(screen.getByRole('button', { name: 'Complete rung' }));
   // A pass is the drill's own rep card, with the next step already under it.
@@ -380,7 +380,7 @@ describe('ScorePlayer — guided Learn composition', () => {
   expect(h.learnLabProps.coachingTask.parts).toEqual(['lh']);
   fireEvent.click(screen.getByRole('button', { name: 'Close lab' }));
   expect(screen.getByTestId('renderer')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Practice bars 1–2' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Learn A, bars 1–2' })).toBeInTheDocument();
  });
  it('opens the mode a ?mode= link names, without starting a run', () => {
   setup(); renderPlayer('/?mode=polish');
@@ -390,18 +390,20 @@ describe('ScorePlayer — guided Learn composition', () => {
  });
  it('ignores a stale passage selection and keeps learning reachable', () => {
   setup(); renderPlayer('/?learnPassage=gone&learnRung=obsolete'); pickMode('Learn');
-  expect(screen.getByRole('button', { name: 'Practice bars 1–2' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Learn A, bars 1–2' })).toBeInTheDocument();
   expect(h.learnLabProps).toBeNull();
  });
  it('keeps direct passage selection and listening available', () => {
   setup(); renderPlayer(); pickMode('Learn');
-  const tile = within(screen.getByRole('navigation', { name: 'Passages in this piece' })).getByRole('button', { name: 'Bars 1–2, Not started' });
-  fireEvent.click(tile);
-  // A tile only shows its bars on the score. The rail button is what opens Learn.
-  expect(tile).toHaveAttribute('aria-pressed', 'true');
+  // A card on the board selects its passage: only its bars show on the score.
+  fireEvent.click(screen.getByRole('button', { name: /^All passages/ }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Passage board' })).getByRole('button', { name: 'A, bars 1–2, Not started' }));
+  const token = within(screen.getByRole('navigation', { name: 'Passages in this piece' })).getByRole('button', { name: 'Learn A, bars 1–2' });
+  expect(token).toHaveAttribute('aria-pressed', 'true');
   expect(document.querySelector('.piano-learn-selection-box')).toHaveAttribute('data-passage', 'm0-1');
   expect(screen.queryByRole('button', { name: 'Listen' })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Practice bars 1–2' }));
+  // The selected token opens Learn on its next tap.
+  fireEvent.click(token);
   fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
   expect(screen.getByRole('dialog', { name: 'Passage demonstration' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Stop listening' }));

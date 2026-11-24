@@ -116,7 +116,7 @@ the truth about what that job is:
 | **Perform** | The music stand | No transport bar; the pedals, the page turner, a swipe or a tap turn pages |
 
 **Which mode a score opens in.** With Learn's roadmap on (`sheetmusic.learn.roadmap`,
-the default), a score opened from the library opens in **Learn**, so the passage rail
+the default), a score opened from the library opens in **Learn**, so the passage path
 is on screen from the first moment. A `?play=` launch opens the mode it names and starts
 it; a `?mode=` link opens the mode it names without starting anything (the home strip
 sends an all-Gold piece to `?mode=polish`); a `learnPassage` link opens Learn. When the household names `sheetmusic.defaultMode`,
@@ -327,11 +327,11 @@ Green means one thing only: you are playing the right note, right now.
 
 The score remains the map. Rehearsal regions are never crossed; within each
 region the planner balances passages targeting four bars (normally three to
-five). The [passage rail](#passage-rail-and-board) under the score names the next
-passage and shows every passage of the piece. A stale passage URL shows an
+five). The [passage path](#passage-path-and-board) under the score names the next
+unit and shows every passage of the piece. A stale passage URL shows an
 explanation and the available choices.
 
-A child uses two screens in Learn: the score with its rail and board, and the
+A child uses two screens in Learn: the score with its path and board, and the
 **drill screen**. There is no preparation page and no result page.
 
 #### The drill screen
@@ -339,7 +339,7 @@ A child uses two screens in Learn: the score with its rail and board, and the
 Opening a passage lands on the Exercises run surface (`ExerciseRun` inside
 `LearnLab`), on the passage's current step, ready to play. `LearnCoach` is glue:
 it chooses the step, hands the passage to the drill as sets and reps, records each
-take with the coach, and stacks the [passage rail](#passage-rail-and-board) under
+take with the coach, and stacks the [passage path](#passage-path-and-board) under
 the drill. It draws no practice screen of its own.
 
 - **Sets and reps.** Every Silver and Gold step of the passage is one set in the
@@ -374,13 +374,13 @@ the drill. It draws no practice screen of its own.
 - **Silver and Gold.** The take that certifies the passage closes the drill's
   curtain (`GateCeremony`, the game gate's) over the stage. On the closed curtain
   the passage's icon turns over into its silver or gold coin above `Silver!` or
-  `Gold!`, a short chime sounds and the passage's rail tile turns at the same
+  `Gold!`, a short chime sounds and the passage's token on the path turns at the same
   moment. The curtain then parts onto what is next (`Next`, the next passage's
   icon and bars) and the screen moves there. It lasts five seconds
   (`PASSAGE_CEREMONY_MS`), with the verdict held for about two.
 - **The whole piece.** When that take finishes the piece, the curtain carries
   every passage instead: one coin per passage, turning in a wave above
-  `All Silver!` or `All Gold!`, with the longer chime, while every rail tile
+  `All Silver!` or `All Gold!`, with the longer chime, while every token on the path
   turns with it. It lasts 7.6 seconds (`PIECE_CEREMONY_MS`). Silver parts onto
   `Next: Go for Gold`; Gold parts onto the piece's title. The screen then returns
   to the score, which celebrates nothing itself.
@@ -414,9 +414,9 @@ the drill. It draws no practice screen of its own.
   coach's primary) or `'repeat'` (a run with no host action).
 - **Listen** demonstrates the step's bars and parts in the same chrome with one
   control, **Stop listening**, and records nothing.
-- **Rail and board.** The same rail as the score view sits under the drill, with
-  this passage outlined and no practice button. A tile opens that passage; the
-  count opens the board over the drill, and a card opens its passage.
+- **Path and board.** The same path as the score view sits under the drill, with
+  this unit selected. Every token opens its unit (`piano.learn.path.open`); **All**
+  opens the board over the drill, and a card opens its unit.
 
 **Verdict marks** (✓ ◂ ▸ ○ ×) hang off the noteheads, on the side away from
 the stem: under a stem-up note, above a stem-down one (`verdictAnchor` in
@@ -521,7 +521,7 @@ first certificate, the score offers Gold.
 pace, no metronome, no lit keys and no stuck-ladder note names. It can be attempted
 at any time. Two straight misses on a Silver step or drill offer **Come back to this
 later**, which skips that passage until the next household day, or until the
-learner starts a take on it again: choosing a set-aside passage from the rail brings
+learner starts a take on it again: choosing a set-aside passage from the path brings
 it back, smaller steps and all (until 2026-11-20 a passage reopened that way got no
 smaller steps for the rest of the day, only **Try again** on the whole check). If
 every remaining passage is set aside, the earliest returns. The check ends as a miss after
@@ -635,58 +635,91 @@ queued items.
 not the current one and is not already ready: `{ userId, scoreId, passageId, from,
 to, mode }`, where `from` and `to` are step skills (`right`, `together`, `timed-75`).
 
-### Passage rail and board
+### Passage path and board
 
-Learn is a game played over the whole piece: turn every passage Silver, then go
-round again for Gold. The score stays the main thing on screen.
+Learn is a game played over the whole piece: turn every passage Bronze, join them
+until the piece is played through (Silver), then go round again for Gold. The score
+stays the main thing on screen. Spec: `ops:docs/superpowers/specs/2026-11-23-piano-learn-rail-path-design.md`.
 
 **The score is pages of whole systems** (see [The page](#the-page-whole-systems-in-every-mode)),
-so a staff is never sliced at the rail. The score opens on the page that holds the
-passage the rail's button names, and turns to the next one when that changes after
-a drill or when Learn is entered from another mode.
+so a staff is never sliced at the path. The score opens on the page that holds the
+path's target unit, and turns to the next one when that changes after a drill or
+when Learn is entered from another mode.
 
-**The rail** is one 64px row under the score:
+**The path** (`PassagePath.jsx`, view model `railModel` in `passageRail.js`) is one
+100px row under the score and under the drill, read left to right like a board-game
+path:
 
-`[Practice bars 1–5] | passage tiles | 3/12`
+`Learn A | (A) (B) (C) (D) (E) (F) | ○ ○ ◇ | [▦ All]`
 
-- **Tiles.** Every passage of the piece, always, with no scrolling. Widths follow
-  bar counts and each tile shows the passage's state icon and the printed number
-  of its first bar. The icons are a crowd answering a stage act
-  (`PassageCoin.jsx`): a **tomato** (not started), a **flower** (partway), a
-  **silver coin** and a **gold coin**. The coins are the household `CoinIcon`;
-  `TomatoIcon` and `FlowerIcon` sit beside it in `frontend/src/lib/icons/`.
-  Opacity never shows state.
+- **Passages are letters.** Passage index to letter: A, B, C… (AA, AB… after Z,
+  `letterOf`). Every token is the same size (56px, the letter about 1.6rem heavy) and
+  its state is the disc (`LetterCoin` in `PassageCoin.jsx`): a plain dark disc (not
+  started; there is no tomato on the path), the disc ringed in pink with a flower at
+  its shoulder (partway), a **bronze coin** with the letter (Bronze, stored
+  `silver`) and a **gold coin** with the letter (Gold). The coins are `CoinIcon`'s
+  palettes (bronze through its `color` hatch) drawn as a plain face so the letter
+  reads at arm's length. Bar numbers appear only as a small caption (`bars 5–8`)
+  under the target and next tokens. Opacity never shows state.
+- **Joins appear only when both halves are certified**: both passages Bronze, or
+  for a higher join both member joins Silver. Only the **next** available join is
+  shown (the coach's recommendation when it is a join, else the first available in
+  play order): a **socket** token ringed in silver, standing on the path between
+  its two halves, labelled with letters (`A+B`; a higher join by its span, `A–D`;
+  the final join of a piece longer than two passages `All`), with silver links
+  either side. There is never a second row.
+- **An earned join folds its members** into one silver coin labelled with its span
+  (`A–B`, `A–D`; the whole piece `All`). A join around the target or the socket is
+  not folded, so the unit being worked on is always visible.
+- **After Silver the path opens out for Gold.** Once the piece is played through
+  (`piece.pieceSilver`) the passages stand on their own again, the seam of every
+  join played through drawn as a thick silver link, and the target is the next Gold
+  unit (`nextGoldPassageId`). A Gold join folds its halves into a gold coin; the
+  next Gold join is a gold-ringed socket. A one-passage piece never opens out. While
+  a join's Silver lands on the drill screen the host holds the Silver drawing
+  (`railModel({ lap: 'silver' })`) so the coin turns where it was earned.
+- **The primary action is on the token.** The coach's next unit (recommended
+  passage or join, else the next Gold unit) is drawn larger (68px) and lifted. The
+  **target** carries a small round play disc: the selected unit, else the next.
+  Tapping the target or the next token opens it (on the score
+  `practiceRailPassage(id)`; on the drill screen `onPassageChange`). Tapping any
+  other token selects it: the score turns to the page that holds its bars and boxes
+  them (`paging.showMeasures`), and the play disc moves to it. Selection is a ring
+  in the neutral ink, never the "done" green; done is only the coin. Opening Learn
+  clears the selection. On the drill screen every token opens its unit.
+- **The caption** at the left names the target's task in child words:
+  `Learn A`, `Play A and B together` (`Play A–B and C–D together` higher up),
+  `Play it all` (the final join), `A in time` (Gold), `Play A again`.
+- **The goal** at the right end: three small outline marks, a silver coin (the
+  piece played through), a gold coin (Polish open, `piece.polishReady`) and a
+  diamond (the Polish diamond, from `polishAwards`), each filled when earned.
+- **All** (grid icon and the word) opens and closes the board. There is no count
+  and no chevron.
+- **Long pieces.** Tokens shrink to a 44px floor (`pathLayout`). When the units
+  cannot all fit at that width (at 1280px, beyond about fifteen) the path becomes a
+  compact lettered strip of state colours, and a tap on it opens the board at that
+  unit's card.
 - **Flower.** An uncertified passage becomes a flower by
   `certification.flower.after`: `both-hands` (the default: each hand alone is
   earned, or the hands together; a one-part passage when its notes step is
   earned), `together` (the hands together only) or `first-step` (any note step).
   Invalid values use the default. `projectCoach` computes it (`segment.flower`,
-  and `passageProgress().state === 'learning'`), so the home strip, the rail, the
+  and `passageProgress().state === 'learning'`), so the home strip, the path, the
   board and the drill agree.
-- **Tapping a tile selects it.** The score turns to the page that holds those bars
-  whole and boxes them: the page it is on when they are already there, else a fixed
-  page that holds them all, else the page that starts at their first system. It
-  does not open practice. Tapping a passage on the score itself still opens it.
-- **The button** opens the selected passage in Learn (`Practice bars 14–17`). With
-  nothing selected it opens the recommended passage. When every passage is Silver
-  it reads `Go for Gold: bars 1–5`. Opening Learn clears the selection, so on
-  return the button names the next recommended passage again.
-- **The count** shows `silver/total` until the piece is all Silver, then
-  `gold/total`, and opens the board.
-- **Long pieces.** A tile is never narrower than 44px. When the passages cannot all
-  fit at that width the tiles become a plain map of the piece (still every
-  passage, no numbers) and a tap on it opens the board at that passage's card.
 
-**The board** slides up from the rail and covers the whole stage above it, without
-moving the music underneath; no staff is left sliced behind it. Its cards fill
-it: they are shared evenly between the rows (`boardColumns`: twelve passages are
-six and six), the rows share the height, and each card's icon is half the card.
-It is the table of contents and the trophy board: the piece's title, the two goals as
-counters (a silver coin with `3/12` and a gold coin with `1/12`, ticked when
-reached), and one card per passage with its state icon, its bars and, while it is
-under way, one mark per Silver step. Tapping a card selects that passage as a tile does and closes the
-board. Otherwise it closes with **Close** (or Escape). **Review a passage** appears
-in its header when a review is due.
+**The board** slides up from the path and covers the whole stage above it, without
+moving the music underneath; no staff is left sliced behind it. It mirrors the
+path: one **lettered card** per passage (its coin or disc, its bars and, while it is
+under way, one mark per Bronze step), a **silver card** for every join played
+through (named for its span, in play order after its halves), and the socket card
+of the join on offer. The same single play disc marks the target. Its cards fill
+it: they are shared evenly between the rows (`boardColumns`: twelve cards are six
+and six), the rows share the height, and each card's coin is half the card. Its
+header is the piece's title and the goals as counters (a bronze coin with
+`3/12`, a silver coin with the joins played through, a gold coin with `1/12`,
+ticked when reached). Tapping a card selects that unit as a token tap does and
+closes the board. Otherwise it closes with **Close** (or Escape). **Review a
+passage** appears in its header when a review is due.
 
 A counter adds `earn a gem` only when a gem is really on offer: the Gem
 Board (`GET /api/v1/earnings/gems`, asked when the board first opens) reports
@@ -694,7 +727,7 @@ Board (`GET /api/v1/earnings/gems`, asked when the board first opens) reports
 is not switched off for them. A guest, an unreadable Gem Board or a missing rule
 gets the plain counter.
 
-After the two counters, the board shows the piece's **Polish gem** once it is
+After the counters, the board shows the piece's **Polish gem** once it is
 earned, and the **diamond** in its place after that (one `GemIcon`, the same
 colours as the run summary: `polishStone` in `polishAwards.js`). It comes from the
 practice record read: `GET /api/v1/piano/users/:userId/practice/:scoreKey`
@@ -704,22 +737,25 @@ stored in the record: `usePracticeRecord` keeps it apart from `record` (as
 `polishAwards`) and a PUT carrying it drops it. A Polish run that earns a stone
 updates it at once from the run's `polishReward`, so the board shows a new gem
 without reopening the score. The score view's board and Learn's board both take
-it (`polish` prop).
+it (`polish` prop), and the path's diamond mark reads it too.
 
-The home strip above the piano menu draws the same icons and counters: one icon
+The home strip above the piano menu draws the passage icons and counters: one icon
 per passage of the child's piece in progress, with the next passage ringed.
 
-**Celebration.** Silver and Gold are celebrated on the drill screen, where they
-are earned (see [the drill screen](#the-drill-screen)). The score view shows the
+**Celebration.** Bronze, Silver and Gold are celebrated on the drill screen, where
+they are earned (see [the drill screen](#the-drill-screen)). The score view shows the
 result and celebrates nothing: no banner, no sentence and no second chime. The
 chime is synthesized on the player's WebAudio context (`passageChime.js`), best
-effort. A tile's turn is held until the ceremony's verdict (`flipDelayMs`) and a
-finished piece turns its tiles as a wave (`wave`).
+effort. A token's turn is held until the ceremony's verdict (`flipDelayMs`) and a
+finished piece turns its tokens as a wave (`wave`).
 
-Logs (`piano-score-player`, `piano-passage-board`):
-`piano.learn.rail.select` (`passageId`, `source: rail|board`),
-`piano.learn.rail.practice` (`passageId`, `target: selected|next|gold|again`),
-`piano.learn.board.open`, `piano.learn.board.close`, `piano.learn.gem-offer`.
+Logs (`piano-score-player`, `piano-learn-coach`, `piano-passage-board`):
+`piano.learn.rail.select` (`passageId`, `source: rail|board|learn-rail|learn-board`),
+`piano.learn.path.open` (`passageId`, and `target: selected|next|gold|again` on the
+score or `from` on the drill screen) when a token opens a unit,
+`piano.learn.rail.practice` (`passageId`, `target`; the score view, beside
+`path.open`), `piano.learn.board.open`, `piano.learn.board.close` (`by: all|close`),
+`piano.learn.gem-offer`.
 A page turn logs `score.page.turn` (see [The page](#the-page-whole-systems-in-every-mode)).
 
 ### Piece log and the piece gems
@@ -1329,7 +1365,7 @@ is appended to the [piece log](#piece-log-and-the-piece-gems) as `polish-mark-50
 **Gem earned!**, each led by a `GemIcon`, only when the server says it is new.
 The passage board (from the practice record read's `polishAwards`) and the home
 strip (from the desk endpoint's `polish`) show the stone the piece holds; see
-[the passage board](#passage-rail-and-board) and [home-desk.md](home-desk.md).
+[the passage board](#passage-path-and-board) and [home-desk.md](home-desk.md).
 
 The rewards pay nothing until the household adds the two milestone rules (see
 [economy](../economy/economy.md#earn-rules)).
@@ -1888,8 +1924,9 @@ during an active run so the judge and falling highway cannot jump timelines.
 | `HandsControl.jsx` | icon-only left/right-hand toggle, one semantic in every mode (grand-staff scores) |
 | `StaffDimLayer.jsx` | fades deselected staves by classing the engraving's own per-staff group |
 | `learnRange.js` | pure auto-range heuristic for the Learn landing (frontier → section → density → fallback) |
-| `passageRail.js` | pure rules for the passage rail and board: tiles, the button's target, the count, the goal counters, the gem offer |
-| `PassageRail.jsx` / `PassageBoard.jsx` / `PassageRail.scss` | the rail under the score and the board that slides over it |
+| `passageRail.js` | pure rules for the passage path and board: letters, tokens (folded joins, the one socket), the target and next, the caption, the goal marks, `pathLayout`, board cards, the gem offer |
+| `PassagePath.jsx` / `PassageBoard.jsx` / `PassagePath.scss` | the path under the score and the drill, and the board that slides over it |
+| `PassageCoin.jsx` / `PassageCoin.scss` | a passage's mark: tomato, flower, bronze/silver/gold coin; `LetterCoin` (the path's lettered coins and discs); the turn animation |
 | `passageChime.js` | the chime for a passage or a whole piece turning Silver or Gold, played by the drill's ceremony |
 | `usePieceGemOffer.js` | asks the Gem Board whether a piece gem is on offer |
 | `server/application/PianoPieceLog.mjs` | dated whole-piece Silver and Gold, and the Polish gem and diamond, read by the `piano-piece`, `piano-polish-gem` and `piano-polish-diamond` milestones |

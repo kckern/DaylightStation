@@ -34,7 +34,7 @@ import useLearnCoach from './useLearnCoach.js';
 import { createCoachPlan } from '../../../../../../../shared/music/learnCoach.mjs';
 import LearnPassageLayer from './LearnPassageLayer.jsx';
 import { segmentNavigationState } from './LearnSegmentRail.jsx';
-import PassageRail from './PassageRail.jsx';
+import PassagePath from './PassagePath.jsx';
 import PassageBoard from './PassageBoard.jsx';
 import ScorePager from './ScorePager.jsx';
 import useSystemPaging from './useSystemPaging.js';
@@ -2423,8 +2423,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
     return () => clearTimeout(timer);
   }, [scale, maxScale, layoutFresh]); // eslint-disable-line react-hooks/exhaustive-deps
   const railVisible = Boolean(roadmapLearn && practiceLoaded && (layout.measures?.length ?? 0) > 0 && !selectedPassage);
-  const rail = useMemo(() => railModel({ segments: coachedPassages, projection: coach.projection, selectedId: railPassageId }),
-    [coachedPassages, coach.projection, railPassageId]);
+  const rail = useMemo(() => railModel({ segments: coachedPassages, projection: coach.projection, selectedId: railPassageId, polish: polishAwards }),
+    [coachedPassages, coach.projection, railPassageId, polishAwards]);
   const gemOffered = usePieceGemOffer({ userId: coach.profileId, enabled: Boolean(passageBoard) });
   const selectRailPassage = useCallback((passageId, source) => {
     const passage = coachedPassages.find((item) => item.id === passageId);
@@ -2440,16 +2440,20 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const passage = pageCount && roadmapLearn ? coachedPassages.find((item) => item.id === railTargetId) : null;
     if (passage) paging.showMeasures(passage.inMeasure, passage.outMeasure);
   }, [railTargetId, pageCount, roadmapLearn]); // eslint-disable-line react-hooks/exhaustive-deps
-  const practiceRailPassage = useCallback(() => {
-    if (!rail.target) return;
-    logger.info('piano.learn.rail.practice', { scoreId: scoreMeta.id, passageId: rail.target.passageId, target: rail.target.kind });
-    openLearnPassage(rail.target.passageId);
-  }, [rail.target, logger, scoreMeta.id, openLearnPassage]);
+  // A tap on the path's target or next token opens that unit.
+  const practiceRailPassage = useCallback((tokenId) => {
+    const passageId = typeof tokenId === 'string' ? tokenId : rail.target?.passageId;
+    if (!passageId) return;
+    const target = passageId === rail.target?.passageId ? rail.target.kind : passageId === rail.nextId ? 'next' : 'selected';
+    logger.info('piano.learn.path.open', { scoreId: scoreMeta.id, passageId, target });
+    logger.info('piano.learn.rail.practice', { scoreId: scoreMeta.id, passageId, target });
+    openLearnPassage(passageId);
+  }, [rail.target, rail.nextId, logger, scoreMeta.id, openLearnPassage]);
   const boardIsOpen = Boolean(passageBoard);
   const togglePassageBoard = useCallback((focusId) => {
-    // The count toggles; a tap on a long piece's map always opens at that passage.
+    // The All button toggles; a tap on a long piece's strip always opens at that unit.
     const next = boardIsOpen && focusId == null ? null : { focusId: focusId ?? null };
-    logger.info(next ? 'piano.learn.board.open' : 'piano.learn.board.close', { scoreId: scoreMeta.id, ...(next ? { passageId: next.focusId } : { by: 'count' }) });
+    logger.info(next ? 'piano.learn.board.open' : 'piano.learn.board.close', { scoreId: scoreMeta.id, ...(next ? { passageId: next.focusId } : { by: 'all' }) });
     setPassageBoard(next);
   }, [boardIsOpen, logger, scoreMeta.id]);
   const closePassageBoard = useCallback(() => {
@@ -2643,8 +2647,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
           onSelect={(passageId) => selectRailPassage(passageId, 'board')} onClose={closePassageBoard} />
       )}
       {railVisible && (
-        <PassageRail model={rail} boardOpen={Boolean(passageBoard)}
-          onSelect={(passageId) => selectRailPassage(passageId, 'rail')} onPractice={practiceRailPassage}
+        <PassagePath model={rail} boardOpen={Boolean(passageBoard)}
+          onSelect={(passageId) => selectRailPassage(passageId, 'rail')} onOpen={practiceRailPassage}
           onOpenBoard={togglePassageBoard} />
       )}
 

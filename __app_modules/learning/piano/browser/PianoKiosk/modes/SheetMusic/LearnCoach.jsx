@@ -7,7 +7,7 @@ import useLearnCoach from './useLearnCoach.js';
 import usePieceGemOffer from './usePieceGemOffer.js';
 import LearnLab from './LearnLab.jsx';
 import LearnListen from './LearnListen.jsx';
-import PassageRail from './PassageRail.jsx';
+import PassagePath from './PassagePath.jsx';
 import PassageBoard from './PassageBoard.jsx';
 import PassageCoin, { PassageTurn } from './PassageCoin.jsx';
 import { playPassageChime } from './passageChime.js';
@@ -334,9 +334,11 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
     {coach.recoveryError && <button type="button" aria-label={coach.recoveryError} onClick={exportEarlier}>Export earlier practice</button>}
   </div> : null;
 
-  // The same rail and board as the score view: every passage of the piece, this one outlined.
-  const rail = useMemo(() => railModel({ segments: coach.projection.segments, projection: coach.projection, selectedId: segment.id }),
-    [coach.projection, segment.id]);
+  // The same path and board as the score view: every passage of the piece, this unit selected. While a
+  // join's Silver lands, the path keeps the Silver drawing so the coin turns where the child earned it.
+  const holdLap = celebrated === 'silver' && isJoin ? 'silver' : null;
+  const rail = useMemo(() => railModel({ segments: coach.projection.segments, projection: coach.projection, selectedId: segment.id, polish, lap: holdLap }),
+    [coach.projection, segment.id, polish, holdLap]);
   const gemOffered = usePieceGemOffer({ userId: coach.profileId, enabled: Boolean(board) });
   const goToPassage = (passageId, source) => {
     setBoard(null);
@@ -344,13 +346,18 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
     logger.info('piano.learn.rail.select', { scoreId: score.id, passageId, source });
     onPassageChange?.(passageId);
   };
+  // On the drill screen every token opens its unit: there is no score here to show its bars on.
+  const openFromPath = (passageId) => {
+    if (passageId !== segment.id) logger.info('piano.learn.path.open', { scoreId: score.id, passageId, from: segment.id });
+    goToPassage(passageId, 'learn-rail');
+  };
   const toggleBoard = (focusId) => {
     const open = board && focusId == null ? null : { focusId: focusId ?? null };
-    logger.info(open ? 'piano.learn.board.open' : 'piano.learn.board.close', { scoreId: score.id, ...(open ? { passageId: open.focusId } : { by: 'count' }) });
+    logger.info(open ? 'piano.learn.board.open' : 'piano.learn.board.close', { scoreId: score.id, ...(open ? { passageId: open.focusId } : { by: 'all' }) });
     setBoard(open);
   };
-  // The rail answers the curtain: this passage's tile turns as the verdict
-  // lands, and a finished piece turns every tile in a wave.
+  // The path answers the curtain: this unit's token turns as the verdict
+  // lands, and a finished piece turns every token in a wave.
   const flips = useMemo(() => (!celebrated ? EMPTY : pieceDone && celebrated === 'gold' ? Object.fromEntries(coach.projection.segments.map((item) => [item.id, celebrated])) : { [segment.id]: celebrated }),
     [celebrated, pieceDone, coach.projection.segments, segment.id]);
   const map = <>
@@ -360,7 +367,8 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
         if (review.passageId === segment.id) begin(review); else onPassageChange?.(review.passageId); }}
       onSelect={(passageId) => goToPassage(passageId, 'learn-board')}
       onClose={() => { logger.info('piano.learn.board.close', { scoreId: score.id, by: 'close' }); setBoard(null); }} />}
-    <PassageRail model={rail} flips={flips} flipDelayMs={verdictAt(ceremonyMs)} wave={Boolean(pieceDone)} boardOpen={Boolean(board)} onSelect={(passageId) => goToPassage(passageId, 'learn-rail')} onOpenBoard={toggleBoard} />
+    <PassagePath model={rail} flips={flips} flipDelayMs={verdictAt(ceremonyMs)} wave={Boolean(pieceDone)} boardOpen={Boolean(board)}
+      onSelect={(passageId) => goToPassage(passageId, 'learn-rail')} onOpen={openFromPath} onOpenBoard={toggleBoard} />
   </>;
 
   if (!task) return <section className="piano-learn-coach"><h2>No playable notes in this passage</h2><button type="button" onClick={onBack}>Back to score</button>{map}</section>;

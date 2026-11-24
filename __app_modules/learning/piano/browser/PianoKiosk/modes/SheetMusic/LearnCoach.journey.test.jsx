@@ -65,8 +65,8 @@ async function open(viewport={width:1280,height:800}){
 const SKIPPING={ default:'open' };
 const click=async(page,name)=>{await page.getByRole('button',{name,exact:true}).click({timeout:30000});};
 const armed=async(page)=>{await page.locator('.piano-exercise-run[data-armed="true"]').waitFor({timeout:15000});await page.waitForTimeout(600);};
-// Open the passage (the rail button), then tap a set of the drill to run that step.
-const openPassage=async(page)=>{await click(page,'Practice bars 1–2');await armed(page);};
+// Open the passage (a tap on the path's target token, the one with the play disc), then tap a set of the drill to run that step.
+const openPassage=async(page)=>{await page.locator('.piano-passage-path__token[data-target]').click({timeout:30000});await armed(page);};
 const openStep=async(page,step)=>{await openPassage(page);await page.locator('button.drill-cluster').and(page.getByRole('button',{name:STEP_NAMES[step],exact:true})).click();await page.locator('.piano-learn-lab__task').filter({hasText:STEP_NAMES[step]}).waitFor();await armed(page);};
 const STEP_NAMES={'On your own':'Play it on your own','100%':'Play at score tempo','Rhythm':'Tap the rhythm'};
 const card=(page,text)=>page.locator('.rep-card').filter({hasText:text});
@@ -90,7 +90,7 @@ describe('real Learn journey',()=>{
    expect(await page.locator('.piano-learn-lab__identity').innerText()).toBe('Bars 1–2');
    expect(await page.getByRole('button',{name:'Start practice'}).count()).toBe(0);
    expect(await page.locator('.drill-cluster').count()).toBe(12);
-   expect(await page.locator('.piano-passage-rail__tile').count()).toBe(1);
+   expect(await page.locator('.piano-passage-path__token').count()).toBe(1);
    const text=await page.locator('.piano-learn-coach').innerText();
    for(const banned of ['Segment','Practicing as','Progress saved','previously earned','Connect the piano'])expect(text).not.toContain(banned);
    // The engraving sits inside its paper, and nothing on the screen scrolls.
@@ -121,27 +121,28 @@ describe('real Learn journey',()=>{
    await curtain(page,'Piece Silver!').waitFor({timeout:15000});await page.waitForTimeout(2600);await page.screenshot({path:path.join(ARTIFACTS,'silver-earned.png')});
    expect(await page.getByRole('status',{name:'You played the whole piece!'}).count()).toBe(1);expect(await page.locator('.gate-ceremony__mark .coin-icon[data-metal="silver"]').count()).toBe(1);
    expect(await page.locator('.rep-card').count()).toBe(0);
-   expect(await page.locator('.piano-passage-rail__tile[data-state="silver"][data-flip="silver"]').count()).toBe(1);
+   expect(await page.locator('.piano-passage-path__token[data-state="silver"][data-flip="silver"]').count()).toBe(1);
    // The verdict is solid while it is held: nothing on the curtain is see-through.
    expect(await page.locator('.gate-ceremony__verdict').evaluate((el)=>getComputedStyle(el).opacity)).toBe('1');
    // The curtain parts onto what is next, then hands back to the score.
    expect(await page.locator('.gate-ceremony__behind').innerText()).toMatch(/Next\s+Go for Gold/i);
-   await page.locator('.piano-passage-rail__go').waitFor({timeout:15000});expect(await page.locator('.gate-ceremony').count()).toBe(0);
+   // Back on the score (the drill screen's path names the same task, so wait for the drill to go first).
+   await page.locator('.piano-learn-coach').waitFor({state:'detached',timeout:15000});await page.getByRole('button',{name:'A in time, bars 1–2',exact:true}).waitFor({timeout:15000});expect(await page.locator('.gate-ceremony').count()).toBe(0);
    await expect.poll(()=>f.attempts.size).toBe(1);
    const attempt=[...f.attempts.values()][0];expect(attempt.diagnostics).toMatchObject({matched_notes:16,wrong_notes:0,missed_notes:0});expect(attempt.criteria.cleanliness).toBe(1);
    const record=[...f.records.values()][0];expect(record.learnCoach.summary.silver).toBeGreaterThan(0);
-   expect(await page.locator('.piano-passage-rail__tile[data-state="silver"]').count()).toBe(1);
+   expect(await page.locator('.piano-passage-path__token[data-state="silver"]').count()).toBe(1);
    expect(f.pieceNotes).toEqual([expect.objectContaining({userId:'learner4',scoreId:SCORE_ID,level:'silver',passages:1})]);
    expect((await page.evaluate(()=>window.__logs)).filter(l=>l.event==='piano.learn.celebrate').map(l=>l.data)).toEqual([expect.objectContaining({scope:'piece',level:'silver'})]);
    await page.screenshot({path:path.join(ARTIFACTS,'silver-landing.png')});
-   await page.getByRole('button',{name:'Go for Gold: bars 1–2'}).waitFor();
-   await page.evaluate(()=>window.__mount());await page.getByRole('button',{name:'Go for Gold: bars 1–2'}).waitFor();await page.waitForTimeout(400);
+   await page.getByRole('button',{name:'A in time, bars 1–2'}).waitFor();
+   await page.evaluate(()=>window.__mount());await page.getByRole('button',{name:'A in time, bars 1–2'}).waitFor();await page.waitForTimeout(400);
    // The score itself celebrates nothing: no banner, no sentence, and nothing again on a reload.
    expect(await page.getByText(/whole piece/i).count()).toBe(0);expect(await page.locator('.gate-ceremony').count()).toBe(0);
    expect((await page.evaluate(()=>window.__logs)).filter(l=>l.event==='piano.learn.celebrate')).toHaveLength(1);
-   // A tile only shows its bars. The rail button opens the passage, on its next Gold step (the rhythm, before the metronome).
-   await page.locator('.piano-passage-rail__tile[data-state="silver"]').first().click();expect(await page.locator('.piano-learn-selection-box').count()).toBeGreaterThan(0);
-   await click(page,'Practice bars 1–2');await page.locator('.piano-learn-lab__task').filter({hasText:'Tap the rhythm'}).waitFor();await page.screenshot({path:path.join(ARTIFACTS,'silver-certified.png')});
+   // The path's next token opens the passage on one tap, on its next Gold step (the rhythm, before the metronome).
+   expect(await page.locator('.piano-passage-path__caption').innerText()).toBe('A in time');
+   await click(page,'A in time, bars 1–2');await page.locator('.piano-learn-lab__task').filter({hasText:'Tap the rhythm'}).waitFor();await page.screenshot({path:path.join(ARTIFACTS,'silver-certified.png')});
    expect(await page.locator('.drill-cluster[data-done]').count()).toBe(4);
    expect(errors).toEqual([]);
   }finally{await page.close();}
@@ -212,9 +213,9 @@ describe('real Learn journey',()=>{
    await playTimed(page);await curtain(page,'All Gold!').waitFor({timeout:15000});await page.waitForTimeout(2600);await page.screenshot({path:path.join(ARTIFACTS,'tablet-gold.png')});
    // The passage's Bronze coin turns into the gold one: exactly one gold coin, and the bronze one it leaves.
    expect(await page.locator('.gate-ceremony__mark .coin-icon[data-metal="gold"]:not(.piano-passage-coin--bronze)').count()).toBe(1);
-   await page.locator('.piano-passage-rail__tile[data-state="gold"]').waitFor({timeout:15000});await expect.poll(()=>f.attempts.size).toBe(2);
-   await page.locator('.piano-passage-rail__go').waitFor({timeout:15000});
-   await page.evaluate(()=>window.__mount());await page.getByRole('button',{name:'Practice bars 1–2',exact:true}).waitFor();await openPassage(page);
+   await page.locator('.piano-passage-path__token[data-state="gold"]').waitFor({timeout:15000});await expect.poll(()=>f.attempts.size).toBe(2);
+   await page.locator('.piano-learn-coach').waitFor({state:'detached',timeout:15000});await page.getByRole('button',{name:'Play A again, bars 1–2',exact:true}).waitFor({timeout:15000});
+   await page.evaluate(()=>window.__mount());await page.getByRole('button',{name:'Play A again, bars 1–2',exact:true}).waitFor();await openPassage(page);
    expect(await page.locator('.drill-cluster[data-done]').count()).toBe(12);expect(errors).toEqual([]);
   }catch(error){fs.writeFileSync(path.join(ARTIFACTS,'failure.json'),JSON.stringify({errors,attempts:[...f.attempts.values()],text:await page.locator('body').innerText(),logs:await page.evaluate(()=>window.__logs)},null,2));await page.screenshot({path:path.join(ARTIFACTS,'failure.png'),fullPage:true});throw error;}finally{await page.close();}
  },90000);
@@ -285,7 +286,7 @@ describe('real Learn journey',()=>{
   }finally{await page.close();}
  },60000);
  it('keeps the drill chrome usable on a narrow screen with reduced motion',async()=>{
-  const{page,errors}=await open({width:600,height:800});try{await page.emulateMedia({reducedMotion:'reduce'});await click(page,'Practice bars 1–2');await page.locator('.piano-exercise-run').waitFor();
+  const{page,errors}=await open({width:600,height:800});try{await page.emulateMedia({reducedMotion:'reduce'});await click(page,'Learn A, bars 1–2');await page.locator('.piano-exercise-run').waitFor();
    await page.screenshot({path:path.join(ARTIFACTS,'narrow-drill.png'),fullPage:true});
    const metrics=await page.locator('.piano-learn-lab__toolbar button').evaluateAll(buttons=>buttons.filter(b=>b.offsetParent).map(b=>({height:b.getBoundingClientRect().height,right:b.getBoundingClientRect().right})));expect(metrics.length).toBeGreaterThanOrEqual(4);expect(metrics.every(m=>m.height>=64&&m.right<=600)).toBe(true);
    expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(600);await page.getByRole('button',{name:'Listen',exact:true}).focus();expect(await page.getByRole('button',{name:'Listen',exact:true}).evaluate(e=>e===document.activeElement)).toBe(true);expect(errors).toEqual([]);

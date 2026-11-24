@@ -191,19 +191,18 @@ describe('LearnCoach', () => {
   await outcome({ ...passed, assessmentId: 'strict', verdict: { passed: false }, criteria: { completeness: 1, cleanliness: 1, placement: 0.5 } });
   expect(h.log.info).toHaveBeenLastCalledWith('piano.learn.coach.take', expect.objectContaining({ placementShare: null }));
  });
- it('puts the passage rail under the drill, and a tile changes passage', () => {
+ it('puts the passage path under the drill, and a token changes passage', () => {
   const two = createCoachPlan({ scoreId: 'score', fingerprint: 'fp', segments: [
     { id: 'a', label: 'Segment 1', barLabel: 'Bars 1–4', inMeasure: 0, outMeasure: 3, playableParts: ['rh', 'lh'] },
     { id: 'b', label: 'Segment 2', barLabel: 'Bars 5–8', inMeasure: 4, outMeasure: 7, playableParts: ['rh', 'lh'] }] });
   const onPassageChange = vi.fn();
   render(<LearnCoach {...props} plan={two} segment={two.segments[0]} onPassageChange={onPassageChange} />);
   const rail = screen.getByRole('navigation', { name: 'Passages in this piece' });
-  expect(rail.querySelectorAll('.piano-passage-rail__tile')).toHaveLength(2);
-  expect(rail.querySelector('.piano-passage-rail__go')).toBeNull();
-  expect(screen.getByRole('button', { name: 'Bars 1–4, Not started' })).toHaveAttribute('aria-current', 'step');
-  fireEvent.click(screen.getByRole('button', { name: 'Bars 5–8, Not started' }));
+  expect(rail.querySelectorAll('.piano-passage-path__token')).toHaveLength(2);
+  expect(screen.getByRole('button', { name: 'Learn A, bars 1–4' })).toHaveAttribute('aria-current', 'step');
+  fireEvent.click(screen.getByRole('button', { name: 'B, bars 5–8, Not started' }));
   expect(onPassageChange).toHaveBeenCalledWith('b');
-  fireEvent.click(screen.getByRole('button', { name: /Open the passage board/ }));
+  fireEvent.click(screen.getByRole('button', { name: /^All passages/ }));
   expect(screen.getByRole('dialog', { name: 'Passage board' })).toBeInTheDocument();
  });
 
