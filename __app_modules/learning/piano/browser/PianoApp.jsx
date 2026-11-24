@@ -110,16 +110,20 @@ function PianoFleetPublisher() {
  * itself) because this is the one place with both Router context (useNavigate)
  * and this piano's resolved basePath.
  */
-function KioskLaunchListener() {
+export function KioskLaunchListener() {
   const navigate = useNavigate();
   const { basePath } = usePianoKioskConfig();
   const { setCurrentUser } = usePianoUser();
   const { setPlaying, setVideoActive } = usePianoPlayback();
   const { sendPanic } = usePianoMidi();
-  const onPianoOpen = useCallback(
-    (contentId, { play = null } = {}) => { openPianoContent({ contentId, basePath, navigate, play }); },
-    [basePath, navigate]
-  );
+  // A remote open hands the kiosk to new content (sheet music today): silence whatever was playing first, as the
+  // course open below does, so a Listen playback, a metronome or a video's scheduled MIDI never sounds under it.
+  const onPianoOpen = useCallback((contentId, { play = null } = {}) => {
+    setPlaying(false);
+    setVideoActive(false);
+    sendPanic?.();
+    openPianoContent({ contentId, basePath, navigate, play });
+  }, [basePath, navigate, sendPanic, setPlaying, setVideoActive]);
   const onPianoCourseOpen = useCallback(({ learnerId, courseId, lessonId }) => {
     // The School handoff owns the kiosk now. Navigation unmounts the current
     // mode/player; these explicit resets silence scheduled MIDI immediately
