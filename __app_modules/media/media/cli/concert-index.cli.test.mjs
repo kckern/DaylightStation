@@ -4,7 +4,7 @@
 // ffmpeg and network I/O live in the CLI shell, so none of this needs a video.
 
 import { describe, it, expect } from 'vitest';
-import { parseTrackListing, stripWiki, mmss, parseSrt, srtTime, sectionsFrom, attachCues, words, lyricOverlap, rankTracks } from './concert-index.cli.mjs';
+import { parseTrackListing, stripWiki, mmss, parseSrt, srtTime, sectionsFrom, attachCues, words, lyricOverlap, rankTracks, buildEvidence } from './concert-index.cli.mjs';
 
 const WIKITEXT = `==Track listing==
 {{Track listing
@@ -149,5 +149,26 @@ describe('rankTracks', () => {
     expect(ranked[0]).toMatchObject({ n: 2, durationRatio: 1 });
     expect(ranked[0].lyric).toBeGreaterThan(0.3);
     expect(ranked.find((r) => r.n === 3).lyric).toBeNull();
+  });
+});
+
+describe('buildEvidence', () => {
+  it('turns a silence log, subtitles and tracks into ranked sections', () => {
+    const silenceLog = [
+      '[silencedetect @ 0x1] silence_start: 118',
+      '[silencedetect @ 0x1] silence_end: 120 | silence_duration: 2',
+    ].join('\n');
+    const ev = buildEvidence({
+      durationS: 300,
+      silenceLog,
+      rmsText: '',
+      hfText: '',
+      cues: [{ i: 1, start: 30, end: 34, text: 'silent night holy night' }],
+      tracks: [{ n: 1, title: 'Silent Night', length: 118, incipit: 'Silent night holy night' }],
+      minGapS: 20,
+    });
+    expect(ev.sections.map((s) => [s.n, s.start, s.end])).toEqual([[1, 0, 120], [2, 120, 300]]);
+    expect(ev.sections[0].ranks[0]).toMatchObject({ n: 1, lyric: 1 });
+    expect(ev.applause).toEqual([]);
   });
 });

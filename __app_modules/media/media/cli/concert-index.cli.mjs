@@ -16,6 +16,10 @@
  * @module cli/concert-index
  */
 
+import {
+  parseSilences, candidateBoundaries, parseAstats, zipFrames, applauseRuns, rejectApplauseCandidates,
+} from './segment-timings.cli.mjs';
+
 /* -------------------------------------------------------------------------- */
 /* Track listings                                                             */
 /* -------------------------------------------------------------------------- */
@@ -195,4 +199,25 @@ export function rankTracks(section, tracks) {
       durationRatio: t.length ? round(len / t.length, 2) : null,
     }))
     .sort((a, b) => ((b.lyric ?? -1) - (a.lyric ?? -1)) || (b.titleHit - a.titleHit));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Evidence                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The whole pure pipeline. Inputs are the raw text the `measure` subcommand
+ * saves, so evidence can be rebuilt with different thresholds without
+ * decoding the video again.
+ */
+export function buildEvidence({ durationS, silenceLog, rmsText, hfText, cues, tracks = [], minGapS = 20 }) {
+  const frames = zipFrames(parseAstats(rmsText), parseAstats(hfText));
+  const applause = applauseRuns(frames);
+  const candidates = rejectApplauseCandidates(
+    candidateBoundaries(parseSilences(silenceLog), { minGapS }),
+    applause,
+  );
+  const sections = attachCues(sectionsFrom({ candidates, applause, durationS }), cues)
+    .map((s, k) => ({ n: k + 1, ...s, ranks: rankTracks(s, tracks).slice(0, 3) }));
+  return { durationS, applause, sections };
 }
