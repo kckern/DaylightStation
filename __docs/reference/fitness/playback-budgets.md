@@ -62,14 +62,27 @@ re-paused the video 2–5 ms after each of 14 play presses (`playback.resumed`
 then `playback.paused {source: dom-event}`), with no cover and no unlock.
 
 The cover (`overlays/PlaybackBudgetNotice.jsx`, `data-testid="playback-budget-overlay"`,
-`data-status`) says what is happening for each blocking status and always offers
-**Unlock** and **Back**:
+`data-status`, class `playback-budget-card--<status>`) is a blurred backdrop
+over the paused frame with one card: an icon in the status's accent, a title, a
+sentence in plain words, and **Grown-up unlock** and **Back**:
 
-- *checking*: "Checking playback allowance…" — "This usually takes a moment. A grown-up can unlock this video now."
-- *unavailable*: "Playback allowance unavailable" — "The allowance could not be read; trying again. A grown-up can unlock this video."
-- *exhausted*: "Unattended playback limit reached" — "A grown-up can join the workout to continue, or unlock this video with a fingerprint."
+| status | icon | title | body |
+|---|---|---|---|
+| *checking* | spinner (blue) | "Getting your video time…" | "This only takes a moment." |
+| *unavailable* | warning (amber) | "Couldn't check video time" | "Trying again. A grown-up can unlock this video." |
+| *exhausted* | clock (violet) | "Video time is used up for today" | "It starts again tomorrow. A grown-up can join the workout, or unlock this video." |
 
-**Unlock** asks for an admin fingerprint with the presence gate's unlock
+A *checking* request is normally sub-second, so for its first 1500 ms
+(`CHECKING_REVEAL_MS`) only the backdrop is drawn: no text, no buttons. The
+video is held from the start either way; the delay changes only what is drawn.
+*unavailable* and *exhausted*, or a check that turns into either, show the card
+at once. Each status the card shows is logged once per mount as
+`fitness.playback_budget.cover_shown` (info, `{ status, delayed }`). The
+backdrop and card styles (`.presence-gate-notice`, `.gate-card`) live in
+`PresenceGateNotice.scss` and are shared with the presence gate's cover; the
+spinner stops under `prefers-reduced-motion`.
+
+**Grown-up unlock** asks for an admin fingerprint with the presence gate's unlock
 (`registerAdmin('playback_budget')`: any user in `users.admin`, see
 [presence-gate.md](presence-gate.md)), in the same `UnlockPrompt` ("Grown-up
 needed", 30 s). A match calls `usePlaybackBudget().grantOverride({ userId })`,

@@ -3,6 +3,7 @@
 import React from 'react';
 import VoiceMemoOverlay from '../../../__app_modules/wellness/fitness/browser/player/overlays/VoiceMemoOverlay.jsx';
 import PlaybackBudgetNotice from '../../../__app_modules/wellness/fitness/browser/player/overlays/PlaybackBudgetNotice.jsx';
+import PresenceGateNotice from '../../../__app_modules/wellness/fitness/browser/player/overlays/PresenceGateNotice.jsx';
 import GovernanceStateOverlay from '../../../__app_modules/wellness/fitness/browser/player/overlays/GovernanceStateOverlay.jsx';
 import { resolveGovernanceDisplay } from '../../../__app_modules/wellness/fitness/browser/hooks/useGovernanceDisplay.js';
 // The overlay's own '../../context/FitnessContext.jsx' import is aliased to this stub.
@@ -82,6 +83,7 @@ export const SCENES = {
   'budget-checking': { render: budgetScene('checking') },
   'budget-unavailable': { render: budgetScene('unavailable') },
   'budget-exhausted': { render: budgetScene('exhausted') },
+  'presence-gate': { render: () => <PresenceGateNotice onUnlock={noop} onBack={noop} /> },
   // One rule: Rider A at 85 BPM in Cool must reach Hot (1 required); Rider B is
   // in the session with no heart rate.
   'lock-one-rule': { render: lockScene(

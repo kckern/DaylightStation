@@ -38,7 +38,8 @@ fs.mkdirSync(OUT, { recursive: true });
 
 // Per scene: the overlay root and panel elements that must sit inside the viewport.
 const MEMO = ['.voice-memo-overlay', '.voice-memo-overlay__panel', '.voice-memo-overlay__actions'];
-const BUDGET = ['[data-testid="playback-budget-overlay"]', '.presence-gate-notice__actions', '.presence-gate-notice__btn'];
+const BUDGET = ['[data-testid="playback-budget-overlay"]', '.gate-card', '.presence-gate-notice__actions', '.presence-gate-notice__btn'];
+const PRESENCE = ['[data-testid="presence-gate-notice"]', '.gate-card', '.presence-gate-notice__actions', '.presence-gate-notice__btn'];
 const LOCK = ['.governance-overlay', '.governance-overlay__panel', '.governance-lock__row'];
 const SCENE_ROOTS = {
   'memo-long': MEMO,
@@ -46,6 +47,7 @@ const SCENE_ROOTS = {
   'budget-checking': BUDGET,
   'budget-unavailable': BUDGET,
   'budget-exhausted': BUDGET,
+  'presence-gate': PRESENCE,
   'lock-one-rule': LOCK,
   'lock-two-rules': LOCK,
 };

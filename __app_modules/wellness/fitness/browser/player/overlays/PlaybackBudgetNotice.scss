@@ -1,0 +1,14 @@
+// Playback time cover. Shared backdrop + card live in PresenceGateNotice.scss;
+// this file only sets each status's accent and the checking spinner.
+.playback-budget-card--checking { --gate-accent: #2f80ed; }
+.playback-budget-card--unavailable { --gate-accent: #f2a33a; }
+.playback-budget-card--exhausted { --gate-accent: #9b8cff; }
+
+.playback-budget-spinner {
+  transform-origin: 50% 50%;
+  animation: playback-budget-spin 1s linear infinite;
+}
+@keyframes playback-budget-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .playback-budget-spinner { animation: none; }
+}
