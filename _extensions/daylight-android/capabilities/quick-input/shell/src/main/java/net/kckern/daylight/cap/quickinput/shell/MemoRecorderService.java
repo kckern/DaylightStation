@@ -61,6 +61,8 @@ public class MemoRecorderService extends Service {
         if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) handle(Event.FOCUS_LOST);
     };
     private MediaRecorder recorder;
+    /** The recorder in use, for the live level; null when none is. */
+    private static volatile MediaRecorder meterSource;
     private int latestStart;
     private static String activeId;
     private static String activeOwner;
@@ -70,6 +72,16 @@ public class MemoRecorderService extends Service {
 
     /** When the recording under way began; 0 when none is. */
     static long startedAtMs() { return MACHINE.startedAtMs(); }
+
+    /**
+     * The loudest the mic has been since this was last asked, 0 to 32767, or 0 when nothing is being
+     * recorded. Read about every 60 ms for the recorder's waveform.
+     */
+    static int level() {
+        MediaRecorder source = meterSource;
+        if (source == null) return 0;
+        try { return source.getMaxAmplitude(); } catch (RuntimeException notRecording) { return 0; }
+    }
 
     static String activeId() { return activeId; }
 
@@ -242,6 +254,7 @@ public class MemoRecorderService extends Service {
                 r.prepare();
                 r.start();
                 recorder = r;
+                meterSource = r;
                 takeFocus();
                 Log.i(TAG, "recording " + activeId + " at " + profile.sampleRate + " Hz");
                 return true;
@@ -273,6 +286,7 @@ public class MemoRecorderService extends Service {
         main.removeCallbacks(cap);
         MediaRecorder current = recorder;
         recorder = null;
+        meterSource = null;
         dropFocus();
         if (current == null) return;
         try { current.stop(); } catch (RuntimeException interrupted) {
@@ -321,6 +335,7 @@ public class MemoRecorderService extends Service {
         main.removeCallbacks(cap);
         MediaRecorder current = recorder;
         recorder = null;
+        meterSource = null;
         if (current != null) { try { current.release(); } catch (RuntimeException ignored) { } }
         dropFocus();
     }

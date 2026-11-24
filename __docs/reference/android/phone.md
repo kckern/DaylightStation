@@ -267,7 +267,7 @@ answers 200 with the effect, 400 `bad_link`, 403 `forbidden` or 500 `failed`.
   stand in for a key in the intent: any app could send the same id.
 - A notice that was posted before a restart carries the key of that run. The
   input queue posts its notice again after a start when there is still something
-  to say; a tap on an older one is refused with "That link is not allowed".
+  to say; a tap on an older one is refused with "That link has expired. Open Daylight and try again.".
 
 Nothing logs a link: the link activity logs that an intent was ignored or that
 the payload failed, by class name; a refusal logs one of a few fixed sentences;

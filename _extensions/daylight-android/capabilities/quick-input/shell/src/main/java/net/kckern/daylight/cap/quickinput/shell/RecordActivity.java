@@ -56,9 +56,18 @@ public class RecordActivity extends Activity {
     private TextView status;
     private TextView hint;
     private Chronometer clock;
-    private Button stop;
-    private Button resume;
-    private Button discard;
+    /** The one big control: record when idle, send while recording or with a saved draft. */
+    private RecordButton stop;
+    private TextView resume;
+    private TextView discard;
+    private WaveView wave;
+    private final Runnable meter = new Runnable() {
+        @Override public void run() {
+            if (!active() || wave == null) return;
+            wave.push(MemoRecorderService.level());
+            main.postDelayed(this, 60);
+        }
+    };
     private MediaPlayer player;
     private String destination;
     private String destinationLabel = "Journal";
@@ -317,21 +326,31 @@ public class RecordActivity extends Activity {
                 clock.setBase(SystemClock.elapsedRealtime() - Math.max(0, elapsed));
                 clock.start();
             }
+            if (!seenRecording) {
+                // A buzz says it is listening; the level bars start moving.
+                stop.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+                main.removeCallbacks(meter);
+                main.post(meter);
+            }
             seenRecording = true;
-            status.setText("Recording");
+            status.setText(sending ? "Sending…" : "Tap to send");
+            stop.setMode(RecordButton.Mode.SEND, !sending);
             stop.setEnabled(!sending);
-            resume.setEnabled(false);
+            resume.setVisibility(android.view.View.GONE);
+            discard.setVisibility(android.view.View.GONE);
             main.postDelayed(watch, 200);
             return;
         }
         if (seenRecording) {
             requested = seenRecording = false;
             clock.stop();
+            main.removeCallbacks(meter);
         }
+        if (wave != null) wave.clear();
         if (draft != null && sending) {
             try {
                 if (store.get(draft.id) == null) {
-                    CaptureStatusActivity.open(this, owner, draft.id);
+                    CaptureUi.sent(this);
                     finish();
                     return;
                 }
@@ -342,12 +361,14 @@ public class RecordActivity extends Activity {
         }
         boolean ready = draft != null && draft.hasContent();
         boolean interrupted = draft != null && draft.interruption().isFile();
-        status.setText(ready ? "Private voice draft"
+        status.setText(ready ? "Draft saved. Tap to send"
                 : interrupted ? "Recording interrupted. The audio could not be played."
-                : requested ? "Starting…" : asking ? "Waiting for permission…" : "Ready to record");
-        stop.setEnabled(ready);
-        resume.setText(ready ? "Resume draft" : "Record memo");
-        resume.setEnabled(!asking && !requested && !interrupted);
+                : requested ? "Starting…" : asking ? "Waiting for permission…" : "Tap to record");
+        stop.setMode(ready ? RecordButton.Mode.SEND : RecordButton.Mode.RECORD, false);
+        stop.setEnabled(ready || (!asking && !requested && !interrupted));
+        resume.setVisibility(ready ? android.view.View.VISIBLE : android.view.View.GONE);
+        resume.setEnabled(ready && !asking && !requested);
+        discard.setVisibility(ready ? android.view.View.VISIBLE : android.view.View.GONE);
         discard.setEnabled(!sending);
         if (requested && resumed) main.postDelayed(watch, 200);
     }
@@ -395,7 +416,7 @@ public class RecordActivity extends Activity {
             }
             if (store.sendForCurrentOwner(draft.id)) {
                 CaptureFiles.tellPayload();
-                CaptureStatusActivity.open(this, owner, draft.id);
+                CaptureUi.sent(this);
                 completed = true;
                 finish();
             }
@@ -459,7 +480,23 @@ public class RecordActivity extends Activity {
         return true;
     }
 
-    @Override public void onBackPressed() { confirmDiscard(); }
+    /**
+     * Back leaves and keeps the recording as a draft: it is already saved, so asking "discard?"
+     * protected nothing. A recording with nothing in it is just dropped. Throwing audio away is the
+     * explicit "Discard draft" button, which still asks.
+     */
+    @Override public void onBackPressed() {
+        if (completed || sending || closeIfOwnerChanged()) { super.onBackPressed(); return; }
+        if (draft == null || !(requested || active() || draft.requiresDiscardConfirmation())) {
+            discardDraft(draft == null ? null : draft.id, false);
+            return;
+        }
+        invalidateDiscard();
+        pauseCapture();
+        stopPlayback();
+        say("Recording kept as a draft");
+        finish();
+    }
 
     private void say(String message) {
         Toast.makeText(getApplicationContext(), message, Toast.LENGTH_LONG).show();
@@ -472,66 +509,69 @@ public class RecordActivity extends Activity {
         int ink = dark ? 0xffedf7f1 : 0xff142c24;
         int secondary = dark ? 0xffb5ccc0 : 0xff49655a;
         int control = dark ? 0xff2b4038 : 0xffe7efea;
+        int accent = dark ? 0xff4fc99a : 0xff125b47;
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setGravity(Gravity.CENTER_HORIZONTAL);
         layout.setPadding(dp(24), dp(18), dp(24), dp(24));
         layout.setBackground(rounded(surface, 24));
 
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = text(destinationLabel, 23, ink);
+        TextView title = text(destinationLabel, 22, ink);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         header.addView(title, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         ImageButton close = new ImageButton(this);
         close.setImageResource(R.drawable.ic_memo_close);
         close.setImageTintList(ColorStateList.valueOf(ink));
         close.setBackground(buttonBackground(control, 24));
-        close.setContentDescription("Close recorder");
-        close.setOnClickListener(v -> confirmDiscard());
-        header.addView(close, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        layout.addView(header);
+        close.setContentDescription("Close recorder, keeping the draft");
+        close.setOnClickListener(v -> onBackPressed());
+        header.addView(close, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        layout.addView(header, new LinearLayout.LayoutParams(-1, -2));
 
+        // The point of the screen: how long, how loud, and one button.
         clock = new Chronometer(this);
-        clock.setTextSize(48);
+        clock.setTextSize(44);
         clock.setTextColor(ink);
         clock.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         clock.setFontFeatureSettings("tnum");
         clock.setGravity(Gravity.CENTER);
-        clock.setPadding(0, dp(22), 0, 0);
+        clock.setPadding(0, dp(16), 0, 0);
         layout.addView(clock);
+
+        wave = new WaveView(this, accent);
+        layout.addView(wave, new LinearLayout.LayoutParams(-1, dp(72)));
+
+        stop = new RecordButton(this, accent);
+        stop.setEnabled(false);
+        stop.setOnClickListener(v -> primary());
+        LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(-2, -2);
+        buttonParams.topMargin = dp(8);
+        layout.addView(stop, buttonParams);
 
         status = text("Preparing recorder…", 15, secondary);
         status.setGravity(Gravity.CENTER);
-        status.setPadding(0, dp(4), 0, dp(24));
+        status.setPadding(0, dp(6), 0, 0);
         layout.addView(status);
 
         hint = text("", 14, secondary);
+        hint.setGravity(Gravity.CENTER);
         layout.addView(hint);
 
-        stop = new Button(this);
-        stop.setAllCaps(false);
-        stop.setText("Send memo");
-        stop.setTextSize(17);
-        stop.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        stop.setTextColor(Color.WHITE);
-        stop.setBackground(buttonBackground(0xff165c49, 15));
-        stop.setMinHeight(dp(54));
-        stop.setEnabled(false);
-        stop.setOnClickListener(v -> send());
-        layout.addView(stop, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        resume = new Button(this);
-        resume.setAllCaps(false);
+        // Only with a saved draft, and small: listening back, and throwing it away.
+        LinearLayout links = new LinearLayout(this);
+        links.setGravity(Gravity.CENTER);
+        resume = CaptureUi.link(this, "Listen first");
+        resume.setTextColor(accent);
         resume.setOnClickListener(v -> review());
-        layout.addView(resume);
-
-        discard = new Button(this);
-        discard.setText("Discard draft");
-        discard.setAllCaps(false);
+        links.addView(resume);
+        discard = CaptureUi.link(this, "Discard draft");
+        discard.setTextColor(secondary);
         discard.setOnClickListener(v -> confirmDiscard());
-        layout.addView(discard);
+        links.addView(discard);
+        layout.addView(links, new LinearLayout.LayoutParams(-1, -2));
 
         ScrollView scroll = new ScrollView(this);
         scroll.setClipToOutline(true);
@@ -544,6 +584,11 @@ public class RecordActivity extends Activity {
         window.setDimAmount(0.45f);
         int available = getResources().getConfiguration().screenWidthDp;
         window.setLayout(dp(Math.min(440, available - 32)), WindowManager.LayoutParams.WRAP_CONTENT);
+    }
+
+    /** The big button: send what is being recorded or saved, or start a recording. */
+    private void primary() {
+        if (active() || (draft != null && draft.hasContent())) send(); else start();
     }
 
     private TextView text(String value, int size, int color) {
