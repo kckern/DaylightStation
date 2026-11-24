@@ -200,8 +200,16 @@ than the piece would always slice a staff at its edge, so the score is shown as
   (`PASSAGE_NUMBER_ROOM`, `passageNumberHeadroom`). Each number is placed by
   `passageNumberPlacements`: a fixed lift over its staff, or over the ink in its
   own column when that stands higher (a slur, a stem, a ledger note), so it never
-  sits on the music, and its strip is ink to the page cut, so a number belongs to
-  its own system's page and is never half on the page above. The passage box and
+  sits on the music. **A passage number is whole or not drawn** (2026-11-24): its
+  disc (with a selected one's ring, `PASSAGE_NUMBER_HALO`) is a **head** of the system
+  under it (`systemCuts(systems, height, ink, heads)`): no page cut falls below a head,
+  and under one the cut goes to the bottom of the free paper above it. Before, a head
+  was plain ink and the cut fell in the widest free strip, which could be under a
+  number standing tight on the stems of the system above: Santa Claus at 1280×800 showed
+  C, D and E cut at their tops on page 2, and the owner saw F cut at the foot of the page
+  above. As a safety net `LearnPassageLayer` draws a disc only when it is whole inside
+  the page view (`view`: the page's cut inside the window). A sweep of eight scores at
+  1280×800 and 1280×720 (54 page views) found no clipped disc, with or without the net. The passage box and
   outline reach every notehead of the bars (ledger notes too), not only the staff.
   `ScoreOverlays.journey.test.jsx` checks all of this in Chromium on a score that
   climbs to C7 in its first system and drops to C1 in its last: every number, box
@@ -373,9 +381,15 @@ the drill. It draws no practice screen of its own.
   Which sets can be tapped depends on the [skipping mode](#skipping-steps); a set
   that cannot be started yet is a disabled button, and outside `strict` its picture
   is dimmed under a small lock (the piano `lock` icon).
-- **Chrome.** One toolbar row of fixed height (4.75rem): Back (to the score), the printed bars,
-  the step's instruction (`Join the hands`), then for a timed step (metronome or cued, the rhythm
-  step included) the **tempo track** and the **click volume** button, then the actions. Every band of
+- **Chrome** (redesigned 2026-11-24). One fixed 72px header row in regions of fixed width, so nothing
+  shifts between states: **‹ Score** (Back names where it goes); the title, which is the step's
+  instruction (`Tap the rhythm`, 26px bold), over the bars it covers (`Pickup + bars 1–4`, 18px muted:
+  `barLabel` in `resolveLearnPlan.js` names a printed bar 0 **Pickup**, so 0..4 reads `Pickup + bars 1–4`,
+  1..4 `Bars 1–4`, 0..0 `Pickup`); the **prompt** (`Press a key to start` with key and pedal glyphs while a
+  timed take is ready, `Play the first note to begin` for a free one; nothing during a take; empty on a
+  result); the **settings** (the speed button, `100%` with the flag at full speed, and the click volume
+  button), removed with their slot kept during a take or Listen; then the actions. No header control
+  is ever shown through `opacity`, `visibility: hidden` or an `is-quiet` state. Every band of
   the drill screen (header, score, step strip, keyboard, path) has a fixed height, and the actions sit
   in a fixed-width, right-aligned slot, so nothing moves when a take starts, pauses or ends, when the
   result appears, or while listening (checked box by box in real Chromium:
@@ -383,19 +397,20 @@ the drill. It draws no practice screen of its own.
   (`Bar 2`). Saving is mentioned only when it failed (**Progress not saved**, **Retry saving**). A lost
   piano is announced once, by the app's banner.
 - **Actions follow the take** (one button style: icon + short label, neutral surface, no green;
-  `ExerciseRun onPhase` tells `LearnLab` the run's phase). Before a take (and after one): **Listen**
-  (plus **Skip rhythm** / **Come back to this later** when on offer). During a take: **Pause** only.
-  Paused: **Resume** and **Start over**; Start over never appears before a take. Listening: **Pause**
-  (↔ **Play**) and **Stop**.
-- **Tempo track** (`LearnTempoTrack.jsx`). A stepped track of tappable stops, not a slider: a drag
-  only ever lands on a stop, and − / + move one stop. The stops are the plan's own Gold rung tempos
+  `ExerciseRun onPhase` tells `LearnLab` the run's phase). Before a take (and after one): **▶ Listen**.
+  During a take: **Pause** only. Paused: **Resume** and **Start over**; Start over never appears before
+  a take. Listening: **Pause** (↔ **Play**) and **Stop**. **Skip rhythm** and **Come back to this
+  later** are not header actions: they live on the result card.
+- **Speed** (`LearnTempoTrack.jsx`, 2026-11-24). One header button showing the chosen percent (with
+  the flag at 100%) that opens an opaque **speed sheet**: one button of at least 96px per stop, the
+  percent big and, only here, the bpm small beneath; ladder rungs labelled as such, earned rungs filled,
+  the stops a pass at the chosen speed would also fill lit, and the sheet says so (`Pass at 85% = 50, 70,
+  85 done`). No slider, no drag, no − / +. The stops are the plan's own Gold rung tempos
   for the unit (read from the plan, never a list in code), the step's tempo, 100%, and one stop about halfway (to the nearest 10)
   between two rungs 20 or more apart (`tempoTrackStops` in `tempoStages.js`; for 30·50·75·100 that is
-  30·40·50·60·75·90·100). The readout is the percent, big, with the bpm small beneath; rung stops are
-  larger and labelled, earned rungs filled green, the stops a pass at the chosen tempo would fill are
-  lit, and 100% carries the flag. The step's own tempo is the floor (a child may go faster, never
+  30·40·50·60·75·90·100). The step's own tempo is the floor (a child may go faster, never
   slower), except on the rhythm step, which also goes down to the plan's lowest timed rung. During a
-  take the track is locked and − / + hide while keeping their room. The choice is kept by the coach for
+  take or Listen the button is removed (its slot kept). The choice is kept by the coach for
   that step (`coachTempoTrack`, `tempoChoice`), applies to the next take, resets when the step changes,
   and is logged `piano.learn.tempo.choose` (`from`, `to`, `step`). A plain rung outside the coach offers
   its tempo stages on the same track, and a take at or above the stage it was set credits it.
@@ -413,11 +428,14 @@ the drill. It draws no practice screen of its own.
   sheet of four big level pictures (Soft · Medium · Loud · Max). Each tap sounds two clicks at that
   level (`playClickPair`) and closes the sheet; usable mid-take. Persisted as before (`clickLevel.js`).
 - **Pedals are any key.** Sustain, soft and sostenuto (CC 64/66/67, pressed down past 64, rising edge
-  only) do what any key does on the drill: start the armed count-in of a cued take
-  (`piano.exercise-countdown-started` `reason: 'pedal'`) and take the result card's way on
-  (`piano.exercise-retry` `via: 'pedal'`). A pedal never reaches `activeNotes`, so it is never graded.
-  They arrive on the raw MIDI tap (`subscribeRaw`); the bridge feeds every control change there
-  (channel 0 when its frame has none).
+  only; a held or half pedal acts once) do what any key does on the drill: start the count-in of a cued
+  take, the press being beat one (`piano.exercise-countdown-started` `reason: 'pedal'`, `downbeat: true`),
+  and take the result card's way on (`piano.exercise-retry` `via: 'pedal'`). A pedal never reaches
+  `activeNotes`, so it is never graded; CC 7 and every other controller does nothing. They arrive on the
+  raw MIDI tap (`subscribeRaw`); the bridge feeds every control change there (channel 0 when its frame
+  has none). Every rising edge is logged once as `piano.exercise-pedal` `{ controller, value, acted:
+  'start' | 'continue' | null, ignored: 'listening' | 'not-prepared' | 'paused' | 'not-cued' | 'counting' |
+  null }`, so a pedal that did nothing says why (a pedal during the count it started is `counting`).
 - **A pass** shows the drill's own rep card (`RepInterstitial`): `Set 3 of 8
   clear`, the score, `Next: On your own`. The next step is already mounted under it.
 - **Silver and Gold.** The take that certifies the passage closes the drill's
@@ -444,7 +462,7 @@ the drill. It draws no practice screen of its own.
   already holding the coach's verdict and actions. The primary button (the brightest neutral) is the
   smaller practice the coach recommends after two misses (`Practice bar 2`, `Practice the left hand`,
   `Try a little slower · 75%`), otherwise **Try again**; **Come back to this later** and, on the rhythm
-  step after two misses, **Skip rhythm** follow. **Releasing the keys and playing any key, or pressing a
+  step after any miss, **Skip rhythm** (a normal secondary button) follow. **Releasing the keys and playing any key, or pressing a
   pedal, takes the primary button** (`onResultContinue`), shown as a key and a pedal glyph (its
   accessible name says it: "Play any key or press a pedal to try a little slower (75%)"); the leave
   gesture is a small two-ends mark, so a child never has to reach for the glass to take the help.
@@ -468,12 +486,15 @@ the drill. It draws no practice screen of its own.
   this unit selected. Every token opens its unit (`piano.learn.path.open`); **All**
   opens the board over the drill, and a card opens its unit.
 
-**Verdict marks** (✓ ◂ ▸ ○ ×) hang off the noteheads, on the side away from
+**Verdict marks** (◂ ▸ ○ ×) hang off the noteheads, on the side away from
 the stem: under a stem-up note, above a stem-down one (`verdictAnchor` in
 `Exercises/ScorePassage.jsx`). Placed under the whole stavenote group they sat
 under the stem tip, and the passage's ink-fitted viewBox cut off the ones under
 low notes. The viewBox keeps two staff spaces of air above and below the ink
 (`passageLayout.js`) so a mark beside the highest or lowest notehead fits.
+A right note carries no mark (2026-11-24): green already says right, and a tick under
+every hit was clutter. Early ◂ / late ▸ (which way) and missed ○ / wrong × (which red)
+keep theirs, because colour cannot say those (`VERDICT_MARK` in `ScorePassage.jsx`).
 
 **Timing on the slowed steps.** Any cued step below score tempo (the 50/60/75%
 steps, slower-beat recoveries, authored slower stages) grades with
@@ -503,6 +524,19 @@ about a fifth larger than on the engraver's page). Staves and bars are always
 inside the frame, whatever was measured. Without a measurement the page is used,
 trimmed where every system stops short. This applies to every `ScorePassage`, in
 Exercises too.
+
+**The score is shown only at its final size** (2026-11-24). Every take re-engraves its
+passage, and a passage can be engraved two or three times before it is accepted
+(smaller, then justified); before its layout is fitted the staff stood at the
+engraver's own size and then filled its stage (in the office flow, 40px of staff then
+93px), on every take. `ScorePassage` sets `data-engraving-ready` on
+`.piano-score-passage` once a layout is accepted and fitted to the stage (a layout
+the fitter cannot place, with no staff boxes, counts as ready rather than never), and
+`Exercises.scss` keeps `.musicxml-renderer` at `visibility: hidden` until then (the
+placeholder that says a score cannot be read is never hidden). The stage shows its
+paper meanwhile; there is no fade and no timer. The office flow
+(`office-sheet-music.runtime.test.mjs`) samples the drawn staff scale on every frame
+for 1.5 s after **Try again** and expects one value, the one before the retry.
 
 Stems and noteheads were checked in the drill at 1280x800 and 1280x748 across all
 twelve passages of a real score, through the ready, playing, resolve and result
@@ -623,6 +657,7 @@ sheetmusic:
         after: both-hands  # when a passage is partway: both-hands | together | first-step
     goldTempos: [50, 70, 85, 100]  # the Gold ladder's speeds: ascending, 1-100, the last 100
     minBpm: 60                     # no rung plays slower than this (lifted at the score's tempo)
+    tomatoes: learners             # tomatoes on passages not started: learners | everyone | nobody
     pieces:
       files:docs/sheet-music/example.mxl:
         goldTempos: [60, 80, 100]  # one piece's own speeds
@@ -742,12 +777,19 @@ ring, and a line of its own for the bars caption):
 - **Passages are letters.** Passage index to letter: A, B, C… (AA, AB… after Z,
   `letterOf`). Every token is the same size (56px, the letter about 1.6rem heavy) and
   its state is the disc (`LetterCoin` in `PassageCoin.jsx`): a plain dark disc (not
-  started; there is no tomato on the path), the disc ringed in pink with a flower at
+  started), wearing a small **tomato** at its shoulder for a learner (below), the disc ringed in pink with a flower at
   its shoulder (partway), a **bronze coin** with the letter (Bronze, stored
   `silver`) and a **gold coin** with the letter (Gold). The coins are `CoinIcon`'s
   palettes (bronze through its `color` hatch) drawn as a plain face so the letter
   reads at arm's length. Bar numbers appear only as a small caption (`bars 5–8`)
   under the target and next tokens. Opacity never shows state.
+- **Tomatoes on passages not yet started** (owner, 2026-11-24). The tomato sits where a
+  partway passage wears its flower (the same shoulder and 17-unit size) on the path and
+  the board. Who sees them is `sheetmusic.learn.tomatoes`: `learners` (the default:
+  profiles with `schoolLearner: true`, the kids), `everyone` or `nobody`; a grown-up
+  (`schoolLearner: false`) or a guest sees plain discs by default. Resolved by
+  `passageTomatoesFor` in `pianoConfigModel.js`, read for whoever is playing by
+  `usePassageTomatoes` (no tomatoes outside the kiosk's user provider).
 - **Joins appear only on the Silver lap and later** (`projection.lap !== 'bronze'`)
   and only when both halves are certified: both passages Bronze, or for a higher
   join both member joins Silver. Only the **next** available join is shown (the
@@ -952,20 +994,21 @@ Free practice waits for and counts the first expected note. Timed practice start
 its visible, audible count-in without a sacrificial arming note. During the
 count-in, input is excluded from grading.
 
-**A clear start (cued Learn passages).** Any key **arms** the take; it is never
-graded. The count-in starts when every key held at arming is released, or 1 s
-after arming (`ARM_RELEASE_MS`), whichever is first, and then waits
-`min(one click, 600 ms)` (`START_GAP_MAX_MS`, never less than the click pre-roll)
-before the first click — so the first click is not hidden under the arming key
-press. Keys pressed while armed are ignored and do not re-arm
-(`piano.exercise-input-ignored`, `reason: 'armed'`). The count band appears in its
-armed form the moment the key lands (`data-start-armed` on the run), and the
-standing line reads "Listen for the clicks." `piano.exercise-armed` records the
-arming; `piano.exercise-countdown-started` carries `reason` (`armed-released` or
-`armed-timeout`), `prerollMs`, `armedAt` and `waitedMs`. A pause or a new take
-drops the arming and its onsets. Other cued callers (exercises, gates) still start their
-count-in on the arming key itself; `startOnReady` (no live caller) starts with no
-arming key and no armed state.
+**The press is beat one (cued Learn passages, 2026-11-24).** A key or pedal press on
+the piano that starts a cued take is **beat one** of the count-in: press, 2, 3, 4,
+play (it was press, 1, 2, 3, 4, play, after a release wait). `startCountIn` takes
+`downbeatAt` (the note-on's time, the onset's stamped time, else now; a pedal's rising
+edge): the runtime starts at the press with no pre-roll, the anchored click scheduler
+skips the beat already past (the press is not sounded again) and clicks 2, 3, 4 land
+on the same grid. The arming key is never graded: while it is still held (it may be
+the passage's first pitch) it does not count as note 1 until struck again
+(`countdownHeldRef`). A press during the count it started (a second key, the pedal
+again) starts nothing new and is not graded. `piano.exercise-armed` (with
+`downbeat: true`) records the press and `piano.exercise-countdown-started` carries
+`reason` (`arming-key`, `pedal`, `missed-cue`), `downbeat` and `prerollMs`. Starts that
+did not come from the piano keep the pre-roll and the full count: the missed-cue
+restart (below) and `startOnReady` (no live caller). Other cued callers (exercises,
+gates) count in on the arming key the same way.
 
 **Shifted entry (cued Learn passages).** ExerciseRun keeps a raw onset log of the
 take (`{ midi, t, phase }`, MIDI timestamps, from the arming key until the result,
@@ -1028,7 +1071,7 @@ one note per event on middle C and the keys held are read as that one key, stamp
 hands on a beat are one tap and the child lifts between taps), so the same timed judge, windows and count-in
 grade only WHEN they came in. The take shows the timed steps' own live feedback on the X noteheads: the clock
 cursor moves with the beat, each head turns green (hit), amber (early/late, at the margins) or grey (missed) the
-moment it is judged, and the result keeps the same marks (✓ ◂ ▸ ○). Every tap is on middle C but the heads are drawn
+moment it is judged, and the result keeps the same marks (◂ ▸ ○; a hit is green with no mark). Every tap is on middle C but the heads are drawn
 on B4/D3, so `rhythmScoreVerdicts` re-keys each verdict onto every head the tap stands for (`ink` on each kept
 event: its source event index and drawn pitches, on every staff, plus any run merged into it) before
 `ScorePassage` paints by event and pitch. The keyboard sounds a percussive voice (the device catalog's Woodblock) for as long
@@ -1041,7 +1084,7 @@ It never nests (a rung failed twice falls to the ordinary smaller steps) and gat
 
 **The rhythm step never walls a child.** Its tempo track also goes down, to the plan's lowest timed rung,
 and a pass at any chosen tempo clears it (a warm-up, not a speed rung; it never proves a timed note step).
-**Skip rhythm** is always on it (a quiet header button; promoted into the result card after two misses):
+**Skip rhythm** is on its result card after any miss (a normal secondary button; it is not in the header):
 skipping earns nothing, and the coach moves on to the unit's next Gold-lap step and never recommends the
 rhythm step for that unit again (a `skip-rhythm` coach event, kept as `skippedRhythm[unitId]` in coach
 state, accepted by the server; projection `rhythmSkipped`; log `piano.learn.rhythm.skip`). Ornaments never
@@ -1135,9 +1178,9 @@ or moving its anchored beat grid. Callers outside Learn keep the default gain.
 
 On a **cued Learn passage** the count-in counts **up** with the clicks: a band
 across the top of the stage (`CountUpOverlay`, `countUpPresentation`) holds one
-numbered pip per click, lit as each click sounds, the first accented; during the
-last click it says **next click: play**, so the cue arrives before the first beat
-rather than on it. Nothing is shown on the first beat (no PLAY), and the music is
+box per beat of the count in bar groups (below), the box under the click lit, each
+bar's 1 accented (the click accents it too); during the last click it says
+**next click: play**, so the cue arrives before the first beat rather than on it. Nothing is shown on the first beat (no PLAY), and the music is
 not greyed (`data-count-style="up"`), because the child is about to read the first
 notes. The clicks are the plan's (`exerciseCountInPlan`, ≤ 4), whatever the meter.
 The band has paper of its own: on a step that shows it (the cued steps and the
@@ -1145,15 +1188,37 @@ metronome's beat loop, `data-count-band`) the stage keeps its top strip clear fo
 the whole step and fits the engraving below it, so the band never stands on high
 first notes, and the music does not move when the clicks start.
 
-**A pickup is counted on the beats before it.** When the first note is not on a
-downbeat (a pickup bar, or a passage that opens on a rest), the count ends on the
-beat before that note: a one-beat pickup in 4/4 counts **1, 2, 3** and the pickup
-is played on 4. Fewer than two clicks before the note adds a bar first. The bar
-lengths come from the engraver's `measureMap`; a pickup bar is the first bar when
-it is shorter than the usual bar (`entryOffsetQuarters`, `alignCountIn`). An entry
-that is not a whole number of clicks (an eighth-note pickup, or clicks coarser than
-the pickup) keeps the full-bar count. `piano.exercise-countdown-started` carries
-`entry: downbeat | aligned | unaligned`. Polish does the same for a run from the
+**A pickup is counted in whole bars, with its entry drawn in its beat** (2026-11-24).
+Cutting the count to end on the beat before a pickup ("1, 2, 3", play on the unsaid 4)
+gave a child no target and 1.5 s at ♩=120, and a hand with no pickup counted four, so
+the count changed between the steps of one passage. `exerciseCountInPlan` in
+`countIn.js` now returns `{ clicks, periodMs, leadInMs, pulseBpm, entry, bars,
+readyBar, slots }`:
+
+- The count ends with the **landing bar**, the bar holding the passage's first note
+  (`passageFirstOnsetQuarter`: the earliest onset across both staves, passed by
+  `LearnLab` to `ExerciseRun`).
+- A **ready bar** comes first unless the landing bar alone gives at least 2.5 s
+  (`READY_BAR_MS`) and two audible clicks after the press (the press is beat one and
+  not sounded). Never more than two bars. At ♩=120, Santa Claus's one-beat pickup is a
+  ready bar then 1 2 3 with the note on 4 (7 clicks, 3.5 s); at ♩=60 the landing bar
+  alone is the count.
+- **The count belongs to the passage, not the hand**: a left hand that enters on the
+  downbeat hears the same count and sees a **rest** box where the pickup is; a hand
+  whose own pulse the pickup does not land on (whole notes under a one-beat pickup)
+  counts in quarters.
+- `slots` lay the count out beat by beat (`{ bar, beat, kind: 'count'|'rest'|'note',
+  half? }`); the overlay draws them in bar groups, the step's entry as a **note box**
+  (♩, ✕ on the rhythm step) in its own beat from the moment the take is armed ("play on
+  this beat", not "after the count"); an eighth-note pickup lands on a half slot. Nothing
+  is lit on the entry beat.
+- **A downbeat passage keeps exactly four clicks**, as before.
+- A **missed-cue restart always has the ready bar** (`forceReadyBar`) and says "You
+  missed the cue — come in on the ♩" (✕ on the rhythm step).
+
+`entry` is `downbeat`, `aligned` (the entry on a click), `offbeat` (between clicks)
+or `unaligned` (a bar the clicks do not divide, which keeps the plain count);
+`piano.exercise-countdown-started` carries it with `readyBar`. Polish does the same for a run from the
 top of the piece (`score.countin.start` carries `entry`), keeping at least 1.5 s of
 count by adding whole bars.
 Everything below about the countdown describes every other timed run.

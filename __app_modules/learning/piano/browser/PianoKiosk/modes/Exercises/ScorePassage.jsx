@@ -527,7 +527,7 @@ const VERDICT_KIND = Object.freeze({ hit: 'hit', early: 'early', late: 'late', l
 const VERDICT_MARK = Object.freeze({ early: '\u25C2', late: '\u25B8', unplayed: '\u25CB', wrong: '\u00D7' });
 
 /**
- * A verdict mark (✓ ◂ ▸ ○ ×) beside an engraved note, in its SVG's own
+ * A verdict mark (◂ ▸ ○ ×; a hit has none) beside an engraved note, in its SVG's own
  * coordinates (the same screen-to-user mapping the cursor uses). Returns the
  * inserted element, or null where there is no geometry (happy-dom, a detached
  * note).
