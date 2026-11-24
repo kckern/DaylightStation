@@ -1,0 +1,81 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`NewspaperRenderer > renderText matches the snapshot 1`] = `
+"THE DAYLIGHT LEDGER
+All the news that fits the roll
+================================================
+Tuesday, November 24, 2026 · No. 142 · 41°/22°
+================================================
+WEATHER: Light snow 41°/22° precip 65%
+Snow tapers by noon; roads slick before 9.
+TODAY:
+  9:00 AM  Staff sync
+  12:30 PM  Lunch with the planning committee at the usual place
+  All day  Thanksgiving time off starts
+TO DO:
+  ! Renew vehicle registration
+  - Order the turkey
+------------------------------------------------
+CHIPMAKER REINSTATES ITS CHIEF AFTER A WEEKEND
+OF PRESSURE
+The board voted late Sunday to bring back its
+founder, two days after removing him over an
+undisclosed relationship. Investors cheered: the
+stock recovered most of Friday's fall in
+after-hours trading. Officials in Washington
+said they had urged the reversal; the company
+would not say whether that mattered. Questions
+about the board's own process are not going
+away.
+  -- BBC NEWS · REUTERS · WSJ
+
+------------------------------------------------
+[ NATION ]
+SENATE CLEARS THE STOPGAP WITH HOURS TO SPARE
+The bill funds the government through January 30
+and leaves the harder fights over spending
+levels for the new year. Both leaders called it
+a win; neither sounded thrilled.
+  -- AP · FOX NEWS
+
+HOLIDAY TRAVEL EXPECTED TO BREAK LAST YEAR'S
+RECORD
+Airlines project more than three million
+passengers on Sunday alone. Forecasters warn of
+storms across the Midwest midweek.
+  -- CBS NEWS
+
+------------------------------------------------
+[ WORLD ]
+NATO CHIEF VOWS DEFENCE AGAINST THREATS IN ORBIT
+German media reported plans for a nuclear-armed
+satellite. Moscow called the reports
+provocations and denied any such program; NATO
+did not confirm the claim.
+  -- BBC NEWS · AL JAZEERA
+
+------------------------------------------------
+[ TECHNOLOGY ]
+A BROWSER ENGINE NOBODY EXPECTED TAKES ITS FIRST
+STEPS
+An independent team shipped an alpha that
+renders most of the top thousand sites. It is
+slow and proud of it.
+  -- ARS TECHNICA
+
+------------------------------------------------
+[ IN BRIEF ]
+* Mortgage rates dip for a third straight week.
+(WSJ)
+* A rare bird draws crowds to a Salt Lake City
+parking lot. (KSL)
+------------------------------------------------
+YESTERDAY: 42 min ride, 6.1 mi, avg 132 bpm.
+9,840 steps.
+SCHOOL: Sam 5 of 6 done, 3 silver. Riley 6 of 6
+done.
+FROM THE PHOTOS: Five years ago today: the lake
+house, everyone in hats.
+================================================
+Composed 5:31 AM from 214 headlines · 9 stories"
+`;
