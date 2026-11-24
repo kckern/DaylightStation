@@ -432,6 +432,10 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   as incomplete after this long without a newly matched note.
  * @param {'always'|'after-wrong'|'never'} [props.keyboardHintPolicy='always'] Whether
  *   the footer keyboard proactively names the target or reveals it as help.
+ * @param {boolean} [props.fullKeyboardHints=false] Light hinted keys at full strength instead of
+ *   the reading surfaces' muted half shade (a learner who is still finding the keys).
+ * @param {boolean} [props.wrongNoteGhosts=false] Score passages: a wrong note also draws a
+ *   translucent notehead on the staff at the pitch played (per-learner, `sheetmusic.learners`).
  * @param {'host'|'local'} [props.failurePresentation='host'] Whether an
  *   `onFailed` consumer replaces the result screen or records it while the run
  *   retains its standard feedback and piano-driven retry.
@@ -440,7 +444,7 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
 const PEDAL_CONTROLLERS = Object.freeze([64, 66, 67]);
 const NO_TARGETS = new Map();
 
-export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', incompleteAfterMs = null, failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, maxCueRestarts = MAX_CUE_RESTARTS, rhythmOnly = false, leadInLoop = false, resultLabel = null, resultActions = null, resultPresentation = 'inline', resultContinueLabel = null, onResultContinue = null, onPickStep = null, demonstration = null, onPhase = null, onStarted, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', fullKeyboardHints = false, wrongNoteGhosts = false, incompleteAfterMs = null, failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, maxCueRestarts = MAX_CUE_RESTARTS, rhythmOnly = false, leadInLoop = false, resultLabel = null, resultActions = null, resultPresentation = 'inline', resultContinueLabel = null, onResultContinue = null, onPickStep = null, demonstration = null, onPhase = null, onStarted, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes: pressedNotes } = usePianoMidiNotes();
@@ -2131,6 +2135,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
             onUnrunnable={handleScoreUnrunnable}
             cursorIndex={demo.active ? sourceIndexOf(Math.max(0, demo.index)) : sourceIndexOf(visualCursor.index)}
             wrongMidi={countingDown || demo.active ? null : lastWrong?.midi ?? null}
+            wrongNoteGhosts={wrongNoteGhosts}
             {...(verdicts && !demo.active ? { verdicts: scoreVerdicts, windowOpen } : {})}
           />
         )}
@@ -2206,7 +2211,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
            what this board physically is. */
         <footer className="piano-exercise-run__keys">
           <PianoKeyboard
-            activeNotes={demo.active ? demo.sounding : feedbackNotes} targetNotes={demo.active ? NO_TARGETS : targetNotes} wrongNotes={demo.active ? null : wrongNotes} dimTarget
+            activeNotes={demo.active ? demo.sounding : feedbackNotes} targetNotes={demo.active ? NO_TARGETS : targetNotes} wrongNotes={demo.active ? null : wrongNotes} dimTarget={!fullKeyboardHints}
             {...resolveBoardRange(keyboardConfig)}
           />
         </footer>

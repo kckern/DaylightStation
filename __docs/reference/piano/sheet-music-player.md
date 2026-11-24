@@ -2097,6 +2097,42 @@ hand's staff has no notes anywhere in the piece, the resolver falls back to
 whichever hand(s) actually have content rather than landing the player on a
 silent, undeadlockable staff.
 
+### Per-learner assist (`sheetmusic.learners`)
+
+For a child who is just starting and does not yet know where a printed note lives on the
+keys. Read raw from `config.sheetmusic.learners` (`learnerAssist.js`), keyed by user id:
+
+```yaml
+sheetmusic:
+  learners:
+    <user id>:
+      collection: files:docs/sheet-music/<folder>  # their track: the score grid opens on this tab
+      keyboardHints: always                         # always | after-wrong | never
+      wrongNoteGhosts: true
+```
+
+- **`keyboardHints: always`** lights the next key on the drill keyboard before any mistake,
+  on every step including the Silver check, and at full strength (`ExerciseRun
+  fullKeyboardHints`, so the keyboard drops its readers' `target-dim` half shade). The
+  pitch-free rhythm step stays dark. Without an entry Learn keeps its reading defaults:
+  `after-wrong`, nothing on the check, half shade.
+- **`wrongNoteGhosts: true`** draws a wrong key on the staff as a see-through red copy of the
+  owed notehead at the pitch played (`Exercises/scoreWrongGhost.js`, painted by
+  `ScorePassage`): moved by letter steps from the owed note, beside it when a second or a
+  unison away, with its ledger lines and a hand-drawn sharp or flat. It sits beside the red
+  owed note, so the page says both "you played this" and "this is the one to find". It is
+  cleared by the next correct note. Drawn in judged (verdict-marked) takes too, from the live
+  wrong pitch.
+- **`collection`** opens that tab of the score grid for the learner, over the remembered tab
+  and again when they are picked.
+
+Applies in the coached drill (`LearnLab`) and Custom practice (`CustomLearnSession`).
+Verified in real Chromium by `LearnerAssist.journey.test.jsx`.
+
+The household's First Notes set (`media/docs/sheet-music/first-notes/`) is written for this: ten
+single-note pieces in C position, right hand, finger numbers on every note, 60 bpm, from whole
+notes on middle C to quarter notes from C to G.
+
 ## Practice record (`users/{id}/apps/piano/practice/`)
 
 `GET`/`PUT` (merge-on-write, same pattern as preferences) at

@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef } from 'react';
+import { useContext, useMemo, useState, useEffect, useRef } from 'react';
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
 import { DaylightAPI, DaylightAPIText } from '../../../../../../../frontend/src/lib/api.mjs';
@@ -11,6 +11,8 @@ import ScorePlayer from './ScorePlayer.jsx';
 import { resolveScoreGroups } from './scoreGroups.js';
 import { isNotationId, collectionListPath, useScoreImage, scoreViewPath } from './sheetMusicModel.js';
 import { useKeyboardOnly } from './office/KeyboardOnlyContext.js';
+import PianoUserContext from '../../PianoUserContext.jsx';
+import { resolveLearnerAssist } from './learnerAssist.js';
 
 /**
  * Sheet Music mode — browse a folder of scores and view them.
@@ -37,25 +39,30 @@ export function SheetMusic() {
   // either way ScoreGrid receives ordered {label, listPath} groups.
   const groups = useMemo(
     () => resolveScoreGroups(config.sheetmusic)
-      .map((g) => ({ label: g.label, listPath: collectionListPath(g.ref) }))
+      .map((g) => ({ label: g.label, ref: g.ref, listPath: collectionListPath(g.ref) }))
       .filter((g) => g.listPath),
     [config.sheetmusic],
   );
+  // A learner with a track (`sheetmusic.learners.<id>.collection`) lands on its tab.
+  // Read without the hook's throw: a screen with no roster simply has no track.
+  const currentUser = useContext(PianoUserContext)?.currentUser ?? null;
+  const trackRef = resolveLearnerAssist(config.sheetmusic?.learners, currentUser ?? null).collection;
   return (
     <Routes>
-      <Route index element={<ScoreGridRoute groups={groups} />} />
+      <Route index element={<ScoreGridRoute groups={groups} trackRef={trackRef} />} />
       <Route path="view/*" element={<ScoreViewerRoute />} />
     </Routes>
   );
 }
 
 /** Score grid → push the selected score's content id (relative). */
-function ScoreGridRoute({ groups }) {
+function ScoreGridRoute({ groups, trackRef = null }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-sheetmusic' }), []);
   const navigate = useNavigate();
   return (
     <ScoreGrid
       groups={groups}
+      trackRef={trackRef}
       onSelect={(item) => {
         logger.info('piano.score-select', { id: item.id });
         // The id can contain slashes (a file path); they become real path

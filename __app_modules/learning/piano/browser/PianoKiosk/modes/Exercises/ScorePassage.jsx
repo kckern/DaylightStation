@@ -7,6 +7,7 @@ import { compileScoreExpectation } from '../../../performance/assessmentAttempt.
 import { excerptMusicXml, selectMusicXmlParts } from './scorePassageXml.js';
 import { scaleScoreTempoMap, scaledScoreBpm } from './scoreTempo.js';
 import { resolvePassageLayout, systemForStep } from './passageLayout.js';
+import { paintWrongGhost } from './scoreWrongGhost.js';
 
 let _logger;
 function logger() {
@@ -137,6 +138,8 @@ export function passageCursorBounds({ noteBounds = [], staffBoxes = [], activeSt
  * @param {number|null} [props.wrongMidi] A note that was played but not asked
  *   for. The note that WAS asked for flashes — the same thing the ABC stage
  *   says with `exercise-note-wrong`.
+ * @param {boolean} [props.wrongNoteGhosts=false] Also draw `wrongMidi` as a translucent
+ *   notehead on the staff at the pitch played (scoreWrongGhost.js). Per learner.
  * @param {Map<number, Map<number, object>>|null} [props.verdicts] A timed run's
  *   RECORDED verdicts (`performance/timedVerdicts.js`), keyed by expectation
  *   event index (this passage's own compiled events) and then midi. When
@@ -150,7 +153,7 @@ export function passageCursorBounds({ noteBounds = [], staffBoxes = [], activeSt
 export default function ScorePassage({
   musicXml, sourceId, measures = null, onExpectation, onUnrunnable, cursorIndex = 0, wrongMidi = null, showCursor = false,
   verdicts = null, windowOpen = undefined, activeParts: requestedParts = null, rangeIndices = null, tempoPercent = 100,
-  keepWholePassage = false,
+  keepWholePassage = false, wrongNoteGhosts = false,
 }) {
   const containerRef = useRef(null);
   const judged = verdicts instanceof Map;
@@ -460,6 +463,34 @@ export default function ScorePassage({
     }
     return () => { for (const el of flashed) el.classList.remove(WRONG); };
   }, [currentStep, judged, wrongMidi]);
+
+  /**
+   * The played pitch, drawn on the staff (wrongNoteGhosts). Its clef and key come
+   * from the passage as engraved: part selection renumbers the staves, so the
+   * focused document, not the source, says which clef staff 0 wears.
+   */
+  const ghostContext = useMemo(() => {
+    if (!wrongNoteGhosts || !focused.musicXml) return null;
+    try {
+      const parsed = parseMusicXml(focused.musicXml);
+      const clefs = parsed?.parts?.[0]?.clefs ?? {};
+      return { fifths: parsed?.key?.fifths ?? 0, clefOf: (staff) => clefs[staff + 1]?.sign ?? (staff >= 1 ? 'F' : 'G') };
+    } catch {
+      return { fifths: 0, clefOf: (staff) => (staff >= 1 ? 'F' : 'G') };
+    }
+  }, [focused.musicXml, wrongNoteGhosts]);
+  useLayoutEffect(() => {
+    // Judged runs too: the drill's takes record verdicts, and the live `wrongMidi`
+    // still says what was just played (the verdict marks only flag the owed note).
+    if (!ghostContext || wrongMidi == null) return undefined;
+    const owed = (currentStep?.notes ?? []).filter((note) => note.el);
+    if (!owed.length || owed.some((note) => note.midi === wrongMidi)) return undefined;
+    // The nearest owed pitch anchors it: a fumbled left-hand note lands on the left-hand staff.
+    const anchor = owed.reduce((best, note) => (Math.abs(note.midi - wrongMidi) < Math.abs(best.midi - wrongMidi) ? note : best));
+    const ghost = paintWrongGhost(anchor, wrongMidi, { fifths: ghostContext.fifths, clef: ghostContext.clefOf(anchor.staff ?? 0) });
+    if (ghost) logger().debug('piano.score-passage.wrong-ghost', { id: sourceId ?? null, owed: anchor.midi, played: wrongMidi });
+    return () => ghost?.remove();
+  }, [currentStep, ghostContext, sourceId, wrongMidi]);
 
   /**
    * The RECORD, painted onto the engraved notes of a timed run. Found by

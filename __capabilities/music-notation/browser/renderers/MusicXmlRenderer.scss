@@ -84,6 +84,17 @@
     --nh-wrong-color: #c0392b;
     path, rect, ellipse, text { fill: var(--nh-wrong-color); animation: none; }
   }
+  // The pitch that WAS played, drawn where it lives on the staff (scoreWrongGhost.js,
+  // per learner `sheetmusic.learners.<id>.wrongNoteGhosts`). A copy of the owed head
+  // in the wrong-note red, see-through so the printed notes stay the page: it says
+  // "you played this one" beside the red owed note's "this is the one to find".
+  .piano-note-ghost {
+    pointer-events: none;
+    opacity: 0.42;
+    path, rect, ellipse, text { fill: #c0392b !important; stroke: none !important; animation: none !important; }
+    .piano-note-ghost__ledger, .piano-note-ghost__accidental { stroke: #c0392b; fill: none !important; stroke-linecap: round; }
+    .piano-note-ghost__accidental { stroke: #c0392b !important; }
+  }
   // Held right now, and written here: the PRINTED note turns green. Declared last
   // so it wins over lit/hit/pending on a note carrying several of these classes —
   // "you are playing this correctly, right now" is the most immediate thing the

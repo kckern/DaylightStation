@@ -52,6 +52,14 @@ describe('PianoHomeDesk progress strip', () => {
     expect(screen.getByRole('button', { name: 'Kid: 1 of 3 Bronze' }).querySelector('.piano-desk__title').textContent).toBe('Jesu Joy');
   });
 
+  it('drops the course card for a child the video courses are off for, keeping the piece', async () => {
+    mount({ courseAccess: { disabledFor: ['kid', 'sib'] } });
+    expect(await screen.findByRole('button', { name: 'Kid: 1 of 3 Bronze' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Kid: Video lesson' })).toBeNull();
+    // Sib had only a course, so Sib has no panel at all.
+    expect(screen.queryByRole('button', { name: /Sib/ })).toBeNull();
+  });
+
   it('defaults to the course when it was played after the piece', async () => {
     h.recent.players[0].courses = [{ ...course, lastPlayedAt: '2026-11-19T10:00:00Z' }];
     mount();
