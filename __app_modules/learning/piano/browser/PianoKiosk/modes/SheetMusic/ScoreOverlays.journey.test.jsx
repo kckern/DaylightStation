@@ -142,9 +142,9 @@ describe('the extras drawn on the engraving stay whole',()=>{
    pages.push(await read());
    for(const seen of pages){expect(seen.numbers).toEqual([]);expect(seen.ink).toEqual([]);expect(seen.onInk).toEqual([]);}
    // Every passage number is shown whole on some page.
-   expect(new Set(pages.flatMap(seen=>seen.shown))).toEqual(new Set(['1','2','3','4','5','6']));
-   // The last passage chosen on the rail: its box holds the low ledger note, its number ring is whole.
-   await page.locator('.piano-passage-rail__tile').nth(5).click();await page.waitForTimeout(900);
+   expect(new Set(pages.flatMap(seen=>seen.shown))).toEqual(new Set(['A','B','C','D','E','F'])); // the path's letters, on the score too
+   // The last passage chosen on the path: its box holds the low ledger note, its badge ring is whole.
+   await page.locator('.piano-passage-path__token').nth(5).click();await page.waitForTimeout(900);
    await page.screenshot({path:path.join(ARTIFACTS,'learn-score-focus-last.png')});
    expect(await partlyClipped(page,'.piano-learn-selection-box, .piano-learn-selection-outline, .piano-learn-passage-map',5)).toEqual([]);
    const lowNote=await page.evaluate(()=>{const box=document.querySelector('.piano-learn-selection-box').getBoundingClientRect();
@@ -157,8 +157,9 @@ describe('the extras drawn on the engraving stay whole',()=>{
  },120000);
  for(const [name,label,tile] of [['first','Practice bars 1–4',0],['last','Practice bars 21–24',5]]) it(`Learn drill on the ${name} passage: the ink, the overlays and the count-in band stay whole and off the notes`,async()=>{
   const{page,errors}=await open();try{
-   await page.locator('.piano-passage-rail__tile').nth(tile).click({timeout:30000});
-   await page.getByRole('button',{name:label,exact:true}).click({timeout:30000});
+   // Tap a token to select it (the play disc moves to it), then tap it again to open it.
+   await page.locator('.piano-passage-path__token').nth(tile).click({timeout:30000});
+   await page.locator('.piano-passage-path__token[data-target]').click({timeout:30000});
    await page.locator('.piano-exercise-run[data-armed="true"]').waitFor({timeout:15000});await page.waitForTimeout(800);
    for(const [step,task] of [['own','Play it on your own'],['timed','Play at score tempo']]){
     await page.locator('button.drill-cluster').and(page.getByRole('button',{name:task,exact:true})).click();await page.locator('.piano-learn-lab__task').filter({hasText:task}).waitFor();

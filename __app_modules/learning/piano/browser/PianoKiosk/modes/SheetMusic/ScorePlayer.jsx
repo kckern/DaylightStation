@@ -39,7 +39,7 @@ import PassageBoard from './PassageBoard.jsx';
 import ScorePager from './ScorePager.jsx';
 import useSystemPaging from './useSystemPaging.js';
 import { SIZE_STEPS } from './ViewSheet.jsx';
-import { railModel } from './passageRail.js';
+import { railModel, letterOf } from './passageRail.js';
 import usePieceGemOffer from './usePieceGemOffer.js';
 import LearnLaunchpad from './LearnLaunchpad.jsx';
 import { buildRungLaunch, creditEligibleRung, learnLaunchpadProjection } from './learnLaunch.js';
@@ -2219,8 +2219,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
     segments: learnPlan.segments, authoredLadder: learnPlan.authoredLadder, tempoMap: learnPlan.tempoMap, certification: learnPlan.certification }),
     [scoreMeta.id, fingerprint, learnPlan]);
   const coach = useLearnCoach({ plan: coachPlan, legacy: practice ?? {} });
-  const coachedPassages = useMemo(() => coach.projection.segments.map((passage) => ({ ...passage,
-    testedOut: passage.mastered, inProgress: passage.skills.some((skill) => skill.ready || skill.successes > 0) })), [coach.projection.segments]);
+  // Passages carry the path's letter (A, B, C…) as their number, so the badge on the score names the same thing the path does.
+  const coachedPassages = useMemo(() => {
+    let order = 0;
+    return coach.projection.segments.map((passage) => ({ ...passage,
+      ...(passage.kind === 'join' ? {} : { number: letterOf(order++) }),
+      testedOut: passage.mastered, inProgress: passage.skills.some((skill) => skill.ready || skill.successes > 0) }));
+  }, [coach.projection.segments]);
   const learnPassages = useMemo(() => {
     const compatible = compatibleLearnPassages(practice?.learn, learnPlan);
     const projected = learnPlan.segments.map((passage) => {
