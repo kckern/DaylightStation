@@ -349,18 +349,47 @@ A child uses two screens in Learn: the score with its path and board, and the
 Opening a passage lands on the Exercises run surface (`ExerciseRun` inside
 `LearnLab`), on the passage's current step, ready to play. `LearnCoach` is glue:
 it chooses the step, hands the passage to the drill as sets and reps, records each
-take with the coach, and stacks the [passage path](#passage-path-and-board) under
-the drill. It draws no practice screen of its own.
+take with the coach, and hands the drill the ends of its coach rail (the passages and the level
+ladder). It draws no practice screen of its own.
+
+**Two rails** (2026-11-24, owner approved; Fable evaluation). The drill is three bands on both the
+tablet (1280×800) and the office (1280×720), and the score gets at least 75% of the canvas (it had 39%
+under five bands):
+
+| Band | Height | What |
+|------|--------|------|
+| **Status line** (`.piano-learn-lab__toolbar`) | 64 CSS px tablet, 56 office | the player's avatar; `<step instruction> · <bars>` on one line; the **prompt slot** (fixed width: ready, the start prompt; counting, the count; during a take, empty with its width kept; after a take, the way on); tablet only, the speed, the click volume and Back (‹, an icon) at 48px on the far right |
+| **The score** (`.piano-exercise-run__stage`) | the rest | the engraving, edge to edge between the rails; nothing of the run's own is drawn over it |
+| **Coach rail** (`.piano-learn-lab__rail`) | 72 CSS px | three fixed zones: the passage coins (`PassagePath variant="rail"`, about 44px, the unit being drilled ringed, tomatoes and flowers as on the path) · this passage's step dots, or after a take the docked result · the level ladder with its word (`LevelLadder variant="word"`: `Bronze`, no count) |
+
+The status line **replaces the app's top bar** while a drill is open: on the tablet the drill claims
+the kiosk's full screen (`useBoardGameFullscreen('sheet-music-learn')`, its toggle hosted and not drawn,
+so `PianoChrome` steps aside and comes back on leaving; the kiosk's remembered choice is untouched); on
+the office the launcher's `SHEET MUSIC` bar is hidden while the stage holds a drill
+(`.tetris-fullscreen:has(.piano-learn-lab) > .office-game-chrome`, `office/OfficeSheetMusic.scss`).
+The run draws into the rails through `ExerciseRun slots={{ prompt, rail }}` (portals): its count-in
+and its way on into the prompt slot, its step pills, live Right/Wrong count and docked result into the
+rail's middle zone; its own grid is then the score alone (`data-rails="host"`). **No fact twice:** the
+passage letter is only its coin, the bars only the status line, the level only the ladder's word.
+Gone: `Learn <letter>`, the bars caption under the coin, the step strip's coin and
+`<letter> · steps to <level>`, `N of M`, the uncoached lab's `Set n of m · Rep n of m` line (the pills
+say it), and the `SHEET MUSIC` bar while drilling. **Nothing moves between states**: every rail and
+zone keeps its height and width in ready, counting, running, paused, listening and result (checked box
+by box in real Chromium: `LearnDrillScreen.journey.test.jsx` "two rails", and the office flow's "two
+rails on the office canvas"). **The keyboard row** is drawn only for a learner whose keys are lit on
+every take (`sheetmusic.learners.<id>.keyboardHints: always`, `ExerciseRun keyboard`): a ruling of
+this change, since that assist is the keyboard, and the score's share is lower for that learner alone.
+Everyone else's after-wrong key hint went with the row (the office never had it).
 
 - **Steps per lap.** The progress row shows only the steps of the lap the step
   being played belongs to: on the Bronze/Silver lap the hands, together and the
   check; on the Gold lap the rhythm, the beat, each hand with the beat, the timed
-  rungs and score tempo. Later-lap steps are not drawn (never a row of locks). The
-  row is headed by the unit's own token, the same lettered coin with the same
-  neutral ring it wears on the path, and `<letter> · steps to <Bronze|Silver|Gold>`
-  (`A · steps to Bronze`, `A–B · steps to Silver`, `A · steps to Gold`): the
-  projection's `head`, drawn by `DrillProgress` at the row's start. The skipping
-  modes still decide which of the shown steps can be started.
+  rungs and score tempo. Later-lap steps are not drawn (never a row of locks). On
+  the coach rail the steps are **dots**: each step's rep pills, ringed while it is
+  the one being played; the current step's name is the status line's, every
+  step's is its accessible name. The row has no head of its own (the coin beside
+  it is the unit's). The skipping modes still decide which of the shown steps can
+  be started.
 - **Sets and reps.** Every step shown is one set in the
   drill's progress row, and the clean takes it needs are its reps. A set is named
   by a picture, not a word: the two hands with the resting one unlit (right hand,
@@ -383,20 +412,21 @@ the drill. It draws no practice screen of its own.
   Which sets can be tapped depends on the [skipping mode](#skipping-steps); a set
   that cannot be started yet is a disabled button, and outside `strict` its picture
   is dimmed under a small lock (the piano `lock` icon).
-- **Chrome** (redesigned 2026-11-24). One fixed 72px header row in regions of fixed width, so nothing
-  shifts between states: **‹ Score** (Back names where it goes); the title, which is the step's
-  instruction (`Tap the rhythm`, 26px bold), over the bars it covers (`Pickup + bars 1–4`, 18px muted:
+- **The status line** (two rails, 2026-11-24). Regions of fixed width, so nothing
+  shifts between states: the avatar; the step's instruction (`Tap the rhythm`, bold) and, after a `·`
+  on the same line, the bars it covers (`Pickup + bars 1–4`, muted:
   `barLabel` in `resolveLearnPlan.js` names a printed bar 0 **Pickup**, so 0..4 reads `Pickup + bars 1–4`,
   1..4 `Bars 1–4`, 0..0 `Pickup`); the **prompt** (`Press a key to start` over `or a pedal` while a
   timed take is ready, `Play the first note to begin` for a free one; nothing during a take, or during
   the 900 ms hold before a missed cue's count restarts, when keys are ignored (`onPhase` reports
   `cue-restart` then, a phase of its own that counts as a take under way: Pause, no settings); empty on a
-  result); the **settings** (the speed button, `100%` with the flag at full speed, and the click volume
-  button), removed with their slot kept during a take or Listen; then the actions. No header control
-  is ever shown through `opacity`, `visibility: hidden` or an `is-quiet` state. Every band of
-  the drill screen (header, score, step strip, keyboard, path) has a fixed height, and the actions sit
-  in a fixed-width, right-aligned slot, so nothing moves when a take starts, pauses or ends, when the
-  result appears, or while listening (checked box by box in real Chromium:
+  the way on after a result) with the run's count-in in it while counting, and on the tablet the
+  actions beside it; the **settings** (the speed button, `100%` with the flag at full speed, and the
+  click volume button), removed with their slot kept during a take or Listen; then **Back** (‹, named
+  where it goes: `Back to score`). No status-line control is ever shown through `opacity`,
+  `visibility: hidden` or an `is-quiet` state. Every band (status line, score, coach rail) has a fixed
+  height, and the prompt slot a fixed width, so nothing moves when a take starts, pauses or ends, when
+  the result appears, or while listening (checked box by box in real Chromium:
   `LearnDrillScreen.journey.test.jsx`). A drill on part of the passage is named by the bars it covers,
   by their printed numbers (`measureRangeLabel` in `resolveLearnPlan.js`, from the score's measures that
   `ScorePlayer` hands `LearnCoach` as `measures`): `Bar 2`, and on a score with a pickup the first two
@@ -406,8 +436,8 @@ the drill. It draws no practice screen of its own.
 - **Actions follow the take** (one button style: icon + short label, neutral surface, no green;
   `ExerciseRun onPhase` tells `LearnLab` the run's phase). Before a take (and after one): **▶ Listen**.
   During a take: **Pause** only. Paused: **Resume** and **Start over**; Start over never appears before
-  a take. Listening: **Pause** (↔ **Play**) and **Stop**. **Skip rhythm** and **Come back to this
-  later** are not header actions: they live on the result card.
+  a take. Listening: **Pause** (↔ **Play**) and **Stop**. After a miss the result's actions (below)
+  take the slot. **Skip rhythm** is never offered before a try.
 - **Speed** (`LearnTempoTrack.jsx`, 2026-11-24). One header button showing the chosen percent (with
   the flag at 100%) that opens an opaque **speed sheet**: one button of at least 96px per stop, the
   percent big and, only here, the bpm small beneath; ladder rungs labelled as such, earned rungs filled,
@@ -459,40 +489,41 @@ the drill. It draws no practice screen of its own.
   turns with it. It lasts 7.6 seconds (`PIECE_CEREMONY_MS`). Silver parts onto
   `Next: Go for Gold`; Gold parts onto the piece's title. The screen then returns
   to the score, which celebrates nothing itself.
-- **A miss** opens the drill's result in the **step strip's own slot**: same top, same height
-  (`--run-rail-row`), over the strip only, so the score, its verdict marks and the keyboard stay where
-  they were (`ExerciseRun resultPresentation="docked"`, Exercises.scss `.is-docked`;
-  `role="alertdialog"` without `aria-modal`, since it sits inside the lab's own dialog). It is pictures,
-  not sentences: a neutral retry mark (never green for a miss), the coach's one short line
-  (`Almost on your own`, `A tap went missing`), and a meter per thing the take was asked, an icon with a
-  fill (notes, clean notes, on the beat; on the rhythm step taps and on the beat only), green only where
-  it met its bar. The card waits out the resolve hold (`RESOLVE_HOLD_MS`, 700 ms) and arrives once,
-  already holding the coach's verdict and actions. The primary button (the brightest neutral) is the
-  smaller practice the coach recommends after two misses (`Practice bar 2`, `Practice the left hand`,
-  `Try a little slower · 75%`), otherwise **Try again**; **Come back to this later** and, on the rhythm
-  step after any miss, **Skip rhythm** (a normal secondary button) follow. **Releasing the keys and playing any key, or pressing a
-  pedal, takes the primary button** (`onResultContinue`), shown as a key and a pedal glyph (its
-  accessible name says it: "Play any key or press a pedal to try a little slower (75%)"); the leave
-  gesture is a small two-ends mark, so a child never has to reach for the glass to take the help.
-  A key counts only once the card has been up `RESULT_ARM_MS` (700 ms) after
-  the hold fired, and only after every key has been released: a key during the
-  hold would have repeated the take before the coach recorded the miss, and a
-  note played on past the end would switch the child onto the help step. The
-  key and pedal glyphs appear (their space held all along) when a key would act on it, and the card then
-  carries `data-result-armed="true"` (`piano.exercise-result-armed` logs it).
+- **A miss** docks the drill's result in the **coach rail's middle zone**, in the steps' place at
+  their size, so the score and its verdict marks never move or resize (`ExerciseRun
+  resultPresentation="docked"` drawn into `slots.rail`, `.is-docked.is-on-rail`; `role="alertdialog"`
+  without `aria-modal`, since it sits inside the lab's own dialog). It is pictures, not sentences: a
+  neutral retry mark (never green for a miss), the coach's one short line (`Almost on your own`,
+  `A tap went missing`), a meter per thing the take was asked, an icon with a fill (notes, clean notes,
+  on the beat; on the rhythm step taps and on the beat only), green only where it met its bar, and the
+  take's **Right / Wrong** pills. The card waits out the resolve hold (`RESOLVE_HOLD_MS`, 700 ms) and
+  arrives once. **Its way on is the status line's prompt slot**: on the tablet the coach's buttons, the
+  primary (the brightest neutral) the smaller practice the coach recommends after two misses
+  (`Practice bar 2`, `Practice the left hand`, `Try a little slower · 75%`), otherwise **Try again**,
+  then **Come back to this later** and, on the rhythm step after any miss, **Skip rhythm**; on the
+  office the words `Play any key to try again` (the menu holds the rest). **Releasing the keys and
+  playing any key, or pressing a pedal, takes the primary** (`onResultContinue`), so a child never has
+  to reach for the glass to take the help. A key counts only once the card has been up `RESULT_ARM_MS`
+  (700 ms) after the hold fired, and only after every key has been released: a key during the hold
+  would have repeated the take before the coach recorded the miss, and a note played on past the end
+  would switch the child onto the help step. The office's words appear (their room held all along)
+  when a key would act, and the card then carries `data-result-armed="true"`
+  (`piano.exercise-result-armed` logs it).
   `piano.exercise-retry` logs `via: 'piano'` or `'pedal'` with `action: 'host'` (the
   coach's primary) or `'repeat'` (a run with no host action).
 - **Listen** plays the step's bars and parts to the child on the piano INSIDE the drill, at the take's
   tempo (the step's or the chosen one): the header shows **Pause** (↔ **Play**) and **Stop**, the score's
   cursor moves to the event that is sounding and the keyboard lights its keys, and a thin progress bar
-  with a headphone mark takes the step strip's slot (`ExerciseRun demonstration`,
+  with a headphone mark takes the coach rail's middle zone (`ExerciseRun demonstration`,
   `Exercises/useRunDemonstration.js`, driven by the score transport with MIDI timestamps; panic on stop).
   The child's keys and pedals start nothing while it plays, and it records nothing. When it ends (or on
   Stop) the drill is ready to play. Logs: `piano.learn.control` `listen`/`listen-pause`/`listen-play`,
   `piano.learn.listen.stop` (`reason: stop|end`).
-- **Path and board.** The same path as the score view sits under the drill, with
-  this unit selected. Every token opens its unit (`piano.learn.path.open`); **All**
-  opens the board over the drill, and a card opens its unit.
+- **Coins and board.** The coach rail's left zone is the piece's passages as coins
+  (the path's tokens, without its caption, bars, play disc, ladder or All), this unit
+  ringed; a coin opens its unit (`piano.learn.path.open`). On the tablet the ladder at
+  the right end is a button that opens the board between the rails, and a card opens
+  its unit.
 
 **Verdict marks** (◂ ▸ ○ ×) hang off the noteheads, on the side away from
 the stem: under a stem-up note, above a stem-down one (`verdictAnchor` in
@@ -578,14 +609,12 @@ numbers it 0, so "Bar 24 is the tricky spot" on a bars 21–24 passage, never "B
 and "You can play pickup + bars 1–4 on your own". Without it (no score numbers) the
 wording falls back to index + 1.
 
-**The tally keeps its own paper.** The Right/Wrong (and, timed, Early/Late/Missed)
-pills stand at the stage's top right from the first note. A score passage's stage
-reserves a 3rem strip at the top for them for the whole step
-(`.piano-exercise-run__score:has(.piano-score-passage)`; a count-band step already
-keeps a taller one), so the engraving is fitted below and an 8va, a slur or a high
-ledger note in the last bar can never sit under them; the strip is there before the
-first note, so the music does not move when the pills appear. The journey asserts that
-the tally and the engraving's box share no area.
+**The tally is never on the music.** In the drill the Right/Wrong (and, timed, Early/Late/Missed,
+as a mark and a number) pills are on the coach rail beside the step dots from the first note, in a
+slot of their own, and after a take on the docked result; nothing is drawn over the notation, so the
+paper keeps no strip for them. The journeys assert that the tally's box and the score's share no
+area. A run with no host rails (Exercises) keeps them at the stage's top right, over a reserved 3rem
+strip of the paper (`.piano-exercise-run__score:has(.piano-score-passage)`).
 
 Stems and noteheads were checked in the drill at 1280x800 and 1280x748 across all
 twelve passages of a real score, through the ready, playing, resolve and result
@@ -658,8 +687,8 @@ it). The retention run of the whole piece steps down the same way when it is mis
 (a drill under a review is offered even though the piece is certified). The server accepts
 a step down only when its bars are exactly the named half's. Words: the result card says
 **Play C–D** (the half's name on the path), the drill's title is `Play C–D`, the path's
-caption `Play C–D first` with the half's token ringed, and the step strip is headed by the
-half's coin and `C–D first · then All`. Then the generic bar-then-hand ladder.
+caption `Play C–D first` with the half's token ringed (on the drill's coach rail, the half's coin
+ringed). Then the generic bar-then-hand ladder.
 
 **Piece Silver** is the final join's check: the large ceremony, the `piano-piece`
 `silver` entry in the piece log and the piece gem. A piece log `silver` entry written
@@ -1941,6 +1970,10 @@ piece, a result, the "who is practising" row. A hold ring says the hold is count
 - **The two edge keys never reach a take**, at its start or in it: they are claimed always.
 - **Closing it gives every key back to the music.** Resume continues the same take; it never starts
   a new one. The hold again also closes it.
+- **In a piece it carries the passage map**: the coach rail's coins at full length, the current
+  passage ringed, the picker that Previous and Next move along (they name the passage they open:
+  `Previous · E`). Learn draws it into the menu's map row (`KeyboardOnlyContext` `menuMapTarget`, a
+  portal from `LearnCoach`); the drill's own rail shows where you are, the menu the way.
 
 Each choice wears its key's staff card and keeps that key whatever else is offered; a choice with
 nothing to do now is a plain empty key in its place:
@@ -1949,7 +1982,7 @@ nothing to do now is a plain empty key in its place:
 |-----|--------|
 | C4 | Resume (over a paused take) · Close |
 | D4 | Pieces: back to the list it came from, same shelf and page (a paused take is abandoned, as Back always did) |
-| E4 / F4 | Previous / Next unit on the path |
+| E4 / F4 | Previous / Next unit on the path (`Previous · E`, `Next · B`) |
 | G4 | Try again (after a result) |
 | A4 | Come back later, or Skip rhythm on the rhythm step |
 | B4 | Leave: out of Sheet Music to the launcher's free play |
@@ -1963,10 +1996,13 @@ what Learn's touch controls did, published through `useKeyStrip(source, actions,
 nor quits it on the hold, until it crashes (`gameOwnsEdgeHold(id, { crashed })`: the crash card's only
 way out on a keyboard-only screen is the launcher's hold-to-quit). Every other game keeps the launcher's tap-to-open, hold-to-quit gesture.
 
-**What is not drawn:** the tablet's on-screen keyboard (its row goes to the score:
-`--run-keys-row: 0`), the result card's touch icons (continue, leave), the drill's Back button, the tempo track and click volume (both keep their
-defaults), the run's Pause/Listen buttons, the result card's buttons, the step pills as choices, the
-path's All button; the path is a map, not a control. The office screen's recorder has **no note
+**The drill on the office** is the tablet's two rails (see "Two rails" under the drill screen): a
+56px status line (the avatar, the step and its bars, the prompt slot: how to start, the count,
+`Play any key to try again`), the score, the 72px coach rail; the launcher's `SHEET MUSIC` bar is
+hidden while a drill is open and comes back in the picker. **What is not drawn:** the tablet's
+on-screen keyboard, the result's buttons, Back, the tempo track and click volume (both keep their
+defaults), the run's Pause/Listen buttons, the step dots as choices; the coins and ladder are a map,
+not controls. The office screen's recorder has **no note
 output**, so Listen is not offered and the click is the browser's WebAudio blip plus the run's visual beat
 marker and count.
 
@@ -1983,7 +2019,7 @@ WebSocket note stream, note events and pedal CCs via `useMidiSubscription().subs
 no-ops) and `PianoPlaybackProvider`. The tablet's Learn styles (`PianoApp.scss`) are loaded scoped
 under `:where(.office-sheet-music__learn)` (`office/learnSurface.scss`): same specificity as on the
 tablet, nothing reaching the rest of the office screen. Canvas 1280×720: the launcher chrome strip and
-the body; the menu is an opaque modal over the body.
+the body (the strip hidden while a drill is open); the menu is an opaque modal over the body.
 
 **Logs:** `office-sheet-music.mounted` / `.unmounted`, `.player-picked`, `.pieces-loaded` /
 `.pieces-failed`, `.browse` (`key`, `level`, `page`), `.shelf-opened`, `.shelf-loaded` / `.shelf-failed`,
@@ -2001,7 +2037,9 @@ the body; the menu is an opaque modal over the body.
 music → a shelf → a catalog piece and back through the menu to the same page → pick a piece → the
 menu over the drill → a take paused by the menu and resumed → result → the menu's Try again →
 continue → the menu's Pieces → the menu in the picker → Leave; the picker with three, one and no
-pieces and still loading; F2 in a take is a wrong note, not a command; games off; a stale player;
+pieces and still loading; F2 in a take is a wrong note, not a command; the two rails at fixed heights
+through ready, a take, the menu's pause, the result and a count-in, with the score at ≥ 75% and no fact
+twice; games off; a stale player;
 every screen checked for clipping and saved under `.superpowers/office-sheet-music/`). The fixture
 has posters of several shapes, printed titles of one to six words, and pieces of 2 to 14 passages.
 

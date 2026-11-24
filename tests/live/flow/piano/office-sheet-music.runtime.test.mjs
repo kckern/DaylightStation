@@ -229,12 +229,123 @@ test('with the menu shut the low octave is music: F2 starts a take', async ({ pa
   await expect(page.locator('.office-piece-key')).toHaveCount(2);
   await tap(page, KEY.C4);
   await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'ready', { timeout: 20000 });
+  await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-armed', 'true', { timeout: 20000 }); // a key before it arms is not heard
   // The old strip's keys (C2–G2) are notes now: in a take, F2 is graded like any other wrong note.
   await tap(page, SCALE[0], 250);
   await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'running');
   await tap(page, KEY.F2, 250);
   await expect(page.locator('.piano-exercise-run__tally')).toContainText('Wrong 1');
   await expect(page.locator('.piano-learn-lab')).toBeVisible();
+});
+
+// ── Two rails instead of five (2026-11-24, plan Task 5) ───────────────────────────────────────────
+// The office canvas: a status line on top (56 CSS px), the score, the coach rail at the bottom (72).
+const RAILS = { status: '.piano-learn-lab__toolbar', prompt: '.piano-learn-lab__prompt', score: '.piano-exercise-run__stage',
+  rail: '.piano-learn-lab__rail', coins: '.piano-learn-lab__rail-start', steps: '.piano-learn-lab__rail-middle', ladder: '.piano-learn-lab__rail-end' };
+const rails = (page) => page.evaluate((map) => Object.fromEntries(Object.entries(map).map(([name, sel]) => {
+  const b = document.querySelector(sel)?.getBoundingClientRect();
+  return [name, b ? [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)] : null];
+})), RAILS);
+const within = (inner, outer) => inner[0] >= outer[0] && inner[1] >= outer[1] && inner[0] + inner[2] <= outer[0] + outer[2] && inner[1] + inner[3] <= outer[1] + outer[3];
+const overlaps = (a, b) => a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3];
+const boxOf = (page, sel) => page.locator(sel).first().evaluate((el) => { const b = el.getBoundingClientRect(); return [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)]; });
+/** Every visible piece of text on the screen, SVG text (a coin's letter) included. */
+const visibleTexts = (page) => page.evaluate(() => {
+  const out = []; const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let node = walk.nextNode(); node; node = walk.nextNode()) {
+    const text = node.textContent.trim(); const el = node.parentElement;
+    if (!text || !el || el.closest('style,script')) continue;
+    if (!el.checkVisibility({ visibilityProperty: true, opacityProperty: true })) continue;
+    const b = el.getBoundingClientRect(); if (!b.width || !b.height) continue;
+    out.push(text);
+  }
+  return out;
+});
+const countIn = (texts, pattern) => texts.reduce((n, text) => n + (text.match(pattern)?.length ?? 0), 0);
+
+test('two rails on the office canvas: fixed heights in every state, no fact twice, the result on the rail, the score ≥ 75%', async ({ page }) => {
+  await installOfficeRoutes(page, { studyDate: 'today', pieces: deskPieces(2) });
+  await page.goto('/', { waitUntil: 'networkidle' });
+  await chord(page, [LOW, HIGH], 150);
+  await tap(page, KEY.D5);
+  await expect(page.locator('.office-piece-key')).toHaveCount(2);
+  await tap(page, KEY.C4);
+  await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'ready', { timeout: 20000 });
+  await expect(page.locator('.piano-score-passage')).toHaveAttribute('data-engraving-ready', 'true', { timeout: 20000 });
+  await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-armed', 'true', { timeout: 20000 });
+
+  // The drill has two rails: status line and coach rail, fixed heights, in every state.
+  const ready = await rails(page);
+  for (const box of Object.values(ready)) expect(box).not.toBeNull();
+  expect([ready.status[1], ready.status[3]]).toEqual([0, 56]);
+  expect([ready.rail[1] + ready.rail[3], ready.rail[3]]).toEqual([720, 72]);
+  // The launcher's "SHEET MUSIC" bar steps aside while a drill is open; the status line carries the player.
+  await expect(page.locator('.office-game-chrome')).toBeHidden();
+  await expect(page.locator('.piano-learn-lab__avatar .piano-avatar')).toBeVisible();
+  // Score share ≥ 75% of the canvas.
+  expect(ready.score[2] * ready.score[3] / (1280 * 720)).toBeGreaterThanOrEqual(0.75);
+  // No fact twice: the passage letter, bars and level each appear once.
+  const texts = await visibleTexts(page);
+  expect(countIn(texts, /\bA\b/g), texts.join(' | ')).toBe(1);
+  expect(countIn(texts, /\bbars \d+–\d+/gi), texts.join(' | ')).toBe(1);
+  expect(countIn(texts, /\b(Bronze|Silver|Gold|Diamond)\b/g), texts.join(' | ')).toBe(1);
+  for (const gone of [/Learn A/, /steps to/, /\d+ of \d+/, /Sheet Music/i]) expect(texts.join(' | ')).not.toMatch(gone);
+  await noClipping(page, 'rails-1-ready');
+
+  // A take with a wrong note: the live count is on the rail, never over the notation.
+  await tap(page, SCALE[0], 250);
+  await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'running');
+  await tap(page, 61, 220);
+  await expect(page.locator('.piano-exercise-run__tally')).toContainText('Wrong 1');
+  for (const note of [63, 61]) await tap(page, note, 220); // enough wrong notes that the take is not clean
+  expect(await rails(page)).toEqual(ready);
+  const live = await boxOf(page, '.piano-exercise-run__tally');
+  expect(overlaps(live, ready.score)).toBe(false);
+  expect(within(live, ready.rail)).toBe(true);
+  await noClipping(page, 'rails-2-running');
+
+  // Paused by the menu: the rails hold under it, and the menu carries the passage map (the picker Previous and Next move along).
+  await openMenu(page);
+  await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'paused');
+  await expect(page.locator('.office-menu__map .piano-passage-path--rail .piano-passage-path__token')).not.toHaveCount(0);
+  await noClipping(page, 'rails-3-menu-paused', '.office-menu');
+  await tap(page, MENU.resume);
+  await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'running', { timeout: 5000 });
+  await page.waitForTimeout(400);
+  expect(await rails(page)).toEqual(ready);
+  await noClipping(page, 'rails-4-resumed');
+
+  // The result docks in the coach rail's middle zone and the score never resizes; its way on is the prompt slot.
+  for (const note of SCALE.slice(1)) await tap(page, note, 220);
+  await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'done', { timeout: 10000 });
+  await expect(page.locator('[data-result-armed="true"]')).toBeVisible({ timeout: 10000 });
+  expect(await rails(page)).toEqual(ready);
+  const result = await boxOf(page, '.piano-exercise-run__result.is-docked');
+  expect(within(result, ready.steps), `${result} in ${ready.steps}`).toBe(true);
+  const pills = await boxOf(page, '.piano-exercise-run__result .piano-exercise-run__tally');
+  expect(overlaps(pills, ready.score)).toBe(false);
+  await expect(page.locator('.piano-learn-lab__prompt')).toContainText('Play any key to');
+  await noClipping(page, 'rails-5-result');
+
+  // Counting: a clean take earns the piece its Silver (one passage) and goes back to the list; opened again,
+  // the coach is on the Gold lap's first step, which counts in.
+  await tap(page, KEY.C4);
+  await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'ready');
+  for (const note of SCALE) await tap(page, note, 220);
+  await expect(page.locator('.office-piece-picker')).toBeVisible({ timeout: 30000 });
+  await expect(page.locator('.office-game-chrome')).toBeVisible(); // the picker keeps the launcher's bar
+  await tap(page, KEY.C4);
+  await expect(page.locator('.piano-learn-lab__heading strong')).toContainText(/rhythm|beat/i, { timeout: 30000 });
+  await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'ready', { timeout: 20000 });
+  const gold = await rails(page);
+  expect([gold.status[3], gold.rail[3], gold.rail[1] + gold.rail[3]]).toEqual([56, 72, 720]);
+  await noClipping(page, 'rails-6-gold-ready');
+  await midi(page, 'press', SCALE[0]);
+  await midi(page, 'release', SCALE[0]);
+  await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'countdown', { timeout: 5000 });
+  await expect(page.locator('.piano-learn-lab__prompt .piano-learn-countin')).toBeVisible();
+  expect(await rails(page)).toEqual(gold);
+  await noClipping(page, 'rails-7-counting');
 });
 
 test('the picker holds a short list, an empty one and a slow one by layout', async ({ page }) => {

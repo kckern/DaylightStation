@@ -6,11 +6,14 @@ import { roundScore } from '../../../performance/timedVerdicts.js';
 import useLearnCoach from './useLearnCoach.js';
 import usePieceGemOffer from './usePieceGemOffer.js';
 import LearnLab from './LearnLab.jsx';
+import useLearnDrillFullscreen from './useLearnDrillFullscreen.js';
 import { tempoTrackStops } from './tempoStages.js';
 import { measureRangeLabel } from './resolveLearnPlan.js';
 import PassagePath from './PassagePath.jsx';
 import PassageBoard from './PassageBoard.jsx';
 import PassageCoin, { PassageTurn } from './PassageCoin.jsx';
+import LevelLadder from './LevelLadder.jsx';
+import { createPortal } from 'react-dom';
 import { playPassageChime } from './passageChime.js';
 import GateCeremony, { hostVerdictAt as verdictAt } from '../Games/GateCeremony.jsx';
 import Icon from '../../../ui/icons/Icon.jsx';
@@ -136,14 +139,13 @@ const lockedIcon = (icon) => <span className="piano-learn-coach__locked">{icon}<
  * beat, the timed rungs, score tempo). Later-lap steps are not drawn. Every step shown is a set, and the
  * clean takes it needs are its reps. `access` (by step key, from the skipping policy) marks the steps
  * that cannot be started; `showLocks` draws a lock on them, which a `strict` ladder does not need.
- * `unit` ({ letter, state, ring }, the unit's token on the path) heads the strip with the same coin and
- * "<letter> · steps to <level>", so the strip reads as that token's.
+ * The steps have no head of their own (2026-11-24, two rails): the coin beside them on the coach rail
+ * is the unit's, and the level word is the ladder's.
  */
 // eslint-disable-next-line react-refresh/only-export-components -- pure projection is exported for focused contract tests
-export function passageDrill(passage, task, { access = EMPTY, showLocks = false, unit = null, preview = null } = {}) {
+export function passageDrill(passage, task, { access = EMPTY, showLocks = false, preview = null } = {}) {
   const current = rootOf(task)?.key ?? null;
   const lap = rootOf(task)?.track === 'gold' ? 'gold' : 'silver';
-  const level = lap === 'gold' ? 'Gold' : passage?.kind === 'join' ? 'Silver' : 'Bronze';
   const steps = (passage?.skills ?? []).filter((skill) => (skill.track === 'gold' ? 'gold' : 'silver') === lap).map((skill) => {
     // A step with no fixed count is earned by two good takes out of the last three.
     const reps = Math.max(1, skill.required ?? 2);
@@ -156,16 +158,7 @@ export function passageDrill(passage, task, { access = EMPTY, showLocks = false,
       state: skill.ready ? 'complete' : skill.key === current ? 'current' : 'locked', ...(locked ? { locked: true } : {}),
       ...(!skill.ready && preview != null && passFills(task, skill, preview) ? { preview: true } : {}) };
   });
-  const name = unit?.letter ?? null;
-  // On a step down the strip says what is being practised first, and what it climbs back to.
-  const first = unit?.stepDownName ?? null;
-  const words = first && name ? { text: `${first} first · then ${name}`, label: `${first} first, then ${name}` }
-    : { text: `${name ? `${name} · ` : ''}steps to ${level}`, label: `${name ? `${name}, ` : ''}steps to ${level}` };
-  const head = { ...words, lap, level: level.toLowerCase(),
-    // On a step down the coin is the half being played.
-    mark: first && name ? <PassageCoin state={unit.stepDownState ?? 'joined'} letter={first} size="100%" />
-      : name ? <PassageCoin state={unit.state} letter={name} ring={unit.ring} size="100%" /> : null };
-  return { projection: { id: `learn:${passage?.id}`, title: barsOf(passage), displaySingleStep: true, steps, head },
+  return { projection: { id: `learn:${passage?.id}`, title: barsOf(passage), displaySingleStep: true, steps },
     stepId: steps.some((step) => step.id === current) ? current : null };
 }
 
@@ -186,7 +179,7 @@ function OwnedCoach(props) {
  * passage to LearnLab as a drill of sets and reps, records each take, and puts
  * the passage rail and board under it. It draws no practice screen of its own.
  */
-function CoachSession({ score, title, plan, segment, coach, measures = EMPTY_LIST, skipping = null, assist = null, polish = null, tempo = EMPTY, feedback, onBack, onPassageChange, onListen }) {
+function CoachSession({ score, title, plan, segment, coach, measures = EMPTY_LIST, skipping = null, assist = null, polish = null, tempo = EMPTY, feedback, player = null, onBack, onPassageChange, onListen }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-learn-coach' }), []);
   // The score's measures (printed numbers), for naming a drill on part of the passage. Read through a
   // ref by the take's material, which is keyed on the task and must not rebuild on a re-layout.
@@ -330,16 +323,10 @@ function CoachSession({ score, title, plan, segment, coach, measures = EMPTY_LIS
   const stepDown = (() => { for (let at = task; at; at = at.parent) if (at.stepDown) return at.stepDown; return null; })();
   const rail = useMemo(() => railModel({ segments: coach.projection.segments, projection: coach.projection, selectedId: segment.id, polish, lap: holdLap, stepDown }),
     [coach.projection, segment.id, polish, holdLap, stepDown]);
-  // The strip is headed by this unit's own token: the same lettered coin, the same ring.
-  const unitToken = rail.cards.find((card) => card.id === segment.id) ?? null;
-  const unitLetter = unitToken?.letter ?? rail.names?.[segment.id] ?? null; const unitState = unitToken?.state ?? null; const unitRing = unitToken?.ring;
-  const stepDownName = stepDown ? rail.names?.[stepDown] ?? null : null;
-  const stepDownState = stepDown ? rail.cards.find((card) => card.id === stepDown)?.state ?? 'joined' : null;
   const chosenPercent = choice && task && choice.key === task.key ? choice.percent : null;
   const drill = useMemo(() => passageDrill(projected, task, { access, showLocks: skipMode !== 'strict',
-    unit: unitLetter ? { letter: unitLetter, state: unitState ?? 'joined', ring: unitRing, stepDownName, stepDownState } : null,
     preview: chosenPercent != null && chosenPercent > task?.tempoPercent ? chosenPercent : null }),
-  [projected, task, access, skipMode, unitLetter, unitState, unitRing, stepDownName, stepDownState, chosenPercent]);
+  [projected, task, access, skipMode, chosenPercent]);
   const track = useMemo(() => coachTempoTrack(projected, task), [projected, task]);
   const tempoChoice = track ? { ...track, value: chosenPercent ?? task.tempoPercent,
     onChange: (percent) => { logger.info('piano.learn.tempo.choose', { scoreId: score.id, passageId: segment.id, skill: task.skill, from: chosenPercent ?? task.tempoPercent, to: percent, step: task.tempoPercent });
@@ -484,6 +471,14 @@ function CoachSession({ score, title, plan, segment, coach, measures = EMPTY_LIS
   // lands, and a finished piece turns every token in a wave.
   const flips = useMemo(() => (!celebrated ? EMPTY : pieceDone && celebrated === 'gold' ? Object.fromEntries(coach.projection.segments.map((item) => [item.id, celebrated])) : { [segment.id]: celebrated }),
     [celebrated, pieceDone, coach.projection.segments, segment.id]);
+  // THE COACH RAIL'S ENDS (LearnLab `railStart` / `railEnd`, 2026-11-24): the piece's passages as coins,
+  // this unit ringed (a tap opens one), and the level ladder with its word (a tap opens the board).
+  const keyOnly = useKeyboardOnly();
+  const coins = <PassagePath variant="rail" model={rail} flips={flips} flipDelayMs={verdictAt(ceremonyMs)} wave={Boolean(pieceDone)} boardOpen={Boolean(board)}
+    onSelect={(passageId) => goToPassage(passageId, 'learn-rail')} onOpen={openFromPath} onOpenBoard={toggleBoard} />;
+  const ladder = keyOnly ? <LevelLadder ladder={rail.ladder} variant="word" />
+    : <button type="button" className="piano-learn-coach__ladder" aria-expanded={Boolean(board)} aria-label={`All passages, ${rail.count?.label ?? ''}`.trim()}
+      onClick={() => toggleBoard(null)}><LevelLadder ladder={rail.ladder} variant="word" /></button>;
   const map = <>
     {board && <PassageBoard title={title ?? barsOf(segment)} model={rail} focusId={board.focusId ?? segment.id} gemOffered={gemOffered} polish={polish}
       review={Boolean(coach.projection.review)}
@@ -491,39 +486,51 @@ function CoachSession({ score, title, plan, segment, coach, measures = EMPTY_LIS
         if (review.passageId === segment.id) begin(review); else onPassageChange?.(review.passageId); }}
       onSelect={(passageId) => goToPassage(passageId, 'learn-board')}
       onClose={() => { logger.info('piano.learn.board.close', { scoreId: score.id, by: 'close' }); setBoard(null); }} />}
-    <PassagePath model={rail} flips={flips} flipDelayMs={verdictAt(ceremonyMs)} wave={Boolean(pieceDone)} boardOpen={Boolean(board)}
-      onSelect={(passageId) => goToPassage(passageId, 'learn-rail')} onOpen={openFromPath} onOpenBoard={toggleBoard} />
   </>;
 
+  // The whole passage holds the tablet's full screen (the app bar steps aside), the loading moment and every
+  // take's remount included.
+  useLearnDrillFullscreen(!keyOnly);
+
   // ── Keyboard only (the office screen) ──────────────────────────────────────
-  // Every button above is touch; there, each becomes a key on the host's strip.
+  // Every button above is touch; there, each becomes a choice in the host's menu.
   // The tempo track and the click volume keep their defaults, and the step pills
   // are read, not picked: a choice a hand cannot make is not drawn as one.
-  const keyOnly = useKeyboardOnly();
   const unitOrder = rail.tokens?.length ? rail.tokens.map((token) => token.id) : coach.projection.segments.map((item) => item.id);
   const unitAt = unitOrder.indexOf(segment.id);
   const previousUnit = unitAt > 0 ? unitOrder[unitAt - 1] : null;
   const nextUnit = unitAt >= 0 && unitAt < unitOrder.length - 1 ? unitOrder[unitAt + 1] : null;
   const busy = Boolean(celebrating);
+  // Previous and Next in the menu name the passage they open ("Previous · E").
+  const letterOfUnit = (id) => rail.tokens?.find((token) => token.id === id)?.letter ?? rail.names?.[id] ?? null;
+  const named = (word, id) => (letterOfUnit(id) ? `${word} · ${letterOfUnit(id)}` : word);
   useKeyStrip('coach', {
-    previous: previousUnit && !busy ? { onSelect: () => goToPassage(previousUnit, 'office-strip') } : null,
-    next: nextUnit && !busy ? { onSelect: () => goToPassage(nextUnit, 'office-strip') } : null,
+    previous: previousUnit && !busy ? { label: named('Previous', previousUnit), onSelect: () => goToPassage(previousUnit, 'office-strip') } : null,
+    next: nextUnit && !busy ? { label: named('Next', nextUnit), onSelect: () => goToPassage(nextUnit, 'office-strip') } : null,
     retry: result && !busy ? { onSelect: () => begin(result.task) } : null,
     later: busy ? null : rhythmStep ? (result?.missed >= 1 ? { label: 'Skip rhythm', onSelect: skipRhythm } : null) : canSetAside ? { label: 'Come back later', onSelect: comeBackLater } : null,
   });
 
-  if (!task) return <section className="piano-learn-coach"><h2>No playable notes in this passage</h2>{!keyOnly && <button type="button" onClick={onBack}>Back to score</button>}{map}</section>;
+  // The office menu draws the whole passage map (the passage picker beside Previous and Next).
+  const menuMap = keyOnly?.menuMapTarget ? createPortal(<PassagePath variant="rail" model={rail} />, keyOnly.menuMapTarget) : null;
+  const railProps = { railStart: coins, railEnd: ladder };
+  if (!task) return <section className="piano-learn-coach"><h2>No playable notes in this passage</h2>{!keyOnly && <button type="button" onClick={onBack}>Back to score</button>}{map}{menuMap}</section>;
   return <div className="piano-learn-coach piano-learn-coach--running" data-save={coach.saveStatus} data-level={certification.gold ? 'gold' : certification.silver ? 'silver' : undefined} data-input={keyOnly ? 'keyboard-only' : undefined}>
     {loaded && material ? <LearnLab key={`${runNumber}:${task.key}`} score={score} revision={plan.fingerprint} segment={material.segment} rung={material.rung}
       coachingTask={task} assist={assist} drill={drill} card={card} ceremony={ceremony} onCardDone={momentDone} notice={notice}
       resultLabel={result?.message.title ?? null} resultActions={keyOnly ? null : resultActions} resultContinueLabel={resultContinueLabel} onResultContinue={resultContinue}
       extraControls={keyOnly || result ? null : laterButton} tempoChoice={keyOnly ? null : tempoChoice}
-      onPickStep={keyOnly ? null : pickStep} onStarted={started} onOutcome={finish}
+      onPickStep={keyOnly ? null : pickStep} onStarted={started} onOutcome={finish} player={player} {...railProps}
       onListen={() => onListen?.(task)}
       tempo={{ ...tempo, tempoMap: plan.tempoMap, adjustable: false }} feedback={feedback}
       onClose={onBack}
       onUnavailable={(reason) => logger.warn('piano.learn.coach.unavailable', { scoreId: score.id, passageId: segment.id, skill: task.skill, reason: String(reason) })} />
-      : <div className="piano-learn-coach__loading" role="status" aria-label="Loading your practice" />}
+      : <div className="piano-learn-coach__loading" role="status" aria-label="Loading your practice">
+        <span className="piano-learn-coach__loading-status" />
+        <span className="piano-learn-coach__loading-score" />
+        <footer className="piano-learn-lab__rail"><div className="piano-learn-lab__rail-start">{coins}</div><div className="piano-learn-lab__rail-middle" /><div className="piano-learn-lab__rail-end">{ladder}</div></footer>
+      </div>}
     {map}
+    {menuMap}
   </div>;
 }

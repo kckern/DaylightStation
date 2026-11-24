@@ -2573,42 +2573,59 @@
 }
 
 .piano-learn-lab {
+  // TWO RAILS (2026-11-24): the status line on top, the score, the coach rail at the bottom. Both rails
+  // keep their height in every state, and every zone in them its width, so the score never moves. The
+  // office screen sets its own status height (office/OfficeSheetMusic.scss).
+  --learn-status-h: 64px;
+  --learn-rail-h: 72px;
+  --learn-control: 48px;
+  --learn-prompt-w: 34rem;
   position: absolute; inset: 0; z-index: 30; min-height: 0;
   display: flex; flex-direction: column; background: var(--piano-bg);
   > .piano-exercise-run { flex: 1 1 auto; min-height: 0; }
-  // ONE ROW OF FIXED HEIGHT: what changes with the take (the actions, the tempo's lock) changes in
-  // place, so the score under it never moves.
-  &__toolbar { z-index: 20; flex: 0 0 auto; box-sizing: border-box; height: 4.75rem; display: flex; flex-wrap: nowrap; align-items: center; gap: 0.7rem; padding: 0.45rem 0.65rem; overflow: hidden; color: var(--piano-fg); background: var(--piano-surface-1); border-bottom: 1px solid var(--piano-border); }
-  &__back { flex: 0 0 auto; display: flex; align-items: center; gap: 0.25rem; min-width: 3.5rem; min-height: 3.5rem; padding: 0.4rem 0.7rem; color: inherit; background: transparent; border: 1px solid var(--piano-border); border-radius: var(--r-sm); font: inherit; }
-  &__back span:first-child { font-size: 1.5rem; line-height: 0.7; }
-  // What to do, big; which bars, quiet beneath it (2026-11-24).
-  &__heading { flex: 1 1 auto; display: grid; min-width: 0; line-height: 1.1; }
-  &__heading strong { overflow: hidden; font-size: 1.6rem; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
-  &__heading span { overflow: hidden; color: var(--piano-muted); font-size: 1.1rem; text-overflow: ellipsis; white-space: nowrap; }
-  // How to start, while ready; an empty slot of the same width otherwise.
-  &__prompt { flex: 0 0 15rem; display: grid; justify-items: center; line-height: 1.15; text-align: center; }
-  &__prompt strong { font-size: 1.25rem; font-weight: 800; color: var(--piano-accent-text, var(--piano-accent)); }
-  &__prompt span { color: var(--piano-muted); font-size: 0.95rem; }
-  // The settings (speed, click volume): buttons that open sheets, removed during a take, slot kept.
-  &__settings { flex: 0 0 13rem; align-self: stretch; min-height: 3.5rem; display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; }
-  // A fixed width, right-aligned: the actions change with the take, and nothing to their left may move.
-  &__run-controls { flex: 0 0 24rem; display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; min-width: 0; }
-  // Every header action is the same button: icon and a short label, one size, a neutral surface.
-  &__action { display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; min-width: 3.5rem; min-height: 3.5rem; padding: 0.35rem 0.95rem; color: var(--piano-fg); background: var(--piano-surface); border: 1px solid var(--piano-border); border-radius: var(--r-md); font: inherit; font-size: 1.25rem; font-weight: 750; white-space: nowrap; cursor: pointer; }
-  &__action .piano-icon { font-size: 1.6rem; }
+  // THE STATUS LINE: who, what and which bars, the prompt slot, and (tablet) speed, volume and Back.
+  &__toolbar { z-index: 20; flex: 0 0 var(--learn-status-h); box-sizing: border-box; height: var(--learn-status-h); display: flex; flex-wrap: nowrap; align-items: center; gap: 0.75rem; padding: 0 0.75rem; overflow: hidden; color: var(--piano-fg); background: var(--piano-surface-1); border-bottom: 1px solid var(--piano-border); }
+  &__avatar { flex: 0 0 auto; display: grid; width: calc(var(--learn-status-h) - 18px); height: calc(var(--learn-status-h) - 18px); overflow: hidden; border-radius: 50%; background: var(--piano-surface-2, #2a2a33); }
+  &__avatar .piano-avatar { width: 100%; height: 100%; object-fit: cover; font-size: 1.1rem; }
+  // What to do, then which bars, on one line.
+  &__heading { flex: 1 1 auto; display: flex; align-items: baseline; gap: 0.6rem; min-width: 0; overflow: hidden; white-space: nowrap; line-height: 1.1; }
+  &__heading strong { min-width: 0; overflow: hidden; font-size: 1.45rem; font-weight: 800; text-overflow: ellipsis; }
+  &__heading span { flex: 0 0 auto; color: var(--piano-muted); font-size: 1.2rem; font-weight: 700; }
+  &__heading span::before { content: '·'; margin-right: 0.6rem; }
+  // THE PROMPT SLOT: one width in every state. Ready: how to start. Counting: the count. During a take:
+  // nothing (the tablet's Pause). After a take: the way on.
+  &__prompt { flex: 0 0 var(--learn-prompt-w); box-sizing: border-box; height: 100%; display: flex; align-items: center; justify-content: flex-end; gap: 0.6rem; min-width: 0; overflow: hidden; }
+  &__cue { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; white-space: nowrap; }
+  &__cue:empty { display: none; }
+  &__cue strong { font-size: 1.25rem; font-weight: 800; color: var(--piano-accent-text, var(--piano-accent)); }
+  &__cue span { color: var(--piano-muted); font-size: 1rem; }
+  &__slot { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+  &__slot:empty { display: none; }
+  &__run-controls { flex: 0 0 auto; display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; }
+  &__run-controls:empty { display: none; }
+  // Every status-line action is the same button: icon and a short label, 48px, a neutral surface.
+  &__action { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; min-width: var(--learn-control); height: var(--learn-control); padding: 0 0.8rem; color: var(--piano-fg); background: var(--piano-surface); border: 1px solid var(--piano-border); border-radius: var(--r-md); font: inherit; font-size: 1.1rem; font-weight: 750; white-space: nowrap; cursor: pointer; }
+  &__action .piano-icon { font-size: 1.4rem; }
   &__action:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
-  &__success { position: absolute; z-index: 35; inset: 4.75rem 0 0; display: grid; place-content: center; justify-items: center; gap: 0.3rem; background: var(--piano-bg); color: var(--piano-fg); }
+  // The settings (speed, click volume): buttons that open sheets, removed during a take, slot kept.
+  &__settings { flex: 0 0 11.5rem; min-width: 0; height: var(--learn-control); display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; }
+  &__back { flex: 0 0 var(--learn-control); box-sizing: border-box; display: grid; place-items: center; width: var(--learn-control); height: var(--learn-control); padding: 0; color: inherit; background: transparent; border: 1px solid var(--piano-border); border-radius: var(--r-md); font: inherit; font-size: 1.5rem; cursor: pointer; }
+  // THE COACH RAIL: the coins | the steps (or the docked result) | the ladder. Three fixed zones.
+  &__rail { z-index: 20; flex: 0 0 var(--learn-rail-h); box-sizing: border-box; height: var(--learn-rail-h); display: grid; grid-template-columns: 22rem minmax(0, 1fr) 10.5rem; align-items: center; gap: 1rem; padding: 0 0.75rem; overflow: hidden; color: var(--piano-fg); background: var(--piano-surface-1); border-top: 1px solid var(--piano-border); }
+  &__rail-start, &__rail-middle, &__rail-end { box-sizing: border-box; height: 100%; min-width: 0; display: flex; align-items: center; overflow: hidden; }
+  &__rail-middle { justify-content: center; gap: 1rem; }
+  &__rail-end { justify-content: flex-end; }
+  &__success { position: absolute; z-index: 35; inset: var(--learn-status-h) 0 0; display: grid; place-content: center; justify-items: center; gap: 0.3rem; background: var(--piano-bg); color: var(--piano-fg); }
   &__success strong { color: var(--piano-accent-text); font-size: clamp(1.8rem, 5vw, 3.5rem); }
   &__success span { color: var(--piano-muted); }
-  // Below the kiosk's width the one row cannot hold everything: two rows, still of fixed height.
-  @media (max-width: 900px) {
-    &__toolbar { height: 9.5rem; flex-wrap: wrap; align-content: center; }
-    &__heading { flex-basis: 30%; }
-    &__run-controls { flex: 1 1 auto; justify-content: flex-start; }
+  // Below the kiosk's width the prompt slot narrows; the rails keep their heights.
+  @media (max-width: 1100px) {
+    --learn-prompt-w: 24rem;
+    &__rail { grid-template-columns: 15rem minmax(0, 1fr) 8rem; }
   }
   @media (max-width: 760px) {
-    &__back span:last-child, &__heading span { display: none; }
-    &__toolbar { gap: 0.45rem; }
+    &__heading span, &__settings { display: none; }
+    --learn-prompt-w: 14rem;
   }
 }
 

@@ -65,8 +65,9 @@
   // key continues; Try again and the rest are in the menu.
   .piano-exercise-run__onward,
   .piano-exercise-run__leave { display: none; }
-  // Right / Wrong, read from the bench.
-  .piano-exercise-run__tally span { min-height: 2.6rem; padding: 0.3rem 0.8rem; font-size: 1.3rem; }
+  // Two rails (2026-11-24): the status line is 56 CSS px here (64 on the tablet); the coach rail 72 on both.
+  .piano-learn-lab,
+  .piano-learn-coach__loading { --learn-status-h: 56px; --learn-prompt-w: 26rem; }
 
   // The "who is practising" roster reuses the launcher's own row, as a page not an overlay.
   &--who .note-launcher { position: absolute; inset: 0; }
@@ -148,7 +149,26 @@
   &__label { font-size: 1.45rem; font-weight: 700; line-height: 1.15; text-wrap: balance; }
 
   &__foot { margin: 0; font-size: 1.1rem; color: #a9a59a; }
+
+  // In a piece: the passage map (Learn's coach-rail coins, the current one ringed), the picker that
+  // Previous and Next move along.
+  &__map {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    height: 4.5rem;
+    min-width: 0;
+  }
+  &__map-label { flex: 0 0 auto; font-size: 1.3rem; font-weight: 700; color: #a9a59a; }
+  &__map-coins { flex: 1 1 auto; min-width: 0; height: 100%; display: flex; }
 }
+// The menu's grid gains the map row when it has one.
+.office-menu:has(> .office-menu__map) { grid-template-rows: auto auto minmax(0, 1fr) auto; }
+
+// While a Learn drill is open its status line is the only bar: the launcher's chrome (the game's name and
+// the player) steps aside, and the status line carries the player's avatar (LearnLab).
+.tetris-fullscreen:has(.piano-learn-lab) > .office-game-chrome,
+.tetris-fullscreen:has(.piano-learn-coach__loading) > .office-game-chrome { display: none; }
 
 // ── The picker ───────────────────────────────────────────────────────────────
 // A setlist of key rows on the dark case: up to three stacked in one column,

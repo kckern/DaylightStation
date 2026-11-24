@@ -245,6 +245,8 @@ export default function OfficeSheetMusic({
     drillAction(id)?.onSelect?.();
   }, [logger, scoreId, backToPieces, onDeactivate, drillAction]);
   const claim = useMemo(() => musicClaim({ menuOpen, edges }), [menuOpen, edges]);
+  // The menu's passage map row: Learn draws the piece's passages into it while the menu is open in a piece.
+  const [menuMapEl, setMenuMapEl] = useState(null);
 
   // ── The kiosk surfaces Learn reads ───────────────────────────────────────
   const userValue = useMemo(() => ({
@@ -254,11 +256,12 @@ export default function OfficeSheetMusic({
   // passage through (OfficeMidiProvider's sends are no-ops), so Listen is not drawn (owner ruling).
   const keyboardOnly = useMemo(() => ({
     input: 'keyboard-only', canListen: false, onExit: backToPieces, publishStrip, menuOpen, menuHolding: holding,
-  }), [backToPieces, publishStrip, menuOpen, holding]);
+    menuMapTarget: menuOpen ? menuMapEl : null,
+  }), [backToPieces, publishStrip, menuOpen, holding, menuMapEl]);
 
   const menu = (
     <>
-      <OfficeMenu open={menuOpen} choices={choices} activeNotes={activeNotes} onSelect={onMenuChoice}
+      <OfficeMenu open={menuOpen} choices={choices} activeNotes={activeNotes} onSelect={onMenuChoice} mapRef={inDrill ? setMenuMapEl : null}
         subtitle={takeHeld ? 'Your take is paused.' : inDrill ? null : 'Close goes back to the list; Leave ends Sheet Music.'} />
       {holding && <HoldRing holdMs={2000} label={menuOpen ? 'HOLD TO CLOSE' : 'HOLD FOR THE MENU'} />}
     </>

@@ -13,6 +13,8 @@ import { toRhythmMusicXml } from '../Exercises/rhythmOnly.js';
 import { entryShiftBeats } from '../../../../../../../shared/music/learnCoach.mjs';
 import { useKeyboardOnly, useKeyStrip } from './office/KeyboardOnlyContext.js';
 import { keyboardHintPolicyFor } from './learnerAssist.js';
+import ProfileAvatar from '../../../../../../../frontend/src/lib/identity/ProfileAvatar.jsx';
+import useLearnDrillFullscreen from './useLearnDrillFullscreen.js';
 
 const handCode = (parts) => parts.length > 1 ? 'RL' : parts[0] === 'lh' ? 'L' : parts[0] === 'rh' ? 'R' : null;
 const clickStorage = () => {
@@ -80,7 +82,7 @@ function learningTempoTake(rung, tempoPercent) {
   return tempoPercent != null && Number.isFinite(percent) && percent < 100;
 }
 
-export default function LearnLab({ score, revision, segment, segments = {}, rung, creditRung = rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, launchSource = 'recommended', creditEligible = true, startOnReady = false, coachingTask = null, assist = null, drill = null, card = null, ceremony = null, onCardDone, notice = null, extraControls = null, resultLabel = null, resultActions = null, resultContinueLabel = null, onResultContinue = null, onPickStep = null, onListen = null, tempoChoice = null, onStarted, onOutcome, onRecord, onClose, onChangePractice, onRungPassed, onMastered, onFinished, onUnavailable, maxCueRestarts }) {
+export default function LearnLab({ score, revision, segment, segments = {}, rung, creditRung = rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, launchSource = 'recommended', creditEligible = true, startOnReady = false, coachingTask = null, assist = null, drill = null, card = null, ceremony = null, onCardDone, notice = null, extraControls = null, resultLabel = null, resultActions = null, resultContinueLabel = null, onResultContinue = null, onPickStep = null, onListen = null, tempoChoice = null, player = null, railStart = null, railEnd = null, onStarted, onOutcome, onRecord, onClose, onChangePractice, onRungPassed, onMastered, onFinished, onUnavailable, maxCueRestarts }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-learn-lab' }), []);
   const reactRunId = useId();
   const runIdRef = useRef(`learn-${reactRunId.replace(/[^a-z0-9_-]/gi, '')}`);
@@ -163,7 +165,6 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
   const passageName = coachingTask ? (segment.barLabel ?? segment.label) : segment.label;
   // A take replayed from the piano is a new take, reported in its own right.
   const takeStarted = () => { outcomeReported.current = false; onStarted?.(); };
-  const currentRep = Math.min(Math.max(1, rung.reps), (runPassCount % Math.max(1, rung.reps)) + 1);
   useEffect(() => {
     const bpm = Number(tempo.tempoMap?.[0]?.bpm);
     logger.info('piano.learn.launch', {
@@ -296,47 +297,70 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
     : null;
   useKeyStrip('lab', { listen: listenKey }, { active: !takeUnderWay && runPhase !== 'paused' });
 
+  // TWO RAILS (2026-11-24): a status line on top and a coach rail at the bottom; the score has the rest.
+  // The run draws its count and its way on into the status line's prompt slot, and its step pills, live
+  // count and docked result into the rail's middle zone (ExerciseRun `slots`).
+  const [promptEl, setPromptEl] = useState(null);
+  const [railEl, setRailEl] = useState(null);
+  const runSlots = useMemo(() => ({ prompt: promptEl, rail: railEl }), [promptEl, railEl]);
+  // The tablet: the drill takes the kiosk's full screen while it is open, so the app's top bar steps aside
+  // and the status line is the only bar. Its toggle is not drawn (the drill hosts none): Back leaves. A
+  // coached drill is claimed by its coach for the whole passage (LearnCoach), so a lab remounted for the
+  // next take, or the coach's loading moment, never lets the app bar back in between.
+  useLearnDrillFullscreen(!coachingTask && !keyOnly);
+  const phaseShown = listening ? 'listening' : runPhase;
+  const bars = coachingTask ? passageName : segment.barLabel;
+
   return <section className={`piano-learn-lab${coachingTask ? ' piano-learn-lab--coach' : ''}`} role="dialog" aria-modal="true" aria-label={`${passageName} · ${rung.label}`}
     data-input={keyOnly ? 'keyboard-only' : undefined}>
-    <header className="piano-learn-lab__toolbar">
-      {/* The header, left to right (2026-11-24): where Back goes, what to do (the title) and which bars,
-          how to start, the settings (sheets), and what can be done now. Every region keeps its width in
-          every state, so nothing moves when a take starts or ends. */}
-      {!keyOnly && <button className="piano-learn-lab__back" type="button" onClick={closeLab} aria-label={coachingTask ? 'Back to score' : `Back to ${segment.label}`}>
-        <span aria-hidden="true">‹</span><span>{coachingTask ? 'Score' : segment.label}</span>
-      </button>}
+    <header className="piano-learn-lab__toolbar" data-phase={phaseShown}>
+      {/* THE STATUS LINE, left to right (2026-11-24): who is playing, what to do and which bars on one line,
+          the prompt slot (how to start; the count; nothing during a take; the way on after one), and on the
+          tablet the speed, the click volume and Back. Every region keeps its width in every state. */}
+      <span className="piano-learn-lab__avatar" aria-hidden={player ? undefined : 'true'}>
+        {player && <ProfileAvatar id={player.id} name={player.name ?? player.id} size={96} />}
+      </span>
       <div className="piano-learn-lab__heading">
         <strong>{rung.label}</strong>
-        <span>{coachingTask ? passageName : segment.barLabel}</span>
-        {!coachingTask && <span>Set {setIndex + 1} of {rung.sets} · Rep {currentRep} of {rung.reps}</span>}
-      </div>
-      <div className="piano-learn-lab__prompt" aria-live="polite">
-        {runPhase === 'ready' && !listening && <><strong>{timedMode ? 'Press a key to start' : 'Play the first note to begin'}</strong>{timedMode && <span>or a pedal</span>}</>}
-      </div>
-      <div className="piano-learn-lab__settings">
-        {track && !keyOnly && !(takeUnderWay || listening) && <LearnTempoTrack stops={track.stops} ladder={track.ladder} earned={track.earned} value={tempoPercent} stepPercent={track.stepPercent}
-          scoreBpm={scoreBpm > 0 ? scoreBpm : null} onChange={chooseTempo} onOpenChange={setSheetOpen} />}
-        {timedMode && !keyOnly && !(takeUnderWay || listening) && <LearnClickVolume level={clickLevel} onChange={selectClickLevel} onOpenChange={setSheetOpen} />}
+        {bars && <span>{bars}</span>}
       </div>
       {notice}
-      {/* One button per thing that can be done NOW: before a take, Listen; during one, Pause; paused,
-          Resume and Start over; listening, Pause or Play and Stop. The row keeps its place.
-          Keyboard only: these are the host's strip keys instead (see `useKeyStrip` above). */}
-      {!keyOnly && <div className="piano-learn-lab__run-controls" role="group" aria-label="Practice controls" data-phase={listening ? 'listening' : runPhase}>
-        {listening ? <>
-          <button type="button" className="piano-learn-lab__action" onClick={() => { logControl(listening === 'playing' ? 'listen-pause' : 'listen-play'); setListening(listening === 'playing' ? 'paused' : 'playing'); }}>
-            <Icon name={listening === 'playing' ? 'pause' : 'play'} /><span>{listening === 'playing' ? 'Pause' : 'Play'}</span></button>
-          <button type="button" className="piano-learn-lab__action" onClick={() => stopListening('stop')}><Icon name="stop" /><span>Stop</span></button>
-        </> : runPhase === 'paused' ? <>
-          <button type="button" className="piano-learn-lab__action" onClick={togglePaused}><Icon name="play" /><span>Resume</span></button>
-          <button type="button" className="piano-learn-lab__action" onClick={() => restartTake('restart')}><Icon name="restart" /><span>Start over</span></button>
-        </> : takeUnderWay ? <button type="button" className="piano-learn-lab__action" onClick={togglePaused}><Icon name="pause" /><span>Pause</span></button>
-          : ['ready', 'done'].includes(runPhase) ? <>
-            {onListen && <button type="button" className="piano-learn-lab__action" onClick={listen}><Icon name="play" /><span>Listen</span></button>}
-            {onChangePractice && <button type="button" className="piano-learn-lab__action" onClick={changePractice}><span>Change practice</span></button>}
-            {extraControls}
-          </> : null}
+      <div className="piano-learn-lab__prompt" aria-live="polite" data-phase={phaseShown}>
+        <div className="piano-learn-lab__cue">
+          {runPhase === 'ready' && !listening && <><strong>{timedMode ? 'Press a key to start' : 'Play the first note to begin'}</strong>{timedMode && <span>or a pedal</span>}</>}
+          {runPhase === 'paused' && !listening && keyOnly && <strong>Paused</strong>}
+        </div>
+        <div className="piano-learn-lab__slot" ref={setPromptEl} />
+        {/* One button per thing that can be done NOW: before a take, Listen; during one, Pause; paused,
+            Resume and Start over; listening, Pause or Play and Stop. Keyboard only: none (the host's menu). */}
+        {!keyOnly && <div className="piano-learn-lab__run-controls" role="group" aria-label="Practice controls" data-phase={phaseShown}>
+          {listening ? <>
+            <button type="button" className="piano-learn-lab__action" onClick={() => { logControl(listening === 'playing' ? 'listen-pause' : 'listen-play'); setListening(listening === 'playing' ? 'paused' : 'playing'); }}>
+              <Icon name={listening === 'playing' ? 'pause' : 'play'} /><span>{listening === 'playing' ? 'Pause' : 'Play'}</span></button>
+            <button type="button" className="piano-learn-lab__action" onClick={() => stopListening('stop')}><Icon name="stop" /><span>Stop</span></button>
+          </> : runPhase === 'paused' ? <>
+            <button type="button" className="piano-learn-lab__action" onClick={togglePaused}><Icon name="play" /><span>Resume</span></button>
+            <button type="button" className="piano-learn-lab__action" onClick={() => restartTake('restart')}><Icon name="restart" /><span>Start over</span></button>
+          </> : takeUnderWay ? <button type="button" className="piano-learn-lab__action" onClick={togglePaused}><Icon name="pause" /><span>Pause</span></button>
+            : runPhase === 'ready' ? <>
+              {onListen && <button type="button" className="piano-learn-lab__action" onClick={listen}><Icon name="play" /><span>Listen</span></button>}
+              {onChangePractice && <button type="button" className="piano-learn-lab__action" onClick={changePractice}><span>Change practice</span></button>}
+              {extraControls}
+            </> : runPhase === 'done' && !resultActions ? <>
+              {onListen && <button type="button" className="piano-learn-lab__action" onClick={listen}><Icon name="play" /><span>Listen</span></button>}
+              {onChangePractice && <button type="button" className="piano-learn-lab__action" onClick={changePractice}><span>Change practice</span></button>}
+              {extraControls}
+            </> : null}
+        </div>}
+      </div>
+      {!keyOnly && <div className="piano-learn-lab__settings">
+        {track && !(takeUnderWay || listening) && <LearnTempoTrack stops={track.stops} ladder={track.ladder} earned={track.earned} value={tempoPercent} stepPercent={track.stepPercent}
+          scoreBpm={scoreBpm > 0 ? scoreBpm : null} onChange={chooseTempo} onOpenChange={setSheetOpen} />}
+        {timedMode && !(takeUnderWay || listening) && <LearnClickVolume level={clickLevel} onChange={selectClickLevel} onOpenChange={setSheetOpen} />}
       </div>}
+      {!keyOnly && <button className="piano-learn-lab__back" type="button" onClick={closeLab} aria-label={coachingTask ? 'Back to score' : `Back to ${segment.label}`}>
+        <Icon name="back" />
+      </button>}
     </header>
     <ExerciseRun rhythmOnly={rhythm} {...(maxCueRestarts != null ? { maxCueRestarts } : {})}
       key={`${segment.id}:${rung.id}:${take}:${tempoPercent}`} instance={null} score={runScore} intent="practice"
@@ -356,10 +380,17 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       fullKeyboardHints={assist?.keyboardHints === 'always'} wrongNoteGhosts={assist?.wrongNoteGhosts === true && !rhythm}
       incompleteAfterMs={coachingTask?.assist === 'none' && coachingTask.stallSeconds ? coachingTask.stallSeconds * 1000 : null}
       failurePresentation="local" resultPresentation="docked" resultLabel={resultLabel} resultActions={resultActions} resultContinueLabel={resultContinueLabel} onResultContinue={onResultContinue} onPickStep={onPickStep} onStarted={takeStarted} onExit={onClose} onPassed={settle}
-      onFailed={failTake} onPhase={setRunPhase}
+      onFailed={failTake} onPhase={setRunPhase} slots={runSlots} keyboard={assist?.keyboardHints === 'always'}
       demonstration={listening ? { playing: listening === 'playing', onDone: () => stopListening('end') } : null}
       onUnavailable={(reason, detail) => onUnavailable?.(detail || reason)}
     />
+    {/* THE COACH RAIL: the passages (the current one ringed) | this passage's steps, or the docked result |
+        the level ladder and its word. Three zones of fixed width, one height, in every state. */}
+    <footer className="piano-learn-lab__rail">
+      <div className="piano-learn-lab__rail-start">{railStart}</div>
+      <div className="piano-learn-lab__rail-middle" ref={setRailEl} />
+      <div className="piano-learn-lab__rail-end">{railEnd}</div>
+    </footer>
     {repCard && !success && <RepInterstitial {...repCard} onDone={() => setRepCard(null)} />}
     {card && <RepInterstitial key={card.id} {...card} onDone={onCardDone} />}
     {ceremony}

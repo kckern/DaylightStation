@@ -188,8 +188,11 @@ describe('the extras drawn on the engraving stay whole',()=>{
    await page.locator('.piano-exercise-run[data-armed="true"]').waitFor({timeout:15000});await page.waitForTimeout(800);
    // The drill screen's path: the open unit is selected (ringed) and, on the first passage, also the larger next token.
    expect(await pathOverlaps(page)).toEqual([]);
-   // The step strip is headed by the open unit's own token, and shows only its lap's steps.
-   expect(await page.locator('.drill-progress__head').getAttribute('aria-label')).toBe(`${tile ? 'F' : 'A'}, steps to Bronze`);
+   // Two rails (2026-11-24): the coach rail rings the open unit's own coin and names the level once (the ladder's word);
+   // the steps have no head of their own, and show only their lap's steps.
+   expect(await page.locator('.drill-progress__head').count()).toBe(0);
+   expect(await page.locator('.piano-passage-path--rail .piano-passage-path__token[aria-pressed="true"]').textContent()).toBe(tile ? 'F' : 'A');
+   expect(await page.locator('.piano-learn-lab__rail-end .piano-level-ladder__count').textContent()).toBe('Bronze');
    expect(await page.locator('button.drill-cluster').count()).toBe(4);
    for(const [step,task] of [['own','Play it on your own'],['timed','Play at score tempo']]){
     if(step==='timed'){
@@ -208,7 +211,7 @@ describe('the extras drawn on the engraving stay whole',()=>{
     if(step==='timed'){await page.evaluate(async()=>{window.__hold([72]);await new Promise(r=>setTimeout(r,60));window.__hold([]);});await page.locator('.piano-learn-countin').waitFor();await page.waitForTimeout(300);}
     else await page.evaluate(async()=>{window.__hold([60,48]);await new Promise(r=>setTimeout(r,300));});
     await page.screenshot({path:path.join(ARTIFACTS,`drill-${name}-${step}.png`)});
-    if(step==='timed'){expect(await page.locator('.drill-progress__head').getAttribute('aria-label')).toBe(`${tile ? 'F' : 'A'}, steps to Gold`);expect(await pathOverlaps(page)).toEqual([]);}
+    if(step==='timed'){expect(await page.locator('.piano-passage-path--rail .piano-passage-path__token[aria-pressed="true"]').textContent()).toBe(tile ? 'F' : 'A');expect(await pathOverlaps(page)).toEqual([]);}
     expect(await partlyClipped(page,'.piano-exercise-run__stage '+INK)).toEqual([]);
     expect(await partlyClipped(page,'.piano-exercise-run__stage *:not(svg *), .piano-exercise-run__beat')).toEqual([]);
     expect(await numbersOnInk(page,'.piano-learn-countin','.piano-exercise-run__stage ')).toEqual([]);

@@ -102,9 +102,11 @@ describe('real Learn journey',()=>{
    expect(await page.locator('.piano-learn-lab__heading strong').innerText()).toBe('Find the right-hand notes');
    expect(await page.locator('.piano-learn-lab__heading span').innerText()).toBe('Bars 1–2');
    expect(await page.getByRole('button',{name:'Start practice'}).count()).toBe(0);
-   // Only the Bronze lap's steps (the hands, together, the check), headed by the passage's own token.
+   // Only the Bronze lap's steps (the hands, together, the check); beside them on the coach rail, the passage's own coin
+   // ringed and the level once, as the ladder's word (two rails, 2026-11-24).
    expect(await page.locator('.drill-cluster').count()).toBe(4);
-   expect(await page.locator('.drill-progress__head').getAttribute('aria-label')).toBe('A, steps to Bronze');
+   expect(await page.locator('.piano-passage-path--rail .piano-passage-path__token[aria-pressed="true"]').textContent()).toBe('A');
+   expect(await page.locator('.piano-learn-lab__rail-end .piano-level-ladder__count').textContent()).toBe('Bronze');
    expect(await page.locator('.piano-passage-path__token').count()).toBe(1);
    const text=await page.locator('.piano-learn-coach').innerText();
    for(const banned of ['Segment','Practicing as','Progress saved','previously earned','Connect the piano'])expect(text).not.toContain(banned);
@@ -212,9 +214,9 @@ describe('real Learn journey',()=>{
    // The path's next token opens the passage on one tap, on its next Gold step (the rhythm, before the metronome).
    expect(await page.locator('.piano-passage-path__caption').innerText()).toBe('A in time');
    await click(page,'A in time, bars 1–2');await page.locator('.piano-learn-lab__heading strong').filter({hasText:'Tap the rhythm'}).waitFor();await page.screenshot({path:path.join(ARTIFACTS,'silver-certified.png')});
-   // The Gold lap's steps only, none done yet, headed "A · steps to Gold".
+   // The Gold lap's steps only, none done yet; the ladder's word is Gold now.
    expect(await page.locator('.drill-cluster').count()).toBe(7);expect(await page.locator('.drill-cluster[data-done]').count()).toBe(0);
-   expect(await page.locator('.drill-progress__head').getAttribute('aria-label')).toBe('A, steps to Gold');
+   expect(await page.locator('.piano-learn-lab__rail-end .piano-level-ladder__count').textContent()).toBe('Gold');
    expect(errors).toEqual([]);
   }finally{await page.close();}
  },90000);
@@ -237,11 +239,13 @@ describe('real Learn journey',()=>{
     const seen=await page.evaluate(()=>[...document.querySelectorAll('.piano-exercise-run__stage [class*="piano-note-verdict-"]')].map(m=>{const b=m.getBoundingClientRect();
      const hit=document.elementFromPoint((b.left+b.right)/2,(b.top+b.bottom)/2);return Boolean(hit&&(hit===m||m.contains(hit)||hit.closest('.piano-exercise-run__stage')));}));
     expect(seen.length).toBeGreaterThan(0);expect(seen.every(Boolean)).toBe(true);
-    const primary=await page.locator('.piano-exercise-run__result-actions button.is-primary').boundingBox();
-    expect(primary.height).toBeGreaterThanOrEqual(48);expect(primary.y).toBeGreaterThanOrEqual(card.y-0.5);expect(primary.y+primary.height).toBeLessThanOrEqual(card.y+card.height+0.5);};
+    // Its way on is the status line's prompt slot (two rails): the primary there, a full touch target.
+    const primary=await page.locator('.piano-exercise-run__result-actions button.is-primary').boundingBox();const slot=await page.locator('.piano-learn-lab__prompt').boundingBox();
+    expect(primary.height).toBeGreaterThanOrEqual(48);expect(primary.y).toBeGreaterThanOrEqual(slot.y-0.5);expect(primary.y+primary.height).toBeLessThanOrEqual(slot.y+slot.height+0.5);
+    expect(primary.x).toBeGreaterThanOrEqual(slot.x-0.5);expect(primary.x+primary.width).toBeLessThanOrEqual(slot.x+slot.width+0.5);};
    await docked();
    expect(await page.getByRole('button',{name:'Try again'}).count()).toBe(1);
-   expect(await page.locator('.piano-exercise-run__onward').getAttribute('aria-label')).toContain('pedal to try again');
+   expect(await page.locator('.piano-learn-lab__prompt .piano-exercise-run__result-actions').getAttribute('aria-label')).toContain('pedal to try again');
    // Any key takes the primary button, so the child never has to reach for the glass.
    const key=()=>page.evaluate(async()=>{window.__hold([72]);await new Promise(r=>setTimeout(r,80));window.__hold([]);await new Promise(r=>setTimeout(r,80));});
    const logged=(event)=>page.evaluate((name)=>window.__logs.filter(l=>l.event===name).map(l=>l.data),event);
@@ -258,7 +262,7 @@ describe('real Learn journey',()=>{
    await page.getByRole('button',{name:'Come back to this later'}).waitFor({timeout:15000});await page.screenshot({path:path.join(ARTIFACTS,'silver-second-miss.png')});
    expect(await page.getByRole('button',{name:/^Practice /}).count()).toBeGreaterThan(0);
    await cardArmed();await docked();
-   expect(await page.locator('.piano-exercise-run__onward').getAttribute('aria-label')).toMatch(/pedal to practice /);
+   expect(await page.locator('.piano-learn-lab__prompt .piano-exercise-run__result-actions').getAttribute('aria-label')).toMatch(/pedal to practice /);
    const paper=await stage();expect(paper.height).toBeGreaterThan(300);
    // The key takes the recommended smaller practice, not a repeat of the take that missed.
    await key();await armed(page);
@@ -342,16 +346,17 @@ describe('real Learn journey',()=>{
    // Paused: Resume and Start over (Listen is for before a take).
    expect(await page.getByRole('button',{name:'Listen',exact:true}).count()).toBe(0);
    for(const name of ['Resume','Start over']){
-    const box=await page.getByRole('button',{name,exact:true}).boundingBox();expect(box.height).toBeGreaterThanOrEqual(56);expect(box.y+box.height).toBeLessThanOrEqual(800);
+    const box=await page.getByRole('button',{name,exact:true}).boundingBox();expect(box.height).toBeGreaterThanOrEqual(48);expect(box.y+box.height).toBeLessThanOrEqual(800);
    }
-   const toolbar=await page.locator('.piano-learn-lab__toolbar').boundingBox();expect(toolbar.height).toBeLessThanOrEqual(84);
+   const toolbar=await page.locator('.piano-learn-lab__toolbar').boundingBox();expect(toolbar.height).toBe(64);
    const stage=await page.locator('.piano-exercise-run__stage').boundingBox();expect(stage.height).toBeGreaterThan(300);
    await page.waitForTimeout(2200);expect(f.attempts.size).toBe(saved);expect(await page.locator('.piano-exercise-run[data-phase="paused"]').count()).toBe(1);
    await click(page,'Resume');await page.locator('.piano-exercise-run[data-phase="resume-countdown"]').waitFor();
    // There is no practice chooser; a step is chosen from the sets, each a full touch target.
    expect(await page.getByRole('button',{name:'Change practice'}).count()).toBe(0);
-   const sets=await page.locator('button.drill-cluster').evaluateAll(list=>list.map(el=>{const r=el.getBoundingClientRect();return{w:r.width,h:r.height,top:r.top,bottom:r.bottom,clip:el.querySelector('.drill-cluster__label').getBoundingClientRect().top>=el.closest('.piano-exercise-run__rail').getBoundingClientRect().top};}));
-   expect(sets).toHaveLength(7);expect(new Set(sets.map(set=>Math.round(set.top))).size).toBe(1);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);expect(sets.every(set=>set.w>=64&&set.h>=56&&set.clip)).toBe(true);
+   // The sets are dots on the coach rail (two rails): one row, each a 44px touch target, inside the rail.
+   const sets=await page.locator('button.drill-cluster').evaluateAll(list=>list.map(el=>{const r=el.getBoundingClientRect();const rail=el.closest('.piano-learn-lab__rail').getBoundingClientRect();return{w:r.width,h:r.height,top:r.top,bottom:r.bottom,clip:r.top>=rail.top&&r.bottom<=rail.bottom};}));
+   expect(sets).toHaveLength(7);expect(new Set(sets.map(set=>Math.round(set.top))).size).toBe(1);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);expect(sets.every(set=>set.w>=44&&set.h>=44&&set.clip)).toBe(true);
    expect(f.attempts.size).toBe(saved);expect(errors).toEqual([]);
   }finally{await page.close();}
  },90000);

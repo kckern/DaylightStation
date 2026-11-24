@@ -9,10 +9,12 @@ import { createContext, useContext, useEffect, useRef } from 'react';
 const KeyboardOnlyContext = createContext(null);
 
 /**
- * `{ input: 'keyboard-only', canListen, onExit(reason), publishStrip(source, entry|null), menuOpen, menuHolding }`
+ * `{ input: 'keyboard-only', canListen, onExit(reason), publishStrip(source, entry|null), menuOpen, menuHolding, menuMapTarget }`
  * on the office screen; null everywhere else. `menuOpen`: the host's menu is up;
  * `menuHolding`: the hold that opens it is counting. Either pauses a take under
- * way (LearnLab) until both are false.
+ * way (LearnLab) until both are false. `menuMapTarget`: while the menu is open in
+ * a piece, the element its passage map row draws into (LearnCoach portals the
+ * coach rail's coins there); null otherwise.
  */
 export function useKeyboardOnly() {
   return useContext(KeyboardOnlyContext);

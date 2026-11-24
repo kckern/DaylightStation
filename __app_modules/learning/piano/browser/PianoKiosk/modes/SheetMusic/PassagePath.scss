@@ -99,6 +99,21 @@
   }
 }
 
+// THE COACH RAIL'S COINS (variant="rail", 2026-11-24): the passages only, about 44px, in the rail's left
+// zone; the unit being drilled ringed. Also the office menu's passage map.
+.piano-passage-path--rail {
+  --ring-room: 5px;
+  flex: 1 1 auto; height: 100%; width: 100%; min-width: 0;
+  // Room at each end for a coin's selection ring (3px, 2px off the coin), so no ring leaves the row.
+  display: flex; align-items: center; gap: 0; padding: 0 var(--ring-room); box-sizing: border-box;
+  background: none; border: 0;
+  .piano-passage-path__track { flex: 1 1 auto; justify-content: flex-start; }
+  .piano-passage-path__track > li[data-link]::before { top: calc(var(--ring-room) + var(--token) / 2 - 2px); }
+  .piano-passage-path__token { padding: var(--ring-room) 0; }
+  .piano-passage-path__disc { margin: 0; }
+  .piano-passage-path__pill { height: 38px; }
+}
+
 .piano-passage-board {
   // The whole stage above the path. A board that covered only part of it left a
   // staff sliced in half behind it, and its cards a third of their room.

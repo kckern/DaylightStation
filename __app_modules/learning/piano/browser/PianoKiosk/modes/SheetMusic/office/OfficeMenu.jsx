@@ -20,8 +20,11 @@ const EXTENT = rimStaffExtent(MENU_KEYS.map((key) => key.note));
  * @param {Function} props.onSelect    - (id) => void
  * @param {string}   [props.title]
  * @param {string}   [props.subtitle]
+ * @param {Function} [props.mapRef]    - in a piece: a ref for the passage map row. Learn draws the piece's
+ *   passages there (LearnCoach, the coach rail's coins, current one ringed): the passage picker that
+ *   Previous and Next move along. The drill's own rail shows only where you are; the menu shows the way.
  */
-export default function OfficeMenu({ open, choices, activeNotes, onSelect, title = 'Menu', subtitle = null }) {
+export default function OfficeMenu({ open, choices, activeNotes, onSelect, title = 'Menu', subtitle = null, mapRef = null }) {
   const live = useMemo(() => choices.filter((choice) => choice.enabled).map((choice) => ({ ...choice, item: choice })), [choices]);
   useNoteSelection({ activeNotes, slots: live, enabled: open, onSelect: (item) => onSelect?.(item.id) });
   if (!open) return null;
@@ -31,6 +34,10 @@ export default function OfficeMenu({ open, choices, activeNotes, onSelect, title
         <h2>{title}</h2>
         {subtitle && <p>{subtitle}</p>}
       </header>
+      {mapRef && <div className="office-menu__map" aria-label="Passages">
+        <span className="office-menu__map-label">Passages</span>
+        <div className="office-menu__map-coins" ref={mapRef} />
+      </div>}
       <ol className="office-menu__keys">
         {choices.map((choice) => (
           <li key={choice.id} className="office-menu__key" data-choice={choice.id} data-enabled={choice.enabled || undefined}>
