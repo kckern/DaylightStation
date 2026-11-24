@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
-import { scanSource, ROOTS, compareToBaseline, planBaselineWrite } from './audit-ui-tokens.mjs';
+import { scanSource, ROOTS, compareToBaseline, planBaselineWrite, bucketCounts } from './audit-ui-tokens.mjs';
 
 describe('audit-ui-tokens rules', () => {
   it('flags raw hex colors', () => {
@@ -80,7 +80,9 @@ describe('compareToBaseline', () => {
   });
 });
 
+const OLD_FLAT = { 'raw-color': 441, 'raw-motion': 3, 'raw-keydown': 1, 'native-control': 2, 'undefined-token': 0 };
 describe('planBaselineWrite', () => {
+  const cur = { a: { ...zero, 'raw-color': 1 } };
   it('refuses increases for an existing root', () => {
     const r = planBaselineWrite({ a: { ...zero, 'raw-color': 3 } }, { a: { ...zero, 'raw-color': 2 } });
     expect(r.ok).toBe(false);
@@ -88,12 +90,69 @@ describe('planBaselineWrite', () => {
   it('allows decreases', () => {
     expect(planBaselineWrite({ a: { ...zero, 'raw-color': 1 } }, { a: { ...zero, 'raw-color': 2 } }).ok).toBe(true);
   });
-  it('allows a one-time migration from the old flat shape', () => {
-    const r = planBaselineWrite({ a: { ...zero, 'raw-color': 9 } }, { 'raw-color': 441 });
+  it('allows migration from a genuine old flat file', () => {
+    const r = planBaselineWrite({ a: { ...zero, 'raw-color': 9 } }, OLD_FLAT);
     expect(r.ok).toBe(true);
     expect(r.migrated).toBe(true);
   });
-  it('allows a root not yet in the baseline', () => {
-    expect(planBaselineWrite({ b: { ...zero, 'raw-color': 5 } }, { a: zero }).ok).toBe(true);
+  it('refuses to migrate an empty baseline', () => {
+    const r = planBaselineWrite(cur, {});
+    expect(r.ok).toBe(false);
+    expect(r.migrated).toBe(false);
+    expect(r.errors.join('\n')).toMatch(/--init-baseline/);
+  });
+  it('refuses to migrate when the file is missing', () => {
+    const r = planBaselineWrite(cur, null);
+    expect(r.ok).toBe(false);
+    expect(r.migrated).toBe(false);
+  });
+  it('refuses a mixed file (roots plus a stray number)', () => {
+    const r = planBaselineWrite(cur, { a: { ...zero, 'raw-color': 5 }, x: 1 });
+    expect(r.ok).toBe(false);
+    expect(r.migrated).toBe(false);
+  });
+  it('refuses a flat file with unknown keys', () => {
+    const r = planBaselineWrite(cur, { ...OLD_FLAT, bogus: 4 });
+    expect(r.ok).toBe(false);
+    expect(r.migrated).toBe(false);
+  });
+  it('refuses an existing new-shape file with one stray number', () => {
+    const r = planBaselineWrite({ a: zero }, { a: zero, 'raw-color': 7 });
+    expect(r.ok).toBe(false);
+    expect(r.migrated).toBe(false);
+  });
+  it('refuses a root absent from the baseline without --add-root', () => {
+    const r = planBaselineWrite({ a: zero, b: { ...zero, 'raw-color': 5 } }, { a: zero });
+    expect(r.ok).toBe(false);
+    expect(r.errors.join('\n')).toMatch(/--add-root b/);
+  });
+  it('allows a new root when --add-root names exactly it', () => {
+    const r = planBaselineWrite({ a: zero, b: { ...zero, 'raw-color': 5 } }, { a: zero }, { addRoot: 'b' });
+    expect(r.ok).toBe(true);
+  });
+  it('refuses a new root when --add-root names a different root', () => {
+    const r = planBaselineWrite({ a: zero, b: zero }, { a: zero }, { addRoot: 'c' });
+    expect(r.ok).toBe(false);
+  });
+  it('--init-baseline writes only when the file is missing', () => {
+    expect(planBaselineWrite(cur, null, { initBaseline: true }).ok).toBe(true);
+    expect(planBaselineWrite(cur, { a: zero }, { initBaseline: true }).ok).toBe(false);
+    expect(planBaselineWrite(cur, {}, { initBaseline: true }).ok).toBe(false);
+  });
+});
+
+describe('bucketCounts', () => {
+  it('buckets hits per root and ignores files under no root', () => {
+    const hits = [
+      { rule: 'raw-color', file: 'r1/a.scss', line: 1 },
+      { rule: 'raw-color', file: 'r1/sub/b.scss', line: 2 },
+      { rule: 'raw-motion', file: 'r2/c.scss', line: 3 },
+      { rule: 'raw-color', file: 'r1x/d.scss', line: 4 },
+      { rule: 'raw-color', file: 'elsewhere/e.scss', line: 5 },
+    ];
+    const c = bucketCounts(hits, ['r1', 'r2']);
+    expect(Object.keys(c)).toEqual(['r1', 'r2']);
+    expect(c.r1).toEqual({ ...zero, 'raw-color': 2 });
+    expect(c.r2).toEqual({ ...zero, 'raw-motion': 1 });
   });
 });

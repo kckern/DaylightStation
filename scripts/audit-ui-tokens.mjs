@@ -49,7 +49,7 @@ const RULES = [
   {
     rule: 'undefined-token',
     // any var(--ds-*) not in the manifest — silent fallback to `inherit`
-    re: /var\(--ds-[a-z0-9-]+/g,
+    re: /var\((--ds-[a-z0-9-]+)/g,
     files: /\.(scss|css|jsx|js)$/,
     custom: 'checkTokenManifest',
   },
@@ -83,7 +83,7 @@ export function scanSource(filePath, source, { strict = false } = {}) {
     lines.forEach((line, i) => {
       if (/^\s*\/\//.test(line)) return;
       if (rule.custom === 'checkTokenManifest') {
-        for (const m of line.matchAll(/var\((--ds-[a-z0-9-]+)/g)) {
+        for (const m of line.matchAll(globalRe)) {
           if (!DS_TOKEN_NAMES.has(m[1])) {
             hits.push({ rule: rule.rule, file: filePath, line: i + 1, token: m[1] });
           }
@@ -143,32 +143,75 @@ export function compareToBaseline(counts, baseline) {
   return { failed, lines };
 }
 
-const isFlatBaseline = (b) => Object.values(b).some((v) => typeof v === 'number');
+const isNumber = (v) => typeof v === 'number';
 
-// Pure: decide whether --write-baseline may proceed.
-export function planBaselineWrite(counts, existing) {
-  if (isFlatBaseline(existing)) return { ok: true, migrated: true, errors: [] };
+// A genuine old-shape file: non-empty, every top-level value a number, every
+// key one of the rule names. Anything else is never migrated.
+const isOldFlatShape = (b) => {
+  if (!b || typeof b !== 'object') return false;
+  const entries = Object.entries(b);
+  return entries.length > 0 && entries.every(([k, v]) => isNumber(v) && RULE_NAMES.includes(k));
+};
+
+// Pure: decide whether --write-baseline may proceed. `existing` is null when
+// the file is missing.
+export function planBaselineWrite(counts, existing, { addRoot = null, initBaseline = false } = {}) {
+  const refuse = (...errors) => ({ ok: false, migrated: false, errors });
+  if (existing === null || existing === undefined) {
+    return initBaseline
+      ? { ok: true, migrated: false, errors: [] }
+      : refuse('baseline file is missing; run with --init-baseline to create it');
+  }
+  if (initBaseline) return refuse('--init-baseline only works when no baseline file exists');
+  if (isOldFlatShape(existing)) return { ok: true, migrated: true, errors: [] };
+  if (typeof existing !== 'object' || Object.keys(existing).length === 0) {
+    return refuse('baseline is empty; refusing to treat it as a migration (use --init-baseline only when the file is missing)');
+  }
+  const stray = Object.entries(existing).filter(([, v]) => !v || typeof v !== 'object');
+  if (stray.length) {
+    return refuse(...stray.map(([k, v]) => `baseline has a non-root entry "${k}": ${JSON.stringify(v)}; refusing to write over a malformed file`));
+  }
   const errors = [];
   for (const root of Object.keys(counts)) {
-    if (!(root in existing)) continue;
+    if (!(root in existing)) {
+      if (addRoot !== root) errors.push(`${root} is not in the baseline; add it deliberately with --add-root ${root}`);
+      continue;
+    }
     for (const rule of RULE_NAMES) {
       const n = rootCount(counts, root, rule);
       const base = rootCount(existing, root, rule);
       if (n > base) errors.push(`${root} ${rule}: ${n} > baseline ${base}`);
     }
   }
+  if (addRoot && (!(addRoot in counts) || addRoot in existing)) {
+    errors.push(`--add-root ${addRoot}: not a new root in ROOTS`);
+  }
   return { ok: errors.length === 0, migrated: false, errors };
 }
 
-function rootOf(file) {
-  return ROOTS.find((r) => file === r || file.startsWith(`${r}/`));
+function rootOf(file, roots = ROOTS) {
+  return roots.find((r) => file === r || file.startsWith(`${r}/`));
+}
+
+// Pure: bucket hits per root; hits under no root are ignored.
+export function bucketCounts(hits, roots) {
+  const counts = {};
+  for (const root of roots) counts[root] = Object.fromEntries(RULE_NAMES.map((r) => [r, 0]));
+  for (const h of hits) {
+    const root = rootOf(h.file, roots);
+    if (root) counts[root][h.rule] += 1;
+  }
+  return counts;
 }
 
 function main() {
   const baselinePath = 'scripts/audit-ui-tokens.baseline.json';
-  const baseline = fs.existsSync(baselinePath)
-    ? JSON.parse(fs.readFileSync(baselinePath, 'utf8'))
-    : {};
+  const baselineMissing = !fs.existsSync(baselinePath);
+  const baseline = baselineMissing ? {} : JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
+  const argAfter = (flag) => {
+    const i = process.argv.indexOf(flag);
+    return i >= 0 ? process.argv[i + 1] ?? null : null;
+  };
 
   const allHits = [];
   for (const root of ROOTS) {
@@ -179,24 +222,30 @@ function main() {
     }
   }
 
-  const counts = {};
-  for (const root of ROOTS) counts[root] = Object.fromEntries(RULE_NAMES.map((r) => [r, 0]));
-  for (const h of allHits) counts[rootOf(h.file)][h.rule] += 1;
+  const counts = bucketCounts(allHits, ROOTS);
 
-  if (process.argv.includes('--write-baseline')) {
-    const plan = planBaselineWrite(counts, baseline);
+  if (process.argv.includes('--write-baseline') || process.argv.includes('--init-baseline')) {
+    const plan = planBaselineWrite(counts, baselineMissing ? null : baseline, {
+      addRoot: argAfter('--add-root'),
+      initBaseline: process.argv.includes('--init-baseline'),
+    });
     if (!plan.ok) {
-      console.log('Refusing to write baseline: counts grew');
+      console.log('Refusing to write baseline:');
       plan.errors.forEach((e) => console.log(`  ${e}`));
       process.exit(1);
     }
     if (plan.migrated) console.log('Old flat baseline shape detected: migrating to per-root shape (one-time exception).');
+    const dropped = Object.keys(baseline).filter((r) => !ROOTS.includes(r) && !plan.migrated);
+    if (dropped.length) console.log(`Note: dropping baseline roots no longer in ROOTS: ${dropped.join(', ')}`);
     fs.writeFileSync(baselinePath, `${JSON.stringify(counts, null, 2)}\n`);
     console.log(`Wrote ${baselinePath}`);
     process.exit(0);
   }
 
-  const flat = isFlatBaseline(baseline);
+  for (const root of ROOTS) {
+    if (!fs.existsSync(root)) console.log(`WARNING: root does not exist on disk: ${root}`);
+  }
+  const flat = isOldFlatShape(baseline);
   const cmp = compareToBaseline(counts, flat ? {} : baseline);
   let failed = cmp.failed;
   if (flat) console.log('Baseline is in the old flat shape; run with --write-baseline once to migrate.');

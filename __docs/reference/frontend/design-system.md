@@ -565,7 +565,8 @@ The transcript fills the draft for review. Send submits the answer explicitly.
   and compares each count against a checked-in baseline kept per root
   (`scripts/audit-ui-tokens.baseline.json`, `{ root: { rule: n } }`;
   `node scripts/audit-ui-tokens.mjs --write-baseline` rewrites it and refuses
-  to raise any existing root's count). A count at or below its baseline
+  to raise any existing root's count; a new root must be added deliberately with
+  `--add-root <root>`, and `--init-baseline` only works when no baseline file exists). A count at or below its baseline
   passes; a count above it fails the gate. **Baselines only shrink.** Fixing
   violations lowers a baseline number in the same change; a new violation
   raising a count above its baseline is a hard failure, never grounds for
