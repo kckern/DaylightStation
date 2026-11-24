@@ -556,12 +556,16 @@ The transcript fills the draft for review. Send submits the answer explicitly.
   shape, a state layout, an interaction) appears, it can live locally. The
   third occurrence is copy-paste calcifying into drift — extract it into
   `frontend/src/lib/ui` instead of copying it again.
-- `npm run audit:ui` is the enforcement gate. It scans the app roots and
-  `lib/ui` itself for five violation classes — raw colors, raw motion/keyframe
+- `npm run audit:ui` is the enforcement gate. It scans these roots: `frontend/src/Apps`,
+  `frontend/src/lib/ui`, `frontend/src/modules/Admin`, and the `browser`
+  folders of the Home, Health, Auto, Life, Feed and Media app modules under
+  `__app_modules/` (School has its own scoped guard). It looks for five violation classes — raw colors, raw motion/keyframe
   values, hand-rolled `keydown` listeners, native `<button>`/`<select>`
   elements outside `lib/ui`, and `--ds-*` names outside the token manifest —
-  and compares each count against a checked-in baseline
-  (`scripts/audit-ui-tokens.baseline.json`). A count at or below its baseline
+  and compares each count against a checked-in baseline kept per root
+  (`scripts/audit-ui-tokens.baseline.json`, `{ root: { rule: n } }`;
+  `node scripts/audit-ui-tokens.mjs --write-baseline` rewrites it and refuses
+  to raise any existing root's count). A count at or below its baseline
   passes; a count above it fails the gate. **Baselines only shrink.** Fixing
   violations lowers a baseline number in the same change; a new violation
   raising a count above its baseline is a hard failure, never grounds for

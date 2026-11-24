@@ -4,13 +4,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import url from 'node:url';
 
-const ROOTS = [
+export const ROOTS = [
   'frontend/src/Apps',
-  'frontend/src/modules/Health',
-  'frontend/src/modules/Life',
-  'frontend/src/modules/Auto',
-  'frontend/src/modules/Media',
   'frontend/src/lib/ui',
+  'frontend/src/modules/Admin',
+  '__app_modules/household/home/browser',
+  '__app_modules/wellness/health/browser',
+  '__app_modules/household/auto/browser',
+  '__app_modules/personal/life/browser',
+  '__app_modules/media/feed/browser',
+  '__app_modules/media/media/browser',
 ];
 const SCHOOL_ROOT = '__app_modules/learning/school/browser';
 const STRICT_SCHOOL = /^(portal|runtime|activities)\//;
@@ -46,7 +49,7 @@ const RULES = [
   {
     rule: 'undefined-token',
     // any var(--ds-*) not in the manifest — silent fallback to `inherit`
-    re: /var\(--ds-[a-z-]+/g,
+    re: /var\(--ds-[a-z0-9-]+/g,
     files: /\.(scss|css|jsx|js)$/,
     custom: 'checkTokenManifest',
   },
@@ -80,7 +83,7 @@ export function scanSource(filePath, source, { strict = false } = {}) {
     lines.forEach((line, i) => {
       if (/^\s*\/\//.test(line)) return;
       if (rule.custom === 'checkTokenManifest') {
-        for (const m of line.matchAll(/var\((--ds-[a-z-]+)/g)) {
+        for (const m of line.matchAll(/var\((--ds-[a-z0-9-]+)/g)) {
           if (!DS_TOKEN_NAMES.has(m[1])) {
             hits.push({ rule: rule.rule, file: filePath, line: i + 1, token: m[1] });
           }
@@ -113,6 +116,54 @@ function walk(dir, out = []) {
   return out;
 }
 
+const RULE_NAMES = RULES.map((r) => r.rule);
+
+function rootCount(counts, root, rule) {
+  return counts[root]?.[rule] ?? 0;
+}
+
+// Pure: compare per-root counts to the per-root baseline. Growth fails;
+// a count below baseline is reported as ratchetable.
+export function compareToBaseline(counts, baseline) {
+  const lines = [];
+  let failed = false;
+  const roots = new Set([...Object.keys(counts), ...Object.keys(baseline)]);
+  for (const root of roots) {
+    for (const rule of RULE_NAMES) {
+      const n = rootCount(counts, root, rule);
+      const base = rootCount(baseline, root, rule);
+      if (n > base) {
+        failed = true;
+        lines.push(`${root} ${rule} ${n} (baseline ${base}) FAIL`);
+      } else if (n < base) {
+        lines.push(`${root} ${rule} ${n} (baseline ${base}) can ratchet down`);
+      }
+    }
+  }
+  return { failed, lines };
+}
+
+const isFlatBaseline = (b) => Object.values(b).some((v) => typeof v === 'number');
+
+// Pure: decide whether --write-baseline may proceed.
+export function planBaselineWrite(counts, existing) {
+  if (isFlatBaseline(existing)) return { ok: true, migrated: true, errors: [] };
+  const errors = [];
+  for (const root of Object.keys(counts)) {
+    if (!(root in existing)) continue;
+    for (const rule of RULE_NAMES) {
+      const n = rootCount(counts, root, rule);
+      const base = rootCount(existing, root, rule);
+      if (n > base) errors.push(`${root} ${rule}: ${n} > baseline ${base}`);
+    }
+  }
+  return { ok: errors.length === 0, migrated: false, errors };
+}
+
+function rootOf(file) {
+  return ROOTS.find((r) => file === r || file.startsWith(`${r}/`));
+}
+
 function main() {
   const baselinePath = 'scripts/audit-ui-tokens.baseline.json';
   const baseline = fs.existsSync(baselinePath)
@@ -129,19 +180,35 @@ function main() {
   }
 
   const counts = {};
-  for (const h of allHits) counts[h.rule] = (counts[h.rule] || 0) + 1;
+  for (const root of ROOTS) counts[root] = Object.fromEntries(RULE_NAMES.map((r) => [r, 0]));
+  for (const h of allHits) counts[rootOf(h.file)][h.rule] += 1;
 
-  let failed = false;
-  for (const rule of RULES.map((r) => r.rule)) {
-    const n = counts[rule] || 0;
-    const base = baseline[rule] ?? 0;
-    const ok = n <= base;
-    if (!ok) failed = true;
-    console.log(`${rule.padEnd(20)} ${String(n).padStart(4)} (baseline ${base}) ${ok ? 'ok' : 'FAIL'}`);
-    if (!ok) {
-      for (const h of allHits.filter((x) => x.rule === rule).slice(0, 20)) {
-        console.log(`  ${h.file}:${h.line}`);
-      }
+  if (process.argv.includes('--write-baseline')) {
+    const plan = planBaselineWrite(counts, baseline);
+    if (!plan.ok) {
+      console.log('Refusing to write baseline: counts grew');
+      plan.errors.forEach((e) => console.log(`  ${e}`));
+      process.exit(1);
+    }
+    if (plan.migrated) console.log('Old flat baseline shape detected: migrating to per-root shape (one-time exception).');
+    fs.writeFileSync(baselinePath, `${JSON.stringify(counts, null, 2)}\n`);
+    console.log(`Wrote ${baselinePath}`);
+    process.exit(0);
+  }
+
+  const flat = isFlatBaseline(baseline);
+  const cmp = compareToBaseline(counts, flat ? {} : baseline);
+  let failed = cmp.failed;
+  if (flat) console.log('Baseline is in the old flat shape; run with --write-baseline once to migrate.');
+  for (const root of ROOTS) {
+    const summary = RULE_NAMES.map((r) => `${r}=${counts[root][r]}`).join(' ');
+    console.log(`${root.padEnd(48)} ${summary}`);
+  }
+  cmp.lines.forEach((l) => console.log(l));
+  if (cmp.failed) {
+    for (const h of allHits) {
+      const n = counts[rootOf(h.file)][h.rule];
+      if (n > rootCount(baseline, rootOf(h.file), h.rule)) console.log(`  ${h.rule} ${h.file}:${h.line}`);
     }
   }
   // School is scoped separately: the historical global allowance never grows

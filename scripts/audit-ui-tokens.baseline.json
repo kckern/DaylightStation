@@ -1,7 +1,65 @@
 {
-  "raw-color": 441,
-  "raw-motion": 56,
-  "raw-keydown": 4,
-  "native-control": 41,
-  "undefined-token": 12
+  "frontend/src/Apps": {
+    "raw-color": 4,
+    "raw-motion": 0,
+    "raw-keydown": 0,
+    "native-control": 0,
+    "undefined-token": 3
+  },
+  "frontend/src/lib/ui": {
+    "raw-color": 0,
+    "raw-motion": 2,
+    "raw-keydown": 0,
+    "native-control": 0,
+    "undefined-token": 2
+  },
+  "frontend/src/modules/Admin": {
+    "raw-color": 23,
+    "raw-motion": 5,
+    "raw-keydown": 3,
+    "native-control": 6,
+    "undefined-token": 187
+  },
+  "__app_modules/household/home/browser": {
+    "raw-color": 28,
+    "raw-motion": 3,
+    "raw-keydown": 0,
+    "native-control": 0,
+    "undefined-token": 0
+  },
+  "__app_modules/wellness/health/browser": {
+    "raw-color": 27,
+    "raw-motion": 4,
+    "raw-keydown": 1,
+    "native-control": 0,
+    "undefined-token": 4
+  },
+  "__app_modules/household/auto/browser": {
+    "raw-color": 0,
+    "raw-motion": 0,
+    "raw-keydown": 0,
+    "native-control": 8,
+    "undefined-token": 0
+  },
+  "__app_modules/personal/life/browser": {
+    "raw-color": 0,
+    "raw-motion": 0,
+    "raw-keydown": 0,
+    "native-control": 0,
+    "undefined-token": 0
+  },
+  "__app_modules/media/feed/browser": {
+    "raw-color": 299,
+    "raw-motion": 22,
+    "raw-keydown": 5,
+    "native-control": 111,
+    "undefined-token": 0
+  },
+  "__app_modules/media/media/browser": {
+    "raw-color": 397,
+    "raw-motion": 49,
+    "raw-keydown": 7,
+    "native-control": 76,
+    "undefined-token": 0
+  }
 }
