@@ -17,12 +17,12 @@ describe('exercise count-in projection', () => {
 
   it('keeps the selected countable pulse for fast music', () => {
     const plan = exerciseCountInPlan({ beatsPerMeasure: 4, gradedBpm: 120, onsetQuarters: [0, 0.5, 1, 1.5] });
-    expect(plan).toEqual({ clicks: 4, periodMs: 500, leadInMs: 2000, pulseBpm: 120, entry: 'downbeat' });
+    expect(plan).toMatchObject({ clicks: 4, periodMs: 500, leadInMs: 2000, pulseBpm: 120, entry: 'downbeat' });
   });
 
   it('uses quarter pulses when the ask has no steady spacing', () => {
     expect(exerciseCountInPlan({ beatsPerMeasure: 4, gradedBpm: 60, onsetQuarters: [0, 1, 1.5] }))
-      .toEqual({ clicks: 4, periodMs: 1000, leadInMs: 4000, pulseBpm: 60, entry: 'downbeat' });
+      .toMatchObject({ clicks: 4, periodMs: 1000, leadInMs: 4000, pulseBpm: 60, entry: 'downbeat' });
   });
 
   it.each([0, -10, NaN, Infinity, undefined])('does not invent a pulse for unusable graded tempo %s', (gradedBpm) => {
@@ -270,7 +270,7 @@ describe('pickup-aware count-in', () => {
   it('puts a one-beat pickup on beat 4 of a three-click count', () => {
     expect(entryOffsetQuarters({ measures: bars(1), firstOnsetQuarter: 0 })).toBe(3);
     expect(exerciseCountInPlan({ beatsPerMeasure: 4, gradedBpm: 60, onsetQuarters: [0, 1, 2, 3], measures: bars(1) }))
-      .toEqual({ clicks: 3, periodMs: 1000, leadInMs: 3000, pulseBpm: 60, entry: 'aligned' });
+      .toMatchObject({ clicks: 3, periodMs: 1000, leadInMs: 3000, pulseBpm: 60, entry: 'aligned', readyBar: false });
   });
   it('counts a full bar first when only one click would come before the pickup', () => {
     expect(alignCountIn({ clicks: 3, pulseQuarters: 1, barQuarters: 3, entryQuarters: 1 })).toEqual({ clicks: 4, entry: 'aligned' });
@@ -287,7 +287,7 @@ describe('pickup-aware count-in', () => {
   });
   it('keeps a downbeat start exactly as today', () => {
     expect(exerciseCountInPlan({ beatsPerMeasure: 4, gradedBpm: 60, onsetQuarters: [0, 1], measures: bars(4) }))
-      .toEqual({ clicks: 4, periodMs: 1000, leadInMs: 4000, pulseBpm: 60, entry: 'downbeat' });
+      .toMatchObject({ clicks: 4, periodMs: 1000, leadInMs: 4000, pulseBpm: 60, entry: 'downbeat' });
   });
   it.each([undefined, [], [{ onsetQuarter: NaN, durationQuarters: 4 }]])('returns null for unusable measures %#', (measures) => {
     expect(entryOffsetQuarters({ measures, firstOnsetQuarter: 0 })).toBeNull();
@@ -324,5 +324,89 @@ describe('the Polish count-in', () => {
   it.each([0, -1, NaN, Infinity])('never loops on a click period of %s', (periodMs) => {
     expect(polishCountIn({ ...plan, periodMs }, { fromTop: true, measures: pickup, firstOnsetQuarter: 0, timeSig }))
       .toEqual({ ...plan, periodMs, entry: 'unaligned' });
+  });
+});
+
+/**
+ * THE PICKUP COUNT, in bars (2026-11-24). "Santa Claus Is Comin' to Town": 4/4, ♩=120, a one-quarter
+ * pickup ("You", RH G4 on beat 4), LH resting until bar 1. The count ends with the landing bar (the
+ * bar holding the passage's first note), a ready bar before it unless the landing bar alone gives
+ * 2.5 s and two clicks after the press; the count belongs to the passage, not the hand.
+ */
+describe('the pickup count, in bars', () => {
+  const santaBars = [{ onsetQuarter: 0, durationQuarters: 1, implicit: true },
+    ...Array.from({ length: 4 }, (_, i) => ({ onsetQuarter: 1 + i * 4, durationQuarters: 4 }))];
+  const rh = [0, 1, 1.5, 2, 3, 4, 4.5];
+  const lh = [1, 5];
+  const plan = (over) => exerciseCountInPlan({ beatsPerMeasure: 4, gradedBpm: 120, measures: santaBars, passageFirstOnsetQuarter: 0, ...over });
+  const kinds = (p) => p.slots.map((slot) => slot.kind);
+  const beats = (p) => p.slots.map((slot) => slot.beat);
+
+  it('Santa Claus RH at 120: a ready bar, then 1 2 3, and the note on 4', () => {
+    const p = plan({ onsetQuarters: rh });
+    expect(p).toMatchObject({ clicks: 7, periodMs: 500, leadInMs: 3500, entry: 'aligned', readyBar: true, bars: 2 });
+    expect(beats(p)).toEqual([1, 2, 3, 4, 1, 2, 3, 4]);
+    expect(kinds(p)).toEqual(['count', 'count', 'count', 'count', 'count', 'count', 'count', 'note']);
+  });
+
+  it('LH of the same passage counts the same bar and rests on the pickup beat', () => {
+    const r = plan({ onsetQuarters: rh });
+    const l = plan({ onsetQuarters: lh });
+    expect(l).toMatchObject({ clicks: 8, leadInMs: 4000, readyBar: true });
+    expect(l.slots[7].kind).toBe('rest');
+    expect(l.slots[8]).toMatchObject({ kind: 'note', beat: 1 });
+    expect(l.slots.slice(0, 7)).toEqual(r.slots.slice(0, 7));
+  });
+
+  it('at 60 bpm the landing bar alone is the count', () => {
+    const p = plan({ gradedBpm: 60, onsetQuarters: rh });
+    expect(p).toMatchObject({ clicks: 3, leadInMs: 3000, readyBar: false, bars: 1 });
+    expect(kinds(p)).toEqual(['count', 'count', 'count', 'note']);
+  });
+
+  it('a missed-cue restart always has the ready bar', () => {
+    expect(plan({ gradedBpm: 60, onsetQuarters: rh, forceReadyBar: true })).toMatchObject({ clicks: 7, leadInMs: 7000, readyBar: true });
+  });
+
+  it('a three-beat pickup always gets a ready bar', () => {
+    const three = [{ onsetQuarter: 0, durationQuarters: 3, implicit: true }, { onsetQuarter: 3, durationQuarters: 4 }, { onsetQuarter: 7, durationQuarters: 4 }];
+    const p = exerciseCountInPlan({ beatsPerMeasure: 4, gradedBpm: 40, onsetQuarters: [0, 1, 2, 3], measures: three, passageFirstOnsetQuarter: 0 });
+    expect(p).toMatchObject({ clicks: 5, readyBar: true });
+    expect(kinds(p).at(-1)).toBe('note');
+    expect(beats(p)).toEqual([1, 2, 3, 4, 1, 2]);
+  });
+
+  it('an eighth-note pickup clicks through 4 and lands on a half slot', () => {
+    const eighth = [{ onsetQuarter: 0, durationQuarters: 0.5, implicit: true }, { onsetQuarter: 0.5, durationQuarters: 4 }, { onsetQuarter: 4.5, durationQuarters: 4 }];
+    const p = exerciseCountInPlan({ beatsPerMeasure: 4, gradedBpm: 60, onsetQuarters: [0, 0.5, 1.5], measures: eighth, passageFirstOnsetQuarter: 0 });
+    expect(p).toMatchObject({ clicks: 4, leadInMs: 3500, entry: 'offbeat', readyBar: false });
+    expect(p.slots.at(-1)).toMatchObject({ kind: 'note', half: true });
+  });
+
+  it('3/4 pickup: 1 2 3 | 1 2 note', () => {
+    const waltz = [{ onsetQuarter: 0, durationQuarters: 1, implicit: true }, { onsetQuarter: 1, durationQuarters: 3 }, { onsetQuarter: 4, durationQuarters: 3 }];
+    const p = exerciseCountInPlan({ beatsPerMeasure: 3, gradedBpm: 60, onsetQuarters: [0, 1, 2, 3], measures: waltz, passageFirstOnsetQuarter: 0 });
+    expect(beats(p)).toEqual([1, 2, 3, 1, 2, 3]);
+    expect(kinds(p)).toEqual(['count', 'count', 'count', 'count', 'count', 'note']);
+    expect(p).toMatchObject({ clicks: 5, leadInMs: 5000 });
+  });
+
+  it('a downbeat passage keeps four clicks, and its note box follows them', () => {
+    const p = exerciseCountInPlan({ beatsPerMeasure: 4, gradedBpm: 60, onsetQuarters: [0, 1], measures: [{ onsetQuarter: 0, durationQuarters: 4 }, { onsetQuarter: 4, durationQuarters: 4 }], passageFirstOnsetQuarter: 0 });
+    expect(p).toMatchObject({ clicks: 4, leadInMs: 4000, entry: 'downbeat', readyBar: false });
+    expect(kinds(p)).toEqual(['count', 'count', 'count', 'count', 'note']);
+  });
+});
+
+describe('countUpPresentation over slots', () => {
+  it('counts the slot under the click and cues the click before the note', async () => {
+    const { countUpPresentation } = await import('./countIn.js');
+    const p = exerciseCountInPlan({ beatsPerMeasure: 4, gradedBpm: 120, onsetQuarters: [0, 1, 2], passageFirstOnsetQuarter: 0,
+      measures: [{ onsetQuarter: 0, durationQuarters: 1, implicit: true }, { onsetQuarter: 1, durationQuarters: 4 }] });
+    const at = (elapsedMs) => countUpPresentation({ clicks: p.clicks, leadInMs: p.leadInMs, periodMs: p.periodMs, slots: p.slots, elapsedMs });
+    expect(at(0)).toMatchObject({ count: 1, last: false });
+    expect(at(2100)).toMatchObject({ count: 5, last: false });
+    expect(at(3100)).toMatchObject({ count: 7, last: true });
+    expect(at(3500)).toBeNull();
   });
 });

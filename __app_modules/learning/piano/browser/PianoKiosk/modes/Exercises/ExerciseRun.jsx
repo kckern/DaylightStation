@@ -484,6 +484,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   const [lastWrong, setLastWrong] = useState(null);
   const [clockNow, setClockNow] = useState(() => Date.now());
   const countdownHeldRef = useRef(new Set());
+  // Set by a missed cue, cleared when a take comes in on the cue: the count keeps its ready bar.
+  const [readyBarForced, setReadyBarForced] = useState(false);
   // THE RAW ONSET LOG of one cued Learn take, independent of the engine:
   // `{ midi, t, phase }` on the attempt's clock (the MIDI timestamp), from the
   // arming key until the result shows, count-in onsets included and flagged by
@@ -801,9 +803,13 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       onsetQuarters: (snapshot.expectation?.events ?? []).map((event) => event.onsetQuarter),
       // The engraver's bars, so a pickup is counted on the beats before it.
       measures: snapshot.expectation?.measureMap,
+      // The passage's first note across both hands: one count for every step of the passage.
+      passageFirstOnsetQuarter: snapshot.expectation?.passageFirstOnsetQuarter,
+      // A missed cue comes back to a count with its ready bar: the child just showed they need it.
+      forceReadyBar: readyBarForced,
     });
     return plan ? { ...plan, gradedBpm: bpm } : null;
-  }, [beatsPerMeasure, clickBpm, snapshot.expectation]);
+  }, [beatsPerMeasure, clickBpm, snapshot.expectation, readyBarForced]);
 
   const timed = snapshot.matcher === 'timed';
   /**
@@ -1223,7 +1229,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   // 1..N with the clicks (1 at once when the press is the first click), the
   // last carrying "next click: play". Nothing on the first beat.
   const countUp = learnCued && countIn
-    ? countingDown ? countUpPresentation({ clicks: countIn.clicks, elapsedMs: countdownElapsedMs, leadInMs: countIn.leadInMs }) : null
+    ? countingDown ? countUpPresentation({ clicks: countIn.clicks, elapsedMs: countdownElapsedMs, leadInMs: countIn.leadInMs, periodMs: countIn.periodMs, slots: countIn.slots }) : null
     : null;
 
   // Resolved once per config: see the anchored click below.
@@ -1251,7 +1257,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     const prerollMs = downbeat ? 0 : Math.max(gapMs, Math.max(0, clickLead.leadMs) + CLICK_PREROLL_MS);
     // An aligned count ends on the beat before the first note, so the grader's
     // clock starts there too; any other count still covers the whole first bar.
-    const originQuarter = countIn?.entry === 'aligned'
+    const originQuarter = countIn && countIn.entry !== 'unaligned'
       ? Math.max(0, Number(runtime.getSnapshot()?.expectation?.events?.[0]?.onsetQuarter) || 0) : 0;
     runtime.start({ time: downbeat ? downbeatAt : Date.now() + prerollMs, leadInMs: countIn?.leadInMs ?? 0, ...(originQuarter ? { originQuarter } : {}), clock: 'date-now' });
     countdownHeldRef.current = new Set(activeNotesRef.current.keys());
@@ -1260,6 +1266,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       ...timedRunPresentation(runtime.getSnapshot(), Date.now()),
       pulseCount: countIn?.clicks ?? 0, pulseBpm: countIn?.pulseBpm ?? null,
       leadInMs: countIn?.leadInMs ?? 0, prerollMs, downbeat, entry: countIn?.entry ?? null,
+      bars: countIn?.bars ?? null, readyBar: countIn?.readyBar ?? null, slots: countIn?.slots?.length ?? null,
       armedAt, waitedMs: Number.isFinite(armedAt) ? Date.now() - armedAt : null,
       ignored: [...activeNotesRef.current.keys()], reason,
     });
@@ -1323,12 +1330,13 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       const current = runtime.getSnapshot();
       if (current.status !== 'running' || current.paused) return;
       const missed = missedCue(current, onsetLogRef.current, Date.now());
-      if (!missed) { cueRestartsRef.current = 0; return; }
+      if (!missed) { cueRestartsRef.current = 0; setReadyBarForced(false); return; }
       if (cueRestartsRef.current >= maxCueRestarts) {
         logger.info('piano.exercise-cue-restart-capped', { ...traceFieldsRef.current, restarts: cueRestartsRef.current });
         return;
       }
       cueRestartsRef.current += 1;
+      setReadyBarForced(true);
       logger.info('piano.exercise-cue-missed', { ...traceFieldsRef.current, attempt: cueRestartsRef.current,
         offsetMs: missed.firstOnsetOffsetMs, windowMs: Math.round(missed.windowMs), beatMs: Math.round(countIn.periodMs) });
       cueHoldRef.current = true;
@@ -2098,7 +2106,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
         {learnPulse && <CountUpOverlay loop active={Boolean(beatLoop)} clicks={beatLoop?.beats} count={beatLoop?.beat} last={false} />}
         {learnCued
           ? <CountUpOverlay active={Boolean(countUp) || Boolean(cueRestart)} clicks={countUp?.clicks ?? countIn?.clicks} count={countUp?.count} last={countUp?.last}
-            notice={cueRestart && !countUp ? 'You missed the cue — counting in again' : null} />
+            slots={countIn?.slots} notehead={rhythmOnly ? 'x' : 'note'}
+            notice={cueRestart && !countUp ? `You missed the cue — come in on the ${rhythmOnly ? '\u2715' : '\u2669'}` : null} />
           : <CountInOverlay active={(countingDown && countInBeat != null) || playHandoff}
             remaining={countdown?.remaining} progress={countdown?.progress} play={countdown?.play} />}
         <CountInOverlay active={resuming} remaining={resumeRemaining} progress={null} play={false} />

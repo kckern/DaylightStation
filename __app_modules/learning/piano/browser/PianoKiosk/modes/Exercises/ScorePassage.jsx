@@ -4,7 +4,7 @@ import { MusicXmlRenderer } from "../../../../../../../__capabilities/music-nota
 import { parseMusicXml } from "../../../../../../../__capabilities/music-notation/browser/parseMusicXml.js";
 import NoteHighlightLayer from '../SheetMusic/NoteHighlightLayer.jsx';
 import { compileScoreExpectation } from '../../../performance/assessmentAttempt.js';
-import { excerptMusicXml, selectMusicXmlParts } from './scorePassageXml.js';
+import { excerptMusicXml, selectMusicXmlParts, firstSoundingOnsetQuarter } from './scorePassageXml.js';
 import { scaleScoreTempoMap, scaledScoreBpm } from './scoreTempo.js';
 import { resolvePassageLayout, systemForStep } from './passageLayout.js';
 
@@ -325,11 +325,14 @@ export default function ScorePassage({
       if (!expectation.events.some((event) => event.notes.length)) {
         return { state: 'dead', reason: 'passage-empty' };
       }
-      return { state: 'ready', expectation };
+      // The passage's first note across BOTH hands (read before the step picked its hand): the count
+      // belongs to the passage, so a hand that enters later rests where the pickup is.
+      const passageFirstOnsetQuarter = firstSoundingOnsetQuarter(excerpt.musicXml);
+      return { state: 'ready', expectation: Number.isFinite(passageFirstOnsetQuarter) ? { ...expectation, passageFirstOnsetQuarter } : expectation };
     } catch (error) {
       return { state: 'dead', reason: 'expectation-uncompilable', error: error?.message ?? String(error) };
     }
-  }, [layout, notes, sourceId, fallbackBpm, requestedParts, excerpt.inheritedTempoMap, excerpt.originalMeasureIndices, tempoPercent]);
+  }, [layout, notes, sourceId, fallbackBpm, requestedParts, excerpt.inheritedTempoMap, excerpt.musicXml, excerpt.originalMeasureIndices, tempoPercent]);
 
   const expectation = compiled.state === 'ready' ? compiled.expectation : null;
   const systemCount = useMemo(

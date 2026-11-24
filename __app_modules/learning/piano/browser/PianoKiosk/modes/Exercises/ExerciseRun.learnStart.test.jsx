@@ -316,8 +316,10 @@ describe('a cued Learn passage counts up with the clicks (A2)', () => {
       advance(firstClick + offset - Date.now());
       seen.push([band().dataset.count, band().querySelector('.piano-learn-countin__cue').textContent]);
     }
-    expect(seen).toEqual([['1', ''], ['2', ''], ['3', ''], ['4', 'next click: play']]);
-    // (the press itself is click 1)
+    // The press itself is click 1; until the last click the band says where to come in.
+    expect(seen).toEqual([['1', 'Play on the ♩'], ['2', 'Play on the ♩'], ['3', 'Play on the ♩'], ['4', 'next click: play']]);
+    // The note box sits after the four count boxes from the first click.
+    expect(band().querySelectorAll('.piano-learn-countin__pip')).toHaveLength(5);
     advance(firstClick + LEAD_IN + 60 - Date.now());
     expect(band()).toBeNull();
     expect(document.querySelector('.piano-score-countin')).toBeNull();
@@ -436,9 +438,22 @@ describe('a cued Learn passage counts a pickup in on its own beat', () => {
       advance(firstClick + offset - Date.now());
       seen.push([band().dataset.count, band().querySelector('.piano-learn-countin__cue').textContent]);
     }
-    expect(seen).toEqual([['1', ''], ['2', ''], ['3', 'next click: play']]);
+    expect(seen).toEqual([['1', 'Play on the ♩'], ['2', 'Play on the ♩'], ['3', 'next click: play']]);
+    // A bar of two (the ready bar), then the pickup's bar: one count, and the note in its beat.
+    expect([...band().querySelectorAll('.piano-learn-countin__bar')].map((bar) => bar.textContent)).toEqual(['12', '1♩']);
     advance(firstClick + 3 * BEAT + 60 - Date.now());
     expect(band()).toBeNull();
+  });
+
+  it('the press is beat one of the ready bar; the pickup is due three clicks after it', async () => {
+    h.measureMap = [{ index: 0, onsetQuarter: 0, durationQuarters: 2 }, { index: 1, onsetQuarter: 2, durationQuarters: 4 }];
+    await mount();
+    const pressedAt = armByTap();
+    expect(events('piano.exercise-countdown-started').at(-1)).toMatchObject({ entry: 'aligned', readyBar: true, bars: 2, slots: 4, pulseCount: 3 });
+    PASSAGE.forEach((midi, index) => { advance(pressedAt + 3 * BEAT + index * BEAT + 20 - Date.now()); strike(midi); });
+    finish();
+    advance(1000);
+    expect(current.onPassed).toHaveBeenCalledTimes(1);
   });
 
   it('grades a passage that opens on a rest from the first note, where the count says play', async () => {
@@ -471,7 +486,7 @@ describe('a missed cue goes back to the count', () => {
     expect(events('piano.exercise-cue-missed')).toEqual([expect.objectContaining({ attempt: 1, windowMs: 400, offsetMs: null })]);
     expect(run()).toHaveAttribute('data-phase', 'ready');
     expect(screen.getAllByText(/missed the cue/i).length).toBeGreaterThan(0);
-    expect(document.querySelector('.piano-learn-countin__cue').textContent).toBe('You missed the cue — counting in again');
+    expect(document.querySelector('.piano-learn-countin__cue').textContent).toBe('You missed the cue — come in on the ♩');
     expect(document.querySelector('.piano-exercise-run__result')).toBeNull();
     expect(current.onFailed).not.toHaveBeenCalled();
     advance(1000);

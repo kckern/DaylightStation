@@ -1667,7 +1667,8 @@ describe('timed practice groove at 1920x1200 in real Chromium', () => {
       await page.waitForFunction((text) => document.querySelector('.piano-learn-countin')?.dataset.count === text, count);
     }
     expect((await probe.one('.piano-learn-countin__cue')).text).toBe('next click: play');
-    expect((await probe.one('.piano-learn-countin__pip.is-current')).text).toBe('4');
+    // Half-note pulse in 4/4: two clicks a bar, so the fourth click is beat 2 of the second bar.
+    expect((await probe.one('.piano-learn-countin__pip.is-current')).text).toBe('2');
     await page.screenshot({ path: '/tmp/piano-groove-next-click.png' });
     await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.dataset.beatPulse === '1');
     expect(await probe.count('.piano-learn-countin')).toBe(0);

@@ -188,23 +188,86 @@ export function polishCountIn(plan, { fromTop, measures, firstOnsetQuarter, time
   return { ...plan, beats: clicks, totalMs: clicks * plan.periodMs, entry: aligned.entry };
 }
 
-/** At most four countable pulses on the exercise's graded musical grid, ending on the beat before the first note. */
-export function exerciseCountInPlan({ beatsPerMeasure, gradedBpm, onsetQuarters, measures }) {
+/**
+ * THE PICKUP COUNT IS COUNTED IN BARS (2026-11-24). Cutting the count to end on the beat before a
+ * pickup ("1, 2, 3" and play on the unsaid 4) gave a child no target and too little time, and a hand
+ * that enters on the downbeat counted four, so the count changed between steps of one passage. Now:
+ *  - the count ends with the LANDING BAR, the bar holding the passage's first note (both hands);
+ *  - a READY BAR comes first unless the landing bar alone gives READY_BAR_MS and two audible clicks
+ *    after the press (the press is beat one and is not sounded), or the take is a missed-cue restart;
+ *  - the count belongs to the passage: a hand that enters later rests where the pickup is;
+ *  - `slots` lay the count out beat by beat, the step's entry drawn as a `note` slot in its beat.
+ * A passage that opens on a downbeat keeps exactly today's count (at most four clicks, a bar before).
+ */
+const READY_BAR_MS = 2500;
+const MIN_AUDIBLE_CLICKS = 2;
+
+function countSlots({ entryPosition, perBar, restPosition = null }) {
+  const slots = [];
+  const last = Math.ceil(entryPosition - WHOLE);
+  for (let k = 0; k <= last; k += 1) {
+    if (k === last && !isWhole(entryPosition)) {
+      slots.push({ bar: Math.floor(k / perBar) + 1, beat: (k % perBar) + 1, kind: 'count' });
+      slots.push({ bar: Math.floor(k / perBar) + 1, beat: (k % perBar) + 1, kind: 'note', half: true });
+      return slots;
+    }
+    const kind = k === last ? 'note' : restPosition != null && k === restPosition ? 'rest' : 'count';
+    slots.push({ bar: Math.floor(k / perBar) + 1, beat: (k % perBar) + 1, kind });
+  }
+  return slots;
+}
+
+/**
+ * @param {{ beatsPerMeasure:number, gradedBpm:number, onsetQuarters:number[], measures?:Array,
+ *   passageFirstOnsetQuarter?:number, forceReadyBar?:boolean }} p
+ * @returns {{ clicks:number, periodMs:number, leadInMs:number, pulseBpm:number,
+ *   entry:'downbeat'|'aligned'|'offbeat'|'unaligned', bars:number, readyBar:boolean,
+ *   slots:Array<{bar:number, beat:number, kind:'count'|'rest'|'note', half?:boolean}>}|null}
+ *   `leadInMs` is the time from the count's start (the press) to the step's first note.
+ */
+export function exerciseCountInPlan({ beatsPerMeasure, gradedBpm, onsetQuarters, measures, passageFirstOnsetQuarter, forceReadyBar = false }) {
   if (!Number.isFinite(gradedBpm) || gradedBpm <= 0) return null;
-  const pulse = askPulseQuarters(onsetQuarters) ?? 1;
+  const stepFirst = Number(onsetQuarters?.[0]);
+  const passageFirst = Number.isFinite(passageFirstOnsetQuarter) ? passageFirstOnsetQuarter : stepFirst;
+  const entryQuarters = entryOffsetQuarters({ measures, firstOnsetQuarter: passageFirst });
+  // The hand's own pulse, unless the passage's pickup does not land on it (a LH of whole notes under
+  // a one-beat pickup): then quarters, so both hands of the passage hear the same count.
+  let pulse = askPulseQuarters(onsetQuarters) ?? 1;
+  if (entryQuarters > WHOLE && !isWhole(entryQuarters / pulse) && isWhole(entryQuarters)) pulse = 1;
   const plan = countInPlan({ beats: beatsPerMeasure, bpm: gradedBpm / pulse });
   const pulseQuarters = plan.periodMs * gradedBpm / 60000;
-  const entryQuarters = entryOffsetQuarters({ measures, firstOnsetQuarter: onsetQuarters?.[0] });
   const bars = Array.isArray(measures) ? measures.slice(1).map((m) => m.durationQuarters).filter((d) => d > 0) : [];
   const barQuarters = bars.length ? Math.max(...bars) : (Number.isFinite(beatsPerMeasure) ? beatsPerMeasure : 4);
-  const { clicks, entry } = alignCountIn({ clicks: Math.min(4, plan.beats), pulseQuarters, barQuarters, entryQuarters });
-  return {
+  const perBarExact = barQuarters / pulseQuarters;
+  const perBar = Math.max(1, Math.round(perBarExact));
+  // How far (in clicks) the step's own first note sits after the passage's.
+  const lag = Number.isFinite(stepFirst) && Number.isFinite(passageFirst) ? Math.max(0, (stepFirst - passageFirst) / pulseQuarters) : 0;
+  const result = (clicks, entryPosition, entry, readyBar, restPosition = null) => ({
     clicks,
     periodMs: plan.periodMs,
-    leadInMs: clicks * plan.periodMs,
+    leadInMs: entryPosition * plan.periodMs,
     pulseBpm: 60000 / plan.periodMs,
     entry,
-  };
+    bars: Math.max(1, Math.ceil((entryPosition + WHOLE) / perBar)),
+    readyBar,
+    slots: countSlots({ entryPosition, perBar, restPosition }),
+  });
+  if (!(entryQuarters > WHOLE)) {
+    const clicks = Math.min(4, plan.beats);
+    return result(clicks + lag, clicks + lag, 'downbeat', false, lag > WHOLE ? clicks : null);
+  }
+  const before = entryQuarters / pulseQuarters;
+  if (!(pulseQuarters > 0) || !isWhole(perBarExact)) {
+    const clicks = Math.min(4, plan.beats);
+    return result(clicks, clicks, 'unaligned', false);
+  }
+  const whole = isWhole(before);
+  const audibleInLandingBar = Math.ceil(before - WHOLE) - 1;
+  const readyBar = forceReadyBar || before * plan.periodMs < READY_BAR_MS - WHOLE || audibleInLandingBar < MIN_AUDIBLE_CLICKS;
+  const passagePosition = (readyBar ? perBar : 0) + before;
+  const entryPosition = passagePosition + lag;
+  const clicks = Math.ceil(entryPosition - WHOLE);
+  return result(clicks, entryPosition, whole ? 'aligned' : 'offbeat', readyBar, lag > WHOLE && isWhole(passagePosition) ? passagePosition : null);
 }
 
 /** Remaining pulses and a draining bar, projected from the run's elapsed time. */
@@ -232,10 +295,16 @@ export function countdownPresentation({ clicks, elapsedMs, leadInMs }) {
  *   pre-roll (no click has sounded yet); 1..clicks = the click now sounding;
  *   null once the first beat arrives (nothing to show, no PLAY).
  */
-export function countUpPresentation({ clicks, elapsedMs, leadInMs }) {
+export function countUpPresentation({ clicks, elapsedMs, leadInMs, periodMs = null, slots = null }) {
   if (!(clicks > 0) || !(leadInMs > 0)) return null;
   if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return { count: 0, clicks, last: false };
   if (elapsedMs >= leadInMs) return null;
+  if (Array.isArray(slots) && slots.length && periodMs > 0) {
+    // Slot-shaped (bar) counts: the slot under the click; the cue on the click before the note.
+    const index = Math.min(clicks - 1, Math.floor(elapsedMs / periodMs));
+    const next = slots[index + 1];
+    return { count: index + 1, clicks, last: next?.kind === 'note' && !slots[index + 2] && !(next.half && slots[index]?.kind === 'count' && index + 1 < clicks), slot: slots[index] };
+  }
   const count = Math.min(clicks, Math.floor(elapsedMs / (leadInMs / clicks)) + 1);
   return { count, clicks, last: count === clicks };
 }

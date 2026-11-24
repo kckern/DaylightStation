@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { excerptMusicXml, selectMusicXmlParts } from './scorePassageXml.js';
+import { excerptMusicXml, selectMusicXmlParts, firstSoundingOnsetQuarter } from './scorePassageXml.js';
 
 const measures = (count, { labels = [], prefix = '' } = {}) => Array.from({ length: count }, (_, index) => `
   <measure number="${labels[index] ?? index + 1}">
@@ -105,5 +105,29 @@ describe('selectMusicXmlParts', () => {
     const document = parse(selectMusicXmlParts(threeParts, ['p3']).musicXml);
     expect([...document.querySelectorAll('part')].map((part) => part.getAttribute('id'))).toEqual(['P3']);
     expect([...document.querySelectorAll('score-part')].map((part) => part.getAttribute('id'))).toEqual(['P3']);
+  });
+});
+
+describe('firstSoundingOnsetQuarter (the passage\'s first note, both hands)', () => {
+  // Santa Claus's opening: a one-quarter pickup, RH G4 on staff 1 while staff 2 rests; bar 1 both staves.
+  const santa = `<?xml version="1.0"?><score-partwise version="3.1"><part-list><score-part id="P1"/></part-list><part id="P1">
+    <measure number="0" implicit="yes"><attributes><divisions>2</divisions><staves>2</staves></attributes>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration><staff>1</staff></note>
+      <backup><duration>2</duration></backup>
+      <note><rest/><duration>2</duration><staff>2</staff></note></measure>
+    <measure number="1"><note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><staff>1</staff></note>
+      <backup><duration>1</duration></backup>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>8</duration><staff>2</staff></note></measure>
+  </part></score-partwise>`;
+  it('finds the pickup note at quarter 0 across both staves', () => {
+    expect(firstSoundingOnsetQuarter(santa)).toBe(0);
+  });
+  it('skips rests: a passage that opens on a rest starts at its first note', () => {
+    const rested = santa.replace('<note><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration><staff>1</staff></note>', '<note><rest/><duration>2</duration><staff>1</staff></note>');
+    expect(firstSoundingOnsetQuarter(rested)).toBe(1);
+  });
+  it('returns null for an unreadable or silent document', () => {
+    expect(firstSoundingOnsetQuarter('not xml')).toBeNull();
+    expect(firstSoundingOnsetQuarter(null)).toBeNull();
   });
 });

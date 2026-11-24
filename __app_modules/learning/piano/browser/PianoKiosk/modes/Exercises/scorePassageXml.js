@@ -188,3 +188,52 @@ export function selectMusicXmlParts(musicXml, requestedParts) {
   return { musicXml: new XMLSerializer().serializeToString(document), originalStaffIndices, error: null };
 }
 import { partIdForStaff } from '../../../performance/partIdentity.js';
+
+/**
+ * THE PASSAGE'S FIRST NOTE, IN QUARTERS FROM THE EXCERPT'S START, ACROSS EVERY PART AND STAFF —
+ * read before a step selects its hand, so a left-hand step can be counted in with the passage's
+ * count (its pickup rest included), not one of its own. Rests, grace notes and chord members do
+ * not advance or start anything; `backup`/`forward` move the voice clock. Null when nothing sounds.
+ *
+ * @param {string} musicXml an excerpt from `excerptMusicXml`
+ * @returns {number|null}
+ */
+export function firstSoundingOnsetQuarter(musicXml) {
+  if (typeof musicXml !== 'string' || !musicXml) return null;
+  let document;
+  try { document = new DOMParser().parseFromString(musicXml, 'application/xml'); } catch { return null; }
+  if (!document || document.getElementsByTagName('parsererror').length) return null;
+  const number = (element, name) => Number(directChildren(element, name)[0]?.textContent);
+  let first = null;
+  for (const part of document.getElementsByTagName('part')) {
+    let divisions = 1;
+    let barStart = 0;
+    for (const measure of directChildren(part, 'measure')) {
+      let clock = 0;
+      let longest = 0;
+      for (const node of [...measure.children]) {
+        if (node.localName === 'attributes') {
+          const d = number(node, 'divisions');
+          if (d > 0) divisions = d;
+        } else if (node.localName === 'backup') {
+          clock -= number(node, 'duration') || 0;
+        } else if (node.localName === 'forward') {
+          clock += number(node, 'duration') || 0;
+        } else if (node.localName === 'note') {
+          if (directChildren(node, 'grace').length) continue;
+          // A chord member sounds with the note before it: it neither starts earlier nor advances.
+          if (directChildren(node, 'chord').length) continue;
+          const duration = number(node, 'duration') || 0;
+          if (!directChildren(node, 'rest').length) {
+            const at = barStart + clock / divisions;
+            if (first == null || at < first) first = at;
+          }
+          clock += duration;
+        }
+        longest = Math.max(longest, clock);
+      }
+      barStart += longest / divisions;
+    }
+  }
+  return first;
+}
