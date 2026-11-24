@@ -52,18 +52,6 @@ export function drawCover(ctx, img, dx, dy, dw, dh) {
 }
 
 /**
- * Flip a canvas 180 degrees for upside-down mounted printers.
- */
-export function flipCanvas(createNodeCanvas, canvas, width, height) {
-  const flipped = createNodeCanvas(width, height);
-  const fctx = flipped.getContext('2d');
-  fctx.translate(width, height);
-  fctx.scale(-1, -1);
-  fctx.drawImage(canvas, 0, 0);
-  return flipped;
-}
-
-/**
  * Format duration in seconds to human-readable string.
  */
 export function formatDuration(seconds) {

@@ -69,6 +69,52 @@ describe('AmbientLedAdapter', () => {
     });
   });
 
+  describe('throttle window (deferred, not dropped)', () => {
+    afterEach(() => vi.useRealTimers());
+
+    test('a scene change inside the window is applied when the window ends', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-11-24T04:01:30Z'));
+      await adapter.syncZone({ zones: [{ zoneId: 'fire', isActive: true }], householdId: 'h' });
+      expect(mockGateway.activateScene).toHaveBeenLastCalledWith('scene.led_red');
+
+      vi.advanceTimersByTime(500);
+      const result = await adapter.syncZone({ zones: [{ zoneId: 'hot', isActive: true }], householdId: 'h' });
+      expect(result.deferred).toBe(true);
+      expect(result.deferMs).toBe(1500);
+      expect(mockGateway.activateScene).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(mockGateway.activateScene).toHaveBeenCalledTimes(2);
+      expect(mockGateway.activateScene).toHaveBeenLastCalledWith('scene.led_orange');
+    });
+
+    test('the latest request wins over a deferred one', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-11-24T04:01:30Z'));
+      await adapter.syncZone({ zones: [{ zoneId: 'fire', isActive: true }], householdId: 'h' });
+      vi.advanceTimersByTime(300);
+      await adapter.syncZone({ zones: [{ zoneId: 'hot', isActive: true }], householdId: 'h' });
+      vi.advanceTimersByTime(300);
+      await adapter.syncZone({ zones: [{ zoneId: 'warm', isActive: true }], householdId: 'h' });
+
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(mockGateway.activateScene).toHaveBeenCalledTimes(2);
+      expect(mockGateway.activateScene).toHaveBeenLastCalledWith('scene.led_yellow');
+    });
+
+    test('reset cancels a deferred change', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-11-24T04:01:30Z'));
+      await adapter.syncZone({ zones: [{ zoneId: 'fire', isActive: true }], householdId: 'h' });
+      vi.advanceTimersByTime(500);
+      await adapter.syncZone({ zones: [{ zoneId: 'hot', isActive: true }], householdId: 'h' });
+      adapter.reset();
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(mockGateway.activateScene).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('syncZone', () => {
     test('activates scene for active zones', async () => {
       const result = await adapter.syncZone({

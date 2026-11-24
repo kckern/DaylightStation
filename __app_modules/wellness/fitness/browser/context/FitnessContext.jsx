@@ -654,6 +654,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     usersConfig,
     ringTimeUnitMs,
     zoneConfig,
+    zoneStability,
     governanceConfig,
     equipmentConfig,
     nomusicLabels,
@@ -698,6 +699,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       // session. Both names are accepted until the config is migrated.
       ringTimeUnitMs: root?.ring_time_unit_ms ?? root?.coin_time_unit_ms,
       zoneConfig: root?.zones,
+      zoneStability: root?.zone_stability ?? null,
       governanceConfig: {
         ...governance,
         governed_labels: normalizedGovernedLabels,
@@ -873,6 +875,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     ant_devices,
     usersConfig,
     zoneConfig,
+    zoneStability,
     governanceConfig,
     ringTimeUnitMs,
     equipmentConfig,
@@ -880,7 +883,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     governedLabels,
     governedTypes,
     sessionsConfig
-  }), [ant_devices, usersConfig, zoneConfig, governanceConfig, ringTimeUnitMs, equipmentConfig, nomusicLabels, governedLabels, governedTypes, sessionsConfig]);
+  }), [ant_devices, usersConfig, zoneConfig, zoneStability, governanceConfig, ringTimeUnitMs, equipmentConfig, nomusicLabels, governedLabels, governedTypes, sessionsConfig]);
 
   const configurationSignature = React.useMemo(() => JSON.stringify({
     ...configurationInputs,
@@ -993,6 +996,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       }
     };
   }, [ringTimeUnitMs, zoneConfig, usersConfig, batchedForceUpdate, version]);
+
+  // Household `zone_stability:` tunables for the zone commit/hysteresis rules.
+  useEffect(() => {
+    fitnessSessionRef.current?.zoneProfileStore?.configureStability?.(zoneStability);
+  }, [zoneStability, version]);
 
   useEffect(() => {
     const session = fitnessSessionRef.current;
@@ -2511,6 +2519,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       fallbackLadder: profile ? null : zoneConfig,
       committedZoneId: committedZoneId(profile),
       committedZoneColor: profile?.zoneTrusted === false ? null : (profile?.currentZoneColor || null),
+      untrusted: profile?.zoneTrusted === false,
     });
   }, [zoneProfileLookup, zoneConfig]);
 

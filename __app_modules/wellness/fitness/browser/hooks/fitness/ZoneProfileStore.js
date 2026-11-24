@@ -43,17 +43,17 @@ const cloneSnapshot = (snapshot) => {
 const now = () => Date.now();
 
 // Hysteresis: after a zone commit, rapid toggling protection activates for this window
-const HYSTERESIS_COOLDOWN_MS = 5000;
+const DEFAULT_HYSTERESIS_COOLDOWN_MS = 5000;
 // During rapid toggling, the new zone must be stable for this long before committing
-const HYSTERESIS_STABILITY_MS = 3000;
+const DEFAULT_HYSTERESIS_STABILITY_MS = 3000;
 // Schmitt trigger: to LEAVE a zone, HR must drop this many BPM below the zone's min threshold
-const EXIT_MARGIN_BPM = 5;
+const DEFAULT_EXIT_MARGIN_BPM = 5;
 // An UPWARD commit needs this many separate samples in the higher zone,
 // spanning at least UPWARD_CONFIRM_MS. One corrupt 204 bpm packet committed
 // Fire instantly twice on 2026-10-23 (ops:docs/_wip/bugs/2026-10-23-fitness-
 // false-fire-ceremonies-recurring.md). A real climb pays about 1s.
 export const UPWARD_CONFIRM_SAMPLES = 2;
-export const UPWARD_CONFIRM_MS = 1000;
+export const UPWARD_CONFIRM_MS = 1000; // default; household config `zone_stability.upward_confirm_ms` overrides
 // Fire must be REACHED, not touched. On 2026-11-17 a rider sat at exactly 160
 // on a 160 floor for ~3s (160, 160, 160, then 159); the 1s confirm committed
 // Fire, the garage went red and the ceremony played. His real Fire that day
@@ -76,11 +76,31 @@ export const FIRE_UPWARD_CONFIRM_MS = 5000;
 // fitness-returning-rider-zone-suppressed-after-break.md).
 export const ZONE_TRUST_RESUME_WINDOW_MS = 60 * 60 * 1000;
 
+// Household `zone_stability:` block in fitness config.yml overrides these
+// (all optional; a missing or non-numeric key keeps the default).
+export const ZONE_STABILITY_DEFAULTS = Object.freeze({
+  hysteresisCooldownMs: DEFAULT_HYSTERESIS_COOLDOWN_MS,
+  hysteresisStabilityMs: DEFAULT_HYSTERESIS_STABILITY_MS,
+  exitMarginBpm: DEFAULT_EXIT_MARGIN_BPM,
+  upwardConfirmMs: UPWARD_CONFIRM_MS,
+  fireQuickConfirmMs: FIRE_QUICK_CONFIRM_MS,
+  fireUpwardConfirmMs: FIRE_UPWARD_CONFIRM_MS,
+});
+const ZONE_STABILITY_YAML_KEYS = {
+  hysteresis_cooldown_ms: 'hysteresisCooldownMs',
+  hysteresis_stability_ms: 'hysteresisStabilityMs',
+  exit_margin_bpm: 'exitMarginBpm',
+  upward_confirm_ms: 'upwardConfirmMs',
+  fire_quick_confirm_ms: 'fireQuickConfirmMs',
+  fire_upward_confirm_ms: 'fireUpwardConfirmMs',
+};
+
 export class ZoneProfileStore {
   constructor() {
     this._profiles = new Map();
     this._signature = null;
     this._baseZoneConfig = null;
+    this._stability = { ...ZONE_STABILITY_DEFAULTS };
     // Per-user hysteresis state: Map<userId, { committedZoneId, lastCommitTs, rawZoneId, rawZoneStableSince }>
     this._hysteresis = new Map();
     this._trustedUsers = new Set();
@@ -230,6 +250,16 @@ export class ZoneProfileStore {
   /** Revision of per-user thresholds, independent of volatile zone/HR state. */
   getZoneConfigRevision() {
     return this._zoneConfigRevision;
+  }
+
+  /** Apply the household `zone_stability:` block (snake_case YAML keys) over the defaults. */
+  configureStability(block) {
+    const next = { ...ZONE_STABILITY_DEFAULTS };
+    for (const [yamlKey, key] of Object.entries(ZONE_STABILITY_YAML_KEYS)) {
+      const v = Number(block?.[yamlKey]);
+      if (block?.[yamlKey] != null && Number.isFinite(v) && v >= 0) next[key] = v;
+    }
+    this._stability = next;
   }
 
   setBaseZoneConfig(zoneConfig) {
@@ -691,9 +721,9 @@ export class ZoneProfileStore {
    *   zone spanning UPWARD_CONFIRM_MS — one corrupt packet cannot commit it
    *   (Fire: FIRE_QUICK_CONFIRM_* with a reading above the floor, else
    *   FIRE_UPWARD_CONFIRM_SAMPLES spanning FIRE_UPWARD_CONFIRM_MS)
-   * - Downward move after a quiet HYSTERESIS_COOLDOWN_MS: instant
-   * - Rapid toggling (second change within HYSTERESIS_COOLDOWN_MS): require
-   *   the new zone to be stable for HYSTERESIS_STABILITY_MS before committing
+   * - Downward move after a quiet hysteresis cooldown (zone_stability.hysteresis_cooldown_ms): instant
+   * - Rapid toggling (second change within the cooldown): require
+   *   the new zone to be stable for hysteresis_stability_ms before committing
    *
    * @param {string} userId
    * @param {string|null} rawZoneId - zone derived directly from current HR
@@ -702,6 +732,7 @@ export class ZoneProfileStore {
    */
   #applyHysteresis(userId, rawZoneId, zoneConfig, heartRate, sampleAt = null, seedZoneId = null) {
     const ts = now();
+    const cfg = this._stability;
     const lookupZone = (id) => {
       if (!id) return { zoneId: null, zoneName: null, zoneColor: null };
       const zone = (zoneConfig || []).find(z => z.id === id);
@@ -727,7 +758,7 @@ export class ZoneProfileStore {
 
     // No reading is not a zone change. Never commit it:
     // a commit here stamped lastCommitTs, so a strap restored within the
-    // cooldown had its real zone held back for HYSTERESIS_STABILITY_MS — 170 bpm
+    // cooldown had its real zone held back for the stability window — 170 bpm
     // read as Cool and governance flashed a warning (2026-10-21, arcade).
     let state = this._hysteresis.get(userId);
     if (!(Number.isFinite(heartRate) && heartRate > 0)) {
@@ -748,7 +779,7 @@ export class ZoneProfileStore {
         this._hysteresis.set(userId, {
           committedZoneId: seedZoneId,
           // Not a zone change (the rider already had this zone): no cooldown.
-          lastCommitTs: ts - HYSTERESIS_COOLDOWN_MS - 1,
+          lastCommitTs: ts - cfg.hysteresisCooldownMs - 1,
           rawZoneId,
           rawZoneStableSince: ts,
           rawSamples: 1,
@@ -793,11 +824,11 @@ export class ZoneProfileStore {
     if (committedRank >= 0 && rawRank >= 0 && rawRank < committedRank && Number.isFinite(heartRate)) {
       const committedMin = getZoneMinThreshold(state.committedZoneId);
       if (committedMin !== null) {
-        const exitThreshold = Math.max(0, committedMin - EXIT_MARGIN_BPM);
+        const exitThreshold = Math.max(0, committedMin - cfg.exitMarginBpm);
         if (heartRate >= exitThreshold) {
           getLogger()?.sampled?.('zoneprofilestore.exit_margin_suppressed', {
             userId, heartRate, committedZoneId: state.committedZoneId, rawZoneId,
-            committedMin, exitThreshold, exitMarginBpm: EXIT_MARGIN_BPM
+            committedMin, exitThreshold, exitMarginBpm: cfg.exitMarginBpm
           }, { maxPerMinute: 3 });
           state.rawZoneId = state.committedZoneId;
           state.rawZoneStableSince = ts;
@@ -825,21 +856,21 @@ export class ZoneProfileStore {
     if (rawZoneId === FIRE_ZONE_ID) {
       const fireMin = getZoneMinThreshold(FIRE_ZONE_ID);
       const reachedAbove = fireMin !== null && Math.round(state.rawPeakHr ?? 0) > fireMin;
-      confirmed = (reachedAbove && held(FIRE_QUICK_CONFIRM_SAMPLES, FIRE_QUICK_CONFIRM_MS))
-        || held(FIRE_UPWARD_CONFIRM_SAMPLES, FIRE_UPWARD_CONFIRM_MS);
+      confirmed = (reachedAbove && held(FIRE_QUICK_CONFIRM_SAMPLES, cfg.fireQuickConfirmMs))
+        || held(FIRE_UPWARD_CONFIRM_SAMPLES, cfg.fireUpwardConfirmMs);
     } else {
-      confirmed = held(UPWARD_CONFIRM_SAMPLES, UPWARD_CONFIRM_MS);
+      confirmed = held(UPWARD_CONFIRM_SAMPLES, cfg.upwardConfirmMs);
     }
     if (upward && !confirmed) {
       return { ...lookupZone(state.committedZoneId), ...lookupRawZone(rawZoneId), commitPath: 'pending-upward', ...trace };
     }
 
-    if (timeSinceLastCommit > HYSTERESIS_COOLDOWN_MS) {
+    if (timeSinceLastCommit > cfg.hysteresisCooldownMs) {
       // No recent zone change — commit (a confirmed climb, or a drop at once)
       return commit(upward ? 'confirmed-upward' : 'downgrade');
     }
 
-    if (rawStableDuration >= HYSTERESIS_STABILITY_MS) {
+    if (rawStableDuration >= cfg.hysteresisStabilityMs) {
       // Rapid toggling detected but new zone has been stable long enough — commit
       return commit(upward ? 'confirmed-upward' : 'stable');
     }

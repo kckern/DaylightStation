@@ -6,8 +6,10 @@ import { committedZoneId } from '../../lib/committedZone.js';
  * via the backend /fitness/zone_led endpoint.
  *
  * Features:
- * - Throttled updates (default 5s) to avoid spamming backend
- * - Debounced zone changes (1s) for stability
+ * - Sends each committed zone change within ~250ms (at most one POST a second)
+ * - The zone store already debounces zones, and the backend adapter keeps its
+ *   own minimum spacing between scene changes, applying a change that arrives
+ *   too soon when the spacing ends
  * - Automatic session-end LED-off
  * - Graceful degradation on errors
  *
@@ -18,8 +20,11 @@ import { committedZoneId } from '../../lib/committedZone.js';
 import { useFitnessStateSync } from "./useFitnessStateSync.js";
 import { getLogger } from "../../../../../../frontend/src/lib/logging/Logger.js";
 
-const THROTTLE_MS = 5000; // Minimum interval between LED updates
-const DEBOUNCE_MS = 1000; // Wait for zone stability before sending
+// The lights trail the committed zone by at most THROTTLE_MS. They were 5000 / 1000:
+// on 2026-11-23 Fire -> Hot committed at :30.1 and the strips changed at :32.1,
+// because another rider's change had been sent 3.4s earlier.
+const THROTTLE_MS = 1000; // Minimum interval between LED POSTs
+const DEBOUNCE_MS = 250;  // Coalesce a render burst of zone changes into one POST
 
 /**
  * Build a signature string for zone state comparison

@@ -83,4 +83,15 @@ describe('displayZoneRecord', () => {
   it('a reading with no ladder at all falls back to the held zone', () => {
     expect(displayZoneRecord({ heartRate: 150, committedZoneId: 'warm' })).toMatchObject({ zoneId: 'warm', live: false, showBar: false });
   });
+
+  it('an untrusted reading claims no zone, however hot it reads', () => {
+    expect(displayZoneRecord({ heartRate: 170, ladder: LADDER, untrusted: true })).toEqual({
+      zoneId: null, zoneName: null, zoneColor: null, progress: null, showBar: false, max: false, live: true, untrusted: true,
+    });
+  });
+
+  it('untrusted with no reading: nothing to mark, the normal no-reading record', () => {
+    expect(displayZoneRecord({ heartRate: null, ladder: LADDER, untrusted: true })).toMatchObject({ zoneId: null, live: false });
+    expect(displayZoneRecord({ heartRate: null, ladder: LADDER, untrusted: true }).untrusted).toBeUndefined();
+  });
 });

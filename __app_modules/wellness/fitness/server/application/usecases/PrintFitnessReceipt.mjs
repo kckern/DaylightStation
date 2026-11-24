@@ -6,14 +6,16 @@ export class PrintFitnessReceipt {
     this.imagePrintGateway = imagePrintGateway;
   }
 
-  async execute({ sessionId, location, upsidedown }) {
+  // The receipt is rendered upright; the thermal printer adapter rotates image
+  // items for a printer mounted upside down.
+  async execute({ sessionId, location }) {
     let printer;
     try {
       printer = this.printerRegistry.resolve(location);
     } catch (error) {
       return { kind: 'printer_not_found', error: error.message };
     }
-    const result = await this.createReceiptCanvas(sessionId, upsidedown);
+    const result = await this.createReceiptCanvas(sessionId);
     if (!result) return { kind: 'session_not_found' };
     const buffer = result.canvas.toBuffer('image/png');
     const outcome = await this.imagePrintGateway.print(printer, {

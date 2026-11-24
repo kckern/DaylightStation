@@ -11,7 +11,7 @@
 
 import moment from 'moment-timezone';
 import { wrapText } from '#rendering/lib/TextRenderer.mjs';
-import { drawDivider, drawBorder, flipCanvas, formatDuration } from '#rendering/lib/LayoutHelpers.mjs';
+import { drawDivider, drawBorder, formatDuration } from '#rendering/lib/LayoutHelpers.mjs';
 import { initCanvas } from '#rendering/lib/CanvasFactory.mjs';
 import { fitnessReceiptTheme as theme } from "./fitnessReceiptTheme.mjs";
 
@@ -29,13 +29,14 @@ export function createFitnessReceiptRenderer(config) {
   const { fontDir } = config;
 
   /**
-   * Render a fitness receipt canvas.
+   * Render a fitness receipt canvas, always upright. A printer mounted upside
+   * down is handled by the thermal printer adapter, which rotates image items
+   * itself; flipping here as well would print the receipt upside down.
    *
    * @param {Object} model - Complete precomputed receipt presentation model
-   * @param {boolean} [upsidedown=false]
    * @returns {Promise<{canvas, width: number, height: number}>}
    */
-  async function createCanvas(model, upsidedown = false) {
+  async function createCanvas(model) {
     if (!model) return null;
 
     // Register the receipt font and grab a 1x1 scratch context for text
@@ -613,12 +614,6 @@ export function createFitnessReceiptRenderer(config) {
         }
         y += 6;
       }
-    }
-
-    // ─── Handle upside-down ───────────────────────────────
-    if (upsidedown) {
-      const flipped = flipCanvas(createNodeCanvas, canvas, width, height);
-      return { canvas: flipped, width, height };
     }
 
     return { canvas, width, height };

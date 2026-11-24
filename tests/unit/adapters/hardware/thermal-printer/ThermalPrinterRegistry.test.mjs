@@ -91,10 +91,10 @@ describe('ThermalPrinterRegistry', () => {
       const list = registry.list();
       expect(list).toHaveLength(2);
       expect(list).toContainEqual({
-        name: 'upstairs', host: '10.20.30.137', port: 9100, isDefault: false,
+        name: 'upstairs', host: '10.20.30.137', port: 9100, isDefault: false, fallback: [],
       });
       expect(list).toContainEqual({
-        name: 'downstairs', host: '10.20.30.50', port: 9100, isDefault: true,
+        name: 'downstairs', host: '10.20.30.50', port: 9100, isDefault: true, fallback: [],
       });
     });
 

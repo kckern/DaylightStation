@@ -418,9 +418,7 @@ export function createGratitudeRouter(config) {
   // ===========================================================================
 
   /**
-   * GET /api/gratitude/card - Preview gratitude card as PNG image
-   * Query params:
-   *   - upsidedown: 'true' to flip for mounted printer
+   * GET /api/gratitude/card - Preview gratitude card as PNG image (upright)
    *
    * Note: The createGratitudeCardCanvas function fetches selections internally
    * using the legacy bridge which delegates to the DDD GratitudeService.
@@ -432,10 +430,8 @@ export function createGratitudeRouter(config) {
       });
     }
 
-    const upsidedown = req.query.upsidedown === 'true';
-
     // Generate canvas (function fetches selections internally)
-    const { canvas } = await createGratitudeCardCanvas(upsidedown);
+    const { canvas } = await createGratitudeCardCanvas();
 
     // Convert to PNG buffer
     const buffer = canvas.toBuffer('image/png');
@@ -448,9 +444,8 @@ export function createGratitudeRouter(config) {
 
   /**
    * GET /api/gratitude/card/print - Generate and print gratitude card
-   * Only marks items as printed if print succeeds
-   * Query params:
-   *   - upsidedown: 'true' to flip for mounted printer (default: true for print)
+   * Only marks items as printed if print succeeds. The card is rendered upright;
+   * the thermal printer adapter rotates it for an upside-down mounted printer.
    *
    * Note: The createGratitudeCardCanvas function returns selectedIds that were
    * included in the generated card, which are then marked as printed.
@@ -470,10 +465,8 @@ export function createGratitudeRouter(config) {
     }
 
     const householdId = getHouseholdId(req);
-    const upsidedown = req.query.upsidedown !== 'false'; // default true for print
-
     // Generate canvas (function fetches selections internally and returns selectedIds)
-    const { canvas, width, height, selectedIds } = await createGratitudeCardCanvas(upsidedown);
+    const { canvas, width, height, selectedIds } = await createGratitudeCardCanvas();
 
     const buffer = canvas.toBuffer('image/png');
     const outcome = await printOperation.print({ buffer, width, height });

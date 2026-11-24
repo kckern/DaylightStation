@@ -162,7 +162,11 @@ grace deadline.
 the first trusted zone commits instantly, an upward change needs two samples
 spanning 1s, a second change within 5s must hold steady for 3s before it
 commits, and a downgrade is suppressed while HR stays within 5 bpm of the
-committed zone's floor (`EXIT_MARGIN_BPM`, a code constant, not config). The
+committed zone's floor. All of these timings and the exit margin are
+household config, the `zone_stability:` block in `fitness/config.yml`
+(`hysteresis_cooldown_ms`, `hysteresis_stability_ms`, `exit_margin_bpm`,
+`upward_confirm_ms`, `fire_quick_confirm_ms`, `fire_upward_confirm_ms`); each
+key is optional and falls back to the built-in value above. The
 full list of anti-flap mechanisms, with values and which are config, is the
 table in `governance-system-architecture.md`, "Hysteresis & Stabilization → At
 a glance". The engine reads those stabilized

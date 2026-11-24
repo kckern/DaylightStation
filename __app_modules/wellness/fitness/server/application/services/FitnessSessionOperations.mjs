@@ -83,9 +83,9 @@ export class FitnessSessionOperations {
   }
 
   get receiptAvailable() { return Boolean(this.renderReceipt); }
-  async receipt(sessionId, upsidedown) {
+  async receipt(sessionId) {
     if (!this.renderReceipt) return { kind: 'unconfigured' };
-    const result = await this.renderReceipt(sessionId, upsidedown);
+    const result = await this.renderReceipt(sessionId);
     return result ? { kind: 'rendered', bytes: result.canvas.toBuffer('image/png') } : { kind: 'not_found' };
   }
 

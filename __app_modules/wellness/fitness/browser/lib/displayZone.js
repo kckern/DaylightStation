@@ -34,8 +34,13 @@ import { deriveZoneProgressSnapshot } from "../hooks/fitness/types.js";
 // @param {string|null} [args.committedZoneId]
 // @param {string|null} [args.committedZoneColor]
 // @param {string|null} [args.committedZoneName]
+// @param {boolean} [args.untrusted] - the store has not accepted this rider's
+//   reading yet (zoneTrusted === false). The BPM still prints, but no zone is
+//   claimed from it: the card shows the untrusted mark instead of a colour
+//   the rider has not earned (owner, 2026-11-23).
 // @returns {{ zoneId: string|null, zoneName: string|null, zoneColor: string|null,
-//   progress: number|null, showBar: boolean, max: boolean, live: boolean }}
+//   progress: number|null, showBar: boolean, max: boolean, live: boolean,
+//   untrusted: boolean }}
 export function displayZoneRecord({
   heartRate = null,
   ladder = null,
@@ -43,7 +48,12 @@ export function displayZoneRecord({
   committedZoneId = null,
   committedZoneColor = null,
   committedZoneName = null,
+  untrusted = false,
 } = {}) {
+  if (untrusted && Number.isFinite(heartRate) && heartRate > 0) {
+    return { zoneId: null, zoneName: null, zoneColor: null, progress: null,
+      showBar: false, max: false, live: true, untrusted: true };
+  }
   const zones = Array.isArray(ladder) && ladder.length ? ladder
     : (Array.isArray(fallbackLadder) && fallbackLadder.length ? fallbackLadder : null);
   // Read the BPM as printed (rounded): 124.6 shows "125" and must read as

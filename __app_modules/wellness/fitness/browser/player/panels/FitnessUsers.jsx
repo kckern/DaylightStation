@@ -20,6 +20,7 @@ import { displayZoneRecord } from "../../lib/displayZone.js";
 import { ZONE_COLORS } from "../../shared/constants/fitness.js";
 import { genericGuestImageId, isGenericGuestProfileId } from "../../lib/guestPlaceholders.js";
 import { GENERIC_EQUIPMENT_FALLBACK_SRC } from "../../shared/EquipmentGlyph.jsx";
+import ZoneTrustDialog, { isUntrustedReading } from "../../components/ZoneTrustDialog.jsx";
 
 // Note: slugifyId has been removed - we now use explicit IDs from config
 
@@ -28,6 +29,8 @@ const CONFIG = {
   uiLabels: {
     RPM_GROUP_TITLE: 'RPM Devices',
     NO_ZONE_BADGE: 'No Zone',
+    // An untrusted live reading: there is a heart rate, but no zone is claimed from it.
+    UNTRUSTED_ZONE_BADGE: 'Unknown',
     ZONE_BADGE_TOOLTIP_PREFIX: 'Zone group:',
     NO_ZONE_TOOLTIP: 'No Zone',
     EMPTY_DEVICES_ICON: '📶',
@@ -160,6 +163,17 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   // Phase 1 SSOT: Use canonical participant list from context
     
   const zoneProfiles = useZoneProfiles();
+  // The rider whose untrusted-reading dialog is open (from the "?" on their card).
+  const [trustRiderId, setTrustRiderId] = useState(null);
+  const closeTrustDialog = React.useCallback(() => setTrustRiderId(null), []);
+  // One log line when the set of riders showing the untrusted mark changes.
+  const untrustedRiderKey = (Array.isArray(zoneProfiles) ? zoneProfiles : [])
+    .filter(isUntrustedReading).map(p => p.id).sort().join(',');
+  useEffect(() => {
+    getLogger().info('fitness.zone_trust.card_marks', {
+      userIds: untrustedRiderKey ? untrustedRiderKey.split(',') : [],
+    });
+  }, [untrustedRiderKey]);
 
   const normalizedCollections = userCollections || {};
 
@@ -494,7 +508,11 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
       fallbackLadder: zones,
       committedZoneId: committed,
       committedZoneColor: profile?.zoneTrusted === false ? null : (profile?.currentZoneColor || null),
+      untrusted: profile?.zoneTrusted === false,
     });
+    // Untrusted: no zone at all, never the live one below — the reading has
+    // not been accepted, so the card claims nothing from it.
+    if (record.untrusted) return { ...record, riderId: profile?.id ?? null };
     // No ladder to read the BPM on and nothing held: still never "No Zone"
     // beside a live BPM (owner, 2026-11-10) — the store's or roster's live
     // zone, without a bar (there is no band to measure it on).
@@ -873,6 +891,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
               }
               const cardDisplay = isHeartRate ? getCardDisplay(device, liveHeartRate) : null;
               const zoneIdForGrouping = cardDisplay?.zoneId || null;
+              const untrustedReading = Boolean(cardDisplay?.untrusted);
               const zoneClass = zoneIdForGrouping ? `zone-${zoneIdForGrouping}` : 'no-zone';
               const zoneBadgeColor = zoneIdForGrouping
                 ? paletteZoneColor(zoneIdForGrouping, cardDisplay?.zoneColor || zoneColorMap[zoneIdForGrouping] || null)
@@ -946,14 +965,14 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                             style={style}
                             title={zid ? `${UI_LABELS.ZONE_BADGE_TOOLTIP_PREFIX} ${readableZone}` : UI_LABELS.NO_ZONE_TOOLTIP}
                           >
-                            {zid ? readableZone : UI_LABELS.NO_ZONE_BADGE}
+                            {zid ? readableZone : (untrustedReading ? UI_LABELS.UNTRUSTED_ZONE_BADGE : UI_LABELS.NO_ZONE_BADGE)}
                           </Badge>
                         );
                       })()
                     )}
                   </div>
                   <div
-                    className={`fitness-device ${isHeartRate ? 'clickable' : ''} ${isHeartRate && layoutMode === 'vert' ? CONFIG.layout.cards.vertical.cardClass : CONFIG.layout.cards.horizontal.cardClass} ${getDeviceColor(device)} ${isInactive ? 'inactive' : 'active'} ${isCountdownActive ? 'countdown-active' : ''} ${zoneClass}${isHeartRate && showTrend ? ' has-trend' : ''}`}
+                    className={`fitness-device ${isHeartRate ? 'clickable' : ''} ${isHeartRate && layoutMode === 'vert' ? CONFIG.layout.cards.vertical.cardClass : CONFIG.layout.cards.horizontal.cardClass} ${getDeviceColor(device)} ${isInactive ? 'inactive' : 'active'} ${isCountdownActive ? 'countdown-active' : ''} ${zoneClass}${isHeartRate && showTrend ? ' has-trend' : ''}${untrustedReading ? ' zone-untrusted' : ''}`}
                     title={`${UI_LABELS.DEVICE_TOOLTIP_PREFIX} ${deviceName} (${device.deviceId}) - ${formatTimeAgo(device.lastSeen)}`}
                     role={isHeartRate ? 'button' : undefined}
                     tabIndex={isHeartRate ? 0 : undefined}
@@ -973,6 +992,16 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                           style={{ width: `${Math.max(0, Math.min(100, countdownWidth))}%` }}
                         />
                       </div>
+                    )}
+                    {untrustedReading && <div className="trust-stripes" aria-hidden="true" />}
+                    {untrustedReading && cardDisplay?.riderId && (
+                      <button
+                        type="button"
+                        className="trust-mark"
+                        aria-label={`${deviceName}'s heart rate is not trusted yet`}
+                        onClick={(event) => { event.stopPropagation(); setTrustRiderId(cardDisplay.riderId); }}
+                        onKeyDown={(event) => event.stopPropagation()}
+                      >?</button>
                     )}
                     <div className={`card-avatar ${zoneClass}`}>
                       {isHeartRate ? (
@@ -1092,6 +1121,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
           {pinnedDevices.map((device) => (device.type === 'rpm-group' ? renderRpmGroup(device) : renderStepMat(device)))}
         </div>
       )}
+      {trustRiderId && <ZoneTrustDialog riderId={trustRiderId} onClose={closeTrustDialog} />}
     </>
   );
 };

@@ -219,3 +219,21 @@
     filter: drop-shadow(0 0 6px rgba(255, 107, 107, 0.6));
   }
 }
+// Untrusted reading (ZoneProfileStore has not accepted it): a small "?" on the
+// avatar. Tapping the footer opens the rider list, where the card's "?" opens
+// the unlock dialog.
+.sidebar-footer .device-card .trust-mark-mini {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  background: rgba(15, 15, 15, 0.85);
+  color: #fff;
+  font: 700 14px/18px 'Roboto Condensed', sans-serif;
+  text-align: center;
+  pointer-events: none;
+}

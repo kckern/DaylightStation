@@ -9,7 +9,7 @@
 
 import { moment } from '#system/libraries/gratitudeRuntime.mjs';
 import { wrapText } from '#rendering/lib/TextRenderer.mjs';
-import { drawBorder, flipCanvas } from '#rendering/lib/LayoutHelpers.mjs';
+import { drawBorder } from '#rendering/lib/LayoutHelpers.mjs';
 import { initCanvas } from '#rendering/lib/CanvasFactory.mjs';
 import { gratitudeCardTheme as theme } from './gratitudeCardTheme.mjs';
 
@@ -32,12 +32,13 @@ export function createGratitudeCardRenderer(config) {
   const { getSelectionsForPrint, fontDir } = config;
 
   /**
-   * Render a gratitude card canvas.
+   * Render a gratitude card canvas, always upright. A printer mounted upside
+   * down is handled by the thermal printer adapter, which rotates image items
+   * itself; flipping here as well would print the card upside down.
    *
-   * @param {boolean} [upsidedown=false] - Whether to rotate the canvas 180 degrees
    * @returns {Promise<{canvas: Canvas, width: number, height: number, selectedIds: {gratitude: string[], hopes: string[]}}>}
    */
-  async function createCanvas(upsidedown = false) {
+  async function createCanvas() {
     const { width } = theme.canvas;
     const fontFamily = theme.fonts.family;
     const margin = theme.layout.margin;
@@ -189,12 +190,6 @@ export function createGratitudeCardRenderer(config) {
       gratitude: selectedGratitude.map(item => item.id),
       hopes: selectedHopes.map(item => item.id)
     };
-
-    // Handle upside-down rotation for mounted printers
-    if (upsidedown) {
-      const flippedCanvas = flipCanvas(createNodeCanvas, canvas, width, height);
-      return { canvas: flippedCanvas, width, height, selectedIds };
-    }
 
     return { canvas, width, height, selectedIds };
   }
