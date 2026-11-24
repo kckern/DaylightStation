@@ -1601,3 +1601,7 @@ components.
   configuration and show no control socket is bound and the port stays free; the
   shell's decision not to start a lifeline is one line that reads the same value
   and is not exercised on the JVM.
+
+## Shortcut icons
+
+Launcher shortcuts and tiles draw one glyph per action on a tile coloured by kind (`ActionTint`): journal blue (notebook, mic), meals orange (fork, camera, barcode), health rose, media purple, anything else the app green. The icon name is the third field of each `actions.N` line in `devices/phone.yml`. The default tiles are journal voice, meal voice, meal photo and meal barcode. The launcher draws its own small app badge on every pinned shortcut; an app cannot remove it.

@@ -128,11 +128,11 @@ test('Feed is gone from the phone: no bookmark, action, shortcut, tile or widget
 });
 
 test('phone input labels distinguish destination and input method', () => {
-  assert.equal(phone.defaults['actions.1'], 'journal|Journal voice|mic|input:voice:journal');
-  assert.equal(phone.defaults['actions.2'], 'meal|Meal voice|mic|input:voice:meal');
+  assert.equal(phone.defaults['actions.1'], 'journal|Journal voice|notebook|input:voice:journal');
+  assert.equal(phone.defaults['actions.2'], 'meal|Meal voice|fork|input:voice:meal');
   assert.equal(phone.defaults['actions.3'], 'meal-photo|Meal photo|camera|input:photo:meal-photo');
-  assert.equal(phone.defaults['actions.4'], 'journal-note|Journal text|note|input:text:journal-note');
-  assert.equal(phone.defaults['actions.5'], 'meal-note|Meal text|note|input:text:meal-note');
+  assert.equal(phone.defaults['actions.4'], 'journal-note|Journal text|notebook|input:text:journal-note');
+  assert.equal(phone.defaults['actions.5'], 'meal-note|Meal text|fork|input:text:meal-note');
   assert.equal(Object.values(phone.defaults).some((v) => /New memo/.test(String(v))), false);
 });
 
