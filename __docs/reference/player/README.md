@@ -175,6 +175,14 @@ actuator. Its budget model:
   Players own a store exposed through the session bridge. Queue advance, repeat-one,
   replay and cross-owner adoption create new visit tokens. Quality adoption carries
   an explicit `manual-quality` or `recovery-quality` reason to retain the visit.
+- **Terminal binding** — `useCommonMediaController` accepts `ended` (and the
+  end-of-content watchdog) only for the target it bound to the element. A
+  renderer-only claim (`beginRenderer`) retires that binding at once, so a
+  stale element cannot end the item. When the claim refreshes the URL on the
+  same element (`VideoPlayer.hardReset`, the stall-jolt path), that element's
+  next `loadstart` adopts the newer `rendererGeneration` (same owner, visit and
+  intent only) and logs `playback.terminal-rebound`. A refused end logs
+  `playback.terminal-rejected` with `reason: 'stale-target'`.
 
 Source repair checks retain their initiating recovery target across backend
 polls. A readable response can clear the source wait, but an accepted Pause,
