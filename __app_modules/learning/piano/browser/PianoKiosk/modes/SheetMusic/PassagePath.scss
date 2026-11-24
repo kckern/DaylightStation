@@ -54,6 +54,8 @@
   // The coach's next unit: larger, and lifted off the path.
   &__token[data-next] &__disc { width: var(--token-next); height: var(--token-next); margin: 0; box-shadow: 0 5px 0 0 var(--piano-stage-2, #0b0b0f); }
   &__token[aria-pressed='true'] &__disc { outline: 3px solid var(--piano-fg); outline-offset: 2px; }
+  // The half a step down is practising wears the same ring as the unit being worked on.
+  &__token[data-step-down] &__disc { outline: 3px solid var(--piano-fg); outline-offset: 2px; }
   // The play disc: on the target, the token a tap opens.
   &__play {
     position: absolute; right: -5px; bottom: -3px; width: 26px; height: 26px; box-sizing: border-box; padding: 5px 4px 5px 6px;

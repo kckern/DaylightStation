@@ -65,7 +65,7 @@ export function railFits(tokenCount, width) { return !pathLayout(tokenCount, wid
  * the target (the selected unit, else the next); `caption` names its task in child words.
  * `lap` ('silver' | 'gold') forces a lap's drawing (a ceremony holds the Silver path while it lands).
  */
-export function railModel({ segments = [], projection, selectedId = null, polish = null, lap: forcedLap = null }) {
+export function railModel({ segments = [], projection, selectedId = null, polish = null, lap: forcedLap = null, stepDown = null }) {
   const passages = segments.filter((segment) => segment.kind !== 'join');
   const joins = segments.filter((segment) => segment.kind === 'join');
   const tiles = passages.map((segment, index) => passageTile(segment, index));
@@ -157,7 +157,11 @@ export function railModel({ segments = [], projection, selectedId = null, polish
     if (!cert(unit).gold && (kind === 'gold' || goldOpen(unit))) return `${name} in time`;
     return `Play ${name} again`;
   };
-  const caption = captionFor(target);
+  // A step down (a join missed twice in one half) practises that half first: the caption names it, and its
+  // token wears the ring of the unit being worked on.
+  const stepUnit = stepDown ? unitById.get(stepDown) ?? null : null;
+  const caption = stepUnit && target && covers(target.unit, stepUnit) && target.unit.id !== stepUnit.id
+    ? `Play ${nameOf(stepUnit)} first` : captionFor(target);
   const targetId = target?.unit.id ?? null;
   // The token that holds the target: itself, or the fold around it.
   const holder = (id) => tokens.find((token) => token.id === id) ?? (unitById.get(id) ? tokens.find((token) => covers(unitById.get(token.id), unitById.get(id))) : null) ?? null;
@@ -168,6 +172,7 @@ export function railModel({ segments = [], projection, selectedId = null, polish
     token.isTarget = token === targetToken;
     token.isNext = token === nextToken;
     token.isSelected = token === pickedToken;
+    token.isStepDown = Boolean(stepUnit) && unitById.has(token.id) && covers(stepUnit, unitById.get(token.id));
     token.aria = token.isTarget && caption ? `${caption}, ${lowerBars(token.id === targetId ? barsOf(target.unit) : token.bars)}` : token.label;
   }
 
@@ -178,10 +183,24 @@ export function railModel({ segments = [], projection, selectedId = null, polish
   const ladder = levelLadder({ lap: coachLap, progress: projection?.lapProgress, piece, joinTotals, polish });
   return {
     tiles, tokens, cards, lap, caption, railRem: PATH_REM, ladder,
+    // Every unit's name on the path (A, A–B, All), for the words around it.
+    names: unitNames(segments),
     selectedId: picked?.id ?? null, outlinedId: targetId, nextId: next?.id ?? null,
     target: target ? { passageId: targetId, kind: target.kind } : null,
     count: { level: ladder.current, done: ladder.done, total: ladder.total, text: `${ladder.done}/${ladder.total}`, label: ladder.text },
   };
+}
+
+/** Every unit's name on the path, by id: passages by letter (A), joins by span (A–B), the whole of a longer piece `All`. */
+export function unitNames(segments = []) {
+  const passages = segments.filter((unit) => unit.kind !== 'join');
+  const indexOf = new Map(passages.map((unit, index) => [unit.id, index]));
+  return Object.fromEntries(segments.flatMap((unit) => {
+    if (unit.kind !== 'join') return [[unit.id, letterOf(indexOf.get(unit.id))]];
+    const from = indexOf.get(unit.memberPassages?.[0]); const to = indexOf.get(unit.memberPassages?.at(-1));
+    if (from == null || to == null) return [];
+    return [[unit.id, unit.final && to - from + 1 > 2 ? 'All' : `${letterOf(from)}–${letterOf(to)}`]];
+  }));
 }
 
 /** The levels of a piece, in order, and the coin each is drawn with (a passage's Bronze is stored `silver`). */

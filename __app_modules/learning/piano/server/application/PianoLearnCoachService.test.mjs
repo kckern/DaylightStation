@@ -212,6 +212,14 @@ describe('acknowledged piano coaching', () => {
       await expect(service.record('learner4', SCORE, { ...f.outcome('too-deep', { task: chain(MAX_DRILL_DEPTH + 1) }), plan })).rejects.toThrow(/Invalid coaching task/);
     });
 
+    it('accepts a step down that plays exactly its half, and refuses one that names bars it does not cover', async () => {
+      const { f, plan, service } = setup();
+      const join = plan.tasks.find((task) => task.passageId === 'join:a:b' && task.assist === 'none');
+      const down = { ...join, assist: undefined, depth: 1, parent: join, reason: 'smaller-join', stepDown: 'b', range: { start: 2, end: 3 } };
+      await expect(service.record('learner4', SCORE, { ...f.outcome('down', { task: down }), plan })).resolves.toBeTruthy();
+      await expect(service.record('learner4', SCORE, { ...f.outcome('down-bad', { task: { ...down, range: { start: 1, end: 3 } } }), plan })).rejects.toThrow(/Invalid coaching task/);
+    });
+
     it('notes Gold when a tempo take finishes every passage, and Silver only with the final join', async () => {
       const { notes, service, take } = setup();
       // Score tempo is earned on two passing takes out of three.

@@ -58,7 +58,7 @@ export default function PassagePath({ model, flips = {}, flipDelayMs = 0, wave =
         const flip = flipOf(token);
         return <li key={token.id} data-link={token.link} data-kind={token.kind}>
           <button type="button" className="piano-passage-path__token" data-state={token.state} data-kind={token.kind} data-flip={flip || undefined}
-            data-next={token.isNext || undefined} data-target={token.isTarget || undefined}
+            data-next={token.isNext || undefined} data-target={token.isTarget || undefined} data-step-down={token.isStepDown || undefined}
             style={flip && (flipDelayMs || wave) ? { '--turn-delay': `${Math.round(flipDelayMs + index * stagger)}ms` } : undefined}
             aria-current={token.isTarget ? 'step' : undefined} aria-pressed={compact ? undefined : token.isSelected}
             aria-label={compact ? `${token.label}. Open the passage board` : token.aria} onClick={() => tap(token)}>

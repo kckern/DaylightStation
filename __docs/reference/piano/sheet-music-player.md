@@ -521,7 +521,21 @@ miss (or any earlier take on it) opens the ladder at the right hand, left hand, 
 then the check. `sheetmusic.learn.certification.testOutFirst: false` restores the old
 order. Two misses on a whole join drill the hand that broke (when one hand is clearly
 worse) across the whole join, or **the join** (the last bar of the first unit and the first
-bar of the next) when the worst bar sits on that seam, then the generic bar-then-hand ladder.
+bar of the next) when the seam's bars are worse than every bar away from it. Otherwise, when
+the misses sit inside **one half** (it carries at least three quarters of the missed and wrong
+notes in `result.spans`), the coach **steps down** to that half: the smaller join or the
+passage, played at the join's mode, tempo and parts (`reason: 'smaller-join'`, `stepDown:
+<half id>`, depth + 1, parent the join's task). Passing it (two of the last three) steps back
+up to the join; a step down that keeps missing can step down again, and inside a passage the
+bar ladder takes over. It is practice, never a demotion: no coin is taken, the half's
+certificate is not asked for again, and the drill has its own key (tagged `step-down`) and
+proves none of the half's steps (no counts, evidence or achievements; `carryGold` ignores
+it). The retention run of the whole piece steps down the same way when it is missed twice
+(a drill under a review is offered even though the piece is certified). The server accepts
+a step down only when its bars are exactly the named half's. Words: the result card says
+**Play C–D** (the half's name on the path), the drill's title is `Play C–D`, the path's
+caption `Play C–D first` with the half's token ringed, and the step strip is headed by the
+half's coin and `C–D first · then All`. Then the generic bar-then-hand ladder.
 
 **Piece Silver** is the final join's check: the large ceremony, the `piano-piece`
 `silver` entry in the piece log and the piece gem. A piece log `silver` entry written

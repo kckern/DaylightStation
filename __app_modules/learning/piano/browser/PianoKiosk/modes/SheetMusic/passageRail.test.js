@@ -188,3 +188,17 @@ describe('boardColumns', () => {
     expect(boardColumns(0)).toBe(1);
   });
 });
+
+describe('a step down', () => {
+  it('names the half on the caption and rings its token while the join is worked on', () => {
+    const plan = planOf(4);
+    let state = bronze(plan, null, ['m0-3', 'm4-7', 'm8-11', 'm12-15']);
+    for (const id of ['join:m0-3:m4-7', 'join:m8-11:m12-15']) state = earn(plan, state, id, 'silver', `j-${id}`);
+    const projection = project(plan, state);
+    const rail = railModel({ segments: projection.segments, projection, selectedId: 'join:m0-3:m12-15', stepDown: 'join:m8-11:m12-15' });
+    expect(rail.caption).toBe('Play C–D first');
+    expect(rail.tokens.filter((token) => token.isStepDown).map((token) => token.letter)).toEqual(['C–D']);
+    expect(rail.names).toMatchObject({ 'm0-3': 'A', 'join:m8-11:m12-15': 'C–D', 'join:m0-3:m12-15': 'All' });
+    expect(railModel({ segments: projection.segments, projection, selectedId: 'join:m0-3:m12-15' }).caption).toBe('Play it all');
+  });
+});

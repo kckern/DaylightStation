@@ -107,7 +107,8 @@ describe('join drills', () => {
   it('falls back to the generic bar drill when the misses are elsewhere', () => {
     const plan = planOf(2);
     const span = (missed) => ({ diagnostics: { expected_notes: 4, missed_notes: missed, wrong_notes: 0 } });
-    const result = { ...bad, spans: { 'measure:1': span(3), 'measure:2': span(1) } };
+    // Spread over both halves (neither carries three quarters of it): the worst bar and the way into it.
+    const result = { ...bad, spans: { 'measure:1': span(3), 'measure:2': span(1), 'measure:6': span(2) } };
     expect(proj(plan, missTwice(plan, 'join:p1:p2', result)).recommended).toMatchObject({ reason: 'focus-bars', range: { start: 0, end: 1 } });
   });
 });
@@ -288,5 +289,90 @@ describe('laps (2026-11-23 night)', () => {
     expect(proj(plan, state).piece.nextGoldPassageId).toBe('join:p3:p4');
     state = goldAll(state, plan, ['join:p3:p4']);
     expect(proj(plan, state)).toMatchObject({ lap: 'diamond', piece: { nextGoldPassageId: null, polishReady: true } });
+  });
+});
+
+describe('step down to the smaller join (2026-11-23 late)', () => {
+  const span = (missed) => ({ diagnostics: { expected_notes: 4, missed_notes: missed, wrong_notes: 0 } });
+  const spansOf = (map) => Object.fromEntries(Object.entries(map).map(([measure, missed]) => [`measure:${measure}`, span(missed)]));
+  const ready4 = (plan) => ['join:p1:p2', 'join:p3:p4'].reduce((acc, id) => play(acc, plan, check(plan, id)), bronze(undefined, plan, ['p1', 'p2', 'p3', 'p4']));
+  const missTwice = (state, plan, task, result) => play(play(state, plan, task, result), plan, task, { ...result });
+  it('practises the half the misses sit in, at the parent\'s parts and pace, and names it by its bars', () => {
+    const plan = planOf(4); const top = check(plan, 'join:p1:p4');
+    const state = missTwice(ready4(plan), plan, top, { ...bad, spans: spansOf({ 9: 3, 10: 2, 13: 1 }) });
+    const next = proj(plan, state).recommended;
+    expect(next).toMatchObject({ passageId: 'join:p1:p4', reason: 'smaller-join', stepDown: 'join:p3:p4', range: { start: 8, end: 15 },
+      parts: ['rh', 'lh'], mode: 'free', depth: 1, label: 'Play bars 9–16' });
+    expect(next.parent.key).toBe(top.key);
+  });
+  it('steps down to the passage when a two-passage join breaks in one of them', () => {
+    const plan = planOf(2);
+    const state = missTwice(bronze(undefined, plan, ['p1', 'p2']), plan, check(plan, 'join:p1:p2'), { ...bad, spans: spansOf({ 5: 3, 6: 2 }) });
+    expect(proj(plan, state).recommended).toMatchObject({ reason: 'smaller-join', stepDown: 'p2', range: { start: 4, end: 7 } });
+  });
+  it('drills the seam first when the worst bar sits on it', () => {
+    const plan = planOf(4);
+    const state = missTwice(ready4(plan), plan, check(plan, 'join:p1:p4'), { ...bad, spans: spansOf({ 7: 4, 9: 1 }) });
+    expect(proj(plan, state).recommended).toMatchObject({ reason: 'seam', range: { start: 7, end: 8 } });
+  });
+  it('steps down, not to the seam, when the misses spread evenly through the half that starts at the seam', () => {
+    const plan = planOf(4);
+    const state = missTwice(ready4(plan), plan, check(plan, 'join:p1:p4'), { ...bad, spans: spansOf({ 8: 2, 9: 2, 10: 2, 11: 2, 12: 2, 13: 2, 14: 2, 15: 2 }) });
+    expect(proj(plan, state).recommended).toMatchObject({ reason: 'smaller-join', stepDown: 'join:p3:p4' });
+  });
+  it('drills the hand first when one hand broke', () => {
+    const plan = planOf(4);
+    const parts = { rh: { diagnostics: { expected_notes: 10, missed_notes: 0, wrong_notes: 0 } }, lh: { diagnostics: { expected_notes: 10, missed_notes: 6, wrong_notes: 2 } } };
+    const state = missTwice(ready4(plan), plan, check(plan, 'join:p1:p4'), { ...bad, parts, spans: spansOf({ 9: 3 }) });
+    expect(proj(plan, state).recommended).toMatchObject({ reason: 'one-hand', parts: ['lh'], range: { start: 0, end: 15 } });
+  });
+  it('passing the half twice steps back up to the join', () => {
+    const plan = planOf(4); const top = check(plan, 'join:p1:p4');
+    let state = missTwice(ready4(plan), plan, top, { ...bad, spans: spansOf({ 9: 3 }) });
+    const down = proj(plan, state).recommended;
+    state = play(play(state, plan, down), plan, down);
+    expect(state.resume.key).toBe(top.key);
+    expect(proj(plan, state).recommended).toMatchObject({ passageId: 'join:p1:p4', depth: 0 });
+  });
+  it('credits nothing of the half: no counts, no achievements, no evidence on its steps, no coin taken', () => {
+    const plan = planOf(4); const top = check(plan, 'join:p1:p4');
+    let state = missTwice(ready4(plan), plan, top, { ...bad, spans: spansOf({ 9: 3 }) });
+    const before = proj(plan, state).segments.find((s) => s.id === 'join:p3:p4');
+    const down = proj(plan, state).recommended;
+    expect(plan.tasks.some((t) => t.key === down.key)).toBe(false);
+    const counts = structuredClone(state.counts); const achievements = Object.keys(state.achievements);
+    state = play(play(state, plan, down), plan, down);
+    expect(Object.keys(state.achievements)).toEqual(achievements);
+    const half = plan.segments.find((s) => s.id === 'join:p3:p4');
+    for (const t of [...half.tasks, ...plan.segments.filter((s) => s.id === 'p3' || s.id === 'p4').flatMap((s) => s.tasks)]) {
+      expect(state.counts[t.key]).toEqual(counts[t.key]);
+      expect(state.evidence.some((e) => e.task.key === down.key && e.eligible.includes(t.key))).toBe(false);
+    }
+    const after = proj(plan, state).segments.find((s) => s.id === 'join:p3:p4');
+    expect(after.skills.map((t) => t.ready)).toEqual(before.skills.map((t) => t.ready));
+    expect(after.certification.silver).toBeTruthy();
+  });
+  it('a timed step down on a join\'s Gold credits none of the passage\'s Gold rungs', () => {
+    const plan = planOf(4);
+    const timed = plan.segments.find((s) => s.id === 'join:p1:p2').tasks.find((t) => t.skill === 'timed-75');
+    let state = missTwice(ready4(plan), plan, timed, { ...bad, spans: spansOf({ 1: 3, 2: 2 }) });
+    const down = projectCoach({ plan, state, dayKey }).goldResume;
+    expect(down).toMatchObject({ reason: 'smaller-join', stepDown: 'p1', mode: 'cued', tempoPercent: 75, range: { start: 0, end: 3 } });
+    state = play(play(state, plan, down), plan, down);
+    const p1 = proj(plan, state).segments.find((s) => s.id === 'p1');
+    expect(p1.skills.filter((t) => t.track === 'gold').some((t) => t.ready)).toBe(false);
+    expect(p1.certification.gold).toBeFalsy();
+    expect(state.goldResume.key).toBe(timed.key);
+  });
+  it('the retention run of the whole piece steps down the same way', () => {
+    const plan = planOf(2);
+    let state = play(bronze(undefined, plan, ['p1', 'p2']), plan, check(plan, 'join:p1:p2'));
+    const review = projectCoach({ plan, state, dayKey: '2026-11-26' }).review;
+    expect(review).toMatchObject({ reason: 'retention' });
+    const miss = (s, id) => applyCoachEvent(s, { id, type: 'outcome', task: review, result: { ...bad, spans: spansOf({ 5: 3, 6: 2 }) } }, { plan, now: '2026-11-26T18:00:00Z', dayKey: '2026-11-26' });
+    state = miss(miss(state, 'r1'), 'r2');
+    const next = projectCoach({ plan, state, dayKey: '2026-11-26' }).recommended;
+    expect(next).toMatchObject({ reason: 'smaller-join', stepDown: 'p2', range: { start: 4, end: 7 }, depth: 1 });
+    expect(next.parent).toMatchObject({ review: true, reason: 'retention' });
   });
 });

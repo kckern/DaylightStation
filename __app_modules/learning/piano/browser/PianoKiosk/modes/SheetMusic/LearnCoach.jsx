@@ -13,7 +13,7 @@ import PassageCoin, { PassageTurn } from './PassageCoin.jsx';
 import { playPassageChime } from './passageChime.js';
 import GateCeremony, { hostVerdictAt as verdictAt } from '../Games/GateCeremony.jsx';
 import Icon from '../../../ui/icons/Icon.jsx';
-import { railModel } from './passageRail.js';
+import { railModel, unitNames } from './passageRail.js';
 import './LearnCoach.scss';
 
 const EMPTY = {};
@@ -45,7 +45,13 @@ const lower = (label) => label.charAt(0).toLowerCase() + label.slice(1);
 /** A recovery step's button label and onward-line sentence, from one place. A
  * slower step without a known tempo says so without a number. */
 // eslint-disable-next-line react-refresh/only-export-components -- pure wording is exported for focused contract tests
-export function recoveryWording(recovery) {
+export function recoveryWording(recovery, names = EMPTY) {
+  // A step down to the half of a join the misses sat in, named as the path names it ("Play C–D").
+  if (recovery.reason === 'smaller-join') {
+    const name = names[recovery.stepDown];
+    return name ? { button: `Play ${name}`, sentence: `play ${name}` }
+      : { button: `Play bars ${recovery.range.start + 1}–${recovery.range.end + 1}`, sentence: `play bars ${recovery.range.start + 1}–${recovery.range.end + 1}` };
+  }
   if (recovery.reason === 'slower-beat') {
     const percent = Number(recovery.tempoPercent);
     return Number.isFinite(percent) && recovery.tempoPercent != null
@@ -97,8 +103,14 @@ export function passageDrill(passage, task, { access = EMPTY, showLocks = false,
       state: skill.ready ? 'complete' : skill.key === current ? 'current' : 'locked', ...(locked ? { locked: true } : {}) };
   });
   const name = unit?.letter ?? null;
-  const head = { text: `${name ? `${name} · ` : ''}steps to ${level}`, label: `${name ? `${name}, ` : ''}steps to ${level}`, lap, level: level.toLowerCase(),
-    mark: name ? <PassageCoin state={unit.state} letter={name} ring={unit.ring} size="100%" /> : null };
+  // On a step down the strip says what is being practised first, and what it climbs back to.
+  const first = unit?.stepDownName ?? null;
+  const words = first && name ? { text: `${first} first · then ${name}`, label: `${first} first, then ${name}` }
+    : { text: `${name ? `${name} · ` : ''}steps to ${level}`, label: `${name ? `${name}, ` : ''}steps to ${level}` };
+  const head = { ...words, lap, level: level.toLowerCase(),
+    // On a step down the coin is the half being played.
+    mark: first && name ? <PassageCoin state={unit.stepDownState ?? 'joined'} letter={first} size="100%" />
+      : name ? <PassageCoin state={unit.state} letter={name} ring={unit.ring} size="100%" /> : null };
   return { projection: { id: `learn:${passage?.id}`, title: barsOf(passage), displaySingleStep: true, steps, head },
     stepId: steps.some((step) => step.id === current) ? current : null };
 }
@@ -162,7 +174,8 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
     const whole = wanted.range.start === segment.inMeasure && wanted.range.end === segment.outMeasure;
     const barLabel = whole ? segment.barLabel : wanted.range.start === wanted.range.end ? `Bar ${wanted.range.start + 1}` : `Bars ${wanted.range.start + 1}–${wanted.range.end + 1}`;
     return { segment: { ...canonical, barLabel, inMeasure: wanted.range.start, outMeasure: wanted.range.end },
-      rung: { id: wanted.skill, label: wanted.label, effectiveParts: wanted.parts, mode: wanted.mode,
+      // A step down is named as the path names its half ("Play C–D").
+      rung: { id: wanted.skill, label: wanted.stepDown && unitNames(plan.segments)[wanted.stepDown] ? `Play ${unitNames(plan.segments)[wanted.stepDown]}` : wanted.label, effectiveParts: wanted.parts, mode: wanted.mode,
         tempoPercent: wanted.tempoPercent, criteria: wanted.criteria, sets: 1, reps: 1, required: 1, passCount: 0 } };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the task's identity, not the projection's fresh objects
   }, [plan, segment.barLabel, segment.inMeasure, segment.outMeasure, task?.key, runNumber]);
@@ -240,14 +253,18 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
   // The same path and board as the score view: every passage of the piece, this unit selected. While a
   // join's Silver lands, the path keeps the Silver drawing so the coin turns where the child earned it.
   const holdLap = celebrated === 'silver' && isJoin ? 'silver' : null;
-  const rail = useMemo(() => railModel({ segments: coach.projection.segments, projection: coach.projection, selectedId: segment.id, polish, lap: holdLap }),
-    [coach.projection, segment.id, polish, holdLap]);
+  // A step down (a join missed twice in one half): the half being practised, from the task or a drill under it.
+  const stepDown = (() => { for (let at = task; at; at = at.parent) if (at.stepDown) return at.stepDown; return null; })();
+  const rail = useMemo(() => railModel({ segments: coach.projection.segments, projection: coach.projection, selectedId: segment.id, polish, lap: holdLap, stepDown }),
+    [coach.projection, segment.id, polish, holdLap, stepDown]);
   // The strip is headed by this unit's own token: the same lettered coin, the same ring.
   const unitToken = rail.cards.find((card) => card.id === segment.id) ?? null;
-  const unitLetter = unitToken?.letter ?? null; const unitState = unitToken?.state ?? null; const unitRing = unitToken?.ring;
+  const unitLetter = unitToken?.letter ?? rail.names?.[segment.id] ?? null; const unitState = unitToken?.state ?? null; const unitRing = unitToken?.ring;
+  const stepDownName = stepDown ? rail.names?.[stepDown] ?? null : null;
+  const stepDownState = stepDown ? rail.cards.find((card) => card.id === stepDown)?.state ?? 'joined' : null;
   const drill = useMemo(() => passageDrill(projected, task, { access, showLocks: skipMode !== 'strict',
-    unit: unitLetter ? { letter: unitLetter, state: unitState, ring: unitRing } : null }),
-  [projected, task, access, skipMode, unitLetter, unitState, unitRing]);
+    unit: unitLetter ? { letter: unitLetter, state: unitState ?? 'joined', ring: unitRing, stepDownName, stepDownState } : null }),
+  [projected, task, access, skipMode, unitLetter, unitState, unitRing, stepDownName, stepDownState]);
   const card = useMemo(() => {
     if (!moment) return null;
     const { task: played, raw, id } = moment;
@@ -306,7 +323,7 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
   const recovery = result && next && next.depth > 0 && next.key !== result.task.key ? next : null;
   // One wording per recovery: the button, and the sentence the onward line
   // finishes ("play any key to try a little slower (75%)").
-  const recoveryWords = recovery ? recoveryWording(recovery) : null;
+  const recoveryWords = recovery ? recoveryWording(recovery, rail.names) : null;
   const recoveryAction = recoveryWords?.button ?? null;
   const canSetAside = coach.projection.canSetAside?.[segment.id] === true;
   const comeBackLater = () => {

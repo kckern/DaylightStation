@@ -59,10 +59,12 @@ export function coachTaskKey(task) {
   // The Silver check is identified without its criteria, so a policy change keeps earned Silver.
   // The rhythm rung has its own key: a pass with no pitch asked must never be credited to the real timed step.
   const rhythmTag = task.rhythm ? [['rhythm']] : [];
+  // A step down to a join's half has its own key too: it is practice, never the half's own steps.
+  const stepDownTag = task.stepDown ? [['step-down', task.stepDown]] : [];
   if (task.assist === 'none') return JSON.stringify(['silver-check', task.scoreId, task.fingerprint, task.range.start, task.range.end, partsOf(task.parts)]);
   return JSON.stringify([task.scoreId, task.fingerprint, task.range.start, task.range.end,
     partsOf(task.parts), task.mode, task.mode === 'free' ? null : task.tempoPercent, canonical(task.criteria),
-    ...(task.authoredStage != null ? [[task.authoredSeries, task.authoredStage]] : []), ...rhythmTag]);
+    ...(task.authoredStage != null ? [[task.authoredSeries, task.authoredStage]] : []), ...rhythmTag, ...stepDownTag]);
 }
 
 export function makeCoachTask(plan, spec) {
@@ -80,6 +82,7 @@ export function makeCoachTask(plan, spec) {
     ...(spec.authoredStage == null && spec.legacyRequired != null ? { legacyRequired: spec.legacyRequired } : {}),
     ...(spec.review ? { review: true } : {}), ...(spec.source ? { source: spec.source } : {}),
     ...(spec.reason ? { reason: spec.reason } : {}), ...(spec.rhythm ? { rhythm: true } : {}),
+    ...(spec.stepDown ? { stepDown: String(spec.stepDown) } : {}),
   };
   return { ...task, key: coachTaskKey(task) };
 }
@@ -306,7 +309,7 @@ const certificate = (achievement, provenance) => ({ at: achievement?.at ?? null,
  */
 function carryGold(state, skills) {
   const earned = Object.keys(state.achievements).map((key) => { try { return JSON.parse(key); } catch { return null; } })
-    .filter((key) => Array.isArray(key) && key[0] !== 'silver-check' && !(Array.isArray(key.at(-1)) && key.at(-1)[0] === 'rhythm'))
+    .filter((key) => Array.isArray(key) && key[0] !== 'silver-check' && !(Array.isArray(key.at(-1)) && ['rhythm', 'step-down'].includes(key.at(-1)[0])))
     .map(([scoreId, fingerprint, start, end, parts, mode, tempoPercent]) => ({ scoreId, fingerprint, range: { start, end }, parts, mode, tempoPercent }));
   const covers = (proof, task) => proof.scoreId === task.scoreId && proof.fingerprint === task.fingerprint
     && sameRange(proof.range, task.range) && task.parts.every((part) => proof.parts.includes(part))
@@ -455,8 +458,9 @@ export function projectCoach({ plan, state, legacy = {}, dayKey }) {
   const open = lap === 'bronze' || lap === 'silver' ? lapUnits.filter((segment) => !segment.certification.silver && eligible(segment)) : [];
   const resume = liveResume(plan, segments, current.resume);
   // A drill continues the take that was missed, on whatever unit the child chose.
+  const rootReview = (task) => { let at = task; while (at?.parent) at = at.parent; return Boolean(at?.review); };
   const drill = resume && resume.depth > 0 && !isGoldWork(resume)
-    && available.some((segment) => segment.id === resume.passageId) && !setAsideToday(resume.passageId) ? resume : null;
+    && (available.some((segment) => segment.id === resume.passageId) || rootReview(resume)) && !setAsideToday(resume.passageId) ? resume : null;
   // Test out first: a unit nobody has touched opens on its hints-off check; once a take, a count
   // or any ready step exists (or the check was missed), it walks the hands first.
   const touched = (segment) => segment.skills.some((task) => task.track === 'silver' && task.assist !== 'none' && task.ready)
@@ -527,22 +531,43 @@ const SHIFT_WORDS = Object.freeze({ 1: 'one beat', 2: 'two beats' });
 
 const burdenOf = (diagnostics = {}) => ((diagnostics.missed_notes ?? 0) + (diagnostics.wrong_notes ?? 0)) / (diagnostics.expected_notes || 1);
 const HAND_GAP = 0.25;
+/** The share of a join's missed and wrong notes one half must carry for the coach to step down to it. */
+const HALF_SHARE = 0.75;
 /**
  * The smaller step after two misses on a whole join: the hand that broke across
  * the join when one hand is clearly worse than the other; otherwise the seam (the
  * last bar of the first unit and the first bar of the next) when the worst bar sits
- * on it. Null leaves the generic bar-then-hand ladder to run.
+ * on it; otherwise, when the misses sit inside one half, that half (a step down to the smaller
+ * join or the passage). Null leaves the generic bar-then-hand ladder to run.
  */
-function joinRecovery(join, task, result) {
+function joinRecovery(plan, join, task, result) {
   if (task.parts.length > 1) {
     const burdens = task.parts.map((part) => ({ part, burden: burdenOf(result.parts?.[part]?.diagnostics) })).sort((a, b) => b.burden - a.burden);
     if (burdens[0].burden - burdens[1].burden >= HAND_GAP) return { range: { ...task.range }, parts: [burdens[0].part], reason: 'one-hand' };
   }
-  const worst = Object.entries(result.spans ?? {}).map(([id, span]) => ({ measure: Number(id.replace(/^measure:/, '')), burden: burdenOf(span.diagnostics), count: span.diagnostics?.expected_notes }))
-    .filter((span) => Number.isInteger(span.measure) && span.count > 0 && span.burden > 0).sort((a, b) => b.burden - a.burden || a.measure - b.measure)[0];
-  if (worst && (worst.measure === join.seam.left || worst.measure === join.seam.right)) {
+  const ranked = Object.entries(result.spans ?? {}).map(([id, span]) => ({ measure: Number(id.replace(/^measure:/, '')), burden: burdenOf(span.diagnostics), count: span.diagnostics?.expected_notes }))
+    .filter((span) => Number.isInteger(span.measure) && span.count > 0 && span.burden > 0).sort((a, b) => b.burden - a.burden || a.measure - b.measure);
+  const onSeam = (span) => span.measure === join.seam.left || span.measure === join.seam.right;
+  const worst = ranked[0];
+  // The seam is the trouble only when its bars are worse than every bar away from it: misses spread evenly
+  // through a half that happens to start at the seam sit in that half, not on the seam.
+  if (worst && onSeam(worst) && !ranked.some((span) => !onSeam(span) && span.burden >= worst.burden)) {
     return { range: { start: join.seam.left, end: join.seam.right }, parts: [...task.parts], reason: 'seam' };
   }
+  // STEP DOWN (2026-11-23 late): the misses sit inside one half (every missed or wrong note there, or at least
+  // HALF_SHARE of them): practise that half, the smaller join or the passage, then step back up.
+  const halves = join.members.map((id) => plan.segments.find((segment) => segment.id === id)).filter(Boolean);
+  const errors = (half) => Object.entries(result.spans ?? {}).reduce((sum, [id, span]) => {
+    const measure = Number(id.replace(/^measure:/, ''));
+    return Number.isInteger(measure) && measure >= half.inMeasure && measure <= half.outMeasure
+      ? sum + (span.diagnostics?.missed_notes ?? 0) + (span.diagnostics?.wrong_notes ?? 0) : sum;
+  }, 0);
+  const load = halves.map((half) => ({ half, errors: errors(half) }));
+  const total = load.reduce((sum, item) => sum + item.errors, 0);
+  const heavy = total > 0 ? load.find((item) => item.errors / total >= HALF_SHARE) : null;
+  const heavyParts = heavy ? task.parts.filter((part) => partsOf(heavy.half.playableParts).includes(part)) : [];
+  if (heavy && heavyParts.length) return { range: { start: heavy.half.inMeasure, end: heavy.half.outMeasure }, parts: heavyParts,
+    reason: 'smaller-join', stepDown: heavy.half.id };
   return null;
 }
 
@@ -559,14 +584,15 @@ function recovery(plan, task, result) {
   let tempoPercent = task.tempoPercent;
   const timingOnly = task.mode === 'cued' && result.criteria?.completeness >= task.criteria.completeness
     && result.criteria?.cleanliness >= task.criteria.cleanliness;
-  const join = plan.segments.find((segment) => segment.id === task.passageId && segment.kind === 'join');
-  const joinDrill = join && !timingOnly && (task.depth ?? 0) === 0 && sameRange(range, { start: join.inMeasure, end: join.outMeasure })
-    ? joinRecovery(join, task, result) : null;
+  // The join being played whole: the task's own unit, or the half a step down is practising (it can step down again).
+  const join = plan.segments.find((segment) => segment.id === (task.stepDown ?? task.passageId) && segment.kind === 'join');
+  const joinDrill = join && !timingOnly && ((task.depth ?? 0) === 0 || task.stepDown) && sameRange(range, { start: join.inMeasure, end: join.outMeasure })
+    ? joinRecovery(plan, join, task, result) : null;
   // RHYTHM RECOVERY: timing is what keeps failing and there is no slower step left (or the child has already
   // been slowed to it). Take the pitch away: any key, a percussive sound, just WHEN. Never inside itself.
   if (timingOnly && !task.rhythm && tempoPercent <= SLOWER_TEMPOS[0] && !joinDrill) {
     return makeCoachTask(plan, { ...task, rhythm: true, required: null, assist: null, stallSeconds: null, legacyRequired: null,
-      label: 'Tap the rhythm', parent: task, depth: (task.depth ?? 0) + 1, reason: 'rhythm', mastery: false, completes: false });
+      label: 'Tap the rhythm', parent: task, depth: (task.depth ?? 0) + 1, reason: 'rhythm', stepDown: null, mastery: false, completes: false });
   }
   if (joinDrill) {
     range = joinDrill.range; parts = joinDrill.parts;
@@ -596,8 +622,14 @@ function recovery(plan, task, result) {
     });
     parts = parts.slice(0, 1);
   } else return null;
+  if (joinDrill?.stepDown) {
+    const half = plan.segments.find((segment) => segment.id === joinDrill.stepDown);
+    return makeCoachTask(plan, { ...task, range, parts, required: null, assist: null, stallSeconds: null, legacyRequired: null,
+      label: `Play bars ${half.inMeasure + 1}–${half.outMeasure + 1}`, parent: task, depth: (task.depth ?? 0) + 1,
+      reason: 'smaller-join', stepDown: half.id, mastery: false, completes: false });
+  }
   const reason = joinDrill ? joinDrill.reason : timingOnly && tempoPercent !== task.tempoPercent ? 'slower-beat' : sameRange(range, task.range) ? 'one-hand' : 'focus-bars';
-  return makeCoachTask(plan, { ...task, range, parts, tempoPercent, required: null, assist: null, stallSeconds: null, legacyRequired: null,
+  return makeCoachTask(plan, { ...task, range, parts, tempoPercent, required: null, assist: null, stallSeconds: null, legacyRequired: null, stepDown: null,
     label: reason === 'slower-beat' ? 'Try a little slower' : reason === 'one-hand' ? 'Practice one hand' : reason === 'seam' ? 'Practice the join' : 'Practice these bars',
     parent: task, depth: (task.depth ?? 0) + 1, reason, mastery: false, completes: false });
 }
@@ -611,11 +643,11 @@ function recovery(plan, task, result) {
  */
 function backChain(plan, task) {
   const parent = task.parent;
-  if (!parent || task.mode !== parent.mode || task.tempoPercent !== parent.tempoPercent || !sameParts(task.parts, parent.parts)) return null;
+  if (!parent || task.stepDown || task.mode !== parent.mode || task.tempoPercent !== parent.tempoPercent || !sameParts(task.parts, parent.parts)) return null;
   if (task.range.end !== parent.range.end || task.range.start <= parent.range.start) return null;
   const range = { start: task.range.start - 1, end: task.range.end };
   if (sameRange(range, parent.range)) return null;
-  return makeCoachTask(plan, { ...task, range, reason: 'back-chain', label: 'Practice these bars' });
+  return makeCoachTask(plan, { ...task, range, reason: 'back-chain', label: 'Practice these bars', stepDown: null });
 }
 
 export function applyCoachEvent(state, event, options) {
@@ -642,7 +674,8 @@ function applyCoachEventToState(state, event, { plan, now, dayKey, legacy = {} }
     resume: current.resume?.passageId === task.passageId ? null : current.resume ?? null };
   if (event.type !== 'outcome' || !assessable(event.result, task)) return current;
   const result = event.result;
-  const candidates = plan.tasks.filter((candidate) => {
+  // A step down to a join's half is practice: it proves none of the half's own steps (no credit, no counts).
+  const candidates = task.stepDown ? [] : plan.tasks.filter((candidate) => {
     if (!canProve(task, candidate)) return false;
     const segment = plan.segments.find((item) => item.id === candidate.passageId);
     if (!segment.authoredLadder || candidate.source === 'demonstration') return true;

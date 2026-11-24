@@ -129,7 +129,10 @@ export class PianoLearnCoachService {
         || !['free', 'metronome', 'cued'].includes(current.mode)
         || (current.assist != null && current.assist !== 'none')
         || (current.mode !== 'free' && (!Number.isFinite(current.tempoPercent) || current.tempoPercent <= 0 || current.tempoPercent > 100))
-        || !current.criteria || Object.values(current.criteria).some((n) => !Number.isFinite(n) || n < 0 || n > 1)) fail('Invalid coaching task');
+        || !current.criteria || Object.values(current.criteria).some((n) => !Number.isFinite(n) || n < 0 || n > 1)
+        // A step down names the half it practises, and plays exactly that half's bars.
+        || (current.stepDown != null && !plan.segments.some((item) => item.id === current.stepDown
+          && item.inMeasure === current.range.start && item.outMeasure === current.range.end))) fail('Invalid coaching task');
       current = current.parent;
     }
     if (!task) fail('Missing coaching task');

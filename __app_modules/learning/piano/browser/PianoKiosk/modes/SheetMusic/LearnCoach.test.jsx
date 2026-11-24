@@ -153,6 +153,18 @@ describe('LearnCoach', () => {
   expect(recoveryWording({ reason: 'smaller-span', range: { start: 1, end: 1 } }).sentence).toBe('practice bar 2');
   expect(recoveryWording({ reason: 'smaller-span', range: { start: 0, end: 2 } }).button).toBe('Practice bars 1–3');
  });
+ it('words a step down by the half\'s name on the path, or its bars without one', () => {
+  expect(recoveryWording({ reason: 'smaller-join', stepDown: 'join:c:d', range: { start: 8, end: 15 } }, { 'join:c:d': 'C–D' })).toEqual({ button: 'Play C–D', sentence: 'play C–D' });
+  expect(recoveryWording({ reason: 'smaller-join', stepDown: 'x', range: { start: 8, end: 15 } })).toEqual({ button: 'Play bars 9–16', sentence: 'play bars 9–16' });
+ });
+ it('heads the strip of a step down with the half first, then the join', () => {
+  const segment = projectCoach({ plan }).segments[0];
+  const check = segment.skills.find((skill) => skill.assist === 'none');
+  const down = { ...check, assist: undefined, key: 'down', depth: 1, parent: check, reason: 'smaller-join', stepDown: 'c' };
+  const drill = passageDrill(segment, down, { unit: { letter: 'All', state: 'joined', stepDownName: 'C–D' } });
+  expect(drill.projection.head).toMatchObject({ text: 'C–D first · then All', label: 'C–D first, then All' });
+  expect(drill.stepId).toBe(check.key);
+ });
  it('names a timing recovery by its slower tempo', async () => {
   render(<LearnCoach {...props} skipping={{ default: 'open' }} />);
   act(() => h.lab.onPickStep({ id: keyOf('mastery') }));
