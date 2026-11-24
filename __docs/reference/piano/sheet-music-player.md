@@ -203,7 +203,9 @@ than the piece would always slice a staff at its edge, so the score is shown as
   sits on the music. **A passage number is whole or not drawn** (2026-11-24): its
   disc (with a selected one's ring, `PASSAGE_NUMBER_HALO`) is a **head** of the system
   under it (`systemCuts(systems, height, ink, heads)`): no page cut falls below a head,
-  and under one the cut goes to the bottom of the free paper above it. Before, a head
+  and under one the cut goes to the bottom of the free paper above it (a head that
+  reaches up into the system above cannot be kept whole without cutting that system, so
+  that gap is cut as if it had none, and the net below hides the disc). Before, a head
   was plain ink and the cut fell in the widest free strip, which could be under a
   number standing tight on the stems of the system above: Santa Claus at 1280×800 showed
   C, D and E cut at their tops on page 2, and the owner saw F cut at the foot of the page
@@ -385,7 +387,7 @@ the drill. It draws no practice screen of its own.
   shifts between states: **‹ Score** (Back names where it goes); the title, which is the step's
   instruction (`Tap the rhythm`, 26px bold), over the bars it covers (`Pickup + bars 1–4`, 18px muted:
   `barLabel` in `resolveLearnPlan.js` names a printed bar 0 **Pickup**, so 0..4 reads `Pickup + bars 1–4`,
-  1..4 `Bars 1–4`, 0..0 `Pickup`); the **prompt** (`Press a key to start` with key and pedal glyphs while a
+  1..4 `Bars 1–4`, 0..0 `Pickup`); the **prompt** (`Press a key to start` over `or a pedal` while a
   timed take is ready, `Play the first note to begin` for a free one; nothing during a take; empty on a
   result); the **settings** (the speed button, `100%` with the flag at full speed, and the click volume
   button), removed with their slot kept during a take or Listen; then the actions. No header control
@@ -404,8 +406,8 @@ the drill. It draws no practice screen of its own.
 - **Speed** (`LearnTempoTrack.jsx`, 2026-11-24). One header button showing the chosen percent (with
   the flag at 100%) that opens an opaque **speed sheet**: one button of at least 96px per stop, the
   percent big and, only here, the bpm small beneath; ladder rungs labelled as such, earned rungs filled,
-  the stops a pass at the chosen speed would also fill lit, and the sheet says so (`Pass at 85% = 50, 70,
-  85 done`). No slider, no drag, no − / +. The stops are the plan's own Gold rung tempos
+  the stops a pass at the chosen speed would also fill lit, and the sheet says so (`A pass at 85% also
+  earns 50, 70, 85%`). No slider, no drag, no − / +. The stops are the plan's own Gold rung tempos
   for the unit (read from the plan, never a list in code), the step's tempo, 100%, and one stop about halfway (to the nearest 10)
   between two rungs 20 or more apart (`tempoTrackStops` in `tempoStages.js`; for 30·50·75·100 that is
   30·40·50·60·75·90·100). The step's own tempo is the floor (a child may go faster, never
@@ -789,7 +791,7 @@ ring, and a line of its own for the bars caption):
   profiles with `schoolLearner: true`, the kids), `everyone` or `nobody`; a grown-up
   (`schoolLearner: false`) or a guest sees plain discs by default. Resolved by
   `passageTomatoesFor` in `pianoConfigModel.js`, read for whoever is playing by
-  `usePassageTomatoes` (no tomatoes outside the kiosk's user provider).
+  `usePassageTomatoes` (outside the kiosk's user provider, only `everyone` shows them).
 - **Joins appear only on the Silver lap and later** (`projection.lap !== 'bronze'`)
   and only when both halves are certified: both passages Bronze, or for a higher
   join both member joins Silver. Only the **next** available join is shown (the
@@ -1196,8 +1198,10 @@ the count changed between the steps of one passage. `exerciseCountInPlan` in
 readyBar, slots }`:
 
 - The count ends with the **landing bar**, the bar holding the passage's first note
-  (`passageFirstOnsetQuarter`: the earliest onset across both staves, passed by
-  `LearnLab` to `ExerciseRun`).
+  (`passageFirstOnsetQuarter`: the earliest onset across both staves, read from the
+  passage's XML by `ScorePassage` before the step picks its hand and carried on its
+  expectation; `ExerciseRun` reads it from the score's expectation, since the attempt
+  recompiles its own without it).
 - A **ready bar** comes first unless the landing bar alone gives at least 2.5 s
   (`READY_BAR_MS`) and two audible clicks after the press (the press is beat one and
   not sounded). Never more than two bars. At ♩=120, Santa Claus's one-beat pickup is a
@@ -1206,7 +1210,10 @@ readyBar, slots }`:
 - **The count belongs to the passage, not the hand**: a left hand that enters on the
   downbeat hears the same count and sees a **rest** box where the pickup is; a hand
   whose own pulse the pickup does not land on (whole notes under a one-beat pickup)
-  counts in quarters.
+  counts in quarters. A hand that first plays in a later bar than the landing bar
+  counts its own entry instead (its wait would run the count past two bars).
+- The click accents the 1 of each bar of the count (`clicksPerBar`, passed to the
+  click as `beatsPerBar`; none for a bar the clicks do not divide).
 - `slots` lay the count out beat by beat (`{ bar, beat, kind: 'count'|'rest'|'note',
   half? }`); the overlay draws them in bar groups, the step's entry as a **note box**
   (♩, ✕ on the rhythm step) in its own beat from the moment the take is armed ("play on

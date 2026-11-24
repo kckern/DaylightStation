@@ -11,12 +11,12 @@ function usePlayerOptional() {
 /**
  * Whether the Learn path draws a tomato on a passage not yet started, for whoever is
  * playing: `sheetmusic.learn.tomatoes` ('learners' by default: the kids, not the
- * grown-ups). Off without a known player.
+ * grown-ups). Without a known player, only `everyone` shows them.
  */
 export default function usePassageTomatoes() {
   const player = usePlayerOptional();
   const learn = usePianoKioskConfigOptional()?.config?.sheetmusic?.learn;
-  if (!player) return false;
+  if (!player) return passageTomatoesFor(learn, null);
   const profile = (player.users ?? []).find((item) => item.id === player.currentUser) ?? player.currentProfile ?? null;
   return passageTomatoesFor(learn, profile);
 }

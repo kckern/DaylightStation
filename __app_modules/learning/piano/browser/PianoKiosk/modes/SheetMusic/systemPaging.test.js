@@ -49,6 +49,12 @@ describe('systemPaging', () => {
     expect(cut.ink[1][0]).toBeLessThanOrEqual(272);
     // A number with no free paper above it still goes with its system.
     expect(systemCuts(pair, 600, [[60, 290], [310, 510]], [[280, 305]])[1]).toBe(280);
+    // A head reaching up into the system above cannot keep its system without cutting that one:
+    // the cut stays between the systems, and the cuts stay in order.
+    const intruding = systemCuts(pair, 600, [[60, 268], [310, 510]], [[200, 305]]);
+    expect(intruding[1]).toBeGreaterThanOrEqual(260);
+    expect(intruding[1]).toBeLessThanOrEqual(310);
+    expect([...intruding].every((cut, index) => index === 0 || cut >= intruding[index - 1])).toBe(true);
   });
 
   it('shows only whole systems, centred in the window', () => {

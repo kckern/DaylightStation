@@ -56,9 +56,14 @@ describe('usePassageTomatoes', () => {
     expect(valueFor({ tomatoes: 'learners', learner: 'grownup' })).toBe(false);
   });
 
-  it('is off with no piano user context at all (a page outside the kiosk)', () => {
+  it('is off with no piano user context at all (a page outside the kiosk), except for everyone', () => {
     let seen;
     render(<Probe onValue={(value) => { seen = value; }} />);
     expect(seen).toBe(false);
+    // ...unless the household asked for tomatoes for everyone (the office screen has no player provider).
+    render(<ActivePianoProvider pianoId="p" basePath="/piano" config={{ sheetmusic: { learn: { tomatoes: 'everyone' } } }}>
+      <Probe onValue={(value) => { seen = value; }} />
+    </ActivePianoProvider>);
+    expect(seen).toBe(true);
   });
 });

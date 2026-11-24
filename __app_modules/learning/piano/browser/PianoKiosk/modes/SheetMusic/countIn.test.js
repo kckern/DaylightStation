@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { countInPlan, exerciseCountInPlan, countdownPresentation, askPulseQuarters, askPace, countInSentence, entryOffsetQuarters, alignCountIn, polishCountIn } from './countIn.js';
+import { countInPlan, exerciseCountInPlan, countdownPresentation, askPulseQuarters, askPace, countInSentence, countUpPresentation, entryOffsetQuarters, alignCountIn, polishCountIn } from './countIn.js';
 
 describe('exercise count-in projection', () => {
   it.each([
@@ -380,7 +380,32 @@ describe('the pickup count, in bars', () => {
     const eighth = [{ onsetQuarter: 0, durationQuarters: 0.5, implicit: true }, { onsetQuarter: 0.5, durationQuarters: 4 }, { onsetQuarter: 4.5, durationQuarters: 4 }];
     const p = exerciseCountInPlan({ beatsPerMeasure: 4, gradedBpm: 60, onsetQuarters: [0, 0.5, 1.5], measures: eighth, passageFirstOnsetQuarter: 0 });
     expect(p).toMatchObject({ clicks: 4, leadInMs: 3500, entry: 'offbeat', readyBar: false });
-    expect(p.slots.at(-1)).toMatchObject({ kind: 'note', half: true });
+    // The note comes on the "and" of 4: the four counts, then the note in the second half of beat 4.
+    expect(p.slots).toEqual([1, 2, 3, 4].map((beat) => ({ bar: 1, beat, kind: 'count' })).concat({ bar: 1, beat: 4, kind: 'note', half: true }));
+    // The cue comes on the last click, 4.
+    const at = (ms) => countUpPresentation({ clicks: p.clicks, elapsedMs: ms, leadInMs: p.leadInMs, periodMs: p.periodMs, slots: p.slots });
+    expect(at(3100)).toMatchObject({ count: 4, last: true });
+    expect(at(2100)).toMatchObject({ count: 3, last: false });
+  });
+
+  it('a hand entering half a click after the passage still counts whole clicks', () => {
+    const p = exerciseCountInPlan({ beatsPerMeasure: 4, gradedBpm: 60, onsetQuarters: [0.5, 1.5], measures: [{ onsetQuarter: 0, durationQuarters: 4 }, { onsetQuarter: 4, durationQuarters: 4 }], passageFirstOnsetQuarter: 0 });
+    expect(Number.isInteger(p.clicks)).toBe(true);
+    expect(p).toMatchObject({ clicks: 5, leadInMs: 4500 }); // clicks on 1 2 3 4 and the next 1; the note on its "and"
+  });
+
+  it('never folds a late hand into more than two bars: it counts its own bar instead', () => {
+    const bars4 = [0, 1, 2, 3].map((index) => ({ onsetQuarter: index * 4, durationQuarters: 4 }));
+    const p = exerciseCountInPlan({ beatsPerMeasure: 4, gradedBpm: 60, onsetQuarters: [8, 9], measures: bars4, passageFirstOnsetQuarter: 0 });
+    expect(p.slots.length).toBeLessThanOrEqual(9);
+    expect(p).toMatchObject({ clicks: 4, leadInMs: 4000, entry: 'downbeat' });
+  });
+
+  it('says how many clicks make a bar, so the click can accent each bar\'s 1', () => {
+    const santa = [{ onsetQuarter: 0, durationQuarters: 1, implicit: true }, { onsetQuarter: 1, durationQuarters: 4 }, { onsetQuarter: 5, durationQuarters: 4 }];
+    expect(exerciseCountInPlan({ beatsPerMeasure: 4, gradedBpm: 120, onsetQuarters: [0, 1, 2], measures: santa, passageFirstOnsetQuarter: 0 }).clicksPerBar).toBe(4);
+    const waltz = [{ onsetQuarter: 0, durationQuarters: 1, implicit: true }, { onsetQuarter: 1, durationQuarters: 3 }, { onsetQuarter: 4, durationQuarters: 3 }];
+    expect(exerciseCountInPlan({ beatsPerMeasure: 3, gradedBpm: 60, onsetQuarters: [0, 1, 2, 3], measures: waltz, passageFirstOnsetQuarter: 0 }).clicksPerBar).toBe(3);
   });
 
   it('3/4 pickup: 1 2 3 | 1 2 note', () => {

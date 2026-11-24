@@ -207,8 +207,9 @@ function countSlots({ entryPosition, perBar, restPosition = null }) {
   const last = Math.ceil(entryPosition - WHOLE);
   for (let k = 0; k <= last; k += 1) {
     if (k === last && !isWhole(entryPosition)) {
-      slots.push({ bar: Math.floor(k / perBar) + 1, beat: (k % perBar) + 1, kind: 'count' });
-      slots.push({ bar: Math.floor(k / perBar) + 1, beat: (k % perBar) + 1, kind: 'note', half: true });
+      // Between two clicks: the note shares the beat of the last count, in its second half.
+      const at = Math.max(0, k - 1);
+      slots.push({ bar: Math.floor(at / perBar) + 1, beat: (at % perBar) + 1, kind: 'note', half: true });
       return slots;
     }
     const kind = k === last ? 'note' : restPosition != null && k === restPosition ? 'rest' : 'count';
@@ -244,6 +245,8 @@ export function exerciseCountInPlan({ beatsPerMeasure, gradedBpm, onsetQuarters,
   const lag = Number.isFinite(stepFirst) && Number.isFinite(passageFirst) ? Math.max(0, (stepFirst - passageFirst) / pulseQuarters) : 0;
   const result = (clicks, entryPosition, entry, readyBar, restPosition = null) => ({
     clicks,
+    // Clicks per bar, so the click accents each bar's 1 (none for a bar the clicks do not divide).
+    clicksPerBar: entry === 'unaligned' ? null : perBar,
     periodMs: plan.periodMs,
     leadInMs: entryPosition * plan.periodMs,
     pulseBpm: 60000 / plan.periodMs,
@@ -252,9 +255,13 @@ export function exerciseCountInPlan({ beatsPerMeasure, gradedBpm, onsetQuarters,
     readyBar,
     slots: countSlots({ entryPosition, perBar, restPosition }),
   });
+  // A hand that enters in a later bar than the passage's landing bar counts its own entry instead: folding
+  // its wait into the count would run past two bars (the run's own rests carry it).
+  const own = () => exerciseCountInPlan({ beatsPerMeasure, gradedBpm, onsetQuarters, measures, forceReadyBar });
   if (!(entryQuarters > WHOLE)) {
     const clicks = Math.min(4, plan.beats);
-    return result(clicks + lag, clicks + lag, 'downbeat', false, lag > WHOLE ? clicks : null);
+    if (lag > perBar - WHOLE) return own();
+    return result(Math.ceil(clicks + lag - WHOLE), clicks + lag, 'downbeat', false, lag > WHOLE ? clicks : null);
   }
   const before = entryQuarters / pulseQuarters;
   if (!(pulseQuarters > 0) || !isWhole(perBarExact)) {
@@ -266,6 +273,7 @@ export function exerciseCountInPlan({ beatsPerMeasure, gradedBpm, onsetQuarters,
   const readyBar = forceReadyBar || before * plan.periodMs < READY_BAR_MS - WHOLE || audibleInLandingBar < MIN_AUDIBLE_CLICKS;
   const passagePosition = (readyBar ? perBar : 0) + before;
   const entryPosition = passagePosition + lag;
+  if (lag > perBar - WHOLE) return own();
   const clicks = Math.ceil(entryPosition - WHOLE);
   return result(clicks, entryPosition, whole ? 'aligned' : 'offbeat', readyBar, lag > WHOLE && isWhole(passagePosition) ? passagePosition : null);
 }

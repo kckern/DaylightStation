@@ -803,13 +803,14 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       onsetQuarters: (snapshot.expectation?.events ?? []).map((event) => event.onsetQuarter),
       // The engraver's bars, so a pickup is counted on the beats before it.
       measures: snapshot.expectation?.measureMap,
-      // The passage's first note across both hands: one count for every step of the passage.
-      passageFirstOnsetQuarter: snapshot.expectation?.passageFirstOnsetQuarter,
+      // The passage's first note across both hands: one count for every step of the passage. The
+      // attempt recompiles its expectation and drops this field, so it is read from the score's own.
+      passageFirstOnsetQuarter: snapshot.expectation?.passageFirstOnsetQuarter ?? scoreExpectation?.passageFirstOnsetQuarter,
       // A missed cue comes back to a count with its ready bar: the child just showed they need it.
       forceReadyBar: readyBarForced,
     });
     return plan ? { ...plan, gradedBpm: bpm } : null;
-  }, [beatsPerMeasure, clickBpm, snapshot.expectation, readyBarForced]);
+  }, [beatsPerMeasure, clickBpm, snapshot.expectation, scoreExpectation, readyBarForced]);
 
   const timed = snapshot.matcher === 'timed';
   /**
@@ -1443,7 +1444,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
 
   useMetronomeClick({
     anchorMs: learnPulse ? pulseAnchor ?? undefined : clickAnchorMs,
-    beatsPerBar: learnPulse ? beatsPerMeasure : undefined,
+    // The beat loop accents the meter's 1; a cued Learn count accents the 1 of each bar it counts.
+    beatsPerBar: learnPulse ? beatsPerMeasure : (learnCued && countIn?.clicksPerBar > 0 ? countIn.clicksPerBar : undefined),
     gain: clickGain,
     leadMs: clickLead.leadMs,
     // The click keeps going while a late entry's last note is awaited: the child

@@ -316,6 +316,16 @@ describe('LearnLab', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('a take that starts with the speed sheet open takes the sheet away, and Escape still leaves', () => {
+    const onClose = vi.fn();
+    render(<LearnLab {...base} onClose={onClose} rung={{ ...rung, mode: 'cued', tempoPercent: 60 }} />);
+    openSpeed();
+    phase('countdown');
+    expect(screen.queryByRole('dialog', { name: 'Speed' })).toBeNull();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('advances through configured set percentages and carries the full score tempo source', () => {
     const timed = { ...rung, mode: 'cued', sets: 3, reps: 1, passCount: 1, required: 3, tempoPercent: 60, tempoPercents: [60, 75, 90] };
     const onRecord = vi.fn(() => ({}));

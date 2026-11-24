@@ -67,9 +67,10 @@ export function systemCuts(systems = [], height = 0, ink = [], heads = []) {
   const cuts = [Math.min(0, first)];
   for (let i = 1; i < systems.length; i++) {
     const from = systems[i - 1].bottom;
-    // No lower than the highest head over this system.
-    const ceiling = tops.reduce((low, [top, bottom]) => (bottom > from && top < systems[i].top ? Math.min(low, top) : low), Infinity);
-    if (ceiling <= from) { cuts.push(ceiling); continue; }
+    // No lower than the highest head over this system. A head reaching up into the system above cannot
+    // be kept without cutting that system: the gap is then cut as if it had no head.
+    const highest = tops.reduce((low, [top, bottom]) => (bottom > from && top < systems[i].top ? Math.min(low, top) : low), Infinity);
+    const ceiling = highest > from ? highest : Infinity;
     const to = Math.min(systems[i].top, ceiling);
     if (!(to > from)) { cuts.push((from + to) / 2); continue; }
     // The free strips of [from, to] once the ink is taken out.

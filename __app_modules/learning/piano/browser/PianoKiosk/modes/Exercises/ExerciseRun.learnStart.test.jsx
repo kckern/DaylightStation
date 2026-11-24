@@ -455,24 +455,31 @@ describe('a cued Learn passage counts a pickup in on its own beat', () => {
     advance(1000);
     expect(current.onPassed).toHaveBeenCalledTimes(1);
   });
+});
 
-  it('grades a passage that opens on a rest from the first note, where the count says play', async () => {
-    // A half-note rest (one click) opens the bar: one click before the note is too few,
-    // so a bar of two clicks comes first. "next click: play" is the third click, and
-    // the first note is due on the click after it — the grader must agree.
+
+describe('the count belongs to the passage, not the hand', () => {
+  it('a hand that enters after the passage hears the passage count, rests where the passage starts, and is graded where it enters', async () => {
+    // The score's first note is on the downbeat (the XML); this hand's first note is a click later.
     h.onsetShift = 2;
     h.measureMap = [0, 1, 2].map((index) => ({ index, onsetQuarter: index * 4, durationQuarters: 4 }));
     await mount();
-    const firstClick = armByTap();
-    expect(events('piano.exercise-countdown-started').at(-1)).toMatchObject({ entry: 'aligned', pulseCount: 3 });
-    PASSAGE.forEach((midi, index) => {
-      advance(firstClick + 3 * BEAT + index * BEAT - Date.now());
-      strike(midi);
-    });
+    const pressedAt = armByTap();
+    // The passage's own count (four clicks, two bars of two at this pulse), a rest box on the click the
+    // passage starts, and this hand's first note on the click after it.
+    expect(events('piano.exercise-countdown-started').at(-1)).toMatchObject({ entry: 'downbeat', pulseCount: 5, leadInMs: 5 * BEAT });
+    expect(band().querySelector('.piano-learn-countin__pip.is-rest')).not.toBeNull();
+    PASSAGE.forEach((midi, index) => { advance(pressedAt + 5 * BEAT + index * BEAT + 20 - Date.now()); strike(midi); });
     finish();
     advance(1000);
     expect(current.onPassed).toHaveBeenCalledTimes(1);
-    expect(current.onFailed).not.toHaveBeenCalled();
+  });
+
+  it('the click accents the 1 of every bar of the count', async () => {
+    h.measureMap = [{ index: 0, onsetQuarter: 0, durationQuarters: 2 }, { index: 1, onsetQuarter: 2, durationQuarters: 4 }];
+    await mount();
+    armByTap();
+    expect(h.click).toMatchObject({ beatsPerBar: 2 });
   });
 });
 
