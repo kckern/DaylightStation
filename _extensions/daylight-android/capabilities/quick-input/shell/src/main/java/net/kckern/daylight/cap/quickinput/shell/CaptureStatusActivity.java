@@ -124,11 +124,12 @@ public final class CaptureStatusActivity extends Activity {
         boolean query = "status".equals(operation);
         if (query) loading = true;
         else acting = true;
+        net.kckern.daylight.shellkit.ShellStart.ensure(this);
         worker.execute(() -> {
             JSONObject response = null;
             try {
                 JSONObject request = new JSONObject().put("op", operation).put("owner", selected).put("id", id);
-                response = new JSONObject(PayloadPort.named(MemoFiles.PORT).call(request.toString(), 2000));
+                response = new JSONObject(PayloadPort.named(MemoFiles.PORT).call(request.toString(), 6000));
             } catch (Exception unavailable) {
                 // The next refresh can read from the restarted payload.
             }
