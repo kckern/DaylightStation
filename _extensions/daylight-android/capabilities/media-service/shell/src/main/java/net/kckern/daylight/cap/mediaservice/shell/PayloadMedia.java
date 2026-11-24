@@ -57,6 +57,15 @@ final class PayloadMedia {
      * A tap on a widget or a tile handed the play service an action id. The payload
      * answers with the media id of that action's content, or refuses.
      */
+    String playlistSources(long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "playlistSources").toString(), waitMs);
+    }
+
+    String playlists(String source, int cursor, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "playlists").put("source", source)
+                .put("cursor", String.valueOf(cursor)).toString(), waitMs);
+    }
+
     String action(String actionId, long waitMs) throws Exception {
         return port.call(new JSONObject().put("op", "action").put("action", actionId).toString(), waitMs);
     }

@@ -495,6 +495,41 @@ Media3 is pinned to 1.1.1, the newest version whose libraries build with
 compileSdk 33 and Android Gradle Plugin 7.4.2. A newer one needs a newer compileSdk
 for every device.
 
+### Resume, the rail and the Drive grid
+
+- **Resume.** The shell declares Media3's `MediaButtonReceiver`, so a media button
+  (a headset, a car, the system's resume card) starts the media service when it is
+  not running. `onPlaybackResumption` then answers: Driving Radio for Android Auto
+  when it is enabled, otherwise the last item played (`resume.*` in the
+  `daylight_buttons` preferences, written each time playback starts; the id is a
+  `p:` leaf id the payload resolves like any other). With nothing played yet the
+  request is refused. Android Auto asks on connect when "Start music automatically"
+  is on; the line `playback resumption asked by <package>` is in `Daylight-Media`.
+  An item the backend remembers as finished comes back at its end and waits paused.
+- **The rail.** With the service stopped Android Auto still lists Daylight and shows
+  the card "Daylight / Tap to open", because the system keeps the receiver as the
+  last media-button target. A `recent` root (`LibraryParams.isRecent`) answers the
+  one last item.
+- **Drive is a grid.** The root answers `CONTENT_STYLE_SUPPORTED`, and the Drive
+  entry carries the grid hints for its children (`NodeItems`). Each tile is a staged
+  playlist marked "Show on Drive": its title, a second line ("Playlist"), and its
+  picture. Driving Radio leads with today's station as the title, "Driving Radio"
+  as the second line, and today's playlist picture. The grid's tile size is Android
+  Auto's and not the app's.
+- **Pictures.** `staged_art.<id>` in the same preferences holds each playlist's
+  https thumbnail. It is saved when a playlist is staged and when the library list
+  is shown in the setup screen. A Drive browse with staged playlists missing a
+  picture asks the payload (`playlistSources`, `playlists`) for them in the
+  background, at most once every ten minutes; each saved picture changes the Drive
+  level and the car asks again. The first Drive load on a fresh install shows
+  placeholders until that finishes (about 40 seconds with 110 playlists).
+- **Seen on the Desktop Head Unit** (build 80): resume on connect, the last-item
+  fallback, the grid with pictures and second lines, the rail after the process was
+  killed. Not seen: a real car, the grid's size on a larger screen, or a voice search
+  accepted through the Google app. Its certificate is pinned in `media.controllerPins`
+  (build 81); the digest comes from `apksigner verify --print-certs` on the installed
+  Google app, and matches the `refused media controller` line it used to log.
+
 ### Only household media plays
 
 - A media id is `root`, `recent`, `catalog`, `c:<contentId>` (a container),

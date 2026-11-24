@@ -480,8 +480,12 @@ public class PhoneHomeActivity extends Activity {
             }
             for (int i = 0; i < items.length(); i++) {
                 JSONObject item = items.optJSONObject(i);
-                if (item != null) addPlaylist(screen, item.optString("contentId"), item.optString("title"),
-                        item.optString("thumbnail"), false);
+                if (item != null) {
+                    // A playlist staged before thumbnails were kept gets its picture here.
+                    new DrivingRadioSettings(this).setArt(item.optString("contentId"), item.optString("thumbnail"));
+                    addPlaylist(screen, item.optString("contentId"), item.optString("title"),
+                            item.optString("thumbnail"), false);
+                }
             }
             int next = result.optInt("nextCursor", -1);
             if (next > cursor) loadPlaylistPage(screen, source, next);
@@ -526,6 +530,7 @@ public class PhoneHomeActivity extends Activity {
         tile.setOnClickListener(view -> {
             if (staged) managePlaylist(contentId, title);
             else chooseShuffle(contentId, title, () -> {
+                new DrivingRadioSettings(this).setArt(contentId, thumbnail);
                 name.setText("✓ " + title);
                 tile.setContentDescription("Staged: " + title);
             });

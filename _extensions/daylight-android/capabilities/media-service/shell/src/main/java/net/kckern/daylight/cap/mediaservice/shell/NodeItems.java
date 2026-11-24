@@ -24,16 +24,49 @@ final class NodeItems {
     }
 
     static MediaItem drivingRadio(String today) {
+        return drivingRadio(today, "");
+    }
+
+    static MediaItem drivingRadio(String today, String art) {
+        // The station is what you are choosing, so it leads; the second line says what the tile is.
+        String name = today == null || today.isEmpty() ? "Driving Radio" : today;
+        MediaMetadata.Builder meta = new MediaMetadata.Builder().setTitle(name)
+                .setSubtitle("Driving Radio").setArtist("Driving Radio").setIsBrowsable(false).setIsPlayable(true);
+        if (art != null && art.startsWith("https://")) meta.setArtworkUri(Uri.parse(art));
         return new MediaItem.Builder().setMediaId(net.kckern.daylight.shellkit.DrivingRadioSettings.MEDIA_ID)
-                .setMediaMetadata(new MediaMetadata.Builder().setTitle("Driving Radio")
-                        .setSubtitle(today).setArtist(today).setIsBrowsable(false).setIsPlayable(true).build())
-                .build();
+                .setMediaMetadata(meta.build()).build();
     }
 
     static MediaItem named(String id, String title, boolean folder) {
-        return new MediaItem.Builder().setMediaId(id)
-                .setMediaMetadata(new MediaMetadata.Builder().setTitle(title)
-                        .setIsBrowsable(folder).setIsPlayable(!folder).build()).build();
+        return named(id, title, folder, "");
+    }
+
+    /** A named node with a thumbnail (an https address) when one is known. */
+    static MediaItem named(String id, String title, boolean folder, String art) {
+        return named(id, title, folder, art, "");
+    }
+
+    /** A named node with a thumbnail and a second line (a car draws the display subtitle). */
+    static MediaItem named(String id, String title, boolean folder, String art, String subtitle) {
+        MediaMetadata.Builder meta = new MediaMetadata.Builder().setTitle(title)
+                .setIsBrowsable(folder).setIsPlayable(!folder);
+        if (subtitle != null && !subtitle.isEmpty()) meta.setSubtitle(subtitle).setArtist(subtitle);
+        if (art != null && art.startsWith("https://")) meta.setArtworkUri(Uri.parse(art));
+        return new MediaItem.Builder().setMediaId(id).setMediaMetadata(meta.build()).build();
+    }
+
+    // Android Auto's content-style hints (androidx.media.utils.MediaConstants). A browsable
+    // item's hints say how its children are drawn: 1 is a list, 2 is a grid of tiles.
+    static final String STYLE_SUPPORTED = "android.media.browse.CONTENT_STYLE_SUPPORTED";
+    private static final String STYLE_PLAYABLE = "android.media.browse.CONTENT_STYLE_PLAYABLE_HINT";
+    private static final String STYLE_BROWSABLE = "android.media.browse.CONTENT_STYLE_BROWSABLE_HINT";
+    private static final int STYLE_GRID = 2;
+
+    private static Bundle gridChildren() {
+        Bundle extras = new Bundle();
+        extras.putInt(STYLE_PLAYABLE, STYLE_GRID);
+        extras.putInt(STYLE_BROWSABLE, STYLE_GRID);
+        return extras;
     }
 
     static List<MediaItem> nodes(List<BrowseAnswer.Entry> entries) {
@@ -45,6 +78,8 @@ final class NodeItems {
                     .setIsPlayable(e.playable);
             if (!e.subtitle.isEmpty()) meta.setSubtitle(e.subtitle).setArtist(e.subtitle);
             if (e.artUrl != null) meta.setArtworkUri(Uri.parse(e.artUrl));
+            // The Drive tab's staged playlists read as a grid of thumbnails, not a text list.
+            if (DrivingRadio.DRIVE.equals(e.id)) meta.setExtras(gridChildren());
             out.add(new MediaItem.Builder().setMediaId(e.id).setMediaMetadata(meta.build()).build());
         }
         return out;

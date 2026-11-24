@@ -9,7 +9,7 @@ abis: []
 # all. Its installed components (the link activity, the tiles, the widget) reach the
 # payload in-process. Debugging is over adb: logcat, and run-as for its files.
 control: { port: 8780, lifelinePort: 8781, bind: none }
-shell: { versionCode: 77, versionName: "0.1-phone.77" }
+shell: { versionCode: 81, versionName: "0.1-phone.81" }
 # The household site's host, so an https link to it (in a relayed push, say) can open in
 # the app. Private: resolved from `placeholders:` when this device's manifest is built.
 appLinks: { host: "{phone_link_host}" }
@@ -88,7 +88,7 @@ defaults:
   # car, an assistant): "package=sha256 of its signing certificate", comma-separated.
   # Signer verified on the Play-installed Android Auto app. The package must also
   # belong to the calling UID. See "Who may connect" in the phone reference.
-  media.controllerPins: "com.google.android.projection.gearhead=1ca8dcc0bed3cbd872d2cb791200c0292ca9975768a82d676b8b424fb65b5295"
+  media.controllerPins: "com.google.android.projection.gearhead=1ca8dcc0bed3cbd872d2cb791200c0292ca9975768a82d676b8b424fb65b5295,com.google.android.googlequicksearchbox=7ce83c1b71f3d572fed04c8d40c5cb10ff75e6d87d9df6fbd53f0468c2905053"
   # The car screen's list in Android Auto (car-actions): ids of the actions above, at most
   # six. A household call (api:), "On my way" and a voice input can be listed; a web page,
   # media, text and photo cannot. A tap runs the action in process; a tap on a voice input

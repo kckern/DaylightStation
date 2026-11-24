@@ -26,6 +26,17 @@
             </intent-filter>
         </service>
 
+        <!-- A media button (a headset, a car, the system's resume card) wakes the service when
+             it is not running. Media3's receiver finds the library service above and starts it;
+             onPlaybackResumption then picks up the last item played. -->
+        <receiver
+            android:name="androidx.media3.session.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
         <!-- Not exported: started only by this app's own widget buttons (an immutable
              PendingIntent.getForegroundService) and tiles, with one action id. It plays a
              configured or pinned media action with no window. -->

@@ -11,6 +11,10 @@ exported:
   # Bound by a car, the system's media controls and Bluetooth; ControllerPolicy decides
   # each connection by the caller's uid, package and signing certificate.
   - net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService
+  # Any app can broadcast a media button, so this is reachable by design. It only starts the
+  # service above; ControllerPolicy still decides the connection, and with nothing queued
+  # onPlaybackResumption resumes the last item played.
+  - androidx.media3.session.MediaButtonReceiver
 # A media link is keyed and arrives through the link activity.
 requires:
   - notifications

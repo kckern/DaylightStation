@@ -60,9 +60,10 @@ test('a photo is taken by the system camera app, so the phone asks for no storag
     'android.permission.FOREGROUND_SERVICE_MICROPHONE', 'android.permission.ACCESS_NETWORK_STATE']);
 });
 
-test('another app can reach exactly these eleven components of the phone build', () => {
+test('another app can reach exactly these twelve components of the phone build', () => {
   const exported = ['net.kckern.daylight.shell.BootReceiver', ...phone.capabilities.flatMap((name) => capabilities[name]?.exported || [])];
   assert.deepEqual(exported.sort(), [
+    'androidx.media3.session.MediaButtonReceiver',
     'net.kckern.daylight.cap.caractions.shell.CarHostGateService',
     'net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService',
     'net.kckern.daylight.cap.notifications.shell.LinkActivity',
@@ -170,7 +171,8 @@ test('a pinned media shortcut is recorded through one closed receiver, and one-t
 });
 
 test('playing with no window adds one service of media-service, not exported, and no permission', () => {
-  assert.deepEqual(capabilities['media-service'].exported, ['net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService']);
+  assert.deepEqual(capabilities['media-service'].exported, ['net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService',
+    'androidx.media3.session.MediaButtonReceiver']);
   assert.deepEqual(capabilities['media-service'].permissions, ['android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
     'android.permission.ACCESS_NETWORK_STATE']);
   const own = Object.entries(EXPECTED_COMPONENTS).filter(([key]) => key.includes('.cap.mediaservice.'));
