@@ -116,6 +116,9 @@ public class PhoneHomeActivity extends Activity {
     }
 
     private void call(String port, String body, Reply success, java.util.function.Consumer<String> failure) {
+        // The service is on demand: Android stops it after a while in the background, so a screen
+        // left open can come back to no payload. Start it again before asking.
+        ShellStart.ensure(this);
         worker.execute(() -> {
             try {
                 JSONObject result = new JSONObject(PayloadPort.named(port).call(body, 12000));
@@ -463,13 +466,10 @@ public class PhoneHomeActivity extends Activity {
         });
     }
 
+    /** Asks Android to place it at once: Android's own prompt is the confirmation, and a second dialog first is friction. */
     private void confirmShortcut(String title, Runnable pin) {
         if (placementActive()) return;
-        new AlertDialog.Builder(this).setTitle("Add " + title + " to home screen?")
-                .setMessage("Android will ask you to confirm placement.")
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Continue", (dialog, which) -> pin.run())
-                .show();
+        pin.run();
     }
 
     private void pickPlaylistToAdd() {
@@ -773,9 +773,16 @@ public class PhoneHomeActivity extends Activity {
     /** A placement finished or was cleared: the item moves between "On your home screen" and "Available". */
     private void onPlacementChanged() {
         String now = placements.addedSignature();
-        if (!now.equals(addedSeen) && tabsShown() && pageHost != null) {
+        boolean newlyAdded = !now.equals(addedSeen);
+        if (newlyAdded && tabsShown() && pageHost != null) {
             addedSeen = now;
             rebuildPage();
+        }
+        // Like any app that pins a shortcut: step aside so the new icon is seen landing on Home.
+        if (newlyAdded && observingPlacement && placements.requests().stream()
+                .anyMatch(r -> !r.playlist && r.status(System.currentTimeMillis()) == LauncherPlacement.Status.ADDED)) {
+            toast("Added to your home screen");
+            timer.postDelayed(() -> { if (!isFinishing() && !isDestroyed()) moveTaskToBack(true); }, 700);
         }
         drawPlacement();
     }
@@ -815,7 +822,7 @@ public class PhoneHomeActivity extends Activity {
         switch (status) {
             case CONFIRM: message = "Confirm in Android"; break;
             case UNCONFIRMED: message = "Placement unconfirmed. Check Android Home before trying again."; break;
-            case REFUSED: message = "Android placement is unavailable."; break;
+            case REFUSED: message = "Daylight could not ask Android to place it. Tap the item to try again."; break;
             case EXTRA_WIDGET:
                 message = "Two widgets were added for this placement. If both are still on Android Home, touch and hold the extra widget, then choose Remove.";
                 break;
