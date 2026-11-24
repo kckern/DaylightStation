@@ -12,9 +12,9 @@ vi.mock('@zxing/browser', () => ({
   },
 }));
 
-function Probe({ active = true, onDecode, restartKey = 0 }) {
+function Probe({ active = true, onDecode, restartKey = 0, continuous = false }) {
   const videoRef = useRef(null);
-  const { cameraState } = useBarcodeScanner({ active, videoRef, onDecode, restartKey });
+  const { cameraState } = useBarcodeScanner({ active, videoRef, onDecode, restartKey, continuous });
   return <><video ref={videoRef} /><output data-testid="state">{cameraState}</output></>;
 }
 
@@ -57,7 +57,8 @@ describe('useBarcodeScanner', () => {
 
   it('falls back to the lazily loaded zxing reader where there is no native detector', async () => {
     zxing.decodeFromVideoElement.mockImplementation(async (_video, callback) => {
-      setTimeout(() => callback({ getText: () => '9780000000002' }), 0);
+      // zxing calls back on every frame it reads; two agreeing reads make one decode.
+      setTimeout(() => { callback({ getText: () => '9780000000002' }); callback({ getText: () => '9780000000002' }); }, 0);
       return { stop: zxing.stop };
     });
     const onDecode = vi.fn();
@@ -67,6 +68,31 @@ describe('useBarcodeScanner', () => {
     expect(tracks[0].stop).toHaveBeenCalled();
     // Only the retail formats, so a QR code or a shelf label is not read as a number.
     expect(zxing.formats).toEqual([14, 15, 7, 6]);
+  });
+
+  it('ignores a single misread frame and waits for two reads that agree', async () => {
+    const detect = vi.fn()
+      .mockResolvedValueOnce([{ rawValue: '749505002729' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([{ rawValue: '749826002729' }]);
+    window.BarcodeDetector = class { detect(video) { return detect(video); } };
+    const onDecode = vi.fn();
+    render(<Probe onDecode={onDecode} />);
+    await waitFor(() => expect(onDecode).toHaveBeenCalledTimes(1));
+    expect(onDecode).toHaveBeenCalledWith('749826002729');
+    expect(onDecode).not.toHaveBeenCalledWith('749505002729');
+  });
+
+  it('continuous mode keeps reading: one report per code in view, then the next code', async () => {
+    const frames = ['111', '111', '111', '111', '222', '222', '222'];
+    const detect = vi.fn(async () => { const next = frames.shift(); return next ? [{ rawValue: next }] : []; });
+    window.BarcodeDetector = class { detect(video) { return detect(video); } };
+    const onDecode = vi.fn();
+    render(<Probe onDecode={onDecode} continuous />);
+    await waitFor(() => expect(onDecode).toHaveBeenCalledTimes(2));
+    expect(onDecode.mock.calls.map(call => call[0])).toEqual(['111', '222']);
+    expect(tracks[0].stop).not.toHaveBeenCalled();
+    expect(screen.getByTestId('state').textContent).toBe('live');
   });
 
   it('reports denied when the camera is refused', async () => {

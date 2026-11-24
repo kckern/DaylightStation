@@ -16,6 +16,13 @@ import { bucketForHour } from '../../../portable/contracts/health/mealBuckets.mj
 import { v5 as uuidv5 } from 'uuid';
 
 /** Local (not UTC) YYYY-MM-DD from a Date instance. */
+/** A UPC-A or EAN-13 as its 13-digit form, so the two spellings of one code compare equal; null otherwise. */
+function gtin13(code) {
+  const digits = String(code ?? '').replace(/\D/g, '');
+  if (digits.length === 12) return `0${digits}`;
+  return digits.length === 13 ? digits : null;
+}
+
 function localDateISO(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -592,7 +599,33 @@ export class FoodCatalogService {
   }
 
   async getByUpc(upc, userId) {
-    return this.#catalogStore.findByUpc(upc, userId);
+    const exact = await this.#catalogStore.findByUpc(upc, userId);
+    if (exact) return exact;
+    // A UPC-A saved as 12 digits and read back as its 13-digit EAN form (or the reverse) is the same code.
+    const target = gtin13(upc);
+    if (!target) return null;
+    const all = await this.#catalogStore.getAll(userId);
+    return all.find(e => e.barcodeUpc && gtin13(e.barcodeUpc) === target) || null;
+  }
+
+  /**
+   * Saved foods whose barcode differs from `upc` in a few digits. A phone camera
+   * can read a blurred frame as a different code that still passes its check
+   * digit; when that code is unknown, the food the owner has scanned before is
+   * almost always the one in their hand.
+   */
+  async findNearUpc(upc, userId, { maxDigits = 3, limit = 3 } = {}) {
+    const target = gtin13(upc);
+    if (!target) return [];
+    const all = await this.#catalogStore.getAll(userId);
+    return all
+      .map(entry => ({ entry, code: entry.barcodeUpc ? gtin13(entry.barcodeUpc) : null }))
+      .filter(({ code }) => code)
+      .map(({ entry, code }) => ({ entry, distance: [...code].filter((digit, i) => digit !== target[i]).length }))
+      .filter(({ distance }) => distance > 0 && distance <= maxDigits)
+      .sort((a, b) => a.distance - b.distance || (b.entry.useCount || 0) - (a.entry.useCount || 0))
+      .slice(0, limit)
+      .map(({ entry }) => entry);
   }
 
   /**

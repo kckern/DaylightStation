@@ -19,13 +19,13 @@ describe('BarcodeCapture over the shared scanner', () => {
     expect(scanner.args.active).toBe(true);
   });
 
-  it('uses a fullscreen, aspect-preserving preview and hides manual entry until requested', () => {
+  it('quick scan is fullscreen, aspect-preserving, continuous, with no manual entry while the camera works', () => {
     const { container } = wrap(<BarcodeCapture open quickScan onClose={vi.fn()} onDecode={vi.fn()} />);
     expect(screen.getByRole('dialog', { name: 'Scan barcode' }).classList.contains('ds-sheet--fullscreen')).toBe(true);
     expect(container.querySelector('video').style.objectFit).toBe('cover');
+    expect(scanner.args.continuous).toBe(true);
     expect(screen.queryByRole('textbox', { name: 'Manual UPC entry' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Enter UPC' }));
-    expect(screen.getByRole('textbox', { name: 'Manual UPC entry' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Enter UPC' })).toBeNull();
   });
 
   it('hands a camera decode to onDecode with the bucket that opened the sheet', async () => {
@@ -97,7 +97,7 @@ describe('BarcodeCapture over the shared scanner', () => {
     const meals = [{ value: 'breakfast', label: 'Breakfast' }, { value: 'lunch', label: 'Lunch' }];
     const known = async upc => ({ upc, product: { name: 'Granola', amount: 40, unit: 'g', calories: 170 } });
 
-    it('logs at once, readies the camera for the next item and keeps an Undo until the owner leaves', async () => {
+    it('logs each beep at once in a toast, never stops the camera, and keeps Undo in the toast', async () => {
       const onDone = vi.fn();
       const onUndo = vi.fn(async () => true);
       const onConfirm = vi.fn(async () => ({ undoToken: 'u1' }));
@@ -105,27 +105,40 @@ describe('BarcodeCapture over the shared scanner', () => {
         onDecode={known} onConfirm={onConfirm} onUndo={onUndo} />);
       await act(async () => { scanner.args.onDecode('012345678905'); });
       await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
-      expect(await screen.findByText('Logged Granola')).toBeTruthy();
-      expect(screen.getByText(/170 kcal · Breakfast/)).toBeTruthy();
+      expect(await screen.findByText('Logged Granola · 170 kcal · Breakfast')).toBeTruthy();
       expect(scanner.args.active).toBe(true);
-      // Nothing closes the screen on a timer: it used to leave after 1.6 s.
-      await new Promise(resolve => setTimeout(resolve, 1800));
+      expect(scanner.stop).not.toHaveBeenCalled();
+      // No Next, Log item or Scan again: the next code just logs.
+      for (const name of ['Log item', 'Scan next', 'Scan again', 'Enter UPC']) expect(screen.queryByRole('button', { name })).toBeNull();
+      await act(async () => { scanner.args.onDecode('042100005264'); });
+      await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(2));
       expect(onDone).not.toHaveBeenCalled();
-      fireEvent.click(screen.getByRole('button', { name: 'Undo logged item' }));
+      fireEvent.click(screen.getAllByRole('button', { name: 'Undo logged item' })[0]);
       await waitFor(() => expect(onUndo).toHaveBeenCalledWith('u1', expect.any(Function), expect.stringMatching(/^undo-/)));
-      expect(await screen.findByText('Removed')).toBeTruthy();
+      expect(await screen.findByText('Removed Granola')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+      expect(onDone).toHaveBeenCalledTimes(1);
     });
 
-    it('keeps an unknown barcode on screen and offers to enter the food', async () => {
+    it('logs the closest saved food when a misread code is unknown, and says so', async () => {
+      const onConfirm = vi.fn(async () => ({ undoToken: 'u2' }));
+      const pudding = { upc: '749826002729', product: { name: 'Banana Pudding', amount: 325, unit: 'ml', calories: 140 } };
+      wrap(<BarcodeCapture open quickScan bucket="lunch" meals={meals} onClose={vi.fn()} onDone={vi.fn()}
+        onDecode={async upc => ({ upc, product: null, suggestions: [pudding] })} onConfirm={onConfirm} onUndo={vi.fn()} />);
+      await act(async () => { scanner.args.onDecode('749505002729'); });
+      await waitFor(() => expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ upc: '749826002729', bucket: 'lunch' })));
+      expect(await screen.findByText(/Logged Banana Pudding \(closest match\)/)).toBeTruthy();
+    });
+
+    it('reports an unknown code in a toast and keeps scanning; details are optional', async () => {
       const onUnknown = vi.fn();
-      const onDone = vi.fn();
-      wrap(<BarcodeCapture open quickScan bucket="lunch" meals={meals} onClose={vi.fn()} onDone={onDone}
+      wrap(<BarcodeCapture open quickScan bucket="lunch" meals={meals} onClose={vi.fn()} onDone={vi.fn()}
         onDecode={async upc => ({ upc, product: null })} onUnknown={onUnknown} />);
       await act(async () => { scanner.args.onDecode('0042100005264'); });
-      fireEvent.click(await screen.findByRole('button', { name: 'Enter food details' }));
+      expect(await screen.findByText('Not found: 0042100005264')).toBeTruthy();
+      expect(scanner.args.active).toBe(true);
+      fireEvent.click(screen.getByRole('button', { name: 'Add details' }));
       expect(onUnknown).toHaveBeenCalledWith('0042100005264', 'lunch');
-      await new Promise(resolve => setTimeout(resolve, 1800));
-      expect(onDone).not.toHaveBeenCalled();
     });
 
     it('brings the camera back by itself when the app is visible again', () => {
@@ -136,9 +149,10 @@ describe('BarcodeCapture over the shared scanner', () => {
       expect(scanner.args.active).toBe(true);
     });
 
-    it('asks a refused camera again when the app comes back', () => {
+    it('asks a refused camera again when the app comes back, and offers typing the number meanwhile', () => {
       scanner.cameraState = 'denied';
       wrap(<BarcodeCapture open quickScan bucket="lunch" meals={meals} onClose={vi.fn()} onDecode={vi.fn()} />);
+      expect(screen.getByRole('textbox', { name: 'Manual UPC entry' })).toBeTruthy();
       const before = scanner.args.restartKey;
       fireEvent(document, new Event('visibilitychange'));
       expect(scanner.args.restartKey).toBeGreaterThan(before);

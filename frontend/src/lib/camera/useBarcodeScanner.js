@@ -9,6 +9,15 @@
  * What a decoded value means — a UPC, an ISBN, nothing — is the caller's
  * business; to scan again after rejecting one, change `restartKey`.
  *
+ * A code counts only when `confirmReads` frames in a row agree on it (empty
+ * frames between them are fine). A phone camera can read one blurred frame as
+ * a different code that still passes its check digit; the next frame almost
+ * never repeats that mistake, so the agreement costs a few milliseconds.
+ *
+ * `continuous` keeps the camera running after a decode and reports each new
+ * code as it arrives: a code still in view (seen again within
+ * `repeatAfterMs`) is not reported twice. That is the scan-after-scan mode.
+ *
  * `cameraState`: `idle` (inactive) | `starting` | `live` | `done` (a decode
  * landed, or the caller called `stop()`; the camera is released) | `denied`.
  * Denied covers a refused permission AND a browser with no camera API: both
@@ -28,10 +37,14 @@ const ZXING_FORMAT = Object.freeze({ upc_a: 'UPC_A', upc_e: 'UPC_E', ean_13: 'EA
  * @param {(value: string) => void} args.onDecode - called once per start
  * @param {string[]} [args.formats]
  * @param {unknown} [args.restartKey] - change it to start a fresh scan
+ * @param {number} [args.confirmReads] - agreeing reads needed before a decode counts (default 2)
+ * @param {boolean} [args.continuous] - keep reading after a decode
+ * @param {number} [args.repeatAfterMs] - continuous: a code must leave the view this long to count again
  * @param {{info?: Function, warn?: Function}|null} [args.logger]
  */
 export function useBarcodeScanner({
-  active, videoRef, onDecode, formats = RETAIL_BARCODE_FORMATS, restartKey = 0, logger = null,
+  active, videoRef, onDecode, formats = RETAIL_BARCODE_FORMATS, restartKey = 0, logger = null, confirmReads = 2,
+  continuous = false, repeatAfterMs = 2500,
 }) {
   const [cameraState, setCameraState] = useState('idle');
   const callback = useRef(onDecode);
@@ -62,10 +75,36 @@ export function useBarcodeScanner({
       stop();
     };
     stopRef.current = finish;
+    let candidate = null;
+    let agreeing = 0;
+    let rejected = 0;
+    let reported = null;
+    let reportedSeenAt = 0;
     const emit = (value, via) => {
       if (stopped || fired) return;
+      if (continuous && value === reported && Date.now() - reportedSeenAt < repeatAfterMs) {
+        reportedSeenAt = Date.now();
+        return;
+      }
+      if (value !== candidate) {
+        if (candidate !== null) rejected += 1;
+        candidate = value;
+        agreeing = 0;
+      }
+      agreeing += 1;
+      if (agreeing < Math.max(1, confirmReads)) return;
+      if (continuous) {
+        logger?.info?.(`decode.${via}`, { reads: agreeing, rejected, continuous: true });
+        reported = value;
+        reportedSeenAt = Date.now();
+        candidate = null;
+        agreeing = 0;
+        rejected = 0;
+        callback.current?.(value);
+        return;
+      }
       fired = true;
-      logger?.info?.(`decode.${via}`, {});
+      logger?.info?.(`decode.${via}`, { reads: agreeing, rejected });
       finish();
       callback.current?.(value);
     };
@@ -90,7 +129,7 @@ export function useBarcodeScanner({
             try {
               const codes = await detector.detect(video);
               if (stopped) return; // closed while detect() was in flight
-              if (codes.length) { emit(codes[0].rawValue, 'native'); return; }
+              if (codes.length) emit(codes[0].rawValue, 'native');
             } catch { /* frame not ready */ }
             if (!stopped) requestAnimationFrame(tick);
           };

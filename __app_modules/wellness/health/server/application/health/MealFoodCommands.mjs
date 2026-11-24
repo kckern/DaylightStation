@@ -82,6 +82,16 @@ function amendmentPatch(row, requested, { voiceCorrection = false } = {}) {
   return patch;
 }
 
+/** A loggable barcode product from a name and portion, or null when either is unusable. */
+function barcodeProduct(name, portion) {
+  if (!name || !(portion?.amount > 0) || !portion.unit || !Number.isFinite(portion.nutrients?.calories) || portion.nutrients.calories < 0) {
+    return null;
+  }
+  const { amount, unit, grams, nutrients } = portion;
+  return { name, amount, unit, grams, ...Object.fromEntries(NUTRIENT_KEYS
+    .filter(key => Number.isFinite(nutrients[key]) && nutrients[key] >= 0).map(key => [key, nutrients[key]])) };
+}
+
 /** Meal-scoped, version-checked commands. All snapshots and replies commit with the ledger. */
 export class MealFoodCommands {
   constructor({ nutritionItems, logger = {} }) { this.store = nutritionItems; this.logger = logger; }
@@ -92,19 +102,19 @@ export class MealFoodCommands {
     const upc = gtin.code;
     const entry = await catalogService.getByUpc(upc, userId);
     const upstream = entry ? null : await provider?.(upc);
-    const portion = entry?.proposedPortion() || (upstream && {
+    const product = barcodeProduct(entry?.name || upstream?.name, entry?.proposedPortion() || (upstream && {
       amount: upstream.serving.size, unit: upstream.serving.unit,
       grams: upstream.serving.unit === 'g' ? upstream.serving.size : null,
       nutrients: upstream.nutrition,
-    });
-    const name = entry?.name || upstream?.name;
-    if (!name || !(portion?.amount > 0) || !portion.unit || !Number.isFinite(portion.nutrients?.calories) || portion.nutrients.calories < 0) {
-      return { upc, product: null };
-    }
-    const { amount, unit, grams, nutrients } = portion;
-    const product = { name, amount, unit, grams, ...Object.fromEntries(NUTRIENT_KEYS
-      .filter(key => Number.isFinite(nutrients[key]) && nutrients[key] >= 0).map(key => [key, nutrients[key]])) };
-    return { upc, product };
+    }));
+    if (product) return { upc, product };
+    // Unknown code: offer the owner's own scanned foods a digit or three away (a camera misread).
+    const near = typeof catalogService.findNearUpc === 'function' ? await catalogService.findNearUpc(upc, userId) : [];
+    const suggestions = near
+      .map(candidate => ({ upc: parseGtin(candidate.barcodeUpc).code, product: barcodeProduct(candidate.name, candidate.proposedPortion()) }))
+      .filter(suggestion => suggestion.product && parseGtin(suggestion.upc).ok);
+    if (suggestions.length) this.logger.info?.('health.barcode.lookup.near', { upc, suggestions: suggestions.map(s => s.upc) });
+    return { upc, product: null, ...(suggestions.length ? { suggestions } : {}) };
   }
 
   async logBarcode(userId, input) {

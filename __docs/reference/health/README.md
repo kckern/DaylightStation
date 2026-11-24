@@ -1208,6 +1208,23 @@ known product reuses the stored serving and photo instead of re-fetching.
 `cli/health-catalog-serving-repair.cli.mjs` backfills older entries from their original
 scan rows (dry run by default; `--apply --backup NEW_DIR --offline`).
 
+**Reading a barcode.** The camera (`frontend/src/lib/camera/useBarcodeScanner.js`) counts
+a code only when two frames in a row agree on it: a phone camera can read one blurred
+frame as another code that still passes its check digit. Lookup
+(`GET /api/v1/health/nutrition/barcode-lookup`) tries the saved foods first (a 12-digit
+UPC-A and its 13-digit EAN spelling are the same code), then Open Food Facts. When the
+code is still unknown it answers `suggestions`: saved foods whose barcode is at most three
+digits away (closest, then most used), each as a loggable `{ upc, product }`.
+
+**Quick scan** (the phone's Meal barcode shortcut, `QuickScanSession.jsx`) is scan after
+scan with no step in between. The camera stays on (`continuous`; a code still in view is
+not reported twice). Each beep becomes a toast: "Got it…", then "Logged Granola · 170 kcal
+· Lunch" with Undo. An unknown code with a suggestion logs the closest saved food and says
+"(closest match)"; Undo covers a wrong guess. An unknown code with no suggestion says
+"Not found" and offers Add details, never requiring it. The only controls are the meal
+picker and Done (or Back). Typing a number appears only when the camera is refused. The
+in-app scanner keeps its review step.
+
 ### Deterministic paths — skip the funnel entirely
 
 **After an add.** A typed sentence shows an in-place "Adding “…”…" row in its meal (the

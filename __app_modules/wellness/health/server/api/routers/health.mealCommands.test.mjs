@@ -188,6 +188,10 @@ describe('confirmed barcode', () => {
    if (code !== upc || username !== 'u') return null;
    const { name, amount, unit, grams, ...nutrients } = product;
    return { name, proposedPortion: () => ({ amount, unit, grams, nutrients }) };
+  }, findNearUpc: async code => {
+   if (code !== '012345678912') return [];
+   const { name, amount, unit, grams, ...nutrients } = product;
+   return [{ name, barcodeUpc: upc, proposedPortion: () => ({ amount, unit, grams, nutrients }) }];
   } };
   const open = ({ loseReply, failAfterMutation = false } = {}) => {
    const store = new YamlNutriListDatastore({ dataService: { user: { resolveDir: (dir, user) => path.join(root, user, dir) } }, logger });
@@ -219,6 +223,8 @@ describe('confirmed barcode', () => {
   expect((await lookup(upc)).body).toEqual({ upc, product });
   expect((await lookup('042100005264')).body).toEqual({ upc: '042100005264', product: null });
   expect((await lookup('036000291452')).status).toBe(503);
+  // An unknown code a few digits from a saved one (a camera misread) offers the saved food.
+  expect((await lookup('012345678912')).body).toEqual({ upc: '012345678912', product: null, suggestions: [{ upc, product }] });
   expect(await store.findByDate('u', date)).toEqual([]);
  }));
  it('confirmedBarcodeCommitReplaysAfterLostResponse', () => fixture(async open => {
