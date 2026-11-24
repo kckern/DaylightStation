@@ -162,6 +162,31 @@ export class SchoolParentDigest {
     return { studyDay: day, digest: status, zeroDays };
   }
 
+  /**
+   * The digest's per-learner rows for a study day, read-only: the same rows
+   * `run()` builds (served of asked, silver, passes, top failure, repeat
+   * scans), with nothing sent, held or remembered and no zero-days walk.
+   * The office paper's "school" line reads this.
+   * @param {{studyDay?: string}} [args] - defaults to today's study day
+   * @returns {Promise<{studyDay: string, today: string, coins: string, learners: object[]}>}
+   */
+  async summarize({ studyDay = null } = {}) {
+    const today = this.#today();
+    const day = studyDay ?? today;
+    const coins = this.#readCoinsMode();
+    const learners = ((await this.#roster()) ?? []).map((l) => l?.id ?? l?.learnerId).filter(Boolean);
+    if (!learners.length) return { studyDay: day, today, coins, learners: [] };
+    const ledger = await this.#ledgerOn(day);
+    const failures = failuresIn(ledger);
+    const rows = [];
+    for (const learnerId of learners) {
+      // eslint-disable-next-line no-await-in-loop
+      const { row } = await this.#learnerRow(learnerId, day, today, failures, ledger);
+      rows.push(row);
+    }
+    return { studyDay: day, today, coins, learners: rows };
+  }
+
   /** Resend every held push. @returns {Promise<{sent: number, held: number}>} */
   async retryHeld() {
     let sent = 0;
