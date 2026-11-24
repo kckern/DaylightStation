@@ -4,7 +4,7 @@ import { PianoLearnCoachService } from './PianoLearnCoachService.mjs';
 import { pianoCoachFixture } from '../../../../../tests/_lib/pianoCoachFixture.mjs';
 
 import captured from '../../../../../shared/music/__fixtures__/learnCoachCapturedPractice.json';
-import { createCoachPlan } from '../../../../../shared/music/learnCoach.mjs';
+import { createCoachPlan, MAX_DRILL_DEPTH } from '../../../../../shared/music/learnCoach.mjs';
 
 const SCORE = 'files-test-musicxml';
 describe('acknowledged piano coaching', () => {
@@ -199,6 +199,17 @@ describe('acknowledged piano coaching', () => {
       expect(certified.find((entry) => entry.passageId === 'b')).toMatchObject({ level: 'silver', takes: 1 });
       expect(certified.find((entry) => entry.passageId === 'join:a:b')).toMatchObject({ level: 'silver', join: true });
       expect(certified.find((entry) => entry.passageId === 'join:a:b')).not.toHaveProperty('takes');
+    });
+
+    it('accepts a drill at the deepest allowed level (its chain is one longer than its depth)', async () => {
+      const { f, plan, service } = setup();
+      const base = plan.tasks.find((task) => task.passageId === 'a' && task.skill === 'timed-30');
+      const chain = (depth) => { let task = base; for (let level = 1; level <= depth; level += 1) task = { ...task, depth: level, parent: task, reason: 'focus-bars' }; return task; };
+      for (const depth of [0, 1, 2, MAX_DRILL_DEPTH]) {
+        const body = f.outcome(`deep-${depth}`, { task: chain(depth) });
+        await expect(service.record('learner4', SCORE, { ...body, plan })).resolves.toBeTruthy();
+      }
+      await expect(service.record('learner4', SCORE, { ...f.outcome('too-deep', { task: chain(MAX_DRILL_DEPTH + 1) }), plan })).rejects.toThrow(/Invalid coaching task/);
     });
 
     it('notes Gold when a tempo take finishes every passage, and Silver only with the final join', async () => {

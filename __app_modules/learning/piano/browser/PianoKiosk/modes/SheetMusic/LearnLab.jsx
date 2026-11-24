@@ -75,7 +75,7 @@ function learningTempoTake(rung, tempoPercent) {
   return tempoPercent != null && Number.isFinite(percent) && percent < 100;
 }
 
-export default function LearnLab({ score, revision, segment, segments = {}, rung, creditRung = rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, launchSource = 'recommended', creditEligible = true, startOnReady = false, coachingTask = null, drill = null, card = null, ceremony = null, onCardDone, notice = null, extraControls = null, resultLabel = null, resultActions = null, resultContinueLabel = null, onResultContinue = null, onPickStep = null, onListen = null, onStarted, onOutcome, onRecord, onClose, onChangePractice, onRungPassed, onMastered, onFinished, onUnavailable }) {
+export default function LearnLab({ score, revision, segment, segments = {}, rung, creditRung = rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, launchSource = 'recommended', creditEligible = true, startOnReady = false, coachingTask = null, drill = null, card = null, ceremony = null, onCardDone, notice = null, extraControls = null, resultLabel = null, resultActions = null, resultContinueLabel = null, onResultContinue = null, onPickStep = null, onListen = null, onStarted, onOutcome, onRecord, onClose, onChangePractice, onRungPassed, onMastered, onFinished, onUnavailable, maxCueRestarts }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-learn-lab' }), []);
   const reactRunId = useId();
   const runIdRef = useRef(`learn-${reactRunId.replace(/[^a-z0-9_-]/gi, '')}`);
@@ -262,7 +262,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
         {extraControls}
       </div>
     </header>
-    <ExerciseRun rhythmOnly={rhythm}
+    <ExerciseRun rhythmOnly={rhythm} {...(maxCueRestarts != null ? { maxCueRestarts } : {})}
       key={`${segment.id}:${rung.id}:${take}`} instance={null} score={runScore} intent="practice"
       practiceMode={rung.mode} practiceRequirement={requirement} programId={projection.id}
       clickGain={clickLevel.gain}

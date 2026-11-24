@@ -434,7 +434,8 @@ describe('a missed cue goes back to the count', () => {
     advance(firstClick + LEAD_IN + 700 - Date.now());
     expect(events('piano.exercise-cue-missed')).toEqual([expect.objectContaining({ attempt: 1, windowMs: 400, offsetMs: null })]);
     expect(run()).toHaveAttribute('data-phase', 'ready');
-    expect(screen.getByText(/missed the cue/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/missed the cue/i).length).toBeGreaterThan(0);
+    expect(document.querySelector('.piano-learn-countin__cue').textContent).toBe('You missed the cue — counting in again');
     expect(document.querySelector('.piano-exercise-run__result')).toBeNull();
     expect(current.onFailed).not.toHaveBeenCalled();
     advance(1000);

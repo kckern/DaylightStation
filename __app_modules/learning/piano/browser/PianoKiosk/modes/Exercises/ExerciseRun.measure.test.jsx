@@ -343,6 +343,9 @@ window.__stage = {
     root = createRoot(host());
     flushSync(() => root.render(h(Fragment, null,
       h(ExerciseRun, {
+        // These probes watch a timed run's layout and timeline with nothing played: a missed cue would
+        // send it back to the count (the cue rule has its own specs in ExerciseRun.learnStart.test.jsx).
+        maxCueRestarts: 0,
         ...rest,
         instance: sources.instance,
         score: sources.score,
@@ -358,6 +361,8 @@ window.__stage = {
   mountLab({ musicXml, mastery = false }) {
     root = createRoot(host());
     flushSync(() => root.render(h(LearnLab, {
+        // Layout probes of an unplayed timed take: no missed-cue restarts (see mountRun).
+        maxCueRestarts: 0,
       score: { id: 'groove-score', sourceId: 'files:four-bars.musicxml', musicXml },
       revision: 'groove',
       segment: { id: 'm0-3', label: 'Segment 1', barLabel: 'Bars 1–4', printedMeasures: [1, 4], inMeasure: 0, outMeasure: 3 },

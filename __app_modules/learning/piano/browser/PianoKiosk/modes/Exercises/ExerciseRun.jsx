@@ -2065,7 +2065,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
         </span>}
         {learnPulse && <CountUpOverlay loop active={Boolean(beatLoop)} clicks={beatLoop?.beats} count={beatLoop?.beat} last={false} />}
         {learnCued
-          ? <CountUpOverlay active={Boolean(countUp)} clicks={countUp?.clicks} count={countUp?.count} last={countUp?.last} />
+          ? <CountUpOverlay active={Boolean(countUp) || Boolean(cueRestart)} clicks={countUp?.clicks ?? countIn?.clicks} count={countUp?.count} last={countUp?.last}
+            notice={cueRestart && !countUp ? 'You missed the cue — counting in again' : null} />
           : <CountInOverlay active={(countingDown && countInBeat != null) || playHandoff}
             remaining={countdown?.remaining} progress={countdown?.progress} play={countdown?.play} />}
         <CountInOverlay active={resuming} remaining={resumeRemaining} progress={null} play={false} />

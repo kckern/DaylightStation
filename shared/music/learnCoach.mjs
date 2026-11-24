@@ -27,7 +27,7 @@ const MAX_POLICY_PASSES = 20;
  * alone, then one hand of it. Was 2 until 2026-11, which stopped one short of
  * the hand a learner was missing.
  */
-const MAX_DRILL_DEPTH = 3;
+export const MAX_DRILL_DEPTH = 3;
 const wholeIn = (value, fallback) => (Number.isInteger(value) && value >= 1 && value <= MAX_POLICY_PASSES ? value : fallback);
 
 /** YAML-defined certification policy, with every invalid value replaced by its default. */

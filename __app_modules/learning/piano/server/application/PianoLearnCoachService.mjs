@@ -1,4 +1,4 @@
-import { applyCoachEvent, coachSummary, createCoachPlan, coachTaskKey, isGoldWork, projectCoach, COACH_VERSION } from '#shared/music/learnCoach.mjs';
+import { applyCoachEvent, coachSummary, createCoachPlan, coachTaskKey, isGoldWork, projectCoach, COACH_VERSION, MAX_DRILL_DEPTH } from '#shared/music/learnCoach.mjs';
 import { resolveSkipMode, stepAccess } from '#shared/music/learnSkipping.mjs';
 import { practiceKeyOfScore as keyOfScore } from '../../portable/music/practiceKey.mjs';
 
@@ -121,7 +121,8 @@ export class PianoLearnCoachService {
     let current = task;let parentCount = 0;
     while (current) {
       const segment = plan.segments.find((item) => item.id === current.passageId);
-      if (++parentCount > 3 || !segment || current.scoreId !== plan.scoreId || current.fingerprint !== plan.fingerprint
+      // A drill at the deepest allowed level (MAX_DRILL_DEPTH) has that many parents above it: the chain is one longer.
+      if (++parentCount > MAX_DRILL_DEPTH + 1 || !segment || current.scoreId !== plan.scoreId || current.fingerprint !== plan.fingerprint
         || !Number.isInteger(current.range?.start) || !Number.isInteger(current.range?.end)
         || current.range.start < segment.inMeasure || current.range.end > segment.outMeasure || current.range.end < current.range.start
         || !Array.isArray(current.parts) || !current.parts.length || current.parts.some((part) => !segment.playableParts.includes(part))
