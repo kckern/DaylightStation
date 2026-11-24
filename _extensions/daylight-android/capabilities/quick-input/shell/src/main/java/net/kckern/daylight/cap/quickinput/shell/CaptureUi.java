@@ -16,6 +16,12 @@ final class CaptureUi {
 
     private CaptureUi() { }
 
+    /** What every capture says once it is on its way: brief, and where to look afterwards. */
+    static void sent(Context context) {
+        android.widget.Toast.makeText(context.getApplicationContext(), "Sent ✓  Review it under Capture status",
+                android.widget.Toast.LENGTH_SHORT).show();
+    }
+
     static int dp(Context context, int value) {
         return Math.round(value * context.getResources().getDisplayMetrics().density);
     }

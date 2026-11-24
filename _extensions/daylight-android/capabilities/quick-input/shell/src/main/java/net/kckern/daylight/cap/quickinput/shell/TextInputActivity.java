@@ -286,7 +286,7 @@ public class TextInputActivity extends Activity {
             selectedStore.writeText(selected.id, new String(body, StandardCharsets.UTF_8));
             if (!selectedStore.sendForCurrentOwner(selected.id)) throw new IOException("Draft cannot be sent");
             CaptureFiles.tellPayload();
-        }, () -> say("Sent ✓  Review it under Capture status"), "Could not queue the draft. Check it and try again.");
+        }, () -> CaptureUi.sent(this), "Could not queue the draft. Check it and try again.");
     }
 
     private void confirmDiscard() {
