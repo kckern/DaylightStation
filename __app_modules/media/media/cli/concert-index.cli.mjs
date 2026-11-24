@@ -38,38 +38,100 @@ export function mmss(s) {
   return nums.reduce((acc, p) => acc * 60 + p, 0);
 }
 
-/** Wiki markup to plain text: links keep their label, refs and templates go. */
+/** Templates whose last argument is the text they wrap. Every other template goes. */
+const UNWRAP = new Set(['nowrap', 'small', 'nobr', 'lang']);
+
+const ENTITIES = { nbsp: ' ', quot: '"', amp: '&' };
+
+/** Wiki markup to plain text: links keep their label, wrapper templates keep their text, the rest goes. */
 export function stripWiki(s) {
-  return String(s ?? '')
+  let out = String(s ?? '')
     .replace(/<ref[^>]*\/>/g, '')
     .replace(/<ref[\s\S]*?<\/ref>/g, '')
-    .replace(/\{\{[^{}]*\}\}/g, '')
-    .replace(/\[\[(?:[^\]|]*\|)?([^\]]*)\]\]/g, '$1')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/\[\[(?:[^\]|]*\|)?([^\]]*)\]\]/g, '$1');
+  // Innermost templates first, until none are left: {{small|{{nowrap|x}}}}.
+  for (let prev = null; prev !== out;) {
+    prev = out;
+    out = out.replace(/\{\{([^{}]*)\}\}/g, (_, inner) => {
+      const args = inner.split('|');
+      return UNWRAP.has(args[0].trim().toLowerCase()) && args.length > 1 ? args[args.length - 1] : '';
+    });
+  }
+  return out
     .replace(/'{2,}/g, '')
+    .replace(/&(?:#(\d+)|#x([0-9a-f]+)|(nbsp|quot|amp));/gi, (m, dec, hex, name) => {
+      if (dec) return String.fromCodePoint(Number(dec));
+      if (hex) return String.fromCodePoint(parseInt(hex, 16));
+      return ENTITIES[name.toLowerCase()];
+    })
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-const LISTING = /\{\{\s*Track listing([\s\S]*?)\n\s*\}\}/gi;
-const FIELD = /^\s*\|\s*([a-z_]+?)(\d*)\s*=\s*(.*)$/i;
+const OPEN = /\{\{\s*Track listing\b/gi;
+
+/**
+ * The body of every `{{Track listing}}`, found by counting `{{`/`}}` depth to
+ * the template's real close, so a nested template or an inline `}}` neither
+ * ends a block early nor lets it run into the next one.
+ */
+function listingBodies(text) {
+  const bodies = [];
+  OPEN.lastIndex = 0;
+  for (let m = OPEN.exec(text); m; m = OPEN.exec(text)) {
+    let depth = 1;
+    let i = m.index + 2;
+    while (i < text.length && depth > 0) {
+      if (text.startsWith('{{', i)) { depth += 1; i += 2; } else if (text.startsWith('}}', i)) { depth -= 1; i += 2; } else i += 1;
+    }
+    if (depth > 0) break; // unclosed: the rest of the article is not a listing
+    bodies.push(text.slice(m.index + m[0].length, i - 2));
+    OPEN.lastIndex = i;
+  }
+  return bodies;
+}
+
+/** Split on `|` that sits outside `[[...]]` and `{{...}}`. */
+function topLevelParts(body) {
+  const parts = [];
+  let link = 0;
+  let tpl = 0;
+  let from = 0;
+  for (let i = 0; i < body.length; i += 1) {
+    const two = body.slice(i, i + 2);
+    if (two === '[[') { link += 1; i += 1; } else if (two === ']]' && link) { link -= 1; i += 1; } else if (two === '{{') { tpl += 1; i += 1; } else if (two === '}}' && tpl) { tpl -= 1; i += 1; } else if (body[i] === '|' && !link && !tpl) { parts.push(body.slice(from, i)); from = i + 1; }
+  }
+  parts.push(body.slice(from));
+  return parts.slice(1); // before the first pipe is the template name's tail
+}
+
+const KEY = /^([a-z_]+?)(\d*)$/i;
 
 /**
  * Every `{{Track listing}}` block in an article's wikitext. An album article
  * often has two (CD and DVD), and they differ, so each track keeps the
- * listing's `headline`.
+ * listing's `headline`. Tracks are every `titleN` present, in numeric order,
+ * so a gap in the numbering keeps the tracks after it, with their real `n`.
  *
  * @returns {Array<{listing:string|null, n:number, title:string, length:number|null, performers:string|null}>}
  */
 export function parseTrackListing(wikitext) {
   const out = [];
-  for (const block of String(wikitext ?? '').matchAll(LISTING)) {
+  for (const body of listingBodies(String(wikitext ?? ''))) {
     const fields = {};
-    for (const line of block[1].split('\n')) {
-      const f = FIELD.exec(line);
-      if (f) fields[`${f[1].toLowerCase()}${f[2]}`] = f[3];
+    const numbers = [];
+    for (const part of topLevelParts(body)) {
+      const eq = part.indexOf('=');
+      if (eq < 0) continue;
+      const key = KEY.exec(part.slice(0, eq).trim());
+      if (!key) continue;
+      const name = key[1].toLowerCase();
+      fields[`${name}${key[2]}`] = part.slice(eq + 1).trim();
+      if (name === 'title' && key[2]) numbers.push(Number(key[2]));
     }
     const listing = stripWiki(fields.headline) || null;
-    for (let n = 1; fields[`title${n}`] !== undefined; n += 1) {
+    for (const n of numbers.sort((x, y) => x - y)) {
       const performers = stripWiki(fields[`extra${n}`]);
       out.push({
         listing,

@@ -40,6 +40,21 @@ describe('stripWiki', () => {
   it('drops links, italics, refs and templates', () => {
     expect(stripWiki("from ''[[Winter Cantata (Smith)|Winter Cantata]]''{{sfn|x}}<ref>a</ref>")).toBe('from Winter Cantata');
   });
+  it('unwraps nowrap, small, nobr and lang to their text, and removes other templates', () => {
+    expect(stripWiki('{{nowrap|Ave Maria}}')).toBe('Ave Maria');
+    expect(stripWiki('Song {{small|(reprise)}}')).toBe('Song (reprise)');
+    expect(stripWiki('{{nobr|Carol of Bells}}')).toBe('Carol of Bells');
+    expect(stripWiki('{{lang|fr|Il est né}}')).toBe('Il est né');
+    expect(stripWiki('Song{{efn|a note}}')).toBe('Song');
+  });
+  it('strips nested templates from the inside out', () => {
+    expect(stripWiki('{{small|{{nowrap|Silent Night}}}}')).toBe('Silent Night');
+    expect(stripWiki('Song{{efn|see {{cite|x}}}}')).toBe('Song');
+  });
+  it('turns <br> into a space and decodes entities', () => {
+    expect(stripWiki('Choir<br />and Orchestra<br>and Bells')).toBe('Choir and Orchestra and Bells');
+    expect(stripWiki('Bells&nbsp;&amp;&nbsp;Choir &quot;live&quot; &#8211; &#x2013;')).toBe('Bells & Choir "live" \u2013 \u2013');
+  });
 });
 
 describe('parseTrackListing', () => {
@@ -61,6 +76,34 @@ describe('parseTrackListing', () => {
   });
   it('returns an empty list for an article without the template', () => {
     expect(parseTrackListing('==Track listing==\n# a list')).toEqual([]);
+  });
+  it('reads a listing written on one line, closed inline', () => {
+    expect(parseTrackListing('{{Track listing | title1 = Ave | length1 = 3:00 | title2 = Gloria | length2 = 2:10}} after')).toEqual([
+      { listing: null, n: 1, title: 'Ave', length: 180, performers: null },
+      { listing: null, n: 2, title: 'Gloria', length: 130, performers: null },
+    ]);
+  });
+  it('does not end a block at a nested template, nor run into the next block', () => {
+    const text = `{{Track listing
+| headline = A
+| title1 = {{nowrap|First Song}}
+| length1 = 1:00
+| extra1 = [[Choir|The Choir]] {{small|with bells}}
+| title2 = Second Song}}
+Prose between listings, with a [[link|label]].
+{{Track listing
+| headline = B
+| title1 = Third Song
+}}`;
+    expect(parseTrackListing(text)).toEqual([
+      { listing: 'A', n: 1, title: 'First Song', length: 60, performers: 'The Choir with bells' },
+      { listing: 'A', n: 2, title: 'Second Song', length: null, performers: null },
+      { listing: 'B', n: 1, title: 'Third Song', length: null, performers: null },
+    ]);
+  });
+  it('keeps tracks after a gap in the numbering, with their real numbers', () => {
+    const tracks = parseTrackListing('{{Track listing\n| title1 = One\n| title3 = Three\n| title10 = Ten\n}}');
+    expect(tracks.map((t) => [t.n, t.title])).toEqual([[1, 'One'], [3, 'Three'], [10, 'Ten']]);
   });
 });
 
