@@ -331,7 +331,7 @@ public class RecordActivity extends Activity {
         if (draft != null && sending) {
             try {
                 if (store.get(draft.id) == null) {
-                    CaptureStatusActivity.open(this, owner, draft.id);
+                    say("Sent ✓  Review it under Capture status");
                     finish();
                     return;
                 }
@@ -395,7 +395,7 @@ public class RecordActivity extends Activity {
             }
             if (store.sendForCurrentOwner(draft.id)) {
                 CaptureFiles.tellPayload();
-                CaptureStatusActivity.open(this, owner, draft.id);
+                say("Sent ✓  Review it under Capture status");
                 completed = true;
                 finish();
             }
@@ -459,7 +459,23 @@ public class RecordActivity extends Activity {
         return true;
     }
 
-    @Override public void onBackPressed() { confirmDiscard(); }
+    /**
+     * Back leaves and keeps the recording as a draft: it is already saved, so asking "discard?"
+     * protected nothing. A recording with nothing in it is just dropped. Throwing audio away is the
+     * explicit "Discard draft" button, which still asks.
+     */
+    @Override public void onBackPressed() {
+        if (completed || sending || closeIfOwnerChanged()) { super.onBackPressed(); return; }
+        if (draft == null || !(requested || active() || draft.requiresDiscardConfirmation())) {
+            discardDraft(draft == null ? null : draft.id, false);
+            return;
+        }
+        invalidateDiscard();
+        pauseCapture();
+        stopPlayback();
+        say("Recording kept as a draft");
+        finish();
+    }
 
     private void say(String message) {
         Toast.makeText(getApplicationContext(), message, Toast.LENGTH_LONG).show();
@@ -488,7 +504,7 @@ public class RecordActivity extends Activity {
         close.setImageTintList(ColorStateList.valueOf(ink));
         close.setBackground(buttonBackground(control, 24));
         close.setContentDescription("Close recorder");
-        close.setOnClickListener(v -> confirmDiscard());
+        close.setOnClickListener(v -> onBackPressed());
         header.addView(close, new LinearLayout.LayoutParams(dp(48), dp(48)));
         layout.addView(header);
 

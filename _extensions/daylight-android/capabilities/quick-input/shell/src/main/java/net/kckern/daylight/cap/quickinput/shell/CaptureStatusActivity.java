@@ -46,15 +46,31 @@ public final class CaptureStatusActivity extends Activity {
         owner = state == null ? getIntent().getStringExtra(CaptureScope.EXTRA)
                 : state.getString(CaptureScope.EXTRA);
         ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(CaptureUi.PAPER);
+        scroll.setFillViewport(true);
+        getWindow().setStatusBarColor(CaptureUi.PAPER);
+        getWindow().setNavigationBarColor(CaptureUi.PAPER);
+        getWindow().getDecorView().setSystemUiVisibility(android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                | android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         LinearLayout layout = column();
-        int padding = (int) (20 * getResources().getDisplayMetrics().density);
+        int padding = CaptureUi.dp(this, 20);
         layout.setPadding(padding, padding, padding, padding);
-        text(layout, "Capture status", 24);
-        summary = text(layout, "Loading captures…", 16);
+        TextView heading = CaptureUi.text(this, "Captures", 28, CaptureUi.INK, true);
+        heading.setAccessibilityHeading(true);
+        layout.addView(heading);
+        summary = CaptureUi.text(this, "Loading captures…", 16, CaptureUi.INK, false);
+        summary.setAlpha(0.75f);
+        layout.addView(summary);
         content = column();
         layout.addView(content);
-        button(layout, "Health status", () -> request("health", null));
-        button(layout, "Done", this::finish);
+        TextView done = CaptureUi.pill(this, "Done", true);
+        done.setOnClickListener(v -> finish());
+        LinearLayout.LayoutParams doneParams = new LinearLayout.LayoutParams(-1, -2);
+        doneParams.topMargin = CaptureUi.dp(this, 20);
+        layout.addView(done, doneParams);
+        TextView health = CaptureUi.link(this, "Open Health");
+        health.setOnClickListener(v -> request("health", null));
+        layout.addView(health, new LinearLayout.LayoutParams(-1, -2));
         scroll.addView(layout);
         setContentView(scroll);
         ShellStart.ensure(this);
@@ -159,17 +175,47 @@ public final class CaptureStatusActivity extends Activity {
                 if (row == null) continue;
                 String id = row.optString("id");
                 if ((pass == 0) != id.equals(focused)) continue;
-                text(content, row.optString("destination"), 18);
-                long capturedAt = row.optLong("recordedAtMs");
-                if (capturedAt > 0) text(content, java.text.DateFormat.getDateTimeInstance(
-                        java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(new java.util.Date(capturedAt)), 14);
-                text(content, row.optString("message"), 16);
-                String action = row.optString("action");
-                if ("Replace capture".equals(action)) button(content, action, () -> request("replace", id));
-                if ("Retry".equals(action)) button(content, action, () -> request("retry", id));
-                if ("View in Health".equals(action)) button(content, action, () -> request("view", id));
+                content.addView(card(row, id));
             }
         }
+    }
+
+    /** One capture: where it went, when, what became of it, and the one thing to do about it. */
+    private LinearLayout card(JSONObject row, String id) {
+        LinearLayout card = column();
+        int pad = CaptureUi.dp(this, 16);
+        card.setPadding(pad, pad, pad, pad);
+        card.setBackground(CaptureUi.round(this, android.graphics.Color.WHITE, 16));
+        card.addView(CaptureUi.text(this, row.optString("destination"), 18, CaptureUi.INK, true));
+        long capturedAt = row.optLong("recordedAtMs");
+        if (capturedAt > 0) {
+            TextView when = CaptureUi.text(this, java.text.DateFormat.getDateTimeInstance(
+                    java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(new java.util.Date(capturedAt)),
+                    13, CaptureUi.INK, false);
+            when.setAlpha(0.6f);
+            card.addView(when);
+        }
+        String message = row.optString("message");
+        String action = row.optString("action");
+        boolean attention = "Replace capture".equals(action) || "Retry".equals(action);
+        TextView state = CaptureUi.text(this, message, 15, attention ? 0xff9a4a00 : CaptureUi.GREEN, true);
+        state.setPadding(0, CaptureUi.dp(this, 6), 0, 0);
+        card.addView(state);
+        // The payload's action names are what it understands; the words on the button are plain.
+        String label = "Replace capture".equals(action) ? "Replace" : "Retry".equals(action) ? "Try again"
+                : "View in Health".equals(action) ? "View" : null;
+        if (label != null) {
+            TextView button = CaptureUi.pill(this, label, attention);
+            button.setOnClickListener(v -> request("Replace capture".equals(action) ? "replace"
+                    : "Retry".equals(action) ? "retry" : "view", id));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+            params.topMargin = CaptureUi.dp(this, 10);
+            card.addView(button, params);
+        }
+        LinearLayout.LayoutParams outer = new LinearLayout.LayoutParams(-1, -2);
+        outer.topMargin = CaptureUi.dp(this, 12);
+        card.setLayoutParams(outer);
+        return card;
     }
 
     private LinearLayout column() {
