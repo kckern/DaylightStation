@@ -3,17 +3,22 @@ import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 vi.mock('./GovernanceAudioPlayer.jsx', () => ({ default: () => null }));
 import GovernanceStateOverlay from './GovernanceStateOverlay.jsx';
-import { resolveGovernanceDisplay } from '../../hooks/useGovernanceDisplay.js';
+import { resolveGovernanceDisplay, groupRidersByGoal } from '../../hooks/useGovernanceDisplay.js';
+const COOL = '#94a3b8';
+const SEQUENCE = [{ id: 'cool', threshold: 60 }, { id: 'active', threshold: 110 }];
 const row = (overrides = {}) => ({
   key: overrides.userId || 'rider-a', userId: 'rider-a', displayName: 'Rider A', avatarSrc: '', heartRate: 96, targetHeartRate: 110, progress: 0.5,
-  currentZone: { id: 'cool', name: 'Cool', color: '#94a3b8' }, targetZone: { id: 'active', name: 'Active', color: '#22c55e' },
-  status: 'missing', holdProgress: null, ...overrides,
+  currentZone: { id: 'cool', name: 'Cool', color: COOL }, targetZone: { id: 'active', name: 'Active', color: '#22c55e' },
+  zoneSequence: SEQUENCE, status: 'missing', holdProgress: null, ...overrides,
 });
+// The lock modal reads display.riders (the rows regrouped per rider); the
+// warning chips read display.rows. Fixtures carry both, as the resolver does.
 const display = (rows, status = 'locked') => ({ show: true, status, videoLocked: status === 'locked', activeUserCount: rows.length,
-  deadline: Date.now() + 30000, gracePeriodTotal: 30, requirements: [], rows });
+  deadline: Date.now() + 30000, gracePeriodTotal: 30, requirements: [], rows, summary: [], obligations: [],
+  riders: groupRidersByGoal([{ key: 'requirement:active', zone: 'active', zoneLabel: 'Active', zoneColor: '#22c55e', rows }]) });
 
 describe('GovernanceStateOverlay — compact feedback', () => {
-  it.each(['warning', 'locked'])('%s uses a pedal icon with accessible instruction in the existing measurement row', (status) => {
+  it.each(['warning', 'locked'])('%s uses a pedal icon with accessible instruction', (status) => {
     const { container, getByLabelText } = render(<GovernanceStateOverlay display={display([row({ pedal: { rpm: 18.4, targetRpm: 30, orZoneLabel: 'Active' } })], status)} />);
     expect(getByLabelText('Pedal or reach Active')).toBeTruthy();
     expect(container.querySelector('.governance-pedal-icon svg')).toBeTruthy();
@@ -38,59 +43,57 @@ describe('GovernanceStateOverlay — compact feedback', () => {
     const { queryByRole } = render(<GovernanceStateOverlay display={display([row({ holdProgress: { elapsedMs: 0, remainingMs: 0, totalMs: 0 } })])} />);
     expect(queryByRole('progressbar')).toBeNull();
   });
-  it('heart-rate and pedal rows retain one shared grid with two identity text lines', () => {
-    const { container } = render(<GovernanceStateOverlay display={display([row(), row({ userId: 'rider-b', pedal: { rpm: 0, targetRpm: 30 } })])} />);
-    const rows = container.querySelectorAll('.governance-lock__row');
+  it('heart-rate and pedal riders share one row layout: face, name, BPM', () => {
+    const { getAllByTestId } = render(<GovernanceStateOverlay display={display([row(), row({ userId: 'rider-b', displayName: 'Rider B', pedal: { rpm: 0, targetRpm: 30 } })])} />);
+    const rows = getAllByTestId('lock-rider-row');
     expect(rows).toHaveLength(2);
-    rows.forEach((r) => expect(r.querySelector('.governance-lock__chip-text').children).toHaveLength(2));
+    rows.forEach((r) => {
+      expect(r.querySelector('.governance-lock__face img')).toBeTruthy();
+      expect(r.querySelector('.governance-lock__name').textContent).toMatch(/^Rider [AB]$/);
+      expect(r.querySelector('.governance-lock__bpm-num').textContent).toBe('96');
+    });
   });
 });
 
-describe('GovernanceStateOverlay — live current state and percentage', () => {
-  it('updates live Cool at 96/110 and 101/110 after a prior Active snapshot', () => {
-    const view = render(<GovernanceStateOverlay display={display([row({ currentZone: { id: 'active', name: 'Active' }, heartRate: 111 })])} />);
+describe('GovernanceStateOverlay — live current state on the BPM scale', () => {
+  it('updates live Cool at 96 and 101 after a prior Active snapshot', () => {
+    const view = render(<GovernanceStateOverlay display={display([row({ currentZone: { id: 'active', name: 'Active', color: '#22c55e' }, heartRate: 111 })])} />);
     for (const hr of [96, 101]) {
       view.rerender(<GovernanceStateOverlay display={display([row({ heartRate: hr })])} />);
-      const current = view.container.querySelector('.governance-lock__pill:not(.governance-lock__pill--target)');
-      expect(current.textContent).toBe('Cool');
-      expect(current.classList.contains('zone-cool')).toBe(true);
-      expect(view.container.querySelector('.governance-lock__avatar.zone-cool')).toBeTruthy();
-      expect(view.container.querySelector('.governance-lock__pill--target.zone-active').textContent).toBe('Active');
-      expect(view.container.querySelector('.governance-lock__chip-meta').textContent).toBe(`${hr} / 110`);
+      const r = view.getByTestId('lock-rider-row');
+      expect(r.querySelector('.governance-lock__bpm-num').textContent).toBe(String(hr));
+      expect(r.querySelector('.governance-lock__heart').style.color).toMatch(/#94a3b8|rgb\(148, 163, 184\)/);
+      expect(r.querySelector('.governance-lock__fill').style.background).toMatch(/#94a3b8|rgb\(148, 163, 184\)/);
+      expect(r.querySelector('.governance-lock__gap').textContent).toBe(`+${110 - hr} to Active`);
     }
   });
-  it.each([[-0.1, '0%', '0'], [0, '0%', '0'], [0.5, '50%', '0.5'], [0.85, '85%', '0.85'], [1, '100%', '1'], [1.1, '100%', '1']])('drives fill and knob for %s from one --p on the track', (value, label, p) => {
-    const { container } = render(<GovernanceStateOverlay display={display([row({ progress: value })])} />);
-    const track = container.querySelector('.governance-lock__progress-track');
+  // Scale: lowest threshold (60) to the highest goal + 10 (120).
+  it.each([[50, '0'], [60, '0'], [96, '0.6'], [114, '0.9'], [120, '1'], [130, '1']])('places %s BPM on the scale at --p %s', (hr, p) => {
+    const { container } = render(<GovernanceStateOverlay display={display([row({ heartRate: hr })])} />);
+    const track = container.querySelector('.governance-lock__track');
     expect(track.style.getPropertyValue('--p')).toBe(p);
-    // The fill and the knob read --p in CSS; neither carries its own position,
-    // so they cannot be told different values (the label used to snap via
-    // inline left/translateX while the fill eased — bug 2026-10-23 #1).
-    const fill = track.querySelector('.governance-lock__progress-fill');
-    expect(fill.style.transform).toBe('');
-    const tip = track.querySelector('.governance-lock__progress-tip');
-    expect(tip).toBeTruthy();
-    expect(tip.getAttribute('style')).toBeNull();
-    const knob = tip.querySelector('.governance-lock__progress-indicator');
-    expect(knob.textContent).toBe(label);
-    expect(knob.style.left).toBe('');
-    expect(knob.style.transform).toBe('');
+    // The fill reads --p in CSS; it carries no position of its own.
+    expect(container.querySelector('.governance-lock__fill').style.transform).toBe('');
   });
-  it('rims the knob in the rider\'s current zone colour', () => {
-    const { container } = render(<GovernanceStateOverlay display={display([row({ progress: 0.4 })])} />);
-    const knob = container.querySelector('.governance-lock__progress-indicator');
-    expect(knob.style.getPropertyValue('--tip-color')).toBe('#94a3b8');
+  it('labels each goal marker with its zone and BPM, in the zone colour', () => {
+    const { container } = render(<GovernanceStateOverlay display={display([row()])} />);
+    const marker = container.querySelector('.governance-lock__marker');
+    expect(marker.textContent).toBe('Active 110');
+    expect(marker.style.getPropertyValue('--marker-color')).toBe('#22c55e');
+    expect(marker.style.left).toBe('83.3%');
   });
-  it('updates the notch with HR progress independently from the secondary hold bar', () => {
-    const view = render(<GovernanceStateOverlay display={display([row({ progress: 0.5 })])} />);
-    view.rerender(<GovernanceStateOverlay display={display([row({ progress: 1, holdProgress: { elapsedMs: 4000, remainingMs: 6000, totalMs: 10000 } })])} />);
-    expect(view.container.querySelector('.governance-lock__progress-indicator').textContent).toBe('100%');
+  it('updates the BPM scale independently from the secondary hold bar', () => {
+    const view = render(<GovernanceStateOverlay display={display([row({ heartRate: 96 })])} />);
+    view.rerender(<GovernanceStateOverlay display={display([row({ heartRate: 114, holdProgress: { elapsedMs: 4000, remainingMs: 6000, totalMs: 10000 } })])} />);
+    expect(view.container.querySelector('.governance-lock__track').style.getPropertyValue('--p')).toBe('0.9');
     expect(view.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('4000');
   });
   it('removes completed blockers immediately when they join the credited faces', () => {
     const view = render(<GovernanceStateOverlay display={display([row()])} />);
-    view.rerender(<GovernanceStateOverlay display={{ ...display([]), activeUserCount: 2, requirements: [{ requiredCount: 2, actualCount: 1, zoneLabel: 'Active' }], metRows: [row()] }} />);
-    expect(view.container.querySelectorAll('.governance-lock__chip-name')).toHaveLength(0);
+    view.rerender(<GovernanceStateOverlay display={{ ...display([]), activeUserCount: 2,
+      summary: [{ key: 'requirement:active', zone: 'active', zoneLabel: 'Active', zoneColor: '#22c55e', requiredCount: 2, actualCount: 1, needed: 1, scope: 'any' }],
+      obligations: [{ key: 'requirement:active', metRows: [row()] }] }} />);
+    expect(view.queryAllByTestId('lock-rider-row')).toHaveLength(0);
     expect(view.container.querySelectorAll('.governance-lock__credit--met')).toHaveLength(1);
   });
 });
@@ -102,20 +105,22 @@ describe('GovernanceStateOverlay — cause-scoped heading and faces', () => {
   const challenge = { type: 'zone', id: 'challenge', zone: 'warm', zoneLabel: 'Warm', actualCount: 1, requiredCount: 2, missingUsers: ['a', 'b'], metUsers: ['c'], holding: ['b'] };
   it.each(['pending', 'failed'])('keeps 3 of 4 Active and only floor faces/rows over a %s Warm challenge', (status) => {
     const resolved = resolveGovernanceDisplay({ isGoverned: true, status: 'locked', activeUserCount: 4, requirements: [floor], challenge: { ...challenge, status } }, map, zoneMeta);
-    const { container } = render(<GovernanceStateOverlay display={resolved} />);
-    expect(container.querySelector('.governance-lock__summary-main').textContent).toBe('3 of 4 in Active');
+    const { container, getAllByTestId } = render(<GovernanceStateOverlay display={resolved} />);
+    expect(container.querySelector('.governance-lock__instruction').textContent).toBe('Get all 4 riders to Active to keep watching.');
+    expect(container.querySelector('.governance-lock__rule').textContent).toBe('Active 3/4');
     expect(container.querySelectorAll('.governance-lock__credit--met')).toHaveLength(3);
-    expect(container.querySelectorAll('.governance-lock__row')).toHaveLength(1);
-    expect(container.querySelector('.governance-lock__chip-meta').textContent).toBe('105 / 110');
+    expect(getAllByTestId('lock-rider-row')).toHaveLength(1);
+    expect(container.querySelector('.governance-lock__gap').textContent).toBe('+5 to Active');
     expect(container.textContent).not.toContain('Warm');
   });
   it('switches back to the same failed Warm challenge after floor recovery', () => {
     const resolve = (base) => resolveGovernanceDisplay({ isGoverned: true, status: 'locked', activeUserCount: 4, requirements: [base], challenge: { ...challenge, status: 'failed' } }, map, zoneMeta);
     const view = render(<GovernanceStateOverlay display={resolve(floor)} />);
     view.rerender(<GovernanceStateOverlay display={resolve({ ...floor, satisfied: true, missingUsers: [] })} />);
-    expect(view.container.querySelector('.governance-lock__summary-main').textContent).toBe('1 of 2 in Warm');
+    expect(view.container.querySelector('.governance-lock__instruction').textContent).toBe('Get 1 more rider to Warm to keep watching.');
+    expect(view.container.querySelector('.governance-lock__rule').textContent).toBe('Warm 1/2');
     expect(view.container.querySelectorAll('.governance-lock__credit--met')).toHaveLength(1);
-    expect(view.container.querySelectorAll('.governance-lock__row')).toHaveLength(2);
+    expect(view.getAllByTestId('lock-rider-row')).toHaveLength(2);
   });
 });
 

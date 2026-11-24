@@ -17,14 +17,17 @@ const normalizeCount = (value) => (Number.isFinite(value) ? Math.max(0, Math.rou
  * their contribution stays visible while everyone else catches up.
  *
  * Unfilled slots render as open rings so the remaining work reads at a glance
- * from across the room without parsing the count text.
+ * from across the room without parsing the count text. `showOpen={false}`
+ * renders only the earned faces (the lock modal's rule chips print the count
+ * beside them; empty dashed rings there read as broken images).
  */
 function CompletionAvatars({
   targetCount,
   actualCount,
   metRows = [],
   containerClassName = 'governance-lock__credits',
-  ariaLabel
+  ariaLabel,
+  showOpen = true
 }) {
   const { slots, target, filled } = useMemo(() => {
     const safeTarget = normalizeCount(targetCount);
@@ -66,6 +69,7 @@ function CompletionAvatars({
     >
       {slots.map((slot) => {
         if (!slot.filled) {
+          if (!showOpen) return null;
           return (
             <span
               key={slot.key}
@@ -113,7 +117,8 @@ CompletionAvatars.propTypes = {
     currentZone: PropTypes.object
   })),
   containerClassName: PropTypes.string,
-  ariaLabel: PropTypes.string
+  ariaLabel: PropTypes.string,
+  showOpen: PropTypes.bool
 };
 
 export default CompletionAvatars;

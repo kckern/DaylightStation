@@ -74,7 +74,17 @@ const lockScene = (riders, requirements) => () => {
     activeUserCount: riders.length, requirements,
     deadline: null, gracePeriodTotal: 30,
   }, new Map(riders), ZONE_META);
-  return <GovernanceStateOverlay display={display} onUnlock={noop} />;
+  // Production (FitnessPlayer.scss) greys and darkens the video while locked
+  // (`.governance-filter-critical`: grayscale(1) brightness(0.6)) and pads the
+  // overlay clamp(16px, 4vw, 48px). The harness does not load that sheet, so
+  // the lock scenes restate both against the stand-in video.
+  return <>
+    <style>{`
+      .harness-stage [data-harness-backdrop] { filter: grayscale(1) brightness(0.6); }
+      .harness-stage .governance-overlay { padding: clamp(16px, 4vw, 48px); text-align: center; }
+    `}</style>
+    <GovernanceStateOverlay display={display} onUnlock={noop} />
+  </>;
 };
 
 export const SCENES = {

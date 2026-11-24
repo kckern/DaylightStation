@@ -40,7 +40,7 @@ fs.mkdirSync(OUT, { recursive: true });
 const MEMO = ['.voice-memo-overlay', '.voice-memo-overlay__panel', '.voice-memo-overlay__actions'];
 const BUDGET = ['[data-testid="playback-budget-overlay"]', '.gate-card', '.presence-gate-notice__actions', '.presence-gate-notice__btn'];
 const PRESENCE = ['[data-testid="presence-gate-notice"]', '.gate-card', '.presence-gate-notice__actions', '.presence-gate-notice__btn'];
-const LOCK = ['.governance-overlay', '.governance-overlay__panel', '.governance-lock__row'];
+const LOCK = ['.governance-overlay', '.governance-overlay__panel', '.governance-lock__rider'];
 const SCENE_ROOTS = {
   'memo-long': MEMO,
   'memo-short': MEMO,
