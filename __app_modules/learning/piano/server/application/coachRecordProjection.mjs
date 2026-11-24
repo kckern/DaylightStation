@@ -62,6 +62,10 @@ export function recordSegments(record, authored = null) {
 }
 
 export function projectRecord({ record, scoreId, segments, certification, goldLadder, dayKey }) {
-  const plan = createCoachPlan({ scoreId, fingerprint: recordFingerprint(record), segments, certification, goldLadder });
+  // The coach summary carries the score's opening tempo (written with each coaching event), so the Gold
+  // ladder's bpm floor lifts and merges the same rungs here as on the kiosk.
+  const bpm = record?.learnCoach?.summary?.baseBpm;
+  const tempoMap = Number.isFinite(bpm) && bpm > 0 ? [{ onsetQuarter: 0, bpm }] : [];
+  const plan = createCoachPlan({ scoreId, fingerprint: recordFingerprint(record), segments, certification, goldLadder, tempoMap });
   return projectCoach({ plan, state: record?.learnCoach ?? null, legacy: record ?? {}, dayKey });
 }

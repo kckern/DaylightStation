@@ -885,13 +885,18 @@ record and gate nothing.
 (default `[50, 70, 85, 100]`; a piece overrides it under `sheetmusic.learn.pieces.<scoreId>`)
 must be ascending, 1–100, ending at 100, or the default is used (`normalizeGoldLadder`).
 `sheetmusic.learn.minBpm` (default 60) lifts any rung that would play slower than that
-at the score's opening tempo (`goldTemposFor`): at 72 bpm, 50% and 70% both become 84%.
+at the score's opening tempo (`goldTemposFor`), and a lifted rung that lands within ten points of the next
+rung (`LIFTED_MERGE_POINTS`) merges into it, so the ladder never shows near-duplicate speeds: at 72 bpm, 50%
+and 70% both lift to 84% and merge into 85% (85, then score tempo); at 100 bpm, 50% lifts to 60% and stays.
+Score tempo is never dropped, and rungs the floor did not lift stay as configured. The coach summary
+(`learnCoach.summary.baseBpm`, written with each coaching event) carries the score's opening tempo, so the
+home desk applies the same floor and merge without the score.
 The plan carries the result (`plan.goldTempos`, `plan.goldLadder`, posted to the server
 with the plan) and everything reads it from there: the ladder, the joins' Gold
 (`timed-<speed>` at each speed, test out at score tempo first), the slower-beat
 recovery (one rung of the plan down at a time; below the first speed the pitch comes
 off, *Tap the rhythm*), the step strip's labels and the desk (`GetPianoDesk` reads
-the same keys). There is no separate beat step any more: the first timed step of a
+the same keys and the summary's `baseBpm`). There is no separate beat step any more: the first timed step of a
 passage (`leadIn: true`, the right hand at the first speed on a two-hand passage)
 opens on the free-running beat loop until a key arms its count-in. Authored ladders do not carry over this way
 (`carryGold` in `shared/music/learnCoach.mjs`). On the Silver track "together"

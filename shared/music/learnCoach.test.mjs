@@ -297,12 +297,40 @@ describe('Gold tempo ladder: 50, 70, 85, then score tempo (2026-11-23 late night
     for (const tempos of [[70, 50, 100], [50, 70, 85], [0, 50, 100], 'fast']) expect(planOf({ goldLadder: { tempos, minBpm: 40 } }).goldTempos).toEqual([50, 70, 85, 100]);
     // 60 bpm at a 100 bpm score is 60%: the 50% rung is lifted to it.
     expect(planOf({ goldLadder: undefined }).goldTempos).toEqual([60, 70, 85, 100]);
-    // A slow score (72 bpm): 50% and 70% would be 36 and 50 bpm, both lifted to 84% (60.5 bpm), one rung.
+    // A slow score (72 bpm): 50% and 70% would be 36 and 50 bpm, both lifted to 84% (60.5 bpm); 84 sits within
+    // ten points of 85, so it merges into it: 85 and score tempo.
     const slow = planOf({ goldLadder: undefined, tempoMap: [{ onsetQuarter: 0, bpm: 72 }] });
-    expect(slow.goldTempos).toEqual([84, 85, 100]);
-    expect(slow.tasks.filter((task) => task.passageId === 'answer' && task.track === 'gold').map((task) => task.skill)).toEqual(['rhythm', 'timed-84', 'timed-85', 'mastery']);
+    expect(slow.goldTempos).toEqual([85, 100]);
+    expect(slow.tasks.filter((task) => task.passageId === 'answer' && task.track === 'gold').map((task) => task.skill)).toEqual(['rhythm', 'timed-85', 'mastery']);
+    // Hands alone at the (merged) first speed.
+    expect(slow.tasks.filter((task) => task.passageId === 'opening' && /-(rh|lh)$/.test(task.skill)).map((task) => task.skill)).toEqual(['timed-85-rh', 'timed-85-lh']);
     // A piece with no known tempo keeps the configured speeds.
     expect(planOf({ goldLadder: undefined, tempoMap: [] }).goldTempos).toEqual([50, 70, 85, 100]);
+  });
+
+  it('merges a lifted rung into the next one within ten points, never dropping 100 or an untouched rung', async () => {
+    const { goldTemposFor } = await import('./learnCoach.mjs');
+    const at = (bpm, tempos) => goldTemposFor({ tempos, minBpm: 60 }, [{ onsetQuarter: 0, bpm }]);
+    // 100 bpm: 50 lifts to 60, ten points from 70, so both stay.
+    expect(at(100, [50, 70, 85, 100])).toEqual([60, 70, 85, 100]);
+    // 72 bpm: 50 and 70 lift to 84, one point from 85: merged.
+    expect(at(72, [50, 70, 85, 100])).toEqual([85, 100]);
+    // 63 bpm: everything below 100 lifts to 96, four points from 100: only score tempo is left.
+    expect(at(63, [50, 70, 85, 100])).toEqual([100]);
+    // A ladder the floor does not touch is kept as configured, however close its rungs.
+    expect(at(200, [90, 95, 100])).toEqual([90, 95, 100]);
+    // The joins' Gold uses the same merged speeds.
+    const slow = planOf({ goldLadder: undefined, segments: [segments[0], { ...segments[0], id: 'more', inMeasure: 4, outMeasure: 7, printedMeasures: ['5', '8'] }, { ...segments[0], id: 'last', inMeasure: 8, outMeasure: 11, printedMeasures: ['9', '12'] }],
+      tempoMap: [{ onsetQuarter: 0, bpm: 72 }] });
+    const join = slow.segments.find((segment) => segment.kind === 'join' && !segment.final);
+    expect(join.tasks.filter((task) => task.track === 'gold').map((task) => task.tempoPercent)).toEqual([85, 100]);
+  });
+
+  it('writes the score tempo on the coach summary, for readers without the score', async () => {
+    const { coachSummary } = await import('./learnCoach.mjs');
+    const plan = planOf({ tempoMap: [{ onsetQuarter: 0, bpm: 72 }] });
+    expect(coachSummary(projection(plan, null), { now: 'x' }).baseBpm).toBe(72);
+    expect(coachSummary(projection(planOf({ tempoMap: [] }), null), { now: 'x' }).baseBpm).toBeNull();
   });
 
   it('steps a timing-only miss down one rung of the plan: 85 to 70 and 70 to 50', () => {

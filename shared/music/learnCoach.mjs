@@ -45,15 +45,28 @@ export function normalizeGoldLadder(raw) {
   return Object.freeze({ tempos, minBpm });
 }
 
+/** A rung the floor lifted is merged into the next one when it lands closer to it than this (percentage points). */
+export const LIFTED_MERGE_POINTS = 10;
+
 /**
  * The speeds a piece's timed steps run at: the configured tempos, each lifted to the floor (`minBpm` at the
- * score's opening tempo), whole percents, duplicates dropped. A piece with no known tempo keeps the tempos.
+ * score's opening tempo), whole percents, duplicates dropped. A lifted rung that lands within
+ * `LIFTED_MERGE_POINTS` of the next kept rung is merged into it, so the ladder never shows near-duplicate
+ * speeds (84 and 85 at a 72 bpm score keep 85); the last rung, 100, is never dropped. Configured rungs the
+ * floor did not touch are kept as configured. A piece with no known tempo keeps the tempos.
  */
 export function goldTemposFor(ladder, tempoMap = []) {
   const { tempos, minBpm } = normalizeGoldLadder(ladder);
   const bpm = tempoMap?.[0]?.bpm;
   const floor = Number.isFinite(bpm) && bpm > 0 ? Math.min(100, Math.ceil((minBpm * 100) / bpm)) : 0;
-  return [...new Set(tempos.map((value) => Math.min(100, Math.max(Math.round(value), floor))))];
+  const rungs = tempos.map((value) => ({ value: Math.min(100, Math.max(Math.round(value), floor)), lifted: Math.round(value) < floor }));
+  const kept = [];
+  for (const rung of [...rungs].reverse()) {
+    const next = kept[0];
+    if (next != null && (rung.value >= next || (rung.lifted && next - rung.value < LIFTED_MERGE_POINTS))) continue;
+    kept.unshift(rung.value);
+  }
+  return kept;
 }
 
 export function normalizeCertification(raw) {
@@ -521,7 +534,8 @@ export function projectCoach({ plan, state, legacy = {}, dayKey }) {
     return segment.skills.find((task) => task.track === 'gold' && !task.ready) ?? null;
   });
   const nextGold = pieceSilver ? goldLap.find((segment) => !segment.certification.gold && (!isJoin(segment) || goldMap[segment.id])) ?? null : null;
-  return { segments, recommended, review, state: current, lap, lapProgress,
+  const baseBpm = Number.isFinite(plan.tempoMap?.[0]?.bpm) && plan.tempoMap[0].bpm > 0 ? plan.tempoMap[0].bpm : null;
+  return { segments, recommended, review, state: current, lap, lapProgress, baseBpm,
     goldResume: ((task) => ((current.ladder ?? 1) < LADDER_REVISION && bypassesUntriedGoldStep(segments, current, task) ? null : task))(liveResume(plan, segments, current.goldResume)),
     gold: goldMap,
     certifications: by((segment) => segment.certification),
@@ -548,6 +562,8 @@ const certificateStamp = (value) => (value ? value.at ?? 'legacy' : null);
 export function coachSummary(projection, { now, state = projection.state }) {
   return { total: projection.piece.total, silver: projection.piece.silver, gold: projection.piece.gold,
     nextPassageId: projection.piece.nextPassageId, setAside: { ...(state?.setAside ?? {}) },
+    // The score's opening tempo, so a reader without the score (the home desk) can apply the Gold ladder's bpm floor.
+    baseBpm: projection.baseBpm ?? null,
     joins: projection.piece.joins, pieceSilver: projection.piece.pieceSilver,
     passages: projection.segments.filter((segment) => segment.kind !== 'join').map((segment) => ({ id: segment.id, start: segment.inMeasure, end: segment.outMeasure, parts: segment.playableParts,
       silver: certificateStamp(segment.certification.silver), gold: certificateStamp(segment.certification.gold) })),

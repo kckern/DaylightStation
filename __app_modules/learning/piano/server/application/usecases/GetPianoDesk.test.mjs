@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { GetPianoDesk, practiceKeyOfScore } from './GetPianoDesk.mjs';
 import { createCoachPlan } from '#shared/music/learnCoach.mjs';
 import { createLearnSegmentsReader } from '../../composition/learnSegments.mjs';
+import { projectRecord } from '../coachRecordProjection.mjs';
 
 const SCORE = 'files:docs/sheet-music/christmas/piece.mxl';
 const KEY = practiceKeyOfScore(SCORE);
@@ -217,4 +218,16 @@ test('a Learn file cut against other XML is ignored, end to end through the read
     datastore: { getSheetMusicLearn: () => ({ contentSha256: 'c', segments: [{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 9 }] }) },
   });
   assert.deepEqual(shape(learnDesk(r, matching)), [['a', 0, 3, 'gold'], ['b', 4, 9, 'todo']]);
+});
+
+test('the desk applies the Gold ladder floor from the tempo the coach summary carries', () => {
+  const segs = [{ id: 'a', inMeasure: 0, outMeasure: 3, playableParts: ['rh', 'lh'] }];
+  const gold = (summary) => projectRecord({ record: record({ learnCoach: summary ? { summary } : undefined }), scoreId: SCORE, segments: segs, dayKey: '2026-11-18' })
+    .segments[0].skills.filter((skill) => skill.track === 'gold').map((skill) => skill.skill);
+  // 72 bpm: the slow rungs lift to 84% and merge into 85%, as on the kiosk.
+  assert.deepEqual(gold({ baseBpm: 72 }), ['rhythm', 'timed-85-rh', 'timed-85-lh', 'timed-85', 'mastery']);
+  // 100 bpm: 50% lifts to 60%.
+  assert.deepEqual(gold({ baseBpm: 100 }), ['rhythm', 'timed-60-rh', 'timed-60-lh', 'timed-60', 'timed-70', 'timed-85', 'mastery']);
+  // An older summary without a tempo keeps the configured speeds.
+  assert.deepEqual(gold(null), ['rhythm', 'timed-50-rh', 'timed-50-lh', 'timed-50', 'timed-70', 'timed-85', 'mastery']);
 });
