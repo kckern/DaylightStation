@@ -754,6 +754,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/media/media/cli/plex-sync.cli.mjs': null,
   '__app_modules/media/media/cli/plex.cli.mjs': null,
   '__app_modules/media/media/cli/segment-timings.cli.mjs': null,
+  '__app_modules/media/media/cli/concert-index.cli.mjs': null,
   '__app_modules/media/media/cli/texture.cli.mjs': null,
   '__app_modules/learning/piano/cli/lilypond-import.cli.mjs': null,
   '__app_modules/learning/piano/cli/midi-to-musicxml.mjs': null,

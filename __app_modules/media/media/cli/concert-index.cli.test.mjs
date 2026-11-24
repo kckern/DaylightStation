@@ -4,7 +4,7 @@
 // ffmpeg and network I/O live in the CLI shell, so none of this needs a video.
 
 import { describe, it, expect } from 'vitest';
-import { parseTrackListing, stripWiki, mmss, parseSrt, srtTime, sectionsFrom, attachCues, words, lyricOverlap, rankTracks, buildEvidence } from './concert-index.cli.mjs';
+import { parseTrackListing, stripWiki, mmss, parseSrt, srtTime, sectionsFrom, attachCues, words, lyricOverlap, rankTracks, buildEvidence, measureGraph, clipArgs } from './concert-index.cli.mjs';
 
 const WIKITEXT = `==Track listing==
 {{Track listing
@@ -170,5 +170,33 @@ describe('buildEvidence', () => {
     expect(ev.sections.map((s) => [s.n, s.start, s.end])).toEqual([[1, 0, 120], [2, 120, 300]]);
     expect(ev.sections[0].ranks[0]).toMatchObject({ n: 1, lyric: 1 });
     expect(ev.applause).toEqual([]);
+  });
+});
+
+describe('measureGraph', () => {
+  it('runs both level passes and silencedetect from one decode', () => {
+    const g = measureGraph('/tmp/out', { noiseDb: -40, minSilenceS: 0.8 });
+    expect(g).toContain('asplit=3');
+    expect(g).toContain('file=/tmp/out/rms.txt');
+    expect(g).toContain('highpass=f=9000');
+    expect(g).toContain('file=/tmp/out/hf.txt');
+    expect(g).toContain('silencedetect=noise=-40dB:d=0.8[out]');
+  });
+  it('refuses an output dir the filtergraph cannot quote', () => {
+    expect(() => measureGraph('/tmp/a,b')).toThrow(/filtergraph/);
+    expect(() => measureGraph('/tmp/a:b')).toThrow(/filtergraph/);
+  });
+});
+
+describe('clipArgs', () => {
+  it('cuts a small review clip centred on a boundary', () => {
+    expect(clipArgs('/m/v.mp4', 120, 6, '/o')).toEqual([
+      '-v', 'error', '-y', '-ss', '114', '-i', '/m/v.mp4', '-t', '12',
+      '-vf', 'scale=-2:360', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '30',
+      '-c:a', 'aac', '-b:a', '128k', '/o/clip-0120.mp4',
+    ]);
+  });
+  it('never seeks before zero', () => {
+    expect(clipArgs('/m/v.mp4', 2, 6, '/o').slice(3, 5)).toEqual(['-ss', '0']);
   });
 });

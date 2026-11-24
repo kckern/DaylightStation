@@ -16,6 +16,11 @@
  * @module cli/concert-index
  */
 
+import { parseArgs } from 'node:util';
+import { spawnSync } from 'node:child_process';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import path from 'node:path';
+
 import {
   parseSilences, candidateBoundaries, parseAstats, zipFrames, applauseRuns, rejectApplauseCandidates,
 } from './segment-timings.cli.mjs';
@@ -221,3 +226,134 @@ export function buildEvidence({ durationS, silenceLog, rmsText, hfText, cues, tr
     .map((s, k) => ({ n: k + 1, ...s, ranks: rankTracks(s, tracks).slice(0, 3) }));
   return { durationS, applause, sections };
 }
+
+/* -------------------------------------------------------------------------- */
+/* CLI shell: all the I/O, so everything above stays unit-testable            */
+/* -------------------------------------------------------------------------- */
+
+const UNQUOTABLE = /[,:;'[\]\\]/;
+
+/**
+ * One decode, three outputs: per-second full-band RMS (8 kHz), per-second
+ * >9 kHz RMS (32 kHz), and silencedetect on stderr. The two level passes are
+ * the recipe in __docs/reference/player/surround/classical/README.md, joined
+ * with asplit so a 3 GB file crosses the network once instead of three times.
+ */
+export function measureGraph(outDir, { noiseDb = -40, minSilenceS = 0.8 } = {}) {
+  if (UNQUOTABLE.test(outDir)) throw new Error(`output dir has characters a filtergraph cannot hold: ${outDir}`);
+  const stats = 'astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level';
+  return [
+    '[0:a]asplit=3[a][b][c]',
+    `[a]aresample=8000,asetnsamples=8000,${stats}:file=${outDir}/rms.txt,anullsink`,
+    `[b]aresample=32000,highpass=f=9000,asetnsamples=32000,${stats}:file=${outDir}/hf.txt,anullsink`,
+    `[c]silencedetect=noise=${noiseDb}dB:d=${minSilenceS}[out]`,
+  ].join(';');
+}
+
+export function clipArgs(media, at, pad, outDir) {
+  const name = `clip-${String(Math.round(at)).padStart(4, '0')}.mp4`;
+  return [
+    '-v', 'error', '-y', '-ss', String(Math.max(0, Math.round(at - pad))), '-i', media, '-t', String(pad * 2),
+    '-vf', 'scale=-2:360', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '30',
+    '-c:a', 'aac', '-b:a', '128k', path.join(outDir, name),
+  ];
+}
+
+function run(cmd, args) {
+  const r = spawnSync(cmd, args, { encoding: 'utf8', maxBuffer: 1 << 28 });
+  if (r.error) throw r.error;
+  if (r.status !== 0) throw new Error(`${cmd} exited ${r.status}: ${String(r.stderr).slice(-800)}`);
+  return r;
+}
+
+function durationOf(media) {
+  return Number(run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', media]).stdout.trim());
+}
+
+const USAGE = `concert-index: evidence for a concert video's programme
+
+  track-listing --page "<Wikipedia title>" [--out tracks.json]
+      Fetch the article's wikitext and print every {{Track listing}} track.
+  measure <media> --out <dir> [--noise -40] [--min-silence 0.8]
+      Decode the audio once; write rms.txt, hf.txt, silence.txt, duration.json.
+  evidence --measured <dir> --srt <file> [--tracks tracks.json] [--min-gap 20] [--out evidence.json]
+      Build sections from measured audio, attach subtitles, rank tracks.
+  clips <media> --at 120,305.5 [--pad 6] --out <dir>
+      Cut a 360p review clip centred on each boundary.`;
+
+export async function runCliEntry(argv = process.argv.slice(2)) {
+  const { values: f, positionals: [cmd, media] } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options: {
+      page: { type: 'string' }, out: { type: 'string' }, noise: { type: 'string' },
+      'min-silence': { type: 'string' }, measured: { type: 'string' }, srt: { type: 'string' },
+      tracks: { type: 'string' }, 'min-gap': { type: 'string' }, at: { type: 'string' },
+      pad: { type: 'string' }, help: { type: 'boolean', short: 'h' },
+    },
+  });
+  const emit = (obj) => {
+    const text = `${JSON.stringify(obj, null, 2)}\n`;
+    if (f.out && cmd !== 'measure' && cmd !== 'clips') writeFileSync(f.out, text);
+    else process.stdout.write(text);
+  };
+
+  if (f.help || !cmd) { console.log(USAGE); return; }
+
+  if (cmd === 'track-listing') {
+    if (!f.page) throw new Error('--page is required');
+    const url = 'https://en.wikipedia.org/w/api.php?action=parse&prop=wikitext&format=json&formatversion=2&redirects=1'
+      + `&page=${encodeURIComponent(f.page)}`;
+    const res = await fetch(url, { headers: { 'User-Agent': 'concert-index/0.1' } });
+    if (!res.ok) throw new Error(`Wikipedia answered ${res.status} for ${f.page}`);
+    const body = await res.json();
+    if (body.error) throw new Error(`Wikipedia: ${body.error.info}`);
+    emit({ page: f.page, tracks: parseTrackListing(body.parse.wikitext) });
+    return;
+  }
+
+  if (cmd === 'measure') {
+    if (!media || !f.out) throw new Error('measure needs <media> and --out');
+    mkdirSync(f.out, { recursive: true });
+    const graph = measureGraph(f.out, {
+      noiseDb: f.noise ? Number(f.noise) : -40,
+      minSilenceS: f['min-silence'] ? Number(f['min-silence']) : 0.8,
+    });
+    const r = run('ffmpeg', ['-hide_banner', '-nostats', '-vn', '-i', media, '-filter_complex', graph, '-map', '[out]', '-f', 'null', '-']);
+    const silence = String(r.stderr).split('\n').filter((l) => l.includes('silencedetect')).join('\n');
+    writeFileSync(path.join(f.out, 'silence.txt'), `${silence}\n`);
+    writeFileSync(path.join(f.out, 'duration.json'), JSON.stringify({ media, durationS: durationOf(media) }));
+    console.log(`measured ${media} -> ${f.out}`);
+    return;
+  }
+
+  if (cmd === 'evidence') {
+    if (!f.measured || !f.srt) throw new Error('evidence needs --measured and --srt');
+    const read = (name) => readFileSync(path.join(f.measured, name), 'utf8');
+    const { durationS } = JSON.parse(read('duration.json'));
+    const tracks = f.tracks ? (JSON.parse(readFileSync(f.tracks, 'utf8')).tracks ?? []) : [];
+    emit(buildEvidence({
+      durationS,
+      silenceLog: read('silence.txt'),
+      rmsText: read('rms.txt'),
+      hfText: read('hf.txt'),
+      cues: parseSrt(readFileSync(f.srt, 'utf8')),
+      tracks,
+      minGapS: f['min-gap'] ? Number(f['min-gap']) : 20,
+    }));
+    return;
+  }
+
+  if (cmd === 'clips') {
+    if (!media || !f.at || !f.out) throw new Error('clips needs <media>, --at and --out');
+    mkdirSync(f.out, { recursive: true });
+    const pad = f.pad ? Number(f.pad) : 6;
+    for (const at of f.at.split(',').map(Number).filter(Number.isFinite)) run('ffmpeg', clipArgs(media, at, pad, f.out));
+    console.log(`clips -> ${f.out}`);
+    return;
+  }
+
+  throw new Error(`unknown subcommand: ${cmd}\n\n${USAGE}`);
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) { await runCliEntry(); }
