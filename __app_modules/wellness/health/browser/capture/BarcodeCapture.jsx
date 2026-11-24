@@ -19,6 +19,9 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
   const saving = useRef(false);
   const scanGeneration = useRef(0);
   const commitRequest = useRef(null);
+  // The WebView paints its own stretched play glyph on a <video> until the first frame; keep the video
+  // hidden (and its poster blank) until the stream is actually playing.
+  const [streaming, setStreaming] = useState(false);
   const [manualUpc, setManualUpc] = useState('');
   const [showManual, setShowManual] = useState(false);
   const [phase, setPhase] = useState('scanning');
@@ -228,8 +231,11 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
       aspectRatio: quickScan ? undefined : '4 / 3',
     }}>
       <video ref={videoRef} muted playsInline autoPlay
+        poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+        onPlaying={() => setStreaming(true)}
         style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', maxHeight: 'none',
-          display: 'block', objectFit: 'cover', objectPosition: 'center' }} />
+          display: 'block', objectFit: 'cover', objectPosition: 'center',
+          opacity: streaming ? 1 : 0, transition: 'opacity 120ms' }} />
       <div aria-hidden="true" style={{ position: 'absolute', left: '8%', right: '8%', top: '50%',
         transform: 'translateY(-50%)', height: quickScan ? 'min(22vw, 22dvh)' : '30%',
         border: '2px solid white', borderRadius: 10, boxShadow: '0 0 0 100vmax #0006',
