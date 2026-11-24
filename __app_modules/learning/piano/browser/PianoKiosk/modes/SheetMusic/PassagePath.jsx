@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { LINK_PX, NEXT_BUMP_PX, pathLayout } from './passageRail.js';
 import PassageCoin, { PassageTurn } from './PassageCoin.jsx';
 import LevelLadder from './LevelLadder.jsx';
+import usePassageTomatoes from './usePassageTomatoes.js';
 import Icon from '../../../ui/icons/Icon.jsx';
 import './PassagePath.scss';
 
@@ -34,10 +35,13 @@ const before = (token, level) => (level === 'gold' ? (token.kind === 'passage' ?
  * board. When a long piece cannot give every token a 44px target the path is a lettered strip, and a
  * tap opens the board at that unit. `flips` names the units turning into a coin right now;
  * `flipDelayMs` holds the turn until the host's ceremony announces it, and `wave` staggers it along
- * a finished piece.
+ * a finished piece. A passage not yet started wears a tomato for a learner (`tomatoes`, else
+ * `sheetmusic.learn.tomatoes` for whoever is playing).
  */
-export default function PassagePath({ model, flips = {}, flipDelayMs = 0, wave = false, boardOpen = false, onSelect, onOpen, onOpenBoard }) {
+export default function PassagePath({ model, flips = {}, flipDelayMs = 0, wave = false, boardOpen = false, tomatoes: tomatoesProp, onSelect, onOpen, onOpenBoard }) {
   const track = useRef(null);
+  const tomatoesFor = usePassageTomatoes();
+  const tomatoes = tomatoesProp ?? tomatoesFor;
   const tokens = model?.tokens ?? [];
   const width = useTrackWidth(track, tokens.length > 0);
   if (!tokens.length) return null;
@@ -64,8 +68,8 @@ export default function PassagePath({ model, flips = {}, flipDelayMs = 0, wave =
             aria-label={compact ? `${token.label}. Open the passage board` : token.aria} onClick={() => tap(token)}>
             {compact ? <span className="piano-passage-path__pill">{token.letter}</span> : <>
               <span className="piano-passage-path__disc">
-                {flip ? <PassageTurn from={before(token, flip)} to={token.state} letter={token.letter} ring={token.ring} size="100%" />
-                  : <PassageCoin state={token.state} letter={token.letter} ring={token.ring} size="100%" />}
+                {flip ? <PassageTurn from={before(token, flip)} to={token.state} letter={token.letter} ring={token.ring} tomato={tomatoes} size="100%" />
+                  : <PassageCoin state={token.state} letter={token.letter} ring={token.ring} tomato={tomatoes} size="100%" />}
                 {token.isTarget && <i className="piano-passage-path__play" aria-hidden="true"><Play /></i>}
               </span>
               <span className="piano-passage-path__bars" aria-hidden="true">{token.isTarget || token.isNext ? lowerBars(token.bars) : ''}</span>
