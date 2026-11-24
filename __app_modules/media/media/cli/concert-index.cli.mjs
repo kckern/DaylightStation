@@ -109,3 +109,41 @@ export function parseSrt(text) {
   }
   return out;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Sections                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @param {object} o
+ * @param {number[]} o.candidates where music resumes (seconds), applause-filtered
+ * @param {Array<{start:number,end:number}>} [o.applause] applause runs
+ * @param {number} o.durationS file duration
+ */
+export function sectionsFrom({ candidates, applause = [], durationS }) {
+  const starts = [0, ...candidates.filter((c) => c > 0 && c < durationS)]
+    .sort((a, b) => a - b)
+    .filter((s, i, all) => i === 0 || s !== all[i - 1]);
+  return starts.map((start, k) => {
+    const next = k + 1 < starts.length ? starts[k + 1] : durationS;
+    const clap = applause.find((r) => r.start > start && r.start < next);
+    return { start, end: clap ? clap.start : next, applauseAfter: Boolean(clap) };
+  });
+}
+
+/**
+ * A cue belongs to the section whose territory (its start up to the NEXT
+ * section's start) holds the cue's midpoint. Applause gaps are part of the
+ * preceding section's territory, because a narrator often speaks over the
+ * last of the clapping to introduce what comes next.
+ */
+export function attachCues(sections, cues) {
+  return sections.map((s, k) => {
+    const next = k + 1 < sections.length ? sections[k + 1].start : Infinity;
+    const mine = cues.filter((c) => {
+      const mid = (c.start + c.end) / 2;
+      return mid >= s.start && mid < next;
+    });
+    return { ...s, cues: mine.map((c) => c.i), text: mine.map((c) => c.text).join(' ') };
+  });
+}

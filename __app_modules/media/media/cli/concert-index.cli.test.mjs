@@ -4,7 +4,7 @@
 // ffmpeg and network I/O live in the CLI shell, so none of this needs a video.
 
 import { describe, it, expect } from 'vitest';
-import { parseTrackListing, stripWiki, mmss, parseSrt, srtTime } from './concert-index.cli.mjs';
+import { parseTrackListing, stripWiki, mmss, parseSrt, srtTime, sectionsFrom, attachCues } from './concert-index.cli.mjs';
 
 const WIKITEXT = `==Track listing==
 {{Track listing
@@ -80,5 +80,40 @@ describe('parseSrt', () => {
     expect(srtTime('00:00:01,500')).toBe(1.5);
     expect(srtTime('00:00:01.500')).toBe(1.5);
     expect(srtTime('nope')).toBeNull();
+  });
+});
+
+describe('sectionsFrom', () => {
+  it('starts at zero, ends each section at the applause that follows it, else at the next start', () => {
+    expect(sectionsFrom({
+      candidates: [0, 120, 300],
+      applause: [{ start: 280, end: 298 }],
+      durationS: 400,
+    })).toEqual([
+      { start: 0, end: 120, applauseAfter: false },
+      { start: 120, end: 280, applauseAfter: true },
+      { start: 300, end: 400, applauseAfter: false },
+    ]);
+  });
+  it('ignores candidates outside the file and duplicates', () => {
+    expect(sectionsFrom({ candidates: [50, 50, 900], durationS: 100 })).toEqual([
+      { start: 0, end: 50, applauseAfter: false },
+      { start: 50, end: 100, applauseAfter: false },
+    ]);
+  });
+});
+
+describe('attachCues', () => {
+  it('gives each cue to the section holding its midpoint, gaps included', () => {
+    const sections = [{ start: 0, end: 100 }, { start: 120, end: 200 }];
+    const cues = [
+      { i: 1, start: 10, end: 12, text: 'one' },
+      { i: 2, start: 104, end: 110, text: 'in the applause gap' },
+      { i: 3, start: 150, end: 152, text: 'two' },
+    ];
+    expect(attachCues(sections, cues)).toEqual([
+      { start: 0, end: 100, cues: [1, 2], text: 'one in the applause gap' },
+      { start: 120, end: 200, cues: [3], text: 'two' },
+    ]);
   });
 });
