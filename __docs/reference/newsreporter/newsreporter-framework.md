@@ -458,6 +458,29 @@ injected `IApplicationScheduler`.
 80 dots per cm), Roboto Condensed Regular and SemiBold from
 `__backend/assets/fonts/roboto-condensed/`, black on white.
 
+### Family-safe screening
+
+The paper lies where a child can pick it up, so `family_safe`
+(`{ enabled: true, threshold: 0.5 }` by default) screens out stories about
+sexual content, sexual abuse or exploitation (including AI-generated sexual
+images), graphic gore or torture, and suicide or self-harm methods. War,
+conflict, politics, and crime or disasters reported plainly stay in.
+`edition/familySafe.mjs` holds the one typed question, used twice:
+
+1. **Pick:** a third question (`mature`, yes/no) on every story unit's existing
+   `evaluate` call, so there are no extra calls. A unit over the threshold, or
+   with no answer, is not picked.
+2. **After writing:** each written lead, story and brief (headline + body) is
+   asked again, because the writer reads the full article and can bring in
+   detail no headline showed. A flagged story is removed before layout, and an
+   emptied section goes with it.
+
+The write prompt also carries a family-paper rule. With no decision gateway,
+that prompt rule is the only guard; the edition records
+`inputs.familySafe = { enabled, method: 'decision'|'prompt-only', pickRemoved, writeRemoved }`
+and logs `newsreporter.edition.family_safe.unscreened`. Removals log
+`newsreporter.edition.family_safe.removed` with `stage: pick|write`.
+
 ### Deliver
 
 `deliver` prints the stored PNG as one `{ type: 'image', width: 576 }` item (the

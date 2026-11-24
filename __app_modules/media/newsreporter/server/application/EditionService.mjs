@@ -23,6 +23,7 @@ import { pickSchema, writeSchema, checkPick, checkWrite } from './edition/editio
 import { buildPickMessages, buildWriteMessages } from './edition/editionPrompts.mjs';
 import { structuredCall } from './edition/structuredCall.mjs';
 import { decisionPick } from './edition/decisionPick.mjs';
+import { screenWritten } from './edition/familySafe.mjs';
 import { buildLayout, fitLayout } from './edition/editionLayout.mjs';
 import { localDate, localTime, localClockLabel } from './edition/editionTime.mjs';
 
@@ -215,7 +216,8 @@ export class EditionService {
     // 3. Pick: typed decisions per story (Jev); the chat pick is the fallback.
     let pick = await decisionPick({
       gateway: this.#decisionGateway, candidates, categories: cfg.news.categories,
-      leadEnabled: cfg.news.lead.enabled, logger: this.#logger, logContext: ctx, timing: this.#gatherer.timing,
+      leadEnabled: cfg.news.lead.enabled, familySafe: cfg.family_safe,
+      logger: this.#logger, logContext: ctx, timing: this.#gatherer.timing,
     });
     let pickInfo;
     if (pick) {
@@ -261,8 +263,23 @@ export class EditionService {
       gateway: this.#gateway, step: 'write', schema: writeSchema, model: cfg.model, logger: this.#logger, logContext: ctx,
       messages: buildWriteMessages({ cfg, date, groups, dayFacts }), maxTokens: 6000,
     });
-    const written = checkWrite(writtenRaw, { pick, candidates, modules });
-    if (written.dropped.length) this.#logger.warn?.('newsreporter.edition.write.dropped', { ...ctx, headlines: written.dropped });
+    const checked = checkWrite(writtenRaw, { pick, candidates, modules });
+    if (checked.dropped.length) this.#logger.warn?.('newsreporter.edition.write.dropped', { ...ctx, headlines: checked.dropped });
+
+    // 5b. Family-safe screen of what was actually written (the writer read the
+    // full articles, so details can appear that no headline showed).
+    let written = checked;
+    const familySafe = { enabled: cfg.family_safe.enabled, method: null, pickRemoved: pick.mature || [], writeRemoved: [] };
+    if (cfg.family_safe.enabled) {
+      const screened = await screenWritten({
+        written: checked, gateway: this.#decisionGateway, threshold: cfg.family_safe.threshold,
+        timing: this.#gatherer.timing, logger: this.#logger, logContext: ctx,
+      });
+      written = screened.written;
+      familySafe.writeRemoved = screened.removed;
+      familySafe.method = screened.checked ? 'decision' : 'prompt-only';
+      if (!screened.checked) this.#logger.warn?.('newsreporter.edition.family_safe.unscreened', { ...ctx, reason: 'no decision gateway' });
+    }
     if (!written.lead && !written.sections.length) throw new Error('the written edition has no stories');
 
     // 6. Layout, 7. fit.
@@ -297,6 +314,7 @@ export class EditionService {
         missing: [...new Set([...gathered.missing, ...plan.modules.filter((m) => !modules.includes(m) && cfg.day[m]?.show !== 'when_notable' && !gathered.missing.includes(m))])].sort(),
         thin: groups.filter((g) => g.thin).length,
         pick: pickInfo,
+        familySafe,
       },
       costUsd,
       model: cfg.model ?? null,
