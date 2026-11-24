@@ -15,6 +15,7 @@ import { resolvePianoConfig } from './PianoKiosk/pianoConfigModel.js';
 import { PianoMidiProvider, usePianoMidi, usePianoMidiNotes } from './PianoKiosk/PianoMidiContext.jsx';
 import { PianoUserProvider } from './PianoKiosk/PianoUserContext.jsx';
 import { useInactivityReturn } from './PianoKiosk/useInactivityReturn.js';
+import { isThoughtfulRoute } from './PianoKiosk/thoughtfulRoutes.js';
 import usePianoCurfew from './PianoKiosk/usePianoCurfew.js';
 import { shouldPreserveCurfewRoute } from './PianoKiosk/pianoCurfew.js';
 import { useAutoStudioEntry } from './PianoKiosk/useAutoStudioEntry.js';
@@ -229,13 +230,18 @@ function PianoShell() {
 
   const idleReturnRef = useRef(false);
 
-  // After idle, return to this piano's menu (unless already there).
+  // After idle, return to this piano's menu (unless already there, or on a thoughtful route).
   // keepAlive=playing suppresses the timer while audio/video is actively playing.
   useInactivityReturn(activeNotes, noteHistory.length, config.inactivityMinutes, () => {
     const home = basePath;
     if (location.pathname !== home) {
       if (shouldPreserveCurfewRoute(location.pathname, basePath, curfewActive)) {
         logger.info('piano.inactivity-preserved', { route: 'sheetmusic', pianoId, reason: 'curfew' });
+        return;
+      }
+      // Reading a score, weighing a move, working a drill: quiet is the activity, not absence.
+      if (isThoughtfulRoute(location.pathname, basePath)) {
+        logger.info('piano.inactivity-preserved', { route: location.pathname, pianoId, reason: 'thoughtful' });
         return;
       }
       logger.info('piano.inactivity-reset', { from: location.pathname, pianoId });

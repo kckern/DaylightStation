@@ -1761,12 +1761,16 @@ does nothing now):
 | C3 | All music (from your pieces or a shelf) · Your pieces (from the shelves) |
 | D3 / E3 | Previous / Next page |
 
-**Staying open.** The office screen's `midi` subscription (`household/screens/office.yml`) dismisses
-the piano overlay only after `dismiss.inactivity: 600` seconds without a key; it does not dismiss on
-the recorder's `session_end` (sent after 30 s of silence). Short idling is PianoVisualizer's own: its
-40 s countdown in free play, switched off while the launcher or a full-screen entry such as Sheet
-Music is open, and its own `session_end` handling, also skipped there. So a player can read a list,
-a score or a result card at length; ten minutes without a key closes it.
+**Staying open: idle never ends thoughtful work.** Reading a score, weighing a chess move or working
+a drill can go minutes without a key; that is the activity, not absence. The office screen's `midi`
+subscription (`household/screens/office.yml`) has **no `dismiss`**: PianoVisualizer owns its idling,
+a 40 s countdown in free play and its own handling of the recorder's `session_end` (sent after 30 s
+of silence), and both are switched off while the launcher or a full-screen entry (Sheet Music, any
+game) is open. That entry stays until the player leaves it (lowest + highest keys). On the tablet,
+`PianoApp`'s idle return (`inactivityMinutes`) leaves thoughtful routes where they are
+(`PianoKiosk/thoughtfulRoutes.js`: sheetmusic, games, exercises, composer, producer, placement; logs
+`piano.inactivity-preserved` with `reason: 'thoughtful'`); passive and free-play routes still return to
+the menu. The screen may still sleep; the work is kept.
 
 **The key strip** (`office/KeyStrip.jsx`), under the drill, a fixed key per action in the octave
 C2–A2, far under where a passage starts (before a take "any key" arms it):
