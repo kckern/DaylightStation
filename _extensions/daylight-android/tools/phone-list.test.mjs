@@ -50,13 +50,13 @@ test('the phone asks for exactly these fifteen permissions', () => {
   ]);
 });
 
-test('a photo is taken by the system camera app, so the phone asks for no storage or location permission', () => {
+test('a photo is taken by the meal camera or the system camera app, so the phone asks for no storage or location permission', () => {
   const names = permissionsFor(phone, capabilities).map((p) => p.name);
   for (const p of ['READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE', 'READ_MEDIA_IMAGES', 'ACCESS_MEDIA_LOCATION',
     'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION']) {
     assert.equal(names.includes(`android.permission.${p}`), false, p);
   }
-  assert.deepEqual(capabilities['quick-input'].permissions, ['android.permission.RECORD_AUDIO',
+  assert.deepEqual(capabilities['quick-input'].permissions, ['android.permission.RECORD_AUDIO', 'android.permission.CAMERA',
     'android.permission.FOREGROUND_SERVICE_MICROPHONE', 'android.permission.ACCESS_NETWORK_STATE']);
 });
 
@@ -98,6 +98,7 @@ test('nothing of quick-input is exported: a capture starts inside the app or not
   const own = Object.entries(EXPECTED_COMPONENTS).filter(([key]) => key.includes('.cap.quickinput.'));
   assert.deepEqual(own.map(([key]) => key).sort(), [
     'activity net.kckern.daylight.cap.quickinput.shell.CaptureStatusActivity',
+    'activity net.kckern.daylight.cap.quickinput.shell.MealCameraActivity',
     'activity net.kckern.daylight.cap.quickinput.shell.PhotoCaptureActivity',
     'activity net.kckern.daylight.cap.quickinput.shell.RecordActivity',
     'activity net.kckern.daylight.cap.quickinput.shell.TextInputActivity',

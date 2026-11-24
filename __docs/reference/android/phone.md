@@ -169,7 +169,7 @@ Two forms are links:
 | `daylight://action/<id>#k=<key>` | Run a one-tap action | yes |
 | `daylight://input/voice?to=<destination id>#k=<key>` | Open the recorder or resume the active recording | yes |
 | `daylight://input/text?to=<destination id>#k=<key>` | Open the text screen for that destination | yes |
-| `daylight://input/photo?to=<destination id>#k=<key>` | Open the system camera or the destination’s private photo review | yes |
+| `daylight://input/photo?to=<destination id>#k=<key>` | Open the meal camera (or, if the camera permission is refused, the phone's camera app and the destination's private photo review) | yes |
 | `daylight://input/status#k=<key>` | Open Capture status | yes |
 | `daylight://input/queue#k=<key>` | Try every waiting and parked input again, and say how many there are | yes |
 | `daylight://input/discard#k=<key>` | Throw away the inputs that could not be sent. Asks first; a second tap within twenty seconds deletes | yes |
@@ -1238,13 +1238,20 @@ If the write fails, the draft remains available.
 
 ### Photo
 
-Open **Meal photo** and grant Camera if prompted. Android’s camera app writes
-to a single-URI grant provided by `InputFileProvider`. After the camera confirms
-the image and the grant is withdrawn, Daylight shows a private review. **Use
-photo** reveals **Send**. **Retake** opens the camera again and retains the
-previous photo if canceled. **Discard** and Back ask before dropping a photo
-draft. Daylight recovers the capture where Android delivers the camera result
-after process recreation.
+**Meal photo** opens Daylight's own camera (`MealCameraActivity`): a viewfinder and a
+shutter, no review step. Each shot is handed to the private draft pipeline on a background
+thread (draft, EXIF removed, prepared, queued), so the camera is ready for the next shot at
+once. A chip shows how many were sent; tapping it opens the capture status screen, where a
+capture is replaced or retried afterwards. Nothing is asked before a photo is sent.
+
+The camera permission is asked for once, in the camera screen. If it is refused, or the
+phone has no usable back camera, the capture opens the phone's camera app instead and the
+older review flow below applies: Android's camera app writes to a single-URI grant provided
+by `InputFileProvider`. After the camera confirms the image and the grant is withdrawn,
+Daylight shows a private review. **Use photo** reveals **Send**. **Retake** opens the
+camera again and retains the previous photo if canceled. **Discard** and Back ask before
+dropping a photo draft. Daylight recovers the capture where Android delivers the camera
+result after process recreation.
 
 Daylight applies EXIF orientation, scales the long edge to at most 2048 pixels,
 and re-encodes the image as JPEG. It checks the encoded file for EXIF, XMP and
@@ -1446,7 +1453,7 @@ Twelve:
 | `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | base | Declared; the phone build has no screen that asks for it (the setup activity is not reachable) |
 | `ACCESS_WIFI_STATE`, `ACCESS_NETWORK_STATE` | base, `webview-host`, `media-service`, `quick-input` | Reload and upload when a network returns |
 | `RECORD_AUDIO` | `webview-host`, `quick-input`, `car-actions` | Voice inputs, on the phone and through the car's microphone. The trusted Call page can request it |
-| `CAMERA` | `webview-host` | Video calls and permission to launch the system camera for meal photos |
+| `CAMERA` | `webview-host`, `quick-input` | Video calls, and the meal photo camera (asked in the camera screen; refused means the phone's camera app is used) |
 | `MODIFY_AUDIO_SETTINGS` | `webview-host` | Page audio |
 | `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | `media-service` | The media library service |
 | `FOREGROUND_SERVICE_MICROPHONE` | `quick-input` | The recorder service |

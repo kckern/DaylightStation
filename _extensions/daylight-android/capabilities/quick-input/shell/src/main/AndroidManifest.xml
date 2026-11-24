@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- The meal photo camera (MealCameraActivity). Asked for once, in the camera screen itself; if it
+         is refused the capture opens the phone's camera app instead. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <!-- Needed for a microphone foreground service from target 34; declared now so a
          later target bump is a config change. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
@@ -36,6 +40,18 @@
         <!-- Not exported: started by this app only, when the payload has accepted a keyed
              input link. Opening it opens the system's camera app, so nothing outside this
              app may open it. The owner reviews the confirmed capture in this window. -->
+        <!-- Not exported: started by this app only, from a keyed photo link. A viewfinder and a
+             shutter; each shot goes to the private draft queue with no review step. -->
+        <activity
+            android:name="net.kckern.daylight.cap.quickinput.shell.MealCameraActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
+            android:excludeFromRecents="true"
+            android:label="Photo"
+            android:screenOrientation="portrait"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen" />
+
         <activity
             android:name="net.kckern.daylight.cap.quickinput.shell.PhotoCaptureActivity"
             android:exported="false"

@@ -62,7 +62,8 @@ public final class QuickInputCapability implements Capability {
     static final String DEST = "input.dest.";
     private static final String RECORD_ACTIVITY = "net.kckern.daylight.cap.quickinput.shell.RecordActivity";
     private static final String TEXT_ACTIVITY = "net.kckern.daylight.cap.quickinput.shell.TextInputActivity";
-    private static final String PHOTO_ACTIVITY = "net.kckern.daylight.cap.quickinput.shell.PhotoCaptureActivity";
+    /** The meal camera; it opens the phone's camera app itself when the camera permission is refused. */
+    private static final String PHOTO_ACTIVITY = "net.kckern.daylight.cap.quickinput.shell.MealCameraActivity";
     /** The extras a capture screen is started with (MemoFiles.EXTRA_DEST and EXTRA_LABEL in the shell half). */
     static final String EXTRA_DEST = "dest";
     static final String EXTRA_LABEL = "label";
