@@ -1,11 +1,17 @@
 import Icon from '../../../../ui/icons/Icon.jsx';
-import { StaffNoteLabel } from '../../../../game-platform/families/addressed-board/StaffNoteLabel.jsx';
+import { useMemo } from 'react';
+import { rimStaffExtent } from '../../../../../../../../__capabilities/music-notation/browser/renderers/RimStaffRenderer.jsx';
+import { PIECE_NOTES, SHELF_NOTES } from './officeKeys.js';
+import KeyCard from './KeyCard.jsx';
 import { PassageMap, usePrintedTitle } from '../../../desk/PianoHomeDesk.jsx';
 import { cardBadge, pieceFocus, piecePolishing } from '../../../desk/deskModel.js';
 
+// One staff size for the whole row (C4 to C5), so every key's card matches.
+const ROW_EXTENT = rimStaffExtent([...PIECE_NOTES, ...SHELF_NOTES]);
+
 const KeyTip = ({ slot }) => (
   <span className="office-piece-key__tip">
-    <StaffNoteLabel midi={slot.note} />
+    <KeyCard note={slot.note} extent={ROW_EXTENT} />
     <span className="office-piece-key__note">{slot.noteName}</span>
   </span>
 );
@@ -58,13 +64,13 @@ function ShelfKey({ slot }) {
  */
 export default function OfficePiecePicker({ title, status = null, kind = 'pieces', slots = [], browse = [], page = null, keyCount }) {
   const Key = kind === 'shelves' ? ShelfKey : PieceKey;
+  const browseExtent = useMemo(() => rimStaffExtent(browse.map((slot) => slot.note)), [browse]);
   return (
     <section className="office-piece-picker" aria-label={title} data-kind={kind}>
       <header className="office-piece-picker__head">
         <h2>{title}</h2>
         <p>
-          {page && page.pageCount > 1 ? `Page ${page.page + 1} of ${page.pageCount} · ` : ''}
-          Play a key to open it · hold the lowest and highest keys to leave
+          {page && page.pageCount > 1 ? `Page ${page.page + 1} of ${page.pageCount}` : ''}
         </p>
       </header>
       {status
@@ -77,10 +83,14 @@ export default function OfficePiecePicker({ title, status = null, kind = 'pieces
       <ol className="office-piece-picker__pages" aria-label="Browse">
         {browse.map((slot) => (
           <li key={slot.note} className="office-piece-picker__page" data-browse={slot.id} data-enabled={slot.enabled || undefined}>
-            <span className="office-piece-picker__page-note">{slot.noteName}</span>
-            <span>{slot.label}</span>
+            <KeyCard note={slot.note} extent={browseExtent} />
+            <span className="office-piece-picker__page-text">
+              <span className="office-piece-picker__page-note">{slot.noteName}</span>
+              <span className="office-piece-picker__page-label">{slot.label}</span>
+            </span>
           </li>
         ))}
+        <li className="office-piece-picker__leave">Hold the lowest and highest keys to leave</li>
       </ol>
     </section>
   );

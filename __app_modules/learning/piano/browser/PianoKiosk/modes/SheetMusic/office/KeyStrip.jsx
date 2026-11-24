@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useNoteSelection } from '../../../../game-platform/input/useNoteSelection.js';
-import { StaffNoteLabel } from '../../../../game-platform/families/addressed-board/StaffNoteLabel.jsx';
+import { rimStaffExtent } from '../../../../../../../../__capabilities/music-notation/browser/renderers/RimStaffRenderer.jsx';
+import KeyCard from './KeyCard.jsx';
 import { stripSlots } from './officeKeys.js';
 
 /**
@@ -21,13 +22,14 @@ import { stripSlots } from './officeKeys.js';
  */
 export default function KeyStrip({ activeNotes, actions, active = true, canListen = false, onSelect }) {
   const slots = useMemo(() => stripSlots(actions, { canListen }), [actions, canListen]);
+  const extent = useMemo(() => rimStaffExtent(slots.map((slot) => slot.note)), [slots]);
   const live = useMemo(() => slots.filter((slot) => slot.enabled), [slots]);
   useNoteSelection({ activeNotes, slots: live, enabled: active, onSelect: (_item, slot) => onSelect?.(slot.id) });
   return (
     <ol className="office-key-strip" data-active={active || undefined} aria-label="Keys" style={{ '--strip-count': slots.length }}>
       {slots.map((slot) => (
         <li key={slot.id} className="office-key-strip__key" data-key={slot.id} data-enabled={(slot.enabled && active) || undefined}>
-          <span className="office-key-strip__card"><StaffNoteLabel midi={slot.note} /></span>
+          <span className="office-key-strip__card"><KeyCard note={slot.note} extent={extent} /></span>
           <span className="office-key-strip__text">
             <span className="office-key-strip__note">{slot.noteName}</span>
             <span className="office-key-strip__label">{slot.label}</span>

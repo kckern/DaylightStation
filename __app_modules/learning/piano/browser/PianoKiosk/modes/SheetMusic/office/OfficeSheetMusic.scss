@@ -8,7 +8,7 @@
   --osm-ivory: var(--pg-ivory, #f1f1f4);
   --osm-ebony: var(--pg-shelf, #1f1f26);
   --osm-brass: var(--pg-brass, #5fe39a);
-  --osm-strip-h: 5.75rem;
+  --osm-strip-h: 6.75rem;
 
   position: absolute;
   inset: 0;
@@ -64,6 +64,16 @@
   .piano-passage-path { pointer-events: none; }
   .piano-passage-path__all,
   .piano-passage-path__play { display: none; } // the play disc says "tap me": here the unit is already open
+  // The tablet's on-screen keyboard is a touch surface; here the real keyboard is
+  // under the player's hands. Its height goes to the score.
+  .piano-exercise-run__keys { display: none; }
+  .piano-exercise-run[data-surface='learn-lab'] { --run-keys-row: 0px; }
+  // The result card's touch icons (continue, leave): nothing can press them. The
+  // strip names the next action on its key instead.
+  .piano-exercise-run__onward,
+  .piano-exercise-run__leave { display: none; }
+  // Right / Wrong, read from the bench.
+  .piano-exercise-run__tally span { min-height: 2.6rem; padding: 0.3rem 0.8rem; font-size: 1.3rem; }
 
   // The "who is practising" roster reuses the launcher's own row, as a page not an overlay.
   &--who .note-launcher { position: absolute; inset: 0; }
@@ -90,6 +100,7 @@
 
 // ── The key strip ────────────────────────────────────────────────────────────
 .office-key-strip {
+  --key-card-h: 5.4rem;
   list-style: none;
   margin: 0;
   height: 100%;
@@ -115,18 +126,10 @@
     }
   }
 
-  &__card {
-    flex: 0 0 auto;
-    width: 3.2rem;
-    height: 100%;
-    max-height: 4.4rem;
-    display: flex;
-    align-items: center;
+  &__card { flex: 0 0 auto; display: flex; align-items: center; }
 
-    > * { width: 100%; height: 100%; }
-  }
-
-  &__key:not([data-enabled]) &__card { filter: grayscale(1); opacity: 0.55; }
+  // A dim key keeps a whole, readable card: only its paper goes grey.
+  &__key:not([data-enabled]) .chess-staff-label { filter: grayscale(1) brightness(0.8); }
 
   &__text {
     min-width: 0;
@@ -136,7 +139,7 @@
   }
 
   &__note {
-    font-size: 0.95rem;
+    font-size: 1.2rem;
     font-weight: 700;
     letter-spacing: 0.08em;
     font-variant-numeric: tabular-nums;
@@ -144,7 +147,7 @@
   }
 
   &__label {
-    font-size: 1.15rem;
+    font-size: 1.35rem;
     font-weight: 700;
     line-height: 1.1;
     text-transform: uppercase;
@@ -178,16 +181,18 @@
     padding: 0;
     flex: 1 1 0;
     min-height: 0;
-    display: grid;
-    grid-template-columns: repeat(var(--key-count, 8), minmax(0, 1fr));
+    display: flex;
+    justify-content: center;
     gap: 0.55rem;
+
+    > li { flex: 0 0 calc((100% - (var(--key-count, 6) - 1) * 0.55rem) / var(--key-count, 6)); }
   }
 
   &__pages {
     list-style: none;
     margin: 0;
     padding: 0;
-    flex: 0 0 3.2rem;
+    flex: 0 0 5.4rem;
     display: flex;
     gap: 0.5rem;
   }
@@ -195,27 +200,35 @@
   // A browse key: ivory when it does something now, solid grey when it does not
   // (the key strip's rule), and always on its own key so a face never moves.
   &__page {
-    flex: 0 0 10.5rem;
+    flex: 0 0 14rem;
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 0.6rem;
+    gap: 0.7rem;
+    padding: 0.3rem 0.8rem 0.3rem 0.35rem;
     border-radius: 0 0 8px 8px;
     background: #3a3a43;
-    color: #8d8d99;
-    font-size: 1.1rem;
+    color: #9d9daa;
     font-weight: 700;
 
     &[data-enabled] {
       background: linear-gradient(180deg, #ffffff 0%, var(--pg-ivory, #f1f1f4) 70%, #dcdce2 100%);
       color: var(--pg-shelf, #1f1f26);
     }
+    &:not([data-enabled]) .chess-staff-label { filter: grayscale(1) brightness(0.8); }
+    .office-key-card { --key-card-h: 4.8rem; }
   }
+
+  &__page-text { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+  &__page-label { font-size: 1.35rem; line-height: 1.1; }
+  &__page-note + * { margin-top: 0.05rem; }
+
+  // The way out, said where the eye already is: at the end of the browse keys.
+  &__leave { margin-left: auto; align-self: center; font-size: 1.2rem; font-weight: 700; color: var(--osm-ivory); opacity: 0.85; text-align: right; }
 
   // A message in the list's place keeps the browse keys under it.
   &__status { flex: 1 1 0; min-height: 0; height: auto; }
 
-  &__page-note { font-variant-numeric: tabular-nums; opacity: 0.8; }
+  &__page-note { font-size: 0.95rem; letter-spacing: 0.08em; font-variant-numeric: tabular-nums; opacity: 0.75; }
 }
 
 .office-piece-key {
@@ -295,13 +308,23 @@
     align-items: center;
     gap: 0.4rem;
 
-    > :first-child { width: 2.6rem; height: 3rem; }
+    .office-key-card { --key-card-h: 4.6rem; }
   }
 
   &__note {
-    font-size: 1.05rem;
+    font-size: 1.5rem;
     font-weight: 700;
-    letter-spacing: 0.08em;
-    opacity: 0.7;
+    letter-spacing: 0.06em;
+    opacity: 0.8;
   }
+}
+
+// ── A key's note card ────────────────────────────────────────────────────────
+// A fixed box in the staff's own proportions; the rim renderer fits the row's
+// shared range (ledger lines included) inside it, so nothing is ever clipped.
+.office-key-card {
+  flex: 0 0 auto;
+  display: block;
+  height: var(--key-card-h, 4.4rem);
+  width: calc(var(--key-card-h, 4.4rem) * 0.9);
 }

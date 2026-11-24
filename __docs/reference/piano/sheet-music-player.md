@@ -1747,6 +1747,12 @@ answers. The full-screen lock panel is shown only when the launcher has nothing 
    pedal arms the take, as on the tablet. The strip's Pieces key returns to the list it came from,
    on the same shelf and page.
 
+**Every key choice shows its note card** (`office/KeyCard.jsx`): the key's note on its staff with its
+clef, drawn by the rim renderer (`RimStaffRenderer`) over one `rimStaffExtent` per row, so a row's
+cards are one size and the lowest note's ledger lines fit (C2, two ledger lines under the bass staff,
+is drawn whole). Piece keys, shelf keys, the browse keys and the key strip all use it; nothing is
+labelled by a note name alone.
+
 **The browse keys**, under every list, each fixed to its own key in the octave below (dim when it
 does nothing now):
 
@@ -1779,7 +1785,8 @@ a key struck while claimed stays hidden until released); **during a take the str
 key is music**. Any other key after a result continues, as on the tablet (the recovery the card
 recommends, else try again).
 
-**What is not drawn:** the drill's Back button, the tempo track and click volume (both keep their
+**What is not drawn:** the tablet's on-screen keyboard (its row goes to the score:
+`--run-keys-row: 0`), the result card's touch icons (continue, leave), the drill's Back button, the tempo track and click volume (both keep their
 defaults), the run's Pause/Listen buttons, the result card's buttons, the step pills as choices, the
 path's All button; the path is a map, not a control. The office screen's recorder has **no note
 output**, so Listen is hidden and the click is the browser's WebAudio blip plus the run's visual beat
