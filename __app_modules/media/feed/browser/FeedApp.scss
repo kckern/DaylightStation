@@ -89,6 +89,21 @@
   }
 }
 
+// The mode links are one rail. It gives up width before the controls do and
+// scrolls sideways when four tabs and a badge outgrow a phone, so nothing
+// wraps onto a second row.
+.feed-tabs__modes {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+
+  a { flex: none; white-space: nowrap; }
+}
+
 .feed-tabs__spacer { flex: 1; }
 
 .feed-tabs__icon { white-space: nowrap; }
@@ -296,6 +311,7 @@
   .feed-tabs,
   .feed-tabs--compact {
     --feed-tabs-gutter: 0.35rem;
+    flex-wrap: nowrap;
 
     a { padding: 0.7rem 0.55rem; font-size: 0.78rem; }
   }
