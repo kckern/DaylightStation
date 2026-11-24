@@ -57,7 +57,10 @@ describe('GovernanceStateOverlay — lock modal rows per rider', () => {
   it('has no percentage badge and no zone pills', () => {
     const { container } = render(<GovernanceStateOverlay display={twoByTwo()} />);
     expect(container.textContent).not.toMatch(/\d+%/);
-    expect(container.querySelector('.governance-lock__pill')).toBeNull();
+    // A zone pill is an element whose whole text is a bare zone name.
+    const bare = [...container.querySelectorAll('*')].filter((el) => el.children.length === 0
+      && /^(Cool|Active|Warm|Hot)$/.test(el.textContent.trim()));
+    expect(bare.map((el) => el.outerHTML)).toEqual([]);
   });
 
   it('renders exactly one lock button', () => {
@@ -78,6 +81,38 @@ describe('GovernanceStateOverlay — lock modal rows per rider', () => {
     const chip = container.querySelector('.governance-lock__rule');
     expect(chip.textContent).toBe('Active 1/2');
     expect(chip.querySelectorAll('.governance-lock__credit--met')).toHaveLength(1);
-    expect(screen.getByText(/Get both riders to Active to keep watching/)).toBeTruthy();
+    // One rider already counts: "both riders" would ask for work already done.
+    expect(screen.getByText('Get 1 more rider to Active to keep watching.')).toBeTruthy();
+  });
+
+  it('staggers goal labels that sit close together on the scale', () => {
+    // Scale 60..150: Active 100 (0.44), Warm 120 (0.67), Hot 140 (0.89).
+    const display = resolve([rule('hot', 1, ['rider-a']), rule('warm', 1, ['rider-a']), rule('active', 1, ['rider-a'])],
+      { 'rider-a': profile('Rider A', 85) });
+    const { container } = render(<GovernanceStateOverlay display={display} />);
+    const lanes = [...container.querySelectorAll('.governance-lock__marker')]
+      .map((m) => [m.textContent, m.classList.contains('governance-lock__marker--above') ? 'above' : 'below']);
+    expect(lanes).toEqual([['Active 100', 'below'], ['Warm 120', 'above'], ['Hot 140', 'below']]);
+    expect(container.querySelector('.governance-lock__scale--stacked')).toBeTruthy();
+  });
+
+  it('keeps every label below the bar when goals are far apart', () => {
+    const { container } = render(<GovernanceStateOverlay display={twoByTwo()} />);
+    expect(container.querySelector('.governance-lock__marker--above')).toBeNull();
+    expect(container.querySelector('.governance-lock__scale--stacked')).toBeNull();
+  });
+
+  it('tells a rider already at every target to hold it', () => {
+    const display = resolve([rule('active', 2, ['rider-a', 'rider-b'])], { 'rider-a': profile('Rider A', 104, 'active'), 'rider-b': profile('Rider B', 90) });
+    const { getAllByTestId } = render(<GovernanceStateOverlay display={display} />);
+    const a = getAllByTestId('lock-rider-row').find((r) => r.textContent.includes('Rider A'));
+    expect(a.querySelector('.governance-lock__gap').textContent).toBe('Hold Active');
+    expect(a.textContent).not.toMatch(/\bIn Active\b/);
+  });
+
+  it('a rider with no target yet says it is waiting for a heart rate', () => {
+    const display = resolve([rule('active', 1, ['rider-a'])], { 'rider-a': { displayName: 'Rider A', avatarSrc: '', heartRate: 90, zoneId: 'cool', zoneTrusted: true, zoneSequence: [] } });
+    const { getByTestId } = render(<GovernanceStateOverlay display={display} />);
+    expect(getByTestId('lock-rider-row').querySelector('.governance-lock__progress').textContent).toBe('Waiting for heart rate');
   });
 });

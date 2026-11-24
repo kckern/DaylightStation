@@ -107,6 +107,9 @@
 // goal they still owe. Read from the bike, 2-3 m away: nothing under 16px.
 .governance-lock {
   --lock-zone-fallback: #94a3b8;
+  // The overlay is sized by the player, not the viewport: rows reflow on the
+  // panel's own width (see the @container rule at the end of this block).
+  container: governance-lock / inline-size;
   display: flex;
   flex-direction: column;
   gap: clamp(12px, 1.4vw, 20px);
@@ -286,7 +289,9 @@
   // One rider: who | BPM | the scale (at least half the row) | the gap.
   &__rider {
     display: grid;
-    grid-template-columns: minmax(12rem, 16rem) 8.5rem minmax(0, 1fr) minmax(10rem, auto);
+    // Fixed BPM and gap columns, so every row's bar starts and ends at the
+    // same x; 55% of the content box keeps the bar over half the padded row.
+    grid-template-columns: minmax(8rem, 13rem) 6.75rem minmax(55%, 1fr) 10rem;
     align-items: center;
     column-gap: clamp(16px, 1.6vw, 28px);
     padding: 14px clamp(14px, 1.6vw, 24px);
@@ -327,7 +332,8 @@
     font-weight: 600;
     line-height: 1.15;
     color: #f8fafc;
-    overflow-wrap: anywhere;
+    // Break between words; only a single over-long word splits.
+    overflow-wrap: break-word;
   }
 
   &__bpm {
@@ -355,9 +361,17 @@
   }
 
   &__scale {
+    --lane: 30px; // one row of goal labels
     position: relative;
-    // Room under the bar for the goal labels.
-    padding-bottom: 30px;
+    // Room under the bar for the goal labels; above it too when they stagger.
+    padding-bottom: var(--lane);
+
+    &--stacked { padding-top: var(--lane); }
+  }
+
+  &__waiting {
+    font-size: 18px;
+    color: rgba(226, 232, 240, 0.75);
   }
 
   // `--p` (0-1, inline) drives the fill's scaleX: transform-only, compositor.
@@ -379,11 +393,17 @@
     transition: transform 450ms var(--ds-motion-easing, cubic-bezier(0.4, 0, 0.2, 1));
   }
 
+  // Laid over the track exactly, so labels hang off its edges.
   &__markers {
     position: absolute;
-    inset: 0;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 16px;
     pointer-events: none;
   }
+
+  &__scale--stacked &__markers { top: var(--lane); }
 
   // A goal: a tick through the bar and its label ("Hot 140") under it.
   &__marker {
@@ -418,6 +438,14 @@
     &--end {
       transform: translateX(calc(-100% + 2px));
       &::before { left: auto; right: 0; margin-left: 0; }
+    }
+
+    // Staggered above the bar: same tick, hung from the label's bottom.
+    &--above {
+      top: auto;
+      bottom: 22px;
+
+      &::before { top: auto; bottom: -26px; }
     }
   }
 
@@ -473,18 +501,34 @@
   }
 }
 
-@media (max-width: 820px) {
-  .governance-overlay__panel {
-    padding: clamp(12px, 2vw, 18px);
+// A smaller player (1280x720 screen, or the sidebar open): tighter numbers so
+// name, BPM and gap fit beside a bar that is still over half the row.
+@container governance-lock (max-width: 1200px) {
+  .governance-lock__rider {
+    grid-template-columns: minmax(9rem, 13rem) 5.75rem minmax(55%, 1fr) 8.5rem;
+    column-gap: 16px;
   }
 
+  .governance-lock__who { gap: 10px; }
+  .governance-lock__face { flex-basis: 44px; width: 44px; height: 44px; }
+  .governance-lock__name { font-size: 20px; }
+
+  .governance-lock__bpm-num { font-size: 34px; }
+  .governance-lock__gap-num { font-size: 28px; }
+  .governance-lock__gap { font-size: 18px; }
+}
+
+// A narrow player: the scale takes its own full-width line under name, BPM
+// and gap.
+@container governance-lock (max-width: 760px) {
   .governance-lock__rider {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     row-gap: 10px;
   }
 
   .governance-lock__progress {
     grid-column: 1 / -1;
+    grid-row: 2;
   }
 }
 

@@ -311,7 +311,9 @@ export function describeUnlockInstruction(summary, obligations = []) {
     const zone = rule.zoneLabel || rule.zone || 'the target zone';
     const pedal = obligations.find((o) => o.key === rule.key)?.requirement?.type === 'cadence_floor';
     const where = pedal ? `pedaling or in ${zone}` : `to ${zone}`;
-    if (rule.scope === 'all' && rule.requiredCount > 1) {
+    // "both riders" only while nobody counts yet; after that it would ask for
+    // work already done.
+    if (rule.scope === 'all' && rule.requiredCount > 1 && rule.actualCount === 0) {
       return `${rule.requiredCount === 2 ? 'both riders' : `all ${rule.requiredCount} riders`} ${where}`;
     }
     return `${rule.needed}${rule.actualCount > 0 ? ' more' : ''} ${rule.needed === 1 ? 'rider' : 'riders'} ${where}`;
@@ -325,6 +327,16 @@ const HeartGlyph = ({ color }) => (
     <path fill="currentColor" d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.8 4.5c2.1 0 3.5 1.1 4.2 2.3h2c.7-1.2 2.1-2.3 4.2-2.3 3.8 0 5.9 3.9 4.4 7.3C19.5 16.4 12 21 12 21z" />
   </svg>
 );
+
+// A goal label ("Active 110", 18px) spans about this share of the narrowest
+// bar (half the row at 1280x720); labels whose spans come closer than the gap
+// move above the bar instead.
+const MARKER_LABEL_SPAN = 0.2;
+const MARKER_LABEL_GAP = 0.03;
+const markerAlign = (pos) => (pos > 0.88 ? 'end' : (pos < 0.12 ? 'start' : 'center'));
+const markerSpan = (pos, align) => (align === 'end' ? [pos - MARKER_LABEL_SPAN, pos]
+  : align === 'start' ? [pos, pos + MARKER_LABEL_SPAN]
+    : [pos - MARKER_LABEL_SPAN / 2, pos + MARKER_LABEL_SPAN / 2]);
 
 /**
  * The rider's BPM on one scale with every goal they still owe marked on it:
@@ -342,17 +354,28 @@ function RiderScale({ rider }) {
   const at = (bpm) => Math.max(0, Math.min(1, (bpm - floor) / span));
   const p = heartRate != null ? at(heartRate) : 0;
   const fillColor = rider.currentZone?.color || NEUTRAL_ZONE_COLOR;
+  // Goals arrive sorted by target BPM, so positions ascend.
+  const markers = [];
+  const laneEnd = { below: -Infinity, above: -Infinity };
+  targets.forEach((goal) => {
+    const pos = at(goal.targetHeartRate);
+    const align = markerAlign(pos);
+    const [left, right] = markerSpan(pos, align);
+    const fits = (lane) => left - laneEnd[lane] >= MARKER_LABEL_GAP;
+    const lane = fits('below') || !fits('above') ? 'below' : 'above';
+    laneEnd[lane] = right;
+    markers.push({ goal, pos, align, lane });
+  });
+  const stacked = markers.some((m) => m.lane === 'above');
   return (
-    <div className="governance-lock__scale" aria-hidden="true">
+    <div className={`governance-lock__scale${stacked ? ' governance-lock__scale--stacked' : ''}`} aria-hidden="true">
       <div className="governance-lock__track" style={{ '--p': Math.round(p * 1000) / 1000 }}>
         <div className="governance-lock__fill" style={{ background: fillColor }} />
       </div>
       <div className="governance-lock__markers">
-        {targets.map((goal) => {
-          const pos = at(goal.targetHeartRate);
-          const align = pos > 0.88 ? 'end' : (pos < 0.12 ? 'start' : 'center');
+        {markers.map(({ goal, pos, align, lane }) => {
           return (
-            <div key={goal.obligationKey} className={`governance-lock__marker governance-lock__marker--${align}`}
+            <div key={goal.obligationKey} className={`governance-lock__marker governance-lock__marker--${align} governance-lock__marker--${lane}`}
               style={{ left: `${Math.round(pos * 1000) / 10}%`, '--marker-color': goal.zoneColor || NEUTRAL_ZONE_COLOR }}>
               {`${goal.zoneLabel} ${Math.round(goal.targetHeartRate)}`}
             </div>
@@ -373,13 +396,18 @@ function RiderGap({ rider }) {
       <span className="governance-lock__gap-zone">to {next.zoneLabel}</span>
     </>;
   }
-  const held = rider.goals.find((goal) => Number.isFinite(goal.targetHeartRate));
-  return held ? <span className="governance-lock__gap-zone">In {held.zoneLabel}</span> : null;
+  // At or past every target but still listed: the engine has not credited it
+  // yet (a hold, or the BPM is ahead of the committed zone). Ask to hold the top one.
+  const reached = rider.goals.filter((goal) => Number.isFinite(goal.targetHeartRate));
+  const top = reached[reached.length - 1];
+  return top ? <span className="governance-lock__gap-zone">Hold {top.zoneLabel}</span> : null;
 }
 
 function RiderRow({ rider }) {
   const zoneColor = rider.currentZone?.color || NEUTRAL_ZONE_COLOR;
   const heartRate = Number.isFinite(rider.heartRate) ? Math.max(0, Math.round(rider.heartRate)) : null;
+  const hasTarget = rider.goals.some((goal) => Number.isFinite(goal.targetHeartRate));
+  const pedal = rider.goals.some((goal) => goal.pedal);
   return (
     <div className="governance-lock__rider" role="row" data-testid="lock-rider-row">
       <div className="governance-lock__who" role="cell">
@@ -393,7 +421,8 @@ function RiderRow({ rider }) {
         <span className="governance-lock__bpm-num">{heartRate ?? '--'}</span>
       </div>
       <div className="governance-lock__progress" role="cell">
-        <RiderScale rider={rider} />
+        {hasTarget ? <RiderScale rider={rider} /> : (pedal ? null
+          : <span className="governance-lock__waiting">Waiting for heart rate</span>)}
         {rider.goals.map((goal) => (
           <HoldProgress key={goal.obligationKey} row={{
             userId: rider.userId, displayName: rider.displayName, zoneSequence: rider.zoneSequence,
@@ -448,12 +477,8 @@ const GovernanceLockPanel = React.memo(function GovernanceLockPanel({ display, o
   }, [status, riders.length, zoneRules.length, noSignal.length]);
 
   // Rate-limited breadcrumb for a lock that has no one to show yet.
-  const lastWaitingLogRef = useRef(0);
   useEffect(() => {
     if (riders.length || status !== 'pending') return;
-    const now = Date.now();
-    if (now - lastWaitingLogRef.current <= 5000) return;
-    lastWaitingLogRef.current = now;
     getLogger().sampled('governance.overlay.waiting_for_participants', {
       status, riderCount: riders.length, noSignalCount: noSignal.length, ruleCount: summary.length,
     }, { maxPerMinute: 6 });

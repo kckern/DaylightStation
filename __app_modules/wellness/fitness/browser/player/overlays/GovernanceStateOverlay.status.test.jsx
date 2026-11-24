@@ -106,7 +106,7 @@ describe('GovernanceStateOverlay — cause-scoped heading and faces', () => {
   it.each(['pending', 'failed'])('keeps 3 of 4 Active and only floor faces/rows over a %s Warm challenge', (status) => {
     const resolved = resolveGovernanceDisplay({ isGoverned: true, status: 'locked', activeUserCount: 4, requirements: [floor], challenge: { ...challenge, status } }, map, zoneMeta);
     const { container, getAllByTestId } = render(<GovernanceStateOverlay display={resolved} />);
-    expect(container.querySelector('.governance-lock__instruction').textContent).toBe('Get all 4 riders to Active to keep watching.');
+    expect(container.querySelector('.governance-lock__instruction').textContent).toBe('Get 1 more rider to Active to keep watching.');
     expect(container.querySelector('.governance-lock__rule').textContent).toBe('Active 3/4');
     expect(container.querySelectorAll('.governance-lock__credit--met')).toHaveLength(3);
     expect(getAllByTestId('lock-rider-row')).toHaveLength(1);

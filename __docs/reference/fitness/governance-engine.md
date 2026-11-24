@@ -912,9 +912,9 @@ supply floor faces. Challenge credit retains its separate guest/exempt policy.
 
 The lock modal (locked / pending; the warning chips are separate) is titled
 `Video paused` and states the unlock in one sentence built from `summary`:
-`Get 1 rider to Hot and both riders to Active to keep watching.` (any-rules say
-how many more riders; all-rules say `both riders` / `all N riders`; the clauses
-join with `and` because every rule must pass). One lock button sits at the
+`Get 1 rider to Hot and both riders to Active to keep watching.` (all-rules say `both riders` / `all N riders` only while nobody counts yet;
+otherwise every rule says how many more riders it needs, `1 more rider`; the
+clauses join with `and` because every rule must pass). One lock button sits at the
 header's right. Under it, one zone-coloured chip per rule (`Hot 0/1`) holds only
 the faces of riders who already met it (`CompletionAvatars showOpen={false}`),
 never empty rings. Then one row per entry in `riders`
@@ -922,8 +922,15 @@ never empty rings. Then one row per entry in `riders`
 truncated), the current BPM with a heart in the current-zone colour, and a bar
 scaled from the rider's lowest zone threshold to their highest goal + 10 BPM,
 filled to the current BPM and marked with a labelled tick per goal
-(`Active 100`, `Hot 140`). The right column reads `+N to Zone` for the nearest
-unmet goal. There is no percentage and no zone pill. A footer names `noSignal`
+(`Active 100`, `Hot 140`); labels that would collide alternate above and below
+the bar. The BPM and gap columns have fixed widths so every row's bar lines up,
+and the bar is over half the row at both 1810×1080 and 1280×720. The panel is a
+size container: it tightens its numbers under 1200 px and moves the bar to its
+own line under 760 px, by its own width rather than the viewport's. The right
+column reads `+N to Zone` for the nearest unmet goal, or `Hold Zone` when the
+rider is already at every target but not yet credited (a hold, or the BPM is
+ahead of the committed zone). A rider with no target BPM yet shows `Waiting for
+heart rate` in place of the bar. There is no percentage and no zone pill. A footer names `noSignal`
 riders: `No heart-rate signal: Rider B`. The panel logs
 `governance.lock_modal.render` (debug, sampled) with `{ riders, rules, noSignal }`.
 

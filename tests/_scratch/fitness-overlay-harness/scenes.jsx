@@ -105,4 +105,10 @@ export const SCENES = {
     [rider('rider_c', 'Rider C', 105, 'cool'), rider('rider_a', 'Rider A', 91, 'cool')],
     [floor('hot', 1, ['rider_c', 'rider_a']), floor('active', 2, ['rider_c', 'rider_a'])],
   ) },
+  // Close goals: Active 110, Warm 130, Hot 150 on one 60..160 scale; Rider C's
+  // name is long enough to wrap. The labels must stagger, never overlap.
+  'lock-close-goals': { render: lockScene(
+    [rider('rider_a', 'Rider A', 95, 'cool'), rider('rider_c', 'Rider C With A Much Longer Name', 118, 'active')],
+    [floor('hot', 1, ['rider_a', 'rider_c']), floor('warm', 1, ['rider_a', 'rider_c']), floor('active', 2, ['rider_a', 'rider_c'])],
+  ) },
 };
