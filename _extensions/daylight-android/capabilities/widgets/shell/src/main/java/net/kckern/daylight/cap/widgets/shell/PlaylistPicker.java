@@ -205,7 +205,7 @@ final class PlaylistPicker {
             chips.removeAllViews();
             List<String> labels = new ArrayList<>();
             labels.add("All");
-            labels.add("In use");
+            labels.add("On Drive");
             labels.addAll(PlaylistSearch.sources(merged(settings, catalog)));
             for (int i = 0; i < labels.size(); i++) {
                 int index = i;
@@ -230,7 +230,7 @@ final class PlaylistPicker {
             if (state.filter == 1) {
                 List<PlaylistEntry> used = new ArrayList<>();
                 for (PlaylistEntry entry : base) {
-                    if (settings.isStaged(entry.id) && PlaylistUse.inUse(settings.snapshot(), entry.id)) used.add(entry);
+                    if (settings.isStaple(entry.id)) used.add(entry);
                 }
                 base = used;
             } else if (state.filter >= 2) {
@@ -380,7 +380,7 @@ final class PlaylistPicker {
             Tile tile = recycled == null ? new Tile(activity) : (Tile) recycled;
             PlaylistEntry entry = getItem(position);
             String used = settings.isStaged(entry.id) ? PlaylistUse.describe(settings.snapshot(), entry.id, weekdays) : "";
-            tile.bind(entry, used);
+            tile.bind(entry, used, settings.isStaple(entry.id));
             return tile;
         }
     }
@@ -432,7 +432,7 @@ final class PlaylistPicker {
             addView(title);
         }
 
-        void bind(PlaylistEntry entry, String used) {
+        void bind(PlaylistEntry entry, String used, boolean onDrive) {
             android.text.SpannableStringBuilder label = new android.text.SpannableStringBuilder(entry.title);
             label.setSpan(new android.text.style.StyleSpan(Typeface.BOLD), 0, label.length(), 0);
             if (!used.isEmpty()) {
@@ -442,8 +442,8 @@ final class PlaylistPicker {
                 label.setSpan(new android.text.style.AbsoluteSizeSpan(11, true), from, label.length(), 0);
             }
             title.setText(label);
-            badge.setVisibility(used.isEmpty() ? GONE : VISIBLE);
-            setContentDescription(entry.title + (used.isEmpty() ? "" : ". In use: " + used));
+            badge.setVisibility(onDrive ? VISIBLE : GONE);
+            setContentDescription(entry.title + (onDrive ? ". On Drive" : "") + (used.isEmpty() ? "" : ". Used: " + used));
             bindCover(cover, placeholder, entry.id, entry.art);
         }
     }

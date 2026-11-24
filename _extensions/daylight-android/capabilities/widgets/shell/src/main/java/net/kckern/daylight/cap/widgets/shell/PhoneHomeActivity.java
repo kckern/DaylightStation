@@ -377,8 +377,7 @@ public class PhoneHomeActivity extends Activity {
     }
 
     private void addPlay() {
-        row("Add a playlist", "Search every playlist and Daylight list", "play", "›", this::pickPlaylistToAdd);
-        row("Playlists in use", "Where each one is used", "play", "›", this::showMediaChoices);
+        row("Drive playlists", "The playlists on the car's Drive tab", "play", "›", this::showMediaChoices);
         row("Driving Radio", "Set the default and day rules", "play", "›", this::showDrivingRadio);
         if (!canPinWidgets()) {
             row("Widget on Home", "How to put a playlist on your home screen", "open", "›",
@@ -457,15 +456,15 @@ public class PhoneHomeActivity extends Activity {
     }
 
     private void pickPlaylistToAdd() {
-        PlaylistPicker.show(this, "Add a playlist", entry -> showPlaylistSheet(entry.id, entry.title, entry.art,
-                () -> toast("Saved " + entry.title)));
+        PlaylistPicker.show(this, "Add to Drive", entry -> showPlaylistSheet(entry.id, entry.title, entry.art,
+                this::drawStagedPlaylists));
     }
 
     private void showDrivingRadio() {
         DrivingRadioScreen.show(this);
     }
 
-    /** The playlists in use, and the ones remembered with no use yet. */
+    /** The Drive list: the playlists on the car's Drive tab, and a button to add more. */
     private void showMediaChoices() {
         if (playlistScreen != null) return;
         playlistRow = null;
@@ -479,9 +478,14 @@ public class PhoneHomeActivity extends Activity {
         Button back = actionButton("‹", "back to setup", this::closeMediaChoices);
         back.setContentDescription("Back to setup");
         header.addView(back, dp(48), dp(48));
-        TextView heading = label("Playlists in use", 24, INK);
+        TextView heading = label("Drive playlists", 24, INK);
         heading.setAccessibilityHeading(true);
-        header.addView(heading);
+        header.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView add = PlaylistPicker.text(this, "+ Add", 15, android.graphics.Color.WHITE, true);
+        add.setGravity(Gravity.CENTER);
+        add.setBackground(PlaylistPicker.round(GREEN, 20, this));
+        add.setOnClickListener(v -> pickPlaylistToAdd());
+        header.addView(add, new LinearLayout.LayoutParams(dp(88), dp(40)));
         playlistScreen.addView(header);
 
         ScrollView scroll = new ScrollView(this);
@@ -501,17 +505,20 @@ public class PhoneHomeActivity extends Activity {
     }
 
     private void drawStagedPlaylists() {
+        if (playlistGrid == null) return;
         playlistGrid.removeAllViews();
         playlistRow = null;
         DrivingRadioSettings radio = new DrivingRadioSettings(this);
         String[] weekdays = new java.text.DateFormatSymbols().getWeekdays();
-        List<DrivingRadioSettings.Staple> remembered = radio.staged();
-        for (DrivingRadioSettings.Staple playlist : remembered) {
+        int shown = 0;
+        for (DrivingRadioSettings.Staple playlist : radio.staged()) {
+            if (!radio.isStaple(playlist.id)) continue;
+            shown++;
             String where = net.kckern.daylight.shellkit.PlaylistUse.describe(radio.snapshot(), playlist.id, weekdays);
-            addPlaylist(playlist.id, playlist.title, where.isEmpty() ? "Not used yet" : where);
+            addPlaylist(playlist.id, playlist.title, where);
         }
-        playlistStatus.setVisibility(remembered.isEmpty() ? View.VISIBLE : View.GONE);
-        playlistStatus.setText("No playlists yet. Use Add a playlist, a widget, or Driving Radio to choose one.");
+        playlistStatus.setVisibility(shown == 0 ? View.VISIBLE : View.GONE);
+        playlistStatus.setText("Nothing on Drive yet. Tap + Add to choose playlists for the car's Drive tab.");
     }
 
     private void managePlaylist(String contentId, String title) {
@@ -519,57 +526,49 @@ public class PhoneHomeActivity extends Activity {
     }
 
     /**
-     * One sheet for a playlist. New: shuffle and "Show on Drive", then Save. Already kept:
-     * the switches change at once, and the buttons add a widget or remove it.
+     * One sheet for a playlist. The Drive list is the one curated list: the playlist is on it
+     * or not, and the button says so. Shuffle is a setting of the playlist wherever it plays.
+     * A playlist only a widget or a day of Driving Radio uses is remembered quietly (its title
+     * and cover, for the car) but is not on Drive until it is added here.
      */
     private void showPlaylistSheet(String contentId, String title, String art, Runnable changed) {
         DrivingRadioSettings radio = new DrivingRadioSettings(this);
-        boolean isNew = !placements.isStaged(contentId);
+        boolean remembered = placements.isStaged(contentId);
+        boolean onDrive = remembered && radio.isStaple(contentId);
         String cover = art == null || art.isEmpty() ? radio.art(contentId) : art;
-        // A new playlist is added to Drive by default: that is usually why it is being added.
-        boolean[] state = {placements.shuffle(contentId), isNew || radio.isStaple(contentId)};
-        String where = isNew ? "Not saved yet" : net.kckern.daylight.shellkit.PlaylistUse.describe(
-                radio.snapshot(), contentId, new java.text.DateFormatSymbols().getWeekdays());
-        if (!isNew && where.isEmpty()) where = "Not used yet";
-        Sheet sheet = new Sheet(this).header(contentId, cover, title, where);
-        if (!isNew) {
-            LauncherPlacement recent = placements.requests().stream()
-                    .filter(request -> request.playlist && request.contentId.equals(contentId))
-                    .max(java.util.Comparator.comparingLong(request -> request.updatedAt)).orElse(null);
-            if (recent != null) {
-                LauncherPlacement.Status status = recent.status(System.currentTimeMillis());
-                if (status == LauncherPlacement.Status.CONFIRM) sheet.note("Confirm the widget placement in Android.");
-                if (status == LauncherPlacement.Status.UNCONFIRMED) sheet.note("Widget placement unconfirmed. Check Android Home before adding it again.");
-            }
-        }
-        sheet.toggle("Shuffle", "Play in random order", state[0], on -> {
-            state[0] = on;
-            if (!isNew) {
+        boolean[] shuffle = {placements.shuffle(contentId)};
+        String uses = remembered ? net.kckern.daylight.shellkit.PlaylistUse.describe(
+                radio.snapshot(), contentId, new java.text.DateFormatSymbols().getWeekdays()) : "";
+        Sheet sheet = new Sheet(this).header(contentId, cover, title, uses.isEmpty() ? "Not on Drive" : uses);
+        sheet.toggle("Shuffle", "Play in random order", shuffle[0], on -> {
+            shuffle[0] = on;
+            if (remembered) {
                 placements.stage(contentId, title, on);
                 PlaylistWidgetState.redraw(this);
             }
         });
-        sheet.toggle("Show on Drive", "A tile on the car's Drive tab", state[1], on -> {
-            state[1] = on;
-            if (!isNew) radio.setStaple(contentId, on);
-        });
-        if (isNew) {
-            sheet.button("Save", Sheet.Style.PRIMARY, () -> {
+        if (!onDrive) {
+            sheet.button("Add to Drive", Sheet.Style.PRIMARY, () -> {
                 radio.remember(contentId, title, cover);
-                placements.stage(contentId, title, state[0]);
-                radio.setStaple(contentId, state[1]);
+                placements.stage(contentId, title, shuffle[0]);
+                radio.setStaple(contentId, true);
                 PlaylistPicker.cacheCover(this, contentId, cover);
                 PlaylistWidgetState.redraw(this);
                 changed.run();
-            }).button("Cancel", Sheet.Style.TONAL, () -> { });
-        } else {
-            if (canPinWidgets()) sheet.button("Add widget to Home", Sheet.Style.PRIMARY, () -> pinWidget(contentId, title));
-            else sheet.button("How to add it to Home", Sheet.Style.TONAL, () -> showManualWidgetPlacement(title));
-            sheet.button("Remove", Sheet.Style.DANGER, () -> {
-                        placements.unstage(contentId);
-                        PlaylistWidgetState.redraw(this);
-                    }).onDismiss(changed);
+            });
         }
+        if (canPinWidgets()) sheet.button("Add widget to Home", onDrive ? Sheet.Style.PRIMARY : Sheet.Style.TONAL,
+                () -> pinWidget(contentId, title));
+        else sheet.button("How to add it to Home", Sheet.Style.TONAL, () -> showManualWidgetPlacement(title));
+        if (onDrive) {
+            sheet.button("Remove from Drive", Sheet.Style.DANGER, () -> {
+                radio.setStaple(contentId, false);
+                radio.forgetIfUnused(contentId);
+                PlaylistWidgetState.redraw(this);
+                changed.run();
+            });
+        }
+        sheet.onDismiss(changed);
         sheet.show();
     }
 

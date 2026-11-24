@@ -161,7 +161,7 @@ public class QuickInputCapabilityTest {
         assertEquals(1, queue.getInt("parked"));
         assertEquals(20, uploads.size());
         assertTrue("the audio is kept", memo.exists());
-        assertTrue(notices.get(notices.size() - 1).contains("1 input could not be sent (Journal 1). Tap to try again."));
+        assertTrue(notices.get(notices.size() - 1).contains("1 input was not accepted (Journal 1). Tap to retry, or discard it."));
 
         // A tap on that notice is the keyed link daylight://memo/queue.
         status = 200;
@@ -374,7 +374,7 @@ public class QuickInputCapabilityTest {
         File refused = record("1700000000000-ab12cd34");
         cap.pumpOnce();
         assertEquals(1, TestCore.get(core, "/input/queue").getInt("parked"));
-        assertTrue("the notice carries the action", notices.get(notices.size() - 1).contains("could not be sent"));
+        assertTrue("the notice carries the action", notices.get(notices.size() - 1).contains("not accepted"));
         down = true;
         File waiting = record("1700000005000-ab12cd34");
         cap.pumpOnce();
@@ -488,7 +488,7 @@ public class QuickInputCapabilityTest {
         JSONObject entry = TestCore.get(core, "/input/queue").getJSONArray("inputs").getJSONObject(0);
         assertEquals("PARKED", entry.getString("state"));
         assertEquals("unknown destination", entry.getString("lastError"));
-        assertTrue(notices.get(0), notices.get(0).contains("1 input could not be sent (meal-photo 1). Tap to try again."));
+        assertTrue(notices.get(0), notices.get(0).contains("1 input was not accepted (meal-photo 1). Tap to retry, or discard it."));
     }
 
     @Test public void theQueueOfTheBuildBeforeDestinationsIsCarriedOver() throws Exception {

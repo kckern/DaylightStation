@@ -530,6 +530,23 @@ for every device.
   (build 81); the digest comes from `apksigner verify --print-certs` on the installed
   Google app, and matches the `refused media controller` line it used to log.
 
+### Choosing playlists on the phone
+
+- **Drive is the one curated list.** A playlist is on Drive or it is not: "Add to Drive" and
+  "Remove from Drive" are the buttons. A widget button and a day of Driving Radio choose from
+  every playlist and never add one to Drive.
+- **One picker everywhere.** A grid of covers with a search box, filter chips (All, On Drive,
+  one per list source), a sort (A–Z, Recent, Source order), a count and an empty state. A
+  playlist's title, cover and shuffle setting are kept on the phone so the car and the widgets
+  draw it with no backend; that record is not something the owner manages. Playlists used by
+  nothing are dropped when their last use is removed.
+- **Widgets.** Apex cannot be asked to pin a widget, so there the sheet shows the real steps
+  (hold an empty spot on Home, Widgets, Daylight playlist, choose the playlist) instead of an
+  "Add widget" button. A launcher that can pin gets the button.
+- **Home tabs.** Services, Capture, Play and Connect are pages that slide as one; swiping moves
+  both pages. Services and Capture list what is already on the home screen first, then what is
+  Available. A placement banner shows only when it needs an answer (confirm, failed, extra widget).
+
 ### Only household media plays
 
 - A media id is `root`, `recent`, `catalog`, `c:<contentId>` (a container),
@@ -1355,7 +1372,7 @@ transport: household pushes keep arriving through the Home Assistant relay.
 | Playback | Media3's own | The media session. Exempt from the notification permission |
 | "Recording a voice memo", with Stop | `daylight_recording` (low) | The recorder service; a foreground-service notification |
 | "N inputs waiting to upload (Journal 2, Meal photo 1)" | `daylight_uploads` (low) | `quick-input`, after a pass that left inputs waiting |
-| "N inputs could not be sent (Meal 1). Tap to try again.", with a Discard action | `daylight_uploads` | `quick-input`, when inputs are parked |
+| "N inputs were not accepted (Meal 1). Tap to retry, or discard them.", with a Discard action | `daylight_uploads` | `quick-input`, when inputs are parked |
 | "This phone is not allowed to send to <label> yet. ..." | `daylight_uploads` | `quick-input`, after a 403 `device_not_allowed`; removed by the first input that destination accepts |
 | "The daily allowance for <label> is used up. Sending resumes at about <day and time>. ..." | `daylight_uploads` | `quick-input`, after a 429, for each destination held |
 | "N recordings were cut off and cannot be played. They are kept on this phone and not sent." | `daylight_uploads` | `quick-input`, while `memos/cutoff/` holds any |

@@ -39,9 +39,9 @@ public class QueueNoticeTest {
     }
 
     @Test public void parkedInputsSayWhatATapDoes() {
-        assertEquals("1 input could not be sent (Meal 1). Tap to try again.", of(NONE, counts("Meal", 1), "").text);
-        assertEquals("2 inputs could not be sent (Meal 2). Tap to try again.", of(NONE, counts("Meal", 2), "").text);
-        assertEquals("2 inputs could not be sent (Journal 1, Meal 1), 1 waiting. Tap to try again.",
+        assertEquals("1 input was not accepted (Meal 1). Tap to retry, or discard it.", of(NONE, counts("Meal", 1), "").text);
+        assertEquals("2 inputs were not accepted (Meal 2). Tap to retry, or discard them.", of(NONE, counts("Meal", 2), "").text);
+        assertEquals("2 inputs were not accepted (Journal 1, Meal 1), 1 waiting. Tap to retry, or discard them.",
                 of(counts("Journal", 1), counts("Journal", 1, "Meal", 1), "").text);
     }
 
@@ -93,7 +93,7 @@ public class QueueNoticeTest {
     /** A notice is a count, a state and a destination's label. Nothing of what was said, typed or photographed. */
     @Test public void aNoticeNeverCarriesMoreThanCountsStatesAndLabels() {
         QueueNotice n = of(counts("Journal note", 1), counts("Meal photo", 1), "");
-        assertEquals("1 input could not be sent (Meal photo 1), 1 waiting. Tap to try again.", n.text);
+        assertEquals("1 input was not accepted (Meal photo 1), 1 waiting. Tap to retry, or discard it.", n.text);
         assertEquals("Quick inputs", n.title);
     }
 
