@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { derivePianos, resolvePianoConfig, resolveScreensaver, PIANO_CONFIG_DEFAULTS } from './pianoConfigModel.js';
+import { derivePianos, resolvePianoConfig, resolveScreensaver, passageTomatoesFor, PIANO_CONFIG_DEFAULTS } from './pianoConfigModel.js';
 
 describe('derivePianos', () => {
   it('lists the configured pianos', () => {
@@ -387,5 +387,25 @@ describe('resolvePianoConfig voicePatches', () => {
     expect(resolvePianoConfig({ voicePatches: raw.voicePatches }, 'default').voicePatches).toEqual(raw.voicePatches);
     expect(resolvePianoConfig(raw, 'yellow').voicePatches).toEqual({ '0:0': { msb: 0, lsb: 3, pc: 0 }, '1:0': { msb: 0, lsb: 0, pc: 2 } });
     expect(resolvePianoConfig({}, 'default').voicePatches).toEqual({});
+  });
+});
+
+describe('passageTomatoesFor (sheetmusic.learn.tomatoes)', () => {
+  const kid = { id: 'kid', schoolLearner: true };
+  const grownup = { id: 'grownup', schoolLearner: false };
+  it("defaults to 'learners': a school learner sees tomatoes, a grown-up or a guest does not", () => {
+    expect(passageTomatoesFor(undefined, kid)).toBe(true);
+    expect(passageTomatoesFor({}, grownup)).toBe(false);
+    expect(passageTomatoesFor({}, null)).toBe(false);
+  });
+  it("'everyone' and 'nobody' override the learner test; an unknown value is the default", () => {
+    expect(passageTomatoesFor({ tomatoes: 'everyone' }, grownup)).toBe(true);
+    expect(passageTomatoesFor({ tomatoes: 'everyone' }, null)).toBe(true);
+    expect(passageTomatoesFor({ tomatoes: 'nobody' }, kid)).toBe(false);
+    expect(passageTomatoesFor({ tomatoes: 'sometimes' }, kid)).toBe(true);
+    expect(passageTomatoesFor({ tomatoes: 'sometimes' }, grownup)).toBe(false);
+  });
+  it('sheetmusic.learn reaches the resolved config whole', () => {
+    expect(resolvePianoConfig({ sheetmusic: { learn: { tomatoes: 'nobody' } } }, 'default').sheetmusic.learn.tomatoes).toBe('nobody');
   });
 });

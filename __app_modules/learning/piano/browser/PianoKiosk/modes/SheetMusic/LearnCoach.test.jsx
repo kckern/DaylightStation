@@ -346,18 +346,19 @@ describe('the chosen tempo on a coached step', () => {
   // No smaller step is offered for a miss at a chosen tempo.
   expect(screen.queryByRole('button', { name: /slower|^Practice / })).toBeNull();
  });
- it('the rhythm step can always be skipped, and offers it again in the result after two misses', async () => {
+ it('Skip rhythm lives on the result card: offered after any miss, never in the header', async () => {
   const coach = goldCoach();
   render(<LearnCoach {...props} coach={coach} skipping={{ default: 'open' }} />);
   act(() => h.lab.onPickStep({ id: step('rhythm').key }));
-  expect(screen.getByRole('button', { name: 'Skip rhythm' })).toBeInTheDocument();
+  // Before a take: not in the header (an always-visible exit invites skipping before trying).
+  expect(screen.queryByRole('button', { name: 'Skip rhythm' })).toBeNull();
   const late = { ...passed, verdict: { passed: false }, criteria: { completeness: 1, cleanliness: 1, placement: 0.1 } };
   await act(async () => { h.lab.onStarted(); h.lab.onOutcome({ ...late, assessmentId: 'r1' }, {}); });
-  await act(async () => { h.lab.onStarted(); h.lab.onOutcome({ ...late, assessmentId: 'r2' }, {}); });
-  // In the header, and again among the result's actions after two misses.
-  expect(screen.getAllByRole('button', { name: 'Skip rhythm' })).toHaveLength(2);
-  fireEvent.click(screen.getAllByRole('button', { name: 'Skip rhythm' }).at(-1));
+  // One miss reaches it, on the result card, as a normal button.
+  expect(screen.getAllByRole('button', { name: 'Skip rhythm' })).toHaveLength(1);
+  expect(screen.getByRole('button', { name: 'Skip rhythm' })).not.toHaveClass('is-quiet');
+  fireEvent.click(screen.getByRole('button', { name: 'Skip rhythm' }));
   expect(coach.skipRhythm).toHaveBeenCalledWith(expect.objectContaining({ skill: 'rhythm' }));
-  expect(h.log.info).toHaveBeenCalledWith('piano.learn.rhythm.skip', expect.objectContaining({ passageId: 'a', misses: 2 }));
+  expect(h.log.info).toHaveBeenCalledWith('piano.learn.rhythm.skip', expect.objectContaining({ passageId: 'a', misses: 1 }));
  });
 });

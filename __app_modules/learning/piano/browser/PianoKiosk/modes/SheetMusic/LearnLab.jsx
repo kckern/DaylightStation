@@ -102,6 +102,8 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
   const [listening, setListening] = useState(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const takeUnderWay = ['countdown', 'running', 'resume-countdown'].includes(runPhase);
+  // A take (or Listen) removes the settings, sheet and all; a sheet removed that way never says it closed.
+  useEffect(() => { if (takeUnderWay || listening) setSheetOpen(false); }, [takeUnderWay, listening]);
   const [clickLevel, setClickLevel] = useState(() => readClickLevel(clickStorage()));
   const selectClickLevel = (level) => {
     setClickLevel(level);
@@ -274,14 +276,25 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
   return <section className={`piano-learn-lab${coachingTask ? ' piano-learn-lab--coach' : ''}`} role="dialog" aria-modal="true" aria-label={`${passageName} · ${rung.label}`}
     data-input={keyOnly ? 'keyboard-only' : undefined}>
     <header className="piano-learn-lab__toolbar">
+      {/* The header, left to right (2026-11-24): where Back goes, what to do (the title) and which bars,
+          how to start, the settings (sheets), and what can be done now. Every region keeps its width in
+          every state, so nothing moves when a take starts or ends. */}
       {!keyOnly && <button className="piano-learn-lab__back" type="button" onClick={closeLab} aria-label={coachingTask ? 'Back to score' : `Back to ${segment.label}`}>
-        <span aria-hidden="true">‹</span><span>Back</span>
+        <span aria-hidden="true">‹</span><span>{coachingTask ? 'Score' : segment.label}</span>
       </button>}
-      <div className="piano-learn-lab__identity">{coachingTask ? <strong>{passageName}</strong> : <><strong>{segment.label}</strong><span>{segment.barLabel}</span></>}</div>
-      <div className="piano-learn-lab__task"><strong>{rung.label}</strong>{!coachingTask && <span>Set {setIndex + 1} of {rung.sets} · Rep {currentRep} of {rung.reps}</span>}</div>
-      {track && !keyOnly && <LearnTempoTrack stops={track.stops} ladder={track.ladder} earned={track.earned} value={tempoPercent} stepPercent={track.stepPercent}
-        scoreBpm={scoreBpm > 0 ? scoreBpm : null} locked={takeUnderWay || Boolean(listening)} onChange={chooseTempo} />}
-      {timedMode && !keyOnly && <LearnClickVolume level={clickLevel} onChange={selectClickLevel} onOpenChange={setSheetOpen} />}
+      <div className="piano-learn-lab__heading">
+        <strong>{rung.label}</strong>
+        <span>{coachingTask ? passageName : segment.barLabel}</span>
+        {!coachingTask && <span>Set {setIndex + 1} of {rung.sets} · Rep {currentRep} of {rung.reps}</span>}
+      </div>
+      <div className="piano-learn-lab__prompt" aria-live="polite">
+        {runPhase === 'ready' && !listening && <><strong>{timedMode ? 'Press a key to start' : 'Play the first note to begin'}</strong>{timedMode && <span>or a pedal</span>}</>}
+      </div>
+      <div className="piano-learn-lab__settings">
+        {track && !keyOnly && !(takeUnderWay || listening) && <LearnTempoTrack stops={track.stops} ladder={track.ladder} earned={track.earned} value={tempoPercent} stepPercent={track.stepPercent}
+          scoreBpm={scoreBpm > 0 ? scoreBpm : null} onChange={chooseTempo} onOpenChange={setSheetOpen} />}
+        {timedMode && !keyOnly && !(takeUnderWay || listening) && <LearnClickVolume level={clickLevel} onChange={selectClickLevel} onOpenChange={setSheetOpen} />}
+      </div>
       {notice}
       {/* One button per thing that can be done NOW: before a take, Listen; during one, Pause; paused,
           Resume and Start over; listening, Pause or Play and Stop. The row keeps its place.
@@ -296,7 +309,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
           <button type="button" className="piano-learn-lab__action" onClick={() => restartTake('restart')}><Icon name="restart" /><span>Start over</span></button>
         </> : takeUnderWay ? <button type="button" className="piano-learn-lab__action" onClick={togglePaused}><Icon name="pause" /><span>Pause</span></button>
           : ['ready', 'done'].includes(runPhase) ? <>
-            {onListen && <button type="button" className="piano-learn-lab__action" onClick={listen}><Icon name="listen" /><span>Listen</span></button>}
+            {onListen && <button type="button" className="piano-learn-lab__action" onClick={listen}><Icon name="play" /><span>Listen</span></button>}
             {onChangePractice && <button type="button" className="piano-learn-lab__action" onClick={changePractice}><span>Change practice</span></button>}
             {extraControls}
           </> : null}

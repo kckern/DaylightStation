@@ -19,6 +19,9 @@ const rung = { id: 'right', label: 'Right hand', effectiveParts: ['rh'], mode: '
 // The run reports its phase to the lab (ExerciseRun `onPhase`); the mock run never does on its own.
 const phase = (value) => act(() => exercise.props.onPhase(value));
 const openVolume = () => fireEvent.click(screen.getByRole('button', { name: /^Click volume/ }));
+/** The speed is one header button; its stops live in a sheet (2026-11-24). */
+const openSpeed = () => fireEvent.click(screen.getByRole('button', { name: /^Speed/ }));
+const chooseSpeed = (name) => { openSpeed(); fireEvent.click(screen.getByRole('button', { name })); };
 const base = { score: { id: 'score', musicXml: '<score />' }, revision: 'rev', segment, rung, onRecord: vi.fn(), onClose: vi.fn() };
 
 describe('LearnLab', () => {
@@ -32,8 +35,8 @@ describe('LearnLab', () => {
     expect(exercise.props.traceContext).toMatchObject({ tempoStage: 'steady', clickLevel: 'loud' });
     openVolume(); fireEvent.click(screen.getByRole('button', { name: 'Soft' }));
     openVolume(); fireEvent.click(screen.getByRole('button', { name: 'Soft' }));
-    fireEvent.click(screen.getByRole('button', { name: '25%' }));
-    fireEvent.click(screen.getByRole('button', { name: '25%' }));
+    chooseSpeed('25%');
+    chooseSpeed('25%');
     rerender(<LearnLab {...props} />);
     expect(exercise.props.traceContext).toMatchObject({ tempoStage: 'very-slow', tempoPercent: 25, clickLevel: 'soft' });
     expect(log.info.mock.calls.filter(([event]) => event.includes('changed'))).toEqual([
@@ -164,19 +167,68 @@ describe('LearnLab', () => {
     expect(JSON.stringify(log.info.mock.calls)).not.toMatch(/\"midi\"|rawMidi/i);
   });
 
-  it('locks the tempo during a take, keeping its place', () => {
+  it('speed and volume are absent during a take and Listen, and their slot keeps its place', () => {
+    render(<LearnLab {...base} rung={{ ...rung, mode: 'cued', tempoPercent: 60 }} onListen={vi.fn()} />);
+    const slot = () => document.querySelector('.piano-learn-lab__settings');
+    expect(screen.getByRole('button', { name: /^Speed/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Click volume/ })).toBeInTheDocument();
+    for (const value of ['countdown', 'running']) {
+      phase(value);
+      expect(slot()).not.toBeNull();
+      expect(screen.queryByRole('button', { name: /^Speed/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Click volume/ })).toBeNull();
+    }
+    phase('ready');
+    fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
+    expect(screen.queryByRole('button', { name: /^Speed/ })).toBeNull();
+    expect(slot()).not.toBeNull();
+  });
+
+  it('the speed sheet offers each stop as a button: no slider, no slower or faster', () => {
+    render(<LearnLab {...base} rung={{ ...rung, mode: 'cued', tempoPercent: 60 }} tempo={{ tempoMap: [{ onsetQuarter: 0, bpm: 120 }], tempoSource: 'musicxml' }} />);
+    expect(screen.getByRole('button', { name: /^Speed/ })).toHaveTextContent('60%');
+    openSpeed();
+    const sheet = screen.getByRole('group', { name: 'Tempo' });
+    expect([...sheet.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(expect.arrayContaining(['25%', '40%', '60%', '100%']));
+    expect(screen.queryByRole('button', { name: 'Faster' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Slower' })).toBeNull();
+    expect(sheet.querySelector('[class*="track"], [class*="rail"]')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '25%' }));
+    expect(exercise.props.score.tempoPercent).toBe(25);
+    expect(screen.queryByRole('group', { name: 'Tempo' })).toBeNull();
+    expect(screen.getByRole('button', { name: /^Speed/ })).toHaveTextContent('25%');
+  });
+
+  it('the header says how to start, only while ready', () => {
     render(<LearnLab {...base} rung={{ ...rung, mode: 'cued', tempoPercent: 60 }} />);
-    expect(screen.getByRole('button', { name: 'Faster' })).not.toBeDisabled();
+    expect(screen.getByText('Press a key to start')).toBeInTheDocument();
     phase('countdown');
-    expect(screen.getByRole('group', { name: 'Tempo' })).toHaveAttribute('data-locked', 'true');
-    expect(screen.getByRole('button', { name: '25%' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Faster' })).toBeDisabled();
+    expect(screen.queryByText('Press a key to start')).toBeNull();
+    phase('done');
+    expect(screen.queryByText('Press a key to start')).toBeNull();
+  });
+
+  it('Back names its destination, the score', () => {
+    const onClose = vi.fn();
+    render(<LearnLab {...base} coachingTask={{ key: 'task' }} onClose={onClose} onOutcome={vi.fn()} />);
+    const back = screen.getByRole('button', { name: 'Back to score' });
+    expect(back).toHaveTextContent('Score');
+    expect(back).not.toHaveTextContent(/^‹?\s*Back$/);
+    fireEvent.click(back);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('the step instruction is the title and the bars its subtitle', () => {
+    render(<LearnLab {...base} coachingTask={{ key: 'task' }} onOutcome={vi.fn()} />);
+    const heading = document.querySelector('.piano-learn-lab__heading');
+    expect(heading.querySelector('strong')).toHaveTextContent('Right hand');
+    expect(heading.querySelector('span')).toHaveTextContent('Bars 1–4');
   });
 
   it('allows both metronome modes to change tempo by restarting only the current take', () => {
     render(<LearnLab {...base} rung={{ ...rung, mode: 'metronome', tempoPercent: 60 }} tempo={{ minimumPercent: 15, maximumPercent: 100, tempoMap: [{ onsetQuarter: 0, bpm: 100 }] }} />);
     const firstKey = exercise.props.controlKey;
-    fireEvent.click(screen.getByRole('button', { name: '15%' }));
+    chooseSpeed('15%');
     expect(exercise.props.controlKey).not.toBe(firstKey);
     expect(exercise.props.traceContext).toMatchObject({ tempoPercent: 15, tempoStage: 'extra-slow' });
   });
@@ -264,12 +316,24 @@ describe('LearnLab', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('a take that starts with the speed sheet open takes the sheet away, and Escape still leaves', () => {
+    const onClose = vi.fn();
+    render(<LearnLab {...base} onClose={onClose} rung={{ ...rung, mode: 'cued', tempoPercent: 60 }} />);
+    openSpeed();
+    phase('countdown');
+    expect(screen.queryByRole('dialog', { name: 'Speed' })).toBeNull();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('advances through configured set percentages and carries the full score tempo source', () => {
     const timed = { ...rung, mode: 'cued', sets: 3, reps: 1, passCount: 1, required: 3, tempoPercent: 60, tempoPercents: [60, 75, 90] };
     const onRecord = vi.fn(() => ({}));
     render(<LearnLab {...base} onRecord={onRecord} rung={timed} tempo={{ tempoMap: [{ onsetQuarter: 0, bpm: 100 }, { onsetQuarter: 8, bpm: 80 }], tempoSource: 'musicxml', minimumPercent: 40, maximumPercent: 100 }} />);
+    openSpeed();
     expect(screen.getByRole('button', { name: '80%' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText('80 bpm')).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
     expect(exercise.props.score.tempoPercent).toBe(80);
     expect(exercise.props.traceContext.tempoSource).toBe('musicxml');
     fireEvent.click(screen.getByRole('button', { name: 'Finish take' }));
@@ -279,6 +343,7 @@ describe('LearnLab', () => {
   it('keeps learner controls within configured bounds', () => {
     const timed = { ...rung, mode: 'cued', tempoPercent: 60 };
     render(<LearnLab {...base} rung={timed} tempo={{ tempoMap: [{ onsetQuarter: 0, bpm: 100 }], tempoSource: 'musicxml', minimumPercent: 55, maximumPercent: 65 }} />);
+    openSpeed();
     expect(screen.getByRole('button', { name: '60%' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '25%' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '100%' })).not.toBeInTheDocument();
@@ -290,16 +355,18 @@ describe('LearnLab', () => {
     render(<LearnLab {...base} rung={mastery} tempo={{ tempoMap: [{ onsetQuarter: 0, bpm: 90 }], tempoSource: 'inferred' }} />);
     expect(screen.queryByText('Fallback tempo')).toBeNull();
     expect(exercise.props.score.tempoPercent).toBe(100);
-    expect(screen.queryByRole('group', { name: 'Tempo' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Speed/ })).not.toBeInTheDocument();
   });
 
   it('directly chooses 25% and scales the original score contract to it', () => {
     render(<LearnLab {...base} rung={{ ...rung, mode: 'cued', tempoPercent: 60 }} tempo={{ tempoMap: [{ onsetQuarter: 0, bpm: 120 }], tempoSource: 'musicxml' }} />);
+    openSpeed();
     expect(screen.getByText('72 bpm')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '25%' }));
     expect(exercise.props.score).toMatchObject({ tempoPercent: 25, musicXml: '<score />' });
+    openSpeed();
     expect(screen.getByText('30 bpm')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Faster' }));
+    fireEvent.click(screen.getByRole('button', { name: '40%' }));
     expect(exercise.props.score.tempoPercent).toBe(40);
   });
 
@@ -317,18 +384,19 @@ describe('LearnLab', () => {
   it('clamps the named selection into a narrow interval excluding standard stages', () => {
     render(<LearnLab {...base} rung={{ ...rung, mode: 'cued', tempoPercent: 100 }} tempo={{ minimumPercent: 61, maximumPercent: 65, tempoMap: [{ onsetQuarter: 0, bpm: 100 }] }} />);
     expect(exercise.props.score.tempoPercent).toBe(61);
+    openSpeed();
     expect(screen.getByRole('button', { name: '61%' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('keeps Test Out at Full speed despite bounded practice tempo', () => {
     render(<LearnLab {...base} rung={{ ...rung, mode: 'cued', completion: 'tested-out', tempoPercent: 25 }} tempo={{ minimumPercent: 25, maximumPercent: 60 }} />);
     expect(exercise.props.score.tempoPercent).toBe(100);
-    expect(screen.queryByRole('group', { name: 'Tempo' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Speed/ })).not.toBeInTheDocument();
   });
 
   it('offers no tempo track when adjustments are disabled', () => {
     render(<LearnLab {...base} rung={{ ...rung, mode: 'cued', tempoPercent: 60 }} tempo={{ adjustable: false }} />);
-    expect(screen.queryByRole('group', { name: 'Tempo' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Speed/ })).not.toBeInTheDocument();
     expect(exercise.props.score.tempoPercent).toBe(60);
   });
 
@@ -462,6 +530,7 @@ describe('LearnLab', () => {
     render(<LearnLab {...base} rung={{ ...base.rung, mode: 'cued', tempoPercent: 50 }} coachingTask={{ key: 'task', tempoPercent: 50 }} tempoChoice={choice}
       tempo={{ tempoMap: [{ bpm: 100 }] }} onOutcome={onOutcome} />);
     expect(exercise.props.score.tempoPercent).toBe(75);
+    openSpeed();
     expect(screen.getByRole('button', { name: '75%' })).toHaveAttribute('aria-pressed', 'true');
     // The stops a pass would fill are lit; the step's own is not.
     expect(screen.getByRole('button', { name: '60%' })).toHaveAttribute('data-lit', 'true');
@@ -475,10 +544,10 @@ describe('LearnLab', () => {
   it('credits a plain rung played at or above the stage it was set', () => {
     const onRecord = vi.fn(() => ({}));
     render(<LearnLab {...base} rung={{ ...rung, mode: 'cued', tempoPercent: 60, reps: 2, required: 2 }} onRecord={onRecord} />);
-    fireEvent.click(screen.getByRole('button', { name: '80%' }));
+    chooseSpeed('80%');
     fireEvent.click(screen.getByRole('button', { name: 'Finish take' }));
     expect(onRecord).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button', { name: '40%' }));
+    chooseSpeed('40%');
     fireEvent.click(screen.getByRole('button', { name: 'Finish take' }));
     expect(onRecord).toHaveBeenCalledTimes(1);
   });

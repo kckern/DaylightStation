@@ -126,6 +126,15 @@ describe('PassagePath', () => {
     expect(screen.queryByText(/whole piece/i)).toBeNull();
   });
 
+  it('passes the tomato to the passages not yet started, and only to them; none without a learner', () => {
+    const { container, unmount } = render(<PassagePath model={modelOf(four, 'p2')} tomatoes />);
+    const tomatoes = [...container.querySelectorAll('.piano-letter-coin__tomato')];
+    expect(tomatoes).toHaveLength(1);
+    expect(tomatoes[0].closest('.piano-letter-coin').getAttribute('data-state')).toBe('todo');
+    unmount();
+    expect(render(<PassagePath model={modelOf(four, 'p2')} />).container.querySelector('.piano-letter-coin__tomato')).toBeNull();
+  });
+
   it('writes the turn delay into the animation itself, so a later rule cannot reset it', () => {
     const source = readFileSync(resolve(__dirname, 'PassageCoin.scss'), 'utf8');
     expect(source.match(/animation: piano-passage-turn-(out|in) [^;]*var\(--turn-delay, 0ms\)[^;]*;/g)).toHaveLength(2);

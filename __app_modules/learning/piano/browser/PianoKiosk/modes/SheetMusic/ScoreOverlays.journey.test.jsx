@@ -78,7 +78,7 @@ const click=async(page,name)=>{await page.getByRole('button',{name,exact:true}).
 const armed=async(page)=>{await page.locator('.piano-exercise-run[data-armed="true"]').waitFor({timeout:15000});await page.waitForTimeout(600);};
 // Open the passage (the rail button), then tap a set of the drill to run that step.
 const openPassage=async(page)=>{await click(page,'Practice bars 1–2');await armed(page);};
-const openStep=async(page,step)=>{await openPassage(page);await page.locator('button.drill-cluster').and(page.getByRole('button',{name:STEP_NAMES[step],exact:true})).click();await page.locator('.piano-learn-lab__task').filter({hasText:STEP_NAMES[step]}).waitFor();await armed(page);};
+const openStep=async(page,step)=>{await openPassage(page);await page.locator('button.drill-cluster').and(page.getByRole('button',{name:STEP_NAMES[step],exact:true})).click();await page.locator('.piano-learn-lab__heading strong').filter({hasText:STEP_NAMES[step]}).waitFor();await armed(page);};
 const STEP_NAMES={'On your own':'Play it on your own','100%':'Play at score tempo','Rhythm':'Tap the rhythm'};
 const card=(page,text)=>page.locator('.rep-card').filter({hasText:text});
 // Silver and Gold close the drill's curtain; its verdict carries the word.
@@ -199,10 +199,10 @@ describe('the extras drawn on the engraving stay whole',()=>{
      await page.locator('.gate-ceremony').filter({has:page.locator('.gate-ceremony__word',{hasText:'Bronze!'})}).waitFor({timeout:15000});
      await page.locator('.gate-ceremony').waitFor({state:'detached',timeout:20000});
      await page.locator('.piano-passage-path__token').nth(tile).click({timeout:30000});
-     await page.locator('.piano-learn-lab__task').filter({hasText:'Tap the rhythm'}).waitFor({timeout:15000});
+     await page.locator('.piano-learn-lab__heading strong').filter({hasText:'Tap the rhythm'}).waitFor({timeout:15000});
      await page.locator('.piano-exercise-run[data-armed="true"]').waitFor({timeout:15000});await page.waitForTimeout(600);
     }
-    await page.locator('button.drill-cluster').and(page.getByRole('button',{name:task,exact:true})).click();await page.locator('.piano-learn-lab__task').filter({hasText:task}).waitFor();
+    await page.locator('button.drill-cluster').and(page.getByRole('button',{name:task,exact:true})).click();await page.locator('.piano-learn-lab__heading strong').filter({hasText:task}).waitFor();
     await page.locator('.piano-exercise-run[data-armed="true"]').waitFor({timeout:15000});await page.waitForTimeout(800);
     // A held chord lights the live ink; on the timed step a key arms the count-in band.
     if(step==='timed'){await page.evaluate(async()=>{window.__hold([72]);await new Promise(r=>setTimeout(r,60));window.__hold([]);});await page.locator('.piano-learn-countin').waitFor();await page.waitForTimeout(300);}

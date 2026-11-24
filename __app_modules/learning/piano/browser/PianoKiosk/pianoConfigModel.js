@@ -4,6 +4,19 @@
 // Split out of PianoConfig.jsx (which keeps the Provider/Context/hooks) so
 // Fast Refresh can hot-reload the provider without a full remount.
 
+/**
+ * Who sees a tomato on a Learn passage not yet started (`sheetmusic.learn.tomatoes`):
+ * 'learners' (the default: profiles with `schoolLearner: true`, the kids), 'everyone',
+ * or 'nobody'. A guest is not a learner. Any other value reads as the default.
+ */
+export const PASSAGE_TOMATOES = ['learners', 'everyone', 'nobody'];
+export function passageTomatoesFor(learn, profile) {
+  const mode = PASSAGE_TOMATOES.includes(learn?.tomatoes) ? learn.tomatoes : 'learners';
+  if (mode === 'everyone') return true;
+  if (mode === 'nobody') return false;
+  return profile?.schoolLearner === true;
+}
+
 export const PIANO_CONFIG_DEFAULTS = {
   videos: { plexCollection: null },
   // Playalong menu — a video collection (backing tracks) reusing the Courses flow.

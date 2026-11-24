@@ -114,7 +114,7 @@ test('the whole Sheet Music flow, on keys only', async ({ page }) => {
   await expect(strip.locator('[data-key="retry"]')).not.toHaveAttribute('data-enabled', 'true');
   // No note output on this piano: Listen is not drawn, and no touch control is.
   await expect(strip.locator('[data-key="listen"]')).toHaveCount(0);
-  await expect(page.locator('.piano-learn-lab__back, .piano-learn-lab__run-controls, .piano-learn-tempo, .piano-learn-click')).toHaveCount(0);
+  await expect(page.locator('.piano-learn-lab__back, .piano-learn-lab__run-controls, .piano-learn-speed, .piano-learn-click')).toHaveCount(0);
   await expect(page.locator('.piano-passage-path__all')).toBeHidden();
   await noClipping(page, '04-drill');
 
@@ -131,9 +131,34 @@ test('the whole Sheet Music flow, on keys only', async ({ page }) => {
   // The docked result card covers the step rail by design (Exercises.scss `.is-docked`).
   await noClipping(page, '05-result', undefined, ['.piano-exercise-run.is-done .piano-exercise-run__rail']);
 
-  // Continue: Try again on the strip is a new take, not a note in one.
+  // Continue: Try again on the strip is a new take, not a note in one. The score is shown only at its
+  // final size: every frame of the next 1.5 s that shows the engraving shows it at the height it had.
+  // The size the music is drawn at: the engraving's scale on screen, screen px per engraved unit (its
+  // SVG box fills the stage whatever the music inside it is scaled to), times the staff's 40-unit height.
+  const shownHeight = () => page.evaluate(() => {
+    const svg = document.querySelector('.piano-score-passage .musicxml-renderer__svg svg');
+    return svg && getComputedStyle(svg).visibility === 'visible' ? Math.round(svg.getScreenCTM().a * 400) / 10 : null;
+  });
+  const heightBefore = await shownHeight();
+  expect(heightBefore).toBeGreaterThan(0);
+  await page.evaluate(() => {
+    window.__scoreHeights = [];
+    const until = performance.now() + 1500;
+    const sample = () => {
+      const svg = document.querySelector('.piano-score-passage .musicxml-renderer__svg svg');
+      if (svg && getComputedStyle(svg).visibility === 'visible') window.__scoreHeights.push(Math.round(svg.getScreenCTM().a * 400) / 10);
+      if (performance.now() < until) requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
   await tap(page, KEY.F2);
   await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'ready');
+  await page.waitForTimeout(1600);
+  const heights = await page.evaluate(() => window.__scoreHeights);
+  expect(heights.length).toBeGreaterThan(0);
+  expect(new Set(heights).size, `score heights seen: ${[...new Set(heights)].join(', ')}`).toBe(1);
+  expect(heights[0]).toBe(heightBefore);
+  await expect(page.locator('.piano-score-passage')).toHaveAttribute('data-engraving-ready', 'true');
   await expect(strip.locator('[data-key="retry"]')).not.toHaveAttribute('data-enabled', 'true');
 
   // A second take, and this time any other key continues, as on the tablet.

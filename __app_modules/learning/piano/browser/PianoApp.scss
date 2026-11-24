@@ -2581,17 +2581,21 @@
   &__toolbar { z-index: 20; flex: 0 0 auto; box-sizing: border-box; height: 4.75rem; display: flex; flex-wrap: nowrap; align-items: center; gap: 0.7rem; padding: 0.45rem 0.65rem; overflow: hidden; color: var(--piano-fg); background: var(--piano-surface-1); border-bottom: 1px solid var(--piano-border); }
   &__back { flex: 0 0 auto; display: flex; align-items: center; gap: 0.25rem; min-width: 3.5rem; min-height: 3.5rem; padding: 0.4rem 0.7rem; color: inherit; background: transparent; border: 1px solid var(--piano-border); border-radius: var(--r-sm); font: inherit; }
   &__back span:first-child { font-size: 1.5rem; line-height: 0.7; }
-  &__identity, &__task { display: grid; min-width: 0; line-height: 1.1; }
-  &__identity { flex: 0 0 auto; padding-right: 0.7rem; border-right: 1px solid var(--piano-border); }
-  &__identity span, &__task span { overflow: hidden; color: var(--piano-muted); font-size: 0.8rem; text-overflow: ellipsis; white-space: nowrap; }
-  &__task { flex: 1 1 auto; }
-  &__task strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  // What to do, big; which bars, quiet beneath it (2026-11-24).
+  &__heading { flex: 1 1 auto; display: grid; min-width: 0; line-height: 1.1; }
+  &__heading strong { overflow: hidden; font-size: 1.6rem; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+  &__heading span { overflow: hidden; color: var(--piano-muted); font-size: 1.1rem; text-overflow: ellipsis; white-space: nowrap; }
+  // How to start, while ready; an empty slot of the same width otherwise.
+  &__prompt { flex: 0 0 15rem; display: grid; justify-items: center; line-height: 1.15; text-align: center; }
+  &__prompt strong { font-size: 1.25rem; font-weight: 800; color: var(--piano-accent-text, var(--piano-accent)); }
+  &__prompt span { color: var(--piano-muted); font-size: 0.95rem; }
+  // The settings (speed, click volume): buttons that open sheets, removed during a take, slot kept.
+  &__settings { flex: 0 0 13rem; align-self: stretch; min-height: 3.5rem; display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; }
   // A fixed width, right-aligned: the actions change with the take, and nothing to their left may move.
   &__run-controls { flex: 0 0 24rem; display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; min-width: 0; }
   // Every header action is the same button: icon and a short label, one size, a neutral surface.
   &__action { display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; min-width: 3.5rem; min-height: 3.5rem; padding: 0.35rem 0.95rem; color: var(--piano-fg); background: var(--piano-surface); border: 1px solid var(--piano-border); border-radius: var(--r-md); font: inherit; font-size: 1.25rem; font-weight: 750; white-space: nowrap; cursor: pointer; }
   &__action .piano-icon { font-size: 1.6rem; }
-  &__action.is-quiet { color: var(--piano-muted); background: transparent; font-size: 1.1rem; }
   &__action:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
   &__success { position: absolute; z-index: 35; inset: 4.75rem 0 0; display: grid; place-content: center; justify-items: center; gap: 0.3rem; background: var(--piano-bg); color: var(--piano-fg); }
   &__success strong { color: var(--piano-accent-text); font-size: clamp(1.8rem, 5vw, 3.5rem); }
@@ -2599,38 +2603,29 @@
   // Below the kiosk's width the one row cannot hold everything: two rows, still of fixed height.
   @media (max-width: 900px) {
     &__toolbar { height: 9.5rem; flex-wrap: wrap; align-content: center; }
-    &__task { flex-basis: 30%; }
+    &__heading { flex-basis: 30%; }
     &__run-controls { flex: 1 1 auto; justify-content: flex-start; }
   }
   @media (max-width: 760px) {
-    &__back span:last-child, &__identity span { display: none; }
+    &__back span:last-child, &__heading span { display: none; }
     &__toolbar { gap: 0.45rem; }
   }
 }
 
-// The drill header's tempo (LearnTempoTrack): a stepped track of stops, − and + a stop at a time, the
-// percent big with the bpm small. Locked during a take: − and + hide but keep their room.
-.piano-learn-tempo {
-  flex: 0 0 auto; display: flex; align-items: center; gap: 0.35rem;
-  &__nudge { display: grid; place-items: center; width: 3rem; height: 3rem; padding: 0; color: var(--piano-fg); background: var(--piano-surface); border: 1px solid var(--piano-border); border-radius: 50%; font-size: 1.3rem; cursor: pointer; }
-  &__nudge:disabled { color: var(--piano-muted); opacity: 0.45; cursor: default; }
-  &[data-locked] &__nudge { visibility: hidden; }
-  &__track { position: relative; width: 13rem; height: 3.6rem; margin: 0 1.2rem; touch-action: none; }
-  &__rail { position: absolute; left: 0; right: 0; top: 1.05rem; height: 4px; border-radius: 2px; background: var(--piano-border); }
-  &__rail i { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: var(--piano-fg); }
-  &__stop { position: absolute; top: 0; width: 2.75rem; height: 3.6rem; margin: 0; padding: 0; display: grid; grid-template-rows: 2.2rem auto; justify-items: center; align-items: center; color: var(--piano-muted); background: transparent; border: 0; transform: translateX(-50%); font: inherit; cursor: pointer; }
-  &__stop:disabled { cursor: default; }
-  &__dot { box-sizing: border-box; width: 0.8rem; height: 0.8rem; border-radius: 50%; background: var(--piano-surface-1); border: 2px solid var(--piano-muted); }
-  &__stop[data-rung] &__dot { width: 1.15rem; height: 1.15rem; }
-  &__stop[data-earned] &__dot { background: var(--piano-accent); border-color: var(--piano-accent); }
-  &__stop[data-lit] &__dot { border-color: var(--piano-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--piano-accent) 35%, var(--piano-surface-1)); }
-  &__stop[aria-pressed='true'] &__dot { width: 1.6rem; height: 1.6rem; background: var(--piano-fg); border: 3px solid var(--piano-surface-1); box-shadow: 0 0 0 2px var(--piano-fg); }
-  &__stop[aria-pressed='true'] { color: var(--piano-fg); }
-  &__label { font-size: 0.85rem; font-weight: 700; line-height: 1; }
-  &__flag { color: #e2b93b; font-size: 1.05rem; }
-  &__readout { display: grid; justify-items: start; min-width: 4.4rem; line-height: 1; }
-  &__readout strong { font-size: 1.7rem; font-weight: 800; }
-  &__readout small { margin-top: 0.15rem; color: var(--piano-muted); font-size: 0.8rem; }
+// The drill's speed (LearnTempoTrack): one header button, the stops in a sheet as big buttons.
+.piano-learn-speed {
+  strong { font-size: 1.4rem; font-weight: 800; }
+  &__flag { color: #e2b93b; }
+}
+.piano-learn-speed-sheet {
+  &__stops { display: grid; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); gap: 0.75rem; padding: 0.75rem 0; }
+  &__stops button { display: grid; justify-items: center; align-content: center; gap: 0.3rem; min-height: 6.5rem; padding: 0.75rem; color: var(--piano-fg); background: var(--piano-surface); border: 2px solid var(--piano-border); border-radius: var(--r-md); font: inherit; cursor: pointer; }
+  &__stops button strong { font-size: 2rem; font-weight: 800; }
+  &__stops button small { color: var(--piano-muted); font-size: 0.9rem; }
+  &__stops button[data-earned] { background: color-mix(in srgb, var(--piano-accent) 22%, var(--piano-surface)); border-color: var(--piano-accent); }
+  &__stops button[data-lit] { border-color: var(--piano-accent); }
+  &__stops button[aria-pressed='true'] { border-color: var(--piano-fg); box-shadow: inset 0 0 0 3px var(--piano-fg); }
+  &__note { display: flex; gap: 1.25rem; margin: 0; color: var(--piano-muted); font-size: 1.05rem; }
 }
 
 // The click's loudness: a speaker and its level bars, in the header button and in the sheet.
@@ -2767,6 +2762,24 @@
       background: var(--piano-accent); color: var(--piano-surface);
       animation: piano-score-countin-pop calc(var(--ds-motion-base) * 1.5) var(--ds-motion-easing) both;
     }
+  }
+  // The count in bars: one group per bar, a bar line between groups, the entry beat a solid
+  // note box (an X on the rhythm step), a later hand's pickup beat a rest box.
+  &__bars { display: flex; align-items: center; gap: 0; }
+  // Read from the bench: bigger boxes when the count is laid out in bars.
+  &[data-slots] &__pip { width: 2.9rem; height: 2.9rem; font-size: 1.6rem; }
+  &[data-slots] &__pip.is-half { width: 1.6rem; }
+  &__bar {
+    display: flex; gap: 0.5rem; margin: 0; padding: 0 0.75rem; list-style: none;
+    & + & { border-left: 4px solid var(--piano-fg); }
+    &:first-child { padding-left: 0; }
+    &:last-child { padding-right: 0; }
+  }
+  &__pip {
+    &.is-note { border-color: var(--piano-accent); background: var(--piano-surface-2, #2a2a33); color: var(--piano-accent-text, var(--piano-accent)); font-size: 1.5rem; }
+    &.is-note.is-current { background: var(--piano-accent); color: var(--piano-surface); }
+    &.is-rest { border-style: dashed; color: var(--piano-muted); font-size: 1.5rem; }
+    &.is-half { width: 1.25rem; border-radius: 0.6rem; font-size: 1rem; }
   }
   &__cue { min-width: 9rem; font-size: 1.1rem; font-weight: 750; color: var(--piano-fg); }
   &[data-armed] &__cue { color: var(--piano-muted); }

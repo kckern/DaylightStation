@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import PassageCoin from './PassageCoin.jsx';
 import { boardColumns } from './passageRail.js';
 import LevelLadder from './LevelLadder.jsx';
+import usePassageTomatoes from './usePassageTomatoes.js';
 
 const Close = () => <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path d="M3.5 3.5l9 9m0-9l-9 9" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg>;
 const Play = () => <svg viewBox="0 0 16 16" width="100%" height="100%" aria-hidden="true"><path d="M5.5 3.6v8.8a.6.6 0 0 0 .9.5l7-4.4a.6.6 0 0 0 0-1L6.4 3.1a.6.6 0 0 0-.9.5z" fill="currentColor" /></svg>;
@@ -14,9 +15,12 @@ const Play = () => <svg viewBox="0 0 16 16" width="100%" height="100%" aria-hidd
  * the path (Bronze → Silver → Gold → Diamond, the lap the child is on and its count; the Diamond is
  * filled from `polish.diamond` through the model) with the one "earn a gem" when that lap pays one. Its cards are shared evenly between the rows
  * (`boardColumns`), so no row ends in blank cells. It slides over the score from the path without
- * moving the music, and closes only with its own control. Tapping a card selects that unit.
+ * moving the music, and closes only with its own control. Tapping a card selects that unit. A
+ * passage not started wears the path's tomato (`tomatoes`, else `sheetmusic.learn.tomatoes`).
  */
-export default function PassageBoard({ title, model, focusId = null, gemOffered = false, review = false, onSelect, onReview, onClose }) {
+export default function PassageBoard({ title, model, focusId = null, gemOffered = false, review = false, tomatoes: tomatoesProp, onSelect, onReview, onClose }) {
+  const tomatoesFor = usePassageTomatoes();
+  const tomatoes = tomatoesProp ?? tomatoesFor;
   const cards = useRef(null);
   const close = useRef(null);
   useEffect(() => { close.current?.focus?.({ preventScroll: true }); }, []);
@@ -44,7 +48,7 @@ export default function PassageBoard({ title, model, focusId = null, gemOffered 
         <button type="button" className="piano-passage-board__card" data-passage={card.id} data-state={card.state} data-kind={card.kind ?? 'passage'}
           aria-current={card.id === current ? 'step' : undefined} aria-label={card.label} onClick={() => onSelect?.(card.id)}>
           <span className="piano-passage-board__coin">
-            <PassageCoin state={card.state} letter={card.letter} ring={card.ring} size="100%" />
+            <PassageCoin state={card.state} letter={card.letter} ring={card.ring} tomato={tomatoes} size="100%" />
             {card.id === model.outlinedId && <i className="piano-passage-board__play" aria-hidden="true"><Play /></i>}
           </span>
           <strong>{card.bars}</strong>

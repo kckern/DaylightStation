@@ -418,6 +418,14 @@
   min-height: 0;
   overflow: hidden;
 
+  // The curtain: an engraving is drawn out of sight and shown only once its
+  // layout is accepted (ScorePassage's `data-engraving-ready`). A passage that
+  // re-engraves smaller, or justified, never shows the size it started at; the
+  // stage shows its own paper meanwhile. No fade, no timer.
+  &:not([data-engraving-ready]) .musicxml-renderer:not(.musicxml-renderer--placeholder) {
+    visibility: hidden;
+  }
+
   // The exercise stage owns both dimensions. Give the engraver that complete
   // viewport and let the SVG's `xMidYMid meet` mapping choose the limiting
   // axis. That is the same contain operation for a short treble stave, a grand

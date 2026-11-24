@@ -179,3 +179,14 @@ describe('score-file layer (admin-approved Learn file)', () => {
       .toBe(resolveLearnPlan({ score: SCORE_4_BARS }).revision);
   });
 });
+
+describe('a pickup is named, never "bar 0"', () => {
+  it('barRangeLabel names a pickup', async () => {
+    const { barRangeLabel } = await import('./resolveLearnPlan.js');
+    expect(barRangeLabel('0', '4')).toBe('Pickup + bars 1–4');
+    expect(barRangeLabel('1', '4')).toBe('Bars 1–4');
+    expect(barRangeLabel('0', '0')).toBe('Pickup');
+    expect(barRangeLabel('0', '1')).toBe('Pickup + bar 1');
+    expect(barRangeLabel('5', '5')).toBe('Bar 5');
+  });
+});

@@ -410,18 +410,18 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, ass
     if (target && onPassageChange) onPassageChange(target); else onBack?.();
   };
   const laterButton = canSetAside ? <button type="button" className="piano-learn-lab__action" onClick={comeBackLater}><span>Come back to this later</span></button> : null;
-  // The rhythm step never walls a child: it can always be skipped (it earns nothing, and the lap moves on).
+  // The rhythm step never walls a child: after any miss the result card offers to skip it (it earns nothing,
+  // and the lap moves on). Not in the header: an always-visible exit invites skipping before trying (2026-11-24).
   const rhythmStep = task?.rhythm === true && (task.depth ?? 0) === 0;
   const skipRhythm = () => {
     logger.info('piano.learn.rhythm.skip', { userId: coach.profileId, scoreId: score.id, passageId: segment.id, misses: misses[task.key] ?? 0 });
     coach.skipRhythm?.(task);
     setSelected(null); setRun(null); setResult(null); setMoment(null); setChoice(null); setLane('gold'); setRunNumber((number) => number + 1);
   };
-  const skipButton = rhythmStep ? <button type="button" className="piano-learn-lab__action is-quiet" onClick={skipRhythm}><Icon name="next" /><span>Skip rhythm</span></button> : null;
   const resultActions = result ? <>
     {recovery && <button type="button" className="is-primary" onClick={() => begin(recovery)}>{recoveryAction}</button>}
     <button type="button" className={recovery ? '' : 'is-primary'} onClick={() => begin(result.task)}>Try again</button>
-    {rhythmStep && result.missed >= 2 && <button type="button" onClick={skipRhythm}>Skip rhythm</button>}
+    {rhythmStep && result.missed >= 1 && <button type="button" onClick={skipRhythm}>Skip rhythm</button>}
     {laterButton}
   </> : null;
   // Any key on the piano takes the primary button, so the help the card
@@ -503,7 +503,7 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, ass
     previous: previousUnit && !busy ? { onSelect: () => goToPassage(previousUnit, 'office-strip') } : null,
     next: nextUnit && !busy ? { onSelect: () => goToPassage(nextUnit, 'office-strip') } : null,
     retry: result && !busy ? { onSelect: () => begin(result.task) } : null,
-    later: busy ? null : rhythmStep ? { label: 'Skip rhythm', onSelect: skipRhythm } : canSetAside ? { label: 'Come back later', onSelect: comeBackLater } : null,
+    later: busy ? null : rhythmStep ? (result?.missed >= 1 ? { label: 'Skip rhythm', onSelect: skipRhythm } : null) : canSetAside ? { label: 'Come back later', onSelect: comeBackLater } : null,
   });
 
   if (!task) return <section className="piano-learn-coach"><h2>No playable notes in this passage</h2>{!keyOnly && <button type="button" onClick={onBack}>Back to score</button>}{map}</section>;
@@ -511,7 +511,7 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, ass
     {loaded && material ? <LearnLab key={`${runNumber}:${task.key}`} score={score} revision={plan.fingerprint} segment={material.segment} rung={material.rung}
       coachingTask={task} assist={assist} drill={drill} card={card} ceremony={ceremony} onCardDone={momentDone} notice={notice}
       resultLabel={result?.message.title ?? null} resultActions={keyOnly ? null : resultActions} resultContinueLabel={resultContinueLabel} onResultContinue={resultContinue}
-      extraControls={keyOnly ? null : result ? skipButton : <>{skipButton}{laterButton}</>} tempoChoice={keyOnly ? null : tempoChoice}
+      extraControls={keyOnly || result ? null : laterButton} tempoChoice={keyOnly ? null : tempoChoice}
       onPickStep={keyOnly ? null : pickStep} onStarted={started} onOutcome={finish}
       onListen={() => onListen?.(task)}
       tempo={{ ...tempo, tempoMap: plan.tempoMap, adjustable: false }} feedback={feedback}
