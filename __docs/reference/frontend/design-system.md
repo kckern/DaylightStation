@@ -596,8 +596,9 @@ The transcript fills the draft for review. Send submits the answer explicitly.
 
 ## Visual verification
 
-`/dev/ds-gallery` renders every primitive together — chrome, both card types,
-all three async states, the sheet, the date stepper, the ask affordance — so a
+`/dev/ds-gallery` renders every visual primitive exported by `lib/ui` together —
+chrome, cards, the async states, sheet, confirm and form dialogs, action menu,
+toasts, skeleton, buttons, the date stepper — so a
 token or primitive change can be eyeballed in one place instead of hunting
 across apps. `tests/live/flow/ds/ds-gallery.runtime.test.mjs` drives it at a
 phone and a desktop viewport, asserts no horizontal overflow, exercises the
@@ -606,7 +607,9 @@ viewport. Because layout regressions (a wrapper collapsing, a media query
 losing specificity) are invisible to jsdom-based unit tests, this Playwright
 pass — and a look at the resulting screenshots — is what actually confirms a
 design-system change renders correctly; re-run it after any change to tokens,
-packs, or `lib/ui`.
+packs, or `lib/ui`. `frontend/src/dev/DsGallery/DsGallery.test.jsx` fails when a
+component is added to the `lib/ui` barrel without a gallery entry
+(`<Demo primitives="...">`) or a stated exemption.
 
 ## Route-owned overlays
 
