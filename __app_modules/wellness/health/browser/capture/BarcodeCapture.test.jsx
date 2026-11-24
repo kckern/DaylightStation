@@ -92,4 +92,56 @@ describe('BarcodeCapture over the shared scanner', () => {
     expect(await screen.findByRole('alert')).toBeTruthy();
     expect(screen.getByLabelText('Manual UPC entry').value).toBe('012345678905');
   });
+
+  describe('quick scan (from the home-screen shortcut)', () => {
+    const meals = [{ value: 'breakfast', label: 'Breakfast' }, { value: 'lunch', label: 'Lunch' }];
+    const known = async upc => ({ upc, product: { name: 'Granola', amount: 40, unit: 'g', calories: 170 } });
+
+    it('logs at once, readies the camera for the next item and keeps an Undo until the owner leaves', async () => {
+      const onDone = vi.fn();
+      const onUndo = vi.fn(async () => true);
+      const onConfirm = vi.fn(async () => ({ undoToken: 'u1' }));
+      wrap(<BarcodeCapture open quickScan bucket="breakfast" meals={meals} onClose={vi.fn()} onDone={onDone}
+        onDecode={known} onConfirm={onConfirm} onUndo={onUndo} />);
+      await act(async () => { scanner.args.onDecode('012345678905'); });
+      await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+      expect(await screen.findByText('Logged Granola')).toBeTruthy();
+      expect(screen.getByText(/170 kcal · Breakfast/)).toBeTruthy();
+      expect(scanner.args.active).toBe(true);
+      // Nothing closes the screen on a timer: it used to leave after 1.6 s.
+      await new Promise(resolve => setTimeout(resolve, 1800));
+      expect(onDone).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Undo logged item' }));
+      await waitFor(() => expect(onUndo).toHaveBeenCalledWith('u1', expect.any(Function), expect.stringMatching(/^undo-/)));
+      expect(await screen.findByText('Removed')).toBeTruthy();
+    });
+
+    it('keeps an unknown barcode on screen and offers to enter the food', async () => {
+      const onUnknown = vi.fn();
+      const onDone = vi.fn();
+      wrap(<BarcodeCapture open quickScan bucket="lunch" meals={meals} onClose={vi.fn()} onDone={onDone}
+        onDecode={async upc => ({ upc, product: null })} onUnknown={onUnknown} />);
+      await act(async () => { scanner.args.onDecode('0042100005264'); });
+      fireEvent.click(await screen.findByRole('button', { name: 'Enter food details' }));
+      expect(onUnknown).toHaveBeenCalledWith('0042100005264', 'lunch');
+      await new Promise(resolve => setTimeout(resolve, 1800));
+      expect(onDone).not.toHaveBeenCalled();
+    });
+
+    it('brings the camera back by itself when the app is visible again', () => {
+      wrap(<BarcodeCapture open quickScan bucket="lunch" meals={meals} onClose={vi.fn()} onDecode={vi.fn()} />);
+      fireEvent(document, new Event('freeze'));
+      expect(scanner.args.active).toBe(false);
+      fireEvent(document, new Event('visibilitychange'));
+      expect(scanner.args.active).toBe(true);
+    });
+
+    it('asks a refused camera again when the app comes back', () => {
+      scanner.cameraState = 'denied';
+      wrap(<BarcodeCapture open quickScan bucket="lunch" meals={meals} onClose={vi.fn()} onDecode={vi.fn()} />);
+      const before = scanner.args.restartKey;
+      fireEvent(document, new Event('visibilitychange'));
+      expect(scanner.args.restartKey).toBeGreaterThan(before);
+    });
+  });
 });
