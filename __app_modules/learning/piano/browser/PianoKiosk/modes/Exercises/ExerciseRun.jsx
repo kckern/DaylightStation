@@ -49,7 +49,7 @@ import { audioContext } from '../SheetMusic/click.js';
 import CountInOverlay from '../SheetMusic/CountInOverlay.jsx';
 import CountUpOverlay from '../SheetMusic/CountUpOverlay.jsx';
 import { beatLoopPosition, BEAT_LOOP_LEAD_MS } from './beatLoop.js';
-import { rhythmNotes, toRhythmExpectation } from './rhythmOnly.js';
+import { rhythmNotes, rhythmScoreVerdicts, toRhythmExpectation } from './rhythmOnly.js';
 import useRunDemonstration from './useRunDemonstration.js';
 import { isRisingEdge } from '../SheetMusic/pedalEdge.js';
 import { exerciseCountInPlan, countdownPresentation, countUpPresentation, askPace, countInSentence } from '../SheetMusic/countIn.js';
@@ -1968,9 +1968,12 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
 
   // The rhythm step's expectation drops ornaments and merges untappable runs (rhythmOnly.js), so its
   // event i is the real passage's `sourceIndex`: the score's cursor and marks are drawn on the real ink.
-  const sourceIndexOf = (index) => (index >= 0 ? askEvents[index]?.sourceIndex ?? index : index);
-  const scoreVerdicts = verdicts && rhythmOnly && askEvents.some((event) => event.sourceIndex != null)
-    ? new Map([...verdicts].map(([index, value]) => [sourceIndexOf(index), value])) : verdicts;
+  // Read off the expectation as this run built it: the attempt's own copy keeps only the fields it grades by.
+  const rhythmEvents = rhythmOnly ? scoreExpectation?.events ?? askEvents : askEvents;
+  const sourceIndexOf = (index) => (index >= 0 ? rhythmEvents[index]?.sourceIndex ?? index : index);
+  // Its taps are all on one pitch, so each verdict is re-keyed onto the X noteheads it stands for (every staff,
+  // and any run merged into the tap) at the pitches they are drawn at.
+  const scoreVerdicts = verdicts && rhythmOnly ? rhythmScoreVerdicts(verdicts, rhythmEvents) : verdicts;
   // Listen takes the rail's slot: what it is playing is on the score; how far through, here.
   const listenRail = demo.active ? <div className="piano-exercise-run__listen" role="progressbar" aria-label="Listening"
     aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(demo.progress * 100)}>

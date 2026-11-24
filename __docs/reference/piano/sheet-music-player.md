@@ -1026,7 +1026,12 @@ passage and tempo with **no pitch asked** (`reason: rhythm`, `rhythm: true`, `Ta
 `ExerciseRun` takes `rhythmOnly` and reads every key as one pitch (`Exercises/rhythmOnly.js`: the expectation is
 one note per event on middle C and the keys held are read as that one key, stamped at the first press, so both
 hands on a beat are one tap and the child lifts between taps), so the same timed judge, windows and count-in
-grade only WHEN they came in. The keyboard sounds a percussive voice (the device catalog's Woodblock) for as long
+grade only WHEN they came in. The take shows the timed steps' own live feedback on the X noteheads: the clock
+cursor moves with the beat, each head turns green (hit), amber (early/late, at the margins) or grey (missed) the
+moment it is judged, and the result keeps the same marks (✓ ◂ ▸ ○). Every tap is on middle C but the heads are drawn
+on B4/D3, so `rhythmScoreVerdicts` re-keys each verdict onto every head the tap stands for (`ink` on each kept
+event: its source event index and drawn pitches, on every staff, plus any run merged into it) before
+`ScorePassage` paints by event and pitch. The keyboard sounds a percussive voice (the device catalog's Woodblock) for as long
 as the rung lasts: `useRhythmVoice` sends it as a Patch-finder style audition, never changing the selected voice,
 and calls `resync()` on leaving to put the real voice back; a piano with no such voice or no output simply plays
 on in its own sound. The rung has its own task key (`coachTaskKey` adds `rhythm`) and `canProve` never mixes it

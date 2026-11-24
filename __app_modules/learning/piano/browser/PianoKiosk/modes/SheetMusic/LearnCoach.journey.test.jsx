@@ -15,6 +15,11 @@ const ROOT = path.resolve(HERE, '../../../../../../..');
 const require = createRequire(path.join(ROOT, 'frontend/package.json'));
 const ARTIFACTS = path.join(ROOT, '.superpowers/sdd/2026-10-26-piano-learn-adaptive-flow/browser');
 const SCORE_ID = 'files:coach-journey.musicxml';
+// Screenshots of the rhythm take (mid-way and its result), for a person to look at.
+const SHOTS = path.join(ROOT, '.superpowers/piano-rhythm-feedback');
+// A tap this late at 240 bpm (250 ms between beats) is outside the 100 ms hit window but nearer its own beat
+// than the next one: yellow, late.
+const LATE_MS = 112;
 const xml = `<?xml version="1.0"?><score-partwise version="3.1"><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1">${[1, 2].map((number) => `<measure number="${number}">${number === 1 ? '<attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes><direction><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>240</per-minute></metronome></direction-type><sound tempo="240"/></direction>' : ''}${[1, 2].map((staff) => `${staff === 2 ? '<backup><duration>4</duration></backup>' : ''}${['C','D','E','F'].map((step) => `<note><pitch><step>${step}</step><octave>${staff === 1 ? 4 : 3}</octave></pitch><duration>1</duration><voice>${staff}</voice><type>quarter</type><staff>${staff}</staff></note>`).join('')}`).join('')}</measure>`).join('')}</part></score-partwise>`;
 const stubs = [
  // The ceremony curtain reads the game registry only for the game gate; its lazy games are not part of Learn.
@@ -41,7 +46,7 @@ beforeAll(async () => {
  const sass = await import('sass-embedded'); const out=[];
  for(const file of new Set([path.join(ROOT,'__capabilities/music-notation/browser/styles/tokens.scss'),path.join(ROOT,'__app_modules/learning/piano/browser/pianoTokens.scss'),path.join(ROOT,'__app_modules/learning/piano/browser/PianoApp.scss'),...sheets]))out.push(file.endsWith('.css')?fs.readFileSync(file,'utf8'):(await sass.compileAsync(file,{loadPaths:[path.join(ROOT,'frontend'),path.dirname(file)]})).css);
  css=out.join('\n').replace(/@font-face\s*\{[^}]*\}/g,'');
- const {chromium}=await import('playwright');browser=await chromium.launch();fs.mkdirSync(ARTIFACTS,{recursive:true});
+ const {chromium}=await import('playwright');browser=await chromium.launch();fs.mkdirSync(ARTIFACTS,{recursive:true});fs.mkdirSync(SHOTS,{recursive:true});
 },180000);
 afterAll(async()=>{await browser?.close();});
 async function open(viewport={width:1280,height:800}){
@@ -121,6 +126,52 @@ describe('real Learn journey',()=>{
    const heads=await page.locator('.piano-exercise-run__stage .vf-notehead').evaluateAll(els=>els.map(el=>{const b=el.getBoundingClientRect();return Math.round(b.top);}));
    expect(heads.length).toBeGreaterThan(0);
    expect(new Set(heads).size).toBeLessThanOrEqual(2);
+   expect(errors).toEqual([]);
+  }finally{await page.close();}
+ },90000);
+ it('gives the rhythm take the timed steps\' live feedback: cursor on the clock, X heads judged as they pass, marks after',async()=>{
+  const{page,errors}=await open();try{
+   await openGold(page,'Rhythm');
+   const stage='.piano-exercise-run__stage';
+   // The X heads, in score order (left to right), and what each wears now.
+   const heads=()=>page.locator(`${stage} .vf-stavenote`).evaluateAll(els=>els.map(el=>({x:Math.round(el.getBoundingClientRect().left),verdict:el.getAttribute('data-verdict'),cls:[...el.classList].find(c=>c.startsWith('piano-note-verdict-'))??null})).sort((a,b)=>a.x-b.x));
+   const cursorX=()=>page.locator(`${stage} .piano-score-passage__cursor`).evaluateAll(els=>els.map(el=>Math.round(el.getBoundingClientRect().left)));
+   // Count in on any key, as the timed steps do.
+   const before=await page.evaluate(()=>window.__logs.filter(l=>l.event==='piano.exercise-countdown-started').length);
+   await page.evaluate(async()=>{window.__hold([30]);await new Promise(r=>setTimeout(r,60));window.__hold([]);});
+   await page.waitForFunction((n)=>window.__logs.filter(l=>l.event==='piano.exercise-countdown-started').length>n,before);
+   const downbeat=await page.evaluate(()=>{const log=window.__logs.filter(l=>l.event==='piano.exercise-countdown-started').at(-1);return log.at+log.data.countdownRemainingMs;});
+   // Eight beats, 250 ms apart, every tap on a pitch the score does not have: on time, except beat 4 at the
+   // margin (late) and beat 5 never tapped.
+   const OFFSET=[0,0,0,LATE_MS,null,0,0,0];
+   // Each tap is timed by sleeping to just short of its moment and then holding the thread until it, so a
+   // busy machine's late timer cannot carry the margin tap out of its beat's reach.
+   const take=page.evaluate(async({downbeat,offsets})=>{for(let i=0;i<offsets.length;i++){if(offsets[i]==null)continue;const at=downbeat+i*250+offsets[i];await new Promise(r=>setTimeout(r,Math.max(0,at-40-Date.now())));while(Date.now()<at);window.__hold([i%2?91:23]);await new Promise(r=>setTimeout(r,60));window.__hold([]);}},{downbeat,offsets:OFFSET});
+   // Early in the take: the cursor is on the score, and moves with the clock.
+   await page.waitForFunction((t)=>Date.now()>=t,downbeat+80);const firstCursor=await cursorX();
+   // Mid-way, past beat 5's window: beats 1-3 green, 4 yellow, 5 missed, the rest not judged yet.
+   await page.waitForFunction((t)=>Date.now()>=t,downbeat+5*250+20);
+   const mid=await heads();const midCursor=await cursorX();
+   await page.screenshot({path:path.join(SHOTS,'rhythm-take-midway.png')});
+   expect(firstCursor).toHaveLength(1);expect(midCursor).toHaveLength(1);expect(midCursor[0]).toBeGreaterThan(firstCursor[0]);
+   // Two staves: each beat is two X heads at one x.
+   const byBeat=(list)=>{const xs=[...new Set(list.map(h=>h.x))].sort((a,b)=>a-b);return xs.map(x=>list.filter(h=>h.x===x).map(h=>h.cls));};
+   const midBeats=byBeat(mid);expect(midBeats).toHaveLength(8);
+   expect(midBeats.slice(0,3).flat()).toEqual(Array(6).fill('piano-note-verdict-hit'));
+   expect(midBeats[3]).toEqual(['piano-note-verdict-late','piano-note-verdict-late']);
+   expect(midBeats[4]).toEqual(['piano-note-verdict-unplayed','piano-note-verdict-unplayed']);
+   expect(midBeats.slice(6).flat()).toEqual([null,null,null,null]);
+   await take;
+   // The result: every head judged, with the same marks the timed steps carry (✓ ◂ ▸ ○).
+   await page.waitForFunction(()=>document.querySelectorAll('.piano-exercise-run__stage .piano-score-passage__drift').length>=16,null,{timeout:10000});
+   const done=byBeat(await heads());
+   expect(done.map(beat=>beat[0])).toEqual(['hit','hit','hit','late','unplayed','hit','hit','hit'].map(k=>`piano-note-verdict-${k}`));
+   const marks=await page.locator(`${stage} .piano-score-passage__drift`).evaluateAll(els=>els.map(el=>el.textContent));
+   expect(marks.filter(m=>m==='✓')).toHaveLength(12);expect(marks.filter(m=>m==='▸')).toHaveLength(2);expect(marks.filter(m=>m==='○')).toHaveLength(2);
+   // The judged colours are really painted on the X glyphs.
+   const fills=await page.locator(`${stage} .piano-note-verdict-hit .vf-notehead path`).evaluateAll(els=>[...new Set(els.map(el=>getComputedStyle(el).fill))]);
+   expect(fills).toEqual(['rgb(0, 150, 70)']);
+   await page.screenshot({path:path.join(SHOTS,'rhythm-take-result.png')});
    expect(errors).toEqual([]);
   }finally{await page.close();}
  },90000);

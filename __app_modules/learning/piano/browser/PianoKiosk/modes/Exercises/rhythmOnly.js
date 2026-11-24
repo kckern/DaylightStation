@@ -26,16 +26,48 @@ export function toRhythmExpectation(expectation, { minTapMs = RHYTHM_MIN_TAP_MS 
   const map = buildTempoMap(expectation.tempoMap);
   const events = [];
   let lastMs = -Infinity;
+  let lastTap = null;
   expectation.events.forEach((event, sourceIndex) => {
     const notes = (event.notes ?? []).filter((note) => !note.grace);
     if (!notes.length && event.notes?.length) return; // an event of grace notes only
+    const ink = { sourceIndex, midis: [...new Set(notes.map((note) => note.midi).filter(Number.isFinite))] };
     const at = msAtQuarter(map, Number(event.onsetQuarter) || 0);
-    if (notes.length && at - lastMs < minTapMs) return;
+    // Merged into the tap before it: its heads are judged with that tap.
+    if (notes.length && at - lastMs < minTapMs) { lastTap?.ink.push(ink); return; }
     if (notes.length) lastMs = at;
     const first = notes[0];
-    events.push({ ...event, sourceIndex, notes: first ? [{ ...first, id: `${first.id}:rhythm`, midi: RHYTHM_MIDI }] : [] });
+    // `ink`: every engraved head this tap stands for (the event's own, on every staff, and any merged into it),
+    // as source event index and the pitches the heads are drawn at, so the verdict lands on each of them.
+    const kept = { ...event, sourceIndex, ink: [ink], notes: first ? [{ ...first, id: `${first.id}:rhythm`, midi: RHYTHM_MIDI }] : [] };
+    if (notes.length) lastTap = kept;
+    events.push(kept);
   });
   return { ...expectation, events };
+}
+
+/**
+ * The rhythm take's verdicts (`assessmentVerdicts`: event index → midi → verdict, every tap on `RHYTHM_MIDI`)
+ * re-keyed onto the score as drawn: the source event index of each head the tap stands for, and the pitch that
+ * head is engraved at (B4/D3, not `RHYTHM_MIDI`). Without it the score's painter, which finds a head's verdict
+ * by its own pitch, finds none and the X noteheads never colour. Verdicts on other pitches (none, in practice:
+ * every key reads as `RHYTHM_MIDI`) pass through on the source event. Pure.
+ */
+export function rhythmScoreVerdicts(verdicts, events) {
+  if (!(verdicts instanceof Map) || !Array.isArray(events)) return verdicts;
+  const painted = new Map();
+  verdicts.forEach((byMidi, index) => {
+    const event = events[index];
+    if (!event) return;
+    const tap = byMidi.get(RHYTHM_MIDI);
+    const ink = event.ink ?? [{ sourceIndex: event.sourceIndex ?? index, midis: [] }];
+    ink.forEach(({ sourceIndex, midis }, n) => {
+      const heads = painted.get(sourceIndex) ?? new Map();
+      if (tap) for (const midi of midis) if (!heads.has(midi)) heads.set(midi, tap);
+      if (n === 0) byMidi.forEach((verdict, midi) => { if (midi !== RHYTHM_MIDI && !heads.has(midi)) heads.set(midi, verdict); });
+      if (heads.size) painted.set(sourceIndex, heads);
+    });
+  });
+  return painted;
 }
 
 /**
