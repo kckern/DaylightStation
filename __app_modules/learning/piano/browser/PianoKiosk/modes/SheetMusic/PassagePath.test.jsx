@@ -45,8 +45,9 @@ describe('PassagePath', () => {
     expect(tokens[2].querySelector('.piano-passage-path__play')).not.toBeNull();
     expect(tokens[2]).toHaveAccessibleName('Learn C, bars 9–12');
     expect(screen.getByText('Learn C')).toBeInTheDocument();
-    expect(within(screen.getByRole('list', { name: 'Goals for this piece' })).getAllByRole('listitem').map((item) => item.getAttribute('aria-label')))
-      .toEqual(['Piece played through: not yet', 'Polish open: not yet', 'Polish diamond: not yet']);
+    // The goal is one level ladder: the Bronze lap and its count, the later levels to come.
+    expect(screen.getByRole('group', { name: 'Levels for this piece: Bronze · 2 of 4' })).toHaveTextContent('Bronze · 2 of 4');
+    expect([...document.querySelectorAll('.piano-level-ladder__rungs li')].map((item) => item.dataset.state)).toEqual(['current', 'later', 'later']);
     expect(screen.queryByRole('button', { name: /^Practice/ })).toBeNull();
   });
 
@@ -147,9 +148,10 @@ describe('PassageBoard', () => {
     render(<PassageBoard title="Minuet in G" model={modelOf(four, 'p2')} gemOffered onClose={vi.fn()} />);
     const board = screen.getByRole('dialog', { name: 'Passage board' });
     expect(within(board).getByRole('heading', { name: 'Minuet in G' })).toBeInTheDocument();
-    const goals = within(board).getByRole('list', { name: 'Goals for this piece' });
-    expect(goals).toHaveTextContent('2/4earn a gem1/4earn a gem');
-    expect(within(goals).getByRole('listitem', { name: 'All Bronze: 2 of 4, earn a gem' })).toBeInTheDocument();
+    // One level ladder, the Bronze lap and its count; a Bronze lap pays no gem, so none is promised.
+    const ladder = within(board).getByRole('group', { name: 'Levels for this piece: Bronze · 2 of 4' });
+    expect(ladder).toHaveTextContent('Bronze · 2 of 4');
+    expect(within(board).queryByText(/earn a gem/)).not.toBeInTheDocument();
     const partway = within(board).getByRole('button', { name: 'C, bars 9–12, Partway, 2 of 4 steps' });
     expect(partway).toHaveTextContent('CBars 9–12');
     expect(partway.querySelector('svg.piano-letter-coin[data-state="learning"]')).not.toBeNull();
@@ -178,28 +180,27 @@ describe('PassageBoard', () => {
     expect(screen.getByRole('dialog', { name: 'Passage board' }).querySelector('.piano-passage-board__cards').style.gridTemplateColumns).toBe('repeat(6, minmax(0, 1fr))');
   });
 
-  it('promises a gem only when one is on offer, and marks a reached goal done', () => {
+  it('promises one gem, on the current level, only when one is on offer', () => {
     const silver = [segment(0, 'silver'), segment(1, 'silver')];
-    const { rerender } = render(<PassageBoard title="T" model={modelOf(silver, null)} onClose={vi.fn()} />);
-    expect(screen.getByRole('list', { name: 'Goals for this piece' })).toHaveTextContent('2/20/2');
-    expect(screen.getByRole('listitem', { name: 'All Bronze: done' })).toHaveAttribute('data-reached', 'true');
+    const lap = (segments) => railModel({ segments, projection: { ...projectionOf(segments, null), lap: 'silver', lapProgress: { done: 0, total: 1 },
+      piece: { ...projectionOf(segments, null).piece, joins: { total: 1, silver: 0, gold: 0 }, pieceSilver: false } } });
+    const { rerender } = render(<PassageBoard title="T" model={lap(silver)} onClose={vi.fn()} />);
+    expect(screen.getByRole('group', { name: 'Levels for this piece: Silver · 0 of 1' })).toBeInTheDocument();
     expect(screen.queryByText(/gem/)).not.toBeInTheDocument();
-    rerender(<PassageBoard title="T" model={modelOf(silver, null)} gemOffered onClose={vi.fn()} />);
-    expect(screen.getByRole('list', { name: 'Goals for this piece' })).toHaveTextContent('2/20/2earn a gem');
+    rerender(<PassageBoard title="T" model={lap(silver)} gemOffered onClose={vi.fn()} />);
+    expect(screen.getByRole('group', { name: 'Levels for this piece: Silver · 0 of 1, earn a gem' })).toBeInTheDocument();
+    expect(screen.getAllByText('earn a gem')).toHaveLength(1);
   });
 
-  it('shows the piece\'s Polish gem beside the counters, and the diamond in its place once earned', () => {
+  it('fills the Diamond once it is earned in Polish', () => {
     const gold = [segment(0, 'gold'), segment(1, 'gold')];
     const { rerender } = render(<PassageBoard title="T" model={modelOf(gold, null)} onClose={vi.fn()} />);
-    const goals = () => screen.getByRole('list', { name: 'Goals for this piece' });
-    expect(goals().querySelector('[data-level="polish"]')).toBeNull();
-    rerender(<PassageBoard title="T" model={modelOf(gold, null)} polish={{ gem: true, diamond: false }} onClose={vi.fn()} />);
-    const gem = within(goals()).getByRole('listitem', { name: 'Polish gem: earned' });
-    expect(gem).toHaveAttribute('data-stone', 'gem');
-    expect(goals().lastElementChild).toBe(gem);
-    rerender(<PassageBoard title="T" model={modelOf(gold, null)} polish={{ gem: true, diamond: true }} onClose={vi.fn()} />);
-    expect(within(goals()).getByRole('listitem', { name: 'Polish diamond: earned' })).toHaveAttribute('data-stone', 'diamond');
-    expect(goals().querySelectorAll('[data-level="polish"]')).toHaveLength(1);
+    const rungs = () => [...document.querySelectorAll('.piano-level-ladder__rungs li')].map((item) => `${item.dataset.level}:${item.dataset.state}`);
+    expect(rungs()).toEqual(['bronze:earned', 'gold:earned', 'diamond:current']);
+    expect(document.querySelector('.piano-level-ladder__rungs [data-level="diamond"] .gem-icon')).toBeNull();
+    rerender(<PassageBoard title="T" model={railModel({ segments: gold, projection: projectionOf(gold, null), polish: { gem: true, diamond: true } })} onClose={vi.fn()} />);
+    expect(rungs()).toEqual(['bronze:earned', 'gold:earned', 'diamond:earned']);
+    expect(screen.getByRole('group', { name: 'Levels for this piece: Diamond · earned' })).toBeInTheDocument();
   });
 
   it('selects from a card, reviews, and closes only by its control or Escape', () => {

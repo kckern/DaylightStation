@@ -172,11 +172,12 @@ describe('what comes next', () => {
   });
   it('recommended is null only when every passage and join has Silver', () => {
     const plan = planOf(); let state;
+    // Laps: every passage to Bronze first, then the joins.
     for (const id of ['one', 'two']) state = play(state, plan, task(plan, 'silver', id));
-    expect(view(plan, state).recommended.passageId).toBe('join:one:two');
-    state = play(state, plan, task(plan, 'silver', 'join:one:two'));
     expect(view(plan, state).recommended.passageId).toBe('solo');
-    for (const id of ['solo', 'join:one:solo']) state = play(state, plan, task(plan, 'silver', id));
+    state = play(state, plan, task(plan, 'silver', 'solo'));
+    expect(view(plan, state).recommended.passageId).toBe('join:one:two');
+    for (const id of ['join:one:two', 'join:one:solo']) state = play(state, plan, task(plan, 'silver', id));
     const done = view(plan, state);
     expect(done.recommended).toBeNull();
     expect(done.piece).toMatchObject({ total: 3, silver: 3, gold: 0, pieceSilver: true, nextPassageId: null, nextGoldPassageId: 'one' });

@@ -126,6 +126,27 @@ async function numbersOnInk(page,sel='.piano-learn-passage-map',scope=''){
   return out;},{sel,scope});
 }
 const INK='.musicxml-renderer__svg svg *:not(:has(*))';
+// The Learn path's row: every token's disc with its selection ring, its play disc and its bars caption sit inside the
+// row, and no caption runs under a disc or its ring (the owner's 2026-11-23 shot: the larger next "C" over "bars 9–12").
+async function pathOverlaps(page){
+ return page.evaluate(()=>{const nav=document.querySelector('.piano-passage-path').getBoundingClientRect();const out=[];
+  const inside=(b)=>b.top>=nav.top-0.5&&b.bottom<=nav.bottom+0.5&&b.left>=nav.left-0.5&&b.right<=nav.right+0.5;
+  const meet=(a,b)=>a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5;
+  const discs=[...document.querySelectorAll('.piano-passage-path__disc')].map(el=>{const b=el.getBoundingClientRect();const cs=getComputedStyle(el);
+   const ring=cs.outlineStyle==='none'?0:parseFloat(cs.outlineWidth)+parseFloat(cs.outlineOffset);return{text:el.textContent,box:{top:b.top-ring,bottom:b.bottom+ring,left:b.left-ring,right:b.right+ring}};});
+  for(const d of discs)if(!inside(d.box))out.push(`disc ${d.text} or its ring leaves the row`);
+  for(const el of document.querySelectorAll('.piano-passage-path__play'))if(!inside(el.getBoundingClientRect()))out.push('play disc leaves the row');
+  for(const el of document.querySelectorAll('.piano-passage-path__bars')){if(!el.textContent)continue;const b=el.getBoundingClientRect();
+   if(!inside(b))out.push(`caption ${el.textContent} leaves the row`);
+   for(const d of discs)if(meet(b,d.box))out.push(`caption ${el.textContent} under disc ${d.text}`);}
+  const ladder=document.querySelector('.piano-passage-path .piano-level-ladder');if(ladder&&!inside(ladder.getBoundingClientRect()))out.push('ladder leaves the row');
+  for(const el of document.querySelectorAll('.piano-passage-path .piano-level-ladder__rungs li[data-state="current"]')){const b=el.getBoundingClientRect();if(!inside({top:b.top-5,bottom:b.bottom+5,left:b.left-5,right:b.right+5}))out.push('ladder ring leaves the row');}
+  return out;});
+}
+// The Gold lap's steps are drawn only once a passage is Bronze (laps, 2026-11-23 night). A clean hints-off take of the
+// passage's four bars earns it: each position right hand, both, left hand, all up.
+const PITCH={C:0,D:2,E:4,F:5,G:7,A:9,B:11};const midiOf=([step,octave])=>12*(octave+1)+PITCH[step];
+const cleanFrames=(first)=>Array.from({length:4},(_,k)=>first+k).flatMap((m)=>rh(m).map((r,i)=>[midiOf(r),midiOf(lh(m)[i])])).flatMap(([r,l])=>[[r],[r,l],[l],[]]);
 describe('the extras drawn on the engraving stay whole',()=>{
  it('Learn score view: passage numbers, the passage box and the ink are never cut by the page or the paper, and no number sits on the music',async()=>{
   const{page,errors}=await open();try{
@@ -143,8 +164,12 @@ describe('the extras drawn on the engraving stay whole',()=>{
    for(const seen of pages){expect(seen.numbers).toEqual([]);expect(seen.ink).toEqual([]);expect(seen.onInk).toEqual([]);}
    // Every passage number is shown whole on some page.
    expect(new Set(pages.flatMap(seen=>seen.shown))).toEqual(new Set(['A','B','C','D','E','F'])); // the path's letters, on the score too
+   // The path's row holds its larger next token, the caption under it and the ladder whole.
+   expect(await pathOverlaps(page)).toEqual([]);
    // The last passage chosen on the path: its box holds the low ledger note, its badge ring is whole.
    await page.locator('.piano-passage-path__token').nth(5).click();await page.waitForTimeout(900);
+   // A selected token (ringed) beside the larger next one: still whole, captions clear of both.
+   expect(await pathOverlaps(page)).toEqual([]);
    await page.screenshot({path:path.join(ARTIFACTS,'learn-score-focus-last.png')});
    expect(await partlyClipped(page,'.piano-learn-selection-box, .piano-learn-selection-outline, .piano-learn-passage-map',5)).toEqual([]);
    const lowNote=await page.evaluate(()=>{const box=document.querySelector('.piano-learn-selection-box').getBoundingClientRect();
@@ -161,13 +186,29 @@ describe('the extras drawn on the engraving stay whole',()=>{
    await page.locator('.piano-passage-path__token').nth(tile).click({timeout:30000});
    await page.locator('.piano-passage-path__token[data-target]').click({timeout:30000});
    await page.locator('.piano-exercise-run[data-armed="true"]').waitFor({timeout:15000});await page.waitForTimeout(800);
+   // The drill screen's path: the open unit is selected (ringed) and, on the first passage, also the larger next token.
+   expect(await pathOverlaps(page)).toEqual([]);
+   // The step strip is headed by the open unit's own token, and shows only its lap's steps.
+   expect(await page.locator('.drill-progress__head').getAttribute('aria-label')).toBe(`${tile ? 'F' : 'A'}, steps to Bronze`);
+   expect(await page.locator('button.drill-cluster').count()).toBe(4);
    for(const [step,task] of [['own','Play it on your own'],['timed','Play at score tempo']]){
+    if(step==='timed'){
+     // Earn the passage's Bronze on its check, come back to it from the path (it opens on the Gold lap), then pick score tempo.
+     await page.evaluate(()=>window.__hold([]));await page.getByRole('button',{name:'Start over',exact:true}).click();await page.locator('.piano-exercise-run[data-armed="true"]').waitFor({timeout:15000});await page.waitForTimeout(600);
+     await page.evaluate(async(list)=>{for(const frame of list){window.__hold(frame);await new Promise(r=>setTimeout(r,70));}},cleanFrames(tile*4+1));
+     await page.locator('.gate-ceremony').filter({has:page.locator('.gate-ceremony__word',{hasText:'Bronze!'})}).waitFor({timeout:15000});
+     await page.locator('.gate-ceremony').waitFor({state:'detached',timeout:20000});
+     await page.locator('.piano-passage-path__token').nth(tile).click({timeout:30000});
+     await page.locator('.piano-learn-lab__task').filter({hasText:'Tap the rhythm'}).waitFor({timeout:15000});
+     await page.locator('.piano-exercise-run[data-armed="true"]').waitFor({timeout:15000});await page.waitForTimeout(600);
+    }
     await page.locator('button.drill-cluster').and(page.getByRole('button',{name:task,exact:true})).click();await page.locator('.piano-learn-lab__task').filter({hasText:task}).waitFor();
     await page.locator('.piano-exercise-run[data-armed="true"]').waitFor({timeout:15000});await page.waitForTimeout(800);
     // A held chord lights the live ink; on the timed step a key arms the count-in band.
     if(step==='timed'){await page.evaluate(async()=>{window.__hold([72]);await new Promise(r=>setTimeout(r,60));window.__hold([]);});await page.locator('.piano-learn-countin').waitFor();await page.waitForTimeout(300);}
     else await page.evaluate(async()=>{window.__hold([60,48]);await new Promise(r=>setTimeout(r,300));});
     await page.screenshot({path:path.join(ARTIFACTS,`drill-${name}-${step}.png`)});
+    if(step==='timed'){expect(await page.locator('.drill-progress__head').getAttribute('aria-label')).toBe(`${tile ? 'F' : 'A'}, steps to Gold`);expect(await pathOverlaps(page)).toEqual([]);}
     expect(await partlyClipped(page,'.piano-exercise-run__stage '+INK)).toEqual([]);
     expect(await partlyClipped(page,'.piano-exercise-run__stage *:not(svg *), .piano-exercise-run__beat')).toEqual([]);
     expect(await numbersOnInk(page,'.piano-learn-countin','.piano-exercise-run__stage ')).toEqual([]);

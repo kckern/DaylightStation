@@ -222,6 +222,26 @@ describe('the progress strip at 1280x800', () => {
     await page.close();
   });
 
+  it('draws the ring round the next passage whole: inside its cell, never cut by the card', async () => {
+    const { page, errors } = await open(['ada', 'ben', 'eve', 'gus']);
+    const rings = await page.evaluate(() => [...document.querySelectorAll('.piano-desk__map i[data-current]')].map((cell) => {
+      const r = cell.getBoundingClientRect(); const coin = cell.querySelector('svg').getBoundingClientRect();
+      const cut = [];
+      for (let a = cell.parentElement; a && a !== document.documentElement; a = a.parentElement) {
+        const cs = getComputedStyle(a);
+        if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
+        const c = a.getBoundingClientRect();
+        if (r.top < c.top - 0.5 || r.bottom > c.bottom + 0.5 || r.left < c.left - 0.5 || r.right > c.right + 0.5) cut.push(String(a.className));
+      }
+      return { inset: getComputedStyle(cell).boxShadow.includes('inset'), cut, coinInside: coin.top >= r.top + 2 && coin.bottom <= r.bottom - 2 && coin.left >= r.left + 2 && coin.right <= r.right - 2 };
+    }));
+    expect(rings.length).toBeGreaterThan(0);
+    for (const ring of rings) expect(ring).toEqual({ inset: true, cut: [], coinInside: true });
+    await shot(page, 'next-passage-ring');
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
   it('fits two children', async () => {
     const { page, errors } = await open(['ada', 'cleo']);
     expect(await spills(page)).toEqual([]);

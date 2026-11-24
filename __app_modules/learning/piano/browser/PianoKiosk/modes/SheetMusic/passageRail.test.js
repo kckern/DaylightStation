@@ -40,23 +40,37 @@ describe('the path', () => {
     expect(rail).toMatchObject({ caption: 'Learn A', target: { passageId: 'm0-3', kind: 'next' }, nextId: 'm0-3', selectedId: null, lap: 'silver' });
     expect(rail.tokens[0].aria).toBe('Learn A, bars 1–4');
     expect(rail.tokens[1].aria).toBe('B, bars 5–8, Not started');
-    expect(rail.marks).toEqual([{ level: 'silver', label: 'Piece played through', reached: false }, { level: 'gold', label: 'Polish open', reached: false },
-      { level: 'diamond', label: 'Polish diamond', reached: false }]);
+    expect(rail.ladder).toMatchObject({ current: 'bronze', text: 'Bronze · 0 of 6', gemLevel: false });
+    expect(rail.ladder.levels.map((item) => `${item.level}:${item.state}`)).toEqual(['bronze:current', 'silver:later', 'gold:later', 'diamond:later']);
   });
 
-  it('hides a join until both halves are Bronze, then shows only the next one as a socket', () => {
+  it('offers no join until every passage is Bronze (the Bronze lap), then only the next one as a socket', () => {
     const plan = planOf(6);
     // A alone: no join yet, B is next.
     expect(path(model(plan, bronze(plan, null, ['m0-3'])))).toBe('A:silver B:todo*> C:todo D:todo E:todo F:todo');
-    // A and B: the A+B socket sits between them, and it is next.
+    // A and B: still the Bronze lap. C is next and no join is offered.
     const ab = model(plan, bronze(plan, null, ['m0-3', 'm4-7']));
-    expect(path(ab)).toBe('A:silver A+B:socket*> B:silver C:todo D:todo E:todo F:todo');
-    expect(links(ab)).toEqual(['socket', 'socket', 'plain', 'plain', 'plain', 'plain']);
-    expect(ab).toMatchObject({ caption: 'Play A and B together', target: { passageId: 'join:m0-3:m4-7', kind: 'next' } });
-    expect(ab.tokens[1]).toMatchObject({ kind: 'socket', aria: 'Play A and B together, bars 1–8', label: 'A+B, bars 1–8, not played through yet' });
-    // Every passage Bronze: still one socket, never a second.
+    expect(path(ab)).toBe('A:silver B:silver C:todo*> D:todo E:todo F:todo');
+    expect(ab.ladder.text).toBe('Bronze · 2 of 6');
+    // Every passage Bronze: the Silver lap opens on A+B, one socket, never a second.
     const all = model(plan, bronze(plan, null, ['m0-3', 'm4-7', 'm8-11', 'm12-15', 'm16-19', 'm20-23']));
+    expect(path(all)).toBe('A:silver A+B:socket*> B:silver C:silver D:silver E:silver F:silver');
+    expect(links(all)).toEqual(['socket', 'socket', 'plain', 'plain', 'plain', 'plain']);
+    expect(all).toMatchObject({ caption: 'Play A and B together', target: { passageId: 'join:m0-3:m4-7', kind: 'next' } });
+    expect(all.tokens[1]).toMatchObject({ kind: 'socket', aria: 'Play A and B together, bars 1–8', label: 'A+B, bars 1–8, not played through yet' });
     expect(all.tokens.filter((token) => token.kind === 'socket')).toHaveLength(1);
+    expect(all.ladder).toMatchObject({ current: 'silver', text: 'Silver · 0 of 5', gemLevel: true });
+    expect(all.ladder.levels.map((item) => item.state)).toEqual(['earned', 'current', 'later', 'later']);
+  });
+
+  it('keeps a backfilled join (A–B Silver while C is untouched) folded and recommends C, with no socket', () => {
+    const plan = planOf(3);
+    let state = bronze(plan, null, ['m0-3', 'm4-7']);
+    state = earn(plan, state, 'join:m0-3:m4-7', 'silver', 'j');
+    const rail = model(plan, state);
+    expect(path(rail)).toBe('A–B:joined C:todo*>');
+    expect(rail.caption).toBe('Learn C');
+    expect(rail.ladder.text).toBe('Bronze · 2 of 3');
   });
 
   it('folds an earned join into one silver coin named for its span, and climbs the tree', () => {
@@ -67,11 +81,15 @@ describe('the path', () => {
     expect(path(rail)).toBe('A–B:joined C:silver C+D:socket*> D:silver E:silver F:silver');
     state = earn(plan, state, 'join:m8-11:m12-15', 'silver', 'j2');
     rail = model(plan, state);
-    // A higher join's socket is named for its span; its halves are the two silver coins.
-    expect(path(rail)).toBe('A–B:joined A–D:socket*> C–D:joined E:silver F:silver');
-    expect(rail.caption).toBe('Play A–B and C–D together');
-    state = earn(plan, state, 'join:m0-3:m12-15', 'silver', 'j3');
+    // The lowest level first: E+F before A–D.
+    expect(path(rail)).toBe('A–B:joined C–D:joined E:silver E+F:socket*> F:silver');
     state = earn(plan, state, 'join:m16-19:m20-23', 'silver', 'j4');
+    rail = model(plan, state);
+    // A higher join's socket is named for its span; its halves are the two silver coins.
+    expect(path(rail)).toBe('A–B:joined A–D:socket*> C–D:joined E–F:joined');
+    expect(rail.caption).toBe('Play A–B and C–D together');
+    expect(rail.ladder.text).toBe('Silver · 3 of 5');
+    state = earn(plan, state, 'join:m0-3:m12-15', 'silver', 'j3');
     rail = model(plan, state);
     expect(path(rail)).toBe('A–D:joined All:socket*> E–F:joined');
     expect(rail.caption).toBe('Play it all');
@@ -87,14 +105,16 @@ describe('the path', () => {
     expect(path(rail)).toBe('A:silver*> B:silver');
     expect(links(rail)).toEqual(['joined']);
     expect(rail).toMatchObject({ caption: 'A in time', target: { passageId: 'm0-3', kind: 'gold' } });
-    expect(rail.marks[0]).toMatchObject({ level: 'silver', reached: true });
+    expect(rail.ladder).toMatchObject({ current: 'gold', text: 'Gold · 0 of 2' });
     // While a join's Silver lands the host holds the Silver drawing: the whole piece is one coin.
     expect(path(model(plan, state, 'join:m0-3:m4-7', { lap: 'silver' }))).toBe('A–B:joined*>');
     for (const [passage, ids] of [['m0-3', ['c', 'd']], ['m4-7', ['e', 'f']]]) for (const id of ids) state = earn(plan, state, passage, 'mastery', id);
     const gold = model(plan, state, null, { polish: { gem: true, diamond: true } });
     expect(path(gold)).toBe('A:gold> B:gold');
     expect(gold).toMatchObject({ caption: 'Play A again', target: { kind: 'again' } });
-    expect(gold.marks.map((mark) => mark.reached)).toEqual([true, true, true]);
+    expect(gold.ladder).toMatchObject({ current: 'diamond', text: 'Diamond · earned' });
+    expect(gold.ladder.levels.map((item) => item.state)).toEqual(['earned', 'earned', 'earned', 'earned']);
+    expect(model(plan, state).ladder).toMatchObject({ current: 'diamond', text: 'Diamond · in Polish' });
   });
 
   it('moves the play disc to a selected token and keeps the next one larger', () => {
@@ -114,8 +134,8 @@ describe('the path', () => {
     const rail = model(plan, state);
     expect(path(rail)).toBe('A:silver*>');
     expect(rail.cards).toHaveLength(1);
-    expect(rail.goals.map((goal) => goal.level)).toEqual(['silver', 'gold']);
-    expect(rail.marks[0].reached).toBe(true);
+    // No Silver rung: the one passage's Bronze is the piece played through.
+    expect(rail.ladder.levels.map((item) => `${item.level}:${item.state}`)).toEqual(['bronze:earned', 'gold:current', 'diamond:later']);
   });
 
   it('puts every passage, every join played through and the socket on the board, in play order', () => {

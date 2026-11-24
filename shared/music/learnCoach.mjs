@@ -435,12 +435,28 @@ export function projectCoach({ plan, state, legacy = {}, dayKey }) {
   const isJoin = (segment) => segment.kind === 'join';
   const passages = segments.filter((segment) => !isJoin(segment));
   const silverIds = new Set(passages.filter((segment) => segment.certification.silver).map((segment) => segment.id));
-  // A join is offered only once every passage under it has its first (Bronze) certificate.
+  // A join can be played once every passage under it has its first (Bronze) certificate.
   const eligible = (segment) => !isJoin(segment) || segment.memberPassages.every((id) => silverIds.has(id));
-  const open = segments.filter((segment) => !segment.certification.silver && eligible(segment));
+  const available = segments.filter((segment) => !segment.certification.silver && eligible(segment));
+  // LAPS (2026-11-23 night): Bronze on every passage, then the Silver lap over the joins lowest level first
+  // (A+B, C+D … then A–D … the whole piece last), then the Gold lap (passages, then the joins below the top),
+  // then Diamond (Polish). Only the recommendation follows the laps: any unit can still be chosen and records.
+  const level = new Map();
+  for (const segment of segments) if (isJoin(segment)) level.set(segment.id, 1 + Math.max(0, ...segment.members.map((id) => level.get(id) ?? 0)));
+  const joinLap = segments.filter(isJoin).sort((a, b) => level.get(a.id) - level.get(b.id) || a.inMeasure - b.inMeasure);
+  const goldLap = [...passages, ...joinLap.filter((segment) => !segment.final)].filter((segment) => segment.skills.some((task) => task.track === 'gold'));
+  const finalUnit = segments.find((segment) => segment.final) ?? (passages.length === 1 ? passages[0] : null);
+  const pieceSilver = Boolean(finalUnit?.certification.silver);
+  const lap = passages.some((segment) => !segment.certification.silver) ? 'bronze'
+    : !pieceSilver && joinLap.length > 0 ? 'silver' : goldLap.some((segment) => !segment.certification.gold) ? 'gold' : 'diamond';
+  const lapUnits = lap === 'bronze' ? passages : lap === 'silver' ? joinLap : lap === 'gold' ? goldLap : [];
+  const lapProgress = lap === 'diamond' ? { done: 0, total: 1 }
+    : { done: lapUnits.filter((segment) => (lap === 'gold' ? segment.certification.gold : segment.certification.silver)).length, total: lapUnits.length };
+  const open = lap === 'bronze' || lap === 'silver' ? lapUnits.filter((segment) => !segment.certification.silver && eligible(segment)) : [];
   const resume = liveResume(plan, segments, current.resume);
+  // A drill continues the take that was missed, on whatever unit the child chose.
   const drill = resume && resume.depth > 0 && !isGoldWork(resume)
-    && open.some((segment) => segment.id === resume.passageId) && !setAsideToday(resume.passageId) ? resume : null;
+    && available.some((segment) => segment.id === resume.passageId) && !setAsideToday(resume.passageId) ? resume : null;
   // Test out first: a unit nobody has touched opens on its hints-off check; once a take, a count
   // or any ready step exists (or the check was missed), it walks the hands first.
   const touched = (segment) => segment.skills.some((task) => task.track === 'silver' && task.assist !== 'none' && task.ready)
@@ -463,7 +479,8 @@ export function projectCoach({ plan, state, legacy = {}, dayKey }) {
     }
     return segment.skills.find((task) => task.track === 'gold' && !task.ready) ?? null;
   });
-  return { segments, recommended, review, state: current,
+  const nextGold = pieceSilver ? goldLap.find((segment) => !segment.certification.gold && (!isJoin(segment) || goldMap[segment.id])) ?? null : null;
+  return { segments, recommended, review, state: current, lap, lapProgress,
     goldResume: ((task) => ((current.ladder ?? 1) < LADDER_REVISION && bypassesUntriedGoldStep(segments, current, task) ? null : task))(liveResume(plan, segments, current.goldResume)),
     gold: goldMap,
     certifications: by((segment) => segment.certification),
@@ -477,10 +494,10 @@ export function projectCoach({ plan, state, legacy = {}, dayKey }) {
         gold: segments.filter((segment) => isJoin(segment) && segment.certification.gold).length },
       // Polish (the final join played in time) opens when every passage and every join below the top is Gold.
       polishReady: passages.length > 0 && segments.filter((segment) => !segment.final).every((segment) => Boolean(segment.certification.gold)),
-      pieceSilver: Boolean((segments.find((segment) => segment.final) ?? (passages.length === 1 ? passages[0] : null))?.certification.silver),
+      pieceSilver,
       nextPassageId: open.find((segment) => !isJoin(segment))?.id ?? null,
-      nextGoldPassageId: (passages.find((segment) => !segment.certification.gold && segment.skills.some((task) => task.track === 'gold'))
-        ?? segments.find((segment) => isJoin(segment) && !segment.final && !segment.certification.gold && goldMap[segment.id]))?.id ?? null },
+      // The Gold lap's next unit, in lap order (passages, then the joins below the top); none before piece Silver.
+      nextGoldPassageId: nextGold?.id ?? null },
     retainedLegacy: { passages: legacy.learn?.passages ?? {}, compatible: compatibleLegacy === legacy } };
 }
 

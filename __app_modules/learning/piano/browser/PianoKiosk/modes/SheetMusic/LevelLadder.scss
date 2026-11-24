@@ -1,0 +1,29 @@
+// The one level ladder (Bronze → Silver → Gold → Diamond) on the Learn path and the passage board.
+// Earned: the coin. Current: its outline in its metal, ringed in the neutral ink. Later: a muted outline.
+// Opacity never shows state.
+.piano-level-ladder {
+  --rung: 1.9rem;
+  display: flex; flex-direction: column; align-items: center; gap: 0.35rem; min-width: 0;
+  color: var(--piano-fg);
+
+  &__rungs {
+    list-style: none; margin: 0; padding: 5px 0; display: flex; align-items: center; gap: 0.55rem;
+    li { position: relative; display: grid; width: var(--rung); height: var(--rung); color: var(--piano-muted); }
+    li[data-state='current'] { margin: 0 5px; }
+    li[data-state='current'][data-level='bronze'] { color: #cd7f32; }
+    li[data-state='current'][data-level='silver'] { color: var(--piano-silver); }
+    li[data-state='current'][data-level='gold'] { color: var(--piano-gold); }
+    li[data-state='current'][data-level='diamond'] { color: var(--piano-diamond); }
+    // The ring around the lap the child is on. The rungs' padding and margin hold it, so no row cuts it.
+    li[data-state='current']::after {
+      content: ''; position: absolute; inset: -5px; border-radius: 50%; border: 3px solid var(--piano-fg);
+    }
+    li svg { width: 100%; height: 100%; }
+  }
+  &__count {
+    margin: 0; display: flex; align-items: baseline; gap: 0.5rem; white-space: nowrap;
+    font-size: 0.95rem; line-height: 1.15; font-variant-numeric: tabular-nums;
+    strong { font-weight: 800; }
+    span { font-size: 0.85rem; font-weight: 700; color: var(--piano-muted); }
+  }
+}
