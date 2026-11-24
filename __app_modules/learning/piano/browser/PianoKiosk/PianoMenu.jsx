@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
 import { gamesDisabledFor } from './gameAccessPolicy.js';
+import { coursesDisabledFor } from './courseAccessPolicy.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
 import { usePianoUser } from './PianoUserContext.jsx';
 import PianoTile from './PianoTile.jsx';
@@ -79,6 +80,8 @@ export function PianoMenu() {
   // another reads as a fault to a child, and invites the hunt for the way back
   // that a plain "not for you" ends.
   const gamesOff = gamesDisabledFor(config.gameAccess, currentUser);
+  // Same rule for the video courses (courseAccessPolicy.js): present, disabled, "not for you".
+  const coursesOff = coursesDisabledFor(config.courseAccess, currentUser);
   const gated = lessonGate.gated;
   const lessonOnly = gated && (curfew || Boolean(lessonGate.challenge));
   const curfewLessonOpen = curfew && gated;
@@ -124,6 +127,7 @@ export function PianoMenu() {
   const desk = (
     <PianoHomeDesk
       disabled={curfew || pending}
+      courseAccess={config.courseAccess}
       onOpenPassage={openPassage}
       onOpenCourse={(userId, courseId, lessonId) => {
         if (userId) setCurrentUser(userId);
@@ -171,7 +175,7 @@ export function PianoMenu() {
           {desk}
           <ul className="piano-menu__tiles" style={{ '--tile-cols': cols }}>
             {PIANO_MODES.map((m) => {
-              const gamesOffTile = m.id === 'games' && gamesOff;
+              const gamesOffTile = (m.id === 'games' && gamesOff) || (m.id === 'videos' && coursesOff);
               // The early pass: a school-locked tile stays live while today's
               // pass cap is unused, affordable or not, so the child reaches
               // the lock (its progress line and Print button) and, with the

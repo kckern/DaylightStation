@@ -11,6 +11,7 @@ import GemIcon from '../../../../../../frontend/src/lib/icons/GemIcon.jsx';
 import { polishStone } from '../modes/SheetMusic/polishAwards.js';
 import { cardBadge, coinLayout, lessonNumber, lessonTitle, nextSkill, nextStep, passageFaded, pieceLabel, scoreHeading, shownCard, stripGroups, piecePolishing, swipeTarget } from './deskModel.js';
 import useCardSwipe from './useCardSwipe.js';
+import { coursesDisabledFor } from '../courseAccessPolicy.js';
 import './PianoHomeDesk.scss';
 
 const players = (response) => (Array.isArray(response?.players) ? response.players : []);
@@ -227,7 +228,7 @@ function ChildPanel({ group, card, disabled, onChoose, onSwipe, onOpen }) {
  * height whether or not it has cards, so the menu below never moves. The cards
  * share its width: it never scrolls, and a card is never cut off at its edge.
  */
-export default function PianoHomeDesk({ disabled, onOpenPassage, onOpenCourse }) {
+export default function PianoHomeDesk({ disabled, onOpenPassage, onOpenCourse, courseAccess = null }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-desk' }), []);
   const { data: pieces } = usePianoList('api/v1/piano/activity/desk', players, { alwaysRevalidate: true });
   const { data: courses } = usePianoList('api/v1/piano/activity/recent', players);
@@ -236,7 +237,10 @@ export default function PianoHomeDesk({ disabled, onOpenPassage, onOpenCourse })
   const children = new Set((users ?? []).filter((user) => user.schoolLearner === true).map((user) => user.id));
   // Both lists or neither: cards that arrived in two waves would reflow the strip.
   const loaded = pieces !== null && courses !== null;
-  const groups = loaded ? stripGroups({ pieces, courses }).filter((group) => children.has(group.userId)) : [];
+  // A child the video courses are switched off for (courseAccess) keeps the
+  // piece card and loses the course card; with no piece, no panel.
+  const shownCourses = (courses ?? []).filter((course) => !coursesDisabledFor(courseAccess, course?.userId));
+  const groups = loaded ? stripGroups({ pieces, courses: shownCourses }).filter((group) => children.has(group.userId)) : [];
   // The card each child last switched to, for as long as the strip is mounted.
   const [chosen, setChosen] = useState({});
   const shown = groups.map((group) => ({ group, card: shownCard(group, chosen[group.userId]) }));

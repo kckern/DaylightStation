@@ -23,6 +23,7 @@ import LessonDrill from './LessonDrill.jsx';
 import { buildWatchLogPayload } from './watchLog.js';
 import { DaylightAPI } from '../../../../../../../frontend/src/lib/api.mjs';
 import LessonReopenCard from './LessonReopenCard.jsx';
+import { coursesDisabledFor } from '../../courseAccessPolicy.js';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -55,6 +56,24 @@ export function Videos({ source, PlayerComponent }) {
   // defaults to the standard PianoVideoPlayer.
   const videos = source ?? config.videos;
   const groups = useMemo(() => resolveCourseGroups(videos), [videos]);
+  const { currentUser } = usePianoUser();
+  // Courses only: Playalong and Singalong pass their own `source` and stay open.
+  // Checked above the routes, so the deep links that skip the grid (checkpoint
+  // `return`, DoNow push, history, reload) meet it too; a hidden tile alone is
+  // not a policy (courseAccessPolicy.js).
+  const coursesOff = !source && coursesDisabledFor(config.courseAccess, currentUser ?? null);
+  const logger = useMemo(() => getLogger().child({ component: 'piano-videos' }), []);
+  useEffect(() => {
+    if (coursesOff) logger.info('piano.videos.courses-off', { learnerId: currentUser ?? null });
+  }, [coursesOff, currentUser, logger]);
+  if (coursesOff) {
+    return (
+      <section className="piano-mode__placeholder piano-games__school-lock" role="status">
+        <h2>Courses are off</h2>
+        <p>Video courses are not part of this player’s piano.</p>
+      </section>
+    );
+  }
   return (
     <Routes>
       <Route index element={<CourseGridRoute groups={groups} />} />

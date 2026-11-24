@@ -94,6 +94,8 @@ export const PIANO_CONFIG_DEFAULTS = {
   // Players who are not offered games AT ALL. Not locked pending schoolwork,
   // not gated behind a challenge — not offered. Empty means everyone may.
   gameAccess: { disabledFor: [] },
+  // Players who are not offered the video courses at all (courseAccessPolicy.js).
+  courseAccess: { disabledFor: [] },
   // Managed board vocabulary and its daily/per-turn pressure. Independent of
   // opponent strength and of the PianoChallenge ladder; off unless configured.
   gameAddressing: { enabled: false },
@@ -241,6 +243,7 @@ export function resolvePianoConfig(raw, pianoId, context = {}) {
     gameLimit: { ...PIANO_CONFIG_DEFAULTS.gameLimit, ...(shared.gameLimit || {}), ...(p.gameLimit || {}) },
     gameGate: { ...PIANO_CONFIG_DEFAULTS.gameGate, ...(shared.gameGate || {}), ...(p.gameGate || {}) },
     gameAccess: { ...PIANO_CONFIG_DEFAULTS.gameAccess, ...(shared.gameAccess || {}), ...(p.gameAccess || {}) },
+    courseAccess: { ...PIANO_CONFIG_DEFAULTS.courseAccess, ...(shared.courseAccess || {}), ...(p.courseAccess || {}) },
     gameAddressing: {
       ...PIANO_CONFIG_DEFAULTS.gameAddressing,
       ...(shared.gameAddressing || {}),
