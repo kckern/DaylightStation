@@ -525,8 +525,10 @@ for every device.
   placeholders until that finishes (about 40 seconds with 110 playlists).
 - **Seen on the Desktop Head Unit** (build 80): resume on connect, the last-item
   fallback, the grid with pictures and second lines, the rail after the process was
-  killed. Not seen: a real car, the grid's size on a larger screen, the pin for the
-  Google app (`media.controllerPins`), which the log refuses until it is added.
+  killed. Not seen: a real car, the grid's size on a larger screen, or a voice search
+  accepted through the Google app. Its certificate is pinned in `media.controllerPins`
+  (build 81); the digest comes from `apksigner verify --print-certs` on the installed
+  Google app, and matches the `refused media controller` line it used to log.
 
 ### Only household media plays
 
