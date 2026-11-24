@@ -231,3 +231,37 @@ test('the desk applies the Gold ladder floor from the tempo the coach summary ca
   // An older summary without a tempo keeps the configured speeds.
   assert.deepEqual(gold(null), ['rhythm', 'timed-50-rh', 'timed-50-lh', 'timed-50', 'timed-70', 'timed-85', 'mastery']);
 });
+
+test('forPlayer lists every piece with real progress, newest first, each projected like the strip', () => {
+  const ids = ['files:docs/sheet-music/a.mxl', 'files:docs/sheet-music/b.mxl', 'files:docs/sheet-music/c.mxl', 'files:docs/sheet-music/browsed.mxl'];
+  const entry = (id, updatedAt, passages) => ({ scoreKey: practiceKeyOfScore(id), record: record({ updatedAt, learn: { segments, passages } }) });
+  const earned = { 'm0-4': { rungs: { right: { passCount: 6 } } } };
+  const entries = [
+    entry(ids[0], '2026-11-01T00:00:00Z', earned),
+    entry(ids[1], '2026-11-10T00:00:00Z', { 'm0-4': { complete: true } }),
+    entry(ids[2], '2026-11-05T00:00:00Z', earned),
+    entry(ids[3], '2026-11-20T00:00:00Z', {}),
+  ];
+  const pieceLog = { list: () => [{ scoreId: ids[1], level: 'polish-gem' }] };
+  const desk = deskFor({ a: entries, b: [] }, { ids, pieceLog });
+  const player = desk.forPlayer('a');
+  assert.equal(player.name, 'A');
+  // The browsed piece is not offered; the rest come newest first.
+  assert.deepEqual(player.pieces.map((p) => p.scoreId), [ids[1], ids[2], ids[0]]);
+  assert.deepEqual({ total: player.pieces[0].total, silver: player.pieces[0].silver }, { total: 3, silver: 1 });
+  assert.deepEqual(player.pieces[0].polish, { gem: true, diamond: false });
+  // The first is exactly the piece the home strip shows.
+  assert.deepEqual(player.pieces[0], desk.execute().players.find((p) => p.userId === 'a').piece);
+  assert.deepEqual(desk.forPlayer('b').pieces, []);
+  assert.equal(desk.forPlayer('stranger'), null);
+});
+
+test('forPlayer offers a score once when two records name it', () => {
+  const state = (at) => ({ version: 1, scoreId: SCORE, fingerprint: 'c', revision: 1, achievements: {}, counts: {}, reviews: {}, resume: null,
+    evidence: [{ id: 'e', at, task: { passageId: 'm0-4', mode: 'free', key: 'k' }, passedCredits: [], eligible: [] }] });
+  const earned = { 'm0-4': { rungs: { right: { passCount: 6 } } } };
+  const newer = { scoreKey: KEY, record: record({ learnCoach: state('2026-11-17T00:00:00Z'), learn: { segments, passages: earned } }) };
+  const older = { scoreKey: 'old-key', record: record({ learnCoach: state('2026-11-02T00:00:00Z'), learn: { segments, passages: earned } }) };
+  const { pieces } = deskFor({ a: [older, newer] }).forPlayer('a');
+  assert.deepEqual(pieces.map((p) => [p.scoreId, p.practicedAt]), [[SCORE, '2026-11-17T00:00:00Z']]);
+});

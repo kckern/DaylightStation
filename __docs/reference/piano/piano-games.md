@@ -228,7 +228,14 @@ settings (passed through as `gameConfig`); it no longer decides what exists.
 **There is no `activation:` config any more.** The old per-game
 `activation.notes` / `window_ms` blocks are gone; nothing reads them.
 
-**Adding a tenth released game** overflows the nine keys. `buildLauncherSlots`
+**Practice entries.** A registry entry with `practice: true` (today only `'sheet-music'`, last, on
+D5) is not a game: it stays on the launcher when games are off for the player or locked by school,
+and the tablet's Games picker leaves it out (the tablet has its own Sheet Music mode). With games off
+or locked the launcher draws every key in its place, the games greyed under a lock with one line
+saying why, and only practice keys answer; the full-screen "Games are off / locked" panel appears
+only when nothing is left to offer. See `sheet-music-player.md`, Office screen.
+
+**Adding a tenth released game** overflows the nine keys (all nine are in use since Sheet Music). `buildLauncherSlots`
 drops the excess and logs `launcher.slots-overflow` (warn) naming what it
 dropped — it never truncates silently. Widen `LAUNCHER_NOTES` in
 `game-platform/launcher/launcherNotes.js` when that day comes.

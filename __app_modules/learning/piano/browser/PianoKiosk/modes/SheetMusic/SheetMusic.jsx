@@ -10,6 +10,7 @@ import ScoreViewer from './ScoreViewer.jsx';
 import ScorePlayer from './ScorePlayer.jsx';
 import { resolveScoreGroups } from './scoreGroups.js';
 import { isNotationId, collectionListPath, useScoreImage, scoreViewPath } from './sheetMusicModel.js';
+import { useKeyboardOnly } from './office/KeyboardOnlyContext.js';
 
 /**
  * Sheet Music mode — browse a folder of scores and view them.
@@ -112,7 +113,8 @@ async function fetchLearnFile(contentId, isCancelled) {
   }
 }
 
-function NotationScore({ contentId }) {
+export function NotationScore({ contentId }) {
+  const keyboardOnly = useKeyboardOnly();
   const logger = useMemo(() => getLogger().child({ component: 'piano-sheetmusic' }), []);
   const [xml, setXml] = useState(null); // null = loading, '' = failed
   // undefined = loading, null = failed, object = the route's answer ({} = none)
@@ -168,7 +170,9 @@ function NotationScore({ contentId }) {
   }, [contentId, localId, logger, retryKey]);
 
   const failed = xml === '' || learnFile === null;
-  if (failed) return <PianoEmpty message="Could not load this score." actionLabel="Try again" onAction={() => setRetryKey((k) => k + 1)} />;
+  // The office screen has no touch: its way back is the Pieces key, so no button is drawn.
+  if (failed) return keyboardOnly ? <PianoEmpty message="Could not load this score. Play the Pieces key to go back." />
+    : <PianoEmpty message="Could not load this score." actionLabel="Try again" onAction={() => setRetryKey((k) => k + 1)} />;
   if (xml === null || learnFile === undefined) return <ScoreSplash image={splashImage} />;
   return <ScorePlayer score={{ id: contentId, musicXml: xml, fetchMs: fetchMsRef.current, splashImage, learnFile }} />;
 }

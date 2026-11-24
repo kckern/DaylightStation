@@ -59,9 +59,9 @@ function MountedGame({ Component, activeNotes, ...rest }) {
 }
 
 export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
-  const { activeNotes, sustainPedal, sessionInfo, noteHistory, subscribe } = useMidiSubscription();
+  const { activeNotes, sustainPedal, sessionInfo, noteHistory, subscribe, subscribeRaw } = useMidiSubscription();
   const { spamState, warningVisible, blackoutRemaining, spamEventCount } = useSpamDetection(activeNotes, noteHistory);
-  const { gamesConfig, deviceConfig, appConfig } = usePianoConfig();
+  const { gamesConfig, deviceConfig, appConfig, timezone } = usePianoConfig();
 
   // Launcher slots come from the REGISTRY, not the games config: config only
   // ever listed the five games that had activation combos, which is why chess,
@@ -135,6 +135,20 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   // as long as the pass stayed active. Only school's own unlock opens it.
   const schoolUnlocked = schoolGameAccess.unlocked && schoolGameAccess.via !== 'pass';
   const gamesAllowed = !gamesOff && schoolUnlocked;
+  // What the launcher offers. With games off or locked it still offers the
+  // practice entries (Sheet Music): practising is what games are switched off
+  // in favour of (owner ruling, 2026-11-23). Each keeps its own key either way,
+  // so a key never changes meaning with the school verdict.
+  const availableSlots = useMemo(
+    () => (gamesAllowed ? slots : slots.filter((slot) => getGameEntry(slot.gameId)?.practice)),
+    [gamesAllowed, slots],
+  );
+  // Drawn with every key still in its place: the games dimmed under a lock, so
+  // the row reads as "games are locked" rather than as one stretched key.
+  const launcherFaces = useMemo(
+    () => slots.map((slot) => (availableSlots.includes(slot) ? slot : { ...slot, locked: true })),
+    [slots, availableSlots],
+  );
 
   // The roster, laid out as the same row of keys the games use. It was a
   // tap-only modal — dark-on-dark and unselectable on a screen with no touch,
@@ -196,8 +210,9 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
 
   const { isOpen: launcherOpen, activeGameId, isHolding, dismiss, exitGame, timeoutMs, launchNonce } =
     useNoteLauncher({
-      activeNotes, slots, initialGame, onRequestUser: openPicker,
-      selectionPaused: rosterNeeded || !gamesAllowed,
+      activeNotes, slots: availableSlots, initialGame, onRequestUser: openPicker,
+      // Games off or locked takes the game keys away (`availableSlots`), not the practice ones.
+      selectionPaused: rosterNeeded,
       options: launcherOptions,
     });
 
@@ -259,14 +274,17 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
     requestRematch: requestOfficeRematch,
     registerCompletion: () => null,
   }), [gameGateEnabled, requestOfficeRematch]);
-  const isFullscreenGame = gamesAllowed && activeGameEntry?.layout === 'replace';
+  // A practice entry runs whatever the games verdict says; a game only when games are allowed.
+  const activeIsPractice = Boolean(activeGameEntry?.practice);
+  const activeMayRun = gamesAllowed || activeIsPractice;
+  const isFullscreenGame = activeMayRun && activeGameEntry?.layout === 'replace';
 
   // A deep link, a note struck just before a status refresh, or a player
   // switch must not leave a game alive behind the lock. Rendering is gated in
   // the same commit; this effect also clears the launcher's internal game id.
   useEffect(() => {
-    if (activeGameId && !gamesAllowed) exitGame(gamesOff ? 'games-off' : 'school-locked');
-  }, [activeGameId, gamesAllowed, gamesOff, exitGame]);
+    if (activeGameId && !activeMayRun) exitGame(gamesOff ? 'games-off' : 'school-locked');
+  }, [activeGameId, activeMayRun, gamesOff, exitGame]);
 
   // More released games than launcher keys: the extras are silently unreachable,
   // so say so rather than letting the row read as "everything is here".
@@ -278,7 +296,8 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   // The school lock reads itself out and then goes. It is a verdict, not a
   // prompt: there is nothing to answer, and leaving it on screen turns a locked
   // afternoon into a piano that looks broken.
-  const schoolLocked = launcherOpen && !rosterVisible && !gamesAllowed;
+  // Only when there is nothing at all to offer: with a practice entry the launcher stays up and says why games are missing.
+  const schoolLocked = launcherOpen && !rosterVisible && !gamesAllowed && availableSlots.length === 0;
   useEffect(() => {
     if (!schoolLocked) return undefined;
     const timer = setTimeout(() => dismiss('school-locked-timeout'), SCHOOL_LOCK_DISMISS_MS);
@@ -421,11 +440,16 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
         </div>
       )}
 
-      {launcherOpen && !rosterVisible && !gamesOff && schoolUnlocked && (
-        <NoteLauncher slots={slots} timeoutMs={timeoutMs} playerName={currentUserName} playerId={currentUser} />
+      {launcherOpen && !rosterVisible && (gamesAllowed || availableSlots.length > 0) && (
+        <NoteLauncher slots={gamesAllowed ? slots : launcherFaces} timeoutMs={timeoutMs} playerName={currentUserName} playerId={currentUser}
+          title={gamesAllowed ? undefined : 'Pick · play its key'}
+          notice={gamesAllowed ? null
+            : gamesOff ? 'Games are off for this player. Sheet Music is open.'
+              : schoolGameAccess.status === 'loading' ? 'Checking today’s schoolwork… Sheet Music is open.'
+                : `Games are locked until ${currentUserName ?? 'this player'}’s schoolwork is done. Sheet Music is open.`} />
       )}
 
-      {launcherOpen && !rosterVisible && gamesOff && (
+      {launcherOpen && !rosterVisible && gamesOff && availableSlots.length === 0 && (
         <div className="note-launcher note-launcher--school-locked" role="status">
           <div className="nl-lock">
             <span className="nl-lock__badge" aria-hidden="true">
@@ -444,7 +468,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
         </div>
       )}
 
-      {launcherOpen && !rosterVisible && !gamesOff && !schoolUnlocked && (
+      {launcherOpen && !rosterVisible && !gamesOff && !schoolUnlocked && availableSlots.length === 0 && (
         <div className="note-launcher note-launcher--school-locked" role="status">
           <div className="nl-lock">
             <span className="nl-lock__badge" aria-hidden="true">
@@ -504,7 +528,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
 
       {confirming && <PlayerConfirm userId={confirming.id} name={confirming.name} />}
 
-      {isFullscreenGame && activeGameEntry?.LazyComponent && gamesAllowed && (
+      {isFullscreenGame && activeGameEntry?.LazyComponent && activeMayRun && (
         <div className="tetris-fullscreen">
           {/* This screen has no breadcrumb rail and no user chip, so a game
               opened into a board that named neither itself nor its player. */}
@@ -565,6 +589,11 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
                 /* Note EVENTS, not just note state — a rhythm game scores on the
                    press and cannot recover the timing from a Map. */
                 subscribe={subscribe}
+                /* Pedals as raw control changes (a take arms on a pedal), the
+                   household zone (Learn's study day), and this board's range. */
+                subscribeRaw={subscribeRaw}
+                timezone={timezone}
+                keyboard={deviceConfig?.keyboard ?? null}
                 /* The kiosk app config. A game rendered here has no
                    ActivePianoProvider to read it from. */
                 appConfig={appConfig}
@@ -575,6 +604,11 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
                    this every office-screen game was played by nobody. */
                 currentUser={currentUser}
                 playerName={currentUserName}
+                /* Practice saves per player: Sheet Music asks who is playing
+                   when the remembered pick is from another day. */
+                users={users}
+                identityStale={identityStale}
+                onPickUser={pickUser}
                 onDeactivate={quitGame}
               />
               </MatchGateContext.Provider>

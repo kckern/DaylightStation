@@ -7,8 +7,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // in isolation (no MIDI, no timers, no overlay context).
 const activeNotes = new Map();
 let midiSessionInfo = null;
+const stubSubscribeRaw = () => () => {};
 vi.mock('./useMidiSubscription.js', () => ({
-  useMidiSubscription: () => ({ activeNotes, sustainPedal: false, sessionInfo: midiSessionInfo, noteHistory: [] }),
+  useMidiSubscription: () => ({ activeNotes, sustainPedal: false, sessionInfo: midiSessionInfo, noteHistory: [], subscribeRaw: stubSubscribeRaw }),
 }));
 
 let gamesConfig = {};
@@ -79,6 +80,9 @@ vi.mock('../../../../frontend/src/lib/logging/Logger.js', async (importOriginal)
 let gameProps = null;
 let gameShouldThrow = false;
 let extraGames = [];
+// The lock panels below describe a launcher with NOTHING left to offer; the
+// registry's practice entry (Sheet Music) would otherwise stay open under them.
+let withoutPractice = false;
 vi.mock('./gameRegistry.js', async (importOriginal) => {
   const actual = await importOriginal();
   const GameStub = (props) => {
@@ -90,7 +94,7 @@ vi.mock('./gameRegistry.js', async (importOriginal) => {
     Object.entries(actual.GAME_REGISTRY).map(([id, entry]) => [id, { ...entry, LazyComponent: GameStub }]),
   );
   const all = () => ({
-    ...patched,
+    ...Object.fromEntries(Object.entries(patched).filter(([, entry]) => !(withoutPractice && entry.practice))),
     ...Object.fromEntries(extraGames.map((id) => [
       id,
       { label: id, icon: 'game-tetris', status: 'released', layout: 'replace', LazyComponent: GameStub },
@@ -135,6 +139,7 @@ beforeEach(() => {
   gameProps = null;
   gameShouldThrow = false;
   extraGames = [];
+  withoutPractice = false;
   gamesConfig = {};
   appConfig = undefined;
   midiSessionInfo = null;
@@ -211,6 +216,7 @@ describe('PianoVisualizer game launcher', () => {
   });
 
   it('shows the school lock instead of game keys while work is incomplete', () => {
+    withoutPractice = true;
     launcherUserState = {
       ...launcherUserState,
       users: [{ id: 'kid1', name: 'Kid One' }], currentUser: 'kid1', identityStale: false,
@@ -223,7 +229,40 @@ describe('PianoVisualizer game launcher', () => {
     // indistinguishable from a broken piano to everyone it is not about.
     expect(container.textContent).toContain('Kid One still has schoolwork to finish today.');
     expect(container.querySelectorAll('.nl-key')).toHaveLength(0);
-    expect(launcherArgs.selectionPaused).toBe(true);
+    expect(launcherArgs.slots).toEqual([]);
+  });
+
+  // Owner ruling 2026-11-23: practising is what games are switched off in
+  // favour of, so Sheet Music stays open under a school lock. The game keys
+  // stay drawn in place, locked, and take no note.
+  it('keeps Sheet Music open under a school lock, the games locked in place', () => {
+    launcherUserState = {
+      ...launcherUserState,
+      users: [{ id: 'kid1', name: 'Kid One' }], currentUser: 'kid1', identityStale: false,
+    };
+    Object.assign(schoolGate, { status: 'ready', state: 'incomplete', unlocked: false });
+    launcherState = { ...launcherState, isOpen: true };
+    const { container } = render(<PianoVisualizer />);
+
+    expect(container.querySelector('.note-launcher--school-locked')).toBeNull();
+    expect(container.querySelector('.note-launcher__notice').textContent).toContain('Kid One');
+    expect(container.querySelectorAll('.nl-key')).toHaveLength(9);
+    expect([...container.querySelectorAll('.nl-key:not(.is-locked)')].map((key) => key.textContent)).toEqual([expect.stringContaining('Sheet Music')]);
+    expect(launcherArgs.slots.map((slot) => [slot.gameId, slot.noteName])).toEqual([['sheet-music', 'D5']]);
+    expect(launcherArgs.selectionPaused).toBe(false);
+  });
+
+  it('runs Sheet Music for a player games are off for, and hands it the player and the board', () => {
+    appConfig = { gameAccess: { disabledFor: ['kid1'] } };
+    launcherUserState = { ...launcherUserState, users: [{ id: 'kid1', name: 'Kid One' }], currentUser: 'kid1', identityStale: true };
+    launcherState = { ...launcherState, activeGameId: 'sheet-music' };
+    const { queryByTestId } = render(<PianoVisualizer />);
+
+    expect(queryByTestId('game-stub')).toBeTruthy();
+    expect(launcherState.exitGame).not.toHaveBeenCalled();
+    expect(gameProps).toMatchObject({ currentUser: 'kid1', identityStale: true, users: [{ id: 'kid1', name: 'Kid One' }] });
+    expect(typeof gameProps.onPickUser).toBe('function');
+    expect(typeof gameProps.subscribeRaw).toBe('function');
   });
 
   it('exits and never mounts a note-launched game when school is locked', () => {
@@ -241,6 +280,7 @@ describe('PianoVisualizer game launcher', () => {
   // office screen has no relock and no consume, so a pass read here would be
   // an unmetered back door: a pass-only unlock is still a school lock.
   it('ignores an early pass: no game keys, and a running game is exited', () => {
+    withoutPractice = true;
     launcherUserState = {
       ...launcherUserState,
       users: [{ id: 'kid1', name: 'Kid One' }], currentUser: 'kid1', identityStale: false,
@@ -251,7 +291,7 @@ describe('PianoVisualizer game launcher', () => {
 
     expect(queryByTestId('game-stub')).toBeNull();
     expect(container.querySelectorAll('.nl-key')).toHaveLength(0);
-    expect(launcherArgs.selectionPaused).toBe(true);
+    expect(launcherArgs.slots).toEqual([]);
     expect(launcherState.exitGame).toHaveBeenCalledWith('school-locked');
   });
 
@@ -259,6 +299,7 @@ describe('PianoVisualizer game launcher', () => {
   // chess. The school verdict was `complete`; `disabledFor` reached only the
   // panel copy, so the launcher still took game keys and nothing ended a game.
   it('pauses game selection for a player games are disabled for, even with school complete', () => {
+    withoutPractice = true;
     appConfig = { gameAccess: { disabledFor: ['kid1'] } };
     launcherUserState = {
       ...launcherUserState,
@@ -269,7 +310,7 @@ describe('PianoVisualizer game launcher', () => {
 
     expect(container.textContent).toContain('Games are off');
     expect(container.querySelectorAll('.nl-key')).toHaveLength(0);
-    expect(launcherArgs.selectionPaused).toBe(true);
+    expect(launcherArgs.slots).toEqual([]);
   });
 
   it('exits and never mounts a game for a player games are disabled for', () => {
@@ -286,8 +327,9 @@ describe('PianoVisualizer game launcher', () => {
     launcherState = { ...launcherState, isOpen: true };
     const { container } = render(<PianoVisualizer />);
     const keys = container.querySelectorAll('.nl-key');
-    // Eight of the nine registered games are released; card-game is preview.
-    expect(keys).toHaveLength(8);
+    // Eight of the nine registered games are released (card-game is preview), plus Sheet Music on D5.
+    expect(keys).toHaveLength(9);
+    expect(keys[8].textContent).toContain('Sheet Music');
     expect(container.textContent).not.toContain('Battle Stadium');
   });
 
@@ -350,7 +392,8 @@ describe('PianoVisualizer game launcher', () => {
   it('warns when there are more released games than launcher keys', () => {
     extraGames = ['tenth-game', 'eleventh-game'];
     render(<PianoVisualizer />);
-    expect(stubLogger.warn).toHaveBeenCalledWith('launcher.slots-overflow', { dropped: ['eleventh-game'] });
+    // Sheet Music took the ninth key, so both extras are dropped.
+    expect(stubLogger.warn).toHaveBeenCalledWith('launcher.slots-overflow', { dropped: ['tenth-game', 'eleventh-game'] });
   });
 
   it('does not warn when every released game has a key', () => {
@@ -581,6 +624,7 @@ describe('PianoVisualizer school lock and a stale identity', () => {
   // today, the denial is theirs and it stands. Re-asking here would turn the
   // lock into a menu of profiles to try until one opens.
   it('keeps the lock when the denied identity was chosen today', () => {
+    withoutPractice = true;
     launcherState = { ...launcherState, isOpen: true };
     launcherUserState = rosterOf('learner-one', false);
     Object.assign(schoolGate, { status: 'ready', state: 'incomplete', unlocked: false });
@@ -608,6 +652,7 @@ describe('PianoVisualizer school lock and a stale identity', () => {
   // The lock never said whose day it was reading, which is why five days of it
   // read as "the piano is broken" rather than "this is Learner One's lock".
   it('names the learner the lock belongs to', () => {
+    withoutPractice = true;
     launcherState = { ...launcherState, isOpen: true };
     launcherUserState = rosterOf('learner-one', false);
     Object.assign(schoolGate, { status: 'ready', state: 'incomplete', unlocked: false });

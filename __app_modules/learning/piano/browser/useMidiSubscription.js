@@ -49,6 +49,17 @@ export function useMidiSubscription() {
     }
   }, []);
 
+  const rawListenersRef = useRef(new Set());
+  const subscribeRaw = useCallback((fn) => {
+    rawListenersRef.current.add(fn);
+    return () => rawListenersRef.current.delete(fn);
+  }, []);
+  const emitRaw = useCallback((event) => {
+    for (const fn of rawListenersRef.current) {
+      try { fn(event); } catch (_) { /* one bad listener must not stop the rest */ }
+    }
+  }, []);
+
   const handleMidiMessage = useCallback((data) => {
     if (data.topic !== 'midi') return;
 
@@ -96,6 +107,14 @@ export function useMidiSubscription() {
       }
     }
 
+    // Pedals as raw control-change bytes, the kiosk's `subscribeRaw` shape
+    // (`{ data: [0xB0|ch, controller, value], time }`), so shared exercise code
+    // that arms a take on a pedal press works here unchanged.
+    if (type === 'control' && eventData?.event === 'control_change' && Number.isInteger(eventData.control)) {
+      const channel = Number.isInteger(eventData.channel) ? eventData.channel & 0x0f : 0;
+      emitRaw({ data: [0xb0 | channel, eventData.control, Number(eventData.value) || 0], time: Date.now() });
+    }
+
     if (type === 'control' && eventData.controlName === 'sustain') {
       setSustainPedal(eventData.value >= 64);
     }
@@ -110,7 +129,7 @@ export function useMidiSubscription() {
     }
     // emitNote is stable (useCallback with no deps) but declared here so the
     // dependency is honest rather than relying on that staying true.
-  }, [logger, emitNote]);
+  }, [logger, emitNote, emitRaw]);
 
   useWebSocketSubscription('midi', handleMidiMessage, [handleMidiMessage]);
 
@@ -217,7 +236,7 @@ export function useMidiSubscription() {
     };
   }, []);
 
-  return { activeNotes, sustainPedal, sessionInfo, isPlaying: activeNotes.size > 0, noteHistory, subscribe };
+  return { activeNotes, sustainPedal, sessionInfo, isPlaying: activeNotes.size > 0, noteHistory, subscribe, subscribeRaw };
 }
 
 export default useMidiSubscription;

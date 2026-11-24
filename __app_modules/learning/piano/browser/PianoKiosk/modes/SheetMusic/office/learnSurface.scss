@@ -1,0 +1,9 @@
+// The tablet's Learn surface (the drill toolbar, the lab's stack, the score
+// player) is styled in PianoApp.scss, which only the tablet app loads. The office
+// screen gets the same rules scoped under its Learn stage with `:where()`: zero
+// added specificity, so every rule wins and loses exactly as it does on the
+// tablet, and nothing in the file can reach the rest of the office screen
+// (its ambient keyboard, the launcher) once this chunk has loaded.
+:where(.office-sheet-music__learn) {
+  @import '../../../../PianoApp.scss';
+}

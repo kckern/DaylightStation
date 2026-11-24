@@ -11,6 +11,7 @@ import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
 import { useRhythmVoice } from './useRhythmVoice.js';
 import { toRhythmMusicXml } from '../Exercises/rhythmOnly.js';
 import { entryShiftBeats } from '../../../../../../../shared/music/learnCoach.mjs';
+import { useKeyboardOnly, useKeyStrip } from './office/KeyboardOnlyContext.js';
 
 const handCode = (parts) => parts.length > 1 ? 'RL' : parts[0] === 'lh' ? 'L' : parts[0] === 'rh' ? 'R' : null;
 const clickStorage = () => {
@@ -261,20 +262,30 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
     if (launchSource !== 'recommended') onFinished?.(result);
   };
 
-  return <section className={`piano-learn-lab${coachingTask ? ' piano-learn-lab--coach' : ''}`} role="dialog" aria-modal="true" aria-label={`${passageName} · ${rung.label}`}>
+  // Keyboard only (the office screen): Listen is a strip key, there only when this piano can sound notes,
+  // and the strip lets go of its keys while a take is under way, when every key is music.
+  const keyOnly = useKeyboardOnly();
+  const listenKey = keyOnly?.canListen && onListen && !takeUnderWay && runPhase !== 'paused'
+    ? (listening ? { label: 'Stop', onSelect: () => stopListening('stop') } : ['ready', 'done'].includes(runPhase) ? { label: 'Listen', onSelect: listen } : null)
+    : null;
+  useKeyStrip('lab', { listen: listenKey }, { active: !takeUnderWay && runPhase !== 'paused' });
+
+  return <section className={`piano-learn-lab${coachingTask ? ' piano-learn-lab--coach' : ''}`} role="dialog" aria-modal="true" aria-label={`${passageName} · ${rung.label}`}
+    data-input={keyOnly ? 'keyboard-only' : undefined}>
     <header className="piano-learn-lab__toolbar">
-      <button className="piano-learn-lab__back" type="button" onClick={closeLab} aria-label={coachingTask ? 'Back to score' : `Back to ${segment.label}`}>
+      {!keyOnly && <button className="piano-learn-lab__back" type="button" onClick={closeLab} aria-label={coachingTask ? 'Back to score' : `Back to ${segment.label}`}>
         <span aria-hidden="true">‹</span><span>Back</span>
-      </button>
+      </button>}
       <div className="piano-learn-lab__identity">{coachingTask ? <strong>{passageName}</strong> : <><strong>{segment.label}</strong><span>{segment.barLabel}</span></>}</div>
       <div className="piano-learn-lab__task"><strong>{rung.label}</strong>{!coachingTask && <span>Set {setIndex + 1} of {rung.sets} · Rep {currentRep} of {rung.reps}</span>}</div>
-      {track && <LearnTempoTrack stops={track.stops} ladder={track.ladder} earned={track.earned} value={tempoPercent} stepPercent={track.stepPercent}
+      {track && !keyOnly && <LearnTempoTrack stops={track.stops} ladder={track.ladder} earned={track.earned} value={tempoPercent} stepPercent={track.stepPercent}
         scoreBpm={scoreBpm > 0 ? scoreBpm : null} locked={takeUnderWay || Boolean(listening)} onChange={chooseTempo} />}
-      {timedMode && <LearnClickVolume level={clickLevel} onChange={selectClickLevel} onOpenChange={setSheetOpen} />}
+      {timedMode && !keyOnly && <LearnClickVolume level={clickLevel} onChange={selectClickLevel} onOpenChange={setSheetOpen} />}
       {notice}
       {/* One button per thing that can be done NOW: before a take, Listen; during one, Pause; paused,
-          Resume and Start over; listening, Pause or Play and Stop. The row keeps its place. */}
-      <div className="piano-learn-lab__run-controls" role="group" aria-label="Practice controls" data-phase={listening ? 'listening' : runPhase}>
+          Resume and Start over; listening, Pause or Play and Stop. The row keeps its place.
+          Keyboard only: these are the host's strip keys instead (see `useKeyStrip` above). */}
+      {!keyOnly && <div className="piano-learn-lab__run-controls" role="group" aria-label="Practice controls" data-phase={listening ? 'listening' : runPhase}>
         {listening ? <>
           <button type="button" className="piano-learn-lab__action" onClick={() => { logControl(listening === 'playing' ? 'listen-pause' : 'listen-play'); setListening(listening === 'playing' ? 'paused' : 'playing'); }}>
             <Icon name={listening === 'playing' ? 'pause' : 'play'} /><span>{listening === 'playing' ? 'Pause' : 'Play'}</span></button>
@@ -288,7 +299,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
             {onChangePractice && <button type="button" className="piano-learn-lab__action" onClick={changePractice}><span>Change practice</span></button>}
             {extraControls}
           </> : null}
-      </div>
+      </div>}
     </header>
     <ExerciseRun rhythmOnly={rhythm} {...(maxCueRestarts != null ? { maxCueRestarts } : {})}
       key={`${segment.id}:${rung.id}:${take}:${tempoPercent}`} instance={null} score={runScore} intent="practice"

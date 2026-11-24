@@ -14,6 +14,7 @@ import { playPassageChime } from './passageChime.js';
 import GateCeremony, { hostVerdictAt as verdictAt } from '../Games/GateCeremony.jsx';
 import Icon from '../../../ui/icons/Icon.jsx';
 import { railModel, unitNames } from './passageRail.js';
+import { useKeyboardOnly, useKeyStrip } from './office/KeyboardOnlyContext.js';
 import './LearnCoach.scss';
 
 const EMPTY = {};
@@ -488,13 +489,30 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
       onSelect={(passageId) => goToPassage(passageId, 'learn-rail')} onOpen={openFromPath} onOpenBoard={toggleBoard} />
   </>;
 
-  if (!task) return <section className="piano-learn-coach"><h2>No playable notes in this passage</h2><button type="button" onClick={onBack}>Back to score</button>{map}</section>;
-  return <div className="piano-learn-coach piano-learn-coach--running" data-save={coach.saveStatus} data-level={certification.gold ? 'gold' : certification.silver ? 'silver' : undefined}>
+  // ── Keyboard only (the office screen) ──────────────────────────────────────
+  // Every button above is touch; there, each becomes a key on the host's strip.
+  // The tempo track and the click volume keep their defaults, and the step pills
+  // are read, not picked: a choice a hand cannot make is not drawn as one.
+  const keyOnly = useKeyboardOnly();
+  const unitOrder = rail.tokens?.length ? rail.tokens.map((token) => token.id) : coach.projection.segments.map((item) => item.id);
+  const unitAt = unitOrder.indexOf(segment.id);
+  const previousUnit = unitAt > 0 ? unitOrder[unitAt - 1] : null;
+  const nextUnit = unitAt >= 0 && unitAt < unitOrder.length - 1 ? unitOrder[unitAt + 1] : null;
+  const busy = Boolean(celebrating);
+  useKeyStrip('coach', {
+    previous: previousUnit && !busy ? { onSelect: () => goToPassage(previousUnit, 'office-strip') } : null,
+    next: nextUnit && !busy ? { onSelect: () => goToPassage(nextUnit, 'office-strip') } : null,
+    retry: result && !busy ? { onSelect: () => begin(result.task) } : null,
+    later: busy ? null : rhythmStep ? { label: 'Skip rhythm', onSelect: skipRhythm } : canSetAside ? { label: 'Come back later', onSelect: comeBackLater } : null,
+  });
+
+  if (!task) return <section className="piano-learn-coach"><h2>No playable notes in this passage</h2>{!keyOnly && <button type="button" onClick={onBack}>Back to score</button>}{map}</section>;
+  return <div className="piano-learn-coach piano-learn-coach--running" data-save={coach.saveStatus} data-level={certification.gold ? 'gold' : certification.silver ? 'silver' : undefined} data-input={keyOnly ? 'keyboard-only' : undefined}>
     {loaded && material ? <LearnLab key={`${runNumber}:${task.key}`} score={score} revision={plan.fingerprint} segment={material.segment} rung={material.rung}
       coachingTask={task} drill={drill} card={card} ceremony={ceremony} onCardDone={momentDone} notice={notice}
-      resultLabel={result?.message.title ?? null} resultActions={resultActions} resultContinueLabel={resultContinueLabel} onResultContinue={resultContinue}
-      extraControls={result ? skipButton : <>{skipButton}{laterButton}</>} tempoChoice={tempoChoice}
-      onPickStep={pickStep} onStarted={started} onOutcome={finish}
+      resultLabel={result?.message.title ?? null} resultActions={keyOnly ? null : resultActions} resultContinueLabel={resultContinueLabel} onResultContinue={resultContinue}
+      extraControls={keyOnly ? null : result ? skipButton : <>{skipButton}{laterButton}</>} tempoChoice={keyOnly ? null : tempoChoice}
+      onPickStep={keyOnly ? null : pickStep} onStarted={started} onOutcome={finish}
       onListen={() => onListen?.(task)}
       tempo={{ ...tempo, tempoMap: plan.tempoMap, adjustable: false }} feedback={feedback}
       onClose={onBack}

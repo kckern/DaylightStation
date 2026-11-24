@@ -1705,6 +1705,81 @@ pianos:
       clickLeadMs: 280   # written by Click timing; null/absent = not measured
 ```
 
+## Office screen: Learn from the keyboard only
+
+The office piano screen (`PianoVisualizer`, `/screen/office`) has no touch. **Sheet Music** is an
+entry on its key launcher (`gameRegistry.js` `'sheet-music'`, `practice: true`, on D5) and runs the
+tablet's own Learn there, every choice on a key. Spec:
+`ops:docs/superpowers/specs/2026-11-23-piano-office-sheet-music-design.md`.
+
+**Open when games are off.** A `practice` entry is offered whatever the games verdict
+(`gameAccess.disabledFor`, school lock): practising is what games are switched off in favour of. With
+games off or locked the launcher still draws every key in its place, the games grey under a lock
+(`.nl-key.is-locked`) with one line saying why (`note-launcher__notice`); only the Sheet Music key
+answers. The full-screen lock panel is shown only when the launcher has nothing to offer.
+
+**The flow** (`PianoKiosk/modes/SheetMusic/office/OfficeSheetMusic.jsx`):
+
+1. **Who is practising.** Practice saves per player, so a launcher pick from an earlier study day
+   (`identityStale`), or none, is asked for first on the roster row (C4 upward). Nothing is fetched
+   or saved before the answer.
+2. **Pieces.** `GET /api/v1/piano/activity/desk/:userId`, newest first, one per white key C4–C5
+   (`office/officeKeys.js` `piecePage`): poster, the desk's level badge (`deskModel.cardBadge`),
+   title, passage map, and the key's note card. More than eight pieces page on the octave below
+   (C3 = page 1, D3 = page 2, …); a piece key always means "the nth piece shown". No pieces: a line
+   saying to start one on the tablet.
+3. **The piece**, opened on the coach's next step. The real `NotationScore` → `ScorePlayer` runs in a
+   `MemoryRouter`; with the keyboard-only context it forces coached Learn, engraves under an opaque
+   cover (the passages come from the engraving) and opens the path's target (`piano.learn.office.open`)
+   the moment the coach has loaded. Any key or pedal arms the take, as on the tablet.
+
+**The key strip** (`office/KeyStrip.jsx`), under the drill, a fixed key per action in the octave
+C2–A2, far under where a passage starts (before a take "any key" arms it):
+
+| Key | Action |
+|-----|--------|
+| C2 | Pieces (back to the list; also where "Back to score" goes: there is no score view here) |
+| D2 / E2 | Previous / next unit on the path |
+| F2 | Try again (after a result) |
+| G2 | Come back later, or Skip rhythm on the rhythm step |
+| A2 | Listen / Stop: drawn only when the piano can sound notes |
+
+An action with nothing to do now stays on its key, drawn dim; keys never shift. While the strip
+shows, its keys are claimed away from the music (`OfficeMidiProvider` hides them from the run, and
+a key struck while claimed stays hidden until released); **during a take the strip lets go and every
+key is music**. Any other key after a result continues, as on the tablet (the recovery the card
+recommends, else try again).
+
+**What is not drawn:** the drill's Back button, the tempo track and click volume (both keep their
+defaults), the run's Pause/Listen buttons, the result card's buttons, the step pills as choices, the
+path's All button; the path is a map, not a control. The office screen's recorder has **no note
+output**, so Listen is hidden and the click is the browser's WebAudio blip plus the run's visual beat
+marker and count.
+
+**Leaving:** hold the lowest and highest keys 2 s, the launcher's own gesture, from anywhere.
+
+**Wiring:** `KeyboardOnlyContext` (`office/KeyboardOnlyContext.js`) is the one switch. PianoApp never
+provides it, so the tablet is unchanged. `ScorePlayer`, `LearnCoach` and `LearnLab` read it;
+`useKeyStrip(source, actions, { active })` publishes what their touch controls did to the host's strip
+(handlers read at press time from a ref; only labels, enabled and active are published). The host
+provides `ActivePianoProvider` (`resolvePianoConfig` over the office app config, with the office
+keyboard's range), a `PianoUserContext` seeded from the launcher, `OfficeMidiProvider` (the
+WebSocket note stream, note events and pedal CCs via `useMidiSubscription().subscribeRaw`; sends are
+no-ops) and `PianoPlaybackProvider`. The tablet's Learn styles (`PianoApp.scss`) are loaded scoped
+under `:where(.office-sheet-music__learn)` (`office/learnSurface.scss`): same specificity as on the
+tablet, nothing reaching the rest of the office screen. Canvas 1280×720: the launcher chrome strip,
+the body, and a fixed 5.75rem key strip.
+
+**Logs:** `office-sheet-music.mounted` / `.unmounted`, `.player-picked`, `.pieces-loaded` /
+`.pieces-failed` / `.pieces-unreachable`, `.page`, `.piece-opened`, `.strip-key` (`key`, `source`),
+`.back-to-pieces` (`reason`), and `piano.learn.office.open`; the drill's own Learn events are unchanged.
+
+**Tests:** `office/officeKeys.test.js`, `office/KeyStrip.test.jsx`, the server's
+`GetPianoDesk.test.mjs` (`forPlayer`), and the real-browser flow driven by simulated MIDI only:
+`npx playwright test --config tests/_infrastructure/config/playwright.office-sheet-music.config.mjs`
+(launcher → Sheet Music → pick a piece → a take → result → continue → back → exit, games off, a stale
+player; every screen checked for clipping and saved under `.superpowers/office-sheet-music/`).
+
 ## Admin: sheet music
 
 Admin → Content → **Sheet music** (`/admin/content/sheet-music`) manages the score

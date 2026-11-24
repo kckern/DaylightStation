@@ -88,28 +88,61 @@ export class GetPianoDesk {
     }
   }
 
-  #player(userId, scoreIds, dayKey) {
-    const profile = this.#configProjection.profile(userId);
+  /**
+   * A player's pieces with real progress, newest first, stopping after `limit`
+   * (Infinity for all). The home strip wants one; the office piece picker wants
+   * every one, each projected exactly as the strip projects its one.
+   */
+  #pieces(userId, scoreIds, dayKey, limit) {
     const records = [...(this.#datastore.listPractice(userId) ?? [])]
       .sort((a, b) => latestActivity(b.record).localeCompare(latestActivity(a.record)));
-    let piece = null;
+    const pieces = [];
+    const seen = new Set();
     for (const entry of records) {
+      let piece = null;
       try { piece = this.#piece(entry, scoreIds, dayKey); } catch (error) {
         this.#logger.warn?.('piano.desk.record_skipped', { userId, scoreKey: entry.scoreKey, error: error.message });
       }
-      if (piece) break;
+      // Two records can name one score (an older key beside a coached one): the newer wins.
+      if (!piece || seen.has(piece.scoreId)) continue;
+      seen.add(piece.scoreId);
+      pieces.push({ ...piece, polish: this.#polish(userId, piece.scoreId) });
+      if (pieces.length >= limit) break;
     }
-    if (piece) piece = { ...piece, polish: this.#polish(userId, piece.scoreId) };
-    return { userId, name: profile?.display_name || profile?.username || userId, piece };
+    return pieces;
   }
 
-  execute() {
-    // Only older records need this: coached ones name their score.
+  #name(userId) {
+    const profile = this.#configProjection.profile(userId);
+    return profile?.display_name || profile?.username || userId;
+  }
+
+  #player(userId, scoreIds, dayKey) {
+    const [piece = null] = this.#pieces(userId, scoreIds, dayKey, 1);
+    return { userId, name: this.#name(userId), piece };
+  }
+
+  /** Only older records need the library walk: coached ones name their score. Walked at most once per call. */
+  #scoreIds() {
     let library = null;
-    const scoreIds = () => {
+    return () => {
       library ??= new Map((this.#datastore.listSheetMusicIds() ?? []).map((id) => [practiceKeyOfScore(id), id]));
       return library;
     };
+  }
+
+  /**
+   * Every piece one player is learning, newest first: the office screen's piece
+   * picker. The same projection as `execute()`, so a picker face and a home
+   * card never disagree. Null for someone not on the roster.
+   */
+  forPlayer(userId) {
+    if (!this.#configProjection.roster().includes(userId)) return null;
+    return { userId, name: this.#name(userId), pieces: this.#pieces(userId, this.#scoreIds(), this.#dayKey(), Infinity) };
+  }
+
+  execute() {
+    const scoreIds = this.#scoreIds();
     const dayKey = this.#dayKey();
     const players = this.#configProjection.roster().map((userId) => {
       try { return this.#player(userId, scoreIds, dayKey); } catch (error) {
