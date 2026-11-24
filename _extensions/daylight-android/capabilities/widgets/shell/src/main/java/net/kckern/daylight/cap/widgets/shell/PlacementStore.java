@@ -61,6 +61,35 @@ final class PlacementStore {
         return requests;
     }
 
+    /** True once a shortcut or widget for this page or action has been confirmed on the home screen. */
+    boolean isAdded(String contentId) {
+        long now = System.currentTimeMillis();
+        for (LauncherPlacement request : requests()) {
+            if (!request.playlist && request.contentId.equals(contentId)
+                    && request.status(now) == LauncherPlacement.Status.ADDED) return true;
+        }
+        return false;
+    }
+
+    /** Forget that this page or action is on the home screen, e.g. after it was removed from the launcher. */
+    void clearAdded(String contentId) {
+        SharedPreferences.Editor edit = prefs.edit();
+        for (LauncherPlacement request : requests()) {
+            if (!request.playlist && request.contentId.equals(contentId)) edit.remove(REQUEST + request.requestId);
+        }
+        edit.apply();
+    }
+
+    /** The ids that are on the home screen, as one string, to tell whether the page needs redrawing. */
+    String addedSignature() {
+        java.util.TreeSet<String> ids = new java.util.TreeSet<>();
+        long now = System.currentTimeMillis();
+        for (LauncherPlacement request : requests()) {
+            if (!request.playlist && request.status(now) == LauncherPlacement.Status.ADDED) ids.add(request.contentId);
+        }
+        return String.join(",", ids);
+    }
+
     private void migrateStaging() {
         if (prefs.getBoolean(STAGING_MIGRATED, false)) return;
         SharedPreferences.Editor edit = prefs.edit().putBoolean(STAGING_MIGRATED, true);

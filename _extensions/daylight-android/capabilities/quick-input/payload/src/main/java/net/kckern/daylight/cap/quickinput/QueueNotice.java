@@ -58,8 +58,12 @@ final class QueueNotice {
                     blocked + ". " + inputs(kept) + (kept == 1 ? " is" : " are") + " kept on this phone" + breakdown(all) + ".");
         }
         if (parkedCount > 0) {
-            return new QueueNotice(TITLE, inputs(parkedCount) + " could not be sent" + breakdown(parked)
-                    + (waitingCount > 0 ? ", " + waitingCount + " waiting" : "") + ". Tap to try again.", true);
+            // "Not accepted" is true whether the server refused an input for good or the phone gave
+            // up on it, and it does not promise that a retry will work: a refusal comes back as
+            // the same refusal. The tap retries once more; Discard throws them away.
+            return new QueueNotice(TITLE, inputs(parkedCount) + (parkedCount == 1 ? " was" : " were") + " not accepted"
+                    + breakdown(parked) + (waitingCount > 0 ? ", " + waitingCount + " waiting" : "")
+                    + ". Tap to retry, or discard " + (parkedCount == 1 ? "it" : "them") + ".", true);
         }
         if (notAllowed != null && !notAllowed.isEmpty()) {
             return new QueueNotice(TITLE, "This phone is not allowed to send to " + either(notAllowed) + " yet. "

@@ -138,6 +138,8 @@ public class DeviceDefaultsTest {
             if (!quickInput) continue;
             // memo:new is a voice input for the journal; input:<kind>:<destination> says both.
             String target = "memo".equals(kind) ? "voice:journal" : a.getString("target");
+            // input:status opens the capture status screen. It sends nothing, so it names no destination.
+            if ("status".equals(target)) continue;
             String wantedKind = target.substring(0, target.indexOf(':'));
             String destination = target.substring(target.indexOf(':') + 1);
             assertEquals("action " + a.getString("id") + " names destination '" + destination + "', which must be configured and take " + wantedKind,
