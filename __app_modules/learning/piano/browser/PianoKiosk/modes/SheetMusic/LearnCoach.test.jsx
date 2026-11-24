@@ -31,7 +31,7 @@ describe('LearnCoach', () => {
  it('hands the passage to the drill as sets and reps: one set per Silver and Gold step', () => {
   render(<LearnCoach {...props} />);
   const { projection, stepId } = h.lab.drill;
-  expect(projection.steps.map((step) => step.display.key)).toEqual(['Right hand', 'Left hand', 'Together', 'On your own', 'Beat', 'Right 30%', 'Left 30%', '30%', '50%', '75%', '100%']);
+  expect(projection.steps.map((step) => step.display.key)).toEqual(['Right hand', 'Left hand', 'Together', 'On your own', 'Rhythm', 'Beat', 'Right 30%', 'Left 30%', '30%', '50%', '75%', '100%']);
   expect(projection.steps[0]).toMatchObject({ id: stepId, state: 'current', requirement: { required_passes: 1 }, pass_count: 0, passed: false });
   expect(projection.steps[4].requirement.required_passes).toBe(2);
  });
@@ -68,7 +68,7 @@ describe('LearnCoach', () => {
  it('banks a passing take with the drill card and moves to the next step under it', async () => {
   render(<LearnCoach {...props} />);
   await outcome(passed);
-  expect(h.lab.card).toMatchObject({ setIndex: 1, setCount: 11, repIndex: 1, repCount: 1, setClear: true, next: { key: 'Left hand' } });
+  expect(h.lab.card).toMatchObject({ setIndex: 1, setCount: 12, repIndex: 1, repCount: 1, setClear: true, next: { key: 'Left hand' } });
   expect(h.lab.coachingTask.skill).toBe('left');
   act(() => h.lab.onCardDone());
   expect(h.lab.card).toBeNull();
@@ -115,7 +115,7 @@ describe('LearnCoach', () => {
  it('has no practice chooser: the sets are how a step is chosen', () => {
   render(<LearnCoach {...props} />);
   expect(h.lab.onChangePractice).toBeUndefined();
-  expect(h.lab.drill.projection.steps.map((step) => step.display.key)).toEqual(['Right hand', 'Left hand', 'Together', 'On your own', 'Beat', 'Right 30%', 'Left 30%', '30%', '50%', '75%', '100%']);
+  expect(h.lab.drill.projection.steps.map((step) => step.display.key)).toEqual(['Right hand', 'Left hand', 'Together', 'On your own', 'Rhythm', 'Beat', 'Right 30%', 'Left 30%', '30%', '50%', '75%', '100%']);
   // Each set is named by a picture; the words stay as its accessible name.
   expect(h.lab.drill.projection.steps.every((step) => step.display.icon && step.title)).toBe(true);
  });
@@ -214,7 +214,7 @@ describe('LearnCoach', () => {
   beforeEach(() => { h.log.info.mockClear(); });
   it('by default opens the note steps and the check, and locks Gold behind Silver with a lock', () => {
    render(<LearnCoach {...props} />);
-   expect(steps().map((step) => Boolean(step.locked))).toEqual([false, false, false, false, true, true, true, true, true, true, true]);
+   expect(steps().map((step) => Boolean(step.locked))).toEqual([false, false, false, false, true, true, true, true, true, true, true, true]);
    expect(lockShown(named('Beat'))).toBe(true);
    expect(lockShown(named('Right 30%'))).toBe(true);
    expect(lockShown(named('Together'))).toBe(false);
@@ -233,7 +233,7 @@ describe('LearnCoach', () => {
   });
   it('strict leaves only the current step to start, and draws no locks', () => {
    render(<LearnCoach {...props} skipping={{ default: 'strict' }} />);
-   expect(steps().map((step) => Boolean(step.locked))).toEqual([false, true, true, true, true, true, true, true, true, true, true]);
+   expect(steps().map((step) => Boolean(step.locked))).toEqual([false, true, true, true, true, true, true, true, true, true, true, true]);
    expect(steps().some(lockShown)).toBe(false);
    act(() => h.lab.onPickStep({ id: named('Left hand').id }));
    expect(h.lab.coachingTask.skill).toBe('right');
@@ -246,7 +246,7 @@ describe('LearnCoach', () => {
    const coach = { profileId: 'learner4', loaded: true, projection: projectCoach({ plan, state, dayKey: '2026-11-19' }), state, saveStatus: 'saved', selectTask: vi.fn(), record: vi.fn() };
    expect(coach.projection.goldResume.skill).toBe('mastery');
    render(<LearnCoach {...props} coach={coach} skipping={{ default: 'strict' }} />);
-   expect(h.lab.coachingTask.skill).toBe('pulse');
+   expect(h.lab.coachingTask.skill).toBe('rhythm');
   });
   it('a learner set to open may start score tempo first', () => {
    render(<LearnCoach {...props} skipping={{ default: 'strict', learners: { guest: 'open' } }} />);

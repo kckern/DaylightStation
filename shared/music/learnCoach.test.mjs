@@ -16,12 +16,15 @@ describe('guided musical progression', () => {
   it('offers a concrete first hand task and omits impossible hand stages for single-part music', () => {
     const plan = planOf();
     expect(projection(plan).recommended).toMatchObject({ skill: 'silver', assist: 'none', mode: 'free', parts: ['rh', 'lh'], range: { start: 0, end: 3 } });
-    expect(plan.tasks.filter((task) => task.passageId === 'answer').map((task) => task.skill)).toEqual(['notes', 'silver', 'pulse', 'timed-30', 'timed-50', 'timed-75', 'mastery']);
+    expect(plan.tasks.filter((task) => task.passageId === 'answer').map((task) => task.skill)).toEqual(['notes', 'silver', 'rhythm', 'pulse', 'timed-30', 'timed-50', 'timed-75', 'mastery']);
   });
 
   it('advances the Gold path after two passes among three equivalent takes and never removes that achievement', () => {
     const plan = planOf(); const task = choose(plan, 'pulse');
-    let state = outcome(undefined, plan, task);
+    // The rhythm step comes first; clear it so this test can follow the beat step.
+    const rhythm = choose(plan, 'rhythm');
+    let state = outcome(outcome(undefined, plan, rhythm), plan, rhythm);
+    state = outcome(state, plan, task);
     expect(projection(plan, state).gold.opening.skill).toBe('pulse');
     state = outcome(state, plan, task, bad);
     state = outcome(state, plan, task);
@@ -275,6 +278,7 @@ describe('Gold tempo ladder: 30, 50, 75, then score tempo', () => {
   it('climbs a 30% beat, cued 30, 50 and 75, then score tempo', () => {
     const plan = planOf();
     expect(gold(plan).map(({ skill, mode, tempoPercent, label }) => [skill, mode, tempoPercent, label])).toEqual([
+      ['rhythm', 'cued', 50, 'Tap the rhythm'],
       ['pulse', 'metronome', 30, 'Settle into a beat'],
       ['timed-30-rh', 'cued', 30, 'Right hand with the beat'],
       ['timed-30-lh', 'cued', 30, 'Left hand with the beat'],
@@ -321,7 +325,7 @@ describe('Gold tempo ladder: 30, 50, 75, then score tempo', () => {
     const slower = oldKey(plan, 'cued', 20);
     const p = projection(plan, stateWith(other, oneHand, slower));
     for (const skill of ['pulse', 'timed-30', 'timed-50', 'timed-75']) expect(skillOf(p, skill).ready).toBe(false);
-    expect(p.gold.opening.skill).toBe('pulse');
+    expect(p.gold.opening.skill).toBe('rhythm');
   });
 
   describe('a saved Gold step from the old 60/80/100 ladder', () => {
@@ -377,13 +381,13 @@ describe('one hand at a time with the beat (2026-11-22)', () => {
   it('puts one-hand beat rungs between the beat and both hands at 30%', () => {
     const plan = planOf();
     expect(plan.tasks.filter((task) => task.passageId === 'opening').map((task) => task.skill)).toEqual(
-      ['right', 'left', 'together', 'silver', 'pulse', 'timed-30-rh', 'timed-30-lh', 'timed-30', 'timed-50', 'timed-75', 'mastery']);
+      ['right', 'left', 'together', 'silver', 'rhythm', 'pulse', 'timed-30-rh', 'timed-30-lh', 'timed-30', 'timed-50', 'timed-75', 'mastery']);
     expect(choose(plan, 'timed-30-rh')).toMatchObject({ parts: ['rh'], mode: 'cued', tempoPercent: 30, track: 'gold', label: 'Right hand with the beat' });
     expect(choose(plan, 'timed-30-lh')).toMatchObject({ parts: ['lh'], mode: 'cued', tempoPercent: 30, track: 'gold', label: 'Left hand with the beat' });
   });
   it('adds no one-hand rungs to a one-part passage', () => {
     expect(planOf().tasks.filter((task) => task.passageId === 'answer').map((task) => task.skill))
-      .toEqual(['notes', 'silver', 'pulse', 'timed-30', 'timed-50', 'timed-75', 'mastery']);
+      .toEqual(['notes', 'silver', 'rhythm', 'pulse', 'timed-30', 'timed-50', 'timed-75', 'mastery']);
   });
   it('a both-hands proof covers the one-hand rungs at or below its tempo', () => {
     const plan = planOf();
@@ -400,12 +404,14 @@ describe('one hand at a time with the beat (2026-11-22)', () => {
     const skills = projection(plan, state).segments[0].skills;
     expect(skills.find((s) => s.skill === 'timed-30-rh').ready).toBe(true);
     expect(skills.find((s) => s.skill === 'timed-30').ready).toBe(false);
-    expect(projection(plan, state).gold.opening.skill).toBe('pulse');
+    expect(projection(plan, state).gold.opening.skill).toBe('rhythm');
   });
   it('a resume saved on 50% before the one-hand rungs existed gives way to the right hand', () => {
     const plan = planOf();
     // A state saved by the old ladder carries no `ladder` revision.
-    let saved = outcome(undefined, plan, choose(plan, 'pulse'));
+    const rhythm = choose(plan, 'rhythm');
+    let saved = outcome(outcome(undefined, plan, rhythm), plan, rhythm);
+    saved = outcome(saved, plan, choose(plan, 'pulse'));
     saved = outcome(saved, plan, choose(plan, 'pulse'));
     const { ladder, ...state } = outcome(saved, plan, choose(plan, 'timed-30'), bad);
     expect(ladder).toBe(3);

@@ -17,6 +17,8 @@ export const RETENTION_DAYS = 3;
 /** The cued Gold steps below score tempo. The ladder was 60/80 until 2026-11; earned keys at other tempos carry over. */
 const GOLD_TEMPOS = Object.freeze([30, 50, 75]);
 /** Where a timing-only miss steps down to, one rung at a time. */
+/** The tempo of the rhythm step (pitch-free, X noteheads) that comes before the metronome steps. */
+export const RHYTHM_TEMPO = 50;
 const SLOWER_TEMPOS = Object.freeze([30, 40, ...GOLD_TEMPOS.slice(1), 100]);
 /** Ladder shape a saved state was written under: 2 = each hand with the beat at 50% (2026-11-22). */
 const LADDER_REVISION = 3;
@@ -153,6 +155,8 @@ export function createCoachPlan({ scoreId, fingerprint, segments = [], authoredL
       { skill: parts.length > 1 ? 'together' : 'notes', label: parts.length > 1 ? 'Join the hands' : 'Find the notes', parts, mode: 'free', ...noteStep },
       { skill: 'silver', label: 'Play it on your own', parts, mode: 'free', track: 'silver', assist: 'none', required: policy.silver.checkPasses, stallSeconds: policy.silver.stallSeconds,
         criteria: { completeness: 1, cleanliness: policy.silver.cleanliness } },
+      // The rhythm alone first (any key, X noteheads, a woodblock): it must be clear before the metronome steps.
+      { skill: 'rhythm', label: 'Tap the rhythm', parts, mode: 'cued', tempoPercent: RHYTHM_TEMPO, track: 'gold', rhythm: true },
       { skill: 'pulse', label: 'Settle into a beat', parts, mode: 'metronome', tempoPercent: GOLD_TEMPOS[0], track: 'gold' },
       // Each hand with the beat before both (2026-11-22): a child who could play the
       // melody in time dropped the left hand the moment both were graded on the click.
@@ -302,7 +306,7 @@ const certificate = (achievement, provenance) => ({ at: achievement?.at ?? null,
  */
 function carryGold(state, skills) {
   const earned = Object.keys(state.achievements).map((key) => { try { return JSON.parse(key); } catch { return null; } })
-    .filter((key) => Array.isArray(key) && key[0] !== 'silver-check')
+    .filter((key) => Array.isArray(key) && key[0] !== 'silver-check' && !(Array.isArray(key.at(-1)) && key.at(-1)[0] === 'rhythm'))
     .map(([scoreId, fingerprint, start, end, parts, mode, tempoPercent]) => ({ scoreId, fingerprint, range: { start, end }, parts, mode, tempoPercent }));
   const covers = (proof, task) => proof.scoreId === task.scoreId && proof.fingerprint === task.fingerprint
     && sameRange(proof.range, task.range) && task.parts.every((part) => proof.parts.includes(part))
@@ -315,7 +319,7 @@ function carryGold(state, skills) {
       const proof = (faster && covers(faster, skill) ? faster : null) ?? earned.find((key) => covers(key, skill));
       if (proof) Object.assign(skill, { ready: true, provenance: skill.provenance ?? proof.provenance ?? 'demonstrated' });
     }
-    if (skill.ready && skill.mode === 'cued' && (!faster || skill.tempoPercent > faster.tempoPercent)) faster = skill;
+    if (skill.ready && skill.mode === 'cued' && !skill.rhythm && (!faster || skill.tempoPercent > faster.tempoPercent)) faster = skill;
   }
 }
 
@@ -680,6 +684,11 @@ export function coachFeedback(result, task) {
     return shift > 0
       ? { title: 'Start on the click', detail: `You started ${words} late — start on the click after the count.`, reason: 'entry-late', entryShiftBeats: shift }
       : { title: 'Wait for the click', detail: `You started ${words} early — wait for the click after the count.`, reason: 'entry-early', entryShiftBeats: shift };
+  }
+  if (task.rhythm) {
+    if (passedFor(result, task)) return { title: 'Nice rhythm!', detail: 'You tapped the rhythm with the beat.', reason: 'passed' };
+    if ((result?.criteria?.completeness ?? 0) < task.criteria.completeness) return { title: 'A tap went missing', detail: 'Tap once for every X, any key, then try again.', reason: 'coverage' };
+    return { title: 'Tap with the click', detail: 'Any key is fine. Line each tap up with its X.', reason: 'timing' };
   }
   if (passedFor(result, task)) return { title: 'Nice work!',
     detail: task.mode === 'cued' ? 'You played the passage with the beat.' : task.mode === 'metronome' ? 'You found the notes with the click playing.' : 'You found all the notes.', reason: 'passed' };

@@ -68,7 +68,7 @@ const armed=async(page)=>{await page.locator('.piano-exercise-run[data-armed="tr
 // Open the passage (the rail button), then tap a set of the drill to run that step.
 const openPassage=async(page)=>{await click(page,'Practice bars 1–2');await armed(page);};
 const openStep=async(page,step)=>{await openPassage(page);await page.locator('button.drill-cluster').and(page.getByRole('button',{name:STEP_NAMES[step],exact:true})).click();await page.locator('.piano-learn-lab__task').filter({hasText:STEP_NAMES[step]}).waitFor();await armed(page);};
-const STEP_NAMES={'On your own':'Play it on your own','100%':'Play at score tempo'};
+const STEP_NAMES={'On your own':'Play it on your own','100%':'Play at score tempo','Rhythm':'Tap the rhythm'};
 const card=(page,text)=>page.locator('.rep-card').filter({hasText:text});
 // Silver and Gold close the drill's curtain; its verdict carries the word.
 const curtain=(page,word)=>page.locator('.gate-ceremony').filter({has:page.locator('.gate-ceremony__word',{hasText:word})});
@@ -89,7 +89,7 @@ describe('real Learn journey',()=>{
    expect(await page.locator('.piano-learn-lab__task').innerText()).toBe('Find the right-hand notes');
    expect(await page.locator('.piano-learn-lab__identity').innerText()).toBe('Bars 1–2');
    expect(await page.getByRole('button',{name:'Start practice'}).count()).toBe(0);
-   expect(await page.locator('.drill-cluster').count()).toBe(11);
+   expect(await page.locator('.drill-cluster').count()).toBe(12);
    expect(await page.locator('.piano-passage-rail__tile').count()).toBe(1);
    const text=await page.locator('.piano-learn-coach').innerText();
    for(const banned of ['Segment','Practicing as','Progress saved','previously earned','Connect the piano'])expect(text).not.toContain(banned);
@@ -100,6 +100,18 @@ describe('real Learn journey',()=>{
    expect(scrollers).toBe(0);expect(await page.evaluate(()=>document.documentElement.scrollHeight)).toBeLessThanOrEqual(800);
    // Opening a passage is not choosing it: nothing is sent until a note is played.
    expect(f.records.size).toBe(0);expect(errors).toEqual([]);
+  }finally{await page.close();}
+ },90000);
+ it('draws the rhythm step as one line of X noteheads, any key, before the metronome',async()=>{
+  const{page,errors}=await open();try{
+   await openStep(page,'Rhythm');
+   expect(await page.locator('.piano-learn-lab__task').innerText()).toBe('Tap the rhythm');
+   await page.screenshot({path:path.join(ARTIFACTS,'rhythm-step.png')});
+   // Every notehead is the X glyph on one line per staff: one distinct vertical position per staff.
+   const heads=await page.locator('.piano-exercise-run__stage .vf-notehead').evaluateAll(els=>els.map(el=>{const b=el.getBoundingClientRect();return Math.round(b.top);}));
+   expect(heads.length).toBeGreaterThan(0);
+   expect(new Set(heads).size).toBeLessThanOrEqual(2);
+   expect(errors).toEqual([]);
   }finally{await page.close();}
  },90000);
  it('certifies Silver from a clean hints-off take with hands held across each other',async()=>{
@@ -127,9 +139,9 @@ describe('real Learn journey',()=>{
    // The score itself celebrates nothing: no banner, no sentence, and nothing again on a reload.
    expect(await page.getByText(/whole piece/i).count()).toBe(0);expect(await page.locator('.gate-ceremony').count()).toBe(0);
    expect((await page.evaluate(()=>window.__logs)).filter(l=>l.event==='piano.learn.celebrate')).toHaveLength(1);
-   // A tile only shows its bars. The rail button opens the passage, on its next Gold step.
+   // A tile only shows its bars. The rail button opens the passage, on its next Gold step (the rhythm, before the metronome).
    await page.locator('.piano-passage-rail__tile[data-state="silver"]').first().click();expect(await page.locator('.piano-learn-selection-box').count()).toBeGreaterThan(0);
-   await click(page,'Practice bars 1–2');await page.locator('.piano-learn-lab__task').filter({hasText:'Settle into a beat'}).waitFor();await page.screenshot({path:path.join(ARTIFACTS,'silver-certified.png')});
+   await click(page,'Practice bars 1–2');await page.locator('.piano-learn-lab__task').filter({hasText:'Tap the rhythm'}).waitFor();await page.screenshot({path:path.join(ARTIFACTS,'silver-certified.png')});
    expect(await page.locator('.drill-cluster[data-done]').count()).toBe(4);
    expect(errors).toEqual([]);
   }finally{await page.close();}
@@ -203,7 +215,7 @@ describe('real Learn journey',()=>{
    await page.locator('.piano-passage-rail__tile[data-state="gold"]').waitFor({timeout:15000});await expect.poll(()=>f.attempts.size).toBe(2);
    await page.locator('.piano-passage-rail__go').waitFor({timeout:15000});
    await page.evaluate(()=>window.__mount());await page.getByRole('button',{name:'Practice bars 1–2',exact:true}).waitFor();await openPassage(page);
-   expect(await page.locator('.drill-cluster[data-done]').count()).toBe(11);expect(errors).toEqual([]);
+   expect(await page.locator('.drill-cluster[data-done]').count()).toBe(12);expect(errors).toEqual([]);
   }catch(error){fs.writeFileSync(path.join(ARTIFACTS,'failure.json'),JSON.stringify({errors,attempts:[...f.attempts.values()],text:await page.locator('body').innerText(),logs:await page.evaluate(()=>window.__logs)},null,2));await page.screenshot({path:path.join(ARTIFACTS,'failure.png'),fullPage:true});throw error;}finally{await page.close();}
  },90000);
  // The field take of 2026-11-20 (Jingle Bells bar 3 at 56 bpm), which used to be scored and named "one beat late"; it now goes back to the count.
@@ -268,7 +280,7 @@ describe('real Learn journey',()=>{
    // There is no practice chooser; a step is chosen from the sets, each a full touch target.
    expect(await page.getByRole('button',{name:'Change practice'}).count()).toBe(0);
    const sets=await page.locator('button.drill-cluster').evaluateAll(list=>list.map(el=>{const r=el.getBoundingClientRect();return{w:r.width,h:r.height,top:r.top,bottom:r.bottom,clip:el.querySelector('.drill-cluster__label').getBoundingClientRect().top>=el.closest('.piano-exercise-run__rail').getBoundingClientRect().top};}));
-   expect(sets).toHaveLength(11);expect(new Set(sets.map(set=>Math.round(set.top))).size).toBe(1);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);expect(sets.every(set=>set.w>=64&&set.h>=56&&set.clip)).toBe(true);
+   expect(sets).toHaveLength(12);expect(new Set(sets.map(set=>Math.round(set.top))).size).toBe(1);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);expect(sets.every(set=>set.w>=64&&set.h>=56&&set.clip)).toBe(true);
    expect(f.attempts.size).toBe(0);expect(errors).toEqual([]);
   }finally{await page.close();}
  },60000);
