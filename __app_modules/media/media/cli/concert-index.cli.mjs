@@ -73,3 +73,39 @@ export function parseTrackListing(wikitext) {
   }
   return out;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Subtitles                                                                  */
+/* -------------------------------------------------------------------------- */
+
+const TS = /(\d+):(\d{2}):(\d{2})[,.](\d{3})/;
+
+/** "00:01:03,160" -> 63.16 */
+export function srtTime(s) {
+  const m = TS.exec(String(s ?? ''));
+  if (!m) return null;
+  // Integer milliseconds first, one division last: 105 + 0.439 in floats is
+  // 105.43900000000001, which breaks exact comparisons downstream.
+  const ms = ((Number(m[1]) * 60 + Number(m[2])) * 60 + Number(m[3])) * 1000 + Number(m[4]);
+  return ms / 1000;
+}
+
+/**
+ * SubRip to cues. The concerts' subtitles are machine transcriptions: speech
+ * is clean, sung lyrics are mangled. Both are kept verbatim; judging which is
+ * which happens downstream.
+ */
+export function parseSrt(text) {
+  const out = [];
+  for (const block of String(text ?? '').replace(/\r/g, '').split(/\n\s*\n/)) {
+    const lines = block.trim().split('\n');
+    const k = lines.findIndex((l) => l.includes('-->'));
+    if (k < 0) continue;
+    const [a, b] = lines[k].split('-->');
+    const start = srtTime(a);
+    const end = srtTime(b);
+    if (start === null || end === null) continue;
+    out.push({ i: out.length + 1, start, end, text: lines.slice(k + 1).join(' ').trim() });
+  }
+  return out;
+}
