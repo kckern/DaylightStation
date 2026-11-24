@@ -215,6 +215,7 @@ test('rider picker cards keep each name clear of its avatar and fill the screen 
     const box = e => { const r = e.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; };
     return {
       layout: box(document.querySelector('.skyline-menu-layout')), pad: box(document.querySelector('.skyline-controls__pad')),
+      window: box(document.querySelector('.skyline-menus--identity')), controls: box(document.querySelector('.skyline-controls')),
       viewport: { width: innerWidth, height: innerHeight }, document: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
       cards: [...document.querySelectorAll('.skyline-controls__pad button')].map(b => ({
         card: box(b), img: box(b.querySelector('img')), name: box(b.querySelector('strong')), badge: box(b.querySelector('.skyline-controls__position')),
@@ -236,6 +237,12 @@ test('rider picker cards keep each name clear of its avatar and fill the screen 
   }
   expect(g.cards.map(c => c.hint)).toEqual(['', 'Hold for Grown-up', '', '']);
   expect(g.pad.height).toBeGreaterThanOrEqual(0.4 * g.layout.height);
+  // Neither half may leave a dead block of sky (review of the 2026-11-24 fix:
+  // the title window sat at the top of an otherwise empty left half).
+  for (const column of [g.window, g.controls]) {
+    expect(column.top - g.layout.top).toBeLessThanOrEqual(0.4 * g.layout.height);
+    expect(g.layout.bottom - column.bottom).toBeLessThanOrEqual(0.4 * g.layout.height);
+  }
   expect(g.document).toEqual([g.viewport.width, g.viewport.height]);
   for (const r of g.everything) expect(inside(r, { left: 0, top: 0, right: g.viewport.width, bottom: g.viewport.height })).toBe(true);
   await expectMenuGeometry(page);
