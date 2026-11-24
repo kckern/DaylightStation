@@ -20,6 +20,7 @@ import { parseArgs } from 'node:util';
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import {
   parseSilences, candidateBoundaries, parseAstats, zipFrames, applauseRuns, rejectApplauseCandidates,
@@ -339,10 +340,42 @@ export function measureGraph(outDir, { noiseDb = -40, minSilenceS = 0.8 } = {}) 
   ].join(';');
 }
 
+/** `--name value` as a number; `fallback` when the flag is absent; an error naming the flag otherwise. */
+export function numberFlag(name, value, fallback) {
+  if (value === undefined) return fallback;
+  const n = Number(value);
+  if (String(value).trim() === '' || !Number.isFinite(n)) throw new Error(`--${name} must be a number, got "${value}"`);
+  return n;
+}
+
+/** "120, 305.5" -> [120, 305.5]. An empty or non-numeric entry is an error, never a silent 0. */
+export function parseAt(value) {
+  return String(value).split(',').map((raw, k) => {
+    const s = raw.trim();
+    const n = Number(s);
+    if (s === '' || !Number.isFinite(n)) throw new Error(`--at entry ${k + 1} is not a number: "${raw}"`);
+    return n;
+  });
+}
+
+/** ffprobe's `format=duration` output as seconds, or an error when it has none (N/A, empty). */
+export function parseDuration(stdout, media) {
+  const text = String(stdout ?? '').trim();
+  const d = Number(text);
+  if (text === '' || !Number.isFinite(d) || d <= 0) throw new Error(`ffprobe gave no usable duration for ${media}: "${text}"`);
+  return d;
+}
+
+/**
+ * A 360p clip centred on `at`. The seek stays fractional so the boundary is
+ * centred, and the name carries a tenth of a second so two close boundaries
+ * do not overwrite each other's clip.
+ */
 export function clipArgs(media, at, pad, outDir) {
-  const name = `clip-${String(Math.round(at)).padStart(4, '0')}.mp4`;
+  const name = `clip-${at.toFixed(1).padStart(6, '0')}.mp4`;
+  const ss = Number(Math.max(0, at - pad).toFixed(3));
   return [
-    '-v', 'error', '-y', '-ss', String(Math.max(0, Math.round(at - pad))), '-i', media, '-t', String(pad * 2),
+    '-v', 'error', '-y', '-ss', String(ss), '-i', media, '-t', String(pad * 2),
     '-vf', 'scale=-2:360', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '30',
     '-c:a', 'aac', '-b:a', '128k', path.join(outDir, name),
   ];
@@ -356,7 +389,7 @@ function run(cmd, args) {
 }
 
 function durationOf(media) {
-  return Number(run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', media]).stdout.trim());
+  return parseDuration(run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', media]).stdout, media);
 }
 
 const USAGE = `concert-index: evidence for a concert video's programme
@@ -370,7 +403,17 @@ const USAGE = `concert-index: evidence for a concert video's programme
   clips <media> --at 120,305.5 [--pad 6] --out <dir>
       Cut a 360p review clip centred on each boundary.`;
 
+/** Run one subcommand. Errors print as one message with a --help hint and set exit code 1. */
 export async function runCliEntry(argv = process.argv.slice(2)) {
+  try {
+    await dispatch(argv);
+  } catch (err) {
+    console.error(`concert-index: ${err.message}\nRun with --help for usage.`);
+    process.exitCode = 1;
+  }
+}
+
+async function dispatch(argv) {
   const { values: f, positionals: [cmd, media] } = parseArgs({
     args: argv,
     allowPositionals: true,
@@ -383,7 +426,7 @@ export async function runCliEntry(argv = process.argv.slice(2)) {
   });
   const emit = (obj) => {
     const text = `${JSON.stringify(obj, null, 2)}\n`;
-    if (f.out && cmd !== 'measure' && cmd !== 'clips') writeFileSync(f.out, text);
+    if (f.out) writeFileSync(f.out, text);
     else process.stdout.write(text);
   };
 
@@ -397,17 +440,18 @@ export async function runCliEntry(argv = process.argv.slice(2)) {
     if (!res.ok) throw new Error(`Wikipedia answered ${res.status} for ${f.page}`);
     const body = await res.json();
     if (body.error) throw new Error(`Wikipedia: ${body.error.info}`);
+    if (typeof body.parse?.wikitext !== 'string') throw new Error(`Wikipedia returned no wikitext for ${f.page}`);
     emit({ page: f.page, tracks: parseTrackListing(body.parse.wikitext) });
     return;
   }
 
   if (cmd === 'measure') {
     if (!media || !f.out) throw new Error('measure needs <media> and --out');
-    mkdirSync(f.out, { recursive: true });
     const graph = measureGraph(f.out, {
-      noiseDb: f.noise ? Number(f.noise) : -40,
-      minSilenceS: f['min-silence'] ? Number(f['min-silence']) : 0.8,
+      noiseDb: numberFlag('noise', f.noise, -40),
+      minSilenceS: numberFlag('min-silence', f['min-silence'], 0.8),
     });
+    mkdirSync(f.out, { recursive: true });
     const r = run('ffmpeg', ['-hide_banner', '-nostats', '-vn', '-i', media, '-filter_complex', graph, '-map', '[out]', '-f', 'null', '-']);
     const silence = String(r.stderr).split('\n').filter((l) => l.includes('silencedetect')).join('\n');
     writeFileSync(path.join(f.out, 'silence.txt'), `${silence}\n`);
@@ -418,6 +462,7 @@ export async function runCliEntry(argv = process.argv.slice(2)) {
 
   if (cmd === 'evidence') {
     if (!f.measured || !f.srt) throw new Error('evidence needs --measured and --srt');
+    const minGapS = numberFlag('min-gap', f['min-gap'], 20);
     const read = (name) => readFileSync(path.join(f.measured, name), 'utf8');
     const { durationS } = JSON.parse(read('duration.json'));
     const tracks = f.tracks ? (JSON.parse(readFileSync(f.tracks, 'utf8')).tracks ?? []) : [];
@@ -428,16 +473,17 @@ export async function runCliEntry(argv = process.argv.slice(2)) {
       hfText: read('hf.txt'),
       cues: parseSrt(readFileSync(f.srt, 'utf8')),
       tracks,
-      minGapS: f['min-gap'] ? Number(f['min-gap']) : 20,
+      minGapS,
     }));
     return;
   }
 
   if (cmd === 'clips') {
     if (!media || !f.at || !f.out) throw new Error('clips needs <media>, --at and --out');
+    const ats = parseAt(f.at);
+    const pad = numberFlag('pad', f.pad, 6);
     mkdirSync(f.out, { recursive: true });
-    const pad = f.pad ? Number(f.pad) : 6;
-    for (const at of f.at.split(',').map(Number).filter(Number.isFinite)) run('ffmpeg', clipArgs(media, at, pad, f.out));
+    for (const at of ats) run('ffmpeg', clipArgs(media, at, pad, f.out));
     console.log(`clips -> ${f.out}`);
     return;
   }
@@ -445,4 +491,4 @@ export async function runCliEntry(argv = process.argv.slice(2)) {
   throw new Error(`unknown subcommand: ${cmd}\n\n${USAGE}`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) { await runCliEntry(); }
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) { await runCliEntry(); }

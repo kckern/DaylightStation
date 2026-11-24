@@ -3,9 +3,14 @@
 // Indexing a concert video into sections. Every function here is pure; the
 // ffmpeg and network I/O live in the CLI shell, so none of this needs a video.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, existsSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { rejectApplauseCandidates } from './segment-timings.cli.mjs';
-import { parseTrackListing, stripWiki, mmss, parseSrt, srtTime, sectionsFrom, attachCues, words, lyricOverlap, rankTracks, buildEvidence, measureGraph, clipArgs } from './concert-index.cli.mjs';
+import { parseTrackListing, stripWiki, mmss, parseSrt, srtTime, sectionsFrom, attachCues, words, lyricOverlap, rankTracks, buildEvidence, measureGraph, clipArgs, numberFlag, parseAt, parseDuration, runCliEntry } from './concert-index.cli.mjs';
 
 const WIKITEXT = `==Track listing==
 {{Track listing
@@ -284,10 +289,80 @@ describe('clipArgs', () => {
     expect(clipArgs('/m/v.mp4', 120, 6, '/o')).toEqual([
       '-v', 'error', '-y', '-ss', '114', '-i', '/m/v.mp4', '-t', '12',
       '-vf', 'scale=-2:360', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '30',
-      '-c:a', 'aac', '-b:a', '128k', '/o/clip-0120.mp4',
+      '-c:a', 'aac', '-b:a', '128k', '/o/clip-0120.0.mp4',
     ]);
   });
   it('never seeks before zero', () => {
     expect(clipArgs('/m/v.mp4', 2, 6, '/o').slice(3, 5)).toEqual(['-ss', '0']);
+  });
+  it('keeps a fractional boundary centred and names clips to a tenth of a second', () => {
+    const a = clipArgs('/m/v.mp4', 120.2, 6, '/o');
+    expect(a.slice(3, 5)).toEqual(['-ss', '114.2']);
+    expect(a.at(-1)).toBe('/o/clip-0120.2.mp4');
+    expect(clipArgs('/m/v.mp4', 120.3, 6, '/o').at(-1)).toBe('/o/clip-0120.3.mp4');
+  });
+});
+
+describe('flag parsing', () => {
+  it('numberFlag reads numbers, falls back when absent, and names the flag when it is not a number', () => {
+    expect(numberFlag('noise', '-40', -30)).toBe(-40);
+    expect(numberFlag('noise', undefined, -30)).toBe(-30);
+    expect(() => numberFlag('noise', 'loud', -30)).toThrow('--noise must be a number, got "loud"');
+    expect(() => numberFlag('pad', '', 6)).toThrow(/--pad must be a number/);
+  });
+  it('parseAt reads a comma list and rejects empty or non-numeric entries', () => {
+    expect(parseAt('120, 305.5')).toEqual([120, 305.5]);
+    expect(() => parseAt('1,,2')).toThrow(/--at entry 2/);
+    expect(() => parseAt('1,x')).toThrow(/--at entry 2 is not a number: "x"/);
+  });
+  it('parseDuration rejects a probe that gave no usable duration', () => {
+    expect(parseDuration('98.5\n', '/m/v.mp4')).toBe(98.5);
+    expect(() => parseDuration('N/A\n', '/m/v.mp4')).toThrow(/no usable duration/);
+    expect(() => parseDuration('', '/m/v.mp4')).toThrow(/no usable duration/);
+  });
+});
+
+describe('runCliEntry errors', () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); process.exitCode = undefined; });
+
+  it('reports a Wikipedia answer with no wikitext, with a hint, and fails the exit code', async () => {
+    vi.stubGlobal('fetch', async () => ({ ok: true, json: async () => ({}) }));
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await runCliEntry(['track-listing', '--page', 'Nothing Here']);
+    expect(process.exitCode).toBe(1);
+    expect(err.mock.calls.flat().join('\n')).toMatch(/no wikitext for Nothing Here[\s\S]*--help/);
+  });
+});
+
+describe('entry points', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
+  const cli = (args) => spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8' });
+
+  it('the shim and the module both run from a relative path', () => {
+    for (const entry of ['cli/concert-index.cli.mjs', '__app_modules/media/media/cli/concert-index.cli.mjs']) {
+      const r = cli([entry, '--help']);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain('track-listing --page');
+    }
+  });
+  it('a bad --at fails with a message and exit 1, before creating anything', () => {
+    const tmp = mkdtempSync(path.join(tmpdir(), 'concert-index-'));
+    try {
+      const out = path.join(tmp, 'clips');
+      const r = cli(['cli/concert-index.cli.mjs', 'clips', path.join(tmp, 'none.mp4'), '--at', '1,,2', '--out', out]);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toMatch(/--at entry 2[\s\S]*--help/);
+      expect(existsSync(out)).toBe(false);
+    } finally { rmSync(tmp, { recursive: true, force: true }); }
+  });
+  it('a non-numeric --noise fails before ffmpeg runs', () => {
+    const tmp = mkdtempSync(path.join(tmpdir(), 'concert-index-'));
+    try {
+      const out = path.join(tmp, 'm');
+      const r = cli(['cli/concert-index.cli.mjs', 'measure', path.join(tmp, 'none.mp4'), '--out', out, '--noise', 'loud']);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain('--noise must be a number');
+      expect(existsSync(out)).toBe(false);
+    } finally { rmSync(tmp, { recursive: true, force: true }); }
   });
 });
