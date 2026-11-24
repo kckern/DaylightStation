@@ -41,6 +41,11 @@ describe('DS token contract', () => {
     expect(dsCssVars(PACKS.admin)['--ds-skeleton-base']).toBe(DS_TOKENS.skeleton.base);
   });
 
+  it('emits --ds-font-mono, letting a pack override it', () => {
+    expect(dsCssVars()['--ds-font-mono']).toBe(DS_TOKENS.fontMono);
+    expect(dsCssVars(PACKS.admin)['--ds-font-mono']).toBe(PACKS.admin.fontFamilyMonospace);
+  });
+
   it('shares compact control geometry across theme packs', () => {
     for (const pack of [PACKS.health, PACKS.home]) {
       expect(dsCssVars(pack)).toMatchObject({
