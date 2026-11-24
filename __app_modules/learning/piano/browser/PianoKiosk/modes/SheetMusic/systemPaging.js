@@ -52,7 +52,12 @@ export function systemCuts(systems = [], height = 0, ink = []) {
   const merged = mergeIntervals(ink.filter((item) => item && !frames(item)));
   const first = merged.length ? Math.min(merged[0][0], systems[0].top) : 0;
   const last = merged.length ? Math.max(merged[merged.length - 1][1], systems[systems.length - 1].bottom) : height;
-  const cuts = [Math.max(0, first)];
+  // The outer cuts have no neighbour to keep out, so they never trim: the top
+  // one stays at the engraving's top edge (or above ink drawn over it) and the
+  // bottom one at its foot (or below ink drawn under it). Cutting at the ink
+  // itself sliced whatever stood just outside a measured strip, such as the ring
+  // of a selected passage number.
+  const cuts = [Math.min(0, first)];
   for (let i = 1; i < systems.length; i++) {
     const from = systems[i - 1].bottom;
     const to = systems[i].top;
@@ -69,7 +74,7 @@ export function systemCuts(systems = [], height = 0, ink = []) {
     consider(cursor, to);
     cuts.push(best ? (best[0] + best[1]) / 2 : (from + to) / 2);
   }
-  cuts.push(Math.max(cuts[cuts.length - 1], height > 0 ? Math.min(height, last) : last));
+  cuts.push(Math.max(cuts[cuts.length - 1], height, last));
   // What each system really takes between its cuts. A page is fitted to its ink,
   // not to the white paper around it, so the window holds as many systems as it can.
   if (merged.length) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createCoachPlan, projectCoach, applyCoachEvent } from '../../../../../../../shared/music/learnCoach.mjs';
-import { boardColumns, passageTile, pieceGemOffered, railFits, railModel } from './passageRail.js';
+import { boardColumns, letterOf, passageTile, pathLayout, pieceGemOffered, railFits, railModel } from './passageRail.js';
 
 const segment = (index, bars = 4, parts = ['rh', 'lh']) => ({ id: `m${index * 4}-${index * 4 + bars - 1}`, inMeasure: index * 4, outMeasure: index * 4 + bars - 1,
   printedMeasures: [index * 4 + 1, index * 4 + bars], barLabel: `Bars ${index * 4 + 1}–${index * 4 + bars}`, playableParts: parts });
@@ -9,85 +9,134 @@ const pass = { status: 'completed', inputContractVersion: 'onsets-v1', criteria:
 const earn = (plan, state, passage, skill, id) => applyCoachEvent(state, { id, type: 'outcome', result: pass,
   task: plan.tasks.find((task) => task.passageId === passage && task.skill === skill) }, { plan, now: '2026-11-18T20:00:00.000Z', dayKey: '2026-11-18' });
 const project = (plan, state) => projectCoach({ plan, state, dayKey: '2026-11-18' });
-const model = (plan, state, selectedId = null) => { const projection = project(plan, state); return railModel({ segments: projection.segments, projection, selectedId }); };
+const model = (plan, state, selectedId = null, extra = {}) => { const projection = project(plan, state); return railModel({ segments: projection.segments, projection, selectedId, ...extra }); };
+const bronze = (plan, state, ids) => ids.reduce((acc, id) => earn(plan, acc, id, 'silver', `b-${id}`), state);
+const path = (rail) => rail.tokens.map((token) => `${token.letter}:${token.state}${token.isNext ? '*' : ''}${token.isTarget ? '>' : ''}`).join(' ');
+const links = (rail) => rail.tokens.slice(1).map((token) => token.link);
 
-describe('passage rail model', () => {
-  it('shows every passage by its printed starting bar, with its state', () => {
+describe('letters', () => {
+  it('names passages A to Z, then AA', () => {
+    expect([0, 1, 25, 26, 27, 51, 52].map(letterOf)).toEqual(['A', 'B', 'Z', 'AA', 'AB', 'AZ', 'BA']);
+  });
+  it('gives each passage its letter, its bars and its state words', () => {
     const plan = planOf(3); let state = earn(plan, null, 'm0-3', 'silver', 'a');
     state = earn(plan, state, 'm4-7', 'right', 'b');
-    // One hand is still a tomato, with its step counted; both hands make a flower.
     const started = model(plan, state);
-    expect(started.tiles[1]).toMatchObject({ state: 'todo', underway: true, steps: { done: 1, total: 4 }, label: 'Bars 5–8, Started, 1 of 4 steps' });
-    expect(started.tiles[2]).toMatchObject({ state: 'todo', underway: false, label: 'Bars 9–12, Not started' });
+    expect(started.tiles[1]).toMatchObject({ letter: 'B', state: 'todo', underway: true, steps: { done: 1, total: 4 }, label: 'B, bars 5–8, Started, 1 of 4 steps' });
     state = earn(plan, state, 'm4-7', 'left', 'b2');
     const rail = model(plan, state);
-    expect(rail.tiles.map((tile) => [tile.startLabel, tile.state, tile.barCount])).toEqual([['1', 'silver', 4], ['5', 'learning', 4], ['9', 'todo', 4]]);
-    expect(rail.tiles[1]).toMatchObject({ underway: true, steps: { done: 2, total: 4 }, label: 'Bars 5–8, Partway, 2 of 4 steps' });
-    expect(rail.tiles[0].label).toBe('Bars 1–4, Bronze');
-    expect(rail.count).toEqual({ level: 'silver', done: 1, total: 3, text: '1/3', label: '1 of 3 Bronze' });
-    expect(rail.goals).toEqual([{ level: 'silver', label: 'All Bronze', done: 1, total: 3, reached: false },
-      { level: 'joined', label: 'Piece Silver', done: 0, total: 2, reached: false }, { level: 'gold', label: 'All Gold', done: 0, total: 3, reached: false }]);
-  });
-
-  it('uses the printed number when the piece starts on a pickup bar', () => {
+    expect(rail.tiles.map((tile) => [tile.letter, tile.startLabel, tile.state])).toEqual([['A', '1', 'silver'], ['B', '5', 'learning'], ['C', '9', 'todo']]);
+    expect(rail.tiles[0].label).toBe('A, bars 1–4, Bronze');
     expect(passageTile({ id: 'p', inMeasure: 0, outMeasure: 2, printedMeasures: [0, 2], barLabel: 'Bars 0–2', skills: [], certification: {} }))
-      .toMatchObject({ startLabel: '0', bars: 'Bars 0–2', barCount: 3, state: 'todo' });
-    expect(passageTile({ id: 'q', inMeasure: 3, outMeasure: 3, skills: [], certification: {} })).toMatchObject({ startLabel: '4', bars: 'Bars 4–4' });
+      .toMatchObject({ startLabel: '0', bars: 'Bars 0–2', barCount: 3, state: 'todo', label: 'Bars 0–2, Not started' });
+  });
+});
+
+describe('the path', () => {
+  it('starts as plain lettered discs with the first one next, and says what to do', () => {
+    const rail = model(planOf(6), null);
+    expect(path(rail)).toBe('A:todo*> B:todo C:todo D:todo E:todo F:todo');
+    expect(links(rail)).toEqual(['plain', 'plain', 'plain', 'plain', 'plain']);
+    expect(rail).toMatchObject({ caption: 'Learn A', target: { passageId: 'm0-3', kind: 'next' }, nextId: 'm0-3', selectedId: null, lap: 'silver' });
+    expect(rail.tokens[0].aria).toBe('Learn A, bars 1–4');
+    expect(rail.tokens[1].aria).toBe('B, bars 5–8, Not started');
+    expect(rail.marks).toEqual([{ level: 'silver', label: 'Piece played through', reached: false }, { level: 'gold', label: 'Polish open', reached: false },
+      { level: 'diamond', label: 'Polish diamond', reached: false }]);
   });
 
-  it('aims the button at the recommended passage until one is selected', () => {
-    const plan = planOf(3); const state = earn(plan, null, 'm0-3', 'silver', 'a');
-    expect(model(plan, state)).toMatchObject({ buttonLabel: 'Practice bars 5–8', target: { passageId: 'm4-7', kind: 'next' }, outlinedId: 'm4-7', selectedId: null });
-    expect(model(plan, state, 'm8-11')).toMatchObject({ buttonLabel: 'Practice bars 9–12', target: { passageId: 'm8-11', kind: 'selected' }, outlinedId: 'm8-11', selectedId: 'm8-11' });
-    expect(model(plan, state, 'gone')).toMatchObject({ target: { passageId: 'm4-7', kind: 'next' }, selectedId: null });
+  it('hides a join until both halves are Bronze, then shows only the next one as a socket', () => {
+    const plan = planOf(6);
+    // A alone: no join yet, B is next.
+    expect(path(model(plan, bronze(plan, null, ['m0-3'])))).toBe('A:silver B:todo*> C:todo D:todo E:todo F:todo');
+    // A and B: the A+B socket sits between them, and it is next.
+    const ab = model(plan, bronze(plan, null, ['m0-3', 'm4-7']));
+    expect(path(ab)).toBe('A:silver A+B:socket*> B:silver C:todo D:todo E:todo F:todo');
+    expect(links(ab)).toEqual(['socket', 'socket', 'plain', 'plain', 'plain', 'plain']);
+    expect(ab).toMatchObject({ caption: 'Play A and B together', target: { passageId: 'join:m0-3:m4-7', kind: 'next' } });
+    expect(ab.tokens[1]).toMatchObject({ kind: 'socket', aria: 'Play A and B together, bars 1–8', label: 'A+B, bars 1–8, not played through yet' });
+    // Every passage Bronze: still one socket, never a second.
+    const all = model(plan, bronze(plan, null, ['m0-3', 'm4-7', 'm8-11', 'm12-15', 'm16-19', 'm20-23']));
+    expect(all.tokens.filter((token) => token.kind === 'socket')).toHaveLength(1);
   });
 
-  it('offers the join once every passage is Bronze, then Gold once the piece is played through', () => {
-    const plan = planOf(2); let state = earn(plan, null, 'm0-3', 'silver', 'a'); state = earn(plan, state, 'm4-7', 'silver', 'b');
-    const bronze = model(plan, state);
-    expect(bronze).toMatchObject({ buttonLabel: 'Play bars 1–8 together', target: { passageId: 'join:m0-3:m4-7', kind: 'next' }, outlinedId: 'join:m0-3:m4-7',
-      count: { level: 'joined', text: '0/1', label: '0 of 1 joins' } });
-    expect(bronze.bridges).toEqual([{ id: 'join:m0-3:m4-7', depth: 1, from: 0, to: 1, state: 'todo', final: true, bars: 'Bars 1–8', label: 'Join bars 1–8, not played through yet' }]);
+  it('folds an earned join into one silver coin named for its span, and climbs the tree', () => {
+    const plan = planOf(6);
+    let state = bronze(plan, null, ['m0-3', 'm4-7', 'm8-11', 'm12-15', 'm16-19', 'm20-23']);
+    state = earn(plan, state, 'join:m0-3:m4-7', 'silver', 'j1');
+    let rail = model(plan, state);
+    expect(path(rail)).toBe('A–B:joined C:silver C+D:socket*> D:silver E:silver F:silver');
+    state = earn(plan, state, 'join:m8-11:m12-15', 'silver', 'j2');
+    rail = model(plan, state);
+    // A higher join's socket is named for its span; its halves are the two silver coins.
+    expect(path(rail)).toBe('A–B:joined A–D:socket*> C–D:joined E:silver F:silver');
+    expect(rail.caption).toBe('Play A–B and C–D together');
+    state = earn(plan, state, 'join:m0-3:m12-15', 'silver', 'j3');
+    state = earn(plan, state, 'join:m16-19:m20-23', 'silver', 'j4');
+    rail = model(plan, state);
+    expect(path(rail)).toBe('A–D:joined All:socket*> E–F:joined');
+    expect(rail.caption).toBe('Play it all');
+    expect(rail.tokens[1].aria).toBe('Play it all, bars 1–24');
+  });
+
+  it('opens out for Gold once the piece is played through: silver links, A in time', () => {
+    const plan = planOf(2);
+    let state = bronze(plan, null, ['m0-3', 'm4-7']);
     state = earn(plan, state, 'join:m0-3:m4-7', 'silver', 'j');
-    const silver = model(plan, state);
-    expect(silver).toMatchObject({ buttonLabel: 'Go for Gold: bars 1–4', target: { passageId: 'm0-3', kind: 'gold' }, count: { level: 'gold', text: '0/2', label: '0 of 2 Gold' } });
-    expect(silver.bridges[0]).toMatchObject({ state: 'joined', label: 'Join bars 1–8, Silver' });
-    expect(silver.goals).toEqual([{ level: 'silver', label: 'All Bronze', done: 2, total: 2, reached: true }, { level: 'joined', label: 'Piece Silver', done: 1, total: 1, reached: true },
-      { level: 'gold', label: 'All Gold', done: 0, total: 2, reached: false }]);
+    const rail = model(plan, state);
+    expect(rail.lap).toBe('gold');
+    expect(path(rail)).toBe('A:silver*> B:silver');
+    expect(links(rail)).toEqual(['joined']);
+    expect(rail).toMatchObject({ caption: 'A in time', target: { passageId: 'm0-3', kind: 'gold' } });
+    expect(rail.marks[0]).toMatchObject({ level: 'silver', reached: true });
+    // While a join's Silver lands the host holds the Silver drawing: the whole piece is one coin.
+    expect(path(model(plan, state, 'join:m0-3:m4-7', { lap: 'silver' }))).toBe('A–B:joined*>');
     for (const [passage, ids] of [['m0-3', ['c', 'd']], ['m4-7', ['e', 'f']]]) for (const id of ids) state = earn(plan, state, passage, 'mastery', id);
-    const gold = model(plan, state);
-    expect(gold).toMatchObject({ buttonLabel: 'Practice bars 1–4', target: { kind: 'again' }, count: { text: '2/2' } });
-    expect(gold.goals.every((goal) => goal.reached)).toBe(true);
+    const gold = model(plan, state, null, { polish: { gem: true, diamond: true } });
+    expect(path(gold)).toBe('A:gold> B:gold');
+    expect(gold).toMatchObject({ caption: 'Play A again', target: { kind: 'again' } });
+    expect(gold.marks.map((mark) => mark.reached)).toEqual([true, true, true]);
   });
 
-  it('stacks joins by depth over the tiles they cover, and a selected join is the target', () => {
-    const plan = planOf(4);
-    const rail = model(plan, null, 'join:m0-3:m12-15');
-    expect(rail.bridges.map((bridge) => [bridge.id, bridge.depth, bridge.from, bridge.to, bridge.final])).toEqual([
-      ['join:m0-3:m4-7', 1, 0, 1, false], ['join:m8-11:m12-15', 1, 2, 3, false], ['join:m0-3:m12-15', 2, 0, 3, true]]);
-    expect(rail.tiles).toHaveLength(4);
-    expect(rail).toMatchObject({ selectedId: 'join:m0-3:m12-15', target: { passageId: 'join:m0-3:m12-15', kind: 'selected' }, buttonLabel: 'Play bars 1–16 together' });
+  it('moves the play disc to a selected token and keeps the next one larger', () => {
+    const plan = planOf(4); const state = bronze(plan, null, ['m0-3']);
+    const rail = model(plan, state, 'm12-15');
+    expect(path(rail)).toBe('A:silver B:todo* C:todo D:todo>');
+    expect(rail).toMatchObject({ caption: 'Learn D', selectedId: 'm12-15', target: { passageId: 'm12-15', kind: 'selected' }, nextId: 'm4-7' });
+    expect(rail.tokens[3]).toMatchObject({ isSelected: true, aria: 'Learn D, bars 13–16' });
+    expect(model(plan, state, 'gone')).toMatchObject({ target: { passageId: 'm4-7', kind: 'next' }, selectedId: null });
+    // A selected passage inside an earned join opens the fold, so it can be seen.
+    let joined = bronze(plan, null, ['m0-3', 'm4-7']); joined = earn(plan, joined, 'join:m0-3:m4-7', 'silver', 'j');
+    expect(path(model(plan, joined, 'm4-7'))).toBe('A:silver B:silver> C:todo* D:todo');
   });
 
-  it('has no bridges for a one-passage piece, whose Bronze is the piece played through', () => {
+  it('has no joins for a one-passage piece, whose Bronze is the piece played through', () => {
     const plan = planOf(1); const state = earn(plan, null, 'm0-3', 'silver', 'a');
     const rail = model(plan, state);
-    expect(rail.bridges).toEqual([]);
+    expect(path(rail)).toBe('A:silver*>');
+    expect(rail.cards).toHaveLength(1);
     expect(rail.goals.map((goal) => goal.level)).toEqual(['silver', 'gold']);
-    expect(rail.count.level).toBe('gold');
+    expect(rail.marks[0].reached).toBe(true);
   });
 
-  it('counts two Silver steps for a single-hand passage', () => {
-    const plan = planOf(1, ['rh']); const state = earn(plan, null, 'm0-3', 'notes', 'a');
-    expect(model(plan, state).tiles[0]).toMatchObject({ state: 'learning', steps: { done: 1, total: 2 } });
+  it('puts every passage, every join played through and the socket on the board, in play order', () => {
+    const plan = planOf(4);
+    let state = bronze(plan, null, ['m0-3', 'm4-7', 'm8-11']);
+    state = earn(plan, state, 'join:m0-3:m4-7', 'silver', 'j');
+    const rail = model(plan, state);
+    expect(rail.cards.map((card) => `${card.letter}:${card.kind}${card.isTarget ? '>' : ''}`)).toEqual(['A:passage', 'B:passage', 'A–B:join', 'C:passage', 'D:passage>']);
+    expect(rail.cards[2]).toMatchObject({ state: 'joined', label: 'A–B, bars 1–8, Silver' });
   });
+});
 
-  it('keeps a usable touch target or says the tiles do not fit', () => {
+describe('path layout', () => {
+  it('shrinks tokens to a 44px floor, then compacts', () => {
+    expect(pathLayout(6, 840)).toEqual({ size: 56, compact: false });
+    expect(pathLayout(14, 840).size).toBeGreaterThanOrEqual(44);
+    expect(pathLayout(14, 840).compact).toBe(false);
+    expect(pathLayout(24, 840)).toMatchObject({ compact: true });
+    expect(pathLayout(5, 0)).toEqual({ size: 56, compact: false });
     expect(railFits(12, 900)).toBe(true);
-    expect(railFits(18, 900)).toBe(true);
-    expect(railFits(19, 900)).toBe(false);
     expect(railFits(40, 900)).toBe(false);
-    expect(railFits(0, 900)).toBe(true);
   });
 });
 

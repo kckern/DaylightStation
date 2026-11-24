@@ -23,8 +23,13 @@ describe('systemPaging', () => {
     // A pedal bracket under system 0 (260-280) and a passage number over system 1 (285-310).
     const inked = systemCuts(systems.slice(0, 2), 600, [[40, 280], [285, 520]]);
     expect(inked[1]).toBe(282.5);
-    expect(inked[0]).toBe(40);
-    expect(inked[2]).toBe(520);
+    // The outer cuts trim nothing: the top edge of the engraving and its foot.
+    expect(inked[0]).toBe(0);
+    expect(inked[2]).toBe(600);
+    // Ink drawn past the engraving's edges stays inside the outer cuts.
+    const past = systemCuts(systems.slice(0, 2), 600, [[-12, 280], [285, 640]]);
+    expect(past[0]).toBe(-12);
+    expect(past[2]).toBe(640);
     // A frame through the whole gap is ignored.
     expect(systemCuts(systems.slice(0, 2), 600, [[0, 600]])[1]).toBe(285);
   });
@@ -107,8 +112,9 @@ describe('systemPaging', () => {
     expect(pageAt(cuts, 0, 479)).toMatchObject({ start: 0, end: 1 });
     const page = pageAt(inked, 0, 479);
     expect(page).toMatchObject({ start: 0, end: 2, top: inked[0], bottom: inked[2] });
-    // The ink, with its margin, is centred: 60 (the top of the paper) to 520.
-    expect(page.shift).toBe(Math.round((479 - 460) / 2) - 60);
+    // The ink, with its margin, is centred: 50 (10px of paper over the first
+    // system, as on every page) to 520.
+    expect(page.shift).toBe(Math.round((479 - 470) / 2) - 50);
     expect(pageStops(inked, 479)).toEqual([0, 2, 4, 6, 7]);
     expect(tallestSystem(inked)).toBe(220);
   });

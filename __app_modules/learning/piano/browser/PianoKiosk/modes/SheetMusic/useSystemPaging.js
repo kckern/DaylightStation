@@ -7,17 +7,17 @@ const SWIPE_PX = 48;
 // How long a turn made for the cursor takes to slide (matches the stylesheet).
 export const GLIDE_MS = 260;
 
-/** Vertical strips of the engraving that carry ink, in the renderer's coordinates. */
+/** Strips of the engraving that carry ink, `[top, bottom, left, right]` in the renderer's coordinates. */
 function measureInk(container) {
   const renderer = container?.querySelector('.musicxml-renderer');
   const svg = renderer?.querySelector('svg');
   if (!renderer || !svg) return [];
-  const origin = renderer.getBoundingClientRect().top;
+  const { top: origin, left: originX } = renderer.getBoundingClientRect();
   const ink = [];
   for (const node of svg.querySelectorAll('*')) {
     if (node.firstElementChild) continue;
     const box = node.getBoundingClientRect();
-    if (box.height > 0 && box.width > 0) ink.push([box.top - origin, box.bottom - origin]);
+    if (box.height > 0 && box.width > 0) ink.push([box.top - origin, box.bottom - origin, box.left - originX, box.right - originX]);
   }
   return ink;
 }
@@ -37,8 +37,12 @@ function measureInk(container) {
  * @param {{current: HTMLElement|null}} p.scrollRef - the score's container
  * @param {object} p.layout - the renderer's published layout (its identity marks a re-engrave)
  * @param {Array} p.measureRects - per-measure rectangles carrying `system`
- * @param {Array<[number, number]>} [p.overlayInk] - strips taken by overlays drawn above the staff
+ * @param {Array<[number, number]>|((ink: Array) => Array<[number, number]>)} [p.overlayInk] - strips
+ *   taken by overlays drawn over the staff, or a function of the engraving's measured
+ *   ink that returns them (an overlay placed clear of the ink it would cover)
  * @param {(turn: {from: number, to: number, by: string}) => void} [p.onTurn]
+ * The result carries `ink`, the strips measured on the current engraving, so an
+ * overlay can be placed by the same measurement the page cut uses.
  */
 export default function useSystemPaging({ enabled, scrollRef, layout, measureRects, overlayInk, onTurn }) {
   const [start, setStart] = useState(0);
@@ -72,7 +76,10 @@ export default function useSystemPaging({ enabled, scrollRef, layout, measureRec
     setInked({ layout, ink: measureInk(scrollRef.current) });
   }, [enabled, scrollRef, layout]);
 
-  const cuts = useMemo(() => systemCuts(systems, layout?.height ?? 0, overlayInk ? [...ink, ...overlayInk] : ink), [systems, layout?.height, ink, overlayInk]);
+  const cuts = useMemo(() => {
+    const extra = typeof overlayInk === 'function' ? overlayInk(ink) : overlayInk;
+    return systemCuts(systems, layout?.height ?? 0, extra?.length ? [...ink, ...extra] : ink);
+  }, [systems, layout?.height, ink, overlayInk]);
   const page = useMemo(() => (enabled ? pageAt(cuts, start, viewport) : null), [enabled, cuts, start, viewport]);
 
   const live = useRef({}); live.current = { cuts, viewport, start: page?.start ?? 0, onTurn };
@@ -141,13 +148,13 @@ export default function useSystemPaging({ enabled, scrollRef, layout, measureRec
 
   useEffect(() => { if (!enabled) setStart(0); }, [enabled]);
 
-  if (!enabled || !page) return { page: null, style: undefined, handlers: null, turning: false, tallest, viewport, next, prev, showMeasures, followMeasure };
+  if (!enabled || !page) return { page: null, style: undefined, handlers: null, turning: false, tallest, viewport, ink, next, prev, showMeasures, followMeasure };
   const cut = glide || page;
   return {
     page,
     style: { '--page-shift': `${page.shift}px`, '--page-top': `${cut.top}px`, '--page-bottom': `${cut.bottom}px` },
     handlers: { onPointerDown, onPointerUp, onPointerCancel, onClickCapture },
-    turning: Boolean(glide), tallest, viewport,
+    turning: Boolean(glide), tallest, viewport, ink,
     next, prev, showMeasures, followMeasure,
   };
 }

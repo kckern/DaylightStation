@@ -1,5 +1,5 @@
 // The Learn passage screen is the drill surface: LearnLab's toolbar over the
-// Exercises run, with the passage rail (and its board) underneath. This file
+// Exercises run, with the passage path (and its board) underneath. This file
 // only stacks them and trims the lab's chrome to one row. It draws no screen.
 .piano-learn-coach {
   position: relative;
@@ -17,7 +17,7 @@
 
   // The board slides over the drill, above the lab's own layers.
   > .piano-passage-board { z-index: 40; }
-  > .piano-passage-rail { z-index: 41; }
+  > .piano-passage-path { z-index: 41; }
 
   // One toolbar row: where you are, what you are playing, and the controls.
   .piano-learn-lab--coach .piano-learn-lab__toolbar { flex-wrap: nowrap; }

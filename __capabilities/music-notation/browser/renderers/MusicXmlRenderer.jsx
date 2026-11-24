@@ -35,6 +35,10 @@ function logger() {
  * @param {boolean} [stretchLastSystem] - justify the last system to the page width,
  *   as the others are. Off by default: a score's short last line stops where it ends.
  *   Off by default; focused score passages opt in after inserting a balanced break.
+ * @param {number} [systemHeadroom] - CSS px of clear paper the engraving keeps above
+ *   every system's ink (and above the first system), for marks a host draws there,
+ *   such as the Learn passage numbers. 0 (default) keeps OSMD's own spacing. A change
+ *   takes the cheap repaint path. See osmdRender's applySystemHeadroom.
  * @param {(res:{width,height,events,notes,steps,tempoEntries,flow,scale,transpose}) => void} [onLayout]
  *   — `flow`/`scale`/`transpose` report WHICH engrave the geometry belongs to, so
  *   a consumer can tell a stale layout from a current one.
@@ -56,7 +60,7 @@ function logger() {
  *   extraction runs once `holdExtraction` flips back to false.
  * @param {React.ReactNode} [children] - overlay content positioned over the SVG
  */
-export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1, transpose = 0, manuscript = false, newSystemFromXML = false, stretchLastSystem = false, presentationViewBox = null, fillContainer = false, onLayout, onProgress, onReady, onFailed, holdExtraction = false, children }) {
+export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1, transpose = 0, manuscript = false, newSystemFromXML = false, stretchLastSystem = false, presentationViewBox = null, fillContainer = false, systemHeadroom = 0, onLayout, onProgress, onReady, onFailed, holdExtraction = false, children }) {
   const hostRef = useRef(null);
   const onFailedRef = useRef(onFailed); onFailedRef.current = onFailed;
   const holdRef = useRef(holdExtraction); holdRef.current = holdExtraction;
@@ -141,7 +145,7 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
         // run the expensive geometry extraction sliced so the tablet still breathes.
         if (osmdRef.current && osmdKeyRef.current === cacheKey) {
           try {
-            const rr = osmdRepaint(osmdRef.current, host, { width: w, flow, scale, transpose });
+            const rr = osmdRepaint(osmdRef.current, host, { width: w, flow, scale, transpose, systemHeadroom });
             if (stale()) return;
             setFailed(false);
             setDims({ width: rr.width, height: rr.height }); // PAINT (sheet visible)
@@ -166,7 +170,7 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
         // Full path: PAINT the engraved sheet first (Manual mode usable at once),
         // THEN extract geometry in yielded slices with progress.
         setRendering(true);
-        const eng = await osmdEngrave(host, musicXml, { width: w, flow, scale, transpose, manuscript, newSystemFromXML, stretchLastSystem, shouldAbort: stale });
+        const eng = await osmdEngrave(host, musicXml, { width: w, flow, scale, transpose, manuscript, newSystemFromXML, stretchLastSystem, systemHeadroom, shouldAbort: stale });
         if (!eng || stale()) return;
         osmdRef.current = eng.osmd;
         osmdKeyRef.current = cacheKey;
@@ -201,7 +205,7 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
     // would defeat the check.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     return () => { if (renderSeq.current === seq) renderSeq.current++; };
-  }, [musicXml, width, flow, scale, transpose, manuscript, newSystemFromXML, stretchLastSystem, onLayout, onProgress, onReady, resizeKey]);
+  }, [musicXml, width, flow, scale, transpose, manuscript, newSystemFromXML, stretchLastSystem, systemHeadroom, onLayout, onProgress, onReady, resizeKey]);
 
   // Release: once holding ends and an extraction is owed, re-run the render effect
   // (cheap repaint + the deferred geometry walk) so overlays catch up. NOTE:

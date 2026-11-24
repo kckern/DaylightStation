@@ -34,18 +34,18 @@ import useLearnCoach from './useLearnCoach.js';
 import { createCoachPlan } from '../../../../../../../shared/music/learnCoach.mjs';
 import LearnPassageLayer from './LearnPassageLayer.jsx';
 import { segmentNavigationState } from './LearnSegmentRail.jsx';
-import PassageRail from './PassageRail.jsx';
+import PassagePath from './PassagePath.jsx';
 import PassageBoard from './PassageBoard.jsx';
 import ScorePager from './ScorePager.jsx';
 import useSystemPaging from './useSystemPaging.js';
 import { SIZE_STEPS } from './ViewSheet.jsx';
-import { railModel } from './passageRail.js';
+import { railModel, letterOf } from './passageRail.js';
 import usePieceGemOffer from './usePieceGemOffer.js';
 import LearnLaunchpad from './LearnLaunchpad.jsx';
 import { buildRungLaunch, creditEligibleRung, learnLaunchpadProjection } from './learnLaunch.js';
 import ScorePassage from '../Exercises/ScorePassage.jsx';
 import { resolveLearnPlan } from './resolveLearnPlan.js';
-import { buildEngravedMeasureRects, measureAtPosition, notationRangeBands } from './focusRangeGeometry.js';
+import { buildEngravedMeasureRects, measureAtPosition, passageNumberPlacements, passageNumberHeadroom, PASSAGE_NUMBER_ROOM } from './focusRangeGeometry.js';
 import { completeBarSelection, moveBarEdge, validBarRange } from './learnBarSelection.js';
 import {
   compileScoreExpectation,
@@ -406,11 +406,20 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   const events = layout.events;
   const steps = layout.steps;
-  const selectionStepBoxes = useMemo(() => layout.steps.map((item, index) => ({
+  // Where the cursor stands at each step: the staff, not the ledger notes.
+  const cursorStepBoxes = useMemo(() => layout.steps.map((item, index) => ({
     x: layout.events[index]?.x ?? item.x,
     top: layout.events[index]?.top ?? item.top,
     bottom: layout.events[index]?.bottom ?? item.bottom,
   })), [layout.events, layout.steps]);
+  // A step's box reaches every notehead it holds, so a passage box or outline
+  // drawn from it holds a note on ledger lines far over or under the staff
+  // instead of running through it.
+  const selectionStepBoxes = useMemo(() => cursorStepBoxes.map((box, index) => {
+    const heads = (layout.steps[index]?.notes || []).filter((note) => Number.isFinite(note.top) && Number.isFinite(note.bottom));
+    if (!heads.length || !Number.isFinite(box.top) || !Number.isFinite(box.bottom)) return box;
+    return { ...box, top: Math.min(box.top, ...heads.map((note) => note.top)), bottom: Math.max(box.bottom, ...heads.map((note) => note.bottom)) };
+  }), [cursorStepBoxes, layout.steps]);
   const measureRects = useMemo(() => buildEngravedMeasureRects(
     layout.measures, layout.measureBounds, layout.staffBoxes, layout.steps, selectionStepBoxes,
   ), [layout.measures, layout.measureBounds, layout.staffBoxes, layout.steps, selectionStepBoxes]);
@@ -2210,8 +2219,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
     segments: learnPlan.segments, authoredLadder: learnPlan.authoredLadder, tempoMap: learnPlan.tempoMap, certification: learnPlan.certification }),
     [scoreMeta.id, fingerprint, learnPlan]);
   const coach = useLearnCoach({ plan: coachPlan, legacy: practice ?? {} });
-  const coachedPassages = useMemo(() => coach.projection.segments.map((passage) => ({ ...passage,
-    testedOut: passage.mastered, inProgress: passage.skills.some((skill) => skill.ready || skill.successes > 0) })), [coach.projection.segments]);
+  // Passages carry the path's letter (A, B, C…) as their number, so the badge on the score names the same thing the path does.
+  const coachedPassages = useMemo(() => {
+    let order = 0;
+    return coach.projection.segments.map((passage) => ({ ...passage,
+      ...(passage.kind === 'join' ? {} : { number: letterOf(order++) }),
+      testedOut: passage.mastered, inProgress: passage.skills.some((skill) => skill.ready || skill.successes > 0) }));
+  }, [coach.projection.segments]);
   const learnPassages = useMemo(() => {
     const compatible = compatibleLearnPassages(practice?.learn, learnPlan);
     const projected = learnPlan.segments.map((passage) => {
@@ -2361,17 +2375,25 @@ export default function ScorePlayer({ score: scoreMeta }) {
     />
   ) : null;
 
-  // The passage numbers sit above the staff: ink a page cut must not run through.
-  const passageNumberInk = useMemo(() => (roadmapLearn ? coachedPassages.map((passage) => {
-    const band = notationRangeBands(layout.measures, selectionStepBoxes, passage, measureRects)[0];
-    return band ? [Math.max(0, band.top - 58), band.top] : null;
-  }).filter(Boolean) : null), [roadmapLearn, coachedPassages, layout.measures, selectionStepBoxes, measureRects]);
+  // The passage numbers stand above the staff, in paper the engraving keeps
+  // clear for them (see PASSAGE_NUMBER_ROOM). Without it a number shares the gap
+  // with the system above's stems and slurs, and the page cut has nowhere clean
+  // to fall. Each number is placed clear of the ink in its own column, and its
+  // strip is ink a page cut must not run through.
+  const passageHeadroom = roadmapLearn ? passageNumberHeadroom() : 0;
+  const mapPassages = useMemo(() => coachedPassages.filter((passage) => passage.kind !== 'join'), [coachedPassages]);
+  const placePassageNumbers = useCallback((ink) => (roadmapLearn
+    ? passageNumberPlacements(mapPassages, { measures: layout.measures, stepBoxes: selectionStepBoxes, cursorBoxes: cursorStepBoxes, measureRects, ink })
+    : []), [roadmapLearn, mapPassages, layout.measures, selectionStepBoxes, cursorStepBoxes, measureRects]);
+  const passageNumberInk = useCallback((ink) => placePassageNumbers(ink)
+    .map(({ anchor }) => [Math.max(0, anchor - PASSAGE_NUMBER_ROOM), anchor]), [placePassageNumbers]);
   // Every mode shows the score as pages of whole systems; nothing scrolls.
   const paging = useSystemPaging({
-    enabled: true, scrollRef, layout, measureRects, overlayInk: passageNumberInk,
+    enabled: true, scrollRef, layout, measureRects, overlayInk: roadmapLearn ? passageNumberInk : null,
     onTurn: (turn) => logger.info('score.page.turn', { scoreId: scoreMeta.id, mode, ...turn }),
   });
   pagingRef.current = paging;
+  const passageNumbers = useMemo(() => placePassageNumbers(paging.ink), [placePassageNumbers, paging.ink]);
   // The page follows the cursor (Listen, Polish, the direct-practice Learn). It
   // turns to a cursor that is off the page; while the music runs it also turns
   // AHEAD of it, as the cursor reaches the last system showing, so the next
@@ -2406,8 +2428,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
     return () => clearTimeout(timer);
   }, [scale, maxScale, layoutFresh]); // eslint-disable-line react-hooks/exhaustive-deps
   const railVisible = Boolean(roadmapLearn && practiceLoaded && (layout.measures?.length ?? 0) > 0 && !selectedPassage);
-  const rail = useMemo(() => railModel({ segments: coachedPassages, projection: coach.projection, selectedId: railPassageId }),
-    [coachedPassages, coach.projection, railPassageId]);
+  const rail = useMemo(() => railModel({ segments: coachedPassages, projection: coach.projection, selectedId: railPassageId, polish: polishAwards }),
+    [coachedPassages, coach.projection, railPassageId, polishAwards]);
   const gemOffered = usePieceGemOffer({ userId: coach.profileId, enabled: Boolean(passageBoard) });
   const selectRailPassage = useCallback((passageId, source) => {
     const passage = coachedPassages.find((item) => item.id === passageId);
@@ -2423,16 +2445,20 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const passage = pageCount && roadmapLearn ? coachedPassages.find((item) => item.id === railTargetId) : null;
     if (passage) paging.showMeasures(passage.inMeasure, passage.outMeasure);
   }, [railTargetId, pageCount, roadmapLearn]); // eslint-disable-line react-hooks/exhaustive-deps
-  const practiceRailPassage = useCallback(() => {
-    if (!rail.target) return;
-    logger.info('piano.learn.rail.practice', { scoreId: scoreMeta.id, passageId: rail.target.passageId, target: rail.target.kind });
-    openLearnPassage(rail.target.passageId);
-  }, [rail.target, logger, scoreMeta.id, openLearnPassage]);
+  // A tap on the path's target or next token opens that unit.
+  const practiceRailPassage = useCallback((tokenId) => {
+    const passageId = typeof tokenId === 'string' ? tokenId : rail.target?.passageId;
+    if (!passageId) return;
+    const target = passageId === rail.target?.passageId ? rail.target.kind : passageId === rail.nextId ? 'next' : 'selected';
+    logger.info('piano.learn.path.open', { scoreId: scoreMeta.id, passageId, target });
+    logger.info('piano.learn.rail.practice', { scoreId: scoreMeta.id, passageId, target });
+    openLearnPassage(passageId);
+  }, [rail.target, rail.nextId, logger, scoreMeta.id, openLearnPassage]);
   const boardIsOpen = Boolean(passageBoard);
   const togglePassageBoard = useCallback((focusId) => {
-    // The count toggles; a tap on a long piece's map always opens at that passage.
+    // The All button toggles; a tap on a long piece's strip always opens at that unit.
     const next = boardIsOpen && focusId == null ? null : { focusId: focusId ?? null };
-    logger.info(next ? 'piano.learn.board.open' : 'piano.learn.board.close', { scoreId: scoreMeta.id, ...(next ? { passageId: next.focusId } : { by: 'count' }) });
+    logger.info(next ? 'piano.learn.board.open' : 'piano.learn.board.close', { scoreId: scoreMeta.id, ...(next ? { passageId: next.focusId } : { by: 'all' }) });
     setPassageBoard(next);
   }, [boardIsOpen, logger, scoreMeta.id]);
   const closePassageBoard = useCallback(() => {
@@ -2488,7 +2514,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         </div>
       )}
       <div className={`piano-score-player__scroll${paging.page ? ' piano-score-player__scroll--paged' : ''}${paging.turning ? ' piano-score-player__scroll--turning' : ''}`} ref={scrollRef} onClick={onScoreClick} style={paging.style} {...paging.handlers}>
-        <MusicXmlRenderer score={parsed} musicXml={scoreMeta.musicXml} flow={flow} scale={scale} transpose={transpose} onLayout={onLayout} onReady={onReady} holdExtraction={running}>
+        <MusicXmlRenderer score={parsed} musicXml={scoreMeta.musicXml} flow={flow} scale={scale} transpose={transpose} systemHeadroom={passageHeadroom} onLayout={onLayout} onReady={onReady} holdExtraction={running}>
           {mode !== 'perform' && layoutFresh && (
             /* container is the ELEMENT, not a ref: React commits layout effects
                bottom-up, so an ancestor's ref is not yet attached when a child's
@@ -2587,7 +2613,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
           )}
           {roadmapLearn && layoutFresh && (
             <LearnPassageLayer
-              passages={roadmapLearn ? coachedPassages.filter((passage) => passage.kind !== 'join') : learnPassages}
+              passages={mapPassages}
+              numbers={passageNumbers}
               measures={layout.measures}
               stepBoxes={selectionStepBoxes}
               measureRects={measureRects}
@@ -2625,8 +2652,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
           onSelect={(passageId) => selectRailPassage(passageId, 'board')} onClose={closePassageBoard} />
       )}
       {railVisible && (
-        <PassageRail model={rail} boardOpen={Boolean(passageBoard)}
-          onSelect={(passageId) => selectRailPassage(passageId, 'rail')} onPractice={practiceRailPassage}
+        <PassagePath model={rail} boardOpen={Boolean(passageBoard)}
+          onSelect={(passageId) => selectRailPassage(passageId, 'rail')} onOpen={practiceRailPassage}
           onOpenBoard={togglePassageBoard} />
       )}
 

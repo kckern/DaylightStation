@@ -11,6 +11,7 @@ import {
   tagStaffGroups,
   staffGroups,
   osmdEngrave,
+  applySystemHeadroom,
 } from "./osmdRender.js";
 
 let constructorOptions;
@@ -32,6 +33,27 @@ describe('OSMD document layout options', () => {
     const host = document.createElement('div');
     await osmdEngrave(host, '<score-partwise/>', { newSystemFromXML: true });
     expect(constructorOptions.newSystemFromXML).toBe(true);
+  });
+});
+
+describe('applySystemHeadroom', () => {
+  const instance = () => ({ EngravingRules: { MinSkyBottomDistBetweenSystems: 5, PageTopMargin: 5 } });
+  it('keeps clear paper above every system, in CSS px whatever the zoom', () => {
+    const osmd = instance();
+    applySystemHeadroom(osmd, 84, 1);
+    expect(osmd.EngravingRules.MinSkyBottomDistBetweenSystems).toBeCloseTo(8.4);
+    expect(osmd.EngravingRules.PageTopMargin).toBeCloseTo(8.4);
+    // At zoom 2 a unit is 20px, so the same paper takes half as many units.
+    applySystemHeadroom(osmd, 84, 2);
+    expect(osmd.EngravingRules.MinSkyBottomDistBetweenSystems).toBe(5);
+  });
+  it('never tightens OSMD and puts its own spacing back when the headroom goes', () => {
+    const osmd = instance();
+    applySystemHeadroom(osmd, 20, 1);
+    expect(osmd.EngravingRules.MinSkyBottomDistBetweenSystems).toBe(5);
+    applySystemHeadroom(osmd, 120, 1);
+    applySystemHeadroom(osmd, 0, 1);
+    expect(osmd.EngravingRules).toMatchObject({ MinSkyBottomDistBetweenSystems: 5, PageTopMargin: 5 });
   });
 });
 

@@ -31,6 +31,9 @@
     "game": {
       "solar": "gamepad-bold"
     },
+    "grid": {
+      "solar": "widget-bold"
+    },
     "home": {
       "solar": "home-2-bold"
     },
@@ -48,6 +51,9 @@
     },
     "notes-off": {
       "solar": "volume-cross-bold"
+    },
+    "patch-finder": {
+      "solar": "tuning-2-bold"
     },
     "pause": {
       "solar": "pause-bold"
@@ -73,7 +79,6 @@
     "repair": {
       "solar": "plug-circle-bold"
     },
-    "patch-finder": { "solar": "tuning-2-bold" },
     "repeat": {
       "solar": "repeat-bold"
     },

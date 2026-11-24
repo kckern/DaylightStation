@@ -55,7 +55,9 @@ describe('Silver in LearnCoach', () => {
     expect(ceremony().querySelector('.gate-ceremony__behind .tomato-icon')).not.toBeNull();
     // The finished take stays under the curtain; nothing new is mounted yet.
     expect(h.lab.coachingTask.skill).toBe('silver');
-    const tile = screen.getByRole('button', { name: 'Bars 1–4, Bronze' });
+    // On the path, this passage's token (the selected one) turns into its bronze coin.
+    const tile = screen.getByRole('navigation', { name: 'Passages in this piece' }).querySelector('.piano-passage-path__token[aria-current="step"]');
+    expect(tile).toHaveAttribute('data-state', 'silver');
     expect(tile).toHaveAttribute('data-flip', 'silver');
     // The tile turns and the chime sounds when the verdict lands, not before.
     expect(parseInt(tile.style.getPropertyValue('--turn-delay'), 10)).toBeGreaterThan(1000);
@@ -119,7 +121,7 @@ describe('Silver in LearnCoach', () => {
   it('opens an inherited complete passage for replay without a ceremony', () => {
     mount(undefined, { learn: { passages: { a: { complete: true } } } });
     expect(h.lab.card).toBeNull(); expect(ceremony()).toBeNull();
-    expect(screen.getByRole('button', { name: 'Bars 1–4, Gold' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Passages in this piece' }).querySelector('.piano-passage-path__token[aria-current="step"]')).toHaveAttribute('data-state', 'gold');
     expect(h.lab.drill.projection.steps.every((step) => step.passed)).toBe(true);
   });
 
