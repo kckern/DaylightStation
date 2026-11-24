@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rejectApplauseCandidates } from './segment-timings.cli.mjs';
-import { parseTrackListing, stripWiki, mmss, parseSrt, srtTime, sectionsFrom, attachCues, words, lyricOverlap, rankTracks, buildEvidence, measureGraph, clipArgs, numberFlag, parseAt, parseDuration, runCliEntry } from './concert-index.cli.mjs';
+import { parseTrackListing, stripWiki, mmss, parseSrt, srtTime, sectionsFrom, attachCues, words, lyricOverlap, rankTracks, buildEvidence, measureGraph, clipArgs, numberFlag, parseAt, parseDuration, runCliEntry, INTRO_MAX_S } from './concert-index.cli.mjs';
 
 const WIKITEXT = `==Track listing==
 {{Track listing
@@ -186,6 +186,38 @@ describe('attachCues', () => {
   it("gives the first section's intro any cues before it starts", () => {
     const [first] = attachCues([{ start: 8, end: 50 }], [{ i: 1, start: 2, end: 4, text: 'welcome' }]);
     expect(first).toMatchObject({ cues: [], text: '', introCues: [1], intro: 'welcome' });
+  });
+  it('passes a short spoken section before a pause on to the piece it announces', () => {
+    // Applause [100,110], speech 110-140, a short silence, music from 141.
+    const sections = attachCues(
+      sectionsFrom({ candidates: [141], applause: [{ start: 100, end: 110 }], durationS: 300 }),
+      [{ i: 1, start: 112, end: 118, text: 'and now Sleigh Ride' }, { i: 2, start: 150, end: 154, text: 'la la la' }],
+    );
+    expect(sections.map((s) => [s.start, s.end])).toEqual([[0, 100], [110, 141], [141, 300]]);
+    expect(sections[1]).toMatchObject({ text: 'and now Sleigh Ride', cues: [1] });
+    expect(sections[2]).toMatchObject({ intro: 'and now Sleigh Ride', introCues: [1], text: 'la la la' });
+    const ranked = rankTracks(sections[2], [
+      { n: 1, title: 'Silent Night', length: 160, incipit: 'Silent night holy night' },
+      { n: 2, title: 'Sleigh Ride', length: 160 },
+    ]);
+    expect(ranked[0]).toMatchObject({ n: 2, titleHit: 1 });
+  });
+  it('does not pass a long section on, so back-to-back songs keep their own lyrics', () => {
+    expect(INTRO_MAX_S).toBe(60);
+    const sections = attachCues(
+      [{ start: 0, end: 60, applauseAfter: false }, { start: 60, end: 200, applauseAfter: false }],
+      [{ i: 1, start: 10, end: 14, text: 'silent night holy night' }],
+    );
+    expect(sections[1]).toMatchObject({ intro: '', introCues: [] });
+  });
+  it('does not pass a short section on across applause or a gap', () => {
+    const sections = attachCues(
+      [{ start: 0, end: 30, applauseAfter: true }, { start: 40, end: 100, applauseAfter: false },
+        { start: 100, end: 120, applauseAfter: false }, { start: 125, end: 200, applauseAfter: false }],
+      [{ i: 1, start: 10, end: 12, text: 'one' }, { i: 2, start: 105, end: 107, text: 'three' }],
+    );
+    expect(sections[1].introCues).toEqual([]);
+    expect(sections[3].introCues).toEqual([]);
   });
 });
 

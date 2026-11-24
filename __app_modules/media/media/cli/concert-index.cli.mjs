@@ -214,14 +214,25 @@ export function sectionsFrom({ candidates, applause = [], durationS }) {
 }
 
 /**
+ * A section shorter than this that runs straight into the next one, with no
+ * applause between, is likely a spoken introduction followed by a pause.
+ */
+export const INTRO_MAX_S = 60;
+
+/**
  * A cue whose midpoint falls inside a section is that section's `text`. A cue
  * in the gap before it (the applause after the previous piece) is its
  * `intro`: a narrator speaking over the last of the clapping is introducing
  * what comes next. The first section's intro is anything before it starts.
+ *
+ * A short section that runs straight into the next one, with no applause
+ * after it, also passes its text on to the next section's intro: "...and now,
+ * Sleigh Ride", a breath, then the music. It keeps its own text too; whoever
+ * reads the evidence decides whether it is an introduction.
  */
 export function attachCues(sections, cues) {
   const mid = (c) => (c.start + c.end) / 2;
-  return sections.map((s, k) => {
+  const out = sections.map((s, k) => {
     const gapStart = k > 0 ? sections[k - 1].end : -Infinity;
     const mine = cues.filter((c) => mid(c) >= s.start && mid(c) < s.end);
     const intro = cues.filter((c) => mid(c) >= gapStart && mid(c) < s.start);
@@ -233,6 +244,14 @@ export function attachCues(sections, cues) {
       intro: intro.map((c) => c.text).join(' '),
     };
   });
+  for (let k = out.length - 2; k >= 0; k -= 1) {
+    const s = out[k];
+    const next = out[k + 1];
+    if (s.applauseAfter || s.end - s.start >= INTRO_MAX_S || next.start !== s.end || !s.cues.length) continue;
+    next.introCues = [...s.cues, ...next.introCues];
+    next.intro = [s.text, next.intro].filter(Boolean).join(' ');
+  }
+  return out;
 }
 
 /* -------------------------------------------------------------------------- */
