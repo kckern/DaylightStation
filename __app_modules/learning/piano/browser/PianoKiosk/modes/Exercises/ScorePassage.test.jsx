@@ -87,6 +87,7 @@ vi.mock("../../../../../../../__capabilities/music-notation/browser/renderers/Mu
           events: [],
           notes: [],
           steps: h.steps.filter((step) => shown.includes(step.measure)).map((step) => ({ ...step, measure: step.measure - first })),
+          ties: (h.ties ?? []).filter((tie) => shown.includes(tie.measure)).map((tie) => ({ ...tie, measure: tie.measure - first })),
           staves: Array.from({ length: systemCount }, (_, system) => ({ system, staff: 0 })),
         });
         onReady?.();
@@ -138,6 +139,7 @@ beforeEach(() => {
   h.scales = [];
   h.stretches = [];
   h.steps = fourBarSteps();
+  h.ties = [];
 });
 
 describe('ScorePassage layout fitting', () => {
@@ -538,5 +540,42 @@ describe('ScorePassage recorded verdicts (timed runs)', () => {
     renderPassage({ onExpectation, verdicts, cursorIndex: 0, wrongMidi: 61 });
     await waitFor(() => expect(onExpectation).toHaveBeenCalled());
     await waitFor(() => expect(wrong()).toEqual([65]));
+  });
+});
+
+describe('ScorePassage tied notes', () => {
+  // Bar 2's E4 struck at onset 4 and held on through a tie into onset 5 (the engraver walks the
+  // held head into `ties`, never into `steps`): one note to play, two heads on the page.
+  const tieHead = () => { const el = notehead(64); el.dataset.tie = 'stop'; return el; };
+  const withTie = () => {
+    h.steps = fourBarSteps().map((step) => (step.onsetQuarter === 4
+      ? { ...step, notes: step.notes.map((note) => ({ ...note, durationQuarters: 1, tie: 'start' })) } : step));
+    h.ties = [{ onsetQuarter: 5, startOnsetQuarter: 4, measure: 1, midi: 64, staff: 0, durationQuarters: 1, tie: 'stop', el: tieHead() }];
+  };
+  const tieClasses = () => [...document.querySelector('.mock-notehead[data-tie]').classList].filter((name) => name.startsWith('piano-note'));
+
+  it('compiles the held head into the note that struck it: no separate attack, held to the tie end', async () => {
+    withTie();
+    const onExpectation = vi.fn();
+    renderPassage({ onExpectation });
+    await waitFor(() => expect(onExpectation).toHaveBeenCalled());
+    const expectation = onExpectation.mock.calls.at(-1)[0];
+    expect(expectation.events.map((event) => event.onsetQuarter)).toEqual([4, 6, 8, 10]);
+    expect(expectation.events[0].notes[0]).toMatchObject({ midi: 64, durationQuarters: 2, tied: true });
+  });
+
+  it('paints the held head with the verdict of the note that struck it', async () => {
+    withTie();
+    const verdicts = new Map([[0, new Map([[64, { state: 'hit', driftMs: 0 }]])], [1, new Map([[65, { state: 'lapsed' }]])]]);
+    renderPassage({ onExpectation: vi.fn(), verdicts, cursorIndex: 2 });
+    await waitFor(() => expect(tieClasses()).toEqual(['piano-note-verdict-hit']));
+    expect(document.querySelector('.mock-notehead[data-tie]').getAttribute('data-verdict')).toBe('hit');
+  });
+
+  it('the cursor moves from the struck note to the next one, never onto the held head', async () => {
+    withTie();
+    renderPassage({ onExpectation: vi.fn(), cursorIndex: 1 });
+    await waitFor(() => expect(lit()).toEqual([65]));
+    expect(tieClasses()).toEqual([]);
   });
 });

@@ -38,7 +38,10 @@ export function toRhythmExpectation(expectation, { minTapMs = RHYTHM_MIN_TAP_MS 
     const first = notes[0];
     // `ink`: every engraved head this tap stands for (the event's own, on every staff, and any merged into it),
     // as source event index and the pitches the heads are drawn at, so the verdict lands on each of them.
-    const kept = { ...event, sourceIndex, ink: [ink], notes: first ? [{ ...first, id: `${first.id}:rhythm`, midi: RHYTHM_MIDI }] : [] };
+    // A tie is not tapped, and here that is the lesson: the tap never carries `tied`, so a tap on the
+    // held note is an extra tap (the pitch steps forgive a re-strike; this one does not).
+    const { tied: _tied, ...tap } = first ?? {};
+    const kept = { ...event, sourceIndex, ink: [ink], notes: first ? [{ ...tap, id: `${first.id}:rhythm`, midi: RHYTHM_MIDI }] : [] };
     if (notes.length) lastTap = kept;
     events.push(kept);
   });

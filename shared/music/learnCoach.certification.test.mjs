@@ -210,6 +210,16 @@ describe('Silver check feedback', () => {
     const stopped = { ...good, criteria: { completeness: 0.5, cleanliness: 1 }, spans: { 'measure:2': { diagnostics: { missed_notes: 2 } }, 'measure:1': { diagnostics: { missed_notes: 1 } }, 'measure:0': { diagnostics: { missed_notes: 0 } } } };
     expect(coachFeedback(stopped, check)).toMatchObject({ reason: 'stopped', bar: 2, title: 'Bar 2 is the tricky spot', detail: 'Practice that spot, then try again.' });
   });
+  it('names bars by the numbers printed on the score, not their index (a pickup is bar 0)', () => {
+    // Under a pickup printed 0, the bars indexed 21–24 are printed 21–24 (index + 1 would say 22–25).
+    const late = { ...check, range: { start: 21, end: 24 } };
+    const stopped = { ...good, criteria: { completeness: 0.5, cleanliness: 1 }, spans: { 'measure:24': { diagnostics: { missed_notes: 2 } } } };
+    const barLabel = (start, end) => (start === end ? `Bar ${start}` : `Bars ${start}–${end}`);
+    expect(coachFeedback(stopped, late, { barLabel })).toMatchObject({ reason: 'stopped', measureIndex: 24, title: 'Bar 24 is the tricky spot' });
+    expect(coachFeedback(good, late, { barLabel })).toMatchObject({ reason: 'silver', detail: 'You can play bars 21–24 on your own.' });
+    // A surface without the score's numbers keeps the index + 1 wording.
+    expect(coachFeedback(stopped, late)).toMatchObject({ title: 'Bar 25 is the tricky spot' });
+  });
   it('asks for fewer extra notes on a finished miss', () => {
     expect(coachFeedback(bad, check)).toMatchObject({ reason: 'notes', title: 'Almost on your own', detail: 'Aim for fewer extra notes, then try again.' });
   });

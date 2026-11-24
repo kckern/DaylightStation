@@ -396,3 +396,42 @@ describe('staffGroups', () => {
     expect(staffGroups(svgWith([]))).toEqual([]);
   });
 });
+
+describe('tie continuations in the cursor walk', () => {
+  // A held note is not a new onset: the walk keeps it out of `steps` (nothing to strike),
+  // but publishes its engraved head in `ties`, pointing at the onset that struck it, so a
+  // surface can paint it with that note's verdict instead of leaving it black.
+  const tiedPair = (halfTone, staff) => {
+    const start = { halfTone, isRest: () => false, IsGraceNote: false, Length: { RealValue: 0.125 }, ParentStaffEntry: { ParentStaff: { idInMusicSheet: staff } } };
+    const stop = { halfTone, isRest: () => false, IsGraceNote: false, Length: { RealValue: 0.25 }, ParentStaffEntry: { ParentStaff: { idInMusicSheet: staff } } };
+    const tie = { StartNote: start, Notes: [start, stop] };
+    start.NoteTie = tie; stop.NoteTie = tie;
+    return [start, stop];
+  };
+  it('marks the struck note `tie: start` and publishes the held head with its start onset', () => {
+    const [rhStart, rhStop] = tiedPair(52, 0); // E4
+    const [lhStart, lhStop] = tiedPair(41, 1); // F3
+    const positions = [
+      { ts: 0.375, notes: [rhStart, lhStart] },
+      { ts: 0.5, notes: [rhStop, lhStop] },
+      { ts: 0.75, notes: [{ halfTone: 48, isRest: () => false, IsGraceNote: false, NoteTie: null, Length: { RealValue: 0.25 }, ParentStaffEntry: { ParentStaff: { idInMusicSheet: 0 } } }] },
+    ];
+    let at = 0;
+    const iterator = {
+      get EndReached() { return at >= positions.length; },
+      get currentTimeStamp() { return { RealValue: positions[at].ts }; },
+      CurrentMeasureIndex: 2, CurrentMeasure: { MeasureNumber: 2 }, CurrentBpm: 90,
+    };
+    const osmd = {
+      GraphicSheet: { MusicPages: [] },
+      cursor: { Iterator: iterator, cursorElement: null, show() {}, hide() {}, reset() { at = 0; }, next() { at += 1; }, NotesUnderCursor: () => positions[at].notes },
+    };
+    const out = extractEvents(osmd);
+    expect(out.steps.map((step) => step.onsetQuarter)).toEqual([1.5, 3]);
+    expect(out.steps[0].notes.map((n) => [n.midi, n.tie])).toEqual([[64, 'start'], [53, 'start']]);
+    expect(out.ties).toEqual([
+      expect.objectContaining({ onsetQuarter: 2, startOnsetQuarter: 1.5, midi: 64, staff: 0, measure: 2, durationQuarters: 1, tie: 'stop' }),
+      expect.objectContaining({ onsetQuarter: 2, startOnsetQuarter: 1.5, midi: 53, staff: 1, measure: 2, durationQuarters: 1, tie: 'stop' }),
+    ]);
+  });
+});

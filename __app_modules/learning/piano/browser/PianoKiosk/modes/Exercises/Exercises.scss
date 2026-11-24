@@ -395,6 +395,14 @@
 .piano-exercise-run__recall-hint { width: min(100%, 42rem); }
 .piano-exercise-run__score { display: grid; place-items: center; padding: 0.5rem; border-radius: var(--r-md, 12px); background: #f5f5f3; color: #111; }
 .piano-exercise-run__score .abc-renderer { min-width: 100%; height: 100%; }
+/* The Right/Wrong tally (top right, from the first note) never stands on the music:
+   the paper keeps a strip of its own for it for the whole step, so the engraving is
+   fitted below and an 8va, a slur or a high ledger note in the last bar cannot climb
+   under it (the office shot of 2026-11-24, an 8va clipped by the pills). Reserved
+   from the start, not the first note, so the music does not move when it appears.
+   A real score passage only: an exercise's one engraved line stays centred on its
+   paper (ExerciseRun.measure) and sits well clear of the corner. */
+.piano-exercise-run__score:has(.piano-score-passage) { padding-top: 3rem; }
 /* A Learn step that counts in with the band (CountUpOverlay: the cue and the
    metronome steps) keeps the band's strip as paper of its own for the whole step,
    so the engraving is fitted below it and the band never stands on the first
@@ -548,7 +556,7 @@
 .piano-exercise-run__status { min-height: 2.75rem; margin: 0; padding: 0.6rem 0.8rem; border-radius: var(--r-sm, 8px); background: var(--ex-surface); color: var(--ex-muted); }
 .piano-exercise-run__status.is-wrong { box-shadow: inset 3px 0 var(--ex-danger); color: #f0aaa4; }
 .piano-exercise-run__tally { position: absolute; z-index: 8; inset: 0.6rem 0.6rem auto auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.35rem; max-width: calc(100% - 1.2rem); pointer-events: none; }
-.piano-exercise-run__tally span { display: inline-flex; align-items: center; gap: 0.3rem; min-height: 2rem; padding: 0.25rem 0.55rem; border: 1px solid var(--ex-border); border-radius: var(--r-pill, 999px); background: color-mix(in srgb, var(--ex-surface) 92%, transparent); color: var(--ex-fg); font-size: 0.8rem; font-weight: 750; box-shadow: 0 2px 8px color-mix(in srgb, #000 22%, transparent); }
+.piano-exercise-run__tally span { box-sizing: border-box; display: inline-flex; align-items: center; gap: 0.3rem; min-height: 2rem; padding: 0.25rem 0.55rem; border: 1px solid var(--ex-border); border-radius: var(--r-pill, 999px); background: color-mix(in srgb, var(--ex-surface) 92%, transparent); color: var(--ex-fg); font-size: 0.8rem; font-weight: 750; box-shadow: 0 2px 8px color-mix(in srgb, #000 22%, transparent); }
 .piano-exercise-run__tally .is-right b { color: var(--ex-accent-text); }
 .piano-exercise-run__tally .is-wrong b { color: var(--ex-danger); }
 .piano-exercise-run__tally .is-timing b { color: var(--ex-warn, #de8c00); }

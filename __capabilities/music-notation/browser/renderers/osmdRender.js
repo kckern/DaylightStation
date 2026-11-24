@@ -78,7 +78,7 @@ export function buildSteps(recs) {
     // overlapping light-up chips. De-dupe by midi within a step (keep the first).
     if (step.seen.has(r.midi)) continue;
     step.seen.add(r.midi);
-    step.notes.push({ midi: r.midi, staff: r.staff, x: r.x, top: r.top, bottom: r.bottom, width: r.width, el: r.el });
+    step.notes.push({ midi: r.midi, staff: r.staff, x: r.x, top: r.top, bottom: r.bottom, width: r.width, el: r.el, ...(r.tie ? { tie: r.tie } : {}) });
   }
   return [...byQuarter.values()]
     .map(({ seen: _seen, ...s }) => s) // drop the internal de-dupe set from the public shape
@@ -346,6 +346,10 @@ function boxOfEl(el, opRect) {
  */
 function makeCursorWalk(osmd) {
   const notes = [], tempoEntries = [], onsetRecords = [];
+  // Tie continuations: a held note is not a new onset, so it never joins `steps`, but its
+  // engraved head is published here with the onset that struck it (keyed by the OSMD Tie),
+  // so a surface can judge and paint it with its start instead of leaving it unmarked.
+  const ties = [], tieStarts = new Map();
   // Cursor-bar box per onset (keyed by onsetQuarter) — the vertical position the
   // Follow/step cursor draws at. `events` is derived from `steps` in finalize()
   // using these, so `events[i]` and `steps[i]` are index-aligned by construction
@@ -371,7 +375,20 @@ function makeCursorWalk(osmd) {
       tempoEntries.push({ onsetQuarter, bpm });
       lastBpm = bpm;
     }
-    const onset = collectOnsetNotes(cursor.NotesUnderCursor());
+    const under = cursor.NotesUnderCursor();
+    const onset = collectOnsetNotes(under);
+    for (const n of under || []) {
+      try {
+        const tie = n?.NoteTie;
+        if (!tie || tie.StartNote === n || n.isRest() || n.IsGraceNote || !tieStarts.has(tie)) continue;
+        const last = Array.isArray(tie.Notes) ? tie.Notes[tie.Notes.length - 1] === n : true;
+        ties.push({ onsetQuarter, startOnsetQuarter: tieStarts.get(tie), measure, number, midi: midiOfHalfTone(n.halfTone),
+          staff: n.ParentStaffEntry?.ParentStaff?.idInMusicSheet ?? 0, durationQuarters: (n.Length?.RealValue ?? 0) * 4,
+          tie: last ? 'stop' : 'both', el: noteheadEl(osmd, n) });
+      } catch {
+        // malformed entry — a held head left unmarked is better than a broken walk
+      }
+    }
     const el = cursor.cursorElement;
     const opRect = el?.offsetParent?.getBoundingClientRect?.() || null;
     // Fallback box (cursor element) reused for any note lacking graphical geometry.
@@ -384,11 +401,14 @@ function makeCursorWalk(osmd) {
     if (onset.length) cursorBoxByQuarter.set(onsetQuarter, fallbackBox);
     for (const n of onset) {
       const staff = n.ParentStaffEntry?.ParentStaff?.idInMusicSheet ?? 0;
+      const tieStart = Boolean(n.NoteTie && n.NoteTie.StartNote === n);
+      if (tieStart) tieStarts.set(n.NoteTie, onsetQuarter);
       notes.push({
         midi: midiOfHalfTone(n.halfTone),
         staff,
         onsetQuarter,
         durationQuarters: (n.Length?.RealValue ?? 0) * 4,
+        ...(tieStart ? { tie: 'start' } : {}),
       });
       const el = noteheadEl(osmd, n);
       const gbox = boxOfEl(el, opRect);
@@ -405,6 +425,7 @@ function makeCursorWalk(osmd) {
         bottom: box.bottom,
         width: box.width,
         el, // engraved notehead <g> — recolored in place by the light-up overlay
+        ...(tieStart ? { tie: 'start' } : {}),
       });
     }
   }
@@ -430,7 +451,7 @@ function makeCursorWalk(osmd) {
         bottom: box.bottom,
       };
     });
-    return { events, notes, tempoEntries, steps, measures, measureMap, staves: extractStaffGeometry(osmd), staffBoxes: extractPerStaffGeometry(osmd), measureBounds: extractMeasureBounds(osmd) };
+    return { events, notes, tempoEntries, steps, ties, measures, measureMap, staves: extractStaffGeometry(osmd), staffBoxes: extractPerStaffGeometry(osmd), measureBounds: extractMeasureBounds(osmd) };
   }
 
   return { cursor, processStep, finalize };

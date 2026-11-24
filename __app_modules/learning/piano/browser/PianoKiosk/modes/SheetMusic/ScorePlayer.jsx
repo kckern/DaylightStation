@@ -84,6 +84,15 @@ import { titleFromScoreId } from './scoreTitle.js';
 import { resolveLearnerAssist } from './learnerAssist.js';
 import { findWorstAssessmentSpan, tallyAssessmentGrades } from './assessmentProjections.js';
 
+/**
+ * A tie's held heads, in the shape the score compiler reads: each is folded into the note that
+ * struck it (held to the tie's end, `tied`), so striking it again is never charged as wrong.
+ */
+const tieHeads = (ties) => (ties || []).map((tie) => ({
+  midi: tie.midi, staff: tie.staff, tie: tie.tie, onsetQuarter: tie.onsetQuarter ?? 0,
+  durationQuarters: tie.durationQuarters ?? 0, measureIndex: tie.measure,
+}));
+
 // One source of truth for the transport's tick rate: the telemetry's stall rule
 // is expressed as a MULTIPLE of it, so the two can never drift apart (audit H1).
 const TRANSPORT_TICK_MS = 100;
@@ -844,11 +853,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
       ...note,
       onsetQuarter: scoreStep.onsetQuarter ?? events[index]?.onsetQuarter ?? 0,
       measureIndex: scoreStep.measure,
-    }))),
+    })).concat(tieHeads(layout.ties))),
     source: { id: scoreMeta.id, revision: fingerprint.contentSha256 },
     tempoMap: tempoMap.map((entry) => ({ ...entry, bpm: entry.bpm * tempoMult })),
     activeParts: parts.filter((part) => activeParts[part.staff]).map((part) => staffPartId(part.staff)),
-  }), [layout.steps, events, tempoMap, tempoMult, activeParts, parts, scoreMeta.id, fingerprint.contentSha256]);
+  }), [layout.steps, layout.ties, events, tempoMap, tempoMult, activeParts, parts, scoreMeta.id, fingerprint.contentSha256]);
 
   const onMeasureGrade = useCallback((g) => {
     setGrades((prev) => ({ ...prev, [g.measure]: g }));
@@ -1074,8 +1083,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
     return (layout.notes || []).map((note) => ({
       ...note,
       measureIndex: note.measureIndex ?? note.measure ?? measureByOnset.get(Number(note.onsetQuarter || 0).toFixed(6)),
-    }));
-  }, [layout.notes, layout.steps]);
+    })).concat(tieHeads(layout.ties));
+  }, [layout.notes, layout.steps, layout.ties]);
   const activePartIds = useMemo(
     () => parts.filter((part) => activeParts[part.staff]).map((part) => staffPartId(part.staff)).sort(),
     [parts, activeParts],

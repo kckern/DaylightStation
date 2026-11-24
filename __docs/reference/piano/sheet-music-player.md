@@ -551,6 +551,42 @@ fit."), and the host still hears `onUnrunnable(reason)`. The office flow
 (`office-sheet-music.runtime.test.mjs`) samples the drawn staff scale on every frame
 for 1.5 s after **Try again** and expects one value, the one before the retry.
 
+**Tied notes are one note, held.** An eighth tied to a quarter is struck once: the
+quarter is the eighth held on. The engraver's cursor walk (`osmdRender.js`) keeps a
+tie's held heads out of `steps` (there is nothing to strike there, so the cursor goes
+from the struck note straight to the next onset) and publishes them in the layout's
+`ties` (`{ onsetQuarter, startOnsetQuarter, midi, staff, measure, durationQuarters,
+tie: 'stop'|'both', el }`); the struck note carries `tie: 'start'`. `ScorePassage`
+hands both to `compileScoreExpectation`, which folds each held head into the note that
+struck it: that note's `durationQuarters` runs to the tie's end and it is marked
+`tied`. When a take is judged, a held head is painted with the verdict (and mark) of
+the note that struck it. **Striking a tied note again is neither asked for nor
+wrong** (`tieRestrike` in `assessmentAttempt.js`, recorded in the attempt's `ignored` with
+reason `tie_restrike`): untimed, while the tie reaches the cursor's position and
+nothing there has been struck yet; timed, while the clock is inside the tie. Past the
+tie's end the same pitch is an extra note again. The rhythm step is the exception:
+there a tie is exactly what is being learned, so its taps never carry `tied` and a
+tap on a held note is an extra tap (`rhythmOnly.js`). Sheet Music's own Learn lap and
+Polish (`ScorePlayer`) compile with the same held heads, so they forgive a re-strike
+the same way. `LearnTies.journey.test.jsx` plays a tied bar in both hands in Chromium,
+re-strikes the held quarter, and checks the cursor, the tally and every painted head.
+
+**Bars are named as printed.** The take's result line (`coachFeedback` in
+`shared/music/learnCoach.mjs`) takes a `barLabel(start, end)` that names measure
+indices by the score's printed numbers (`measureRangeLabel`); a score with a pickup
+numbers it 0, so "Bar 24 is the tricky spot" on a bars 21–24 passage, never "Bar 25",
+and "You can play pickup + bars 1–4 on your own". Without it (no score numbers) the
+wording falls back to index + 1.
+
+**The tally keeps its own paper.** The Right/Wrong (and, timed, Early/Late/Missed)
+pills stand at the stage's top right from the first note. A score passage's stage
+reserves a 3rem strip at the top for them for the whole step
+(`.piano-exercise-run__score:has(.piano-score-passage)`; a count-band step already
+keeps a taller one), so the engraving is fitted below and an 8va, a slur or a high
+ledger note in the last bar can never sit under them; the strip is there before the
+first note, so the music does not move when the pills appear. The journey asserts that
+the tally and the engraving's box share no area.
+
 Stems and noteheads were checked in the drill at 1280x800 and 1280x748 across all
 twelve passages of a real score, through the ready, playing, resolve and result
 states: every stem touches a notehead. The drill puts no CSS transform on an
@@ -1650,6 +1686,11 @@ onset, index-aligned — so a single `step` integer indexes the cursor and the
 light-up interchangeably, **including left-hand-only onsets** (which have no
 top-staff melody note but must still be cursor stops). `events[i].midi` is the
 representative pitch: top-staff highest, else overall highest.
+
+Tie continuations are never steps. They come back separately as `ties`, each with
+the onset of the note that struck it (`startOnsetQuarter`) and its engraved head, for
+surfaces that judge or paint the held head with its start (see
+[The drill screen](#the-drill-screen), tied notes).
 
 ## Telemetry (logs-only)
 

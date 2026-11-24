@@ -265,7 +265,8 @@ function CoachSession({ score, title, plan, segment, coach, measures = EMPTY_LIS
     const played = chosen ? (({ key: _old, ...rest }) => { const task = { ...rest, tempoPercent: playedTempo, stepTempoPercent: step.tempoPercent };
       return { ...task, key: coachTaskKey(task) }; })(step) : step;
     raw = { ...raw, assessmentId: raw.assessmentId ?? freshId() };
-    const message = coachFeedback(raw, played);
+    // Bars named as printed: a score with a pickup numbers it 0 (the owner's "Bar 25" on a bars 21–24 passage).
+    const message = coachFeedback(raw, played, { barLabel: (start, end) => measureRangeLabel(measuresRef.current, start, end) });
     const passed = message.reason === 'silver' || message.reason === 'passed';
     logger.info('piano.learn.coach.take', { scoreId: score.id, passageId: segment.id, skill: played.skill, depth: played.depth ?? 0, reason: message.reason, passed,
       // The scores the take was judged on, so a timing failure can be read from the log alone.

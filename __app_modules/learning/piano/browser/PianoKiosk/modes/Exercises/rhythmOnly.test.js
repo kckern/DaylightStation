@@ -21,6 +21,13 @@ describe('toRhythmExpectation', () => {
   it('passes through what it cannot read', () => {
     expect(toRhythmExpectation(null)).toBeNull();
   });
+  it('keeps a tie strict: a tap on the held quarter is an extra tap, not a forgiven re-strike', () => {
+    // The pitch steps forgive striking a tied note again (assessmentAttempt `tieRestrike`); the rhythm
+    // step is where a child learns that a tie is NOT tapped, so its one note never carries `tied`.
+    const tied = { ...expectation, events: [{ id: 't', onsetQuarter: 0, notes: [{ id: 'tn', midi: 64, part: 'rh', durationQuarters: 1.5, tied: true }] }] };
+    expect(toRhythmExpectation(tied).events[0].notes[0]).not.toHaveProperty('tied');
+    expect(toRhythmExpectation(tied).events[0].notes[0].durationQuarters).toBe(1.5);
+  });
   it('keeps each kept event\'s place in the real passage', () => {
     expect(toRhythmExpectation(expectation).events.map((event) => event.sourceIndex)).toEqual([0, 1, 2]);
   });
