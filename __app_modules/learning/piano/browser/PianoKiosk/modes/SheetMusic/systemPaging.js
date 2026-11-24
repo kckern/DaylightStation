@@ -40,16 +40,23 @@ function mergeIntervals(intervals) {
  * under one staff, a tempo mark or passage number over the next), so a page
  * never shows a sliver of its neighbour.
  *
+ * A head (a passage number standing over a system) belongs to the system under
+ * it: the cut above that system is never below a head, even where the widest
+ * free strip is, or the page that ends there would show the number cut in half
+ * and the page that starts there would show it not at all.
+ *
  * @param {Array} systems - from `engravedSystems`
  * @param {number} height - the engraving's height
  * @param {Array<[number, number]>} ink - occupied [top, bottom] strips
+ * @param {Array<[number, number]>} [heads] - strips drawn over the system below them
  */
-export function systemCuts(systems = [], height = 0, ink = []) {
+export function systemCuts(systems = [], height = 0, ink = [], heads = []) {
   if (!systems.length) return [];
   // Something that runs through a whole gap is a frame, not a system's ink.
   const frames = (item) => systems.some((system, i) => i > 0 && systems[i - 1].bottom < system.top
     && item[0] <= systems[i - 1].bottom && item[1] >= system.top);
-  const merged = mergeIntervals(ink.filter((item) => item && !frames(item)));
+  const tops = (heads || []).filter((item) => item && item[1] > item[0]);
+  const merged = mergeIntervals([...ink.filter((item) => item && !frames(item)), ...tops]);
   const first = merged.length ? Math.min(merged[0][0], systems[0].top) : 0;
   const last = merged.length ? Math.max(merged[merged.length - 1][1], systems[systems.length - 1].bottom) : height;
   // The outer cuts have no neighbour to keep out, so they never trim: the top
@@ -60,7 +67,10 @@ export function systemCuts(systems = [], height = 0, ink = []) {
   const cuts = [Math.min(0, first)];
   for (let i = 1; i < systems.length; i++) {
     const from = systems[i - 1].bottom;
-    const to = systems[i].top;
+    // No lower than the highest head over this system.
+    const ceiling = tops.reduce((low, [top, bottom]) => (bottom > from && top < systems[i].top ? Math.min(low, top) : low), Infinity);
+    if (ceiling <= from) { cuts.push(ceiling); continue; }
+    const to = Math.min(systems[i].top, ceiling);
     if (!(to > from)) { cuts.push((from + to) / 2); continue; }
     // The free strips of [from, to] once the ink is taken out.
     let cursor = from;
@@ -72,7 +82,11 @@ export function systemCuts(systems = [], height = 0, ink = []) {
       cursor = Math.max(cursor, bottom);
     }
     consider(cursor, to);
-    cuts.push(best ? (best[0] + best[1]) / 2 : (from + to) / 2);
+    // Under a head, the cut goes as low as the free paper allows (the head's room
+    // keeps paper over its disc, the system above may have none to spare); with no
+    // free paper at all, a head still keeps its system: cut right over it.
+    if (ceiling < Infinity) cuts.push(best ? best[1] : to);
+    else cuts.push(best ? (best[0] + best[1]) / 2 : (from + to) / 2);
   }
   cuts.push(Math.max(cuts[cuts.length - 1], height, last));
   // What each system really takes between its cuts. A page is fitted to its ink,

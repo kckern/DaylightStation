@@ -38,8 +38,9 @@ function measureInk(container) {
  * @param {object} p.layout - the renderer's published layout (its identity marks a re-engrave)
  * @param {Array} p.measureRects - per-measure rectangles carrying `system`
  * @param {Array<[number, number]>|((ink: Array) => Array<[number, number]>)} [p.overlayInk] - strips
- *   taken by overlays drawn over the staff, or a function of the engraving's measured
- *   ink that returns them (an overlay placed clear of the ink it would cover)
+ *   taken by overlays drawn over a staff (the passage numbers), or a function of the
+ *   engraving's measured ink that returns them (an overlay placed clear of the ink it
+ *   would cover). Each belongs to the system under it: no cut falls below one.
  * @param {(turn: {from: number, to: number, by: string}) => void} [p.onTurn]
  * The result carries `ink`, the strips measured on the current engraving, so an
  * overlay can be placed by the same measurement the page cut uses.
@@ -78,7 +79,7 @@ export default function useSystemPaging({ enabled, scrollRef, layout, measureRec
 
   const cuts = useMemo(() => {
     const extra = typeof overlayInk === 'function' ? overlayInk(ink) : overlayInk;
-    return systemCuts(systems, layout?.height ?? 0, extra?.length ? [...ink, ...extra] : ink);
+    return systemCuts(systems, layout?.height ?? 0, ink, extra);
   }, [systems, layout?.height, ink, overlayInk]);
   const page = useMemo(() => (enabled ? pageAt(cuts, start, viewport) : null), [enabled, cuts, start, viewport]);
 

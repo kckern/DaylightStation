@@ -46,7 +46,7 @@ import LearnLaunchpad from './LearnLaunchpad.jsx';
 import { buildRungLaunch, creditEligibleRung, learnLaunchpadProjection } from './learnLaunch.js';
 import ScorePassage from '../Exercises/ScorePassage.jsx';
 import { resolveLearnPlan } from './resolveLearnPlan.js';
-import { buildEngravedMeasureRects, measureAtPosition, passageNumberPlacements, passageNumberHeadroom, PASSAGE_NUMBER_ROOM } from './focusRangeGeometry.js';
+import { buildEngravedMeasureRects, measureAtPosition, passageNumberPlacements, passageNumberHeadroom, PASSAGE_NUMBER_HALO } from './focusRangeGeometry.js';
 import { completeBarSelection, moveBarEdge, validBarRange } from './learnBarSelection.js';
 import {
   compileScoreExpectation,
@@ -2390,14 +2390,15 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // clear for them (see PASSAGE_NUMBER_ROOM). Without it a number shares the gap
   // with the system above's stems and slurs, and the page cut has nowhere clean
   // to fall. Each number is placed clear of the ink in its own column, and its
-  // strip is ink a page cut must not run through.
+  // disc (with the ring of a selected one) is a head of the system under it: a
+  // page cut never runs through it or below it, so it shows whole or not at all.
   const passageHeadroom = roadmapLearn ? passageNumberHeadroom() : 0;
   const mapPassages = useMemo(() => coachedPassages.filter((passage) => passage.kind !== 'join'), [coachedPassages]);
   const placePassageNumbers = useCallback((ink) => (roadmapLearn
     ? passageNumberPlacements(mapPassages, { measures: layout.measures, stepBoxes: selectionStepBoxes, cursorBoxes: cursorStepBoxes, measureRects, ink })
     : []), [roadmapLearn, mapPassages, layout.measures, selectionStepBoxes, cursorStepBoxes, measureRects]);
   const passageNumberInk = useCallback((ink) => placePassageNumbers(ink)
-    .map(({ anchor }) => [Math.max(0, anchor - PASSAGE_NUMBER_ROOM), anchor]), [placePassageNumbers]);
+    .map(({ top, anchor }) => [Math.max(0, top - PASSAGE_NUMBER_HALO), anchor]), [placePassageNumbers]);
   // Every mode shows the score as pages of whole systems; nothing scrolls.
   const paging = useSystemPaging({
     enabled: true, scrollRef, layout, measureRects, overlayInk: roadmapLearn ? passageNumberInk : null,
@@ -2405,6 +2406,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   });
   pagingRef.current = paging;
   const passageNumbers = useMemo(() => placePassageNumbers(paging.ink), [placePassageNumbers, paging.ink]);
+  // What the page shows of the engraving: its cut, inside the window. A passage number is drawn whole here or not at all.
+  const pageTop = paging.page?.top; const pageBottom = paging.page?.bottom; const pageShift = paging.page?.shift;
+  const pageView = useMemo(() => (pageTop == null || !(paging.viewport > 0) ? null
+    : { top: Math.max(pageTop, -pageShift), bottom: Math.min(pageBottom, paging.viewport - pageShift) }), [pageTop, pageBottom, pageShift, paging.viewport]);
   // The page follows the cursor (Listen, Polish, the direct-practice Learn). It
   // turns to a cursor that is off the page; while the music runs it also turns
   // AHEAD of it, as the cursor reaches the last system showing, so the next
@@ -2649,6 +2654,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
               selectedId={selectedPassage?.id ?? null}
               focusId={rail.selectedId}
               achievementId={learnAchievement}
+              view={pageView}
               onAchievementEnd={() => setLearnAchievement(null)}
               onSelect={openLearnPassage}
             />
