@@ -884,21 +884,63 @@ observed ineligibility or departure resets the affected hold.
 `source` is `requirement` or `challenge`. While any floor is unmet, entries contain
 only unmet floors, ordered by target severity and kept separately scoped. Once
 all floors recover, a locking challenge may supply the explanation; a pending
-challenge never supplies a generic lock explanation. Activity and unavailable
-sensor policies retain their existing behavior. Compatibility fields such as
+challenge never supplies a generic lock explanation. Step-mat floors
+(`activity_rate`) are obligations like any other: `display.activityRequirements`
+lists every unmet one, wherever it sorts, and `summary` entries carry the
+obligation `type`, so the lock modal keeps step-mat rules out of the zone chips
+and zone wording, shows the step-mat row beside the rider rows (never instead of
+them) and adds `and step on the mat at N steps a minute` to the instruction. A
+step-mat floor alone keeps its own line (`Keep stepping: 12 / 30 SPM`); a
+suspended mat says the sensor is unavailable and blocks nothing. Compatibility fields such as
 `rows`, `metRows`, `requirements`, `challenge`, `zoneLabel`, and counts reflect the
 first selected obligation. Hosts presenting multiple floors consume the scoped
 entries instead of merging their rows and credit.
+
+The same call also returns three derivations of those obligations for the lock
+modal:
+
+- `riders`: one entry per unmet rider across every obligation
+  (`{ userId, displayName, avatarSrc, heartRate, currentZone, zoneSequence, goals }`),
+  ordered by the highest-rank zone they still owe, then name. Each goal is
+  `{ obligationKey, zone, zoneLabel, zoneColor, targetHeartRate, bpmToGo,
+  holdProgress }` (plus `pedal` for cadence floors), sorted by target BPM;
+  `bpmToGo = max(0, targetHeartRate - heartRate)`.
+- `noSignal`: subjects an obligation waits on whose heart rate is missing, zero
+  or listed in `hrInactiveUsers` (`{ userId, displayName, avatarSrc }`, deduped).
+  They used to be dropped without a trace.
+- `summary`: per obligation `{ key, zone, zoneLabel, zoneColor, requiredCount,
+  actualCount, needed, scope }`; `scope` is `all` when the rule needs every
+  subject it counts (missing plus credited), otherwise `any`.
 
 Zone floor summaries carry `eligibleMetUsers` for the governed subjects counted
 by `actualCount`; broad `metUsers` can include guests/exempt riders and must not
 supply floor faces. Challenge credit retains its separate guest/exempt policy.
 
-Current zone pills and avatar rings follow live trusted committed state. HR
-remains visible while untrusted, without an earned-zone treatment. The HR
-denominator is the displayed obligation's personal target threshold, even if
-several zones above the rider's current zone. The numeric percentage notch tracks
-HR progress and remains within the bar at 0–100%. Nonzero holds add a slim
+The lock modal (locked / pending; the warning chips are separate) is titled
+`Video paused` and states the unlock in one sentence built from `summary`:
+`Get 1 rider to Hot and both riders to Active to keep watching.` (all-rules say `both riders` / `all N riders` only while nobody counts yet;
+otherwise every rule says how many more riders it needs, `1 more rider`; the
+clauses join with `and` because every rule must pass). One lock button sits at the
+header's right. Under it, one zone-coloured chip per rule (`Hot 0/1`) holds only
+the faces of riders who already met it (`CompletionAvatars showOpen={false}`),
+never empty rings. Then one row per entry in `riders`
+(`data-testid="lock-rider-row"`): a 56 px face, the full name (wraps, never
+truncated), the current BPM with a heart in the current-zone colour, and a bar
+scaled from the rider's lowest zone threshold to their highest goal + 10 BPM,
+filled to the current BPM and marked with a labelled tick per goal
+(`Active 100`, `Hot 140`); labels that would collide alternate above and below
+the bar. The BPM and gap columns have fixed widths so every row's bar lines up,
+and the bar is over half the row at both 1810×1080 and 1280×720. The panel is a
+size container: it tightens its numbers under 1200 px and moves the bar to its
+own line under 760 px, by its own width rather than the viewport's. The right
+column reads `+N to Zone` for the nearest unmet goal, or `Hold Zone` when the
+rider is already at every target but not yet credited (a hold, or the BPM is
+ahead of the committed zone). A rider with no target BPM yet shows `Waiting for
+heart rate` in place of the bar. There is no percentage and no zone pill. A footer names `noSignal`
+riders: `No heart-rate signal: Rider B`. The panel logs
+`governance.lock_modal.render` (debug, sampled) with `{ riders, rules, noSignal }`.
+
+HR remains visible while untrusted, without an earned-zone treatment. Nonzero holds add a slim
 secondary hold bar (`player/overlays/HoldProgress.jsx`) under the rider's zone
 bar, with accessible individual timing and a quiet label on the same line — no
 Holding prose and no extra text row. The label reads `Hold Ns` (whole seconds
@@ -914,9 +956,10 @@ part-way with a negative `animation-delay`, and is re-keyed only when a snapshot
 disagrees with it by more than 500 ms (reset, pause/resume, new total). While the
 challenge is paused (`row.holdPaused`, from `challenge.paused`) the fill is a
 static transform at the engine's frozen elapsed time. Cadence blockers use a crank/pedal icon with an
-accessible pedal OR zone instruction and a compact measurement in the existing
-row. Lock rows use natural height and bounded scrolling rather than blank
-reserved table space. Zone colors use the shared palette; HR strap identity
+accessible pedal OR zone instruction and a compact measurement in the rider's
+right column. Lock rows use natural height and bounded scrolling rather than blank
+reserved table space. All lock-modal text is at least 16 px at the kiosk's
+1810×1080 content area. Zone colors use the shared palette; HR strap identity
 colors remain a separate contract.
 
 ## Configuration

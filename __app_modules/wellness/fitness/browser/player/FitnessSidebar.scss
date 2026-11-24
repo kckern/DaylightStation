@@ -33,12 +33,12 @@
   }
 }
 
-// RPM Group styling — one circle size at every bike count. Four bikes fit
-// one row of the 250px sidebar (4 x 46 + 3 x 10 = 214 of 218px); a fifth
-// wraps to a second row.
+// RPM Group styling — one circle size at every bike count, one row per bike:
+// the circle, then the equipment name and its rider. The circle alone (avatar
+// + RPM badge) named neither, and 16px text does not fit under a 46px circle.
 .rpm-group-container {
   --rpm-cell: 46px;
-  --rpm-gap: 10px;
+  --rpm-gap: 6px;
   width: 100%;
   background: rgba(34, 34, 34, 0.6);
   border-radius: 8px;
@@ -47,9 +47,33 @@
 
   .rpm-devices {
     display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
+    flex-direction: column;
     gap: var(--rpm-gap);
+  }
+
+  .rpm-device-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .rpm-device-label {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.15;
+
+    .rpm-device-name,
+    .rpm-device-rider {
+      font-size: 16px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .rpm-device-name { font-weight: 700; color: #fff; }
+    .rpm-device-rider { font-weight: 500; color: rgba(255, 255, 255, 0.75); }
+    .rpm-device-rider--none { color: rgba(255, 255, 255, 0.5); }
   }
 
   .rpm-device-avatar {
@@ -423,6 +447,7 @@
       .device-info .device-stats .device-value {
         font-size: clamp(16px, calc(var(--rider-card-height, 64px) * .2), 24px);
       }
+      .device-info .device-stats .device-value--no-signal { font-size: 16px; }
     }
 
     // Tall card with an HR trend: avatar + name/BPM on top, the chart fills
@@ -575,7 +600,10 @@
         
         .device-value { font-size: 0.95rem; font-weight: 700; color: #fff; line-height:1; margin-bottom:1px; }
         
-        .device-unit { font-size: 0.875rem; font-weight: 600; color: rgba(255,255,255,0.75); text-transform: uppercase; letter-spacing:.5px; }
+        .device-unit { font-size: 1rem; font-weight: 600; color: rgba(255,255,255,0.75); text-transform: uppercase; letter-spacing:.5px; }
+
+        // No reading: words in place of "<n> BPM", muted so a number still reads first.
+        .device-value--no-signal { font-size: 16px; font-weight: 600; color: rgba(255,255,255,0.6); }
       }
     }
 
@@ -1868,26 +1896,30 @@
     stroke-linecap: round;
     vector-effect: non-scaling-stroke;
   }
-  // Collecting state: same box as the chart, a quiet ring until the rider has
-  // enough readings to draw.
+  // Collecting state: same box as the chart, a faint flat dashed baseline
+  // where the line will be, and a small label above it. (A lone spinner ring
+  // here read as stuck on the garage display, 2026-11-24.)
   .rider-hr-trend--loading {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
   }
-  .rider-hr-trend__spinner {
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    border: 2px solid rgba(255, 255, 255, 0.25);
-    border-top-color: rgba(255, 255, 255, 0.6);
-    animation: rider-hr-trend-spin 1s linear infinite;
+  .rider-hr-trend__baseline {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 60%;
+    border-top: 2px dashed rgba(255, 255, 255, 0.18);
   }
-  @keyframes rider-hr-trend-spin {
-    to { transform: rotate(360deg); }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .rider-hr-trend__spinner { animation: none; opacity: 0.4; }
+  .rider-hr-trend__label {
+    position: relative;
+    font-size: 16px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.55);
+    white-space: nowrap;
+    padding: 0 6px;
+    margin-bottom: 1.2em;
   }
   .rider-hr-trend__guide {
     stroke: rgba(255, 255, 255, 0.1);

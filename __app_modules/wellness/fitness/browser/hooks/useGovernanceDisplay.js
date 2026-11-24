@@ -54,6 +54,63 @@ export function resolveParticipantGovernanceStatuses(govState) {
   return statuses;
 }
 
+const finiteOrNull = (value) => (Number.isFinite(value) ? value : null);
+
+/**
+ * One rule's standing for the lock header: how many more riders it needs, and
+ * whether it asks for everyone it counts ('all') or only some of them ('any').
+ */
+function summarizeObligation(obligation) {
+  const requiredCount = finiteOrNull(obligation.requiredCount);
+  const actualCount = finiteOrNull(obligation.actualCount) ?? 0;
+  return {
+    key: obligation.key, zone: obligation.zone, zoneLabel: obligation.zoneLabel, zoneColor: obligation.zoneColor,
+    // 'zone', 'cadence_floor', 'activity_rate', or a challenge's type: hosts
+    // keep step-mat rules out of zone chips and zone wording.
+    type: (obligation.requirement || obligation.challenge)?.type || 'zone',
+    requiredCount, actualCount,
+    needed: Math.max(0, (requiredCount ?? 0) - actualCount),
+    scope: requiredCount != null && requiredCount > 0 && requiredCount === obligation.eligibleCount ? 'all' : 'any',
+  };
+}
+
+/**
+ * The per-rule rows regrouped per rider: a rider missing two rules is one
+ * entry with two goals, each a BPM target in that rule's zone. Riders are
+ * ordered by their highest unmet zone, then name; goals by target BPM.
+ */
+export function groupRidersByGoal(obligations, rankOf = () => -1) {
+  const byKey = new Map();
+  for (const obligation of obligations) {
+    for (const row of obligation.rows) {
+      let rider = byKey.get(row.key);
+      if (!rider) {
+        rider = {
+          key: row.key, userId: row.userId, displayName: row.displayName, avatarSrc: row.avatarSrc,
+          heartRate: row.heartRate, currentZone: row.currentZone, zoneSequence: row.zoneSequence,
+          groupLabel: row.groupLabel, goals: [],
+        };
+        byKey.set(row.key, rider);
+      }
+      const targetHeartRate = finiteOrNull(row.targetHeartRate);
+      rider.goals.push({
+        obligationKey: obligation.key,
+        zone: row.targetZone?.id || obligation.zone || null,
+        zoneLabel: obligation.zoneLabel || row.targetZone?.name || null,
+        zoneColor: row.targetZone?.color || obligation.zoneColor || null,
+        targetZone: row.targetZone, targetHeartRate,
+        bpmToGo: targetHeartRate != null && Number.isFinite(row.heartRate) ? Math.max(0, Math.round(targetHeartRate - row.heartRate)) : null,
+        holdProgress: row.holdProgress, holdPaused: row.holdPaused, status: row.status, pedal: row.pedal,
+      });
+    }
+  }
+  const topRank = (rider) => Math.max(-1, ...rider.goals.map((goal) => rankOf(goal.zone)));
+  const riders = [...byKey.values()];
+  riders.forEach((rider) => rider.goals.sort((a, b) => (a.targetHeartRate ?? Infinity) - (b.targetHeartRate ?? Infinity)));
+  return riders.sort((a, b) => (topRank(b) - topRank(a))
+    || String(a.displayName || '').localeCompare(String(b.displayName || '')));
+}
+
 /**
  * Pure function: resolve governance decisions + display map → display rows.
  * Exported for testability. Used via useGovernanceDisplay hook.
@@ -86,6 +143,14 @@ export function resolveGovernanceDisplay(govState, displayMap = new Map(), zoneM
     return display?.zoneTrusted === false ? null : (zoneMap[display?.zoneId] || null);
   };
 
+  // Subjects a rule is waiting on who have no heart-rate reading: they cannot
+  // be given a target, but they must not vanish from the lock screen either.
+  const noSignalById = new Map();
+  const noteNoSignal = (key, userId, display) => {
+    if (noSignalById.has(key)) return;
+    noSignalById.set(key, { userId, displayName: nameOf(display, userId), avatarSrc: display?.avatarSrc || FALLBACK_AVATAR });
+  };
+
   const makeObligation = (requirement, source, index) => {
     const targetId = requirement.type === 'cadence_floor' ? requirement.orZone : requirement.zone;
     const targetZone = zoneMap[targetId] || null;
@@ -97,11 +162,12 @@ export function resolveGovernanceDisplay(govState, displayMap = new Map(), zoneM
     const rows = [];
     for (const userId of requirement.missingUsers || []) {
       const key = normalize(userId);
-      if (credited.has(key) || hrInactiveSet.has(key)) continue;
+      if (credited.has(key)) continue;
       const display = displayMap.get(key);
+      if (hrInactiveSet.has(key)) { noteNoSignal(key, userId, display); continue; }
       // Preserve the existing signal-loss filter while allowing roster startup
       // fallback names when the display map has not populated yet.
-      if (display && (display.heartRate == null || display.heartRate <= 0)) continue;
+      if (display && (display.heartRate == null || display.heartRate <= 0)) { noteNoSignal(key, userId, display); continue; }
       const currentZone = currentZoneOf(display);
       const zoneSequence = display?.zoneSequence || [];
       const currentZoneIndex = zoneSequence.findIndex((zone) => zone.id === currentZone?.id);
@@ -140,8 +206,11 @@ export function resolveGovernanceDisplay(govState, displayMap = new Map(), zoneM
       metRows.push({ key, userId: key, displayName: nameOf(display, key), avatarSrc: display?.avatarSrc || FALLBACK_AVATAR,
         heartRate: display?.heartRate ?? null, currentZone: currentZoneOf(display), groupLabel: display?.groupLabel || null });
     }
+    // Everyone the rule counts: the subjects still missing plus those credited.
+    const eligibleCount = new Set([...missing, ...credited]).size;
     return {
       key: `${source}:${requirement.id || index}`, source, zone: targetId || null,
+      zoneColor: targetZone?.color || null, eligibleCount,
       zoneLabel: requirement.zoneLabel || requirement.orZoneLabel || targetZone?.name || targetId || null,
       requiredCount: requirement.requiredCount ?? null, actualCount: requirement.actualCount ?? null,
       rows, metRows,
@@ -153,6 +222,11 @@ export function resolveGovernanceDisplay(govState, displayMap = new Map(), zoneM
   const obligations = floors.map((req, index) => makeObligation(req, 'requirement', index));
   if (!floors.length && lockingChallenge) obligations.push(makeObligation(lockingChallenge, 'challenge', 0));
   const selected = obligations[0] || null;
+  const riders = groupRidersByGoal(obligations, rankOf);
+  const noSignal = [...noSignalById.entries()]
+    .filter(([key]) => !riders.some((r) => r.key === key))
+    .map(([, entry]) => entry);
+  const summary = obligations.map(summarizeObligation);
   const activityRequirements = floors.filter((req) => req.type === 'activity_rate');
   const cycleLocked = lockingChallenge?.type === 'cycle';
   const cycleHealthLock = cycleLocked && lockingChallenge.lockReason === 'health';
@@ -162,12 +236,13 @@ export function resolveGovernanceDisplay(govState, displayMap = new Map(), zoneM
   const quiet = show && govState.status === 'unlocked' && !lockingChallenge && obligations.length > 0;
   return {
     show, quiet, status: govState.status,
-    obligations,
+    obligations, riders, noSignal, summary,
     zone: selected?.zone || null, zoneLabel: selected?.zoneLabel || null,
     requiredCount: selected?.requiredCount ?? null, actualCount: selected?.actualCount ?? null,
     rows: selected?.rows || [], metRows: selected?.metRows || [],
     requirements: selected?.requirement ? [selected.requirement] : [],
-    activityRequirements: selected?.requirement?.type === 'activity_rate' ? [selected.requirement] : [],
+    // Every unmet step-mat floor, wherever it sorts among the obligations.
+    activityRequirements,
     challenge: lockingChallenge || null,
     deadline: govState.deadline ?? null, gracePeriodTotal: govState.gracePeriodTotal ?? null,
     videoLocked: cycleHealthLock ? true : (cycleLocked ? false : Boolean(govState.videoLocked)),

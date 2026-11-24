@@ -1046,4 +1046,36 @@ describe('GovernanceEngine', () => {
       expect(scheduled).toBe(true);
     });
   });
+
+  // With no riders and no policy that applies, the engine is 'pending' with
+  // nothing to wait for. A policyId kept from earlier in the session made the
+  // sidebar say "Waiting for riders" (FitnessGovernance keys on policyId).
+  describe('no riders and no policy', () => {
+    const zoneRankMap = { cool: 0, active: 1 };
+    const zoneInfoMap = {
+      cool: { id: 'cool', name: 'Cool', color: '#0000ff' },
+      active: { id: 'active', name: 'Active', color: '#ff0000' }
+    };
+    let engine;
+    afterEach(() => engine.destroy());
+
+    it('drops the earlier policy from the requirement summary', () => {
+      engine = new GovernanceEngine({ roster: [], zoneProfileStore: null, snapshot: { zoneConfig: [] } });
+      const config = { governed_labels: ['exercise'], grace_period_seconds: 30 };
+      engine.configure(config, [{ id: 'default', name: 'default', minParticipants: 1, baseRequirement: { active: 'all' }, challenges: [] }], {});
+      engine.setMedia({ id: 'test-media', labels: ['exercise'] });
+      engine.setCallbacks({ onPhaseChange: () => {}, onPulse: () => {}, onStateChange: () => {} });
+
+      engine.evaluate({ activeParticipants: ['alice'], userZoneMap: { alice: 'active' }, zoneRankMap, zoneInfoMap, totalCount: 1 });
+      expect(engine.state.policyId).toBe('default');
+
+      // Policies removed mid-session; then the last rider leaves.
+      engine.configure(config, [], {});
+      engine.evaluate({ activeParticipants: [], userZoneMap: {}, zoneRankMap, zoneInfoMap, totalCount: 0 });
+
+      expect(engine.phase).toBe('pending');
+      expect(engine.state.policyId).toBeNull();
+      expect(engine.state.requirements).toEqual([]);
+    });
+  });
 });

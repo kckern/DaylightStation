@@ -2816,8 +2816,12 @@ export class GovernanceEngine {
           requirements: prePopulatedRequirements,
           activeCount: 0
         };
+      } else {
+        // No policy applies: drop the summary so an earlier policyId doesn't
+        // survive and read as "waiting for riders" (sidebar keys on policyId).
+        this.requirementSummary = { policyId: null, targetUserCount: null, requirements: [], activeCount: 0 };
       }
-      
+
       this._clearTimers();
       if (this.challengeState.activeChallenge) {
         this._suspendChallengeForFloor(this.challengeState.activeChallenge, now, activeParticipants, userZoneMap);

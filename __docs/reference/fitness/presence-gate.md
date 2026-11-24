@@ -73,7 +73,10 @@ give a usable answer (`unavailable`, `unreadable`, `error`, `no_gateway`).
   gated.
 - `PresenceGateNotice` — the cover shown after a dismissed prompt: "Unlock"
   re-opens the prompt, "Back" leaves. Large touch targets on pointerdown, with
-  Enter/Space (gamepad A) fallbacks.
+  Enter/Space (gamepad A) fallbacks. Drawn as a card (lock icon, "Grown-up
+  needed", one sentence, buttons) on a blurred backdrop; the card styles
+  (`.gate-card` in `PresenceGateNotice.scss`) are shared with the playback
+  budget cover (see [playback-budgets.md](playback-budgets.md)).
 
 ## Logs (`context.component: presence-gate`)
 

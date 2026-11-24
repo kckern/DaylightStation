@@ -16,9 +16,13 @@
   &__panel {
     pointer-events: auto;
     box-sizing: border-box;
-    // Centered modal with fixed sizing - consistent height across all states
+    // Centered modal. The 380px floor keeps short states (recording, a one-line
+    // memo) the same size; a long transcript grows the panel up to 85vh and
+    // then scrolls inside the transcript.
     width: 420px;
-    height: 380px;
+    height: auto;
+    min-height: 380px;
+    max-height: 85vh;
     background: rgba(13, 18, 28, 0.95);
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 1.5rem;
@@ -29,6 +33,11 @@
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+
+    // Review reads a transcript: wider so a long memo wraps into fewer lines.
+    &--review {
+      width: min(640px, 90vw);
+    }
   }
 
   &__header {
@@ -82,6 +91,9 @@
     }
 
     &--review {
+      // auto basis: the transcript's height counts toward the panel's, so a
+      // long memo grows the panel (to its max-height) before it scrolls.
+      flex: 1 1 auto;
       align-items: center;
       text-align: center;
       justify-content: center;
@@ -208,16 +220,32 @@
       color: rgba(255, 255, 255, 0.9);
       width: 100%;
       max-width: 100%;
-      line-height: 1.6;
-      // Fill vertical space and center text
-      flex: 1;
+      line-height: 1.4;
+      // Fill vertical space and center a short memo. `safe` keeps an
+      // overflowing one starting at the top, where it can be scrolled from.
+      flex: 1 1 auto;
       display: flex;
-      align-items: center;
-      justify-content: center;
+      align-items: safe center;
+      justify-content: safe center;
       text-align: center;
       min-height: 0;
       max-height: none;
       overflow-y: auto;
+    }
+
+    // Long memo (set by the JSX past LONG_TRANSCRIPT_CHARS): plain top-down
+    // block that scrolls, with a fade at the bottom edge showing more below.
+    // padding-bottom lets the last line scroll clear of the fade.
+    &--long {
+      display: block;
+      text-align: left;
+      font-size: 1.05rem;
+      line-height: 1.35;
+      overflow-y: auto;
+      padding-right: 0.5rem;
+      padding-bottom: 1.5rem;
+      -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.5rem), transparent);
+      mask-image: linear-gradient(to bottom, #000 calc(100% - 1.5rem), transparent);
     }
 
     &--faded {
@@ -632,6 +660,8 @@
       width: 100%;
       max-width: 100%;
       max-height: 60vh;
+      // min-height beats max-height; keep the sheet within 60vh on short screens.
+      min-height: min(380px, 60vh);
       border-radius: 1.5rem 1.5rem 0 0;
       margin: 0;
     }

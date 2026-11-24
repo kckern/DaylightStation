@@ -89,9 +89,9 @@ export function MenuUi({ phase }) {
     <div className="skyline-glider__menu">
       <SkylineMenus state={state} riders={RIDERS} acts={ACTS} onEvent={() => {}}
         crashNote={phase === 'crash' ? 'The gate shut before you got through. Boost (bottom right) as soon as it starts closing.' : null}
+        notice={phase === 'flights' ? 'This saved flight uses an older course. Start begins a fresh flight. Earned completion is kept.' : null}
         summary={state.phase === 'result' ? SUMMARY : null}/>
       {state.phase === 'result' && !saveError && <p className="skyline-glider__notice" data-tone="good">Flight saved · +3 rings</p>}
-      {phase === 'flights' && <p className="skyline-glider__notice" role="status">This saved flight uses an older course. Start begins a fresh flight; earned completion is kept.</p>}
     </div>
     <SkylineControlPanel controls={controls} onPress={() => {}}/>
   </main>;

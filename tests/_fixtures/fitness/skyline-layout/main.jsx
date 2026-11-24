@@ -40,7 +40,7 @@ function Fixture() {
     document.fonts.ready.then(() => requestAnimationFrame(() => { pending?.(); document.body.dataset.ready = 'true'; }));
   }, [scenario, pending]);
   const s = scenario;
-  const riders = Array.from({ length: 4 }, (_, i) => ({ id: `r${i}`, name: s.longText ? LONG : ['Robin', 'Sparrow', 'Dad', 'Other riders'][i], position: i + 1, avatarSrc: DaylightImagePath() }));
+  const riders = Array.from({ length: 4 }, (_, i) => ({ id: `r${i}`, name: s.longText ? LONG : ['Robin', 'Sparrow', 'Dad', 'Other riders'][i], position: i + 1, avatarSrc: DaylightImagePath(), ...(i === 1 ? { gestureHint: 'Hold for Grown-up' } : {}) }));
   const acts = Array.from({ length: s.count }, (_, i) => ({ id: `a${i}`, name: s.longText ? (i % 2 ? LONG : 'Mountain Pass Mountain Pass') : names[i % names.length], status: i % 3 === 0 ? 'completed' : i % 3 === 1 ? 'open' : 'locked', stars: 2, introduces: [], detail: 'Shoot down 4 · 0:30' }));
   const chosen = acts[s.selectedIndex];
   const state = { ...createSkylineControlState({ riders, acts }), phase: s.screen, riderId: 'r0', actId: chosen?.id, saveStatus: s.saveStatus, accessReason: 'Finish today’s school work to unlock flying.', rosterIndex: 0, cadence: { rpm: 47 }, countdown: 3 };
@@ -59,10 +59,12 @@ function Fixture() {
     }
   };
   useMenuInput(s.game === 'invaders', (action) => { const hit = pressForMenuKey(s.screen, action); if (hit) onPress(...hit); });
+  // As in SkylineGlider: on the flight list the notice is part of the window; elsewhere it follows it.
+  const flightNotice = s.game === 'glider' && s.screen === 'flights' ? s.notice : '';
   const menu = s.game === 'glider'
     ? ['loading','error'].includes(s.screen)
       ? <p className="skyline-glider__notice" data-tone={s.screen==='error'?'bad':undefined}>{s.screen==='error'?'The course could not be loaded. Try again.':'Charting the course…'}</p>
-      : <SkylineMenus state={state} riders={riders} acts={acts} onEvent={e => update({ ...s, selectedIndex: acts.findIndex(a => a.id === e.actId) })} crashNote="The gate shut before you got through. Boost (bottom right) as soon as it starts closing." summary={['Bells', 'Targets', 'Score', 'Bumps'].map(n => [n, 12])}/>
+      : <SkylineMenus state={state} riders={riders} acts={acts} onEvent={e => update({ ...s, selectedIndex: acts.findIndex(a => a.id === e.actId) })} crashNote="The gate shut before you got through. Boost (bottom right) as soon as it starts closing." summary={['Bells', 'Targets', 'Score', 'Bumps'].map(n => [n, 12])} notice={flightNotice}/>
     : s.screen === 'result'
       ? <InvadersResult record={record} level={{ name: chosen?.name || 'First Light', pass: { kills: 4, base_hp_min: 50 } }} saveStatus={s.saveStatus}/>
       : s.screen === 'ready'
@@ -74,7 +76,7 @@ function Fixture() {
     && (!['roster', 'sound', 'method'].includes(s.screen) || control.position === 3 || control.position === 6));
   const controls = s.game === 'glider' ? <SkylineControlPanel controls={describeSkylineControls(state)} onPress={onPress}/> : <InvadersTouchKeys keys={touchKeys} onPress={onPress}/>;
   const showMore = s.game === 'glider' ? !['settings','saving','loading','error'].includes(s.screen) : ['who','roster','waves','locked','paused','result'].includes(s.screen);
-  const layout = <SkylineMenuLayout key={`${s.game}:${s.screen}`} variant={s.game === 'glider' ? 'bike' : 'touch'} className={s.game === 'invaders' ? 'skyline-invaders__window' : ''} actions={controls} utility={showMore&&<MoreButton onMore={() => actions.push({ type: 'more', value: true })}/>}>{menu}{s.notice && <p className="skyline-glider__notice" role="status">{s.notice}</p>}</SkylineMenuLayout>;
+  const layout = <SkylineMenuLayout key={`${s.game}:${s.screen}`} variant={s.game === 'glider' ? 'bike' : 'touch'} className={s.game === 'invaders' ? 'skyline-invaders__window' : ''} actions={controls} utility={showMore&&<MoreButton onMore={() => actions.push({ type: 'more', value: true })}/>}>{menu}{s.notice && !flightNotice && <p className="skyline-glider__notice" role="status">{s.notice}</p>}</SkylineMenuLayout>;
   return <div id="host" style={s.host ? { width: s.host.width, height: s.host.height } : undefined}>
     {s.game === 'glider' ? <main className="skyline-glider skyline-glider--controls skyline-menu-screen" data-control-phase={s.screen}>{layout}</main> : <main className="skyline-invaders" data-screen={s.screen}><section className="skyline-menu-screen skyline-invaders__menu">{layout}</section></main>}
   </div>;

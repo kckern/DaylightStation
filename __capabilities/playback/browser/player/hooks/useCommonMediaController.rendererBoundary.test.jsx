@@ -2,6 +2,8 @@ import React from 'react';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useCommonMediaController } from './useCommonMediaController.js';
+import { createRecoveryIdentity } from '../lib/recovery/recoveryIdentity.js';
+import * as Logger from '../../../../../frontend/src/lib/logging/Logger.js';
 
 vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: vi.fn(() => Promise.resolve({})) }));
 
@@ -45,7 +47,20 @@ function Harness({ node, operation, onReady }) {
   return null;
 }
 
+// One array for the whole file: the controller caches its child logger at
+// module level, so the spy must be in place before the first test logs.
+const logEvents = [];
+const logChild = {
+  info: (e, d) => logEvents.push(['info', e, d]),
+  warn: (e, d) => logEvents.push(['warn', e, d]),
+  error: (e, d) => logEvents.push(['error', e, d]),
+  debug: () => {},
+  sampled: () => {},
+};
+
 beforeEach(() => {
+  logEvents.length = 0;
+  vi.spyOn(Logger, 'getLogger').mockReturnValue({ ...logChild, child: () => logChild });
   useCommonMediaController.__appliedStartByKey = Object.create(null);
   useCommonMediaController.__lastSeekByKey = { 'short-audio': 55 };
   useCommonMediaController.__lastPosByKey = { 'short-audio': 56 };
@@ -93,5 +108,74 @@ describe('useCommonMediaController renderer operation', () => {
     expect(useCommonMediaController.__lastSeekByKey['short-audio']).toBe(55);
     expect(useCommonMediaController.__lastPosByKey['short-audio']).toBe(56);
     expect(useCommonMediaController.__appliedStartByKey['short-audio']).toBeUndefined();
+  });
+});
+
+// A stall jolt (stall-jolt-refresh-url) claims a new renderer generation and
+// refreshes the URL on the SAME <video>. On 2026-11-24 the video then reached
+// its end and nothing advanced: the terminal binding still held the old target.
+function IdentityHarness({ node, identity, onEnd }) {
+  const api = useCommonMediaController({
+    meta: { assetId: 'plex:workout', title: 'Workout' },
+    type: 'dash_video', isVideo: true,
+    recoveryIdentity: identity,
+    onEnd,
+  });
+  api.containerRef.current = node;
+  return null;
+}
+
+function makeVideo() {
+  const node = makeMedia({ currentTime: 80, duration: 90 });
+  node.tagName = 'VIDEO';
+  return node;
+}
+
+function endVideo(node) {
+  node.currentTime = 90;
+  node.ended = true;
+  node.fire('ended');
+}
+
+describe('useCommonMediaController terminal binding across a same-element URL refresh', () => {
+  it('advances on `ended` once the same element has started loading the new renderer', () => {
+    const identity = createRecoveryIdentity({ ownerId: 'fitness-player' });
+    const node = makeVideo();
+    const onEnd = vi.fn();
+    render(<IdentityHarness node={node} identity={identity} onEnd={onEnd} />);
+
+    act(() => { identity.beginRenderer(identity.getTarget()); });
+    act(() => node.fire('loadstart'));
+    act(() => endVideo(node));
+
+    expect(onEnd).toHaveBeenCalledTimes(1);
+    expect(logEvents.map(([, e]) => e)).toContain('playback.terminal-rebound');
+  });
+
+  it('refuses `ended` from an element the new renderer has not taken over, and says why', () => {
+    const identity = createRecoveryIdentity({ ownerId: 'fitness-player' });
+    const node = makeVideo();
+    const onEnd = vi.fn();
+    render(<IdentityHarness node={node} identity={identity} onEnd={onEnd} />);
+
+    act(() => { identity.beginRenderer(identity.getTarget()); });
+    act(() => endVideo(node));
+
+    expect(onEnd).not.toHaveBeenCalled();
+    const rejected = logEvents.find(([level, e]) => level === 'warn' && e === 'playback.terminal-rejected');
+    expect(rejected?.[2]).toMatchObject({ reason: 'stale-target', via: 'native-ended', bound: 0, current: 1 });
+  });
+
+  it('does not adopt a target whose user intent moved on', () => {
+    const identity = createRecoveryIdentity({ ownerId: 'fitness-player' });
+    const node = makeVideo();
+    const onEnd = vi.fn();
+    render(<IdentityHarness node={node} identity={identity} onEnd={onEnd} />);
+
+    act(() => { identity.beginVisit(); });
+    act(() => node.fire('loadstart'));
+    act(() => endVideo(node));
+
+    expect(onEnd).not.toHaveBeenCalled();
   });
 });

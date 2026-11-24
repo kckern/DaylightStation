@@ -37,6 +37,12 @@ const CONFIG = {
     CONNECTED_STATUS: 'Ready for Users',
     DISCONNECTED_STATUS: 'Disconnected',
     RECONNECT_BUTTON: 'Reconnect',
+    // A heart-rate card with no reading prints this in place of "<n> BPM".
+    NO_SIGNAL: 'No signal',
+    // The heart wears the strap's sticker colour (§3), not the zone.
+    STRAP_COLOUR_PREFIX: 'Strap colour:',
+    NO_STRAP_COLOUR: 'No strap colour on file',
+    NO_RIDER: 'No rider',
     DEVICE_TOOLTIP_PREFIX: 'Device:',
     TIME_JUST_NOW: 'Just now',
     TIME_NEVER: 'Never',
@@ -426,7 +432,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return map;
   }, [equipment]);
 
-  const heartColorIcon = (strapColor) => <HeartIcon fill={strapColor || CONFIG.color.heartNoZone} />;
+  const heartColorIcon = (strapColor, label) => <HeartIcon fill={strapColor || CONFIG.color.heartNoZone} label={label} />;
 
   const formatTimeAgo = (timestamp) => {
     if (!timestamp) return UI_LABELS.TIME_NEVER;
@@ -439,8 +445,8 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return `${hours}${UI_LABELS.TIME_HOURS_SUFFIX}`;
   };
 
-  const getDeviceIcon = (device, strapColor = null) => {
-    if (device.type === 'heart_rate') return heartColorIcon(strapColor);
+  const getDeviceIcon = (device, strapColor = null, label = null) => {
+    if (device.type === 'heart_rate') return heartColorIcon(strapColor, label);
     return (CONFIG.devices[device.type] || CONFIG.devices.default).icon;
   };
 
@@ -658,7 +664,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   const onRosterAnimationFinish = React.useCallback(() => setListResizes((n) => n + 1), []);
   const densitySignatureRef = React.useRef('');
   // HR trend (RiderHrTrend): available from session start — a tall card shows
-  // a collecting spinner until the rider has enough readings, so the card takes
+  // a collecting state (dashed baseline + "Reading heart rate…") until the rider has enough readings, so the card takes
   // its trend height once instead of jumping when the line appears. A single
   // rider may grow past 132px so the chart gets real room (owner decision
   // 2026-10-23).
@@ -691,6 +697,18 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   // Equipment that must stay in view (RPM meters, step mats) is pinned below
   // the scrolling rider list, never inside it: when the roster overflows at
   // the 64px floor only rider cards scroll (2026-10-23 cutout bug).
+  // A claimant id -> the rider's name, from the live roster first, then the
+  // household's configured users. Null when nobody by that id is known.
+  const riderNameForId = (riderId) => {
+    if (!riderId) return null;
+    const key = String(riderId);
+    const matches = (entry) => entry && [entry.id, entry.profileId, entry.slug].some((v) => v != null && String(v) === key);
+    const live = (activeHeartRateParticipants || []).find(matches);
+    if (live?.displayLabel || live?.name) return live.displayLabel || live.name;
+    const known = (normalizedCollections.all || []).find(matches) || registeredUsers.find(matches);
+    return known?.displayLabel || known?.name || null;
+  };
+
   const renderRpmGroup = (device) => {
     const rpmDevices = device.devices;
 
@@ -716,19 +734,27 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
             const deviceColor = cadenceColorMap[String(rpmDevice.deviceId)];
             const colorMap = CONFIG.rpm.colorMap;
             const borderColor = deviceColor ? (colorMap[deviceColor] || deviceColor) : colorMap.green;
+            // The circle alone (avatar + RPM badge) said neither which machine
+            // nor whose it was (2026-11-24 review): name both beside it.
+            const riderName = claimedRiderId ? (riderNameForId(claimedRiderId) || String(claimedRiderId)) : null;
 
             return (
+              <div key={`rpm-${rpmDevice.deviceId}`} className="rpm-device-item">
               <RpmDeviceAvatar
-                key={`rpm-${rpmDevice.deviceId}`}
                 rpm={rpmValue}
                 animationDuration={animationDuration}
                 avatarSrc={riderAvatarSrc || DaylightMediaPath(`/static/img/equipment/${equipmentId}`)}
-                avatarAlt={claimedRiderId ? claimedRiderId : deviceName}
+                avatarAlt={riderName || deviceName}
                 imageClassName="rpm-device-image"
                 spinnerStyle={{ borderColor }}
                 valueStyle={{ background: CONFIG.rpm.overlayBg }}
                 fallbackSrc={GENERIC_EQUIPMENT_FALLBACK_SRC}
               />
+              <div className="rpm-device-label">
+                <span className="rpm-device-name">{deviceName}</span>
+                <span className={`rpm-device-rider${riderName ? '' : ' rpm-device-rider--none'}`}>{riderName || UI_LABELS.NO_RIDER}</span>
+              </div>
+              </div>
             );
           })}
         </div>
@@ -852,6 +878,15 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                 ? (cssColorForStrap(hrColorMap[deviceIdStr])
                     || (!resolvedUser && !guestAssignment ? hashColorForDevice(deviceIdStr) : null))
                 : null;
+              // What the heart's colour means, said in words: the configured
+              // sticker colour, or that none is on file (grey for a known rider,
+              // a per-device hash colour for an unidentified strap).
+              const configuredStrap = isHeartRate ? strapLabel(hrColorMap[deviceIdStr]) : null;
+              const strapColourLabel = isHeartRate
+                ? (configuredStrap && cssColorForStrap(hrColorMap[deviceIdStr])
+                    ? `${UI_LABELS.STRAP_COLOUR_PREFIX} ${configuredStrap.replace(/ strap$/, '')}`
+                    : UI_LABELS.NO_STRAP_COLOUR)
+                : null;
               const liveHeartRate = Number.isFinite(userVitalsEntry?.heartRate)
                 ? userVitalsEntry.heartRate
                 : (Number.isFinite(participantEntry?.heartRate)
@@ -906,6 +941,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
               const deviceValue = Number.isFinite(liveHeartRate) && liveHeartRate > 0
                 ? `${Math.round(liveHeartRate)}`
                 : getDeviceValue(device, { canonicalUserName, vitals: userVitalsEntry });
+              const noSignal = isHeartRate && deviceValue === '';
               if (zoneIdForGrouping) seenZones.add(zoneIdForGrouping);
               if (!zoneIdForGrouping && device.type === 'heart_rate' && !noZoneShown) noZoneShown = true;
 
@@ -953,8 +989,8 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                           border: `1px solid ${bg}`,
                           textTransform: 'uppercase',
                           letterSpacing: '0.5px',
-                          // Mantine's xs badge is 9px; read from the bike.
-                          fontSize: '0.875rem',
+                          // Mantine's xs badge is 9px; read from the bike (16px floor).
+                          fontSize: '1rem',
                           height: 'auto',
                           padding: '2px 10px'
                         };
@@ -1038,9 +1074,15 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                         {deviceName}
                       </div>
                       <div className="device-stats">
-                        <span className="device-icon" title={isHeartRate ? (strapLabel(hrColorMap[deviceIdStr]) || 'Strap') : undefined}>{getDeviceIcon(device, strapColor)}</span>
-                        <span className="device-value">{deviceValue}</span>
-                        <span className="device-unit">{getDeviceUnit(device)}</span>
+                        <span className="device-icon" title={strapColourLabel || undefined}>{getDeviceIcon(device, strapColor, strapColourLabel)}</span>
+                        {noSignal ? (
+                          <span className="device-value device-value--no-signal">{UI_LABELS.NO_SIGNAL}</span>
+                        ) : (
+                          <>
+                            <span className="device-value">{deviceValue}</span>
+                            <span className="device-unit">{getDeviceUnit(device)}</span>
+                          </>
+                        )}
                       </div>
                     </div>
                     {isHeartRate && showTrend && (
@@ -1052,6 +1094,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                         zones={trendSequence}
                         profileId={profileId}
                         cardHeight={cardHeight}
+                        noSignal={noSignal}
                       />
                     )}
                     {isHeartRate && zoneBar.show && (
