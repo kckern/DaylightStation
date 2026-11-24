@@ -329,6 +329,19 @@ is triggered (Home Assistant's office arrival automation, the newsstand page at
 `/feed/paper`, or the CLI). The `report` kind above is unchanged; the two kinds
 share the config file, the scheduler surfacing and the router.
 
+**Home Assistant side** (in HA's version-controlled `_includes/`):
+`rest_commands/office_paper.yaml` defines `rest_command.office_paper`
+(`POST http://daylight-station:3111/api/v1/newsreporter/office-paper/deliver`,
+body `{"trigger":"ha"}`), and `automations/office_paper_delivery.yaml`
+(`automation.office_paper_print_on_arrival`) calls it when
+`binary_sensor.office_presence_sensor_presence` has been on for 5 minutes
+between 07:00 and 12:00. It is deliberately a separate automation from
+`office_morning_program_auto_start` (same trigger): a TV failure cannot stop
+the paper and the paper's print time cannot delay the TV. HA keeps no
+"printed today" flag; the deliver route's once-a-day rule and `expires_after`
+are the only gates, so every later arrival that morning answers
+`already_delivered`.
+
 ### Config
 
 ```yaml
