@@ -22,7 +22,7 @@
  * Falls back (returns null) when the gateway is missing or unconfigured, or
  * more than half the calls fail; the caller then uses the chat pick.
  */
-import { choice, score } from '#apps/common/ports/IDecisionGateway.mjs';
+import { choice, score, yesNo } from '#apps/common/ports/IDecisionGateway.mjs';
 import { ApplicationError } from '#apps/common/errors/ApplicationError.mjs';
 import { mapLimit, withTimeout } from './editionGather.mjs';
 
@@ -146,10 +146,18 @@ export async function decisionPick({ gateway, candidates, categories, leadEnable
   const interest = new Map();
   for (const j of placed) for (const id of j.unit.ids) interest.set(id, j.interest);
 
+  // Kept stories so far, in the order they were kept: what a later unit is
+  // checked against so one event never prints twice (2026-11-23: NATO's
+  // space-defence pledge printed from BBC and France 24 as two World stories).
+  const kept = [];
+  const sameAsKept = (j) => firstSameEvent({ gateway, unit: j.unit, kept, timeoutMs, timing, logger, logContext });
+  let merged = 0;
+
   let lead = null;
   if (leadEnabled && placed.length) {
     const pickLead = placed.find((j) => j.unit.outlets >= 2) || placed[0];
-    lead = pickLead.unit.ids;
+    lead = [...pickLead.unit.ids];
+    kept.push({ unit: pickLead.unit, ids: lead });
     placed.splice(placed.indexOf(pickLead), 1);
   }
 
@@ -159,15 +167,70 @@ export async function decisionPick({ gateway, candidates, categories, leadEnable
     if (category.balance === 'lean') {
       mine.sort((a, b) => (Math.round((b.value - a.value) * 100) || (b.unit.cols.length - a.unit.cols.length)));
     }
-    const stories = mine.slice(0, category.stories).map((j, i) => ({
-      ids: eligibleIds(j.unit, category), rank: i + 1, interest: j.interest,
-    })).filter((s) => s.ids.length);
+    const stories = [];
+    for (const j of mine) {
+      if (stories.length >= category.stories) break;
+      const ids = eligibleIds(j.unit, category);
+      if (!ids.length) continue;
+      const twin = await sameAsKept(j);
+      if (twin) {
+        // Same event as a story already in the paper: its coverage joins
+        // that story (more outlets credited) instead of printing again.
+        for (const id of j.unit.ids) if (!twin.ids.includes(id)) twin.ids.push(id);
+        merged += 1;
+        continue;
+      }
+      const story = { ids, rank: stories.length + 1, interest: j.interest };
+      stories.push(story);
+      kept.push({ unit: j.unit, ids: story.ids });
+    }
     if (stories.length) out.push({ id: category.id, stories });
   }
   if (!out.length && !lead) {
     throw new ApplicationError('edition pick left every category empty', { code: 'EDITION_PICK_EMPTY' });
   }
-  return { lead, categories: out, interest, unknownIds: [], disallowed: [], units: units.length, failed };
+  if (merged) logger.info?.('newsreporter.edition.pick.merged_duplicates', { ...logContext, merged });
+  return { lead, categories: out, interest, unknownIds: [], disallowed: [], units: units.length, failed, merged };
+}
+
+const STOP = new Set(['about', 'after', 'again', 'against', 'amid', 'before', 'being', 'from', 'have', 'into', 'more', 'over', 'says', 'said', 'than', 'that', 'their', 'there', 'they', 'this', 'what', 'when', 'will', 'with', 'would', 'your']);
+
+/** Content words of a title (4+ letters, lowercased, crude plural/-ce folding). */
+export function contentWords(text) {
+  return new Set(String(text || '').toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').split(/[\s-]+/)
+    .filter((w) => w.length >= 4 && !STOP.has(w))
+    .map((w) => w.replace(/(ies)$/, 'y').replace(/s$/, '').replace(/ce$/, 'se')));
+}
+
+/** Cheap prefilter: only pairs sharing two content words are worth a model call. */
+export function mightBeSameEvent(a, b) {
+  const wa = contentWords(`${a.title} ${a.blurb}`);
+  let shared = 0;
+  for (const w of contentWords(`${b.title} ${b.blurb}`)) if (wa.has(w) && ++shared >= 2) return true;
+  return false;
+}
+
+const SAME_EVENT = {
+  same: yesNo(
+    'Do stories `a` and `b` report the same specific news event (the same incident, announcement, ruling, or result), not merely the same topic, people, or ongoing story?',
+    { yes: 'Both are covering one specific event.', no: 'Different events, or only the same broad topic or people.' }),
+};
+
+/** The kept story `unit` duplicates, or null. A failed call counts as "different". */
+export async function firstSameEvent({ gateway, unit, kept, timeoutMs = PICK_TIMEOUT_MS, timing = null, logger = console, logContext = {} }) {
+  const suspects = kept.filter((k) => mightBeSameEvent(k.unit, unit));
+  if (!suspects.length) return null;
+  const verdicts = await Promise.all(suspects.map(async (k) => {
+    try {
+      const state = { a: { title: k.unit.title, blurb: k.unit.blurb }, b: { title: unit.title, blurb: unit.blurb } };
+      const result = await withTimeout(gateway.evaluate(state, SAME_EVENT, { timeout: timeoutMs }), timeoutMs + 1000, 'decision', timing);
+      return Number(result?.answers?.same?.probability) > 0.5;
+    } catch (error) {
+      logger.warn?.('newsreporter.edition.pick.same_event_failed', { ...logContext, unit: unit.key, error: error?.message || String(error) });
+      return false;
+    }
+  }));
+  return suspects.find((_, i) => verdicts[i]) || null;
 }
 
 export default decisionPick;

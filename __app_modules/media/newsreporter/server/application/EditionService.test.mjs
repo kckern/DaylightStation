@@ -14,7 +14,7 @@ describe('EditionService.compose', () => {
     const stored = await h.store.get('office-paper', TODAY);
     expect(stored).toMatchObject({ number: 1, status: 'composed', deliveries: [], error: null });
     expect(h.store.pngs.get(`office-paper/${TODAY}`).subarray(1, 4).toString()).toBe('PNG');
-    expect(stored.inputs.pick).toEqual({ method: 'decision', units: 4, failed: 0 });
+    expect(stored.inputs.pick).toEqual({ method: 'decision', units: 4, failed: 0, merged: 0 });
     expect(stored.inputs.headlines).toBe(5);
     expect(stored.inputs.missing).toEqual([]);
     expect(stored.layout.masthead).toMatchObject({ title: 'The Daylight Ledger', number: 1, weatherLabel: '41°/22°' });

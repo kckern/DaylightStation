@@ -20,6 +20,19 @@ export const READ_CHARS = 6000;
 const SOURCE_TYPE = { weather: 'weather', todoist: 'tasks', strava: 'strava', health: 'health', immich: 'immich', journal: 'journal', gratitude: 'gratitude' };
 
 /**
+ * A Todoist title as words for paper: markdown links become their text, bare
+ * URLs go, whitespace collapses. (2026-11-23: a task titled with a markdown
+ * Ancestry link printed its whole tracking URL down the To do column.)
+ */
+export function taskText(title) {
+  return String(title || '')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
  * Bound `promise` by `ms` through the injected IApplicationScheduler (the
  * application layer owns no timers). Without one the promise is unbounded.
  */
@@ -193,7 +206,8 @@ export class EditionGatherer {
 
   async #todoist({ cfg, user }) {
     const items = await this.#fetch('todoist', { params: { filter: 'overdue_or_due_today' } }, user);
-    const tasks = items.map((i) => ({ text: i.title, overdue: !!i.meta?.isOverdue }))
+    const tasks = items.map((i) => ({ text: taskText(i.title), overdue: !!i.meta?.isOverdue }))
+      .filter((t) => t.text.length >= 3)
       .sort((a, b) => Number(b.overdue) - Number(a.overdue));
     return { items: tasks.slice(0, cfg.max ?? 4), total: tasks.length, notable: tasks.some((t) => t.overdue) };
   }

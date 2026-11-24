@@ -219,7 +219,7 @@ export class EditionService {
     });
     let pickInfo;
     if (pick) {
-      pickInfo = { method: 'decision', units: pick.units, failed: pick.failed };
+      pickInfo = { method: 'decision', units: pick.units, failed: pick.failed, merged: pick.merged ?? 0 };
     } else {
       const pickRaw = await structuredCall({
         gateway: this.#gateway, step: 'pick', schema: pickSchema, model: cfg.model, logger: this.#logger, logContext: ctx,
