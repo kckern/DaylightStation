@@ -38,7 +38,7 @@
     "raw-color": 0,
     "raw-motion": 0,
     "raw-keydown": 0,
-    "native-control": 8,
+    "native-control": 1,
     "undefined-token": 0
   },
   "__app_modules/personal/life/browser": {
