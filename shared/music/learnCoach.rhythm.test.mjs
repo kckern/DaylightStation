@@ -48,3 +48,32 @@ describe('rhythm recovery rung', () => {
     expect(projectCoach({ plan, state, dayKey }).goldResume.rhythm).toBeUndefined();
   });
 });
+
+describe('the rhythm step (before the metronome)', () => {
+  const plain = createCoachPlan({ scoreId: 'files:t.musicxml', fingerprint: 'fp', segments, tempoMap: [{ onsetQuarter: 0, bpm: 90 }] });
+  const gold = (state) => projectCoach({ plan: plain, state, dayKey }).gold.a;
+  const doTwice = (state, task, result = good) => [1, 2].reduce((acc) => applyCoachEvent(acc, { id: `s${++n}`, type: 'outcome', task, result }, { plan: plain, now: '2026-11-23T18:00:00Z', dayKey }), state);
+  const stepOf = (skill) => plain.tasks.find((t) => t.passageId === 'a' && t.skill === skill);
+  it('is the first Gold step, pitch-free at 50%', () => {
+    expect(gold(undefined)).toMatchObject({ skill: 'rhythm', rhythm: true, mode: 'cued', tempoPercent: 50, label: 'Tap the rhythm' });
+  });
+  it('once clear, the beat comes next', () => {
+    expect(gold(doTwice(undefined, stepOf('rhythm')))).toMatchObject({ skill: 'pulse' });
+  });
+  it('a pitch-free pass proves no timed step, even at a faster tempo than one', () => {
+    const state = doTwice(undefined, stepOf('rhythm'));
+    const skills = projectCoach({ plan: plain, state, dayKey }).segments[0].skills;
+    for (const skill of ['pulse', 'timed-30-rh', 'timed-30']) expect(skills.find((s) => s.skill === skill).ready).toBe(false);
+  });
+  it('playing the real notes in time at an equal or faster tempo proves the rhythm step', () => {
+    const state = doTwice(undefined, stepOf('timed-75'));
+    const skills = projectCoach({ plan: plain, state, dayKey }).segments[0].skills;
+    expect(skills.find((s) => s.skill === 'rhythm').ready).toBe(true);
+  });
+  it('speaks of taps, not notes', async () => {
+    const { coachFeedback } = await import('./learnCoach.mjs');
+    const rhythm = stepOf('rhythm');
+    expect(coachFeedback({ ...good, criteria: { completeness: 0.8, cleanliness: 1, placement: 1 } }, rhythm)).toMatchObject({ title: 'A tap went missing', reason: 'coverage' });
+    expect(coachFeedback(good, rhythm)).toMatchObject({ title: 'Nice rhythm!', reason: 'passed' });
+  });
+});

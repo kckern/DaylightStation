@@ -540,7 +540,7 @@ with `id`, `start`, `end`, `silver` and `gold`. Certification values are timesta
 ### Skipping steps
 
 The generated ladder runs right hand, left hand, together, the Silver check, the
-beat (30%, metronome), right hand with the beat and left hand with the beat (cued
+rhythm (50%, any key, X noteheads), the beat (30%, metronome), right hand with the beat and left hand with the beat (cued
 30%, two-hand passages only: `timed-30-rh`, `timed-30-lh`), cued 30%, 50%, 75%, then score tempo (Gold). The current step
 is the first one not yet ready. `sheetmusic.learn.skipping` says which other steps a
 child may start:
@@ -847,7 +847,14 @@ late entry in that case). It applies to cued Learn takes only. Logs: `piano.exer
 carries `reason: 'missed-cue'` on `piano.exercise-countdown-started`. The `maxCueRestarts` prop of
 `ExerciseRun` overrides the cap (tests pass 0).
 
-**Tap the rhythm (the rhythm recovery rung).** When a timed step keeps failing on timing alone and no slower
+**Tap the rhythm (a ladder step, and a recovery rung).** The first Gold step, right after the Silver check and
+before *Settle into a beat*, is the rhythm alone (`skill: rhythm`, `rhythm: true`, cued, 50% `RHYTHM_TEMPO`): it
+must be clear before the metronome steps. The score is drawn as rhythm only (`toRhythmMusicXml` in
+`Exercises/rhythmOnly.js`, applied by `LearnLab` for any `rhythm` task): every note on its staff's middle line with
+an X notehead, no accidentals, a chord as one note; durations, rests, ties and bars unchanged. Its result copy talks
+about taps (`A tap went missing`, `Tap with the click`), never notes. A real timed take at an equal or faster tempo
+proves the step (`carryGold`); a rhythm pass proves no timed step, and a ready rhythm step never counts as the faster
+proof for the steps above it. The same step is also offered as a recovery rung: When a timed step keeps failing on timing alone and no slower
 step is left (the 30% floor), the coach offers one more smaller step before it shrinks the bars: the same
 passage and tempo with **no pitch asked** (`reason: rhythm`, `rhythm: true`, `Tap the rhythm`). Any key counts:
 `ExerciseRun` takes `rhythmOnly` and reads every key as one pitch (`Exercises/rhythmOnly.js`: the expectation is

@@ -1692,7 +1692,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Feed domain router (FreshRSS reader + headline harvesting + boonscrolling)
-  if (feedServices) {  await installFeedApi({ configService, dataService, userService, rootLogger, userLoadFile, gratitudeServices, userLoadCurrent, contentServices, contentRegistry, mediaLibConfig, audiobookshelfConfig, mediaBasePath, feedServices, entropyServices, v1Routers });
+  // Its personal source adapters and article reader are also the office
+  // paper's inputs (NewsReporter edition reporters, wired below).
+  let feedRuntime = null;
+  if (feedServices) {  feedRuntime = await installFeedApi({ configService, dataService, userService, rootLogger, userLoadFile, gratitudeServices, userLoadCurrent, contentServices, contentRegistry, mediaLibConfig, audiobookshelfConfig, mediaBasePath, feedServices, entropyServices, v1Routers });
 }
 
   // Cost domain router
@@ -3823,6 +3826,9 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     });
   }
 
+  // The digest's read-only summary feeds the office paper's school line; it
+  // stays null when the digest is not wired (dev, no cron, disabled).
+  let schoolParentDigest = null;
   // Parent digest (school economy C6): one push to each teacher at the
   // economy catalog's `digest.cron` (read here, at boot: a change needs a
   // restart; null registers nothing) summing each child's school day, plus a
@@ -3833,7 +3839,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
       && schoolLifecycle.useCases?.getLearnerDayCompletion) {
     try {
       const { createSchoolParentDigest } = await import("../../__app_modules/learning/school/server/composition-parent-digest.mjs");
-      createSchoolParentDigest({
+      schoolParentDigest = createSchoolParentDigest({
         economyConfig: economyApi.configProjection,
         economyService: economyApi.economyService,
         // One zone and 4 am boundary for both School's day and the economy's
@@ -4236,6 +4242,18 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     httpClient: axios,
     logger: rootLogger.child({ module: 'newsreporter' }),
     agentUsageRecorder,
+    // Edition reporters (the office paper): write on the household AI
+    // gateway, pick on the typed-decision gateway, both attributed to
+    // newsreporter/office-paper; inputs from the feed, the calendar and the
+    // school digest; cost from the usage ledger.
+    aiGateway: scopedGateway(sharedAiGateway, { app: 'newsreporter', feature: 'office-paper' }),
+    decisionGateway: scopedGateway(decisionGateway, { app: 'newsreporter', feature: 'office-paper' }),
+    headlineService: feedServices?.headlineService ?? null,
+    feedSourceAdapters: feedRuntime?.feedSourceAdapters ?? [],
+    webContentAdapter: feedRuntime?.webContentAdapter ?? null,
+    loadCalendar: (username) => userLoadCurrent(username, 'calendar'),
+    summarizeSchool: schoolParentDigest?.digest ? (args) => schoolParentDigest.digest.summarize(args) : null,
+    costReader: aiUsageLedger,
   });
 
   // Compose the canonical jobs.yml store with the newsreporter store. Order is
@@ -4324,9 +4342,12 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     logger: rootLogger.child({ module: 'scheduling-api' })
   });
 
-  // NewsReporter manual-run endpoint (POST /api/v1/newsreporter/:id/run)
+  // NewsReporter API: POST /:id/run, and the edition routes (editions, image,
+  // compose, deliver, printers) the office paper and its newsstand use.
   v1Routers.newsreporter = createNewsReporterRouter({
     newsReporterService: newsReporter.service,
+    editionService: newsReporter.editionService,
+    reporterDirectory: newsReporter.reporterDirectory,
     logger: rootLogger.child({ module: 'newsreporter-api' })
   });
 

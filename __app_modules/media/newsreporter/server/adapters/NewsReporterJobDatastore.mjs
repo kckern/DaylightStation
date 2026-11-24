@@ -2,6 +2,9 @@ import { Job } from '#domains/scheduling/entities/Job.mjs';
 import { IJobDatastore } from '#apps/scheduling/ports/IJobDatastore.mjs';
 
 const REPORTER_TIMEOUT_MS = 120000;
+// An edition compose reads dozens of articles and makes a decision call per
+// story plus a long write call; give it ten minutes.
+const EDITION_TIMEOUT_MS = 600000;
 const BUCKET = 'newsreporter';
 
 /**
@@ -9,7 +12,8 @@ const BUCKET = 'newsreporter';
  * scheduler jobs.
  *
  * Reads the `newsreporter` household app config and synthesizes one
- * {@link Job} per enabled reporter, so cron lives SSOT in newsreporter.yml and
+ * {@link Job} per enabled reporter (an edition reporter's `schedule` is its
+ * compose time; delivery is triggered separately), so cron lives SSOT in newsreporter.yml and
  * the existing scheduler (dependency checks, missed-run handling, nextRun) work
  * unchanged. Composed alongside the YAML job store via CompositeJobDatastore.
  *
@@ -49,7 +53,7 @@ export class NewsReporterJobDatastore extends IJobDatastore {
         name: `${BUCKET}:${id}`,
         schedule: reporter.schedule,
         enabled: reporter.enabled !== false,
-        timeout: REPORTER_TIMEOUT_MS,
+        timeout: reporter.kind === 'edition' ? EDITION_TIMEOUT_MS : REPORTER_TIMEOUT_MS,
         bucket: BUCKET,
       })
     );

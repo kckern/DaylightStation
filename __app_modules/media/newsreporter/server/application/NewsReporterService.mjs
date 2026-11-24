@@ -30,6 +30,7 @@ export class NewsReporterService {
   #consolidator;
   #sinkRegistry;
   #history;
+  #editionService;
   #logger;
   #clock;
 
@@ -40,11 +41,12 @@ export class NewsReporterService {
    *   consolidator: { consolidate: Function },
    *   sinkRegistry: { create: Function },
    *   history: { record: Function },
+   *   editionService?: { handles: Function, compose: Function } | null,
    *   logger?: object,
    *   clock?: { now: () => Date },
    * }} deps
    */
-  constructor({ configProjection, sourceRegistry, consolidator, sinkRegistry, history, logger, clock } = {}) {
+  constructor({ configProjection, sourceRegistry, consolidator, sinkRegistry, history, editionService = null, logger, clock } = {}) {
     if (!configProjection?.reporter || !configProjection?.timezone) throw new Error('NewsReporterService requires a configProjection');
     if (!sourceRegistry) throw new Error('NewsReporterService requires a sourceRegistry');
     if (!consolidator) throw new Error('NewsReporterService requires a consolidator');
@@ -55,6 +57,7 @@ export class NewsReporterService {
     this.#consolidator = consolidator;
     this.#sinkRegistry = sinkRegistry;
     this.#history = history;
+    this.#editionService = editionService;
     this.#logger = logger || console;
     this.#clock = clock || { now: () => new Date() };
   }
@@ -71,6 +74,14 @@ export class NewsReporterService {
     const cfg = this.#configProjection.reporter(reporterId);
     if (!cfg || cfg.enabled === false) {
       throw new EntityNotFoundError('newsreporter', reporterId);
+    }
+
+    // An edition reporter's run (scheduler or POST /run) means compose.
+    if (this.#editionService?.handles(reporterId)) {
+      const result = await this.#editionService.compose(reporterId, {
+        date: overrides.date ?? null, dryRun: !!overrides.dryRun, trigger: 'run',
+      });
+      return result.status === 'failed' ? { ...result, status: 'error' } : result;
     }
 
     // 2. Build run context.

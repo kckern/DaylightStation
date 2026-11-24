@@ -44,11 +44,11 @@ describe('which steps may be started', () => {
   it('strict opens only the current step', () => {
     expect(currentStep(passage(null)).skill).toBe('right');
     expect(access(null, 'strict')).toEqual({ right: 'open', left: 'locked', together: 'locked', silver: 'locked',
-      pulse: 'locked', 'timed-30-rh': 'locked', 'timed-30-lh': 'locked', 'timed-30': 'locked', 'timed-50': 'locked', 'timed-75': 'locked', mastery: 'locked' });
+      rhythm: 'locked', pulse: 'locked', 'timed-30-rh': 'locked', 'timed-30-lh': 'locked', 'timed-30': 'locked', 'timed-50': 'locked', 'timed-75': 'locked', mastery: 'locked' });
   });
   it('open-to-silver opens every note step and the check, and Gold after Silver', () => {
     expect(access(null, 'open-to-silver')).toEqual({ right: 'open', left: 'open', together: 'open', silver: 'open',
-      pulse: 'locked', 'timed-30-rh': 'locked', 'timed-30-lh': 'locked', 'timed-30': 'locked', 'timed-50': 'locked', 'timed-75': 'locked', mastery: 'locked' });
+      rhythm: 'locked', pulse: 'locked', 'timed-30-rh': 'locked', 'timed-30-lh': 'locked', 'timed-30': 'locked', 'timed-50': 'locked', 'timed-75': 'locked', mastery: 'locked' });
     const silver = take(null, 'silver');
     expect(Object.values(access(silver, 'open-to-silver')).every((value) => value === 'open')).toBe(true);
   });
@@ -59,7 +59,7 @@ describe('which steps may be started', () => {
     const state = take(null, 'right');
     expect(access(state, 'strict')).toMatchObject({ right: 'open', left: 'open', together: 'locked' });
     const segment = passage(take(null, 'silver'));
-    expect(stepAccess(segment, segment.skills.find((skill) => skill.skill === 'pulse'), 'strict')).toBe('open');
+    expect(stepAccess(segment, segment.skills.find((skill) => skill.skill === 'rhythm'), 'strict')).toBe('open');
     expect(stepAccess(segment, segment.skills.find((skill) => skill.skill === 'mastery'), 'strict')).toBe('locked');
   });
 });

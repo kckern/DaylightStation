@@ -1,7 +1,7 @@
 # NewsReporter Framework
 
 > Bounded context: `newsreporter` — config-driven, scheduled, LLM-generated reports.
-> Current as of: 2026-06-21.
+> Current as of: 2026-11-23 (edition reporters added).
 
 ## What it is
 
@@ -11,7 +11,7 @@ A *reporter* is a declarative pipeline that runs on a schedule:
 gather (N sources)  →  consolidate (LLM)  →  render + emit (M sinks)
 ```
 
-Each reporter is a key in `data/household/config/newsreporter.yml`. Sources and
+Each reporter is a key in `data/household/newsreporter/config.yml`. Sources and
 sinks are pluggable through type-keyed registries — adding a new kind is
 add-a-class-and-register, never edit-the-core. The first reporter,
 `world-cup-reporter`, fetches yesterday's football results each morning and
@@ -36,7 +36,7 @@ The scheduler marks the job **succeeded** on `empty` (it ran correctly); only
 
 ## Config schema
 
-`data/household/config/newsreporter.yml` — each top-level key is a reporter id
+`data/household/newsreporter/config.yml` — each top-level key is a reporter id
 (also its scheduler job id). Loaded via `ConfigService.getHouseholdAppConfig(null,
 'newsreporter')`, cached and hot-reloadable.
 
@@ -96,7 +96,7 @@ placeholders already resolved.
 
 | Type        | Status  | Adapter |
 |-------------|---------|---------|
-| `http`      | built   | `1_adapters/newsreporter/sources/HttpSourceAdapter.mjs` |
+| `http`      | built   | `server/adapters/sources/HttpSourceAdapter.mjs` |
 | `rss`       | stub    | `RssSourceAdapter.mjs` (throws on `gather`) |
 | `harvester` | stub    | `HarvesterSourceAdapter.mjs` (throws on `gather`) |
 | `agent`     | stub    | `AgentSourceAdapter.mjs` (throws on `gather`) |
@@ -108,8 +108,8 @@ misconfigured reporter fails loudly (recorded as `error`).
 
 ### Adding a source type
 
-1. Implement `ISource` (`3_applications/newsreporter/ports/ISource.mjs`) in a new
-   adapter under `1_adapters/newsreporter/sources/`. Wrap external calls so "no
+1. Implement `ISource` (`server/application/ports/ISource.mjs`) in a new
+   adapter under `server/adapters/sources/`. Wrap external calls so "no
    data" (`[]`) stays distinct from "failure" (throw).
 2. Register it in `createSourceRegistry` (`sources/sourceRegistry.mjs`) under its
    `type` key. Unknown types throw a `ValidationError` at `create()`.
@@ -121,7 +121,7 @@ independent: one failing sink does not abort siblings.
 
 | Type      | Status | Glue |
 |-----------|--------|------|
-| `printer` | built  | `3_applications/newsreporter/sinks/PrinterSink.mjs` |
+| `printer` | built  | `server/application/sinks/PrinterSink.mjs` |
 
 **PrinterSink** (3_app glue — the only layer allowed to import both `1_rendering`
 and the printer adapter):
@@ -135,7 +135,7 @@ emit(sections, cfg, ctx):
   return { status: ok ? 'ok' : 'error' }
 ```
 
-**ReportReceiptRenderer** (`1_rendering/newsreporter/ReportReceiptRenderer.mjs`,
+**ReportReceiptRenderer** (`server/rendering/ReportReceiptRenderer.mjs`,
 pure — no I/O, no `1_adapters` import) maps sections → a `PrintJob` POJO
 (`{ items: PrintItem[], footer: { paddingLines, autoCut } }`). It is the single
 owner of layout: tables are pre-expanded into fixed-width text rows (mirroring the
@@ -150,7 +150,7 @@ a plain-text approximation for `--dry-run` previews.
 ## Section schema (the LLM contract)
 
 The consolidator must emit — and zod-validates against
-(`3_applications/newsreporter/reportSchema.mjs`) — an ordered list of typed
+(`server/application/reportSchema.mjs`) — an ordered list of typed
 sections:
 
 ```js
@@ -171,10 +171,10 @@ failure, then records `error`.
 
 Reporters surface as scheduler jobs without duplicating cron in `jobs.yml`:
 
-1. **`NewsReporterJobDatastore`** (`1_adapters/newsreporter/`) reads the
+1. **`NewsReporterJobDatastore`** (`server/adapters/`) reads the
    `newsreporter` config and synthesizes one `Job` per enabled reporter
    (`id = reporterId`, `name = newsreporter:<id>`, `schedule` from the reporter,
-   `timeout = 120s`, `bucket = newsreporter`). It also exposes `reporterIds() →
+   `timeout = 120s`, 600s for an edition reporter, `bucket = newsreporter`). It also exposes `reporterIds() →
    Set<string>` (re-read each call, so new reporters register without a restart).
 2. **`CompositeJobDatastore`** (`1_adapters/scheduling/`) concatenates the canonical
    `YamlJobDatastore` jobs with the synthesized reporter jobs. Order is
@@ -182,23 +182,24 @@ Reporters surface as scheduler jobs without duplicating cron in `jobs.yml`:
    `scheduler.jobStore.id_collision` warning is logged. The orchestrator keeps
    calling `loadJobs()` unchanged (dependency checks, missed-run handling,
    `nextRun` all come for free).
-3. **`NewsReporterJobExecutor`** (`3_applications/newsreporter/`) is added to
+3. **`NewsReporterJobExecutor`** (`server/application/`) is added to
    `SchedulerOrchestrator` ahead of the harvester/media executors:
    `canHandle(jobId) → reporterIds.has(jobId)`; `execute(jobId) →
    NewsReporterService.run(jobId)`. It rethrows on failure so the scheduler records
    the job as failed.
-4. **Wiring:** `NewsReporterContainer.build({ configService, agentRuntime,
-   printerRegistry, dataService, logger })` is the composition root — it builds the
-   renderer, source/sink registries, consolidator, history store, service, job
-   datastore, and executor, and is wired into `app.mjs` near the scheduler
-   bootstrap.
+4. **Wiring:** `createNewsReporterServices` (`server/composition.mjs`, re-exported
+   by `5_composition/bootstrap.mjs`) builds the adapters and renderers and hands
+   them to `NewsReporterContainer.build`, which builds the consolidator, sink
+   registry, service, edition service, executor and reporter directory. `app.mjs`
+   calls it near the scheduler bootstrap. An edition reporter's job runs
+   `NewsReporterService.run`, which delegates to `EditionService.compose`.
 
 ## Manual run: endpoint + CLI
 
 The reporter service is already wired into the running app, so ad-hoc triggers
 drive a thin HTTP endpoint rather than reconstructing services.
 
-**Endpoint** (`4_api/v1/routers/newsreporter.mjs`):
+**Endpoint** (`server/api/newsreporter.mjs`):
 
 ```
 POST /api/v1/newsreporter/:id/run
@@ -269,29 +270,44 @@ swallowed.
 ## File map
 
 ```
-__backend/src/3_applications/newsreporter/
-  NewsReporterService.mjs        # orchestration core
-  NewsReporterContainer.mjs      # composition root (app wiring)
-  NewsReporterJobExecutor.mjs    # scheduler bridge
-  Consolidator.mjs               # LLM step + one-retry validation
-  reportSchema.mjs               # zod sections schema (published language)
-  ports/{ISource,ISink,IReportRunHistory}.mjs
-  sinks/{PrinterSink,sinkRegistry}.mjs
-  placeholders.mjs               # TZ-aware {{date}} resolver
-
-__backend/src/1_rendering/newsreporter/
-  ReportReceiptRenderer.mjs      # pure: sections → PrintJob
-
-__backend/src/1_adapters/newsreporter/
-  sources/{HttpSourceAdapter, RssSourceAdapter, HarvesterSourceAdapter,
-           AgentSourceAdapter, sourceRegistry}.mjs
-  NewsReporterJobDatastore.mjs   # reporters → scheduler Jobs
+__app_modules/media/newsreporter/
+  server/composition.mjs                 # composition root: adapters, renderers, container
+  server/api/newsreporter.mjs            # router: /run + edition routes
+  server/application/
+    NewsReporterService.mjs              # report pipeline (delegates edition runs to compose)
+    NewsReporterContainer.mjs            # wires services, executor, reporter directory
+    NewsReporterJobExecutor.mjs          # scheduler bridge
+    Consolidator.mjs                     # report LLM step + one-retry validation
+    reportSchema.mjs                     # zod sections schema (published language)
+    placeholders.mjs                     # TZ-aware {{date}} resolver
+    EditionService.mjs                   # edition compose / deliver / reads
+    edition/
+      editionConfig.mjs                  # edition config schema + source/page check
+      editionSelect.mjs                  # candidates, dedupe, module plan + rotation
+      decisionPick.mjs                   # per-story pick on the decision gateway
+      editionContracts.mjs               # zod pick/write contracts + checks
+      editionPrompts.mjs                 # pick (fallback) and write prompts, word budget
+      structuredCall.mjs                 # chatStructured + zod + one corrective retry
+      editionGather.mjs                  # headlines, day modules, article reads
+      editionLayout.mjs                  # layout contract + fit drop order
+      editionTime.mjs                    # household-local dates, seeded PRNG
+    ports/{ISource,ISink,IReportRunHistory,IEditionStore}.mjs
+    sinks/{PrinterSink,sinkRegistry}.mjs
+  server/rendering/
+    ReportReceiptRenderer.mjs            # pure: sections → PrintJob
+    NewspaperRenderer.mjs                # pure: edition layout → 576-dot canvas
+  server/adapters/
+    NewsReporterConfigProjection.mjs     # reporter config + household TZ
+    NewsReporterJobDatastore.mjs         # reporters → scheduler Jobs
+    sources/{HttpSourceAdapter, RssSourceAdapter, HarvesterSourceAdapter,
+             AgentSourceAdapter, sourceRegistry}.mjs
+    persistence/YamlReportRunDatastore.mjs
+    persistence/YamlEditionDatastore.mjs # edition records + PNGs
+  cli/newsreporter.cli.mjs               # ad-hoc trigger (cli/newsreporter.cli.mjs re-exports it)
 __backend/src/1_adapters/scheduling/CompositeJobDatastore.mjs
-__backend/src/1_adapters/persistence/yaml/YamlReportRunDatastore.mjs
-
-__backend/src/4_api/v1/routers/newsreporter.mjs   # manual-run endpoint
-cli/newsreporter.cli.mjs                          # ad-hoc trigger
-data/household/config/newsreporter.yml            # reporter configs (gitignored data)
+data/household/newsreporter/config.yml   # reporter configs (data tree, not in git)
+data/household/newsreporter/editions/<id>/<date>.yml   # edition records
+<media>/newsreporter/<id>/<date>.png                   # edition images
 ```
 
 ## Example: world-cup-reporter
@@ -304,3 +320,175 @@ all soccer events for the day; the consolidate prompt filters to
 returning `{ sections: [] }` when no World Cup matches were played. `on_empty: skip`
 means no-match mornings print nothing. (The data-path config carries TheSportsDB's
 public test API key, which is fine — `data/` is gitignored and not committed.)
+
+## Edition reporters (the office paper)
+
+A reporter with `kind: edition` is a different pipeline: a one-page newspaper
+composed each morning, rendered to a PNG, held, and printed once when delivery
+is triggered (Home Assistant's office arrival automation, the newsstand page at
+`/feed/paper`, or the CLI). The `report` kind above is unchanged; the two kinds
+share the config file, the scheduler surfacing and the router.
+
+### Config
+
+```yaml
+office-paper:
+  enabled: true
+  kind: edition
+  title: "The Daylight Ledger"
+  tagline: "optional line under the masthead"
+  schedule: "30 5 * * *"          # COMPOSE time (household TZ); delivery is separate
+  deliver:
+    printer: office
+    fallback: false               # true → the registry's routed printer (may print elsewhere)
+    once_per_day: true
+    expires_after: "12:00"        # no unforced print after this local time
+  length: { target_cm: 50, max_cm: 60 }
+  model: null                     # write-step model; null → gateway default
+  voice: |
+    Wry, plain-spoken morning paper. ...
+  news:
+    user: <username>              # whose feed.yml headline pages to read
+    pages: [mainstream]           # headline page ids; omit for all
+    max_age_hours: 18
+    dedupe_editions: 3
+    lead: { enabled: true, sentences: 4 }
+    categories:
+      - { id: us, label: Nation, topic: "...", stories: 3, balance: lean }
+      - { id: tech, label: Technology, sources: [arstechnica, bbc], stories: 2 }
+      - { id: local, label: Utah, sources: [ksl], stories: 2, optional: true }
+  day:
+    weather:    { show: always }
+    calendar:   { show: always, max: 5 }
+    todoist:    { show: always, max: 4 }
+    yesterday:  { show: rotate, weight: 2, parts: [strava, health] }
+    school:     { show: weekdays }
+    reflective: { show: rotate, weight: 1, parts: [immich, journal, gratitude] }
+    rotation:   { slots: 1 }
+```
+
+`show` is `always | weekdays | weekends | rotate | when_notable | never`.
+`rotate` modules are drawn into `rotation.slots`, weighted, seeded by the
+reporter id and date (a recompose draws the same), never repeating a module the
+previous edition carried. `when_notable` keeps a module only when its gatherer
+flags it: weather on a freeze (low ≤ 32 °F), heat (high ≥ 95 °F) or a wet day
+(≥ 60 % of the day's hours with precipitation); todoist when anything is
+overdue.
+
+The config is validated with zod when an edition reporter is used (unknown keys
+and modules, bad policies, repeated category ids, a bad expiry). The error is a
+`ValidationError` naming the key, e.g. `news.categories[2].id: category id "us"
+repeats`. Page and source ids are checked against the feed right after the
+headlines are read, before any model call.
+
+### Compose
+
+```
+gather → select → pick (decisions) → read → write (LLM) → layout → fit → store
+```
+
+1. **Gather**, in parallel: every configured headline page
+   (`HeadlineService.getAllHeadlines`) and the day modules: weather, todoist,
+   strava, health, immich, journal and gratitude through the feed's source
+   adapters (`fetchItems`); the calendar from the user's `current/calendar`
+   (today, plus the next two days when today has fewer than two events); school
+   from `SchoolParentDigest.summarize` for the latest earlier day that asked for
+   work. Each module has a 15 s timeout; one that fails is left out and listed
+   in `inputs.missing`. Headlines failing fails the compose.
+2. **Select** (code): age filter, undated items dropped, de-duplication within
+   the feed and against the previous `dedupe_editions` editions (canonical URL,
+   then normalized title), newest first, capped at 250. Candidates get short ids
+   (`h1`…) for the models.
+3. **Pick** on the typed-decision gateway (Jev, `IDecisionGateway`). One unit
+   per story: each briefing cluster, plus each remaining single headline. Each
+   unit gets one `evaluate` with two questions: `category`, a choice over the
+   categories it is eligible for (its sources pass `sources` / `exclude`) plus
+   `none`; and `interest`, a five-level score (routine, minor, notable, major,
+   historic). Value = score + 0.15 per extra outlet (at most +0.6). A unit joins
+   its category unless `none` has the largest probability. The lead is the
+   highest-valued unit with two or more outlets (any unit if none has), taken
+   out of its category; each category keeps its top `stories`, and
+   `balance: lean` breaks ties toward coverage spanning more grid columns.
+   `confidence` is not used. Concurrency 8, 20 s per call; a failed unit is
+   skipped and counted. When the decision gateway is missing or unconfigured,
+   or more than half the calls fail, the pick falls back to one
+   `chatStructured` call (zod-checked, one corrective retry, unknown ids
+   dropped). The edition records `inputs.pick = { method: 'decision'|'chat',
+   units, failed }`, and each stored story its `interest`.
+4. **Read**: the first two article URLs of each picked story through the feed's
+   `WebContentAdapter.extractReadableContent`, 8 s each, 6 at a time, 6,000
+   characters kept. A story with no readable text is written short (`thin`).
+5. **Write** (`IAIGateway.chatStructured`, zod contract, one corrective retry):
+   lead, sections, optional briefs and the day notes. The word budget comes
+   from `length.target_cm`. Stories may cite only picked ids.
+6. **Layout** (code): masthead, the "Your day" box (weather | agenda, tasks),
+   lead, sections in config order, briefs, notes (yesterday, school,
+   reflective), footer. A module the writer gave no note for gets the code's
+   own line.
+7. **Fit** (code): measure; while over `max_cm` drop briefs, then the
+   lowest-ranked story of the section with the most stories, then optional
+   sections, then notes, tasks and trailing sections. The masthead, weather,
+   agenda and lead are never dropped. A page that still overflows prints long
+   (`fit.overflow`, logged).
+8. **Store**: the record at `data/household/newsreporter/editions/<id>/<date>.yml`
+   and the image at `<media>/newsreporter/<id>/<date>.png`. `number` is the
+   previous edition's plus one and is kept on a recompose, which also keeps the
+   day's deliveries. A failed compose records `status: failed` only when the day
+   has no good edition.
+
+Both gateways are scoped `{ app: 'newsreporter', feature: 'office-paper' }`.
+`costUsd` is the sum of the AI usage ledger's rows for that app and feature
+during the compose (null when the ledger has none). Timeouts go through the
+injected `IApplicationScheduler`.
+
+`NewspaperRenderer` is pure node-canvas, 576 dots wide (72 mm at 8 dots/mm, so
+80 dots per cm), Roboto Condensed Regular and SemiBold from
+`__backend/assets/fonts/roboto-condensed/`, black on white.
+
+### Deliver
+
+`deliver` prints the stored PNG as one `{ type: 'image', width: 576 }` item (the
+printer adapter rotates it for upside-down printers) with the text transcript
+attached, on `printerRegistry.get(printer)` (unrouted) unless
+`deliver.fallback: true`. Deliveries are serialized per reporter. It always
+answers HTTP 200 with a status:
+
+| Status | Meaning |
+|---|---|
+| `printed` | Printed and recorded in `deliveries[]` (`{ at, printer, trigger, confirmed }`). |
+| `already_delivered` | `once_per_day` and already printed; nothing printed unless `force`. |
+| `expired` | Past `expires_after` (or a past day) and not forced. |
+| `composed_then_printed` | No good edition existed; composed now, then printed. |
+| `print_failed` | The printer refused, faulted or is unknown; the edition stays undelivered so a later deliver retries. |
+| `compose_failed` | No edition existed and composing it failed; nothing printed. |
+
+### API
+
+| Route | Does |
+|---|---|
+| `GET /api/v1/newsreporter/` | bare array `[{ id, kind, title, enabled }]` |
+| `GET /:id/editions?limit=30` | bare array of `{ date, number, status, composedAt, deliveredAt, printer, costUsd, leadHeadline, missing }`, newest first |
+| `GET /:id/editions/:date` | the full record (layout, inputs, stories `[{ ids, urls, titles, … }]`, deliveries); 404 when none |
+| `GET /:id/editions/:date/image.png` | the stored PNG |
+| `POST /:id/compose` `{ date?, dryRun? }` | `{ status, edition }`; a dry run stores nothing and adds `png` (base64, no `data:` prefix) |
+| `POST /:id/deliver` `{ date?, printer?, force?, trigger? }` | `{ status, edition }` (statuses above) |
+| `GET /:id/printers` | bare array of printer names |
+| `POST /:id/run` | for an edition reporter: compose |
+
+`date` defaults to today in the household timezone. An unknown, disabled or
+report-kind id on an edition route is a 404.
+
+### CLI
+
+```
+node cli/newsreporter.cli.mjs office-paper --compose --dry-run --out /tmp/paper.png
+node cli/newsreporter.cli.mjs office-paper --compose            # real compose; --out fetches the stored image
+node cli/newsreporter.cli.mjs office-paper --deliver [--printer upstairs] [--force] [--date YYYY-MM-DD]
+```
+
+### Logs
+
+`newsreporter.edition.compose.start|complete|error`, `.gather.module_failed`,
+`.pick.unit_failed|fallback|unknown_ids|balance|complete`, `.read.failed`,
+`.write.dropped`, `.fit.dropped|overflow`, `.deliver.printed|skipped|failed`,
+`.cost.unavailable`, each with `reporterId` and `date`.

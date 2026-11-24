@@ -19,7 +19,7 @@ import './LearnCoach.scss';
 const EMPTY = {};
 /** What a step is called under its pills: a set label, not a sentence. */
 const SET_NAMES = Object.freeze({ right: 'Right hand', left: 'Left hand', together: 'Together', notes: 'Notes', silver: 'On your own',
-  pulse: 'Beat', 'timed-30-rh': 'Right 30%', 'timed-30-lh': 'Left 30%', 'timed-30': '30%', 'timed-50': '50%', 'timed-75': '75%', mastery: '100%' });
+  rhythm: 'Rhythm', pulse: 'Beat', 'timed-30-rh': 'Right 30%', 'timed-30-lh': 'Left 30%', 'timed-30': '30%', 'timed-50': '50%', 'timed-75': '75%', mastery: '100%' });
 const setName = (task) => SET_NAMES[task.skill] ?? task.label;
 /**
  * What stands over a set's pills. A picture where one says it, so the row reads

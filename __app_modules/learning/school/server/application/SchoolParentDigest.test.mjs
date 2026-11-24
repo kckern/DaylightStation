@@ -445,3 +445,34 @@ describe('SchoolParentDigest — a held push', () => {
     expect(digests(day1.sent).map((i) => i.dedupeKey)).toEqual(['digest:2026-10-19', 'digest:2026-10-20']);
   });
 });
+
+describe('SchoolParentDigest — summarize (read-only)', () => {
+  it('returns the rows run() builds and sends nothing', async () => {
+    const { digest, sent } = makeDigest({
+      learners: ['learner_a', 'learner_b'],
+      sections: {
+        learner_a: [section('served'), section('served'), section('obligated')],
+        learner_b: [section('excused', 'not_a_school_day')],
+      },
+      economy: { learner_a: { silverEarned: 4, passesUsed: 0 } },
+      events: { '2026-10-20': [
+        { ts: '2026-10-20T08:00:00.000-07:00', event: 'school.issue.failed', data: { learnerId: 'learner_a', stage: 'print' } },
+      ] },
+    });
+    const summary = await digest.summarize({ studyDay: '2026-10-20' });
+    expect(sent).toEqual([]);
+    expect(summary).toMatchObject({ studyDay: '2026-10-20', today: '2026-10-20', coins: 'live' });
+    expect(summary.learners).toEqual([
+      expect.objectContaining({ learnerId: 'learner_a', child: 'Learner A', judged: true, served: 2, asked: 3, silverEarned: 4, failure: 'print_failed' }),
+      expect.objectContaining({ learnerId: 'learner_b', child: 'Learner B', asked: 0, silverEarned: null, failure: null }),
+    ]);
+    // A later run still sends the digest: summarize remembered nothing.
+    await digest.run();
+    expect(digests(sent)).toHaveLength(1);
+  });
+
+  it('works with no teachers and with no learners', async () => {
+    expect((await makeDigest({ teachers: [] }).digest.summarize()).learners).toHaveLength(1);
+    expect(await makeDigest({ learners: [] }).digest.summarize()).toMatchObject({ learners: [] });
+  });
+});

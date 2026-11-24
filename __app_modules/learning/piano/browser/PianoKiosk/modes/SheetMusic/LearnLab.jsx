@@ -7,6 +7,7 @@ import { TEMPO_STAGES, availableTempoStages, nearestTempoStage } from './tempoSt
 import { CLICK_LEVELS, readClickLevel, writeClickLevel } from './clickLevel.js';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
 import { useRhythmVoice } from './useRhythmVoice.js';
+import { toRhythmMusicXml } from '../Exercises/rhythmOnly.js';
 import { entryShiftBeats } from '../../../../../../../shared/music/learnCoach.mjs';
 
 const handCode = (parts) => parts.length > 1 ? 'RL' : parts[0] === 'lh' ? 'L' : parts[0] === 'rh' ? 'R' : null;
@@ -132,13 +133,16 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
   // be told from those judged on the strict curve. Null when not applied.
   const placementShare = requirement.policy?.placementFullCreditShare ?? null;
   const partsKey = (rung.effectiveParts ?? []).join('\u0000');
-  const runScore = useMemo(() => ({
+  const baseRunScore = useMemo(() => ({
     ...score,
     measures: segment.printedMeasures ?? [null, null],
     rangeIndices: { start: segment.inMeasure, end: segment.outMeasure },
     activeParts: partsKey ? partsKey.split('\u0000') : [],
     tempoPercent,
   }), [score, segment.printedMeasures, segment.inMeasure, segment.outMeasure, partsKey, tempoPercent]);
+  // The rhythm step and rung draw the passage as rhythm only: one line per staff, X noteheads (rhythmOnly.js).
+  const runScore = useMemo(() => (coachingTask?.rhythm === true && typeof baseRunScore.musicXml === 'string'
+    ? { ...baseRunScore, musicXml: toRhythmMusicXml(baseRunScore.musicXml) } : baseRunScore), [baseRunScore, coachingTask?.rhythm]);
   const stepIndex = setIndex;
   const passageName = coachingTask ? (segment.barLabel ?? segment.label) : segment.label;
   // A take replayed from the piano is a new take, reported in its own right.

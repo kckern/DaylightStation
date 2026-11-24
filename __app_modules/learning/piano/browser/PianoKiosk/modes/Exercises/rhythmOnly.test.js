@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RHYTHM_MIDI, rhythmNotes, toRhythmExpectation } from './rhythmOnly.js';
+import { RHYTHM_MIDI, rhythmNotes, toRhythmExpectation, toRhythmMusicXml } from './rhythmOnly.js';
 
 describe('toRhythmExpectation', () => {
   const expectation = { version: 1, tempoMap: [{ onsetQuarter: 0, bpm: 90 }], measureMap: [], events: [
@@ -29,5 +29,32 @@ describe('rhythmNotes', () => {
   });
   it('is empty when nothing is held', () => {
     expect(rhythmNotes(new Map()).size).toBe(0);
+  });
+});
+
+describe('toRhythmMusicXml', () => {
+  const xml = `<?xml version="1.0"?><score-partwise version="3.1"><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1">
+    <measure number="1"><attributes><divisions>1</divisions><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
+      <note><pitch><step>F</step><alter>1</alter><octave>5</octave></pitch><duration>1</duration><type>quarter</type><accidental>sharp</accidental><staff>1</staff></note>
+      <note><chord/><pitch><step>A</step><octave>5</octave></pitch><duration>1</duration><type>quarter</type><staff>1</staff></note>
+      <note><rest/><duration>1</duration><type>quarter</type><staff>1</staff></note>
+      <backup><duration>2</duration></backup>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>2</duration><type>half</type><staff>2</staff></note>
+    </measure></part></score-partwise>`;
+  const read = (text) => new DOMParser().parseFromString(text, 'application/xml');
+  it('puts every note on its staff middle line with an X head, drops chord notes and accidentals, keeps rests and durations', () => {
+    const doc = read(toRhythmMusicXml(xml));
+    const notes = [...doc.getElementsByTagName('note')];
+    expect(notes).toHaveLength(3);
+    const pitched = notes.filter((n) => n.getElementsByTagName('pitch').length);
+    expect(pitched.map((n) => [n.getElementsByTagName('step')[0].textContent, n.getElementsByTagName('octave')[0].textContent, n.getElementsByTagName('notehead')[0].textContent])).toEqual([['B', '4', 'x'], ['D', '3', 'x']]);
+    expect(doc.getElementsByTagName('alter')).toHaveLength(0);
+    expect(doc.getElementsByTagName('accidental')).toHaveLength(0);
+    expect(notes.map((n) => n.getElementsByTagName('duration')[0].textContent)).toEqual(['1', '1', '2']);
+    expect(notes[1].getElementsByTagName('rest')).toHaveLength(1);
+  });
+  it('returns what it cannot parse unchanged', () => {
+    expect(toRhythmMusicXml('<not xml')).toBe('<not xml');
+    expect(toRhythmMusicXml(null)).toBeNull();
   });
 });
