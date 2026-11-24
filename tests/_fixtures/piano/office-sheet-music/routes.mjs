@@ -17,6 +17,17 @@ export const USERS = [
 /** The office keyboard: a 76-key E1..G7, so the leave gesture is E1 + G7. */
 export const OFFICE_KEYBOARD = { startNote: 28, endNote: 103 };
 
+/** The catalog's shelves (`sheetmusic.collections`), each listed by GET /list/files/<folder>. */
+const notation = (folder, n) => Array.from({ length: n }, (_, index) => ({
+  id: `files:docs/sheet-music/${folder}/score-${index + 1}.musicxml`, title: `score-${index + 1}`, type: 'notation', thumbnail: null,
+}));
+export const SHELVES = [
+  { label: 'Beginner', ref: 'files:docs/sheet-music/beginner',
+    // The second desk piece is on this shelf too: it shows its progress there. A page-image score is left off.
+    items: [{ id: 'files:docs/sheet-music/piece-2.musicxml', title: 'piece-2', type: 'notation' }, ...notation('beginner', 13), { id: 'plex:123', title: 'scan', type: 'image' }] },
+  { label: 'Christmas', ref: 'files:docs/sheet-music/christmas', items: notation('christmas', 3) },
+];
+
 const passage = (id, start, end, state = 'todo', done = 0) => ({ id, start, end, state, steps: { done, total: 4 } });
 /** `count` pieces with real progress, newest first, as GET /activity/desk/:userId returns them. */
 export function deskPieces(count = 10) {
@@ -46,11 +57,16 @@ export async function installOfficeRoutes(page, { pieces = deskPieces(), gamesOf
     const p = url.pathname.replace(/^\/api\/v1\//, '');
     const method = request.method();
     if (p === 'device/config') return json(route, { devices: { 'office-tv': { modules: { 'piano-visualizer': { keyboard: OFFICE_KEYBOARD } } } } });
-    if (p === 'admin/apps/piano/config') return json(route, { householdTimezone: 'UTC', parsed: { gameAccess: { disabledFor: gamesOffFor }, sheetmusic: {} } });
+    if (p === 'admin/apps/piano/config') return json(route, { householdTimezone: 'UTC', parsed: { gameAccess: { disabledFor: gamesOffFor }, sheetmusic: { collections: SHELVES.map(({ label, ref }) => ({ label, ref })) } } });
     if (p === 'piano/users') return json(route, { users: USERS });
     let m = /^piano\/activity\/desk\/([^/]+)$/.exec(p);
     if (m) return json(route, { userId: m[1], name: m[1], pieces });
     if (/^piano\/users\/[^/]+\/board-game-day$/.test(p)) return json(route, { completedGames: 0 });
+    m = /^list\/files\/(.+)$/.exec(p);
+    if (m) {
+      const shelf = SHELVES.find((entry) => entry.ref === `files:${m[1]}`);
+      return shelf ? json(route, { items: shelf.items }) : json(route, {}, 404);
+    }
     if (p.startsWith('proxy/media/stream/')) return route.fulfill({ status: 200, contentType: 'application/xml', body: SCORE_XML });
     if (p === 'piano/sheet-music/learn') return json(route, {});
     if (p.startsWith('info/')) return json(route, {}); // the score's poster sidecar: none

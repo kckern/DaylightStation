@@ -20,7 +20,7 @@ mkdirSync(SHOTS, { recursive: true });
 
 const LOW = OFFICE_KEYBOARD.startNote;
 const HIGH = OFFICE_KEYBOARD.endNote;
-const KEY = { C2: 36, D2: 38, E2: 40, F2: 41, C3: 48, D3: 50, C4: 60, D5: 74 };
+const KEY = { C2: 36, D2: 38, E2: 40, F2: 41, C3: 48, D3: 50, E3: 52, C4: 60, D4: 62, D5: 74 };
 const SCALE = [60, 62, 64, 65, 67, 69, 71, 72]; // the fixture score: C4 up to C5
 
 const midi = (page, fn, ...args) => page.evaluate(([f, a]) => window.__officeMidi[f](...a), [fn, args]);
@@ -53,23 +53,57 @@ test('the whole Sheet Music flow, on keys only', async ({ page }) => {
   await expect(entry).toContainText('D5');
   await noClipping(page, '01-launcher', '.note-launcher');
 
-  // Sheet Music → the player's pieces, newest first, with level badges and page keys.
+  // Sheet Music → the player's pieces, newest first, six a page, with level badges and the browse keys.
   await tap(page, KEY.D5);
-  await expect(page.locator('.office-piece-key')).toHaveCount(8);
+  await expect(page.locator('.office-piece-key')).toHaveCount(6);
   await expect(page.locator('.office-piece-key').first()).toHaveAttribute('data-score', 'files:docs/sheet-music/four-bars.musicxml');
   await expect(page.locator('.office-piece-key__badge').first()).toHaveText('Bronze next');
   await expect(page.locator('.office-piece-key__badge').nth(1)).toHaveText('Gold next');
-  await expect(page.locator('.office-piece-picker__page')).toHaveCount(2);
+  const browseKey = (id) => page.locator(`.office-piece-picker__page[data-browse="${id}"]`);
+  await expect(browseKey('switch')).toContainText('All music');
+  await expect(browseKey('previous')).not.toHaveAttribute('data-enabled', 'true');
+  await expect(browseKey('next')).toHaveAttribute('data-enabled', 'true');
   await expect(page.locator('button')).toHaveCount(0); // nothing to tap
   await noClipping(page, '02-picker');
 
-  // The octave below turns the page.
-  await tap(page, KEY.D3);
-  await expect(page.locator('.office-piece-key')).toHaveCount(2);
-  await expect(page.locator('.office-piece-picker__page[data-current]')).toContainText('Page 2');
+  // Next turns the page; Previous turns it back.
+  await tap(page, KEY.E3);
+  await expect(page.locator('.office-piece-key')).toHaveCount(4);
+  await expect(page.locator('.office-piece-picker__head')).toContainText('Page 2 of 2');
+  await expect(browseKey('next')).not.toHaveAttribute('data-enabled', 'true');
   await noClipping(page, '03-picker-page-2');
+  await tap(page, KEY.D3);
+  await expect(page.locator('.office-piece-key')).toHaveCount(6);
+
+  // All music: the shelves, one per key; a shelf lists its engraved scores six a page.
   await tap(page, KEY.C3);
-  await expect(page.locator('.office-piece-key')).toHaveCount(8);
+  await expect(page.locator('.office-piece-key--shelf')).toHaveCount(2);
+  await expect(page.locator('.office-piece-picker__head h2')).toHaveText('All music');
+  await expect(browseKey('switch')).toContainText('Your pieces');
+  // Each shelf says how many pieces open here (the page-image scan is not counted).
+  await expect(page.locator('.office-piece-key--shelf').first()).toContainText('14 pieces');
+  await noClipping(page, '03b-shelves');
+  await tap(page, KEY.C4);
+  await expect(page.locator('.office-piece-picker__head h2')).toHaveText('Beginner');
+  await expect(page.locator('.office-piece-key')).toHaveCount(6);
+  // A piece the player has started shows its progress here too; the rest are New.
+  await expect(page.locator('.office-piece-key__badge').first()).toHaveText('Gold next');
+  await expect(page.locator('.office-piece-key__badge').nth(1)).toHaveText('New');
+  await tap(page, KEY.E3);
+  await tap(page, KEY.E3);
+  // 14 engraved scores: the third page holds two; the page-image scan is left off.
+  await expect(page.locator('.office-piece-key')).toHaveCount(2);
+  await noClipping(page, '03c-shelf-page-3');
+  // Open a catalog piece, come back with the Pieces key to the same shelf and page.
+  await tap(page, KEY.D4);
+  await expect(page.locator('.piano-learn-lab')).toBeVisible({ timeout: 20000 });
+  await tap(page, KEY.C2);
+  await expect(page.locator('.office-piece-picker__head h2')).toHaveText('Beginner');
+  await expect(page.locator('.office-piece-picker__head')).toContainText('Page 3 of 3');
+  // Back to the shelves, then to the player's own pieces.
+  await tap(page, KEY.C3);
+  await tap(page, KEY.C3);
+  await expect(page.locator('.office-piece-key').first()).toHaveAttribute('data-score', 'files:docs/sheet-music/four-bars.musicxml');
 
   // A piece opens straight on the coach's next step, with the key strip under it.
   await tap(page, KEY.C4);

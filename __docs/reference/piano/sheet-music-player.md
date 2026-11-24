@@ -1728,15 +1728,39 @@ answers. The full-screen lock panel is shown only when the launcher has nothing 
 1. **Who is practising.** Practice saves per player, so a launcher pick from an earlier study day
    (`identityStale`), or none, is asked for first on the roster row (C4 upward). Nothing is fetched
    or saved before the answer.
-2. **Pieces.** `GET /api/v1/piano/activity/desk/:userId`, newest first, one per white key C4–C5
-   (`office/officeKeys.js` `piecePage`): poster, the desk's level badge (`deskModel.cardBadge`),
-   title, passage map, and the key's note card. More than eight pieces page on the octave below
-   (C3 = page 1, D3 = page 2, …); a piece key always means "the nth piece shown". No pieces: a line
-   saying to start one on the tablet.
-3. **The piece**, opened on the coach's next step. The real `NotationScore` → `ScorePlayer` runs in a
-   `MemoryRouter`; with the keyboard-only context it forces coached Learn, engraves under an opaque
-   cover (the passages come from the engraving) and opens the path's target (`piano.learn.office.open`)
-   the moment the coach has loaded. Any key or pedal arms the take, as on the tablet.
+2. **Your pieces** (where Sheet Music opens). `GET /api/v1/piano/activity/desk/:userId`, newest
+   first, **six a page** on the white keys C4–A4 (`office/officeKeys.js` `listPage`): poster, the
+   desk's level badge (`deskModel.cardBadge`), title, passage map, and the key's note card. A piece
+   key always means "the nth piece shown".
+3. **All music** (the catalog). The shelves are `sheetmusic.collections`, the tablet's library tabs,
+   one per key C4–C5, each with its first cover and how many pieces open here. A shelf lists its
+   engraved scores (`GET /api/v1/list/<source>/<folder>`, `.musicxml`/`.mxl` only: page-image
+   scores stay on the tablet) six a page. A piece the player has started shows its desk badge and
+   passage map there too; the rest say **New**. Shelves load when All music opens and are kept for
+   the session.
+4. **The piece**, opened on the coach's next step. The real `NotationScore` → `ScorePlayer` runs in
+   its own memory router (`office/IsolatedMemoryRouter.jsx`): the office screen already sits under
+   the app's router, and React Router refuses a router inside a router, so the inner one is given a
+   clean root and Learn's URL state never touches the screen's URL. With the keyboard-only context it
+   forces coached Learn, engraves under an opaque cover (the passages come from the engraving) and
+   opens the path's target (`piano.learn.office.open`) the moment the coach has loaded. Any key or
+   pedal arms the take, as on the tablet. The strip's Pieces key returns to the list it came from,
+   on the same shelf and page.
+
+**The browse keys**, under every list, each fixed to its own key in the octave below (dim when it
+does nothing now):
+
+| Key | Action |
+|-----|--------|
+| C3 | All music (from your pieces or a shelf) · Your pieces (from the shelves) |
+| D3 / E3 | Previous / Next page |
+
+**Staying open.** The office screen's `midi` subscription (`household/screens/office.yml`) dismisses
+the piano overlay only after `dismiss.inactivity: 600` seconds without a key; it does not dismiss on
+the recorder's `session_end` (sent after 30 s of silence). Short idling is PianoVisualizer's own: its
+40 s countdown in free play, switched off while the launcher or a full-screen entry such as Sheet
+Music is open, and its own `session_end` handling, also skipped there. So a player can read a list,
+a score or a result card at length; ten minutes without a key closes it.
 
 **The key strip** (`office/KeyStrip.jsx`), under the drill, a fixed key per action in the octave
 C2–A2, far under where a passage starts (before a take "any key" arms it):
@@ -1776,13 +1800,15 @@ tablet, nothing reaching the rest of the office screen. Canvas 1280×720: the la
 the body, and a fixed 5.75rem key strip.
 
 **Logs:** `office-sheet-music.mounted` / `.unmounted`, `.player-picked`, `.pieces-loaded` /
-`.pieces-failed` / `.pieces-unreachable`, `.page`, `.piece-opened`, `.strip-key` (`key`, `source`),
+`.pieces-failed`, `.browse` (`key`, `level`, `page`), `.shelf-opened`, `.shelf-loaded` / `.shelf-failed`,
+`.piece-opened` (`from`), `.strip-key` (`key`, `source`),
 `.back-to-pieces` (`reason`), and `piano.learn.office.open`; the drill's own Learn events are unchanged.
 
-**Tests:** `office/officeKeys.test.js`, `office/KeyStrip.test.jsx`, the server's
+**Tests:** `office/officeKeys.test.js`, `office/KeyStrip.test.jsx`, `office/IsolatedMemoryRouter.test.jsx`, the server's
 `GetPianoDesk.test.mjs` (`forPlayer`), and the real-browser flow driven by simulated MIDI only:
 `npx playwright test --config tests/_infrastructure/config/playwright.office-sheet-music.config.mjs`
-(launcher → Sheet Music → pick a piece → a take → result → continue → back → exit, games off, a stale
+(mounted under a router as on the screen; launcher → Sheet Music → your pieces, Next/Previous → All
+music → a shelf → a catalog piece and back to the same page → pick a piece → a take → result → continue → back → exit, games off, a stale
 player; every screen checked for clipping and saved under `.superpowers/office-sheet-music/`).
 
 ## Admin: sheet music

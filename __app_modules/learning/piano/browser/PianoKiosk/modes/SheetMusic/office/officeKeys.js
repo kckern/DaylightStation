@@ -10,9 +10,11 @@
 
 import { SELECTION_NOTES, SECONDARY_NOTES, bindNoteSlots } from '../../../../game-platform/input/useNoteSelection.js';
 
-/** One page of pieces: C4 to C5, eight faces wide enough to read across a room. */
-export const PIECE_NOTES = Object.freeze(SELECTION_NOTES.slice(0, 8));
-/** Page keys: C3, D3, E3… one per page. */
+/** Six pieces a page, C4 to A4: wide enough faces to read across a room. */
+export const PIECE_NOTES = Object.freeze(SELECTION_NOTES.slice(0, 6));
+/** The shelves (the catalog's collections), C4 to C5. */
+export const SHELF_NOTES = Object.freeze(SELECTION_NOTES.slice(0, 8));
+/** Kept for the key-row contract: the browse keys live on this row. */
 export const PAGE_NOTES = SECONDARY_NOTES;
 
 const NAMES = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
@@ -24,22 +26,37 @@ export function noteName(midi) {
 }
 
 /**
- * The pieces on page `page` bound to PIECE_NOTES, plus one page key per page
- * when there is more than one. A page past the end clamps to the last.
+ * One page of a list bound to keys: `notes` from the left, the page clamped to
+ * the list. Any length can be reached: Previous and Next step one page at a time.
  */
-export function piecePage(pieces, page = 0, perPage = PIECE_NOTES.length) {
-  const list = Array.isArray(pieces) ? pieces : [];
-  const size = Math.max(1, Math.min(perPage, PIECE_NOTES.length));
-  // More pages than page keys cannot be reached: the extra pieces are left off
-  // (and reported) rather than bound to keys that are not there.
-  const pageCount = Math.max(1, Math.min(PAGE_NOTES.length, Math.ceil(list.length / size)));
+export function listPage(items, page = 0, notes = PIECE_NOTES) {
+  const list = Array.isArray(items) ? items : [];
+  const size = Math.max(1, notes.length);
+  const pageCount = Math.max(1, Math.ceil(list.length / size));
   const at = Math.min(Math.max(0, Math.floor(Number(page) || 0)), pageCount - 1);
-  const { slots } = bindNoteSlots(list.slice(at * size, (at + 1) * size), PIECE_NOTES);
-  const pageSlots = pageCount > 1
-    ? bindNoteSlots(Array.from({ length: pageCount }, (_, index) => ({ page: index, label: `Page ${index + 1}` })), PAGE_NOTES).slots
-      .map((slot) => ({ ...slot, current: slot.item.page === at }))
-    : [];
-  return { page: at, pageCount, slots, pageSlots, unreachable: Math.max(0, list.length - pageCount * size) };
+  const { slots } = bindNoteSlots(list.slice(at * size, (at + 1) * size), notes);
+  return { page: at, pageCount, slots, hasPrevious: at > 0, hasNext: at < pageCount - 1 };
+}
+
+/**
+ * The browse keys under the list, one fixed key each so a face never moves:
+ * C3 switches between your pieces and the shelves, D3 and E3 turn the page.
+ * A key that does nothing right now is drawn dim on its key.
+ */
+export const BROWSE_KEYS = Object.freeze([
+  { id: 'switch', note: SECONDARY_NOTES[0] },
+  { id: 'previous', note: SECONDARY_NOTES[1], label: 'Previous' },
+  { id: 'next', note: SECONDARY_NOTES[2], label: 'Next' },
+]);
+
+/** The browse row as drawn for a level ('mine' | 'shelves' | 'shelf') and its page. */
+export function browseSlots(level, page = {}) {
+  const switchLabel = level === 'shelves' ? 'Your pieces' : 'All music';
+  const enabled = { switch: true, previous: Boolean(page.hasPrevious), next: Boolean(page.hasNext) };
+  return BROWSE_KEYS.map((key) => ({
+    id: key.id, note: key.note, noteName: noteName(key.note), label: key.id === 'switch' ? switchLabel : key.label,
+    enabled: enabled[key.id], item: { browse: key.id },
+  }));
 }
 
 /**

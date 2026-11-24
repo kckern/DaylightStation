@@ -192,20 +192,28 @@
     gap: 0.5rem;
   }
 
+  // A browse key: ivory when it does something now, solid grey when it does not
+  // (the key strip's rule), and always on its own key so a face never moves.
   &__page {
-    flex: 0 0 8.5rem;
+    flex: 0 0 10.5rem;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    gap: 0.6rem;
     border-radius: 0 0 8px 8px;
     background: #3a3a43;
-    color: #c9c9d1;
-    font-size: 1.05rem;
+    color: #8d8d99;
+    font-size: 1.1rem;
     font-weight: 700;
 
-    &[data-current] { background: var(--osm-brass); color: #0f1a13; }
+    &[data-enabled] {
+      background: linear-gradient(180deg, #ffffff 0%, var(--pg-ivory, #f1f1f4) 70%, #dcdce2 100%);
+      color: var(--pg-shelf, #1f1f26);
+    }
   }
+
+  // A message in the list's place keeps the browse keys under it.
+  &__status { flex: 1 1 0; min-height: 0; height: auto; }
 
   &__page-note { font-variant-numeric: tabular-nums; opacity: 0.8; }
 }
@@ -254,7 +262,13 @@
 
     &[data-level='gold'] { background: #e9c25a; color: #3a2a00; }
     &[data-level='diamond'] { background: #9fd8ef; color: #0d3142; }
+    &[data-level='new'] { background: #d9e6f5; color: #1b2f45; }
   }
+
+  // A shelf: poster, its name, its key.
+  &--shelf { grid-template-rows: minmax(0, 1fr) auto auto auto; }
+  &--shelf &__title { font-size: 1.3rem; }
+  &__count { min-height: 1.2em; font-size: 0.95rem; opacity: 0.65; }
 
   &__title {
     max-width: 100%;

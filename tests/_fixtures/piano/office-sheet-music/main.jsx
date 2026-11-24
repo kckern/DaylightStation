@@ -1,5 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
 import { wsService } from '../../../../frontend/src/services/WebSocketService.js';
 import { ScreenOverlayProvider } from '../../../../__capabilities/screen-host/browser/overlays.mjs';
 import { PianoVisualizer } from '../../../../__app_modules/learning/piano/browser/PianoVisualizer.jsx';
@@ -15,8 +16,11 @@ window.__officeMidi = {
   pedal: (value) => wsService._dispatch({ topic: 'midi', type: 'control', data: { event: 'control_change', control: 64, controlName: 'sustain', value, channel: 0 } }),
 };
 
+// Under a router, as on the office screen (/screen/office): Learn's own router must nest inside it.
 createRoot(document.getElementById('root')).render(
-  <ScreenOverlayProvider>
-    <PianoVisualizer onClose={() => {}} onSessionEnd={() => {}} />
-  </ScreenOverlayProvider>,
+  <BrowserRouter>
+    <ScreenOverlayProvider>
+      <PianoVisualizer onClose={() => {}} onSessionEnd={() => {}} />
+    </ScreenOverlayProvider>
+  </BrowserRouter>,
 );
