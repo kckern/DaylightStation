@@ -257,6 +257,19 @@ describe('ScorePassage layout fitting', () => {
     await waitFor(() => expect(onUnrunnable).toHaveBeenCalledWith('passage-too-dense'));
     expect(h.scales).toEqual(expect.arrayContaining([1, 0.65]));
   });
+
+  it('says so in the stage, plainly, instead of leaving blank paper behind the curtain', async () => {
+    h.systems = 4;
+    const onUnrunnable = vi.fn();
+    const { container } = renderPassage({ onExpectation: vi.fn(), onUnrunnable });
+    await waitFor(() => expect(onUnrunnable).toHaveBeenCalledWith('passage-too-dense'));
+    const message = container.querySelector('.piano-score-passage [role="status"]');
+    expect(message).not.toBeNull();
+    expect(message).toHaveTextContent('These bars are too many to show at once.');
+    // Shown, not curtained: the message is the placeholder the curtain never hides, and no engraving is left behind it.
+    expect(message.classList.contains('musicxml-renderer--placeholder')).toBe(true);
+    expect(container.querySelector('[data-testid="engraver"]')).toBeNull();
+  });
 });
 
 describe('ScorePassage expectation', () => {

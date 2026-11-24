@@ -208,6 +208,17 @@ describe('LearnLab', () => {
     expect(screen.queryByText('Press a key to start')).toBeNull();
   });
 
+  it('hides the start prompt while a missed cue holds for its restart, keeping its slot', () => {
+    render(<LearnLab {...base} rung={{ ...rung, mode: 'cued', tempoPercent: 60 }} />);
+    phase('cue-restart');
+    expect(screen.queryByText('Press a key to start')).toBeNull();
+    expect(screen.queryByText('or a pedal')).toBeNull();
+    expect(document.querySelector('.piano-learn-lab__prompt')).not.toBeNull();
+    // A take is under way: nothing to change mid-take, but it can be paused.
+    expect(screen.queryByRole('button', { name: 'Listen' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+  });
+
   it('Back names its destination, the score', () => {
     const onClose = vi.fn();
     render(<LearnLab {...base} coachingTask={{ key: 'task' }} onClose={onClose} onOutcome={vi.fn()} />);

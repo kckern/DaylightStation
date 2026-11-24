@@ -236,6 +236,28 @@ describe('a key on the piano is beat one of the count (A1)', () => {
     expect(h.click.anchorMs).toBe(pressedAt);
   });
 
+  it('the count starts at the note-on\'s own MIDI time, not when the run got round to seeing it', async () => {
+    await mount();
+    // The bridge stamped the key 120 ms before the render that saw it.
+    const pressedAt = Date.now() - 120;
+    act(() => { h.activeNotes = new Map([[55, { velocity: 1, timestamp: pressedAt }]]); rerender(); });
+    expect(events('piano.exercise-armed').at(-1)).toMatchObject({ at: pressedAt, downbeat: true });
+    expect(h.click.anchorMs).toBe(pressedAt);
+    hold([]);
+    // The grid is the press's: notes on it pass.
+    PASSAGE.forEach((midi, index) => { advance(pressedAt + LEAD_IN + index * BEAT + 20 - Date.now()); strike(midi); });
+    finish();
+    advance(1000);
+    expect(current.onPassed).toHaveBeenCalledTimes(1);
+  });
+
+  it('a stamp from the future or long ago is not trusted: the count starts when the run saw the key', async () => {
+    await mount();
+    const seenAt = Date.now();
+    act(() => { h.activeNotes = new Map([[55, { velocity: 1, timestamp: seenAt - 60000 }]]); rerender(); });
+    expect(events('piano.exercise-armed').at(-1)).toMatchObject({ at: seenAt });
+  });
+
   it('a second key during the count is not graded and does not start it again', async () => {
     await mount();
     hold([55]);
@@ -287,6 +309,21 @@ describe('a pedal is any key: it starts the count, and every press is logged', (
     expect(events('piano.exercise-pedal')).toEqual([
       expect.objectContaining({ acted: 'start' }),
       expect.objectContaining({ acted: null, ignored: 'counting' }),
+    ]);
+  });
+
+  it('a pedal during the take after the count is logged as ignored while playing', async () => {
+    await mount();
+    const pressedAt = Date.now();
+    cc(64, 127);
+    cc(64, 0);
+    advance(BEAT);
+    cc(64, 127);
+    cc(64, 0);
+    advance(pressedAt + LEAD_IN + 100 - Date.now());
+    cc(64, 127);
+    expect(events('piano.exercise-pedal').map(({ acted, ignored }) => [acted, ignored])).toEqual([
+      ['start', null], [null, 'counting'], [null, 'playing'],
     ]);
   });
 
@@ -458,6 +495,22 @@ describe('a cued Learn passage counts a pickup in on its own beat', () => {
 });
 
 
+describe('the bar-shaped count is the Learn passage\'s alone', () => {
+  it('a cued score outside Learn keeps the old count before a pickup (no bars, no slots)', async () => {
+    h.measureMap = [{ index: 0, onsetQuarter: 0, durationQuarters: 2 }, { index: 1, onsetQuarter: 2, durationQuarters: 4 }];
+    await mount({ surface: 'default' });
+    hold([55]);
+    expect(events('piano.exercise-countdown-started').at(-1)).toMatchObject({ entry: 'aligned', pulseCount: 3, bars: null, readyBar: null, slots: null });
+  });
+
+  it('a Learn passage gets the bar-shaped count', async () => {
+    h.measureMap = [{ index: 0, onsetQuarter: 0, durationQuarters: 2 }, { index: 1, onsetQuarter: 2, durationQuarters: 4 }];
+    await mount();
+    armByTap();
+    expect(events('piano.exercise-countdown-started').at(-1)).toMatchObject({ entry: 'aligned', bars: 2, readyBar: true, slots: 4 });
+  });
+});
+
 describe('the count belongs to the passage, not the hand', () => {
   it('a hand that enters after the passage hears the passage count, rests where the passage starts, and is graded where it enters', async () => {
     // The score's first note is on the downbeat (the XML); this hand's first note is a click later.
@@ -499,6 +552,18 @@ describe('a missed cue goes back to the count', () => {
     advance(1000);
     expect(events('piano.exercise-countdown-started').at(-1)).toMatchObject({ reason: 'missed-cue' });
     expect(run()).toHaveAttribute('data-phase', 'countdown');
+  });
+
+  it('tells the host the run is holding for a missed-cue restart, then counting again', async () => {
+    const onPhase = vi.fn();
+    await mount({ onPhase });
+    const firstClick = armByTap();
+    advance(firstClick + LEAD_IN + 700 - Date.now());
+    expect(onPhase).toHaveBeenLastCalledWith('cue-restart');
+    // The run itself still reads ready (its own missed-cue notice).
+    expect(run()).toHaveAttribute('data-phase', 'ready');
+    advance(1000);
+    expect(onPhase).toHaveBeenLastCalledWith('countdown');
   });
 
   it('treats a whole-beat-late first note as a missed cue before it is played', async () => {

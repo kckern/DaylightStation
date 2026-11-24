@@ -31,6 +31,16 @@ function printed(measures, index) {
   return value == null || value === '' ? String(index + 1) : String(value);
 }
 
+/**
+ * Bars `start`–`end` (measure indices) by their printed numbers, as `barRangeLabel` words them: a drill
+ * on part of a pickup passage is "Pickup + bar 1", never "Bars 1–2". Without the score's measures (or a
+ * number) a bar is named by its index + 1.
+ */
+export function measureRangeLabel(measures, start, end) {
+  const list = Array.isArray(measures) ? measures : [];
+  return barRangeLabel(printed(list, start), printed(list, end));
+}
+
 function decorateSegment(segment, number, measures, ladder) {
   const playableParts = segment.playableParts ?? [];
   return {

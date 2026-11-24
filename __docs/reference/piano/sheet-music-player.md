@@ -388,15 +388,20 @@ the drill. It draws no practice screen of its own.
   instruction (`Tap the rhythm`, 26px bold), over the bars it covers (`Pickup + bars 1–4`, 18px muted:
   `barLabel` in `resolveLearnPlan.js` names a printed bar 0 **Pickup**, so 0..4 reads `Pickup + bars 1–4`,
   1..4 `Bars 1–4`, 0..0 `Pickup`); the **prompt** (`Press a key to start` over `or a pedal` while a
-  timed take is ready, `Play the first note to begin` for a free one; nothing during a take; empty on a
+  timed take is ready, `Play the first note to begin` for a free one; nothing during a take, or during
+  the 900 ms hold before a missed cue's count restarts, when keys are ignored (`onPhase` reports
+  `cue-restart` then, a phase of its own that counts as a take under way: Pause, no settings); empty on a
   result); the **settings** (the speed button, `100%` with the flag at full speed, and the click volume
   button), removed with their slot kept during a take or Listen; then the actions. No header control
   is ever shown through `opacity`, `visibility: hidden` or an `is-quiet` state. Every band of
   the drill screen (header, score, step strip, keyboard, path) has a fixed height, and the actions sit
   in a fixed-width, right-aligned slot, so nothing moves when a take starts, pauses or ends, when the
   result appears, or while listening (checked box by box in real Chromium:
-  `LearnDrillScreen.journey.test.jsx`). A drill on part of the passage is named by the bars it covers
-  (`Bar 2`). Saving is mentioned only when it failed (**Progress not saved**, **Retry saving**). A lost
+  `LearnDrillScreen.journey.test.jsx`). A drill on part of the passage is named by the bars it covers,
+  by their printed numbers (`measureRangeLabel` in `resolveLearnPlan.js`, from the score's measures that
+  `ScorePlayer` hands `LearnCoach` as `measures`): `Bar 2`, and on a score with a pickup the first two
+  bars are `Pickup + bar 1`, never `Bars 1–2`. The recovery buttons (`Practice bars 2–3`), the pass
+  card's `Next:` and a step down without a name are worded the same way. Saving is mentioned only when it failed (**Progress not saved**, **Retry saving**). A lost
   piano is announced once, by the app's banner.
 - **Actions follow the take** (one button style: icon + short label, neutral surface, no green;
   `ExerciseRun onPhase` tells `LearnLab` the run's phase). Before a take (and after one): **▶ Listen**.
@@ -437,7 +442,8 @@ the drill. It draws no practice screen of its own.
   raw MIDI tap (`subscribeRaw`); the bridge feeds every control change there (channel 0 when its frame
   has none). Every rising edge is logged once as `piano.exercise-pedal` `{ controller, value, acted:
   'start' | 'continue' | null, ignored: 'listening' | 'not-prepared' | 'paused' | 'not-cued' | 'counting' |
-  null }`, so a pedal that did nothing says why (a pedal during the count it started is `counting`).
+  'playing' | null }`, so a pedal that did nothing says why (a pedal during the count it started is
+  `counting`; one during the take after the count is `playing`).
 - **A pass** shows the drill's own rep card (`RepInterstitial`): `Set 3 of 8
   clear`, the score, `Next: On your own`. The next step is already mounted under it.
 - **Silver and Gold.** The take that certifies the passage closes the drill's
@@ -536,7 +542,12 @@ engraver's own size and then filled its stage (in the office flow, 40px of staff
 the fitter cannot place, with no staff boxes, counts as ready rather than never), and
 `Exercises.scss` keeps `.musicxml-renderer` at `visibility: hidden` until then (the
 placeholder that says a score cannot be read is never hidden). The stage shows its
-paper meanwhile; there is no fade and no timer. The office flow
+paper meanwhile; there is no fade and no timer. A passage that cannot be fitted
+(`passage-too-dense`: more than two systems at the smallest readable scale;
+`passage-layout-unbalanced`: the balanced line break did not hold) is never ready, so
+in its place the stage says so in plain text, in that same never-hidden placeholder
+("These bars are too many to show at once." / "These bars could not be laid out to
+fit."), and the host still hears `onUnrunnable(reason)`. The office flow
 (`office-sheet-music.runtime.test.mjs`) samples the drawn staff scale on every frame
 for 1.5 s after **Try again** and expects one value, the one before the retry.
 
@@ -999,8 +1010,9 @@ count-in, input is excluded from grading.
 **The press is beat one (cued Learn passages, 2026-11-24).** A key or pedal press on
 the piano that starts a cued take is **beat one** of the count-in: press, 2, 3, 4,
 play (it was press, 1, 2, 3, 4, play, after a release wait). `startCountIn` takes
-`downbeatAt` (the note-on's time, the onset's stamped time, else now; a pedal's rising
-edge): the runtime starts at the press with no pre-roll, the anchored click scheduler
+`downbeatAt` (the note-on's own MIDI time, the stamp on `activeNotes`, not the render
+that saw it; a stamp from the future or more than 1 s old is not trusted and the press
+is then the time the run saw it; a pedal's rising edge): the runtime starts at the press with no pre-roll, the anchored click scheduler
 skips the beat already past (the press is not sounded again) and clicks 2, 3, 4 land
 on the same grid. The arming key is never graded: while it is still held (it may be
 the passage's first pitch) it does not count as note 1 until struck again
@@ -1194,8 +1206,13 @@ first notes, and the music does not move when the clicks start.
 Cutting the count to end on the beat before a pickup ("1, 2, 3", play on the unsaid 4)
 gave a child no target and 1.5 s at ♩=120, and a hand with no pickup counted four, so
 the count changed between the steps of one passage. `exerciseCountInPlan` in
-`countIn.js` now returns `{ clicks, periodMs, leadInMs, pulseBpm, entry, bars,
-readyBar, slots }`:
+`countIn.js` returns `{ clicks, periodMs, leadInMs, pulseBpm, entry, bars,
+readyBar, slots }` when asked for the bar-shaped count (`barShaped: true`, which
+`ExerciseRun` passes for a cued Learn passage only). Every other cued caller (a bank
+exercise, a gate passage through the old `CountInOverlay`) keeps the old count: at most
+four clicks ending on the beat before a pickup (`alignCountIn`), `{ clicks, periodMs,
+leadInMs, pulseBpm, entry }`, with the grader's origin moved to the first note only for an
+`aligned` entry. The bar-shaped count:
 
 - The count ends with the **landing bar**, the bar holding the passage's first note
   (`passageFirstOnsetQuarter`: the earliest onset across both staves, read from the

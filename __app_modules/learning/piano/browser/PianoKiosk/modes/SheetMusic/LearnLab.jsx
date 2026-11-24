@@ -100,7 +100,9 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
   // Listen: null, or the demonstration 'playing' / 'paused' inside the drill.
   const [listening, setListening] = useState(null);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const takeUnderWay = ['countdown', 'running', 'resume-countdown'].includes(runPhase);
+  // 'cue-restart': a missed cue's hold before the count starts again. Keys are ignored then, so the
+  // prompt is not shown, and the take is still under way (Pause, no settings).
+  const takeUnderWay = ['countdown', 'running', 'resume-countdown', 'cue-restart'].includes(runPhase);
   // A take (or Listen) removes the settings, sheet and all; a sheet removed that way never says it closed.
   useEffect(() => { if (takeUnderWay || listening) setSheetOpen(false); }, [takeUnderWay, listening]);
   const [clickLevel, setClickLevel] = useState(() => readClickLevel(clickStorage()));

@@ -98,6 +98,8 @@ export const MAX_CUE_RESTARTS = 3;
 const CUE_RESTART_PAUSE_MS = 900;
 /** How long past the cue window the onset log is read, so a note at the window's edge is already in it. */
 const CUE_LOG_MARGIN_MS = 150;
+/** The oldest MIDI stamp a start press is trusted at: older (or in the future) is a stale or foreign clock. */
+const PRESS_STAMP_MAX_AGE_MS = 1000;
 const DEFAULT_POLICY = Object.freeze({
   matchWindowMs: 220, missWindowMs: 420, timingToleranceMs: 80, timingWindowMs: 320,
   windowFraction: 0.4, windowMinMs: 80, windowMaxMs: 400,
@@ -789,6 +791,13 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
    * The lead-in ends on that selected pulse, so the anchored metronome can
    * continue across the grading boundary without changing phase or rate.
    */
+  /**
+   * A CUED LEARN PASSAGE: the segment Learn run (`surface="learn-lab"` on score
+   * material) in cued mode. Only it gets the armed start, the count-up, the
+   * bar-shaped count and the shifted-entry naming; every other caller keeps the
+   * behaviour it had.
+   */
+  const learnCued = surface === 'learn-lab' && Boolean(score) && snapshot.mode === 'cued';
   const countIn = useMemo(() => {
     // The attempt's own tempo map is the tempo the engine GRADES against, and
     // it is not always `clickBpm`: a single-event cued instance carrying no
@@ -798,6 +807,9 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     const bpm = graded > 0 ? graded : clickBpm;
     if (!(bpm > 0)) return null;
     const plan = exerciseCountInPlan({
+      // The count in bars (ready bar, landing bar, slots) is the Learn passage's; any other cued
+      // caller keeps the old count, which ends on the beat before a pickup.
+      barShaped: learnCued,
       beatsPerMeasure,
       gradedBpm: bpm,
       onsetQuarters: (snapshot.expectation?.events ?? []).map((event) => event.onsetQuarter),
@@ -810,15 +822,9 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       forceReadyBar: readyBarForced,
     });
     return plan ? { ...plan, gradedBpm: bpm } : null;
-  }, [beatsPerMeasure, clickBpm, snapshot.expectation, scoreExpectation, readyBarForced]);
+  }, [beatsPerMeasure, clickBpm, snapshot.expectation, scoreExpectation, readyBarForced, learnCued]);
 
   const timed = snapshot.matcher === 'timed';
-  /**
-   * A CUED LEARN PASSAGE: the segment Learn run (`surface="learn-lab"` on score
-   * material) in cued mode. Only it gets the armed start, the count-up and the
-   * shifted-entry naming; every other caller keeps the behaviour it had.
-   */
-  const learnCued = surface === 'learn-lab' && Boolean(score) && snapshot.mode === 'cued';
   /**
    * THE RECORD, for every renderer of a timed run. The staff used to judge for
    * itself — green whenever the held key matched the clock cursor's note, and
@@ -1258,7 +1264,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     const prerollMs = downbeat ? 0 : Math.max(gapMs, Math.max(0, clickLead.leadMs) + CLICK_PREROLL_MS);
     // An aligned count ends on the beat before the first note, so the grader's
     // clock starts there too; any other count still covers the whole first bar.
-    const originQuarter = countIn && countIn.entry !== 'unaligned'
+    const originQuarter = countIn && (learnCued ? countIn.entry !== 'unaligned' : countIn.entry === 'aligned')
       ? Math.max(0, Number(runtime.getSnapshot()?.expectation?.events?.[0]?.onsetQuarter) || 0) : 0;
     runtime.start({ time: downbeat ? downbeatAt : Date.now() + prerollMs, leadInMs: countIn?.leadInMs ?? 0, ...(originQuarter ? { originQuarter } : {}), clock: 'date-now' });
     countdownHeldRef.current = new Set(activeNotesRef.current.keys());
@@ -1271,7 +1277,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       armedAt, waitedMs: Number.isFinite(armedAt) ? Date.now() - armedAt : null,
       ignored: [...activeNotesRef.current.keys()], reason,
     });
-  }, [clickLead, countIn, runtime, traceEvent]);
+  }, [clickLead, countIn, learnCued, runtime, traceEvent]);
 
   /**
    * `startOnReady` (no live caller today) starts the count-in as soon as the
@@ -1300,7 +1306,12 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     if (cueHoldRef.current) { said(null, 'not-prepared'); return; }
     const state = runtime.getSnapshot();
     if (state.paused) { said(null, 'paused'); return; }
-    if (state.status !== 'prepared') { said(null, state.status === 'running' ? 'counting' : 'not-prepared'); return; }
+    if (state.status !== 'prepared') {
+      // Running is the count-in ('counting') or the take after it ('playing').
+      const running = state.status === 'running' && timedRunPresentation(state, Date.now()).phase === 'countdown' ? 'counting' : 'playing';
+      said(null, state.status === 'running' ? running : 'not-prepared');
+      return;
+    }
     const at = Date.now();
     said('start');
     traceEvent('piano.exercise-armed', { at, held: [], onsets: [], pedal: controller, downbeat: true });
@@ -1545,8 +1556,12 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       if (snapshot.mode === 'cued') {
         if (!learnCued) { startCountIn(); return; }
         if (cueHoldRef.current) return;
-        // The press is beat one: the count starts at the key's own time.
-        const pressTimes = onsets.map((midi) => onsetTime(midi)).filter(Number.isFinite);
+        // The press is beat one: the count starts at the note-on's own MIDI time (the stamp on
+        // `activeNotes`), not at this effect's render a bridge hop later. `onsetTime` keeps the effect's
+        // clock while the run is only prepared, so the stamp is read here; one from the future or more
+        // than PRESS_STAMP_MAX_AGE_MS old is not trusted, and the press is then the time the run saw it.
+        const pressTimes = onsets.map((midi) => activeNotes.get(midi)?.timestamp)
+          .filter((stamp) => Number.isFinite(stamp) && stamp <= time && time - stamp <= PRESS_STAMP_MAX_AGE_MS);
         const downbeatAt = pressTimes.length ? Math.min(...pressTimes) : time;
         traceEvent('piano.exercise-armed', { at: downbeatAt, held, onsets, downbeat: true });
         startCountIn({ reason: 'arming-key', downbeatAt });
@@ -1693,8 +1708,11 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       : snapshot.status === 'prepared' ? 'ready'
         : resultReady && JUDGED_STATUSES.has(snapshot.status) ? 'done'
           : countingDown ? 'countdown' : 'running';
+  // The host also hears a missed cue's hold before its count restarts ('cue-restart'): the run reads
+  // ready meanwhile, but keys are ignored, so a host must not say "press a key".
+  const hostPhase = runPhase === 'ready' && cueRestart ? 'cue-restart' : runPhase;
   const onPhaseRef = useRef(onPhase); onPhaseRef.current = onPhase;
-  useEffect(() => { onPhaseRef.current?.(runPhase); }, [runPhase]);
+  useEffect(() => { onPhaseRef.current?.(hostPhase); }, [hostPhase]);
 
   if (notFound) return <PianoEmpty message="Exercise not found. It may have been renamed." />;
   if (unrunnable) return <PianoEmpty message="Cannot start this one. It is missing something the challenge needs — try another." />;

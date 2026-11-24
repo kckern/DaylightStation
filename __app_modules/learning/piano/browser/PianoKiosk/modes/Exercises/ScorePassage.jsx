@@ -173,6 +173,11 @@ export default function ScorePassage({
   // across blank paper. One system is left alone; it is scaled up to the stage.
   const [stretchLastSystem, setStretchLastSystem] = useState(false);
   const [fitError, setFitError] = useState(null);
+  // The engraving a fit error was reached on: the stage's message stands in for that engraving only,
+  // so a new excerpt (another passage, a re-balanced break) is still engraved and judged.
+  const [unfitXml, setUnfitXml] = useState(null);
+  const focusedXmlRef = useRef(null);
+  const failFit = useCallback((reason) => { setFitError(reason); setUnfitXml(focusedXmlRef.current); }, []);
 
   useLayoutEffect(() => {
     const element = containerRef.current;
@@ -208,7 +213,7 @@ export default function ScorePassage({
           measureBounds: (result.measureBounds ?? []).map(({ left, right, top, bottom }) => ({ left, right, top, bottom })),
         });
         setLayout(null);
-        setFitError('passage-layout-unbalanced');
+        failFit('passage-layout-unbalanced');
         return;
       }
       const systems = new Set((result?.staves ?? []).map((staff) => staff.system).filter(Number.isInteger)).size;
@@ -221,8 +226,8 @@ export default function ScorePassage({
     }
     setLayout(null);
     if (fit.nextScale != null) setRenderScale(fit.nextScale);
-    else setFitError('passage-too-dense');
-  }, [measures, renderScale, sourceId, stretchLastSystem, systemBreakBefore]);
+    else failFit('passage-too-dense');
+  }, [failFit, measures, renderScale, sourceId, stretchLastSystem, systemBreakBefore]);
 
   /**
    * The one place a dead end is announced. Every caller of this is a decision to
@@ -279,6 +284,7 @@ export default function ScorePassage({
     () => (excerpt.musicXml ? selectMusicXmlParts(excerpt.musicXml, requestedParts) : { musicXml: null, originalStaffIndices: [], error: excerpt.error }),
     [excerpt.error, excerpt.musicXml, requestedParts],
   );
+  focusedXmlRef.current = focused.musicXml;
 
   /**
    * Every engraved note, in the shape the score compiler reads: the note as the
@@ -502,7 +508,12 @@ export default function ScorePassage({
   const engravingReady = Boolean(layout) && (presentation != null || !(layout.staffBoxes?.length));
   return (
     <div ref={containerRef} className="piano-score-passage" data-engraving-ready={engravingReady || undefined} data-system-count={systemCount || undefined} data-layout-mode={presentation?.mode} data-layout-compact={presentation?.compact || undefined} data-cursor-enabled={String(showCursor)}>
-      {focused.musicXml ? (
+      {fitError && unfitXml === focused.musicXml ? (
+        // A passage the stage cannot hold: said plainly where the music would be, not blank paper.
+        <div className="musicxml-renderer musicxml-renderer--placeholder" role="status">
+          <p>{UNFIT_MESSAGE[fitError] ?? UNFIT_MESSAGE['passage-too-dense']}</p>
+        </div>
+      ) : focused.musicXml ? (
         <MusicXmlRenderer key={`${systemBreakBefore ?? 'auto'}:${renderScale}:${stretchLastSystem}`} musicXml={focused.musicXml} scale={renderScale} newSystemFromXML stretchLastSystem={stretchLastSystem} fillContainer presentationViewBox={presentation?.viewBox} onLayout={handleLayout} onFailed={handleEngraveFailed}>
           <NoteHighlightLayer step={currentStep} activeParts={activeParts} />
         </MusicXmlRenderer>
@@ -516,6 +527,11 @@ export default function ScorePassage({
   );
 }
 
+/** What the stage says when a passage cannot be fitted (the host also hears `onUnrunnable`). */
+const UNFIT_MESSAGE = Object.freeze({
+  'passage-too-dense': 'These bars are too many to show at once.',
+  'passage-layout-unbalanced': 'These bars could not be laid out to fit.',
+});
 /** The tempo a score that names none is counted at — the Sheet Music surface's own. */
 const DEFAULT_BPM = 90;
 const MAX_PASSAGE_SYSTEMS = 2;

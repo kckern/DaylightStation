@@ -219,15 +219,21 @@ function countSlots({ entryPosition, perBar, restPosition = null }) {
 }
 
 /**
+ * The count-in of a cued exercise. `barShaped` (the cued Learn passage only) is the count in bars
+ * above. Every other caller (an exercise, a gate passage through the old CountInOverlay) gets the
+ * old count: at most four clicks, ending on the beat before a pickup (`alignCountIn`), with no bars,
+ * ready bar or slots.
+ *
  * @param {{ beatsPerMeasure:number, gradedBpm:number, onsetQuarters:number[], measures?:Array,
- *   passageFirstOnsetQuarter?:number, forceReadyBar?:boolean }} p
+ *   passageFirstOnsetQuarter?:number, forceReadyBar?:boolean, barShaped?:boolean }} p
  * @returns {{ clicks:number, periodMs:number, leadInMs:number, pulseBpm:number,
  *   entry:'downbeat'|'aligned'|'offbeat'|'unaligned', bars:number, readyBar:boolean,
  *   slots:Array<{bar:number, beat:number, kind:'count'|'rest'|'note', half?:boolean}>}|null}
  *   `leadInMs` is the time from the count's start (the press) to the step's first note.
  */
-export function exerciseCountInPlan({ beatsPerMeasure, gradedBpm, onsetQuarters, measures, passageFirstOnsetQuarter, forceReadyBar = false }) {
+export function exerciseCountInPlan({ beatsPerMeasure, gradedBpm, onsetQuarters, measures, passageFirstOnsetQuarter, forceReadyBar = false, barShaped = false }) {
   if (!Number.isFinite(gradedBpm) || gradedBpm <= 0) return null;
+  if (!barShaped) return alignedExerciseCountIn({ beatsPerMeasure, gradedBpm, onsetQuarters, measures });
   const stepFirst = Number(onsetQuarters?.[0]);
   const passageFirst = Number.isFinite(passageFirstOnsetQuarter) ? passageFirstOnsetQuarter : stepFirst;
   const entryQuarters = entryOffsetQuarters({ measures, firstOnsetQuarter: passageFirst });
@@ -257,7 +263,7 @@ export function exerciseCountInPlan({ beatsPerMeasure, gradedBpm, onsetQuarters,
   });
   // A hand that enters in a later bar than the passage's landing bar counts its own entry instead: folding
   // its wait into the count would run past two bars (the run's own rests carry it).
-  const own = () => exerciseCountInPlan({ beatsPerMeasure, gradedBpm, onsetQuarters, measures, forceReadyBar });
+  const own = () => exerciseCountInPlan({ beatsPerMeasure, gradedBpm, onsetQuarters, measures, forceReadyBar, barShaped: true });
   if (!(entryQuarters > WHOLE)) {
     const clicks = Math.min(4, plan.beats);
     if (lag > perBar - WHOLE) return own();
@@ -279,6 +285,18 @@ export function exerciseCountInPlan({ beatsPerMeasure, gradedBpm, onsetQuarters,
 }
 
 /** Remaining pulses and a draining bar, projected from the run's elapsed time. */
+/** The count every cued caller but a Learn passage keeps: at most four pulses, ending on the beat before the first note. */
+function alignedExerciseCountIn({ beatsPerMeasure, gradedBpm, onsetQuarters, measures }) {
+  const pulse = askPulseQuarters(onsetQuarters) ?? 1;
+  const plan = countInPlan({ beats: beatsPerMeasure, bpm: gradedBpm / pulse });
+  const pulseQuarters = plan.periodMs * gradedBpm / 60000;
+  const entryQuarters = entryOffsetQuarters({ measures, firstOnsetQuarter: onsetQuarters?.[0] });
+  const bars = Array.isArray(measures) ? measures.slice(1).map((m) => m.durationQuarters).filter((d) => d > 0) : [];
+  const barQuarters = bars.length ? Math.max(...bars) : (Number.isFinite(beatsPerMeasure) ? beatsPerMeasure : 4);
+  const { clicks, entry } = alignCountIn({ clicks: Math.min(4, plan.beats), pulseQuarters, barQuarters, entryQuarters });
+  return { clicks, periodMs: plan.periodMs, leadInMs: clicks * plan.periodMs, pulseBpm: 60000 / plan.periodMs, entry };
+}
+
 export function countdownPresentation({ clicks, elapsedMs, leadInMs }) {
   if (!(clicks > 0) || !(leadInMs > 0)) return { remaining: 0, progress: 0, play: true };
   const elapsed = Math.min(leadInMs, Math.max(0, elapsedMs));

@@ -2493,7 +2493,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [keyOnlyReady, selectedPassageId, railTargetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (roadmapLearn && selectedPassage) return <div className="piano-score-player piano-score-player--learn-launchpad">
-    <LearnCoach score={learnScore} title={meta.title} plan={coachPlan} segment={selectedPassage} coach={coach} skipping={learnPlan.skipping} polish={polishAwards}
+    <LearnCoach score={learnScore} title={meta.title} plan={coachPlan} segment={selectedPassage} coach={coach} measures={layout.measures} skipping={learnPlan.skipping} polish={polishAwards}
       tempo={{ ...learnPlan.settings.tempo, tempoSource: learnPlan.tempoSource, measureOnsets: layout.measures.map((measure) => layout.steps[measure.firstStep]?.onsetQuarter) }} feedback={learnPlan.settings.feedback}
       onBack={closeLearnPassage} onPassageChange={openLearnPassage}
       onListen={(task) => logger.info('piano.learn.listen', { scoreId: scoreMeta.id, passageId: task.passageId, parts: task.parts })} />
