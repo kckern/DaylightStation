@@ -23,9 +23,10 @@ function usePrintedTitle(scoreId) {
     if (!scoreId) return undefined;
     let live = true;
     if (headings.has(scoreId)) { setTitle(headings.get(scoreId)); return undefined; }
+    setTitle(null); // a new score: its file name stands in until the heading is read
     DaylightAPIText(`api/v1/proxy/media/stream/${encodeURIComponent(scoreId.replace(/^[a-z]+:/i, ''))}`)
       .then((xml) => { const value = scoreHeading(xml).title; headings.set(scoreId, value); if (live) setTitle(value); })
-      .catch(() => { headings.set(scoreId, null); });
+      .catch(() => { headings.set(scoreId, null); if (live) setTitle(null); });
     return () => { live = false; };
   }, [scoreId]);
   return title ?? (scoreId ? titleFromScoreId(scoreId) : '');

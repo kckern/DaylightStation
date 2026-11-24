@@ -71,7 +71,7 @@ export default function OfficePiecePicker({ title, status = null, kind = 'pieces
         ? <p className="office-sheet-music__status office-piece-picker__status" role="status">{status}</p>
         : (
           <ol className="office-piece-picker__keys" style={{ '--key-count': keyCount ?? Math.max(slots.length, 4) }}>
-            {slots.map((slot) => <Key key={slot.note} slot={slot} />)}
+            {slots.map((slot) => <Key key={slot.item.scoreId ?? slot.item.listPath ?? slot.note} slot={slot} />)}
           </ol>
         )}
       <ol className="office-piece-picker__pages" aria-label="Browse">
