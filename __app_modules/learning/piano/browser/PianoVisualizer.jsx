@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, Suspense } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from 'react';
 import { configure as configureLogger, getLogger } from '../../../../frontend/src/lib/logging/Logger.js';
 import { PianoKeyboard } from './components/PianoKeyboard.jsx';
 import { NoteWaterfall } from './components/NoteWaterfall.jsx';
@@ -9,7 +9,7 @@ import { resolveBoardRange } from './noteUtils.js';
 import './tokens-style.mjs';
 import './components/PianoModePlaceholder.scss';
 import './PianoVisualizer.scss';
-import { getGameEntry, getGameIds } from './gameRegistry.js';
+import { gameOwnsEdgeHold, getGameEntry, getGameIds } from './gameRegistry.js';
 import { buildLauncherSlots } from './game-platform/launcher/launcherNotes.js';
 import { useNoteLauncher } from './game-platform/launcher/useNoteLauncher.js';
 import { comboNotesForKeyboard } from './game-platform/launcher/comboForKeyboard.js';
@@ -81,9 +81,13 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   // 88-key pair it used to assume does not physically exist there, so the combo
   // could never be played. Derived from the configured range, memoized because
   // the hook takes it as an effect dependency.
+  const crashedLaunchRef = useRef(null);
+  const launchNonceRef = useRef(0);
   const launcherOptions = useMemo(
-    // A game that owns the hold (Sheet Music's menu) gets it to itself.
-    () => ({ comboNotes: comboNotesForKeyboard(deviceConfig?.keyboard), gameOwnsCombo: (gameId) => Boolean(getGameEntry(gameId)?.ownsEdgeHold) }),
+    // A game that owns the hold (Sheet Music's menu) gets it to itself, until it crashes
+    // (`crashedLaunchRef`, set by the boundary): then the hold quits it, as for any game.
+    () => ({ comboNotes: comboNotesForKeyboard(deviceConfig?.keyboard),
+      gameOwnsCombo: (gameId) => gameOwnsEdgeHold(gameId, { crashed: crashedLaunchRef.current === `${gameId}:${launchNonceRef.current}` }) }),
     [deviceConfig?.keyboard],
   );
 
@@ -216,6 +220,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
       selectionPaused: rosterNeeded,
       options: launcherOptions,
     });
+  launchNonceRef.current = launchNonce;
 
 
 
@@ -579,6 +584,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
             resetKey={`${activeGameId}:${launchNonce}`}
             gameId={activeGameId}
             label={activeGameEntry.label ?? 'This game'}
+            onCrash={() => { crashedLaunchRef.current = `${activeGameId}:${launchNonce}`; }}
             onExit={quitCrashedGame}
           >
             <Suspense fallback={null}>

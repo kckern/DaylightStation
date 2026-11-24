@@ -270,21 +270,27 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
   // Keyboard only (the office screen): Listen is a menu choice, there only when this piano can sound notes.
   const keyOnly = useKeyboardOnly();
   // The office menu (the board's lowest + highest keys, held) pauses a take under way: no credit, no
-  // failure, the run's own Pause. Closing it resumes the same take; between takes it pauses nothing.
-  const menuOpen = Boolean(keyOnly?.menuOpen);
+  // failure, the run's own Pause. It pauses from the moment the hold starts counting, so the two seconds
+  // of the hold are not graded; a hold let go early, or the menu closed, resumes the same take. Between
+  // takes it pauses nothing.
+  const menuHold = Boolean(keyOnly?.menuOpen || keyOnly?.menuHolding);
   const menuPausedRef = useRef(false);
+  const abandonRef = useRef(null);
+  abandonRef.current = () => abandonTake('office-menu');
   useEffect(() => {
-    if (menuOpen && takeUnderWay && !paused) {
+    if (menuHold && takeUnderWay && !paused) {
       menuPausedRef.current = true;
       logger.info('piano.learn.control', { ...controlContext, action: 'pause', by: 'office-menu' });
       setPaused(true);
-    } else if (!menuOpen && menuPausedRef.current) {
+    } else if (!menuHold && menuPausedRef.current) {
       menuPausedRef.current = false;
       logger.info('piano.learn.control', { ...controlContext, action: 'resume', by: 'office-menu' });
       setPaused(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- acts on the menu opening and closing only
-  }, [menuOpen]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- acts on the hold and the menu only
+  }, [menuHold]);
+  // Left from the menu (Pieces, Previous, Next, Come back later) with the take still paused: say so.
+  useEffect(() => () => { if (menuPausedRef.current) abandonRef.current?.(); }, []);
   const listenKey = keyOnly?.canListen && onListen && !takeUnderWay && runPhase !== 'paused'
     ? (listening ? { label: 'Stop', onSelect: () => stopListening('stop') } : ['ready', 'done'].includes(runPhase) ? { label: 'Listen', onSelect: listen } : null)
     : null;
@@ -342,6 +348,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       framing={`${passageName} · ${rung.label}`}
       ask={rhythm ? 'Tap the rhythm on any key.' : rung.mode === 'free' ? 'Play the passage accurately.' : 'Play the passage with the beat.'}
       traceContext={{ runId: runIdRef.current, take, tempoPercent, tempoStage: stage.id, clickLevel: clickLevel.id, tempoSource: tempo.tempoSource ?? 'inferred', launchSource }} surface="learn-lab"
+      exitHint={keyOnly ? 'Hold the lowest and highest keys for the menu.' : undefined}
       paused={paused} resumeDelayMs={effectiveBpm ? Math.round(120000 / effectiveBpm) : 1000} controlKey={take}
       startOnReady={startOnReady}
       persistInterrupted={false} persistAssessment={!coachingTask}

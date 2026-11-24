@@ -1859,9 +1859,10 @@ answers. The full-screen lock panel is shown only when the launcher has nothing 
    (`identityStale`), or none, is asked for first on the roster row (C4 upward). Nothing is fetched
    or saved before the answer.
 2. **Your pieces** (where Sheet Music opens). `GET /api/v1/piano/activity/desk/:userId`, newest
-   first, **six a page** on the white keys C4–A4 (`office/officeKeys.js` `listPage`): poster, the
-   desk's level badge (`deskModel.cardBadge`), title, passage map, and the key's note card. A piece
-   key always means "the nth piece shown".
+   first, **six a page** on the white keys C4–A4 (`office/officeKeys.js` `listPage`). A piece key
+   always means "the nth piece shown". With no pieces of their own yet, Sheet Music opens on the
+   shelves instead, saying so ("No pieces started yet. Pick a shelf."), and the shelves' C3 key
+   (which would lead back to an empty list) is not drawn.
 3. **All music** (the catalog). The shelves are `sheetmusic.collections`, the tablet's library tabs,
    one per key C4–C5, each with its first cover and how many pieces open here. A shelf lists its
    engraved scores (`GET /api/v1/list/<source>/<folder>`, `.musicxml`/`.mxl` only: page-image
@@ -1874,17 +1875,36 @@ answers. The full-screen lock panel is shown only when the launcher has nothing 
    clean root and Learn's URL state never touches the screen's URL. With the keyboard-only context it
    forces coached Learn, engraves under an opaque cover (the passages come from the engraving) and
    opens the path's target (`piano.learn.office.open`) the moment the coach has loaded. Any key or
-   pedal arms the take, as on the tablet. The strip's Pieces key returns to the list it came from,
+   pedal arms the take, as on the tablet. The menu's Pieces returns to the list it came from,
    on the same shelf and page.
+
+**The picker's layout** (`office/OfficePiecePicker.jsx`, from a design critique of 2026-11-24): a
+setlist of key rows on the dark case. Up to three on a page stack in one column; more split into two
+columns filled down the left first (`pickerGrid`), so the lower keys sit on the left of the screen
+as they do under the hands. One or two on a page draw larger. Every card is one anatomy in fixed
+columns, so keys, posters and titles line up whatever the art's shape:
+
+| Column | What |
+|--------|------|
+| Key | the staff card with the note name under it |
+| Poster | a fixed 2:3 box, the picture cover-fit from the top (covers print their titles there); no poster: the sheet-music mark on a solid stand-in |
+| Text | the title in headline case (`office/shelfTitle.js`: files often print sentence case; it only ever raises a letter), clamped to two lines; under it on one line the desk's level badge and progress |
+
+Progress is one coin per passage (the next one ringed) up to six passages; past six it is the coin
+of the level in play and a count, `5 of 12 Bronze` / `1 of 8 Gold`, never rows of tiny coins. A
+shelf card shows its first cover, its name and how many pieces open here; eight shelves a page in
+two columns of four. Cards are solid dark (`#24242c`), so the staff cards are the one light thing
+on the page. The footer is a rule with the browse keys from the left, the page (`2 of 3`) between
+Previous and Next, and at its end "Hold the lowest and highest keys for the menu".
 
 **Every key choice shows its note card** (`office/KeyCard.jsx`): the key's note on its staff with its
 clef, drawn by the rim renderer (`RimStaffRenderer`) over one `rimStaffExtent` per row, so a row's
 cards are one size and the lowest note's ledger lines fit (C2, two ledger lines under the bass staff,
-is drawn whole). Piece keys, shelf keys, the browse keys and the key strip all use it; nothing is
+is drawn whole). Piece keys, shelf keys, the browse keys and the menu all use it; nothing is
 labelled by a note name alone.
 
-**The browse keys**, under every list, each fixed to its own key in the octave below (dim when it
-does nothing now):
+**The browse keys**, under every list, each fixed to its own key in the octave below. A page key with
+nothing to do on this page keeps its slot and is not drawn (no grey dead slab):
 
 | Key | Action |
 |-----|--------|
@@ -1896,61 +1916,94 @@ a drill can go minutes without a key; that is the activity, not absence. The off
 subscription (`household/screens/office.yml`) has **no `dismiss`**: PianoVisualizer owns its idling,
 a 40 s countdown in free play and its own handling of the recorder's `session_end` (sent after 30 s
 of silence), and both are switched off while the launcher or a full-screen entry (Sheet Music, any
-game) is open. That entry stays until the player leaves it (lowest + highest keys). On the tablet,
+game) is open. That entry stays until the player leaves it (the menu's Leave). On the tablet,
 `PianoApp`'s idle return (`inactivityMinutes`) leaves thoughtful routes where they are
 (`PianoKiosk/thoughtfulRoutes.js`: sheetmusic, games, exercises, composer, producer, placement; logs
 `piano.inactivity-preserved` with `reason: 'thoughtful'`); passive and free-play routes still return to
 the menu. The screen may still sleep; the work is kept.
 
-**The key strip** (`office/KeyStrip.jsx`), under the drill, a fixed key per action in the octave
-C2–A2, far under where a passage starts (before a take "any key" arms it):
+**The menu: no playable key is ever a command.** In a piece every key is music: there is no row of
+command keys under the drill (the old C2–G2 key strip was removed on 2026-11-24, because a first note
+in that range could be stolen as a command, or a command graded as a wrong note). Every navigation
+choice is in one menu (`office/OfficeMenu.jsx`, choices `office/officeMenu.js`), opened by **holding
+the board's lowest and highest keys for 2 s** (`office/useEdgeHold.js`; the edge keys come from the
+office keyboard's range, E1 + G7 on the 76-key board), from anywhere in Sheet Music: the picker, a
+piece, a result, the "who is practising" row. A hold ring says the hold is counting.
 
-| Key | Action |
+- **While it is open the music is paused and every key is navigation.** A take under way pauses
+  through the run's own Pause from the moment the hold starts counting (`KeyboardOnlyContext`
+  `menuHolding` / `menuOpen` → `LearnLab`), so the hold's two seconds are not graded: no credit, no
+  failure. A hold let go early resumes the same take. Left from the menu while paused, the take is
+  logged `piano.learn.take-abandoned` (`reason: 'office-menu'`). The run's line says "Hold the lowest
+  and highest keys for the menu" (`ExerciseRun` `exitHint`).
+  `OfficeMidiProvider` claims every key and the pedal away from the music (`musicClaim`), and a key
+  still held when the menu closes stays out of the music until it is released.
+- **The two edge keys never reach a take**, at its start or in it: they are claimed always.
+- **Closing it gives every key back to the music.** Resume continues the same take; it never starts
+  a new one. The hold again also closes it.
+
+Each choice wears its key's staff card and keeps that key whatever else is offered; a choice with
+nothing to do now is a plain empty key in its place:
+
+| Key | Choice |
 |-----|--------|
-| C2 | Pieces (back to the list; also where "Back to score" goes: there is no score view here) |
-| D2 / E2 | Previous / next unit on the path |
-| F2 | Try again (after a result) |
-| G2 | Come back later, or Skip rhythm on the rhythm step |
-| A2 | Listen / Stop: drawn only when the piano can sound notes |
+| C4 | Resume (over a paused take) · Close |
+| D4 | Pieces: back to the list it came from, same shelf and page (a paused take is abandoned, as Back always did) |
+| E4 / F4 | Previous / Next unit on the path |
+| G4 | Try again (after a result) |
+| A4 | Come back later, or Skip rhythm on the rhythm step |
+| B4 | Leave: out of Sheet Music to the launcher's free play |
 
-An action with nothing to do now stays on its key, drawn dim; keys never shift. While the strip
-shows, its keys are claimed away from the music (`OfficeMidiProvider` hides them from the run, and
-a key struck while claimed stays hidden until released); **during a take the strip lets go and every
-key is music**. Any other key after a result continues, as on the tablet (the recovery the card
-recommends, else try again).
+In the picker only Close and Leave are offered (the picker's own keys browse). The drill's choices are
+what Learn's touch controls did, published through `useKeyStrip(source, actions, { active })`
+(`LearnCoach`: previous, next, retry, later; `LearnLab`: whether a take is under way).
+
+**Sheet Music owns the hold.** Its registry entry has `ownsEdgeHold: true`; PianoVisualizer passes
+`gameOwnsCombo` to `useNoteLauncher`, which then neither opens the launcher over a running Sheet Music
+nor quits it on the hold, until it crashes (`gameOwnsEdgeHold(id, { crashed })`: the crash card's only
+way out on a keyboard-only screen is the launcher's hold-to-quit). Every other game keeps the launcher's tap-to-open, hold-to-quit gesture.
 
 **What is not drawn:** the tablet's on-screen keyboard (its row goes to the score:
 `--run-keys-row: 0`), the result card's touch icons (continue, leave), the drill's Back button, the tempo track and click volume (both keep their
 defaults), the run's Pause/Listen buttons, the result card's buttons, the step pills as choices, the
 path's All button; the path is a map, not a control. The office screen's recorder has **no note
-output**, so Listen is hidden and the click is the browser's WebAudio blip plus the run's visual beat
+output**, so Listen is not offered and the click is the browser's WebAudio blip plus the run's visual beat
 marker and count.
 
-**Leaving:** hold the lowest and highest keys 2 s, the launcher's own gesture, from anywhere.
+**Leaving:** the menu's Leave (B4). The hold itself no longer leaves Sheet Music.
 
 **Wiring:** `KeyboardOnlyContext` (`office/KeyboardOnlyContext.js`) is the one switch. PianoApp never
 provides it, so the tablet is unchanged. `ScorePlayer`, `LearnCoach` and `LearnLab` read it;
-`useKeyStrip(source, actions, { active })` publishes what their touch controls did to the host's strip
-(handlers read at press time from a ref; only labels, enabled and active are published). The host
+`useKeyStrip(source, actions, { active })` publishes what their touch controls did to the host's menu
+(handlers read at press time from a ref; only labels, enabled and active are published); `menuOpen`
+tells LearnLab to pause a take. The host
 provides `ActivePianoProvider` (`resolvePianoConfig` over the office app config, with the office
 keyboard's range), a `PianoUserContext` seeded from the launcher, `OfficeMidiProvider` (the
 WebSocket note stream, note events and pedal CCs via `useMidiSubscription().subscribeRaw`; sends are
 no-ops) and `PianoPlaybackProvider`. The tablet's Learn styles (`PianoApp.scss`) are loaded scoped
 under `:where(.office-sheet-music__learn)` (`office/learnSurface.scss`): same specificity as on the
-tablet, nothing reaching the rest of the office screen. Canvas 1280×720: the launcher chrome strip,
-the body, and a fixed 5.75rem key strip.
+tablet, nothing reaching the rest of the office screen. Canvas 1280×720: the launcher chrome strip and
+the body; the menu is an opaque modal over the body.
 
 **Logs:** `office-sheet-music.mounted` / `.unmounted`, `.player-picked`, `.pieces-loaded` /
 `.pieces-failed`, `.browse` (`key`, `level`, `page`), `.shelf-opened`, `.shelf-loaded` / `.shelf-failed`,
-`.piece-opened` (`from`), `.strip-key` (`key`, `source`),
+`.piece-opened` (`from`), `.menu-opened` / `.menu-closed`, `.menu-choice` (`choice`),
+`piano.learn.control` with `by: 'office-menu'` (pause / resume),
 `.back-to-pieces` (`reason`), and `piano.learn.office.open`; the drill's own Learn events are unchanged.
 
-**Tests:** `office/officeKeys.test.js`, `office/KeyStrip.test.jsx`, `office/IsolatedMemoryRouter.test.jsx`, the server's
+**Tests:** `office/officeKeys.test.js`, `office/OfficePiecePicker.test.jsx`, `office/shelfTitle.test.js`,
+`office/officeMenu.test.js`, `office/OfficeMenu.test.jsx`, `office/useEdgeHold.test.js`,
+`office/OfficeMidiProvider.test.jsx`, `LearnLab.test.jsx` (the menu pause), `useNoteLauncher.test.js`
+(a game that owns the hold), `office/IsolatedMemoryRouter.test.jsx`, the server's
 `GetPianoDesk.test.mjs` (`forPlayer`), and the real-browser flow driven by simulated MIDI only:
 `npx playwright test --config tests/_infrastructure/config/playwright.office-sheet-music.config.mjs`
 (mounted under a router as on the screen; launcher → Sheet Music → your pieces, Next/Previous → All
-music → a shelf → a catalog piece and back to the same page → pick a piece → a take → result → continue → back → exit, games off, a stale
-player; every screen checked for clipping and saved under `.superpowers/office-sheet-music/`).
+music → a shelf → a catalog piece and back through the menu to the same page → pick a piece → the
+menu over the drill → a take paused by the menu and resumed → result → the menu's Try again →
+continue → the menu's Pieces → the menu in the picker → Leave; the picker with three, one and no
+pieces and still loading; F2 in a take is a wrong note, not a command; games off; a stale player;
+every screen checked for clipping and saved under `.superpowers/office-sheet-music/`). The fixture
+has posters of several shapes, printed titles of one to six words, and pieces of 2 to 14 passages.
 
 ## Admin: sheet music
 

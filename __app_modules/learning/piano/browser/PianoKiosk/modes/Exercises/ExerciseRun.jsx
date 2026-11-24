@@ -446,7 +446,7 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
 const PEDAL_CONTROLLERS = Object.freeze([64, 66, 67]);
 const NO_TARGETS = new Map();
 
-export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', fullKeyboardHints = false, wrongNoteGhosts = false, incompleteAfterMs = null, failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, maxCueRestarts = MAX_CUE_RESTARTS, rhythmOnly = false, leadInLoop = false, resultLabel = null, resultActions = null, resultPresentation = 'inline', resultContinueLabel = null, onResultContinue = null, onPickStep = null, demonstration = null, onPhase = null, onStarted, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', fullKeyboardHints = false, wrongNoteGhosts = false, incompleteAfterMs = null, failurePresentation = 'host', clickGain, exitHint = 'Hold the lowest and highest keys for two seconds to leave.', paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, maxCueRestarts = MAX_CUE_RESTARTS, rhythmOnly = false, leadInLoop = false, resultLabel = null, resultActions = null, resultPresentation = 'inline', resultContinueLabel = null, onResultContinue = null, onPickStep = null, demonstration = null, onPhase = null, onStarted, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes: pressedNotes } = usePianoMidiNotes();
@@ -1886,7 +1886,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{!runtime ? 'Getting the music ready…' : cueRestart ? 'You missed the cue — counting in again.' : snapshot.mode === 'cued' ? countInSentence(countIn?.clicks ?? beatsPerMeasure, cuedPace) : 'Play the first note to begin.'}</p>{!connected && <span>Waiting for the piano…</span>}</div>}
       {phase === 'paused' && <p className="piano-exercise-run__status" role="status">Paused. Your place is saved.</p>}
       {phase === 'resume-countdown' && <p className="piano-exercise-run__status" role="status">Get ready…</p>}
-      {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : huntSentence ?? (isWrong ? 'That note was not expected — keep going.' : stage === 'recall' ? 'Play the named music from memory.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.')}{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
+      {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : huntSentence ?? (isWrong ? 'That note was not expected — keep going.' : stage === 'recall' ? 'Play the named music from memory.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.')}{onExit && exitHint && ` ${exitHint}`}</p>}
     </>
   );
   /**
@@ -2174,7 +2174,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
         <div className="piano-exercise-run__onward" data-ready={localRetry && resultArmed ? 'true' : undefined}
           aria-label={`Play any key or press a pedal to ${resultContinueLabel ?? 'try again'}`}>
           <Icon name="piano-key" /><Icon name="pedal" />
-          {onExit && <span className="piano-exercise-run__leave" aria-label="Hold the lowest and highest keys for two seconds to leave"><Icon name="keys-ends" /></span>}
+          {onExit && exitHint && <span className="piano-exercise-run__leave" aria-label={exitHint.replace(/\.$/, '')}><Icon name="keys-ends" /></span>}
         </div>
         <div className="piano-exercise-run__result-actions">{resultActions}</div>
       </section>}
@@ -2186,7 +2186,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
         {scoreReadout
           ? <>{timingCopy && <p className="piano-exercise-run__result-copy">{timingCopy}</p>}<dl><div><dt>All notes</dt><dd>{Math.round((result.criteria.completeness ?? 0) * 100)}%</dd></div><div><dt>Clean notes</dt><dd>{Math.round((result.criteria.cleanliness ?? 0) * 100)}%</dd></div>{Number.isFinite(result.criteria.placement) && <div><dt>On the beat</dt><dd>{Math.round(result.criteria.placement * 100)}%</dd></div>}</dl></>
           : <p className="piano-exercise-run__result-copy">{passed ? 'You played every note that was asked for.' : timingCopy ?? 'Some of the notes are still missing. Have another go.'}</p>}
-        {localRetry && resultArmed && <p className="piano-exercise-run__result-onward">Release the keys, then play any key to {resultContinueLabel ?? 'try again'}.{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
+        {localRetry && resultArmed && <p className="piano-exercise-run__result-onward">Release the keys, then play any key to {resultContinueLabel ?? 'try again'}.{onExit && exitHint && ` ${exitHint}`}</p>}
         {resultActions && resultSettled && <div className="piano-exercise-run__result-actions">{resultActions}</div>}
       </section>}
       </div>

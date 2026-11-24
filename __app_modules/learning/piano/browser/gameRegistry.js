@@ -108,6 +108,15 @@ export function getGameEntry(gameId) {
 }
 
 /**
+ * Whether the running game keeps the board's lowest + highest keys to itself
+ * (Sheet Music: its menu). Not once it has crashed: the crash card's only way
+ * out on a keyboard-only screen is the launcher's hold-to-quit.
+ */
+export function gameOwnsEdgeHold(gameId, { crashed = false } = {}) {
+  return !crashed && Boolean(getGameEntry(gameId)?.ownsEdgeHold);
+}
+
+/**
  * Fetch a game's chunk BEFORE anything is riding on it.
  *
  * `lazyWithReload` recovers from a stale chunk by reloading the shell, which is

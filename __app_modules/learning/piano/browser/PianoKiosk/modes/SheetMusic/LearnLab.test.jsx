@@ -186,6 +186,28 @@ describe('LearnLab', () => {
     expect(log.info).toHaveBeenCalledWith('piano.learn.control', expect.objectContaining({ action: 'resume', by: 'office-menu' }));
   });
 
+  it('the hold pauses a take while it counts; let go early and the same take carries on', () => {
+    const office = (menuHolding) => ({ input: 'keyboard-only', canListen: false, menuOpen: false, menuHolding, publishStrip: () => {} });
+    const { rerender } = render(<KeyboardOnlyContext.Provider value={office(false)}><LearnLab {...base} /></KeyboardOnlyContext.Provider>);
+    phase('running');
+    const take = exercise.props.controlKey;
+    rerender(<KeyboardOnlyContext.Provider value={office(true)}><LearnLab {...base} /></KeyboardOnlyContext.Provider>);
+    expect(exercise.props.paused).toBe(true);
+    rerender(<KeyboardOnlyContext.Provider value={office(false)}><LearnLab {...base} /></KeyboardOnlyContext.Provider>);
+    expect(exercise.props.paused).toBe(false);
+    expect(exercise.props.controlKey).toBe(take);
+  });
+
+  it('a take the menu paused and then left is logged as abandoned, and the run says the hold opens the menu', () => {
+    const office = { input: 'keyboard-only', canListen: false, menuOpen: false, publishStrip: () => {} };
+    const { rerender, unmount } = render(<KeyboardOnlyContext.Provider value={office}><LearnLab {...base} /></KeyboardOnlyContext.Provider>);
+    expect(exercise.props.exitHint).toBe('Hold the lowest and highest keys for the menu.');
+    phase('running');
+    rerender(<KeyboardOnlyContext.Provider value={{ ...office, menuOpen: true }}><LearnLab {...base} /></KeyboardOnlyContext.Provider>);
+    unmount();
+    expect(log.info).toHaveBeenCalledWith('piano.learn.take-abandoned', expect.objectContaining({ reason: 'office-menu', creditOutcome: 'none' }));
+  });
+
   it('the office menu opened between takes pauses nothing', () => {
     const office = (menuOpen) => ({ input: 'keyboard-only', canListen: false, menuOpen, publishStrip: () => {} });
     const { rerender } = render(<KeyboardOnlyContext.Provider value={office(false)}><LearnLab {...base} /></KeyboardOnlyContext.Provider>);

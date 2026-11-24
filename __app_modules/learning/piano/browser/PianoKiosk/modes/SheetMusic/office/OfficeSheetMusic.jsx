@@ -253,8 +253,8 @@ export default function OfficeSheetMusic({
   // `canListen`: the office piano's recorder only reads the keyboard; there is no note OUTPUT to play a
   // passage through (OfficeMidiProvider's sends are no-ops), so Listen is not drawn (owner ruling).
   const keyboardOnly = useMemo(() => ({
-    input: 'keyboard-only', canListen: false, onExit: backToPieces, publishStrip, menuOpen,
-  }), [backToPieces, publishStrip, menuOpen]);
+    input: 'keyboard-only', canListen: false, onExit: backToPieces, publishStrip, menuOpen, menuHolding: holding,
+  }), [backToPieces, publishStrip, menuOpen, holding]);
 
   const menu = (
     <>

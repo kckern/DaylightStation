@@ -9,9 +9,10 @@ import { createContext, useContext, useEffect, useRef } from 'react';
 const KeyboardOnlyContext = createContext(null);
 
 /**
- * `{ input: 'keyboard-only', canListen, onExit(reason), publishStrip(source, entry|null), menuOpen }`
- * on the office screen; null everywhere else. `menuOpen`: the host's menu is up,
- * so a take under way pauses (LearnLab) until it closes.
+ * `{ input: 'keyboard-only', canListen, onExit(reason), publishStrip(source, entry|null), menuOpen, menuHolding }`
+ * on the office screen; null everywhere else. `menuOpen`: the host's menu is up;
+ * `menuHolding`: the hold that opens it is counting. Either pauses a take under
+ * way (LearnLab) until both are false.
  */
 export function useKeyboardOnly() {
   return useContext(KeyboardOnlyContext);
