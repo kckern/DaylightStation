@@ -1,5 +1,9 @@
 import { msToTickX } from './timelineOverlay.js';
 
+// FitnessSession flushes events queued before the timeline existed with their
+// original timestamps, so a run's `begin` can land a few ms before session.start
+// (2026-11-24: −17 ms hid a whole 32-minute session). Accept that slack and clamp.
+const PRE_ORIGIN_SLACK_MS = 5000;
 const STATES = new Set(['waiting', 'playing', 'warning', 'governance_paused', 'paused', 'buffering', 'unknown', 'none']);
 const videoEvents = events => events.filter(e => e?.type === 'media' && e.data && e.data?.contentType !== 'track' && !e.data?.artist);
 const unknown = (startMs, endMs, contentId = null, title = null) => ({ startMs, endMs, state: 'unknown', reason: 'unknown', contentId, title, playbackRunId: null, evidence: null, firstPlaying: false });
@@ -32,7 +36,7 @@ export function buildPlaybackIntervals(sessionData, axis) {
       const d = evt?.data;
       if (evt?.type !== 'playback_state' || d?.version !== 1 || !d.playbackRunId || !d.contentId
           || !STATES.has(d.state) || !['begin','change','end'].includes(d.observation)
-          || !Number.isFinite(evt.timestamp) || evt.timestamp < origin) continue;
+          || !Number.isFinite(evt.timestamp) || evt.timestamp < origin - PRE_ORIGIN_SLACK_MS) continue;
       const key = JSON.stringify(evt);
       if (seen.has(key)) continue;
       seen.add(key);

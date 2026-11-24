@@ -47,3 +47,13 @@ it('retains closing observations beyond the last chart tick and clips their geom
   const xs = buildPlaybackIntervals(session([media(0,1001000), ev(0,'waiting','begin'), ev(1000,'playing'), ev(1001000,'none','end')]), axis);
   expect(shape(xs)).toEqual([[0,1000,'waiting'],[1000,1000000,'playing']]);
 });
+
+it('keeps a run whose begin was stamped a few ms before session start (flushed pre-start events)', () => {
+  const xs = buildPlaybackIntervals(session([media(3000, 900000), ev(-17,'waiting','begin'), ev(6000,'playing'), ev(500000,'buffering'), ev(504000,'playing'), ev(890000,'none','end')]), axis);
+  expect(shape(xs)).toEqual([[0,6000,'waiting'],[6000,500000,'playing'],[500000,504000,'buffering'],[504000,890000,'playing'],[890000,900000,'unknown']]);
+});
+
+it('still ignores events well before the session origin', () => {
+  const xs = buildPlaybackIntervals(session([media(0, 900000), ev(-60000,'waiting','begin'), ev(10000,'playing'), ev(800000,'none','end')]), axis);
+  expect(xs.some(x => x.state === 'playing')).toBe(false);
+});
