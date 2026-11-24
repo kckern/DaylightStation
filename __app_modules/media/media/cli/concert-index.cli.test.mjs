@@ -4,7 +4,7 @@
 // ffmpeg and network I/O live in the CLI shell, so none of this needs a video.
 
 import { describe, it, expect } from 'vitest';
-import { parseTrackListing, stripWiki, mmss, parseSrt, srtTime, sectionsFrom, attachCues } from './concert-index.cli.mjs';
+import { parseTrackListing, stripWiki, mmss, parseSrt, srtTime, sectionsFrom, attachCues, words, lyricOverlap, rankTracks } from './concert-index.cli.mjs';
 
 const WIKITEXT = `==Track listing==
 {{Track listing
@@ -115,5 +115,39 @@ describe('attachCues', () => {
       { start: 0, end: 100, cues: [1, 2], text: 'one in the applause gap' },
       { start: 120, end: 200, cues: [3], text: 'two' },
     ]);
+  });
+});
+
+describe('lyricOverlap', () => {
+  const HEARD = 'Was born on Christmas Day to save us all from savers all when we were gone astray. Oh tidings are';
+  const GOD_REST = "God rest ye merry, gentlemen, let nothing you dismay, remember Christ our Saviour was born on Christmas Day to save us all from Satan's power when we were gone astray. O tidings of comfort and joy";
+
+  it('scores a mangled transcription against the right carol', () => {
+    expect(lyricOverlap(HEARD, GOD_REST)).toBeGreaterThan(0.3);
+  });
+  it('scores zero against an unrelated carol', () => {
+    expect(lyricOverlap(HEARD, 'Silent night, holy night, all is calm, all is bright')).toBe(0);
+  });
+  it('is zero when either side is empty', () => {
+    expect(lyricOverlap('', GOD_REST)).toBe(0);
+    expect(lyricOverlap(HEARD, '')).toBe(0);
+  });
+  it('words() drops stop words, short words, accents and apostrophes', () => {
+    expect(words("O Holy Night, Noël — Satan's")).toEqual(['holy', 'night', 'noel', 'satans']);
+  });
+});
+
+describe('rankTracks', () => {
+  it('ranks by incipit overlap, then title overlap, and reports the duration ratio', () => {
+    const section = { start: 0, end: 330, text: 'born on Christmas Day tidings astray' };
+    const tracks = [
+      { n: 1, title: 'Silent Night', length: 240, incipit: 'Silent night holy night' },
+      { n: 2, title: 'God Rest Ye Merry, Gentlemen', length: 331, incipit: 'born on Christmas Day when we were gone astray tidings of comfort and joy' },
+      { n: 3, title: 'Organ Voluntary', length: 300 },
+    ];
+    const ranked = rankTracks(section, tracks);
+    expect(ranked[0]).toMatchObject({ n: 2, durationRatio: 1 });
+    expect(ranked[0].lyric).toBeGreaterThan(0.3);
+    expect(ranked.find((r) => r.n === 3).lyric).toBeNull();
   });
 });

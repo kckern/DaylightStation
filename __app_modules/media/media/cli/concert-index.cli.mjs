@@ -147,3 +147,52 @@ export function attachCues(sections, cues) {
     return { ...s, cues: mine.map((c) => c.i), text: mine.map((c) => c.text).join(' ') };
   });
 }
+
+/* -------------------------------------------------------------------------- */
+/* Matching                                                                   */
+/* -------------------------------------------------------------------------- */
+
+const STOP = new Set(('a an and the of to in on is it for with be we you i he she they '
+  + 'our his her my me us oh o this that all are as at by from not but so ye thy thee').split(' '));
+
+/** Content words: lowercased, accents and apostrophes gone, 3+ letters, no stop words. */
+export function words(s) {
+  return String(s ?? '')
+    .toLowerCase()
+    .normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    .replace(/'/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter((w) => w.length > 2 && !STOP.has(w));
+}
+
+/** Share of the reference's distinct content words that were heard. 0..1. */
+export function lyricOverlap(heard, reference) {
+  const h = new Set(words(heard));
+  const ref = new Set(words(reference));
+  if (!h.size || !ref.size) return 0;
+  let hit = 0;
+  for (const w of ref) if (h.has(w)) hit += 1;
+  return hit / ref.size;
+}
+
+const round = (v, places) => Number(v.toFixed(places));
+
+/**
+ * Every track, best first. `lyric` is null where the track has no incipit
+ * (instrumentals, bell pieces), so "no evidence" never reads as "no match".
+ * `title` catches spoken introductions ("...and now, Sleigh Ride").
+ * `durationRatio` is a tiebreaker only: concert edits differ from the album.
+ */
+export function rankTracks(section, tracks) {
+  const len = section.end - section.start;
+  return tracks
+    .map((t) => ({
+      n: t.n,
+      title: t.title,
+      lyric: t.incipit ? round(lyricOverlap(section.text, t.incipit), 3) : null,
+      titleHit: round(lyricOverlap(section.text, t.title), 3),
+      durationRatio: t.length ? round(len / t.length, 2) : null,
+    }))
+    .sort((a, b) => ((b.lyric ?? -1) - (a.lyric ?? -1)) || (b.titleHit - a.titleHit));
+}
