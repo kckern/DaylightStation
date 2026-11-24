@@ -48,7 +48,7 @@ public class SurfacePlanTest {
         assertEquals("an unassigned slot is cleared, not left stale", "", cache.get("tile.2.uri"));
         assertEquals("Lights off", cache.get("tile.3.label"));
         assertEquals("", cache.get("tile.4.uri"));
-        assertEquals(16, cache.size());
+        assertEquals(20, cache.size());
     }
 
     @Test public void namesAnUnknownActionOrTooManyTiles() {
@@ -64,7 +64,7 @@ public class SurfacePlanTest {
         assertEquals("[memo, feed]", ids(p));
         assertEquals("", p.tileCache.get("tile.1.uri"));
         assertEquals("Lights off", p.tileCache.get("tile.2.label"));
-        assertEquals(16, p.tileCache.size());
+        assertEquals(20, p.tileCache.size());
         assertEquals(3, problems.size());
     }
 

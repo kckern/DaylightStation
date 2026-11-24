@@ -12,6 +12,7 @@
              its own, and must not drag the app's task to the front by being started. -->
         <activity
             android:name="net.kckern.daylight.cap.notifications.shell.LinkActivity"
+            android:showWhenLocked="true"
             android:exported="true"
             android:excludeFromRecents="true"
             android:noHistory="true"

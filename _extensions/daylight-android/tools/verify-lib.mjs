@@ -389,6 +389,19 @@ const BOOT_RECEIVER = 'net.kckern.daylight.shell.BootReceiver';
 const LOCK_SCREEN_ATTRIBUTES = ['showWhenLocked', 'turnScreenOn', 'showOnLockScreen'];
 
 /**
+ * The only windows of a personal build allowed over the lock screen (showWhenLocked, not the
+ * other two attributes): the capture path a quick-settings tile starts without an unlock. They
+ * write into a private queue and show nothing already saved; the link activity is the visible
+ * hop that starts them.
+ */
+const OVER_LOCK_ALLOWED = new Set([
+  'net.kckern.daylight.cap.notifications.shell.LinkActivity',
+  'net.kckern.daylight.cap.quickinput.shell.RecordActivity',
+  'net.kckern.daylight.cap.quickinput.shell.MealCameraActivity',
+  'net.kckern.daylight.cap.quickinput.shell.PhotoCaptureActivity',
+]);
+
+/**
  * A personal device's APK is held to an exact list: the components another app can
  * reach are the boot receiver and what each listed capability names under `exported:`
  * in its capability.yml. No cleartext traffic, no TV launcher entry, no lock task.
@@ -416,6 +429,7 @@ export function personalBuildFailures(xmltree, device, capabilities) {
     if (COMPONENT_KINDS.includes(n.name) && n.attrs.lockTaskMode !== undefined) failures.push(`${n.attrs.name} declares android:lockTaskMode on a device with control.bind none`);
     // The site, a recording screen, a draft being typed: all of it is behind the lock.
     for (const attribute of LOCK_SCREEN_ATTRIBUTES) {
+      if (attribute === 'showWhenLocked' && OVER_LOCK_ALLOWED.has(n.attrs.name)) continue;
       if (COMPONENT_KINDS.includes(n.name) && n.attrs[attribute] === 'true') {
         failures.push(`${n.attrs.name} declares android:${attribute} on a device with control.bind none: nothing of a personal build shows over the lock screen`);
       }

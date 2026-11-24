@@ -52,8 +52,10 @@ public abstract class ActionTileService extends TileService {
     public void onClick() {
         final TileFace face = face();
         if (!face.available) return;
-        // An action changes something, so a locked phone asks for the unlock first.
-        if (isLocked()) unlockAndRun(() -> tap(face.link));
+        // Other actions change something, so a locked phone asks for the unlock first.
+        // A voice or photo capture runs over the lock screen: capturing is the point of the tile.
+        boolean overLock = "1".equals(SurfaceCache.get(this, SurfaceKeys.tile(slot(), SurfaceKeys.LOCK_OK)));
+        if (isLocked() && !overLock) unlockAndRun(() -> tap(face.link));
         else tap(face.link);
     }
 

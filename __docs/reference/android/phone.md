@@ -1478,7 +1478,11 @@ storage or location permission. Kiosk-only permissions include
   on. This holds for the kiosks too.
 - No `lockTaskMode` on any activity and no `LEANBACK_LAUNCHER` category.
 - No component declares `showWhenLocked`, `turnScreenOn` or `showOnLockScreen`:
-  the build and the verifier fail a personal build where one does.
+  the build and the verifier fail a personal build where one does. The one exception is
+  `showWhenLocked` on the voice and photo capture path (`LinkActivity`, `RecordActivity`,
+  `MealCameraActivity`, `PhotoCaptureActivity`), so a quick-settings tile can record a memo or
+  take a meal photo with no unlock. The tile runs only voice and photo actions over the lock
+  (`tile.N.lockok`); text, barcode and everything else still ask for the unlock.
 
 ### Debug and release builds
 

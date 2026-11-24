@@ -33,6 +33,8 @@ public final class SurfaceKeys {
      * for a tile slot, a widget slot and every action.
      */
     public static final String DIRECT = "direct";
+    /** "1" for a tile whose action may run over the lock screen (a voice or photo capture). */
+    public static final String LOCK_OK = "lockok";
     private static final String LINK_PREFIX = "daylight://";
 
     private SurfaceKeys() { }
