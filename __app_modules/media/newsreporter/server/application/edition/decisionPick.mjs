@@ -25,6 +25,7 @@
 import { choice, score, yesNo } from '#apps/common/ports/IDecisionGateway.mjs';
 import { ApplicationError } from '#apps/common/errors/ApplicationError.mjs';
 import { mapLimit, withTimeout } from './editionGather.mjs';
+import { MATURE_QUESTION, isMature, DEFAULT_THRESHOLD } from './familySafe.mjs';
 
 export const PICK_CONCURRENCY = 8;
 export const PICK_TIMEOUT_MS = 20000;
@@ -81,7 +82,7 @@ export function eligibleIds(unit, category) {
   return unit.members.filter((m) => (!only || only.has(m.sourceId)) && !not.has(m.sourceId)).map((m) => m.id);
 }
 
-export function questionsFor(unit, categories) {
+export function questionsFor(unit, categories, { familySafe = false } = {}) {
   const eligible = categories.filter((c) => eligibleIds(unit, c).length);
   if (!eligible.length) return null;
   const options = Object.fromEntries(eligible.map((c) => [c.id, c.topic ? `${c.label}: ${c.topic}` : c.label]));
@@ -89,6 +90,7 @@ export function questionsFor(unit, categories) {
   return {
     category: choice('Which section of a morning newspaper does this story belong in?', options),
     interest: score('How much does this story matter to a general reader this morning?', [...INTEREST_LEVELS]),
+    ...(familySafe ? { mature: MATURE_QUESTION } : {}),
   };
 }
 
@@ -116,12 +118,15 @@ export function assignedCategory(answer) {
  * @returns {Promise<null | { lead, categories, interest: Map<string, number>, units: number, failed: number }>}
  *   null → fall back to the chat pick
  */
-export async function decisionPick({ gateway, candidates, categories, leadEnabled = true, logger = console, logContext = {}, timeoutMs = PICK_TIMEOUT_MS, timing = null }) {
+export async function decisionPick({ gateway, candidates, categories, leadEnabled = true, familySafe = null, logger = console, logContext = {}, timeoutMs = PICK_TIMEOUT_MS, timing = null }) {
   if (!gateway?.evaluate || (typeof gateway.isConfigured === 'function' && !gateway.isConfigured())) return null;
-  const units = buildUnits(candidates).map((u) => ({ ...u, questions: questionsFor(u, categories) })).filter((u) => u.questions);
+  const screen = !!familySafe?.enabled;
+  const threshold = familySafe?.threshold ?? DEFAULT_THRESHOLD;
+  const units = buildUnits(candidates).map((u) => ({ ...u, questions: questionsFor(u, categories, { familySafe: screen }) })).filter((u) => u.questions);
   if (!units.length) return null;
 
   let failed = 0;
+  const mature = [];
   const judged = await mapLimit(units, PICK_CONCURRENCY, async (unit) => {
     try {
       const state = { title: unit.title, blurb: unit.blurb, sources: unit.sources, outlets: unit.outlets };
@@ -129,6 +134,14 @@ export async function decisionPick({ gateway, candidates, categories, leadEnable
       const interest = Number(result?.answers?.interest?.score);
       const category = assignedCategory(result?.answers?.category);
       if (!Number.isFinite(interest)) throw new Error('no interest score');
+      if (screen) {
+        const answer = result?.answers?.mature;
+        // Screening on, no answer: the unit is not cleared, so it is not printed.
+        if (!answer || isMature(answer, threshold)) {
+          mature.push(unit.title);
+          return null;
+        }
+      }
       return { unit, category, interest, value: unitValue(interest, unit.outlets) };
     } catch (error) {
       failed += 1;
@@ -190,7 +203,8 @@ export async function decisionPick({ gateway, candidates, categories, leadEnable
     throw new ApplicationError('edition pick left every category empty', { code: 'EDITION_PICK_EMPTY' });
   }
   if (merged) logger.info?.('newsreporter.edition.pick.merged_duplicates', { ...logContext, merged });
-  return { lead, categories: out, interest, unknownIds: [], disallowed: [], units: units.length, failed, merged };
+  if (mature.length) logger.info?.('newsreporter.edition.family_safe.removed', { ...logContext, stage: 'pick', removed: mature });
+  return { lead, categories: out, interest, unknownIds: [], disallowed: [], units: units.length, failed, merged, mature };
 }
 
 const STOP = new Set(['about', 'after', 'again', 'against', 'amid', 'before', 'being', 'from', 'have', 'into', 'more', 'over', 'says', 'said', 'than', 'that', 'their', 'there', 'they', 'this', 'what', 'when', 'will', 'with', 'would', 'your']);

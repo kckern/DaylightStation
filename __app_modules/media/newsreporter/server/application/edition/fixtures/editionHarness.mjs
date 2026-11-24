@@ -94,11 +94,15 @@ export function decisionGatewayFake({ configured = true, failAll = false } = {})
     isConfigured: () => configured,
     evaluate: vi.fn(async (state, questions) => {
       if (failAll) throw new Error('jev down');
+      // Family-safe screen (pick and post-write) and same-event merge questions.
+      const mature = questions.mature ? { mature: { type: 'yesNo', probability: 0.02 } } : {};
+      if (questions.same) return { model: 'jev-fake', answers: { same: { type: 'yesNo', probability: 0.1 } } };
+      if (!questions.category) return { model: 'jev-fake', answers: { ...mature } };
       const d = DECISIONS[state.title] || { category: 'none', interest: 0 };
       const options = Object.keys(questions.category.options);
       const chosen = options.includes(d.category) ? d.category : 'none';
       const probabilities = Object.fromEntries(options.map((k) => [k, k === chosen ? 0.8 : 0.2 / options.length]));
-      return { model: 'jev-fake', answers: { category: { type: 'choice', choice: chosen, confidence: 0.5, probabilities }, interest: { type: 'score', score: d.interest, confidence: 0.5, probabilities: [] } } };
+      return { model: 'jev-fake', answers: { ...mature, category: { type: 'choice', choice: chosen, confidence: 0.5, probabilities }, interest: { type: 'score', score: d.interest, confidence: 0.5, probabilities: [] } } };
     }),
   };
 }

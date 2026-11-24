@@ -64,6 +64,7 @@ export function buildWriteMessages({ cfg, date, groups, dayFacts }) {
     'Rules:',
     '- Write ONLY from the supplied headlines, blurbs and article text. Never add facts, names or numbers that are not there.',
     '- When the outlets disagree, say who claims what, naming the outlet.',
+    ...(cfg.family_safe?.enabled === false ? [] : ['- This is a family paper a child may read. Report war, crime and disasters plainly, without sexual, graphic or gory detail; never describe sexual content, abuse, or suicide or self-harm methods.']),
     '- Headlines are plain and specific, no clickbait, no "breaking", at most 11 words.',
     `- The lead body is about ${leadWords} words${cfg.news.lead.enabled ? ` (${cfg.news.lead.sentences} sentences or so)` : ''}; other stories about ${perStory} words; a story marked thin (headline and blurb only) gets one or two sentences.`,
     '- "sources" lists the outlet names you drew on, as given. "ids" are the candidate ids of the story, copied from the input.',

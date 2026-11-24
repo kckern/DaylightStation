@@ -140,7 +140,10 @@ public class DaylightMediaService extends MediaLibraryService {
             }
 
             @Override public void onIsPlayingChanged(boolean playing) {
-                if (playing) playedQueue = true;
+                if (playing) {
+                    playedQueue = true;
+                    radio.remember(player.getCurrentMediaItem());
+                }
                 PlayStart.Attempt attempt = shortcutOwner;
                 if (playing && attempt != null && ownsPlaylist(attempt)) {
                     attempt.recordPlaying(SystemClock.elapsedRealtime());

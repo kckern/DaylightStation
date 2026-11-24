@@ -305,6 +305,9 @@ export const EXPECTED_COMPONENTS = {
   // accepted is decided per connection (ControllerPolicy), and a controller hands over
   // media ids only; what an id plays is the payload's answer from the backend.
   'service net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService': { exported: true, permission: null, foregroundServiceType: ['mediaPlayback'] },
+  // A media button (headset, car, the system's resume card) reaches this receiver, which only
+  // starts the service above; the session still judges the controller.
+  'receiver androidx.media3.session.MediaButtonReceiver': { exported: true, permission: null },
   // Started by this app only, when the payload has accepted a keyed media link.
   'activity net.kckern.daylight.cap.mediaservice.shell.PlayActivity': { exported: false, permission: null },
   // Started by this app only: a widget button's immutable PendingIntent and a tile, with

@@ -71,6 +71,12 @@ export const editionConfigSchema = z.object({
   }).default({ target_cm: 50, max_cm: 60 }),
   model: z.string().nullable().default(null),
   voice: z.string().default(''),
+  // A child may pick the paper up: screen out sexual, abuse, gore and
+  // self-harm stories (war and hard news stay). On unless turned off.
+  family_safe: z.strictObject({
+    enabled: z.boolean().default(true),
+    threshold: z.number().min(0).max(1).default(0.5),
+  }).default({ enabled: true, threshold: 0.5 }),
   news: z.strictObject({
     user: z.string().min(1),
     pages: z.array(z.string().min(1)).min(1).optional(),

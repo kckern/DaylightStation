@@ -89,10 +89,21 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
     @Override
     public ListenableFuture<MediaSession.MediaItemsWithStartPosition> onPlaybackResumption(
             MediaSession session, MediaSession.ControllerInfo controller) {
-        if (radio == null || !DrivingRadio.isCar(controller) || !radio.enabled()) {
-            return MediaLibrarySession.Callback.super.onPlaybackResumption(session, controller);
+        Log.i(TAG, "playback resumption asked by " + controller.getPackageName());
+        MediaItem request;
+        if (radio != null && DrivingRadio.isCar(controller) && radio.enabled()) {
+            request = new MediaItem.Builder().setMediaId(DrivingRadioSettings.MEDIA_ID).build();
+        } else {
+            // A media button or the system's resume card, with nothing queued: pick up the
+            // last thing played. The id is resolved by the payload like any other.
+            MediaItem last = radio == null ? null : radio.last();
+            if (last == null) {
+                Log.i(TAG, "playback resumption: nothing played yet");
+                return MediaLibrarySession.Callback.super.onPlaybackResumption(session, controller);
+            }
+            Log.i(TAG, "playback resumption: resuming the last item played");
+            request = new MediaItem.Builder().setMediaId(last.mediaId).build();
         }
-        MediaItem request = new MediaItem.Builder().setMediaId(DrivingRadioSettings.MEDIA_ID).build();
         return onSetMediaItems(session, controller, Collections.singletonList(request), C.INDEX_UNSET, C.TIME_UNSET);
     }
 
@@ -144,22 +155,36 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
     @Override
     public ListenableFuture<LibraryResult<MediaItem>> onGetLibraryRoot(
             MediaLibrarySession session, MediaSession.ControllerInfo browser, LibraryParams params) {
-        // The root is fixed, so a car gets an answer before the payload is up.
-        return Futures.immediateFuture(LibraryResult.ofItem(NodeItems.root(), params));
+        // The root is fixed, so a car gets an answer before the payload is up. The extras tell
+        // Android Auto that this app's items carry content-style hints (the Drive grid); a
+        // "recent" root is the system asking what it could resume.
+        Bundle extras = new Bundle();
+        extras.putBoolean(NodeItems.STYLE_SUPPORTED, true);
+        LibraryParams.Builder reply = new LibraryParams.Builder().setExtras(extras);
+        if (params != null && params.isRecent) reply.setRecent(true);
+        return Futures.immediateFuture(LibraryResult.ofItem(NodeItems.root(), reply.build()));
     }
 
     @Override
     public ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> onGetChildren(
             final MediaLibrarySession session, MediaSession.ControllerInfo browser, final String parentId,
             final int page, final int pageSize, final LibraryParams params) {
+        if (params != null && params.isRecent && NodeItems.ROOT.equals(parentId)) {
+            // What the system may offer to resume: the one item last played, or nothing.
+            MediaItem last = radio == null ? null : radio.last();
+            return Futures.immediateFuture(LibraryResult.ofItemList(
+                    last == null || page > 0 ? ImmutableList.<MediaItem>of() : ImmutableList.of(last), params));
+        }
         final SettableFuture<LibraryResult<ImmutableList<MediaItem>>> future = SettableFuture.create();
         try {
             io.execute(() -> {
                 try {
                     if (radio != null && DrivingRadio.DRIVE.equals(parentId)) {
                         List<MediaItem> drive = page == 0 ? radio.staples() : Collections.emptyList();
-                        if (page == 0 && radio.enabled()) drive.add(0, NodeItems.drivingRadio(radio.todayTitle()));
+                        if (page == 0 && radio.enabled()) drive.add(0, NodeItems.drivingRadio(radio.todayTitle(), radio.todayArt()));
                         future.set(LibraryResult.ofItemList(drive, params));
+                        // Tiles with no picture are fetched now; each one saved tells the car to ask again.
+                        radio.fillMissingArt();
                         return;
                     }
                     List<BrowseAnswer.Entry> entries;
