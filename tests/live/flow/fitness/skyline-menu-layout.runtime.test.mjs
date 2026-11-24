@@ -205,6 +205,42 @@ test('multiline action text fits at DPR 1.39 @actions', async ({ browser }) => {
   } finally { await context.close(); }
 });
 
+// 2026-11-17 kiosk screenshot: the names sat on top of the avatars, the cards
+// filled a third of the screen and the same hold hint was printed three times.
+test('rider picker cards keep each name clear of its avatar and fill the screen @identity', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1810, height: 1080 });
+  await scenario(page, { game: 'glider', screen: 'identity', longText: false, host: null, notice: '' });
+  await page.waitForFunction(() => [...document.querySelectorAll('.skyline-controls img')].every(i => i.complete));
+  const g = await page.evaluate(() => {
+    const box = e => { const r = e.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; };
+    return {
+      layout: box(document.querySelector('.skyline-menu-layout')), pad: box(document.querySelector('.skyline-controls__pad')),
+      viewport: { width: innerWidth, height: innerHeight }, document: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
+      cards: [...document.querySelectorAll('.skyline-controls__pad button')].map(b => ({
+        card: box(b), img: box(b.querySelector('img')), name: box(b.querySelector('strong')), badge: box(b.querySelector('.skyline-controls__position')),
+        hint: b.querySelector('.skyline-controls__hint').textContent,
+      })),
+      everything: [...document.querySelectorAll('.skyline-menu-layout *')].filter(e => e.getClientRects().length).map(box),
+    };
+  });
+  await page.screenshot({ path: testInfo.outputPath('glider-identity-1810.png') });
+  const inside = (a, b) => a.left >= b.left - 1 && a.right <= b.right + 1 && a.top >= b.top - 1 && a.bottom <= b.bottom + 1;
+  const overlaps = (a, b) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5;
+  expect(g.cards).toHaveLength(4);
+  for (const c of g.cards) {
+    expect(c.img.height).toBeGreaterThan(0);
+    expect(overlaps(c.img, c.name)).toBe(false);
+    expect(inside(c.name, c.card)).toBe(true);
+    expect(inside(c.badge, c.card)).toBe(true);
+    expect(inside(c.img, c.card)).toBe(true);
+  }
+  expect(g.cards.map(c => c.hint)).toEqual(['', 'Hold for Grown-up', '', '']);
+  expect(g.pad.height).toBeGreaterThanOrEqual(0.4 * g.layout.height);
+  expect(g.document).toEqual([g.viewport.width, g.viewport.height]);
+  for (const r of g.everything) expect(inside(r, { left: 0, top: 0, right: g.viewport.width, bottom: g.viewport.height })).toBe(true);
+  await expectMenuGeometry(page);
+});
+
 const screenMatrix = {
   glider: ['identity','roster','flights','ready','countdown','menu','settings','crash','result','save-details','denied','loading','error'],
   invaders: ['who','roster','waves','method','sweep','locked','ready','paused','result','sound','loading','error'],

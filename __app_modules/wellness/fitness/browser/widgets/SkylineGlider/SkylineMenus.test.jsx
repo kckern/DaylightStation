@@ -17,8 +17,10 @@ it('lists no riders of its own on the identity screen: the bike-button panel car
  const riders=[{id:'a',name:'Rider A',position:1,avatarSrc:'/a.jpg'},{id:'b',name:'Rider B',position:2,avatarSrc:'/b.jpg'}];
  const onEvent=vi.fn();
  render(<SkylineMenus state={{...createSkylineControlState({acts:[],riders}),phase:'identity'}} acts={[]} riders={riders} onEvent={onEvent}/>);
- expect(screen.getByTestId('skyline-identity')).toHaveTextContent(/Who’s flying\?/);
- expect(screen.getByText(/Press your rider button on the pad/)).toBeVisible();
+ expect(screen.getByTestId('skyline-identity')).toHaveTextContent('Pick your rider');
+ // No apostrophe or colon: the pixel face has neither glyph (2026-11-17 screenshot).
+ expect(screen.getByRole('heading')).toHaveTextContent(/^Pick your rider$/);
+ expect(screen.getByText('Press your button on the pad. Hold it to pick another rider.')).toBeVisible();
  expect(screen.queryAllByRole('button')).toHaveLength(0);
  expect(screen.queryByText(/Rider A|Rider B|Button [1-4]/)).toBeNull();
 });

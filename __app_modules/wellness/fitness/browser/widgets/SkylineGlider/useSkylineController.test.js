@@ -53,3 +53,11 @@ it('cannot open the menu between a measured zero and the next animation frame',(
  expect(result.current.state.phase).toBe('stall');
  expect(onEffect.mock.calls.some(([e])=>e.type==='pause')).toBe(false);
 });
+it('words a card hint as a sentence, only for a specific hold or double press',()=>{
+ const ctx={selectorInputRouter:createSelectorInputRouter(),riderSelectors:[{id:'pad',equipment:'bike',buttons:{'1_single':'child','1_long':'dad','2_single':'kid','2_double':'gran','3_single':'pal'}}],users:[{id:'child'},{id:'dad',group_label:'Grown-up'},{id:'kid'},{id:'gran',name:'Gran'},{id:'pal'}],equipment:[{id:'bike',cadence:7}]};
+ const {result}=renderHook(()=>useSkylineController({ctx,courses:[{id:'one'}],access:{unlocked:true},onEffect:vi.fn()}));
+ const hint=id=>result.current.state.riders.find(r=>r.id===id).gestureHint;
+ expect(hint('child')).toBe('Hold for Grown-up');
+ expect(hint('kid')).toBe('Double-press for Gran');
+ expect(hint('pal')).toBe('');
+});

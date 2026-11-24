@@ -119,7 +119,34 @@
     small { font: inherit; }
   }
   &__hint { min-width: 0; min-height: 2.3em; overflow-wrap: anywhere; font-size: var(--sg-text-s); font-weight: 600; line-height: 1.15; }
-  img { width: sgvw(5.4); height: sgvw(5.4); object-fit: cover; box-shadow: sg-ring(var(--sg-ink)); }
+  // A rider's avatar fills its own slot and never more: the ink ring is drawn
+  // inside the box (padding on ink), so it cannot reach the name below. A fixed
+  // size here once beat the slot's max-height and drew the photo over the name
+  // (2026-11-17 kiosk screenshot).
+  button[data-kind="rider"] .skyline-controls__icon { position: relative; height: auto; min-height: sgvw(7); }
+  button[data-kind="rider"] img {
+    position: absolute; inset: 0; margin: auto; box-sizing: border-box; height: 100%; width: auto; max-width: 100%; max-height: 100%; aspect-ratio: 1;
+    padding: var(--sg-px); background: var(--sg-ink); object-fit: cover;
+  }
+}
+
+// The rider picker: the pad is the whole of the right half and the cards share
+// it. Each card reads top to bottom: its pad number, the avatar, the name, and
+// a hint only where a hold picks someone specific.
+[data-control-phase="identity"] .skyline-controls {
+  display: flex; flex-direction: column; block-size: 100%;
+  .skyline-controls__pad { flex: 1 1 auto; min-block-size: 0; }
+  // The pad number is the physical button: big enough to read from the saddle.
+  // 1.3em keeps the face's tall glyph box inside the square (and the card).
+  --sg-badge: max(#{sgvw(2.6)}, calc(1.3 * var(--sg-text-l)));
+  .skyline-controls__position { top: 0; left: 0; width: var(--sg-badge); height: var(--sg-badge); font-size: var(--sg-text-l); }
+  button {
+    display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: sgvw(.5);
+    padding: calc(var(--sg-badge) + #{sgvw(.4)}) sgvw(.8) calc(sgvw(.8) + 2 * var(--sg-px));
+    strong { flex: none; min-height: 0; font-size: var(--sg-text-l); }
+  }
+  .skyline-controls__icon { flex: 1 1 0; }
+  .skyline-controls__hint { flex: none; min-height: 0; &:empty { display: none; } }
 }
 
 @keyframes sg-menu-step-right { 50% { transform: translateX(3px); } }

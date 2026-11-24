@@ -19,7 +19,10 @@ export function useSkylineController({ctx,courses=[],world,access,saved,saveStat
   const position=Number(Object.keys(selector?.buttons||{}).find(k=>/_single$/.test(k)&&selector.buttons[k]===id)?.split('_')[0])||null;
   return {id,name:nameOf(id),position,
    avatarSrc:p.avatarSrc||DaylightImagePath('users/'+id),
-   gestureHint:Object.entries(selector?.buttons||{}).filter(([k])=>k.startsWith(position+'_')&&!k.endsWith('_single')).map(([k,who])=>(k.endsWith('_double')?'Double: ':'Hold: ')+nameOf(who)).join(' · ')||'Hold: other riders'};
+   // Only a hold or double press that picks someone specific is printed on the
+   // card; "hold for other riders" is the screen's subtitle, said once. No colon:
+   // the pixel face has no glyph for it (2026-11-17).
+   gestureHint:Object.entries(selector?.buttons||{}).filter(([k])=>k.startsWith(position+'_')&&!k.endsWith('_single')).map(([k,who])=>(k.endsWith('_double')?'Double-press for ':'Hold for ')+nameOf(who)).join(' · ')};
  });
  const mapActs=new Map((world?.zones||[]).flatMap(z=>z.acts||[]).map(a=>[a.id,a]));
  const acts=courses.map(c=>({...c,...mapActs.get(c.id),status:mapActs.get(c.id)?.status||'open'}));

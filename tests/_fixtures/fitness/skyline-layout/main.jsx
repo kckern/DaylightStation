@@ -40,7 +40,7 @@ function Fixture() {
     document.fonts.ready.then(() => requestAnimationFrame(() => { pending?.(); document.body.dataset.ready = 'true'; }));
   }, [scenario, pending]);
   const s = scenario;
-  const riders = Array.from({ length: 4 }, (_, i) => ({ id: `r${i}`, name: s.longText ? LONG : ['Robin', 'Sparrow', 'Dad', 'Other riders'][i], position: i + 1, avatarSrc: DaylightImagePath() }));
+  const riders = Array.from({ length: 4 }, (_, i) => ({ id: `r${i}`, name: s.longText ? LONG : ['Robin', 'Sparrow', 'Dad', 'Other riders'][i], position: i + 1, avatarSrc: DaylightImagePath(), ...(i === 1 ? { gestureHint: 'Hold for Grown-up' } : {}) }));
   const acts = Array.from({ length: s.count }, (_, i) => ({ id: `a${i}`, name: s.longText ? (i % 2 ? LONG : 'Mountain Pass Mountain Pass') : names[i % names.length], status: i % 3 === 0 ? 'completed' : i % 3 === 1 ? 'open' : 'locked', stars: 2, introduces: [], detail: 'Shoot down 4 · 0:30' }));
   const chosen = acts[s.selectedIndex];
   const state = { ...createSkylineControlState({ riders, acts }), phase: s.screen, riderId: 'r0', actId: chosen?.id, saveStatus: s.saveStatus, accessReason: 'Finish today’s school work to unlock flying.', rosterIndex: 0, cadence: { rpm: 47 }, countdown: 3 };

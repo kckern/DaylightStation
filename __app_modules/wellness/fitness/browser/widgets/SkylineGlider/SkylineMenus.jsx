@@ -51,7 +51,8 @@ export default function SkylineMenus({state,riders,acts,onEvent,crashNote,summar
  // The riders are listed once: on the bike-button panel beside this, where each
  // rider sits on the button that selects them (touch or physical). The 2×2 grid
  // of the same four riders that used to sit here duplicated it (2026-11-10).
- if(state.phase==='identity')return <section className="skyline-menus skyline-menus--identity" data-phase="identity" data-testid="skyline-identity"><h1>Who’s flying?</h1><p>Press your rider button on the pad. Hold for other riders.</p></section>;
+ // The words avoid ' and : — SNES Mario Paint has neither glyph (2026-11-17).
+ if(state.phase==='identity')return <section className="skyline-menus skyline-menus--identity" data-phase="identity" data-testid="skyline-identity"><h1>Pick your rider</h1><p>Press your button on the pad. Hold it to pick another rider.</p></section>;
  if(state.phase==='roster'){const r=riders[state.rosterIndex];return <section className="skyline-menus" data-phase="roster"><h1>Other riders</h1><p>Browse with the top buttons. Choose with bottom right.</p>{r&&<div className="skyline-menus__person"><SkylineAvatar src={r.avatarSrc} name={r.name}/><strong>{r.name}</strong></div>}</section>}
  if(state.phase==='flights')return <section className="skyline-menus" data-phase="flights">
   <p className="skyline-menus__kicker">{rider?.name} is flying</p><h1>Pick a flight</h1>
