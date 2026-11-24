@@ -43,6 +43,11 @@ public class LinkActivity extends Activity {
             return;
         }
         ShellStart.ensure(this);
+        // A tap with the app cold waits for the payload, with nothing on screen. Say so after a beat,
+        // so the owner knows the tap registered and does not tap again.
+        final android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+        final Runnable starting = () -> Toast.makeText(getApplicationContext(), "Starting Daylight…", Toast.LENGTH_SHORT).show();
+        main.postDelayed(starting, 700);
         LINKS.execute(() -> {
             LinkAnswer answer;
             try {
@@ -62,6 +67,7 @@ public class LinkActivity extends Activity {
             }
             final LinkAnswer result = answer;
             runOnUiThread(() -> {
+                main.removeCallbacks(starting);
                 perform(result);
                 finish();
             });

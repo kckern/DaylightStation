@@ -33,26 +33,37 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
   const doneRef = useRef(onDone);
   doneRef.current = onDone;
 
-  useEffect(() => {
-    if (!quickScan || !['logged', 'unknown'].includes(phase)) return;
-    const timeout = setTimeout(() => doneRef.current?.(), 1600);
-    return () => clearTimeout(timeout);
-  }, [quickScan, phase]);
+  // Quick scan never closes itself: a timed exit lost unknown products and the chance to undo.
+  // The owner leaves with Done or Close; after each logged item the camera is ready for the next.
+  const [last, setLast] = useState(null);
+  const pausedByVisibility = useRef(false);
+  const deniedRef = useRef(false);
+  const mealLabel = id => meals?.find(meal => meal.value === id)?.label;
 
   const { cameraState, stop } = useBarcodeScanner({
     active: phase === 'scanning', restartKey: generation, videoRef, logger,
     onDecode: upc => { if (live.current && scanGeneration.current === generation && armed.current) void decode(upc, true); },
   });
 
+  deniedRef.current = cameraState === 'denied';
+
   useEffect(() => {
     live.current = true;
     const pause = () => {
       if (!armed.current) return;
       armed.current = false;
+      pausedByVisibility.current = true;
       stop();
       setPhase('paused');
     };
-    const onVisibility = () => { if (document.hidden) pause(); };
+    const onVisibility = () => {
+      if (document.hidden) { pause(); return; }
+      if (!quickScan) return;
+      // Back from the notification shade or another app: the camera comes back by itself, and a
+      // camera that was refused is asked again (the owner may just have switched it on in Settings).
+      if (pausedByVisibility.current) { pausedByVisibility.current = false; rearm(); }
+      else if (deniedRef.current) { scanGeneration.current += 1; setGeneration(scanGeneration.current); }
+    };
     document.addEventListener('visibilitychange', onVisibility);
     document.addEventListener('freeze', pause);
     window.addEventListener('pagehide', pause);
@@ -133,7 +144,21 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
     }
   }
 
+  const rearm = () => {
+    armed.current = true;
+    scanGeneration.current += 1;
+    setGeneration(scanGeneration.current);
+    commitRequest.current = null;
+    setManualUpc('');
+    setError(null);
+    setRead(null);
+    setResult(null);
+    setUndoFeedback(null);
+    setPhase('scanning');
+  };
+
   const scanAnother = () => {
+    setLast(null);
     armed.current = true;
     scanGeneration.current += 1;
     setGeneration(scanGeneration.current);
@@ -153,8 +178,17 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
     setPhase('committing');
     commitRequest.current ??= { operationId: crypto.randomUUID(), upc: item.upc, product: item.product, bucket: target };
     try {
+      const operationId = commitRequest.current.operationId;
       const confirmed = await onConfirm(commitRequest.current);
       if (!live.current) return;
+      if (quickScan) {
+        // Eager: the item is logged, so the camera is ready for the next one straight away, and the
+        // card below holds what was logged with an Undo. Revising is a step after, never a gate.
+        setLast({ name: item.product.name, kcal: item.product.calories, meal: mealLabel(target),
+          undoToken: confirmed?.undoToken, operationId, busy: false, undone: false, error: null });
+        rearm();
+        return;
+      }
       setResult(confirmed);
       setPhase('logged');
     } catch (err) {
@@ -175,6 +209,16 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
       if (live.current) setUndoFeedback({ token, error });
     }, `undo-${commitRequest.current.operationId}`);
     if (success && live.current) setUndoFeedback({ token, undone: true });
+  };
+
+  const undoLast = async () => {
+    const item = last;
+    if (!item?.undoToken || item.busy || item.undone) return;
+    setLast({ ...item, busy: true, error: null });
+    const success = await onUndo(item.undoToken, message => {
+      if (live.current) setLast(current => current && { ...current, busy: false, error: message });
+    }, `undo-${item.operationId}`);
+    if (live.current) setLast(current => current && (success ? { ...current, busy: false, undone: true } : { ...current, busy: false }));
   };
 
   const camera = phase === 'scanning' && cameraState !== 'denied' && (
@@ -215,23 +259,42 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
   if (quickScan) {
     const liveCamera = phase === 'scanning' && cameraState !== 'denied';
     const message = {
-      scanning: liveCamera ? 'Center the barcode inside the guide.' : 'Camera unavailable.',
+      scanning: liveCamera ? 'Center the barcode inside the guide.'
+        : 'Camera is off. Allow it in Settings, then come back, or enter the number.',
       'looking-up': 'Looking up barcode…',
       committing: read?.product?.name ? `Logging ${read.product.name}…` : 'Logging item…',
-      logged: undone ? 'Log undone' : `Logged ${read?.product?.name || 'item'}`,
-      unknown: 'No matching food found.',
+      logged: `Logged ${read?.product?.name || 'item'}`,
+      unknown: `No food found for ${read?.upc || 'this barcode'}.`,
       paused: 'Camera paused.',
       review: read?.product?.name,
     }[phase];
+    const lastCard = last && (
+      <div role="status" style={{ display: 'grid', gap: '0.5rem', justifyItems: 'center', background: '#000a',
+        borderRadius: 16, padding: '0.75rem 1rem', maxWidth: '92%' }}>
+        <Text fw={700}>{last.undone ? 'Removed' : `Logged ${last.name}`}</Text>
+        {!last.undone && <Text size="sm">{[last.kcal ? `${last.kcal} kcal` : null, last.meal].filter(Boolean).join(' · ')}</Text>}
+        {last.error && <Text role="alert" size="sm">{last.error}</Text>}
+        <Group gap="xs">
+          {!last.undone && last.undoToken && <Button variant="default" aria-label="Undo logged item" loading={last.busy} onClick={undoLast}>Undo</Button>}
+          <Button onClick={onDone}>Done</Button>
+        </Group>
+      </div>
+    );
     return (
       <Sheet open onClose={close} title="Scan barcode" placement="fullscreen">
         {camera}
+        {phase === 'scanning' && meals?.length > 0 && (
+          <div style={{ position: 'absolute', top: '3.5rem', left: '1rem', zIndex: 1 }}>
+            <NativeSelect size="xs" aria-label="Meal" data={meals} value={target} onChange={event => setTarget(event.target.value)} />
+          </div>
+        )}
         <div style={{
           position: 'absolute', display: 'grid', gap: '0.75rem', justifyItems: 'center',
           padding: '1rem', color: 'white', textAlign: 'center',
           ...(liveCamera ? { bottom: 'max(1rem, env(safe-area-inset-bottom))', left: 0, right: 0,
             textShadow: '0 1px 6px black' } : { inset: '3.5rem 0 0', alignContent: 'center' }),
         }}>
+          {lastCard}
           {error ? <Text role="alert">{error}</Text> : <Text role="status">{message}</Text>}
           {phase === 'scanning' && liveCamera && !showManual && (
             <Button variant="default" onClick={() => setShowManual(true)}>Enter UPC</Button>
@@ -240,7 +303,10 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
           {['paused', 'lookup-error'].includes(phase) && <Button onClick={scanAnother}>Scan again</Button>}
           {phase === 'review' && <Button onClick={() => confirm()}>Log item</Button>}
           {phase === 'uncertain' && <Button onClick={() => confirm()}>Retry log</Button>}
-          {['logged', 'unknown'].includes(phase) && <Button variant="subtle" onClick={onDone}>Done</Button>}
+          {phase === 'unknown' && <Group gap="xs">
+            {onUnknown && <Button onClick={() => onUnknown(read.upc, target)}>Enter food details</Button>}
+            <Button variant="default" onClick={rearm}>Scan next</Button>
+          </Group>}
         </div>
       </Sheet>
     );

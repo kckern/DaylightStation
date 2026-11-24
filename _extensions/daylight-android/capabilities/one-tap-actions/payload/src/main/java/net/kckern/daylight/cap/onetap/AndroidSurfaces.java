@@ -141,8 +141,8 @@ final class AndroidSurfaces implements SurfaceSink {
         int size = Math.max(108, manager().getIconMaxWidth());
         Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
-        boolean meal = action.id.equals("meal") || action.id.startsWith("meal-");
-        canvas.drawColor(meal ? 0xff8b421e : 0xff17465a);
+        // One colour for every shortcut: the app's green, so they read as a family on the launcher.
+        canvas.drawColor(0xff125b47);
         Drawable glyph = context.getDrawable(iconResource(action.icon));
         int inset = size / 4;
         glyph.setBounds(inset, inset, size - inset, size - inset);

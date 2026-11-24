@@ -40,10 +40,8 @@ public class ButtonWidgetConfigActivity extends Activity {
 
         PlacementStore store = new PlacementStore(this);
         setTitle("Choose a playlist");
-        if (!ButtonWidgetProvider.chosen(this, widgetId).isEmpty()) {
-            showMessage("This widget already has a playlist. Add another widget to choose a different one.");
-            return;
-        }
+        // A widget that already has a playlist is reconfigured: the same chooser, and the pick replaces it.
+        boolean reconfiguring = !ButtonWidgetProvider.chosen(this, widgetId).isEmpty();
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setFocusableInTouchMode(true);
@@ -52,7 +50,7 @@ public class ButtonWidgetConfigActivity extends Activity {
             DrivingRadioSettings settings = new DrivingRadioSettings(this);
             settings.remember(entry.id, entry.title, entry.art);
             PlaylistPicker.cacheCover(this, entry.id, entry.art);
-            assign(store, manager, entry.id);
+            assign(store, manager, entry.id, reconfiguring);
         }), new LinearLayout.LayoutParams(-1, -1));
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
                 | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
@@ -60,8 +58,8 @@ public class ButtonWidgetConfigActivity extends Activity {
         layout.requestFocus();
     }
 
-    private void assign(PlacementStore store, AppWidgetManager manager, String contentId) {
-        if (!ButtonWidgetProvider.owns(this, manager, widgetId) || !store.assignStaged(contentId, widgetId)) {
+    private void assign(PlacementStore store, AppWidgetManager manager, String contentId, boolean replace) {
+        if (!ButtonWidgetProvider.owns(this, manager, widgetId) || !store.assignStaged(contentId, widgetId, replace)) {
             showMessage("This playlist is no longer available. Add the widget again to refresh the list.");
             return;
         }

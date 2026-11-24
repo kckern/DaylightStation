@@ -84,7 +84,12 @@ public final class PlaylistWidgetState {
 
     public Tap tap(String expectedRevision) {
         if (expectedRevision == null) return phase == Phase.READY ? Tap.START : Tap.IGNORE;
-        if (!revision.equals(expectedRevision)) return Tap.IGNORE;
+        if (!revision.equals(expectedRevision)) {
+            // The widget on Home is older than this process: after the app was killed it keeps showing
+            // "playing" with a revision nothing here knows. If nothing is playing now, the owner's tap
+            // means "play this", so start it instead of swallowing the first tap.
+            return phase == Phase.READY || phase == Phase.FAILED ? Tap.START : Tap.IGNORE;
+        }
         switch (phase) {
             case PLAYING: return Tap.PAUSE;
             case PAUSED: return Tap.RESUME;

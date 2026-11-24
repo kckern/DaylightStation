@@ -155,7 +155,12 @@ final class PlacementStore {
     }
 
     boolean assignStaged(String contentId, int widgetId) {
-        if (widgetId <= 0 || !prefs.getString(ButtonFace.storeKey(widgetId), "").isEmpty()) return false;
+        return assignStaged(contentId, widgetId, false);
+    }
+
+    /** With replace, a widget that already has a playlist is pointed at another one (Reconfigure). */
+    boolean assignStaged(String contentId, int widgetId, boolean replace) {
+        if (widgetId <= 0 || (!replace && !prefs.getString(ButtonFace.storeKey(widgetId), "").isEmpty())) return false;
         String title = prefs.getString(STAGED + contentId, "");
         if (title.isEmpty()) return false;
         return prefs.edit().putString(ButtonFace.storeKey(widgetId), "c:" + contentId)
