@@ -26,7 +26,8 @@ export function FoodOperationStatus({ operation, active }) {
       if (id) context.store.discard(operation.id, { descendants: operation.resumable });
     }}>{choice.label}</Button>)}
     {operation.phase !== 'conflict' && (!operation.response || acknowledged || operation.resumable) && <Button size="compact-xs" onClick={() => context.retry(operation.id).catch(() => {})}>{acknowledged ? 'Retry refresh' : 'Retry'}</Button>}
-    {!acknowledged && <Button size="compact-xs" variant="subtle" onClick={() => context.store.discard(operation.id, { descendants: operation.resumable })}>Dismiss</Button>}
+    {/* Always dismissible: when the food was already saved and only the refresh failed, hiding the banner loses nothing, and a banner with no way off the screen is worse than a stale one. */}
+    <Button size="compact-xs" variant="subtle" onClick={() => context.store.discard(operation.id, { descendants: operation.resumable })}>Dismiss</Button>
   </div>;
   return <CaptureProgress startedAt={operation.startedAt} label="Food analysis" text={text} active={active} />;
 }

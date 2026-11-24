@@ -372,7 +372,7 @@ describe('TodayView barcode review', () => {
     expect(screen.queryByRole('dialog', { name: 'Scan barcode' })).toBeNull();
     expect(screen.getByRole('textbox', { name: 'Log food or change this day' })).toBeTruthy();
   });
-  it('logs one physical shortcut scan and returns to the host automatically', async () => {
+  it('logs a physical shortcut scan, keeps scanning, and returns to the host on Done', async () => {
     const finish = vi.fn();
     window.addEventListener('daylight:barcode-shortcut-done', finish);
     try {
@@ -380,7 +380,10 @@ describe('TodayView barcode review', () => {
       await act(async () => { camera.current.onDecode(upc); });
       expect(await screen.findByText(/^Logged /)).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'Log item' })).toBeNull();
-      await waitFor(() => expect(finish).toHaveBeenCalledTimes(1), { timeout: 2500 });
+      // The scanner stays open for the next item; Done is what hands control back.
+      expect(finish).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+      await waitFor(() => expect(finish).toHaveBeenCalledTimes(1));
     } finally {
       window.removeEventListener('daylight:barcode-shortcut-done', finish);
     }
