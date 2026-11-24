@@ -235,7 +235,9 @@ function jobLogContext(printJob) {
  * @property {number} [port=9100] - Printer port
  * @property {number} [timeout=5000] - Connection timeout in ms
  * @property {string} [encoding='utf8'] - Text encoding
- * @property {boolean} [upsideDown=true] - Enable upside-down mode for mounted printers
+ * @property {boolean} [upsideDown=true] - Printer is mounted upside down: text uses
+ *   `ESC { 1`, items go out in reverse order, and image items are rotated 180°
+ *   here. Callers always send upright content.
  */
 
 /**
@@ -1198,7 +1200,7 @@ export class ThermalPrinterAdapter {
           commands = this.#processTextItem(item);
           break;
         case 'image':
-          commands = await this.#processImageItem(item);
+          commands = await this.#processImageItem(item, config);
           break;
         case 'barcode':
           commands = this.#processBarcodeItem(item);
@@ -1303,8 +1305,20 @@ export class ThermalPrinterAdapter {
    * empty buffer here printed the header, the padding and the cut around a hole
    * where the receipt should have been. There is no partial receipt worth
    * having — refuse the job instead.
+   *
+   * UPSIDE-DOWN MOUNTING IS HANDLED HERE, FOR EVERY CALLER (2026-11-23).
+   *
+   * `ESC { 1` (sent by `#executePrintJob` when `upsideDown`) rotates CHARACTERS
+   * only; a `GS v 0` raster prints exactly as sent. So when the job's effective
+   * `upsideDown` is true the image is drawn rotated 180° onto the working canvas
+   * before monochrome conversion. Callers hand over an upright image and never
+   * flip it themselves — gratitude and fitness used to pre-flip their own
+   * canvases, and School never did, so School receipts came out upside down.
+   *
+   * @param {Object} item
+   * @param {Object} [config] - the job's effective config (`upsideDown` read here)
    */
-  async #processImageItem(item) {
+  async #processImageItem(item, config = {}) {
     let commands = Buffer.alloc(0);
 
     try {
@@ -1322,15 +1336,39 @@ export class ThermalPrinterAdapter {
       const canvas = createCanvas(targetWidth, targetHeight);
       const ctx = canvas.getContext('2d');
 
+      const upsideDown = config.upsideDown === true;
+
       ctx.fillStyle = 'white';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
+      if (upsideDown) {
+        ctx.save();
+        ctx.translate(targetWidth, targetHeight);
+        ctx.rotate(Math.PI);
+        ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
+        ctx.restore();
+      } else {
+        ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
+      }
 
       const bitmap = this.#convertToMonochrome(canvas, item.threshold || 128);
 
-      // Alignment
-      if (item.align) {
-        const alignCode = item.align === 'center' ? 0x01 : item.align === 'right' ? 0x02 : 0x00;
+      // Alignment.
+      //
+      // Upside down, the alignment is MIRRORED: an image narrower than the
+      // paper that the printer places at its own left edge reads as
+      // right-aligned once the paper is turned the right way up, so left and
+      // right swap (center is unchanged). An item with no `align` prints at the
+      // printer's left (its state after `ESC @`), so it is treated as left and
+      // sent as right. UNVERIFIED ON HARDWARE as of 2026-11-23: this assumes
+      // `ESC a` places a raster in the printer's own frame and that `ESC { 1`
+      // does not already mirror raster placement. For a full-width image
+      // (the School and fitness/gratitude receipts) the alignment has no effect
+      // either way.
+      const align = upsideDown
+        ? ({ left: 'right', right: 'left', center: 'center' }[item.align || 'left'] ?? 'right')
+        : item.align;
+      if (align) {
+        const alignCode = align === 'center' ? 0x01 : align === 'right' ? 0x02 : 0x00;
         commands = Buffer.concat([commands, Buffer.from([0x1B, 0x61, alignCode])]);
       }
 

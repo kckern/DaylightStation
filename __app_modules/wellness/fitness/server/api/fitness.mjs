@@ -797,11 +797,10 @@ export function createFitnessRouter(config) {
       return res.status(501).json({ error: 'Receipt renderer not configured' });
     }
     const { sessionId } = req.params;
-    const upsidedown = req.query.upsidedown === 'true';
     if (!sessionId) {
       return res.status(400).json({ error: 'sessionId is required' });
     }
-    const result = await fitnessSessionOperations.receipt(sessionId, upsidedown);
+    const result = await fitnessSessionOperations.receipt(sessionId);
     if (result.kind === 'not_found') {
       return res.status(404).json({ error: 'Session not found' });
     }
@@ -812,20 +811,18 @@ export function createFitnessRouter(config) {
   }));
 
   /**
-   * GET /api/fitness/receipt/:sessionId/print - Generate and print fitness receipt
-   * Query params:
-   *   - upsidedown: 'true'/'false' (default: true for print)
+   * GET /api/fitness/receipt/:sessionId/print - Generate and print fitness receipt.
+   * Rendered upright; the thermal printer adapter rotates it for an
+   * upside-down mounted printer.
    */
   router.get('/receipt/:sessionId/print{/:location}', asyncHandler(async (req, res) => {
     if (!printFitnessReceipt) {
       return res.status(501).json({ error: 'Receipt renderer not configured' });
     }
     const { sessionId } = req.params;
-    const upsidedown = req.query.upsidedown !== 'false'; // default true for print
     const result = await printFitnessReceipt.execute({
       sessionId,
       location: req.params.location,
-      upsidedown,
     });
     if (result.kind === 'printer_not_found') return res.status(404).json({ error: result.error });
     if (result.kind === 'session_not_found') {

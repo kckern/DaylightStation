@@ -188,8 +188,10 @@ export class VirtualThermalPrinterAdapter extends ThermalPrinterAdapter {
 
     const receiptId = `receipt_${String(++this.#seq).padStart(4, '0')}`;
     // Transcript order is the AUTHORED order. The real adapter reverses items on
-    // the wire for upside-down mounting; that is a wire concern, and reversing
-    // the transcript would make every assertion read backwards.
+    // the wire for upside-down mounting, and rotates image items 180°; both are
+    // wire concerns, and reversing the transcript would make every assertion
+    // read backwards. Captured `images` likewise point at the upright PNGs the
+    // renderers wrote (no renderer flips its own canvas any more).
     //
     // A renderer that already knows what it drew (the raster receipt renderer,
     // which has no text item for `transcribeEscPosItems` to read) hands that

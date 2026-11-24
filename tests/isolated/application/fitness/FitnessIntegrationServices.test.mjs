@@ -56,7 +56,7 @@ describe('Fitness integration facades', () => {
       imagePrintGateway: { print: printReceipt },
     });
 
-    await expect(useCase.execute({ sessionId: 's1', location: 'garage', upsidedown: true }))
+    await expect(useCase.execute({ sessionId: 's1', location: 'garage' }))
       .resolves.toEqual({ kind: 'printed', success: true });
     expect(printReceipt).toHaveBeenCalledWith(printer, expect.objectContaining({
       sessionId: 's1',
