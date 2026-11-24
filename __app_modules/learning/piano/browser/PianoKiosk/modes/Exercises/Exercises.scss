@@ -490,6 +490,11 @@
     .piano-note-verdict-late { path, rect, ellipse, text { fill: rgb(222, 140, 0); animation: none; } }
     .piano-note-verdict-unplayed { path, rect, ellipse, text { fill: rgb(150, 150, 150); animation: none; } }
   }
+  // The rhythm step (tap the X's): the clock moves on without the child, so a missed tap is RED, not the grey
+  // "still owed" of a note step (owner, 2026-11-24: green on time, yellow at the margins, red when missed).
+  .piano-exercise-run[data-rhythm] & .musicxml-renderer__svg .piano-note-verdict-unplayed {
+    path, rect, ellipse, text { fill: rgb(200, 40, 40); }
+  }
 
   .piano-score-passage__drift {
     fill: rgb(180, 110, 0);
