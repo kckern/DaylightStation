@@ -31,7 +31,7 @@ it('reports success, HTTP refusal and a lost connection for manual localhost res
   await expect(result.current.restartWebSocketServer()).resolves.toBe(false);
   expect(fetch).toHaveBeenCalledTimes(3);
   for (const [url, init] of fetch.mock.calls) {
-    expect(url).toBe('http://localhost:3112/api/v1/admin/ws/restart');
+    expect(url).toBe('/api/v1/admin/ws/restart');
     expect(init.method).toBe('POST');
   }
 });
