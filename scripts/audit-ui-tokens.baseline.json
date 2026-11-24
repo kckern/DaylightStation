@@ -8,10 +8,10 @@
   },
   "frontend/src/lib/ui": {
     "raw-color": 0,
-    "raw-motion": 2,
+    "raw-motion": 0,
     "raw-keydown": 0,
     "native-control": 0,
-    "undefined-token": 2
+    "undefined-token": 0
   },
   "frontend/src/modules/Admin": {
     "raw-color": 23,

@@ -32,6 +32,15 @@ describe('DS token contract', () => {
     expect(vars['--ds-motion-base']).toBe('200ms');
   });
 
+  it('emits the skeleton colour roles and sweep duration', () => {
+    expect(dsCssVars()).toMatchObject({
+      '--ds-skeleton-base': 'rgb(255 255 255 / 6%)',
+      '--ds-skeleton-sheen': 'rgb(255 255 255 / 13%)',
+      '--ds-motion-sweep': '1600ms',
+    });
+    expect(dsCssVars(PACKS.admin)['--ds-skeleton-base']).toBe(DS_TOKENS.skeleton.base);
+  });
+
   it('shares compact control geometry across theme packs', () => {
     for (const pack of [PACKS.health, PACKS.home]) {
       expect(dsCssVars(pack)).toMatchObject({

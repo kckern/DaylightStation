@@ -286,6 +286,11 @@ html[data-browser-app-viewport] {
   to { transform: scale(1); opacity: 1; }
 }
 
+// Skeleton's highlight sweep (Skeleton.scss): transform only, no layout.
+@keyframes ds-skeleton-sweep {
+  to { transform: translateX(100%); }
+}
+
 // A text cursor's blink (School's typed lines, Programs/shared/TypedText):
 // on a little longer than off, hard steps, no fade.
 @keyframes ds-cursor-blink {

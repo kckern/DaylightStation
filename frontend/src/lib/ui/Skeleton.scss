@@ -1,9 +1,5 @@
-// See Skeleton.jsx. Tokens are local so the block sits correctly on any of the
-// app's dark panels without each surface restating them.
+// See Skeleton.jsx. Colours and sweep duration are shared tokens (lib/theme/tokens.mjs).
 .ds-skeleton {
-  --ds-skeleton-base: rgb(255 255 255 / 6%);
-  --ds-skeleton-sheen: rgb(255 255 255 / 13%);
-
   position: relative;
   overflow: hidden;
   width: 100%;
@@ -24,11 +20,7 @@
     var(--ds-skeleton-sheen) 50%,
     transparent 100%
   );
-  animation: ds-skeleton-sweep 1.6s ease-in-out infinite;
-}
-
-@keyframes ds-skeleton-sweep {
-  to { transform: translateX(100%); }
+  animation: ds-skeleton-sweep var(--ds-motion-sweep) ease-in-out infinite;
 }
 
 // A placeholder is never worth motion sickness.
