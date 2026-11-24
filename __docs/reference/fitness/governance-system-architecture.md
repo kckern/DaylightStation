@@ -386,10 +386,10 @@ one answers a different question; none is redundant with another (see
 | # | Mechanism | Where | Value | Source | What it stops |
 |---|-----------|-------|-------|--------|---------------|
 | 0 | Slew gate | `hrPlausibility.js` (DeviceManager) | ≥25 BPM jump within 2s is held for one packet | code (`HR_SLEW_MAX_DELTA_BPM`, `HR_SLEW_WINDOW_MS`) | single corrupt packets (e.g. 204 BPM) |
-| 1a | Upward confirmation | `ZoneProfileStore#applyHysteresis` | 2 separate samples spanning ≥1s; **Fire: 2 spanning ≥2s with one reading above the floor, or 3 spanning ≥5s** | code (`UPWARD_CONFIRM_*`, `FIRE_QUICK_CONFIRM_*`, `FIRE_UPWARD_CONFIRM_*`) | one packet claiming a higher zone; touching the Fire floor for a moment |
-| 1b | **Exit margin** (Schmitt trigger) | `ZoneProfileStore#applyHysteresis` | stay in the committed zone until HR < zone floor − **5 BPM** | code (`EXIT_MARGIN_BPM`) — not configurable | HR drifting ±1–3 BPM around a floor |
-| 1c | Commit cooldown | `ZoneProfileStore#applyHysteresis` | a change within **5s** of the last commit… | code (`HYSTERESIS_COOLDOWN_MS`) | rapid back-and-forth toggling |
-| 1d | Stability hold | `ZoneProfileStore#applyHysteresis` | …must hold steady **3s** before it commits | code (`HYSTERESIS_STABILITY_MS`) | (with 1c) noisy toggling |
+| 1a | Upward confirmation | `ZoneProfileStore#applyHysteresis` | 2 separate samples spanning ≥1s; **Fire: 2 spanning ≥2s with one reading above the floor, or 3 spanning ≥5s** | config `zone_stability.upward_confirm_ms` / `fire_quick_confirm_ms` / `fire_upward_confirm_ms` (defaults 1000 / 2000 / 5000; sample counts stay in code) | one packet claiming a higher zone; touching the Fire floor for a moment |
+| 1b | **Exit margin** (Schmitt trigger) | `ZoneProfileStore#applyHysteresis` | stay in the committed zone until HR < zone floor − **5 BPM** | config `zone_stability.exit_margin_bpm` (default 5) | HR drifting ±1–3 BPM around a floor |
+| 1c | Commit cooldown | `ZoneProfileStore#applyHysteresis` | a change within **5s** of the last commit… | config `zone_stability.hysteresis_cooldown_ms` (default 5000) | rapid back-and-forth toggling |
+| 1d | Stability hold | `ZoneProfileStore#applyHysteresis` | …must hold steady **3s** before it commits | config `zone_stability.hysteresis_stability_ms` (default 3000) | (with 1c) noisy toggling |
 | 1e | HR-loss grace | `UserManager.js` | committed zone kept through a **5s** reading gap | code (`HR_LOSS_GRACE_MS`) | strap dropouts reading as Cool |
 | 2a | Grace period | `GovernanceEngine` phase logic | `warning` countdown before `locked` | config `grace_period_seconds` (code default 0 = lock at once; live: 30) | a brief dip locking the video |
 | 2b | Warning cooldown | `GovernanceEngine._setPhase` | after recovering to `unlocked`, no new `warning` for N s | config `warning_cooldown_seconds` (no code default = off; live: 30) | repeat warnings from a rider bobbing at the floor |
@@ -526,7 +526,7 @@ For each HR update:
 - Cooldown window: 5 seconds after last zone commit
 - Stability requirement: 3 seconds of continuous new zone
 - Exit margin: 5 BPM below the committed zone's floor before a downgrade can
-  commit (`EXIT_MARGIN_BPM`; logged as `zoneprofilestore.exit_margin_suppressed`)
+  commit (`zone_stability.exit_margin_bpm`, default 5; logged as `zoneprofilestore.exit_margin_suppressed`)
 - First transition (accepted Cool, or a resume): instant (no stability wait)
 - Upward confirmation: a higher zone commits only on its second separate
   sample at least 1s after the first. A "sample" is a distinct reading
@@ -595,10 +595,16 @@ For each HR update:
   without a birthyear, explicit non-learner membership or an adult guest
   assignment identifies an adult. Kid guest assignments keep the Cool rule.
   All riders still require accepted packets; rejected startup packets cannot
-  earn rings. `ZoneTrustWarning` stays visible across fitness views while a
-  live rider is untrusted, naming the rider, saying rings and Fire celebrations
-  are paused, and explaining the personal Active threshold or packet acceptance
-  wait. **Admin unlock** uses `IdentityProvider.registerAdmin` and approves the
+  earn rings. A live rider who is untrusted shows on their own rider card
+  (`FitnessUsers`), not as a screen-wide notice: no zone colour (the group
+  header reads "Unknown"), slow grey diagonal stripes, the BPM still printed,
+  and a "?" in the card's corner. The menu sidebar avatar carries a small "?"
+  too. The "?" opens `ZoneTrustDialog` (an `AppModal`) for that rider: the
+  reading, that rings and Fire don't count yet, how it clears (the personal
+  Active threshold, or a steady reading from the strap), and **Admin unlock**.
+  The dialog closes itself once the reading is accepted. (Until 2026-11-23 a
+  fixed warning covered every view; that day it covered the screen for ~16s
+  as each kid joined at rest.) **Admin unlock** uses `IdentityProvider.registerAdmin` and approves the
   selected rider, including kids, without requiring Cool. The approval is bound
   to session, wearer revision and strap: cancellation, handover, reset or a
   delayed fingerprint from an old session cannot approve a replacement wearer.

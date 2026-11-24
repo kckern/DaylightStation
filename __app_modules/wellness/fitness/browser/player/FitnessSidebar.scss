@@ -1763,6 +1763,56 @@
   }
   .card-avatar.no-zone     { --avatar-ring: #333; --avatar-glow: none; }
 
+  // Untrusted reading (zone store has not accepted it yet): no zone colour,
+  // slow grey diagonal stripes behind the content, a "?" in the corner that
+  // opens ZoneTrustDialog. The BPM still prints; it earns nothing.
+  &.zone-untrusted {
+    border-left: 4px dashed rgba(255, 255, 255, 0.35);
+    .device-value { opacity: 0.7; }
+    .card-avatar { --avatar-ring: rgba(255, 255, 255, 0.3); --avatar-glow: none; }
+  }
+  .trust-stripes {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    overflow: hidden;
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0 -28px 0 -28px;
+      background: repeating-linear-gradient(
+        -45deg,
+        rgba(255, 255, 255, 0.07) 0 10px,
+        transparent 10px 20px
+      );
+      animation: trust-stripes-drift 2.4s linear infinite;
+      will-change: transform;
+    }
+  }
+  .trust-mark {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 3;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.55);
+    background: rgba(15, 15, 15, 0.85);
+    color: #fff;
+    font: 700 18px/1 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+    // 46px touch target around the 30px mark.
+    &::after { content: ''; position: absolute; inset: -8px; }
+    &:focus-visible { outline: 2px solid #4fc3f7; outline-offset: 2px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .trust-stripes::before { animation: none; }
+  }
+
   .zone-progress-bar {
     position: absolute;
     left: 0;
@@ -1975,4 +2025,10 @@
     .menu-section .menu-item.touch-volume-item { padding: 8px; gap: 6px; }
     .menu-section .menu-item.touch-volume-item .touch-volume-button { height: 44px; }
   }
+}
+
+// One stripe period (20px along the -45deg gradient = ~28.28px horizontally).
+@keyframes trust-stripes-drift {
+  from { transform: translateX(0); }
+  to { transform: translateX(28.28px); }
 }

@@ -366,7 +366,8 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
             : null;
           const cardZoneClass = device.type === 'heart_rate' && zoneId ? `zone-${zoneId}` : 'no-zone';
           const isActive = computeDeviceActive(device);
-          const cardClasses = ['device-card', cardZoneClass, isActive ? 'active' : 'inactive']
+          const untrusted = Boolean(display?.untrusted);
+          const cardClasses = ['device-card', cardZoneClass, isActive ? 'active' : 'inactive', untrusted ? 'zone-untrusted' : null]
             .filter(Boolean)
             .join(' ');
           
@@ -388,7 +389,7 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
                   size="100%"
                   ringWidth={8}
                   showIndicator={false}
-                  ariaLabel={ownerName ? `${ownerName} heart rate` : undefined}
+                  ariaLabel={ownerName ? `${ownerName} heart rate${untrusted ? ', not trusted yet' : ''}` : undefined}
                 />
               ) : (
                 <div className="device-icon-fallback">
@@ -399,6 +400,8 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
                   {!['power', 'cadence', 'speed', 'jumprope'].includes(device.type) && '📡'}
                 </div>
               )}
+              {/* Untrusted reading: the rider list's card carries the "?" that opens the unlock. */}
+              {untrusted && <span className="trust-mark-mini" aria-hidden="true">?</span>}
             </div>
           );
         })}

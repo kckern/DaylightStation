@@ -1,0 +1,51 @@
+// One rider's untrusted-reading dialog, an AppModal opened from the "?" on
+// their card. The shared modal layer (--app-z-modal: 200) sits under the
+// player chrome (1000–2001), so lift it; UnlockPrompt (2300) opens above it.
+.app-modal-overlay:has(> .zone-trust-dialog) {
+  z-index: 2050;
+}
+
+.app-modal.zone-trust-dialog {
+  .app-modal__title {
+    font-size: var(--app-font-size-xl);
+  }
+
+  .app-modal__body p {
+    margin: 0 0 var(--app-spacing-sm);
+    font-size: var(--app-font-size-lg);
+    line-height: 1.4;
+    color: var(--app-text-primary);
+  }
+
+  .app-modal__footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--app-spacing-md);
+  }
+}
+
+.zone-trust-dialog__reading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--app-spacing-xs);
+}
+
+.zone-trust-dialog__bpm {
+  font-size: var(--app-font-size-3xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--app-text-secondary);
+}
+
+.zone-trust-dialog__unit {
+  font-size: var(--app-font-size-md);
+  color: var(--app-text-muted);
+}
+
+.app-modal.zone-trust-dialog .app-modal__body .zone-trust-dialog__hint {
+  color: var(--app-text-secondary);
+}
+
+.app-modal.zone-trust-dialog .app-modal__body .zone-trust-dialog__error {
+  color: var(--app-text-accent);
+}

@@ -82,6 +82,12 @@ export class AmbientLedAdapter extends IZoneLedController {
     this.graceTimer = null;
     this.graceStartedAt = null;
 
+    // A change that lands inside the throttle window is applied when the
+    // window ends (latest wins) rather than dropped: the frontend sends each
+    // committed zone change once, so a dropped one left the strips on the old
+    // colour until some other rider changed zone.
+    this.deferTimer = null;
+
     // Metrics
     this.metrics = {
       totalRequests: 0,
@@ -143,6 +149,13 @@ export class AmbientLedAdapter extends IZoneLedController {
    * Resolve scene from config with fallback chain
    * @private
    */
+  #clearDeferTimer() {
+    if (this.deferTimer) {
+      clearTimeout(this.deferTimer);
+      this.deferTimer = null;
+    }
+  }
+
   #resolveSceneFromConfig(sceneConfig, zoneKey) {
     if (!sceneConfig || typeof sceneConfig !== 'object') return null;
 
@@ -274,6 +287,8 @@ export class AmbientLedAdapter extends IZoneLedController {
   async syncZone({ zones = [], sessionEnded = false, householdId }) {
     this.metrics.totalRequests++;
     const now = Date.now();
+    // Any newer request supersedes a deferred one.
+    this.#clearDeferTimer();
 
     // Track session events
     if (sessionEnded) {
@@ -444,15 +459,25 @@ export class AmbientLedAdapter extends IZoneLedController {
     const elapsed = now - this.lastActivatedAt;
     if (elapsed < throttleMs && !sessionEnded) {
       this.metrics.skippedRateLimited++;
-      this.#logger.debug?.('fitness.zone_led.skipped', {
+      const deferMs = throttleMs - elapsed;
+      this.#logger.debug?.('fitness.zone_led.deferred', {
         reason: 'rate_limited',
         elapsed,
-        throttleMs
+        throttleMs,
+        deferMs,
+        scene: targetScene
       });
+      this.deferTimer = setTimeout(() => {
+        this.deferTimer = null;
+        this.syncZone({ zones, sessionEnded: false, householdId }).catch(() => {});
+      }, deferMs);
+      this.deferTimer.unref?.();
       return {
         ok: true,
         skipped: true,
+        deferred: true,
         reason: 'rate_limited',
+        deferMs,
         scene: this.lastScene
       };
     }
@@ -660,6 +685,7 @@ export class AmbientLedAdapter extends IZoneLedController {
 
     // Clear grace timer if active
     this.#clearGraceTimer();
+    this.#clearDeferTimer();
 
     this.failureCount = 0;
     this.backoffUntil = 0;

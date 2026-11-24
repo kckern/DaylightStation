@@ -810,10 +810,13 @@ HR oscillating: 99 → 101 → 99 → 101
 WITHOUT hysteresis:     cool → active → cool → active  (flickering)
 WITH hysteresis:        cool ──────────────────────────  (stable for 3s before committing)
 
-Rules:
+Rules (household `zone_stability:` in fitness config.yml; defaults shown):
   • First zone transition: instant (no wait)
-  • Subsequent transitions: require 3s of continuous new zone
-  • Cooldown after commit: 5s before next transition allowed
+  • A change after a quiet cooldown (5s since the last commit): instant down;
+    up needs 2 samples over 1s (Fire: 2s with a reading above the floor, or 5s)
+  • A change inside the cooldown (a bounce back): must hold 3s to commit
+  • Leaving a zone: HR must fall exit_margin_bpm below its floor (default 5;
+    the household runs 2 since 2026-11-23)
 ```
 
 ### Ladder validation (ZoneProfileStore)
@@ -1278,12 +1281,14 @@ The `AmbientLedAdapter` controls physical LED strips that change color with the 
 HR Zone Change (ZoneProfileStore)
      │
      ▼
-FitnessContext → POST /api/fitness/zone_led
-     │
+FitnessContext (useZoneLedSync) → POST /api/fitness/zone_led
+     │   each committed change within ~250ms, at most one POST a second
+     │   (was 5s, which left the lights ~2s behind the zone on 2026-11-23)
      ▼
 AmbientLedAdapter
      │
-     ├── Rate limiter (2s throttle) — prevents rapid scene switching
+     ├── Rate limiter (throttle_ms, 2s) — a change inside the window is
+     │   applied when the window ends (latest wins), never dropped
      ├── Deduplication — skip if same scene as last
      ├── Grace period (30s) — delay "off" to avoid flicker during transient drops
      ├── Circuit breaker (5 max failures, exponential backoff up to 60s)

@@ -7,7 +7,7 @@
  */
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { render, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const testState = vi.hoisted(() => ({ context: null }));
 
@@ -20,6 +20,10 @@ vi.mock('@/lib/logging/Logger.js', () => {
   const logger = { child: () => logger, debug: noop, info: noop, warn: noop, error: noop, sampled: noop };
   return { default: () => logger };
 });
+
+vi.mock("../../identity/useIdentity.js", () => ({
+  useIdentity: () => ({ registerAdmin: () => new Promise(() => {}), clearUnlock: () => {}, unlockState: 'idle' }),
+}));
 
 vi.mock('@mantine/core', () => ({ Badge: ({ children, title }) => <span className="zone-badge" title={title}>{children}</span> }));
 
@@ -101,5 +105,54 @@ describe('FitnessUsers zone badge with a live reading', () => {
     await waitFor(() => expect(container.querySelectorAll('.device-name').length).toBe(3));
     expect(badges(container)).toEqual(['Hot', 'Warm']);
     expect(container.textContent).not.toMatch(/No Zone/i);
+  });
+});
+
+// 2026-11-23 (owner): a reading the zone store has not accepted earns nothing
+// and claims no zone, however hot it reads. The card says so with stripes and
+// a "?" that opens the admin unlock; nothing covers the screen.
+describe('FitnessUsers card for an untrusted reading', () => {
+  const untrustedProfile = (over = {}) => ({
+    id: 'rider-a', name: 'Rider A', displayName: 'Rider A', heartRate: 165, zoneTrusted: false,
+    zoneReadingEligible: true, zoneReadingDeviceId: '101', trustRevision: 1,
+    zoneConfig: ZONES, currentZoneId: null, ...over,
+  });
+
+  it('shows no zone colour, the stripes and the "?" mark, with the BPM still printed', async () => {
+    testState.context = context([participant({ heartRate: 165, rawZoneId: 'hot' })], {
+      zoneProfiles: [untrustedProfile()],
+      fitnessSessionInstance: { getEquipmentUser: () => null, sessionId: 's1', endTime: null },
+    });
+    const { container } = render(<FitnessUsersList />);
+    await waitFor(() => expect(container.querySelector('.device-name')).not.toBeNull());
+    const card = container.querySelector('.fitness-device');
+    expect(card.classList.contains('zone-untrusted')).toBe(true);
+    expect(card.classList.contains('zone-hot')).toBe(false);
+    expect(container.querySelector('.trust-stripes')).not.toBeNull();
+    expect(container.querySelector('.device-value').textContent).toBe('165');
+    expect(badges(container)).toEqual(['Unknown']);
+  });
+
+  it('the "?" opens that rider\'s dialog and does not start a reassignment', async () => {
+    const onRequestGuestAssignment = vi.fn();
+    testState.context = context([participant({ heartRate: 165, rawZoneId: 'hot' })], {
+      zoneProfiles: [untrustedProfile()],
+      fitnessSessionInstance: { getEquipmentUser: () => null, sessionId: 's1', endTime: null },
+    });
+    const { container } = render(<FitnessUsersList onRequestGuestAssignment={onRequestGuestAssignment} />);
+    await waitFor(() => expect(container.querySelector('.trust-mark')).not.toBeNull());
+    fireEvent.click(container.querySelector('.trust-mark'));
+    expect(onRequestGuestAssignment).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: "Rider A's heart rate isn't trusted yet" })).toBeTruthy();
+  });
+
+  it('a trusted rider has no mark', async () => {
+    testState.context = context([participant({ heartRate: 165, zoneId: 'hot', zoneTrusted: true, rawZoneId: 'hot' })], {
+      zoneProfiles: [untrustedProfile({ zoneTrusted: true, currentZoneId: 'hot', currentZoneColor: 'orange' })],
+    });
+    const { container } = render(<FitnessUsersList />);
+    await waitFor(() => expect(container.querySelector('.device-name')).not.toBeNull());
+    expect(container.querySelector('.trust-mark')).toBeNull();
+    expect(container.querySelector('.fitness-device.zone-hot')).not.toBeNull();
   });
 });

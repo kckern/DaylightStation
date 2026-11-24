@@ -54,17 +54,19 @@ describe('buildParticipantDisplayMap', () => {
     expect(entry.display).toMatchObject({ zoneId: 'warm', live: true, showBar: true });
   });
 
-  test('display follows the BPM shown, not the committed zone held by the exit margin', () => {
-    // Committed Hot (floor 140) held at 137 bpm: the chip and card show Warm,
-    // measured on the Warm band — never a Hot colour over a Warm-band bar.
+  test('display holds the committed zone while the exit margin holds it', () => {
+    // Committed Hot (floor 140) held at 137 bpm. Since 2026-11-17 the display
+    // follows the commit (lib/displayZone.js: the ring turns when the room
+    // does), with the bar pinned empty while the drop is held — never a Hot
+    // colour over a Warm-band bar.
     const map = buildParticipantDisplayMap([
       { ...mockProfiles[0], heartRate: 137, currentZoneId: 'hot', currentZoneColor: 'orange' }
     ], mockRoster);
     const entry = map.get('user one');
     expect(entry.zoneId).toBe('hot');
-    expect(entry.display.zoneId).toBe('warm');
-    expect(entry.display.zoneColor).toBe('yellow');
-    expect(entry.progress).toBeCloseTo(0.85, 5);
+    expect(entry.display.zoneId).toBe('hot');
+    expect(entry.display.progress).toBe(0);
+    expect(entry.display.showBar).toBe(true);
   });
 
   test('surfaces zoneIndex from profile.zoneSnapshot for sort keys', () => {

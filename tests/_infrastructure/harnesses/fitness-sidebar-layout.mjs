@@ -3,7 +3,7 @@
  * Isolated real-component/styles sidebar, menu, and ceremony geometry checks.
  * No backend or hardware connection: all context data is synthetic and every
  * network request is confined to this ephemeral loopback fixture server.
- * Run: node tests/_infrastructure/harnesses/fitness-sidebar-layout.mjs [chromium|firefox] [--integration-only] [--only=roster,trend,menu,toast,home,transition,integration] [--out-dir <dir>]
+ * Run: node tests/_infrastructure/harnesses/fitness-sidebar-layout.mjs [chromium|firefox] [--integration-only] [--only=roster,trend,untrusted,menu,toast,home,transition,integration] [--out-dir <dir>]
  * --only runs just the named sections (cheap targeted checks); the default runs all of them.
  * Screenshots and geometry.json go to a fresh per-run directory under the OS temp dir
  * (fitness-harness-XXXXXX) unless --out-dir or FITNESS_HARNESS_OUT_DIR names one.
@@ -64,21 +64,27 @@ const fixtureMedia = document.createElement('video');
 const root = createRoot(document.getElementById('root'));
 import { installIntegration } from './tests/_infrastructure/harnesses/fitness-integration-fixture.jsx';
 installIntegration(root, FixtureContext);
-window.renderFixture = ({ count = 5, width = 300, height = 650, rpm = 0, zones = 1, inactive = false, menu = null, people = 0, achievement = false, home = false, gov = false, media = false, ticks = 0 }) => {
+window.renderFixture = ({ count = 5, width = 300, height = 650, rpm = 0, zones = 1, inactive = false, menu = null, people = 0, achievement = false, home = false, gov = false, media = false, ticks = 0, untrusted = [] }) => {
   const zoneIds = ['cool', 'active', 'warm', 'hot', 'fire'];
   const devices = Array.from({ length: count }, (_, i) => ({
     id: 'rider-' + i, profileId: 'rider-' + i, deviceId: String(101 + i), type: 'heart_rate', heartRate: 123 + i,
     name: 'Long Participant Name ' + i, zoneId: zoneIds[i % zones], rawZoneId: 'fire', isActive: !inactive, lastSeen: Date.now()
   }));
+  // Riders whose reading the zone store has not accepted yet (ZoneTrustDialog).
+  for (const i of untrusted) Object.assign(devices[i], { heartRate: 165, zoneId: null, zoneTrusted: false });
+  const ladder = [['cool', 0], ['active', 100], ['warm', 120], ['hot', 140], ['fire', 160]].map(([id, min]) => ({ id, name: id, min }));
+  const untrustedProfiles = untrusted.map(i => ({ id: devices[i].profileId, name: devices[i].name, displayName: devices[i].name,
+    heartRate: 165, zoneTrusted: false, zoneReadingEligible: true, zoneReadingDeviceId: devices[i].deviceId, trustRevision: 1,
+    zoneConfig: ladder, currentZoneId: null }));
   const context = {
     connected: true, fitnessDevices: new Map(devices.map(d => [d.deviceId, d])), allDevices: devices,
     participantRoster: devices, participantsByDevice: Object.fromEntries(devices.map(d => [d.deviceId,d])),
     activeHeartRateParticipants: sortByZoneRank(devices), rpmDevices: Array.from({length:rpm}, (_, i) => ({ deviceId: String(200 + i), type: 'cadence', cadence: 45, isActive: true })), equipmentDevices: [],
     deviceConfiguration: { hr: {}, cadence: {} }, equipment: [], users: [],
-    hrColorMap: Object.fromEntries(devices.map(d => [d.deviceId, 'purple'])), zones: [], zoneProfiles: [],
+    hrColorMap: Object.fromEntries(devices.map(d => [d.deviceId, 'purple'])), zones: [], zoneProfiles: untrustedProfiles,
     deviceAssignments: [], zoneProgressIndex: new Map(), userCollections: { all: [] }, deviceOwnership: {}, pressureMatActivities: {},
     getDisplayName: id => ({ displayName: 'Long Participant Name ' + id, source: 'fixture' }),
-    fitnessSessionInstance: { getEquipmentUser: () => null },
+    fitnessSessionInstance: { getEquipmentUser: () => null, sessionId: 'fixture-session', endTime: null, approveZoneTrust: () => ({ ok: true }) },
     ...(ticks ? {
       timelineTimebase: { tickCount: ticks, intervalMs: 5000 },
       // Zones arrive the way production delivers them: on the ZoneProfileStore
@@ -129,6 +135,9 @@ const bundle = await build({
       contents: "import React from 'react'; export const FixtureContext = React.createContext({}); export const useFitnessContext = () => React.useContext(FixtureContext);",
       resolveDir: join(repo, 'frontend'),
     }));
+    builder.onResolve({ filter: /identity\/useIdentity\.js$/ }, () => ({ path: 'fixture-identity', namespace: 'identity' }));
+    builder.onLoad({ filter: /.*/, namespace: 'identity' }, () => ({ contents:
+      'const identity = { registerAdmin: () => new Promise(() => {}), clearUnlock: () => {}, unlockState: "idle", unlockedUser: null }; export const useIdentity = () => identity; export const useOptionalIdentity = () => identity;' }));
     builder.onResolve({ filter: /logging\/singleton\.js$/ }, () => ({path:'fixture-singleton',namespace:'singleton'}));
     builder.onLoad({filter:/.*/,namespace:'singleton'},()=>({contents:'export const getChildLogger = () => ({info:()=>{},debug:()=>{},warn:()=>{},error:()=>{},sampled:()=>{}});'}));
     builder.onResolve({ filter: /logging\/Logger\.js$/ }, () => ({ path: 'fixture-logger', namespace: 'logger' }));
@@ -344,6 +353,41 @@ try {
     if (options.count===1) assert.ok(options.ticks>=1 ? trend[0].height>132 : trend[0].height<=132,'single-rider cap follows the trend: '+JSON.stringify(trend));
     evidence.push({trend:options,cards:trend});
     await page.screenshot({path:artifact('trend-'+options.count+'-'+options.ticks+'.png')});
+  }
+  // Untrusted reading: the card shows stripes and a "?" (no zone colour), and
+  // the "?" opens one rider's dialog above the player chrome.
+  if (has('untrusted')) {
+    await page.setViewportSize({width:1381,height:777});
+    await page.evaluate(()=>window.renderFixture({count:3,zones:3,width:300,height:597,untrusted:[1]}));
+    await page.waitForTimeout(500);
+    const card = await page.evaluate(() => {
+      const cards=[...document.querySelectorAll('.fitness-device.heart-rate')];
+      const marked=cards.filter(c=>c.classList.contains('zone-untrusted'));
+      const c=marked[0]; const r=c?.getBoundingClientRect(); const m=c?.querySelector('.trust-mark')?.getBoundingClientRect();
+      return {cards:cards.length,marked:marked.length,zoneClass:c?[...c.classList].filter(k=>k.startsWith('zone-')):[],
+        stripes:!!c?.querySelector('.trust-stripes'),value:c?.querySelector('.device-value')?.textContent,
+        mark:m?{w:m.width,h:m.height,inside:m.top>=r.top&&m.right<=r.right+0.5&&m.left>=r.left&&m.bottom<=r.bottom}:null};
+    });
+    assert.equal(card.marked,1,'one untrusted card: '+JSON.stringify(card));
+    assert.deepEqual(card.zoneClass,['zone-untrusted'],'untrusted card claims no zone: '+JSON.stringify(card));
+    assert.ok(card.stripes && card.value==='165','stripes and the BPM: '+JSON.stringify(card));
+    assert.ok(card.mark && card.mark.w>=30 && card.mark.inside,'"?" visible inside the card: '+JSON.stringify(card));
+    await page.screenshot({path:artifact('untrusted-card.png')});
+    await page.click('.fitness-device.zone-untrusted .trust-mark');
+    await page.waitForTimeout(300);
+    const dialog = await page.evaluate(() => {
+      const d=document.querySelector('[role="dialog"].zone-trust-dialog'); const o=d?.closest('.app-modal-overlay');
+      return {open:!!d,title:d?.querySelector('.app-modal__title')?.textContent,z:o?Number(getComputedStyle(o).zIndex):null,
+        buttons:[...(d?.querySelectorAll('button')||[])].map(b=>b.textContent.trim()).filter(Boolean)};
+    });
+    assert.ok(dialog.open && /isn't trusted yet/.test(dialog.title),'dialog opens for the rider: '+JSON.stringify(dialog));
+    assert.ok(dialog.z>2001,'dialog above the player chrome: '+JSON.stringify(dialog));
+    assert.ok(dialog.buttons.includes('Admin unlock') && dialog.buttons.includes('Close'),'dialog actions: '+JSON.stringify(dialog));
+    evidence.push({untrusted:true,card,dialog});
+    await page.screenshot({path:artifact('untrusted-dialog.png')});
+    await page.click('.zone-trust-dialog .app-button--secondary');
+    await page.waitForTimeout(200);
+    assert.equal(await page.locator('.zone-trust-dialog').count(),0,'Close closes the dialog');
   }
   for(const options of !has('transition') ? [] : [{count:8,rpm:5,zones:3},{count:3,rpm:1,zones:1},{count:5,rpm:5,zones:3,width:250},{count:5,rpm:2,zones:2,width:345}]) {
     await page.evaluate(options=>window.renderFixture({...options,height:597}),options);

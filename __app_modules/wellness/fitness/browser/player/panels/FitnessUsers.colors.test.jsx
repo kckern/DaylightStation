@@ -68,14 +68,23 @@ describe('FitnessUsers strap identity and earned zone', () => {
   });
 
   // An explicitly null committed profile is never revived as EARNED state (the
-  // participant's 'hot' stays out), but the card shows the live reading's zone.
-  it.each([false, true])('shows the live reading\'s zone, not the stale committed one, over a null profile (trust %s)', async (zoneTrusted) => {
+  // participant's 'hot' stays out), but a trusted card shows the live reading's zone.
+  it('shows the live reading\'s zone, not the stale committed one, over a null profile', async () => {
     testState.context = { ...context({ name: 'Rider A', zoneId: 'hot', rawZoneId: 'fire' }),
-      zoneProfiles: [{ id: 'rider-a', name: 'Rider A', zoneTrusted, currentZoneId: null }] };
+      zoneProfiles: [{ id: 'rider-a', name: 'Rider A', zoneTrusted: true, currentZoneId: null }] };
     const { container } = render(<FitnessUsersList />);
     await waitFor(() => expect(container.querySelector('.fitness-device.zone-fire')).toBeTruthy());
     expect(container.querySelector('.fitness-device.zone-hot')).toBeNull();
     expect(hex(container.querySelector('.fitness-heart-icon').style.color)).toBe('#b07cf7');
+  });
+  // 2026-11-23 (owner): an untrusted reading claims no zone, however hot it reads.
+  it('an untrusted profile shows the untrusted mark, neither the live nor the stale zone', async () => {
+    testState.context = { ...context({ name: 'Rider A', zoneId: 'hot', rawZoneId: 'fire' }),
+      zoneProfiles: [{ id: 'rider-a', name: 'Rider A', zoneTrusted: false, currentZoneId: null }] };
+    const { container } = render(<FitnessUsersList />);
+    await waitFor(() => expect(container.querySelector('.fitness-device.zone-untrusted')).toBeTruthy());
+    expect(container.querySelector('.fitness-device.zone-fire')).toBeNull();
+    expect(container.querySelector('.fitness-device.zone-hot')).toBeNull();
   });
   it('shows No Zone only when there is no reading', async () => {
     testState.context = { ...context({ name: 'Rider A', zoneId: null, rawZoneId: 'fire', heartRate: null }),
@@ -93,9 +102,10 @@ describe('FitnessUsers strap identity and earned zone', () => {
       ] };
     const { container } = render(<FitnessUsersList />);
     await waitFor(() => expect(container.querySelector('.fitness-device')).toBeTruthy());
-    // The owner's committed Hot never leaks onto the guest; the guest's own live reading does show.
+    // The owner's committed Hot never leaks onto the guest; the guest's own
+    // profile decides, and it is untrusted, so the card claims no zone.
     expect(container.querySelector('.fitness-device').classList.contains('zone-hot')).toBe(false);
-    expect(container.querySelector('.fitness-device').classList.contains('zone-fire')).toBe(true);
+    expect(container.querySelector('.fitness-device').classList.contains('zone-untrusted')).toBe(true);
   });
 
 });
