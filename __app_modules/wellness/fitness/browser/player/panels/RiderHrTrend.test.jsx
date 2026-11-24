@@ -24,11 +24,15 @@ const lastPoint = (d) => {
 };
 
 describe('RiderHrTrend', () => {
-  it('shows the collecting spinner until five real readings, keeping its box', () => {
+  it('shows a flat baseline and "Reading heart rate…" until five real readings, keeping its box', () => {
     const s = { heart_rate: [110, null, 120, 125] };
     const { container } = render(<RiderHrTrend {...base} getSeries={(_i, m) => s[m]} tickCount={4} />);
-    expect(container.querySelector('.rider-hr-trend--loading[role="status"]')).not.toBeNull();
-    expect(container.querySelector('.rider-hr-trend__spinner')).not.toBeNull();
+    const box = container.querySelector('.rider-hr-trend--loading[role="status"]');
+    expect(box).not.toBeNull();
+    expect(box.querySelector('.rider-hr-trend__baseline')).not.toBeNull();
+    expect(box.querySelector('.rider-hr-trend__label').textContent).toBe('Reading heart rate…');
+    // The lone spinner ring read as stuck on the garage display (2026-11-24).
+    expect(container.querySelector('.rider-hr-trend__spinner')).toBeNull();
     expect(container.querySelector('svg')).toBeNull();
   });
 

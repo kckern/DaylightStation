@@ -6,6 +6,17 @@ import "./FitnessGovernance.scss";
 
 const STATUS_PRIORITY = ['locked', 'red', 'warning', 'yellow', 'unlocked', 'green', 'init', 'idle', 'off', 'pending'];
 
+// Statuses with nothing to say: the engine reports 'idle' when it has no
+// phase yet, 'off' is a legacy name for the same. The bar is hidden for them
+// rather than showing a lock and an empty grey pill.
+const SILENT_STATUSES = new Set(['idle', 'off']);
+
+// Words for statuses whose pill has no striped bar. 'pending' is the engine's
+// phase before the requirements have ever been met (GovernanceEngine).
+const STATUS_TEXT = {
+  pending: 'Waiting for riders'
+};
+
 // Map status to stripe animation speeds
 const STRIPE_SPEEDS = {
   green: 0.5,
@@ -68,9 +79,10 @@ const FitnessGovernance = () => {
     return `${seconds}`;
   }, [summary.nextChallengeRemaining]);
 
-  if (!governanceState?.isGoverned) {
+  if (!governanceState?.isGoverned || SILENT_STATUSES.has(summary.status)) {
     return null;
   }
+  const statusText = STATUS_TEXT[summary.status] || null;
 
   return (
     <div className={`fitness-governance ${statusClass}`}>
@@ -88,6 +100,7 @@ const FitnessGovernance = () => {
         </div>
         
         <div className={`fg-status-pill fg-${statusColor}`}>
+          {statusText ? <span className="fg-status-text">{statusText}</span> : null}
           {(summary.status === 'unlocked' || summary.status === 'warning' || summary.status === 'locked' ||
             summary.status === 'green' || summary.status === 'yellow' || summary.status === 'red' || summary.status === 'init') && (
             <StripedProgressBar

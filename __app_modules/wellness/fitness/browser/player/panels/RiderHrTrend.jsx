@@ -44,8 +44,8 @@ function frameAt({ chart, prevRange }, f) {
 
 /**
  * Whole-session HR sparkline for a tall rider card. Until the rider has
- * TREND_MIN_READINGS real readings it shows a collecting spinner in the same
- * box. Then: one monotone curve on a log time axis (hrTrendScale.js), drawn in
+ * TREND_MIN_READINGS real readings it shows a faint dashed baseline and a
+ * "Reading heart rate…" label in the same box. Then: one monotone curve on a log time axis (hrTrendScale.js), drawn in
  * (x, bpm) user space and referenced once per zone band, each copy clipped to
  * its band and stroked in the band's colour — so the colour changes exactly
  * where the line crosses a threshold.
@@ -142,8 +142,9 @@ const RiderHrTrend = ({ participantId, getSeries, tickCount, tickMs, zones, prof
 
   if (!ready) {
     return (
-      <div className="rider-hr-trend rider-hr-trend--loading" role="status" aria-label="Collecting heart rate">
-        <span className="rider-hr-trend__spinner" />
+      <div className="rider-hr-trend rider-hr-trend--loading" role="status" aria-label="Reading heart rate">
+        <span className="rider-hr-trend__baseline" aria-hidden="true" />
+        <span className="rider-hr-trend__label">Reading heart rate…</span>
       </div>
     );
   }

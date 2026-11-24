@@ -73,10 +73,20 @@
     position: relative;
     overflow: hidden;
 
+    // Plain words in the pill (e.g. "Waiting for riders"), read from the bike.
+    .fg-status-text {
+      position: relative;
+      z-index: 1;
+      font-size: 16px;
+      text-transform: none;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+
     &.fg-grey,
     &.fg-gray {
       background: rgba(156, 163, 175, 0.2);
-      color: #9ca3af;
+      color: #c4c9d1;
       box-shadow: 0 0 0 rgba(156, 163, 175, 0);
     }
 
