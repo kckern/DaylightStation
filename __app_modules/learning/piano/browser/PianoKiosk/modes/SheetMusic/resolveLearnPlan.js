@@ -173,6 +173,8 @@ export function resolveLearnPlan({ defaults = SHEET_MUSIC_DEFAULTS.learn, catego
     navigation, segments, ladder, testOut, ...tempo,
     settings: { passages: normalized.passages, tempo: normalized.tempo, feedback: normalized.feedback },
     certification: normalized.certification,
+    // Household `goldTempos` / `minBpm`, overridden per piece (`pieces.<scoreId>`) like every Learn setting.
+    goldLadder: normalized.goldLadder,
     // Household-only, exactly as the server reads it (`sheetmusic.learn.skipping`): a category or
     // piece layer must not open steps the server would refuse.
     skipping: normalizeSkipping(defaults?.skipping),

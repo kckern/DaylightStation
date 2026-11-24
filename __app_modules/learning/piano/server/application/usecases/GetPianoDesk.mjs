@@ -55,8 +55,12 @@ export class GetPianoDesk {
     if (!scoreId || !fingerprint) return null;
     const segments = recordSegments(record, this.#learnSegments?.(scoreId, fingerprint));
     if (!segments.length) return null;
-    const certification = this.#configProjection.raw?.()?.sheetmusic?.learn?.certification;
-    const projection = projectRecord({ record, scoreId, segments, certification, dayKey });
+    const learn = this.#configProjection.raw?.()?.sheetmusic?.learn;
+    const certification = learn?.certification;
+    // The Gold ladder's speeds, household then piece (`pieces.<scoreId>`), as the kiosk resolves them.
+    const piece = learn?.pieces?.[scoreId];
+    const goldLadder = { tempos: piece?.goldTempos ?? learn?.goldTempos, minBpm: piece?.minBpm ?? learn?.minBpm };
+    const projection = projectRecord({ record, scoreId, segments, certification, goldLadder, dayKey });
     const passages = projection.segments.filter((segment) => segment.kind !== 'join').map(passageProgress);
     // A piece someone only opened or tried is not one they are learning.
     if (!passages.some((passage) => passage.steps.done > 0 || passage.state === 'silver' || passage.state === 'gold')) return null;

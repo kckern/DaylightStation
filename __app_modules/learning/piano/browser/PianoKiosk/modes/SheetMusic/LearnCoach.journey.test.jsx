@@ -154,7 +154,7 @@ describe('real Learn journey',()=>{
    expect(await page.locator('.piano-passage-path__caption').innerText()).toBe('A in time');
    await click(page,'A in time, bars 1–2');await page.locator('.piano-learn-lab__task').filter({hasText:'Tap the rhythm'}).waitFor();await page.screenshot({path:path.join(ARTIFACTS,'silver-certified.png')});
    // The Gold lap's steps only, none done yet, headed "A · steps to Gold".
-   expect(await page.locator('.drill-cluster').count()).toBe(8);expect(await page.locator('.drill-cluster[data-done]').count()).toBe(0);
+   expect(await page.locator('.drill-cluster').count()).toBe(7);expect(await page.locator('.drill-cluster[data-done]').count()).toBe(0);
    expect(await page.locator('.drill-progress__head').getAttribute('aria-label')).toBe('A, steps to Gold');
    expect(errors).toEqual([]);
   }finally{await page.close();}
@@ -295,7 +295,7 @@ describe('real Learn journey',()=>{
    // There is no practice chooser; a step is chosen from the sets, each a full touch target.
    expect(await page.getByRole('button',{name:'Change practice'}).count()).toBe(0);
    const sets=await page.locator('button.drill-cluster').evaluateAll(list=>list.map(el=>{const r=el.getBoundingClientRect();return{w:r.width,h:r.height,top:r.top,bottom:r.bottom,clip:el.querySelector('.drill-cluster__label').getBoundingClientRect().top>=el.closest('.piano-exercise-run__rail').getBoundingClientRect().top};}));
-   expect(sets).toHaveLength(8);expect(new Set(sets.map(set=>Math.round(set.top))).size).toBe(1);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);expect(sets.every(set=>set.w>=64&&set.h>=56&&set.clip)).toBe(true);
+   expect(sets).toHaveLength(7);expect(new Set(sets.map(set=>Math.round(set.top))).size).toBe(1);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);expect(sets.every(set=>set.w>=64&&set.h>=56&&set.clip)).toBe(true);
    expect(f.attempts.size).toBe(saved);expect(errors).toEqual([]);
   }finally{await page.close();}
  },90000);

@@ -269,6 +269,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
     <ExerciseRun rhythmOnly={rhythm} {...(maxCueRestarts != null ? { maxCueRestarts } : {})}
       key={`${segment.id}:${rung.id}:${take}`} instance={null} score={runScore} intent="practice"
       practiceMode={rung.mode} practiceRequirement={requirement} programId={projection.id}
+      leadInLoop={rung.mode === 'cued' && coachingTask?.leadIn === true && !rhythm}
       clickGain={clickLevel.gain}
       stepId={drill ? drill.stepId : projection.steps[stepIndex]?.id} drillProjection={projection}
       hideHeading scoreLayoutPolicy="whole-passage"

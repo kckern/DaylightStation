@@ -3,7 +3,7 @@ import { createCoachPlan, projectCoach, applyCoachEvent, coachSummary, buildJoin
 
 const seg = (n, parts = ['rh', 'lh']) => ({ id: `p${n}`, inMeasure: (n - 1) * 4, outMeasure: n * 4 - 1, printedMeasures: [String((n - 1) * 4 + 1), String(n * 4)], playableParts: parts });
 const many = (count, parts) => Array.from({ length: count }, (_, i) => seg(i + 1, parts));
-const planOf = (count = 6, parts) => createCoachPlan({ scoreId: 'files:t.musicxml', fingerprint: 'fp', segments: many(count, parts), tempoMap: [{ onsetQuarter: 0, bpm: 100 }] });
+const planOf = (count = 6, parts) => createCoachPlan({ scoreId: 'files:t.musicxml', fingerprint: 'fp', segments: many(count, parts), tempoMap: [{ onsetQuarter: 0, bpm: 100 }], goldLadder: { minBpm: 40 } });
 const good = { status: 'completed', inputContractVersion: 'onsets-v1', criteria: { completeness: 1, cleanliness: 0.95, placement: 0.95 }, verdict: { passed: true }, diagnostics: { expected_notes: 10, matched_notes: 10, wrong_notes: 0, missed_notes: 0 } };
 const bad = { ...good, criteria: { completeness: 0.4, cleanliness: 0.4, placement: 0.4 }, diagnostics: { expected_notes: 10, matched_notes: 4, wrong_notes: 6, missed_notes: 6 } };
 const dayKey = '2026-11-23';
@@ -125,10 +125,10 @@ describe('a plan handed back to createCoachPlan', () => {
 describe('join Gold (stage 3)', () => {
   const gold = (plan, id, skill) => plan.segments.find((s) => s.id === id).tasks.find((t) => t.skill === skill);
   const goldAll = (state, plan, ids) => ids.reduce((acc, id) => { const t = gold(plan, id, 'mastery'); return play(play(acc, plan, t), plan, t); }, state);
-  it('gives a join a Gold ladder: 50, 75, score tempo', () => {
+  it('gives a join a Gold ladder at the plan speeds: 50, 70, 85, score tempo', () => {
     const plan = planOf(4);
     const join = plan.segments.find((s) => s.id === 'join:p1:p2');
-    expect(join.tasks.filter((t) => t.track === 'gold').map((t) => [t.skill, t.tempoPercent, t.mode])).toEqual([['timed-50', 50, 'cued'], ['timed-75', 75, 'cued'], ['mastery', 100, 'cued']]);
+    expect(join.tasks.filter((t) => t.track === 'gold').map((t) => [t.skill, t.tempoPercent, t.mode])).toEqual([['timed-50', 50, 'cued'], ['timed-70', 70, 'cued'], ['timed-85', 85, 'cued'], ['mastery', 100, 'cued']]);
     expect(join.demonstration).toBe(join.tasks.find((t) => t.mastery));
   });
   it('unlocks join Gold only when the join has Silver and both halves are Gold', () => {
@@ -142,7 +142,7 @@ describe('join Gold (stage 3)', () => {
     state = goldAll(state, plan, ['p2']);
     expect(proj(plan, state).gold['join:p1:p2']).toMatchObject({ skill: 'mastery' }); // test out first
   });
-  it('a failed test-out walks 50, 75, then score tempo', () => {
+  it('a failed test-out walks 50, 70, 85, then score tempo', () => {
     const plan = planOf(4);
     let state = goldAll(play(bronze(undefined, plan, ['p1', 'p2']), plan, check(plan, 'join:p1:p2')), plan, ['p1', 'p2']);
     const top = gold(plan, 'join:p1:p2', 'mastery');
@@ -354,10 +354,10 @@ describe('step down to the smaller join (2026-11-23 late)', () => {
   });
   it('a timed step down on a join\'s Gold credits none of the passage\'s Gold rungs', () => {
     const plan = planOf(4);
-    const timed = plan.segments.find((s) => s.id === 'join:p1:p2').tasks.find((t) => t.skill === 'timed-75');
+    const timed = plan.segments.find((s) => s.id === 'join:p1:p2').tasks.find((t) => t.skill === 'timed-70');
     let state = missTwice(ready4(plan), plan, timed, { ...bad, spans: spansOf({ 1: 3, 2: 2 }) });
     const down = projectCoach({ plan, state, dayKey }).goldResume;
-    expect(down).toMatchObject({ reason: 'smaller-join', stepDown: 'p1', mode: 'cued', tempoPercent: 75, range: { start: 0, end: 3 } });
+    expect(down).toMatchObject({ reason: 'smaller-join', stepDown: 'p1', mode: 'cued', tempoPercent: 70, range: { start: 0, end: 3 } });
     state = play(play(state, plan, down), plan, down);
     const p1 = proj(plan, state).segments.find((s) => s.id === 'p1');
     expect(p1.skills.filter((t) => t.track === 'gold').some((t) => t.ready)).toBe(false);

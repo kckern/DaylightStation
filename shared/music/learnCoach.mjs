@@ -14,12 +14,15 @@ export const FLOWER_AFTER = Object.freeze(['both-hands', 'together', 'first-step
 const LEGACY_STEP_PASSES = 6;
 /** Days after a piece is played through before its retention run is offered (and again after each run). */
 export const RETENTION_DAYS = 3;
-/** The cued Gold steps below score tempo. The ladder was 60/80 until 2026-11; earned keys at other tempos carry over. */
-const GOLD_TEMPOS = Object.freeze([30, 50, 75]);
-/** Where a timing-only miss steps down to, one rung at a time. */
-/** The tempo of the rhythm step (pitch-free, X noteheads) that comes before the metronome steps. */
-export const RHYTHM_TEMPO = 50;
-const SLOWER_TEMPOS = Object.freeze([30, 40, ...GOLD_TEMPOS.slice(1), 100]);
+/**
+ * The Gold ladder's speeds (2026-11-23 late night): the timed steps' tempos, ascending, the last 100, and a floor
+ * in beats per minute that lifts any rung that would be slower. Household `sheetmusic.learn.goldTempos` and
+ * `minBpm`, with a per-piece override. Was 30·50·75·100 (and 60/80 before that); earned keys at any old speed
+ * still prove every rung at or below it.
+ */
+export const GOLD_LADDER_DEFAULTS = Object.freeze({ tempos: Object.freeze([50, 70, 85, 100]), minBpm: 60 });
+/** The tempo of the rhythm step (pitch-free, X noteheads): score tempo, stepped down by the slower-beat recovery. */
+export const RHYTHM_TEMPO = 100;
 /** Ladder shape a saved state was written under: 2 = each hand with the beat at 50% (2026-11-22). */
 const LADDER_REVISION = 3;
 const ONE_HAND_BEAT = /^timed-\d+-(rh|lh)$/;
@@ -33,6 +36,26 @@ export const MAX_DRILL_DEPTH = 3;
 const wholeIn = (value, fallback) => (Number.isInteger(value) && value >= 1 && value <= MAX_POLICY_PASSES ? value : fallback);
 
 /** YAML-defined certification policy, with every invalid value replaced by its default. */
+/** A Gold ladder config with anything invalid replaced by its default: tempos ascending, 1–100, the last 100. */
+export function normalizeGoldLadder(raw) {
+  const tempos = Array.isArray(raw?.tempos) && raw.tempos.length > 0 && raw.tempos.every((value) => Number.isFinite(value) && value >= 1 && value <= 100)
+    && raw.tempos.every((value, index) => index === 0 || value > raw.tempos[index - 1]) && raw.tempos.at(-1) === 100
+    ? Object.freeze([...raw.tempos]) : GOLD_LADDER_DEFAULTS.tempos;
+  const minBpm = Number.isFinite(raw?.minBpm) && raw.minBpm > 0 && raw.minBpm <= 240 ? raw.minBpm : GOLD_LADDER_DEFAULTS.minBpm;
+  return Object.freeze({ tempos, minBpm });
+}
+
+/**
+ * The speeds a piece's timed steps run at: the configured tempos, each lifted to the floor (`minBpm` at the
+ * score's opening tempo), whole percents, duplicates dropped. A piece with no known tempo keeps the tempos.
+ */
+export function goldTemposFor(ladder, tempoMap = []) {
+  const { tempos, minBpm } = normalizeGoldLadder(ladder);
+  const bpm = tempoMap?.[0]?.bpm;
+  const floor = Number.isFinite(bpm) && bpm > 0 ? Math.min(100, Math.ceil((minBpm * 100) / bpm)) : 0;
+  return [...new Set(tempos.map((value) => Math.min(100, Math.max(Math.round(value), floor))))];
+}
+
 export function normalizeCertification(raw) {
   const silver = raw?.silver ?? {};
   const fallback = CERTIFICATION_DEFAULTS.silver;
@@ -82,7 +105,7 @@ export function makeCoachTask(plan, spec) {
     ...(spec.authoredStage == null && spec.legacyRequired != null ? { legacyRequired: spec.legacyRequired } : {}),
     ...(spec.review ? { review: true } : {}), ...(spec.source ? { source: spec.source } : {}),
     ...(spec.reason ? { reason: spec.reason } : {}), ...(spec.rhythm ? { rhythm: true } : {}),
-    ...(spec.stepDown ? { stepDown: String(spec.stepDown) } : {}),
+    ...(spec.stepDown ? { stepDown: String(spec.stepDown) } : {}), ...(spec.leadIn ? { leadIn: true } : {}),
   };
   return { ...task, key: coachTaskKey(task) };
 }
@@ -122,11 +145,15 @@ function playOrder(id, byId) {
   return unit?.kind === 'join' ? [...unit.members.flatMap((member) => playOrder(member, byId)), id] : [id];
 }
 
-export function createCoachPlan({ scoreId, fingerprint, segments = [], authoredLadder = false, tempoMap = [], criteria = {}, certification }) {
+export function createCoachPlan({ scoreId, fingerprint, segments = [], authoredLadder = false, tempoMap = [], criteria = {}, certification, goldLadder }) {
   const content = fingerprintOf(fingerprint);
   if (!scoreId || !content) throw new Error('Coaching requires a score and content fingerprint');
   const policy = normalizeCertification(certification);
-  const plan = { version: COACH_VERSION, scoreId, fingerprint: content, authoredLadder, tempoMap, criteria: { ...criteria }, certification: policy, segments: [], tasks: [] };
+  const ladderPolicy = normalizeGoldLadder(goldLadder);
+  // The timed steps' speeds, read by every consumer from the plan (never hard-coded): the ladder, recovery, the strip.
+  const goldTempos = goldTemposFor(ladderPolicy, tempoMap);
+  const plan = { version: COACH_VERSION, scoreId, fingerprint: content, authoredLadder, tempoMap, criteria: { ...criteria }, certification: policy,
+    goldLadder: ladderPolicy, goldTempos, segments: [], tasks: [] };
   const noteStep = { track: 'silver', required: policy.silver.stepPasses, legacyRequired: LEGACY_STEP_PASSES };
   // Joins are derived, never input: a plan handed back to this function (the kiosk posts its plan to the
   // server, which rebuilds it) must not turn its own joins into passages.
@@ -158,18 +185,18 @@ export function createCoachPlan({ scoreId, fingerprint, segments = [], authoredL
       { skill: parts.length > 1 ? 'together' : 'notes', label: parts.length > 1 ? 'Join the hands' : 'Find the notes', parts, mode: 'free', ...noteStep },
       { skill: 'silver', label: 'Play it on your own', parts, mode: 'free', track: 'silver', assist: 'none', required: policy.silver.checkPasses, stallSeconds: policy.silver.stallSeconds,
         criteria: { completeness: 1, cleanliness: policy.silver.cleanliness } },
-      // The rhythm alone first (any key, X noteheads, a woodblock): it must be clear before the metronome steps.
+      // The rhythm alone first (any key, X noteheads, a woodblock), at score tempo: tapping is easier than
+      // playing, and two timing misses step it down through the slower-beat recovery.
       { skill: 'rhythm', label: 'Tap the rhythm', parts, mode: 'cued', tempoPercent: RHYTHM_TEMPO, track: 'gold', rhythm: true },
-      { skill: 'pulse', label: 'Settle into a beat', parts, mode: 'metronome', tempoPercent: GOLD_TEMPOS[0], track: 'gold' },
-      // Each hand with the beat before both (2026-11-22): a child who could play the
-      // melody in time dropped the left hand the moment both were graded on the click.
+      // Each hand with the beat before both (2026-11-22), at the first speed only. The first timed take opens on
+      // the free-running beat loop (`leadIn`): what the retired "Settle into a beat" step used to be.
       ...(parts.length > 1 ? parts.filter((part) => part === 'rh' || part === 'lh').map((part) => ({
-        track: 'gold', skill: `timed-${GOLD_TEMPOS[0]}-${part}`, label: part === 'rh' ? 'Right hand with the beat' : 'Left hand with the beat',
-        parts: [part], mode: 'cued', tempoPercent: GOLD_TEMPOS[0] })) : []),
-      ...[...GOLD_TEMPOS, 100].map((tempoPercent) => ({ track: 'gold', skill: tempoPercent === 100 ? 'mastery' : `timed-${tempoPercent}`,
+        track: 'gold', skill: `timed-${goldTempos[0]}-${part}`, label: part === 'rh' ? 'Right hand with the beat' : 'Left hand with the beat',
+        parts: [part], mode: 'cued', tempoPercent: goldTempos[0] })) : []),
+      ...goldTempos.map((tempoPercent) => ({ track: 'gold', skill: tempoPercent === 100 ? 'mastery' : `timed-${tempoPercent}`,
         label: tempoPercent === 100 ? 'Play at score tempo' : 'Play with the beat', parts, mode: 'cued', tempoPercent,
         mastery: tempoPercent === 100, completes: tempoPercent === 100 })),
-    ];
+    ].map((spec, index, all) => (index === all.findIndex((item) => item.track === 'gold' && item.mode === 'cued' && !item.rhythm) ? { ...spec, leadIn: true } : spec));
     const tasks = specs.filter((spec) => spec.parts?.length && spec.parts.every((part) => parts.includes(part)))
       .map((spec) => makeCoachTask(plan, { ...spec, criteria: { ...criteria, ...spec.criteria }, passageId: segment.id, range }));
     const demonstration = tasks.find((task) => task.mastery) ?? makeCoachTask(plan, {
@@ -190,10 +217,10 @@ export function createCoachPlan({ scoreId, fingerprint, segments = [], authoredL
       { skill: parts.length > 1 ? 'together' : 'notes', label: parts.length > 1 ? 'Join the hands' : 'Find the notes', parts, mode: 'free', ...noteStep },
       { skill: 'silver', label: 'Play it on your own', parts, mode: 'free', track: 'silver', assist: 'none', required: policy.silver.checkPasses, stallSeconds: policy.silver.stallSeconds,
         criteria: { completeness: 1, cleanliness: policy.silver.cleanliness } },
-      // A join's Gold is the whole span played in time, both hands: 50, 75, then score tempo (never the pulse
+      // A join's Gold is the whole span played in time, both hands, at the ladder's speeds (never the rhythm
       // or one-hand rungs, which the passages under it already earned). Test out at score tempo first.
       // The final join has none: its timed play is Polish.
-      ...(join.final ? [] : [...GOLD_TEMPOS.slice(1), 100]).map((tempoPercent) => ({ track: 'gold', skill: tempoPercent === 100 ? 'mastery' : `timed-${tempoPercent}`,
+      ...(join.final ? [] : goldTempos).map((tempoPercent) => ({ track: 'gold', skill: tempoPercent === 100 ? 'mastery' : `timed-${tempoPercent}`,
         label: tempoPercent === 100 ? 'Play at score tempo' : 'Play with the beat', parts, mode: 'cued', tempoPercent,
         mastery: tempoPercent === 100, completes: tempoPercent === 100 })),
     ];
@@ -315,6 +342,16 @@ function carryGold(state, skills) {
     && sameRange(proof.range, task.range) && task.parts.every((part) => proof.parts.includes(part))
     && (proof.mode === 'cued' || (task.mode === 'metronome' && proof.mode === 'metronome'))
     && Number.isFinite(proof.tempoPercent) && proof.tempoPercent >= task.tempoPercent;
+  // The rhythm step moved from 50% to score tempo (2026-11-23): a rhythm pass at any speed keeps it.
+  const rhythmEarned = Object.keys(state.achievements).map((key) => { try { return JSON.parse(key); } catch { return null; } })
+    .filter((key) => Array.isArray(key) && Array.isArray(key.at(-1)) && key.at(-1)[0] === 'rhythm')
+    .map(([scoreId, fingerprint, start, end, parts]) => ({ scoreId, fingerprint, range: { start, end }, parts }));
+  for (const skill of skills) {
+    if (skill.ready || !skill.rhythm) continue;
+    if (rhythmEarned.some((proof) => proof.scoreId === skill.scoreId && proof.fingerprint === skill.fingerprint && sameRange(proof.range, skill.range) && sameParts(proof.parts, skill.parts))) {
+      Object.assign(skill, { ready: true, provenance: skill.provenance ?? 'demonstrated' });
+    }
+  }
   let faster = null;
   for (const skill of [...skills].reverse()) {
     if (skill.track !== 'gold' || (skill.mode !== 'cued' && skill.mode !== 'metronome')) continue;
@@ -590,14 +627,16 @@ function recovery(plan, task, result) {
     ? joinRecovery(plan, join, task, result) : null;
   // RHYTHM RECOVERY: timing is what keeps failing and there is no slower step left (or the child has already
   // been slowed to it). Take the pitch away: any key, a percussive sound, just WHEN. Never inside itself.
-  if (timingOnly && !task.rhythm && tempoPercent <= SLOWER_TEMPOS[0] && !joinDrill) {
+  // The slower speeds are the plan's own rungs (so a configured ladder is honoured), lowest first.
+  const slower = plan.goldTempos?.length ? plan.goldTempos : goldTemposFor(null, plan.tempoMap);
+  if (timingOnly && !task.rhythm && tempoPercent <= slower[0] && !joinDrill) {
     return makeCoachTask(plan, { ...task, rhythm: true, required: null, assist: null, stallSeconds: null, legacyRequired: null,
       label: 'Tap the rhythm', parent: task, depth: (task.depth ?? 0) + 1, reason: 'rhythm', stepDown: null, mastery: false, completes: false });
   }
   if (joinDrill) {
     range = joinDrill.range; parts = joinDrill.parts;
-  } else if (timingOnly && tempoPercent > SLOWER_TEMPOS[0]) {
-    tempoPercent = SLOWER_TEMPOS.filter((value) => value < tempoPercent).at(-1) ?? SLOWER_TEMPOS[0];
+  } else if (timingOnly && tempoPercent > slower[0]) {
+    tempoPercent = slower.filter((value) => value < tempoPercent).at(-1) ?? slower[0];
   } else if (range.end > range.start) {
     // An unfinished take has every unreached bar fully missed, so the place it stopped is the first gap.
     const unfinished = task.mode === 'free' && (result.criteria?.completeness ?? 1) < 1;

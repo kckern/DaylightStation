@@ -203,7 +203,7 @@ describe('acknowledged piano coaching', () => {
 
     it('accepts a drill at the deepest allowed level (its chain is one longer than its depth)', async () => {
       const { f, plan, service } = setup();
-      const base = plan.tasks.find((task) => task.passageId === 'a' && task.skill === 'timed-30');
+      const base = plan.tasks.find((task) => task.passageId === 'a' && task.skill === `timed-${plan.goldTempos[0]}`);
       const chain = (depth) => { let task = base; for (let level = 1; level <= depth; level += 1) task = { ...task, depth: level, parent: task, reason: 'focus-bars' }; return task; };
       for (const depth of [0, 1, 2, MAX_DRILL_DEPTH]) {
         const body = f.outcome(`deep-${depth}`, { task: chain(depth) });
@@ -262,12 +262,12 @@ describe('acknowledged piano coaching', () => {
 
     it('accepts a Gold take before Silver by default and saves it, logging the locked step', async () => {
       const f = pianoCoachFixture(); const { service, warn } = logged(f, undefined);
-      const saved = await service.record('learner4', SCORE, f.outcome('early-gold', { task: of(f, 'timed-75') }));
+      const saved = await service.record('learner4', SCORE, f.outcome('early-gold', { task: of(f, 'timed-85') }));
       await service.record('learner4', SCORE, select(f, 'pick-gold', of(f, 'mastery')));
       expect(saved.revision).toBeGreaterThan(0);
       expect(f.records.get(`learner4/${SCORE}`).learnCoach.evidence).toHaveLength(1);
       expect(warn).toEqual([
-        ['piano.learn.coach.locked', { userId: 'learner4', scoreId: 'files:test.musicxml', passageId: 'opening', skill: 'timed-75', type: 'outcome', mode: 'open-to-silver' }],
+        ['piano.learn.coach.locked', { userId: 'learner4', scoreId: 'files:test.musicxml', passageId: 'opening', skill: 'timed-85', type: 'outcome', mode: 'open-to-silver' }],
         ['piano.learn.coach.locked', expect.objectContaining({ skill: 'mastery', type: 'selection' })],
       ]);
     });

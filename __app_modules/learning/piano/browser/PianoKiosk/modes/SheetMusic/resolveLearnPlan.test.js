@@ -134,6 +134,23 @@ describe('certification policy', () => {
   });
 });
 
+describe('Gold ladder speeds', () => {
+  it('defaults to 50, 70, 85, 100 with a 60 bpm floor, and a piece overrides the household', () => {
+    const base = resolveLearnPlan({ score: score() });
+    expect(base.goldLadder).toEqual({ tempos: [50, 70, 85, 100], minBpm: 60 });
+    const tuned = resolveLearnPlan({ score: score(), defaults: { ...SHEET_MUSIC_DEFAULTS.learn, goldTempos: [40, 60, 80, 100], minBpm: 50 },
+      piece: { goldTempos: [60, 80, 100] } });
+    expect(tuned.goldLadder).toEqual({ tempos: [60, 80, 100], minBpm: 50 });
+    // Changing the speeds never changes the plan revision (earned progress is kept by the coach).
+    expect(tuned.revision).toBe(base.revision);
+  });
+  it('drops an invalid ladder for the default', () => {
+    for (const goldTempos of [[80, 60, 100], [50, 70], [0, 100], 'quick']) {
+      expect(resolveLearnPlan({ score: score(), piece: { goldTempos, minBpm: -4 } }).goldLadder).toEqual({ tempos: [50, 70, 85, 100], minBpm: 60 });
+    }
+  });
+});
+
 describe('score-file layer (admin-approved Learn file)', () => {
   const SCORE_4_BARS = score(4);
   it('uses score-file segments when no config piece layer exists', () => {

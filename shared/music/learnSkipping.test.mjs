@@ -44,11 +44,11 @@ describe('which steps may be started', () => {
   it('strict opens only the current step', () => {
     expect(currentStep(passage(null)).skill).toBe('right');
     expect(access(null, 'strict')).toEqual({ right: 'open', left: 'locked', together: 'locked', silver: 'locked',
-      rhythm: 'locked', pulse: 'locked', 'timed-30-rh': 'locked', 'timed-30-lh': 'locked', 'timed-30': 'locked', 'timed-50': 'locked', 'timed-75': 'locked', mastery: 'locked' });
+      rhythm: 'locked', 'timed-50-rh': 'locked', 'timed-50-lh': 'locked', 'timed-50': 'locked', 'timed-70': 'locked', 'timed-85': 'locked', mastery: 'locked' });
   });
   it('open-to-silver opens every note step and the check, and Gold after Silver', () => {
     expect(access(null, 'open-to-silver')).toEqual({ right: 'open', left: 'open', together: 'open', silver: 'open',
-      rhythm: 'locked', pulse: 'locked', 'timed-30-rh': 'locked', 'timed-30-lh': 'locked', 'timed-30': 'locked', 'timed-50': 'locked', 'timed-75': 'locked', mastery: 'locked' });
+      rhythm: 'locked', 'timed-50-rh': 'locked', 'timed-50-lh': 'locked', 'timed-50': 'locked', 'timed-70': 'locked', 'timed-85': 'locked', mastery: 'locked' });
     const silver = take(null, 'silver');
     expect(Object.values(access(silver, 'open-to-silver')).every((value) => value === 'open')).toBe(true);
   });
@@ -76,9 +76,9 @@ describe('higher passes cover lower steps', () => {
     expect(segment.certification.silver).toMatchObject({ provenance: 'check' });
     expect(segment.certification.gold).toBeNull();
   });
-  it('75% covers 50%, 60% and the beat, without Silver or Gold', () => {
-    const segment = passage(take(take(null, 'timed-75'), 'timed-75'));
-    expect(readySkills(segment)).toEqual(expect.arrayContaining(['pulse', 'timed-30', 'timed-50', 'timed-75']));
+  it('85% covers 70%, 50% and each hand at 50%, without Silver or Gold', () => {
+    const segment = passage(take(take(null, 'timed-85'), 'timed-85'));
+    expect(readySkills(segment)).toEqual(expect.arrayContaining(['timed-50-rh', 'timed-50-lh', 'timed-50', 'timed-70', 'timed-85']));
     expect(readySkills(segment)).not.toContain('mastery');
     expect(segment.certification).toEqual({ silver: null, gold: null });
   });

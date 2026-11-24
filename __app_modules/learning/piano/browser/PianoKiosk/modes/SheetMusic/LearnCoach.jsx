@@ -19,21 +19,37 @@ import './LearnCoach.scss';
 const EMPTY = {};
 /** What a step is called under its pills: a set label, not a sentence. */
 const SET_NAMES = Object.freeze({ right: 'Right hand', left: 'Left hand', together: 'Together', notes: 'Notes', silver: 'On your own',
-  rhythm: 'Rhythm', pulse: 'Beat', 'timed-30-rh': 'Right 30%', 'timed-30-lh': 'Left 30%', 'timed-30': '30%', 'timed-50': '50%', 'timed-75': '75%', mastery: '100%' });
-const setName = (task) => SET_NAMES[task.skill] ?? task.label;
+  rhythm: 'Rhythm', pulse: 'Beat', mastery: '100%' });
+// A timed step's speed is the plan's (`timed-<percent>`, `timed-<percent>-rh|lh`), never a fixed list: the ladder
+// is configured (`sheetmusic.learn.goldTempos`) and lifted to a bpm floor.
+const TIMED = /^timed-(\d+)(?:-(rh|lh))?$/;
+const setName = (task) => {
+  if (SET_NAMES[task.skill]) return SET_NAMES[task.skill];
+  const timed = TIMED.exec(task.skill ?? '');
+  if (timed) return `${timed[2] === 'rh' ? 'Right ' : timed[2] === 'lh' ? 'Left ' : ''}${timed[1]}%`;
+  return task.label;
+};
 /**
  * What stands over a set's pills. A picture where one says it, so the row reads
- * without words: the hands, then the silver coin they earn; the beat, the three
- * slower tempos, then the gold coin. A step with no picture keeps its words.
+ * without words: the hands, then the coin they earn; each timed step the metronome
+ * with its speed (one hand at the first speed shows that hand), then the gold coin.
+ * A step with no picture keeps its words.
  */
 const SET_ICONS = Object.freeze({
   // Both hands are always drawn, in their places; the one that rests is unlit.
   right: <><Icon name="hand-left" className="is-resting" /><Icon name="hand-right" /></>, left: <><Icon name="hand-left" /><Icon name="hand-right" className="is-resting" /></>,
   together: <><Icon name="hand-left" /><Icon name="hand-right" /></>, notes: <Icon name="quarter-note" />,
-  silver: <PassageCoin state="silver" />, pulse: <Icon name="metronome" />,
-  'timed-30-rh': <><Icon name="hand-left" className="is-resting" /><Icon name="hand-right" /><b>30%</b></>,
-  'timed-30-lh': <><Icon name="hand-left" /><Icon name="hand-right" className="is-resting" /><b>30%</b></>, 'timed-30': <b>30%</b>, 'timed-50': <b>50%</b>, 'timed-75': <b>75%</b>, mastery: <PassageCoin state="gold" />,
+  silver: <PassageCoin state="silver" />, pulse: <Icon name="metronome" />, mastery: <PassageCoin state="gold" />,
 });
+const iconOf = (skill) => {
+  if (SET_ICONS[skill]) return SET_ICONS[skill];
+  const timed = TIMED.exec(skill ?? '');
+  if (!timed) return null;
+  const [, percent, hand] = timed;
+  if (hand === 'rh') return <><Icon name="hand-left" className="is-resting" /><Icon name="hand-right" /><b>{percent}%</b></>;
+  if (hand === 'lh') return <><Icon name="hand-left" /><Icon name="hand-right" className="is-resting" /><b>{percent}%</b></>;
+  return <><Icon name="metronome" /><b>{percent}%</b></>;
+};
 /** A passage's coin holds the curtain for about two seconds; a finished piece, for more than three. */
 export const PASSAGE_CEREMONY_MS = 5000;
 export const PIECE_CEREMONY_MS = 7600;
@@ -96,7 +112,7 @@ export function passageDrill(passage, task, { access = EMPTY, showLocks = false,
     const reps = Math.max(1, skill.required ?? 2);
     const banked = skill.ready ? reps : Math.min(reps - 1, skill.successes ?? 0);
     const locked = access[skill.key] === 'locked' && skill.key !== current;
-    const icon = SET_ICONS[skill.skill] ?? null;
+    const icon = iconOf(skill.skill);
     return { id: skill.key, title: locked ? `${skill.label} (locked)` : skill.label,
       display: { key: setName(skill), hand: null, hand_label: null, icon: locked && showLocks ? lockedIcon(icon ?? <b>{setName(skill)}</b>) : icon },
       requirement: { required_passes: reps }, pass_count: banked, passed: Boolean(skill.ready),

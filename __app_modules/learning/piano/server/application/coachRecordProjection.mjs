@@ -61,7 +61,7 @@ export function recordSegments(record, authored = null) {
     : passageRanges(record);
 }
 
-export function projectRecord({ record, scoreId, segments, certification, dayKey }) {
-  const plan = createCoachPlan({ scoreId, fingerprint: recordFingerprint(record), segments, certification });
+export function projectRecord({ record, scoreId, segments, certification, goldLadder, dayKey }) {
+  const plan = createCoachPlan({ scoreId, fingerprint: recordFingerprint(record), segments, certification, goldLadder });
   return projectCoach({ plan, state: record?.learnCoach ?? null, legacy: record ?? {}, dayKey });
 }

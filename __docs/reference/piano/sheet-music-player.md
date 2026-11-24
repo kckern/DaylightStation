@@ -354,9 +354,10 @@ the drill. It draws no practice screen of its own.
 - **Sets and reps.** Every step shown is one set in the
   drill's progress row, and the clean takes it needs are its reps. A set is named
   by a picture, not a word: the two hands with the resting one unlit (right hand,
-  left hand, together), the **silver coin** over the Silver check, a metronome, each
-  hand with `50%` (the hand that rests unlit),
-  `50%`, `60%`, `75%`, and the **gold coin** over the step at score tempo. So the row
+  left hand, together), the **silver coin** over the Silver check, `Rhythm`, each
+  hand with the first speed (`50%`, the hand that rests unlit), then every timed
+  step as the metronome with its speed (`50%`, `70%`, `85%` by default, read from
+  the plan, never a fixed list), and the **gold coin** over the step at score tempo. So the row
   reads as the way to each coin. A step with no picture (an authored ladder)
   keeps its words. The words stay as each set's accessible name. A Gold step
   with no fixed count (two good takes out of the last three) shows two reps.
@@ -580,6 +581,11 @@ sheetmusic:
         stallSeconds: 30   # time without a new correct note
       flower:
         after: both-hands  # when a passage is partway: both-hands | together | first-step
+    goldTempos: [50, 70, 85, 100]  # the Gold ladder's speeds: ascending, 1-100, the last 100
+    minBpm: 60                     # no rung plays slower than this (lifted at the score's tempo)
+    pieces:
+      files:docs/sheet-music/example.mxl:
+        goldTempos: [60, 80, 100]  # one piece's own speeds
 ```
 
 Invalid values use these defaults. Policy changes never remove earned credit.
@@ -597,8 +603,9 @@ with `id`, `start`, `end`, `silver` and `gold`. Certification values are timesta
 ### Skipping steps
 
 The generated ladder runs right hand, left hand, together, the Silver check, the
-rhythm (50%, any key, X noteheads), the beat (30%, metronome), right hand with the beat and left hand with the beat (cued
-30%, two-hand passages only: `timed-30-rh`, `timed-30-lh`), cued 30%, 50%, 75%, then score tempo (Gold). The current step
+rhythm (score tempo, any key, X noteheads), right hand with the beat and left hand with the beat (cued, at the
+first speed only, two-hand passages only: `timed-50-rh`, `timed-50-lh`), then both hands at each speed of the
+Gold ladder (`timed-50`, `timed-70`, `timed-85` by default), then score tempo (Gold). The current step
 is the first one not yet ready. `sheetmusic.learn.skipping` says which other steps a
 child may start:
 
@@ -635,7 +642,7 @@ achievement is rewritten.
 |---|---|
 | Together | Right hand and left hand (`carrySilver`) |
 | Silver check | Every note step of the passage (Silver certifies them) |
-| A cued tempo (say 75%) | The slower cued steps and the beat (`carryGold`) |
+| A cued tempo (say 85%) | The slower cued steps (`carryGold`) |
 | Both hands at a cued tempo | Each hand alone at that tempo and below (`carryGold`); one hand never covers both |
 | Score tempo (mastery) | Every Gold step |
 
@@ -846,8 +853,9 @@ The standard path is:
 | Find the left-hand notes | Pitch, LH | Unpaced |
 | Join the hands / Find the notes | Pitch, all playable parts | Unpaced |
 | Play it on your own (Silver) | Pitch, all playable parts, no hints | Unpaced |
-| Settle into a beat | Pitch with a guide click; timing is not graded | 50% |
-| Play with the beat | Pitch and placement | 50%, then 60%, then 75% |
+| Tap the rhythm | Timing only, any key | 100% (stepped down by the slower-beat recovery) |
+| Right / left hand with the beat | Pitch and placement, one hand | The first speed (50%) |
+| Play with the beat | Pitch and placement | The ladder's speeds below 100 (50%, 70%, 85%) |
 | Play at score tempo | Pitch and placement, full passage and every playable part | 100% |
 
 Single-part passages omit separate-hand and coordination tasks. Silver steps need
@@ -865,12 +873,27 @@ A stronger timed demonstration can establish easier skills without redundant
 practice. Equivalent custom takes contribute regardless of their launch source.
 Shortened, slower or single-hand work never proves a stronger full-passage skill.
 Earned readiness and mastery are permanent. A failed review or easier practice
-cannot remove them. A change to the generated Gold tempos cannot remove them either:
-a Gold beat or cued step is ready when a later, faster step of the same passage is
-ready, or when an earned achievement covers the same bars and parts in cued work at
-an equal or faster tempo (a beat step also accepts earned beat work). So a child who
-earned the old 60% and 80% steps resumes at score tempo, and one who earned only 60%
-resumes at 75%. Authored ladders do not carry over this way
+cannot remove them. A change to the Gold ladder's speeds cannot remove them either:
+a cued step is ready when a later, faster step of the same passage is ready, or when
+an earned achievement covers the same bars and parts in cued work at an equal or
+faster tempo. So a child who earned the old 60% and 80% steps keeps 50% and 70% and
+goes on to 85%; one who earned 75% on the 30/50/75 ladder does the same. A rhythm step
+earned at the old 50% stays earned. Earned beat (`pulse`) achievements stay in the
+record and gate nothing.
+
+**The Gold ladder's speeds** (2026-11-23 late night). `sheetmusic.learn.goldTempos`
+(default `[50, 70, 85, 100]`; a piece overrides it under `sheetmusic.learn.pieces.<scoreId>`)
+must be ascending, 1–100, ending at 100, or the default is used (`normalizeGoldLadder`).
+`sheetmusic.learn.minBpm` (default 60) lifts any rung that would play slower than that
+at the score's opening tempo (`goldTemposFor`): at 72 bpm, 50% and 70% both become 84%.
+The plan carries the result (`plan.goldTempos`, `plan.goldLadder`, posted to the server
+with the plan) and everything reads it from there: the ladder, the joins' Gold
+(`timed-<speed>` at each speed, test out at score tempo first), the slower-beat
+recovery (one rung of the plan down at a time; below the first speed the pitch comes
+off, *Tap the rhythm*), the step strip's labels and the desk (`GetPianoDesk` reads
+the same keys). There is no separate beat step any more: the first timed step of a
+passage (`leadIn: true`, the right hand at the first speed on a two-hand passage)
+opens on the free-running beat loop until a key arms its count-in. Authored ladders do not carry over this way
 (`carryGold` in `shared/music/learnCoach.mjs`). On the Silver track "together"
 covers each hand (`carrySilver`; see [Skipping steps](#skipping-steps)). A saved Gold resume from the
 old ladder (say `timed-80`) is dropped when no step of the passage's current
@@ -944,15 +967,16 @@ late entry in that case). It applies to cued Learn takes only. Logs: `piano.exer
 carries `reason: 'missed-cue'` on `piano.exercise-countdown-started`. The `maxCueRestarts` prop of
 `ExerciseRun` overrides the cap (tests pass 0).
 
-**Tap the rhythm (a ladder step, and a recovery rung).** The first Gold step, right after the Silver check and
-before *Settle into a beat*, is the rhythm alone (`skill: rhythm`, `rhythm: true`, cued, 50% `RHYTHM_TEMPO`): it
-must be clear before the metronome steps. The score is drawn as rhythm only (`toRhythmMusicXml` in
+**Tap the rhythm (a ladder step, and a recovery rung).** The first Gold step, right after the Silver check, is
+the rhythm alone (`skill: rhythm`, `rhythm: true`, cued, at score tempo, `RHYTHM_TEMPO` 100): tapping is easier
+than playing and the rhythm reads truest at score tempo. Two timing misses step it down through the slower-beat
+recovery (85, 70… the plan's speeds), and a pass climbs back up. It must be clear before the timed steps. The score is drawn as rhythm only (`toRhythmMusicXml` in
 `Exercises/rhythmOnly.js`, applied by `LearnLab` for any `rhythm` task): every note on its staff's middle line with
 an X notehead, no accidentals, a chord as one note; durations, rests, ties and bars unchanged. Its result copy talks
 about taps (`A tap went missing`, `Tap with the click`), never notes. A real timed take at an equal or faster tempo
-proves the step (`carryGold`); a rhythm pass proves no timed step, and a ready rhythm step never counts as the faster
+(so, now, score tempo) proves the step (`carryGold`); a rhythm pass proves no timed step, and a ready rhythm step never counts as the faster
 proof for the steps above it. The same step is also offered as a recovery rung: When a timed step keeps failing on timing alone and no slower
-step is left (the 30% floor), the coach offers one more smaller step before it shrinks the bars: the same
+step is left (the ladder's first speed), the coach offers one more smaller step before it shrinks the bars: the same
 passage and tempo with **no pitch asked** (`reason: rhythm`, `rhythm: true`, `Tap the rhythm`). Any key counts:
 `ExerciseRun` takes `rhythmOnly` and reads every key as one pitch (`Exercises/rhythmOnly.js`: the expectation is
 one note per event on middle C and the keys held are read as that one key, stamped at the first press, so both
@@ -965,10 +989,12 @@ with real takes: a pitchless pass is no credit for the timed step, and a pass re
 It never nests (a rung failed twice falls to the ordinary smaller steps) and gates nothing. Log:
 `piano.learn.rhythm-voice` (`applied`, `voice`, `restored`).
 
-**The beat loop (*Settle into a beat*).** The click-guided step (`mode: 'metronome'`, pitch graded, timing
-not) starts its click and shows the count band above the score with one pip per beat of the bar and
-beat 1 accented; the lit pip steps round the bar for as long as the click runs and keeps going under the
-take. The click and the pips read one anchor fixed when the run is ready (`beatLoop.js`), so what is lit
+**The beat loop (the first timed take's lead-in).** The retired *Settle into a beat* step lives on as the
+lead-in of a passage's first timed step (`leadIn: true` on the task; `LearnLab` passes `leadInLoop` to
+`ExerciseRun`): while that cued take waits for a key, the click runs and the count band above the score shows
+one pip per beat of the bar with beat 1 accented, the lit pip stepping round the bar. A key arms the count-in
+as for every timed take, and the loop gives way to it. A saved `mode: 'metronome'` task still runs the loop
+under its take. The click and the pips read one anchor fixed when the run is ready (`beatLoop.js`), so what is lit
 is what is heard. Nothing waits for the child: the first note starts the take whenever they like, and the
 cue reads "Play when you feel the beat".
 

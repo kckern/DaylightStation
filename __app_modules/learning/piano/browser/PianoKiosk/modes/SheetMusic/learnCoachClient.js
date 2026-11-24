@@ -18,7 +18,7 @@ const persistent = (scope) => Boolean(scope.profileId && scope.profileId !== 'gu
 /** Store the plan recipe once per scope, not duplicate task projections. */
 export function serializeCoachPlan(plan) {
   return { version: plan.version, scoreId: plan.scoreId, fingerprint: plan.fingerprint,
-    authoredLadder: plan.authoredLadder, tempoMap: plan.tempoMap, criteria: plan.criteria, certification: plan.certification,
+    authoredLadder: plan.authoredLadder, tempoMap: plan.tempoMap, criteria: plan.criteria, certification: plan.certification, goldLadder: plan.goldLadder,
     // Joins are derived by createCoachPlan on the server too; posting them would rebuild joins of joins.
     segments: plan.segments.filter((segment) => segment.kind !== 'join').map((segment) => ({ id: segment.id, inMeasure: segment.inMeasure, outMeasure: segment.outMeasure,
       printedMeasures: segment.printedMeasures, playableParts: segment.playableParts, label: segment.label,

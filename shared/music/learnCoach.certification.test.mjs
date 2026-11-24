@@ -8,7 +8,7 @@ const segments = [
   { id: 'two', inMeasure: 4, outMeasure: 7, playableParts: ['rh', 'lh'] },
   { id: 'solo', inMeasure: 8, outMeasure: 11, playableParts: ['rh'] },
 ];
-const planOf = (over = {}) => createCoachPlan({ scoreId: 'files:t.mxl', fingerprint: 'c', segments, tempoMap: [{ onsetQuarter: 0, bpm: 90 }], ...over });
+const planOf = (over = {}) => createCoachPlan({ scoreId: 'files:t.mxl', fingerprint: 'c', segments, tempoMap: [{ onsetQuarter: 0, bpm: 90 }], goldLadder: { minBpm: 40 }, ...over });
 const good = { status: 'completed', inputContractVersion: 'onsets-v1', criteria: { completeness: 1, cleanliness: 0.95, placement: 0.95 }, diagnostics: { expected_notes: 8, matched_notes: 8, wrong_notes: 0, missed_notes: 0 }, spans: {} };
 const bad = { ...good, criteria: { completeness: 1, cleanliness: 0.5, placement: 0.5 }, diagnostics: { expected_notes: 8, matched_notes: 8, wrong_notes: 8, missed_notes: 0 } };
 const task = (plan, skill, passageId = 'one') => plan.tasks.find((t) => t.skill === skill && t.passageId === passageId);
@@ -39,10 +39,10 @@ describe('certification policy', () => {
 describe('Silver and Gold tasks', () => {
   it('adds the Silver check after the note steps', () => {
     const plan = planOf();
-    expect(plan.tasks.filter((t) => t.passageId === 'one').map((t) => t.skill)).toEqual(['right', 'left', 'together', 'silver', 'rhythm', 'pulse', 'timed-30-rh', 'timed-30-lh', 'timed-30', 'timed-50', 'timed-75', 'mastery']);
-    expect(plan.tasks.filter((t) => t.passageId === 'solo').map((t) => t.skill)).toEqual(['notes', 'silver', 'rhythm', 'pulse', 'timed-30', 'timed-50', 'timed-75', 'mastery']);
+    expect(plan.tasks.filter((t) => t.passageId === 'one').map((t) => t.skill)).toEqual(['right', 'left', 'together', 'silver', 'rhythm', 'timed-50-rh', 'timed-50-lh', 'timed-50', 'timed-70', 'timed-85', 'mastery']);
+    expect(plan.tasks.filter((t) => t.passageId === 'solo').map((t) => t.skill)).toEqual(['notes', 'silver', 'rhythm', 'timed-50', 'timed-70', 'timed-85', 'mastery']);
     expect(task(plan, 'silver')).toMatchObject({ label: 'Play it on your own', mode: 'free', assist: 'none', track: 'silver', parts: ['rh', 'lh'] });
-    expect(task(plan, 'pulse').track).toBe('gold');
+    expect(task(plan, 'timed-50').track).toBe('gold');
   });
   it('keeps existing task keys', () => {
     const t = task(planOf(), 'right');
@@ -123,9 +123,9 @@ describe('what comes next', () => {
     const after = view(plan, play(stuck.state, plan, first.recommended, good, DAY, stuck.legacy), { legacy: stuck.legacy });
     expect(after.recommended).toMatchObject({ passageId: 'm5-8', skill: 'silver' });
   });
-  it('failed metronome takes never change recommended', () => {
+  it('failed timed takes never change recommended', () => {
     const plan = planOf(); const before = view(plan).recommended.key;
-    let state; for (const skill of ['pulse', 'pulse', 'mastery', 'mastery']) state = play(state, plan, task(plan, skill), bad);
+    let state; for (const skill of ['timed-50', 'timed-50', 'mastery', 'mastery']) state = play(state, plan, task(plan, skill), bad);
     const projected = view(plan, state);
     expect(projected.recommended.key).toBe(before);
     expect(projected.goldResume).toMatchObject({ depth: 1, mode: 'cued' });
@@ -140,7 +140,7 @@ describe('what comes next', () => {
     let state = play(play(undefined, plan, check, bad), plan, check, bad);
     const drill = view(plan, state).recommended;
     expect(drill.depth).toBe(1);
-    state = play(state, plan, task(plan, 'pulse'), bad);
+    state = play(state, plan, task(plan, 'timed-50'), bad);
     expect(view(plan, state).recommended.key).toBe(drill.key);
   });
   it('a selected review goes to goldResume and never becomes recommended', () => {

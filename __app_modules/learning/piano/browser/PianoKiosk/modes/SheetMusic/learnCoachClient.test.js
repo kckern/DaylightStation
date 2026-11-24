@@ -235,3 +235,15 @@ describe('set-aside events', () => {
     client.dispose();
   });
 });
+
+describe('serializeCoachPlan carries the Gold ladder', () => {
+  it('posts the speeds, so the server rebuilds the same steps', async () => {
+    const { createCoachPlan } = await import('../../../../../../../shared/music/learnCoach.mjs');
+    const { serializeCoachPlan: serialize } = await import('./learnCoachClient.js');
+    const plan = createCoachPlan({ scoreId: 'files:t.mxl', fingerprint: 'f', tempoMap: [{ onsetQuarter: 0, bpm: 100 }], goldLadder: { tempos: [60, 80, 100], minBpm: 40 },
+      segments: [{ id: 'a', inMeasure: 0, outMeasure: 3, playableParts: ['rh', 'lh'] }] });
+    const again = createCoachPlan(serialize(plan));
+    expect(again.goldTempos).toEqual([60, 80, 100]);
+    expect(again.tasks.map((task) => task.key)).toEqual(plan.tasks.map((task) => task.key));
+  });
+});

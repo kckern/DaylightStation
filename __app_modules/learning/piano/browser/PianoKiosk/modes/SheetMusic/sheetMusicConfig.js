@@ -4,7 +4,7 @@
  * nested `perform` and `scoring.thresholds` groups; ignores non-object input.
  */
 import sha256 from 'crypto-js/sha256.js';
-import { CERTIFICATION_DEFAULTS, normalizeCertification } from '../../../../../../../shared/music/learnCoach.mjs';
+import { CERTIFICATION_DEFAULTS, GOLD_LADDER_DEFAULTS, normalizeCertification, normalizeGoldLadder } from '../../../../../../../shared/music/learnCoach.mjs';
 import { normalizeSkipping } from '../../../../../../../shared/music/learnSkipping.mjs';
 
 const DEFAULT_LADDER = [
@@ -29,6 +29,9 @@ export const SHEET_MUSIC_DEFAULTS = {
     tempo: { fallbackBpm: 90, minimumPercent: 15, maximumPercent: 100, adjustable: true },
     feedback: { successReturnMs: 900 },
     certification: CERTIFICATION_DEFAULTS,
+    // The Gold ladder's speeds (ascending, the last 100) and the floor in beats per minute that lifts slow rungs.
+    goldTempos: GOLD_LADDER_DEFAULTS.tempos,
+    minBpm: GOLD_LADDER_DEFAULTS.minBpm,
     // Which Learn steps a child may start: strict | open-to-silver | open, by piece, learner, household.
     skipping: normalizeSkipping(null),
     ladder: DEFAULT_LADDER,
@@ -113,6 +116,9 @@ function normalizeLearn(rawLearn) {
     feedback,
     // Outside `behavior`: changing the policy must not invalidate earned progress.
     certification: normalizeCertification(raw.certification),
+    // The Gold ladder (`goldTempos`, `minBpm`), validated; the coach plan reads it, so changing it never
+    // takes earned rungs away (an old pass proves every new rung at or below its speed).
+    goldLadder: normalizeGoldLadder({ tempos: raw.goldTempos, minBpm: raw.minBpm }),
     skipping: normalizeSkipping(raw.skipping),
     ...behavior,
     revision: sha256(JSON.stringify(behavior)).toString(),

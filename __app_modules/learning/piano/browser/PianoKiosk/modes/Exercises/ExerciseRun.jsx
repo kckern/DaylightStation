@@ -429,7 +429,7 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   `onFailed` consumer replaces the result screen or records it while the run
  *   retains its standard feedback and piano-driven retry.
  */
-export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', incompleteAfterMs = null, failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, maxCueRestarts = MAX_CUE_RESTARTS, rhythmOnly = false, resultLabel = null, resultActions = null, resultPresentation = 'inline', resultContinueLabel = null, onResultContinue = null, onPickStep = null, onStarted, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', incompleteAfterMs = null, failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, maxCueRestarts = MAX_CUE_RESTARTS, rhythmOnly = false, leadInLoop = false, resultLabel = null, resultActions = null, resultPresentation = 'inline', resultContinueLabel = null, onResultContinue = null, onPickStep = null, onStarted, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes: pressedNotes } = usePianoMidiNotes();
@@ -1387,7 +1387,10 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
    * The timer only exists while the pre-pulse does, so arming (which makes
    * `prePulse` false) and unmounting both clear it through the same cleanup.
    */
-  const prePulse = snapshot.status === 'prepared' && snapshot.mode === 'metronome';
+  // A cued Learn take marked `leadInLoop` (the first timed step of a passage, 2026-11-23) opens on the same
+  // free-running beat loop until a key arms its count-in: the retired "Settle into a beat" step, as a lead-in.
+  const leadIn = leadInLoop && snapshot.mode === 'cued' && !armed;
+  const prePulse = snapshot.status === 'prepared' && (snapshot.mode === 'metronome' || leadIn);
   useEffect(() => {
     if (!prePulse || prePulseStopped) return undefined;
     const timer = globalThis.setTimeout(() => setPrePulseStopped(true), PRE_PULSE_LIMIT_MS);
@@ -1415,7 +1418,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
    * they like, and the loop keeps going under it. Both the click and the marker read one anchor, fixed
    * the moment the run is ready, so what is lit is what is heard.
    */
-  const learnPulse = surface === 'learn-lab' && Boolean(score) && snapshot.mode === 'metronome';
+  const learnPulse = surface === 'learn-lab' && Boolean(score) && (snapshot.mode === 'metronome' || (leadIn && prePulse));
   const pulseLive = learnPulse && !snapshot.paused && ((prePulse && !prePulseStopped) || snapshot.status === 'running');
   useEffect(() => {
     if (!learnPulse || !runtime || pulseAnchor != null || !(prePulse && !prePulseStopped)) return;

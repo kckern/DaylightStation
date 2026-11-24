@@ -38,11 +38,13 @@ describe('LearnCoach', () => {
   expect(projection.steps[0]).toMatchObject({ id: stepId, state: 'current', requirement: { required_passes: 1 }, pass_count: 0, passed: false });
   expect(projection.head).toMatchObject({ text: 'A · steps to Bronze', lap: 'silver', level: 'bronze' });
  });
- it('draws the Gold lap\'s steps for a Gold task: rhythm, beat, one hand with the beat, the timed rungs', () => {
+ it('draws the Gold lap\'s steps for a Gold task: rhythm, one hand at the first speed, the plan speeds', () => {
   const segment = projectCoach({ plan }).segments[0];
   const rhythm = segment.skills.find((skill) => skill.skill === 'rhythm');
   const drill = passageDrill(segment, rhythm, { unit: { letter: 'A', state: 'silver' } });
-  expect(drill.projection.steps.map((step) => step.display.key)).toEqual(['Rhythm', 'Beat', 'Right 30%', 'Left 30%', '30%', '50%', '75%', '100%']);
+  expect(drill.projection.steps.map((step) => step.display.key)).toEqual(['Rhythm', 'Right 50%', 'Left 50%', '50%', '70%', '85%', '100%']);
+  // Every timed step is the metronome with its speed; the hands-alone steps the hand; score tempo the gold coin.
+  expect(drill.projection.steps.map((step) => step.display.icon != null)).toEqual([false, true, true, true, true, true, true]);
   expect(drill.projection.steps[0].requirement.required_passes).toBe(2);
   expect(drill.projection.head).toMatchObject({ text: 'A · steps to Gold', level: 'gold' });
   expect(drill.stepId).toBe(rhythm.key);
@@ -173,10 +175,11 @@ describe('LearnCoach', () => {
   expect(h.lab.drill.projection.head.text).toBe('A · steps to Gold');
   const failed = { ...passed, criteria: { completeness: 1, cleanliness: 1, placement: .2 }, verdict: { passed: false } };
   await outcome(failed); await outcome({ ...failed, assessmentId: 'timing2' });
-  expect(screen.getByRole('button', { name: 'Try a little slower · 75%' })).toBeInTheDocument();
+  // One rung of the plan down: 100 to 85.
+  expect(screen.getByRole('button', { name: 'Try a little slower · 85%' })).toBeInTheDocument();
   expect(screen.queryByText('slower-beat')).not.toBeInTheDocument();
-  // The piano's onward line says it as a sentence: "play any key to try a little slower (75%)".
-  expect(h.lab.resultContinueLabel).toBe('try a little slower (75%)');
+  // The piano's onward line says it as a sentence: "play any key to try a little slower (85%)".
+  expect(h.lab.resultContinueLabel).toBe('try a little slower (85%)');
  });
  it('a take that stalls in the last bar practises the way into it, then builds back a bar at a time', async () => {
   render(<LearnCoach {...props} />);
@@ -208,10 +211,10 @@ describe('LearnCoach', () => {
  it('logs each take with its tempo and the scores it was judged on', async () => {
   h.log.info.mockClear();
   render(<LearnCoach {...props} skipping={{ default: 'open' }} />);
-  act(() => h.lab.onPickStep({ id: keyOf('timed-75') }));
+  act(() => h.lab.onPickStep({ id: keyOf('timed-85') }));
   await act(async () => { h.lab.onStarted(); h.lab.onOutcome({ ...passed, criteria: { completeness: 1, cleanliness: 0.93333, placement: 0.71234 }, verdict: { passed: false } }, { placementShare: 0.6 }); });
   expect(h.log.info).toHaveBeenCalledWith('piano.learn.coach.take', expect.objectContaining({
-   tempoPercent: 75, placement: 0.712, completeness: 1, cleanliness: 0.933, passed: false, placementShare: 0.6,
+   tempoPercent: 85, placement: 0.712, completeness: 1, cleanliness: 0.933, passed: false, placementShare: 0.6,
   }));
   // A take judged without the wider share says so: null, not absent.
   await outcome({ ...passed, assessmentId: 'strict', verdict: { passed: false }, criteria: { completeness: 1, cleanliness: 1, placement: 0.5 } });

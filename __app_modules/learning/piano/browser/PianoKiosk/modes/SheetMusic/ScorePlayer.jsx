@@ -2216,7 +2216,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     },
   }), [config, layout.measures, layout.steps, layout.tempoEntries, parsed?.tempo, scoreFile, scoreMeta.category, scoreMeta.id, sections]);
   const coachPlan = useMemo(() => createCoachPlan({ scoreId: scoreMeta.id, fingerprint,
-    segments: learnPlan.segments, authoredLadder: learnPlan.authoredLadder, tempoMap: learnPlan.tempoMap, certification: learnPlan.certification }),
+    segments: learnPlan.segments, authoredLadder: learnPlan.authoredLadder, tempoMap: learnPlan.tempoMap, certification: learnPlan.certification, goldLadder: learnPlan.goldLadder }),
     [scoreMeta.id, fingerprint, learnPlan]);
   const coach = useLearnCoach({ plan: coachPlan, legacy: practice ?? {} });
   // Passages carry the path's letter (A, B, C…) as their number, so the badge on the score names the same thing the path does.
