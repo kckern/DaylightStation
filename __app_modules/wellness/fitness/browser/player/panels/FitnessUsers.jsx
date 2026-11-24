@@ -1094,6 +1094,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                         zones={trendSequence}
                         profileId={profileId}
                         cardHeight={cardHeight}
+                        noSignal={noSignal}
                       />
                     )}
                     {isHeartRate && zoneBar.show && (

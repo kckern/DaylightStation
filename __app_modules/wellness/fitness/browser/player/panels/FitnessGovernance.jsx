@@ -79,7 +79,11 @@ const FitnessGovernance = () => {
     return `${seconds}`;
   }, [summary.nextChallengeRemaining]);
 
-  if (!governanceState?.isGoverned || SILENT_STATUSES.has(summary.status)) {
+  // 'pending' covers two engine states: a policy whose requirements have never
+  // been met (waiting for riders) and no policy at all (reset() clears
+  // policyId). Only the first has anything to say.
+  const pendingWithoutPolicy = summary.status === 'pending' && !governanceState?.policyId;
+  if (!governanceState?.isGoverned || SILENT_STATUSES.has(summary.status) || pendingWithoutPolicy) {
     return null;
   }
   const statusText = STATUS_TEXT[summary.status] || null;

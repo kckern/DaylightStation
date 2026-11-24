@@ -16,9 +16,16 @@ const renderWith = (governanceState) => {
 };
 
 describe('FitnessGovernance status bar', () => {
-  it('says "Waiting for riders" while pending', () => {
-    const { container } = renderWith({ isGoverned: true, status: 'pending' });
+  it('says "Waiting for riders" while pending under an active policy', () => {
+    const { container } = renderWith({ isGoverned: true, status: 'pending', policyId: 'default' });
     expect(container.querySelector('.fg-status-pill').textContent).toBe('Waiting for riders');
+  });
+
+  // The engine is also 'pending' when no policy applies (reset() clears
+  // policyId): nothing is being waited for, so there is nothing to say.
+  it('hides while pending with no active policy', () => {
+    const { container } = renderWith({ isGoverned: true, status: 'pending', policyId: null });
+    expect(container.firstChild).toBeNull();
   });
 
   it.each(['idle', 'off', undefined])('hides entirely when the status is %s', (status) => {
@@ -27,7 +34,7 @@ describe('FitnessGovernance status bar', () => {
   });
 
   it('hides when the media is not governed', () => {
-    const { container } = renderWith({ isGoverned: false, status: 'pending' });
+    const { container } = renderWith({ isGoverned: false, status: 'pending', policyId: 'default' });
     expect(container.firstChild).toBeNull();
   });
 

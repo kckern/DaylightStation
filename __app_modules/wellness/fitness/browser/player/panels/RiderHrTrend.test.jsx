@@ -36,6 +36,18 @@ describe('RiderHrTrend', () => {
     expect(container.querySelector('svg')).toBeNull();
   });
 
+  // A rider with no live reading shows "No signal" on the card; the trend box
+  // must not also claim to be reading. Same box, baseline only.
+  it('shows only the baseline, never "Reading heart rate…", when there is no signal', () => {
+    const s = { heart_rate: [110, null, 120, 125] };
+    const { container } = render(<RiderHrTrend {...base} getSeries={(_i, m) => s[m]} tickCount={4} noSignal />);
+    const box = container.querySelector('.rider-hr-trend--loading');
+    expect(box).not.toBeNull();
+    expect(box.querySelector('.rider-hr-trend__baseline')).not.toBeNull();
+    expect(box.querySelector('.rider-hr-trend__label')).toBeNull();
+    expect(container.textContent).not.toMatch(/Reading/);
+  });
+
   it('draws one path clipped once per zone band, coloured by band', () => {
     const { container } = render(<RiderHrTrend {...base} />);
     const uses = [...container.querySelectorAll('use')];

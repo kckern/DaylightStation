@@ -14,6 +14,12 @@ vi.mock('@/lib/logging/Logger.js', () => {
   return { default: () => logger };
 });
 
+// jsdom has no layout: report a tall card so the trend box is on screen.
+vi.mock('./riderListDensity.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  measureRiderLayout: () => ({ height: 200, gap: 10 }),
+}));
+
 vi.mock('@mantine/core', () => ({ Badge: ({ children }) => <span>{children}</span> }));
 
 import FitnessUsersList from "./FitnessUsers.jsx";
@@ -38,6 +44,23 @@ describe('FitnessUsers card labels', () => {
     await waitFor(() => expect(container.querySelector('.fitness-device')).toBeTruthy());
     expect(container.querySelector('.device-value').textContent).toBe('No signal');
     expect(container.querySelector('.device-unit')).toBeNull();
+  });
+
+  it('a no-signal rider\'s trend box does not say it is reading', async () => {
+    testState.context = context({ heartRate: null, getParticipantTimelineSeries: () => [], timelineTimebase: { tickCount: 3, intervalMs: 5000 } });
+    const { container } = render(<FitnessUsersList />);
+    await waitFor(() => expect(container.querySelector('.fitness-device')).toBeTruthy());
+    expect(container.querySelector('.device-value').textContent).toBe('No signal');
+    await waitFor(() => expect(container.querySelector('.rider-hr-trend--loading')).toBeTruthy());
+    expect(container.querySelector('.rider-hr-trend__baseline')).toBeTruthy();
+    expect(container.textContent).not.toMatch(/Reading heart rate/);
+  });
+
+  it('a rider with a reading but too few for a line says it is reading', async () => {
+    testState.context = context({ heartRate: 120, getParticipantTimelineSeries: () => [118, 120], timelineTimebase: { tickCount: 2, intervalMs: 5000 } });
+    const { container } = render(<FitnessUsersList />);
+    await waitFor(() => expect(container.querySelector('.rider-hr-trend__label')).toBeTruthy());
+    expect(container.querySelector('.rider-hr-trend__label').textContent).toBe('Reading heart rate…');
   });
 
   it('keeps the number and BPM unit when there is a reading', async () => {

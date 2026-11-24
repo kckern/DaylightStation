@@ -55,7 +55,7 @@ function frameAt({ chart, prevRange }, f) {
  * clock glides the line; frames write `d` and the plot transform through refs,
  * so React never re-renders per frame (the DistanceChart pattern).
  */
-const RiderHrTrend = ({ participantId, getSeries, tickCount, tickMs, zones, profileId, cardHeight }) => {
+const RiderHrTrend = ({ participantId, getSeries, tickCount, tickMs, zones, profileId, cardHeight, noSignal = false }) => {
   const getSeriesRef = useRef(getSeries);
   getSeriesRef.current = getSeries;
   const uid = `hrt${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
@@ -141,6 +141,15 @@ const RiderHrTrend = ({ participantId, getSeries, tickCount, tickMs, zones, prof
   }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!ready) {
+    // No live reading: the card already says "No signal", so the box keeps its
+    // height with the baseline alone instead of claiming to be reading.
+    if (noSignal) {
+      return (
+        <div className="rider-hr-trend rider-hr-trend--loading rider-hr-trend--no-signal" aria-hidden="true">
+          <span className="rider-hr-trend__baseline" />
+        </div>
+      );
+    }
     return (
       <div className="rider-hr-trend rider-hr-trend--loading" role="status" aria-label="Reading heart rate">
         <span className="rider-hr-trend__baseline" aria-hidden="true" />

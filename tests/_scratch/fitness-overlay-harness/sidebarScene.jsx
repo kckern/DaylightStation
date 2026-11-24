@@ -33,7 +33,7 @@ const devices = RIDERS.map((r) => ({ deviceId: r.deviceId, type: 'heart_rate', h
 const byDevice = Object.fromEntries(RIDERS.map((r) => [r.deviceId, { id: r.id, profileId: r.id, name: r.name, heartRate: r.heartRate, zoneId: r.zoneId, rawZoneId: r.zoneId, timelineUserId: r.id }]));
 
 const CTX = {
-  governanceState: { isGoverned: true, status: 'pending' },
+  governanceState: { isGoverned: true, status: 'pending', policyId: 'default' },
   connected: true, fitnessDevices: new Map(), allDevices: devices, activeHeartRateParticipants: devices,
   rpmDevices: [{ deviceId: '7001', cadence: 56, type: 'cadence', isActive: true, lastSeen: Date.now() }],
   equipmentDevices: [], deviceConfiguration: { hr: {}, cadence: {} },
