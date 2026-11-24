@@ -61,6 +61,12 @@
             android:taskAffinity=""
             android:theme="@android:style/Theme.DeviceDefault.Dialog" />
 
+        <!-- Not exported: only the system's job scheduler binds it. Sends a queued capture after the app was stopped. -->
+        <service
+            android:name="net.kckern.daylight.cap.quickinput.shell.UploadJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <activity
             android:name="net.kckern.daylight.cap.quickinput.shell.CaptureStatusActivity"
             android:exported="false"

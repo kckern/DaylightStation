@@ -522,7 +522,7 @@ public final class MealCameraActivity extends Activity implements TextureView.Su
             if (prepared != PhotoPlan.Preparation.READY) throw new IOException("preparation: " + prepared.name());
             if (!store.acceptPhoto(draft.id, encoded, true)) throw new IOException("photo not accepted");
             if (!store.sendForCurrentOwner(draft.id)) throw new IOException("not queued");
-            CaptureFiles.tellPayload();
+            CaptureFiles.tellPayload(this);
             ok = true;
         } catch (IOException | RuntimeException e) {
             Log.w(TAG, "shot not queued: " + e.getMessage());

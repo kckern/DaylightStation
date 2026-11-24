@@ -61,10 +61,15 @@ public class ShellService extends Service implements ShellServer.Host {
             if (l != null) l.onShellComponent(name, instance);
         });
         ShellLog.install(this);
-        createNotificationChannel();
-        ShellLog.note("SHELL", "service created, device=" + BuildConfig.DEVICE_ID + " versionCode=" + versionCode());
-        installRestartOnCrash();
-        ShellKeepAlive.schedule(this);
+        if (BuildConfig.PERSISTENT_SERVICE) createNotificationChannel();
+        else removeServiceChannels();
+        ShellLog.note("SHELL", "service created, device=" + BuildConfig.DEVICE_ID + " versionCode=" + versionCode()
+                + (BuildConfig.PERSISTENT_SERVICE ? "" : " (on demand)"));
+        // Only a device that is operated remotely needs reviving after a crash or a kill.
+        if (BuildConfig.PERSISTENT_SERVICE) {
+            installRestartOnCrash();
+            ShellKeepAlive.schedule(this);
+        }
     }
 
     /**
@@ -87,7 +92,7 @@ public class ShellService extends Service implements ShellServer.Host {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        postNotification();
+        if (BuildConfig.PERSISTENT_SERVICE) postNotification();
         // The lifeline comes up before the payload, so a payload that hangs on
         // start still leaves rollback reachable.
         // control.bind none: this device has no lifeline, as it has no control API.
@@ -112,7 +117,7 @@ public class ShellService extends Service implements ShellServer.Host {
             // Queued on the loader's own thread: a payload's start() never runs on the main thread.
             l.boot();
         }
-        return START_STICKY;
+        return BuildConfig.PERSISTENT_SERVICE ? START_STICKY : START_NOT_STICKY;
     }
 
     @Override
@@ -177,6 +182,13 @@ public class ShellService extends Service implements ShellServer.Host {
         } catch (Exception e) { return -1; }
     }
 
+    /** An on-demand device shows no service notice, so its (earlier) channels are removed. */
+    private void removeServiceChannels() {
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        manager.deleteNotificationChannel(CHANNEL_ID);
+        manager.deleteNotificationChannel(OLD_CHANNEL_ID);
+    }
+
     private void createNotificationChannel() {
         NotificationManager manager = getSystemService(NotificationManager.class);
         NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Daylight is running", NotificationManager.IMPORTANCE_MIN);
@@ -207,7 +219,7 @@ public class ShellService extends Service implements ShellServer.Host {
         @Override public Object component(String name) { return ShellComponents.get(name); }
         @Override public void updateNotification(String text) {
             notificationText = text == null ? "" : text;
-            postNotification();
+            if (BuildConfig.PERSISTENT_SERVICE) postNotification();
         }
         @Override public String requestPayloadSwap(String url, String sha256) {
             PayloadLoader l = loader;

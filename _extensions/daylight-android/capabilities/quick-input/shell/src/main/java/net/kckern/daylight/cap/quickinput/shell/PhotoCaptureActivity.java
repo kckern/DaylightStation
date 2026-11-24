@@ -454,7 +454,7 @@ public class PhotoCaptureActivity extends Activity {
         try {
             if (!store.sendForCurrentOwner(draft.id)) return;
             completed = true;
-            CaptureFiles.tellPayload();
+            CaptureFiles.tellPayload(this);
             CaptureStatusActivity.open(this, owner, draft.id);
             finish();
         } catch (IOException e) {

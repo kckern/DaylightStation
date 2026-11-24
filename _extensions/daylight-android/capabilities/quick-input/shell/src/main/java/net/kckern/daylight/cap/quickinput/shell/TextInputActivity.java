@@ -285,7 +285,7 @@ public class TextInputActivity extends Activity {
             if (!CaptureScope.currentIs(selectedOwner)) throw new IOException("The draft belongs to another account");
             selectedStore.writeText(selected.id, new String(body, StandardCharsets.UTF_8));
             if (!selectedStore.sendForCurrentOwner(selected.id)) throw new IOException("Draft cannot be sent");
-            CaptureFiles.tellPayload();
+            CaptureFiles.tellPayload(this);
         }, () -> CaptureUi.sent(this), "Could not queue the draft. Check it and try again.");
     }
 

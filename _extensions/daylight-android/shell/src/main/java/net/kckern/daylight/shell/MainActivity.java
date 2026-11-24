@@ -24,7 +24,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        startForegroundService(new Intent(this, ShellService.class));
+        Intent service = new Intent(this, ShellService.class);
+        if (BuildConfig.PERSISTENT_SERVICE) startForegroundService(service); else startService(service);
         requestBatteryExemptionIfNeeded();
         String[] missing = missingRuntimePermissions();
         if (missing.length == 0) { finish(); return; }

@@ -104,10 +104,12 @@ test('nothing of quick-input is exported: a capture starts inside the app or not
     'activity net.kckern.daylight.cap.quickinput.shell.TextInputActivity',
     'provider net.kckern.daylight.cap.quickinput.shell.InputFileProvider',
     'service net.kckern.daylight.cap.quickinput.shell.MemoRecorderService',
+    'service net.kckern.daylight.cap.quickinput.shell.UploadJob',
   ]);
   for (const [key, row] of own) {
     assert.equal(row.exported, false, key);
-    assert.equal(row.permission, null, key);
+    // The job service is bound only by the system's job scheduler, which holds BIND_JOB_SERVICE.
+    assert.equal(row.permission, key.endsWith('.UploadJob') ? 'android.permission.BIND_JOB_SERVICE' : null, key);
   }
 });
 

@@ -60,6 +60,7 @@ Driving Radio.
 | `debug-tools`, `app-launcher` | Listed | Not listed: both exist to be driven over the control API. The payload test fails a device that is not a kiosk and lists either |
 | Heartbeats and log shipping | On, to the household log store | Off (`heartbeat.enabled: false`, no log store URL). The test requires heartbeats of kiosks only |
 | Self-update and secure-settings permissions | `REQUEST_INSTALL_PACKAGES`, `WRITE_SECURE_SETTINGS` | Neither. They come from a kiosk build's generated manifest only |
+| Shell service | Kept in the foreground with a notice, restarted by a keep-alive alarm and at boot | Started on demand (`ShellStart.ensure`, from a visible screen), no notice, not restarted when Android stops it. `PERSISTENT_SERVICE` is `control.bind != none`. A queued capture schedules a one-shot job (`UploadJob`, about 45 s later) that starts the service again to send it if the app was stopped |
 | Drawing over other apps | `SYSTEM_ALERT_WINDOW` | Removed from the phone manifest |
 | Lock task, TV launcher entry | `lockTaskMode="if_whitelisted"` and a `LEANBACK_LAUNCHER` category on the kiosk Activity | Neither: removed by the phone's generated manifest |
 | Setup activity (`MainActivity`) | Exported, startable by name over adb | Not exported |

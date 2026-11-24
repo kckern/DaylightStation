@@ -322,6 +322,8 @@ export const EXPECTED_COMPONENTS = {
   // Opening the photo screen opens the camera, so only this app can: the payload on a
   // keyed input link.
   'activity net.kckern.daylight.cap.quickinput.shell.MealCameraActivity': { exported: false, permission: null },
+  // Only the job scheduler binds it: it sends a queued capture after the app was stopped.
+  'service net.kckern.daylight.cap.quickinput.shell.UploadJob': { exported: false, permission: 'android.permission.BIND_JOB_SERVICE' },
   'activity net.kckern.daylight.cap.quickinput.shell.PhotoCaptureActivity': { exported: false, permission: null },
   'activity net.kckern.daylight.cap.quickinput.shell.CaptureStatusActivity': { exported: false, permission: null },
   // The camera app reaches the one file of a capture through a grant the photo screen

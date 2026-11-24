@@ -9,7 +9,26 @@ public final class ShellStart {
     /** By name: a capability's shell half cannot reference the shell app module. */
     static final String SERVICE = "net.kckern.daylight.shell.ShellService";
 
+    private static Boolean persistent;
+
     private ShellStart() { }
+
+    /**
+     * Whether this device keeps the shell service in the foreground (a kiosk) or starts it on demand
+     * (the phone). Read once from the shell's own BuildConfig, by name, since a capability's shell
+     * half cannot reference the shell module. Persistent when it cannot be read.
+     */
+    public static synchronized boolean persistent() {
+        if (persistent == null) {
+            try {
+                persistent = (Boolean) Class.forName("net.kckern.daylight.shell.BuildConfig")
+                        .getField("PERSISTENT_SERVICE").get(null);
+            } catch (ReflectiveOperationException | RuntimeException unreadable) {
+                persistent = Boolean.TRUE;
+            }
+        }
+        return persistent;
+    }
 
     /**
      * @return false when Android refused the start. From Android 12 a foreground
@@ -19,7 +38,9 @@ public final class ShellStart {
      */
     public static boolean ensure(Context context) {
         try {
-            context.startForegroundService(new Intent().setClassName(context, SERVICE));
+            Intent intent = new Intent().setClassName(context, SERVICE);
+            // On demand (the phone): a plain start from a visible screen, with no foreground notice.
+            if (persistent()) context.startForegroundService(intent); else context.startService(intent);
             return true;
         } catch (RuntimeException refused) {
             Log.w("Daylight", "shell service start refused: " + refused);
