@@ -21,4 +21,10 @@ public class PlaylistWidgetStateTest {
         assertEquals(IGNORE, new PlaylistWidgetState(PLAYING, "playing").tap(null));
         assertEquals(START, new PlaylistWidgetState(READY, "").tap(null));
     }
+
+    @Test public void aStaleWidgetTapStartsPlaybackWhenNothingIsPlaying() {
+        // The app was killed: the widget still shows "playing" with a revision this process never saw.
+        assertEquals(START, new PlaylistWidgetState(READY, "fresh").tap("from-before-the-kill"));
+        assertEquals(START, new PlaylistWidgetState(FAILED, "fresh").tap("from-before-the-kill"));
+    }
 }

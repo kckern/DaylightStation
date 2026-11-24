@@ -89,6 +89,7 @@ final class ActionsScreen extends Screen {
         try {
             io.execute(() -> {
                 List<CarAnswers.Entry> answer;
+                boolean failedList = false;
                 try {
                     answer = CarAnswers.entries(payload.list(LIST_WAIT_MS));
                 } catch (PayloadPort.NotReadyException noPayload) {
@@ -98,12 +99,16 @@ final class ActionsScreen extends Screen {
                     // The payload is replaceable code; whatever it throws must not take the screen down.
                     Log.w(DaylightCarAppService.TAG, "car list failed: " + broke.getClass().getSimpleName());
                     answer = CarAnswers.starting();
+                    failedList = true;
                 }
                 final List<CarAnswers.Entry> shown = answer;
+                final boolean retrySoon = failedList;
                 main.post(() -> {
                     rows = shown;
                     loading.set(false);
                     invalidate();
+                    // A list that threw must not leave the car on "starting" for good: ask again shortly.
+                    if (retrySoon) main.postDelayed(() -> { rows = null; invalidate(); }, 5000);
                 });
             });
         } catch (RuntimeException stopping) {

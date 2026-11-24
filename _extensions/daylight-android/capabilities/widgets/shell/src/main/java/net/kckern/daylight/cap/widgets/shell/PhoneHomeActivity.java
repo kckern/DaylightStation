@@ -402,13 +402,30 @@ public class PhoneHomeActivity extends Activity {
         returnShortcut(page, "daylight://bookmark/" + page.optString("id"));
     }
 
+    /** A launcher icon in the app's green with the glyph inset: white-on-transparent vanishes on most launchers. */
+    private android.graphics.Bitmap greenIcon(int glyphResource, boolean adaptive) {
+        int size = 192;
+        android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888);
+        android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
+        android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(GREEN);
+        if (adaptive) canvas.drawColor(GREEN);
+        else canvas.drawRoundRect(new android.graphics.RectF(0, 0, size, size), size * 0.22f, size * 0.22f, paint);
+        android.graphics.drawable.Drawable glyph = getDrawable(glyphResource);
+        if (glyph != null) {
+            int inset = size / 4;
+            glyph.setBounds(inset, inset, size - inset, size - inset);
+            glyph.draw(canvas);
+        }
+        return bitmap;
+    }
+
     private void returnShortcut(JSONObject page, String link) {
         Intent open = SurfaceCache.viewIntent(this, link)
                 .setClassName(this, "net.kckern.daylight.cap.notifications.shell.LinkActivity");
         Intent result = new Intent().putExtra(Intent.EXTRA_SHORTCUT_NAME, page.optString("label"))
                 .putExtra(Intent.EXTRA_SHORTCUT_INTENT, open)
-                .putExtra(Intent.EXTRA_SHORTCUT_ICON_RESOURCE,
-                        Intent.ShortcutIconResource.fromContext(this, drawable(page.optString("icon"))));
+                .putExtra(Intent.EXTRA_SHORTCUT_ICON, greenIcon(drawable(page.optString("icon")), false));
         setResult(RESULT_OK, result);
         finish();
     }
@@ -426,7 +443,7 @@ public class PhoneHomeActivity extends Activity {
             ShortcutManager manager = getSystemService(ShortcutManager.class);
             try {
                 ShortcutInfo shortcut = new ShortcutInfo.Builder(this, "bookmark-" + id)
-                        .setShortLabel(title).setIcon(Icon.createWithResource(this, drawable("star")))
+                        .setShortLabel(title).setIcon(Icon.createWithAdaptiveBitmap(greenIcon(drawable("star"), true)))
                         .setIntent(SurfaceCache.viewIntent(this, "daylight://bookmark/" + id)).build();
                 if (manager != null && manager.isRequestPinShortcutSupported()
                         && manager.requestPinShortcut(shortcut, callback(placement).getIntentSender())) return;

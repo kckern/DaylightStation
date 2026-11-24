@@ -50,7 +50,7 @@ import java.util.concurrent.Executors;
  * camera is ready for the next shot the moment the shutter is pressed. What happens to a photo
  * afterwards (replace it, retry it) is on the capture status screen, not a gate before it.
  *
- * If the camera permission is refused or there is no usable camera, this opens the
+ * If the phone has no usable back camera, this opens the
  * system-camera screen instead, so a capture is never lost to the permission.
  */
 public final class MealCameraActivity extends Activity implements TextureView.SurfaceTextureListener {
@@ -66,18 +66,22 @@ public final class MealCameraActivity extends Activity implements TextureView.Su
 
     private TextureView view;
     private TextView counter;
+    private TextView notice;
+    private TextView noticeAction;
     private View shutter;
     private View flash;
 
     private HandlerThread cameraThread;
     private Handler cameraHandler;
-    private CameraDevice camera;
-    private CameraCaptureSession session;
-    private ImageReader reader;
+    private volatile CameraDevice camera;
+    private volatile CameraCaptureSession session;
+    private volatile ImageReader reader;
+    /** True between onResume and onPause: a camera that finishes opening after that must be closed again. */
+    private volatile boolean active;
     private Size previewSize;
     private int sensorOrientation;
     private boolean flashAvailable;
-    private boolean shotInFlight;
+    private volatile boolean shotInFlight;
     private boolean fellBack;
 
     private final ExecutorService shots = Executors.newSingleThreadExecutor(r -> {
@@ -150,6 +154,25 @@ public final class MealCameraActivity extends Activity implements TextureView.Su
         counterParams.bottomMargin = dp(150);
         root.addView(counter, counterParams);
 
+        // A message with one action, for the states the camera cannot fix by itself.
+        android.widget.LinearLayout panel = new android.widget.LinearLayout(this);
+        panel.setOrientation(android.widget.LinearLayout.VERTICAL);
+        panel.setGravity(Gravity.CENTER);
+        panel.setPadding(dp(32), 0, dp(32), 0);
+        notice = new TextView(this);
+        notice.setTextColor(Color.WHITE);
+        notice.setTextSize(18);
+        notice.setGravity(Gravity.CENTER);
+        panel.addView(notice);
+        noticeAction = chip("", 16);
+        noticeAction.setPadding(dp(24), 0, dp(24), 0);
+        android.widget.LinearLayout.LayoutParams actionParams = new android.widget.LinearLayout.LayoutParams(-2, dp(48));
+        actionParams.topMargin = dp(20);
+        panel.addView(noticeAction, actionParams);
+        panel.setVisibility(View.GONE);
+        panel.setTag("notice-panel");
+        root.addView(panel, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
+
         shutter = new View(this);
         GradientDrawable ring = new GradientDrawable();
         ring.setShape(GradientDrawable.OVAL);
@@ -162,6 +185,31 @@ public final class MealCameraActivity extends Activity implements TextureView.Su
         shutterParams.bottomMargin = dp(48);
         root.addView(shutter, shutterParams);
         setContentView(root);
+    }
+
+    /** Show a message over the viewfinder with one action; a null label hides the action. */
+    private void showNotice(String message, String actionLabel, Runnable action) {
+        runOnUiThread(() -> {
+            View panel = ((ViewGroup) view.getParent()).findViewWithTag("notice-panel");
+            notice.setText(message);
+            noticeAction.setVisibility(actionLabel == null ? View.GONE : View.VISIBLE);
+            if (actionLabel != null) {
+                noticeAction.setText(actionLabel);
+                noticeAction.setOnClickListener(v -> action.run());
+            }
+            panel.setVisibility(View.VISIBLE);
+            shutter.setEnabled(false);
+            shutter.setAlpha(0.4f);
+        });
+    }
+
+    private void hideNotice() {
+        runOnUiThread(() -> {
+            View panel = ((ViewGroup) view.getParent()).findViewWithTag("notice-panel");
+            panel.setVisibility(View.GONE);
+            shutter.setEnabled(true);
+            shutter.setAlpha(1f);
+        });
     }
 
     private TextView chip(String text, int sp) {
@@ -182,11 +230,32 @@ public final class MealCameraActivity extends Activity implements TextureView.Su
     @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(request, permissions, results);
         if (request != REQUEST_CAMERA) return;
-        if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) openWhenReady();
-        else fallBack("Camera permission was not given. Using the phone's camera app.");
+        if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
+            hideNotice();
+            openWhenReady();
+        } else {
+            showCameraOff();
+        }
     }
 
-    /** The system-camera screen takes over, with the same extras. */
+    /**
+     * The permission is off. The phone's own camera app is not a way round it: a build that
+     * declares CAMERA must hold it before the system camera will take a picture for it. So the
+     * way forward is here: ask again while Android still lets us, otherwise open the app's
+     * settings page where it can be switched on.
+     */
+    private void showCameraOff() {
+        boolean canAsk = shouldShowRequestPermissionRationale(Manifest.permission.CAMERA);
+        showNotice("Daylight needs the camera to take meal photos.",
+                canAsk ? "Allow camera" : "Open settings",
+                () -> {
+                    if (canAsk) requestPermissions(new String[]{Manifest.permission.CAMERA}, REQUEST_CAMERA);
+                    else startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            android.net.Uri.fromParts("package", getPackageName(), null)));
+                });
+    }
+
+    /** The camera hardware cannot be used here at all: the phone's camera app takes over. */
     private void fallBack(String message) {
         if (fellBack) return;
         fellBack = true;
@@ -200,13 +269,16 @@ public final class MealCameraActivity extends Activity implements TextureView.Su
     @Override protected void onResume() {
         super.onResume();
         if (store == null) return;
+        active = true;
         cameraThread = new HandlerThread("Daylight-camera");
         cameraThread.start();
         cameraHandler = new Handler(cameraThread.getLooper());
+        if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) hideNotice();
         openWhenReady();
     }
 
     @Override protected void onPause() {
+        active = false;
         closeCamera();
         if (cameraThread != null) {
             cameraThread.quitSafely();
@@ -261,11 +333,19 @@ public final class MealCameraActivity extends Activity implements TextureView.Su
             texture.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
             manager.openCamera(id, new CameraDevice.StateCallback() {
                 @Override public void onOpened(CameraDevice device) {
+                    if (!active) { device.close(); return; }
                     camera = device;
                     startPreview(texture);
                 }
 
-                @Override public void onDisconnected(CameraDevice device) { device.close(); camera = null; }
+                @Override public void onDisconnected(CameraDevice device) {
+                    device.close();
+                    camera = null;
+                    if (active) showNotice("The camera was taken by another app.", "Try again", () -> {
+                        hideNotice();
+                        openWhenReady();
+                    });
+                }
 
                 @Override public void onError(CameraDevice device, int error) {
                     device.close();
@@ -380,7 +460,15 @@ public final class MealCameraActivity extends Activity implements TextureView.Su
             request.set(CaptureRequest.CONTROL_AE_MODE, flashAvailable
                     ? CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH : CaptureRequest.CONTROL_AE_MODE_ON);
             request.set(CaptureRequest.JPEG_ORIENTATION, sensorOrientation);
-            session.capture(request.build(), null, cameraHandler);
+            session.capture(request.build(), new CameraCaptureSession.CaptureCallback() {
+                @Override public void onCaptureFailed(CameraCaptureSession s2, CaptureRequest r, android.hardware.camera2.CaptureFailure f) {
+                    shotInFlight = false;
+                    failed++;
+                    runOnUiThread(MealCameraActivity.this::showCounter);
+                }
+            }, cameraHandler);
+            // A shot that never arrives must not lock the shutter for good.
+            cameraHandler.postDelayed(() -> shotInFlight = false, 4000);
         } catch (CameraAccessException | IllegalStateException e) {
             shotInFlight = false;
             Log.w(TAG, "capture failed: " + e.getClass().getSimpleName());
@@ -455,7 +543,7 @@ public final class MealCameraActivity extends Activity implements TextureView.Su
         if (queued == 0 && failed == 0) return;
         counter.setVisibility(View.VISIBLE);
         StringBuilder text = new StringBuilder();
-        if (queued > 0) text.append("✓ ").append(queued).append(queued == 1 ? " sent" : " sent");
+        if (queued > 0) text.append("✓ ").append(queued).append(" queued");
         if (failed > 0) text.append(queued > 0 ? "  ·  " : "").append(failed).append(" not saved");
         if (queued > 0) text.append("  ·  Review");
         counter.setText(text);
