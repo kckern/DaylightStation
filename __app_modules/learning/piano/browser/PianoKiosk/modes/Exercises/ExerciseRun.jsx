@@ -50,6 +50,8 @@ import CountInOverlay from '../SheetMusic/CountInOverlay.jsx';
 import CountUpOverlay from '../SheetMusic/CountUpOverlay.jsx';
 import { beatLoopPosition, BEAT_LOOP_LEAD_MS } from './beatLoop.js';
 import { rhythmNotes, toRhythmExpectation } from './rhythmOnly.js';
+import useRunDemonstration from './useRunDemonstration.js';
+import { isRisingEdge } from '../SheetMusic/pedalEdge.js';
 import { exerciseCountInPlan, countdownPresentation, countUpPresentation, askPace, countInSentence } from '../SheetMusic/countIn.js';
 import { detectEntryShift, lateEntryWaitUntil, entryShiftSentence, entryShiftReason, missedCue, missedCueDueAt } from '../../../performance/entryShift.js';
 import Icon from '../../../ui/icons/Icon.jsx';
@@ -419,6 +421,11 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   is sized from the row variables only the `learn-lab` surface defines
  *   (`--run-rail-row` and friends); on other surfaces it falls back to fixed
  *   heights, so use it with `surface="learn-lab"`.
+ * @param {{playing?: boolean, onDone?: Function}|null} [props.demonstration] Listen: while set, the
+ *   passage is played to the child (useRunDemonstration) with the cursor and the keys following what
+ *   sounds and a progress bar in the rail; the keys and pedals start nothing. `playing: false` pauses it.
+ * @param {(phase: string) => void} [props.onPhase] Told each phase of the run (ready, countdown,
+ *   running, paused, resume-countdown, done), so a host's controls can follow the take.
  * @param {'timed'|'always'} [props.scoreCursorPolicy='timed'] Whether a score
  *   passage draws its position cursor only for clocked work or for every run.
  * @param {number|null} [props.incompleteAfterMs] Free practice only: end the take
@@ -429,13 +436,17 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   `onFailed` consumer replaces the result screen or records it while the run
  *   retains its standard feedback and piano-driven retry.
  */
-export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', incompleteAfterMs = null, failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, maxCueRestarts = MAX_CUE_RESTARTS, rhythmOnly = false, leadInLoop = false, resultLabel = null, resultActions = null, resultPresentation = 'inline', resultContinueLabel = null, onResultContinue = null, onPickStep = null, onStarted, onExit, onPassed, onFailed, onUnavailable }) {
+/** The pedals that count as any key: sustain, soft (una corda), sostenuto. */
+const PEDAL_CONTROLLERS = Object.freeze([64, 66, 67]);
+const NO_TARGETS = new Map();
+
+export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', incompleteAfterMs = null, failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, maxCueRestarts = MAX_CUE_RESTARTS, rhythmOnly = false, leadInLoop = false, resultLabel = null, resultActions = null, resultPresentation = 'inline', resultContinueLabel = null, onResultContinue = null, onPickStep = null, demonstration = null, onPhase = null, onStarted, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes: pressedNotes } = usePianoMidiNotes();
   // The rhythm rung reads any key as one pitch (see rhythmOnly.js); every other run sees the keys as played.
   const activeNotes = useMemo(() => (rhythmOnly ? rhythmNotes(pressedNotes) : pressedNotes), [rhythmOnly, pressedNotes]);
-  const { connected } = usePianoMidi();
+  const { connected, subscribeRaw } = usePianoMidi();
   const kioskConfig = usePianoKioskConfigOptional()?.config;
   const keyboardConfig = kioskConfig?.keyboard;
   // Off only when a household says so; a kiosk with no config at all engraves
@@ -464,6 +475,11 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
    * none", which together are what `notFound` reads below.
    */
   const [scoreExpectation, setScoreExpectation] = useState(null);
+  // Listen: the passage played to the child inside the run. Its keys start nothing while it lasts.
+  const demo = useRunDemonstration({ expectation: scoreExpectation, active: Boolean(demonstration),
+    playing: demonstration?.playing !== false, onDone: demonstration?.onDone });
+  const demonstratingRef = useRef(false);
+  demonstratingRef.current = Boolean(demonstration);
   const [runtime, setRuntime] = useState(null);
   const [lastWrong, setLastWrong] = useState(null);
   const [clockNow, setClockNow] = useState(() => Date.now());
@@ -1054,18 +1070,19 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       onPassedRef.current?.({ ...judgedResult, assessmentId: assessmentIdRef.current });
     }, true);
   }, [judgedResult, resultPassed, onPassed, logger, holdResolve]);
+  // A host that offers a next step (a slower tempo, one hand, fewer bars)
+  // gets the key press for it, so the child never has to reach for the
+  // glass to take the help the result card recommends. A pedal does the same.
+  const continueFromPiano = (via = 'piano') => {
+    const hostAction = onResultContinueRef.current;
+    logger.info('piano.exercise-retry', { ...traceFieldsRef.current, via, action: hostAction ? 'host' : 'repeat' });
+    if (hostAction) hostAction();
+    else installRuntime();
+  };
   const { exitHeld } = usePianoExitGesture({
     activeNotes, keyboard: keyboardConfig, onExit, enabled: Boolean(onExit) || localRetry,
     continueEnabled: localRetry && resultArmed, resetKey: runtime,
-    onContinue: () => {
-      // A host that offers a next step (a slower tempo, one hand, fewer bars)
-      // gets the key press for it, so the child never has to reach for the
-      // glass to take the help the result card recommends.
-      const hostAction = onResultContinueRef.current;
-      logger.info('piano.exercise-retry', { ...traceFieldsRef.current, via: 'piano', action: hostAction ? 'host' : 'repeat' });
-      if (hostAction) hostAction();
-      else installRuntime();
-    },
+    onContinue: () => continueFromPiano('piano'),
   });
 
   /**
@@ -1305,6 +1322,30 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   }, [armed, heldKey, snapshot.paused, snapshot.status, countIn, startCountIn]);
 
   /**
+   * A PEDAL IS "ANY KEY" (sustain, soft or sostenuto: CC 64/66/67 pressed down) everywhere the drill
+   * already takes any key: the armed start of a cued Learn take and the result card's continue. It is
+   * never a note: the CC never reaches `activeNotes`, so it cannot be graded. Rising edge only, so a
+   * held or half pedal acts once. Nothing while listening.
+   */
+  const pedalLevelsRef = useRef({});
+  const onPedalRef = useRef(null);
+  onPedalRef.current = (controller) => {
+    if (demonstratingRef.current) return;
+    if (localRetry && resultArmed) { continueFromPiano('pedal'); return; }
+    if (!learnCued || !runtime || armedRef.current || cueHoldRef.current) return;
+    const state = runtime.getSnapshot();
+    if (state.status !== 'prepared' || state.paused) return;
+    traceEvent('piano.exercise-armed', { at: Date.now(), held: [], onsets: [], pedal: controller, releaseWaitMs: 0 });
+    startCountIn({ gapMs: Math.min(countIn?.periodMs ?? START_GAP_MAX_MS, START_GAP_MAX_MS), reason: 'pedal' });
+  };
+  useEffect(() => subscribeRaw?.(({ data } = {}) => {
+    if (!data || data.length < 3 || (data[0] & 0xf0) !== 0xb0 || !PEDAL_CONTROLLERS.includes(data[1])) return;
+    const previous = pedalLevelsRef.current[data[1]] ?? 0;
+    pedalLevelsRef.current[data[1]] = data[2];
+    if (isRisingEdge(previous, data[2])) onPedalRef.current?.(data[1]);
+  }) ?? undefined, [subscribeRaw]);
+
+  /**
    * THE MISSED CUE. When the first note's window has closed with nothing played in it, the
    * take is thrown back to the count (a new runtime, nothing recorded, no credit or failure)
    * and the count starts again after a short pause. Capped, so a child who cannot find the
@@ -1459,6 +1500,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     const onsets = held.filter((midi) => !previousHeld.includes(midi));
     const releases = previousHeld.filter((midi) => !held.includes(midi));
     previousNotesRef.current = held;
+    // Listening: the child's keys are not a take and start nothing.
+    if (demonstratingRef.current) return;
     const time = Date.now();
     traceEvent('piano.exercise-midi-state', {
       heldBefore: previousHeld,
@@ -1677,6 +1720,14 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     });
   }, [eventIndex, held, snapshot.status, traceEvent, visualCursor.index, visualCursor.reason, visualCursorSignature, countInBeat]);
 
+  const runPhase = snapshot.paused ? 'paused'
+    : resuming ? 'resume-countdown'
+      : snapshot.status === 'prepared' ? 'ready'
+        : resultReady && JUDGED_STATUSES.has(snapshot.status) ? 'done'
+          : countingDown ? 'countdown' : 'running';
+  const onPhaseRef = useRef(onPhase); onPhaseRef.current = onPhase;
+  useEffect(() => { onPhaseRef.current?.(runPhase); }, [runPhase]);
+
   if (notFound) return <PianoEmpty message="Exercise not found. It may have been renamed." />;
   if (unrunnable) return <PianoEmpty message="Cannot start this one. It is missing something the challenge needs — try another." />;
   if (instance === undefined || score === undefined || (challenge && !requirement)) return <SkeletonStage />;
@@ -1693,11 +1744,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   // status line — a run that has ended, still saying "follow the highlighted
   // notes" at a piano nothing is listening to.
   const result = resultReady && JUDGED_STATUSES.has(snapshot.result?.status) ? snapshot.result : null;
-  const phase = snapshot.paused ? 'paused'
-    : resuming ? 'resume-countdown'
-      : snapshot.status === 'prepared' ? 'ready'
-        : resultReady && JUDGED_STATUSES.has(snapshot.status) ? 'done'
-          : countingDown ? 'countdown' : 'running';
+  const phase = runPhase;
   const resumeRemaining = resuming
     ? Math.max(1, Math.ceil((snapshot.resumingUntil - Math.max(clockNow, Date.now())) / Math.max(1, resumeDelayMs / 2)))
     : null;
@@ -1919,8 +1966,29 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   const scoreReadout = stage !== 'keys' && presentation?.notationStyle !== 'flashcard'
     && Number.isFinite(result?.score);
 
+  // The rhythm step's expectation drops ornaments and merges untappable runs (rhythmOnly.js), so its
+  // event i is the real passage's `sourceIndex`: the score's cursor and marks are drawn on the real ink.
+  const sourceIndexOf = (index) => (index >= 0 ? askEvents[index]?.sourceIndex ?? index : index);
+  const scoreVerdicts = verdicts && rhythmOnly && askEvents.some((event) => event.sourceIndex != null)
+    ? new Map([...verdicts].map(([index, value]) => [sourceIndexOf(index), value])) : verdicts;
+  // Listen takes the rail's slot: what it is playing is on the score; how far through, here.
+  const listenRail = demo.active ? <div className="piano-exercise-run__listen" role="progressbar" aria-label="Listening"
+    aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(demo.progress * 100)}>
+    <Icon name="listen" /><span className="piano-exercise-run__listen-track"><i style={{ width: `${Math.round(demo.progress * 1000) / 10}%` }} /></span>
+  </div> : null;
+  const criteriaWanted = runRequirement?.rubric?.criteria ?? practiceRequirement?.rubric?.criteria ?? {};
+  // The docked result's meters: what was asked of the take, each as a picture with a fill.
+  const meters = result && resultPresentation === 'docked' ? [
+    { id: 'completeness', icon: rhythmOnly ? 'hand-right' : 'quarter-note', label: rhythmOnly ? 'Taps' : 'Notes' },
+    ...(rhythmOnly ? [] : [{ id: 'cleanliness', icon: 'sparkle', label: 'Clean notes' }]),
+    ...(Number.isFinite(result.criteria?.placement) ? [{ id: 'placement', icon: 'metronome', label: 'On the beat' }] : []),
+  ].map((meter) => {
+    const value = Math.max(0, Math.min(1, Number(result.criteria?.[meter.id]) || 0));
+    return { ...meter, value, met: Number.isFinite(criteriaWanted[meter.id]) ? value >= criteriaWanted[meter.id] : value >= 1 };
+  }) : [];
+
   return (
-    <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}${resolveHold ? ` is-resolve-held is-resolve-${resolveHold.outcome}${resolveHold.settled ? ' is-resolve-settled' : ''}` : ''}`} data-tier={runTier} data-stage={stage} data-surface={surface} data-phase={phase} data-count-style={learnCued ? 'up' : undefined} data-count-band={learnCued || learnPulse ? 'true' : undefined} data-start-armed={armed ? 'true' : undefined} data-entry-shift={entryShift ? String(entryShift.beats) : undefined} data-armed={runtime ? 'true' : undefined} data-expected-cursor={timeline?.expectedCursor ?? eventIndex} data-displayed-cursor={visualCursor.index} data-hunting={countingDown ? undefined : huntHelp ?? undefined}
+    <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}${resolveHold ? ` is-resolve-held is-resolve-${resolveHold.outcome}${resolveHold.settled ? ' is-resolve-settled' : ''}` : ''}`} data-tier={runTier} data-stage={stage} data-surface={surface} data-phase={phase} data-listening={demo.active ? (demonstration?.playing === false ? 'paused' : 'playing') : undefined} data-count-style={learnCued ? 'up' : undefined} data-count-band={learnCued || learnPulse ? 'true' : undefined} data-start-armed={armed ? 'true' : undefined} data-entry-shift={entryShift ? String(entryShift.beats) : undefined} data-armed={runtime ? 'true' : undefined} data-expected-cursor={timeline?.expectedCursor ?? eventIndex} data-displayed-cursor={visualCursor.index} data-hunting={countingDown ? undefined : huntHelp ?? undefined}
       data-beat-pulse={beatPulse ?? undefined} data-downbeat={beatPulse == null || timeline.downbeat == null ? undefined : String(timeline.downbeat)}>
       <header className="piano-exercise-run__head">
         {/* WHY YOU ARE HERE, AND NOTHING ELSE, WHEN THERE IS CHROME.
@@ -2048,7 +2116,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
              built from. It is mounted before there is a runtime, deliberately —
              see the guard above. */
           <ScorePassage
-            showCursor={scoreCursorPolicy === 'always' || timed}
+            showCursor={scoreCursorPolicy === 'always' || timed || demo.active}
             musicXml={score.musicXml}
             sourceId={score.id}
             measures={score.measures}
@@ -2058,9 +2126,9 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
             keepWholePassage={scoreLayoutPolicy === 'whole-passage'}
             onExpectation={takeScoreExpectation}
             onUnrunnable={handleScoreUnrunnable}
-            cursorIndex={visualCursor.index}
-            wrongMidi={countingDown ? null : lastWrong?.midi ?? null}
-            {...(verdicts ? { verdicts, windowOpen } : {})}
+            cursorIndex={demo.active ? sourceIndexOf(Math.max(0, demo.index)) : sourceIndexOf(visualCursor.index)}
+            wrongMidi={countingDown || demo.active ? null : lastWrong?.midi ?? null}
+            {...(verdicts && !demo.active ? { verdicts: scoreVerdicts, windowOpen } : {})}
           />
         )}
         {beatPulse != null && <span key={beatInMeasure == null ? beatPulse : `${timeline.measureIndex}:${beatInMeasure}`} className="piano-exercise-run__beat" aria-hidden="true">
@@ -2087,14 +2155,35 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
           begin", "Follow the highlighted notes") was telling a child something
           the staff and the cursor already say — nine times over, once per rep.
           It is kept for a lone exercise, which has no pills to read instead. */}
-      {runProgress ?? standingInstruction}
+      {listenRail ?? runProgress ?? standingInstruction}
       {/* The piano still starts the run; only the sentence about it is gone.
           A disconnected piano is the one thing the pills cannot say, so it
           keeps its own line whatever the surface. */}
       {!bare && chromeDrawn && !connected && <span className="piano-exercise-run__waiting">Waiting for the piano…</span>}
       {/* A docked card waits out the hold and arrives once, with the host's actions;
           its keys wait for RESULT_ARM_MS. Non-modal: it sits inside LearnLab's dialog. */}
-      {phase === 'done' && result && !hostOwnsFailure && !(resultPresentation === 'docked' && (passed || !resultSettled)) && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}${resultPresentation === 'docked' ? ' is-docked' : ''}`} data-result-armed={localRetry && resultArmed ? 'true' : undefined} {...(resultPresentation === 'docked' ? { role: 'alertdialog', 'aria-label': resultLabel ?? 'Result' } : {})}>
+      {/* THE DOCKED RESULT IS PICTURES, IN THE RAIL'S OWN SLOT: a verdict mark (never green for a miss), one
+          short line, a meter per thing asked (a fill, not a number), the piano's way on (a key or a pedal),
+          and the leave gesture as a small mark. It appears once, settled, at the rail's height. */}
+      {phase === 'done' && result && !hostOwnsFailure && resultPresentation === 'docked' && !passed && resultSettled && <section className="piano-exercise-run__result is-docked is-developing"
+        data-result-armed={localRetry && resultArmed ? 'true' : undefined} role="alertdialog" aria-label={resultLabel ?? 'Result'}>
+        <span className="piano-exercise-run__verdict" aria-hidden="true"><Icon name="retry" /></span>
+        <div className="piano-exercise-run__verdict-body">
+          <strong className="piano-exercise-run__verdict-line">{resultLabel ?? 'Have another go'}</strong>
+          <ul className="piano-exercise-run__meters" aria-label="How it went">
+            {meters.map((meter) => <li key={meter.id} data-met={meter.met || undefined} aria-label={`${meter.label}: ${Math.round(meter.value * 100)}%`}>
+              <Icon name={meter.icon} /><span className="piano-exercise-run__meter"><i style={{ width: `${Math.round(meter.value * 100)}%` }} /></span>
+            </li>)}
+          </ul>
+        </div>
+        <div className="piano-exercise-run__onward" data-ready={localRetry && resultArmed ? 'true' : undefined}
+          aria-label={`Play any key or press a pedal to ${resultContinueLabel ?? 'try again'}`}>
+          <Icon name="piano-key" /><Icon name="pedal" />
+          {onExit && <span className="piano-exercise-run__leave" aria-label="Hold the lowest and highest keys for two seconds to leave"><Icon name="keys-ends" /></span>}
+        </div>
+        <div className="piano-exercise-run__result-actions">{resultActions}</div>
+      </section>}
+      {phase === 'done' && result && !hostOwnsFailure && resultPresentation !== 'docked' && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}${resultPresentation === 'docked' ? ' is-docked' : ''}`} data-result-armed={localRetry && resultArmed ? 'true' : undefined} {...(resultPresentation === 'docked' ? { role: 'alertdialog', 'aria-label': resultLabel ?? 'Result' } : {})}>
         <div><span>{resultLabel ?? (passed ? 'Passed' : challenge ? 'Keep working' : 'Practice complete')}</span>{scoreReadout && <strong>{Math.round(result.score * 100)}%</strong>}</div>
         {/* A percentage is a reading task of its own, and the tiers below 2 are
             for children who have not been given it yet. They are told the same
@@ -2114,7 +2203,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
            what this board physically is. */
         <footer className="piano-exercise-run__keys">
           <PianoKeyboard
-            activeNotes={feedbackNotes} targetNotes={targetNotes} wrongNotes={wrongNotes} dimTarget
+            activeNotes={demo.active ? demo.sounding : feedbackNotes} targetNotes={demo.active ? NO_TARGETS : targetNotes} wrongNotes={demo.active ? null : wrongNotes} dimTarget
             {...resolveBoardRange(keyboardConfig)}
           />
         </footer>

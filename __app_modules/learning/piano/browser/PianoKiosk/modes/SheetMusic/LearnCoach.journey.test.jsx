@@ -166,7 +166,7 @@ describe('real Learn journey',()=>{
    const before=await stage();
    await playFree(page,miss);await page.locator('.piano-exercise-run__result').filter({hasText:'Almost on your own'}).waitFor({timeout:15000});await page.screenshot({path:path.join(ARTIFACTS,'silver-miss.png')});
    expect(await page.locator('.rep-card').count()).toBe(0);
-   // The result is docked over the rail and keyboard: the music does not move or resize when a take ends.
+   // The result is docked in the rail's slot: the music does not move or resize when a take ends.
    expect(await stage()).toEqual(before);
    // Every verdict mark is on the paper, beside a notehead: never under a stem tip, never past the edge.
    const marks=await page.evaluate(()=>{const svg=document.querySelector('.piano-exercise-run__stage .musicxml-renderer__svg svg');const paper=svg.getBoundingClientRect();
@@ -185,10 +185,10 @@ describe('real Learn journey',()=>{
      const hit=document.elementFromPoint((b.left+b.right)/2,(b.top+b.bottom)/2);return Boolean(hit&&(hit===m||m.contains(hit)||hit.closest('.piano-exercise-run__stage')));}));
     expect(seen.length).toBeGreaterThan(0);expect(seen.every(Boolean)).toBe(true);
     const primary=await page.locator('.piano-exercise-run__result-actions button.is-primary').boundingBox();
-    expect(primary.height).toBeGreaterThanOrEqual(64);expect(primary.y).toBeGreaterThanOrEqual(card.y-0.5);expect(primary.y+primary.height).toBeLessThanOrEqual(card.y+card.height+0.5);};
+    expect(primary.height).toBeGreaterThanOrEqual(48);expect(primary.y).toBeGreaterThanOrEqual(card.y-0.5);expect(primary.y+primary.height).toBeLessThanOrEqual(card.y+card.height+0.5);};
    await docked();
    expect(await page.getByRole('button',{name:'Try again'}).count()).toBe(1);
-   expect(await page.locator('.piano-exercise-run__result-onward').innerText()).toContain('play any key to try again');
+   expect(await page.locator('.piano-exercise-run__onward').getAttribute('aria-label')).toContain('pedal to try again');
    // Any key takes the primary button, so the child never has to reach for the glass.
    const key=()=>page.evaluate(async()=>{window.__hold([72]);await new Promise(r=>setTimeout(r,80));window.__hold([]);await new Promise(r=>setTimeout(r,80));});
    const logged=(event)=>page.evaluate((name)=>window.__logs.filter(l=>l.event===name).map(l=>l.data),event);
@@ -205,7 +205,7 @@ describe('real Learn journey',()=>{
    await page.getByRole('button',{name:'Come back to this later'}).waitFor({timeout:15000});await page.screenshot({path:path.join(ARTIFACTS,'silver-second-miss.png')});
    expect(await page.getByRole('button',{name:/^Practice /}).count()).toBeGreaterThan(0);
    await cardArmed();await docked();
-   expect(await page.locator('.piano-exercise-run__result-onward').innerText()).toMatch(/play any key to practice /);
+   expect(await page.locator('.piano-exercise-run__onward').getAttribute('aria-label')).toMatch(/pedal to practice /);
    const paper=await stage();expect(paper.height).toBeGreaterThan(300);
    // The key takes the recommended smaller practice, not a repeat of the take that missed.
    await key();await armed(page);
@@ -274,8 +274,9 @@ describe('real Learn journey',()=>{
  },60000);
  it('demonstrates only the chosen hands without creating an assessment and returns to the drill',async()=>{
   const{page,f,errors}=await open();try{await openPassage(page);await click(page,'Listen');
-   await page.getByRole('button',{name:'Stop listening'}).waitFor();await page.screenshot({path:path.join(ARTIFACTS,'listen.png')});
-   await page.locator('.piano-exercise-run').waitFor({timeout:15000});
+   // Listen plays inside the drill: Pause and Stop in the header, the run underneath it.
+   await page.getByRole('button',{name:'Stop',exact:true}).waitFor();await page.screenshot({path:path.join(ARTIFACTS,'listen.png')});
+   await page.locator('.piano-exercise-run:not([data-listening])').waitFor({timeout:15000});
    const audio=await page.evaluate(()=>window.__audio);expect(audio.length).toBe(8);expect(audio.every(note=>note>=60)).toBe(true);expect(f.attempts.size).toBe(0);expect(errors).toEqual([]);
   }finally{await page.close();}
  },60000);
@@ -285,8 +286,10 @@ describe('real Learn journey',()=>{
    await page.waitForFunction(()=>window.__logs.some(l=>l.event==='piano.exercise-countdown-started'));await click(page,'Pause');
    await page.locator('.piano-exercise-run[data-phase="paused"]').waitFor();
    await page.screenshot({path:path.join(ARTIFACTS,'tablet-running-paused.png')});
-   for(const name of ['Listen','Resume','Start over']){
-    const box=await page.getByRole('button',{name,exact:true}).boundingBox();expect(box.height).toBeGreaterThanOrEqual(64);expect(box.y+box.height).toBeLessThanOrEqual(800);
+   // Paused: Resume and Start over (Listen is for before a take).
+   expect(await page.getByRole('button',{name:'Listen',exact:true}).count()).toBe(0);
+   for(const name of ['Resume','Start over']){
+    const box=await page.getByRole('button',{name,exact:true}).boundingBox();expect(box.height).toBeGreaterThanOrEqual(56);expect(box.y+box.height).toBeLessThanOrEqual(800);
    }
    const toolbar=await page.locator('.piano-learn-lab__toolbar').boundingBox();expect(toolbar.height).toBeLessThanOrEqual(84);
    const stage=await page.locator('.piano-exercise-run__stage').boundingBox();expect(stage.height).toBeGreaterThan(300);
@@ -302,7 +305,7 @@ describe('real Learn journey',()=>{
  it('keeps the drill chrome usable on a narrow screen with reduced motion',async()=>{
   const{page,errors}=await open({width:600,height:800});try{await page.emulateMedia({reducedMotion:'reduce'});await click(page,'Learn A, bars 1–2');await page.locator('.piano-exercise-run').waitFor();
    await page.screenshot({path:path.join(ARTIFACTS,'narrow-drill.png'),fullPage:true});
-   const metrics=await page.locator('.piano-learn-lab__toolbar button').evaluateAll(buttons=>buttons.filter(b=>b.offsetParent).map(b=>({height:b.getBoundingClientRect().height,right:b.getBoundingClientRect().right})));expect(metrics.length).toBeGreaterThanOrEqual(4);expect(metrics.every(m=>m.height>=64&&m.right<=600)).toBe(true);
+   const metrics=await page.locator('.piano-learn-lab__toolbar button').evaluateAll(buttons=>buttons.filter(b=>b.offsetParent).map(b=>({height:b.getBoundingClientRect().height,right:b.getBoundingClientRect().right})));expect(metrics.length).toBeGreaterThanOrEqual(2);expect(metrics.every(m=>m.height>=44&&m.right<=600)).toBe(true);
    expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(600);await page.getByRole('button',{name:'Listen',exact:true}).focus();expect(await page.getByRole('button',{name:'Listen',exact:true}).evaluate(e=>e===document.activeElement)).toBe(true);expect(errors).toEqual([]);
   }finally{await page.close();}
  },60000);

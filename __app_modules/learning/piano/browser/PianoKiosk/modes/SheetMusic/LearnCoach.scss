@@ -19,15 +19,9 @@
   > .piano-passage-board { z-index: 40; }
   > .piano-passage-path { z-index: 41; }
 
-  // One toolbar row: where you are, what you are playing, and the controls.
-  .piano-learn-lab--coach .piano-learn-lab__toolbar { flex-wrap: nowrap; }
+  // One toolbar row (PianoApp.scss `.piano-learn-lab__toolbar`, fixed height): where you are, what you are playing, and the controls.
   .piano-learn-lab--coach .piano-learn-lab__identity strong { font-size: 1.25rem; white-space: nowrap; }
-  .piano-learn-lab--coach .piano-learn-lab__task { strong { font-size: 1.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } span { font-size: 0.95rem; } }
-  .piano-learn-lab--coach .piano-learn-lab__run-controls {
-    order: 0; flex: 0 0 auto; grid-auto-flow: column; grid-auto-columns: auto; grid-template-columns: none;
-    button { padding-inline: 1.1rem; white-space: nowrap; }
-    button:first-child { border-color: var(--piano-border); }
-  }
+  .piano-learn-lab--coach .piano-learn-lab__task { strong { font-size: 1.25rem; } span { font-size: 0.95rem; } }
   // The sets are the child's way to choose a step, so each is a full touch
   // target and the row is tall enough for its picture.
   // The row is set through the run's own variable, so the docked result card
@@ -40,11 +34,11 @@
   .piano-learn-coach__locked { position: relative; display: inline-flex; align-items: center; gap: 0.1rem; }
   .piano-learn-coach__locked > :not(.piano-learn-coach__lock) { opacity: 0.4; }
   .piano-learn-coach__lock { position: absolute; right: -0.55rem; bottom: -0.25rem; font-size: 0.85rem; color: var(--drill-muted, currentColor); }
+  // A step a pass at the chosen tempo would fill: lit before the take, so going faster shows what it is worth.
+  .drill-cluster[data-preview] { box-shadow: inset 0 0 0 2px var(--piano-accent); border-radius: var(--r-sm); }
   @media (max-width: 900px) {
     .drill-progress__rail { flex-wrap: wrap; }
     .drill-cluster { min-width: 0; }
-    .piano-learn-lab--coach .piano-learn-lab__toolbar { flex-wrap: wrap; }
-    .piano-learn-lab--coach .piano-learn-lab__run-controls { flex: 1 0 100%; grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   // The connection is announced once, by the app's banner.
   .piano-exercise-run__waiting, .piano-exercise-run__ready span { display: none; }
@@ -57,8 +51,8 @@
   // a child stay on the keys.
   .piano-exercise-run__result.is-docked .piano-exercise-run__result-actions button {
     border: 1px solid var(--piano-border); border-radius: var(--r-md);
-    font: inherit; font-size: 1.05rem; font-weight: 750; white-space: nowrap; cursor: pointer;
-    &.is-primary { border-color: var(--piano-accent); font-size: 1.6rem; font-weight: 800; }
+    font: inherit; font-size: 1.1rem; font-weight: 750; white-space: nowrap; cursor: pointer;
+    &.is-primary { border-color: var(--piano-fg); font-size: 1.35rem; font-weight: 800; }
   }
 
   // A finished piece on the curtain: every passage, turning into its coin in a wave.
@@ -68,9 +62,6 @@
     flex: 0 0 auto; display: flex; align-items: center; gap: 0.5rem; color: var(--piano-warn); font-size: 1rem;
     button { min-height: 4rem; padding: 0.4rem 0.9rem; border: 1px solid var(--piano-warn); border-radius: var(--r-sm); background: transparent; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
   }
-
-  // Listening borrows the same chrome; its music takes the whole stage.
-  .piano-learn-listen__stage { flex: 1 1 auto; min-height: 0; grid-template: minmax(0, 1fr) / minmax(0, 1fr); margin: 0.4rem var(--sp-3, 0.75rem); border-radius: var(--r-md, 12px); overflow: hidden; }
 
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none; transition: none; } }
 }

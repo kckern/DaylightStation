@@ -194,7 +194,7 @@ describe('the extras drawn on the engraving stay whole',()=>{
    for(const [step,task] of [['own','Play it on your own'],['timed','Play at score tempo']]){
     if(step==='timed'){
      // Earn the passage's Bronze on its check, come back to it from the path (it opens on the Gold lap), then pick score tempo.
-     await page.evaluate(()=>window.__hold([]));await page.getByRole('button',{name:'Start over',exact:true}).click();await page.locator('.piano-exercise-run[data-armed="true"]').waitFor({timeout:15000});await page.waitForTimeout(600);
+     await page.evaluate(()=>window.__hold([]));await page.getByRole('button',{name:'Pause',exact:true}).click();await page.getByRole('button',{name:'Start over',exact:true}).click();await page.locator('.piano-exercise-run[data-armed="true"]').waitFor({timeout:15000});await page.waitForTimeout(600);
      await page.evaluate(async(list)=>{for(const frame of list){window.__hold(frame);await new Promise(r=>setTimeout(r,70));}},cleanFrames(tile*4+1));
      await page.locator('.gate-ceremony').filter({has:page.locator('.gate-ceremony__word',{hasText:'Bronze!'})}).waitFor({timeout:15000});
      await page.locator('.gate-ceremony').waitFor({state:'detached',timeout:20000});

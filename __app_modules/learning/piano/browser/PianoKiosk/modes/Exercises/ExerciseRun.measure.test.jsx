@@ -1497,40 +1497,48 @@ describe('the score stage, engraved by the real OSMD in Chromium', () => {
 });
 
 describe('Learn recovery controls at the 1280x800 kiosk canvas', () => {
-  it('keeps recovery actions reachable and accepts Extra slow without losing the run', async () => {
+  it('keeps recovery actions reachable and accepts 15% without losing the run', async () => {
     await openStage(css, js, KIOSK);
     await page.evaluate(PROBE);
     await page.evaluate((musicXml) => window.__stage.mountLab({ musicXml }), fourBars);
     await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]');
     const canvas = { top: 0, left: 0, right: KIOSK.width, bottom: KIOSK.height };
-    const controlButtons = await probe.all('.piano-learn-lab__run-controls button');
-    expect(controlButtons.map(({ text }) => text)).toEqual(['Pause', 'Start over', 'Change practice']);
-    for (const button of controlButtons) {
-      const label = button.text;
-      expect(button.height, `${label} is too short`).toBeGreaterThanOrEqual(64);
-      expect(button.width, `${label} is too narrow`).toBeGreaterThanOrEqual(64);
-      expect(inside(button, canvas), `${label} leaves the kiosk canvas: ${say(button)}`).toBe(true);
-      expect(button.reachable, `${label} is not reachable`).toBe(true);
-    }
-    await page.getByRole('button', { name: /^Choose tempo:/ }).click();
-    await page.getByRole('button', { name: 'Full speed', exact: true }).click();
+    const reachable = async (names) => {
+      // The lab hears the run's phase a commit later (ExerciseRun onPhase).
+      await page.waitForFunction((want) => [...document.querySelectorAll('.piano-learn-lab__run-controls button')].map((b) => b.innerText.trim()).join('|') === want, names.join('|'));
+      const controlButtons = await probe.all('.piano-learn-lab__run-controls button');
+      expect(controlButtons.map(({ text }) => text)).toEqual(names);
+      for (const button of controlButtons) {
+        const label = button.text;
+        expect(button.height, `${label} is too short`).toBeGreaterThanOrEqual(56);
+        expect(button.width, `${label} is too narrow`).toBeGreaterThanOrEqual(56);
+        expect(inside(button, canvas), `${label} leaves the kiosk canvas: ${say(button)}`).toBe(true);
+        expect(button.reachable, `${label} is not reachable`).toBe(true);
+      }
+    };
+    // Before a take: nothing to pause or start over.
+    await reachable(['Change practice']);
+    await page.getByRole('button', { name: '100%', exact: true }).click();
     // A tempo change re-arms the run; a key pressed before it is armed again is
     // dropped, and the run then never starts (passed alone, hung in the gate).
     await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]', { timeout: 20000 });
     await probe.press(84);
     await page.waitForSelector('.piano-exercise-run.is-running', { timeout: 20000 });
+    await reachable(['Pause']);
     await page.getByRole('button', { name: 'Pause', exact: true }).click();
     expect(await page.locator('.piano-exercise-run').getAttribute('data-phase')).toBe('paused');
+    await reachable(['Resume', 'Start over']);
     await page.getByRole('button', { name: 'Resume', exact: true }).click();
     expect(await page.locator('.piano-exercise-run').getAttribute('data-phase')).toBe('resume-countdown');
+    await page.getByRole('button', { name: 'Pause', exact: true }).click();
     await page.getByRole('button', { name: 'Start over', exact: true }).click();
     await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]');
     await page.getByRole('button', { name: 'Change practice', exact: true }).click();
     expect(await probe.calls()).toContainEqual({ name: 'change-practice', value: expect.objectContaining({ parts: ['rh'], mode: 'cued' }) });
-    await page.getByRole('button', { name: /^Choose tempo:/ }).click();
-    await page.getByRole('button', { name: 'Extra slow', exact: true }).click();
+    await page.getByRole('button', { name: '15%', exact: true }).click();
     await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]');
-    expect(await probe.text()).toContain('Extra slow · 12 BPM');
+    expect(await probe.text()).toContain('15%');
+    expect(await probe.text()).toContain('12 bpm');
     expect((await probe.one('.piano-exercise-run__stage')).painted).toBe(true);
     expectNoPageErrors();
   }, 120000);
@@ -1559,10 +1567,9 @@ describe('timed practice groove at 1920x1200 in real Chromium', () => {
   }
 
   async function chooseFullSpeed() {
-    await page.getByRole('button', { name: /^Choose tempo:/ }).click();
-    await page.getByRole('button', { name: 'Full speed', exact: true }).click();
+    await page.getByRole('button', { name: '100%', exact: true }).click();
     await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]');
-    expect(await probe.text()).toContain('Full speed · 80 BPM');
+    expect(await probe.text()).toContain('80 bpm');
   }
 
   async function assertRunGeometry() {
@@ -1583,64 +1590,51 @@ describe('timed practice groove at 1920x1200 in real Chromium', () => {
 
   // Removing the sheet, shrinking its hit targets, or losing focus trapping
   // must break this scenario; the picked label must also change the REAL ask.
-  it('offers a reachable tempo modal and persistent loudness without disturbing notation or progress', async () => {
+  it('offers a reachable tempo track and a click-volume sheet without disturbing notation or progress', async () => {
     await lab();
     const before = await assertRunGeometry();
     geometry('groove layout', before);
-    const opener = page.getByRole('button', { name: 'Choose tempo: Steady · 48 BPM' });
     expect(await probe.count('input[type="number"], input[type="range"]')).toBe(0);
-    for (const button of await probe.all('.piano-learn-lab__click-level button')) {
-      expect(button.height).toBeGreaterThanOrEqual(64);
-      expect(button.width).toBeGreaterThanOrEqual(64);
-      expect(button.reachable).toBe(true);
-      expect(button.background, 'loudness controls need an opaque themed surface').not.toBe('rgba(0, 0, 0, 0)');
+    // The tempo: discrete stops, each a target, all reachable.
+    const stops = await probe.all('.piano-learn-tempo__stop');
+    expect(stops.map((b) => b.text.replace(/\D/g, ''))).toEqual(['15', '25', '40', '60', '80', '']);
+    for (const stop of stops) {
+      expect(stop.height).toBeGreaterThanOrEqual(44);
+      expect(stop.width).toBeGreaterThanOrEqual(44);
+      expect(stop.reachable).toBe(true);
     }
-    const loud = page.getByRole('button', { name: 'Loud', exact: true });
-    const soft = page.getByRole('button', { name: 'Soft', exact: true });
-    expect(await loud.getAttribute('aria-pressed')).toBe('true');
-    await soft.click();
-    expect(await soft.getAttribute('aria-pressed')).toBe('true');
-    expect(await page.evaluate(() => localStorage.getItem('piano.learn.click-level'))).toBe('soft');
-    const after = await assertRunGeometry();
-    expect(after).toEqual(before);
-
+    // The loudness: one button, opening four big levels on an opaque sheet.
+    const opener = page.getByRole('button', { name: 'Click volume: Loud', exact: true });
     await opener.click();
-    expect(await probe.count('.piano-learn-tempo-sheet'), 'the tempo button must open its sheet').toBe(1);
-    const dialog = page.getByRole('dialog', { name: 'Practice tempo', exact: true });
+    const dialog = page.getByRole('dialog', { name: 'Click volume', exact: true });
     await dialog.waitFor({ state: 'visible' });
-    const panel = await probe.one('.piano-learn-tempo-sheet .piano-tsheet__panel');
-    expect(inside(panel, canvas), `tempo panel overflows canvas: ${say(panel)}`).toBe(true);
-    const buttons = await probe.all('.piano-learn-tempo-sheet__stages button');
-    expect(buttons.map((b) => b.text)).toEqual(['Extra slow', 'Very slow', 'Slow', 'Steady', 'Nearly there', 'Full speed']);
-    for (const button of buttons) {
+    const panel = await probe.one('.piano-learn-click-sheet .piano-tsheet__panel');
+    expect(inside(panel, canvas), `volume panel overflows canvas: ${say(panel)}`).toBe(true);
+    const levels = await probe.all('.piano-learn-click-sheet__levels button');
+    expect(levels.map((b) => b.text)).toEqual(['Soft', 'Medium', 'Loud', 'Max']);
+    for (const button of levels) {
       expect(button.height).toBeGreaterThanOrEqual(64);
-      expect(button.reachable, `unreachable tempo stage ${button.text}`).toBe(true);
-      expect(button.background, 'tempo choices need an opaque themed surface').not.toBe('rgba(0, 0, 0, 0)');
+      expect(button.reachable, `unreachable level ${button.text}`).toBe(true);
+      expect(button.background, 'level choices need an opaque themed surface').not.toBe('rgba(0, 0, 0, 0)');
     }
-    geometry('tempo modal', { panel, buttons });
-    await page.screenshot({ path: '/tmp/piano-groove-modal.png' });
-    expect(await page.evaluate(() => document.activeElement.textContent.trim())).toBe('Steady');
-    await dialog.getByRole('button', { name: 'Back', exact: true }).focus();
-    await page.keyboard.press('Tab');
-    expect(await page.evaluate(() => document.activeElement.getAttribute('aria-label'))).toBe('Close Practice tempo');
-    await page.keyboard.press('Shift+Tab');
-    expect(await page.evaluate(() => document.activeElement.textContent.trim())).toBe('Back');
+    await page.screenshot({ path: '/tmp/piano-groove-volume.png' });
     await page.keyboard.press('Escape');
     await dialog.waitFor({ state: 'detached' });
-    expect(await opener.evaluate((button) => button === document.activeElement)).toBe(true);
     expect(await probe.calls()).toEqual([]);
     await opener.click();
-    await dialog.getByRole('button', { name: 'Very slow', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Soft', exact: true }).click();
     await dialog.waitFor({ state: 'detached' });
+    expect(await page.evaluate(() => localStorage.getItem('piano.learn.click-level'))).toBe('soft');
+    expect(await assertRunGeometry()).toEqual(before);
+    await page.getByRole('button', { name: '25%', exact: true }).click();
     await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]');
-    expect(await probe.text()).toContain('Very slow · 20 BPM');
+    expect(await probe.text()).toContain('20 bpm');
     await assertRunGeometry();
     // Remount in the same real origin: the loudness choice survives a lab visit.
     await page.evaluate(() => window.__stage.reset());
     await page.evaluate((arg) => window.__stage.mountLab(arg), { musicXml: fourBars, mastery: true });
-    expect(await page.getByRole('button', { name: 'Soft', exact: true }).getAttribute('aria-pressed')).toBe('true');
-    expect(await probe.text()).toContain('Full speed · 80 BPM');
-    expect(await page.getByRole('button', { name: /^Choose tempo:/ }).count()).toBe(0);
+    await page.getByRole('button', { name: 'Click volume: Soft', exact: true }).waitFor();
+    expect(await page.getByRole('group', { name: 'Tempo', exact: true }).count()).toBe(0);
     expectNoPageErrors();
   }, 30000);
 

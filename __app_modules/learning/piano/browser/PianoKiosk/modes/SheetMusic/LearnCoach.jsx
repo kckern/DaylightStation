@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { coachFeedback, entryShiftBeats, isGoldWork, passageProgress } from '../../../../../../../shared/music/learnCoach.mjs';
+import { coachFeedback, coachTaskKey, entryShiftBeats, isGoldWork, passageProgress } from '../../../../../../../shared/music/learnCoach.mjs';
 import { currentStep, passageAccess, resolveSkipMode } from '../../../../../../../shared/music/learnSkipping.mjs';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
 import { roundScore } from '../../../performance/timedVerdicts.js';
 import useLearnCoach from './useLearnCoach.js';
 import usePieceGemOffer from './usePieceGemOffer.js';
 import LearnLab from './LearnLab.jsx';
-import LearnListen from './LearnListen.jsx';
+import { tempoTrackStops } from './tempoStages.js';
 import PassagePath from './PassagePath.jsx';
 import PassageBoard from './PassageBoard.jsx';
 import PassageCoin, { PassageTurn } from './PassageCoin.jsx';
@@ -90,6 +90,40 @@ const nextName = (task, segment) => {
 };
 const freshId = () => `coach-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
 
+/**
+ * Whether a pass of `task` played at `percent` (a tempo the child chose above the step's) would fill
+ * `skill`: the coach's test-out (shared/music/learnCoach.mjs `testedOutBy`) drawn on the strip before
+ * the take, so the child sees what going faster is worth.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- pure rule is exported for focused contract tests
+export function passFills(task, skill, percent) {
+  if (!task || skill.track !== 'gold' || skill.passageId !== task.passageId || skill.assist === 'none') return false;
+  if (skill.range?.start !== task.range?.start || skill.range?.end !== task.range?.end || !skill.parts.every((part) => task.parts.includes(part))) return false;
+  if (task.rhythm && !skill.rhythm) return false;
+  if (skill.rhythm) return true;
+  if (task.mode === 'metronome' && skill.mode !== 'metronome') return false;
+  if (skill.mode === 'metronome') return true;
+  return skill.mode === 'cued' && skill.tempoPercent <= percent;
+}
+
+/**
+ * The tempo track a coached step offers (LearnLab `tempoChoice`): its stops from the plan's own Gold
+ * rung tempos for this unit, never a list of numbers here; the step's tempo is the floor, except on the
+ * rhythm step, a warm-up that must never wall a child, which goes down to the lowest timed rung. Rungs
+ * already earned are filled.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- pure projection is exported for focused contract tests
+export function coachTempoTrack(passage, task) {
+  if (!task || !['cued', 'metronome'].includes(task.mode) || !Number.isFinite(task.tempoPercent)) return null;
+  const gold = (passage?.skills ?? []).filter((skill) => skill.track === 'gold' && skill.mode === 'cued' && Number.isFinite(skill.tempoPercent));
+  const timed = gold.filter((skill) => !skill.rhythm);
+  const ladder = [...new Set(timed.map((skill) => skill.tempoPercent))].sort((a, b) => a - b);
+  const floor = task.rhythm ? Math.min(task.tempoPercent, ladder[0] ?? task.tempoPercent) : task.tempoPercent;
+  const same = (skill) => skill.parts.length === task.parts.length && skill.parts.every((part) => task.parts.includes(part));
+  const earned = [...new Set((task.rhythm ? gold.filter((skill) => skill.rhythm) : timed.filter(same)).filter((skill) => skill.ready).map((skill) => skill.tempoPercent))];
+  return { stops: tempoTrackStops({ ladder, stepPercent: task.tempoPercent, floor }), ladder, earned, stepPercent: task.tempoPercent };
+}
+
 /** A step the child cannot start yet: its picture, dimmed, under a small lock. */
 const lockedIcon = (icon) => <span className="piano-learn-coach__locked">{icon}<Icon name="lock" className="piano-learn-coach__lock" /></span>;
 
@@ -103,7 +137,7 @@ const lockedIcon = (icon) => <span className="piano-learn-coach__locked">{icon}<
  * "<letter> · steps to <level>", so the strip reads as that token's.
  */
 // eslint-disable-next-line react-refresh/only-export-components -- pure projection is exported for focused contract tests
-export function passageDrill(passage, task, { access = EMPTY, showLocks = false, unit = null } = {}) {
+export function passageDrill(passage, task, { access = EMPTY, showLocks = false, unit = null, preview = null } = {}) {
   const current = rootOf(task)?.key ?? null;
   const lap = rootOf(task)?.track === 'gold' ? 'gold' : 'silver';
   const level = lap === 'gold' ? 'Gold' : passage?.kind === 'join' ? 'Silver' : 'Bronze';
@@ -116,7 +150,8 @@ export function passageDrill(passage, task, { access = EMPTY, showLocks = false,
     return { id: skill.key, title: locked ? `${skill.label} (locked)` : skill.label,
       display: { key: setName(skill), hand: null, hand_label: null, icon: locked && showLocks ? lockedIcon(icon ?? <b>{setName(skill)}</b>) : icon },
       requirement: { required_passes: reps }, pass_count: banked, passed: Boolean(skill.ready),
-      state: skill.ready ? 'complete' : skill.key === current ? 'current' : 'locked', ...(locked ? { locked: true } : {}) };
+      state: skill.ready ? 'complete' : skill.key === current ? 'current' : 'locked', ...(locked ? { locked: true } : {}),
+      ...(!skill.ready && preview != null && passFills(task, skill, preview) ? { preview: true } : {}) };
   });
   const name = unit?.letter ?? null;
   // On a step down the strip says what is being practised first, and what it climbs back to.
@@ -150,7 +185,6 @@ function OwnedCoach(props) {
  */
 function CoachSession({ score, title, plan, segment, coach, skipping = null, polish = null, tempo = EMPTY, feedback, onBack, onPassageChange, onListen }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-learn-coach' }), []);
-  const [view, setView] = useState('play'); // play | listen
   const [selected, setSelected] = useState(null);
   const [lane, setLane] = useState(null); // 'gold' once the child is working on Gold here
   const [run, setRun] = useState(null); // the task of a take that has begun
@@ -158,6 +192,10 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
   const [moment, setMoment] = useState(null); // the pass being celebrated
   const [runNumber, setRunNumber] = useState(0);
   const [board, setBoard] = useState(null); // null, or { focusId }
+  // A tempo the child chose on the header's track for one step ({ key, percent }); any other step plays at its own.
+  const [choice, setChoice] = useState(null);
+  // Misses in a row at a chosen tempo, and on the rhythm step, by step key: two of either changes what is offered.
+  const [misses, setMisses] = useState({});
   const live = useRef(true);
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
 
@@ -198,13 +236,13 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
 
   useEffect(() => {
     logger.info('piano.learn.coach.step', { scoreId: score.id, passageId: segment.id, skill: task?.skill ?? null,
-      mode: task?.mode ?? null, depth: task?.depth ?? 0, view });
-  }, [logger, score.id, segment.id, task?.key, task?.skill, task?.mode, task?.depth, view]);
+      mode: task?.mode ?? null, depth: task?.depth ?? 0 });
+  }, [logger, score.id, segment.id, task?.key, task?.skill, task?.mode, task?.depth]);
 
   const begin = (wanted) => {
     setSelected(wanted ?? null); setRun(null); setResult(null); setMoment(null);
     if (wanted) setLane(isGoldWork(wanted) ? 'gold' : null);
-    setRunNumber((number) => number + 1); setView('play');
+    setRunNumber((number) => number + 1);
   };
   const started = () => {
     const playing = taskRef.current;
@@ -212,9 +250,14 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
     setRun(playing); setResult(null);
     coach.selectTask(playing);
   };
-  const finish = (raw, { placementShare = null } = {}) => {
+  const finish = (raw, { placementShare = null, tempoPercent: playedTempo = null } = {}) => {
     if (!live.current) return;
-    const played = taskRef.current;
+    const step = taskRef.current;
+    // A take at a tempo the child chose is recorded at that tempo, with the step's own beside it: a pass
+    // tests out the unit's Gold steps up to it, a miss changes nothing (learnCoach.mjs `chosenTempo`).
+    const chosen = step.mode !== 'free' && Number.isFinite(playedTempo) && playedTempo !== step.tempoPercent;
+    const played = chosen ? (({ key: _old, ...rest }) => { const task = { ...rest, tempoPercent: playedTempo, stepTempoPercent: step.tempoPercent };
+      return { ...task, key: coachTaskKey(task) }; })(step) : step;
     raw = { ...raw, assessmentId: raw.assessmentId ?? freshId() };
     const message = coachFeedback(raw, played);
     const passed = message.reason === 'silver' || message.reason === 'passed';
@@ -229,8 +272,15 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
       entryShiftBeats: entryShiftBeats(raw) });
     setLane(isGoldWork(played) ? 'gold' : null);
     coach.record(played, raw);
-    if (passed) { setMoment({ id: raw.assessmentId, task: played, raw, was: { silver: Boolean(certification.silver), gold: Boolean(certification.gold), flower: Boolean(projected?.flower) } }); setResult(null); }
-    else setResult({ task: played, raw, message });
+    // Two misses in a row at a chosen tempo go back to the step's own; two on the rhythm step offer the skip.
+    const missed = (misses[step.key] ?? 0) + 1;
+    setMisses((counts) => ({ ...counts, [step.key]: passed ? 0 : missed }));
+    const backTo = chosen && !passed && missed >= 2 && playedTempo > step.tempoPercent ? step.tempoPercent : null;
+    if (backTo != null) { setChoice(null); setMisses((counts) => ({ ...counts, [step.key]: 0 }));
+      logger.info('piano.learn.tempo.snap-back', { scoreId: score.id, passageId: segment.id, skill: step.skill, from: playedTempo, to: backTo }); }
+    if (passed) setChoice(null);
+    if (passed) { setMoment({ id: raw.assessmentId, task: played, step, raw, was: { silver: Boolean(certification.silver), gold: Boolean(certification.gold), flower: Boolean(projected?.flower) } }); setResult(null); }
+    else setResult({ task: step, played, raw, message: backTo != null ? { ...message, title: `Back to ${backTo}%` } : message, missed });
   };
 
   // What the pass amounts to, read from the projection the take has just changed.
@@ -253,7 +303,7 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
     if (!moment || celebrated || moment.advanced) return;
     setMoment({ ...moment, advanced: true });
     // A chosen step stays chosen until its set is clear, so its next rep follows.
-    const played = moment.task;
+    const played = moment.step ?? moment.task;
     const cleared = (played.depth ?? 0) > 0 || projected?.skills.find((skill) => skill.key === played.key)?.ready === true;
     setSelected(cleared ? null : played); setRun(null); setRunNumber((number) => number + 1);
   }, [moment, celebrated, projected]);
@@ -278,13 +328,23 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
   const unitLetter = unitToken?.letter ?? rail.names?.[segment.id] ?? null; const unitState = unitToken?.state ?? null; const unitRing = unitToken?.ring;
   const stepDownName = stepDown ? rail.names?.[stepDown] ?? null : null;
   const stepDownState = stepDown ? rail.cards.find((card) => card.id === stepDown)?.state ?? 'joined' : null;
+  const chosenPercent = choice && task && choice.key === task.key ? choice.percent : null;
   const drill = useMemo(() => passageDrill(projected, task, { access, showLocks: skipMode !== 'strict',
-    unit: unitLetter ? { letter: unitLetter, state: unitState ?? 'joined', ring: unitRing, stepDownName, stepDownState } : null }),
-  [projected, task, access, skipMode, unitLetter, unitState, unitRing, stepDownName, stepDownState]);
+    unit: unitLetter ? { letter: unitLetter, state: unitState ?? 'joined', ring: unitRing, stepDownName, stepDownState } : null,
+    preview: chosenPercent != null && chosenPercent > task?.tempoPercent ? chosenPercent : null }),
+  [projected, task, access, skipMode, unitLetter, unitState, unitRing, stepDownName, stepDownState, chosenPercent]);
+  const track = useMemo(() => coachTempoTrack(projected, task), [projected, task]);
+  const tempoChoice = track ? { ...track, value: chosenPercent ?? task.tempoPercent,
+    onChange: (percent) => { logger.info('piano.learn.tempo.choose', { scoreId: score.id, passageId: segment.id, skill: task.skill, from: chosenPercent ?? task.tempoPercent, to: percent, step: task.tempoPercent });
+      setChoice(percent === task.tempoPercent ? null : { key: task.key, percent }); } } : null;
   const card = useMemo(() => {
     if (!moment) return null;
     const { task: played, raw, id } = moment;
     if (celebrated) return null;
+    // A pass at a chosen tempo says what it earned: everything up to it (a slower rhythm pass, the rhythm).
+    if (Number.isFinite(played.stepTempoPercent)) return { id, score: raw.score ?? null,
+      copy: { eyebrow: barsOf(segment), headline: `Passed at ${played.tempoPercent}%`,
+        line: played.tempoPercent > played.stepTempoPercent ? `Everything up to ${played.tempoPercent}% done` : 'Rhythm done' } };
     const steps = drill.projection.steps;
     const index = steps.findIndex((step) => step.id === rootOf(played).key);
     const step = (played.depth ?? 0) === 0 ? steps[index] : null;
@@ -348,10 +408,19 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
     coach.setAside(silverTask ?? task);
     if (target && onPassageChange) onPassageChange(target); else onBack?.();
   };
-  const laterButton = canSetAside ? <button type="button" onClick={comeBackLater}>Come back to this later</button> : null;
+  const laterButton = canSetAside ? <button type="button" className="piano-learn-lab__action" onClick={comeBackLater}><span>Come back to this later</span></button> : null;
+  // The rhythm step never walls a child: it can always be skipped (it earns nothing, and the lap moves on).
+  const rhythmStep = task?.rhythm === true && (task.depth ?? 0) === 0;
+  const skipRhythm = () => {
+    logger.info('piano.learn.rhythm.skip', { userId: coach.profileId, scoreId: score.id, passageId: segment.id, misses: misses[task.key] ?? 0 });
+    coach.skipRhythm?.(task);
+    setSelected(null); setRun(null); setResult(null); setMoment(null); setChoice(null); setLane('gold'); setRunNumber((number) => number + 1);
+  };
+  const skipButton = rhythmStep ? <button type="button" className="piano-learn-lab__action is-quiet" onClick={skipRhythm}><Icon name="next" /><span>Skip rhythm</span></button> : null;
   const resultActions = result ? <>
     {recovery && <button type="button" className="is-primary" onClick={() => begin(recovery)}>{recoveryAction}</button>}
     <button type="button" className={recovery ? '' : 'is-primary'} onClick={() => begin(result.task)}>Try again</button>
+    {rhythmStep && result.missed >= 2 && <button type="button" onClick={skipRhythm}>Skip rhythm</button>}
     {laterButton}
   </> : null;
   // Any key on the piano takes the primary button, so the help the card
@@ -376,7 +445,7 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
   const retrySave = async () => {
     await coach.retry().catch(() => {});
     const again = result ?? moment;
-    if (again && live.current) coach.record(again.task, again.raw);
+    if (again && live.current) coach.record(again.played ?? again.task, again.raw);
   };
   const exportEarlier = () => {
     const link = document.createElement('a'); const url = URL.createObjectURL(new Blob([coach.recoveryData()], { type: 'application/json' }));
@@ -420,17 +489,13 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
   </>;
 
   if (!task) return <section className="piano-learn-coach"><h2>No playable notes in this passage</h2><button type="button" onClick={onBack}>Back to score</button>{map}</section>;
-  if (view === 'listen') return <section className="piano-learn-coach" aria-label={`${barsOf(segment)} demonstration`}>
-    <LearnListen score={score} task={task} tempoMap={plan.tempoMap} passageName={barsOf(segment)} onDone={() => { setRunNumber((number) => number + 1); setView('play'); }} />
-    {map}
-  </section>;
   return <div className="piano-learn-coach piano-learn-coach--running" data-save={coach.saveStatus} data-level={certification.gold ? 'gold' : certification.silver ? 'silver' : undefined}>
     {loaded && material ? <LearnLab key={`${runNumber}:${task.key}`} score={score} revision={plan.fingerprint} segment={material.segment} rung={material.rung}
       coachingTask={task} drill={drill} card={card} ceremony={ceremony} onCardDone={momentDone} notice={notice}
       resultLabel={result?.message.title ?? null} resultActions={resultActions} resultContinueLabel={resultContinueLabel} onResultContinue={resultContinue}
-      extraControls={result ? null : laterButton}
+      extraControls={result ? skipButton : <>{skipButton}{laterButton}</>} tempoChoice={tempoChoice}
       onPickStep={pickStep} onStarted={started} onOutcome={finish}
-      onListen={() => { onListen?.(task); setView('listen'); }}
+      onListen={() => onListen?.(task)}
       tempo={{ ...tempo, tempoMap: plan.tempoMap, adjustable: false }} feedback={feedback}
       onClose={onBack}
       onUnavailable={(reason) => logger.warn('piano.learn.coach.unavailable', { scoreId: score.id, passageId: segment.id, skill: task.skill, reason: String(reason) })} />

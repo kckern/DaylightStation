@@ -815,7 +815,8 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
     if (type === 'note_on') applyNoteOn(note, velocity, stampNote(t, 'bridge'), channel);
     else if (type === 'note_off') applyNoteOff(note, stampNote(t, 'bridge'));
     else if (type === 'control_change') {
-      if (Number.isInteger(channel)) emitRaw(new Uint8Array([0xb0 | channel, note, velocity]));
+      // Every CC reaches the raw tap (the drill reads its pedals there); a bridge frame without a channel is channel 0.
+      emitRaw(new Uint8Array([0xb0 | ((Number.isInteger(channel) ? channel : 0) & 0x0f), note & 0x7f, velocity & 0x7f]));
       if (note === SUSTAIN_CONTROLLER) storeRef.current.sustain(isSustainDown(velocity));
     }
     else if (type === 'reset') {

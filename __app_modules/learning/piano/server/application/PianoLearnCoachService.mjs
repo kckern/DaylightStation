@@ -141,6 +141,7 @@ export class PianoLearnCoachService {
     const passageId = event.task.passageId;
     const base = { userId, scoreId: plan.scoreId, passageId };
     if (event.type === 'set-aside') this.logger?.info?.('piano.learn.set-aside', base);
+    if (event.type === 'skip-rhythm') this.logger?.info?.('piano.learn.rhythm.skip', base);
     const entry = state.evidence.at(-1);
     if (event.type === 'outcome' && event.task.assist === 'none' && entry?.id === event.id) {
       this.logger?.info?.('piano.learn.silver-check', { ...base, passed: entry.passedCredits.includes(entry.task.key),
@@ -166,7 +167,7 @@ export class PianoLearnCoachService {
     return this.#serial(userId, scoreKey, async () => {
       this.#scope(userId, scoreKey);this.#recover(userId, scoreKey);
       const event = body?.event;
-      if (!ID.test(String(event?.id)) || event.profileId !== userId || !['selection', 'outcome', 'set-aside'].includes(event.type)) fail('Invalid coaching event');
+      if (!ID.test(String(event?.id)) || event.profileId !== userId || !['selection', 'outcome', 'set-aside', 'skip-rhythm'].includes(event.type)) fail('Invalid coaching event');
       const plan = this.#plan(body.plan, scoreKey);
       const signature = JSON.stringify(canonical(body));
       const receipt = this.receiptStore.getReceipt(userId, scoreKey, event.id);

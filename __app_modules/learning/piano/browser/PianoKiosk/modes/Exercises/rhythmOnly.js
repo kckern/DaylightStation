@@ -2,23 +2,40 @@
 // Any key counts, and the engine is handed an expectation of one note per beat-event on one pitch, so the
 // same timed judge, windows and count-in grade WHEN the child came in and nothing else. Pure.
 
+import { buildTempoMap, msAtQuarter } from '../../../../../../../__capabilities/music-notation/browser/scoreTimeline.js';
+
 /** The one pitch the rung expects, and every key played is read as. */
 export const RHYTHM_MIDI = 60;
 
 /**
- * The expectation with each event reduced to one note on `RHYTHM_MIDI` (a chord, or both hands together, is
- * one tap). Event ids, onsets, spans, the tempo map and the bar map are unchanged, so cursor, windows and
- * coverage read as for the real passage.
+ * The closest two taps may be and still be asked for as two (ms, at the take's own tempo). A trill, a
+ * turn or a run of fast ornament notes is one tap here: a child cannot tap 16 notes a second on one key,
+ * and the warm-up must never ask for what cannot be done.
  */
-export function toRhythmExpectation(expectation) {
+export const RHYTHM_MIN_TAP_MS = 120;
+
+/**
+ * The expectation with each event reduced to one note on `RHYTHM_MIDI` (a chord, or both hands together, is
+ * one tap). Grace notes are dropped, and an event closer than `minTapMs` to the last kept one merges into
+ * it (the expectation's tempo map is already the take's). Kept events carry `sourceIndex`, their index in
+ * the real passage, so the score's cursor and marks still land on the right ink. Ids, onsets, spans, the
+ * tempo map and the bar map are unchanged, so cursor, windows and coverage read as for the real passage.
+ */
+export function toRhythmExpectation(expectation, { minTapMs = RHYTHM_MIN_TAP_MS } = {}) {
   if (!expectation?.events) return expectation;
-  return {
-    ...expectation,
-    events: expectation.events.map((event) => {
-      const first = event.notes?.[0];
-      return { ...event, notes: first ? [{ ...first, id: `${first.id}:rhythm`, midi: RHYTHM_MIDI }] : [] };
-    }),
-  };
+  const map = buildTempoMap(expectation.tempoMap);
+  const events = [];
+  let lastMs = -Infinity;
+  expectation.events.forEach((event, sourceIndex) => {
+    const notes = (event.notes ?? []).filter((note) => !note.grace);
+    if (!notes.length && event.notes?.length) return; // an event of grace notes only
+    const at = msAtQuarter(map, Number(event.onsetQuarter) || 0);
+    if (notes.length && at - lastMs < minTapMs) return;
+    if (notes.length) lastMs = at;
+    const first = notes[0];
+    events.push({ ...event, sourceIndex, notes: first ? [{ ...first, id: `${first.id}:rhythm`, midi: RHYTHM_MIDI }] : [] });
+  });
+  return { ...expectation, events };
 }
 
 /**
@@ -42,7 +59,7 @@ const LINE = Object.freeze({ G: { step: 'B', octave: '4' }, F: { step: 'D', octa
 
 /**
  * The score drawn as rhythm only: every note on one line of its staff with an X notehead, no accidentals,
- * a chord as its first note. Durations, rests, ties, bars and the tempo are untouched, so the passage,
+ * a chord as its first note, grace notes gone. Durations, rests, ties, bars and the tempo are untouched, so the passage,
  * the cursor and the grader line up with the real score. Pure apart from the DOM parser it is given.
  */
 export function toRhythmMusicXml(xml, { DOMParser: Parser = globalThis.DOMParser, XMLSerializer: Serializer = globalThis.XMLSerializer } = {}) {
@@ -57,6 +74,8 @@ export function toRhythmMusicXml(xml, { DOMParser: Parser = globalThis.DOMParser
         clefs[clef.getAttribute('number') ?? '1'] = sign;
       }
       for (const note of [...measure.getElementsByTagName('note')]) {
+        // A grace note takes no time and is never a tap: it is not drawn.
+        if (note.getElementsByTagName('grace').length) { note.parentNode.removeChild(note); continue; }
         const pitch = note.getElementsByTagName('pitch')[0];
         if (!pitch) continue; // a rest stays a rest
         if (note.getElementsByTagName('chord').length) { note.parentNode.removeChild(note); continue; }

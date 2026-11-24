@@ -373,12 +373,51 @@ the drill. It draws no practice screen of its own.
   Which sets can be tapped depends on the [skipping mode](#skipping-steps); a set
   that cannot be started yet is a disabled button, and outside `strict` its picture
   is dimmed under a small lock (the piano `lock` icon).
-- **Chrome.** One toolbar row: Back (to the score), the printed bars, the step's
-  instruction (`Join the hands`), then for a timed step its tempo (`40 BPM`) and
-  click loudness, and **Listen**, **Pause** and **Start over**. A drill on part of the passage
-  is named by the bars it covers (`Bar 2`). Saving is mentioned only when it
-  failed (**Progress not saved**, **Retry saving**). A lost piano is announced once,
-  by the app's banner.
+- **Chrome.** One toolbar row of fixed height (4.75rem): Back (to the score), the printed bars,
+  the step's instruction (`Join the hands`), then for a timed step (metronome or cued, the rhythm
+  step included) the **tempo track** and the **click volume** button, then the actions. Every band of
+  the drill screen (header, score, step strip, keyboard, path) has a fixed height, and the actions sit
+  in a fixed-width, right-aligned slot, so nothing moves when a take starts, pauses or ends, when the
+  result appears, or while listening (checked box by box in real Chromium:
+  `LearnDrillScreen.journey.test.jsx`). A drill on part of the passage is named by the bars it covers
+  (`Bar 2`). Saving is mentioned only when it failed (**Progress not saved**, **Retry saving**). A lost
+  piano is announced once, by the app's banner.
+- **Actions follow the take** (one button style: icon + short label, neutral surface, no green;
+  `ExerciseRun onPhase` tells `LearnLab` the run's phase). Before a take (and after one): **Listen**
+  (plus **Skip rhythm** / **Come back to this later** when on offer). During a take: **Pause** only.
+  Paused: **Resume** and **Start over**; Start over never appears before a take. Listening: **Pause**
+  (↔ **Play**) and **Stop**.
+- **Tempo track** (`LearnTempoTrack.jsx`). A stepped track of tappable stops, not a slider: a drag
+  only ever lands on a stop, and − / + move one stop. The stops are the plan's own Gold rung tempos
+  for the unit (read from the plan, never a list in code), the step's tempo, 100%, and one stop about halfway (to the nearest 10)
+  between two rungs 20 or more apart (`tempoTrackStops` in `tempoStages.js`; for 30·50·75·100 that is
+  30·40·50·60·75·90·100). The readout is the percent, big, with the bpm small beneath; rung stops are
+  larger and labelled, earned rungs filled green, the stops a pass at the chosen tempo would fill are
+  lit, and 100% carries the flag. The step's own tempo is the floor (a child may go faster, never
+  slower), except on the rhythm step, which also goes down to the plan's lowest timed rung. During a
+  take the track is locked and − / + hide while keeping their room. The choice is kept by the coach for
+  that step (`coachTempoTrack`, `tempoChoice`), applies to the next take, resets when the step changes,
+  and is logged `piano.learn.tempo.choose` (`from`, `to`, `step`). A plain rung outside the coach offers
+  its tempo stages on the same track, and a take at or above the stage it was set credits it.
+- **Chosen tempo = test-out** (owner ruling 2026-11-23). A take is recorded at the tempo played, with
+  the step's own beside it (`task.stepTempoPercent`, outside the key). One pass at a tempo chosen above
+  the step's makes every Gold-lap step of the unit (same bars, hands the take covered) at or below it
+  ready at once, the rhythm step (a warm-up, whatever its own tempo) and the one-hand beat steps included, with
+  achievements of provenance `tested-out` (`applyChosenTempo` in `shared/music/learnCoach.mjs`); steps
+  above it are untouched. A pitch-free rhythm take tests out rhythm steps only; a beat take, beat steps
+  only. Before the take the strip lights the steps a pass would fill (`passFills`, `data-preview`); the
+  pass card says `Passed at 75%` / `Everything up to 75% done`. A miss at a chosen tempo changes nothing
+  (no step is charged, no smaller step offered); two in a row go back to the step's tempo, and the
+  result line says `Back to 50%` (`piano.learn.tempo.snap-back`).
+- **Click volume** (`LearnClickVolume.jsx`): one button, a speaker with level bars, opening an opaque
+  sheet of four big level pictures (Soft · Medium · Loud · Max). Each tap sounds two clicks at that
+  level (`playClickPair`) and closes the sheet; usable mid-take. Persisted as before (`clickLevel.js`).
+- **Pedals are any key.** Sustain, soft and sostenuto (CC 64/66/67, pressed down past 64, rising edge
+  only) do what any key does on the drill: start the armed count-in of a cued take
+  (`piano.exercise-countdown-started` `reason: 'pedal'`) and take the result card's way on
+  (`piano.exercise-retry` `via: 'pedal'`). A pedal never reaches `activeNotes`, so it is never graded.
+  They arrive on the raw MIDI tap (`subscribeRaw`); the bridge feeds every control change there
+  (channel 0 when its frame has none).
 - **A pass** shows the drill's own rep card (`RepInterstitial`): `Set 3 of 8
   clear`, the score, `Next: On your own`. The next step is already mounted under it.
 - **Silver and Gold.** The take that certifies the passage closes the drill's
@@ -394,36 +433,37 @@ the drill. It draws no practice screen of its own.
   turns with it. It lasts 7.6 seconds (`PIECE_CEREMONY_MS`). Silver parts onto
   `Next: Go for Gold`; Gold parts onto the piece's title. The screen then returns
   to the score, which celebrates nothing itself.
-- **A miss** opens the drill's result as a card docked over the run's rail and
-  keyboard rows, under the score (`ExerciseRun resultPresentation="docked"`,
-  Exercises.scss `.is-docked`; `role="alertdialog"` without `aria-modal`,
-  since it sits inside the lab's own dialog). The engraved take and its
-  verdict marks stay in view while the card is up. The card's height is the
-  two rows' (`--run-rail-row`, `--run-row-gap`, `--run-keys-row` on the
-  learn-lab run), so it fits the 1280×800 kiosk, and anything taller scrolls
-  inside it rather than reaching the score. The card waits out the resolve
-  hold (`RESOLVE_HOLD_MS`, 700 ms) and arrives once, already holding the
-  coach's verdict and actions. The run's rows never change when a take ends,
-  so the score does not move or resize under the child. The card holds the
-  coach's short verdict (`Almost on your own`, `Bar 2 is the tricky spot`)
-  and the take's numbers on the left, and the next moves on the right. The
-  primary button is the largest (4.5rem tall) and is the smaller practice the
-  coach recommends after two misses (`Practice bar 2`, `Practice the left hand`,
-  `Try a little slower · 75%`), otherwise **Try again**. **Come back to this
-  later** follows when it is on offer. **Releasing the keys and playing any key
-  takes the primary button** (`onResultContinue`), and the card says so
-  ("play any key to practice bar 2", "play any key to try a little slower
-  (75%)"), so a child never has to reach for the glass to take the help.
+- **A miss** opens the drill's result in the **step strip's own slot**: same top, same height
+  (`--run-rail-row`), over the strip only, so the score, its verdict marks and the keyboard stay where
+  they were (`ExerciseRun resultPresentation="docked"`, Exercises.scss `.is-docked`;
+  `role="alertdialog"` without `aria-modal`, since it sits inside the lab's own dialog). It is pictures,
+  not sentences: a neutral retry mark (never green for a miss), the coach's one short line
+  (`Almost on your own`, `A tap went missing`), and a meter per thing the take was asked, an icon with a
+  fill (notes, clean notes, on the beat; on the rhythm step taps and on the beat only), green only where
+  it met its bar. The card waits out the resolve hold (`RESOLVE_HOLD_MS`, 700 ms) and arrives once,
+  already holding the coach's verdict and actions. The primary button (the brightest neutral) is the
+  smaller practice the coach recommends after two misses (`Practice bar 2`, `Practice the left hand`,
+  `Try a little slower · 75%`), otherwise **Try again**; **Come back to this later** and, on the rhythm
+  step after two misses, **Skip rhythm** follow. **Releasing the keys and playing any key, or pressing a
+  pedal, takes the primary button** (`onResultContinue`), shown as a key and a pedal glyph (its
+  accessible name says it: "Play any key or press a pedal to try a little slower (75%)"); the leave
+  gesture is a small two-ends mark, so a child never has to reach for the glass to take the help.
   A key counts only once the card has been up `RESULT_ARM_MS` (700 ms) after
   the hold fired, and only after every key has been released: a key during the
   hold would have repeated the take before the coach recorded the miss, and a
   note played on past the end would switch the child onto the help step. The
-  "play any key" line appears when a key would act on it, and the card then
+  key and pedal glyphs appear (their space held all along) when a key would act on it, and the card then
   carries `data-result-armed="true"` (`piano.exercise-result-armed` logs it).
-  `piano.exercise-retry` logs `via: 'piano'` with `action: 'host'` (the
+  `piano.exercise-retry` logs `via: 'piano'` or `'pedal'` with `action: 'host'` (the
   coach's primary) or `'repeat'` (a run with no host action).
-- **Listen** demonstrates the step's bars and parts in the same chrome with one
-  control, **Stop listening**, and records nothing.
+- **Listen** plays the step's bars and parts to the child on the piano INSIDE the drill, at the take's
+  tempo (the step's or the chosen one): the header shows **Pause** (↔ **Play**) and **Stop**, the score's
+  cursor moves to the event that is sounding and the keyboard lights its keys, and a thin progress bar
+  with a headphone mark takes the step strip's slot (`ExerciseRun demonstration`,
+  `Exercises/useRunDemonstration.js`, driven by the score transport with MIDI timestamps; panic on stop).
+  The child's keys and pedals start nothing while it plays, and it records nothing. When it ends (or on
+  Stop) the drill is ready to play. Logs: `piano.learn.control` `listen`/`listen-pause`/`listen-play`,
+  `piano.learn.listen.stop` (`reason: stop|end`).
 - **Path and board.** The same path as the score view sits under the drill, with
   this unit selected. Every token opens its unit (`piano.learn.path.open`); **All**
   opens the board over the drill, and a card opens its unit.
@@ -994,6 +1034,17 @@ with real takes: a pitchless pass is no credit for the timed step, and a pass re
 It never nests (a rung failed twice falls to the ordinary smaller steps) and gates nothing. Log:
 `piano.learn.rhythm-voice` (`applied`, `voice`, `restored`).
 
+**The rhythm step never walls a child.** Its tempo track also goes down, to the plan's lowest timed rung,
+and a pass at any chosen tempo clears it (a warm-up, not a speed rung; it never proves a timed note step).
+**Skip rhythm** is always on it (a quiet header button; promoted into the result card after two misses):
+skipping earns nothing, and the coach moves on to the unit's next Gold-lap step and never recommends the
+rhythm step for that unit again (a `skip-rhythm` coach event, kept as `skippedRhythm[unitId]` in coach
+state, accepted by the server; projection `rhythmSkipped`; log `piano.learn.rhythm.skip`). Ornaments never
+ask for untappable taps: the rhythm expectation drops grace notes and merges an event closer than
+`RHYTHM_MIN_TAP_MS` (120 ms at the take's tempo) to the last kept one into it, and each kept event carries
+`sourceIndex` so the score's cursor and marks still land on the real ink; the X-note score hides grace
+notes (`toRhythmExpectation`, `toRhythmMusicXml`).
+
 **The beat loop (the first timed take's lead-in).** The retired *Settle into a beat* step lives on as the
 lead-in of a passage's first timed step (`leadIn: true` on the task; `LearnLab` passes `leadInLoop` to
 `ExerciseRun`): while that cued take waits for a key, the click runs and the count band above the score shows
@@ -1004,9 +1055,9 @@ is what is heard. Nothing waits for the child: the first note starts the take wh
 cue reads "Play when you feel the beat".
 
 Notation, the assessment cursor and verdicts remain dominant in the lab. Wrong
-pitches reveal the still-owed keyboard notes until the cursor advances. **Pause**,
-**Start over** and **Back** remain visible (a lab outside the coached drill also
-keeps **Change practice**). Pause freezes the
+pitches reveal the still-owed keyboard notes until the cursor advances. **Back** is always
+there; **Pause** during a take, **Resume** and **Start over** while paused (a lab outside the coached
+drill also offers **Change practice** before a take). Pause freezes the
 clock, miss windows and click; resume supplies a short count-in. Restart and
 setup changes affect the current take, preserving achievements. Save responses
 cannot replace the material of an active take or interrupt its verdict hold.

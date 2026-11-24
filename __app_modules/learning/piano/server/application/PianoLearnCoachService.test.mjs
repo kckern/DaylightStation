@@ -4,7 +4,7 @@ import { PianoLearnCoachService } from './PianoLearnCoachService.mjs';
 import { pianoCoachFixture } from '../../../../../tests/_lib/pianoCoachFixture.mjs';
 
 import captured from '../../../../../shared/music/__fixtures__/learnCoachCapturedPractice.json';
-import { createCoachPlan, MAX_DRILL_DEPTH } from '../../../../../shared/music/learnCoach.mjs';
+import { createCoachPlan, makeCoachTask, MAX_DRILL_DEPTH } from '../../../../../shared/music/learnCoach.mjs';
 
 const SCORE = 'files-test-musicxml';
 describe('acknowledged piano coaching', () => {
@@ -301,5 +301,21 @@ describe('acknowledged piano coaching', () => {
       await service.record('learner4', SCORE, f.outcome('straight-to-gold', { task: of(f, 'mastery') }));
       expect(f.records.get(`learner4/${SCORE}`).learnCoach.evidence).toHaveLength(1);
     });
+  });
+
+  it('accepts a take recorded at a tempo the child chose above the step, and saves its test-out', async () => {
+    const f = pianoCoachFixture(); const service = new PianoLearnCoachService(f);
+    const step = f.plan.tasks.find((task) => task.skill === 'rhythm');
+    const cued = f.plan.tasks.filter((task) => task.track === 'gold' && task.mode === 'cued' && !task.rhythm && task.tempoPercent < 100);
+    const chosen = Math.max(...cued.map((task) => task.tempoPercent));
+    const together = cued.find((task) => task.parts.length === 2);
+    const task = makeCoachTask(f.plan, { ...together, tempoPercent: chosen, stepTempoPercent: together.tempoPercent });
+    await service.record('learner4', SCORE, f.outcome('chosen-tempo', { task }));
+    const saved = f.records.get(`learner4/${SCORE}`).learnCoach;
+    expect(saved.evidence.at(-1).task).toMatchObject({ tempoPercent: chosen, stepTempoPercent: together.tempoPercent });
+    const earned = Object.values(saved.achievements).map((a) => a.provenance);
+    expect(earned.length).toBeGreaterThanOrEqual(cued.length);
+    expect(saved.achievements[step.key]).toMatchObject({ provenance: 'tested-out' });
+    expect(saved.achievements[f.plan.tasks.find((t) => t.mastery && t.track === 'gold').key]).toBeUndefined();
   });
 });

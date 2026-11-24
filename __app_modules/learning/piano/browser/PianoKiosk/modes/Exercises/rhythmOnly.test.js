@@ -20,6 +20,26 @@ describe('toRhythmExpectation', () => {
   it('passes through what it cannot read', () => {
     expect(toRhythmExpectation(null)).toBeNull();
   });
+  it('keeps each kept event\'s place in the real passage', () => {
+    expect(toRhythmExpectation(expectation).events.map((event) => event.sourceIndex)).toEqual([0, 1, 2]);
+  });
+  it('drops grace notes, and an event of grace notes only', () => {
+    const graced = { ...expectation, events: [
+      { id: 'g', onsetQuarter: 0, notes: [{ id: 'gn', midi: 62, grace: true }] },
+      { id: 'e1', onsetQuarter: 0, notes: [{ id: 'n1', midi: 64, grace: true }, { id: 'n2', midi: 48 }] },
+    ] };
+    const out = toRhythmExpectation(graced);
+    expect(out.events.map((event) => [event.id, event.notes[0].id, event.sourceIndex])).toEqual([['e1', 'n2:rhythm', 1]]);
+  });
+  it('merges a trill or a fast run into one tap at the take tempo', () => {
+    // 90 bpm: a 32nd is 83 ms apart, too close to tap; a quarter (667 ms) is not.
+    const trill = { ...expectation, events: [0, 0.125, 0.25, 0.375, 1].map((onsetQuarter, i) => ({ id: `t${i}`, onsetQuarter, notes: [{ id: `n${i}`, midi: 60 + (i % 2) }] })) };
+    const out = toRhythmExpectation(trill);
+    // 0 and 0.25 (167 ms) are both kept; 0.125 and 0.375 are inside a tap of the one before.
+    expect(out.events.map((event) => event.id)).toEqual(['t0', 't2', 't4']);
+    // The same notes at a quarter of the speed are all tappable.
+    expect(toRhythmExpectation({ ...trill, tempoMap: [{ onsetQuarter: 0, bpm: 22.5 }] }).events).toHaveLength(5);
+  });
 });
 
 describe('rhythmNotes', () => {
@@ -52,6 +72,12 @@ describe('toRhythmMusicXml', () => {
     expect(doc.getElementsByTagName('accidental')).toHaveLength(0);
     expect(notes.map((n) => n.getElementsByTagName('duration')[0].textContent)).toEqual(['1', '1', '2']);
     expect(notes[1].getElementsByTagName('rest')).toHaveLength(1);
+  });
+  it('hides grace notes', () => {
+    const graced = xml.replace('<note><rest/>', '<note><grace slash="yes"/><pitch><step>G</step><octave>5</octave></pitch><type>eighth</type><staff>1</staff></note><note><rest/>');
+    const doc = read(toRhythmMusicXml(graced));
+    expect(doc.getElementsByTagName('grace')).toHaveLength(0);
+    expect(doc.getElementsByTagName('note')).toHaveLength(3);
   });
   it('returns what it cannot parse unchanged', () => {
     expect(toRhythmMusicXml('<not xml')).toBe('<not xml');

@@ -31,3 +31,20 @@ export function availableTempoStages({
     ? TEMPO_STAGES.find(({ id }) => id === 'nearly-there') : nearest;
   return [{ ...identity, percent }];
 }
+
+const round10 = (value) => Math.round(value / 10) * 10;
+/**
+ * The stops of the drill header's tempo track, low to high: the ladder's own rung tempos (read from the
+ * plan, never assumed), the step's tempo, 100, and one stop halfway between two rungs that are 20 or more
+ * apart, so a child can creep up between rungs. Nothing below `floor` (the step's tempo, or lower on the
+ * rhythm step only) and nothing above 100.
+ */
+export function tempoTrackStops({ ladder = [], stepPercent = 100, floor = stepPercent } = {}) {
+  const marks = [...new Set([...ladder, stepPercent, 100].map(Number).filter((value) => Number.isFinite(value) && value > 0 && value <= 100))].sort((a, b) => a - b);
+  const stops = new Set(marks);
+  marks.forEach((value, index) => {
+    const next = marks[index + 1];
+    if (next != null && next - value >= 20) stops.add(round10((value + next) / 2));
+  });
+  return [...stops].filter((value) => value >= floor && value <= 100).sort((a, b) => a - b);
+}

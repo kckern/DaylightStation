@@ -97,12 +97,12 @@ describe('LearnPassageSession', () => {
     render(<LearnPassageSession score={{ id: 'score-1', musicXml: '<score />' }} revision="rev" passage={passage} rung={timed}
       tempo={{ tempoMap: [{ onsetQuarter: 0, bpm: 100 }], tempoSource: 'musicxml', minimumPercent: 40, maximumPercent: 100, adjustable: true }}
       onRecord={() => ({ rungComplete: false })} onBack={() => {}} />);
-    // 09e57927a: named stages replace the raw percentage; 60% reads "Steady".
-    expect(screen.getByRole('button', { name: 'Choose tempo: Steady · 60 BPM' })).toBeInTheDocument();
+    // The tempo track: a stop per stage, the percent big and the bpm small.
+    expect(screen.getByRole('button', { name: '60%' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('60 bpm')).toBeInTheDocument();
     expect(exercise.props.score.tempoPercent).toBe(60);
-    fireEvent.click(screen.getByRole('button', { name: 'Choose tempo: Steady · 60 BPM' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Nearly there' }));
-    expect(screen.getByRole('button', { name: 'Choose tempo: Nearly there · 80 BPM' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '80%' }));
+    expect(screen.getByText('80 bpm')).toBeInTheDocument();
     expect(exercise.props.score.tempoPercent).toBe(80);
   });
 
@@ -111,8 +111,7 @@ describe('LearnPassageSession', () => {
     render(<LearnPassageSession score={{ id: 'score-1', musicXml: '<score />' }} revision="rev" passage={passage} rung={mastery}
       tempo={{ tempoMap: [{ onsetQuarter: 0, bpm: 92 }], tempoSource: 'musicxml', minimumPercent: 40, maximumPercent: 100, adjustable: true }}
       onRecord={() => ({ rungComplete: false })} onBack={() => {}} />);
-    expect(screen.getByText('Full speed · 92 BPM')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Choose tempo/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Tempo' })).not.toBeInTheDocument();
     expect(exercise.props.score.tempoPercent).toBe(100);
   });
 
