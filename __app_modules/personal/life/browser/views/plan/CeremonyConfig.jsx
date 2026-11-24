@@ -1,9 +1,8 @@
 import { useRef, useState } from 'react';
 import { Stack, Paper, Text, Group, Badge, Switch } from '@mantine/core';
-import { notifications } from '@mantine/notifications';
 import { IconCalendarEvent, IconFlame } from '@tabler/icons-react';
 import { useCeremonyConfig } from "../../hooks/useLifePlan.js";
-import { useRetryRegion } from '@/lib/ui';
+import { Button, Toast, ToastRegion, useRetryRegion } from '@/lib/ui';
 import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
 import { formatPeriodLabel } from "../../lib/format.js";
 
@@ -16,7 +15,7 @@ const CEREMONY_TYPES = [
   { id: 'era_vision', label: 'Era Vision', description: 'Long-term purpose and direction review' },
 ];
 
-function CeremonySwitch({ type, enabled, readingBack, save }) {
+function CeremonySwitch({ type, enabled, readingBack, save, onError }) {
   const control = useRef(null);
   const pending = useRef(false);
   const [saving, setSaving] = useState(false);
@@ -30,7 +29,7 @@ function CeremonySwitch({ type, enabled, readingBack, save }) {
       await save(type.id, input.checked);
     } catch (err) {
       if (control.current === input) {
-        notifications.show({ color: 'red', title: "Couldn't update ceremony", message: err.message });
+        onError(err.message);
       }
     } finally {
       pending.current = false;
@@ -44,6 +43,7 @@ function CeremonySwitch({ type, enabled, readingBack, save }) {
 export function CeremonyConfig({ username }) {
   const { ceremonies, current, loading, readingBack, error, refetch, setCeremonyEnabled } = useCeremonyConfig(username);
   const { regionProps, retry } = useRetryRegion(refetch, loading || readingBack);
+  const [saveError, setSaveError] = useState(null);
 
   const content = loading ? <LoadingState /> : error
     ? <ErrorState label="Ceremonies" error={error} onRetry={retry} />
@@ -79,7 +79,7 @@ export function CeremonyConfig({ username }) {
                     <Text size="sm" fw={500}>{type.label}</Text>
                     <Text size="xs" c="dimmed">{type.description}</Text>
                   </Stack>
-                  <CeremonySwitch type={type} enabled={enabled} readingBack={readingBack} save={setCeremonyEnabled} />
+                  <CeremonySwitch type={type} enabled={enabled} readingBack={readingBack} save={setCeremonyEnabled} onError={setSaveError} />
                 </Group>
 
                 {enabled && (
@@ -109,6 +109,14 @@ export function CeremonyConfig({ username }) {
       <section {...regionProps} aria-label="Ceremonies results">
         {content}
       </section>
+      <ToastRegion>
+        {saveError != null && (
+          <Toast tone="error" autoCloseMs={8000} onAutoClose={() => setSaveError(null)}
+            message={`Couldn't update ceremony: ${saveError}`}>
+            <Button density="compact" variant="secondary" onClick={() => setSaveError(null)}>Dismiss</Button>
+          </Toast>
+        )}
+      </ToastRegion>
     </LifePage>
   );
 }
