@@ -10,12 +10,12 @@ const WIKITEXT = `==Track listing==
 {{Track listing
 | headline        = CD
 | extra_column    = Performer(s)
-| title1          = Processional on "God Rest Ye Merry, Gentlemen"
+| title1          = Processional on "Deck the Hall"
 | length1         = 5:31
 | extra1          = Choir, Orchestra, and Bells
-| title2          = Through Heaven's Eyes, from ''[[The Prince of Egypt]]''
+| title2          = Snowfall Song, from ''[[The Winter Garden]]''
 | length2         = 3:52
-| extra2          = [[Brian Stokes Mitchell]] with Choir<ref>liner notes</ref>
+| extra2          = [[Jane Carroll]] with Choir<ref>liner notes</ref>
 }}
 {{Track listing
 | headline = DVD
@@ -37,7 +37,7 @@ describe('mmss', () => {
 
 describe('stripWiki', () => {
   it('drops links, italics, refs and templates', () => {
-    expect(stripWiki("from ''[[Messiah (Handel)|Messiah]]''{{sfn|x}}<ref>a</ref>")).toBe('from Messiah');
+    expect(stripWiki("from ''[[Winter Cantata (Smith)|Winter Cantata]]''{{sfn|x}}<ref>a</ref>")).toBe('from Winter Cantata');
   });
 });
 
@@ -50,9 +50,9 @@ describe('parseTrackListing', () => {
   it('cleans titles and performers and converts lengths to seconds', () => {
     expect(tracks[1]).toEqual({
       listing: 'CD', n: 2,
-      title: "Through Heaven's Eyes, from The Prince of Egypt",
+      title: 'Snowfall Song, from The Winter Garden',
       length: 232,
-      performers: 'Brian Stokes Mitchell with Choir',
+      performers: 'Jane Carroll with Choir',
     });
   });
   it('leaves performers null when the listing has no extra column', () => {

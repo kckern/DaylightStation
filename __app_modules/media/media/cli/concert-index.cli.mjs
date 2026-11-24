@@ -168,7 +168,7 @@ const STOP = new Set(('a an and the of to in on is it for with be we you i he sh
 export function words(s) {
   return String(s ?? '')
     .toLowerCase()
-    .normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
     .replace(/'/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .split(' ')
