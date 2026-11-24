@@ -228,7 +228,7 @@ public final class NotificationsCapability implements Capability, LinkKeySource,
             boolean keyed = keyed(link);
             if (link.needsKey() && !keyed) {
                 return refuse(403, "forbidden", "a " + link.kind + " link without this install's key",
-                        "That link is not allowed");
+                        "That link has expired. Open Daylight and try again.");
             }
             LinkHandler owner = null;
             for (LinkHandler h : core.services().all(LinkHandler.class)) {
