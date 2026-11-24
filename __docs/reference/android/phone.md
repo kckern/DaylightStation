@@ -28,7 +28,8 @@ under "What the phone does not have".
 The Daylight app icon opens setup. Choose Health, Home, Lifelog, Media or
 Call to add its own shortcut to Android Home. Journal and Meal capture shortcuts
 open the recorder, text form or camera directly from Android Home. **Meal
-barcode** opens the Health scanner. **Capture status** opens receipt and retry
+barcode** opens the Health quick scanner: scan after scan, each one logged with a toast
+and Undo, Done to leave. **Capture status** opens receipt and retry
 controls. Full Journal needs a supported mobile destination.
 
 A service shortcut starts a fresh service WebView. Back follows that service’s

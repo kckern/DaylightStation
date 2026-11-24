@@ -82,6 +82,24 @@ describe('FoodCatalogService.suggest', () => {
     expect((await svc.getByUpc('012345678905', 'u')).name).toBe('Local Granola');
   });
 
+  it('finds a saved barcode by its 13-digit EAN spelling', async () => {
+    const svc2 = new FoodCatalogService({ clock: { now: () => NOW }, createId: () => "id", catalogStore: makeStore([entry({ id: 'p', name: 'Banana Pudding', barcodeUpc: '749826002729' })]) });
+    expect((await svc2.getByUpc('0749826002729', 'u'))?.name).toBe('Banana Pudding');
+  });
+
+  it('findNearUpc offers saved foods a few digits from an unknown code, closest and most used first', async () => {
+    const svc2 = new FoodCatalogService({ clock: { now: () => NOW }, createId: () => "id", catalogStore: makeStore([
+      entry({ id: 'p', name: 'Banana Pudding', barcodeUpc: '749826002729', useCount: 4 }),
+      entry({ id: 'c', name: 'Cookies and Cream', barcodeUpc: '749826002019', useCount: 9 }),
+      entry({ id: 'x', name: 'Unrelated', barcodeUpc: '036632042590' }),
+    ]) });
+    // A camera misread of the pudding: three digits off, same check digit.
+    expect((await svc2.findNearUpc('749505002729', 'u')).map(e => e.id)).toEqual(['p']);
+    // Never offers the code itself.
+    expect((await svc2.findNearUpc('749826002729', 'u')).map(e => e.id)).toEqual(['c']);
+    expect(await svc2.findNearUpc('12345', 'u')).toEqual([]);
+  });
+
   it('explicit future definitions scale all supplied nutrients without deleting evidence', async () => {
     const before = await store.getById('a');
     before.observations = [{ date: '2026-09-01', grams: 100, kcal: 200, logId: 'old' }];
