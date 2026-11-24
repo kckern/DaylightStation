@@ -1,0 +1,253 @@
+@use "../feedMixins.scss" as *;
+@use "../../../../../frontend/src/styles/breakpoints" as bp;
+
+// =========================================================================
+// Paper — the newsstand for the office thermal paper. The edition image is
+// shown as the sheet that printed: white paper, black ink, in every reading
+// theme, because that is what thermal paper is. Everything around it is the
+// Feed's dark chrome on the --feed-* scale.
+// =========================================================================
+
+.feed-paper {
+  --feed-paper-sheet: #ffffff; /* data-color: thermal paper is white in every theme */
+  --feed-paper-ink: #000000; /* data-color: thermal print is black */
+  --feed-paper-width: 576px; // the printer's 576-dot line, shown at 1 CSS px per dot
+
+  box-sizing: border-box;
+  min-height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, calc(var(--feed-paper-width) + 2rem)) minmax(15rem, 21rem);
+  justify-content: center;
+  align-items: start;
+  gap: 2rem;
+  padding: var(--ds-space-lg) var(--ds-space-lg) 3rem;
+  background: var(--feed-canvas);
+  color: var(--feed-text-1);
+  font-family: var(--feed-font-condensed);
+
+  h1, h2 { margin: 0; color: var(--feed-text-1); font-weight: 700; }
+  h1 { font-size: 1.5rem; letter-spacing: 0.01em; }
+  h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--feed-text-3); }
+
+  @include bp.mobile-only {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--ds-space-lg);
+    padding: var(--ds-space-md) var(--ds-space-md) 2.5rem;
+  }
+}
+
+.feed-paper--state {
+  display: block;
+  max-width: 36rem;
+  margin: 0 auto;
+  padding-top: 3rem;
+}
+
+.feed-paper__desk {
+  display: grid;
+  gap: var(--ds-space-md);
+  min-width: 0;
+}
+
+.feed-paper__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--ds-space-md);
+}
+
+.feed-paper__date {
+  margin: 0.2rem 0 0;
+  color: var(--feed-text-2);
+  font-size: 0.9rem;
+}
+
+.feed-paper__picker,
+.feed-paper__printer label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-sm);
+  min-width: 0;
+  color: var(--feed-text-2);
+  font-size: 0.85rem;
+
+  select { max-width: 100%; background: var(--feed-surface-2); }
+}
+
+.feed-paper__status,
+.feed-paper__inputs {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.feed-paper__status { color: var(--feed-text-1); font-size: 1rem; }
+.feed-paper__inputs { color: var(--feed-text-3); font-size: 0.85rem; }
+
+.feed-paper__actions,
+.feed-paper__printer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ds-space-sm);
+}
+
+.feed-paper__printer {
+  padding: var(--ds-space-sm) var(--ds-space-md);
+  border: 1px solid var(--feed-border-strong);
+  border-radius: var(--feed-radius-md);
+  background: var(--feed-surface-1);
+}
+
+.feed-paper__stage {
+  min-width: 0;
+
+  &[aria-busy='true'] .feed-paper__sheet { opacity: 0.6; }
+}
+
+.feed-paper__sheet {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--feed-paper-width);
+  margin: 0;
+  padding: 0.75rem 0;
+  background: var(--feed-paper-sheet);
+  color: var(--feed-paper-ink);
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--feed-paper-ink) 30%, transparent),
+    0 0.6rem 1.6rem color-mix(in srgb, var(--feed-paper-ink) 40%, transparent);
+  transition: opacity var(--ds-motion-base) var(--ds-motion-easing);
+
+  img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  // At full paper width each dot is a whole number of device pixels, so
+  // keep the 1-bit print crisp. Narrower screens scale it down smoothly.
+  @include bp.tablet-up {
+    img { image-rendering: pixelated; }
+  }
+
+  @include bp.mobile-only { margin-inline: auto; }
+}
+
+.feed-paper__sheet--preview {
+  outline: 2px dashed var(--feed-accent);
+  outline-offset: 4px;
+
+  figcaption {
+    margin: 0 0.75rem 0.75rem;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--feed-paper-ink);
+    color: var(--feed-paper-ink);
+    font-size: 0.85rem;
+  }
+}
+
+.feed-paper__missing {
+  margin: 0;
+  padding: var(--ds-space-lg);
+  border: 1px dashed var(--feed-border-strong);
+  border-radius: var(--feed-radius-md);
+  color: var(--feed-text-2);
+  line-height: 1.45;
+}
+
+.feed-paper__stories {
+  display: grid;
+  gap: var(--ds-space-sm);
+  max-width: var(--feed-paper-width);
+
+  ol {
+    display: grid;
+    gap: var(--ds-space-sm);
+    margin: 0;
+    padding-left: 1.4rem;
+    color: var(--feed-text-3);
+  }
+
+  li { display: grid; gap: 0.2rem; }
+
+  a {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.4rem;
+    color: var(--feed-text-1);
+    text-decoration: none;
+    line-height: 1.3;
+
+    &:hover span, &:focus-visible span { text-decoration: underline; }
+    &:focus-visible { outline: var(--ds-focus-width) solid var(--feed-accent); outline-offset: 2px; }
+  }
+
+  small { color: var(--feed-text-3); font-size: 0.75rem; }
+  .feed-paper__story-also { font-size: 0.85rem; color: var(--feed-text-2); }
+}
+
+.feed-paper__issues {
+  display: grid;
+  gap: var(--ds-space-sm);
+  min-width: 0;
+
+  @include bp.tablet-up {
+    position: sticky;
+    top: var(--ds-space-lg);
+  }
+
+  ol {
+    display: grid;
+    gap: 0.35rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+}
+
+.feed-paper__today-link {
+  color: var(--feed-accent-strong);
+  font-size: 0.9rem;
+}
+
+.feed-paper__issue {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--feed-border);
+  border-radius: var(--feed-radius-md);
+  background: var(--feed-surface-1);
+  color: var(--feed-text-2);
+  text-decoration: none;
+
+  &:hover { border-color: var(--feed-border-strong); color: var(--feed-text-1); }
+  &:focus-visible { outline: var(--ds-focus-width) solid var(--feed-accent); outline-offset: 2px; }
+}
+
+.feed-paper__issue--current {
+  border-color: var(--feed-accent);
+  background: var(--feed-accent-bg);
+  color: var(--feed-text-1);
+}
+
+.feed-paper__issue-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--ds-space-sm);
+  color: var(--feed-text-1);
+  font-weight: 700;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.feed-paper__issue-lead {
+  font-size: 0.9rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.feed-paper__issue-meta {
+  color: var(--feed-text-3);
+  font-size: 0.75rem;
+}

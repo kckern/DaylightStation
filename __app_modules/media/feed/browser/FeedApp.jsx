@@ -30,6 +30,7 @@ const Headlines = lazy(() => import("./Headlines/Headlines.jsx"));
 const Scroll = lazy(() => import("./Scroll/Scroll.jsx"));
 const Reader = lazy(() => import("./Reader/Reader.jsx"));
 const FeedSearch = lazy(() => import("./Search/FeedSearch.jsx"));
+const Paper = lazy(() => import("./Paper/Paper.jsx"));
 const SEARCH_PATH = '/feed/search';
 
 const log = getLogger().child({ app: 'feed', module: 'feed-app', sessionLog: true });
@@ -139,6 +140,7 @@ function FeedLayout() {
   const isScroll = location.pathname.startsWith('/feed/scroll');
   const isHeadlines = location.pathname.startsWith('/feed/headlines');
   const isSearch = Boolean(useMatch(SEARCH_PATH));
+  const isPaper = Boolean(useMatch('/feed/paper/*'));
   const currentHeadlinePage = isHeadlines ? location.pathname.split('/').filter(Boolean)[2] : '';
   const { density, setDensity, readingPreferences, summary, retrySync, pendingMutations, workspaceReady } = useFeedWorkspace();
 
@@ -163,6 +165,28 @@ function FeedLayout() {
       prevMiniBarRef.current = showMiniBar;
     }
   }, [showMiniBar, activeMedia]);
+
+  // Keep the current mode's tab in view when the rail scrolls on a phone,
+  // again whenever a tab changes width (the unread badge, the web font).
+  const modesRef = useRef(null);
+  useLayoutEffect(() => {
+    const rail = modesRef.current;
+    if (!rail) return undefined;
+    const reveal = () => {
+      const active = rail.querySelector('a.active');
+      if (!active || rail.scrollWidth <= rail.clientWidth) return;
+      const start = active.offsetLeft - rail.offsetLeft;
+      const end = start + active.offsetWidth;
+      if (start < rail.scrollLeft) rail.scrollLeft = start;
+      else if (end > rail.scrollLeft + rail.clientWidth) rail.scrollLeft = end - rail.clientWidth;
+    };
+    reveal();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(reveal);
+    observer.observe(rail);
+    for (const tab of rail.children) observer.observe(tab);
+    return () => observer.disconnect();
+  }, [location.pathname]);
 
   useHotkey('/', () => {
     if (isSearch) return false;
@@ -207,13 +231,18 @@ function FeedLayout() {
           from Scroll; compact modifier keeps it unobtrusive while scrolling. (F-12) */}
       <nav ref={tabsRef} className={isScroll ? 'feed-tabs feed-tabs--compact' : 'feed-tabs'}
         style={{ '--feed-tabs-height': `${tabsHeight}px` }} aria-label="Feed modes">
-        <NavLink to="/feed/reader" className={({ isActive }) => isActive ? 'active' : ''}>
-          Reader{summary.readerUnread > 0 && <span className="feed-tab-badge" aria-label={`${summary.readerUnread} unread Reader items`}>{summary.readerUnread > 999 ? '999+' : summary.readerUnread}</span>}
-        </NavLink>
-        <NavLink to={`/feed/headlines/${currentHeadlinePage || headlinePages[0]?.id || 'mainstream'}`} className={() => isHeadlines ? 'active' : ''}>Headlines</NavLink>
-        <NavLink to="/feed/scroll" className={({ isActive }) => isActive ? 'active' : ''}>
-          Scroll
-        </NavLink>
+        {/* The mode links scroll sideways as one rail on a phone, so the
+            controls to the right keep their row instead of wrapping. */}
+        <div ref={modesRef} className="feed-tabs__modes">
+          <NavLink to="/feed/reader" className={({ isActive }) => isActive ? 'active' : ''}>
+            Reader{summary.readerUnread > 0 && <span className="feed-tab-badge" aria-label={`${summary.readerUnread} unread Reader items`}>{summary.readerUnread > 999 ? '999+' : summary.readerUnread}</span>}
+          </NavLink>
+          <NavLink to={`/feed/headlines/${currentHeadlinePage || headlinePages[0]?.id || 'mainstream'}`} className={() => isHeadlines ? 'active' : ''}>Headlines</NavLink>
+          <NavLink to="/feed/scroll" className={({ isActive }) => isActive ? 'active' : ''}>
+            Scroll
+          </NavLink>
+          <NavLink to="/feed/paper" className={() => isPaper ? 'active' : ''}>Paper</NavLink>
+        </div>
         <span className="feed-tabs__spacer" />
         {isHeadlines && headlinePages.length > 1 && (
           <label className="feed-edition-picker">
@@ -260,6 +289,7 @@ const FeedApp = () => {
                 <Route path="headlines" element={<Navigate to="/feed/headlines/mainstream" replace />} />
                 <Route path="scroll/:feedItemId?" element={<Scroll />} />
                 <Route path="search" element={<FeedSearch />} />
+                <Route path="paper/:date?" element={<Paper />} />
               </Route>
             </Routes>
           </FeedPlayerProvider>

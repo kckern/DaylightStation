@@ -70,6 +70,7 @@ The feed system aggregates content from external services (RSS, Reddit, YouTube,
 │  │  /feed/headlines/:pageId → Headlines (newspaper grid)         │   │
 │  │  /feed/scroll     → Scroll (card feed)                        │   │
 │  │  /feed/scroll/:feedItemId → DetailView (expanded content)      │   │
+│  │  /feed/paper[/:date] → Paper (office paper newsstand)         │   │
 │  └───────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌────────────────────┐  ┌──────────────────────┐                   │
