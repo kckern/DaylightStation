@@ -287,7 +287,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | School day-to-day operations (troubleshooting, logs, hardware, HA grading hook, presence → lights hook) | `__docs/runbooks/school/README.md` (presence → lights: `__docs/runbooks/school/home-assistant-grading-hook.md` §7) |
 | Push notifications (text standard, school push copy, HA relay contract) | `__docs/reference/notifications/push-standard.md` |
 | Harvester health (failed harvests, failing/stale pushes, token rotation, Withings reconnect) | `__docs/reference/harvesters/health-and-reconnect.md` |
-| NewsReporter framework (scheduled reports) | `__docs/reference/newsreporter/newsreporter-framework.md` |
+| NewsReporter framework (scheduled reports; edition reporters = the office paper: compose with a per-story Jev pick, 576-dot newspaper PNG, deliver once on HA arrival, newsstand API) | `__docs/reference/newsreporter/newsreporter-framework.md` |
 | Provenance scene (streaming-service logo before a film or show: rules in `media/provenance.yml` (overrides by content filter/collection/studio, priority groups over Watchmode offers, fallbacks by year/length/library/studio), per-play connecting motion, long-absence resume, restart replay, logos in `content/providers/`, 2,500-credit allowance) | `__docs/reference/media/provenance.md` |
 | Plex live TV channels (`plex-live:<slug>`: the free watch.plex.tv/live-tv channels from plex.tv, playlist token rewrite in the `plex-live` proxy, path gate, lineup cache, menu entries, no progress for live) | `__docs/reference/media/plex-live-tv.md` |
 | Content filter Admin workshop (library, Make filter runs + filter worker, review list, nudges, review marks, parent sign-off) | `__docs/reference/core/content-filter.md` (Admin workshop) |
