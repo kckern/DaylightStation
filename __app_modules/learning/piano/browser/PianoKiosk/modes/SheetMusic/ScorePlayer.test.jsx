@@ -364,14 +364,14 @@ describe('ScorePlayer — guided Learn composition', () => {
   setup(); renderPlayer('/?learnPassage=m0-1&learnRung=right');
   expect(h.learnLabProps.coachingTask).toMatchObject({ passageId: 'm0-1', skill: 'right' });
   expect(h.learnLabProps.segment.barLabel).toBe('Bars 1–2');
-  expect(h.learnLabProps.drill.projection.steps).toHaveLength(12);
+  expect(h.learnLabProps.drill.projection.steps).toHaveLength(4);
   expect(screen.getByRole('navigation', { name: 'Passages in this piece' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /Start practice/ })).not.toBeInTheDocument();
  });
  it('provides one learning entry that lands on the drill, banks a pass, and returns to the score', async () => {
   setup(); renderPlayer(); pickMode('Learn');
   expect(screen.getByRole('navigation', { name: 'Passages in this piece' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: /^All passages, 0 of \d+ Bronze$/ })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /^All passages, Bronze · 0 of \d+$/ })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Learn A, bars 1–2' }));
   expect(h.learnLabProps.coachingTask.parts).toEqual(['rh']);
   fireEvent.click(screen.getByRole('button', { name: 'Complete rung' }));

@@ -85,6 +85,21 @@
   flex-wrap: wrap;
 }
 
+// The strip's head: the coin of the unit these steps belong to, ringed as its token is on the path
+// (3px of the foreground, 2px off the coin), and "C · steps to Bronze" beside it.
+.drill-progress__head {
+  display: flex; align-items: center; gap: 0.6rem; align-self: center;
+  padding-right: clamp(0.5rem, 2vw, 1.25rem); border-right: 2px solid var(--drill-track);
+}
+.drill-progress__mark {
+  display: grid; width: 2.6rem; height: 2.6rem; border-radius: 50%; flex: none;
+  outline: 3px solid var(--piano-fg, var(--drill-fg)); outline-offset: 2px; margin: 5px;
+  svg { width: 100%; height: 100%; }
+}
+.drill-progress__head-text {
+  font-size: 1rem; font-weight: 800; line-height: 1.15; white-space: nowrap; color: var(--drill-fg);
+}
+
 .drill-cluster {
   display: flex;
   flex-direction: column;

@@ -3,7 +3,9 @@
 // (partway), a bronze coin (Bronze), a gold coin (Gold); a join is a socket, then a silver coin.
 // Selection is a ring in the neutral ink, never the "done" green. Opacity never shows state.
 .piano-passage-path {
-  --path-h: 6.25rem;
+  --path-h: 6.75rem;
+  // Room round a disc for its selection ring (3px, 2px off the disc), so no token is cut by the row.
+  --ring-room: 5px;
   --token: 56px;
   --token-next: 68px;
   --link: 12px;
@@ -29,7 +31,7 @@
     // The path between two tokens: plain, silver across a join played through, silver either side of a socket.
     > li[data-link]::before {
       content: ''; position: absolute; right: 100%; width: var(--link);
-      top: calc(var(--token-next) / 2 - 2px); height: 4px;
+      top: calc(var(--ring-room) + var(--token-next) / 2 - 2px); height: 4px;
       background: var(--piano-border);
     }
     > li[data-link='joined']::before { height: 6px; margin-top: -1px; background: var(--piano-silver); }
@@ -38,7 +40,9 @@
 
   &__token {
     position: relative; display: flex; flex-direction: column; align-items: center;
-    padding: 0 0 1.1rem; border: 0; background: none; color: var(--piano-fg);
+    // The caption has its own line under the ring: it never sits under the disc or its ring.
+    // Above and below the disc there is room for its ring; beside it the ring overlaps the link, never a token.
+    padding: var(--ring-room) 0 calc(1.1rem + var(--ring-room) + 3px); border: 0; background: none; color: var(--piano-fg);
     min-width: var(--token);
   }
   &__disc {
@@ -49,7 +53,7 @@
   }
   // The coach's next unit: larger, and lifted off the path.
   &__token[data-next] &__disc { width: var(--token-next); height: var(--token-next); margin: 0; box-shadow: 0 5px 0 0 var(--piano-stage-2, #0b0b0f); }
-  &__token[aria-pressed='true'] &__disc { outline: 3px solid var(--piano-fg); outline-offset: 3px; }
+  &__token[aria-pressed='true'] &__disc { outline: 3px solid var(--piano-fg); outline-offset: 2px; }
   // The play disc: on the target, the token a tap opens.
   &__play {
     position: absolute; right: -5px; bottom: -3px; width: 26px; height: 26px; box-sizing: border-box; padding: 5px 4px 5px 6px;
@@ -82,17 +86,8 @@
   &__token[data-state='socket'] &__pill { background: var(--piano-bg); border: 2px solid var(--piano-silver); }
   &__token[aria-current='step'] &__pill { outline: 3px solid var(--piano-fg); outline-offset: 1px; }
 
-  // The goal: the piece played through, Polish open, the diamond. Outlines until earned.
-  &__marks {
-    list-style: none; margin: 0; padding: 0; display: flex; align-items: center; gap: 6px;
-    li { width: 1.9rem; height: 1.9rem; display: grid; color: var(--piano-silver); }
-    li[data-level='gold'] { color: var(--piano-gold); }
-    li[data-level='diamond'] { color: var(--piano-diamond); }
-    li[data-reached='false'] { color: var(--piano-muted); }
-    li[data-reached='false'][data-level='silver'] { color: var(--piano-silver); }
-    li[data-reached='false'][data-level='gold'] { color: var(--piano-gold); }
-    li[data-reached='false'][data-level='diamond'] { color: var(--piano-diamond); }
-  }
+  // The level ladder at the right end (LevelLadder.scss).
+  &__ladder { flex: 0 0 auto; }
   &__all {
     display: flex; align-items: center; gap: 0.45rem; min-height: 3.25rem; padding: 0 var(--sp-4, 16px);
     border: 2px solid var(--piano-border); border-radius: var(--r-md, 12px);
@@ -105,7 +100,7 @@
 .piano-passage-board {
   // The whole stage above the path. A board that covered only part of it left a
   // staff sliced in half behind it, and its cards a third of their room.
-  position: absolute; z-index: 20; left: 0; right: 0; top: 0; bottom: 6.25rem; box-sizing: border-box;
+  position: absolute; z-index: 20; left: 0; right: 0; top: 0; bottom: 6.75rem; box-sizing: border-box;
   display: flex; flex-direction: column; min-height: 0;
   color: var(--piano-fg); background: var(--piano-surface-1, #1c1c23);
   border-top: 3px solid var(--piano-fg); border-radius: var(--r-lg, 16px) var(--r-lg, 16px) 0 0;
@@ -117,15 +112,8 @@
     padding: var(--sp-3, 12px) var(--sp-4, 16px); border-bottom: 1px solid var(--piano-border);
   }
   &__title { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 1.6rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  // The goals are counters, not buttons: a coin and how many units carry it.
-  &__goals {
-    list-style: none; margin: 0; padding: 0; display: flex; gap: var(--sp-5, 24px); flex: 0 0 auto;
-    li { display: flex; align-items: center; gap: 0.5rem; font-size: 1.5rem; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--piano-silver); }
-    li[data-level='gold'] { color: var(--piano-gold); }
-    li[data-level='polish'] .gem-icon { width: 2.2rem; height: 2.2rem; }
-    .coin-icon { width: 2.2rem; height: 2.2rem; }
-    span { font-size: 1rem; font-weight: 700; color: var(--piano-fg); }
-  }
+  // The level ladder, the same one as the path's, a size up.
+  &__ladder { flex: 0 0 auto; --rung: 2.3rem; .piano-level-ladder__count { font-size: 1.1rem; } }
   &__review, &__close {
     flex: 0 0 auto; display: flex; align-items: center; gap: 0.4rem; min-height: 3rem; padding: 0 var(--sp-4, 16px);
     border: 2px solid var(--piano-border); border-radius: var(--r-md, 12px);

@@ -40,21 +40,20 @@ describe('join tree', () => {
 });
 
 describe('piece Silver is the final join', () => {
-  it('counts passages only and offers the first join after its two passages', () => {
+  it('counts passages only and offers the first join once every passage is Bronze', () => {
     const plan = planOf(6);
-    let state = bronze(undefined, plan, ['p1']);
-    expect(proj(plan, state).recommended.passageId).toBe('p2');
-    state = bronze(state, plan, ['p2']);
-    const p = proj(plan, state);
+    let state = bronze(undefined, plan, ['p1', 'p2']);
+    let p = proj(plan, state);
     expect(p.piece).toMatchObject({ total: 6, silver: 2, pieceSilver: false, joins: { total: 5, silver: 0 } });
+    expect(p.recommended.passageId).toBe('p3');
+    state = bronze(state, plan, ['p3', 'p4', 'p5', 'p6']);
+    p = proj(plan, state);
     expect(p.recommended).toMatchObject({ passageId: 'join:p1:p2', assist: 'none' });
   });
-  it('never recommends a join over a passage that has no Silver yet', () => {
+  it('never recommends a join over a passage that has no Bronze yet', () => {
     const plan = planOf(4);
-    const state = bronze(undefined, plan, ['p1', 'p2', 'p3']);
-    expect(proj(plan, state).recommended.passageId).toBe('join:p1:p2');
-    const only = bronze(undefined, plan, ['p1']);
-    expect(proj(plan, only).recommended.passageId).toBe('p2');
+    expect(proj(plan, bronze(undefined, plan, ['p1', 'p2', 'p3'])).recommended.passageId).toBe('p4');
+    expect(proj(plan, bronze(undefined, plan, ['p1'])).recommended.passageId).toBe('p2');
   });
   it('certifies the piece when the final join passes, not before', () => {
     const plan = planOf(2);
@@ -212,9 +211,82 @@ describe('review fixes', () => {
   });
   it('a join can be set aside and names where it goes next', () => {
     const plan = planOf(4);
-    const state = bronze(undefined, plan, ['p1', 'p2']);
+    const state = bronze(undefined, plan, ['p1', 'p2', 'p3', 'p4']);
     const p = proj(plan, state);
     expect(p.recommended.passageId).toBe('join:p1:p2');
-    expect(p.afterSetAside['join:p1:p2']).toBe('p3');
+    expect(p.afterSetAside['join:p1:p2']).toBe('join:p3:p4');
+  });
+});
+
+describe('laps (2026-11-23 night)', () => {
+  const gold = (plan, id) => plan.segments.find((s) => s.id === id).tasks.find((t) => t.mastery);
+  const goldAll = (state, plan, ids) => ids.reduce((acc, id) => { const t = gold(plan, id); return play(play(acc, plan, t), plan, t); }, state);
+  const silverAll = (state, plan, ids) => ids.reduce((acc, id) => play(acc, plan, check(plan, id)), state);
+  // Walk the recommendation, passing each unit's check, and list the units in the order they came.
+  const walk = (plan) => {
+    let state; const seen = [];
+    for (let guard = 0; guard < 40; guard += 1) {
+      const next = proj(plan, state).recommended;
+      if (!next) break;
+      seen.push(next.passageId); state = play(state, plan, check(plan, next.passageId));
+    }
+    return { seen, state };
+  };
+  it('recommends every passage, then the joins lowest level first, the whole piece last', () => {
+    expect(walk(planOf(6)).seen).toEqual(['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'join:p1:p2', 'join:p3:p4', 'join:p5:p6', 'join:p1:p4', 'join:p1:p6']);
+    expect(walk(planOf(5)).seen).toEqual(['p1', 'p2', 'p3', 'p4', 'p5', 'join:p1:p2', 'join:p3:p4', 'join:p1:p4', 'join:p1:p5']);
+  });
+  it('keeps plan.segments in play order (saved keys and states unchanged)', () => {
+    expect(planOf(3).segments.map((s) => s.id)).toEqual(['p1', 'p2', 'join:p1:p2', 'p3', 'join:p1:p3']);
+  });
+  it('names the lap and its count', () => {
+    const plan = planOf(3);
+    expect(proj(plan)).toMatchObject({ lap: 'bronze', lapProgress: { done: 0, total: 3 } });
+    let state = bronze(undefined, plan, ['p1', 'p2']);
+    expect(proj(plan, state)).toMatchObject({ lap: 'bronze', lapProgress: { done: 2, total: 3 } });
+    state = bronze(state, plan, ['p3']);
+    expect(proj(plan, state)).toMatchObject({ lap: 'silver', lapProgress: { done: 0, total: 2 } });
+    state = silverAll(state, plan, ['join:p1:p2', 'join:p1:p3']);
+    expect(proj(plan, state)).toMatchObject({ lap: 'gold', lapProgress: { done: 0, total: 4 } });
+    state = goldAll(state, plan, ['p1', 'p2', 'p3', 'join:p1:p2']);
+    expect(proj(plan, state)).toMatchObject({ lap: 'diamond', recommended: null });
+  });
+  it('a one-passage piece goes Bronze, then Gold', () => {
+    const plan = planOf(1);
+    expect(proj(plan).lap).toBe('bronze');
+    expect(proj(plan, bronze(undefined, plan, ['p1']))).toMatchObject({ lap: 'gold', lapProgress: { done: 0, total: 1 } });
+  });
+  it('a backfilled state (A, B Bronze, A–B Silver, C untouched) recommends C', () => {
+    const plan = planOf(3);
+    const state = silverAll(bronze(undefined, plan, ['p1', 'p2']), plan, ['join:p1:p2']);
+    const p = proj(plan, state);
+    expect(p.recommended).toMatchObject({ passageId: 'p3', assist: 'none' });
+    expect(p).toMatchObject({ lap: 'bronze', lapProgress: { done: 2, total: 3 } });
+    expect(p.segments.find((s) => s.id === 'join:p1:p2').certification.silver).toBeTruthy();
+  });
+  it('a later-lap unit chosen from the board still records', () => {
+    const plan = planOf(3);
+    let state = bronze(undefined, plan, ['p1', 'p2']);
+    expect(proj(plan, state).recommended.passageId).toBe('p3');
+    state = play(state, plan, check(plan, 'join:p1:p2'));
+    expect(proj(plan, state).segments.find((s) => s.id === 'join:p1:p2').certification.silver).toBeTruthy();
+    expect(proj(plan, state).piece.joins.silver).toBe(1);
+    // A Gold step on a Bronze passage records too, before the Gold lap.
+    state = goldAll(state, plan, ['p1']);
+    expect(proj(plan, state).segments.find((s) => s.id === 'p1').certification.gold).toBeTruthy();
+    expect(proj(plan, state).recommended.passageId).toBe('p3');
+  });
+  it('the Gold lap follows lap order (passages, then the joins below the top) and only after piece Silver', () => {
+    const plan = planOf(4);
+    let state = bronze(undefined, plan, ['p1', 'p2', 'p3', 'p4']);
+    expect(proj(plan, state).piece.nextGoldPassageId).toBeNull();
+    state = silverAll(state, plan, ['join:p1:p2', 'join:p3:p4', 'join:p1:p4']);
+    expect(proj(plan, state).piece.nextGoldPassageId).toBe('p1');
+    state = goldAll(state, plan, ['p1', 'p2', 'p3', 'p4']);
+    expect(proj(plan, state).piece.nextGoldPassageId).toBe('join:p1:p2');
+    state = goldAll(state, plan, ['join:p1:p2']);
+    expect(proj(plan, state).piece.nextGoldPassageId).toBe('join:p3:p4');
+    state = goldAll(state, plan, ['join:p3:p4']);
+    expect(proj(plan, state)).toMatchObject({ lap: 'diamond', piece: { nextGoldPassageId: null, polishReady: true } });
   });
 });

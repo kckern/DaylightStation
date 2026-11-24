@@ -39,7 +39,8 @@ export const PASSAGE_CEREMONY_MS = 5000;
 export const PIECE_CEREMONY_MS = 7600;
 /** Every passage of a finished piece on the curtain, sized so any piece fits in the stage. */
 const pieceMarkSize = (count) => (count <= 8 ? '6rem' : count <= 12 ? '4.6rem' : count <= 24 ? '4rem' : count <= 48 ? '3rem' : '2rem');
-const barsOf = (passage) => passage?.barLabel ?? passage?.label ?? '';
+// A join has no label of its own: it is named by the bars it spans.
+const barsOf = (passage) => passage?.barLabel ?? passage?.label ?? (Number.isInteger(passage?.inMeasure) ? `Bars ${passage.inMeasure + 1}–${passage.outMeasure + 1}` : '');
 const lower = (label) => label.charAt(0).toLowerCase() + label.slice(1);
 /** A recovery step's button label and onward-line sentence, from one place. A
  * slower step without a known tempo says so without a number. */
@@ -71,15 +72,20 @@ const freshId = () => `coach-${globalThis.crypto?.randomUUID?.() ?? `${Date.now(
 const lockedIcon = (icon) => <span className="piano-learn-coach__locked">{icon}<Icon name="lock" className="piano-learn-coach__lock" /></span>;
 
 /**
- * A passage's steps as the drill surface draws a program: every Silver and
- * Gold step is a set, and the clean takes it needs are its reps. `access` (by
- * step key, from the skipping policy) marks the steps that cannot be started;
- * `showLocks` draws a lock on them, which a `strict` ladder does not need.
+ * A unit's steps as the drill surface draws a program, ONE LAP AT A TIME (2026-11-23 night): the lap of
+ * the step being played (the Bronze/Silver lap: the hands, together, the check; the Gold lap: rhythm,
+ * beat, the timed rungs, score tempo). Later-lap steps are not drawn. Every step shown is a set, and the
+ * clean takes it needs are its reps. `access` (by step key, from the skipping policy) marks the steps
+ * that cannot be started; `showLocks` draws a lock on them, which a `strict` ladder does not need.
+ * `unit` ({ letter, state, ring }, the unit's token on the path) heads the strip with the same coin and
+ * "<letter> · steps to <level>", so the strip reads as that token's.
  */
 // eslint-disable-next-line react-refresh/only-export-components -- pure projection is exported for focused contract tests
-export function passageDrill(passage, task, { access = EMPTY, showLocks = false } = {}) {
+export function passageDrill(passage, task, { access = EMPTY, showLocks = false, unit = null } = {}) {
   const current = rootOf(task)?.key ?? null;
-  const steps = (passage?.skills ?? []).map((skill) => {
+  const lap = rootOf(task)?.track === 'gold' ? 'gold' : 'silver';
+  const level = lap === 'gold' ? 'Gold' : passage?.kind === 'join' ? 'Silver' : 'Bronze';
+  const steps = (passage?.skills ?? []).filter((skill) => (skill.track === 'gold' ? 'gold' : 'silver') === lap).map((skill) => {
     // A step with no fixed count is earned by two good takes out of the last three.
     const reps = Math.max(1, skill.required ?? 2);
     const banked = skill.ready ? reps : Math.min(reps - 1, skill.successes ?? 0);
@@ -90,7 +96,10 @@ export function passageDrill(passage, task, { access = EMPTY, showLocks = false 
       requirement: { required_passes: reps }, pass_count: banked, passed: Boolean(skill.ready),
       state: skill.ready ? 'complete' : skill.key === current ? 'current' : 'locked', ...(locked ? { locked: true } : {}) };
   });
-  return { projection: { id: `learn:${passage?.id}`, title: barsOf(passage), displaySingleStep: true, steps },
+  const name = unit?.letter ?? null;
+  const head = { text: `${name ? `${name} · ` : ''}steps to ${level}`, label: `${name ? `${name}, ` : ''}steps to ${level}`, lap, level: level.toLowerCase(),
+    mark: name ? <PassageCoin state={unit.state} letter={name} ring={unit.ring} size="100%" /> : null };
+  return { projection: { id: `learn:${passage?.id}`, title: barsOf(passage), displaySingleStep: true, steps, head },
     stepId: steps.some((step) => step.id === current) ? current : null };
 }
 
@@ -157,7 +166,6 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
         tempoPercent: wanted.tempoPercent, criteria: wanted.criteria, sets: 1, reps: 1, required: 1, passCount: 0 } };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the task's identity, not the projection's fresh objects
   }, [plan, segment.barLabel, segment.inMeasure, segment.outMeasure, task?.key, runNumber]);
-  const drill = useMemo(() => passageDrill(projected, task, { access, showLocks: skipMode !== 'strict' }), [projected, task, access, skipMode]);
 
   useEffect(() => {
     logger.info('piano.learn.coach.step', { scoreId: score.id, passageId: segment.id, skill: task?.skill ?? null,
@@ -208,7 +216,8 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
   const coinOf = (level) => (level === 'silver' && isJoin ? 'joined' : level);
   const pieceDone = celebrated === 'gold' ? piece.polishReady === true
     : celebrated === 'silver' && piece.pieceSilver === true && (isJoin ? segment.final === true : piece.total === 1);
-  const leaveFor = celebrated === 'silver' ? (pieceDone ? null : nextPassage) : celebrated === 'gold' ? (pieceDone ? null : nextGold) : null;
+  // After a Gold won off the lap (before the piece is played through) the child goes on to the coach's next unit.
+  const leaveFor = celebrated === 'silver' ? (pieceDone ? null : nextPassage) : celebrated === 'gold' ? (pieceDone ? null : nextGold ?? nextPassage) : null;
   // A pass that does not certify moves straight on, the way a drill's next rep
   // arrives under its card. A Silver or Gold stays on the finished take.
   useEffect(() => {
@@ -228,6 +237,17 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
     if (leaveFor && onPassageChange) onPassageChange(leaveFor.id);
     else onBack?.();
   };
+  // The same path and board as the score view: every passage of the piece, this unit selected. While a
+  // join's Silver lands, the path keeps the Silver drawing so the coin turns where the child earned it.
+  const holdLap = celebrated === 'silver' && isJoin ? 'silver' : null;
+  const rail = useMemo(() => railModel({ segments: coach.projection.segments, projection: coach.projection, selectedId: segment.id, polish, lap: holdLap }),
+    [coach.projection, segment.id, polish, holdLap]);
+  // The strip is headed by this unit's own token: the same lettered coin, the same ring.
+  const unitToken = rail.cards.find((card) => card.id === segment.id) ?? null;
+  const unitLetter = unitToken?.letter ?? null; const unitState = unitToken?.state ?? null; const unitRing = unitToken?.ring;
+  const drill = useMemo(() => passageDrill(projected, task, { access, showLocks: skipMode !== 'strict',
+    unit: unitLetter ? { letter: unitLetter, state: unitState, ring: unitRing } : null }),
+  [projected, task, access, skipMode, unitLetter, unitState, unitRing]);
   const card = useMemo(() => {
     if (!moment) return null;
     const { task: played, raw, id } = moment;
@@ -334,11 +354,6 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
     {coach.recoveryError && <button type="button" aria-label={coach.recoveryError} onClick={exportEarlier}>Export earlier practice</button>}
   </div> : null;
 
-  // The same path and board as the score view: every passage of the piece, this unit selected. While a
-  // join's Silver lands, the path keeps the Silver drawing so the coin turns where the child earned it.
-  const holdLap = celebrated === 'silver' && isJoin ? 'silver' : null;
-  const rail = useMemo(() => railModel({ segments: coach.projection.segments, projection: coach.projection, selectedId: segment.id, polish, lap: holdLap }),
-    [coach.projection, segment.id, polish, holdLap]);
   const gemOffered = usePieceGemOffer({ userId: coach.profileId, enabled: Boolean(board) });
   const goToPassage = (passageId, source) => {
     setBoard(null);

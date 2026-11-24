@@ -9,7 +9,7 @@ export const LINK_PX = 12;
 /** The coach's next unit is drawn this much larger than the rest. */
 export const NEXT_BUMP_PX = 12;
 /** The path's height (rem); the board stops at its top edge. */
-export const PATH_REM = 6.25;
+export const PATH_REM = 6.75;
 
 // A passage's first certificate is stored as `silver` and shown as BRONZE; Silver is the join (the piece
 // played through, 2026-11-23). `joined` is a join's own state, drawn as the silver coin.
@@ -104,8 +104,10 @@ export function railModel({ segments = [], projection, selectedId = null, polish
   const target = picked ? { unit: picked, kind: 'selected' } : recommended ? { unit: recommended, kind: 'next' }
     : nextGold ? { unit: nextGold, kind: 'gold' } : passages[0] ? { unit: passages[0], kind: 'again' } : null;
 
+  // The coach's lap (2026-11-23 night): no join is offered while a passage is still short of Bronze.
+  const coachLap = projection?.lap ?? (!allBronze ? 'bronze' : !pieceSilver && joinTotals.total > 0 ? 'silver' : !allGold ? 'gold' : 'diamond');
   // The one join drawn as a socket: the target join while it is not earned, else the next available.
-  const nextJoin = (isJoin(next) && available(next) ? next : null) ?? joins.find(available) ?? null;
+  const nextJoin = coachLap === 'bronze' ? null : (isJoin(next) && available(next) ? next : null) ?? joins.find(available) ?? null;
   const socket = target && isJoin(target.unit) && !earned(target.unit) ? target.unit : nextJoin;
   // Earned joins fold into one coin, except one around the target or the socket (that would hide it).
   const strictlyAround = (outer, inner) => inner && outer.id !== inner.id && covers(outer, inner);
@@ -173,22 +175,42 @@ export function railModel({ segments = [], projection, selectedId = null, polish
   const cards = segments.filter((unit) => !isJoin(unit) || cert(unit).silver || unit.id === socket?.id).map(tokenOf)
     .map((card) => ({ ...card, isTarget: card.id === targetId }));
 
-  const count = lap === 'gold' ? { level: 'gold', done: piece.gold, total: piece.total, word: 'Gold' }
-    : allBronze && joinTotals.total > 0 ? { level: 'joined', done: joinTotals.silver, total: joinTotals.total, word: 'joins' }
-      : { level: 'silver', done: piece.silver, total: piece.total, word: 'Bronze' };
+  const ladder = levelLadder({ lap: coachLap, progress: projection?.lapProgress, piece, joinTotals, polish });
   return {
-    tiles, tokens, cards, lap, caption, railRem: PATH_REM,
+    tiles, tokens, cards, lap, caption, railRem: PATH_REM, ladder,
     selectedId: picked?.id ?? null, outlinedId: targetId, nextId: next?.id ?? null,
     target: target ? { passageId: targetId, kind: target.kind } : null,
-    count: { level: count.level, done: count.done, total: count.total, text: `${count.done}/${count.total}`, label: `${count.done} of ${count.total} ${count.word}` },
-    // The goal at the path's right end: three marks that fill as they are earned.
-    marks: [{ level: 'silver', label: 'Piece played through', reached: Boolean(pieceSilver) },
-      { level: 'gold', label: 'Polish open', reached: Boolean(allGold) },
-      { level: 'diamond', label: 'Polish diamond', reached: polish?.diamond === true }],
-    goals: [{ level: 'silver', label: 'All Bronze', done: piece.silver, total: piece.total, reached: allBronze },
-      ...(joinTotals.total > 0 ? [{ level: 'joined', label: 'Piece Silver', done: joinTotals.silver, total: joinTotals.total, reached: Boolean(pieceSilver) }] : []),
-      { level: 'gold', label: 'All Gold', done: piece.gold, total: piece.total, reached: Boolean(allGold) }],
+    count: { level: ladder.current, done: ladder.done, total: ladder.total, text: `${ladder.done}/${ladder.total}`, label: ladder.text },
   };
+}
+
+/** The levels of a piece, in order, and the coin each is drawn with (a passage's Bronze is stored `silver`). */
+export const LEVELS = Object.freeze([
+  Object.freeze({ level: 'bronze', word: 'Bronze', coin: 'silver' }), Object.freeze({ level: 'silver', word: 'Silver', coin: 'joined' }),
+  Object.freeze({ level: 'gold', word: 'Gold', coin: 'gold' }), Object.freeze({ level: 'diamond', word: 'Diamond', coin: 'diamond' }),
+]);
+
+/**
+ * The one level ladder (Bronze → Silver → Gold → Diamond) the path and the board both draw: the lap the
+ * child is on with its count ("Bronze · 2 of 3"), the levels before it earned, the ones after it to come.
+ * A piece with no joins (one passage, or an authored ladder) has no Silver rung. Diamond is earned in
+ * Polish (`polish.diamond`). `lap` and `progress` are the coach's (`projection.lap`, `lapProgress`).
+ */
+export function levelLadder({ lap = 'bronze', progress = null, piece = {}, joinTotals = { total: 0, silver: 0 }, polish = null }) {
+  const levels = LEVELS.filter((item) => item.level !== 'silver' || joinTotals.total > 0);
+  const diamond = polish?.diamond === true;
+  const current = diamond ? 'diamond' : levels.some((item) => item.level === lap) ? lap : 'gold';
+  const at = levels.findIndex((item) => item.level === current);
+  const fallback = current === 'bronze' ? { done: piece.silver ?? 0, total: piece.total ?? 0 }
+    : current === 'silver' ? { done: joinTotals.silver ?? 0, total: joinTotals.total ?? 0 }
+      : current === 'gold' ? { done: piece.gold ?? 0, total: piece.total ?? 0 } : { done: diamond ? 1 : 0, total: 1 };
+  const { done, total } = current === 'diamond' ? { done: diamond ? 1 : 0, total: 1 } : progress ?? fallback;
+  const word = levels[at].word;
+  const text = current === 'diamond' ? (diamond ? 'Diamond · earned' : 'Diamond · in Polish') : `${word} · ${done} of ${total}`;
+  return { current, done, total, text,
+    // A gem is paid for the piece played through, the piece all Gold, and the diamond; never for a Bronze lap.
+    gemLevel: current !== 'bronze' && !diamond,
+    levels: levels.map((item, index) => ({ ...item, state: index < at || (diamond && index === at) ? 'earned' : index === at ? 'current' : 'later' })) };
 }
 
 /**

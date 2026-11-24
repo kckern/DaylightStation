@@ -175,8 +175,9 @@ describe('Silver in LearnCoach', () => {
     expect(ceremony().querySelector('.gate-ceremony__word').textContent).toBe('Gold!');
     const turn = ceremony().querySelector('.gate-ceremony__mark .piano-passage-turn');
     expect([...turn.children].map((icon) => icon.getAttribute('class') + (icon.dataset.metal ?? ''))).toEqual(['coin-icon piano-passage-coin--bronzegold', 'coin-icongold']);
-    expect(ceremony().querySelector('.gate-ceremony__behind').textContent).toBe('NextBars 5–8');
+    // A Gold won before the piece is played through (the Silver lap) goes on to the coach's next unit: the join.
+    expect(ceremony().querySelector('.gate-ceremony__behind').textContent).toBe('NextPlay bars 1–8 together');
     act(() => vi.advanceTimersByTime(PASSAGE_CEREMONY_MS));
-    expect(onPassageChange).toHaveBeenCalledWith('b');
+    expect(onPassageChange).toHaveBeenCalledWith('join:a:b');
   });
 });

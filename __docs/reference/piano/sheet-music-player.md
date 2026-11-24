@@ -342,7 +342,16 @@ it chooses the step, hands the passage to the drill as sets and reps, records ea
 take with the coach, and stacks the [passage path](#passage-path-and-board) under
 the drill. It draws no practice screen of its own.
 
-- **Sets and reps.** Every Silver and Gold step of the passage is one set in the
+- **Steps per lap.** The progress row shows only the steps of the lap the step
+  being played belongs to: on the Bronze/Silver lap the hands, together and the
+  check; on the Gold lap the rhythm, the beat, each hand with the beat, the timed
+  rungs and score tempo. Later-lap steps are not drawn (never a row of locks). The
+  row is headed by the unit's own token, the same lettered coin with the same
+  neutral ring it wears on the path, and `<letter> · steps to <Bronze|Silver|Gold>`
+  (`A · steps to Bronze`, `A–B · steps to Silver`, `A · steps to Gold`): the
+  projection's `head`, drawn by `DrillProgress` at the row's start. The skipping
+  modes still decide which of the shown steps can be started.
+- **Sets and reps.** Every step shown is one set in the
   drill's progress row, and the clean takes it needs are its reps. A set is named
   by a picture, not a word: the two hands with the resting one unlit (right hand,
   left hand, together), the **silver coin** over the Silver check, a metronome, each
@@ -484,10 +493,26 @@ child sees is:
 **Joins** are plan segments the coach derives itself (`kind: 'join'`, built by
 `buildJoinTree` in `shared/music/learnCoach.mjs`; nobody edits them): adjacent passages
 pair up (1–2, 3–4, 5–6), then pairs of pairs (1–4), and an odd unit out carries to the
-next level, until the top join spans the whole piece. They come in play order, so a
-six-passage piece runs P1 P2 J1–2 P3 P4 J3–4 J1–4 P5 P6 J5–6 J1–6. A one-passage piece
-has no joins; its Bronze is piece Silver. A join is offered only once every passage under
-it has Bronze. `piece.total/silver/gold` count passages only; `piece.joins`
+next level, until the top join spans the whole piece. `plan.segments` keeps them in play
+order (P1 P2 J1–2 P3 P4 J3–4 J1–4 P5 P6 J5–6 J1–6), which is also how keys and saved
+states are written. A one-passage piece has no joins; its Bronze is piece Silver.
+
+**Laps** (2026-11-23 night) decide what is recommended, never what can be played:
+
+1. **Bronze lap**: every passage, in order, until each has its first certificate. No join
+   is recommended or offered on the path while a passage is short of Bronze.
+2. **Silver lap**: the joins in merge-tree order, lowest level first (A+B, C+D, E+F, then
+   A–D, …), the whole piece last. A join's level is one more than its highest member's.
+3. **Gold lap** (after piece Silver): passages, then the joins below the top, same order
+   (`piece.nextGoldPassageId`; null before piece Silver). The rhythm and metronome steps
+   are Gold-lap steps.
+4. **Diamond**: Polish.
+
+`projectCoach` exposes `lap` (`bronze | silver | gold | diamond`) and `lapProgress`
+(`{ done, total }` for that lap). A child is always on exactly one lap. A unit of a later
+lap chosen from the path or the board still plays and records (a join played before every
+passage is Bronze keeps its Silver; a backfilled A, B Bronze + A–B Silver + C untouched
+recommends C). A drill in progress continues on whatever unit it belongs to. `piece.total/silver/gold` count passages only; `piece.joins`
 (`total/silver/gold`), `piece.pieceSilver` and `piece.polishReady` describe the rest.
 
 **Test out first.** A passage or join nobody has touched opens on its hints-off check
@@ -512,10 +537,10 @@ Each passage keeps its two certifications: the first moves the learner on, **Gol
 certifies playing with the metronome at score tempo. Gold is optional and never changes
 the recommended next step. Passing Gold also grants the first certificate.
 
-The recommendation is the first unfinished Silver-track step in the earliest unit
-without it (a join only once its passages have Bronze). A drill in progress comes first.
-Gold work and reviews keep their own resume slot. When every passage and join has its
-first certificate, the score offers Gold.
+The recommendation is the first unfinished Silver-track step in the first unit of the
+current lap without its first certificate. A drill in progress comes first. Gold work and
+reviews keep their own resume slot. On the Gold lap the score offers the next Gold unit.
+A Gold won off the lap (before piece Silver) leaves for the coach's next unit.
 
 **Play it on your own** is the Silver check: all playable parts, the learner's own
 pace, no metronome, no lit keys and no stuck-ladder note names. It can be attempted
@@ -648,9 +673,10 @@ when Learn is entered from another mode.
 
 **The path** (`PassagePath.jsx`, view model `railModel` in `passageRail.js`) is one
 100px row under the score and under the drill, read left to right like a board-game
-path:
+path (108px, `PATH_REM` 6.75rem: room above and below each disc for its selection
+ring, and a line of its own for the bars caption):
 
-`Learn A | (A) (B) (C) (D) (E) (F) | ○ ○ ◇ | [▦ All]`
+`Learn A | (A) (B) (C) (D) (E) (F) | ◉ ○ ○ ◇ Bronze · 0 of 6 | [▦ All]`
 
 - **Passages are letters.** Passage index to letter: A, B, C… (AA, AB… after Z,
   `letterOf`). Every token is the same size (56px, the letter about 1.6rem heavy) and
@@ -661,10 +687,10 @@ path:
   palettes (bronze through its `color` hatch) drawn as a plain face so the letter
   reads at arm's length. Bar numbers appear only as a small caption (`bars 5–8`)
   under the target and next tokens. Opacity never shows state.
-- **Joins appear only when both halves are certified**: both passages Bronze, or
-  for a higher join both member joins Silver. Only the **next** available join is
-  shown (the coach's recommendation when it is a join, else the first available in
-  play order): a **socket** token ringed in silver, standing on the path between
+- **Joins appear only on the Silver lap and later** (`projection.lap !== 'bronze'`)
+  and only when both halves are certified: both passages Bronze, or for a higher
+  join both member joins Silver. Only the **next** available join is shown (the
+  coach's recommendation when it is a join, else the first available in play order): a **socket** token ringed in silver, standing on the path between
   its two halves, labelled with letters (`A+B`; a higher join by its span, `A–D`;
   the final join of a piece longer than two passages `All`), with silver links
   either side. There is never a second row.
@@ -690,9 +716,13 @@ path:
 - **The caption** at the left names the target's task in child words:
   `Learn A`, `Play A and B together` (`Play A–B and C–D together` higher up),
   `Play it all` (the final join), `A in time` (Gold), `Play A again`.
-- **The goal** at the right end: three small outline marks, a silver coin (the
-  piece played through), a gold coin (Polish open, `piece.polishReady`) and a
-  diamond (the Polish diamond, from `polishAwards`), each filled when earned.
+- **The level ladder** at the right end (`LevelLadder.jsx`, model `levelLadder` in
+  `passageRail.js`): Bronze → Silver → Gold → Diamond. Earned levels show their
+  coin (the Diamond its `GemIcon`, filled from `polish.diamond`), the lap the child
+  is on is its outline in its metal, ringed in the neutral ink, with its count under
+  the row (`Bronze · 2 of 3`, `Silver · 0 of 2`, `Gold · 0 of 4`, `Diamond · in
+  Polish`), and later levels are muted outlines. A piece with no joins has no Silver
+  rung. The count comes from `projection.lap` / `lapProgress`.
 - **All** (grid icon and the word) opens and closes the board. There is no count
   and no chevron.
 - **Long pieces.** Tokens shrink to a 44px floor (`pathLayout`). When the units
@@ -715,27 +745,26 @@ through (named for its span, in play order after its halves), and the socket car
 of the join on offer. The same single play disc marks the target. Its cards fill
 it: they are shared evenly between the rows (`boardColumns`: twelve cards are six
 and six), the rows share the height, and each card's coin is half the card. Its
-header is the piece's title and the goals as counters (a bronze coin with
-`3/12`, a silver coin with the joins played through, a gold coin with `1/12`,
-ticked when reached). Tapping a card selects that unit as a token tap does and
+header is the piece's title and the same level ladder as the path. Tapping a card selects that unit as a token tap does and
 closes the board. Otherwise it closes with **Close** (or Escape). **Review a
 passage** appears in its header when a review is due.
 
-A counter adds `earn a gem` only when a gem is really on offer: the Gem
+The ladder adds one quiet `earn a gem` under its count, on a Silver, Gold or
+Diamond lap (a Bronze lap pays none), and only when a gem is really on offer: the Gem
 Board (`GET /api/v1/earnings/gems`, asked when the board first opens) reports
 `mode: live`, lists this player as a learner, and carries a `piano-piece` rule that
 is not switched off for them. A guest, an unreadable Gem Board or a missing rule
-gets the plain counter.
+gets the plain ladder.
 
-After the counters, the board shows the piece's **Polish gem** once it is
-earned, and the **diamond** in its place after that (one `GemIcon`, the same
-colours as the run summary: `polishStone` in `polishAwards.js`). It comes from the
+The ladder's Diamond fills once the **Polish diamond** is earned (one `GemIcon`,
+the same colour as the run summary, `POLISH_DIAMOND_COLOR` in `polishAwards.js`; the
+retired 50% Polish gem is no longer drawn on the board). It comes from the
 practice record read: `GET /api/v1/piano/users/:userId/practice/:scoreKey`
 answers `polishAwards: { gem, diamond }` beside any saved record, read from the
 piece log (`PianoPolishReward.holdings`, matched on the score key). It is never
 stored in the record: `usePracticeRecord` keeps it apart from `record` (as
 `polishAwards`) and a PUT carrying it drops it. A Polish run that earns a stone
-updates it at once from the run's `polishReward`, so the board shows a new gem
+updates it at once from the run's `polishReward`, so the ladder shows a new diamond
 without reopening the score. The score view's board and Learn's board both take
 it (`polish` prop), and the path's diamond mark reads it too.
 
@@ -1924,7 +1953,7 @@ during an active run so the judge and falling highway cannot jump timelines.
 | `HandsControl.jsx` | icon-only left/right-hand toggle, one semantic in every mode (grand-staff scores) |
 | `StaffDimLayer.jsx` | fades deselected staves by classing the engraving's own per-staff group |
 | `learnRange.js` | pure auto-range heuristic for the Learn landing (frontier → section → density → fallback) |
-| `passageRail.js` | pure rules for the passage path and board: letters, tokens (folded joins, the one socket), the target and next, the caption, the goal marks, `pathLayout`, board cards, the gem offer |
+| `passageRail.js` | pure rules for the passage path and board: letters, tokens (folded joins, the one socket), the target and next, the caption, the level ladder (`levelLadder`), `pathLayout`, board cards, the gem offer |
 | `PassagePath.jsx` / `PassageBoard.jsx` / `PassagePath.scss` | the path under the score and the drill, and the board that slides over it |
 | `PassageCoin.jsx` / `PassageCoin.scss` | a passage's mark: tomato, flower, bronze/silver/gold coin; `LetterCoin` (the path's lettered coins and discs); the turn animation |
 | `passageChime.js` | the chime for a passage or a whole piece turning Silver or Gold, played by the drill's ceremony |

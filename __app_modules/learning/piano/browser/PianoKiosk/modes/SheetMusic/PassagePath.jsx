@@ -1,10 +1,8 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { LINK_PX, NEXT_BUMP_PX, pathLayout } from './passageRail.js';
 import PassageCoin, { PassageTurn } from './PassageCoin.jsx';
-import CoinIcon from '../../../../../../../frontend/src/lib/icons/CoinIcon.jsx';
-import GemIcon from '../../../../../../../frontend/src/lib/icons/GemIcon.jsx';
+import LevelLadder from './LevelLadder.jsx';
 import Icon from '../../../ui/icons/Icon.jsx';
-import { POLISH_DIAMOND_COLOR } from './polishAwards.js';
 import './PassagePath.scss';
 
 /** The path's width, measured before paint so a long piece never flashes full-size tokens. */
@@ -24,13 +22,6 @@ function useTrackWidth(ref, mounted) {
 }
 
 const Play = () => <svg viewBox="0 0 16 16" width="100%" height="100%" aria-hidden="true"><path d="M5.5 3.6v8.8a.6.6 0 0 0 .9.5l7-4.4a.6.6 0 0 0 0-1L6.4 3.1a.6.6 0 0 0-.9.5z" fill="currentColor" /></svg>;
-/** A goal not reached yet: the outline of its coin or stone. */
-const Outline = ({ level }) => (level === 'diamond'
-  ? <svg viewBox="0 0 36 36" width="100%" height="100%" aria-hidden="true"><path d="M18 31 4.5 14.5 10 6.5h16l5.5 8z" fill="none" stroke="currentColor" strokeWidth="3" strokeLinejoin="round" /></svg>
-  : <svg viewBox="0 0 36 36" width="100%" height="100%" aria-hidden="true"><circle cx="18" cy="18" r="14.5" fill="none" stroke="currentColor" strokeWidth="3" /></svg>);
-const Mark = ({ mark }) => (!mark.reached ? <Outline level={mark.level} />
-  : mark.level === 'diamond' ? <GemIcon size="100%" color={POLISH_DIAMOND_COLOR} /> : <CoinIcon metal={mark.level} size="100%" />);
-
 // What a token was the moment before it turned: a passage's flower or its Bronze, a join's socket.
 const before = (token, level) => (level === 'gold' ? (token.kind === 'passage' ? 'silver' : 'joined') : token.kind === 'passage' ? 'learning' : 'socket');
 
@@ -39,7 +30,7 @@ const before = (token, level) => (level === 'gold' ? (token.kind === 'passage' ?
  * left to right (A, B, C…), the next join as a socket between its halves, earned joins as one coin.
  * The coach's next unit is drawn larger. The play disc sits on the target; tapping the target or the
  * next opens it (`onOpen(id)`), tapping any other token selects it (`onSelect(id)`). The caption at
- * the left names the task; the right end is the goal (three marks) and the All button that opens the
+ * the left names the task; the right end is the level ladder (Bronze → Silver → Gold → Diamond) and the All button that opens the
  * board. When a long piece cannot give every token a 44px target the path is a lettered strip, and a
  * tap opens the board at that unit. `flips` names the units turning into a coin right now;
  * `flipDelayMs` holds the turn until the host's ceremony announces it, and `wave` staggers it along
@@ -83,10 +74,7 @@ export default function PassagePath({ model, flips = {}, flipDelayMs = 0, wave =
         </li>;
       })}
     </ol>
-    <ul className="piano-passage-path__marks" aria-label="Goals for this piece">
-      {model.marks.map((mark) => <li key={mark.level} data-level={mark.level} data-reached={mark.reached}
-        aria-label={`${mark.label}: ${mark.reached ? 'done' : 'not yet'}`}><Mark mark={mark} /></li>)}
-    </ul>
+    <LevelLadder ladder={model.ladder} className="piano-passage-path__ladder" />
     <button type="button" className="piano-passage-path__all" aria-expanded={boardOpen} aria-label={`All passages, ${model.count.label}`}
       onClick={() => onOpenBoard?.(null)}>
       <Icon name="grid" /><span>All</span>
