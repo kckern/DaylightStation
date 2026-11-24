@@ -402,7 +402,8 @@ function CoachSession({ score, title, plan, segment, coach, measures = EMPTY_LIS
     coach.setAside(silverTask ?? task);
     if (target && onPassageChange) onPassageChange(target); else onBack?.();
   };
-  const laterButton = canSetAside ? <button type="button" className="piano-learn-lab__action" onClick={comeBackLater}><span>Come back to this later</span></button> : null;
+  // A short word on the status line's fixed slot; the name says it whole.
+  const laterButton = canSetAside ? <button type="button" className="piano-learn-lab__action" aria-label="Come back to this later" onClick={comeBackLater}><span>Later</span></button> : null;
   // The rhythm step never walls a child: after any miss the result card offers to skip it (it earns nothing,
   // and the lap moves on). Not in the header: an always-visible exit invites skipping before trying (2026-11-24).
   const rhythmStep = task?.rhythm === true && (task.depth ?? 0) === 0;
@@ -414,7 +415,7 @@ function CoachSession({ score, title, plan, segment, coach, measures = EMPTY_LIS
   const resultActions = result ? <>
     {recovery && <button type="button" className="is-primary" onClick={() => begin(recovery)}>{recoveryAction}</button>}
     <button type="button" className={recovery ? '' : 'is-primary'} onClick={() => begin(result.task)}>Try again</button>
-    {rhythmStep && result.missed >= 1 && <button type="button" onClick={skipRhythm}>Skip rhythm</button>}
+    {rhythmStep && result.missed >= 1 && <button type="button" aria-label="Skip rhythm" onClick={skipRhythm}>Skip</button>}
     {laterButton}
   </> : null;
   // Any key on the piano takes the primary button, so the help the card

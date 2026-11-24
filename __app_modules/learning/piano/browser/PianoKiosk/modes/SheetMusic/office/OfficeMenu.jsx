@@ -36,7 +36,8 @@ export default function OfficeMenu({ open, choices, activeNotes, onSelect, title
       </header>
       {mapRef && <div className="office-menu__map" aria-label="Passages">
         <span className="office-menu__map-label">Passages</span>
-        <div className="office-menu__map-coins" ref={mapRef} />
+        {/* A map, not a control: nothing in it takes focus (Previous and Next are the keys). */}
+        <div className="office-menu__map-coins" ref={mapRef} inert="" />
       </div>}
       <ol className="office-menu__keys">
         {choices.map((choice) => (

@@ -290,6 +290,7 @@ test('two rails on the office canvas: fixed heights in every state, no fact twic
   expect(countIn(texts, /\bbars \d+–\d+/gi), texts.join(' | ')).toBe(1);
   expect(countIn(texts, /\b(Bronze|Silver|Gold|Diamond)\b/g), texts.join(' | ')).toBe(1);
   for (const gone of [/Learn A/, /steps to/, /\d+ of \d+/, /Sheet Music/i]) expect(texts.join(' | ')).not.toMatch(gone);
+  const dotReady = await boxOf(page, '.piano-learn-lab__rail .drill-cluster[data-active]');
   await noClipping(page, 'rails-1-ready');
 
   // A take with a wrong note: the live count is on the rail, never over the notation.
@@ -297,6 +298,8 @@ test('two rails on the office canvas: fixed heights in every state, no fact twic
   await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'running');
   await tap(page, 61, 220);
   await expect(page.locator('.piano-exercise-run__tally')).toContainText('Wrong 1');
+  // The live count has a slot of its own: the step dots do not move when it appears.
+  expect(await boxOf(page, '.piano-learn-lab__rail .drill-cluster[data-active]')).toEqual(dotReady);
   for (const note of [63, 61]) await tap(page, note, 220); // enough wrong notes that the take is not clean
   expect(await rails(page)).toEqual(ready);
   const live = await boxOf(page, '.piano-exercise-run__tally');

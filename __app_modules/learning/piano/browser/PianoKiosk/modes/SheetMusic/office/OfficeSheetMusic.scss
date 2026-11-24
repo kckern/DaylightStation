@@ -1,6 +1,7 @@
 // Sheet Music on the office screen (1280×720, keyboard only).
 // Fixed heights top to bottom, so nothing is ever pushed off the canvas: the
-// launcher's chrome strip above and the body. Every navigation is the menu (an
+// launcher's chrome strip above and the body (the strip steps aside while a
+// Learn drill is open: the drill's status line carries the player). Every navigation is the menu (an
 // opaque modal over the body), so the drill has no row of keys under it.
 // No hover, focus rings or pointer affordances: nothing here is touched.
 
@@ -162,8 +163,10 @@
   &__map-label { flex: 0 0 auto; font-size: 1.3rem; font-weight: 700; color: #a9a59a; }
   &__map-coins { flex: 1 1 auto; min-width: 0; height: 100%; display: flex; }
 }
-// The menu's grid gains the map row when it has one.
-.office-menu:has(> .office-menu__map) { grid-template-rows: auto auto minmax(0, 1fr) auto; }
+// The menu's grid gains the map row when it has one; a row Learn has not drawn into (the piece still
+// loading) is not shown as a label beside nothing.
+.office-menu:has(> .office-menu__map .piano-passage-path) { grid-template-rows: auto auto minmax(0, 1fr) auto; }
+.office-menu__map:not(:has(.piano-passage-path)) { display: none; }
 
 // While a Learn drill is open its status line is the only bar: the launcher's chrome (the game's name and
 // the player) steps aside, and the status line carries the player's avatar (LearnLab).

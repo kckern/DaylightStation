@@ -45,6 +45,31 @@ describe('LearnLab', () => {
     expect(memory.size).toBe(0);
   });
 
+  it('draws the keyboard row only for a learner whose config asks for key hints (always or after-wrong), never by default', () => {
+    const { rerender } = render(<LearnLab {...base} />);
+    expect(exercise.props.keyboard).toBe(false);
+    rerender(<LearnLab {...base} assist={{ keyboardHints: 'always' }} />);
+    expect(exercise.props.keyboard).toBe(true);
+    rerender(<LearnLab {...base} assist={{ keyboardHints: 'after-wrong' }} />);
+    expect(exercise.props.keyboard).toBe(true);
+    rerender(<LearnLab {...base} assist={{ keyboardHints: 'never' }} />);
+    expect(exercise.props.keyboard).toBe(false);
+  });
+
+  it('a save problem is said in the prompt slot, so the status line keeps its height and its heading', () => {
+    render(<LearnLab {...base} notice={<div className="piano-learn-coach__save" role="status">Progress not saved</div>} />);
+    expect(document.querySelector('.piano-learn-lab__prompt .piano-learn-coach__save')).not.toBeNull();
+    // Only the cue is announced; the prompt's buttons are not a live region.
+    expect(document.querySelector('.piano-learn-lab__prompt').getAttribute('aria-live')).toBeNull();
+    expect(document.querySelector('.piano-learn-lab__cue').getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('after a missed take the tablet keeps Listen beside the result\'s actions', () => {
+    render(<LearnLab {...base} coachingTask={{ key: 'task' }} onOutcome={vi.fn()} onListen={vi.fn()} resultActions={<button type="button">Try again</button>} />);
+    phase('done');
+    expect(screen.getByRole('button', { name: 'Listen' })).toBeInTheDocument();
+  });
+
   it('the status line says what to do and which bars on one line, with the player; no set or rep count', () => {
     render(<LearnLab {...base} player={{ id: 'learner4', name: 'Learner Four' }} />);
     const status = document.querySelector('.piano-learn-lab__toolbar');

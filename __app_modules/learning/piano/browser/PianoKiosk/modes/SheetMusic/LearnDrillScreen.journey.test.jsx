@@ -208,6 +208,7 @@ describe('the drill screen: header, tempo, volume, Listen, result',()=>{
    expect(await page.locator('.piano-exercise-run__meters li').count()).toBe(2);
    expect(await bands(page)).toEqual(ready);
    await page.locator('.piano-exercise-run__result[data-result-armed="true"]').waitFor({timeout:15000});
+   expect(await fits(page)).toBe(true);
    await shot(page,'8-rhythm-result');
    // The result's actions are the status line's prompt slot: the way on, where the start prompt was.
    const prompt=page.locator('.piano-learn-lab__prompt');
@@ -278,6 +279,11 @@ const boxOf=(page,sel)=>page.locator(sel).first().evaluate(el=>{const b=el.getBo
 const visibleTexts=(page)=>page.evaluate(()=>{const out=[];const walk=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
  for(let node=walk.nextNode();node;node=walk.nextNode()){const text=node.textContent.trim();const el=node.parentElement;if(!text||!el||el.closest('style,script'))continue;
   if(!el.checkVisibility({visibilityProperty:true,opacityProperty:true}))continue;const b=el.getBoundingClientRect();if(!b.width||!b.height)continue;out.push(text);}return out;});
+// Whether the status line's prompt slot holds its content without clipping any of it.
+const fits=(page)=>page.locator('.piano-learn-lab__prompt').evaluate(el=>el.scrollWidth<=el.clientWidth+1&&[...el.querySelectorAll('button')].every(b=>{const r=b.getBoundingClientRect(),p=el.getBoundingClientRect();return r.left>=p.left-0.5&&r.right<=p.right+0.5;}));
+// Whether the count in the prompt slot stands clear of every button beside it.
+const apart=(page)=>page.locator('.piano-learn-lab__prompt').evaluate(el=>{const band=el.querySelector('.piano-learn-countin')?.getBoundingClientRect();if(!band)return true;
+ return [...el.querySelectorAll('button')].every(b=>{const r=b.getBoundingClientRect();return r.left>=band.right-0.5||r.right<=band.left+0.5;});});
 const countIn=(texts,pattern)=>texts.reduce((n,text)=>n+(text.match(pattern)?.length??0),0);
 const timedGold=async(page)=>{await openGold(page,'Rhythm');const names=await page.locator('button.drill-cluster').evaluateAll(list=>list.map(b=>b.getAttribute('aria-label')));
  await timedStep(page,names.indexOf('Play with the beat'));};
@@ -293,20 +299,31 @@ describe('two rails: the score gets the screen (tablet 1280x800)',()=>{
    expect([ready.status[1],ready.status[3]]).toEqual([0,64]);
    expect([ready.rail[1]+ready.rail[3],ready.rail[3]]).toEqual([800,72]);
    expect(await page.locator('.piano-exercise-run__keys, .piano-passage-path:not(.piano-passage-path--rail), .drill-progress__head').count()).toBe(0);
+   const dot=()=>boxOf(page,'.piano-learn-lab__rail .drill-cluster[data-active]');const dotReady=await dot();
+   expect(await fits(page)).toBe(true);
    await shot(page,'rails-1-ready');
    await page.evaluate(async()=>{window.__hold([72]);await new Promise(r=>setTimeout(r,60));window.__hold([]);});
    await page.locator('.piano-exercise-run[data-phase="countdown"]').waitFor();
    expect(await rails(page)).toEqual(ready);await shot(page,'rails-2-counting');
    await page.locator('.piano-exercise-run[data-phase="running"]').waitFor({timeout:10000});
    expect(await rails(page)).toEqual(ready);await shot(page,'rails-3-running');
+   expect(await dot()).toEqual(dotReady);
+   // No note: the cue is missed and the count starts again, saying so. The count never runs under a button.
+   await page.locator('.piano-learn-lab__prompt .piano-learn-countin').filter({hasText:/missed the cue/i}).waitFor({timeout:15000});
+   expect(await apart(page)).toBe(true);expect(await fits(page)).toBe(true);expect(await rails(page)).toEqual(ready);
+   await shot(page,'rails-3b-missed-cue');
    await click(page,'Pause');await page.locator('.piano-exercise-run[data-phase="paused"]').waitFor();
-   expect(await rails(page)).toEqual(ready);await shot(page,'rails-4-paused');
+   await expect.poll(()=>headerButtons(page)).toEqual(['Resume','Start over']);
+   expect(await rails(page)).toEqual(ready);expect(await dot()).toEqual(dotReady);await shot(page,'rails-4-paused');
    await click(page,'Start over');await armed(page);
    await click(page,'Listen');await page.locator('.piano-exercise-run[data-listening="playing"]').waitFor();
    expect(await rails(page)).toEqual(ready);await shot(page,'rails-5-listening');
    await click(page,'Stop');await page.locator('.piano-exercise-run:not([data-listening])').waitFor();
    await missedTake(page);
-   expect(await rails(page)).toEqual(ready);await shot(page,'rails-6-result');
+   expect(await rails(page)).toEqual(ready);
+   // The way on fits its slot (nothing clipped), and Listen stays beside it.
+   expect(await fits(page)).toBe(true);expect(await page.locator('.piano-learn-lab__run-controls').getByRole('button',{name:'Listen',exact:true}).count()).toBe(1);
+   await shot(page,'rails-6-result');
    expect(errors).toEqual([]);
   }finally{await page.close();}
  },180000);
@@ -348,13 +365,15 @@ describe('two rails: the score gets the screen (tablet 1280x800)',()=>{
  it('the Right/Wrong count is never drawn over notation',async()=>{
   const{page,errors}=await open();try{
    await timedGold(page);
-   const score=await boxOf(page,RAILS.score);const rail=await boxOf(page,RAILS.rail);
+   const score=await boxOf(page,RAILS.score);const rail=await boxOf(page,RAILS.rail);const dotBefore=await boxOf(page,'.piano-learn-lab__rail .drill-cluster[data-active]');
    // A take with notes in it: the live count, mid-take, is on the rail.
    const percent=await page.locator('.piano-learn-speed strong').evaluate(el=>parseInt(el.textContent,10));
    const take=playAt(page,percent,{only:[0,1,2,3,4,5]});
    await page.locator('.piano-exercise-run[data-phase="running"]').waitFor({timeout:10000});
    await page.locator('.piano-exercise-run__tally').first().waitFor({timeout:10000});
    const live=await boxOf(page,'.piano-exercise-run__tally');
+   // The live count has a slot of its own: the step dots do not move when it appears.
+   expect(await boxOf(page,'.piano-learn-lab__rail .drill-cluster[data-active]')).toEqual(dotBefore);
    expect(overlaps(live,score)).toBe(false);expect(within(live,rail)).toBe(true);
    expect(await page.locator('.piano-exercise-run__stage .piano-exercise-run__tally').count()).toBe(0);
    await take;

@@ -377,9 +377,10 @@ say it), and the `SHEET MUSIC` bar while drilling. **Nothing moves between state
 zone keeps its height and width in ready, counting, running, paused, listening and result (checked box
 by box in real Chromium: `LearnDrillScreen.journey.test.jsx` "two rails", and the office flow's "two
 rails on the office canvas"). **The keyboard row** is drawn only for a learner whose keys are lit on
-every take (`sheetmusic.learners.<id>.keyboardHints: always`, `ExerciseRun keyboard`): a ruling of
-this change, since that assist is the keyboard, and the score's share is lower for that learner alone.
-Everyone else's after-wrong key hint went with the row (the office never had it).
+every take, or after a wrong note, by their own entry (`sheetmusic.learners.<id>.keyboardHints: always`
+or `after-wrong`, `ExerciseRun keyboard`): a ruling of this change, since that assist is the keyboard,
+and the score's share is lower (about 72% on the tablet) for those learners alone. Without an entry the
+default after-wrong key hint went with the row (the office never had it).
 
 - **Steps per lap.** The progress row shows only the steps of the lap the step
   being played belongs to: on the Bronze/Silver lap the hands, together and the
@@ -500,8 +501,10 @@ Everyone else's after-wrong key hint went with the row (the office never had it)
   arrives once. **Its way on is the status line's prompt slot**: on the tablet the coach's buttons, the
   primary (the brightest neutral) the smaller practice the coach recommends after two misses
   (`Practice bar 2`, `Practice the left hand`, `Try a little slower · 75%`), otherwise **Try again**,
-  then **Come back to this later** and, on the rhythm step after any miss, **Skip rhythm**; on the
-  office the words `Play any key to try again` (the menu holds the rest). **Releasing the keys and
+  then **Later** (named "Come back to this later") and, on the rhythm step after any miss, **Skip**
+  (named "Skip rhythm"), short words so every way on fits the slot; a key and a pedal mark lead them
+  while there are two or fewer, and **Listen** stays beside them as its mark alone; on the office the
+  words `Play any key to try again` (the menu holds the rest). **Releasing the keys and
   playing any key, or pressing a pedal, takes the primary** (`onResultContinue`), so a child never has
   to reach for the glass to take the help. A key counts only once the card has been up `RESULT_ARM_MS`
   (700 ms) after the hold fired, and only after every key has been released: a key during the hold
@@ -609,10 +612,10 @@ numbers it 0, so "Bar 24 is the tricky spot" on a bars 21–24 passage, never "B
 and "You can play pickup + bars 1–4 on your own". Without it (no score numbers) the
 wording falls back to index + 1.
 
-**The tally is never on the music.** In the drill the Right/Wrong (and, timed, Early/Late/Missed,
-as a mark and a number) pills are on the coach rail beside the step dots from the first note, in a
-slot of their own, and after a take on the docked result; nothing is drawn over the notation, so the
-paper keeps no strip for them. The journeys assert that the tally's box and the score's share no
+**The tally is never on the music.** In the drill the Right / Wrong pills are on the coach rail from
+the first note, in a fixed slot of their own beside the step dots (so the dots never move when it
+appears or grows), and after a take on the docked result; the early, late and missed story is the
+score's verdict marks. Nothing is drawn over the notation, so the paper keeps no strip for them. The journeys assert that the tally's box and the score's share no
 area. A run with no host rails (Exercises) keeps them at the stage's top right, over a reserved 3rem
 strip of the paper (`.piano-exercise-run__score:has(.piano-score-passage)`).
 
@@ -846,7 +849,7 @@ path's target unit, and turns to the next one when that changes after a drill or
 when Learn is entered from another mode.
 
 **The path** (`PassagePath.jsx`, view model `railModel` in `passageRail.js`) is one
-100px row under the score and under the drill, read left to right like a board-game
+100px row under the score (the drill draws its coins only, on the coach rail), read left to right like a board-game
 path (108px, `PATH_REM` 6.75rem: room above and below each disc for its selection
 ring, and a line of its own for the bars caption):
 
@@ -1163,7 +1166,7 @@ It never nests (a rung failed twice falls to the ordinary smaller steps) and gat
 
 **The rhythm step never walls a child.** Its tempo track also goes down, to the plan's lowest timed rung,
 and a pass at any chosen tempo clears it (a warm-up, not a speed rung; it never proves a timed note step).
-**Skip rhythm** is on its result card after any miss (a normal secondary button; it is not in the header):
+**Skip rhythm** is offered with the result after any miss (**Skip** in the status line's prompt slot, a normal secondary button; never before a try):
 skipping earns nothing, and the coach moves on to the unit's next Gold-lap step and never recommends the
 rhythm step for that unit again (a `skip-rhythm` coach event, kept as `skippedRhythm[unitId]` in coach
 state, accepted by the server; projection `rhythmSkipped`; log `piano.learn.rhythm.skip`). Ornaments never
@@ -2332,11 +2335,12 @@ sheetmusic:
       wrongNoteGhosts: true
 ```
 
-- **`keyboardHints: always`** lights the next key on the drill keyboard before any mistake,
-  on every step including the Silver check, and at full strength (`ExerciseRun
-  fullKeyboardHints`, so the keyboard drops its readers' `target-dim` half shade). The
-  pitch-free rhythm step stays dark. Without an entry Learn keeps its reading defaults:
-  `after-wrong`, nothing on the check, half shade.
+- **`keyboardHints`** brings the drill keyboard back (two rails, 2026-11-24: without an entry
+  the drill draws no keyboard, and the score gets that row). **`always`** lights the next key
+  before any mistake, on every step including the Silver check, and at full strength
+  (`ExerciseRun fullKeyboardHints`, so the keyboard drops its readers' `target-dim` half shade);
+  **`after-wrong`** lights it after a wrong note, nothing on the check, half shade; **`never`**
+  keeps the keyboard off. The pitch-free rhythm step stays dark.
 - **`wrongNoteGhosts: true`** draws a wrong key on the staff as a see-through red copy of the
   owed notehead at the pitch played (`Exercises/scoreWrongGhost.js`, painted by
   `ScorePassage`): moved by letter steps from the owed note, beside it when a second or a

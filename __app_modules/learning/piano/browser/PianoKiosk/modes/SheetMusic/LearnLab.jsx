@@ -317,16 +317,15 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       {/* THE STATUS LINE, left to right (2026-11-24): who is playing, what to do and which bars on one line,
           the prompt slot (how to start; the count; nothing during a take; the way on after one), and on the
           tablet the speed, the click volume and Back. Every region keeps its width in every state. */}
-      <span className="piano-learn-lab__avatar" aria-hidden={player ? undefined : 'true'}>
-        {player && <ProfileAvatar id={player.id} name={player.name ?? player.id} size={96} />}
-      </span>
+      {player && <span className="piano-learn-lab__avatar"><ProfileAvatar id={player.id} name={player.name ?? player.id} size={96} /></span>}
       <div className="piano-learn-lab__heading">
         <strong>{rung.label}</strong>
         {bars && <span>{bars}</span>}
       </div>
-      {notice}
-      <div className="piano-learn-lab__prompt" aria-live="polite" data-phase={phaseShown}>
-        <div className="piano-learn-lab__cue">
+      <div className="piano-learn-lab__prompt" data-phase={phaseShown}>
+        {/* A save problem is said here, in the slot's own room, never by squeezing the heading. */}
+        {notice}
+        <div className="piano-learn-lab__cue" aria-live="polite">
           {runPhase === 'ready' && !listening && <><strong>{timedMode ? 'Press a key to start' : 'Play the first note to begin'}</strong>{timedMode && <span>or a pedal</span>}</>}
           {runPhase === 'paused' && !listening && keyOnly && <strong>Paused</strong>}
         </div>
@@ -350,6 +349,9 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
               {onListen && <button type="button" className="piano-learn-lab__action" onClick={listen}><Icon name="play" /><span>Listen</span></button>}
               {onChangePractice && <button type="button" className="piano-learn-lab__action" onClick={changePractice}><span>Change practice</span></button>}
               {extraControls}
+            </> : runPhase === 'done' ? <>
+              {/* Beside the result's own actions: Listen as its mark alone, so the way on keeps the room. */}
+              {onListen && <button type="button" className="piano-learn-lab__action" aria-label="Listen" onClick={listen}><Icon name="play" /></button>}
             </> : null}
         </div>}
       </div>
@@ -380,7 +382,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       fullKeyboardHints={assist?.keyboardHints === 'always'} wrongNoteGhosts={assist?.wrongNoteGhosts === true && !rhythm}
       incompleteAfterMs={coachingTask?.assist === 'none' && coachingTask.stallSeconds ? coachingTask.stallSeconds * 1000 : null}
       failurePresentation="local" resultPresentation="docked" resultLabel={resultLabel} resultActions={resultActions} resultContinueLabel={resultContinueLabel} onResultContinue={onResultContinue} onPickStep={onPickStep} onStarted={takeStarted} onExit={onClose} onPassed={settle}
-      onFailed={failTake} onPhase={setRunPhase} slots={runSlots} keyboard={assist?.keyboardHints === 'always'}
+      onFailed={failTake} onPhase={setRunPhase} slots={runSlots} keyboard={assist?.keyboardHints === 'always' || assist?.keyboardHints === 'after-wrong'}
       demonstration={listening ? { playing: listening === 'playing', onDone: () => stopListening('end') } : null}
       onUnavailable={(reason, detail) => onUnavailable?.(detail || reason)}
     />

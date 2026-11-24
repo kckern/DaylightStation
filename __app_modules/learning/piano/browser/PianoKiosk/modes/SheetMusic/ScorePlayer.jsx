@@ -2372,6 +2372,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const learnSession = learnSessionOpen ? (
       <LearnLab
         key={`${selectedPassage.id}:${activeLearnRung.id}:${learnLaunchNonce}`}
+        player={learnPlayer}
         score={learnScore}
         revision={learnPlan.revision}
         segment={selectedPassage}

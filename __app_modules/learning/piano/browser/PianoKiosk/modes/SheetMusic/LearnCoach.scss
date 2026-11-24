@@ -48,9 +48,10 @@
   // A finished piece on the curtain: every passage, turning into its coin in a wave.
   &__piece-mark { display: grid; justify-content: center; gap: 0.35em 0.3em; > span { display: grid; } }
 
+  // In the status line's prompt slot (LearnLab): the slot's height, never the heading's room.
   &__save {
-    flex: 0 0 auto; display: flex; align-items: center; gap: 0.5rem; color: var(--piano-warn); font-size: 1rem;
-    button { min-height: 4rem; padding: 0.4rem 0.9rem; border: 1px solid var(--piano-warn); border-radius: var(--r-sm); background: transparent; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
+    flex: 0 0 auto; display: flex; align-items: center; gap: 0.5rem; color: var(--piano-warn); font-size: 1rem; white-space: nowrap;
+    button { height: var(--learn-control, 48px); padding: 0 0.8rem; border: 1px solid var(--piano-warn); border-radius: var(--r-sm); background: transparent; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
   }
 
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none; transition: none; } }

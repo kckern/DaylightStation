@@ -1992,20 +1992,16 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   // A host's own rails (`slots`): what this run draws into them instead of its own rows.
   const railSlot = slots?.rail ?? null;
   const promptSlot = slots?.prompt ?? null;
-  // The live Right / Wrong count. On a host's rail it sits beside the pills, never on the music; the
-  // timing counts there are a mark and a number (their words are the accessible names).
+  // The live Right / Wrong count. On a host's rail it is Right and Wrong only, in a slot of its own beside
+  // the pills (the early / late / missed story is the score's verdict marks); never on the music.
   const tally = snapshot.musicalInput ? <div className="piano-exercise-run__tally" aria-live="polite" aria-label="Practice score">
     <span className="is-right"><b aria-hidden="true">✓</b> Right {liveTally.right}</span>
     <span className="is-wrong"><b aria-hidden="true">×</b> Wrong {liveTally.wrong}</span>
-    {timed && (railSlot ? <>
-      <span className="is-timing" aria-label={`Early ${liveTally.early}`}><b aria-hidden="true"><Icon name="previous" /></b><span aria-hidden="true">{liveTally.early}</span></span>
-      <span className="is-timing" aria-label={`Late ${liveTally.late}`}><b aria-hidden="true"><Icon name="next" /></b><span aria-hidden="true">{liveTally.late}</span></span>
-      <span className="is-missed" aria-label={`Missed ${liveTally.missed}`}><b aria-hidden="true">○</b><span aria-hidden="true">{liveTally.missed}</span></span>
-    </> : <>
+    {timed && !railSlot && <>
       <span className="is-timing"><b aria-hidden="true"><Icon name="previous" /></b> Early {liveTally.early}</span>
       <span className="is-timing"><b aria-hidden="true"><Icon name="next" /></b> Late {liveTally.late}</span>
       <span className="is-missed"><b aria-hidden="true">○</b> Missed {liveTally.missed}</span>
-    </>)}
+    </>}
   </div> : null;
   // The count-in: on the stage, or in the host's prompt slot.
   const counts = <>
@@ -2023,7 +2019,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   // short line and a meter per thing asked; the take's Right / Wrong beside them. Its way on is the host's
   // prompt slot (below), so the rail never holds a button.
   const railResult = dockedShown ? <section className="piano-exercise-run__result is-docked is-developing is-on-rail"
-    data-result-armed={localRetry && resultArmed ? 'true' : undefined} role="alertdialog" aria-label={resultLabel ?? 'Result'}>
+    data-result-armed={localRetry && resultArmed ? 'true' : undefined} role="status" aria-label={resultLabel ?? 'Result'}>
     <span className="piano-exercise-run__verdict" aria-hidden="true"><Icon name="retry" /></span>
     <div className="piano-exercise-run__verdict-body">
       <strong className="piano-exercise-run__verdict-line">{resultLabel ?? 'Have another go'}</strong>

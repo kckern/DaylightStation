@@ -2579,7 +2579,7 @@
   --learn-status-h: 64px;
   --learn-rail-h: 72px;
   --learn-control: 48px;
-  --learn-prompt-w: 34rem;
+  --learn-prompt-w: 37rem;
   position: absolute; inset: 0; z-index: 30; min-height: 0;
   display: flex; flex-direction: column; background: var(--piano-bg);
   > .piano-exercise-run { flex: 1 1 auto; min-height: 0; }
@@ -2599,8 +2599,10 @@
   &__cue:empty { display: none; }
   &__cue strong { font-size: 1.25rem; font-weight: 800; color: var(--piano-accent-text, var(--piano-accent)); }
   &__cue span { color: var(--piano-muted); font-size: 1rem; }
-  &__slot { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+  &__slot { flex: 0 1 auto; display: flex; align-items: center; gap: 0.5rem; min-width: 0; overflow: hidden; }
   &__slot:empty { display: none; }
+  // Paused, the slot is the way back (Resume, Start over): a count it was showing goes with the take.
+  &__prompt[data-phase='paused'] &__slot { display: none; }
   &__run-controls { flex: 0 0 auto; display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; }
   &__run-controls:empty { display: none; }
   // Every status-line action is the same button: icon and a short label, 48px, a neutral surface.
@@ -2611,9 +2613,11 @@
   &__settings { flex: 0 0 11.5rem; min-width: 0; height: var(--learn-control); display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; }
   &__back { flex: 0 0 var(--learn-control); box-sizing: border-box; display: grid; place-items: center; width: var(--learn-control); height: var(--learn-control); padding: 0; color: inherit; background: transparent; border: 1px solid var(--piano-border); border-radius: var(--r-md); font: inherit; font-size: 1.5rem; cursor: pointer; }
   // THE COACH RAIL: the coins | the steps (or the docked result) | the ladder. Three fixed zones.
-  &__rail { z-index: 20; flex: 0 0 var(--learn-rail-h); box-sizing: border-box; height: var(--learn-rail-h); display: grid; grid-template-columns: 22rem minmax(0, 1fr) 10.5rem; align-items: center; gap: 1rem; padding: 0 0.75rem; overflow: hidden; color: var(--piano-fg); background: var(--piano-surface-1); border-top: 1px solid var(--piano-border); }
+  &__rail { z-index: 20; flex: 0 0 var(--learn-rail-h); box-sizing: border-box; height: var(--learn-rail-h); display: grid; grid-template-columns: 22rem minmax(0, 1fr) 10.5rem; align-items: center; gap: 0.75rem; padding: 0 0.75rem; overflow: hidden; color: var(--piano-fg); background: var(--piano-surface-1); border-top: 1px solid var(--piano-border); }
   &__rail-start, &__rail-middle, &__rail-end { box-sizing: border-box; height: 100%; min-width: 0; display: flex; align-items: center; overflow: hidden; }
-  &__rail-middle { justify-content: center; gap: 1rem; }
+  // The steps, centred in their own column, and the live count in a fixed slot beside them: nothing in the
+  // zone moves when the count appears or grows. The docked result spans both.
+  &__rail-middle { display: grid; grid-template-columns: minmax(0, 1fr) 12.5rem; justify-items: center; column-gap: 0.75rem; }
   &__rail-end { justify-content: flex-end; }
   &__success { position: absolute; z-index: 35; inset: var(--learn-status-h) 0 0; display: grid; place-content: center; justify-items: center; gap: 0.3rem; background: var(--piano-bg); color: var(--piano-fg); }
   &__success strong { color: var(--piano-accent-text); font-size: clamp(1.8rem, 5vw, 3.5rem); }
