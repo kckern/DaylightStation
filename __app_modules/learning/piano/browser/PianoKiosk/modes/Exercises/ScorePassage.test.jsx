@@ -35,6 +35,8 @@ const h = vi.hoisted(() => ({
   scales: [],
   /** Whether each engraving was asked to justify its last system. */
   stretches: [],
+  /** Whether the passage said it was ready as each engraving was drawn (before its layout is judged). */
+  readyAtEngrave: [],
 }));
 
 /** A notehead the engraver would have produced, attached so classes are findable. */
@@ -68,6 +70,7 @@ vi.mock("../../../../../../../__capabilities/music-notation/browser/renderers/Mu
         // happy-dom, and the state a gate used to hang in.
         if (h.engraveFails) { onFailed?.({ error: 'Could not read this score.' }); return; }
         h.publishes += 1;
+        h.readyAtEngrave.push(document.querySelector('.piano-score-passage')?.hasAttribute('data-engraving-ready') ?? null);
         const shown = [...new DOMParser().parseFromString(musicXml, 'application/xml').querySelectorAll('part:first-of-type > measure')]
           .map((measure) => Number(measure.getAttribute('number')) - 1);
         const first = shown[0] ?? 0;
@@ -205,6 +208,22 @@ describe('ScorePassage layout fitting', () => {
 
     await waitFor(() => expect(onExpectation).toHaveBeenCalled());
     expect(h.scales).toEqual(expect.arrayContaining([1, 0.67]));
+  });
+
+  it('hides the engraving until its layout is accepted, through every re-engrave pass', async () => {
+    h.systems = 3;
+    h.readyAtEngrave = [];
+    const onExpectation = vi.fn();
+    const { container } = renderPassage({ onExpectation });
+    const passage = container.querySelector('.piano-score-passage');
+    // Three systems at full size, smaller at two, then justified: three engravings, none of them shown.
+    await waitFor(() => expect(passage).toHaveAttribute('data-engraving-ready'));
+    expect(h.scales).toEqual(expect.arrayContaining([1, 0.67]));
+    expect(h.stretches).toEqual([false, false, true]);
+    expect(h.readyAtEngrave).toEqual([false, false, false]);
+    // The curtain is the stylesheet's: the engraving is hidden while the attribute is absent, with no fade.
+    const scss = readFileSync(resolve(__dirname, 'Exercises.scss'), 'utf8');
+    expect(scss).toMatch(/\n\.piano-score-passage \{[^}]*?&:not\(\[data-engraving-ready\]\) \.musicxml-renderer:not\(\.musicxml-renderer--placeholder\)\s*\{\s*visibility: hidden;\s*\}/);
   });
 
   it('justifies the last system of a two-system passage before publishing, so the second line is never half blank', async () => {

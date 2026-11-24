@@ -497,8 +497,11 @@ export default function ScorePassage({
     };
   }, [elsByOnset, expectation, judged, verdicts]);
 
+  // Shown only at its final size: an accepted layout, fitted to the stage. A layout the
+  // fitter cannot place (no staff boxes) is shown as engraved rather than never.
+  const engravingReady = Boolean(layout) && (presentation != null || !(layout.staffBoxes?.length));
   return (
-    <div ref={containerRef} className="piano-score-passage" data-system-count={systemCount || undefined} data-layout-mode={presentation?.mode} data-layout-compact={presentation?.compact || undefined} data-cursor-enabled={String(showCursor)}>
+    <div ref={containerRef} className="piano-score-passage" data-engraving-ready={engravingReady || undefined} data-system-count={systemCount || undefined} data-layout-mode={presentation?.mode} data-layout-compact={presentation?.compact || undefined} data-cursor-enabled={String(showCursor)}>
       {focused.musicXml ? (
         <MusicXmlRenderer key={`${systemBreakBefore ?? 'auto'}:${renderScale}:${stretchLastSystem}`} musicXml={focused.musicXml} scale={renderScale} newSystemFromXML stretchLastSystem={stretchLastSystem} fillContainer presentationViewBox={presentation?.viewBox} onLayout={handleLayout} onFailed={handleEngraveFailed}>
           <NoteHighlightLayer step={currentStep} activeParts={activeParts} />
