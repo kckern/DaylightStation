@@ -72,6 +72,7 @@ public class PhoneHomeActivity extends Activity {
         launcherPicker = Intent.ACTION_CREATE_SHORTCUT.equals(getIntent().getAction());
         if (launcherPicker) setResult(RESULT_CANCELED);
         placements = new PlacementStore(this);
+        swipe = makeSwipe();
         getWindow().setStatusBarColor(PAPER);
         getWindow().setNavigationBarColor(PAPER);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
@@ -151,22 +152,99 @@ public class PhoneHomeActivity extends Activity {
         });
     }
 
+    private static final String[] TABS = {"Services", "Capture", "Play", "Connect"};
+    private int tab;
+    /** Made in onCreate: a detector needs the activity's context, which does not exist yet at construction. */
+    private android.view.GestureDetector swipe;
+
+    private android.view.GestureDetector makeSwipe() {
+        return new android.view.GestureDetector(this,
+                new android.view.GestureDetector.SimpleOnGestureListener() {
+                    @Override public boolean onFling(android.view.MotionEvent down, android.view.MotionEvent up, float vx, float vy) {
+                        // A clear sideways flick on the tabs' page moves to the next or previous tab.
+                        if (!tabsShown() || Math.abs(vx) < 900 || Math.abs(vx) < Math.abs(vy) * 1.8f) return false;
+                        selectTab(tab + (vx < 0 ? 1 : -1), vx < 0 ? 1 : -1);
+                        return false;
+                    }
+                });
+    }
+
+    private boolean tabsShown() {
+        return !launcherPicker && !loading && loadError == null && playlistScreen == null;
+    }
+
+    @Override public boolean dispatchTouchEvent(android.view.MotionEvent event) {
+        if (swipe != null) swipe.onTouchEvent(event);
+        return super.dispatchTouchEvent(event);
+    }
+
+    @Override protected void onSaveInstanceState(Bundle state) {
+        super.onSaveInstanceState(state);
+        state.putInt("tab", tab);
+    }
+
+    @Override protected void onRestoreInstanceState(Bundle state) {
+        super.onRestoreInstanceState(state);
+        tab = Math.max(0, Math.min(TABS.length - 1, state.getInt("tab", 0)));
+        if (tabsShown()) draw();
+    }
+
+    private void selectTab(int index, int direction) {
+        int next = Math.max(0, Math.min(TABS.length - 1, index));
+        if (next == tab) return;
+        tab = next;
+        draw();
+        if (column != null && direction != 0) {
+            column.setTranslationX(direction * dp(48));
+            column.setAlpha(0f);
+            column.animate().translationX(0).alpha(1f).setDuration(180).start();
+        }
+    }
+
+    /** The four tabs as chips of equal width: one is always the page. */
+    private View tabStrip() {
+        LinearLayout strip = new LinearLayout(this);
+        strip.setPadding(dp(16), dp(4), dp(16), dp(8));
+        for (int i = 0; i < TABS.length; i++) {
+            int index = i;
+            boolean selected = i == tab;
+            TextView chip = PlaylistPicker.text(this, TABS[i], 14, selected ? android.graphics.Color.WHITE : GREEN, true);
+            chip.setGravity(Gravity.CENTER);
+            chip.setBackground(PlaylistPicker.round(selected ? GREEN : PlaylistPicker.COLOR_CHIP, 20, this));
+            chip.setContentDescription(TABS[i] + (selected ? ", selected" : ""));
+            chip.setOnClickListener(v -> selectTab(index, index > tab ? 1 : -1));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1);
+            if (i > 0) lp.leftMargin = dp(8);
+            strip.addView(chip, lp);
+        }
+        return strip;
+    }
+
     private void draw() {
         setupRows.clear();
         buttonRow = null;
         placementPanel = null;
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(PAPER);
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.VERTICAL);
+        header.setPadding(dp(16), dp(16), dp(16), dp(8));
+        TextView title = label("Daylight", 28, INK);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        header.addView(title);
+        header.addView(label(launcherPicker ? "Choose a shortcut" : "Add to your Android home screen", 16, INK));
+        root.addView(header);
+        if (tabsShown()) root.addView(tabStrip());
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(PAPER);
         column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
-        column.setPadding(dp(16), dp(16), dp(16), dp(16));
+        column.setPadding(dp(16), dp(8), dp(16), dp(16));
         scroll.addView(column);
-        setContentView(scroll);
-        TextView title = label("Daylight", 28, INK);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        column.addView(title);
-        column.addView(label(launcherPicker ? "Choose a shortcut" : "Add to your Android home screen", 16, INK));
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        setContentView(root);
         if (loading) { column.addView(label("Loading services…", 16, INK)); return; }
         if (loadError != null) {
             column.addView(label(loadError, 16, INK));
@@ -179,7 +257,22 @@ public class PhoneHomeActivity extends Activity {
             placementPanel.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
             column.addView(placementPanel);
         }
-        section("Services");
+        if (launcherPicker) {
+            // The launcher's shortcut chooser is short: two sections on one page, no tabs.
+            section("Services");
+            addServices();
+            section("Quick capture");
+            addCapture();
+            return;
+        }
+        if (tab == 0) addServices();
+        else if (tab == 1) addCapture();
+        else if (tab == 2) addPlay();
+        else addConnections();
+        drawPlacement();
+    }
+
+    private void addServices() {
         for (int i = 0; i < pages.length(); i++) {
             JSONObject page = pages.optJSONObject(i);
             if (page == null) continue;
@@ -195,7 +288,9 @@ public class PhoneHomeActivity extends Activity {
                         () -> pinPage(page));
             }
         }
-        section("Quick capture");
+    }
+
+    private void addCapture() {
         for (int i = 0; i < configuredActions.length(); i++) {
             JSONObject action = configuredActions.optJSONObject(i);
             if (action == null || !("INPUT".equals(action.optString("kind")) || "meal-barcode".equals(action.optString("id")))) continue;
@@ -209,15 +304,21 @@ public class PhoneHomeActivity extends Activity {
                         () -> confirmShortcut(id, action.optString("label")));
             }
         }
-        if (launcherPicker) return;
-        section("Play on demand");
-        row("Playlists", "Stage playlists and Daylight lists", "play", "›", () -> showMediaChoices(false));
-        row("Staged", "Manage staged playlists", "play", "›", () -> showMediaChoices(true));
+    }
+
+    private void addPlay() {
+        row("Add a playlist", "Search every playlist and Daylight list", "play", "›", this::pickPlaylistToAdd);
+        row("Playlists in use", "Where each one is used", "play", "›", this::showMediaChoices);
         row("Driving Radio", "Set the default and day rules", "play", "›", this::showDrivingRadio);
-        section("Connections");
+        if (!canPinWidgets()) {
+            row("Widget on Home", "How to put a playlist on your home screen", "open", "›",
+                    () -> showManualWidgetPlacement(null));
+        }
+    }
+
+    private void addConnections() {
         row("Freematics", "Manage Bluetooth connection", "open", "›",
                 () -> startActivity(new Intent(this, FreematicsActivity.class)));
-        drawPlacement();
     }
 
     private void returnCaptureShortcut(JSONObject action) {
@@ -285,45 +386,18 @@ public class PhoneHomeActivity extends Activity {
                 .show();
     }
 
+    private void pickPlaylistToAdd() {
+        PlaylistPicker.show(this, "Add a playlist", entry -> showPlaylistSheet(entry.id, entry.title, entry.art,
+                () -> toast("Saved " + entry.title)));
+    }
+
     private void showDrivingRadio() {
-        List<PlacementStore.StagedPlaylist> staged = placements.staged();
-        if (staged.isEmpty()) {
-            new AlertDialog.Builder(this).setTitle("Driving Radio")
-                    .setMessage("Stage a playlist to use it as your driving default.")
-                    .setNegativeButton("Close", null)
-                    .setPositiveButton("Playlists", (dialog, which) -> showMediaChoices(false)).show();
-            return;
-        }
-        DrivingRadioSettings radio = new DrivingRadioSettings(this);
-        String[] days = new java.text.DateFormatSymbols().getWeekdays();
-        days[0] = "Default";
-        String[] rows = days.clone();
-        for (int day = 0; day < rows.length; day++) {
-            String id = radio.get(day);
-            String title = day == 0 ? "Off" : "Use default";
-            for (PlacementStore.StagedPlaylist entry : staged) {
-                if (entry.contentId.equals(id)) title = entry.title;
-            }
-            rows[day] += " · " + title;
-        }
-        new AlertDialog.Builder(this).setTitle("Driving Radio").setItems(rows, (dialog, day) -> {
-            String[] choices = new String[staged.size() + 1];
-            choices[0] = day == 0 ? "Off" : "Use default";
-            for (int i = 0; i < staged.size(); i++) choices[i + 1] = staged.get(i).title;
-            new AlertDialog.Builder(this).setTitle(days[day]).setItems(choices, (picker, selected) -> {
-                radio.set(day, selected == 0 ? "" : staged.get(selected - 1).contentId);
-                showDrivingRadio();
-            }).setNegativeButton("Cancel", null).show();
-        }).setNegativeButton("Done", null).show();
+        DrivingRadioScreen.show(this);
     }
 
-    private void showMediaChoices(boolean staged) {
+    /** The playlists in use, and the ones remembered with no use yet. */
+    private void showMediaChoices() {
         if (playlistScreen != null) return;
-        showMediaChoices(staged, null, null);
-    }
-
-    private void showMediaChoices(boolean staged, String source, JSONArray choices) {
-        boolean entering = playlistScreen == null;
         playlistRow = null;
         playlistScreen = new LinearLayout(this);
         playlistScreen.setOrientation(LinearLayout.VERTICAL);
@@ -335,28 +409,10 @@ public class PhoneHomeActivity extends Activity {
         Button back = actionButton("‹", "back to setup", this::closeMediaChoices);
         back.setContentDescription("Back to setup");
         header.addView(back, dp(48), dp(48));
-        TextView heading = label(staged ? "Staged playlists" : "Play on demand", 24, INK);
+        TextView heading = label("Playlists in use", 24, INK);
         heading.setAccessibilityHeading(true);
         header.addView(heading);
         playlistScreen.addView(header);
-        if (!staged && choices != null) {
-            HorizontalScrollView sourceScroll = new HorizontalScrollView(this);
-            sourceScroll.setHorizontalScrollBarEnabled(false);
-            LinearLayout sources = new LinearLayout(this);
-            for (int i = 0; i < choices.length(); i++) {
-                JSONObject choice = choices.optJSONObject(i);
-                if (choice == null) continue;
-                String key = choice.optString("id");
-                String title = choice.optString("title");
-                if (key.isEmpty() || title.isEmpty()) continue;
-                Button tab = actionButton(title, title, () -> showMediaChoices(false, key, choices));
-                tab.setSelected(key.equals(source));
-                tab.setEnabled(!key.equals(source));
-                sources.addView(tab, new LinearLayout.LayoutParams(-2, dp(48)));
-            }
-            sourceScroll.addView(sources);
-            playlistScreen.addView(sourceScroll);
-        }
 
         ScrollView scroll = new ScrollView(this);
         playlistScreen.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -366,84 +422,85 @@ public class PhoneHomeActivity extends Activity {
         playlistGrid = new LinearLayout(this);
         playlistGrid.setOrientation(LinearLayout.VERTICAL);
         content.addView(playlistGrid);
-        playlistStatus = label("Loading playlists…", 16, INK);
+        playlistStatus = label("", 16, INK);
         playlistStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         content.addView(playlistStatus);
         setContentView(playlistScreen);
-        if (entering) slideIn(playlistScreen, 1);
-        if (staged) drawStagedPlaylists();
-        else if (source == null) loadPlaylistSources(playlistScreen);
-        else loadPlaylistPage(playlistScreen, source, 0);
-    }
-
-    private void loadPlaylistSources(LinearLayout screen) {
-        playlistStatus.setText("Loading playlist sources…");
-        playlistStatus.setOnClickListener(null);
-        call("media", request("playlistSources").toString(), result -> {
-            if (playlistScreen != screen) return;
-            JSONArray items = result.optJSONArray("items");
-            if (!result.optBoolean("ok") || items == null) {
-                showPlaylistSourcesRetry();
-            } else if (items.length() == 0) {
-                playlistStatus.setText("No audio list sources configured.");
-            } else {
-                showMediaChoices(false, items.optJSONObject(0).optString("id"), items);
-            }
-        }, message -> {
-            if (playlistScreen == screen) showPlaylistSourcesRetry();
-        });
-    }
-
-    private void showPlaylistSourcesRetry() {
-        playlistStatus.setText("Could not load playlist sources. Tap to retry.");
-        playlistStatus.setOnClickListener(view -> loadPlaylistSources(playlistScreen));
+        slideIn(playlistScreen, 1);
+        drawStagedPlaylists();
     }
 
     private void drawStagedPlaylists() {
         playlistGrid.removeAllViews();
         playlistRow = null;
-        List<PlacementStore.StagedPlaylist> staged = placements.staged();
-        for (PlacementStore.StagedPlaylist playlist : staged) {
-            addPlaylist(playlistScreen, playlist.contentId, playlist.title, "", true);
-        }
-        playlistStatus.setVisibility(staged.isEmpty() ? View.VISIBLE : View.GONE);
-        playlistStatus.setText("No staged playlists. Choose a playlist from the library to stage it.");
-    }
-
-    private void chooseShuffle(String contentId, String title, Runnable saved) {
         DrivingRadioSettings radio = new DrivingRadioSettings(this);
-        boolean[] options = {placements.shuffle(contentId), radio.isStaple(contentId)};
-        new AlertDialog.Builder(this).setTitle(title)
-                .setMultiChoiceItems(new String[]{"Shuffle", "Show on Drive"}, options, (dialog, which, checked) -> options[which] = checked)
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton(placements.isStaged(contentId) ? "Save" : "Stage playlist", (dialog, which) -> {
-                    placements.stage(contentId, title, options[0]);
-                    radio.setStaple(contentId, options[1]);
-                    PlaylistWidgetState.redraw(this);
-                    saved.run();
-                }).show();
+        String[] weekdays = new java.text.DateFormatSymbols().getWeekdays();
+        List<DrivingRadioSettings.Staple> remembered = radio.staged();
+        for (DrivingRadioSettings.Staple playlist : remembered) {
+            String where = net.kckern.daylight.shellkit.PlaylistUse.describe(radio.snapshot(), playlist.id, weekdays);
+            addPlaylist(playlist.id, playlist.title, where.isEmpty() ? "Not used yet" : where);
+        }
+        playlistStatus.setVisibility(remembered.isEmpty() ? View.VISIBLE : View.GONE);
+        playlistStatus.setText("No playlists yet. Use Add a playlist, a widget, or Driving Radio to choose one.");
     }
 
     private void managePlaylist(String contentId, String title) {
-        String instructions = (placements.shuffle(contentId) ? "Shuffle on. " : "Playlist order. ")
-                + "Available in Android Home → Widgets → Daylight playlist.";
-        LauncherPlacement recent = placements.requests().stream()
-                .filter(request -> request.playlist && request.contentId.equals(contentId))
-                .max(java.util.Comparator.comparingLong(request -> request.updatedAt)).orElse(null);
-        if (recent != null) {
-            LauncherPlacement.Status status = recent.status(System.currentTimeMillis());
-            if (status == LauncherPlacement.Status.CONFIRM) instructions = "Confirm placement in Android. " + instructions;
-            if (status == LauncherPlacement.Status.UNCONFIRMED) instructions = "Placement unconfirmed. Check Android Home before adding it again. " + instructions;
+        showPlaylistSheet(contentId, title, "", this::drawStagedPlaylists);
+    }
+
+    /**
+     * One sheet for a playlist. New: shuffle and "Show on Drive", then Save. Already kept:
+     * the switches change at once, and the buttons add a widget or remove it.
+     */
+    private void showPlaylistSheet(String contentId, String title, String art, Runnable changed) {
+        DrivingRadioSettings radio = new DrivingRadioSettings(this);
+        boolean isNew = !placements.isStaged(contentId);
+        String cover = art == null || art.isEmpty() ? radio.art(contentId) : art;
+        // A new playlist is added to Drive by default: that is usually why it is being added.
+        boolean[] state = {placements.shuffle(contentId), isNew || radio.isStaple(contentId)};
+        String where = isNew ? "Not saved yet" : net.kckern.daylight.shellkit.PlaylistUse.describe(
+                radio.snapshot(), contentId, new java.text.DateFormatSymbols().getWeekdays());
+        if (!isNew && where.isEmpty()) where = "Not used yet";
+        Sheet sheet = new Sheet(this).header(contentId, cover, title, where);
+        if (!isNew) {
+            LauncherPlacement recent = placements.requests().stream()
+                    .filter(request -> request.playlist && request.contentId.equals(contentId))
+                    .max(java.util.Comparator.comparingLong(request -> request.updatedAt)).orElse(null);
+            if (recent != null) {
+                LauncherPlacement.Status status = recent.status(System.currentTimeMillis());
+                if (status == LauncherPlacement.Status.CONFIRM) sheet.note("Confirm the widget placement in Android.");
+                if (status == LauncherPlacement.Status.UNCONFIRMED) sheet.note("Widget placement unconfirmed. Check Android Home before adding it again.");
+            }
         }
-        new AlertDialog.Builder(this).setTitle(title)
-                .setMessage(instructions)
-                .setPositiveButton("Add widget", (dialog, which) -> pinWidget(contentId, title))
-                .setNeutralButton("Unstage", (dialog, which) -> {
-                    placements.unstage(contentId);
-                    drawStagedPlaylists();
-                })
-                .setNegativeButton("Playback options", (dialog, which) -> chooseShuffle(contentId, title, this::drawStagedPlaylists))
-                .show();
+        sheet.toggle("Shuffle", "Play in random order", state[0], on -> {
+            state[0] = on;
+            if (!isNew) {
+                placements.stage(contentId, title, on);
+                PlaylistWidgetState.redraw(this);
+            }
+        });
+        sheet.toggle("Show on Drive", "A tile on the car's Drive tab", state[1], on -> {
+            state[1] = on;
+            if (!isNew) radio.setStaple(contentId, on);
+        });
+        if (isNew) {
+            sheet.button("Save", Sheet.Style.PRIMARY, () -> {
+                radio.remember(contentId, title, cover);
+                placements.stage(contentId, title, state[0]);
+                radio.setStaple(contentId, state[1]);
+                PlaylistPicker.cacheCover(this, contentId, cover);
+                PlaylistWidgetState.redraw(this);
+                changed.run();
+            }).button("Cancel", Sheet.Style.TONAL, () -> { });
+        } else {
+            if (canPinWidgets()) sheet.button("Add widget to Home", Sheet.Style.PRIMARY, () -> pinWidget(contentId, title));
+            else sheet.button("How to add it to Home", Sheet.Style.TONAL, () -> showManualWidgetPlacement(title));
+            sheet.button("Remove", Sheet.Style.DANGER, () -> {
+                        placements.unstage(contentId);
+                        PlaylistWidgetState.redraw(this);
+                    }).onDismiss(changed);
+        }
+        sheet.show();
     }
 
     private void slideIn(View screen, int direction) {
@@ -466,43 +523,7 @@ public class PhoneHomeActivity extends Activity {
         slideIn(column, -1);
     }
 
-    private void loadPlaylistPage(LinearLayout screen, String source, int cursor) {
-        playlistStatus.setVisibility(View.VISIBLE);
-        playlistStatus.setText("Loading playlists…");
-        playlistStatus.setOnClickListener(null);
-        playlistStatus.setClickable(false);
-        call("media", request("playlists", "cursor", String.valueOf(cursor), "source", source).toString(), result -> {
-            if (playlistScreen != screen) return;
-            JSONArray items = result.optJSONArray("items");
-            if (!result.optBoolean("ok") || items == null) {
-                showPlaylistRetry(screen, source, cursor);
-                return;
-            }
-            for (int i = 0; i < items.length(); i++) {
-                JSONObject item = items.optJSONObject(i);
-                if (item != null) {
-                    // A playlist staged before thumbnails were kept gets its picture here.
-                    new DrivingRadioSettings(this).setArt(item.optString("contentId"), item.optString("thumbnail"));
-                    addPlaylist(screen, item.optString("contentId"), item.optString("title"),
-                            item.optString("thumbnail"), false);
-                }
-            }
-            int next = result.optInt("nextCursor", -1);
-            if (next > cursor) loadPlaylistPage(screen, source, next);
-            else if (playlistGrid.getChildCount() == 0) playlistStatus.setText("No lists with playable audio found.");
-            else playlistStatus.setVisibility(View.GONE);
-        }, message -> {
-            if (playlistScreen == screen) showPlaylistRetry(screen, source, cursor);
-        });
-    }
-
-    private void showPlaylistRetry(LinearLayout screen, String source, int cursor) {
-        playlistStatus.setText("Could not load playlists. Tap to retry.");
-        playlistStatus.setMinHeight(dp(48));
-        playlistStatus.setOnClickListener(v -> loadPlaylistPage(screen, source, cursor));
-    }
-
-    private void addPlaylist(LinearLayout screen, String contentId, String title, String thumbnail, boolean staged) {
+    private void addPlaylist(String contentId, String title, String where) {
         if (contentId.isEmpty() || title.isEmpty()) return;
         if (playlistRow == null || playlistRow.getChildCount() == 3) {
             playlistRow = new LinearLayout(this);
@@ -513,8 +534,7 @@ public class PhoneHomeActivity extends Activity {
         tile.setOrientation(LinearLayout.VERTICAL);
         tile.setPadding(dp(4), dp(4), dp(4), dp(12));
         tile.setFocusable(true);
-        boolean alreadyStaged = staged || placements.isStaged(contentId);
-        tile.setContentDescription((staged ? "Manage " : alreadyStaged ? "Staged: " : "Stage ") + title);
+        tile.setContentDescription("Manage " + title + ". " + where);
         ImageView cover = new ImageView(this) {
             @Override protected void onMeasure(int width, int height) {
                 int side = View.MeasureSpec.getSize(width);
@@ -526,18 +546,15 @@ public class PhoneHomeActivity extends Activity {
         cover.setScaleType(ImageView.ScaleType.CENTER);
         cover.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         tile.addView(cover, new LinearLayout.LayoutParams(-1, -2));
-        TextView name = label(!staged && alreadyStaged ? "✓ " + title : title, 14, INK);
-        tile.setOnClickListener(view -> {
-            if (staged) managePlaylist(contentId, title);
-            else chooseShuffle(contentId, title, () -> {
-                new DrivingRadioSettings(this).setArt(contentId, thumbnail);
-                name.setText("✓ " + title);
-                tile.setContentDescription("Staged: " + title);
-            });
-        });
+        TextView name = label(title, 14, INK);
+        tile.setOnClickListener(view -> managePlaylist(contentId, title));
         name.setPadding(0, dp(6), 0, 0);
         name.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         tile.addView(name);
+        TextView note = label(where, 12, INK);
+        note.setAlpha(0.7f);
+        note.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        tile.addView(note);
         playlistRow.addView(tile, new LinearLayout.LayoutParams(0, -2, 1));
 
         Bitmap cached = PlaylistWidgetArtwork.read(this, "c:" + contentId);
@@ -545,28 +562,27 @@ public class PhoneHomeActivity extends Activity {
             cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
             cover.setImageBitmap(cached);
         }
-        if (!staged && thumbnail.startsWith("https://")) artworkWorker.execute(() -> {
-            Bitmap art = PlaylistArtwork.load(thumbnail, 600);
-            if (art == null) return;
-            PlaylistWidgetArtwork.save(getApplicationContext(), "c:" + contentId, art);
-            runOnUiThread(() -> {
-                PlaylistWidgetState.redraw(getApplicationContext());
-                if (playlistScreen != screen) return;
-                cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                cover.setImageBitmap(art);
-            });
-        });
     }
 
-    private void pinWidget(String contentId, String title) {
+    /**
+     * Whether this phone's launcher will take a pin request for a widget. Apex does not: it
+     * ignores the request, so there the owner places the widget from Android Home and picks the
+     * playlist in the widget's own chooser.
+     */
+    private boolean canPinWidgets() {
         Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
         android.content.pm.ResolveInfo launcher = getPackageManager().resolveActivity(home,
                 android.content.pm.PackageManager.MATCH_DEFAULT_ONLY);
         String launcherPackage = launcher == null || launcher.activityInfo == null
                 ? "" : launcher.activityInfo.packageName;
         AppWidgetManager manager = AppWidgetManager.getInstance(this);
-        if ("com.anddoes.launcher".equals(launcherPackage) || manager == null
-                || !manager.isRequestPinAppWidgetSupported()) {
+        return !"com.anddoes.launcher".equals(launcherPackage) && manager != null
+                && manager.isRequestPinAppWidgetSupported();
+    }
+
+    private void pinWidget(String contentId, String title) {
+        AppWidgetManager manager = AppWidgetManager.getInstance(this);
+        if (!canPinWidgets()) {
             showManualWidgetPlacement(title);
             return;
         }
@@ -619,13 +635,19 @@ public class PhoneHomeActivity extends Activity {
         timer.post(check);
     }
 
+    /** The real steps, for a launcher that cannot be asked to add the widget. */
     private void showManualWidgetPlacement(String title) {
-        new AlertDialog.Builder(this).setTitle("Add " + title)
-                .setMessage("Touch and hold an empty spot on Android Home. Open Widgets, add Daylight playlist, then choose " + title + ".")
-                .setNegativeButton("Stay here", null)
-                .setPositiveButton("Go to Home", (dialog, which) -> startActivity(
+        Sheet sheet = new Sheet(this).heading("Put a playlist on Home",
+                "Your launcher adds widgets itself, so it takes three steps there.");
+        sheet.step(1, "Touch and hold an empty spot on your home screen.")
+                .step(2, "Open Widgets and drag Daylight playlist onto the page.")
+                .step(3, title == null || title.isEmpty()
+                        ? "Choose a playlist. You can search the whole list."
+                        : "Choose " + title + ". You can search the whole list.")
+                .button("Go to Home", Sheet.Style.PRIMARY, () -> startActivity(
                         new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)))
+                .button("Not now", Sheet.Style.TONAL, () -> { })
                 .show();
     }
 
@@ -690,11 +712,28 @@ public class PhoneHomeActivity extends Activity {
             case EXTRA_WIDGET:
                 message = "Two widgets were added for this placement. If both are still on Android Home, touch and hold the extra widget, then choose Remove.";
                 break;
-            default: message = "Added";
+            default: message = "Added to your home screen";
         }
-        placementPanel.addView(label(request.title + " — " + message, 16, INK));
-        if (status != LauncherPlacement.Status.UNCONFIRMED && status != LauncherPlacement.Status.REFUSED) return;
-        placementPanel.addView(label("Tap the item below to retry, or check your launcher's shortcuts.", 14, INK));
+        boolean problem = status == LauncherPlacement.Status.UNCONFIRMED || status == LauncherPlacement.Status.REFUSED
+                || status == LauncherPlacement.Status.EXTRA_WIDGET;
+        // A banner, not a loose line: a check on good news, an amber card for anything to act on.
+        LinearLayout banner = new LinearLayout(this);
+        banner.setOrientation(LinearLayout.VERTICAL);
+        banner.setPadding(dp(16), dp(12), dp(16), dp(12));
+        banner.setBackground(PlaylistPicker.round(problem ? 0xfffff1d6 : PlaylistPicker.COLOR_CHIP, 16, this));
+        TextView headline = PlaylistPicker.text(this, (problem ? "" : "✓  ") + request.title, 15, INK, true);
+        banner.addView(headline);
+        TextView detail = PlaylistPicker.text(this, message, 14, INK, false);
+        detail.setAlpha(0.85f);
+        banner.addView(detail);
+        if (status == LauncherPlacement.Status.UNCONFIRMED || status == LauncherPlacement.Status.REFUSED) {
+            TextView retry = PlaylistPicker.text(this, "Tap the item below to retry, or check your launcher's shortcuts.", 13, INK, false);
+            retry.setAlpha(0.7f);
+            banner.addView(retry);
+        }
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.bottomMargin = dp(10);
+        placementPanel.addView(banner, params);
     }
 
     private void updateSetupAvailability(boolean busy) {

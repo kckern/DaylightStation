@@ -14,6 +14,9 @@ public final class DrivingRadioSettings {
     public static final String SHUFFLE = "playlist_shuffle.";
     private static final String STAPLE = "drive_staple.";
     private static final String ART = "staged_art.";
+    /** When a playlist was last picked, for the "Recent" sort. */
+    private static final String ADDED = "staged_at.";
+    private static final String PLACED = "playlist_placed_at.";
     /** The one last-played item, kept so the system can offer to resume it. */
     private static final String LAST_ID = "resume.id";
     private static final String LAST_TITLE = "resume.title";
@@ -93,6 +96,40 @@ public final class DrivingRadioSettings {
         if (id.isEmpty()) return null;
         return new String[]{id, prefs.getString(LAST_TITLE, ""), prefs.getString(LAST_SUBTITLE, ""),
                 prefs.getString(LAST_ART, "")};
+    }
+
+    /**
+     * Keep what the car and the widgets need to draw a playlist with no backend: its title
+     * and, when known, its picture. The shuffle default is set only for a new record, so
+     * picking a playlist again never undoes a choice made for it.
+     */
+    public void remember(String id, String title, String art) {
+        if (id == null || id.isEmpty() || title == null || title.trim().isEmpty()) return;
+        SharedPreferences.Editor edit = prefs.edit().putString(STAGED + id, title)
+                .putLong(ADDED + id, System.currentTimeMillis());
+        if (!prefs.contains(SHUFFLE + id)) edit.putBoolean(SHUFFLE + id, true);
+        edit.apply();
+        setArt(id, art);
+    }
+
+    public boolean inUse(String id) {
+        return PlaylistUse.inUse(prefs.getAll(), id);
+    }
+
+    /** Drop the record when nothing uses it any more. Returns true when it was dropped. */
+    public boolean forgetIfUnused(String id) {
+        if (id == null || id.isEmpty() || !isStaged(id) || inUse(id)) return false;
+        prefs.edit().remove(STAGED + id).remove(SHUFFLE + id).remove(ART + id).remove(STAPLE + id).remove(ADDED + id).apply();
+        return true;
+    }
+
+    /** The last time this playlist was picked or placed on a widget, 0 when never. */
+    public long usedAt(String id) {
+        return Math.max(prefs.getLong(ADDED + id, 0L), prefs.getLong(PLACED + id, 0L));
+    }
+
+    public java.util.Map<String, ?> snapshot() {
+        return prefs.getAll();
     }
 
     public boolean isStaged(String id) {

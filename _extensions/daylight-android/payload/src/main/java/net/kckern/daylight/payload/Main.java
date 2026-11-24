@@ -48,7 +48,8 @@ public final class Main implements Payload {
             if (!net.kckern.daylight.api.ControlBind.listens(DeviceConfig.CONTROL_BIND)) {
                 if (stopped) throw new IllegalStateException("stopped during start");
                 shell.note("CONTROL", "control.bind is " + DeviceConfig.CONTROL_BIND + ": no control server");
-                shell.updateNotification(DeviceConfig.DEVICE_ID + " " + DeviceConfig.PAYLOAD_VERSION);
+                // A phone's owner reads this line in the shade: not a device id and a build tag.
+                shell.updateNotification("Daylight is running");
                 return;
             }
             // lan: every interface. loopback: this device only (a phone joins other networks).

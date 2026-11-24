@@ -21,7 +21,10 @@ import java.io.File;
  */
 public class ShellService extends Service implements ShellServer.Host {
     private static final String TAG = "Daylight";
-    private static final String CHANNEL_ID = "daylight_shell";
+    /** Minimal importance: no status-bar icon, no sound, and the notice sits at the bottom of the shade. */
+    private static final String CHANNEL_ID = "daylight_service";
+    /** The earlier, louder channel; removed so its settings do not linger. */
+    private static final String OLD_CHANNEL_ID = "daylight_shell";
     private static final int NOTIFICATION_ID = 2;
 
     private static volatile ShellService INSTANCE;
@@ -175,9 +178,11 @@ public class ShellService extends Service implements ShellServer.Host {
     }
 
     private void createNotificationChannel() {
-        NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Daylight", NotificationManager.IMPORTANCE_LOW);
-        channel.setDescription("Daylight device service");
-        getSystemService(NotificationManager.class).createNotificationChannel(channel);
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Daylight is running", NotificationManager.IMPORTANCE_MIN);
+        channel.setDescription("Keeps Daylight available in the background");
+        manager.createNotificationChannel(channel);
+        manager.deleteNotificationChannel(OLD_CHANNEL_ID);
     }
 
     private void postNotification() {
