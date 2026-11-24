@@ -208,6 +208,34 @@ must not be confused with CSS layout dimensions. `--integration-only` runs just
 the added frame/governance/interaction checks during fixture development; use the
 full command for acceptance evidence.
 
+## Fitness player overlay screenshots
+
+`tests/_scratch/fitness-overlay-harness/` mounts the production player overlays
+(voice memo review, playback time cover, presence gate cover, governance lock
+modal) from fixture scenes, with the fitness context, logger and governance
+audio stubbed. It reuses the app's Vite config, needs no backend, and loads the
+repo's Roboto Condensed so text wraps as on the kiosk. `tests/_scratch/` is
+gitignored; these files are tracked, so add new ones with `git add -f`.
+
+```bash
+# frontend-only server on 127.0.0.1:5198 (HARNESS_PORT to change); stop it after
+node_modules/.bin/vite --config tests/_scratch/fitness-overlay-harness/vite.harness.config.mjs
+# every scene; BROWSER=firefox|chromium (firefox default, as on the kiosk),
+# VIEWPORT=1810x1080 (default, the kiosk content area) or e.g. 1280x720, SCENES=a,b
+node tests/_scratch/shoot-fitness-overlays.mjs
+```
+
+Scenes: `memo-long`, `memo-short`, `budget-checking`, `budget-unavailable`,
+`budget-exhausted`, `presence-gate`, `lock-one-rule`, `lock-two-rules`,
+`lock-close-goals`. The script exits non-zero, naming the scene and check, when
+an overlay panel or `[data-harness-check]` element leaves the viewport
+(`bounds`), a `[data-harness-scroll]` container clips its first line or
+overflows without scrolling (`scroll`), visible text is under 16 px (`font`), a
+lock rider row's bar is under half the row or its goal labels overlap (`lock`),
+or on a console error, page error or failed request. PNGs and `metrics.json` go
+to `tests/_scratch/out/fitness-overlays/`. The sidebar rider cards have a
+second entry point, `vite.sidebar.config.mjs` (open `/sidebar.html`).
+
 ## Media acceptance fixtures
 
 The Media app's journeys (`tests/live/flow/media/`) run against `tests/_lib/media-redesign-server.mjs`, an owned acceptance server (exact-SHA preview) that mounts REAL backend services over in-memory or throwaway state. It never writes household data and never commands a household screen (only Office may be used as a physical screen). What it provides:
