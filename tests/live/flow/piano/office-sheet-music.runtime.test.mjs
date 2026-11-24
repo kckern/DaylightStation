@@ -114,7 +114,7 @@ test('the whole Sheet Music flow, on keys only', async ({ page }) => {
   await expect(strip.locator('[data-key="retry"]')).not.toHaveAttribute('data-enabled', 'true');
   // No note output on this piano: Listen is not drawn, and no touch control is.
   await expect(strip.locator('[data-key="listen"]')).toHaveCount(0);
-  await expect(page.locator('.piano-learn-lab__back, .piano-learn-lab__run-controls, .piano-learn-tempo, .piano-learn-click')).toHaveCount(0);
+  await expect(page.locator('.piano-learn-lab__back, .piano-learn-lab__run-controls, .piano-learn-speed, .piano-learn-click')).toHaveCount(0);
   await expect(page.locator('.piano-passage-path__all')).toBeHidden();
   await noClipping(page, '04-drill');
 

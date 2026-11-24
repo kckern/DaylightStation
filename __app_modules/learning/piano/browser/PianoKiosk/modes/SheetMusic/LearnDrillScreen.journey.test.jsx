@@ -68,15 +68,15 @@ const click=async(page,name)=>{await page.getByRole('button',{name,exact:true}).
 const armed=async(page)=>{await page.locator('.piano-exercise-run[data-armed="true"]').waitFor({timeout:15000});await page.waitForTimeout(600);};
 // Open the passage (a tap on the path's target token, the one with the play disc), then tap a set of the drill to run that step.
 const openPassage=async(page)=>{await page.locator('.piano-passage-path__token[data-target]').click({timeout:30000});await armed(page);};
-const openStep=async(page,step)=>{await openPassage(page);await page.locator('button.drill-cluster').and(page.getByRole('button',{name:STEP_NAMES[step],exact:true})).click();await page.locator('.piano-learn-lab__task').filter({hasText:STEP_NAMES[step]}).waitFor();await armed(page);};
+const openStep=async(page,step)=>{await openPassage(page);await page.locator('button.drill-cluster').and(page.getByRole('button',{name:STEP_NAMES[step],exact:true})).click();await page.locator('.piano-learn-lab__heading strong').filter({hasText:STEP_NAMES[step]}).waitFor();await armed(page);};
 // The Gold lap's steps are drawn only once the passage is Bronze (laps): earn it with a clean check, land back on the
 // score, then open the path's "A in time" token (it opens on the rhythm step) and tap the step wanted.
 const goldTake=[[60,48],[62,50],[64,52],[65,53],[60,48],[62,50],[64,52],[65,53]].flatMap(([r,l])=>[[r],[r,l],[l],[]]);
 const openGold=async(page,step)=>{await openStep(page,'On your own');
  await page.evaluate(async(list)=>{for(const frame of list){window.__hold(frame);await new Promise(r=>setTimeout(r,70));}},goldTake);
  await curtain(page,'Piece Silver!').waitFor({timeout:15000});await page.locator('.piano-learn-coach').waitFor({state:'detached',timeout:20000});
- await page.getByRole('button',{name:'A in time, bars 1–2',exact:true}).click({timeout:15000});await page.locator('.piano-learn-lab__task').filter({hasText:'Tap the rhythm'}).waitFor();await armed(page);
- if(step!=='Rhythm'){await page.locator('button.drill-cluster').and(page.getByRole('button',{name:STEP_NAMES[step],exact:true})).click();await page.locator('.piano-learn-lab__task').filter({hasText:STEP_NAMES[step]}).waitFor();await armed(page);}};
+ await page.getByRole('button',{name:'A in time, bars 1–2',exact:true}).click({timeout:15000});await page.locator('.piano-learn-lab__heading strong').filter({hasText:'Tap the rhythm'}).waitFor();await armed(page);
+ if(step!=='Rhythm'){await page.locator('button.drill-cluster').and(page.getByRole('button',{name:STEP_NAMES[step],exact:true})).click();await page.locator('.piano-learn-lab__heading strong').filter({hasText:STEP_NAMES[step]}).waitFor();await armed(page);}};
 const STEP_NAMES={'On your own':'Play it on your own','100%':'Play at score tempo','Rhythm':'Tap the rhythm'};
 const card=(page,text)=>page.locator('.rep-card').filter({hasText:text});
 // Silver and Gold close the drill's curtain; its verdict carries the word.
@@ -96,10 +96,14 @@ async function playAt(page,percent=100,{lateMs=0,only=null}={}){
  await page.evaluate(async({beat,lateMs,only})=>{const log=window.__logs.filter(l=>l.event==='piano.exercise-countdown-started').at(-1);const downbeat=log.at+log.data.countdownRemainingMs;for(let i=0;i<8;i++){if(only&&!only.includes(i))continue;await new Promise(r=>setTimeout(r,Math.max(0,downbeat+lateMs+i*beat-Date.now())));window.__hold([[60,48],[62,50],[64,52],[65,53]][i%4]);await new Promise(r=>setTimeout(r,75));window.__hold([]);}},{beat:60000/(240*percent/100),lateMs,only});
 }
 // Every band of the drill screen, by its box: none may move or resize whatever the take is doing.
-const BANDS={header:'.piano-learn-lab__toolbar',tempo:'.piano-learn-tempo',score:'.piano-exercise-run__stage',strip:'.piano-exercise-run__rail',keys:'.piano-exercise-run__keys',path:'.piano-passage-path'};
+const BANDS={header:'.piano-learn-lab__toolbar',tempo:'.piano-learn-lab__settings',score:'.piano-exercise-run__stage',strip:'.piano-exercise-run__rail',keys:'.piano-exercise-run__keys',path:'.piano-passage-path'};
 const bands=(page)=>page.evaluate((map)=>Object.fromEntries(Object.entries(map).map(([name,sel])=>{const el=document.querySelector(sel);const b=el?.getBoundingClientRect();return[name,b?[Math.round(b.x),Math.round(b.y),Math.round(b.width),Math.round(b.height)]:null];})),BANDS);
 const shot=(page,name)=>page.screenshot({path:path.join(ARTIFACTS,`${name}.png`)});
-const timedStep=async(page,index)=>{await page.locator('button.drill-cluster').nth(index).click();await page.locator('.piano-learn-lab__task').filter({hasText:'Play with the beat'}).waitFor();await armed(page);};
+// The speed is one header button; its stops are in a sheet (2026-11-24).
+const speedStops=async(page,sel='')=>{await page.getByRole('button',{name:/^Speed/}).click();const dialog=page.getByRole('dialog',{name:'Speed',exact:true});await dialog.waitFor();
+ const out=await page.locator('.piano-learn-speed-sheet__stops button'+sel).evaluateAll(list=>list.map(b=>b.getAttribute('aria-label')));await page.keyboard.press('Escape');await dialog.waitFor({state:'detached'});return out;};
+const chooseSpeed=async(page,name)=>{await page.getByRole('button',{name:/^Speed/}).click();const dialog=page.getByRole('dialog',{name:'Speed',exact:true});await dialog.getByRole('button',{name,exact:true}).click();await dialog.waitFor({state:'detached'});};
+const timedStep=async(page,index)=>{await page.locator('button.drill-cluster').nth(index).click();await page.locator('.piano-learn-lab__heading strong').filter({hasText:'Play with the beat'}).waitFor();await armed(page);};
 const headerButtons=(page)=>page.locator('.piano-learn-lab__run-controls button').evaluateAll(list=>list.map(b=>b.innerText.trim()));
 const logged=(page,name)=>page.evaluate((event)=>window.__logs.filter(l=>l.event===event).map(l=>l.data),name);
 
@@ -115,7 +119,7 @@ describe('the drill screen: header, tempo, volume, Listen, result',()=>{
    // Before a take: Listen, never Start over; the tempo track and one click-volume button, no four-button row.
    expect(await headerButtons(page)).toEqual(['Listen']);
    expect(await page.getByRole('button',{name:'Start over'}).count()).toBe(0);
-   expect(await page.getByRole('group',{name:'Tempo'}).count()).toBe(1);
+   expect(await page.getByRole('button',{name:/^Speed/}).count()).toBe(1);
    expect(await page.getByRole('button',{name:/^Click volume/}).count()).toBe(1);
    for(const banned of ['BPM','Soft','Medium','Loud','Max','Score tempo','Fallback tempo'])expect(await page.locator('.piano-learn-lab__toolbar').innerText()).not.toContain(banned);
    const header=await page.locator('.piano-learn-lab__toolbar').evaluate(el=>({scroll:el.scrollWidth,client:el.clientWidth}));expect(header.scroll).toBeLessThanOrEqual(header.client);
@@ -126,7 +130,8 @@ describe('the drill screen: header, tempo, volume, Listen, result',()=>{
    await page.evaluate(async()=>{window.__hold([72]);await new Promise(r=>setTimeout(r,60));window.__hold([]);});
    await page.locator('.piano-learn-lab__run-controls[data-phase="countdown"], .piano-learn-lab__run-controls[data-phase="running"]').waitFor();
    expect(await headerButtons(page)).toEqual(['Pause']);
-   expect(await page.locator('.piano-learn-tempo[data-locked]').count()).toBe(1);
+   // During a take the settings leave the header; their slot stays.
+   expect(await page.locator('.piano-learn-speed, .piano-learn-click').count()).toBe(0);
    expect(await bands(page)).toEqual(ready);
    await shot(page,'2-gold-step-during-take');
    await click(page,'Pause');await page.locator('.piano-exercise-run[data-phase="paused"]').waitFor();
@@ -135,7 +140,7 @@ describe('the drill screen: header, tempo, volume, Listen, result',()=>{
    await shot(page,'3-gold-step-paused');
    await click(page,'Start over');await armed(page);await expect.poll(()=>headerButtons(page)).toEqual(['Listen']);
    // A take with notes missing: the result takes the strip's slot and nothing moves.
-   await playAt(page,await page.locator('.piano-learn-tempo__readout strong').evaluate(el=>parseInt(el.textContent,10)),{only:[0,1,2,3,4,5]});
+   await playAt(page,await page.locator('.piano-learn-speed strong').evaluate(el=>parseInt(el.textContent,10)),{only:[0,1,2,3,4,5]});
    const result=page.locator('.piano-exercise-run__result.is-docked');await result.waitFor({timeout:20000});
    await page.locator('.piano-exercise-run__result[data-result-armed="true"]').waitFor({timeout:15000});
    expect(await bands(page)).toEqual(ready);
@@ -163,13 +168,13 @@ describe('the drill screen: header, tempo, volume, Listen, result',()=>{
    const names=await page.locator('button.drill-cluster').evaluateAll(list=>list.map(b=>b.getAttribute('aria-label')));
    const timed=names.map((n,i)=>[n,i]).filter(([n])=>n==='Play with the beat').map(([,i])=>i);
    await timedStep(page,timed[0]);
-   const stops=await page.locator('.piano-learn-tempo__stop').evaluateAll(list=>list.map(b=>b.getAttribute('aria-label')));
-   const rungs=await page.locator('.piano-learn-tempo__stop[data-rung]').evaluateAll(list=>list.map(b=>parseInt(b.getAttribute('aria-label'),10)));
+   const stops=await speedStops(page);
+   const rungs=(await speedStops(page,'[data-rung]')).map(label=>parseInt(label,10));
    const chosen=rungs.filter(r=>r<100).at(-1);
    // Nothing below the step's own tempo on a note step.
-   expect(parseInt(stops[0],10)).toBe(parseInt(await page.locator('.piano-learn-tempo__readout strong').innerText(),10));
-   await page.getByRole('button',{name:`${chosen}%`,exact:true}).click();await armed(page);
-   expect(await page.locator('.piano-learn-tempo__readout strong').innerText()).toBe(`${chosen}%`);
+   expect(parseInt(stops[0],10)).toBe(parseInt(await page.locator('.piano-learn-speed strong').innerText(),10));
+   await chooseSpeed(page,`${chosen}%`);await armed(page);
+   expect(await page.locator('.piano-learn-speed strong').innerText()).toBe(`${chosen}%`);
    expect(await page.locator('.drill-cluster[data-preview]').count()).toBeGreaterThan(1);
    await shot(page,'5-chosen-tempo-prelit');
    await playAt(page,chosen);
@@ -189,10 +194,11 @@ describe('the drill screen: header, tempo, volume, Listen, result',()=>{
   const{page,errors}=await open();try{
    await openGold(page,'Rhythm');
    const ready=await bands(page);
-   const step=parseInt(await page.locator('.piano-learn-tempo__readout strong').innerText(),10);
-   const stops=await page.locator('.piano-learn-tempo__stop').evaluateAll(list=>list.map(b=>parseInt(b.getAttribute('aria-label'),10)));
+   const step=parseInt(await page.locator('.piano-learn-speed strong').innerText(),10);
+   const stops=(await speedStops(page)).map(label=>parseInt(label,10));
    expect(stops[0]).toBeLessThan(step);
-   expect(await page.getByRole('button',{name:'Skip rhythm'}).count()).toBe(1);
+   // Skip rhythm is not in the header before a take; a miss puts it on the result card.
+   expect(await page.getByRole('button',{name:'Skip rhythm'}).count()).toBe(0);
    await shot(page,'7-rhythm-step-ready');
    // A rhythm take with taps missing: two meters (taps, on the beat), the strip's slot.
    await playAt(page,step,{only:[0,1,2,3,4]});
@@ -201,9 +207,9 @@ describe('the drill screen: header, tempo, volume, Listen, result',()=>{
    expect(await bands(page)).toEqual(ready);
    await page.locator('.piano-exercise-run__result[data-result-armed="true"]').waitFor({timeout:15000});
    await shot(page,'8-rhythm-result');
-   await page.getByRole('button',{name:'Try again'}).click();await armed(page);
-   await page.getByRole('button',{name:'Skip rhythm'}).click();
-   await page.locator('.piano-learn-lab__task').filter({hasNotText:'Tap the rhythm'}).waitFor({timeout:15000});
+   expect(await result.getByRole('button',{name:'Skip rhythm'}).count()).toBe(1);
+   await result.getByRole('button',{name:'Skip rhythm'}).click();
+   await page.locator('.piano-learn-lab__heading strong').filter({hasNotText:'Tap the rhythm'}).waitFor({timeout:15000});
    expect((await logged(page,'piano.learn.rhythm.skip')).length).toBe(1);
    expect(errors).toEqual([]);
   }finally{await page.close();}

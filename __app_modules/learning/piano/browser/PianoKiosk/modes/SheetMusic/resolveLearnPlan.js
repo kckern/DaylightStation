@@ -38,9 +38,23 @@ function decorateSegment(segment, number, measures, ladder) {
     number,
     label: `Segment ${number}`,
     name: typeof segment.name === 'string' && segment.name.trim() ? segment.name.trim() : null,
-    barLabel: `Bars ${printed(measures, segment.inMeasure)}–${printed(measures, segment.outMeasure)}`,
+    barLabel: barRangeLabel(printed(measures, segment.inMeasure), printed(measures, segment.outMeasure)),
     ladder: applicableLearnLadder(segment.ladder ?? ladder, playableParts),
   };
+}
+
+/**
+ * The bars a passage covers, as a child reads them. A score numbers its pickup bar 0; nobody says "bar 0",
+ * so a range that starts there is "Pickup + bars 1–4" (2026-11-24).
+ */
+export function barRangeLabel(first, last) {
+  const a = String(first ?? '');
+  const b = String(last ?? '');
+  if (a === '0') {
+    if (b === '0') return 'Pickup';
+    return b === '1' ? 'Pickup + bar 1' : `Pickup + bars 1–${b}`;
+  }
+  return a === b ? `Bar ${a}` : `Bars ${a}–${b}`;
 }
 
 function generatedSegments(score, passages, ladder) {

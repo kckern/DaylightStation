@@ -327,8 +327,8 @@ describe('ScorePlayer — approved Learn file (sidecar)', () => {
   const id = 'files:sidecar-applied.musicxml';
   renderWith(id, { segments: SEGMENTS, contentSha256: sha256(XML).toString() });
   pickMode('Learn');
-  expect(rail().getByRole('button', { name: /^Learn A, (opening|bars 1–1)$/ })).toBeInTheDocument();
-  expect(rail().getByRole('button', { name: 'B, bars 2–2, Not started' })).toBeInTheDocument();
+  expect(rail().getByRole('button', { name: /^Learn A, (opening|bar 1|bars 1–1)$/ })).toBeInTheDocument();
+  expect(rail().getByRole('button', { name: 'B, bar 2, Not started' })).toBeInTheDocument();
   expect(rail().queryByRole('button', { name: /bars 1–2/ })).not.toBeInTheDocument();
   expect(events('score.learn.sidecar-applied', id)).toEqual([expect.objectContaining({ data: { scoreId: id, segments: 2 } })]);
   expect(events('score.learn.sidecar-stale', id)).toHaveLength(0);
@@ -340,7 +340,7 @@ describe('ScorePlayer — approved Learn file (sidecar)', () => {
   renderWith(id, { segments: SEGMENTS, contentSha256: 'not-this-xml' });
   pickMode('Learn');
   expect(rail().getByRole('button', { name: 'Learn A, bars 1–2' })).toBeInTheDocument();
-  expect(rail().queryByRole('button', { name: 'B, bars 2–2, Not started' })).not.toBeInTheDocument();
+  expect(rail().queryByRole('button', { name: 'B, bar 2, Not started' })).not.toBeInTheDocument();
   expect(events('score.learn.sidecar-stale', id)).toHaveLength(1);
   expect(events('score.learn.sidecar-applied', id)).toHaveLength(0);
  });
