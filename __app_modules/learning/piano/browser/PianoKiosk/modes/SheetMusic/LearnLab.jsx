@@ -267,9 +267,24 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
     if (launchSource !== 'recommended') onFinished?.(result);
   };
 
-  // Keyboard only (the office screen): Listen is a strip key, there only when this piano can sound notes,
-  // and the strip lets go of its keys while a take is under way, when every key is music.
+  // Keyboard only (the office screen): Listen is a menu choice, there only when this piano can sound notes.
   const keyOnly = useKeyboardOnly();
+  // The office menu (the board's lowest + highest keys, held) pauses a take under way: no credit, no
+  // failure, the run's own Pause. Closing it resumes the same take; between takes it pauses nothing.
+  const menuOpen = Boolean(keyOnly?.menuOpen);
+  const menuPausedRef = useRef(false);
+  useEffect(() => {
+    if (menuOpen && takeUnderWay && !paused) {
+      menuPausedRef.current = true;
+      logger.info('piano.learn.control', { ...controlContext, action: 'pause', by: 'office-menu' });
+      setPaused(true);
+    } else if (!menuOpen && menuPausedRef.current) {
+      menuPausedRef.current = false;
+      logger.info('piano.learn.control', { ...controlContext, action: 'resume', by: 'office-menu' });
+      setPaused(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- acts on the menu opening and closing only
+  }, [menuOpen]);
   const listenKey = keyOnly?.canListen && onListen && !takeUnderWay && runPhase !== 'paused'
     ? (listening ? { label: 'Stop', onSelect: () => stopListening('stop') } : ['ready', 'done'].includes(runPhase) ? { label: 'Listen', onSelect: listen } : null)
     : null;

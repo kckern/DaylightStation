@@ -1,6 +1,7 @@
 import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import LearnLab, { learnPracticeRequirement } from './LearnLab.jsx';
+import KeyboardOnlyContext from './office/KeyboardOnlyContext.js';
 import { createClickScheduler } from './clickScheduler.js';
 import { useMetronomeClick } from './useMetronomeClick.js';
 
@@ -165,6 +166,31 @@ describe('LearnLab', () => {
     expect(log.info).toHaveBeenCalledWith('piano.learn.control', expect.objectContaining({ action: 'restart' }));
     expect(log.info).toHaveBeenCalledWith('piano.learn.control', expect.objectContaining({ action: 'change-practice' }));
     expect(JSON.stringify(log.info.mock.calls)).not.toMatch(/\"midi\"|rawMidi/i);
+  });
+
+  it('the hold mid-take pauses the take; Resume continues it without a new take', () => {
+    // The office menu (KeyboardOnlyContext `menuOpen`) pauses a take under way: no credit, no failure.
+    const office = (menuOpen) => ({ input: 'keyboard-only', canListen: false, menuOpen, publishStrip: () => {} });
+    const onOutcome = vi.fn();
+    const { rerender } = render(<KeyboardOnlyContext.Provider value={office(false)}><LearnLab {...base} onOutcome={onOutcome} /></KeyboardOnlyContext.Provider>);
+    phase('running');
+    const take = exercise.props.controlKey;
+    rerender(<KeyboardOnlyContext.Provider value={office(true)}><LearnLab {...base} onOutcome={onOutcome} /></KeyboardOnlyContext.Provider>);
+    expect(exercise.props.paused).toBe(true);
+    phase('paused');
+    rerender(<KeyboardOnlyContext.Provider value={office(false)}><LearnLab {...base} onOutcome={onOutcome} /></KeyboardOnlyContext.Provider>);
+    expect(exercise.props.paused).toBe(false);
+    expect(exercise.props.controlKey).toBe(take); // the same take continues
+    expect(onOutcome).not.toHaveBeenCalled();
+    expect(log.info).toHaveBeenCalledWith('piano.learn.control', expect.objectContaining({ action: 'pause', by: 'office-menu' }));
+    expect(log.info).toHaveBeenCalledWith('piano.learn.control', expect.objectContaining({ action: 'resume', by: 'office-menu' }));
+  });
+
+  it('the office menu opened between takes pauses nothing', () => {
+    const office = (menuOpen) => ({ input: 'keyboard-only', canListen: false, menuOpen, publishStrip: () => {} });
+    const { rerender } = render(<KeyboardOnlyContext.Provider value={office(false)}><LearnLab {...base} /></KeyboardOnlyContext.Provider>);
+    rerender(<KeyboardOnlyContext.Provider value={office(true)}><LearnLab {...base} /></KeyboardOnlyContext.Provider>);
+    expect(exercise.props.paused).toBe(false);
   });
 
   it('speed and volume are absent during a take and Listen, and their slot keeps its place', () => {

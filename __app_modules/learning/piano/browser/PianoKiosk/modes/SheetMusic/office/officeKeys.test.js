@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { listPage, browseSlots, PIECE_NOTES, SHELF_NOTES, STRIP_KEYS, STRIP_NOTES, stripSlots, noteName } from './officeKeys.js';
+import { listPage, browseSlots, PIECE_NOTES, SHELF_NOTES, noteName } from './officeKeys.js';
 import { SECONDARY_NOTES } from '../../../../game-platform/input/useNoteSelection.js';
 
 const pieces = (n) => Array.from({ length: n }, (_, i) => ({ scoreId: `files:p${i}.mxl` }));
@@ -42,7 +42,7 @@ describe('listPage (six pieces a page)', () => {
 });
 
 describe('browseSlots (the keys under a list)', () => {
-  it('keeps each browse action on its own key in the octave below, dim when it does nothing', () => {
+  it('keeps each browse action on its own key in the octave below, enabled only when it does something', () => {
     const row = browseSlots('shelf', { hasPrevious: false, hasNext: true });
     expect(row.map((slot) => [slot.id, slot.noteName, slot.label, slot.enabled])).toEqual([
       ['switch', 'C3', 'All music', true], ['previous', 'D3', 'Previous', false], ['next', 'E3', 'Next', true],
@@ -57,31 +57,5 @@ describe('browseSlots (the keys under a list)', () => {
     expect(browseSlots('shelves', {}, { hasOwn: true })[0]).toMatchObject({ id: 'switch', enabled: true });
     // From a shelf, C3 still goes back to the shelves.
     expect(browseSlots('shelf', {}, { hasOwn: false })[0]).toMatchObject({ id: 'switch', label: 'All music', enabled: true });
-  });
-});
-
-describe('stripSlots (the drill key strip)', () => {
-  it('gives every action its own fixed key in the octave under the page keys', () => {
-    expect(STRIP_KEYS.map((key) => [key.id, noteName(key.note)])).toEqual([
-      ['pieces', 'C2'], ['previous', 'D2'], ['next', 'E2'], ['retry', 'F2'], ['later', 'G2'], ['listen', 'A2'],
-    ]);
-    expect(Math.max(...STRIP_NOTES)).toBeLessThan(Math.min(...SECONDARY_NOTES));
-  });
-
-  it('draws an action with nothing to do now on its own key, disabled', () => {
-    const slots = stripSlots({ pieces: { onSelect: () => {} } });
-    expect(slots.map((slot) => [slot.id, slot.enabled])).toEqual([
-      ['pieces', true], ['previous', false], ['next', false], ['retry', false], ['later', false],
-    ]);
-  });
-
-  it('hides Listen without a way to sound notes, and shows it with one', () => {
-    expect(stripSlots({ listen: { onSelect: () => {} } }).some((slot) => slot.id === 'listen')).toBe(false);
-    const listen = stripSlots({ listen: { onSelect: () => {}, label: 'Stop' } }, { canListen: true }).find((slot) => slot.id === 'listen');
-    expect(listen).toMatchObject({ noteName: 'A2', label: 'Stop', enabled: true });
-  });
-
-  it('takes the label the action gives (Skip rhythm on the later key)', () => {
-    expect(stripSlots({ later: { label: 'Skip rhythm', onSelect: () => {} } }).find((slot) => slot.id === 'later').label).toBe('Skip rhythm');
   });
 });

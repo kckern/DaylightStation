@@ -93,6 +93,9 @@ const GAME_REGISTRY = {
   'sheet-music': {
     label: 'Sheet Music', icon: 'sheet-music', status: 'released', family: 'practice',
     practice: true,
+    // The board's lowest + highest keys open Sheet Music's own menu (Leave is in it), so the
+    // launcher neither opens over it nor quits it on that hold. Every other game keeps the old gesture.
+    ownsEdgeHold: true,
     component: () => importWithReload(() => import('./PianoKiosk/modes/SheetMusic/office/OfficeSheetMusic.jsx')),
     hook: () => importWithReload(() => import('./PianoKiosk/modes/SheetMusic/office/OfficeSheetMusic.jsx')),
     layout: 'replace',

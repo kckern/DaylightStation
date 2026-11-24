@@ -17,7 +17,7 @@ import './NoteLauncher.scss';
  * inside the overlay would disappear at exactly the moment the player needs to
  * see that holding is doing something.
  */
-export default function HoldRing({ holdMs = 2000 }) {
+export default function HoldRing({ holdMs = 2000, label = 'HOLD TO QUIT' }) {
   return (
     <div className="nl-hold" aria-hidden="true">
       <svg className="nl-hold__svg" viewBox="0 0 100 100">
@@ -37,7 +37,7 @@ export default function HoldRing({ holdMs = 2000 }) {
           style={{ animationDuration: `${holdMs}ms` }}
         />
       </svg>
-      <span className="nl-hold__label">HOLD TO QUIT</span>
+      <span className="nl-hold__label">{label}</span>
     </div>
   );
 }

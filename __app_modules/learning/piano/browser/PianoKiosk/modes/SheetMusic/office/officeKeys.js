@@ -1,11 +1,11 @@
 // officeKeys.js — which key does what in Sheet Music on the office screen.
 //
 // The office screen has no touch input: every choice is a key, drawn as a key
-// face that wears its note. Three fixed rows, chosen so they never collide:
+// face that wears its note. In the picker (no music playing) two fixed rows:
 //   - the PIECES, on the white keys from middle C up (the launcher's own row);
-//   - the PAGES of a long list, on the octave below (SECONDARY_NOTES);
-//   - the drill's KEY STRIP, on the octave below that (C2–A2), far under where a
-//     passage starts, because before a take "any key" arms it.
+//   - the PAGES of a long list, on the octave below (SECONDARY_NOTES).
+// In a piece no key is ever a command: navigation is the menu (officeMenu.js),
+// opened by holding the board's lowest and highest keys.
 // Spec: ops:docs/superpowers/specs/2026-11-23-piano-office-sheet-music-design.md
 
 import { SELECTION_NOTES, SECONDARY_NOTES, bindNoteSlots } from '../../../../game-platform/input/useNoteSelection.js';
@@ -72,32 +72,4 @@ export function browseSlots(level, page = {}, { hasOwn = true } = {}) {
     id: key.id, note: key.note, noteName: noteName(key.note), label: key.id === 'switch' ? switchLabel : key.label,
     enabled: enabled[key.id], item: { browse: key.id },
   }));
-}
-
-/**
- * The drill's key strip. Each action owns one key for good, so a face never
- * moves under a hand: an action that does not apply right now is drawn dim on
- * its key rather than another action sliding into its place. Listen is the
- * exception — without a way to sound notes on this piano it is not drawn.
- */
-export const STRIP_KEYS = Object.freeze([
-  { id: 'pieces', note: 36, label: 'Pieces' },
-  { id: 'previous', note: 38, label: 'Previous' },
-  { id: 'next', note: 40, label: 'Next' },
-  { id: 'retry', note: 41, label: 'Try again' },
-  { id: 'later', note: 43, label: 'Come back later' },
-  { id: 'listen', note: 45, label: 'Listen' },
-]);
-export const STRIP_NOTES = Object.freeze(STRIP_KEYS.map((key) => key.note));
-
-/**
- * The strip as drawn: one face per key, with what each does now. `actions` maps
- * an id to `{ onSelect, label? }` (absent or without onSelect = not now).
- */
-export function stripSlots(actions = {}, { canListen = false } = {}) {
-  return STRIP_KEYS.filter((key) => key.id !== 'listen' || canListen).map((key) => {
-    const action = actions[key.id] ?? null;
-    return { id: key.id, note: key.note, noteName: noteName(key.note), label: action?.label ?? key.label,
-      enabled: typeof action?.onSelect === 'function', item: key };
-  });
 }

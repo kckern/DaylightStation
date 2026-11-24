@@ -20,7 +20,9 @@ mkdirSync(SHOTS, { recursive: true });
 
 const LOW = OFFICE_KEYBOARD.startNote;
 const HIGH = OFFICE_KEYBOARD.endNote;
-const KEY = { C2: 36, D2: 38, E2: 40, F2: 41, C3: 48, D3: 50, E3: 52, C4: 60, D4: 62, D5: 74 };
+const KEY = { C2: 36, D2: 38, E2: 40, F2: 41, C3: 48, D3: 50, E3: 52, C4: 60, D4: 62, E4: 64, F4: 65, G4: 67, A4: 69, B4: 71, D5: 74 };
+/** The menu's keys (officeMenu MENU_KEYS): one choice each, fixed. */
+const MENU = { resume: KEY.C4, pieces: KEY.D4, previous: KEY.E4, next: KEY.F4, retry: KEY.G4, later: KEY.A4, leave: KEY.B4 };
 const SCALE = [60, 62, 64, 65, 67, 69, 71, 72]; // the fixture score: C4 up to C5
 
 const midi = (page, fn, ...args) => page.evaluate(([f, a]) => window.__officeMidi[f](...a), [fn, args]);
@@ -35,6 +37,11 @@ async function chord(page, notes, holdMs) {
   await page.waitForTimeout(holdMs);
   for (const note of notes) await midi(page, 'release', note);
   await page.waitForTimeout(200);
+}
+/** Hold the board's lowest and highest keys: in Sheet Music, the menu. */
+async function openMenu(page) {
+  await chord(page, [LOW, HIGH], 2300);
+  await expect(page.locator('.office-menu')).toBeVisible();
 }
 async function noClipping(page, label, scope = '.tetris-fullscreen', ignore = []) {
   await page.screenshot({ path: path.join(SHOTS, `${label}.png`) });
@@ -97,7 +104,9 @@ test('the whole Sheet Music flow, on keys only', async ({ page }) => {
   // Open a catalog piece, come back with the Pieces key to the same shelf and page.
   await tap(page, KEY.D4);
   await expect(page.locator('.piano-learn-lab')).toBeVisible({ timeout: 20000 });
-  await tap(page, KEY.C2);
+  await openMenu(page);
+  await tap(page, MENU.pieces);
+  await expect(page.locator('.office-menu')).toHaveCount(0);
   await expect(page.locator('.office-piece-picker__head h2')).toHaveText('Beginner');
   await expect(page.locator('.office-piece-picker__page-count')).toHaveText('3 of 3');
   // Back to the shelves, then to the player's own pieces.
@@ -105,33 +114,54 @@ test('the whole Sheet Music flow, on keys only', async ({ page }) => {
   await tap(page, KEY.C3);
   await expect(page.locator('.office-piece-key').first()).toHaveAttribute('data-score', 'files:docs/sheet-music/four-bars.musicxml');
 
-  // A piece opens straight on the coach's next step, with the key strip under it.
+  // A piece opens straight on the coach's next step. No key under it is a command: every key is music.
   await tap(page, KEY.C4);
   await expect(page.locator('.piano-learn-lab')).toBeVisible({ timeout: 20000 });
   await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'ready', { timeout: 20000 });
-  const strip = page.locator('.office-key-strip');
-  await expect(strip.locator('[data-key="pieces"]')).toHaveAttribute('data-enabled', 'true');
-  await expect(strip.locator('[data-key="retry"]')).not.toHaveAttribute('data-enabled', 'true');
-  // No note output on this piano: Listen is not drawn, and no touch control is.
-  await expect(strip.locator('[data-key="listen"]')).toHaveCount(0);
+  await expect(page.locator('.office-key-strip')).toHaveCount(0);
+  // No touch control is drawn.
   await expect(page.locator('.piano-learn-lab__back, .piano-learn-lab__run-controls, .piano-learn-speed, .piano-learn-click')).toHaveCount(0);
   await expect(page.locator('.piano-passage-path__all')).toBeHidden();
   await noClipping(page, '04-drill');
+  // The menu over a drill with no take: Close, Pieces and Leave; Try again only after a result.
+  await openMenu(page);
+  const choice = (id) => page.locator(`.office-menu__key[data-choice="${id}"]`);
+  await expect(choice('resume')).toContainText('Close');
+  await expect(choice('pieces')).toHaveAttribute('data-enabled', 'true');
+  await expect(choice('retry')).not.toHaveAttribute('data-enabled', 'true');
+  await expect(choice('leave')).toHaveAttribute('data-enabled', 'true');
+  await noClipping(page, '04b-menu-drill', '.office-menu'); // the menu covers what is under it by design
+  await tap(page, MENU.resume);
+  await expect(page.locator('.office-menu')).toHaveCount(0);
+  // The menu's keys did not reach the music: the run is still waiting for its first note.
+  await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'ready');
 
-  // A take with wrong notes in it: the strip lets go of its keys while it runs.
+  // A take with wrong notes in it, paused half way by the menu: no credit, no failure, and Resume carries on.
   await tap(page, SCALE[0], 250);
   await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'running');
-  await expect(strip).not.toHaveAttribute('data-active', 'true');
-  for (const note of [61, 63, 61, 63, ...SCALE.slice(1)]) await tap(page, note, 220);
+  for (const note of [61, 63, 61, 63]) await tap(page, note, 220);
+  await openMenu(page);
+  await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'paused');
+  await expect(choice('resume')).toContainText('Resume');
+  await expect(page.locator('.office-menu__head')).toContainText('Your take is paused');
+  await noClipping(page, '04c-menu-take-paused', '.office-menu'); // the menu covers what is under it by design
+  expect(writes.filter((write) => write.kind === 'coach' && write.event?.type === 'outcome')).toHaveLength(0);
+  await tap(page, MENU.resume);
+  await expect(page.locator('.piano-exercise-run')).not.toHaveAttribute('data-phase', 'paused', { timeout: 5000 });
+  await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'running', { timeout: 5000 });
+  for (const note of SCALE.slice(1)) await tap(page, note, 220);
   await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'done', { timeout: 10000 });
-  await expect(strip).toHaveAttribute('data-active', 'true');
-  await expect(strip.locator('[data-key="retry"]')).toHaveAttribute('data-enabled', 'true');
-  expect(writes.filter((write) => write.kind === 'coach' && write.event?.type === 'outcome' && write.user === 'learner4')).toHaveLength(1);
+  await expect.poll(() => writes.filter((write) => write.kind === 'coach' && write.event?.type === 'outcome' && write.user === 'learner4').length).toBe(1);
   await expect(page.locator('[data-result-armed="true"]')).toBeVisible({ timeout: 10000 });
   // The docked result card covers the step rail by design (Exercises.scss `.is-docked`).
   await noClipping(page, '05-result', undefined, ['.piano-exercise-run.is-done .piano-exercise-run__rail']);
 
-  // Continue: Try again on the strip is a new take, not a note in one. The score is shown only at its
+  // The board's two edge keys are not music: holding them over the result does not continue it.
+  await openMenu(page);
+  await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'done');
+  await expect(choice('retry')).toHaveAttribute('data-enabled', 'true');
+  await noClipping(page, '05b-menu-result', '.office-menu'); // the menu covers what is under it by design
+  // Continue: Try again in the menu is a new take, not a note in one. The score is shown only at its
   // final size: every frame of the next 1.5 s that shows the engraving shows it at the height it had.
   // The size the music is drawn at: the engraving's scale on screen, screen px per engraved unit (its
   // SVG box fills the stage whatever the music inside it is scaled to), times the staff's 40-unit height.
@@ -151,7 +181,7 @@ test('the whole Sheet Music flow, on keys only', async ({ page }) => {
     };
     requestAnimationFrame(sample);
   });
-  await tap(page, KEY.F2);
+  await tap(page, MENU.retry);
   await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'ready');
   await page.waitForTimeout(1600);
   const heights = await page.evaluate(() => window.__scoreHeights);
@@ -159,7 +189,6 @@ test('the whole Sheet Music flow, on keys only', async ({ page }) => {
   expect(new Set(heights).size, `score heights seen: ${[...new Set(heights)].join(', ')}`).toBe(1);
   expect(heights[0]).toBe(heightBefore);
   await expect(page.locator('.piano-score-passage')).toHaveAttribute('data-engraving-ready', 'true');
-  await expect(strip.locator('[data-key="retry"]')).not.toHaveAttribute('data-enabled', 'true');
 
   // A second take, and this time any other key continues, as on the tablet.
   for (const note of [SCALE[0], 61, 63, 61, 63, ...SCALE.slice(1)]) await tap(page, note, 220);
@@ -168,15 +197,44 @@ test('the whole Sheet Music flow, on keys only', async ({ page }) => {
   await tap(page, KEY.C4);
   await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'ready');
 
-  // Back: the Pieces key returns to the list.
-  await tap(page, KEY.C2);
+  // Back: Pieces in the menu returns to the list.
+  await openMenu(page);
+  await tap(page, MENU.pieces);
   await expect(page.locator('.office-piece-picker')).toBeVisible();
   await expect(page.locator('.piano-learn-lab')).toHaveCount(0);
 
-  // Exit: lowest + highest held for two seconds leaves to the launcher's free play.
-  await chord(page, [LOW, HIGH], 2400);
+  // In the picker the same hold opens the same menu: Close and Leave only. Closed, the piece keys still work.
+  await openMenu(page);
+  await expect(page.locator('.office-menu__key[data-enabled]')).toHaveCount(2);
+  await expect(choice('resume')).toContainText('Close');
+  await noClipping(page, '06b-menu-picker', '.office-menu'); // the menu covers what is under it by design
+  await tap(page, MENU.resume);
+  await expect(page.locator('.office-menu')).toHaveCount(0);
+  await expect(page.locator('.office-sheet-music')).toBeVisible(); // the hold did not leave Sheet Music
+  await tap(page, KEY.C3);
+  await expect(page.locator('.office-piece-picker__head h2')).toHaveText('All music');
+
+  // Leave, in the menu, goes back to the launcher's free play.
+  await openMenu(page);
+  await tap(page, MENU.leave);
   await expect(page.locator('.office-sheet-music')).toHaveCount(0);
   await expect(page.locator('.tetris-fullscreen')).toHaveCount(0);
+});
+
+test('with the menu shut the low octave is music: F2 starts a take', async ({ page }) => {
+  await installOfficeRoutes(page, { studyDate: 'today', pieces: deskPieces(2) });
+  await page.goto('/', { waitUntil: 'networkidle' });
+  await chord(page, [LOW, HIGH], 150);
+  await tap(page, KEY.D5);
+  await expect(page.locator('.office-piece-key')).toHaveCount(2);
+  await tap(page, KEY.C4);
+  await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'ready', { timeout: 20000 });
+  // The old strip's keys (C2–G2) are notes now: in a take, F2 is graded like any other wrong note.
+  await tap(page, SCALE[0], 250);
+  await expect(page.locator('.piano-exercise-run')).toHaveAttribute('data-phase', 'running');
+  await tap(page, KEY.F2, 250);
+  await expect(page.locator('.piano-exercise-run__tally')).toContainText('Wrong 1');
+  await expect(page.locator('.piano-learn-lab')).toBeVisible();
 });
 
 test('the picker holds a short list, an empty one and a slow one by layout', async ({ page }) => {

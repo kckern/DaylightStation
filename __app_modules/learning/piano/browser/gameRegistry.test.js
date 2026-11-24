@@ -13,3 +13,10 @@ describe('piano game registry ordering', () => {
     });
   });
 });
+
+describe('the edge-key hold', () => {
+  it('Sheet Music owns it (its menu); no game does', () => {
+    expect(getGameEntry('sheet-music').ownsEdgeHold).toBe(true);
+    expect(getGameIds().filter((id) => getGameEntry(id).ownsEdgeHold)).toEqual(['sheet-music']);
+  });
+});

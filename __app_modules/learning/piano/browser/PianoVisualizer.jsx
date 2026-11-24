@@ -82,7 +82,8 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   // could never be played. Derived from the configured range, memoized because
   // the hook takes it as an effect dependency.
   const launcherOptions = useMemo(
-    () => ({ comboNotes: comboNotesForKeyboard(deviceConfig?.keyboard) }),
+    // A game that owns the hold (Sheet Music's menu) gets it to itself.
+    () => ({ comboNotes: comboNotesForKeyboard(deviceConfig?.keyboard), gameOwnsCombo: (gameId) => Boolean(getGameEntry(gameId)?.ownsEdgeHold) }),
     [deviceConfig?.keyboard],
   );
 

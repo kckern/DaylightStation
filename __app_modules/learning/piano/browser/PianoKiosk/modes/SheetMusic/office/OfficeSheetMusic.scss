@@ -1,6 +1,7 @@
 // Sheet Music on the office screen (1280×720, keyboard only).
 // Fixed heights top to bottom, so nothing is ever pushed off the canvas: the
-// launcher's chrome strip above, the body, and — on a piece — the key strip.
+// launcher's chrome strip above and the body. Every navigation is the menu (an
+// opaque modal over the body), so the drill has no row of keys under it.
 // No hover, focus rings or pointer affordances: nothing here is touched.
 
 .office-sheet-music {
@@ -8,7 +9,6 @@
   --osm-ivory: var(--pg-ivory, #f1f1f4);
   --osm-ebony: var(--pg-shelf, #1f1f26);
   --osm-brass: var(--pg-brass, #5fe39a);
-  --osm-strip-h: 6.75rem;
 
   position: absolute;
   inset: 0;
@@ -29,7 +29,7 @@
     overflow: hidden;
   }
 
-  // Learn's own stage: the tablet's drill, given exactly the room above the strip.
+  // Learn's own stage: the tablet's drill, given the whole body.
   &__learn {
     position: absolute;
     inset: 0;
@@ -53,13 +53,6 @@
     text-wrap: balance;
   }
 
-  &__strip {
-    flex: 0 0 var(--osm-strip-h);
-    height: var(--osm-strip-h);
-    border-top: 1px solid var(--pg-hairline, #34343f);
-    background: var(--osm-ebony);
-  }
-
   // The drill's touch-only furniture, where a host cannot hide it by prop.
   .piano-passage-path { pointer-events: none; }
   .piano-passage-path__all,
@@ -68,8 +61,8 @@
   // under the player's hands. Its height goes to the score.
   .piano-exercise-run__keys { display: none; }
   .piano-exercise-run[data-surface='learn-lab'] { --run-keys-row: 0px; }
-  // The result card's touch icons (continue, leave): nothing can press them. The
-  // strip names the next action on its key instead.
+  // The result card's touch icons (continue, leave): nothing can press them. Any
+  // key continues; Try again and the rest are in the menu.
   .piano-exercise-run__onward,
   .piano-exercise-run__leave { display: none; }
   // Right / Wrong, read from the bench.
@@ -98,65 +91,65 @@
   span { font-size: 1.2rem; color: var(--pg-brass, #5fe39a); }
 }
 
-// ── The key strip ────────────────────────────────────────────────────────────
-.office-key-strip {
-  --key-card-h: 5.4rem;
-  list-style: none;
-  margin: 0;
-  height: 100%;
-  padding: 0.55rem 1rem 0.65rem;
+// ── The menu (the board's lowest + highest keys, held) ──────────────────────
+// Opaque over everything Sheet Music draws: while it is up the music is paused
+// and every key is navigation. One row of key faces from C4, each on its own
+// key; a choice with nothing to do now is a plain empty key in its place.
+.office-menu {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
   display: grid;
-  grid-template-columns: repeat(var(--strip-count, 6), minmax(0, 1fr));
-  gap: 0.45rem;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 1.25rem;
+  padding: 1.5rem 1.5rem 1.25rem;
+  background: var(--osm-case, #16161b);
+  color: #ece6d8;
+  font-family: 'Roboto Condensed', sans-serif;
+
+  &__head {
+    display: flex;
+    align-items: baseline;
+    gap: 1.25rem;
+    h2 { margin: 0; font-size: 2rem; line-height: 1.1; }
+    p { margin: 0; font-size: 1.3rem; color: #a9a59a; }
+  }
+
+  &__keys {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    align-self: center;
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.75rem;
+    height: 17rem;
+  }
 
   &__key {
     min-width: 0;
     display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.35rem 0.7rem 0.35rem 0.4rem;
-    border-radius: 0 0 9px 9px;
-    // A dim key: drawn in solid greys so it never reads as a half-faded button.
-    background: #3a3a43;
-    color: #9d9daa;
-
-    &[data-enabled] {
-      background: linear-gradient(180deg, #ffffff 0%, var(--pg-ivory, #f1f1f4) 70%, #dcdce2 100%);
-      color: var(--pg-shelf, #1f1f26);
-    }
-  }
-
-  &__card { flex: 0 0 auto; display: flex; align-items: center; }
-
-  // A dim key keeps a whole, readable card: only its paper goes grey.
-  &__key:not([data-enabled]) .chess-staff-label { filter: grayscale(1) brightness(0.8); }
-
-  &__text {
-    min-width: 0;
-    display: flex;
     flex-direction: column;
-    gap: 0.1rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    padding: 1rem 0.5rem;
+    border: 1px solid #34343f;
+    border-radius: 12px;
+    background: #24242c;
+    text-align: center;
+
+    .office-key-card { --key-card-h: 7rem; }
+    // Nothing to do now: the key keeps its place, plain and empty.
+    &:not([data-enabled]) { background: transparent; border-style: solid; }
   }
 
-  &__note {
-    font-size: 1.2rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    font-variant-numeric: tabular-nums;
-    opacity: 0.75;
-  }
+  &__note { font-size: 1.5rem; font-weight: 800; letter-spacing: 0.06em; font-variant-numeric: tabular-nums; }
+  &__label { font-size: 1.45rem; font-weight: 700; line-height: 1.15; text-wrap: balance; }
 
-  &__label {
-    font-size: 1.35rem;
-    font-weight: 700;
-    line-height: 1.1;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    overflow-wrap: break-word;
-  }
+  &__foot { margin: 0; font-size: 1.1rem; color: #a9a59a; }
 }
 
-// ── The piece picker ─────────────────────────────────────────────────────────
 // ── The picker ───────────────────────────────────────────────────────────────
 // A setlist of key rows on the dark case: up to three stacked in one column,
 // more in two (filled down the left column first, as the keys run under the
