@@ -28,6 +28,12 @@ export function taskText(title) {
   return String(title || '')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/https?:\/\/\S+/g, '')
+    // Tasks made from an email ("Your hold is ready - me@x.com - Gmail")
+    // carry the mailbox and the mail app in the title; neither is the task.
+    .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, '')
+    .replace(/(\s+[-–|]\s*)+(Gmail|Outlook|Mail)\s*$/i, '')
+    .replace(/(\s+[-–|])+\s*$/g, '')
+    .replace(/\s+[-–|]\s+(?=[-–|])/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }

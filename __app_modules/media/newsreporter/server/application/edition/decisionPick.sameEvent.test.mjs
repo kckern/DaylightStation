@@ -82,5 +82,8 @@ describe('taskText', () => {
     expect(taskText('[My Discoveries](https://www.ancestry.com/inst/discoveries/?o_xid=59215&x=1)')).toBe('My Discoveries');
     expect(taskText('Read https://example.com/a  later')).toBe('Read later');
     expect(taskText('Paint Garage Sides (get newspapers)')).toBe('Paint Garage Sides (get newspapers)');
+    expect(taskText('Your Hold Is Ready at King County Library System - someone@example.com - Gmail'))
+      .toBe('Your Hold Is Ready at King County Library System');
+    expect(taskText('Call Bob - Smith & Co')).toBe('Call Bob - Smith & Co');
   });
 });
