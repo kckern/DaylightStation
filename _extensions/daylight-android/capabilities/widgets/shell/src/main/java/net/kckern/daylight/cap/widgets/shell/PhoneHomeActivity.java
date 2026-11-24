@@ -55,8 +55,9 @@ public class PhoneHomeActivity extends Activity {
     private final List<View> setupRows = new ArrayList<>();
     private final Handler timer = new Handler(android.os.Looper.getMainLooper());
     private final Runnable placementTimeout = this::drawPlacement;
+    private String addedSeen = "";
     private final SharedPreferences.OnSharedPreferenceChangeListener placementChanged =
-            (prefs, key) -> drawPlacement();
+            (prefs, key) -> onPlacementChanged();
     private final ExecutorService artworkWorker = Executors.newFixedThreadPool(3);
     private LinearLayout playlistScreen;
     private LinearLayout playlistGrid;
@@ -73,6 +74,7 @@ public class PhoneHomeActivity extends Activity {
         if (launcherPicker) setResult(RESULT_CANCELED);
         placements = new PlacementStore(this);
         swipe = makeSwipe();
+        addedSeen = placements.addedSignature();
         getWindow().setStatusBarColor(PAPER);
         getWindow().setNavigationBarColor(PAPER);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
@@ -306,38 +308,72 @@ public class PhoneHomeActivity extends Activity {
         return scroll;
     }
 
+    /** Rows for items, with the ones already on the home screen grouped first when there are any. */
+    private void addGrouped(List<JSONObject> items, java.util.function.Function<JSONObject, Runnable> addAction) {
+        List<JSONObject> added = new ArrayList<>(), rest = new ArrayList<>();
+        for (JSONObject item : items) (placements.isAdded(item.optString("id")) ? added : rest).add(item);
+        if (!added.isEmpty()) {
+            section("On your home screen");
+            for (JSONObject item : added) {
+                row(item.optString("label"), "On your home screen", item.optString("icon"), "✓",
+                        () -> showAddedSheet(item.optString("id"), item.optString("label")));
+            }
+            if (!rest.isEmpty()) section("Available");
+        }
+        for (JSONObject item : rest) {
+            row(item.optString("label"), "Add to home screen", item.optString("icon"), "+", addAction.apply(item));
+        }
+    }
+
+    /** What to do with something already on the home screen. */
+    private void showAddedSheet(String id, String label) {
+        new Sheet(this).heading(label, "On your home screen")
+                .note("To take it off, touch and hold its icon on Home and choose Remove.")
+                .button("Go to Home", Sheet.Style.PRIMARY, () -> startActivity(
+                        new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)))
+                .button("Already removed? Move back to Available", Sheet.Style.TONAL, () -> {
+                    placements.clearAdded(id);
+                    onPlacementChanged();
+                }).show();
+    }
+
     private void addServices() {
-        for (int i = 0; i < pages.length(); i++) {
-            JSONObject page = pages.optJSONObject(i);
-            if (page == null) continue;
-            if (launcherPicker) {
+        if (launcherPicker) {
+            for (int i = 0; i < pages.length(); i++) {
+                JSONObject page = pages.optJSONObject(i);
+                if (page == null) continue;
                 // This result goes to the caller. Only stable, unkeyed page bookmarks may leave the app.
                 String id = page.optString("id");
                 if (java.util.Arrays.asList("health", "home", "lifelog", "media").contains(id)) {
                     row(page.optString("label"), "Choose shortcut", page.optString("icon"), "›",
                             () -> returnLauncherShortcut(page));
                 }
-            } else {
-                row(page.optString("label"), "Add to home screen", page.optString("icon"), "+",
-                        () -> pinPage(page));
             }
+            return;
         }
+        List<JSONObject> items = new ArrayList<>();
+        for (int i = 0; i < pages.length(); i++) {
+            JSONObject page = pages.optJSONObject(i);
+            if (page != null) items.add(page);
+        }
+        addGrouped(items, page -> () -> pinPage(page));
     }
 
     private void addCapture() {
+        List<JSONObject> items = new ArrayList<>();
         for (int i = 0; i < configuredActions.length(); i++) {
             JSONObject action = configuredActions.optJSONObject(i);
             if (action == null || !("INPUT".equals(action.optString("kind")) || "meal-barcode".equals(action.optString("id")))) continue;
-            String id = action.optString("id");
             if (launcherPicker) {
-                if (!LauncherCaptureShortcut.supports(id)) continue;
+                if (!LauncherCaptureShortcut.supports(action.optString("id"))) continue;
                 row(action.optString("label"), "Choose shortcut", action.optString("icon"), "›",
                         () -> returnCaptureShortcut(action));
             } else {
-                row(action.optString("label"), "Add to home screen", action.optString("icon"), "+",
-                        () -> confirmShortcut(id, action.optString("label")));
+                items.add(action);
             }
         }
+        if (!launcherPicker) addGrouped(items, action -> () -> confirmShortcut(action.optString("id"), action.optString("label")));
     }
 
     private void addPlay() {
@@ -718,6 +754,25 @@ public class PhoneHomeActivity extends Activity {
         return placements.requests().stream().anyMatch(request -> request.status(now) == LauncherPlacement.Status.CONFIRM);
     }
 
+    /** A placement finished or was cleared: the item moves between "On your home screen" and "Available". */
+    private void onPlacementChanged() {
+        String now = placements.addedSignature();
+        if (!now.equals(addedSeen) && tabsShown() && pageHost != null) {
+            addedSeen = now;
+            rebuildPage();
+        }
+        drawPlacement();
+    }
+
+    /** Redraw the current tab in place, with no slide. */
+    private void rebuildPage() {
+        if (pageHost == null) return;
+        for (int i = pageHost.getChildCount() - 1; i >= 0; i--) pageHost.getChildAt(i).animate().cancel();
+        pageHost.removeAllViews();
+        page = buildPage();
+        pageHost.addView(page);
+    }
+
     private void drawPlacement() {
         if (!observingPlacement || placementPanel == null) return;
         timer.removeCallbacks(placementTimeout);
@@ -728,6 +783,8 @@ public class PhoneHomeActivity extends Activity {
         requests.removeIf(request -> request.playlist);
         for (LauncherPlacement request : LauncherPlacement.visible(requests, now)) {
             LauncherPlacement.Status status = request.status(now);
+            // A finished placement is shown by where the item sits (On your home screen), not a banner.
+            if (status == LauncherPlacement.Status.ADDED) continue;
             if (status == LauncherPlacement.Status.CONFIRM) {
                 active = true;
                 timer.postDelayed(placementTimeout, Math.max(1, request.startedAt + LauncherPlacement.TIMEOUT_MS - now));
