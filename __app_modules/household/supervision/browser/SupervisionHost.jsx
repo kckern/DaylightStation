@@ -8,6 +8,8 @@ import {ActivityScopeProvider} from './ActivityScope.jsx';
 import {ParentControls} from './ParentControls.jsx';
 import {DaylightAPI} from '@/lib/api.mjs';
 import {suspendActivities} from './activityLifecycle.js';
+/** Parent controls are drawn only once bootstrap says supervision is on: an unanswered or failed
+ * bootstrap (every page load, a network fault) must not flash an adult control on a kiosk. */
 export function SupervisionHost({children,activityId='kiosk:menu',routePath=null,api=DaylightAPI,subscribe,onResume,homeHref='/'}){
   const [parentOpen,setParentOpen]=useState(false),[learnerId,setLearnerId]=useState(''),[catalog,setCatalog]=useState(null);
   const canonicalReady=!routePath || catalog?.path===routePath;
@@ -32,7 +34,7 @@ export function SupervisionHost({children,activityId='kiosk:menu',routePath=null
   return <SupervisionBoundary key={approval.session?.sessionId??'ordinary'} access={effective} suspendActivity={suspendActivities}
     onResume={onResume??(()=>window.location.replace(homeHref))}
     blockedContent={requestOnly?<ApprovalRequestShell context={context} activities={catalog?.activities??[]} learners={catalog?.learners??[]} approval={approval} onLearnerChange={setLearnerId} onActivityChange={id=>{const selected=catalog?.activities?.find(activity=>activity.id===id);if(selected?.path)window.location.assign(selected.path);}}/>:null}
-    parentControls={access.enabled!==false?<ParentControls devices={access.devices??[]} api={api} onOpenChange={setParentOpen} onChanged={()=>access.refresh({invalidate:true})}/>:null}>
+    parentControls={access.enabled===true?<ParentControls devices={access.devices??[]} api={api} onOpenChange={setParentOpen} onChanged={()=>access.refresh({invalidate:true})}/>:null}>
     <ActivityScopeProvider value={{restricted:!!approval.session,activityId:context.activityId,learnerId,onMismatch:approval.endSession}}>{children}</ActivityScopeProvider>
   </SupervisionBoundary>;
 }

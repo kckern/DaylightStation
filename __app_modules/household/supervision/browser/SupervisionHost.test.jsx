@@ -47,10 +47,27 @@ it('acknowledges Stop only after child lifecycle teardown has committed',async()
 });
 it('parent controls expose physical power uncertainty while keeping child content stopped',async()=>{
  const api=async path=>path.endsWith('/bootstrap')?{enabled:true,deviceId:'portal'}:path.endsWith('/status')?{consumers:[{deviceId:'garage',capability:'ha-stop',acknowledged:true,blocked:true,lastContactAt:Date.now(),detail:{verified:false}}]}:{allowed:false,reason:'SUPERVISION_BLOCKED',epoch:1};
- render(<SupervisionHost api={api} subscribe={()=>()=>{}}><p>Reward</p></SupervisionHost>);fireEvent.click(screen.getByRole('button',{name:'Parent controls'}));await waitFor(()=>expect(screen.getByText(/garage.*Power: unverified.*power off unverified/i)).toBeTruthy());expect(screen.queryByText('Reward')).toBeNull();
+ render(<SupervisionHost api={api} subscribe={()=>()=>{}}><p>Reward</p></SupervisionHost>);fireEvent.click(await screen.findByRole('button',{name:'Parent controls'}));await waitFor(()=>expect(screen.getByText(/garage.*Power: unverified.*power off unverified/i)).toBeTruthy());expect(screen.queryByText('Reward')).toBeNull();
 });
 it('parent diagnostics require a fresh password command and are cleared when controls close',async()=>{
  const api=vi.fn(async(path)=>path.endsWith('/bootstrap')?{enabled:true,deviceId:'portal'}:path.endsWith('/parent-diagnostics')?{mode:{required:true,known:false},requests:[{id:'private-request',status:'pending'}],enforcement:{errors:['NATIVE_LEASE_CREDENTIAL_REQUIRED']}}:{allowed:false,reason:'SUPERVISION_BLOCKED',epoch:1});
- render(<SupervisionHost api={api} subscribe={()=>()=>{}}><p>Protected</p></SupervisionHost>);fireEvent.click(screen.getByRole('button',{name:'Parent controls'}));fireEvent.change(screen.getByLabelText('Parent username'),{target:{value:'parent'}});fireEvent.change(screen.getByLabelText('Parent password'),{target:{value:'password'}});fireEvent.change(screen.getByLabelText('Parent action'),{target:{value:'diagnostics'}});fireEvent.click(screen.getByRole('button',{name:'Confirm'}));
+ render(<SupervisionHost api={api} subscribe={()=>()=>{}}><p>Protected</p></SupervisionHost>);fireEvent.click(await screen.findByRole('button',{name:'Parent controls'}));fireEvent.change(screen.getByLabelText('Parent username'),{target:{value:'parent'}});fireEvent.change(screen.getByLabelText('Parent password'),{target:{value:'password'}});fireEvent.change(screen.getByLabelText('Parent action'),{target:{value:'diagnostics'}});fireEvent.click(screen.getByRole('button',{name:'Confirm'}));
  await waitFor(()=>expect(screen.getByText('Source unavailable or stale')).toBeTruthy());expect(screen.getByLabelText('Parent password').value).toBe('');expect(api).toHaveBeenCalledWith('api/v1/supervision/parent-diagnostics',{username:'parent',password:'password'},'POST');fireEvent.click(screen.getByRole('button',{name:'Close'}));expect(screen.queryByText('Source unavailable or stale')).toBeNull();
+});
+
+it('draws no Parent controls on a kiosk until bootstrap says supervision is on',async()=>{
+ let answer;const pending=new Promise(resolve=>{answer=resolve;});
+ const api=async path=>path.endsWith('/bootstrap')?pending:{allowed:true,epoch:0,issuedAt:100000,expiresAt:105000};
+ render(<SupervisionHost activityId="kiosk:menu" api={api} subscribe={()=>()=>{}}><p>Dashboard</p></SupervisionHost>);
+ // Loading: nothing adult on screen.
+ expect(screen.queryByRole('button',{name:'Parent controls'})).toBeNull();
+ answer({enabled:false});
+ await waitFor(()=>expect(screen.getByText('Dashboard')).toBeTruthy());
+ expect(screen.queryByRole('button',{name:'Parent controls'})).toBeNull();
+});
+it('draws no Parent controls when bootstrap cannot be reached',async()=>{
+ const api=async()=>{throw Object.assign(Error('Failed to fetch'),{status:0});};
+ render(<SupervisionHost activityId="kiosk:menu" api={api} subscribe={()=>()=>{}}><p>Dashboard</p></SupervisionHost>);
+ await new Promise(resolve=>setTimeout(resolve,50));
+ expect(screen.queryByRole('button',{name:'Parent controls'})).toBeNull();
 });
