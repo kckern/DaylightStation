@@ -124,6 +124,9 @@ describe('EditionService.deliver', () => {
     await h.service.compose('office-paper');
     const result = await h.service.deliver('office-paper', { trigger: 'ha' });
     expect(result.status).toBe('printed');
+    // The stored edition says so (2026-11-23: the first live print left it `composed`).
+    expect(result.edition.status).toBe('delivered');
+    expect(result.edition.deliveredAt).toBeTruthy();
     expect(h.printerRegistry.get).toHaveBeenCalledWith('office');
     expect(h.printerRegistry.resolve).not.toHaveBeenCalled();
     const job = h.printerRegistry.printer.print.mock.calls[0][0];

@@ -174,7 +174,7 @@ export class EditionService {
       const message = errorText(error);
       this.#logger.error?.('newsreporter.edition.compose.error', { ...ctx, error: message, code: error?.code ?? null, stack: error?.stack?.split('\n').slice(0, 3).join(' | ') });
       // A failed recompose never clobbers a good edition.
-      if (!dryRun && existing?.status !== 'composed') {
+      if (!dryRun && existing?.status !== 'composed' && existing?.status !== 'delivered') {
         try {
           await this.#store.save(reporterId, day, {
             date: day, number: existing?.number ?? null, status: 'failed', composedAt: startedAt.toISOString(),
@@ -363,7 +363,10 @@ export class EditionService {
     }
 
     let composedNow = false;
-    let imagePath = edition?.status === 'composed' ? await this.#store.pngPath(reporterId, day) : null;
+    // A printable edition is a composed one, delivered or not; a reprint must
+    // never recompose (the paper on the desk and the newsstand stay the same).
+    const printable = edition?.status === 'composed' || edition?.status === 'delivered';
+    let imagePath = printable ? await this.#store.pngPath(reporterId, day) : null;
     if (!imagePath) {
       const composed = await this.compose(reporterId, { date: day, trigger: `deliver:${trigger}` });
       if (composed.status !== 'composed') {
@@ -399,7 +402,7 @@ export class EditionService {
     if (!printed) return fail(outcome?.faults?.length ? `printer fault: ${outcome.faults.join(', ')}` : 'printer did not take the job');
 
     const delivery = { at: this.#clock.now().toISOString(), printer: printerName, trigger, confirmed };
-    edition = { ...edition, deliveries: [...(edition.deliveries || []), delivery] };
+    edition = { ...edition, status: 'delivered', deliveries: [...(edition.deliveries || []), delivery] };
     try {
       await this.#store.save(reporterId, day, edition);
     } catch (error) {
