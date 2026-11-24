@@ -65,6 +65,9 @@ function summarizeObligation(obligation) {
   const actualCount = finiteOrNull(obligation.actualCount) ?? 0;
   return {
     key: obligation.key, zone: obligation.zone, zoneLabel: obligation.zoneLabel, zoneColor: obligation.zoneColor,
+    // 'zone', 'cadence_floor', 'activity_rate', or a challenge's type: hosts
+    // keep step-mat rules out of zone chips and zone wording.
+    type: (obligation.requirement || obligation.challenge)?.type || 'zone',
     requiredCount, actualCount,
     needed: Math.max(0, (requiredCount ?? 0) - actualCount),
     scope: requiredCount != null && requiredCount > 0 && requiredCount === obligation.eligibleCount ? 'all' : 'any',
@@ -238,7 +241,8 @@ export function resolveGovernanceDisplay(govState, displayMap = new Map(), zoneM
     requiredCount: selected?.requiredCount ?? null, actualCount: selected?.actualCount ?? null,
     rows: selected?.rows || [], metRows: selected?.metRows || [],
     requirements: selected?.requirement ? [selected.requirement] : [],
-    activityRequirements: selected?.requirement?.type === 'activity_rate' ? [selected.requirement] : [],
+    // Every unmet step-mat floor, wherever it sorts among the obligations.
+    activityRequirements,
     challenge: lockingChallenge || null,
     deadline: govState.deadline ?? null, gracePeriodTotal: govState.gracePeriodTotal ?? null,
     videoLocked: cycleHealthLock ? true : (cycleLocked ? false : Boolean(govState.videoLocked)),

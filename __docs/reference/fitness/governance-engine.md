@@ -884,8 +884,14 @@ observed ineligibility or departure resets the affected hold.
 `source` is `requirement` or `challenge`. While any floor is unmet, entries contain
 only unmet floors, ordered by target severity and kept separately scoped. Once
 all floors recover, a locking challenge may supply the explanation; a pending
-challenge never supplies a generic lock explanation. Activity and unavailable
-sensor policies retain their existing behavior. Compatibility fields such as
+challenge never supplies a generic lock explanation. Step-mat floors
+(`activity_rate`) are obligations like any other: `display.activityRequirements`
+lists every unmet one, wherever it sorts, and `summary` entries carry the
+obligation `type`, so the lock modal keeps step-mat rules out of the zone chips
+and zone wording, shows the step-mat row beside the rider rows (never instead of
+them) and adds `and step on the mat at N steps a minute` to the instruction. A
+step-mat floor alone keeps its own line (`Keep stepping: 12 / 30 SPM`); a
+suspended mat says the sensor is unavailable and blocks nothing. Compatibility fields such as
 `rows`, `metRows`, `requirements`, `challenge`, `zoneLabel`, and counts reflect the
 first selected obligation. Hosts presenting multiple floors consume the scoped
 entries instead of merging their rows and credit.

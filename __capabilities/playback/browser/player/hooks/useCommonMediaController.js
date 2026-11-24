@@ -1206,6 +1206,8 @@ export function useCommonMediaController({
     // binding above. When this element starts loading again it IS the new
     // renderer: adopt the current target so its `ended` still advances
     // (2026-11-24: a jolted workout video ended and never reached the player).
+    // A deliberately retired old node that still fires loadstart during
+    // teardown could re-adopt here; harmless, as that node never fires `ended`.
     const onLoadStart = () => {
       if (!active || terminalBindingRef.current !== terminalBinding || getMediaEl() !== mediaEl || !recoveryIdentity) return;
       const current = recoveryIdentity.getTarget();

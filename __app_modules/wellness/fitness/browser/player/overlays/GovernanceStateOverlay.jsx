@@ -306,8 +306,9 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
  * One clause per unmet rule, from display.summary: "1 rider to Hot",
  * "both riders to Active". Every rule must pass, so the clauses join with "and".
  */
-export function describeUnlockInstruction(summary, obligations = []) {
-  const parts = (Array.isArray(summary) ? summary : []).filter((rule) => rule && rule.needed > 0).map((rule) => {
+export function describeUnlockInstruction(summary, obligations = [], activity = null) {
+  const parts = (Array.isArray(summary) ? summary : [])
+    .filter((rule) => rule && rule.needed > 0 && rule.type !== 'activity_rate').map((rule) => {
     const zone = rule.zoneLabel || rule.zone || 'the target zone';
     const pedal = obligations.find((o) => o.key === rule.key)?.requirement?.type === 'cadence_floor';
     const where = pedal ? `pedaling or in ${zone}` : `to ${zone}`;
@@ -319,7 +320,10 @@ export function describeUnlockInstruction(summary, obligations = []) {
     return `${rule.needed}${rule.actualCount > 0 ? ' more' : ''} ${rule.needed === 1 ? 'rider' : 'riders'} ${where}`;
   });
   if (!parts.length) return null;
-  return `Get ${parts.join(' and ')} to keep watching.`;
+  // A step-mat floor alongside: one more clause (a suspended mat blocks nothing).
+  const mat = activity && !activity.suspended
+    ? ` and step on the mat at ${Math.max(0, Math.round(activity.targetRate || 0))} steps a minute` : '';
+  return `Get ${parts.join(' and ')}${mat} to keep watching.`;
 }
 
 const HeartGlyph = ({ color }) => (
@@ -455,20 +459,24 @@ const GovernanceLockPanel = React.memo(function GovernanceLockPanel({ display, o
   const stepActual = Math.min(stepTarget, Math.max(0, Math.round(Number(challenge?.actualCount) || 0)));
   const stepUnit = challenge?.metric === 'stomps' ? 'stomps' : 'steps';
   const isInitPoolEmpty = !riders.length && !noSignal.length && (!Number.isFinite(activeUserCount) || activeUserCount <= 0);
-  const zoneRules = activity || isFailedStepChallenge ? NO_ITEMS : summary.filter((rule) => Number.isFinite(rule.requiredCount) && rule.requiredCount > 0);
+  const zoneRules = isFailedStepChallenge ? NO_ITEMS : summary.filter((rule) => rule.type !== 'activity_rate'
+    && Number.isFinite(rule.requiredCount) && rule.requiredCount > 0);
 
   const instruction = useMemo(() => {
+    // A zone rule alongside the mat: one sentence names both.
+    if (riders.length || zoneRules.length) {
+      const sentence = describeUnlockInstruction(summary, obligations, activity);
+      if (sentence) return sentence;
+    }
     if (activity) {
       if (activity.suspended) return 'Step mat sensor unavailable';
       return `Keep stepping: ${Math.max(0, Math.round(activity.currentRate || 0))} / ${Math.max(0, Math.round(activity.targetRate || 0))} SPM`;
     }
     if (isFailedStepChallenge) return `Keep going: ${stepActual} / ${stepTarget} ${stepUnit}`;
     if (isInitPoolEmpty) return 'No participants connected';
-    const sentence = describeUnlockInstruction(summary, obligations);
-    if (sentence) return sentence;
     if (Number.isFinite(activeUserCount) && activeUserCount > 0) return `${plural(activeUserCount, 'participant')} in pool`;
     return 'Waiting for participant data...';
-  }, [activity, isFailedStepChallenge, stepActual, stepTarget, stepUnit, isInitPoolEmpty, summary, obligations, activeUserCount]);
+  }, [activity, isFailedStepChallenge, stepActual, stepTarget, stepUnit, isInitPoolEmpty, summary, obligations, activeUserCount, riders.length, zoneRules.length]);
 
   useEffect(() => {
     lockLogger().sampled('governance.lock_modal.render', {
@@ -484,19 +492,7 @@ const GovernanceLockPanel = React.memo(function GovernanceLockPanel({ display, o
     }, { maxPerMinute: 6 });
   }, [riders.length, status, noSignal.length, summary.length]);
 
-  const body = isFailedStepChallenge ? (
-    <div className="governance-lock__activity" role="row">
-      <div className="governance-lock__activity-icon" aria-hidden="true">{challenge.metric === 'stomps' ? '💥' : '👟'}</div>
-      <div className="governance-lock__activity-copy" role="cell">
-        <strong>Finish the {stepUnit} challenge</strong>
-        <span>Catch up to resume playback.</span>
-      </div>
-      <div className="governance-lock__activity-rate" role="cell">
-        <strong>{stepActual}/{stepTarget}</strong>
-        <span>{stepUnit}</span>
-      </div>
-    </div>
-  ) : activity ? (
+  const activityRow = activity ? (
     <div className="governance-lock__activity" role="row">
       <div className="governance-lock__activity-icon" aria-hidden="true">{activity.suspended ? '⚠' : '👟'}</div>
       <div className="governance-lock__activity-copy" role="cell">
@@ -512,7 +508,25 @@ const GovernanceLockPanel = React.memo(function GovernanceLockPanel({ display, o
         </div>
       ) : null}
     </div>
-  ) : riders.length ? riders.map((rider) => <RiderRow key={rider.key} rider={rider} />)
+  ) : null;
+
+  // Rider rows and the step-mat row stand together: every rule must pass.
+  const body = isFailedStepChallenge ? (
+    <div className="governance-lock__activity" role="row">
+      <div className="governance-lock__activity-icon" aria-hidden="true">{challenge.metric === 'stomps' ? '💥' : '👟'}</div>
+      <div className="governance-lock__activity-copy" role="cell">
+        <strong>Finish the {stepUnit} challenge</strong>
+        <span>Catch up to resume playback.</span>
+      </div>
+      <div className="governance-lock__activity-rate" role="cell">
+        <strong>{stepActual}/{stepTarget}</strong>
+        <span>{stepUnit}</span>
+      </div>
+    </div>
+  ) : (activity || riders.length) ? <>
+    {riders.map((rider) => <RiderRow key={rider.key} rider={rider} />)}
+    {activityRow}
+  </>
     : isInitPoolEmpty ? (
       <div className="governance-lock__init" role="note" aria-live="polite">
         <p className="governance-lock__init-title">Waiting for first participant</p>

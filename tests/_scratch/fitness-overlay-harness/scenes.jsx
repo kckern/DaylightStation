@@ -105,6 +105,13 @@ export const SCENES = {
     [rider('rider_c', 'Rider C', 105, 'cool'), rider('rider_a', 'Rider A', 91, 'cool')],
     [floor('hot', 1, ['rider_c', 'rider_a']), floor('active', 2, ['rider_c', 'rider_a'])],
   ) },
+  // A zone rule and a step-mat rule together: Rider A must reach Hot AND the
+  // mat must run at 30 steps a minute. Both must show; neither replaces the other.
+  'lock-zone-and-mat': { render: lockScene(
+    [rider('rider_a', 'Rider A', 92, 'cool')],
+    [floor('hot', 1, ['rider_a']), { id: 'keep-stepping', type: 'activity_rate', equipment: 'step_mat',
+      currentRate: 12, targetRate: 30, requiredCount: 1, actualCount: 0, satisfied: false, missingUsers: [], metUsers: [] }],
+  ) },
   // Close goals: Active 110, Warm 130, Hot 150 on one 60..160 scale; Rider C's
   // name is long enough to wrap. The labels must stagger, never overlap.
   'lock-close-goals': { render: lockScene(

@@ -64,6 +64,12 @@ export default function PlaybackBudgetNotice({ status, onUnlock, onBack }) {
   const visible = s !== 'checking' || checkElapsed;
   const loggedRef = useRef(new Set());
 
+  // Leaving "checking" ends that check: the next one gets its own grace
+  // instead of showing its card at once.
+  useEffect(() => {
+    if (s !== 'checking') setCheckElapsed(false);
+  }, [s]);
+
   useEffect(() => {
     if (visible) return undefined;
     const timer = setTimeout(() => setCheckElapsed(true), CHECKING_REVEAL_MS);

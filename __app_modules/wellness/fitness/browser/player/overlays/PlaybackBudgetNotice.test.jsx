@@ -73,4 +73,19 @@ describe('PlaybackBudgetNotice', () => {
     fireEvent.keyDown(screen.getByRole('button', { name: 'Back' }), { key: 'Enter' });
     expect(onBack).toHaveBeenCalledTimes(1);
   });
+
+  it('each new check gets its own grace: checking → unavailable → checking hides the card again', () => {
+    const view = render(<PlaybackBudgetNotice status="checking" onUnlock={vi.fn()} onBack={vi.fn()} />);
+    act(() => { vi.advanceTimersByTime(1500); });
+    expect(screen.getByText('Getting your video time…')).toBeTruthy();
+    view.rerender(<PlaybackBudgetNotice status="unavailable" onUnlock={vi.fn()} onBack={vi.fn()} />);
+    expect(screen.getByText("Couldn't check video time")).toBeTruthy();
+    view.rerender(<PlaybackBudgetNotice status="checking" onUnlock={vi.fn()} onBack={vi.fn()} />);
+    expect(cover().textContent).toBe('');
+    act(() => { vi.advanceTimersByTime(1499); });
+    expect(screen.queryByText('Getting your video time…')).toBeNull();
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(screen.getByText('Getting your video time…')).toBeTruthy();
+  });
 });
+

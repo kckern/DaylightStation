@@ -53,6 +53,7 @@ const SCENE_ROOTS = {
   'lock-one-rule': LOCK,
   'lock-two-rules': LOCK,
   'lock-close-goals': LOCK,
+  'lock-zone-and-mat': [...LOCK, '.governance-lock__activity'],
 };
 const ALL = Object.keys(SCENE_ROOTS);
 const scenes = process.env.SCENES ? process.env.SCENES.split(',').map((s) => s.trim()).filter(Boolean) : ALL;

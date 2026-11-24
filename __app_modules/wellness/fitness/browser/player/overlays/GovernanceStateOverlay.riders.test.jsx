@@ -115,4 +115,21 @@ describe('GovernanceStateOverlay — lock modal rows per rider', () => {
     const { getByTestId } = render(<GovernanceStateOverlay display={display} />);
     expect(getByTestId('lock-rider-row').querySelector('.governance-lock__progress').textContent).toBe('Waiting for heart rate');
   });
+
+  it.each([['zone first', 'zone'], ['mat first', 'mat']])('%s: zone rule and step-mat rule show together', (_, first) => {
+    const mat = { id: 'keep-stepping', type: 'activity_rate', equipment: 'step_mat', currentRate: 12, targetRate: 30,
+      requiredCount: 1, actualCount: 0, satisfied: false, missingUsers: [], metUsers: [] };
+    const hot = rule('hot', 1, ['rider-a']);
+    const display = resolve(first === 'zone' ? [hot, mat] : [mat, hot], { 'rider-a': profile('Rider A', 85) });
+    const { container, getAllByTestId } = render(<GovernanceStateOverlay display={display} />);
+    expect(getAllByTestId('lock-rider-row')).toHaveLength(1);
+    expect(container.querySelector('.governance-lock__activity')).toBeTruthy();
+    expect(container.textContent).toContain('Stay on the step mat');
+    expect(container.textContent).not.toContain('null');
+    expect(container.textContent).not.toContain('target zone');
+    expect([...container.querySelectorAll('.governance-lock__rule')].map((c) => c.textContent)).toEqual(['Hot 0/1']);
+    expect(container.querySelector('.governance-lock__instruction').textContent)
+      .toBe('Get 1 rider to Hot and step on the mat at 30 steps a minute to keep watching.');
+  });
 });
+
