@@ -1645,12 +1645,10 @@ describe('timed practice groove at 1920x1200 in real Chromium', () => {
   it('counts up 1 2 3 4 above the notation, cues the last click, and shows no PLAY', async () => {
     await lab();
     await chooseFullSpeed();
-    // The arming key is heard at once: while it is held the run is armed and
-    // the band shows its armed form; the count-in waits for the release.
+    // The press is beat one: the count shows 1 at once, the key still down.
     await page.evaluate(() => window.__stage.hold([84]));
-    await page.waitForSelector('.piano-exercise-run.is-ready[data-start-armed="true"] .piano-learn-countin[data-armed="true"]');
-    await page.evaluate(() => window.__stage.hold([]));
     await page.waitForSelector('.piano-exercise-run.is-countdown .piano-learn-countin[data-count="1"]');
+    await page.evaluate(() => window.__stage.hold([]));
     const { stage, rail, keys } = await assertRunGeometry();
     const overlay = await probe.one('.piano-learn-countin');
     expect(inside(overlay, stage)).toBe(true);

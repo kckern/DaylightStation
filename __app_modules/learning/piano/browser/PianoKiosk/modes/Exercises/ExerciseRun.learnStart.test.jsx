@@ -1,6 +1,6 @@
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import ExerciseRun, { ARM_RELEASE_MS, MAX_CUE_RESTARTS } from './ExerciseRun.jsx';
+import ExerciseRun, { CLICK_PREROLL_MS, MAX_CUE_RESTARTS } from './ExerciseRun.jsx';
 import fourBars from './__fixtures__/fourBars.musicxml?raw';
 
 /**
@@ -47,6 +47,8 @@ const h = vi.hoisted(() => ({
   measureMap: null,
   /** Quarters added to every shown onset: a passage that opens on a rest. */
   onsetShift: 0,
+  /** The metronome hook's latest arguments: where the click grid is anchored. */
+  click: null,
 }));
 
 const notehead = (midi) => {
@@ -80,7 +82,7 @@ vi.mock('../../../components/PianoKeyboard.jsx', () => ({
 // anything. `DaylightAPIText` is still doubled, and that one has teeth — the
 // media tree is where a score WOULD be fetched from, and `h.text` never being
 // called is the assertion that this run fetches nothing (`AskSession` did).
-vi.mock('../SheetMusic/useMetronomeClick.js', () => ({ useMetronomeClick: () => {} }));
+vi.mock('../SheetMusic/useMetronomeClick.js', () => ({ useMetronomeClick: (args) => { h.click = args; } }));
 vi.mock('../../../../../../../frontend/src/lib/api.mjs', async (importOriginal) => ({
   ...(await importOriginal()),
   DaylightAPIText: h.text,
@@ -136,7 +138,7 @@ vi.mock('./assessment.js', async (importOriginal) => {
 const SOURCE = 'files:docs/sheet-music/four-bars.musicxml';
 const BEAT = 1500;
 const LEAD_IN = 4 * BEAT;
-const GAP = 600; // min(one click, 600 ms)
+const GAP = 600; // a missed-cue restart's pre-roll: min(one click, 600 ms)
 const PASSAGE = [64, 65, 67, 69];
 const settledScore = () => Object.freeze({ id: SOURCE, musicXml: fourBars, measures: [2, 3] });
 const learnRequirement = { mode: 'cued', rubric: { id: 'learn-passage-v1', version: '1', criteria: { completeness: 1, cleanliness: 0.8, placement: 0.8 } } };
@@ -170,12 +172,13 @@ async function mount(over = {}) {
   vi.useFakeTimers({ now: Date.now() });
 }
 
-/** Arm with a quick tap and return when the first click will sound. */
+/** Start with a quick tap: the press is beat one, so the count's first click IS the press. */
 function armByTap() {
+  const pressedAt = Date.now();
   strike(55);
   const started = events('piano.exercise-countdown-started').at(-1);
-  expect(started).toMatchObject({ reason: 'armed-released', prerollMs: GAP });
-  return Date.now() + GAP; // the release instant + the gap
+  expect(started).toMatchObject({ reason: 'arming-key', downbeat: true });
+  return pressedAt;
 }
 
 /** Play the passage at `offset` from each target (first target = first click + lead-in). */
@@ -202,48 +205,53 @@ beforeEach(() => {
 });
 afterEach(() => { view?.unmount(); view = null; vi.useRealTimers(); });
 
-describe('a cued Learn passage starts clear of the arming key (A1)', () => {
-  it('arms on a held key, shows it heard it, ignores more keys, and counts in after the release plus the gap', async () => {
+describe('a key on the piano is beat one of the count (A1)', () => {
+  it('a key on the piano is beat one: the count shows 1 at once and the first note is due four clicks after the press', async () => {
     await mount();
+    const pressedAt = Date.now();
     hold([55]);
-    expect(run()).toHaveAttribute('data-start-armed', 'true');
-    expect(run()).toHaveAttribute('data-phase', 'ready');
-    expect(band()).toHaveAttribute('data-armed', 'true');
-    expect(screen.getByText('Listen for the clicks.')).toBeInTheDocument();
-    advance(400);
-    // A second key while armed is ignored and does not re-arm.
-    hold([55, 60]);
-    expect(events('piano.exercise-input-ignored').at(-1)).toMatchObject({ reason: 'armed', ignored: [60] });
-    expect(events('piano.exercise-armed')).toHaveLength(1);
-    advance(300);
-    expect(run()).toHaveAttribute('data-phase', 'ready');
-    // Every key held AT ARMING is up (60 came later and does not count).
-    hold([60]);
-    expect(run()).not.toHaveAttribute('data-start-armed');
-    expect(events('piano.exercise-countdown-started')).toEqual([expect.objectContaining({ reason: 'armed-released', prerollMs: GAP, waitedMs: 700 })]);
+    expect(events('piano.exercise-countdown-started')).toEqual([expect.objectContaining({ reason: 'arming-key', downbeat: true, prerollMs: 0 })]);
     expect(run()).toHaveAttribute('data-phase', 'countdown');
-    // The gap before the first click: still the armed form, no numeral yet.
-    advance(GAP - 50);
-    expect(band()).toHaveAttribute('data-armed', 'true');
-    advance(100);
     expect(band()).toHaveAttribute('data-count', '1');
+    hold([]);
+    advance(BEAT);
+    expect(band()).toHaveAttribute('data-count', '2');
+    // The passage played on the grid the press began passes.
+    PASSAGE.forEach((midi, index) => { advance(pressedAt + LEAD_IN + index * BEAT + 20 - Date.now()); strike(midi); });
+    finish();
+    advance(1000);
+    expect(current.onPassed).toHaveBeenCalledTimes(1);
   });
 
-  it('starts one second after arming when the arming key is never released', async () => {
+  it('the press is not sounded again: the click grid is anchored at the press, its first beat already past', async () => {
+    await mount();
+    const pressedAt = Date.now();
+    hold([55]);
+    expect(h.click.anchorMs).toBe(pressedAt);
+  });
+
+  it('a second key during the count is not graded and does not start it again', async () => {
     await mount();
     hold([55]);
-    advance(ARM_RELEASE_MS - 10);
-    expect(run()).toHaveAttribute('data-phase', 'ready');
-    expect(events('piano.exercise-countdown-started')).toHaveLength(0);
-    advance(20);
-    expect(events('piano.exercise-countdown-started')).toEqual([expect.objectContaining({ reason: 'armed-timeout', prerollMs: GAP })]);
-    expect(run()).toHaveAttribute('data-phase', 'countdown');
+    advance(400);
+    hold([55, 60]);
+    expect(events('piano.exercise-countdown-started')).toHaveLength(1);
+    expect(events('piano.exercise-input-ignored').at(-1)).toMatchObject({ reason: 'countdown', ignored: [60] });
+  });
+
+  it('a missed-cue restart keeps the pre-roll and all four clicks', async () => {
+    await mount();
+    const pressedAt = armByTap();
+    advance(pressedAt + LEAD_IN + 700 - Date.now());
+    advance(1000);
+    const restart = events('piano.exercise-countdown-started').at(-1);
+    expect(restart).toMatchObject({ reason: 'missed-cue', downbeat: false, pulseCount: 4 });
+    expect(restart.prerollMs).toBeGreaterThanOrEqual(CLICK_PREROLL_MS);
   });
 
   it('keeps the old immediate start, countdown and PLAY for a cued score outside Learn', async () => {
     await mount({ surface: 'default' });
     hold([55]);
-    expect(run()).not.toHaveAttribute('data-start-armed');
     expect(run()).not.toHaveAttribute('data-count-style');
     expect(run()).toHaveAttribute('data-phase', 'countdown');
     expect(events('piano.exercise-countdown-started')).toEqual([expect.objectContaining({ reason: 'arming-key' })]);
@@ -259,11 +267,12 @@ describe('a cued Learn passage counts up with the clicks (A2)', () => {
     expect(run()).toHaveAttribute('data-count-style', 'up');
     const firstClick = armByTap();
     const seen = [];
-    for (const offset of [10, BEAT + 10, 2 * BEAT + 10, 3 * BEAT + 10]) {
+    for (const offset of [100, BEAT + 100, 2 * BEAT + 100, 3 * BEAT + 100]) {
       advance(firstClick + offset - Date.now());
       seen.push([band().dataset.count, band().querySelector('.piano-learn-countin__cue').textContent]);
     }
     expect(seen).toEqual([['1', ''], ['2', ''], ['3', ''], ['4', 'next click: play']]);
+    // (the press itself is click 1)
     advance(firstClick + LEAD_IN + 60 - Date.now());
     expect(band()).toBeNull();
     expect(document.querySelector('.piano-score-countin')).toBeNull();
@@ -272,48 +281,30 @@ describe('a cued Learn passage counts up with the clicks (A2)', () => {
 });
 
 describe('a cued Learn passage arms safely around its own notes and controls', () => {
-  it('arms on the passage\'s first pitch held through the count-in, then takes it re-struck as note 1', async () => {
+  it('a held arming key (the first pitch) is ignored until re-struck', async () => {
     await mount();
+    const pressedAt = Date.now();
     hold([64]);
-    advance(ARM_RELEASE_MS + 10);
-    expect(events('piano.exercise-countdown-started')).toEqual([expect.objectContaining({ reason: 'armed-timeout' })]);
-    expect(events('piano.exercise-armed')).toHaveLength(1);
-    const firstClick = Date.now() - 10 + GAP;
-    advance(firstClick + LEAD_IN - 300 - Date.now());
+    expect(events('piano.exercise-countdown-started')).toEqual([expect.objectContaining({ reason: 'arming-key', downbeat: true })]);
+    advance(pressedAt + LEAD_IN - 300 - Date.now());
     hold([]);
-    PASSAGE.forEach((midi, index) => { advance(firstClick + LEAD_IN + index * BEAT + 20 - Date.now()); strike(midi); });
+    PASSAGE.forEach((midi, index) => { advance(pressedAt + LEAD_IN + index * BEAT + 20 - Date.now()); strike(midi); });
     finish();
-    expect(events('piano.exercise-armed')).toHaveLength(1);
     expect(events('piano.exercise-timing-summary').at(-1)).toMatchObject({ entryShiftBeats: null });
     advance(1000);
     expect(current.onPassed).toHaveBeenCalledTimes(1);
     expect(current.onFailed).not.toHaveBeenCalled();
   });
 
-  it('drops an arming on pause, starts nothing while paused, and arms afresh on resume', async () => {
+  it('a key while paused starts nothing; after resume a key starts the count', async () => {
     await mount({ maxCueRestarts: 0 });
-    hold([55]);
-    expect(run()).toHaveAttribute('data-start-armed', 'true');
     act(() => { current = { ...current, paused: true }; rerender(); });
-    expect(run()).not.toHaveAttribute('data-start-armed');
-    hold([]);
+    strike(55);
     advance(3000);
     expect(events('piano.exercise-countdown-started')).toHaveLength(0);
     act(() => { current = { ...current, paused: false }; rerender(); });
-    const firstClick = armByTap();
-    playAt(firstClick, 700, [61, 70, 58, 73]);
-    finish();
-    // The dropped arming's key is not in the take's log.
-    expect(events('piano.exercise-onset-log').at(-1).onsets.filter(([, , phase]) => phase === 'armed')).toHaveLength(1);
-  });
-
-  it('starts nothing after unmounting while armed', async () => {
-    await mount();
-    hold([55]);
-    view.unmount();
-    view = null;
-    advance(3000);
-    expect(events('piano.exercise-countdown-started')).toHaveLength(0);
+    armByTap();
+    expect(events('piano.exercise-countdown-started')).toHaveLength(1);
   });
 
   it('does not delay the result of an ordinary failed take', async () => {
@@ -396,7 +387,7 @@ describe('a cued Learn passage counts a pickup in on its own beat', () => {
     const firstClick = armByTap();
     expect(events('piano.exercise-countdown-started').at(-1)).toMatchObject({ entry: 'aligned' });
     const seen = [];
-    for (const offset of [10, BEAT + 10, 2 * BEAT + 10]) {
+    for (const offset of [100, BEAT + 100, 2 * BEAT + 100]) {
       advance(firstClick + offset - Date.now());
       seen.push([band().dataset.count, band().querySelector('.piano-learn-countin__cue').textContent]);
     }
