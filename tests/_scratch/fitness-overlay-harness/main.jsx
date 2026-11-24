@@ -54,7 +54,12 @@ if (!scene) {
     img.complete ? null : new Promise((r) => { img.onload = r; img.onerror = r; })
   )));
   (async () => {
-    try { await document.fonts?.ready; } catch { /* fonts API absent */ }
+    try {
+      // Load the app font explicitly so the shot never catches a fallback face.
+      await Promise.all(['400 16px "Roboto Condensed"', '600 16px "Roboto Condensed"'].map((f) => document.fonts.load(f)));
+      if (!document.fonts.check('400 16px "Roboto Condensed"')) document.body.dataset.harnessError = 'Roboto Condensed did not load';
+      await document.fonts.ready;
+    } catch { /* fonts API absent */ }
     await new Promise((r) => setTimeout(r, 200));
     await imagesSettled();
     await new Promise((r) => setTimeout(r, READY_SETTLE_MS));

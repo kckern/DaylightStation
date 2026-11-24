@@ -6,6 +6,7 @@
 //
 //   node_modules/.bin/vite --config tests/_scratch/fitness-overlay-harness/vite.harness.config.mjs
 //   BASE_URL=http://127.0.0.1:5198 node tests/_scratch/shoot-fitness-overlays.mjs
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import appConfigFn from '../../../frontend/vite.config.js';
@@ -33,6 +34,13 @@ function harnessAssets() {
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const url = (req.url || '').split('?')[0];
+        // The app loads Roboto Condensed from Google Fonts; serve the repo's
+        // local copy instead so the harness wraps text like the kiosk, offline.
+        const font = url.match(/^\/harness-fonts\/(RobotoCondensed-[A-Za-z]+\.ttf)$/);
+        if (font) {
+          const file = path.join(repoRoot, '__backend/assets/fonts/roboto-condensed', font[1]);
+          if (fs.existsSync(file)) { res.setHeader('Content-Type', 'font/ttf'); res.end(fs.readFileSync(file)); return; }
+        }
         const m = url.match(/^\/api\/v1\/static\/img\/users\/(.+)$/);
         if (m) { res.setHeader('Content-Type', 'image/svg+xml'); res.end(faceSvg(m[1])); return; }
         if (url.startsWith('/api/') || url.startsWith('/ws') || url.startsWith('/media/')) {
