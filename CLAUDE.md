@@ -229,6 +229,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Real-time game kit (step runner, frame driver, effect dispatcher, tick lerp, run roles, simulated piano clock, gem-ceremony ordering) | `__docs/reference/gaming/realtime-kit.md` |
 | Piano home progress strip (per-child piece or course card, Silver/Gold passage map, kiosk-only curfew, `activity/desk`) | `__docs/reference/piano/home-desk.md` |
 | Sheet music admin (library, upload, Learn segments, proposals, Jev calibration, posters) | `__docs/reference/piano/sheet-music-player.md` (Admin: sheet music) |
+| Office piano Sheet Music (launcher entry open when games are off, keyboard-only Learn: piece picker on keys, key strip, `KeyboardOnlyContext`, `GET activity/desk/:userId`) | `__docs/reference/piano/sheet-music-player.md` (Office screen) |
 | Piano Producer (jam/song builder) | `__docs/reference/piano/producer.md` |
 | Piano tablet screen control (screensaver, manual off holds, power authority) | `__docs/reference/piano/screen-control.md` |
 | Piano voice patches + Patch finder (catalog address vs what the keyboard plays, `voicePatches` config, audition by ear, bridge `/midi/tap` listen) | `__docs/reference/piano/voice-patches.md` |

@@ -85,6 +85,19 @@ const GAME_REGISTRY = {
     layout: 'replace',
     LazyComponent: lazyWithReload(() => import('./PianoCheckers/PianoCheckers.jsx')),
   },
+  // Not a game: Learn, run from the keyboard on the office screen. `practice`
+  // keeps it on the launcher when school rules switch games off — practising a
+  // piece is the thing games are switched off in favour of. Last in the registry
+  // so it adds a key (D5) instead of moving every game one key along.
+  // Spec: ops:docs/superpowers/specs/2026-11-23-piano-office-sheet-music-design.md
+  'sheet-music': {
+    label: 'Sheet Music', icon: 'sheet-music', status: 'released', family: 'practice',
+    practice: true,
+    component: () => importWithReload(() => import('./PianoKiosk/modes/SheetMusic/office/OfficeSheetMusic.jsx')),
+    hook: () => importWithReload(() => import('./PianoKiosk/modes/SheetMusic/office/OfficeSheetMusic.jsx')),
+    layout: 'replace',
+    LazyComponent: lazyWithReload(() => import('./PianoKiosk/modes/SheetMusic/office/OfficeSheetMusic.jsx')),
+  },
 };
 
 export function getGameEntry(gameId) {

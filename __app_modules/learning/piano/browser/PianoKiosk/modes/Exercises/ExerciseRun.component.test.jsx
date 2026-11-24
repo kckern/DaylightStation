@@ -20,6 +20,10 @@ const cuedRequirement = ({ passScore }) => withPassScore({ mode: 'cued', passSco
 
 const h = vi.hoisted(() => ({
   activeNotes: new Map(),
+  // The raw MIDI tap (control changes): `h.cc(controller, value)` sends one.
+  raws: new Set(),
+  cc(controller, value) { for (const listener of this.raws) listener({ data: new Uint8Array([0xb0, controller, value]) }); },
+  subscribeRaw(listener) { h.raws.add(listener); return () => h.raws.delete(listener); },
   record: vi.fn(),
   createAttempt: vi.fn(),
   createRuntime: vi.fn(),
@@ -77,7 +81,7 @@ vi.mock('../../../../../../../frontend/src/lib/logging/Logger.js', () => ({
   default: () => ({ child: () => h.log }),
 }));
 vi.mock('../../PianoMidiContext.jsx', () => ({
-  usePianoMidi: () => ({ connected: true }),
+  usePianoMidi: () => ({ connected: true, subscribeRaw: h.subscribeRaw }),
   usePianoMidiNotes: () => ({ activeNotes: h.activeNotes }),
 }));
 vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: h.currentUser }) }));
@@ -1989,16 +1993,33 @@ describe('ExerciseRun resolve hold', () => {
       const { view, props, onResultContinue } = await failLocally();
       act(() => vi.advanceTimersByTime(RESOLVE_HOLD_MS));
       view.rerender(<ExerciseRun {...props} />);
-      expect(screen.queryByText(/play any key/)).toBeNull();
+      // The way on (a key or a pedal) holds its place but is not shown until the card takes a key.
+      expect(view.container.querySelector('.piano-exercise-run__onward[data-ready]')).toBeNull();
       act(() => vi.advanceTimersByTime(200));
       tap(view, props); // a note played on past the end of the take
       expect(retries()).toEqual([]);
       expect(view.container.querySelector('[data-result-armed]')).toBeNull();
       act(() => vi.advanceTimersByTime(600)); // +800 ms
-      expect(screen.getByText('Release the keys, then play any key to try a little slower (75%). Hold the lowest and highest keys for two seconds to leave.')).toBeInTheDocument();
+      expect(view.container.querySelector('.piano-exercise-run__onward[data-ready]')).toHaveAttribute('aria-label', 'Play any key or press a pedal to try a little slower (75%)');
+      expect(screen.getByLabelText('Hold the lowest and highest keys for two seconds to leave')).toBeInTheDocument();
       expect(h.log.info).toHaveBeenCalledWith('piano.exercise-result-armed', expect.objectContaining({ armMs: RESULT_ARM_MS, hostAction: true }));
       tap(view, props);
       expect(retries()).toEqual(['host']);
+      expect(onResultContinue).toHaveBeenCalledTimes(1);
+    });
+
+    it('a pedal pressed down is any key: it takes the card once armed, and is never a note', async () => {
+      const { view, props, onResultContinue } = await failLocally();
+      act(() => vi.advanceTimersByTime(RESOLVE_HOLD_MS));
+      view.rerender(<ExerciseRun {...props} />);
+      h.cc(64, 127); h.cc(64, 0);
+      expect(onResultContinue).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(RESULT_ARM_MS));
+      h.cc(67, 127);
+      h.cc(67, 127); // held: once
+      expect(onResultContinue).toHaveBeenCalledTimes(1);
+      expect(h.log.info).toHaveBeenCalledWith('piano.exercise-retry', expect.objectContaining({ via: 'pedal', action: 'host' }));
+      h.cc(7, 127); // not a pedal
       expect(onResultContinue).toHaveBeenCalledTimes(1);
     });
 

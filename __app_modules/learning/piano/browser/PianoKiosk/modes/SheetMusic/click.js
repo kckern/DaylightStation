@@ -40,4 +40,20 @@ export function playClick() {
   } catch { /* audio device gone — ignore */ }
 }
 
+/**
+ * Two clicks at one loudness, a beat apart: what the click-volume sheet sounds when a level is tapped,
+ * so the choice is made by ear. Silent no-op if no WebAudio.
+ */
+export function playClickPair(gain, { gapS = 0.32 } = {}) {
+  const ac = audioContext();
+  if (!ac) return false;
+  try {
+    if (ac.state === 'suspended') ac.resume();
+    const at = ac.currentTime + 0.02;
+    scheduleBlipAt(ac, at, { gain });
+    scheduleBlipAt(ac, at + gapS, { gain });
+    return true;
+  } catch { return false; }
+}
+
 export default playClick;

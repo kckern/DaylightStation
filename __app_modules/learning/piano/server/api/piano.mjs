@@ -101,6 +101,7 @@ function attemptPolicyErrors(userId, body) {
  *   Home desk:
  *   GET    /activity/recent                  → { players: [...] }  (per-player most-recent lesson-course progress)
  *   GET    /activity/desk                    → { players: [...] }  (per-player current piece, passages, next step and Polish gem/diamond)
+ *   GET    /activity/desk/:userId            → { userId, name, pieces: [...] }  (every piece with real progress, newest first)
  *
  *   Game-time budget (server is the source of truth; unwired service fails open):
  *   GET    /users/:userId/game-budget                          → live balance ({enabled:false} if unwired/off)
@@ -1272,6 +1273,15 @@ export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = nul
   // ── Home desk: each player's current piece and next step ───────────────────
   router.get('/activity/desk', asyncHandler(async (req, res) => {
     res.json(pianoContainer.getPianoDesk().execute());
+  }));
+
+  // ── One player's pieces, newest first (the office screen's piece picker) ───
+  router.get('/activity/desk/:userId', asyncHandler(async (req, res) => {
+    const { userId } = req.params;
+    if (!safeSegment(userId)) return res.status(400).json({ error: 'invalid user' });
+    const player = pianoContainer.getPianoDesk().forPlayer(userId);
+    if (!player) return res.status(404).json({ error: 'unknown player' });
+    res.json(player);
   }));
 
   // ── Always-on MIDI history (.mid per user/date) ─────────────────────────────

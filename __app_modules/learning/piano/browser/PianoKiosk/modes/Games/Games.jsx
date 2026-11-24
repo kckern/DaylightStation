@@ -173,7 +173,8 @@ export function Games() {
 function GamePicker({ ceremony = null, onCeremonyDone }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-games' }), []);
   const navigate = useNavigate();
-  const ids = getGameIds();
+  // Practice entries (office Sheet Music) live on the office launcher; the tablet has its own Sheet Music mode.
+  const ids = getGameIds().filter((id) => !getGameEntry(id)?.practice);
   const cols = balancedColumns(ids.length);
 
   return (
@@ -473,7 +474,7 @@ function AuthorizedGameHost({ earlyPass = null }) {
   // A game id nothing answers to is not a gate at all — asking a child to play
   // a scale before telling them the game does not exist would be a toll on
   // nothing, so this is settled before either gate below.
-  if (!entry?.LazyComponent) {
+  if (!entry?.LazyComponent || entry.practice) {
     return (
       <div className="piano-mode__placeholder">
         Game not found.{' '}

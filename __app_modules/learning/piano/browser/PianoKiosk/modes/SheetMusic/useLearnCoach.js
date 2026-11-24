@@ -43,7 +43,9 @@ export default function useLearnCoach({ plan, legacy = {} }) {
     result: { ...result, inputContractVersion: 'onsets-v1' } }), [send]);
   const selectTask = useCallback((task) => send({ id: freshId(), type: 'selection', task }), [send]);
   const setAside = useCallback((task) => send({ id: freshId(), type: 'set-aside', task }), [send]);
+  // The rhythm step passed over for this unit: it earns nothing and is not offered here again.
+  const skipRhythm = useCallback((task) => send({ id: freshId(), type: 'skip-rhythm', task }), [send]);
   const retry = useCallback(() => client.retry(scope), [client, scope]);
   const recoveryData = useCallback(() => client.recoveryData(scope), [client, scope]);
-  return { ...active, state: active.state ?? projection.state, projection, record, selectTask, setAside, retry, recoveryData, profileId: scope.profileId };
+  return { ...active, state: active.state ?? projection.state, projection, record, selectTask, setAside, skipRhythm, retry, recoveryData, profileId: scope.profileId };
 }

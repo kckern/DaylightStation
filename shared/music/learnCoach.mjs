@@ -119,6 +119,11 @@ export function makeCoachTask(plan, spec) {
     ...(spec.review ? { review: true } : {}), ...(spec.source ? { source: spec.source } : {}),
     ...(spec.reason ? { reason: spec.reason } : {}), ...(spec.rhythm ? { rhythm: true } : {}),
     ...(spec.stepDown ? { stepDown: String(spec.stepDown) } : {}), ...(spec.leadIn ? { leadIn: true } : {}),
+    // A take played at a tempo the child CHOSE: faster than its step asks, or (the rhythm step only, a
+    // warm-up that must never wall a child) slower. The step's own tempo is kept beside the played one,
+    // never in the key. See `chosenTempo` and the test-out in applyCoachEvent.
+    ...(spec.mode !== 'free' && Number.isFinite(spec.stepTempoPercent) && Number.isFinite(spec.tempoPercent) && spec.stepTempoPercent > 0
+      && (spec.stepTempoPercent < spec.tempoPercent || (spec.rhythm && spec.stepTempoPercent > spec.tempoPercent)) ? { stepTempoPercent: spec.stepTempoPercent } : {}),
   };
   return { ...task, key: coachTaskKey(task) };
 }
@@ -531,7 +536,7 @@ export function projectCoach({ plan, state, legacy = {}, dayKey }) {
       const timedBefore = current.evidence.some((item) => item.task?.passageId === segment.id && isGoldWork(item.task));
       return (!timedBefore && segment.skills.find((task) => task.mastery && !task.ready)) || segment.skills.find((task) => task.track === 'gold' && !task.ready) || null;
     }
-    return segment.skills.find((task) => task.track === 'gold' && !task.ready) ?? null;
+    return segment.skills.find((task) => task.track === 'gold' && !task.ready && !(task.rhythm && current.skippedRhythm?.[segment.id])) ?? null;
   });
   const nextGold = pieceSilver ? goldLap.find((segment) => !segment.certification.gold && (!isJoin(segment) || goldMap[segment.id])) ?? null : null;
   const baseBpm = Number.isFinite(plan.tempoMap?.[0]?.bpm) && plan.tempoMap[0].bpm > 0 ? plan.tempoMap[0].bpm : null;
@@ -540,6 +545,7 @@ export function projectCoach({ plan, state, legacy = {}, dayKey }) {
     gold: goldMap,
     certifications: by((segment) => segment.certification),
     afterSetAside: by((segment) => open.find((other) => other.id !== segment.id && !setAsideToday(other.id))?.id ?? null),
+    rhythmSkipped: by((segment) => Boolean(current.skippedRhythm?.[segment.id])),
     canSetAside: by((segment) => !segment.certification.silver && !setAsideToday(segment.id) && missedTwice(current, segment)),
     piece: { total: passages.length,
       silver: passages.filter((segment) => segment.certification.silver).length,
@@ -705,6 +711,50 @@ function backChain(plan, task) {
   return makeCoachTask(plan, { ...task, range, reason: 'back-chain', label: 'Practice these bars', stepDown: null });
 }
 
+/**
+ * A take played at a tempo the child CHOSE above its step's own (the drill header's tempo track).
+ * A pass is a test-out of the unit's Gold lap up to that tempo: every Gold step of the same bars whose
+ * hands the take covered and whose tempo is at or below the played one is earned at once (a beat step
+ * by any covered tempo; a pitch-free rhythm take tests out only rhythm steps). Steps above stay as they
+ * were. A miss changes nothing: no step is charged with it, no smaller step is offered, and the child
+ * goes back to the step's own tempo. The rhythm step alone may also be taken DOWN; a pass at any tempo
+ * clears it (never a note step). The tempos come from the plan, never from a list here.
+ * ops:docs/superpowers/specs/2026-11-23-piano-drill-header-tempo-volume-design.md
+ */
+const chosenTempo = (task) => task.mode !== 'free' && !task.stepDown && Number.isFinite(task.stepTempoPercent) && task.tempoPercent !== task.stepTempoPercent;
+function testedOutBy(task, candidate) {
+  if (candidate.track !== 'gold' || candidate.passageId !== task.passageId || candidate.assist === 'none') return false;
+  if (!sameRange(candidate.range, task.range) || !candidate.parts.every((part) => task.parts.includes(part))) return false;
+  if (task.rhythm && !candidate.rhythm) return false;
+  // The rhythm step is a warm-up, not a speed rung: any passing take that covers its bars and hands clears it.
+  if (candidate.rhythm) return true;
+  // A beat take (notes found with the click, timing not judged) tests out only beat steps.
+  if (task.mode === 'metronome' && candidate.mode !== 'metronome') return false;
+  if (candidate.mode === 'metronome') return true;
+  return candidate.mode === 'cued' && Number.isFinite(candidate.tempoPercent) && candidate.tempoPercent <= task.tempoPercent;
+}
+function applyChosenTempo(current, task, result, { plan, now, dayKey, id, slot }) {
+  const step = plan.tasks.find((item) => item.key === coachTaskKey({ ...task, tempoPercent: task.stepTempoPercent }))
+    ?? makeCoachTask(plan, { ...task, tempoPercent: task.stepTempoPercent, stepTempoPercent: null });
+  const passed = passedFor(result, task);
+  // A slower rhythm take (the warm-up taken down) clears that rhythm step and nothing else.
+  const covered = !passed ? [] : task.tempoPercent < task.stepTempoPercent ? plan.tasks.filter((candidate) => candidate.key === step.key)
+    : plan.tasks.filter((candidate) => testedOutBy(task, candidate));
+  const keys = [...new Set([...covered.map((candidate) => candidate.key), ...(passed ? [task.key] : [])])];
+  const entry = { id, task, at: now, dayKey, eligible: keys, passedCredits: keys, chosen: true,
+    result: { criteria: result.criteria, diagnostics: result.diagnostics, spans: result.spans, parts: result.parts } };
+  const next = { ...current, revision: current.revision + 1, evidence: [...current.evidence, entry].slice(-128),
+    achievements: { ...current.achievements }, counts: { ...current.counts } };
+  for (const candidate of covered) {
+    const count = current.counts[candidate.key] ?? { attempts: 0, passes: 0, streak: 0 };
+    next.counts[candidate.key] = { attempts: count.attempts + 1, passes: count.passes + 1, streak: count.streak + 1 };
+    if (!next.achievements[candidate.key]) next.achievements[candidate.key] = { at: now, dayKey, provenance: 'tested-out', evidenceIds: [id] };
+  }
+  if (covered.some((candidate) => candidate.mastery)) next.reviews = { ...current.reviews, [task.passageId]: { at: now, dayKey } };
+  next[slot] = passed && (next.achievements[step.key] || ready(next, step)) ? null : step;
+  return next;
+}
+
 export function applyCoachEvent(state, event, options) {
   const before = stateFor(options.plan, state);
   const next = applyCoachEventToState(state, event, options);
@@ -724,11 +774,17 @@ function applyCoachEventToState(state, event, { plan, now, dayKey, legacy = {} }
     return { ...current, revision: current.revision + 1, [slot]: task,
       ...(current.setAside?.[task.passageId] ? { setAside } : {}) };
   }
+  // The rhythm step passed over for this unit (it must never wall a child): nothing is earned, and the
+  // Gold lap moves on to its next step here and never recommends the rhythm step for this unit again.
+  if (event.type === 'skip-rhythm') return { ...current, revision: current.revision + 1,
+    skippedRhythm: { ...current.skippedRhythm, [task.passageId]: dayKey },
+    goldResume: current.goldResume?.passageId === task.passageId && current.goldResume?.rhythm ? null : current.goldResume ?? null };
   if (event.type === 'set-aside') return { ...current, revision: current.revision + 1,
     setAside: { ...current.setAside, [task.passageId]: dayKey },
     resume: current.resume?.passageId === task.passageId ? null : current.resume ?? null };
   if (event.type !== 'outcome' || !assessable(event.result, task)) return current;
   const result = event.result;
+  if (chosenTempo(task)) return applyChosenTempo(current, task, result, { plan, now, dayKey, id: event.id, slot });
   // A step down to a join's half is practice: it proves none of the half's own steps (no credit, no counts).
   const candidates = task.stepDown ? [] : plan.tasks.filter((candidate) => {
     if (!canProve(task, candidate)) return false;

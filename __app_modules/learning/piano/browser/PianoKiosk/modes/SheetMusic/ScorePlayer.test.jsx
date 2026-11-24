@@ -405,8 +405,7 @@ describe('ScorePlayer — guided Learn composition', () => {
   // The selected token opens Learn on its next tap.
   fireEvent.click(token);
   fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
-  expect(screen.getByRole('dialog', { name: 'Passage demonstration' })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Stop listening' }));
+  // Listen plays inside the drill (LearnLab owns it): the drill stays, and the host is told.
   expect(screen.getByRole('button', { name: 'Listen' })).toBeInTheDocument();
   expect(h.learnLabProps.coachingTask.skill).toBe('right');
  });

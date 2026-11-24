@@ -26,6 +26,8 @@ export function usePianoConfig() {
   // exist on the office screen.
   const [appConfig, setAppConfig] = useState(null);
   const [deviceConfig, setDeviceConfig] = useState(null);
+  // The household zone, served beside the file. Learn reads the study day on it.
+  const [timezone, setTimezone] = useState(null);
   const pianoConfigRef = useRef(null);
 
   useEffect(() => {
@@ -35,7 +37,10 @@ export function usePianoConfig() {
       try {
         const pianoAppConfig = await DaylightAPI('api/v1/admin/apps/piano/config');
         const gamesC = pianoAppConfig?.parsed?.games ?? null;
-        if (!cancelled) { setGamesConfig(gamesC); setAppConfig(pianoAppConfig?.parsed ?? null); }
+        if (!cancelled) {
+          setGamesConfig(gamesC); setAppConfig(pianoAppConfig?.parsed ?? null);
+          setTimezone(typeof pianoAppConfig?.householdTimezone === 'string' ? pianoAppConfig.householdTimezone : null);
+        }
         return true;
       } catch (err) {
         if (attempt < CONFIG_RETRY_DELAYS.length && !cancelled) {
@@ -89,5 +94,5 @@ export function usePianoConfig() {
     };
   }, [logger]);
 
-  return { gamesConfig, deviceConfig, appConfig };
+  return { gamesConfig, deviceConfig, appConfig, timezone };
 }

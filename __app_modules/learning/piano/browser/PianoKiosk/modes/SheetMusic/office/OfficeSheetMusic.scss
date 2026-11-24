@@ -1,0 +1,293 @@
+// Sheet Music on the office screen (1280×720, keyboard only).
+// Fixed heights top to bottom, so nothing is ever pushed off the canvas: the
+// launcher's chrome strip above, the body, and — on a piece — the key strip.
+// No hover, focus rings or pointer affordances: nothing here is touched.
+
+.office-sheet-music {
+  --osm-case: var(--pg-case, #16161b);
+  --osm-ivory: var(--pg-ivory, #f1f1f4);
+  --osm-ebony: var(--pg-shelf, #1f1f26);
+  --osm-brass: var(--pg-brass, #5fe39a);
+  --osm-strip-h: 5.75rem;
+
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+  background: var(--osm-case);
+  color: var(--osm-ivory);
+  font-family: 'Roboto Condensed', sans-serif;
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  &__body {
+    position: relative;
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  // Learn's own stage: the tablet's drill, given exactly the room above the strip.
+  &__learn {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+
+    > .piano-score-player,
+    > .piano-mode__placeholder { flex: 1 1 0; min-height: 0; position: relative; }
+  }
+
+  &__status {
+    margin: 0;
+    height: 100%;
+    display: grid;
+    place-items: center;
+    padding: 2rem;
+    text-align: center;
+    font-size: 1.5rem;
+    color: var(--osm-ivory);
+    text-wrap: balance;
+  }
+
+  &__strip {
+    flex: 0 0 var(--osm-strip-h);
+    height: var(--osm-strip-h);
+    border-top: 1px solid var(--pg-hairline, #34343f);
+    background: var(--osm-ebony);
+  }
+
+  // The drill's touch-only furniture, where a host cannot hide it by prop.
+  .piano-passage-path { pointer-events: none; }
+  .piano-passage-path__all,
+  .piano-passage-path__play { display: none; } // the play disc says "tap me": here the unit is already open
+
+  // The "who is practising" roster reuses the launcher's own row, as a page not an overlay.
+  &--who .note-launcher { position: absolute; inset: 0; }
+}
+
+// ── The cover the score engraves under (ScorePlayer, keyboard only) ─────────
+.piano-score-player__keyboard-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  background: var(--pg-case, #16161b);
+  color: var(--pg-ivory, #f1f1f4);
+  font-family: 'Roboto Condensed', sans-serif;
+  text-align: center;
+
+  strong { font-size: 2.2rem; letter-spacing: 0.02em; }
+  span { font-size: 1.2rem; color: var(--pg-brass, #5fe39a); }
+}
+
+// ── The key strip ────────────────────────────────────────────────────────────
+.office-key-strip {
+  list-style: none;
+  margin: 0;
+  height: 100%;
+  padding: 0.55rem 1rem 0.65rem;
+  display: grid;
+  grid-template-columns: repeat(var(--strip-count, 6), minmax(0, 1fr));
+  gap: 0.45rem;
+
+  &__key {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.35rem 0.7rem 0.35rem 0.4rem;
+    border-radius: 0 0 9px 9px;
+    // A dim key: drawn in solid greys so it never reads as a half-faded button.
+    background: #3a3a43;
+    color: #9d9daa;
+
+    &[data-enabled] {
+      background: linear-gradient(180deg, #ffffff 0%, var(--pg-ivory, #f1f1f4) 70%, #dcdce2 100%);
+      color: var(--pg-shelf, #1f1f26);
+    }
+  }
+
+  &__card {
+    flex: 0 0 auto;
+    width: 3.2rem;
+    height: 100%;
+    max-height: 4.4rem;
+    display: flex;
+    align-items: center;
+
+    > * { width: 100%; height: 100%; }
+  }
+
+  &__key:not([data-enabled]) &__card { filter: grayscale(1); opacity: 0.55; }
+
+  &__text {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  &__note {
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.75;
+  }
+
+  &__label {
+    font-size: 1.15rem;
+    font-weight: 700;
+    line-height: 1.1;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    overflow-wrap: break-word;
+  }
+}
+
+// ── The piece picker ─────────────────────────────────────────────────────────
+.office-piece-picker {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 1.1rem 1.5rem 1rem;
+  gap: 0.9rem;
+
+  &__head {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1.5rem;
+
+    h2 { margin: 0; font-size: 1.7rem; letter-spacing: 0.02em; }
+    p { margin: 0; font-size: 1rem; opacity: 0.7; text-align: right; }
+  }
+
+  &__keys {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    flex: 1 1 0;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: repeat(var(--key-count, 8), minmax(0, 1fr));
+    gap: 0.55rem;
+  }
+
+  &__pages {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    flex: 0 0 3.2rem;
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  &__page {
+    flex: 0 0 8.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 0 0 8px 8px;
+    background: #3a3a43;
+    color: #c9c9d1;
+    font-size: 1.05rem;
+    font-weight: 700;
+
+    &[data-current] { background: var(--osm-brass); color: #0f1a13; }
+  }
+
+  &__page-note { font-variant-numeric: tabular-nums; opacity: 0.8; }
+}
+
+.office-piece-key {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto auto auto;
+  justify-items: center;
+  gap: 0.45rem;
+  padding: 0.6rem 0.6rem 0.8rem;
+  border-radius: 0 0 12px 12px;
+  background: linear-gradient(180deg, #ffffff 0%, var(--pg-ivory, #f1f1f4) 64%, #dcdce2 100%);
+  color: var(--pg-shelf, #1f1f26);
+  overflow: hidden;
+
+  &__poster {
+    width: 100%;
+    min-height: 0;
+    border-radius: 6px;
+    background: #d4d4db;
+    overflow: hidden;
+
+    display: grid;
+    place-items: center;
+
+    img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  }
+
+  // No poster: the sheet-music mark on the stand-in, solid grey ink.
+  &__stand-in { font-size: 3.5rem; color: #8b8b96; }
+
+  // The desk's badge, on ivory.
+  &__badge.piano-desk__badge {
+    max-width: 100%;
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    background: #c9ccd3;
+    color: #23262b;
+
+    &[data-level='gold'] { background: #e9c25a; color: #3a2a00; }
+    &[data-level='diamond'] { background: #9fd8ef; color: #0d3142; }
+  }
+
+  &__title {
+    max-width: 100%;
+    font-size: 1.05rem;
+    line-height: 1.15;
+    text-align: center;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  &__map {
+    max-width: 100%;
+    display: flex;
+    justify-content: center;
+
+    .piano-desk__map { display: grid; gap: 3px; width: 100%; }
+    .piano-desk__map i { display: block; aspect-ratio: 1; }
+  }
+
+  &__tip {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+
+    > :first-child { width: 2.6rem; height: 3rem; }
+  }
+
+  &__note {
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    opacity: 0.7;
+  }
+}

@@ -30,6 +30,7 @@ import { projectLearnPassage } from './learnRoadmap.js';
 import { CustomLearnSession } from './LearnRoadmap.jsx';
 import LearnLab from './LearnLab.jsx';
 import LearnCoach from './LearnCoach.jsx';
+import { useKeyboardOnly } from './office/KeyboardOnlyContext.js';
 import useLearnCoach from './useLearnCoach.js';
 import { createCoachPlan } from '../../../../../../../shared/music/learnCoach.mjs';
 import LearnPassageLayer from './LearnPassageLayer.jsx';
@@ -168,6 +169,8 @@ const attemptId = () => `attempt-${globalThis.crypto?.randomUUID?.() || `${Date.
  * {@link useScoreTelemetry}.
  */
 export default function ScorePlayer({ score: scoreMeta }) {
+  // Present on the office screen only: no touch, so Learn opens on its own and its buttons become keys.
+  const keyOnly = useKeyboardOnly();
   const { subscribe, subscribeRaw, releaseNote, sendNoteAt, sendNoteOffAt, sendPanic } = usePianoMidi();
   const { setPlaying: setGlobalPlaying } = usePianoPlayback();
   const { config } = usePianoKioskConfig();
@@ -248,6 +251,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [mode, setMode] = useState(() => {
+    // The office screen runs Learn only: the other modes are touch surfaces.
+    if (keyOnly) return 'learn';
     if (autoplayMode) return autoplayMode;
     // `?mode=` opens a mode without starting it (the home strip's Polish link).
     const asked = searchParams.get('mode');
@@ -456,7 +461,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Learn always means silent wait-for-correct. A focused loop changes the
   // cursor range, never who performs the music; machine demonstration belongs
   // exclusively to Listen.
-  const roadmapLearn = mode === 'learn' && config?.sheetmusic?.learn?.roadmap !== false;
+  // The office screen (keyboard only) always runs the coached path: it has no score view to fall back to.
+  const roadmapLearn = mode === 'learn' && (Boolean(keyOnly) || config?.sheetmusic?.learn?.roadmap !== false);
   const learnGate = mode === 'learn' && !roadmapLearn;
   // The audio plane's one predicate: who actually sends notes to the piano. Every
   // flush/panic guard reads THIS, never a literal mode check (wave-3 §0).
@@ -2256,7 +2262,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
       return next;
     }, { replace: true });
   }, [setSearchParams]);
-  const closeLearnPassage = useCallback(() => updateLearnSelection(null), [updateLearnSelection]);
+  // On the office screen there is no score view behind the drill: leaving a unit goes back to the piece list.
+  const exitKeyboardOnly = keyOnly?.onExit;
+  const closeLearnPassage = useCallback(() => {
+    if (exitKeyboardOnly) { exitKeyboardOnly('learn-back'); return; }
+    updateLearnSelection(null);
+  }, [updateLearnSelection, exitKeyboardOnly]);
   // The passage a rail tile or board card points at. It only shows those bars on
   // the score: `learnPassage` in the URL is what opens Learn.
   const [railPassageId, setRailPassageId] = useState(null);
@@ -2465,6 +2476,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
     logger.info('piano.learn.board.close', { scoreId: scoreMeta.id, by: 'close' });
     setPassageBoard(null);
   }, [logger, scoreMeta.id]);
+  // The office screen has no score view to start from: once the engraving has named the passages and the
+  // coach has loaded, it opens on the coach's next step (the path's target), as the play disc would.
+  const keyOnlyOpened = useRef(false);
+  const keyOnlyReady = Boolean(keyOnly && roadmapLearn && practiceLoaded && coach.loaded !== false && layoutFresh && (layout.measures?.length ?? 0) > 0);
+  useEffect(() => {
+    if (!keyOnlyReady || selectedPassageId || keyOnlyOpened.current || !railTargetId) return;
+    keyOnlyOpened.current = true;
+    logger.info('piano.learn.office.open', { scoreId: scoreMeta.id, passageId: railTargetId, target: rail.target?.kind ?? null });
+    openLearnPassage(railTargetId);
+  }, [keyOnlyReady, selectedPassageId, railTargetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (roadmapLearn && selectedPassage) return <div className="piano-score-player piano-score-player--learn-launchpad">
     <LearnCoach score={learnScore} title={meta.title} plan={coachPlan} segment={selectedPassage} coach={coach} skipping={learnPlan.skipping} polish={polishAwards}
@@ -2504,6 +2525,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   return (
     <div className="piano-score-player">
+      {/* The office screen never shows the score view: it engraves under this cover (the passages come from
+          the engraving) and opens the coach's next step the moment it can. */}
+      {keyOnly && <div className="piano-score-player__keyboard-cover" role="status">
+        <strong>{meta.title}</strong>
+        <span>{keyOnlyReady && !railTargetId ? 'This piece has no passages to practise yet.' : 'Opening your next step…'}</span>
+      </div>}
       {learnSession}
       {customSession}
       {roadmapLearn && selectedPassageId && !selectedPassage && layoutFresh && (layout.measures?.length ?? 0) > 0 && <p role="status">That passage is no longer available. Choose a passage to continue.</p>}

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import LearnCoach, { passageDrill, recoveryWording } from './LearnCoach.jsx';
-import { applyCoachEvent, createCoachPlan, projectCoach } from '../../../../../../../shared/music/learnCoach.mjs';
+import LearnCoach, { coachTempoTrack, passageDrill, passFills, recoveryWording } from './LearnCoach.jsx';
+import { applyCoachEvent, coachTaskKey, createCoachPlan, projectCoach } from '../../../../../../../shared/music/learnCoach.mjs';
 const h = vi.hoisted(() => ({ profile: 'guest', lab: null, labs: 0,
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), sampled: vi.fn() } }));
 vi.mock('../../../../../../../frontend/src/lib/logging/Logger.js', () => ({ default: () => ({ child: () => h.log }) }));
@@ -72,12 +72,12 @@ describe('LearnCoach', () => {
   expect(h.lab).toBeNull();
   expect(screen.getByRole('status', { name: 'Loading your practice' })).toBeInTheDocument();
  });
- it('offers listening from the drill chrome without starting an assessment', () => {
-  render(<LearnCoach {...props} />); act(() => h.lab.onListen());
+ it('offers listening inside the drill without starting an assessment', () => {
+  render(<LearnCoach {...props} />); const labs = h.labs; act(() => h.lab.onListen());
   expect(props.onListen).toHaveBeenCalledWith(expect.objectContaining({ passageId: 'a' }));
-  expect(screen.queryByText('Drill surface')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Stop listening' }));
+  // The drill stays: Listen plays inside it (LearnLab), not on a screen of its own.
   expect(screen.getByText('Drill surface')).toBeInTheDocument();
+  expect(h.labs).toBeGreaterThanOrEqual(labs);
  });
  it('banks a passing take with the drill card and moves to the next step under it', async () => {
   render(<LearnCoach {...props} />);
@@ -281,5 +281,83 @@ describe('LearnCoach', () => {
    expect(h.lab.coachingTask).toMatchObject({ skill: 'mastery', tempoPercent: 100 });
    expect(h.log.info).toHaveBeenCalledWith('piano.learn.coach.skip', expect.objectContaining({ from: 'right', to: 'mastery', mode: 'open' }));
   });
+ });
+});
+
+describe('the chosen tempo on a coached step', () => {
+ const segment = projectCoach({ plan }).segments[0];
+ const step = (skill) => segment.skills.find((item) => item.skill === skill);
+ const ladder = [...new Set(segment.skills.filter((s) => s.track === 'gold' && s.mode === 'cued' && !s.rhythm).map((s) => s.tempoPercent))].sort((a, b) => a - b);
+ it('offers the plan\'s own rung tempos, from the step up; the rhythm step also goes down', () => {
+  const timed = segment.skills.find((s) => s.track === 'gold' && s.mode === 'cued' && !s.rhythm && s.parts.length === 2);
+  const track = coachTempoTrack(segment, timed);
+  expect(track.ladder).toEqual(ladder);
+  expect(track.stops[0]).toBe(timed.tempoPercent);
+  expect(track.stops.at(-1)).toBe(100);
+  for (const rung of ladder.filter((value) => value >= timed.tempoPercent)) expect(track.stops).toContain(rung);
+  const rhythm = coachTempoTrack(segment, step('rhythm'));
+  expect(rhythm.stops[0]).toBe(Math.min(step('rhythm').tempoPercent, ladder[0]));
+  expect(coachTempoTrack(segment, step('right'))).toBeNull();
+ });
+ it('lights the steps a pass at the chosen tempo would fill', () => {
+  const together = segment.skills.find((s) => s.track === 'gold' && s.mode === 'cued' && !s.rhythm && s.parts.length === 2);
+  const chosen = ladder.filter((value) => value < 100).at(-1);
+  const filled = segment.skills.filter((s) => passFills(together, s, chosen)).map((s) => s.skill);
+  expect(filled).toContain('rhythm');
+  expect(filled).not.toContain('mastery');
+  const drill = passageDrill(segment, together, { preview: chosen });
+  expect(drill.projection.steps.filter((s) => s.preview).map((s) => s.id).sort()).toEqual(segment.skills.filter((s) => filled.includes(s.skill)).map((s) => s.key).sort());
+  // A pitch-free rhythm take fills only rhythm steps.
+  expect(segment.skills.filter((s) => passFills(step('rhythm'), s, 100)).map((s) => s.skill)).toEqual(['rhythm']);
+ });
+ const goldCoach = () => {
+  let state = null;
+  const record = vi.fn((task, raw) => { state = applyCoachEvent(state, { id: raw.assessmentId, type: 'outcome', task, result: raw }, { plan, now: '2026-11-23T18:00:00Z', dayKey: '2026-11-23' }); });
+  const coach = { profileId: 'learner4', loaded: true, get projection() { return projectCoach({ plan, state }); }, state: {}, saveStatus: 'saved', selectTask: vi.fn(), record, skipRhythm: vi.fn() };
+  return coach;
+ };
+ it('records a take at the chosen tempo with the step\'s beside it, and says what it earned', async () => {
+  const coach = goldCoach(); const timed = segment.skills.find((s) => s.track === 'gold' && s.mode === 'cued' && !s.rhythm && s.parts.length === 2);
+  const view = render(<LearnCoach {...props} coach={coach} skipping={{ default: 'open' }} />);
+  act(() => h.lab.onPickStep({ id: timed.key }));
+  const chosen = ladder.filter((value) => value < 100).at(-1);
+  act(() => h.lab.tempoChoice.onChange(chosen));
+  expect(h.lab.tempoChoice.value).toBe(chosen);
+  expect(h.lab.drill.projection.steps.some((s) => s.preview)).toBe(true);
+  expect(h.log.info).toHaveBeenCalledWith('piano.learn.tempo.choose', expect.objectContaining({ from: timed.tempoPercent, to: chosen }));
+  await act(async () => { h.lab.onStarted(); h.lab.onOutcome(passed, { tempoPercent: chosen }); });
+  const [played] = coach.record.mock.calls[0];
+  expect(played).toMatchObject({ tempoPercent: chosen, stepTempoPercent: timed.tempoPercent });
+  expect(played.key).toBe(coachTaskKey(played));
+  view.rerender(<LearnCoach {...props} coach={coach} skipping={{ default: 'open' }} />);
+  expect(h.lab.card.copy).toMatchObject({ headline: `Passed at ${chosen}%`, line: `Everything up to ${chosen}% done` });
+ });
+ it('two misses above the step\'s tempo go back to it', async () => {
+  const coach = goldCoach(); const timed = segment.skills.find((s) => s.track === 'gold' && s.mode === 'cued' && !s.rhythm && s.parts.length === 2);
+  render(<LearnCoach {...props} coach={coach} skipping={{ default: 'open' }} />);
+  act(() => h.lab.onPickStep({ id: timed.key }));
+  act(() => h.lab.tempoChoice.onChange(100));
+  const late = { ...passed, verdict: { passed: false }, criteria: { completeness: 1, cleanliness: 1, placement: 0.1 } };
+  await act(async () => { h.lab.onStarted(); h.lab.onOutcome({ ...late, assessmentId: 'm1' }, { tempoPercent: 100 }); });
+  expect(h.lab.tempoChoice.value).toBe(100);
+  await act(async () => { h.lab.onStarted(); h.lab.onOutcome({ ...late, assessmentId: 'm2' }, { tempoPercent: 100 }); });
+  expect(h.lab.tempoChoice.value).toBe(timed.tempoPercent);
+  expect(screen.getByText(`Back to ${timed.tempoPercent}%`)).toBeInTheDocument();
+  // No smaller step is offered for a miss at a chosen tempo.
+  expect(screen.queryByRole('button', { name: /slower|^Practice / })).toBeNull();
+ });
+ it('the rhythm step can always be skipped, and offers it again in the result after two misses', async () => {
+  const coach = goldCoach();
+  render(<LearnCoach {...props} coach={coach} skipping={{ default: 'open' }} />);
+  act(() => h.lab.onPickStep({ id: step('rhythm').key }));
+  expect(screen.getByRole('button', { name: 'Skip rhythm' })).toBeInTheDocument();
+  const late = { ...passed, verdict: { passed: false }, criteria: { completeness: 1, cleanliness: 1, placement: 0.1 } };
+  await act(async () => { h.lab.onStarted(); h.lab.onOutcome({ ...late, assessmentId: 'r1' }, {}); });
+  await act(async () => { h.lab.onStarted(); h.lab.onOutcome({ ...late, assessmentId: 'r2' }, {}); });
+  // In the header, and again among the result's actions after two misses.
+  expect(screen.getAllByRole('button', { name: 'Skip rhythm' })).toHaveLength(2);
+  fireEvent.click(screen.getAllByRole('button', { name: 'Skip rhythm' }).at(-1));
+  expect(coach.skipRhythm).toHaveBeenCalledWith(expect.objectContaining({ skill: 'rhythm' }));
+  expect(h.log.info).toHaveBeenCalledWith('piano.learn.rhythm.skip', expect.objectContaining({ passageId: 'a', misses: 2 }));
  });
 });

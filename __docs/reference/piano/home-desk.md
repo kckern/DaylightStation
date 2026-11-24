@@ -107,6 +107,11 @@ a piece nor a course has no card.
 
 ## Data
 
+`GET /api/v1/piano/activity/desk/:userId` is the same projection for one player, every piece with
+real progress instead of the newest one, newest first (`{ userId, name, pieces }`; 404 off the roster;
+a score two records name is offered once, the newer). The office screen's Sheet Music piece picker
+reads it (`sheet-music-player.md`, Office screen); its first piece is always the strip's card.
+
 `GET /api/v1/piano/activity/desk` returns each roster child's current piece, with its `cover` when the library has one, and
 `polish: { gem, diamond }`: the piece's Polish awards, read from the piece log
 (`polish-gem` / `polish-diamond` entries; an unreadable log answers both false and

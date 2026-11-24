@@ -48,7 +48,7 @@ export function createLearnCoachClient({ request, storage = null, onChange = () 
       try {
         const event = item?.body?.event;
         const recipe = item?.body?.plan;
-        if (!event?.id || !['selection', 'outcome', 'set-aside'].includes(event.type) || event.profileId !== scope.profileId
+        if (!event?.id || !['selection', 'outcome', 'set-aside', 'skip-rhythm'].includes(event.type) || event.profileId !== scope.profileId
           || recipe?.scoreId !== scope.scoreId || recipe.fingerprint !== scope.fingerprint
           || (event.type === 'outcome' && (!item.evidence || item.evidence.attempt_id !== event.id))) throw new Error('Unreadable queued take');
         applyCoachEvent(null, event, { plan: createCoachPlan(recipe), ...context() });

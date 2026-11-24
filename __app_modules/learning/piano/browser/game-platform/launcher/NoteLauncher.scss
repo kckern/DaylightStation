@@ -278,6 +278,19 @@
     text-transform: uppercase;
   }
 
+  // Why some keys are locked: one line, beside the title, never a panel.
+  &__notice {
+    min-width: 0;
+    flex: 0 1 auto;
+    color: var(--brass);
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   // Time left, as a draining brass hairline. No number — the bar says it.
   &__timer {
     flex: 1;
@@ -429,6 +442,20 @@
     color: var(--ebony);
     opacity: 0.7;
   }
+}
+
+// A game key while games are off or locked: still in its place, so the row and
+// the keys under the hand agree, but plainly not playable. Opaque greys, no
+// translucency: the face is drawn dim, not faded over the case.
+.nl-key.is-locked {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--ivory) 34%, var(--case)) 0%,
+    color-mix(in srgb, var(--ivory) 26%, var(--case)) 100%);
+  color: color-mix(in srgb, var(--ivory) 78%, var(--case));
+
+  .nl-key__note,
+  .nl-key__label,
+  .nl-key__icon { color: color-mix(in srgb, var(--ivory) 78%, var(--case)); }
 }
 
 @keyframes nl-rise {

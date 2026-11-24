@@ -26,12 +26,14 @@ import './NoteLauncher.scss';
  */
 export default function NoteLauncher({
   slots = [], timeoutMs = 30000, playerName = null, playerId = null,
-  title = 'Pick a game · play its key', variant = 'games', showTimer = true,
+  title = 'Pick a game · play its key', variant = 'games', showTimer = true, notice = null, showPlayer = true,
 }) {
   return (
     <div className={`note-launcher note-launcher--${variant}`} role="dialog" aria-label={title}>
       <div className="note-launcher__head">
         <span className="note-launcher__title">{title}</span>
+        {/* Why the row is short: games switched off or locked leave only the practice keys. */}
+        {notice && <span className="note-launcher__notice" role="status">{notice}</span>}
         {showTimer && (
           <div className="note-launcher__timer" aria-hidden="true">
             <i style={{ animationDuration: `${timeoutMs}ms` }} />
@@ -41,7 +43,8 @@ export default function NoteLauncher({
         {/* Who the result gets filed under, and how to change it. Named rather
             than implied: the office screen cannot know who sat down, and a
             silent default is how results end up under the wrong person. */}
-        <span className="note-launcher__player">
+        {/* `showPlayer={false}` when the row itself IS the question of who is playing. */}
+        {showPlayer && <span className="note-launcher__player">
           {playerName ? (
             <span className="note-launcher__player-row">
               <span className="note-launcher__player-avatar">
@@ -56,14 +59,15 @@ export default function NoteLauncher({
               </span>
             </span>
           ) : <b>Nobody yet — play the top key</b>}
-        </span>
+        </span>}
       </div>
 
       <ul className="note-launcher__keys" style={{ '--key-count': slots.length }}>
         {slots.map((slot, i) => (
           <li
             key={slot.gameId ?? slot.userId}
-            className={`nl-key${slot.sharpAfter ? ' has-sharp' : ''}`}
+            className={`nl-key${slot.sharpAfter ? ' has-sharp' : ''}${slot.locked ? ' is-locked' : ''}`}
+            data-locked={slot.locked || undefined}
             style={{ '--key-index': i }}
           >
             {/* Two readings of the same key.
@@ -92,7 +96,7 @@ export default function NoteLauncher({
                     title rather than trailing after it. */}
                 <StaffNoteLabel midi={slot.note} />
                 <span className="nl-key__note">{slot.noteName}</span>
-                <Icon name={slot.icon} className="nl-key__icon" />
+                <Icon name={slot.locked ? 'lock' : slot.icon} className="nl-key__icon" />
                 <span className="nl-key__label">{slot.label}</span>
               </>
             )}
