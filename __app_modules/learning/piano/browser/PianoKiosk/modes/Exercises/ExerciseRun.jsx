@@ -1282,13 +1282,19 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
    */
   const pedalLevelsRef = useRef({});
   const onPedalRef = useRef(null);
-  onPedalRef.current = (controller) => {
-    if (demonstratingRef.current) return;
-    if (localRetry && resultArmed) { continueFromPiano('pedal'); return; }
-    if (!learnCued || !runtime || cueHoldRef.current) return;
+  // Every press is logged with what the drill did with it, so a pedal that "does nothing"
+  // on the real piano can be told apart from one that never arrived (2026-11-24).
+  onPedalRef.current = (controller, value) => {
+    const said = (acted, ignored = null) => traceEvent('piano.exercise-pedal', { controller, value, acted, ignored });
+    if (demonstratingRef.current) { said(null, 'listening'); return; }
+    if (localRetry && resultArmed) { said('continue'); continueFromPiano('pedal'); return; }
+    if (!learnCued || !runtime) { said(null, 'not-cued'); return; }
+    if (cueHoldRef.current) { said(null, 'not-prepared'); return; }
     const state = runtime.getSnapshot();
-    if (state.status !== 'prepared' || state.paused) return;
+    if (state.paused) { said(null, 'paused'); return; }
+    if (state.status !== 'prepared') { said(null, state.status === 'running' ? 'counting' : 'not-prepared'); return; }
     const at = Date.now();
+    said('start');
     traceEvent('piano.exercise-armed', { at, held: [], onsets: [], pedal: controller, downbeat: true });
     startCountIn({ reason: 'pedal', downbeatAt: at });
   };
@@ -1296,7 +1302,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     if (!data || data.length < 3 || (data[0] & 0xf0) !== 0xb0 || !PEDAL_CONTROLLERS.includes(data[1])) return;
     const previous = pedalLevelsRef.current[data[1]] ?? 0;
     pedalLevelsRef.current[data[1]] = data[2];
-    if (isRisingEdge(previous, data[2])) onPedalRef.current?.(data[1]);
+    if (isRisingEdge(previous, data[2])) onPedalRef.current?.(data[1], data[2]);
   }) ?? undefined, [subscribeRaw]);
 
   /**

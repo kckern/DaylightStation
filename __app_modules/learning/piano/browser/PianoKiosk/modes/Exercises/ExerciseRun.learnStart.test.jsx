@@ -49,6 +49,9 @@ const h = vi.hoisted(() => ({
   onsetShift: 0,
   /** The metronome hook's latest arguments: where the click grid is anchored. */
   click: null,
+  /** Raw MIDI listeners (the pedals arrive here as control-change bytes). */
+  raw: new Set(),
+  subscribeRaw: (fn) => { h.raw.add(fn); return () => h.raw.delete(fn); },
 }));
 
 const notehead = (midi) => {
@@ -69,7 +72,7 @@ const fourBarSteps = () => [60, 62, 64, 65, 67, 69, 71, 72].map((midi, index) =>
 
 vi.mock('../../../../../../../frontend/src/lib/logging/Logger.js', () => ({ default: () => ({ child: () => h.log }) }));
 vi.mock('../../PianoMidiContext.jsx', () => ({
-  usePianoMidi: () => ({ connected: true }),
+  usePianoMidi: () => ({ connected: true, subscribeRaw: h.subscribeRaw }),
   usePianoMidiNotes: () => ({ activeNotes: h.activeNotes }),
 }));
 vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: 'learner4' }) }));
@@ -161,6 +164,8 @@ const hold = (midis) => act(() => {
 });
 const strike = (midi) => { hold([midi]); advance(80); hold([]); };
 const run = () => document.querySelector('.piano-exercise-run');
+/** A control change, as the bridge delivers it. */
+const cc = (controller, value) => act(() => { for (const fn of [...h.raw]) fn({ data: new Uint8Array([0xb0, controller, value]), time: Date.now() }); });
 const band = () => document.querySelector('.piano-learn-countin');
 const events = (name) => h.log.info.mock.calls.filter(([event]) => event === name).map(([, data]) => data);
 
@@ -192,6 +197,7 @@ const finish = () => advance(4 * BEAT);
 
 beforeEach(() => {
   document.body.innerHTML = '';
+  h.raw.clear();
   h.activeNotes = new Map();
   h.steps = fourBarSteps();
   h.engraveFails = false;
@@ -258,6 +264,45 @@ describe('a key on the piano is beat one of the count (A1)', () => {
     expect(band()).toBeNull();
     advance(400);
     expect(document.querySelector('.piano-score-countin__beat')).toHaveTextContent('4');
+  });
+});
+
+describe('a pedal is any key: it starts the count, and every press is logged', () => {
+  it('a sustain press on a prepared cued take starts the count with the press as beat one', async () => {
+    await mount();
+    const pressedAt = Date.now();
+    cc(64, 127);
+    expect(events('piano.exercise-countdown-started')).toEqual([expect.objectContaining({ reason: 'pedal', downbeat: true, prerollMs: 0 })]);
+    expect(h.click.anchorMs).toBe(pressedAt);
+    expect(events('piano.exercise-pedal')).toEqual([expect.objectContaining({ controller: 64, value: 127, acted: 'start', ignored: null })]);
+  });
+
+  it('a held or half pedal acts once, and a pedal during the count is logged as ignored', async () => {
+    await mount();
+    cc(64, 127);
+    cc(64, 100);
+    cc(64, 0);
+    cc(64, 127);
+    expect(events('piano.exercise-countdown-started')).toHaveLength(1);
+    expect(events('piano.exercise-pedal')).toEqual([
+      expect.objectContaining({ acted: 'start' }),
+      expect.objectContaining({ acted: null, ignored: 'counting' }),
+    ]);
+  });
+
+  it('soft and sostenuto (CC 66, 67) start it too; CC 7 does nothing', async () => {
+    await mount();
+    cc(7, 127);
+    expect(events('piano.exercise-countdown-started')).toHaveLength(0);
+    expect(events('piano.exercise-pedal')).toHaveLength(0);
+    cc(66, 127);
+    expect(events('piano.exercise-countdown-started')).toEqual([expect.objectContaining({ reason: 'pedal' })]);
+    view.unmount();
+    vi.useRealTimers();
+    for (const logger of Object.values(h.log)) logger.mockClear();
+    await mount();
+    cc(67, 127);
+    expect(events('piano.exercise-countdown-started')).toEqual([expect.objectContaining({ reason: 'pedal' })]);
   });
 });
 
