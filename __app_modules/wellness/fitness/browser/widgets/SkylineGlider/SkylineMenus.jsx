@@ -32,21 +32,22 @@ export function flightWindow(count,index,rows=FLIGHT_ROWS){
 }
 // The list of flights (or, in Skyline Invaders, waves): a fixed window of rows
 // that follows the cursor, a count of rows above and below it, a cursor on the
-// chosen one. Each row: { id, name, status, status_label (a node) }.
-export function FlightList({rows,selectedId,onSelect,testIdPrefix='skyline'}){
+// chosen one. Each row: { id, name, status, status_label (a node) }. An
+// optional position ("3 of 14") sits at the right end of the top line.
+export function FlightList({rows,selectedId,onSelect,testIdPrefix='skyline',position=null}){
  const index=rows.findIndex(r=>r.id===selectedId),{start,end}=flightWindow(rows.length,index);
  const listRef=useRef(null);
  const selectionKey=JSON.stringify([selectedId,rows.slice(start,end).map(r=>r.id)]);
  useSkylineSelectionVisibility(listRef,selectionKey);
  return <>
-  <p className="skyline-menus__more" data-dir="up" data-testid={`${testIdPrefix}-more-above`} data-empty={start===0||undefined}><PixelIcon name="right" className="skyline-menus__more-icon"/>{start} more</p>
+  <p className="skyline-menus__more" data-dir="up" data-testid={`${testIdPrefix}-more-above`} data-empty={start===0||undefined}><PixelIcon name="right" className="skyline-menus__more-icon"/>{start} more{position&&<span className="skyline-menus__position">{position}</span>}</p>
   <div className="skyline-menus__options" ref={listRef}>{rows.slice(start,end).map(r=><button key={r.id} type="button" aria-pressed={r.id===selectedId} data-status={r.status} data-row={r.id} onClick={event=>{event.currentTarget.blur();onSelect?.(r.id)}}>
    <PixelIcon name="cursor" className="skyline-menus__cursor"/><strong>{r.name}</strong><small>{r.status_label}</small>
   </button>)}</div>
   <p className="skyline-menus__more" data-dir="down" data-testid={`${testIdPrefix}-more-below`} data-empty={end>=rows.length||undefined}><PixelIcon name="right" className="skyline-menus__more-icon"/>{rows.length-end} more</p>
  </>;
 }
-export default function SkylineMenus({state,riders,acts,onEvent,crashNote,summary,sound}){
+export default function SkylineMenus({state,riders,acts,onEvent,crashNote,summary,sound,notice}){
  const selected=acts.find(a=>a.id===state.actId),rider=riders.find(r=>r.id===state.riderId);
  // The riders are listed once: on the bike-button panel beside this, where each
  // rider sits on the button that selects them (touch or physical). The 2×2 grid
@@ -56,8 +57,12 @@ export default function SkylineMenus({state,riders,acts,onEvent,crashNote,summar
  if(state.phase==='roster'){const r=riders[state.rosterIndex];return <section className="skyline-menus" data-phase="roster"><h1>Other riders</h1><p>Browse with the top buttons. Choose with bottom right.</p>{r&&<div className="skyline-menus__person"><SkylineAvatar src={r.avatarSrc} name={r.name}/><strong>{r.name}</strong></div>}</section>}
  if(state.phase==='flights')return <section className="skyline-menus" data-phase="flights">
   <p className="skyline-menus__kicker">{rider?.name} is flying</p><h1>Pick a flight</h1>
-  <FlightList rows={acts.map(a=>{const [icon,label]=ACT_STATUS[a.status]||[null,'Ready to explore'];return {id:a.id,name:a.name,status:a.status,status_label:<>{icon&&<PixelIcon name={icon}/>}{label}</>}})} selectedId={state.actId} onSelect={actId=>onEvent({type:'SELECT_ACT',actId})}/>
-  <p><span className="skyline-menus__position">{acts.findIndex(a=>a.id===state.actId)+1} of {acts.length}</span> Top buttons browse. Bottom right starts.</p>
+  <FlightList rows={acts.map(a=>{const [icon,label]=ACT_STATUS[a.status]||[null,'Ready to explore'];return {id:a.id,name:a.name,status:a.status,status_label:<>{icon&&<PixelIcon name={icon}/>}{label}</>}})} selectedId={state.actId} onSelect={actId=>onEvent({type:'SELECT_ACT',actId})} position={`${acts.findIndex(a=>a.id===state.actId)+1} of ${acts.length}`}/>
+  {/* A note about the chosen flight sits in the window under the list, not
+      under the window where it ran off the kiosk screen (2026-11-13). No
+      footer: the button panel already names each key, and the position rides
+      on the list's top line. */}
+  {notice&&<p className="skyline-glider__notice skyline-menus__notice" role="status">{notice}</p>}
  </section>;
  // The sound sheet: the house touch volume strip (11 keys, 0 = off) and a mute
  // key for touch; the bike buttons beside it step the same level (1 quieter,

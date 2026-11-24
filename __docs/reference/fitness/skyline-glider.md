@@ -349,7 +349,9 @@ Terminal results embed `gaming-result/v1`; continuous flight simulation remains 
 
 ## Flight list
 
-The lobby's flight list keeps a logical window of five rows that follows the bike-button cursor, with "N more" above and below and the cursor's position ("5 of 14"). Titles have space for two lines; status sits below the title. Longer text can grow the row.
+The lobby's flight list keeps a logical window of five rows that follows the bike-button cursor, with "N more" above and below and the cursor's position ("5 of 14") at the right end of the top line (shown even when nothing is above). Each row is the name on one line and its status ("Ready to explore", "Completed", "Admin unlock required") on the line under it; the chosen row is the gold plate. The list's rows are all as tall as the tallest one (`grid-auto-rows: 1fr`), so a name that wraps grows all five rows together instead of doubling one. There is no footer: the bike-button panel already names each key, so the old "Top buttons browse. Bottom right starts." line is gone.
+
+A note about the chosen flight (today: "This saved flight uses an older course. Start begins a fresh flight. Earned completion is kept." when the rider's saved flight is `incompatible` or `invalid`) is passed to `SkylineMenus` as `notice` and drawn inside the window under the list, as an ink callout with a gold edge at `--sg-text-s`. Before 2026-11-24 it was a separate strip under the window, which on the garage kiosk (1810×1080) ran off the bottom of the screen. At that size the full window, notice included, fits without scrolling (pinned by the `@flights` cases in the layout spec). Other notices (saved, could not be saved, storage, admin badge) still follow the window.
 
 Menu screens use `SkylineMenuLayout`, which fills the module's assigned host rather than imposing a viewport minimum height. Content scrolls when its five rows and notices do not fit; changing the cursor reveals that row inside the content region without scrolling the page or stealing focus. Resizing the host or finishing font loading also reveals the selection. Unrelated renders leave manual scrolling alone.
 
