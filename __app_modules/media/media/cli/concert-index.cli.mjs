@@ -42,7 +42,7 @@ export function mmss(s) {
 /** Templates whose last argument is the text they wrap. Every other template goes. */
 const UNWRAP = new Set(['nowrap', 'small', 'nobr', 'lang']);
 
-const ENTITIES = { nbsp: ' ', quot: '"', amp: '&' };
+const ENTITIES = { nbsp: ' ', quot: '"', apos: "'", ndash: '\u2013', mdash: '\u2014', amp: '&' };
 
 /** Wiki markup to plain text: links keep their label, wrapper templates keep their text, the rest goes. */
 export function stripWiki(s) {
@@ -55,13 +55,16 @@ export function stripWiki(s) {
   for (let prev = null; prev !== out;) {
     prev = out;
     out = out.replace(/\{\{([^{}]*)\}\}/g, (_, inner) => {
-      const args = inner.split('|');
-      return UNWRAP.has(args[0].trim().toLowerCase()) && args.length > 1 ? args[args.length - 1] : '';
+      const [name, ...args] = inner.split('|');
+      if (!UNWRAP.has(name.trim().toLowerCase())) return '';
+      // The text is the last unnamed argument: {{lang|fr|Il est né|italic=no}}, {{nowrap|1=Silent Night}}.
+      const text = args.filter((a) => !/^\s*[a-z_][\w-]*\s*=/i.test(a)).pop() ?? '';
+      return text.replace(/^\s*\d+\s*=/, '');
     });
   }
   return out
     .replace(/'{2,}/g, '')
-    .replace(/&(?:#(\d+)|#x([0-9a-f]+)|(nbsp|quot|amp));/gi, (m, dec, hex, name) => {
+    .replace(/&(?:#(\d+)|#x([0-9a-f]+)|(nbsp|quot|apos|ndash|mdash|amp));/gi, (m, dec, hex, name) => {
       if (dec) return String.fromCodePoint(Number(dec));
       if (hex) return String.fromCodePoint(parseInt(hex, 16));
       return ENTITIES[name.toLowerCase()];
@@ -70,7 +73,7 @@ export function stripWiki(s) {
     .trim();
 }
 
-const OPEN = /\{\{\s*Track listing\b/gi;
+const OPEN = /\{\{\s*(?:Track listing|Tracklist)\b/gi;
 
 /**
  * The body of every `{{Track listing}}`, found by counting `{{`/`}}` depth to
@@ -110,7 +113,8 @@ function topLevelParts(body) {
 const KEY = /^([a-z_]+?)(\d*)$/i;
 
 /**
- * Every `{{Track listing}}` block in an article's wikitext. An album article
+ * Every `{{Track listing}}` (or `{{Tracklist}}`) block in an article's wikitext,
+ * HTML comments removed first. An album article
  * often has two (CD and DVD), and they differ, so each track keeps the
  * listing's `headline`. Tracks are every `titleN` present, in numeric order,
  * so a gap in the numbering keeps the tracks after it, with their real `n`.
@@ -119,20 +123,21 @@ const KEY = /^([a-z_]+?)(\d*)$/i;
  */
 export function parseTrackListing(wikitext) {
   const out = [];
-  for (const body of listingBodies(String(wikitext ?? ''))) {
+  for (const body of listingBodies(String(wikitext ?? '').replace(/<!--[\s\S]*?-->/g, ''))) {
     const fields = {};
-    const numbers = [];
+    const numbers = new Set();
     for (const part of topLevelParts(body)) {
       const eq = part.indexOf('=');
       if (eq < 0) continue;
       const key = KEY.exec(part.slice(0, eq).trim());
       if (!key) continue;
       const name = key[1].toLowerCase();
-      fields[`${name}${key[2]}`] = part.slice(eq + 1).trim();
-      if (name === 'title' && key[2]) numbers.push(Number(key[2]));
+      const n = key[2] ? Number(key[2]) : '';  // title01 and title1 are one track
+      fields[`${name}${n}`] = part.slice(eq + 1).trim();
+      if (name === 'title' && n !== '') numbers.add(n);
     }
     const listing = stripWiki(fields.headline) || null;
-    for (const n of numbers.sort((x, y) => x - y)) {
+    for (const n of [...numbers].sort((x, y) => x - y)) {
       const performers = stripWiki(fields[`extra${n}`]);
       out.push({
         listing,
@@ -186,6 +191,9 @@ export function parseSrt(text) {
 /* Sections                                                                   */
 /* -------------------------------------------------------------------------- */
 
+/** Shorter sections are stubs (the second after closing applause) and are dropped. */
+export const MIN_SECTION_S = 2;
+
 /**
  * A section runs from where the music resumes to where the applause after it
  * begins. Every applause run's end is a start, because the silences that
@@ -210,7 +218,7 @@ export function sectionsFrom({ candidates, applause = [], durationS }) {
       const clap = applause.find((r) => r.start > start && r.start < next);
       return { start, end: clap ? clap.start : next, applauseAfter: Boolean(clap) };
     })
-    .filter((s) => s.end > s.start);
+    .filter((s) => s.end - s.start >= MIN_SECTION_S);
 }
 
 /**
@@ -223,7 +231,8 @@ export const INTRO_MAX_S = 60;
  * A cue whose midpoint falls inside a section is that section's `text`. A cue
  * in the gap before it (the applause after the previous piece) is its
  * `intro`: a narrator speaking over the last of the clapping is introducing
- * what comes next. The first section's intro is anything before it starts.
+ * what comes next. The first section's intro is anything before it starts,
+ * and cues after the last section ends ("thank you, good night") are its text.
  *
  * A short section that runs straight into the next one, with no applause
  * after it, also passes its text on to the next section's intro: "...and now,
@@ -234,7 +243,8 @@ export function attachCues(sections, cues) {
   const mid = (c) => (c.start + c.end) / 2;
   const out = sections.map((s, k) => {
     const gapStart = k > 0 ? sections[k - 1].end : -Infinity;
-    const mine = cues.filter((c) => mid(c) >= s.start && mid(c) < s.end);
+    const end = k + 1 < sections.length ? s.end : Infinity;
+    const mine = cues.filter((c) => mid(c) >= s.start && mid(c) < end);
     const intro = cues.filter((c) => mid(c) >= gapStart && mid(c) < s.start);
     return {
       ...s,

@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rejectApplauseCandidates } from './segment-timings.cli.mjs';
-import { parseTrackListing, stripWiki, mmss, parseSrt, srtTime, sectionsFrom, attachCues, words, lyricOverlap, rankTracks, buildEvidence, measureGraph, clipArgs, numberFlag, parseAt, parseDuration, runCliEntry, INTRO_MAX_S } from './concert-index.cli.mjs';
+import { parseTrackListing, stripWiki, mmss, parseSrt, srtTime, sectionsFrom, attachCues, words, lyricOverlap, rankTracks, buildEvidence, measureGraph, clipArgs, numberFlag, parseAt, parseDuration, runCliEntry, INTRO_MAX_S, MIN_SECTION_S } from './concert-index.cli.mjs';
 
 const WIKITEXT = `==Track listing==
 {{Track listing
@@ -55,6 +55,13 @@ describe('stripWiki', () => {
   it('strips nested templates from the inside out', () => {
     expect(stripWiki('{{small|{{nowrap|Silent Night}}}}')).toBe('Silent Night');
     expect(stripWiki('Song{{efn|see {{cite|x}}}}')).toBe('Song');
+  });
+  it('unwraps to the last unnamed argument, dropping a numbered name', () => {
+    expect(stripWiki('{{nowrap|1=Silent Night}}')).toBe('Silent Night');
+    expect(stripWiki('{{lang|fr|Il est né|italic=no}}')).toBe('Il est né');
+  });
+  it('decodes dashes and apostrophes', () => {
+    expect(stripWiki('Bells &ndash; Choir &mdash; Carol&#39;s &apos;Song&apos;')).toBe("Bells \u2013 Choir \u2014 Carol's 'Song'");
   });
   it('turns <br> into a space and decodes entities', () => {
     expect(stripWiki('Choir<br />and Orchestra<br>and Bells')).toBe('Choir and Orchestra and Bells');
@@ -104,6 +111,19 @@ Prose between listings, with a [[link|label]].
       { listing: 'A', n: 1, title: 'First Song', length: 60, performers: 'The Choir with bells' },
       { listing: 'A', n: 2, title: 'Second Song', length: null, performers: null },
       { listing: 'B', n: 1, title: 'Third Song', length: null, performers: null },
+    ]);
+  });
+  it('treats title01 and title1 as the same track', () => {
+    const tracks = parseTrackListing('{{Track listing\n| title01 = One\n| length1 = 1:00\n| title1 = One\n| title02 = Two\n}}');
+    expect(tracks.map((t) => [t.n, t.title, t.length])).toEqual([[1, 'One', 60], [2, 'Two', null]]);
+  });
+  it('ignores HTML comments, including a commented-out listing', () => {
+    const text = '<!-- {{Track listing\n| title1 = Old\n}} -->\n{{Track listing\n| title1 = Kept <!-- check spelling --> Song\n}}';
+    expect(parseTrackListing(text).map((t) => t.title)).toEqual(['Kept Song']);
+  });
+  it('recognises the Tracklist alias', () => {
+    expect(parseTrackListing('{{Tracklist\n| title1 = Alias Song\n| length1 = 2:00\n}}')).toEqual([
+      { listing: null, n: 1, title: 'Alias Song', length: 120, performers: null },
     ]);
   });
   it('keeps tracks after a gap in the numbering, with their real numbers', () => {
@@ -161,6 +181,13 @@ describe('sectionsFrom', () => {
       { start: 260, end: 400, applauseAfter: false },
     ]);
   });
+  it('drops a stub shorter than MIN_SECTION_S after closing applause', () => {
+    expect(MIN_SECTION_S).toBe(2);
+    expect(sectionsFrom({ candidates: [200], applause: [{ start: 380, end: 399 }], durationS: 400 })).toEqual([
+      { start: 0, end: 200, applauseAfter: false },
+      { start: 200, end: 380, applauseAfter: true },
+    ]);
+  });
   it('moves a start that falls inside applause to where the applause ends', () => {
     expect(sectionsFrom({ candidates: [50, 60], applause: [{ start: 0, end: 8 }, { start: 55, end: 65 }], durationS: 100 })).toEqual([
       { start: 8, end: 50, applauseAfter: false },
@@ -209,6 +236,14 @@ describe('attachCues', () => {
       [{ i: 1, start: 10, end: 14, text: 'silent night holy night' }],
     );
     expect(sections[1]).toMatchObject({ intro: '', introCues: [] });
+  });
+  it('gives cues after the last section ends to its text', () => {
+    const sections = attachCues(
+      sectionsFrom({ candidates: [200], applause: [{ start: 380, end: 399 }], durationS: 400 }),
+      [{ i: 1, start: 390, end: 394, text: 'thank you and good night' }],
+    );
+    expect(sections).toHaveLength(2);
+    expect(sections[1]).toMatchObject({ cues: [1], text: 'thank you and good night' });
   });
   it('does not pass a short section on across applause or a gap', () => {
     const sections = attachCues(
