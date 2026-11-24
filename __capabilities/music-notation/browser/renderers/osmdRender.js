@@ -656,6 +656,28 @@ function applyManuscriptRules(osmd, manuscript) {
 }
 
 /**
+ * Clear paper a host reserves above every system, for marks it draws there
+ * (the Learn passage numbers). OSMD measures system spacing in units of 10px
+ * at zoom 1, ink to ink (its skyline and bottom line), and the top margin above
+ * the first system the same way; the host asks in CSS pixels because its marks
+ * do not scale with the zoom. The defaults are kept on the instance so a later
+ * render with no headroom puts them back: the rules live on the OSMD instance
+ * and survive the repaint path.
+ * @param {object} osmd
+ * @param {number} headroom - CSS px of clear paper above each system's ink (0 = OSMD's own spacing)
+ * @param {number} zoom
+ */
+export function applySystemHeadroom(osmd, headroom, zoom) {
+  const rules = osmd?.EngravingRules;
+  if (!rules) return;
+  rules.__systemDefaults ??= { between: rules.MinSkyBottomDistBetweenSystems, top: rules.PageTopMargin };
+  const base = rules.__systemDefaults;
+  const units = Number.isFinite(headroom) && headroom > 0 ? headroom / (10 * (zoom || 1)) : 0;
+  rules.MinSkyBottomDistBetweenSystems = Math.max(base.between, units);
+  rules.PageTopMargin = Math.max(base.top, units);
+}
+
+/**
  * Engrave (PAINT) `xml` into `host` up to and including `osmd.render()` — the
  * fast part the React wrapper reveals first. Does NOT extract events/geometry;
  * that expensive cursor walk is run separately (sliced) in Task 8 so the main
@@ -666,10 +688,11 @@ function applyManuscriptRules(osmd, manuscript) {
  * @param {string} xml - raw MusicXML
  * @param {{ width?:number, flow?:'wrapped'|'horizontal', scale?:number,
  *           transpose?:number, manuscript?:boolean, newSystemFromXML?:boolean, stretchLastSystem?:boolean,
- *           shouldAbort?:() => boolean }} [opts]
+ *           systemHeadroom?:number, shouldAbort?:() => boolean }} [opts]
  *   transpose is an integer semitone offset (default 0) re-engraving the score in
  *   a new key — the notation AND the extracted pitches follow it.
  *   manuscript opts into the writing-surface rules — see applyManuscriptRules.
+ *   systemHeadroom reserves clear paper above every system — see applySystemHeadroom.
  *   shouldAbort is checked after each await so a stale render never clobbers
  *   a newer one's DOM.
  * @returns {Promise<{osmd:object,width:number,height:number,flow:string}|null>}
@@ -724,6 +747,7 @@ export async function osmdEngrave(host, xml, opts = {}) {
   }
 
   if (opts.width) host.style.width = `${opts.width}px`;
+  applySystemHeadroom(osmd, opts.systemHeadroom, scale);
   osmd.Zoom = scale;
   osmd.render();
 
@@ -781,6 +805,7 @@ export function osmdRepaint(osmd, host, opts = {}) {
       logger().warn('osmd.transpose-failed', { transpose: opts.transpose, error: err?.message });
     }
   }
+  applySystemHeadroom(osmd, opts.systemHeadroom, scale);
   osmd.Zoom = scale;
   osmd.render();
 

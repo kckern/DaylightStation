@@ -1,4 +1,4 @@
-import { notationRangeBands } from './focusRangeGeometry.js';
+import { notationRangeBands, PASSAGE_NUMBER_LIFT } from './focusRangeGeometry.js';
 
 const passageState = (passage) => passage.locked ? ['locked', 'Locked']
   : passage.testedOut ? ['tested-out', 'Tested out']
@@ -6,8 +6,15 @@ const passageState = (passage) => passage.locked ? ['locked', 'Locked']
   : passage.inProgress ? ['in-progress', 'In progress']
   : passage.recommended ? ['next', 'Next'] : ['unstarted', 'Unstarted'];
 
+/**
+ * The passage map over the engraved score: a numbered disc over the first system
+ * each passage reaches, its hitboxes, and the boxes for a chosen passage.
+ * `numbers` (from passageNumberPlacements) places each disc clear of the ink in
+ * its column, in the room the engraving keeps above every system; without it a
+ * disc stands a fixed lift over its band.
+ */
 export default function LearnPassageLayer({
-  passages = [], measures = [], stepBoxes = [], measureRects = [], selectedId = null,
+  passages = [], measures = [], stepBoxes = [], measureRects = [], numbers = null, selectedId = null,
   selectedRange = null, focusId = null, achievementId = null, onAchievementEnd, onSelect,
 }) {
   const selected = selectedRange || passages.find((passage) => passage.id === selectedId);
@@ -15,6 +22,7 @@ export default function LearnPassageLayer({
   // The passage chosen on the rail or the board: boxed on every system it spans.
   const focused = focusId ? passages.find((passage) => passage.id === focusId) : null;
   const boxes = focused ? notationRangeBands(measures, stepBoxes, focused, measureRects) : [];
+  const placed = new Map((numbers || []).map((number) => [number.id, number]));
   return <>
     {boxes.map((band, index) => <div
       key={`focus-${index}`}
@@ -51,7 +59,9 @@ export default function LearnPassageLayer({
           data-state={state}
           disabled={passage.locked}
           aria-label={label}
-          style={{ left: first.left + 4, top: Math.max(2, first.top - 54) }}
+          style={placed.has(passage.id)
+            ? { left: placed.get(passage.id).left, top: placed.get(passage.id).top }
+            : { left: first.left + 4, top: Math.max(2, first.top - PASSAGE_NUMBER_LIFT) }}
           onClick={select}
           onAnimationEnd={() => { if (passage.id === achievementId) onAchievementEnd?.(passage.id); }}
         ><span aria-hidden="true">{passage.number ?? passage.order}</span></button>

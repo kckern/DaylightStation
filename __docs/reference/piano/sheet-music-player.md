@@ -188,6 +188,24 @@ than the piece would always slice a staff at its edge, so the score is shown as
   away between systems, in the widest strip that carries no ink, so a page never
   shows a sliver of its neighbour. The last page is always a full one, so it may
   repeat a system of the page before it.
+- **Nothing drawn on the score is cut.** The cut between pages never runs through
+  a mark: it falls in clear paper or not at all. The cuts above the first system
+  and below the last trim nothing (the engraving's own edges, or past them for ink
+  drawn outside), so a ring, a halo or a low ledger note on the first or last page
+  is whole. In Learn the passage numbers stand in paper the engraving keeps for
+  them: the renderer is asked for `systemHeadroom` (OSMD's
+  `MinSkyBottomDistBetweenSystems` and `PageTopMargin`, set in CSS px whatever the
+  zoom, so changing it is a repaint, not a re-engrave), enough for the number at
+  its largest (the achievement ring at the top of its pop) over every system's ink
+  (`PASSAGE_NUMBER_ROOM`, `passageNumberHeadroom`). Each number is placed by
+  `passageNumberPlacements`: a fixed lift over its staff, or over the ink in its
+  own column when that stands higher (a slur, a stem, a ledger note), so it never
+  sits on the music, and its strip is ink to the page cut, so a number belongs to
+  its own system's page and is never half on the page above. The passage box and
+  outline reach every notehead of the bars (ledger notes too), not only the staff.
+  `ScoreOverlays.journey.test.jsx` checks all of this in Chromium on a score that
+  climbs to C7 in its first system and drops to C1 in its last: every number, box
+  and engraved mark is either whole or off the page, and no number touches ink.
 - **The page turner** (`ScorePager`) stands in the paper's right margin in every
   mode: a tall up button, a tall down button and one pip per page, with no words.
   A swipe up or left turns forward, down or right turns back.
@@ -956,6 +974,10 @@ last click it says **next click: play**, so the cue arrives before the first bea
 rather than on it. Nothing is shown on the first beat (no PLAY), and the music is
 not greyed (`data-count-style="up"`), because the child is about to read the first
 notes. The clicks are the plan's (`exerciseCountInPlan`, ≤ 4), whatever the meter.
+The band has paper of its own: on a step that shows it (the cued steps and the
+metronome's beat loop, `data-count-band`) the stage keeps its top strip clear for
+the whole step and fits the engraving below it, so the band never stands on high
+first notes, and the music does not move when the clicks start.
 
 **A pickup is counted on the beats before it.** When the first note is not on a
 downbeat (a pickup bar, or a passage that opens on a rest), the count ends on the

@@ -2,6 +2,66 @@
 // RangeHandleLayer.jsx, which shares the measure-extent math for its drag
 // handles), split out so Fast Refresh can hot-reload the layer on its own.
 
+/**
+ * The Learn passage number (LearnPassageLayer) stands over the first system its
+ * passage reaches: a 40px disc, `LIFT` px above its anchor (so its foot is 14px
+ * clear of it). The anchor is the band's top, or the top of the engraved ink in
+ * the disc's own column when that stands higher (a slur, a stem, a high ledger
+ * note), so the disc never sits on the music it names. `ROOM` px above the
+ * anchor holds the disc whole at its largest: the achievement ring (8px) at the
+ * top of its pop (scale 1.35) reaches 34 + 28 * 1.35 = 72px up.
+ *
+ * ScorePlayer asks the engraving to keep ROOM plus the band's pad clear above
+ * every system's ink (`passageNumberHeadroom`), and the page cut treats each
+ * disc's strip as ink, so a number is never cut and never sits on the system
+ * above it.
+ */
+export const PASSAGE_NUMBER_LIFT = 54;
+export const PASSAGE_NUMBER_ROOM = 72;
+const PASSAGE_NUMBER_SIZE = 40;
+const PASSAGE_NUMBER_INSET = 4;
+// The selected ring (5px) and a hair of paper either side of the disc's column.
+const PASSAGE_NUMBER_HALO = 8;
+
+/**
+ * Where each passage number stands: `{ id, left, top, anchor }` in the
+ * engraving's coordinates, for the passages that have engraved notation.
+ * @param {Array} passages - `{ id, inMeasure, outMeasure }`
+ * @param {object} geometry
+ * @param {Array} geometry.measures
+ * @param {Array} geometry.stepBoxes - steps reaching every notehead (where the system's ink can be)
+ * @param {Array} [geometry.cursorBoxes] - the cursor's steps (the staff): the anchor when
+ *   nothing stands higher in the disc's column, so a high note elsewhere on the system
+ *   does not lift every number with it. Defaults to `stepBoxes`.
+ * @param {Array} [geometry.measureRects]
+ * @param {Array<Array<number>>} [geometry.ink] - engraved ink strips `[top, bottom, left, right]`
+ *   (useSystemPaging's `ink`); strips without x are ignored
+ */
+export function passageNumberPlacements(passages = [], { measures = [], stepBoxes = [], cursorBoxes = null, measureRects = [], ink = [] } = {}) {
+  const out = [];
+  for (const passage of passages) {
+    const band = notationRangeBands(measures, stepBoxes, passage, measureRects)[0];
+    if (!band) continue;
+    const staff = (cursorBoxes && notationRangeBands(measures, cursorBoxes, passage, measureRects)[0]) || band;
+    const left = band.left + PASSAGE_NUMBER_INSET;
+    const from = left - PASSAGE_NUMBER_HALO;
+    const to = left + PASSAGE_NUMBER_SIZE + PASSAGE_NUMBER_HALO;
+    let anchor = staff.top;
+    for (const [top, bottom, inkLeft, inkRight] of ink) {
+      if (!Number.isFinite(inkLeft) || !Number.isFinite(inkRight)) continue;
+      if (inkRight < from || inkLeft > to) continue;
+      // This system's ink only: what reaches into the room over its notes, down to its foot.
+      if (bottom <= band.top - PASSAGE_NUMBER_ROOM || top >= band.bottom) continue;
+      anchor = Math.min(anchor, top);
+    }
+    out.push({ id: passage.id, left, top: Math.max(2, anchor - PASSAGE_NUMBER_LIFT), anchor });
+  }
+  return out;
+}
+
+/** Clear paper the engraving keeps above every system's ink for the passage numbers. */
+export const passageNumberHeadroom = () => PASSAGE_NUMBER_ROOM + NOTATION_PAD_PX;
+
 export function measureExtent(m, stepBoxes, measureRect = null) {
   if (measureRect && Number.isFinite(measureRect.left) && Number.isFinite(measureRect.right)) return measureRect;
   let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;

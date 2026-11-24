@@ -45,7 +45,7 @@ import LearnLaunchpad from './LearnLaunchpad.jsx';
 import { buildRungLaunch, creditEligibleRung, learnLaunchpadProjection } from './learnLaunch.js';
 import ScorePassage from '../Exercises/ScorePassage.jsx';
 import { resolveLearnPlan } from './resolveLearnPlan.js';
-import { buildEngravedMeasureRects, measureAtPosition, notationRangeBands } from './focusRangeGeometry.js';
+import { buildEngravedMeasureRects, measureAtPosition, passageNumberPlacements, passageNumberHeadroom, PASSAGE_NUMBER_ROOM } from './focusRangeGeometry.js';
 import { completeBarSelection, moveBarEdge, validBarRange } from './learnBarSelection.js';
 import {
   compileScoreExpectation,
@@ -406,11 +406,20 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   const events = layout.events;
   const steps = layout.steps;
-  const selectionStepBoxes = useMemo(() => layout.steps.map((item, index) => ({
+  // Where the cursor stands at each step: the staff, not the ledger notes.
+  const cursorStepBoxes = useMemo(() => layout.steps.map((item, index) => ({
     x: layout.events[index]?.x ?? item.x,
     top: layout.events[index]?.top ?? item.top,
     bottom: layout.events[index]?.bottom ?? item.bottom,
   })), [layout.events, layout.steps]);
+  // A step's box reaches every notehead it holds, so a passage box or outline
+  // drawn from it holds a note on ledger lines far over or under the staff
+  // instead of running through it.
+  const selectionStepBoxes = useMemo(() => cursorStepBoxes.map((box, index) => {
+    const heads = (layout.steps[index]?.notes || []).filter((note) => Number.isFinite(note.top) && Number.isFinite(note.bottom));
+    if (!heads.length || !Number.isFinite(box.top) || !Number.isFinite(box.bottom)) return box;
+    return { ...box, top: Math.min(box.top, ...heads.map((note) => note.top)), bottom: Math.max(box.bottom, ...heads.map((note) => note.bottom)) };
+  }), [cursorStepBoxes, layout.steps]);
   const measureRects = useMemo(() => buildEngravedMeasureRects(
     layout.measures, layout.measureBounds, layout.staffBoxes, layout.steps, selectionStepBoxes,
   ), [layout.measures, layout.measureBounds, layout.staffBoxes, layout.steps, selectionStepBoxes]);
@@ -2361,17 +2370,25 @@ export default function ScorePlayer({ score: scoreMeta }) {
     />
   ) : null;
 
-  // The passage numbers sit above the staff: ink a page cut must not run through.
-  const passageNumberInk = useMemo(() => (roadmapLearn ? coachedPassages.map((passage) => {
-    const band = notationRangeBands(layout.measures, selectionStepBoxes, passage, measureRects)[0];
-    return band ? [Math.max(0, band.top - 58), band.top] : null;
-  }).filter(Boolean) : null), [roadmapLearn, coachedPassages, layout.measures, selectionStepBoxes, measureRects]);
+  // The passage numbers stand above the staff, in paper the engraving keeps
+  // clear for them (see PASSAGE_NUMBER_ROOM). Without it a number shares the gap
+  // with the system above's stems and slurs, and the page cut has nowhere clean
+  // to fall. Each number is placed clear of the ink in its own column, and its
+  // strip is ink a page cut must not run through.
+  const passageHeadroom = roadmapLearn ? passageNumberHeadroom() : 0;
+  const mapPassages = useMemo(() => coachedPassages.filter((passage) => passage.kind !== 'join'), [coachedPassages]);
+  const placePassageNumbers = useCallback((ink) => (roadmapLearn
+    ? passageNumberPlacements(mapPassages, { measures: layout.measures, stepBoxes: selectionStepBoxes, cursorBoxes: cursorStepBoxes, measureRects, ink })
+    : []), [roadmapLearn, mapPassages, layout.measures, selectionStepBoxes, cursorStepBoxes, measureRects]);
+  const passageNumberInk = useCallback((ink) => placePassageNumbers(ink)
+    .map(({ anchor }) => [Math.max(0, anchor - PASSAGE_NUMBER_ROOM), anchor]), [placePassageNumbers]);
   // Every mode shows the score as pages of whole systems; nothing scrolls.
   const paging = useSystemPaging({
-    enabled: true, scrollRef, layout, measureRects, overlayInk: passageNumberInk,
+    enabled: true, scrollRef, layout, measureRects, overlayInk: roadmapLearn ? passageNumberInk : null,
     onTurn: (turn) => logger.info('score.page.turn', { scoreId: scoreMeta.id, mode, ...turn }),
   });
   pagingRef.current = paging;
+  const passageNumbers = useMemo(() => placePassageNumbers(paging.ink), [placePassageNumbers, paging.ink]);
   // The page follows the cursor (Listen, Polish, the direct-practice Learn). It
   // turns to a cursor that is off the page; while the music runs it also turns
   // AHEAD of it, as the cursor reaches the last system showing, so the next
@@ -2488,7 +2505,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         </div>
       )}
       <div className={`piano-score-player__scroll${paging.page ? ' piano-score-player__scroll--paged' : ''}${paging.turning ? ' piano-score-player__scroll--turning' : ''}`} ref={scrollRef} onClick={onScoreClick} style={paging.style} {...paging.handlers}>
-        <MusicXmlRenderer score={parsed} musicXml={scoreMeta.musicXml} flow={flow} scale={scale} transpose={transpose} onLayout={onLayout} onReady={onReady} holdExtraction={running}>
+        <MusicXmlRenderer score={parsed} musicXml={scoreMeta.musicXml} flow={flow} scale={scale} transpose={transpose} systemHeadroom={passageHeadroom} onLayout={onLayout} onReady={onReady} holdExtraction={running}>
           {mode !== 'perform' && layoutFresh && (
             /* container is the ELEMENT, not a ref: React commits layout effects
                bottom-up, so an ancestor's ref is not yet attached when a child's
@@ -2587,7 +2604,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
           )}
           {roadmapLearn && layoutFresh && (
             <LearnPassageLayer
-              passages={roadmapLearn ? coachedPassages.filter((passage) => passage.kind !== 'join') : learnPassages}
+              passages={mapPassages}
+              numbers={passageNumbers}
               measures={layout.measures}
               stepBoxes={selectionStepBoxes}
               measureRects={measureRects}
