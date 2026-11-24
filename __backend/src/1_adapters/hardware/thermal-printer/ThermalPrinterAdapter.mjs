@@ -230,14 +230,73 @@ function jobLogContext(printJob) {
 }
 
 /**
+ * Characters per line on 576-dot (80 mm) paper at size 1: font A is 12 dots
+ * wide, font B 9. The same 48 the table printer and the newsreporter receipt
+ * renderer already lay out against.
+ */
+const PAPER_COLUMNS = { a: 48, b: 64 };
+
+function columnsFor(item) {
+  const base = PAPER_COLUMNS[item.font === 'b' ? 'b' : 'a'];
+  const widthScale = Math.max(1, Math.min(8, item.size?.width || 1));
+  return Math.max(1, Math.floor(base / widthScale));
+}
+
+/** Word-wraps one line at `columns`, hard-breaking a word longer than a line. */
+function wrapLine(line, columns) {
+  if (line.length <= columns) return [line];
+  const out = [];
+  let current = '';
+  for (const word of line.split(/(\s+)/)) {
+    if (!word) continue;
+    if ((current + word).length <= columns) { current += word; continue; }
+    if (current.trim()) out.push(current.trimEnd());
+    current = word.trimStart();
+    while (current.length > columns) {
+      out.push(current.slice(0, columns));
+      current = current.slice(columns);
+    }
+  }
+  if (current.trim() || out.length === 0) out.push(current.trimEnd());
+  return out;
+}
+
+/**
+ * One text item per printed line, for an upside-down printer.
+ *
+ * Upside down, the job goes out in reverse item order so the receipt reads
+ * top-to-bottom once it is turned round. That reversal works on items, so a
+ * text item holding several lines, whether from an embedded `\n` or from the
+ * printer wrapping a long line itself, printed those lines in reverse reading
+ * order. Splitting on `\n` and wrapping at the paper width here, before the
+ * reversal, makes every printed line its own item. A blank line becomes a
+ * single space, because `#processTextItem` prints nothing for empty content.
+ *
+ * @param {PrintItem[]} items
+ * @returns {PrintItem[]}
+ */
+export function splitTextIntoPrintedLines(items) {
+  const out = [];
+  for (const item of items) {
+    if (item?.type !== 'text' || typeof item.content !== 'string') { out.push(item); continue; }
+    const columns = columnsFor(item);
+    const lines = item.content.split(/\r?\n/).flatMap(line => wrapLine(line, columns));
+    if (lines.length <= 1) { out.push(item); continue; }
+    for (const line of lines) out.push({ ...item, content: line || ' ' });
+  }
+  return out;
+}
+
+/**
  * @typedef {Object} PrinterConfig
  * @property {string} host - Printer IP address
  * @property {number} [port=9100] - Printer port
  * @property {number} [timeout=5000] - Connection timeout in ms
  * @property {string} [encoding='utf8'] - Text encoding
  * @property {boolean} [upsideDown=true] - Printer is mounted upside down: text uses
- *   `ESC { 1`, items go out in reverse order, and image items are rotated 180°
- *   here. Callers always send upright content.
+ *   `ESC { 1`, items go out in reverse order (text split first into one item
+ *   per printed line, see `splitTextIntoPrintedLines`), and image items are
+ *   rotated 180° here. Callers always send upright content.
  */
 
 /**
@@ -1061,7 +1120,9 @@ export class ThermalPrinterAdapter {
               commands = Buffer.concat([commands, Buffer.from([0x1B, 0x7B, 0x01])]);
             }
 
-            const sortedItems = config.upsideDown ? [...printJob.items].reverse() : printJob.items;
+            const sortedItems = config.upsideDown
+              ? splitTextIntoPrintedLines(printJob.items).reverse()
+              : printJob.items;
 
             for (const item of sortedItems) {
               const itemCommands = await this.#processItem(item, config);

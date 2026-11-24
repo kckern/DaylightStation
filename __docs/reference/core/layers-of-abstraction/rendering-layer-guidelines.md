@@ -133,7 +133,11 @@ Renderers always draw upright. A thermal printer mounted upside down
 is handled entirely by `ThermalPrinterAdapter`:
 
 - text items go out under `ESC { 1`, which rotates characters, and the job's
-  items are sent in reverse order so the receipt reads top to bottom;
+  items are sent in reverse order so the receipt reads top to bottom. Before
+  reversing, each text item is split into one item per printed line: on `\n`,
+  and by word-wrapping at the paper width (48 columns for font A, 64 for font
+  B, divided by the size multiplier). Without that, a multi-line item, or a
+  line the printer wrapped itself, printed its lines in reverse order;
 - image items (`GS v 0` rasters, which `ESC {` does not rotate) are drawn
   rotated 180° before monochrome conversion, and their `align` is mirrored
   (left and right swap, center stays). The mirroring is unverified on the
