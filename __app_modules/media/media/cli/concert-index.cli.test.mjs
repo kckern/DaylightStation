@@ -161,7 +161,7 @@ describe('lyricOverlap', () => {
 });
 
 describe('rankTracks', () => {
-  it('ranks by incipit overlap, then title overlap, and reports the duration ratio', () => {
+  it('puts the lyric match first and reports the duration ratio', () => {
     const section = { start: 0, end: 330, text: 'born on Christmas Day tidings astray' };
     const tracks = [
       { n: 1, title: 'Silent Night', length: 240, incipit: 'Silent night holy night' },
@@ -177,6 +177,26 @@ describe('rankTracks', () => {
     const section = { start: 0, end: 200, intro: 'and now, silent night', text: '' };
     const [row] = rankTracks(section, [{ n: 1, title: 'Silent Night', length: 200, incipit: 'Silent night holy night' }]);
     expect(row).toMatchObject({ lyric: 0, titleHit: 1 });
+  });
+  it('ranks on the best evidence, so an announced instrumental beats a lyric miss', () => {
+    const section = { start: 0, end: 200, intro: 'and now, sleigh ride', text: 'la la la' };
+    const ranked = rankTracks(section, [
+      { listing: 'CD', n: 1, title: 'Silent Night', length: 240, incipit: 'Silent night holy night' },
+      { listing: 'CD', n: 2, title: 'Sleigh Ride', length: 200 },
+    ]);
+    expect(ranked.map((r) => r.n)).toEqual([2, 1]);
+    expect(ranked[0]).toMatchObject({ listing: 'CD', lyric: null, titleHit: 1, score: 1 });
+    expect(ranked[1]).toMatchObject({ listing: 'CD', lyric: 0, titleHit: 0, score: 0 });
+  });
+  it('breaks score ties by lyric evidence, then album order', () => {
+    const section = { start: 0, end: 100, text: '' };
+    const ranked = rankTracks(section, [
+      { n: 1, title: 'Bells A', length: 100 },
+      { n: 2, title: 'Bells B', length: 100 },
+      { n: 3, title: 'Carol C', length: 100, incipit: 'unheard words' },
+    ]);
+    expect(ranked.map((r) => r.n)).toEqual([3, 1, 2]);
+    expect(ranked[1].listing).toBeNull();
   });
 });
 

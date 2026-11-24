@@ -207,20 +207,30 @@ const round = (v, places) => Number(v.toFixed(places));
  * incipit, and is null where the track has none (instrumentals, bell pieces),
  * so "no evidence" never reads as "no match". `titleHit` scores the intro and
  * the text against the title, to catch "...and now, Sleigh Ride".
- * `durationRatio` is a tiebreaker only: concert edits differ from the album.
+ * `score` is the better of the two, so an announced instrumental (no
+ * incipit, title heard) is not pushed out of the top few by a lyric miss.
+ * Ties go to lyric evidence, then album order. `durationRatio` is shown for
+ * judgement only: concert edits differ from the album.
  */
 export function rankTracks(section, tracks) {
   const len = section.end - section.start;
   const heard = `${section.intro ?? ''} ${section.text ?? ''}`;
   return tracks
-    .map((t) => ({
-      n: t.n,
-      title: t.title,
-      lyric: t.incipit ? round(lyricOverlap(section.text, t.incipit), 3) : null,
-      titleHit: round(lyricOverlap(heard, t.title), 3),
-      durationRatio: t.length ? round(len / t.length, 2) : null,
-    }))
-    .sort((a, b) => ((b.lyric ?? -1) - (a.lyric ?? -1)) || (b.titleHit - a.titleHit));
+    .map((t) => {
+      const lyric = t.incipit ? round(lyricOverlap(section.text, t.incipit), 3) : null;
+      const titleHit = round(lyricOverlap(heard, t.title), 3);
+      return {
+        listing: t.listing ?? null,
+        n: t.n,
+        title: t.title,
+        score: Math.max(lyric ?? 0, titleHit),
+        lyric,
+        titleHit,
+        durationRatio: t.length ? round(len / t.length, 2) : null,
+      };
+    })
+    // Array.prototype.sort is stable, so equal rows keep album order.
+    .sort((a, b) => (b.score - a.score) || ((b.lyric ?? -1) - (a.lyric ?? -1)));
 }
 
 /* -------------------------------------------------------------------------- */
