@@ -12,7 +12,7 @@ export class FitnessReceiptCanvasRenderer {
     this.preparePresentation = preparePresentation;
   }
 
-  createCanvas(session, upsideDown = false) {
+  createCanvas(session) {
     const model = this.preparePresentation(this.serializeSession(session), {
       resolveDisplayName: this.resolveDisplayName,
       targetRows: this.theme.chart.downsampleTarget,
@@ -20,7 +20,7 @@ export class FitnessReceiptCanvasRenderer {
       eventSymbols: this.theme.chart.eventSymbols,
       histogramBuckets: this.theme.leaderboard.histogramBuckets,
     });
-    return this.renderer.createCanvas(model, upsideDown);
+    return this.renderer.createCanvas(model);
   }
 }
 

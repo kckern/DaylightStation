@@ -100,7 +100,7 @@ Shared drawing code that multiple renderers compose:
 
 | Primitive | Purpose |
 |-----------|---------|
-| `CanvasFactory` | Canvas creation, font registration, upside-down rotation |
+| `CanvasFactory` | Canvas creation, font registration |
 | `TextRenderer` | Text wrapping, measurement, multi-line rendering |
 | `LayoutHelpers` | Dividers, borders, section spacing, visual separators |
 
@@ -124,14 +124,28 @@ export async function createCanvas(config) {
   const { createCanvas: create, registerFont } = await import('canvas');
   // ... font registration, canvas setup
 }
-
-/**
- * Rotate a canvas 180 degrees for upside-down mounted printers.
- */
-export function flipCanvas(canvas) {
-  // ... rotation logic
-}
 ```
+
+### Printer orientation is not a renderer concern
+
+Renderers always draw upright. A thermal printer mounted upside down
+(`upsideDown`, default `true` from `thermal_printer_defaults` in `adapters.yml`)
+is handled entirely by `ThermalPrinterAdapter`:
+
+- text items go out under `ESC { 1`, which rotates characters, and the job's
+  items are sent in reverse order so the receipt reads top to bottom. Before
+  reversing, each text item is split into one item per printed line: on `\n`,
+  and by word-wrapping at the paper width (48 columns for font A, 64 for font
+  B, divided by the size multiplier). Without that, a multi-line item, or a
+  line the printer wrapped itself, printed its lines in reverse order;
+- image items (`GS v 0` rasters, which `ESC {` does not rotate) are drawn
+  rotated 180° before monochrome conversion, and their `align` is mirrored
+  (left and right swap, center stays). The mirroring is unverified on the
+  hardware; every current receipt is full paper width, where it has no effect.
+
+Do not flip a canvas before printing it. Gratitude and fitness used to, and
+School never did; since 2026-11-23 the adapter does it once for all of them.
+PNG preview endpoints therefore show the same upright image that prints.
 
 ### Rules for Primitives
 

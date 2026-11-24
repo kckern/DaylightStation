@@ -8,9 +8,9 @@ export class RenderFitnessReceipt {
     this.receiptRenderer = receiptRenderer;
   }
 
-  async execute(sessionId, upsideDown = false) {
+  async execute(sessionId) {
     const session = await this.loadSession(sessionId);
-    return session ? this.receiptRenderer.createCanvas(session, upsideDown) : null;
+    return session ? this.receiptRenderer.createCanvas(session) : null;
   }
 }
 

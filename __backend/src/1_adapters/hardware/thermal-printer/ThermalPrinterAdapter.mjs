@@ -230,12 +230,73 @@ function jobLogContext(printJob) {
 }
 
 /**
+ * Characters per line on 576-dot (80 mm) paper at size 1: font A is 12 dots
+ * wide, font B 9. The same 48 the table printer and the newsreporter receipt
+ * renderer already lay out against.
+ */
+const PAPER_COLUMNS = { a: 48, b: 64 };
+
+function columnsFor(item) {
+  const base = PAPER_COLUMNS[item.font === 'b' ? 'b' : 'a'];
+  const widthScale = Math.max(1, Math.min(8, item.size?.width || 1));
+  return Math.max(1, Math.floor(base / widthScale));
+}
+
+/** Word-wraps one line at `columns`, hard-breaking a word longer than a line. */
+function wrapLine(line, columns) {
+  if (line.length <= columns) return [line];
+  const out = [];
+  let current = '';
+  for (const word of line.split(/(\s+)/)) {
+    if (!word) continue;
+    if ((current + word).length <= columns) { current += word; continue; }
+    if (current.trim()) out.push(current.trimEnd());
+    current = word.trimStart();
+    while (current.length > columns) {
+      out.push(current.slice(0, columns));
+      current = current.slice(columns);
+    }
+  }
+  if (current.trim() || out.length === 0) out.push(current.trimEnd());
+  return out;
+}
+
+/**
+ * One text item per printed line, for an upside-down printer.
+ *
+ * Upside down, the job goes out in reverse item order so the receipt reads
+ * top-to-bottom once it is turned round. That reversal works on items, so a
+ * text item holding several lines, whether from an embedded `\n` or from the
+ * printer wrapping a long line itself, printed those lines in reverse reading
+ * order. Splitting on `\n` and wrapping at the paper width here, before the
+ * reversal, makes every printed line its own item. A blank line becomes a
+ * single space, because `#processTextItem` prints nothing for empty content.
+ *
+ * @param {PrintItem[]} items
+ * @returns {PrintItem[]}
+ */
+export function splitTextIntoPrintedLines(items) {
+  const out = [];
+  for (const item of items) {
+    if (item?.type !== 'text' || typeof item.content !== 'string') { out.push(item); continue; }
+    const columns = columnsFor(item);
+    const lines = item.content.split(/\r?\n/).flatMap(line => wrapLine(line, columns));
+    if (lines.length <= 1) { out.push(item); continue; }
+    for (const line of lines) out.push({ ...item, content: line || ' ' });
+  }
+  return out;
+}
+
+/**
  * @typedef {Object} PrinterConfig
  * @property {string} host - Printer IP address
  * @property {number} [port=9100] - Printer port
  * @property {number} [timeout=5000] - Connection timeout in ms
  * @property {string} [encoding='utf8'] - Text encoding
- * @property {boolean} [upsideDown=true] - Enable upside-down mode for mounted printers
+ * @property {boolean} [upsideDown=true] - Printer is mounted upside down: text uses
+ *   `ESC { 1`, items go out in reverse order (text split first into one item
+ *   per printed line, see `splitTextIntoPrintedLines`), and image items are
+ *   rotated 180° here. Callers always send upright content.
  */
 
 /**
@@ -1059,7 +1120,9 @@ export class ThermalPrinterAdapter {
               commands = Buffer.concat([commands, Buffer.from([0x1B, 0x7B, 0x01])]);
             }
 
-            const sortedItems = config.upsideDown ? [...printJob.items].reverse() : printJob.items;
+            const sortedItems = config.upsideDown
+              ? splitTextIntoPrintedLines(printJob.items).reverse()
+              : printJob.items;
 
             for (const item of sortedItems) {
               const itemCommands = await this.#processItem(item, config);
@@ -1198,7 +1261,7 @@ export class ThermalPrinterAdapter {
           commands = this.#processTextItem(item);
           break;
         case 'image':
-          commands = await this.#processImageItem(item);
+          commands = await this.#processImageItem(item, config);
           break;
         case 'barcode':
           commands = this.#processBarcodeItem(item);
@@ -1303,8 +1366,20 @@ export class ThermalPrinterAdapter {
    * empty buffer here printed the header, the padding and the cut around a hole
    * where the receipt should have been. There is no partial receipt worth
    * having — refuse the job instead.
+   *
+   * UPSIDE-DOWN MOUNTING IS HANDLED HERE, FOR EVERY CALLER (2026-11-23).
+   *
+   * `ESC { 1` (sent by `#executePrintJob` when `upsideDown`) rotates CHARACTERS
+   * only; a `GS v 0` raster prints exactly as sent. So when the job's effective
+   * `upsideDown` is true the image is drawn rotated 180° onto the working canvas
+   * before monochrome conversion. Callers hand over an upright image and never
+   * flip it themselves — gratitude and fitness used to pre-flip their own
+   * canvases, and School never did, so School receipts came out upside down.
+   *
+   * @param {Object} item
+   * @param {Object} [config] - the job's effective config (`upsideDown` read here)
    */
-  async #processImageItem(item) {
+  async #processImageItem(item, config = {}) {
     let commands = Buffer.alloc(0);
 
     try {
@@ -1322,15 +1397,39 @@ export class ThermalPrinterAdapter {
       const canvas = createCanvas(targetWidth, targetHeight);
       const ctx = canvas.getContext('2d');
 
+      const upsideDown = config.upsideDown === true;
+
       ctx.fillStyle = 'white';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
+      if (upsideDown) {
+        ctx.save();
+        ctx.translate(targetWidth, targetHeight);
+        ctx.rotate(Math.PI);
+        ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
+        ctx.restore();
+      } else {
+        ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
+      }
 
       const bitmap = this.#convertToMonochrome(canvas, item.threshold || 128);
 
-      // Alignment
-      if (item.align) {
-        const alignCode = item.align === 'center' ? 0x01 : item.align === 'right' ? 0x02 : 0x00;
+      // Alignment.
+      //
+      // Upside down, the alignment is MIRRORED: an image narrower than the
+      // paper that the printer places at its own left edge reads as
+      // right-aligned once the paper is turned the right way up, so left and
+      // right swap (center is unchanged). An item with no `align` prints at the
+      // printer's left (its state after `ESC @`), so it is treated as left and
+      // sent as right. UNVERIFIED ON HARDWARE as of 2026-11-23: this assumes
+      // `ESC a` places a raster in the printer's own frame and that `ESC { 1`
+      // does not already mirror raster placement. For a full-width image
+      // (the School and fitness/gratitude receipts) the alignment has no effect
+      // either way.
+      const align = upsideDown
+        ? ({ left: 'right', right: 'left', center: 'center' }[item.align || 'left'] ?? 'right')
+        : item.align;
+      if (align) {
+        const alignCode = align === 'center' ? 0x01 : align === 'right' ? 0x02 : 0x00;
         commands = Buffer.concat([commands, Buffer.from([0x1B, 0x61, alignCode])]);
       }
 
