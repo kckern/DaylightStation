@@ -4,6 +4,7 @@
 // ffmpeg and network I/O live in the CLI shell, so none of this needs a video.
 
 import { describe, it, expect } from 'vitest';
+import { rejectApplauseCandidates } from './segment-timings.cli.mjs';
 import { parseTrackListing, stripWiki, mmss, parseSrt, srtTime, sectionsFrom, attachCues, words, lyricOverlap, rankTracks, buildEvidence, measureGraph, clipArgs } from './concert-index.cli.mjs';
 
 const WIKITEXT = `==Track listing==
@@ -87,7 +88,7 @@ describe('sectionsFrom', () => {
   it('starts at zero, ends each section at the applause that follows it, else at the next start', () => {
     expect(sectionsFrom({
       candidates: [0, 120, 300],
-      applause: [{ start: 280, end: 298 }],
+      applause: [{ start: 280, end: 300 }],
       durationS: 400,
     })).toEqual([
       { start: 0, end: 120, applauseAfter: false },
@@ -101,10 +102,28 @@ describe('sectionsFrom', () => {
       { start: 50, end: 100, applauseAfter: false },
     ]);
   });
+  it('starts a section where each applause run ends, even when the candidates there were rejected', () => {
+    const applause = [{ start: 100, end: 110 }, { start: 250, end: 260 }];
+    // The silences bracketing applause sit within padS of it, so every one is rejected.
+    const candidates = rejectApplauseCandidates([98.5, 111.5, 262], applause);
+    expect(candidates).toEqual([]);
+    expect(sectionsFrom({ candidates, applause, durationS: 400 })).toEqual([
+      { start: 0, end: 100, applauseAfter: true },
+      { start: 110, end: 250, applauseAfter: true },
+      { start: 260, end: 400, applauseAfter: false },
+    ]);
+  });
+  it('moves a start that falls inside applause to where the applause ends', () => {
+    expect(sectionsFrom({ candidates: [50, 60], applause: [{ start: 0, end: 8 }, { start: 55, end: 65 }], durationS: 100 })).toEqual([
+      { start: 8, end: 50, applauseAfter: false },
+      { start: 50, end: 55, applauseAfter: true },
+      { start: 65, end: 100, applauseAfter: false },
+    ]);
+  });
 });
 
 describe('attachCues', () => {
-  it('gives each cue to the section holding its midpoint, gaps included', () => {
+  it('gives each cue to the section holding its midpoint; a cue in the gap introduces the next section', () => {
     const sections = [{ start: 0, end: 100 }, { start: 120, end: 200 }];
     const cues = [
       { i: 1, start: 10, end: 12, text: 'one' },
@@ -112,9 +131,13 @@ describe('attachCues', () => {
       { i: 3, start: 150, end: 152, text: 'two' },
     ];
     expect(attachCues(sections, cues)).toEqual([
-      { start: 0, end: 100, cues: [1, 2], text: 'one in the applause gap' },
-      { start: 120, end: 200, cues: [3], text: 'two' },
+      { start: 0, end: 100, cues: [1], text: 'one', introCues: [], intro: '' },
+      { start: 120, end: 200, cues: [3], text: 'two', introCues: [2], intro: 'in the applause gap' },
     ]);
+  });
+  it("gives the first section's intro any cues before it starts", () => {
+    const [first] = attachCues([{ start: 8, end: 50 }], [{ i: 1, start: 2, end: 4, text: 'welcome' }]);
+    expect(first).toMatchObject({ cues: [], text: '', introCues: [1], intro: 'welcome' });
   });
 });
 
@@ -149,6 +172,11 @@ describe('rankTracks', () => {
     expect(ranked[0]).toMatchObject({ n: 2, durationRatio: 1 });
     expect(ranked[0].lyric).toBeGreaterThan(0.3);
     expect(ranked.find((r) => r.n === 3).lyric).toBeNull();
+  });
+  it('matches titles against the spoken intro, lyrics against the section only', () => {
+    const section = { start: 0, end: 200, intro: 'and now, silent night', text: '' };
+    const [row] = rankTracks(section, [{ n: 1, title: 'Silent Night', length: 200, incipit: 'Silent night holy night' }]);
+    expect(row).toMatchObject({ lyric: 0, titleHit: 1 });
   });
 });
 

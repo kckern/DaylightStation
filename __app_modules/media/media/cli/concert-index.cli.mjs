@@ -124,36 +124,51 @@ export function parseSrt(text) {
 /* -------------------------------------------------------------------------- */
 
 /**
+ * A section runs from where the music resumes to where the applause after it
+ * begins. Every applause run's end is a start, because the silences that
+ * bracket applause are rejected as candidates (they sit within its padding),
+ * and without this every piece after the first applause would vanish.
+ *
  * @param {object} o
  * @param {number[]} o.candidates where music resumes (seconds), applause-filtered
  * @param {Array<{start:number,end:number}>} [o.applause] applause runs
  * @param {number} o.durationS file duration
  */
 export function sectionsFrom({ candidates, applause = [], durationS }) {
-  const starts = [0, ...candidates.filter((c) => c > 0 && c < durationS)]
+  const inside = (s) => applause.find((r) => r.start <= s && s < r.end);
+  const starts = [0, ...candidates, ...applause.map((r) => r.end)]
+    .map((s) => inside(s)?.end ?? s)
+    .filter((s) => s >= 0 && s < durationS)
     .sort((a, b) => a - b)
     .filter((s, i, all) => i === 0 || s !== all[i - 1]);
-  return starts.map((start, k) => {
-    const next = k + 1 < starts.length ? starts[k + 1] : durationS;
-    const clap = applause.find((r) => r.start > start && r.start < next);
-    return { start, end: clap ? clap.start : next, applauseAfter: Boolean(clap) };
-  });
+  return starts
+    .map((start, k) => {
+      const next = k + 1 < starts.length ? starts[k + 1] : durationS;
+      const clap = applause.find((r) => r.start > start && r.start < next);
+      return { start, end: clap ? clap.start : next, applauseAfter: Boolean(clap) };
+    })
+    .filter((s) => s.end > s.start);
 }
 
 /**
- * A cue belongs to the section whose territory (its start up to the NEXT
- * section's start) holds the cue's midpoint. Applause gaps are part of the
- * preceding section's territory, because a narrator often speaks over the
- * last of the clapping to introduce what comes next.
+ * A cue whose midpoint falls inside a section is that section's `text`. A cue
+ * in the gap before it (the applause after the previous piece) is its
+ * `intro`: a narrator speaking over the last of the clapping is introducing
+ * what comes next. The first section's intro is anything before it starts.
  */
 export function attachCues(sections, cues) {
+  const mid = (c) => (c.start + c.end) / 2;
   return sections.map((s, k) => {
-    const next = k + 1 < sections.length ? sections[k + 1].start : Infinity;
-    const mine = cues.filter((c) => {
-      const mid = (c.start + c.end) / 2;
-      return mid >= s.start && mid < next;
-    });
-    return { ...s, cues: mine.map((c) => c.i), text: mine.map((c) => c.text).join(' ') };
+    const gapStart = k > 0 ? sections[k - 1].end : -Infinity;
+    const mine = cues.filter((c) => mid(c) >= s.start && mid(c) < s.end);
+    const intro = cues.filter((c) => mid(c) >= gapStart && mid(c) < s.start);
+    return {
+      ...s,
+      cues: mine.map((c) => c.i),
+      text: mine.map((c) => c.text).join(' '),
+      introCues: intro.map((c) => c.i),
+      intro: intro.map((c) => c.text).join(' '),
+    };
   });
 }
 
@@ -188,19 +203,21 @@ export function lyricOverlap(heard, reference) {
 const round = (v, places) => Number(v.toFixed(places));
 
 /**
- * Every track, best first. `lyric` is null where the track has no incipit
- * (instrumentals, bell pieces), so "no evidence" never reads as "no match".
- * `title` catches spoken introductions ("...and now, Sleigh Ride").
+ * Every track, best first. `lyric` scores the section's own text against the
+ * incipit, and is null where the track has none (instrumentals, bell pieces),
+ * so "no evidence" never reads as "no match". `titleHit` scores the intro and
+ * the text against the title, to catch "...and now, Sleigh Ride".
  * `durationRatio` is a tiebreaker only: concert edits differ from the album.
  */
 export function rankTracks(section, tracks) {
   const len = section.end - section.start;
+  const heard = `${section.intro ?? ''} ${section.text ?? ''}`;
   return tracks
     .map((t) => ({
       n: t.n,
       title: t.title,
       lyric: t.incipit ? round(lyricOverlap(section.text, t.incipit), 3) : null,
-      titleHit: round(lyricOverlap(section.text, t.title), 3),
+      titleHit: round(lyricOverlap(heard, t.title), 3),
       durationRatio: t.length ? round(len / t.length, 2) : null,
     }))
     .sort((a, b) => ((b.lyric ?? -1) - (a.lyric ?? -1)) || (b.titleHit - a.titleHit));
