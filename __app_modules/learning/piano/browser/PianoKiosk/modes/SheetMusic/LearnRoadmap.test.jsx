@@ -97,11 +97,15 @@ describe('LearnPassageSession', () => {
     render(<LearnPassageSession score={{ id: 'score-1', musicXml: '<score />' }} revision="rev" passage={passage} rung={timed}
       tempo={{ tempoMap: [{ onsetQuarter: 0, bpm: 100 }], tempoSource: 'musicxml', minimumPercent: 40, maximumPercent: 100, adjustable: true }}
       onRecord={() => ({ rungComplete: false })} onBack={() => {}} />);
-    // The tempo track: a stop per stage, the percent big and the bpm small.
+    // The speed: one button opening a sheet of stops, the bpm shown there.
+    fireEvent.click(screen.getByRole('button', { name: /^Speed/ }));
     expect(screen.getByRole('button', { name: '60%' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText('60 bpm')).toBeInTheDocument();
     expect(exercise.props.score.tempoPercent).toBe(60);
     fireEvent.click(screen.getByRole('button', { name: '80%' }));
+    // The sheet closes on a pick; the header button shows the speed, the sheet its bpm.
+    expect(screen.getByRole('button', { name: 'Speed: 80%' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^Speed/ }));
     expect(screen.getByText('80 bpm')).toBeInTheDocument();
     expect(exercise.props.score.tempoPercent).toBe(80);
   });

@@ -18,10 +18,10 @@
  */
 export const PASSAGE_NUMBER_LIFT = 54;
 export const PASSAGE_NUMBER_ROOM = 72;
-const PASSAGE_NUMBER_SIZE = 40;
+export const PASSAGE_NUMBER_SIZE = 40;
 const PASSAGE_NUMBER_INSET = 4;
 // The selected ring (5px) and a hair of paper either side of the disc's column.
-const PASSAGE_NUMBER_HALO = 8;
+export const PASSAGE_NUMBER_HALO = 8;
 
 /**
  * Where each passage number stands: `{ id, left, top, anchor }` in the

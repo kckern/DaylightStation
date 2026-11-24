@@ -34,6 +34,29 @@ describe('systemPaging', () => {
     expect(systemCuts(systems.slice(0, 2), 600, [[0, 600]])[1]).toBe(285);
   });
 
+  it('keeps a passage number with the system under it: the cut is never below a number', () => {
+    // System 0 ends at 260 with a stem down to 268; system 1's staff starts at 310. The number's
+    // room (272-302) sits tight on that stem, so the widest free strip is under it (302-310 is
+    // narrower, but 268-272 is narrower still): cut as plain ink, the page would end under the number.
+    const pair = systems.slice(0, 2);
+    const ink = [[60, 268], [310, 510]];
+    const head = [272, 302];
+    expect(systemCuts(pair, 600, [...ink, head])[1]).toBe(306);
+    const cut = systemCuts(pair, 600, ink, [head]);
+    expect(cut[1]).toBeLessThanOrEqual(272);
+    expect(cut[1]).toBeGreaterThanOrEqual(268);
+    // The number is system 1's ink, so a page that starts there keeps it on screen.
+    expect(cut.ink[1][0]).toBeLessThanOrEqual(272);
+    // A number with no free paper above it still goes with its system.
+    expect(systemCuts(pair, 600, [[60, 290], [310, 510]], [[280, 305]])[1]).toBe(280);
+    // A head reaching up into the system above cannot keep its system without cutting that one:
+    // the cut stays between the systems, and the cuts stay in order.
+    const intruding = systemCuts(pair, 600, [[60, 268], [310, 510]], [[200, 305]]);
+    expect(intruding[1]).toBeGreaterThanOrEqual(260);
+    expect(intruding[1]).toBeLessThanOrEqual(310);
+    expect([...intruding].every((cut, index) => index === 0 || cut >= intruding[index - 1])).toBe(true);
+  });
+
   it('shows only whole systems, centred in the window', () => {
     const page = pageAt(cuts, 0, 622);
     expect(page).toMatchObject({ start: 0, end: 2, top: 0, bottom: 535, hasPrev: false, hasNext: true, index: 0 });

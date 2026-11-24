@@ -7,6 +7,7 @@ import useLearnCoach from './useLearnCoach.js';
 import usePieceGemOffer from './usePieceGemOffer.js';
 import LearnLab from './LearnLab.jsx';
 import { tempoTrackStops } from './tempoStages.js';
+import { measureRangeLabel } from './resolveLearnPlan.js';
 import PassagePath from './PassagePath.jsx';
 import PassageBoard from './PassageBoard.jsx';
 import PassageCoin, { PassageTurn } from './PassageCoin.jsx';
@@ -18,6 +19,7 @@ import { useKeyboardOnly, useKeyStrip } from './office/KeyboardOnlyContext.js';
 import './LearnCoach.scss';
 
 const EMPTY = {};
+const EMPTY_LIST = Object.freeze([]);
 /** What a step is called under its pills: a set label, not a sentence. */
 const SET_NAMES = Object.freeze({ right: 'Right hand', left: 'Left hand', together: 'Together', notes: 'Notes', silver: 'On your own',
   rhythm: 'Rhythm', pulse: 'Beat', mastery: '100%' });
@@ -62,12 +64,13 @@ const lower = (label) => label.charAt(0).toLowerCase() + label.slice(1);
 /** A recovery step's button label and onward-line sentence, from one place. A
  * slower step without a known tempo says so without a number. */
 // eslint-disable-next-line react-refresh/only-export-components -- pure wording is exported for focused contract tests
-export function recoveryWording(recovery, names = EMPTY) {
+export function recoveryWording(recovery, names = EMPTY, measures = EMPTY_LIST) {
+  // Bars by their printed numbers (a printed bar 0 is the pickup), lower-cased for the button's verb.
+  const bars = () => lower(measureRangeLabel(measures, recovery.range.start, recovery.range.end));
   // A step down to the half of a join the misses sat in, named as the path names it ("Play C–D").
   if (recovery.reason === 'smaller-join') {
-    const name = names[recovery.stepDown];
-    return name ? { button: `Play ${name}`, sentence: `play ${name}` }
-      : { button: `Play bars ${recovery.range.start + 1}–${recovery.range.end + 1}`, sentence: `play bars ${recovery.range.start + 1}–${recovery.range.end + 1}` };
+    const name = names[recovery.stepDown] ?? bars();
+    return { button: `Play ${name}`, sentence: `play ${name}` };
   }
   if (recovery.reason === 'slower-beat') {
     const percent = Number(recovery.tempoPercent);
@@ -77,17 +80,16 @@ export function recoveryWording(recovery, names = EMPTY) {
   }
   if (recovery.reason === 'rhythm') return { button: 'Tap the rhythm', sentence: 'tap the rhythm' };
   const button = recovery.reason === 'one-hand' ? `Practice the ${recovery.parts?.[0] === 'lh' ? 'left' : 'right'} hand`
-    : recovery.range.start === recovery.range.end ? `Practice bar ${recovery.range.start + 1}`
-      : `Practice bars ${recovery.range.start + 1}–${recovery.range.end + 1}`;
+    : `Practice ${bars()}`;
   return { button, sentence: lower(button) };
 }
 /** The plan step a task belongs to: itself, or the step a recovery drill came from. */
 const rootOf = (task) => { let at = task; while (at?.parent) at = at.parent; return at; };
 /** What a drill's pass card says comes next: a smaller or growing drill by its bars, otherwise its step. */
-const nextName = (task, segment) => {
+const nextName = (task, segment, measures) => {
   if (!(task.depth > 0) || task.reason === 'one-hand' || task.reason === 'slower-beat') return setName(rootOf(task));
   if (task.range.start === segment.inMeasure && task.range.end === segment.outMeasure) return setName(rootOf(task));
-  return task.range.start === task.range.end ? `Bar ${task.range.start + 1}` : `Bars ${task.range.start + 1}–${task.range.end + 1}`;
+  return measureRangeLabel(measures, task.range.start, task.range.end);
 };
 const freshId = () => `coach-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
 
@@ -184,8 +186,11 @@ function OwnedCoach(props) {
  * passage to LearnLab as a drill of sets and reps, records each take, and puts
  * the passage rail and board under it. It draws no practice screen of its own.
  */
-function CoachSession({ score, title, plan, segment, coach, skipping = null, assist = null, polish = null, tempo = EMPTY, feedback, onBack, onPassageChange, onListen }) {
+function CoachSession({ score, title, plan, segment, coach, measures = EMPTY_LIST, skipping = null, assist = null, polish = null, tempo = EMPTY, feedback, onBack, onPassageChange, onListen }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-learn-coach' }), []);
+  // The score's measures (printed numbers), for naming a drill on part of the passage. Read through a
+  // ref by the take's material, which is keyed on the task and must not rebuild on a re-layout.
+  const measuresRef = useRef(measures); measuresRef.current = measures;
   const [selected, setSelected] = useState(null);
   const [lane, setLane] = useState(null); // 'gold' once the child is working on Gold here
   const [run, setRun] = useState(null); // the task of a take that has begun
@@ -227,7 +232,7 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, ass
     const canonical = plan.segments.find((item) => item.id === wanted.passageId) ?? segment;
     // A drill on part of the passage is named by the bars it covers.
     const whole = wanted.range.start === segment.inMeasure && wanted.range.end === segment.outMeasure;
-    const barLabel = whole ? segment.barLabel : wanted.range.start === wanted.range.end ? `Bar ${wanted.range.start + 1}` : `Bars ${wanted.range.start + 1}–${wanted.range.end + 1}`;
+    const barLabel = whole ? segment.barLabel : measureRangeLabel(measuresRef.current, wanted.range.start, wanted.range.end);
     return { segment: { ...canonical, barLabel, inMeasure: wanted.range.start, outMeasure: wanted.range.end },
       // A step down is named as the path names its half ("Play C–D").
       rung: { id: wanted.skill, label: wanted.stepDown && unitNames(plan.segments)[wanted.stepDown] ? `Play ${unitNames(plan.segments)[wanted.stepDown]}` : wanted.label, effectiveParts: wanted.parts, mode: wanted.mode,
@@ -351,7 +356,7 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, ass
     const step = (played.depth ?? 0) === 0 ? steps[index] : null;
     const upNext = task && task.key !== played.key ? task : null;
     if (!step) return { id, score: raw.score ?? null,
-      copy: { eyebrow: barsOf(segment), headline: Number.isFinite(raw.score) ? `${Math.round(raw.score * 100)}%` : 'Passed', line: upNext ? `Next: ${nextName(upNext, segment)}` : 'Again' } };
+      copy: { eyebrow: barsOf(segment), headline: Number.isFinite(raw.score) ? `${Math.round(raw.score * 100)}%` : 'Passed', line: upNext ? `Next: ${nextName(upNext, segment, measures)}` : 'Again' } };
     const repCount = step.requirement.required_passes;
     return { id, score: raw.score ?? null, setIndex: index + 1, setCount: steps.length, repIndex: Math.max(1, step.pass_count), repCount,
       setClear: step.passed, next: { key: step.passed && upNext ? setName(rootOf(upNext)) : step.display.key, hand: null } };
@@ -400,7 +405,7 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, ass
   const recovery = result && next && next.depth > 0 && next.key !== result.task.key ? next : null;
   // One wording per recovery: the button, and the sentence the onward line
   // finishes ("play any key to try a little slower (75%)").
-  const recoveryWords = recovery ? recoveryWording(recovery, rail.names) : null;
+  const recoveryWords = recovery ? recoveryWording(recovery, rail.names, measures) : null;
   const recoveryAction = recoveryWords?.button ?? null;
   const canSetAside = coach.projection.canSetAside?.[segment.id] === true;
   const comeBackLater = () => {
@@ -410,18 +415,18 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, ass
     if (target && onPassageChange) onPassageChange(target); else onBack?.();
   };
   const laterButton = canSetAside ? <button type="button" className="piano-learn-lab__action" onClick={comeBackLater}><span>Come back to this later</span></button> : null;
-  // The rhythm step never walls a child: it can always be skipped (it earns nothing, and the lap moves on).
+  // The rhythm step never walls a child: after any miss the result card offers to skip it (it earns nothing,
+  // and the lap moves on). Not in the header: an always-visible exit invites skipping before trying (2026-11-24).
   const rhythmStep = task?.rhythm === true && (task.depth ?? 0) === 0;
   const skipRhythm = () => {
     logger.info('piano.learn.rhythm.skip', { userId: coach.profileId, scoreId: score.id, passageId: segment.id, misses: misses[task.key] ?? 0 });
     coach.skipRhythm?.(task);
     setSelected(null); setRun(null); setResult(null); setMoment(null); setChoice(null); setLane('gold'); setRunNumber((number) => number + 1);
   };
-  const skipButton = rhythmStep ? <button type="button" className="piano-learn-lab__action is-quiet" onClick={skipRhythm}><Icon name="next" /><span>Skip rhythm</span></button> : null;
   const resultActions = result ? <>
     {recovery && <button type="button" className="is-primary" onClick={() => begin(recovery)}>{recoveryAction}</button>}
     <button type="button" className={recovery ? '' : 'is-primary'} onClick={() => begin(result.task)}>Try again</button>
-    {rhythmStep && result.missed >= 2 && <button type="button" onClick={skipRhythm}>Skip rhythm</button>}
+    {rhythmStep && result.missed >= 1 && <button type="button" onClick={skipRhythm}>Skip rhythm</button>}
     {laterButton}
   </> : null;
   // Any key on the piano takes the primary button, so the help the card
@@ -503,7 +508,7 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, ass
     previous: previousUnit && !busy ? { onSelect: () => goToPassage(previousUnit, 'office-strip') } : null,
     next: nextUnit && !busy ? { onSelect: () => goToPassage(nextUnit, 'office-strip') } : null,
     retry: result && !busy ? { onSelect: () => begin(result.task) } : null,
-    later: busy ? null : rhythmStep ? { label: 'Skip rhythm', onSelect: skipRhythm } : canSetAside ? { label: 'Come back later', onSelect: comeBackLater } : null,
+    later: busy ? null : rhythmStep ? (result?.missed >= 1 ? { label: 'Skip rhythm', onSelect: skipRhythm } : null) : canSetAside ? { label: 'Come back later', onSelect: comeBackLater } : null,
   });
 
   if (!task) return <section className="piano-learn-coach"><h2>No playable notes in this passage</h2>{!keyOnly && <button type="button" onClick={onBack}>Back to score</button>}{map}</section>;
@@ -511,7 +516,7 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, ass
     {loaded && material ? <LearnLab key={`${runNumber}:${task.key}`} score={score} revision={plan.fingerprint} segment={material.segment} rung={material.rung}
       coachingTask={task} assist={assist} drill={drill} card={card} ceremony={ceremony} onCardDone={momentDone} notice={notice}
       resultLabel={result?.message.title ?? null} resultActions={keyOnly ? null : resultActions} resultContinueLabel={resultContinueLabel} onResultContinue={resultContinue}
-      extraControls={keyOnly ? null : result ? skipButton : <>{skipButton}{laterButton}</>} tempoChoice={keyOnly ? null : tempoChoice}
+      extraControls={keyOnly || result ? null : laterButton} tempoChoice={keyOnly ? null : tempoChoice}
       onPickStep={keyOnly ? null : pickStep} onStarted={started} onOutcome={finish}
       onListen={() => onListen?.(task)}
       tempo={{ ...tempo, tempoMap: plan.tempoMap, adjustable: false }} feedback={feedback}

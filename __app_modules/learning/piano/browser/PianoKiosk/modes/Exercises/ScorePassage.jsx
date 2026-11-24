@@ -4,7 +4,7 @@ import { MusicXmlRenderer } from "../../../../../../../__capabilities/music-nota
 import { parseMusicXml } from "../../../../../../../__capabilities/music-notation/browser/parseMusicXml.js";
 import NoteHighlightLayer from '../SheetMusic/NoteHighlightLayer.jsx';
 import { compileScoreExpectation } from '../../../performance/assessmentAttempt.js';
-import { excerptMusicXml, selectMusicXmlParts } from './scorePassageXml.js';
+import { excerptMusicXml, selectMusicXmlParts, firstSoundingOnsetQuarter } from './scorePassageXml.js';
 import { scaleScoreTempoMap, scaledScoreBpm } from './scoreTempo.js';
 import { resolvePassageLayout, systemForStep } from './passageLayout.js';
 import { paintWrongGhost } from './scoreWrongGhost.js';
@@ -176,6 +176,11 @@ export default function ScorePassage({
   // across blank paper. One system is left alone; it is scaled up to the stage.
   const [stretchLastSystem, setStretchLastSystem] = useState(false);
   const [fitError, setFitError] = useState(null);
+  // The engraving a fit error was reached on: the stage's message stands in for that engraving only,
+  // so a new excerpt (another passage, a re-balanced break) is still engraved and judged.
+  const [unfitXml, setUnfitXml] = useState(null);
+  const focusedXmlRef = useRef(null);
+  const failFit = useCallback((reason) => { setFitError(reason); setUnfitXml(focusedXmlRef.current); }, []);
 
   useLayoutEffect(() => {
     const element = containerRef.current;
@@ -211,7 +216,7 @@ export default function ScorePassage({
           measureBounds: (result.measureBounds ?? []).map(({ left, right, top, bottom }) => ({ left, right, top, bottom })),
         });
         setLayout(null);
-        setFitError('passage-layout-unbalanced');
+        failFit('passage-layout-unbalanced');
         return;
       }
       const systems = new Set((result?.staves ?? []).map((staff) => staff.system).filter(Number.isInteger)).size;
@@ -224,8 +229,8 @@ export default function ScorePassage({
     }
     setLayout(null);
     if (fit.nextScale != null) setRenderScale(fit.nextScale);
-    else setFitError('passage-too-dense');
-  }, [measures, renderScale, sourceId, stretchLastSystem, systemBreakBefore]);
+    else failFit('passage-too-dense');
+  }, [failFit, measures, renderScale, sourceId, stretchLastSystem, systemBreakBefore]);
 
   /**
    * The one place a dead end is announced. Every caller of this is a decision to
@@ -282,6 +287,7 @@ export default function ScorePassage({
     () => (excerpt.musicXml ? selectMusicXmlParts(excerpt.musicXml, requestedParts) : { musicXml: null, originalStaffIndices: [], error: excerpt.error }),
     [excerpt.error, excerpt.musicXml, requestedParts],
   );
+  focusedXmlRef.current = focused.musicXml;
 
   /**
    * Every engraved note, in the shape the score compiler reads: the note as the
@@ -328,11 +334,14 @@ export default function ScorePassage({
       if (!expectation.events.some((event) => event.notes.length)) {
         return { state: 'dead', reason: 'passage-empty' };
       }
-      return { state: 'ready', expectation };
+      // The passage's first note across BOTH hands (read before the step picked its hand): the count
+      // belongs to the passage, so a hand that enters later rests where the pickup is.
+      const passageFirstOnsetQuarter = firstSoundingOnsetQuarter(excerpt.musicXml);
+      return { state: 'ready', expectation: Number.isFinite(passageFirstOnsetQuarter) ? { ...expectation, passageFirstOnsetQuarter } : expectation };
     } catch (error) {
       return { state: 'dead', reason: 'expectation-uncompilable', error: error?.message ?? String(error) };
     }
-  }, [layout, notes, sourceId, fallbackBpm, requestedParts, excerpt.inheritedTempoMap, excerpt.originalMeasureIndices, tempoPercent]);
+  }, [layout, notes, sourceId, fallbackBpm, requestedParts, excerpt.inheritedTempoMap, excerpt.musicXml, excerpt.originalMeasureIndices, tempoPercent]);
 
   const expectation = compiled.state === 'ready' ? compiled.expectation : null;
   const systemCount = useMemo(
@@ -525,9 +534,17 @@ export default function ScorePassage({
     };
   }, [elsByOnset, expectation, judged, verdicts]);
 
+  // Shown only at its final size: an accepted layout, fitted to the stage. A layout the
+  // fitter cannot place (no staff boxes) is shown as engraved rather than never.
+  const engravingReady = Boolean(layout) && (presentation != null || !(layout.staffBoxes?.length));
   return (
-    <div ref={containerRef} className="piano-score-passage" data-system-count={systemCount || undefined} data-layout-mode={presentation?.mode} data-layout-compact={presentation?.compact || undefined} data-cursor-enabled={String(showCursor)}>
-      {focused.musicXml ? (
+    <div ref={containerRef} className="piano-score-passage" data-engraving-ready={engravingReady || undefined} data-system-count={systemCount || undefined} data-layout-mode={presentation?.mode} data-layout-compact={presentation?.compact || undefined} data-cursor-enabled={String(showCursor)}>
+      {fitError && unfitXml === focused.musicXml ? (
+        // A passage the stage cannot hold: said plainly where the music would be, not blank paper.
+        <div className="musicxml-renderer musicxml-renderer--placeholder" role="status">
+          <p>{UNFIT_MESSAGE[fitError] ?? UNFIT_MESSAGE['passage-too-dense']}</p>
+        </div>
+      ) : focused.musicXml ? (
         <MusicXmlRenderer key={`${systemBreakBefore ?? 'auto'}:${renderScale}:${stretchLastSystem}`} musicXml={focused.musicXml} scale={renderScale} newSystemFromXML stretchLastSystem={stretchLastSystem} fillContainer presentationViewBox={presentation?.viewBox} onLayout={handleLayout} onFailed={handleEngraveFailed}>
           <NoteHighlightLayer step={currentStep} activeParts={activeParts} />
         </MusicXmlRenderer>
@@ -541,16 +558,23 @@ export default function ScorePassage({
   );
 }
 
+/** What the stage says when a passage cannot be fitted (the host also hears `onUnrunnable`). */
+const UNFIT_MESSAGE = Object.freeze({
+  'passage-too-dense': 'These bars are too many to show at once.',
+  'passage-layout-unbalanced': 'These bars could not be laid out to fit.',
+});
 /** The tempo a score that names none is counted at — the Sheet Music surface's own. */
 const DEFAULT_BPM = 90;
 const MAX_PASSAGE_SYSTEMS = 2;
 const MIN_PASSAGE_SCALE = 0.65;
 /** A recorded verdict state → the class suffix painted on its engraved note. */
 const VERDICT_KIND = Object.freeze({ hit: 'hit', early: 'early', late: 'late', lapsed: 'unplayed', miss: 'unplayed' });
-const VERDICT_MARK = Object.freeze({ hit: '\u2713', early: '\u25C2', late: '\u25B8', unplayed: '\u25CB', wrong: '\u00D7' });
+// A right note is green and needs nothing more (owner, 2026-11-24): only a note to fix carries a mark —
+// early ◂ / late ▸ say which way, missed ○ / wrong × say which red.
+const VERDICT_MARK = Object.freeze({ early: '\u25C2', late: '\u25B8', unplayed: '\u25CB', wrong: '\u00D7' });
 
 /**
- * A verdict mark (✓ ◂ ▸ ○ ×) beside an engraved note, in its SVG's own
+ * A verdict mark (◂ ▸ ○ ×; a hit has none) beside an engraved note, in its SVG's own
  * coordinates (the same screen-to-user mapping the cursor uses). Returns the
  * inserted element, or null where there is no geometry (happy-dom, a detached
  * note).

@@ -1518,7 +1518,8 @@ describe('Learn recovery controls at the 1280x800 kiosk canvas', () => {
     };
     // Before a take: nothing to pause or start over.
     await reachable(['Change practice']);
-    await page.getByRole('button', { name: '100%', exact: true }).click();
+    await page.getByRole('button', { name: /^Speed/ }).click();
+    await page.getByRole('dialog', { name: 'Speed', exact: true }).getByRole('button', { name: '100%', exact: true }).click();
     // A tempo change re-arms the run; a key pressed before it is armed again is
     // dropped, and the run then never starts (passed alone, hung in the gate).
     await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]', { timeout: 20000 });
@@ -1535,10 +1536,11 @@ describe('Learn recovery controls at the 1280x800 kiosk canvas', () => {
     await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]');
     await page.getByRole('button', { name: 'Change practice', exact: true }).click();
     expect(await probe.calls()).toContainEqual({ name: 'change-practice', value: expect.objectContaining({ parts: ['rh'], mode: 'cued' }) });
-    await page.getByRole('button', { name: '15%', exact: true }).click();
+    await page.getByRole('button', { name: /^Speed/ }).click();
+    expect(await probe.text()).toContain('bpm');
+    await page.getByRole('dialog', { name: 'Speed', exact: true }).getByRole('button', { name: '15%', exact: true }).click();
     await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]');
-    expect(await probe.text()).toContain('15%');
-    expect(await probe.text()).toContain('12 bpm');
+    expect(await page.getByRole('button', { name: 'Speed: 15%' }).count()).toBe(1);
     expect((await probe.one('.piano-exercise-run__stage')).painted).toBe(true);
     expectNoPageErrors();
   }, 120000);
@@ -1566,11 +1568,15 @@ describe('timed practice groove at 1920x1200 in real Chromium', () => {
     expectNoPageErrors();
   }
 
-  async function chooseFullSpeed() {
-    await page.getByRole('button', { name: '100%', exact: true }).click();
+  /** The speed is one header button; its stops are in a sheet (2026-11-24). */
+  async function chooseSpeed(name) {
+    await page.getByRole('button', { name: /^Speed/ }).click();
+    await page.getByRole('dialog', { name: 'Speed', exact: true }).getByRole('button', { name, exact: true }).click();
+    await page.getByRole('dialog', { name: 'Speed', exact: true }).waitFor({ state: 'detached' });
     await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]');
-    expect(await probe.text()).toContain('80 bpm');
+    expect(await page.getByRole('button', { name: `Speed: ${name}` }).count()).toBe(1);
   }
+  async function chooseFullSpeed() { await chooseSpeed('100%'); }
 
   async function assertRunGeometry() {
     const runBox = await probe.one('.piano-exercise-run');
@@ -1595,14 +1601,18 @@ describe('timed practice groove at 1920x1200 in real Chromium', () => {
     const before = await assertRunGeometry();
     geometry('groove layout', before);
     expect(await probe.count('input[type="number"], input[type="range"]')).toBe(0);
-    // The tempo: discrete stops, each a target, all reachable.
-    const stops = await probe.all('.piano-learn-tempo__stop');
-    expect(stops.map((b) => b.text.replace(/\D/g, ''))).toEqual(['15', '25', '40', '60', '80', '']);
+    // The speed: one header button opening a sheet of discrete stops, each a big target.
+    await page.getByRole('button', { name: /^Speed/ }).click();
+    await page.getByRole('dialog', { name: 'Speed', exact: true }).waitFor({ state: 'visible' });
+    const stops = await probe.all('.piano-learn-speed-sheet__stops button');
+    expect(stops.map((b) => b.text.replace(/\D/g, ''))).toEqual(['15', '25', '40', '60', '80', '100']);
     for (const stop of stops) {
-      expect(stop.height).toBeGreaterThanOrEqual(44);
-      expect(stop.width).toBeGreaterThanOrEqual(44);
+      expect(stop.height).toBeGreaterThanOrEqual(64);
+      expect(stop.width).toBeGreaterThanOrEqual(64);
       expect(stop.reachable).toBe(true);
     }
+    await page.keyboard.press('Escape');
+    await page.getByRole('dialog', { name: 'Speed', exact: true }).waitFor({ state: 'detached' });
     // The loudness: one button, opening four big levels on an opaque sheet.
     const opener = page.getByRole('button', { name: 'Click volume: Loud', exact: true });
     await opener.click();
@@ -1626,15 +1636,13 @@ describe('timed practice groove at 1920x1200 in real Chromium', () => {
     await dialog.waitFor({ state: 'detached' });
     expect(await page.evaluate(() => localStorage.getItem('piano.learn.click-level'))).toBe('soft');
     expect(await assertRunGeometry()).toEqual(before);
-    await page.getByRole('button', { name: '25%', exact: true }).click();
-    await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]');
-    expect(await probe.text()).toContain('20 bpm');
+    await chooseSpeed('25%');
     await assertRunGeometry();
     // Remount in the same real origin: the loudness choice survives a lab visit.
     await page.evaluate(() => window.__stage.reset());
     await page.evaluate((arg) => window.__stage.mountLab(arg), { musicXml: fourBars, mastery: true });
     await page.getByRole('button', { name: 'Click volume: Soft', exact: true }).waitFor();
-    expect(await page.getByRole('group', { name: 'Tempo', exact: true }).count()).toBe(0);
+    expect(await page.getByRole('button', { name: /^Speed/ }).count()).toBe(0);
     expectNoPageErrors();
   }, 30000);
 
@@ -1645,12 +1653,10 @@ describe('timed practice groove at 1920x1200 in real Chromium', () => {
   it('counts up 1 2 3 4 above the notation, cues the last click, and shows no PLAY', async () => {
     await lab();
     await chooseFullSpeed();
-    // The arming key is heard at once: while it is held the run is armed and
-    // the band shows its armed form; the count-in waits for the release.
+    // The press is beat one: the count shows 1 at once, the key still down.
     await page.evaluate(() => window.__stage.hold([84]));
-    await page.waitForSelector('.piano-exercise-run.is-ready[data-start-armed="true"] .piano-learn-countin[data-armed="true"]');
-    await page.evaluate(() => window.__stage.hold([]));
     await page.waitForSelector('.piano-exercise-run.is-countdown .piano-learn-countin[data-count="1"]');
+    await page.evaluate(() => window.__stage.hold([]));
     const { stage, rail, keys } = await assertRunGeometry();
     const overlay = await probe.one('.piano-learn-countin');
     expect(inside(overlay, stage)).toBe(true);
@@ -1669,7 +1675,8 @@ describe('timed practice groove at 1920x1200 in real Chromium', () => {
       await page.waitForFunction((text) => document.querySelector('.piano-learn-countin')?.dataset.count === text, count);
     }
     expect((await probe.one('.piano-learn-countin__cue')).text).toBe('next click: play');
-    expect((await probe.one('.piano-learn-countin__pip.is-current')).text).toBe('4');
+    // Half-note pulse in 4/4: two clicks a bar, so the fourth click is beat 2 of the second bar.
+    expect((await probe.one('.piano-learn-countin__pip.is-current')).text).toBe('2');
     await page.screenshot({ path: '/tmp/piano-groove-next-click.png' });
     await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.dataset.beatPulse === '1');
     expect(await probe.count('.piano-learn-countin')).toBe(0);

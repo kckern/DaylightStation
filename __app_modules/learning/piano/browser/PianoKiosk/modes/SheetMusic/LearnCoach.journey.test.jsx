@@ -72,15 +72,15 @@ const click=async(page,name)=>{await page.getByRole('button',{name,exact:true}).
 const armed=async(page)=>{await page.locator('.piano-exercise-run[data-armed="true"]').waitFor({timeout:15000});await page.waitForTimeout(600);};
 // Open the passage (a tap on the path's target token, the one with the play disc), then tap a set of the drill to run that step.
 const openPassage=async(page)=>{await page.locator('.piano-passage-path__token[data-target]').click({timeout:30000});await armed(page);};
-const openStep=async(page,step)=>{await openPassage(page);await page.locator('button.drill-cluster').and(page.getByRole('button',{name:STEP_NAMES[step],exact:true})).click();await page.locator('.piano-learn-lab__task').filter({hasText:STEP_NAMES[step]}).waitFor();await armed(page);};
+const openStep=async(page,step)=>{await openPassage(page);await page.locator('button.drill-cluster').and(page.getByRole('button',{name:STEP_NAMES[step],exact:true})).click();await page.locator('.piano-learn-lab__heading strong').filter({hasText:STEP_NAMES[step]}).waitFor();await armed(page);};
 // The Gold lap's steps are drawn only once the passage is Bronze (laps): earn it with a clean check, land back on the
 // score, then open the path's "A in time" token (it opens on the rhythm step) and tap the step wanted.
 const goldTake=[[60,48],[62,50],[64,52],[65,53],[60,48],[62,50],[64,52],[65,53]].flatMap(([r,l])=>[[r],[r,l],[l],[]]);
 const openGold=async(page,step)=>{await openStep(page,'On your own');
  await page.evaluate(async(list)=>{for(const frame of list){window.__hold(frame);await new Promise(r=>setTimeout(r,70));}},goldTake);
  await curtain(page,'Piece Silver!').waitFor({timeout:15000});await page.locator('.piano-learn-coach').waitFor({state:'detached',timeout:20000});
- await page.getByRole('button',{name:'A in time, bars 1–2',exact:true}).click({timeout:15000});await page.locator('.piano-learn-lab__task').filter({hasText:'Tap the rhythm'}).waitFor();await armed(page);
- if(step!=='Rhythm'){await page.locator('button.drill-cluster').and(page.getByRole('button',{name:STEP_NAMES[step],exact:true})).click();await page.locator('.piano-learn-lab__task').filter({hasText:STEP_NAMES[step]}).waitFor();await armed(page);}};
+ await page.getByRole('button',{name:'A in time, bars 1–2',exact:true}).click({timeout:15000});await page.locator('.piano-learn-lab__heading strong').filter({hasText:'Tap the rhythm'}).waitFor();await armed(page);
+ if(step!=='Rhythm'){await page.locator('button.drill-cluster').and(page.getByRole('button',{name:STEP_NAMES[step],exact:true})).click();await page.locator('.piano-learn-lab__heading strong').filter({hasText:STEP_NAMES[step]}).waitFor();await armed(page);}};
 const STEP_NAMES={'On your own':'Play it on your own','100%':'Play at score tempo','Rhythm':'Tap the rhythm'};
 const card=(page,text)=>page.locator('.rep-card').filter({hasText:text});
 // Silver and Gold close the drill's curtain; its verdict carries the word.
@@ -99,8 +99,8 @@ describe('real Learn journey',()=>{
  it('lands on the drill surface with the passage contained and nothing to scroll',async()=>{
   const{page,f,errors}=await open();try{
    await openPassage(page);await page.screenshot({path:path.join(ARTIFACTS,'drill-open.png')});
-   expect(await page.locator('.piano-learn-lab__task').innerText()).toBe('Find the right-hand notes');
-   expect(await page.locator('.piano-learn-lab__identity').innerText()).toBe('Bars 1–2');
+   expect(await page.locator('.piano-learn-lab__heading strong').innerText()).toBe('Find the right-hand notes');
+   expect(await page.locator('.piano-learn-lab__heading span').innerText()).toBe('Bars 1–2');
    expect(await page.getByRole('button',{name:'Start practice'}).count()).toBe(0);
    // Only the Bronze lap's steps (the hands, together, the check), headed by the passage's own token.
    expect(await page.locator('.drill-cluster').count()).toBe(4);
@@ -120,7 +120,7 @@ describe('real Learn journey',()=>{
  it('draws the rhythm step as one line of X noteheads, any key, before the metronome',async()=>{
   const{page,errors}=await open();try{
    await openGold(page,'Rhythm');
-   expect(await page.locator('.piano-learn-lab__task').innerText()).toBe('Tap the rhythm');
+   expect(await page.locator('.piano-learn-lab__heading strong').innerText()).toBe('Tap the rhythm');
    await page.screenshot({path:path.join(ARTIFACTS,'rhythm-step.png')});
    // Every notehead is the X glyph on one line per staff: one distinct vertical position per staff.
    const heads=await page.locator('.piano-exercise-run__stage .vf-notehead').evaluateAll(els=>els.map(el=>{const b=el.getBoundingClientRect();return Math.round(b.top);}));
@@ -162,12 +162,20 @@ describe('real Learn journey',()=>{
    expect(midBeats[4]).toEqual(['piano-note-verdict-unplayed','piano-note-verdict-unplayed']);
    expect(midBeats.slice(6).flat()).toEqual([null,null,null,null]);
    await take;
-   // The result: every head judged, with the same marks the timed steps carry (✓ ◂ ▸ ○).
-   await page.waitForFunction(()=>document.querySelectorAll('.piano-exercise-run__stage .piano-score-passage__drift').length>=16,null,{timeout:10000});
+   // The result: every head judged by colour; only notes to fix carry a mark (◂ ▸ ○ ×), a right note none (2026-11-24).
+   await page.waitForFunction(()=>document.querySelectorAll('.piano-exercise-run__stage .piano-score-passage__drift').length>=4,null,{timeout:10000});
    const done=byBeat(await heads());
    expect(done.map(beat=>beat[0])).toEqual(['hit','hit','hit','late','unplayed','hit','hit','hit'].map(k=>`piano-note-verdict-${k}`));
    const marks=await page.locator(`${stage} .piano-score-passage__drift`).evaluateAll(els=>els.map(el=>el.textContent));
-   expect(marks.filter(m=>m==='✓')).toHaveLength(12);expect(marks.filter(m=>m==='▸')).toHaveLength(2);expect(marks.filter(m=>m==='○')).toHaveLength(2);
+   expect(marks.filter(m=>m==='✓')).toHaveLength(0);expect(marks.filter(m=>m==='▸')).toHaveLength(2);expect(marks.filter(m=>m==='○')).toHaveLength(2);
+   // Every verdict mark is on the paper, beside a notehead: never under a stem tip, never past the edge.
+   const placed=await page.evaluate(()=>{const svg=document.querySelector('.piano-exercise-run__stage .musicxml-renderer__svg svg');const paper=svg.getBoundingClientRect();
+    const heads=[...svg.querySelectorAll('.vf-notehead')].map(h=>h.getBoundingClientRect());
+    return [...svg.querySelectorAll('.piano-score-passage__drift')].map(m=>{const b=m.getBoundingClientRect();const cy=(b.top+b.bottom)/2;
+     const near=Math.min(...heads.filter(h=>Math.abs((h.left+h.right)/2-(b.left+b.right)/2)<b.width+4).map(h=>Math.min(Math.abs(cy-h.top),Math.abs(cy-h.bottom))));
+     return{inside:b.top>=paper.top-0.5&&b.bottom<=paper.bottom+0.5,near,space:heads[0]?heads[0].height:10};});});
+   expect(placed).toHaveLength(4);
+   for(const mark of placed){expect(mark.inside).toBe(true);expect(mark.near).toBeLessThan(mark.space*2);}
    // The judged colours are really painted on the X glyphs.
    const fills=await page.locator(`${stage} .piano-note-verdict-hit .vf-notehead path`).evaluateAll(els=>[...new Set(els.map(el=>getComputedStyle(el).fill))]);
    expect(fills).toEqual(['rgb(0, 150, 70)']);
@@ -203,7 +211,7 @@ describe('real Learn journey',()=>{
    expect((await page.evaluate(()=>window.__logs)).filter(l=>l.event==='piano.learn.celebrate')).toHaveLength(1);
    // The path's next token opens the passage on one tap, on its next Gold step (the rhythm, before the metronome).
    expect(await page.locator('.piano-passage-path__caption').innerText()).toBe('A in time');
-   await click(page,'A in time, bars 1–2');await page.locator('.piano-learn-lab__task').filter({hasText:'Tap the rhythm'}).waitFor();await page.screenshot({path:path.join(ARTIFACTS,'silver-certified.png')});
+   await click(page,'A in time, bars 1–2');await page.locator('.piano-learn-lab__heading strong').filter({hasText:'Tap the rhythm'}).waitFor();await page.screenshot({path:path.join(ARTIFACTS,'silver-certified.png')});
    // The Gold lap's steps only, none done yet, headed "A · steps to Gold".
    expect(await page.locator('.drill-cluster').count()).toBe(7);expect(await page.locator('.drill-cluster[data-done]').count()).toBe(0);
    expect(await page.locator('.drill-progress__head').getAttribute('aria-label')).toBe('A, steps to Gold');
@@ -219,20 +227,14 @@ describe('real Learn journey',()=>{
    expect(await page.locator('.rep-card').count()).toBe(0);
    // The result is docked in the rail's slot: the music does not move or resize when a take ends.
    expect(await stage()).toEqual(before);
-   // Every verdict mark is on the paper, beside a notehead: never under a stem tip, never past the edge.
-   const marks=await page.evaluate(()=>{const svg=document.querySelector('.piano-exercise-run__stage .musicxml-renderer__svg svg');const paper=svg.getBoundingClientRect();
-    const heads=[...svg.querySelectorAll('.vf-notehead')].map(h=>h.getBoundingClientRect());
-    return [...svg.querySelectorAll('.piano-score-passage__drift')].map(m=>{const b=m.getBoundingClientRect();const cy=(b.top+b.bottom)/2;
-     const near=Math.min(...heads.filter(h=>Math.abs((h.left+h.right)/2-(b.left+b.right)/2)<b.width+4).map(h=>Math.min(Math.abs(cy-h.top),Math.abs(cy-h.bottom))));
-     return{inside:b.top>=paper.top-0.5&&b.bottom<=paper.bottom+0.5,near,space:heads[0]?heads[0].height:10};});});
-   expect(marks.length).toBeGreaterThan(0);
-   for(const mark of marks){expect(mark.inside).toBe(true);expect(mark.near).toBeLessThan(mark.space*2);}
+   // (Mark placement is checked on the rhythm take, whose late and missed notes carry marks.)
    // The card never covers the score: it sits under the stage, inside the kiosk's 800 px, with nothing scrolled out of
    // sight, and every verdict mark is still the topmost thing at its own position.
    const docked=async()=>{const card=await page.locator('.piano-exercise-run__result.is-docked').boundingBox();
     expect(card.y).toBeGreaterThanOrEqual(before.y+before.height-0.5);expect(card.y+card.height).toBeLessThanOrEqual(800.5);
     expect(await page.locator('.piano-exercise-run__result.is-docked').evaluate(el=>el.scrollHeight<=el.clientHeight+1)).toBe(true);
-    const seen=await page.evaluate(()=>[...document.querySelectorAll('.piano-exercise-run__stage .piano-score-passage__drift')].map(m=>{const b=m.getBoundingClientRect();
+    // Probed on the judged noteheads (a right note carries no mark since 2026-11-24).
+    const seen=await page.evaluate(()=>[...document.querySelectorAll('.piano-exercise-run__stage [class*="piano-note-verdict-"]')].map(m=>{const b=m.getBoundingClientRect();
      const hit=document.elementFromPoint((b.left+b.right)/2,(b.top+b.bottom)/2);return Boolean(hit&&(hit===m||m.contains(hit)||hit.closest('.piano-exercise-run__stage')));}));
     expect(seen.length).toBeGreaterThan(0);expect(seen.every(Boolean)).toBe(true);
     const primary=await page.locator('.piano-exercise-run__result-actions button.is-primary').boundingBox();
@@ -261,7 +263,7 @@ describe('real Learn journey',()=>{
    // The key takes the recommended smaller practice, not a repeat of the take that missed.
    await key();await armed(page);
    expect((await page.evaluate(()=>window.__logs)).filter(l=>l.event==='piano.exercise-retry').map(l=>l.data.action)).toEqual(['host','host']);
-   expect(await page.locator('.piano-learn-lab__identity').innerText()).toMatch(/^Bars? \d/);expect(errors).toEqual([]);
+   expect(await page.locator('.piano-learn-lab__heading span').innerText()).toMatch(/^Bars? \d/);expect(errors).toEqual([]);
   }finally{await page.close();}
  },90000);
  it('grades two-hand timed notes, saves each take once, earns Gold and resumes after remount',async()=>{
@@ -316,7 +318,7 @@ describe('real Learn journey',()=>{
    await card(page,'Rep 1 of 2').waitFor({timeout:15000});await page.locator('.rep-card').waitFor({state:'detached',timeout:10000});
    await page.getByText('Progress not saved',{exact:true}).waitFor({timeout:15000});
    expect(f.attempts.size).toBe(1);
-   await page.evaluate(()=>window.__profile('learner5'));await page.locator('.piano-learn-lab__task').filter({hasText:'Find the right-hand notes'}).waitFor();
+   await page.evaluate(()=>window.__profile('learner5'));await page.locator('.piano-learn-lab__heading strong').filter({hasText:'Find the right-hand notes'}).waitFor();
    expect(await page.getByText('Progress not saved',{exact:true}).count()).toBe(0);
    f.offline=false;await page.evaluate(()=>window.__profile('learner4'));
    await expect.poll(()=>f.attempts.size,{timeout:15000}).toBe(2);

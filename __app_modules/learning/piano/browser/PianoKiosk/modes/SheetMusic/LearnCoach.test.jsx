@@ -155,6 +155,25 @@ describe('LearnCoach', () => {
   expect(recoveryWording({ reason: 'smaller-span', range: { start: 1, end: 1 } }).sentence).toBe('practice bar 2');
   expect(recoveryWording({ reason: 'smaller-span', range: { start: 0, end: 2 } }).button).toBe('Practice bars 1–3');
  });
+ it('words a bar range by its printed numbers, a printed bar 0 as the pickup', () => {
+  const pickup = ['0', '1', '2', '3'].map((number) => ({ number }));
+  expect(recoveryWording({ reason: 'smaller-span', range: { start: 0, end: 1 } }, {}, pickup)).toEqual({ button: 'Practice pickup + bar 1', sentence: 'practice pickup + bar 1' });
+  expect(recoveryWording({ reason: 'smaller-span', range: { start: 2, end: 2 } }, {}, pickup).button).toBe('Practice bar 2');
+  expect(recoveryWording({ reason: 'smaller-join', stepDown: 'x', range: { start: 1, end: 3 } }, {}, pickup).button).toBe('Play bars 1–3');
+ });
+ it('names a drill on part of a pickup passage by its printed bars', async () => {
+  const pickup = ['0', '1', '2', '3'].map((number) => ({ number }));
+  render(<LearnCoach {...props} measures={pickup} />);
+  const span = (missed) => ({ diagnostics: { expected_notes: 2, missed_notes: missed, wrong_notes: 0 } });
+  const stalled = { ...passed, verdict: { passed: false }, criteria: { completeness: .9, cleanliness: 1 },
+    spans: { 'measure:0': span(0), 'measure:1': span(0), 'measure:2': span(0), 'measure:3': span(2) } };
+  await outcome({ ...stalled, assessmentId: 'stall1' }); await outcome({ ...stalled, assessmentId: 'stall2' });
+  fireEvent.click(screen.getByRole('button', { name: 'Practice bars 2–3' }));
+  expect(h.lab.segment.barLabel).toBe('Bars 2–3');
+  await outcome({ ...passed, assessmentId: 'link1' }); await outcome({ ...passed, assessmentId: 'link2' });
+  expect(h.lab.card.copy.line).toBe('Next: Bars 1–3');
+  expect(h.lab.segment.barLabel).toBe('Bars 1–3');
+ });
  it('words a step down by the half\'s name on the path, or its bars without one', () => {
   expect(recoveryWording({ reason: 'smaller-join', stepDown: 'join:c:d', range: { start: 8, end: 15 } }, { 'join:c:d': 'C–D' })).toEqual({ button: 'Play C–D', sentence: 'play C–D' });
   expect(recoveryWording({ reason: 'smaller-join', stepDown: 'x', range: { start: 8, end: 15 } })).toEqual({ button: 'Play bars 9–16', sentence: 'play bars 9–16' });
@@ -346,18 +365,19 @@ describe('the chosen tempo on a coached step', () => {
   // No smaller step is offered for a miss at a chosen tempo.
   expect(screen.queryByRole('button', { name: /slower|^Practice / })).toBeNull();
  });
- it('the rhythm step can always be skipped, and offers it again in the result after two misses', async () => {
+ it('Skip rhythm lives on the result card: offered after any miss, never in the header', async () => {
   const coach = goldCoach();
   render(<LearnCoach {...props} coach={coach} skipping={{ default: 'open' }} />);
   act(() => h.lab.onPickStep({ id: step('rhythm').key }));
-  expect(screen.getByRole('button', { name: 'Skip rhythm' })).toBeInTheDocument();
+  // Before a take: not in the header (an always-visible exit invites skipping before trying).
+  expect(screen.queryByRole('button', { name: 'Skip rhythm' })).toBeNull();
   const late = { ...passed, verdict: { passed: false }, criteria: { completeness: 1, cleanliness: 1, placement: 0.1 } };
   await act(async () => { h.lab.onStarted(); h.lab.onOutcome({ ...late, assessmentId: 'r1' }, {}); });
-  await act(async () => { h.lab.onStarted(); h.lab.onOutcome({ ...late, assessmentId: 'r2' }, {}); });
-  // In the header, and again among the result's actions after two misses.
-  expect(screen.getAllByRole('button', { name: 'Skip rhythm' })).toHaveLength(2);
-  fireEvent.click(screen.getAllByRole('button', { name: 'Skip rhythm' }).at(-1));
+  // One miss reaches it, on the result card, as a normal button.
+  expect(screen.getAllByRole('button', { name: 'Skip rhythm' })).toHaveLength(1);
+  expect(screen.getByRole('button', { name: 'Skip rhythm' })).not.toHaveClass('is-quiet');
+  fireEvent.click(screen.getByRole('button', { name: 'Skip rhythm' }));
   expect(coach.skipRhythm).toHaveBeenCalledWith(expect.objectContaining({ skill: 'rhythm' }));
-  expect(h.log.info).toHaveBeenCalledWith('piano.learn.rhythm.skip', expect.objectContaining({ passageId: 'a', misses: 2 }));
+  expect(h.log.info).toHaveBeenCalledWith('piano.learn.rhythm.skip', expect.objectContaining({ passageId: 'a', misses: 1 }));
  });
 });

@@ -80,6 +80,24 @@ describe('LearnPassageLayer', () => {
     expect(outlines[0].style.height).toBe('7px');
   });
 
+  it("a badge that would cross the page view's edge is not drawn", () => {
+    // Three passages on three systems; the page view shows the engraving from 150 to 520.
+    const measures = [0, 1, 2].map((index) => ({ firstStep: index, lastStep: index }));
+    const stepBoxes = [0, 1, 2].map((index) => ({ x: 40, top: 100 + index * 200, bottom: 180 + index * 200 }));
+    const passages = ['A', 'B', 'C'].map((letter, index) => ({ id: letter, number: letter, label: `Passage ${letter}`, inMeasure: index, outMeasure: index }));
+    // A is cut at the top (100-140 against 150), B is whole (300-340), C is cut at the bottom (500-540 against 520).
+    const numbers = [0, 1, 2].map((index) => ({ id: passages[index].id, left: 44, top: 100 + index * 200, anchor: 154 + index * 200 }));
+    const { rerender } = render(<LearnPassageLayer passages={passages} measures={measures} stepBoxes={stepBoxes} numbers={numbers} view={{ top: 150, bottom: 520 }} />);
+    expect(screen.queryByRole('button', { name: /Passage A/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /Passage B/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Passage C/ })).toBeNull();
+    // A badge exactly on the edge is whole; no view (not paged yet) draws them all.
+    rerender(<LearnPassageLayer passages={passages} measures={measures} stepBoxes={stepBoxes} numbers={numbers} view={{ top: 100, bottom: 540 }} />);
+    expect(screen.getAllByRole('button')).toHaveLength(3);
+    rerender(<LearnPassageLayer passages={passages} measures={measures} stepBoxes={stepBoxes} numbers={numbers} />);
+    expect(screen.getAllByRole('button')).toHaveLength(3);
+  });
+
   it('keeps the segment marker clear above the selected passage bracket', () => {
     const { container } = render(<LearnPassageLayer
       passages={[{ id: 'a', number: 1, label: 'Segment 1', inMeasure: 0, outMeasure: 0 }]}
