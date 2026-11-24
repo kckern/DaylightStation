@@ -69,7 +69,7 @@ test('the whole Sheet Music flow, on keys only', async ({ page }) => {
   // Next turns the page; Previous turns it back.
   await tap(page, KEY.E3);
   await expect(page.locator('.office-piece-key')).toHaveCount(4);
-  await expect(page.locator('.office-piece-picker__head')).toContainText('Page 2 of 2');
+  await expect(page.locator('.office-piece-picker__page-count')).toHaveText('2 of 2');
   await expect(browseKey('next')).not.toHaveAttribute('data-enabled', 'true');
   await noClipping(page, '03-picker-page-2');
   await tap(page, KEY.D3);
@@ -77,7 +77,7 @@ test('the whole Sheet Music flow, on keys only', async ({ page }) => {
 
   // All music: the shelves, one per key; a shelf lists its engraved scores six a page.
   await tap(page, KEY.C3);
-  await expect(page.locator('.office-piece-key--shelf')).toHaveCount(2);
+  await expect(page.locator('.office-piece-key--shelf')).toHaveCount(7);
   await expect(page.locator('.office-piece-picker__head h2')).toHaveText('All music');
   await expect(browseKey('switch')).toContainText('Your pieces');
   // Each shelf says how many pieces open here (the page-image scan is not counted).
@@ -99,7 +99,7 @@ test('the whole Sheet Music flow, on keys only', async ({ page }) => {
   await expect(page.locator('.piano-learn-lab')).toBeVisible({ timeout: 20000 });
   await tap(page, KEY.C2);
   await expect(page.locator('.office-piece-picker__head h2')).toHaveText('Beginner');
-  await expect(page.locator('.office-piece-picker__head')).toContainText('Page 3 of 3');
+  await expect(page.locator('.office-piece-picker__page-count')).toHaveText('3 of 3');
   // Back to the shelves, then to the player's own pieces.
   await tap(page, KEY.C3);
   await tap(page, KEY.C3);
@@ -177,6 +177,45 @@ test('the whole Sheet Music flow, on keys only', async ({ page }) => {
   await chord(page, [LOW, HIGH], 2400);
   await expect(page.locator('.office-sheet-music')).toHaveCount(0);
   await expect(page.locator('.tetris-fullscreen')).toHaveCount(0);
+});
+
+test('the picker holds a short list, an empty one and a slow one by layout', async ({ page }) => {
+  // Three pieces (the usual case), then one, then none, then a list still loading.
+  await installOfficeRoutes(page, { studyDate: 'today', pieces: deskPieces(3) });
+  await page.goto('/', { waitUntil: 'networkidle' });
+  await chord(page, [LOW, HIGH], 150);
+  await tap(page, KEY.D5);
+  await expect(page.locator('.office-piece-key')).toHaveCount(3);
+  await expect(page.locator('.office-piece-picker__page[data-browse="next"] .office-key-card')).toHaveCount(0);
+  await noClipping(page, '02b-picker-three');
+
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+  await installOfficeRoutes(page, { studyDate: 'today', pieces: deskPieces(1) });
+  await page.goto('/', { waitUntil: 'networkidle' });
+  await chord(page, [LOW, HIGH], 150);
+  await tap(page, KEY.D5);
+  await expect(page.locator('.office-piece-key')).toHaveCount(1);
+  await noClipping(page, '02c-picker-one');
+
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+  await installOfficeRoutes(page, { studyDate: 'today', pieces: [] });
+  await page.goto('/', { waitUntil: 'networkidle' });
+  await chord(page, [LOW, HIGH], 150);
+  await tap(page, KEY.D5);
+  // No pieces of their own: Sheet Music opens on the shelves, saying why, with no key back to an empty list.
+  await expect(page.locator('.office-piece-picker__head')).toContainText('No pieces started yet');
+  await expect(page.locator('.office-piece-key--shelf')).toHaveCount(7);
+  await expect(page.locator('.office-piece-picker__page[data-browse="switch"] .office-key-card')).toHaveCount(0);
+  await noClipping(page, '02d-picker-empty');
+
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+  await installOfficeRoutes(page, { studyDate: 'today' });
+  await page.route('**/api/v1/piano/activity/desk/**', () => {}); // never answers: the list is still loading
+  await page.goto('/', { waitUntil: 'networkidle' }).catch(() => {});
+  await chord(page, [LOW, HIGH], 150);
+  await tap(page, KEY.D5);
+  await expect(page.locator('.office-sheet-music [role="status"]')).toContainText('Finding your pieces');
+  await noClipping(page, '02e-picker-loading');
 });
 
 test('with games off, Sheet Music stays on the launcher and the games are locked in place', async ({ page }) => {

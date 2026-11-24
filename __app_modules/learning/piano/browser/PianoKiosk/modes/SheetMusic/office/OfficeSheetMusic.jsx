@@ -22,6 +22,8 @@ import './learnSurface.scss';
 import './OfficeSheetMusic.scss';
 
 const NO_PIECES = Object.freeze([]);
+/** Where the way out (and every other navigation) is, said once at the end of the picker's footer. */
+const MENU_HINT = 'Hold the lowest and highest keys for the menu';
 /** Strip sources in the order their actions win when two name one key. */
 const STRIP_SOURCES = ['host', 'coach', 'lab'];
 const STRIP_CLAIM = new Set(STRIP_NOTES);
@@ -137,7 +139,12 @@ export default function OfficeSheetMusic({
   const page = useMemo(() => (browse.level === 'shelves'
     ? listPage(shelfFaces, browse.shelvesPage, SHELF_NOTES)
     : listPage(Array.isArray(listed) ? listed : NO_PIECES, browse.page, PIECE_NOTES)), [browse, shelfFaces, listed]);
-  const browseRow = useMemo(() => browseSlots(browse.level, page), [browse.level, page]);
+  // No pieces of their own yet: Sheet Music opens on the shelves, and says why, rather than on an empty page.
+  const hasOwn = !(Array.isArray(pieces) && pieces.length === 0);
+  useEffect(() => {
+    if (!hasOwn) setBrowse((current) => (current.level === 'mine' ? { ...current, level: 'shelves' } : current));
+  }, [hasOwn]);
+  const browseRow = useMemo(() => browseSlots(browse.level, page, { hasOwn }), [browse.level, page, hasOwn]);
   const pickerSlots = useMemo(() => [
     ...page.slots.map((slot) => ({ ...slot, kind: browse.level === 'shelves' ? 'shelf' : 'piece' })),
     ...browseRow.filter((slot) => slot.enabled).map((slot) => ({ ...slot, kind: 'browse' })),
@@ -149,7 +156,7 @@ export default function OfficeSheetMusic({
       : playerName ? `${playerName}’s pieces` : 'Your pieces';
   const pickerStatus = browse.level === 'mine'
     ? (pieces === false ? 'Your pieces could not be loaded. Play C3 for all music.'
-      : Array.isArray(pieces) && pieces.length === 0 ? 'No pieces yet. Play C3 to choose one from all music.' : null)
+      : null)
     : browse.level === 'shelves'
       ? (shelves.length === 0 ? 'No music shelves are set up.' : null)
       : shelfList === undefined ? 'Opening the shelf…'
@@ -245,9 +252,9 @@ export default function OfficeSheetMusic({
         <div className="office-sheet-music__body">
           {!scoreId && (
             pieces === null ? <p className="office-sheet-music__status" role="status">Finding your pieces…</p>
-              : <OfficePiecePicker title={pickerTitle} status={pickerStatus} kind={browse.level === 'shelves' ? 'shelves' : 'pieces'}
-                  slots={page.slots} browse={browseRow} page={page}
-                  keyCount={browse.level === 'shelves' ? Math.max(page.slots.length, 4) : PIECE_NOTES.length} />
+              : <OfficePiecePicker title={pickerTitle} status={pickerStatus}
+                  notice={browse.level === 'shelves' && !hasOwn ? 'No pieces started yet. Pick a shelf.' : null} kind={browse.level === 'shelves' ? 'shelves' : 'pieces'}
+                  slots={page.slots} browse={browseRow} page={page} hint={MENU_HINT} />
           )}
           {scoreId && (
             <ActivePianoProvider pianoId="office" basePath="/" config={config}>

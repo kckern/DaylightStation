@@ -51,6 +51,13 @@ describe('browseSlots (the keys under a list)', () => {
     expect(row.every((slot) => SECONDARY_NOTES.includes(slot.note))).toBe(true);
     expect(row.some((slot) => SHELF_NOTES.includes(slot.note))).toBe(false);
   });
+
+  it('with no pieces of their own, the shelves offer no way back to an empty list', () => {
+    expect(browseSlots('shelves', {}, { hasOwn: false })[0]).toMatchObject({ id: 'switch', enabled: false });
+    expect(browseSlots('shelves', {}, { hasOwn: true })[0]).toMatchObject({ id: 'switch', enabled: true });
+    // From a shelf, C3 still goes back to the shelves.
+    expect(browseSlots('shelf', {}, { hasOwn: false })[0]).toMatchObject({ id: 'switch', label: 'All music', enabled: true });
+  });
 });
 
 describe('stripSlots (the drill key strip)', () => {
