@@ -162,12 +162,20 @@ describe('real Learn journey',()=>{
    expect(midBeats[4]).toEqual(['piano-note-verdict-unplayed','piano-note-verdict-unplayed']);
    expect(midBeats.slice(6).flat()).toEqual([null,null,null,null]);
    await take;
-   // The result: every head judged, with the same marks the timed steps carry (✓ ◂ ▸ ○).
-   await page.waitForFunction(()=>document.querySelectorAll('.piano-exercise-run__stage .piano-score-passage__drift').length>=16,null,{timeout:10000});
+   // The result: every head judged by colour; only notes to fix carry a mark (◂ ▸ ○ ×), a right note none (2026-11-24).
+   await page.waitForFunction(()=>document.querySelectorAll('.piano-exercise-run__stage .piano-score-passage__drift').length>=4,null,{timeout:10000});
    const done=byBeat(await heads());
    expect(done.map(beat=>beat[0])).toEqual(['hit','hit','hit','late','unplayed','hit','hit','hit'].map(k=>`piano-note-verdict-${k}`));
    const marks=await page.locator(`${stage} .piano-score-passage__drift`).evaluateAll(els=>els.map(el=>el.textContent));
-   expect(marks.filter(m=>m==='✓')).toHaveLength(12);expect(marks.filter(m=>m==='▸')).toHaveLength(2);expect(marks.filter(m=>m==='○')).toHaveLength(2);
+   expect(marks.filter(m=>m==='✓')).toHaveLength(0);expect(marks.filter(m=>m==='▸')).toHaveLength(2);expect(marks.filter(m=>m==='○')).toHaveLength(2);
+   // Every verdict mark is on the paper, beside a notehead: never under a stem tip, never past the edge.
+   const placed=await page.evaluate(()=>{const svg=document.querySelector('.piano-exercise-run__stage .musicxml-renderer__svg svg');const paper=svg.getBoundingClientRect();
+    const heads=[...svg.querySelectorAll('.vf-notehead')].map(h=>h.getBoundingClientRect());
+    return [...svg.querySelectorAll('.piano-score-passage__drift')].map(m=>{const b=m.getBoundingClientRect();const cy=(b.top+b.bottom)/2;
+     const near=Math.min(...heads.filter(h=>Math.abs((h.left+h.right)/2-(b.left+b.right)/2)<b.width+4).map(h=>Math.min(Math.abs(cy-h.top),Math.abs(cy-h.bottom))));
+     return{inside:b.top>=paper.top-0.5&&b.bottom<=paper.bottom+0.5,near,space:heads[0]?heads[0].height:10};});});
+   expect(placed).toHaveLength(4);
+   for(const mark of placed){expect(mark.inside).toBe(true);expect(mark.near).toBeLessThan(mark.space*2);}
    // The judged colours are really painted on the X glyphs.
    const fills=await page.locator(`${stage} .piano-note-verdict-hit .vf-notehead path`).evaluateAll(els=>[...new Set(els.map(el=>getComputedStyle(el).fill))]);
    expect(fills).toEqual(['rgb(0, 150, 70)']);
@@ -219,20 +227,14 @@ describe('real Learn journey',()=>{
    expect(await page.locator('.rep-card').count()).toBe(0);
    // The result is docked in the rail's slot: the music does not move or resize when a take ends.
    expect(await stage()).toEqual(before);
-   // Every verdict mark is on the paper, beside a notehead: never under a stem tip, never past the edge.
-   const marks=await page.evaluate(()=>{const svg=document.querySelector('.piano-exercise-run__stage .musicxml-renderer__svg svg');const paper=svg.getBoundingClientRect();
-    const heads=[...svg.querySelectorAll('.vf-notehead')].map(h=>h.getBoundingClientRect());
-    return [...svg.querySelectorAll('.piano-score-passage__drift')].map(m=>{const b=m.getBoundingClientRect();const cy=(b.top+b.bottom)/2;
-     const near=Math.min(...heads.filter(h=>Math.abs((h.left+h.right)/2-(b.left+b.right)/2)<b.width+4).map(h=>Math.min(Math.abs(cy-h.top),Math.abs(cy-h.bottom))));
-     return{inside:b.top>=paper.top-0.5&&b.bottom<=paper.bottom+0.5,near,space:heads[0]?heads[0].height:10};});});
-   expect(marks.length).toBeGreaterThan(0);
-   for(const mark of marks){expect(mark.inside).toBe(true);expect(mark.near).toBeLessThan(mark.space*2);}
+   // (Mark placement is checked on the rhythm take, whose late and missed notes carry marks.)
    // The card never covers the score: it sits under the stage, inside the kiosk's 800 px, with nothing scrolled out of
    // sight, and every verdict mark is still the topmost thing at its own position.
    const docked=async()=>{const card=await page.locator('.piano-exercise-run__result.is-docked').boundingBox();
     expect(card.y).toBeGreaterThanOrEqual(before.y+before.height-0.5);expect(card.y+card.height).toBeLessThanOrEqual(800.5);
     expect(await page.locator('.piano-exercise-run__result.is-docked').evaluate(el=>el.scrollHeight<=el.clientHeight+1)).toBe(true);
-    const seen=await page.evaluate(()=>[...document.querySelectorAll('.piano-exercise-run__stage .piano-score-passage__drift')].map(m=>{const b=m.getBoundingClientRect();
+    // Probed on the judged noteheads (a right note carries no mark since 2026-11-24).
+    const seen=await page.evaluate(()=>[...document.querySelectorAll('.piano-exercise-run__stage [class*="piano-note-verdict-"]')].map(m=>{const b=m.getBoundingClientRect();
      const hit=document.elementFromPoint((b.left+b.right)/2,(b.top+b.bottom)/2);return Boolean(hit&&(hit===m||m.contains(hit)||hit.closest('.piano-exercise-run__stage')));}));
     expect(seen.length).toBeGreaterThan(0);expect(seen.every(Boolean)).toBe(true);
     const primary=await page.locator('.piano-exercise-run__result-actions button.is-primary').boundingBox();

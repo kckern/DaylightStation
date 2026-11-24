@@ -519,7 +519,9 @@ const MAX_PASSAGE_SYSTEMS = 2;
 const MIN_PASSAGE_SCALE = 0.65;
 /** A recorded verdict state → the class suffix painted on its engraved note. */
 const VERDICT_KIND = Object.freeze({ hit: 'hit', early: 'early', late: 'late', lapsed: 'unplayed', miss: 'unplayed' });
-const VERDICT_MARK = Object.freeze({ hit: '\u2713', early: '\u25C2', late: '\u25B8', unplayed: '\u25CB', wrong: '\u00D7' });
+// A right note is green and needs nothing more (owner, 2026-11-24): only a note to fix carries a mark —
+// early ◂ / late ▸ say which way, missed ○ / wrong × say which red.
+const VERDICT_MARK = Object.freeze({ early: '\u25C2', late: '\u25B8', unplayed: '\u25CB', wrong: '\u00D7' });
 
 /**
  * A verdict mark (✓ ◂ ▸ ○ ×) beside an engraved note, in its SVG's own
