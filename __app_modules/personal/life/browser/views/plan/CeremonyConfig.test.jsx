@@ -39,6 +39,10 @@ describe('CeremonyConfig', () => {
       wrap(<CeremonyConfig />);
       fireEvent.click(screen.getByRole('switch', { name: 'Unit Intention' }));
       await screen.findByRole('alert');
+      // The toast rendered outside act, so its passive effect (the one that
+      // starts the countdown) can still be queued behind the faked scheduler.
+      // Flush it first, or the 8 s timer starts after the clock has moved on.
+      await act(async () => {});
       await act(async () => { vi.advanceTimersByTime(8100); });
       expect(screen.queryByRole('alert')).toBeNull();
     } finally { vi.useRealTimers(); }
