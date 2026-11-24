@@ -30,6 +30,10 @@ android {
                 // lan, loopback or none: where the lifeline listens, if anywhere. The payload reads the same
                 // value from its generated DeviceConfig for the control server.
                 buildConfigField 'String', 'CONTROL_BIND', "\"${d.controlBind}\""
+                // A device with a control API (a kiosk) keeps the shell service running in the foreground, with a
+                // notice, so it can be operated at any time. One with none (the phone) starts it on demand and lets
+                // Android stop it when idle: no permanent notification.
+                buildConfigField 'boolean', 'PERSISTENT_SERVICE', "${d.controlBind != 'none'}"
                 // A device that listens nowhere (control.bind none) gets no token compiled in:
                 // an APK can be read by every app on the device it is installed on.
                 buildConfigField 'String', 'CONTROL_TOKEN', "\"${d.controlBind == 'none' ? '' : tokens.tokenFor(d.id)}\""

@@ -415,7 +415,7 @@ public class RecordActivity extends Activity {
                 return;
             }
             if (store.sendForCurrentOwner(draft.id)) {
-                CaptureFiles.tellPayload();
+                CaptureFiles.tellPayload(this);
                 CaptureUi.sent(this);
                 completed = true;
                 finish();

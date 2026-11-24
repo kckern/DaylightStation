@@ -17,6 +17,7 @@
              a recording, so nothing outside this app may open it. -->
         <activity
             android:name="net.kckern.daylight.cap.quickinput.shell.RecordActivity"
+            android:showWhenLocked="true"
             android:exported="false"
             android:excludeFromRecents="true"
             android:label="Voice memo"
@@ -44,6 +45,7 @@
              shutter; each shot goes to the private draft queue with no review step. -->
         <activity
             android:name="net.kckern.daylight.cap.quickinput.shell.MealCameraActivity"
+            android:showWhenLocked="true"
             android:exported="false"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
             android:excludeFromRecents="true"
@@ -54,12 +56,19 @@
 
         <activity
             android:name="net.kckern.daylight.cap.quickinput.shell.PhotoCaptureActivity"
+            android:showWhenLocked="true"
             android:exported="false"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
             android:excludeFromRecents="true"
             android:label="Photo"
             android:taskAffinity=""
             android:theme="@android:style/Theme.DeviceDefault.Dialog" />
+
+        <!-- Not exported: only the system's job scheduler binds it. Sends a queued capture after the app was stopped. -->
+        <service
+            android:name="net.kckern.daylight.cap.quickinput.shell.UploadJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <activity
             android:name="net.kckern.daylight.cap.quickinput.shell.CaptureStatusActivity"

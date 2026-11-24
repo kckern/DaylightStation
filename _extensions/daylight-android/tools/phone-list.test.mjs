@@ -104,10 +104,12 @@ test('nothing of quick-input is exported: a capture starts inside the app or not
     'activity net.kckern.daylight.cap.quickinput.shell.TextInputActivity',
     'provider net.kckern.daylight.cap.quickinput.shell.InputFileProvider',
     'service net.kckern.daylight.cap.quickinput.shell.MemoRecorderService',
+    'service net.kckern.daylight.cap.quickinput.shell.UploadJob',
   ]);
   for (const [key, row] of own) {
     assert.equal(row.exported, false, key);
-    assert.equal(row.permission, null, key);
+    // The job service is bound only by the system's job scheduler, which holds BIND_JOB_SERVICE.
+    assert.equal(row.permission, key.endsWith('.UploadJob') ? 'android.permission.BIND_JOB_SERVICE' : null, key);
   }
 });
 
@@ -126,11 +128,11 @@ test('Feed is gone from the phone: no bookmark, action, shortcut, tile or widget
 });
 
 test('phone input labels distinguish destination and input method', () => {
-  assert.equal(phone.defaults['actions.1'], 'journal|Journal voice|mic|input:voice:journal');
-  assert.equal(phone.defaults['actions.2'], 'meal|Meal voice|mic|input:voice:meal');
+  assert.equal(phone.defaults['actions.1'], 'journal|Journal voice|notebook|input:voice:journal');
+  assert.equal(phone.defaults['actions.2'], 'meal|Meal voice|fork|input:voice:meal');
   assert.equal(phone.defaults['actions.3'], 'meal-photo|Meal photo|camera|input:photo:meal-photo');
-  assert.equal(phone.defaults['actions.4'], 'journal-note|Journal text|note|input:text:journal-note');
-  assert.equal(phone.defaults['actions.5'], 'meal-note|Meal text|note|input:text:meal-note');
+  assert.equal(phone.defaults['actions.4'], 'journal-note|Journal text|notebook|input:text:journal-note');
+  assert.equal(phone.defaults['actions.5'], 'meal-note|Meal text|fork|input:text:meal-note');
   assert.equal(Object.values(phone.defaults).some((v) => /New memo/.test(String(v))), false);
 });
 

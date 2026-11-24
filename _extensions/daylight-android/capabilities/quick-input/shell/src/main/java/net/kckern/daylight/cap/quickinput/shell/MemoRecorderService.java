@@ -128,7 +128,7 @@ public class MemoRecorderService extends Service {
             CaptureDraftStore.Draft draft = drafts.get(id);
             if (draft == null || !draft.kind.voice()) return;
             if (ACTION_SEND.equals(action) && drafts.sendForCurrentOwner(id)) {
-                CaptureFiles.tellPayload();
+                CaptureFiles.tellPayload(this);
                 say("Memo queued for sending");
             } else if (ACTION_DISCARD.equals(action)) {
                 drafts.discard(id, true);
@@ -297,7 +297,7 @@ public class MemoRecorderService extends Service {
         try {
             boolean playable = store.finishAudio(activeId, MemoRecorderService::playable);
             if (send && playable && store.sendForCurrentOwner(activeId)) {
-                CaptureFiles.tellPayload();
+                CaptureFiles.tellPayload(this);
                 say("Memo queued for sending");
             } else if (!playable) {
                 say("Recording interrupted. No playable audio was found. Nothing sent.");

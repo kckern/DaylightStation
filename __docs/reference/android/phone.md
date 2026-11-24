@@ -60,6 +60,7 @@ Driving Radio.
 | `debug-tools`, `app-launcher` | Listed | Not listed: both exist to be driven over the control API. The payload test fails a device that is not a kiosk and lists either |
 | Heartbeats and log shipping | On, to the household log store | Off (`heartbeat.enabled: false`, no log store URL). The test requires heartbeats of kiosks only |
 | Self-update and secure-settings permissions | `REQUEST_INSTALL_PACKAGES`, `WRITE_SECURE_SETTINGS` | Neither. They come from a kiosk build's generated manifest only |
+| Shell service | Kept in the foreground with a notice, restarted by a keep-alive alarm and at boot | Started on demand (`ShellStart.ensure`, from a visible screen), no notice, not restarted when Android stops it. `PERSISTENT_SERVICE` is `control.bind != none`. A queued capture schedules a one-shot job (`UploadJob`, about 45 s later) that starts the service again to send it if the app was stopped |
 | Drawing over other apps | `SYSTEM_ALERT_WINDOW` | Removed from the phone manifest |
 | Lock task, TV launcher entry | `lockTaskMode="if_whitelisted"` and a `LEANBACK_LAUNCHER` category on the kiosk Activity | Neither: removed by the phone's generated manifest |
 | Setup activity (`MainActivity`) | Exported, startable by name over adb | Not exported |
@@ -1477,7 +1478,11 @@ storage or location permission. Kiosk-only permissions include
   on. This holds for the kiosks too.
 - No `lockTaskMode` on any activity and no `LEANBACK_LAUNCHER` category.
 - No component declares `showWhenLocked`, `turnScreenOn` or `showOnLockScreen`:
-  the build and the verifier fail a personal build where one does.
+  the build and the verifier fail a personal build where one does. The one exception is
+  `showWhenLocked` on the voice and photo capture path (`LinkActivity`, `RecordActivity`,
+  `MealCameraActivity`, `PhotoCaptureActivity`), so a quick-settings tile can record a memo or
+  take a meal photo with no unlock. The tile runs only voice and photo actions over the lock
+  (`tile.N.lockok`); text, barcode and everything else still ask for the unlock.
 
 ### Debug and release builds
 
@@ -1600,3 +1605,7 @@ components.
   configuration and show no control socket is bound and the port stays free; the
   shell's decision not to start a lifeline is one line that reads the same value
   and is not exercised on the JVM.
+
+## Shortcut icons
+
+Launcher shortcuts and tiles draw one glyph per action on a tile coloured by kind (`ActionTint`): journal blue (notebook, mic), meals orange (fork, camera, barcode), health rose, media purple, anything else the app green. The icon name is the third field of each `actions.N` line in `devices/phone.yml`. The default tiles are journal voice, meal voice, meal photo and meal barcode. The launcher draws its own small app badge on every pinned shortcut; an app cannot remove it.

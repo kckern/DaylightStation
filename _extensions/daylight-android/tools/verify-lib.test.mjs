@@ -543,6 +543,13 @@ test('no component of a personal build declares itself over the lock screen', ()
   }
 });
 
+test('the capture screens a tile starts may show over the lock screen, but not wake it', () => {
+  const REC = 'net.kckern.daylight.cap.quickinput.shell.RecordActivity';
+  const withAttr = (attr) => [...component('activity', REC, 'false', null), `            A: ${NS}:${attr}(0x01010001)=true`];
+  assert.deepEqual(personalBuildFailures(phoneTree(GOOD_APP, PHONE_COMPONENTS, withAttr('showWhenLocked')), PHONE, CAPS), []);
+  assert.equal(personalBuildFailures(phoneTree(GOOD_APP, PHONE_COMPONENTS, withAttr('turnScreenOn')), PHONE, CAPS).length, 1);
+});
+
 test('the text screen is not exported', () => {
   const TEXT = 'net.kckern.daylight.cap.quickinput.shell.TextInputActivity';
   assert.deepEqual(componentAttributeFailures(tree(component('activity', TEXT, 'false', null))), []);

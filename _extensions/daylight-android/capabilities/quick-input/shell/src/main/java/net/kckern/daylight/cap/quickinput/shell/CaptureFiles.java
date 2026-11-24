@@ -1,5 +1,7 @@
 package net.kckern.daylight.cap.quickinput.shell;
 
+import android.content.Context;
+
 import net.kckern.daylight.api.PayloadPort;
 
 import java.io.File;
@@ -122,6 +124,12 @@ final class CaptureFiles {
     }
 
     /** Tell the payload now. With none loaded, its next scan of the inbox finds the file. */
+    static void tellPayload(Context context) {
+        UploadJob.schedule(context);
+        tellPayload();
+    }
+
+    /** Tell the payload now, without scheduling the follow-up job (the payload's own recovery path). */
     static void tellPayload() {
         Thread tell = new Thread(() -> {
             try { PayloadPort.named(MemoFiles.PORT).call(MemoFiles.RECORDED, 0); }

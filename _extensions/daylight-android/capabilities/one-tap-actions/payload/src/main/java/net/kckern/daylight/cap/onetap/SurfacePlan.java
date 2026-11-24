@@ -78,6 +78,11 @@ final class SurfacePlan {
             cache.put(SurfaceKeys.tile(slot, SurfaceKeys.URI), a == null ? "" : linker.uri(a));
             // The tile may start the play service with this id and no window (DirectPlay).
             cache.put(SurfaceKeys.tile(slot, SurfaceKeys.DIRECT), a != null && a.kind == ActionCatalog.Kind.MEDIA ? a.id : "");
+            // Voice and photo capture records into a private queue and shows nothing already saved,
+            // so a tile may run it without the unlock. Text and everything else asks first.
+            boolean overLock = a != null && a.kind == ActionCatalog.Kind.INPUT
+                    && (a.value.startsWith("voice:") || a.value.startsWith("photo:"));
+            cache.put(SurfaceKeys.tile(slot, SurfaceKeys.LOCK_OK), overLock ? "1" : "");
         }
         return new SurfacePlan(shortcuts, tiles, cache);
     }

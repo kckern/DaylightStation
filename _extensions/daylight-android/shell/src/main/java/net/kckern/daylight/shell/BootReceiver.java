@@ -28,6 +28,8 @@ public class BootReceiver extends BroadcastReceiver {
         // Open the durable log first, so the notes below reach shell.log even when
         // no service has called install() yet in this process.
         ShellLog.install(context);
+        // An on-demand device (the phone) starts the service when something needs it, not at boot.
+        if (!BuildConfig.PERSISTENT_SERVICE) return;
         if (ShellKeepAlive.ACTION.equals(action)) {
             // Keep-alive alarm: start only when the service is not already up, and
             // record it, because a revival is the event worth knowing about.
