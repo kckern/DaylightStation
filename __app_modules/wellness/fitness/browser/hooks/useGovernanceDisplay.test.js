@@ -561,3 +561,81 @@ describe('resolveGovernanceDisplay — chip zone is the display record', () => {
     expect(result.rows[0].currentZone).toMatchObject({ id: 'fat-burn' });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Rider grouping: one entry per unmet rider across all rules, with real BPM
+// targets; riders with no heart-rate signal are listed instead of dropped.
+// ---------------------------------------------------------------------------
+
+describe('resolveGovernanceDisplay — riders, noSignal and summary', () => {
+  const zones = { map: Object.fromEntries(['cool', 'active', 'warm', 'hot'].map((id, rank) =>
+    [id, { id, name: id[0].toUpperCase() + id.slice(1), rank, color: ['#94a3b8', '#22c55e', '#eab308', '#f97316'][rank] }])) };
+  const sequence = [{ id: 'cool', threshold: 60 }, { id: 'active', threshold: 100 }, { id: 'warm', threshold: 120 }, { id: 'hot', threshold: 140 }];
+  const profile = (name, heartRate, zoneId = 'cool') => ({ displayName: name, avatarSrc: `/img/${name}`, heartRate, zoneId, zoneTrusted: heartRate != null, zoneSequence: heartRate != null ? sequence : [] });
+  const rule = (zone, requiredCount, missingUsers, metUsers = []) => ({ id: `${zone}-floor`, type: 'zone', zone, zoneLabel: zones.map[zone].name,
+    requiredCount, actualCount: metUsers.length, satisfied: false, missingUsers, metUsers, eligibleMetUsers: metUsers });
+  const twoByTwo = () => resolveGovernanceDisplay(makeGovState({ status: 'locked', requirements: [rule('hot', 1, ['rider-a', 'rider-b']), rule('active', 2, ['rider-a', 'rider-b'])] }),
+    makeDisplayMap({ 'rider-a': profile('Rider A', 85), 'rider-b': profile('Rider B', 95) }), zones);
+
+  it('two riders under two rules give two riders with two goals each', () => {
+    const result = twoByTwo();
+    expect(result.riders).toHaveLength(2);
+    result.riders.forEach((r) => expect(r.goals).toHaveLength(2));
+    const a = result.riders.find((r) => r.userId === 'rider-a');
+    expect(a).toMatchObject({ displayName: 'Rider A', avatarSrc: '/img/Rider A', heartRate: 85 });
+    expect(a.currentZone).toMatchObject({ id: 'cool' });
+    expect(a.zoneSequence).toBe(sequence);
+    expect(a.goals.map((g) => [g.zone, g.zoneLabel, g.zoneColor, g.targetHeartRate, g.bpmToGo])).toEqual([
+      ['active', 'Active', '#22c55e', 100, 15], ['hot', 'Hot', '#f97316', 140, 55],
+    ]);
+    expect(a.goals[0].obligationKey).toBe('requirement:active-floor');
+    expect(a.goals[0].holdProgress).toBeNull();
+  });
+
+  it('orders riders by highest unmet zone, then name', () => {
+    const result = resolveGovernanceDisplay(makeGovState({ status: 'locked', requirements: [rule('hot', 1, ['rider-c']), rule('active', 2, ['rider-b', 'rider-a'])] }),
+      makeDisplayMap({ 'rider-a': profile('Rider A', 85), 'rider-b': profile('Rider B', 95), 'rider-c': profile('Rider C', 90) }), zones);
+    expect(result.riders.map((r) => r.userId)).toEqual(['rider-c', 'rider-a', 'rider-b']);
+  });
+
+  it('bpmToGo is never negative', () => {
+    const result = resolveGovernanceDisplay(makeGovState({ status: 'locked', requirements: [rule('active', 1, ['rider-a'])] }),
+      makeDisplayMap({ 'rider-a': profile('Rider A', 104, 'active') }), zones);
+    expect(result.riders[0].goals[0].bpmToGo).toBe(0);
+  });
+
+  it('lists a subject with no heart rate as noSignal, once, and not as a rider', () => {
+    const result = resolveGovernanceDisplay(makeGovState({ status: 'locked', requirements: [rule('hot', 1, ['rider-a', 'rider-b']), rule('active', 2, ['rider-a', 'rider-b'])] }),
+      makeDisplayMap({ 'rider-a': profile('Rider A', 85), 'rider-b': profile('Rider B', null, null) }), zones);
+    expect(result.noSignal).toEqual([{ userId: 'rider-b', displayName: 'Rider B', avatarSrc: '/img/Rider B' }]);
+    expect(result.riders.map((r) => r.userId)).toEqual(['rider-a']);
+  });
+
+  it('noSignal is empty when every rider has a reading', () => {
+    expect(twoByTwo().noSignal).toEqual([]);
+  });
+
+  it('summarises each rule with how many more riders it needs and its scope', () => {
+    const result = resolveGovernanceDisplay(makeGovState({ status: 'locked', requirements: [rule('hot', 1, ['rider-a', 'rider-b']), rule('active', 2, ['rider-b'], ['rider-a'])] }),
+      makeDisplayMap({ 'rider-a': profile('Rider A', 105, 'active'), 'rider-b': profile('Rider B', 95) }), zones);
+    expect(result.summary).toEqual([
+      { key: 'requirement:hot-floor', zone: 'hot', zoneLabel: 'Hot', zoneColor: '#f97316', requiredCount: 1, actualCount: 0, needed: 1, scope: 'any' },
+      { key: 'requirement:active-floor', zone: 'active', zoneLabel: 'Active', zoneColor: '#22c55e', requiredCount: 2, actualCount: 1, needed: 1, scope: 'all' },
+    ]);
+  });
+
+  it('carries a challenge hold onto the rider goal', () => {
+    const result = resolveGovernanceDisplay(makeGovState({ status: 'locked', challenge: {
+      id: 'warm-challenge', type: 'zone', status: 'failed', zone: 'warm', zoneLabel: 'Warm', requiredCount: 1, actualCount: 0,
+      metUsers: [], missingUsers: ['rider-a'], holding: ['rider-a'], holdProgressByUser: { 'rider-a': { elapsedMs: 2000, remainingMs: 8000, totalMs: 10000 } },
+    } }), makeDisplayMap({ 'rider-a': profile('Rider A', 121, 'warm') }), zones);
+    expect(result.riders[0].goals[0]).toMatchObject({ zone: 'warm', targetHeartRate: 120, bpmToGo: 0, holdProgress: { elapsedMs: 2000, remainingMs: 8000, totalMs: 10000 } });
+  });
+
+  it('keeps the per-rule obligations unchanged', () => {
+    const result = twoByTwo();
+    expect(result.obligations.map((o) => [o.zone, o.rows.map((r) => r.userId)])).toEqual([
+      ['hot', ['rider-a', 'rider-b']], ['active', ['rider-a', 'rider-b']],
+    ]);
+  });
+});
