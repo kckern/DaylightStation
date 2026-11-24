@@ -299,4 +299,8 @@ export async function installFeedApi({ configService, dataService, userService, 
       logger: rootLogger.child({ module: 'feed' }),
     });
 
+    // The personal source adapters and the readable-article reader are also
+    // the office paper's inputs (NewsReporter edition reporters); app.mjs
+    // hands them on.
+    return { feedSourceAdapters, webContentAdapter };
 }
