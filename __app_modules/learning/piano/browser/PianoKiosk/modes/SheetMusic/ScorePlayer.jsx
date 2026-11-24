@@ -81,6 +81,7 @@ import StuckPrompt from './StuckPrompt.jsx';
 import { nearestEvent } from './nearestEvent.js';
 import { measureAtPoint } from './measureAtPoint.js';
 import { titleFromScoreId } from './scoreTitle.js';
+import { resolveLearnerAssist } from './learnerAssist.js';
 import { findWorstAssessmentSpan, tallyAssessmentGrades } from './assessmentProjections.js';
 
 // One source of truth for the transport's tick rate: the telemetry's stall rule
@@ -2225,6 +2226,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
     segments: learnPlan.segments, authoredLadder: learnPlan.authoredLadder, tempoMap: learnPlan.tempoMap, certification: learnPlan.certification, goldLadder: learnPlan.goldLadder }),
     [scoreMeta.id, fingerprint, learnPlan]);
   const coach = useLearnCoach({ plan: coachPlan, legacy: practice ?? {} });
+  // Per-learner drill help (`sheetmusic.learners.<id>`): lit keys, wrong-note ghosts. See learnerAssist.js.
+  const learnerAssist = useMemo(() => resolveLearnerAssist(config?.sheetmusic?.learners, coach.profileId), [config?.sheetmusic?.learners, coach.profileId]);
   // Passages carry the path's letter (A, B, C…) as their number, so the badge on the score names the same thing the path does.
   const coachedPassages = useMemo(() => {
     let order = 0;
@@ -2381,6 +2384,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       range={customRange}
       measures={layout.measures}
       activeParts={activePartIds}
+      assist={learnerAssist}
       onResult={(result) => { setCustomResult(result); setCustomRunOpen(false); }}
       onBack={() => setCustomRunOpen(false)}
     />
@@ -2488,7 +2492,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [keyOnlyReady, selectedPassageId, railTargetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (roadmapLearn && selectedPassage) return <div className="piano-score-player piano-score-player--learn-launchpad">
-    <LearnCoach score={learnScore} title={meta.title} plan={coachPlan} segment={selectedPassage} coach={coach} skipping={learnPlan.skipping} polish={polishAwards}
+    <LearnCoach score={learnScore} title={meta.title} plan={coachPlan} segment={selectedPassage} coach={coach} skipping={learnPlan.skipping} assist={learnerAssist} polish={polishAwards}
       tempo={{ ...learnPlan.settings.tempo, tempoSource: learnPlan.tempoSource, measureOnsets: layout.measures.map((measure) => layout.steps[measure.firstStep]?.onsetQuarter) }} feedback={learnPlan.settings.feedback}
       onBack={closeLearnPassage} onPassageChange={openLearnPassage}
       onListen={(task) => logger.info('piano.learn.listen', { scoreId: scoreMeta.id, passageId: task.passageId, parts: task.parts })} />

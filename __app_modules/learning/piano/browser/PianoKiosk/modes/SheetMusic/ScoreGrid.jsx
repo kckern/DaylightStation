@@ -23,13 +23,18 @@ const saveTab = (label) => { try { window.localStorage.setItem(TAB_KEY, label); 
  *
  * @param {Array<{label: string|null, listPath: string}>} groups
  * @param {(item: object) => void} onSelect
+ * @param {string|null} [trackRef] The player's own track (`sheetmusic.learners.<id>.collection`):
+ *   its tab opens first, over the remembered one, and again when that player is picked.
  */
-export default function ScoreGrid({ groups = [], onSelect }) {
-  // Restore the remembered tab; a label that no longer exists falls back to 0.
+export default function ScoreGrid({ groups = [], onSelect, trackRef = null }) {
+  const trackIdx = trackRef ? groups.findIndex((g) => g.ref === trackRef) : -1;
+  // The player's track first; else the remembered tab; a label that no longer exists falls back to 0.
   const [tabIdx, setTabIdx] = useState(() => {
+    if (trackIdx >= 0) return trackIdx;
     const i = groups.findIndex((g) => g.label != null && g.label === loadTab());
     return i >= 0 ? i : 0;
   });
+  useEffect(() => { if (trackIdx >= 0) setTabIdx(trackIdx); }, [trackIdx]);
   const active = groups[Math.min(tabIdx, groups.length - 1)] ?? null;
   const { data: items, error } = usePianoList(active?.listPath ?? null);
   const all = items ?? [];

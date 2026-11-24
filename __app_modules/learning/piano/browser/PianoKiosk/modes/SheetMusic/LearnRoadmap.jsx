@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components -- pure projections are exported beside their sole host for focused contract tests. */
 import ExerciseRun from '../Exercises/ExerciseRun.jsx';
 import LearnLab, { learnDrillProjection, learnPracticeRequirement } from './LearnLab.jsx';
+import { keyboardHintPolicyFor } from './learnerAssist.js';
 export { learnDrillProjection, learnPracticeRequirement };
 
 /** Compatibility adapter for callers mounted before LearnLab became first class. */
@@ -9,7 +10,7 @@ export function LearnPassageSession({ passage, onBack, ...props }) {
 }
 
 /** Self-directed practice never writes the preset passage ladder. */
-export function CustomLearnSession({ score, range, measures = [], activeParts = ['rh', 'lh'], onResult, onBack }) {
+export function CustomLearnSession({ score, range, measures = [], activeParts = ['rh', 'lh'], assist = null, onResult, onBack }) {
   const start = measures[range.inMeasure]?.number ?? range.inMeasure + 1;
   const end = measures[range.outMeasure]?.number ?? range.outMeasure + 1;
   const label = `Bars ${start}–${end}`;
@@ -31,7 +32,8 @@ export function CustomLearnSession({ score, range, measures = [], activeParts = 
       stepId={`bars:${range.inMeasure}-${range.outMeasure}`}
       framing={`${label} · Custom practice`}
       ask="Play the selected bars at your own pace."
-      bare surface="learn-lab" scoreCursorPolicy="always" keyboardHintPolicy="after-wrong"
+      bare surface="learn-lab" scoreCursorPolicy="always" keyboardHintPolicy={keyboardHintPolicyFor(assist)}
+      fullKeyboardHints={assist?.keyboardHints === 'always'} wrongNoteGhosts={assist?.wrongNoteGhosts === true}
       onExit={onBack}
       onPassed={onResult}
       onFailed={onResult}

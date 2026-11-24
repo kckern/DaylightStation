@@ -12,6 +12,7 @@ import { useRhythmVoice } from './useRhythmVoice.js';
 import { toRhythmMusicXml } from '../Exercises/rhythmOnly.js';
 import { entryShiftBeats } from '../../../../../../../shared/music/learnCoach.mjs';
 import { useKeyboardOnly, useKeyStrip } from './office/KeyboardOnlyContext.js';
+import { keyboardHintPolicyFor } from './learnerAssist.js';
 
 const handCode = (parts) => parts.length > 1 ? 'RL' : parts[0] === 'lh' ? 'L' : parts[0] === 'rh' ? 'R' : null;
 const clickStorage = () => {
@@ -79,7 +80,7 @@ function learningTempoTake(rung, tempoPercent) {
   return tempoPercent != null && Number.isFinite(percent) && percent < 100;
 }
 
-export default function LearnLab({ score, revision, segment, segments = {}, rung, creditRung = rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, launchSource = 'recommended', creditEligible = true, startOnReady = false, coachingTask = null, drill = null, card = null, ceremony = null, onCardDone, notice = null, extraControls = null, resultLabel = null, resultActions = null, resultContinueLabel = null, onResultContinue = null, onPickStep = null, onListen = null, tempoChoice = null, onStarted, onOutcome, onRecord, onClose, onChangePractice, onRungPassed, onMastered, onFinished, onUnavailable, maxCueRestarts }) {
+export default function LearnLab({ score, revision, segment, segments = {}, rung, creditRung = rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, launchSource = 'recommended', creditEligible = true, startOnReady = false, coachingTask = null, assist = null, drill = null, card = null, ceremony = null, onCardDone, notice = null, extraControls = null, resultLabel = null, resultActions = null, resultContinueLabel = null, onResultContinue = null, onPickStep = null, onListen = null, tempoChoice = null, onStarted, onOutcome, onRecord, onClose, onChangePractice, onRungPassed, onMastered, onFinished, onUnavailable, maxCueRestarts }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-learn-lab' }), []);
   const reactRunId = useId();
   const runIdRef = useRef(`learn-${reactRunId.replace(/[^a-z0-9_-]/gi, '')}`);
@@ -314,7 +315,8 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       paused={paused} resumeDelayMs={effectiveBpm ? Math.round(120000 / effectiveBpm) : 1000} controlKey={take}
       startOnReady={startOnReady}
       persistInterrupted={false} persistAssessment={!coachingTask}
-      scoreCursorPolicy="always" keyboardHintPolicy={coachingTask?.assist === 'none' || rhythm ? 'never' : 'after-wrong'}
+      scoreCursorPolicy="always" keyboardHintPolicy={keyboardHintPolicyFor(assist, { rhythm, check: coachingTask?.assist === 'none' })}
+      fullKeyboardHints={assist?.keyboardHints === 'always'} wrongNoteGhosts={assist?.wrongNoteGhosts === true && !rhythm}
       incompleteAfterMs={coachingTask?.assist === 'none' && coachingTask.stallSeconds ? coachingTask.stallSeconds * 1000 : null}
       failurePresentation="local" resultPresentation="docked" resultLabel={resultLabel} resultActions={resultActions} resultContinueLabel={resultContinueLabel} onResultContinue={onResultContinue} onPickStep={onPickStep} onStarted={takeStarted} onExit={onClose} onPassed={settle}
       onFailed={failTake} onPhase={setRunPhase}

@@ -33,6 +33,14 @@ beforeEach(() => {
 });
 
 describe('ScoreGrid tabs', () => {
+  it('opens the learner’s own track over the remembered tab', () => {
+    window.localStorage.setItem('daylight.piano.sm.tab', 'Video Games');
+    const groups = GROUPS.map((g) => ({ ...g, ref: g.listPath.replace('api/v1/list/files/', 'files:') }));
+    render(<ScoreGrid groups={groups} trackRef="files:docs/sheet-music/tv-shows" onSelect={() => {}} />);
+    expect(screen.getByRole('tab', { name: 'TV Shows' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('The Adventures Of Tintin Theme')).toBeInTheDocument();
+  });
+
   it('renders a tab per group, first active, and lists that tab’s scores', () => {
     render(<ScoreGrid groups={GROUPS} onSelect={() => {}} />);
     const tabs = screen.getAllByRole('tab');

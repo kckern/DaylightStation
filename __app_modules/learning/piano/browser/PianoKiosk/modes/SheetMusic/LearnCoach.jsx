@@ -184,7 +184,7 @@ function OwnedCoach(props) {
  * passage to LearnLab as a drill of sets and reps, records each take, and puts
  * the passage rail and board under it. It draws no practice screen of its own.
  */
-function CoachSession({ score, title, plan, segment, coach, skipping = null, polish = null, tempo = EMPTY, feedback, onBack, onPassageChange, onListen }) {
+function CoachSession({ score, title, plan, segment, coach, skipping = null, assist = null, polish = null, tempo = EMPTY, feedback, onBack, onPassageChange, onListen }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-learn-coach' }), []);
   const [selected, setSelected] = useState(null);
   const [lane, setLane] = useState(null); // 'gold' once the child is working on Gold here
@@ -509,7 +509,7 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
   if (!task) return <section className="piano-learn-coach"><h2>No playable notes in this passage</h2>{!keyOnly && <button type="button" onClick={onBack}>Back to score</button>}{map}</section>;
   return <div className="piano-learn-coach piano-learn-coach--running" data-save={coach.saveStatus} data-level={certification.gold ? 'gold' : certification.silver ? 'silver' : undefined} data-input={keyOnly ? 'keyboard-only' : undefined}>
     {loaded && material ? <LearnLab key={`${runNumber}:${task.key}`} score={score} revision={plan.fingerprint} segment={material.segment} rung={material.rung}
-      coachingTask={task} drill={drill} card={card} ceremony={ceremony} onCardDone={momentDone} notice={notice}
+      coachingTask={task} assist={assist} drill={drill} card={card} ceremony={ceremony} onCardDone={momentDone} notice={notice}
       resultLabel={result?.message.title ?? null} resultActions={keyOnly ? null : resultActions} resultContinueLabel={resultContinueLabel} onResultContinue={resultContinue}
       extraControls={keyOnly ? null : result ? skipButton : <>{skipButton}{laterButton}</>} tempoChoice={keyOnly ? null : tempoChoice}
       onPickStep={keyOnly ? null : pickStep} onStarted={started} onOutcome={finish}
