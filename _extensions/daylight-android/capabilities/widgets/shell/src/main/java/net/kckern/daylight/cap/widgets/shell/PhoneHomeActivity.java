@@ -189,22 +189,42 @@ public class PhoneHomeActivity extends Activity {
         if (tabsShown()) draw();
     }
 
+    private LinearLayout tabs;
+    private android.widget.FrameLayout pageHost;
+    private ScrollView page;
+
     private void selectTab(int index, int direction) {
         int next = Math.max(0, Math.min(TABS.length - 1, index));
-        if (next == tab) return;
+        if (next == tab || pageHost == null) return;
         tab = next;
-        draw();
-        if (column != null && direction != 0) {
-            column.setTranslationX(direction * dp(48));
-            column.setAlpha(0f);
-            column.animate().translationX(0).alpha(1f).setDuration(180).start();
+        fillTabs();
+        // A quick second swipe: drop whatever is still sliding out before starting the next.
+        for (int i = pageHost.getChildCount() - 1; i >= 0; i--) {
+            View child = pageHost.getChildAt(i);
+            if (child != page) {
+                child.animate().cancel();
+                pageHost.removeViewAt(i);
+            }
         }
+        ScrollView leaving = page;
+        page = buildPage();
+        pageHost.addView(page);
+        if (leaving == null || direction == 0) {
+            if (leaving != null) pageHost.removeView(leaving);
+            return;
+        }
+        // Both pages move: the old one out the way the finger went, the new one in behind it.
+        int width = pageHost.getWidth() > 0 ? pageHost.getWidth() : getResources().getDisplayMetrics().widthPixels;
+        android.view.animation.Interpolator ease = new DecelerateInterpolator(1.6f);
+        page.setTranslationX(direction * width);
+        page.animate().translationX(0).setDuration(240).setInterpolator(ease).start();
+        leaving.animate().translationX(-direction * width).setDuration(240).setInterpolator(ease)
+                .withEndAction(() -> pageHost.removeView(leaving)).start();
     }
 
     /** The four tabs as chips of equal width: one is always the page. */
-    private View tabStrip() {
-        LinearLayout strip = new LinearLayout(this);
-        strip.setPadding(dp(16), dp(4), dp(16), dp(8));
+    private void fillTabs() {
+        tabs.removeAllViews();
         for (int i = 0; i < TABS.length; i++) {
             int index = i;
             boolean selected = i == tab;
@@ -215,15 +235,11 @@ public class PhoneHomeActivity extends Activity {
             chip.setOnClickListener(v -> selectTab(index, index > tab ? 1 : -1));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1);
             if (i > 0) lp.leftMargin = dp(8);
-            strip.addView(chip, lp);
+            tabs.addView(chip, lp);
         }
-        return strip;
     }
 
     private void draw() {
-        setupRows.clear();
-        buttonRow = null;
-        placementPanel = null;
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(PAPER);
@@ -235,7 +251,26 @@ public class PhoneHomeActivity extends Activity {
         header.addView(title);
         header.addView(label(launcherPicker ? "Choose a shortcut" : "Add to your Android home screen", 16, INK));
         root.addView(header);
-        if (tabsShown()) root.addView(tabStrip());
+        tabs = null;
+        if (tabsShown()) {
+            tabs = new LinearLayout(this);
+            tabs.setPadding(dp(16), dp(4), dp(16), dp(8));
+            fillTabs();
+            root.addView(tabs);
+        }
+        pageHost = new android.widget.FrameLayout(this);
+        pageHost.setBackgroundColor(PAPER);
+        root.addView(pageHost, new LinearLayout.LayoutParams(-1, 0, 1));
+        setContentView(root);
+        page = buildPage();
+        pageHost.addView(page);
+    }
+
+    /** One page: the section the selected tab names, in its own scrolling view. */
+    private ScrollView buildPage() {
+        setupRows.clear();
+        buttonRow = null;
+        placementPanel = null;
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(PAPER);
@@ -243,13 +278,11 @@ public class PhoneHomeActivity extends Activity {
         column.setOrientation(LinearLayout.VERTICAL);
         column.setPadding(dp(16), dp(8), dp(16), dp(16));
         scroll.addView(column);
-        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        setContentView(root);
-        if (loading) { column.addView(label("Loading services…", 16, INK)); return; }
+        if (loading) { column.addView(label("Loading services…", 16, INK)); return scroll; }
         if (loadError != null) {
             column.addView(label(loadError, 16, INK));
             row("Try again", "Try again", "open", "›", this::refresh);
-            return;
+            return scroll;
         }
         if (!launcherPicker) {
             placementPanel = new LinearLayout(this);
@@ -263,13 +296,14 @@ public class PhoneHomeActivity extends Activity {
             addServices();
             section("Quick capture");
             addCapture();
-            return;
+            return scroll;
         }
         if (tab == 0) addServices();
         else if (tab == 1) addCapture();
         else if (tab == 2) addPlay();
         else addConnections();
         drawPlacement();
+        return scroll;
     }
 
     private void addServices() {
