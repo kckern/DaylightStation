@@ -286,6 +286,13 @@ html[data-browser-app-viewport] {
   to { transform: scale(1); opacity: 1; }
 }
 
+// A dim-and-return breath for a placeholder tile (opacity only, 0.6 to 0.3 and
+// back). Slower and deeper than ds-pending-pulse; the Home entropy skeleton.
+@keyframes ds-dim-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 0.3; }
+}
+
 // Skeleton's highlight sweep (Skeleton.scss): transform only, no layout.
 @keyframes ds-skeleton-sweep {
   to { transform: translateX(100%); }

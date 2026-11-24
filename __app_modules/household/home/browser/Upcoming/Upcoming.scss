@@ -1,6 +1,9 @@
 
 // Upcoming.scss
 
+// Fixed-palette kiosk surface: the tinted calendar hues and the white/black
+// overlays are painted over event photos and must not follow the theme, so each
+// literal is marked data-color.
 // variable for transition time
 $transition-time: 1s;
 
@@ -9,25 +12,25 @@ $transition-time: 1s;
     display: flex;
     height: 100%;
     flex-grow: 1;
-    outline: 2px solid #f0f0f077;
+    outline: 2px solid #f0f0f077; /* data-color */
 
     .grey{
-      background-color: #1d1c1c77;
+      background-color: #1d1c1c77; /* data-color */
     }
     .orange{
-      background-color: #851b0177;
+      background-color: #851b0177; /* data-color */
     }
     .yellow{
-      background-color: #f77f0077;
+      background-color: #f77f0077; /* data-color */
     }
     .blue{
-      background-color: #00304977;
+      background-color: #00304977; /* data-color */
     }
     .red{
-      background-color: #78000077;
+      background-color: #78000077; /* data-color */
     }
     .green{
-      background-color: #3a5a4077;
+      background-color: #3a5a4077; /* data-color */
     }
 
 
@@ -58,7 +61,7 @@ $transition-time: 1s;
           max-width: 100%;
           padding: 0;
           box-sizing: border-box;
-          border-right: 1px solid #f0f0f0;
+          border-right: 1px solid #f0f0f0; /* data-color */
           word-break: break-word;
           overflow: hidden;
 
@@ -72,8 +75,8 @@ $transition-time: 1s;
       
           h2 {
             padding: 10px;
-            background-color: #F0F0F0AA;
-            color: #111;
+            background-color: #F0F0F0AA; /* data-color */
+            color: #111; /* data-color */
             margin: 0;
             text-align: center;
             padding: 0.2rem;
@@ -83,8 +86,8 @@ $transition-time: 1s;
 
                 h3, h4 {
                 padding: 10px;
-                background-color: #FFFFFF88;
-                color: #00000099;
+                background-color: #FFFFFF88; /* data-color */
+                color: #00000099; /* data-color */
                 margin: 0;
                 padding: 0.2rem;
                 text-align: center;
@@ -97,7 +100,7 @@ $transition-time: 1s;
                 flex-shrink: 0;
                 }
           h4{
-            background-color: #FFFFFF66;
+            background-color: #FFFFFF66; /* data-color */
           }
           p{
             flex-grow: 1;
@@ -142,14 +145,14 @@ $transition-time: 1s;
         overflow: hidden;
         position: relative;
         transition: none!important;
-        background-color: #000;
-        border-left: 1px solid #f0f0f0;
+        background-color: #000; /* data-color */
+        border-left: 1px solid #f0f0f0; /* data-color */
         margin-left: -1px;
         display: flex;
         flex-direction: column;
       
         .list-panel-item {
-          border: 1px solid #f0f0f033;
+          border: 1px solid #f0f0f033; /* data-color */
           height: 2.8rem;
           line-height: 2.8rem;
           padding: 0 0.5ex;
@@ -175,8 +178,8 @@ $transition-time: 1s;
         }
         .list-item {
           .chip{
-            background-color: #FFFFFF44;
-            color: #111;
+            background-color: #FFFFFF44; /* data-color */
+            color: #111; /* data-color */
             margin-right: 1ex;
             font-size: 1rem;
             padding: 0 0.5ex;

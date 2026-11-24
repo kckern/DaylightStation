@@ -44,7 +44,7 @@ const EntropyPanel = () => {
   if (!report) {
     return (
       <div className="entropy-panel">
-        <div style={{ textAlign: 'center', color: '#ff6b6b', fontSize: '0.8rem' }}>Failed to load</div>
+        <div style={{ textAlign: 'center', color: 'var(--ds-live)', fontSize: '0.8rem' }}>Failed to load</div>
       </div>
     );
   }
