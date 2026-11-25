@@ -85,6 +85,18 @@ A kept program is still subject to its own schedule: piano that meets Monday to
 Friday is not owed on a Saturday inside the Christmas break. A tier never widens
 a course's schedule.
 
+### Programs answer with the same rule
+
+A program's own service (Gratitude's take and submit, the debrief's owed days)
+decides "is this asked today?" with `programAskedOn` (`domain/dayOffPolicy.mjs`),
+the same rule the agenda uses: the program's schedule, then Sunday rest (a
+Sunday asks only Scripture), then the keep-list on a keeping tier, then the
+plain school-day verdict. The live keep-lists come from `liveCalendar.policy`,
+so a calendar save in the teacher console reaches the services without a
+restart. A service must never ask the household calendar alone
+(`scheduleVerdict`): that is false on every day off, and on 2026-11-25 it made
+Gratitude refuse every recording on a stay-home day the board was asking for it.
+
 ## Date-bound units and placeholders
 
 An enrichment or holiday activity is an ordinary unit with `onDays`:
