@@ -57,6 +57,7 @@
 
 .clip-band__title {
   text-align: center; /* centred over the progress bar (owner 2026-11-24) */
+  text-wrap: balance; /* a wrapped title splits evenly, never one dangling word */
   font-family: var(--surround-display, Georgia, serif);
   font-size: 1.75rem;
   font-weight: 600;
@@ -113,6 +114,7 @@
 }
 
 .clip-band__next-title {
+  text-wrap: balance;
   font-size: 1.05rem;
   line-height: 1.2;
 }

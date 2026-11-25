@@ -68,3 +68,11 @@ describe('PosterCard', () => {
     expect(getSurroundRegistry().getMeta('poster-card').regions).toContain('right');
   });
 });
+
+describe('PosterCard: a steady rail', () => {
+  it('keeps the fact slot even with no fact, so the poster never resizes', () => {
+    const { container } = render(<PosterCard data={{ ...DATA, facts: [] }} />);
+    expect(container.querySelector('.poster-card__fact-slot')).not.toBeNull();
+    expect(container.querySelector('.poster-card__fact')).toBeNull();
+  });
+});

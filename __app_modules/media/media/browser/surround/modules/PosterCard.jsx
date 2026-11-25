@@ -49,7 +49,10 @@ export default function PosterCard({ data = null, logger = null }) {
           />
         )}
       </div>
-      {fact && <p key={factIndex} className="poster-card__fact">{fact}</p>}
+      {/* A fixed slot: rotating facts of different lengths never move the poster. */}
+      <div className="poster-card__fact-slot">
+        {fact && <p key={factIndex} className="poster-card__fact">{fact}</p>}
+      </div>
       {logo && logoBroken !== logo && (
         <img
           className="poster-card__logo"
