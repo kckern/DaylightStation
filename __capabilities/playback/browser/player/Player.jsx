@@ -254,6 +254,7 @@ const Player = forwardRef(function Player(props, ref) {
     onResilienceEvent,
     mediaLoadTimeoutMs,
     forceShader,
+    advanceGate = null,
     initialRendererOperation = null,
     // An auxiliary Player (music behind a slideshow, RQ-PLAY-12) never takes
     // screen-level queue commands: those belong to the main playback owner.
@@ -331,10 +332,21 @@ const Player = forwardRef(function Player(props, ref) {
 
   // Gated advance: marks the queue as advanced so activeSource starts following
   // playQueue[0] instead of the original `play` prop.
+  //
+  // `advanceGate` (set by SurroundHost): a framed clip shuts its change curtain
+  // BEFORE the queue moves, so the new picture and chrome only ever appear
+  // behind it. Read through a ref so the gate never changes advance's identity.
+  const advanceGateRef = useRef(advanceGate);
+  advanceGateRef.current = advanceGate;
   const advance = useCallback((...args) => {
-    beginRecoveryVisit();
-    setQueueHasAdvanced(true);
-    return rawAdvance(...args);
+    const run = () => {
+      beginRecoveryVisit();
+      setQueueHasAdvanced(true);
+      return rawAdvance(...args);
+    };
+    const gate = advanceGateRef.current;
+    if (typeof gate === 'function') { gate(run); return undefined; }
+    return run();
   }, [rawAdvance, beginRecoveryVisit]);
   const { onDeck: onDeckCfg } = usePlayerConfig();
 
@@ -3138,7 +3150,8 @@ Player.propTypes = {
    * explicit dispatch, queue/item metadata, and a manual shader cycle. Not
    * meant to be set by any other caller.
    */
-  forceShader: PropTypes.string
+  forceShader: PropTypes.string,
+  advanceGate: PropTypes.func
 };
 
 export default Player;

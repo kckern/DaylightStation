@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import {
-  curtainReady, useChangeCurtain, CURTAIN_MIN_MS, CURTAIN_MAX_MS,
+  curtainReady, useChangeCurtain, CURTAIN_MIN_MS, CURTAIN_MAX_MS, CURTAIN_CLOSE_MS,
 } from './curtain.js';
 
 const CLIP = { segment: { start: 100, end: 300 } };
@@ -65,5 +65,46 @@ describe('useChangeCurtain: identity', () => {
     const { result, rerender } = renderHook((p) => useChangeCurtain(p), { initialProps: { ...base, contentId: 'plex:1@100' } });
     rerender({ ...base, contentId: 'plex:1@400' });
     expect(result.current).toBe('closed');
+  });
+});
+
+describe('useChangeCurtain: the advance gate (nothing changes before the curtain is shut)', () => {
+  afterEach(() => { vi.useRealTimers(); });
+  const root = { current: { querySelectorAll: () => [] } };
+  const base = { enabled: true, clip: CLIP, playing: true, seeking: false, position: 150, rootRef: root };
+
+  it('closes first and lets the queue move only once the panels have met', () => {
+    vi.useFakeTimers();
+    const gateRef = { current: null };
+    const { result } = renderHook((p) => useChangeCurtain(p), { initialProps: { ...base, contentId: 'plex:1@100', gateRef } });
+    const go = vi.fn();
+    act(() => { gateRef.current(go); });
+    expect(result.current).toBe('closed');
+    expect(go).not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(CURTAIN_CLOSE_MS - 10); });
+    expect(go).not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(20); });
+    expect(go).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays shut over the OLD clip, ready or not, until the new item arrives', () => {
+    vi.useFakeTimers();
+    const gateRef = { current: null };
+    const { result, rerender } = renderHook((p) => useChangeCurtain(p), { initialProps: { ...base, contentId: 'plex:1@100', gateRef } });
+    act(() => { gateRef.current(() => {}); });
+    act(() => { vi.advanceTimersByTime(CURTAIN_MIN_MS + 1000); });
+    expect(result.current).toBe('closed');
+    rerender({ ...base, contentId: 'plex:2@300', gateRef, position: 301 });
+    act(() => { vi.advanceTimersByTime(CURTAIN_MIN_MS + 200); });
+    expect(result.current).toBe('open');
+  });
+
+  it('passes straight through when the item is not a clip', () => {
+    const gateRef = { current: null };
+    const { result } = renderHook((p) => useChangeCurtain(p), { initialProps: { ...base, clip: null, contentId: 'plex:9', gateRef } });
+    const go = vi.fn();
+    act(() => { gateRef.current(go); });
+    expect(go).toHaveBeenCalledTimes(1);
+    expect(result.current).toBe('open');
   });
 });

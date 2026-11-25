@@ -189,6 +189,7 @@ export default function SurroundFrame({
   logger = null,
   className = '',
   onModuleError = null,
+  advanceGateRef = null,
   children = null,
 }) {
   const log = useMemo(() => surroundLogger(logger, 'surround-frame'), [logger]);
@@ -632,7 +633,7 @@ export default function SurroundFrame({
     ? `${clip.work ?? contentId}@${clip.segment.start}`
     : contentId;
   const curtain = useChangeCurtain({
-    enabled, contentId: changeId, clip, playing, seeking, position, rootRef, log,
+    enabled, contentId: changeId, clip, playing, seeking, position, rootRef, log, gateRef: advanceGateRef,
   });
 
   // The measured media width, published as a custom property so the SCSS can

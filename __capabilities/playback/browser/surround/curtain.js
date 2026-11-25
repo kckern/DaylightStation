@@ -54,17 +54,39 @@ export function imagesSettled(root) {
 
 /**
  * The curtain's state for one frame.
+ *
+ * THE ADVANCE GATE (`gateRef`): nothing on screen may change before the curtain
+ * is shut. A change the frame merely SEES has already happened (new picture, new
+ * band) by the time it could close, so the Player routes every queue move
+ * through `gateRef.current(go)`: on a clip it closes first and calls `go` only
+ * once the panels have met, and it stays shut over the old clip until the new
+ * item has arrived and is ready. Anything that is not a clip passes straight
+ * through.
+ *
  * @returns {'open'|'closed'} closed covers the screen; open is parted.
  */
 export function useChangeCurtain({
-  enabled, contentId, clip, playing, seeking, position, rootRef, log,
+  enabled, contentId, clip, playing, seeking, position, rootRef, log, gateRef = null,
 }) {
   const [state, setState] = useState('open');
   const lastId = useRef(null);
   const wasClip = useRef(false);
   const closedAt = useRef(0);
+  // The item the gate closed over; non-null until a different one arrives.
+  const pendingFrom = useRef(null);
   const live = useRef({});
   live.current = { playing, seeking, position, clip };
+
+  if (gateRef) {
+    gateRef.current = !enabled ? null : (go) => {
+      if (!live.current.clip) { go(); return; }
+      if (pendingFrom.current == null) pendingFrom.current = lastId.current;
+      closedAt.current = Date.now();
+      setState('closed');
+      log?.info?.('surround.curtain.close', { from: lastId.current, gated: true });
+      setTimeout(go, CURTAIN_CLOSE_MS);
+    };
+  }
 
   // Close on a change of item, between two items either of which is a clip.
   useEffect(() => {
@@ -76,6 +98,11 @@ export function useChangeCurtain({
     wasClip.current = isClip;
     if (prev == null || prev === contentId || !clipChange) return;
     closedAt.current = Date.now();
+    if (pendingFrom.current != null) {
+      // The gate already shut it; the new item has now arrived under it.
+      pendingFrom.current = null;
+      return;
+    }
     setState('closed');
     log?.info?.('surround.curtain.close', { from: prev, to: contentId });
   }, [enabled, contentId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -86,8 +113,10 @@ export function useChangeCurtain({
     const timer = setInterval(() => {
       const waited = Date.now() - closedAt.current;
       if (waited < CURTAIN_MIN_MS) return;
-      const ready = curtainReady({ ...live.current, imagesLoaded: imagesSettled(rootRef.current) });
+      const arrived = pendingFrom.current == null;
+      const ready = arrived && curtainReady({ ...live.current, imagesLoaded: imagesSettled(rootRef.current) });
       if (!ready && waited < CURTAIN_MAX_MS) return;
+      pendingFrom.current = null;
       setState('open');
       if (ready) log?.info?.('surround.curtain.open', { contentId, waitedMs: waited });
       else log?.warn?.('surround.curtain.timeout', { contentId, waitedMs: waited, ...live.current, clip: undefined });

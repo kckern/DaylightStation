@@ -39,7 +39,7 @@
 // runs and no 10 Hz React sampling happens. An un-enriched item costs the 1 Hz
 // poll and the clock's idle supervisor, and nothing else.
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import getLogger from "../../../../frontend/src/lib/logging/Logger.js";
 import { useMediaClockState } from "../player-support/useMediaClock.js";
@@ -169,6 +169,15 @@ function SurroundStage({ contentId, surround, active, mode, logger, getMediaEl, 
     return () => document.removeEventListener('surround-seek', handler);
   }, [active, getMediaEl, getPlayerHandle, contentId, logger]);
 
+  // Every queue move goes through the frame's curtain first (curtain.js): it
+  // shuts, THEN the Player advances, so nothing changes in view. Stable
+  // identity; with no frame installed it is a straight pass-through.
+  const advanceGateRef = useRef(null);
+  const advanceGate = useCallback((go) => {
+    if (advanceGateRef.current) advanceGateRef.current(go);
+    else go();
+  }, []);
+
   const onModuleError = (error) => {
     logger.error('surround.render.error', {
       contentId,
@@ -185,7 +194,7 @@ function SurroundStage({ contentId, surround, active, mode, logger, getMediaEl, 
   // module header). Inactive/un-enriched items pass `children` through
   // untouched, so nothing about today's shader behaviour changes for them.
   const framedChildren = active && React.isValidElement(children)
-    ? React.cloneElement(children, { forceShader: 'focused' })
+    ? React.cloneElement(children, { forceShader: 'focused', advanceGate })
     : children;
 
   return (
@@ -200,6 +209,7 @@ function SurroundStage({ contentId, surround, active, mode, logger, getMediaEl, 
       pictureAspect={pictureAspect}
       logger={logger}
       onModuleError={onModuleError}
+      advanceGateRef={advanceGateRef}
     >
       {framedChildren}
     </SurroundFrame>
