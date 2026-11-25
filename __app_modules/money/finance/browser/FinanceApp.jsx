@@ -1,5 +1,8 @@
 import { useState, useMemo } from 'react';
-import { Button, MantineProvider, Select, Drawer } from '@mantine/core';
+import { Button, Select, Drawer } from '@mantine/core';
+import { AppThemeProvider } from '@/lib/ui/AppThemeProvider.jsx';
+import { PACKS } from '@/lib/theme/packs.mjs';
+import { dsCssVars } from '@/lib/theme/tokens.mjs';
 import useDocumentTitle from "../../../../frontend/src/hooks/useDocumentTitle.js";
 import { BudgetHoldings, BudgetSpending } from "./blocks.jsx";
 import { BudgetMortgage } from "./blocks/mortgage.jsx";
@@ -17,6 +20,9 @@ import spinner from "../../../../frontend/src/assets/icons/spinner.svg";
 import moment from 'moment';
 import { getChildLogger } from "../../../../frontend/src/lib/logging/singleton.js";
 
+// Mantine mounts the Drawer in a portal outside the themed root, so it carries the pack's vars itself.
+const FINANCE_VARS = dsCssVars(PACKS.finance);
+
 const financeLogger = getChildLogger({ app: 'finance' });
 
 export default function App() {
@@ -25,7 +31,7 @@ export default function App() {
   const { data, error, retry } = finance;
 
   return (
-    <MantineProvider>
+    <AppThemeProvider pack="finance">
       {error && (
         <div className="finance-error-banner">
           <strong>{error.source === 'refresh' ? 'Refresh failed — showing the last loaded data.' : 'Failed to load finance data.'}</strong>
@@ -45,7 +51,7 @@ export default function App() {
           <BudgetViewer budget={data.budgets} mortgage={data.mortgage} finance={finance} />
         </FinanceErrorBoundary>
       )}
-    </MantineProvider>
+    </AppThemeProvider>
   );
 }
 
@@ -94,7 +100,7 @@ function Header({ availableBudgetKeys = [], activeBudgetKey, setActiveBudgetKey,
               input: {
                 fontSize: '1.5rem',
                 fontWeight: 'bold',
-                border: '1px solid #FFFFFF33',
+                border: '1px solid #FFFFFF33', // data-color: hairline on the charcoal header bar
                 textAlign: 'center',
                 backgroundColor: 'transparent',
                 color: 'white',
@@ -156,6 +162,7 @@ export function BudgetViewer({ budget, mortgage, finance }) {
           position="right"
           padding="md"
           className="txn-drawer"
+          style={FINANCE_VARS}
         >
           <FinanceErrorBoundary label="Drawer">
             <DrawerHost descriptor={drawerContent} budget={activeBudget} mortgage={mortgage} />

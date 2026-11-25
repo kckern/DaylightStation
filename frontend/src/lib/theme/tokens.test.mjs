@@ -127,6 +127,18 @@ it('exposes the Feed reading chrome colors through the shared semantic roles', (
   });
 });
 
+it('finance pack: light panels, charcoal header, spent/gained/over status hues', () => {
+  expect(PACKS.finance.defaultColorScheme).toBe('light');
+  expect(dsCssVars(PACKS.finance)).toMatchObject({
+    '--ds-surface': '#eeeeee', '--ds-background': '#444444', '--ds-text-high': '#000000',
+    '--ds-info': '#0077b6', '--ds-success': '#759c82', '--ds-danger': '#cc0000',
+    '--ds-font-family': '"Roboto Condensed", sans-serif',
+  });
+  const theme = createAppTheme(PACKS.finance);
+  expect(theme.primaryColor).toBe('blue');
+  expect(theme.components.Button).toBeUndefined();
+});
+
 it('compiles the shared Sass mixins at the JavaScript breakpoint boundaries', () => {
   const { md, lg } = DS_TOKENS.breakpoints;
   const { css } = sass.compileString(`

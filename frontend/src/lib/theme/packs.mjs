@@ -75,6 +75,26 @@ export const PACKS = Object.freeze({
     primaryColor: 'orange',
     accent: '#e5a00d', // AMBER[5] — was #f0a05a, drifted from the palette
   }),
+  finance: Object.freeze({
+    name: 'finance',
+    defaultColorScheme: 'light',
+    character: 'A budget wall board: light grey panels under one charcoal header '
+      + 'bar, dense tabular numbers, and blue for money spent, green for money '
+      + 'gained, red for overspend.',
+    primaryColor: 'blue',
+    accent: '#0077b6',
+    fontFamily: '"Roboto Condensed", sans-serif',
+    // The light panels read as `surface`; `background` is the charcoal header
+    // bar; `textHigh` is the ink on a panel, `textLow` the muted memo grey.
+    colors: Object.freeze({
+      background: '#444444', surface: '#eeeeee', surfaceAlt: '#f5f5f5', border: '#cccccc',
+      textHigh: '#000000', textMid: '#666666', textLow: '#888888',
+    }),
+    status: Object.freeze({ success: '#759c82', warning: '#d29922', danger: '#cc0000', info: '#0077b6' }),
+    // Finance never carried the base contract's Button/Modal/Drawer defaults;
+    // an empty set keeps Mantine's own sizes.
+    themeExtras: Object.freeze({ components: Object.freeze({}) }),
+  }),
   school: Object.freeze({
     name: 'school',
     character: 'A child\'s study desk on a kiosk: big centred type, one calm '
