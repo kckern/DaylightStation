@@ -41,6 +41,19 @@ export function normalizeStreamContentId(contentId) {
 }
 
 /**
+ * The id `/play` resolves for a content id. A clip id (`<contentId>#<n>` from a
+ * surround-segments query, `<contentId>#seg<n>` from a videoRules expansion)
+ * names a window of a recording; `/play` knows only the recording, and a raw
+ * `#` in the path would start a URL fragment and drop the query string. The
+ * window itself lives on the item (`segment`) and is re-applied by the player.
+ * @param {string} contentId
+ * @returns {string}
+ */
+export function playContentId(contentId) {
+  return typeof contentId === 'string' ? contentId.replace(/#(?:seg)?\d+$/, '') : contentId;
+}
+
+/**
  * Fetch media information from API
  * @param {Object} params - Parameters for fetching media
  * @param {string} params.contentId - Content identifier (compound ID, bare number, or bare name)
@@ -74,7 +87,7 @@ export async function fetchMediaInfo({ contentId, plex, media, shuffle, maxVideo
   }
   // stream: ids carry a raw url whose slashes/colons break the /play/<id> path —
   // encode to a path-safe base64url token before building any request URL.
-  const effectiveContentId = normalizeStreamContentId(rawContentId);
+  const effectiveContentId = playContentId(normalizeStreamContentId(rawContentId));
 
   const buildUrl = (base, params = {}) => {
     const searchParams = new URLSearchParams();
