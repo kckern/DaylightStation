@@ -397,6 +397,56 @@ describe('SurroundHost', () => {
     expect(getPlayerHandle.mock.calls.length).toBeGreaterThan(afterMount);
   });
 
+  // --- the clip form ---------------------------------------------------------
+  //
+  // An item that plays only a window of its media is a clip. The host puts the
+  // window and the queue around it on the payload as `data.clip`, read from the
+  // handle, so a module never has to read the player itself.
+  describe('clip context', () => {
+    const entry = (id, title, subtitle) => ({ queueItemId: `g-${id}`, contentId: id, title, subtitle });
+    const QUEUE = [
+      entry('plex:1#1', 'First Carol', 'Winter Concert (2001)'),
+      entry('plex:2#4', 'Second Carol', 'Snow Concert (2002)'),
+    ];
+    const clipPlayer = (item, position) => {
+      const player = makePlayer({ item, media: new FakeMedia() });
+      const state = { position };
+      player.handle.getNowPlaying = () => ({ item: player.state.item, isQueue: true, queuePosition: state.position });
+      player.handle.getQueueSnapshot = () => ({
+        items: QUEUE, currentIndex: state.position,
+        executionOrder: QUEUE.slice(state.position).map((e) => e.queueItemId),
+      });
+      return { ...player, moveTo: (p) => { state.position = p; } };
+    };
+    const lastData = () => recorded[recorded.length - 1]?.data;
+
+    it('puts the clip window, position and next clip on the payload', () => {
+      const player = clipPlayer({ id: 'plex:1#1', surround: SURROUND, segment: { start: 10, end: 200 } }, 0);
+      renderHost({ getPlayerHandle: player.get, logger });
+      expect(lastData().clip).toEqual({
+        segment: { start: 10, end: 200 }, index: 0, total: 2,
+        next: { title: 'Second Carol', subtitle: 'Snow Concert (2002)' },
+      });
+      expect(lastData().piece).toEqual(SURROUND.piece);
+    });
+
+    it('has no next clip at the end of the queue', async () => {
+      const player = clipPlayer({ id: 'plex:1#1', surround: SURROUND, segment: { start: 10, end: 200 } }, 0);
+      renderHost({ getPlayerHandle: player.get, logger });
+      player.moveTo(1);
+      player.advanceTo({ id: 'plex:2#4', surround: SURROUND, segment: { start: 5, end: 90 } });
+      await act(async () => { vi.advanceTimersByTime(1000); });
+      expect(lastData().clip).toMatchObject({ segment: { start: 5, end: 90 }, index: 1, total: 2, next: null });
+    });
+
+    it('leaves the payload as authored for an item without a window', () => {
+      const player = clipPlayer({ id: 'plex:663134', surround: SURROUND }, 0);
+      renderHost({ getPlayerHandle: player.get, logger });
+      expect('clip' in lastData()).toBe(false);
+      expect(lastData().piece).toBe(SURROUND.piece);
+    });
+  });
+
   // --- player continuity ----------------------------------------------------
   //
   // THE DEFECT THESE EXIST FOR. The host used to render `children` bare and then

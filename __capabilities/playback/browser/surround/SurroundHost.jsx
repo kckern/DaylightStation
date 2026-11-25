@@ -48,6 +48,7 @@ import { resolveContentId, railContentId } from "./segments.js";
 import { useSurroundSetting, SURROUND_OFF } from "./SurroundSettingContext.js";
 import { definitionModules } from "./surroundHostModules.js";
 import { SurroundOverrideContext } from "./surroundOverride.js";
+import { clipContext, clipKey } from "./clipContext.js";
 // Side-effect import: registers segment-map / cue-ticker / composer-card, so
 // neither seam needs a registration call of its own.
 
@@ -211,7 +212,7 @@ export default function SurroundHost({
 
   const disabled = mode === SURROUND_OFF;
 
-  const [current, setCurrent] = useState({ contentId: null, surround: null });
+  const [current, setCurrent] = useState({ contentId: null, surround: null, clip: null });
 
   useEffect(() => {
     if (disabled) {
@@ -222,12 +223,13 @@ export default function SurroundHost({
     }
 
     // Tracked outside React state so the poll can compare without re-subscribing.
-    let seen = { contentId: null, surroundId: null };
+    let seen = { contentId: null, surroundId: null, clip: '' };
 
     const read = () => {
+      const handle = readHandle();
       let item = null;
       try {
-        item = readHandle()?.getNowPlaying?.()?.item ?? null;
+        item = handle?.getNowPlaying?.()?.item ?? null;
       } catch (_) {
         item = null;
       }
@@ -237,7 +239,17 @@ export default function SurroundHost({
       // `railContentId` prefers the queue's own pairing and falls back to the id.
       const nextId = railContentId(item, surround);
       const surroundId = surround?.id ?? null;
-      if (nextId === seen.contentId && surroundId === seen.surroundId) return;
+      // A clip (an item playing only its `segment` window) also carries where
+      // it sits in the queue and what plays next, which can change under the
+      // same item (an Up Next edit), so it is part of what "changed" means.
+      const clip = surround ? clipContext(item, handle) : null;
+      const clipSeen = clipKey(clip);
+      if (nextId === seen.contentId && surroundId === seen.surroundId) {
+        if (clipSeen === seen.clip) return;
+        seen = { ...seen, clip: clipSeen };
+        setCurrent((prev) => ({ ...prev, clip }));
+        return;
+      }
 
       hostLogger.debug('surround.item-change', {
         contentId: nextId,
@@ -246,11 +258,11 @@ export default function SurroundHost({
         enriched: !!surround,
         surroundId,
       });
-      seen = { contentId: nextId, surroundId };
+      seen = { contentId: nextId, surroundId, clip: clipSeen };
       // New object only on a real change — the surround reference is therefore
       // stable for the life of the item, which is what keeps the frame's payload
       // memo from rebuilding on every 10 Hz tick.
-      setCurrent({ contentId: nextId, surround });
+      setCurrent({ contentId: nextId, surround, clip });
     };
 
     read();
@@ -264,7 +276,14 @@ export default function SurroundHost({
   // An open override (caller-supplied data, e.g. the content-filter shield)
   // wins over the item's own surround while open.
   const [override, setOverride] = useState(null);
-  const frameData = override ?? current.surround;
+  // A clip rides on the payload as `data.clip`, beside everything else a
+  // module reads, so no module needs a prop the contract does not have. The
+  // frame draws the definition's `clip:` regions while it is set.
+  const itemData = useMemo(
+    () => (current.surround && current.clip ? { ...current.surround, clip: current.clip } : current.surround),
+    [current.surround, current.clip],
+  );
+  const frameData = override ?? itemData;
   const active = !disabled && !!frameData;
 
   const overrideApi = useMemo(() => ({

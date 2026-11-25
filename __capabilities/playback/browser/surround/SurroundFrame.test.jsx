@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, act } from '@testing-library/react';
 import * as sass from 'sass-embedded';
-import SurroundFrame, { surroundTheme } from "./SurroundFrame.jsx";
+import SurroundFrame, { surroundTheme, regionsFor } from "./SurroundFrame.jsx";
 import {
   ENTER_MS, ENTER_MEDIA_MS, ENTER_DELAY, ENTER_TOTAL_MS, ENTER_UNCLIP_MS, shrinkFrom,
 } from "./entrance.js";
@@ -1078,5 +1078,79 @@ describe('SurroundFrame — themes', () => {
     expect(css).toMatch(/:where\(\.surround-frame--theme-classical\) \.surround-frame__stage::after \{/);
     expect(css).toMatch(/\.surround-frame:where\(\.surround-frame--theme-classical\) \{[^}]*font-family: var\(--surround-body\)/);
     expect(css).toMatch(/@font-face \{ font-family: "EB Garamond"/);
+  });
+});
+
+describe('SurroundFrame — the clip form', () => {
+  const ClipStub = ({ data }) => <div data-testid="clip-stub">{data?.clip ? 'clip' : 'whole'}</div>;
+  const CLIP = { segment: { start: 10, end: 200 }, index: 0, total: 3, next: null };
+  const WITH_CLIP_REGIONS = {
+    ...DEFINITION,
+    clip: { bottom: [{ module: 'clip-band', height: 64 }] },
+  };
+
+  beforeEach(() => {
+    observers = [];
+    globalThis.ResizeObserver = FakeResizeObserver;
+    resetSurroundRegistry();
+    registerSurroundModule('segment-map', SegmentStub);
+    registerSurroundModule('cue-ticker', TickerStub);
+    registerSurroundModule('composer-card', CardStub);
+    registerSurroundModule('clip-band', ClipStub);
+  });
+  afterEach(() => {
+    resetSurroundRegistry();
+    observers = [];
+  });
+
+  it('draws the clip regions while a clip plays and the definition authors them', () => {
+    const { getByTestId, queryByTestId } = renderFrame({
+      data: { ...DATA, definition: WITH_CLIP_REGIONS, clip: CLIP },
+    });
+    expect(getByTestId('clip-stub')).toHaveTextContent('clip');
+    expect(queryByTestId('segment-stub')).toBeNull();
+    expect(queryByTestId('ticker-stub')).toBeNull();
+  });
+
+  it('keeps every slot the clip set does not name', () => {
+    const { getByTestId } = renderFrame({
+      data: { ...DATA, definition: WITH_CLIP_REGIONS, clip: CLIP },
+    });
+    expect(getByTestId('card-stub')).toHaveTextContent('Ludwig van Beethoven');
+  });
+
+  it('draws the normal regions for a whole item, even when clip regions are authored', () => {
+    const { getByTestId, queryByTestId } = renderFrame({ data: { ...DATA, definition: WITH_CLIP_REGIONS } });
+    expect(getByTestId('segment-stub')).toBeInTheDocument();
+    expect(queryByTestId('clip-stub')).toBeNull();
+  });
+
+  it('draws the normal regions for a clip when the definition authors no clip set', () => {
+    const { getByTestId, queryByTestId } = renderFrame({ data: { ...DATA, clip: CLIP } });
+    expect(getByTestId('segment-stub')).toBeInTheDocument();
+    expect(getByTestId('ticker-stub')).toBeInTheDocument();
+    expect(queryByTestId('clip-stub')).toBeNull();
+  });
+});
+
+describe('regionsFor', () => {
+  const definition = {
+    regions: { right: { module: 'a' }, bottom: { module: 'b' }, top: { module: 't' } },
+    clip: { bottom: { module: 'c' }, top: null },
+  };
+
+  it('returns the normal regions without a clip', () => {
+    expect(regionsFor(definition, null)).toBe(definition.regions);
+  });
+
+  it('overrides only the slots the clip set names, and lets a clip slot be emptied', () => {
+    expect(regionsFor(definition, { segment: { start: 0, end: 1 } })).toEqual({
+      right: { module: 'a' }, bottom: { module: 'c' }, top: null,
+    });
+  });
+
+  it('returns the normal regions for a definition with no clip set', () => {
+    const plain = { regions: { right: { module: 'a' } } };
+    expect(regionsFor(plain, { segment: { start: 0, end: 1 } })).toBe(plain.regions);
   });
 });

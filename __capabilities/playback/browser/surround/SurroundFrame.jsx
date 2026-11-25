@@ -116,6 +116,25 @@ export function surroundTheme(definition) {
   return typeof t === 'string' && /^[a-z0-9-]+$/.test(t) ? t : DEFAULT_SURROUND_THEME;
 }
 
+/**
+ * The region slots this frame draws. A definition may author a second set,
+ * `clip:`, for an item that plays only a window of its media (a single piece
+ * cut from a concert, which arrives with `data.clip`): while both exist each
+ * slot takes its `clip:` entry when there is one and its `regions:` entry
+ * otherwise. Any surround can opt in; one that authors no `clip:` is drawn the
+ * same for a clip as for the whole.
+ */
+export function regionsFor(definition, clip) {
+  const regions = definition?.regions ?? {};
+  const clipRegions = clip && definition?.clip && typeof definition.clip === 'object' ? definition.clip : null;
+  if (!clipRegions) return regions;
+  const out = { ...regions };
+  for (const slot of ['top', 'right', 'bottom', 'lyric']) {
+    if (clipRegions[slot] !== undefined) out[slot] = clipRegions[slot];
+  }
+  return out;
+}
+
 /** A region slot in the definition may be a single object or a list of them. */
 function normalizeRegions(value, slot) {
   if (!value) return [];
@@ -188,10 +207,12 @@ export default function SurroundFrame({
 
   const definition = data?.definition ?? null;
   const theme = surroundTheme(definition);
+  const clip = data?.clip ?? null;
+  const regions = useMemo(() => regionsFor(definition, clip), [definition, clip]);
   // `right` is authored as either a single object or a list of modules (e.g.
   // composer-card + country-map). Width and side both belong to the rail as a
   // whole, so when it's a list the first entry carries them.
-  const rightDef = definition?.regions?.right;
+  const rightDef = regions.right;
   const railFirst = Array.isArray(rightDef) ? rightDef[0] : rightDef;
   const railWidth = railFirst?.width ?? DEFAULT_RAIL_WIDTH;
   const railSide = railFirst?.side === 'left' ? 'left' : 'right';
@@ -217,11 +238,11 @@ export default function SurroundFrame({
     : footerFloor;
 
   const topRegions = useMemo(
-    () => normalizeRegions(definition?.regions?.top, 'top'), [definition]);
+    () => normalizeRegions(regions.top, 'top'), [regions]);
   const rightRegions = useMemo(
-    () => normalizeRegions(definition?.regions?.right, 'right'), [definition]);
+    () => normalizeRegions(regions.right, 'right'), [regions]);
   const footerRegions = useMemo(
-    () => normalizeRegions(definition?.regions?.bottom, 'bottom'), [definition]);
+    () => normalizeRegions(regions.bottom, 'bottom'), [regions]);
   /**
    * THE LYRIC SLOT. Authored as a sibling of `right`, never inside it, because
    * the frame renders exactly ONE of the two: when a piece's segments carry
@@ -232,7 +253,7 @@ export default function SurroundFrame({
    * words.
    */
   const lyricRegions = useMemo(
-    () => normalizeRegions(definition?.regions?.lyric, 'lyric'), [definition]);
+    () => normalizeRegions(regions.lyric, 'lyric'), [regions]);
 
   // The module contract is exactly { position, duration, playing, seeking, data,
   // region }. contentId is not a seventh prop — it rides inside `data`, so every
@@ -698,7 +719,7 @@ export default function SurroundFrame({
 }
 
 SurroundFrame.propTypes = {
-  /** Resolved surround payload: { id, definition, piece, segments, cues, facts, composer, assetBase }. */
+  /** Resolved surround payload: { id, definition, piece, segments, cues, facts, composer, assetBase }, plus `clip` (see clipContext.js) while a clip plays. */
   data: PropTypes.object,
   /** False renders the no-box shell around `children` and no regions at all. */
   active: PropTypes.bool,

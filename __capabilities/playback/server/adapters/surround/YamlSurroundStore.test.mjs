@@ -1556,6 +1556,22 @@ describe('YamlSurroundStore — the band’s fields (design wave 7)', () => {
     const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     expect('theme' in store.lookup('plex:663134', '').definition).toBe(false);
   });
+
+  // THE CLIP FORM. A definition may author a second region set, `clip:`, that
+  // the frame draws while an item plays only a window of its media.
+  // TO GO RED: drop `clip` from the projection.
+  it('carries an authored definition.clip region set', () => {
+    write('_surrounds/concert-hall.yml',
+      'id: concert-hall\nregions:\n  right: { width: 20%, module: composer-card }\n'
+      + 'clip:\n  bottom:\n    - { module: clip-band, height: 64 }\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    expect(store.lookup('plex:663134', '').definition.clip).toEqual({ bottom: [{ module: 'clip-band', height: 64 }] });
+  });
+
+  it('leaves definition.clip absent when unauthored', () => {
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    expect('clip' in store.lookup('plex:663134', '').definition).toBe(false);
+  });
 });
 
 /**

@@ -1437,7 +1437,12 @@ export class YamlSurroundStore extends ISurroundStore {
           // the concert-hall and playhouse definitions). Passed through only
           // when authored: the frame's default is the neutral theme, and the
           // store knows nothing about any particular look.
-          ...(typeof definition.theme === 'string' && definition.theme ? { theme: definition.theme } : {})
+          ...(typeof definition.theme === 'string' && definition.theme ? { theme: definition.theme } : {}),
+          // THE CLIP FORM: the regions the frame draws while an item plays
+          // only a window of its media (a surround-segments clip). Slots it
+          // does not name fall back to `regions` in the frame, so it is passed
+          // through as authored and only when authored.
+          ...(isPlainObject(definition.clip) ? { clip: definition.clip } : {})
         },
         piece,
         pieceSegments: resolvedPieceSegments,
