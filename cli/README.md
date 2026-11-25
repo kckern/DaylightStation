@@ -401,6 +401,8 @@ Evidence for where the music and the talk are inside a concert video. It writes 
 ```
 concert-index: where the music and the talk are inside a concert video
 
+  chapters <media> [--out chapters.json]
+      List the file's native chapter markers as [{index, start, end, title}].
   clips <media> --at 120,305.5 [--pad 6] --out <dir>
       Cut a 360p review clip centred on each boundary.
 ```

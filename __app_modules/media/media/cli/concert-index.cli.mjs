@@ -8,16 +8,51 @@
  * of that structure. It does NOT write a sidecar: the evidence is for a
  * person or agent to judge.
  *
- * Subcommands: clips. Run with --help.
+ * Subcommands: chapters, clips. Run with --help.
  *
  * @module cli/concert-index
  */
 
 import { parseArgs } from 'node:util';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+
+/* -------------------------------------------------------------------------- */
+/* Chapters                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `ffprobe -show_chapters -of json` output (object or text) to chapters in
+ * time order: `{index, start, end, title}`, seconds, `index` from 1. A chapter
+ * without a `title` tag has title null.
+ */
+export function parseChapters(json) {
+  const probe = typeof json === 'string' ? JSON.parse(json) : (json ?? {});
+  return (probe.chapters ?? [])
+    .map((c) => ({ start: Number(c.start_time), end: Number(c.end_time), title: c.tags?.title ?? null }))
+    .sort((a, b) => a.start - b.start)
+    .map((c, k) => ({ index: k + 1, ...c }));
+}
+
+/**
+ * The chapters `evidence` works on: raw ffprobe output, the `chapters`
+ * subcommand's list, or a list the caller built with real titles
+ * (`[{title, start, end}]`, `index` optional). Every chapter needs a numeric
+ * start before its end.
+ */
+export function chapterList(input) {
+  const list = Array.isArray(input) ? input : parseChapters(input);
+  return list.map((c, k) => {
+    const start = Number(c.start);
+    const end = Number(c.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || !(start < end)) {
+      throw new Error(`chapter ${k + 1} (${JSON.stringify(c.title ?? null)}) needs numeric start < end`);
+    }
+    return { ...c, index: c.index ?? k + 1, start, end };
+  });
+}
 
 /* -------------------------------------------------------------------------- */
 /* Subtitles                                                                  */
@@ -129,6 +164,8 @@ function run(cmd, args) {
 
 const USAGE = `concert-index: where the music and the talk are inside a concert video
 
+  chapters <media> [--out chapters.json]
+      List the file's native chapter markers as [{index, start, end, title}].
   clips <media> --at 120,305.5 [--pad 6] --out <dir>
       Cut a 360p review clip centred on each boundary.`;
 
@@ -152,7 +189,19 @@ async function dispatch(argv) {
     },
   });
 
+  const emit = (obj) => {
+    const text = `${JSON.stringify(obj, null, 2)}\n`;
+    if (f.out) writeFileSync(f.out, text);
+    else process.stdout.write(text);
+  };
+
   if (f.help || !cmd) { console.log(USAGE); return; }
+
+  if (cmd === 'chapters') {
+    if (!media) throw new Error('chapters needs <media>');
+    emit(parseChapters(run('ffprobe', ['-v', 'error', '-show_chapters', '-of', 'json', media]).stdout));
+    return;
+  }
 
   if (cmd === 'clips') {
     if (!media || !f.at || !f.out) throw new Error('clips needs <media>, --at and --out');

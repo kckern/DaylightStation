@@ -10,7 +10,7 @@ import { mkdtempSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseSrt, srtTime, words, lyricOverlap, clipArgs, numberFlag, parseAt, runCliEntry } from './concert-index.cli.mjs';
+import { parseSrt, srtTime, parseChapters, chapterList, words, lyricOverlap, clipArgs, numberFlag, parseAt, runCliEntry } from './concert-index.cli.mjs';
 
 describe('parseSrt', () => {
   const SRT = '1\r\n00:01:03,160 --> 00:01:11,560\r\nTo buy the table\r\n\r\n'
@@ -31,6 +31,47 @@ describe('parseSrt', () => {
     expect(srtTime('nope')).toBeNull();
   });
 });
+describe('parseChapters', () => {
+  const PROBE = {
+    chapters: [
+      { id: 1, time_base: '1/1000', start: 360093, start_time: '360.093000', end_time: '656.890000' },
+      { id: 0, time_base: '1/1000', start: 0, start_time: '0.000000', end_time: '360.093000', tags: { title: 'Opening' } },
+    ],
+  };
+
+  it('reads ffprobe chapters into seconds, in time order, numbered from 1', () => {
+    expect(parseChapters(PROBE)).toEqual([
+      { index: 1, start: 0, end: 360.093, title: 'Opening' },
+      { index: 2, start: 360.093, end: 656.89, title: null },
+    ]);
+  });
+  it('accepts the JSON text as ffprobe prints it', () => {
+    expect(parseChapters(JSON.stringify(PROBE))).toHaveLength(2);
+  });
+  it('is empty for a file without chapters', () => {
+    expect(parseChapters({})).toEqual([]);
+    expect(parseChapters('{"chapters": []}')).toEqual([]);
+  });
+});
+
+describe('chapterList', () => {
+  it('takes a caller-built list of titled chapters, numbering any without an index', () => {
+    expect(chapterList([{ title: 'Carol', start: 0, end: 60 }, { index: 7, title: 'Reading', start: 60, end: 90 }])).toEqual([
+      { index: 1, title: 'Carol', start: 0, end: 60 },
+      { index: 7, title: 'Reading', start: 60, end: 90 },
+    ]);
+  });
+  it('also takes raw ffprobe output', () => {
+    expect(chapterList({ chapters: [{ start_time: '0', end_time: '5', tags: { title: 'A' } }] })).toEqual([
+      { index: 1, start: 0, end: 5, title: 'A' },
+    ]);
+  });
+  it('rejects a chapter without a usable start and end', () => {
+    expect(() => chapterList([{ title: 'Broken', start: 10 }])).toThrow(/chapter 1 \("Broken"\) needs numeric start < end/);
+    expect(() => chapterList([{ title: 'Backwards', start: 10, end: 5 }])).toThrow(/chapter 1/);
+  });
+});
+
 describe('lyricOverlap', () => {
   const HEARD = 'Was born on Christmas Day to save us all from savers all when we were gone astray. Oh tidings are';
   const GOD_REST = "God rest ye merry, gentlemen, let nothing you dismay, remember Christ our Saviour was born on Christmas Day to save us all from Satan's power when we were gone astray. O tidings of comfort and joy";
