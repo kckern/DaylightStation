@@ -20,7 +20,7 @@
  * `away` keeps nothing unless configured otherwise.
  */
 import { SUBJECT_IDS } from "./curriculum/unitValidation.mjs";
-import { DAY_OFF_TIERS } from "./schoolCalendar.mjs";
+import { DAY_OFF_TIERS, dayOffTier, isoWeekday, scheduleVerdict } from "./schoolCalendar.mjs";
 
 const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -99,6 +99,35 @@ export function keepsEntry(policy, tier, entry) {
   return keep.some((selector) => (selector.subject !== undefined
     ? selector.subject === entry?.subject
     : selector.program === entry?.program));
+}
+
+/**
+ * Is this program asked for on this day? The SAME answer the agenda gives
+ * (`planDailyAgenda`, agenda.mjs): the program's own schedule first; then
+ * Sunday rest (agenda.mjs `sundayRest`: a Sunday asks only scripture, even of
+ * an enrollment that meets on Sunday); then, on a keeping tier (stay-home,
+ * enrichment, major-holiday), the keep-list; on any other day the household
+ * calendar's plain school-day verdict (`away` and untiered breaks ask nothing).
+ *
+ * Program services must use this rather than `scheduleVerdict(household)`:
+ * that verdict is false on every day off, so a service using it refuses work
+ * the board is asking for (2026-11-25: Gratitude on a stay-home day, 409 on
+ * every take).
+ *
+ * @param {string} day YYYY-MM-DD study day
+ * @param {{enrollment: {programId: string, subject?: string, schedule?: object|null},
+ *   householdSchedule?: object|null, dayOffPolicy?: object}} args
+ */
+export function programAskedOn(day, { enrollment, householdSchedule = null, dayOffPolicy = DEFAULT_DAY_OFF_POLICY } = {}) {
+  if (!scheduleVerdict(day, enrollment?.schedule ?? null).schoolDay) return false;
+  if (isoWeekday(day) === 7 && enrollment?.subject !== 'scripture') return false;
+  if (householdSchedule == null) return true;
+  const tier = dayOffTier(day, householdSchedule)?.tier ?? null;
+  const keepingTier = tier != null && tier !== 'normal' && tier !== 'away';
+  if (keepingTier) {
+    return keepsEntry(dayOffPolicy ?? DEFAULT_DAY_OFF_POLICY, tier, { subject: enrollment?.subject, program: enrollment?.programId });
+  }
+  return scheduleVerdict(day, householdSchedule).schoolDay;
 }
 
 const nextDay = (day) => new Date(Date.parse(`${day}T00:00:00.000Z`) + 86_400_000).toISOString().slice(0, 10);
