@@ -24,6 +24,7 @@ import { registerSurroundModule } from "../../../../../__capabilities/playback/b
 // frame is neutral; definitions opt in with `theme: classical`. Loaded here,
 // first, so it reaches the page before the modules' own sheets.
 import "../surround-classical.mjs";
+import "../surround-christmas.mjs";
 import SegmentMap from "./modules/SegmentMap.jsx";
 import CueTicker from "./modules/CueTicker.jsx";
 import ComposerCard from "./modules/ComposerCard.jsx";
