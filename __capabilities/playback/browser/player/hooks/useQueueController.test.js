@@ -328,3 +328,37 @@ describe('useQueueController re-fetches after remount (signature cache carryover
     expect(second.result.current.playQueue[0]?.contentId).toBe('plex:140619');
   });
 });
+
+// A saved query of clips (surround-segments) resolves through the same queue
+// endpoint whichever way it starts: a menu's Queue action, or a MediaApp
+// `?queue=query:<name>` deep link, whose single session item reaches the
+// Player as `play: { contentId }`. Each clip must keep its window and frame.
+describe('useQueueController with a clip query', () => {
+  const CLIPS = [
+    { id: 'plex:1001#1', contentId: 'plex:1001#1', title: 'Opening Carol', format: 'video', mediaType: 'video',
+      mediaUrl: '/api/v1/proxy/plex/stream/1001', segment: { start: 10, end: 200 }, surroundPart: 0,
+      surround: { id: 'test-hall', piece: { title: 'Winter Concert' } } },
+    { id: 'plex:1002#2', contentId: 'plex:1002#2', title: 'Snow Song', format: 'video', mediaType: 'video',
+      mediaUrl: '/api/v1/proxy/plex/stream/1002', segment: { start: 160, end: 300 }, surroundPart: 0,
+      surround: { id: 'test-hall', piece: { title: 'Snow Concert' } } },
+  ];
+
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it.each([
+    ['a menu queue action', { play: null, queue: { contentId: 'query:winter-songs', shuffle: true } }],
+    ['a deep-linked session item', { play: { contentId: 'query:winter-songs' }, queue: null }],
+  ])('keeps every clip\'s segment and surround from %s', async (_label, input) => {
+    const { DaylightAPI } = await import('../../../../../frontend/src/lib/api.mjs');
+    DaylightAPI.mockResolvedValueOnce({ items: CLIPS, audio: null });
+    const { result } = renderHook(() => useQueueController({ ...input, clear: vi.fn() }));
+    await vi.waitFor(() => expect(result.current.playQueue).toHaveLength(2));
+    expect(DaylightAPI.mock.calls[0][0]).toMatch(/^api\/v1\/queue\/query:winter-songs/);
+    expect(result.current.isQueue).toBe(true);
+    result.current.playQueue.forEach((item, i) => {
+      expect(item.segment).toEqual(CLIPS[i].segment);
+      expect(item.surround).toEqual(CLIPS[i].surround);
+      expect(item.surroundPart).toBe(0);
+    });
+  });
+});

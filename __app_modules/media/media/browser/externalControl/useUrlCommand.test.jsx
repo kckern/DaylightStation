@@ -118,3 +118,15 @@ it('does not replay an unchanged legacy URL after quality keys are added to the 
   renderHook(() => useUrlCommand(controller, '?play=plex:42'));
   expect(controller.queue.playNow).not.toHaveBeenCalled();
 });
+
+// A clip query must not be expanded by the session's container path, which
+// lists children through `/list` and keeps only their ids: the session holds
+// the query as one item, and the Player resolves it through `/queue`, where
+// each clip keeps its window (see useQueueController's clip-query spec).
+it('queues a saved query by id, as one session item the Player resolves', async () => {
+  const { isContainerInput } = await import('../session/containerExpansion.js');
+  const controller = makeController();
+  renderHook(() => useUrlCommand(controller, '?queue=query:winter-songs&shuffle=1'));
+  expect(controller.queue.add).toHaveBeenCalledWith({ contentId: 'query:winter-songs' });
+  expect(isContainerInput(controller.queue.add.mock.calls[0][0])).toBe(false);
+});

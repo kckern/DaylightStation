@@ -144,6 +144,11 @@ export class QueryAdapter {
     }
 
     if (query.audio) allItems.audio = query.audio;
+    // A surround-segments entry shuffles its own clips (and keeps two of the
+    // same song apart); a second shuffle by the queue would undo that.
+    if (query.items.some((entry) => (entry.source || entry.type) === 'surround-segments')) {
+      allItems.preserveOrder = true;
+    }
     // Queue resolution returns an Array with collection-level properties (the
     // existing audio contract uses the same mechanism). Preserve the explicit
     // cover here because a titlecard-first query has no item thumbnail from

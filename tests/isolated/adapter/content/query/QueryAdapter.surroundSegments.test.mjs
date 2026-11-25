@@ -100,6 +100,14 @@ describe('QueryAdapter surround-segments source', () => {
   it('returns nothing without a reader', async () => {
     const savedQueryService = new SavedQueryService({ readQuery: () => QUERY });
     const adapter = new QueryAdapter({ savedQueryService, registry: { resolve: () => null } });
-    expect(await adapter.resolvePlayables('query:winter-songs')).toEqual([]);
+    expect(await adapter.resolvePlayables('query:winter-songs')).toHaveLength(0);
+  });
+});
+
+describe('QueryAdapter surround-segments order', () => {
+  it('marks the queue as already ordered, so a queue shuffle keeps noRepeatSong', async () => {
+    const { adapter } = makeAdapter();
+    const items = await adapter.resolvePlayables('query:winter-songs');
+    expect(items.preserveOrder).toBe(true);
   });
 });

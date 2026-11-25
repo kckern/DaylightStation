@@ -20,12 +20,23 @@ export class QueuePresentationService {
     const prepared = selected.map((item) => {
       try {
         const part = plan?.surroundFor.get(item.id) ?? null;
-        const surround = part?.payload ?? (plan?.refused ? null : this.store?.lookup(item.id, item.title));
+        // A clip (a surround-segments query item, `<contentId>#<n>`) names the
+        // recording it was cut from in `contentId`; the sidecar is the
+        // recording's, so that is the id to look up.
+        const recordingId = item.contentId ?? item.id;
+        const surround = part?.payload ?? (plan?.refused ? null : this.store?.lookup(recordingId, item.title));
         if (!surround) return item;
         const result = { ...item, surround };
         if (part) Object.assign(result, { surroundPart: part.part, resumePosition: null, resume: false });
+        else if (recordingId !== item.id) {
+          // The rail's segments are stamped with the recording's id, never the
+          // clip's, so point the frame at the recording's slot on it.
+          const slot = (surround.timeline?.parts ?? []).findIndex((p) => String(p?.contentId) === String(recordingId));
+          if (slot >= 0) result.surroundPart = slot;
+        }
         this.logger?.debug?.('surround.attach', {
           contentId: item.id,
+          ...(recordingId !== item.id ? { recordingId } : {}),
           surroundId: surround.id,
           path: 'queue',
           ...(part ? { containerId, part: part.part } : {}),
