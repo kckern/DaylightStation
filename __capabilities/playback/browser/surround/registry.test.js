@@ -126,7 +126,7 @@ describe('surround builtins', () => {
     );
     expect([...SURROUND_BUILTIN_MODULES].sort())
       .toEqual([
-        'composer-card', 'content-filter-rail', 'content-filter-timeline', 'country-map', 'cue-ticker', 'libretto', 'movement-map',
+        'clip-band', 'composer-card', 'content-filter-rail', 'content-filter-timeline', 'country-map', 'cue-ticker', 'libretto', 'movement-map',
         'place-carousel', 'play-card', 'poster-card', 'script-rail', 'segment-map', 'work-placard',
       ]);
   });

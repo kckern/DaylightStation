@@ -1,0 +1,102 @@
+.clip-band {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.6fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 1.5em;
+  height: 100%;
+  padding: 0.4em 1.2em;
+  box-sizing: border-box;
+  color: var(--ink, #f3ead6);
+  font-family: var(--surround-body, Georgia, serif);
+  position: relative;
+  z-index: 1; /* above the snow layer */
+}
+
+.clip-band__from,
+.clip-band__next {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15em;
+}
+
+.clip-band__title,
+.clip-band__next-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 1.05em;
+  line-height: 1.15;
+}
+
+.clip-band__meta {
+  display: flex;
+  gap: 0.8em;
+  color: var(--ink-soft, #b9b29c);
+  font-size: 0.85em;
+}
+
+.clip-band__year {
+  color: var(--brass, #c9a24a);
+  letter-spacing: 0.12em;
+}
+
+.clip-band__ticks {
+  display: flex;
+  gap: 3px;
+  margin: 0.2em 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.clip-band__tick {
+  flex: 0 1 10px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ink-soft, #b9b29c);
+  opacity: 0.35;
+}
+
+.clip-band__tick--lit {
+  background: var(--brass, #c9a24a);
+  opacity: 1;
+}
+
+.clip-band__progress {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft, #b9b29c);
+}
+
+.clip-band__bar {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--programme-edge, rgba(201, 162, 74, 0.35));
+  overflow: hidden;
+  position: relative;
+}
+
+.clip-band__fill {
+  height: 100%;
+  background: var(--brass, #c9a24a);
+}
+
+.clip-band__next {
+  text-align: right;
+  align-items: flex-end;
+}
+
+.clip-band__next-label {
+  color: var(--brass, #c9a24a);
+  font-size: 0.75em;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.clip-band__next-subtitle {
+  color: var(--ink-soft, #b9b29c);
+  font-size: 0.85em;
+}
