@@ -1,8 +1,8 @@
 import { PACKS } from '../../lib/theme/packs.mjs';
 
 const DS_BLUE = [
-  '#e8f0fe', '#c4d7fc', '#9ebcfa', '#789ff7', PACKS.admin.accent,
-  '#3d6be0', '#3360cc', '#2952b3', '#1f4499', '#163680'
+  '#e8f0fe', '#c4d7fc', '#9ebcfa', '#789ff7', PACKS.admin.accent, // data-color: Mantine ramp for the admin accent (5th stop is the pack accent)
+  '#3d6be0', '#3360cc', '#2952b3', '#1f4499', '#163680' // data-color: Mantine ramp for the admin accent
 ];
 
 const themeExtras = {

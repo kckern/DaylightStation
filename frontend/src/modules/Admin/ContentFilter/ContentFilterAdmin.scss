@@ -73,7 +73,7 @@
 // A stage that has run but left parts to check: amber, never the plain green check.
 .cf-rail__stage.has-check .cf-rail__mark { background: var(--ds-warning); color: var(--ds-background); }
 .cf-rail__stage.has-check .cf-rail__text { color: var(--ds-warning); font-weight: 600; }
-.cf-rail__stage.has-check[aria-selected="true"] .cf-rail__text { color: #fff; }
+.cf-rail__stage.has-check[aria-selected="true"] .cf-rail__text { color: #fff; /* data-color: white text on the accent fill */ }
 .cf-rail__stage.is-waiting .cf-rail__name { color: var(--ds-text-mid); }
 .cf-rail__stage.is-waiting .cf-rail__mark { color: var(--ds-text-low); }
 /* The tab you are on is the filled chevron; the film's current stage, when you are elsewhere, keeps an
@@ -81,7 +81,7 @@
 .cf-rail__stage.is-current .cf-rail__name { color: var(--ds-accent); }
 .cf-rail__stage.is-current .cf-rail__mark { box-shadow: inset 0 0 0 2px var(--ds-accent); color: var(--ds-accent); }
 .cf-rail__stage[aria-selected="true"]:not(.is-stuck) { background: var(--ds-accent); color: #fff; }
-.cf-rail__stage[aria-selected="true"]:not(.is-stuck) .cf-rail__name { color: #fff; }
+.cf-rail__stage[aria-selected="true"]:not(.is-stuck) .cf-rail__name { color: #fff; /* data-color: white text on the accent fill */ }
 .cf-rail__stage[aria-selected="true"]:not(.is-stuck) .cf-rail__mark { background: #fff; color: var(--ds-accent); box-shadow: none; }
 .cf-rail__stage[aria-selected="true"].is-complete:not(.is-stuck) .cf-rail__mark { background: #fff; color: var(--ds-success); }
 .cf-rail__stage[aria-selected="true"].has-check:not(.is-stuck) .cf-rail__mark { background: var(--ds-warning); color: var(--ds-background); }
@@ -114,7 +114,7 @@
 // pause overlay becomes a small "paused" badge in the corner (other players keep their scrim).
 .cf-review__player .loading-overlay.paused { inset: auto auto 10px 10px; top: auto; left: 10px; width: auto; height: auto; padding: 0; background: none; }
 .cf-review__player .loading-overlay.paused .loading-overlay__inner, .cf-review__player .loading-overlay.paused .loading-timing { width: auto; height: auto; flex: none; }
-.cf-review__player .loading-overlay.paused .loading-spinner { width: 28px; height: 28px; padding: 5px; box-sizing: border-box; border-radius: 6px; background: #111; cursor: default; pointer-events: none; }
+.cf-review__player .loading-overlay.paused .loading-spinner { width: 28px; height: 28px; padding: 5px; box-sizing: border-box; border-radius: 6px; background: #111; /* data-color: media-chrome scrim over video */ cursor: default; pointer-events: none; }
 .cf-review__list { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .cf-review__list > * { flex-shrink: 0; }
 .cf-review__list > .cf-review__rows { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
@@ -152,7 +152,7 @@
 
 // The part icons (partVisuals.jsx). One colour per effect family; green = done, orange = needs a
 // look, grey = plays or nothing to say.
-.cf-review-page, .cf-review__list { --cf-fx-audio: #2dd4bf; --cf-fx-picture: #a78bfa; --cf-fx-skip: #f472b6; }
+.cf-review-page, .cf-review__list { --cf-fx-audio: #2dd4bf; --cf-fx-picture: #a78bfa; --cf-fx-skip: #f472b6; } /* data-color: effect-family category hues, the only data-viz palette here */
 .cf-ico { display: inline-flex; align-items: center; justify-content: center; flex: none; line-height: 0; color: var(--ds-text-low); }
 .cf-ico--fx.is-audio { color: var(--cf-fx-audio); }
 .cf-ico--fx.is-picture { color: var(--cf-fx-picture); }
@@ -167,8 +167,7 @@
 // Unsure timing (refine gave up, or left coarse edges) is amber: grey made a give-up look refined.
 .cf-ico--timing.is-rough, .cf-ico--timing.is-rough-left, .cf-ico--timing.is-unsure { color: var(--ds-warning); }
 .cf-ico--refining { color: var(--ds-info); }
-.cf-ico.is-spinning svg { animation: cf-spin 1.2s linear infinite; }
-@keyframes cf-spin { to { transform: rotate(360deg); } }
+.cf-ico.is-spinning svg { animation: ds-spin calc(var(--ds-motion-sweep) * 0.75) linear infinite; }
 @media (prefers-reduced-motion: reduce) { .cf-ico.is-spinning svg { animation: none; } }
 .cf-fx-tag { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border: 1px solid currentColor; border-radius: 999px; font-size: 11px; font-weight: 700; line-height: 16px; white-space: nowrap; color: var(--ds-text-mid); }
 .cf-fx-tag.is-audio { color: var(--cf-fx-audio); }
@@ -246,22 +245,21 @@
 .cf-strip__tick.is-major { height: 10px; background: var(--ds-text-mid); }
 .cf-strip__label { position: absolute; top: 11px; left: 3px; font-family: var(--ds-font-mono); font-size: 10px; line-height: 1; color: var(--ds-text-mid); white-space: nowrap; }
 .cf-strip__band { position: absolute; top: 30px; bottom: 8px; background: var(--ds-accent); border-radius: 3px; overflow: hidden; display: flex; align-items: center; box-sizing: border-box; padding: 0 6px; }
-.cf-strip__bandlabel { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; font-size: 11px; font-weight: 600; line-height: 1; color: #fff; text-shadow: 0 0 2px rgba(0, 0, 0, 0.6); pointer-events: none; }
+.cf-strip__bandlabel { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; font-size: 11px; font-weight: 600; line-height: 1; color: #fff; text-shadow: 0 0 2px rgba(0, 0, 0, 0.6); pointer-events: none; /* data-color: white label with dark halo on the band fill */ }
 .cf-card-part__autosave { text-align: center; }
 .cf-strip__band.is-neighbour { opacity: 0.6; background: var(--ds-text-low); }
 .cf-strip__band.is-neighbour.is-audio { background: var(--cf-fx-audio); }
 .cf-strip__band.is-neighbour.is-picture { background: var(--cf-fx-picture); }
 .cf-strip__band.is-neighbour.is-skip { background: var(--cf-fx-skip); }
-.cf-strip__band.is-locked { background-image: repeating-linear-gradient(45deg, transparent 0 4px, rgba(0, 0, 0, 0.35) 4px 8px); }
+.cf-strip__band.is-locked { background-image: repeating-linear-gradient(45deg, transparent 0 4px, rgba(0, 0, 0, 0.35) 4px 8px); /* data-color: neutral hatch for a locked band */ }
 .cf-strip__saved { position: absolute; bottom: 2px; height: 3px; background: var(--ds-text-mid); pointer-events: none; }
-.cf-strip__saved.is-pending { background: var(--ds-warning); animation: cf-strip-pending 0.9s ease-in-out infinite alternate; }
-@keyframes cf-strip-pending { from { opacity: 0.35; } to { opacity: 1; } }
+.cf-strip__saved.is-pending { background: var(--ds-warning); animation: ds-pending-pulse calc(var(--ds-motion-sweep) / 2) ease-in-out infinite alternate; }
 @media (prefers-reduced-motion: reduce) { .cf-strip__saved.is-pending { animation: none; } }
 .cf-strip__playhead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--ds-warning); pointer-events: none; z-index: 1; }
 .cf-strip__handle { position: absolute; top: 0; bottom: 0; width: 20px; cursor: ew-resize; touch-action: none; z-index: 2; }
 .cf-strip__handle.is-start { margin-left: -16px; }
 .cf-strip__handle.is-end { margin-left: -4px; }
-.cf-strip__handle::before { content: ''; position: absolute; top: 24px; bottom: 4px; width: 4px; border-radius: 2px; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5); }
+.cf-strip__handle::before { content: ''; position: absolute; top: 24px; bottom: 4px; width: 4px; border-radius: 2px; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5); /* data-color: white drag handle with dark edge, readable on any band */ }
 .cf-strip__handle.is-start::before { left: 14px; }
 .cf-strip__handle.is-end::before { left: 2px; }
 .cf-strip__handle.is-neighbour::before { width: 2px; background: var(--ds-text-high); opacity: 0.8; }
