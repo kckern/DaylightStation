@@ -14,6 +14,7 @@
  */
 
 @use "../../../../../../__capabilities/playback/browser/surround/tokens" as *;
+@use "../themes/classical-ink" as *;
 
 .surround-play-card {
   height: 100%;
@@ -24,7 +25,7 @@
   flex-direction: column;
   overflow: hidden;
   font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
-  color: var(--ink, #2a1d07);
+  color: var(--ink, #{$cl-ink});
 }
 
 .surround-play-card__header {
@@ -47,14 +48,14 @@
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--ink-soft, #6b6152);
+  color: var(--ink-soft, #{$cl-ink-soft});
 }
 
 .surround-play-card__setting {
   margin: 0.3rem 0 0;
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--ink-soft, #6b6152);
+  color: var(--ink-soft, #{$cl-ink-soft});
 }
 
 /* Same reserved-height law as ComposerCard's fact zone: at most three
@@ -71,7 +72,7 @@
   height: 1px;
   margin: 0 0 0.6rem;
   border: 0;
-  background: var(--programme-edge, #ddd0b4);
+  background: var(--programme-edge, #{$cl-programme-edge});
 }
 
 .surround-play-card__fact {
@@ -88,7 +89,7 @@
   text-wrap: balance;
   font-family: var(--surround-body, "EB Garamond", Georgia, serif);
   font-weight: 500;
-  color: var(--ink-soft, #6b6152);
+  color: var(--ink-soft, #{$cl-ink-soft});
   opacity: 1;
 }
 

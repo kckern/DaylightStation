@@ -34,6 +34,7 @@
 
 /* The frame's shared literals - see `../themes/_classical-tokens.scss`. */
 @use "../themes/classical-tokens" as *;
+@use "../../theme/ink" as *;
 
 .surround-composer-card {
   height: 100%;
@@ -49,7 +50,7 @@
   flex-direction: column;
   overflow: hidden;
   font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
-  color: var(--ink, #2a1d07);
+  color: var(--ink, #{$cl-ink});
 }
 
 /* ---------------------------------------------------------------------------
@@ -104,8 +105,8 @@
   box-sizing: border-box;
   background: var(--mat, #{$mat});
   box-shadow:
-    inset 0 0 0 1px var(--mat-edge, rgba(8, 5, 5, 0.9)),
-    0 1px 3px rgba(0, 0, 0, 0.45);
+    inset 0 0 0 1px var(--mat-edge, #{tint($cl-mat-edge, 0.9)}),
+    0 1px 3px scrim(0.45);
   line-height: 0;
 }
 
@@ -155,18 +156,18 @@
   box-sizing: border-box;
   padding: 0.4rem 0.6rem 0.45rem;
   text-align: center;
-  border: 1px solid #5d4514;
+  border: 1px solid #5d4514; // data-color: engraved brass plate
   border-radius: 2px;
-  background-color: #c79a3e;
+  background-color: $cl-brass;
   background-image:
     url('/api/v1/static/img/ui/plaque/brass.jpg'),
-    linear-gradient(180deg, #7a5c1d 0%, #e7c266 16%, #f6e3a0 36%, #d8ad4d 62%, #9a772b 100%);
+    linear-gradient(180deg, #7a5c1d 0%, #e7c266 16%, $cl-brass-lit 36%, #d8ad4d 62%, #9a772b 100%); // data-color: engraved brass plate
   background-size: cover, cover;
   background-position: center;
   box-shadow:
-    0 1px 2px rgba($hall-ink, 0.4),
-    inset 0 1px 0 rgba(255, 248, 214, 0.85),
-    inset 0 -1px 0 rgba(78, 56, 18, 0.75);
+    0 1px 2px tint($hall-ink, 0.4),
+    inset 0 1px 0 rgba(255, 248, 214, 0.85), // data-color: engraved brass plate
+    inset 0 -1px 0 rgba(78, 56, 18, 0.75); // data-color: engraved brass plate
 }
 
 /* Engraved: multiply lets the metal grain show through the letters. Both lines
@@ -174,9 +175,9 @@
    read as more engraving, not a sticker on top of the brass. */
 .surround-composer-card__nameplate .surround-composer-card__name,
 .surround-composer-card__nameplate .surround-composer-card__dates {
-  color: #2a1d07;
+  color: $cl-ink;
   mix-blend-mode: multiply;
-  text-shadow: 0 1px 0 rgba(255, 248, 220, 0.5);
+  text-shadow: 0 1px 0 rgba(255, 248, 220, 0.5); // data-color: engraved brass plate
 }
 
 /* THE NAME USES THE VERTICAL (design wave 4). The plate has a column, not a
@@ -253,7 +254,7 @@
   text-overflow: ellipsis;
   font-size: 0.82rem;
   font-weight: 600;
-  color: var(--ink-soft, #6b6152);
+  color: var(--ink-soft, #{$cl-ink-soft});
 }
 
 /* THE PERIOD (design wave 6) — the era the work belongs to, in the programme's
@@ -290,7 +291,7 @@
   overflow: hidden;
   overflow-wrap: break-word;
   text-wrap: balance;              /* progressive; wraps as before without it */
-  color: var(--ink-soft, #6b6152);
+  color: var(--ink-soft, #{$cl-ink-soft});
 }
 
 /* THE LINE — the clamp (fix round 1, review finding M3). Size, position and
@@ -328,7 +329,7 @@
   height: 1px;
   margin: 0 0 0.6rem;
   border: 0;
-  background: var(--programme-edge, #ddd0b4);
+  background: var(--programme-edge, #{$cl-programme-edge});
 }
 
 /* At most three lines, ellipsized — never clipped mid-glyph by the card edge,
@@ -378,7 +379,7 @@
   text-wrap: balance;              /* progressive; wraps as before without it */
   font-family: var(--surround-body, "EB Garamond", Georgia, serif);
   font-weight: 500;
-  color: var(--ink-soft, #6b6152);
+  color: var(--ink-soft, #{$cl-ink-soft});
   opacity: 1;
 }
 

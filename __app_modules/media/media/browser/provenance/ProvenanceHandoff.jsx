@@ -44,7 +44,7 @@ export function useLinkStalls(stalls, active) {
 }
 
 /** Line and dot colour when the answer names none (config `services[].accent`). */
-export const DEFAULT_ACCENT = '#ffffff';
+export const DEFAULT_ACCENT = '#ffffff'; // data-color: default service accent
 
 export function ProvenanceHandoff({ phase, provenance, linkMs = null, random = Math.random }) {
   // A fresh motion for every play: bursts, shared stops, a hang on one side.

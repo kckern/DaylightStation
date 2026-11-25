@@ -452,7 +452,7 @@ function generateGradientFromLabel(label) {
   const sat = 50 + (Math.abs(hash >> 4) % 20); // 50-70%
   const light = 35 + (Math.abs(hash >> 6) % 15); // 35-50%
   
-  return `linear-gradient(135deg, hsl(${hue1}, ${sat}%, ${light}%) 0%, hsl(${hue2}, ${sat - 10}%, ${light - 10}%) 100%)`;
+  return `linear-gradient(135deg, hsl(${hue1}, ${sat}%, ${light}%) 0%, hsl(${hue2}, ${sat - 10}%, ${light - 10}%) 100%)`; // data-color: per-title generated hues
 }
 
 /**
@@ -493,7 +493,8 @@ function extractDominantColor(imgEl, containerEl) {
     r = Math.round(r / n * 0.6);
     g = Math.round(g / n * 0.6);
     b = Math.round(b / n * 0.6);
-    containerEl.style.backgroundColor = `rgb(${r},${g},${b})`;
+    // data-color: sampled from the poster edge
+    containerEl.style.backgroundColor = `rgb(${r},${g},${b})`; // data-color: sampled from the poster edge
   } catch (_) {
     // CORS or canvas tainted — keep default background
   }

@@ -3,10 +3,10 @@
 // variables (the mediaTheme dark ramp) — no second token system. App-specific
 // layout vars live on .media-app (MediaApp.scss).
 @use "../../../../../frontend/src/styles/breakpoints" as *;
+@use "../theme/ink" as *;
 
-// Ink color for text sitting ON the amber accent (buttons, chips). One token,
-// not four hardcoded hexes.
-$amber-ink: #1a1300;
+// Ink color for text sitting ON the amber accent (buttons, chips): `$on-accent` in theme/ink.
+$amber-ink: $on-accent;
 
 // One focus treatment for every interactive element in the shell (matches
 // Cast.scss's convention: 2px amber outline, offset 2).
@@ -270,7 +270,7 @@ $amber-ink: #1a1300;
   justify-content: center;
   border-radius: 999px;
   background: var(--mantine-color-amber-5);
-  color: #1a1300;
+  color: $on-accent;
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
@@ -415,7 +415,7 @@ $amber-ink: #1a1300;
     width: var(--media-dock-video-w);
     height: calc(var(--media-mini-h) - 12px);
     padding: 0;
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid chalk(0.12);
     border-radius: var(--mantine-radius-sm);
     overflow: hidden;
     background: var(--mantine-color-dark-8);
@@ -573,7 +573,7 @@ $amber-ink: #1a1300;
 .queue-panel {
   .queue-toolbar {
     padding: var(--mantine-spacing-xs) 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    border-bottom: 1px solid chalk(0.06);
   }
 
   .queue-items {
@@ -691,9 +691,9 @@ $amber-ink: #1a1300;
   right: 0;
   z-index: 300;
   background: var(--mantine-color-dark-6);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid chalk(0.1);
   border-radius: var(--mantine-radius-md);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 12px 32px scrim(0.5);
   max-height: min(70dvh, 560px);
   overflow-y: auto;
   padding: var(--mantine-spacing-xs);
@@ -754,7 +754,7 @@ $amber-ink: #1a1300;
   display: flex;
   gap: var(--mantine-spacing-sm);
   padding: var(--mantine-spacing-xs) var(--mantine-spacing-md);
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid chalk(0.06);
   color: var(--mantine-color-amber-4);
   font-size: 12px;
 }
@@ -888,7 +888,7 @@ $amber-ink: #1a1300;
 
 .result-action {
   background: var(--mantine-color-dark-5);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid chalk(0.07);
   border-radius: var(--mantine-radius-sm);
   color: var(--mantine-color-dark-0);
   font-size: 12px;
@@ -1079,11 +1079,11 @@ $amber-ink: #1a1300;
   gap: var(--mantine-spacing-sm);
   padding: var(--mantine-spacing-md);
   background: var(--mantine-color-dark-5);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid chalk(0.05);
   border-radius: var(--mantine-radius-md);
   transition: border-color 120ms ease;
 
-  &:hover { border-color: rgba(255, 255, 255, 0.12); }
+  &:hover { border-color: chalk(0.12); }
 
   .fleet-card-head {
     display: flex;
@@ -1176,9 +1176,9 @@ $amber-ink: #1a1300;
 .dispatch-target-picker {
   min-width: 260px;
   background: var(--mantine-color-dark-6);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid chalk(0.1);
   border-radius: var(--mantine-radius-md);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 12px 32px scrim(0.5);
   padding: var(--mantine-spacing-sm);
   color: var(--mantine-color-dark-0);
   font-size: 14px;
@@ -1269,7 +1269,7 @@ $amber-ink: #1a1300;
   gap: 2px;
   padding: 4px var(--mantine-spacing-sm);
   background: var(--mantine-color-dark-6);
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid chalk(0.06);
   flex-shrink: 0;
   font-size: 13px;
 

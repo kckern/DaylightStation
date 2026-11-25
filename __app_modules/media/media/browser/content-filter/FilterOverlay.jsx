@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import { FilterBumper, FilterBadge } from './FilterChrome.jsx';
+import { FILTER_BLACK, FILTER_WHITE, filterBlack } from './filterInks.js';
 
 /**
  * FilterOverlay — renders the OVERLAY-kind content-filter effects on top of the
@@ -71,13 +72,13 @@ function OverlayEffect({ effect, cue, theme, visible = true, art }) {
   };
   switch (effect) {
     case 'censor-bar':
-      return <div data-filter-effect="censor-bar" style={{ ...base, opacity: shown ? 1 : 0, backgroundColor: theme.barColor || '#000' }} />;
+      return <div data-filter-effect="censor-bar" style={{ ...base, opacity: shown ? 1 : 0, backgroundColor: theme.barColor || FILTER_BLACK }} />;
     case 'pixelate':
       return <div data-filter-effect="pixelate" style={{ ...base, ...blur(' contrast(0.9)') }} />;
     case 'blur':
       return <div data-filter-effect="blur" style={{ ...base, ...blur() }} />;
     case 'full-blur':
-      return <div data-filter-effect="full-blur" style={{ ...base, ...blur(), backgroundColor: shown ? (theme.fullBg || 'rgba(0,0,0,0.35)') : 'rgba(0,0,0,0)' }} />;
+      return <div data-filter-effect="full-blur" style={{ ...base, ...blur(), backgroundColor: shown ? (theme.fullBg || filterBlack(0.35)) : filterBlack(0) }} />;
     case 'title-card':
       return <Card text={cue.text} theme={theme} effect="title-card" art={art} visible={visible} />;
     case 'blackout':
@@ -100,9 +101,9 @@ function Blackout({ cue, theme, shown, base }) {
   }, [cue.id, cue.cardSec]);
   const font = theme.font || 'Roboto Condensed, sans-serif';
   return (
-    <div data-filter-effect="blackout" style={{ ...base, inset: 0, backgroundColor: '#000', opacity: shown ? 1 : 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div data-filter-effect="blackout" style={{ ...base, inset: 0, backgroundColor: FILTER_BLACK, opacity: shown ? 1 : 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       {cue.firstPiece !== false && cue.text ? (
-        <div data-blackout-text style={{ color: '#fff', fontFamily: font, fontSize: '1.5em', textAlign: 'center', padding: '0 2em', opacity: textOn ? 0.9 : 0, transition: `opacity ${FADE_MS}ms ease` }}>{cue.text}</div>
+        <div data-blackout-text style={{ color: FILTER_WHITE, fontFamily: font, fontSize: '1.5em', textAlign: 'center', padding: '0 2em', opacity: textOn ? 0.9 : 0, transition: `opacity ${FADE_MS}ms ease` }}>{cue.text}</div>
       ) : null}
     </div>
   );
@@ -132,27 +133,27 @@ function Card({ text, theme, effect = 'card', art, visible = true, fullFrame = f
       ? {
           position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none',
           backgroundImage: `url(${art.background})`, backgroundSize: 'cover', backgroundPosition: 'center',
-          color: '#fff', fontFamily: font, ...fade,
+          color: FILTER_WHITE, fontFamily: font, ...fade,
         }
       : {
           position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
           width: '72%', maxWidth: '900px', aspectRatio: '16 / 7',
           borderRadius: '0.5em', overflow: 'hidden', pointerEvents: 'none',
           backgroundImage: `url(${art.background})`, backgroundSize: 'cover', backgroundPosition: 'center',
-          color: '#fff', fontFamily: font, boxShadow: '0 0 40px rgba(0,0,0,0.65)',
+          color: FILTER_WHITE, fontFamily: font, boxShadow: `0 0 40px ${filterBlack(0.65)}`,
           ...fade,
         };
     // Scrim over the (busy, character-heavy) film art so the logo/text stay legible:
     // lighter at top where the art reads, darkening toward the bottom band of text.
-    const dim = <div style={{ position: 'absolute', inset: 0, background: theme.cardScrim || 'linear-gradient(180deg, rgba(0,0,0,0.32) 0%, rgba(0,0,0,0.5) 48%, rgba(0,0,0,0.84) 100%)' }} />;
-    const textStyle = { position: 'relative', fontSize: '1.5em', lineHeight: 1.3, padding: '0 1.4em', textShadow: '0 2px 8px rgba(0,0,0,0.85)' };
+    const dim = <div style={{ position: 'absolute', inset: 0, background: theme.cardScrim || `linear-gradient(180deg, ${filterBlack(0.32)} 0%, ${filterBlack(0.5)} 48%, ${filterBlack(0.84)} 100%)` }} />;
+    const textStyle = { position: 'relative', fontSize: '1.5em', lineHeight: 1.3, padding: '0 1.4em', textShadow: `0 2px 8px ${filterBlack(0.85)}` };
 
     if (usePoster) {
       return (
         <div className="filter-card filter-card-art" data-filter-effect={effect} data-card-layout="poster-left" style={cardStyle}>
           {dim}
           <div style={{ position: 'relative', display: 'flex', alignItems: 'stretch', width: '100%', height: '100%' }}>
-            <img src={art.poster} alt="" onError={hideOnError} style={{ height: '100%', objectFit: 'cover', flexShrink: 0, boxShadow: '2px 0 12px rgba(0,0,0,0.6)' }} />
+            <img src={art.poster} alt="" onError={hideOnError} style={{ height: '100%', objectFit: 'cover', flexShrink: 0, boxShadow: `2px 0 12px ${filterBlack(0.6)}` }} />
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', ...textStyle, maxWidth: '100%' }}>{text}</div>
           </div>
         </div>
@@ -170,7 +171,7 @@ function Card({ text, theme, effect = 'card', art, visible = true, fullFrame = f
         {!logoFailed && <img
           src={art.logo} alt="" onError={() => setLogoFailed(true)}
           onLoad={(e) => { if (e.currentTarget.naturalWidth < MIN_LOGO_PX) setLogoFailed(true); }}
-          style={{ position: 'relative', maxWidth: '55%', maxHeight: '34%', objectFit: 'contain', marginBottom: '0.6em', filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.75))' }}
+          style={{ position: 'relative', maxWidth: '55%', maxHeight: '34%', objectFit: 'contain', marginBottom: '0.6em', filter: `drop-shadow(0 2px 6px ${filterBlack(0.75)})` }}
         />}
         <div style={{ ...textStyle, maxWidth: '82%', textAlign: 'center' }}>{text}</div>
       </div>
@@ -185,13 +186,13 @@ function Card({ text, theme, effect = 'card', art, visible = true, fullFrame = f
       style={fullFrame ? {
         position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
         textAlign: 'center', fontFamily: font, fontSize: '1.6em', lineHeight: 1.35, padding: '0 12%',
-        color: theme.cardColor || '#fff', background: theme.maskBg || theme.cardBg || 'rgba(0,0,0,0.94)', pointerEvents: 'none',
+        color: theme.cardColor || FILTER_WHITE, background: theme.maskBg || theme.cardBg || filterBlack(0.94), pointerEvents: 'none',
         ...fade,
       } : {
         position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
         maxWidth: '70%', padding: '1.2em 1.6em', borderRadius: '0.4em', textAlign: 'center',
         fontFamily: font, fontSize: '1.4em', lineHeight: 1.3,
-        color: theme.cardColor || '#fff', background: theme.cardBg || 'rgba(0,0,0,0.8)', pointerEvents: 'none',
+        color: theme.cardColor || FILTER_WHITE, background: theme.cardBg || filterBlack(0.8), pointerEvents: 'none',
         ...fade,
       }}
     >

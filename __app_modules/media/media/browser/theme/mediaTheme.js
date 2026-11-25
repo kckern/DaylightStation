@@ -28,9 +28,9 @@ import { createAppTheme } from "../../../../../frontend/src/lib/theme/createAppT
 import { PACKS } from "../../../../../frontend/src/lib/theme/packs.mjs";
 
 const AMBER = [
-  '#fdf3dc', '#f9e3ae', '#f4d27e', '#efc14e', '#f2b431',
-  '#e5a00d', // [5] — the brand accent, primaryShade
-  '#cf9009', '#a67407', '#7d5805', '#553c03',
+  '#fdf3dc', '#f9e3ae', '#f4d27e', '#efc14e', '#f2b431', // data-color: Media amber ramp
+  '#e5a00d', // data-color: Media amber ramp ([5] — the brand accent, primaryShade)
+  '#cf9009', '#a67407', '#7d5805', '#553c03', // data-color: Media amber ramp
 ];
 
 // The visual-redesign tokens (2026-10-06). The ONLY place these hexes live;
@@ -39,19 +39,19 @@ const AMBER = [
 // Play/Resume control, the destination control's device name, the selected
 // scope segment and focus rings.
 export const MEDIA_TOKENS = Object.freeze({
-  ink: '#14161B',     // body
-  surface: '#1D2027', // raised: menus, popovers, the handle bar
-  line: '#2B2F38',    // hairlines / borders
-  text: '#ECEEF2',
-  muted: '#9AA1AE',
-  accent: '#E5A00D',
+  ink: '#14161B',     // data-color: Media pack source tokens (body)
+  surface: '#1D2027', // data-color: Media pack source tokens (raised: menus, popovers, the handle bar)
+  line: '#2B2F38',    // data-color: Media pack source tokens (hairlines / borders)
+  text: '#ECEEF2', // data-color: Media pack source tokens
+  muted: '#9AA1AE', // data-color: Media pack source tokens
+  accent: '#E5A00D', // data-color: Media pack source tokens
 });
 
 export const MEDIA_FONT_FAMILY = "'Atkinson Hyperlegible Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 
 // Intermediate steps of the ramp: [2] dimmed, [3] pressed, [6] panels/inputs,
 // [8]/[9] recesses deeper than the body.
-const [DIM, PRESSED, PANEL, RECESS, DEEP] = ['#6f7684', '#454b57', '#191c22', '#0f1115', '#090a0d'];
+const [DIM, PRESSED, PANEL, RECESS, DEEP] = ['#6f7684', '#454b57', '#191c22', '#0f1115', '#090a0d']; // data-color: Media dark ramp steps
 
 const DARK = [
   MEDIA_TOKENS.text,    // [0] text
@@ -145,14 +145,14 @@ export const MEDIA_PACK = {
         styles: { thumb: { borderWidth: rem(2) } },
       },
       Modal: {
-        styles: { content: { border: '1px solid rgba(255,255,255,0.07)' } },
+        styles: { content: { border: '1px solid rgba(255,255,255,0.07)' } }, // data-color: portal hairline over the dark surface
       },
       Drawer: {
-        styles: { content: { border: '1px solid rgba(255,255,255,0.07)' } },
+        styles: { content: { border: '1px solid rgba(255,255,255,0.07)' } }, // data-color: portal hairline over the dark surface
       },
       Popover: {
         defaultProps: { shadow: 'md' },
-        styles: { dropdown: { border: '1px solid rgba(255,255,255,0.1)' } },
+        styles: { dropdown: { border: '1px solid rgba(255,255,255,0.1)' } }, // data-color: portal hairline over the dark surface
       },
       Menu: {
         defaultProps: { shadow: 'md' },
@@ -163,10 +163,10 @@ export const MEDIA_PACK = {
       },
     },
     other: {
-      success: '#5cbf5c',
-      danger: '#e35d5d',
-      info: '#4ea1d3',
-      live: '#e35d5d',
+      success: '#5cbf5c', // data-color: Media state hues
+      danger: '#e35d5d', // data-color: Media state hues
+      info: '#4ea1d3', // data-color: Media state hues
+      live: '#e35d5d', // data-color: Media state hues
     },
   },
 };

@@ -4,10 +4,12 @@
 // layer; the scene's own z-index only orders it within that layer.
 // Reference: __docs/reference/media/provenance.md
 
+@use "../theme/ink" as *;
+
 $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
 
 .provenance-handoff {
-  --ph-accent: #fff;
+  --ph-accent: #fff; // data-color: default line and dot ink; the service accent overrides it
   --ph-link-ms: 2200ms; // set per play from the random hold
   position: absolute;
   inset: 0;
@@ -20,8 +22,8 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
     position: absolute;
     inset: 0;
     background:
-      radial-gradient(ellipse at 50% 46%, rgba(255, 255, 255, 0.07) 0%, rgba(0, 0, 0, 0) 55%),
-      #05060a;
+      radial-gradient(ellipse at 50% 46%, chalk(0.07) 0%, scrim(0) 55%),
+      #05060a; // data-color: provenance scene ground
     opacity: 1;
     // Covers the video at once: the film's first frame must not flash before the scene.
     transition: opacity 900ms ease;
@@ -129,8 +131,8 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
       height: 22cqh;
       padding: 3.2cqh 2.6cqw;
       border-radius: 1.6cqw;
-      background: linear-gradient(180deg, #ffffff 0%, #eceef3 100%);
-      box-shadow: 0 0 4cqw rgba(255, 255, 255, 0.12), 0 1cqh 3cqh rgba(0, 0, 0, 0.6);
+      background: linear-gradient(180deg, #ffffff 0%, #eceef3 100%); // data-color: white logo plate
+      box-shadow: 0 0 4cqw chalk(0.12), 0 1cqh 3cqh scrim(0.6);
     }
   }
 
@@ -191,7 +193,7 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
       width: 11cqw;
       height: 6.5cqh;
       opacity: 0.8;
-      filter: drop-shadow(0 0 0.6cqw rgba(0, 0, 0, 0.85));
+      filter: drop-shadow(0 0 0.6cqw scrim(0.85));
     }
     .provenance-handoff__badge--plate {
       width: 11cqw;

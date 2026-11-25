@@ -1,3 +1,5 @@
+@use "../theme/ink" as *;
+
 .launch-card {
   width: 100%;
   height: 100%;
@@ -6,8 +8,8 @@
   align-items: center;
   justify-content: center;
   gap: 1.5rem;
-  background: rgba(0, 0, 0, 0.92);
-  color: #f8fafc;
+  background: scrim(0.92);
+  color: #f8fafc; // data-color: launch card text on the black scrim
 
   &__art {
     width: 80%;
@@ -36,7 +38,7 @@
   &__progress-track {
     width: 40%;
     height: 4px;
-    background: rgba(255, 255, 255, 0.12);
+    background: chalk(0.12);
     border-radius: 2px;
     overflow: hidden;
   }
@@ -44,7 +46,7 @@
   &__progress-fill {
     height: 100%;
     width: 0%;
-    background: #4caf50;
+    background: #4caf50; // data-color: launch success
     border-radius: 2px;
   }
 
@@ -58,11 +60,11 @@
   }
 
   &__success {
-    color: #4caf50;
+    color: #4caf50; // data-color: launch success
   }
 
   &__error {
-    color: #f44336;
+    color: #f44336; // data-color: launch failure
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -80,7 +82,7 @@
   }
 
   &--blocked {
-    background: rgba(0, 0, 0, 0.95);
+    background: scrim(0.95);
 
     .launch-card__art {
       width: auto;

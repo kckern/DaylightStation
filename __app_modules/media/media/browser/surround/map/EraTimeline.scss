@@ -42,6 +42,7 @@
 
 /* The frame's shared literals - see `_tokens.scss`. */
 @use "../../../../../../__capabilities/playback/browser/surround/tokens" as *;
+@use "../themes/classical-ink" as *;
 
 .surround-era-timeline {
   width: 100%;
@@ -73,7 +74,7 @@
   line-height: normal;
   text-align: left;
   font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
-  color: var(--ink, #2a1d07);
+  color: var(--ink, #{$cl-ink});
 }
 
 /* The drawing: heading, plumb, rule, extent, names. Fixed rows, because the
@@ -102,13 +103,13 @@
   text-transform: uppercase;
   letter-spacing: 0.16em;
   font-weight: 500;
-  color: var(--ink-soft, #6b6152);
+  color: var(--ink-soft, #{$cl-ink-soft});
 }
 
 /* The author's phrase, in full ink: the one place on the plate the era is
    stated rather than drawn. */
 .surround-era-timeline__dateline-era {
-  color: var(--ink, #2a1d07);
+  color: var(--ink, #{$cl-ink});
   font-weight: 600;
 }
 
@@ -154,7 +155,7 @@
   font-weight: 500;
   letter-spacing: 0.06em;
   font-variant-numeric: lining-nums;
-  color: var(--brass-lit, #f6e3a0);
+  color: var(--brass-lit, #{$cl-brass-lit});
 }
 
 /* WHICH SIDE OF THE THREAD IT HANGS ON — `yearAnchorFor` decides, this draws
@@ -192,7 +193,7 @@
   bottom: 0;
   width: 2px;
   margin-left: -1px;
-  background: var(--brass-lit, #f6e3a0);
+  background: var(--brass-lit, #{$cl-brass-lit});
   opacity: 0.62;
   pointer-events: none;
 }
@@ -217,7 +218,7 @@
   position: absolute;
   top: 2px;
   height: 2px;
-  background: var(--ink-soft, #6b6152);
+  background: var(--ink-soft, #{$cl-ink-soft});
   opacity: 0.55;
 }
 
@@ -229,7 +230,7 @@
 .surround-era-timeline__band--subject {
   top: 0;
   height: 6px;
-  background: var(--ink, #2a1d07);
+  background: var(--ink, #{$cl-ink});
   opacity: 1;
 }
 
@@ -242,7 +243,7 @@
   top: -2px;
   width: 1px;
   height: 10px;
-  background: var(--ink-soft, #6b6152);
+  background: var(--ink-soft, #{$cl-ink-soft});
   opacity: 0.55;
   pointer-events: none;
 }
@@ -266,7 +267,7 @@
      the rule rather than a tick on it. */
   height: 16px;
   margin-left: -1.5px;
-  background: var(--brass-lit, #f6e3a0);
+  background: var(--brass-lit, #{$cl-brass-lit});
   pointer-events: none;
 }
 
@@ -290,7 +291,7 @@
   font-variant-numeric: lining-nums;
   letter-spacing: 0.1em;
   font-weight: 500;
-  color: var(--ink-soft, #6b6152);
+  color: var(--ink-soft, #{$cl-ink-soft});
   opacity: 0.72;
 }
 
@@ -317,7 +318,7 @@
   font-size: var(--label-floor, #{$label-floor});   /* the ten-foot floor itself, scaled to this root */
   line-height: 1.2;
   text-transform: uppercase;
-  color: var(--ink-soft, #6b6152);
+  color: var(--ink-soft, #{$cl-ink-soft});
   font-weight: 500;
   letter-spacing: 0.12em;
   opacity: 0.8;
@@ -334,7 +335,7 @@
    The `--subject` role still governs PLACEMENT — never dropped, never crowded —
    which is where it always did the real work. */
 .surround-era-timeline__label--subject {
-  color: var(--ink, #2a1d07);
+  color: var(--ink, #{$cl-ink});
   opacity: 1;
 }
 
@@ -373,7 +374,7 @@
      "driving bass line" across the compound, and on a note this short an even
      rag is worth less than a break in the right place. */
   text-wrap: pretty;
-  color: var(--ink, #2a1d07);
+  color: var(--ink, #{$cl-ink});
   opacity: 0.92;
 }
 

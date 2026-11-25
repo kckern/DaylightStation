@@ -10,6 +10,8 @@
 // one moment scope mattered (see MediaShell.scss's mobile-only block). Chips
 // scroll horizontally within their own row instead of being squeezed by a
 // fixed-width control or hidden outright.
+@use "../theme/ink" as *;
+
 .media-scope-chips {
   display: flex;
   flex-direction: column;
@@ -142,7 +144,7 @@
   align-items: center;
   gap: var(--mantine-spacing-sm);
   padding: var(--mantine-spacing-sm);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid chalk(0.06);
   flex-shrink: 0;
 
   .search-mode-close {
@@ -190,7 +192,7 @@
 .search-mode-widening-notice {
   flex-shrink: 0;
   padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid chalk(0.06);
   color: var(--mantine-color-dark-1);
   font-size: 12px;
 }

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
+import { FILTER_WHITE, FILTER_HIGHLIGHT, filterBlack, filterHighlightGlow } from './filterInks.js';
 import { getChildLogger } from "../../../../../frontend/src/lib/logging/singleton.js";
 
 let _logger;
@@ -31,7 +32,7 @@ export function FilterBumper({ summary, art, theme = {} }) {
       style={{
         position: 'absolute', left: '50%', bottom: '12%', transform: 'translateX(-50%)',
         minWidth: '32%', maxWidth: '60%', padding: '1em 1.6em', borderRadius: '0.5em',
-        background: theme.cardBg || 'rgba(0,0,0,0.82)', color: '#fff', fontFamily: font,
+        background: theme.cardBg || filterBlack(0.82), color: FILTER_WHITE, fontFamily: font,
         textAlign: 'center', pointerEvents: 'none',
         opacity: mounted ? 1 : 0, transition: `opacity ${FADE_MS}ms ease`,
       }}
@@ -57,7 +58,7 @@ export function FilterBadge({ state, active = false, onOpen }) {
   }, [active, state]);
 
   const solid = state === 'certified';
-  const ink = active ? '#ffd54a' : '#fff';
+  const ink = active ? FILTER_HIGHLIGHT : FILTER_WHITE;
   const clickable = typeof onOpen === 'function';
   const handleClick = clickable ? (e) => { e.stopPropagation(); onOpen(); } : undefined;
   return (
@@ -74,8 +75,8 @@ export function FilterBadge({ state, active = false, onOpen }) {
         pointerEvents: clickable ? 'auto' : 'none', cursor: clickable ? 'pointer' : undefined,
         opacity: active ? 1 : 0.4, transition: 'opacity 250ms ease, filter 250ms ease',
         filter: active
-          ? 'drop-shadow(0 0 6px rgba(255,213,74,0.9))'
-          : 'drop-shadow(0 1px 3px rgba(0,0,0,0.7))',
+          ? `drop-shadow(0 0 6px ${filterHighlightGlow(0.9)})`
+          : `drop-shadow(0 1px 3px ${filterBlack(0.7)})`,
       }}
     >
       <svg viewBox="0 0 24 24" width="100%" height="100%">

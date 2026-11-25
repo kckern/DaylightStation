@@ -24,6 +24,7 @@
  */
 
 @use "../themes/classical-tokens" as *;
+@use "../../theme/ink" as *;
 
 .surround-script-rail {
   display: flex;
@@ -37,7 +38,7 @@
   /* NO ground of its own. The region beneath already paints the rail's fibre
      and gradient (SurroundFrame.scss), and a panel that repainted it would
      flatten the one texture that makes this column read as printed stock. */
-  color: var(--ink, #e9dfc8);
+  color: var(--ink, #{$cl-parchment});
 }
 
 /* -------------------------------------------------------------------------- */
@@ -62,7 +63,7 @@
   flex: 0 0 auto;
   margin: 1.1rem 0 0;
   padding-top: 0.75rem;
-  border-top: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.26));
+  border-top: 1px solid var(--programme-edge, #{tint($cl-parchment, 0.26)});
 }
 
 /* A nested level is set in from the title it belongs to, and given a hairline
@@ -70,7 +71,7 @@
 .surround-script-rail__programme-item > .surround-script-rail__programme-level {
   margin: 0.2rem 0 0.3rem 0.16rem;
   padding-left: 0.62rem;
-  border-left: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.2));
+  border-left: 1px solid var(--programme-edge, #{tint($cl-parchment, 0.2)});
 }
 
 /**
@@ -93,7 +94,7 @@
   letter-spacing: 0.14em;
   line-height: 1.2;
   text-transform: uppercase;
-  color: var(--muted-ink, rgba(233, 223, 200, 0.66));
+  color: var(--muted-ink, #{tint($cl-parchment, 0.66)});
 }
 
 .surround-script-rail__programme-list {
@@ -131,7 +132,7 @@
   font-family: var(--surround-body, "EB Garamond", Georgia, serif);
   font-size: calc(var(--label-floor, #{$label-floor}) * 1.33);
   line-height: 1.24;
-  color: var(--muted-ink, rgba(233, 223, 200, 0.66));
+  color: var(--muted-ink, #{tint($cl-parchment, 0.66)});
 }
 
 .surround-script-rail__programme-item .surround-script-rail__programme-item {
@@ -149,7 +150,7 @@
 
 .surround-script-rail__programme-item--active {
   font-weight: 600;
-  color: var(--ink, #e9dfc8);
+  color: var(--ink, #{$cl-parchment});
 }
 
 /**
@@ -161,7 +162,7 @@
  * the marker has to be lighter than what it sits on.
  */
 .surround-script-rail__programme-item--here > .surround-script-rail__programme-title {
-  box-shadow: inset 2px 0 0 0 var(--ink-soft, #a89a80);
+  box-shadow: inset 2px 0 0 0 var(--ink-soft, #{$cl-parchment-soft});
 }
 
 /* -------------------------------------------------------------------------- */
@@ -200,7 +201,7 @@
   font-size: max(1.35rem, calc(var(--label-floor, #{$label-floor}) * 1.62));
   font-weight: 600;
   line-height: 1.14;
-  color: var(--ink, #e9dfc8);
+  color: var(--ink, #{$cl-parchment});
   /* The frame's law is that nothing is ever cut, and it does not stop here. */
   overflow-wrap: break-word;
 }
@@ -221,7 +222,7 @@
   font-style: italic;
   font-weight: 500;
   line-height: 1.2;
-  color: var(--muted-ink, rgba(233, 223, 200, 0.82));
+  color: var(--muted-ink, #{tint($cl-parchment, 0.82)});
   overflow-wrap: break-word;
 }
 
@@ -289,7 +290,7 @@
   padding-left: 1.4em;
   text-indent: -1.4em;
   line-height: 1.34;
-  color: var(--ink, #e9dfc8);
+  color: var(--ink, #{$cl-parchment});
   overflow-wrap: break-word;
 }
 
