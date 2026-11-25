@@ -27,14 +27,14 @@
 }
 
 .poster-card__poster {
-  /* A fixed 2:3 frame, the whole poster inside it (contain, never cover): DVD
-     covers are a little wider than 2:3, so the rest of the frame is the rail's
-     dark ground, never cropped lettering (owner 2026-11-24). */
+  /* A fixed 2:3 frame the poster fills (cover): DVD covers a little wider
+     than 2:3 lose a sliver at the sides, never the frame's shape (owner
+     2026-11-24). */
   display: block;
   height: 100%;
   max-width: 100%;
   aspect-ratio: 2 / 3;
-  object-fit: contain;
+  object-fit: cover;
   background: #0c1a12;
   border: 2px solid var(--brass, #c9a24a);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
