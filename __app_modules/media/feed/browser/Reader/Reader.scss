@@ -111,7 +111,7 @@
   border: 0;
   background: transparent;
   color: inherit;
-  transition: transform 0.15s;
+  transition: transform var(--ds-motion-fast);
   &.collapsed { transform: rotate(-90deg); }
   &:hover { color: var(--feed-accent-strong); }
 }
@@ -217,7 +217,7 @@
   background: transparent;
   color: inherit;
   cursor: pointer;
-  transition: transform 0.15s;
+  transition: transform var(--ds-motion-fast);
   &.collapsed { transform: rotate(-90deg); }
   &:hover { color: var(--feed-accent-strong); }
 }
@@ -608,7 +608,7 @@
     width: min(260px, calc(100vw - var(--browser-safe-area-left) - var(--browser-safe-area-right)));
     z-index: $feed-modal-panel;
     transform: translateX(calc(-100% - var(--browser-safe-area-left)));
-    transition: transform 0.2s ease;
+    transition: transform var(--ds-motion-base) ease;
     background: var(--feed-surface-1);
     box-shadow: 2px 0 8px color-mix(in srgb, var(--feed-ink) 40%, transparent);
 

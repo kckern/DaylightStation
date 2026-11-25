@@ -84,7 +84,7 @@
 
   // Hover state for cards
   .feed-card {
-    transition: filter 0.15s ease;
+    transition: filter var(--ds-motion-fast) ease;
 
     &:hover {
       filter: brightness(1.1);
@@ -109,7 +109,7 @@
   height: 120px;
   background: var(--feed-surface-1);
   border-radius: 0;
-  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  animation: skeleton-pulse var(--ds-motion-sweep) ease-in-out infinite;
 }
 
 @media (min-width: 900px) {

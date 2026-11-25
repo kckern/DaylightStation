@@ -6,7 +6,7 @@
   z-index: feed.$feed-modal-scrim;
   background: color-mix(in srgb, var(--feed-ink) 50%, transparent);
   opacity: 0;
-  transition: opacity 300ms ease;
+  transition: opacity var(--ds-motion-reveal) ease;
   pointer-events: none;
 
   &.open {
@@ -25,7 +25,7 @@
   border-radius: 16px 16px 0 0;
   transform: translateY(100%);
   visibility: hidden;
-  transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1), visibility 300ms step-end;
+  transition: transform var(--ds-motion-reveal) cubic-bezier(0.32, 0.72, 0, 1), visibility var(--ds-motion-reveal) step-end;
   user-select: none;
   -webkit-user-select: none;
   padding: 0 1.5rem calc(2rem + var(--browser-safe-area-bottom));
@@ -36,7 +36,7 @@
   &.open {
     transform: translateY(0);
     visibility: visible;
-    transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1), visibility 0ms;
+    transition: transform var(--ds-motion-reveal) cubic-bezier(0.32, 0.72, 0, 1);
   }
 
   &.dragging {
@@ -173,7 +173,7 @@
   border-radius: 50%;
   background: var(--feed-pure-white);
   opacity: 0;
-  transition: opacity 150ms ease;
+  transition: opacity var(--ds-motion-fast) ease;
 
   .sheet-scrubber:hover &,
   .sheet-scrubber.dragging & {

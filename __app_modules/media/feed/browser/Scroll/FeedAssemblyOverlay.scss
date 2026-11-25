@@ -14,7 +14,7 @@
   align-items: center;
   justify-content: center;
   opacity: 0.5;
-  transition: opacity 0.15s;
+  transition: opacity var(--ds-motion-fast);
 
   &:hover {
     opacity: 1;
@@ -83,7 +83,7 @@
 
 .assembly-tier {
   margin-bottom: 6px;
-  transition: opacity 0.15s;
+  transition: opacity var(--ds-motion-fast);
 
   &:last-child { margin-bottom: 0; }
 
@@ -111,7 +111,7 @@
     border-radius: 3px;
     padding: 0 4px;
     margin: -0 -4px;
-    transition: background 0.1s;
+    transition: background var(--ds-motion-fast);
 
     &:hover { background: color-mix(in srgb, var(--feed-pure-white) 8%, transparent); }
     &:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
@@ -140,7 +140,7 @@
   height: 100%;
   border-radius: 3px;
   min-width: 2px;
-  transition: width 0.2s ease;
+  transition: width var(--ds-motion-base) ease;
 }
 
 .assembly-sources {
@@ -158,7 +158,7 @@
   background: var(--feed-surface-1);
   border-radius: 4px;
   padding: 1px 6px;
-  transition: opacity 0.15s, outline-color 0.1s;
+  transition: opacity var(--ds-motion-fast), outline-color var(--ds-motion-fast);
 
   strong {
     color: var(--feed-text-2);

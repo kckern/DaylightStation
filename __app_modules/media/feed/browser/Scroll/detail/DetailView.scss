@@ -165,7 +165,7 @@
     var(--feed-surface-1) 80%
   );
   background-size: 200% 100%;
-  animation: detail-shimmer 1.5s ease-in-out infinite;
+  animation: detail-shimmer var(--ds-motion-sweep) ease-in-out infinite;
 }
 
 @keyframes detail-shimmer {
@@ -376,7 +376,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s, color 0.15s;
+  transition: background var(--ds-motion-fast), color var(--ds-motion-fast);
 
   &:hover {
     background: color-mix(in srgb, var(--feed-pure-white) 15%, transparent);

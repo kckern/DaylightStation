@@ -1,7 +1,7 @@
 .feed-player-controls {
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.3s;
+  transition: opacity var(--ds-motion-reveal);
 
   &[data-visible='true'],
   &:focus-within {

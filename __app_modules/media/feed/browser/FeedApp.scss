@@ -83,7 +83,7 @@
     font-weight: 500;
     font-size: 0.9rem;
     border-bottom: 2px solid transparent;
-    transition: color 0.15s, border-color 0.15s;
+    transition: color var(--ds-motion-fast), border-color var(--ds-motion-fast);
 
     &:hover {
       color: var(--feed-text-2);
@@ -249,7 +249,7 @@
     height: 8px;
     border-radius: 50%;
     background: var(--feed-text-3);
-    animation: feed-dot-bounce 1.2s ease-in-out infinite;
+    animation: feed-dot-bounce calc(var(--ds-motion-sweep) * 0.75) ease-in-out infinite;
 
     &:nth-child(2) { animation-delay: 0.15s; }
     &:nth-child(3) { animation-delay: 0.3s; }
