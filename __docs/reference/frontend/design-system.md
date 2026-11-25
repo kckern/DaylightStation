@@ -210,6 +210,8 @@ silently degrades — an unknown custom property falls back to `inherit`, so it
 looks fine until the surrounding context changes. `npm run audit:ui` checks
 every `var(--ds-*)` reference against the manifest of legal names.
 
+Feed keeps its own `--feed-*` aliases (surfaces, text, accent, tints) on `.feed-app`, but every one derives from a `--ds-*` role, using `color-mix()` for tints and status backgrounds. A Feed stylesheet reads `var(--feed-*)` with no literal fallback. The literals left in Feed are data or media hues: source and tier palettes, annotation highlights, the reading themes, and the black and white used as shadow, scrim and glyph ink over photos and video.
+
 Colors that come from data (a status derived from a value, a chart series, a
 sentiment ramp) are the one place a literal color is legitimate. Mark the line
 with a `data-color` comment so the audit's `raw-color` rule exempts it:
