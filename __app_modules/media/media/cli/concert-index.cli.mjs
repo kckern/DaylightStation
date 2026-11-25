@@ -8,7 +8,7 @@
  * of that structure. It does NOT write a sidecar: the evidence is for a
  * person or agent to judge.
  *
- * Subcommands: chapters, clips. Run with --help.
+ * Subcommands: chapters, classify, clips. Run with --help.
  *
  * @module cli/concert-index
  */
@@ -17,7 +17,7 @@ import { parseArgs } from 'node:util';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 /* -------------------------------------------------------------------------- */
 /* Chapters                                                                   */
@@ -289,6 +289,21 @@ export function clipArgs(media, at, pad, outDir) {
   ];
 }
 
+/** The sound-event script beside this module (PEP 723 header, so `uv run --script` installs its deps). */
+const AUDIO_EVENTS_PY = fileURLToPath(new URL('./audio-events.py', import.meta.url));
+
+/**
+ * How `classify` runs the sound-event script: `uv run --script` by default,
+ * or `<python> <script>` when an interpreter that already has its
+ * dependencies is given.
+ */
+export function classifyArgs({ script, media, outDir, python }) {
+  const out = path.join(outDir, 'events.json');
+  return python
+    ? { cmd: python, args: [script, media, out] }
+    : { cmd: 'uv', args: ['run', '--script', script, media, out] };
+}
+
 function run(cmd, args) {
   const r = spawnSync(cmd, args, { encoding: 'utf8', maxBuffer: 1 << 28 });
   if (r.error) throw r.error;
@@ -300,6 +315,9 @@ const USAGE = `concert-index: where the music and the talk are inside a concert 
 
   chapters <media> [--out chapters.json]
       List the file's native chapter markers as [{index, start, end, title}].
+  classify <media> --out <dir> [--python <bin>]
+      Score every second for music, speech, applause and the like (PANNs);
+      write <dir>/events.json. Runs audio-events.py with uv, or with <bin>.
   clips <media> --at 120,305.5 [--pad 6] --out <dir>
       Cut a 360p review clip centred on each boundary.`;
 
@@ -318,7 +336,7 @@ async function dispatch(argv) {
     args: argv,
     allowPositionals: true,
     options: {
-      out: { type: 'string' }, at: { type: 'string' }, pad: { type: 'string' },
+      out: { type: 'string' }, at: { type: 'string' }, pad: { type: 'string' }, python: { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
   });
@@ -334,6 +352,17 @@ async function dispatch(argv) {
   if (cmd === 'chapters') {
     if (!media) throw new Error('chapters needs <media>');
     emit(parseChapters(run('ffprobe', ['-v', 'error', '-show_chapters', '-of', 'json', media]).stdout));
+    return;
+  }
+
+  if (cmd === 'classify') {
+    if (!media || !f.out) throw new Error('classify needs <media> and --out');
+    mkdirSync(f.out, { recursive: true });
+    const { cmd: bin, args } = classifyArgs({ script: AUDIO_EVENTS_PY, media, outDir: f.out, python: f.python });
+    const r = spawnSync(bin, args, { stdio: ['ignore', 'inherit', 'inherit'] });
+    if (r.error) throw r.error;
+    if (r.status !== 0) throw new Error(`${bin} exited ${r.status} running audio-events.py`);
+    console.log(`classified ${media} -> ${path.join(f.out, 'events.json')}`);
     return;
   }
 

@@ -403,9 +403,14 @@ concert-index: where the music and the talk are inside a concert video
 
   chapters <media> [--out chapters.json]
       List the file's native chapter markers as [{index, start, end, title}].
+  classify <media> --out <dir> [--python <bin>]
+      Score every second for music, speech, applause and the like (PANNs);
+      write <dir>/events.json. Runs audio-events.py with uv, or with <bin>.
   clips <media> --at 120,305.5 [--pad 6] --out <dir>
       Cut a 360p review clip centred on each boundary.
 ```
+
+`classify` needs [uv](https://docs.astral.sh/uv/) (the script declares its own dependencies), or `--python` pointing at an interpreter with `panns_inference`, `torch` and `numpy` installed. The first run downloads the model checkpoint.
 
 ## Piano Bridge Bluetooth controls
 

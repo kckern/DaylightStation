@@ -10,7 +10,7 @@ import { mkdtempSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseSrt, srtTime, parseChapters, chapterList, MUSIC_CLASSES, labelSeconds, runsFrom, refineChapter, words, lyricOverlap, clipArgs, numberFlag, parseAt, runCliEntry } from './concert-index.cli.mjs';
+import { parseSrt, srtTime, parseChapters, chapterList, MUSIC_CLASSES, labelSeconds, runsFrom, refineChapter, classifyArgs, words, lyricOverlap, clipArgs, numberFlag, parseAt, runCliEntry } from './concert-index.cli.mjs';
 
 describe('parseSrt', () => {
   const SRT = '1\r\n00:01:03,160 --> 00:01:11,560\r\nTo buy the table\r\n\r\n'
@@ -184,6 +184,19 @@ describe('lyricOverlap', () => {
     expect(words("O Holy Night, Noël — Satan's")).toEqual(['holy', 'night', 'noel', 'satans']);
   });
 });
+describe('classifyArgs', () => {
+  it('runs the script with uv by default', () => {
+    expect(classifyArgs({ script: '/s/audio-events.py', media: '/m/v.mp4', outDir: '/o' })).toEqual({
+      cmd: 'uv', args: ['run', '--script', '/s/audio-events.py', '/m/v.mp4', '/o/events.json'],
+    });
+  });
+  it('runs it with an explicit interpreter when one is given', () => {
+    expect(classifyArgs({ script: '/s/audio-events.py', media: '/m/v.mp4', outDir: '/o', python: '/venv/bin/python' })).toEqual({
+      cmd: '/venv/bin/python', args: ['/s/audio-events.py', '/m/v.mp4', '/o/events.json'],
+    });
+  });
+});
+
 describe('clipArgs', () => {
   it('cuts a small review clip centred on a boundary', () => {
     expect(clipArgs('/m/v.mp4', 120, 6, '/o')).toEqual([
