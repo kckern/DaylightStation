@@ -119,6 +119,7 @@ ssh {env.prod_host} 'echo "content" > /path/to/file'
   are all the same failure: work dumped back on the user after they asked for it to
   be done.
 - **Can't delete? Move to `_deleteme/`** - When `rm` is permission-blocked (e.g. cleaning up scratch/temp scripts), `mv` the files into a `_deleteme/` folder at repo root instead of leaving them in place. The user empties `_deleteme/` manually. `_deleteme/` is gitignored.
+- **Backups go in a `_backups/` subfolder, never beside the original** - Before editing a file you want a safety copy of (config YAML, data files, anything), create `_backups/` inside the file's own directory and put the copy there (`<dir>/_backups/<name>.bak-<date>-<reason>`). Never leave `*.bak*`, `*.orig`, `*-backup*` or dated copies next to live files: data directories like `data/content/lists/menus/` are scanned and read by humans, and stray copies pollute them. When you find existing backups loose in a directory, move them into its `_backups/` as part of the same task. Delete a backup (or move it to `_deleteme/`) once the change is verified and no longer needs a rollback.
 
 ---
 
