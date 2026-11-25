@@ -197,7 +197,7 @@ it first:
   JetBrains Mono are there. A font only one module uses (ArtMode's
   Garamonds, the clock's Droid Sans Mono, School's Kongtext) stays with that
   module.
-- Admin's palette and typography live in its pack. `frontend/src/modules/Admin/Admin.variables.scss` defines scoped legacy aliases for editors. The provider encloses an Admin portal target so controls and dialogs inherit the same colors.
+- Admin's palette and typography live in its pack. `frontend/src/modules/Admin/Admin.variables.scss` defines scoped aliases for editors: the Admin-only names are `--admin-*`, and the legacy `--ds-*` aliases stay in `.admin-theme` for the piano admin, fitness config, content-catalog, party-games and chess consumers that still read them. The provider encloses an Admin portal target so controls and dialogs inherit the same colors.
 - Admin’s navigation uses the shared `md` breakpoint. At 768px the focused link stays in the visible rail. At 767px the rail collapses and its toggle takes focus if that link was focused. [Keyboard and resize tests](../../../tests/live/flow/admin/admin-navigation.runtime.test.mjs)
 
 Before route splitting, one 11 MB bundle loaded every app's CSS on every
@@ -604,6 +604,30 @@ The transcript fills the draft for review. Send submits the answer explicitly.
   `scripts/audit-css-ownership.baseline.json` (same only-shrink rule). It sees
   class names only — a component that renders another module's component (and
   so its classes) is covered by that component importing its own sheet.
+
+## Audit roots and accepted residuals
+
+Final counts from `node scripts/audit-ui-tokens.mjs` (raw-color / raw-motion / raw-keydown / native-control / undefined-token). Every root is 0 on raw-color and undefined-token. Counts that are not zero are reviewed and accepted:
+
+| Root | motion | keydown | native | Notes |
+| --- | --- | --- | --- | --- |
+| `frontend/src/Apps`, `frontend/src/lib/ui`, Home, Health, Life | 0 | 0 | 0 | clean |
+| `frontend/src/modules/Admin` | 0 | 3 | 6 | Keydown: capture-phase review keys (`ContentFilter/useReviewKeys.js`) and dynamic-letter menus that `useHotkey` cannot express. Native: custom tabs and marks whose geometry is not a Button. |
+| `household/auto/browser` | 0 | 0 | 1 | one native control kept |
+| `media/feed/browser` | 3 | 5 | 111 | Motion: bespoke keyframes. Native: the feed-chip and feed-quiet treatment does not fit the `.ds-touch` Button geometry (see next work). Also 17 `notifications.show` sites and the scroll `matchMedia(min-width:900px)` stay; the audit does not count them. |
+| `media/media/browser` | 14 | 7 | 76 | Motion: provenance and menu keyframes, and the SegmentMap test pins 120ms. Keydown: window-level TV-remote listeners. Native: same chip geometry issue as Feed. `cast/DestinationLine` keeps a Modal because FormDialog does not forward a ref. Four raw fetches remain (LaunchCard chain, countryMapGeoCache). |
+| `money/finance/browser` | 0 | 0 | 8 | native controls kept |
+
+Other known gaps:
+
+- Health `today/DayInputBar` keeps a Mantine Modal. The shared `Sheet` has no focus-return opt-out and no layer prop (its z-index 300 sits below the toast layer at 350).
+- Legacy `--ds-*` aliases in `.admin-theme` (see Packs) are kept for non-Admin consumers.
+
+### Next shared-layer work
+
+- `Sheet`: a focus-return opt-out and a layer prop, to take `DayInputBar` off Mantine Modal.
+- `FormDialog`: forward a ref, to take `cast/DestinationLine` off Modal.
+- A compact `Button` density that fits Feed and Media chips, which would retire most of the 187 native controls there.
 
 ## Visual verification
 
