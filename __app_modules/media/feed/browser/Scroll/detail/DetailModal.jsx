@@ -52,7 +52,7 @@ export default function DetailModal({ item, sections, detailActions, ogImage, og
           onClick={() => onPrev()}
           aria-label="Previous item"
         >
-          &#8249;
+          ‹
         </button>
       )}
       {onNext && (
@@ -62,7 +62,7 @@ export default function DetailModal({ item, sections, detailActions, ogImage, og
           onClick={() => onNext()}
           aria-label="Next item"
         >
-          &#8250;
+          ›
         </button>
       )}
     </div>

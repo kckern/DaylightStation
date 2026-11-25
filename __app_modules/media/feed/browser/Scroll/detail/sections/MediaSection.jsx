@@ -8,7 +8,7 @@ export default function MediaSection({ data }) {
         <div key={i}>
           <img src={img.url} alt={img.alt ?? ''} loading="lazy" decoding="async" style={{ width: '100%', display: 'block', borderRadius: '8px' }} />
           {img.caption && (
-            <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: '#5c636a', textAlign: 'center' }}>{img.caption}</p>
+            <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: 'var(--feed-text-4)', textAlign: 'center' }}>{img.caption}</p>
           )}
         </div>
       ))}

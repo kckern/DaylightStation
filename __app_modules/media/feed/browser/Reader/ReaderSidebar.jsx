@@ -79,7 +79,7 @@ export default function ReaderSidebar({ feeds, loaded, activeFeeds, onToggleFeed
                 onClick={() => toggleCollapse(category)}
                 aria-expanded={!collapsed[category]}
                 aria-label={`${collapsed[category] ? 'Expand' : 'Collapse'} ${category}`}
-              >&#9662;</button>
+              >▾</button>
               <button
                 type="button"
                 className="reader-category-label"

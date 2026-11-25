@@ -20,7 +20,7 @@ export function YouTubeScrollBody({ item }) {
         margin: 0,
         fontSize: '0.95rem',
         fontWeight: 500,
-        color: '#fff',
+        color: 'var(--feed-pure-white)',
         wordBreak: 'break-word',
       }}>
         {item.title}
@@ -29,7 +29,7 @@ export function YouTubeScrollBody({ item }) {
         <p style={{
           margin: '0.25rem 0 0',
           fontSize: '0.8rem',
-          color: '#868e96',
+          color: 'var(--feed-text-3)',
           wordBreak: 'break-word',
           display: '-webkit-box',
           WebkitLineClamp: 2,

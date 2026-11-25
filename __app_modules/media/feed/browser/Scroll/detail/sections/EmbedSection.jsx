@@ -8,7 +8,7 @@ export default function EmbedSection({ data, item }) {
   const [w, h] = (data.aspectRatio || '16:9').split(':').map(Number);
   const paddingTop = `${(h / w) * 100}%`;
   return (
-    <div style={{ position: 'relative', width: '100%', paddingTop, background: '#000', borderRadius: '8px', overflow: 'hidden' }}>
+    <div style={{ position: 'relative', width: '100%', paddingTop, background: 'var(--feed-ink)', borderRadius: '8px', overflow: 'hidden' }}>
       <iframe
         src={src}
         title={item?.title || 'Embedded content'}

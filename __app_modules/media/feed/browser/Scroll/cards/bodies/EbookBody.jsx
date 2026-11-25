@@ -8,7 +8,7 @@ export default function EbookBody({ item }) {
         margin: 0,
         fontSize: '0.95rem',
         fontWeight: 600,
-        color: '#fff',
+        color: 'var(--feed-pure-white)',
         lineHeight: 1.3,
         display: '-webkit-box',
         WebkitLineClamp: 2,
@@ -21,7 +21,7 @@ export default function EbookBody({ item }) {
         <p style={{
           margin: '0.15rem 0 0',
           fontSize: '0.75rem',
-          color: '#868e96',
+          color: 'var(--feed-text-3)',
           lineHeight: 1.3,
           display: '-webkit-box',
           WebkitLineClamp: 1,
@@ -35,7 +35,7 @@ export default function EbookBody({ item }) {
         <p style={{
           margin: '0.25rem 0 0',
           fontSize: '0.8rem',
-          color: '#adb5bd',
+          color: 'var(--feed-text-2)',
           lineHeight: 1.35,
           display: '-webkit-box',
           WebkitLineClamp: 3,

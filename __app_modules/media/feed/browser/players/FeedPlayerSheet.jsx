@@ -257,7 +257,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
             onClick={toggle}
             aria-label={playing ? 'Pause' : 'Play'}
           >
-            <UiIcon name={playing ? 'pause' : 'play'} size={28} style={{ color: '#1a1b1e' }} />
+            <UiIcon name={playing ? 'pause' : 'play'} size={28} style={{ color: 'var(--feed-surface-1)' }} />
           </button>
           <button
             className="sheet-skip-btn"

@@ -2,7 +2,7 @@
   width: min(100%, var(--feed-reading-measure, 72ch));
   margin: 1.5rem auto 0;
   padding: 1rem;
-  border: 1px solid rgba(128, 128, 128, 0.28);
+  border: 1px solid color-mix(in srgb, var(--feed-neutral) 28%, transparent);
   border-radius: var(--feed-radius-lg, 12px);
   color: inherit;
 }
@@ -19,9 +19,9 @@
 .feed-annotations h3 { margin: 0; font-size: 1rem; }
 .feed-annotations button {
   min-height: 36px;
-  border: 1px solid rgba(128, 128, 128, 0.45);
+  border: 1px solid color-mix(in srgb, var(--feed-neutral) 45%, transparent);
   border-radius: var(--feed-radius-sm, 4px);
-  background: rgba(128, 128, 128, 0.13);
+  background: color-mix(in srgb, var(--feed-neutral) 13%, transparent);
   color: inherit;
   padding: 0.35rem 0.65rem;
   cursor: pointer;
@@ -29,9 +29,9 @@
 .feed-annotations textarea {
   width: 100%;
   resize: vertical;
-  border: 1px solid rgba(128, 128, 128, 0.45);
+  border: 1px solid color-mix(in srgb, var(--feed-neutral) 45%, transparent);
   border-radius: var(--feed-radius-md, 8px);
-  background: rgba(128, 128, 128, 0.1);
+  background: color-mix(in srgb, var(--feed-neutral) 10%, transparent);
   color: inherit;
   padding: 0.65rem;
   font: inherit;
@@ -40,18 +40,18 @@
 .feed-annotations__form { display: grid; gap: 0.7rem; margin-top: 0.8rem; }
 .feed-annotations__form > label { display: grid; gap: 0.35rem; }
 .feed-annotations__form-actions label { display: flex; align-items: center; gap: 0.4rem; }
-.feed-annotation { padding: 0.8rem 0; border-bottom: 1px solid rgba(128, 128, 128, 0.2); }
+.feed-annotation { padding: 0.8rem 0; border-bottom: 1px solid color-mix(in srgb, var(--feed-neutral) 20%, transparent); }
 .feed-annotation p { white-space: pre-wrap; }
 .feed-annotation__meta { justify-content: flex-end; font-size: 0.78rem; opacity: 0.8; }
 .feed-annotation__meta time { margin-right: auto; }
-.feed-annotation-quote { position: relative; margin: 0.6rem 0; padding: 0.65rem 2rem 0.65rem 0.8rem; border-left: 4px solid #ffd43b; background: rgba(255, 212, 59, 0.13); }
-.feed-annotation-quote--blue { border-color: #4dabf7; background: rgba(77, 171, 247, 0.13); }
-.feed-annotation-quote--green { border-color: #51cf66; background: rgba(81, 207, 102, 0.13); }
-.feed-annotation-quote--pink { border-color: #f783ac; background: rgba(247, 131, 172, 0.13); }
-.feed-annotation-quote--none { border-color: #868e96; background: transparent; }
+.feed-annotation-quote { --feed-highlight: #ffd43b; /* data-color: yellow highlight */ position: relative; margin: 0.6rem 0; padding: 0.65rem 2rem 0.65rem 0.8rem; border-left: 4px solid var(--feed-highlight); background: color-mix(in srgb, var(--feed-highlight) 13%, transparent); }
+.feed-annotation-quote--blue { --feed-highlight: #4dabf7; /* data-color: blue highlight */ border-color: var(--feed-highlight); }
+.feed-annotation-quote--green { --feed-highlight: #51cf66; /* data-color: green highlight */ border-color: var(--feed-highlight); }
+.feed-annotation-quote--pink { --feed-highlight: #f783ac; /* data-color: pink highlight */ border-color: var(--feed-highlight); }
+.feed-annotation-quote--none { border-color: var(--feed-text-3); background: transparent; }
 .feed-annotation-quote > button { position: absolute; top: 0.25rem; right: 0.25rem; min-width: 32px; padding: 0; }
 .feed-annotations__status { opacity: 0.7; }
-.feed-annotations__error { color: #ff8787; }
+.feed-annotations__error { color: var(--feed-danger-text); }
 
 @media (max-width: 600px) {
   .feed-annotations { padding: 0.8rem; }

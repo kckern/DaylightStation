@@ -7,13 +7,8 @@ import { webLink } from "../../shared/webLink.mjs";
 import { safeImage } from "../Scroll/cards/utils.js";
 
 // Default neutral color palette (used if no col_colors in config)
-const DEFAULT_COL_COLORS = [
-  'hsl(220, 15%, 35%)',
-  'hsl(220, 15%, 35%)',
-  'hsl(220, 15%, 35%)',
-  'hsl(220, 15%, 35%)',
-  'hsl(220, 15%, 35%)',
-];
+const DEFAULT_COL_COLOR = 'hsl(220, 15%, 35%)'; // data-color: neutral column header default
+const DEFAULT_COL_COLORS = Array.from({ length: 5 }, () => DEFAULT_COL_COLOR);
 const log = getLogger().child({ app: 'feed', module: 'headline-source' });
 
 export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, onStateAction, colColors }) {

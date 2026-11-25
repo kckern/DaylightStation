@@ -4,15 +4,15 @@ import { useTemporaryIndicator } from '../../../../../frontend/src/lib/hooks/use
 import "./FeedAssemblyOverlay.scss";
 
 const TIER_COLORS = {
-  wire: '#228be6',
-  compass: '#fab005',
-  scrapbook: '#748ffc',
-  library: '#be4bdb',
+  wire: '#228be6', // data-color: tier identity
+  compass: '#fab005', // data-color: tier identity
+  scrapbook: '#748ffc', // data-color: tier identity
+  library: '#be4bdb', // data-color: tier identity
 };
 
 function TierBar({ tier, data, maxAllocated, activeTiers, activeSources, onToggleTier, onToggleSource }) {
   const pct = maxAllocated > 0 ? (data.selected / maxAllocated) * 100 : 0;
-  const color = TIER_COLORS[tier] || '#5c636a';
+  const color = TIER_COLORS[tier] || 'var(--feed-text-4)';
   const tierActive = activeTiers.has(tier);
   const hasAnyFilter = activeTiers.size > 0 || activeSources.size > 0;
   const tierDimmed = hasAnyFilter && !tierActive;

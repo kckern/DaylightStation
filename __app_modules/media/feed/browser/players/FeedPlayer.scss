@@ -11,7 +11,7 @@
 }
 
 .feed-player-progress:has(.feed-player-progress-input:focus-visible) {
-  outline: 2px solid #fff;
+  outline: 2px solid var(--feed-pure-white);
   outline-offset: 2px;
   border-radius: 2px;
 }

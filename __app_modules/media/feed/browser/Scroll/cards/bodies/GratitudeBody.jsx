@@ -25,7 +25,7 @@ export default function GratitudeBody({ item }) {
               margin: 0,
               fontSize: '0.9rem',
               fontStyle: 'italic',
-              color: '#fff3bf',
+              color: '#fff3bf', // data-color: gratitude card warm ink
               lineHeight: 1.4,
               wordBreak: 'break-word',
               flex: 1,
@@ -35,7 +35,7 @@ export default function GratitudeBody({ item }) {
             {entry.displayName && (
               <span style={{
                 fontSize: '0.65rem',
-                color: '#5c636a',
+                color: 'var(--feed-text-4)',
                 flexShrink: 0,
                 whiteSpace: 'nowrap',
               }}>
@@ -54,7 +54,7 @@ export default function GratitudeBody({ item }) {
       margin: 0,
       fontSize: '0.95rem',
       fontStyle: 'italic',
-      color: '#fff3bf',
+      color: '#fff3bf', // data-color: gratitude card warm ink
       lineHeight: 1.5,
       wordBreak: 'break-word',
     }}>

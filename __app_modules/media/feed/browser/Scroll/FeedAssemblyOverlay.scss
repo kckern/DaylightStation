@@ -6,9 +6,9 @@
   width: 36px;
   height: 36px;
   border-radius: 8px;
-  background: rgba(26, 27, 30, 0.85);
-  border: 1px solid #333;
-  color: #868e96;
+  background: color-mix(in srgb, var(--feed-surface-1) 85%, transparent);
+  border: 1px solid var(--feed-border-strong);
+  color: var(--feed-text-3);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -18,14 +18,14 @@
 
   &:hover {
     opacity: 1;
-    color: #fab005;
-    border-color: #fab005;
+    color: var(--ds-warning);
+    border-color: var(--ds-warning);
   }
 
   &--filtering {
     opacity: 0.85;
-    color: #fab005;
-    border-color: #fab005;
+    color: var(--ds-warning);
+    border-color: var(--ds-warning);
   }
 }
 
@@ -41,15 +41,15 @@
 }
 
 .assembly-copy-btn {
-  background: #25262b;
-  border: 1px solid #333;
+  background: var(--feed-surface-2);
+  border: 1px solid var(--feed-border-strong);
   border-radius: 6px;
-  color: #c1c2c5;
+  color: var(--feed-text-2);
   font-size: 0.7rem;
   padding: 4px 10px;
   cursor: pointer;
 
-  &:hover { background: #2c2e33; }
+  &:hover { background: var(--feed-surface-3); }
 }
 
 .assembly-batch-list {
@@ -60,7 +60,7 @@
 }
 
 .assembly-batch {
-  background: #25262b;
+  background: var(--feed-surface-2);
   border-radius: 8px;
   padding: 10px 12px;
 }
@@ -72,12 +72,12 @@
   margin-bottom: 8px;
   font-size: 0.75rem;
   font-weight: 600;
-  color: #c1c2c5;
+  color: var(--feed-text-2);
 }
 
 .assembly-batch-meta {
   font-weight: 400;
-  color: #868e96;
+  color: var(--feed-text-3);
   font-size: 0.65rem;
 }
 
@@ -113,25 +113,25 @@
     margin: -0 -4px;
     transition: background 0.1s;
 
-    &:hover { background: rgba(255, 255, 255, 0.08); }
+    &:hover { background: color-mix(in srgb, var(--feed-pure-white) 8%, transparent); }
     &:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
   }
 
   &--active {
-    background: rgba(255, 255, 255, 0.12);
+    background: color-mix(in srgb, var(--feed-pure-white) 12%, transparent);
     outline: 1px solid currentColor;
     outline-offset: 1px;
   }
 }
 
 .assembly-tier-count {
-  color: #868e96;
+  color: var(--feed-text-3);
   font-variant-numeric: tabular-nums;
 }
 
 .assembly-tier-bar-bg {
   height: 6px;
-  background: #1a1b1e;
+  background: var(--feed-surface-1);
   border-radius: 3px;
   overflow: hidden;
 }
@@ -154,27 +154,27 @@
   border: 0;
   font-size: 0.6rem;
   font-family: inherit;
-  color: #868e96;
-  background: #1a1b1e;
+  color: var(--feed-text-3);
+  background: var(--feed-surface-1);
   border-radius: 4px;
   padding: 1px 6px;
   transition: opacity 0.15s, outline-color 0.1s;
 
   strong {
-    color: #c1c2c5;
+    color: var(--feed-text-2);
     margin-left: 2px;
   }
 
   &--clickable {
     cursor: pointer;
 
-    &:hover { background: #2c2e33; }
+    &:hover { background: var(--feed-surface-3); }
     &:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
   }
 
   &--active {
-    outline: 1px solid #c1c2c5;
-    background: #2c2e33;
+    outline: 1px solid var(--feed-text-2);
+    background: var(--feed-surface-3);
   }
 
   &--dimmed { opacity: 0.35; }
@@ -182,14 +182,14 @@
 
 .assembly-clear-btn {
   background: none;
-  border: 1px solid #e03131;
+  border: 1px solid var(--ds-danger);
   border-radius: 6px;
-  color: #e03131;
+  color: var(--ds-danger);
   font-size: 0.65rem;
   padding: 3px 8px;
   cursor: pointer;
 
-  &:hover { background: rgba(224, 49, 49, 0.12); }
+  &:hover { background: color-mix(in srgb, var(--ds-danger) 12%, transparent); }
 
   &[aria-disabled="true"] {
     opacity: 0.45;

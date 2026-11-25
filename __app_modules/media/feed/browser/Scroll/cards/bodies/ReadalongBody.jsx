@@ -10,7 +10,7 @@ export default function ReadalongBody({ item }) {
         margin: 0,
         fontSize: '0.95rem',
         fontWeight: 600,
-        color: '#fff',
+        color: 'var(--feed-pure-white)',
         lineHeight: 1.1,
         display: '-webkit-box',
         WebkitLineClamp: 2,
@@ -23,7 +23,7 @@ export default function ReadalongBody({ item }) {
         <p style={{
           margin: '0.3rem 0 0',
           fontSize: '0.8rem',
-          color: '#868e96',
+          color: 'var(--feed-text-3)',
           lineHeight: 1.1,
           display: '-webkit-box',
           WebkitLineClamp: 2,

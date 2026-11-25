@@ -5,8 +5,8 @@
   width: 100%;
   margin: 0 auto;
   min-height: 100vh;
-  background: var(--feed-canvas, #0f1113);
-  color: var(--feed-text-2, #a9b1b9);
+  background: var(--feed-canvas);
+  color: var(--feed-text-2);
   position: relative;
   padding: 0;
 }
@@ -27,7 +27,7 @@
   top: 0.4rem;
   right: 0.5rem;
   z-index: 10;
-  background: rgba(15, 17, 19, 0.7);
+  background: color-mix(in srgb, var(--ds-background) 70%, transparent);
   border: none;
   color: var(--feed-text-3);
   cursor: pointer;
@@ -52,7 +52,7 @@
   height: var(--detail-sticky-height);
   margin-bottom: calc(-1 * var(--detail-sticky-height));
   padding: 0 0.5rem;
-  background: var(--feed-canvas, #0f1113);
+  background: var(--feed-canvas);
   border-bottom: 1px solid var(--feed-border);
   opacity: 0;
   pointer-events: none;
@@ -141,7 +141,7 @@
     aspect-ratio: auto !important;
     display: flex;
     justify-content: center;
-    background: #0a0a0a;
+    background: var(--feed-ink);
 
     img {
       width: auto;
@@ -157,12 +157,12 @@
   height: 100%;
   position: absolute;
   inset: 0;
-  background: var(--feed-surface-1, #17191c);
+  background: var(--feed-surface-1);
   background-image: linear-gradient(
     90deg,
-    var(--feed-surface-1, #17191c) 0%,
-    var(--feed-surface-3, #262a2f) 40%,
-    var(--feed-surface-1, #17191c) 80%
+    var(--feed-surface-1) 0%,
+    var(--feed-surface-3) 40%,
+    var(--feed-surface-1) 80%
   );
   background-size: 200% 100%;
   animation: detail-shimmer 1.5s ease-in-out infinite;
@@ -207,7 +207,7 @@
 }
 
 .feed-detail-player-seek:focus-visible {
-  outline: 2px solid var(--feed-accent, #228be6);
+  outline: 2px solid var(--feed-accent);
   outline-offset: 3px;
   border-radius: 2px;
 }
@@ -236,7 +236,7 @@
   width: 100%;
   height: calc(100vh - 140px); // leave room for header/title
   border: none;
-  background: var(--feed-surface-1, #17191c);
+  background: var(--feed-surface-1);
 }
 
 .detail-open-link {
@@ -293,7 +293,7 @@
   max-height: calc(100dvh - var(--browser-safe-area-top) - var(--browser-safe-area-bottom));
   overflow-y: auto;
   margin: 0;
-  box-shadow: 0 1rem 4rem rgba(0, 0, 0, 0.65);
+  box-shadow: 0 1rem 4rem color-mix(in srgb, var(--feed-ink) 65%, transparent);
 
   h1 { margin-top: 0; }
   > div { display: flex; gap: 0.6rem; flex-wrap: wrap; }
@@ -319,7 +319,7 @@
     grid-template-columns: 1fr 1fr;
     gap: 0.5rem;
     padding: 0.65rem 1rem;
-    background: rgba(15, 17, 19, 0.96);
+    background: color-mix(in srgb, var(--ds-background) 96%, transparent);
     border-top: 1px solid var(--feed-border-strong);
   }
 
@@ -331,7 +331,7 @@
   position: fixed;
   inset: 0;
   z-index: feed.$feed-modal-scrim;
-  background: rgba(0, 0, 0, 0.75);
+  background: color-mix(in srgb, var(--feed-ink) 75%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -349,7 +349,7 @@
   &::-webkit-scrollbar { display: none; }
   border-radius: var(--feed-radius-lg, 12px);
   border: 1px solid var(--feed-border-strong);
-  background: var(--feed-canvas, #0f1113);
+  background: var(--feed-canvas);
 
   // Override DetailView styles inside modal
   .detail-view {
@@ -365,9 +365,9 @@
   top: calc(50% + (var(--browser-safe-area-top) - var(--browser-safe-area-bottom)) / 2);
   transform: translateY(-50%);
   z-index: 210;
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--feed-pure-white) 8%, transparent);
   border: none;
-  color: rgba(255, 255, 255, 0.5);
+  color: color-mix(in srgb, var(--feed-pure-white) 50%, transparent);
   font-size: 2.5rem;
   width: 48px;
   height: 80px;
@@ -379,8 +379,8 @@
   transition: background 0.15s, color 0.15s;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.15);
-    color: #fff;
+    background: color-mix(in srgb, var(--feed-pure-white) 15%, transparent);
+    color: var(--feed-pure-white);
   }
 
   &--left {
@@ -453,14 +453,14 @@
   blockquote {
     margin: 0 0 1.5em;
     padding: 0.5em 0 0.5em 1em;
-    border-left: 2px solid rgba(128, 128, 128, 0.4);
+    border-left: 2px solid color-mix(in srgb, var(--feed-neutral) 40%, transparent);
     opacity: 0.8;
     font-style: italic;
   }
 
   hr {
     border: none;
-    border-top: 1px solid rgba(128, 128, 128, 0.3);
+    border-top: 1px solid color-mix(in srgb, var(--feed-neutral) 30%, transparent);
     margin: 1.5em 0;
   }
 }
@@ -509,7 +509,7 @@
   text-align: left;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.03);
+    background: color-mix(in srgb, var(--feed-pure-white) 3%, transparent);
   }
 
   &--current {

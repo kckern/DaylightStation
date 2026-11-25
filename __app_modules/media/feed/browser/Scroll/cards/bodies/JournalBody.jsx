@@ -9,7 +9,7 @@ export default function JournalBody({ item }) {
           margin: '0 0 0.3rem',
           fontSize: '0.95rem',
           fontWeight: 600,
-          color: '#fff',
+          color: 'var(--feed-pure-white)',
           lineHeight: 1.3,
         }}>
           {item.title}
@@ -19,7 +19,7 @@ export default function JournalBody({ item }) {
         <p style={{
           margin: 0,
           fontSize: '0.9rem',
-          color: '#dee2e6',
+          color: 'var(--feed-text-1)',
           lineHeight: 1.1,
           // justify
           textAlign: 'justify',
@@ -53,7 +53,7 @@ export default function JournalBody({ item }) {
           )}
           <span style={{
             fontSize: '0.7rem',
-            color: '#5c636a',
+            color: 'var(--feed-text-4)',
           }}>
             &mdash; {item.meta.senderName}
           </span>
