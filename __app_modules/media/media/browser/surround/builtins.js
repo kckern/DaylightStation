@@ -31,6 +31,7 @@ import ComposerCard from "./modules/ComposerCard.jsx";
 import CountryMapModule from "./modules/CountryMapModule.jsx";
 import PlaceCarousel from "./modules/PlaceCarousel.jsx";
 import PlayCard from "./modules/PlayCard.jsx";
+import PosterCard from "./modules/PosterCard.jsx";
 import WorkPlacard from "./modules/WorkPlacard.jsx";
 import ScriptRail from "./modules/ScriptRail.jsx";
 import FilterRail from "../content-filter/preview/FilterRail.jsx";
@@ -63,6 +64,8 @@ const BUILTIN_MODULES = [
   // below the picture, and which of those a frame wants is again the
   // definition's call.
   ['play-card', PlayCard, { regions: ['right', 'top', 'bottom'] }],
+  // A concert's own poster, title, guests and facts (the christmas-hall rail).
+  ['poster-card', PosterCard, { regions: ['right'] }],
   ['work-placard', WorkPlacard, { regions: ['top'] }],
   // The lyric rail. `lyric` is its OWN slot, not `right`: the frame renders
   // exactly one of the two, and declaring it as a right-hand module would

@@ -1,0 +1,51 @@
+.poster-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5em;
+  padding: 1.2em 1em;
+  color: var(--ink, #f3ead6);
+  font-family: var(--surround-body, Georgia, serif);
+  text-align: center;
+  position: relative;
+  z-index: 1; /* above the snow layer */
+}
+
+.poster-card__poster {
+  width: 78%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border: 2px solid var(--brass, #c9a24a);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.poster-card__title {
+  margin: 0.4em 0 0;
+  font-family: var(--surround-display, Georgia, serif);
+  font-size: 1.5em;
+  line-height: 1.1;
+}
+
+.poster-card__year {
+  color: var(--brass-lit, #ecd28a);
+  letter-spacing: 0.12em;
+}
+
+.poster-card__performance {
+  color: var(--ink-soft, #b9b29c);
+  font-style: italic;
+}
+
+.poster-card__fact {
+  margin: 0.8em 0 0;
+  padding-top: 0.8em;
+  border-top: 1px solid var(--programme-edge, rgba(201, 162, 74, 0.35));
+  font-size: 0.95em;
+  animation: poster-card-fade 900ms ease-out;
+}
+
+@keyframes poster-card-fade { from { opacity: 0; } to { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .poster-card__fact { animation: none; }
+}
