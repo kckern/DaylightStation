@@ -13,10 +13,18 @@
  * the strip follows a new segmentation at once instead of at the child's next
  * take. The projection lives in ../coachRecordProjection.mjs, shared with the
  * Polish reward.
+ *
+ * Which piece is a child's card (`#card`): their assigned piece
+ * (`sheetmusic.learners.<id>.piece`), else their newest piece in their own track
+ * (`sheetmusic.learners.<id>.collection`), else their newest piece outside every
+ * other learner's track. An assigned piece, or a track, with nothing practised
+ * yet shows fresh (no passages, `fresh: true`). An entry is one learner's only;
+ * see ../deskAssignment.mjs.
  */
 import { passageProgress } from '#shared/music/learnCoach.mjs';
 import { projectRecord, recordFingerprint, recordSegments } from '../coachRecordProjection.mjs';
 import { practiceKeyOfScore } from '../../../portable/music/practiceKey.mjs';
+import { inTrack, resolveDeskAssignments } from '../deskAssignment.mjs';
 
 export { practiceKeyOfScore };
 
@@ -27,6 +35,7 @@ function latestActivity(record) {
 
 export class GetPianoDesk {
   #datastore; #configProjection; #pieceLog; #learnSegments; #clock; #timezone; #logger;
+  #refusedWarned = new Set();
 
   /**
    * @param {object} deps
@@ -117,9 +126,60 @@ export class GetPianoDesk {
     return profile?.display_name || profile?.username || userId;
   }
 
-  #player(userId, scoreIds, dayKey) {
-    const [piece = null] = this.#pieces(userId, scoreIds, dayKey, 1);
+  #player(userId, scoreIds, dayKey, assignments) {
+    const piece = this.#card(userId, this.#pieces(userId, scoreIds, dayKey, Infinity), assignments, scoreIds);
     return { userId, name: this.#name(userId), piece };
+  }
+
+  /**
+   * Each roster learner's `sheetmusic.learners` entry. Entries keyed by anyone
+   * off the roster (a typo, or a catch-all like `*` or `all`) are refused, so
+   * no config can put one piece or track on every child's card.
+   */
+  #assignments() {
+    const { byUser, refused } = resolveDeskAssignments(this.#configProjection.raw?.()?.sheetmusic?.learners, this.#configProjection.roster());
+    for (const { key, reason } of refused) {
+      const id = `${key}\u0000${reason}`;
+      if (this.#refusedWarned.has(id)) continue;
+      this.#refusedWarned.add(id);
+      this.#logger.warn?.('piano.desk.learner-refused', { key, reason });
+    }
+    return byUser;
+  }
+
+  /** A card for an assigned piece (or a track's first score) not yet practised. */
+  #fresh(userId, scoreId) {
+    return {
+      scoreId, scoreKey: practiceKeyOfScore(scoreId), practicedAt: null,
+      cover: this.#datastore.sheetMusicCover?.(scoreId) ?? null,
+      total: 0, silver: 0, gold: 0, pieceSilver: false, polishReady: false, joins: { total: 0, silver: 0, gold: 0 },
+      next: null, nextGoldPassageId: null, passages: [], fresh: true,
+      polish: this.#polish(userId, scoreId),
+    };
+  }
+
+  /**
+   * The child's card, from every piece they have progress on (newest first):
+   * their assigned piece; else their newest piece in their own track, or the
+   * track's first score; else their newest piece outside other learners' tracks.
+   */
+  #card(userId, pieces, assignments, scoreIds) {
+    const mine = assignments.get(userId) ?? { piece: null, track: null };
+    const library = () => [...scoreIds().values()];
+    if (mine.piece) {
+      const assigned = pieces.find((piece) => piece.scoreId === mine.piece);
+      if (assigned) return assigned;
+      if (library().includes(mine.piece)) return this.#fresh(userId, mine.piece);
+      this.#logger.warn?.('piano.desk.assigned-piece-missing', { userId, scoreId: mine.piece });
+    }
+    if (mine.track) {
+      const inMine = pieces.find((piece) => inTrack(piece.scoreId, mine.track));
+      if (inMine) return inMine;
+      const first = library().filter((id) => inTrack(id, mine.track)).sort()[0];
+      if (first) return this.#fresh(userId, first);
+    }
+    const others = [...assignments].filter(([id, a]) => id !== userId && a.track && a.track !== mine.track).map(([, a]) => a.track);
+    return pieces.find((piece) => !others.some((track) => inTrack(piece.scoreId, track))) ?? null;
   }
 
   /** Only older records need the library walk: coached ones name their score. Walked at most once per call. */
@@ -134,18 +194,24 @@ export class GetPianoDesk {
   /**
    * Every piece one player is learning, newest first: the office screen's piece
    * picker. The same projection as `execute()`, so a picker face and a home
-   * card never disagree. Null for someone not on the roster.
+   * card never disagree: the strip's card comes first, the rest newest first.
+   * Null for someone not on the roster.
    */
   forPlayer(userId) {
     if (!this.#configProjection.roster().includes(userId)) return null;
-    return { userId, name: this.#name(userId), pieces: this.#pieces(userId, this.#scoreIds(), this.#dayKey(), Infinity) };
+    const scoreIds = this.#scoreIds();
+    const pieces = this.#pieces(userId, scoreIds, this.#dayKey(), Infinity);
+    // The strip's card leads, so the picker and the home card never disagree.
+    const card = this.#card(userId, pieces, this.#assignments(), scoreIds);
+    return { userId, name: this.#name(userId), pieces: card ? [card, ...pieces.filter((piece) => piece.scoreId !== card.scoreId)] : pieces };
   }
 
   execute() {
     const scoreIds = this.#scoreIds();
     const dayKey = this.#dayKey();
+    const assignments = this.#assignments();
     const players = this.#configProjection.roster().map((userId) => {
-      try { return this.#player(userId, scoreIds, dayKey); } catch (error) {
+      try { return this.#player(userId, scoreIds, dayKey, assignments); } catch (error) {
         this.#logger.warn?.('piano.desk.player_skipped', { userId, error: error.message });
         const profile = this.#configProjection.profile(userId);
         return { userId, name: profile?.display_name || profile?.username || userId, piece: null };

@@ -9,9 +9,8 @@ their video course.
 The strip is for the child choosing what to play: each card says what is next and
 resumes it in one tap. Each child gets one panel, headed by their avatar (32px) and
 name, over **one card** (`stripGroups`); children are ordered by their latest activity.
-A child has a piece when they have one in progress (at least one step earned; the most
-recent such piece; pieces only opened or tried do not count), and a course when they
-have one.
+A child has a piece when one is theirs by the rule in [Which piece](#which-piece), and
+a course when they have one.
 
 A child with both switches between them with a **sideways swipe on the card**: left
 shows the next card, right the one before, wrapping like a carousel (`swipeTarget`;
@@ -105,14 +104,54 @@ Tapping a card also makes that child the current player (owner-requested 2026-07
 Choosing a player otherwise stays in the "Who's playing" modal. A child with neither
 a piece nor a course has no card.
 
+## Which piece
+
+A child's piece card is, in order (`GetPianoDesk#card`, `application/deskAssignment.mjs`):
+
+1. **Their assigned piece**, `sheetmusic.learners.<id>.piece` in piano.yml (a library
+   score id), with its progress, however recently anything else was played. The
+   household sets it per child; it stays until the config changes.
+2. Else **their newest piece in their own track**, `sheetmusic.learners.<id>.collection`
+   (the folder the score grid opens on for them); with nothing started there yet, the
+   track's first score (by file name, so zero-padded names teach in order).
+3. Else their **newest piece in progress** (at least one step earned; pieces only opened
+   or tried do not count), leaving out any piece inside **another learner's track**.
+
+An assigned piece, or a track's first score, that the child has not practised yet comes
+**fresh**: `fresh: true`, no passages, `total: 0`, `practicedAt: null`. Its card reads
+**Start here** with no coins or count, and a tap opens the score. An assigned piece not in
+the library is ignored (`piano.desk.assigned-piece-missing`, warn) and the rule goes on.
+
+`sheetmusic.learners` entries are **one learner's each** and never apply to anyone else.
+A key that is not on the piano roster, including a catch-all (`*`, `all`, `default`,
+`everyone`), is refused and logged once per process (`piano.desk.learner-refused`, warn,
+`{ key, reason }`); so is a `piece` that is not a `files:` library id. No config can put
+one piece or one track on every child's card.
+
+Why: on 2026-11-24 a toddler was given the First Notes track, the older children tried
+its first scores, and the newest-piece rule then showed Middle C on every child's card,
+reading as if all of them had been enrolled. The track rule (3) and per-child
+assignments (1) are what stop that. Pinned by `GetPianoDesk.test.mjs` ("Desk
+assignments") and `deskAssignment.test.mjs`.
+
+```yaml
+sheetmusic:
+  learners:
+    <child id>:
+      piece: files:docs/sheet-music/christmas/<score>.mxl   # their card
+    <youngest id>:
+      collection: files:docs/sheet-music/first-notes          # their track
+```
+
 ## Data
 
 `GET /api/v1/piano/activity/desk/:userId` is the same projection for one player, every piece with
 real progress instead of the newest one, newest first (`{ userId, name, pieces }`; 404 off the roster;
-a score two records name is offered once, the newer). The office screen's Sheet Music piece picker
+a score two records name is offered once, the newer). The strip's card leads the list (a fresh one
+included), the rest follow newest first. The office screen's Sheet Music piece picker
 reads it (`sheet-music-player.md`, Office screen); its first piece is always the strip's card.
 
-`GET /api/v1/piano/activity/desk` returns each roster child's current piece, with its `cover` when the library has one, and
+`GET /api/v1/piano/activity/desk` returns each roster child's card piece ([Which piece](#which-piece)), with its `cover` when the library has one, and
 `polish: { gem, diamond }`: the piece's Polish awards, read from the piece log
 (`polish-gem` / `polish-diamond` entries; an unreadable log answers both false and
 logs `piano.desk.polish_unreadable`). Each piece is

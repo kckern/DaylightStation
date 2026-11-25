@@ -126,6 +126,8 @@ export function lessonNumber(course) {
 
 /** The line under a card's title: the bars up next, or "Lesson 51". */
 export function nextStep(card) {
+  // An assigned piece (or a track's first score) not practised yet: the server sends it with no passages.
+  if (card.kind === 'piece' && card.piece?.fresh === true) return 'Start here';
   if (card.kind === 'piece') return piecePolishing(card.piece) ? 'Whole piece' : passageBars(card.focus);
   const number = lessonNumber(card.course);
   return number ? `Lesson ${number}` : '';

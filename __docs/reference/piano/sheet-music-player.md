@@ -2331,9 +2331,14 @@ sheetmusic:
   learners:
     <user id>:
       collection: files:docs/sheet-music/<folder>  # their track: the score grid opens on this tab
+      piece: files:docs/sheet-music/<folder>/<file> # their piece: the home strip's card (home-desk.md)
       keyboardHints: always                         # always | after-wrong | never
       wrongNoteGhosts: true
 ```
+
+Each entry is that one learner's; a key off the roster (or a catch-all like `*`) is refused.
+`piece` and `collection` also decide the home strip's piece card, and a track keeps other
+children's tries out of their cards: see [Which piece](home-desk.md#which-piece).
 
 - **`keyboardHints`** brings the drill keyboard back (two rails, 2026-11-24: without an entry
   the drill draws no keyboard, and the score gets that row). **`always`** lights the next key
