@@ -1,7 +1,7 @@
 import { GRATITUDE_PROMPT, isUnheardTranscript, deriveGratitudeState, recentGratitudeFacts, gratitudeConfigOf, gratitudePublicationId } from '../../domain/gratitude.mjs';
 import { validGratitudeEvidence } from '../../domain/gratitudeEvidence.mjs';
 import { studyDayForInstant, studyDayWindowForDate } from '../../domain/studyDay.mjs';
-import { scheduleVerdict } from '../../domain/schoolCalendar.mjs';
+import { programAskedOn, DEFAULT_DAY_OFF_POLICY } from '../../domain/dayOffPolicy.mjs';
 import { followUpFallbackFor, normalizeFollowUpQuestion } from './GratitudeFollowUpWriter.mjs';
 
 export class GratitudeError extends Error {
@@ -12,10 +12,10 @@ const sameAnswer = (a,b) => ['text','via','audioRef','edited','followUpOf'].ever
 
 /** Gratitude policy and durable recovery. All mutations for a learner share one queue. */
 export class GratitudeService {
-  #store; #assignments; #capture; #judge; #extractor; #followUpWriter; #publish; #clock; #timezone; #config; #logger; #queues = new Map(); #submitting = new Map(); #householdSchedule;
-  constructor({ store, assignments, captureTake = null, judge, extractor, followUpWriter = null, publish, clock = () => new Date(), timezone = null, config = gratitudeConfigOf(), logger = {}, householdSchedule = null }) {
+  #store; #assignments; #capture; #judge; #extractor; #followUpWriter; #publish; #clock; #timezone; #config; #logger; #queues = new Map(); #submitting = new Map(); #householdSchedule; #dayOffPolicy;
+  constructor({ store, assignments, captureTake = null, judge, extractor, followUpWriter = null, publish, clock = () => new Date(), timezone = null, config = gratitudeConfigOf(), logger = {}, householdSchedule = null, dayOffPolicy = null }) {
     this.#store=store; this.#assignments=assignments; this.#capture=captureTake; this.#judge=judge; this.#extractor=extractor; this.#followUpWriter=followUpWriter; this.#publish=publish;
-    this.#clock=clock; this.#timezone=timezone; this.#config=config; this.#logger=logger; this.#householdSchedule=householdSchedule;
+    this.#clock=clock; this.#timezone=timezone; this.#config=config; this.#logger=logger; this.#householdSchedule=householdSchedule; this.#dayOffPolicy=dayOffPolicy;
   }
   today() { return studyDayForInstant(this.#clock().getTime(), { timezone:this.#timezone }); }
   #now() { return this.#clock().toISOString(); }
@@ -58,8 +58,10 @@ export class GratitudeService {
   async #fresh(id,day,records) {
     const enrollment=await this.#enrolled(id);
     if(!studyDayWindowForDate(day,{timezone:this.#timezone}) || day!==this.today())throw new GratitudeError('Please open today’s Gratitude activity.',409);
-    const household=typeof this.#householdSchedule==='function'?this.#householdSchedule():this.#householdSchedule;
-    if(!scheduleVerdict(day,enrollment.schedule??null).schoolDay || (household && !scheduleVerdict(day,household).schoolDay))throw new GratitudeError('Gratitude is not assigned today.',409);
+    const live=value=>typeof value==='function'?value():value;
+    // The agenda's own rule (programAskedOn): a stay-home day that keeps scripture still asks for Gratitude.
+    const program={...enrollment,subject:enrollment.subject??'scripture'};
+    if(!programAskedOn(day,{enrollment:program,householdSchedule:live(this.#householdSchedule),dayOffPolicy:live(this.#dayOffPolicy)??DEFAULT_DAY_OFF_POLICY}))throw new GratitudeError('Gratitude is not assigned today.',409);
     this.#cooldown(records);
     if(records.some(r=>pending(this.#state(r))))throw new GratitudeError('Your saved answer is waiting. Please retry it first.',409);
     if(this.#state(records.find(r=>r.studyDay===day)).phase==='completed')throw new GratitudeError('Today’s Gratitude is already complete.',409);

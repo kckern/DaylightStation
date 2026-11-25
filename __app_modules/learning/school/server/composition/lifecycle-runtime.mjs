@@ -1033,7 +1033,7 @@ try {
     const runtime = createGratitudeRuntime({configService,store:lifecycle.gratitudeStore,assignments:lifecycle.gratitudeAssignments,grants:dependencies.schoolGratitudeGrants,teacherGate:schoolTeacherGate,
       aiGateway:dependencies.scopedGateway?.(dependencies.sharedAiGateway,{app:'school',feature:'gratitude'}),
       decisionGateway:dependencies.scopedGateway?.(dependencies.decisionGateway,{app:'school',feature:'gratitude'}),
-      scheduler:new NodeAsyncScheduler(),timezone:configService.getTimezone?.()??null,householdSchedule:()=>lifecycle.householdSchedule,logger,
+      scheduler:new NodeAsyncScheduler(),timezone:configService.getTimezone?.()??null,householdSchedule:()=>lifecycle.householdSchedule,dayOffPolicy:()=>lifecycle.liveCalendar?.policy?.()??null,logger,
       publish:body=>dependencies.gratitudeServices.publishSchoolGratitude({...body,householdId}),
       notify:async body=>{let userName=body.learnerId;try{userName=await learnerDisplayName(body.learnerId)||userName;}catch{}; dependencies.broadcastGratitude?.({topic:'gratitude',action:'item_added',source:'school',persisted:true,category:'gratitude',userId:body.learnerId,userName,items:[{id:body.selectionId,text:body.subject}]});},
     });

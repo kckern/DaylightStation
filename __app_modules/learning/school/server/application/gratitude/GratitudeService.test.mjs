@@ -4,11 +4,11 @@ import { GRATITUDE_FOLLOW_UP_FALLBACK, GRATITUDE_FOLLOW_UP_FALLBACK_KO } from '.
 import { gratitudeConfigOf } from '../../domain/gratitude.mjs';
 import { validGratitudeEvidence } from '../../domain/gratitudeEvidence.mjs';
 
-function harness({ verdict='eligible', publishFailure=false, verdicts=null, writerFails=false, followUpEnabled=true, logger={}, followUpWriter=null, transcript='My toys', judgeDelay=null, config=null }={}) {
+function harness({ verdict='eligible', publishFailure=false, verdicts=null, writerFails=false, followUpEnabled=true, logger={}, followUpWriter=null, transcript='My toys', judgeDelay=null, config=null, householdSchedule=null, dayOffPolicy=undefined }={}) {
   const days=new Map(), selections=new Map(); let now=new Date('2026-11-16T18:00:00Z'); let fail=publishFailure; let assessment=verdict; let calls=0;
   const queue=verdicts?[...verdicts]:[]; const judgeCalls=[]; const extracted=[];
   const store={ async read(id,day){return {status:days.has(day)?'ok':'missing',events:structuredClone(days.get(day)??[])};},async append(id,day,event){const next=[...(days.get(day)??[]),structuredClone(event)];if(!validGratitudeEvidence(next))throw new Error('Invalid Gratitude evidence');days.set(day,next);},async listDays(){return [...days.keys()].sort();} };
-  const deps={store,assignments:{get:async()=>({programs:[{programId:'gratitude',schedule:{daysOfWeek:[1,2,3,4,5]}}]})},clock:()=>now,timezone:'America/Los_Angeles',
+  const deps={store,assignments:{get:async()=>({programs:[{programId:'gratitude',schedule:{daysOfWeek:[1,2,3,4,5]}}]})},clock:()=>now,timezone:'America/Los_Angeles',householdSchedule,dayOffPolicy,
     config:config??gratitudeConfigOf({gratitude:{follow_up:{enabled:followUpEnabled}}}),
     captureTake:async({onSaved})=>{const audioRef=`child/take-${days.size}-${Math.random().toString(36).slice(2,8)}.webm`;await onSaved({audioRef});return {audioRef,text:typeof transcript==='function'?transcript():transcript};},
     judge:{assess:async args=>{calls++;if(judgeDelay)await judgeDelay();judgeCalls.push(args);const v=queue.length?queue.shift():assessment;return {verdict:v,confidence:.99,model:'test',rubricVersion:1,matchedId:v==='repetition'?(args.history?.[0]?.id??'school-gratitude:child:2026-11-16'):null};}},
@@ -18,6 +18,22 @@ function harness({ verdict='eligible', publishFailure=false, verdicts=null, writ
 }
 const body={attemptId:'attempt-1',text:"I'm grateful for my toys",via:'typed',audioRef:null,edited:false};
 describe('School gratitude workflow',()=>{
+  describe('household day-off tiers',()=>{
+    const breakOn=tier=>({except:[{from:'2026-11-16',to:'2026-11-16',label:'Break',tier}]});
+    it('accepts an answer on a stay-home day, because the agenda keeps scripture (2026-11-25 incident)',async()=>{
+      const h=harness({householdSchedule:breakOn('stay-home')});
+      await expect(h.service.assertCanTake('child','2026-11-16')).resolves.toBeUndefined();
+      expect((await h.service.submit('child','2026-11-16',body)).phase).toBe('completed');
+    });
+    it('refuses on an away day',async()=>{
+      const h=harness({householdSchedule:breakOn('away')});
+      await expect(h.service.assertCanTake('child','2026-11-16')).rejects.toMatchObject({status:409,message:'Gratitude is not assigned today.'});
+    });
+    it('refuses when the configured keep-list drops scripture',async()=>{
+      const h=harness({householdSchedule:breakOn('stay-home'),dayOffPolicy:()=>({'stay-home':{keep:[{program:'piano-course'}]}})});
+      await expect(h.service.assertCanTake('child','2026-11-16')).rejects.toMatchObject({status:409,message:'Gratitude is not assigned today.'});
+    });
+  });
   it('restores a server-saved take when the upload response was lost',async()=>{
     const h=harness();
     h.days.set('2026-11-16',[{type:'take-saved',at:'2026-11-16T18:00:00Z',takeId:'take-1',audioRef:'child/2026-11-16-1.webm',text:'My toys'}]);
