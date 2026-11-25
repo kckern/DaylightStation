@@ -237,3 +237,24 @@ it('the text-box screen treats a steered or warned day as a retry', async () => 
     view.unmount();
   }
 });
+
+it('shows the server refusal for a rejected take instead of blaming the mic', async () => {
+  api.open.mockResolvedValue({ ok: true, data: base });
+  api.take.mockResolvedValue({ ok: false, status: 409, data: { error: 'Gratitude is not assigned today.' } });
+  mount();
+  fireEvent.click(await screen.findByRole('button', { name: 'Tell me' }));
+  await act(async () => { await receiveTake({ blob: new Blob(['a']) }); });
+  expect(screenOf()).toBe('error');
+  expect(screen.getByText('Gratitude is not assigned today.')).toBeVisible();
+  expect(spoken).not.toContain("I didn't hear you. Try again.");
+});
+
+it('a lost upload (no server answer) asks again rather than showing the error screen', async () => {
+  api.open.mockResolvedValue({ ok: true, data: base });
+  api.take.mockResolvedValue({ ok: false, status: 0, data: null });
+  mount();
+  fireEvent.click(await screen.findByRole('button', { name: 'Tell me' }));
+  await act(async () => { await receiveTake({ blob: new Blob(['a']) }); });
+  expect(screenOf()).not.toBe('error');
+  expect(screen.getByText("I didn't hear you. Try again.")).toBeVisible();
+});

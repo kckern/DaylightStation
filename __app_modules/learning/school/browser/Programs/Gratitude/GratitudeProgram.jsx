@@ -42,8 +42,18 @@ export default function GratitudeProgram({learnerId,learnerName=null,gratitudeGr
   const take=useCallback(async blob=>{
     if(!takeIds.current.has(blob))takeIds.current.set(blob,crypto.randomUUID());
     const result=await api.take(view.studyDay,blob,takeIds.current.get(blob));
-    if(!result.ok){if(result.status===429)apply(await api.day(view.studyDay));throw new Error(result.data?.error??'Recording failed');}
-    takeIds.current.delete(blob);return result.data;
+    if(!result.ok){
+      if(result.status===429){apply(await api.day(view.studyDay));throw new Error(result.data?.error??'Recording failed');}
+      // The server refused the recording (a 4xx, e.g. not assigned today): say why, never "I didn't hear you".
+      // A lost upload or a server fault (no status, 5xx) stays a retryable recording.
+      if(result.status>=400&&result.status<500){
+        const message=result.data?.error??'Your recording could not be sent.';
+        if(live.current)setError(message);
+        throw Object.assign(new Error(message),{rejected:true});
+      }
+      throw new Error(result.data?.error??'Recording failed');
+    }
+    takeIds.current.delete(blob);if(live.current)setError(null);return result.data;
   },[api,view?.studyDay,apply]);
   const retryTake=async()=>{const result=await api.take(view.studyDay,new Blob([],{type:'audio/webm'}),view.draft?.takeId);if(!result.ok)throw new Error('Recording retry failed');return result.data;};
   const submit=async answer=>{

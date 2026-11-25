@@ -13,7 +13,7 @@ export function createGratitudeApi({ learnerId, grant, ...options }) {
       },
     });
     if (!result.ok) {
-      const detail = { path, status: result.status, kind: result.error?.kind };
+      const detail = { path, status: result.status, kind: result.error?.kind, error: result.data?.error ?? null };
       if (result.status) gratitudeLog.apiRejected(detail); else gratitudeLog.apiFailed(detail);
     }
     return client.finish(result);

@@ -19,6 +19,27 @@ it('reuses its take identity when a saved upload loses its response',async()=>{
   expect(api.take.mock.calls[0][2]).toBe(api.take.mock.calls[1][2]);
   expect(api.take.mock.calls[0][1]).toBe(blob);expect(api.take.mock.calls[1][1]).toBe(blob);
 });
+it('shows the server refusal for a rejected take, and clears it once a take is kept',async()=>{
+  api.open.mockResolvedValue({ok:true,data:initial});api.take.mockReset();
+  api.take.mockResolvedValueOnce({ok:false,status:409,data:{error:'Gratitude is not assigned today.'}})
+    .mockResolvedValueOnce({ok:true,data:{audioRef:'child/b.webm',text:'My dog'}});
+  render(<GratitudeProgram learnerId="child" gratitudeGrant="grant" today="2026-11-16" onExit={()=>{}}/>);
+  await screen.findByRole('textbox');
+  await act(async()=>{await receiveTake({blob:new Blob(['a'])});});
+  expect(screen.getByRole('alert')).toHaveTextContent('Gratitude is not assigned today.');
+  await act(async()=>{await receiveTake({blob:new Blob(['b'])});});
+  await screen.findByDisplayValue('My dog');
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+it('a lost upload (no server answer) stays a retryable recording, not a refusal',async()=>{
+  api.open.mockResolvedValue({ok:true,data:initial});api.take.mockReset();
+  api.take.mockResolvedValueOnce({ok:false,status:0,data:null});
+  render(<GratitudeProgram learnerId="child" gratitudeGrant="grant" today="2026-11-16" onExit={()=>{}}/>);
+  await screen.findByRole('textbox');
+  await act(async()=>{await receiveTake({blob:new Blob(['a'])});});
+  expect(screen.getByRole('button',{name:'Retry recording upload'})).toBeVisible();
+  expect(screen.queryByRole('alert')).toBeNull();
+});
 it('accepts typing and displays the saved concise gratitude subject',async()=>{
   api.open.mockResolvedValue({ok:true,data:initial});
   api.submit.mockResolvedValue({ok:true,data:{...initial,phase:'completed',subject:'Toys'}});
