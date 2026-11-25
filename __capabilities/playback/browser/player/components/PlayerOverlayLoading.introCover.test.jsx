@@ -33,14 +33,14 @@ describe('PlayerOverlayLoading — covering intro', () => {
     expect(container.querySelector('.loading-overlay')).not.toBeNull();
   });
 
-  it('keeps the source-healing wait (notice and Skip) over a covering intro', () => {
+  it('keeps the source-healing wait (the held card, with Skip) over a covering intro', () => {
     setIntroCovering(true);
     const { container, getByTestId } = render(
-      <PlayerOverlayLoading {...baseProps} sourceNotice="Fixing this video… · 0:05" onSkipSource={vi.fn()} />,
+      <PlayerOverlayLoading {...baseProps} sourceNotice="Fixing this video… · 0:05" onSkipSource={vi.fn()} next={{ title: 'B' }} />,
     );
     expect(container.querySelector('.loading-overlay')).not.toBeNull();
-    expect(getByTestId('player-source-notice')).toBeInTheDocument();
-    expect(getByTestId('player-source-skip')).toBeInTheDocument();
+    expect(getByTestId('player-held-card')).toHaveTextContent('Fixing this video… · 0:05');
+    expect(getByTestId('player-held-card')).toHaveTextContent('Skip to B');
   });
 
   it('keeps the link notice over a covering intro', () => {

@@ -34,6 +34,7 @@ import { getPlayerSessionRegistry } from "../../../../__capabilities/playback/br
 import { ScreenSceneProvider } from "../../../../__capabilities/screen-host/browser/providers.mjs";
 import { ScreenAmbientProvider } from "../../../../__capabilities/screen-host/browser/ambient.mjs";
 import { SurroundSettingContext } from "../../../../__capabilities/playback/browser/surround-surround-setting-context.mjs";
+import { PlaybackSurfaceProvider, inputFromScreenType } from "../../../../__capabilities/playback/browser/public.mjs";
 import { MenuNavigationProvider } from "../../../../__capabilities/screen-host/browser/menu-context.mjs";
 import { useMenuNavigationContext } from "../../../../__capabilities/screen-host/browser/menu-navigation.mjs";
 import { parseAutoplayParams, autoplayToAction, AUTOPLAY_ACTIONS } from '../../lib/parseAutoplayParams.js';
@@ -515,6 +516,9 @@ export function ScreenRenderer({ screenId: propScreenId }) {
             <ScreenAmbientProvider value={config.ambient}>
             <MenuNavigationProvider>
               <ScreenSceneProvider>
+              {/* How this screen is operated, for the Player's held card
+                  (touch / remote / numpad; undeclared = no input). */}
+              <PlaybackSurfaceProvider input={inputFromScreenType(config.input?.type)}>
               <ScreenOverlayProvider inputType={config.input?.type}>
                 <SessionSourceProvider source={sessionSource}>
                 <PipManager config={config.pip}>
@@ -535,6 +539,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
                 </PipManager>
                 </SessionSourceProvider>
               </ScreenOverlayProvider>
+              </PlaybackSurfaceProvider>
               </ScreenSceneProvider>
             </MenuNavigationProvider>
             </ScreenAmbientProvider>

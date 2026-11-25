@@ -8,6 +8,11 @@ import { useEffect, useRef } from 'react';
  * OK or the media-next key. Back is unreliable on the Shield, so nothing here
  * depends on it.
  *
+ * Since 2026-11-25 a skip only exists when something comes NEXT: the Player's
+ * `canConsume` answers false on the last item, because a skip there is just
+ * an exit and every host owns its exit (Back, ✕, keypad 4). The held card
+ * (PlayerHeldCard) names the next item on its Skip.
+ *
  * This is a page-level listener, so it is deliberately polite:
  *  - only Enter / NumpadEnter / MediaTrackNext (never D-pad or Tab: those
  *    belong to screen navigation, overlay buttons and the fitness display);

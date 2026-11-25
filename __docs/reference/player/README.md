@@ -218,14 +218,50 @@ The held event is `{kind: 'resilience-held', reason, attempts, target, retryAfte
 and a held report/renderer clear cannot be interpreted as natural completion.
 Backend source checks and repair still run within their existing bounded wait.
 
-The held overlay offers native, focusable Retry, Quality and Skip buttons. D-pad
-arrows move among these controls; OK/Enter/Space activates the focused action
-exactly once without reaching page playback/skip handlers. The inline Quality
-dialog uses scoped remote controls: arrows move between fields/actions; OK enters
-a native select or numeric field's value editing and returns to navigation.
-While editing, arrows change the value. Back leaves editing first, then closes
-Quality; Close also restores focus to the held Quality action. Quality reuses `PlaybackQualityForm` and
-existing guarded owner snapshot adoption; Media opens its existing quality sheet.
+#### The held card: only what this surface can do
+
+A held video shows one solid card in place of the spinner, because nothing is
+loading. It has a headline saying what happened ("The video stopped loading",
+or "Waiting for the video" while the server repairs the source) and where it
+stopped. `heldRecoveryModel` (`lib/heldRecoveryModel.js`) decides what the card
+offers, by one rule: **offer an action only when this surface can perform it,
+the host does not already provide it, and it means something now.**
+
+**How the surface is operated** comes from `PlaybackSurfaceContext`. Screens
+provide it from `input.type` in their config (`inputFromScreenType`). The
+fitness app and the piano tablet provide `touch`. With no provider (MediaApp,
+admin) it is `pointer`.
+
+| Input | Surfaces | The card |
+|---|---|---|
+| `touch` / `pointer` | fitness, portal, piano, MediaApp | Tap targets, no key hints |
+| `remote` | living room (D-pad) | The same buttons. The first enabled action takes focus, arrows move, OK activates once and never reaches page keys. A key line appears only when there is a choice |
+| `numpad` | office keypad (function keys, no OK or arrows) | No buttons. It names the keys that act: Play/Pause tries again (the Player maps `toggle` to retry while held; during the rolling-cap cooldown the key is swallowed and the line reads "Try again in Ns"), Next skips when something is next |
+| `none` | an undeclared screen | No buttons. `useAutoHeldRecovery` retries every 20 s, 3 times, then plays the next item if there is one. Otherwise the card reads "This video couldn't be loaded". A retry refused by the shared ledger's rolling cap is not an attempt: it waits out the cooldown it names. A recovery that holds for a minute gives the next stall a fresh count |
+
+The actions:
+- **Try again** is the first action. It shows "Try again in Ns" during the
+  rolling-cap delay.
+- **Skip** appears only when the Player's own queue has a next item, and it
+  names it ("Skip to …"). OK/Next skip keys (`useSourceWaitSkipKeys`) act
+  under the same condition. On the last item a skip is only an exit.
+- **Close/Exit** is never offered. Every host owns its exit: the fitness ✕,
+  Back on screens, keypad 4. A host that runs its own queue (MediaApp,
+  `onSkipHeldPlayback`) keeps Next in its own transport.
+- **Quality** has no desktop form on a TV. The card offers one rung:
+  **Lower quality (720p / 480p)**, below the playing picture height, for a
+  source that accepts limits. It is applied straight through guarded owner
+  snapshot adoption (same visit, paused position, content timeline). Other
+  overrides already in force (a bitrate cap, a forced transcode) are kept. The
+  picture height is remembered per item, because the ladder's last remount
+  leaves an element with no frame yet. A host
+  with its own quality sheet (`onOpenPlaybackQuality`, MediaApp) gets
+  **Quality…**, which opens it.
+
+Events: `playback.held-card-action {action, input}`,
+`playback.held-quality-lowered {maxResolution}`,
+`playback.held-auto-retry {attempt, limit}`, `playback.held-auto-skip`.
+
 Blackout still suppresses all overlays. Retry displays the remaining rolling-cap
 delay, keeps the current queue visit and intentional pause, and uses the same
 shared ledger as other recovery actions. The browser/screen transport action
@@ -253,7 +289,7 @@ only terminal-failure action that advances the queue.
 | **Refused source** | The media server will not read the file: Plex 404 on a direct-play part (NAS zeroed its mode, or Plex mid library scan), or the proxy's 503 `source-unreadable`. Mid-playback it can arrive as an unlabelled `Format error` / `PIPELINE_ERROR_READ`, which is checked with the backend; the jolt ladder also checks before exhausting, so a refused file waits instead of being skipped | The recovery ladder stands down, and `useSourceAvailability` waits on `POST /api/v1/media-source/check`, which runs the repair ladder. The Player remounts once when the file is readable. See `media-source-healing.md` |
 | **Resilience jolt ladder** | Unrecovered stall past the grace deadline | Rung 1: `hardReset({ refreshUrl })` in place → rung 2: full renderer remount. Each rung asks the ledger; a cooldown denial reschedules the rung at `waitMs` |
 | **Slow link hold** | A stuck episode whose buffered end is still growing (≥0.5 s of media per 6 s window), with under 5 s buffered ahead, readyState below `HAVE_FUTURE_DATA` and no media error; or, before metadata, an element still receiving bytes (`progress` events) | The jolt ladder holds instead of firing a rung (a rung re-requests the stream and throws the download away), re-checks every 2 s, and shows "Slow connection — waiting for the video to download". The startup deadline defers the same way while bytes arrive, and the controller's `duration-lost` softReinit stands down while the element is still loading its header. Every hold is bounded (120 s backstop; a frozen playhead passes 5 s ahead first). See [Slow links](#slow-links-wait-for-buffer-do-not-re-request) |
-| **Stall exhaustion** | Session cap reached | Finite video stays on the same visit/queue/confirmed position and reports `resilience-held`. Focusable Retry, Quality and explicit Skip remain available. Retry opens an incident through the owner, retaining the rolling cap and deliberate pause |
+| **Stall exhaustion** | Session cap reached | Finite video stays on the same visit/queue/confirmed position and reports `resilience-held`. The held card offers what the surface can do (Try again, Skip when something is next, Lower quality); see [The held card](#the-held-card-only-what-this-surface-can-do). Retry opens an incident through the owner, retaining the rolling cap and deliberate pause |
 | **User forceReload** | Operator reload request | Records a ledger attempt like everything else — reload-hammering lands on the exhausted overlay (which still offers retry) instead of looping raw reloads |
 | **Autoplay block** | Browser `NotAllowedError` (Firefox won't fire `canplay`) | Click-to-play overlay; resumes from a user gesture |
 | **End-of-content / close / stale-session watchdogs** | Natural end, manual close, abandoned sessions | Clean teardown (`dashCleanup`) to prevent SourceBuffer orphans |

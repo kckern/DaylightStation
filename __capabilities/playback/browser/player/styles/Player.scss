@@ -414,60 +414,116 @@
     font-variant-numeric: tabular-nums;
 }
 
-// "Skip · OK" under the fixing note, on screens only. Quiet pill, legible from
-// the couch; the OK hint is what a D-pad remote presses.
-.player-held-quality {
-    position: absolute;
-    z-index: var(--player-layer-held-quality, 60);
-    inset: 5%;
-    margin: auto;
-    max-width: 36rem;
-    max-height: 90%;
-    overflow: auto;
-    padding: 1.5rem;
-    color: white;
-    background: #171717;
-    border: 2px solid #FFFFFF99;
-    border-radius: 1rem;
+// THE HELD CARD (PlayerHeldCard, heldRecoveryModel): recovery has stopped, or
+// the server is repairing the source. Solid, not a scrim — nothing is loading,
+// and a half-faded frozen frame under a spinner said otherwise. It offers only
+// what this surface can do; sizes read from a bench and a couch.
+.loading-overlay.loading-overlay--held {
+    background: #0b0b0b;
     pointer-events: auto;
+    // Everything below is sized from the PLAYER's box (cqh/cqw), so the card
+    // reads the same full-screen on a TV, in the fitness pane and on the
+    // piano tablet.
+    container-type: size;
 }
-
-.loading-overlay .loading-recovery-actions {
+.loading-overlay--held .loading-overlay__inner {
+    position: absolute;
+    inset: 0;
     display: flex;
-    gap: 1rem;
+    align-items: center;
+    justify-content: center;
 }
 
-.loading-overlay .loading-skip{
+.player-held-card {
+    box-sizing: border-box;
+    width: min(46rem, 88cqw);
+    padding: 4.5cqh 5cqh;
+    border-radius: 2cqh;
+    background: #161616;
+    border: 1px solid #2c2c2c;
+    color: #ffffff;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 1.4cqh;
+}
+.player-held-card__headline {
+    font-size: clamp(1.5rem, 4.6cqh, 3rem);
+    font-weight: 700;
+    line-height: 1.15;
+    text-wrap: balance;
+}
+.player-held-card__detail {
+    font-size: clamp(1.05rem, 2.9cqh, 1.9rem);
+    color: #c8c8c8;
+    font-variant-numeric: tabular-nums;
+}
+.player-held-card__plan {
+    font-size: clamp(1.05rem, 2.9cqh, 1.9rem);
+    font-weight: 600;
+    color: #f2c45a;
+    font-variant-numeric: tabular-nums;
+}
+// One column: a long "Skip to …" title fits, and a D-pad moves up and down.
+.player-held-card__actions {
+    display: flex;
+    flex-direction: column;
+    gap: 1.4cqh;
+    margin-top: 1.6cqh;
+}
+.player-held-card__action {
+    min-height: clamp(3rem, 8cqh, 5.5rem);
+    padding: 0 3cqh;
+    border-radius: 1.4cqh;
+    border: 2px solid #3a3a3a;
+    background: #262626;
+    color: #ffffff;
+    font: inherit;
+    font-size: clamp(1.1rem, 3.1cqh, 2rem);
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.player-held-card__action--primary {
+    background: #ffffff;
+    border-color: #ffffff;
+    color: #111111;
+}
+.player-held-card__action:disabled {
+    background: #262626;
+    border-color: #3a3a3a;
+    color: #8a8a8a;
+    cursor: default;
+}
+// The D-pad's focus: unmistakable from the couch, on any button colour.
+.player-held-card__action:focus-visible {
+    outline: max(4px, 0.5cqh) solid #4da3ff;
+    outline-offset: max(4px, 0.5cqh);
+}
+.player-held-card__keys {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1cqh 3cqh;
+    margin-top: 1cqh;
+    font-size: clamp(0.95rem, 2.4cqh, 1.6rem);
+    color: #b0b0b0;
+}
+.player-held-card__key-pair {
     display: inline-flex;
     align-items: center;
-    gap: 0.6rem;
-    margin-top: 1rem;
-    padding: 0.4rem 1.1rem;
-    background: #222222;
-    border: 2px solid #FFFFFF55;
-    border-radius: 999px;
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: #FFFFFFCC;
-    cursor: pointer;
-    pointer-events: auto;
+    gap: 1cqh;
 }
-.loading-overlay .loading-skip:focus-visible,
-.player-held-quality button:focus-visible,
-.player-held-quality select:focus-visible,
-.player-held-quality input:focus-visible {
-    outline: 3px solid white;
-    outline-offset: 4px;
-}
-.loading-overlay .loading-skip:disabled {
-    opacity: 0.65;
-    cursor: wait;
-}
-.loading-overlay .loading-skip__key{
-    padding: 0.05rem 0.5rem;
-    border-radius: 6px;
-    background: #FFFFFF33;
-    font-size: 0.95rem;
+.player-held-card__key {
+    font: inherit;
+    font-weight: 700;
+    color: #ffffff;
+    padding: 0.3cqh 1.2cqh;
+    border-radius: 0.8cqh;
+    border: 1px solid #555555;
+    background: #2a2a2a;
 }
 
 .loading-overlay .loading-timer{

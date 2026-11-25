@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { PlaybackSurfaceProvider } from '../../../../__capabilities/playback/browser/public.mjs';
 import { MantineProvider, Text } from '@mantine/core';
 import '@mantine/core/styles.css';
 import "./FitnessApp.scss";
@@ -2013,4 +2014,10 @@ const GlobalOverlays = ({ moduleLive = false }) => {
   );
 };
 
-export default FitnessApp;
+// The garage display is a touch screen: the Player's held card offers tap
+// targets and leaves exit to the fitness player's own ✕.
+const FitnessAppOnTouch = () => (
+  <PlaybackSurfaceProvider input="touch"><FitnessApp /></PlaybackSurfaceProvider>
+);
+
+export default FitnessAppOnTouch;

@@ -159,7 +159,7 @@ the part probe below, exist for that case.
 | `resume` | Resets the recovery ledger, then one `source-restored` recovery with `refreshUrl` and `forceRemount`. It seeks to the last position that played, and works even from `exhausted`. It carries `resumePlayback` (the rebuilt element autoplays) unless the viewer had paused before the error: the refused load pauses the element itself, and before 2026-09-30 that pause was carried as the viewer's, so the restored video sat loaded and frozen until the 15s startup deadline remounted it again. |
 | `retry` | The refusal cleared before any wait: one `source-refusal-cleared` recovery. |
 | `normal` | Nothing extra; the ordinary ladder runs — except for a `MEDIA_ERR_SRC_NOT_SUPPORTED` (code 4) element the backend calls readable (see below). |
-| `gave-up` | After the maximum wait (default 30 minutes, an owner option) the Player falls back to `exhausted` (Tap to Retry) and calls `onExhausted` with reason `source-unavailable-gave-up`. |
+| `gave-up` | After the maximum wait (default 30 minutes, an owner option) the Player falls back to `exhausted` (the held card: Try again, and Skip when something is next) and calls `onExhausted` with reason `source-unavailable-gave-up`. |
 
 **The maximum wait is an owner option.** `monitor.sourceUnavailableMaxMs` in the
 Player's resilience config (`mediaResilienceConfig`) sets it; the default stays

@@ -10,7 +10,7 @@ vi.mock('./hooks/useMediaResilience.js', async original => ({ ...(await original
 } }));
 vi.mock('../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: vi.fn().mockRejectedValue(new Error('offline')) }));
 import Player from './Player.jsx';
-import { MantineProvider } from '@mantine/core';
+import { PlaybackSurfaceProvider } from './PlaybackSurfaceContext.js';
 
 const movie = { contentId: 'plex:1', format: 'video', mediaType: 'video', duration: 600, title: 'Movie' };
 const queue = [movie, { ...movie, contentId: 'plex:2' }, { ...movie, contentId: 'plex:3' }];
@@ -63,7 +63,7 @@ describe('finite movie terminal failure', () => {
     const view = render(<Player holdOnRefusal play={queue} clear={() => {}} />);
     await waitFor(() => expect(state.frame?.contentId).toBe('plex:1'));
     exhausted('source-unavailable-gave-up');
-    const button = view.getByRole('button', { name: /^Retry/ });
+    const button = view.getByRole('button', { name: /^Try again/ });
     button.focus();
     fireEvent.keyDown(button, { key: 'Enter' });
     expect(retry).toHaveBeenCalledTimes(1);
@@ -74,153 +74,184 @@ describe('finite movie terminal failure', () => {
     const view = render(<Player play={queue} clear={() => {}} />);
     await waitFor(() => expect(state.frame?.contentId).toBe('plex:1'));
     exhausted('stall-jolt-exhausted');
-    expect(view.getByRole('button', { name: /^Retry/ })).toBeVisible();
+    expect(view.getByRole('button', { name: /^Try again/ })).toBeVisible();
   });
 });
 
-it('held Quality is focusable and applies through guarded owner adoption at the paused position', async () => {
+// A playing picture of `height` lines, registered the way the renderer does.
+const withVideo = (height, { currentTime = 0 } = {}) => {
+  const node = document.createElement('video');
+  Object.defineProperty(node, 'currentTime', { configurable: true, value: currentTime });
+  Object.defineProperty(node, 'videoHeight', { configurable: true, value: height });
+  act(() => state.frame.onMediaRef(node, { contentId: 'plex:1', rendererToken: Object.freeze({ tokenId: 'v', node, resolvedContentId: 'plex:1' }) }));
+  return node;
+};
+const on = (input, el) => <PlaybackSurfaceProvider input={input}>{el}</PlaybackSurfaceProvider>;
+
+it('held Lower quality applies through guarded owner adoption at the paused position', async () => {
   const ref = React.createRef();
   state.overlay = { isExhausted: true, shouldRender: true, isVisible: true };
-  const view = render(<MantineProvider><Player ref={ref} play={queue} clear={() => {}} /></MantineProvider>);
+  const view = render(<Player ref={ref} play={queue} clear={() => {}} />);
   await waitFor(() => expect(state.frame?.contentId).toBe('plex:1'));
+  withVideo(1080);
   act(() => state.frame.onPlaybackMetrics({ seconds: 321, isPaused: true, pauseIntent: 'user' }));
   exhausted('stall-jolt-exhausted');
   const target = ref.current.getRecoveryTarget();
-  const quality = view.getByRole('button', { name: /Quality/ });
-  expect(quality.tabIndex).toBe(0);
-  fireEvent.click(quality);
-  expect(view.getByLabelText('Maximum resolution')).toHaveFocus();
-  fireEvent.change(view.getByLabelText('Maximum resolution'), { target: { value: '480' } });
-  fireEvent.click(view.getByRole('button', { name: 'Apply to current playback' }));
-  await waitFor(() => expect(state.frame.maxResolution).toBe('480'));
+  fireEvent.click(view.getByRole('button', { name: 'Lower quality (720p)' }));
+  await waitFor(() => expect(state.frame.maxResolution).toBe('720'));
   expect(ref.current.getRecoveryTarget().visitId).toBe(target.visitId);
   expect(ref.current.getQueueSnapshot().items).toHaveLength(3);
   expect(state.frame.initialRendererOperation?.autoplay ?? state.frame.remountDiagnostics?.rendererOperation?.autoplay).toBe(false);
 });
 
-it('shows the rolling-cap Retry delay and blocks spinner bypass', async () => {
+it('shows the rolling-cap retry delay, and no spinner pretends it is loading', async () => {
   const retry = vi.fn();
   state.overlay = { isExhausted: true, shouldRender: true, isVisible: true, retryAfterMs: 12000, onRetryFromExhausted: retry };
   const view = render(<Player play={queue} />);
   await waitFor(() => expect(state.frame?.contentId).toBe('plex:1'));
   exhausted('stall-jolt-exhausted');
-  expect(view.getByRole('button', { name: 'Retry in 12s' })).toBeDisabled();
-  fireEvent.click(view.container.querySelector('.loading-spinner'));
-  expect(retry).not.toHaveBeenCalled();
+  expect(view.getByRole('button', { name: 'Try again in 12s' })).toBeDisabled();
+  expect(view.container.querySelector('.loading-spinner')).toBeNull();
+  expect(view.getByText('The video stopped loading')).toBeVisible();
 });
 
-it('keeps all held controls after a deliberate owner pause changes intent', async () => {
+it('keeps the held card after a deliberate owner pause changes intent', async () => {
   const ref = React.createRef();
   state.overlay = { isExhausted: false, shouldRender: false, isVisible: false };
   const view = render(<Player ref={ref} play={queue} />);
   await waitFor(() => expect(state.frame?.contentId).toBe('plex:1'));
   exhausted('stall-jolt-exhausted');
   act(() => ref.current.pause());
-  expect(view.getByRole('button', { name: /^Retry/ })).toBeVisible();
-  expect(view.getByRole('button', { name: /Quality/ })).toBeVisible();
-  expect(view.getByRole('button', { name: /Skip/ })).toBeVisible();
+  expect(view.getByRole('button', { name: /^Try again/ })).toBeVisible();
+  expect(view.getByRole('button', { name: 'Skip to Movie' })).toBeVisible();
 });
-it('D-pad focuses held controls and Enter never reaches broad playback keys', async () => {
+
+it('D-pad moves between held actions and Enter never reaches broad playback keys', async () => {
   state.overlay = { isExhausted: true, shouldRender: true, isVisible: true };
-  const view = render(<Player holdOnRefusal play={queue} />);
+  const view = render(on('remote', <Player holdOnRefusal play={queue} />));
   await waitFor(() => expect(state.frame?.contentId).toBe('plex:1'));
   exhausted('stall-jolt-exhausted');
-  const retry = view.getByRole('button', { name: /^Retry/ });
-  retry.focus();
-  fireEvent.keyDown(retry, { key: 'ArrowRight' });
-  expect(view.getByRole('button', { name: /Quality/ })).toHaveFocus();
+  expect(view.getByRole('button', { name: /^Try again/ })).toHaveFocus();
+  fireEvent.keyDown(document.activeElement, { key: 'ArrowRight' });
+  expect(view.getByRole('button', { name: 'Skip to Movie' })).toHaveFocus();
   fireEvent.keyDown(document.activeElement, { key: 'ArrowLeft' });
   const broadKey = vi.fn(); window.addEventListener('keydown', broadKey);
   fireEvent.keyDown(document.activeElement, { key: 'Enter' });
   window.removeEventListener('keydown', broadKey);
   expect(broadKey).not.toHaveBeenCalled();
   expect(state.frame.contentId).toBe('plex:1');
+  expect(view.getByTestId('player-held-keys')).toHaveTextContent('Choose');
 });
 
-it('held Skip delegates to an external queue owner exactly once', async () => {
-  const skip = vi.fn(); const clear = vi.fn();
+it('a single item offers no Skip — even with a host skip handler — and never a Close', async () => {
+  const skip = vi.fn();
   state.overlay = { isExhausted: true, shouldRender: true, isVisible: true };
-  const view = render(<Player play={movie} clear={clear} onSkipHeldPlayback={skip} />);
+  const view = render(<Player play={movie} clear={() => {}} onSkipHeldPlayback={skip} />);
   await waitFor(() => expect(state.frame?.contentId).toBe('plex:1'));
   exhausted('stall-jolt-exhausted');
-  fireEvent.click(view.getByRole('button', { name: /Skip/ }));
-  expect(skip).toHaveBeenCalledTimes(1);
-  expect(clear).not.toHaveBeenCalled();
+  expect(view.queryByRole('button', { name: /Skip/ })).toBeNull();
+  expect(view.queryByRole('button', { name: /Close/ })).toBeNull();
+  expect(view.queryByRole('dialog')).toBeNull();
 });
 
-it('a held movie gives the remote an initial focus on the first available action', async () => {
+it('a held movie gives the remote an initial focus on the first enabled action', async () => {
   state.overlay = { isExhausted: true, shouldRender: true, isVisible: true, retryAfterMs: 12000 };
-  const view = render(<Player play={queue} />);
+  const view = render(on('remote', <Player play={queue} />));
   await waitFor(() => expect(state.frame?.contentId).toBe('plex:1'));
   exhausted('stall-jolt-exhausted');
-  expect(view.getByRole('button', { name: /Quality/ })).toHaveFocus();
+  expect(view.getByRole('button', { name: 'Skip to Movie' })).toHaveFocus();
 });
 
-const remoteKey = key => fireEvent.keyDown(document.activeElement, { key });
-const remoteOpenQuality = async view => {
-  await waitFor(() => expect(state.frame?.contentId).toBe('plex:1'));
-  exhausted('stall-jolt-exhausted');
-  expect(view.getByRole('button', { name: /^Retry/ })).toHaveFocus();
-  remoteKey('ArrowRight');
-  expect(view.getByRole('button', { name: /Quality/ })).toHaveFocus();
-  remoteKey('Enter');
-};
-
-it('D-pad alone opens Quality, edits resolution, and applies without moving the movie visit', async () => {
+it('D-pad alone reaches Lower quality and applies it without moving the movie visit', async () => {
   const ref = React.createRef();
   state.overlay = { isExhausted: true, shouldRender: true, isVisible: true };
-  const view = render(<MantineProvider><Player ref={ref} play={queue} /></MantineProvider>);
+  const view = render(on('remote', <Player ref={ref} play={queue} />));
+  await waitFor(() => expect(state.frame?.contentId).toBe('plex:1'));
+  withVideo(1080);
   const target = ref.current.getRecoveryTarget();
-  await remoteOpenQuality(view);
-  const resolution = view.getByLabelText('Maximum resolution');
-  expect(resolution).toHaveFocus();
-  remoteKey('Enter'); // edit this native select, rather than navigating away
-  remoteKey('ArrowDown'); // default -> 1080
-  remoteKey('ArrowDown'); // 1080 -> 720
-  expect(resolution).toHaveValue('720');
-  remoteKey('Enter'); // finish editing
-  for (let next = 0; next < 5; next++) remoteKey('ArrowDown');
-  expect(view.getByRole('button', { name: 'Apply to current playback' })).toHaveFocus();
-  remoteKey('Enter');
+  exhausted('stall-jolt-exhausted');
+  fireEvent.keyDown(document.activeElement, { key: 'ArrowRight' });
+  fireEvent.keyDown(document.activeElement, { key: 'ArrowRight' });
+  expect(view.getByRole('button', { name: 'Lower quality (720p)' })).toHaveFocus();
+  fireEvent.keyDown(document.activeElement, { key: 'Enter' });
   await waitFor(() => expect(state.frame.maxResolution).toBe('720'));
-  expect(view.queryByRole('dialog')).toBeNull();
   expect(ref.current.getRecoveryTarget().visitId).toBe(target.visitId);
   expect(ref.current.getQueueSnapshot().items).toHaveLength(3);
 });
 
-it('D-pad alone reaches Close Quality and restores focus to the held Quality action', async () => {
+it('numpad: no buttons it could never reach; names its keys, and Play/Pause tries again', async () => {
+  const ref = React.createRef();
+  const retry = vi.fn(() => ({ ok: true }));
+  state.overlay = { isExhausted: true, shouldRender: true, isVisible: true, onRetryFromExhausted: retry };
+  const view = render(on('numpad', <Player ref={ref} play={queue} />));
+  await waitFor(() => expect(state.frame?.contentId).toBe('plex:1'));
+  exhausted('stall-jolt-exhausted');
+  expect(view.queryAllByRole('button')).toHaveLength(0);
+  expect(view.getByTestId('player-held-keys')).toHaveTextContent('Play/Pause');
+  expect(view.getByTestId('player-held-keys')).toHaveTextContent('Skip to Movie');
+  act(() => { ref.current.toggle(); });
+  expect(retry).toHaveBeenCalledTimes(1);
+});
+
+it('numpad: during the retry cooldown Play/Pause does nothing (no refused retry, no play on a dead element)', async () => {
+  const ref = React.createRef();
+  const retry = vi.fn(() => ({ ok: false, code: 'rolling-cap' }));
+  state.overlay = { isExhausted: true, shouldRender: true, isVisible: true, retryAfterMs: 9000, onRetryFromExhausted: retry };
+  const view = render(on('numpad', <Player ref={ref} play={queue} />));
+  await waitFor(() => expect(state.frame?.contentId).toBe('plex:1'));
+  exhausted('stall-jolt-exhausted');
+  act(() => { ref.current.toggle(); });
+  expect(retry).not.toHaveBeenCalled();
+  expect(view.getByTestId('player-held-keys')).toHaveTextContent('Try again in 9s');
+});
+
+it('Lower quality survives a remount that leaves the element without a picture height', async () => {
   state.overlay = { isExhausted: true, shouldRender: true, isVisible: true };
-  const view = render(<MantineProvider><Player play={queue} /></MantineProvider>);
-  await remoteOpenQuality(view);
-  remoteKey('ArrowUp'); // wrap to Close without changing a native select
-  expect(view.getByRole('button', { name: 'Close Quality' })).toHaveFocus();
-  remoteKey('Enter');
-  expect(view.queryByRole('dialog')).toBeNull();
-  expect(view.getByRole('button', { name: /Quality/ })).toHaveFocus();
-  expect(state.frame.contentId).toBe('plex:1');
+  const view = render(<Player play={queue} />);
+  await waitFor(() => expect(state.frame?.contentId).toBe('plex:1'));
+  withVideo(1080);
+  withVideo(0); // the ladder's last remount: a fresh element with no frame yet
+  exhausted('stall-jolt-exhausted');
+  expect(view.getByRole('button', { name: 'Lower quality (720p)' })).toBeVisible();
+});
+
+it('Lower quality keeps the other quality limits already in force', async () => {
+  state.overlay = { isExhausted: true, shouldRender: true, isVisible: true };
+  const items = [{ ...movie, maxVideoBitrate: 3000 }, queue[1]];
+  const view = render(<Player play={items} />);
+  await waitFor(() => expect(state.frame?.contentId).toBe('plex:1'));
+  act(() => { state.frame.onResolvedMeta(items[0]); });
+  withVideo(1080);
+  exhausted('stall-jolt-exhausted');
+  fireEvent.click(view.getByRole('button', { name: 'Lower quality (720p)' }));
+  await waitFor(() => expect(state.frame.maxResolution).toBe('720'));
+  expect(state.frame.maxVideoBitrate).toBe(3000);
+});
+
+it('no input: no buttons; the card states the automatic plan', async () => {
+  state.overlay = { isExhausted: true, shouldRender: true, isVisible: true };
+  const view = render(on('none', <Player play={queue} />));
+  await waitFor(() => expect(state.frame?.contentId).toBe('plex:1'));
+  exhausted('stall-jolt-exhausted');
+  expect(view.queryAllByRole('button')).toHaveLength(0);
+  expect(view.getByTestId('player-held-plan')).toHaveTextContent('Trying again in 20s (attempt 1 of 3)');
 });
 
 it.each([
   [{ expectedEndSeconds: 5895, provenance: 'catalog', rendererStartSeconds: 0, contentStartSeconds: 4320 }, 4370],
   [{ expectedEndSeconds: 5895, provenance: 'catalog' }, 4320],
-])('held direct Quality adopts confirmed content position with timeline %j', async (contentTimeline, expected) => {
+])('held Lower quality adopts confirmed content position with timeline %j', async (contentTimeline, expected) => {
   const ref = React.createRef();
   state.overlay = { isExhausted: true, shouldRender: true, isVisible: true };
   const items = [{ ...movie, duration: 5895, contentTimeline }, queue[1]];
-  const view = render(<MantineProvider><Player ref={ref} play={items} /></MantineProvider>);
+  const view = render(<Player ref={ref} play={items} />);
   await waitFor(() => expect(state.frame?.contentId).toBe('plex:1'));
-  const node = document.createElement('video');
-  Object.defineProperty(node, 'currentTime', { configurable: true, value: 50 });
-  act(() => {
-    state.frame.onResolvedMeta(items[0]);
-    state.frame.onMediaRef(node, { contentId: 'plex:1', rendererToken: Object.freeze({ tokenId: 'relative', node, resolvedContentId: 'plex:1' }) });
-    state.frame.onPlaybackMetrics({ seconds: 4320, isPaused: true, pauseIntent: 'user' });
-  });
+  act(() => { state.frame.onResolvedMeta(items[0]); });
+  withVideo(1080, { currentTime: 50 });
+  act(() => { state.frame.onPlaybackMetrics({ seconds: 4320, isPaused: true, pauseIntent: 'user' }); });
   exhausted('early-eof');
-  fireEvent.click(view.getByRole('button', { name: /Quality/ }));
-  fireEvent.change(view.getByLabelText('Maximum resolution'), { target: { value: '480' } });
-  fireEvent.click(view.getByRole('button', { name: 'Apply to current playback' }));
-  await waitFor(() => expect(state.frame.maxResolution).toBe('480'));
+  fireEvent.click(view.getByRole('button', { name: 'Lower quality (720p)' }));
+  await waitFor(() => expect(state.frame.maxResolution).toBe('720'));
   expect(state.frame.remountDiagnostics.rendererOperation.targetSeconds).toBe(expected);
   expect(state.frame.remountDiagnostics.rendererOperation.autoplay).toBe(false);
 });

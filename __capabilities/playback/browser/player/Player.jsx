@@ -10,7 +10,8 @@ import { useQueueController } from './hooks/useQueueController.js';
 import { SinglePlayer } from './components/SinglePlayer.jsx';
 import { AudioLayer } from './components/AudioLayer.jsx';
 import { AmbientLayer } from './components/AmbientLayer.jsx';
-import { HeldPlaybackQualityDialog } from './components/HeldPlaybackQualityDialog.jsx';
+import { usePlaybackSurface } from './PlaybackSurfaceContext.js';
+import { useAutoHeldRecovery } from './hooks/useAutoHeldRecovery.js';
 import { PlayerOverlayLoading } from './components/PlayerOverlayLoading.jsx';
 import { holdsAfterGaveUp } from './lib/sourceAvailability.js';
 import { useSourceWaitSkipKeys, playerIsHitTarget } from "../player-support/useSourceWaitSkipKeys.js";
@@ -1792,7 +1793,7 @@ const Player = forwardRef(function Player(props, ref) {
   // RELY.5a/AC4: what this Player last gave up on (and what plays instead),
   // published in the screen's session snapshot so whoever sent or steered this
   // screen can be told. A record, not a live state: it carries its own time.
-  // The item a screen is HOLDING after the maximum wait (Tap to Retry + Skip).
+  // The item a screen is HOLDING after the maximum wait (the held card).
   const [refusalHeldGuid, setRefusalHeldGuid] = useState(null);
   const finiteVideo = (effectiveMeta?.mediaType === 'video'
     || ['video', 'hls_video', 'dash_video'].includes(effectiveMeta?.format))
@@ -1821,7 +1822,7 @@ const Player = forwardRef(function Player(props, ref) {
   }, [currentMediaGuid, refusalHeldGuid]);
   const handleResilienceExhausted = useCallback(({ reason, attempts, waitKey: exhaustedWaitKey }) => {
     // A screen never gives a refused video up to its queue, even after the
-    // maximum wait: it stays on "Tap to Retry" (and Skip) until someone decides.
+    // maximum wait: it stays on the held card until someone decides.
     if (finiteVideo || reason === 'early-eof' || reason === 'timeline-unverified' || holdsAfterGaveUp({ reason, hold: holdRefusals })) {
       playbackLog('resilience-exhausted-hold', {
         reason, attempts, ...describeWaitKey(exhaustedWaitKey), action: 'hold', queueRemaining: playQueue?.length ?? 0,
@@ -2232,11 +2233,14 @@ const Player = forwardRef(function Player(props, ref) {
     && (!overlayProps?.pauseOverlayActive || overlayProps?.stalled === true || heldForCurrentVisit);
   const skipPillShowingRef = useRef(false);
   skipPillShowingRef.current = skipPillShowing;
+  // Skip keys act only when something comes next: on the last item a skip is
+  // just an exit, and every host already has one (Back, ✕, keypad 4).
+  const skipHasNextRef = useRef(false);
   const playerShellRef = useRef(null);
   // The sleep shader sets pointer-events on while a screen sleeps; a Player
   // underneath must not eat the wake key (OK) meant for the screen.
   const canConsumeSkipKey = useCallback(() => {
-    if (!skipPillShowingRef.current) return false;
+    if (!skipPillShowingRef.current || !skipHasNextRef.current) return false;
     return playerIsHitTarget(playerShellRef.current);
   }, []);
   useSourceWaitSkipKeys({
@@ -2420,7 +2424,12 @@ const Player = forwardRef(function Player(props, ref) {
     );
   }, [issueOwnerRevision, withTransport, acceptRecoveryIntent]);
 
+  // While a video is HELD (recovery stopped), play/pause means "try again":
+  // the element has nothing to play, and the office keypad has no other way
+  // to say it (heldRecoveryModel names this key).
+  const heldRetryRef = useRef(null);
   const toggleOwner = useCallback(() => {
+    if (heldRetryRef.current?.()) return true;
     acceptRecoveryIntent('play');
     ownerStoppedRef.current = false;
     issueOwnerRevision({ playback: true });
@@ -2513,18 +2522,13 @@ const Player = forwardRef(function Player(props, ref) {
     if (result?.ok !== false) { setHeldFailure(null); lastProblemRef.current = null; }
     return result ?? { ok: true };
   }, [resilienceControllerRef, recoveryIdentity, overlayProps?.onRetryFromExhausted]);
-  const [heldQualityRequest, setHeldQualityRequest] = useState(null);
-  const heldQualityReturnFocus = useRef(null);
+  // Quality from the held card: a host with its own dialog (MediaApp) opens
+  // it; everywhere else the card offers one "Lower quality" rung, applied
+  // straight to the current item (no desktop form on a TV).
   const openHeldQuality = useCallback(() => {
-    if (typeof props.onOpenPlaybackQuality === 'function') { props.onOpenPlaybackQuality(); return; }
-    heldQualityReturnFocus.current = document.activeElement;
-    setHeldQualityRequest({ mode: 'playing', item: effectiveMeta,
-      initial: normalizePlaybackQuality(effectiveMeta), target: recoveryIdentity.getTarget() });
-  }, [props.onOpenPlaybackQuality, effectiveMeta, recoveryIdentity]);
-  const applyHeldQuality = useCallback((quality) => {
-    if (!heldQualityRequest || !sameRecoveryTarget(heldQualityRequest.target, recoveryIdentity.getTarget())) {
-      return { ok: false, code: 'PLAYBACK_CHANGED' };
-    }
+    if (typeof props.onOpenPlaybackQuality === 'function') props.onOpenPlaybackQuality();
+  }, [props.onOpenPlaybackQuality]);
+  const applyQualityToCurrent = useCallback((quality) => {
     const item = { ...effectiveMeta, contentId: effectiveMeta.contentId ?? effectiveMeta.assetId,
       format: effectiveMeta.format ?? 'video' };
     const ownedQueue = queueSnapshot.items.length ? queueSnapshot : {
@@ -2544,10 +2548,50 @@ const Player = forwardRef(function Player(props, ref) {
     const result = playbackQualityChange(snapshot, { contentId: item.contentId, quality });
     if (!result.ok) return result;
     const adopted = adoptSessionSnapshot(result.snapshot, { reason: 'manual-quality', autoplay: !paused });
-    if (adopted.ok) { setHeldQualityRequest(null); setHeldFailure(null); lastProblemRef.current = null; }
+    if (adopted.ok) { setHeldFailure(null); lastProblemRef.current = null; }
     return adopted;
-  }, [heldQualityRequest, recoveryIdentity, effectiveMeta, queueSnapshot, currentMediaGuid, playbackMetrics,
+  }, [effectiveMeta, queueSnapshot, currentMediaGuid, playbackMetrics,
     playerInstanceId, shuffleOn, repeatMode, effectiveShader, sessionVolume, sessionPlaybackRate, adoptSessionSnapshot, overlayProps?.userIntent, explicitStartSeconds]);
+  const lowerHeldQuality = useCallback((resolution) => {
+    playbackLog('held-quality-lowered', { maxResolution: resolution }, { level: 'info' });
+    // A quality change replaces every override, so carry the ones already in
+    // force (a launch bitrate cap, a forced transcode) and lower only the height.
+    return applyQualityToCurrent({ ...normalizePlaybackQuality(effectiveMeta), maxResolution: resolution });
+  }, [applyQualityToCurrent, effectiveMeta]);
+
+  // What the held card may offer here (heldRecoveryModel): how this surface is
+  // operated, what comes next in this Player's own queue, the playing height.
+  const { input: surfaceInput } = usePlaybackSurface();
+  const heldExhausted = heldForCurrentVisit || overlayProps?.isExhausted === true;
+  const heldNext = useMemo(() => {
+    if (!(isQueue && hasNextQueueItem)) return null;
+    const nextId = queueSnapshot.executionOrder?.[1];
+    const entry = nextId != null ? queueSnapshot.items.find((it) => it.queueItemId === nextId) : null;
+    return { title: entry?.title ?? entry?.label ?? null };
+  }, [isQueue, hasNextQueueItem, queueSnapshot]);
+  // The picture height, remembered per item: the ladder's last remount leaves
+  // a fresh element with no frame (videoHeight 0) at exactly the moment the
+  // card needs to know whether a lower rung exists.
+  const lastVideoHeightRef = useRef({ guid: null, height: null });
+  const liveVideoHeight = Number(_getMediaElFallback()?.videoHeight) || 0;
+  if (liveVideoHeight > 0) lastVideoHeightRef.current = { guid: currentMediaGuid, height: liveVideoHeight };
+  const heldVideoHeight = heldExhausted && lastVideoHeightRef.current.guid === currentMediaGuid
+    ? lastVideoHeightRef.current.height : null;
+  skipHasNextRef.current = Boolean(heldNext);
+  // While held, play/pause is "try again" — but during the rolling-cap
+  // cooldown it is swallowed: a retry would be refused, and play on the dead
+  // element does nothing either (the card shows when it will work).
+  const heldCooldown = (overlayProps?.retryAfterMs ?? 0) > 0;
+  heldRetryRef.current = heldExhausted
+    ? () => { if (!heldCooldown) retryHeldPlayback(); return true; }
+    : null;
+  const autoHeld = useAutoHeldRecovery({
+    active: surfaceInput === 'none' && heldExhausted,
+    mediaKey: currentMediaGuid,
+    retry: () => retryHeldPlayback(),
+    skip: heldNext ? () => skipRefusedSource({ key: 'auto' }) : null,
+  });
+
   useImperativeHandle(isValidImperativeRef ? ref : null, () => ({
     retryMediaResilience: retryHeldPlayback,
     getRecoveryIdentity: () => recoveryIdentity,
@@ -2919,7 +2963,14 @@ const Player = forwardRef(function Player(props, ref) {
         shouldRender={heldForCurrentVisit || overlayProps.shouldRender}
         isVisible={heldForCurrentVisit || overlayProps.isVisible}
         onRetryFromExhausted={() => retryHeldPlayback()}
-        onOpenQuality={heldForCurrentVisit && supportsPlaybackQuality(effectiveMeta) ? openHeldQuality : null}
+        onOpenQuality={typeof props.onOpenPlaybackQuality === 'function' ? openHeldQuality : null}
+        qualityHost={typeof props.onOpenPlaybackQuality === 'function'}
+        canChangeQuality={supportsPlaybackQuality(effectiveMeta)}
+        onLowerQuality={lowerHeldQuality}
+        videoHeight={heldVideoHeight}
+        next={heldNext}
+        autoAttempt={autoHeld.attempt}
+        autoRetryInSec={autoHeld.retryInSec}
         onSkipSource={sourceWaitSkippable ? skipRefusedSource : null}
         effectiveMetaIsNull={!effectiveMeta}
         suppressForBlackout={suppressOverlaysForBlackout}
@@ -2930,10 +2981,6 @@ const Player = forwardRef(function Player(props, ref) {
         suppressForBlackout={suppressOverlaysForBlackout}
         suppressPauseOverlay={props.suppressPauseOverlay}
       />
-      {heldQualityRequest && !suppressOverlaysForBlackout && <HeldPlaybackQualityDialog
-        request={heldQualityRequest} onApply={applyHeldQuality}
-        returnFocus={heldQualityReturnFocus.current} onClose={() => setHeldQualityRequest(null)}
-      />}
       <PlayerOverlayStateDebug {...overlayProps} />
       <PlayerOverlayAutoplayBlocked
         autoplayBlocked={mediaAccess.autoplayBlocked}

@@ -5,6 +5,9 @@ import pause from '../../../../../frontend/src/assets/icons/pause.svg';
 import { playbackLog } from '../lib/playbackLogger.js';
 import { getLoadingPresentation } from '../../presentation.mjs';
 import { subscribeIntroCover, isIntroCovering } from '../../player-support/introCover.js';
+import { usePlaybackSurface } from '../PlaybackSurfaceContext.js';
+import { heldRecoveryModel } from '../lib/heldRecoveryModel.js';
+import { PlayerHeldCard } from './PlayerHeldCard.jsx';
 
 /**
  * Loading / resilience overlay shown while media is buffering, stalling, or waiting to start.
@@ -45,8 +48,19 @@ export function PlayerOverlayLoading({
   linkNotice = null,
   // Screens only: a way out of the wait (OK / tap). The keys live in
   // lib/Player/useSourceWaitSkipKeys; this is the visible half.
-  onSkipSource = null
+  onSkipSource = null,
+  // The held card's context (heldRecoveryModel): the next item in the
+  // Player's own queue, the playing picture height, whether the source takes
+  // a quality limit, a host quality dialog, and the no-input automatic plan.
+  next = null,
+  videoHeight = null,
+  canChangeQuality = false,
+  qualityHost = false,
+  onLowerQuality = null,
+  autoAttempt = 0,
+  autoRetryInSec = null,
 }) {
+  const { input } = usePlaybackSurface();
   // Removed on 2026-08-16, all for the same reason: no caller anywhere in the
   // repo supplied them, so every value they ever reported came from the default
   // written on this line — `startupWatchdogState` (rendered as
@@ -74,15 +88,9 @@ export function PlayerOverlayLoading({
   // shows a black screen with no affordance — see the 2026-05-22 audit.
   const overlayDisplayActive = shouldRender && isVisible && (!pauseOverlayActive || stalled || held || isExhausted);
 
+  // Initial focus belongs to the held card, and only on a D-pad surface
+  // (PlayerHeldCard): a focus ring on a touch screen is noise.
   const loadingRootRef = useRef(null);
-  useEffect(() => {
-    if (!isExhausted || !overlayDisplayActive || suppressForBlackout) return;
-    const root = loadingRootRef.current;
-    const active = document.activeElement;
-    if (active === document.body || active === document.documentElement || root?.contains(active)) {
-      root?.querySelector('button:not(:disabled)')?.focus();
-    }
-  }, [isExhausted, held, overlayDisplayActive, suppressForBlackout]);
 
   const logIntervalRef = useRef(null);
   const visibleSinceRef = useRef(null);
@@ -270,7 +278,6 @@ export function PlayerOverlayLoading({
   const hasValidPosition = positionDisplay && positionDisplay !== '0:00';
   const isStartupPhase = status === 'startup';
   const statusLabel = (() => {
-    if (isExhausted) return 'Tap to Retry';
     if (sourceNotice) return 'Source unavailable';
     if (linkNotice) return 'Buffering…';
     if (isStartupPhase) return 'Starting…';
@@ -402,6 +409,31 @@ export function PlayerOverlayLoading({
     };
   }, [effectiveMetaIsNull, overlayLoggingActive, overlayLogContext]);
 
+  // HELD: recovery has stopped, or the server is repairing the source. The
+  // card replaces the spinner — nothing is loading — and offers only what this
+  // surface can do (heldRecoveryModel).
+  const heldState = (isExhausted || held) ? 'exhausted' : (sourceNotice ? 'source-wait' : null);
+  const heldModel = heldState ? heldRecoveryModel({
+    input,
+    state: heldState,
+    positionLabel: hasValidPosition ? positionDisplay : null,
+    sourceNotice,
+    next: typeof onSkipSource === 'function' ? next : null,
+    retryAfterMs,
+    videoHeight,
+    canChangeQuality: canChangeQuality && (qualityHost ? typeof onOpenQuality === 'function' : typeof onLowerQuality === 'function'),
+    qualityHost,
+    autoAttempt,
+    autoRetryInSec,
+  }) : null;
+  const handleHeldAction = useCallback((action) => {
+    playbackLog('held-card-action', { action: action.id, input }, { level: 'info' });
+    if (action.id === 'retry') onRetryFromExhausted?.();
+    else if (action.id === 'skip') onSkipSource?.({ key: 'card' });
+    else if (action.id === 'quality') onOpenQuality?.();
+    else if (action.id === 'lower-quality') onLowerQuality?.(action.resolution);
+  }, [input, onRetryFromExhausted, onSkipSource, onOpenQuality, onLowerQuality]);
+
   if (!overlayDisplayActive) {
     return null;
   }
@@ -439,7 +471,10 @@ export function PlayerOverlayLoading({
   return (
     <div
       ref={loadingRootRef}
-      className={`loading-overlay ${showPauseIcon ? 'paused' : 'loading'}`}
+      // `loading` stays on the held card: the fitness player toggles
+      // fullscreen on a tap inside `.loading-overlay.loading`, and in
+      // fullscreen that tap is the only way back to its ✕ (FitnessPlayer).
+      className={`loading-overlay ${showPauseIcon && !heldModel ? 'paused' : 'loading'}${heldModel ? ' loading-overlay--held' : ''}`}
       data-no-fullscreen="true"
       style={{
         opacity: isVisible ? 1 : 0,
@@ -464,6 +499,9 @@ export function PlayerOverlayLoading({
       onDoubleClick={(event) => { if (!event.target.closest('button')) togglePauseOverlay?.(); }}
     >
       <div className="loading-overlay__inner">
+        {heldModel ? (
+          <PlayerHeldCard model={heldModel} onAction={handleHeldAction} />
+        ) : (
         <div className="loading-timing">
           <div
             className="loading-spinner"
@@ -482,32 +520,11 @@ export function PlayerOverlayLoading({
               </div>
             </div>
           </div>
-          {sourceNotice ? (
-            <div className="loading-notice" data-testid="player-source-notice">{sourceNotice}</div>
-          ) : null}
-          {!sourceNotice && linkNotice ? (
+          {linkNotice ? (
             <div className="loading-notice" data-testid="player-link-notice">{linkNotice}</div>
           ) : null}
-          {isExhausted && <div className="loading-recovery-actions">
-            <button type="button" className="loading-skip" disabled={retryAfterMs > 0}
-              onClick={(event) => { event.preventDefault(); event.stopPropagation(); onRetryFromExhausted?.(); }}>
-              {retryAfterMs > 0 ? `Retry in ${Math.ceil(retryAfterMs / 1000)}s` : 'Retry'}
-            </button>
-            {typeof onOpenQuality === 'function' && <button type="button" className="loading-skip"
-              onClick={(event) => { event.preventDefault(); event.stopPropagation(); onOpenQuality(); }}>Quality…</button>}
-          </div>}
-          {(sourceNotice || isExhausted) && typeof onSkipSource === 'function' ? (
-            <button
-              type="button"
-              className="loading-skip"
-              data-testid="player-source-skip"
-              data-no-fullscreen="true"
-              onClick={(event) => { event.preventDefault(); event.stopPropagation(); onSkipSource({ key: 'tap' }); }}
-            >
-              Skip<span className="loading-skip__key">OK</span>
-            </button>
-          ) : null}
         </div>
+        )}
       </div>
     </div>
   );
@@ -550,7 +567,15 @@ PlayerOverlayLoading.propTypes = {
   held: PropTypes.bool,
   onOpenQuality: PropTypes.func,
   sourceNotice: PropTypes.string,
-  linkNotice: PropTypes.string
+  linkNotice: PropTypes.string,
+  onSkipSource: PropTypes.func,
+  next: PropTypes.shape({ title: PropTypes.string }),
+  videoHeight: PropTypes.number,
+  canChangeQuality: PropTypes.bool,
+  qualityHost: PropTypes.bool,
+  onLowerQuality: PropTypes.func,
+  autoAttempt: PropTypes.number,
+  autoRetryInSec: PropTypes.number
 };
 
 export default PlayerOverlayLoading;

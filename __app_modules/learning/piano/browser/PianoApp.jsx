@@ -1,4 +1,5 @@
 import {useActivityStop} from '../../../household/supervision/browser/index.js';
+import { PlaybackSurfaceProvider } from '../../../../__capabilities/playback/browser/public.mjs';
 import {suspendChessSounds} from './PianoChessGame/chessSounds.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
@@ -473,7 +474,10 @@ export default function PianoApp() {
 
   return (
     <PianoConfigProvider>
-      <PianoRoutes />
+      {/* The piano tablet is a touch screen (held card: tap targets). */}
+      <PlaybackSurfaceProvider input="touch">
+        <PianoRoutes />
+      </PlaybackSurfaceProvider>
       <RebootPromptModal {...jankReboot} />
     </PianoConfigProvider>
   );
