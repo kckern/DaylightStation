@@ -286,264 +286,262 @@ GovernanceWarningOverlay.propTypes = {
   quiet: PropTypes.bool
 };
 
-let _lockLogger;
-const lockLogger = () => {
-  if (!_lockLogger) _lockLogger = getLogger().child({ component: 'governance-lock-modal' });
-  return _lockLogger;
-};
-
-const FALLBACK_AVATAR_PATH = '/static/img/users/user';
-const avatarFallback = (event) => {
-  const img = event.currentTarget;
-  if (img.dataset.fallback) return;
-  img.dataset.fallback = '1';
-  img.src = DaylightMediaPath(FALLBACK_AVATAR_PATH);
-};
-const NEUTRAL_ZONE_COLOR = '#94a3b8';
-const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-
-/**
- * One clause per unmet rule, from display.summary: "1 rider to Hot",
- * "both riders to Active". Every rule must pass, so the clauses join with "and".
- */
-export function describeUnlockInstruction(summary, obligations = [], activity = null) {
-  const parts = (Array.isArray(summary) ? summary : [])
-    .filter((rule) => rule && rule.needed > 0 && rule.type !== 'activity_rate').map((rule) => {
-    const zone = rule.zoneLabel || rule.zone || 'the target zone';
-    const pedal = obligations.find((o) => o.key === rule.key)?.requirement?.type === 'cadence_floor';
-    const where = pedal ? `pedaling or in ${zone}` : `to ${zone}`;
-    // "both riders" only while nobody counts yet; after that it would ask for
-    // work already done.
-    if (rule.scope === 'all' && rule.requiredCount > 1 && rule.actualCount === 0) {
-      return `${rule.requiredCount === 2 ? 'both riders' : `all ${rule.requiredCount} riders`} ${where}`;
-    }
-    return `${rule.needed}${rule.actualCount > 0 ? ' more' : ''} ${rule.needed === 1 ? 'rider' : 'riders'} ${where}`;
-  });
-  if (!parts.length) return null;
-  // A step-mat floor alongside: one more clause (a suspended mat blocks nothing).
-  const mat = activity && !activity.suspended
-    ? ` and step on the mat at ${Math.max(0, Math.round(activity.targetRate || 0))} steps a minute` : '';
-  return `Get ${parts.join(' and ')}${mat} to keep watching.`;
-}
-
-const HeartGlyph = ({ color }) => (
-  <svg className="governance-lock__heart" viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" style={{ color }}>
-    <path fill="currentColor" d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.8 4.5c2.1 0 3.5 1.1 4.2 2.3h2c.7-1.2 2.1-2.3 4.2-2.3 3.8 0 5.9 3.9 4.4 7.3C19.5 16.4 12 21 12 21z" />
-  </svg>
-);
-
-// A goal label ("Active 110", 18px) spans about this share of the narrowest
-// bar (half the row at 1280x720); labels whose spans come closer than the gap
-// move above the bar instead.
-const MARKER_LABEL_SPAN = 0.2;
-const MARKER_LABEL_GAP = 0.03;
-const markerAlign = (pos) => (pos > 0.88 ? 'end' : (pos < 0.12 ? 'start' : 'center'));
-const markerSpan = (pos, align) => (align === 'end' ? [pos - MARKER_LABEL_SPAN, pos]
-  : align === 'start' ? [pos, pos + MARKER_LABEL_SPAN]
-    : [pos - MARKER_LABEL_SPAN / 2, pos + MARKER_LABEL_SPAN / 2]);
-
-/**
- * The rider's BPM on one scale with every goal they still owe marked on it:
- * from their lowest zone threshold to 10 above the highest goal.
- */
-function RiderScale({ rider }) {
-  const targets = rider.goals.filter((goal) => Number.isFinite(goal.targetHeartRate));
-  if (!targets.length) return null;
-  const thresholds = (rider.zoneSequence || []).map((zone) => zone?.threshold).filter(Number.isFinite);
-  const heartRate = Number.isFinite(rider.heartRate) ? rider.heartRate : null;
-  const top = Math.max(...targets.map((goal) => goal.targetHeartRate)) + 10;
-  const floor = thresholds.length ? Math.min(...thresholds)
-    : Math.max(0, Math.min(heartRate ?? Infinity, ...targets.map((goal) => goal.targetHeartRate)) - 20);
-  const span = Math.max(1, top - floor);
-  const at = (bpm) => Math.max(0, Math.min(1, (bpm - floor) / span));
-  const p = heartRate != null ? at(heartRate) : 0;
-  const fillColor = rider.currentZone?.color || NEUTRAL_ZONE_COLOR;
-  // Goals arrive sorted by target BPM, so positions ascend.
-  const markers = [];
-  const laneEnd = { below: -Infinity, above: -Infinity };
-  targets.forEach((goal) => {
-    const pos = at(goal.targetHeartRate);
-    const align = markerAlign(pos);
-    const [left, right] = markerSpan(pos, align);
-    const fits = (lane) => left - laneEnd[lane] >= MARKER_LABEL_GAP;
-    const lane = fits('below') || !fits('above') ? 'below' : 'above';
-    laneEnd[lane] = right;
-    markers.push({ goal, pos, align, lane });
-  });
-  const stacked = markers.some((m) => m.lane === 'above');
-  return (
-    <div className={`governance-lock__scale${stacked ? ' governance-lock__scale--stacked' : ''}`} aria-hidden="true">
-      <div className="governance-lock__track" style={{ '--p': Math.round(p * 1000) / 1000 }}>
-        <div className="governance-lock__fill" style={{ background: fillColor }} />
-      </div>
-      <div className="governance-lock__markers">
-        {markers.map(({ goal, pos, align, lane }) => {
-          return (
-            <div key={goal.obligationKey} className={`governance-lock__marker governance-lock__marker--${align} governance-lock__marker--${lane}`}
-              style={{ left: `${Math.round(pos * 1000) / 10}%`, '--marker-color': goal.zoneColor || NEUTRAL_ZONE_COLOR }}>
-              {`${goal.zoneLabel} ${Math.round(goal.targetHeartRate)}`}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function RiderGap({ rider }) {
-  const pedalGoal = rider.goals.find((goal) => goal.pedal);
-  if (pedalGoal) return <PedalFeedback pedal={pedalGoal.pedal} />;
-  const next = rider.goals.find((goal) => Number.isFinite(goal.bpmToGo) && goal.bpmToGo > 0);
-  if (next) {
-    return <>
-      <span className="governance-lock__gap-num" style={{ color: next.zoneColor || undefined }}>+{next.bpmToGo}</span>{' '}
-      <span className="governance-lock__gap-zone">to {next.zoneLabel}</span>
-    </>;
+function normalizeRequiredCountFromRule(rule, totalCount) {
+  if (!Number.isFinite(totalCount) || totalCount < 0) return null;
+  const normalizedTotal = Math.max(0, Math.round(totalCount));
+  if (normalizedTotal === 0) return 0;
+  if (typeof rule === 'number' && Number.isFinite(rule)) {
+    return Math.min(normalizedTotal, Math.max(0, Math.round(rule)));
   }
-  // At or past every target but still listed: the engine has not credited it
-  // yet (a hold, or the BPM is ahead of the committed zone). Ask to hold the top one.
-  const reached = rider.goals.filter((goal) => Number.isFinite(goal.targetHeartRate));
-  const top = reached[reached.length - 1];
-  return top ? <span className="governance-lock__gap-zone">Hold {top.zoneLabel}</span> : null;
+  if (typeof rule !== 'string') return null;
+  const normalizedRule = rule.trim().toLowerCase();
+  if (normalizedRule === 'all') return normalizedTotal;
+  if (normalizedRule === 'majority' || normalizedRule === 'most') {
+    return Math.max(1, Math.ceil(normalizedTotal * 0.5));
+  }
+  if (normalizedRule === 'some') {
+    return Math.max(1, Math.ceil(normalizedTotal * 0.3));
+  }
+  if (normalizedRule === 'any') return normalizedTotal > 0 ? 1 : 0;
+  return null;
 }
 
-function RiderRow({ rider }) {
-  const zoneColor = rider.currentZone?.color || NEUTRAL_ZONE_COLOR;
-  const heartRate = Number.isFinite(rider.heartRate) ? Math.max(0, Math.round(rider.heartRate)) : null;
-  const hasTarget = rider.goals.some((goal) => Number.isFinite(goal.targetHeartRate));
-  const pedal = rider.goals.some((goal) => goal.pedal);
-  return (
-    <div className="governance-lock__rider" role="row" data-testid="lock-rider-row">
-      <div className="governance-lock__who" role="cell">
-        <span className="governance-lock__face" style={{ borderColor: zoneColor }}>
-          <img src={rider.avatarSrc} alt="" onError={avatarFallback} />
-        </span>
-        <span className="governance-lock__name">{rider.displayName}</span>
-      </div>
-      <div className="governance-lock__bpm" role="cell" aria-label={heartRate != null ? `${heartRate} beats per minute` : 'No heart rate'}>
-        <HeartGlyph color={zoneColor} />
-        <span className="governance-lock__bpm-num">{heartRate ?? '--'}</span>
-      </div>
-      <div className="governance-lock__progress" role="cell">
-        {hasTarget ? <RiderScale rider={rider} /> : (pedal ? null
-          : <span className="governance-lock__waiting">Waiting for heart rate</span>)}
-        {rider.goals.map((goal) => (
-          <HoldProgress key={goal.obligationKey} row={{
-            userId: rider.userId, displayName: rider.displayName, zoneSequence: rider.zoneSequence,
-            currentZone: rider.currentZone, targetZone: goal.targetZone,
-            holdProgress: goal.holdProgress, holdPaused: goal.holdPaused, status: goal.status,
-          }} />
-        ))}
-      </div>
-      <div className="governance-lock__gap" role="cell"><RiderGap rider={rider} /></div>
-    </div>
-  );
-}
+// A stable default: a fresh `[]` per render changed the `rows` memo every
+// render, and with two or more rows the sorted copy re-fired the row-animation
+// effect, which re-rendered, forever — a render loop on every multi-rider lock.
+const NO_LOCK_ROWS = [];
 
-const NO_ITEMS = [];
+const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ display, overlay, lockRows = NO_LOCK_ROWS, onUnlock = null, embedded = false }) {
+  // Support both new (display) and legacy (overlay + lockRows) format
+  const status = display?.status || overlay?.status || 'unknown';
+  const requirements = useMemo(() => (
+    Array.isArray(display?.requirements)
+      ? display.requirements
+      : (Array.isArray(overlay?.requirements) ? overlay.requirements : [])
+  ), [display?.requirements, overlay?.requirements]);
+  const foreground = display?.obligations?.[0] || null;
+  const challenge = foreground ? foreground.challenge : (display?.challenge || null);
+  const activeUserCount = Number.isFinite(display?.activeUserCount)
+    ? Math.max(0, Math.round(display.activeUserCount))
+    : null;
+  // Sort by progress descending — closest to meeting target bubbles to top
+  const rows = useMemo(() => {
+    const unsortedRows = (display ? display.rows : lockRows) || [];
+    if (unsortedRows.length <= 1) return unsortedRows;
+    return [...unsortedRows].sort((a, b) => {
+      const pa = a.progress ?? -1;
+      const pb = b.progress ?? -1;
+      return pb - pa; // highest progress first
+    });
+  }, [display, lockRows]);
+  const hasRows = rows.length > 0;
 
-const GovernanceLockPanel = React.memo(function GovernanceLockPanel({ display, onUnlock = null }) {
-  const status = display?.status || 'unknown';
-  const riders = Array.isArray(display?.riders) ? display.riders : NO_ITEMS;
-  const noSignal = Array.isArray(display?.noSignal) ? display.noSignal : NO_ITEMS;
-  const summary = Array.isArray(display?.summary) ? display.summary : NO_ITEMS;
-  const obligations = Array.isArray(display?.obligations) ? display.obligations : NO_ITEMS;
-  const challenge = obligations[0] ? obligations[0].challenge : (display?.challenge || null);
-  const activeUserCount = Number.isFinite(display?.activeUserCount) ? Math.max(0, Math.round(display.activeUserCount)) : null;
+  const isInitPoolEmpty = !hasRows && (!Number.isFinite(activeUserCount) || activeUserCount <= 0);
 
-  const activity = (Array.isArray(display?.activityRequirements) ? display.activityRequirements : NO_ITEMS)
-    .find((requirement) => requirement && !requirement.satisfied)
-    || display?.activityRequirements?.[0] || null;
+  const activeRequirement = useMemo(() => {
+    if (!requirements.length) return null;
+    return requirements.find((req) => req && !req.satisfied) || requirements[0] || null;
+  }, [requirements]);
+
+  const activeActivityRequirement = useMemo(() => {
+    const activityRequirements = Array.isArray(display?.activityRequirements)
+      ? display.activityRequirements
+      : requirements.filter((requirement) => requirement?.type === 'activity_rate');
+    return activityRequirements.find((requirement) => requirement && !requirement.satisfied)
+      || activityRequirements[0]
+      || null;
+  }, [display?.activityRequirements, requirements]);
+  const hasActivityRequirement = Boolean(activeActivityRequirement);
   const isFailedStepChallenge = challenge?.type === 'step' && challenge?.status === 'failed';
-  const stepTarget = Math.max(0, Math.round(Number(challenge?.target ?? challenge?.requiredCount) || 0));
-  const stepActual = Math.min(stepTarget, Math.max(0, Math.round(Number(challenge?.actualCount) || 0)));
-  const stepUnit = challenge?.metric === 'stomps' ? 'stomps' : 'steps';
-  const isInitPoolEmpty = !riders.length && !noSignal.length && (!Number.isFinite(activeUserCount) || activeUserCount <= 0);
-  const zoneRules = isFailedStepChallenge ? NO_ITEMS : summary.filter((rule) => rule.type !== 'activity_rate'
-    && Number.isFinite(rule.requiredCount) && rule.requiredCount > 0);
+  const stepChallengeTarget = Math.max(0, Math.round(
+    Number(challenge?.target ?? challenge?.requiredCount) || 0
+  ));
+  const stepChallengeActual = Math.min(
+    stepChallengeTarget,
+    Math.max(0, Math.round(Number(challenge?.actualCount) || 0))
+  );
+  const stepChallengeUnit = challenge?.metric === 'stomps' ? 'stomps' : 'steps';
 
-  const instruction = useMemo(() => {
-    // A zone rule alongside the mat: one sentence names both.
-    if (riders.length || zoneRules.length) {
-      const sentence = describeUnlockInstruction(summary, obligations, activity);
-      if (sentence) return sentence;
+  const targetZoneName = foreground?.zoneLabel
+    || challenge?.zoneLabel
+    || challenge?.zone
+    || activeRequirement?.zoneLabel
+    || activeRequirement?.zone
+    || 'target';
+
+  const targetCount = useMemo(() => {
+    if (Number.isFinite(foreground?.requiredCount)) return foreground.requiredCount;
+    if (Number.isFinite(challenge?.requiredCount)) {
+      return Math.max(0, Math.round(challenge.requiredCount));
     }
-    if (activity) {
-      if (activity.suspended) return 'Step mat sensor unavailable';
-      return `Keep stepping: ${Math.max(0, Math.round(activity.currentRate || 0))} / ${Math.max(0, Math.round(activity.targetRate || 0))} SPM`;
+    if (Number.isFinite(activeRequirement?.requiredCount)) {
+      return Math.max(0, Math.round(activeRequirement.requiredCount));
     }
-    if (isFailedStepChallenge) return `Keep going: ${stepActual} / ${stepTarget} ${stepUnit}`;
-    if (isInitPoolEmpty) return 'No participants connected';
-    if (Number.isFinite(activeUserCount) && activeUserCount > 0) return `${plural(activeUserCount, 'participant')} in pool`;
+    if (Number.isFinite(activeUserCount)) {
+      return normalizeRequiredCountFromRule(activeRequirement?.rule, activeUserCount);
+    }
+    return null;
+  }, [foreground, challenge, activeRequirement, activeUserCount]);
+
+  const actualCount = useMemo(() => {
+    const challengeActual = Number.isFinite(challenge?.actualCount)
+      ? Math.max(0, Math.round(challenge.actualCount))
+      : null;
+    const requirementActual = Number.isFinite(activeRequirement?.actualCount)
+      ? Math.max(0, Math.round(activeRequirement.actualCount))
+      : null;
+    const resolved = foreground?.actualCount ?? challengeActual ?? requirementActual ?? 0;
+    if (Number.isFinite(targetCount)) {
+      return Math.min(targetCount, resolved);
+    }
+    return resolved;
+  }, [foreground, challenge, activeRequirement, targetCount]);
+
+  // Participants who have already satisfied, joined to their avatar/zone by
+  // resolveGovernanceDisplay. `rows` is missing-only, so these riders exist
+  // nowhere else on the panel.
+  const metRows = useMemo(
+    () => (Array.isArray(display?.metRows) ? display.metRows.filter(Boolean) : []),
+    [display]
+  );
+
+  const hasTargetCount = Number.isFinite(targetCount) && targetCount > 0;
+  const showCountBlocks = !hasActivityRequirement && !isFailedStepChallenge && !isInitPoolEmpty && hasTargetCount;
+
+  const summaryMain = useMemo(() => {
+    if (hasActivityRequirement) {
+      if (activeActivityRequirement.suspended) return 'Step mat sensor unavailable';
+      const actual = Math.max(0, Math.round(activeActivityRequirement.currentRate || 0));
+      const target = Math.max(0, Math.round(activeActivityRequirement.targetRate || 0));
+      return `Keep stepping: ${actual} / ${target} SPM`;
+    }
+    if (isFailedStepChallenge) {
+      return `Keep going: ${stepChallengeActual} / ${stepChallengeTarget} ${stepChallengeUnit}`;
+    }
+    if (isInitPoolEmpty) {
+      return 'No participants connected';
+    }
+    if (hasTargetCount) {
+      return `${actualCount} of ${targetCount} in ${targetZoneName}`;
+    }
+    if (Number.isFinite(activeUserCount) && activeUserCount > 0) {
+      return `${activeUserCount} participant${activeUserCount === 1 ? '' : 's'} in pool`;
+    }
     return 'Waiting for participant data...';
-  }, [activity, isFailedStepChallenge, stepActual, stepTarget, stepUnit, isInitPoolEmpty, summary, obligations, activeUserCount, riders.length, zoneRules.length]);
+  }, [hasActivityRequirement, activeActivityRequirement, isFailedStepChallenge, stepChallengeActual, stepChallengeTarget, stepChallengeUnit, isInitPoolEmpty, hasTargetCount, targetCount, actualCount, targetZoneName, activeUserCount]);
 
+  // Log when "Waiting for participant data" renders (rate-limited)
+  const lastWaitingLogRef = useRef(0);
   useEffect(() => {
-    lockLogger().sampled('governance.lock_modal.render', {
-      status, riders: riders.length, rules: zoneRules.length, noSignal: noSignal.length,
-    }, { maxPerMinute: 6, level: 'debug' });
-  }, [status, riders.length, zoneRules.length, noSignal.length]);
+    if (!hasRows && status === 'pending') {
+      const now = Date.now();
+      if (now - lastWaitingLogRef.current > 5000) {
+        lastWaitingLogRef.current = now;
+        getLogger().sampled('governance.overlay.waiting_for_participants', {
+          status,
+          displayRowCount: display?.rows?.length ?? -1,
+          lockRowCount: lockRows?.length ?? -1,
+          requirementCount: requirements.length,
+          hasDisplay: !!display
+        }, { maxPerMinute: 6 });
+      }
+    }
+  }, [hasRows, status, display, lockRows, requirements]);
 
-  // Rate-limited breadcrumb for a lock that has no one to show yet.
-  useEffect(() => {
-    if (riders.length || status !== 'pending') return;
-    getLogger().sampled('governance.overlay.waiting_for_participants', {
-      status, riderCount: riders.length, noSignalCount: noSignal.length, ruleCount: summary.length,
-    }, { maxPerMinute: 6 });
-  }, [riders.length, status, noSignal.length, summary.length]);
-
-  const activityRow = activity ? (
-    <div className="governance-lock__activity" role="row">
-      <div className="governance-lock__activity-icon" aria-hidden="true">{activity.suspended ? '⚠' : '👟'}</div>
-      <div className="governance-lock__activity-copy" role="cell">
-        <strong>{activity.suspended ? 'Mat unavailable' : 'Stay on the step mat'}</strong>
-        <span>{activity.suspended
-          ? 'Playback is not penalized while the sensor is offline.'
-          : `Reach ${Math.round(activity.targetRate || 0)} steps per minute to continue.`}</span>
-      </div>
-      {!activity.suspended ? (
-        <div className="governance-lock__activity-rate" role="cell">
-          <strong>{Math.round(activity.currentRate || 0)}</strong>
-          <span>SPM</span>
+  const renderProgressBlock = (row) => {
+    // Support both formats: progress (new) and progressPercent (legacy)
+    const rawProgress = row.progress ?? row.progressPercent ?? null;
+    if (rawProgress == null) return null;
+    const clamped = Math.max(0, Math.min(1, rawProgress));
+    const percentValue = Math.round(clamped * 100);
+    const widthPercent = Number.isFinite(percentValue) ? Math.max(0, percentValue) : 0;
+    const progressClass = 'governance-lock__progress governance-lock__progress--inline';
+    const intermediateZones = Array.isArray(row.intermediateZones) ? row.intermediateZones : [];
+    const currentColor = row.currentZone?.color || 'rgba(148, 163, 184, 0.6)';
+    const targetColor = row.targetZone?.color || 'rgba(34, 197, 94, 0.85)';
+    let fillBackground;
+    if (intermediateZones.length > 0) {
+      const stops = [`${currentColor} 0%`];
+      intermediateZones.forEach((zone) => {
+        stops.push(`${zone.color || currentColor} ${Math.round((zone.position || 0) * 100)}%`);
+      });
+      stops.push(`${targetColor} 100%`);
+      fillBackground = `linear-gradient(90deg, ${stops.join(', ')})`;
+    } else {
+      fillBackground = row.progressGradient || `linear-gradient(90deg, ${currentColor}, ${targetColor})`;
+    }
+    return (
+      <div className={progressClass}>
+        {/* One input, `--p`, drives both the fill (scaleX) and the knob's
+            wrapper (translateX) with the same transition, so the percentage
+            rides the bar tip instead of snapping ahead of it. */}
+        <div className="governance-lock__progress-track" aria-hidden="true" style={{ '--p': clamped }}>
+          <div
+            className="governance-lock__progress-fill"
+            style={{ background: fillBackground }}
+          />
+          {intermediateZones.map((zone) => {
+            const markerPosition = Math.round((zone.position || 0) * 100);
+            const isPassed = widthPercent >= markerPosition;
+            return (
+              <div
+                key={zone.id}
+                className={`governance-lock__zone-marker${isPassed ? ' governance-lock__zone-marker--passed' : ''}`}
+                style={{
+                  left: `${markerPosition}%`,
+                  borderColor: zone.color || undefined
+                }}
+                title={zone.name || zone.id}
+              />
+            );
+          })}
+          <div className="governance-lock__progress-tip">
+            <span className="governance-lock__progress-indicator"
+              style={{ '--tip-color': currentColor /* data-color */ }}>{percentValue}%</span>
+          </div>
         </div>
-      ) : null}
-    </div>
-  ) : null;
-
-  // Rider rows and the step-mat row stand together: every rule must pass.
-  const body = isFailedStepChallenge ? (
-    <div className="governance-lock__activity" role="row">
-      <div className="governance-lock__activity-icon" aria-hidden="true">{challenge.metric === 'stomps' ? '💥' : '👟'}</div>
-      <div className="governance-lock__activity-copy" role="cell">
-        <strong>Finish the {stepUnit} challenge</strong>
-        <span>Catch up to resume playback.</span>
+        <HoldProgress row={row} />
       </div>
-      <div className="governance-lock__activity-rate" role="cell">
-        <strong>{stepActual}/{stepTarget}</strong>
-        <span>{stepUnit}</span>
-      </div>
-    </div>
-  ) : (activity || riders.length) ? <>
-    {riders.map((rider) => <RiderRow key={rider.key} rider={rider} />)}
-    {activityRow}
-  </>
-    : isInitPoolEmpty ? (
-      <div className="governance-lock__init" role="note" aria-live="polite">
-        <p className="governance-lock__init-title">Waiting for first participant</p>
-        <p className="governance-lock__init-text">Start a participant or connect a heart rate sensor to continue.</p>
-      </div>
-    ) : noSignal.length ? null : (
-      <div className="governance-lock__empty" role="row">Collecting participant vitals...</div>
     );
+  };
+
+  const renderChipMeta = (row) => {
+    const base = (() => {
+      if (row.pedal) {
+        return <PedalFeedback pedal={row.pedal} />;
+      }
+      const currentHr = Number.isFinite(row.heartRate) ? Math.max(0, Math.round(row.heartRate)) : null;
+      const targetHr = Number.isFinite(row.targetHeartRate) ? Math.max(0, Math.round(row.targetHeartRate)) : null;
+      if (currentHr != null) {
+        if (targetHr != null) {
+          return `${currentHr} / ${targetHr}`;
+        }
+        return String(currentHr);
+      }
+      return row.groupLabel || 'No HR data';
+    })();
+    return base;
+  };
 
   return (
-    <div className={`governance-overlay governance-overlay--${status}`}>
-      <div className="governance-overlay__panel governance-lock governance-lock--wide" role="dialog" aria-label="Video paused">
-        <div className="governance-lock__header">
-          <div className="governance-lock__heading">
-            <h2 className="governance-lock__title">Video paused</h2>
-            <p className="governance-lock__instruction">{instruction}</p>
-          </div>
+    <div className={embedded ? 'governance-lock__section' : `governance-overlay governance-overlay--${status}`}>
+      <div className={`${embedded ? '' : 'governance-overlay__panel '}governance-lock governance-lock--wide`}>
+        {/* One chrome line owns all the standing state: who has earned it, the
+            count, and the unlock affordance. The former stacked title
+            ("Video Locked") and instruction line were static copy the paused
+            video already communicated, and they pushed the rows — the only part
+            that answers "what do I do?" — down the panel. */}
+        <div className={`governance-lock__header${showCountBlocks ? '' : ' governance-lock__header--summary-only'}`}>
+          {showCountBlocks ? (
+            <CompletionAvatars
+              targetCount={targetCount}
+              actualCount={actualCount}
+              metRows={metRows}
+              containerClassName="governance-lock__credits"
+              ariaLabel={`Exit criteria progress ${actualCount} of ${targetCount}`}
+            />
+          ) : null}
+          <p className="governance-lock__summary-main">{summaryMain}</p>
           {onUnlock ? (
             <button
               type="button"
@@ -561,53 +559,147 @@ const GovernanceLockPanel = React.memo(function GovernanceLockPanel({ display, o
             </button>
           ) : null}
         </div>
-        {zoneRules.length ? (
-          <div className="governance-lock__rules">
-            {zoneRules.map((rule) => {
-              const metRows = obligations.find((o) => o.key === rule.key)?.metRows || NO_ITEMS;
-              const shown = Math.min(rule.actualCount, rule.requiredCount);
-              return (
-                <div key={rule.key} className="governance-lock__rule" style={{ '--zone-color': rule.zoneColor || NEUTRAL_ZONE_COLOR }}>
-                  <span className="governance-lock__rule-label">{`${rule.zoneLabel} ${shown}/${rule.requiredCount}`}</span>
-                  <CompletionAvatars targetCount={rule.requiredCount} actualCount={rule.actualCount} metRows={metRows}
-                    showOpen={false} ariaLabel={`${rule.zoneLabel}: ${shown} of ${rule.requiredCount} riders`} />
+
+        <div
+          className={`governance-lock__table${isInitPoolEmpty && !hasActivityRequirement && !isFailedStepChallenge ? ' governance-lock__table--init' : ''}`}
+          role="table"
+          aria-label="Unlock requirements"
+        >
+            {isFailedStepChallenge ? (
+              <div className="governance-lock__activity" role="row">
+                <div className="governance-lock__activity-icon" aria-hidden="true">
+                  {challenge.metric === 'stomps' ? '💥' : '👟'}
                 </div>
-              );
-            })}
-          </div>
-        ) : null}
-        {body ? (
-          <div className={`governance-lock__table${isInitPoolEmpty && !activity && !isFailedStepChallenge ? ' governance-lock__table--init' : ''}`}
-            role="table" aria-label="Unlock requirements">
-            {body}
-          </div>
-        ) : null}
-        {noSignal.length ? (
-          <div className="governance-lock__no-signal">
-            <span className="governance-lock__no-signal-faces" aria-hidden="true">
-              {noSignal.map((rider) => <img key={rider.userId} src={rider.avatarSrc} alt="" onError={avatarFallback} />)}
-            </span>
-            <span>{`No heart-rate signal: ${noSignal.map((rider) => rider.displayName).join(', ')}`}</span>
-          </div>
-        ) : null}
+                <div className="governance-lock__activity-copy" role="cell">
+                  <strong>Finish the {stepChallengeUnit} challenge</strong>
+                  <span>Catch up to resume playback.</span>
+                </div>
+                <div className="governance-lock__activity-rate" role="cell">
+                  <strong>{stepChallengeActual}/{stepChallengeTarget}</strong>
+                  <span>{stepChallengeUnit}</span>
+                </div>
+              </div>
+            ) : hasActivityRequirement ? (
+              <div className="governance-lock__activity" role="row">
+                <div className="governance-lock__activity-icon" aria-hidden="true">
+                  {activeActivityRequirement.suspended ? '⚠' : '👟'}
+                </div>
+                <div className="governance-lock__activity-copy" role="cell">
+                  <strong>{activeActivityRequirement.suspended ? 'Mat unavailable' : 'Stay on the step mat'}</strong>
+                  <span>
+                    {activeActivityRequirement.suspended
+                      ? 'Playback is not penalized while the sensor is offline.'
+                      : `Reach ${Math.round(activeActivityRequirement.targetRate || 0)} steps per minute to continue.`}
+                  </span>
+                </div>
+                {!activeActivityRequirement.suspended ? (
+                  <div className="governance-lock__activity-rate" role="cell">
+                    <strong>{Math.round(activeActivityRequirement.currentRate || 0)}</strong>
+                    <span>SPM</span>
+                  </div>
+                ) : null}
+              </div>
+            ) : hasRows ? rows.map((row) => {
+            const currentLabel = row.currentZone?.name || row.currentLabel || 'No signal';
+            const currentClass = row.currentZone?.id ? `zone-${row.currentZone.id}` : 'zone-none';
+            const targetClass = row.targetZone?.id ? `zone-${row.targetZone.id}` : 'zone-none';
+            const chip = (
+              <div className="governance-lock__chip">
+                <div className={`governance-lock__avatar ${currentClass}`}>
+                  <img
+                    src={row.avatarSrc}
+                    alt=""
+                    onError={(event) => {
+                      const img = event.currentTarget;
+                      if (img.dataset.fallback) return;
+                      img.dataset.fallback = '1';
+                      img.src = DaylightMediaPath('/static/img/users/user');
+                    }}
+                  />
+                </div>
+                <div className="governance-lock__chip-text">
+                  <span className="governance-lock__chip-name">{row.displayName || row.displayLabel || row.name}</span>
+                  <span className="governance-lock__chip-meta">{renderChipMeta(row)}</span>
+                </div>
+              </div>
+            );
+
+              return (
+              <div
+                className="governance-lock__row"
+                role="row"
+                key={row.key}
+              >
+                <div className="governance-lock__identity" role="cell">
+                  {chip}
+                </div>
+                <div className="governance-lock__metric" role="cell">
+                  <span className={`governance-lock__pill ${currentClass}`}>
+                    {currentLabel}
+                  </span>
+                </div>
+                <div className="governance-lock__metric governance-lock__metric--progress" role="cell">
+                  {renderProgressBlock(row)}
+                </div>
+                <div className="governance-lock__metric" role="cell">
+                  <span className={`governance-lock__pill governance-lock__pill--target ${targetClass}`}>
+                    {row.targetZone?.name || row.targetLabel || 'Target'}
+                  </span>
+                </div>
+              </div>
+            );
+            }) : isInitPoolEmpty ? (
+              <div className="governance-lock__init" role="note" aria-live="polite">
+                <p className="governance-lock__init-title">Waiting for first participant</p>
+                <p className="governance-lock__init-text">
+                  Start a participant or connect a heart rate sensor to continue.
+                </p>
+              </div>
+            ) : (
+              <div className="governance-lock__row governance-lock__row--empty" role="row">
+                <div className="governance-lock__metric governance-lock__metric--empty" role="cell">
+                  Collecting participant vitals...
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 });
 
-GovernanceLockPanel.propTypes = {
+GovernancePanelOverlay.propTypes = {
   display: PropTypes.shape({
     status: PropTypes.string,
-    riders: PropTypes.array,
-    noSignal: PropTypes.array,
-    summary: PropTypes.array,
-    obligations: PropTypes.array,
+    rows: PropTypes.array,
+    metRows: PropTypes.array,
+    requirements: PropTypes.array,
     activeUserCount: PropTypes.number,
-    activityRequirements: PropTypes.array,
-    challenge: PropTypes.object,
+    activityRequirements: PropTypes.array
   }),
-  onUnlock: PropTypes.func,
+  overlay: PropTypes.shape({
+    status: PropTypes.string,
+    title: PropTypes.string,
+    descriptions: PropTypes.arrayOf(PropTypes.string),
+    requirements: PropTypes.array
+  }),
+  lockRows: PropTypes.array,
+  onUnlock: PropTypes.func
 };
+
+function GovernancePanels({ display, onUnlock }) {
+  if ((display?.obligations?.length || 0) <= 1) return <GovernancePanelOverlay display={display} onUnlock={onUnlock} />;
+  return <div className={`governance-overlay governance-overlay--${display.status}`}>
+    <div className="governance-overlay__panel governance-overlay__panel--sections">
+      {display.obligations.map((obligation, index) => <GovernancePanelOverlay key={obligation.key} embedded
+        onUnlock={index === 0 ? onUnlock : null}
+        display={{ ...display, ...obligation, obligations: [obligation],
+          requirements: obligation.requirement ? [obligation.requirement] : [],
+          activityRequirements: obligation.requirement?.type === 'activity_rate' ? [obligation.requirement] : [],
+        }} />)}
+    </div>
+  </div>;
+}
 
 const GenericOverlay = React.memo(function GenericOverlay({ overlay }) {
   return (
@@ -638,12 +730,13 @@ GenericOverlay.propTypes = {
 const GovernanceStateOverlay = ({
   display,
   overlay = null,
+  lockRows = [],
   warningOffenders = [],
   voiceMemoOpen = false,
   onUnlock = null
 }) => {
   // New path: display prop from useGovernanceDisplay
-  // Legacy path: overlay + warningOffenders (warning chips and generic copy)
+  // Legacy path: overlay + lockRows + warningOffenders
   const useNewPath = display != null;
 
   const effectiveStatus = useNewPath
@@ -707,7 +800,7 @@ const GovernanceStateOverlay = ({
     return (
       <>
         <GovernanceAudioPlayer trackKey={audioTrackKey} paused={voiceMemoOpen} />
-        <GovernanceLockPanel display={display} onUnlock={onUnlock} />
+        <GovernancePanels display={display} onUnlock={onUnlock} />
       </>
     );
   }
@@ -722,6 +815,19 @@ const GovernanceStateOverlay = ({
           countdownTotal={overlay.countdownTotal}
           notches={countdownNotches}
           offenders={warningOffenders}
+        />
+      </>
+    );
+  }
+
+  if (overlay.category === 'governance') {
+    return (
+      <>
+        <GovernanceAudioPlayer trackKey={audioTrackKey} paused={voiceMemoOpen} />
+        <GovernancePanelOverlay
+          overlay={overlay}
+          lockRows={lockRows}
+          onUnlock={onUnlock}
         />
       </>
     );
@@ -758,6 +864,7 @@ GovernanceStateOverlay.propTypes = {
     descriptions: PropTypes.arrayOf(PropTypes.string),
     requirements: PropTypes.array
   }),
+  lockRows: PropTypes.array,
   warningOffenders: PropTypes.array,
   voiceMemoOpen: PropTypes.bool,
   onUnlock: PropTypes.func

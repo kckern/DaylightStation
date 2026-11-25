@@ -1,6 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { SCENES } from './scenes.jsx';
+import '../../../__app_modules/wellness/fitness/browser/player/FitnessPlayer.scss';
 
 const READY_SETTLE_MS = 600; // entry transitions, first avatar paint
 
@@ -43,11 +44,11 @@ if (!scene) {
   // the nav rail). position:fixed overlays (the voice memo portal) cover the same box.
   root.render(
     <Boundary>
-      <div className="harness-stage fitness-player-content" data-scene={name}
+      <div className="fitness-player"><div className="harness-stage fitness-player-content" data-scene={name}
         style={{ position: 'relative', width: '100vw', height: '100vh', background: '#0a0a14', overflow: 'hidden' }}>
         <PausedVideo />
         {scene.render()}
-      </div>
+      </div></div>
     </Boundary>
   );
   const imagesSettled = () => Promise.all([...document.images].map((img) => (

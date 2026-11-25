@@ -483,7 +483,11 @@ dash-video {
       z-index: var(--fitness-parent-overlay-z, 60);
       text-align: center;
 
-      &__panel:not(.governance-lock--wide) {
+      // The lock panels size themselves (GovernanceStateOverlay.scss). That
+      // includes the --sections panel that stacks two or more rules (e.g. Hot
+      // and Active): left under this 520px cap, its rider names and bars were
+      // crushed to "Fe…" on the kiosk.
+      &__panel:not(.governance-lock--wide):not(.governance-overlay__panel--sections) {
         max-width: min(520px, 100%);
         width: 100%;
         background: rgba(17, 24, 39, 0.78);

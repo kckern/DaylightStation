@@ -16,8 +16,6 @@
 //              above its top while scrollTop is 0 (clipped, unreachable), or overflows
 //              its bottom while it cannot scroll
 //   3 font     any visible text renders under 16 px
-//   4 lock     a governance lock rider row's BPM bar is under half the row's width,
-//              or two of its goal labels overlap (metrics.lockRows has the ratios)
 // and also on a thrown scene, a console error, a failed request or an HTTP >= 400.
 import { chromium, firefox } from 'playwright';
 import fs from 'node:fs';
@@ -42,7 +40,7 @@ fs.mkdirSync(OUT, { recursive: true });
 const MEMO = ['.voice-memo-overlay', '.voice-memo-overlay__panel', '.voice-memo-overlay__actions'];
 const BUDGET = ['[data-testid="playback-budget-overlay"]', '.gate-card', '.presence-gate-notice__actions', '.presence-gate-notice__btn'];
 const PRESENCE = ['[data-testid="presence-gate-notice"]', '.gate-card', '.presence-gate-notice__actions', '.presence-gate-notice__btn'];
-const LOCK = ['.governance-overlay', '.governance-overlay__panel', '.governance-lock__rider'];
+const LOCK = ['.governance-overlay', '.governance-overlay__panel', '.governance-lock__row'];
 const SCENE_ROOTS = {
   'memo-long': MEMO,
   'memo-short': MEMO,
@@ -52,8 +50,6 @@ const SCENE_ROOTS = {
   'presence-gate': PRESENCE,
   'lock-one-rule': LOCK,
   'lock-two-rules': LOCK,
-  'lock-close-goals': LOCK,
-  'lock-zone-and-mat': [...LOCK, '.governance-lock__activity'],
 };
 const ALL = Object.keys(SCENE_ROOTS);
 const scenes = process.env.SCENES ? process.env.SCENES.split(',').map((s) => s.trim()).filter(Boolean) : ALL;
@@ -145,24 +141,6 @@ function inspect({ roots }) {
       failures.push({ check: 'font', detail: `"${entry.text}" in ${entry.el} renders at ${entry.px}px (< 16px)` });
     }
   }
-  // 4. lock modal rows: the bar is the row's main column, and goal labels never collide
-  metrics.lockRows = [];
-  document.querySelectorAll('.governance-lock__rider').forEach((row, i) => {
-    const rowBox = row.getBoundingClientRect();
-    const track = row.querySelector('.governance-lock__track');
-    const ratio = track ? track.getBoundingClientRect().width / rowBox.width : null;
-    const labels = [...row.querySelectorAll('.governance-lock__marker')].map((m) => ({ text: m.textContent, b: m.getBoundingClientRect() }));
-    metrics.lockRows.push({ row: i, ratio: ratio == null ? null : Math.round(ratio * 1000) / 1000, labels: labels.map((l) => ({ text: l.text, ...box(l.b) })) });
-    if (ratio != null && ratio < 0.5) failures.push({ check: 'lock', detail: `rider row ${i}: bar is ${Math.round(ratio * 100)}% of the row (< 50%)` });
-    for (let a = 0; a < labels.length; a++) {
-      for (let b = a + 1; b < labels.length; b++) {
-        const A = labels[a].b; const B = labels[b].b;
-        if (A.left < B.right && B.left < A.right && A.top < B.bottom && B.top < A.bottom) {
-          failures.push({ check: 'lock', detail: `rider row ${i}: labels "${labels[a].text}" and "${labels[b].text}" overlap` });
-        }
-      }
-    }
-  });
   return { metrics, failures };
 }
 
@@ -200,7 +178,6 @@ for (const scene of scenes) {
   results[scene] = { browser: BROWSER, viewport: VIEWPORT, ok: failures.length === 0, failures, metrics };
   if (failures.length) failed += 1;
   console.log(`${failures.length ? 'FAIL' : 'ok  '} ${scene} (${BROWSER} ${VIEWPORT.width}x${VIEWPORT.height})`);
-  (metrics?.lockRows || []).forEach((r) => console.log(`       bar/row ${r.ratio}  labels ${r.labels.map((l) => l.text).join(' | ')}`));
   failures.forEach((f) => console.log(`       [${f.check}] ${f.detail}`));
 }
 await browser.close();

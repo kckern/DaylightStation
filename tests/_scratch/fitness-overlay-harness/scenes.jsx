@@ -74,17 +74,7 @@ const lockScene = (riders, requirements) => () => {
     activeUserCount: riders.length, requirements,
     deadline: null, gracePeriodTotal: 30,
   }, new Map(riders), ZONE_META);
-  // Production (FitnessPlayer.scss) greys and darkens the video while locked
-  // (`.governance-filter-critical`: grayscale(1) brightness(0.6)) and pads the
-  // overlay clamp(16px, 4vw, 48px). The harness does not load that sheet, so
-  // the lock scenes restate both against the stand-in video.
-  return <>
-    <style>{`
-      .harness-stage [data-harness-backdrop] { filter: grayscale(1) brightness(0.6); }
-      .harness-stage .governance-overlay { padding: clamp(16px, 4vw, 48px); text-align: center; }
-    `}</style>
-    <GovernanceStateOverlay display={display} onUnlock={noop} />
-  </>;
+  return <GovernanceStateOverlay display={display} onUnlock={noop} />;
 };
 
 export const SCENES = {
@@ -104,18 +94,5 @@ export const SCENES = {
   'lock-two-rules': { render: lockScene(
     [rider('rider_c', 'Rider C', 105, 'cool'), rider('rider_a', 'Rider A', 91, 'cool')],
     [floor('hot', 1, ['rider_c', 'rider_a']), floor('active', 2, ['rider_c', 'rider_a'])],
-  ) },
-  // A zone rule and a step-mat rule together: Rider A must reach Hot AND the
-  // mat must run at 30 steps a minute. Both must show; neither replaces the other.
-  'lock-zone-and-mat': { render: lockScene(
-    [rider('rider_a', 'Rider A', 92, 'cool')],
-    [floor('hot', 1, ['rider_a']), { id: 'keep-stepping', type: 'activity_rate', equipment: 'step_mat',
-      currentRate: 12, targetRate: 30, requiredCount: 1, actualCount: 0, satisfied: false, missingUsers: [], metUsers: [] }],
-  ) },
-  // Close goals: Active 110, Warm 130, Hot 150 on one 60..160 scale; Rider C's
-  // name is long enough to wrap. The labels must stagger, never overlap.
-  'lock-close-goals': { render: lockScene(
-    [rider('rider_a', 'Rider A', 95, 'cool'), rider('rider_c', 'Rider C With A Much Longer Name', 118, 'active')],
-    [floor('hot', 1, ['rider_a', 'rider_c']), floor('warm', 1, ['rider_a', 'rider_c']), floor('active', 2, ['rider_a', 'rider_c'])],
   ) },
 };

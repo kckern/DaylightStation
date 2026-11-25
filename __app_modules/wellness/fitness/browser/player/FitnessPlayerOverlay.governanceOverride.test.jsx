@@ -180,8 +180,7 @@ describe('FitnessPlayerOverlay cycling bypass and recovery', () => {
     expect(screen.queryByRole('status', { name: 'Cadence sensor unavailable' })).not.toBeInTheDocument();
     expect(container.querySelector('.cycle-lock-screen')).toBeNull();
     expect(container.querySelector('.governance-overlay')).not.toBeNull();
-    expect(screen.getByText('Get 1 rider to Warm to keep watching.')).toBeVisible();
-    expect(screen.getByText('Warm 0/1')).toBeVisible();
+    expect(screen.getByText('0 of 1 in Warm')).toBeVisible();
     fireEvent.pointerDown(screen.getByRole('button', { name: /skip or unlock/i }));
     expect(onGovernanceUnlock).toHaveBeenCalledTimes(1);
   });

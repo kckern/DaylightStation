@@ -84,13 +84,3 @@ describe('CompletionAvatars', () => {
     expect(container.firstChild).toBeNull();
   });
 });
-
-describe('CompletionAvatars — showOpen={false}', () => {
-  it('renders only the earned faces', () => {
-    const { container } = render(
-      <CompletionAvatars targetCount={3} actualCount={1} metRows={[{ key: 'a', displayName: 'Rider A', avatarSrc: '/a' }]} showOpen={false} />
-    );
-    expect(container.querySelectorAll('.governance-lock__credit--open')).toHaveLength(0);
-    expect(container.querySelectorAll('.governance-lock__credit--met')).toHaveLength(1);
-  });
-});

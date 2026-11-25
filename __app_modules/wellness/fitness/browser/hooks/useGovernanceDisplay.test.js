@@ -619,8 +619,8 @@ describe('resolveGovernanceDisplay — riders, noSignal and summary', () => {
     const result = resolveGovernanceDisplay(makeGovState({ status: 'locked', requirements: [rule('hot', 1, ['rider-a', 'rider-b']), rule('active', 2, ['rider-b'], ['rider-a'])] }),
       makeDisplayMap({ 'rider-a': profile('Rider A', 105, 'active'), 'rider-b': profile('Rider B', 95) }), zones);
     expect(result.summary).toEqual([
-      { key: 'requirement:hot-floor', zone: 'hot', zoneLabel: 'Hot', zoneColor: '#f97316', requiredCount: 1, actualCount: 0, needed: 1, scope: 'any', type: 'zone' },
-      { key: 'requirement:active-floor', zone: 'active', zoneLabel: 'Active', zoneColor: '#22c55e', requiredCount: 2, actualCount: 1, needed: 1, scope: 'all', type: 'zone' },
+      { key: 'requirement:hot-floor', zone: 'hot', zoneLabel: 'Hot', zoneColor: '#f97316', requiredCount: 1, actualCount: 0, needed: 1, scope: 'any' },
+      { key: 'requirement:active-floor', zone: 'active', zoneLabel: 'Active', zoneColor: '#22c55e', requiredCount: 2, actualCount: 1, needed: 1, scope: 'all' },
     ]);
   });
 
@@ -639,17 +639,3 @@ describe('resolveGovernanceDisplay — riders, noSignal and summary', () => {
     ]);
   });
 });
-
-describe('resolveGovernanceDisplay — zone and step-mat rules together', () => {
-  const zones = { map: { cool: { id: 'cool', name: 'Cool', rank: 0 }, hot: { id: 'hot', name: 'Hot', rank: 3, color: '#f97316' } } };
-  const hot = { id: 'hot-floor', type: 'zone', zone: 'hot', zoneLabel: 'Hot', requiredCount: 1, actualCount: 0, satisfied: false, missingUsers: ['rider-a'], metUsers: [] };
-  const mat = { id: 'keep-stepping', type: 'activity_rate', equipment: 'step_mat', currentRate: 12, targetRate: 30, requiredCount: 1, actualCount: 0, satisfied: false, missingUsers: [], metUsers: [] };
-  const map = () => makeDisplayMap({ 'rider-a': { displayName: 'Rider A', heartRate: 90, zoneId: 'cool' } });
-  it.each([['zone first', [hot, mat]], ['mat first', [mat, hot]]])('%s: every activity floor is listed and summary entries carry their type', (_, requirements) => {
-    const result = resolveGovernanceDisplay(makeGovState({ status: 'locked', requirements }), map(), zones);
-    expect(result.activityRequirements).toEqual([mat]);
-    expect(Object.fromEntries(result.summary.map((r) => [r.key, r.type]))).toEqual({ 'requirement:hot-floor': 'zone', 'requirement:keep-stepping': 'activity_rate' });
-    expect(result.riders.map((r) => r.userId)).toEqual(['rider-a']);
-  });
-});
-
