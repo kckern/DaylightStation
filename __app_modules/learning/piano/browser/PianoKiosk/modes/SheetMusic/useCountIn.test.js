@@ -27,6 +27,19 @@ describe('useCountIn', () => {
     expect(result.current.active).toBe(false);
   });
 
+  it('plans the count on one clock: each blip and the go carry their performance-clock instant', () => {
+    vi.useFakeTimers();
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const blips = [];
+    const onGo = vi.fn();
+    const { result } = renderHook(() => useCountIn({ onGo, scheduleBlip: (offsetS, at) => blips.push(at) }));
+    act(() => result.current.start({ beats: 3, periodMs: 500, leadMs: 2 }));
+    expect(blips).toEqual([{ perfMs: 1000, leadMs: 2 }, { perfMs: 1500, leadMs: 2 }, { perfMs: 2000, leadMs: 2 }]); // no WebAudio here: no start delay
+    act(() => vi.advanceTimersByTime(1500));
+    expect(onGo).toHaveBeenCalledWith({ atPerfMs: 2500 });
+    now.mockRestore();
+  });
+
   it('cancel stops everything and never fires onGo', () => {
     vi.useFakeTimers();
     const onGo = vi.fn();

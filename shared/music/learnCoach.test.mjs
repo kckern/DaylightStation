@@ -343,17 +343,18 @@ describe('Gold tempo ladder: 50, 70, 85, then score tempo (2026-11-23 late night
     }
   });
 
-  it('steps the rhythm step down through the slower-beat recovery, and back up when it passes', () => {
+  it('steps the rhythm step down through the slower-beat recovery, and a slower pass clears it', () => {
     const plan = planOf(); const rhythm = choose(plan, 'rhythm');
     const timing = { ...bad, criteria: { completeness: 1, cleanliness: 1, placement: 0.2 } };
     let state = outcome(outcome(undefined, plan, rhythm, timing), plan, rhythm, timing);
     const down = projection(plan, state).goldResume;
     expect(down).toMatchObject({ rhythm: true, tempoPercent: 85, reason: 'slower-beat', depth: 1 });
     state = outcome(outcome(state, plan, down), plan, down);
-    expect(projection(plan, state).goldResume.key).toBe(rhythm.key);
-    // A slower rhythm pass proves only its drill, never the rhythm step at score tempo or a timed step.
+    // The rhythm step is a warm-up: a slower pass over its bars clears it (was: back up to score tempo, which
+    // bounced a child between 100% and 85% for 40 takes, 2026-11-24). It still proves no timed step.
     const skills = projection(plan, state).segments[0].skills;
-    expect(skills.find((s) => s.skill === 'rhythm').ready).toBe(false);
+    expect(skills.find((s) => s.skill === 'rhythm').ready).toBe(true);
+    expect(projection(plan, state).goldResume?.rhythm).not.toBe(true);
     expect(skills.filter((s) => s.track === 'gold' && !s.rhythm).some((s) => s.ready)).toBe(false);
   });
 

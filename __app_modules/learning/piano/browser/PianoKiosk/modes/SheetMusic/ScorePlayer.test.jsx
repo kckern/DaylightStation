@@ -7,6 +7,9 @@ import getLogger, { getRecentEvents } from '../../../../../../../frontend/src/li
 import sha256 from 'crypto-js/sha256.js';
 import { __resetRecorder, __snapshotForTest, KIND } from '../../../../../../../frontend/src/lib/logging/inputRecorder.js';
 
+// Polish keeps a run open for its last note's match window (timingToleranceMs 80 × 5).
+const POLISH_TAIL_MS = 400;
+
 // Shared holders (hoisted so the vi.mock factories can see them).
 const h = vi.hoisted(() => ({
   // EVERY live note-event subscriber, not just the last one. The real
@@ -1272,7 +1275,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     expect(screen.getByText('2 / 4')).toBeTruthy();
     act(() => vi.advanceTimersByTime(1050)); // 2nd quarter @60
     expect(screen.getByText('3 / 4')).toBeTruthy();
-    act(() => vi.advanceTimersByTime(550)); // 3rd quarter @120 = 500ms
+    act(() => vi.advanceTimersByTime(550 + POLISH_TAIL_MS)); // 3rd quarter @120 = 500ms, then the last note's window
     // The 4th onset is the LAST timeline event, so firing it also completes the
     // run — and a completed run returns the cursor home (audit H2). Landing on
     // '1 / 4' at 2550ms elapsed is itself the proof the mid-piece 120bpm change
@@ -1328,7 +1331,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     expect(document.querySelector('.piano-score-countin')).toBeNull();
     expect(sheet().scrollTop).toBe(0);
     // The run ends and the cursor goes home: the page goes back with it.
-    act(() => vi.advanceTimersByTime(1100));
+    act(() => vi.advanceTimersByTime(1100 + POLISH_TAIL_MS));
     expect(cursorAt()).toBe(AT[0]);
     expect(pageLabel()).toBe('Page 1 of 2');
   });
@@ -1404,7 +1407,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     for (const n of [61, 62, 63]) { act(() => vi.advanceTimersByTime(1000)); play(n); }
     act(() => vi.advanceTimersByTime(850));
     play(64); // closing note inside the shared scorer's early window
-    act(() => vi.advanceTimersByTime(50)); // final onset tick → onDone
+    act(() => vi.advanceTimersByTime(50 + POLISH_TAIL_MS)); // final onset tick → onDone
 
     expect(document.querySelector('.piano-score-run-summary')).not.toBeNull();
     const graded = emitted.filter(([ev]) => ev === 'score.polish.measure').map(([, d]) => [d.measure, d.grade]);
@@ -1538,7 +1541,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     await act(async () => {});
     act(() => vi.advanceTimersByTime(4100)); // through the 4-beat @60 count-in
     play(62); // the pass
-    act(() => vi.advanceTimersByTime(2200)); // play it out → onDone finalizes
+    act(() => vi.advanceTimersByTime(2200 + POLISH_TAIL_MS)); // play it out → onDone finalizes
 
     const grades = emitted.filter(([ev]) => ev === 'score.polish.measure');
     const played = grades.filter(([, d]) => d.measure === 1);
@@ -1561,7 +1564,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(4100)); // count-in
-    for (let i = 0; i < 4; i++) act(() => vi.advanceTimersByTime(1100)); // play it out → onDone
+    for (let i = 0; i < 4; i++) act(() => vi.advanceTimersByTime(1100 + POLISH_TAIL_MS)); // play it out → onDone
     expect(document.querySelector('.piano-score-run-summary')).not.toBeNull(); // the run ended
     emitted.length = 0; // only what happens AFTER the run is over
 
@@ -1974,7 +1977,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     play(61);
     act(() => vi.advanceTimersByTime(950));
     play(62); // closing note just before the final onset
-    act(() => vi.advanceTimersByTime(50)); // → final step + onDone (finalize grades m1 AND m2)
+    act(() => vi.advanceTimersByTime(50 + POLISH_TAIL_MS)); // → final step + onDone (finalize grades m1 AND m2)
 
     expect(document.querySelector('.piano-score-run-summary')).not.toBeNull();
     expect(h.recordTierBest).toHaveBeenCalledTimes(1);
@@ -2004,7 +2007,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     play(61);
     act(() => vi.advanceTimersByTime(950));
     play(62);
-    act(() => vi.advanceTimersByTime(50)); // → onDone
+    act(() => vi.advanceTimersByTime(50 + POLISH_TAIL_MS)); // → onDone
 
     expect(h.recordTierBest).toHaveBeenCalledTimes(1);
     const call = h.recordTierBest.mock.calls[0][0];
@@ -2025,7 +2028,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     play(61);
     act(() => vi.advanceTimersByTime(950));
     play(62);
-    await act(async () => { vi.advanceTimersByTime(50); }); // → onDone, and the reward answer
+    await act(async () => { vi.advanceTimersByTime(50 + POLISH_TAIL_MS); }); // → onDone, and the reward answer
   };
 
   it('a completed run is reported to the server to the server, with whether every measure was green, and a new diamond is announced', async () => {
@@ -2060,7 +2063,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     play(61);
     act(() => vi.advanceTimersByTime(950));
     play(62);
-    await act(async () => { vi.advanceTimersByTime(50); });
+    await act(async () => { vi.advanceTimersByTime(50 + POLISH_TAIL_MS); });
 
     expect(h.recordPolishRun).toHaveBeenCalledTimes(1);
     expect(h.recordPolishRun.mock.calls[0][0].metronome).toBe(false);
@@ -2080,7 +2083,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     pickTempo('125%'); // mid-run tempo change → tier bests are no longer comparable
     play(61);
     play(62);
-    act(() => vi.advanceTimersByTime(2000)); // let the (now rescaled) run finish → onDone
+    act(() => vi.advanceTimersByTime(2000 + POLISH_TAIL_MS)); // let the (now rescaled) run finish → onDone
 
     expect(document.querySelector('.piano-score-run-summary')).not.toBeNull();
     expect(screen.getByText(/mixed tempo/i)).toBeInTheDocument();
@@ -2106,7 +2109,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     play(61);
     act(() => vi.advanceTimersByTime(950));
     play(62);
-    act(() => vi.advanceTimersByTime(50));
+    act(() => vi.advanceTimersByTime(50 + POLISH_TAIL_MS));
 
     expect(screen.queryByText(/mixed tempo/i)).toBeNull();
     expect(h.recordTierBest).toHaveBeenCalledWith({ bucket: 'both', tier: 'medium', score: 100 });
@@ -2131,7 +2134,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     play(61);
     act(() => vi.advanceTimersByTime(950));
     play(62);
-    act(() => vi.advanceTimersByTime(50));
+    act(() => vi.advanceTimersByTime(50 + POLISH_TAIL_MS));
 
     expect(tierBestEvents(emitted)).toEqual([
       { bucket: 'both', tier: 'medium', score: 100, banked: true, reason: 'banked' },
@@ -2191,7 +2194,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     play(61);
     act(() => vi.advanceTimersByTime(950));
     play(62);
-    act(() => vi.advanceTimersByTime(50));
+    act(() => vi.advanceTimersByTime(50 + POLISH_TAIL_MS));
 
     expect(tierBestEvents(emitted)).toEqual([
       { bucket: 'both', tier: 'medium', score: 100, banked: false, reason: 'not-better' },
@@ -2214,7 +2217,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     play(61);
     act(() => vi.advanceTimersByTime(950));
     play(62);
-    act(() => vi.advanceTimersByTime(50));
+    act(() => vi.advanceTimersByTime(50 + POLISH_TAIL_MS));
 
     expect(tierBestEvents(emitted)).toEqual([
       { bucket: 'both', tier: 'medium', score: 100, banked: false, reason: 'guest' },
@@ -2239,7 +2242,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     pickTempo('80%');
     await pressPlay();
     act(() => vi.advanceTimersByTime(COUNT_IN_MS));
-    act(() => vi.advanceTimersByTime(1000)); // → onDone
+    act(() => vi.advanceTimersByTime(1000 + POLISH_TAIL_MS)); // → onDone
 
     expect(tierBestEvents(emitted)).toEqual([
       { bucket: 'both', tier: 'medium', score: null, banked: false, reason: 'nothing-graded' },
@@ -2392,7 +2395,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     for (const n of [60, 62, 64, 65]) play(n); // four of five — the fifth is missed
     act(() => vi.advanceTimersByTime(950));
     play(72);                                  // …and m1's note just before its onset
-    act(() => vi.advanceTimersByTime(50));     // → final step + onDone
+    act(() => vi.advanceTimersByTime(50 + POLISH_TAIL_MS));     // → final step + onDone
 
     expect(h.recordTierBest).toHaveBeenCalledWith({ bucket: 'both', tier: 'overclocked', score: 116 });
     expect(document.querySelector('.piano-score-run-score__value').textContent).toBe('116');
@@ -2434,7 +2437,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     act(() => vi.advanceTimersByTime(1000));
     play(61);
     play(62);
-    act(() => vi.advanceTimersByTime(1000));
+    act(() => vi.advanceTimersByTime(1000 + POLISH_TAIL_MS));
 
     const cells = [...document.querySelectorAll('.piano-score-run-tier__value')].map((n) => n.textContent);
     expect(cells).toEqual(['—', '—', '—', '—']);
@@ -2463,7 +2466,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     act(() => vi.advanceTimersByTime(1000)); // → step 2 (grades m1)
     play(62);
     play(63);
-    act(() => vi.advanceTimersByTime(1000)); // → final step + onDone
+    act(() => vi.advanceTimersByTime(1000 + POLISH_TAIL_MS)); // → final step + onDone
 
     const events = tierBestOnly(emitted);
     expect(events.length).toBe(1);
@@ -2495,7 +2498,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     act(() => vi.advanceTimersByTime(700));
     play(62);
     play(63);
-    act(() => vi.advanceTimersByTime(1400)); // → the end at the new tempo → onDone
+    act(() => vi.advanceTimersByTime(1400 + POLISH_TAIL_MS)); // → the end at the new tempo → onDone
 
     const events = tierBestOnly(emitted);
     expect(events.length).toBe(1);
@@ -2537,7 +2540,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     act(() => vi.advanceTimersByTime(700));
     play(62);
     play(63);
-    act(() => vi.advanceTimersByTime(700)); // → onDone
+    act(() => vi.advanceTimersByTime(700 + POLISH_TAIL_MS)); // → onDone
 
     const events = tierBestOnly(emitted);
     expect(events.length).toBe(1);
@@ -2563,7 +2566,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     act(() => vi.advanceTimersByTime(1000));
     play(62);
     play(63);
-    act(() => vi.advanceTimersByTime(1000)); // → onDone
+    act(() => vi.advanceTimersByTime(1000 + POLISH_TAIL_MS)); // → onDone
 
     const events = tierBestOnly(emitted);
     expect(events.length).toBe(1);
@@ -2593,7 +2596,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     act(() => vi.advanceTimersByTime(1000));
     play(62);
     play(63);
-    act(() => vi.advanceTimersByTime(1000)); // → onDone
+    act(() => vi.advanceTimersByTime(1000 + POLISH_TAIL_MS)); // → onDone
 
     const events = tierBestOnly(emitted);
     expect(events[events.length - 1]).toMatchObject({ bucket: 'both', tier: 'medium', banked: true, reason: 'banked' });
@@ -2620,7 +2623,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     act(() => vi.advanceTimersByTime(1000));
     play(62);
     play(63);
-    await act(async () => { vi.advanceTimersByTime(1000); }); // → onDone
+    await act(async () => { vi.advanceTimersByTime(1000 + POLISH_TAIL_MS); }); // → onDone
     expect(h.recordPolishRun).toHaveBeenCalledTimes(1);
     return h.recordPolishRun.mock.calls[0][0];
   };
@@ -2651,7 +2654,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     act(() => vi.advanceTimersByTime(1000));
     play(61);
     play(62);
-    act(() => vi.advanceTimersByTime(1000)); // run 1 → banks medium
+    act(() => vi.advanceTimersByTime(1000 + POLISH_TAIL_MS)); // run 1 → banks medium
     expect(h.recordTierBest).toHaveBeenCalledTimes(1);
 
     // onDone parked the cursor back home, so this is a fresh run from the top.
@@ -2662,7 +2665,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     act(() => vi.advanceTimersByTime(700));
     play(61);
     play(62);
-    act(() => vi.advanceTimersByTime(700)); // → onDone
+    act(() => vi.advanceTimersByTime(700 + POLISH_TAIL_MS)); // → onDone
 
     expect(h.recordTierBest).toHaveBeenCalledTimes(2);
     expect(h.recordTierBest.mock.calls[1][0]).toMatchObject({ bucket: 'both', tier: 'overclocked' });
@@ -2953,7 +2956,7 @@ describe('ScorePlayer — Listen mode', () => {
     expect(screen.getByText('m 2 / 2')).toBeTruthy(); // where the range left the cursor
     screen.getByRole('button', { name: 'Play' }).click(); // Listen always plays immediately (no count-in — wave-3 A)
     await act(async () => {});
-    act(() => vi.advanceTimersByTime(1100)); // past the final step @60bpm → the run completes
+    act(() => vi.advanceTimersByTime(1100 + POLISH_TAIL_MS)); // past the final step @60bpm → the run completes
     expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument(); // finished, never wrapped
     expect(screen.getByText('m 1 / 2')).toBeTruthy(); // …and the cursor went home, not to an in-point
     // Completion still flushes the audio plane (sendsAudio): the delayed panic
@@ -2973,7 +2976,7 @@ describe('ScorePlayer — Listen mode', () => {
     expect(screen.getByTestId('score-position')).toHaveTextContent('1 / 4');
     screen.getByRole('button', { name: 'Play' }).click(); // Listen always plays immediately (no count-in — wave-3 A)
     await act(async () => {});
-    act(() => vi.advanceTimersByTime(5000)); // past the final onset AND its release → onDone
+    act(() => vi.advanceTimersByTime(5000 + POLISH_TAIL_MS)); // past the final onset AND its release → onDone
     expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument(); // the run finished
     expect(screen.getByTestId('score-position')).toHaveTextContent('1 / 4'); // home, not parked at 4 / 4
   });

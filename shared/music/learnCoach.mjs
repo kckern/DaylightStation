@@ -292,6 +292,9 @@ function canProve(actual, wanted) {
   if (!sameRange(actual.range, wanted.range) || !sameParts(actual.parts, wanted.parts)) return false;
   if (wanted.assist === 'none' && actual.assist !== 'none') return false;
   if (wanted.mode === 'free') return true;
+  // The rhythm step is a warm-up, not a speed rung (a rhythm pass at any speed keeps it, `carryGold`): a passing
+  // pitch-free take over its bars and hands proves it at any tempo, so "Try a little slower" clears it.
+  if (wanted.rhythm) return actual.mode === 'cued';
   if (wanted.mode === 'metronome') return actual.mode === 'metronome' || actual.mode === 'cued';
   return actual.mode === 'cued' && actual.tempoPercent >= wanted.tempoPercent;
 }
@@ -651,6 +654,15 @@ function recovery(plan, task, result) {
   // been slowed to it). Take the pitch away: any key, a percussive sound, just WHEN. Never inside itself.
   // The slower speeds are the plan's own rungs (so a configured ladder is honoured), lowest first.
   const slower = plan.goldTempos?.length ? plan.goldTempos : goldTemposFor(null, plan.tempoMap);
+  // A missed rhythm take slows down first, over the SAME bars and hands, whatever it missed: with no pitch asked
+  // every miss is a rhythm miss, and a pass at the slower speed clears the rhythm step itself (`canProve`). Was:
+  // a tap gone missing shrank it to one bar at score tempo, three levels down with nowhere left to go, and a
+  // child sat 40 takes there (2026-11-24). Only at the slowest speed does it shrink to bars.
+  if (task.rhythm && tempoPercent > slower[0]) {
+    const down = slower.filter((value) => value < tempoPercent).at(-1) ?? slower[0];
+    return makeCoachTask(plan, { ...task, tempoPercent: down, stepTempoPercent: null, required: null, assist: null, stallSeconds: null, legacyRequired: null, stepDown: null,
+      label: 'Try a little slower', parent: task, depth: (task.depth ?? 0) + 1, reason: 'slower-beat', mastery: false, completes: false });
+  }
   if (timingOnly && !task.rhythm && tempoPercent <= slower[0] && !joinDrill) {
     return makeCoachTask(plan, { ...task, rhythm: true, required: null, assist: null, stallSeconds: null, legacyRequired: null,
       label: 'Tap the rhythm', parent: task, depth: (task.depth ?? 0) + 1, reason: 'rhythm', stepDown: null, mastery: false, completes: false });

@@ -80,3 +80,31 @@ describe('the rhythm step (first of the Gold lap, at score tempo)', () => {
     expect(coachFeedback(good, rhythm)).toMatchObject({ title: 'Nice rhythm!', reason: 'passed' });
   });
 });
+
+describe('a missed rhythm step slows down over the same bars, and a slower pass clears it', () => {
+  const plain = createCoachPlan({ scoreId: 'files:t.musicxml', fingerprint: 'fp', segments, tempoMap: [{ onsetQuarter: 0, bpm: 120 }], goldLadder: { minBpm: 40 } });
+  const go = (state, task, result) => applyCoachEvent(state, { id: `w${++n}`, type: 'outcome', task, result }, { plan: plain, now: '2026-11-24T17:00:00Z', dayKey });
+  const tapMissing = { ...good, criteria: { completeness: 0.8, cleanliness: 1, placement: 0.6 }, diagnostics: { expected_notes: 8, matched_notes: 7, wrong_notes: 0, missed_notes: 1 } };
+  const rhythm = plain.tasks.find((t) => t.passageId === 'a' && t.skill === 'rhythm');
+  const resume = (state) => projectCoach({ plan: plain, state, dayKey }).goldResume;
+  it('a tap gone missing twice steps the tempo down, never the bars', () => {
+    const state = go(go(undefined, rhythm, tapMissing), rhythm, tapMissing);
+    expect(resume(state)).toMatchObject({ rhythm: true, reason: 'slower-beat', tempoPercent: 85, range: rhythm.range, parts: rhythm.parts, depth: 1 });
+  });
+  it('down the ladder to its slowest speed, then the bars shrink', () => {
+    let state = go(go(undefined, rhythm, tapMissing), rhythm, tapMissing);
+    for (const tempo of [70, 50]) {
+      const drill = resume(state);
+      state = go(go(state, drill, tapMissing), drill, tapMissing);
+      expect(resume(state)).toMatchObject({ rhythm: true, tempoPercent: tempo, range: rhythm.range });
+    }
+  });
+  it('two passes at the slower speed clear the rhythm step, and the lap moves on', () => {
+    let state = go(go(undefined, rhythm, tapMissing), rhythm, tapMissing);
+    const drill = resume(state);
+    state = go(go(state, drill, good), drill, good);
+    const skills = projectCoach({ plan: plain, state, dayKey }).segments.find((s) => s.id === 'a').skills;
+    expect(skills.find((s) => s.skill === 'rhythm').ready).toBe(true);
+    expect(projectCoach({ plan: plain, state, dayKey }).gold.a).toMatchObject({ skill: 'timed-50-rh' });
+  });
+});

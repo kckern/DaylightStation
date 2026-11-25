@@ -17,6 +17,8 @@ import { staffLabels, defaultActiveParts, expectedMidisAtStep } from './activePa
 import { rangeSteps, clampStepToRange, sectionToRange, homeStep } from './focusRange.js';
 import useLearnAssessmentProjection from './useLearnAssessmentProjection.js';
 import useMetronomeClick from './useMetronomeClick.js';
+import { resolveClickLead, logClickAnchored } from './clickLead.js';
+import { audioContext } from './click.js';
 import useCountIn from './useCountIn.js';
 import { countInPlan, polishCountIn } from './countIn.js';
 import useScoreTelemetry from './useScoreTelemetry.js';
@@ -241,6 +243,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Resolved sheetmusic config (defaults filled). Hoisted above the mode state so
   // the initial mode can come from `defaultMode` — the ladder starts at Listen.
   const smCfg = useMemo(() => resolveSheetMusicConfig(config?.sheetmusic), [config]);
+  // How early an anchored click plays to land on the grading clock (Learn's
+  // ExerciseRun resolves the same): Polish's count-in and metronome use it too.
+  const clickLead = useMemo(() => resolveClickLead(config, audioContext()), [config]);
+  // Epoch ms of the running Polish transport's position 0, set when a count-in
+  // starts the run: the Polish metronome is anchored to it (null = not running).
+  const [polishAnchorMs, setPolishAnchorMs] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const VALID_MODES = ['listen', 'learn', 'polish', 'perform'];
   // Per-score practice settings restored device-locally (mode/tempo/hands), so a
@@ -598,6 +606,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // the note timeline; Learn's gate has no transport at all (the tracker drives).
     timeline: mode === 'polish' || sendsAudio ? playTimeline : [],
     tickMs: TRANSPORT_TICK_MS,
+    // Polish grades its last note when the run ends: keep it open for that note's
+    // whole match window (useScoreEvaluator: timingToleranceMs × 5).
+    tailMs: mode === 'polish' ? (smCfg.scoring?.timingToleranceMs ?? 80) * 5 : 0,
     // AUDIO PLANE — runs up to lookaheadMs ahead; must touch NO React state
     // beyond the sounding ledger (used only for flush bookkeeping). Sends carry
     // the transport's wall timestamp so the MIDI service dispatches on time even
@@ -738,7 +749,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // must be audible BEFORE the transport is graded (audit J1). onGo seeks to the
   // current cursor and starts playback; a tap on the score cancels it.
   const countIn = useCountIn({
-    onGo: () => {
+    onGo: (go) => {
       // Play always starts INSIDE an active loop (audit L6) — clamp a cursor
       // left outside the range to its in-point before seeking.
       const startStep = rangeRef.current ? clampStepToRange(stepRef.current, rangeRef.current) : stepRef.current;
@@ -760,7 +771,15 @@ export default function ScorePlayer({ score: scoreMeta }) {
       if (startStep === 0) runEligibleRef.current = true;
       transportRef.current?.seek((stepTimeline[startStep]?.t ?? 0) / tempoMult);
       setRunActive(true);
-      transportRef.current?.play();
+      // Start ON the count's planned last beat (the instant its clicks were heard
+      // against), not whenever this timer callback ran.
+      transportRef.current?.play(Number.isFinite(go?.atPerfMs) ? { atPerfMs: go.atPerfMs } : undefined);
+      const anchorPerf = transportRef.current?.getAnchorPerfMs?.();
+      if (Number.isFinite(anchorPerf) && Number.isFinite(globalThis.performance?.timeOrigin)) {
+        const anchorMs = performance.timeOrigin + anchorPerf;
+        setPolishAnchorMs(anchorMs);
+        logClickAnchored(clickLead, { anchorMs, mode, bpm: (tempoMap[0]?.bpm || 90) * tempoMult });
+      }
       logger.info('score.countin.go', { step: startStep, mode, tier: runTierRef.current });
     },
   });
@@ -817,6 +836,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
       || (mode === 'learn' && learnClick)
       || (mode === 'listen' && listenClick && clickAllowed),
     bpm: clickBpmExact,
+    // Polish's beat is graded: the click sits on the transport's own grid (beat 0 =
+    // position 0) and plays early by the output latency, like Learn's. Was free-
+    // running from whenever the effect ran, never compensated: ~0.3 s behind the
+    // grade on the piano tablet, so following the click failed timing (2026-11-24).
+    ...(mode === 'polish' && Number.isFinite(polishAnchorMs) ? { anchorMs: polishAnchorMs, leadMs: clickLead.leadMs } : {}),
   });
 
   const flashWrong = useCallback(() => {
@@ -2001,7 +2025,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           fromTop: stepRef.current === 0, measures: layoutRef.current?.measureMap,
           firstOnsetQuarter: layoutRef.current?.steps?.[0]?.onsetQuarter ?? 0, timeSig: parsed?.timeSig,
         });
-        countIn.start(plan);
+        countIn.start({ ...plan, leadMs: clickLead.leadMs });
         logger.info('score.countin.start', { mode, ...plan, bpm: tempoMap[0]?.bpm, tempoMult });
       } else {
         // Play always starts INSIDE an active loop (audit L6) — clamp a cursor

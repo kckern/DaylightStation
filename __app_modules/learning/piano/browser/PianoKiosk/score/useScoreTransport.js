@@ -32,6 +32,11 @@ const isNote = (ev) => ev.type === 'note_on' || ev.type === 'note_off';
 export function useScoreTransport({
   timeline, onEvent, onFire, onSchedule, onDone,
   lookaheadMs = 400, tickMs = 100,
+  // Ms the run stays open past the last event's due time before onDone. Polish
+  // grades its last note at onDone, so ending AT that note's onset gave it no
+  // late half of its window: a child a beat-fraction behind always lost the
+  // final bar (2026-11-24). Listen keeps 0.
+  tailMs = 0,
 }) {
   const [playing, setPlaying] = useState(false);
   const timelineRef = useRef(timeline); timelineRef.current = timeline || [];
@@ -39,6 +44,7 @@ export function useScoreTransport({
   const onFireRef = useRef(onFire); onFireRef.current = onFire;
   const onScheduleRef = useRef(onSchedule); onScheduleRef.current = onSchedule;
   const onDoneRef = useRef(onDone); onDoneRef.current = onDone;
+  const tailRef = useRef(tailMs); tailRef.current = Number.isFinite(tailMs) && tailMs > 0 ? tailMs : 0;
   const intervalRef = useRef(null);
   const anchorRef = useRef(0);   // wall time corresponding to position 0
   const posRef = useRef(0);      // position while paused (ms)
@@ -82,7 +88,7 @@ export function useScoreTransport({
       fireIdxRef.current += 1;
     }
 
-    if (fireIdxRef.current >= tl.length) {
+    if (fireIdxRef.current >= tl.length && posNow >= (tl[tl.length - 1]?.t ?? 0) + tailRef.current) {
       clearTimer();
       posRef.current = 0; fireIdxRef.current = 0; schedIdxRef.current = 0;
       setPlaying(false);
@@ -90,9 +96,16 @@ export function useScoreTransport({
     }
   }, [lookaheadMs]);
 
-  const play = useCallback(() => {
+  /**
+   * Start from the current position. `atPerfMs` (performance.now() domain) puts
+   * the current position at that instant instead of now — a count-in planned on
+   * the audio clock starts the run on its own last beat even when the timer
+   * that calls play() fires late. (Guarded: play is also used as a click handler.)
+   */
+  const play = useCallback((options) => {
     if (!timelineRef.current.length) return;
-    anchorRef.current = performance.now() - posRef.current;
+    const at = Number.isFinite(options?.atPerfMs) ? options.atPerfMs : performance.now();
+    anchorRef.current = at - posRef.current;
     lastPosRef.current = posRef.current;
     clearTimer();
     setPlaying(true);
@@ -130,8 +143,11 @@ export function useScoreTransport({
     intervalRef.current != null ? performance.now() - anchorRef.current : posRef.current
   ), []);
 
+  /** performance.now() instant of position 0 while playing, else null. */
+  const getAnchorPerfMs = useCallback(() => (intervalRef.current != null ? anchorRef.current : null), []);
+
   useEffect(() => () => clearTimer(), []);
-  return { playing, play, pause, seek, stop, getPosition, lookaheadMs };
+  return { playing, play, pause, seek, stop, getPosition, getAnchorPerfMs, lookaheadMs };
 }
 
 export default useScoreTransport;

@@ -692,6 +692,10 @@ describe('learnPracticeRequirement', () => {
     // Any cued step below score tempo, whatever put it there.
     expect(learnPracticeRequirement(rung({ id: 'slower-beat', tempoPercent: 100 }), 90).policy).toEqual({ placementFullCreditShare: 0.6 });
   });
+  it('gives the pitch-free rhythm step the wider share at every tempo, score tempo included', () => {
+    expect(learnPracticeRequirement(rung({ id: 'rhythm', tempoPercent: 100 }), 100, { rhythm: true }).policy).toEqual({ placementFullCreditShare: 0.6 });
+    expect(learnPracticeRequirement(rung({ id: 'rhythm', tempoPercent: 100 }), 100).policy).toBeUndefined();
+  });
   it('keeps hands-together onsets alongside the wider share', () => {
     expect(learnPracticeRequirement(rung({ effectiveParts: ['rh', 'lh'] })).policy).toEqual({ requireConcurrentOnset: true, placementFullCreditShare: 0.6 });
     expect(learnPracticeRequirement(rung({ effectiveParts: ['rh', 'lh'], mode: 'free' })).policy).toEqual({ requireConcurrentOnset: true });

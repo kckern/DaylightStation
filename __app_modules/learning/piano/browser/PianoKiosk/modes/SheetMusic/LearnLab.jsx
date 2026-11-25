@@ -47,12 +47,12 @@ export function learnDrillProjection(segment, rung) {
 }
 
 // eslint-disable-next-line react-refresh/only-export-components -- pure adapter is exported for focused contract tests
-export function learnPracticeRequirement(rung, tempoPercent = rung.tempoPercent) {
+export function learnPracticeRequirement(rung, tempoPercent = rung.tempoPercent, { rhythm = false } = {}) {
   const criteria = { ...(rung.criteria || {}) };
   if (rung.mode === 'free' && criteria.cleanliness == null) criteria.cleanliness = 0.8;
   const policy = {
     ...((rung.effectiveParts?.length ?? 0) > 1 ? { requireConcurrentOnset: true } : {}),
-    ...(learningTempoTake(rung, tempoPercent) ? { placementFullCreditShare: LEARNING_PLACEMENT_SHARE } : {}),
+    ...(learningTempoTake(rung, tempoPercent, rhythm) ? { placementFullCreditShare: LEARNING_PLACEMENT_SHARE } : {}),
   };
   return {
     mode: rung.mode,
@@ -75,8 +75,11 @@ export function learnPracticeRequirement(rung, tempoPercent = rung.tempoPercent)
  * ops:docs/_wip/audits/2026-11-20-sheetmusic-learn-take-ux-audit.md
  */
 const LEARNING_PLACEMENT_SHARE = 0.6;
-function learningTempoTake(rung, tempoPercent) {
+function learningTempoTake(rung, tempoPercent, rhythm = false) {
   if (rung.mode !== 'cued') return false;
+  // The pitch-free rhythm step is a warm-up at any tempo, score tempo included: tapping eighths at 120 bpm
+  // gave a ±100 ms window with full credit only inside ±40 ms, and a child tapped it 40 times (2026-11-24).
+  if (rhythm) return true;
   if (rung.mastery === true || rung.completion === 'tested-out' || rung.id === 'mastery' || rung.id === 'test-out') return false;
   const percent = Number(tempoPercent);
   return tempoPercent != null && Number.isFinite(percent) && percent < 100;
@@ -143,9 +146,9 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
   // A coached passage brings its own sets: one per Silver or Gold step.
   const ownProjection = useMemo(() => learnDrillProjection(segment, runRung), [segment, runRung]);
   const projection = drill?.projection ?? ownProjection;
-  const requirement = useMemo(() => learnPracticeRequirement(rung, tempoPercent), [rung, tempoPercent]);
   // The rhythm recovery rung: any key, a percussive voice while it lasts (restored on leaving).
   const rhythm = coachingTask?.rhythm === true;
+  const requirement = useMemo(() => learnPracticeRequirement(rung, tempoPercent, { rhythm }), [rung, tempoPercent, rhythm]);
   useRhythmVoice(rhythm);
   // Recorded with each take, so placement scores judged on the wider share can
   // be told from those judged on the strict curve. Null when not applied.

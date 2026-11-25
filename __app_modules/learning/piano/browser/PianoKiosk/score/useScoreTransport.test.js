@@ -135,6 +135,28 @@ describe('useScoreTransport (lookahead scheduler)', () => {
     expect(result.current.playing).toBe(false);
   });
 
+  it('tailMs keeps the run open past the last event so its late window can still be graded', () => {
+    const onDone = vi.fn();
+    const { result } = renderHook(() => useScoreTransport({ timeline: STEPS, onEvent: () => {}, onDone, tailMs: 400 }));
+    act(() => result.current.play());
+    act(() => vi.advanceTimersByTime(1600));
+    expect(onDone).not.toHaveBeenCalled();
+    expect(result.current.playing).toBe(true);
+    act(() => vi.advanceTimersByTime(400));
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it('play({ atPerfMs }) puts the current position at that instant, and reports the anchor', () => {
+    const fired = [];
+    const { result } = renderHook(() => useScoreTransport({ timeline: STEPS, onEvent: (e) => fired.push(e.index) }));
+    act(() => result.current.play({ atPerfMs: 300 }));
+    expect(result.current.getAnchorPerfMs()).toBe(300);
+    expect(fired).toEqual([]);
+    act(() => vi.advanceTimersByTime(300));
+    expect(fired).toEqual([0]);
+    expect(result.current.getPosition()).toBe(0);
+  });
+
   it('stop resets to the top', () => {
     const fired = [];
     const { result } = renderHook(() => useScoreTransport({ timeline: STEPS, onEvent: (e) => fired.push(e.index) }));
