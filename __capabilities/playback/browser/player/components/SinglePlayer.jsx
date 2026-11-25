@@ -366,6 +366,15 @@ export function SinglePlayer(props = {}) {
         maxResolution: play?.maxResolution ?? null
       };
 
+      // A clip keeps its own identity. `/play` describes the recording it was
+      // cut from (`plex:<id>`, not `plex:<id>#<n>`); keeping that id would log
+      // the clip's heartbeats as the concert's own progress, open a media
+      // server session for the whole recording, and could mark it watched.
+      if (play?.segment != null) {
+        withCap.id = play.id ?? play.contentId ?? withCap.id;
+        withCap.assetId = play.assetId ?? withCap.id;
+      }
+
       // Override seconds if explicitly provided in play object
       if (play?.seconds !== undefined) {
         withCap.seconds = play.seconds;

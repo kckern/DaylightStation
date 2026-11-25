@@ -67,7 +67,15 @@ const tick = (node, seconds) => act(() => {
 });
 
 async function mountQueue(items, { via = 'queue' } = {}) {
-  DaylightAPI.mockImplementation(async (path) => (String(path).includes('/queue/') ? { items } : {}));
+  DaylightAPI.mockImplementation(async (path) => {
+    if (String(path).includes('/queue/')) return { items };
+    // `/play` describes the recording a clip was cut from, under its own id.
+    if (String(path).startsWith('api/v1/play/plex:')) {
+      return { id: 'plex:1001', assetId: 'plex:1001', title: 'Winter Concert', mediaUrl: '/api/v1/proxy/plex/stream/1001',
+        mediaType: 'video', format: 'video', duration: RECORDING, contentTimeline: TIMELINE };
+    }
+    return {};
+  });
   const completed = vi.fn();
   const ref = createRef();
   await act(async () => {
@@ -126,5 +134,22 @@ describe('a clip queue through the Player', () => {
       expect(Number(log.percent)).toBeLessThanOrEqual(100);
     }
     expect(logs.at(-1)).toMatchObject({ seconds: 4100, percent: '82.0' });
+  });
+
+  it('keeps the clip\'s identity in progress logs after a recovery remount', async () => {
+    const { ref } = await mountQueue([plexClip(1, 4000, 4300), plexClip(2, 100, 300)]);
+    await act(async () => ref.current.beginRendererBoundary({ operationId: 'clip-remount',
+      expectedContentId: 'plex:1001#1', targetSeconds: 4000, autoplay: true }));
+    for (let i = 0; i < 5; i += 1) await act(async () => { vi.advanceTimersByTime(50); });
+    expect(DaylightAPI.mock.calls.some(([path]) => String(path).startsWith('api/v1/play/plex:1001'))).toBe(true);
+    const node = document.querySelector('video');
+    expect(node).toBeTruthy();
+    expect(ref.current.getNowPlaying().item).toMatchObject({ segment: { start: 4000, end: 4300 } });
+    DaylightAPI.mockClear();
+    prime(node, 4000);
+    tick(node, 4100);
+    const logs = playLogs();
+    expect(logs.length).toBeGreaterThan(0);
+    for (const log of logs) expect(log.assetId).toBe('plex:1001#1');
   });
 });
