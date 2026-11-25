@@ -41,9 +41,9 @@ const EMPTY = {
 export function ReviewPage() {
   const { ratingKey, rowId } = useParams();
   const owner = useFilmReviewOwner();
-  const [session, setSession] = useState({ owner, visit: 0 });
-  if (owner !== session.owner) setSession({ owner, visit: session.visit + 1 });
-  return <FilmReview key={`${ratingKey}:${session.visit}`} ratingKey={ratingKey} rowId={rowId} owner={owner} />;
+  // No remount of its own on a new owner: AdminSessionBoundary already remounts Admin when the session
+  // changes (3326c48e65), and a second remount here read the review twice for one credential change.
+  return <FilmReview key={ratingKey} ratingKey={ratingKey} rowId={rowId} owner={owner} />;
 }
 
 function FilmReview({ ratingKey, rowId, owner }) {
