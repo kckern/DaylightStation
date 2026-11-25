@@ -280,6 +280,18 @@ export function SinglePlayer(props = {}) {
       if (play?.resumePosition !== undefined && directInfo.seconds === undefined) {
         directInfo.seconds = play.resumePosition;
       }
+      // A queue-owned clip plays the item's own mediaUrl as given: no `/play`
+      // mint, so no resume offset was baked into the stream, and its window is
+      // authored in that file's own clock. Without origins the clip's end can
+      // never be mapped (it would play to the recording's end and stall as
+      // `timeline-unverified`), so a native-video clip that arrives without
+      // them starts both clocks at zero. Origins the queue item does carry win.
+      const isVideoClip = play?.segment != null
+        && ['video', 'hls_video', 'dash_video'].includes(directInfo.format ?? directInfo.mediaType);
+      const timeline = directInfo.contentTimeline;
+      if (isVideoClip && timeline?.rendererStartSeconds == null && timeline?.contentStartSeconds == null) {
+        directInfo.contentTimeline = { ...(timeline ?? {}), rendererStartSeconds: 0, contentStartSeconds: 0 };
+      }
       setMediaInfo(withTracks(directInfo));
       setIsReady(true);
       return;

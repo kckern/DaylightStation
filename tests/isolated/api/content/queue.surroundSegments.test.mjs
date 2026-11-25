@@ -53,6 +53,7 @@ const makeLogger = () => {
 
 function makeApp({ random = () => 0.3 } = {}) {
   const plex = {
+    describePlayback: () => ({ contentTimeline: { rendererStartSeconds: 0, contentStartSeconds: 0 } }),
     getItem: vi.fn(async (localId) => ({
       id: `plex:${localId}`, source: 'plex', localId, title: `Full ${localId}`,
       mediaType: 'video', mediaUrl: `/api/v1/proxy/plex/stream/${localId}`,
@@ -98,7 +99,9 @@ describe('queueing a surround-segments query', () => {
     for (const item of res.body.items) {
       const recording = item.id.split('#')[0];
       expect(item.segment.end).toBeGreaterThan(item.segment.start);
-      expect(item.duration).toBe(item.segment.end - item.segment.start);
+      // The recording's duration and timeline: the clip's length is its segment.
+      expect(item.duration).toBe(5000);
+      expect(item.contentTimeline).toMatchObject({ rendererStartSeconds: 0, contentStartSeconds: 0, expectedEndSeconds: 5000 });
       expect(item.surround?.piece?.title).toBe(`Concert ${recording}`);
       expect(item.mediaUrl).toBe(`/api/v1/proxy/plex/stream/${recording.slice(5)}`);
       expect(item.subtitle).toMatch(/Concert \(\d{4}\)$/);

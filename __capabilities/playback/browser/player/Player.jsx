@@ -457,6 +457,10 @@ const Player = forwardRef(function Player(props, ref) {
       return playQueueHead;
     }
     if (play && !Array.isArray(play)) {
+      // A single `play` that resolved to a queue of clips (a saved query of
+      // windows, e.g. a session item `query:<name>`) plays the clip: `/play`
+      // on the query id resolves to a whole item and cannot carry the window.
+      if (playQueueHead?.segment != null && playQueueHead.contentId !== play.contentId) return playQueueHead;
       return play;
     }
     return null;

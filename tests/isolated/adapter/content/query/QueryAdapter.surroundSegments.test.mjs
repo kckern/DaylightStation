@@ -35,7 +35,10 @@ const plexItem = (id) => ({
 });
 
 function makeAdapter({ sidecars = SIDECARS, missing = [] } = {}) {
-  const plex = { getItem: vi.fn(async (localId) => (missing.includes(`plex:${localId}`) ? null : plexItem(`plex:${localId}`))) };
+  const plex = {
+    getItem: vi.fn(async (localId) => (missing.includes(`plex:${localId}`) ? null : plexItem(`plex:${localId}`))),
+    describePlayback: vi.fn(() => ({ contentTimeline: { rendererStartSeconds: 0, contentStartSeconds: 0 } })),
+  };
   const registry = {
     get: vi.fn(() => null),
     resolve: vi.fn((id) => (id.startsWith('plex:') ? { adapter: plex, localId: id.slice(5) } : null)),
@@ -64,7 +67,7 @@ describe('QueryAdapter surround-segments source', () => {
       title: 'Opening Carol',
       subtitle: 'Winter Concert (2001)',
       segment: { start: 10, end: 200 },
-      duration: 190,
+      duration: 5000,
       song: 'opening',
       source: 'plex',
       mediaType: 'video',
@@ -108,6 +111,52 @@ describe('QueryAdapter surround-segments order', () => {
   it('marks the queue as already ordered, so a queue shuffle keeps noRepeatSong', async () => {
     const { adapter } = makeAdapter();
     const items = await adapter.resolvePlayables('query:winter-songs');
+    expect(items.preserveOrder).toBe(true);
+  });
+});
+
+describe('QueryAdapter surround-segments timeline', () => {
+  it('keeps the recording\'s duration; the clip\'s length is its segment', async () => {
+    const { adapter } = makeAdapter();
+    for (const clip of await adapter.resolvePlayables('query:winter-songs')) {
+      expect(clip.duration).toBe(5000);
+    }
+  });
+
+  it('carries the recording\'s playback timeline, so the clip\'s end can be mapped', async () => {
+    const { adapter, plex } = makeAdapter();
+    const [clip] = await adapter.resolvePlayables('query:winter-songs');
+    expect(plex.describePlayback).toHaveBeenCalled();
+    expect(clip.contentTimeline).toEqual({
+      expectedEndSeconds: 5000, provenance: 'catalog', clipStartSeconds: null, clipEndSeconds: null,
+      rendererStartSeconds: 0, contentStartSeconds: 0,
+    });
+  });
+
+  it('carries no timeline when the source does not describe one', async () => {
+    const { adapter, plex } = makeAdapter();
+    plex.describePlayback = undefined;
+    const [clip] = await adapter.resolvePlayables('query:winter-songs');
+    expect(clip).not.toHaveProperty('contentTimeline');
+  });
+});
+
+describe('QueryAdapter nested queries', () => {
+  it('keeps preserveOrder when a sub-query carries it', async () => {
+    const plex = {
+      getItem: vi.fn(async (localId) => plexItem(`plex:${localId}`)),
+    };
+    const registry = { get: () => null, resolve: (id) => ({ adapter: plex, localId: id.slice(5) }) };
+    const queries = {
+      'winter-songs': QUERY,
+      evening: { title: 'Evening', items: [{ query: 'winter-songs' }] },
+    };
+    const adapter = new QueryAdapter({
+      savedQueryService: new SavedQueryService({ readQuery: (n) => queries[n] ?? null }),
+      registry, surroundSegments: { read: () => SIDECARS }, random: () => 0.5,
+    });
+    const items = await adapter.resolvePlayables('query:evening');
+    expect(items.length).toBeGreaterThan(0);
     expect(items.preserveOrder).toBe(true);
   });
 });

@@ -76,7 +76,9 @@ export function avoidNeighbourRepeats(items) {
  * @param {boolean} [options.params.noRepeatSong] - Keep two clips of the same song apart
  * @param {() => number} options.rng - Uniform [0, 1)
  * @returns {Array<{ id: string, contentId: string, title: string, subtitle: string,
- *   segment: { start: number, end: number }, duration: number, song?: string }>}
+ *   segment: { start: number, end: number }, song?: string }>} No `duration`:
+ *   a clip plays inside its recording's clock, whose duration the recording
+ *   item supplies; the clip's own length is `segment.end - segment.start`.
  */
 export function segmentItems({ sidecars, params = {}, rng } = {}) {
   const kinds = Array.isArray(params?.kinds) ? new Set(params.kinds) : null;
@@ -101,7 +103,6 @@ export function segmentItems({ sidecars, params = {}, rng } = {}) {
         title: segment.name,
         subtitle,
         segment: { start, end },
-        duration: end - start,
         ...(hasSong(segment) ? { song: segment.song } : {}),
       });
     }

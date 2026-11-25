@@ -68,6 +68,9 @@ export function toQueueItem(item) {
   if (item.slideshow) qi.slideshow = item.slideshow;
   if (item.titlecard) qi.titlecard = item.titlecard;
   if (item.segment) qi.segment = item.segment;
+  // A clip's playback timeline (origins + catalog end), so the player can map
+  // the window's end without a `/play` round trip.
+  if (item.contentTimeline) qi.contentTimeline = item.contentTimeline;
   if (item.surround) qi.surround = item.surround;
   if (item.surroundPart !== undefined) qi.surroundPart = item.surroundPart;
 

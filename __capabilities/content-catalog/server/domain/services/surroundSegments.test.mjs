@@ -82,7 +82,6 @@ describe('segmentItems', () => {
       title: 'Piece 1',
       subtitle: 'Winter Concert (2001)',
       segment: { start: 10, end: 200 },
-      duration: 190,
       song: 'alpha',
     });
   });

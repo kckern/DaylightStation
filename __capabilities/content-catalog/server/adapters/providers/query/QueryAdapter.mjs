@@ -135,6 +135,8 @@ export class QueryAdapter {
       if (entry.query) {
         const subItems = await this.resolvePlayables(`query:${entry.query}`);
         allItems.push(...subItems);
+        // A sub-query that owns its order (surround-segments) keeps it here.
+        if (subItems.preserveOrder) allItems.preserveOrder = true;
         continue;
       }
 
@@ -369,7 +371,7 @@ export class QueryAdapter {
       try {
         const resolved = this.#registry?.resolve?.(contentId);
         const item = resolved?.adapter?.getItem ? await resolved.adapter.getItem(resolved.localId) : null;
-        if (item) recordings.set(contentId, item);
+        if (item) recordings.set(contentId, { item, contentTimeline: this.#recordingTimeline(resolved.adapter, item) });
         else console.warn(`[QueryAdapter] surround-segments recording not found: ${contentId}`);
       } catch (err) {
         console.warn(`[QueryAdapter] surround-segments recording failed: ${contentId}`, err.message);
@@ -380,12 +382,36 @@ export class QueryAdapter {
       const recording = recordings.get(clip.contentId);
       if (!recording) return [];
       return [{
-        ...recording,
+        ...recording.item,
         ...clip,
+        ...(recording.contentTimeline ? { contentTimeline: recording.contentTimeline } : {}),
         resumable: false,
         resumePosition: null,
       }];
     });
+  }
+
+  /**
+   * The recording's playback timeline, as `/play` would describe it: the
+   * source's renderer/content origins (Plex: both 0 for these streams) and the
+   * catalog end. A clip's window is in the recording's clock, so without the
+   * origins the player cannot map position to it and the clip never ends.
+   * Null when the source describes none (the player then defaults a direct
+   * clip's origins itself).
+   */
+  #recordingTimeline(adapter, item) {
+    if (!['video', 'hls_video', 'dash_video'].includes(item?.mediaType)) return null;
+    const described = adapter?.describePlayback?.(item)?.contentTimeline;
+    if (!described) return null;
+    const known = Number.isFinite(item.duration) && item.duration > 0;
+    return {
+      expectedEndSeconds: known ? item.duration : null,
+      provenance: known ? 'catalog' : 'unknown',
+      clipStartSeconds: null,
+      clipEndSeconds: null,
+      rendererStartSeconds: described.rendererStartSeconds ?? null,
+      contentStartSeconds: described.contentStartSeconds ?? null,
+    };
   }
 
   /**
