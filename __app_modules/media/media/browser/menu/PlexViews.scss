@@ -13,6 +13,7 @@
 
 // Variables
 @use "../theme/ink" as *;
+@use "../theme/motion" as *;
 
 $bg-primary: #141414; // data-color: Plex-style menu palette
 $bg-secondary: #1a1a1a; // data-color: Plex-style menu palette
@@ -253,7 +254,7 @@ $transition-normal: 0.25s ease;
 .season-card__timeout-fill {
   height: 100%;
   background: linear-gradient(90deg, $progress-from 0%, $progress-to 100%);
-  transition: width 0.015s linear;
+  transition: width sweep(15) linear;
   box-shadow: 0 0 8px tint($progress-to, 0.6);
 }
 
@@ -539,7 +540,7 @@ $transition-normal: 0.25s ease;
 .episode-grid-card__timeout-fill {
   height: 100%;
   background: linear-gradient(90deg, $progress-from 0%, $progress-to 100%);
-  transition: width 0.015s linear;
+  transition: width sweep(15) linear;
   box-shadow: 0 0 8px tint($progress-to, 0.6);
 }
 
@@ -820,7 +821,7 @@ $transition-normal: 0.25s ease;
 }
 
 .skeleton-pulse {
-  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  animation: skeleton-pulse sweep(1500) ease-in-out infinite;
   background: $bg-card;
 }
 

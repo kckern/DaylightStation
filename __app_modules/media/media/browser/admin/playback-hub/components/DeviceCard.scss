@@ -4,6 +4,8 @@
 // This file is intentionally minimal — only add overrides here when
 // Mantine theming can't deliver the layout we want.
 
+@use "../../../theme/motion" as *;
+
 .playback-hub-device-card {
   // Slight breathing room between cards in the page-level Stack.
   & + & {
@@ -28,7 +30,7 @@
     // Subtle animated underline so the operator can tell the state is
     // "in flight" rather than just disabled. ~1.5s pulse — quick enough
     // to feel responsive, slow enough not to be distracting.
-    animation: playback-hub-pending-pulse 1.5s ease-in-out infinite;
+    animation: playback-hub-pending-pulse sweep(1500) ease-in-out infinite;
   }
 
   // Buttons that are disabled-because-pending get the same visual.

@@ -10,7 +10,7 @@
   border-radius: 50%;
   color: var(--media-text, var(--mantine-color-dark-0));
   background: transparent;
-  transition: background 120ms ease;
+  transition: background var(--ds-motion-fast) ease;
 
   &:hover { background: var(--mantine-color-dark-5); }
   &--open { background: var(--mantine-color-dark-5); }

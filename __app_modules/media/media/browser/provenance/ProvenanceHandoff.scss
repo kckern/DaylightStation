@@ -5,6 +5,7 @@
 // Reference: __docs/reference/media/provenance.md
 
 @use "../theme/ink" as *;
+@use "../theme/motion" as *;
 
 $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
 
@@ -26,7 +27,7 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
       #05060a; // data-color: provenance scene ground
     opacity: 1;
     // Covers the video at once: the film's first frame must not flash before the scene.
-    transition: opacity 900ms ease;
+    transition: opacity sweep(900) ease;
   }
 
   // ---- the link: two lines reaching toward the centre, dots in the gap ----
@@ -36,7 +37,7 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
     right: 0;
     top: 64%;
     height: 0;
-    transition: opacity 500ms ease;
+    transition: opacity sweep(500) ease;
   }
 
   &__line {
@@ -49,8 +50,8 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
     width: 0;
     // Bursts and stops across the whole hold, like a connection negotiating. The
     // component names a per-play animation (linkCurve.js); ph-reach is the fallback.
-    animation: ph-reach var(--ph-link-ms) linear 150ms forwards;
-    transition: width 420ms $ph-ease;
+    animation: ph-reach var(--ph-link-ms) linear sweep(150) forwards;
+    transition: width sweep(420) $ph-ease;
     &--left {
       left: 0;
       background: linear-gradient(to right, transparent, var(--ph-accent));
@@ -68,7 +69,7 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
     transform: translate(-50%, -50%);
     display: flex;
     gap: 1.4cqw;
-    transition: opacity 350ms ease;
+    transition: opacity sweep(350) ease;
     i {
       display: block;
       width: max(7px, 0.9cqw);
@@ -76,7 +77,7 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
       border-radius: 50%;
       background: var(--ph-accent);
       opacity: 0.25;
-      animation: ph-dot 900ms ease-in-out infinite;
+      animation: ph-dot sweep(900) ease-in-out infinite;
       &:nth-child(2) { animation-delay: 150ms; }
       &:nth-child(3) { animation-delay: 300ms; }
     }
@@ -88,7 +89,7 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
     i { animation-duration: 2400ms; }
   }
   &--resumed .provenance-handoff__dots {
-    animation: ph-dots-pick-up 420ms ease-out;
+    animation: ph-dots-pick-up sweep(420) ease-out;
   }
 
   // A flash where the lines meet.
@@ -116,7 +117,7 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
     height: 20cqh;
     box-sizing: border-box;
     transform: translate(-50%, -50%);
-    animation: ph-logo-in 700ms $ph-ease both;
+    animation: ph-logo-in sweep(700) $ph-ease both;
     transition:
       left 900ms $ph-ease,
       top 900ms $ph-ease,
@@ -149,8 +150,8 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
     height: 8cqh;
     transform: translate(-50%, -50%);
     opacity: 0;
-    animation: ph-secondary-in 700ms $ph-ease 350ms forwards;
-    transition: opacity 600ms ease;
+    animation: ph-secondary-in sweep(700) $ph-ease sweep(350) forwards;
+    transition: opacity sweep(600) ease;
   }
 
   &__secondary-logo {
@@ -177,7 +178,7 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
       width: 50%;
     }
     .provenance-handoff__dots { opacity: 0; }
-    .provenance-handoff__spark { animation: ph-spark 700ms ease-out forwards; }
+    .provenance-handoff__spark { animation: ph-spark sweep(700) ease-out forwards; }
   }
 
   &--docked,

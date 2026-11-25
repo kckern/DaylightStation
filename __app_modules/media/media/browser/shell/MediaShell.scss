@@ -896,7 +896,7 @@ $amber-ink: $on-accent;
   min-height: 34px;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 120ms ease;
+  transition: background var(--ds-motion-fast) ease;
 
   &:hover { background: var(--mantine-color-dark-4); }
 
@@ -911,7 +911,7 @@ $amber-ink: $on-accent;
   &.action-flash {
     background: var(--mantine-color-amber-5);
     color: $amber-ink;
-    transition: background 120ms ease;
+    transition: background var(--ds-motion-fast) ease;
   }
 }
 
@@ -1081,7 +1081,7 @@ $amber-ink: $on-accent;
   background: var(--mantine-color-dark-5);
   border: 1px solid chalk(0.05);
   border-radius: var(--mantine-radius-md);
-  transition: border-color 120ms ease;
+  transition: border-color var(--ds-motion-fast) ease;
 
   &:hover { border-color: chalk(0.12); }
 

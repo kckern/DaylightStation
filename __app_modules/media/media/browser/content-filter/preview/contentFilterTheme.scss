@@ -12,6 +12,7 @@
  */
 @use "./palette" as *;
 @use "../../theme/fonts";
+@use "../../theme/motion" as *;
 
 .surround-frame--theme-content-filter {
   @include cf-tokens;
@@ -73,7 +74,7 @@
   box-shadow: 0 6px 18px var(--cf-shadow);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 100ms ease;
+  transition: opacity sweep(100) ease;
 }
 
 [data-cf-hint]:hover::after,

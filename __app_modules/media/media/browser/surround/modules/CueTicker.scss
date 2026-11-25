@@ -38,6 +38,7 @@
 
 /* The band's shared literals - see `../themes/_classical-tokens.scss` and `SegmentMap.scss`. */
 @use "../themes/classical-tokens" as *;
+@use "../../theme/motion" as *;
 
 .surround-cue-ticker {
   position: relative;
@@ -112,7 +113,7 @@
   /* The considered move: the whole band's text dissolves through the ground
      while the registers change sides beneath it. Duration comes from the
      component (the house dissolve), so this and the JS timer cannot drift. */
-  transition: opacity var(--cue-fade-ms, 320ms) ease;
+  transition: opacity var(--cue-fade-ms, #{sweep(320)}) ease;
 }
 
 /* The NOW register sits LEFT (`band.nowSide`). DOM order never changes — the
@@ -180,7 +181,7 @@
   pointer-events: none;
   /* The FADE only. `left` is interpolated in JS with the rail's own geometry —
      see the note above and `../band.js`, `useEasedVector`. */
-  transition: opacity var(--accordion-ms, 420ms) linear;
+  transition: opacity var(--accordion-ms, #{sweep(420)}) linear;
 }
 
 /* NOTHING IS SOUNDING (design wave 9) — the tuning and the walk-on before the

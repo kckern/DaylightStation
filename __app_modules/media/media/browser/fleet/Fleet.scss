@@ -80,7 +80,7 @@
   color: var(--mantine-color-dark-0);
   font: inherit;
   cursor: pointer;
-  transition: background 120ms ease;
+  transition: background var(--ds-motion-fast) ease;
 
   &:hover { background: var(--mantine-color-dark-5); }
   &:focus-visible {
