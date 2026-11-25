@@ -22,9 +22,9 @@ for (const cursor of [null, 'page-two']) {
         return;
       }
       if (cursor && !requestedCursor) return route.fulfill({ json: {
-        items: [{ id: 'first', title: 'Retained bird' }], nextCursor: cursor, total: 2,
+        items: [{ id: 'first', title: 'Retained bird', state: { isSaved: true } }], nextCursor: cursor, total: 2,
       } });
-      return route.fulfill({ json: { items: [{ id: 'recovered', title: 'Recovered bird' }], total: cursor ? 2 : 1 } });
+      return route.fulfill({ json: { items: [{ id: 'recovered', title: 'Recovered bird', state: { isSaved: true } }], total: cursor ? 2 : 1 } });
     });
 
     await page.goto('/feed/search?q=birds&state=saved');
@@ -111,7 +111,7 @@ for (const keepFocus of [true, false]) {
     const queries = [];
     const retry = Promise.withResolvers();
     let thirdPageAttempts = 0;
-    const result = (id, title, nextCursor) => ({ items: [{ id, title }], total: 3, nextCursor });
+    const result = (id, title, nextCursor) => ({ items: [{ id, title, state: { isSaved: true } }], total: 3, nextCursor });
     await page.routeWebSocket('**/*', () => {});
     await page.route('**/api/**', async route => {
       const { pathname, searchParams } = new URL(route.request().url());
@@ -235,8 +235,8 @@ test('two Feed Search tabs reconcile a queued change across their loaded filtere
     await expect.poll(() => writes).toEqual([{ action: 'unsave', itemIds: ['shared'] }]);
     await sibling.bringToFront();
     await expect(pending(sibling)).toBeVisible();
-    await expect(row(sibling, shared.title).getByRole('button', { name: 'Save', exact: true })).toBeVisible();
-    await expect(row(sibling, shared.title).getByText(/sync pending/)).toBeVisible();
+    // The saved filter drops a row the moment its save is withdrawn (0e69d8f0ab).
+    await expect(row(sibling, shared.title)).toHaveCount(0);
     await sibling.evaluate(() => { delete navigator.onLine; });
     releaseReplay.resolve();
     await expect.poll(() => requests.get(sibling).length).toBe(3);
