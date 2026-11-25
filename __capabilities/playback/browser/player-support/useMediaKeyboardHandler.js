@@ -11,6 +11,7 @@ import { resolveContentId } from "../surround-segments.mjs";
 // lives in segmentNav now, as the one rule it always was — `previousSegmentAction`
 // applies it, so there is nothing left to compare against here.
 import { nextSegmentAction, previousSegmentAction } from "../surround-segment-nav.mjs";
+import { clipWindow, bumpIncrement, bumpTarget } from "./clipSeek.js";
 import { SURROUND_NAV_EVENT, SURROUND_NAV_STATE_EVENT, NAV_IDLE_MS } from "../surround-nav-mode.mjs";
 
 /**
@@ -112,16 +113,19 @@ export function useMediaKeyboardHandler(config) {
     return { currentTime, duration, percent };
   };
 
-  const resolveSeekIncrement = () => {
-    const duration = mediaController.getDuration?.();
-    if (Number.isFinite(duration) && duration > 0) {
-      return Math.max(5, Math.floor(duration / 50));
-    }
-    return 10;
-  };
+  // A clip item (one song cut from a longer recording) scopes the bump to its
+  // own window: sized to the clip, never seeking out of it (clipSeek.js).
+  const resolveSeekIncrement = () => bumpIncrement(mediaController.getDuration?.(), clipWindow(meta));
 
   const applySeekDelta = (deltaSeconds) => {
     if (!Number.isFinite(deltaSeconds)) return;
+    const window = clipWindow(meta);
+    if (window) {
+      const target = bumpTarget(mediaController.getCurrentTime?.(), deltaSeconds, window, mediaController.getDuration?.());
+      const landed = mediaController.seek?.(target);
+      setCurrentTime && setCurrentTime(Number.isFinite(landed) ? landed : target);
+      return;
+    }
     const nextFromRelative = mediaController.seekRelative?.(deltaSeconds);
     if (Number.isFinite(nextFromRelative)) {
       setCurrentTime && setCurrentTime(nextFromRelative);

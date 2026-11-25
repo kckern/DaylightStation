@@ -11,6 +11,7 @@ const asArray = (v) => (Array.isArray(v) ? v : []);
 const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 const hasSong = (item) => typeof item?.song === 'string' && item.song !== '';
 const sameSong = (a, b) => hasSong(a) && hasSong(b) && a.song === b.song;
+const sameRecording = (a, b) => !!a?.contentId && a.contentId === b?.contentId;
 
 /**
  * @typedef {Object} SegmentSidecar
@@ -31,30 +32,66 @@ function shuffle(list, rng) {
   return out;
 }
 
+const ORDER_APART_BUDGET = 20000;
+
 /**
- * Re-order so no two neighbours share a `song`, when that is possible.
+ * Depth-first: at each step take the first remaining item (in the given order)
+ * that differs from the last one placed, backing up when stuck. Keeps the
+ * shuffle's order wherever the rule allows it. Bounded: returns null when the
+ * budget runs out or no separation exists, and the caller falls back.
+ * @returns {Array|null}
+ */
+function orderApart(items, same) {
+  const used = new Array(items.length).fill(false);
+  const out = [];
+  let steps = 0;
+  const place = () => {
+    if (out.length === items.length) return true;
+    const last = out[out.length - 1];
+    for (let k = 0; k < items.length; k += 1) {
+      if (used[k] || (last && same(items[k], last))) continue;
+      if (++steps > ORDER_APART_BUDGET) return false;
+      used[k] = true;
+      out.push(items[k]);
+      if (place()) return true;
+      out.pop();
+      used[k] = false;
+    }
+    return false;
+  };
+  return place() ? out : null;
+}
+
+/**
+ * Re-order so no two neighbours are "the same" (by default: share a `song`),
+ * when that is possible. Only the very next item is constrained: the one after
+ * may repeat freely, so nothing has to cycle through every recording.
  *
- * Greedy: walking left to right, a repeat is swapped with the first later item
+ * First a bounded depth-first ordering (orderApart). If that finds nothing,
+ * the greedy fallback: walking left to right, a repeat is swapped with the first later item
  * that differs from its left neighbour. A repeat with nothing left to swap (the
  * tail) is moved back into the first gap whose two sides both differ from it.
  * When neither exists the item stays where it is: some inputs (one song making
  * up most of the list) cannot be separated, and the queue still plays.
  *
- * @param {Array<{song?: string}>} items
+ * @param {Array<{song?: string, contentId?: string}>} items
+ * @param {(a: Object, b: Object) => boolean} [same] - What counts as a repeat
  * @returns {Array} A new array
  */
-export function avoidNeighbourRepeats(items) {
+export function avoidNeighbourRepeats(items, same = sameSong) {
+  const apart = orderApart(asArray(items), same);
+  if (apart) return apart;
   const out = [...asArray(items)];
   for (let i = 1; i < out.length; i += 1) {
-    if (!sameSong(out[i], out[i - 1])) continue;
-    const j = out.findIndex((candidate, k) => k > i && !sameSong(candidate, out[i - 1]));
+    if (!same(out[i], out[i - 1])) continue;
+    const j = out.findIndex((candidate, k) => k > i && !same(candidate, out[i - 1]));
     if (j !== -1) {
       [out[i], out[j]] = [out[j], out[i]];
       continue;
     }
     const item = out[i];
     const rest = [...out.slice(0, i), ...out.slice(i + 1)];
-    const gap = rest.findIndex((right, k) => k < i && !sameSong(item, right) && (k === 0 || !sameSong(item, rest[k - 1])));
+    const gap = rest.findIndex((right, k) => k < i && !same(item, right) && (k === 0 || !same(item, rest[k - 1])));
     if (gap === -1) continue;
     rest.splice(gap, 0, item);
     out.splice(0, out.length, ...rest);
@@ -74,6 +111,8 @@ export function avoidNeighbourRepeats(items) {
  * @param {string[]} [options.params.kinds] - Keep only these segment kinds (all when absent)
  * @param {string[]} [options.params.confidence] - Keep only these confidence levels (all when absent)
  * @param {boolean} [options.params.noRepeatSong] - Keep two clips of the same song apart
+ * @param {boolean} [options.params.noRepeatRecording] - Never follow a clip with
+ *   another from the same recording (only the very next clip is constrained)
  * @param {() => number} options.rng - Uniform [0, 1)
  * @returns {Array<{ id: string, contentId: string, title: string, subtitle: string,
  *   segment: { start: number, end: number }, song?: string }>} No `duration`:
@@ -109,7 +148,9 @@ export function segmentItems({ sidecars, params = {}, rng } = {}) {
   }
 
   const shuffled = typeof rng === 'function' ? shuffle(items, rng) : items;
-  return params?.noRepeatSong ? avoidNeighbourRepeats(shuffled) : shuffled;
+  const rules = [params?.noRepeatSong && sameSong, params?.noRepeatRecording && sameRecording].filter(Boolean);
+  if (!rules.length) return shuffled;
+  return avoidNeighbourRepeats(shuffled, (a, b) => rules.some((rule) => rule(a, b)));
 }
 
 export default segmentItems;

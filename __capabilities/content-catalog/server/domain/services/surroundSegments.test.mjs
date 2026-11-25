@@ -125,6 +125,39 @@ describe('segmentItems', () => {
       }
     }
   });
+
+  it('never plays two clips from the same recording back to back when noRepeatRecording is set', () => {
+    // Uneven concerts (5, 3, 2 clips): separable, but a plain shuffle often is not.
+    const sizes = [5, 3, 2];
+    const sidecars = sizes.map((n, k) => ({
+      contentId: `plex:40${k}`, title: `Concert ${k}`, year: 2000 + k,
+      segments: Array.from({ length: n }, (_, i) => seg(i + 1, 'song', i * 100, i * 100 + 90, { song: `s-${k}-${i}` })),
+    }));
+    for (let s = 1; s <= 50; s += 1) {
+      const items = segmentItems({ sidecars, params: { noRepeatRecording: true }, rng: seeded(s) });
+      expect(items).toHaveLength(10);
+      for (let i = 1; i < items.length; i += 1) {
+        expect(items[i].contentId).not.toBe(items[i - 1].contentId);
+      }
+    }
+  });
+
+  it('keeps both songs and recordings apart when both rules are set', () => {
+    const sidecars = [1, 2, 3, 4].map((k) => ({
+      contentId: `plex:50${k}`, title: `Concert ${k}`, year: 2000 + k,
+      segments: [
+        seg(1, 'song', 0, 100, { song: 'carol' }),
+        seg(2, 'song', 100, 200, { song: `other-${k}` }),
+      ],
+    }));
+    for (let s = 1; s <= 50; s += 1) {
+      const items = segmentItems({ sidecars, params: { noRepeatSong: true, noRepeatRecording: true }, rng: seeded(s) });
+      for (let i = 1; i < items.length; i += 1) {
+        expect(items[i].song).not.toBe(items[i - 1].song);
+        expect(items[i].contentId).not.toBe(items[i - 1].contentId);
+      }
+    }
+  });
 });
 
 describe('avoidNeighbourRepeats', () => {
